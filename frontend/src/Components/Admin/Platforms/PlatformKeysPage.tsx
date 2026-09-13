@@ -4,6 +4,7 @@ import { ApiError } from '../../../api/client'
 import { LoadingSpinner } from '../../../Shared/Components/Loading/LoadingSpinner'
 import { ScopeGate } from '../../../Shared/Components/Access/ScopeGate'
 import { useConfirm } from '../../../Shared/Components/Modal/useConfirm'
+import { Dropdown } from '../../../Shared/Components/Dropdown/Dropdown'
 import { AppScopes } from '../../../config/security/scopes'
 
 // Admin-only view of registered AI platforms and their API keys
@@ -173,18 +174,9 @@ function AddKeyForm({
           required
           className="min-w-40 flex-1 rounded border border-gray-300 px-3 py-1.5 text-sm"
         />
-        <select
-          value={platform}
-          onChange={(e) => setPlatform(e.target.value)}
-          required
-          className="rounded border border-gray-300 px-3 py-1.5 text-sm"
-        >
-          {platforms.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
+        <div className="w-40">
+          <Dropdown options={platforms.map((p) => ({ value: p.id, label: p.name }))} value={platform} onChange={setPlatform} />
+        </div>
         <input
           type="password"
           placeholder="API key"

@@ -12,6 +12,7 @@ import {
 import { fetchPlatforms, type Platform } from '../../api/platforms'
 import { ApiError } from '../../api/client'
 import { LoadingSpinner } from '../../Shared/Components/Loading/LoadingSpinner'
+import { Dropdown } from '../../Shared/Components/Dropdown/Dropdown'
 import { ConversationSidebar } from './ConversationSidebar'
 import { MessageThread } from './MessageThread'
 import { MessageComposer } from './MessageComposer'
@@ -245,34 +246,12 @@ function NewConversationForm({
         <h2 className="text-sm font-semibold text-gray-900">New conversation</h2>
         <div>
           <label className="mb-1 block text-xs font-medium text-gray-500">Platform</label>
-          <select
-            value={platformId}
-            onChange={(e) => handlePlatformChange(e.target.value)}
-            required
-            className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
-          >
-            {platforms.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
+          <Dropdown options={platforms.map((p) => ({ value: p.id, label: p.name }))} value={platformId} onChange={handlePlatformChange} />
         </div>
         {needsModel && (
           <div>
             <label className="mb-1 block text-xs font-medium text-gray-500">Model</label>
-            <select
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              required
-              className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
-            >
-              {selectedPlatform?.models.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
+            <Dropdown options={(selectedPlatform?.models ?? []).map((m) => ({ value: m, label: m }))} value={model} onChange={setModel} />
           </div>
         )}
         <p className="text-xs text-gray-400">The platform and model can&apos;t be changed after the conversation is created.</p>
