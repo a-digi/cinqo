@@ -18,10 +18,58 @@ import (
 	tool_entity "github.com/a-digi/cinqo/src/tool/entity"
 	"github.com/a-digi/cinqo/src/tool/manager"
 	"github.com/a-digi/cinqo/src/tool/manifest"
+	tool_mcp "github.com/a-digi/cinqo/src/tool/mcp"
 	tool_persistent "github.com/a-digi/cinqo/src/tool/repository/persistent"
 	tool_query "github.com/a-digi/cinqo/src/tool/repository/query"
 	"github.com/a-digi/cinqo/src/tool/sandbox"
 )
+
+// discoverMCPToolsIfDeclared is a best-effort, non-fatal hook run after
+// a tool's install/update/enable already succeeded: manifest.MCP is
+// only an optimization gate (see manifest.go's own doc comment), so a
+// failure here never fails the surrounding request — it just leaves
+// tool_mcp_tools empty for this tool, same as any tool that never
+// declared MCP support at all. Runs unconditionally regardless of
+// whether the tool's own HTTP surface is currently enabled — MCP
+// discovery spawns its own separate --mcp-mode process. See
+// plan/ai/tools/pdf-generator/step-04-ai-model-invocation.md.
+func discoverMCPToolsIfDeclared(reqCtx request.RequestContext, db *sql.DB, m manifest.Manifest, installDir, toolID string) {
+	if !m.MCP {
+		return
+	}
+	execPath, err := filepath.Abs(filepath.Join(installDir, backendExecutableFilename))
+	if err != nil {
+		reqCtx.GetDI().GetLogger().Warning("tool %q declared mcp support but its executable path could not be resolved: %v", m.Slug, err)
+		return
+	}
+	// A real, reproduced failure without this: the spawned --mcp
+	// process inherits a bare environment with none of
+	// TOOL_DB_DIR/TOOL_UPLOADS_DIR/TOOL_TMP_DIR set, so its own
+	// main() fails os.MkdirAll("", ...) at startup and exits before
+	// ever completing the MCP handshake — surfaced only as "connection
+	// closed: EOF" from Discover, not an obviously env-related error.
+	corePort, portErr := readCorePort()
+	if portErr != nil {
+		reqCtx.GetDI().GetLogger().Warning("tool %q declared mcp support but its backend port could not be determined: %v", m.Slug, portErr)
+		return
+	}
+	envVars, err := manager.ToolEnvVars(m.Slug, corePort)
+	if err != nil {
+		reqCtx.GetDI().GetLogger().Warning("tool %q declared mcp support but its env vars could not be resolved: %v", m.Slug, err)
+		return
+	}
+	mcpTools, err := tool_mcp.Discover(reqCtx.GetRequest().Context(), execPath, envVars)
+	if err != nil {
+		reqCtx.GetDI().GetLogger().Warning("tool %q declared mcp support but discovery failed: %v", m.Slug, err)
+		return
+	}
+	for i := range mcpTools {
+		mcpTools[i].ToolID = toolID
+	}
+	if err := tool_persistent.NewToolMCPToolPersistentRepo(db).ReplaceAll(toolID, mcpTools); err != nil {
+		reqCtx.GetDI().GetLogger().Warning("tool %q mcp discovery succeeded but caching its tools failed: %v", m.Slug, err)
+	}
+}
 
 // maxUploadedPackageBytes caps the raw upload before the multipart form
 // is even parsed — rejects an oversized request before it's fully
@@ -186,6 +234,8 @@ func InstallHandler(reqCtx request.RequestContext) {
 			reqCtx.GetDI().GetLogger().Warning("tool %q installed but could not determine backend port to start it: %v", tool.Slug, portErr)
 		}
 
+		discoverMCPToolsIfDeclared(reqCtx, db, m, finalDir, tool.ID)
+
 		created, err := queryRepo.FindByID(tool.ID)
 		if err != nil {
 			response.ErrorResponse(w, http.StatusInternalServerError, "tool installed but failed to reload")
@@ -261,6 +311,11 @@ func InstallHandler(reqCtx request.RequestContext) {
 			reqCtx.GetDI().GetLogger().Warning("tool %q updated but could not determine backend port to restart it: %v", updated.Slug, portErr)
 		}
 	}
+
+	// Unconditional — not gated on updated.Enabled, unlike the restart
+	// above: MCP discovery spawns its own independent --mcp-mode
+	// process regardless of the HTTP surface's enabled state.
+	discoverMCPToolsIfDeclared(reqCtx, db, m, finalDir, updated.ID)
 
 	reloaded, err := queryRepo.FindByID(updated.ID)
 	if err != nil {

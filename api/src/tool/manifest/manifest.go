@@ -24,6 +24,16 @@ type Manifest struct {
 	Scopes         []ScopeDecl `json:"scopes,omitempty"`
 	Routes         []RouteDecl `json:"routes,omitempty"`
 	RequiredScopes []string    `json:"required_scopes,omitempty"`
+	// MCP declares that this tool's own backend executable also speaks
+	// MCP over stdio when invoked with --mcp — deliberately the
+	// opposite of how Kind is trusted: this is a self-declared
+	// optimization gate on whether the install pipeline even attempts
+	// MCP discovery, not the source of truth itself (confirming MCP
+	// support means actually spawning the binary and completing a real
+	// handshake — a tool that declares this but fails discovery simply
+	// ends up with no cached MCP tools, non-fatal). See
+	// plan/ai/tools/pdf-generator/step-04-ai-model-invocation.md.
+	MCP bool `json:"mcp,omitempty"`
 }
 
 type ScopeDecl struct {
@@ -112,6 +122,10 @@ func Validate(m Manifest, in ValidationInput) (kind string, err error) {
 		if cmp > 0 {
 			return "", fmt.Errorf("requires app version <= %s, running %s", m.MaxAppVersion, in.CurrentAppVersion)
 		}
+	}
+
+	if m.MCP && !in.HasBackendExecutable {
+		return "", fmt.Errorf("mcp: true requires the package to include a backend executable")
 	}
 
 	switch {

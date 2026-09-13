@@ -70,6 +70,39 @@ func Start(db *sql.DB, t tool_entity.Tool, corePort int) error {
 	return startProcess(db, t, corePort)
 }
 
+// ToolEnvVars returns the fixed TOOL_DB_DIR/TOOL_UPLOADS_DIR/
+// TOOL_TMP_DIR/CORE_API_URL env vars every tool subprocess gets —
+// shared by this package's own long-running HTTP-mode spawn and
+// tool/mcp's separate on-demand --mcp-mode spawn (discovery/
+// invocation), so both give a tool's own code the exact same,
+// correctly-absolute-pathed contract. Must be absolute: whichever
+// caller spawns the process may set cmd.Dir to the tool's own install
+// directory, which would otherwise resolve a relative value against
+// the wrong base — verified directly, reproduced as a real
+// data-loss-on-update bug before this was extracted into one shared
+// function (see this package's own git history / the pdf-generator
+// step-02 design doc's "Implemented and verified" section).
+func ToolEnvVars(slug string, corePort int) ([]string, error) {
+	dbDir, err := filepath.Abs(filepath.Join("data", "db", "tools", slug))
+	if err != nil {
+		return nil, err
+	}
+	uploadsDir, err := filepath.Abs(filepath.Join("data", "uploads", "tools", slug))
+	if err != nil {
+		return nil, err
+	}
+	tmpDir, err := filepath.Abs(filepath.Join("data", "tmp", "tools", slug))
+	if err != nil {
+		return nil, err
+	}
+	return []string{
+		"TOOL_DB_DIR=" + dbDir,
+		"TOOL_UPLOADS_DIR=" + uploadsDir,
+		"TOOL_TMP_DIR=" + tmpDir,
+		fmt.Sprintf("CORE_API_URL=http://127.0.0.1:%d", corePort),
+	}, nil
+}
+
 func startProcess(db *sql.DB, t tool_entity.Tool, corePort int) error {
 	if t.BackendExecutableRelpath == "" {
 		return nil // frontend-only — nothing to spawn
@@ -92,15 +125,15 @@ func startProcess(db *sql.DB, t tool_entity.Tool, corePort int) error {
 		return err
 	}
 
+	toolEnv, err := ToolEnvVars(t.Slug, corePort)
+	if err != nil {
+		_ = setStatusAndPID(db, t.ID, "error", 0)
+		return err
+	}
+
 	cmd := exec.Command(execPath)
 	cmd.Dir = t.InstallPath
-	cmd.Env = append(os.Environ(),
-		fmt.Sprintf("PORT=%d", port),
-		"TOOL_DB_DIR="+filepath.Join("data", "db", "tools", t.Slug),
-		"TOOL_UPLOADS_DIR="+filepath.Join("data", "uploads", "tools", t.Slug),
-		"TOOL_TMP_DIR="+filepath.Join("data", "tmp", "tools", t.Slug),
-		fmt.Sprintf("CORE_API_URL=http://127.0.0.1:%d", corePort),
-	)
+	cmd.Env = append(os.Environ(), append(toolEnv, fmt.Sprintf("PORT=%d", port))...)
 
 	if err := cmd.Start(); err != nil {
 		_ = setStatusAndPID(db, t.ID, "error", 0)

@@ -4,11 +4,14 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	"github.com/a-digi/coco-server/server/request"
 	"github.com/a-digi/coco-server/server/response"
 
 	"github.com/a-digi/cinqo/src/tool/manager"
+	"github.com/a-digi/cinqo/src/tool/manifest"
 	tool_persistent "github.com/a-digi/cinqo/src/tool/repository/persistent"
 	tool_query "github.com/a-digi/cinqo/src/tool/repository/query"
 )
@@ -55,6 +58,15 @@ func EnableHandler(reqCtx request.RequestContext) {
 		// doesn't fail the enable request — the tool is enabled, just
 		// not currently running.
 		reqCtx.GetDI().GetLogger().Warning("tool %q enabled but failed to start: %v", slug, err)
+	}
+
+	// Re-enabling doesn't re-upload a manifest — the declared "mcp"
+	// flag is read back from the already-installed package's own
+	// manifest.json rather than duplicated into a new tools column.
+	if manifestBytes, readErr := os.ReadFile(filepath.Join(tool.InstallPath, "manifest.json")); readErr == nil {
+		if m, parseErr := manifest.Parse(manifestBytes); parseErr == nil {
+			discoverMCPToolsIfDeclared(reqCtx, db, m, tool.InstallPath, tool.ID)
+		}
 	}
 
 	reloaded, err := queryRepo.FindBySlug(slug)

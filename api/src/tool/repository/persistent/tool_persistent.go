@@ -123,6 +123,9 @@ func (r *ToolPersistentRepo) Delete(id string) error {
 	if _, err := tx.Exec(`DELETE FROM tool_required_scopes WHERE tool_id = ?`, id); err != nil {
 		return err
 	}
+	if _, err := tx.Exec(`DELETE FROM tool_mcp_tools WHERE tool_id = ?`, id); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(`DELETE FROM tools WHERE id = ?`, id); err != nil {
 		return err
 	}
