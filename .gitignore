@@ -43,6 +43,7 @@ plan/
 /api/server.pid
 /api/*.log
 /api/vendor/
+/api/bin/
 
 # MCP logs
 

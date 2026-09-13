@@ -95,3 +95,26 @@ test-cover:
 .PHONY: mod-tidy
 mod-tidy:
 	cd api && go mod tidy
+
+# Builds Caddy from source as part of this module's own build — no
+# xcaddy, no system-wide Caddy install on any machine that builds this
+# repo. api/cmd/caddy/main.go is a verbatim copy of Caddy's own
+# documented "build without xcaddy" entry point; api/go.mod pins the
+# exact caddy version, same as every other dependency here. Output is
+# gitignored (a compiled binary, not source) and rebuilt on demand, not
+# committed.
+.PHONY: build-caddy
+build-caddy:
+	@mkdir -p api/bin
+	cd api && go build -o bin/caddy ./cmd/caddy
+	@echo "caddy built at api/bin/caddy"
+
+# Runs Caddy in front of the built frontend (frontend/dist) and the
+# already-running backend (:7026), unifying them on one local origin
+# (:7030) — a "run it like production" preview, not the fast dev loop
+# (that's run-dev-all / Vite's HMR server). Requires: `npm run build` has
+# been run in frontend/, and the backend is already running (make
+# run-dev). See plan/ai/deploy/local-caddy-plan.md.
+.PHONY: run-caddy
+run-caddy: build-caddy
+	./api/bin/caddy run --config Caddyfile --adapter caddyfile

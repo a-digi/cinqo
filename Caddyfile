@@ -1,0 +1,26 @@
+:7030 {
+	# /api/* and /auth (+/auth/*) go to the backend — everything else is
+	# the built frontend. Two separate `handle` blocks for /auth,
+	# deliberately not a single `handle /auth*` glob (which is what
+	# coco-mda's own Caddy block uses) — that glob also matches
+	# "/authorization" or any other future path starting with "/auth",
+	# the exact same false-positive class of bug vite.config.ts's dev
+	# proxy already documents and avoids with an anchored regex. Matching
+	# only the exact prefix here is the more correct version of the same
+	# rule, not a deviation from precedent.
+	handle /api/* {
+		reverse_proxy 127.0.0.1:7026
+	}
+	handle /auth {
+		reverse_proxy 127.0.0.1:7026
+	}
+	handle /auth/* {
+		reverse_proxy 127.0.0.1:7026
+	}
+
+	handle {
+		root * frontend/dist
+		try_files {path} /index.html
+		file_server
+	}
+}
