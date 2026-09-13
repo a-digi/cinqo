@@ -44,6 +44,12 @@ plan/
 /api/*.log
 /api/vendor/
 /api/bin/
+/api/cmd/app/webapp/dist/
+
+# Build output (make build/build-linux/build-app) — compiled binaries,
+# not source. Was an unaddressed gap before this ever produced a real
+# file in this repo (build/build-linux hadn't been run here yet either).
+/versions/
 
 # MCP logs
 

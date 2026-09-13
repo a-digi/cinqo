@@ -1,0 +1,17 @@
+:7030 {
+	handle /api/* {
+		reverse_proxy {env.CINQO_BACKEND_ADDR}
+	}
+	handle /auth {
+		reverse_proxy {env.CINQO_BACKEND_ADDR}
+	}
+	handle /auth/* {
+		reverse_proxy {env.CINQO_BACKEND_ADDR}
+	}
+
+	handle {
+		root * {env.CINQO_FRONTEND_DIR}
+		try_files {path} /index.html
+		file_server
+	}
+}

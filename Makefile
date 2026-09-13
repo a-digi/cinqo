@@ -118,3 +118,26 @@ build-caddy:
 .PHONY: run-caddy
 run-caddy: build-caddy
 	./api/bin/caddy run --config Caddyfile --adapter caddyfile
+
+# Builds the frontend and copies its output under api/cmd/app/webapp/dist
+# so //go:embed (which cannot reach outside the tree of the file
+# containing the directive) can pull it into the single-executable
+# build (make build-app). Output is a build artifact, gitignored, never
+# hand-edited. See plan/ai/build/app/step-02-embed-frontend-build.md.
+.PHONY: embed-frontend
+embed-frontend:
+	cd frontend && npm run build
+	rm -rf api/cmd/app/webapp/dist
+	cp -R frontend/dist api/cmd/app/webapp/dist
+
+# Builds the single, self-contained executable: backend + Caddy (as a
+# library, not a second binary) + the embedded frontend build, all in
+# one file. A distinct artifact from build/build-linux (which stay
+# backend-only, the right shape for any future server-style remote
+# deploy) — this is the desktop-tool-style "run it, it opens" mode. See
+# plan/ai/build/app.md.
+.PHONY: build-app
+build-app: embed-frontend
+	@mkdir -p versions
+	cd api && go build -o ../versions/cinqo-app-$(BRANCH) ./cmd/app
+	@echo "cinqo-app built at versions/cinqo-app-$(BRANCH)"
