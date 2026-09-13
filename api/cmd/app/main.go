@@ -10,6 +10,7 @@ import (
 	_ "embed"
 	"fmt"
 	"io/fs"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -34,7 +35,14 @@ import (
 //go:embed embedded.Caddyfile
 var embeddedCaddyfile []byte
 
-const caddyAddr = "http://localhost:7030"
+// caddyPort is the single source of truth for the port embedded.Caddyfile
+// itself hardcodes (its site address can't be an {env.*} placeholder —
+// see plan/ai/build/app/step-03-embedded-caddy-config.md). Kept here too
+// so stopStaleInstance and caddyAddr don't each carry their own copy of
+// the literal.
+const caddyPort = 7030
+
+var caddyAddr = fmt.Sprintf("http://localhost:%d", caddyPort)
 
 func main() {
 	if err := run(); err != nil {
@@ -44,11 +52,25 @@ func main() {
 }
 
 func run() error {
+	cfg, err := server.LoadConfig("config.json")
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+
+	stoppedPID, err := stopStaleInstance(cfg)
+	if err != nil {
+		return err
+	}
+
 	srv, cfg, log, err := backendapp.Start()
 	if err != nil {
 		return fmt.Errorf("backend: %w", err)
 	}
 	defer log.Close()
+
+	if stoppedPID != 0 {
+		log.Info("stopped previous instance (pid %d) before starting", stoppedPID)
+	}
 
 	frontendDir, err := extractFrontend()
 	if err != nil {
@@ -69,6 +91,92 @@ func run() error {
 
 	waitForShutdown(srv, cfg.PidFile, log, frontendDir)
 	return nil
+}
+
+// stopStaleInstance detects whether a previous cinqo-app instance — or a
+// stray `make run-dev` backend, since it writes the exact same PID file
+// via the same server.StartServer call — is still running, signals it
+// to stop, and waits until this app's own ports are actually free before
+// returning. Runs before backendapp.Start() creates the structured
+// logger, so progress is reported directly to stdout: the interactive,
+// "watch it happen" signal this is meant to be, not something to bury in
+// a log file nobody's tailing live. Returns the stopped PID (0 if there
+// was nothing to stop) so the caller can log a permanent record of it
+// once the real logger exists. See
+// plan/ai/build/app/step-07-stale-instance-shutdown-on-startup.md.
+func stopStaleInstance(cfg *server.Config) (stoppedPID int, err error) {
+	pid, err := server.ReadPID(cfg.PidFile)
+	if err != nil {
+		return 0, nil // no PID file — nothing to stop
+	}
+
+	process, findErr := os.FindProcess(pid)
+	alive := findErr == nil && process.Signal(syscall.Signal(0)) == nil
+	if !alive {
+		// Stale leftover file from an unclean shutdown/crash — nothing
+		// is actually running, just clear it and move on.
+		_ = server.RemovePID(cfg.PidFile)
+		return 0, nil
+	}
+
+	fmt.Printf("Shutting down previous cinqo instance (pid %d)", pid)
+	_ = server.SendSIGTERM(pid)
+
+	ports := []int{cfg.Port, caddyPort}
+
+	if waitForPortsFree(ports, 10*time.Second) {
+		fmt.Println(" done.")
+		_ = server.RemovePID(cfg.PidFile)
+		return pid, nil
+	}
+
+	fmt.Println()
+	fmt.Printf("Previous instance (pid %d) did not stop within 10s — forcing it to stop...\n", pid)
+	_ = process.Signal(syscall.SIGKILL)
+
+	if !waitForPortsFree(ports, 3*time.Second) {
+		return 0, fmt.Errorf(
+			"port %d or %d is still in use after force-stopping the previous instance (pid %d) — "+
+				"something else may be using it", cfg.Port, caddyPort, pid)
+	}
+
+	_ = server.RemovePID(cfg.PidFile)
+	return pid, nil
+}
+
+// waitForPortsFree polls until every port in ports can be bound, or
+// timeout elapses. Prints one "." per poll tick (no newline) so the
+// caller's in-progress line grows visibly.
+func waitForPortsFree(ports []int, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for {
+		if allPortsFree(ports) {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		fmt.Print(".")
+		time.Sleep(300 * time.Millisecond)
+	}
+}
+
+func allPortsFree(ports []int) bool {
+	for _, p := range ports {
+		if !portFree(p) {
+			return false
+		}
+	}
+	return true
+}
+
+func portFree(port int) bool {
+	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	if err != nil {
+		return false
+	}
+	ln.Close()
+	return true
 }
 
 // extractFrontend writes the embedded frontend build out to a real temp
