@@ -14,6 +14,8 @@ export interface MenuEntry {
 export const menuEntries: MenuEntry[] = [
   { label: 'Home', path: '/' },
   { label: 'Conversations', path: '/conversations', scopes: [AppScopes.ConversationUse] },
+  { label: 'Tools', path: '/admin/tools', scopes: [AppScopes.ToolManage] },
+  { label: 'Platforms', path: '/admin/platforms', scopes: [AppScopes.PlatformRead] },
   {
     label: 'System',
     children: [
@@ -21,8 +23,6 @@ export const menuEntries: MenuEntry[] = [
         label: 'Security',
         children: [{ label: 'Scopes', path: '/admin/security/scopes', scopes: [AppScopes.SuperAdmin] }],
       },
-      { label: 'Tools', path: '/admin/tools', scopes: [AppScopes.ToolManage] },
-      { label: 'Platforms', path: '/admin/platforms', scopes: [AppScopes.PlatformRead] },
     ],
   },
 ]
