@@ -2,6 +2,16 @@ import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkBreaks from 'remark-breaks'
 
+// Extracts the generated file's id from a tool proxy download href and
+// turns it into a real save-as filename — the one part of that href
+// this component already trusts (it's what made the href "safe" to
+// render as a link in the first place), unlike the link's own visible
+// text. See plan/ai/tools/pdf-generator/step-07-download-link-fix.md.
+function proxyDownloadFilename(href: string): string | null {
+  const match = /^\/api\/v1\/tools\/[^/]+\/proxy\/files\?id=([^&]+)$/.exec(href)
+  return match ? `${decodeURIComponent(match[1])}.pdf` : null
+}
+
 // react-markdown never renders raw HTML from its source (no
 // rehype-raw plugin here) — its AST-based rendering has no
 // dangerouslySetInnerHTML anywhere, so this stays XSS-safe by
@@ -49,15 +59,34 @@ const components: Components = {
     // produce — anchored at the start so a protocol-relative `//host/...`
     // (which also starts with "/") can't slip through. See
     // plan/ai/tools/pdf-generator/step-07-download-link-fix.md.
-    const safe =
-      typeof href === 'string' &&
-      (/^(https?:|mailto:)/i.test(href) || /^\/api\/v1\/tools\/[^/]+\/proxy\//.test(href))
-    return safe ? (
-      <a href={href} download target="_blank" rel="noopener noreferrer" className="underline">
+    const isProxyDownload = typeof href === 'string' && /^\/api\/v1\/tools\/[^/]+\/proxy\//.test(href)
+    const safe = typeof href === 'string' && (/^(https?:|mailto:)/i.test(href) || isProxyDownload)
+    if (!safe) {
+      return <span>{children}</span>
+    }
+
+    // An empty `download` attribute leaves the actual saved filename up
+    // to browser-specific fallback behavior instead of reliably
+    // deferring to the response's own Content-Disposition — in
+    // practice this landed on the URL's last path segment ("files",
+    // since the real id only ever lives in the query string), not the
+    // real filename. Derived here from the id already inside the
+    // href — not from `children` (the model-controlled visible link
+    // text) — since a hallucinated label could otherwise pair a
+    // legitimate href with a misleading save-as name. See this file's
+    // step-07 doc, "Amendment" section.
+    const filename = isProxyDownload ? proxyDownloadFilename(href as string) : null
+
+    return (
+      <a
+        href={href}
+        download={filename ?? undefined}
+        target={isProxyDownload ? undefined : '_blank'}
+        rel="noopener noreferrer"
+        className="underline"
+      >
         {children}
       </a>
-    ) : (
-      <span>{children}</span>
     )
   },
 }
