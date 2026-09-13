@@ -23,6 +23,7 @@ import (
 	"time"
 
 	tool_entity "github.com/a-digi/cinqo/src/tool/entity"
+	tool_query "github.com/a-digi/cinqo/src/tool/repository/query"
 )
 
 const (
@@ -68,6 +69,35 @@ func Start(db *sql.DB, t tool_entity.Tool, corePort int) error {
 	crashCounts[t.ID] = 0
 	mu.Unlock()
 	return startProcess(db, t, corePort)
+}
+
+// StartAllEnabled (re)starts every tool the database already says is
+// enabled — called once at application boot, since nothing else does
+// (Start is otherwise only ever reached via a deliberate enable/
+// install request). Without this, this package's own in-memory
+// processes map starts empty on every restart while the database
+// still says "enabled"/"running" from before, leaving every tool's
+// proxy route 503ing ("tool is not currently running") until someone
+// manually disables and re-enables it — a real, reproduced bug behind
+// a live PDF-download failure. Best-effort per tool, matching
+// enable_handler.go's own established convention: one tool failing to
+// start is reported through warn and does not stop the rest from
+// being attempted. See
+// plan/ai/tools/step-11-restart-enabled-tools-on-boot.md.
+func StartAllEnabled(db *sql.DB, corePort int, warn func(format string, args ...any)) {
+	tools, err := tool_query.NewToolQueryRepo(db).List()
+	if err != nil {
+		warn("tool manager: failed to list tools for boot-time restart: %v", err)
+		return
+	}
+	for _, t := range tools {
+		if !t.Enabled {
+			continue
+		}
+		if err := Start(db, *t, corePort); err != nil {
+			warn("tool %q enabled but failed to start at boot: %v", t.Slug, err)
+		}
+	}
 }
 
 // ToolEnvVars returns the fixed TOOL_DB_DIR/TOOL_UPLOADS_DIR/

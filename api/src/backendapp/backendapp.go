@@ -20,6 +20,7 @@ import (
 	auth_config "github.com/a-digi/cinqo/src/auth/config"
 	auth_service "github.com/a-digi/cinqo/src/auth/service"
 	platform_crypto "github.com/a-digi/cinqo/src/platform/crypto"
+	tool_manager "github.com/a-digi/cinqo/src/tool/manager"
 
 	"github.com/a-digi/coco-logger/logger"
 )
@@ -56,6 +57,18 @@ func Start() (srv *http.Server, cfg *server.Config, ctx *di.ContextBag, log logg
 	if err := manager.SyncMigrations(); err != nil {
 		return nil, nil, nil, log, err
 	}
+
+	// Reconcile every tool the database says is already enabled — this
+	// package's own tool manager otherwise starts every restart with a
+	// completely empty in-memory "what's running" map, leaving every
+	// tool's proxy route 503ing until someone manually disables and
+	// re-enables it by hand. See
+	// plan/ai/tools/step-11-restart-enabled-tools-on-boot.md.
+	corePortCfg, err := server.LoadConfig("config.json")
+	if err != nil {
+		return nil, nil, nil, log, err
+	}
+	tool_manager.StartAllEnabled(manager.Connector.DB, corePortCfg.Port, func(format string, args ...any) { log.Warning(format, args...) })
 
 	ctx = di.NewContextBag(manager, log)
 
