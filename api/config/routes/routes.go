@@ -15,6 +15,8 @@ import (
 	auth_service "github.com/a-digi/cinqo/src/auth/service"
 	"github.com/a-digi/cinqo/src/health"
 	"github.com/a-digi/cinqo/src/ping"
+	"github.com/a-digi/cinqo/src/platform"
+	platform_handler "github.com/a-digi/cinqo/src/platform/handler"
 	"github.com/a-digi/cinqo/src/security/scopes"
 	security_handler "github.com/a-digi/cinqo/src/security/scopes/handler"
 	"github.com/a-digi/cinqo/src/tool"
@@ -55,6 +57,7 @@ func Init(ctx serverdi.Context) {
 	scopes.Register(scopes.CoreScopeGroup)
 	scopes.Register(ping.ScopeGroup)
 	scopes.Register(tool.ScopeGroup)
+	scopes.Register(platform.ScopeGroup)
 
 	handlerMap := map[string]routing.HandlerInterface{
 		"HealthzGet": local_routing.HandlerFunc(health.GetHandler),
@@ -77,6 +80,11 @@ func Init(ctx serverdi.Context) {
 		"ToolDisable":        local_routing.HandlerFunc(tool_handler.DisableHandler),
 		"ToolFrontendBundle": local_routing.HandlerFunc(tool_handler.FrontendBundleHandler),
 		"ToolProxy":          local_routing.HandlerFunc(tool_handler.ProxyHandler),
+
+		"PlatformList":      local_routing.HandlerFunc(platform_handler.ListPlatformsHandler),
+		"PlatformKeyList":   local_routing.HandlerFunc(platform_handler.ListKeysHandler),
+		"PlatformKeyCreate": local_routing.HandlerFunc(platform_handler.CreateKeyHandler),
+		"PlatformKeyDelete": local_routing.HandlerFunc(platform_handler.DeleteKeyHandler),
 	}
 
 	var inner *lift_security.ScopeSecurityLayer

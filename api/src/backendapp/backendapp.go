@@ -19,6 +19,7 @@ import (
 	"github.com/a-digi/cinqo/config/routes"
 	auth_config "github.com/a-digi/cinqo/src/auth/config"
 	auth_service "github.com/a-digi/cinqo/src/auth/service"
+	platform_crypto "github.com/a-digi/cinqo/src/platform/crypto"
 
 	"github.com/a-digi/coco-logger/logger"
 )
@@ -57,6 +58,36 @@ func Start() (srv *http.Server, cfg *server.Config, ctx *di.ContextBag, log logg
 	}
 
 	ctx = di.NewContextBag(manager, log)
+
+	// Conversation feature's own, separate SQLite database (its own
+	// file, its own migrations folder) — a deliberate second
+	// DatabaseManager, not a table in cinqo.db, per
+	// plan/ai/conversation/step-01-data-model-and-separate-database.md.
+	// Registered into DI under its own key rather than replacing
+	// ContextBag.DatabaseManager, so existing handlers resolving the
+	// main database are unaffected.
+	conversationMigrationsPath, err := config.ConversationMigrationsPath()
+	if err != nil {
+		return nil, nil, nil, log, err
+	}
+	conversationManager, err := dbmanager.NewDatabaseManager("conversation.db", "./data/db", []string{conversationMigrationsPath})
+	if err != nil {
+		return nil, nil, nil, log, err
+	}
+	if err := conversationManager.SyncMigrations(); err != nil {
+		return nil, nil, nil, log, err
+	}
+	ctx.Set("conversation_db_manager", conversationManager)
+
+	// Platform API-key encryption key — loaded/generated once at
+	// bootstrap, deliberately never sourced from config.json (step 2),
+	// registered into DI so every platform handler resolves the same
+	// in-memory key rather than each re-reading the file itself.
+	platformEncryptionKey, err := platform_crypto.LoadOrGenerateKey("./data/keys/platform-encryption.key")
+	if err != nil {
+		return nil, nil, nil, log, err
+	}
+	ctx.Set("platform_encryption_key", platformEncryptionKey)
 
 	// Auth bootstrap: config.json's "auth" block is always present (dev
 	// HS256 secret); iam.yaml does not exist on disk yet (see

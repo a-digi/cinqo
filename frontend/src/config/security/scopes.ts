@@ -15,4 +15,6 @@ export const AppScopes = {
   PingRead: 'cinqo:ping:read',
   PingCreate: 'cinqo:ping:create',
   ToolManage: 'tool:manage',
+  PlatformRead: 'cinqo:platform:read',
+  PlatformManage: 'cinqo:platform:manage',
 } as const

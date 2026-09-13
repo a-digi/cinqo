@@ -6,6 +6,7 @@ import { LoginPage } from '../../Components/Auth/LoginPage'
 import { Layout } from '../../Layout/Layout'
 import { ScopesPage } from '../../Components/Admin/Security/ScopesPage'
 import { ToolsListPage } from '../../Components/Admin/Tools/ToolsListPage'
+import { PlatformKeysPage } from '../../Components/Admin/Platforms/PlatformKeysPage'
 import { ToolRouteOutlet } from '../../Components/Tools/ToolRouteOutlet'
 import { AppScopes } from '../security/scopes'
 
@@ -38,6 +39,14 @@ export const router = createBrowserRouter([
             element: (
               <AuthGuard scopes={[AppScopes.ToolManage]}>
                 <ToolsListPage />
+              </AuthGuard>
+            ),
+          },
+          {
+            path: '/admin/platforms',
+            element: (
+              <AuthGuard scopes={[AppScopes.PlatformRead]}>
+                <PlatformKeysPage />
               </AuthGuard>
             ),
           },

@@ -115,6 +115,16 @@ func MigrationsPath() (string, error) {
 	return migrationsSubdir("migrations")
 }
 
+// ConversationMigrationsPath returns the on-disk path to the
+// conversation feature's own database's migrations folder
+// (data/db/conversation.db) — a separate SQLite database from the
+// main cinqo.db, per plan/ai/conversation/step-01's own decision. See
+// MigrationsPath's own doc comment for why this is a dedicated
+// function per database rather than a parameterized one.
+func ConversationMigrationsPath() (string, error) {
+	return migrationsSubdir("migrations-conversation")
+}
+
 func migrationsSubdir(name string) (string, error) {
 	full := filepath.Join(resolved().Root(), "db", name)
 	info, err := os.Stat(full)
