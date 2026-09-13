@@ -1,4 +1,5 @@
 import type { ConversationMessage } from '../../api/conversations'
+import { Markdown } from '../../Shared/Components/Markdown/Markdown'
 
 // Renders the active conversation's messages in order, user/assistant
 // styled distinctly. No streaming — a sent message shows a
@@ -41,12 +42,8 @@ function Bubble({ role, content }: { role: 'user' | 'assistant'; content: string
   const isUser = role === 'user'
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-      <div
-        className={`max-w-lg whitespace-pre-wrap rounded-lg px-3 py-2 text-sm ${
-          isUser ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-900'
-        }`}
-      >
-        {content}
+      <div className={`max-w-lg rounded-lg px-3 py-2 text-sm ${isUser ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-900'}`}>
+        <Markdown content={content} />
       </div>
     </div>
   )
