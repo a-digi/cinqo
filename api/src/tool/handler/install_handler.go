@@ -63,10 +63,29 @@ func discoverMCPToolsIfDeclared(reqCtx request.RequestContext, db *sql.DB, m man
 		reqCtx.GetDI().GetLogger().Warning("tool %q declared mcp support but discovery failed: %v", m.Slug, err)
 		return
 	}
-	for i := range mcpTools {
-		mcpTools[i].ToolID = toolID
+	// MCP's own tools/list has no concept of a cinqo scope at all — the
+	// manifest's own mcp_tools mapping is the only source of truth for
+	// which scope gates each one. A discovered name with no matching
+	// manifest entry is dropped, not cached with an empty scope (which
+	// would make it callable by anyone) — logged so a manifest that
+	// forgot to declare a real tool is a visible, not silent, gap.
+	scopeByName := make(map[string]string, len(m.MCPTools))
+	for _, mt := range m.MCPTools {
+		scopeByName[mt.Name] = mt.RequiredScope
 	}
-	if err := tool_persistent.NewToolMCPToolPersistentRepo(db).ReplaceAll(toolID, mcpTools); err != nil {
+	filtered := make([]tool_entity.ToolMCPTool, 0, len(mcpTools))
+	for _, mt := range mcpTools {
+		scope, declared := scopeByName[mt.Name]
+		if !declared {
+			reqCtx.GetDI().GetLogger().Warning("tool %q's mcp server declared a tool %q with no matching mcp_tools entry in its manifest — not cached", m.Slug, mt.Name)
+			continue
+		}
+		mt.ToolID = toolID
+		mt.RequiredScope = scope
+		filtered = append(filtered, mt)
+	}
+
+	if err := tool_persistent.NewToolMCPToolPersistentRepo(db).ReplaceAll(toolID, filtered); err != nil {
 		reqCtx.GetDI().GetLogger().Warning("tool %q mcp discovery succeeded but caching its tools failed: %v", m.Slug, err)
 	}
 }

@@ -49,6 +49,12 @@ func SendMessageHandler(reqCtx request.RequestContext) {
 		return
 	}
 
+	scopes, err := callerScopes(reqCtx)
+	if err != nil {
+		response.ErrorResponse(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
 	convDB, err := conversationDB(reqCtx)
 	if err != nil {
 		response.ErrorResponse(w, http.StatusInternalServerError, "conversation database not configured")
@@ -72,7 +78,7 @@ func SendMessageHandler(reqCtx request.RequestContext) {
 
 	mainDB := reqCtx.GetDI().GetDatabaseManager().Connector.DB
 
-	turn, err := conversation.SendMessage(reqCtx.GetRequest().Context(), http.DefaultClient, mainDB, convDB, encKey, id, body.Content)
+	turn, err := conversation.SendMessage(reqCtx.GetRequest().Context(), http.DefaultClient, mainDB, convDB, encKey, id, body.Content, scopes)
 	if err != nil {
 		writeSendMessageError(w, err)
 		return
@@ -97,6 +103,8 @@ func writeSendMessageError(w http.ResponseWriter, err error) {
 		response.ErrorResponse(w, http.StatusNotFound, "conversation not found")
 	case errors.Is(err, conversation.ErrProviderCallFailed):
 		response.ErrorResponse(w, http.StatusBadGateway, "the AI platform request failed")
+	case errors.Is(err, conversation.ErrToolIterationLimitReached):
+		response.ErrorResponse(w, http.StatusInternalServerError, "the model kept calling tools without producing a final reply")
 	default:
 		response.ErrorResponse(w, http.StatusInternalServerError, "failed to send message")
 	}

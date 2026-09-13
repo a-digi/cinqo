@@ -72,6 +72,37 @@ func callerUserID(reqCtx request.RequestContext) (string, error) {
 	return sub, nil
 }
 
+// callerScopes resolves the authenticated caller's own scopes — used
+// to scope-filter which MCP tools get offered to the model (see
+// plan/ai/tools/pdf-generator/step-04-ai-model-invocation.md). Same
+// token-validation path as callerUserID, kept as its own function
+// since most callers only need one or the other.
+func callerScopes(reqCtx request.RequestContext) ([]string, error) {
+	token := tokenFromRequest(reqCtx.GetRequest())
+	if token == "" {
+		return nil, errNoToken
+	}
+
+	storeCtx, ok := reqCtx.GetDI().(diStore)
+	if !ok {
+		return nil, errNoToken
+	}
+	raw, ok := storeCtx.Get("jwks_service")
+	if !ok {
+		return nil, errNoToken
+	}
+	jwksSvc, ok := raw.(*auth_service.JwksService)
+	if !ok {
+		return nil, errNoToken
+	}
+
+	_, scopes, _, err := jwksSvc.Validate(token)
+	if err != nil {
+		return nil, errNoToken
+	}
+	return scopes, nil
+}
+
 // conversationDB resolves the conversation feature's own separate
 // database (backendapp.Start registers it into DI as
 // "conversation_db_manager" — plan/ai/conversation/step-01).

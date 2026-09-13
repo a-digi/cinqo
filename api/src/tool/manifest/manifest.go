@@ -34,6 +34,14 @@ type Manifest struct {
 	// ends up with no cached MCP tools, non-fatal). See
 	// plan/ai/tools/pdf-generator/step-04-ai-model-invocation.md.
 	MCP bool `json:"mcp,omitempty"`
+	// MCPTools declares which scope gates calling each of this tool's
+	// own MCP tools by name — MCP's own tools/list has no concept of a
+	// cinqo scope at all, so this mapping can only come from the
+	// manifest, not from live discovery. A discovered MCP tool name
+	// with no matching entry here is never cached/offered to a model —
+	// see plan/ai/tools/pdf-generator/step-04-ai-model-invocation.md's
+	// own "Offering tools to the model" design.
+	MCPTools []MCPToolDecl `json:"mcp_tools,omitempty"`
 }
 
 type ScopeDecl struct {
@@ -44,6 +52,11 @@ type ScopeDecl struct {
 type RouteDecl struct {
 	Method        string `json:"method"`
 	PathSuffix    string `json:"path_suffix"`
+	RequiredScope string `json:"required_scope"`
+}
+
+type MCPToolDecl struct {
+	Name          string `json:"name"`
 	RequiredScope string `json:"required_scope"`
 }
 
@@ -126,6 +139,21 @@ func Validate(m Manifest, in ValidationInput) (kind string, err error) {
 
 	if m.MCP && !in.HasBackendExecutable {
 		return "", fmt.Errorf("mcp: true requires the package to include a backend executable")
+	}
+	if len(m.MCPTools) > 0 && !m.MCP {
+		return "", fmt.Errorf("mcp_tools requires mcp: true")
+	}
+	declaredScopes := make(map[string]struct{}, len(m.Scopes))
+	for _, s := range m.Scopes {
+		declaredScopes[s.Scope] = struct{}{}
+	}
+	for _, mt := range m.MCPTools {
+		if strings.TrimSpace(mt.Name) == "" {
+			return "", fmt.Errorf("mcp_tools entries require a name")
+		}
+		if _, ok := declaredScopes[mt.RequiredScope]; !ok {
+			return "", fmt.Errorf("mcp_tools entry %q: required_scope %q must be one of this tool's own declared scopes", mt.Name, mt.RequiredScope)
+		}
 	}
 
 	switch {
