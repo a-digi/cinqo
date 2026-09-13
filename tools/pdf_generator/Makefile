@@ -1,6 +1,9 @@
 # tools/pdf_generator/Makefile — cross-compiles and packages this
 # tool's backend for macOS (Apple Silicon), Linux, and Windows, each a
-# complete, independently-installable .zip. See
+# complete, independently-installable .zip dropped into this tool's own
+# tools/pdf_generator/versions/ — not the shared root /versions/ (which
+# stays cinqo's own binary's and every other tool's generic-package
+# drop point). See
 # plan/ai/tools/pdf-generator/step-06-multi-os-packaging.md.
 #
 # pdf_generator's own backend has zero cgo dependencies (chromedp,
@@ -60,18 +63,27 @@ build-windows:
 .PHONY: build-all
 build-all: build-darwin build-linux build-windows
 
+
+# VERSIONS_DIR is this tool's own output folder — deliberately not the
+# shared root versions/ (which the root Makefile's build/build-linux/
+# generic package-tool still use for cinqo's own binary and every other
+# tool's single-OS package): a tool with its own multi-OS Makefile
+# keeps its own finished .zips alongside itself, under
+# tools/pdf_generator/versions/.
+VERSIONS_DIR := versions
+
 .PHONY: zip
 zip: build-all
-	@mkdir -p ../../versions
-	cd $(BUILD_DIR)/darwin-arm64  && zip -r ../../../../versions/tool-pdf_generator-darwin-arm64.zip  . >/dev/null
-	cd $(BUILD_DIR)/linux-amd64   && zip -r ../../../../versions/tool-pdf_generator-linux-amd64.zip   . >/dev/null
-	cd $(BUILD_DIR)/linux-arm64   && zip -r ../../../../versions/tool-pdf_generator-linux-arm64.zip   . >/dev/null
-	cd $(BUILD_DIR)/windows-amd64 && zip -r ../../../../versions/tool-pdf_generator-windows-amd64.zip . >/dev/null
+	@mkdir -p $(VERSIONS_DIR)
+	cd $(BUILD_DIR)/darwin-arm64  && zip -r ../../$(VERSIONS_DIR)/tool-pdf_generator-darwin-arm64.zip  . >/dev/null
+	cd $(BUILD_DIR)/linux-amd64   && zip -r ../../$(VERSIONS_DIR)/tool-pdf_generator-linux-amd64.zip   . >/dev/null
+	cd $(BUILD_DIR)/linux-arm64   && zip -r ../../$(VERSIONS_DIR)/tool-pdf_generator-linux-arm64.zip   . >/dev/null
+	cd $(BUILD_DIR)/windows-amd64 && zip -r ../../$(VERSIONS_DIR)/tool-pdf_generator-windows-amd64.zip . >/dev/null
 	@echo "packaged:"
-	@echo "  versions/tool-pdf_generator-darwin-arm64.zip"
-	@echo "  versions/tool-pdf_generator-linux-amd64.zip"
-	@echo "  versions/tool-pdf_generator-linux-arm64.zip"
-	@echo "  versions/tool-pdf_generator-windows-amd64.zip"
+	@echo "  tools/pdf_generator/$(VERSIONS_DIR)/tool-pdf_generator-darwin-arm64.zip"
+	@echo "  tools/pdf_generator/$(VERSIONS_DIR)/tool-pdf_generator-linux-amd64.zip"
+	@echo "  tools/pdf_generator/$(VERSIONS_DIR)/tool-pdf_generator-linux-arm64.zip"
+	@echo "  tools/pdf_generator/$(VERSIONS_DIR)/tool-pdf_generator-windows-amd64.zip"
 
 .PHONY: clean
 clean:

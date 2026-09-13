@@ -61,9 +61,14 @@ plan/
 # Every tool's own build output (make package-tool's generic build,
 # and any tool-specific Makefile's own per-OS builds) — a build
 # artifact, not source; the source lives in tools/<name>/ itself,
-# tracked. Final installable .zips still land in /versions/,
-# unaffected by this.
+# tracked. Final installable .zips still land in /versions/ for a
+# tool using the generic package-tool path.
 /tools/*/build/
+
+# A tool with its own multi-OS Makefile (e.g. pdf_generator) drops its
+# finished .zips inside its own folder instead of the shared
+# /versions/ — still a build artifact, not source.
+/tools/*/versions/
 
 # MCP logs
 
