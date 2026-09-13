@@ -17,6 +17,8 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -44,6 +46,14 @@ const caddyPort = 7030
 
 var caddyAddr = fmt.Sprintf("http://localhost:%d", caddyPort)
 
+// chromePidFile tracks the PID of the private Chrome instance this app
+// opens (see openBrowser/launchPrivateChrome), so a later run can close
+// it before opening its own fresh one. Resolved relative to CWD, same
+// convention as server.pid (both live in api/, since cmd/app runs with
+// CWD=api/ — see the Makefile's run-app target). See
+// plan/ai/build/app/step-09-private-chrome-instance-and-pid-tracking.md.
+const chromePidFile = "chrome.pid"
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Println(err)
@@ -61,6 +71,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	closeStaleChromeInstance()
 
 	srv, cfg, log, err := backendapp.Start()
 	if err != nil {
@@ -85,8 +96,12 @@ func run() error {
 	if err := waitUntilUp(caddyAddr, 5*time.Second); err != nil {
 		log.Warning("caddy did not become reachable in time: %v", err)
 	}
-	if err := openBrowser(caddyAddr); err != nil {
+	if pid, err := openBrowser(caddyAddr); err != nil {
 		log.Warning("could not open a browser automatically: %v", err)
+	} else if pid != 0 {
+		if err := os.WriteFile(chromePidFile, []byte(strconv.Itoa(pid)), 0o644); err != nil {
+			log.Warning("could not record chrome pid: %v", err)
+		}
 	}
 
 	waitForShutdown(srv, cfg.PidFile, log, frontendDir)
@@ -179,6 +194,44 @@ func portFree(port int) bool {
 	return true
 }
 
+// closeStaleChromeInstance closes a private Chrome instance left behind
+// by a previous cinqo-app run (tracked via chromePidFile), if one is
+// still open, before this run opens its own fresh one. Much simpler
+// than stopStaleInstance: there's no port/listening contract to wait
+// on, so a short fixed grace period is enough instead of a polling
+// loop, and no stdout progress output — closing a leftover browser
+// window is expected to be near-instant. See
+// plan/ai/build/app/step-09-private-chrome-instance-and-pid-tracking.md.
+func closeStaleChromeInstance() {
+	data, err := os.ReadFile(chromePidFile)
+	if err != nil {
+		return // no PID file — nothing to close
+	}
+
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		_ = os.Remove(chromePidFile)
+		return
+	}
+
+	process, findErr := os.FindProcess(pid)
+	alive := findErr == nil && process.Signal(syscall.Signal(0)) == nil
+	if !alive {
+		// Stale leftover file — the browser window (or whole machine
+		// session) was already closed some other way.
+		_ = os.Remove(chromePidFile)
+		return
+	}
+
+	_ = process.Signal(syscall.SIGTERM)
+	time.Sleep(2 * time.Second)
+	if process.Signal(syscall.Signal(0)) == nil {
+		_ = process.Signal(syscall.SIGKILL)
+	}
+
+	_ = os.Remove(chromePidFile)
+}
+
 // extractFrontend writes the embedded frontend build out to a real temp
 // directory — Caddy's stock file_server module serves from a real
 // filesystem path, not an in-process fs.FS; writing a custom Caddy
@@ -262,38 +315,69 @@ func waitUntilUp(url string, timeout time.Duration) error {
 // openBrowser tries Google Chrome specifically first (the requirement),
 // falling back to the OS's generic "open a URL" mechanism if Chrome
 // isn't found — a hard failure when Chrome is merely absent would make
-// this mode worse, not better, for that user. See
-// plan/ai/build/app.md's "Opening the browser" section and
-// plan/ai/build/app/step-04-combined-entrypoint.md's open question
-// (flagged there, not yet confirmed) about whether this fallback is
-// actually wanted versus a strict Chrome-or-fail requirement.
-func openBrowser(url string) error {
+// this mode worse, not better, for that user. Returns the launched
+// Chrome process's PID (0 for the generic-fallback path, which hands
+// off to the OS and exits immediately — there is no stable PID to learn
+// there on any platform) so the caller can record it in chromePidFile.
+// See plan/ai/build/app.md's "Opening the browser" section and
+// plan/ai/build/app/step-09-private-chrome-instance-and-pid-tracking.md.
+func openBrowser(url string) (int, error) {
 	switch runtime.GOOS {
 	case "darwin":
-		if err := exec.Command("open", "-a", "Google Chrome", url).Start(); err == nil {
-			return nil
+		chromePath := "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+		if _, err := os.Stat(chromePath); err == nil {
+			return launchPrivateChrome(chromePath, url)
 		}
-		return exec.Command("open", url).Start()
+		return 0, exec.Command("open", url).Start()
 	case "linux":
 		for _, bin := range []string{"google-chrome", "google-chrome-stable"} {
 			if path, err := exec.LookPath(bin); err == nil {
-				return exec.Command(path, url).Start()
+				return launchPrivateChrome(path, url)
 			}
 		}
-		return exec.Command("xdg-open", url).Start()
+		return 0, exec.Command("xdg-open", url).Start()
 	case "windows":
 		for _, path := range []string{
 			`C:\Program Files\Google\Chrome\Application\chrome.exe`,
 			`C:\Program Files (x86)\Google\Chrome\Application\chrome.exe`,
 		} {
 			if _, err := os.Stat(path); err == nil {
-				return exec.Command(path, url).Start()
+				return launchPrivateChrome(path, url)
 			}
 		}
-		return exec.Command("cmd", "/c", "start", "", url).Start()
+		return 0, exec.Command("cmd", "/c", "start", "", url).Start()
 	default:
-		return fmt.Errorf("unsupported OS %q for opening a browser", runtime.GOOS)
+		return 0, fmt.Errorf("unsupported OS %q for opening a browser", runtime.GOOS)
 	}
+}
+
+// launchPrivateChrome spawns a genuinely separate, private (Incognito)
+// Chrome instance — not a new tab in whatever Chrome window already
+// happens to be open. Verified directly: invoking the real binary with
+// a fresh --user-data-dir forces Chrome's own single-instance check to
+// treat this as an independent instance (its own PID, own process
+// tree), which is also what makes returning a trackable PID possible at
+// all — the OS-handoff commands (`open`, `xdg-open`, `cmd /c start`)
+// used elsewhere in this file never give one back.
+func launchPrivateChrome(chromePath, url string) (int, error) {
+	profileDir, err := os.MkdirTemp("", "cinqo-chrome-profile-*")
+	if err != nil {
+		return 0, err
+	}
+
+	cmd := exec.Command(chromePath,
+		"--user-data-dir="+profileDir,
+		"--incognito",
+		"--no-first-run",
+		"--no-default-browser-check",
+		url,
+	)
+	if err := cmd.Start(); err != nil {
+		_ = os.RemoveAll(profileDir)
+		return 0, err
+	}
+
+	return cmd.Process.Pid, nil
 }
 
 // waitForShutdown blocks until SIGINT/SIGTERM, then stops Caddy before
