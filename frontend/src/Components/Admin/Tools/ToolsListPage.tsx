@@ -4,6 +4,8 @@ import { ApiError } from '../../../api/client'
 import { LoadingSpinner } from '../../../Shared/Components/Loading/LoadingSpinner'
 import { ScopeGate } from '../../../Shared/Components/Access/ScopeGate'
 import { useConfirm } from '../../../Shared/Components/Modal/useConfirm'
+import { IconButton } from '../../../Shared/Components/IconButton/IconButton'
+import { PowerIcon, TrashIcon } from '../../../Shared/Components/IconButton/icons'
 import { AppScopes } from '../../../config/security/scopes'
 import { reloadAfterToolChange } from '../../../config/tools/loadTools'
 import { ToolInstallButton } from './ToolInstallButton'
@@ -142,29 +144,31 @@ export function ToolsListPage() {
                   <StatusBadge status={tool.status} />
                 </td>
                 <td className="px-4 py-2">
-                  <ScopeGate scopes={[AppScopes.ToolManage]}>
-                    <button
-                      type="button"
-                      onClick={() => handleToggle(tool)}
-                      disabled={busySlug === tool.slug}
-                      className={`rounded-full px-2 py-0.5 text-xs font-medium disabled:opacity-50 ${
-                        tool.enabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
-                      }`}
-                    >
-                      {tool.enabled ? 'Enabled' : 'Disabled'}
-                    </button>
-                  </ScopeGate>
+                  <span
+                    className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+                      tool.enabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
+                    }`}
+                  >
+                    {tool.enabled ? 'Enabled' : 'Disabled'}
+                  </span>
                 </td>
                 <td className="px-4 py-2 text-right">
                   <ScopeGate scopes={[AppScopes.ToolManage]}>
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(tool)}
-                      disabled={busySlug === tool.slug}
-                      className="text-xs font-medium text-red-600 hover:text-red-800 disabled:opacity-50"
-                    >
-                      Delete
-                    </button>
+                    <div className="flex justify-end gap-1">
+                      <IconButton
+                        icon={<PowerIcon />}
+                        label={tool.enabled ? 'Disable' : 'Enable'}
+                        onClick={() => handleToggle(tool)}
+                        disabled={busySlug === tool.slug}
+                      />
+                      <IconButton
+                        icon={<TrashIcon />}
+                        label="Delete"
+                        onClick={() => handleDelete(tool)}
+                        disabled={busySlug === tool.slug}
+                        variant="danger"
+                      />
+                    </div>
                   </ScopeGate>
                 </td>
               </tr>
