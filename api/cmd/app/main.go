@@ -400,12 +400,14 @@ func openBrowser(url string) (int, error) {
 // treat this as an independent instance (its own PID, own process
 // tree), which is also what makes returning a trackable PID possible at
 // all — the OS-handoff commands (`open`, `xdg-open`, `cmd /c start`)
-// used elsewhere in this file never give one back. --app=<url> puts it
-// in Chrome's "app mode" — no tab strip, no address bar, no bookmarks
-// bar, just the page content and a native window frame — so the window
-// reads as a native app shell rather than an obviously-a-browser window
-// with one tab open. See
-// plan/ai/build/app/step-11-chrome-app-mode-window.md.
+// used elsewhere in this file never give one back. A normal window
+// (tab strip, address bar, reload button) is opened, not Chrome's
+// chromeless "app mode" — that was tried (step 11) and reverted (step
+// 15) once real usage showed two concrete costs: no download-shelf
+// indicator at all (a successful download gives no visible
+// confirmation), and no visible reload control on a single-page app
+// that only picks up new code on an actual reload. See
+// plan/ai/build/app/step-15-revert-to-normal-private-chrome-window.md.
 func launchPrivateChrome(chromePath, url string) (int, error) {
 	profileDir, err := os.MkdirTemp("", "cinqo-chrome-profile-*")
 	if err != nil {
@@ -419,12 +421,12 @@ func launchPrivateChrome(chromePath, url string) (int, error) {
 	}
 
 	cmd := exec.Command(chromePath,
-		"--app="+url,
 		"--user-data-dir="+profileDir,
 		"--incognito",
 		"--no-first-run",
 		"--no-default-browser-check",
 		fmt.Sprintf("--remote-debugging-port=%d", debugPort),
+		url, // a normal window/tab navigated to url, not --app=<url>
 	)
 	if err := cmd.Start(); err != nil {
 		_ = os.RemoveAll(profileDir)
