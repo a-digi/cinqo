@@ -46,10 +46,17 @@ plan/
 /api/bin/
 /api/cmd/app/webapp/dist/
 
-# Build output (make build/build-linux/build-app) — compiled binaries,
-# not source. Was an unaddressed gap before this ever produced a real
-# file in this repo (build/build-linux hadn't been run here yet either).
+# Build output (make build/build-linux) — compiled binaries, not source.
+# Was an unaddressed gap before this ever produced a real file in this
+# repo (build/build-linux hadn't been run here yet either).
 /versions/
+
+# Build output (make build-app). Only the compiled binary is ignored —
+# app/VERSION is deliberately NOT ignored, same as api/VERSION: it's the
+# persistent version counter, meant to survive across clones/commits so
+# "the latest version was X" is a real, checked-in fact, not something
+# that resets to 0.0.000 the moment someone clones fresh.
+/app/cinqo-app
 
 # MCP logs
 

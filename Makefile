@@ -130,14 +130,56 @@ embed-frontend:
 	rm -rf api/cmd/app/webapp/dist
 	cp -R frontend/dist api/cmd/app/webapp/dist
 
+# app/VERSION tracks cinqo-app's own version, independently of
+# api/VERSION (build/build-linux's, unrelated, unpadded M.N.P scheme).
+# Format is M.N.PPP — patch always zero-padded to exactly 3 digits.
+# Bumped unconditionally on every build-app run (no NO_BUMP escape,
+# unlike bump-version below — intentional, per explicit instruction).
+# See plan/ai/build/app/step-06-app-output-and-version-tracking.md.
+APP_VERSION_FILE := app/VERSION
+
+.PHONY: bump-app-version
+bump-app-version:
+	@mkdir -p app
+	@cur=$$(cat $(APP_VERSION_FILE) 2>/dev/null || echo 0.0.000); \
+	 maj=$${cur%%.*}; rest=$${cur#*.}; min=$${rest%%.*}; pat=$${rest#*.}; \
+	 pat=$$((10#$$pat + 1)); \
+	 if [ $$pat -gt 999 ]; then pat=0; min=$$((min + 1)); fi; \
+	 new=$$(printf '%s.%s.%03d' "$$maj" "$$min" "$$pat"); \
+	 printf '%s' "$$new" > $(APP_VERSION_FILE); \
+	 echo "cinqo-app version: $$cur -> $$new"
+
 # Builds the single, self-contained executable: backend + Caddy (as a
 # library, not a second binary) + the embedded frontend build, all in
 # one file. A distinct artifact from build/build-linux (which stay
 # backend-only, the right shape for any future server-style remote
-# deploy) — this is the desktop-tool-style "run it, it opens" mode. See
+# deploy) — this is the desktop-tool-style "run it, it opens" mode.
+# Output is a fixed filename (app/cinqo-app), overwritten every build —
+# app/VERSION is the single source of truth for which version that
+# binary currently is, not the filename itself. See
 # plan/ai/build/app.md.
 .PHONY: build-app
-build-app: embed-frontend
-	@mkdir -p versions
-	cd api && go build -o ../versions/cinqo-app-$(BRANCH) ./cmd/app
-	@echo "cinqo-app built at versions/cinqo-app-$(BRANCH)"
+build-app: embed-frontend bump-app-version
+	@mkdir -p app
+	cd api && go build -o ../app/cinqo-app ./cmd/app
+	@echo "cinqo-app $$(cat $(APP_VERSION_FILE)) built at app/cinqo-app"
+
+# Builds (if needed) and runs the single executable in the foreground —
+# unlike run-dev, deliberately NOT backgrounded with `&`: this is the
+# "run it, it opens" desktop-tool mode, so Ctrl+C in this same terminal
+# is the natural way to stop it. cinqo-app's own signal handler then
+# stops Caddy and the backend together (they're one process, not two —
+# see api/cmd/app/main.go's waitForShutdown) and cleans up the extracted
+# frontend temp dir and PID file.
+#
+# Run with CWD=api/ — same convention run-dev already uses — NOT the
+# repo root. cinqo-app's backend half still resolves its own
+# config.json/config/ relative to its working directory (only the
+# frontend build is actually embedded/portable today); running it from
+# the repo root instead silently creates a fresh DEFAULT config.json
+# there (coco-server's own port-2026 fallback, not this app's real
+# 7026) rather than using the real api/config.json. Caught by testing
+# this exact target, not assumed.
+.PHONY: run-app
+run-app: build-app
+	cd api && ../app/cinqo-app
