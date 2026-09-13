@@ -14,10 +14,13 @@ func NewConversationPersistentRepo(db *sql.DB) *ConversationPersistentRepo {
 	return &ConversationPersistentRepo{db: db}
 }
 
+// Insert writes platform_id/model once, at creation — no method in
+// this repo ever updates them afterward (see the entity's own doc
+// comment on why that's a structural, not runtime, guarantee).
 func (r *ConversationPersistentRepo) Insert(c *conversation_entity.Conversation) error {
 	_, err := r.db.Exec(
-		`INSERT INTO conversations (id, user_id, title, file_path) VALUES (?, ?, ?, ?)`,
-		c.ID, c.UserID, c.Title, c.FilePath,
+		`INSERT INTO conversations (id, user_id, title, file_path, platform_id, model) VALUES (?, ?, ?, ?, ?, ?)`,
+		c.ID, c.UserID, c.Title, c.FilePath, c.PlatformID, c.Model,
 	)
 	return err
 }

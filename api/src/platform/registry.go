@@ -14,32 +14,41 @@ import (
 )
 
 // Entry is one registered platform. Completer is the ChatCompleter this
-// platform's chat completion calls go through.
+// platform's chat completion calls go through. SelectableModels is the
+// fixed, curated list a caller may choose from at conversation-creation
+// time (plan/ai/conversation/step-07-fixed-platform-and-model-per-conversation.md)
+// — empty/nil means no user-facing choice exists and DefaultModel is
+// always used (OpenRouter's own case: its "auto" routing already covers
+// "give me something free/appropriate").
 type Entry struct {
-	Info           entity.Platform
-	DefaultBaseURL string
-	DefaultModel   string
-	Completer      chatcompleter.ChatCompleter
+	Info             entity.Platform
+	DefaultBaseURL   string
+	DefaultModel     string
+	SelectableModels []string
+	Completer        chatcompleter.ChatCompleter
 }
 
 var registry = []Entry{
 	{
-		Info:           entity.Platform{ID: "openai", Name: "OpenAI"},
-		DefaultBaseURL: "https://api.openai.com/v1",
-		DefaultModel:   "gpt-4o-mini",
-		Completer:      openai.Client{},
+		Info:             entity.Platform{ID: "openai", Name: "OpenAI"},
+		DefaultBaseURL:   "https://api.openai.com/v1",
+		DefaultModel:     "gpt-4o-mini",
+		SelectableModels: []string{"gpt-4o-mini", "gpt-4o", "gpt-4-turbo"},
+		Completer:        openai.Client{},
 	},
 	{
-		Info:           entity.Platform{ID: "anthropic", Name: "Anthropic"},
-		DefaultBaseURL: "https://api.anthropic.com/v1",
-		DefaultModel:   "claude-3-5-haiku-latest",
-		Completer:      anthropic.Client{},
+		Info:             entity.Platform{ID: "anthropic", Name: "Anthropic"},
+		DefaultBaseURL:   "https://api.anthropic.com/v1",
+		DefaultModel:     "claude-3-5-haiku-latest",
+		SelectableModels: []string{"claude-3-5-haiku-latest", "claude-3-5-sonnet-latest", "claude-3-opus-latest"},
+		Completer:        anthropic.Client{},
 	},
 	{
 		Info:           entity.Platform{ID: "openrouter", Name: "OpenRouter"},
 		DefaultBaseURL: "https://openrouter.ai/api/v1",
 		DefaultModel:   "openrouter/auto",
-		Completer:      openrouter.Client{},
+		// SelectableModels intentionally omitted — no user choice.
+		Completer: openrouter.Client{},
 	},
 }
 
@@ -67,4 +76,21 @@ func Lookup(id string) (Entry, bool) {
 func IsValid(id string) bool {
 	_, ok := Lookup(id)
 	return ok
+}
+
+// IsSelectableModel reports whether model is one of platformID's own
+// curated choices — used at conversation-creation time so an arbitrary
+// client-supplied string never reaches the real provider unchecked.
+// See plan/ai/conversation/step-07-fixed-platform-and-model-per-conversation.md.
+func IsSelectableModel(platformID, model string) bool {
+	entry, ok := Lookup(platformID)
+	if !ok {
+		return false
+	}
+	for _, m := range entry.SelectableModels {
+		if m == model {
+			return true
+		}
+	}
+	return false
 }

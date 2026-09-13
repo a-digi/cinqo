@@ -115,13 +115,23 @@ func encryptionKey(reqCtx request.RequestContext) ([]byte, error) {
 // conversationResponse is the shape every conversation-metadata
 // response uses (create/list/get/rename) — never FilePath or UserID
 // (both json:"-" on the entity anyway, but this DTO makes that
-// explicit at the response-shape level too).
+// explicit at the response-shape level too). PlatformID/Model ARE
+// included — fixed at creation and never mutated afterward, but the
+// frontend still needs to know what they are to display them (step 7).
 type conversationResponse struct {
-	ID        string `json:"id"`
-	Title     string `json:"title"`
-	StartedAt string `json:"startedAt"`
+	ID         string `json:"id"`
+	Title      string `json:"title"`
+	StartedAt  string `json:"startedAt"`
+	PlatformID string `json:"platformId"`
+	Model      string `json:"model"`
 }
 
 func toConversationResponse(c *conversation_entity.Conversation) conversationResponse {
-	return conversationResponse{ID: c.ID, Title: c.Title, StartedAt: c.StartedAt}
+	return conversationResponse{
+		ID:         c.ID,
+		Title:      c.Title,
+		StartedAt:  c.StartedAt,
+		PlatformID: c.PlatformID,
+		Model:      c.Model,
+	}
 }

@@ -4,9 +4,14 @@ import { apiDelete, apiGet, apiPost } from './client'
 // the wire (api/src/platform/entity/platform.go's json tags, added in
 // step 5) — no snake_case *Raw mapping needed here, unlike api/tools.ts.
 
+// models is empty (never undefined) when this platform has no
+// user-facing model choice — the conversation create flow uses this to
+// decide whether to show a model picker at all
+// (plan/ai/conversation/step-07-fixed-platform-and-model-per-conversation.md).
 export interface Platform {
   id: string
   name: string
+  models: string[]
 }
 
 export interface PlatformKey {

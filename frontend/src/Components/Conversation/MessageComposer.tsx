@@ -1,22 +1,15 @@
 import { useState } from 'react'
-import type { Platform } from '../../api/platforms'
 
-// Platform <select> + a plain text input — no model picker by default
-// (step 1/2 of this plan default `model` to the platform's own
-// registered default when omitted). Platform selection is per-message,
-// not persisted on the conversation itself, but the caller (
-// ConversationPage) remembers the last-picked platform across sends
-// for convenience. See plan/ai/conversation/step-05-frontend-chat-ui.md.
+// A plain text input — no platform/model picker here anymore. A
+// conversation's platform+model are fixed at creation and can never
+// change (plan/ai/conversation/step-07-fixed-platform-and-model-per-conversation.md);
+// platformLabel is a read-only display of that fixed choice.
 export function MessageComposer({
-  platforms,
-  platform,
-  onPlatformChange,
+  platformLabel,
   onSend,
   disabled,
 }: {
-  platforms: Platform[]
-  platform: string
-  onPlatformChange: (id: string) => void
+  platformLabel: string
   onSend: (content: string) => void
   disabled: boolean
 }) {
@@ -36,18 +29,9 @@ export function MessageComposer({
 
   return (
     <form onSubmit={handleSubmit} className="flex items-end gap-2 border-t border-gray-200 p-3">
-      <select
-        value={platform}
-        onChange={(e) => onPlatformChange(e.target.value)}
-        disabled={disabled}
-        className="rounded border border-gray-300 px-2 py-2 text-sm disabled:opacity-50"
-      >
-        {platforms.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.name}
-          </option>
-        ))}
-      </select>
+      <span className="shrink-0 rounded border border-gray-200 bg-gray-50 px-2 py-2 text-xs text-gray-500">
+        {platformLabel}
+      </span>
       <textarea
         value={content}
         onChange={(e) => setContent(e.target.value)}

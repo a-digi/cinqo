@@ -47,11 +47,14 @@ var (
 	ErrProviderCallFailed = errors.New("conversation: provider call failed")
 )
 
-// SendMessage resolves a platform + its most recently created key,
-// sends the conversation's recent history plus the new user message to
-// that platform, and persists both sides as one turn. No conversation-
-// ownership check happens here — that's the HTTP handler layer's
-// concern (step 4); this trusts the conversationID it's given. See
+// SendMessage resolves the conversation's own fixed platform+model
+// (set once at creation, never mutated — see
+// plan/ai/conversation/step-07-fixed-platform-and-model-per-conversation.md)
+// and its most recently created key, sends the conversation's recent
+// history plus the new user message to that platform, and persists
+// both sides as one turn. No conversation-ownership check happens
+// here — that's the HTTP handler layer's concern (step 4); this
+// trusts the conversationID it's given. See
 // plan/ai/conversation/step-02-sending-a-message.md.
 func SendMessage(
 	ctx context.Context,
@@ -59,7 +62,7 @@ func SendMessage(
 	mainDB *sql.DB,
 	conversationDB *sql.DB,
 	encryptionKey []byte,
-	conversationID, platformID, model, content string,
+	conversationID, content string,
 ) (*Turn, error) {
 	if content == "" {
 		return nil, ErrEmptyContent
@@ -68,18 +71,24 @@ func SendMessage(
 		return nil, ErrContentTooLong
 	}
 
-	entry, ok := platform.Lookup(platformID)
+	conv, err := conversation_query.NewConversationQueryRepo(conversationDB).FindByID(conversationID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrConversationNotFound
+		}
+		return nil, fmt.Errorf("conversation: look up conversation: %w", err)
+	}
+
+	entry, ok := platform.Lookup(conv.PlatformID)
 	if !ok {
 		return nil, ErrPlatformNotFound
 	}
 	if entry.Completer == nil {
 		return nil, ErrPlatformUnsupported
 	}
-	if model == "" {
-		model = entry.DefaultModel
-	}
+	model := conv.Model
 
-	key, err := platform_query.NewKeyQueryRepo(mainDB).FindMostRecentForPlatform(platformID)
+	key, err := platform_query.NewKeyQueryRepo(mainDB).FindMostRecentForPlatform(conv.PlatformID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNoKeyForPlatform
@@ -89,14 +98,6 @@ func SendMessage(
 	plainKey, err := platform_crypto.Decrypt(key.EncryptedKey, encryptionKey)
 	if err != nil {
 		return nil, fmt.Errorf("conversation: decrypt platform key: %w", err)
-	}
-
-	conv, err := conversation_query.NewConversationQueryRepo(conversationDB).FindByID(conversationID)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrConversationNotFound
-		}
-		return nil, fmt.Errorf("conversation: look up conversation: %w", err)
 	}
 
 	recent, err := ReadRecentTurns(conv.FilePath, ContextTurns)

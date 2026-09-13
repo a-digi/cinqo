@@ -19,10 +19,8 @@ type messageResponse struct {
 }
 
 type conversationDetailResponse struct {
-	ID        string            `json:"id"`
-	Title     string            `json:"title"`
-	StartedAt string            `json:"startedAt"`
-	Messages  []messageResponse `json:"messages"`
+	conversationResponse
+	Messages []messageResponse `json:"messages"`
 }
 
 // GetHandler handles GET /api/v1/conversations/{id} — the caller's own
@@ -76,9 +74,7 @@ func GetHandler(reqCtx request.RequestContext) {
 	}
 
 	response.SuccessResponse(w, http.StatusOK, conversationDetailResponse{
-		ID:        conv.ID,
-		Title:     conv.Title,
-		StartedAt: conv.StartedAt,
-		Messages:  messages,
+		conversationResponse: toConversationResponse(conv),
+		Messages:             messages,
 	})
 }

@@ -12,10 +12,10 @@ import (
 	conversation_query "github.com/a-digi/cinqo/src/conversation/repository/query"
 )
 
+// Content only — platformId/model are no longer per-message; they're
+// fixed on the conversation itself at creation (step 7).
 type sendMessageRequest struct {
-	PlatformID string `json:"platformId"`
-	Model      string `json:"model"`
-	Content    string `json:"content"`
+	Content string `json:"content"`
 }
 
 type sendMessageResponse struct {
@@ -40,10 +40,6 @@ func SendMessageHandler(reqCtx request.RequestContext) {
 	var body sendMessageRequest
 	if err := reqCtx.BindJSON(&body); err != nil {
 		response.ErrorResponse(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-	if body.PlatformID == "" {
-		response.ErrorResponse(w, http.StatusBadRequest, "platformId is required")
 		return
 	}
 
@@ -76,7 +72,7 @@ func SendMessageHandler(reqCtx request.RequestContext) {
 
 	mainDB := reqCtx.GetDI().GetDatabaseManager().Connector.DB
 
-	turn, err := conversation.SendMessage(reqCtx.GetRequest().Context(), http.DefaultClient, mainDB, convDB, encKey, id, body.PlatformID, body.Model, body.Content)
+	turn, err := conversation.SendMessage(reqCtx.GetRequest().Context(), http.DefaultClient, mainDB, convDB, encKey, id, body.Content)
 	if err != nil {
 		writeSendMessageError(w, err)
 		return

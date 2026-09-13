@@ -4,10 +4,14 @@ import { apiDelete, apiGet, apiPatch, apiPost } from './client'
 // response DTOs) — no snake_case *Raw mapping needed, same as
 // api/platforms.ts.
 
+// platformId/model are fixed at creation and never change afterward
+// (plan/ai/conversation/step-07-fixed-platform-and-model-per-conversation.md).
 export interface Conversation {
   id: string
   title: string
   startedAt: string
+  platformId: string
+  model: string
 }
 
 // No `id` field on a message — content lives in a file, not a database
@@ -28,8 +32,8 @@ export async function fetchConversations(): Promise<Conversation[]> {
   return raw.message
 }
 
-export async function createConversation(title?: string): Promise<Conversation> {
-  const raw = await apiPost<{ message: Conversation }>('/api/v1/conversations', title ? { title } : {})
+export async function createConversation(input: { title?: string; platformId: string; model?: string }): Promise<Conversation> {
+  const raw = await apiPost<{ message: Conversation }>('/api/v1/conversations', input)
   return raw.message
 }
 
@@ -47,10 +51,9 @@ export async function deleteConversation(id: string): Promise<void> {
   await apiDelete(`/api/v1/conversations/${encodeURIComponent(id)}`)
 }
 
-export async function sendMessage(
-  conversationId: string,
-  input: { platformId: string; model?: string; content: string },
-): Promise<ConversationMessage> {
+// platformId/model no longer travel per-message — a conversation's own
+// fixed values apply automatically (step 7).
+export async function sendMessage(conversationId: string, input: { content: string }): Promise<ConversationMessage> {
   const raw = await apiPost<{ message: ConversationMessage }>(
     `/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`,
     input,

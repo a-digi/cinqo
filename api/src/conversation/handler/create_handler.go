@@ -13,25 +13,52 @@ import (
 	conversation_entity "github.com/a-digi/cinqo/src/conversation/entity"
 	conversation_persistent "github.com/a-digi/cinqo/src/conversation/repository/persistent"
 	conversation_query "github.com/a-digi/cinqo/src/conversation/repository/query"
+	"github.com/a-digi/cinqo/src/platform"
 )
 
 type createConversationRequest struct {
-	Title string `json:"title"`
+	Title      string `json:"title"`
+	PlatformID string `json:"platformId"`
+	Model      string `json:"model"`
 }
 
 // CreateHandler handles POST /api/v1/conversations. title defaults to
-// "New conversation" when omitted — the user renames it via PATCH once
-// they've actually seen what it's about. See
-// plan/ai/conversation/step-03-conversation-api.md.
+// "New conversation" when omitted. platformId/model are fixed for the
+// conversation's entire lifetime — no endpoint ever changes them after
+// this. See
+// plan/ai/conversation/step-07-fixed-platform-and-model-per-conversation.md.
 func CreateHandler(reqCtx request.RequestContext) {
 	w := reqCtx.GetWriter()
 
 	var body createConversationRequest
-	_ = reqCtx.BindJSON(&body) // title is optional — an empty/missing body is fine
+	if err := reqCtx.BindJSON(&body); err != nil {
+		response.ErrorResponse(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
 
 	title := body.Title
 	if title == "" {
 		title = "New conversation"
+	}
+
+	entry, ok := platform.Lookup(body.PlatformID)
+	if !ok {
+		response.ErrorResponse(w, http.StatusBadRequest, "platformId is required and must be a registered platform")
+		return
+	}
+
+	model := body.Model
+	if len(entry.SelectableModels) > 0 {
+		if model == "" || !platform.IsSelectableModel(body.PlatformID, model) {
+			response.ErrorResponse(w, http.StatusBadRequest, "model is required for this platform and must be one of its selectable models")
+			return
+		}
+	} else {
+		if model != "" {
+			response.ErrorResponse(w, http.StatusBadRequest, "this platform has no selectable models — omit model")
+			return
+		}
+		model = entry.DefaultModel
 	}
 
 	userID, err := callerUserID(reqCtx)
@@ -53,10 +80,12 @@ func CreateHandler(reqCtx request.RequestContext) {
 
 	id := uuid.NewString()
 	c := &conversation_entity.Conversation{
-		ID:       id,
-		UserID:   userID,
-		Title:    title,
-		FilePath: conversation.LogPath(conversation.LogsRoot, id),
+		ID:         id,
+		UserID:     userID,
+		Title:      title,
+		FilePath:   conversation.LogPath(conversation.LogsRoot, id),
+		PlatformID: body.PlatformID,
+		Model:      model,
 	}
 
 	if err := conversation_persistent.NewConversationPersistentRepo(db).Insert(c); err != nil {
