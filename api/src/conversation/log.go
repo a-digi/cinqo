@@ -20,6 +20,13 @@ const (
 	maxFileSize = 5 * 1024 * 1024 // 5MB
 )
 
+// LogsRoot is the shared root directory every conversation's own log
+// file lives under — matches this app's existing data/-rooted
+// local-state convention (data/db/, data/keys/, data/logs/). Step 3's
+// create-conversation handler ensures this directory exists before
+// inserting a new conversation row.
+const LogsRoot = "./data/conversations"
+
 // Turn is one user+assistant exchange — the unit both retention caps
 // operate on. A turn is never split across the size/count boundary.
 type Turn struct {
@@ -127,6 +134,39 @@ func AppendTurn(filePath string, turn Turn) error {
 	return enforceRetention(filePath)
 }
 
+// AppendUserOnly appends a lone user block with no matching assistant
+// block — used when a provider call fails (step 2), so a caller can
+// still confirm "was this actually sent" even though no reply exists.
+// Not retention-checked here: parseTurns already excludes a block
+// missing its assistant header from the turn count (so a dangling
+// block never counts toward the 20-turn cap on its own), but if a
+// LATER successful AppendTurn's own retention pass ends up rewriting
+// the file (either cap exceeded), that rewrite only re-serializes
+// recognized complete turns — a still-unanswered dangling block would
+// be dropped from the file at that point, not preserved indefinitely.
+// This tradeoff matches step 2's own recommendation but is flagged
+// there as an open, unconfirmed question — not silently engineered
+// around here.
+func AppendUserOnly(filePath, userTimestamp, content string) error {
+	mu := lockFor(filePath)
+	mu.Lock()
+	defer mu.Unlock()
+
+	f, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return fmt.Errorf("conversation: open log file: %w", err)
+	}
+	_, writeErr := f.WriteString(fmt.Sprintf("## user — %s\n\n%s\n\n", userTimestamp, content))
+	closeErr := f.Close()
+	if writeErr != nil {
+		return fmt.Errorf("conversation: append user-only block: %w", writeErr)
+	}
+	if closeErr != nil {
+		return fmt.Errorf("conversation: close log file: %w", closeErr)
+	}
+	return nil
+}
+
 // enforceRetention drops the oldest turn(s) until the file holds at
 // most maxTurns turns AND is at most maxFileSize bytes, rewriting the
 // file once with whatever survives. A no-op (no rewrite) when both
@@ -159,6 +199,10 @@ func enforceRetention(filePath string) error {
 // step 2 (building the platform's context) and step 3 (the "get
 // conversation" response) — one read mechanism, two callers. Reads
 // directly off the file, never from any in-memory or database cache.
+// A conversation's log file doesn't exist yet until its first turn is
+// ever appended (AppendTurn creates it lazily) — that's zero turns,
+// not an error, so a not-yet-created file returns (nil, nil) rather
+// than failing.
 func ReadRecentTurns(filePath string, n int) ([]Turn, error) {
 	mu := lockFor(filePath)
 	mu.Lock()
@@ -166,6 +210,9 @@ func ReadRecentTurns(filePath string, n int) ([]Turn, error) {
 
 	raw, err := os.ReadFile(filePath)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
 		return nil, fmt.Errorf("conversation: read log file: %w", err)
 	}
 

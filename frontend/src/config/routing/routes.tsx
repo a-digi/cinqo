@@ -7,6 +7,7 @@ import { Layout } from '../../Layout/Layout'
 import { ScopesPage } from '../../Components/Admin/Security/ScopesPage'
 import { ToolsListPage } from '../../Components/Admin/Tools/ToolsListPage'
 import { PlatformKeysPage } from '../../Components/Admin/Platforms/PlatformKeysPage'
+import { ConversationPage } from '../../Components/Conversation/ConversationPage'
 import { ToolRouteOutlet } from '../../Components/Tools/ToolRouteOutlet'
 import { AppScopes } from '../security/scopes'
 
@@ -47,6 +48,14 @@ export const router = createBrowserRouter([
             element: (
               <AuthGuard scopes={[AppScopes.PlatformRead]}>
                 <PlatformKeysPage />
+              </AuthGuard>
+            ),
+          },
+          {
+            path: '/conversations',
+            element: (
+              <AuthGuard scopes={[AppScopes.ConversationUse]}>
+                <ConversationPage />
               </AuthGuard>
             ),
           },

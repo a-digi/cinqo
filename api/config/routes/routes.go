@@ -13,6 +13,8 @@ import (
 	local_routing "github.com/a-digi/cinqo/config/routing"
 	auth_handler "github.com/a-digi/cinqo/src/auth/handler"
 	auth_service "github.com/a-digi/cinqo/src/auth/service"
+	"github.com/a-digi/cinqo/src/conversation"
+	conversation_handler "github.com/a-digi/cinqo/src/conversation/handler"
 	"github.com/a-digi/cinqo/src/health"
 	"github.com/a-digi/cinqo/src/ping"
 	"github.com/a-digi/cinqo/src/platform"
@@ -58,6 +60,7 @@ func Init(ctx serverdi.Context) {
 	scopes.Register(ping.ScopeGroup)
 	scopes.Register(tool.ScopeGroup)
 	scopes.Register(platform.ScopeGroup)
+	scopes.Register(conversation.ScopeGroup)
 
 	handlerMap := map[string]routing.HandlerInterface{
 		"HealthzGet": local_routing.HandlerFunc(health.GetHandler),
@@ -85,6 +88,13 @@ func Init(ctx serverdi.Context) {
 		"PlatformKeyList":   local_routing.HandlerFunc(platform_handler.ListKeysHandler),
 		"PlatformKeyCreate": local_routing.HandlerFunc(platform_handler.CreateKeyHandler),
 		"PlatformKeyDelete": local_routing.HandlerFunc(platform_handler.DeleteKeyHandler),
+
+		"ConversationCreate":      local_routing.HandlerFunc(conversation_handler.CreateHandler),
+		"ConversationList":        local_routing.HandlerFunc(conversation_handler.ListHandler),
+		"ConversationGet":         local_routing.HandlerFunc(conversation_handler.GetHandler),
+		"ConversationUpdateTitle": local_routing.HandlerFunc(conversation_handler.UpdateTitleHandler),
+		"ConversationDelete":      local_routing.HandlerFunc(conversation_handler.DeleteHandler),
+		"ConversationSendMessage": local_routing.HandlerFunc(conversation_handler.SendMessageHandler),
 	}
 
 	var inner *lift_security.ScopeSecurityLayer

@@ -17,4 +17,5 @@ export const AppScopes = {
   ToolManage: 'tool:manage',
   PlatformRead: 'cinqo:platform:read',
   PlatformManage: 'cinqo:platform:manage',
+  ConversationUse: 'cinqo:conversation:use',
 } as const

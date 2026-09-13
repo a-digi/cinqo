@@ -51,3 +51,14 @@ func (r *KeyQueryRepo) FindByID(id string) (*platform_entity.Key, error) {
 	row := r.db.QueryRow(`SELECT `+keyColumns+` FROM platform_keys WHERE id = ? LIMIT 1`, id)
 	return scanKey(row.Scan)
 }
+
+// FindMostRecentForPlatform returns the most recently created key for
+// platformID — the "current" key for that platform, per the same
+// "most recent row is the current one" convention (no is_active flag
+// anywhere in this design). Returns sql.ErrNoRows (unwrapped) if no
+// key has been registered for this platform yet. See
+// plan/ai/conversation/step-02-sending-a-message.md.
+func (r *KeyQueryRepo) FindMostRecentForPlatform(platformID string) (*platform_entity.Key, error) {
+	row := r.db.QueryRow(`SELECT `+keyColumns+` FROM platform_keys WHERE platform = ? ORDER BY created_at DESC LIMIT 1`, platformID)
+	return scanKey(row.Scan)
+}

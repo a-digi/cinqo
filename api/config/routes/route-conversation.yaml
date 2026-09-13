@@ -1,0 +1,49 @@
+routes:
+  # No cinqo:super:admin anywhere in this file, deliberately — a
+  # conversation's content is closer to personal correspondence than
+  # operational data, so this feature has no admin bypass at all,
+  # breaking from this codebase's otherwise-universal
+  # cinqo:super:admin pattern. See
+  # plan/ai/conversation/step-03-conversation-api.md's own security
+  # considerations.
+  - path: /api/v1/conversations
+    method: POST
+    executor: ConversationCreate
+    security: authenticated
+    scopes:
+      - cinqo:conversation:use
+
+  - path: /api/v1/conversations
+    method: GET
+    executor: ConversationList
+    security: authenticated
+    scopes:
+      - cinqo:conversation:use
+
+  - path: /api/v1/conversations/{id}
+    method: GET
+    executor: ConversationGet
+    security: authenticated
+    scopes:
+      - cinqo:conversation:use
+
+  - path: /api/v1/conversations/{id}
+    method: PATCH
+    executor: ConversationUpdateTitle
+    security: authenticated
+    scopes:
+      - cinqo:conversation:use
+
+  - path: /api/v1/conversations/{id}
+    method: DELETE
+    executor: ConversationDelete
+    security: authenticated
+    scopes:
+      - cinqo:conversation:use
+
+  - path: /api/v1/conversations/{id}/messages
+    method: POST
+    executor: ConversationSendMessage
+    security: authenticated
+    scopes:
+      - cinqo:conversation:use

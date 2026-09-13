@@ -13,6 +13,7 @@ export interface MenuEntry {
 
 export const menuEntries: MenuEntry[] = [
   { label: 'Home', path: '/' },
+  { label: 'Conversations', path: '/conversations', scopes: [AppScopes.ConversationUse] },
   {
     label: 'System',
     children: [
