@@ -84,8 +84,15 @@ var registry = []Entry{
 	{
 		Info:           entity.Platform{ID: "openrouter", Name: "OpenRouter"},
 		DefaultBaseURL: "https://openrouter.ai/api/v1",
-		DefaultModel:   "openrouter/auto",
-		// SelectableModels intentionally omitted — no user choice.
+		// "openrouter/free" (plan/ai/platform/step-09-openrouter-free-model.md)
+		// — verified directly against openrouter.ai/openrouter/free: a
+		// real, distinct router that picks a free model per-request,
+		// never a paid one — unlike "openrouter/auto" (never
+		// independently verified when first picked), which carries no
+		// such guarantee.
+		DefaultModel: "openrouter/free",
+		// SelectableModels still intentionally omitted — no user
+		// choice; openrouter/free is itself already a router.
 		Completer: openrouter.Client{},
 	},
 }
