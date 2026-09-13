@@ -61,3 +61,4 @@ plan/
 # MCP logs
 
 .playwright-mcp
+*.pid

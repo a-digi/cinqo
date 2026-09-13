@@ -62,6 +62,15 @@ func main() {
 }
 
 func run() error {
+	// Armed before anything else starts (backend, Caddy, or the
+	// browser) so a self-sent SIGTERM from launchPrivateChrome's exit
+	// watcher can never race ahead of signal.Notify — an unhandled
+	// SIGTERM's default disposition is immediate, non-graceful process
+	// termination. See
+	// plan/ai/build/app/step-10-shutdown-when-browser-closes.md.
+	shutdownCh := make(chan os.Signal, 1)
+	signal.Notify(shutdownCh, os.Interrupt, syscall.SIGTERM)
+
 	cfg, err := server.LoadConfig("config.json")
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
@@ -104,7 +113,7 @@ func run() error {
 		}
 	}
 
-	waitForShutdown(srv, cfg.PidFile, log, frontendDir)
+	waitForShutdown(shutdownCh, srv, cfg.PidFile, log, frontendDir)
 	return nil
 }
 
@@ -377,16 +386,30 @@ func launchPrivateChrome(chromePath, url string) (int, error) {
 		return 0, err
 	}
 
+	// Verified directly (see plan/ai/build/app/step-10-shutdown-when-browser-closes.md):
+	// cmd.Wait() reliably unblocks in real time when this exact spawned
+	// Chrome process exits, whether that's the user closing the last
+	// window, quitting the app, or a crash. Self-signaling SIGTERM
+	// reuses waitForShutdown's already-tested cleanup sequence — the
+	// same path SIGINT/SIGTERM already take — instead of duplicating
+	// it. Only fires while some part of this specific instance is
+	// still alive; additional windows opened within it keep it running
+	// and correctly don't trigger this.
+	go func() {
+		_ = cmd.Wait()
+		_ = syscall.Kill(os.Getpid(), syscall.SIGTERM)
+	}()
+
 	return cmd.Process.Pid, nil
 }
 
-// waitForShutdown blocks until SIGINT/SIGTERM, then stops Caddy before
-// the backend — Caddy is the public-facing listener, so stopping the
-// backend first would leave it still accepting connections it can no
-// longer proxy anywhere.
-func waitForShutdown(srv *http.Server, pidFile string, log logger.Logger, frontendDir string) {
-	ch := make(chan os.Signal, 1)
-	signal.Notify(ch, os.Interrupt, syscall.SIGTERM)
+// waitForShutdown blocks until SIGINT/SIGTERM arrives on ch — armed by
+// the caller (run) before anything is started, and also the target of
+// launchPrivateChrome's own self-signal when the user closes the
+// spawned browser — then stops Caddy before the backend, since Caddy is
+// the public-facing listener and stopping the backend first would leave
+// it still accepting connections it can no longer proxy anywhere.
+func waitForShutdown(ch <-chan os.Signal, srv *http.Server, pidFile string, log logger.Logger, frontendDir string) {
 	sig := <-ch
 	log.Info("Received signal %s, shutting down...", sig)
 
