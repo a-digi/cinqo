@@ -17,6 +17,8 @@ import (
 	"github.com/a-digi/cinqo/src/ping"
 	"github.com/a-digi/cinqo/src/security/scopes"
 	security_handler "github.com/a-digi/cinqo/src/security/scopes/handler"
+	"github.com/a-digi/cinqo/src/tool"
+	tool_handler "github.com/a-digi/cinqo/src/tool/handler"
 )
 
 // diStore mirrors src/auth/handler.diStore — Get isn't part of
@@ -52,6 +54,7 @@ func Init(ctx serverdi.Context) {
 	// get wired below. See plan/ai/security/security.md.
 	scopes.Register(scopes.CoreScopeGroup)
 	scopes.Register(ping.ScopeGroup)
+	scopes.Register(tool.ScopeGroup)
 
 	handlerMap := map[string]routing.HandlerInterface{
 		"HealthzGet": local_routing.HandlerFunc(health.GetHandler),
@@ -66,6 +69,14 @@ func Init(ctx serverdi.Context) {
 		"PingCreate": local_routing.HandlerFunc(ping.CreateHandler),
 
 		"SecurityScopesList": &security_handler.ScopesListHandler{},
+
+		"ToolList":           local_routing.HandlerFunc(tool_handler.ListHandler),
+		"ToolInstall":        local_routing.HandlerFunc(tool_handler.InstallHandler),
+		"ToolDelete":         local_routing.HandlerFunc(tool_handler.DeleteHandler),
+		"ToolEnable":         local_routing.HandlerFunc(tool_handler.EnableHandler),
+		"ToolDisable":        local_routing.HandlerFunc(tool_handler.DisableHandler),
+		"ToolFrontendBundle": local_routing.HandlerFunc(tool_handler.FrontendBundleHandler),
+		"ToolProxy":          local_routing.HandlerFunc(tool_handler.ProxyHandler),
 	}
 
 	var inner *lift_security.ScopeSecurityLayer

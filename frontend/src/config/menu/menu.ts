@@ -20,6 +20,7 @@ export const menuEntries: MenuEntry[] = [
         label: 'Security',
         children: [{ label: 'Scopes', path: '/admin/security/scopes', scopes: [AppScopes.SuperAdmin] }],
       },
+      { label: 'Tools', path: '/admin/tools', scopes: [AppScopes.ToolManage] },
     ],
   },
 ]

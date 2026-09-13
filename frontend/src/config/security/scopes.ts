@@ -14,4 +14,5 @@ export const AppScopes = {
   SuperAdmin: 'cinqo:super:admin',
   PingRead: 'cinqo:ping:read',
   PingCreate: 'cinqo:ping:create',
+  ToolManage: 'tool:manage',
 } as const

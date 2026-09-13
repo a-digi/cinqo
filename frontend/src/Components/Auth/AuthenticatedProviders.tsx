@@ -1,5 +1,6 @@
 import { Outlet } from 'react-router-dom'
 import { AuthProvider } from './AuthContext'
+import { ToolRegistryProvider } from '../../config/tools/ToolRegistryContext'
 
 // Pathless layout route wrapping every route that needs a session
 // (/login, /login/callback, and the AuthGuard-protected `/` subtree).
@@ -13,11 +14,16 @@ import { AuthProvider } from './AuthContext'
 //
 // Any future auth-dependent global provider (a notification context, a
 // profile-avatar context, etc.) nests inside AuthProvider here, exactly
-// as coco-mda accumulates them — none exist yet for cinqo's skeleton.
+// as coco-mda accumulates them. ToolRegistryProvider (plan/ai/tools/
+// step-07) is the first one — it needs useAuth() itself (only loads
+// tools once truly authenticated), so it must nest inside AuthProvider,
+// not beside it.
 export function AuthenticatedProviders() {
   return (
     <AuthProvider>
-      <Outlet />
+      <ToolRegistryProvider>
+        <Outlet />
+      </ToolRegistryProvider>
     </AuthProvider>
   )
 }

@@ -183,3 +183,22 @@ build-app: embed-frontend bump-app-version
 .PHONY: run-app
 run-app: build-app
 	cd api && ../app/cinqo-app
+
+# Packages a tools/<name>/ source directory into the .zip the install
+# endpoint (POST /api/v1/tools/install) expects — builds the backend
+# (if present) first. See plan/ai/tools/step-09-skeleton-tool-templates.md.
+.PHONY: package-tool
+package-tool:
+	@test -n "$(TOOL)" || (echo "Usage: make package-tool TOOL=<dir-name-under-tools/>"; exit 1)
+	@test -d tools/$(TOOL) || (echo "tools/$(TOOL) does not exist"; exit 1)
+	@rm -rf tools/.build/$(TOOL)
+	@mkdir -p tools/.build/$(TOOL)
+	cp tools/$(TOOL)/manifest.json tools/.build/$(TOOL)/
+	@if [ -d tools/$(TOOL)/frontend ]; then cp -R tools/$(TOOL)/frontend tools/.build/$(TOOL)/frontend; fi
+	@if [ -d tools/$(TOOL)/backend ]; then \
+		mkdir -p tools/.build/$(TOOL)/backend && \
+		cd tools/$(TOOL)/backend && go build -o ../../.build/$(TOOL)/backend/tool . ; \
+	fi
+	@mkdir -p versions
+	cd tools/.build/$(TOOL) && zip -r ../../../versions/tool-$(TOOL).zip . >/dev/null
+	@echo "packaged: versions/tool-$(TOOL).zip"

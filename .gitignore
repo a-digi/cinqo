@@ -58,6 +58,10 @@ plan/
 # that resets to 0.0.000 the moment someone clones fresh.
 /app/cinqo-app
 
+# Tool packaging staging area (make package-tool) — a build artifact,
+# not source; the source lives in tools/<name>/ itself, tracked.
+/tools/.build/
+
 # MCP logs
 
 .playwright-mcp

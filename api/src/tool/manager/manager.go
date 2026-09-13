@@ -1,0 +1,285 @@
+// Package manager supervises one child OS process per activated tool's
+// backend — verified directly against coco-mda's real PluginManager
+// rather than assumed: never a Go plugin.Open() .so, always an
+// independently-compiled subprocess spoken to only over HTTP on
+// loopback. See
+// plan/ai/tools/step-04-enable-disable-and-tool-manager.md.
+//
+// Package-level state (a mutex-protected map, no struct instance
+// threaded through DI) — same idiom already established in this
+// codebase by security/scopes' registry for exactly this kind of
+// infrastructure-level, process-lifetime singleton.
+package manager
+
+import (
+	"database/sql"
+	"fmt"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"sync"
+	"syscall"
+	"time"
+
+	tool_entity "github.com/a-digi/cinqo/src/tool/entity"
+)
+
+const (
+	basePort            = 20000
+	healthCheckTimeout  = 10 * time.Second
+	healthCheckInterval = 200 * time.Millisecond
+	stopGracePeriod     = 2 * time.Second
+	// maxCrashRestarts caps the total number of automatic restarts a
+	// tool gets across its running lifetime (reset only by a
+	// deliberate external Start — an enable, or a fresh install/update)
+	// — not per-attempt, so a tool that keeps crashing shortly after
+	// each successful restart still gives up eventually rather than
+	// looping forever.
+	maxCrashRestarts = 3
+)
+
+type runningProcess struct {
+	cmd  *exec.Cmd
+	port int
+	// stopRequested distinguishes a deliberate Stop() from an
+	// unexpected crash — supervise reads this once cmd.Wait() returns
+	// to decide whether to restart at all.
+	stopRequested bool
+}
+
+var (
+	mu          sync.Mutex
+	nextPortVal = basePort
+	processes   = map[string]*runningProcess{} // keyed by tool ID
+	crashCounts = map[string]int{}
+)
+
+// Start spawns t's backend process, if it has one — a no-op for a
+// frontend-only tool. Kills any leftover PID from a previous run of
+// this same tool first, assigns the next loopback port, waits for
+// /healthz to report healthy before marking the tool "running", and
+// arms the crash-restart supervisor. Resets this tool's crash-restart
+// budget — this is the entry point for a deliberate "start it" request
+// (enable, a fresh install/update), not the supervisor's own internal
+// retry.
+func Start(db *sql.DB, t tool_entity.Tool, corePort int) error {
+	mu.Lock()
+	crashCounts[t.ID] = 0
+	mu.Unlock()
+	return startProcess(db, t, corePort)
+}
+
+func startProcess(db *sql.DB, t tool_entity.Tool, corePort int) error {
+	if t.BackendExecutableRelpath == "" {
+		return nil // frontend-only — nothing to spawn
+	}
+
+	killIfAlive(t.PID)
+
+	port := nextPort()
+
+	// Must be absolute: when cmd.Dir is set, Go's os/exec resolves a
+	// *relative* cmd.Path against cmd.Dir, not the caller's CWD —
+	// joining InstallPath (itself relative to CWD) into a relative
+	// Path here would then get InstallPath applied twice. Verified
+	// directly: reproduced the exact "no such file or directory"
+	// failure this caused, confirmed filepath.Abs fixes it. See
+	// plan/ai/tools/step-04-enable-disable-and-tool-manager.md.
+	execPath, err := filepath.Abs(filepath.Join(t.InstallPath, t.BackendExecutableRelpath))
+	if err != nil {
+		_ = setStatusAndPID(db, t.ID, "error", 0)
+		return err
+	}
+
+	cmd := exec.Command(execPath)
+	cmd.Dir = t.InstallPath
+	cmd.Env = append(os.Environ(),
+		fmt.Sprintf("PORT=%d", port),
+		"TOOL_DB_DIR="+filepath.Join("data", "db", "tools", t.Slug),
+		"TOOL_UPLOADS_DIR="+filepath.Join("data", "uploads", "tools", t.Slug),
+		"TOOL_TMP_DIR="+filepath.Join("data", "tmp", "tools", t.Slug),
+		fmt.Sprintf("CORE_API_URL=http://127.0.0.1:%d", corePort),
+	)
+
+	if err := cmd.Start(); err != nil {
+		_ = setStatusAndPID(db, t.ID, "error", 0)
+		return err
+	}
+
+	// Persisted immediately — a crash of the host itself still leaves
+	// a way to find and kill an orphaned child on the next startup.
+	if err := setStatusAndPID(db, t.ID, "starting", cmd.Process.Pid); err != nil {
+		_ = cmd.Process.Kill()
+		go cmd.Wait() // reap — nothing else will
+		return err
+	}
+
+	mu.Lock()
+	processes[t.ID] = &runningProcess{cmd: cmd, port: port}
+	mu.Unlock()
+
+	if !waitHealthy(port, healthCheckTimeout) {
+		_ = cmd.Process.Kill()
+		go cmd.Wait() // reap
+		mu.Lock()
+		delete(processes, t.ID)
+		mu.Unlock()
+		_ = setStatusAndPID(db, t.ID, "error", 0)
+		return fmt.Errorf("tool %q did not become healthy within %s", t.Slug, healthCheckTimeout)
+	}
+
+	if err := setStatusAndPID(db, t.ID, "running", cmd.Process.Pid); err != nil {
+		return err
+	}
+
+	go supervise(db, t, cmd, corePort)
+
+	return nil
+}
+
+// supervise waits for the child to exit and, unless that exit was
+// requested via Stop, restarts it — capped at maxCrashRestarts total
+// (not per attempt) before giving up into a permanent "error" status.
+func supervise(db *sql.DB, t tool_entity.Tool, cmd *exec.Cmd, corePort int) {
+	_ = cmd.Wait()
+
+	mu.Lock()
+	rp, tracked := processes[t.ID]
+	stopRequested := tracked && rp.stopRequested
+	if tracked {
+		delete(processes, t.ID)
+	}
+	mu.Unlock()
+
+	if stopRequested {
+		return // Stop() already set status/pid
+	}
+
+	mu.Lock()
+	crashCounts[t.ID]++
+	count := crashCounts[t.ID]
+	mu.Unlock()
+
+	if count > maxCrashRestarts {
+		_ = setStatusAndPID(db, t.ID, "error", 0)
+		return
+	}
+
+	time.Sleep(time.Duration(count) * time.Second) // linear backoff
+
+	if err := startProcess(db, t, corePort); err != nil {
+		_ = setStatusAndPID(db, t.ID, "error", 0)
+	}
+}
+
+// Port returns the loopback port a tool's backend is currently bound
+// to, if this process tracks it as running. Used by the reverse proxy
+// (step 5) to find where to forward a request — reading this in-memory
+// map rather than persisting the port to the DB, since it's only ever
+// meaningful for the lifetime of the process that assigned it.
+func Port(toolID string) (int, bool) {
+	mu.Lock()
+	defer mu.Unlock()
+	rp, ok := processes[toolID]
+	if !ok {
+		return 0, false
+	}
+	return rp.port, true
+}
+
+// Stop signals t's tracked process (escalating SIGTERM→SIGKILL after a
+// short grace period — same idiom already proven in
+// api/cmd/app/main.go's closeStaleChromeInstance/stopStaleInstance,
+// reused here rather than inventing a third variant), clears the
+// persisted PID, and marks the tool "stopped". A no-op if nothing is
+// tracked and the DB has no PID either (a frontend-only tool, or one
+// already stopped).
+func Stop(db *sql.DB, toolID string) error {
+	mu.Lock()
+	rp, tracked := processes[toolID]
+	if tracked {
+		rp.stopRequested = true
+	}
+	mu.Unlock()
+
+	pid := 0
+	if tracked {
+		pid = rp.cmd.Process.Pid
+	} else if dbPID, err := readPID(db, toolID); err == nil {
+		pid = dbPID
+	}
+
+	if pid > 0 {
+		killIfAlive(pid)
+	}
+
+	mu.Lock()
+	delete(processes, toolID)
+	delete(crashCounts, toolID)
+	mu.Unlock()
+
+	return setStatusAndPID(db, toolID, "stopped", 0)
+}
+
+func nextPort() int {
+	mu.Lock()
+	defer mu.Unlock()
+	p := nextPortVal
+	nextPortVal++
+	return p
+}
+
+// killIfAlive signals pid to stop, escalating to SIGKILL if it's still
+// alive after a short grace period. A no-op if pid is zero/negative or
+// already dead — matches the liveness-probe idiom already established
+// in api/cmd/app/main.go rather than assuming a DB-recorded PID is
+// still real.
+func killIfAlive(pid int) {
+	if pid <= 0 {
+		return
+	}
+	process, err := os.FindProcess(pid)
+	if err != nil {
+		return
+	}
+	if process.Signal(syscall.Signal(0)) != nil {
+		return // not alive
+	}
+
+	_ = process.Signal(syscall.SIGTERM)
+	time.Sleep(stopGracePeriod)
+	if process.Signal(syscall.Signal(0)) == nil {
+		_ = process.Signal(syscall.SIGKILL)
+	}
+}
+
+func waitHealthy(port int, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	client := &http.Client{Timeout: 500 * time.Millisecond}
+	url := fmt.Sprintf("http://127.0.0.1:%d/healthz", port)
+
+	for time.Now().Before(deadline) {
+		if resp, err := client.Get(url); err == nil {
+			resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				return true
+			}
+		}
+		time.Sleep(healthCheckInterval)
+	}
+	return false
+}
+
+func setStatusAndPID(db *sql.DB, toolID, status string, pid int) error {
+	_, err := db.Exec(`UPDATE tools SET status = ?, pid = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, status, pid, toolID)
+	return err
+}
+
+func readPID(db *sql.DB, toolID string) (int, error) {
+	var pid sql.NullInt64
+	if err := db.QueryRow(`SELECT pid FROM tools WHERE id = ?`, toolID).Scan(&pid); err != nil {
+		return 0, err
+	}
+	return int(pid.Int64), nil
+}
