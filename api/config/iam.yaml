@@ -1,0 +1,40 @@
+# coco-iam connection settings for the cinqo application.
+#
+# TEMPLATE — every value below is a placeholder. This file has no effect
+# until a real application record for "cinqo" is created in a running
+# coco-iam instance and these values are replaced with what that
+# registration actually produces. See
+# plan/ai/backend/auth/step-01-iam-config-and-registration.md.
+#
+# Loaded by backendapp.Start() on startup
+# (config.ReadConfigFile("iam.yaml")); if present and parseable,
+# IamConfig.Apply() derives the real issuer/authorize/token/userinfo/jwks
+# URLs from org_slug/workspace_slug/app_slug/app_id and overlays them
+# onto config.json's "auth" block. See
+# api/src/auth/config/iam_config.go for the derivation logic. If this
+# file is absent (as it was until now) or fails to parse, cinqo simply
+# runs on config.json's dev HS256 values alone — not a startup error.
+#
+# Derived URLs (once real values are filled in):
+#   authorize : {issuer}/a/{org_slug}/{workspace_slug}/{app_slug}/oauth/authorize
+#   token     : {issuer}/a/{org_slug}/{workspace_slug}/{app_slug}/oauth/token
+#   userinfo  : {issuer}/a/{org_slug}/{workspace_slug}/{app_slug}/oauth/userinfo
+#   jwks      : {issuer}/api/v1/applications/{app_id}/.well-known/jwks.json
+
+issuer: https://coco-iam-api.t-digi.com/ # e.g. https://coco-iam-api.example.com
+login_url: https://coco-iam.t-digi.com # e.g. https://coco-iam.example.com — falls back to issuer if left blank
+org_slug: cinqo
+workspace_slug: ai
+app_slug: cinqo # matches the cinqo:* scope prefix already in use in config.json — shouldn't need to change
+app_id: "3f8fb22a-4e9f-4c18-ae13-9afaaa1954da" # UUID assigned when the application is registered in coco-iam
+client_id: cinqo # coco-iam's user-facing OAuth client id for this app
+client_secret: "oBGWn_mgfZt4xHmdyY4Al5SlmR0j694NIFN0c6AmjkM" # coco-iam's user-facing OAuth client secret
+audience: "cinqo" # coco-iam issues aud = client_id, NOT the cinqo:* scope prefix — verify against a real token's claims once registered, don't assume "cinqo"
+frontend_url: "http://localhost:7030" # this app's frontend origin — real value once deployed, not just local dev
+
+# Optional explicit overrides — leave blank to derive automatically from
+# the values above.
+authorize_url: ""
+token_url: ""
+userinfo_url: ""
+jwks_url: ""

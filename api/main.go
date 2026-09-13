@@ -31,7 +31,7 @@ func main() {
 		return
 	}
 
-	srv, cfg, log, err := backendapp.Start()
+	srv, cfg, _, log, err := backendapp.Start()
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)

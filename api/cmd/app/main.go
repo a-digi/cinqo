@@ -31,7 +31,9 @@ import (
 	_ "github.com/caddyserver/caddy/v2/modules/standard"          // reverse_proxy, file_server, handle, try_files
 
 	"github.com/a-digi/cinqo/cmd/app/webapp"
+	"github.com/a-digi/cinqo/config/di"
 	"github.com/a-digi/cinqo/src/backendapp"
+	auth_config "github.com/a-digi/cinqo/src/auth/config"
 )
 
 //go:embed embedded.Caddyfile
@@ -82,7 +84,7 @@ func run() error {
 	}
 	closeStaleChromeInstance()
 
-	srv, cfg, log, err := backendapp.Start()
+	srv, cfg, ctx, log, err := backendapp.Start()
 	if err != nil {
 		return fmt.Errorf("backend: %w", err)
 	}
@@ -91,6 +93,8 @@ func run() error {
 	if stoppedPID != 0 {
 		log.Info("stopped previous instance (pid %d) before starting", stoppedPID)
 	}
+
+	overrideFrontendCallbackURL(ctx, log)
 
 	frontendDir, err := extractFrontend()
 	if err != nil {
@@ -239,6 +243,34 @@ func closeStaleChromeInstance() {
 	}
 
 	_ = os.Remove(chromePidFile)
+}
+
+// overrideFrontendCallbackURL points the OAuth login flow's frontend
+// redirect at this mode's actual frontend origin (Caddy on caddyPort),
+// instead of config.json's committed dev value (Vite's :5173 — correct
+// only for the separate `npm run dev` + `make run-dev` loop, unreachable
+// here since neither Vite nor a bare backend-only setup is running).
+// config.json itself is intentionally left unchanged — same convention
+// every coco-aim reference app already follows (its committed config
+// targets Vite's dev port; nothing there is tuned for a Caddy-fronted
+// mode). Safe to override post-Start: auth_handler.getAuthConfig reads
+// "auth_config" fresh from the ContextBag on every request rather than
+// having it baked into a closure at routes.Init time, so this takes
+// effect for every request from here on, and no code path in cmd/app
+// (or the config file on disk) needs to know two ports at once. See
+// plan/ai/build/app/step-13-frontend-callback-url-override.md.
+func overrideFrontendCallbackURL(ctx *di.ContextBag, log logger.Logger) {
+	raw, ok := ctx.Get("auth_config")
+	if !ok {
+		return
+	}
+	authCfg, ok := raw.(auth_config.AppAuthConfig)
+	if !ok {
+		return
+	}
+	authCfg.FrontendCallbackURL = fmt.Sprintf("%s/login/callback", caddyAddr)
+	ctx.Set("auth_config", authCfg)
+	log.Info("overrode frontend_callback_url for app mode: %s", authCfg.FrontendCallbackURL)
 }
 
 // extractFrontend writes the embedded frontend build out to a real temp

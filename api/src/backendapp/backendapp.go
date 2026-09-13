@@ -28,28 +28,35 @@ import (
 // un-blocked. The caller decides how to wait for shutdown:
 // api/main.go calls server.GracefulShutdown right after (today's exact
 // behavior); api/cmd/app/main.go instead coordinates shutdown together
-// with an in-process Caddy instance.
-func Start() (srv *http.Server, cfg *server.Config, log logger.Logger, err error) {
+// with an in-process Caddy instance. The returned ContextBag lets a
+// caller override a DI-registered value after bootstrap — e.g.
+// cmd/app/main.go overriding "auth_config"'s FrontendCallbackURL to
+// match the port its own embedded Caddy actually serves the frontend
+// on, since request handlers (auth_handler.getAuthConfig) read
+// "auth_config" fresh from the ContextBag on every request rather than
+// having it baked into a closure at routes.Init time — a later Set()
+// here takes effect immediately, no restart needed.
+func Start() (srv *http.Server, cfg *server.Config, ctx *di.ContextBag, log logger.Logger, err error) {
 	log, err = logger.NewLogger(server.LogFileName("cinqo"), "data/logs")
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	migrationsPath, err := config.MigrationsPath()
 	if err != nil {
-		return nil, nil, log, err
+		return nil, nil, nil, log, err
 	}
 
 	manager, err := dbmanager.NewDatabaseManager("cinqo.db", "./data/db", []string{migrationsPath})
 	if err != nil {
-		return nil, nil, log, err
+		return nil, nil, nil, log, err
 	}
 
 	if err := manager.SyncMigrations(); err != nil {
-		return nil, nil, log, err
+		return nil, nil, nil, log, err
 	}
 
-	ctx := di.NewContextBag(manager, log)
+	ctx = di.NewContextBag(manager, log)
 
 	// Auth bootstrap: config.json's "auth" block is always present (dev
 	// HS256 secret); iam.yaml does not exist on disk yet (see
@@ -59,11 +66,11 @@ func Start() (srv *http.Server, cfg *server.Config, log logger.Logger, err error
 	// not a startup error.
 	authCfgBytes, err := config.ReadConfigFile("config.json")
 	if err != nil {
-		return nil, nil, log, err
+		return nil, nil, nil, log, err
 	}
 	authCfg, err := auth_config.Load(authCfgBytes)
 	if err != nil {
-		return nil, nil, log, err
+		return nil, nil, nil, log, err
 	}
 	if iamBytes, iamErr := config.ReadConfigFile("iam.yaml"); iamErr == nil {
 		iamCfg, iamParseErr := auth_config.LoadIamConfig(iamBytes)
@@ -92,5 +99,5 @@ func Start() (srv *http.Server, cfg *server.Config, log logger.Logger, err error
 	routes.Init(ctx)
 
 	srv, cfg, err = server.StartServer("config.json", log)
-	return srv, cfg, log, err
+	return srv, cfg, ctx, log, err
 }
