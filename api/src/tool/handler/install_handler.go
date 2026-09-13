@@ -260,7 +260,7 @@ func InstallHandler(reqCtx request.RequestContext) {
 			response.ErrorResponse(w, http.StatusInternalServerError, "tool installed but failed to reload")
 			return
 		}
-		response.SuccessResponse(w, http.StatusCreated, created)
+		response.SuccessResponse(w, http.StatusCreated, toToolResponse(created, systemToolsConfigFrom(reqCtx)))
 		return
 	}
 
@@ -341,7 +341,7 @@ func InstallHandler(reqCtx request.RequestContext) {
 		response.ErrorResponse(w, http.StatusInternalServerError, "tool updated but failed to reload")
 		return
 	}
-	response.SuccessResponse(w, http.StatusOK, reloaded)
+	response.SuccessResponse(w, http.StatusOK, toToolResponse(reloaded, systemToolsConfigFrom(reqCtx)))
 }
 
 func childRowsFromManifest(m manifest.Manifest) ([]tool_entity.ToolScope, []tool_entity.ToolRoute, []tool_entity.ToolRequiredScope) {

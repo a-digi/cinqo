@@ -21,6 +21,7 @@ import (
 	auth_service "github.com/a-digi/cinqo/src/auth/service"
 	platform_crypto "github.com/a-digi/cinqo/src/platform/crypto"
 	tool_manager "github.com/a-digi/cinqo/src/tool/manager"
+	"github.com/a-digi/cinqo/src/tool/systemtools"
 
 	"github.com/a-digi/coco-logger/logger"
 )
@@ -139,6 +140,21 @@ func Start() (srv *http.Server, cfg *server.Config, ctx *di.ContextBag, log logg
 
 	ctx.Set("jwks_service", jwksSvc)
 	ctx.Set("auth_config", authCfg)
+
+	// system-tools.yaml is the sole source of truth for which installed
+	// tools are protected from deletion — optional, same convention as
+	// iam.yaml above: absent or unparseable is logged and falls back to
+	// "nothing protected" rather than failing startup. See
+	// plan/ai/tools/step-10-system-tools.md.
+	systemToolsCfg := systemtools.Config{}
+	if data, err := config.ReadConfigFile("system-tools.yaml"); err == nil {
+		if cfg, parseErr := systemtools.Load(data); parseErr != nil {
+			log.Warning("system-tools.yaml present but could not be parsed, ignoring: %v", parseErr)
+		} else {
+			systemToolsCfg = cfg
+		}
+	}
+	ctx.Set("system_tools_config", systemToolsCfg)
 
 	routes.Init(ctx)
 

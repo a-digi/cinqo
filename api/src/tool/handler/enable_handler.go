@@ -74,5 +74,5 @@ func EnableHandler(reqCtx request.RequestContext) {
 		response.ErrorResponse(w, http.StatusInternalServerError, "tool enabled but failed to reload")
 		return
 	}
-	response.SuccessResponse(w, http.StatusOK, reloaded)
+	response.SuccessResponse(w, http.StatusOK, toToolResponse(reloaded, systemToolsConfigFrom(reqCtx)))
 }

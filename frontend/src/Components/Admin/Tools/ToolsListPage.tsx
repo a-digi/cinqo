@@ -17,6 +17,7 @@ export function ToolsListPage() {
   const [tools, setTools] = useState<Tool[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busySlug, setBusySlug] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
   const { confirm, dialog } = useConfirm()
 
   useEffect(() => {
@@ -76,6 +77,9 @@ export function ToolsListPage() {
     )
   }
 
+  const q = query.trim().toLowerCase()
+  const filtered = q ? tools.filter((t) => t.name.toLowerCase().includes(q) || t.slug.toLowerCase().includes(q)) : tools
+
   return (
     <div className="max-w-4xl space-y-6 p-6">
       <div className="flex items-start justify-between">
@@ -89,6 +93,16 @@ export function ToolsListPage() {
           <ToolInstallButton />
         </ScopeGate>
       </div>
+
+      {tools.length > 0 && (
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search tools…"
+          className="w-full max-w-xs rounded border border-gray-300 px-3 py-1.5 text-sm focus:border-gray-500 focus:outline-none"
+        />
+      )}
 
       <div className="rounded-lg border border-gray-200">
         <table className="w-full text-left text-sm">
@@ -111,7 +125,14 @@ export function ToolsListPage() {
                 </td>
               </tr>
             )}
-            {tools.map((tool) => (
+            {tools.length > 0 && filtered.length === 0 && (
+              <tr>
+                <td colSpan={7} className="px-4 py-6 text-center text-gray-400">
+                  No tools match your search.
+                </td>
+              </tr>
+            )}
+            {filtered.map((tool) => (
               <tr key={tool.id} className="border-t border-gray-100">
                 <td className="px-4 py-2 text-gray-900">{tool.name}</td>
                 <td className="px-4 py-2 font-mono text-xs text-gray-700">{tool.slug}</td>

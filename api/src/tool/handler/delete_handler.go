@@ -18,11 +18,28 @@ import (
 // files removed before the DB row, so a failure partway through is
 // safely retryable rather than leaving a DB row with no matching
 // files. See plan/ai/tools/step-03-install-update-uninstall.md.
+//
+// A system tool (system-tools.yaml) is refused outright, before even
+// looking the tool up in the database — the config file alone is
+// enough to reject the request, and a rejected delete must never stop
+// a system tool's running process as an unwanted side effect. No
+// scope-based override exists: even cinqo:super:admin cannot delete a
+// system tool through this endpoint. See
+// plan/ai/tools/step-10-system-tools.md.
 func DeleteHandler(reqCtx request.RequestContext) {
 	w := reqCtx.GetWriter()
 	slug := reqCtx.GetURI().GetPathVariable("slug")
 	if slug == "" {
 		response.ErrorResponse(w, http.StatusBadRequest, "slug is required")
+		return
+	}
+
+	if protected, reason := systemToolsConfigFrom(reqCtx).IsSystemTool(slug); protected {
+		msg := "system tools cannot be deleted — disable it instead"
+		if reason != "" {
+			msg += ": " + reason
+		}
+		response.ErrorResponse(w, http.StatusForbidden, msg)
 		return
 	}
 
