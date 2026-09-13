@@ -29,6 +29,7 @@ export function ConversationPage() {
   const [sending, setSending] = useState(false)
   const [pendingUserContent, setPendingUserContent] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
 
   useEffect(() => {
     Promise.all([fetchPlatforms(), fetchConversations()])
@@ -139,17 +140,30 @@ export function ConversationPage() {
 
   return (
     <div className="flex h-[calc(100vh-4rem)]">
-      <ConversationSidebar
-        conversations={conversations}
-        selectedId={selectedId}
-        busyId={busyId}
-        onSelect={handleSelect}
-        onCreate={handleCreate}
-        onRename={handleRename}
-        onDelete={handleDelete}
-      />
+      {!isSidebarCollapsed && (
+        <ConversationSidebar
+          conversations={conversations}
+          selectedId={selectedId}
+          busyId={busyId}
+          onSelect={handleSelect}
+          onCreate={handleCreate}
+          onRename={handleRename}
+          onDelete={handleDelete}
+        />
+      )}
 
       <div className="flex flex-1 flex-col">
+        <div className="flex items-center border-b border-gray-200 px-3 py-2">
+          <button
+            type="button"
+            onClick={() => setIsSidebarCollapsed((v) => !v)}
+            aria-label={isSidebarCollapsed ? 'Show conversation list' : 'Hide conversation list'}
+            className="rounded p-1.5 text-gray-500 hover:bg-gray-100"
+          >
+            <PanelIcon open={!isSidebarCollapsed} />
+          </button>
+        </div>
+
         {error && <p className="border-b border-red-100 bg-red-50 px-4 py-2 text-sm text-red-600">{error}</p>}
 
         {!selectedId && (
@@ -178,5 +192,16 @@ export function ConversationPage() {
         )}
       </div>
     </div>
+  )
+}
+
+// A panel outline with its left "sidebar" strip filled when the
+// conversation list is showing, hollow when it's collapsed.
+function PanelIcon({ open }: { open: boolean }) {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-5 w-5">
+      <rect x="3" y="4" width="14" height="12" rx="1.5" strokeWidth="1.2" />
+      <rect x="3" y="4" width="3.5" height="12" rx="1" fill={open ? 'currentColor' : 'none'} strokeWidth="1.2" />
+    </svg>
   )
 }
