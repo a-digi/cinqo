@@ -21,6 +21,18 @@ export function Sidebar() {
             Home
           </NavLink>
         </li>
+        <li>
+          <NavLink
+            to="/admin/security/scopes"
+            className={({ isActive }) =>
+              `block rounded-md px-3 py-2 text-sm ${
+                isActive ? 'bg-gray-100 font-medium text-gray-900' : 'text-gray-600 hover:bg-gray-50'
+              }`
+            }
+          >
+            Scopes
+          </NavLink>
+        </li>
       </ul>
     </nav>
   )

@@ -15,6 +15,8 @@ import (
 	auth_service "github.com/a-digi/cinqo/src/auth/service"
 	"github.com/a-digi/cinqo/src/health"
 	"github.com/a-digi/cinqo/src/ping"
+	"github.com/a-digi/cinqo/src/security/scopes"
+	security_handler "github.com/a-digi/cinqo/src/security/scopes/handler"
 )
 
 // diStore mirrors src/auth/handler.diStore — Get isn't part of
@@ -45,6 +47,12 @@ func Init(ctx serverdi.Context) {
 	updatedYamlBytes, _ := lift_routes.LoadRoutesYAML(config.ConfigFS)
 	config.SetEnforcedScopes(updatedYamlBytes)
 
+	// Security engine bridge — each domain that owns scopes registers
+	// its own group here, explicitly, right next to where its handlers
+	// get wired below. See plan/ai/security/security.md.
+	scopes.Register(scopes.CoreScopeGroup)
+	scopes.Register(ping.ScopeGroup)
+
 	handlerMap := map[string]routing.HandlerInterface{
 		"HealthzGet": local_routing.HandlerFunc(health.GetHandler),
 
@@ -56,6 +64,8 @@ func Init(ctx serverdi.Context) {
 
 		"PingList":   local_routing.HandlerFunc(ping.ListHandler),
 		"PingCreate": local_routing.HandlerFunc(ping.CreateHandler),
+
+		"SecurityScopesList": &security_handler.ScopesListHandler{},
 	}
 
 	var inner *lift_security.ScopeSecurityLayer
