@@ -40,14 +40,22 @@ var registry = []Entry{
 		// 5.6/6-astra generation, whose own lighter tiers are named
 		// "Terra"/"Luna", not "-mini"/"-nano". DefaultModel is the
 		// current generation's own cost-sensitive tier.
+		//
+		// gpt-oss-120b/gpt-oss-20b deliberately NOT included — verified
+		// directly (each model's own detail page's Endpoints section)
+		// that both are hosted on api.openai.com only via the Responses
+		// API (v1/responses), never Chat Completions
+		// (v1/chat/completions) — the only endpoint openai.Client
+		// (step 3) implements. Offering them here would create
+		// successfully but fail on every real send. Revisit once
+		// Responses-API support is a real, separate design — see that
+		// step's own "Open question 3, resolved" section.
 		DefaultModel: "gpt-5.6-luna",
 		SelectableModels: []string{
 			"gpt-6-astra",   // most capable — current flagship
 			"gpt-5.6-sol",   // flagship, complex professional work
 			"gpt-5.6-terra", // balances intelligence and cost
 			"gpt-5.6-luna",  // cost-sensitive workloads — lightest of the current generation
-			"gpt-oss-120b",  // open-weight, Apache 2.0
-			"gpt-oss-20b",   // open-weight, Apache 2.0, smaller
 		},
 		Completer: openai.Client{},
 	},
