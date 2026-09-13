@@ -1,8 +1,11 @@
 // Frontend-side mirror of the backend's scope catalog
-// (plan/ai/backend/auth/step-04-scope-naming-convention.md). Kept in sync
-// BY HAND with the backend's config/scopes/*.json — there is no shared
-// source of truth between frontend and backend for this, matching every
-// sibling coco-aim app.
+// (api/src/security/scopes, plan/ai/security/security.md). Kept in sync
+// BY HAND — there is no shared source of truth between frontend and
+// backend for this, matching every sibling coco-aim app. A stale entry
+// here (renamed/removed backend-side) is caught, not silently ignored:
+// see plan/ai/security/frontend-scope-conformance.md and the "Referenced
+// by the frontend but not a registered backend scope" banner on
+// Components/Admin/Security/ScopesPage.tsx.
 //
 // Started in auth/02 (AuthGuard needs the super-admin bypass) with just
 // SuperAdmin; the Ping entries were added here in auth/04. Extend this

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { fetchSecurityScopes, type SecurityScopes } from '../../../api/security'
 import { ApiError } from '../../../api/client'
 import { LoadingSpinner } from '../../../Shared/Components/Loading/LoadingSpinner'
+import { referencedScopeIds } from '../../../config/security/scopeConformance'
 
 // Admin-only view of the scope registry (api/src/security/scopes) — see
 // plan/ai/security/security.md. Read-only: scopes are declared in code,
@@ -36,6 +37,9 @@ export function ScopesPage() {
     )
   }
 
+  const registeredIds = new Set(data.groups.flatMap((g) => g.scopes.map((s) => s.id)))
+  const unknownFrontendScopes = referencedScopeIds().filter((id) => !registeredIds.has(id))
+
   return (
     <div className="max-w-4xl space-y-8 p-6">
       <div>
@@ -59,6 +63,14 @@ export function ScopesPage() {
           title="Not requested from the identity provider"
           description="These scopes can never be granted to any user — they're missing from the OAuth scopes requested at login."
           scopes={data.unrequestedScopes}
+        />
+      )}
+
+      {unknownFrontendScopes.length > 0 && (
+        <DiagnosticBanner
+          title="Referenced by the frontend but not a registered backend scope"
+          description="These scope strings appear in the frontend's own AppScopes catalog but no longer match anything the backend registers — likely renamed or removed. Any menu entry or guard using one of these stays silently hidden/denied."
+          scopes={unknownFrontendScopes}
         />
       )}
 

@@ -1,38 +1,17 @@
-import { NavLink } from 'react-router-dom'
+import { useMenuGroups } from '../config/menu/useMenuGroups'
+import { SidebarMenuItem } from './SidebarMenuItem'
 
-// A hardcoded nav list — no menu-config system yet (coco-mda's
-// config/menu/menu.ts + useMenuGroups). Add one only once there are
-// enough real pages to need a data-driven menu; a hardcoded list is fine
-// until then.
+// Data-driven, recursively nestable — see config/menu/menu.ts and
+// plan/ai/frontend/frontend/step-06-nested-menu-system.md. Replaces the
+// previous hardcoded flat list.
 export function Sidebar() {
+  const groups = useMenuGroups()
   return (
     <nav className="w-56 shrink-0 border-r border-gray-200 bg-white p-4">
       <ul className="space-y-1">
-        <li>
-          <NavLink
-            to="/"
-            end
-            className={({ isActive }) =>
-              `block rounded-md px-3 py-2 text-sm ${
-                isActive ? 'bg-gray-100 font-medium text-gray-900' : 'text-gray-600 hover:bg-gray-50'
-              }`
-            }
-          >
-            Home
-          </NavLink>
-        </li>
-        <li>
-          <NavLink
-            to="/admin/security/scopes"
-            className={({ isActive }) =>
-              `block rounded-md px-3 py-2 text-sm ${
-                isActive ? 'bg-gray-100 font-medium text-gray-900' : 'text-gray-600 hover:bg-gray-50'
-              }`
-            }
-          >
-            Scopes
-          </NavLink>
-        </li>
+        {groups.map((entry) => (
+          <SidebarMenuItem key={entry.label} entry={entry} depth={1} />
+        ))}
       </ul>
     </nav>
   )
