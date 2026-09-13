@@ -60,11 +60,26 @@ var registry = []Entry{
 		Completer: openai.Client{},
 	},
 	{
-		Info:             entity.Platform{ID: "anthropic", Name: "Anthropic"},
-		DefaultBaseURL:   "https://api.anthropic.com/v1",
-		DefaultModel:     "claude-3-5-haiku-latest",
-		SelectableModels: []string{"claude-3-5-haiku-latest", "claude-3-5-sonnet-latest", "claude-3-opus-latest"},
-		Completer:        anthropic.Client{},
+		Info:           entity.Platform{ID: "anthropic", Name: "Anthropic"},
+		DefaultBaseURL: "https://api.anthropic.com/v1",
+		// claude-3-x family removed entirely (plan/ai/platform/step-08-anthropic-model-list-revision.md)
+		// — several generations behind current; not even in Anthropic's
+		// own "Legacy models (still available)" list (which only goes
+		// back to 4.x). Verified directly against
+		// platform.claude.com/docs/en/models/overview's real comparison
+		// table — these are the exact "Claude API ID" column values
+		// (the direct Anthropic API's own model identifier, not the
+		// Bedrock/Vertex/Foundry variants also listed there).
+		// DefaultModel is the current generation's own fastest/
+		// cheapest tier.
+		DefaultModel: "claude-haiku-4-5-20251001",
+		SelectableModels: []string{
+			"claude-fable-5-1",          // demanding reasoning, long-horizon agentic work
+			"claude-opus-5",             // complex agentic coding and enterprise work
+			"claude-sonnet-5",           // best combination of speed and intelligence
+			"claude-haiku-4-5-20251001", // fastest, near-frontier intelligence
+		},
+		Completer: anthropic.Client{},
 	},
 	{
 		Info:           entity.Platform{ID: "openrouter", Name: "OpenRouter"},
