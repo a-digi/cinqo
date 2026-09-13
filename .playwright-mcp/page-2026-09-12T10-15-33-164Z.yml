@@ -1,0 +1,7 @@
+- generic [ref=e3]:
+  - paragraph [ref=e4]: cinqo — frontend scaffold running
+  - generic [ref=e5]: "{ \"isLoading\": true, \"isAuthenticated\": false, \"user\": null, \"scopes\": [] }"
+  - generic [ref=e6]:
+    - button "Recheck auth" [ref=e7]
+    - button "Logout" [ref=e8]
+    - button "Test PKCE" [ref=e9]

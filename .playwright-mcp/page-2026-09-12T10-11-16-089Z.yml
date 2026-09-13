@@ -1,0 +1,13 @@
+- generic [ref=e3]:
+  - paragraph [ref=e4]: cinqo — frontend scaffold running
+  - generic [ref=e5]:
+    - button "Fire success toast" [ref=e6]
+    - button "Fire error toast" [ref=e7]
+    - button "Fire persistent error" [ref=e8]
+  - generic [ref=e9]:
+    - status "TEST loading label" [ref=e10]
+    - generic [ref=e11]: TEST loading label
+  - generic [ref=e13]:
+    - heading "Access Denied" [level=1] [ref=e17]
+    - paragraph [ref=e18]: You don't have permission to view this page.
+    - button "Go Back" [ref=e19]

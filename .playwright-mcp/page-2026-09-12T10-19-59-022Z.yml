@@ -1,0 +1,9 @@
+- generic [ref=e3]:
+  - paragraph [ref=e4]: HOME (unguarded)
+  - generic [ref=e6]:
+    - status "Loading…" [ref=e7]
+    - generic [ref=e8]: Loading…
+  - generic [ref=e10]:
+    - status "Loading…" [ref=e11]
+    - generic [ref=e12]: Loading…
+  - button "Prep + go to callback" [ref=e13]

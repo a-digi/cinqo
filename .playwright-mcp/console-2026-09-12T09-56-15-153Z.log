@@ -1,0 +1,14 @@
+[     131ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:5173/node_modules/.vite/deps/react-dom_client.js?v=f1048cf8:15804
+[     170ms] [LOG] TEST: auth/config OK {"authorize_url":"","client_id":"","redirect_uri":"http://localhost:7026/auth/callback","scopes":"openid profile email offline_access cinqo:super:admin cinqo:ping:read cinqo:ping:create"} @ http://localhost:5173/src/App.tsx:12
+[     171ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/v1/pings:0
+[     190ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:5173/favicon.ico:0
+[     206ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/v1/pings:0
+[     207ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/v1/auth/renew:0
+[     207ms] [LOG] TEST: sessionExpired fired @ http://localhost:5173/src/App.tsx:11
+[     208ms] [LOG] TEST: sessionExpired fired @ http://localhost:5173/src/App.tsx:11
+[     208ms] [LOG] TEST: pings ApiError status=401 message=Access denied @ http://localhost:5173/src/App.tsx:15
+[     210ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:5173/api/v1/auth/renew:0
+[     210ms] [LOG] TEST: sessionExpired fired @ http://localhost:5173/src/App.tsx:11
+[     210ms] [LOG] TEST: sessionExpired fired @ http://localhost:5173/src/App.tsx:11
+[     211ms] [LOG] TEST: pings ApiError status=401 message=Access denied @ http://localhost:5173/src/App.tsx:15
+[     240ms] [LOG] TEST: auth/config OK {"authorize_url":"","client_id":"","redirect_uri":"http://localhost:7026/auth/callback","scopes":"openid profile email offline_access cinqo:super:admin cinqo:ping:read cinqo:ping:create"} @ http://localhost:5173/src/App.tsx:12

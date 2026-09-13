@@ -1,0 +1,8 @@
+- generic [ref=f3e3]:
+  - paragraph [ref=f3e4]: HOME (unguarded)
+  - generic [ref=f3e5]: PROTECTED CONTENT
+  - generic [ref=f3e6]:
+    - heading "Access Denied" [level=1] [ref=f3e10]
+    - paragraph [ref=f3e11]: You don't have permission to view this page.
+    - button "Go Back" [ref=f3e12]
+  - button "Prep + go to callback" [ref=f3e13]

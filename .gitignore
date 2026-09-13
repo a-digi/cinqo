@@ -37,3 +37,9 @@ go.work.sum
 # Plan
 
 plan/
+
+# Runtime / local dev artifacts (backend)
+/api/data/
+/api/server.pid
+/api/*.log
+/api/vendor/
