@@ -1,17 +1,20 @@
 routes:
-  # No cinqo:super:admin anywhere in this file, deliberately — a
-  # conversation's content is closer to personal correspondence than
-  # operational data, so this feature has no admin bypass at all,
-  # breaking from this codebase's otherwise-universal
-  # cinqo:super:admin pattern. See
-  # plan/ai/conversation/step-03-conversation-api.md's own security
-  # considerations.
+  # cinqo:super:admin is now accepted alongside cinqo:conversation:use
+  # on every route below — plan/ai/conversation/step-06-superadmin-route-access.md
+  # revises step-03's original "no admin bypass" decision. This only
+  # restores route-level access for a superadmin's OWN conversations —
+  # it does not grant visibility into other users' conversations: every
+  # handler still filters by the caller's own resolved user_id
+  # unconditionally (conversation_query.FindOwnedByID/ListOwnedBy),
+  # regardless of scope. See that step's own "What this does — and
+  # does not — change" section.
   - path: /api/v1/conversations
     method: POST
     executor: ConversationCreate
     security: authenticated
     scopes:
       - cinqo:conversation:use
+      - cinqo:super:admin
 
   - path: /api/v1/conversations
     method: GET
@@ -19,6 +22,7 @@ routes:
     security: authenticated
     scopes:
       - cinqo:conversation:use
+      - cinqo:super:admin
 
   - path: /api/v1/conversations/{id}
     method: GET
@@ -26,6 +30,7 @@ routes:
     security: authenticated
     scopes:
       - cinqo:conversation:use
+      - cinqo:super:admin
 
   - path: /api/v1/conversations/{id}
     method: PATCH
@@ -33,6 +38,7 @@ routes:
     security: authenticated
     scopes:
       - cinqo:conversation:use
+      - cinqo:super:admin
 
   - path: /api/v1/conversations/{id}
     method: DELETE
@@ -40,6 +46,7 @@ routes:
     security: authenticated
     scopes:
       - cinqo:conversation:use
+      - cinqo:super:admin
 
   - path: /api/v1/conversations/{id}/messages
     method: POST
@@ -47,3 +54,4 @@ routes:
     security: authenticated
     scopes:
       - cinqo:conversation:use
+      - cinqo:super:admin
