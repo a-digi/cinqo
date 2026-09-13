@@ -43,3 +43,7 @@ plan/
 /api/server.pid
 /api/*.log
 /api/vendor/
+
+# MCP logs
+
+.playwright-mcp
