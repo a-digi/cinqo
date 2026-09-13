@@ -8,6 +8,7 @@ package main
 import (
 	"context"
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"net"
@@ -411,12 +412,19 @@ func launchPrivateChrome(chromePath, url string) (int, error) {
 		return 0, err
 	}
 
+	debugPort, err := findFreePort()
+	if err != nil {
+		_ = os.RemoveAll(profileDir)
+		return 0, err
+	}
+
 	cmd := exec.Command(chromePath,
 		"--app="+url,
 		"--user-data-dir="+profileDir,
 		"--incognito",
 		"--no-first-run",
 		"--no-default-browser-check",
+		fmt.Sprintf("--remote-debugging-port=%d", debugPort),
 	)
 	if err := cmd.Start(); err != nil {
 		_ = os.RemoveAll(profileDir)
@@ -437,7 +445,97 @@ func launchPrivateChrome(chromePath, url string) (int, error) {
 		_ = syscall.Kill(os.Getpid(), syscall.SIGTERM)
 	}()
 
+	// Closing the app-mode window alone does NOT make the Chrome
+	// process exit — verified directly (see
+	// plan/ai/build/app/step-14-fully-quit-chrome-on-window-close.md):
+	// macOS (and every platform) leaves a GUI app's process running
+	// with zero windows after its last window closes, same as any
+	// other app. cmd.Wait() above never fires on its own in that case.
+	// This goroutine finishes the job Chrome won't do itself: poll this
+	// specific instance's own CDP debug port (addressed by a private
+	// TCP port, not the ambiguous, shared "Google Chrome" bundle
+	// identity AppleScript would use) for its visible window/tab count,
+	// and terminate the process once it's genuinely gone — which then
+	// drives the cmd.Wait() goroutine above, same as a direct
+	// Cmd+Q/SIGTERM already does.
+	go watchForWindowClose(cmd, debugPort)
+
 	return cmd.Process.Pid, nil
+}
+
+// findFreePort asks the OS for an available TCP port by briefly binding
+// to :0 and reading back what it picked, then releasing it immediately
+// for Chrome's own debug server to bind instead. Same find-a-free-port
+// idiom this file already relies on via portFree, just inverted (find
+// one that's free, rather than confirm one already is).
+func findFreePort() (int, error) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, err
+	}
+	defer ln.Close()
+	return ln.Addr().(*net.TCPAddr).Port, nil
+}
+
+// watchForWindowClose polls the Chrome instance's own CDP debug port
+// (see findFreePort/launchPrivateChrome) until its visible window is
+// gone, then terminates the process. A short debounce (two consecutive
+// zero-readings, ~1s) guards against a same-origin SPA navigation or
+// reload transiently reporting zero visible pages — not a proven issue
+// for this app's own React Router SPA (client-side navigation never
+// destroys/recreates the page target), but a cheap safety margin. See
+// plan/ai/build/app/step-14-fully-quit-chrome-on-window-close.md.
+func watchForWindowClose(cmd *exec.Cmd, debugPort int) {
+	client := &http.Client{Timeout: 500 * time.Millisecond}
+	consecutiveZero := 0
+	for {
+		time.Sleep(500 * time.Millisecond)
+
+		if process, err := os.FindProcess(cmd.Process.Pid); err != nil || process.Signal(syscall.Signal(0)) != nil {
+			return // process already gone (e.g. via cmd.Wait()'s own path) — nothing left to watch
+		}
+
+		if hasVisiblePage(client, debugPort) {
+			consecutiveZero = 0
+			continue
+		}
+
+		consecutiveZero++
+		if consecutiveZero >= 2 {
+			_ = cmd.Process.Signal(syscall.SIGTERM)
+			return
+		}
+	}
+}
+
+// cdpTarget mirrors just the fields needed from a Chrome DevTools
+// Protocol /json/list entry — the endpoint returns several always-
+// present internal targets (background_page, browser_ui,
+// service_worker) regardless of window state; only "page" is a real,
+// visible window/tab. Verified directly against a real instance before
+// relying on this filter.
+type cdpTarget struct {
+	Type string `json:"type"`
+}
+
+func hasVisiblePage(client *http.Client, debugPort int) bool {
+	resp, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/json/list", debugPort))
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+
+	var targets []cdpTarget
+	if err := json.NewDecoder(resp.Body).Decode(&targets); err != nil {
+		return false
+	}
+
+	for _, t := range targets {
+		if t.Type == "page" {
+			return true
+		}
+	}
+	return false
 }
 
 // waitForShutdown blocks until SIGINT/SIGTERM arrives on ch — armed by
