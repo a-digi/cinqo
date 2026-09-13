@@ -32,8 +32,13 @@ tools/
 make package-tool TOOL=<your-tool-name>
 ```
 
-Builds the backend (if present) and produces `versions/tool-<name>.zip`,
-ready to upload.
+Builds the backend (if present) into that tool's own
+`tools/<your-tool-name>/build/generic/` (a gitignored build artifact,
+never hand-edited) and produces `versions/tool-<name>.zip`, ready to
+upload. A tool that needs to ship for more than the host's own OS
+(e.g. `pdf_generator`, which cross-compiles for macOS/Linux/Windows)
+can additionally have its own `Makefile` — see
+`plan/ai/tools/pdf-generator/step-06-multi-os-packaging.md`.
 
 ## Examples
 

@@ -58,9 +58,12 @@ plan/
 # that resets to 0.0.000 the moment someone clones fresh.
 /app/cinqo-app
 
-# Tool packaging staging area (make package-tool) — a build artifact,
-# not source; the source lives in tools/<name>/ itself, tracked.
-/tools/.build/
+# Every tool's own build output (make package-tool's generic build,
+# and any tool-specific Makefile's own per-OS builds) — a build
+# artifact, not source; the source lives in tools/<name>/ itself,
+# tracked. Final installable .zips still land in /versions/,
+# unaffected by this.
+/tools/*/build/
 
 # MCP logs
 

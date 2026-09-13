@@ -191,14 +191,14 @@ run-app: build-app
 package-tool:
 	@test -n "$(TOOL)" || (echo "Usage: make package-tool TOOL=<dir-name-under-tools/>"; exit 1)
 	@test -d tools/$(TOOL) || (echo "tools/$(TOOL) does not exist"; exit 1)
-	@rm -rf tools/.build/$(TOOL)
-	@mkdir -p tools/.build/$(TOOL)
-	cp tools/$(TOOL)/manifest.json tools/.build/$(TOOL)/
-	@if [ -d tools/$(TOOL)/frontend ]; then cp -R tools/$(TOOL)/frontend tools/.build/$(TOOL)/frontend; fi
+	@rm -rf tools/$(TOOL)/build/generic
+	@mkdir -p tools/$(TOOL)/build/generic
+	cp tools/$(TOOL)/manifest.json tools/$(TOOL)/build/generic/
+	@if [ -d tools/$(TOOL)/frontend ]; then cp -R tools/$(TOOL)/frontend tools/$(TOOL)/build/generic/frontend; fi
 	@if [ -d tools/$(TOOL)/backend ]; then \
-		mkdir -p tools/.build/$(TOOL)/backend && \
-		cd tools/$(TOOL)/backend && go build -o ../../.build/$(TOOL)/backend/tool . ; \
+		mkdir -p tools/$(TOOL)/build/generic/backend && \
+		cd tools/$(TOOL)/backend && go build -o ../build/generic/backend/tool . ; \
 	fi
 	@mkdir -p versions
-	cd tools/.build/$(TOOL) && zip -r ../../../versions/tool-$(TOOL).zip . >/dev/null
+	cd tools/$(TOOL)/build/generic && zip -r ../../../../versions/tool-$(TOOL).zip . >/dev/null
 	@echo "packaged: versions/tool-$(TOOL).zip"
