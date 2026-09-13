@@ -3,6 +3,7 @@ import { fetchPlatforms, fetchPlatformKeys, createPlatformKey, deletePlatformKey
 import { ApiError } from '../../../api/client'
 import { LoadingSpinner } from '../../../Shared/Components/Loading/LoadingSpinner'
 import { ScopeGate } from '../../../Shared/Components/Access/ScopeGate'
+import { useConfirm } from '../../../Shared/Components/Modal/useConfirm'
 import { AppScopes } from '../../../config/security/scopes'
 
 // Admin-only view of registered AI platforms and their API keys
@@ -16,6 +17,7 @@ export function PlatformKeysPage() {
   const [keys, setKeys] = useState<PlatformKey[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const { confirm, dialog } = useConfirm()
 
   const load = () => {
     setError(null)
@@ -34,7 +36,11 @@ export function PlatformKeysPage() {
   }, [])
 
   const handleDelete = async (key: PlatformKey) => {
-    if (!window.confirm(`Delete "${key.label}"? This cannot be undone.`)) return
+    const confirmed = await confirm({
+      title: 'Delete API key',
+      message: `Delete "${key.label}"? This cannot be undone.`,
+    })
+    if (!confirmed) return
     setBusyId(key.id)
     try {
       await deletePlatformKey(key.id)
@@ -117,6 +123,7 @@ export function PlatformKeysPage() {
           onError={(message) => setError(message)}
         />
       </ScopeGate>
+      {dialog}
     </div>
   )
 }

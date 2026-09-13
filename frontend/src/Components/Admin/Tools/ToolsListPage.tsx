@@ -3,6 +3,7 @@ import { fetchTools, enableTool, disableTool, deleteTool, type Tool } from '../.
 import { ApiError } from '../../../api/client'
 import { LoadingSpinner } from '../../../Shared/Components/Loading/LoadingSpinner'
 import { ScopeGate } from '../../../Shared/Components/Access/ScopeGate'
+import { useConfirm } from '../../../Shared/Components/Modal/useConfirm'
 import { AppScopes } from '../../../config/security/scopes'
 import { reloadAfterToolChange } from '../../../config/tools/loadTools'
 import { ToolInstallButton } from './ToolInstallButton'
@@ -16,6 +17,7 @@ export function ToolsListPage() {
   const [tools, setTools] = useState<Tool[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busySlug, setBusySlug] = useState<string | null>(null)
+  const { confirm, dialog } = useConfirm()
 
   useEffect(() => {
     let cancelled = false
@@ -47,7 +49,11 @@ export function ToolsListPage() {
   }
 
   const handleDelete = async (tool: Tool) => {
-    if (!window.confirm(`Delete "${tool.name}"? This removes its files and cannot be undone.`)) return
+    const confirmed = await confirm({
+      title: 'Delete tool',
+      message: `Delete "${tool.name}"? This removes its files and cannot be undone.`,
+    })
+    if (!confirmed) return
     setBusySlug(tool.slug)
     try {
       await deleteTool(tool.slug)
@@ -145,6 +151,7 @@ export function ToolsListPage() {
           </tbody>
         </table>
       </div>
+      {dialog}
     </div>
   )
 }

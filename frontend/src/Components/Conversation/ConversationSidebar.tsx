@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { Conversation } from '../../api/conversations'
+import { useConfirm } from '../../Shared/Components/Modal/useConfirm'
 
 // List, "New conversation", inline rename, delete-behind-confirm — same
 // established pattern ToolsListPage/PlatformKeysPage already use. See
@@ -23,6 +24,7 @@ export function ConversationSidebar({
 }) {
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  const { confirm, dialog } = useConfirm()
 
   const startRename = (c: Conversation) => {
     setRenamingId(c.id)
@@ -36,8 +38,12 @@ export function ConversationSidebar({
     onRename(id, title)
   }
 
-  const handleDelete = (c: Conversation) => {
-    if (!window.confirm(`Delete "${c.title}"? This cannot be undone.`)) return
+  const handleDelete = async (c: Conversation) => {
+    const confirmed = await confirm({
+      title: 'Delete conversation',
+      message: `Delete "${c.title}"? This cannot be undone.`,
+    })
+    if (!confirmed) return
     onDelete(c.id)
   }
 
@@ -99,6 +105,7 @@ export function ConversationSidebar({
           ))}
         </ul>
       </div>
+      {dialog}
     </div>
   )
 }
