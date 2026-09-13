@@ -30,11 +30,26 @@ type Entry struct {
 
 var registry = []Entry{
 	{
-		Info:             entity.Platform{ID: "openai", Name: "OpenAI"},
-		DefaultBaseURL:   "https://api.openai.com/v1",
-		DefaultModel:     "gpt-4o-mini",
-		SelectableModels: []string{"gpt-4o-mini", "gpt-4o", "gpt-4-turbo"},
-		Completer:        openai.Client{},
+		Info:           entity.Platform{ID: "openai", Name: "OpenAI"},
+		DefaultBaseURL: "https://api.openai.com/v1",
+		// GPT-4 family removed entirely (plan/ai/platform/step-07-openai-model-list-revision.md).
+		// Verified directly against the real page's raw HTML (not a
+		// summary) — "gpt-5"/"gpt-5-mini"/"gpt-5-nano" are a real but
+		// SUPERSEDED generation (that page's own "More models" bucket);
+		// the actual current "Flagship models" section is the
+		// 5.6/6-astra generation, whose own lighter tiers are named
+		// "Terra"/"Luna", not "-mini"/"-nano". DefaultModel is the
+		// current generation's own cost-sensitive tier.
+		DefaultModel: "gpt-5.6-luna",
+		SelectableModels: []string{
+			"gpt-6-astra",   // most capable — current flagship
+			"gpt-5.6-sol",   // flagship, complex professional work
+			"gpt-5.6-terra", // balances intelligence and cost
+			"gpt-5.6-luna",  // cost-sensitive workloads — lightest of the current generation
+			"gpt-oss-120b",  // open-weight, Apache 2.0
+			"gpt-oss-20b",   // open-weight, Apache 2.0, smaller
+		},
+		Completer: openai.Client{},
 	},
 	{
 		Info:             entity.Platform{ID: "anthropic", Name: "Anthropic"},
