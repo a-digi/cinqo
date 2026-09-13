@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 // A plain text input — no platform/model picker here anymore. A
 // conversation's platform+model are fixed at creation and can never
@@ -14,6 +14,17 @@ export function MessageComposer({
   disabled: boolean
 }) {
   const [content, setContent] = useState('')
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // Auto-grow: reset to 'auto' first so scrollHeight reflects the new
+  // content only, not the box's own prior (possibly taller) height —
+  // otherwise it could never shrink back down when text is deleted.
+  useEffect(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }, [content])
 
   const submit = () => {
     const trimmed = content.trim()
@@ -33,6 +44,7 @@ export function MessageComposer({
         {platformLabel}
       </span>
       <textarea
+        ref={textareaRef}
         value={content}
         onChange={(e) => setContent(e.target.value)}
         onKeyDown={(e) => {
@@ -44,7 +56,8 @@ export function MessageComposer({
         placeholder="Type a message…"
         rows={1}
         disabled={disabled}
-        className="min-w-0 flex-1 resize-none rounded border border-gray-300 px-3 py-2 text-sm disabled:opacity-50"
+        className="min-w-0 flex-1 resize-none overflow-y-auto rounded border border-gray-300 px-3 py-2 text-sm disabled:opacity-50"
+        style={{ maxHeight: '12rem' }}
       />
       <button
         type="submit"
