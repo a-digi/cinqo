@@ -1,3 +1,9 @@
+{
+	log {
+		level ERROR
+	}
+}
+
 :7030 {
 	# /api/* and /auth (+/auth/*) go to the backend — everything else is
 	# the built frontend. Two separate `handle` blocks for /auth,

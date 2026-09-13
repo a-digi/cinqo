@@ -1,3 +1,10 @@
+{
+	admin off
+	log {
+		level ERROR
+	}
+}
+
 :7030 {
 	handle /api/* {
 		reverse_proxy {env.CINQO_BACKEND_ADDR}
