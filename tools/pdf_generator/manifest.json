@@ -1,7 +1,7 @@
 {
   "slug": "pdf_generator",
   "name": "PDF Generator",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "mcp": true,
   "scopes": [
     {"scope": "tool:pdf_generator:generate", "description": "Render XHTML into a PDF."},

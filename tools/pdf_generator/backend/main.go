@@ -208,7 +208,7 @@ func filesHandler(uploadsDir string) http.HandlerFunc {
 		}
 
 		w.Header().Set("Content-Type", "application/pdf")
-		w.Header().Set("Content-Disposition", `inline; filename="`+id+`.pdf"`)
+		w.Header().Set("Content-Disposition", `attachment; filename="`+id+`.pdf"`)
 		w.Write(data)
 	}
 }

@@ -42,10 +42,18 @@ const components: Components = {
   a: ({ href, children }) => {
     // Scheme allowlist — React does not itself block a `javascript:`
     // href, so anything other than http(s)/mailto renders as inert
-    // plain text instead of a clickable link.
-    const safe = typeof href === 'string' && /^(https?:|mailto:)/i.test(href)
+    // plain text instead of a clickable link. The one relative shape
+    // admitted alongside that is the tool-download link
+    // appendResourceLinks (api/src/conversation/chat.go) deterministically
+    // generates itself — not arbitrary relative text a model could
+    // produce — anchored at the start so a protocol-relative `//host/...`
+    // (which also starts with "/") can't slip through. See
+    // plan/ai/tools/pdf-generator/step-07-download-link-fix.md.
+    const safe =
+      typeof href === 'string' &&
+      (/^(https?:|mailto:)/i.test(href) || /^\/api\/v1\/tools\/[^/]+\/proxy\//.test(href))
     return safe ? (
-      <a href={href} target="_blank" rel="noopener noreferrer" className="underline">
+      <a href={href} download target="_blank" rel="noopener noreferrer" className="underline">
         {children}
       </a>
     ) : (
