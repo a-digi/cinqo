@@ -197,7 +197,7 @@ export function ConversationPage() {
 
         {!creatingNew && selectedId && detail && (
           <>
-            <MessageThread messages={detail.messages} pendingUserContent={pendingUserContent} sending={sending} />
+            <MessageThread messages={detail.messages} pendingUserContent={pendingUserContent} sending={sending} onResend={handleSend} />
             <MessageComposer platformLabel={platformLabel(platforms, detail)} onSend={handleSend} disabled={sending} />
           </>
         )}

@@ -80,6 +80,16 @@ func SendMessageHandler(reqCtx request.RequestContext) {
 
 	turn, err := conversation.SendMessage(reqCtx.GetRequest().Context(), http.DefaultClient, mainDB, convDB, encKey, id, body.Content, scopes)
 	if err != nil {
+		// Logged here, the handler layer, not inside SendMessage itself
+		// — matches this codebase's own established convention
+		// (install_handler.go's own Warning calls) of domain functions
+		// just returning errors, never touching a logger. The real
+		// failure detail is also persisted into the conversation's own
+		// log (step 8) for the end user to inspect via the info
+		// button; this is the separate, operator-facing record of it.
+		if errors.Is(err, conversation.ErrProviderCallFailed) {
+			reqCtx.GetDI().GetLogger().Warning("conversation %q: send failed: %v", id, err)
+		}
 		writeSendMessageError(w, err)
 		return
 	}

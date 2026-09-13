@@ -29,11 +29,20 @@ const LogsRoot = "./data/conversations"
 
 // Turn is one user+assistant exchange — the unit both retention caps
 // operate on. A turn is never split across the size/count boundary.
+//
+// Failed/ErrorTimestamp/ErrorMessage are set instead of the two
+// Assistant* fields when this turn's own provider call failed —
+// mutually exclusive with a successful assistant reply, never both
+// populated. See
+// plan/ai/conversation/step-08-failed-message-handling.md.
 type Turn struct {
 	UserTimestamp      string
 	UserContent        string
 	AssistantTimestamp string
 	AssistantContent   string
+	Failed             bool
+	ErrorTimestamp     string
+	ErrorMessage       string
 }
 
 // locks serializes the append-then-prune-then-rewrite sequence (and
@@ -62,9 +71,21 @@ func LogPath(logsRoot, conversationID string) string {
 var (
 	userHeaderRe      = regexp.MustCompile(`(?m)^## user — (.*)$`)
 	assistantHeaderRe = regexp.MustCompile(`(?m)^## assistant — (.*)$`)
+	errorHeaderRe     = regexp.MustCompile(`(?m)^## error — (.*)$`)
 )
 
+// formatTurn serializes a normal successful turn as "## user — / ##
+// assistant —", or a failed one (Turn.Failed) as "## user — / ##
+// error —" instead — the two shapes are mutually exclusive on one
+// Turn, so a single branch here is enough for both AppendTurn (the
+// only writer, reused unchanged for a failed turn too) and
+// renderTurns' own retention-pruning rewrite to round-trip a failed
+// turn correctly.
 func formatTurn(t Turn) string {
+	if t.Failed {
+		return fmt.Sprintf("## user — %s\n\n%s\n\n## error — %s\n\n%s\n\n",
+			t.UserTimestamp, t.UserContent, t.ErrorTimestamp, t.ErrorMessage)
+	}
 	return fmt.Sprintf("## user — %s\n\n%s\n\n## assistant — %s\n\n%s\n\n",
 		t.UserTimestamp, t.UserContent, t.AssistantTimestamp, t.AssistantContent)
 }
@@ -78,10 +99,15 @@ func renderTurns(turns []Turn) string {
 }
 
 // parseTurns splits content on "## user — " headers, then matches each
-// resulting block's own "## assistant — " header to recover both
-// halves. A block missing its assistant header (a truncated/malformed
-// file) is skipped rather than failing the whole parse — a partial
-// turn is useless as context either way.
+// resulting block's own second header to recover the other half — a
+// normal "## assistant — " header (a successful turn) or a "## error
+// — " header (a failed one, Turn.Failed — see
+// plan/ai/conversation/step-08-failed-message-handling.md). A block
+// with NEITHER header (a truncated/malformed file, or a dangling
+// fragment written before this step's own format existed) is skipped
+// rather than failing the whole parse — a partial turn is useless as
+// context either way, and there's no way to retroactively know what
+// error (if any) an already-silently-dropped old entry represents.
 func parseTurns(content string) []Turn {
 	starts := userHeaderRe.FindAllStringIndex(content, -1)
 	turns := make([]Turn, 0, len(starts))
@@ -95,17 +121,31 @@ func parseTurns(content string) []Turn {
 		block := content[blockStart:blockEnd]
 
 		userHeader := userHeaderRe.FindStringSubmatchIndex(block)
-		assistantHeader := assistantHeaderRe.FindStringSubmatchIndex(block)
-		if userHeader == nil || assistantHeader == nil {
+		if userHeader == nil {
 			continue
 		}
 
-		turns = append(turns, Turn{
-			UserTimestamp:      block[userHeader[2]:userHeader[3]],
-			UserContent:        strings.TrimSpace(block[userHeader[1]:assistantHeader[0]]),
-			AssistantTimestamp: block[assistantHeader[2]:assistantHeader[3]],
-			AssistantContent:   strings.TrimSpace(block[assistantHeader[1]:]),
-		})
+		if assistantHeader := assistantHeaderRe.FindStringSubmatchIndex(block); assistantHeader != nil {
+			turns = append(turns, Turn{
+				UserTimestamp:      block[userHeader[2]:userHeader[3]],
+				UserContent:        strings.TrimSpace(block[userHeader[1]:assistantHeader[0]]),
+				AssistantTimestamp: block[assistantHeader[2]:assistantHeader[3]],
+				AssistantContent:   strings.TrimSpace(block[assistantHeader[1]:]),
+			})
+			continue
+		}
+
+		if errorHeader := errorHeaderRe.FindStringSubmatchIndex(block); errorHeader != nil {
+			turns = append(turns, Turn{
+				UserTimestamp:  block[userHeader[2]:userHeader[3]],
+				UserContent:    strings.TrimSpace(block[userHeader[1]:errorHeader[0]]),
+				Failed:         true,
+				ErrorTimestamp: block[errorHeader[2]:errorHeader[3]],
+				ErrorMessage:   strings.TrimSpace(block[errorHeader[1]:]),
+			})
+			continue
+		}
+		// neither header — old-style dangling fragment, skipped.
 	}
 	return turns
 }
@@ -132,39 +172,6 @@ func AppendTurn(filePath string, turn Turn) error {
 	}
 
 	return enforceRetention(filePath)
-}
-
-// AppendUserOnly appends a lone user block with no matching assistant
-// block — used when a provider call fails (step 2), so a caller can
-// still confirm "was this actually sent" even though no reply exists.
-// Not retention-checked here: parseTurns already excludes a block
-// missing its assistant header from the turn count (so a dangling
-// block never counts toward the 20-turn cap on its own), but if a
-// LATER successful AppendTurn's own retention pass ends up rewriting
-// the file (either cap exceeded), that rewrite only re-serializes
-// recognized complete turns — a still-unanswered dangling block would
-// be dropped from the file at that point, not preserved indefinitely.
-// This tradeoff matches step 2's own recommendation but is flagged
-// there as an open, unconfirmed question — not silently engineered
-// around here.
-func AppendUserOnly(filePath, userTimestamp, content string) error {
-	mu := lockFor(filePath)
-	mu.Lock()
-	defer mu.Unlock()
-
-	f, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return fmt.Errorf("conversation: open log file: %w", err)
-	}
-	_, writeErr := f.WriteString(fmt.Sprintf("## user — %s\n\n%s\n\n", userTimestamp, content))
-	closeErr := f.Close()
-	if writeErr != nil {
-		return fmt.Errorf("conversation: append user-only block: %w", writeErr)
-	}
-	if closeErr != nil {
-		return fmt.Errorf("conversation: close log file: %w", closeErr)
-	}
-	return nil
 }
 
 // enforceRetention drops the oldest turn(s) until the file holds at

@@ -17,10 +17,16 @@ export interface Conversation {
 // No `id` field on a message — content lives in a file, not a database
 // row (plan/ai/conversation/step-01); a message is identified by its
 // own timestamp instead.
+//
+// failed/error surface a send that failed (plan/ai/conversation/step-08) —
+// undefined for a normal message. A failed message is always role
+// "user" with no paired assistant message, since there never was one.
 export interface ConversationMessage {
   role: 'user' | 'assistant'
   content: string
   createdAt: string
+  failed?: boolean
+  error?: string
 }
 
 export interface ConversationDetail extends Conversation {

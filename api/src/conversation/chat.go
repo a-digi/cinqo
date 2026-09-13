@@ -127,6 +127,13 @@ func SendMessage(
 
 	messages := make([]chatcompleter.Message, 0, len(recent)*2+1)
 	for _, t := range recent {
+		if t.Failed {
+			// No real exchange happened — replaying the user's own
+			// text with a fabricated empty assistant reply would be
+			// wrong (and some providers reject an empty message
+			// outright). Skip the whole turn rather than either.
+			continue
+		}
 		messages = append(messages,
 			chatcompleter.Message{Role: "user", Content: t.UserContent},
 			chatcompleter.Message{Role: "assistant", Content: t.AssistantContent},
@@ -145,11 +152,19 @@ func SendMessage(
 
 	assistantContent, err := runToolLoop(sendCtx, httpClient, entry, plainKey, model, messages, tools, mainDB, callerScopes)
 	if err != nil {
-		// Record the user's own message even though the reply failed —
-		// see step 2's open question 4. The decrypted key never
-		// touches this path or any error message.
-		if appendErr := AppendUserOnly(conv.FilePath, userTimestamp, content); appendErr != nil {
-			return nil, fmt.Errorf("conversation: chat completion failed (%v) and failed to record the user message: %w", err, appendErr)
+		// Record the user's own message AND the real failure reason —
+		// a real, recognized "## error —" block (step 8), not a
+		// dangling fragment silently dropped on the next read. The
+		// decrypted key never touches this path or any error message.
+		failedTurn := Turn{
+			UserTimestamp:  userTimestamp,
+			UserContent:    content,
+			Failed:         true,
+			ErrorTimestamp: time.Now().UTC().Format(time.RFC3339),
+			ErrorMessage:   truncateError(err.Error()),
+		}
+		if appendErr := AppendTurn(conv.FilePath, failedTurn); appendErr != nil {
+			return nil, fmt.Errorf("conversation: chat completion failed (%v) and failed to record the failed turn: %w", err, appendErr)
 		}
 		if errors.Is(err, ErrToolIterationLimitReached) {
 			return nil, err
@@ -333,4 +348,18 @@ func readCorePort() (int, error) {
 		return 0, err
 	}
 	return cfg.Port, nil
+}
+
+// maxStoredErrorLength caps a failed turn's own stored error text — a
+// provider's raw error body is untrusted-length text; without a cap, a
+// single pathological response could bloat the log file
+// disproportionately. See
+// plan/ai/conversation/step-08-failed-message-handling.md.
+const maxStoredErrorLength = 2000
+
+func truncateError(s string) string {
+	if len(s) <= maxStoredErrorLength {
+		return s
+	}
+	return s[:maxStoredErrorLength] + "… (truncated)"
 }

@@ -12,10 +12,15 @@ import (
 	conversation_query "github.com/a-digi/cinqo/src/conversation/repository/query"
 )
 
+// Failed/Error surface a failed send (step 8) — omitted (false/nil)
+// for a normal message. A failed message is always role "user" with
+// no paired assistant message, since there never was one.
 type messageResponse struct {
-	Role      string `json:"role"`
-	Content   string `json:"content"`
-	CreatedAt string `json:"createdAt"`
+	Role      string  `json:"role"`
+	Content   string  `json:"content"`
+	CreatedAt string  `json:"createdAt"`
+	Failed    bool    `json:"failed,omitempty"`
+	Error     *string `json:"error,omitempty"`
 }
 
 type conversationDetailResponse struct {
@@ -67,6 +72,14 @@ func GetHandler(reqCtx request.RequestContext) {
 
 	messages := make([]messageResponse, 0, len(turns)*2)
 	for _, t := range turns {
+		if t.Failed {
+			errMsg := t.ErrorMessage
+			messages = append(messages, messageResponse{
+				Role: "user", Content: t.UserContent, CreatedAt: t.UserTimestamp,
+				Failed: true, Error: &errMsg,
+			})
+			continue
+		}
 		messages = append(messages,
 			messageResponse{Role: "user", Content: t.UserContent, CreatedAt: t.UserTimestamp},
 			messageResponse{Role: "assistant", Content: t.AssistantContent, CreatedAt: t.AssistantTimestamp},
