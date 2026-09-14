@@ -143,12 +143,16 @@ function AddKeyForm({
   onError: (message: string) => void
 }) {
   const [label, setLabel] = useState('')
-  const [platform, setPlatform] = useState(platforms[0]?.id ?? '')
+  const [platform, setPlatform] = useState('')
   const [key, setKey] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!platform) {
+      onError('Select a platform.')
+      return
+    }
     setSubmitting(true)
     try {
       const created = await createPlatformKey({ label, platform, key })
@@ -175,7 +179,12 @@ function AddKeyForm({
           className="min-w-40 flex-1 rounded border border-gray-300 px-3 py-1.5 text-sm"
         />
         <div className="w-40">
-          <Dropdown options={platforms.map((p) => ({ value: p.id, label: p.name }))} value={platform} onChange={setPlatform} />
+          <Dropdown
+            options={platforms.map((p) => ({ value: p.id, label: p.name }))}
+            value={platform}
+            onChange={setPlatform}
+            placeholder="Select platform…"
+          />
         </div>
         <input
           type="password"
@@ -187,7 +196,7 @@ function AddKeyForm({
         />
         <button
           type="submit"
-          disabled={submitting}
+          disabled={submitting || !platform}
           className="rounded bg-gray-900 px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50"
         >
           Add key
