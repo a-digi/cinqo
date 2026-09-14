@@ -1,0 +1,43 @@
+{
+  "slug": "career",
+  "name": "Career",
+  "version": "0.6.0",
+  "mcp": true,
+  "requires_tools": [
+    { "slug": "browser" }
+  ],
+  "scopes": [
+    {
+      "scope": "tool:career:profile",
+      "description": "Read and update the user's own career profile, skills, and experience."
+    },
+    {
+      "scope": "tool:career:jobs",
+      "description": "Save, list, and search crawled job postings."
+    }
+  ],
+  "routes": [
+    { "method": "GET", "path_suffix": "profile", "required_scope": "tool:career:profile" },
+    { "method": "POST", "path_suffix": "profile", "required_scope": "tool:career:profile" },
+    { "method": "GET", "path_suffix": "skills", "required_scope": "tool:career:profile" },
+    { "method": "POST", "path_suffix": "skills", "required_scope": "tool:career:profile" },
+    { "method": "DELETE", "path_suffix": "skills", "required_scope": "tool:career:profile" },
+    { "method": "GET", "path_suffix": "experience", "required_scope": "tool:career:profile" },
+    { "method": "POST", "path_suffix": "experience", "required_scope": "tool:career:profile" },
+    { "method": "DELETE", "path_suffix": "experience", "required_scope": "tool:career:profile" },
+    { "method": "GET", "path_suffix": "jobs", "required_scope": "tool:career:jobs" },
+    { "method": "DELETE", "path_suffix": "jobs", "required_scope": "tool:career:jobs" }
+  ],
+  "mcp_tools": [
+    { "name": "get_career_profile", "required_scope": "tool:career:profile" },
+    { "name": "update_career_profile", "required_scope": "tool:career:profile" },
+    { "name": "add_career_skill", "required_scope": "tool:career:profile" },
+    { "name": "remove_career_skill", "required_scope": "tool:career:profile" },
+    { "name": "add_career_experience", "required_scope": "tool:career:profile" },
+    { "name": "remove_career_experience", "required_scope": "tool:career:profile" },
+    { "name": "save_job", "required_scope": "tool:career:jobs" },
+    { "name": "list_jobs", "required_scope": "tool:career:jobs" },
+    { "name": "search_jobs", "required_scope": "tool:career:jobs" },
+    { "name": "delete_job", "required_scope": "tool:career:jobs" }
+  ]
+}

@@ -42,6 +42,15 @@ type Manifest struct {
 	// see plan/ai/tools/pdf-generator/step-04-ai-model-invocation.md's
 	// own "Offering tools to the model" design.
 	MCPTools []MCPToolDecl `json:"mcp_tools,omitempty"`
+	// RequiresTools declares other tools this one cannot function
+	// without — each entry's Slug must already be installed (and
+	// enabled — see ValidateRequiredTools) before this manifest can
+	// pass validation. A genuinely different concept from
+	// RequiredScopes above (that one is an existing *cinqo* scope this
+	// tool needs, informational only, never enforced) — this one is
+	// enforced, at both install and enable time. See
+	// plan/ai/tools/step-14-tool-dependencies.md.
+	RequiresTools []RequiredToolDecl `json:"requires_tools,omitempty"`
 }
 
 type ScopeDecl struct {
@@ -58,6 +67,23 @@ type RouteDecl struct {
 type MCPToolDecl struct {
 	Name          string `json:"name"`
 	RequiredScope string `json:"required_scope"`
+}
+
+// RequiredToolDecl is one other tool this manifest's own tool depends
+// on. MinVersion is optional — omitted means any installed, enabled
+// version of Slug satisfies the dependency.
+type RequiredToolDecl struct {
+	Slug       string `json:"slug"`
+	MinVersion string `json:"min_version,omitempty"`
+}
+
+// InstalledToolInfo is the small, DB-free shape ValidationInput.InstalledTools
+// holds per slug — everything RequiresTools checking needs and nothing
+// more, matching this whole package's own "no DB dependency" rule
+// (the caller converts its own tool_entity.Tool rows into this).
+type InstalledToolInfo struct {
+	Version string
+	Enabled bool
 }
 
 var (
@@ -92,6 +118,10 @@ type ValidationInput struct {
 	// app/VERSION for cinqo-app — the caller's choice, not this
 	// package's (see step 2's "Open questions").
 	CurrentAppVersion string
+	// InstalledTools maps every currently-installed tool's own slug to
+	// its current version/enabled state — what RequiresTools is
+	// checked against. See plan/ai/tools/step-14-tool-dependencies.md.
+	InstalledTools map[string]InstalledToolInfo
 }
 
 // Validate checks every rule in step 2's "Validation, in order" list
@@ -137,6 +167,10 @@ func Validate(m Manifest, in ValidationInput) (kind string, err error) {
 		}
 	}
 
+	if err := ValidateRequiredTools(m, in.InstalledTools); err != nil {
+		return "", err
+	}
+
 	if m.MCP && !in.HasBackendExecutable {
 		return "", fmt.Errorf("mcp: true requires the package to include a backend executable")
 	}
@@ -166,6 +200,38 @@ func Validate(m Manifest, in ValidationInput) (kind string, err error) {
 	default:
 		return "", fmt.Errorf("package must contain frontend/bundle.js and/or backend/tool")
 	}
+}
+
+// ValidateRequiredTools checks m's own RequiresTools against
+// installed — a small, standalone function (not folded silently into
+// Validate's own body, even though Validate also calls it for the
+// install path) so EnableHandler can re-run exactly this one check on
+// its own, without re-running slug/scope/app-version validation that
+// doesn't apply to re-enabling an already-installed tool. A dependency
+// must be both installed AND enabled — "cannot be used" (the request's
+// own wording) means a disabled dependency blocks re-enabling the
+// dependent tool too, not only its first install. See
+// plan/ai/tools/step-14-tool-dependencies.md.
+func ValidateRequiredTools(m Manifest, installed map[string]InstalledToolInfo) error {
+	for _, dep := range m.RequiresTools {
+		info, ok := installed[dep.Slug]
+		if !ok {
+			return fmt.Errorf("requires tool %q to be installed first", dep.Slug)
+		}
+		if !info.Enabled {
+			return fmt.Errorf("requires tool %q to be enabled", dep.Slug)
+		}
+		if dep.MinVersion != "" {
+			cmp, err := CompareVersions(info.Version, dep.MinVersion)
+			if err != nil {
+				return err
+			}
+			if cmp < 0 {
+				return fmt.Errorf("requires tool %q version >= %s, installed %s", dep.Slug, dep.MinVersion, info.Version)
+			}
+		}
+	}
+	return nil
 }
 
 // CompareVersions compares two dot-separated, all-numeric version

@@ -24,14 +24,23 @@ import (
 	conversation_query "github.com/a-digi/cinqo/src/conversation/repository/query"
 )
 
-// maxMessageContentLength/sendTimeout match the reference's own
-// MaxMessageContentLength/chatRequestTimeout exactly — proven values,
-// not picked arbitrarily. See
-// plan/ai/conversation/step-02-sending-a-message.md.
-const (
-	maxMessageContentLength = 8000
-	sendTimeout             = 60 * time.Second
-)
+// maxMessageContentLength matches the reference's own
+// MaxMessageContentLength exactly — a proven value, not picked
+// arbitrarily. See plan/ai/conversation/step-02-sending-a-message.md.
+//
+// No send-side timeout is imposed here (deliberately removed — see
+// plan/ai/conversation/step-12-remove-send-timeout.md): a real LLM
+// call, especially one running a multi-step tool-calling loop, can
+// legitimately take a long time, and there is no server-level
+// http.Server.WriteTimeout/ReadTimeout configured either (verified
+// directly in coco-server's own server.go — the http.Server there
+// sets only Addr/Handler), so the operation is bounded only by the
+// incoming request's own context (cancelled if the caller's own
+// connection goes away) and by each individual downstream call's own
+// timeout (chatcompleter HTTP client, tool_mcp.Invoke's own
+// invokeTimeout, etc.), not by an artificial ceiling on the whole
+// send.
+const maxMessageContentLength = 8000
 
 // ContextTurns is how many recent turns are sent to the platform as
 // context — the same tail-read step 1 recommends, not the full
@@ -142,15 +151,12 @@ func SendMessage(
 	userTimestamp := time.Now().UTC().Format(time.RFC3339)
 	messages = append(messages, chatcompleter.Message{Role: "user", Content: content})
 
-	sendCtx, cancel := context.WithTimeout(ctx, sendTimeout)
-	defer cancel()
-
 	tools, err := offerableTools(mainDB, callerScopes)
 	if err != nil {
 		return nil, fmt.Errorf("conversation: look up offerable tools: %w", err)
 	}
 
-	assistantContent, err := runToolLoop(sendCtx, httpClient, entry, plainKey, model, messages, tools, mainDB, callerScopes)
+	assistantContent, err := runToolLoop(ctx, httpClient, entry, plainKey, model, messages, tools, mainDB, callerScopes)
 	if err != nil {
 		// Record the user's own message AND the real failure reason —
 		// a real, recognized "## error —" block (step 8), not a

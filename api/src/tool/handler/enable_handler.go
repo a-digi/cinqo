@@ -40,6 +40,31 @@ func EnableHandler(reqCtx request.RequestContext) {
 		return
 	}
 
+	// Re-enabling doesn't re-upload a manifest — read the
+	// already-installed package's own manifest.json back off disk,
+	// same as discoverMCPToolsIfDeclared below already needed to.
+	// Parsed once here and reused there, rather than read twice.
+	var m manifest.Manifest
+	if manifestBytes, readErr := os.ReadFile(filepath.Join(tool.InstallPath, "manifest.json")); readErr == nil {
+		if parsed, parseErr := manifest.Parse(manifestBytes); parseErr == nil {
+			m = parsed
+		}
+	}
+
+	// A dependency (browser, say) may have been disabled or removed
+	// since this tool was first installed — "cannot be used" means
+	// re-enabling must fail now, not just installing originally. See
+	// plan/ai/tools/step-14-tool-dependencies.md.
+	installedTools, err := installedToolsMap(queryRepo)
+	if err != nil {
+		response.ErrorResponse(w, http.StatusInternalServerError, "failed to check tool dependencies")
+		return
+	}
+	if err := manifest.ValidateRequiredTools(m, installedTools); err != nil {
+		response.ErrorResponse(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
 	if err := persistentRepo.SetEnabled(tool.ID, true); err != nil {
 		response.ErrorResponse(w, http.StatusInternalServerError, "failed to enable tool: "+err.Error())
 		return
@@ -60,14 +85,11 @@ func EnableHandler(reqCtx request.RequestContext) {
 		reqCtx.GetDI().GetLogger().Warning("tool %q enabled but failed to start: %v", slug, err)
 	}
 
-	// Re-enabling doesn't re-upload a manifest — the declared "mcp"
-	// flag is read back from the already-installed package's own
-	// manifest.json rather than duplicated into a new tools column.
-	if manifestBytes, readErr := os.ReadFile(filepath.Join(tool.InstallPath, "manifest.json")); readErr == nil {
-		if m, parseErr := manifest.Parse(manifestBytes); parseErr == nil {
-			discoverMCPToolsIfDeclared(reqCtx, db, m, tool.InstallPath, tool.ID)
-		}
-	}
+	// m was already read+parsed above (for the dependency check) — its
+	// own zero value has MCP: false if that read/parse failed, so
+	// discoverMCPToolsIfDeclared's own early-return still applies the
+	// same as if this were a fresh read here.
+	discoverMCPToolsIfDeclared(reqCtx, db, m, tool.InstallPath, tool.ID)
 
 	reloaded, err := queryRepo.FindBySlug(slug)
 	if err != nil {

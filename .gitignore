@@ -86,6 +86,11 @@ plan/
 /tools/browser/frontend-app/node_modules/
 /tools/browser/frontend-app/dist/
 
+# Step 5 (career tool): same treatment, same reason.
+/tools/career/frontend/bundle.js
+/tools/career/frontend-app/node_modules/
+/tools/career/frontend-app/dist/
+
 # MCP logs
 
 .playwright-mcp

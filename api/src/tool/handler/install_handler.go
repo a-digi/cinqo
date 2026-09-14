@@ -190,6 +190,12 @@ func InstallHandler(reqCtx request.RequestContext) {
 		return
 	}
 
+	installedTools, err := installedToolsMap(queryRepo)
+	if err != nil {
+		response.ErrorResponse(w, http.StatusInternalServerError, "failed to check installed tool dependencies")
+		return
+	}
+
 	_, frontendErr := os.Stat(filepath.Join(stagingDir, frontendBundleFilename))
 	_, backendErr := os.Stat(filepath.Join(stagingDir, backendExecutableFilename))
 
@@ -204,13 +210,14 @@ func InstallHandler(reqCtx request.RequestContext) {
 		HasBackendExecutable: backendErr == nil,
 		ExistingScopes:       existingScopes,
 		CurrentAppVersion:    currentAppVersion,
+		InstalledTools:       installedTools,
 	})
 	if err != nil {
 		response.ErrorResponse(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	scopes, routes, required := childRowsFromManifest(m)
+	scopes, routes, required, requiredTools := childRowsFromManifest(m)
 	finalDir := filepath.Join(toolsRoot, m.Slug)
 
 	if !found {
@@ -250,6 +257,11 @@ func InstallHandler(reqCtx request.RequestContext) {
 			// directory with no matching row.
 			os.RemoveAll(finalDir)
 			response.ErrorResponse(w, http.StatusInternalServerError, "failed to record installed tool: "+err.Error())
+			return
+		}
+		if err := tool_persistent.NewToolRequiredToolPersistentRepo(db).ReplaceAll(tool.ID, requiredTools); err != nil {
+			os.RemoveAll(finalDir)
+			response.ErrorResponse(w, http.StatusInternalServerError, "failed to record tool dependencies: "+err.Error())
 			return
 		}
 
@@ -330,6 +342,10 @@ func InstallHandler(reqCtx request.RequestContext) {
 		response.ErrorResponse(w, http.StatusInternalServerError, "failed to record updated tool: "+err.Error())
 		return
 	}
+	if err := tool_persistent.NewToolRequiredToolPersistentRepo(db).ReplaceAll(updated.ID, requiredTools); err != nil {
+		response.ErrorResponse(w, http.StatusInternalServerError, "failed to record tool dependencies: "+err.Error())
+		return
+	}
 
 	// Restart on the new code only if it was enabled before — an
 	// update never silently turns a disabled tool on.
@@ -356,7 +372,7 @@ func InstallHandler(reqCtx request.RequestContext) {
 	response.SuccessResponse(w, http.StatusOK, toToolResponse(reloaded, systemToolsConfigFrom(reqCtx)))
 }
 
-func childRowsFromManifest(m manifest.Manifest) ([]tool_entity.ToolScope, []tool_entity.ToolRoute, []tool_entity.ToolRequiredScope) {
+func childRowsFromManifest(m manifest.Manifest) ([]tool_entity.ToolScope, []tool_entity.ToolRoute, []tool_entity.ToolRequiredScope, []tool_entity.ToolRequiredTool) {
 	scopes := make([]tool_entity.ToolScope, 0, len(m.Scopes))
 	for _, s := range m.Scopes {
 		scopes = append(scopes, tool_entity.ToolScope{Scope: s.Scope, Description: s.Description})
@@ -369,7 +385,29 @@ func childRowsFromManifest(m manifest.Manifest) ([]tool_entity.ToolScope, []tool
 	for _, s := range m.RequiredScopes {
 		required = append(required, tool_entity.ToolRequiredScope{Scope: s})
 	}
-	return scopes, routes, required
+	requiredTools := make([]tool_entity.ToolRequiredTool, 0, len(m.RequiresTools))
+	for _, rt := range m.RequiresTools {
+		requiredTools = append(requiredTools, tool_entity.ToolRequiredTool{RequiredSlug: rt.Slug, MinVersion: rt.MinVersion})
+	}
+	return scopes, routes, required, requiredTools
+}
+
+// installedToolsMap builds manifest.ValidationInput's own
+// InstalledTools lookup from every currently-installed tool — the
+// same "convert tool_entity rows into the DB-free shape manifest.go
+// itself needs" pattern ExistingScopesExcludingTool's own caller-side
+// map-building already established for scopes. See
+// plan/ai/tools/step-14-tool-dependencies.md.
+func installedToolsMap(queryRepo *tool_query.ToolQueryRepo) (map[string]manifest.InstalledToolInfo, error) {
+	all, err := queryRepo.List()
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]manifest.InstalledToolInfo, len(all))
+	for _, t := range all {
+		out[t.Slug] = manifest.InstalledToolInfo{Version: t.Version, Enabled: t.Enabled}
+	}
+	return out, nil
 }
 
 // replaceInstallDir swaps finalDir for stagingDir's contents, keeping a
