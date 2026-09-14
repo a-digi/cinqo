@@ -8,3 +8,12 @@
 body {
   margin: 0;
 }
+
+/* Tailwind's Preflight resets <button>/[role=button] cursor to
+   "default", overriding the browser's own native pointer cursor — so
+   every button in the app needs it restored explicitly, not per
+   component. */
+button:not(:disabled),
+[role='button']:not([aria-disabled='true']) {
+  cursor: pointer;
+}
