@@ -76,9 +76,34 @@ func initDatabases() error {
 	}
 	careerDB = db
 
-	jdb, err := openDB(filepath.Join(dbDir, "jobs.db"), jobsSchema)
+	jdb, err := sql.Open("sqlite", filepath.Join(dbDir, "jobs.db"))
 	if err != nil {
 		return fmt.Errorf("failed to open jobs.db: %w", err)
+	}
+	jdb.SetMaxOpenConns(1)
+	// PRAGMA foreign_keys defaults OFF per SQLite connection — unlike
+	// careerDB (whose migrateCareerDB turns it ON at the end of its own
+	// migration, a real one-time need this DB never had), jobs.db
+	// never previously depended on FK enforcement (jobs.company_id
+	// didn't exist before step 14, and step 14's own SET NULL was
+	// exercised only through the app's own explicit UPDATE in
+	// linkJobToCompany, never through a real DELETE). Step 16 is the
+	// first thing in this DB that actually needs a cascade to fire —
+	// caught directly (not assumed) by deleting a company with a real
+	// linked recruiter and finding the recruiter survived, orphaned,
+	// with a company_id pointing at nothing. See
+	// plan/ai/tools/career/step-16-recruiters.md.
+	if _, err := jdb.Exec(`PRAGMA foreign_keys = ON`); err != nil {
+		jdb.Close()
+		return fmt.Errorf("failed to enable foreign keys on jobs.db: %w", err)
+	}
+	if err := migrateJobsDB(jdb); err != nil {
+		jdb.Close()
+		return fmt.Errorf("failed to migrate jobs.db: %w", err)
+	}
+	if _, err := jdb.Exec(jobsSchema); err != nil {
+		jdb.Close()
+		return fmt.Errorf("failed to prepare jobs.db schema: %w", err)
 	}
 	jobsDB = jdb
 
@@ -142,15 +167,34 @@ CREATE TABLE IF NOT EXISTS career_experience (
 `
 
 const jobsSchema = `
+CREATE TABLE IF NOT EXISTS companies (
+    id          TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT
+);
+
 CREATE TABLE IF NOT EXISTS jobs (
     id          TEXT PRIMARY KEY,
     source_url  TEXT NOT NULL UNIQUE,
     title       TEXT NOT NULL,
     company     TEXT,
+    company_id  TEXT REFERENCES companies(id) ON DELETE SET NULL,
     location    TEXT,
     description TEXT,
     posted_at   TEXT,
     crawled_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS recruiters (
+    id          TEXT PRIMARY KEY,
+    company_id  TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    first_name  TEXT NOT NULL DEFAULT '',
+    last_name   TEXT NOT NULL DEFAULT '',
+    email       TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT
 );
 `
 
@@ -425,26 +469,37 @@ DROP TABLE career_profile;
 	return tx.Commit()
 }
 
-// openDB opens a single SQLite file and applies its own schema — used
-// for jobs.db, which needs neither the FK pragma nor a migration
-// routine. career.db's own open path is inlined in initDatabases
-// above since it needs both. MaxOpenConns(1) matches browser's own
-// login_credentials.go reasoning verbatim: this tool's own write
-// volume is small (a human occasionally editing their profile, an AI
-// occasionally saving a batch of crawled jobs), so a single connection
-// avoids any "database is locked" surprise from modernc.org/sqlite's
-// own concurrent-writer behavior, not worth tuning around here.
-func openDB(path, schema string) (*sql.DB, error) {
-	db, err := sql.Open("sqlite", path)
+// migrateJobsDB detects a pre-company jobs.db (a jobs table with no
+// company_id column) and, if found, creates the companies table (so
+// the column's own REFERENCES target exists before the column is
+// added) and adds company_id via a plain ALTER TABLE ADD COLUMN — no
+// table rebuild needed, unlike career.db's own persona/profile
+// migrations, since adding a nullable column with no UNIQUE/PK
+// constraint is one of the ALTER TABLE forms SQLite supports
+// directly. No-op on a brand-new install (jobs doesn't exist yet —
+// jobsSchema creates it correctly shaped from the start) and on an
+// already-migrated one. See plan/ai/tools/career/step-14-companies.md.
+func migrateJobsDB(db *sql.DB) error {
+	exists, hasCompanyID, err := tableHasColumn(db, "jobs", "company_id")
 	if err != nil {
-		return nil, err
+		return err
 	}
-	db.SetMaxOpenConns(1)
-
-	if _, err := db.Exec(schema); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("failed to prepare schema: %w", err)
+	if !exists || hasCompanyID {
+		return nil
 	}
 
-	return db, nil
+	if _, err := db.Exec(`
+CREATE TABLE IF NOT EXISTS companies (
+    id          TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT
+);
+`); err != nil {
+		return err
+	}
+
+	_, err = db.Exec(`ALTER TABLE jobs ADD COLUMN company_id TEXT REFERENCES companies(id) ON DELETE SET NULL`)
+	return err
 }

@@ -69,6 +69,7 @@ export interface Job {
   sourceUrl: string
   title: string
   company: string
+  companyId?: string
   location: string
   description: string
   postedAt: string
@@ -78,6 +79,26 @@ export interface Job {
 export interface JobsResult {
   jobs: Job[]
   total: number
+}
+
+export interface Company {
+  id: string
+  name: string
+  description: string
+  jobCount: number
+  recruiterCount: number
+  createdAt: string
+  updatedAt?: string
+}
+
+export interface Recruiter {
+  id: string
+  companyId: string
+  firstName: string
+  lastName: string
+  email: string
+  createdAt: string
+  updatedAt?: string
 }
 
 async function jsonOrThrow<T>(res: Response, action: string): Promise<T> {
@@ -260,10 +281,11 @@ export async function removeExperience(personaId: string, id: string): Promise<v
   if (!res.ok && res.status !== 204) throw new Error(`failed to remove experience (${res.status})`)
 }
 
-export async function fetchJobs(query: string, location: string): Promise<JobsResult> {
+export async function fetchJobs(query: string, location: string, companyId?: string): Promise<JobsResult> {
   const params = new URLSearchParams()
   if (query) params.set('query', query)
   if (location) params.set('location', location)
+  if (companyId) params.set('companyId', companyId)
   const qs = params.toString()
   const res = await fetch(`${PROXY_BASE}/jobs${qs ? `?${qs}` : ''}`, { credentials: 'include' })
   return jsonOrThrow<JobsResult>(res, 'load jobs')
@@ -275,4 +297,93 @@ export async function removeJob(id: string): Promise<void> {
     credentials: 'include',
   })
   if (!res.ok && res.status !== 204) throw new Error(`failed to remove job (${res.status})`)
+}
+
+export async function linkJobToCompany(jobId: string, companyId: string): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/jobs`, {
+    method: 'PUT',
+    credentials: 'include',
+    body: JSON.stringify({ id: jobId, companyId }),
+  })
+  if (!res.ok && res.status !== 204) throw new Error(`failed to link job to company (${res.status})`)
+}
+
+// --- companies ---
+
+export async function fetchCompanies(): Promise<Company[]> {
+  const res = await fetch(`${PROXY_BASE}/companies`, { credentials: 'include' })
+  const data = await jsonOrThrow<{ companies: Company[] }>(res, 'load companies')
+  return data.companies
+}
+
+export async function createCompany(name: string, description: string): Promise<Company[]> {
+  const res = await fetch(`${PROXY_BASE}/companies`, {
+    method: 'POST',
+    credentials: 'include',
+    body: JSON.stringify({ name, description }),
+  })
+  const data = await jsonOrThrow<{ companies: Company[] }>(res, 'create company')
+  return data.companies
+}
+
+export async function updateCompany(id: string, args: { name?: string; description?: string }): Promise<Company[]> {
+  const res = await fetch(`${PROXY_BASE}/companies`, {
+    method: 'PUT',
+    credentials: 'include',
+    body: JSON.stringify({ id, ...args }),
+  })
+  const data = await jsonOrThrow<{ companies: Company[] }>(res, 'update company')
+  return data.companies
+}
+
+export async function removeCompany(id: string): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/companies?id=${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  })
+  if (!res.ok && res.status !== 204) throw new Error(`failed to delete company (${res.status})`)
+}
+
+// --- recruiters ---
+
+export async function fetchRecruiters(companyId?: string): Promise<Recruiter[]> {
+  const qs = companyId ? `?companyId=${encodeURIComponent(companyId)}` : ''
+  const res = await fetch(`${PROXY_BASE}/recruiters${qs}`, { credentials: 'include' })
+  const data = await jsonOrThrow<{ recruiters: Recruiter[] }>(res, 'load recruiters')
+  return data.recruiters
+}
+
+export async function createRecruiter(
+  companyId: string,
+  firstName: string,
+  lastName: string,
+  email: string,
+): Promise<{ id: string }> {
+  const res = await fetch(`${PROXY_BASE}/recruiters`, {
+    method: 'POST',
+    credentials: 'include',
+    body: JSON.stringify({ companyId, firstName, lastName, email }),
+  })
+  return jsonOrThrow<{ id: string }>(res, 'create recruiter')
+}
+
+export async function updateRecruiter(
+  id: string,
+  args: { firstName?: string; lastName?: string; email?: string },
+): Promise<Recruiter[]> {
+  const res = await fetch(`${PROXY_BASE}/recruiters`, {
+    method: 'PUT',
+    credentials: 'include',
+    body: JSON.stringify({ id, ...args }),
+  })
+  const data = await jsonOrThrow<{ recruiters: Recruiter[] }>(res, 'update recruiter')
+  return data.recruiters
+}
+
+export async function removeRecruiter(id: string): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/recruiters?id=${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  })
+  if (!res.ok && res.status !== 204) throw new Error(`failed to delete recruiter (${res.status})`)
 }

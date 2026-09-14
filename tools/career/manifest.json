@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.13.1",
+  "version": "0.17.0",
   "mcp": true,
   "requires_tools": [
     {
@@ -16,6 +16,10 @@
     {
       "scope": "tool:career:jobs",
       "description": "Save, list, and search crawled job postings."
+    },
+    {
+      "scope": "tool:career:companies",
+      "description": "Create, read, update, and delete companies and their linked job postings."
     }
   ],
   "routes": [
@@ -125,9 +129,54 @@
       "required_scope": "tool:career:jobs"
     },
     {
+      "method": "PUT",
+      "path_suffix": "jobs",
+      "required_scope": "tool:career:companies"
+    },
+    {
       "method": "DELETE",
       "path_suffix": "jobs",
       "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "companies",
+      "required_scope": "tool:career:companies"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "companies",
+      "required_scope": "tool:career:companies"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "companies",
+      "required_scope": "tool:career:companies"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "companies",
+      "required_scope": "tool:career:companies"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "recruiters",
+      "required_scope": "tool:career:companies"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "recruiters",
+      "required_scope": "tool:career:companies"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "recruiters",
+      "required_scope": "tool:career:companies"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "recruiters",
+      "required_scope": "tool:career:companies"
     }
   ],
   "mcp_tools": [
@@ -214,6 +263,42 @@
     {
       "name": "delete_job",
       "required_scope": "tool:career:jobs"
+    },
+    {
+      "name": "create_company",
+      "required_scope": "tool:career:companies"
+    },
+    {
+      "name": "list_companies",
+      "required_scope": "tool:career:companies"
+    },
+    {
+      "name": "update_company",
+      "required_scope": "tool:career:companies"
+    },
+    {
+      "name": "delete_company",
+      "required_scope": "tool:career:companies"
+    },
+    {
+      "name": "link_job_to_company",
+      "required_scope": "tool:career:companies"
+    },
+    {
+      "name": "create_recruiter",
+      "required_scope": "tool:career:companies"
+    },
+    {
+      "name": "list_recruiters",
+      "required_scope": "tool:career:companies"
+    },
+    {
+      "name": "update_recruiter",
+      "required_scope": "tool:career:companies"
+    },
+    {
+      "name": "delete_recruiter",
+      "required_scope": "tool:career:companies"
     }
   ]
 }

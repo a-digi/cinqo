@@ -51,6 +51,8 @@ func runHTTPServer() {
 	http.HandleFunc("/skills", skillsHandler)
 	http.HandleFunc("/experience", experienceHandler)
 	http.HandleFunc("/jobs", jobsHandler)
+	http.HandleFunc("/companies", companiesHandler)
+	http.HandleFunc("/recruiters", recruitersHandler)
 
 	if err := http.ListenAndServe("127.0.0.1:"+port, nil); err != nil {
 		os.Exit(1)
@@ -93,6 +95,15 @@ func runMCPServer() {
 	registerListJobs(server)
 	registerSearchJobs(server)
 	registerDeleteJob(server)
+	registerCreateCompany(server)
+	registerListCompanies(server)
+	registerUpdateCompany(server)
+	registerDeleteCompany(server)
+	registerLinkJobToCompany(server)
+	registerCreateRecruiter(server)
+	registerListRecruiters(server)
+	registerUpdateRecruiter(server)
+	registerDeleteRecruiter(server)
 
 	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
 		os.Exit(1)

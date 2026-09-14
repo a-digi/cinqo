@@ -48,6 +48,24 @@ func writeProfileAwareError(w http.ResponseWriter, action string, err error) {
 	http.Error(w, "failed to "+action+": "+err.Error(), http.StatusInternalServerError)
 }
 
+// writeCompanyAwareError is the same idea for errUnknownCompany.
+func writeCompanyAwareError(w http.ResponseWriter, action string, err error) {
+	if errors.Is(err, errUnknownCompany) {
+		http.Error(w, "unknown company id", http.StatusBadRequest)
+		return
+	}
+	http.Error(w, "failed to "+action+": "+err.Error(), http.StatusInternalServerError)
+}
+
+// writeRecruiterAwareError is the same idea for errUnknownRecruiter.
+func writeRecruiterAwareError(w http.ResponseWriter, action string, err error) {
+	if errors.Is(err, errUnknownRecruiter) {
+		http.Error(w, "unknown recruiter id", http.StatusBadRequest)
+		return
+	}
+	http.Error(w, "failed to "+action+": "+err.Error(), http.StatusInternalServerError)
+}
+
 // --- /profiles ---
 
 type profileRequest struct {
@@ -488,26 +506,44 @@ func experienceHandler(w http.ResponseWriter, r *http.Request) {
 
 // --- /jobs ---
 
+type linkJobToCompanyRequest struct {
+	ID        string `json:"id"`
+	CompanyID string `json:"companyId"`
+}
+
 // jobsHandler's own GET always calls searchJobs — deliberately not a
 // separate list-vs-search branch: searchJobs already degrades to
-// "return everything" when both query and location are empty, the
-// same overlap this step's own design doc calls out on the MCP side
-// (list_jobs/search_jobs). No POST here at all — jobs are populated
-// only by the AI's own crawling workflow (step 4), never hand-entered
-// through this UI. Jobs stay profile/persona-independent — step 8/10
-// deliberately did not touch this table.
+// "return everything" when query/location/companyId are all empty,
+// the same overlap this step's own design doc calls out on the MCP
+// side (list_jobs/search_jobs). PUT is narrow — it only ever sets or
+// clears company_id (step 14's own link_job_to_company), never any
+// other job field: jobs are still populated only by the AI's own
+// crawling workflow (step 4), never hand-entered through this UI. See
+// plan/ai/tools/career/step-14-companies.md.
 func jobsHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		q := r.URL.Query()
 		limit := atoiOrZero(q.Get("limit"))
 		offset := atoiOrZero(q.Get("offset"))
-		result, err := searchJobs(q.Get("query"), q.Get("location"), clampLimit(limit), offset)
+		result, err := searchJobs(q.Get("query"), q.Get("location"), q.Get("companyId"), clampLimit(limit), offset)
 		if err != nil {
 			http.Error(w, "failed to list jobs: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 		writeJSON(w, result)
+
+	case http.MethodPut:
+		var body linkJobToCompanyRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.ID == "" {
+			http.Error(w, "id is required", http.StatusBadRequest)
+			return
+		}
+		if err := linkJobToCompany(body.ID, body.CompanyID); err != nil {
+			writeCompanyAwareError(w, "link job to company", err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 
 	case http.MethodDelete:
 		id := r.URL.Query().Get("id")
@@ -517,6 +553,159 @@ func jobsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := deleteJob(id); err != nil {
 			http.Error(w, "failed to delete job: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// --- /companies ---
+
+type companyRequest struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+type companyUpdateRequest struct {
+	ID          string  `json:"id"`
+	Name        *string `json:"name,omitempty"`
+	Description *string `json:"description,omitempty"`
+}
+
+func companiesHandler(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		companies, err := listCompanies()
+		if err != nil {
+			http.Error(w, "failed to list companies: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, map[string]any{"companies": companies})
+
+	case http.MethodPost:
+		var body companyRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Name == "" {
+			http.Error(w, "name is required", http.StatusBadRequest)
+			return
+		}
+		id, err := createCompany(body.Name, body.Description)
+		if err != nil {
+			http.Error(w, "failed to create company: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		companies, err := listCompanies()
+		if err != nil {
+			http.Error(w, "company created but failed to reload: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, map[string]any{"id": id, "companies": companies})
+
+	case http.MethodPut:
+		var body companyUpdateRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.ID == "" {
+			http.Error(w, "id is required", http.StatusBadRequest)
+			return
+		}
+		if err := updateCompany(body.ID, body.Name, body.Description); err != nil {
+			writeCompanyAwareError(w, "update company", err)
+			return
+		}
+		companies, err := listCompanies()
+		if err != nil {
+			http.Error(w, "company updated but failed to reload: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, map[string]any{"companies": companies})
+
+	case http.MethodDelete:
+		id := r.URL.Query().Get("id")
+		if id == "" {
+			http.Error(w, "id query parameter is required", http.StatusBadRequest)
+			return
+		}
+		if err := deleteCompany(id); err != nil {
+			http.Error(w, "failed to delete company: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// --- /recruiters ---
+
+type recruiterRequest struct {
+	CompanyID string `json:"companyId"`
+	FirstName string `json:"firstName"`
+	LastName  string `json:"lastName"`
+	Email     string `json:"email"`
+}
+
+type recruiterUpdateRequest struct {
+	ID        string  `json:"id"`
+	FirstName *string `json:"firstName,omitempty"`
+	LastName  *string `json:"lastName,omitempty"`
+	Email     *string `json:"email,omitempty"`
+}
+
+func recruitersHandler(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		recruiters, err := listRecruiters(r.URL.Query().Get("companyId"))
+		if err != nil {
+			http.Error(w, "failed to list recruiters: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, map[string]any{"recruiters": recruiters})
+
+	case http.MethodPost:
+		var body recruiterRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.CompanyID == "" {
+			http.Error(w, "companyId is required", http.StatusBadRequest)
+			return
+		}
+		id, err := createRecruiter(body.CompanyID, body.FirstName, body.LastName, body.Email)
+		if err != nil {
+			writeCompanyAwareError(w, "create recruiter", err)
+			return
+		}
+		recruiters, err := listRecruiters("")
+		if err != nil {
+			http.Error(w, "recruiter created but failed to reload: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, map[string]any{"id": id, "recruiters": recruiters})
+
+	case http.MethodPut:
+		var body recruiterUpdateRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.ID == "" {
+			http.Error(w, "id is required", http.StatusBadRequest)
+			return
+		}
+		if err := updateRecruiter(body.ID, body.FirstName, body.LastName, body.Email); err != nil {
+			writeRecruiterAwareError(w, "update recruiter", err)
+			return
+		}
+		recruiters, err := listRecruiters("")
+		if err != nil {
+			http.Error(w, "recruiter updated but failed to reload: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, map[string]any{"recruiters": recruiters})
+
+	case http.MethodDelete:
+		id := r.URL.Query().Get("id")
+		if id == "" {
+			http.Error(w, "id query parameter is required", http.StatusBadRequest)
+			return
+		}
+		if err := deleteRecruiter(id); err != nil {
+			http.Error(w, "failed to delete recruiter: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)

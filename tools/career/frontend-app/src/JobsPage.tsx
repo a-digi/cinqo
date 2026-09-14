@@ -1,19 +1,27 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { fetchJobs, removeJob, type Job } from './api'
+import { fetchJobs, removeJob, fetchCompanies, linkJobToCompany, type Job, type Company } from './api'
+import { Dropdown } from './Dropdown'
 
 // No "add job" affordance — jobs are populated by the AI's own
 // crawling workflow (step 4), never hand-entered here. See this
 // step's own open question 2.
+//
+// Step 15 added an optional companyId filter — read once from the
+// URL on mount (so CompaniesPage's own "N linked jobs" link arrives
+// pre-filtered) and also selectable via a Dropdown once companies
+// exist. See plan/ai/tools/career/step-15-companies-frontend.md.
 export function JobsPage() {
   const [query, setQuery] = useState('')
   const [location, setLocation] = useState('')
+  const [companyId, setCompanyId] = useState(() => new URLSearchParams(window.location.search).get('companyId') ?? '')
+  const [companies, setCompanies] = useState<Company[]>([])
   const [jobs, setJobs] = useState<Job[]>([])
   const [total, setTotal] = useState(0)
   const [error, setError] = useState('')
 
-  function load() {
+  function load(companyIdOverride?: string) {
     setError('')
-    fetchJobs(query, location)
+    fetchJobs(query, location, companyIdOverride ?? companyId)
       .then((result) => {
         setJobs(result.jobs)
         setTotal(result.total)
@@ -22,7 +30,10 @@ export function JobsPage() {
   }
 
   useEffect(() => {
-    load()
+    load(companyId)
+    fetchCompanies()
+      .then(setCompanies)
+      .catch((err: Error) => setError(err.message))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -31,12 +42,26 @@ export function JobsPage() {
     load()
   }
 
+  function handleCompanyFilterChange(id: string) {
+    setCompanyId(id)
+    load(id)
+  }
+
   function handleRemove(id: string) {
     setError('')
     removeJob(id)
-      .then(load)
+      .then(() => load())
       .catch((err: Error) => setError(err.message))
   }
+
+  function handleUnlink(id: string) {
+    setError('')
+    linkJobToCompany(id, '')
+      .then(() => load())
+      .catch((err: Error) => setError(err.message))
+  }
+
+  const companyNames: Record<string, string> = Object.fromEntries(companies.map((c) => [c.id, c.name]))
 
   return (
     <div className="max-w-4xl p-6 font-sans text-gray-900">
@@ -64,6 +89,14 @@ export function JobsPage() {
         >
           Search
         </button>
+        {companies.length > 0 && (
+          <Dropdown
+            placeholder="Any company"
+            options={[{ value: '', label: 'Any company' }, ...companies.map((c) => ({ value: c.id, label: c.name }))]}
+            value={companyId}
+            onChange={handleCompanyFilterChange}
+          />
+        )}
       </form>
 
       <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
@@ -92,7 +125,21 @@ export function JobsPage() {
                     {job.title}
                   </a>
                 </td>
-                <td className="border-b border-gray-200 p-3">{job.company}</td>
+                <td className="border-b border-gray-200 p-3">
+                  {job.company}
+                  {job.companyId && (
+                    <div className="mt-0.5 flex items-center gap-1.5 text-xs text-gray-400">
+                      linked to {companyNames[job.companyId] ?? '…'}
+                      <button
+                        type="button"
+                        onClick={() => handleUnlink(job.id)}
+                        className="text-gray-400 underline hover:text-red-700"
+                      >
+                        unlink
+                      </button>
+                    </div>
+                  )}
+                </td>
                 <td className="border-b border-gray-200 p-3">{job.location}</td>
                 <td className="border-b border-gray-200 p-3">{job.postedAt}</td>
                 <td className="border-b border-gray-200 p-3">

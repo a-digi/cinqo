@@ -10,6 +10,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -30,6 +31,7 @@ type job struct {
 	SourceURL   string `json:"sourceUrl"`
 	Title       string `json:"title"`
 	Company     string `json:"company,omitempty"`
+	CompanyID   string `json:"companyId,omitempty"`
 	Location    string `json:"location,omitempty"`
 	Description string `json:"description,omitempty"`
 	PostedAt    string `json:"postedAt,omitempty"`
@@ -76,17 +78,27 @@ type jobsListResult struct {
 	Total int   `json:"total"`
 }
 
-// listJobs is a plain paged read, newest crawled_at first.
-func listJobs(limit, offset int) (jobsListResult, error) {
-	return queryJobs(`WHERE 1=1`, nil, limit, offset)
+// listJobs is a plain paged read, newest crawled_at first. companyId,
+// if non-empty, restricts to jobs linked to that company (step 14) —
+// see plan/ai/tools/career/step-14-companies.md.
+func listJobs(companyId string, limit, offset int) (jobsListResult, error) {
+	where := `WHERE 1=1`
+	args := []any{}
+	if companyId != "" {
+		where += ` AND company_id = ?`
+		args = append(args, companyId)
+	}
+	return queryJobs(where, args, limit, offset)
 }
 
 // searchJobs matches query against title/company/description and
-// location against location — both optional; omitting both is
-// equivalent to listJobs. Plain parameterized LIKE, case-insensitive
-// via LOWER(...) — no full-text-search extension for a first pass
-// (see this step's own open question 1).
-func searchJobs(query, location string, limit, offset int) (jobsListResult, error) {
+// location against location — both optional; companyId, if
+// non-empty, restricts to jobs linked to that company (step 14).
+// Omitting query/location/companyId is equivalent to listJobs. Plain
+// parameterized LIKE, case-insensitive via LOWER(...) — no
+// full-text-search extension for a first pass (see this step's own
+// open question 1).
+func searchJobs(query, location, companyId string, limit, offset int) (jobsListResult, error) {
 	where := `WHERE 1=1`
 	args := []any{}
 	if query != "" {
@@ -97,6 +109,10 @@ func searchJobs(query, location string, limit, offset int) (jobsListResult, erro
 	if location != "" {
 		where += ` AND LOWER(location) LIKE ?`
 		args = append(args, "%"+toLower(location)+"%")
+	}
+	if companyId != "" {
+		where += ` AND company_id = ?`
+		args = append(args, companyId)
 	}
 	return queryJobs(where, args, limit, offset)
 }
@@ -110,7 +126,7 @@ func queryJobs(where string, whereArgs []any, limit, offset int) (jobsListResult
 
 	pageArgs := append(append([]any{}, whereArgs...), limit, offset)
 	rows, err := jobsDB.Query(
-		`SELECT id, source_url, title, company, location, description, posted_at, crawled_at
+		`SELECT id, source_url, title, company, company_id, location, description, posted_at, crawled_at
 		 FROM jobs `+where+` ORDER BY crawled_at DESC LIMIT ? OFFSET ?`,
 		pageArgs...,
 	)
@@ -122,11 +138,12 @@ func queryJobs(where string, whereArgs []any, limit, offset int) (jobsListResult
 	jobs := []job{}
 	for rows.Next() {
 		var j job
-		var company, location, description, postedAt sql.NullString
-		if err := rows.Scan(&j.ID, &j.SourceURL, &j.Title, &company, &location, &description, &postedAt, &j.CrawledAt); err != nil {
+		var company, companyID, location, description, postedAt sql.NullString
+		if err := rows.Scan(&j.ID, &j.SourceURL, &j.Title, &company, &companyID, &location, &description, &postedAt, &j.CrawledAt); err != nil {
 			return jobsListResult{}, err
 		}
 		j.Company = company.String
+		j.CompanyID = companyID.String
 		j.Location = location.String
 		j.Description = description.String
 		j.PostedAt = postedAt.String
@@ -141,6 +158,24 @@ func queryJobs(where string, whereArgs []any, limit, offset int) (jobsListResult
 
 func deleteJob(id string) error {
 	_, err := jobsDB.Exec(`DELETE FROM jobs WHERE id = ?`, id)
+	return err
+}
+
+// linkJobToCompany sets (or, if companyId is "", clears) a job's own
+// company_id. A non-empty, unknown companyId is a real error
+// (errUnknownCompany), never a silent no-op — same
+// requireCompanyExists pattern profile.go/persona.go already use for
+// their own parent references. See
+// plan/ai/tools/career/step-14-companies.md.
+func linkJobToCompany(jobId, companyId string) error {
+	if companyId != "" {
+		if err := requireCompanyExists(companyId); err != nil {
+			return err
+		}
+		_, err := jobsDB.Exec(`UPDATE jobs SET company_id = ? WHERE id = ?`, companyId, jobId)
+		return err
+	}
+	_, err := jobsDB.Exec(`UPDATE jobs SET company_id = NULL WHERE id = ?`, jobId)
 	return err
 }
 
@@ -198,8 +233,9 @@ func registerSaveJob(server *mcp.Server) {
 }
 
 type listJobsArgs struct {
-	Limit  int `json:"limit,omitempty" jsonschema:"max results to return (default 50, max 200)"`
-	Offset int `json:"offset,omitempty" jsonschema:"how many matching results to skip, for paging"`
+	CompanyID string `json:"companyId,omitempty" jsonschema:"restrict to jobs linked to this company (see link_job_to_company); omit for every job"`
+	Limit     int    `json:"limit,omitempty" jsonschema:"max results to return (default 50, max 200)"`
+	Offset    int    `json:"offset,omitempty" jsonschema:"how many matching results to skip, for paging"`
 }
 
 func registerListJobs(server *mcp.Server) {
@@ -207,7 +243,7 @@ func registerListJobs(server *mcp.Server) {
 		Name:        "list_jobs",
 		Description: "List saved job postings, newest first.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args listJobsArgs) (*mcp.CallToolResult, any, error) {
-		result, err := listJobs(clampLimit(args.Limit), args.Offset)
+		result, err := listJobs(args.CompanyID, clampLimit(args.Limit), args.Offset)
 		if err != nil {
 			return errResult(fmt.Sprintf("failed to list jobs: %v", err)), nil, nil
 		}
@@ -216,22 +252,49 @@ func registerListJobs(server *mcp.Server) {
 }
 
 type searchJobsArgs struct {
-	Query    string `json:"query,omitempty" jsonschema:"matches against title/company/description"`
-	Location string `json:"location,omitempty" jsonschema:"matches against the posting's own location"`
-	Limit    int    `json:"limit,omitempty" jsonschema:"max results to return (default 50, max 200)"`
-	Offset   int    `json:"offset,omitempty" jsonschema:"how many matching results to skip, for paging"`
+	Query     string `json:"query,omitempty" jsonschema:"matches against title/company/description"`
+	Location  string `json:"location,omitempty" jsonschema:"matches against the posting's own location"`
+	CompanyID string `json:"companyId,omitempty" jsonschema:"restrict to jobs linked to this company (see link_job_to_company); omit for every matching job"`
+	Limit     int    `json:"limit,omitempty" jsonschema:"max results to return (default 50, max 200)"`
+	Offset    int    `json:"offset,omitempty" jsonschema:"how many matching results to skip, for paging"`
 }
 
 func registerSearchJobs(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "search_jobs",
-		Description: "Search saved job postings by query and/or location. Omitting both is equivalent to list_jobs.",
+		Description: "Search saved job postings by query, location, and/or company. Omitting all is equivalent to list_jobs.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args searchJobsArgs) (*mcp.CallToolResult, any, error) {
-		result, err := searchJobs(args.Query, args.Location, clampLimit(args.Limit), args.Offset)
+		result, err := searchJobs(args.Query, args.Location, args.CompanyID, clampLimit(args.Limit), args.Offset)
 		if err != nil {
 			return errResult(fmt.Sprintf("failed to search jobs: %v", err)), nil, nil
 		}
 		return jsonResult(result)
+	})
+}
+
+type linkJobToCompanyArgs struct {
+	JobID     string `json:"jobId" jsonschema:"the job's own id, from save_job/list_jobs/search_jobs"`
+	CompanyID string `json:"companyId" jsonschema:"the company's own id, from create_company/list_companies; empty string unlinks the job"`
+}
+
+func registerLinkJobToCompany(server *mcp.Server) {
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "link_job_to_company",
+		Description: "Link a saved job posting to a company (or, with an empty companyId, unlink it).",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args linkJobToCompanyArgs) (*mcp.CallToolResult, any, error) {
+		if args.JobID == "" {
+			return errResult("jobId is required"), nil, nil
+		}
+		if err := linkJobToCompany(args.JobID, args.CompanyID); err != nil {
+			if errors.Is(err, errUnknownCompany) {
+				return errResult(fmt.Sprintf("unknown company id %q", args.CompanyID)), nil, nil
+			}
+			return errResult(fmt.Sprintf("failed to link job to company: %v", err)), nil, nil
+		}
+		if args.CompanyID == "" {
+			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "unlinked"}}}, nil, nil
+		}
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "linked"}}}, nil, nil
 	})
 }
 
