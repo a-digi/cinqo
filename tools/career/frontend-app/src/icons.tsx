@@ -16,3 +16,11 @@ export function XIcon() {
     </svg>
   )
 }
+
+export function PlayIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-3.5 w-3.5">
+      <path d="M6 4.5l9 5.5-9 5.5v-11z" strokeWidth="1.4" strokeLinejoin="round" />
+    </svg>
+  )
+}

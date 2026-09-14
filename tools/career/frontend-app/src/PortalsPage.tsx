@@ -10,7 +10,9 @@ import {
   type Portal,
   type PortalLink,
 } from './api'
-import { PlusIcon } from './icons'
+import { fetchPlatforms, createConversation, sendMessage, type Platform } from './coreApi'
+import { buildCrawlMessage, crawlConversationTitle } from './crawl'
+import { PlusIcon, PlayIcon } from './icons'
 
 // Portals are tool-wide, not persona/profile-scoped — same reasoning
 // Jobs/Companies already document. No Dropdown call site here: a
@@ -33,6 +35,18 @@ export function PortalsPage() {
   const [crawlInstructionsDraft, setCrawlInstructionsDraft] = useState('')
   const [error, setError] = useState('')
 
+  // Manual crawl trigger (step 24) — platforms is fetched once, up
+  // front, purely to know whether any AI platform is configured at
+  // all (gates every "Crawl now" button) and, for v1, to pick
+  // platforms[0] to run the crawl under (no picker yet — see
+  // plan/ai/tools/career/step-25-manual-crawl-trigger-polish.md).
+  // crawlingLinkId is page-wide (only one crawl in flight at a time,
+  // a deliberate v1 simplification), crawlResults holds only the last
+  // outcome per link, not a history.
+  const [platforms, setPlatforms] = useState<Platform[]>([])
+  const [crawlingLinkId, setCrawlingLinkId] = useState<string | null>(null)
+  const [crawlResults, setCrawlResults] = useState<Record<string, { ok: boolean; text: string } | undefined>>({})
+
   function load() {
     setError('')
     fetchPortals()
@@ -42,7 +56,35 @@ export function PortalsPage() {
 
   useEffect(() => {
     load()
+    fetchPlatforms()
+      .then(setPlatforms)
+      .catch(() => {
+        // Left empty (no platforms) rather than surfacing this as a
+        // page-level error — every "Crawl now" button already
+        // disables itself when platforms.length === 0, which is
+        // enough signal on its own.
+      })
   }, [])
+
+  function handleCrawlNow(link: PortalLink) {
+    if (crawlingLinkId || platforms.length === 0) return
+    const platform = platforms[0]
+    const model = platform.models.length > 0 ? platform.models[0] : undefined
+
+    setCrawlingLinkId(link.id)
+    setCrawlResults((prev) => ({ ...prev, [link.id]: undefined }))
+
+    createConversation({ title: crawlConversationTitle(link), platformId: platform.id, model })
+      .then((conversation) => sendMessage(conversation.id, buildCrawlMessage(link)))
+      .then((result) => {
+        const suffix = result.durationMs != null ? ` (${(result.durationMs / 1000).toFixed(1)}s)` : ''
+        setCrawlResults((prev) => ({ ...prev, [link.id]: { ok: true, text: `${result.content}${suffix}` } }))
+      })
+      .catch((err: Error) => {
+        setCrawlResults((prev) => ({ ...prev, [link.id]: { ok: false, text: err.message } }))
+      })
+      .finally(() => setCrawlingLinkId(null))
+  }
 
   function handleCreatePortal() {
     const name = newPortalName.trim()
@@ -311,6 +353,25 @@ export function PortalsPage() {
                       {link.crawlInstructions ? 'Crawl instructions set' : 'No crawl instructions yet'} —{' '}
                       {expandedLinkId === link.id ? 'hide' : link.crawlInstructions ? 'view/edit' : 'add'}
                     </button>
+                    {link.crawlInstructions && (
+                      <div className="mt-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleCrawlNow(link)}
+                          disabled={crawlingLinkId !== null || platforms.length === 0}
+                          title={platforms.length === 0 ? 'No AI platform configured — add one on the Platforms page first' : undefined}
+                          className="flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <PlayIcon />
+                          {crawlingLinkId === link.id ? 'Crawling…' : 'Crawl now'}
+                        </button>
+                        {crawlResults[link.id] && (
+                          <p className={`mt-1 text-xs ${crawlResults[link.id]!.ok ? 'text-green-700' : 'text-red-700'}`}>
+                            {crawlResults[link.id]!.text}
+                          </p>
+                        )}
+                      </div>
+                    )}
                     {expandedLinkId === link.id && (
                       <div className="mt-1.5">
                         <textarea

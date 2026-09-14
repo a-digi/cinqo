@@ -1,0 +1,68 @@
+// coreApi.ts — thin fetch helpers for cinqo's own CORE endpoints
+// (/api/v1/platforms, /api/v1/conversations), as opposed to api.ts's
+// own PROXY_BASE calls to this tool's own backend. This tool's bundle
+// runs as plain JS in the same page/origin as the rest of the app, so
+// the same session cookie already authenticates these calls, and each
+// route below already enforces its own scope independently — this
+// file adds a new CALLER, not a new capability. See
+// plan/ai/tools/career/step-24-manual-crawl-trigger.md.
+//
+// No 401-retry/session-renewal here (unlike the core app's own
+// api/client.ts) — deliberately simple, matching this tool's own
+// api.ts convention; a session that expires mid-crawl surfaces as a
+// plain error in the crawl result line, same as any other failure.
+
+async function coreJsonOrThrow<T>(res: Response, action: string): Promise<T> {
+  const body = (await res.json().catch(() => undefined)) as { message?: unknown } | undefined
+  if (!res.ok) {
+    const message = body && typeof body.message === 'string' ? body.message : `failed to ${action} (${res.status})`
+    throw new Error(message)
+  }
+  return (body as { message: T }).message
+}
+
+export interface Platform {
+  id: string
+  name: string
+  models: string[]
+}
+
+export async function fetchPlatforms(): Promise<Platform[]> {
+  const res = await fetch('/api/v1/platforms', { credentials: 'include' })
+  return coreJsonOrThrow<Platform[]>(res, 'load AI platforms')
+}
+
+export interface Conversation {
+  id: string
+  title: string
+  startedAt: string
+  platformId: string
+  model: string
+}
+
+export async function createConversation(input: { title?: string; platformId: string; model?: string }): Promise<Conversation> {
+  const res = await fetch('/api/v1/conversations', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  return coreJsonOrThrow<Conversation>(res, 'create conversation')
+}
+
+export interface SendMessageResult {
+  role: string
+  content: string
+  createdAt: string
+  durationMs?: number
+}
+
+export async function sendMessage(conversationId: string, content: string): Promise<SendMessageResult> {
+  const res = await fetch(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+  })
+  return coreJsonOrThrow<SendMessageResult>(res, 'send message')
+}
