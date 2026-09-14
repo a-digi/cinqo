@@ -75,6 +75,7 @@ func runMCPServer() {
 	registerRemoveCareerSkill(server)
 	registerAddCareerExperience(server)
 	registerRemoveCareerExperience(server)
+	registerUpdateCareerExperience(server)
 	registerSaveJob(server)
 	registerListJobs(server)
 	registerSearchJobs(server)

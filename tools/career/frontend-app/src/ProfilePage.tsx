@@ -1,14 +1,6 @@
 import { useEffect, useState } from 'react'
-import {
-  fetchProfile,
-  updateProfile,
-  addSkill,
-  removeSkill,
-  addExperience,
-  removeExperience,
-  type CareerExperience,
-} from './api'
-import { PlusIcon, XIcon } from './icons'
+import { fetchProfile, updateProfile } from './api'
+import { Field } from './Field'
 
 const emptyForm = {
   fullName: '',
@@ -20,17 +12,13 @@ const emptyForm = {
   minSalary: '',
 }
 
-// ProfilePage keeps skills/experience inline on one page rather than
-// their own sub-views — a handful of chips/entries fits comfortably
-// here, and unlike browser's own credentials flow there's no
-// plaintext-secret-lingering-in-a-shared-view reason to isolate them.
-// See this step's own open question 1.
+// Core profile fields only — Skills and Experience moved to their own
+// pages (SkillsPage / ExperiencePage) as of step 7, reversing step 5's
+// own "inline for a first pass" call now that the request has made
+// the split explicit. See
+// plan/ai/tools/career/step-07-dedicated-skills-and-experience-pages.md.
 export function ProfilePage() {
   const [form, setForm] = useState(emptyForm)
-  const [skills, setSkills] = useState<string[]>([])
-  const [experience, setExperience] = useState<CareerExperience[]>([])
-  const [newSkill, setNewSkill] = useState('')
-  const [newExp, setNewExp] = useState({ company: '', title: '', startDate: '', endDate: '', description: '' })
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -47,8 +35,6 @@ export function ProfilePage() {
           desiredLocations: result.profile?.desiredLocations ?? '',
           minSalary: result.profile?.minSalary ? String(result.profile.minSalary) : '',
         })
-        setSkills(result.skills)
-        setExperience(result.experience)
       })
       .catch((err: Error) => setError(err.message))
   }
@@ -69,52 +55,8 @@ export function ProfilePage() {
       desiredLocations: form.desiredLocations,
       minSalary: form.minSalary ? Number(form.minSalary) : undefined,
     })
-      .then((result) => {
-        setSkills(result.skills)
-        setExperience(result.experience)
-      })
       .catch((err: Error) => setError(err.message))
       .finally(() => setSaving(false))
-  }
-
-  function handleAddSkill() {
-    const skill = newSkill.trim()
-    if (!skill) return
-    setError('')
-    addSkill(skill)
-      .then((result) => {
-        setSkills(result)
-        setNewSkill('')
-      })
-      .catch((err: Error) => setError(err.message))
-  }
-
-  function handleRemoveSkill(skill: string) {
-    setError('')
-    removeSkill(skill)
-      .then(() => setSkills((prev) => prev.filter((s) => s !== skill)))
-      .catch((err: Error) => setError(err.message))
-  }
-
-  function handleAddExperience() {
-    if (!newExp.company.trim() || !newExp.title.trim()) {
-      setError('Company and title are both required')
-      return
-    }
-    setError('')
-    addExperience(newExp)
-      .then((result) => {
-        setExperience(result)
-        setNewExp({ company: '', title: '', startDate: '', endDate: '', description: '' })
-      })
-      .catch((err: Error) => setError(err.message))
-  }
-
-  function handleRemoveExperience(id: string) {
-    setError('')
-    removeExperience(id)
-      .then(() => setExperience((prev) => prev.filter((e) => e.id !== id)))
-      .catch((err: Error) => setError(err.message))
   }
 
   return (
@@ -127,7 +69,7 @@ export function ProfilePage() {
 
       <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
 
-      <section className="mb-6 rounded-md border border-gray-200 p-4 shadow-sm">
+      <section className="rounded-md border border-gray-200 p-4 shadow-sm">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Full name" value={form.fullName} onChange={(v) => setForm({ ...form, fullName: v })} />
           <Field label="Headline" value={form.headline} onChange={(v) => setForm({ ...form, headline: v })} />
@@ -167,116 +109,6 @@ export function ProfilePage() {
           {saving ? 'Saving…' : 'Save profile'}
         </button>
       </section>
-
-      <section className="mb-6 rounded-md border border-gray-200 p-4 shadow-sm">
-        <h2 className="mb-3 text-sm font-semibold">Skills</h2>
-        <div className="mb-3 flex flex-wrap gap-2">
-          {skills.map((skill) => (
-            <span
-              key={skill}
-              className="flex items-center gap-1.5 rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-700"
-            >
-              {skill}
-              <button
-                type="button"
-                aria-label={`Remove ${skill}`}
-                onClick={() => handleRemoveSkill(skill)}
-                className="text-gray-400 hover:text-red-700"
-              >
-                <XIcon />
-              </button>
-            </span>
-          ))}
-        </div>
-        <div className="flex gap-2">
-          <input
-            value={newSkill}
-            onChange={(e) => setNewSkill(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleAddSkill()}
-            placeholder="Add a skill"
-            className="flex-1 rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
-          />
-          <button
-            type="button"
-            onClick={handleAddSkill}
-            className="flex items-center gap-1 rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
-          >
-            <PlusIcon />
-            Add
-          </button>
-        </div>
-      </section>
-
-      <section className="rounded-md border border-gray-200 p-4 shadow-sm">
-        <h2 className="mb-3 text-sm font-semibold">Experience</h2>
-        <div className="mb-4 space-y-2">
-          {experience.map((exp) => (
-            <div key={exp.id} className="flex items-start justify-between gap-3 rounded-md border border-gray-200 p-3">
-              <div>
-                <div className="text-sm font-medium">{exp.title} · {exp.company}</div>
-                <div className="text-xs text-gray-500">
-                  {exp.startDate || '—'} – {exp.endDate || 'present'}
-                </div>
-                {exp.description && <div className="mt-1 text-xs text-gray-600">{exp.description}</div>}
-              </div>
-              <button
-                type="button"
-                onClick={() => handleRemoveExperience(exp.id)}
-                className="shrink-0 rounded-md border border-gray-200 px-2.5 py-1 text-xs text-red-700 hover:bg-red-50"
-              >
-                Remove
-              </button>
-            </div>
-          ))}
-        </div>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <Field label="Company" value={newExp.company} onChange={(v) => setNewExp({ ...newExp, company: v })} />
-          <Field label="Title" value={newExp.title} onChange={(v) => setNewExp({ ...newExp, title: v })} />
-          <Field label="Start date" value={newExp.startDate} onChange={(v) => setNewExp({ ...newExp, startDate: v })} />
-          <Field label="End date" value={newExp.endDate} onChange={(v) => setNewExp({ ...newExp, endDate: v })} />
-        </div>
-        <label className="mt-2 block text-xs font-medium text-gray-500">
-          Description
-          <textarea
-            value={newExp.description}
-            onChange={(e) => setNewExp({ ...newExp, description: e.target.value })}
-            rows={2}
-            className="mt-1 w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
-          />
-        </label>
-        <button
-          type="button"
-          onClick={handleAddExperience}
-          className="mt-2 flex items-center gap-1 rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
-        >
-          <PlusIcon />
-          Add experience
-        </button>
-      </section>
     </div>
-  )
-}
-
-function Field({
-  label,
-  value,
-  onChange,
-  type = 'text',
-}: {
-  label: string
-  value: string
-  onChange: (v: string) => void
-  type?: string
-}) {
-  return (
-    <label className="block text-xs font-medium text-gray-500">
-      {label}
-      <input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="mt-1 w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
-      />
-    </label>
   )
 }

@@ -210,6 +210,59 @@ func removeCareerExperience(id string) error {
 	return err
 }
 
+// updateCareerExperienceArgs mirrors updateCareerProfileArgs's own
+// partial-update shape — only fields provided are changed. id is
+// required; updating an unknown id is a benign no-op (0 rows
+// affected), the same posture removeCareerExperience already has.
+type updateCareerExperienceArgs struct {
+	ID          string
+	Company     *string
+	Title       *string
+	StartDate   *string
+	EndDate     *string
+	Description *string
+}
+
+func updateCareerExperience(args updateCareerExperienceArgs) error {
+	var e careerExperience
+	var startDate, endDate, description sql.NullString
+	err := careerDB.QueryRow(
+		`SELECT id, company, title, start_date, end_date, description FROM career_experience WHERE id = ?`,
+		args.ID,
+	).Scan(&e.ID, &e.Company, &e.Title, &startDate, &endDate, &description)
+	switch {
+	case err == sql.ErrNoRows:
+		return nil
+	case err != nil:
+		return err
+	}
+	e.StartDate = startDate.String
+	e.EndDate = endDate.String
+	e.Description = description.String
+
+	if args.Company != nil {
+		e.Company = *args.Company
+	}
+	if args.Title != nil {
+		e.Title = *args.Title
+	}
+	if args.StartDate != nil {
+		e.StartDate = *args.StartDate
+	}
+	if args.EndDate != nil {
+		e.EndDate = *args.EndDate
+	}
+	if args.Description != nil {
+		e.Description = *args.Description
+	}
+
+	_, err = careerDB.Exec(
+		`UPDATE career_experience SET company = ?, title = ?, start_date = ?, end_date = ?, description = ? WHERE id = ?`,
+		e.Company, e.Title, e.StartDate, e.EndDate, e.Description, args.ID,
+	)
+	return err
+}
+
 // --- MCP registration ---
 
 type getCareerProfileArgs struct{}
@@ -340,6 +393,41 @@ func registerRemoveCareerExperience(server *mcp.Server) {
 			return errResult(fmt.Sprintf("failed to remove experience: %v", err)), nil, nil
 		}
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "removed"}}}, nil, nil
+	})
+}
+
+type updateCareerExperienceToolArgs struct {
+	ID          string  `json:"id" jsonschema:"the experience entry's own id, from add_career_experience or get_career_profile"`
+	Company     *string `json:"company,omitempty" jsonschema:"the employer's name"`
+	Title       *string `json:"title,omitempty" jsonschema:"the job title held there"`
+	StartDate   *string `json:"startDate,omitempty" jsonschema:"when this position started"`
+	EndDate     *string `json:"endDate,omitempty" jsonschema:"when this position ended — omit for a current position"`
+	Description *string `json:"description,omitempty" jsonschema:"what the role involved"`
+}
+
+func registerUpdateCareerExperience(server *mcp.Server) {
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "update_career_experience",
+		Description: "Update a work experience entry on the user's own career profile. Only the fields provided are changed — omitted fields keep their current value. A no-op if id is unknown.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args updateCareerExperienceToolArgs) (*mcp.CallToolResult, any, error) {
+		if args.ID == "" {
+			return errResult("id is required"), nil, nil
+		}
+		if err := updateCareerExperience(updateCareerExperienceArgs{
+			ID:          args.ID,
+			Company:     args.Company,
+			Title:       args.Title,
+			StartDate:   args.StartDate,
+			EndDate:     args.EndDate,
+			Description: args.Description,
+		}); err != nil {
+			return errResult(fmt.Sprintf("failed to update experience: %v", err)), nil, nil
+		}
+		result, err := fetchCareerProfile()
+		if err != nil {
+			return errResult(fmt.Sprintf("experience updated but failed to reload: %v", err)), nil, nil
+		}
+		return jsonResult(result)
 	})
 }
 

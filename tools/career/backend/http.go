@@ -117,6 +117,15 @@ type experienceRequest struct {
 	Description string `json:"description"`
 }
 
+type experienceUpdateRequest struct {
+	ID          string  `json:"id"`
+	Company     *string `json:"company,omitempty"`
+	Title       *string `json:"title,omitempty"`
+	StartDate   *string `json:"startDate,omitempty"`
+	EndDate     *string `json:"endDate,omitempty"`
+	Description *string `json:"description,omitempty"`
+}
+
 func experienceHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -140,6 +149,30 @@ func experienceHandler(w http.ResponseWriter, r *http.Request) {
 		result, err := fetchCareerProfile()
 		if err != nil {
 			http.Error(w, "experience added but failed to reload: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, map[string]any{"experience": result.Experience})
+
+	case http.MethodPut:
+		var body experienceUpdateRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.ID == "" {
+			http.Error(w, "id is required", http.StatusBadRequest)
+			return
+		}
+		if err := updateCareerExperience(updateCareerExperienceArgs{
+			ID:          body.ID,
+			Company:     body.Company,
+			Title:       body.Title,
+			StartDate:   body.StartDate,
+			EndDate:     body.EndDate,
+			Description: body.Description,
+		}); err != nil {
+			http.Error(w, "failed to update experience: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		result, err := fetchCareerProfile()
+		if err != nil {
+			http.Error(w, "experience updated but failed to reload: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 		writeJSON(w, map[string]any{"experience": result.Experience})

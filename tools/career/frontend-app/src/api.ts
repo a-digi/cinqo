@@ -74,6 +74,12 @@ export async function updateProfile(args: UpdateProfileArgs): Promise<ProfileRes
   return jsonOrThrow<ProfileResult>(res, 'update profile')
 }
 
+export async function fetchSkills(): Promise<string[]> {
+  const res = await fetch(`${PROXY_BASE}/skills`, { credentials: 'include' })
+  const data = await jsonOrThrow<{ skills: string[] }>(res, 'load skills')
+  return data.skills
+}
+
 export async function addSkill(skill: string): Promise<string[]> {
   const res = await fetch(`${PROXY_BASE}/skills`, {
     method: 'POST',
@@ -92,6 +98,12 @@ export async function removeSkill(skill: string): Promise<void> {
   if (!res.ok && res.status !== 204) throw new Error(`failed to remove skill (${res.status})`)
 }
 
+export async function fetchExperience(): Promise<CareerExperience[]> {
+  const res = await fetch(`${PROXY_BASE}/experience`, { credentials: 'include' })
+  const data = await jsonOrThrow<{ experience: CareerExperience[] }>(res, 'load experience')
+  return data.experience
+}
+
 export async function addExperience(entry: Omit<CareerExperience, 'id'>): Promise<CareerExperience[]> {
   const res = await fetch(`${PROXY_BASE}/experience`, {
     method: 'POST',
@@ -99,6 +111,18 @@ export async function addExperience(entry: Omit<CareerExperience, 'id'>): Promis
     body: JSON.stringify(entry),
   })
   const data = await jsonOrThrow<{ experience: CareerExperience[] }>(res, 'add experience')
+  return data.experience
+}
+
+export type UpdateExperienceArgs = Partial<Omit<CareerExperience, 'id'>> & { id: string }
+
+export async function updateExperience(args: UpdateExperienceArgs): Promise<CareerExperience[]> {
+  const res = await fetch(`${PROXY_BASE}/experience`, {
+    method: 'PUT',
+    credentials: 'include',
+    body: JSON.stringify(args),
+  })
+  const data = await jsonOrThrow<{ experience: CareerExperience[] }>(res, 'update experience')
   return data.experience
 }
 
