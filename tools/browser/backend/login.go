@@ -6,8 +6,13 @@
 // the MCP args carry no credential at all — the AI only ever
 // instructs WHICH elements matter (via find_login_elements), never
 // what to fill them with; the tool resolves the real
-// username/password itself. See
-// plan/ai/tools/browser/step-08-ai-instructed-login.md.
+// username/password itself. As of the domain-normalization/YAML-
+// instructions follow-up, the AI's own instruction to this tool is a
+// literal YAML document (parsed server-side, never sent as raw HTML-
+// form fields) — the same "AI instructs via YAML how the tool can
+// login" shape from the original request, now applied to the MCP
+// wire args themselves, not just the human-facing credential store.
+// See plan/ai/tools/browser/step-08-ai-instructed-login.md.
 package main
 
 import (
@@ -15,10 +20,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/chromedp/chromedp"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"gopkg.in/yaml.v3"
 )
 
 // loginTimeout bounds one fill+submit+settle cycle.
@@ -95,12 +102,19 @@ func performLogin(req loginRequest) (loginResponse, error) {
 	ctx, cancel := context.WithTimeout(sessionCtx, loginTimeout)
 	defer cancel()
 
+	// normalizeDomain (login_credentials.go, built for
+	// has_login_credential) applied here too — the retrofit flagged in
+	// step 11's own open question 3: reduces the same realistic model
+	// failure mode (a full URL instead of a bare hostname) for the
+	// login path itself, not just the existence check.
+	domain := normalizeDomain(req.Domain)
+
 	// A stored credential's own existence for this domain IS the login
 	// approval — no separate allowlist (step 7 retired allowlist.go
 	// entirely). The MCP schema itself carries no username/password
 	// field at all as of this step — cred.Username/cred.Password below
 	// are the ONLY values ever used to fill the form.
-	cred, err := lookupCredential(req.Domain)
+	cred, err := lookupCredential(domain)
 	if err != nil {
 		return loginResponse{}, fmt.Errorf("could not look up the stored credential: %w", err)
 	}
@@ -109,7 +123,7 @@ func performLogin(req loginRequest) (loginResponse, error) {
 			Success: false,
 			Reason: fmt.Sprintf(
 				"no stored credential for %q — ask the user to add one via POST /login-credentials on this tool (outside of any AI tool call), then retry",
-				req.Domain,
+				domain,
 			),
 		}, nil
 	}
@@ -161,11 +175,26 @@ func performLogin(req loginRequest) (loginResponse, error) {
 	return loginResponse{Success: true, FinalURL: finalURL, HTML: html}, nil
 }
 
+// loginInstructions is the YAML shape the AI itself writes as the
+// login tool's own single argument — literally "instruct via YAML how
+// the tool can login," the same wording the whole browser-tool plan
+// started from, now applied directly to this tool's own MCP wire
+// shape rather than only the human-facing credential store (step 7).
+// Deliberately has no username/password field to bind to at all: even
+// if a model's own YAML text includes one (nothing stops it from
+// trying), gopkg.in/yaml.v3 silently ignores unknown keys by default
+// — the exact same structural guarantee step 8 already established
+// for the old typed-JSON-fields shape, carried forward unchanged for
+// this one.
+type loginInstructions struct {
+	Domain           string `yaml:"domain"`
+	UsernameSelector string `yaml:"usernameSelector"`
+	PasswordSelector string `yaml:"passwordSelector"`
+	SubmitSelector   string `yaml:"submitSelector"`
+}
+
 type loginArgs struct {
-	Domain           string `json:"domain" jsonschema:"the domain being logged into"`
-	UsernameSelector string `json:"usernameSelector" jsonschema:"CSS selector for the username/email field, from find_login_elements"`
-	PasswordSelector string `json:"passwordSelector" jsonschema:"CSS selector for the password field, from find_login_elements"`
-	SubmitSelector   string `json:"submitSelector" jsonschema:"CSS selector for the submit control, from find_login_elements"`
+	Instructions string `json:"instructions" jsonschema:"a YAML document describing how to log in — domain, usernameSelector, passwordSelector, submitSelector (the selectors come from find_login_elements). Example:\ndomain: example.com\nusernameSelector: \"#username\"\npasswordSelector: \"#password\"\nsubmitSelector: \"#submit\"\nNever include a username or password here — this tool resolves the real credential itself; any such fields would be silently ignored."`
 }
 
 // registerLogin adds the login MCP tool — the only credential-
@@ -177,20 +206,34 @@ type loginArgs struct {
 func registerLogin(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "login",
-		Description: "Log into the currently loaded page using selectors from find_login_elements. Only proceeds if a credential has already been registered for the given domain (via /login-credentials, outside any AI tool call) — the tool fills and submits it itself; the AI never sees the credential.",
+		Description: "Log into the currently loaded page, instructed via a YAML document (domain + selectors from find_login_elements). Only proceeds if a credential has already been registered for the given domain (via /login-credentials, outside any AI tool call) — the tool fills and submits it itself; the AI never sees the credential.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args loginArgs) (*mcp.CallToolResult, any, error) {
-		if args.Domain == "" || args.UsernameSelector == "" || args.PasswordSelector == "" || args.SubmitSelector == "" {
+		if strings.TrimSpace(args.Instructions) == "" {
 			return &mcp.CallToolResult{
-				Content: []mcp.Content{&mcp.TextContent{Text: "domain, usernameSelector, passwordSelector, and submitSelector are all required"}},
+				Content: []mcp.Content{&mcp.TextContent{Text: "instructions is required — a YAML document with domain, usernameSelector, passwordSelector, and submitSelector"}},
+				IsError: true,
+			}, nil, nil
+		}
+
+		var parsed loginInstructions
+		if err := yaml.Unmarshal([]byte(args.Instructions), &parsed); err != nil {
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("invalid YAML instructions: %v", err)}},
+				IsError: true,
+			}, nil, nil
+		}
+		if parsed.Domain == "" || parsed.UsernameSelector == "" || parsed.PasswordSelector == "" || parsed.SubmitSelector == "" {
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: "instructions must include domain, usernameSelector, passwordSelector, and submitSelector"}},
 				IsError: true,
 			}, nil, nil
 		}
 
 		reqBody, err := json.Marshal(loginRequest{
-			Domain:           args.Domain,
-			UsernameSelector: args.UsernameSelector,
-			PasswordSelector: args.PasswordSelector,
-			SubmitSelector:   args.SubmitSelector,
+			Domain:           parsed.Domain,
+			UsernameSelector: parsed.UsernameSelector,
+			PasswordSelector: parsed.PasswordSelector,
+			SubmitSelector:   parsed.SubmitSelector,
 		})
 		if err != nil {
 			return &mcp.CallToolResult{

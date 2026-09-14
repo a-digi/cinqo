@@ -14,11 +14,25 @@
 // would be replaced instead of the real one below — caught live, see
 // this step's own "Implemented and verified" section.)
 (function (payload) {
+  var maxValueLength = payload.maxValueLength;
+
+  // Bounds one matched value's own length — maxItems (below) only
+  // ever bounded the *count* of matches for a multiple field, not one
+  // value's own size, so a selector accidentally matching a huge
+  // container element (e.g. a whole <body> instead of a small title)
+  // could otherwise still return one enormous string.
+  function truncate(value) {
+    if (typeof value === "string" && maxValueLength && value.length > maxValueLength) {
+      return value.slice(0, maxValueLength);
+    }
+    return value;
+  }
+
   function readValue(el, attribute) {
     if (!attribute || attribute === "text") {
-      return (el.textContent || "").trim();
+      return truncate((el.textContent || "").trim());
     }
-    return el.getAttribute(attribute);
+    return truncate(el.getAttribute(attribute));
   }
 
   var results = {};

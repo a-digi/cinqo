@@ -38,8 +38,19 @@ const extractTimeout = 10 * time.Second
 // field ever returns — an overly broad selector (e.g. "div") could
 // otherwise return thousands of values. A plain, non-configurable
 // constant, matching maxHTMLBytes's own first-pass-number precedent.
-// See this step's own "Open questions".
 const maxExtractedItems = 200
+
+// maxExtractedValueLength bounds a single matched value's own length —
+// open question 2 from this step's own design: maxExtractedItems only
+// ever capped the *count* of matches for a multiple field, not one
+// value's own size, so a selector matching a huge container element
+// (e.g. accidentally selecting a whole <body>'s text content instead
+// of a small title) could still return one enormous string. Measured
+// in UTF-16 code units (JS string length, applied browser-side in
+// extract.js) — the same "good enough, not grapheme-boundary-precise"
+// approximation maxHTMLBytes's own byte-slicing already accepts for
+// crawlPage.
+const maxExtractedValueLength = 5000
 
 type extractField struct {
 	Label     string `json:"label" jsonschema:"a name for this field in the result, e.g. \"title\""`
@@ -103,9 +114,10 @@ func performExtraction(fields []extractField) (extractResponse, error) {
 	defer cancel()
 
 	payload := struct {
-		Fields   []extractField `json:"fields"`
-		MaxItems int            `json:"maxItems"`
-	}{Fields: fields, MaxItems: maxExtractedItems}
+		Fields         []extractField `json:"fields"`
+		MaxItems       int            `json:"maxItems"`
+		MaxValueLength int            `json:"maxValueLength"`
+	}{Fields: fields, MaxItems: maxExtractedItems, MaxValueLength: maxExtractedValueLength}
 
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
