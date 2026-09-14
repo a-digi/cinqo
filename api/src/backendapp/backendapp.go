@@ -37,20 +37,36 @@ import (
 // close enough. See plan/ai/build/app/step-17-configurable-data-directory.md.
 const defaultDataDir = "data"
 
-// ResolveDataDir applies the one fallback rule --data needs, in the
-// one place both callers that need it before/independent of Start
-// itself (api/main.go's own shutdown-action logger) and Start itself
-// both call, so the rule can't drift between them.
-func ResolveDataDir(flagValue string) string {
-	if flagValue == "" {
-		return defaultDataDir
+// ResolveDataDir applies the fallback rule --data needs, in the one
+// place every caller that needs it before/independent of Start itself
+// (api/main.go's own shutdown-action logger, cmd/app/main.go's own
+// apphome resolution) and Start itself all call, so the rule can't
+// drift between them. fallback is step 18's own addition — an
+// explicit --data always wins regardless; absent that, fallback wins
+// if the caller has one (cmd/app/main.go passes its own apphome-based
+// data/ directory when config.json wasn't found in CWD either), else
+// defaultDataDir ("data", CWD-relative — api/main.go's own call always
+// passes "" here, preserving its exact original behavior). See
+// plan/ai/build/app/step-18-embedded-default-config-and-app-home.md.
+func ResolveDataDir(flagValue, fallback string) string {
+	if flagValue != "" {
+		return flagValue
 	}
-	return flagValue
+	if fallback != "" {
+		return fallback
+	}
+	return defaultDataDir
 }
 
 // Start performs the full backend bootstrap (config, DB manager, DI,
 // auth, routes.Init) and starts the HTTP server, returning it
-// un-blocked. The caller decides how to wait for shutdown:
+// un-blocked. dataDir and configPath are both expected to already be
+// fully resolved by the caller (ResolveDataDir for the former; the
+// latter has no equivalent helper since its own fallback — apphome —
+// is a cmd/app/main.go-specific concept Start itself has no business
+// knowing about). See
+// plan/ai/build/app/step-18-embedded-default-config-and-app-home.md.
+// The caller decides how to wait for shutdown:
 // api/main.go calls server.GracefulShutdown right after (today's exact
 // behavior); api/cmd/app/main.go instead coordinates shutdown together
 // with an in-process Caddy instance. The returned ContextBag lets a
@@ -61,8 +77,7 @@ func ResolveDataDir(flagValue string) string {
 // "auth_config" fresh from the ContextBag on every request rather than
 // having it baked into a closure at routes.Init time — a later Set()
 // here takes effect immediately, no restart needed.
-func Start(dataDir string) (srv *http.Server, cfg *server.Config, ctx *di.ContextBag, log logger.Logger, err error) {
-	dataDir = ResolveDataDir(dataDir)
+func Start(dataDir, configPath string) (srv *http.Server, cfg *server.Config, ctx *di.ContextBag, log logger.Logger, err error) {
 	logsDir := filepath.Join(dataDir, "logs")
 	dbDir := filepath.Join(dataDir, "db")
 	keyPath := filepath.Join(dataDir, "keys", "platform-encryption.key")
@@ -92,7 +107,7 @@ func Start(dataDir string) (srv *http.Server, cfg *server.Config, ctx *di.Contex
 	// tool's proxy route 503ing until someone manually disables and
 	// re-enables it by hand. See
 	// plan/ai/tools/step-11-restart-enabled-tools-on-boot.md.
-	corePortCfg, err := server.LoadConfig("config.json")
+	corePortCfg, err := server.LoadConfig(configPath)
 	if err != nil {
 		return nil, nil, nil, log, err
 	}
@@ -193,6 +208,6 @@ func Start(dataDir string) (srv *http.Server, cfg *server.Config, ctx *di.Contex
 
 	routes.Init(ctx)
 
-	srv, cfg, err = server.StartServer("config.json", log)
+	srv, cfg, err = server.StartServer(configPath, log)
 	return srv, cfg, ctx, log, err
 }

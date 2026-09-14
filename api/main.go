@@ -28,7 +28,13 @@ func main() {
 		action = args[0]
 	}
 
-	resolvedDataDir := backendapp.ResolveDataDir(*dataDir)
+	// This dev binary always assumes cd api && ... (the Makefile's own
+	// convention) — no apphome fallback here, unlike cmd/app/main.go
+	// (step 18): a missing api/config.json in this workflow is a real
+	// setup problem worth failing loudly on, not smoothing over. Both
+	// calls below pass the literal "config.json" and an empty data-dir
+	// fallback ("") for exactly that reason.
+	resolvedDataDir := backendapp.ResolveDataDir(*dataDir, "")
 
 	if action == "shutdown" {
 		log, err := logger.NewLogger(server.LogFileName("cinqo"), filepath.Join(resolvedDataDir, "logs"))
@@ -44,7 +50,7 @@ func main() {
 		return
 	}
 
-	srv, cfg, _, log, err := backendapp.Start(resolvedDataDir)
+	srv, cfg, _, log, err := backendapp.Start(resolvedDataDir, "config.json")
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)

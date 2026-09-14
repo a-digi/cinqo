@@ -41,6 +41,18 @@ import (
 //go:embed embedded.Caddyfile
 var embeddedCaddyfile []byte
 
+// embeddedConfigJSON is the default root config.json (port/pid_file)
+// this app falls back to when launched from a directory that doesn't
+// already have one — the actual fix for "load config: could not open
+// config file: open config.json: no such file or directory" when
+// opened from somewhere other than api/. Its own pid_file value is a
+// template only: ensureConfigFile overrides it to an absolute,
+// apphome-relative path before ever writing the file to disk. See
+// plan/ai/build/app/step-18-embedded-default-config-and-app-home.md.
+//
+//go:embed embedded-config.json
+var embeddedConfigJSON []byte
+
 // caddyPort is the single source of truth for the port embedded.Caddyfile
 // itself hardcodes (its site address can't be an {env.*} placeholder —
 // see plan/ai/build/app/step-03-embedded-caddy-config.md). Kept here too
@@ -50,12 +62,12 @@ const caddyPort = 7030
 
 var caddyAddr = fmt.Sprintf("http://localhost:%d", caddyPort)
 
-// chromePidFile tracks the PID of the private Chrome instance this app
-// opens (see openBrowser/launchPrivateChrome), so a later run can close
-// it before opening its own fresh one. Resolved relative to CWD, same
-// convention as server.pid (both live in api/, since cmd/app runs with
-// CWD=api/ — see the Makefile's run-app target). See
-// plan/ai/build/app/step-09-private-chrome-instance-and-pid-tracking.md.
+// chromePidFile is the bare CWD-relative literal used when config.json
+// was already found in CWD (today's exact dev/Makefile-driven
+// behavior, unchanged) — resolveAppHome's own apphome-relative value
+// is used instead when it wasn't. See
+// plan/ai/build/app/step-09-private-chrome-instance-and-pid-tracking.md
+// and plan/ai/build/app/step-18-embedded-default-config-and-app-home.md.
 const chromePidFile = "chrome.pid"
 
 func main() {
@@ -67,9 +79,11 @@ func main() {
 
 func run() error {
 	// --data overrides where this app's own local state (db/, logs/,
-	// keys/, tools/) lives — omitted, falls back to today's exact
-	// "data/" (relative to CWD) behavior. See
-	// plan/ai/build/app/step-17-configurable-data-directory.md.
+	// keys/, tools/) lives — omitted, falls back to resolveAppHome's
+	// own data/ default (apphome-relative if config.json wasn't found
+	// in CWD, "data" relative to CWD otherwise). See
+	// plan/ai/build/app/step-17-configurable-data-directory.md and
+	// plan/ai/build/app/step-18-embedded-default-config-and-app-home.md.
 	dataDir := flag.String("data", "", `path to the data directory (default: "data", relative to the working directory)`)
 	flag.Parse()
 
@@ -82,7 +96,33 @@ func run() error {
 	shutdownCh := make(chan os.Signal, 1)
 	signal.Notify(shutdownCh, os.Interrupt, syscall.SIGTERM)
 
-	cfg, err := server.LoadConfig("config.json")
+	// Resolved first, before anything else touches config.json — see
+	// plan/ai/build/app/step-18-embedded-default-config-and-app-home.md.
+	// If config.json is already in CWD (today's exact dev/Makefile-
+	// driven behavior via `cd api && ../app/cinqo-app`), nothing here
+	// changes at all. Otherwise this is the "opened from another
+	// location" case the embedded default/auto-create exists for:
+	// config.json, the data/ default, and chrome.pid all move to the
+	// same stable, OS-user-scoped ~/.cinqo directory so every later
+	// launch from anywhere finds the same persistent state instead of
+	// starting fresh each time.
+	home, usingCWD, err := resolveAppHome()
+	if err != nil {
+		return fmt.Errorf("resolve app home: %w", err)
+	}
+	configPath := "config.json"
+	dataDefault := ""
+	chromePidPath := chromePidFile
+	if !usingCWD {
+		configPath = filepath.Join(home, "config.json")
+		if err := ensureConfigFile(configPath, home); err != nil {
+			return fmt.Errorf("create default config: %w", err)
+		}
+		dataDefault = filepath.Join(home, "data")
+		chromePidPath = filepath.Join(home, "chrome.pid")
+	}
+
+	cfg, err := server.LoadConfig(configPath)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
@@ -91,9 +131,9 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	closeStaleChromeInstance()
+	closeStaleChromeInstance(chromePidPath)
 
-	srv, cfg, ctx, log, err := backendapp.Start(backendapp.ResolveDataDir(*dataDir))
+	srv, cfg, ctx, log, err := backendapp.Start(backendapp.ResolveDataDir(*dataDir, dataDefault), configPath)
 	if err != nil {
 		return fmt.Errorf("backend: %w", err)
 	}
@@ -121,13 +161,62 @@ func run() error {
 	if pid, err := openBrowser(caddyAddr); err != nil {
 		log.Warning("could not open a browser automatically: %v", err)
 	} else if pid != 0 {
-		if err := os.WriteFile(chromePidFile, []byte(strconv.Itoa(pid)), 0o644); err != nil {
+		if err := os.WriteFile(chromePidPath, []byte(strconv.Itoa(pid)), 0o644); err != nil {
 			log.Warning("could not record chrome pid: %v", err)
 		}
 	}
 
 	waitForShutdown(shutdownCh, srv, cfg.PidFile, log, frontendDir)
 	return nil
+}
+
+// resolveAppHome decides where this run's own config.json — and,
+// absent an explicit --data, its data/ directory and chrome.pid too —
+// live. ~/.cinqo (via os.UserHomeDir, not a per-OS special-purpose
+// directory) is deliberately one unified tree, matching this app's
+// own existing convention of config.json sitting next to data/ rather
+// than splitting config/data/cache across OS-specific locations. See
+// plan/ai/build/app/step-18-embedded-default-config-and-app-home.md.
+func resolveAppHome() (home string, usingCWD bool, err error) {
+	if _, err := os.Stat("config.json"); err == nil {
+		return "", true, nil
+	}
+	dir, err := os.UserHomeDir()
+	if err != nil {
+		return "", false, err
+	}
+	home = filepath.Join(dir, ".cinqo")
+	return home, false, os.MkdirAll(home, 0o755)
+}
+
+// ensureConfigFile writes the embedded default config.json to path if
+// nothing is there yet — never overwrites an existing file, so a
+// user's own later edits (e.g. a different port) persist across
+// restarts, the same expectation the checked-in dev config.json
+// already has. pid_file is overridden to an absolute, home-relative
+// path before writing — parsed and re-marshaled, not string-
+// templated, since verified directly (coco-server's own pid.go)
+// that PidFile is used as a genuinely opaque path (os.Create/
+// os.ReadFile/os.Remove, no joining with any other base directory),
+// so an absolute value here is safe and resolves correctly regardless
+// of process CWD at any future launch. See
+// plan/ai/build/app/step-18-embedded-default-config-and-app-home.md.
+func ensureConfigFile(path, home string) error {
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	}
+
+	var cfg map[string]any
+	if err := json.Unmarshal(embeddedConfigJSON, &cfg); err != nil {
+		return fmt.Errorf("parse embedded default config: %w", err)
+	}
+	cfg["pid_file"] = filepath.Join(home, "server.pid")
+
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
 }
 
 // stopStaleInstance detects whether a previous cinqo-app instance — or a
@@ -217,22 +306,25 @@ func portFree(port int) bool {
 }
 
 // closeStaleChromeInstance closes a private Chrome instance left behind
-// by a previous cinqo-app run (tracked via chromePidFile), if one is
-// still open, before this run opens its own fresh one. Much simpler
+// by a previous cinqo-app run (tracked via chromePidPath — the bare
+// CWD-relative chromePidFile literal when config.json was found in
+// CWD, resolveAppHome's own apphome-relative path otherwise), if one
+// is still open, before this run opens its own fresh one. Much simpler
 // than stopStaleInstance: there's no port/listening contract to wait
 // on, so a short fixed grace period is enough instead of a polling
 // loop, and no stdout progress output — closing a leftover browser
 // window is expected to be near-instant. See
-// plan/ai/build/app/step-09-private-chrome-instance-and-pid-tracking.md.
-func closeStaleChromeInstance() {
-	data, err := os.ReadFile(chromePidFile)
+// plan/ai/build/app/step-09-private-chrome-instance-and-pid-tracking.md
+// and plan/ai/build/app/step-18-embedded-default-config-and-app-home.md.
+func closeStaleChromeInstance(chromePidPath string) {
+	data, err := os.ReadFile(chromePidPath)
 	if err != nil {
 		return // no PID file — nothing to close
 	}
 
 	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
 	if err != nil {
-		_ = os.Remove(chromePidFile)
+		_ = os.Remove(chromePidPath)
 		return
 	}
 
@@ -241,7 +333,7 @@ func closeStaleChromeInstance() {
 	if !alive {
 		// Stale leftover file — the browser window (or whole machine
 		// session) was already closed some other way.
-		_ = os.Remove(chromePidFile)
+		_ = os.Remove(chromePidPath)
 		return
 	}
 
@@ -251,7 +343,7 @@ func closeStaleChromeInstance() {
 		_ = process.Signal(syscall.SIGKILL)
 	}
 
-	_ = os.Remove(chromePidFile)
+	_ = os.Remove(chromePidPath)
 }
 
 // overrideFrontendCallbackURL points the OAuth login flow's frontend
