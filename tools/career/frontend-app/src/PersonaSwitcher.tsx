@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { fetchPersonas, fetchProfiles, type Persona } from './api'
 import { getStoredPersonaId, setStoredPersonaId } from './personaStore'
 import { profileLabel } from './ProfileSwitcher'
+import { Dropdown } from './Dropdown'
 
 const PERSONAS_PATH = '/tools/career/personas'
 
@@ -64,27 +65,24 @@ export function PersonaSwitcher({
   }
 
   return (
-    <div className="mb-4 flex items-center gap-2 text-sm">
-      <label className="text-gray-500" htmlFor="persona-switcher">
-        Persona
-      </label>
-      <select
-        id="persona-switcher"
-        value={personaId ?? ''}
-        onChange={(e) => {
-          setStoredPersonaId(e.target.value)
-          onChange(e.target.value)
+    <div className="mb-4 flex items-end gap-2 text-sm">
+      <Dropdown
+        label="Persona"
+        options={personas.map((p) => ({
+          value: p.id,
+          label: profileNames[p.profileId] ? `${p.name} — ${profileNames[p.profileId]}` : p.name,
+        }))}
+        value={personaId}
+        onChange={(id) => {
+          setStoredPersonaId(id)
+          onChange(id)
         }}
-        className="rounded-md border border-gray-300 px-2 py-1 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
+      />
+      <a
+        href={PERSONAS_PATH}
+        onClick={navigateToPersonas}
+        className="pb-1 text-gray-500 underline hover:text-gray-700"
       >
-        {personas.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.name}
-            {profileNames[p.profileId] ? ` — ${profileNames[p.profileId]}` : ''}
-          </option>
-        ))}
-      </select>
-      <a href={PERSONAS_PATH} onClick={navigateToPersonas} className="text-gray-500 underline hover:text-gray-700">
         Manage
       </a>
     </div>

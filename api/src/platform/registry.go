@@ -90,10 +90,12 @@ var registry = []Entry{
 		// never a paid one — unlike "openrouter/auto" (never
 		// independently verified when first picked), which carries no
 		// such guarantee.
-		DefaultModel: "openrouter/free",
-		// SelectableModels still intentionally omitted — no user
-		// choice; openrouter/free is itself already a router.
-		Completer: openrouter.Client{},
+		DefaultModel: "openrouter/free", // unchanged; harmless to keep set even though CreateHandler no longer falls back to it now that SelectableModels is non-empty
+		// A real select list, starting with just the one verified
+		// model (plan/ai/platform/step-10-openrouter-model-selection.md).
+		// More entries are a later, separate addition.
+		SelectableModels: []string{"openrouter/free"},
+		Completer:        openrouter.Client{},
 	},
 }
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { fetchProfiles, type Profile } from './api'
 import { getStoredProfileId, setStoredProfileId } from './profileStore'
+import { Dropdown } from './Dropdown'
 
 const PROFILES_PATH = '/tools/career/profiles'
 
@@ -54,26 +55,21 @@ export function ProfileSwitcher({
   }
 
   return (
-    <div className="mb-4 flex items-center gap-2 text-sm">
-      <label className="text-gray-500" htmlFor="profile-switcher">
-        Profile
-      </label>
-      <select
-        id="profile-switcher"
-        value={profileId ?? ''}
-        onChange={(e) => {
-          setStoredProfileId(e.target.value)
-          onChange(e.target.value)
+    <div className="mb-4 flex items-end gap-2 text-sm">
+      <Dropdown
+        label="Profile"
+        options={profiles.map((p) => ({ value: p.id, label: profileLabel(p) }))}
+        value={profileId}
+        onChange={(id) => {
+          setStoredProfileId(id)
+          onChange(id)
         }}
-        className="rounded-md border border-gray-300 px-2 py-1 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
+      />
+      <a
+        href={PROFILES_PATH}
+        onClick={navigateToProfiles}
+        className="pb-1 text-gray-500 underline hover:text-gray-700"
       >
-        {profiles.map((p) => (
-          <option key={p.id} value={p.id}>
-            {profileLabel(p)}
-          </option>
-        ))}
-      </select>
-      <a href={PROFILES_PATH} onClick={navigateToProfiles} className="text-gray-500 underline hover:text-gray-700">
         Manage
       </a>
     </div>

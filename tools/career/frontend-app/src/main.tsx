@@ -6,15 +6,21 @@
 //
 // Step 7 split Skills and Experience out of Profile into their own
 // pages/routes/menu children. Step 9 added Personas. Step 11 added
-// Profiles — the new first child, since nothing else (Personas, and
-// everything under a Persona) can be used without one existing first
-// (step 10's own "forced to be mapped to an existing Profile") — and
-// renamed what used to be called "Profile" to "Persona Details",
-// matching the backend's own step 10 rename. See
+// Profiles — since nothing else (Personas, and everything under a
+// Persona) can be used without one existing first (step 10's own
+// "forced to be mapped to an existing Profile") — and renamed what
+// used to be called "Profile" to "Persona Details", matching the
+// backend's own step 10 rename. Step 12 nested Personas/Persona
+// Details/Skills/Experience under Profiles itself (Profiles keeps its
+// own path — the host's own SidebarMenuItem renders a path and
+// children independently — while gaining a caret to expand/collapse
+// the four of them); Jobs stays a flat sibling of Profiles, not
+// nested, since it's tool-wide rather than persona-scoped. See
 // plan/ai/tools/career/step-07-dedicated-skills-and-experience-pages.md,
 // plan/ai/tools/career/step-09-persona-frontend.md,
-// plan/ai/tools/career/step-10-job-seeker-profile.md, and
-// plan/ai/tools/career/step-11-job-seeker-profile-frontend.md.
+// plan/ai/tools/career/step-10-job-seeker-profile.md,
+// plan/ai/tools/career/step-11-job-seeker-profile-frontend.md, and
+// plan/ai/tools/career/step-12-nested-profiles-menu.md.
 import { createRoot, type Root } from 'react-dom/client'
 import { ProfilesPage } from './ProfilesPage'
 import { PersonasPage } from './PersonasPage'
@@ -38,26 +44,28 @@ window.__cinqoToolBridge.registerMenuEntry({
       label: 'Profiles',
       path: PROFILES_PATH,
       scopes: ['tool:career:profile'],
-    },
-    {
-      label: 'Personas',
-      path: PERSONAS_PATH,
-      scopes: ['tool:career:profile'],
-    },
-    {
-      label: 'Persona Details',
-      path: PERSONA_DETAILS_PATH,
-      scopes: ['tool:career:profile'],
-    },
-    {
-      label: 'Skills',
-      path: SKILLS_PATH,
-      scopes: ['tool:career:profile'],
-    },
-    {
-      label: 'Experience',
-      path: EXPERIENCE_PATH,
-      scopes: ['tool:career:profile'],
+      children: [
+        {
+          label: 'Personas',
+          path: PERSONAS_PATH,
+          scopes: ['tool:career:profile'],
+        },
+        {
+          label: 'Persona Details',
+          path: PERSONA_DETAILS_PATH,
+          scopes: ['tool:career:profile'],
+        },
+        {
+          label: 'Skills',
+          path: SKILLS_PATH,
+          scopes: ['tool:career:profile'],
+        },
+        {
+          label: 'Experience',
+          path: EXPERIENCE_PATH,
+          scopes: ['tool:career:profile'],
+        },
+      ],
     },
     {
       label: 'Jobs',
