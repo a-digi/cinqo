@@ -130,6 +130,24 @@ embed-frontend:
 	rm -rf api/cmd/app/webapp/dist
 	cp -R frontend/dist api/cmd/app/webapp/dist
 
+# Copies api/config/'s own runtime-data files (migrations SQL, route
+# YAML, the auth config.json, iam.yaml, system-tools.yaml) into a
+# location //go:embed in api/cmd/app/main.go can actually reach (embed
+# patterns can't cross up out of their own package directory) —
+# selectively, .go files (di.go, embed.go, routes.go,
+# handlerfunc.go, scope_registry.go) excluded on purpose: copying them
+# too would litter the module with duplicate, unimported Go packages
+# that go build ./...//go vet ./... would then also compile. Same
+# rm -rf + fresh-copy shape as embed-frontend above — a build-
+# generated, gitignored directory, not something hand-edited. See
+# plan/ai/build/app/step-19-embedded-config-directory.md.
+.PHONY: embed-config
+embed-config:
+	rm -rf api/cmd/app/embeddedconfig
+	mkdir -p api/cmd/app/embeddedconfig
+	cd api/config && find . -type f \( -name '*.sql' -o -name '*.yaml' -o -name '*.json' \) \
+	  -exec sh -c 'mkdir -p "../cmd/app/embeddedconfig/$$(dirname "$$1")" && cp "$$1" "../cmd/app/embeddedconfig/$$1"' _ {} \;
+
 # app/VERSION tracks cinqo-app's own version, independently of
 # api/VERSION (build/build-linux's, unrelated, unpadded M.N.P scheme).
 # Format is M.N.PPP — patch always zero-padded to exactly 3 digits.
@@ -159,7 +177,7 @@ bump-app-version:
 # binary currently is, not the filename itself. See
 # plan/ai/build/app.md.
 .PHONY: build-app
-build-app: embed-frontend bump-app-version
+build-app: embed-frontend embed-config bump-app-version
 	@mkdir -p app
 	cd api && go build -o ../app/cinqo-app ./cmd/app
 	@echo "cinqo-app $$(cat $(APP_VERSION_FILE)) built at app/cinqo-app"

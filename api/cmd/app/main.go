@@ -7,7 +7,7 @@ package main
 
 import (
 	"context"
-	_ "embed"
+	"embed"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -33,6 +33,7 @@ import (
 	_ "github.com/caddyserver/caddy/v2/modules/standard"          // reverse_proxy, file_server, handle, try_files
 
 	"github.com/a-digi/cinqo/cmd/app/webapp"
+	"github.com/a-digi/cinqo/config"
 	"github.com/a-digi/cinqo/config/di"
 	auth_config "github.com/a-digi/cinqo/src/auth/config"
 	"github.com/a-digi/cinqo/src/backendapp"
@@ -52,6 +53,20 @@ var embeddedCaddyfile []byte
 //
 //go:embed embedded-config.json
 var embeddedConfigJSON []byte
+
+// embeddedConfigDir is api/config/'s own runtime-data files (migration
+// SQL, route YAML, the auth config.json, iam.yaml, system-tools.yaml)
+// — Go source files (di.go, embed.go, routes.go, handlerfunc.go,
+// scope_registry.go) deliberately excluded by `make embed-config`'s
+// own selective copy, not embedded here. Extracted (always
+// overwritten, unlike embeddedConfigJSON's own once-only
+// ensureConfigFile) to <home>/config and pointed at via
+// CINQO_CONFIG_DIR when launched from a directory with no api/config/
+// tree of its own. See
+// plan/ai/build/app/step-19-embedded-config-directory.md.
+//
+//go:embed all:embeddedconfig
+var embeddedConfigDir embed.FS
 
 // caddyPort is the single source of truth for the port embedded.Caddyfile
 // itself hardcodes (its site address can't be an {env.*} placeholder —
@@ -120,6 +135,25 @@ func run() error {
 		}
 		dataDefault = filepath.Join(home, "data")
 		chromePidPath = filepath.Join(home, "chrome.pid")
+
+		// Same "opened from another location" case, one level further:
+		// migrations/route YAML/the auth config.json/iam.yaml/
+		// system-tools.yaml all live under api/config/ today, resolved
+		// via candidateDefaults()'s own executable-relative/CWD-relative
+		// search — which finds nothing when there's no api/config/ tree
+		// shipped next to this binary at all. Extracting the embedded
+		// copy and pointing CINQO_CONFIG_DIR (the override
+		// candidateDefaults() already respects) at it fixes every one of
+		// those in one shot — no changes needed to backendapp.Start or
+		// the config package itself. See
+		// plan/ai/build/app/step-19-embedded-config-directory.md.
+		configDir := filepath.Join(home, "config")
+		if err := extractEmbeddedConfig(configDir); err != nil {
+			return fmt.Errorf("extract embedded config: %w", err)
+		}
+		if err := os.Setenv(config.EnvVarConfigDir, configDir); err != nil {
+			return fmt.Errorf("set %s: %w", config.EnvVarConfigDir, err)
+		}
 	}
 
 	cfg, err := server.LoadConfig(configPath)
@@ -217,6 +251,43 @@ func ensureConfigFile(path, home string) error {
 		return err
 	}
 	return os.WriteFile(path, data, 0o644)
+}
+
+// extractEmbeddedConfig always overwrites dest with the embedded
+// config tree's current content — deliberately different from
+// ensureConfigFile's own never-overwrite policy just above: this is
+// app-owned, versioned data (migrations, route YAML, the auth
+// config.json, iam.yaml, system-tools.yaml), not something a user is
+// expected to hand-edit, so a later app version's own new migration
+// must actually reach a user whose ~/.cinqo/config/ already exists
+// from an earlier install — "extract once" would silently prevent
+// that. Same fs.WalkDir + os.MkdirAll/os.WriteFile shape
+// extractFrontend already uses for the embedded frontend build, just
+// writing to a stable, persistent destination instead of a fresh temp
+// directory removed on shutdown. See
+// plan/ai/build/app/step-19-embedded-config-directory.md.
+func extractEmbeddedConfig(dest string) error {
+	if err := os.RemoveAll(dest); err != nil {
+		return err
+	}
+	return fs.WalkDir(embeddedConfigDir, "embeddedconfig", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel("embeddedconfig", path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dest, rel)
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		data, err := fs.ReadFile(embeddedConfigDir, path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, data, 0o644)
+	})
 }
 
 // stopStaleInstance detects whether a previous cinqo-app instance — or a
