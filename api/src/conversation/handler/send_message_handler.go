@@ -78,7 +78,13 @@ func SendMessageHandler(reqCtx request.RequestContext) {
 
 	mainDB := reqCtx.GetDI().GetDatabaseManager().Connector.DB
 
-	turn, err := conversation.SendMessage(reqCtx.GetRequest().Context(), http.DefaultClient, mainDB, convDB, encKey, id, body.Content, scopes)
+	port, err := corePort(reqCtx)
+	if err != nil {
+		response.ErrorResponse(w, http.StatusInternalServerError, "core port not configured")
+		return
+	}
+
+	turn, err := conversation.SendMessage(reqCtx.GetRequest().Context(), http.DefaultClient, mainDB, convDB, encKey, id, body.Content, scopes, port)
 	if err != nil {
 		// Logged here, the handler layer, not inside SendMessage itself
 		// — matches this codebase's own established convention

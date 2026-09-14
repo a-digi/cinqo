@@ -11,8 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/a-digi/coco-server/server"
-
 	"github.com/a-digi/cinqo/src/platform"
 	"github.com/a-digi/cinqo/src/platform/chatcompleter"
 	platform_crypto "github.com/a-digi/cinqo/src/platform/crypto"
@@ -92,6 +90,7 @@ func SendMessage(
 	encryptionKey []byte,
 	conversationID, content string,
 	callerScopes []string,
+	corePort int,
 ) (*Turn, error) {
 	if content == "" {
 		return nil, ErrEmptyContent
@@ -156,7 +155,7 @@ func SendMessage(
 		return nil, fmt.Errorf("conversation: look up offerable tools: %w", err)
 	}
 
-	assistantContent, err := runToolLoop(ctx, httpClient, entry, plainKey, model, messages, tools, mainDB, callerScopes)
+	assistantContent, err := runToolLoop(ctx, httpClient, entry, plainKey, model, messages, tools, mainDB, callerScopes, corePort)
 	if err != nil {
 		// Record the user's own message AND the real failure reason —
 		// a real, recognized "## error —" block (step 8), not a
@@ -242,6 +241,7 @@ func runToolLoop(
 	tools []chatcompleter.ToolDef,
 	mainDB *sql.DB,
 	callerScopes []string,
+	corePort int,
 ) (string, error) {
 	var allLinks []tool_mcp.ResourceLink
 
@@ -261,7 +261,7 @@ func runToolLoop(
 		})
 
 		for _, call := range result.ToolCalls {
-			text, links := invokeToolCall(ctx, mainDB, callerScopes, call)
+			text, links := invokeToolCall(ctx, mainDB, callerScopes, call, corePort)
 			messages = append(messages, chatcompleter.Message{Role: "tool", ToolCallID: call.ID, Content: text})
 			allLinks = append(allLinks, links...)
 		}
@@ -301,7 +301,7 @@ func appendResourceLinks(content string, links []tool_mcp.ResourceLink) string {
 // stranding the conversation. See
 // plan/ai/tools/pdf-generator/step-04-ai-model-invocation.md's
 // "Invocation, concretely".
-func invokeToolCall(ctx context.Context, mainDB *sql.DB, callerScopes []string, call chatcompleter.ToolCall) (string, []tool_mcp.ResourceLink) {
+func invokeToolCall(ctx context.Context, mainDB *sql.DB, callerScopes []string, call chatcompleter.ToolCall, corePort int) (string, []tool_mcp.ResourceLink) {
 	mcpTool, err := tool_query.NewToolMCPToolQueryRepo(mainDB).FindMCPToolByName(call.Name)
 	if err != nil {
 		return "tool unavailable", nil
@@ -315,10 +315,6 @@ func invokeToolCall(ctx context.Context, mainDB *sql.DB, callerScopes []string, 
 		return "tool unavailable", nil
 	}
 
-	corePort, err := readCorePort()
-	if err != nil {
-		return fmt.Sprintf("tool invocation failed: %v", err), nil
-	}
 	envVars, err := tool_manager.ToolEnvVars(tool.Slug, corePort)
 	if err != nil {
 		return fmt.Sprintf("tool invocation failed: %v", err), nil
@@ -350,17 +346,6 @@ func hasScope(scopes []string, want string) bool {
 		}
 	}
 	return false
-}
-
-// readCorePort matches tool/handler/paths.go's own identical helper —
-// duplicated rather than exported cross-package for this one small
-// read, same rationale as hasScope above.
-func readCorePort() (int, error) {
-	cfg, err := server.LoadConfig("config.json")
-	if err != nil {
-		return 0, err
-	}
-	return cfg.Port, nil
 }
 
 // maxStoredErrorLength caps a failed turn's own stored error text — a

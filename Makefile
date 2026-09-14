@@ -156,9 +156,13 @@ embed-config:
 # app/VERSION tracks cinqo-app's own version, independently of
 # api/VERSION (build/build-linux's, unrelated, unpadded M.N.P scheme).
 # Format is M.N.PPP — patch always zero-padded to exactly 3 digits.
-# Bumped unconditionally on every build-app run (no NO_BUMP escape,
-# unlike bump-version below — intentional, per explicit instruction).
-# See plan/ai/build/app/step-06-app-output-and-version-tracking.md.
+# Bumped by default on a direct `make build-app` — skippable via
+# `NO_BUMP=1`, the same idiom `build`/`build-linux` already use for
+# api/VERSION (build-app didn't originally have this escape at all;
+# added so run-app, below, can build without advancing the version on
+# every casual run). See
+# plan/ai/build/app/step-06-app-output-and-version-tracking.md and
+# plan/ai/build/app/step-12-run-app-no-version-bump.md.
 APP_VERSION_FILE := app/VERSION
 
 .PHONY: bump-app-version
@@ -182,7 +186,10 @@ bump-app-version:
 # binary currently is, not the filename itself. See
 # plan/ai/build/app.md.
 .PHONY: build-app
-build-app: embed-frontend embed-config bump-app-version
+build-app: embed-frontend embed-config
+ifndef NO_BUMP
+	$(MAKE) bump-app-version
+endif
 	@mkdir -p app
 	cd api && go build -o ../app/cinqo-app ./cmd/app
 	@echo "cinqo-app $$(cat $(APP_VERSION_FILE)) built at app/cinqo-app"
@@ -204,7 +211,8 @@ build-app: embed-frontend embed-config bump-app-version
 # 7026) rather than using the real api/config.json. Caught by testing
 # this exact target, not assumed.
 .PHONY: run-app
-run-app: build-app
+run-app:
+	$(MAKE) build-app NO_BUMP=1
 	cd api && ../app/cinqo-app
 
 # Packages a tools/<name>/ source directory into the .zip the install

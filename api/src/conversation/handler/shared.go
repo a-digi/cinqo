@@ -151,6 +151,37 @@ func encryptionKey(reqCtx request.RequestContext) ([]byte, error) {
 // constant) is worth a one-line duplicated literal.
 const defaultDataDir = "data"
 
+// errCorePortUnavailable / corePort mirror tool/handler/paths.go's own
+// identical helpers exactly — same "resolved once at boot, via DI"
+// fix for the same class of bug: conversation/chat.go's own
+// readCorePort used to call a bare server.LoadConfig("config.json"),
+// CWD-relative with no fallback, the exact bug already fixed in
+// tool/handler/paths.go's own corePort (step 20) but never carried
+// over to this package's own intentionally-duplicated twin — found
+// live, not assumed, when a real AI conversation's tool call ("please
+// call list_portals") failed with "tool invocation failed: could not
+// open config file: open config.json: no such file or directory" on
+// an install running via apphome (CWD without its own config.json).
+// See plan/ai/build/app/step-20-app-version-via-di.md and
+// plan/ai/conversation/step-13-conversation-core-port-via-di.md.
+var errCorePortUnavailable = errors.New("core port unavailable")
+
+func corePort(reqCtx request.RequestContext) (int, error) {
+	storeCtx, ok := reqCtx.GetDI().(diStore)
+	if !ok {
+		return 0, errCorePortUnavailable
+	}
+	raw, ok := storeCtx.Get("core_port")
+	if !ok {
+		return 0, errCorePortUnavailable
+	}
+	p, ok := raw.(int)
+	if !ok || p == 0 {
+		return 0, errCorePortUnavailable
+	}
+	return p, nil
+}
+
 // logsRoot resolves the shared root directory every conversation's
 // own log file lives under — the "conversations" subdirectory of
 // whatever backendapp.Start registered as "data_dir" (defaults to
