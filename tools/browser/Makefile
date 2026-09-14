@@ -26,19 +26,34 @@
 # Linux ships both amd64 and arm64, matching pdf_generator's own
 # already-verified convention.
 #
-# Step 10 added frontend/bundle.js — plain JS text, not compiled,
-# identical across every OS/arch, so it's copied verbatim into each
-# OS build dir alongside manifest.json (same reasoning already applied
-# to manifest.json itself). Its presence is what promotes this
-# package's own derived "kind" from backend_only to
-# frontend_and_backend at install time (api/src/tool/manifest/manifest.go)
-# — nothing here declares kind explicitly. See
+# Step 10 added frontend/bundle.js — copied verbatim into each OS
+# build dir alongside manifest.json (same reasoning already applied to
+# manifest.json itself: identical across every OS/arch). Its presence
+# is what promotes this package's own derived "kind" from
+# backend_only to frontend_and_backend at install time
+# (api/src/tool/manifest/manifest.go) — nothing here declares kind
+# explicitly. See
 # plan/ai/tools/browser/step-10-credential-management-frontend.md.
+#
+# Step 15 replaced bundle.js's own hand-written DOM-string-
+# concatenation source with a real React + Tailwind build —
+# frontend/bundle.js is now a generated artifact (untracked, see
+# .gitignore), produced by build-frontend below from
+# frontend-app/'s own React+Tailwind source (tracked). Vite's own
+# outDir writes straight to ../frontend/bundle.js — no separate copy
+# step needed for the frontend BUILD itself, only for shipping the
+# already-built file into each OS's own package dir, same as before.
+# See plan/ai/tools/browser/step-15-react-tailwind-frontend-rewrite.md.
 
 BUILD_DIR := build
 
+.PHONY: build-frontend
+build-frontend:
+	cd frontend-app && npm install && npm run build
+	@echo "built: frontend/bundle.js (from frontend-app/)"
+
 .PHONY: build-darwin
-build-darwin:
+build-darwin: build-frontend
 	@mkdir -p $(BUILD_DIR)/darwin-arm64/backend
 	cp manifest.json $(BUILD_DIR)/darwin-arm64/
 	cp -r frontend $(BUILD_DIR)/darwin-arm64/
@@ -46,7 +61,7 @@ build-darwin:
 	@echo "built: $(BUILD_DIR)/darwin-arm64/backend/tool"
 
 .PHONY: build-linux
-build-linux:
+build-linux: build-frontend
 	@mkdir -p $(BUILD_DIR)/linux-amd64/backend $(BUILD_DIR)/linux-arm64/backend
 	cp manifest.json $(BUILD_DIR)/linux-amd64/
 	cp manifest.json $(BUILD_DIR)/linux-arm64/
@@ -58,7 +73,7 @@ build-linux:
 	@echo "built: $(BUILD_DIR)/linux-arm64/backend/tool"
 
 .PHONY: build-windows
-build-windows:
+build-windows: build-frontend
 	@mkdir -p $(BUILD_DIR)/windows-amd64/backend
 	cp manifest.json $(BUILD_DIR)/windows-amd64/
 	cp -r frontend $(BUILD_DIR)/windows-amd64/
@@ -93,3 +108,4 @@ zip: build-all
 .PHONY: clean
 clean:
 	rm -rf $(BUILD_DIR)
+	rm -rf frontend-app/node_modules frontend-app/dist
