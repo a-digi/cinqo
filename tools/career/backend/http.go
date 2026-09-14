@@ -66,6 +66,36 @@ func writeRecruiterAwareError(w http.ResponseWriter, action string, err error) {
 	http.Error(w, "failed to "+action+": "+err.Error(), http.StatusInternalServerError)
 }
 
+// writePortalAwareError is the same idea for errUnknownPortal.
+func writePortalAwareError(w http.ResponseWriter, action string, err error) {
+	if errors.Is(err, errUnknownPortal) {
+		http.Error(w, "unknown portal id", http.StatusBadRequest)
+		return
+	}
+	http.Error(w, "failed to "+action+": "+err.Error(), http.StatusInternalServerError)
+}
+
+// writePortalLinkAwareError additionally maps errDuplicatePortalLink
+// (the same url added twice to one portal) and errInvalidCrawlInstructions
+// (step 19's own shape check) to a 400 — the latter's own error text
+// already carries the specific, actionable reason (e.g. "pagination.
+// maxPages is required"), so it's passed straight through rather than
+// replaced with a generic message.
+func writePortalLinkAwareError(w http.ResponseWriter, action string, err error) {
+	switch {
+	case errors.Is(err, errUnknownPortal):
+		http.Error(w, "unknown portal id", http.StatusBadRequest)
+	case errors.Is(err, errUnknownPortalLink):
+		http.Error(w, "unknown portal link id", http.StatusBadRequest)
+	case errors.Is(err, errDuplicatePortalLink):
+		http.Error(w, "this url is already a link on this portal", http.StatusBadRequest)
+	case errors.Is(err, errInvalidCrawlInstructions):
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	default:
+		http.Error(w, "failed to "+action+": "+err.Error(), http.StatusInternalServerError)
+	}
+}
+
 // --- /profiles ---
 
 type profileRequest struct {
@@ -526,7 +556,7 @@ func jobsHandler(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		limit := atoiOrZero(q.Get("limit"))
 		offset := atoiOrZero(q.Get("offset"))
-		result, err := searchJobs(q.Get("query"), q.Get("location"), q.Get("companyId"), clampLimit(limit), offset)
+		result, err := searchJobs(q.Get("query"), q.Get("location"), q.Get("companyId"), q.Get("portalLinkId"), clampLimit(limit), offset)
 		if err != nil {
 			http.Error(w, "failed to list jobs: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -706,6 +736,166 @@ func recruitersHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := deleteRecruiter(id); err != nil {
 			http.Error(w, "failed to delete recruiter: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// --- /portals ---
+
+type portalRequest struct {
+	Name string `json:"name"`
+}
+
+type portalUpdateRequest struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+func portalsHandler(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		portals, err := listPortals()
+		if err != nil {
+			http.Error(w, "failed to list portals: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, map[string]any{"portals": portals})
+
+	case http.MethodPost:
+		var body portalRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Name == "" {
+			http.Error(w, "name is required", http.StatusBadRequest)
+			return
+		}
+		id, err := createPortal(body.Name)
+		if err != nil {
+			http.Error(w, "failed to create portal: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		portals, err := listPortals()
+		if err != nil {
+			http.Error(w, "portal created but failed to reload: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, map[string]any{"id": id, "portals": portals})
+
+	case http.MethodPut:
+		var body portalUpdateRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.ID == "" || body.Name == "" {
+			http.Error(w, "id and name are both required", http.StatusBadRequest)
+			return
+		}
+		if err := updatePortal(body.ID, body.Name); err != nil {
+			writePortalAwareError(w, "update portal", err)
+			return
+		}
+		portals, err := listPortals()
+		if err != nil {
+			http.Error(w, "portal updated but failed to reload: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, map[string]any{"portals": portals})
+
+	case http.MethodDelete:
+		id := r.URL.Query().Get("id")
+		if id == "" {
+			http.Error(w, "id query parameter is required", http.StatusBadRequest)
+			return
+		}
+		if err := deletePortal(id); err != nil {
+			http.Error(w, "failed to delete portal: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// --- /portal-links ---
+
+type portalLinkRequest struct {
+	PortalID string `json:"portalId"`
+	URL      string `json:"url"`
+}
+
+type portalLinkUpdateRequest struct {
+	ID                string  `json:"id"`
+	URL               *string `json:"url,omitempty"`
+	CrawlInstructions *string `json:"crawlInstructions,omitempty"`
+}
+
+func portalLinksHandler(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodPost:
+		var body portalLinkRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.URL == "" {
+			http.Error(w, "url is required", http.StatusBadRequest)
+			return
+		}
+		if body.PortalID == "" {
+			http.Error(w, "portalId is required", http.StatusBadRequest)
+			return
+		}
+		id, err := addPortalLink(body.PortalID, body.URL)
+		if err != nil {
+			writePortalLinkAwareError(w, "add portal link", err)
+			return
+		}
+		portals, err := listPortals()
+		if err != nil {
+			http.Error(w, "portal link added but failed to reload: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, map[string]any{"id": id, "portals": portals})
+
+	case http.MethodPut:
+		var body portalLinkUpdateRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.ID == "" {
+			http.Error(w, "id is required", http.StatusBadRequest)
+			return
+		}
+		if body.URL == nil && body.CrawlInstructions == nil {
+			http.Error(w, "url or crawlInstructions is required", http.StatusBadRequest)
+			return
+		}
+		if body.URL != nil {
+			if *body.URL == "" {
+				http.Error(w, "url cannot be empty", http.StatusBadRequest)
+				return
+			}
+			if err := updatePortalLink(body.ID, *body.URL); err != nil {
+				writePortalLinkAwareError(w, "update portal link", err)
+				return
+			}
+		}
+		if body.CrawlInstructions != nil {
+			if err := updatePortalLinkCrawlInstructions(body.ID, *body.CrawlInstructions); err != nil {
+				writePortalLinkAwareError(w, "update portal link crawl instructions", err)
+				return
+			}
+		}
+		portals, err := listPortals()
+		if err != nil {
+			http.Error(w, "portal link updated but failed to reload: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, map[string]any{"portals": portals})
+
+	case http.MethodDelete:
+		id := r.URL.Query().Get("id")
+		if id == "" {
+			http.Error(w, "id query parameter is required", http.StatusBadRequest)
+			return
+		}
+		if err := removePortalLink(id); err != nil {
+			http.Error(w, "failed to remove portal link: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)

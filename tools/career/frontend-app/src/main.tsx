@@ -30,6 +30,7 @@ import { ExperiencePage } from './ExperiencePage'
 import { JobsPage } from './JobsPage'
 import { CompaniesPage } from './CompaniesPage'
 import { RecruitersPage } from './RecruitersPage'
+import { PortalsPage } from './PortalsPage'
 import './index.css'
 
 const PROFILES_PATH = '/tools/career/profiles'
@@ -40,6 +41,7 @@ const EXPERIENCE_PATH = '/tools/career/experience'
 const JOBS_PATH = '/tools/career/jobs'
 const COMPANIES_PATH = '/tools/career/companies'
 const RECRUITERS_PATH = '/tools/career/recruiters'
+const PORTALS_PATH = '/tools/career/portals'
 
 window.__cinqoToolBridge.registerMenuEntry({
   label: 'Career',
@@ -85,6 +87,13 @@ window.__cinqoToolBridge.registerMenuEntry({
       label: 'Jobs',
       path: JOBS_PATH,
       scopes: ['tool:career:jobs'],
+      children: [
+        {
+          label: 'Portals',
+          path: PORTALS_PATH,
+          scopes: ['tool:career:portals'],
+        },
+      ],
     },
   ],
 })
@@ -147,5 +156,11 @@ window.__cinqoToolBridge.registerRoute({
 window.__cinqoToolBridge.registerRoute({
   path: RECRUITERS_PATH,
   mount: (container) => mountReact(container, <RecruitersPage />),
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: PORTALS_PATH,
+  mount: (container) => mountReact(container, <PortalsPage />),
   unmount: unmountReact,
 })

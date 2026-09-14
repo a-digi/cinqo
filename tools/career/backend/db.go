@@ -175,16 +175,34 @@ CREATE TABLE IF NOT EXISTS companies (
     updated_at  TEXT
 );
 
-CREATE TABLE IF NOT EXISTS jobs (
+CREATE TABLE IF NOT EXISTS portals (
     id          TEXT PRIMARY KEY,
-    source_url  TEXT NOT NULL UNIQUE,
-    title       TEXT NOT NULL,
-    company     TEXT,
-    company_id  TEXT REFERENCES companies(id) ON DELETE SET NULL,
-    location    TEXT,
-    description TEXT,
-    posted_at   TEXT,
-    crawled_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    name        TEXT NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT
+);
+
+CREATE TABLE IF NOT EXISTS portal_links (
+    id                  TEXT PRIMARY KEY,
+    portal_id           TEXT NOT NULL REFERENCES portals(id) ON DELETE CASCADE,
+    url                 TEXT NOT NULL,
+    crawl_instructions  TEXT,
+    created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at          TEXT,
+    UNIQUE(portal_id, url)
+);
+
+CREATE TABLE IF NOT EXISTS jobs (
+    id              TEXT PRIMARY KEY,
+    source_url      TEXT NOT NULL UNIQUE,
+    title           TEXT NOT NULL,
+    company         TEXT,
+    company_id      TEXT REFERENCES companies(id) ON DELETE SET NULL,
+    portal_link_id  TEXT REFERENCES portal_links(id) ON DELETE SET NULL,
+    location        TEXT,
+    description     TEXT,
+    posted_at       TEXT,
+    crawled_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS recruiters (
@@ -480,6 +498,13 @@ DROP TABLE career_profile;
 // jobsSchema creates it correctly shaped from the start) and on an
 // already-migrated one. See plan/ai/tools/career/step-14-companies.md.
 func migrateJobsDB(db *sql.DB) error {
+	if err := migrateJobsCompanyID(db); err != nil {
+		return err
+	}
+	return migrateJobsPortalLinkID(db)
+}
+
+func migrateJobsCompanyID(db *sql.DB) error {
 	exists, hasCompanyID, err := tableHasColumn(db, "jobs", "company_id")
 	if err != nil {
 		return err
@@ -501,5 +526,45 @@ CREATE TABLE IF NOT EXISTS companies (
 	}
 
 	_, err = db.Exec(`ALTER TABLE jobs ADD COLUMN company_id TEXT REFERENCES companies(id) ON DELETE SET NULL`)
+	return err
+}
+
+// migrateJobsPortalLinkID mirrors migrateJobsCompanyID exactly, one
+// step later: detects a pre-portal jobs table (no portal_link_id
+// column) and, if found, creates portals/portal_links (so the
+// column's own REFERENCES target exists — a no-op via CREATE TABLE IF
+// NOT EXISTS on an install that already has them from steps 18/19) and
+// adds portal_link_id via a plain ALTER TABLE ADD COLUMN. See
+// plan/ai/tools/career/step-20-portal-job-ingestion.md.
+func migrateJobsPortalLinkID(db *sql.DB) error {
+	exists, hasPortalLinkID, err := tableHasColumn(db, "jobs", "portal_link_id")
+	if err != nil {
+		return err
+	}
+	if !exists || hasPortalLinkID {
+		return nil
+	}
+
+	if _, err := db.Exec(`
+CREATE TABLE IF NOT EXISTS portals (
+    id          TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT
+);
+CREATE TABLE IF NOT EXISTS portal_links (
+    id                  TEXT PRIMARY KEY,
+    portal_id           TEXT NOT NULL REFERENCES portals(id) ON DELETE CASCADE,
+    url                 TEXT NOT NULL,
+    crawl_instructions  TEXT,
+    created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at          TEXT,
+    UNIQUE(portal_id, url)
+);
+`); err != nil {
+		return err
+	}
+
+	_, err = db.Exec(`ALTER TABLE jobs ADD COLUMN portal_link_id TEXT REFERENCES portal_links(id) ON DELETE SET NULL`)
 	return err
 }

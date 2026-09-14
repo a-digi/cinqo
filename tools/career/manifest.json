@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.17.0",
+  "version": "0.22.0",
   "mcp": true,
   "requires_tools": [
     {
@@ -20,6 +20,10 @@
     {
       "scope": "tool:career:companies",
       "description": "Create, read, update, and delete companies and their linked job postings."
+    },
+    {
+      "scope": "tool:career:portals",
+      "description": "Create, read, update, and delete job portals and their crawl target links."
     }
   ],
   "routes": [
@@ -177,6 +181,41 @@
       "method": "DELETE",
       "path_suffix": "recruiters",
       "required_scope": "tool:career:companies"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "portals",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "portals",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "portals",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "portals",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "portal-links",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "portal-links",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "portal-links",
+      "required_scope": "tool:career:portals"
     }
   ],
   "mcp_tools": [
@@ -299,6 +338,46 @@
     {
       "name": "delete_recruiter",
       "required_scope": "tool:career:companies"
+    },
+    {
+      "name": "create_portal",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "name": "list_portals",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "name": "update_portal",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "name": "delete_portal",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "name": "add_portal_link",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "name": "update_portal_link",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "name": "remove_portal_link",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "name": "get_portal_link_crawl_instructions",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "name": "set_portal_link_crawl_instructions",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "name": "save_portal_job",
+      "required_scope": "tool:career:jobs"
     }
   ]
 }

@@ -101,6 +101,23 @@ export interface Recruiter {
   updatedAt?: string
 }
 
+export interface PortalLink {
+  id: string
+  portalId: string
+  url: string
+  crawlInstructions: string | null
+  createdAt: string
+  updatedAt?: string
+}
+
+export interface Portal {
+  id: string
+  name: string
+  links: PortalLink[]
+  createdAt: string
+  updatedAt?: string
+}
+
 async function jsonOrThrow<T>(res: Response, action: string): Promise<T> {
   if (!res.ok) throw new Error(`failed to ${action} (${res.status})`)
   return res.json() as Promise<T>
@@ -386,4 +403,67 @@ export async function removeRecruiter(id: string): Promise<void> {
     credentials: 'include',
   })
   if (!res.ok && res.status !== 204) throw new Error(`failed to delete recruiter (${res.status})`)
+}
+
+// --- portals ---
+
+export async function fetchPortals(): Promise<Portal[]> {
+  const res = await fetch(`${PROXY_BASE}/portals`, { credentials: 'include' })
+  const data = await jsonOrThrow<{ portals: Portal[] }>(res, 'load portals')
+  return data.portals
+}
+
+export async function createPortal(name: string): Promise<{ id: string }> {
+  const res = await fetch(`${PROXY_BASE}/portals`, {
+    method: 'POST',
+    credentials: 'include',
+    body: JSON.stringify({ name }),
+  })
+  return jsonOrThrow<{ id: string }>(res, 'create portal')
+}
+
+export async function updatePortal(id: string, name: string): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/portals`, {
+    method: 'PUT',
+    credentials: 'include',
+    body: JSON.stringify({ id, name }),
+  })
+  if (!res.ok && res.status !== 204) throw new Error(`failed to update portal (${res.status})`)
+}
+
+export async function removePortal(id: string): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/portals?id=${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  })
+  if (!res.ok && res.status !== 204) throw new Error(`failed to delete portal (${res.status})`)
+}
+
+export async function addPortalLink(portalId: string, url: string): Promise<{ id: string }> {
+  const res = await fetch(`${PROXY_BASE}/portal-links`, {
+    method: 'POST',
+    credentials: 'include',
+    body: JSON.stringify({ portalId, url }),
+  })
+  return jsonOrThrow<{ id: string }>(res, 'add portal link')
+}
+
+export async function updatePortalLink(id: string, args: { url?: string; crawlInstructions?: string }): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/portal-links`, {
+    method: 'PUT',
+    credentials: 'include',
+    body: JSON.stringify({ id, ...args }),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(text || `failed to update portal link (${res.status})`)
+  }
+}
+
+export async function removePortalLink(id: string): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/portal-links?id=${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  })
+  if (!res.ok && res.status !== 204) throw new Error(`failed to remove portal link (${res.status})`)
 }
