@@ -1,6 +1,7 @@
 import { Outlet } from 'react-router-dom'
 import { AuthProvider } from './AuthContext'
 import { ToolRegistryProvider } from '../../config/tools/ToolRegistryContext'
+import { ConversationProvider } from '../../config/conversation/ConversationContext'
 
 // Pathless layout route wrapping every route that needs a session
 // (/login, /login/callback, and the AuthGuard-protected `/` subtree).
@@ -17,12 +18,18 @@ import { ToolRegistryProvider } from '../../config/tools/ToolRegistryContext'
 // as coco-mda accumulates them. ToolRegistryProvider (plan/ai/tools/
 // step-07) is the first one — it needs useAuth() itself (only loads
 // tools once truly authenticated), so it must nest inside AuthProvider,
-// not beside it.
+// not beside it. ConversationProvider (plan/ai/conversation/step-16) is
+// the second — same reasoning, and it must be visible to both
+// ConversationPage (rendered under Layout's own Outlet) and, from
+// step-17, the floating widget mounted directly in Layout — the only
+// placement visible to both.
 export function AuthenticatedProviders() {
   return (
     <AuthProvider>
       <ToolRegistryProvider>
-        <Outlet />
+        <ConversationProvider>
+          <Outlet />
+        </ConversationProvider>
       </ToolRegistryProvider>
     </AuthProvider>
   )

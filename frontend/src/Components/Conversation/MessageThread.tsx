@@ -59,7 +59,7 @@ function Bubble({
   const isUser = message.role === 'user'
 
   return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+    <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'}`}>
       <div
         className={`max-w-lg rounded-lg px-3 py-2 text-sm ${
           message.failed ? 'border border-red-300 bg-red-50 text-red-900' : isUser ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-900'
@@ -91,8 +91,42 @@ function Bubble({
           <pre className="mt-2 whitespace-pre-wrap break-words rounded bg-red-100 p-2 text-xs text-red-800">{message.error}</pre>
         )}
       </div>
+      {message.createdAt && (
+        <div className="mt-1 px-1 text-xs text-gray-400">
+          {formatTimestamp(message.createdAt)}
+          {message.durationMs != null && ` · ${formatDuration(message.durationMs)}`}
+        </div>
+      )}
     </div>
   )
+}
+
+// Full datetime including seconds (plan/ai/conversation/step-14/15's
+// own "should show the datetime, with seconds also") — the backend's
+// RFC3339 timestamps already carry second precision; this is purely a
+// display-formatting choice, not a precision one.
+function formatTimestamp(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
+}
+
+// ms is always a whole number of milliseconds from the backend
+// (Turn.DurationMs) — formatted here, never on the backend, matching
+// this app's existing "backend returns raw values, frontend formats
+// for display" split.
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`
+  const seconds = ms / 1000
+  if (seconds < 60) return `${seconds.toFixed(1)}s`
+  const minutes = Math.floor(seconds / 60)
+  const remSeconds = Math.round(seconds % 60)
+  return `${minutes}m ${remSeconds}s`
 }
 
 function InfoIcon() {

@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 )
 
 // maxTurns/maxFileSize are the two independent retention caps —
@@ -36,6 +37,32 @@ type Turn struct {
 	Failed             bool
 	ErrorTimestamp     string
 	ErrorMessage       string
+}
+
+// DurationMs returns how long this turn took to resolve — from the
+// user's own message to the assistant's reply (or, for a failed
+// turn, to the recorded error) — computed from the two already-
+// persisted RFC3339 timestamps every turn already carries, never a
+// separately stored value (so it can never drift from the timestamps
+// it's derived from). Returns nil only if a timestamp fails to parse
+// — should never happen in practice, since both are always written
+// by SendMessage in this exact format; defensive, not expected to
+// fire. See plan/ai/conversation/step-14-turn-duration-backend.md.
+func (t Turn) DurationMs() *int64 {
+	start, err := time.Parse(time.RFC3339, t.UserTimestamp)
+	if err != nil {
+		return nil
+	}
+	endStr := t.AssistantTimestamp
+	if t.Failed {
+		endStr = t.ErrorTimestamp
+	}
+	end, err := time.Parse(time.RFC3339, endStr)
+	if err != nil {
+		return nil
+	}
+	ms := end.Sub(start).Milliseconds()
+	return &ms
 }
 
 // locks serializes the append-then-prune-then-rewrite sequence (and

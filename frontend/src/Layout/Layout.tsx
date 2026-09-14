@@ -2,15 +2,18 @@ import { useState } from 'react'
 import { useErrorAlert } from '../Shared/Components/ErrorAlert/ErrorAlertContext'
 import { ErrorAlert } from '../Shared/Components/ErrorAlert/ErrorAlert'
 import { Content } from './Content'
+import { GlobalChatWidget } from './GlobalChatWidget'
 import { Navbar } from './Navbar'
 import { Sidebar } from './Sidebar'
 
-// Minimal authenticated shell: Navbar + Sidebar + Content, nothing else
-// beyond the sidebar's own show/hide toggle
-// (plan/ai/frontend/frontend/step-08-collapsible-sidebars.md). State
-// lives here, not in Sidebar itself — the control that re-expands a
-// hidden sidebar (Navbar's toggle button) must stay rendered
-// regardless of collapse state.
+// Minimal authenticated shell: Navbar + Sidebar + Content, plus the
+// floating GlobalChatWidget (plan/ai/conversation/step-17) mounted as
+// a sibling of the Navbar/Sidebar/Content row — not inside Content's
+// own <Outlet/>, so it persists across every route change instead of
+// unmounting/remounting on navigation. State otherwise lives here, not
+// in Sidebar itself — the control that re-expands a hidden sidebar
+// (Navbar's toggle button) must stay rendered regardless of collapse
+// state (plan/ai/frontend/frontend/step-08-collapsible-sidebars.md).
 export function Layout() {
   const { errors, dismissError } = useErrorAlert()
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
@@ -23,6 +26,7 @@ export function Layout() {
         {!isSidebarCollapsed && <Sidebar />}
         <Content />
       </div>
+      <GlobalChatWidget />
     </div>
   )
 }

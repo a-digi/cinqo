@@ -19,9 +19,10 @@ type sendMessageRequest struct {
 }
 
 type sendMessageResponse struct {
-	Role      string `json:"role"`
-	Content   string `json:"content"`
-	CreatedAt string `json:"createdAt"`
+	Role       string `json:"role"`
+	Content    string `json:"content"`
+	CreatedAt  string `json:"createdAt"`
+	DurationMs *int64 `json:"durationMs,omitempty"`
 }
 
 // SendMessageHandler handles POST /api/v1/conversations/{id}/messages
@@ -101,9 +102,10 @@ func SendMessageHandler(reqCtx request.RequestContext) {
 	}
 
 	response.SuccessResponse(w, http.StatusCreated, sendMessageResponse{
-		Role:      "assistant",
-		Content:   turn.AssistantContent,
-		CreatedAt: turn.AssistantTimestamp,
+		Role:       "assistant",
+		Content:    turn.AssistantContent,
+		CreatedAt:  turn.AssistantTimestamp,
+		DurationMs: turn.DurationMs(),
 	})
 }
 

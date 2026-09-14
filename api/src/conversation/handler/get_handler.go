@@ -14,13 +14,18 @@ import (
 
 // Failed/Error surface a failed send (step 8) — omitted (false/nil)
 // for a normal message. A failed message is always role "user" with
-// no paired assistant message, since there never was one.
+// no paired assistant message, since there never was one. DurationMs
+// (step 14) is set on the "assistant" entry of a successful turn and
+// the "user" entry of a failed one (the one that actually carries the
+// end timestamp for that turn) — never on a plain user message of a
+// successful turn, which has no "how long did it take" of its own.
 type messageResponse struct {
-	Role      string  `json:"role"`
-	Content   string  `json:"content"`
-	CreatedAt string  `json:"createdAt"`
-	Failed    bool    `json:"failed,omitempty"`
-	Error     *string `json:"error,omitempty"`
+	Role       string  `json:"role"`
+	Content    string  `json:"content"`
+	CreatedAt  string  `json:"createdAt"`
+	Failed     bool    `json:"failed,omitempty"`
+	Error      *string `json:"error,omitempty"`
+	DurationMs *int64  `json:"durationMs,omitempty"`
 }
 
 type conversationDetailResponse struct {
@@ -76,13 +81,13 @@ func GetHandler(reqCtx request.RequestContext) {
 			errMsg := t.ErrorMessage
 			messages = append(messages, messageResponse{
 				Role: "user", Content: t.UserContent, CreatedAt: t.UserTimestamp,
-				Failed: true, Error: &errMsg,
+				Failed: true, Error: &errMsg, DurationMs: t.DurationMs(),
 			})
 			continue
 		}
 		messages = append(messages,
 			messageResponse{Role: "user", Content: t.UserContent, CreatedAt: t.UserTimestamp},
-			messageResponse{Role: "assistant", Content: t.AssistantContent, CreatedAt: t.AssistantTimestamp},
+			messageResponse{Role: "assistant", Content: t.AssistantContent, CreatedAt: t.AssistantTimestamp, DurationMs: t.DurationMs()},
 		)
 	}
 

@@ -21,12 +21,20 @@ export interface Conversation {
 // failed/error surface a send that failed (plan/ai/conversation/step-08) —
 // undefined for a normal message. A failed message is always role
 // "user" with no paired assistant message, since there never was one.
+//
+// durationMs (plan/ai/conversation/step-14) is how long this turn took
+// to resolve — present on the "assistant" entry of a successful turn
+// and the "user" entry of a failed one, undefined on a plain
+// successful "user" entry (which has no "how long did it take" of its
+// own). Raw milliseconds from the backend; formatting is this
+// frontend's own job (step-15).
 export interface ConversationMessage {
   role: 'user' | 'assistant'
   content: string
   createdAt: string
   failed?: boolean
   error?: string
+  durationMs?: number
 }
 
 export interface ConversationDetail extends Conversation {

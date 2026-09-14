@@ -1,16 +1,8 @@
 import { useEffect, useState } from 'react'
-import {
-  fetchConversations,
-  createConversation,
-  fetchConversation,
-  renameConversation,
-  deleteConversation,
-  sendMessage,
-  type Conversation,
-  type ConversationDetail,
-} from '../../api/conversations'
+import type { ConversationDetail } from '../../api/conversations'
 import { fetchPlatforms, type Platform } from '../../api/platforms'
 import { ApiError } from '../../api/client'
+import { useConversationContext } from '../../config/conversation/ConversationContext'
 import { LoadingSpinner } from '../../Shared/Components/Loading/LoadingSpinner'
 import { Dropdown } from '../../Shared/Components/Dropdown/Dropdown'
 import { ConversationSidebar } from './ConversationSidebar'
@@ -26,67 +18,63 @@ import { MessageComposer } from './MessageComposer'
 // plan/ai/conversation/step-07-fixed-platform-and-model-per-conversation.md.
 // "New conversation" no longer creates instantly; it shows an inline
 // picker (creatingNew) in the right-hand pane first.
+//
+// Conversations/selectedId/detail/sending/pendingUserContent/error all
+// come from the shared ConversationContext (plan/ai/conversation/
+// step-16) now, not local state — the same provider step-17's own
+// floating widget reads, so both show the exact same conversation.
+// platforms/busyId/isSidebarCollapsed/creatingNew stay local — they're
+// pure page-UI concerns the widget has no equivalent of.
 export function ConversationPage() {
+  const {
+    conversations,
+    selectedId,
+    detail,
+    loading,
+    sending,
+    error,
+    pendingUserContent,
+    selectConversation,
+    createConversation,
+    sendMessage,
+    renameConversation,
+    deleteConversation,
+  } = useConversationContext()
   const [platforms, setPlatforms] = useState<Platform[] | null>(null)
-  const [conversations, setConversations] = useState<Conversation[] | null>(null)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [detail, setDetail] = useState<ConversationDetail | null>(null)
+  const [platformsError, setPlatformsError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
-  const [sending, setSending] = useState(false)
-  const [pendingUserContent, setPendingUserContent] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [creatingNew, setCreatingNew] = useState(false)
 
   useEffect(() => {
-    Promise.all([fetchPlatforms(), fetchConversations()])
-      .then(([p, c]) => {
-        setPlatforms(p)
-        setConversations(c)
-      })
-      .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load conversations.'))
+    fetchPlatforms()
+      .then(setPlatforms)
+      .catch((err) => setPlatformsError(err instanceof ApiError ? err.message : 'Failed to load platforms.'))
   }, [])
-
-  const loadDetail = (id: string) => {
-    fetchConversation(id)
-      .then((d) => setDetail(d))
-      .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load conversation.'))
-  }
 
   const handleSelect = (id: string) => {
     setCreatingNew(false)
-    setSelectedId(id)
-    setDetail(null)
-    loadDetail(id)
+    selectConversation(id)
   }
 
   const handleStartCreate = () => {
-    setError(null)
-    setSelectedId(null)
-    setDetail(null)
     setCreatingNew(true)
   }
 
   const handleCreate = async (input: { platformId: string; model?: string }) => {
     try {
-      const created = await createConversation(input)
-      setConversations((prev) => (prev ? [created, ...prev] : [created]))
+      await createConversation(input)
       setCreatingNew(false)
-      setSelectedId(created.id)
-      setDetail({ ...created, messages: [] })
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to create conversation.')
+    } catch {
+      // createConversation already surfaces its own failure via the
+      // shared context's own `error` state — nothing extra to do here.
     }
   }
 
   const handleRename = async (id: string, title: string) => {
     setBusyId(id)
     try {
-      const updated = await renameConversation(id, title)
-      setConversations((prev) => (prev ? prev.map((c) => (c.id === id ? updated : c)) : prev))
-      setDetail((prev) => (prev && prev.id === id ? { ...prev, title: updated.title } : prev))
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to rename conversation.')
+      await renameConversation(id, title)
     } finally {
       setBusyId(null)
     }
@@ -96,56 +84,18 @@ export function ConversationPage() {
     setBusyId(id)
     try {
       await deleteConversation(id)
-      setConversations((prev) => (prev ? prev.filter((c) => c.id !== id) : prev))
-      if (selectedId === id) {
-        setSelectedId(null)
-        setDetail(null)
-      }
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to delete conversation.')
     } finally {
       setBusyId(null)
     }
   }
 
-  const handleSend = async (content: string) => {
-    if (!selectedId) return
-    setError(null)
-    setPendingUserContent(content)
-    setSending(true)
-    try {
-      await sendMessage(selectedId, { content })
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Failed to send message.')
-    } finally {
-      // Refetch either way — a provider failure still records the
-      // user's own message server-side (plan/ai/conversation/step-02),
-      // so the real state is always worth showing rather than
-      // reconstructing it optimistically.
-      try {
-        if (selectedId) await loadDetailAsync(selectedId)
-      } finally {
-        setPendingUserContent(null)
-        setSending(false)
-      }
-    }
+  const combinedError = error ?? platformsError
+
+  if (combinedError && !conversations) {
+    return <p className="p-6 text-sm text-red-600">{combinedError}</p>
   }
 
-  const loadDetailAsync = async (id: string) => {
-    try {
-      const d = await fetchConversation(id)
-      setDetail(d)
-    } catch {
-      // Best-effort refresh — a failure here doesn't need its own
-      // error message on top of whatever handleSend already surfaced.
-    }
-  }
-
-  if (error && !conversations) {
-    return <p className="p-6 text-sm text-red-600">{error}</p>
-  }
-
-  if (!platforms || !conversations) {
+  if (!platforms || loading || !conversations) {
     return (
       <div className="flex min-h-64 items-center justify-center">
         <LoadingSpinner label="Loading conversations…" />
@@ -179,7 +129,7 @@ export function ConversationPage() {
           </button>
         </div>
 
-        {error && <p className="border-b border-red-100 bg-red-50 px-4 py-2 text-sm text-red-600">{error}</p>}
+        {combinedError && <p className="border-b border-red-100 bg-red-50 px-4 py-2 text-sm text-red-600">{combinedError}</p>}
 
         {creatingNew && <NewConversationForm platforms={platforms} onCreate={handleCreate} onCancel={() => setCreatingNew(false)} />}
 
@@ -197,8 +147,8 @@ export function ConversationPage() {
 
         {!creatingNew && selectedId && detail && (
           <>
-            <MessageThread messages={detail.messages} pendingUserContent={pendingUserContent} sending={sending} onResend={handleSend} />
-            <MessageComposer platformLabel={platformLabel(platforms, detail)} onSend={handleSend} disabled={sending} />
+            <MessageThread messages={detail.messages} pendingUserContent={pendingUserContent} sending={sending} onResend={sendMessage} />
+            <MessageComposer platformLabel={platformLabel(platforms, detail)} onSend={sendMessage} disabled={sending} />
           </>
         )}
       </div>
