@@ -44,6 +44,7 @@ func runHTTPServer() {
 		w.WriteHeader(http.StatusOK)
 	})
 
+	http.HandleFunc("/personas", personasHandler)
 	http.HandleFunc("/profile", profileHandler)
 	http.HandleFunc("/skills", skillsHandler)
 	http.HandleFunc("/experience", experienceHandler)
@@ -69,6 +70,10 @@ func runMCPServer() {
 
 	server := mcp.NewServer(&mcp.Implementation{Name: "career", Version: "0.1.0"}, nil)
 
+	registerCreatePersona(server)
+	registerListPersonas(server)
+	registerUpdatePersona(server)
+	registerDeletePersona(server)
 	registerGetCareerProfile(server)
 	registerUpdateCareerProfile(server)
 	registerAddCareerSkill(server)

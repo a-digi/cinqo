@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { fetchProfile, updateProfile } from './api'
 import { Field } from './Field'
+import { PersonaSwitcher } from './PersonaSwitcher'
 
 const emptyForm = {
   fullName: '',
@@ -13,18 +14,21 @@ const emptyForm = {
 }
 
 // Core profile fields only — Skills and Experience moved to their own
-// pages (SkillsPage / ExperiencePage) as of step 7, reversing step 5's
-// own "inline for a first pass" call now that the request has made
-// the split explicit. See
-// plan/ai/tools/career/step-07-dedicated-skills-and-experience-pages.md.
+// pages (SkillsPage / ExperiencePage) as of step 7. Step 9 added the
+// persona switcher — every call below is now scoped to whichever
+// persona is currently selected (step 8's own "forced to be mapped to
+// an existing Persona"). See
+// plan/ai/tools/career/step-07-dedicated-skills-and-experience-pages.md
+// and plan/ai/tools/career/step-09-persona-frontend.md.
 export function ProfilePage() {
+  const [personaId, setPersonaId] = useState<string | null>(null)
   const [form, setForm] = useState(emptyForm)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
 
-  function load() {
+  function load(forPersonaId: string) {
     setError('')
-    fetchProfile()
+    fetchProfile(forPersonaId)
       .then((result) => {
         setForm({
           fullName: result.profile?.fullName ?? '',
@@ -40,13 +44,14 @@ export function ProfilePage() {
   }
 
   useEffect(() => {
-    load()
-  }, [])
+    if (personaId) load(personaId)
+  }, [personaId])
 
   function handleSave() {
+    if (!personaId) return
     setError('')
     setSaving(true)
-    updateProfile({
+    updateProfile(personaId, {
       fullName: form.fullName,
       headline: form.headline,
       summary: form.summary,
@@ -67,48 +72,52 @@ export function ProfilePage() {
         for jobs. Nothing here is treated as a secret.
       </p>
 
+      <PersonaSwitcher personaId={personaId} onChange={setPersonaId} />
+
       <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
 
-      <section className="rounded-md border border-gray-200 p-4 shadow-sm">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label="Full name" value={form.fullName} onChange={(v) => setForm({ ...form, fullName: v })} />
-          <Field label="Headline" value={form.headline} onChange={(v) => setForm({ ...form, headline: v })} />
-          <Field label="Location" value={form.location} onChange={(v) => setForm({ ...form, location: v })} />
-          <Field
-            label="Minimum salary"
-            type="number"
-            value={form.minSalary}
-            onChange={(v) => setForm({ ...form, minSalary: v })}
-          />
-          <Field
-            label="Desired titles"
-            value={form.desiredTitles}
-            onChange={(v) => setForm({ ...form, desiredTitles: v })}
-          />
-          <Field
-            label="Desired locations"
-            value={form.desiredLocations}
-            onChange={(v) => setForm({ ...form, desiredLocations: v })}
-          />
-        </div>
-        <label className="mt-3 block text-xs font-medium text-gray-500">
-          Summary
-          <textarea
-            value={form.summary}
-            onChange={(e) => setForm({ ...form, summary: e.target.value })}
-            rows={3}
-            className="mt-1 w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
-          />
-        </label>
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={saving}
-          className="mt-3 rounded-md bg-gray-900 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:opacity-50"
-        >
-          {saving ? 'Saving…' : 'Save profile'}
-        </button>
-      </section>
+      {personaId && (
+        <section className="rounded-md border border-gray-200 p-4 shadow-sm">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Field label="Full name" value={form.fullName} onChange={(v) => setForm({ ...form, fullName: v })} />
+            <Field label="Headline" value={form.headline} onChange={(v) => setForm({ ...form, headline: v })} />
+            <Field label="Location" value={form.location} onChange={(v) => setForm({ ...form, location: v })} />
+            <Field
+              label="Minimum salary"
+              type="number"
+              value={form.minSalary}
+              onChange={(v) => setForm({ ...form, minSalary: v })}
+            />
+            <Field
+              label="Desired titles"
+              value={form.desiredTitles}
+              onChange={(v) => setForm({ ...form, desiredTitles: v })}
+            />
+            <Field
+              label="Desired locations"
+              value={form.desiredLocations}
+              onChange={(v) => setForm({ ...form, desiredLocations: v })}
+            />
+          </div>
+          <label className="mt-3 block text-xs font-medium text-gray-500">
+            Summary
+            <textarea
+              value={form.summary}
+              onChange={(e) => setForm({ ...form, summary: e.target.value })}
+              rows={3}
+              className="mt-1 w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving}
+            className="mt-3 rounded-md bg-gray-900 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:opacity-50"
+          >
+            {saving ? 'Saving…' : 'Save profile'}
+          </button>
+        </section>
+      )}
     </div>
   )
 }

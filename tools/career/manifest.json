@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.7.0",
+  "version": "0.9.0",
   "mcp": true,
   "requires_tools": [
     { "slug": "browser" }
@@ -17,6 +17,10 @@
     }
   ],
   "routes": [
+    { "method": "GET", "path_suffix": "personas", "required_scope": "tool:career:profile" },
+    { "method": "POST", "path_suffix": "personas", "required_scope": "tool:career:profile" },
+    { "method": "PUT", "path_suffix": "personas", "required_scope": "tool:career:profile" },
+    { "method": "DELETE", "path_suffix": "personas", "required_scope": "tool:career:profile" },
     { "method": "GET", "path_suffix": "profile", "required_scope": "tool:career:profile" },
     { "method": "POST", "path_suffix": "profile", "required_scope": "tool:career:profile" },
     { "method": "GET", "path_suffix": "skills", "required_scope": "tool:career:profile" },
@@ -30,6 +34,10 @@
     { "method": "DELETE", "path_suffix": "jobs", "required_scope": "tool:career:jobs" }
   ],
   "mcp_tools": [
+    { "name": "create_persona", "required_scope": "tool:career:profile" },
+    { "name": "list_personas", "required_scope": "tool:career:profile" },
+    { "name": "update_persona", "required_scope": "tool:career:profile" },
+    { "name": "delete_persona", "required_scope": "tool:career:profile" },
     { "name": "get_career_profile", "required_scope": "tool:career:profile" },
     { "name": "update_career_profile", "required_scope": "tool:career:profile" },
     { "name": "add_career_skill", "required_scope": "tool:career:profile" },
