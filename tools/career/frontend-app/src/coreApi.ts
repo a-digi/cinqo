@@ -12,11 +12,24 @@
 // api.ts convention; a session that expires mid-crawl surfaces as a
 // plain error in the crawl result line, same as any other failure.
 
+// Carries the HTTP status so callers can special-case 401/403 (e.g. a
+// caller with tool:career:portals but neither cinqo:platform:read nor
+// cinqo:conversation:use — step 24's own open question 4, resolved in
+// step 25 with a friendlier message keyed off this field) without
+// parsing it back out of a generic error message.
+export class CoreApiError extends Error {
+  status: number
+  constructor(status: number, message: string) {
+    super(message)
+    this.status = status
+  }
+}
+
 async function coreJsonOrThrow<T>(res: Response, action: string): Promise<T> {
   const body = (await res.json().catch(() => undefined)) as { message?: unknown } | undefined
   if (!res.ok) {
     const message = body && typeof body.message === 'string' ? body.message : `failed to ${action} (${res.status})`
-    throw new Error(message)
+    throw new CoreApiError(res.status, message)
   }
   return (body as { message: T }).message
 }

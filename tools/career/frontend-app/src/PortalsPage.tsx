@@ -10,8 +10,9 @@ import {
   type Portal,
   type PortalLink,
 } from './api'
-import { fetchPlatforms, createConversation, sendMessage, type Platform } from './coreApi'
+import { fetchPlatforms, createConversation, sendMessage, CoreApiError, type Platform } from './coreApi'
 import { buildCrawlMessage, crawlConversationTitle } from './crawl'
+import { Dropdown } from './Dropdown'
 import { PlusIcon, PlayIcon } from './icons'
 
 // Portals are tool-wide, not persona/profile-scoped — same reasoning
@@ -35,17 +36,22 @@ export function PortalsPage() {
   const [crawlInstructionsDraft, setCrawlInstructionsDraft] = useState('')
   const [error, setError] = useState('')
 
-  // Manual crawl trigger (step 24) — platforms is fetched once, up
-  // front, purely to know whether any AI platform is configured at
-  // all (gates every "Crawl now" button) and, for v1, to pick
-  // platforms[0] to run the crawl under (no picker yet — see
-  // plan/ai/tools/career/step-25-manual-crawl-trigger-polish.md).
-  // crawlingLinkId is page-wide (only one crawl in flight at a time,
-  // a deliberate v1 simplification), crawlResults holds only the last
-  // outcome per link, not a history.
+  // Manual crawl trigger (step 24, polished in step 25) — platforms is
+  // fetched once, up front, purely to know whether any AI platform is
+  // configured at all (gates every "Crawl now" button) and to offer a
+  // picker when there's more than one. selectedPlatformId/selectedModel
+  // is a single, page-wide choice (not per-link) — every crawl on this
+  // page runs under the same platform/model until changed here.
+  // crawlingLinkIds (a Set, step 25 — was a single ID in step 24) lets
+  // multiple links crawl concurrently, each in its own conversation.
+  // crawlResults holds only the last outcome per link, not a history —
+  // the real history is each run's own conversation (see
+  // conversationIds below and "View conversation").
   const [platforms, setPlatforms] = useState<Platform[]>([])
-  const [crawlingLinkId, setCrawlingLinkId] = useState<string | null>(null)
-  const [crawlResults, setCrawlResults] = useState<Record<string, { ok: boolean; text: string } | undefined>>({})
+  const [selectedPlatformId, setSelectedPlatformId] = useState<string | null>(null)
+  const [selectedModel, setSelectedModel] = useState<string | null>(null)
+  const [crawlingLinkIds, setCrawlingLinkIds] = useState<Set<string>>(new Set())
+  const [crawlResults, setCrawlResults] = useState<Record<string, { ok: boolean; text: string; conversationId?: string } | undefined>>({})
 
   function load() {
     setError('')
@@ -57,7 +63,13 @@ export function PortalsPage() {
   useEffect(() => {
     load()
     fetchPlatforms()
-      .then(setPlatforms)
+      .then((list) => {
+        setPlatforms(list)
+        if (list.length > 0) {
+          setSelectedPlatformId(list[0].id)
+          setSelectedModel(list[0].models.length > 0 ? list[0].models[0] : null)
+        }
+      })
       .catch(() => {
         // Left empty (no platforms) rather than surfacing this as a
         // page-level error — every "Crawl now" button already
@@ -66,24 +78,51 @@ export function PortalsPage() {
       })
   }, [])
 
-  function handleCrawlNow(link: PortalLink) {
-    if (crawlingLinkId || platforms.length === 0) return
-    const platform = platforms[0]
-    const model = platform.models.length > 0 ? platform.models[0] : undefined
+  const selectedPlatform = platforms.find((p) => p.id === selectedPlatformId) ?? null
 
-    setCrawlingLinkId(link.id)
+  function handleSelectPlatform(id: string) {
+    setSelectedPlatformId(id)
+    const next = platforms.find((p) => p.id === id)
+    setSelectedModel(next && next.models.length > 0 ? next.models[0] : null)
+  }
+
+  function handleCrawlNow(link: PortalLink) {
+    if (crawlingLinkIds.has(link.id) || !selectedPlatform) return
+    const platformId = selectedPlatform.id
+    const model = selectedPlatform.models.length > 0 ? (selectedModel ?? selectedPlatform.models[0]) : undefined
+
+    setCrawlingLinkIds((prev) => new Set(prev).add(link.id))
     setCrawlResults((prev) => ({ ...prev, [link.id]: undefined }))
 
-    createConversation({ title: crawlConversationTitle(link), platformId: platform.id, model })
-      .then((conversation) => sendMessage(conversation.id, buildCrawlMessage(link)))
-      .then((result) => {
+    createConversation({ title: crawlConversationTitle(link), platformId, model })
+      .then((conversation) => sendMessage(conversation.id, buildCrawlMessage(link)).then((result) => ({ conversation, result })))
+      .then(({ conversation, result }) => {
         const suffix = result.durationMs != null ? ` (${(result.durationMs / 1000).toFixed(1)}s)` : ''
-        setCrawlResults((prev) => ({ ...prev, [link.id]: { ok: true, text: `${result.content}${suffix}` } }))
+        setCrawlResults((prev) => ({
+          ...prev,
+          [link.id]: { ok: true, text: `${result.content}${suffix}`, conversationId: conversation.id },
+        }))
       })
-      .catch((err: Error) => {
-        setCrawlResults((prev) => ({ ...prev, [link.id]: { ok: false, text: err.message } }))
+      .catch((err: unknown) => {
+        const text =
+          err instanceof CoreApiError && (err.status === 401 || err.status === 403)
+            ? 'Ask an admin to grant you access to AI conversations.'
+            : err instanceof Error
+              ? err.message
+              : 'Crawl failed.'
+        setCrawlResults((prev) => ({ ...prev, [link.id]: { ok: false, text } }))
       })
-      .finally(() => setCrawlingLinkId(null))
+      .finally(() => {
+        setCrawlingLinkIds((prev) => {
+          const next = new Set(prev)
+          next.delete(link.id)
+          return next
+        })
+      })
+  }
+
+  function handleViewConversation() {
+    window.__cinqoToolBridge.navigate('/conversations')
   }
 
   function handleCreatePortal() {
@@ -229,6 +268,29 @@ export function PortalsPage() {
         normally prepared by the AI. Deleting a portal permanently deletes every link it owns.
       </p>
 
+      {platforms.length > 1 && (
+        <div className="mb-5 flex flex-wrap items-end gap-3 rounded-md border border-gray-200 bg-gray-50 p-3">
+          <div className="min-w-[180px]">
+            <label className="mb-1 block text-xs font-medium text-gray-500">Crawl using</label>
+            <Dropdown
+              options={platforms.map((p) => ({ value: p.id, label: p.name }))}
+              value={selectedPlatformId}
+              onChange={handleSelectPlatform}
+            />
+          </div>
+          {selectedPlatform && selectedPlatform.models.length > 0 && (
+            <div className="min-w-[180px]">
+              <label className="mb-1 block text-xs font-medium text-gray-500">Model</label>
+              <Dropdown
+                options={selectedPlatform.models.map((m) => ({ value: m, label: m }))}
+                value={selectedModel}
+                onChange={setSelectedModel}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
 
       <div className="mb-4 space-y-4">
@@ -324,6 +386,9 @@ export function PortalsPage() {
                           {link.title || '(untitled link)'}
                         </div>
                         <div className="truncate text-xs text-gray-500">{link.url}</div>
+                        <div className="truncate text-xs text-gray-400">
+                          {link.lastCrawledAt ? `Last crawled: ${new Date(link.lastCrawledAt).toLocaleString()}` : 'Never crawled'}
+                        </div>
                       </div>
                       <div className="flex shrink-0 gap-2">
                         <button
@@ -358,16 +423,28 @@ export function PortalsPage() {
                         <button
                           type="button"
                           onClick={() => handleCrawlNow(link)}
-                          disabled={crawlingLinkId !== null || platforms.length === 0}
+                          disabled={crawlingLinkIds.has(link.id) || platforms.length === 0}
                           title={platforms.length === 0 ? 'No AI platform configured — add one on the Platforms page first' : undefined}
                           className="flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           <PlayIcon />
-                          {crawlingLinkId === link.id ? 'Crawling…' : 'Crawl now'}
+                          {crawlingLinkIds.has(link.id) ? 'Crawling…' : 'Crawl now'}
                         </button>
                         {crawlResults[link.id] && (
                           <p className={`mt-1 text-xs ${crawlResults[link.id]!.ok ? 'text-green-700' : 'text-red-700'}`}>
                             {crawlResults[link.id]!.text}
+                            {crawlResults[link.id]!.ok && crawlResults[link.id]!.conversationId && (
+                              <>
+                                {' — '}
+                                <button
+                                  type="button"
+                                  onClick={handleViewConversation}
+                                  className="underline hover:text-green-900"
+                                >
+                                  View conversation
+                                </button>
+                              </>
+                            )}
                           </p>
                         )}
                       </div>

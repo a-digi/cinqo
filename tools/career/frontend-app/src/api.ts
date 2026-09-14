@@ -107,6 +107,9 @@ export interface PortalLink {
   url: string
   title: string | null
   crawlInstructions: string | null
+  // Most recent job crawled_at against this link (step 26) — null
+  // when no job has ever been saved for it. Read-only, derived.
+  lastCrawledAt: string | null
   createdAt: string
   updatedAt?: string
 }

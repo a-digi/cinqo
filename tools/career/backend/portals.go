@@ -65,8 +65,14 @@ type portalLink struct {
 	URL               string `json:"url"`
 	Title             string `json:"title,omitempty"`
 	CrawlInstructions string `json:"crawlInstructions,omitempty"`
-	CreatedAt         string `json:"createdAt"`
-	UpdatedAt         string `json:"updatedAt,omitempty"`
+	// LastCrawledAt (step 26) is the most recent jobs.crawled_at
+	// among every job ever saved against this link — read-only,
+	// derived, never itself written; empty when no job has ever been
+	// saved for this link. See
+	// plan/ai/tools/career/step-26-last-crawled-hint.md.
+	LastCrawledAt string `json:"lastCrawledAt,omitempty"`
+	CreatedAt     string `json:"createdAt"`
+	UpdatedAt     string `json:"updatedAt,omitempty"`
 }
 
 type portal struct {
@@ -87,6 +93,37 @@ func createPortal(name string) (string, error) {
 		return "", err
 	}
 	return id, nil
+}
+
+// lastCrawledByPortalLink (step 26) reads the most recent
+// jobs.crawled_at per portal_link_id, in one query — the same jobsDB
+// handle listPortals already uses, no new database or cross-DB join.
+// A link with no saved job at all simply has no entry in the returned
+// map (not a zero-value string), so callers' own map lookup naturally
+// leaves portalLink.LastCrawledAt empty/omitted.
+func lastCrawledByPortalLink() (map[string]string, error) {
+	rows, err := jobsDB.Query(
+		`SELECT portal_link_id, MAX(crawled_at) FROM jobs
+		 WHERE portal_link_id IS NOT NULL
+		 GROUP BY portal_link_id`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[string]string)
+	for rows.Next() {
+		var linkID, lastCrawledAt string
+		if err := rows.Scan(&linkID, &lastCrawledAt); err != nil {
+			return nil, err
+		}
+		result[linkID] = lastCrawledAt
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 // listPortals returns every portal with its own links nested — same
@@ -118,6 +155,11 @@ func listPortals() ([]portal, error) {
 	}
 	rows.Close()
 
+	lastCrawled, err := lastCrawledByPortalLink()
+	if err != nil {
+		return nil, err
+	}
+
 	linkRows, err := jobsDB.Query(
 		`SELECT id, portal_id, url, title, crawl_instructions, created_at, updated_at
 		 FROM portal_links ORDER BY created_at ASC`,
@@ -136,6 +178,7 @@ func listPortals() ([]portal, error) {
 		l.Title = title.String
 		l.CrawlInstructions = crawlInstructions.String
 		l.UpdatedAt = updatedAt.String
+		l.LastCrawledAt = lastCrawled[l.ID]
 		byPortal[l.PortalID] = append(byPortal[l.PortalID], l)
 	}
 	if err := linkRows.Err(); err != nil {
