@@ -24,15 +24,25 @@
 // fallback so the page still renders sensibly even if they're ever
 // missing. See
 // plan/ai/tools/browser/step-12-menu-grouping-and-tool-styling-contract.md.
+//
+// Two routes as of step 14 — the list and the add form are separate
+// pages, the latter reachable only via the list's own "+" button, no
+// menu entry of its own. Multiple registerRoute calls per tool are
+// fully supported (ToolRouteOutlet matches location.pathname against
+// a flat array), and navigate() performs a real client-side route
+// change bound to React Router — neither needs a menu entry to work.
+// See plan/ai/tools/browser/step-14-separate-add-credential-page.md.
 (function () {
   var PROXY_BASE = '/api/v1/tools/browser/proxy/login-credentials'
+  var LIST_PATH = '/tools/browser/credentials'
+  var ADD_PATH = '/tools/browser/credentials/new'
 
   window.__cinqoToolBridge.registerMenuEntry({
     label: 'Browser',
     children: [
       {
         label: 'Login',
-        path: '/tools/browser/credentials',
+        path: LIST_PATH,
         // Reuses the existing tool:browser:login scope — the same
         // permission that already gates writing a credential via the
         // underlying route, deliberately not a separate scope: a user
@@ -44,8 +54,18 @@
   })
 
   window.__cinqoToolBridge.registerRoute({
-    path: '/tools/browser/credentials',
-    mount: mount,
+    path: LIST_PATH,
+    mount: mountList,
+    unmount: function (container) {
+      container.innerHTML = ''
+    },
+  })
+
+  // No registerMenuEntry for this one — deliberately reachable only
+  // by clicking the list page's own "+" button.
+  window.__cinqoToolBridge.registerRoute({
+    path: ADD_PATH,
+    mount: mountAdd,
     unmount: function (container) {
       container.innerHTML = ''
     },
@@ -64,6 +84,12 @@
       '  font-family: var(--cinqo-tool-font, system-ui, sans-serif);' +
       '  color: var(--cinqo-tool-text, #111827);' +
       '}' +
+      '.cinqo-browser-credentials .header-row {' +
+      '  display: flex;' +
+      '  align-items: flex-start;' +
+      '  justify-content: space-between;' +
+      '  gap: 12px;' +
+      '}' +
       '.cinqo-browser-credentials h1 {' +
       '  font-size: 1.25rem;' +
       '  margin: 0 0 6px;' +
@@ -77,10 +103,37 @@
       '  font-size: 0.875rem;' +
       '  margin: 0 0 20px;' +
       '}' +
+      '.cinqo-browser-credentials a.back-link {' +
+      '  display: inline-block;' +
+      '  color: var(--cinqo-tool-text-muted, #6b7280);' +
+      '  font-size: 0.8125rem;' +
+      '  text-decoration: none;' +
+      '  margin: 0 0 16px;' +
+      '}' +
+      '.cinqo-browser-credentials a.back-link:hover {' +
+      '  text-decoration: underline;' +
+      '}' +
       '.cinqo-browser-credentials [data-role="status"] {' +
       '  min-height: 1.2em;' +
       '  color: var(--cinqo-tool-danger, #b91c1c);' +
       '  font-size: 0.875rem;' +
+      '}' +
+      '.cinqo-browser-credentials .icon-button {' +
+      '  flex-shrink: 0;' +
+      '  display: inline-flex;' +
+      '  align-items: center;' +
+      '  justify-content: center;' +
+      '  width: 28px;' +
+      '  height: 28px;' +
+      '  border: none;' +
+      '  border-radius: 4px;' +
+      '  background: transparent;' +
+      '  color: var(--cinqo-tool-text-muted, #6b7280);' +
+      '  transition: background-color 120ms ease, color 120ms ease;' +
+      '}' +
+      '.cinqo-browser-credentials .icon-button:hover {' +
+      '  background: var(--cinqo-tool-icon-hover, #f3f4f6);' +
+      '  color: var(--cinqo-tool-text, #111827);' +
       '}' +
       '.cinqo-browser-credentials .card {' +
       '  border: 1px solid var(--cinqo-tool-border, #e5e7eb);' +
@@ -169,14 +222,29 @@
     document.head.appendChild(style)
   }
 
-  function mount(container) {
+  var PLUS_ICON_SVG =
+    '<svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor">' +
+    '<path d="M10 5v10M5 10h10" stroke-width="1.6" stroke-linecap="round"></path>' +
+    '</svg>'
+
+  // mountList renders the table only — no inline form (moved to
+  // mountAdd, step 14). A single "+" button is the only way to reach
+  // the add page; it carries no menu entry of its own.
+  function mountList(container) {
     ensureStyle()
 
     container.innerHTML =
       '<div class="cinqo-browser-credentials">' +
+      '<div class="header-row">' +
+      '<div>' +
       '<h1>Login Credentials</h1>' +
       '<p class="description">Domains the Browser tool can log into on your behalf. ' +
       'The AI can ask whether a credential exists for a domain, but never sees the username or password stored here.</p>' +
+      '</div>' +
+      '<button type="button" class="icon-button" data-role="add" aria-label="Add credential" title="Add credential">' +
+      PLUS_ICON_SVG +
+      '</button>' +
+      '</div>' +
       '<div data-role="status"></div>' +
       '<div class="card">' +
       '<table data-role="list">' +
@@ -188,24 +256,15 @@
       '<tbody data-role="rows"></tbody>' +
       '</table>' +
       '</div>' +
-      '<h2>Add / Update Credential</h2>' +
-      '<form class="card" data-role="form">' +
-      '<div class="field"><label for="cinqo-browser-cred-domain">Domain</label>' +
-      '<input id="cinqo-browser-cred-domain" data-role="domain" type="text" placeholder="example.com" required></div>' +
-      '<div class="field"><label for="cinqo-browser-cred-username">Username</label>' +
-      '<input id="cinqo-browser-cred-username" data-role="username" type="text" required></div>' +
-      '<div class="field"><label for="cinqo-browser-cred-password">Password</label>' +
-      '<input id="cinqo-browser-cred-password" data-role="password" type="password" required></div>' +
-      '<button type="submit">Save</button>' +
-      '</form>' +
       '</div>'
 
     var statusEl = container.querySelector('[data-role="status"]')
     var rowsEl = container.querySelector('[data-role="rows"]')
-    var formEl = container.querySelector('[data-role="form"]')
-    var domainEl = container.querySelector('[data-role="domain"]')
-    var usernameEl = container.querySelector('[data-role="username"]')
-    var passwordEl = container.querySelector('[data-role="password"]')
+    var addBtn = container.querySelector('[data-role="add"]')
+
+    addBtn.addEventListener('click', function () {
+      window.__cinqoToolBridge.navigate(ADD_PATH)
+    })
 
     function setStatus(message) {
       statusEl.textContent = message || ''
@@ -272,6 +331,49 @@
         })
     }
 
+    loadCredentials()
+  }
+
+  // mountAdd is the add-only page (step 14) — the same 3-field form
+  // step 10/13 already built, relocated here verbatim. Reachable only
+  // via mountList's own "+" button; no menu entry points at it.
+  function mountAdd(container) {
+    ensureStyle()
+
+    container.innerHTML =
+      '<div class="cinqo-browser-credentials">' +
+      '<a href="#" class="back-link" data-role="back">&larr; Back to Login Credentials</a>' +
+      '<h1>Add / Update Credential</h1>' +
+      '<p class="description">Saving an existing domain again updates its stored credential. ' +
+      'The AI never sees the username or password entered here.</p>' +
+      '<div data-role="status"></div>' +
+      '<form class="card" data-role="form">' +
+      '<div class="field"><label for="cinqo-browser-cred-domain">Domain</label>' +
+      '<input id="cinqo-browser-cred-domain" data-role="domain" type="text" placeholder="example.com" required></div>' +
+      '<div class="field"><label for="cinqo-browser-cred-username">Username</label>' +
+      '<input id="cinqo-browser-cred-username" data-role="username" type="text" required></div>' +
+      '<div class="field"><label for="cinqo-browser-cred-password">Password</label>' +
+      '<input id="cinqo-browser-cred-password" data-role="password" type="password" required></div>' +
+      '<button type="submit">Save</button>' +
+      '</form>' +
+      '</div>'
+
+    var backLink = container.querySelector('[data-role="back"]')
+    var statusEl = container.querySelector('[data-role="status"]')
+    var formEl = container.querySelector('[data-role="form"]')
+    var domainEl = container.querySelector('[data-role="domain"]')
+    var usernameEl = container.querySelector('[data-role="username"]')
+    var passwordEl = container.querySelector('[data-role="password"]')
+
+    function setStatus(message) {
+      statusEl.textContent = message || ''
+    }
+
+    backLink.addEventListener('click', function (event) {
+      event.preventDefault()
+      window.__cinqoToolBridge.navigate(LIST_PATH)
+    })
+
     formEl.addEventListener('submit', function (event) {
       event.preventDefault()
       setStatus('')
@@ -291,20 +393,19 @@
           if (!r.ok) throw new Error('failed to save credential (' + r.status + ')')
           return r.json()
         })
-        .then(function (data) {
-          // Clear the form's own values explicitly, not just relying on
-          // the DOM's default post-submit state — the plaintext
+        .then(function () {
+          // Clear the form's own values explicitly, not just relying
+          // on the DOM's default post-submit state — the plaintext
           // password shouldn't linger in the input any longer than
-          // necessary.
+          // necessary. Then go back to the list so the user
+          // immediately sees the new/updated row.
           formEl.reset()
-          renderRows(data.credentials || [])
+          window.__cinqoToolBridge.navigate(LIST_PATH)
         })
         .catch(function (err) {
           setStatus(err.message)
         })
     })
-
-    loadCredentials()
   }
 
   // normalizeDomain lets a user paste a full login URL (e.g.

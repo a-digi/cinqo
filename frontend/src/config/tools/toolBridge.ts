@@ -40,9 +40,11 @@ export interface ToolRoute {
   //   --cinqo-tool-primary-hover hover background for a primary/CTA button
   //   --cinqo-tool-danger-hover  hover background for a danger/destructive button
   //   --cinqo-tool-shadow        subtle card/elevation shadow
+  //   --cinqo-tool-icon-hover    hover background for a small icon-only button
   // e.g. `container.style.border = '1px solid var(--cinqo-tool-border, #e5e7eb)'`.
-  // See plan/ai/tools/browser/step-12-menu-grouping-and-tool-styling-contract.md
-  // and step-13-credential-page-visual-refresh.md.
+  // See plan/ai/tools/browser/step-12-menu-grouping-and-tool-styling-contract.md,
+  // step-13-credential-page-visual-refresh.md, and
+  // step-14-separate-add-credential-page.md.
   mount: (container: HTMLElement) => void
   unmount?: (container: HTMLElement) => void
 }

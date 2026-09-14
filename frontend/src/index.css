@@ -28,6 +28,7 @@
   --cinqo-tool-primary-hover: #1f2937; /* gray-800 — the app's own real hover shade for a gray-900 button */
   --cinqo-tool-danger-hover: #fef2f2; /* red-50 — the app's own real light-danger hover background */
   --cinqo-tool-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05); /* Tailwind's own shadow-sm default */
+  --cinqo-tool-icon-hover: #f3f4f6; /* gray-100 — IconButton's own real default-variant hover background */
 }
 
 body {
