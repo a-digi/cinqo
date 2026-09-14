@@ -24,6 +24,10 @@
   --cinqo-tool-danger: #b91c1c; /* red-700 */
   --cinqo-tool-radius: 6px; /* rounded-md */
   --cinqo-tool-font: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  --cinqo-tool-input-bg: #ffffff;
+  --cinqo-tool-primary-hover: #1f2937; /* gray-800 — the app's own real hover shade for a gray-900 button */
+  --cinqo-tool-danger-hover: #fef2f2; /* red-50 — the app's own real light-danger hover background */
+  --cinqo-tool-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05); /* Tailwind's own shadow-sm default */
 }
 
 body {

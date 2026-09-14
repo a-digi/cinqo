@@ -36,8 +36,13 @@ export interface ToolRoute {
   //   --cinqo-tool-danger        error/destructive text or accent color
   //   --cinqo-tool-radius        standard corner radius
   //   --cinqo-tool-font          the app's own font stack
+  //   --cinqo-tool-input-bg      form input background (white)
+  //   --cinqo-tool-primary-hover hover background for a primary/CTA button
+  //   --cinqo-tool-danger-hover  hover background for a danger/destructive button
+  //   --cinqo-tool-shadow        subtle card/elevation shadow
   // e.g. `container.style.border = '1px solid var(--cinqo-tool-border, #e5e7eb)'`.
-  // See plan/ai/tools/browser/step-12-menu-grouping-and-tool-styling-contract.md.
+  // See plan/ai/tools/browser/step-12-menu-grouping-and-tool-styling-contract.md
+  // and step-13-credential-page-visual-refresh.md.
   mount: (container: HTMLElement) => void
   unmount?: (container: HTMLElement) => void
 }

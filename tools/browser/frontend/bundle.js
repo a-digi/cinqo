@@ -59,92 +59,112 @@
     style.id = STYLE_ID
     style.textContent =
       '.cinqo-browser-credentials {' +
-      '  max-width: 640px;' +
+      '  max-width: 680px;' +
+      '  padding: 24px 0;' +
       '  font-family: var(--cinqo-tool-font, system-ui, sans-serif);' +
       '  color: var(--cinqo-tool-text, #111827);' +
       '}' +
       '.cinqo-browser-credentials h1 {' +
       '  font-size: 1.25rem;' +
-      '  margin: 0 0 4px;' +
+      '  margin: 0 0 6px;' +
       '}' +
       '.cinqo-browser-credentials h2 {' +
       '  font-size: 1rem;' +
-      '  margin: 24px 0 12px;' +
+      '  margin: 32px 0 14px;' +
       '}' +
       '.cinqo-browser-credentials p.description {' +
       '  color: var(--cinqo-tool-text-muted, #6b7280);' +
       '  font-size: 0.875rem;' +
-      '  margin: 0 0 16px;' +
+      '  margin: 0 0 20px;' +
       '}' +
       '.cinqo-browser-credentials [data-role="status"] {' +
       '  min-height: 1.2em;' +
       '  color: var(--cinqo-tool-danger, #b91c1c);' +
       '  font-size: 0.875rem;' +
       '}' +
+      '.cinqo-browser-credentials .card {' +
+      '  border: 1px solid var(--cinqo-tool-border, #e5e7eb);' +
+      '  border-radius: var(--cinqo-tool-radius, 6px);' +
+      '  box-shadow: var(--cinqo-tool-shadow, 0 1px 2px 0 rgb(0 0 0 / 0.05));' +
+      '  overflow: hidden;' +
+      '}' +
       '.cinqo-browser-credentials table {' +
       '  width: 100%;' +
       '  border-collapse: collapse;' +
-      '  margin: 12px 0;' +
       '  font-size: 0.875rem;' +
       '}' +
       '.cinqo-browser-credentials th {' +
       '  text-align: left;' +
-      '  padding: 8px;' +
+      '  padding: 12px;' +
       '  background: var(--cinqo-tool-surface, #f9fafb);' +
       '  border-bottom: 1px solid var(--cinqo-tool-border, #e5e7eb);' +
       '  font-weight: 500;' +
       '  color: var(--cinqo-tool-text-muted, #6b7280);' +
       '}' +
       '.cinqo-browser-credentials td {' +
-      '  padding: 8px;' +
+      '  padding: 12px;' +
       '  border-bottom: 1px solid var(--cinqo-tool-border, #e5e7eb);' +
       '}' +
-      '.cinqo-browser-credentials form {' +
-      '  border: 1px solid var(--cinqo-tool-border, #e5e7eb);' +
-      '  border-radius: var(--cinqo-tool-radius, 6px);' +
-      '  padding: 16px;' +
+      '.cinqo-browser-credentials tbody tr:last-child td {' +
+      '  border-bottom: none;' +
+      '}' +
+      '.cinqo-browser-credentials tbody tr:hover {' +
+      '  background: var(--cinqo-tool-surface, #f9fafb);' +
+      '}' +
+      '.cinqo-browser-credentials form.card {' +
+      '  padding: 24px;' +
       '  background: var(--cinqo-tool-surface, #f9fafb);' +
       '}' +
       '.cinqo-browser-credentials .field {' +
-      '  margin-bottom: 12px;' +
+      '  margin-bottom: 16px;' +
       '}' +
       '.cinqo-browser-credentials label {' +
       '  display: block;' +
       '  font-size: 0.8125rem;' +
       '  font-weight: 500;' +
-      '  margin-bottom: 4px;' +
+      '  margin-bottom: 6px;' +
       '}' +
       '.cinqo-browser-credentials input {' +
       '  width: 100%;' +
       '  box-sizing: border-box;' +
-      '  padding: 6px 8px;' +
+      '  padding: 10px 12px;' +
       '  font-size: 0.875rem;' +
+      '  background: var(--cinqo-tool-input-bg, #ffffff);' +
       '  border: 1px solid var(--cinqo-tool-border, #e5e7eb);' +
       '  border-radius: var(--cinqo-tool-radius, 6px);' +
       '  font-family: inherit;' +
+      '  transition: border-color 120ms ease, box-shadow 120ms ease;' +
       '}' +
       '.cinqo-browser-credentials input:focus {' +
-      '  outline: 2px solid var(--cinqo-tool-primary, #111827);' +
-      '  outline-offset: 1px;' +
+      '  outline: none;' +
+      '  border-color: var(--cinqo-tool-primary, #111827);' +
+      '  box-shadow: 0 0 0 3px rgb(17 24 39 / 0.1);' +
       '}' +
       '.cinqo-browser-credentials button {' +
       '  font-family: inherit;' +
       '  font-size: 0.875rem;' +
       '  border-radius: var(--cinqo-tool-radius, 6px);' +
       '  cursor: pointer;' +
+      '  transition: background-color 120ms ease;' +
       '}' +
       '.cinqo-browser-credentials button[type="submit"] {' +
       '  background: var(--cinqo-tool-primary, #111827);' +
       '  color: var(--cinqo-tool-primary-text, #ffffff);' +
       '  border: none;' +
-      '  padding: 8px 16px;' +
+      '  padding: 10px 18px;' +
       '  font-weight: 500;' +
+      '}' +
+      '.cinqo-browser-credentials button[type="submit"]:hover {' +
+      '  background: var(--cinqo-tool-primary-hover, #1f2937);' +
       '}' +
       '.cinqo-browser-credentials button[data-role="remove"] {' +
       '  background: transparent;' +
       '  color: var(--cinqo-tool-danger, #b91c1c);' +
       '  border: 1px solid var(--cinqo-tool-border, #e5e7eb);' +
-      '  padding: 4px 10px;' +
+      '  padding: 5px 12px;' +
+      '}' +
+      '.cinqo-browser-credentials button[data-role="remove"]:hover {' +
+      '  background: var(--cinqo-tool-danger-hover, #fef2f2);' +
       '}'
     document.head.appendChild(style)
   }
@@ -158,6 +178,7 @@
       '<p class="description">Domains the Browser tool can log into on your behalf. ' +
       'The AI can ask whether a credential exists for a domain, but never sees the username or password stored here.</p>' +
       '<div data-role="status"></div>' +
+      '<div class="card">' +
       '<table data-role="list">' +
       '<thead><tr>' +
       '<th>Domain</th>' +
@@ -166,8 +187,9 @@
       '</tr></thead>' +
       '<tbody data-role="rows"></tbody>' +
       '</table>' +
+      '</div>' +
       '<h2>Add / Update Credential</h2>' +
-      '<form data-role="form">' +
+      '<form class="card" data-role="form">' +
       '<div class="field"><label for="cinqo-browser-cred-domain">Domain</label>' +
       '<input id="cinqo-browser-cred-domain" data-role="domain" type="text" placeholder="example.com" required></div>' +
       '<div class="field"><label for="cinqo-browser-cred-username">Username</label>' +
