@@ -3,6 +3,27 @@
 :root {
   font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
+
+  /* Public style contract for tool frontend bundles (see
+     toolBridge.ts) — a tool's own bundle.js lives outside this app's
+     Tailwind build entirely (installed at runtime, scanned by nothing
+     at build time), so it can never use a Tailwind utility class.
+     These are hand-authored and deliberately NOT the same as
+     Tailwind's own auto-generated --color-* variables (those are
+     purged to only whatever shades this app's own source happens to
+     use elsewhere, and would silently disappear from under a tool if
+     that usage ever changed) — a stable promise instead, matching the
+     app's real, currently-used visual language. See
+     plan/ai/tools/browser/step-12-menu-grouping-and-tool-styling-contract.md. */
+  --cinqo-tool-text: #111827; /* gray-900 */
+  --cinqo-tool-text-muted: #6b7280; /* gray-500 */
+  --cinqo-tool-border: #e5e7eb; /* gray-200 */
+  --cinqo-tool-surface: #f9fafb; /* gray-50 */
+  --cinqo-tool-primary: #111827; /* gray-900 — the app's own CTA color */
+  --cinqo-tool-primary-text: #ffffff;
+  --cinqo-tool-danger: #b91c1c; /* red-700 */
+  --cinqo-tool-radius: 6px; /* rounded-md */
+  --cinqo-tool-font: system-ui, Avenir, Helvetica, Arial, sans-serif;
 }
 
 body {

@@ -19,6 +19,25 @@ export interface ToolRoute {
   // Must start with "/tools/" — enforced at registration time, not
   // just documented.
   path: string
+  // A tool's own bundle.js is installed at runtime and never passes
+  // through this app's Tailwind build — it can never use a Tailwind
+  // utility class, no matter how it's wired. For visual consistency
+  // with the rest of the app, reference these CSS custom properties
+  // (always present on :root, defined in frontend/src/index.css) from
+  // plain inline styles or a <style> tag, with a literal fallback on
+  // every one so the page still renders sensibly if they're ever
+  // missing:
+  //   --cinqo-tool-text          body text color
+  //   --cinqo-tool-text-muted    secondary/helper text color
+  //   --cinqo-tool-border        border color
+  //   --cinqo-tool-surface       subtle background (e.g. table header)
+  //   --cinqo-tool-primary       primary/CTA background color
+  //   --cinqo-tool-primary-text  text color on top of --cinqo-tool-primary
+  //   --cinqo-tool-danger        error/destructive text or accent color
+  //   --cinqo-tool-radius        standard corner radius
+  //   --cinqo-tool-font          the app's own font stack
+  // e.g. `container.style.border = '1px solid var(--cinqo-tool-border, #e5e7eb)'`.
+  // See plan/ai/tools/browser/step-12-menu-grouping-and-tool-styling-contract.md.
   mount: (container: HTMLElement) => void
   unmount?: (container: HTMLElement) => void
 }

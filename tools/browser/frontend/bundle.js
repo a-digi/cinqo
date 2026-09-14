@@ -15,18 +15,32 @@
 // bodies rather than hand-templating YAML strings — correct escaping
 // for free, no injection risk from a domain/username/password
 // containing YAML-special characters.
+//
+// Styling: this bundle is installed at runtime and never passes
+// through the app's own Tailwind build, so it can never use a
+// Tailwind utility class — styled instead via the app's own
+// --cinqo-tool-* CSS custom properties (frontend/src/index.css,
+// documented in toolBridge.ts), each referenced with a literal
+// fallback so the page still renders sensibly even if they're ever
+// missing. See
+// plan/ai/tools/browser/step-12-menu-grouping-and-tool-styling-contract.md.
 (function () {
   var PROXY_BASE = '/api/v1/tools/browser/proxy/login-credentials'
 
   window.__cinqoToolBridge.registerMenuEntry({
-    label: 'Login Credentials',
-    path: '/tools/browser/credentials',
-    // Reuses the existing tool:browser:login scope — the same
-    // permission that already gates writing a credential via the
-    // underlying route, deliberately not a separate scope: a user who
-    // can't submit a credential shouldn't see a page whose only
-    // purpose is submitting one.
-    scopes: ['tool:browser:login'],
+    label: 'Browser',
+    children: [
+      {
+        label: 'Login',
+        path: '/tools/browser/credentials',
+        // Reuses the existing tool:browser:login scope — the same
+        // permission that already gates writing a credential via the
+        // underlying route, deliberately not a separate scope: a user
+        // who can't submit a credential shouldn't see a page whose
+        // only purpose is submitting one.
+        scopes: ['tool:browser:login'],
+      },
+    ],
   })
 
   window.__cinqoToolBridge.registerRoute({
@@ -37,29 +51,129 @@
     },
   })
 
+  var STYLE_ID = 'cinqo-browser-credentials-style'
+
+  function ensureStyle() {
+    if (document.getElementById(STYLE_ID)) return
+    var style = document.createElement('style')
+    style.id = STYLE_ID
+    style.textContent =
+      '.cinqo-browser-credentials {' +
+      '  max-width: 640px;' +
+      '  font-family: var(--cinqo-tool-font, system-ui, sans-serif);' +
+      '  color: var(--cinqo-tool-text, #111827);' +
+      '}' +
+      '.cinqo-browser-credentials h1 {' +
+      '  font-size: 1.25rem;' +
+      '  margin: 0 0 4px;' +
+      '}' +
+      '.cinqo-browser-credentials h2 {' +
+      '  font-size: 1rem;' +
+      '  margin: 24px 0 12px;' +
+      '}' +
+      '.cinqo-browser-credentials p.description {' +
+      '  color: var(--cinqo-tool-text-muted, #6b7280);' +
+      '  font-size: 0.875rem;' +
+      '  margin: 0 0 16px;' +
+      '}' +
+      '.cinqo-browser-credentials [data-role="status"] {' +
+      '  min-height: 1.2em;' +
+      '  color: var(--cinqo-tool-danger, #b91c1c);' +
+      '  font-size: 0.875rem;' +
+      '}' +
+      '.cinqo-browser-credentials table {' +
+      '  width: 100%;' +
+      '  border-collapse: collapse;' +
+      '  margin: 12px 0;' +
+      '  font-size: 0.875rem;' +
+      '}' +
+      '.cinqo-browser-credentials th {' +
+      '  text-align: left;' +
+      '  padding: 8px;' +
+      '  background: var(--cinqo-tool-surface, #f9fafb);' +
+      '  border-bottom: 1px solid var(--cinqo-tool-border, #e5e7eb);' +
+      '  font-weight: 500;' +
+      '  color: var(--cinqo-tool-text-muted, #6b7280);' +
+      '}' +
+      '.cinqo-browser-credentials td {' +
+      '  padding: 8px;' +
+      '  border-bottom: 1px solid var(--cinqo-tool-border, #e5e7eb);' +
+      '}' +
+      '.cinqo-browser-credentials form {' +
+      '  border: 1px solid var(--cinqo-tool-border, #e5e7eb);' +
+      '  border-radius: var(--cinqo-tool-radius, 6px);' +
+      '  padding: 16px;' +
+      '  background: var(--cinqo-tool-surface, #f9fafb);' +
+      '}' +
+      '.cinqo-browser-credentials .field {' +
+      '  margin-bottom: 12px;' +
+      '}' +
+      '.cinqo-browser-credentials label {' +
+      '  display: block;' +
+      '  font-size: 0.8125rem;' +
+      '  font-weight: 500;' +
+      '  margin-bottom: 4px;' +
+      '}' +
+      '.cinqo-browser-credentials input {' +
+      '  width: 100%;' +
+      '  box-sizing: border-box;' +
+      '  padding: 6px 8px;' +
+      '  font-size: 0.875rem;' +
+      '  border: 1px solid var(--cinqo-tool-border, #e5e7eb);' +
+      '  border-radius: var(--cinqo-tool-radius, 6px);' +
+      '  font-family: inherit;' +
+      '}' +
+      '.cinqo-browser-credentials input:focus {' +
+      '  outline: 2px solid var(--cinqo-tool-primary, #111827);' +
+      '  outline-offset: 1px;' +
+      '}' +
+      '.cinqo-browser-credentials button {' +
+      '  font-family: inherit;' +
+      '  font-size: 0.875rem;' +
+      '  border-radius: var(--cinqo-tool-radius, 6px);' +
+      '  cursor: pointer;' +
+      '}' +
+      '.cinqo-browser-credentials button[type="submit"] {' +
+      '  background: var(--cinqo-tool-primary, #111827);' +
+      '  color: var(--cinqo-tool-primary-text, #ffffff);' +
+      '  border: none;' +
+      '  padding: 8px 16px;' +
+      '  font-weight: 500;' +
+      '}' +
+      '.cinqo-browser-credentials button[data-role="remove"] {' +
+      '  background: transparent;' +
+      '  color: var(--cinqo-tool-danger, #b91c1c);' +
+      '  border: 1px solid var(--cinqo-tool-border, #e5e7eb);' +
+      '  padding: 4px 10px;' +
+      '}'
+    document.head.appendChild(style)
+  }
+
   function mount(container) {
+    ensureStyle()
+
     container.innerHTML =
-      '<div style="max-width:640px;font-family:system-ui,sans-serif">' +
+      '<div class="cinqo-browser-credentials">' +
       '<h1>Login Credentials</h1>' +
-      '<p style="color:#555">Domains the Browser tool can log into on your behalf. ' +
+      '<p class="description">Domains the Browser tool can log into on your behalf. ' +
       'The AI can ask whether a credential exists for a domain, but never sees the username or password stored here.</p>' +
-      '<div data-role="status" style="min-height:1.2em;color:#b00"></div>' +
-      '<table data-role="list" style="width:100%;border-collapse:collapse;margin:1em 0">' +
+      '<div data-role="status"></div>' +
+      '<table data-role="list">' +
       '<thead><tr>' +
-      '<th style="text-align:left;border-bottom:1px solid #ccc;padding:4px">Domain</th>' +
-      '<th style="text-align:left;border-bottom:1px solid #ccc;padding:4px">Username</th>' +
-      '<th style="border-bottom:1px solid #ccc;padding:4px"></th>' +
+      '<th>Domain</th>' +
+      '<th>Username</th>' +
+      '<th></th>' +
       '</tr></thead>' +
       '<tbody data-role="rows"></tbody>' +
       '</table>' +
-      '<h2 style="font-size:1em">Add / Update Credential</h2>' +
+      '<h2>Add / Update Credential</h2>' +
       '<form data-role="form">' +
-      '<div style="margin-bottom:8px"><label>Domain<br>' +
-      '<input data-role="domain" type="text" placeholder="example.com" style="width:100%;padding:4px" required></label></div>' +
-      '<div style="margin-bottom:8px"><label>Username<br>' +
-      '<input data-role="username" type="text" style="width:100%;padding:4px" required></label></div>' +
-      '<div style="margin-bottom:8px"><label>Password<br>' +
-      '<input data-role="password" type="password" style="width:100%;padding:4px" required></label></div>' +
+      '<div class="field"><label for="cinqo-browser-cred-domain">Domain</label>' +
+      '<input id="cinqo-browser-cred-domain" data-role="domain" type="text" placeholder="example.com" required></div>' +
+      '<div class="field"><label for="cinqo-browser-cred-username">Username</label>' +
+      '<input id="cinqo-browser-cred-username" data-role="username" type="text" required></div>' +
+      '<div class="field"><label for="cinqo-browser-cred-password">Password</label>' +
+      '<input id="cinqo-browser-cred-password" data-role="password" type="password" required></div>' +
       '<button type="submit">Save</button>' +
       '</form>' +
       '</div>'
@@ -82,19 +196,17 @@
         var tr = document.createElement('tr')
 
         var domainTd = document.createElement('td')
-        domainTd.style.padding = '4px'
         domainTd.textContent = cred.domain
         tr.appendChild(domainTd)
 
         var usernameTd = document.createElement('td')
-        usernameTd.style.padding = '4px'
         usernameTd.textContent = cred.username
         tr.appendChild(usernameTd)
 
         var actionTd = document.createElement('td')
-        actionTd.style.padding = '4px'
         var removeBtn = document.createElement('button')
         removeBtn.type = 'button'
+        removeBtn.setAttribute('data-role', 'remove')
         removeBtn.textContent = 'Remove'
         removeBtn.addEventListener('click', function (domain) {
           return function () {
