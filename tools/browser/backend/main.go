@@ -17,7 +17,10 @@
 // plan/ai/tools/browser/step-08-ai-instructed-login.md — extract.go
 // for step 9, deliberately independent of login/
 // login_credentials.go, see
-// plan/ai/tools/browser/step-09-yaml-instructed-extraction.md).
+// plan/ai/tools/browser/step-09-yaml-instructed-extraction.md —
+// paginate.go for step 16, a multi-page crawl loop built on top of
+// extract.go's own per-page extraction, see
+// plan/ai/tools/browser/step-16-paginated-crawl-instructions.md).
 package main
 
 import (
@@ -97,6 +100,7 @@ func runHTTPServer() {
 	http.HandleFunc("/crawl", crawlHandler)
 	http.HandleFunc("/find-login-elements", findLoginElementsHandler)
 	http.HandleFunc("/extract", extractHandler)
+	http.HandleFunc("/crawl-paginated", paginatedCrawlHandler)
 	http.HandleFunc("/login", loginHandler)
 	// Deliberately not exposed as an MCP tool — see
 	// login_credentials.go's own top comment. Reachable only via the
@@ -179,6 +183,7 @@ func runMCPServer() {
 	registerFetchPageHTML(server)
 	registerFindLoginElements(server)
 	registerExtractPageData(server)
+	registerCrawlPaginated(server)
 	registerHasLoginCredential(server)
 	registerLogin(server)
 

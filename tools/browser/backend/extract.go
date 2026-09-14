@@ -105,7 +105,9 @@ func extractHandler(w http.ResponseWriter, r *http.Request) {
 // performExtraction runs the caller-supplied fields against whatever
 // page the shared session currently has loaded — never navigates,
 // never submits anything. Holds sessionMu for the whole operation,
-// same as crawlPage/findLoginElements.
+// same as crawlPage/findLoginElements. A thin lock+timeout wrapper
+// around runExtractionOnCurrentPage — see that function's own doc
+// comment for why the split exists.
 func performExtraction(fields []extractField) (extractResponse, error) {
 	sessionMu.Lock()
 	defer sessionMu.Unlock()
@@ -113,6 +115,19 @@ func performExtraction(fields []extractField) (extractResponse, error) {
 	ctx, cancel := context.WithTimeout(sessionCtx, extractTimeout)
 	defer cancel()
 
+	return runExtractionOnCurrentPage(ctx, fields)
+}
+
+// runExtractionOnCurrentPage is performExtraction's own actual logic,
+// factored out lock-free and context-free (the caller supplies both)
+// so a caller that already holds sessionMu for a longer-lived
+// operation — paginate.go's own multi-page crawl loop (step 16) —
+// can invoke it directly without deadlocking sessionMu (sync.Mutex is
+// not reentrant; performExtraction locking it again from inside an
+// already-locked caller would hang forever). performExtraction's own
+// external behavior/contract is unchanged by this split. See
+// plan/ai/tools/browser/step-16-paginated-crawl-instructions.md.
+func runExtractionOnCurrentPage(ctx context.Context, fields []extractField) (extractResponse, error) {
 	payload := struct {
 		Fields         []extractField `json:"fields"`
 		MaxItems       int            `json:"maxItems"`
