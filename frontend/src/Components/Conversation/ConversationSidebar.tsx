@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import type { Conversation } from '../../api/conversations'
 import { useConfirm } from '../../Shared/Components/Modal/useConfirm'
+import { IconButton } from '../../Shared/Components/IconButton/IconButton'
+import { PencilIcon, TrashIcon, CheckIcon, XIcon, PlusIcon } from '../../Shared/Components/IconButton/icons'
 
 // List, "New conversation", inline rename, delete-behind-confirm — same
 // established pattern ToolsListPage/PlatformKeysPage already use. See
@@ -38,6 +40,16 @@ export function ConversationSidebar({
     onRename(id, title)
   }
 
+  const cancelRename = () => {
+    setRenamingId(null)
+  }
+
+  // Stops the rename <input>'s own onBlur from firing (and committing)
+  // before Save/Cancel's onClick runs — a click on either button would
+  // otherwise blur the input first, silently committing even a Cancel
+  // click. See plan/ai/conversation/step-10-sidebar-action-icons.md.
+  const preventBlur = (e: React.MouseEvent) => e.preventDefault()
+
   const handleDelete = async (c: Conversation) => {
     const confirmed = await confirm({
       title: 'Delete conversation',
@@ -49,14 +61,9 @@ export function ConversationSidebar({
 
   return (
     <div className="flex h-full w-64 shrink-0 flex-col border-r border-gray-200">
-      <div className="p-3">
-        <button
-          type="button"
-          onClick={onCreate}
-          className="w-full rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-800"
-        >
-          New conversation
-        </button>
+      <div className="flex items-center justify-between border-b border-gray-100 px-3 py-2">
+        <span className="text-sm font-medium text-gray-400">Conversation</span>
+        <IconButton icon={<PlusIcon />} label="New conversation" onClick={onCreate} />
       </div>
 
       <div className="flex-1 overflow-y-auto">
@@ -77,7 +84,7 @@ export function ConversationSidebar({
                   onBlur={() => commitRename(c.id)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') commitRename(c.id)
-                    if (e.key === 'Escape') setRenamingId(null)
+                    if (e.key === 'Escape') cancelRename()
                   }}
                   className="min-w-0 flex-1 rounded border border-gray-300 px-1 py-0.5 text-sm"
                 />
@@ -93,14 +100,17 @@ export function ConversationSidebar({
                   {c.title}
                 </button>
               )}
-              <button
-                type="button"
-                onClick={() => handleDelete(c)}
-                disabled={busyId === c.id}
-                className="shrink-0 text-xs font-medium text-red-600 opacity-0 hover:text-red-800 disabled:opacity-50 group-hover:opacity-100"
-              >
-                Delete
-              </button>
+              {renamingId === c.id ? (
+                <div className="flex shrink-0 gap-0.5">
+                  <IconButton icon={<CheckIcon />} label="Save" onMouseDown={preventBlur} onClick={() => commitRename(c.id)} />
+                  <IconButton icon={<XIcon />} label="Cancel" onMouseDown={preventBlur} onClick={cancelRename} />
+                </div>
+              ) : (
+                <div className="flex shrink-0 gap-0.5 opacity-0 group-hover:opacity-100">
+                  <IconButton icon={<PencilIcon />} label="Rename" onClick={() => startRename(c)} disabled={busyId === c.id} />
+                  <IconButton icon={<TrashIcon />} label="Delete" onClick={() => handleDelete(c)} disabled={busyId === c.id} variant="danger" />
+                </div>
+              )}
             </li>
           ))}
         </ul>

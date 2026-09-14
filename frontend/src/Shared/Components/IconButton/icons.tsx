@@ -23,3 +23,41 @@ export function TrashIcon() {
     </svg>
   )
 }
+
+export function PencilIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-4 w-4">
+      <path
+        d="M13.5 4.5l2 2-8.25 8.25H5v-2.25L13.25 4.5a1 1 0 0 1 1.42 0z"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path d="M11.75 6.25l2 2" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+export function CheckIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-4 w-4">
+      <path d="M4.5 10.5l3.5 3.5 7-8" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+export function XIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-4 w-4">
+      <path d="M5.5 5.5l9 9M14.5 5.5l-9 9" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+export function PlusIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-4 w-4">
+      <path d="M10 5v10M5 10h10" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  )
+}

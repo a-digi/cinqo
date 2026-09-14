@@ -10,6 +10,13 @@ export interface IconButtonProps {
   icon: React.ReactNode
   label: string
   onClick: () => void
+  // Optional escape hatch for a button that sits next to a focused
+  // input (e.g. a Save/Cancel pair beside a rename <input>) — a plain
+  // click would blur that input first, running its onBlur handler
+  // before this button's own onClick. Passing
+  // `(e) => e.preventDefault()` here stops that blur from happening at
+  // all. See plan/ai/conversation/step-10-sidebar-action-icons.md.
+  onMouseDown?: (e: React.MouseEvent) => void
   disabled?: boolean
   variant?: 'default' | 'danger'
 }
@@ -19,11 +26,12 @@ const variantClasses: Record<NonNullable<IconButtonProps['variant']>, string> = 
   danger: 'text-red-600 hover:bg-red-50 hover:text-red-700',
 }
 
-export function IconButton({ icon, label, onClick, disabled, variant = 'default' }: IconButtonProps) {
+export function IconButton({ icon, label, onClick, onMouseDown, disabled, variant = 'default' }: IconButtonProps) {
   return (
     <button
       type="button"
       onClick={onClick}
+      onMouseDown={onMouseDown}
       disabled={disabled}
       aria-label={label}
       title={label}
