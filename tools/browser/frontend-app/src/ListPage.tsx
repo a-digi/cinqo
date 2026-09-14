@@ -27,7 +27,7 @@ export function ListPage() {
   }
 
   return (
-    <div className="max-w-2xl py-6 font-sans text-gray-900">
+    <div className="max-w-2xl p-6 font-sans text-gray-900">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h1 className="mb-1.5 text-xl font-semibold">Login Credentials</h1>
