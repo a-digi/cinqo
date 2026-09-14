@@ -1,7 +1,7 @@
 {
   "slug": "browser",
   "name": "Browser",
-  "version": "0.8.0",
+  "version": "0.10.0",
   "mcp": true,
   "scopes": [
     {
@@ -11,6 +11,10 @@
     {
       "scope": "tool:browser:login",
       "description": "Fill and submit a login form in the shared browser session."
+    },
+    {
+      "scope": "tool:browser:login:status",
+      "description": "Check whether a stored login credential exists for a domain (yes/no only) — no credential or username data returned."
     }
   ],
   "routes": [
@@ -20,12 +24,14 @@
     { "method": "POST", "path_suffix": "login", "required_scope": "tool:browser:login" },
     { "method": "GET", "path_suffix": "login-credentials", "required_scope": "tool:browser:login" },
     { "method": "POST", "path_suffix": "login-credentials", "required_scope": "tool:browser:login" },
-    { "method": "DELETE", "path_suffix": "login-credentials", "required_scope": "tool:browser:login" }
+    { "method": "DELETE", "path_suffix": "login-credentials", "required_scope": "tool:browser:login" },
+    { "method": "POST", "path_suffix": "has-login-credential", "required_scope": "tool:browser:login:status" }
   ],
   "mcp_tools": [
     { "name": "fetch_page_html", "required_scope": "tool:browser:crawl" },
     { "name": "find_login_elements", "required_scope": "tool:browser:crawl" },
     { "name": "extract_page_data", "required_scope": "tool:browser:crawl" },
+    { "name": "has_login_credential", "required_scope": "tool:browser:login:status" },
     { "name": "login", "required_scope": "tool:browser:login" }
   ]
 }

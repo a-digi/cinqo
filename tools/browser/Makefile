@@ -25,6 +25,15 @@
 #
 # Linux ships both amd64 and arm64, matching pdf_generator's own
 # already-verified convention.
+#
+# Step 10 added frontend/bundle.js — plain JS text, not compiled,
+# identical across every OS/arch, so it's copied verbatim into each
+# OS build dir alongside manifest.json (same reasoning already applied
+# to manifest.json itself). Its presence is what promotes this
+# package's own derived "kind" from backend_only to
+# frontend_and_backend at install time (api/src/tool/manifest/manifest.go)
+# — nothing here declares kind explicitly. See
+# plan/ai/tools/browser/step-10-credential-management-frontend.md.
 
 BUILD_DIR := build
 
@@ -32,6 +41,7 @@ BUILD_DIR := build
 build-darwin:
 	@mkdir -p $(BUILD_DIR)/darwin-arm64/backend
 	cp manifest.json $(BUILD_DIR)/darwin-arm64/
+	cp -r frontend $(BUILD_DIR)/darwin-arm64/
 	cd backend && CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -o ../$(BUILD_DIR)/darwin-arm64/backend/tool .
 	@echo "built: $(BUILD_DIR)/darwin-arm64/backend/tool"
 
@@ -40,6 +50,8 @@ build-linux:
 	@mkdir -p $(BUILD_DIR)/linux-amd64/backend $(BUILD_DIR)/linux-arm64/backend
 	cp manifest.json $(BUILD_DIR)/linux-amd64/
 	cp manifest.json $(BUILD_DIR)/linux-arm64/
+	cp -r frontend $(BUILD_DIR)/linux-amd64/
+	cp -r frontend $(BUILD_DIR)/linux-arm64/
 	cd backend && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ../$(BUILD_DIR)/linux-amd64/backend/tool .
 	cd backend && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o ../$(BUILD_DIR)/linux-arm64/backend/tool .
 	@echo "built: $(BUILD_DIR)/linux-amd64/backend/tool"
@@ -49,6 +61,7 @@ build-linux:
 build-windows:
 	@mkdir -p $(BUILD_DIR)/windows-amd64/backend
 	cp manifest.json $(BUILD_DIR)/windows-amd64/
+	cp -r frontend $(BUILD_DIR)/windows-amd64/
 	cd backend && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o ../$(BUILD_DIR)/windows-amd64/backend/tool .
 	@echo "built: $(BUILD_DIR)/windows-amd64/backend/tool"
 

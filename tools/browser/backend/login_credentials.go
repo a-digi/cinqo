@@ -13,15 +13,19 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"gopkg.in/yaml.v3"
 
 	_ "modernc.org/sqlite"
@@ -263,4 +267,121 @@ func loginCredentialsHandler(w http.ResponseWriter, r *http.Request) {
 func writeCredentialsResponse(w http.ResponseWriter, summaries []credentialSummary) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(credentialsListResponse{Credentials: summaries})
+}
+
+// normalizeDomain reduces a realistic model failure mode — passing a
+// full URL (e.g. "https://example.com/login") instead of a bare
+// hostname — without adding real complexity. Falls back to the raw,
+// trimmed input whenever it isn't a parseable absolute URL. See
+// plan/ai/tools/browser/step-11-ai-facing-credential-existence-check.md.
+func normalizeDomain(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if u, err := url.Parse(raw); err == nil && u.Scheme != "" && u.Hostname() != "" {
+		return u.Hostname()
+	}
+	return raw
+}
+
+// hasCredentialRequest/Response carry exactly one bit of information
+// in either direction — no credential, username, or even masked
+// username ever crosses this boundary. This is the first MCP-exposed
+// surface that touches login_credentials at all; see this file's own
+// top comment and step 11's own "Security considerations" for why
+// that's a deliberate, narrow exception, not an oversight.
+type hasCredentialRequest struct {
+	Domain string `json:"domain"`
+}
+
+type hasCredentialResponse struct {
+	Exists bool `json:"exists"`
+}
+
+// hasCredentialHandler handles POST /has-login-credential — the
+// --mcp adapter's own real target for has_login_credential. Never
+// reads cred.Username/cred.Password beyond the nil check itself.
+func hasCredentialHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var body hasCredentialRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Domain == "" {
+		http.Error(w, "domain is required", http.StatusBadRequest)
+		return
+	}
+
+	cred, err := lookupCredential(normalizeDomain(body.Domain))
+	if err != nil {
+		http.Error(w, fmt.Sprintf("failed to look up credential: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(hasCredentialResponse{Exists: cred != nil})
+}
+
+type hasCredentialArgs struct {
+	Domain string `json:"domain" jsonschema:"the domain to check — a bare hostname (e.g. example.com), not a full URL"`
+}
+
+// registerHasLoginCredential adds the has_login_credential MCP tool —
+// the only credential-adjacent action the AI can take that isn't
+// gated behind a human having already registered one. Deliberately
+// scoped narrower than tool:browser:login (see manifest.json's own
+// scope description for tool:browser:login:status) — this tool can
+// never fill/submit anything or leak a credential, only report
+// whether one exists.
+func registerHasLoginCredential(server *mcp.Server) {
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "has_login_credential",
+		Description: "Check whether a login credential is already stored for a domain. Returns yes/no only — never the credential itself. If no credential is stored, ask the user to add one on the Browser tool's own \"Login Credentials\" page; the AI cannot create or see this data itself.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args hasCredentialArgs) (*mcp.CallToolResult, any, error) {
+		if args.Domain == "" {
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: "domain is required"}},
+				IsError: true,
+			}, nil, nil
+		}
+
+		reqBody, err := json.Marshal(hasCredentialRequest{Domain: args.Domain})
+		if err != nil {
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("failed to build request: %v", err)}},
+				IsError: true,
+			}, nil, nil
+		}
+
+		respBody, err := callSibling("has-login-credential", reqBody)
+		if err != nil {
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
+				IsError: true,
+			}, nil, nil
+		}
+
+		var result hasCredentialResponse
+		if err := json.Unmarshal(respBody, &result); err != nil {
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("failed to parse response: %v", err)}},
+				IsError: true,
+			}, nil, nil
+		}
+
+		domain := normalizeDomain(args.Domain)
+		var text string
+		if result.Exists {
+			text = fmt.Sprintf(
+				"A login credential is already stored for %q. Proceed with fetch_page_html → find_login_elements → login.",
+				domain,
+			)
+		} else {
+			text = fmt.Sprintf(
+				"No login credential is stored for %q. Ask the user to add one on the Browser tool's own \"Login Credentials\" page (Tools → Login Credentials) — the AI cannot create or see this data itself.",
+				domain,
+			)
+		}
+
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}, nil, nil
+	})
 }

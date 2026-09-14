@@ -104,6 +104,13 @@ func runHTTPServer() {
 	// by the AI's own tool-calling loop (which only ever calls
 	// registered MCP tools).
 	http.HandleFunc("/login-credentials", loginCredentialsHandler)
+	// Unlike /login-credentials above, THIS one is deliberately also
+	// an MCP tool (has_login_credential, registered below) — the one
+	// deliberate, narrow crack in "the AI never touches login data":
+	// it can only ever report a yes/no existence check, never a
+	// credential. See
+	// plan/ai/tools/browser/step-11-ai-facing-credential-existence-check.md.
+	http.HandleFunc("/has-login-credential", hasCredentialHandler)
 
 	log.Printf("browser tool listening on 127.0.0.1:%s", port)
 	if err := http.ListenAndServe("127.0.0.1:"+port, nil); err != nil {
@@ -162,14 +169,17 @@ func allocatorOptions() []chromedp.ExecAllocatorOption {
 // contract (see api/src/tool/mcp). Each registered tool calls
 // callSibling below rather than touching sessionCtx directly (this
 // subprocess never holds sessionCtx itself — that only ever exists
-// inside the long-running HTTP-mode sibling). allowlist management is
-// deliberately never registered here — see allowlist.go.
+// inside the long-running HTTP-mode sibling). Credential management
+// itself (POST/GET/DELETE /login-credentials) is deliberately never
+// registered here — see login_credentials.go's own top comment;
+// has_login_credential below is the one narrow, deliberate exception.
 func runMCPServer() {
 	server := mcp.NewServer(&mcp.Implementation{Name: "browser", Version: "0.1.0"}, nil)
 
 	registerFetchPageHTML(server)
 	registerFindLoginElements(server)
 	registerExtractPageData(server)
+	registerHasLoginCredential(server)
 	registerLogin(server)
 
 	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
