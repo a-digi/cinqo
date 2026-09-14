@@ -8,8 +8,16 @@
 // itself and the --mcp adapter that reaches it
 // (plan/ai/tools/browser/step-02-shared-browser-session.md) — plus
 // the HTTP-mode wiring for each feature, implemented in its own file
-// (crawl.go for step 3, login_elements.go for step 4, login.go +
-// allowlist.go for step 5).
+// (crawl.go for step 3, login_elements.go for step 4, login.go
+// originally for step 5, login_credentials.go + crypto.go for step 7
+// — step 7 retired step 5's own allowlist.go entirely, see
+// plan/ai/tools/browser/step-07-login-profiles-and-credential-isolation.md
+// — login.go rewritten again by step 8 around domain + selectors
+// only, no credential fields on the wire at all, see
+// plan/ai/tools/browser/step-08-ai-instructed-login.md — extract.go
+// for step 9, deliberately independent of login/
+// login_credentials.go, see
+// plan/ai/tools/browser/step-09-yaml-instructed-extraction.md).
 package main
 
 import (
@@ -60,8 +68,8 @@ func runHTTPServer() {
 	if err := startSharedSession(); err != nil {
 		log.Fatalf("failed to start shared browser session: %v", err)
 	}
-	if err := initAllowlistDB(); err != nil {
-		log.Fatalf("failed to open login allowlist database: %v", err)
+	if err := initBrowserDB(); err != nil {
+		log.Fatalf("failed to open browser database: %v", err)
 	}
 
 	// A bare `defer stopSharedSession()` here would never actually run:
@@ -88,12 +96,14 @@ func runHTTPServer() {
 	})
 	http.HandleFunc("/crawl", crawlHandler)
 	http.HandleFunc("/find-login-elements", findLoginElementsHandler)
+	http.HandleFunc("/extract", extractHandler)
 	http.HandleFunc("/login", loginHandler)
-	// Deliberately not exposed as an MCP tool — see allowlist.go's own
-	// top comment. Reachable only via the ordinary tool proxy a
-	// signed-in human's own request hits, never by the AI's own
-	// tool-calling loop (which only ever calls registered MCP tools).
-	http.HandleFunc("/allowlist", allowlistHandler)
+	// Deliberately not exposed as an MCP tool — see
+	// login_credentials.go's own top comment. Reachable only via the
+	// ordinary tool proxy a signed-in human's own request hits, never
+	// by the AI's own tool-calling loop (which only ever calls
+	// registered MCP tools).
+	http.HandleFunc("/login-credentials", loginCredentialsHandler)
 
 	log.Printf("browser tool listening on 127.0.0.1:%s", port)
 	if err := http.ListenAndServe("127.0.0.1:"+port, nil); err != nil {
@@ -159,6 +169,7 @@ func runMCPServer() {
 
 	registerFetchPageHTML(server)
 	registerFindLoginElements(server)
+	registerExtractPageData(server)
 	registerLogin(server)
 
 	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {

@@ -1,8 +1,13 @@
 // login.go implements the login feature — fills and submits a login
 // form in the shared browser session. The one credential-submitting
-// action in this tool, gated both by scope (tool:browser:login, step
-// 1) and by allowlist.go's own domain allowlist. See
-// plan/ai/tools/browser/step-05-login-feature.md.
+// action in this tool, gated by scope (tool:browser:login, step 1)
+// and by the mere existence of a stored credential for the caller-
+// supplied domain (step 7's login_credentials store). As of step 8,
+// the MCP args carry no credential at all — the AI only ever
+// instructs WHICH elements matter (via find_login_elements), never
+// what to fill them with; the tool resolves the real
+// username/password itself. See
+// plan/ai/tools/browser/step-08-ai-instructed-login.md.
 package main
 
 import (
@@ -10,7 +15,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
 	"time"
 
 	"github.com/chromedp/chromedp"
@@ -21,11 +25,10 @@ import (
 const loginTimeout = 20 * time.Second
 
 type loginRequest struct {
+	Domain           string `json:"domain"`
 	UsernameSelector string `json:"usernameSelector"`
 	PasswordSelector string `json:"passwordSelector"`
 	SubmitSelector   string `json:"submitSelector"`
-	Username         string `json:"username"`
-	Password         string `json:"password"`
 }
 
 // loginResponse's Success only ever means "the form was mechanically
@@ -34,8 +37,8 @@ type loginRequest struct {
 // with an error message, still a normal page load). That judgment is
 // left to whoever reads FinalURL/HTML — see registerLogin's own
 // prompt text below. Reason is set instead of Success/FinalURL/HTML
-// when the allowlist check itself is what stopped this from
-// proceeding at all.
+// when the credential lookup itself is what stopped this from
+// proceeding at all (no stored credential for the given domain).
 type loginResponse struct {
 	Success  bool   `json:"success"`
 	Reason   string `json:"reason,omitempty"`
@@ -56,8 +59,8 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
-	if body.UsernameSelector == "" || body.PasswordSelector == "" || body.SubmitSelector == "" || body.Username == "" || body.Password == "" {
-		http.Error(w, "usernameSelector, passwordSelector, submitSelector, username, and password are all required", http.StatusBadRequest)
+	if body.Domain == "" || body.UsernameSelector == "" || body.PasswordSelector == "" || body.SubmitSelector == "" {
+		http.Error(w, "domain, usernameSelector, passwordSelector, and submitSelector are all required", http.StatusBadRequest)
 		return
 	}
 
@@ -74,10 +77,16 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(result)
 }
 
-// performLogin checks the shared session's CURRENT page origin against
-// the allowlist before touching anything — it never navigates itself,
-// so "current page" is exactly whatever fetch_page_html (step 3) last
-// loaded. Holds sessionMu for the whole operation, same as
+// performLogin never navigates itself — it fills/submits whatever
+// login page the shared session already has loaded (via
+// fetch_page_html, step 3) — and looks up the credential to use by
+// the caller-supplied Domain rather than parsing the current page's
+// own URL: the two are expected to agree, but keeping the lookup
+// explicit removes any ambiguity if they don't (e.g. a www. prefix
+// difference from how the human typed the domain when registering
+// it) and makes a lookup failure's own error message unambiguous
+// about which domain it checked. See this step's own "Open
+// questions". Holds sessionMu for the whole operation, same as
 // crawlPage/findLoginElements.
 func performLogin(req loginRequest) (loginResponse, error) {
 	sessionMu.Lock()
@@ -86,33 +95,28 @@ func performLogin(req loginRequest) (loginResponse, error) {
 	ctx, cancel := context.WithTimeout(sessionCtx, loginTimeout)
 	defer cancel()
 
-	var currentURL string
-	if err := chromedp.Run(ctx, chromedp.Location(&currentURL)); err != nil {
-		return loginResponse{}, err
-	}
-
-	u, err := url.Parse(currentURL)
+	// A stored credential's own existence for this domain IS the login
+	// approval — no separate allowlist (step 7 retired allowlist.go
+	// entirely). The MCP schema itself carries no username/password
+	// field at all as of this step — cred.Username/cred.Password below
+	// are the ONLY values ever used to fill the form.
+	cred, err := lookupCredential(req.Domain)
 	if err != nil {
-		return loginResponse{}, fmt.Errorf("could not parse the current page's URL: %w", err)
+		return loginResponse{}, fmt.Errorf("could not look up the stored credential: %w", err)
 	}
-
-	allowed, err := isDomainAllowed(u.Hostname())
-	if err != nil {
-		return loginResponse{}, fmt.Errorf("could not check the domain allowlist: %w", err)
-	}
-	if !allowed {
+	if cred == nil {
 		return loginResponse{
 			Success: false,
 			Reason: fmt.Sprintf(
-				"%q is not in the approved domains list — ask the user to add it first (POST /allowlist on this tool, outside of any AI tool call), then retry",
-				u.Hostname(),
+				"no stored credential for %q — ask the user to add one via POST /login-credentials on this tool (outside of any AI tool call), then retry",
+				req.Domain,
 			),
 		}, nil
 	}
 
 	if err := chromedp.Run(ctx,
-		chromedp.SendKeys(req.UsernameSelector, req.Username),
-		chromedp.SendKeys(req.PasswordSelector, req.Password),
+		chromedp.SendKeys(req.UsernameSelector, cred.Username),
+		chromedp.SendKeys(req.PasswordSelector, cred.Password),
 	); err != nil {
 		return loginResponse{Success: false, Reason: fmt.Sprintf("failed to fill the form: %v", err)}, nil
 	}
@@ -158,36 +162,35 @@ func performLogin(req loginRequest) (loginResponse, error) {
 }
 
 type loginArgs struct {
+	Domain           string `json:"domain" jsonschema:"the domain being logged into"`
 	UsernameSelector string `json:"usernameSelector" jsonschema:"CSS selector for the username/email field, from find_login_elements"`
 	PasswordSelector string `json:"passwordSelector" jsonschema:"CSS selector for the password field, from find_login_elements"`
 	SubmitSelector   string `json:"submitSelector" jsonschema:"CSS selector for the submit control, from find_login_elements"`
-	Username         string `json:"username" jsonschema:"the username/email to submit"`
-	Password         string `json:"password" jsonschema:"the password to submit"`
 }
 
 // registerLogin adds the login MCP tool — the only credential-
-// submitting action in this whole tool. Deliberately does not itself
-// run find_login_elements or navigate anywhere; the model is expected
-// to have already done both. See this file's own top comment for the
-// allowlist gate this sits behind.
+// submitting action in this whole tool, and, as of step 8, one whose
+// args have no field capable of carrying a credential at all: the
+// model only ever instructs WHICH elements matter, never what to fill
+// them with. Deliberately does not itself run find_login_elements or
+// navigate anywhere; the model is expected to have already done both.
 func registerLogin(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "login",
-		Description: "Fill and submit a login form in the shared browser session, using selectors from find_login_elements. Only proceeds if the current page's domain has already been approved by the user.",
+		Description: "Log into the currently loaded page using selectors from find_login_elements. Only proceeds if a credential has already been registered for the given domain (via /login-credentials, outside any AI tool call) — the tool fills and submits it itself; the AI never sees the credential.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args loginArgs) (*mcp.CallToolResult, any, error) {
-		if args.UsernameSelector == "" || args.PasswordSelector == "" || args.SubmitSelector == "" || args.Username == "" || args.Password == "" {
+		if args.Domain == "" || args.UsernameSelector == "" || args.PasswordSelector == "" || args.SubmitSelector == "" {
 			return &mcp.CallToolResult{
-				Content: []mcp.Content{&mcp.TextContent{Text: "usernameSelector, passwordSelector, submitSelector, username, and password are all required"}},
+				Content: []mcp.Content{&mcp.TextContent{Text: "domain, usernameSelector, passwordSelector, and submitSelector are all required"}},
 				IsError: true,
 			}, nil, nil
 		}
 
 		reqBody, err := json.Marshal(loginRequest{
+			Domain:           args.Domain,
 			UsernameSelector: args.UsernameSelector,
 			PasswordSelector: args.PasswordSelector,
 			SubmitSelector:   args.SubmitSelector,
-			Username:         args.Username,
-			Password:         args.Password,
 		})
 		if err != nil {
 			return &mcp.CallToolResult{

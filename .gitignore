@@ -8,6 +8,14 @@
 *.so
 *.dylib
 
+# A bare `go build ./...` (no -o) inside a tool's own backend/
+# directory drops a binary named after that module right there —
+# e.g. tools/browser/backend/browser-tool-backend. Not a real "build"
+# output path (that's already covered by /tools/*/build/ below), just
+# stray local verification debris; excluded broadly rather than
+# per-tool so this can't recur for any tool's own backend module.
+/tools/*/backend/*-backend
+
 # Test binary, built with `go test -c`
 *.test
 
