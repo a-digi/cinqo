@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"path/filepath"
 	"strings"
 
 	dbmanager "github.com/a-digi/coco-orm/orm"
@@ -141,6 +142,32 @@ func encryptionKey(reqCtx request.RequestContext) ([]byte, error) {
 		return nil, errors.New("encryption key not configured")
 	}
 	return key, nil
+}
+
+// defaultDataDir mirrors backendapp.ResolveDataDir's own fallback
+// ("data") for the case "data_dir" isn't in DI at all — should never
+// happen once backendapp.Start has run, but this package staying
+// self-contained (not importing backendapp just for one string
+// constant) is worth a one-line duplicated literal.
+const defaultDataDir = "data"
+
+// logsRoot resolves the shared root directory every conversation's
+// own log file lives under — the "conversations" subdirectory of
+// whatever backendapp.Start registered as "data_dir" (defaults to
+// "data", relative to CWD, unless overridden via --data). Was a plain
+// exported conversation.LogsRoot constant before --data existed; now
+// resolved per-request since the value isn't known until Start runs.
+// See plan/ai/build/app/step-17-configurable-data-directory.md.
+func logsRoot(reqCtx request.RequestContext) string {
+	dataDir := defaultDataDir
+	if storeCtx, ok := reqCtx.GetDI().(diStore); ok {
+		if raw, ok := storeCtx.Get("data_dir"); ok {
+			if s, ok := raw.(string); ok && s != "" {
+				dataDir = s
+			}
+		}
+	}
+	return filepath.Join(dataDir, "conversations")
 }
 
 // conversationResponse is the shape every conversation-metadata

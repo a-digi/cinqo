@@ -10,6 +10,7 @@ package backendapp
 import (
 	"context"
 	"net/http"
+	"path/filepath"
 
 	dbmanager "github.com/a-digi/coco-orm/orm"
 	"github.com/a-digi/coco-server/server"
@@ -26,6 +27,27 @@ import (
 	"github.com/a-digi/coco-logger/logger"
 )
 
+// defaultDataDir is today's exact well-known location — every
+// data/-relative literal that used to be hardcoded throughout this
+// file now derives from whatever ResolveDataDir returns, and this is
+// what it returns when the caller doesn't override it. "data" and the
+// old "./data" literals resolve identically (a leading "./" is a
+// no-op to every path/filepath and os function that touches these
+// paths) — this fallback is provably behavior-preserving, not just
+// close enough. See plan/ai/build/app/step-17-configurable-data-directory.md.
+const defaultDataDir = "data"
+
+// ResolveDataDir applies the one fallback rule --data needs, in the
+// one place both callers that need it before/independent of Start
+// itself (api/main.go's own shutdown-action logger) and Start itself
+// both call, so the rule can't drift between them.
+func ResolveDataDir(flagValue string) string {
+	if flagValue == "" {
+		return defaultDataDir
+	}
+	return flagValue
+}
+
 // Start performs the full backend bootstrap (config, DB manager, DI,
 // auth, routes.Init) and starts the HTTP server, returning it
 // un-blocked. The caller decides how to wait for shutdown:
@@ -39,8 +61,13 @@ import (
 // "auth_config" fresh from the ContextBag on every request rather than
 // having it baked into a closure at routes.Init time — a later Set()
 // here takes effect immediately, no restart needed.
-func Start() (srv *http.Server, cfg *server.Config, ctx *di.ContextBag, log logger.Logger, err error) {
-	log, err = logger.NewLogger(server.LogFileName("cinqo"), "data/logs")
+func Start(dataDir string) (srv *http.Server, cfg *server.Config, ctx *di.ContextBag, log logger.Logger, err error) {
+	dataDir = ResolveDataDir(dataDir)
+	logsDir := filepath.Join(dataDir, "logs")
+	dbDir := filepath.Join(dataDir, "db")
+	keyPath := filepath.Join(dataDir, "keys", "platform-encryption.key")
+
+	log, err = logger.NewLogger(server.LogFileName("cinqo"), logsDir)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
@@ -50,7 +77,7 @@ func Start() (srv *http.Server, cfg *server.Config, ctx *di.ContextBag, log logg
 		return nil, nil, nil, log, err
 	}
 
-	manager, err := dbmanager.NewDatabaseManager("cinqo.db", "./data/db", []string{migrationsPath})
+	manager, err := dbmanager.NewDatabaseManager("cinqo.db", dbDir, []string{migrationsPath})
 	if err != nil {
 		return nil, nil, nil, log, err
 	}
@@ -84,7 +111,7 @@ func Start() (srv *http.Server, cfg *server.Config, ctx *di.ContextBag, log logg
 	if err != nil {
 		return nil, nil, nil, log, err
 	}
-	conversationManager, err := dbmanager.NewDatabaseManager("conversation.db", "./data/db", []string{conversationMigrationsPath})
+	conversationManager, err := dbmanager.NewDatabaseManager("conversation.db", dbDir, []string{conversationMigrationsPath})
 	if err != nil {
 		return nil, nil, nil, log, err
 	}
@@ -97,11 +124,19 @@ func Start() (srv *http.Server, cfg *server.Config, ctx *di.ContextBag, log logg
 	// bootstrap, deliberately never sourced from config.json (step 2),
 	// registered into DI so every platform handler resolves the same
 	// in-memory key rather than each re-reading the file itself.
-	platformEncryptionKey, err := platform_crypto.LoadOrGenerateKey("./data/keys/platform-encryption.key")
+	platformEncryptionKey, err := platform_crypto.LoadOrGenerateKey(keyPath)
 	if err != nil {
 		return nil, nil, nil, log, err
 	}
 	ctx.Set("platform_encryption_key", platformEncryptionKey)
+
+	// The resolved data directory itself — registered so tool/handler
+	// (installed-tool directories) and conversation/handler (per-
+	// conversation log files) can each derive their own subdirectory
+	// from the same root --data overrode, instead of each hardcoding
+	// their own "data/..." literal. See
+	// plan/ai/build/app/step-17-configurable-data-directory.md.
+	ctx.Set("data_dir", dataDir)
 
 	// Auth bootstrap: config.json's "auth" block is always present (dev
 	// HS256 secret); iam.yaml does not exist on disk yet (see

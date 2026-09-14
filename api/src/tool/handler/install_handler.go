@@ -139,12 +139,12 @@ func InstallHandler(reqCtx request.RequestContext) {
 		return
 	}
 
-	if err := os.MkdirAll(toolsRoot, 0o755); err != nil {
+	if err := os.MkdirAll(toolsRoot(reqCtx), 0o755); err != nil {
 		response.ErrorResponse(w, http.StatusInternalServerError, "failed to prepare the tools directory")
 		return
 	}
 
-	stagingDir := filepath.Join(toolsRoot, ".staging", uuid.NewString())
+	stagingDir := filepath.Join(toolsRoot(reqCtx), ".staging", uuid.NewString())
 	if err := os.MkdirAll(stagingDir, 0o755); err != nil {
 		response.ErrorResponse(w, http.StatusInternalServerError, "failed to prepare a staging directory")
 		return
@@ -218,7 +218,7 @@ func InstallHandler(reqCtx request.RequestContext) {
 	}
 
 	scopes, routes, required, requiredTools := childRowsFromManifest(m)
-	finalDir := filepath.Join(toolsRoot, m.Slug)
+	finalDir := filepath.Join(toolsRoot(reqCtx), m.Slug)
 
 	if !found {
 		tool := &tool_entity.Tool{

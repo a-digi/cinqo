@@ -62,7 +62,7 @@ func DeleteHandler(reqCtx request.RequestContext) {
 		return
 	}
 
-	within, err := isWithin(toolsRoot, tool.InstallPath)
+	within, err := isWithin(toolsRoot(reqCtx), tool.InstallPath)
 	if err != nil {
 		response.ErrorResponse(w, http.StatusInternalServerError, "failed to validate install path")
 		return

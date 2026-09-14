@@ -73,7 +73,8 @@ func CreateHandler(reqCtx request.RequestContext) {
 		return
 	}
 
-	if err := os.MkdirAll(conversation.LogsRoot, 0o755); err != nil {
+	logsDir := logsRoot(reqCtx)
+	if err := os.MkdirAll(logsDir, 0o755); err != nil {
 		response.ErrorResponse(w, http.StatusInternalServerError, "failed to prepare conversation storage")
 		return
 	}
@@ -83,7 +84,7 @@ func CreateHandler(reqCtx request.RequestContext) {
 		ID:         id,
 		UserID:     userID,
 		Title:      title,
-		FilePath:   conversation.LogPath(conversation.LogsRoot, id),
+		FilePath:   conversation.LogPath(logsDir, id),
 		PlatformID: body.PlatformID,
 		Model:      model,
 	}

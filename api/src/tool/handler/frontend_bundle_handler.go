@@ -39,7 +39,7 @@ func FrontendBundleHandler(reqCtx request.RequestContext) {
 		return
 	}
 
-	within, err := isWithin(toolsRoot, tool.InstallPath)
+	within, err := isWithin(toolsRoot(reqCtx), tool.InstallPath)
 	if err != nil || !within {
 		response.ErrorResponse(w, http.StatusInternalServerError, "invalid install path")
 		return

@@ -20,13 +20,6 @@ const (
 	maxFileSize = 5 * 1024 * 1024 // 5MB
 )
 
-// LogsRoot is the shared root directory every conversation's own log
-// file lives under — matches this app's existing data/-rooted
-// local-state convention (data/db/, data/keys/, data/logs/). Step 3's
-// create-conversation handler ensures this directory exists before
-// inserting a new conversation row.
-const LogsRoot = "./data/conversations"
-
 // Turn is one user+assistant exchange — the unit both retention caps
 // operate on. A turn is never split across the size/count boundary.
 //

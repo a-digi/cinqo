@@ -1,8 +1,10 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/a-digi/coco-server/server"
 
@@ -12,13 +14,24 @@ import (
 )
 
 func main() {
+	// --data must come before the start/shutdown action — Go's own
+	// flag package stops parsing at the first non-flag argument, so
+	// `cinqo-app --data /path start` works but `cinqo-app start --data
+	// /path` does not (the "start" positional halts flag parsing
+	// before --data is ever seen). See
+	// plan/ai/build/app/step-17-configurable-data-directory.md.
+	dataDir := flag.String("data", "", `path to the data directory (default: "data", relative to the working directory)`)
+	flag.Parse()
+
 	action := "start"
-	if len(os.Args) > 1 {
-		action = os.Args[1]
+	if args := flag.Args(); len(args) > 0 {
+		action = args[0]
 	}
 
+	resolvedDataDir := backendapp.ResolveDataDir(*dataDir)
+
 	if action == "shutdown" {
-		log, err := logger.NewLogger(server.LogFileName("cinqo"), "data/logs")
+		log, err := logger.NewLogger(server.LogFileName("cinqo"), filepath.Join(resolvedDataDir, "logs"))
 		if err != nil {
 			fmt.Println(err)
 			os.Exit(1)
@@ -31,7 +44,7 @@ func main() {
 		return
 	}
 
-	srv, cfg, _, log, err := backendapp.Start()
+	srv, cfg, _, log, err := backendapp.Start(resolvedDataDir)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)

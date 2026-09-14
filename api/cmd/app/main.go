@@ -9,6 +9,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io/fs"
 	"net"
@@ -33,8 +34,8 @@ import (
 
 	"github.com/a-digi/cinqo/cmd/app/webapp"
 	"github.com/a-digi/cinqo/config/di"
-	"github.com/a-digi/cinqo/src/backendapp"
 	auth_config "github.com/a-digi/cinqo/src/auth/config"
+	"github.com/a-digi/cinqo/src/backendapp"
 )
 
 //go:embed embedded.Caddyfile
@@ -65,6 +66,13 @@ func main() {
 }
 
 func run() error {
+	// --data overrides where this app's own local state (db/, logs/,
+	// keys/, tools/) lives — omitted, falls back to today's exact
+	// "data/" (relative to CWD) behavior. See
+	// plan/ai/build/app/step-17-configurable-data-directory.md.
+	dataDir := flag.String("data", "", `path to the data directory (default: "data", relative to the working directory)`)
+	flag.Parse()
+
 	// Armed before anything else starts (backend, Caddy, or the
 	// browser) so a self-sent SIGTERM from launchPrivateChrome's exit
 	// watcher can never race ahead of signal.Notify — an unhandled
@@ -85,7 +93,7 @@ func run() error {
 	}
 	closeStaleChromeInstance()
 
-	srv, cfg, ctx, log, err := backendapp.Start()
+	srv, cfg, ctx, log, err := backendapp.Start(backendapp.ResolveDataDir(*dataDir))
 	if err != nil {
 		return fmt.Errorf("backend: %w", err)
 	}

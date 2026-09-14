@@ -7,13 +7,33 @@ import (
 	"strings"
 
 	"github.com/a-digi/coco-server/server"
+	"github.com/a-digi/coco-server/server/request"
 )
 
 // toolsRoot is where every installed tool's own directory lives —
-// relative to the backend's CWD (api/, same convention as data/db,
-// data/logs — see backendapp.Start()). Mirrors coco-mda's
-// data/plugins/ layout, renamed.
-const toolsRoot = "data/tools"
+// under the backend's own resolved data directory (backendapp.Start's
+// "data_dir", same one data/db, data/logs derive from — defaults to
+// "data", relative to CWD, unless overridden via --data). Mirrors
+// coco-mda's data/plugins/ layout, renamed. See
+// plan/ai/build/app/step-17-configurable-data-directory.md.
+func toolsRoot(reqCtx request.RequestContext) string {
+	dataDir := defaultDataDirFallback
+	if storeCtx, ok := reqCtx.GetDI().(diStore); ok {
+		if raw, ok := storeCtx.Get("data_dir"); ok {
+			if s, ok := raw.(string); ok && s != "" {
+				dataDir = s
+			}
+		}
+	}
+	return filepath.Join(dataDir, "tools")
+}
+
+// defaultDataDirFallback mirrors backendapp.ResolveDataDir's own
+// fallback ("data") for the case "data_dir" isn't in DI at all —
+// should never happen once backendapp.Start has run, but a handler
+// package staying self-contained (not importing backendapp just for
+// one string constant) is worth a one-line duplicated literal.
+const defaultDataDirFallback = "data"
 
 // Fixed on-disk convention for a tool package — never configurable,
 // never trusted from the manifest itself. See
