@@ -41,9 +41,10 @@ export function ListPage() {
           aria-label="Add credential"
           title="Add credential"
           onClick={() => window.__cinqoToolBridge.navigate(ADD_PATH)}
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900"
+          className="flex shrink-0 items-center gap-1.5 rounded-md bg-gray-900 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800"
         >
           <PlusIcon />
+          Add
         </button>
       </div>
 

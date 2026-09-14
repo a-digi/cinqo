@@ -29,7 +29,7 @@ export function AddPage() {
   }
 
   return (
-    <div className="max-w-2xl py-6 font-sans text-gray-900">
+    <div className="max-w-2xl p-6 font-sans text-gray-900">
       <a
         href="#"
         onClick={(e) => {
