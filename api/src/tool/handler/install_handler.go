@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"database/sql"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -57,6 +58,17 @@ func discoverMCPToolsIfDeclared(reqCtx request.RequestContext, db *sql.DB, m man
 	if err != nil {
 		reqCtx.GetDI().GetLogger().Warning("tool %q declared mcp support but its env vars could not be resolved: %v", m.Slug, err)
 		return
+	}
+	// TOOL_OWN_PORT lets a tool's own --mcp subprocess reach its
+	// already-running HTTP-mode sibling directly (127.0.0.1-only,
+	// same host) — the mechanism a tool needing state to persist
+	// across separate --mcp invocations (e.g. browser's own shared
+	// session) relies on. Harmless, unused env var for every tool that
+	// doesn't need it, same as CORE_API_URL already is for a tool that
+	// never calls back into cinqo's own API. See
+	// plan/ai/tools/browser/step-02-shared-browser-session.md.
+	if port, ok := manager.Port(toolID); ok {
+		envVars = append(envVars, fmt.Sprintf("TOOL_OWN_PORT=%d", port))
 	}
 	mcpTools, err := tool_mcp.Discover(reqCtx.GetRequest().Context(), execPath, envVars)
 	if err != nil {

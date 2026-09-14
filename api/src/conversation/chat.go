@@ -317,6 +317,13 @@ func invokeToolCall(ctx context.Context, mainDB *sql.DB, callerScopes []string, 
 	if err != nil {
 		return fmt.Sprintf("tool invocation failed: %v", err), nil
 	}
+	// See install_handler.go's identical addition and
+	// plan/ai/tools/browser/step-02-shared-browser-session.md — lets a
+	// tool's own --mcp subprocess reach its already-running HTTP-mode
+	// sibling for state that must persist across separate calls.
+	if port, ok := tool_manager.Port(tool.ID); ok {
+		envVars = append(envVars, fmt.Sprintf("TOOL_OWN_PORT=%d", port))
+	}
 	execPath, err := filepath.Abs(filepath.Join(tool.InstallPath, tool.BackendExecutableRelpath))
 	if err != nil {
 		return fmt.Sprintf("tool invocation failed: %v", err), nil
