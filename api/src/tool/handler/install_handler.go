@@ -49,12 +49,12 @@ func discoverMCPToolsIfDeclared(reqCtx request.RequestContext, db *sql.DB, m man
 	// main() fails os.MkdirAll("", ...) at startup and exits before
 	// ever completing the MCP handshake — surfaced only as "connection
 	// closed: EOF" from Discover, not an obviously env-related error.
-	corePort, portErr := readCorePort()
+	port, portErr := corePort(reqCtx)
 	if portErr != nil {
 		reqCtx.GetDI().GetLogger().Warning("tool %q declared mcp support but its backend port could not be determined: %v", m.Slug, portErr)
 		return
 	}
-	envVars, err := manager.ToolEnvVars(m.Slug, corePort)
+	envVars, err := manager.ToolEnvVars(m.Slug, port)
 	if err != nil {
 		reqCtx.GetDI().GetLogger().Warning("tool %q declared mcp support but its env vars could not be resolved: %v", m.Slug, err)
 		return
@@ -199,7 +199,7 @@ func InstallHandler(reqCtx request.RequestContext) {
 	_, frontendErr := os.Stat(filepath.Join(stagingDir, frontendBundleFilename))
 	_, backendErr := os.Stat(filepath.Join(stagingDir, backendExecutableFilename))
 
-	currentAppVersion, err := readCurrentAppVersion()
+	currentAppVersion, err := appVersion(reqCtx)
 	if err != nil {
 		response.ErrorResponse(w, http.StatusInternalServerError, "failed to determine the running app version")
 		return
@@ -269,8 +269,8 @@ func InstallHandler(reqCtx request.RequestContext) {
 		// leaves status "error" (recorded by manager.Start itself),
 		// doesn't fail the 201 — the tool is still successfully
 		// installed, just not currently running.
-		if corePort, portErr := readCorePort(); portErr == nil {
-			if startErr := manager.Start(db, *tool, corePort); startErr != nil {
+		if port, portErr := corePort(reqCtx); portErr == nil {
+			if startErr := manager.Start(db, *tool, port); startErr != nil {
 				reqCtx.GetDI().GetLogger().Warning("tool %q installed but failed to start: %v", tool.Slug, startErr)
 			}
 		} else {
@@ -350,8 +350,8 @@ func InstallHandler(reqCtx request.RequestContext) {
 	// Restart on the new code only if it was enabled before — an
 	// update never silently turns a disabled tool on.
 	if updated.Enabled {
-		if corePort, portErr := readCorePort(); portErr == nil {
-			if startErr := manager.Start(db, *updated, corePort); startErr != nil {
+		if port, portErr := corePort(reqCtx); portErr == nil {
+			if startErr := manager.Start(db, *updated, port); startErr != nil {
 				reqCtx.GetDI().GetLogger().Warning("tool %q updated but failed to restart: %v", updated.Slug, startErr)
 			}
 		} else {

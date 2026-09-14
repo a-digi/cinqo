@@ -54,6 +54,7 @@ plan/
 /api/bin/
 /api/cmd/app/webapp/dist/
 /api/cmd/app/embeddedconfig/
+/api/cmd/app/embedded-version
 
 # Build output (make build/build-linux) — compiled binaries, not source.
 # Was an unaddressed gap before this ever produced a real file in this

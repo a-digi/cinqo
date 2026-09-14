@@ -68,6 +68,17 @@ var embeddedConfigJSON []byte
 //go:embed all:embeddedconfig
 var embeddedConfigDir embed.FS
 
+// embeddedAppVersion is a copy of api/VERSION's own content — the fix
+// for "failed to determine the running app version" on a fresh tool
+// install when this binary is opened from a directory with no
+// api/VERSION beside it. Always present, compiled in — unlike
+// api/main.go's own equivalent (a real, possibly-failing file read),
+// this can never fail to resolve regardless of launch location. See
+// plan/ai/build/app/step-20-app-version-via-di.md.
+//
+//go:embed embedded-version
+var embeddedAppVersion string
+
 // caddyPort is the single source of truth for the port embedded.Caddyfile
 // itself hardcodes (its site address can't be an {env.*} placeholder —
 // see plan/ai/build/app/step-03-embedded-caddy-config.md). Kept here too
@@ -167,7 +178,11 @@ func run() error {
 	}
 	closeStaleChromeInstance(chromePidPath)
 
-	srv, cfg, ctx, log, err := backendapp.Start(backendapp.ResolveDataDir(*dataDir, dataDefault), configPath)
+	srv, cfg, ctx, log, err := backendapp.Start(backendapp.Options{
+		DataDir:    backendapp.ResolveDataDir(*dataDir, dataDefault),
+		ConfigPath: configPath,
+		AppVersion: strings.TrimSpace(embeddedAppVersion),
+	})
 	if err != nil {
 		return fmt.Errorf("backend: %w", err)
 	}

@@ -70,14 +70,14 @@ func EnableHandler(reqCtx request.RequestContext) {
 		return
 	}
 
-	corePort, err := readCorePort()
+	port, err := corePort(reqCtx)
 	if err != nil {
 		response.ErrorResponse(w, http.StatusInternalServerError, "failed to determine backend port")
 		return
 	}
 
 	tool.Enabled = true
-	if err := manager.Start(db, *tool, corePort); err != nil {
+	if err := manager.Start(db, *tool, port); err != nil {
 		// Best-effort, matching the reference: a start failure leaves
 		// status "error" (already recorded by manager.Start itself),
 		// doesn't fail the enable request — the tool is enabled, just

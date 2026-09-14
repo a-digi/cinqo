@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/a-digi/coco-server/server"
 
@@ -50,7 +51,11 @@ func main() {
 		return
 	}
 
-	srv, cfg, _, log, err := backendapp.Start(resolvedDataDir, "config.json")
+	srv, cfg, _, log, err := backendapp.Start(backendapp.Options{
+		DataDir:    resolvedDataDir,
+		ConfigPath: "config.json",
+		AppVersion: readAppVersionFile(),
+	})
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
@@ -58,4 +63,21 @@ func main() {
 	defer log.Close()
 
 	server.GracefulShutdown(srv, cfg.PidFile, log)
+}
+
+// readAppVersionFile reads api/VERSION, unchanged CWD-relative
+// behavior — this dev binary always assumes cd api && ..., same
+// philosophy as the "config.json" literal above. Deliberately
+// non-fatal on failure (returns "", not an error) — today, a missing
+// VERSION file only breaks tool installation specifically, not
+// startup; appVersion(reqCtx) (tool/handler/paths.go) is what turns
+// an empty value back into that same, narrowly-scoped error, only
+// if/when a tool install is actually attempted. See
+// plan/ai/build/app/step-20-app-version-via-di.md.
+func readAppVersionFile() string {
+	data, err := os.ReadFile("VERSION")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
 }

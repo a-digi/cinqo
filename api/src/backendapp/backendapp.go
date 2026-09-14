@@ -58,15 +58,29 @@ func ResolveDataDir(flagValue, fallback string) string {
 	return defaultDataDir
 }
 
-// Start performs the full backend bootstrap (config, DB manager, DI,
-// auth, routes.Init) and starts the HTTP server, returning it
-// un-blocked. dataDir and configPath are both expected to already be
-// fully resolved by the caller (ResolveDataDir for the former; the
+// Options bundles Start's own input parameters — switched from
+// positional args to a struct once a third one (AppVersion) showed
+// up, per step 18's own "revisit once a third override parameter is
+// needed" note. DataDir and ConfigPath are both expected to already
+// be fully resolved by the caller (ResolveDataDir for the former; the
 // latter has no equivalent helper since its own fallback — apphome —
 // is a cmd/app/main.go-specific concept Start itself has no business
-// knowing about). See
-// plan/ai/build/app/step-18-embedded-default-config-and-app-home.md.
-// The caller decides how to wait for shutdown:
+// knowing about). AppVersion may be empty (api/main.go's own
+// non-fatal read failure, step 20) — Start registers whatever it's
+// given as-is; appVersion(reqCtx)'s own downstream empty-string check
+// (tool/handler/paths.go) is what turns that into a real error, only
+// if/when a tool install is actually attempted. See
+// plan/ai/build/app/step-18-embedded-default-config-and-app-home.md
+// and plan/ai/build/app/step-20-app-version-via-di.md.
+type Options struct {
+	DataDir    string
+	ConfigPath string
+	AppVersion string
+}
+
+// Start performs the full backend bootstrap (config, DB manager, DI,
+// auth, routes.Init) and starts the HTTP server, returning it
+// un-blocked. The caller decides how to wait for shutdown:
 // api/main.go calls server.GracefulShutdown right after (today's exact
 // behavior); api/cmd/app/main.go instead coordinates shutdown together
 // with an in-process Caddy instance. The returned ContextBag lets a
@@ -77,7 +91,9 @@ func ResolveDataDir(flagValue, fallback string) string {
 // "auth_config" fresh from the ContextBag on every request rather than
 // having it baked into a closure at routes.Init time — a later Set()
 // here takes effect immediately, no restart needed.
-func Start(dataDir, configPath string) (srv *http.Server, cfg *server.Config, ctx *di.ContextBag, log logger.Logger, err error) {
+func Start(opts Options) (srv *http.Server, cfg *server.Config, ctx *di.ContextBag, log logger.Logger, err error) {
+	dataDir := opts.DataDir
+	configPath := opts.ConfigPath
 	logsDir := filepath.Join(dataDir, "logs")
 	dbDir := filepath.Join(dataDir, "db")
 	keyPath := filepath.Join(dataDir, "keys", "platform-encryption.key")
@@ -152,6 +168,25 @@ func Start(dataDir, configPath string) (srv *http.Server, cfg *server.Config, ct
 	// their own "data/..." literal. See
 	// plan/ai/build/app/step-17-configurable-data-directory.md.
 	ctx.Set("data_dir", dataDir)
+
+	// The running app's own version — resolved once here from
+	// whatever the caller supplied (embedded, for cmd/app; read fresh
+	// from api/VERSION, for the dev binary) rather than tool/handler
+	// re-reading a bare "VERSION" file itself on every install
+	// request. May be empty (api/main.go's own non-fatal read
+	// failure) — appVersion(reqCtx) (tool/handler/paths.go) is what
+	// turns that into a real, user-facing error, only if/when a tool
+	// install is actually attempted. See
+	// plan/ai/build/app/step-20-app-version-via-di.md.
+	ctx.Set("app_version", opts.AppVersion)
+
+	// The backend's own listening port — reuses corePortCfg (already
+	// loaded above, via the correctly-resolved configPath, for
+	// tool_manager.StartAllEnabled) rather than tool/handler's own
+	// corePort(reqCtx) re-reading config.json a second time via a bare
+	// CWD-relative literal, the exact same class of bug app_version
+	// itself had. See plan/ai/build/app/step-20-app-version-via-di.md.
+	ctx.Set("core_port", corePortCfg.Port)
 
 	// Auth bootstrap: config.json's "auth" block is always present (dev
 	// HS256 secret); iam.yaml does not exist on disk yet (see

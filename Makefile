@@ -140,13 +140,18 @@ embed-frontend:
 # that go build ./...//go vet ./... would then also compile. Same
 # rm -rf + fresh-copy shape as embed-frontend above — a build-
 # generated, gitignored directory, not something hand-edited. See
-# plan/ai/build/app/step-19-embedded-config-directory.md.
+# plan/ai/build/app/step-19-embedded-config-directory.md. Also copies
+# api/VERSION to embedded-version (a lone file, not part of the
+# api/config/ tree, but the same "//go:embed can't reach outside
+# api/cmd/app/" constraint applies) — see
+# plan/ai/build/app/step-20-app-version-via-di.md.
 .PHONY: embed-config
 embed-config:
 	rm -rf api/cmd/app/embeddedconfig
 	mkdir -p api/cmd/app/embeddedconfig
 	cd api/config && find . -type f \( -name '*.sql' -o -name '*.yaml' -o -name '*.json' \) \
 	  -exec sh -c 'mkdir -p "../cmd/app/embeddedconfig/$$(dirname "$$1")" && cp "$$1" "../cmd/app/embeddedconfig/$$1"' _ {} \;
+	cp api/VERSION api/cmd/app/embedded-version
 
 # app/VERSION tracks cinqo-app's own version, independently of
 # api/VERSION (build/build-linux's, unrelated, unpadded M.N.P scheme).

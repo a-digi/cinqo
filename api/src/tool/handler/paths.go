@@ -1,12 +1,11 @@
 package handler
 
 import (
-	"fmt"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/a-digi/coco-server/server"
 	"github.com/a-digi/coco-server/server/request"
 )
 
@@ -69,33 +68,67 @@ func chmodBackendExecutableIfPresent(installDir string) error {
 	return os.Chmod(execPath, 0o755)
 }
 
-// readCurrentAppVersion reads the running backend's own VERSION file
-// off CWD — both api/main.go and cmd/app/main.go run with CWD=api/, so
-// this is always api/VERSION regardless of which binary is hosting the
-// request. Simpler than distinguishing which binary is running (the
-// two are otherwise indistinguishable from a request handler's own
-// vantage point, and both expose the exact same HTTP API a tool talks
-// to) — a deliberate simplification over step 2's originally-recommended
-// "whichever binary is running," discovered to need new cross-cutting
-// plumbing this step doesn't otherwise require. See
-// plan/ai/tools/step-02-manifest-and-safe-zip-extraction.md's confirmed
-// open question.
-func readCurrentAppVersion() (string, error) {
-	data, err := os.ReadFile("VERSION")
-	if err != nil {
-		return "", fmt.Errorf("read VERSION: %w", err)
+// errAppVersionUnavailable is returned by appVersion whenever
+// "app_version" isn't resolvable via DI — either it was never
+// registered (shouldn't happen once backendapp.Start has run) or it
+// resolved to an empty string (api/main.go's own non-fatal
+// api/VERSION read failure, step 20). Both collapse to the same
+// install_handler.go error text this tool-install path has always
+// shown, preserving today's exact failure scope: a version-resolution
+// problem breaks tool installation specifically, never app startup.
+var errAppVersionUnavailable = errors.New("app version unavailable")
+
+// appVersion resolves the running app's own version — registered into
+// DI once, at boot, by backendapp.Start (embedded and always present
+// for cmd/app; read fresh from api/VERSION, possibly empty on
+// failure, for the dev binary) — rather than re-reading a bare
+// "VERSION" file off CWD on every tool-install request the way
+// readCurrentAppVersion used to. See
+// plan/ai/build/app/step-20-app-version-via-di.md.
+func appVersion(reqCtx request.RequestContext) (string, error) {
+	storeCtx, ok := reqCtx.GetDI().(diStore)
+	if !ok {
+		return "", errAppVersionUnavailable
 	}
-	return strings.TrimSpace(string(data)), nil
+	raw, ok := storeCtx.Get("app_version")
+	if !ok {
+		return "", errAppVersionUnavailable
+	}
+	v, ok := raw.(string)
+	if !ok || v == "" {
+		return "", errAppVersionUnavailable
+	}
+	return v, nil
 }
 
-// readCorePort reads the backend's own listening port straight from
-// config.json (the same file server.StartServer itself reads) — reused
-// here rather than threading cfg.Port through DI, since it's already
-// on disk and this is the only place outside main.go that needs it.
-func readCorePort() (int, error) {
-	cfg, err := server.LoadConfig("config.json")
-	if err != nil {
-		return 0, err
+// errCorePortUnavailable mirrors errAppVersionUnavailable for
+// corePort below — same "resolved once at boot, via DI" fix for the
+// exact same class of bug readCorePort used to have (a bare
+// server.LoadConfig("config.json") read, CWD-relative, no fallback —
+// found sitting immediately adjacent to the reported "failed to
+// determine the running app version" bug and fixed alongside it,
+// since leaving it would have meant a fresh-elsewhere tool install
+// hit the identical class of failure on its very next step). See
+// plan/ai/build/app/step-20-app-version-via-di.md.
+var errCorePortUnavailable = errors.New("core port unavailable")
+
+// corePort resolves the backend's own listening port — registered
+// into DI once, at boot, by backendapp.Start (it already loads
+// config.json via the correctly-resolved configPath for its own
+// tool_manager.StartAllEnabled call; this reuses that same value
+// rather than re-reading config.json a second time here).
+func corePort(reqCtx request.RequestContext) (int, error) {
+	storeCtx, ok := reqCtx.GetDI().(diStore)
+	if !ok {
+		return 0, errCorePortUnavailable
 	}
-	return cfg.Port, nil
+	raw, ok := storeCtx.Get("core_port")
+	if !ok {
+		return 0, errCorePortUnavailable
+	}
+	p, ok := raw.(int)
+	if !ok || p == 0 {
+		return 0, errCorePortUnavailable
+	}
+	return p, nil
 }
