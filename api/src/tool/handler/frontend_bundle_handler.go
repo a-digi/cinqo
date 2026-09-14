@@ -47,5 +47,12 @@ func FrontendBundleHandler(reqCtx request.RequestContext) {
 
 	bundlePath := filepath.Join(tool.InstallPath, tool.FrontendBundleRelpath)
 	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+	// Safe to cache indefinitely: loadTools.ts's own request URL
+	// already carries ?v=<tool version>, and install_handler.go
+	// already rejects installing a tool at a version that isn't
+	// strictly greater than what's currently installed — so this
+	// exact URL's content can never change under a client that has it
+	// cached. See plan/ai/build/app/step-16-cache-busting-headers.md.
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	http.ServeFile(w, reqCtx.GetRequest(), bundlePath)
 }

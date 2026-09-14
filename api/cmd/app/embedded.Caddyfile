@@ -19,6 +19,26 @@
 	handle {
 		root * {env.CINQO_FRONTEND_DIR}
 		try_files {path} /index.html
+
+		# Vite hashes every asset's content into its own filename
+		# (index-<hash>.js/.css) — the filename itself changes
+		# whenever content does, so it's always safe to cache
+		# indefinitely. Mutually-exclusive matchers (not two
+		# ordered "default" rules) so one can never silently
+		# overwrite the other regardless of directive order —
+		# verified directly against this project's own real Caddy
+		# dependency before shipping. See
+		# plan/ai/build/app/step-16-cache-busting-headers.md.
+		@assets path /assets/*
+		header @assets Cache-Control "public, max-age=31536000, immutable"
+
+		# Everything else — index.html itself, and every SPA
+		# fallback path try_files resolves to it — must always be
+		# revalidated: it's the one file whose own content decides
+		# which hashed asset filenames are current.
+		@not_assets not path /assets/*
+		header @not_assets Cache-Control "no-cache"
+
 		file_server
 	}
 }
