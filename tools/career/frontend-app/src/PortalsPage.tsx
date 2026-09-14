@@ -25,8 +25,10 @@ export function PortalsPage() {
   const [editingPortalId, setEditingPortalId] = useState<string | null>(null)
   const [editPortalName, setEditPortalName] = useState('')
   const [linkUrlDrafts, setLinkUrlDrafts] = useState<Record<string, string>>({})
+  const [linkTitleDrafts, setLinkTitleDrafts] = useState<Record<string, string>>({})
   const [editingLinkId, setEditingLinkId] = useState<string | null>(null)
   const [editLinkUrl, setEditLinkUrl] = useState('')
+  const [editLinkTitle, setEditLinkTitle] = useState('')
   const [expandedLinkId, setExpandedLinkId] = useState<string | null>(null)
   const [crawlInstructionsDraft, setCrawlInstructionsDraft] = useState('')
   const [error, setError] = useState('')
@@ -93,13 +95,26 @@ export function PortalsPage() {
     return linkUrlDrafts[portalId] ?? ''
   }
 
+  function linkTitleDraft(portalId: string): string {
+    return linkTitleDrafts[portalId] ?? ''
+  }
+
   function handleAddLink(portalId: string) {
     const url = linkUrlDraft(portalId).trim()
-    if (!url) return
+    const title = linkTitleDraft(portalId).trim()
+    if (!url) {
+      setError('URL is required')
+      return
+    }
+    if (!title) {
+      setError('Title is required')
+      return
+    }
     setError('')
-    addPortalLink(portalId, url)
+    addPortalLink(portalId, url, title)
       .then(() => {
         setLinkUrlDrafts((prev) => ({ ...prev, [portalId]: '' }))
+        setLinkTitleDrafts((prev) => ({ ...prev, [portalId]: '' }))
         load()
       })
       .catch((err: Error) => setError(err.message))
@@ -108,21 +123,28 @@ export function PortalsPage() {
   function startEditLink(link: PortalLink) {
     setEditingLinkId(link.id)
     setEditLinkUrl(link.url)
+    setEditLinkTitle(link.title ?? '')
   }
 
   function cancelEditLink() {
     setEditingLinkId(null)
     setEditLinkUrl('')
+    setEditLinkTitle('')
   }
 
-  function saveEditLinkUrl(id: string) {
+  function saveEditLink(id: string) {
     const url = editLinkUrl.trim()
+    const title = editLinkTitle.trim()
     if (!url) {
       setError('URL is required')
       return
     }
+    if (!title) {
+      setError('Title is required')
+      return
+    }
     setError('')
-    updatePortalLink(id, { url })
+    updatePortalLink(id, { url, title })
       .then(() => {
         cancelEditLink()
         load()
@@ -222,31 +244,45 @@ export function PortalsPage() {
               {p.links.map((link) => (
                 <div key={link.id} className="rounded-md border border-gray-100 bg-gray-50 p-2">
                   {editingLinkId === link.id ? (
-                    <div className="flex gap-2">
+                    <div className="space-y-1.5">
                       <input
                         autoFocus
+                        value={editLinkTitle}
+                        onChange={(e) => setEditLinkTitle(e.target.value)}
+                        placeholder="Title, e.g. Software Engineer jobs, Hamburg"
+                        className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-900 focus:border-gray-500 focus:outline-none"
+                      />
+                      <input
                         value={editLinkUrl}
                         onChange={(e) => setEditLinkUrl(e.target.value)}
-                        className="flex-1 rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-900 focus:border-gray-500 focus:outline-none"
+                        placeholder="URL"
+                        className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-900 focus:border-gray-500 focus:outline-none"
                       />
-                      <button
-                        type="button"
-                        onClick={() => saveEditLinkUrl(link.id)}
-                        className="rounded-md bg-gray-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-gray-800"
-                      >
-                        Save
-                      </button>
-                      <button
-                        type="button"
-                        onClick={cancelEditLink}
-                        className="rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-white"
-                      >
-                        Cancel
-                      </button>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => saveEditLink(link.id)}
+                          className="rounded-md bg-gray-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-gray-800"
+                        >
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          onClick={cancelEditLink}
+                          className="rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-white"
+                        >
+                          Cancel
+                        </button>
+                      </div>
                     </div>
                   ) : (
                     <div className="flex items-center justify-between gap-2">
-                      <span className="truncate text-xs text-gray-700">{link.url}</span>
+                      <div className="min-w-0">
+                        <div className="truncate text-xs font-medium text-gray-900">
+                          {link.title || '(untitled link)'}
+                        </div>
+                        <div className="truncate text-xs text-gray-500">{link.url}</div>
+                      </div>
                       <div className="flex shrink-0 gap-2">
                         <button
                           type="button"
@@ -308,12 +344,18 @@ export function PortalsPage() {
               ))}
             </div>
 
-            <div className="mt-2 flex gap-2">
+            <div className="mt-2 flex flex-wrap gap-2">
+              <input
+                value={linkTitleDraft(p.id)}
+                onChange={(e) => setLinkTitleDrafts((prev) => ({ ...prev, [p.id]: e.target.value }))}
+                placeholder="Title, e.g. Software Engineer jobs, Hamburg"
+                className="min-w-[220px] flex-1 rounded-md border border-gray-300 px-2.5 py-1.5 text-xs text-gray-900 focus:border-gray-500 focus:outline-none"
+              />
               <input
                 value={linkUrlDraft(p.id)}
                 onChange={(e) => setLinkUrlDrafts((prev) => ({ ...prev, [p.id]: e.target.value }))}
                 placeholder="URL to crawl"
-                className="flex-1 rounded-md border border-gray-300 px-2.5 py-1.5 text-xs text-gray-900 focus:border-gray-500 focus:outline-none"
+                className="min-w-[220px] flex-1 rounded-md border border-gray-300 px-2.5 py-1.5 text-xs text-gray-900 focus:border-gray-500 focus:outline-none"
               />
               <button
                 type="button"

@@ -186,6 +186,7 @@ CREATE TABLE IF NOT EXISTS portal_links (
     id                  TEXT PRIMARY KEY,
     portal_id           TEXT NOT NULL REFERENCES portals(id) ON DELETE CASCADE,
     url                 TEXT NOT NULL,
+    title               TEXT,
     crawl_instructions  TEXT,
     created_at          TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at          TEXT,
@@ -501,7 +502,10 @@ func migrateJobsDB(db *sql.DB) error {
 	if err := migrateJobsCompanyID(db); err != nil {
 		return err
 	}
-	return migrateJobsPortalLinkID(db)
+	if err := migrateJobsPortalLinkID(db); err != nil {
+		return err
+	}
+	return migratePortalLinksTitle(db)
 }
 
 func migrateJobsCompanyID(db *sql.DB) error {
@@ -556,6 +560,7 @@ CREATE TABLE IF NOT EXISTS portal_links (
     id                  TEXT PRIMARY KEY,
     portal_id           TEXT NOT NULL REFERENCES portals(id) ON DELETE CASCADE,
     url                 TEXT NOT NULL,
+    title               TEXT,
     crawl_instructions  TEXT,
     created_at          TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at          TEXT,
@@ -566,5 +571,25 @@ CREATE TABLE IF NOT EXISTS portal_links (
 	}
 
 	_, err = db.Exec(`ALTER TABLE jobs ADD COLUMN portal_link_id TEXT REFERENCES portal_links(id) ON DELETE SET NULL`)
+	return err
+}
+
+// migratePortalLinksTitle detects a pre-title portal_links table (a
+// real table with no title column — includes the brand-new-table case
+// migrateJobsPortalLinkID may have just created above, which already
+// has title from its own inline CREATE TABLE, so this is correctly a
+// no-op there too) and adds it via a plain ALTER TABLE ADD COLUMN — no
+// rebuild needed, same shape as every other column addition to this
+// database. Existing rows get title = NULL, never a synthesized
+// default. See plan/ai/tools/career/step-22-portal-link-titles.md.
+func migratePortalLinksTitle(db *sql.DB) error {
+	exists, hasTitle, err := tableHasColumn(db, "portal_links", "title")
+	if err != nil {
+		return err
+	}
+	if !exists || hasTitle {
+		return nil
+	}
+	_, err = db.Exec(`ALTER TABLE portal_links ADD COLUMN title TEXT`)
 	return err
 }

@@ -823,11 +823,13 @@ func portalsHandler(w http.ResponseWriter, r *http.Request) {
 type portalLinkRequest struct {
 	PortalID string `json:"portalId"`
 	URL      string `json:"url"`
+	Title    string `json:"title"`
 }
 
 type portalLinkUpdateRequest struct {
 	ID                string  `json:"id"`
 	URL               *string `json:"url,omitempty"`
+	Title             *string `json:"title,omitempty"`
 	CrawlInstructions *string `json:"crawlInstructions,omitempty"`
 }
 
@@ -843,7 +845,11 @@ func portalLinksHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "portalId is required", http.StatusBadRequest)
 			return
 		}
-		id, err := addPortalLink(body.PortalID, body.URL)
+		if body.Title == "" {
+			http.Error(w, "title is required", http.StatusBadRequest)
+			return
+		}
+		id, err := addPortalLink(body.PortalID, body.URL, body.Title)
 		if err != nil {
 			writePortalLinkAwareError(w, "add portal link", err)
 			return
@@ -861,16 +867,20 @@ func portalLinksHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "id is required", http.StatusBadRequest)
 			return
 		}
-		if body.URL == nil && body.CrawlInstructions == nil {
-			http.Error(w, "url or crawlInstructions is required", http.StatusBadRequest)
+		if body.URL == nil && body.Title == nil && body.CrawlInstructions == nil {
+			http.Error(w, "url, title, or crawlInstructions is required", http.StatusBadRequest)
 			return
 		}
-		if body.URL != nil {
-			if *body.URL == "" {
-				http.Error(w, "url cannot be empty", http.StatusBadRequest)
-				return
-			}
-			if err := updatePortalLink(body.ID, *body.URL); err != nil {
+		if body.URL != nil && *body.URL == "" {
+			http.Error(w, "url cannot be empty", http.StatusBadRequest)
+			return
+		}
+		if body.Title != nil && *body.Title == "" {
+			http.Error(w, "title cannot be empty", http.StatusBadRequest)
+			return
+		}
+		if body.URL != nil || body.Title != nil {
+			if err := updatePortalLink(body.ID, body.URL, body.Title); err != nil {
 				writePortalLinkAwareError(w, "update portal link", err)
 				return
 			}

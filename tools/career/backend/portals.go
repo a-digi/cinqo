@@ -63,6 +63,7 @@ type portalLink struct {
 	ID                string `json:"id"`
 	PortalID          string `json:"portalId"`
 	URL               string `json:"url"`
+	Title             string `json:"title,omitempty"`
 	CrawlInstructions string `json:"crawlInstructions,omitempty"`
 	CreatedAt         string `json:"createdAt"`
 	UpdatedAt         string `json:"updatedAt,omitempty"`
@@ -118,7 +119,7 @@ func listPortals() ([]portal, error) {
 	rows.Close()
 
 	linkRows, err := jobsDB.Query(
-		`SELECT id, portal_id, url, crawl_instructions, created_at, updated_at
+		`SELECT id, portal_id, url, title, crawl_instructions, created_at, updated_at
 		 FROM portal_links ORDER BY created_at ASC`,
 	)
 	if err != nil {
@@ -128,10 +129,11 @@ func listPortals() ([]portal, error) {
 	byPortal := make(map[string][]portalLink, len(portals))
 	for linkRows.Next() {
 		var l portalLink
-		var crawlInstructions, updatedAt sql.NullString
-		if err := linkRows.Scan(&l.ID, &l.PortalID, &l.URL, &crawlInstructions, &l.CreatedAt, &updatedAt); err != nil {
+		var title, crawlInstructions, updatedAt sql.NullString
+		if err := linkRows.Scan(&l.ID, &l.PortalID, &l.URL, &title, &crawlInstructions, &l.CreatedAt, &updatedAt); err != nil {
 			return nil, err
 		}
+		l.Title = title.String
 		l.CrawlInstructions = crawlInstructions.String
 		l.UpdatedAt = updatedAt.String
 		byPortal[l.PortalID] = append(byPortal[l.PortalID], l)
@@ -167,14 +169,14 @@ func deletePortal(id string) error {
 	return err
 }
 
-func addPortalLink(portalId, url string) (string, error) {
+func addPortalLink(portalId, url, title string) (string, error) {
 	if err := requirePortalExists(portalId); err != nil {
 		return "", err
 	}
 	id := uuid.NewString()
 	_, err := jobsDB.Exec(
-		`INSERT INTO portal_links (id, portal_id, url, created_at) VALUES (?, ?, ?, datetime('now'))`,
-		id, portalId, url,
+		`INSERT INTO portal_links (id, portal_id, url, title, created_at) VALUES (?, ?, ?, ?, datetime('now'))`,
+		id, portalId, url, title,
 	)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
@@ -185,19 +187,35 @@ func addPortalLink(portalId, url string) (string, error) {
 	return id, nil
 }
 
-// updatePortalLink corrects a link's own url. crawl_instructions
-// (step 19) is deliberately not touched by this function — that
-// column's own validated read/write path is step 19's own
+// updatePortalLink corrects a link's own url and/or title — both
+// independently optional, partial-update style (matching
+// updateCompany/updateRecruiter's own established shape). crawl_
+// instructions (step 19) is deliberately not touched by this function
+// — that column's own validated read/write path is step 19's own
 // contribution, kept separate so this step can't accidentally store
 // an unvalidated YAML document through a generic update path.
-func updatePortalLink(id, url string) error {
+func updatePortalLink(id string, url, title *string) error {
 	if err := requirePortalLinkExists(id); err != nil {
 		return err
 	}
-	_, err := jobsDB.Exec(
-		`UPDATE portal_links SET url = ?, updated_at = datetime('now') WHERE id = ?`,
-		url, id,
-	)
+	if url == nil && title == nil {
+		return nil
+	}
+
+	setClauses := ""
+	args := []any{}
+	if url != nil {
+		setClauses += "url = ?, "
+		args = append(args, *url)
+	}
+	if title != nil {
+		setClauses += "title = ?, "
+		args = append(args, *title)
+	}
+	setClauses += "updated_at = datetime('now')"
+	args = append(args, id)
+
+	_, err := jobsDB.Exec(`UPDATE portal_links SET `+setClauses+` WHERE id = ?`, args...)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed") {
 		return errDuplicatePortalLink
 	}
@@ -309,8 +327,11 @@ type createPortalArgs struct {
 
 func registerCreatePortal(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "create_portal",
-		Description: "Create a new job portal — a source to crawl for job postings.",
+		Name: "create_portal",
+		Description: "Create a new job portal — a source to crawl for job postings. Only call this after " +
+			"list_portals confirms no existing portal already matches what the user described (e.g. the same " +
+			"job board under a slightly different name) — if one does, use that portal's own id instead of " +
+			"creating a duplicate.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args createPortalArgs) (*mcp.CallToolResult, any, error) {
 		if args.Name == "" {
 			return errResult("name is required"), nil, nil
@@ -327,8 +348,12 @@ type listPortalsArgs struct{}
 
 func registerListPortals(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "list_portals",
-		Description: "List every job portal, including each one's own crawl target links.",
+		Name: "list_portals",
+		Description: "List every job portal, including each one's own crawl target links (id, title, url, " +
+			"crawlInstructions). Always call this first before create_portal, add_portal_link, or " +
+			"set_portal_link_crawl_instructions — check whether a portal or link matching what the user " +
+			"described already exists (by name/title, not just an exact URL match) before creating or asking " +
+			"to create anything new.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args listPortalsArgs) (*mcp.CallToolResult, any, error) {
 		portals, err := listPortals()
 		if err != nil {
@@ -386,12 +411,19 @@ func registerDeletePortal(server *mcp.Server) {
 type addPortalLinkArgs struct {
 	PortalID string `json:"portalId" jsonschema:"the portal to add this crawl target to — must already exist"`
 	URL      string `json:"url" jsonschema:"the URL to crawl for job postings"`
+	Title    string `json:"title" jsonschema:"a short, descriptive title for this link (e.g. 'Software Engineer jobs, Hamburg') so it stays recognizable later"`
 }
 
 func registerAddPortalLink(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "add_portal_link",
-		Description: "Add a URL to crawl to an existing job portal.",
+		Name: "add_portal_link",
+		Description: "Add a URL to crawl to an existing job portal, with a short, descriptive title (e.g. " +
+			"'Software Engineer jobs, Hamburg') so it stays recognizable later — title is required. Call " +
+			"list_portals first: if a link with a matching or very similar title/URL already exists under this " +
+			"portal, do not add a duplicate — use update_portal_link or set_portal_link_crawl_instructions " +
+			"against its existing id instead. If the user's request could reasonably match more than one " +
+			"existing link and it isn't clear which one they mean, ask the user to clarify before adding or " +
+			"editing anything — never guess.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args addPortalLinkArgs) (*mcp.CallToolResult, any, error) {
 		if args.PortalID == "" {
 			return errResult("portalId is required"), nil, nil
@@ -399,7 +431,10 @@ func registerAddPortalLink(server *mcp.Server) {
 		if args.URL == "" {
 			return errResult("url is required"), nil, nil
 		}
-		id, err := addPortalLink(args.PortalID, args.URL)
+		if args.Title == "" {
+			return errResult("title is required"), nil, nil
+		}
+		id, err := addPortalLink(args.PortalID, args.URL, args.Title)
 		if err != nil {
 			switch {
 			case errors.Is(err, errUnknownPortal):
@@ -414,22 +449,31 @@ func registerAddPortalLink(server *mcp.Server) {
 }
 
 type updatePortalLinkArgs struct {
-	ID  string `json:"id" jsonschema:"the portal link's own id, from add_portal_link or list_portals"`
-	URL string `json:"url" jsonschema:"the link's own new URL"`
+	ID    string  `json:"id" jsonschema:"the portal link's own id, from add_portal_link or list_portals"`
+	URL   *string `json:"url,omitempty" jsonschema:"the link's own new URL"`
+	Title *string `json:"title,omitempty" jsonschema:"the link's own new title"`
 }
 
 func registerUpdatePortalLink(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "update_portal_link",
-		Description: "Correct a portal link's own URL. Fails if id is unknown.",
+		Name: "update_portal_link",
+		Description: "Correct an existing portal link's own title and/or url. This is the right tool when a " +
+			"link close to what's wanted already exists — use it instead of add_portal_link to avoid creating " +
+			"a duplicate. Fails if id is unknown.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args updatePortalLinkArgs) (*mcp.CallToolResult, any, error) {
 		if args.ID == "" {
 			return errResult("id is required"), nil, nil
 		}
-		if args.URL == "" {
-			return errResult("url is required"), nil, nil
+		if args.URL == nil && args.Title == nil {
+			return errResult("url or title is required"), nil, nil
 		}
-		if err := updatePortalLink(args.ID, args.URL); err != nil {
+		if args.URL != nil && *args.URL == "" {
+			return errResult("url cannot be empty"), nil, nil
+		}
+		if args.Title != nil && *args.Title == "" {
+			return errResult("title cannot be empty"), nil, nil
+		}
+		if err := updatePortalLink(args.ID, args.URL, args.Title); err != nil {
 			switch {
 			case errors.Is(err, errUnknownPortalLink):
 				return errResult(fmt.Sprintf("unknown portal link id %q", args.ID)), nil, nil
@@ -495,9 +539,11 @@ type setPortalLinkCrawlInstructionsArgs struct {
 func registerSetPortalLinkCrawlInstructions(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "set_portal_link_crawl_instructions",
-		Description: "Save the YAML crawl instructions for one portal link — the exact same shape crawl_paginated " +
-			"expects (fields: [...] + pagination: {nextSelector, maxPages}), so it can be handed to that tool " +
-			"directly later. Example:\nfields:\n  - label: title\n    selector: h1\npagination:\n  " +
+		Description: "Save the YAML crawl instructions for one portal link — works equally on a link you just " +
+			"created or one that already existed before this conversation; call list_portals first to find the " +
+			"target link's own id (match by its title) if you don't already have it. The exact same shape " +
+			"crawl_paginated expects (fields: [...] + pagination: {nextSelector, maxPages}), so it can be handed " +
+			"to that tool directly later. Example:\nfields:\n  - label: title\n    selector: h1\npagination:\n  " +
 			"nextSelector: a.next-page\n  maxPages: 5\nRejected if it doesn't parse or is missing required keys " +
 			"— this only checks shape, not that it actually works against the real page.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args setPortalLinkCrawlInstructionsArgs) (*mcp.CallToolResult, any, error) {

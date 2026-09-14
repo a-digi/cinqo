@@ -105,6 +105,7 @@ export interface PortalLink {
   id: string
   portalId: string
   url: string
+  title: string | null
   crawlInstructions: string | null
   createdAt: string
   updatedAt?: string
@@ -439,16 +440,19 @@ export async function removePortal(id: string): Promise<void> {
   if (!res.ok && res.status !== 204) throw new Error(`failed to delete portal (${res.status})`)
 }
 
-export async function addPortalLink(portalId: string, url: string): Promise<{ id: string }> {
+export async function addPortalLink(portalId: string, url: string, title: string): Promise<{ id: string }> {
   const res = await fetch(`${PROXY_BASE}/portal-links`, {
     method: 'POST',
     credentials: 'include',
-    body: JSON.stringify({ portalId, url }),
+    body: JSON.stringify({ portalId, url, title }),
   })
   return jsonOrThrow<{ id: string }>(res, 'add portal link')
 }
 
-export async function updatePortalLink(id: string, args: { url?: string; crawlInstructions?: string }): Promise<void> {
+export async function updatePortalLink(
+  id: string,
+  args: { url?: string; title?: string; crawlInstructions?: string },
+): Promise<void> {
   const res = await fetch(`${PROXY_BASE}/portal-links`, {
     method: 'PUT',
     credentials: 'include',
