@@ -13,6 +13,21 @@ export interface ToolMenuEntry {
   path?: string
   scopes?: string[]
   children?: ToolMenuEntry[]
+  // SVG markup only — sanitized by SidebarIcon (frontend/src/Layout/SidebarIcon.tsx)
+  // before it ever reaches the DOM, since this string comes from a
+  // tool's own (untrusted) bundle. Only a small allowlist of
+  // shape-drawing elements/attributes survives sanitization (svg,
+  // path, g, circle, rect, line, polyline, polygon, ellipse, defs;
+  // d/viewBox/fill/stroke/stroke-width/stroke-linecap/stroke-linejoin/
+  // cx/cy/r/rx/ry/x/y/x1/y1/x2/y2/points/width/height) — no
+  // <script>/<foreignObject>/<use>/<image>, no on* attributes, no
+  // href/xlink:href, no style attribute. The root <svg>'s own
+  // width/height are always discarded and replaced with a fixed
+  // display size, so an oversized icon can't break the sidebar's own
+  // row layout. A string longer than 2000 characters is rejected
+  // outright, before parsing. See
+  // plan/ai/frontend/frontend/step-13-sidebar-icons-and-calculated-indentation.md.
+  icon?: string
 }
 
 export interface ToolRoute {

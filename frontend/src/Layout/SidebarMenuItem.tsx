@@ -1,13 +1,23 @@
 import { useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import type { MenuEntry } from '../config/menu/menu'
+import { SidebarIcon } from './SidebarIcon'
 
 export function hasActiveDescendant(entry: MenuEntry, pathname: string): boolean {
   if (entry.path && (pathname === entry.path || pathname.startsWith(entry.path + '/'))) return true
   return entry.children?.some((child) => hasActiveDescendant(child, pathname)) ?? false
 }
 
-const INDENT_CLASSES = ['pl-3', 'pl-6', 'pl-9']
+// Calculated, not looked up — depth * step reproduces the old fixed
+// pl-3/pl-6/pl-9 progression exactly for depths 1-3 (Tailwind's own
+// N*4px spacing scale: 12px/24px/36px = depth*12px) but, unlike a
+// small fixed lookup table, scales correctly to any depth instead of
+// capping. A plain inline style, not a Tailwind class: Tailwind only
+// ever emits CSS for class names its build-time scanner can see
+// literally in source, so a class built from a runtime `depth`
+// variable would never have a matching compiled rule. See
+// plan/ai/frontend/frontend/step-13-sidebar-icons-and-calculated-indentation.md.
+const SIDEBAR_INDENT_STEP_PX = 12
 
 // Recursive: one component renders every depth. A path-less entry
 // (System, Security) is a plain toggle button, not a link — clicking it
@@ -17,7 +27,12 @@ export function SidebarMenuItem({ entry, depth }: { entry: MenuEntry; depth: num
   const location = useLocation()
   const [isExpanded, setIsExpanded] = useState(() => hasActiveDescendant(entry, location.pathname))
   const hasChildren = !!entry.children?.length
-  const indent = INDENT_CLASSES[Math.min(depth - 1, INDENT_CLASSES.length - 1)]
+  const paddingLeft = depth * SIDEBAR_INDENT_STEP_PX
+
+  // An icon-less entry still reserves the same icon-slot width as its
+  // siblings, so labels at the same depth line up whether or not each
+  // one has its own icon.
+  const iconSlot = entry.icon ? <SidebarIcon svg={entry.icon} /> : <span className="inline-block h-4 w-4 shrink-0" />
 
   return (
     <li>
@@ -26,12 +41,14 @@ export function SidebarMenuItem({ entry, depth }: { entry: MenuEntry; depth: num
           <NavLink
             to={entry.path}
             end={entry.path === '/'}
+            style={{ paddingLeft }}
             className={({ isActive }) =>
-              `flex-1 rounded-md px-3 py-2 text-sm ${indent} ${
+              `flex flex-1 items-center gap-2 rounded-md py-2 pr-3 text-sm ${
                 isActive ? 'bg-gray-100 font-medium text-gray-900' : 'text-gray-600 hover:bg-gray-50'
               }`
             }
           >
+            {iconSlot}
             {entry.label}
           </NavLink>
         ) : (
@@ -39,8 +56,10 @@ export function SidebarMenuItem({ entry, depth }: { entry: MenuEntry; depth: num
             type="button"
             onClick={() => setIsExpanded((prev) => !prev)}
             aria-expanded={isExpanded}
-            className={`flex-1 rounded-md px-3 py-2 text-left text-sm font-medium text-gray-500 ${indent}`}
+            style={{ paddingLeft }}
+            className="flex flex-1 items-center gap-2 rounded-md py-2 pr-3 text-left text-sm font-medium text-gray-500"
           >
+            {iconSlot}
             {entry.label}
           </button>
         )}
