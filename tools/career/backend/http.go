@@ -1,18 +1,19 @@
-// http.go is the plain HTTP mirror of profile.go/persona.go/jobs.go's
-// own MCP tools — needed because a human's own browser session and
-// the AI's own MCP tool-calling loop are two different callers
-// needing two different transports to reach the same underlying data
-// (the same reason browser's own /login-credentials route exists
-// alongside its MCP tools). Every handler here calls the exact same
-// fetchCareerProfile/updateCareerProfile/addCareerSkill/saveJob/etc.
-// functions profile.go/persona.go/jobs.go already built — never
-// independently reimplemented. Deliberately not MCP-exposed
-// themselves (the AI already has the real MCP tools) — scope
-// enforcement happens at the host's own reverse proxy via
+// http.go is the plain HTTP mirror of profile.go/persona.go/
+// persona_details.go/jobs.go's own MCP tools — needed because a
+// human's own browser session and the AI's own MCP tool-calling loop
+// are two different callers needing two different transports to reach
+// the same underlying data (the same reason browser's own
+// /login-credentials route exists alongside its MCP tools). Every
+// handler here calls the exact same functions those files already
+// built — never independently reimplemented. Deliberately not
+// MCP-exposed themselves (the AI already has the real MCP tools) —
+// scope enforcement happens at the host's own reverse proxy via
 // manifest.json's routes[], same as every other tool's own HTTP
 // routes; nothing here re-checks it. See
-// plan/ai/tools/career/step-05-react-tailwind-frontend.md and
-// plan/ai/tools/career/step-08-persona.md (personaId threading).
+// plan/ai/tools/career/step-05-react-tailwind-frontend.md,
+// plan/ai/tools/career/step-08-persona.md (personaId threading), and
+// plan/ai/tools/career/step-10-job-seeker-profile.md (/profiles,
+// /profile-links, /profile renamed to /persona-details).
 package main
 
 import (
@@ -27,8 +28,9 @@ func writeJSON(w http.ResponseWriter, v any) {
 }
 
 // writePersonaAwareError maps errUnknownPersona to a 400 (a caller
-// mistake) and everything else to a 500, matching profile.go's own
-// personaAwareErrResult reasoning on the MCP side.
+// mistake) and everything else to a 500, matching
+// persona_details.go's own personaAwareErrResult reasoning on the MCP
+// side.
 func writePersonaAwareError(w http.ResponseWriter, action string, err error) {
 	if errors.Is(err, errUnknownPersona) {
 		http.Error(w, "unknown persona id", http.StatusBadRequest)
@@ -37,9 +39,161 @@ func writePersonaAwareError(w http.ResponseWriter, action string, err error) {
 	http.Error(w, "failed to "+action+": "+err.Error(), http.StatusInternalServerError)
 }
 
+// writeProfileAwareError is the same idea for errUnknownProfile.
+func writeProfileAwareError(w http.ResponseWriter, action string, err error) {
+	if errors.Is(err, errUnknownProfile) {
+		http.Error(w, "unknown profile id", http.StatusBadRequest)
+		return
+	}
+	http.Error(w, "failed to "+action+": "+err.Error(), http.StatusInternalServerError)
+}
+
+// --- /profiles ---
+
+type profileRequest struct {
+	FirstName string `json:"firstName"`
+	LastName  string `json:"lastName"`
+}
+
+type profileUpdateRequest struct {
+	ID        string  `json:"id"`
+	FirstName *string `json:"firstName,omitempty"`
+	LastName  *string `json:"lastName,omitempty"`
+}
+
+func profilesHandler(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		profiles, err := listProfiles()
+		if err != nil {
+			http.Error(w, "failed to list profiles: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, map[string]any{"profiles": profiles})
+
+	case http.MethodPost:
+		var body profileRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid request body", http.StatusBadRequest)
+			return
+		}
+		id, err := createProfile(body.FirstName, body.LastName)
+		if err != nil {
+			http.Error(w, "failed to create profile: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		profiles, err := listProfiles()
+		if err != nil {
+			http.Error(w, "profile created but failed to reload: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, map[string]any{"id": id, "profiles": profiles})
+
+	case http.MethodPut:
+		var body profileUpdateRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.ID == "" {
+			http.Error(w, "id is required", http.StatusBadRequest)
+			return
+		}
+		if err := updateProfile(body.ID, body.FirstName, body.LastName); err != nil {
+			writeProfileAwareError(w, "update profile", err)
+			return
+		}
+		profiles, err := listProfiles()
+		if err != nil {
+			http.Error(w, "profile updated but failed to reload: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, map[string]any{"profiles": profiles})
+
+	case http.MethodDelete:
+		id := r.URL.Query().Get("id")
+		if id == "" {
+			http.Error(w, "id query parameter is required", http.StatusBadRequest)
+			return
+		}
+		if err := deleteProfile(id); err != nil {
+			http.Error(w, "failed to delete profile: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// --- /profile-links ---
+
+type profileLinkRequest struct {
+	ProfileID string `json:"profileId"`
+	Platform  string `json:"platform"`
+	URL       string `json:"url"`
+}
+
+func profileLinksHandler(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		profileID := r.URL.Query().Get("profileId")
+		if profileID == "" {
+			http.Error(w, "profileId query parameter is required", http.StatusBadRequest)
+			return
+		}
+		profiles, err := listProfiles()
+		if err != nil {
+			http.Error(w, "failed to load external links: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		for _, p := range profiles {
+			if p.ID == profileID {
+				writeJSON(w, map[string]any{"externalLinks": p.ExternalLinks})
+				return
+			}
+		}
+		http.Error(w, "unknown profile id", http.StatusBadRequest)
+
+	case http.MethodPost:
+		var body profileLinkRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Platform == "" || body.URL == "" {
+			http.Error(w, "platform and url are both required", http.StatusBadRequest)
+			return
+		}
+		if body.ProfileID == "" {
+			http.Error(w, "profileId is required", http.StatusBadRequest)
+			return
+		}
+		if err := upsertProfileExternalLink(body.ProfileID, body.Platform, body.URL); err != nil {
+			writeProfileAwareError(w, "add external link", err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+
+	case http.MethodDelete:
+		profileID := r.URL.Query().Get("profileId")
+		platform := r.URL.Query().Get("platform")
+		if profileID == "" {
+			http.Error(w, "profileId query parameter is required", http.StatusBadRequest)
+			return
+		}
+		if platform == "" {
+			http.Error(w, "platform query parameter is required", http.StatusBadRequest)
+			return
+		}
+		if err := removeProfileExternalLink(profileID, platform); err != nil {
+			writeProfileAwareError(w, "remove external link", err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
 // --- /personas ---
 
 type personaRequest struct {
+	ProfileID   string `json:"profileId"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
 }
@@ -53,7 +207,7 @@ type personaUpdateRequest struct {
 func personasHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		personas, err := listPersonas()
+		personas, err := listPersonas(r.URL.Query().Get("profileId"))
 		if err != nil {
 			http.Error(w, "failed to list personas: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -66,12 +220,16 @@ func personasHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "name is required", http.StatusBadRequest)
 			return
 		}
-		id, err := createPersona(body.Name, body.Description)
-		if err != nil {
-			http.Error(w, "failed to create persona: "+err.Error(), http.StatusInternalServerError)
+		if body.ProfileID == "" {
+			http.Error(w, "profileId is required", http.StatusBadRequest)
 			return
 		}
-		personas, err := listPersonas()
+		id, err := createPersona(body.ProfileID, body.Name, body.Description)
+		if err != nil {
+			writeProfileAwareError(w, "create persona", err)
+			return
+		}
+		personas, err := listPersonas("")
 		if err != nil {
 			http.Error(w, "persona created but failed to reload: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -88,7 +246,7 @@ func personasHandler(w http.ResponseWriter, r *http.Request) {
 			writePersonaAwareError(w, "update persona", err)
 			return
 		}
-		personas, err := listPersonas()
+		personas, err := listPersonas("")
 		if err != nil {
 			http.Error(w, "persona updated but failed to reload: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -112,9 +270,9 @@ func personasHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// --- /profile ---
+// --- /persona-details ---
 
-func profileHandler(w http.ResponseWriter, r *http.Request) {
+func personaDetailsHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		personaID := r.URL.Query().Get("personaId")
@@ -122,15 +280,15 @@ func profileHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "personaId query parameter is required", http.StatusBadRequest)
 			return
 		}
-		result, err := fetchCareerProfile(personaID)
+		result, err := fetchPersonaDetails(personaID)
 		if err != nil {
-			writePersonaAwareError(w, "read profile", err)
+			writePersonaAwareError(w, "read persona details", err)
 			return
 		}
 		writeJSON(w, result)
 
 	case http.MethodPost:
-		var body updateCareerProfileArgs
+		var body updatePersonaDetailsArgs
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, "invalid request body", http.StatusBadRequest)
 			return
@@ -139,13 +297,13 @@ func profileHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "personaId is required", http.StatusBadRequest)
 			return
 		}
-		if err := updateCareerProfile(body); err != nil {
-			writePersonaAwareError(w, "update profile", err)
+		if err := updatePersonaDetails(body); err != nil {
+			writePersonaAwareError(w, "update persona details", err)
 			return
 		}
-		result, err := fetchCareerProfile(body.PersonaID)
+		result, err := fetchPersonaDetails(body.PersonaID)
 		if err != nil {
-			http.Error(w, "profile updated but failed to reload: "+err.Error(), http.StatusInternalServerError)
+			http.Error(w, "persona details updated but failed to reload: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 		writeJSON(w, result)
@@ -170,7 +328,7 @@ func skillsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "personaId query parameter is required", http.StatusBadRequest)
 			return
 		}
-		result, err := fetchCareerProfile(personaID)
+		result, err := fetchPersonaDetails(personaID)
 		if err != nil {
 			writePersonaAwareError(w, "read skills", err)
 			return
@@ -191,7 +349,7 @@ func skillsHandler(w http.ResponseWriter, r *http.Request) {
 			writePersonaAwareError(w, "add skill", err)
 			return
 		}
-		result, err := fetchCareerProfile(body.PersonaID)
+		result, err := fetchPersonaDetails(body.PersonaID)
 		if err != nil {
 			http.Error(w, "skill added but failed to reload: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -249,7 +407,7 @@ func experienceHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "personaId query parameter is required", http.StatusBadRequest)
 			return
 		}
-		result, err := fetchCareerProfile(personaID)
+		result, err := fetchPersonaDetails(personaID)
 		if err != nil {
 			writePersonaAwareError(w, "read experience", err)
 			return
@@ -270,7 +428,7 @@ func experienceHandler(w http.ResponseWriter, r *http.Request) {
 			writePersonaAwareError(w, "add experience", err)
 			return
 		}
-		result, err := fetchCareerProfile(body.PersonaID)
+		result, err := fetchPersonaDetails(body.PersonaID)
 		if err != nil {
 			http.Error(w, "experience added but failed to reload: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -299,7 +457,7 @@ func experienceHandler(w http.ResponseWriter, r *http.Request) {
 			writePersonaAwareError(w, "update experience", err)
 			return
 		}
-		result, err := fetchCareerProfile(body.PersonaID)
+		result, err := fetchPersonaDetails(body.PersonaID)
 		if err != nil {
 			http.Error(w, "experience updated but failed to reload: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -336,9 +494,8 @@ func experienceHandler(w http.ResponseWriter, r *http.Request) {
 // same overlap this step's own design doc calls out on the MCP side
 // (list_jobs/search_jobs). No POST here at all — jobs are populated
 // only by the AI's own crawling workflow (step 4), never hand-entered
-// through this UI. Jobs stay persona-independent — step 8 deliberately
-// did not touch this table (see step-08-persona.md's own open
-// question 1).
+// through this UI. Jobs stay profile/persona-independent — step 8/10
+// deliberately did not touch this table.
 func jobsHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:

@@ -1,9 +1,14 @@
 // persona.go is the AI-facing (and HTTP-mirrored) surface over
 // career.db's own personas table, plus the shared requirePersonaExists
-// guard every profile/skill/experience operation in profile.go now
-// calls first. A Persona is a named "hat" the user wears — each one
-// owns exactly one profile, one skills set, one experience list (see
-// db.go's own schema). See plan/ai/tools/career/step-08-persona.md.
+// guard every persona-scoped operation calls first. A Persona is a
+// named "hat" the user wears — each one owns exactly one set of
+// persona details, one skills set, one experience list (see db.go's
+// own schema). As of step 10, every Persona belongs to exactly one
+// Profile (profile.go) — profileId is required and validated the same
+// "forced to be mapped, never implicit" way personaId already is
+// everywhere else in this tool. See
+// plan/ai/tools/career/step-08-persona.md and
+// plan/ai/tools/career/step-10-job-seeker-profile.md.
 package main
 
 import (
@@ -17,15 +22,15 @@ import (
 )
 
 // errUnknownPersona is returned by requirePersonaExists — and
-// wrapped into every profile/skill/experience function's own error —
-// whenever a caller supplies a personaId that doesn't exist. Treated
-// as a real, rejected error everywhere (never a silent no-op, never
-// an auto-created persona) — the literal enforcement of "forced to be
+// wrapped into every persona-scoped operation's own error — whenever
+// a caller supplies a personaId that doesn't exist. Treated as a
+// real, rejected error everywhere (never a silent no-op, never an
+// auto-created persona) — the literal enforcement of "forced to be
 // mapped to an existing Persona."
 var errUnknownPersona = errors.New("unknown persona id")
 
-// requirePersonaExists is the shared guard every profile/skill/
-// experience function (profile.go) calls before doing anything else.
+// requirePersonaExists is the shared guard every persona-scoped
+// function (persona_details.go) calls before doing anything else.
 func requirePersonaExists(id string) error {
 	var exists int
 	err := careerDB.QueryRow(`SELECT 1 FROM personas WHERE id = ?`, id).Scan(&exists)
@@ -40,17 +45,21 @@ func requirePersonaExists(id string) error {
 
 type persona struct {
 	ID          string `json:"id"`
+	ProfileID   string `json:"profileId"`
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
 	CreatedAt   string `json:"createdAt"`
 	UpdatedAt   string `json:"updatedAt,omitempty"`
 }
 
-func createPersona(name, description string) (string, error) {
+func createPersona(profileId, name, description string) (string, error) {
+	if err := requireProfileExists(profileId); err != nil {
+		return "", err
+	}
 	id := uuid.NewString()
 	_, err := careerDB.Exec(
-		`INSERT INTO personas (id, name, description, created_at) VALUES (?, ?, ?, datetime('now'))`,
-		id, name, description,
+		`INSERT INTO personas (id, profile_id, name, description, created_at) VALUES (?, ?, ?, ?, datetime('now'))`,
+		id, profileId, name, description,
 	)
 	if err != nil {
 		return "", err
@@ -58,10 +67,20 @@ func createPersona(name, description string) (string, error) {
 	return id, nil
 }
 
-func listPersonas() ([]persona, error) {
-	rows, err := careerDB.Query(
-		`SELECT id, name, description, created_at, updated_at FROM personas ORDER BY created_at ASC`,
-	)
+// listPersonas optionally filters by profileId — omitted (empty
+// string) lists every persona across every profile, matching this
+// tool's own "omitting an optional filter means unfiltered" convention
+// (search_jobs's own query/location params).
+func listPersonas(profileId string) ([]persona, error) {
+	query := `SELECT id, profile_id, name, description, created_at, updated_at FROM personas`
+	args := []any{}
+	if profileId != "" {
+		query += ` WHERE profile_id = ?`
+		args = append(args, profileId)
+	}
+	query += ` ORDER BY created_at ASC`
+
+	rows, err := careerDB.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +90,7 @@ func listPersonas() ([]persona, error) {
 	for rows.Next() {
 		var p persona
 		var description, updatedAt sql.NullString
-		if err := rows.Scan(&p.ID, &p.Name, &description, &p.CreatedAt, &updatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.ProfileID, &p.Name, &description, &p.CreatedAt, &updatedAt); err != nil {
 			return nil, err
 		}
 		p.Description = description.String
@@ -107,10 +126,10 @@ func updatePersona(id string, name, description *string) error {
 }
 
 // deletePersona cascades (ON DELETE CASCADE, db.go's own schema) to
-// that persona's own profile row, every skill, every experience entry
-// — a genuinely larger blast radius than any other destructive
-// operation this tool has. A benign no-op if id is unknown, matching
-// this tool's existing posture for every other delete-by-id operation.
+// that persona's own details row, every skill, every experience entry
+// — a genuinely larger blast radius than a plain single-row delete.
+// A benign no-op if id is unknown, matching this tool's existing
+// posture for every other delete-by-id operation.
 func deletePersona(id string) error {
 	_, err := careerDB.Exec(`DELETE FROM personas WHERE id = ?`, id)
 	return err
@@ -119,6 +138,7 @@ func deletePersona(id string) error {
 // --- MCP registration ---
 
 type createPersonaArgs struct {
+	ProfileID   string `json:"profileId" jsonschema:"the profile (job seeker) this persona belongs to, from create_profile or list_profiles"`
 	Name        string `json:"name" jsonschema:"a short name for this persona, e.g. \"Backend Engineer\""`
 	Description string `json:"description,omitempty" jsonschema:"what this persona is for"`
 }
@@ -126,27 +146,35 @@ type createPersonaArgs struct {
 func registerCreatePersona(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "create_persona",
-		Description: "Create a new persona — a named \"hat\" the user wears, each owning its own profile, skills, and experience. Profile/skill/experience operations require an existing persona's id.",
+		Description: "Create a new persona — a named \"hat\" a job seeker (profile) wears, each owning its own details, skills, and experience. Must belong to an existing profile.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args createPersonaArgs) (*mcp.CallToolResult, any, error) {
+		if args.ProfileID == "" {
+			return errResult("profileId is required"), nil, nil
+		}
 		if args.Name == "" {
 			return errResult("name is required"), nil, nil
 		}
-		id, err := createPersona(args.Name, args.Description)
+		id, err := createPersona(args.ProfileID, args.Name, args.Description)
 		if err != nil {
+			if errors.Is(err, errUnknownProfile) {
+				return errResult(fmt.Sprintf("unknown profile id %q", args.ProfileID)), nil, nil
+			}
 			return errResult(fmt.Sprintf("failed to create persona: %v", err)), nil, nil
 		}
-		return jsonResult(map[string]string{"id": id, "name": args.Name, "description": args.Description})
+		return jsonResult(map[string]string{"id": id, "profileId": args.ProfileID, "name": args.Name, "description": args.Description})
 	})
 }
 
-type listPersonasArgs struct{}
+type listPersonasArgs struct {
+	ProfileID string `json:"profileId,omitempty" jsonschema:"limit to personas belonging to this profile; omit to list every persona"`
+}
 
 func registerListPersonas(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_personas",
-		Description: "List every persona the user has created.",
+		Description: "List personas, optionally limited to one profile.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args listPersonasArgs) (*mcp.CallToolResult, any, error) {
-		personas, err := listPersonas()
+		personas, err := listPersonas(args.ProfileID)
 		if err != nil {
 			return errResult(fmt.Sprintf("failed to list personas: %v", err)), nil, nil
 		}
@@ -179,13 +207,13 @@ func registerUpdatePersona(server *mcp.Server) {
 }
 
 type deletePersonaArgs struct {
-	ID string `json:"id" jsonschema:"the persona's own id — deleting it also deletes its own profile, every skill, and every experience entry"`
+	ID string `json:"id" jsonschema:"the persona's own id — deleting it also deletes its own details, every skill, and every experience entry"`
 }
 
 func registerDeletePersona(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "delete_persona",
-		Description: "Delete a persona. This also permanently deletes that persona's own profile, every skill, and every experience entry — there is no separate confirmation step.",
+		Description: "Delete a persona. This also permanently deletes that persona's own details, every skill, and every experience entry — there is no separate confirmation step.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args deletePersonaArgs) (*mcp.CallToolResult, any, error) {
 		if args.ID == "" {
 			return errResult("id is required"), nil, nil

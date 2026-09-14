@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react'
-import { fetchProfile, updateProfile } from './api'
+import { fetchPersonaDetails, updatePersonaDetails } from './api'
 import { Field } from './Field'
 import { PersonaSwitcher } from './PersonaSwitcher'
 
 const emptyForm = {
-  fullName: '',
   headline: '',
   summary: '',
   location: '',
@@ -13,14 +12,15 @@ const emptyForm = {
   minSalary: '',
 }
 
-// Core profile fields only — Skills and Experience moved to their own
-// pages (SkillsPage / ExperiencePage) as of step 7. Step 9 added the
-// persona switcher — every call below is now scoped to whichever
-// persona is currently selected (step 8's own "forced to be mapped to
-// an existing Persona"). See
-// plan/ai/tools/career/step-07-dedicated-skills-and-experience-pages.md
-// and plan/ai/tools/career/step-09-persona-frontend.md.
-export function ProfilePage() {
+// Renamed from ProfilePage.tsx as of step 11, matching the backend's
+// own step 10 rename: this was never the job seeker's own profile
+// (that's the new ProfilesPage/Profile entity) — it's a persona's own
+// career positioning (headline/summary/location/desired titles/min
+// salary). See
+// plan/ai/tools/career/step-07-dedicated-skills-and-experience-pages.md,
+// plan/ai/tools/career/step-09-persona-frontend.md, and
+// plan/ai/tools/career/step-11-job-seeker-profile-frontend.md.
+export function PersonaDetailsPage() {
   const [personaId, setPersonaId] = useState<string | null>(null)
   const [form, setForm] = useState(emptyForm)
   const [error, setError] = useState('')
@@ -28,16 +28,15 @@ export function ProfilePage() {
 
   function load(forPersonaId: string) {
     setError('')
-    fetchProfile(forPersonaId)
+    fetchPersonaDetails(forPersonaId)
       .then((result) => {
         setForm({
-          fullName: result.profile?.fullName ?? '',
-          headline: result.profile?.headline ?? '',
-          summary: result.profile?.summary ?? '',
-          location: result.profile?.location ?? '',
-          desiredTitles: result.profile?.desiredTitles ?? '',
-          desiredLocations: result.profile?.desiredLocations ?? '',
-          minSalary: result.profile?.minSalary ? String(result.profile.minSalary) : '',
+          headline: result.personaDetails?.headline ?? '',
+          summary: result.personaDetails?.summary ?? '',
+          location: result.personaDetails?.location ?? '',
+          desiredTitles: result.personaDetails?.desiredTitles ?? '',
+          desiredLocations: result.personaDetails?.desiredLocations ?? '',
+          minSalary: result.personaDetails?.minSalary ? String(result.personaDetails.minSalary) : '',
         })
       })
       .catch((err: Error) => setError(err.message))
@@ -51,8 +50,7 @@ export function ProfilePage() {
     if (!personaId) return
     setError('')
     setSaving(true)
-    updateProfile(personaId, {
-      fullName: form.fullName,
+    updatePersonaDetails(personaId, {
       headline: form.headline,
       summary: form.summary,
       location: form.location,
@@ -66,10 +64,10 @@ export function ProfilePage() {
 
   return (
     <div className="max-w-2xl p-6 font-sans text-gray-900">
-      <h1 className="mb-1.5 text-xl font-semibold">Career Profile</h1>
+      <h1 className="mb-1.5 text-xl font-semibold">Persona Details</h1>
       <p className="mb-5 text-sm text-gray-500">
-        Your own career profile — what the AI reads and updates when helping you find and apply
-        for jobs. Nothing here is treated as a secret.
+        This persona's own career positioning — what the AI reads and updates when helping you
+        find and apply for jobs under this persona. Nothing here is treated as a secret.
       </p>
 
       <PersonaSwitcher personaId={personaId} onChange={setPersonaId} />
@@ -79,7 +77,6 @@ export function ProfilePage() {
       {personaId && (
         <section className="rounded-md border border-gray-200 p-4 shadow-sm">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Field label="Full name" value={form.fullName} onChange={(v) => setForm({ ...form, fullName: v })} />
             <Field label="Headline" value={form.headline} onChange={(v) => setForm({ ...form, headline: v })} />
             <Field label="Location" value={form.location} onChange={(v) => setForm({ ...form, location: v })} />
             <Field
@@ -114,7 +111,7 @@ export function ProfilePage() {
             disabled={saving}
             className="mt-3 rounded-md bg-gray-900 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:opacity-50"
           >
-            {saving ? 'Saving…' : 'Save profile'}
+            {saving ? 'Saving…' : 'Save details'}
           </button>
         </section>
       )}

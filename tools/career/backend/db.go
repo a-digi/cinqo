@@ -1,26 +1,33 @@
 // db.go opens and initializes this tool's own two SQLite databases —
-// career.db (the user's own personas, profile/skills/experience) and
-// jobs.db (crawled job postings) — kept as two separate files, not two
-// schemas in one, because they have genuinely different lifecycles:
-// the profile changes rarely, by the user's own hand or the AI
-// helping fill it in; jobs is bulk-written by crawling and is
-// realistically the one a user might want to reset independently
-// without touching their own profile. Both live under TOOL_DB_DIR,
-// via modernc.org/sqlite (pure Go, no CGO — the same driver already
-// verified in this codebase to cross-compile cleanly for every
-// OS/arch this project ships, reused here rather than re-verified
-// from scratch). See plan/ai/tools/career/step-02-two-databases.md.
+// career.db (the job seeker's own profiles/personas/persona
+// details/skills/experience) and jobs.db (crawled job postings) —
+// kept as two separate files, not two schemas in one, because they
+// have genuinely different lifecycles: the profile changes rarely, by
+// the user's own hand or the AI helping fill it in; jobs is
+// bulk-written by crawling and is realistically the one a user might
+// want to reset independently without touching their own profile.
+// Both live under TOOL_DB_DIR, via modernc.org/sqlite (pure Go, no
+// CGO — the same driver already verified in this codebase to
+// cross-compile cleanly for every OS/arch this project ships, reused
+// here rather than re-verified from scratch). See
+// plan/ai/tools/career/step-02-two-databases.md.
 //
-// Step 8 introduced Persona — every profile/skill/experience row now
-// belongs to a persona (career_profile is keyed by persona_id itself;
-// career_skills/career_experience carry a persona_id FK). Since
+// Step 8 introduced Persona — every profile/skill/experience row
+// belonged to a persona (career_profile keyed by persona_id itself;
+// career_skills/career_experience carrying a persona_id FK). Step 10
+// introduced Profile (the actual job seeker) one level above Persona
+// — every persona now belongs to a profile — and renamed the old
+// per-persona "career_profile" concept to "persona_details" (it was
+// never the job seeker's own profile, it was that persona's own
+// career positioning; "profile" now means the job seeker). Since
 // SQLite cannot retroactively add a primary key or foreign key to an
-// existing table, an already-installed pre-step-8 career.db needs a
-// real one-time migration, run by this binary itself (there is no
-// migration framework for tool-owned databases the way
+// existing table, each of these steps needed a real one-time
+// migration, run by this binary itself (there is no migration
+// framework for tool-owned databases the way
 // api/config/db/migrations/ is for the main cinqo API's own
 // users.db) — see migrateCareerDB below and
-// plan/ai/tools/career/step-08-persona.md.
+// plan/ai/tools/career/step-08-persona.md /
+// plan/ai/tools/career/step-10-job-seeker-profile.md.
 package main
 
 import (
@@ -28,6 +35,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
@@ -55,13 +63,12 @@ func initDatabases() error {
 		return fmt.Errorf("failed to open career.db: %w", err)
 	}
 	db.SetMaxOpenConns(1)
-	if _, err := db.Exec(`PRAGMA foreign_keys = ON`); err != nil {
-		db.Close()
-		return fmt.Errorf("failed to enable foreign keys on career.db: %w", err)
-	}
+	// migrateCareerDB itself owns turning PRAGMA foreign_keys on —
+	// toggled off for the duration of its own table-rebuild surgery,
+	// then back on once done (see its own doc comment for why).
 	if err := migrateCareerDB(db); err != nil {
 		db.Close()
-		return fmt.Errorf("failed to migrate career.db to persona schema: %w", err)
+		return fmt.Errorf("failed to migrate career.db: %w", err)
 	}
 	if _, err := db.Exec(careerSchema); err != nil {
 		db.Close()
@@ -79,17 +86,33 @@ func initDatabases() error {
 }
 
 const careerSchema = `
+CREATE TABLE IF NOT EXISTS profiles (
+    id          TEXT PRIMARY KEY,
+    first_name  TEXT NOT NULL DEFAULT '',
+    last_name   TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT
+);
+
+CREATE TABLE IF NOT EXISTS profile_external_links (
+    id         TEXT PRIMARY KEY,
+    profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    platform   TEXT NOT NULL,
+    url        TEXT NOT NULL,
+    UNIQUE(profile_id, platform)
+);
+
 CREATE TABLE IF NOT EXISTS personas (
     id          TEXT PRIMARY KEY,
+    profile_id  TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
     name        TEXT NOT NULL,
     description TEXT,
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at  TEXT
 );
 
-CREATE TABLE IF NOT EXISTS career_profile (
+CREATE TABLE IF NOT EXISTS persona_details (
     persona_id        TEXT PRIMARY KEY REFERENCES personas(id) ON DELETE CASCADE,
-    full_name         TEXT NOT NULL DEFAULT '',
     headline          TEXT NOT NULL DEFAULT '',
     summary           TEXT NOT NULL DEFAULT '',
     location          TEXT NOT NULL DEFAULT '',
@@ -131,48 +154,111 @@ CREATE TABLE IF NOT EXISTS jobs (
 );
 `
 
-// migrateCareerDB detects a pre-step-8 career.db (a career_profile
-// table with no persona_id column) and, if found, rebuilds all three
-// tables under one seeded "default" persona, preserving every
-// existing row. A no-op for a brand-new install (no career_profile
-// table yet — the schema block right after this call creates it
-// directly in the new shape) and a no-op for an already-migrated
-// database (persona_id already present).
+// migrateCareerDB runs, in order, every past schema migration this
+// tool has needed. Each phase detects its own "old shape" and is a
+// no-op if that shape isn't present — safe to run on a brand-new
+// install (both phases no-op; the schema block right after this call
+// creates the current shape directly), an already-fully-migrated
+// database (both phases no-op), or a database caught mid-history at
+// any prior version (only the phases still needed actually run).
+//
+// Foreign keys are turned off for the duration: verified directly
+// (not assumed) that SQLite's own DROP TABLE, when foreign_keys is
+// on, performs an implicit delete of every row in any table that
+// references the one being dropped — so rebuilding "personas" (step
+// 10's own migratePreStep10Schema) would silently cascade-delete
+// every row in persona_details/career_skills/career_experience
+// before this migration ever got a chance to copy them forward. A
+// real bug caught by testing the migration against a real copy of
+// this tool's own live database before running it for real — not a
+// hypothetical. PRAGMA foreign_keys can't be changed inside a
+// transaction, so it's toggled here, outside both phases' own
+// transactions, not inside migratePreStep8Schema/migratePreStep10Schema
+// themselves. foreign_key_check afterward confirms no dangling
+// reference was introduced by any of this table surgery.
 func migrateCareerDB(db *sql.DB) error {
-	var tableExists int
-	err := db.QueryRow(
-		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'career_profile'`,
-	).Scan(&tableExists)
-	if err != nil {
+	if _, err := db.Exec(`PRAGMA foreign_keys = OFF`); err != nil {
 		return err
-	}
-	if tableExists == 0 {
-		return nil
 	}
 
-	rows, err := db.Query(`PRAGMA table_info(career_profile)`)
+	if err := migratePreStep8Schema(db); err != nil {
+		return err
+	}
+	if err := migratePreStep10Schema(db); err != nil {
+		return err
+	}
+
+	if err := checkForeignKeys(db); err != nil {
+		return err
+	}
+
+	_, err := db.Exec(`PRAGMA foreign_keys = ON`)
+	return err
+}
+
+// checkForeignKeys runs SQLite's own foreign_key_check — a real
+// integrity verification, not just a hope, that the table surgery
+// above didn't leave any row pointing at a parent id that no longer
+// exists.
+func checkForeignKeys(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA foreign_key_check`)
 	if err != nil {
 		return err
 	}
-	hasPersonaID := false
+	defer rows.Close()
+	if rows.Next() {
+		return fmt.Errorf("post-migration foreign key check failed — data integrity issue, refusing to continue")
+	}
+	return rows.Err()
+}
+
+// tableHasColumn is the shared detection primitive both migration
+// phases use — PRAGMA table_info is SQLite's own way to inspect a
+// table's real current columns, the only reliable way to tell "old
+// shape" from "already migrated" without a separate version-tracking
+// table.
+func tableHasColumn(db *sql.DB, table, column string) (exists, hasColumn bool, err error) {
+	var tableExists int
+	if err := db.QueryRow(
+		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, table,
+	).Scan(&tableExists); err != nil {
+		return false, false, err
+	}
+	if tableExists == 0 {
+		return false, false, nil
+	}
+
+	rows, err := db.Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		return true, false, err
+	}
+	defer rows.Close()
 	for rows.Next() {
 		var cid int
 		var name, ctype string
 		var notNull, pk int
 		var dflt sql.NullString
 		if err := rows.Scan(&cid, &name, &ctype, &notNull, &dflt, &pk); err != nil {
-			rows.Close()
-			return err
+			return true, false, err
 		}
-		if name == "persona_id" {
-			hasPersonaID = true
+		if name == column {
+			hasColumn = true
 		}
 	}
-	if err := rows.Err(); err != nil {
+	return true, hasColumn, rows.Err()
+}
+
+// migratePreStep8Schema detects a pre-step-8 career.db (a
+// career_profile table with no persona_id column) and, if found,
+// rebuilds it (plus career_skills/career_experience) under one seeded
+// "default" persona, preserving every existing row. See
+// plan/ai/tools/career/step-08-persona.md.
+func migratePreStep8Schema(db *sql.DB) error {
+	exists, hasPersonaID, err := tableHasColumn(db, "career_profile", "persona_id")
+	if err != nil {
 		return err
 	}
-	rows.Close()
-	if hasPersonaID {
+	if !exists || hasPersonaID {
 		return nil
 	}
 
@@ -204,7 +290,7 @@ CREATE TABLE career_profile_new (
     updated_at        TEXT
 );
 INSERT INTO career_profile_new (persona_id, full_name, headline, summary, location, desired_titles, desired_locations, min_salary, updated_at)
-SELECT 'default', full_name, headline, summary, location, desired_titles, desired_locations, min_salary, updated_at FROM career_profile;
+SELECT 'default', COALESCE(full_name, ''), COALESCE(headline, ''), COALESCE(summary, ''), COALESCE(location, ''), COALESCE(desired_titles, ''), COALESCE(desired_locations, ''), min_salary, updated_at FROM career_profile;
 DROP TABLE career_profile;
 ALTER TABLE career_profile_new RENAME TO career_profile;
 
@@ -236,6 +322,106 @@ ALTER TABLE career_experience_new RENAME TO career_experience;
 	if _, err := tx.Exec(migration); err != nil {
 		return err
 	}
+	return tx.Commit()
+}
+
+// migratePreStep10Schema detects a step-8/9-shape career.db (a
+// personas table with no profile_id column) and, if found, seeds one
+// Profile (best-effort backfilling its name from whatever full_name
+// already exists on career_profile — see this step's own design doc
+// for why that's a deliberately simple, explicitly lossy rule, not a
+// real name-parser), links every existing persona to it, and renames
+// career_profile to persona_details, dropping full_name (that's the
+// job seeker's own identity now, not a per-persona field). See
+// plan/ai/tools/career/step-10-job-seeker-profile.md.
+func migratePreStep10Schema(db *sql.DB) error {
+	exists, hasProfileID, err := tableHasColumn(db, "personas", "profile_id")
+	if err != nil {
+		return err
+	}
+	if !exists || hasProfileID {
+		return nil
+	}
+
+	var firstName, lastName string
+	var fullName sql.NullString
+	err = db.QueryRow(
+		`SELECT full_name FROM career_profile WHERE full_name IS NOT NULL AND full_name != '' LIMIT 1`,
+	).Scan(&fullName)
+	if err != nil && err != sql.ErrNoRows {
+		return err
+	}
+	if fullName.Valid {
+		parts := strings.SplitN(strings.TrimSpace(fullName.String), " ", 2)
+		firstName = parts[0]
+		if len(parts) == 2 {
+			lastName = parts[1]
+		}
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`
+CREATE TABLE IF NOT EXISTS profiles (
+    id          TEXT PRIMARY KEY,
+    first_name  TEXT NOT NULL DEFAULT '',
+    last_name   TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT
+);
+CREATE TABLE IF NOT EXISTS profile_external_links (
+    id         TEXT PRIMARY KEY,
+    profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    platform   TEXT NOT NULL,
+    url        TEXT NOT NULL,
+    UNIQUE(profile_id, platform)
+);
+`); err != nil {
+		return err
+	}
+
+	if _, err := tx.Exec(
+		`INSERT INTO profiles (id, first_name, last_name, created_at) VALUES ('default', ?, ?, datetime('now'))`,
+		firstName, lastName,
+	); err != nil {
+		return err
+	}
+
+	if _, err := tx.Exec(`
+CREATE TABLE personas_new (
+    id          TEXT PRIMARY KEY,
+    profile_id  TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    name        TEXT NOT NULL,
+    description TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT
+);
+INSERT INTO personas_new (id, profile_id, name, description, created_at, updated_at)
+SELECT id, 'default', name, description, created_at, updated_at FROM personas;
+DROP TABLE personas;
+ALTER TABLE personas_new RENAME TO personas;
+
+CREATE TABLE persona_details (
+    persona_id        TEXT PRIMARY KEY REFERENCES personas(id) ON DELETE CASCADE,
+    headline          TEXT NOT NULL DEFAULT '',
+    summary           TEXT NOT NULL DEFAULT '',
+    location          TEXT NOT NULL DEFAULT '',
+    desired_titles    TEXT NOT NULL DEFAULT '',
+    desired_locations TEXT NOT NULL DEFAULT '',
+    min_salary        INTEGER,
+    updated_at        TEXT
+);
+INSERT INTO persona_details (persona_id, headline, summary, location, desired_titles, desired_locations, min_salary, updated_at)
+SELECT persona_id, headline, summary, location, desired_titles, desired_locations, min_salary, updated_at FROM career_profile;
+DROP TABLE career_profile;
+`); err != nil {
+		return err
+	}
+
 	return tx.Commit()
 }
 

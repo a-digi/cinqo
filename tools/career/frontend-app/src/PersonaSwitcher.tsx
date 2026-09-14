@@ -1,15 +1,23 @@
 import { useEffect, useState } from 'react'
-import { fetchPersonas, type Persona } from './api'
+import { fetchPersonas, fetchProfiles, type Persona } from './api'
 import { getStoredPersonaId, setStoredPersonaId } from './personaStore'
+import { profileLabel } from './ProfileSwitcher'
 
 const PERSONAS_PATH = '/tools/career/personas'
 
-// Shared by ProfilePage/SkillsPage/ExperiencePage — resolves an
-// "effective" persona id (the stored one if it's still valid, else
+// Shared by PersonaDetailsPage/SkillsPage/ExperiencePage — resolves
+// an "effective" persona id (the stored one if it's still valid, else
 // the first persona in the list, else null if there are none at all)
 // and reports it back to the parent page via onChange, which is what
-// actually reloads that page's own profile/skills/experience data.
-// See plan/ai/tools/career/step-09-persona-frontend.md.
+// actually reloads that page's own details/skills/experience data.
+//
+// Left genuinely unfiltered by profile (step 11) — still lists every
+// persona across every profile — but each option now reads "{persona
+// name} — {profile name}" so personas from different job seekers are
+// at least visually distinguishable in this one shared dropdown, a
+// deliberate middle ground short of full profile-scoped filtering.
+// See plan/ai/tools/career/step-09-persona-frontend.md and
+// plan/ai/tools/career/step-11-job-seeker-profile-frontend.md.
 export function PersonaSwitcher({
   personaId,
   onChange,
@@ -18,15 +26,17 @@ export function PersonaSwitcher({
   onChange: (id: string) => void
 }) {
   const [personas, setPersonas] = useState<Persona[] | null>(null)
+  const [profileNames, setProfileNames] = useState<Record<string, string>>({})
   const [error, setError] = useState('')
 
   useEffect(() => {
-    fetchPersonas()
-      .then((list) => {
-        setPersonas(list)
-        if (list.length === 0) return
+    Promise.all([fetchPersonas(), fetchProfiles()])
+      .then(([personaList, profileList]) => {
+        setPersonas(personaList)
+        setProfileNames(Object.fromEntries(profileList.map((p) => [p.id, profileLabel(p)])))
+        if (personaList.length === 0) return
         const stored = getStoredPersonaId()
-        const effective = list.find((p) => p.id === stored) ?? list[0]
+        const effective = personaList.find((p) => p.id === stored) ?? personaList[0]
         onChange(effective.id)
       })
       .catch((err: Error) => setError(err.message))
@@ -70,6 +80,7 @@ export function PersonaSwitcher({
         {personas.map((p) => (
           <option key={p.id} value={p.id}>
             {p.name}
+            {profileNames[p.profileId] ? ` — ${profileNames[p.profileId]}` : ''}
           </option>
         ))}
       </select>

@@ -1,26 +1,46 @@
 // api.ts — thin fetch helpers over this tool's own proxy routes
-// (http.go, step 5), the human-facing mirror of steps 3/4/8's own MCP
-// tools. Same PROXY_BASE convention browser's own api.ts already
+// (http.go, step 5), the human-facing mirror of steps 3/4/8/10's own
+// MCP tools. Same PROXY_BASE convention browser's own api.ts already
 // established: /api/v1/tools/{slug}/proxy/{path_suffix}.
 //
-// Step 8 made every profile/skill/experience call require a
-// personaId (backend-enforced — an unknown one is a real 400, not a
-// silent empty result); step 9 threads that through every function
-// here. See plan/ai/tools/career/step-08-persona.md and
-// plan/ai/tools/career/step-09-persona-frontend.md.
+// Step 8 made every persona-scoped call require a personaId
+// (backend-enforced — an unknown one is a real 400, not a silent
+// empty result); step 9 threaded that through every function here.
+// Step 10 introduced Profile (the job seeker) one level above
+// Persona, and renamed what used to be called "profile" (headline/
+// summary/location/desired titles/min salary) to "persona details" —
+// that was never the job seeker's own profile, it was a persona's own
+// career positioning. Step 11 threads Profile through this file. See
+// plan/ai/tools/career/step-08-persona.md,
+// plan/ai/tools/career/step-10-job-seeker-profile.md, and
+// plan/ai/tools/career/step-11-job-seeker-profile-frontend.md.
 const PROXY_BASE = '/api/v1/tools/career/proxy'
+
+export interface ProfileExternalLink {
+  platform: string
+  url: string
+}
+
+export interface Profile {
+  id: string
+  firstName: string
+  lastName: string
+  createdAt: string
+  updatedAt?: string
+  externalLinks: ProfileExternalLink[]
+}
 
 export interface Persona {
   id: string
+  profileId: string
   name: string
   description?: string
   createdAt: string
   updatedAt?: string
 }
 
-export interface CareerProfile {
+export interface PersonaDetails {
   personaId: string
-  fullName: string
   headline: string
   summary: string
   location: string
@@ -38,8 +58,8 @@ export interface CareerExperience {
   description: string
 }
 
-export interface ProfileResult {
-  profile: CareerProfile | null
+export interface PersonaDetailsResult {
+  personaDetails: PersonaDetails | null
   skills: string[]
   experience: CareerExperience[]
 }
@@ -65,17 +85,73 @@ async function jsonOrThrow<T>(res: Response, action: string): Promise<T> {
   return res.json() as Promise<T>
 }
 
-export async function fetchPersonas(): Promise<Persona[]> {
-  const res = await fetch(`${PROXY_BASE}/personas`, { credentials: 'include' })
+// --- profiles (job seekers) ---
+
+export async function fetchProfiles(): Promise<Profile[]> {
+  const res = await fetch(`${PROXY_BASE}/profiles`, { credentials: 'include' })
+  const data = await jsonOrThrow<{ profiles: Profile[] }>(res, 'load profiles')
+  return data.profiles
+}
+
+export async function createProfile(firstName: string, lastName: string): Promise<Profile[]> {
+  const res = await fetch(`${PROXY_BASE}/profiles`, {
+    method: 'POST',
+    credentials: 'include',
+    body: JSON.stringify({ firstName, lastName }),
+  })
+  const data = await jsonOrThrow<{ profiles: Profile[] }>(res, 'create profile')
+  return data.profiles
+}
+
+export async function updateProfile(id: string, args: { firstName?: string; lastName?: string }): Promise<Profile[]> {
+  const res = await fetch(`${PROXY_BASE}/profiles`, {
+    method: 'PUT',
+    credentials: 'include',
+    body: JSON.stringify({ id, ...args }),
+  })
+  const data = await jsonOrThrow<{ profiles: Profile[] }>(res, 'update profile')
+  return data.profiles
+}
+
+export async function deleteProfile(id: string): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/profiles?id=${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  })
+  if (!res.ok && res.status !== 204) throw new Error(`failed to delete profile (${res.status})`)
+}
+
+export async function addProfileExternalLink(profileId: string, platform: string, url: string): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/profile-links`, {
+    method: 'POST',
+    credentials: 'include',
+    body: JSON.stringify({ profileId, platform, url }),
+  })
+  if (!res.ok && res.status !== 204) throw new Error(`failed to add external link (${res.status})`)
+}
+
+export async function removeProfileExternalLink(profileId: string, platform: string): Promise<void> {
+  const res = await fetch(
+    `${PROXY_BASE}/profile-links?profileId=${encodeURIComponent(profileId)}&platform=${encodeURIComponent(platform)}`,
+    { method: 'DELETE', credentials: 'include' },
+  )
+  if (!res.ok && res.status !== 204) throw new Error(`failed to remove external link (${res.status})`)
+}
+
+// --- personas ---
+
+export async function fetchPersonas(profileId?: string): Promise<Persona[]> {
+  const qs = profileId ? `?profileId=${encodeURIComponent(profileId)}` : ''
+  const res = await fetch(`${PROXY_BASE}/personas${qs}`, { credentials: 'include' })
   const data = await jsonOrThrow<{ personas: Persona[] }>(res, 'load personas')
   return data.personas
 }
 
-export async function createPersona(name: string, description?: string): Promise<Persona[]> {
+export async function createPersona(profileId: string, name: string, description?: string): Promise<Persona[]> {
   const res = await fetch(`${PROXY_BASE}/personas`, {
     method: 'POST',
     credentials: 'include',
-    body: JSON.stringify({ name, description }),
+    body: JSON.stringify({ profileId, name, description }),
   })
   const data = await jsonOrThrow<{ personas: Persona[] }>(res, 'create persona')
   return data.personas
@@ -99,13 +175,14 @@ export async function deletePersona(id: string): Promise<void> {
   if (!res.ok && res.status !== 204) throw new Error(`failed to delete persona (${res.status})`)
 }
 
-export async function fetchProfile(personaId: string): Promise<ProfileResult> {
-  const res = await fetch(`${PROXY_BASE}/profile?personaId=${encodeURIComponent(personaId)}`, { credentials: 'include' })
-  return jsonOrThrow<ProfileResult>(res, 'load profile')
+// --- persona details ---
+
+export async function fetchPersonaDetails(personaId: string): Promise<PersonaDetailsResult> {
+  const res = await fetch(`${PROXY_BASE}/persona-details?personaId=${encodeURIComponent(personaId)}`, { credentials: 'include' })
+  return jsonOrThrow<PersonaDetailsResult>(res, 'load persona details')
 }
 
-export interface UpdateProfileArgs {
-  fullName?: string
+export interface UpdatePersonaDetailsArgs {
   headline?: string
   summary?: string
   location?: string
@@ -114,13 +191,13 @@ export interface UpdateProfileArgs {
   minSalary?: number
 }
 
-export async function updateProfile(personaId: string, args: UpdateProfileArgs): Promise<ProfileResult> {
-  const res = await fetch(`${PROXY_BASE}/profile`, {
+export async function updatePersonaDetails(personaId: string, args: UpdatePersonaDetailsArgs): Promise<PersonaDetailsResult> {
+  const res = await fetch(`${PROXY_BASE}/persona-details`, {
     method: 'POST',
     credentials: 'include',
     body: JSON.stringify({ personaId, ...args }),
   })
-  return jsonOrThrow<ProfileResult>(res, 'update profile')
+  return jsonOrThrow<PersonaDetailsResult>(res, 'update persona details')
 }
 
 export async function fetchSkills(personaId: string): Promise<string[]> {
