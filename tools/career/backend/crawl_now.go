@@ -223,17 +223,26 @@ var crawlStatusPollInterval = 5 * time.Second
 // pollBrowserPhase polls GET /crawl-status?requestId=<runID> on
 // browser's own proxy every crawlStatusPollInterval while a call to
 // /crawl or /crawl-paginated is in flight, forwarding every observed
-// phase CHANGE into crawl_runs via setCrawlRunPhase — this turns
-// browser's own internal state into something Career's own log/phase
-// actually reflects, in near-real-time. Runs concurrently with the
-// blocking POST call it accompanies; stop() must be called on every
-// exit path of that call. A poll failure (network error, browser
-// tool temporarily unreachable, a stale/expired token) is silently
-// ignored — this is a secondary, best-effort observability channel
-// that must never affect the real, authoritative call's own outcome.
+// change into crawl_runs via setCrawlRunPhase — this turns browser's
+// own internal state into something Career's own log/phase actually
+// reflects, in near-real-time. Runs concurrently with the blocking
+// POST call it accompanies; stop() must be called on every exit path
+// of that call. A poll failure (network error, browser tool
+// temporarily unreachable, a stale/expired token) is silently ignored
+// — this is a secondary, best-effort observability channel that must
+// never affect the real, authoritative call's own outcome.
+//
+// Dedupes on phase+message together, not phase alone — a real bug
+// fixed here: browser's own awaiting_human_challenge phase now updates
+// its own message every retry tick (which attempt number, which
+// detection reason) while the phase VALUE itself stays
+// "awaiting_human_challenge" for the whole wait; deduping on phase
+// alone would have silently dropped every one of those per-tick
+// updates, making a perfectly-alive wait look identically frozen in
+// Career's own log too.
 func pollBrowserPhase(ctx context.Context, coreURL, runID, accessToken string) (stop func()) {
 	done := make(chan struct{})
-	lastPhase := ""
+	last := ""
 	go func() {
 		ticker := time.NewTicker(crawlStatusPollInterval)
 		defer ticker.Stop()
@@ -243,10 +252,14 @@ func pollBrowserPhase(ctx context.Context, coreURL, runID, accessToken string) (
 				return
 			case <-ticker.C:
 				phase, message, ok := fetchBrowserCrawlStatus(ctx, coreURL, runID, accessToken)
-				if !ok || phase == lastPhase {
+				if !ok {
 					continue
 				}
-				lastPhase = phase
+				current := phase + "\x00" + message
+				if current == last {
+					continue
+				}
+				last = current
 				_ = setCrawlRunPhase(runID, phase, message)
 			}
 		}

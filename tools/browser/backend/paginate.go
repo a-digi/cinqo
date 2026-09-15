@@ -457,7 +457,7 @@ func performPaginatedCrawlWithNormalSession(blockedURL, container string, fields
 		return result, pageHTML, err
 	}
 
-	cleared, waitErr := waitForHumanToClearCloudflare(ctx, requestID)
+	cleared, waitErr := waitForHumanToClearCloudflare(ctx, requestID, cfErr.Reason)
 	if waitErr != nil {
 		return paginatedCrawlResponse{}, nil, waitErr
 	}

@@ -56,7 +56,9 @@ const normalSessionCrawlTimeout = 31 * time.Minute
 // needs real time to notice it and react — checked again every
 // humanSolveRetryInterval (not continuously) rather than one more
 // short automated poll.
-const humanSolveRetryInterval = 15 * time.Second
+// var, not const, solely so a temporary test can shorten it — see
+// TestWaitForHumanToClearCloudflareReportsEveryTick.
+var humanSolveRetryInterval = 15 * time.Second
 
 // maxHumanSolveDuration bounds the total time waitForHumanToClearCloudflare
 // spends waiting — a wall-clock cap, not a fixed retry count (step
@@ -65,8 +67,9 @@ const humanSolveRetryInterval = 15 * time.Second
 // reopen mid-attempt — the window stays open the whole time. See
 // plan/ai/tools/browser/step-27-long-lived-headed-fallback-session.md.
 // An explicit starting estimate, not verified against a real person's
-// own reaction time.
-const maxHumanSolveDuration = 30 * time.Minute
+// own reaction time. var, not const, for the same testing reason as
+// humanSolveRetryInterval above.
+var maxHumanSolveDuration = 30 * time.Minute
 
 type crawlRequest struct {
 	URL string `json:"url"`
@@ -289,10 +292,18 @@ func crawlWithNormalSession(rawURL, requestID string) (crawlResponse, error) {
 // plan/ai/tools/browser/step-25-human-assisted-cloudflare-retry.md,
 // step-26-headed-fallback-for-paginated-crawl.md, and
 // step-27-long-lived-headed-fallback-session.md.
-func waitForHumanToClearCloudflare(ctx context.Context, requestID string) (bool, error) {
-	setCrawlPhase(requestID, phaseAwaitingHumanChallenge, "Cloudflare challenge detected — waiting for a person to solve it in the open browser window")
+// initialReason is the Reason the caller's own initial detection
+// already found (crawlError.Reason) — reported immediately so the
+// very first status a poller ever sees already says which signal
+// triggered this wait, not a generic placeholder.
+func waitForHumanToClearCloudflare(ctx context.Context, requestID, initialReason string) (bool, error) {
+	setCrawlPhase(requestID, phaseAwaitingHumanChallenge, fmt.Sprintf(
+		"Cloudflare challenge detected (%s) — waiting for a person to solve it in the open browser window", initialReason,
+	))
 	deadline := time.Now().Add(maxHumanSolveDuration)
+	attempt := 0
 	for time.Now().Before(deadline) {
+		attempt++
 		if err := chromedp.Run(ctx, chromedp.Sleep(humanSolveRetryInterval)); err != nil {
 			return false, err
 		}
@@ -303,6 +314,21 @@ func waitForHumanToClearCloudflare(ctx context.Context, requestID string) (bool,
 		if !check.Detected {
 			return true, nil
 		}
+		// Reported every tick, not just once at the top — a real gap
+		// fixed here: without this, this function's own live status
+		// never changed for the ENTIRE wait (up to 30 minutes), no
+		// matter how many times the check underneath actually re-ran,
+		// making a perfectly-alive retry loop look frozen from any
+		// poller's own point of view. Including check.Reason on every
+		// tick (not just the first) also surfaces a reason that
+		// CHANGES between ticks — e.g. a page that first shows the
+		// resolvable JS challenge (reason "title") and later, after a
+		// redirect, shows a harder WAF block (reason
+		// "waf-block-params") — as a real, visible signal rather than
+		// silently indistinguishable "still detected" text.
+		setCrawlPhase(requestID, phaseAwaitingHumanChallenge, fmt.Sprintf(
+			"still detected (%s) — check #%d, waiting for a person to solve it in the open browser window", check.Reason, attempt,
+		))
 	}
 	return false, nil
 }
@@ -313,7 +339,7 @@ func waitForHumanToClearCloudflare(ctx context.Context, requestID string) (bool,
 // once cleared. See
 // plan/ai/tools/browser/step-25-human-assisted-cloudflare-retry.md.
 func waitForHumanToSolveCloudflare(ctx context.Context, fallback *crawlError, requestID string) (crawlResponse, error) {
-	cleared, err := waitForHumanToClearCloudflare(ctx, requestID)
+	cleared, err := waitForHumanToClearCloudflare(ctx, requestID, fallback.Reason)
 	if err != nil {
 		return crawlResponse{}, err
 	}
