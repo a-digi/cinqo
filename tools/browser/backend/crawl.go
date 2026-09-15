@@ -33,6 +33,18 @@ const crawlTimeout = 20 * time.Second
 
 const settleDelay = 1500 * time.Millisecond
 
+// normalSessionCrawlTimeout bounds one headed-Chrome fallback attempt
+// end to end (process launch + stealth injection + navigate + settle +
+// up to cloudflareMaxWait's own wait + HTML read) — deliberately its
+// OWN budget, not nested inside or derived from the primary attempt's
+// own ctx (already bounded by crawlTimeout, and likely close to
+// exhausted by the time a fallback is even considered, having just
+// spent up to cloudflareMaxWait waiting inside the headless attempt).
+// See plan/ai/tools/browser/step-24-headed-chrome-cloudflare-fallback.md's
+// own Open Question 1 for the real tension this creates against
+// tool_mcp.Invoke's own 45s invokeTimeout on the AI-driven call path.
+const normalSessionCrawlTimeout = 20 * time.Second
+
 type crawlRequest struct {
 	URL string `json:"url"`
 }
@@ -80,16 +92,15 @@ func crawlHandler(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(result)
 }
 
-// crawlPage navigates the one shared session to rawURL and reads back
-// its rendered HTML/title/final URL. Holds sessionMu for the whole
-// operation — see that variable's own doc comment in main.go.
-func crawlPage(rawURL string) (crawlResponse, error) {
-	sessionMu.Lock()
-	defer sessionMu.Unlock()
-
-	ctx, cancel := context.WithTimeout(sessionCtx, crawlTimeout)
-	defer cancel()
-
+// navigateAndReadWithCloudflareCheck runs the shared navigate → settle
+// → Cloudflare-wait → read-HTML sequence against ctx — extracted so
+// both the primary (shared headless session) and fallback (ephemeral
+// headed session, step 24) crawl attempts share one implementation
+// instead of two copies that could drift apart. Returns the same
+// crawlError (cloudflare_challenge_unresolved) as before when the
+// challenge is still present once ctx's own wait budget is spent. See
+// plan/ai/tools/browser/step-24-headed-chrome-cloudflare-fallback.md.
+func navigateAndReadWithCloudflareCheck(ctx context.Context, rawURL string) (crawlResponse, error) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(rawURL),
 		chromedp.Sleep(settleDelay),
@@ -126,6 +137,57 @@ func crawlPage(rawURL string) (crawlResponse, error) {
 		FinalURL:  finalURL,
 		Truncated: truncated,
 	}, nil
+}
+
+// crawlPage navigates the one shared headless session to rawURL and
+// reads back its rendered HTML/title/final URL. Holds sessionMu for
+// the whole operation — see that variable's own doc comment in
+// main.go. When the headless session hits an unresolved Cloudflare
+// challenge, retries once via crawlWithNormalSession (step 24) instead
+// of failing immediately — a real, headed browser is often materially
+// harder for Cloudflare to flag as automated than headless Chrome,
+// even with this tool's own existing stealth patches applied.
+func crawlPage(rawURL string) (crawlResponse, error) {
+	sessionMu.Lock()
+	defer sessionMu.Unlock()
+
+	ctx, cancel := context.WithTimeout(sessionCtx, crawlTimeout)
+	defer cancel()
+
+	result, err := navigateAndReadWithCloudflareCheck(ctx, rawURL)
+
+	var cfErr *crawlError
+	if errors.As(err, &cfErr) {
+		return crawlWithNormalSession(rawURL)
+	}
+	return result, err
+}
+
+// crawlWithNormalSession retries rawURL in a freshly launched, non-
+// headless Chrome instance — called only after the shared headless
+// session (crawlPage, above) already failed to clear the same
+// Cloudflare challenge. Always tears the headed instance down before
+// returning, on every exit path (success, still blocked, or any other
+// error) — "close after it is finished." See
+// plan/ai/tools/browser/step-24-headed-chrome-cloudflare-fallback.md.
+func crawlWithNormalSession(rawURL string) (crawlResponse, error) {
+	normalSessionMu.Lock()
+	defer normalSessionMu.Unlock()
+
+	ctx, cancels, err := startSharedNormalSession()
+	if err != nil {
+		return crawlResponse{}, fmt.Errorf("normal-session fallback: failed to start: %w", err)
+	}
+	defer func() {
+		for _, cancel := range cancels {
+			cancel()
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(ctx, normalSessionCrawlTimeout)
+	defer cancel()
+
+	return navigateAndReadWithCloudflareCheck(ctx, rawURL)
 }
 
 // validateCrawlURL is this tool's own SSRF guard — a page-fetching
@@ -179,7 +241,7 @@ func registerFetchPageHTML(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "fetch_page_html",
 		Description: "Navigate the shared browser session to a URL and return the page's rendered HTML, title, and final URL (after any redirect). " +
-			"If the page is behind a Cloudflare challenge, this waits briefly for it to clear before reading the page; if it's still blocking once the wait runs out, this call fails with a cloudflare_challenge_unresolved error instead of returning the interstitial as if it were the real page.",
+			"If the page is behind a Cloudflare challenge, this waits briefly for it to clear before reading the page; if it's still blocking once the wait runs out, this automatically retries once in a normal (non-headless) browser before giving up, which can make a blocked call noticeably slower — if it's still blocked after that retry, this call fails with a cloudflare_challenge_unresolved error instead of returning the interstitial as if it were the real page.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args fetchPageHTMLArgs) (*mcp.CallToolResult, any, error) {
 		if args.URL == "" {
 			return &mcp.CallToolResult{

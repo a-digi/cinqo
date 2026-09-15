@@ -154,6 +154,73 @@ func stopSharedSession() {
 	}
 }
 
+// normalSessionMu serializes headed-Chrome fallback attempts (crawl.go's
+// crawlWithNormalSession) — at most one headed Chrome window is ever
+// open at a time, regardless of how many concurrent crawl requests hit
+// a Cloudflare block simultaneously. Separate from sessionMu (which
+// guards the always-on shared headless session's own state) since this
+// guards a completely different, ephemeral resource. See
+// plan/ai/tools/browser/step-24-headed-chrome-cloudflare-fallback.md.
+var normalSessionMu sync.Mutex
+
+// startSharedNormalSession launches a fresh, non-headless ("normal")
+// Chrome instance — used only as a fallback when the always-on shared
+// headless session (startSharedSession, above — never called by this
+// function, never modified by this feature) fails to get past a
+// Cloudflare challenge. Unlike startSharedSession, this does NOT store
+// its context/cancel funcs into the package-level
+// sessionCtx/sessionCancel — those remain exclusively the shared
+// headless session's own state — and is never called at boot
+// (runHTTPServer keeps calling only startSharedSession). The caller
+// owns the returned cancel funcs and must call every one of them once
+// done with this instance ("close after it is finished") — see
+// crawl.go's crawlWithNormalSession, the one caller.
+func startSharedNormalSession() (context.Context, []context.CancelFunc, error) {
+	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), normalAllocatorOptions()...)
+	ctx, ctxCancel := chromedp.NewContext(allocCtx)
+
+	actions := []chromedp.Action{
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			_, err := page.AddScriptToEvaluateOnNewDocument(stealth.JS).Do(ctx)
+			return err
+		}),
+		chromedp.Navigate("about:blank"),
+	}
+
+	if err := chromedp.Run(ctx, actions...); err != nil {
+		ctxCancel()
+		allocCancel()
+		return nil, nil, err
+	}
+
+	return ctx, []context.CancelFunc{ctxCancel, allocCancel}, nil
+}
+
+// normalAllocatorOptions mirrors allocatorOptions' own stealth-oriented
+// flags exactly, except headless is explicitly forced off. A
+// deliberate, separate duplicate of allocatorOptions — not a shared
+// helper with a headless bool parameter — specifically so
+// allocatorOptions itself, and therefore startSharedSession's own
+// behavior, is never touched by this feature.
+func normalAllocatorOptions() []chromedp.ExecAllocatorOption {
+	opts := chromedp.DefaultExecAllocatorOptions[:]
+	if p := os.Getenv("BROWSER_TOOL_CHROME_PATH"); p != "" {
+		opts = append(opts, chromedp.ExecPath(p))
+	}
+
+	opts = append(opts,
+		chromedp.Flag("disable-blink-features", "AutomationControlled"),
+		chromedp.Flag("excludeSwitches", "enable-automation"),
+		chromedp.Flag("use-mock-keychain", true),
+		chromedp.Flag("headless", false), // the whole point of this fallback
+		chromedp.Flag("disable-infobars", true),
+		chromedp.Flag("disable-notifications", true),
+		chromedp.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
+		chromedp.Flag("lang", "en-US,en;q=0.9"),
+	)
+	return opts
+}
+
 func allocatorOptions() []chromedp.ExecAllocatorOption {
 	opts := chromedp.DefaultExecAllocatorOptions[:]
 	if p := os.Getenv("BROWSER_TOOL_CHROME_PATH"); p != "" {
