@@ -3,6 +3,10 @@ import { Link, useLocation } from 'react-router-dom'
 import { useConversationContext } from '../config/conversation/ConversationContext'
 import { fetchPlatforms, type Platform } from '../api/platforms'
 import { ApiError } from '../api/client'
+import type { Conversation } from '../api/conversations'
+import { useConfirm } from '../Shared/Components/Modal/useConfirm'
+import { IconButton } from '../Shared/Components/IconButton/IconButton'
+import { TrashIcon } from '../Shared/Components/IconButton/icons'
 import { LoadingSpinner } from '../Shared/Components/Loading/LoadingSpinner'
 import { MessageThread } from '../Components/Conversation/MessageThread'
 import { MessageComposer } from '../Components/Conversation/MessageComposer'
@@ -20,8 +24,20 @@ import { NewConversationForm } from '../Components/Conversation/NewConversationF
 export function GlobalChatWidget() {
   const location = useLocation()
   const [isOpen, setIsOpen] = useState(false)
-  const { conversations, selectedId, detail, sending, error, pendingUserContent, selectConversation, createConversation, sendMessage } =
-    useConversationContext()
+  const {
+    conversations,
+    selectedId,
+    detail,
+    sending,
+    error,
+    pendingUserContent,
+    selectConversation,
+    createConversation,
+    sendMessage,
+    deleteConversation,
+  } = useConversationContext()
+  const { confirm, dialog } = useConfirm()
+  const [busyId, setBusyId] = useState<string | null>(null)
 
   // showList/creatingNew (step 18) are local to the widget, not the
   // shared context — switching the widget's own view never affects
@@ -69,6 +85,25 @@ export function GlobalChatWidget() {
     } catch {
       // createConversation already surfaces its own failure via the
       // shared context's own `error` state — nothing extra to do here.
+    }
+  }
+
+  async function handleDelete(c: Conversation) {
+    const ok = await confirm({
+      title: 'Delete conversation',
+      message: `Delete "${c.title}"? This cannot be undone.`,
+      danger: true,
+    })
+    if (!ok) return
+    setBusyId(c.id)
+    try {
+      // deleteConversation itself clears selectedId/detail when the
+      // deleted conversation was the one open — the existing render
+      // condition (showList || !selectedId) then falls back to the
+      // list view with no extra handling needed here.
+      await deleteConversation(c.id)
+    } finally {
+      setBusyId(null)
     }
   }
 
@@ -146,7 +181,13 @@ export function GlobalChatWidget() {
             <NewConversationForm platforms={platforms} onCreate={handleCreate} onCancel={openList} />
           )
         ) : showList || !selectedId ? (
-          <ConversationList conversations={conversations} selectedId={selectedId} onSelect={handleSelect} />
+          <ConversationList
+            conversations={conversations}
+            selectedId={selectedId}
+            busyId={busyId}
+            onSelect={handleSelect}
+            onDelete={handleDelete}
+          />
         ) : !detail ? (
           <div className="flex flex-1 items-center justify-center p-6">
             <LoadingSpinner label="Loading conversation…" />
@@ -158,6 +199,7 @@ export function GlobalChatWidget() {
           </>
         )}
       </div>
+      {dialog}
     </div>
   )
 }
@@ -165,11 +207,15 @@ export function GlobalChatWidget() {
 function ConversationList({
   conversations,
   selectedId,
+  busyId,
   onSelect,
+  onDelete,
 }: {
-  conversations: { id: string; title: string; startedAt: string }[] | null
+  conversations: Conversation[] | null
   selectedId: string | null
+  busyId: string | null
   onSelect: (id: string) => void
+  onDelete: (c: Conversation) => void
 }) {
   if (!conversations || conversations.length === 0) {
     return (
@@ -182,17 +228,22 @@ function ConversationList({
   return (
     <div className="flex-1 overflow-y-auto">
       {conversations.map((c) => (
-        <button
+        <div
           key={c.id}
-          type="button"
-          onClick={() => onSelect(c.id)}
-          className={`block w-full border-b border-gray-100 px-3 py-2 text-left text-sm hover:bg-gray-50 ${
-            c.id === selectedId ? 'bg-gray-50 font-medium text-gray-900' : 'text-gray-700'
-          }`}
+          className={`flex items-center border-b border-gray-100 hover:bg-gray-50 ${c.id === selectedId ? 'bg-gray-50' : ''}`}
         >
-          <div className="truncate">{c.title}</div>
-          <div className="text-xs text-gray-400">{new Date(c.startedAt).toLocaleString()}</div>
-        </button>
+          <button
+            type="button"
+            onClick={() => onSelect(c.id)}
+            className={`min-w-0 flex-1 px-3 py-2 text-left text-sm ${c.id === selectedId ? 'font-medium text-gray-900' : 'text-gray-700'}`}
+          >
+            <div className="truncate">{c.title}</div>
+            <div className="text-xs text-gray-400">{new Date(c.startedAt).toLocaleString()}</div>
+          </button>
+          <div className="mr-1 shrink-0">
+            <IconButton icon={<TrashIcon />} label="Delete" onClick={() => onDelete(c)} disabled={busyId === c.id} variant="danger" />
+          </div>
+        </div>
       ))}
     </div>
   )
