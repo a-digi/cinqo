@@ -44,19 +44,33 @@ type cloudflareCheck struct {
 // CSS selectors, which this tool already evaluates today. Checks, in
 // order: document.title === "Just a moment..." (the stable,
 // version-independent title Cloudflare's own JS challenge page has used
-// for years); a known challenge element id/class; a
-// <script src="*challenges.cloudflare.com*"> tag (covers the
-// Turnstile-based challenge even when the page's own title/wrapper
-// markup varies); a <script src="*/cdn-cgi/challenge-platform/*"> tag
-// and a global window.__CF$cv$params (both cover Cloudflare's WAF
-// "Request Blocked" interstitial — a harder, non-resolving block
-// distinct from the resolvable JS challenge the first three signatures
-// target, but still "a Cloudflare challenge the browser could not
-// overcome" from a caller's point of view). DOM/title signatures only —
-// does not inspect HTTP response headers (cf-mitigated, server:
-// cloudflare), which would require chromedp's Network domain event
-// interception; see this step's own open question 3 for what that gap
-// means in practice.
+// for years); a known challenge element id/class — both of these are
+// genuinely removed/replaced once a challenge is solved (Cloudflare
+// swaps the whole interstitial DOM out or navigates away), so presence
+// alone is reliable evidence a challenge is CURRENTLY showing.
+//
+// A <script src="*challenges.cloudflare.com*"> or
+// "*/cdn-cgi/challenge-platform/*"> tag, and the global
+// window.__CF$cv$params, are a DIFFERENT kind of signal — verified
+// directly (not assumed), and a real bug fixed here: a <script> tag is
+// never removed from the DOM once the browser has executed it, and
+// window.__CF$cv$params is set once at page load and never unset —
+// neither is retroactively cleaned up just because a challenge was
+// solved. A live user-reported false positive confirmed this exactly:
+// the real page and URL were visibly correct in the browser after
+// solving a challenge, yet this check kept reporting "still detected"
+// indefinitely, because the zone's own Cloudflare bot-management
+// script (present on every page it serves, cleared or not) never
+// leaves the DOM. These two signals were originally added to catch
+// Cloudflare's WAF "Request Blocked" interstitial — a harder,
+// non-resolving block with no title/element markers of its own — so
+// they can't simply be removed; instead, each now requires a SECOND,
+// independent corroborating signal that a challenge is actually being
+// shown right now: either a visibly rendered challenge widget element,
+// or a suspiciously thin page body (a real block/challenge page has
+// almost no real content; any genuine page — a job listing, an
+// article — does). See
+// plan/ai/tools/browser/step-33-fix-persistent-script-tag-false-positive.md.
 const cloudflareDetectJS = `(function() {
 	if (document.title === "Just a moment...") {
 		return {detected: true, reason: "title"};
@@ -66,15 +80,20 @@ const cloudflareDetectJS = `(function() {
 		document.getElementById("cf-wrapper")) {
 		return {detected: true, reason: "challenge-element"};
 	}
-	if (document.querySelector('script[src*="challenges.cloudflare.com"]')) {
-		return {detected: true, reason: "turnstile-script"};
+
+	var hasChallengeScript = !!document.querySelector('script[src*="challenges.cloudflare.com"]') ||
+		!!document.querySelector('script[src*="/cdn-cgi/challenge-platform/"]');
+	var hasWafParams = typeof window.__CF$cv$params !== "undefined";
+	if (hasChallengeScript || hasWafParams) {
+		var visibleWidget = document.querySelector('iframe[src*="challenges.cloudflare.com"]') ||
+			document.querySelector('#challenge-stage') ||
+			document.querySelector('[class*="cf-turnstile"]');
+		var bodyText = ((document.body && document.body.innerText) || '').trim();
+		if (visibleWidget || bodyText.length < 200) {
+			return {detected: true, reason: hasWafParams ? "waf-block-params" : "challenge-platform-script"};
+		}
 	}
-	if (document.querySelector('script[src*="/cdn-cgi/challenge-platform/"]')) {
-		return {detected: true, reason: "challenge-platform-script"};
-	}
-	if (typeof window.__CF$cv$params !== "undefined") {
-		return {detected: true, reason: "waf-block-params"};
-	}
+
 	return {detected: false, reason: ""};
 })()`
 
