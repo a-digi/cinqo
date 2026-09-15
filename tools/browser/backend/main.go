@@ -33,6 +33,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sync"
 	"syscall"
 
@@ -176,7 +177,12 @@ var normalSessionMu sync.Mutex
 // done with this instance ("close after it is finished") — see
 // crawl.go's crawlWithNormalSession, the one caller.
 func startSharedNormalSession() (context.Context, []context.CancelFunc, error) {
-	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), normalAllocatorOptions()...)
+	profileDir, err := normalSessionProfileDir()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), normalAllocatorOptions(profileDir)...)
 	ctx, ctxCancel := chromedp.NewContext(allocCtx)
 
 	actions := []chromedp.Action{
@@ -196,19 +202,49 @@ func startSharedNormalSession() (context.Context, []context.CancelFunc, error) {
 	return ctx, []context.CancelFunc{ctxCancel, allocCancel}, nil
 }
 
+// normalSessionProfileDir resolves (and ensures exists) the persistent
+// Chrome profile directory the headed fallback session reuses across
+// every invocation — under TOOL_DB_DIR, this tool's own established
+// convention for durable, tool-owned storage (see initBrowserDB,
+// login_credentials.go). A REAL, persistent profile — not the fresh
+// temporary one chromedp creates by default when no UserDataDir is
+// given — so cookies/local storage (in particular, whatever
+// cf_clearance cookie a human manually earns by solving a challenge
+// once) survive into the next fallback attempt against the same site,
+// and the window looks and behaves like an ordinary standing Chrome
+// profile a human recognizes, not a blank "private"-feeling one. Safe
+// to reuse across sequential invocations only because normalSessionMu
+// (crawl.go) already guarantees at most one headed instance is ever
+// running at a time — two Chrome processes sharing one user-data-dir
+// concurrently would conflict. See
+// plan/ai/tools/browser/step-25-human-assisted-cloudflare-retry.md.
+func normalSessionProfileDir() (string, error) {
+	dbDir := os.Getenv("TOOL_DB_DIR")
+	if dbDir == "" {
+		return "", fmt.Errorf("TOOL_DB_DIR is not set")
+	}
+	dir := filepath.Join(dbDir, "normal-chrome-profile")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", fmt.Errorf("failed to create normal-session Chrome profile directory: %w", err)
+	}
+	return dir, nil
+}
+
 // normalAllocatorOptions mirrors allocatorOptions' own stealth-oriented
-// flags exactly, except headless is explicitly forced off. A
-// deliberate, separate duplicate of allocatorOptions — not a shared
-// helper with a headless bool parameter — specifically so
-// allocatorOptions itself, and therefore startSharedSession's own
-// behavior, is never touched by this feature.
-func normalAllocatorOptions() []chromedp.ExecAllocatorOption {
+// flags exactly, except headless is explicitly forced off and a real,
+// persistent profileDir is used instead of chromedp's own default
+// fresh-temp-dir-per-launch behavior. A deliberate, separate duplicate
+// of allocatorOptions — not a shared helper with a headless bool
+// parameter — specifically so allocatorOptions itself, and therefore
+// startSharedSession's own behavior, is never touched by this feature.
+func normalAllocatorOptions(profileDir string) []chromedp.ExecAllocatorOption {
 	opts := chromedp.DefaultExecAllocatorOptions[:]
 	if p := os.Getenv("BROWSER_TOOL_CHROME_PATH"); p != "" {
 		opts = append(opts, chromedp.ExecPath(p))
 	}
 
 	opts = append(opts,
+		chromedp.UserDataDir(profileDir),
 		chromedp.Flag("disable-blink-features", "AutomationControlled"),
 		chromedp.Flag("excludeSwitches", "enable-automation"),
 		chromedp.Flag("use-mock-keychain", true),
