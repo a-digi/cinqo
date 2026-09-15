@@ -217,6 +217,32 @@ CREATE TABLE IF NOT EXISTS recruiters (
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at  TEXT
 );
+
+-- crawl_runs (step 36) tracks one "Crawl now" attempt, run detached
+-- from any HTTP request (step 37) so it survives the initiating tab
+-- closing. Mirrors the AI conversation feature's own turn_runs table
+-- (api/src/conversation/entity/turn_run.go) shape and reasoning
+-- exactly. The partial unique index is the real, DB-enforced
+-- guarantee — not an app-level check-then-insert, which would race
+-- under two concurrent "Crawl now" clicks for the same link — that
+-- only one run can be in flight per link at a time. See
+-- plan/ai/tools/career/step-36-crawl-run-data-model.md.
+CREATE TABLE IF NOT EXISTS crawl_runs (
+    id             TEXT PRIMARY KEY,
+    portal_link_id TEXT NOT NULL REFERENCES portal_links(id) ON DELETE CASCADE,
+    status         TEXT NOT NULL DEFAULT 'running'
+                     CHECK (status IN ('running','completed','failed','cancelled')),
+    started_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    finished_at    TEXT,
+    log            TEXT NOT NULL DEFAULT '',
+    result_summary TEXT,
+    error_message  TEXT
+);
+
+CREATE INDEX IF NOT EXISTS crawl_runs_portal_link_idx ON crawl_runs(portal_link_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS crawl_runs_one_running_idx
+    ON crawl_runs(portal_link_id) WHERE status = 'running';
 `
 
 // migrateCareerDB runs, in order, every past schema migration this

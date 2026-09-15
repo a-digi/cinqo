@@ -2,12 +2,17 @@
 // user's own career profile (skills, experience, what they're looking
 // for) and a database of crawled job postings. Requires the browser
 // tool to be installed and enabled (enforced by the host, see
-// plan/ai/tools/step-14-tool-dependencies.md) — but this backend never
-// calls browser's own backend directly: the two cooperate only
-// through the AI's own multi-tool-call orchestration in one
-// conversation (browser crawls, this tool stores what was found). See
-// plan/ai/tools/career/career.md and
-// plan/ai/tools/career/step-01-manifest-and-package-skeleton.md.
+// plan/ai/tools/step-14-tool-dependencies.md). For the AI-driven "Crawl
+// with AI" path, the two cooperate only through the AI's own
+// multi-tool-call orchestration in one conversation (browser crawls,
+// this tool stores what was found) — this backend itself never calls
+// browser directly for that path. The deterministic "Crawl now" path
+// is the one exception (step 37, crawl_now.go): this backend's own
+// detached goroutine calls browser's proxy routes directly over HTTP,
+// via CORE_API_URL, so that crawl survives the initiating browser tab
+// closing. See plan/ai/tools/career/career.md,
+// plan/ai/tools/career/step-01-manifest-and-package-skeleton.md, and
+// plan/ai/tools/career/step-37-detached-crawl-now-orchestration.md.
 //
 // Unlike browser, this tool holds no persistent external resource
 // (no shared browser session) across separate calls — every --mcp
@@ -39,6 +44,13 @@ func runHTTPServer() {
 	if err := initDatabases(); err != nil {
 		log.Fatalf("failed to open career/jobs databases: %v", err)
 	}
+	// A goroutine, unlike an OS process, has no PID to find or
+	// reattach after a restart — any crawl_runs row still 'running'
+	// from before this process started is definitely orphaned. See
+	// plan/ai/tools/career/step-37-detached-crawl-now-orchestration.md.
+	if err := reconcileOrphanedCrawlRuns(); err != nil {
+		log.Fatalf("failed to reconcile orphaned crawl runs: %v", err)
+	}
 
 	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -57,6 +69,8 @@ func runHTTPServer() {
 	http.HandleFunc("/portal-links", portalLinksHandler)
 	http.HandleFunc("/portal-links/crawl-request", crawlRequestHandler)
 	http.HandleFunc("/portal-links/ingest-crawl-results", ingestCrawlResultsHandler)
+	http.HandleFunc("/portal-links/crawl-now", crawlNowHandler)
+	http.HandleFunc("/portal-links/crawl-now/active", crawlNowActiveHandler)
 
 	if err := http.ListenAndServe("127.0.0.1:"+port, nil); err != nil {
 		os.Exit(1)

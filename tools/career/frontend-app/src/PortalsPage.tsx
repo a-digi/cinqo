@@ -13,7 +13,7 @@ import {
 import { fetchPlatforms, createConversation, sendMessage, CoreApiError, type Platform } from './coreApi'
 import { buildCrawlMessage, crawlConversationTitle } from './crawl'
 import { buildGenerateInstructionsMessage, generateInstructionsConversationTitle } from './generateInstructions'
-import { fetchCrawlRequest, navigateTo, crawlPaginated, ingestCrawlResults, CrawlBlockedError } from './browserApi'
+import { startCrawlNow, fetchActiveCrawlRun, type CrawlRun } from './crawlNow'
 import { Dropdown } from './Dropdown'
 import { PlusIcon, PlayIcon, SparkleIcon } from './icons'
 
@@ -38,11 +38,14 @@ export function PortalsPage() {
   const [crawlInstructionsDraft, setCrawlInstructionsDraft] = useState('')
   const [error, setError] = useState('')
 
-  // Manual crawl trigger — two independent mechanisms, both landing in
-  // the same crawlingLinkIds/crawlResults state:
-  //   - "Crawl now" (step 27): deterministic, no AI — fetchCrawlRequest
-  //     + navigateTo + crawlPaginated + ingestCrawlResults
-  //     (browserApi.ts), all plain proxy calls, no platform/API key.
+  // Manual crawl trigger — two independent mechanisms:
+  //   - "Crawl now" (steps 27/37/38): deterministic, no AI. As of step
+  //     37, the whole navigate/extract/ingest sequence runs detached on
+  //     Career's own backend (crawl_now.go) — this page only starts it
+  //     (startCrawlNow) and polls its live state (fetchActiveCrawlRun),
+  //     tracked in crawlRunWatches below, not crawlingLinkIds/
+  //     crawlResults. Surviving a closed tab / page reload is the
+  //     whole point; see the resume-on-load effect further down.
   //   - "Crawl with AI" (steps 24-26, kept per step 27's own decision
   //     to offer both rather than replace): creates a conversation and
   //     sends a generated instruction, letting the AI itself drive
@@ -50,16 +53,24 @@ export function PortalsPage() {
   //     tolerates crawl instructions that don't fit "Crawl now"'s own
   //     fixed label vocabulary and can apply its own judgement
   //     (normalizing dates, inferring a missing company name, etc).
+  //     Still uses crawlingLinkIds/crawlResults exactly as before.
   // platforms/selectedPlatformId/selectedModel only matter for "Crawl
   // with AI" — "Crawl now" needs none of them.
-  // crawlingLinkIds (a Set) lets multiple links crawl concurrently,
-  // regardless of which of the two mechanisms each one used.
-  // crawlResults holds only the last outcome per link, not a history.
   const [platforms, setPlatforms] = useState<Platform[]>([])
   const [selectedPlatformId, setSelectedPlatformId] = useState<string | null>(null)
   const [selectedModel, setSelectedModel] = useState<string | null>(null)
   const [crawlingLinkIds, setCrawlingLinkIds] = useState<Set<string>>(new Set())
   const [crawlResults, setCrawlResults] = useState<Record<string, { ok: boolean; text: string; conversationId?: string } | undefined>>({})
+
+  // isLinkBusy is the one place "is anything already crawling this
+  // link" is decided — true while either mechanism is active, so
+  // starting one disables the other's own button, matching the
+  // cross-exclusion the old shared crawlingLinkIds Set gave both
+  // mechanisms before step 37 split "Crawl now"'s own busy state out
+  // into crawlRunWatches.
+  function isLinkBusy(id: string): boolean {
+    return crawlingLinkIds.has(id) || crawlRunWatches[id]?.status === 'running'
+  }
 
   // "Generate with AI" (step 33) — a separate, independent busy-state
   // from crawlingLinkIds above: generating/editing a link's own
@@ -109,6 +120,37 @@ export function PortalsPage() {
       })
   }, [])
 
+  // Resume watching any "Crawl now" run still in progress — the
+  // concrete mechanism behind "the user can leave the page, it does
+  // not have to be in the tab": reopening/reloading this page re-runs
+  // load(), which brings back each link's own hasActiveCrawlRun, and
+  // this effect immediately starts polling any that are still running
+  // without requiring a click.
+  //
+  // Guarded by `!(link.id in crawlWatchTokensRef.current)`, not by
+  // crawlRunWatches' own status — crawlWatchTokensRef gets an entry
+  // for a link the FIRST time this tab ever calls watchCrawlRun for
+  // it (from this effect or from handleCrawlNow) and that entry is
+  // never removed, including by handleCancelCrawlNow (which only
+  // bumps it to supersede the poll, on purpose). Using the run's own
+  // status instead would reopen a watch this tab's user just
+  // explicitly stopped the moment any unrelated load() refresh ran
+  // (e.g. editing a different link) — a real bug caught while writing
+  // this effect, not a hypothetical: hasActiveCrawlRun stays true on
+  // the server regardless of what one tab's own UI decided to stop
+  // showing. This condition instead means "resume once per link, per
+  // page load, only for a link this tab hasn't already made its own
+  // explicit decision about" (steps 37/38).
+  useEffect(() => {
+    for (const portal of portals) {
+      for (const link of portal.links) {
+        if (link.hasActiveCrawlRun && !(link.id in crawlWatchTokensRef.current)) {
+          void watchCrawlRun(link.id)
+        }
+      }
+    }
+  }, [portals])
+
   const selectedPlatform = platforms.find((p) => p.id === selectedPlatformId) ?? null
 
   function handleSelectPlatform(id: string) {
@@ -130,86 +172,113 @@ export function PortalsPage() {
     })
   }
 
-  // "Crawl now" own per-link cancellation token (step 35) — lets Stop
-  // supersede an in-flight attempt cleanly. Step 34's own outer
-  // "retry the whole sequence every 15s" loop is REMOVED here: the
-  // browser tool itself now waits up to ~30 minutes internally, in one
-  // continuously open window, whenever Cloudflare blocks it
-  // (plan/ai/tools/browser/step-27-long-lived-headed-fallback-session.md)
-  // — retrying the whole sequence on top of that would only ever fire
-  // after that full internal wait already failed, and would reopen a
-  // brand-new window for another 30 minutes, which is exactly the
-  // close-and-reopen behavior this step exists to stop. See
-  // plan/ai/tools/career/step-35-crawl-now-single-long-lived-attempt.md.
-  const crawlNowTokensRef = useRef<Record<string, number>>({})
+  // "Crawl now" own live state, keyed by portal link id (steps 37/38)
+  // — the authoritative record of what Career's own detached backend
+  // goroutine has reported for this link's most recent run, whether
+  // still running or already terminal. Independent of crawlingLinkIds/
+  // crawlResults above (those now belong to "Crawl with AI" only).
+  const [crawlRunWatches, setCrawlRunWatches] = useState<Record<string, CrawlRun>>({})
+  // Per-link cancellation token (same pattern step 35's own
+  // crawlNowTokensRef used, and ConversationContext.tsx's own
+  // watchTokensRef) — lets "Stop watching" supersede an in-flight poll
+  // loop cleanly without an AbortController.
+  const crawlWatchTokensRef = useRef<Record<string, number>>({})
+  // Which link's own failure log is currently expanded — at most one
+  // at a time, matching expandedLinkId's own single-open convention
+  // elsewhere on this page.
+  const [expandedCrawlLogLinkId, setExpandedCrawlLogLinkId] = useState<string | null>(null)
 
-  // "Crawl now" (step 27) — deterministic, no AI: load the link's own
-  // crawl instructions (already parsed server-side into the shape
-  // browser's own /crawl-paginated wants), navigate there, run the
-  // paginated extraction, then hand the raw results to career's own
-  // backend to map onto job rows via the fixed label vocabulary. One
-  // attempt per click — if Cloudflare blocks it, the browser tool's
-  // own call already waits as long as it needs to (up to ~30 minutes)
-  // before this resolves; nothing here schedules a further retry.
+  function sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms))
+  }
+
+  // watchCrawlRun polls GET .../crawl-now/active until the run reaches
+  // a terminal status, writing every observed row into crawlRunWatches
+  // as it goes — this is what "the frontend shows the status and the
+  // logs" means concretely: crawlRunWatches[link.id] is always exactly
+  // what the backend's own crawl_runs row says, never optimistic local
+  // state. A poll interval of 3s (coarser than the AI conversation
+  // feature's own 2s turn poll) — a crawl run's own log is sparse
+  // (four or five entries total), so tighter polling buys nothing.
+  const CRAWL_POLL_INTERVAL_MS = 3000
+  async function watchCrawlRun(portalLinkId: string) {
+    const myToken = (crawlWatchTokensRef.current[portalLinkId] ?? 0) + 1
+    crawlWatchTokensRef.current[portalLinkId] = myToken
+
+    for (;;) {
+      let run: CrawlRun | null
+      try {
+        run = await fetchActiveCrawlRun(portalLinkId)
+      } catch {
+        break
+      }
+      if (crawlWatchTokensRef.current[portalLinkId] !== myToken) return // superseded
+      if (!run) break
+      setCrawlRunWatches((prev) => ({ ...prev, [portalLinkId]: run! }))
+      if (run.status !== 'running') break
+      await sleep(CRAWL_POLL_INTERVAL_MS)
+      if (crawlWatchTokensRef.current[portalLinkId] !== myToken) return
+    }
+  }
+
+  // "Crawl now" (steps 27/37/38) — starts the crawl on Career's own
+  // backend and begins watching it; the actual navigate/extract/ingest
+  // sequence runs entirely server-side from this point on; closing
+  // this tab does not stop it (see step-37's own design). A start
+  // failure (e.g. 409 — one already running, or 400 — no valid crawl
+  // instructions) is shown via the existing crawlResults notice, the
+  // same place "Crawl with AI" shows its own outcomes; the run's own
+  // later live/terminal state always lives in crawlRunWatches instead.
   function handleCrawlNow(link: PortalLink) {
-    if (crawlingLinkIds.has(link.id)) return
-    const myToken = (crawlNowTokensRef.current[link.id] ?? 0) + 1
-    crawlNowTokensRef.current[link.id] = myToken
-    startCrawl(link)
-
-    fetchCrawlRequest(link.id)
-      .then((request) => navigateTo(link.url).then(() => crawlPaginated(request)))
-      .then((crawlResult) => ingestCrawlResults(link.id, crawlResult.pages).then((ingested) => ({ crawlResult, ingested })))
-      .then(({ crawlResult, ingested }) => {
-        if (crawlNowTokensRef.current[link.id] !== myToken) return // Stop was clicked
-        const summary = `Saved ${ingested.jobsSaved} new, updated ${ingested.jobsUpdated}, skipped ${ingested.jobsSkipped} — visited ${crawlResult.pagesVisited} page(s).`
-        if (crawlResult.stoppedReason === 'cloudflare_blocked') {
-          const reasonSuffix = crawlResult.blockedReason ? ` (${crawlResult.blockedReason})` : ''
-          setCrawlResults((prev) => ({
-            ...prev,
-            [link.id]: { ok: false, text: `${summary} Crawl stopped early — Cloudflare blocked page ${crawlResult.pagesVisited + 1}${reasonSuffix}.` },
-          }))
-          return
-        }
-        setCrawlResults((prev) => ({ ...prev, [link.id]: { ok: true, text: `${summary} (${crawlResult.stoppedReason}).` } }))
+    if (isLinkBusy(link.id)) return
+    setCrawlResults((prev) => ({ ...prev, [link.id]: undefined }))
+    startCrawlNow(link.id)
+      .then((started) => {
+        setCrawlRunWatches((prev) => ({
+          ...prev,
+          [link.id]: {
+            crawlRunId: started.crawlRunId,
+            status: 'running',
+            startedAt: started.startedAt,
+            finishedAt: null,
+            log: [],
+            resultSummary: null,
+            errorMessage: null,
+          },
+        }))
+        return watchCrawlRun(link.id)
       })
       .catch((err: unknown) => {
-        if (crawlNowTokensRef.current[link.id] !== myToken) return
-        if (err instanceof CrawlBlockedError) {
-          const reasonSuffix = err.reason ? ` (${err.reason})` : ''
-          setCrawlResults((prev) => ({ ...prev, [link.id]: { ok: false, text: `Crawl blocked by Cloudflare — ${err.message}${reasonSuffix}.` } }))
-          return
-        }
-        setCrawlResults((prev) => ({ ...prev, [link.id]: { ok: false, text: err instanceof Error ? err.message : 'Crawl failed.' } }))
-      })
-      .finally(() => {
-        if (crawlNowTokensRef.current[link.id] === myToken) finishCrawl(link)
+        setCrawlResults((prev) => ({ ...prev, [link.id]: { ok: false, text: err instanceof Error ? err.message : 'Failed to start crawl.' } }))
       })
   }
 
-  // Stop only ever bumps the token so this component stops acting on
-  // whatever the in-flight fetch eventually resolves with — it does
-  // NOT cancel the underlying request or the browser tool's own headed
-  // session, which keeps running server-side regardless (neither
-  // crawlHandler nor paginatedCrawlHandler ties its own context to the
-  // incoming HTTP request's context, and this call uses no
-  // AbortController). A deliberate, named limitation — see
-  // plan/ai/tools/browser/step-27-long-lived-headed-fallback-session.md's
-  // own Open Question 1 — not an oversight.
+  // "Stop watching" only ever bumps the token so this tab stops
+  // polling and clears its own local view of the run — it does NOT
+  // cancel anything server-side (Career's own goroutine has no cancel
+  // path at all, per step-37's own design: a crawl run has no natural
+  // mid-flight abort point the way an LLM tool-calling loop does).
+  // Reopening this page later re-discovers the run via
+  // hasActiveCrawlRun/the resume effect below if it's still going, or
+  // shows its finished result if it already completed.
   function handleCancelCrawlNow(link: PortalLink) {
-    crawlNowTokensRef.current[link.id] = (crawlNowTokensRef.current[link.id] ?? 0) + 1
+    crawlWatchTokensRef.current[link.id] = (crawlWatchTokensRef.current[link.id] ?? 0) + 1
+    setCrawlRunWatches((prev) => {
+      const next = { ...prev }
+      delete next[link.id]
+      return next
+    })
     setCrawlResults((prev) => ({
       ...prev,
-      [link.id]: { ok: false, text: 'Crawl cancelled in this tab — the browser tool may still be working on it in the background.' },
+      [link.id]: { ok: false, text: 'Stopped watching in this tab — the crawl may still be running in the background; reopen this page to check its latest status.' },
     }))
-    finishCrawl(link)
   }
 
   // "Crawl with AI" (steps 24-26, kept per step 27) — creates a
   // conversation and lets the AI itself drive browser's tools, using
   // its own judgement rather than the fixed label vocabulary above.
   function handleCrawlWithAI(link: PortalLink) {
-    if (crawlingLinkIds.has(link.id) || !selectedPlatform) return
+    if (isLinkBusy(link.id) || !selectedPlatform) return
     const platformId = selectedPlatform.id
     const model = selectedPlatform.models.length > 0 ? (selectedModel ?? selectedPlatform.models[0]) : undefined
     startCrawl(link)
@@ -610,21 +679,22 @@ export function PortalsPage() {
                     {link.crawlInstructions && (
                       <div className="mt-1.5">
                         <div className="flex flex-wrap gap-2">
-                          {crawlingLinkIds.has(link.id) ? (
+                          {crawlRunWatches[link.id]?.status === 'running' ? (
                             <button
                               type="button"
                               onClick={() => handleCancelCrawlNow(link)}
-                              title="Stop waiting on this crawl in this tab — if the browser tool already opened a window to wait out a Cloudflare challenge, it may keep running in the background regardless."
+                              title="Stop watching this crawl in this tab — it keeps running on the server regardless, and reopening this page later will show its latest status. See plan/ai/tools/career/step-37-detached-crawl-now-orchestration.md."
                               className="flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50"
                             >
                               <PlayIcon />
-                              Stop
+                              Stop watching
                             </button>
                           ) : (
                             <button
                               type="button"
                               onClick={() => handleCrawlNow(link)}
-                              title="Deterministic — no AI, no platform needed. Requires fields labeled title/url (and optionally company/location/description/postedAt) in this link's crawl instructions. If Cloudflare blocks it, this can take up to about 30 minutes while the browser tool waits for it to clear."
+                              disabled={isLinkBusy(link.id)}
+                              title="Deterministic — no AI, no platform needed. Runs on the server, so it keeps going even if you leave this page. Requires fields labeled title/url (and optionally company/location/description/postedAt) in this link's crawl instructions. If Cloudflare blocks it, this can take up to about 30 minutes while the browser tool waits for it to clear."
                               className="flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               <PlayIcon />
@@ -634,7 +704,7 @@ export function PortalsPage() {
                           <button
                             type="button"
                             onClick={() => handleCrawlWithAI(link)}
-                            disabled={crawlingLinkIds.has(link.id) || platforms.length === 0}
+                            disabled={isLinkBusy(link.id) || platforms.length === 0}
                             title={
                               platforms.length === 0
                                 ? 'No AI platform configured — add one on the Platforms page first'
@@ -662,6 +732,31 @@ export function PortalsPage() {
                               </>
                             )}
                           </p>
+                        )}
+                        {/* "Crawl now"'s own live/terminal state (steps 37/38) — kept
+                            separate from crawlResults above, which now only ever
+                            carries a start failure or a stop notice for this
+                            mechanism. Nothing shown while running: the button itself
+                            already says "Stop watching". */}
+                        {crawlRunWatches[link.id]?.status === 'completed' && (
+                          <p className="mt-1 text-xs text-green-700">{crawlRunWatches[link.id]!.resultSummary}</p>
+                        )}
+                        {crawlRunWatches[link.id]?.status === 'failed' && (
+                          <div className="mt-1">
+                            <p className="text-xs text-red-700">{crawlRunWatches[link.id]!.errorMessage}</p>
+                            <button
+                              type="button"
+                              onClick={() => setExpandedCrawlLogLinkId(expandedCrawlLogLinkId === link.id ? null : link.id)}
+                              className="text-xs text-gray-500 underline hover:text-gray-700"
+                            >
+                              {expandedCrawlLogLinkId === link.id ? 'Hide log' : 'View log'}
+                            </button>
+                            {expandedCrawlLogLinkId === link.id && (
+                              <pre className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap rounded-md bg-gray-900 p-2 text-xs text-gray-100">
+                                {crawlRunWatches[link.id]!.log.length > 0 ? crawlRunWatches[link.id]!.log.join('\n') : '(no log entries)'}
+                              </pre>
+                            )}
+                          </div>
                         )}
                       </div>
                     )}

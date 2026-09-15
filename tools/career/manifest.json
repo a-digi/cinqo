@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.33.73",
+  "version": "0.33.74",
   "mcp": true,
   "requires_tools": [
     {
@@ -225,6 +225,16 @@
     {
       "method": "POST",
       "path_suffix": "portal-links/ingest-crawl-results",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "portal-links/crawl-now",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "portal-links/crawl-now/active",
       "required_scope": "tool:career:portals"
     }
   ],

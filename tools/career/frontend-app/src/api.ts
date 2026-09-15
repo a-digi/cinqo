@@ -116,6 +116,12 @@ export interface PortalLink {
   // updatePortalLink's own instructionsAiError field.
   instructionsAiError: string | null
   instructionsAiErrorAt: string | null
+  // True while a detached "Crawl now" run is in progress for this link
+  // (step 37) — read-only, derived from crawl_runs server-side. Lets
+  // the frontend resume watching a run still going after a page
+  // reload/reopen. See
+  // plan/ai/tools/career/step-38-crawl-now-polling-frontend.md.
+  hasActiveCrawlRun: boolean
   createdAt: string
   updatedAt?: string
 }

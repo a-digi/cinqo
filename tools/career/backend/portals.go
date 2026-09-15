@@ -79,8 +79,15 @@ type portalLink struct {
 	// plan/ai/tools/career/step-33-ai-generated-crawl-instructions.md.
 	InstructionsAIError   string `json:"instructionsAiError,omitempty"`
 	InstructionsAIErrorAt string `json:"instructionsAiErrorAt,omitempty"`
-	CreatedAt             string `json:"createdAt"`
-	UpdatedAt             string `json:"updatedAt,omitempty"`
+	// HasActiveCrawlRun (step 37) is true while a detached "Crawl now"
+	// run is in progress for this link — read-only, derived from
+	// crawl_runs, never itself written. Lets the frontend resume
+	// watching a run still going after a page reload/reopen without a
+	// separate round trip per link. See
+	// plan/ai/tools/career/step-37-detached-crawl-now-orchestration.md.
+	HasActiveCrawlRun bool   `json:"hasActiveCrawlRun"`
+	CreatedAt         string `json:"createdAt"`
+	UpdatedAt         string `json:"updatedAt,omitempty"`
 }
 
 type portal struct {
@@ -167,6 +174,10 @@ func listPortals() ([]portal, error) {
 	if err != nil {
 		return nil, err
 	}
+	activeCrawlRuns, err := activeCrawlRunPortalLinkIDs()
+	if err != nil {
+		return nil, err
+	}
 
 	linkRows, err := jobsDB.Query(
 		`SELECT id, portal_id, url, title, crawl_instructions, instructions_ai_error, instructions_ai_error_at, created_at, updated_at
@@ -189,6 +200,7 @@ func listPortals() ([]portal, error) {
 		l.InstructionsAIErrorAt = instructionsAIErrorAt.String
 		l.UpdatedAt = updatedAt.String
 		l.LastCrawledAt = lastCrawled[l.ID]
+		l.HasActiveCrawlRun = activeCrawlRuns[l.ID]
 		byPortal[l.PortalID] = append(byPortal[l.PortalID], l)
 	}
 	if err := linkRows.Err(); err != nil {
@@ -431,6 +443,22 @@ func validateCrawlOutputSchema(doc crawlInstructionsDoc) error {
 		}
 	}
 	return nil
+}
+
+// getPortalLinkURL (step 37) reads just a link's own url — the
+// detached crawl-now orchestration needs it to navigate browser's
+// shared session, the one field listPortals' own per-link struct
+// already exposes to the frontend but no standalone reader returned
+// until now.
+func getPortalLinkURL(id string) (string, error) {
+	if err := requirePortalLinkExists(id); err != nil {
+		return "", err
+	}
+	var url string
+	if err := jobsDB.QueryRow(`SELECT url FROM portal_links WHERE id = ?`, id).Scan(&url); err != nil {
+		return "", err
+	}
+	return url, nil
 }
 
 func getPortalLinkCrawlInstructions(id string) (string, error) {
