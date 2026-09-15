@@ -20,6 +20,7 @@ import (
 	"github.com/a-digi/cinqo/config/routes"
 	auth_config "github.com/a-digi/cinqo/src/auth/config"
 	auth_service "github.com/a-digi/cinqo/src/auth/service"
+	"github.com/a-digi/cinqo/src/conversation"
 	platform_crypto "github.com/a-digi/cinqo/src/platform/crypto"
 	tool_manager "github.com/a-digi/cinqo/src/tool/manager"
 	"github.com/a-digi/cinqo/src/tool/systemtools"
@@ -150,6 +151,16 @@ func Start(opts Options) (srv *http.Server, cfg *server.Config, ctx *di.ContextB
 		return nil, nil, nil, log, err
 	}
 	ctx.Set("conversation_db_manager", conversationManager)
+
+	// A turn run's own execution lives in a goroutine, not a supervised
+	// OS process — it has no PID to reattach to after a restart the way
+	// tool_manager.StartAllEnabled reconciles tools. Every turn_runs row
+	// still "running" at this point in boot is therefore, by
+	// definition, dead; mark it failed and record a matching error turn
+	// so a reopened page explains what happened instead of the turn
+	// simply vanishing. See
+	// plan/ai/conversation/step-23-detach-turn-execution-from-request.md.
+	conversation.ReconcileOrphanedTurnRuns(conversationManager.Connector.DB, func(format string, args ...any) { log.Warning(format, args...) })
 
 	// Platform API-key encryption key — loaded/generated once at
 	// bootstrap, deliberately never sourced from config.json (step 2),

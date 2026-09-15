@@ -28,9 +28,17 @@ type messageResponse struct {
 	DurationMs *int64  `json:"durationMs,omitempty"`
 }
 
+// ActiveTurn is present only when a turn is actually still running for
+// this conversation right now — never for a past, already-terminal
+// run (unlike the dedicated polling endpoint, GetActiveTurnHandler,
+// which deliberately keeps showing the last run's terminal status).
+// Lets a freshly opened or reloaded page immediately know whether to
+// start polling, without a separate round trip. See
+// plan/ai/conversation/step-23-detach-turn-execution-from-request.md.
 type conversationDetailResponse struct {
 	conversationResponse
-	Messages []messageResponse `json:"messages"`
+	Messages   []messageResponse   `json:"messages"`
+	ActiveTurn *activeTurnResponse `json:"activeTurn,omitempty"`
 }
 
 // GetHandler handles GET /api/v1/conversations/{id} — the caller's own
@@ -91,8 +99,18 @@ func GetHandler(reqCtx request.RequestContext) {
 		)
 	}
 
+	var activeTurn *activeTurnResponse
+	if run, err := conversation_query.NewTurnRunQueryRepo(db).FindActiveByConversationID(id); err == nil {
+		resp := toActiveTurnResponse(run)
+		activeTurn = &resp
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		response.ErrorResponse(w, http.StatusInternalServerError, "failed to look up active turn")
+		return
+	}
+
 	response.SuccessResponse(w, http.StatusOK, conversationDetailResponse{
 		conversationResponse: toConversationResponse(conv),
 		Messages:             messages,
+		ActiveTurn:           activeTurn,
 	})
 }

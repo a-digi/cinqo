@@ -51,7 +51,15 @@ func Invoke(ctx context.Context, execPath, toolName string, args json.RawMessage
 	defer cancel()
 
 	client := mcp.NewClient(clientImplementation, nil)
-	cmd := exec.Command(execPath, "--mcp")
+	// exec.CommandContext (not exec.Command), per
+	// plan/ai/conversation/step-25-cancel-in-progress-turn.md's own
+	// Security considerations: makes Go's runtime responsible for
+	// killing this subprocess the moment ctx is done, regardless of
+	// whether the MCP SDK's own CommandTransport also tears it down
+	// internally on cancellation — a stop request or this run's own
+	// timeout must not leave an orphaned tool process (e.g. headless
+	// Chrome) running undetected.
+	cmd := exec.CommandContext(ctx, execPath, "--mcp")
 	cmd.Env = append(os.Environ(), envVars...)
 	transport := &mcp.CommandTransport{Command: cmd}
 

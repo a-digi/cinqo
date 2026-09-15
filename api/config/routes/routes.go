@@ -89,12 +89,14 @@ func Init(ctx serverdi.Context) {
 		"PlatformKeyCreate": local_routing.HandlerFunc(platform_handler.CreateKeyHandler),
 		"PlatformKeyDelete": local_routing.HandlerFunc(platform_handler.DeleteKeyHandler),
 
-		"ConversationCreate":      local_routing.HandlerFunc(conversation_handler.CreateHandler),
-		"ConversationList":        local_routing.HandlerFunc(conversation_handler.ListHandler),
-		"ConversationGet":         local_routing.HandlerFunc(conversation_handler.GetHandler),
-		"ConversationUpdateTitle": local_routing.HandlerFunc(conversation_handler.UpdateTitleHandler),
-		"ConversationDelete":      local_routing.HandlerFunc(conversation_handler.DeleteHandler),
-		"ConversationSendMessage": local_routing.HandlerFunc(conversation_handler.SendMessageHandler),
+		"ConversationCreate":         local_routing.HandlerFunc(conversation_handler.CreateHandler),
+		"ConversationList":           local_routing.HandlerFunc(conversation_handler.ListHandler),
+		"ConversationGet":            local_routing.HandlerFunc(conversation_handler.GetHandler),
+		"ConversationUpdateTitle":    local_routing.HandlerFunc(conversation_handler.UpdateTitleHandler),
+		"ConversationDelete":         local_routing.HandlerFunc(conversation_handler.DeleteHandler),
+		"ConversationSendMessage":    local_routing.HandlerFunc(conversation_handler.SendMessageHandler),
+		"ConversationGetActiveTurn":  local_routing.HandlerFunc(conversation_handler.GetActiveTurnHandler),
+		"ConversationStopActiveTurn": local_routing.HandlerFunc(conversation_handler.StopActiveTurnHandler),
 	}
 
 	var inner *lift_security.ScopeSecurityLayer

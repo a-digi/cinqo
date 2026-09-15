@@ -70,6 +70,58 @@ export interface SendMessageResult {
   durationMs?: number
 }
 
+// TurnRunStatus/ActiveTurn/StartedTurnRun mirror the primary admin
+// frontend's own frontend/src/api/conversations.ts types exactly — see
+// plan/ai/conversation/step-23-detach-turn-execution-from-request.md.
+// POST .../messages no longer waits for the AI (this tool is the
+// second, independent production caller of that same route — see that
+// step's own Dependencies section) — it now only starts a detached
+// turn run; sendMessage below polls .../turns/active until it finishes
+// and returns the same SendMessageResult shape callers already expect,
+// so PortalsPage.tsx's own handleCrawlWithAI needs no further change.
+export type TurnRunStatus = 'running' | 'completed' | 'failed' | 'cancelled'
+
+interface ActiveTurn {
+  turnRunId: string
+  status: TurnRunStatus
+  startedAt: string
+  userContent: string
+  log: string[]
+}
+
+interface StartedTurnRun {
+  turnRunId: string
+  status: TurnRunStatus
+  startedAt: string
+}
+
+interface ConversationMessage {
+  role: 'user' | 'assistant'
+  content: string
+  createdAt: string
+  failed?: boolean
+  error?: string
+  durationMs?: number
+}
+
+interface ConversationDetail {
+  id: string
+  messages: ConversationMessage[]
+  activeTurn?: ActiveTurn
+}
+
+const TURN_POLL_INTERVAL_MS = 2000
+
+async function fetchActiveTurn(conversationId: string): Promise<ActiveTurn> {
+  const res = await fetch(`/api/v1/conversations/${encodeURIComponent(conversationId)}/turns/active`, { credentials: 'include' })
+  return coreJsonOrThrow<ActiveTurn>(res, 'load active turn')
+}
+
+async function fetchConversationDetail(conversationId: string): Promise<ConversationDetail> {
+  const res = await fetch(`/api/v1/conversations/${encodeURIComponent(conversationId)}`, { credentials: 'include' })
+  return coreJsonOrThrow<ConversationDetail>(res, 'load conversation')
+}
+
 export async function sendMessage(conversationId: string, content: string): Promise<SendMessageResult> {
   const res = await fetch(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`, {
     method: 'POST',
@@ -77,5 +129,21 @@ export async function sendMessage(conversationId: string, content: string): Prom
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ content }),
   })
-  return coreJsonOrThrow<SendMessageResult>(res, 'send message')
+  await coreJsonOrThrow<StartedTurnRun>(res, 'send message')
+
+  for (;;) {
+    const turn = await fetchActiveTurn(conversationId)
+    if (turn.status !== 'running') break
+    await new Promise((resolve) => setTimeout(resolve, TURN_POLL_INTERVAL_MS))
+  }
+
+  const detail = await fetchConversationDetail(conversationId)
+  const last = detail.messages[detail.messages.length - 1]
+  if (!last) {
+    throw new CoreApiError(500, 'the AI turn finished but produced no message')
+  }
+  if (last.failed) {
+    throw new CoreApiError(502, last.error || 'the AI turn failed')
+  }
+  return { role: last.role, content: last.content, createdAt: last.createdAt, durationMs: last.durationMs }
 }

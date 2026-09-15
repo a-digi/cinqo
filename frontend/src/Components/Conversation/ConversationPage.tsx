@@ -34,9 +34,12 @@ export function ConversationPage() {
     sending,
     error,
     pendingUserContent,
+    turnStartedAt,
+    turnClockOffsetMs,
     selectConversation,
     createConversation,
     sendMessage,
+    stopTurn,
     renameConversation,
     deleteConversation,
   } = useConversationContext()
@@ -147,8 +150,15 @@ export function ConversationPage() {
 
         {!creatingNew && selectedId && detail && (
           <>
-            <MessageThread messages={detail.messages} pendingUserContent={pendingUserContent} sending={sending} onResend={sendMessage} />
-            <MessageComposer platformLabel={platformLabel(platforms, detail)} onSend={sendMessage} disabled={sending} />
+            <MessageThread
+              messages={detail.messages}
+              pendingUserContent={pendingUserContent}
+              sending={sending}
+              turnStartedAt={turnStartedAt}
+              turnClockOffsetMs={turnClockOffsetMs}
+              onResend={sendMessage}
+            />
+            <MessageComposer platformLabel={platformLabel(platforms, detail)} onSend={sendMessage} onStop={stopTurn} disabled={sending} />
           </>
         )}
       </div>

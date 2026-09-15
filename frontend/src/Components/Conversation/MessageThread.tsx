@@ -16,11 +16,19 @@ export function MessageThread({
   messages,
   pendingUserContent,
   sending,
+  turnStartedAt,
+  turnClockOffsetMs,
   onResend,
 }: {
   messages: ConversationMessage[]
   pendingUserContent: string | null
   sending: boolean
+  // Server-recorded turn-start time + this client's clock offset from
+  // the server — see ThinkingIndicator's own doc comment and
+  // plan/ai/conversation/step-24-server-tracked-turn-elapsed-time.md.
+  // null only when `sending` is false (nothing to show a timer for).
+  turnStartedAt: string | null
+  turnClockOffsetMs: number
   onResend: (content: string) => void
 }) {
   if (messages.length === 0 && !pendingUserContent) {
@@ -39,9 +47,9 @@ export function MessageThread({
       {pendingUserContent && (
         <Bubble message={{ role: 'user', content: pendingUserContent, createdAt: '' }} onResend={onResend} resendDisabled={sending} />
       )}
-      {sending && (
+      {sending && turnStartedAt && (
         <div className="flex justify-start">
-          <ThinkingIndicator />
+          <ThinkingIndicator startedAt={turnStartedAt} clockOffsetMs={turnClockOffsetMs} />
         </div>
       )}
     </div>

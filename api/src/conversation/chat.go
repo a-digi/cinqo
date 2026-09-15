@@ -162,7 +162,7 @@ func SendMessage(
 		return nil, fmt.Errorf("conversation: look up offerable tools: %w", err)
 	}
 
-	assistantContent, err := runToolLoop(ctx, httpClient, entry, plainKey, model, messages, tools, mainDB, callerScopes, corePort)
+	assistantContent, err := runToolLoop(ctx, httpClient, entry, plainKey, model, messages, tools, mainDB, callerScopes, corePort, nil)
 	if err != nil {
 		// Record the user's own message AND the real failure reason —
 		// a real, recognized "## error —" block (step 8), not a
@@ -239,6 +239,13 @@ func offerableTools(mainDB *sql.DB, callerScopes []string) ([]chatcompleter.Tool
 // the link was wrong — so the host now states the real link itself
 // rather than trusting that retelling. See
 // plan/ai/tools/pdf-generator/step-04-ai-model-invocation.md.
+// logStep, when non-nil, is called once per loop iteration (before
+// the model call) and once per tool invocation within that iteration
+// — a coarse, step-by-step progress trace a caller can persist
+// somewhere a client can poll (see runner.go's own use of this, added
+// by plan/ai/conversation/step-23-detach-turn-execution-from-request.md).
+// Never receives raw model/tool content, only fixed, backend-authored
+// strings — see that step's own Security considerations for why.
 func runToolLoop(
 	ctx context.Context,
 	httpClient *http.Client,
@@ -249,10 +256,14 @@ func runToolLoop(
 	mainDB *sql.DB,
 	callerScopes []string,
 	corePort int,
+	logStep func(step string),
 ) (string, error) {
 	var allLinks []tool_mcp.ResourceLink
 
 	for i := 0; i < maxToolIterations; i++ {
+		if logStep != nil {
+			logStep(fmt.Sprintf("iteration %d: calling model", i+1))
+		}
 		result, err := entry.Completer.ChatCompletion(ctx, httpClient, entry.DefaultBaseURL, apiKey, model, messages, tools)
 		if err != nil {
 			return "", err
@@ -268,6 +279,9 @@ func runToolLoop(
 		})
 
 		for _, call := range result.ToolCalls {
+			if logStep != nil {
+				logStep(fmt.Sprintf("iteration %d: invoking tool %s", i+1, call.Name))
+			}
 			text, links := invokeToolCall(ctx, mainDB, callerScopes, call, corePort)
 			messages = append(messages, chatcompleter.Message{Role: "tool", ToolCallID: call.ID, Content: text})
 			allLinks = append(allLinks, links...)

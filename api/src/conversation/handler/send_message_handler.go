@@ -18,18 +18,26 @@ type sendMessageRequest struct {
 	Content string `json:"content"`
 }
 
-type sendMessageResponse struct {
-	Role       string `json:"role"`
-	Content    string `json:"content"`
-	CreatedAt  string `json:"createdAt"`
-	DurationMs *int64 `json:"durationMs,omitempty"`
+// startTurnRunResponse — this route no longer waits for the AI to
+// finish (see plan/ai/conversation/step-23-detach-turn-execution-from-request.md,
+// which supersedes step 12's "bounded only by the incoming request's
+// own context" conclusion): it starts a detached turn run and returns
+// immediately. The caller polls GET .../turns/active (turn_handler.go)
+// until Status leaves "running", then re-fetches the conversation
+// (GetHandler) for the real, finished message.
+type startTurnRunResponse struct {
+	TurnRunID string `json:"turnRunId"`
+	Status    string `json:"status"`
+	StartedAt string `json:"startedAt"`
 }
 
 // SendMessageHandler handles POST /api/v1/conversations/{id}/messages
-// — the HTTP wrapper around step 2's SendMessage. Verifies ownership
-// first (wrong owner and nonexistent both read as the same 404) before
-// ever calling SendMessage, which has no ownership concept of its own.
-// See plan/ai/conversation/step-03-conversation-api.md.
+// — the HTTP wrapper around conversation.StartTurnRun. Verifies
+// ownership first (wrong owner and nonexistent both read as the same
+// 404) before ever calling StartTurnRun, which has no ownership
+// concept of its own. See
+// plan/ai/conversation/step-03-conversation-api.md and
+// plan/ai/conversation/step-23-detach-turn-execution-from-request.md.
 func SendMessageHandler(reqCtx request.RequestContext) {
 	w := reqCtx.GetWriter()
 	id := reqCtx.GetURI().GetPathVariable("id")
@@ -85,45 +93,33 @@ func SendMessageHandler(reqCtx request.RequestContext) {
 		return
 	}
 
-	turn, err := conversation.SendMessage(reqCtx.GetRequest().Context(), http.DefaultClient, mainDB, convDB, encKey, id, body.Content, scopes, port)
+	// http.DefaultClient, not reqCtx.GetRequest()'s own client — there
+	// is no such thing on the server side; this is the same shared
+	// client the run itself will keep using for the entirety of its own
+	// detached lifetime, well past this handler returning.
+	run, err := conversation.StartTurnRun(http.DefaultClient, mainDB, convDB, encKey, id, body.Content, scopes, port)
 	if err != nil {
-		// Logged here, the handler layer, not inside SendMessage itself
-		// — matches this codebase's own established convention
-		// (install_handler.go's own Warning calls) of domain functions
-		// just returning errors, never touching a logger. The real
-		// failure detail is also persisted into the conversation's own
-		// log (step 8) for the end user to inspect via the info
-		// button; this is the separate, operator-facing record of it.
-		if errors.Is(err, conversation.ErrProviderCallFailed) {
-			reqCtx.GetDI().GetLogger().Warning("conversation %q: send failed: %v", id, err)
-		}
-		writeSendMessageError(w, err)
+		writeStartTurnRunError(w, err)
 		return
 	}
 
-	response.SuccessResponse(w, http.StatusCreated, sendMessageResponse{
-		Role:       "assistant",
-		Content:    turn.AssistantContent,
-		CreatedAt:  turn.AssistantTimestamp,
-		DurationMs: turn.DurationMs(),
+	response.SuccessResponse(w, http.StatusAccepted, startTurnRunResponse{
+		TurnRunID: run.ID,
+		Status:    run.Status,
+		StartedAt: run.StartedAt,
 	})
 }
 
-func writeSendMessageError(w http.ResponseWriter, err error) {
+func writeStartTurnRunError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, conversation.ErrEmptyContent),
-		errors.Is(err, conversation.ErrContentTooLong),
-		errors.Is(err, conversation.ErrPlatformNotFound),
-		errors.Is(err, conversation.ErrPlatformUnsupported),
-		errors.Is(err, conversation.ErrNoKeyForPlatform):
+		errors.Is(err, conversation.ErrContentTooLong):
 		response.ErrorResponse(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, conversation.ErrConversationNotFound):
 		response.ErrorResponse(w, http.StatusNotFound, "conversation not found")
-	case errors.Is(err, conversation.ErrProviderCallFailed):
-		response.ErrorResponse(w, http.StatusBadGateway, "the AI platform request failed")
-	case errors.Is(err, conversation.ErrToolIterationLimitReached):
-		response.ErrorResponse(w, http.StatusInternalServerError, "the model kept calling tools without producing a final reply")
+	case errors.Is(err, conversation.ErrTurnAlreadyRunning):
+		response.ErrorResponse(w, http.StatusConflict, "a turn is already in progress for this conversation")
 	default:
-		response.ErrorResponse(w, http.StatusInternalServerError, "failed to send message")
+		response.ErrorResponse(w, http.StatusInternalServerError, "failed to start turn")
 	}
 }

@@ -31,9 +31,12 @@ export function GlobalChatWidget() {
     sending,
     error,
     pendingUserContent,
+    turnStartedAt,
+    turnClockOffsetMs,
     selectConversation,
     createConversation,
     sendMessage,
+    stopTurn,
     deleteConversation,
   } = useConversationContext()
   const { confirm, dialog } = useConfirm()
@@ -198,8 +201,15 @@ export function GlobalChatWidget() {
           </div>
         ) : (
           <>
-            <MessageThread messages={detail.messages} pendingUserContent={pendingUserContent} sending={sending} onResend={sendMessage} />
-            <MessageComposer platformLabel={`${detail.platformId} · ${detail.model}`} onSend={sendMessage} disabled={sending} />
+            <MessageThread
+              messages={detail.messages}
+              pendingUserContent={pendingUserContent}
+              sending={sending}
+              turnStartedAt={turnStartedAt}
+              turnClockOffsetMs={turnClockOffsetMs}
+              onResend={sendMessage}
+            />
+            <MessageComposer platformLabel={`${detail.platformId} · ${detail.model}`} onSend={sendMessage} onStop={stopTurn} disabled={sending} />
           </>
         )}
         </div>

@@ -55,3 +55,24 @@ routes:
     scopes:
       - cinqo:conversation:use
       - cinqo:super:admin
+
+  # step-23-detach-turn-execution-from-request.md — the polling
+  # endpoint a client uses to observe a detached turn run's progress
+  # and terminal status, since ConversationSendMessage above no longer
+  # waits for it to finish.
+  - path: /api/v1/conversations/{id}/turns/active
+    method: GET
+    executor: ConversationGetActiveTurn
+    security: authenticated
+    scopes:
+      - cinqo:conversation:use
+      - cinqo:super:admin
+
+  # step-25-cancel-in-progress-turn.md — stop a still-running turn.
+  - path: /api/v1/conversations/{id}/turns/active/stop
+    method: POST
+    executor: ConversationStopActiveTurn
+    security: authenticated
+    scopes:
+      - cinqo:conversation:use
+      - cinqo:super:admin
