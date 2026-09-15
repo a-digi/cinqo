@@ -70,6 +70,16 @@ type extractRequest struct {
 	// plan/ai/tools/browser/step-18-grouped-container-extraction.md.
 	Container string         `json:"container,omitempty"`
 	Fields    []extractField `json:"fields"`
+	// Mapping (step 20) is an optional {sourceLabel: targetKey} — when
+	// set, every key in the response (Results/Items entries, and
+	// NotFound) whose original field label appears as a mapping source
+	// is renamed to its target before the response is returned. Lets a
+	// caller extract under whatever labels are natural for the page
+	// while a downstream consumer still gets a specific, fixed set of
+	// output keys. A label absent from Mapping passes through
+	// unchanged. See
+	// plan/ai/tools/browser/step-20-output-field-mapping.md.
+	Mapping map[string]string `json:"mapping,omitempty"`
 }
 
 type extractResponse struct {
@@ -106,8 +116,12 @@ func extractHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if err := validateMapping(body.Fields, body.Mapping); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
-	result, err := performExtraction(body.Container, body.Fields)
+	result, err := performExtraction(body.Container, body.Fields, body.Mapping)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("extract failed: %v", err), http.StatusBadGateway)
 		return
@@ -123,14 +137,14 @@ func extractHandler(w http.ResponseWriter, r *http.Request) {
 // same as crawlPage/findLoginElements. A thin lock+timeout wrapper
 // around runExtractionOnCurrentPage — see that function's own doc
 // comment for why the split exists.
-func performExtraction(container string, fields []extractField) (extractResponse, error) {
+func performExtraction(container string, fields []extractField, mapping map[string]string) (extractResponse, error) {
 	sessionMu.Lock()
 	defer sessionMu.Unlock()
 
 	ctx, cancel := context.WithTimeout(sessionCtx, extractTimeout)
 	defer cancel()
 
-	return runExtractionOnCurrentPage(ctx, container, fields)
+	return runExtractionOnCurrentPage(ctx, container, fields, mapping)
 }
 
 // runExtractionOnCurrentPage is performExtraction's own actual logic,
@@ -142,7 +156,7 @@ func performExtraction(container string, fields []extractField) (extractResponse
 // already-locked caller would hang forever). performExtraction's own
 // external behavior/contract is unchanged by this split. See
 // plan/ai/tools/browser/step-16-paginated-crawl-instructions.md.
-func runExtractionOnCurrentPage(ctx context.Context, container string, fields []extractField) (extractResponse, error) {
+func runExtractionOnCurrentPage(ctx context.Context, container string, fields []extractField, mapping map[string]string) (extractResponse, error) {
 	payload := struct {
 		Container      string         `json:"container,omitempty"`
 		Fields         []extractField `json:"fields"`
@@ -176,12 +190,84 @@ func runExtractionOnCurrentPage(ctx context.Context, container string, fields []
 		result.NotFound = []string{}
 	}
 
+	applyFieldMapping(&result, mapping)
+
 	return result, nil
 }
 
+// applyFieldMapping renames keys in resp.Results/resp.Items (whichever is
+// populated) and resp.NotFound from their original field label to
+// mapping's own target, in place — step 20's own "schema mapper": lets a
+// caller extract under whatever labels are natural for a page while a
+// downstream consumer still gets a specific, fixed set of output keys. A
+// label absent from mapping passes through unchanged. mapping == nil (or
+// empty) is a no-op, preserving the exact pre-step-20 response shape —
+// including Results/Items' own nil-ness, which a naive unconditional
+// rebuild would otherwise lose. See
+// plan/ai/tools/browser/step-20-output-field-mapping.md.
+func applyFieldMapping(resp *extractResponse, mapping map[string]string) {
+	if len(mapping) == 0 {
+		return
+	}
+	rename := func(m map[string]any) map[string]any {
+		out := make(map[string]any, len(m))
+		for k, v := range m {
+			if target, ok := mapping[k]; ok {
+				out[target] = v
+			} else {
+				out[k] = v
+			}
+		}
+		return out
+	}
+	if resp.Results != nil {
+		resp.Results = rename(resp.Results)
+	}
+	for i, item := range resp.Items {
+		resp.Items[i] = rename(item)
+	}
+	renamed := make([]string, len(resp.NotFound))
+	for i, label := range resp.NotFound {
+		if target, ok := mapping[label]; ok {
+			renamed[i] = target
+		} else {
+			renamed[i] = label
+		}
+	}
+	resp.NotFound = renamed
+}
+
+// validateMapping rejects a mapping that would produce an ambiguous
+// output — two of the caller's declared fields (after mapping is
+// applied, when it applies) resolving to the same effective key. Reused
+// by both extract_page_data and crawl_paginated's own registration
+// handlers (tools/browser/backend/paginate.go). A mapping source label
+// that doesn't match any declared field is not an error — a harmless
+// no-op in applyFieldMapping, kept that way here too so a caller tweaking
+// fields doesn't also have to keep mapping in lockstep. See
+// plan/ai/tools/browser/step-20-output-field-mapping.md.
+func validateMapping(fields []extractField, mapping map[string]string) error {
+	if len(mapping) == 0 {
+		return nil
+	}
+	seenBySource := make(map[string]string, len(fields)) // effective target -> original source label
+	for _, f := range fields {
+		target := f.Label
+		if t, ok := mapping[f.Label]; ok {
+			target = t
+		}
+		if prevSource, exists := seenBySource[target]; exists && prevSource != f.Label {
+			return fmt.Errorf("mapping target %q is used by both %q and %q — each target key must be unique", target, prevSource, f.Label)
+		}
+		seenBySource[target] = f.Label
+	}
+	return nil
+}
+
 type extractPageDataArgs struct {
-	Container string         `json:"container,omitempty" jsonschema:"CSS selector for each repeating item's own wrapping element (e.g. one job listing's own <div> or <li>). Set this whenever the page LISTS MULTIPLE similar items at once (a search-results/job-listing/product-catalog page) and more than one field describes each one — this is the correct default for a listing page, not an optional extra. Leave unset only for a page describing a single item. With it, fields are evaluated relative to each item and grouped correctly; without it on a listing page, fields describing multiple items are returned as separate arrays that may NOT actually correspond position-for-position to the same real item."`
-	Fields    []extractField `json:"fields" jsonschema:"one entry per piece of data to extract — relative to each container match when container is set, relative to the whole page otherwise"`
+	Container string            `json:"container,omitempty" jsonschema:"CSS selector for each repeating item's own wrapping element (e.g. one job listing's own <div> or <li>). Set this whenever the page LISTS MULTIPLE similar items at once (a search-results/job-listing/product-catalog page) and more than one field describes each one — this is the correct default for a listing page, not an optional extra. Leave unset only for a page describing a single item. With it, fields are evaluated relative to each item and grouped correctly; without it on a listing page, fields describing multiple items are returned as separate arrays that may NOT actually correspond position-for-position to the same real item."`
+	Fields    []extractField    `json:"fields" jsonschema:"one entry per piece of data to extract — relative to each container match when container is set, relative to the whole page otherwise"`
+	Mapping   map[string]string `json:"mapping,omitempty" jsonschema:"optional {sourceLabel: targetKey} — renames extracted fields to specific output key names before they're returned, e.g. when a consumer expects a fixed schema (title/url/company/...) but this page's own natural fields are better labeled job_title/link/employer. Fields not listed pass through under their own label."`
 }
 
 // registerExtractPageData adds the extract_page_data MCP tool — thin,
@@ -191,7 +277,8 @@ func registerExtractPageData(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "extract_page_data",
 		Description: "Read specific fields (by CSS selector) off the currently loaded page (see fetch_page_html) and return them structured, instead of the whole page's HTML. Read-only; submits nothing. " +
-			"Before calling this, check whether the page LISTS MULTIPLE similar items at once (e.g. a job board's own search-results page) or describes just ONE item. For a listing page, always pass container — a selector for one item's own repeating wrapping element — so the result is one correctly-grouped object per item (in `items`); this is the default correct approach for a listing page, not a fallback for when something looks wrong. Omitting container on a listing page returns separate same-length arrays (in `results`) that may NOT actually correspond position-for-position to the same real item.",
+			"Before calling this, check whether the page LISTS MULTIPLE similar items at once (e.g. a job board's own search-results page) or describes just ONE item. For a listing page, always pass container — a selector for one item's own repeating wrapping element — so the result is one correctly-grouped object per item (in `items`); this is the default correct approach for a listing page, not a fallback for when something looks wrong. Omitting container on a listing page returns separate same-length arrays (in `results`) that may NOT actually correspond position-for-position to the same real item. " +
+			"Optionally set mapping to rename extracted fields to specific output keys — e.g. a consuming tool expects title/url but this page's own natural fields are better labeled job_title/link.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args extractPageDataArgs) (*mcp.CallToolResult, any, error) {
 		if len(args.Fields) == 0 {
 			return &mcp.CallToolResult{
@@ -207,8 +294,14 @@ func registerExtractPageData(server *mcp.Server) {
 				}, nil, nil
 			}
 		}
+		if err := validateMapping(args.Fields, args.Mapping); err != nil {
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
+				IsError: true,
+			}, nil, nil
+		}
 
-		reqBody, err := json.Marshal(extractRequest{Container: args.Container, Fields: args.Fields})
+		reqBody, err := json.Marshal(extractRequest{Container: args.Container, Fields: args.Fields, Mapping: args.Mapping})
 		if err != nil {
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("failed to build request: %v", err)}},

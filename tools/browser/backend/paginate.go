@@ -55,9 +55,15 @@ type paginationSpec struct {
 // own doc comment (extract.go) for what it does; unset, every page's
 // own extraction stays in today's flat mode.
 type paginatedCrawlInstructions struct {
-	Container  string         `yaml:"container,omitempty"`
-	Fields     []extractField `yaml:"fields"`
-	Pagination paginationSpec `yaml:"pagination"`
+	Container string         `yaml:"container,omitempty"`
+	Fields    []extractField `yaml:"fields"`
+	// Mapping (step 20) — optional {sourceLabel: targetKey}, renames
+	// extracted fields to specific output keys before each page's own
+	// result is returned. See extractRequest's own doc comment
+	// (extract.go) and
+	// plan/ai/tools/browser/step-20-output-field-mapping.md.
+	Mapping    map[string]string `yaml:"mapping,omitempty"`
+	Pagination paginationSpec    `yaml:"pagination"`
 }
 
 type pageExtractResult struct {
@@ -83,11 +89,12 @@ type paginatedCrawlResponse struct {
 // by the time it crosses this boundary, same convention as every
 // other feature's own callSibling request.
 type paginatedCrawlRequest struct {
-	Container         string         `json:"container,omitempty"`
-	Fields            []extractField `json:"fields"`
-	NextSelector      string         `json:"nextSelector"`
-	RequestedMaxPages int            `json:"requestedMaxPages"`
-	EffectiveMaxPages int            `json:"effectiveMaxPages"`
+	Container         string            `json:"container,omitempty"`
+	Fields            []extractField    `json:"fields"`
+	Mapping           map[string]string `json:"mapping,omitempty"`
+	NextSelector      string            `json:"nextSelector"`
+	RequestedMaxPages int               `json:"requestedMaxPages"`
+	EffectiveMaxPages int               `json:"effectiveMaxPages"`
 }
 
 // paginatedCrawlHandler handles POST /crawl-paginated — the --mcp
@@ -108,7 +115,7 @@ func paginatedCrawlHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := performPaginatedCrawl(body.Container, body.Fields, body.NextSelector, body.RequestedMaxPages, body.EffectiveMaxPages)
+	result, err := performPaginatedCrawl(body.Container, body.Fields, body.Mapping, body.NextSelector, body.RequestedMaxPages, body.EffectiveMaxPages)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("paginated crawl failed: %v", err), http.StatusBadGateway)
 		return
@@ -132,7 +139,7 @@ func paginatedCrawlHandler(w http.ResponseWriter, r *http.Request) {
 // performExtraction, precisely because it already holds the lock
 // performExtraction would try to take again. See that function's own
 // doc comment.
-func performPaginatedCrawl(container string, fields []extractField, nextSelector string, requestedMaxPages, effectiveMaxPages int) (paginatedCrawlResponse, error) {
+func performPaginatedCrawl(container string, fields []extractField, mapping map[string]string, nextSelector string, requestedMaxPages, effectiveMaxPages int) (paginatedCrawlResponse, error) {
 	sessionMu.Lock()
 	defer sessionMu.Unlock()
 
@@ -143,7 +150,7 @@ func performPaginatedCrawl(container string, fields []extractField, nextSelector
 	stoppedReason := ""
 
 	for page := 1; ; page++ {
-		result, err := runExtractionOnCurrentPage(ctx, container, fields)
+		result, err := runExtractionOnCurrentPage(ctx, container, fields, mapping)
 		if err != nil {
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 				stoppedReason = "time_budget_reached"
@@ -224,7 +231,7 @@ func jsStringLiteral(s string) string {
 }
 
 type crawlPaginatedArgs struct {
-	Instructions string `json:"instructions" jsonschema:"a YAML document describing fields to extract (same shape as extract_page_data) plus a pagination block, and — for a LISTING page — a top-level container. BEFORE writing this, check whether the page lists multiple similar items at once (a search-results/job-listing page, the common case) or describes a single item. Single-item example:\nfields:\n  - label: title\n    selector: h1\npagination:\n  nextSelector: a.next-page\n  maxPages: 5\nmaxPages counts the currently loaded page as page 1. Never navigates to a starting URL itself — call fetch_page_html first. LISTING-page example (use this whenever more than one field describes the same repeating item, e.g. a job listing's own title, company, and link — this is the default correct approach for a listing page, not only a fix for when something looks wrong):\ncontainer: \".job-result\"\nfields:\n  - label: title\n    selector: h2\n  - label: url\n    selector: a\n    attribute: href\npagination:\n  nextSelector: a.next-page\n  maxPages: 5\nWithout container on a listing page, fields describing multiple items are returned as separate arrays (in results) that may NOT actually correspond position-for-position to the same real item — with it, the result is one correctly-grouped object per item (in items)."`
+	Instructions string `json:"instructions" jsonschema:"a YAML document describing fields to extract (same shape as extract_page_data) plus a pagination block, and — for a LISTING page — a top-level container. BEFORE writing this, check whether the page lists multiple similar items at once (a search-results/job-listing page, the common case) or describes a single item. Single-item example:\nfields:\n  - label: title\n    selector: h1\npagination:\n  nextSelector: a.next-page\n  maxPages: 5\nmaxPages counts the currently loaded page as page 1. Never navigates to a starting URL itself — call fetch_page_html first. LISTING-page example (use this whenever more than one field describes the same repeating item, e.g. a job listing's own title, company, and link — this is the default correct approach for a listing page, not only a fix for when something looks wrong):\ncontainer: \".job-result\"\nfields:\n  - label: title\n    selector: h2\n  - label: url\n    selector: a\n    attribute: href\npagination:\n  nextSelector: a.next-page\n  maxPages: 5\nWithout container on a listing page, fields describing multiple items are returned as separate arrays (in results) that may NOT actually correspond position-for-position to the same real item — with it, the result is one correctly-grouped object per item (in items). Optionally add a top-level mapping ({sourceLabel: targetKey}) to rename fields to specific output keys before they're returned — e.g. a consuming tool expects title/url/company but this page's own natural fields are better labeled job_title/link/employer:\ncontainer: \".job-result\"\nfields:\n  - label: job_title\n    selector: h2\n  - label: employer\n    selector: .company\nmapping:\n  job_title: title\n  employer: company\npagination:\n  nextSelector: a.next-page\n  maxPages: 5"`
 }
 
 // registerCrawlPaginated adds the crawl_paginated MCP tool — thin,
@@ -235,7 +242,8 @@ func registerCrawlPaginated(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "crawl_paginated",
 		Description: "Extract fields from the currently loaded page, then follow a pagination control and repeat, up to a maximum number of pages — instructed via a YAML document (fields + pagination). Read-only; submits nothing. " +
-			"Before writing the instructions, check whether the page LISTS MULTIPLE similar items at once or describes just one. For a listing page, always add a top-level container selector for one item's own repeating wrapping element — the default correct approach for a listing page, not a fallback — so the result is one correctly-grouped object per item (in `items`) instead of separate same-length arrays (in `results`) that may NOT actually line up.",
+			"Before writing the instructions, check whether the page LISTS MULTIPLE similar items at once or describes just one. For a listing page, always add a top-level container selector for one item's own repeating wrapping element — the default correct approach for a listing page, not a fallback — so the result is one correctly-grouped object per item (in `items`) instead of separate same-length arrays (in `results`) that may NOT actually line up. " +
+			"Optionally add a top-level mapping to rename extracted fields to specific output keys — e.g. a consuming tool expects title/url/company but this page's own natural fields are better labeled job_title/link/employer.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args crawlPaginatedArgs) (*mcp.CallToolResult, any, error) {
 		if strings.TrimSpace(args.Instructions) == "" {
 			return &mcp.CallToolResult{
@@ -271,6 +279,12 @@ func registerCrawlPaginated(server *mcp.Server) {
 				IsError: true,
 			}, nil, nil
 		}
+		if err := validateMapping(parsed.Fields, parsed.Mapping); err != nil {
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
+				IsError: true,
+			}, nil, nil
+		}
 
 		effectiveMaxPages := parsed.Pagination.MaxPages
 		if effectiveMaxPages > maxAllowedPaginationPages {
@@ -280,6 +294,7 @@ func registerCrawlPaginated(server *mcp.Server) {
 		reqBody, err := json.Marshal(paginatedCrawlRequest{
 			Container:         parsed.Container,
 			Fields:            parsed.Fields,
+			Mapping:           parsed.Mapping,
 			NextSelector:      parsed.Pagination.NextSelector,
 			RequestedMaxPages: parsed.Pagination.MaxPages,
 			EffectiveMaxPages: effectiveMaxPages,

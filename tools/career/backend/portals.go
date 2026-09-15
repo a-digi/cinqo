@@ -302,10 +302,30 @@ type crawlInstructionsDoc struct {
 	// directly instead of zipping parallel arrays by index. See
 	// plan/ai/tools/career/step-30-grouped-crawl-ingestion.md and
 	// plan/ai/tools/browser/step-18-grouped-container-extraction.md.
-	Container  string                       `yaml:"container,omitempty"`
-	Fields     []crawlInstructionsField     `yaml:"fields"`
+	Container string                   `yaml:"container,omitempty"`
+	Fields    []crawlInstructionsField `yaml:"fields"`
+	// Mapping (step 32) is optional {sourceLabel: targetKey} — renames
+	// a field's own label to a specific output key before
+	// ingestCrawlResults ever sees it (browser's own crawl_paginated
+	// applies the rename, not this tool — see
+	// plan/ai/tools/browser/step-20-output-field-mapping.md). Lets an
+	// AI author fields under whatever labels are natural for a given
+	// page (e.g. "job_title") while still satisfying the fixed
+	// "title"/"url"/... vocabulary ingestCrawlResults reads by.
+	// validateCrawlInstructions below checks the *effective* output
+	// (label, or its mapping target when present) produces the
+	// required keys. See
+	// plan/ai/tools/career/step-32-required-schema-and-mapping.md.
+	Mapping    map[string]string            `yaml:"mapping,omitempty"`
 	Pagination *crawlInstructionsPagination `yaml:"pagination"`
 }
+
+// requiredCrawlOutputKeys mirrors ingestCrawlResults' own hard
+// requirement exactly (title == "" || sourceURL == "" → skipped,
+// company/location/description/postedAt all optional) — the single
+// source of truth for what validateCrawlInstructions checks the
+// effective (post-mapping) field labels against.
+var requiredCrawlOutputKeys = []string{"title", "url"}
 
 // errInvalidCrawlInstructions wraps a specific, actionable detail
 // message (via fmt.Errorf's own %w) — a shape check, not a
@@ -340,6 +360,43 @@ func validateCrawlInstructions(yamlText string) error {
 	}
 	if doc.Pagination.MaxPages <= 0 {
 		return fmt.Errorf("%w: pagination.maxPages is required", errInvalidCrawlInstructions)
+	}
+	if err := validateCrawlOutputSchema(doc); err != nil {
+		return err
+	}
+	return nil
+}
+
+// validateCrawlOutputSchema checks that the *effective* output of these
+// instructions — each field's own label, or its mapping target when
+// doc.Mapping renames it — would actually produce every key in
+// requiredCrawlOutputKeys. This is what closes the real gap step 32 was
+// written for: previously, instructions with fields labeled e.g.
+// "job_title"/"employer" (a perfectly reasonable, arguably better choice
+// for a real page's own vocabulary) passed this function's shape checks
+// cleanly, saved without error, and then silently produced zero saved
+// jobs on every future deterministic crawl — ingestCrawlResults only
+// ever reads the literal keys "title"/"url"/etc. and has no fallback.
+// Still a shape check, not a correctness check, per this function's own
+// sibling comment above: this only proves the *keys* would be right,
+// never that the selectors actually match real content on the page. See
+// plan/ai/tools/career/step-32-required-schema-and-mapping.md.
+func validateCrawlOutputSchema(doc crawlInstructionsDoc) error {
+	effective := make(map[string]bool, len(doc.Fields))
+	for _, f := range doc.Fields {
+		key := f.Label
+		if target, ok := doc.Mapping[f.Label]; ok {
+			key = target
+		}
+		effective[key] = true
+	}
+	for _, required := range requiredCrawlOutputKeys {
+		if !effective[required] {
+			return fmt.Errorf(
+				"%w: no field produces the required %q key (add a field labeled %q, or add a mapping entry renaming one of your existing fields — e.g. mapping: { <your label>: %s })",
+				errInvalidCrawlInstructions, required, required, required,
+			)
+		}
 	}
 	return nil
 }
@@ -409,6 +466,7 @@ type crawlRequestField struct {
 type crawlRequest struct {
 	Container         string              `json:"container,omitempty"`
 	Fields            []crawlRequestField `json:"fields"`
+	Mapping           map[string]string   `json:"mapping,omitempty"`
 	NextSelector      string              `json:"nextSelector"`
 	RequestedMaxPages int                 `json:"requestedMaxPages"`
 	EffectiveMaxPages int                 `json:"effectiveMaxPages"`
@@ -455,6 +513,7 @@ func buildCrawlRequest(id string) (crawlRequest, error) {
 	return crawlRequest{
 		Container:         doc.Container,
 		Fields:            fields,
+		Mapping:           doc.Mapping,
 		NextSelector:      doc.Pagination.NextSelector,
 		RequestedMaxPages: requested,
 		EffectiveMaxPages: effective,
@@ -823,7 +882,7 @@ func registerGetPortalLinkCrawlInstructions(server *mcp.Server) {
 
 type setPortalLinkCrawlInstructionsArgs struct {
 	PortalLinkID string `json:"portalLinkId" jsonschema:"the portal link's own id, from add_portal_link or list_portals"`
-	Instructions string `json:"instructions" jsonschema:"YAML: fields (>=1 entry, each with label+selector) and pagination (nextSelector+maxPages), the exact shape crawl_paginated expects"`
+	Instructions string `json:"instructions" jsonschema:"YAML: fields (>=1 entry, each with label+selector), pagination (nextSelector+maxPages), and optionally container/mapping — the exact shape crawl_paginated expects. The effective output (a field's own label, or its mapping target) must include title and url, see this tool's own description for the full required schema."`
 }
 
 func registerSetPortalLinkCrawlInstructions(server *mcp.Server) {
@@ -846,12 +905,15 @@ func registerSetPortalLinkCrawlInstructions(server *mcp.Server) {
 			"is nothing to group. The exact same shape crawl_paginated expects (fields: [...] + pagination: " +
 			"{nextSelector, maxPages}, plus the optional top-level container), so it can be handed to that tool " +
 			"directly later.\n\n" +
-			"Example — LISTING page (the common case):\ncontainer: \".job-result\"\nfields:\n  - label: title\n    selector: h2\n  - label: url\n    selector: a\n    attribute: href\n  - label: company\n    selector: .company\npagination:\n  " +
+			"Required output schema (checked at save time, not just field shape): every field's own label — or its mapping target, see below — must, taken together, include title (required) and url (required); company, location, description, and postedAt are all optional and used verbatim with no reformatting. This is the exact vocabulary the deterministic \"Crawl now\" button reads by; if this page's own natural field names don't already match (e.g. \"job_title\" instead of \"title\"), add a top-level mapping block renaming them — the same mechanism crawl_paginated itself now supports — rather than forcing awkward labels onto your fields.\n\nExample — LISTING page (the common case):\ncontainer: \".job-result\"\nfields:\n  - label: title\n    selector: h2\n  - label: url\n    selector: a\n    attribute: href\n  - label: company\n    selector: .company\npagination:\n  " +
+			"nextSelector: a.next-page\n  maxPages: 5\n\n" +
+			"Example — LISTING page with natural field names, mapped to the required schema:\ncontainer: \".job-result\"\nfields:\n  - label: job_title\n    selector: h2\n  - label: employer\n    selector: .company\nmapping:\n  job_title: title\n  employer: company\npagination:\n  " +
 			"nextSelector: a.next-page\n  maxPages: 5\n\n" +
 			"Example — single DETAIL page (no container needed):\nfields:\n  - label: title\n    selector: h1\npagination:\n  " +
 			"nextSelector: a.next-page\n  maxPages: 5\n\n" +
-			"Rejected if it doesn't parse or is missing required keys — this only checks shape, not that it " +
-			"actually works against the real page.",
+			"Rejected if it doesn't parse, is missing required keys, or the effective output (after mapping) " +
+			"wouldn't produce both title and url — this only checks shape, not that it actually works against " +
+			"the real page.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args setPortalLinkCrawlInstructionsArgs) (*mcp.CallToolResult, any, error) {
 		if args.PortalLinkID == "" {
 			return errResult("portalLinkId is required"), nil, nil
