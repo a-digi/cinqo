@@ -208,6 +208,47 @@ type crawlNowPaginatedResult struct {
 	BlockedReason     string            `json:"blockedReason,omitempty"`
 }
 
+// heartbeatInterval — how often startHeartbeat appends a "still
+// waiting" line to crawl_runs.log while a call to browser's own /crawl
+// or /crawl-paginated is in flight. A real, reported gap this closes:
+// either call is a single opaque, blocking HTTP round trip from this
+// goroutine's own perspective, and browser's own Cloudflare
+// human-solve fallback can legitimately hold it open for up to ~30
+// minutes (humanSolveRetryInterval/maxHumanSolveDuration,
+// tools/browser/backend/crawl.go) — with nothing appended to the log
+// for the whole wait, a perfectly normal, in-progress crawl reads as
+// indistinguishable from a genuinely stuck one. See
+// plan/ai/tools/career/step-37-detached-crawl-now-orchestration.md's
+// own "Post-implementation" notes for the report that prompted this.
+var heartbeatInterval = 20 * time.Second
+
+// startHeartbeat appends one log line immediately (so a slow first
+// tick doesn't leave a caller wondering) and then every
+// heartbeatInterval, until the returned stop func is called — always
+// call stop via defer immediately after starting one, on every exit
+// path of the call it's wrapping.
+func startHeartbeat(runID string) (stop func()) {
+	startedAt := time.Now()
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(heartbeatInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ticker.C:
+				elapsed := time.Since(startedAt).Round(time.Second)
+				_ = appendCrawlRunLog(runID, fmt.Sprintf(
+					"still waiting on browser (%s elapsed) — this can take up to ~30 minutes if Cloudflare is blocking the page and a human hasn't cleared it yet",
+					elapsed,
+				))
+			}
+		}
+	}()
+	return func() { close(done) }
+}
+
 // runCrawlNow is the detached goroutine body — rooted in
 // context.Background() by its caller (crawlNowHandler), not the
 // request's own context, so it keeps running after the handler has
@@ -249,7 +290,10 @@ func runCrawlNow(ctx context.Context, runID, portalLinkID, accessToken string) {
 		fail(err)
 		return
 	}
-	if _, err := callBrowserProxy(ctx, coreURL, "/api/v1/tools/browser/proxy/crawl", navBody, accessToken); err != nil {
+	stopHeartbeat := startHeartbeat(runID)
+	_, err = callBrowserProxy(ctx, coreURL, "/api/v1/tools/browser/proxy/crawl", navBody, accessToken)
+	stopHeartbeat()
+	if err != nil {
 		fail(err)
 		return
 	}
@@ -260,7 +304,9 @@ func runCrawlNow(ctx context.Context, runID, portalLinkID, accessToken string) {
 		fail(err)
 		return
 	}
+	stopHeartbeat = startHeartbeat(runID)
 	respBody, err := callBrowserProxy(ctx, coreURL, "/api/v1/tools/browser/proxy/crawl-paginated", pagBody, accessToken)
+	stopHeartbeat()
 	if err != nil {
 		fail(err)
 		return

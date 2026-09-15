@@ -182,6 +182,7 @@ func startSharedNormalSession() (context.Context, []context.CancelFunc, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	removeStaleChromeSingletonLock(profileDir)
 
 	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), normalAllocatorOptions(profileDir)...)
 	ctx, ctxCancel := chromedp.NewContext(allocCtx)
@@ -225,6 +226,41 @@ func normalSessionProfileDir() (string, error) {
 		return "", fmt.Errorf("failed to create normal-session Chrome profile directory: %w", err)
 	}
 	return dir, nil
+}
+
+// removeStaleChromeSingletonLock deletes Chrome's own SingletonLock/
+// SingletonCookie/SingletonSocket files from profileDir before a new
+// launch — a real, reproduced bug fix, not a hypothetical: Chrome's
+// own singleton-instance protection is normally self-healing (it
+// detects a dead owner via SingletonSocket and removes a stale lock
+// itself), but that self-healing races against the previous headed
+// Chrome process's own OS-level teardown — normalSessionMu (crawl.go)
+// only guarantees the *Go-level* call that owned the previous instance
+// has returned (its own chromedp cancel() already invoked, per this
+// function's own caller), not that the OS process it spawned has
+// actually finished exiting and released its lock file by the time
+// the very next call acquires the mutex and reaches here. Observed
+// directly: "chrome failed to start ... Failed to create
+// .../normal-chrome-profile/SingletonLock: File exists (17) ...
+// Aborting now to avoid profile corruption" on a retry attempted only
+// seconds after a previous headed session ended.
+//
+// Safe to remove unconditionally at this exact point, not just a
+// best-effort guess: normalSessionMu (crawl.go) is already held by the
+// caller before this function runs, and this same package never
+// launches a second headed Chrome instance against this profile
+// directory while the mutex is held — so any lock files present here
+// cannot belong to a session this process still considers live; they
+// are, by construction, leftovers from an already-concluded (or
+// externally terminated, e.g. a human closing the window directly)
+// previous instance. Best-effort: a removal failure (e.g. the files
+// genuinely don't exist) is not itself an error worth failing the
+// whole launch over — chromedp's own subsequent Chrome launch will
+// surface a real, actionable error if something else is wrong.
+func removeStaleChromeSingletonLock(profileDir string) {
+	for _, name := range []string{"SingletonLock", "SingletonCookie", "SingletonSocket"} {
+		_ = os.Remove(filepath.Join(profileDir, name))
+	}
 }
 
 // normalAllocatorOptions mirrors allocatorOptions' own stealth-oriented
