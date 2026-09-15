@@ -234,7 +234,12 @@ func runPaginatedCrawlLoop(ctx context.Context, container string, fields []extra
 			return paginatedCrawlResponse{}, nil, err
 		}
 
-		cf, err := detectCloudflareChallenge(ctx)
+		// step 36 — derived locally from this loop's own already-in-scope
+		// container/fields rather than threaded as a separate parameter
+		// through every caller: this is the one place per page that
+		// actually needs it, and container/fields are already exactly
+		// what expectedSelectorsFromFields wants.
+		cf, err := detectCloudflareChallenge(ctx, expectedSelectorsFromFields(container, fields))
 		if err != nil {
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 				stoppedReason = "time_budget_reached"
@@ -457,7 +462,7 @@ func performPaginatedCrawlWithNormalSession(blockedURL, container string, fields
 		return result, pageHTML, err
 	}
 
-	cleared, waitErr := waitForHumanToClearCloudflare(ctx, requestID, cfErr.Reason)
+	cleared, waitErr := waitForHumanToClearCloudflare(ctx, requestID, cfErr.Reason, expectedSelectorsFromFields(container, fields))
 	if waitErr != nil {
 		return paginatedCrawlResponse{}, nil, waitErr
 	}

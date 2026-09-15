@@ -10,6 +10,8 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/chromedp/chromedp"
@@ -80,13 +82,20 @@ type cloudflareCheck struct {
 // "invisible" mode — a real `<iframe>` permanently present for
 // background bot-scoring, deliberately kept hidden
 // (`display:none`/zero-size) unless an interactive challenge is
-// actually needed. isRenderedVisible below checks genuine on-screen
+// actually needed. isRenderedVisibleJS below checks genuine on-screen
 // rendering (computed display/visibility/opacity plus a non-zero
 // bounding box), not mere presence — the same "presence isn't the same
 // as active" lesson `step-33` already applied to the script tag/global
 // variable checks, applied here to the widget element check too. See
 // plan/ai/tools/browser/step-35-fix-hidden-turnstile-widget-false-positive.md.
-const cloudflareDetectJS = `(function() {
+//
+// isRenderedVisibleJS is a shared JS function body — both the forward
+// override embedded in buildCloudflareDetectJS below and the standalone
+// expectedContentVisible (the reverse-direction check,
+// waitForHumanToClearCloudflare) depend on it, so both directions agree
+// on exactly what "visible" means. See
+// plan/ai/tools/browser/step-36-content-based-cloudflare-override.md.
+const isRenderedVisibleJS = `
 	function isRenderedVisible(el) {
 		if (!el) return false;
 		var style = window.getComputedStyle(el);
@@ -96,47 +105,147 @@ const cloudflareDetectJS = `(function() {
 		var rect = el.getBoundingClientRect();
 		return rect.width > 0 && rect.height > 0;
 	}
+`
+
+// buildCloudflareDetectJS renders the fixed detection script plus one
+// caller-scoped addition (step 36): when expectedSelectors is
+// non-empty and the fixed heuristic below would otherwise report
+// Detected, first check whether the crawl's OWN target content is
+// already visibly present — if so, override to not-detected. Computed
+// AFTER the full heuristic result (not short-circuited per-signal), so
+// this applies uniformly regardless of which of the five signals
+// fired, matching this step's own "if the real target content is
+// there, it does not matter why the generic heuristic still fires"
+// reasoning. expectedSelectors is marshaled to JSON and embedded
+// directly — caller-supplied (ultimately an AI-authored, already
+// shape-validated crawl instruction) but only ever used as a
+// querySelector argument, the same trust boundary extract.go's own
+// arbitrary selectors already cross.
+func buildCloudflareDetectJS(expectedSelectors []string) (string, error) {
+	selectorsJSON, err := json.Marshal(expectedSelectors)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf(`(function() {
+	%s
+	var detected = false;
+	var reason = "";
 
 	if (document.title === "Just a moment...") {
-		return {detected: true, reason: "title"};
-	}
-	if (document.getElementById("cf-challenge-running") ||
+		detected = true;
+		reason = "title";
+	} else if (document.getElementById("cf-challenge-running") ||
 		document.querySelector(".cf-browser-verification") ||
 		document.getElementById("cf-wrapper")) {
-		return {detected: true, reason: "challenge-element"};
-	}
-
-	var hasChallengeScript = !!document.querySelector('script[src*="challenges.cloudflare.com"]') ||
-		!!document.querySelector('script[src*="/cdn-cgi/challenge-platform/"]');
-	var hasWafParams = typeof window.__CF$cv$params !== "undefined";
-	if (hasChallengeScript || hasWafParams) {
-		var widgetCandidates = document.querySelectorAll(
-			'iframe[src*="challenges.cloudflare.com"], #challenge-stage, [class*="cf-turnstile"]'
-		);
-		var visibleWidget = false;
-		for (var i = 0; i < widgetCandidates.length; i++) {
-			if (isRenderedVisible(widgetCandidates[i])) {
-				visibleWidget = true;
-				break;
+		detected = true;
+		reason = "challenge-element";
+	} else {
+		var hasChallengeScript = !!document.querySelector('script[src*="challenges.cloudflare.com"]') ||
+			!!document.querySelector('script[src*="/cdn-cgi/challenge-platform/"]');
+		var hasWafParams = typeof window.__CF$cv$params !== "undefined";
+		if (hasChallengeScript || hasWafParams) {
+			var widgetCandidates = document.querySelectorAll(
+				'iframe[src*="challenges.cloudflare.com"], #challenge-stage, [class*="cf-turnstile"]'
+			);
+			var visibleWidget = false;
+			for (var i = 0; i < widgetCandidates.length; i++) {
+				if (isRenderedVisible(widgetCandidates[i])) {
+					visibleWidget = true;
+					break;
+				}
+			}
+			var bodyText = ((document.body && document.body.innerText) || '').trim();
+			if (visibleWidget || bodyText.length < 200) {
+				detected = true;
+				reason = hasWafParams ? "waf-block-params" : "challenge-platform-script";
 			}
 		}
-		var bodyText = ((document.body && document.body.innerText) || '').trim();
-		if (visibleWidget || bodyText.length < 200) {
-			return {detected: true, reason: hasWafParams ? "waf-block-params" : "challenge-platform-script"};
+	}
+
+	if (detected) {
+		var expected = %s;
+		if (expected && expected.length > 0) {
+			for (var j = 0; j < expected.length; j++) {
+				var el;
+				try { el = document.querySelector(expected[j]); } catch (e) { continue; }
+				if (el && isRenderedVisible(el)) {
+					return {detected: false, reason: "expected-content-found"};
+				}
+			}
 		}
 	}
 
-	return {detected: false, reason: ""};
-})()`
+	return {detected: detected, reason: reason};
+})()`, isRenderedVisibleJS, string(selectorsJSON)), nil
+}
 
-// detectCloudflareChallenge runs cloudflareDetectJS against whatever
-// page ctx's own session currently has loaded.
-func detectCloudflareChallenge(ctx context.Context) (cloudflareCheck, error) {
+// detectCloudflareChallenge runs the detection script (with
+// expectedSelectors' own forward override baked in, step 36) against
+// whatever page ctx's own session currently has loaded. expectedSelectors
+// may be nil/empty — every AI-driven caller (fetch_page_html,
+// crawl_paginated with no container/fields context yet) passes nothing,
+// identical to this function's own pre-step-36 behavior.
+func detectCloudflareChallenge(ctx context.Context, expectedSelectors []string) (cloudflareCheck, error) {
+	script, err := buildCloudflareDetectJS(expectedSelectors)
+	if err != nil {
+		return cloudflareCheck{}, err
+	}
 	var result cloudflareCheck
-	if err := chromedp.Run(ctx, chromedp.Evaluate(cloudflareDetectJS, &result)); err != nil {
+	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &result)); err != nil {
 		return cloudflareCheck{}, err
 	}
 	return result, nil
+}
+
+// expectedContentVisible checks whether ANY of expectedSelectors
+// currently matches a visibly rendered element — the reverse-direction
+// check (step 36), used only by waitForHumanToClearCloudflare's own
+// retry loop when the heuristic itself reports clear but the crawl's
+// own target content still isn't confirmed present. Shares
+// isRenderedVisibleJS with the forward override so both directions
+// agree on what "visible" means.
+func expectedContentVisible(ctx context.Context, expectedSelectors []string) (bool, error) {
+	selectorsJSON, err := json.Marshal(expectedSelectors)
+	if err != nil {
+		return false, err
+	}
+	script := fmt.Sprintf(`(function(selectors) {
+	%s
+	for (var i = 0; i < selectors.length; i++) {
+		var el;
+		try { el = document.querySelector(selectors[i]); } catch (e) { continue; }
+		if (el && isRenderedVisible(el)) return true;
+	}
+	return false;
+})(%s)`, isRenderedVisibleJS, string(selectorsJSON))
+
+	var found bool
+	if err := chromedp.Run(ctx, chromedp.Evaluate(script, &found)); err != nil {
+		return false, err
+	}
+	return found, nil
+}
+
+// expectedSelectorsFromFields derives the "expected content" selector
+// list (step 36) from a crawl instruction's own container/fields — a
+// single strong "does the repeating item wrapper exist" signal when a
+// container is set (step 18), rather than several narrower selectors
+// only meaningful nested inside it; otherwise every field's own
+// selector. Shared by both this tool's own /crawl-paginated path
+// (paginate.go, which already has container/fields in scope at every
+// relevant call site) and Career's own crawl_now.go (which derives the
+// same list from its own, independently-declared crawlRequest shape).
+func expectedSelectorsFromFields(container string, fields []extractField) []string {
+	if container != "" {
+		return []string{container}
+	}
+	selectors := make([]string, 0, len(fields))
+	for _, f := range fields {
+		if f.Selector != "" {
+			selectors = append(selectors, f.Selector)
+		}
+	}
+	return selectors
 }
 
 // waitForCloudflareClearance checks once immediately; if clear, returns
@@ -146,9 +255,13 @@ func detectCloudflareChallenge(ctx context.Context) (cloudflareCheck, error) {
 // (proceed normally — the real content is now loaded), or
 // {true, reason, nil} if still present once the budget is exhausted
 // (give up; caller proceeds anyway with whatever HTML/DOM exists, now
-// correctly flagged).
-func waitForCloudflareClearance(ctx context.Context) (cloudflareCheck, error) {
-	check, err := detectCloudflareChallenge(ctx)
+// correctly flagged). expectedSelectors (step 36) only ever feeds the
+// forward override inside detectCloudflareChallenge here — this
+// function's own short automated wait deliberately does NOT apply the
+// reverse direction (see waitForHumanToClearCloudflare's own doc
+// comment for why that's scoped narrower).
+func waitForCloudflareClearance(ctx context.Context, expectedSelectors []string) (cloudflareCheck, error) {
+	check, err := detectCloudflareChallenge(ctx, expectedSelectors)
 	if err != nil {
 		return cloudflareCheck{}, err
 	}
@@ -161,7 +274,7 @@ func waitForCloudflareClearance(ctx context.Context) (cloudflareCheck, error) {
 		if err := chromedp.Run(ctx, chromedp.Sleep(cloudflarePollInterval)); err != nil {
 			return cloudflareCheck{}, err
 		}
-		check, err = detectCloudflareChallenge(ctx)
+		check, err = detectCloudflareChallenge(ctx, expectedSelectors)
 		if err != nil {
 			return cloudflareCheck{}, err
 		}
