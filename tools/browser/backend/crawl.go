@@ -30,19 +30,6 @@ const maxHTMLBytes = 200_000
 // its own to also account for.
 const crawlTimeout = 20 * time.Second
 
-// settleDelay is a fixed wait after Navigate, before reading the DOM
-// back out. chromedp.Navigate only waits for Chrome's own "load"
-// event (page + its synchronously-referenced resources finished
-// downloading) — verified directly against chromedp's own source
-// (responseAction in chromedp.go waits on page.EventLoadEventFired/
-// EventFrameStoppedLoading only). Most JS frameworks keep rendering
-// *after* that event fires (async data fetches, useEffect-driven
-// mounts, lazy routes), so reading OuterHTML immediately after
-// Navigate can capture an empty app shell instead of the real
-// content. A fixed delay is the simplest fix and is good enough for
-// most sites; a real network-idle wait is a better, more involved fix
-// to revisit later if this proves insufficient. See
-// plan/ai/tools/browser/step-03-html-crawler-feature.md.
 const settleDelay = 1500 * time.Millisecond
 
 type crawlRequest struct {

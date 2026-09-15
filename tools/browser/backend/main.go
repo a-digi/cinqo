@@ -167,6 +167,19 @@ func allocatorOptions() []chromedp.ExecAllocatorOption {
 	if p := os.Getenv("BROWSER_TOOL_CHROME_PATH"); p != "" {
 		opts = append(opts, chromedp.ExecPath(p))
 	}
+
+	opts = append(opts,
+		// Disable the automation bar and flags that identify the browser as a test suite
+		chromedp.Flag("disable-blink-features", "AutomationControlled"),
+		chromedp.Flag("excludeSwitches", "enable-automation"),
+
+		// Prevent fallback behaviors like using unique mock keychain architectures
+		chromedp.Flag("use-mock-keychain", true),
+
+		// Set a modern consumer User Agent (overrides the 'HeadlessChrome' identifier)
+		chromedp.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
+	)
+
 	return opts
 }
 
