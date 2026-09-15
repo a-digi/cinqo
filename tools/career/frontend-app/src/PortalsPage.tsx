@@ -64,15 +64,25 @@ export function PortalsPage() {
   // "Generate with AI" (step 33) — a separate, independent busy-state
   // from crawlingLinkIds above: generating/editing a link's own
   // crawl_instructions is a different operation from crawling it, and
-  // could in principle overlap. No local result state to mirror
-  // crawlResults — success needs no visible trace beyond the spinner
-  // clearing (and, if instructions were written, the existing "Crawl
-  // instructions set" toggle text updating on the next load()); only
-  // failure is shown, and durably (link.instructionsAiError, part of
-  // the normal portals payload — survives a reload, unlike
-  // crawlResults). See
+  // could in principle overlap. No local result state on success —
+  // success needs no visible trace beyond the spinner clearing (and,
+  // if instructions were written, the existing "Crawl instructions
+  // set" toggle text updating on the next load()).
+  //
+  // instructionsAiLocalError (below) is a same-session, immediate
+  // failure display — set the moment the AI attempt itself fails,
+  // never waiting on (or depending on) the durable
+  // updatePortalLink(instructionsAiError) write that follows it also
+  // succeeding. Without this, a failure of that *recording* call
+  // itself (a separate network request, which can fail for its own
+  // reasons) would leave nothing visible at all — exactly the bug
+  // this fixes. link.instructionsAiError (the durable, reload-
+  // surviving field from the portals payload) is still the source of
+  // truth once load() refreshes; this local copy is only a same-
+  // session guarantee that a failure is never silently invisible. See
   // plan/ai/tools/career/step-33-ai-generated-crawl-instructions.md.
   const [instructionsAiPendingIds, setInstructionsAiPendingIds] = useState<Set<string>>(new Set())
+  const [instructionsAiLocalError, setInstructionsAiLocalError] = useState<Record<string, string | undefined>>({})
 
   function load() {
     setError('')
@@ -199,6 +209,7 @@ export function PortalsPage() {
     const platformId = selectedPlatform.id
     const model = selectedPlatform.models.length > 0 ? (selectedModel ?? selectedPlatform.models[0]) : undefined
     setInstructionsAiPendingIds((prev) => new Set(prev).add(link.id))
+    setInstructionsAiLocalError((prev) => ({ ...prev, [link.id]: undefined }))
 
     createConversation({ title: generateInstructionsConversationTitle(link), platformId, model, hidden: true })
       .then((conversation) => sendMessage(conversation.id, buildGenerateInstructionsMessage(link)))
@@ -210,10 +221,17 @@ export function PortalsPage() {
             : err instanceof Error
               ? err.message
               : 'Failed to generate crawl instructions.'
-        return updatePortalLink(link.id, { instructionsAiError: text }).catch(() => {
-          // Recording the failure itself also failed — nothing further
-          // to do here; see this step's own Open Question 1 for the
-          // reliability limit this recording step already has.
+        // Shown immediately, regardless of whether the durable write
+        // below succeeds — a network failure recording the error must
+        // never leave the failure completely invisible. See this
+        // handler's own top comment.
+        setInstructionsAiLocalError((prev) => ({ ...prev, [link.id]: text }))
+        return updatePortalLink(link.id, { instructionsAiError: text }).catch((recordErr: unknown) => {
+          // Recording the failure durably itself also failed — the
+          // local error above still shows for this session; see this
+          // step's own Open Question 1 for the reliability limit
+          // durable recording already has (e.g. across a reload).
+          console.error('failed to record instructions-AI error on portal link', link.id, recordErr)
         })
       })
       .then(() => load())
@@ -543,10 +561,10 @@ export function PortalsPage() {
                       <SparkleIcon />
                       {instructionsAiPendingIds.has(link.id) ? 'Generating…' : 'Generate with AI'}
                     </button>
-                    {link.instructionsAiError && (
+                    {(instructionsAiLocalError[link.id] || link.instructionsAiError) && (
                       <p className="mt-1 text-xs text-red-700">
-                        AI instructions generation failed: {link.instructionsAiError}
-                        {link.instructionsAiErrorAt && ` (${new Date(link.instructionsAiErrorAt).toLocaleString()})`}
+                        AI instructions generation failed: {instructionsAiLocalError[link.id] || link.instructionsAiError}
+                        {!instructionsAiLocalError[link.id] && link.instructionsAiErrorAt && ` (${new Date(link.instructionsAiErrorAt).toLocaleString()})`}
                       </p>
                     )}
                     {link.crawlInstructions && (
