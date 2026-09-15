@@ -833,6 +833,11 @@ type portalLinkUpdateRequest struct {
 	URL               *string `json:"url,omitempty"`
 	Title             *string `json:"title,omitempty"`
 	CrawlInstructions *string `json:"crawlInstructions,omitempty"`
+	// InstructionsAIError (step 33) — nil: don't touch. Present with
+	// "": clear any previously recorded failure (a fresh attempt
+	// succeeded). Present non-empty: record this as the most recent
+	// failure. Same presence-gated shape CrawlInstructions above uses.
+	InstructionsAIError *string `json:"instructionsAiError,omitempty"`
 }
 
 func portalLinksHandler(w http.ResponseWriter, r *http.Request) {
@@ -869,8 +874,8 @@ func portalLinksHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "id is required", http.StatusBadRequest)
 			return
 		}
-		if body.URL == nil && body.Title == nil && body.CrawlInstructions == nil {
-			http.Error(w, "url, title, or crawlInstructions is required", http.StatusBadRequest)
+		if body.URL == nil && body.Title == nil && body.CrawlInstructions == nil && body.InstructionsAIError == nil {
+			http.Error(w, "url, title, crawlInstructions, or instructionsAiError is required", http.StatusBadRequest)
 			return
 		}
 		if body.URL != nil && *body.URL == "" {
@@ -890,6 +895,12 @@ func portalLinksHandler(w http.ResponseWriter, r *http.Request) {
 		if body.CrawlInstructions != nil {
 			if err := updatePortalLinkCrawlInstructions(body.ID, *body.CrawlInstructions); err != nil {
 				writePortalLinkAwareError(w, "update portal link crawl instructions", err)
+				return
+			}
+		}
+		if body.InstructionsAIError != nil {
+			if err := updatePortalLinkInstructionsAIStatus(body.ID, body.InstructionsAIError); err != nil {
+				writePortalLinkAwareError(w, "update portal link instructions AI status", err)
 				return
 			}
 		}

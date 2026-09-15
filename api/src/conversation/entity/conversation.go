@@ -22,4 +22,15 @@ type Conversation struct {
 	FilePath   string   `db:"file_path" dbtype:"TEXT" nullable:"false" json:"-"`
 	PlatformID string   `db:"platform_id" dbtype:"TEXT" nullable:"false" json:"platformId"`
 	Model      string   `db:"model" dbtype:"TEXT" nullable:"false" json:"model"`
+	// Hidden (step 30) excludes this conversation from ListOwnedBy —
+	// used by callers that want an AI conversation running without it
+	// ever showing up in the caller's own normal conversation list
+	// (e.g. Career's own "generate crawl instructions with AI").
+	// json:"-" — never echoed back in any response; a caller that
+	// creates a hidden conversation already knows it did so, and every
+	// other route (FindOwnedByID/FindByID) stays fully unfiltered by
+	// this, so a hidden conversation is exactly as usable as a normal
+	// one to anything that already has its ID. See
+	// plan/ai/conversation/step-30-hidden-conversations.md.
+	Hidden bool `db:"hidden" dbtype:"INTEGER" nullable:"false" json:"-"`
 }

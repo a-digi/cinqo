@@ -24,11 +24,11 @@ func NewConversationQueryRepo(db *sql.DB) *ConversationQueryRepo {
 	return &ConversationQueryRepo{db: db}
 }
 
-const conversationColumns = `id, user_id, title, started_at, file_path, platform_id, model`
+const conversationColumns = `id, user_id, title, started_at, file_path, platform_id, model, hidden`
 
 func scanConversation(scan func(dest ...any) error) (*conversation_entity.Conversation, error) {
 	var c conversation_entity.Conversation
-	if err := scan(&c.ID, &c.UserID, &c.Title, &c.StartedAt, &c.FilePath, &c.PlatformID, &c.Model); err != nil {
+	if err := scan(&c.ID, &c.UserID, &c.Title, &c.StartedAt, &c.FilePath, &c.PlatformID, &c.Model, &c.Hidden); err != nil {
 		return nil, err
 	}
 	return &c, nil
@@ -51,11 +51,14 @@ func (r *ConversationQueryRepo) FindOwnedByID(id, userID string) (*conversation_
 	return scanConversation(row.Scan)
 }
 
-// ListOwnedBy returns userID's own conversations, most recently
-// started first. No "last activity" sort available — see step 3's own
-// design note on why.
+// ListOwnedBy returns userID's own non-hidden conversations, most
+// recently started first. No "last activity" sort available — see
+// step 3's own design note on why. Excludes hidden = 1 rows (step 30)
+// — a conversation created with hidden:true never shows up here, but
+// remains fully reachable via FindOwnedByID/FindByID by anything that
+// already has its ID.
 func (r *ConversationQueryRepo) ListOwnedBy(userID string) ([]*conversation_entity.Conversation, error) {
-	rows, err := r.db.Query(`SELECT `+conversationColumns+` FROM conversations WHERE user_id = ? ORDER BY started_at DESC`, userID)
+	rows, err := r.db.Query(`SELECT `+conversationColumns+` FROM conversations WHERE user_id = ? AND hidden = 0 ORDER BY started_at DESC`, userID)
 	if err != nil {
 		return nil, err
 	}

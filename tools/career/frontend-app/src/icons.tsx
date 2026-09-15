@@ -24,3 +24,18 @@ export function PlayIcon() {
     </svg>
   )
 }
+
+// SparkleIcon (step 33) — marks the "generate/edit with AI" action,
+// distinct from PlayIcon's own "run something" meaning.
+export function SparkleIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-3.5 w-3.5">
+      <path
+        d="M10 3.5l1.2 3.3 3.3 1.2-3.3 1.2-1.2 3.3-1.2-3.3-3.3-1.2 3.3-1.2 1.2-3.3z"
+        strokeWidth="1.2"
+        strokeLinejoin="round"
+      />
+      <path d="M15.5 13l0.6 1.6 1.6 0.6-1.6 0.6-0.6 1.6-0.6-1.6-1.6-0.6 1.6-0.6 0.6-1.6z" strokeWidth="1" strokeLinejoin="round" />
+    </svg>
+  )
+}

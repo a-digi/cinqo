@@ -16,11 +16,13 @@ func NewConversationPersistentRepo(db *sql.DB) *ConversationPersistentRepo {
 
 // Insert writes platform_id/model once, at creation — no method in
 // this repo ever updates them afterward (see the entity's own doc
-// comment on why that's a structural, not runtime, guarantee).
+// comment on why that's a structural, not runtime, guarantee). hidden
+// (step 30) is likewise set only here — nothing ever flips it after
+// creation.
 func (r *ConversationPersistentRepo) Insert(c *conversation_entity.Conversation) error {
 	_, err := r.db.Exec(
-		`INSERT INTO conversations (id, user_id, title, file_path, platform_id, model) VALUES (?, ?, ?, ?, ?, ?)`,
-		c.ID, c.UserID, c.Title, c.FilePath, c.PlatformID, c.Model,
+		`INSERT INTO conversations (id, user_id, title, file_path, platform_id, model, hidden) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		c.ID, c.UserID, c.Title, c.FilePath, c.PlatformID, c.Model, c.Hidden,
 	)
 	return err
 }

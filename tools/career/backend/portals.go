@@ -71,8 +71,16 @@ type portalLink struct {
 	// saved for this link. See
 	// plan/ai/tools/career/step-26-last-crawled-hint.md.
 	LastCrawledAt string `json:"lastCrawledAt,omitempty"`
-	CreatedAt     string `json:"createdAt"`
-	UpdatedAt     string `json:"updatedAt,omitempty"`
+	// InstructionsAIError/InstructionsAIErrorAt (step 33) record the
+	// most recent failure of an AI-driven crawl-instructions
+	// generation/edit attempt for this link — both empty when no
+	// failure is currently recorded (the default, and the state after
+	// a successful attempt clears them). See
+	// plan/ai/tools/career/step-33-ai-generated-crawl-instructions.md.
+	InstructionsAIError   string `json:"instructionsAiError,omitempty"`
+	InstructionsAIErrorAt string `json:"instructionsAiErrorAt,omitempty"`
+	CreatedAt             string `json:"createdAt"`
+	UpdatedAt             string `json:"updatedAt,omitempty"`
 }
 
 type portal struct {
@@ -161,7 +169,7 @@ func listPortals() ([]portal, error) {
 	}
 
 	linkRows, err := jobsDB.Query(
-		`SELECT id, portal_id, url, title, crawl_instructions, created_at, updated_at
+		`SELECT id, portal_id, url, title, crawl_instructions, instructions_ai_error, instructions_ai_error_at, created_at, updated_at
 		 FROM portal_links ORDER BY created_at ASC`,
 	)
 	if err != nil {
@@ -171,12 +179,14 @@ func listPortals() ([]portal, error) {
 	byPortal := make(map[string][]portalLink, len(portals))
 	for linkRows.Next() {
 		var l portalLink
-		var title, crawlInstructions, updatedAt sql.NullString
-		if err := linkRows.Scan(&l.ID, &l.PortalID, &l.URL, &title, &crawlInstructions, &l.CreatedAt, &updatedAt); err != nil {
+		var title, crawlInstructions, instructionsAIError, instructionsAIErrorAt, updatedAt sql.NullString
+		if err := linkRows.Scan(&l.ID, &l.PortalID, &l.URL, &title, &crawlInstructions, &instructionsAIError, &instructionsAIErrorAt, &l.CreatedAt, &updatedAt); err != nil {
 			return nil, err
 		}
 		l.Title = title.String
 		l.CrawlInstructions = crawlInstructions.String
+		l.InstructionsAIError = instructionsAIError.String
+		l.InstructionsAIErrorAt = instructionsAIErrorAt.String
 		l.UpdatedAt = updatedAt.String
 		l.LastCrawledAt = lastCrawled[l.ID]
 		byPortal[l.PortalID] = append(byPortal[l.PortalID], l)
@@ -267,6 +277,28 @@ func updatePortalLink(id string, url, title *string) error {
 
 func removePortalLink(id string) error {
 	_, err := jobsDB.Exec(`DELETE FROM portal_links WHERE id = ?`, id)
+	return err
+}
+
+// updatePortalLinkInstructionsAIStatus records (or clears) the outcome
+// of the most recent AI-driven crawl-instructions generation/edit
+// attempt for this link — errText nil or empty clears any previously
+// recorded failure (a fresh attempt succeeded, or the caller is
+// explicitly resetting it); non-empty records it, alongside the
+// current timestamp. See
+// plan/ai/tools/career/step-33-ai-generated-crawl-instructions.md.
+func updatePortalLinkInstructionsAIStatus(id string, errText *string) error {
+	if err := requirePortalLinkExists(id); err != nil {
+		return err
+	}
+	if errText == nil || *errText == "" {
+		_, err := jobsDB.Exec(`UPDATE portal_links SET instructions_ai_error = NULL, instructions_ai_error_at = NULL WHERE id = ?`, id)
+		return err
+	}
+	_, err := jobsDB.Exec(
+		`UPDATE portal_links SET instructions_ai_error = ?, instructions_ai_error_at = datetime('now') WHERE id = ?`,
+		*errText, id,
+	)
 	return err
 }
 

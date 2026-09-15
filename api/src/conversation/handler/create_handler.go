@@ -20,6 +20,10 @@ type createConversationRequest struct {
 	Title      string `json:"title"`
 	PlatformID string `json:"platformId"`
 	Model      string `json:"model"`
+	// Hidden (step 30) excludes this conversation from ListHandler's
+	// own list — omitted (or false) preserves today's exact behavior.
+	// See plan/ai/conversation/step-30-hidden-conversations.md.
+	Hidden bool `json:"hidden"`
 }
 
 // CreateHandler handles POST /api/v1/conversations. title defaults to
@@ -87,6 +91,7 @@ func CreateHandler(reqCtx request.RequestContext) {
 		FilePath:   conversation.LogPath(logsDir, id),
 		PlatformID: body.PlatformID,
 		Model:      model,
+		Hidden:     body.Hidden,
 	}
 
 	if err := conversation_persistent.NewConversationPersistentRepo(db).Insert(c); err != nil {

@@ -12,9 +12,10 @@ import {
 } from './api'
 import { fetchPlatforms, createConversation, sendMessage, CoreApiError, type Platform } from './coreApi'
 import { buildCrawlMessage, crawlConversationTitle } from './crawl'
+import { buildGenerateInstructionsMessage, generateInstructionsConversationTitle } from './generateInstructions'
 import { fetchCrawlRequest, navigateTo, crawlPaginated, ingestCrawlResults, CrawlBlockedError } from './browserApi'
 import { Dropdown } from './Dropdown'
-import { PlusIcon, PlayIcon } from './icons'
+import { PlusIcon, PlayIcon, SparkleIcon } from './icons'
 
 // Portals are tool-wide, not persona/profile-scoped — same reasoning
 // Jobs/Companies already document. No Dropdown call site here: a
@@ -59,6 +60,19 @@ export function PortalsPage() {
   const [selectedModel, setSelectedModel] = useState<string | null>(null)
   const [crawlingLinkIds, setCrawlingLinkIds] = useState<Set<string>>(new Set())
   const [crawlResults, setCrawlResults] = useState<Record<string, { ok: boolean; text: string; conversationId?: string } | undefined>>({})
+
+  // "Generate with AI" (step 33) — a separate, independent busy-state
+  // from crawlingLinkIds above: generating/editing a link's own
+  // crawl_instructions is a different operation from crawling it, and
+  // could in principle overlap. No local result state to mirror
+  // crawlResults — success needs no visible trace beyond the spinner
+  // clearing (and, if instructions were written, the existing "Crawl
+  // instructions set" toggle text updating on the next load()); only
+  // failure is shown, and durably (link.instructionsAiError, part of
+  // the normal portals payload — survives a reload, unlike
+  // crawlResults). See
+  // plan/ai/tools/career/step-33-ai-generated-crawl-instructions.md.
+  const [instructionsAiPendingIds, setInstructionsAiPendingIds] = useState<Set<string>>(new Set())
 
   function load() {
     setError('')
@@ -169,6 +183,47 @@ export function PortalsPage() {
         setCrawlResults((prev) => ({ ...prev, [link.id]: { ok: false, text } }))
       })
       .finally(() => finishCrawl(link))
+  }
+
+  // "Generate with AI" (step 33) — creates a conversation the same way
+  // handleCrawlWithAI does, but hidden (never shown in the normal
+  // conversation list) and instructed to write/update this link's own
+  // crawl_instructions instead of running a crawl. Runs in the
+  // background regardless of this tab staying open
+  // (plan/ai/conversation/step-23-detach-turn-execution-from-request.md);
+  // only a failure is durably recorded (updatePortalLink's own
+  // instructionsAiError field) — success clears any previous failure
+  // and needs no further trace.
+  function handleGenerateInstructionsWithAI(link: PortalLink) {
+    if (instructionsAiPendingIds.has(link.id) || !selectedPlatform) return
+    const platformId = selectedPlatform.id
+    const model = selectedPlatform.models.length > 0 ? (selectedModel ?? selectedPlatform.models[0]) : undefined
+    setInstructionsAiPendingIds((prev) => new Set(prev).add(link.id))
+
+    createConversation({ title: generateInstructionsConversationTitle(link), platformId, model, hidden: true })
+      .then((conversation) => sendMessage(conversation.id, buildGenerateInstructionsMessage(link)))
+      .then(() => updatePortalLink(link.id, { instructionsAiError: '' }))
+      .catch((err: unknown) => {
+        const text =
+          err instanceof CoreApiError && (err.status === 401 || err.status === 403)
+            ? 'Ask an admin to grant you access to AI conversations.'
+            : err instanceof Error
+              ? err.message
+              : 'Failed to generate crawl instructions.'
+        return updatePortalLink(link.id, { instructionsAiError: text }).catch(() => {
+          // Recording the failure itself also failed — nothing further
+          // to do here; see this step's own Open Question 1 for the
+          // reliability limit this recording step already has.
+        })
+      })
+      .then(() => load())
+      .finally(() => {
+        setInstructionsAiPendingIds((prev) => {
+          const next = new Set(prev)
+          next.delete(link.id)
+          return next
+        })
+      })
   }
 
   function handleViewConversation() {
@@ -473,6 +528,27 @@ export function PortalsPage() {
                       {link.crawlInstructions ? 'Crawl instructions set' : 'No crawl instructions yet'} —{' '}
                       {expandedLinkId === link.id ? 'hide' : link.crawlInstructions ? 'view/edit' : 'add'}
                     </button>
+                    {' · '}
+                    <button
+                      type="button"
+                      onClick={() => handleGenerateInstructionsWithAI(link)}
+                      disabled={instructionsAiPendingIds.has(link.id) || platforms.length === 0}
+                      title={
+                        platforms.length === 0
+                          ? 'No AI platform configured — add one on the Platforms page first'
+                          : 'Let the AI inspect this page and write (or update) its crawl instructions for you'
+                      }
+                      className="inline-flex items-center gap-1 text-xs text-gray-500 underline hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <SparkleIcon />
+                      {instructionsAiPendingIds.has(link.id) ? 'Generating…' : 'Generate with AI'}
+                    </button>
+                    {link.instructionsAiError && (
+                      <p className="mt-1 text-xs text-red-700">
+                        AI instructions generation failed: {link.instructionsAiError}
+                        {link.instructionsAiErrorAt && ` (${new Date(link.instructionsAiErrorAt).toLocaleString()})`}
+                      </p>
+                    )}
                     {link.crawlInstructions && (
                       <div className="mt-1.5">
                         <div className="flex flex-wrap gap-2">

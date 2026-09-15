@@ -183,13 +183,15 @@ CREATE TABLE IF NOT EXISTS portals (
 );
 
 CREATE TABLE IF NOT EXISTS portal_links (
-    id                  TEXT PRIMARY KEY,
-    portal_id           TEXT NOT NULL REFERENCES portals(id) ON DELETE CASCADE,
-    url                 TEXT NOT NULL,
-    title               TEXT,
-    crawl_instructions  TEXT,
-    created_at          TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at          TEXT,
+    id                        TEXT PRIMARY KEY,
+    portal_id                 TEXT NOT NULL REFERENCES portals(id) ON DELETE CASCADE,
+    url                       TEXT NOT NULL,
+    title                     TEXT,
+    crawl_instructions        TEXT,
+    instructions_ai_error     TEXT,
+    instructions_ai_error_at  TEXT,
+    created_at                TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at                TEXT,
     UNIQUE(portal_id, url)
 );
 
@@ -505,7 +507,10 @@ func migrateJobsDB(db *sql.DB) error {
 	if err := migrateJobsPortalLinkID(db); err != nil {
 		return err
 	}
-	return migratePortalLinksTitle(db)
+	if err := migratePortalLinksTitle(db); err != nil {
+		return err
+	}
+	return migratePortalLinksInstructionsAIStatus(db)
 }
 
 func migrateJobsCompanyID(db *sql.DB) error {
@@ -557,13 +562,15 @@ CREATE TABLE IF NOT EXISTS portals (
     updated_at  TEXT
 );
 CREATE TABLE IF NOT EXISTS portal_links (
-    id                  TEXT PRIMARY KEY,
-    portal_id           TEXT NOT NULL REFERENCES portals(id) ON DELETE CASCADE,
-    url                 TEXT NOT NULL,
-    title               TEXT,
-    crawl_instructions  TEXT,
-    created_at          TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at          TEXT,
+    id                        TEXT PRIMARY KEY,
+    portal_id                 TEXT NOT NULL REFERENCES portals(id) ON DELETE CASCADE,
+    url                       TEXT NOT NULL,
+    title                     TEXT,
+    crawl_instructions        TEXT,
+    instructions_ai_error     TEXT,
+    instructions_ai_error_at  TEXT,
+    created_at                TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at                TEXT,
     UNIQUE(portal_id, url)
 );
 `); err != nil {
@@ -591,5 +598,27 @@ func migratePortalLinksTitle(db *sql.DB) error {
 		return nil
 	}
 	_, err = db.Exec(`ALTER TABLE portal_links ADD COLUMN title TEXT`)
+	return err
+}
+
+// migratePortalLinksInstructionsAIStatus adds the two nullable columns
+// that record the outcome of the most recent AI-driven crawl-
+// instructions generation/edit attempt for a link (step 33) — same
+// plain ALTER TABLE ADD COLUMN shape as migratePortalLinksTitle above,
+// guarded the same way. Both NULL means "no recorded failure," the
+// default and the state after a successful attempt clears them. See
+// plan/ai/tools/career/step-33-ai-generated-crawl-instructions.md.
+func migratePortalLinksInstructionsAIStatus(db *sql.DB) error {
+	exists, hasColumn, err := tableHasColumn(db, "portal_links", "instructions_ai_error")
+	if err != nil {
+		return err
+	}
+	if !exists || hasColumn {
+		return nil
+	}
+	if _, err := db.Exec(`ALTER TABLE portal_links ADD COLUMN instructions_ai_error TEXT`); err != nil {
+		return err
+	}
+	_, err = db.Exec(`ALTER TABLE portal_links ADD COLUMN instructions_ai_error_at TEXT`)
 	return err
 }

@@ -110,6 +110,12 @@ export interface PortalLink {
   // Most recent job crawled_at against this link (step 26) — null
   // when no job has ever been saved for it. Read-only, derived.
   lastCrawledAt: string | null
+  // Most recent failure of an AI-driven crawl-instructions generation/
+  // edit attempt for this link (step 33) — both null when no failure
+  // is currently recorded. Read-only; written only via
+  // updatePortalLink's own instructionsAiError field.
+  instructionsAiError: string | null
+  instructionsAiErrorAt: string | null
   createdAt: string
   updatedAt?: string
 }
@@ -454,7 +460,7 @@ export async function addPortalLink(portalId: string, url: string, title: string
 
 export async function updatePortalLink(
   id: string,
-  args: { url?: string; title?: string; crawlInstructions?: string },
+  args: { url?: string; title?: string; crawlInstructions?: string; instructionsAiError?: string },
 ): Promise<void> {
   const res = await fetch(`${PROXY_BASE}/portal-links`, {
     method: 'PUT',

@@ -53,7 +53,13 @@ export interface Conversation {
   model: string
 }
 
-export async function createConversation(input: { title?: string; platformId: string; model?: string }): Promise<Conversation> {
+// hidden (step 33, plan/ai/conversation/step-30-hidden-conversations.md)
+// — omitted (or false) preserves today's exact behavior; true excludes
+// this conversation from the normal GET /api/v1/conversations list.
+// Used by the "generate crawl instructions with AI" flow
+// (generateInstructions.ts) — never by "Crawl with AI" (crawl.ts),
+// which stays visible/reviewable.
+export async function createConversation(input: { title?: string; platformId: string; model?: string; hidden?: boolean }): Promise<Conversation> {
   const res = await fetch('/api/v1/conversations', {
     method: 'POST',
     credentials: 'include',
