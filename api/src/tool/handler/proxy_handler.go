@@ -3,6 +3,7 @@ package handler
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -42,22 +43,28 @@ func ProxyHandler(reqCtx request.RequestContext) {
 
 	tool, err := queryRepo.FindBySlug(slug)
 	if err != nil {
-		response.ErrorResponse(w, http.StatusNotFound, "tool not found")
+		// Includes the slug itself — this is the caller's OWN request
+		// URL echoed back (e.g. /api/v1/tools/{slug}/proxy/...), not new
+		// information disclosure, and was worth adding after a real
+		// debugging session where "tool not found" alone left it
+		// genuinely ambiguous which of several proxy calls in a chain
+		// had actually failed.
+		response.ErrorResponse(w, http.StatusNotFound, fmt.Sprintf("tool not found: %q", slug))
 		return
 	}
 
 	if !tool.Enabled || tool.Status != "running" {
-		response.ErrorResponse(w, http.StatusServiceUnavailable, "tool is not currently enabled and running")
+		response.ErrorResponse(w, http.StatusServiceUnavailable, fmt.Sprintf("tool %q is not currently enabled and running", slug))
 		return
 	}
 
 	// Route existence is checked BEFORE the scope check — a 404 for an
 	// undeclared path reveals nothing about what scopes exist, the
-	// safer ordering (confirmed in the design doc's open question).
+	// safer ordering (confirmed in the design doc's own open question).
 	route, err := queryRepo.FindRoute(tool.ID, r.Method, remainder)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			response.ErrorResponse(w, http.StatusNotFound, "tool does not declare this route")
+			response.ErrorResponse(w, http.StatusNotFound, fmt.Sprintf("tool %q does not declare route %s /%s", slug, r.Method, remainder))
 			return
 		}
 		response.ErrorResponse(w, http.StatusInternalServerError, "failed to look up tool route")

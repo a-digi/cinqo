@@ -91,6 +91,8 @@ func writePortalLinkAwareError(w http.ResponseWriter, action string, err error) 
 		http.Error(w, "this url is already a link on this portal", http.StatusBadRequest)
 	case errors.Is(err, errInvalidCrawlInstructions):
 		http.Error(w, err.Error(), http.StatusBadRequest)
+	case errors.Is(err, errNoCrawlInstructions):
+		http.Error(w, err.Error(), http.StatusBadRequest)
 	default:
 		http.Error(w, "failed to "+action+": "+err.Error(), http.StatusInternalServerError)
 	}
@@ -913,6 +915,66 @@ func portalLinksHandler(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// --- deterministic ("Crawl now") crawl support (step 27) ---
+//
+// Two new, separately registered routes rather than sub-paths of
+// /portal-links — this tool's own router (main.go's plain
+// http.HandleFunc calls) has no path-parameter matching, only exact
+// registered paths, the same reason every other by-id operation in
+// this file takes its id via ?id= or a JSON body field instead of a
+// URL segment. See plan/ai/tools/career/step-27-ai-free-manual-crawl.md.
+
+// crawlRequestHandler handles GET /portal-links/crawl-request?id=... —
+// the frontend's first step in the deterministic "Crawl now" flow:
+// turn the link's own stored crawl_instructions into the JSON shape
+// browser's own POST /crawl-paginated (called directly by the
+// frontend, via that tool's own proxy route) expects.
+func crawlRequestHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		http.Error(w, "id query parameter is required", http.StatusBadRequest)
+		return
+	}
+	req, err := buildCrawlRequest(id)
+	if err != nil {
+		writePortalLinkAwareError(w, "build crawl request", err)
+		return
+	}
+	writeJSON(w, req)
+}
+
+type ingestCrawlResultsRequest struct {
+	PortalLinkID string            `json:"portalLinkId"`
+	Pages        []crawlResultPage `json:"pages"`
+}
+
+// ingestCrawlResultsHandler handles POST /portal-links/ingest-crawl-
+// results — the deterministic flow's last step: the frontend forwards
+// browser's own /crawl-paginated response body (plus which portal
+// link it was crawling) here unmodified, and this tool maps it onto
+// job rows via ingestCrawlResults' own fixed label vocabulary.
+func ingestCrawlResultsHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body ingestCrawlResultsRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.PortalLinkID == "" {
+		http.Error(w, "portalLinkId is required", http.StatusBadRequest)
+		return
+	}
+	result, err := ingestCrawlResults(body.PortalLinkID, body.Pages)
+	if err != nil {
+		writePortalLinkAwareError(w, "ingest crawl results", err)
+		return
+	}
+	writeJSON(w, result)
 }
 
 func atoiOrZero(s string) int {

@@ -272,16 +272,20 @@ func removePortalLink(id string) error {
 
 // --- crawl instructions (step 19) ---
 
-// crawlInstructionsField/crawlInstructionsPagination mirror only the
-// keys this step actually validates — browser's own crawl_paginated
-// tolerates (and this step ignores) any other field (e.g. `attribute`/
-// `multiple` on a field entry), since re-validating those isn't this
-// step's job; yaml.v3 silently ignores unknown keys on unmarshal by
-// default, so a real, fuller instruction still round-trips through
-// this shape check untouched.
+// crawlInstructionsField/crawlInstructionsPagination originally
+// mirrored only the keys step 19's own shape check validated —
+// Attribute/Multiple were tolerated but ignored, since only
+// browser's own crawl_paginated ever consumed the full instruction.
+// Step 27 changes that: this tool's own backend now also *runs* a
+// crawl (deterministically, via buildCrawlRequest below), so it needs
+// every field crawl_paginated itself needs, not just the two this
+// step validates the presence of. See
+// plan/ai/tools/career/step-27-ai-free-manual-crawl.md.
 type crawlInstructionsField struct {
-	Label    string `yaml:"label"`
-	Selector string `yaml:"selector"`
+	Label     string `yaml:"label"`
+	Selector  string `yaml:"selector"`
+	Attribute string `yaml:"attribute,omitempty"`
+	Multiple  bool   `yaml:"multiple,omitempty"`
 }
 
 type crawlInstructionsPagination struct {
@@ -360,6 +364,196 @@ func updatePortalLinkCrawlInstructions(id, yamlText string) error {
 		yamlText, id,
 	)
 	return err
+}
+
+// --- deterministic ("Crawl now") crawl support (step 27) ---
+
+// errNoCrawlInstructions is a 400, not a 500 — this is a caller
+// mistake (the UI's own "Crawl now" button is already gated on
+// link.crawlInstructions being set), not a server failure.
+var errNoCrawlInstructions = errors.New("this portal link has no crawl instructions set")
+
+// maxAllowedPaginationPages mirrors browser's own identically-named
+// constant (tools/browser/backend/paginate.go) exactly — that ceiling
+// is normally only enforced by the AI-facing --mcp adapter in front of
+// browser's own plain POST /crawl-paginated, which this tool's
+// deterministic path calls directly, bypassing that adapter entirely.
+// Duplicated (not imported — two fully separate Go modules/binaries,
+// same reasoning as validateCrawlInstructions' own header comment)
+// here so an oversized stored maxPages still can't run an unbounded
+// crawl now that no AI-side safeguard is in the loop. See open
+// question 3, plan/ai/tools/career/step-27-ai-free-manual-crawl.md.
+const maxAllowedPaginationPages = 10
+
+// crawlRequestField/crawlRequest are the exact JSON shape browser's
+// own POST /crawl-paginated expects as its request body
+// (tools/browser/backend/paginate.go's paginatedCrawlRequest) — this
+// tool has no dependency on that package, so the shape is
+// independently declared here, kept in sync by hand.
+type crawlRequestField struct {
+	Label     string `json:"label"`
+	Selector  string `json:"selector"`
+	Attribute string `json:"attribute,omitempty"`
+	Multiple  bool   `json:"multiple,omitempty"`
+}
+
+type crawlRequest struct {
+	Fields            []crawlRequestField `json:"fields"`
+	NextSelector      string              `json:"nextSelector"`
+	RequestedMaxPages int                 `json:"requestedMaxPages"`
+	EffectiveMaxPages int                 `json:"effectiveMaxPages"`
+}
+
+// buildCrawlRequest turns a portal link's own stored crawl_instructions
+// YAML into the JSON shape browser's own /crawl-paginated route
+// expects — reusing validateCrawlInstructions' own parsing/shape
+// check (defensive: normally already validated at write time, but this
+// re-checks in case a row predates that check or was hand-edited)
+// rather than re-implementing it. Returns errNoCrawlInstructions when
+// the link has no crawl instructions at all — the deterministic
+// "Crawl now" button has nothing to run in that case.
+func buildCrawlRequest(id string) (crawlRequest, error) {
+	yamlText, err := getPortalLinkCrawlInstructions(id)
+	if err != nil {
+		return crawlRequest{}, err
+	}
+	if yamlText == "" {
+		return crawlRequest{}, errNoCrawlInstructions
+	}
+	if err := validateCrawlInstructions(yamlText); err != nil {
+		return crawlRequest{}, err
+	}
+
+	var doc crawlInstructionsDoc
+	if err := yaml.Unmarshal([]byte(yamlText), &doc); err != nil {
+		// Unreachable in practice — validateCrawlInstructions above
+		// already parsed this same text successfully.
+		return crawlRequest{}, fmt.Errorf("%w: %v", errInvalidCrawlInstructions, err)
+	}
+
+	requested := doc.Pagination.MaxPages
+	effective := requested
+	if effective > maxAllowedPaginationPages {
+		effective = maxAllowedPaginationPages
+	}
+
+	fields := make([]crawlRequestField, len(doc.Fields))
+	for i, f := range doc.Fields {
+		fields[i] = crawlRequestField{Label: f.Label, Selector: f.Selector, Attribute: f.Attribute, Multiple: f.Multiple}
+	}
+
+	return crawlRequest{
+		Fields:            fields,
+		NextSelector:      doc.Pagination.NextSelector,
+		RequestedMaxPages: requested,
+		EffectiveMaxPages: effective,
+	}, nil
+}
+
+// crawlResultPage mirrors browser's own pageExtractResult
+// (tools/browser/backend/paginate.go) — one page's worth of extracted
+// values, keyed by the field label the crawl instructions declared.
+// Results[label] is either a single string (Multiple: false) or a
+// []any of strings (Multiple: true) — extractResultStrings below
+// normalizes either shape to a []string.
+type crawlResultPage struct {
+	URL      string         `json:"url"`
+	Results  map[string]any `json:"results"`
+	NotFound []string       `json:"notFound"`
+}
+
+// extractResultStrings normalizes one field's extracted value (a
+// plain string for a non-multiple field, a []any for a multiple one,
+// or absent) to a []string — the one shape ingestCrawlResults' own
+// per-index zip below needs regardless of which the field was
+// authored as.
+func extractResultStrings(v any) []string {
+	switch t := v.(type) {
+	case string:
+		if t == "" {
+			return nil
+		}
+		return []string{t}
+	case []any:
+		out := make([]string, 0, len(t))
+		for _, item := range t {
+			if s, ok := item.(string); ok && s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+// at returns s[i], or "" when i is out of range — lets
+// ingestCrawlResults zip several independently-lengthed field arrays
+// (a page listing 12 jobs might have 12 titles and 12 urls, but only
+// 9 of them also matched a "location" selector) without a bounds
+// check at every call site.
+func at(s []string, i int) string {
+	if i < len(s) {
+		return s[i]
+	}
+	return ""
+}
+
+type ingestCrawlResultsResult struct {
+	JobsSaved   int `json:"jobsSaved"`
+	JobsUpdated int `json:"jobsUpdated"`
+	JobsSkipped int `json:"jobsSkipped"`
+}
+
+// ingestCrawlResults maps a completed deterministic crawl's own raw
+// results (browser's own /crawl-paginated response body, forwarded
+// here unmodified by the frontend) onto job rows via the fixed label
+// vocabulary decided in step 27 (title/url required; company/
+// location/description/postedAt optional, used verbatim with no date
+// normalization or other AI-style interpretation) and persists each
+// one through the exact same savePortalJob (step 20) the AI-based
+// "Crawl with AI" path already uses — one shared insert path for both
+// crawl mechanisms, only how a job's own fields were produced differs.
+//
+// A page listing many jobs (not just one detail page) is the common
+// case for a real job board — "title"/"url" are typically authored
+// with Multiple: true, yielding one array per field rather than one
+// scalar. This walks index 0..len(titles) per page (title is the
+// required anchor field) and zips every other field positionally via
+// at() — a title with no matching url at the same index is skipped
+// (JobsSkipped), never inserted with an empty sourceUrl.
+func ingestCrawlResults(portalLinkID string, pages []crawlResultPage) (ingestCrawlResultsResult, error) {
+	if err := requirePortalLinkExists(portalLinkID); err != nil {
+		return ingestCrawlResultsResult{}, err
+	}
+
+	var result ingestCrawlResultsResult
+	for _, page := range pages {
+		titles := extractResultStrings(page.Results["title"])
+		urls := extractResultStrings(page.Results["url"])
+		companies := extractResultStrings(page.Results["company"])
+		locations := extractResultStrings(page.Results["location"])
+		descriptions := extractResultStrings(page.Results["description"])
+		postedAts := extractResultStrings(page.Results["postedAt"])
+
+		for i, title := range titles {
+			sourceURL := at(urls, i)
+			if title == "" || sourceURL == "" {
+				result.JobsSkipped++
+				continue
+			}
+			_, created, _, err := savePortalJob(portalLinkID, sourceURL, title, at(companies, i), at(locations, i), at(descriptions, i), at(postedAts, i))
+			if err != nil {
+				return result, err
+			}
+			if created {
+				result.JobsSaved++
+			} else {
+				result.JobsUpdated++
+			}
+		}
+	}
+	return result, nil
 }
 
 // --- MCP registration ---

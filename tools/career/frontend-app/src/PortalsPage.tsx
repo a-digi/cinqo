@@ -12,6 +12,7 @@ import {
 } from './api'
 import { fetchPlatforms, createConversation, sendMessage, CoreApiError, type Platform } from './coreApi'
 import { buildCrawlMessage, crawlConversationTitle } from './crawl'
+import { fetchCrawlRequest, navigateTo, crawlPaginated, ingestCrawlResults } from './browserApi'
 import { Dropdown } from './Dropdown'
 import { PlusIcon, PlayIcon } from './icons'
 
@@ -36,17 +37,23 @@ export function PortalsPage() {
   const [crawlInstructionsDraft, setCrawlInstructionsDraft] = useState('')
   const [error, setError] = useState('')
 
-  // Manual crawl trigger (step 24, polished in step 25) — platforms is
-  // fetched once, up front, purely to know whether any AI platform is
-  // configured at all (gates every "Crawl now" button) and to offer a
-  // picker when there's more than one. selectedPlatformId/selectedModel
-  // is a single, page-wide choice (not per-link) — every crawl on this
-  // page runs under the same platform/model until changed here.
-  // crawlingLinkIds (a Set, step 25 — was a single ID in step 24) lets
-  // multiple links crawl concurrently, each in its own conversation.
-  // crawlResults holds only the last outcome per link, not a history —
-  // the real history is each run's own conversation (see
-  // conversationIds below and "View conversation").
+  // Manual crawl trigger — two independent mechanisms, both landing in
+  // the same crawlingLinkIds/crawlResults state:
+  //   - "Crawl now" (step 27): deterministic, no AI — fetchCrawlRequest
+  //     + navigateTo + crawlPaginated + ingestCrawlResults
+  //     (browserApi.ts), all plain proxy calls, no platform/API key.
+  //   - "Crawl with AI" (steps 24-26, kept per step 27's own decision
+  //     to offer both rather than replace): creates a conversation and
+  //     sends a generated instruction, letting the AI itself drive
+  //     browser's tools — needs a configured platform/API key, but
+  //     tolerates crawl instructions that don't fit "Crawl now"'s own
+  //     fixed label vocabulary and can apply its own judgement
+  //     (normalizing dates, inferring a missing company name, etc).
+  // platforms/selectedPlatformId/selectedModel only matter for "Crawl
+  // with AI" — "Crawl now" needs none of them.
+  // crawlingLinkIds (a Set) lets multiple links crawl concurrently,
+  // regardless of which of the two mechanisms each one used.
+  // crawlResults holds only the last outcome per link, not a history.
   const [platforms, setPlatforms] = useState<Platform[]>([])
   const [selectedPlatformId, setSelectedPlatformId] = useState<string | null>(null)
   const [selectedModel, setSelectedModel] = useState<string | null>(null)
@@ -86,13 +93,49 @@ export function PortalsPage() {
     setSelectedModel(next && next.models.length > 0 ? next.models[0] : null)
   }
 
+  function startCrawl(link: PortalLink) {
+    setCrawlingLinkIds((prev) => new Set(prev).add(link.id))
+    setCrawlResults((prev) => ({ ...prev, [link.id]: undefined }))
+  }
+
+  function finishCrawl(link: PortalLink) {
+    setCrawlingLinkIds((prev) => {
+      const next = new Set(prev)
+      next.delete(link.id)
+      return next
+    })
+  }
+
+  // "Crawl now" (step 27) — deterministic, no AI: load the link's own
+  // crawl instructions (already parsed server-side into the shape
+  // browser's own /crawl-paginated wants), navigate there, run the
+  // paginated extraction, then hand the raw results to career's own
+  // backend to map onto job rows via the fixed label vocabulary.
   function handleCrawlNow(link: PortalLink) {
+    if (crawlingLinkIds.has(link.id)) return
+    startCrawl(link)
+
+    fetchCrawlRequest(link.id)
+      .then((request) => navigateTo(link.url).then(() => crawlPaginated(request)))
+      .then((crawlResult) => ingestCrawlResults(link.id, crawlResult.pages).then((ingested) => ({ crawlResult, ingested })))
+      .then(({ crawlResult, ingested }) => {
+        const text = `Saved ${ingested.jobsSaved} new, updated ${ingested.jobsUpdated}, skipped ${ingested.jobsSkipped} — visited ${crawlResult.pagesVisited} page(s) (${crawlResult.stoppedReason}).`
+        setCrawlResults((prev) => ({ ...prev, [link.id]: { ok: true, text } }))
+      })
+      .catch((err: unknown) => {
+        setCrawlResults((prev) => ({ ...prev, [link.id]: { ok: false, text: err instanceof Error ? err.message : 'Crawl failed.' } }))
+      })
+      .finally(() => finishCrawl(link))
+  }
+
+  // "Crawl with AI" (steps 24-26, kept per step 27) — creates a
+  // conversation and lets the AI itself drive browser's tools, using
+  // its own judgement rather than the fixed label vocabulary above.
+  function handleCrawlWithAI(link: PortalLink) {
     if (crawlingLinkIds.has(link.id) || !selectedPlatform) return
     const platformId = selectedPlatform.id
     const model = selectedPlatform.models.length > 0 ? (selectedModel ?? selectedPlatform.models[0]) : undefined
-
-    setCrawlingLinkIds((prev) => new Set(prev).add(link.id))
-    setCrawlResults((prev) => ({ ...prev, [link.id]: undefined }))
+    startCrawl(link)
 
     createConversation({ title: crawlConversationTitle(link), platformId, model })
       .then((conversation) => sendMessage(conversation.id, buildCrawlMessage(link)).then((result) => ({ conversation, result })))
@@ -112,13 +155,7 @@ export function PortalsPage() {
               : 'Crawl failed.'
         setCrawlResults((prev) => ({ ...prev, [link.id]: { ok: false, text } }))
       })
-      .finally(() => {
-        setCrawlingLinkIds((prev) => {
-          const next = new Set(prev)
-          next.delete(link.id)
-          return next
-        })
-      })
+      .finally(() => finishCrawl(link))
   }
 
   function handleViewConversation() {
@@ -420,16 +457,32 @@ export function PortalsPage() {
                     </button>
                     {link.crawlInstructions && (
                       <div className="mt-1.5">
-                        <button
-                          type="button"
-                          onClick={() => handleCrawlNow(link)}
-                          disabled={crawlingLinkIds.has(link.id) || platforms.length === 0}
-                          title={platforms.length === 0 ? 'No AI platform configured — add one on the Platforms page first' : undefined}
-                          className="flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          <PlayIcon />
-                          {crawlingLinkIds.has(link.id) ? 'Crawling…' : 'Crawl now'}
-                        </button>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleCrawlNow(link)}
+                            disabled={crawlingLinkIds.has(link.id)}
+                            title="Deterministic — no AI, no platform needed. Requires fields labeled title/url (and optionally company/location/description/postedAt) in this link's crawl instructions."
+                            className="flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <PlayIcon />
+                            {crawlingLinkIds.has(link.id) ? 'Crawling…' : 'Crawl now'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleCrawlWithAI(link)}
+                            disabled={crawlingLinkIds.has(link.id) || platforms.length === 0}
+                            title={
+                              platforms.length === 0
+                                ? 'No AI platform configured — add one on the Platforms page first'
+                                : 'Lets the AI drive the crawl itself — tolerates instructions that don’t fit "Crawl now"’s fixed fields, but needs a configured AI platform.'
+                            }
+                            className="flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <PlayIcon />
+                            {crawlingLinkIds.has(link.id) ? 'Crawling…' : 'Crawl with AI'}
+                          </button>
+                        </div>
                         {crawlResults[link.id] && (
                           <p className={`mt-1 text-xs ${crawlResults[link.id]!.ok ? 'text-green-700' : 'text-red-700'}`}>
                             {crawlResults[link.id]!.text}
