@@ -36,6 +36,27 @@ func ProxyHandler(reqCtx request.RequestContext) {
 	r := reqCtx.GetRequest()
 
 	slug := reqCtx.GetURI().GetPathVariable("slug")
+	if slug == "" {
+		// Workaround for a real bug in coco-server's own
+		// URI.ExtractPathVariables (server/request/uri.go): it bails
+		// out WITHOUT extracting any {placeholder} — including {slug}
+		// — whenever the real URL has a different segment count than
+		// the route pattern. For this route
+		// (/api/v1/tools/{slug}/proxy/**), that's true any time the
+		// ** remainder itself contains more than one segment (e.g.
+		// .../proxy/portal-links/crawl-request — 2 remainder segments,
+		// one more than the pattern ever accounts for). Every route
+		// this proxy served before step 27 happened to have a single-
+		// segment remainder (.../proxy/portals, .../proxy/jobs, ...),
+		// so segment counts always coincidentally matched and this was
+		// latent until step 27 introduced this repo's first multi-
+		// segment proxy remainder. Fixing this properly belongs in
+		// coco-server itself (a separately versioned dependency, not
+		// this repo) — derived directly from the real URL here instead
+		// as a local, scoped workaround. See
+		// plan/ai/tools/career/step-27-ai-free-manual-crawl.md.
+		slug = slugFromToolsProxyPath(r.URL.Path)
+	}
 	remainder := reqCtx.GetURI().GetPathRemainder()
 
 	db := reqCtx.GetDI().GetDatabaseManager().Connector.DB
@@ -96,6 +117,24 @@ func ProxyHandler(reqCtx request.RequestContext) {
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	r.URL.Path = "/" + remainder
 	proxy.ServeHTTP(w, r)
+}
+
+// slugFromToolsProxyPath extracts {slug} directly from a real
+// /api/v1/tools/{slug}/proxy/** URL — the ProxyHandler-local
+// workaround for coco-server's own ExtractPathVariables bug (see
+// ProxyHandler's own comment above). Looks for the literal "tools"
+// segment rather than hardcoding an index, so it isn't sensitive to
+// the exact API version prefix. Returns "" (the same as the buggy
+// upstream extraction) if the URL doesn't have the expected shape —
+// FindBySlug("") then fails exactly as it already does today.
+func slugFromToolsProxyPath(path string) string {
+	segments := strings.Split(strings.Trim(path, "/"), "/")
+	for i, s := range segments {
+		if s == "tools" && i+1 < len(segments) {
+			return segments[i+1]
+		}
+	}
+	return ""
 }
 
 // callerScopes validates the request's own token (cookie or Bearer
