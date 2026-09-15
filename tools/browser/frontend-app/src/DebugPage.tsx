@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { fetchBrowserSettings, saveBrowserSettings, type BrowserSettings } from './api'
+import { fetchBrowserSettings, saveBrowserSettings, fetchCloudflareDomains, type BrowserSettings, type CloudflareDomain } from './api'
 
 // Debug settings page (step 22) — a single object with two booleans.
 // Debug active gates ALL crawl logging: off (the confirmed default),
@@ -13,10 +13,19 @@ export function DebugPage() {
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
 
+  // Cloudflare domain cache (step 30) — read-only; step 29's own cache
+  // has no manual removal path yet (see that step's own Open Question
+  // 1), so this is purely observability for now.
+  const [cloudflareDomains, setCloudflareDomains] = useState<CloudflareDomain[] | null>(null)
+  const [cloudflareDomainsError, setCloudflareDomainsError] = useState('')
+
   useEffect(() => {
     fetchBrowserSettings()
       .then(setSettings)
       .catch((err: Error) => setError(err.message))
+    fetchCloudflareDomains()
+      .then(setCloudflareDomains)
+      .catch((err: Error) => setCloudflareDomainsError(err.message))
   }, [])
 
   function update(next: BrowserSettings) {
@@ -83,6 +92,43 @@ export function DebugPage() {
           </span>
         </label>
       </div>
+
+      <h2 className="mb-1.5 mt-8 text-lg font-semibold">Known Cloudflare domains</h2>
+      <p className="mb-3 text-sm text-gray-500">
+        Every domain that has ever given the headless session an unresolved Cloudflare challenge —
+        crawls against these now skip straight to the headed (non-headless) fallback instead of
+        trying headless first. Read-only; there is currently no way to remove a domain from this
+        list once it's been recorded.
+      </p>
+
+      {cloudflareDomainsError && <div className="mb-3 text-sm text-red-700">{cloudflareDomainsError}</div>}
+
+      {cloudflareDomains && cloudflareDomains.length === 0 && (
+        <p className="text-sm text-gray-400">No domains recorded yet.</p>
+      )}
+
+      {cloudflareDomains && cloudflareDomains.length > 0 && (
+        <div className="overflow-x-auto rounded-md border border-gray-200 bg-gray-50 shadow-sm">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-gray-200 text-xs uppercase text-gray-500">
+                <th className="px-4 py-2 font-medium">Domain</th>
+                <th className="px-4 py-2 font-medium">Reason</th>
+                <th className="px-4 py-2 font-medium">First detected</th>
+              </tr>
+            </thead>
+            <tbody>
+              {cloudflareDomains.map((d) => (
+                <tr key={d.domain} className="border-b border-gray-100 last:border-0">
+                  <td className="px-4 py-2 font-mono text-xs">{d.domain}</td>
+                  <td className="px-4 py-2 text-xs text-gray-600">{d.reason}</td>
+                  <td className="px-4 py-2 text-xs text-gray-500">{new Date(d.firstDetectedAt).toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }

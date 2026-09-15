@@ -82,6 +82,11 @@
       "method": "PUT",
       "path_suffix": "browser-settings",
       "required_scope": "tool:browser:crawl"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "cloudflare-domains",
+      "required_scope": "tool:browser:crawl"
     }
   ],
   "mcp_tools": [

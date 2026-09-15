@@ -357,6 +357,28 @@ func performPaginatedCrawl(container string, fields []extractField, mapping map[
 		ctx, cancel := context.WithTimeout(sessionCtx, paginatedCrawlTimeout)
 		defer cancel()
 
+		// step 29 — crawl_paginated never takes a URL of its own (it
+		// operates on whatever the shared session already has loaded),
+		// so the domain check reads the session's own CURRENT location
+		// first, before running the extraction loop at all. A
+		// known-Cloudflare domain skips straight to the headed fallback
+		// via the same errors.As dispatch below, reusing a synthetic
+		// crawlError rather than duplicating the fallback-invocation
+		// logic — "known-cloudflare-cache" is deliberately distinct
+		// from cloudflareCheck's own detection reasons, so a human
+		// reading a recorded reason can tell "we actually saw it this
+		// time" apart from "we skipped straight to headed because of a
+		// past detection." See
+		// plan/ai/tools/browser/step-29-skip-headless-for-known-cloudflare-domains.md.
+		var startURL string
+		if locErr := chromedp.Run(ctx, chromedp.Location(&startURL)); locErr == nil {
+			if domain, hostErr := hostnameOf(startURL); hostErr == nil {
+				if known, cacheErr := isDomainKnownCloudflare(domain); cacheErr == nil && known {
+					return paginatedCrawlResponse{}, nil, startURL, newCloudflareUnresolvedError("known-cloudflare-cache")
+				}
+			}
+		}
+
 		result, pageHTML, err := runPaginatedCrawlLoop(ctx, container, fields, mapping, nextSelector, requestedMaxPages, effectiveMaxPages, captureHTML)
 
 		var cfErr *crawlError
@@ -370,6 +392,11 @@ func performPaginatedCrawl(container string, fields []extractField, mapping map[
 			// original Cloudflare error rather than the location
 			// lookup's own failure.
 			return paginatedCrawlResponse{}, nil, "", err
+		}
+		// step 28 — best-effort: a failed cache write must never turn
+		// an otherwise-working fallback into a failure.
+		if domain, hostErr := hostnameOf(currentURL); hostErr == nil {
+			_ = recordCloudflareDomain(domain, cfErr.Reason)
 		}
 		return paginatedCrawlResponse{}, nil, currentURL, err
 	}()

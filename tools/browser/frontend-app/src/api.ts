@@ -129,6 +129,29 @@ export async function saveBrowserSettings(settings: BrowserSettings): Promise<Br
   return res.json()
 }
 
+// --- Cloudflare domain cache (step 30) ---
+//
+// Read-only view of what step 29's own cache (tools/browser/backend/
+// cloudflare_domains.go) has recorded — every domain that's ever given
+// the headless session an unresolved Cloudflare challenge, and so now
+// skips straight to the headed fallback on every crawl. See
+// plan/ai/tools/browser/step-30-cloudflare-domain-list-visibility.md.
+
+const CLOUDFLARE_DOMAINS_BASE = '/api/v1/tools/browser/proxy/cloudflare-domains'
+
+export interface CloudflareDomain {
+  domain: string
+  reason: string
+  firstDetectedAt: string
+}
+
+export async function fetchCloudflareDomains(): Promise<CloudflareDomain[]> {
+  const res = await fetch(CLOUDFLARE_DOMAINS_BASE, { credentials: 'include' })
+  if (!res.ok) throw new Error(`failed to load cloudflare domains (${res.status})`)
+  const data: { domains: CloudflareDomain[] } = await res.json()
+  return data.domains ?? []
+}
+
 export async function removeCredential(domain: string): Promise<void> {
   const res = await fetch(`${PROXY_BASE}?domain=${encodeURIComponent(domain)}`, {
     method: 'DELETE',

@@ -189,6 +189,20 @@ func navigateAndReadWithCloudflareCheck(ctx context.Context, rawURL string) (cra
 // flag as automated than headless Chrome, even with this tool's own
 // existing stealth patches applied.
 func crawlPage(rawURL string) (crawlResponse, error) {
+	// step 29 — a known-Cloudflare domain skips the headless attempt
+	// entirely, straight to the headed fallback: the only signal
+	// available before ever navigating anywhere is the cache (nothing
+	// has been loaded yet to inspect live). A lookup failure (e.g. a
+	// transient DB error) is treated the same as "not known" — falls
+	// through to the normal headless attempt rather than blocking the
+	// whole call on a cache problem. See
+	// plan/ai/tools/browser/step-29-skip-headless-for-known-cloudflare-domains.md.
+	if domain, err := hostnameOf(rawURL); err == nil {
+		if known, err := isDomainKnownCloudflare(domain); err == nil && known {
+			return crawlWithNormalSession(rawURL)
+		}
+	}
+
 	result, err := func() (crawlResponse, error) {
 		sessionMu.Lock()
 		defer sessionMu.Unlock()
@@ -201,6 +215,11 @@ func crawlPage(rawURL string) (crawlResponse, error) {
 
 	var cfErr *crawlError
 	if errors.As(err, &cfErr) {
+		// step 28 — best-effort: a failed cache write must never turn
+		// an otherwise-working fallback into a failure.
+		if domain, hostErr := hostnameOf(rawURL); hostErr == nil {
+			_ = recordCloudflareDomain(domain, cfErr.Reason)
+		}
 		return crawlWithNormalSession(rawURL)
 	}
 	return result, err

@@ -90,6 +90,7 @@ func runHTTPServer() {
 	http.HandleFunc("/crawl-paginated", paginatedCrawlHandler)
 	http.HandleFunc("/crawl-logs", crawlLogsHandler)
 	http.HandleFunc("/browser-settings", browserSettingsHandler)
+	http.HandleFunc("/cloudflare-domains", cloudflareDomainsHandler)
 	http.HandleFunc("/login", loginHandler)
 	// Deliberately not exposed as an MCP tool — see
 	// login_credentials.go's own top comment. Reachable only via the

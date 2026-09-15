@@ -125,6 +125,21 @@ func initBrowserDB() error {
 		return fmt.Errorf("failed to seed browser_settings: %w", err)
 	}
 
+	// cloudflare_domains (step 28) — a persistent record of every
+	// hostname this tool has ever seen give the headless session an
+	// unresolved Cloudflare challenge, so future crawls against the
+	// same domain can skip straight to the headed fallback (step 29)
+	// instead of re-discovering the same failure every time. See
+	// plan/ai/tools/browser/step-28-cloudflare-domain-cache.md.
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS cloudflare_domains (
+		domain            TEXT PRIMARY KEY,
+		reason            TEXT NOT NULL,
+		first_detected_at TEXT NOT NULL DEFAULT (datetime('now'))
+	)`); err != nil {
+		db.Close()
+		return fmt.Errorf("failed to prepare cloudflare_domains schema: %w", err)
+	}
+
 	browserDB = db
 	return nil
 }
