@@ -83,15 +83,21 @@ export function CrawlLogsPage() {
                       Pagination: <span className="font-mono">{entry.nextSelector}</span>, requested{' '}
                       {entry.requestedMaxPages} page(s), capped at {entry.effectiveMaxPages}
                     </div>
+                    {entry.container && (
+                      <div className="mt-1 text-xs text-gray-500">
+                        Container (grouped extraction): <span className="font-mono">{entry.container}</span>
+                      </div>
+                    )}
                   </div>
 
                   {entry.pages.map((page, i) => (
                     <div key={i} className="rounded bg-gray-50 p-2">
                       <div className="mb-1 truncate text-xs font-medium text-gray-900">
                         Page {i + 1}: {page.url}
+                        {page.items && <span className="ml-1.5 font-normal text-gray-500">({page.items.length} item(s))</span>}
                       </div>
                       <pre className="overflow-x-auto whitespace-pre-wrap break-words text-xs text-gray-700">
-                        {JSON.stringify(page.results, null, 2)}
+                        {JSON.stringify(page.items ?? page.results, null, 2)}
                       </pre>
                       {page.notFound.length > 0 && (
                         <p className="mt-1 text-xs text-red-700">Not found on this page: {page.notFound.join(', ')}</p>

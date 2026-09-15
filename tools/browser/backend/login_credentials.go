@@ -79,10 +79,15 @@ func initBrowserDB() error {
 	}
 
 	// crawl_logs (step 17) — diagnostic record of every /crawl-paginated
-	// call, AI-driven or deterministic; see crawl_log.go.
+	// call, AI-driven or deterministic; see crawl_log.go. container
+	// (step 18) added inline here for a fresh install; migrateCrawlLogsContainer
+	// below adds it to an already-existing table (this tool has no
+	// migration runner — CREATE TABLE IF NOT EXISTS alone never adds a
+	// column to a table that already exists).
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS crawl_logs (
 		id                  TEXT PRIMARY KEY,
 		created_at          TEXT NOT NULL,
+		container           TEXT,
 		request_fields      TEXT NOT NULL,
 		next_selector       TEXT NOT NULL,
 		requested_max_pages INTEGER NOT NULL,
@@ -93,6 +98,10 @@ func initBrowserDB() error {
 	)`); err != nil {
 		db.Close()
 		return fmt.Errorf("failed to prepare crawl_logs schema: %w", err)
+	}
+	if err := migrateCrawlLogsContainer(db); err != nil {
+		db.Close()
+		return fmt.Errorf("failed to migrate crawl_logs schema: %w", err)
 	}
 
 	browserDB = db

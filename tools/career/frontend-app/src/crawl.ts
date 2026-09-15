@@ -16,6 +16,14 @@
 // own maxToolIterations ceiling
 // (conversation: model kept calling tools without a final reply). See
 // plan/ai/tools/career/step-29-batch-save-portal-jobs.md.
+//
+// Step 30 taught the AI about container grouping only as a reactive
+// fix ("if results look misaligned, add a container"). Revised here to
+// be proactive instead — check for a listing page as a normal, upfront
+// step, matching set_portal_link_crawl_instructions' own description
+// (portals.go), not just something to reach for after noticing a
+// problem. See plan/ai/tools/career/step-30-grouped-crawl-ingestion.md
+// and step-31-proactive-container-guidance.md.
 export function buildCrawlMessage(link: { id: string; title: string | null; url: string }): string {
   return [
     'Please run a manual crawl for this existing portal link only — do not create a new portal or link, and do not ask which link is meant (it is already specified below).',
@@ -24,7 +32,16 @@ export function buildCrawlMessage(link: { id: string; title: string | null; url:
     `Title: ${link.title || '(untitled)'}`,
     `URL: ${link.url}`,
     '',
-    'Steps: call get_portal_link_crawl_instructions for this link id to load its stored crawl instructions, navigate to the URL, run crawl_paginated using those exact instructions, then call save_portal_jobs ONCE with every job you found (with this portalLinkId) — do not call save_portal_job job-by-job, that wastes tool-calling turns on a page with many jobs. When done, reply with a short summary: how many jobs were found and saved, and how many were skipped as duplicates, or explain why none were found.',
+    'Steps:',
+    '1. Call get_portal_link_crawl_instructions for this link id to load its stored crawl instructions.',
+    '2. Navigate to the URL, then look at the page: does it list MULTIPLE similar items at once (a search-results/job-listing page — the common case), or does it describe a single item (a one-job detail page)?',
+    "3. If it's a listing page and the loaded instructions do NOT already have a top-level container, call set_portal_link_crawl_instructions first to add one (a CSS selector for one item's own repeating wrapping element) before crawling — this is the normal, expected step for a listing page, not something to do only after noticing a problem. A single-item detail page needs no container.",
+    '4. Run crawl_paginated using the (possibly just-updated) instructions.',
+    '5. Call save_portal_jobs ONCE with every job you found (with this portalLinkId) — do not call save_portal_job job-by-job, that wastes tool-calling turns on a page with many jobs.',
+    '',
+    "If you skipped step 3 and crawl_paginated's own results come back as separate arrays that don't clearly correspond field-for-field to the same job (e.g. a title that doesn't obviously match the url next to it), add a container now via set_portal_link_crawl_instructions and re-run crawl_paginated before saving anything.",
+    '',
+    'When done, reply with a short summary: how many jobs were found and saved, and how many were skipped as duplicates, or explain why none were found.',
   ].join('\n')
 }
 

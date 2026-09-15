@@ -294,6 +294,15 @@ type crawlInstructionsPagination struct {
 }
 
 type crawlInstructionsDoc struct {
+	// Container (step 30) is optional — a CSS selector for each
+	// repeating item's own wrapping element (e.g. one job listing's
+	// own <div>). When set, every field's own selector is evaluated
+	// relative to each matched container instead of the whole page,
+	// and ingestCrawlResults below consumes the resulting Items
+	// directly instead of zipping parallel arrays by index. See
+	// plan/ai/tools/career/step-30-grouped-crawl-ingestion.md and
+	// plan/ai/tools/browser/step-18-grouped-container-extraction.md.
+	Container  string                       `yaml:"container,omitempty"`
 	Fields     []crawlInstructionsField     `yaml:"fields"`
 	Pagination *crawlInstructionsPagination `yaml:"pagination"`
 }
@@ -398,6 +407,7 @@ type crawlRequestField struct {
 }
 
 type crawlRequest struct {
+	Container         string              `json:"container,omitempty"`
 	Fields            []crawlRequestField `json:"fields"`
 	NextSelector      string              `json:"nextSelector"`
 	RequestedMaxPages int                 `json:"requestedMaxPages"`
@@ -443,6 +453,7 @@ func buildCrawlRequest(id string) (crawlRequest, error) {
 	}
 
 	return crawlRequest{
+		Container:         doc.Container,
 		Fields:            fields,
 		NextSelector:      doc.Pagination.NextSelector,
 		RequestedMaxPages: requested,
@@ -455,11 +466,16 @@ func buildCrawlRequest(id string) (crawlRequest, error) {
 // values, keyed by the field label the crawl instructions declared.
 // Results[label] is either a single string (Multiple: false) or a
 // []any of strings (Multiple: true) — extractResultStrings below
-// normalizes either shape to a []string.
+// normalizes either shape to a []string. Items (step 30) is populated
+// instead of Results when the crawl instructions set a container —
+// each entry is already one real job's own correctly-grouped fields;
+// exactly one of Results/Items is ever non-empty, mirroring browser's
+// own contract exactly.
 type crawlResultPage struct {
-	URL      string         `json:"url"`
-	Results  map[string]any `json:"results"`
-	NotFound []string       `json:"notFound"`
+	URL      string           `json:"url"`
+	Results  map[string]any   `json:"results,omitempty"`
+	Items    []map[string]any `json:"items,omitempty"`
+	NotFound []string         `json:"notFound"`
 }
 
 // extractResultStrings normalizes one field's extracted value (a
@@ -516,12 +532,24 @@ type ingestCrawlResultsResult struct {
 // crawl mechanisms, only how a job's own fields were produced differs.
 //
 // A page listing many jobs (not just one detail page) is the common
-// case for a real job board — "title"/"url" are typically authored
-// with Multiple: true, yielding one array per field rather than one
-// scalar. This walks index 0..len(titles) per page (title is the
-// required anchor field) and zips every other field positionally via
-// at() — a title with no matching url at the same index is skipped
-// (JobsSkipped), never inserted with an empty sourceUrl.
+// case for a real job board. Grouped pages (step 30, page.Items set —
+// the crawl instructions declared a container) are handled first, per
+// page: each item is already one real job's own correctly-grouped
+// fields, no positional zipping needed at all — this is the actual
+// fix for the misalignment flat mode could silently produce. A page
+// with no Items (no container was set for this link, or an older
+// crawl instruction predating step 30) falls back to flat mode
+// unchanged: "title"/"url" are typically authored with Multiple:
+// true, yielding one array per field rather than one scalar; this
+// walks index 0..len(titles) (title is the required anchor field) and
+// zips every other field positionally via at() — a title with no
+// matching url at the same index is skipped (JobsSkipped), never
+// inserted with an empty sourceUrl. Both branches count a save the
+// same way flat mode always has: only `created` is ever checked
+// (savePortalJob's own `duplicate` result is intentionally not
+// tracked as a separate outcome here, matching the pre-existing
+// behavior exactly — a duplicate is counted as JobsUpdated, same as a
+// genuine update).
 func ingestCrawlResults(portalLinkID string, pages []crawlResultPage) (ingestCrawlResultsResult, error) {
 	if err := requirePortalLinkExists(portalLinkID); err != nil {
 		return ingestCrawlResultsResult{}, err
@@ -529,6 +557,31 @@ func ingestCrawlResults(portalLinkID string, pages []crawlResultPage) (ingestCra
 
 	var result ingestCrawlResultsResult
 	for _, page := range pages {
+		if len(page.Items) > 0 {
+			for _, item := range page.Items {
+				title := at(extractResultStrings(item["title"]), 0)
+				sourceURL := at(extractResultStrings(item["url"]), 0)
+				if title == "" || sourceURL == "" {
+					result.JobsSkipped++
+					continue
+				}
+				company := at(extractResultStrings(item["company"]), 0)
+				location := at(extractResultStrings(item["location"]), 0)
+				description := at(extractResultStrings(item["description"]), 0)
+				postedAt := at(extractResultStrings(item["postedAt"]), 0)
+				_, created, _, err := savePortalJob(portalLinkID, sourceURL, title, company, location, description, postedAt)
+				if err != nil {
+					return result, err
+				}
+				if created {
+					result.JobsSaved++
+				} else {
+					result.JobsUpdated++
+				}
+			}
+			continue
+		}
+
 		titles := extractResultStrings(page.Results["title"])
 		urls := extractResultStrings(page.Results["url"])
 		companies := extractResultStrings(page.Results["company"])
@@ -778,11 +831,27 @@ func registerSetPortalLinkCrawlInstructions(server *mcp.Server) {
 		Name: "set_portal_link_crawl_instructions",
 		Description: "Save the YAML crawl instructions for one portal link — works equally on a link you just " +
 			"created or one that already existed before this conversation; call list_portals first to find the " +
-			"target link's own id (match by its title) if you don't already have it. The exact same shape " +
-			"crawl_paginated expects (fields: [...] + pagination: {nextSelector, maxPages}), so it can be handed " +
-			"to that tool directly later. Example:\nfields:\n  - label: title\n    selector: h1\npagination:\n  " +
-			"nextSelector: a.next-page\n  maxPages: 5\nRejected if it doesn't parse or is missing required keys " +
-			"— this only checks shape, not that it actually works against the real page.",
+			"target link's own id (match by its title) if you don't already have it. " +
+			"BEFORE WRITING fields, decide which kind of page this is: (1) a LISTING page — a search-results/" +
+			"job-board/catalog page showing MULTIPLE similar items at once (this is the common case for a job " +
+			"portal's own crawl target), or (2) a single item's own DETAIL page describing just one thing. " +
+			"For a listing page, ALWAYS set a top-level container — a CSS selector for one item's own repeating " +
+			"wrapping element (the <div>/<li>/<article> that repeats once per item on the page) — this is the " +
+			"correct default for any repeating list, not an optional fix applied only after something looks " +
+			"wrong. Every field's own selector is then evaluated relative to each matched container, and the " +
+			"result is one correctly-grouped object per real item. Without container on a listing page, fields " +
+			"describing multiple items are instead saved as separate same-length arrays whose positions may NOT " +
+			"actually correspond to the same real item — silently pairing one item's title with a different " +
+			"item's own url/company/etc. Only omit container for a genuine single-item detail page, where there " +
+			"is nothing to group. The exact same shape crawl_paginated expects (fields: [...] + pagination: " +
+			"{nextSelector, maxPages}, plus the optional top-level container), so it can be handed to that tool " +
+			"directly later.\n\n" +
+			"Example — LISTING page (the common case):\ncontainer: \".job-result\"\nfields:\n  - label: title\n    selector: h2\n  - label: url\n    selector: a\n    attribute: href\n  - label: company\n    selector: .company\npagination:\n  " +
+			"nextSelector: a.next-page\n  maxPages: 5\n\n" +
+			"Example — single DETAIL page (no container needed):\nfields:\n  - label: title\n    selector: h1\npagination:\n  " +
+			"nextSelector: a.next-page\n  maxPages: 5\n\n" +
+			"Rejected if it doesn't parse or is missing required keys — this only checks shape, not that it " +
+			"actually works against the real page.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args setPortalLinkCrawlInstructionsArgs) (*mcp.CallToolResult, any, error) {
 		if args.PortalLinkID == "" {
 			return errResult("portalLinkId is required"), nil, nil

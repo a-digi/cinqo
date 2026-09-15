@@ -12,6 +12,7 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"net/http"
 
@@ -23,8 +24,12 @@ import (
 const maxCrawlLogEntries = 100
 
 type crawlLogEntry struct {
-	ID                string              `json:"id"`
-	CreatedAt         string              `json:"createdAt"`
+	ID        string `json:"id"`
+	CreatedAt string `json:"createdAt"`
+	// Container (step 18) — empty when the crawl used flat (non-
+	// grouped) extraction; a non-empty value here is what tells the
+	// log viewer to expect Items (not Results) on each page below.
+	Container         string              `json:"container,omitempty"`
 	Fields            []crawlRequestField `json:"fields"`
 	NextSelector      string              `json:"nextSelector"`
 	RequestedMaxPages int                 `json:"requestedMaxPages"`
@@ -32,6 +37,43 @@ type crawlLogEntry struct {
 	Pages             []pageExtractResult `json:"pages"`
 	StoppedReason     string              `json:"stoppedReason"`
 	PagesVisited      int                 `json:"pagesVisited"`
+}
+
+// migrateCrawlLogsContainer adds crawl_logs.container to a table that
+// already existed before step 18 — CREATE TABLE IF NOT EXISTS alone
+// never adds a column to an existing table. A no-op once already
+// applied (or if crawl_logs doesn't exist yet at all, in which case
+// the CREATE TABLE just above already created it with the column).
+func migrateCrawlLogsContainer(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA table_info(crawl_logs)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	hasContainer := false
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notNull, pk int
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &ctype, &notNull, &dflt, &pk); err != nil {
+			return err
+		}
+		if name == "container" {
+			hasContainer = true
+			break
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if hasContainer {
+		return nil
+	}
+
+	_, err = db.Exec(`ALTER TABLE crawl_logs ADD COLUMN container TEXT`)
+	return err
 }
 
 // crawlRequestField mirrors extractField (extract.go) — declared
@@ -50,7 +92,7 @@ type crawlRequestField struct {
 // the real crawl has already succeeded, so a failure here is logged
 // nowhere further and never surfaces to the crawl's own caller — this
 // must never turn a successful crawl into a failed HTTP response.
-func saveCrawlLog(fields []extractField, nextSelector string, requestedMaxPages, effectiveMaxPages int, result paginatedCrawlResponse) {
+func saveCrawlLog(container string, fields []extractField, nextSelector string, requestedMaxPages, effectiveMaxPages int, result paginatedCrawlResponse) {
 	requestFields := make([]crawlRequestField, len(fields))
 	for i, f := range fields {
 		requestFields[i] = crawlRequestField{Label: f.Label, Selector: f.Selector, Attribute: f.Attribute, Multiple: f.Multiple}
@@ -67,9 +109,9 @@ func saveCrawlLog(fields []extractField, nextSelector string, requestedMaxPages,
 
 	id := uuid.NewString()
 	_, _ = browserDB.Exec(
-		`INSERT INTO crawl_logs (id, created_at, request_fields, next_selector, requested_max_pages, effective_max_pages, pages, stopped_reason, pages_visited)
-		 VALUES (?, datetime('now'), ?, ?, ?, ?, ?, ?, ?)`,
-		id, string(fieldsJSON), nextSelector, requestedMaxPages, effectiveMaxPages, string(pagesJSON), result.StoppedReason, result.PagesVisited,
+		`INSERT INTO crawl_logs (id, created_at, container, request_fields, next_selector, requested_max_pages, effective_max_pages, pages, stopped_reason, pages_visited)
+		 VALUES (?, datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, container, string(fieldsJSON), nextSelector, requestedMaxPages, effectiveMaxPages, string(pagesJSON), result.StoppedReason, result.PagesVisited,
 	)
 
 	_, _ = browserDB.Exec(
@@ -81,7 +123,7 @@ func saveCrawlLog(fields []extractField, nextSelector string, requestedMaxPages,
 // listCrawlLogs returns every retained entry, newest first.
 func listCrawlLogs() ([]crawlLogEntry, error) {
 	rows, err := browserDB.Query(
-		`SELECT id, created_at, request_fields, next_selector, requested_max_pages, effective_max_pages, pages, stopped_reason, pages_visited
+		`SELECT id, created_at, container, request_fields, next_selector, requested_max_pages, effective_max_pages, pages, stopped_reason, pages_visited
 		 FROM crawl_logs ORDER BY created_at DESC`,
 	)
 	if err != nil {
@@ -92,10 +134,12 @@ func listCrawlLogs() ([]crawlLogEntry, error) {
 	logs := []crawlLogEntry{}
 	for rows.Next() {
 		var e crawlLogEntry
+		var container sql.NullString
 		var fieldsJSON, pagesJSON string
-		if err := rows.Scan(&e.ID, &e.CreatedAt, &fieldsJSON, &e.NextSelector, &e.RequestedMaxPages, &e.EffectiveMaxPages, &pagesJSON, &e.StoppedReason, &e.PagesVisited); err != nil {
+		if err := rows.Scan(&e.ID, &e.CreatedAt, &container, &fieldsJSON, &e.NextSelector, &e.RequestedMaxPages, &e.EffectiveMaxPages, &pagesJSON, &e.StoppedReason, &e.PagesVisited); err != nil {
 			return nil, err
 		}
+		e.Container = container.String
 		if err := json.Unmarshal([]byte(fieldsJSON), &e.Fields); err != nil {
 			return nil, err
 		}

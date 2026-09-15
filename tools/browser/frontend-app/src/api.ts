@@ -46,13 +46,20 @@ export interface CrawlLogField {
 
 export interface CrawlLogPage {
   url: string
-  results: Record<string, unknown>
+  // Exactly one of results/items is ever present (step 18) — results
+  // in flat mode, items (one object per matched container) in grouped
+  // mode.
+  results?: Record<string, unknown>
+  items?: Record<string, unknown>[]
   notFound: string[]
 }
 
 export interface CrawlLogEntry {
   id: string
   createdAt: string
+  // Empty when this crawl used flat (non-grouped) extraction — see
+  // CrawlLogPage's own results/items split above.
+  container?: string
   fields: CrawlLogField[]
   nextSelector: string
   requestedMaxPages: number

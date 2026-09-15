@@ -45,6 +45,12 @@ export interface CrawlRequestField {
 }
 
 export interface CrawlRequest {
+  // Optional (step 30) — a CSS selector for each repeating item's own
+  // wrapping element. Purely passed through by this file: career's own
+  // backend both produces this (crawl-request) and consumes crawlPaginated's
+  // resulting `items` per page (ingest-crawl-results) — the frontend
+  // never inspects or transforms it.
+  container?: string
   fields: CrawlRequestField[]
   nextSelector: string
   requestedMaxPages: number
@@ -76,7 +82,11 @@ export async function navigateTo(url: string): Promise<void> {
 
 export interface CrawlResultPage {
   url: string
-  results: Record<string, unknown>
+  // Exactly one of results/items is ever present (step 30, mirroring
+  // browser's own step 18 contract) — results in flat mode, items (one
+  // object per matched container) in grouped mode.
+  results?: Record<string, unknown>
+  items?: Record<string, unknown>[]
   notFound: string[]
 }
 

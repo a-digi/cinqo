@@ -60,12 +60,27 @@ type extractField struct {
 }
 
 type extractRequest struct {
-	Fields []extractField `json:"fields"`
+	// Container (step 18) is an optional CSS selector for each
+	// repeating item's own wrapping element — when set, every field's
+	// own selector is evaluated relative to each matched container
+	// instead of the whole document, and the response's own Items
+	// (not Results) is populated: one correctly-grouped object per
+	// real item, instead of separate same-length arrays that may not
+	// actually correspond to the same item. See
+	// plan/ai/tools/browser/step-18-grouped-container-extraction.md.
+	Container string         `json:"container,omitempty"`
+	Fields    []extractField `json:"fields"`
 }
 
 type extractResponse struct {
-	Results  map[string]any `json:"results"`
-	NotFound []string       `json:"notFound"`
+	// Results is populated in flat mode (no Container) — unchanged
+	// from before step 18.
+	Results map[string]any `json:"results,omitempty"`
+	// Items is populated in grouped mode (Container set) — one object
+	// per matched container, shaped like Results would be for that one
+	// item alone. Exactly one of Results/Items is ever non-nil.
+	Items    []map[string]any `json:"items,omitempty"`
+	NotFound []string         `json:"notFound"`
 }
 
 // extractHandler handles POST /extract — the --mcp adapter's own real
@@ -92,7 +107,7 @@ func extractHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	result, err := performExtraction(body.Fields)
+	result, err := performExtraction(body.Container, body.Fields)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("extract failed: %v", err), http.StatusBadGateway)
 		return
@@ -108,14 +123,14 @@ func extractHandler(w http.ResponseWriter, r *http.Request) {
 // same as crawlPage/findLoginElements. A thin lock+timeout wrapper
 // around runExtractionOnCurrentPage — see that function's own doc
 // comment for why the split exists.
-func performExtraction(fields []extractField) (extractResponse, error) {
+func performExtraction(container string, fields []extractField) (extractResponse, error) {
 	sessionMu.Lock()
 	defer sessionMu.Unlock()
 
 	ctx, cancel := context.WithTimeout(sessionCtx, extractTimeout)
 	defer cancel()
 
-	return runExtractionOnCurrentPage(ctx, fields)
+	return runExtractionOnCurrentPage(ctx, container, fields)
 }
 
 // runExtractionOnCurrentPage is performExtraction's own actual logic,
@@ -127,12 +142,13 @@ func performExtraction(fields []extractField) (extractResponse, error) {
 // already-locked caller would hang forever). performExtraction's own
 // external behavior/contract is unchanged by this split. See
 // plan/ai/tools/browser/step-16-paginated-crawl-instructions.md.
-func runExtractionOnCurrentPage(ctx context.Context, fields []extractField) (extractResponse, error) {
+func runExtractionOnCurrentPage(ctx context.Context, container string, fields []extractField) (extractResponse, error) {
 	payload := struct {
+		Container      string         `json:"container,omitempty"`
 		Fields         []extractField `json:"fields"`
 		MaxItems       int            `json:"maxItems"`
 		MaxValueLength int            `json:"maxValueLength"`
-	}{Fields: fields, MaxItems: maxExtractedItems, MaxValueLength: maxExtractedValueLength}
+	}{Container: container, Fields: fields, MaxItems: maxExtractedItems, MaxValueLength: maxExtractedValueLength}
 
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
@@ -144,7 +160,16 @@ func runExtractionOnCurrentPage(ctx context.Context, fields []extractField) (ext
 	if err := chromedp.Run(ctx, chromedp.Evaluate(js, &result)); err != nil {
 		return extractResponse{}, err
 	}
-	if result.Results == nil {
+	// Default only the mode actually in play — grouped mode (Container
+	// set) leaves Results nil/omitted rather than forcing it to {}, and
+	// vice versa for Items, so the response's own "exactly one of
+	// Results/Items is populated" contract holds even for a page with
+	// zero matches.
+	if container != "" {
+		if result.Items == nil {
+			result.Items = []map[string]any{}
+		}
+	} else if result.Results == nil {
 		result.Results = map[string]any{}
 	}
 	if result.NotFound == nil {
@@ -155,7 +180,8 @@ func runExtractionOnCurrentPage(ctx context.Context, fields []extractField) (ext
 }
 
 type extractPageDataArgs struct {
-	Fields []extractField `json:"fields" jsonschema:"one entry per piece of data to extract from the currently loaded page"`
+	Container string         `json:"container,omitempty" jsonschema:"CSS selector for each repeating item's own wrapping element (e.g. one job listing's own <div> or <li>). Set this whenever the page LISTS MULTIPLE similar items at once (a search-results/job-listing/product-catalog page) and more than one field describes each one — this is the correct default for a listing page, not an optional extra. Leave unset only for a page describing a single item. With it, fields are evaluated relative to each item and grouped correctly; without it on a listing page, fields describing multiple items are returned as separate arrays that may NOT actually correspond position-for-position to the same real item."`
+	Fields    []extractField `json:"fields" jsonschema:"one entry per piece of data to extract — relative to each container match when container is set, relative to the whole page otherwise"`
 }
 
 // registerExtractPageData adds the extract_page_data MCP tool — thin,
@@ -163,8 +189,9 @@ type extractPageDataArgs struct {
 // the result.
 func registerExtractPageData(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "extract_page_data",
-		Description: "Read specific fields (by CSS selector) off the currently loaded page (see fetch_page_html) and return them structured, instead of the whole page's HTML. Read-only; submits nothing.",
+		Name: "extract_page_data",
+		Description: "Read specific fields (by CSS selector) off the currently loaded page (see fetch_page_html) and return them structured, instead of the whole page's HTML. Read-only; submits nothing. " +
+			"Before calling this, check whether the page LISTS MULTIPLE similar items at once (e.g. a job board's own search-results page) or describes just ONE item. For a listing page, always pass container — a selector for one item's own repeating wrapping element — so the result is one correctly-grouped object per item (in `items`); this is the default correct approach for a listing page, not a fallback for when something looks wrong. Omitting container on a listing page returns separate same-length arrays (in `results`) that may NOT actually correspond position-for-position to the same real item.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args extractPageDataArgs) (*mcp.CallToolResult, any, error) {
 		if len(args.Fields) == 0 {
 			return &mcp.CallToolResult{
@@ -181,7 +208,7 @@ func registerExtractPageData(server *mcp.Server) {
 			}
 		}
 
-		reqBody, err := json.Marshal(extractRequest{Fields: args.Fields})
+		reqBody, err := json.Marshal(extractRequest{Container: args.Container, Fields: args.Fields})
 		if err != nil {
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("failed to build request: %v", err)}},
