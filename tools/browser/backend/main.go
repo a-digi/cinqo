@@ -35,6 +35,7 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -138,7 +139,31 @@ func startSharedSession() error {
 	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), allocatorOptions()...)
 	ctx, ctxCancel := chromedp.NewContext(allocCtx)
 
-	if err := chromedp.Run(ctx, chromedp.Navigate("about:blank")); err != nil {
+	// Pure JavaScript modifications mimicking the puppeteer stealth plugin
+	stealthScript := `
+		Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+		Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+		window.chrome = { runtime: {}, loadTimes: Date.now, csi: () => {}, app: {} };
+		Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+		
+		const getParameter = WebGLRenderingContext.prototype.getParameter;
+		WebGLRenderingContext.prototype.getParameter = function(parameter) {
+			if (parameter === 37445) return 'Intel Inc.';
+			if (parameter === 37446) return 'Intel(R) Iris(R) Xe Graphics';
+			return getParameter.apply(this, arguments);
+		};
+	`
+
+	// Build actions using the native cdproto/page Action wrapper
+	actions := []chromedp.Action{
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			_, err := page.AddScriptToEvaluateOnNewDocument(stealthScript).Do(ctx)
+			return err
+		}),
+		chromedp.Navigate("about:blank"),
+	}
+
+	if err := chromedp.Run(ctx, actions...); err != nil {
 		ctxCancel()
 		allocCancel()
 		return err
@@ -169,17 +194,19 @@ func allocatorOptions() []chromedp.ExecAllocatorOption {
 	}
 
 	opts = append(opts,
-		// Disable the automation bar and flags that identify the browser as a test suite
+		// 1. Strip the standard automation controls and markers
 		chromedp.Flag("disable-blink-features", "AutomationControlled"),
 		chromedp.Flag("excludeSwitches", "enable-automation"),
-
-		// Prevent fallback behaviors like using unique mock keychain architectures
 		chromedp.Flag("use-mock-keychain", true),
 
-		// Set a modern consumer User Agent (overrides the 'HeadlessChrome' identifier)
+		// 2. Erase core headless indicators and sandbox configurations
+		chromedp.Flag("headless", "new"), // Modern headless engine is harder to spot than "old" headless
+		chromedp.Flag("disable-infobars", true),
+		chromedp.Flag("disable-notifications", true),
+
+		// 3. Set a standard, non-headless consumer User Agent matching current browser iterations
 		chromedp.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
 	)
-
 	return opts
 }
 
