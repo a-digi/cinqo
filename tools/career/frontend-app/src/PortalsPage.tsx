@@ -15,7 +15,7 @@ import { buildCrawlMessage, crawlConversationTitle } from './crawl'
 import { buildGenerateInstructionsMessage, generateInstructionsConversationTitle } from './generateInstructions'
 import { startCrawlNow, fetchActiveCrawlRun, type CrawlRun } from './crawlNow'
 import { Dropdown } from './Dropdown'
-import { PlusIcon, PlayIcon, SparkleIcon } from './icons'
+import { PlusIcon, PlayIcon, SparkleIcon, LogIcon } from './icons'
 
 // Portals are tool-wide, not persona/profile-scoped — same reasoning
 // Jobs/Companies already document. No Dropdown call site here: a
@@ -190,6 +190,19 @@ export function PortalsPage() {
 
   function sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms))
+  }
+
+  // latestCrawlLogMessage strips the leading "RFC3339<TAB>" the
+  // backend's own log entries carry (crawl_runs.go's
+  // appendCrawlRunLog) and returns just the human-readable message
+  // part of the most recent one — the live "what's happening right
+  // now" text shown next to the "Stop watching" button while a run is
+  // still in progress.
+  function latestCrawlLogMessage(log: string[]): string | null {
+    if (log.length === 0) return null
+    const last = log[log.length - 1]
+    const tabIndex = last.indexOf('\t')
+    return tabIndex >= 0 ? last.slice(tabIndex + 1) : last
   }
 
   // watchCrawlRun polls GET .../crawl-now/active until the run reaches
@@ -736,24 +749,39 @@ export function PortalsPage() {
                         {/* "Crawl now"'s own live/terminal state (steps 37/38) — kept
                             separate from crawlResults above, which now only ever
                             carries a start failure or a stop notice for this
-                            mechanism. Nothing shown while running: the button itself
-                            already says "Stop watching". */}
-                        {crawlRunWatches[link.id]?.status === 'completed' && (
-                          <p className="mt-1 text-xs text-green-700">{crawlRunWatches[link.id]!.resultSummary}</p>
-                        )}
-                        {crawlRunWatches[link.id]?.status === 'failed' && (
+                            mechanism. Shown for every status, including while
+                            running: the backend already appends a coarse log entry
+                            per step (building request/navigating/crawl_paginated/
+                            ingesting) as it goes, and this page is already polling
+                            it every 3s — surfacing the latest entry live, plus the
+                            full log on demand, is what "the frontend shows the
+                            status and the logs" concretely means (not just on a
+                            terminal outcome). */}
+                        {crawlRunWatches[link.id] && (
                           <div className="mt-1">
-                            <p className="text-xs text-red-700">{crawlRunWatches[link.id]!.errorMessage}</p>
+                            {crawlRunWatches[link.id]!.status === 'running' && (
+                              <p className="text-xs text-gray-500">
+                                {latestCrawlLogMessage(crawlRunWatches[link.id]!.log) ?? 'Crawl in progress…'}
+                              </p>
+                            )}
+                            {crawlRunWatches[link.id]!.status === 'completed' && (
+                              <p className="text-xs text-green-700">{crawlRunWatches[link.id]!.resultSummary}</p>
+                            )}
+                            {crawlRunWatches[link.id]!.status === 'failed' && (
+                              <p className="text-xs text-red-700">{crawlRunWatches[link.id]!.errorMessage}</p>
+                            )}
                             <button
                               type="button"
                               onClick={() => setExpandedCrawlLogLinkId(expandedCrawlLogLinkId === link.id ? null : link.id)}
-                              className="text-xs text-gray-500 underline hover:text-gray-700"
+                              title="Show every logged step of this crawl run, from start to its current or final status."
+                              className="mt-1 flex items-center gap-1 rounded-md border border-gray-200 px-2 py-0.5 text-xs text-gray-700 hover:bg-gray-50"
                             >
+                              <LogIcon />
                               {expandedCrawlLogLinkId === link.id ? 'Hide log' : 'View log'}
                             </button>
                             {expandedCrawlLogLinkId === link.id && (
                               <pre className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap rounded-md bg-gray-900 p-2 text-xs text-gray-100">
-                                {crawlRunWatches[link.id]!.log.length > 0 ? crawlRunWatches[link.id]!.log.join('\n') : '(no log entries)'}
+                                {crawlRunWatches[link.id]!.log.length > 0 ? crawlRunWatches[link.id]!.log.join('\n') : '(no log entries yet)'}
                               </pre>
                             )}
                           </div>
