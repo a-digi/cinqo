@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   fetchPortals,
   createPortal,
@@ -130,19 +130,38 @@ export function PortalsPage() {
     })
   }
 
+  // "Crawl now" own per-link cancellation token (step 35) — lets Stop
+  // supersede an in-flight attempt cleanly. Step 34's own outer
+  // "retry the whole sequence every 15s" loop is REMOVED here: the
+  // browser tool itself now waits up to ~30 minutes internally, in one
+  // continuously open window, whenever Cloudflare blocks it
+  // (plan/ai/tools/browser/step-27-long-lived-headed-fallback-session.md)
+  // — retrying the whole sequence on top of that would only ever fire
+  // after that full internal wait already failed, and would reopen a
+  // brand-new window for another 30 minutes, which is exactly the
+  // close-and-reopen behavior this step exists to stop. See
+  // plan/ai/tools/career/step-35-crawl-now-single-long-lived-attempt.md.
+  const crawlNowTokensRef = useRef<Record<string, number>>({})
+
   // "Crawl now" (step 27) — deterministic, no AI: load the link's own
   // crawl instructions (already parsed server-side into the shape
   // browser's own /crawl-paginated wants), navigate there, run the
   // paginated extraction, then hand the raw results to career's own
-  // backend to map onto job rows via the fixed label vocabulary.
+  // backend to map onto job rows via the fixed label vocabulary. One
+  // attempt per click — if Cloudflare blocks it, the browser tool's
+  // own call already waits as long as it needs to (up to ~30 minutes)
+  // before this resolves; nothing here schedules a further retry.
   function handleCrawlNow(link: PortalLink) {
     if (crawlingLinkIds.has(link.id)) return
+    const myToken = (crawlNowTokensRef.current[link.id] ?? 0) + 1
+    crawlNowTokensRef.current[link.id] = myToken
     startCrawl(link)
 
     fetchCrawlRequest(link.id)
       .then((request) => navigateTo(link.url).then(() => crawlPaginated(request)))
       .then((crawlResult) => ingestCrawlResults(link.id, crawlResult.pages).then((ingested) => ({ crawlResult, ingested })))
       .then(({ crawlResult, ingested }) => {
+        if (crawlNowTokensRef.current[link.id] !== myToken) return // Stop was clicked
         const summary = `Saved ${ingested.jobsSaved} new, updated ${ingested.jobsUpdated}, skipped ${ingested.jobsSkipped} — visited ${crawlResult.pagesVisited} page(s).`
         if (crawlResult.stoppedReason === 'cloudflare_blocked') {
           const reasonSuffix = crawlResult.blockedReason ? ` (${crawlResult.blockedReason})` : ''
@@ -155,6 +174,7 @@ export function PortalsPage() {
         setCrawlResults((prev) => ({ ...prev, [link.id]: { ok: true, text: `${summary} (${crawlResult.stoppedReason}).` } }))
       })
       .catch((err: unknown) => {
+        if (crawlNowTokensRef.current[link.id] !== myToken) return
         if (err instanceof CrawlBlockedError) {
           const reasonSuffix = err.reason ? ` (${err.reason})` : ''
           setCrawlResults((prev) => ({ ...prev, [link.id]: { ok: false, text: `Crawl blocked by Cloudflare — ${err.message}${reasonSuffix}.` } }))
@@ -162,7 +182,27 @@ export function PortalsPage() {
         }
         setCrawlResults((prev) => ({ ...prev, [link.id]: { ok: false, text: err instanceof Error ? err.message : 'Crawl failed.' } }))
       })
-      .finally(() => finishCrawl(link))
+      .finally(() => {
+        if (crawlNowTokensRef.current[link.id] === myToken) finishCrawl(link)
+      })
+  }
+
+  // Stop only ever bumps the token so this component stops acting on
+  // whatever the in-flight fetch eventually resolves with — it does
+  // NOT cancel the underlying request or the browser tool's own headed
+  // session, which keeps running server-side regardless (neither
+  // crawlHandler nor paginatedCrawlHandler ties its own context to the
+  // incoming HTTP request's context, and this call uses no
+  // AbortController). A deliberate, named limitation — see
+  // plan/ai/tools/browser/step-27-long-lived-headed-fallback-session.md's
+  // own Open Question 1 — not an oversight.
+  function handleCancelCrawlNow(link: PortalLink) {
+    crawlNowTokensRef.current[link.id] = (crawlNowTokensRef.current[link.id] ?? 0) + 1
+    setCrawlResults((prev) => ({
+      ...prev,
+      [link.id]: { ok: false, text: 'Crawl cancelled in this tab — the browser tool may still be working on it in the background.' },
+    }))
+    finishCrawl(link)
   }
 
   // "Crawl with AI" (steps 24-26, kept per step 27) — creates a
@@ -570,16 +610,27 @@ export function PortalsPage() {
                     {link.crawlInstructions && (
                       <div className="mt-1.5">
                         <div className="flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handleCrawlNow(link)}
-                            disabled={crawlingLinkIds.has(link.id)}
-                            title="Deterministic — no AI, no platform needed. Requires fields labeled title/url (and optionally company/location/description/postedAt) in this link's crawl instructions."
-                            className="flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            <PlayIcon />
-                            {crawlingLinkIds.has(link.id) ? 'Crawling…' : 'Crawl now'}
-                          </button>
+                          {crawlingLinkIds.has(link.id) ? (
+                            <button
+                              type="button"
+                              onClick={() => handleCancelCrawlNow(link)}
+                              title="Stop waiting on this crawl in this tab — if the browser tool already opened a window to wait out a Cloudflare challenge, it may keep running in the background regardless."
+                              className="flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                            >
+                              <PlayIcon />
+                              Stop
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleCrawlNow(link)}
+                              title="Deterministic — no AI, no platform needed. Requires fields labeled title/url (and optionally company/location/description/postedAt) in this link's crawl instructions. If Cloudflare blocks it, this can take up to about 30 minutes while the browser tool waits for it to clear."
+                              className="flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              <PlayIcon />
+                              Crawl now
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => handleCrawlWithAI(link)}
