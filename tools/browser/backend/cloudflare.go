@@ -71,7 +71,32 @@ type cloudflareCheck struct {
 // almost no real content; any genuine page — a job listing, an
 // article — does). See
 // plan/ai/tools/browser/step-33-fix-persistent-script-tag-false-positive.md.
+//
+// A second, real false positive found on the FIRST version of the
+// widget check, live-reported with the exact reason it produced
+// ("challenge-platform-script") on a page confirmed to show no
+// challenge at all: `document.querySelector('iframe[src*="..."]')`
+// only tests DOM *presence*, and Cloudflare's own Turnstile can run in
+// "invisible" mode — a real `<iframe>` permanently present for
+// background bot-scoring, deliberately kept hidden
+// (`display:none`/zero-size) unless an interactive challenge is
+// actually needed. isRenderedVisible below checks genuine on-screen
+// rendering (computed display/visibility/opacity plus a non-zero
+// bounding box), not mere presence — the same "presence isn't the same
+// as active" lesson `step-33` already applied to the script tag/global
+// variable checks, applied here to the widget element check too. See
+// plan/ai/tools/browser/step-35-fix-hidden-turnstile-widget-false-positive.md.
 const cloudflareDetectJS = `(function() {
+	function isRenderedVisible(el) {
+		if (!el) return false;
+		var style = window.getComputedStyle(el);
+		if (style.display === "none" || style.visibility === "hidden" || parseFloat(style.opacity) === 0) {
+			return false;
+		}
+		var rect = el.getBoundingClientRect();
+		return rect.width > 0 && rect.height > 0;
+	}
+
 	if (document.title === "Just a moment...") {
 		return {detected: true, reason: "title"};
 	}
@@ -85,9 +110,16 @@ const cloudflareDetectJS = `(function() {
 		!!document.querySelector('script[src*="/cdn-cgi/challenge-platform/"]');
 	var hasWafParams = typeof window.__CF$cv$params !== "undefined";
 	if (hasChallengeScript || hasWafParams) {
-		var visibleWidget = document.querySelector('iframe[src*="challenges.cloudflare.com"]') ||
-			document.querySelector('#challenge-stage') ||
-			document.querySelector('[class*="cf-turnstile"]');
+		var widgetCandidates = document.querySelectorAll(
+			'iframe[src*="challenges.cloudflare.com"], #challenge-stage, [class*="cf-turnstile"]'
+		);
+		var visibleWidget = false;
+		for (var i = 0; i < widgetCandidates.length; i++) {
+			if (isRenderedVisible(widgetCandidates[i])) {
+				visibleWidget = true;
+				break;
+			}
+		}
 		var bodyText = ((document.body && document.body.innerText) || '').trim();
 		if (visibleWidget || bodyText.length < 200) {
 			return {detected: true, reason: hasWafParams ? "waf-block-params" : "challenge-platform-script"};
