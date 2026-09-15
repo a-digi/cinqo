@@ -47,10 +47,16 @@ type cloudflareCheck struct {
 // for years); a known challenge element id/class; a
 // <script src="*challenges.cloudflare.com*"> tag (covers the
 // Turnstile-based challenge even when the page's own title/wrapper
-// markup varies). DOM/title signatures only — does not inspect HTTP
-// response headers (cf-mitigated, server: cloudflare), which would
-// require chromedp's Network domain event interception; see this step's
-// own open question 3 for what that gap means in practice.
+// markup varies); a <script src="*/cdn-cgi/challenge-platform/*"> tag
+// and a global window.__CF$cv$params (both cover Cloudflare's WAF
+// "Request Blocked" interstitial — a harder, non-resolving block
+// distinct from the resolvable JS challenge the first three signatures
+// target, but still "a Cloudflare challenge the browser could not
+// overcome" from a caller's point of view). DOM/title signatures only —
+// does not inspect HTTP response headers (cf-mitigated, server:
+// cloudflare), which would require chromedp's Network domain event
+// interception; see this step's own open question 3 for what that gap
+// means in practice.
 const cloudflareDetectJS = `(function() {
 	if (document.title === "Just a moment...") {
 		return {detected: true, reason: "title"};
@@ -62,6 +68,12 @@ const cloudflareDetectJS = `(function() {
 	}
 	if (document.querySelector('script[src*="challenges.cloudflare.com"]')) {
 		return {detected: true, reason: "turnstile-script"};
+	}
+	if (document.querySelector('script[src*="/cdn-cgi/challenge-platform/"]')) {
+		return {detected: true, reason: "challenge-platform-script"};
+	}
+	if (typeof window.__CF$cv$params !== "undefined") {
+		return {detected: true, reason: "waf-block-params"};
 	}
 	return {detected: false, reason: ""};
 })()`
@@ -108,4 +120,32 @@ func waitForCloudflareClearance(ctx context.Context) (cloudflareCheck, error) {
 	}
 
 	return check, nil
+}
+
+// crawlError is a distinct, typed crawl failure — today only "the
+// Cloudflare challenge could not be cleared" — that crawlHandler and
+// paginatedCrawlHandler (crawl.go, paginate.go) surface as structured
+// JSON rather than the plain-text 502 body every other crawl failure
+// still gets, so a caller (Career's own deterministic "Crawl now") can
+// branch on Code instead of string-matching an error message.
+type crawlError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	Reason  string `json:"reason"`
+}
+
+func (e *crawlError) Error() string { return e.Message }
+
+// newCloudflareUnresolvedError is returned when a Cloudflare challenge
+// was still present after waitForCloudflareClearance's own wait budget
+// ran out (or, on the shorter per-page pagination path, detected at
+// all — see paginate.go) — i.e. the browser could not overcome it, as
+// opposed to step 21's original "detected but cleared in time" case,
+// which is not an error at all.
+func newCloudflareUnresolvedError(reason string) *crawlError {
+	return &crawlError{
+		Code:    "cloudflare_challenge_unresolved",
+		Message: "Cloudflare challenge could not be cleared",
+		Reason:  reason,
+	}
 }

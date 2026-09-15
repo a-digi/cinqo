@@ -17,19 +17,42 @@
 const CAREER_PROXY_BASE = '/api/v1/tools/career/proxy'
 const BROWSER_PROXY_BASE = '/api/v1/tools/browser/proxy'
 
+// CrawlBlockedError is thrown instead of a plain Error when browser's
+// own /crawl or /crawl-paginated (tools/browser/backend/cloudflare.go's
+// crawlError) reports a Cloudflare challenge it could not clear — its
+// `code` lets a caller (PortalsPage's handleCrawlNow) branch on this
+// specific failure rather than pattern-matching err.message.
+export class CrawlBlockedError extends Error {
+  code: string
+  reason?: string
+  constructor(message: string, code: string, reason?: string) {
+    super(message)
+    this.name = 'CrawlBlockedError'
+    this.code = code
+    this.reason = reason
+  }
+}
+
 // Both career's own handlers (writeJSON({...})) and core's own proxy-
 // level failures (response.ErrorResponse's {error:true,message:"..."})
 // can produce the error responses this sees — parsed for a clean
 // `.message` either way, rather than surfacing the raw JSON body text
-// verbatim to the user.
+// verbatim to the user. A body carrying `code` (browser's own
+// crawlError shape) is thrown as a CrawlBlockedError instead of a
+// plain Error.
 async function proxyJsonOrThrow<T>(res: Response, action: string): Promise<T> {
   if (!res.ok) {
     const text = await res.text().catch(() => '')
     let message = text
     try {
-      const parsed = JSON.parse(text) as { message?: unknown }
+      const parsed = JSON.parse(text) as { message?: unknown; code?: unknown; reason?: unknown }
       if (parsed && typeof parsed.message === 'string') message = parsed.message
-    } catch {
+      if (parsed && typeof parsed.code === 'string') {
+        const reason = typeof parsed.reason === 'string' ? parsed.reason : undefined
+        throw new CrawlBlockedError(message || `failed to ${action} (${res.status})`, parsed.code, reason)
+      }
+    } catch (e) {
+      if (e instanceof CrawlBlockedError) throw e
       // Not JSON (e.g. a plain-text 404/502 from a proxied backend) — use the raw text as-is.
     }
     throw new Error(message || `failed to ${action} (${res.status})`)
@@ -96,6 +119,10 @@ export interface CrawlPaginatedResult {
   pagesVisited: number
   requestedMaxPages: number
   effectiveMaxPages: number
+  // blockedReason (only set when stoppedReason is "cloudflare_blocked")
+  // — a Cloudflare challenge/block was hit after page 1, so pagination
+  // stopped early; pages already collected are still returned above.
+  blockedReason?: string
 }
 
 // POST browser/crawl-paginated — extract fields[] from the current

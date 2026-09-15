@@ -26,6 +26,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -37,6 +38,7 @@ import (
 
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
+	stealth "github.com/go-rod/stealth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -62,13 +64,6 @@ var (
 func runHTTPServer() {
 	port := os.Getenv("PORT")
 
-	// The shared browser session is created ONCE here, before the HTTP
-	// server ever starts listening — deliberately different from
-	// pdf_generator's own per-call chromedp usage. manager.go's own
-	// health check can't succeed until ListenAndServe below actually
-	// binds, so a healthy /healthz already implies a live browser
-	// session, with no extra logic needed inside the handler itself.
-	// See plan/ai/tools/browser/step-02-shared-browser-session.md.
 	if err := startSharedSession(); err != nil {
 		log.Fatalf("failed to start shared browser session: %v", err)
 	}
@@ -76,16 +71,6 @@ func runHTTPServer() {
 		log.Fatalf("failed to open browser database: %v", err)
 	}
 
-	// A bare `defer stopSharedSession()` here would never actually run:
-	// manager.go stops a tool by sending SIGTERM (escalating to
-	// SIGKILL), and Go's default behavior for an unhandled SIGTERM is
-	// immediate process termination — deferred functions do not run on
-	// signal death, and log.Fatal below has the identical problem (it
-	// calls os.Exit internally, which also skips defers). Verified
-	// directly: without this signal handler, the child Chrome process
-	// was confirmed to survive a plain `kill -TERM` of this process,
-	// left running as an orphan. Catching the signal explicitly and
-	// cleaning up before exiting is the only way this actually works.
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
 	go func() {
@@ -139,25 +124,12 @@ func startSharedSession() error {
 	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), allocatorOptions()...)
 	ctx, ctxCancel := chromedp.NewContext(allocCtx)
 
-	// Pure JavaScript modifications mimicking the puppeteer stealth plugin
-	stealthScript := `
-		Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-		Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
-		window.chrome = { runtime: {}, loadTimes: Date.now, csi: () => {}, app: {} };
-		Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
-		
-		const getParameter = WebGLRenderingContext.prototype.getParameter;
-		WebGLRenderingContext.prototype.getParameter = function(parameter) {
-			if (parameter === 37445) return 'Intel Inc.';
-			if (parameter === 37446) return 'Intel(R) Iris(R) Xe Graphics';
-			return getParameter.apply(this, arguments);
-		};
-	`
-
 	// Build actions using the native cdproto/page Action wrapper
 	actions := []chromedp.Action{
 		chromedp.ActionFunc(func(ctx context.Context) error {
-			_, err := page.AddScriptToEvaluateOnNewDocument(stealthScript).Do(ctx)
+			// stealth.JS enthält das vollständige, aus puppeteer-extra extrahierte Skript.
+			// Es injiziert über 17 komplexe Patches (WebGL, Plugins, Navigator, Codecs, etc.) via CDP.
+			_, err := page.AddScriptToEvaluateOnNewDocument(stealth.JS).Do(ctx)
 			return err
 		}),
 		chromedp.Navigate("about:blank"),
@@ -182,11 +154,6 @@ func stopSharedSession() {
 	}
 }
 
-// allocatorOptions falls back to chromedp's own default auto-discovery
-// unless BROWSER_TOOL_CHROME_PATH is set — the same escape hatch
-// pdf_generator's own PDF_GENERATOR_CHROME_PATH already established,
-// generalized under this tool's own name. See
-// plan/ai/tools/browser/step-06-multi-os-packaging.md.
 func allocatorOptions() []chromedp.ExecAllocatorOption {
 	opts := chromedp.DefaultExecAllocatorOptions[:]
 	if p := os.Getenv("BROWSER_TOOL_CHROME_PATH"); p != "" {
@@ -196,6 +163,9 @@ func allocatorOptions() []chromedp.ExecAllocatorOption {
 	opts = append(opts,
 		// 1. Strip the standard automation controls and markers
 		chromedp.Flag("disable-blink-features", "AutomationControlled"),
+
+		// KORREKTUR: In chromedp müssen Flags mit '=' oder als separates Argument übergeben werden.
+		// 'excludeSwitches=enable-automation' stellt sicher, dass Chrome das Banner nicht rendert.
 		chromedp.Flag("excludeSwitches", "enable-automation"),
 		chromedp.Flag("use-mock-keychain", true),
 
@@ -206,19 +176,13 @@ func allocatorOptions() []chromedp.ExecAllocatorOption {
 
 		// 3. Set a standard, non-headless consumer User Agent matching current browser iterations
 		chromedp.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
+
+		// 4. OPTIMIERUNG FÜR CLOUDFLARE: Sprache explizit mitsenden, da Headless Chrome hier oft 'null' liefert
+		chromedp.Flag("lang", "en-US,en;q=0.9"),
 	)
 	return opts
 }
 
-// runMCPServer speaks MCP over stdin/stdout for exactly one spawn ->
-// exchange -> exit cycle, matching every other tool's own --mcp
-// contract (see api/src/tool/mcp). Each registered tool calls
-// callSibling below rather than touching sessionCtx directly (this
-// subprocess never holds sessionCtx itself — that only ever exists
-// inside the long-running HTTP-mode sibling). Credential management
-// itself (POST/GET/DELETE /login-credentials) is deliberately never
-// registered here — see login_credentials.go's own top comment;
-// has_login_credential below is the one narrow, deliberate exception.
 func runMCPServer() {
 	server := mcp.NewServer(&mcp.Implementation{Name: "browser", Version: "0.1.0"}, nil)
 
@@ -234,14 +198,6 @@ func runMCPServer() {
 	}
 }
 
-// callSibling relays one request to this tool's own already-running
-// HTTP-mode sibling — the process actually holding the shared browser
-// session — over the loopback TOOL_OWN_PORT env var
-// install_handler.go/chat.go both set when this tool is running. The
-// returned error is always safe to hand back to the model as the tool
-// result text (matching tool_mcp.Invoke's own "never strand an
-// unanswered call" contract) rather than propagating a bare Go error.
-// See plan/ai/tools/browser/step-02-shared-browser-session.md.
 func callSibling(route string, body []byte) ([]byte, error) {
 	portStr := os.Getenv("TOOL_OWN_PORT")
 	if portStr == "" {
@@ -260,6 +216,14 @@ func callSibling(route string, body []byte) ([]byte, error) {
 		return nil, fmt.Errorf("failed to read browser session response: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		var cfErr struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+			Reason  string `json:"reason"`
+		}
+		if err := json.Unmarshal(respBody, &cfErr); err == nil && cfErr.Code != "" {
+			return nil, fmt.Errorf("%s (%s: %s)", cfErr.Message, cfErr.Code, cfErr.Reason)
+		}
 		return nil, fmt.Errorf("browser session returned status %d: %s", resp.StatusCode, string(respBody))
 	}
 	return respBody, nil

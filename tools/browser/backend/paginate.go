@@ -92,6 +92,10 @@ type paginatedCrawlResponse struct {
 	PagesVisited      int                 `json:"pagesVisited"`
 	RequestedMaxPages int                 `json:"requestedMaxPages"`
 	EffectiveMaxPages int                 `json:"effectiveMaxPages"`
+	// BlockedReason carries the Cloudflare check's own Reason
+	// (cloudflare.go) when StoppedReason is "cloudflare_blocked" — set
+	// only on that one stop reason, empty otherwise.
+	BlockedReason string `json:"blockedReason,omitempty"`
 }
 
 // paginatedCrawlRequest is the internal JSON shape the --mcp adapter
@@ -138,6 +142,13 @@ func paginatedCrawlHandler(w http.ResponseWriter, r *http.Request) {
 
 	result, pageHTML, err := performPaginatedCrawl(body.Container, body.Fields, body.Mapping, body.NextSelector, body.RequestedMaxPages, body.EffectiveMaxPages, captureHTML)
 	if err != nil {
+		var cfErr *crawlError
+		if errors.As(err, &cfErr) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadGateway)
+			_ = json.NewEncoder(w).Encode(cfErr)
+			return
+		}
 		http.Error(w, fmt.Sprintf("paginated crawl failed: %v", err), http.StatusBadGateway)
 		return
 	}
@@ -187,6 +198,7 @@ func performPaginatedCrawl(container string, fields []extractField, mapping map[
 		pageHTML = make([]string, 0, effectiveMaxPages)
 	}
 	stoppedReason := ""
+	blockedReason := ""
 
 	for page := 1; ; page++ {
 		result, err := runExtractionOnCurrentPage(ctx, container, fields, mapping)
@@ -240,6 +252,27 @@ func performPaginatedCrawl(container string, fields []extractField, mapping map[
 			pageHTML = append(pageHTML, html)
 		}
 
+		// A Cloudflare challenge/block on this page means the extraction
+		// above ran against interstitial DOM, not real content — the
+		// page just appended is noise. On the very first page nothing
+		// useful was collected at all, so this is a hard error (same
+		// contract as crawlPage's own unresolved-challenge case). On a
+		// later page, real items were already collected on earlier
+		// pages — stop pagination but keep and return what's already
+		// there, distinctly flagged, rather than silently falling
+		// through to "no_next_link" (today's misleading bug: the
+		// interstitial page has no next-page selector either, so the
+		// loop used to just end as if pagination were naturally
+		// exhausted).
+		if cf.Detected {
+			if len(pages) == 1 {
+				return paginatedCrawlResponse{}, nil, newCloudflareUnresolvedError(cf.Reason)
+			}
+			stoppedReason = "cloudflare_blocked"
+			blockedReason = cf.Reason
+			break
+		}
+
 		if page >= effectiveMaxPages {
 			stoppedReason = "max_pages_reached"
 			break
@@ -288,6 +321,7 @@ func performPaginatedCrawl(container string, fields []extractField, mapping map[
 		PagesVisited:      len(pages),
 		RequestedMaxPages: requestedMaxPages,
 		EffectiveMaxPages: effectiveMaxPages,
+		BlockedReason:     blockedReason,
 	}, pageHTML, nil
 }
 
@@ -315,7 +349,7 @@ func registerCrawlPaginated(server *mcp.Server) {
 		Description: "Extract fields from the currently loaded page, then follow a pagination control and repeat, up to a maximum number of pages — instructed via a YAML document (fields + pagination). Read-only; submits nothing. " +
 			"Before writing the instructions, check whether the page LISTS MULTIPLE similar items at once or describes just one. For a listing page, always add a top-level container selector for one item's own repeating wrapping element — the default correct approach for a listing page, not a fallback — so the result is one correctly-grouped object per item (in `items`) instead of separate same-length arrays (in `results`) that may NOT actually line up. " +
 			"Optionally add a top-level mapping to rename extracted fields to specific output keys — e.g. a consuming tool expects title/url/company but this page's own natural fields are better labeled job_title/link/employer. " +
-			"A page's own cloudflareDetected (in its entry under pages) means a Cloudflare challenge was still showing on that page — its results/items may reflect the challenge interstitial, not real content.",
+			"If a Cloudflare challenge or block is hit on the very first page, this call fails with a cloudflare_challenge_unresolved error. If it's hit on a later page, pagination stops there and the response's stoppedReason is \"cloudflare_blocked\" (with blockedReason explaining why) — pages already collected before the block are still returned.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args crawlPaginatedArgs) (*mcp.CallToolResult, any, error) {
 		if strings.TrimSpace(args.Instructions) == "" {
 			return &mcp.CallToolResult{

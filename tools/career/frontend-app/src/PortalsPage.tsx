@@ -12,7 +12,7 @@ import {
 } from './api'
 import { fetchPlatforms, createConversation, sendMessage, CoreApiError, type Platform } from './coreApi'
 import { buildCrawlMessage, crawlConversationTitle } from './crawl'
-import { fetchCrawlRequest, navigateTo, crawlPaginated, ingestCrawlResults } from './browserApi'
+import { fetchCrawlRequest, navigateTo, crawlPaginated, ingestCrawlResults, CrawlBlockedError } from './browserApi'
 import { Dropdown } from './Dropdown'
 import { PlusIcon, PlayIcon } from './icons'
 
@@ -119,10 +119,23 @@ export function PortalsPage() {
       .then((request) => navigateTo(link.url).then(() => crawlPaginated(request)))
       .then((crawlResult) => ingestCrawlResults(link.id, crawlResult.pages).then((ingested) => ({ crawlResult, ingested })))
       .then(({ crawlResult, ingested }) => {
-        const text = `Saved ${ingested.jobsSaved} new, updated ${ingested.jobsUpdated}, skipped ${ingested.jobsSkipped} — visited ${crawlResult.pagesVisited} page(s) (${crawlResult.stoppedReason}).`
-        setCrawlResults((prev) => ({ ...prev, [link.id]: { ok: true, text } }))
+        const summary = `Saved ${ingested.jobsSaved} new, updated ${ingested.jobsUpdated}, skipped ${ingested.jobsSkipped} — visited ${crawlResult.pagesVisited} page(s).`
+        if (crawlResult.stoppedReason === 'cloudflare_blocked') {
+          const reasonSuffix = crawlResult.blockedReason ? ` (${crawlResult.blockedReason})` : ''
+          setCrawlResults((prev) => ({
+            ...prev,
+            [link.id]: { ok: false, text: `${summary} Crawl stopped early — Cloudflare blocked page ${crawlResult.pagesVisited + 1}${reasonSuffix}.` },
+          }))
+          return
+        }
+        setCrawlResults((prev) => ({ ...prev, [link.id]: { ok: true, text: `${summary} (${crawlResult.stoppedReason}).` } }))
       })
       .catch((err: unknown) => {
+        if (err instanceof CrawlBlockedError) {
+          const reasonSuffix = err.reason ? ` (${err.reason})` : ''
+          setCrawlResults((prev) => ({ ...prev, [link.id]: { ok: false, text: `Crawl blocked by Cloudflare — ${err.message}${reasonSuffix}.` } }))
+          return
+        }
         setCrawlResults((prev) => ({ ...prev, [link.id]: { ok: false, text: err instanceof Error ? err.message : 'Crawl failed.' } }))
       })
       .finally(() => finishCrawl(link))
