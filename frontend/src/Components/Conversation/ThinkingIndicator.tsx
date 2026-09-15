@@ -1,19 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { THINKING_WORDS } from './thinkingWords'
 import { formatDuration } from './formatDuration'
+import { effectiveStartMs } from './turnTiming'
 
 function randomWord(): string {
   return THINKING_WORDS[Math.floor(Math.random() * THINKING_WORDS.length)]
-}
-
-// effectiveStartMs is startedAt (RFC3339, the server's own recorded
-// turn-start time) shifted by clockOffsetMs (serverNow - Date.now(),
-// as of the most recent poll — see ConversationContext's own
-// pollUntilFinished) so that Date.now() - effectiveStartMs always
-// equals real server-side elapsed time, even when the viewer's local
-// clock disagrees with the server's.
-function effectiveStartMs(startedAt: string, clockOffsetMs: number): number {
-  return Date.parse(startedAt) - clockOffsetMs
 }
 
 // Claude-Code-style "thinking" placeholder — a random word (re-rolled

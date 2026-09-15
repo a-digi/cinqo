@@ -4,6 +4,7 @@ package query
 
 import (
 	"database/sql"
+	"strings"
 
 	conversation_entity "github.com/a-digi/cinqo/src/conversation/entity"
 )
@@ -57,6 +58,43 @@ func (r *TurnRunQueryRepo) FindMostRecentByConversationID(conversationID string)
 func (r *TurnRunQueryRepo) FindByID(id string) (*conversation_entity.TurnRun, error) {
 	row := r.db.QueryRow(`SELECT `+turnRunColumns+` FROM turn_runs WHERE id = ? LIMIT 1`, id)
 	return scanTurnRun(row.Scan)
+}
+
+// FindActiveSummariesByConversationIDs returns a lean
+// {turnRunId, startedAt} projection for every currently-running turn
+// among conversationIDs, keyed by conversation_id — used by
+// ListHandler to enrich the conversation list with a running-turn
+// indicator without pulling every running turn's own (potentially
+// sizeable) log/user_content into a response that may be polled every
+// few seconds. Returns an empty map without querying when
+// conversationIDs is empty (avoids a malformed `IN ()`). See
+// plan/ai/conversation/step-26-list-endpoint-active-turn-summary.md.
+func (r *TurnRunQueryRepo) FindActiveSummariesByConversationIDs(conversationIDs []string) (map[string]conversation_entity.TurnRunSummary, error) {
+	out := map[string]conversation_entity.TurnRunSummary{}
+	if len(conversationIDs) == 0 {
+		return out, nil
+	}
+
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(conversationIDs)), ",")
+	args := make([]any, len(conversationIDs))
+	for i, id := range conversationIDs {
+		args[i] = id
+	}
+
+	rows, err := r.db.Query(`SELECT id, conversation_id, started_at FROM turn_runs WHERE status = 'running' AND conversation_id IN (`+placeholders+`)`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var s conversation_entity.TurnRunSummary
+		if err := rows.Scan(&s.TurnRunID, &s.ConversationID, &s.StartedAt); err != nil {
+			return nil, err
+		}
+		out[s.ConversationID] = s
+	}
+	return out, rows.Err()
 }
 
 // FindAllRunning returns every row still marked "running" — used once

@@ -11,6 +11,7 @@ import { LoadingSpinner } from '../Shared/Components/Loading/LoadingSpinner'
 import { MessageThread } from '../Components/Conversation/MessageThread'
 import { MessageComposer } from '../Components/Conversation/MessageComposer'
 import { NewConversationForm } from '../Components/Conversation/NewConversationForm'
+import { TurnStatusBadge } from '../Components/Conversation/TurnStatusBadge'
 
 // Floating bottom-right chat widget, mounted once in Layout.tsx so it
 // persists across every authenticated route (not just /conversations).
@@ -24,21 +25,19 @@ import { NewConversationForm } from '../Components/Conversation/NewConversationF
 export function GlobalChatWidget() {
   const location = useLocation()
   const [isOpen, setIsOpen] = useState(false)
-  const {
-    conversations,
-    selectedId,
-    detail,
-    sending,
-    error,
-    pendingUserContent,
-    turnStartedAt,
-    turnClockOffsetMs,
-    selectConversation,
-    createConversation,
-    sendMessage,
-    stopTurn,
-    deleteConversation,
-  } = useConversationContext()
+  const { conversations, selectedId, detail, error, turnWatches, selectConversation, createConversation, sendMessage, stopTurn, deleteConversation } =
+    useConversationContext()
+  // Derived from the shared per-conversation-ID registry
+  // (plan/ai/conversation/step-29-frontend-per-conversation-turn-watch-registry.md)
+  // for whichever conversation is currently selected in this widget —
+  // the widget still only ever shows one conversation's own thread at
+  // a time, even though the registry can track several concurrently
+  // (e.g. one started from this widget, another from the full page).
+  const watch = selectedId ? turnWatches[selectedId] : undefined
+  const sending = !!watch
+  const pendingUserContent = watch?.pendingUserContent ?? null
+  const turnStartedAt = watch?.turnStartedAt ?? null
+  const turnClockOffsetMs = watch?.turnClockOffsetMs ?? 0
   const { confirm, dialog } = useConfirm()
   const [busyId, setBusyId] = useState<string | null>(null)
 
@@ -207,9 +206,14 @@ export function GlobalChatWidget() {
               sending={sending}
               turnStartedAt={turnStartedAt}
               turnClockOffsetMs={turnClockOffsetMs}
-              onResend={sendMessage}
+              onResend={(content) => void sendMessage(detail.id, content)}
             />
-            <MessageComposer platformLabel={`${detail.platformId} · ${detail.model}`} onSend={sendMessage} onStop={stopTurn} disabled={sending} />
+            <MessageComposer
+              platformLabel={`${detail.platformId} · ${detail.model}`}
+              onSend={(content) => void sendMessage(detail.id, content)}
+              onStop={() => void stopTurn(detail.id)}
+              disabled={sending}
+            />
           </>
         )}
         </div>
@@ -254,6 +258,7 @@ function ConversationList({
           >
             <div className="truncate">{c.title}</div>
             <div className="text-xs text-gray-400">{new Date(c.startedAt).toLocaleString()}</div>
+            <TurnStatusBadge activeTurn={c.activeTurn} />
           </button>
           <div className="mr-1 shrink-0">
             <IconButton icon={<TrashIcon />} label="Delete" onClick={() => onDelete(c)} disabled={busyId === c.id} variant="danger" />

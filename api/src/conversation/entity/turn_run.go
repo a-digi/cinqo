@@ -31,3 +31,14 @@ type TurnRun struct {
 	// handles that case by marking any still-"running" row "failed").
 	CancelRequested bool `db:"cancel_requested" dbtype:"INTEGER" nullable:"false" json:"-"`
 }
+
+// TurnRunSummary is a lean projection of TurnRun for read paths that
+// only need to say "this conversation has a turn running since X" —
+// e.g. the conversation list endpoint — without paying for
+// UserContent/Log on every row. See
+// plan/ai/conversation/step-26-list-endpoint-active-turn-summary.md.
+type TurnRunSummary struct {
+	TurnRunID      string
+	ConversationID string
+	StartedAt      string
+}

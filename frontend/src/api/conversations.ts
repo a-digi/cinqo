@@ -6,12 +6,19 @@ import { apiDelete, apiGet, apiPatch, apiPost } from './client'
 
 // platformId/model are fixed at creation and never change afterward
 // (plan/ai/conversation/step-07-fixed-platform-and-model-per-conversation.md).
+//
+// activeTurn (plan/ai/conversation/step-26-list-endpoint-active-turn-summary.md)
+// is populated only by the list endpoint (fetchConversations below) —
+// absent from create/rename results, whose own backend handlers never
+// set it (see that step's own reasoning for keeping it off the shared
+// response DTO those share).
 export interface Conversation {
   id: string
   title: string
   startedAt: string
   platformId: string
   model: string
+  activeTurn?: ActiveTurnSummary
 }
 
 // No `id` field on a message — content lives in a file, not a database
@@ -41,25 +48,35 @@ export interface ConversationMessage {
 // constraint exactly (plan/ai/conversation/step-23-detach-turn-execution-from-request.md).
 export type TurnRunStatus = 'running' | 'completed' | 'failed' | 'cancelled'
 
-// ActiveTurn is a detached turn's own execution state — startedAt is
-// the server's own timestamp, captured once at turn-start, so a
-// reopened page can compute real elapsed time instead of restarting a
-// local timer from zero (plan/ai/conversation/step-24-server-tracked-turn-elapsed-time.md
-// builds directly on this field). log is a coarse, step-by-step trace
-// of the tool-calling loop's own progress — never raw model/tool
-// output.
-export interface ActiveTurn {
+// ActiveTurnSummary is the lean projection of a turn's own execution
+// state — startedAt is the server's own timestamp, captured once at
+// turn-start, so a reopened page can compute real elapsed time instead
+// of restarting a local timer from zero
+// (plan/ai/conversation/step-24-server-tracked-turn-elapsed-time.md
+// builds directly on this field). serverNow is this response's own
+// clock at response time — never stored, always freshly computed —
+// letting a client correct for clock skew: elapsed = (Date.now() +
+// (serverNow - Date.now())) - startedAt. This is what
+// fetchConversations' own per-item `activeTurn` field
+// (plan/ai/conversation/step-26-list-endpoint-active-turn-summary.md)
+// carries — cheap enough to include for every conversation in a list
+// that's polled every few seconds
+// (plan/ai/conversation/step-27-frontend-periodic-list-refresh.md).
+export interface ActiveTurnSummary {
   turnRunId: string
   status: TurnRunStatus
   startedAt: string
-  // The server's own clock at response time — never stored, always
-  // freshly computed. Lets a client correct for clock skew: elapsed =
-  // (Date.now() + (serverNow - Date.now())) - startedAt. See
-  // plan/ai/conversation/step-24-server-tracked-turn-elapsed-time.md.
   serverNow: string
-  // The message that started this run — not yet in `messages` (the
-  // conversation's own Markdown log only gains this turn once it
-  // finishes), so a page reopened mid-turn needs this to show it.
+}
+
+// ActiveTurn is the fuller shape fetchActiveTurn (below) and
+// fetchConversation's own `activeTurn` field return — everything
+// ActiveTurnSummary has, plus the message that started this run (not
+// yet in `messages` — the conversation's own Markdown log only gains
+// this turn once it finishes, so a page reopened mid-turn needs this
+// to show it) and a coarse, step-by-step trace of the tool-calling
+// loop's own progress — never raw model/tool output.
+export interface ActiveTurn extends ActiveTurnSummary {
   userContent: string
   log: string[]
 }

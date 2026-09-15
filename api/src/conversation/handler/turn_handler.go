@@ -16,23 +16,35 @@ import (
 	conversation_query "github.com/a-digi/cinqo/src/conversation/repository/query"
 )
 
-// activeTurnResponse is the shape both GetActiveTurnHandler and
-// GetHandler's own `activeTurn` field use — see
-// plan/ai/conversation/step-23-detach-turn-execution-from-request.md.
-// Log is split into lines here (rather than the raw stored string)
-// since that's the shape a poller actually wants to render as a list.
-type activeTurnResponse struct {
+// activeTurnSummaryResponse is the lean subset of activeTurnResponse
+// (below) that's cheap enough to include once per item in a
+// conversation-list response — see ListHandler
+// (list_handler.go) and
+// plan/ai/conversation/step-26-list-endpoint-active-turn-summary.md.
+// ServerNow is this handler's own clock at response time — never
+// stored, computed fresh on every request. Lets a client compute a
+// one-time clockOffset = serverNow - Date.now() and display elapsed
+// time as (Date.now() + clockOffset) - startedAt, so a turn's elapsed
+// timer stays correct even when the viewer's own system clock
+// disagrees with the server's. See
+// plan/ai/conversation/step-24-server-tracked-turn-elapsed-time.md.
+type activeTurnSummaryResponse struct {
 	TurnRunID string `json:"turnRunId"`
 	Status    string `json:"status"`
 	StartedAt string `json:"startedAt"`
-	// ServerNow is this handler's own clock at response time — never
-	// stored, computed fresh on every request. Lets a client compute a
-	// one-time clockOffset = serverNow - Date.now() and display elapsed
-	// time as (Date.now() + clockOffset) - startedAt, so a turn's
-	// elapsed timer stays correct even when the viewer's own system
-	// clock disagrees with the server's. See
-	// plan/ai/conversation/step-24-server-tracked-turn-elapsed-time.md.
 	ServerNow string `json:"serverNow"`
+}
+
+// activeTurnResponse is the fuller shape both GetActiveTurnHandler and
+// GetHandler's own `activeTurn` field use — see
+// plan/ai/conversation/step-23-detach-turn-execution-from-request.md.
+// Embeds activeTurnSummaryResponse (encoding/json flattens an embedded
+// anonymous struct's fields into the parent object, so this is not a
+// wire-format change from before this embedding was introduced). Log
+// is split into lines here (rather than the raw stored string) since
+// that's the shape a poller actually wants to render as a list.
+type activeTurnResponse struct {
+	activeTurnSummaryResponse
 	// UserContent is the message that started this run — included
 	// (unlike the TurnRun entity's own json:"-" on this field, which
 	// only prevents an accidental full-entity dump elsewhere) because
@@ -43,18 +55,24 @@ type activeTurnResponse struct {
 	Log         []string `json:"log"`
 }
 
+func toActiveTurnSummaryResponse(t *conversation_entity.TurnRun) activeTurnSummaryResponse {
+	return activeTurnSummaryResponse{
+		TurnRunID: t.ID,
+		Status:    t.Status,
+		StartedAt: t.StartedAt,
+		ServerNow: time.Now().UTC().Format(time.RFC3339),
+	}
+}
+
 func toActiveTurnResponse(t *conversation_entity.TurnRun) activeTurnResponse {
 	lines := strings.Split(strings.TrimRight(t.Log, "\n"), "\n")
 	if len(lines) == 1 && lines[0] == "" {
 		lines = []string{}
 	}
 	return activeTurnResponse{
-		TurnRunID:   t.ID,
-		Status:      t.Status,
-		StartedAt:   t.StartedAt,
-		ServerNow:   time.Now().UTC().Format(time.RFC3339),
-		UserContent: t.UserContent,
-		Log:         lines,
+		activeTurnSummaryResponse: toActiveTurnSummaryResponse(t),
+		UserContent:               t.UserContent,
+		Log:                       lines,
 	}
 }
 

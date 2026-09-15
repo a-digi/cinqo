@@ -31,11 +31,8 @@ export function ConversationPage() {
     selectedId,
     detail,
     loading,
-    sending,
     error,
-    pendingUserContent,
-    turnStartedAt,
-    turnClockOffsetMs,
+    turnWatches,
     selectConversation,
     createConversation,
     sendMessage,
@@ -43,6 +40,16 @@ export function ConversationPage() {
     renameConversation,
     deleteConversation,
   } = useConversationContext()
+  // Derived from the shared per-conversation-ID registry
+  // (plan/ai/conversation/step-29-frontend-per-conversation-turn-watch-registry.md)
+  // for whichever conversation is currently selected — the page itself
+  // still only ever shows one conversation's own thread at a time,
+  // even though the registry can track several concurrently.
+  const watch = selectedId ? turnWatches[selectedId] : undefined
+  const sending = !!watch
+  const pendingUserContent = watch?.pendingUserContent ?? null
+  const turnStartedAt = watch?.turnStartedAt ?? null
+  const turnClockOffsetMs = watch?.turnClockOffsetMs ?? 0
   const [platforms, setPlatforms] = useState<Platform[] | null>(null)
   const [platformsError, setPlatformsError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -156,9 +163,14 @@ export function ConversationPage() {
               sending={sending}
               turnStartedAt={turnStartedAt}
               turnClockOffsetMs={turnClockOffsetMs}
-              onResend={sendMessage}
+              onResend={(content) => void sendMessage(selectedId, content)}
             />
-            <MessageComposer platformLabel={platformLabel(platforms, detail)} onSend={sendMessage} onStop={stopTurn} disabled={sending} />
+            <MessageComposer
+              platformLabel={platformLabel(platforms, detail)}
+              onSend={(content) => void sendMessage(selectedId, content)}
+              onStop={() => void stopTurn(selectedId)}
+              disabled={sending}
+            />
           </>
         )}
       </div>

@@ -21,32 +21,59 @@ import { ApiError } from '../../api/client'
 // without hammering the backend.
 const TURN_POLL_INTERVAL_MS = 2000
 
+// How often to re-fetch the whole conversation list — looser than
+// TURN_POLL_INTERVAL_MS since this now runs continuously for the
+// entire authenticated session against every conversation at once
+// (to keep every item's own activeTurn badge live), not just while one
+// turn is actively being watched. See
+// plan/ai/conversation/step-27-frontend-periodic-list-refresh.md.
+const LIST_POLL_INTERVAL_MS = 8000
+
+// TurnWatch is one conversation's own live turn-tracking state —
+// plan/ai/conversation/step-29-frontend-per-conversation-turn-watch-registry.md.
+// Presence of a conversation's own ID as a key in turnWatches IS "this
+// conversation is currently being watched" — there's no separate
+// boolean to let drift out of sync with the map's own membership.
+export interface TurnWatch {
+  pendingUserContent: string | null
+  turnStartedAt: string | null
+  turnClockOffsetMs: number
+}
+
 export interface ConversationContextValue {
   conversations: Conversation[] | null
   selectedId: string | null
   detail: ConversationDetail | null
   loading: boolean
-  sending: boolean
   error: string | null
-  pendingUserContent: string | null
-  // The currently-running turn's own server-recorded start time (RFC3339)
-  // and this client's own clock offset from the server (serverNow -
-  // Date.now(), in ms) as of the most recent poll — null/0 while
-  // `sending` is false. Lets ThinkingIndicator show real elapsed time
-  // instead of restarting from 0 on every remount. See
-  // plan/ai/conversation/step-24-server-tracked-turn-elapsed-time.md.
-  turnStartedAt: string | null
-  turnClockOffsetMs: number
+  // Every conversation currently being watched (tier 2 — full detail,
+  // not just the list-level badge tier), keyed by conversation ID.
+  // Replaces the old single-scalar sending/pendingUserContent/
+  // turnStartedAt/turnClockOffsetMs: those only ever tracked "whichever
+  // conversation is selected," so sending in one conversation and
+  // switching to another used to silently stop watching the first
+  // one's turn (it kept running server-side regardless — only the UI
+  // lost track of it). This registry lets any number of conversations'
+  // turns be watched concurrently and correctly, independent of which
+  // one is currently selected. See
+  // plan/ai/conversation/step-29-frontend-per-conversation-turn-watch-registry.md.
+  turnWatches: Record<string, TurnWatch>
   selectConversation: (id: string) => void
   createConversation: (input: { title?: string; platformId: string; model?: string }) => Promise<Conversation>
-  sendMessage: (content: string) => Promise<void>
-  // Requests cancellation of the selected conversation's own
-  // currently-running turn — a no-op if nothing is running. Does not
-  // itself flip `sending` off: the existing poll loop observes the
-  // run's status turning "cancelled" and settles normally, the same
-  // way it already handles "completed"/"failed". See
-  // plan/ai/conversation/step-25-cancel-in-progress-turn.md.
-  stopTurn: () => Promise<void>
+  // Explicit conversationId (not implicitly "the selected one") — the
+  // literal shape multi-conversation infrastructure requires: a caller
+  // can now start a turn in a conversation that isn't currently
+  // selected. Both existing consumers always pass their own
+  // `selectedId` today; this is a widening of the surface, not a
+  // behavior change for them.
+  sendMessage: (conversationId: string, content: string) => Promise<void>
+  // Requests cancellation of conversationId's own currently-running
+  // turn — a no-op if nothing is running. Does not itself remove the
+  // conversation from turnWatches: the already-running watch loop
+  // observes the run's status turning "cancelled" and settles
+  // normally, the same way it already handles "completed"/"failed".
+  // See plan/ai/conversation/step-25-cancel-in-progress-turn.md.
+  stopTurn: (conversationId: string) => Promise<void>
   refreshConversations: () => Promise<void>
   renameConversation: (id: string, title: string) => Promise<void>
   deleteConversation: (id: string) => Promise<void>
@@ -76,33 +103,40 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [detail, setDetail] = useState<ConversationDetail | null>(null)
   const [loading, setLoading] = useState(false)
-  const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [pendingUserContent, setPendingUserContent] = useState<string | null>(null)
-  const [turnStartedAt, setTurnStartedAt] = useState<string | null>(null)
-  const [turnClockOffsetMs, setTurnClockOffsetMs] = useState(0)
-  const loadedRef = useRef(false)
+  const [turnWatches, setTurnWatches] = useState<Record<string, TurnWatch>>({})
 
-  // pollGenerationRef guards a poll loop against acting once it's no
-  // longer relevant — the user navigated to a different conversation,
-  // or a second send started a fresh poll loop before an older one
-  // noticed it should stop. Every new poll loop (and every
-  // selectConversation call) increments this and checks it's still
-  // the current value before ever touching state; the backend's own
-  // detached run keeps going regardless — this only guards what the
-  // UI does with the result.
-  const pollGenerationRef = useRef(0)
+  // watchTokensRef guards each conversation's own watch loop
+  // independently — replaces the old single, app-wide
+  // pollGenerationRef. A new watchTurn(id) call issues a fresh token
+  // for that id and stores it; the loop checks its own token is still
+  // current before touching state, so a second, superseding watch for
+  // the SAME id cleanly wins — but a watch for a DIFFERENT id is never
+  // affected, unlike the old single-ref design. See
+  // plan/ai/conversation/step-29-frontend-per-conversation-turn-watch-registry.md.
+  const watchTokensRef = useRef<Record<string, number>>({})
 
-  // pollUntilFinished polls GET .../turns/active every
+  // watchTurn polls GET .../turns/active for conversationId every
   // TURN_POLL_INTERVAL_MS until the run leaves "running", then
   // refetches the full conversation for the real, finished message —
-  // the async replacement for the old single-await sendMessageApi
-  // call (plan/ai/conversation/step-23). Safe to call either right
-  // after starting a new turn, or on mount/selection to resume
-  // watching one already in progress from before the page was opened.
-  const pollUntilFinished = useCallback(async (conversationId: string) => {
-    const generation = ++pollGenerationRef.current
-    setSending(true)
+  // the per-conversation-ID replacement for the old single-scalar
+  // pollUntilFinished (plan/ai/conversation/step-23). Safe to call
+  // either right after starting a new turn, or on selection to resume
+  // watching one already in progress. Runs to completion independently
+  // of any other conversation's own watchTurn call, and independently
+  // of whether conversationId stays selected for its whole duration.
+  const watchTurn = useCallback(async (conversationId: string) => {
+    const myToken = (watchTokensRef.current[conversationId] ?? 0) + 1
+    watchTokensRef.current[conversationId] = myToken
+    setTurnWatches((prev) => ({
+      ...prev,
+      [conversationId]: {
+        pendingUserContent: prev[conversationId]?.pendingUserContent ?? null,
+        turnStartedAt: null,
+        turnClockOffsetMs: 0,
+      },
+    }))
+
     for (;;) {
       let turn
       try {
@@ -112,28 +146,40 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         // itself failed — either way, nothing left to poll for.
         break
       }
-      if (pollGenerationRef.current !== generation) return
+      if (watchTokensRef.current[conversationId] !== myToken) return // superseded
       // Reconciled on every poll response, not just the first — cheap,
       // and keeps the client's own clock-offset estimate fresh for the
       // whole (potentially long) duration of a run.
-      setTurnStartedAt(turn.startedAt)
-      setTurnClockOffsetMs(Date.parse(turn.serverNow) - Date.now())
+      setTurnWatches((prev) =>
+        prev[conversationId]
+          ? { ...prev, [conversationId]: { ...prev[conversationId], turnStartedAt: turn.startedAt, turnClockOffsetMs: Date.parse(turn.serverNow) - Date.now() } }
+          : prev,
+      )
       if (turn.status !== 'running') break
       await new Promise((resolve) => setTimeout(resolve, TURN_POLL_INTERVAL_MS))
-      if (pollGenerationRef.current !== generation) return
+      if (watchTokensRef.current[conversationId] !== myToken) return // superseded
     }
 
     try {
       const d = await fetchConversation(conversationId)
-      if (pollGenerationRef.current === generation) setDetail(d)
+      if (watchTokensRef.current[conversationId] === myToken) {
+        // Only overwrites the open detail pane if the user is still
+        // actually looking at this conversation — a background watch
+        // finishing must not clobber whatever conversation is
+        // currently selected.
+        setDetail((prev) => (prev && prev.id === conversationId ? d : prev))
+      }
     } catch {
-      // Best-effort refresh — matches the old sendMessage's own
-      // "a failure here doesn't need its own error message" comment.
+      // Best-effort refresh — matches this codebase's own established
+      // "a failure here doesn't need its own error message" convention.
     } finally {
-      if (pollGenerationRef.current === generation) {
-        setPendingUserContent(null)
-        setTurnStartedAt(null)
-        setSending(false)
+      if (watchTokensRef.current[conversationId] === myToken) {
+        setTurnWatches((prev) => {
+          if (!(conversationId in prev)) return prev
+          const next = { ...prev }
+          delete next[conversationId]
+          return next
+        })
       }
     }
   }, [])
@@ -151,102 +197,141 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  // Eager-fetch the conversation list only (not any detail) once truly
-  // authenticated — same gating ToolRegistryProvider already uses, and
-  // the same "list only" scope the design settled on: enough for
-  // step-17's widget to show something immediately, without changing
-  // the full page's own "nothing selected on first load" behavior.
-  useEffect(() => {
-    if (!isAuthenticated || loadedRef.current) return
-    loadedRef.current = true
-    void refreshConversations()
-  }, [isAuthenticated, refreshConversations])
+  // Background refresh (step 27) — keeps every conversation's own
+  // activeTurn badge live (step-26/28) without flashing the full-page
+  // `loading` state, or surfacing a transient failure via `error`, on
+  // every tick the way the user-facing refreshConversations above
+  // does; a failed tick is silently skipped and the next one tries
+  // again. See plan/ai/conversation/step-27-frontend-periodic-list-refresh.md.
+  const refreshConversationsSilently = useCallback(async () => {
+    try {
+      const list = await fetchConversations()
+      setConversations(list)
+    } catch {
+      // best-effort — next interval tick tries again.
+    }
+  }, [])
 
+  // Eager-fetch the conversation list once truly authenticated (same
+  // gating ToolRegistryProvider already uses), then keep it live for
+  // the rest of the session via a periodic silent refresh. See
+  // plan/ai/conversation/step-27-frontend-periodic-list-refresh.md.
+  useEffect(() => {
+    if (!isAuthenticated) return
+    void refreshConversations()
+    const id = setInterval(() => {
+      void refreshConversationsSilently()
+    }, LIST_POLL_INTERVAL_MS)
+    return () => clearInterval(id)
+  }, [isAuthenticated, refreshConversations, refreshConversationsSilently])
+
+  // turnWatchesRef mirrors turnWatches so a plain membership check
+  // (turnWatchExists, used by selectConversation below) doesn't need
+  // turnWatches itself as a dependency — which would otherwise change
+  // selectConversation's identity on every watch start/stop.
+  const turnWatchesRef = useRef(turnWatches)
+  turnWatchesRef.current = turnWatches
+  const turnWatchExists = useCallback((id: string) => id in turnWatchesRef.current, [])
+
+  // No longer cancels any other conversation's own watch — switching
+  // away from a conversation whose turn is still running leaves that
+  // watch running untouched (turnWatches[id] stays populated);
+  // switching back to it later finds live data already waiting, no
+  // "resuming" needed. See
+  // plan/ai/conversation/step-29-frontend-per-conversation-turn-watch-registry.md.
   const selectConversation = useCallback(
     (id: string) => {
-      // Invalidate any poll loop still running for a previously
-      // selected conversation — the backend's own detached run is
-      // unaffected; this only stops this component from acting on its
-      // result once the user has navigated away from it.
-      pollGenerationRef.current++
       setSelectedId(id)
       setDetail(null)
       setError(null)
-      setSending(false)
-      setPendingUserContent(null)
-      setTurnStartedAt(null)
-      setTurnClockOffsetMs(0)
       fetchConversation(id)
         .then((d) => {
           setDetail(d)
           // A turn was already running when this page/tab opened (or
           // reopened) — resume watching it instead of leaving the UI
-          // looking idle while the backend keeps working. See
+          // looking idle while the backend keeps working, unless it's
+          // already being watched (e.g. this conversation's own turn
+          // was started from here a moment ago and is still in
+          // flight). See
           // plan/ai/conversation/step-23-detach-turn-execution-from-request.md.
-          if (d.activeTurn?.status === 'running') {
-            setPendingUserContent(d.activeTurn.userContent)
-            // Set eagerly from this same response, rather than waiting
-            // for pollUntilFinished's own first poll round trip — a
-            // resumed turn should show correct elapsed time
-            // immediately, not after one more network call.
-            setTurnStartedAt(d.activeTurn.startedAt)
-            setTurnClockOffsetMs(Date.parse(d.activeTurn.serverNow) - Date.now())
-            void pollUntilFinished(id)
+          if (d.activeTurn?.status === 'running' && !turnWatchExists(id)) {
+            void watchTurn(id)
           }
         })
         .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load conversation.'))
     },
-    [pollUntilFinished],
+    [watchTurn, turnWatchExists],
   )
 
   const createConversation = useCallback(async (input: { title?: string; platformId: string; model?: string }) => {
     const created = await createConversationApi(input)
     setConversations((prev) => (prev ? [created, ...prev] : [created]))
     setSelectedId(created.id)
-    setDetail({ ...created, messages: [] })
+    // A freshly created conversation can never already have a turn
+    // running — created.activeTurn is always undefined here (the
+    // create endpoint's own response never sets it), so this is never
+    // actually dropping live data, just satisfying ConversationDetail's
+    // own fuller ActiveTurn type (step-26/27) instead of the lean
+    // ActiveTurnSummary Conversation itself now carries.
+    setDetail({ id: created.id, title: created.title, startedAt: created.startedAt, platformId: created.platformId, model: created.model, messages: [] })
     return created
   }, [])
 
   // POST .../messages now only starts a detached turn run and returns
   // immediately (plan/ai/conversation/step-23) — the actual "wait for
-  // the AI, then show the result" work happens in pollUntilFinished,
-  // which keeps running (via its own setTimeout loop) independently of
-  // this component's lifetime, the same way the backend's own run is
-  // independent of this HTTP request's lifetime.
+  // the AI, then show the result" work happens in watchTurn, which
+  // keeps running (via its own setTimeout loop) independently of this
+  // component's lifetime and of whichever conversation is currently
+  // selected, the same way the backend's own run is independent of
+  // this HTTP request's lifetime.
   const sendMessage = useCallback(
-    async (content: string) => {
-      if (!selectedId) return
-      const conversationId = selectedId
+    async (conversationId: string, content: string) => {
       setError(null)
-      setPendingUserContent(content)
+      // If a watch already exists for this conversation (a turn is
+      // already running there — this call is about to fail with a 409
+      // from the backend's own turn_runs_one_running_idx), leave
+      // turnWatches alone entirely: don't optimistically add an entry
+      // that wasn't there, and don't delete the real, still-running
+      // watch on failure below. Only the common case (no existing
+      // watch) gets the optimistic pendingUserContent entry.
+      const alreadyWatching = turnWatchExists(conversationId)
+      if (!alreadyWatching) {
+        setTurnWatches((prev) => ({ ...prev, [conversationId]: { pendingUserContent: content, turnStartedAt: null, turnClockOffsetMs: 0 } }))
+      }
       try {
         await sendMessageApi(conversationId, { content })
       } catch (err) {
         setError(err instanceof ApiError ? err.message : 'Failed to send message.')
-        setPendingUserContent(null)
+        if (!alreadyWatching) {
+          setTurnWatches((prev) => {
+            if (!(conversationId in prev)) return prev
+            const next = { ...prev }
+            delete next[conversationId]
+            return next
+          })
+        }
         return
       }
-      await pollUntilFinished(conversationId)
+      await watchTurn(conversationId)
     },
-    [selectedId, pollUntilFinished],
+    [watchTurn, turnWatchExists],
   )
 
   // Fire-and-forget from the caller's own point of view: the stop
   // request itself is asynchronous server-side (see
-  // stopActiveTurn's own doc comment) — the already-running
-  // pollUntilFinished loop for this conversation is what actually
-  // notices the run finishing (as "cancelled") and clears `sending`.
-  // A failure here (e.g. the run already finished on its own a moment
-  // before the click landed) is surfaced but otherwise harmless — the
-  // poll loop settles normally either way.
-  const stopTurn = useCallback(async () => {
-    if (!selectedId) return
+  // stopActiveTurn's own doc comment) — the already-running watchTurn
+  // loop for conversationId is what actually notices the run finishing
+  // (as "cancelled") and clears it from turnWatches. A failure here
+  // (e.g. the run already finished on its own a moment before the
+  // click landed) is surfaced but otherwise harmless — the watch loop
+  // settles normally either way.
+  const stopTurn = useCallback(async (conversationId: string) => {
     try {
-      await stopActiveTurn(selectedId)
+      await stopActiveTurn(conversationId)
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to stop the turn.')
     }
-  }, [selectedId])
+  }, [])
 
   const renameConversation = useCallback(async (id: string, title: string) => {
     const updated = await renameConversationApi(id, title)
@@ -257,6 +342,18 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   const deleteConversation = useCallback(
     async (id: string) => {
       await deleteConversationApi(id)
+      // Invalidate any in-flight watch for the now-deleted conversation
+      // — its next fetchActiveTurn call would 404 and break out of the
+      // loop on its own regardless, but doing it here removes any
+      // stale entry from turnWatches immediately rather than waiting
+      // for that next poll tick.
+      watchTokensRef.current[id] = (watchTokensRef.current[id] ?? 0) + 1
+      setTurnWatches((prev) => {
+        if (!(id in prev)) return prev
+        const next = { ...prev }
+        delete next[id]
+        return next
+      })
       setConversations((prev) => (prev ? prev.filter((c) => c.id !== id) : prev))
       if (selectedId === id) {
         setSelectedId(null)
@@ -271,11 +368,8 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     selectedId,
     detail,
     loading,
-    sending,
     error,
-    pendingUserContent,
-    turnStartedAt,
-    turnClockOffsetMs,
+    turnWatches,
     selectConversation,
     createConversation,
     sendMessage,

@@ -3,6 +3,7 @@ import type { Conversation } from '../../api/conversations'
 import { useConfirm } from '../../Shared/Components/Modal/useConfirm'
 import { IconButton } from '../../Shared/Components/IconButton/IconButton'
 import { PencilIcon, TrashIcon, CheckIcon, XIcon, PlusIcon } from '../../Shared/Components/IconButton/icons'
+import { TurnStatusBadge } from './TurnStatusBadge'
 
 // List, "New conversation", inline rename, delete-behind-confirm — same
 // established pattern ToolsListPage/PlatformKeysPage already use. See
@@ -94,10 +95,11 @@ export function ConversationSidebar({
                   onClick={() => onSelect(c.id)}
                   onDoubleClick={() => startRename(c)}
                   disabled={busyId === c.id}
-                  className="min-w-0 flex-1 truncate text-left text-gray-800 disabled:opacity-50"
+                  className="min-w-0 flex-1 text-left text-gray-800 disabled:opacity-50"
                   title={c.title}
                 >
-                  {c.title}
+                  <span className="block truncate">{c.title}</span>
+                  <TurnStatusBadge activeTurn={c.activeTurn} />
                 </button>
               )}
               {renamingId === c.id ? (
