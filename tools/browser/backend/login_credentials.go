@@ -104,6 +104,27 @@ func initBrowserDB() error {
 		return fmt.Errorf("failed to migrate crawl_logs schema: %w", err)
 	}
 
+	// browser_settings (step 22) — a singleton row (id = 1, enforced by
+	// the CHECK constraint) holding the Debug toggle crawl logging is
+	// now gated behind. INSERT OR IGNORE right after CREATE TABLE IF NOT
+	// EXISTS so both a fresh install and an existing one always end up
+	// with exactly one row, defaulted OFF — every read downstream is a
+	// plain SELECT with no "no rows yet" special-casing. See
+	// plan/ai/tools/browser/step-22-debug-mode-and-log-management.md.
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS browser_settings (
+		id             INTEGER PRIMARY KEY CHECK (id = 1),
+		debug_enabled  INTEGER NOT NULL DEFAULT 0,
+		debug_log_html INTEGER NOT NULL DEFAULT 0,
+		updated_at     TEXT
+	)`); err != nil {
+		db.Close()
+		return fmt.Errorf("failed to prepare browser_settings schema: %w", err)
+	}
+	if _, err := db.Exec(`INSERT OR IGNORE INTO browser_settings (id, debug_enabled, debug_log_html) VALUES (1, 0, 0)`); err != nil {
+		db.Close()
+		return fmt.Errorf("failed to seed browser_settings: %w", err)
+	}
+
 	browserDB = db
 	return nil
 }

@@ -74,6 +74,16 @@ type pageExtractResult struct {
 	// same contract as extractResponse.
 	Items    []map[string]any `json:"items,omitempty"`
 	NotFound []string         `json:"notFound"`
+	// CloudflareDetected/CloudflareReason (step 21) — a single,
+	// immediate check (detectCloudflareChallenge, cloudflare.go), not
+	// the full wait-then-poll crawlPage's own initial navigation gets
+	// (waitForCloudflareClearance) — this tool's own per-page time
+	// budget (paginatedCrawlTimeout) has far less slack for an extra
+	// multi-second wait per page across up to maxAllowedPaginationPages
+	// pages. See this step's own open question 1,
+	// plan/ai/tools/browser/step-21-cloudflare-challenge-detection.md.
+	CloudflareDetected bool   `json:"cloudflareDetected,omitempty"`
+	CloudflareReason   string `json:"cloudflareReason,omitempty"`
 }
 
 type paginatedCrawlResponse struct {
@@ -115,7 +125,18 @@ func paginatedCrawlHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := performPaginatedCrawl(body.Container, body.Fields, body.Mapping, body.NextSelector, body.RequestedMaxPages, body.EffectiveMaxPages)
+	// Step 22 — read once, up front: both whether to log at all
+	// (DebugEnabled) and whether to also capture each page's own raw
+	// HTML while crawling (DebugLogHTML) are decided from this single
+	// read, not two independent ones later, so the two can't observe a
+	// setting change mid-request. A read failure is treated the same as
+	// "Debug off" — logging is best-effort observability, never allowed
+	// to turn a successful crawl into a failed response. See
+	// plan/ai/tools/browser/step-22-debug-mode-and-log-management.md.
+	settings, _ := loadBrowserSettings()
+	captureHTML := settings.DebugEnabled && settings.DebugLogHTML
+
+	result, pageHTML, err := performPaginatedCrawl(body.Container, body.Fields, body.Mapping, body.NextSelector, body.RequestedMaxPages, body.EffectiveMaxPages, captureHTML)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("paginated crawl failed: %v", err), http.StatusBadGateway)
 		return
@@ -126,7 +147,11 @@ func paginatedCrawlHandler(w http.ResponseWriter, r *http.Request) {
 	// "Crawl now" (both reach this same handler). Logged only on
 	// success, after the real result is known — a failed crawl (above)
 	// has nothing useful to log beyond the error already returned.
-	saveCrawlLog(body.Container, body.Fields, body.NextSelector, body.RequestedMaxPages, body.EffectiveMaxPages, result)
+	// Step 22 — and only when Debug is on at all; saveCrawlLog is not
+	// even called otherwise, so nothing is written, not merely hidden.
+	if settings.DebugEnabled {
+		saveCrawlLog(body.Container, body.Fields, body.NextSelector, body.RequestedMaxPages, body.EffectiveMaxPages, result, pageHTML)
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(result)
@@ -139,7 +164,17 @@ func paginatedCrawlHandler(w http.ResponseWriter, r *http.Request) {
 // performExtraction, precisely because it already holds the lock
 // performExtraction would try to take again. See that function's own
 // doc comment.
-func performPaginatedCrawl(container string, fields []extractField, mapping map[string]string, nextSelector string, requestedMaxPages, effectiveMaxPages int) (paginatedCrawlResponse, error) {
+// captureHTML (step 22) gates one extra chromedp.OuterHTML read per
+// page — costs nothing when false (the overwhelming default: Debug or
+// "Log HTML" off), only paid when a human has explicitly turned "Log
+// HTML" on. pageHTML, the second return value, is parallel to the
+// returned response's own Pages (one entry per page, empty string when
+// captureHTML is false) and is never embedded in paginatedCrawlResponse
+// itself — kept as a separate return value specifically so it cannot
+// reach the live AI-facing JSON response; only paginatedCrawlHandler's
+// own saveCrawlLog call (crawl_log.go) ever sees it. See
+// plan/ai/tools/browser/step-22-debug-mode-and-log-management.md.
+func performPaginatedCrawl(container string, fields []extractField, mapping map[string]string, nextSelector string, requestedMaxPages, effectiveMaxPages int, captureHTML bool) (paginatedCrawlResponse, []string, error) {
 	sessionMu.Lock()
 	defer sessionMu.Unlock()
 
@@ -147,6 +182,10 @@ func performPaginatedCrawl(container string, fields []extractField, mapping map[
 	defer cancel()
 
 	pages := make([]pageExtractResult, 0, effectiveMaxPages)
+	var pageHTML []string
+	if captureHTML {
+		pageHTML = make([]string, 0, effectiveMaxPages)
+	}
 	stoppedReason := ""
 
 	for page := 1; ; page++ {
@@ -156,7 +195,7 @@ func performPaginatedCrawl(container string, fields []extractField, mapping map[
 				stoppedReason = "time_budget_reached"
 				break
 			}
-			return paginatedCrawlResponse{}, err
+			return paginatedCrawlResponse{}, nil, err
 		}
 
 		var currentURL string
@@ -165,9 +204,41 @@ func performPaginatedCrawl(container string, fields []extractField, mapping map[
 				stoppedReason = "time_budget_reached"
 				break
 			}
-			return paginatedCrawlResponse{}, err
+			return paginatedCrawlResponse{}, nil, err
 		}
-		pages = append(pages, pageExtractResult{URL: currentURL, Results: result.Results, Items: result.Items, NotFound: result.NotFound})
+
+		cf, err := detectCloudflareChallenge(ctx)
+		if err != nil {
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				stoppedReason = "time_budget_reached"
+				break
+			}
+			return paginatedCrawlResponse{}, nil, err
+		}
+
+		pages = append(pages, pageExtractResult{
+			URL:                currentURL,
+			Results:            result.Results,
+			Items:              result.Items,
+			NotFound:           result.NotFound,
+			CloudflareDetected: cf.Detected,
+			CloudflareReason:   cf.Reason,
+		})
+
+		if captureHTML {
+			var html string
+			if err := chromedp.Run(ctx, chromedp.OuterHTML("html", &html)); err != nil {
+				if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+					stoppedReason = "time_budget_reached"
+					break
+				}
+				return paginatedCrawlResponse{}, nil, err
+			}
+			if len(html) > maxHTMLBytes {
+				html = html[:maxHTMLBytes]
+			}
+			pageHTML = append(pageHTML, html)
+		}
 
 		if page >= effectiveMaxPages {
 			stoppedReason = "max_pages_reached"
@@ -181,7 +252,7 @@ func performPaginatedCrawl(container string, fields []extractField, mapping map[
 				stoppedReason = "time_budget_reached"
 				break
 			}
-			return paginatedCrawlResponse{}, err
+			return paginatedCrawlResponse{}, nil, err
 		}
 		if !nextExists {
 			stoppedReason = "no_next_link"
@@ -203,7 +274,7 @@ func performPaginatedCrawl(container string, fields []extractField, mapping map[
 				stoppedReason = "time_budget_reached"
 				break
 			}
-			return paginatedCrawlResponse{}, err
+			return paginatedCrawlResponse{}, nil, err
 		}
 		if urlAfterClick == currentURL {
 			stoppedReason = "url_unchanged"
@@ -217,7 +288,7 @@ func performPaginatedCrawl(container string, fields []extractField, mapping map[
 		PagesVisited:      len(pages),
 		RequestedMaxPages: requestedMaxPages,
 		EffectiveMaxPages: effectiveMaxPages,
-	}, nil
+	}, pageHTML, nil
 }
 
 // jsStringLiteral marshals a Go string into a JSON string literal for
@@ -243,7 +314,8 @@ func registerCrawlPaginated(server *mcp.Server) {
 		Name: "crawl_paginated",
 		Description: "Extract fields from the currently loaded page, then follow a pagination control and repeat, up to a maximum number of pages — instructed via a YAML document (fields + pagination). Read-only; submits nothing. " +
 			"Before writing the instructions, check whether the page LISTS MULTIPLE similar items at once or describes just one. For a listing page, always add a top-level container selector for one item's own repeating wrapping element — the default correct approach for a listing page, not a fallback — so the result is one correctly-grouped object per item (in `items`) instead of separate same-length arrays (in `results`) that may NOT actually line up. " +
-			"Optionally add a top-level mapping to rename extracted fields to specific output keys — e.g. a consuming tool expects title/url/company but this page's own natural fields are better labeled job_title/link/employer.",
+			"Optionally add a top-level mapping to rename extracted fields to specific output keys — e.g. a consuming tool expects title/url/company but this page's own natural fields are better labeled job_title/link/employer. " +
+			"A page's own cloudflareDetected (in its entry under pages) means a Cloudflare challenge was still showing on that page — its results/items may reflect the challenge interstitial, not real content.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args crawlPaginatedArgs) (*mcp.CallToolResult, any, error) {
 		if strings.TrimSpace(args.Instructions) == "" {
 			return &mcp.CallToolResult{

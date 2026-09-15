@@ -52,6 +52,14 @@ export interface CrawlLogPage {
   results?: Record<string, unknown>
   items?: Record<string, unknown>[]
   notFound: string[]
+  // Set (step 21) when a Cloudflare challenge interstitial was still
+  // showing on this page — results/items above may reflect the
+  // challenge page, not real content.
+  cloudflareDetected?: boolean
+  cloudflareReason?: string
+  // Set (step 22) only when Debug + "Log HTML" were both on for this
+  // crawl — this page's own raw rendered HTML at the time it was read.
+  html?: string
 }
 
 export interface CrawlLogEntry {
@@ -74,6 +82,51 @@ export async function fetchCrawlLogs(): Promise<CrawlLogEntry[]> {
   if (!res.ok) throw new Error(`failed to load crawl logs (${res.status})`)
   const data: { logs: CrawlLogEntry[] } = await res.json()
   return data.logs ?? []
+}
+
+// deleteCrawlLog/clearAllCrawlLogs (step 22) — clearAllCrawlLogs
+// requires the explicit all=true query parameter server-side (see
+// crawlLogsHandler, crawl_log.go); there's no bare "delete everything"
+// default to guard against on this side either.
+export async function deleteCrawlLog(id: string): Promise<void> {
+  const res = await fetch(`${CRAWL_LOGS_BASE}?id=${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  })
+  if (!res.ok && res.status !== 204) throw new Error(`failed to delete crawl log (${res.status})`)
+}
+
+export async function clearAllCrawlLogs(): Promise<void> {
+  const res = await fetch(`${CRAWL_LOGS_BASE}?all=true`, {
+    method: 'DELETE',
+    credentials: 'include',
+  })
+  if (!res.ok && res.status !== 204) throw new Error(`failed to clear crawl logs (${res.status})`)
+}
+
+// --- Debug settings (step 22) ---
+
+const SETTINGS_BASE = '/api/v1/tools/browser/proxy/browser-settings'
+
+export interface BrowserSettings {
+  debugEnabled: boolean
+  debugLogHtml: boolean
+}
+
+export async function fetchBrowserSettings(): Promise<BrowserSettings> {
+  const res = await fetch(SETTINGS_BASE, { credentials: 'include' })
+  if (!res.ok) throw new Error(`failed to load settings (${res.status})`)
+  return res.json()
+}
+
+export async function saveBrowserSettings(settings: BrowserSettings): Promise<BrowserSettings> {
+  const res = await fetch(SETTINGS_BASE, {
+    method: 'PUT',
+    credentials: 'include',
+    body: JSON.stringify(settings),
+  })
+  if (!res.ok) throw new Error(`failed to save settings (${res.status})`)
+  return res.json()
 }
 
 export async function removeCredential(domain: string): Promise<void> {

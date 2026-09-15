@@ -10,11 +10,13 @@ import { createRoot, type Root } from 'react-dom/client'
 import { ListPage } from './ListPage'
 import { AddPage } from './AddPage'
 import { CrawlLogsPage } from './CrawlLogsPage'
+import { DebugPage } from './DebugPage'
 import './index.css'
 
 const LIST_PATH = '/tools/browser/credentials'
 const ADD_PATH = '/tools/browser/credentials/new'
 const CRAWL_LOGS_PATH = '/tools/browser/crawl-logs'
+const DEBUG_PATH = '/tools/browser/debug'
 
 window.__cinqoToolBridge.registerMenuEntry({
   label: 'Browser',
@@ -39,6 +41,14 @@ window.__cinqoToolBridge.registerMenuEntry({
       path: CRAWL_LOGS_PATH,
       // Reuses tool:browser:crawl — the same permission already
       // needed to run a crawl at all (step 17's own design).
+      scopes: ['tool:browser:crawl'],
+    },
+    {
+      label: 'Debug',
+      path: DEBUG_PATH,
+      // Reuses tool:browser:crawl (step 22's own design) — same
+      // permission tier as Crawl Logs, which this page's own Debug
+      // toggle controls the logging behind.
       scopes: ['tool:browser:crawl'],
     },
   ],
@@ -80,5 +90,11 @@ window.__cinqoToolBridge.registerRoute({
 window.__cinqoToolBridge.registerRoute({
   path: CRAWL_LOGS_PATH,
   mount: (container) => mountReact(container, <CrawlLogsPage />),
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: DEBUG_PATH,
+  mount: (container) => mountReact(container, <DebugPage />),
   unmount: unmountReact,
 })

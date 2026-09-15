@@ -54,6 +54,16 @@ type crawlResponse struct {
 	Title     string `json:"title"`
 	FinalURL  string `json:"finalUrl"`
 	Truncated bool   `json:"truncated"`
+	// CloudflareDetected/CloudflareReason (step 21) — set when
+	// waitForCloudflareClearance (cloudflare.go) still found a
+	// Cloudflare challenge interstitial present after its own wait
+	// budget was exhausted; empty/false when no challenge was ever
+	// seen, or one was seen but cleared within budget (in which case
+	// HTML/Title/FinalURL above already reflect the real, resolved
+	// page). See
+	// plan/ai/tools/browser/step-21-cloudflare-challenge-detection.md.
+	CloudflareDetected bool   `json:"cloudflareDetected,omitempty"`
+	CloudflareReason   string `json:"cloudflareReason,omitempty"`
 }
 
 // crawlHandler handles POST /crawl — the --mcp adapter's own real
@@ -95,10 +105,20 @@ func crawlPage(rawURL string) (crawlResponse, error) {
 	ctx, cancel := context.WithTimeout(sessionCtx, crawlTimeout)
 	defer cancel()
 
-	var html, title, finalURL string
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(rawURL),
 		chromedp.Sleep(settleDelay),
+	); err != nil {
+		return crawlResponse{}, err
+	}
+
+	cf, err := waitForCloudflareClearance(ctx)
+	if err != nil {
+		return crawlResponse{}, err
+	}
+
+	var html, title, finalURL string
+	if err := chromedp.Run(ctx,
 		chromedp.Title(&title),
 		chromedp.Location(&finalURL),
 		chromedp.OuterHTML("html", &html),
@@ -112,7 +132,14 @@ func crawlPage(rawURL string) (crawlResponse, error) {
 		truncated = true
 	}
 
-	return crawlResponse{HTML: html, Title: title, FinalURL: finalURL, Truncated: truncated}, nil
+	return crawlResponse{
+		HTML:               html,
+		Title:              title,
+		FinalURL:           finalURL,
+		Truncated:          truncated,
+		CloudflareDetected: cf.Detected,
+		CloudflareReason:   cf.Reason,
+	}, nil
 }
 
 // validateCrawlURL is this tool's own SSRF guard — a page-fetching
@@ -164,8 +191,9 @@ type fetchPageHTMLArgs struct {
 // main.go's own runMCPServer doc comment).
 func registerFetchPageHTML(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "fetch_page_html",
-		Description: "Navigate the shared browser session to a URL and return the page's rendered HTML, title, and final URL (after any redirect).",
+		Name: "fetch_page_html",
+		Description: "Navigate the shared browser session to a URL and return the page's rendered HTML, title, and final URL (after any redirect). " +
+			"If the page is behind a Cloudflare challenge, this waits briefly for it to clear before reading the page; a returned cloudflareDetected warning means it was still blocking when the wait ran out — the HTML returned may be the challenge interstitial, not the real page.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args fetchPageHTMLArgs) (*mcp.CallToolResult, any, error) {
 		if args.URL == "" {
 			return &mcp.CallToolResult{
@@ -201,6 +229,9 @@ func registerFetchPageHTML(server *mcp.Server) {
 		text := fmt.Sprintf("Title: %s\nURL: %s\n", result.Title, result.FinalURL)
 		if result.Truncated {
 			text += "(HTML truncated to fit the response size limit)\n"
+		}
+		if result.CloudflareDetected {
+			text += fmt.Sprintf("⚠️ Cloudflare challenge still present after waiting — this page's own content may be the interstitial, not the real page (reason: %s)\n", result.CloudflareReason)
 		}
 		text += "\n" + result.HTML
 
