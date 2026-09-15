@@ -50,9 +50,16 @@ const ContextTurns = 4
 
 // maxToolIterations bounds the tool-calling loop (send -> tool call ->
 // invoke -> send again) — a hard ceiling against a model that keeps
-// calling tools without ever producing a final reply. See
-// plan/ai/tools/pdf-generator/step-04-ai-model-invocation.md.
-const maxToolIterations = 5
+// calling tools without ever producing a final reply. Originally 5
+// (plan/ai/tools/pdf-generator/step-04-ai-model-invocation.md), raised
+// to 15 (step-29-batch-save-portal-jobs.md) — 5 was tuned for
+// pdf-generator's own single-tool-call flows and structurally
+// collided with career's own multi-step crawl workflow (get
+// instructions, navigate, crawl_paginated, then one save call per job
+// found), which a real job-listing page routinely needs more than 5
+// round-trips for even after step 29's own save_portal_jobs batching
+// cuts the per-job multiplier out entirely.
+const maxToolIterations = 15
 
 var (
 	ErrEmptyContent         = errors.New("conversation: content is empty")

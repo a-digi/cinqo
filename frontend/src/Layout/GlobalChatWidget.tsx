@@ -109,16 +109,19 @@ export function GlobalChatWidget() {
 
   if (!isOpen) {
     return (
-      <div className="pointer-events-none fixed bottom-4 right-4 z-50">
-        <button
-          type="button"
-          onClick={() => setIsOpen(true)}
-          aria-label="Open chat"
-          className="pointer-events-auto flex h-12 w-12 items-center justify-center rounded-full bg-gray-900 text-white shadow-lg hover:bg-gray-800"
-        >
-          <ChatIcon />
-        </button>
-      </div>
+      <>
+        <div className="pointer-events-none fixed bottom-4 right-4 z-50">
+          <button
+            type="button"
+            onClick={() => setIsOpen(true)}
+            aria-label="Open chat"
+            className="pointer-events-auto flex h-12 w-12 items-center justify-center rounded-full bg-gray-900 text-white shadow-lg hover:bg-gray-800"
+          >
+            <ChatIcon />
+          </button>
+        </div>
+        {dialog}
+      </>
     )
   }
 
@@ -126,8 +129,9 @@ export function GlobalChatWidget() {
   const headerTitle = creatingNew ? 'New conversation' : showList || !selectedId ? 'Conversations' : (selectedTitle ?? 'Conversation')
 
   return (
-    <div className="pointer-events-none fixed bottom-4 right-4 z-50">
-      <div className="pointer-events-auto flex max-h-[70vh] w-[380px] max-w-[calc(100vw-2rem)] flex-col rounded-lg border border-gray-200 bg-white shadow-xl">
+    <>
+      <div className="pointer-events-none fixed bottom-4 right-4 z-50">
+        <div className="pointer-events-auto flex max-h-[70vh] w-[380px] max-w-[calc(100vw-2rem)] flex-col rounded-lg border border-gray-200 bg-white shadow-xl">
         <div className="flex items-center gap-1 border-b border-gray-200 px-2 py-2">
           <button
             type="button"
@@ -198,9 +202,10 @@ export function GlobalChatWidget() {
             <MessageComposer platformLabel={`${detail.platformId} · ${detail.model}`} onSend={sendMessage} disabled={sending} />
           </>
         )}
+        </div>
       </div>
       {dialog}
-    </div>
+    </>
   )
 }
 

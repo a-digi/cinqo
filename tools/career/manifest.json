@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.28.1",
+  "version": "0.29.0",
   "mcp": true,
   "requires_tools": [
     {
@@ -387,6 +387,10 @@
     },
     {
       "name": "save_portal_job",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "name": "save_portal_jobs",
       "required_scope": "tool:career:jobs"
     }
   ]

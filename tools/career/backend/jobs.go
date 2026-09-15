@@ -435,6 +435,75 @@ func registerSavePortalJob(server *mcp.Server) {
 	})
 }
 
+// savePortalJobInput/savePortalJobsArgs (step 29) — the batch sibling
+// of save_portal_job: the same required/optional fields, one entry
+// per job. Exists specifically so a crawl finding N jobs on one page
+// costs one tool call, not N — see this tool's own description below
+// for why that matters (api/src/conversation/chat.go's own
+// maxToolIterations, a real ceiling on tool round-trips per turn).
+type savePortalJobInput struct {
+	SourceURL   string `json:"sourceUrl" jsonschema:"the posting's own canonical URL"`
+	Title       string `json:"title" jsonschema:"the job title"`
+	Company     string `json:"company" jsonschema:"the hiring company"`
+	Location    string `json:"location,omitempty" jsonschema:"where the job is located"`
+	Description string `json:"description,omitempty" jsonschema:"the posting's own description text"`
+	PostedAt    string `json:"postedAt,omitempty" jsonschema:"when the posting says it went up, as scraped (free text — not used for duplicate detection)"`
+}
+
+type savePortalJobsArgs struct {
+	PortalLinkID string               `json:"portalLinkId" jsonschema:"the portal link every job in this batch was found via — must already exist"`
+	Jobs         []savePortalJobInput `json:"jobs" jsonschema:"every job found on this crawl — pass them all in one call, never call save_portal_job job-by-job"`
+}
+
+func registerSavePortalJobs(server *mcp.Server) {
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "save_portal_jobs",
+		Description: "Save every job posting found on a crawl in ONE call — pass the whole batch in `jobs`, " +
+			"never call save_portal_job (singular) once per job. Same cross-portal duplicate detection as " +
+			"save_portal_job, applied per entry: a job matching an existing one (case-insensitive, trimmed " +
+			"title+company) is left untouched and counted as a duplicate rather than inserted again. Use this " +
+			"as the last step of a manual crawl, after crawl_paginated — this is what keeps a page listing many " +
+			"jobs from needing many separate tool calls.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args savePortalJobsArgs) (*mcp.CallToolResult, any, error) {
+		if args.PortalLinkID == "" {
+			return errResult("portalLinkId is required"), nil, nil
+		}
+		if len(args.Jobs) == 0 {
+			return errResult("jobs must have at least one entry"), nil, nil
+		}
+
+		var saved, updated, duplicates, skipped int
+		for _, j := range args.Jobs {
+			if j.SourceURL == "" || j.Title == "" || j.Company == "" {
+				skipped++
+				continue
+			}
+			_, created, duplicate, err := savePortalJob(args.PortalLinkID, j.SourceURL, j.Title, j.Company, j.Location, j.Description, j.PostedAt)
+			if err != nil {
+				if errors.Is(err, errUnknownPortalLink) {
+					return errResult(fmt.Sprintf("unknown portal link id %q", args.PortalLinkID)), nil, nil
+				}
+				return errResult(fmt.Sprintf("failed to save portal job %q: %v", j.Title, err)), nil, nil
+			}
+			switch {
+			case duplicate:
+				duplicates++
+			case created:
+				saved++
+			default:
+				updated++
+			}
+		}
+		return jsonResult(map[string]any{
+			"jobsProcessed": len(args.Jobs),
+			"saved":         saved,
+			"updated":       updated,
+			"duplicates":    duplicates,
+			"skipped":       skipped,
+		})
+	})
+}
+
 type deleteJobArgs struct {
 	ID string `json:"id" jsonschema:"the job's own id, from save_job/list_jobs/search_jobs"`
 }

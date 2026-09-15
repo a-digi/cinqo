@@ -100,6 +100,7 @@ func runMCPServer() {
 	registerSearchJobs(server)
 	registerDeleteJob(server)
 	registerSavePortalJob(server)
+	registerSavePortalJobs(server)
 	registerCreateCompany(server)
 	registerListCompanies(server)
 	registerUpdateCompany(server)
