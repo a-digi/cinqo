@@ -18,6 +18,11 @@ const CRAWL_LOGS_PATH = '/tools/browser/crawl-logs'
 
 window.__cinqoToolBridge.registerMenuEntry({
   label: 'Browser',
+  // A globe/web glyph — the sidebar's own sanitizer allowlist (circle,
+  // ellipse, line, plus viewBox/stroke-width) is deliberately narrow,
+  // so this is built only from those primitives. See
+  // plan/ai/tools/step-15-menu-icons-for-browser-and-career.md.
+  icon: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor"><circle cx="10" cy="10" r="7" stroke-width="1.3"/><ellipse cx="10" cy="10" rx="3" ry="7" stroke-width="1.3"/><line x1="3" y1="10" x2="17" y2="10" stroke-width="1.3"/></svg>',
   children: [
     {
       label: 'Login',

@@ -10,6 +10,7 @@ interface CinqoToolMenuEntry {
   path?: string
   scopes?: string[]
   children?: CinqoToolMenuEntry[]
+  icon?: string
 }
 
 interface CinqoToolRoute {

@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import type { ConversationMessage } from '../../api/conversations'
 import { Markdown } from '../../Shared/Components/Markdown/Markdown'
+import { ThinkingIndicator } from './ThinkingIndicator'
+import { formatDuration } from './formatDuration'
 
 // Renders the active conversation's messages in order, user/assistant
 // styled distinctly. No streaming — a sent message shows a
@@ -39,7 +41,7 @@ export function MessageThread({
       )}
       {sending && (
         <div className="flex justify-start">
-          <div className="max-w-lg rounded-lg bg-gray-100 px-3 py-2 text-sm text-gray-400">Thinking…</div>
+          <ThinkingIndicator />
         </div>
       )}
     </div>
@@ -114,19 +116,6 @@ function formatTimestamp(iso: string): string {
     minute: '2-digit',
     second: '2-digit',
   })
-}
-
-// ms is always a whole number of milliseconds from the backend
-// (Turn.DurationMs) — formatted here, never on the backend, matching
-// this app's existing "backend returns raw values, frontend formats
-// for display" split.
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`
-  const seconds = ms / 1000
-  if (seconds < 60) return `${seconds.toFixed(1)}s`
-  const minutes = Math.floor(seconds / 60)
-  const remSeconds = Math.round(seconds % 60)
-  return `${minutes}m ${remSeconds}s`
 }
 
 function InfoIcon() {

@@ -35,6 +35,28 @@ body {
   margin: 0;
 }
 
+/* Per-letter "wave" effect for ThinkingIndicator's own word-change
+   animation (step 22) — each character fades/rises in with a
+   staggered animation-delay, applied via a Tailwind arbitrary-value
+   utility (animate-[thinking-wave_0.4s_ease]) rather than a Tailwind
+   keyframe, since a custom keyframe still has to be declared in real
+   CSS somewhere. See
+   plan/ai/conversation/step-22-thinking-indicator-polish.md. */
+@keyframes thinking-wave {
+  0% {
+    transform: translateY(0);
+    opacity: 0.3;
+  }
+  40% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
 /* Tailwind's Preflight resets <button>/[role=button] cursor to
    "default", overriding the browser's own native pointer cursor — so
    every button in the app needs it restored explicitly, not per

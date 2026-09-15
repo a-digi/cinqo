@@ -45,6 +45,10 @@ const PORTALS_PATH = '/tools/career/portals'
 
 window.__cinqoToolBridge.registerMenuEntry({
   label: 'Career',
+  // A briefcase glyph — built only from the sidebar's own sanitizer
+  // allowlist (rect, path, line, plus viewBox/stroke-width). See
+  // plan/ai/tools/step-15-menu-icons-for-browser-and-career.md.
+  icon: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor"><rect x="3" y="7" width="14" height="9" rx="1.5" stroke-width="1.3"/><path d="M7 7V5.5a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 13 5.5V7" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><line x1="3" y1="11" x2="17" y2="11" stroke-width="1.3"/></svg>',
   children: [
     {
       label: 'Profiles',
