@@ -106,6 +106,13 @@ func paginatedCrawlHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Step 17 — diagnostic record of this call, covering both the AI's
+	// own crawl_paginated tool calls and career's own deterministic
+	// "Crawl now" (both reach this same handler). Logged only on
+	// success, after the real result is known — a failed crawl (above)
+	// has nothing useful to log beyond the error already returned.
+	saveCrawlLog(body.Fields, body.NextSelector, body.RequestedMaxPages, body.EffectiveMaxPages, result)
+
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(result)
 }

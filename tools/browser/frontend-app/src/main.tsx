@@ -9,10 +9,12 @@
 import { createRoot, type Root } from 'react-dom/client'
 import { ListPage } from './ListPage'
 import { AddPage } from './AddPage'
+import { CrawlLogsPage } from './CrawlLogsPage'
 import './index.css'
 
 const LIST_PATH = '/tools/browser/credentials'
 const ADD_PATH = '/tools/browser/credentials/new'
+const CRAWL_LOGS_PATH = '/tools/browser/crawl-logs'
 
 window.__cinqoToolBridge.registerMenuEntry({
   label: 'Browser',
@@ -26,6 +28,13 @@ window.__cinqoToolBridge.registerMenuEntry({
       // who can't submit a credential shouldn't see a page whose
       // only purpose is submitting one.
       scopes: ['tool:browser:login'],
+    },
+    {
+      label: 'Crawl Logs',
+      path: CRAWL_LOGS_PATH,
+      // Reuses tool:browser:crawl — the same permission already
+      // needed to run a crawl at all (step 17's own design).
+      scopes: ['tool:browser:crawl'],
     },
   ],
 })
@@ -60,5 +69,11 @@ window.__cinqoToolBridge.registerRoute({
 window.__cinqoToolBridge.registerRoute({
   path: ADD_PATH,
   mount: (container) => mountReact(container, <AddPage />),
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: CRAWL_LOGS_PATH,
+  mount: (container) => mountReact(container, <CrawlLogsPage />),
   unmount: unmountReact,
 })

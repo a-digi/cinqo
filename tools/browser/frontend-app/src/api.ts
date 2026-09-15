@@ -33,6 +33,42 @@ export async function saveCredential(domain: string, username: string, password:
   return data.credentials ?? []
 }
 
+// --- crawl logs (step 17) ---
+
+const CRAWL_LOGS_BASE = '/api/v1/tools/browser/proxy/crawl-logs'
+
+export interface CrawlLogField {
+  label: string
+  selector: string
+  attribute?: string
+  multiple?: boolean
+}
+
+export interface CrawlLogPage {
+  url: string
+  results: Record<string, unknown>
+  notFound: string[]
+}
+
+export interface CrawlLogEntry {
+  id: string
+  createdAt: string
+  fields: CrawlLogField[]
+  nextSelector: string
+  requestedMaxPages: number
+  effectiveMaxPages: number
+  pages: CrawlLogPage[]
+  stoppedReason: string
+  pagesVisited: number
+}
+
+export async function fetchCrawlLogs(): Promise<CrawlLogEntry[]> {
+  const res = await fetch(CRAWL_LOGS_BASE, { credentials: 'include' })
+  if (!res.ok) throw new Error(`failed to load crawl logs (${res.status})`)
+  const data: { logs: CrawlLogEntry[] } = await res.json()
+  return data.logs ?? []
+}
+
 export async function removeCredential(domain: string): Promise<void> {
   const res = await fetch(`${PROXY_BASE}?domain=${encodeURIComponent(domain)}`, {
     method: 'DELETE',

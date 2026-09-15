@@ -419,9 +419,14 @@ export function PortalsPage() {
                   ) : (
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0">
-                        <div className="truncate text-xs font-medium text-gray-900">
+                        <a
+                          href={link.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block truncate text-xs font-medium text-gray-900 underline hover:text-gray-700"
+                        >
                           {link.title || '(untitled link)'}
-                        </div>
+                        </a>
                         <div className="truncate text-xs text-gray-500">{link.url}</div>
                         <div className="truncate text-xs text-gray-400">
                           {link.lastCrawledAt ? `Last crawled: ${new Date(link.lastCrawledAt).toLocaleString()}` : 'Never crawled'}

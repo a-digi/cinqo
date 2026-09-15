@@ -78,6 +78,23 @@ func initBrowserDB() error {
 		return fmt.Errorf("failed to prepare login_credentials schema: %w", err)
 	}
 
+	// crawl_logs (step 17) — diagnostic record of every /crawl-paginated
+	// call, AI-driven or deterministic; see crawl_log.go.
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS crawl_logs (
+		id                  TEXT PRIMARY KEY,
+		created_at          TEXT NOT NULL,
+		request_fields      TEXT NOT NULL,
+		next_selector       TEXT NOT NULL,
+		requested_max_pages INTEGER NOT NULL,
+		effective_max_pages INTEGER NOT NULL,
+		pages               TEXT NOT NULL,
+		stopped_reason      TEXT NOT NULL,
+		pages_visited       INTEGER NOT NULL
+	)`); err != nil {
+		db.Close()
+		return fmt.Errorf("failed to prepare crawl_logs schema: %w", err)
+	}
+
 	browserDB = db
 	return nil
 }
