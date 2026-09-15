@@ -186,10 +186,6 @@ func startSharedNormalSession() (context.Context, []context.CancelFunc, error) {
 	ctx, ctxCancel := chromedp.NewContext(allocCtx)
 
 	actions := []chromedp.Action{
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			_, err := page.AddScriptToEvaluateOnNewDocument(stealth.JS).Do(ctx)
-			return err
-		}),
 		chromedp.Navigate("about:blank"),
 	}
 
