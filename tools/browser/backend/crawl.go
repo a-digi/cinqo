@@ -70,6 +70,14 @@ const maxHumanSolveDuration = 30 * time.Minute
 
 type crawlRequest struct {
 	URL string `json:"url"`
+	// RequestID (step 31) is optional — when set, this call's own
+	// live phase (navigating/checking_cloudflare/awaiting_human_challenge/
+	// completed/failed) is tracked under this id and readable via
+	// GET /crawl-status?requestId=... while this call is still in
+	// flight. Absent for every AI-driven call (callSibling never sets
+	// it) — a no-op in that case, see crawl_status.go's own doc
+	// comment. See plan/ai/tools/browser/step-31-crawl-phase-status-endpoint.md.
+	RequestID string `json:"requestId,omitempty"`
 }
 
 type crawlResponse struct {
@@ -98,8 +106,9 @@ func crawlHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := crawlPage(body.URL)
+	result, err := crawlPage(body.URL, body.RequestID)
 	if err != nil {
+		setCrawlPhase(body.RequestID, phaseFailed, err.Error())
 		var cfErr *crawlError
 		if errors.As(err, &cfErr) {
 			w.Header().Set("Content-Type", "application/json")
@@ -111,6 +120,7 @@ func crawlHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	setCrawlPhase(body.RequestID, phaseCompleted, "HTML crawled")
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(result)
 }
@@ -155,7 +165,8 @@ func readCrawlResponse(ctx context.Context) (crawlResponse, error) {
 // crawlError (cloudflare_challenge_unresolved) as before when the
 // challenge is still present once ctx's own wait budget is spent. See
 // plan/ai/tools/browser/step-24-headed-chrome-cloudflare-fallback.md.
-func navigateAndReadWithCloudflareCheck(ctx context.Context, rawURL string) (crawlResponse, error) {
+func navigateAndReadWithCloudflareCheck(ctx context.Context, rawURL, requestID string) (crawlResponse, error) {
+	setCrawlPhase(requestID, phaseNavigating, "navigating to "+rawURL)
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(rawURL),
 		chromedp.Sleep(settleDelay),
@@ -163,6 +174,7 @@ func navigateAndReadWithCloudflareCheck(ctx context.Context, rawURL string) (cra
 		return crawlResponse{}, err
 	}
 
+	setCrawlPhase(requestID, phaseCheckingCloudflare, "checking for a Cloudflare challenge")
 	cf, err := waitForCloudflareClearance(ctx)
 	if err != nil {
 		return crawlResponse{}, err
@@ -188,7 +200,7 @@ func navigateAndReadWithCloudflareCheck(ctx context.Context, rawURL string) (cra
 // real, headed browser is often materially harder for Cloudflare to
 // flag as automated than headless Chrome, even with this tool's own
 // existing stealth patches applied.
-func crawlPage(rawURL string) (crawlResponse, error) {
+func crawlPage(rawURL, requestID string) (crawlResponse, error) {
 	// step 29 — a known-Cloudflare domain skips the headless attempt
 	// entirely, straight to the headed fallback: the only signal
 	// available before ever navigating anywhere is the cache (nothing
@@ -199,7 +211,7 @@ func crawlPage(rawURL string) (crawlResponse, error) {
 	// plan/ai/tools/browser/step-29-skip-headless-for-known-cloudflare-domains.md.
 	if domain, err := hostnameOf(rawURL); err == nil {
 		if known, err := isDomainKnownCloudflare(domain); err == nil && known {
-			return crawlWithNormalSession(rawURL)
+			return crawlWithNormalSession(rawURL, requestID)
 		}
 	}
 
@@ -210,7 +222,7 @@ func crawlPage(rawURL string) (crawlResponse, error) {
 		ctx, cancel := context.WithTimeout(sessionCtx, crawlTimeout)
 		defer cancel()
 
-		return navigateAndReadWithCloudflareCheck(ctx, rawURL)
+		return navigateAndReadWithCloudflareCheck(ctx, rawURL, requestID)
 	}()
 
 	var cfErr *crawlError
@@ -220,7 +232,7 @@ func crawlPage(rawURL string) (crawlResponse, error) {
 		if domain, hostErr := hostnameOf(rawURL); hostErr == nil {
 			_ = recordCloudflareDomain(domain, cfErr.Reason)
 		}
-		return crawlWithNormalSession(rawURL)
+		return crawlWithNormalSession(rawURL, requestID)
 	}
 	return result, err
 }
@@ -236,7 +248,7 @@ func crawlPage(rawURL string) (crawlResponse, error) {
 // immediately. See
 // plan/ai/tools/browser/step-24-headed-chrome-cloudflare-fallback.md
 // and plan/ai/tools/browser/step-25-human-assisted-cloudflare-retry.md.
-func crawlWithNormalSession(rawURL string) (crawlResponse, error) {
+func crawlWithNormalSession(rawURL, requestID string) (crawlResponse, error) {
 	normalSessionMu.Lock()
 	defer normalSessionMu.Unlock()
 
@@ -253,13 +265,13 @@ func crawlWithNormalSession(rawURL string) (crawlResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, normalSessionCrawlTimeout)
 	defer cancel()
 
-	result, err := navigateAndReadWithCloudflareCheck(ctx, rawURL)
+	result, err := navigateAndReadWithCloudflareCheck(ctx, rawURL, requestID)
 
 	var cfErr *crawlError
 	if !errors.As(err, &cfErr) {
 		return result, err
 	}
-	return waitForHumanToSolveCloudflare(ctx, cfErr)
+	return waitForHumanToSolveCloudflare(ctx, cfErr, requestID)
 }
 
 // waitForHumanToClearCloudflare polls detectCloudflareChallenge every
@@ -277,7 +289,8 @@ func crawlWithNormalSession(rawURL string) (crawlResponse, error) {
 // plan/ai/tools/browser/step-25-human-assisted-cloudflare-retry.md,
 // step-26-headed-fallback-for-paginated-crawl.md, and
 // step-27-long-lived-headed-fallback-session.md.
-func waitForHumanToClearCloudflare(ctx context.Context) (bool, error) {
+func waitForHumanToClearCloudflare(ctx context.Context, requestID string) (bool, error) {
+	setCrawlPhase(requestID, phaseAwaitingHumanChallenge, "Cloudflare challenge detected — waiting for a person to solve it in the open browser window")
 	deadline := time.Now().Add(maxHumanSolveDuration)
 	for time.Now().Before(deadline) {
 		if err := chromedp.Run(ctx, chromedp.Sleep(humanSolveRetryInterval)); err != nil {
@@ -299,8 +312,8 @@ func waitForHumanToClearCloudflare(ctx context.Context) (bool, error) {
 // Cloudflare challenge and solve it themselves, then reads the page
 // once cleared. See
 // plan/ai/tools/browser/step-25-human-assisted-cloudflare-retry.md.
-func waitForHumanToSolveCloudflare(ctx context.Context, fallback *crawlError) (crawlResponse, error) {
-	cleared, err := waitForHumanToClearCloudflare(ctx)
+func waitForHumanToSolveCloudflare(ctx context.Context, fallback *crawlError, requestID string) (crawlResponse, error) {
+	cleared, err := waitForHumanToClearCloudflare(ctx, requestID)
 	if err != nil {
 		return crawlResponse{}, err
 	}

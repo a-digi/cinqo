@@ -40,6 +40,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -166,6 +167,7 @@ type crawlRunResponse struct {
 	Log           []string `json:"log"`
 	ResultSummary *string  `json:"resultSummary"`
 	ErrorMessage  *string  `json:"errorMessage"`
+	Phase         *string  `json:"phase"`
 }
 
 func toCrawlRunResponse(r *crawlRun) crawlRunResponse {
@@ -186,6 +188,7 @@ func toCrawlRunResponse(r *crawlRun) crawlRunResponse {
 		Log:           lines,
 		ResultSummary: r.ResultSummary,
 		ErrorMessage:  r.ErrorMessage,
+		Phase:         r.Phase,
 	}
 }
 
@@ -208,45 +211,81 @@ type crawlNowPaginatedResult struct {
 	BlockedReason     string            `json:"blockedReason,omitempty"`
 }
 
-// heartbeatInterval — how often startHeartbeat appends a "still
-// waiting" line to crawl_runs.log while a call to browser's own /crawl
-// or /crawl-paginated is in flight. A real, reported gap this closes:
-// either call is a single opaque, blocking HTTP round trip from this
-// goroutine's own perspective, and browser's own Cloudflare
-// human-solve fallback can legitimately hold it open for up to ~30
-// minutes (humanSolveRetryInterval/maxHumanSolveDuration,
-// tools/browser/backend/crawl.go) — with nothing appended to the log
-// for the whole wait, a perfectly normal, in-progress crawl reads as
-// indistinguishable from a genuinely stuck one. See
-// plan/ai/tools/career/step-37-detached-crawl-now-orchestration.md's
-// own "Post-implementation" notes for the report that prompted this.
-var heartbeatInterval = 20 * time.Second
+// crawlStatusPollInterval — how often pollBrowserPhase asks browser's
+// own GET /crawl-status while a call to /crawl or /crawl-paginated is
+// in flight. Supersedes the earlier plain elapsed-time heartbeat
+// (which could only prove a run was alive, never say what it was
+// actually doing) now that browser exposes its own real phase — see
+// plan/ai/tools/browser/step-31-crawl-phase-status-endpoint.md and
+// plan/ai/tools/career/step-39-fine-grained-crawl-phases.md.
+var crawlStatusPollInterval = 5 * time.Second
 
-// startHeartbeat appends one log line immediately (so a slow first
-// tick doesn't leave a caller wondering) and then every
-// heartbeatInterval, until the returned stop func is called — always
-// call stop via defer immediately after starting one, on every exit
-// path of the call it's wrapping.
-func startHeartbeat(runID string) (stop func()) {
-	startedAt := time.Now()
+// pollBrowserPhase polls GET /crawl-status?requestId=<runID> on
+// browser's own proxy every crawlStatusPollInterval while a call to
+// /crawl or /crawl-paginated is in flight, forwarding every observed
+// phase CHANGE into crawl_runs via setCrawlRunPhase — this turns
+// browser's own internal state into something Career's own log/phase
+// actually reflects, in near-real-time. Runs concurrently with the
+// blocking POST call it accompanies; stop() must be called on every
+// exit path of that call. A poll failure (network error, browser
+// tool temporarily unreachable, a stale/expired token) is silently
+// ignored — this is a secondary, best-effort observability channel
+// that must never affect the real, authoritative call's own outcome.
+func pollBrowserPhase(ctx context.Context, coreURL, runID, accessToken string) (stop func()) {
 	done := make(chan struct{})
+	lastPhase := ""
 	go func() {
-		ticker := time.NewTicker(heartbeatInterval)
+		ticker := time.NewTicker(crawlStatusPollInterval)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-done:
 				return
 			case <-ticker.C:
-				elapsed := time.Since(startedAt).Round(time.Second)
-				_ = appendCrawlRunLog(runID, fmt.Sprintf(
-					"still waiting on browser (%s elapsed) — this can take up to ~30 minutes if Cloudflare is blocking the page and a human hasn't cleared it yet",
-					elapsed,
-				))
+				phase, message, ok := fetchBrowserCrawlStatus(ctx, coreURL, runID, accessToken)
+				if !ok || phase == lastPhase {
+					continue
+				}
+				lastPhase = phase
+				_ = setCrawlRunPhase(runID, phase, message)
 			}
 		}
 	}()
 	return func() { close(done) }
+}
+
+// browserCrawlStatusResponse mirrors browser's own crawlStatusResponse
+// (tools/browser/backend/crawl_status.go) — independently declared,
+// same "two separate Go modules" reason every other cross-tool JSON
+// shape in this tool is duplicated by hand.
+type browserCrawlStatusResponse struct {
+	Phase   string `json:"phase"`
+	Message string `json:"message"`
+}
+
+// fetchBrowserCrawlStatus GETs browser's own /crawl-status for runID —
+// (phase, message, true) on a 200, or ("", "", false) for anything
+// else (404 — nothing reported yet — included), so pollBrowserPhase
+// can treat every non-success outcome identically as "nothing new."
+func fetchBrowserCrawlStatus(ctx context.Context, coreURL, runID, accessToken string) (phase, message string, ok bool) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, coreURL+"/api/v1/tools/browser/proxy/crawl-status?requestId="+url.QueryEscape(runID), nil)
+	if err != nil {
+		return "", "", false
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	resp, err := crawlNowHTTPClient.Do(req)
+	if err != nil {
+		return "", "", false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", "", false
+	}
+	var body browserCrawlStatusResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return "", "", false
+	}
+	return body.Phase, body.Message, true
 }
 
 // runCrawlNow is the detached goroutine body — rooted in
@@ -270,7 +309,7 @@ func runCrawlNow(ctx context.Context, runID, portalLinkID, accessToken string) {
 		return
 	}
 
-	_ = appendCrawlRunLog(runID, "building crawl request")
+	_ = setCrawlRunPhase(runID, "building_request", "building crawl request")
 	req, err := buildCrawlRequest(portalLinkID)
 	if err != nil {
 		fail(err)
@@ -283,30 +322,39 @@ func runCrawlNow(ctx context.Context, runID, portalLinkID, accessToken string) {
 	}
 
 	_ = appendCrawlRunLog(runID, "navigating to "+linkURL)
+	// requestId (step 39) — runID doubles as the id browser's own
+	// GET /crawl-status tracks this operation under; ties Career's own
+	// crawl_runs row directly to browser's own in-memory phase, no new
+	// id generation needed.
 	navBody, err := json.Marshal(struct {
-		URL string `json:"url"`
-	}{URL: linkURL})
+		URL       string `json:"url"`
+		RequestID string `json:"requestId"`
+	}{URL: linkURL, RequestID: runID})
 	if err != nil {
 		fail(err)
 		return
 	}
-	stopHeartbeat := startHeartbeat(runID)
+	stopPoll := pollBrowserPhase(ctx, coreURL, runID, accessToken)
 	_, err = callBrowserProxy(ctx, coreURL, "/api/v1/tools/browser/proxy/crawl", navBody, accessToken)
-	stopHeartbeat()
+	stopPoll()
 	if err != nil {
 		fail(err)
 		return
 	}
 
 	_ = appendCrawlRunLog(runID, "running crawl_paginated")
-	pagBody, err := json.Marshal(req)
+	pagRequest := struct {
+		crawlRequest
+		RequestID string `json:"requestId"`
+	}{crawlRequest: req, RequestID: runID}
+	pagBody, err := json.Marshal(pagRequest)
 	if err != nil {
 		fail(err)
 		return
 	}
-	stopHeartbeat = startHeartbeat(runID)
+	stopPoll = pollBrowserPhase(ctx, coreURL, runID, accessToken)
 	respBody, err := callBrowserProxy(ctx, coreURL, "/api/v1/tools/browser/proxy/crawl-paginated", pagBody, accessToken)
-	stopHeartbeat()
+	stopPoll()
 	if err != nil {
 		fail(err)
 		return
@@ -318,7 +366,7 @@ func runCrawlNow(ctx context.Context, runID, portalLinkID, accessToken string) {
 		return
 	}
 
-	_ = appendCrawlRunLog(runID, fmt.Sprintf("ingesting %d page(s)", len(result.Pages)))
+	_ = setCrawlRunPhase(runID, "ingesting_jobs", fmt.Sprintf("saving %d page(s) of results", len(result.Pages)))
 	ingested, err := ingestCrawlResults(portalLinkID, result.Pages)
 	if err != nil {
 		fail(fmt.Errorf("failed to save crawled jobs: %w", err))

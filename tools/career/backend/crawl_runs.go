@@ -38,6 +38,11 @@ type crawlRun struct {
 	Log           string
 	ResultSummary *string
 	ErrorMessage  *string
+	// Phase (step 39) is the single most recent fine-grained step this
+	// run has reached — nil until the first setCrawlRunPhase call
+	// lands, never cleared afterward (see db.go's own crawl_runs
+	// schema comment for why).
+	Phase *string
 }
 
 // startCrawlRun inserts a new running row for portalLinkID.
@@ -72,6 +77,16 @@ func appendCrawlRunLog(id, line string) error {
 	return err
 }
 
+// setCrawlRunPhase updates crawl_runs.phase and appends a matching log
+// line in one call (step 39) — every phase transition is a log-worthy
+// event by definition, so there is no legitimate case for updating one
+// without the other. Superset of a plain appendCrawlRunLog call.
+func setCrawlRunPhase(id, phase, message string) error {
+	entry := time.Now().UTC().Format(time.RFC3339) + "\t" + message + "\n"
+	_, err := jobsDB.Exec(`UPDATE crawl_runs SET phase = ?, log = log || ? WHERE id = ?`, phase, entry, id)
+	return err
+}
+
 // orNull turns a *string into a value database/sql writes as either
 // the string or NULL — explicit rather than relying on database/sql's
 // own pointer-dereferencing conversion, matching this file's own
@@ -100,8 +115,8 @@ func finishCrawlRun(id, status string, resultSummary, errorMessage *string) erro
 // findMostRecentCrawlRun both use.
 func scanCrawlRun(row *sql.Row) (*crawlRun, error) {
 	var r crawlRun
-	var finishedAt, resultSummary, errorMessage sql.NullString
-	if err := row.Scan(&r.ID, &r.PortalLinkID, &r.Status, &r.StartedAt, &finishedAt, &r.Log, &resultSummary, &errorMessage); err != nil {
+	var finishedAt, resultSummary, errorMessage, phase sql.NullString
+	if err := row.Scan(&r.ID, &r.PortalLinkID, &r.Status, &r.StartedAt, &finishedAt, &r.Log, &resultSummary, &errorMessage, &phase); err != nil {
 		return nil, err
 	}
 	if finishedAt.Valid {
@@ -113,6 +128,9 @@ func scanCrawlRun(row *sql.Row) (*crawlRun, error) {
 	if errorMessage.Valid {
 		r.ErrorMessage = &errorMessage.String
 	}
+	if phase.Valid {
+		r.Phase = &phase.String
+	}
 	return &r, nil
 }
 
@@ -123,7 +141,7 @@ func scanCrawlRun(row *sql.Row) (*crawlRun, error) {
 // establishes for "absent" values).
 func findActiveCrawlRun(portalLinkID string) (*crawlRun, error) {
 	row := jobsDB.QueryRow(
-		`SELECT id, portal_link_id, status, started_at, finished_at, log, result_summary, error_message
+		`SELECT id, portal_link_id, status, started_at, finished_at, log, result_summary, error_message, phase
 		 FROM crawl_runs WHERE portal_link_id = ? AND status = 'running'`,
 		portalLinkID,
 	)
@@ -148,7 +166,7 @@ func findActiveCrawlRun(portalLinkID string) (*crawlRun, error) {
 // correct tiebreaker (here, the only ordering key at all).
 func findMostRecentCrawlRun(portalLinkID string) (*crawlRun, error) {
 	row := jobsDB.QueryRow(
-		`SELECT id, portal_link_id, status, started_at, finished_at, log, result_summary, error_message
+		`SELECT id, portal_link_id, status, started_at, finished_at, log, result_summary, error_message, phase
 		 FROM crawl_runs WHERE portal_link_id = ? ORDER BY rowid DESC LIMIT 1`,
 		portalLinkID,
 	)

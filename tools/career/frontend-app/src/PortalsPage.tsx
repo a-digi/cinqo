@@ -15,7 +15,28 @@ import { buildCrawlMessage, crawlConversationTitle } from './crawl'
 import { buildGenerateInstructionsMessage, generateInstructionsConversationTitle } from './generateInstructions'
 import { startCrawlNow, fetchActiveCrawlRun, type CrawlRun } from './crawlNow'
 import { Dropdown } from './Dropdown'
-import { PlusIcon, PlayIcon, SparkleIcon, LogIcon } from './icons'
+import { PlusIcon, PlayIcon, SparkleIcon, LogIcon, AlertIcon } from './icons'
+
+// PHASE_LABELS (step 40) — a human-readable sentence per fine-grained
+// crawl_runs.phase value (step 39). A plain lookup, not a switch,
+// since crawlNow.ts's own CrawlRun.phase is deliberately a plain
+// string, not a TS union — see that field's own doc comment.
+const PHASE_LABELS: Record<string, string> = {
+  building_request: 'Preparing crawl instructions',
+  navigating: 'Opening the page',
+  checking_cloudflare: 'Checking for a Cloudflare challenge',
+  awaiting_human_challenge: 'Waiting for you to solve a Cloudflare challenge',
+  extracting: 'Extracting job listings',
+  ingesting_jobs: 'Saving jobs',
+}
+
+// phaseLabel falls back to the raw phase string for a value not yet in
+// PHASE_LABELS (e.g. a phase the backend adds later than this table) —
+// still shows *something* meaningful rather than nothing.
+function phaseLabel(phase: string | null): string | null {
+  if (!phase) return null
+  return PHASE_LABELS[phase] ?? phase
+}
 
 // Portals are tool-wide, not persona/profile-scoped — same reasoning
 // Jobs/Companies already document. No Dropdown call site here: a
@@ -257,6 +278,7 @@ export function PortalsPage() {
             log: [],
             resultSummary: null,
             errorMessage: null,
+            phase: null,
           },
         }))
         return watchCrawlRun(link.id)
@@ -746,23 +768,32 @@ export function PortalsPage() {
                             )}
                           </p>
                         )}
-                        {/* "Crawl now"'s own live/terminal state (steps 37/38) — kept
-                            separate from crawlResults above, which now only ever
-                            carries a start failure or a stop notice for this
+                        {/* "Crawl now"'s own live/terminal state (steps 37/38/40) —
+                            kept separate from crawlResults above, which now only
+                            ever carries a start failure or a stop notice for this
                             mechanism. Shown for every status, including while
-                            running: the backend already appends a coarse log entry
-                            per step (building request/navigating/crawl_paginated/
-                            ingesting) as it goes, and this page is already polling
-                            it every 3s — surfacing the latest entry live, plus the
-                            full log on demand, is what "the frontend shows the
-                            status and the logs" concretely means (not just on a
-                            terminal outcome). */}
+                            running: the backend now tracks a real, fine-grained
+                            phase per step (step 39, sourced from browser's own
+                            live status — step 31) and this page polls it every
+                            3s — surfacing the current phase live, plus the full
+                            log on demand, is what "the frontend shows the status
+                            and the logs" concretely means (not just on a terminal
+                            outcome). awaiting_human_challenge gets its own
+                            visually distinct callout — this is the one phase
+                            where the user, not the system, is the blocker. */}
                         {crawlRunWatches[link.id] && (
                           <div className="mt-1">
                             {crawlRunWatches[link.id]!.status === 'running' && (
-                              <p className="text-xs text-gray-500">
-                                {latestCrawlLogMessage(crawlRunWatches[link.id]!.log) ?? 'Crawl in progress…'}
-                              </p>
+                              crawlRunWatches[link.id]!.phase === 'awaiting_human_challenge' ? (
+                                <p className="flex items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800">
+                                  <AlertIcon />
+                                  Waiting for you to solve a Cloudflare challenge in the browser window
+                                </p>
+                              ) : (
+                                <p className="text-xs text-gray-500">
+                                  {phaseLabel(crawlRunWatches[link.id]!.phase) ?? latestCrawlLogMessage(crawlRunWatches[link.id]!.log) ?? 'Crawl in progress…'}
+                                </p>
+                              )
                             )}
                             {crawlRunWatches[link.id]!.status === 'completed' && (
                               <p className="text-xs text-green-700">{crawlRunWatches[link.id]!.resultSummary}</p>

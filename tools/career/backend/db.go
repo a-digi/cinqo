@@ -227,6 +227,15 @@ CREATE TABLE IF NOT EXISTS recruiters (
 -- under two concurrent "Crawl now" clicks for the same link — that
 -- only one run can be in flight per link at a time. See
 -- plan/ai/tools/career/step-36-crawl-run-data-model.md.
+-- phase (step 39) is the single most recent fine-grained step this run
+-- has reached — building_request/navigating/checking_cloudflare/
+-- awaiting_human_challenge/extracting/ingesting_jobs — layered on top
+-- of status (which stays the coarse running/completed/failed/cancelled
+-- control-flow signal). Deliberately never cleared on completion: the
+-- last phase a FAILED run reached is real diagnostic information
+-- ("failed while: awaiting_human_challenge" tells a different story
+-- than "failed while: ingesting_jobs"). See
+-- plan/ai/tools/career/step-39-fine-grained-crawl-phases.md.
 CREATE TABLE IF NOT EXISTS crawl_runs (
     id             TEXT PRIMARY KEY,
     portal_link_id TEXT NOT NULL REFERENCES portal_links(id) ON DELETE CASCADE,
@@ -236,7 +245,8 @@ CREATE TABLE IF NOT EXISTS crawl_runs (
     finished_at    TEXT,
     log            TEXT NOT NULL DEFAULT '',
     result_summary TEXT,
-    error_message  TEXT
+    error_message  TEXT,
+    phase          TEXT
 );
 
 CREATE INDEX IF NOT EXISTS crawl_runs_portal_link_idx ON crawl_runs(portal_link_id);
@@ -536,7 +546,10 @@ func migrateJobsDB(db *sql.DB) error {
 	if err := migratePortalLinksTitle(db); err != nil {
 		return err
 	}
-	return migratePortalLinksInstructionsAIStatus(db)
+	if err := migratePortalLinksInstructionsAIStatus(db); err != nil {
+		return err
+	}
+	return migrateCrawlRunsPhase(db)
 }
 
 func migrateJobsCompanyID(db *sql.DB) error {
@@ -646,5 +659,23 @@ func migratePortalLinksInstructionsAIStatus(db *sql.DB) error {
 		return err
 	}
 	_, err = db.Exec(`ALTER TABLE portal_links ADD COLUMN instructions_ai_error_at TEXT`)
+	return err
+}
+
+// migrateCrawlRunsPhase adds the fine-grained phase column (step 39)
+// to an already-installed crawl_runs table — same plain ALTER TABLE
+// ADD COLUMN shape as every other column addition in this file, a
+// no-op on a brand-new install (crawl_runs' own inline CREATE TABLE IF
+// NOT EXISTS above already includes phase) or an already-migrated one.
+// See plan/ai/tools/career/step-39-fine-grained-crawl-phases.md.
+func migrateCrawlRunsPhase(db *sql.DB) error {
+	exists, hasColumn, err := tableHasColumn(db, "crawl_runs", "phase")
+	if err != nil {
+		return err
+	}
+	if !exists || hasColumn {
+		return nil
+	}
+	_, err = db.Exec(`ALTER TABLE crawl_runs ADD COLUMN phase TEXT`)
 	return err
 }

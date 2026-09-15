@@ -123,6 +123,9 @@ type paginatedCrawlRequest struct {
 	NextSelector      string            `json:"nextSelector"`
 	RequestedMaxPages int               `json:"requestedMaxPages"`
 	EffectiveMaxPages int               `json:"effectiveMaxPages"`
+	// RequestID (step 31) — same optional, opt-in phase-tracking field
+	// crawlRequest (crawl.go) carries; see that field's own doc comment.
+	RequestID string `json:"requestId,omitempty"`
 }
 
 // paginatedCrawlHandler handles POST /crawl-paginated — the --mcp
@@ -154,8 +157,9 @@ func paginatedCrawlHandler(w http.ResponseWriter, r *http.Request) {
 	settings, _ := loadBrowserSettings()
 	captureHTML := settings.DebugEnabled && settings.DebugLogHTML
 
-	result, pageHTML, err := performPaginatedCrawl(body.Container, body.Fields, body.Mapping, body.NextSelector, body.RequestedMaxPages, body.EffectiveMaxPages, captureHTML)
+	result, pageHTML, err := performPaginatedCrawl(body.Container, body.Fields, body.Mapping, body.NextSelector, body.RequestedMaxPages, body.EffectiveMaxPages, captureHTML, body.RequestID)
 	if err != nil {
+		setCrawlPhase(body.RequestID, phaseFailed, err.Error())
 		var cfErr *crawlError
 		if errors.As(err, &cfErr) {
 			w.Header().Set("Content-Type", "application/json")
@@ -166,6 +170,7 @@ func paginatedCrawlHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("paginated crawl failed: %v", err), http.StatusBadGateway)
 		return
 	}
+	setCrawlPhase(body.RequestID, phaseCompleted, fmt.Sprintf("finished — visited %d page(s) (%s)", result.PagesVisited, result.StoppedReason))
 
 	// Step 17 — diagnostic record of this call, covering both the AI's
 	// own crawl_paginated tool calls and career's own deterministic
@@ -200,7 +205,7 @@ func paginatedCrawlHandler(w http.ResponseWriter, r *http.Request) {
 // reach the live AI-facing JSON response; only paginatedCrawlHandler's
 // own saveCrawlLog call (crawl_log.go) ever sees it. See
 // plan/ai/tools/browser/step-22-debug-mode-and-log-management.md.
-func runPaginatedCrawlLoop(ctx context.Context, container string, fields []extractField, mapping map[string]string, nextSelector string, requestedMaxPages, effectiveMaxPages int, captureHTML bool) (paginatedCrawlResponse, []string, error) {
+func runPaginatedCrawlLoop(ctx context.Context, container string, fields []extractField, mapping map[string]string, nextSelector string, requestedMaxPages, effectiveMaxPages int, captureHTML bool, requestID string) (paginatedCrawlResponse, []string, error) {
 	pages := make([]pageExtractResult, 0, effectiveMaxPages)
 	var pageHTML []string
 	if captureHTML {
@@ -210,6 +215,7 @@ func runPaginatedCrawlLoop(ctx context.Context, container string, fields []extra
 	blockedReason := ""
 
 	for page := 1; ; page++ {
+		setCrawlPhase(requestID, phaseExtracting, fmt.Sprintf("extracting page %d", page))
 		result, err := runExtractionOnCurrentPage(ctx, container, fields, mapping)
 		if err != nil {
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
@@ -349,7 +355,7 @@ func runPaginatedCrawlLoop(ctx context.Context, container string, fields []extra
 // page it should have been looking at, since crawl_paginated itself
 // never takes a URL. See
 // plan/ai/tools/browser/step-26-headed-fallback-for-paginated-crawl.md.
-func performPaginatedCrawl(container string, fields []extractField, mapping map[string]string, nextSelector string, requestedMaxPages, effectiveMaxPages int, captureHTML bool) (paginatedCrawlResponse, []string, error) {
+func performPaginatedCrawl(container string, fields []extractField, mapping map[string]string, nextSelector string, requestedMaxPages, effectiveMaxPages int, captureHTML bool, requestID string) (paginatedCrawlResponse, []string, error) {
 	result, pageHTML, blockedURL, err := func() (paginatedCrawlResponse, []string, string, error) {
 		sessionMu.Lock()
 		defer sessionMu.Unlock()
@@ -379,7 +385,7 @@ func performPaginatedCrawl(container string, fields []extractField, mapping map[
 			}
 		}
 
-		result, pageHTML, err := runPaginatedCrawlLoop(ctx, container, fields, mapping, nextSelector, requestedMaxPages, effectiveMaxPages, captureHTML)
+		result, pageHTML, err := runPaginatedCrawlLoop(ctx, container, fields, mapping, nextSelector, requestedMaxPages, effectiveMaxPages, captureHTML, requestID)
 
 		var cfErr *crawlError
 		if !errors.As(err, &cfErr) {
@@ -403,7 +409,7 @@ func performPaginatedCrawl(container string, fields []extractField, mapping map[
 
 	var cfErr *crawlError
 	if errors.As(err, &cfErr) && blockedURL != "" {
-		return performPaginatedCrawlWithNormalSession(blockedURL, container, fields, mapping, nextSelector, requestedMaxPages, effectiveMaxPages, captureHTML)
+		return performPaginatedCrawlWithNormalSession(blockedURL, container, fields, mapping, nextSelector, requestedMaxPages, effectiveMaxPages, captureHTML, requestID)
 	}
 	return result, pageHTML, err
 }
@@ -422,7 +428,7 @@ func performPaginatedCrawl(container string, fields []extractField, mapping map[
 // plan/ai/tools/browser/step-24-headed-chrome-cloudflare-fallback.md,
 // step-25-human-assisted-cloudflare-retry.md, and
 // step-26-headed-fallback-for-paginated-crawl.md.
-func performPaginatedCrawlWithNormalSession(blockedURL, container string, fields []extractField, mapping map[string]string, nextSelector string, requestedMaxPages, effectiveMaxPages int, captureHTML bool) (paginatedCrawlResponse, []string, error) {
+func performPaginatedCrawlWithNormalSession(blockedURL, container string, fields []extractField, mapping map[string]string, nextSelector string, requestedMaxPages, effectiveMaxPages int, captureHTML bool, requestID string) (paginatedCrawlResponse, []string, error) {
 	normalSessionMu.Lock()
 	defer normalSessionMu.Unlock()
 
@@ -439,25 +445,26 @@ func performPaginatedCrawlWithNormalSession(blockedURL, container string, fields
 	ctx, cancel := context.WithTimeout(ctx, normalSessionPaginatedCrawlTimeout)
 	defer cancel()
 
+	setCrawlPhase(requestID, phaseNavigating, "navigating to "+blockedURL)
 	if err := chromedp.Run(ctx, chromedp.Navigate(blockedURL), chromedp.Sleep(settleDelay)); err != nil {
 		return paginatedCrawlResponse{}, nil, err
 	}
 
-	result, pageHTML, err := runPaginatedCrawlLoop(ctx, container, fields, mapping, nextSelector, requestedMaxPages, effectiveMaxPages, captureHTML)
+	result, pageHTML, err := runPaginatedCrawlLoop(ctx, container, fields, mapping, nextSelector, requestedMaxPages, effectiveMaxPages, captureHTML, requestID)
 
 	var cfErr *crawlError
 	if !errors.As(err, &cfErr) {
 		return result, pageHTML, err
 	}
 
-	cleared, waitErr := waitForHumanToClearCloudflare(ctx)
+	cleared, waitErr := waitForHumanToClearCloudflare(ctx, requestID)
 	if waitErr != nil {
 		return paginatedCrawlResponse{}, nil, waitErr
 	}
 	if !cleared {
 		return paginatedCrawlResponse{}, nil, cfErr
 	}
-	return runPaginatedCrawlLoop(ctx, container, fields, mapping, nextSelector, requestedMaxPages, effectiveMaxPages, captureHTML)
+	return runPaginatedCrawlLoop(ctx, container, fields, mapping, nextSelector, requestedMaxPages, effectiveMaxPages, captureHTML, requestID)
 }
 
 // jsStringLiteral marshals a Go string into a JSON string literal for

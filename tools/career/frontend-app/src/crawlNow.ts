@@ -28,6 +28,16 @@ export interface CrawlRun {
   log: string[]
   resultSummary: string | null
   errorMessage: string | null
+  // phase (step 39) is the single most recent fine-grained step this
+  // run has reached — a plain string, not a TS union: it only ever
+  // needs a lookup-table label (see PortalsPage.tsx's own
+  // PHASE_LABELS) and a special case for 'awaiting_human_challenge',
+  // and a union would need updating here every time the backend's own
+  // fixed vocabulary changes, for no real type-safety benefit (the
+  // value always comes from the network). null until the first phase
+  // transition lands, never cleared afterward. See
+  // plan/ai/tools/career/step-40-phase-display-frontend.md.
+  phase: string | null
 }
 
 // startCrawlNow starts a detached crawl for this link — 409 (a crawl

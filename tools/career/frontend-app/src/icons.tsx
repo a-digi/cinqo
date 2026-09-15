@@ -51,3 +51,16 @@ export function LogIcon() {
     </svg>
   )
 }
+
+// AlertIcon (step 40) — marks the one running-phase state that needs
+// the user's own action (awaiting_human_challenge), distinct from
+// every other, passive status glyph on this page.
+export function AlertIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-3.5 w-3.5">
+      <path d="M10 3l8 14H2l8-14z" strokeWidth="1.3" strokeLinejoin="round" />
+      <path d="M10 8.5v3.2" strokeWidth="1.3" strokeLinecap="round" />
+      <circle cx="10" cy="14" r="0.6" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
