@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useState, type SyntheticEvent } from 'react'
 import { fetchJobs, removeJob, fetchCompanies, linkJobToCompany, type Job, type Company } from '../../api'
 import { Dropdown } from '../Dropdown/Dropdown'
 
@@ -26,18 +26,22 @@ export function JobsPage() {
         setJobs(result.jobs)
         setTotal(result.total)
       })
-      .catch((err: Error) => setError(err.message))
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+      })
   }
 
   useEffect(() => {
     load(companyId)
     fetchCompanies()
       .then(setCompanies)
-      .catch((err: Error) => setError(err.message))
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+      })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  function handleSearch(e: FormEvent) {
+  function handleSearch(e: SyntheticEvent<HTMLFormElement>) {
     e.preventDefault()
     load()
   }
@@ -50,15 +54,23 @@ export function JobsPage() {
   function handleRemove(id: string) {
     setError('')
     removeJob(id)
-      .then(() => load())
-      .catch((err: Error) => setError(err.message))
+      .then(() => {
+        load()
+      })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+      })
   }
 
   function handleUnlink(id: string) {
     setError('')
     linkJobToCompany(id, '')
-      .then(() => load())
-      .catch((err: Error) => setError(err.message))
+      .then(() => {
+        load()
+      })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+      })
   }
 
   const companyNames: Record<string, string> = Object.fromEntries(companies.map((c) => [c.id, c.name]))
@@ -73,13 +85,17 @@ export function JobsPage() {
       <form onSubmit={handleSearch} className="mb-4 flex flex-wrap gap-2">
         <input
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => {
+            setQuery(e.target.value)
+          }}
           placeholder="Search title, company, description…"
           className="flex-1 min-w-[180px] rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
         />
         <input
           value={location}
-          onChange={(e) => setLocation(e.target.value)}
+          onChange={(e) => {
+            setLocation(e.target.value)
+          }}
           placeholder="Location…"
           className="min-w-[140px] rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
         />
@@ -132,7 +148,9 @@ export function JobsPage() {
                       linked to {companyNames[job.companyId] ?? '…'}
                       <button
                         type="button"
-                        onClick={() => handleUnlink(job.id)}
+                        onClick={() => {
+                          handleUnlink(job.id)
+                        }}
                         className="text-gray-400 underline hover:text-red-700"
                       >
                         unlink
@@ -145,7 +163,9 @@ export function JobsPage() {
                 <td className="border-b border-gray-200 p-3">
                   <button
                     type="button"
-                    onClick={() => handleRemove(job.id)}
+                    onClick={() => {
+                      handleRemove(job.id)
+                    }}
                     className="rounded-md border border-gray-200 px-3 py-1 text-red-700 transition-colors hover:bg-red-50"
                   >
                     Remove

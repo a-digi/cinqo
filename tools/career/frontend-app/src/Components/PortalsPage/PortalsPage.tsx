@@ -46,7 +46,9 @@ export function PortalsPage() {
     setError('')
     fetchPortals()
       .then(setPortals)
-      .catch((err: Error) => setError(err.message))
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+      })
   }
 
   useEffect(() => {
@@ -87,7 +89,9 @@ export function PortalsPage() {
         setNewPortalName('')
         load()
       })
-      .catch((err: Error) => setError(err.message))
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+      })
   }
 
   function startEditPortal(p: Portal) {
@@ -112,14 +116,18 @@ export function PortalsPage() {
         cancelEditPortal()
         load()
       })
-      .catch((err: Error) => setError(err.message))
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+      })
   }
 
   function handleDeletePortal(id: string) {
     setError('')
     removePortal(id)
       .then(load)
-      .catch((err: Error) => setError(err.message))
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+      })
   }
 
   function linkUrlDraft(portalId: string): string {
@@ -148,7 +156,9 @@ export function PortalsPage() {
         setLinkTitleDrafts((prev) => ({ ...prev, [portalId]: '' }))
         load()
       })
-      .catch((err: Error) => setError(err.message))
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+      })
   }
 
   function startEditLink(link: PortalLink) {
@@ -180,23 +190,27 @@ export function PortalsPage() {
         cancelEditLink()
         load()
       })
-      .catch((err: Error) => setError(err.message))
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+      })
   }
 
   function handleRemoveLink(id: string) {
     setError('')
     removePortalLink(id)
       .then(load)
-      .catch((err: Error) => setError(err.message))
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+      })
   }
 
   return (
     <div className="max-w-2xl p-6 font-sans text-gray-900">
       <h1 className="mb-1.5 text-xl font-semibold">Portals</h1>
       <p className="mb-5 text-sm text-gray-500">
-        Job portals to crawl — each portal owns one or more links, and each link can carry its own
-        YAML crawl instructions (the exact shape the browser tool's own crawl_paginated expects),
-        normally prepared by the AI. Deleting a portal permanently deletes every link it owns.
+        Job portals to crawl — each portal owns one or more links, and each link can carry its own YAML crawl instructions (the exact shape
+        the browser tool's own crawl_paginated expects), normally prepared by the AI. Deleting a portal permanently deletes every link it
+        owns.
       </p>
 
       <CrawlPlatformPicker
@@ -215,16 +229,23 @@ export function PortalsPage() {
             {editingPortalId === p.id ? (
               <div className="mb-3">
                 <input
+                  // Deliberate: entering edit mode should focus the input
+                  // immediately, the same convention most inline-rename UIs use.
+                  // eslint-disable-next-line jsx-a11y/no-autofocus
                   autoFocus
                   value={editPortalName}
-                  onChange={(e) => setEditPortalName(e.target.value)}
+                  onChange={(e) => {
+                    setEditPortalName(e.target.value)
+                  }}
                   placeholder="Name"
                   className="mb-2 w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
                 />
                 <div className="flex gap-2">
                   <button
                     type="button"
-                    onClick={() => saveEditPortal(p.id)}
+                    onClick={() => {
+                      saveEditPortal(p.id)
+                    }}
                     className="rounded-md bg-gray-900 px-3 py-1 text-xs font-medium text-white hover:bg-gray-800"
                   >
                     Save
@@ -244,14 +265,18 @@ export function PortalsPage() {
                 <div className="flex shrink-0 gap-2">
                   <button
                     type="button"
-                    onClick={() => startEditPortal(p)}
+                    onClick={() => {
+                      startEditPortal(p)
+                    }}
                     className="rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50"
                   >
                     Edit
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleDeletePortal(p.id)}
+                    onClick={() => {
+                      handleDeletePortal(p.id)
+                    }}
                     className="rounded-md border border-gray-200 px-2.5 py-1 text-xs text-red-700 hover:bg-red-50"
                   >
                     Delete
@@ -266,22 +291,31 @@ export function PortalsPage() {
                   {editingLinkId === link.id ? (
                     <div className="space-y-1.5">
                       <input
+                        // Deliberate: entering edit mode should focus the input
+                        // immediately, the same convention most inline-rename UIs use.
+                        // eslint-disable-next-line jsx-a11y/no-autofocus
                         autoFocus
                         value={editLinkTitle}
-                        onChange={(e) => setEditLinkTitle(e.target.value)}
+                        onChange={(e) => {
+                          setEditLinkTitle(e.target.value)
+                        }}
                         placeholder="Title, e.g. Software Engineer jobs, Hamburg"
                         className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-900 focus:border-gray-500 focus:outline-none"
                       />
                       <input
                         value={editLinkUrl}
-                        onChange={(e) => setEditLinkUrl(e.target.value)}
+                        onChange={(e) => {
+                          setEditLinkUrl(e.target.value)
+                        }}
                         placeholder="URL"
                         className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-900 focus:border-gray-500 focus:outline-none"
                       />
                       <div className="flex gap-2">
                         <button
                           type="button"
-                          onClick={() => saveEditLink(link.id)}
+                          onClick={() => {
+                            saveEditLink(link.id)
+                          }}
                           className="rounded-md bg-gray-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-gray-800"
                         >
                           Save
@@ -304,7 +338,7 @@ export function PortalsPage() {
                           rel="noopener noreferrer"
                           className="block truncate text-xs font-medium text-gray-900 underline hover:text-gray-700"
                         >
-                          {link.title || '(untitled link)'}
+                          {link.title ?? '(untitled link)'}
                         </a>
                         <div className="truncate text-xs text-gray-500">{link.url}</div>
                         <div className="truncate text-xs text-gray-400">
@@ -314,14 +348,18 @@ export function PortalsPage() {
                       <div className="flex shrink-0 gap-2">
                         <button
                           type="button"
-                          onClick={() => startEditLink(link)}
+                          onClick={() => {
+                            startEditLink(link)
+                          }}
                           className="text-xs text-gray-500 underline hover:text-gray-700"
                         >
                           Edit
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleRemoveLink(link.id)}
+                          onClick={() => {
+                            handleRemoveLink(link.id)
+                          }}
                           className="text-xs text-red-700 underline hover:text-red-800"
                         >
                           Remove
@@ -345,19 +383,25 @@ export function PortalsPage() {
             <div className="mt-2 flex flex-wrap gap-2">
               <input
                 value={linkTitleDraft(p.id)}
-                onChange={(e) => setLinkTitleDrafts((prev) => ({ ...prev, [p.id]: e.target.value }))}
+                onChange={(e) => {
+                  setLinkTitleDrafts((prev) => ({ ...prev, [p.id]: e.target.value }))
+                }}
                 placeholder="Title, e.g. Software Engineer jobs, Hamburg"
                 className="min-w-[220px] flex-1 rounded-md border border-gray-300 px-2.5 py-1.5 text-xs text-gray-900 focus:border-gray-500 focus:outline-none"
               />
               <input
                 value={linkUrlDraft(p.id)}
-                onChange={(e) => setLinkUrlDrafts((prev) => ({ ...prev, [p.id]: e.target.value }))}
+                onChange={(e) => {
+                  setLinkUrlDrafts((prev) => ({ ...prev, [p.id]: e.target.value }))
+                }}
                 placeholder="URL to crawl"
                 className="min-w-[220px] flex-1 rounded-md border border-gray-300 px-2.5 py-1.5 text-xs text-gray-900 focus:border-gray-500 focus:outline-none"
               />
               <button
                 type="button"
-                onClick={() => handleAddLink(p.id)}
+                onClick={() => {
+                  handleAddLink(p.id)
+                }}
                 className="flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
               >
                 <PlusIcon />
@@ -372,7 +416,9 @@ export function PortalsPage() {
         <h2 className="mb-3 text-sm font-semibold">New portal</h2>
         <input
           value={newPortalName}
-          onChange={(e) => setNewPortalName(e.target.value)}
+          onChange={(e) => {
+            setNewPortalName(e.target.value)
+          }}
           placeholder="Name"
           className="mb-2 w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
         />

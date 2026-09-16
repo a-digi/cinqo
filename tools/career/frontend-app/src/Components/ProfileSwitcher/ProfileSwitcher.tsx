@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { fetchProfiles, type Profile } from '../../api'
 import { getProfileIdFromLocalStorage, setProfileIdInLocalStorage } from './repositoryLocalStorage'
+import { profileLabel } from './profileLabel'
 import { Dropdown } from '../Dropdown/Dropdown'
 
 const PROFILES_PATH = '/tools/career/profiles'
@@ -11,13 +12,7 @@ const PROFILES_PATH = '/tools/career/profiles'
 // onChange, which is what actually scopes that page's own persona
 // list/create form. Mirrors PersonaSwitcher's exact shape. See
 // plan/ai/tools/career/step-11-job-seeker-profile-frontend.md.
-export function ProfileSwitcher({
-  profileId,
-  onChange,
-}: {
-  profileId: string | null
-  onChange: (id: string) => void
-}) {
+export function ProfileSwitcher({ profileId, onChange }: { profileId: string | null; onChange: (id: string) => void }) {
   const [profiles, setProfiles] = useState<Profile[] | null>(null)
   const [error, setError] = useState('')
 
@@ -30,7 +25,9 @@ export function ProfileSwitcher({
         const effective = list.find((p) => p.id === stored) ?? list[0]
         onChange(effective.id)
       })
-      .catch((err: Error) => setError(err.message))
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+      })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -65,20 +62,11 @@ export function ProfileSwitcher({
           onChange(id)
         }}
       />
-      <a
-        href={PROFILES_PATH}
-        onClick={navigateToProfiles}
-        className="pb-1 text-gray-500 underline hover:text-gray-700"
-      >
+      <a href={PROFILES_PATH} onClick={navigateToProfiles} className="pb-1 text-gray-500 underline hover:text-gray-700">
         Manage
       </a>
     </div>
   )
-}
-
-export function profileLabel(p: Profile): string {
-  const name = `${p.firstName} ${p.lastName}`.trim()
-  return name || `Profile ${p.id.slice(0, 8)}`
 }
 
 function navigateToProfiles(e: React.MouseEvent) {

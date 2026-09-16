@@ -25,7 +25,12 @@ export interface Conversation {
 // Used by the "generate crawl instructions with AI" flow
 // (generateInstructions.ts) — never by "Crawl with AI" (crawl.ts),
 // which stays visible/reviewable.
-export async function createConversation(input: { title?: string; platformId: string; model?: string; hidden?: boolean }): Promise<Conversation> {
+export async function createConversation(input: {
+  title?: string
+  platformId: string
+  model?: string
+  hidden?: boolean
+}): Promise<Conversation> {
   const res = await httpClient.post('/api/v1/conversations', input)
   return httpClient.responseBody<Conversation>(res, 'create conversation')
 }
@@ -94,7 +99,7 @@ export async function sendMessage(conversationId: string, content: string): Prom
 
   await httpClient.responseBody<StartedTurnRun>(res, 'send message')
 
-  for (; ;) {
+  for (;;) {
     const turn = await fetchActiveTurn(conversationId)
     if (turn.status !== 'running') break
     await new Promise((resolve) => setTimeout(resolve, TURN_POLL_INTERVAL_MS))
@@ -102,11 +107,14 @@ export async function sendMessage(conversationId: string, content: string): Prom
 
   const detail = await fetchConversationDetail(conversationId)
   const last = detail.messages[detail.messages.length - 1]
+  // noUncheckedIndexedAccess isn't on, so TS types this indexed access as
+  // always-defined — it genuinely isn't when messages is empty.
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   if (!last) {
     throw new CoreApiError(500, 'the AI turn finished but produced no message')
   }
   if (last.failed) {
-    throw new CoreApiError(502, last.error || 'the AI turn failed')
+    throw new CoreApiError(502, last.error ?? 'the AI turn failed')
   }
 
   return { role: last.role, content: last.content, createdAt: last.createdAt, durationMs: last.durationMs }

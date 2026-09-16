@@ -28,21 +28,15 @@ export function CrawlPlatformPicker({
   return (
     <div className="mb-5 flex flex-wrap items-end gap-3 rounded-md border border-gray-200 bg-gray-50 p-3">
       <div className="min-w-[180px]">
-        <label className="mb-1 block text-xs font-medium text-gray-500">Crawl using</label>
-        <Dropdown
-          options={platforms.map((p) => ({ value: p.id, label: p.name }))}
-          value={selectedPlatformId}
-          onChange={onSelectPlatform}
-        />
+        {/* A span, not a <label> — Dropdown renders no native form
+            control a label could actually be associated with. */}
+        <span className="mb-1 block text-xs font-medium text-gray-500">Crawl using</span>
+        <Dropdown options={platforms.map((p) => ({ value: p.id, label: p.name }))} value={selectedPlatformId} onChange={onSelectPlatform} />
       </div>
       {selectedPlatform && selectedPlatform.models.length > 0 && (
         <div className="min-w-[180px]">
-          <label className="mb-1 block text-xs font-medium text-gray-500">Model</label>
-          <Dropdown
-            options={selectedPlatform.models.map((m) => ({ value: m, label: m }))}
-            value={selectedModel}
-            onChange={onSelectModel}
-          />
+          <span className="mb-1 block text-xs font-medium text-gray-500">Model</span>
+          <Dropdown options={selectedPlatform.models.map((m) => ({ value: m, label: m }))} value={selectedModel} onChange={onSelectModel} />
         </div>
       )}
     </div>

@@ -13,7 +13,7 @@ export function buildGenerateInstructionsMessage(link: { id: string; title: stri
     'Please create or update the stored crawl instructions for this existing portal link only — do not create a new portal or link, and do not ask which link is meant (it is already specified below). Do not run a crawl or save any jobs — this is only about the stored instructions themselves.',
     '',
     `Portal link ID: ${link.id}`,
-    `Title: ${link.title || '(untitled)'}`,
+    `Title: ${link.title ?? '(untitled)'}`,
     `URL: ${link.url}`,
     '',
     'Steps:',
@@ -28,5 +28,5 @@ export function buildGenerateInstructionsMessage(link: { id: string; title: stri
 }
 
 export function generateInstructionsConversationTitle(link: { title: string | null; url: string }): string {
-  return `Generate crawl instructions: ${link.title || link.url}`
+  return `Generate crawl instructions: ${link.title ?? link.url}`
 }

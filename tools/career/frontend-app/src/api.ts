@@ -271,10 +271,10 @@ export async function addSkill(personaId: string, skill: string): Promise<string
 }
 
 export async function removeSkill(personaId: string, skill: string): Promise<void> {
-  const res = await fetch(
-    `${PROXY_BASE}/skills?personaId=${encodeURIComponent(personaId)}&skill=${encodeURIComponent(skill)}`,
-    { method: 'DELETE', credentials: 'include' },
-  )
+  const res = await fetch(`${PROXY_BASE}/skills?personaId=${encodeURIComponent(personaId)}&skill=${encodeURIComponent(skill)}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  })
   if (!res.ok && res.status !== 204) throw new Error(`failed to remove skill (${res.status})`)
 }
 
@@ -307,10 +307,10 @@ export async function updateExperience(personaId: string, args: UpdateExperience
 }
 
 export async function removeExperience(personaId: string, id: string): Promise<void> {
-  const res = await fetch(
-    `${PROXY_BASE}/experience?personaId=${encodeURIComponent(personaId)}&id=${encodeURIComponent(id)}`,
-    { method: 'DELETE', credentials: 'include' },
-  )
+  const res = await fetch(`${PROXY_BASE}/experience?personaId=${encodeURIComponent(personaId)}&id=${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  })
   if (!res.ok && res.status !== 204) throw new Error(`failed to remove experience (${res.status})`)
 }
 
@@ -386,12 +386,7 @@ export async function fetchRecruiters(companyId?: string): Promise<Recruiter[]> 
   return data.recruiters
 }
 
-export async function createRecruiter(
-  companyId: string,
-  firstName: string,
-  lastName: string,
-  email: string,
-): Promise<{ id: string }> {
+export async function createRecruiter(companyId: string, firstName: string, lastName: string, email: string): Promise<{ id: string }> {
   const res = await fetch(`${PROXY_BASE}/recruiters`, {
     method: 'POST',
     credentials: 'include',
@@ -400,10 +395,7 @@ export async function createRecruiter(
   return jsonOrThrow<{ id: string }>(res, 'create recruiter')
 }
 
-export async function updateRecruiter(
-  id: string,
-  args: { firstName?: string; lastName?: string; email?: string },
-): Promise<Recruiter[]> {
+export async function updateRecruiter(id: string, args: { firstName?: string; lastName?: string; email?: string }): Promise<Recruiter[]> {
   const res = await fetch(`${PROXY_BASE}/recruiters`, {
     method: 'PUT',
     credentials: 'include',

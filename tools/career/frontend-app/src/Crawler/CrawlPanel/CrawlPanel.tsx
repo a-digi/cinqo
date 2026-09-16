@@ -239,7 +239,9 @@ export function CrawlPanel({
               : 'Crawl failed.'
         setCrawlResult({ ok: false, text })
       })
-      .finally(() => setIsCrawling(false))
+      .finally(() => {
+        setIsCrawling(false)
+      })
   }
 
   // "Generate with AI" (step 33) — creates a conversation the same way
@@ -258,7 +260,7 @@ export function CrawlPanel({
     setAiPending(true)
     setAiLocalError(undefined)
 
-    createConversation({ title: generateInstructionsConversationTitle(link), platformId, model, hidden: true })
+    void createConversation({ title: generateInstructionsConversationTitle(link), platformId, model, hidden: true })
       .then((conversation) => sendMessage(conversation.id, buildGenerateInstructionsMessage(link)))
       .then(() => updatePortalLink(link.id, { instructionsAiError: '' }))
       .catch((err: unknown) => {
@@ -280,8 +282,12 @@ export function CrawlPanel({
           console.error('failed to record instructions-AI error on portal link', link.id, recordErr)
         })
       })
-      .then(() => onReload())
-      .finally(() => setAiPending(false))
+      .then(() => {
+        onReload()
+      })
+      .finally(() => {
+        setAiPending(false)
+      })
   }
 
   function handleViewConversation() {
@@ -303,16 +309,14 @@ export function CrawlPanel({
         setInstructionsExpanded(false)
         onReload()
       })
-      .catch((err: Error) => onError(err.message))
+      .catch((err: unknown) => {
+        onError(err instanceof Error ? err.message : String(err))
+      })
   }
 
   return (
     <div className="mt-1.5">
-      <button
-        type="button"
-        onClick={toggleCrawlInstructions}
-        className="text-xs text-gray-500 underline hover:text-gray-700"
-      >
+      <button type="button" onClick={toggleCrawlInstructions} className="text-xs text-gray-500 underline hover:text-gray-700">
         {link.crawlInstructions ? 'Crawl instructions set' : 'No crawl instructions yet'} —{' '}
         {instructionsExpanded ? 'hide' : link.crawlInstructions ? 'view/edit' : 'add'}
       </button>
@@ -331,9 +335,9 @@ export function CrawlPanel({
         <SparkleIcon />
         {aiPending ? 'Generating…' : 'Generate with AI'}
       </button>
-      {(aiLocalError || link.instructionsAiError) && (
+      {(aiLocalError ?? link.instructionsAiError) && (
         <p className="mt-1 text-xs text-red-700">
-          AI instructions generation failed: {aiLocalError || link.instructionsAiError}
+          AI instructions generation failed: {aiLocalError ?? link.instructionsAiError}
           {!aiLocalError && link.instructionsAiErrorAt && ` (${new Date(link.instructionsAiErrorAt).toLocaleString()})`}
         </p>
       )}
@@ -412,15 +416,15 @@ export function CrawlPanel({
                     Waiting for you to solve a Cloudflare challenge in the browser window
                   </p>
                 ) : (
-                  <p className="text-xs text-gray-500">
-                    {phaseLabel(run.phase) ?? latestCrawlLogMessage(run.log) ?? 'Crawl in progress…'}
-                  </p>
+                  <p className="text-xs text-gray-500">{phaseLabel(run.phase) ?? latestCrawlLogMessage(run.log) ?? 'Crawl in progress…'}</p>
                 ))}
               {run.status === 'completed' && <p className="text-xs text-green-700">{run.resultSummary}</p>}
               {run.status === 'failed' && <p className="text-xs text-red-700">{run.errorMessage}</p>}
               <button
                 type="button"
-                onClick={() => setLogExpanded((prev) => !prev)}
+                onClick={() => {
+                  setLogExpanded((prev) => !prev)
+                }}
                 title="Show every logged step of this crawl run, from start to its current or final status."
                 className="mt-1 flex items-center gap-1 rounded-md border border-gray-200 px-2 py-0.5 text-xs text-gray-700 hover:bg-gray-50"
               >
@@ -440,7 +444,9 @@ export function CrawlPanel({
         <div className="mt-1.5">
           <textarea
             value={instructionsDraft}
-            onChange={(e) => setInstructionsDraft(e.target.value)}
+            onChange={(e) => {
+              setInstructionsDraft(e.target.value)
+            }}
             placeholder={'fields:\n  - label: title\n    selector: h1\npagination:\n  nextSelector: a.next-page\n  maxPages: 5'}
             rows={6}
             spellCheck={false}
@@ -456,7 +462,9 @@ export function CrawlPanel({
             </button>
             <button
               type="button"
-              onClick={() => setInstructionsExpanded(false)}
+              onClick={() => {
+                setInstructionsExpanded(false)
+              }}
               className="rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-white"
             >
               Cancel

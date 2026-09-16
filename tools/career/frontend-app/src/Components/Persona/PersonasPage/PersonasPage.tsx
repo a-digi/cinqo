@@ -24,7 +24,9 @@ export function PersonasPage() {
     setError('')
     fetchPersonas(forProfileId)
       .then(setPersonas)
-      .catch((err: Error) => setError(err.message))
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+      })
   }
 
   useEffect(() => {
@@ -45,7 +47,9 @@ export function PersonasPage() {
         setNewName('')
         setNewDescription('')
       })
-      .catch((err: Error) => setError(err.message))
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+      })
   }
 
   function startEdit(p: Persona) {
@@ -72,24 +76,29 @@ export function PersonasPage() {
         if (profileId) load(profileId)
         cancelEdit()
       })
-      .catch((err: Error) => setError(err.message))
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+      })
   }
 
   function handleDelete(id: string) {
     setError('')
     deletePersona(id)
-      .then(() => setPersonas((prev) => prev.filter((p) => p.id !== id)))
-      .catch((err: Error) => setError(err.message))
+      .then(() => {
+        setPersonas((prev) => prev.filter((p) => p.id !== id))
+      })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+      })
   }
 
   return (
     <div className="max-w-2xl p-6 font-sans text-gray-900">
       <h1 className="mb-1.5 text-xl font-semibold">Personas</h1>
       <p className="mb-5 text-sm text-gray-500">
-        Each persona owns its own details, skills, and experience — use separate personas for
-        different roles this profile is pursuing (e.g. "Backend Engineer", "Freelance
-        Consultant"). Deleting a persona permanently deletes its own details, every skill, and
-        every experience entry — there's no separate confirmation step.
+        Each persona owns its own details, skills, and experience — use separate personas for different roles this profile is pursuing (e.g.
+        "Backend Engineer", "Freelance Consultant"). Deleting a persona permanently deletes its own details, every skill, and every
+        experience entry — there's no separate confirmation step.
       </p>
 
       <ProfileSwitcher profileId={profileId} onChange={setProfileId} />
@@ -103,22 +112,31 @@ export function PersonasPage() {
               editingId === p.id ? (
                 <div key={p.id} className="rounded-md border border-gray-200 p-3">
                   <input
+                    // Deliberate: entering edit mode should focus the input
+                    // immediately, the same convention most inline-rename UIs use.
+                    // eslint-disable-next-line jsx-a11y/no-autofocus
                     autoFocus
                     value={editName}
-                    onChange={(e) => setEditName(e.target.value)}
+                    onChange={(e) => {
+                      setEditName(e.target.value)
+                    }}
                     placeholder="Name"
                     className="mb-2 w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
                   />
                   <input
                     value={editDescription}
-                    onChange={(e) => setEditDescription(e.target.value)}
+                    onChange={(e) => {
+                      setEditDescription(e.target.value)
+                    }}
                     placeholder="Description"
                     className="mb-2 w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
                   />
                   <div className="flex gap-2">
                     <button
                       type="button"
-                      onClick={() => saveEdit(p.id)}
+                      onClick={() => {
+                        saveEdit(p.id)
+                      }}
                       className="rounded-md bg-gray-900 px-3 py-1 text-xs font-medium text-white hover:bg-gray-800"
                     >
                       Save
@@ -142,14 +160,18 @@ export function PersonasPage() {
                   <div className="flex shrink-0 gap-2">
                     <button
                       type="button"
-                      onClick={() => startEdit(p)}
+                      onClick={() => {
+                        startEdit(p)
+                      }}
                       className="rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50"
                     >
                       Edit
                     </button>
                     <button
                       type="button"
-                      onClick={() => handleDelete(p.id)}
+                      onClick={() => {
+                        handleDelete(p.id)
+                      }}
                       className="rounded-md border border-gray-200 px-2.5 py-1 text-xs text-red-700 hover:bg-red-50"
                     >
                       Delete
@@ -164,13 +186,17 @@ export function PersonasPage() {
             <h2 className="mb-3 text-sm font-semibold">New persona</h2>
             <input
               value={newName}
-              onChange={(e) => setNewName(e.target.value)}
+              onChange={(e) => {
+                setNewName(e.target.value)
+              }}
               placeholder={'Name, e.g. "Backend Engineer"'}
               className="mb-2 w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
             />
             <input
               value={newDescription}
-              onChange={(e) => setNewDescription(e.target.value)}
+              onChange={(e) => {
+                setNewDescription(e.target.value)
+              }}
               placeholder="Description (optional)"
               className="mb-2 w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
             />

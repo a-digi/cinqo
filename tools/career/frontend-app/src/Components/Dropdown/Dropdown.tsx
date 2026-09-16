@@ -86,7 +86,9 @@ export function Dropdown(props: DropdownProps) {
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-labelledby={label ? `${id}-label` : undefined}
-        onClick={() => setOpen((prev) => !prev)}
+        onClick={() => {
+          setOpen((prev) => !prev)
+        }}
         onKeyDown={(e) => {
           if (e.key === 'ArrowDown' && !open) {
             e.preventDefault()
@@ -101,7 +103,7 @@ export function Dropdown(props: DropdownProps) {
       {open && (
         <ul
           role="listbox"
-          aria-multiselectable={props.multiple || undefined}
+          aria-multiselectable={props.multiple ? true : undefined}
           className="absolute z-10 mt-1 max-h-60 min-w-full overflow-auto rounded-md border border-gray-200 bg-white py-1 shadow-sm"
         >
           {options.map((o) => {
@@ -110,7 +112,9 @@ export function Dropdown(props: DropdownProps) {
               <li key={o.value} role="option" aria-selected={selected}>
                 <button
                   type="button"
-                  onClick={() => handleSelect(o.value)}
+                  onClick={() => {
+                    handleSelect(o.value)
+                  }}
                   className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-gray-50 ${
                     selected ? 'font-medium text-gray-900' : 'text-gray-700'
                   }`}

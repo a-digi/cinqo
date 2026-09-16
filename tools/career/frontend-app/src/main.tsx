@@ -117,54 +117,72 @@ function unmountReact(container: HTMLElement) {
 
 window.__cinqoToolBridge.registerRoute({
   path: PROFILES_PATH,
-  mount: (container) => mountReact(container, <ProfilesPage />),
+  mount: (container) => {
+    mountReact(container, <ProfilesPage />)
+  },
   unmount: unmountReact,
 })
 
 window.__cinqoToolBridge.registerRoute({
   path: PERSONAS_PATH,
-  mount: (container) => mountReact(container, <PersonasPage />),
+  mount: (container) => {
+    mountReact(container, <PersonasPage />)
+  },
   unmount: unmountReact,
 })
 
 window.__cinqoToolBridge.registerRoute({
   path: PERSONA_DETAILS_PATH,
-  mount: (container) => mountReact(container, <PersonaDetailsPage />),
+  mount: (container) => {
+    mountReact(container, <PersonaDetailsPage />)
+  },
   unmount: unmountReact,
 })
 
 window.__cinqoToolBridge.registerRoute({
   path: SKILLS_PATH,
-  mount: (container) => mountReact(container, <SkillsPage />),
+  mount: (container) => {
+    mountReact(container, <SkillsPage />)
+  },
   unmount: unmountReact,
 })
 
 window.__cinqoToolBridge.registerRoute({
   path: EXPERIENCE_PATH,
-  mount: (container) => mountReact(container, <ExperiencePage />),
+  mount: (container) => {
+    mountReact(container, <ExperiencePage />)
+  },
   unmount: unmountReact,
 })
 
 window.__cinqoToolBridge.registerRoute({
   path: JOBS_PATH,
-  mount: (container) => mountReact(container, <JobsPage />),
+  mount: (container) => {
+    mountReact(container, <JobsPage />)
+  },
   unmount: unmountReact,
 })
 
 window.__cinqoToolBridge.registerRoute({
   path: COMPANIES_PATH,
-  mount: (container) => mountReact(container, <CompaniesPage />),
+  mount: (container) => {
+    mountReact(container, <CompaniesPage />)
+  },
   unmount: unmountReact,
 })
 
 window.__cinqoToolBridge.registerRoute({
   path: RECRUITERS_PATH,
-  mount: (container) => mountReact(container, <RecruitersPage />),
+  mount: (container) => {
+    mountReact(container, <RecruitersPage />)
+  },
   unmount: unmountReact,
 })
 
 window.__cinqoToolBridge.registerRoute({
   path: PORTALS_PATH,
-  mount: (container) => mountReact(container, <PortalsPage />),
+  mount: (container) => {
+    mountReact(container, <PortalsPage />)
+  },
   unmount: unmountReact,
 })

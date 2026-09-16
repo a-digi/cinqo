@@ -29,7 +29,7 @@ export function buildCrawlMessage(link: { id: string; title: string | null; url:
     'Please run a manual crawl for this existing portal link only — do not create a new portal or link, and do not ask which link is meant (it is already specified below).',
     '',
     `Portal link ID: ${link.id}`,
-    `Title: ${link.title || '(untitled)'}`,
+    `Title: ${link.title ?? '(untitled)'}`,
     `URL: ${link.url}`,
     '',
     'Steps:',
@@ -46,5 +46,5 @@ export function buildCrawlMessage(link: { id: string; title: string | null; url:
 }
 
 export function crawlConversationTitle(link: { title: string | null; url: string }): string {
-  return `Crawl: ${link.title || link.url}`
+  return `Crawl: ${link.title ?? link.url}`
 }

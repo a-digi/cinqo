@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { fetchPersonas, fetchProfiles, type Persona } from '../../../api'
 import { getPersonaIdFromLocalStorage, setPersonaIdInLocalStorage } from './repositoryLocalStorage'
-import { profileLabel } from '../../ProfileSwitcher/ProfileSwitcher'
+import { profileLabel } from '../../ProfileSwitcher/profileLabel'
 import { Dropdown } from '../../Dropdown/Dropdown'
 
 const PERSONAS_PATH = '/tools/career/personas'
@@ -19,13 +19,7 @@ const PERSONAS_PATH = '/tools/career/personas'
 // deliberate middle ground short of full profile-scoped filtering.
 // See plan/ai/tools/career/step-09-persona-frontend.md and
 // plan/ai/tools/career/step-11-job-seeker-profile-frontend.md.
-export function PersonaSwitcher({
-  personaId,
-  onChange,
-}: {
-  personaId: string | null
-  onChange: (id: string) => void
-}) {
+export function PersonaSwitcher({ personaId, onChange }: { personaId: string | null; onChange: (id: string) => void }) {
   const [personas, setPersonas] = useState<Persona[] | null>(null)
   const [profileNames, setProfileNames] = useState<Record<string, string>>({})
   const [error, setError] = useState('')
@@ -40,7 +34,9 @@ export function PersonaSwitcher({
         const effective = personaList.find((p) => p.id === stored) ?? personaList[0]
         onChange(effective.id)
       })
-      .catch((err: Error) => setError(err.message))
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+      })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -78,11 +74,7 @@ export function PersonaSwitcher({
           onChange(id)
         }}
       />
-      <a
-        href={PERSONAS_PATH}
-        onClick={navigateToPersonas}
-        className="pb-1 text-gray-500 underline hover:text-gray-700"
-      >
+      <a href={PERSONAS_PATH} onClick={navigateToPersonas} className="pb-1 text-gray-500 underline hover:text-gray-700">
         Manage
       </a>
     </div>

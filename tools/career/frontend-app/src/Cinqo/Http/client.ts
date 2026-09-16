@@ -34,7 +34,7 @@ export interface HttpClientOptions {
   headers?: Record<string, string>
 }
 
-function request(method: string, url: string, body: unknown | undefined, options?: HttpClientOptions): Promise<Response> {
+function request(method: string, url: string, body: unknown, options?: HttpClientOptions): Promise<Response> {
   const headers: Record<string, string> = { ...options?.headers }
   const init: RequestInit = { method, credentials: 'include', headers }
   if (body !== undefined) {
