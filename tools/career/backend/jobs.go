@@ -46,10 +46,20 @@ type job struct {
 	Company      string `json:"company,omitempty"`
 	CompanyID    string `json:"companyId,omitempty"`
 	PortalLinkID string `json:"portalLinkId,omitempty"`
-	Location     string `json:"location,omitempty"`
-	Description  string `json:"description,omitempty"`
-	PostedAt     string `json:"postedAt,omitempty"`
-	CrawledAt    string `json:"crawledAt"`
+	// PortalID/PortalName (step — Jobs page platform column/filter) are
+	// resolved via a LEFT JOIN through portal_links to portals in
+	// queryJobs, below — a job only ever stores portal_link_id itself;
+	// these two are read-only, derived convenience fields for display
+	// and for filtering by the owning portal rather than one specific
+	// link. Both empty when PortalLinkID is empty or points at a portal
+	// link whose own portal has since been deleted (LEFT JOIN, not
+	// JOIN, so a job row is never hidden by a dangling reference).
+	PortalID    string `json:"portalId,omitempty"`
+	PortalName  string `json:"portalName,omitempty"`
+	Location    string `json:"location,omitempty"`
+	Description string `json:"description,omitempty"`
+	PostedAt    string `json:"postedAt,omitempty"`
+	CrawledAt   string `json:"crawledAt"`
 }
 
 // saveJob upserts by source_url — re-saving a posting already known
@@ -96,63 +106,83 @@ type jobsListResult struct {
 // if non-empty, restricts to jobs linked to that company (step 14) —
 // see plan/ai/tools/career/step-14-companies.md. portalLinkId, if
 // non-empty, restricts to jobs found via that portal link (step 20) —
-// see plan/ai/tools/career/step-20-portal-job-ingestion.md.
-func listJobs(companyId, portalLinkId string, limit, offset int) (jobsListResult, error) {
+// see plan/ai/tools/career/step-20-portal-job-ingestion.md. portalId,
+// if non-empty, restricts to jobs found via ANY link belonging to that
+// portal — the coarser, "which platform" filter the Jobs page's own
+// portal dropdown uses, as opposed to portalLinkId's one-specific-URL
+// granularity. See plan/ai/tools/career/step-XX-jobs-page-platform-
+// column-filter-pagination.md.
+func listJobs(companyId, portalLinkId, portalId string, limit, offset int) (jobsListResult, error) {
 	where := `WHERE 1=1`
 	args := []any{}
 	if companyId != "" {
-		where += ` AND company_id = ?`
+		where += ` AND j.company_id = ?`
 		args = append(args, companyId)
 	}
 	if portalLinkId != "" {
-		where += ` AND portal_link_id = ?`
+		where += ` AND j.portal_link_id = ?`
 		args = append(args, portalLinkId)
+	}
+	if portalId != "" {
+		where += ` AND pl.portal_id = ?`
+		args = append(args, portalId)
 	}
 	return queryJobs(where, args, limit, offset)
 }
 
 // searchJobs matches query against title/company/description and
-// location against location — both optional; companyId/portalLinkId,
-// if non-empty, additionally restrict to jobs linked to that company
-// (step 14) / found via that portal link (step 20). Omitting
-// query/location/companyId/portalLinkId is equivalent to listJobs.
+// location against location — both optional; companyId/portalLinkId/
+// portalId, if non-empty, additionally restrict as documented on
+// listJobs, above. Omitting every filter is equivalent to listJobs.
 // Plain parameterized LIKE, case-insensitive via LOWER(...) — no
 // full-text-search extension for a first pass (see this step's own
 // open question 1).
-func searchJobs(query, location, companyId, portalLinkId string, limit, offset int) (jobsListResult, error) {
+func searchJobs(query, location, companyId, portalLinkId, portalId string, limit, offset int) (jobsListResult, error) {
 	where := `WHERE 1=1`
 	args := []any{}
 	if query != "" {
-		where += ` AND (LOWER(title) LIKE ? OR LOWER(company) LIKE ? OR LOWER(description) LIKE ?)`
+		where += ` AND (LOWER(j.title) LIKE ? OR LOWER(j.company) LIKE ? OR LOWER(j.description) LIKE ?)`
 		pattern := "%" + toLower(query) + "%"
 		args = append(args, pattern, pattern, pattern)
 	}
 	if location != "" {
-		where += ` AND LOWER(location) LIKE ?`
+		where += ` AND LOWER(j.location) LIKE ?`
 		args = append(args, "%"+toLower(location)+"%")
 	}
 	if companyId != "" {
-		where += ` AND company_id = ?`
+		where += ` AND j.company_id = ?`
 		args = append(args, companyId)
 	}
 	if portalLinkId != "" {
-		where += ` AND portal_link_id = ?`
+		where += ` AND j.portal_link_id = ?`
 		args = append(args, portalLinkId)
+	}
+	if portalId != "" {
+		where += ` AND pl.portal_id = ?`
+		args = append(args, portalId)
 	}
 	return queryJobs(where, args, limit, offset)
 }
 
+// jobsFromClause is shared by queryJobs's own COUNT(*) and paged SELECT
+// so the two can never drift apart — a LEFT JOIN (not JOIN) on both
+// hops so a job is never hidden by a portal link, or that link's own
+// portal, having since been deleted out from under it.
+const jobsFromClause = `FROM jobs j
+	LEFT JOIN portal_links pl ON pl.id = j.portal_link_id
+	LEFT JOIN portals p ON p.id = pl.portal_id`
+
 func queryJobs(where string, whereArgs []any, limit, offset int) (jobsListResult, error) {
 	var total int
 	countArgs := append([]any{}, whereArgs...)
-	if err := jobsDB.QueryRow(`SELECT COUNT(*) FROM jobs `+where, countArgs...).Scan(&total); err != nil {
+	if err := jobsDB.QueryRow(`SELECT COUNT(*) `+jobsFromClause+` `+where, countArgs...).Scan(&total); err != nil {
 		return jobsListResult{}, err
 	}
 
 	pageArgs := append(append([]any{}, whereArgs...), limit, offset)
 	rows, err := jobsDB.Query(
-		`SELECT id, source_url, title, company, company_id, portal_link_id, location, description, posted_at, crawled_at
-		 FROM jobs `+where+` ORDER BY crawled_at DESC LIMIT ? OFFSET ?`,
+		`SELECT j.id, j.source_url, j.title, j.company, j.company_id, j.portal_link_id, p.id, p.name, j.location, j.description, j.posted_at, j.crawled_at
+		 `+jobsFromClause+` `+where+` ORDER BY j.crawled_at DESC LIMIT ? OFFSET ?`,
 		pageArgs...,
 	)
 	if err != nil {
@@ -163,13 +193,15 @@ func queryJobs(where string, whereArgs []any, limit, offset int) (jobsListResult
 	jobs := []job{}
 	for rows.Next() {
 		var j job
-		var company, companyID, portalLinkID, location, description, postedAt sql.NullString
-		if err := rows.Scan(&j.ID, &j.SourceURL, &j.Title, &company, &companyID, &portalLinkID, &location, &description, &postedAt, &j.CrawledAt); err != nil {
+		var company, companyID, portalLinkID, portalID, portalName, location, description, postedAt sql.NullString
+		if err := rows.Scan(&j.ID, &j.SourceURL, &j.Title, &company, &companyID, &portalLinkID, &portalID, &portalName, &location, &description, &postedAt, &j.CrawledAt); err != nil {
 			return jobsListResult{}, err
 		}
 		j.Company = company.String
 		j.CompanyID = companyID.String
 		j.PortalLinkID = portalLinkID.String
+		j.PortalID = portalID.String
+		j.PortalName = portalName.String
 		j.Location = location.String
 		j.Description = description.String
 		j.PostedAt = postedAt.String
@@ -332,7 +364,8 @@ func registerSaveJob(server *mcp.Server) {
 
 type listJobsArgs struct {
 	CompanyID    string `json:"companyId,omitempty" jsonschema:"restrict to jobs linked to this company (see link_job_to_company); omit for every job"`
-	PortalLinkID string `json:"portalLinkId,omitempty" jsonschema:"restrict to jobs found via this portal link (see save_portal_job); omit for every job"`
+	PortalLinkID string `json:"portalLinkId,omitempty" jsonschema:"restrict to jobs found via this specific portal link (see save_portal_job); omit for every job"`
+	PortalID     string `json:"portalId,omitempty" jsonschema:"restrict to jobs found via ANY link belonging to this portal (see list_portals); omit for every job"`
 	Limit        int    `json:"limit,omitempty" jsonschema:"max results to return (default 50, max 200)"`
 	Offset       int    `json:"offset,omitempty" jsonschema:"how many matching results to skip, for paging"`
 }
@@ -342,7 +375,7 @@ func registerListJobs(server *mcp.Server) {
 		Name:        "list_jobs",
 		Description: "List saved job postings, newest first.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args listJobsArgs) (*mcp.CallToolResult, any, error) {
-		result, err := listJobs(args.CompanyID, args.PortalLinkID, clampLimit(args.Limit), args.Offset)
+		result, err := listJobs(args.CompanyID, args.PortalLinkID, args.PortalID, clampLimit(args.Limit), args.Offset)
 		if err != nil {
 			return errResult(fmt.Sprintf("failed to list jobs: %v", err)), nil, nil
 		}
@@ -354,7 +387,8 @@ type searchJobsArgs struct {
 	Query        string `json:"query,omitempty" jsonschema:"matches against title/company/description"`
 	Location     string `json:"location,omitempty" jsonschema:"matches against the posting's own location"`
 	CompanyID    string `json:"companyId,omitempty" jsonschema:"restrict to jobs linked to this company (see link_job_to_company); omit for every matching job"`
-	PortalLinkID string `json:"portalLinkId,omitempty" jsonschema:"restrict to jobs found via this portal link (see save_portal_job); omit for every matching job"`
+	PortalLinkID string `json:"portalLinkId,omitempty" jsonschema:"restrict to jobs found via this specific portal link (see save_portal_job); omit for every matching job"`
+	PortalID     string `json:"portalId,omitempty" jsonschema:"restrict to jobs found via ANY link belonging to this portal (see list_portals); omit for every matching job"`
 	Limit        int    `json:"limit,omitempty" jsonschema:"max results to return (default 50, max 200)"`
 	Offset       int    `json:"offset,omitempty" jsonschema:"how many matching results to skip, for paging"`
 }
@@ -362,9 +396,9 @@ type searchJobsArgs struct {
 func registerSearchJobs(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "search_jobs",
-		Description: "Search saved job postings by query, location, company, and/or portal link. Omitting all is equivalent to list_jobs.",
+		Description: "Search saved job postings by query, location, company, and/or portal (or a specific portal link). Omitting all is equivalent to list_jobs.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args searchJobsArgs) (*mcp.CallToolResult, any, error) {
-		result, err := searchJobs(args.Query, args.Location, args.CompanyID, args.PortalLinkID, clampLimit(args.Limit), args.Offset)
+		result, err := searchJobs(args.Query, args.Location, args.CompanyID, args.PortalLinkID, args.PortalID, clampLimit(args.Limit), args.Offset)
 		if err != nil {
 			return errResult(fmt.Sprintf("failed to search jobs: %v", err)), nil, nil
 		}

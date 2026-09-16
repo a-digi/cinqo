@@ -92,6 +92,14 @@ type crawlRequest struct {
 	// every AI-driven call, identical to today's behavior. See
 	// plan/ai/tools/browser/step-36-content-based-cloudflare-override.md.
 	ExpectedSelectors []string `json:"expectedSelectors,omitempty"`
+	// RemoveSelectors (step 41) — optional CSS selectors for elements
+	// to strip from the returned HTML before it's read (e.g. "header",
+	// "script", "style", ".cookie-banner") — removes boilerplate/noise
+	// the caller doesn't need, never touching what's actually returned
+	// beyond that. Absent means "return the page exactly as rendered,"
+	// today's existing behavior. See
+	// plan/ai/tools/browser/step-41-remove-html-elements.md.
+	RemoveSelectors []string `json:"removeSelectors,omitempty"`
 }
 
 type crawlResponse struct {
@@ -120,7 +128,7 @@ func crawlHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := crawlPage(body.URL, body.RequestID, body.ExpectedSelectors)
+	result, err := crawlPage(body.URL, body.RequestID, body.ExpectedSelectors, body.RemoveSelectors)
 	if err != nil {
 		setCrawlPhase(body.RequestID, phaseFailed, err.Error())
 		var cfErr *crawlError
@@ -147,13 +155,23 @@ func crawlHandler(w http.ResponseWriter, r *http.Request) {
 // can read the page once cleared, without either needing to
 // re-navigate — which would discard whatever a human just did in a
 // visible window to clear the challenge.
-func readCrawlResponse(ctx context.Context) (crawlResponse, error) {
+func readCrawlResponse(ctx context.Context, removeSelectors []string) (crawlResponse, error) {
+	var actions []chromedp.Action
+	if len(removeSelectors) > 0 {
+		script, err := removeElementsJS(removeSelectors)
+		if err != nil {
+			return crawlResponse{}, err
+		}
+		actions = append(actions, chromedp.Evaluate(script, nil))
+	}
+
 	var html, title, finalURL string
-	if err := chromedp.Run(ctx,
+	actions = append(actions,
 		chromedp.Title(&title),
 		chromedp.Location(&finalURL),
 		chromedp.OuterHTML("html", &html),
-	); err != nil {
+	)
+	if err := chromedp.Run(ctx, actions...); err != nil {
 		return crawlResponse{}, err
 	}
 
@@ -171,6 +189,31 @@ func readCrawlResponse(ctx context.Context) (crawlResponse, error) {
 	}, nil
 }
 
+// removeElementsJS returns a JS snippet that removes every element
+// matching any of selectors from the current document — run
+// immediately before OuterHTML captures it, so the returned HTML never
+// includes them. Selectors are embedded via json.Marshal (a valid JS
+// array literal), the same safe-embedding technique
+// buildCloudflareDetectJS (cloudflare.go) already uses for
+// expectedSelectors — never string-concatenated raw. An individual
+// selector that fails to parse (querySelectorAll throws) is skipped,
+// not fatal to the others or to the crawl itself. See
+// plan/ai/tools/browser/step-41-remove-html-elements.md.
+func removeElementsJS(selectors []string) (string, error) {
+	selectorsJSON, err := json.Marshal(selectors)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf(`(function() {
+		var selectors = %s;
+		selectors.forEach(function(sel) {
+			try {
+				document.querySelectorAll(sel).forEach(function(el) { el.remove(); });
+			} catch (e) {}
+		});
+	})()`, selectorsJSON), nil
+}
+
 // navigateAndReadWithCloudflareCheck runs the shared navigate → settle
 // → Cloudflare-wait → read-HTML sequence against ctx — extracted so
 // both the primary (shared headless session) and fallback (ephemeral
@@ -179,7 +222,7 @@ func readCrawlResponse(ctx context.Context) (crawlResponse, error) {
 // crawlError (cloudflare_challenge_unresolved) as before when the
 // challenge is still present once ctx's own wait budget is spent. See
 // plan/ai/tools/browser/step-24-headed-chrome-cloudflare-fallback.md.
-func navigateAndReadWithCloudflareCheck(ctx context.Context, rawURL, requestID string, expectedSelectors []string) (crawlResponse, error) {
+func navigateAndReadWithCloudflareCheck(ctx context.Context, rawURL, requestID string, expectedSelectors, removeSelectors []string) (crawlResponse, error) {
 	setCrawlPhase(requestID, phaseNavigating, "navigating to "+rawURL)
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(rawURL),
@@ -197,7 +240,7 @@ func navigateAndReadWithCloudflareCheck(ctx context.Context, rawURL, requestID s
 		return crawlResponse{}, newCloudflareUnresolvedError(cf.Reason)
 	}
 
-	return readCrawlResponse(ctx)
+	return readCrawlResponse(ctx, removeSelectors)
 }
 
 // crawlPage navigates the one shared headless session to rawURL and
@@ -214,7 +257,7 @@ func navigateAndReadWithCloudflareCheck(ctx context.Context, rawURL, requestID s
 // real, headed browser is often materially harder for Cloudflare to
 // flag as automated than headless Chrome, even with this tool's own
 // existing stealth patches applied.
-func crawlPage(rawURL, requestID string, expectedSelectors []string) (crawlResponse, error) {
+func crawlPage(rawURL, requestID string, expectedSelectors, removeSelectors []string) (crawlResponse, error) {
 	// step 29 — a known-Cloudflare domain skips the headless attempt
 	// entirely, straight to the headed fallback: the only signal
 	// available before ever navigating anywhere is the cache (nothing
@@ -225,7 +268,7 @@ func crawlPage(rawURL, requestID string, expectedSelectors []string) (crawlRespo
 	// plan/ai/tools/browser/step-29-skip-headless-for-known-cloudflare-domains.md.
 	if domain, err := hostnameOf(rawURL); err == nil {
 		if known, err := isDomainKnownCloudflare(domain); err == nil && known {
-			return crawlWithNormalSession(rawURL, requestID, expectedSelectors)
+			return crawlWithNormalSession(rawURL, requestID, expectedSelectors, removeSelectors)
 		}
 	}
 
@@ -236,7 +279,7 @@ func crawlPage(rawURL, requestID string, expectedSelectors []string) (crawlRespo
 		ctx, cancel := context.WithTimeout(sessionCtx, crawlTimeout)
 		defer cancel()
 
-		return navigateAndReadWithCloudflareCheck(ctx, rawURL, requestID, expectedSelectors)
+		return navigateAndReadWithCloudflareCheck(ctx, rawURL, requestID, expectedSelectors, removeSelectors)
 	}()
 
 	var cfErr *crawlError
@@ -246,7 +289,7 @@ func crawlPage(rawURL, requestID string, expectedSelectors []string) (crawlRespo
 		if domain, hostErr := hostnameOf(rawURL); hostErr == nil {
 			_ = recordCloudflareDomain(domain, cfErr.Reason)
 		}
-		return crawlWithNormalSession(rawURL, requestID, expectedSelectors)
+		return crawlWithNormalSession(rawURL, requestID, expectedSelectors, removeSelectors)
 	}
 	// step 38 — deliberately wrapped only here, after the Cloudflare
 	// dispatch above: a session-interrupted error must never trigger
@@ -267,7 +310,7 @@ func crawlPage(rawURL, requestID string, expectedSelectors []string) (crawlRespo
 // immediately. See
 // plan/ai/tools/browser/step-24-headed-chrome-cloudflare-fallback.md
 // and plan/ai/tools/browser/step-25-human-assisted-cloudflare-retry.md.
-func crawlWithNormalSession(rawURL, requestID string, expectedSelectors []string) (crawlResponse, error) {
+func crawlWithNormalSession(rawURL, requestID string, expectedSelectors, removeSelectors []string) (crawlResponse, error) {
 	normalSessionMu.Lock()
 	defer normalSessionMu.Unlock()
 
@@ -284,13 +327,13 @@ func crawlWithNormalSession(rawURL, requestID string, expectedSelectors []string
 	ctx, cancel := context.WithTimeout(ctx, normalSessionCrawlTimeout)
 	defer cancel()
 
-	result, err := navigateAndReadWithCloudflareCheck(ctx, rawURL, requestID, expectedSelectors)
+	result, err := navigateAndReadWithCloudflareCheck(ctx, rawURL, requestID, expectedSelectors, removeSelectors)
 
 	var cfErr *crawlError
 	if !errors.As(err, &cfErr) {
 		return result, err
 	}
-	return waitForHumanToSolveCloudflare(ctx, cfErr, requestID, expectedSelectors)
+	return waitForHumanToSolveCloudflare(ctx, cfErr, requestID, expectedSelectors, removeSelectors)
 }
 
 // waitForHumanToClearCloudflare polls detectCloudflareChallenge every
@@ -389,7 +432,7 @@ func waitForHumanToClearCloudflare(ctx context.Context, requestID, initialReason
 // Cloudflare challenge and solve it themselves, then reads the page
 // once cleared. See
 // plan/ai/tools/browser/step-25-human-assisted-cloudflare-retry.md.
-func waitForHumanToSolveCloudflare(ctx context.Context, fallback *crawlError, requestID string, expectedSelectors []string) (crawlResponse, error) {
+func waitForHumanToSolveCloudflare(ctx context.Context, fallback *crawlError, requestID string, expectedSelectors, removeSelectors []string) (crawlResponse, error) {
 	cleared, err := waitForHumanToClearCloudflare(ctx, requestID, fallback.Reason, expectedSelectors)
 	if err != nil {
 		return crawlResponse{}, err
@@ -397,7 +440,7 @@ func waitForHumanToSolveCloudflare(ctx context.Context, fallback *crawlError, re
 	if !cleared {
 		return crawlResponse{}, fallback
 	}
-	return readCrawlResponse(ctx)
+	return readCrawlResponse(ctx, removeSelectors)
 }
 
 // validateCrawlURL is this tool's own SSRF guard — a page-fetching
@@ -440,7 +483,8 @@ func isDisallowedIP(ip net.IP) bool {
 }
 
 type fetchPageHTMLArgs struct {
-	URL string `json:"url" jsonschema:"the absolute http(s) URL to navigate to and read"`
+	URL             string   `json:"url" jsonschema:"the absolute http(s) URL to navigate to and read"`
+	RemoveSelectors []string `json:"removeSelectors,omitempty" jsonschema:"optional CSS selectors for ANY elements to strip from the returned HTML before it's read — e.g. [\"header\", \"footer\", \"nav\", \"script\", \"style\", \".cookie-banner\", \"#ads\"]. Not limited to these examples: any valid CSS selector is matched and removed. Use this to cut boilerplate/noise you don't need out of the result; omit to get the page exactly as rendered."`
 }
 
 // registerFetchPageHTML adds the fetch_page_html MCP tool — thin: it
@@ -451,6 +495,7 @@ func registerFetchPageHTML(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "fetch_page_html",
 		Description: "Navigate the shared browser session to a URL and return the page's rendered HTML, title, and final URL (after any redirect). " +
+			"Pass removeSelectors to strip elements you don't want out of the HTML before it's returned to you — any valid CSS selector works (tag names like \"header\", \"script\", \"style\", \"nav\", \"footer\"; classes like \".cookie-banner\"; ids like \"#ads\"; or anything else CSS can target). Use this whenever you only need part of the page, to cut boilerplate/noise out of your own result instead of reading past it. " +
 			"If the page is behind a Cloudflare challenge, this waits briefly for it to clear before reading the page; if it's still blocking once the wait runs out, this automatically retries in a normal (non-headless) browser window and can wait up to about 30 minutes for a person to notice and solve the challenge there before giving up — meaning this call can take up to roughly 30 minutes in that case, almost certainly longer than this AI tool-calling session's own timeout, so a Cloudflare-blocked page is effectively only recoverable through this path by a human watching for the window, not by an AI call waiting on the result. If it's still blocked after that, this call fails with a cloudflare_challenge_unresolved error instead of returning the interstitial as if it were the real page.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args fetchPageHTMLArgs) (*mcp.CallToolResult, any, error) {
 		if args.URL == "" {
@@ -460,7 +505,7 @@ func registerFetchPageHTML(server *mcp.Server) {
 			}, nil, nil
 		}
 
-		reqBody, err := json.Marshal(crawlRequest{URL: args.URL})
+		reqBody, err := json.Marshal(crawlRequest{URL: args.URL, RemoveSelectors: args.RemoveSelectors})
 		if err != nil {
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("failed to build request: %v", err)}},

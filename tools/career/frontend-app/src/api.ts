@@ -70,6 +70,8 @@ export interface Job {
   title: string
   company: string
   companyId?: string
+  portalId?: string
+  portalName?: string
   location: string
   description: string
   postedAt: string
@@ -314,11 +316,21 @@ export async function removeExperience(personaId: string, id: string): Promise<v
   if (!res.ok && res.status !== 204) throw new Error(`failed to remove experience (${res.status})`)
 }
 
-export async function fetchJobs(query: string, location: string, companyId?: string): Promise<JobsResult> {
+export async function fetchJobs(
+  query: string,
+  location: string,
+  companyId?: string,
+  portalId?: string,
+  limit?: number,
+  offset?: number,
+): Promise<JobsResult> {
   const params = new URLSearchParams()
   if (query) params.set('query', query)
   if (location) params.set('location', location)
   if (companyId) params.set('companyId', companyId)
+  if (portalId) params.set('portalId', portalId)
+  if (limit !== undefined) params.set('limit', String(limit))
+  if (offset !== undefined) params.set('offset', String(offset))
   const qs = params.toString()
   const res = await fetch(`${PROXY_BASE}/jobs${qs ? `?${qs}` : ''}`, { credentials: 'include' })
   return jsonOrThrow<JobsResult>(res, 'load jobs')

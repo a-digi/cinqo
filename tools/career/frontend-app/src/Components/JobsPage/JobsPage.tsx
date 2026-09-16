@@ -1,6 +1,9 @@
 import { useEffect, useState, type SyntheticEvent } from 'react'
-import { fetchJobs, removeJob, fetchCompanies, linkJobToCompany, type Job, type Company } from '../../api'
+import { fetchJobs, removeJob, fetchCompanies, fetchPortals, linkJobToCompany, type Job, type Company, type Portal } from '../../api'
 import { Dropdown } from '../Dropdown/Dropdown'
+import { Pagination } from '../Pagination/Pagination'
+
+const PAGE_SIZE = 50
 
 // No "add job" affordance — jobs are populated by the AI's own
 // crawling workflow (step 4), never hand-entered here. See this
@@ -10,18 +13,27 @@ import { Dropdown } from '../Dropdown/Dropdown'
 // URL on mount (so CompaniesPage's own "N linked jobs" link arrives
 // pre-filtered) and also selectable via a Dropdown once companies
 // exist. See plan/ai/tools/career/step-15-companies-frontend.md.
+//
+// Step 53 added an optional portalId filter (same URL-seeded +
+// Dropdown pattern as companyId) and a Platform column showing which
+// portal (LinkedIn, Indeed, etc.) a job was found via. See
+// plan/ai/tools/career/step-53-jobs-page-platform-column-filter-pagination.md.
 export function JobsPage() {
   const [query, setQuery] = useState('')
   const [location, setLocation] = useState('')
   const [companyId, setCompanyId] = useState(() => new URLSearchParams(window.location.search).get('companyId') ?? '')
+  const [portalId, setPortalId] = useState(() => new URLSearchParams(window.location.search).get('portalId') ?? '')
   const [companies, setCompanies] = useState<Company[]>([])
+  const [portals, setPortals] = useState<Portal[]>([])
   const [jobs, setJobs] = useState<Job[]>([])
   const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(1)
   const [error, setError] = useState('')
 
-  function load(companyIdOverride?: string) {
+  function load(companyIdOverride?: string, portalIdOverride?: string, pageOverride?: number) {
     setError('')
-    fetchJobs(query, location, companyIdOverride ?? companyId)
+    const effectivePage = pageOverride ?? page
+    fetchJobs(query, location, companyIdOverride ?? companyId, portalIdOverride ?? portalId, PAGE_SIZE, (effectivePage - 1) * PAGE_SIZE)
       .then((result) => {
         setJobs(result.jobs)
         setTotal(result.total)
@@ -32,9 +44,14 @@ export function JobsPage() {
   }
 
   useEffect(() => {
-    load(companyId)
+    load(companyId, portalId, 1)
     fetchCompanies()
       .then(setCompanies)
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+      })
+    fetchPortals()
+      .then(setPortals)
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : String(err))
       })
@@ -43,12 +60,25 @@ export function JobsPage() {
 
   function handleSearch(e: SyntheticEvent<HTMLFormElement>) {
     e.preventDefault()
-    load()
+    setPage(1)
+    load(undefined, undefined, 1)
   }
 
   function handleCompanyFilterChange(id: string) {
     setCompanyId(id)
-    load(id)
+    setPage(1)
+    load(id, undefined, 1)
+  }
+
+  function handlePortalFilterChange(id: string) {
+    setPortalId(id)
+    setPage(1)
+    load(undefined, id, 1)
+  }
+
+  function handlePageChange(nextPage: number) {
+    setPage(nextPage)
+    load(undefined, undefined, nextPage)
   }
 
   function handleRemove(id: string) {
@@ -78,9 +108,7 @@ export function JobsPage() {
   return (
     <div className="max-w-4xl p-6 font-sans text-gray-900">
       <h1 className="mb-1.5 text-xl font-semibold">Saved Jobs</h1>
-      <p className="mb-5 text-sm text-gray-500">
-        Job postings the AI has crawled and saved on your behalf, showing {jobs.length} of {total}.
-      </p>
+      <p className="mb-5 text-sm text-gray-500">Job postings the AI has crawled and saved on your behalf.</p>
 
       <form onSubmit={handleSearch} className="mb-4 flex flex-wrap gap-2">
         <input
@@ -113,69 +141,83 @@ export function JobsPage() {
             onChange={handleCompanyFilterChange}
           />
         )}
+        {portals.length > 0 && (
+          <Dropdown
+            placeholder="Any platform"
+            options={[{ value: '', label: 'Any platform' }, ...portals.map((p) => ({ value: p.id, label: p.name }))]}
+            value={portalId}
+            onChange={handlePortalFilterChange}
+          />
+        )}
       </form>
 
       <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
 
       <div className="overflow-hidden rounded-md border border-gray-200 shadow-sm">
-        <table className="w-full text-sm">
-          <thead>
-            <tr>
-              <th className="border-b border-gray-200 bg-gray-50 p-3 text-left font-medium text-gray-500">Title</th>
-              <th className="border-b border-gray-200 bg-gray-50 p-3 text-left font-medium text-gray-500">Company</th>
-              <th className="border-b border-gray-200 bg-gray-50 p-3 text-left font-medium text-gray-500">Location</th>
-              <th className="border-b border-gray-200 bg-gray-50 p-3 text-left font-medium text-gray-500">Posted</th>
-              <th className="border-b border-gray-200 bg-gray-50 p-3"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {jobs.map((job) => (
-              <tr key={job.id} className="last:[&>td]:border-b-0 hover:bg-gray-50">
-                <td className="border-b border-gray-200 p-3">
-                  <a
-                    href={job.sourceUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-gray-900 underline decoration-gray-300 hover:decoration-gray-600"
-                  >
-                    {job.title}
-                  </a>
-                </td>
-                <td className="border-b border-gray-200 p-3">
-                  {job.company}
-                  {job.companyId && (
-                    <div className="mt-0.5 flex items-center gap-1.5 text-xs text-gray-400">
-                      linked to {companyNames[job.companyId] ?? '…'}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          handleUnlink(job.id)
-                        }}
-                        className="text-gray-400 underline hover:text-red-700"
-                      >
-                        unlink
-                      </button>
-                    </div>
-                  )}
-                </td>
-                <td className="border-b border-gray-200 p-3">{job.location}</td>
-                <td className="border-b border-gray-200 p-3">{job.postedAt}</td>
-                <td className="border-b border-gray-200 p-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleRemove(job.id)
-                    }}
-                    className="rounded-md border border-gray-200 px-3 py-1 text-red-700 transition-colors hover:bg-red-50"
-                  >
-                    Remove
-                  </button>
-                </td>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr>
+                <th className="border-b border-gray-200 bg-gray-50 p-3 text-left font-medium text-gray-500">Title</th>
+                <th className="border-b border-gray-200 bg-gray-50 p-3 text-left font-medium text-gray-500">Company</th>
+                <th className="border-b border-gray-200 bg-gray-50 p-3 text-left font-medium text-gray-500">Platform</th>
+                <th className="border-b border-gray-200 bg-gray-50 p-3 text-left font-medium text-gray-500">Location</th>
+                <th className="border-b border-gray-200 bg-gray-50 p-3 text-left font-medium text-gray-500">Posted</th>
+                <th className="border-b border-gray-200 bg-gray-50 p-3"></th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {jobs.map((job) => (
+                <tr key={job.id} className="last:[&>td]:border-b-0 hover:bg-gray-50">
+                  <td className="border-b border-gray-200 p-3">
+                    <a
+                      href={job.sourceUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-gray-900 underline decoration-gray-300 hover:decoration-gray-600"
+                    >
+                      {job.title}
+                    </a>
+                  </td>
+                  <td className="border-b border-gray-200 p-3">
+                    {job.company}
+                    {job.companyId && (
+                      <div className="mt-0.5 flex items-center gap-1.5 text-xs text-gray-400">
+                        linked to {companyNames[job.companyId] ?? '…'}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleUnlink(job.id)
+                          }}
+                          className="text-gray-400 underline hover:text-red-700"
+                        >
+                          unlink
+                        </button>
+                      </div>
+                    )}
+                  </td>
+                  <td className="border-b border-gray-200 p-3">{job.portalName ?? '—'}</td>
+                  <td className="border-b border-gray-200 p-3">{job.location}</td>
+                  <td className="border-b border-gray-200 p-3">{job.postedAt}</td>
+                  <td className="border-b border-gray-200 p-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleRemove(job.id)
+                      }}
+                      className="rounded-md border border-gray-200 px-3 py-1 text-red-700 transition-colors hover:bg-red-50"
+                    >
+                      Remove
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
+
+      <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={handlePageChange} />
     </div>
   )
 }

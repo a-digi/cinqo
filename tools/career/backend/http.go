@@ -558,7 +558,7 @@ func jobsHandler(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		limit := atoiOrZero(q.Get("limit"))
 		offset := atoiOrZero(q.Get("offset"))
-		result, err := searchJobs(q.Get("query"), q.Get("location"), q.Get("companyId"), q.Get("portalLinkId"), clampLimit(limit), offset)
+		result, err := searchJobs(q.Get("query"), q.Get("location"), q.Get("companyId"), q.Get("portalLinkId"), q.Get("portalId"), clampLimit(limit), offset)
 		if err != nil {
 			http.Error(w, "failed to list jobs: "+err.Error(), http.StatusInternalServerError)
 			return
