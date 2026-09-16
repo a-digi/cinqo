@@ -96,6 +96,9 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 // questions". Holds sessionMu for the whole operation, same as
 // crawlPage/findLoginElements.
 func performLogin(req loginRequest) (loginResponse, error) {
+	if err := ensureSharedSession(); err != nil {
+		return loginResponse{}, err
+	}
 	sessionMu.Lock()
 	defer sessionMu.Unlock()
 

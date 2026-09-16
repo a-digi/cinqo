@@ -273,6 +273,9 @@ func crawlPage(rawURL, requestID string, expectedSelectors, removeSelectors []st
 	}
 
 	result, err := func() (crawlResponse, error) {
+		if err := ensureSharedSession(); err != nil {
+			return crawlResponse{}, err
+		}
 		sessionMu.Lock()
 		defer sessionMu.Unlock()
 

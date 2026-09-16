@@ -283,7 +283,7 @@ func runToolLoop(
 				logStep(fmt.Sprintf("iteration %d: invoking tool %s", i+1, call.Name))
 			}
 			text, links := invokeToolCall(ctx, mainDB, callerScopes, call, corePort)
-			messages = append(messages, chatcompleter.Message{Role: "tool", ToolCallID: call.ID, Content: text})
+			messages = append(messages, chatcompleter.Message{Role: "tool", ToolCallID: call.ID, Content: truncateToolResult(text)})
 			allLinks = append(allLinks, links...)
 		}
 	}
@@ -367,6 +367,35 @@ func hasScope(scopes []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// maxToolResultContentLength caps how much of any single tool's own
+// result text is ever forwarded into the model's context — without
+// this, a tool that can legitimately return very large content (e.g.
+// the Browser tool's up-to-200,000-byte crawled HTML,
+// tools/browser/backend/crawl.go's own maxHTMLBytes) can push a
+// multi-iteration tool-calling loop's own accumulated messages past a
+// model's context window well before maxToolIterations is ever
+// reached — a real, reproduced failure (context_length_exceeded from
+// OpenRouter at 294,446 tokens), not a hypothetical one. Applied only
+// to the ephemeral in-loop messages sent to the model, never to the
+// conversation's own persisted log (AppendTurn only ever stores the
+// final UserContent/AssistantContent per turn, never the intermediate
+// tool-call transcript). Character-length, not a real token count —
+// matching this file's own existing maxStoredErrorLength/
+// truncateError idiom below, not a new tokenizer dependency for one
+// bug fix. See plan/ai/conversation/step-33-cap-tool-result-context-
+// length.md.
+const maxToolResultContentLength = 20_000
+
+func truncateToolResult(s string) string {
+	if len(s) <= maxToolResultContentLength {
+		return s
+	}
+	return s[:maxToolResultContentLength] + fmt.Sprintf(
+		"\n\n… (truncated — %d characters total; ask for less at once, e.g. narrower selectors/pagination, if you need the rest)",
+		len(s),
+	)
 }
 
 // maxStoredErrorLength caps a failed turn's own stored error text — a

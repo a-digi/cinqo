@@ -54,8 +54,10 @@ func main() {
 // sessionMu guards every access to sessionCtx — every HTTP handler
 // that touches the shared page must hold this for the duration of its
 // own chromedp actions, so two requests never race on the same tab.
-// Nothing acquires it yet (no feature exists), but every future
-// handler (steps 3-5) must.
+// sessionCtx itself is nil until ensureSharedSession's first successful
+// call (lazy start, step-43-lazy-shared-session.md) — every handler
+// that needs it calls ensureSharedSession first, never assumes it's
+// already set.
 var (
 	sessionMu     sync.Mutex
 	sessionCtx    context.Context
@@ -65,9 +67,10 @@ var (
 func runHTTPServer() {
 	port := os.Getenv("PORT")
 
-	if err := startSharedSession(); err != nil {
-		log.Fatalf("failed to start shared browser session: %v", err)
-	}
+	// The shared headless session is no longer started here — see
+	// ensureSharedSession's own doc comment. /healthz (and every other
+	// route) is reachable the moment this process is listening,
+	// regardless of whether a browser has ever been launched.
 	if err := initBrowserDB(); err != nil {
 		log.Fatalf("failed to open browser database: %v", err)
 	}
@@ -114,16 +117,35 @@ func runHTTPServer() {
 	}
 }
 
-// startSharedSession creates the one chromedp browser context this
-// whole process holds for its entire lifetime. A real, empty
-// navigation (not just allocator/context creation) forces the browser
-// to actually launch now rather than lazily on first real use —
-// confirming a genuinely live browser before this process ever reports
-// itself healthy, not just that the Go-side handles were constructed.
-func startSharedSession() error {
+// ensureSharedSession lazily starts the shared headless session on
+// first actual need — replacing this tool's previous behavior of
+// launching it unconditionally at process boot (before this process
+// ever reported itself healthy), regardless of whether any browser
+// feature was ever going to be used. A no-op once already started, so
+// every call site below can call this unconditionally on every
+// request at negligible cost (a single mutex lock/unlock) once warm.
+// Must be called BEFORE the caller's own sessionMu.Lock() for its
+// actual crawl/login/extract operation — this function fully acquires
+// and releases sessionMu itself, so calling it while already holding
+// sessionMu would deadlock (sync.Mutex isn't reentrant). See
+// plan/ai/tools/browser/step-43-lazy-shared-session.md.
+func ensureSharedSession() error {
 	sessionMu.Lock()
 	defer sessionMu.Unlock()
+	if sessionCtx != nil {
+		return nil
+	}
+	return startSharedSessionLocked()
+}
 
+// startSharedSessionLocked creates the one chromedp browser context
+// this whole process holds for its entire lifetime — assumes the
+// caller (ensureSharedSession, above) already holds sessionMu. A real,
+// empty navigation (not just allocator/context creation) forces the
+// browser to actually launch now rather than deferring even further,
+// so a genuinely live browser (not just constructed Go-side handles)
+// is confirmed before this returns successfully.
+func startSharedSessionLocked() error {
 	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), allocatorOptions()...)
 	ctx, ctxCancel := chromedp.NewContext(allocCtx)
 
@@ -167,17 +189,18 @@ func stopSharedSession() {
 var normalSessionMu sync.Mutex
 
 // startSharedNormalSession launches a fresh, non-headless ("normal")
-// Chrome instance — used only as a fallback when the always-on shared
-// headless session (startSharedSession, above — never called by this
-// function, never modified by this feature) fails to get past a
-// Cloudflare challenge. Unlike startSharedSession, this does NOT store
-// its context/cancel funcs into the package-level
-// sessionCtx/sessionCancel — those remain exclusively the shared
-// headless session's own state — and is never called at boot
-// (runHTTPServer keeps calling only startSharedSession). The caller
-// owns the returned cancel funcs and must call every one of them once
-// done with this instance ("close after it is finished") — see
-// crawl.go's crawlWithNormalSession, the one caller.
+// Chrome instance — used only as a fallback when the lazily-started
+// shared headless session (ensureSharedSession/startSharedSessionLocked,
+// above — never called by this function, never modified by this
+// feature) fails to get past a Cloudflare challenge. Unlike that
+// session, this does NOT store its context/cancel funcs into the
+// package-level sessionCtx/sessionCancel — those remain exclusively
+// the shared headless session's own state — and is never called at
+// boot (nothing browser-related is started at boot anymore — see
+// step-43-lazy-shared-session.md). The caller owns the returned
+// cancel funcs and must call every one of them once done with this
+// instance ("close after it is finished") — see crawl.go's
+// crawlWithNormalSession, the one caller.
 func startSharedNormalSession() (context.Context, []context.CancelFunc, error) {
 	profileDir, err := normalSessionProfileDir()
 	if err != nil {
@@ -270,7 +293,8 @@ func removeStaleChromeSingletonLock(profileDir string) {
 // fresh-temp-dir-per-launch behavior. A deliberate, separate duplicate
 // of allocatorOptions — not a shared helper with a headless bool
 // parameter — specifically so allocatorOptions itself, and therefore
-// startSharedSession's own behavior, is never touched by this feature.
+// startSharedSessionLocked's own behavior, is never touched by this
+// feature.
 func normalAllocatorOptions(profileDir string) []chromedp.ExecAllocatorOption {
 	opts := chromedp.DefaultExecAllocatorOptions[:]
 	if p := os.Getenv("BROWSER_TOOL_CHROME_PATH"); p != "" {

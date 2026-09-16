@@ -61,6 +61,9 @@ func findLoginElementsHandler(w http.ResponseWriter, r *http.Request) {
 // submits anything. Holds sessionMu for the whole operation, same as
 // crawlPage.
 func findLoginElements() (findLoginElementsResponse, error) {
+	if err := ensureSharedSession(); err != nil {
+		return findLoginElementsResponse{}, err
+	}
 	sessionMu.Lock()
 	defer sessionMu.Unlock()
 

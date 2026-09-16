@@ -402,6 +402,9 @@ func runPaginatedCrawlLoop(ctx context.Context, container string, fields []extra
 // plan/ai/tools/browser/step-37-atomic-navigate-and-extract.md.
 func performPaginatedCrawl(url, container string, fields []extractField, mapping map[string]string, nextSelector string, requestedMaxPages, effectiveMaxPages int, captureHTML bool, requestID string) (paginatedCrawlResponse, []string, error) {
 	result, pageHTML, blockedURL, err := func() (paginatedCrawlResponse, []string, string, error) {
+		if err := ensureSharedSession(); err != nil {
+			return paginatedCrawlResponse{}, nil, "", err
+		}
 		sessionMu.Lock()
 		defer sessionMu.Unlock()
 

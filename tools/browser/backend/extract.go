@@ -138,6 +138,9 @@ func extractHandler(w http.ResponseWriter, r *http.Request) {
 // around runExtractionOnCurrentPage — see that function's own doc
 // comment for why the split exists.
 func performExtraction(container string, fields []extractField, mapping map[string]string) (extractResponse, error) {
+	if err := ensureSharedSession(); err != nil {
+		return extractResponse{}, err
+	}
 	sessionMu.Lock()
 	defer sessionMu.Unlock()
 
