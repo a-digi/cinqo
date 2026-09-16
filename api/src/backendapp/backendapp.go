@@ -128,7 +128,7 @@ func Start(opts Options) (srv *http.Server, cfg *server.Config, ctx *di.ContextB
 	if err != nil {
 		return nil, nil, nil, log, err
 	}
-	tool_manager.StartAllEnabled(manager.Connector.DB, corePortCfg.Port, func(format string, args ...any) { log.Warning(format, args...) })
+	tool_manager.StartAllEnabled(manager.Connector.DB, dataDir, corePortCfg.Port, func(format string, args ...any) { log.Warning(format, args...) })
 
 	ctx = di.NewContextBag(manager, log)
 

@@ -1,0 +1,16 @@
+routes:
+  - path: /api/v1/pings
+    method: GET
+    executor: PingList
+    security: authenticated
+    scopes:
+      - cinqo:ping:read
+      - cinqo:super:admin
+
+  - path: /api/v1/pings
+    method: POST
+    executor: PingCreate
+    security: authenticated
+    scopes:
+      - cinqo:ping:create
+      - cinqo:super:admin

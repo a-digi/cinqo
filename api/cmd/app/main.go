@@ -88,14 +88,6 @@ const caddyPort = 7030
 
 var caddyAddr = fmt.Sprintf("http://localhost:%d", caddyPort)
 
-// chromePidFile is the bare CWD-relative literal used when config.json
-// was already found in CWD (today's exact dev/Makefile-driven
-// behavior, unchanged) — resolveAppHome's own apphome-relative value
-// is used instead when it wasn't. See
-// plan/ai/build/app/step-09-private-chrome-instance-and-pid-tracking.md
-// and plan/ai/build/app/step-18-embedded-default-config-and-app-home.md.
-const chromePidFile = "chrome.pid"
-
 func main() {
 	if err := run(); err != nil {
 		fmt.Println(err)
@@ -106,11 +98,10 @@ func main() {
 func run() error {
 	// --data overrides where this app's own local state (db/, logs/,
 	// keys/, tools/) lives — omitted, falls back to resolveAppHome's
-	// own data/ default (apphome-relative if config.json wasn't found
-	// in CWD, "data" relative to CWD otherwise). See
+	// own data/ default, next to the running executable. See
 	// plan/ai/build/app/step-17-configurable-data-directory.md and
-	// plan/ai/build/app/step-18-embedded-default-config-and-app-home.md.
-	dataDir := flag.String("data", "", `path to the data directory (default: "data", relative to the working directory)`)
+	// plan/ai/build/app/step-22-data-dir-always-executable-relative.md.
+	dataDir := flag.String("data", "", `path to the data directory (default: "data", next to the executable)`)
 	flag.Parse()
 
 	// Armed before anything else starts (backend, Caddy, or the
@@ -122,49 +113,40 @@ func run() error {
 	shutdownCh := make(chan os.Signal, 1)
 	signal.Notify(shutdownCh, os.Interrupt, syscall.SIGTERM)
 
-	// Resolved first, before anything else touches config.json — see
-	// plan/ai/build/app/step-18-embedded-default-config-and-app-home.md.
-	// If config.json is already in CWD (today's exact dev/Makefile-
-	// driven behavior via `cd api && ../app/cinqo-app`), nothing here
-	// changes at all. Otherwise this is the "opened from another
-	// location" case the embedded default/auto-create exists for:
-	// config.json, the data/ default, and chrome.pid all move to the
-	// same stable, OS-user-scoped ~/.cinqo directory so every later
-	// launch from anywhere finds the same persistent state instead of
-	// starting fresh each time.
-	home, usingCWD, err := resolveAppHome()
+	// Resolved first, before anything else touches config.json — always
+	// the running executable's own directory, regardless of the
+	// process's CWD or launch method, so every launch from anywhere
+	// finds the same persistent state instead of starting fresh each
+	// time or landing in an OS-user-scoped home directory the user
+	// never asked for. See
+	// plan/ai/build/app/step-18-embedded-default-config-and-app-home.md
+	// and plan/ai/build/app/step-22-data-dir-always-executable-relative.md.
+	home, err := resolveAppHome()
 	if err != nil {
 		return fmt.Errorf("resolve app home: %w", err)
 	}
-	configPath := "config.json"
-	dataDefault := ""
-	chromePidPath := chromePidFile
-	if !usingCWD {
-		configPath = filepath.Join(home, "config.json")
-		if err := ensureConfigFile(configPath, home); err != nil {
-			return fmt.Errorf("create default config: %w", err)
-		}
-		dataDefault = filepath.Join(home, "data")
-		chromePidPath = filepath.Join(home, "chrome.pid")
+	configPath := filepath.Join(home, "config.json")
+	if err := ensureConfigFile(configPath, home); err != nil {
+		return fmt.Errorf("create default config: %w", err)
+	}
+	dataDefault := filepath.Join(home, "data")
+	chromePidPath := filepath.Join(home, "chrome.pid")
 
-		// Same "opened from another location" case, one level further:
-		// migrations/route YAML/the auth config.json/iam.yaml/
-		// system-tools.yaml all live under api/config/ today, resolved
-		// via candidateDefaults()'s own executable-relative/CWD-relative
-		// search — which finds nothing when there's no api/config/ tree
-		// shipped next to this binary at all. Extracting the embedded
-		// copy and pointing CINQO_CONFIG_DIR (the override
-		// candidateDefaults() already respects) at it fixes every one of
-		// those in one shot — no changes needed to backendapp.Start or
-		// the config package itself. See
-		// plan/ai/build/app/step-19-embedded-config-directory.md.
-		configDir := filepath.Join(home, "config")
-		if err := extractEmbeddedConfig(configDir); err != nil {
-			return fmt.Errorf("extract embedded config: %w", err)
-		}
-		if err := os.Setenv(config.EnvVarConfigDir, configDir); err != nil {
-			return fmt.Errorf("set %s: %w", config.EnvVarConfigDir, err)
-		}
+	// migrations/route YAML/the auth config.json/iam.yaml/
+	// system-tools.yaml all live under api/config/ today, resolved via
+	// candidateDefaults()'s own executable-relative/CWD-relative
+	// search — which finds nothing when there's no api/config/ tree
+	// shipped next to this binary at all. Extracting the embedded copy
+	// and pointing CINQO_CONFIG_DIR (the override candidateDefaults()
+	// already respects) at it fixes every one of those in one shot —
+	// no changes needed to backendapp.Start or the config package
+	// itself. See plan/ai/build/app/step-19-embedded-config-directory.md.
+	configDir := filepath.Join(home, "config")
+	if err := extractEmbeddedConfig(configDir); err != nil {
+		return fmt.Errorf("extract embedded config: %w", err)
+	}
+	if err := os.Setenv(config.EnvVarConfigDir, configDir); err != nil {
+		return fmt.Errorf("set %s: %w", config.EnvVarConfigDir, err)
 	}
 
 	cfg, err := server.LoadConfig(configPath)
@@ -221,21 +203,31 @@ func run() error {
 
 // resolveAppHome decides where this run's own config.json — and,
 // absent an explicit --data, its data/ directory and chrome.pid too —
-// live. ~/.cinqo (via os.UserHomeDir, not a per-OS special-purpose
-// directory) is deliberately one unified tree, matching this app's
-// own existing convention of config.json sitting next to data/ rather
-// than splitting config/data/cache across OS-specific locations. See
+// live: always the running executable's own directory, never the
+// process's CWD and never an OS-user-scoped home directory. This is
+// deliberately one unified tree, matching this app's own existing
+// convention of config.json sitting next to data/ rather than
+// splitting config/data/cache across OS-specific locations, and
+// guarantees every path this app writes to (databases, its own logs,
+// every tool's own database/uploads/tmp directories — see
+// plan/ai/build/app/step-22-data-dir-always-executable-relative.md)
+// resolves under the same one directory regardless of how or from
+// where the binary was launched. See
 // plan/ai/build/app/step-18-embedded-default-config-and-app-home.md.
-func resolveAppHome() (home string, usingCWD bool, err error) {
-	if _, err := os.Stat("config.json"); err == nil {
-		return "", true, nil
-	}
-	dir, err := os.UserHomeDir()
+func resolveAppHome() (home string, err error) {
+	exePath, err := os.Executable()
 	if err != nil {
-		return "", false, err
+		return "", err
 	}
-	home = filepath.Join(dir, ".cinqo")
-	return home, false, os.MkdirAll(home, 0o755)
+	// Resolve symlinks so launching via a symlink (a Homebrew-style
+	// /usr/local/bin -> Cellar link, or a desktop shortcut) still
+	// resolves to the real binary's own directory, not the symlink's —
+	// os.Executable()'s own doc comment calls this caveat out
+	// explicitly.
+	if resolved, evalErr := filepath.EvalSymlinks(exePath); evalErr == nil {
+		exePath = resolved
+	}
+	return filepath.Dir(exePath), nil
 }
 
 // ensureConfigFile writes the embedded default config.json to path if
@@ -392,10 +384,9 @@ func portFree(port int) bool {
 }
 
 // closeStaleChromeInstance closes a private Chrome instance left behind
-// by a previous cinqo-app run (tracked via chromePidPath — the bare
-// CWD-relative chromePidFile literal when config.json was found in
-// CWD, resolveAppHome's own apphome-relative path otherwise), if one
-// is still open, before this run opens its own fresh one. Much simpler
+// by a previous cinqo-app run (tracked via chromePidPath — resolveAppHome's
+// own executable-relative path), if one is still open, before this run
+// opens its own fresh one. Much simpler
 // than stopStaleInstance: there's no port/listening contract to wait
 // on, so a short fixed grace period is enough instead of a polling
 // loop, and no stdout progress output — closing a leftover browser

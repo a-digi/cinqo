@@ -1,1 +1,52 @@
 @import 'tailwindcss';
+
+/* Modal (Shared/Modal) entrance — backdrop/panel opacity+scale, no
+   library. See plan/ai/tools/career/step-58-portals-page-modal-accordion-redesign.md. */
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Portals page mount cascade (AccordionItem cards). */
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* AccordionItem's own expand/collapse — CSS grid row-size animation
+   handles arbitrary/variable body height correctly, unlike a fixed
+   max-height guess. */
+.accordion-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 220ms ease;
+}
+
+.accordion-body[data-open='true'] {
+  grid-template-rows: 1fr;
+}
+
+.accordion-body > div {
+  overflow: hidden;
+}

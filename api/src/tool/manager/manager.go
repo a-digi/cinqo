@@ -64,11 +64,11 @@ var (
 // budget — this is the entry point for a deliberate "start it" request
 // (enable, a fresh install/update), not the supervisor's own internal
 // retry.
-func Start(db *sql.DB, t tool_entity.Tool, corePort int) error {
+func Start(db *sql.DB, dataDir string, t tool_entity.Tool, corePort int) error {
 	mu.Lock()
 	crashCounts[t.ID] = 0
 	mu.Unlock()
-	return startProcess(db, t, corePort)
+	return startProcess(db, dataDir, t, corePort)
 }
 
 // StartAllEnabled (re)starts every tool the database already says is
@@ -84,7 +84,7 @@ func Start(db *sql.DB, t tool_entity.Tool, corePort int) error {
 // start is reported through warn and does not stop the rest from
 // being attempted. See
 // plan/ai/tools/step-11-restart-enabled-tools-on-boot.md.
-func StartAllEnabled(db *sql.DB, corePort int, warn func(format string, args ...any)) {
+func StartAllEnabled(db *sql.DB, dataDir string, corePort int, warn func(format string, args ...any)) {
 	tools, err := tool_query.NewToolQueryRepo(db).List()
 	if err != nil {
 		warn("tool manager: failed to list tools for boot-time restart: %v", err)
@@ -94,7 +94,7 @@ func StartAllEnabled(db *sql.DB, corePort int, warn func(format string, args ...
 		if !t.Enabled {
 			continue
 		}
-		if err := Start(db, *t, corePort); err != nil {
+		if err := Start(db, dataDir, *t, corePort); err != nil {
 			warn("tool %q enabled but failed to start at boot: %v", t.Slug, err)
 		}
 	}
@@ -112,16 +112,26 @@ func StartAllEnabled(db *sql.DB, corePort int, warn func(format string, args ...
 // data-loss-on-update bug before this was extracted into one shared
 // function (see this package's own git history / the pdf-generator
 // step-02 design doc's "Implemented and verified" section).
-func ToolEnvVars(slug string, corePort int) ([]string, error) {
-	dbDir, err := filepath.Abs(filepath.Join("data", "db", "tools", slug))
+//
+// dataDir must be the same resolved data directory backendapp.Start
+// registered as "data_dir" (defaults to executable-relative, overridden
+// via --data) — every caller resolves it from there rather than this
+// function assuming a bare "data" CWD-relative literal, which used to
+// silently diverge from the app's own real data directory whenever the
+// two processes' CWDs differed (a real bug: a tool's own database/
+// uploads/tmp directories landing somewhere other than the rest of the
+// app's data). See
+// plan/ai/build/app/step-22-data-dir-always-executable-relative.md.
+func ToolEnvVars(dataDir, slug string, corePort int) ([]string, error) {
+	dbDir, err := filepath.Abs(filepath.Join(dataDir, "db", "tools", slug))
 	if err != nil {
 		return nil, err
 	}
-	uploadsDir, err := filepath.Abs(filepath.Join("data", "uploads", "tools", slug))
+	uploadsDir, err := filepath.Abs(filepath.Join(dataDir, "uploads", "tools", slug))
 	if err != nil {
 		return nil, err
 	}
-	tmpDir, err := filepath.Abs(filepath.Join("data", "tmp", "tools", slug))
+	tmpDir, err := filepath.Abs(filepath.Join(dataDir, "tmp", "tools", slug))
 	if err != nil {
 		return nil, err
 	}
@@ -133,7 +143,7 @@ func ToolEnvVars(slug string, corePort int) ([]string, error) {
 	}, nil
 }
 
-func startProcess(db *sql.DB, t tool_entity.Tool, corePort int) error {
+func startProcess(db *sql.DB, dataDir string, t tool_entity.Tool, corePort int) error {
 	if t.BackendExecutableRelpath == "" {
 		return nil // frontend-only — nothing to spawn
 	}
@@ -155,7 +165,7 @@ func startProcess(db *sql.DB, t tool_entity.Tool, corePort int) error {
 		return err
 	}
 
-	toolEnv, err := ToolEnvVars(t.Slug, corePort)
+	toolEnv, err := ToolEnvVars(dataDir, t.Slug, corePort)
 	if err != nil {
 		_ = setStatusAndPID(db, t.ID, "error", 0)
 		return err
@@ -196,7 +206,7 @@ func startProcess(db *sql.DB, t tool_entity.Tool, corePort int) error {
 		return err
 	}
 
-	go supervise(db, t, cmd, corePort)
+	go supervise(db, dataDir, t, cmd, corePort)
 
 	return nil
 }
@@ -204,7 +214,7 @@ func startProcess(db *sql.DB, t tool_entity.Tool, corePort int) error {
 // supervise waits for the child to exit and, unless that exit was
 // requested via Stop, restarts it — capped at maxCrashRestarts total
 // (not per attempt) before giving up into a permanent "error" status.
-func supervise(db *sql.DB, t tool_entity.Tool, cmd *exec.Cmd, corePort int) {
+func supervise(db *sql.DB, dataDir string, t tool_entity.Tool, cmd *exec.Cmd, corePort int) {
 	_ = cmd.Wait()
 
 	mu.Lock()
@@ -231,7 +241,7 @@ func supervise(db *sql.DB, t tool_entity.Tool, cmd *exec.Cmd, corePort int) {
 
 	time.Sleep(time.Duration(count) * time.Second) // linear backoff
 
-	if err := startProcess(db, t, corePort); err != nil {
+	if err := startProcess(db, dataDir, t, corePort); err != nil {
 		_ = setStatusAndPID(db, t.ID, "error", 0)
 	}
 }

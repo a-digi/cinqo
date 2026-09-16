@@ -9,13 +9,18 @@ import (
 	"github.com/a-digi/coco-server/server/request"
 )
 
-// toolsRoot is where every installed tool's own directory lives —
-// under the backend's own resolved data directory (backendapp.Start's
-// "data_dir", same one data/db, data/logs derive from — defaults to
-// "data", relative to CWD, unless overridden via --data). Mirrors
-// coco-mda's data/plugins/ layout, renamed. See
-// plan/ai/build/app/step-17-configurable-data-directory.md.
-func toolsRoot(reqCtx request.RequestContext) string {
+// resolvedDataDir resolves the backend's own resolved data directory —
+// backendapp.Start's "data_dir", the same one data/db, data/logs, and
+// every tool subprocess's own TOOL_DB_DIR/TOOL_UPLOADS_DIR/TOOL_TMP_DIR
+// (manager.ToolEnvVars) derive from — defaults to "data", next to the
+// running executable, unless overridden via --data. Extracted out of
+// toolsRoot so callers that need the bare data directory itself (not
+// just its "tools" subdirectory) — install/enable handlers passing it
+// into manager.Start/manager.ToolEnvVars — don't each re-duplicate the
+// same DI lookup. See
+// plan/ai/build/app/step-17-configurable-data-directory.md and
+// plan/ai/build/app/step-22-data-dir-always-executable-relative.md.
+func resolvedDataDir(reqCtx request.RequestContext) string {
 	dataDir := defaultDataDirFallback
 	if storeCtx, ok := reqCtx.GetDI().(diStore); ok {
 		if raw, ok := storeCtx.Get("data_dir"); ok {
@@ -24,7 +29,15 @@ func toolsRoot(reqCtx request.RequestContext) string {
 			}
 		}
 	}
-	return filepath.Join(dataDir, "tools")
+	return dataDir
+}
+
+// toolsRoot is where every installed tool's own directory lives —
+// under the backend's own resolved data directory. Mirrors coco-mda's
+// data/plugins/ layout, renamed. See
+// plan/ai/build/app/step-17-configurable-data-directory.md.
+func toolsRoot(reqCtx request.RequestContext) string {
+	return filepath.Join(resolvedDataDir(reqCtx), "tools")
 }
 
 // defaultDataDirFallback mirrors backendapp.ResolveDataDir's own

@@ -14,6 +14,8 @@ import { fetchPlatforms, type Platform } from '../../Cinqo/Platform/platformRepo
 import { CrawlPlatformPicker } from '../../Crawler/CrawlPlatformPicker/CrawlPlatformPicker'
 import { CrawlPanel } from '../../Crawler/CrawlPanel/CrawlPanel'
 import { PlusIcon } from '../../Shared/Icons/icons'
+import { Modal } from '../../Shared/Modal/Modal'
+import { AccordionItem } from '../../Shared/Accordion/AccordionItem'
 
 // Portals are tool-wide, not persona/profile-scoped — same reasoning
 // Jobs/Companies already document. No Dropdown call site here: a
@@ -21,11 +23,16 @@ import { PlusIcon } from '../../Shared/Icons/icons'
 // single-select picker. Each link's own crawl instructions (step 19)
 // and every crawl-triggering mechanism live in CrawlPanel, one
 // instance per link (step 42) — this page owns only portal/link CRUD.
-// See plan/ai/tools/career/step-21-portals-frontend.md and
-// plan/ai/tools/career/step-42-crawler-folder-reorganization.md.
+// Portals render as a 2-column (1 on mobile) grid of accordions, and
+// "New portal" opens in a modal instead of a bottom-of-page form —
+// see plan/ai/tools/career/step-21-portals-frontend.md,
+// plan/ai/tools/career/step-42-crawler-folder-reorganization.md, and
+// plan/ai/tools/career/step-58-portals-page-modal-accordion-redesign.md.
 export function PortalsPage() {
   const [portals, setPortals] = useState<Portal[]>([])
+  const [isNewPortalModalOpen, setIsNewPortalModalOpen] = useState(false)
   const [newPortalName, setNewPortalName] = useState('')
+  const [openPortalIds, setOpenPortalIds] = useState<Set<string>>(new Set())
   const [editingPortalId, setEditingPortalId] = useState<string | null>(null)
   const [editPortalName, setEditPortalName] = useState('')
   const [linkUrlDrafts, setLinkUrlDrafts] = useState<Record<string, string>>({})
@@ -77,6 +84,18 @@ export function PortalsPage() {
     setSelectedModel(next && next.models.length > 0 ? next.models[0] : null)
   }
 
+  function togglePortalOpen(id: string) {
+    setOpenPortalIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }
+
   function handleCreatePortal() {
     const name = newPortalName.trim()
     if (!name) {
@@ -87,6 +106,7 @@ export function PortalsPage() {
     createPortal(name)
       .then(() => {
         setNewPortalName('')
+        setIsNewPortalModalOpen(false)
         load()
       })
       .catch((err: unknown) => {
@@ -205,8 +225,20 @@ export function PortalsPage() {
   }
 
   return (
-    <div className="max-w-2xl p-6 font-sans text-gray-900">
-      <h1 className="mb-1.5 text-xl font-semibold">Portals</h1>
+    <div className="max-w-5xl p-6 font-sans text-gray-900">
+      <div className="mb-1.5 flex items-start justify-between gap-3">
+        <h1 className="text-xl font-semibold">Portals</h1>
+        <button
+          type="button"
+          onClick={() => {
+            setIsNewPortalModalOpen(true)
+          }}
+          className="flex shrink-0 items-center gap-1 rounded-md bg-gray-900 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800"
+        >
+          <PlusIcon />
+          New portal
+        </button>
+      </div>
       <p className="mb-5 text-sm text-gray-500">
         Job portals to crawl — each portal owns one or more links, and each link can carry its own YAML crawl instructions (the exact shape
         the browser tool's own crawl_paginated expects), normally prepared by the AI. Deleting a portal permanently deletes every link it
@@ -223,68 +255,101 @@ export function PortalsPage() {
 
       <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
 
-      <div className="mb-4 space-y-4">
-        {portals.map((p) => (
-          <div key={p.id} className="rounded-md border border-gray-200 p-3">
-            {editingPortalId === p.id ? (
-              <div className="mb-3">
-                <input
-                  // Deliberate: entering edit mode should focus the input
-                  // immediately, the same convention most inline-rename UIs use.
-                  // eslint-disable-next-line jsx-a11y/no-autofocus
-                  autoFocus
-                  value={editPortalName}
-                  onChange={(e) => {
-                    setEditPortalName(e.target.value)
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        {portals.map((p, index) => (
+          <AccordionItem
+            key={p.id}
+            isOpen={openPortalIds.has(p.id)}
+            onToggle={() => {
+              togglePortalOpen(p.id)
+            }}
+            // "both" fill mode, not "backwards" alone: "backwards" only
+            // holds the from-keyframe (opacity:0) during the delay
+            // *before* the animation starts — once it finishes, fill
+            // stops applying entirely and the element falls back to its
+            // own static styles. Without a forwards-inclusive fill mode
+            // there'd be nothing left setting opacity back to 1, so every
+            // card would render, animate in, then vanish the instant the
+            // animation ends. "both" = "backwards" (delay) + "forwards"
+            // (after it ends) — this was the actual bug, found live via
+            // Playwright. See
+            // plan/ai/tools/career/step-58-portals-page-modal-accordion-redesign.md.
+            className="[animation:fade-in-up_600ms_ease-out_both]"
+            header={
+              editingPortalId === p.id ? (
+                // Not a real interaction — only stops the header row's own
+                // onClick (AccordionItem's toggle) from firing while editing.
+                // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
+                <div
+                  className="flex items-center gap-2"
+                  onClick={(e) => {
+                    e.stopPropagation()
                   }}
-                  placeholder="Name"
-                  className="mb-2 w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
-                />
-                <div className="flex gap-2">
+                >
+                  <input
+                    // Deliberate: entering edit mode should focus the input
+                    // immediately, the same convention most inline-rename UIs use.
+                    // eslint-disable-next-line jsx-a11y/no-autofocus
+                    autoFocus
+                    value={editPortalName}
+                    onChange={(e) => {
+                      setEditPortalName(e.target.value)
+                    }}
+                    placeholder="Name"
+                    className="min-w-0 flex-1 rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
+                  />
                   <button
                     type="button"
                     onClick={() => {
                       saveEditPortal(p.id)
                     }}
-                    className="rounded-md bg-gray-900 px-3 py-1 text-xs font-medium text-white hover:bg-gray-800"
+                    className="shrink-0 rounded-md bg-gray-900 px-3 py-1 text-xs font-medium text-white hover:bg-gray-800"
                   >
                     Save
                   </button>
                   <button
                     type="button"
                     onClick={cancelEditPortal}
-                    className="rounded-md border border-gray-200 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                    className="shrink-0 rounded-md border border-gray-200 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
                   >
                     Cancel
                   </button>
                 </div>
-              </div>
-            ) : (
-              <div className="mb-3 flex items-start justify-between gap-3">
-                <div className="text-sm font-medium">{p.name}</div>
-                <div className="flex shrink-0 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      startEditPortal(p)
-                    }}
-                    className="rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleDeletePortal(p.id)
-                    }}
-                    className="rounded-md border border-gray-200 px-2.5 py-1 text-xs text-red-700 hover:bg-red-50"
-                  >
-                    Delete
-                  </button>
+              ) : (
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="truncate text-sm font-medium">{p.name}</span>
+                  <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
+                    {p.links.length} {p.links.length === 1 ? 'link' : 'links'}
+                  </span>
+                  <span className="ml-auto flex shrink-0 gap-2">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        startEditPortal(p)
+                      }}
+                      className="rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleDeletePortal(p.id)
+                      }}
+                      className="rounded-md border border-gray-200 px-2.5 py-1 text-xs text-red-700 hover:bg-red-50"
+                    >
+                      Delete
+                    </button>
+                  </span>
                 </div>
-              </div>
-            )}
-
+              )
+            }
+            // Staggered mount cascade — animation-delay set inline since
+            // Tailwind's own utilities have no per-index dynamic value.
+            style={{ animationDelay: `${index * 90}ms` }}
+          >
             <div className="space-y-2">
               {p.links.map((link) => (
                 <div key={link.id} className="rounded-md border border-gray-100 bg-gray-50 p-2">
@@ -408,19 +473,32 @@ export function PortalsPage() {
                 Add link
               </button>
             </div>
-          </div>
+          </AccordionItem>
         ))}
       </div>
 
-      <section className="rounded-md border border-gray-200 p-4 shadow-sm">
-        <h2 className="mb-3 text-sm font-semibold">New portal</h2>
+      <Modal
+        open={isNewPortalModalOpen}
+        title="New portal"
+        onClose={() => {
+          setIsNewPortalModalOpen(false)
+          setNewPortalName('')
+        }}
+      >
         <input
+          // eslint-disable-next-line jsx-a11y/no-autofocus
+          autoFocus
           value={newPortalName}
           onChange={(e) => {
             setNewPortalName(e.target.value)
           }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              handleCreatePortal()
+            }
+          }}
           placeholder="Name"
-          className="mb-2 w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
+          className="mb-3 w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
         />
         <button
           type="button"
@@ -430,7 +508,7 @@ export function PortalsPage() {
           <PlusIcon />
           Create portal
         </button>
-      </section>
+      </Modal>
     </div>
   )
 }

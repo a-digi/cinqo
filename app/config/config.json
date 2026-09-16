@@ -1,0 +1,11 @@
+{
+  "auth": {
+    "issuer": "dev-local",
+    "audience": "cinqo",
+    "hs256_secret": "dev-secret-change-in-production",
+    "jwks_url": "",
+    "redirect_uri": "http://localhost:7026/auth/callback",
+    "frontend_callback_url": "http://localhost:5173/login/callback",
+    "scopes": "openid profile email offline_access cinqo:super:admin cinqo:ping:read cinqo:ping:create"
+  }
+}

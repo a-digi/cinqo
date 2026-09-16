@@ -70,3 +70,14 @@ export function FilterIcon() {
     </svg>
   )
 }
+
+// ChevronDownIcon (step 58) — the Accordion's own expand/collapse
+// indicator, rotated 180deg by the caller when open rather than
+// swapped for a separate "up" glyph.
+export function ChevronDownIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-4 w-4">
+      <path d="M5 7.5l5 5 5-5" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}

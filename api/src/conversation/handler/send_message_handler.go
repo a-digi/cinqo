@@ -97,7 +97,7 @@ func SendMessageHandler(reqCtx request.RequestContext) {
 	// is no such thing on the server side; this is the same shared
 	// client the run itself will keep using for the entirety of its own
 	// detached lifetime, well past this handler returning.
-	run, err := conversation.StartTurnRun(http.DefaultClient, mainDB, convDB, encKey, id, body.Content, scopes, port)
+	run, err := conversation.StartTurnRun(http.DefaultClient, mainDB, convDB, encKey, id, body.Content, scopes, resolvedDataDir(reqCtx), port)
 	if err != nil {
 		writeStartTurnRunError(w, err)
 		return

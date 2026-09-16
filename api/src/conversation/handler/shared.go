@@ -182,14 +182,18 @@ func corePort(reqCtx request.RequestContext) (int, error) {
 	return p, nil
 }
 
-// logsRoot resolves the shared root directory every conversation's
-// own log file lives under — the "conversations" subdirectory of
-// whatever backendapp.Start registered as "data_dir" (defaults to
-// "data", relative to CWD, unless overridden via --data). Was a plain
-// exported conversation.LogsRoot constant before --data existed; now
-// resolved per-request since the value isn't known until Start runs.
-// See plan/ai/build/app/step-17-configurable-data-directory.md.
-func logsRoot(reqCtx request.RequestContext) string {
+// resolvedDataDir resolves whatever backendapp.Start registered as
+// "data_dir" (defaults to "data", next to the running executable,
+// unless overridden via --data) — the same root logsRoot's own
+// "conversations" subdirectory and every tool subprocess's own
+// TOOL_DB_DIR/TOOL_UPLOADS_DIR/TOOL_TMP_DIR (manager.ToolEnvVars, via
+// runner.go's runDetachedTurn -> chat.go's invokeToolCall) derive
+// from — extracted out of logsRoot so send_message_handler.go can pass
+// the bare data directory itself into StartTurnRun without duplicating
+// this same DI lookup. See
+// plan/ai/build/app/step-17-configurable-data-directory.md and
+// plan/ai/build/app/step-22-data-dir-always-executable-relative.md.
+func resolvedDataDir(reqCtx request.RequestContext) string {
 	dataDir := defaultDataDir
 	if storeCtx, ok := reqCtx.GetDI().(diStore); ok {
 		if raw, ok := storeCtx.Get("data_dir"); ok {
@@ -198,7 +202,17 @@ func logsRoot(reqCtx request.RequestContext) string {
 			}
 		}
 	}
-	return filepath.Join(dataDir, "conversations")
+	return dataDir
+}
+
+// logsRoot resolves the shared root directory every conversation's
+// own log file lives under — the "conversations" subdirectory of the
+// resolved data directory. Was a plain exported conversation.LogsRoot
+// constant before --data existed; now resolved per-request since the
+// value isn't known until Start runs. See
+// plan/ai/build/app/step-17-configurable-data-directory.md.
+func logsRoot(reqCtx request.RequestContext) string {
+	return filepath.Join(resolvedDataDir(reqCtx), "conversations")
 }
 
 // conversationResponse is the shape every conversation-metadata

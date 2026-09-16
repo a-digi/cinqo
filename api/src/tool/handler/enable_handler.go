@@ -77,7 +77,7 @@ func EnableHandler(reqCtx request.RequestContext) {
 	}
 
 	tool.Enabled = true
-	if err := manager.Start(db, *tool, port); err != nil {
+	if err := manager.Start(db, resolvedDataDir(reqCtx), *tool, port); err != nil {
 		// Best-effort, matching the reference: a start failure leaves
 		// status "error" (already recorded by manager.Start itself),
 		// doesn't fail the enable request — the tool is enabled, just

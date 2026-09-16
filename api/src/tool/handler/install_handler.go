@@ -54,7 +54,7 @@ func discoverMCPToolsIfDeclared(reqCtx request.RequestContext, db *sql.DB, m man
 		reqCtx.GetDI().GetLogger().Warning("tool %q declared mcp support but its backend port could not be determined: %v", m.Slug, portErr)
 		return
 	}
-	envVars, err := manager.ToolEnvVars(m.Slug, port)
+	envVars, err := manager.ToolEnvVars(resolvedDataDir(reqCtx), m.Slug, port)
 	if err != nil {
 		reqCtx.GetDI().GetLogger().Warning("tool %q declared mcp support but its env vars could not be resolved: %v", m.Slug, err)
 		return
@@ -270,7 +270,7 @@ func InstallHandler(reqCtx request.RequestContext) {
 		// doesn't fail the 201 — the tool is still successfully
 		// installed, just not currently running.
 		if port, portErr := corePort(reqCtx); portErr == nil {
-			if startErr := manager.Start(db, *tool, port); startErr != nil {
+			if startErr := manager.Start(db, resolvedDataDir(reqCtx), *tool, port); startErr != nil {
 				reqCtx.GetDI().GetLogger().Warning("tool %q installed but failed to start: %v", tool.Slug, startErr)
 			}
 		} else {
@@ -351,7 +351,7 @@ func InstallHandler(reqCtx request.RequestContext) {
 	// update never silently turns a disabled tool on.
 	if updated.Enabled {
 		if port, portErr := corePort(reqCtx); portErr == nil {
-			if startErr := manager.Start(db, *updated, port); startErr != nil {
+			if startErr := manager.Start(db, resolvedDataDir(reqCtx), *updated, port); startErr != nil {
 				reqCtx.GetDI().GetLogger().Warning("tool %q updated but failed to restart: %v", updated.Slug, startErr)
 			}
 		} else {

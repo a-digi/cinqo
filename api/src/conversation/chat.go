@@ -113,6 +113,7 @@ func SendMessage(
 	encryptionKey []byte,
 	conversationID, content string,
 	callerScopes []string,
+	dataDir string,
 	corePort int,
 ) (*Turn, error) {
 	if content == "" {
@@ -178,7 +179,7 @@ func SendMessage(
 		return nil, fmt.Errorf("conversation: look up offerable tools: %w", err)
 	}
 
-	assistantContent, err := runToolLoop(ctx, httpClient, entry, plainKey, model, messages, tools, mainDB, callerScopes, corePort, nil, nil, nil)
+	assistantContent, err := runToolLoop(ctx, httpClient, entry, plainKey, model, messages, tools, mainDB, callerScopes, dataDir, corePort, nil, nil, nil)
 	if err != nil {
 		// Record the user's own message AND the real failure reason —
 		// a real, recognized "## error —" block (step 8), not a
@@ -285,6 +286,7 @@ func runToolLoop(
 	tools []chatcompleter.ToolDef,
 	mainDB *sql.DB,
 	callerScopes []string,
+	dataDir string,
 	corePort int,
 	logStep func(step string),
 	reportUsage func(promptTokens, completionTokens int),
@@ -348,7 +350,7 @@ func runToolLoop(
 			if logStep != nil {
 				logStep(fmt.Sprintf("iteration %d: invoking tool %s", i+1, call.Name))
 			}
-			text, links := invokeToolCall(ctx, mainDB, callerScopes, call, corePort)
+			text, links := invokeToolCall(ctx, mainDB, callerScopes, call, dataDir, corePort)
 			group = append(group, chatcompleter.Message{Role: "tool", ToolCallID: call.ID, Content: truncateToolResult(text)})
 			allLinks = append(allLinks, links...)
 		}
@@ -411,7 +413,7 @@ func appendResourceLinks(content string, links []tool_mcp.ResourceLink) string {
 // stranding the conversation. See
 // plan/ai/tools/pdf-generator/step-04-ai-model-invocation.md's
 // "Invocation, concretely".
-func invokeToolCall(ctx context.Context, mainDB *sql.DB, callerScopes []string, call chatcompleter.ToolCall, corePort int) (string, []tool_mcp.ResourceLink) {
+func invokeToolCall(ctx context.Context, mainDB *sql.DB, callerScopes []string, call chatcompleter.ToolCall, dataDir string, corePort int) (string, []tool_mcp.ResourceLink) {
 	mcpTool, err := tool_query.NewToolMCPToolQueryRepo(mainDB).FindMCPToolByName(call.Name)
 	if err != nil {
 		return "tool unavailable", nil
@@ -425,7 +427,7 @@ func invokeToolCall(ctx context.Context, mainDB *sql.DB, callerScopes []string, 
 		return "tool unavailable", nil
 	}
 
-	envVars, err := tool_manager.ToolEnvVars(tool.Slug, corePort)
+	envVars, err := tool_manager.ToolEnvVars(dataDir, tool.Slug, corePort)
 	if err != nil {
 		return fmt.Sprintf("tool invocation failed: %v", err), nil
 	}

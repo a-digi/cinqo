@@ -1,0 +1,119 @@
+routes:
+  # cinqo:super:admin is now accepted alongside cinqo:conversation:use
+  # on every route below — plan/ai/conversation/step-06-superadmin-route-access.md
+  # revises step-03's original "no admin bypass" decision. This only
+  # restores route-level access for a superadmin's OWN conversations —
+  # it does not grant visibility into other users' conversations: every
+  # handler still filters by the caller's own resolved user_id
+  # unconditionally (conversation_query.FindOwnedByID/ListOwnedBy),
+  # regardless of scope. See that step's own "What this does — and
+  # does not — change" section.
+  - path: /api/v1/conversations
+    method: POST
+    executor: ConversationCreate
+    security: authenticated
+    scopes:
+      - cinqo:conversation:use
+      - cinqo:super:admin
+
+  - path: /api/v1/conversations
+    method: GET
+    executor: ConversationList
+    security: authenticated
+    scopes:
+      - cinqo:conversation:use
+      - cinqo:super:admin
+
+  - path: /api/v1/conversations/{id}
+    method: GET
+    executor: ConversationGet
+    security: authenticated
+    scopes:
+      - cinqo:conversation:use
+      - cinqo:super:admin
+
+  - path: /api/v1/conversations/{id}
+    method: PATCH
+    executor: ConversationUpdateTitle
+    security: authenticated
+    scopes:
+      - cinqo:conversation:use
+      - cinqo:super:admin
+
+  - path: /api/v1/conversations/{id}
+    method: DELETE
+    executor: ConversationDelete
+    security: authenticated
+    scopes:
+      - cinqo:conversation:use
+      - cinqo:super:admin
+
+  - path: /api/v1/conversations/{id}/messages
+    method: POST
+    executor: ConversationSendMessage
+    security: authenticated
+    scopes:
+      - cinqo:conversation:use
+      - cinqo:super:admin
+
+  # step-23-detach-turn-execution-from-request.md — the polling
+  # endpoint a client uses to observe a detached turn run's progress
+  # and terminal status, since ConversationSendMessage above no longer
+  # waits for it to finish.
+  - path: /api/v1/conversations/{id}/turns/active
+    method: GET
+    executor: ConversationGetActiveTurn
+    security: authenticated
+    scopes:
+      - cinqo:conversation:use
+      - cinqo:super:admin
+
+  # step-25-cancel-in-progress-turn.md — stop a still-running turn.
+  - path: /api/v1/conversations/{id}/turns/active/stop
+    method: POST
+    executor: ConversationStopActiveTurn
+    security: authenticated
+    scopes:
+      - cinqo:conversation:use
+      - cinqo:super:admin
+
+  # step-36-ai-trace-logs.md — diagnostic view of the full raw
+  # request/response exchange with the AI model, one .txt file per
+  # turn. No ?turnId= lists every turn with a trace file; ?turnId=<id>
+  # streams that one file's raw content.
+  - path: /api/v1/conversations/{id}/logs
+    method: GET
+    executor: ConversationGetLogs
+    security: authenticated
+    scopes:
+      - cinqo:conversation:use
+      - cinqo:super:admin
+
+  # step-38-ai-logs-overview-page.md — admin-wide overview of every
+  # conversation that has ever produced an AI trace log, not just the
+  # caller's own. Admin-only, same reasoning as .../settings below.
+  - path: /api/v1/conversations/logs
+    method: GET
+    executor: ConversationGetAllLogs
+    security: authenticated
+    scopes:
+      - cinqo:super:admin
+
+  # step-37-ai-debug-logging-toggle.md — the global switch controlling
+  # whether the AI trace logs above ever get written at all.
+  # Admin-only: unlike every other route in this file, NOT also
+  # cinqo:conversation:use — this affects every user's conversations
+  # at once, not just the caller's own.
+  - path: /api/v1/conversations/settings
+    method: GET
+    executor: ConversationGetSettings
+    security: authenticated
+    scopes:
+      - cinqo:super:admin
+
+  - path: /api/v1/conversations/settings
+    method: PUT
+    executor: ConversationUpdateSettings
+    security: authenticated
+    scopes:
+      - cinqo:super:admin

@@ -68,6 +68,7 @@ func StartTurnRun(
 	encryptionKey []byte,
 	conversationID, content string,
 	callerScopes []string,
+	dataDir string,
 	corePort int,
 ) (*conversation_entity.TurnRun, error) {
 	if content == "" {
@@ -105,7 +106,7 @@ func StartTurnRun(
 	active[run.ID] = cancel
 	runnerMu.Unlock()
 
-	go runDetachedTurn(ctx, run.ID, httpClient, mainDB, conversationDB, encryptionKey, conversationID, content, callerScopes, corePort)
+	go runDetachedTurn(ctx, run.ID, httpClient, mainDB, conversationDB, encryptionKey, conversationID, content, callerScopes, dataDir, corePort)
 
 	return run, nil
 }
@@ -127,6 +128,7 @@ func runDetachedTurn(
 	encryptionKey []byte,
 	conversationID, content string,
 	callerScopes []string,
+	dataDir string,
 	corePort int,
 ) {
 	defer func() {
@@ -236,7 +238,7 @@ func runDetachedTurn(
 			_ = appendTraceEntry(tracePath, iteration, msgs, toolDefs, result, callErr)
 		}
 	}
-	assistantContent, err := runToolLoop(ctx, httpClient, entry, plainKey, model, messages, tools, mainDB, callerScopes, corePort, logStep, reportUsage, logExchange)
+	assistantContent, err := runToolLoop(ctx, httpClient, entry, plainKey, model, messages, tools, mainDB, callerScopes, dataDir, corePort, logStep, reportUsage, logExchange)
 	if err != nil {
 		failedTurn := Turn{
 			UserTimestamp:    userTimestamp,
