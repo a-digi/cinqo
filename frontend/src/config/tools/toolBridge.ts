@@ -1,4 +1,5 @@
 import { toolNavigate } from './toolNavigator'
+import { openToolConversation } from './toolConversationOpener'
 
 // Deliberately dependency-free (no React import, no cinqo-internal
 // types beyond plain interfaces) — a tool author can copy just this
@@ -68,6 +69,14 @@ export interface ToolBridge {
   registerMenuEntry(entry: ToolMenuEntry): void
   registerRoute(route: ToolRoute): void
   navigate(path: string): void
+  // Opens the floating chat widget (GlobalChatWidget), if currently
+  // mounted, showing this conversation — resuming its live turn watch
+  // automatically if one is still running. A conversationId the
+  // caller isn't the owner of behaves exactly like a user navigating
+  // to one they don't own today: the widget's own existing error
+  // handling shows "Failed to load conversation," nothing more. See
+  // plan/ai/tools/career/step-60-generate-with-ai-live-chat-window.md.
+  openConversation(conversationId: string): void
 }
 
 export interface ToolBridgeCallbacks {
@@ -89,6 +98,9 @@ export function createToolBridge(callbacks: ToolBridgeCallbacks): ToolBridge {
     },
     navigate(path) {
       toolNavigate(path)
+    },
+    openConversation(conversationId) {
+      openToolConversation(conversationId)
     },
   }
 }

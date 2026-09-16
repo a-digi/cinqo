@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import { updatePortalLink, type PortalLink } from '../../api'
 import type { Platform } from '../../Cinqo/Platform/platformRepository'
 import { CoreApiError } from '../../Cinqo/Http/client'
-import { createConversation, sendMessage } from '../../Cinqo/Conversation/conversation'
+import { createConversation, sendMessage, awaitTurnCompletion, fetchTurnStatus } from '../../Cinqo/Conversation/conversation'
 import { buildCrawlMessage, crawlConversationTitle } from '../crawl'
 import { buildGenerateInstructionsMessage, generateInstructionsConversationTitle } from '../generateInstructions'
 import { startCrawlNow, fetchActiveCrawlRun, type CrawlRun } from '../crawlNow'
-import { PlayIcon, SparkleIcon, LogIcon, AlertIcon } from '../../Shared/Icons/icons'
+import { PlayIcon, SparkleIcon, LogIcon, AlertIcon, RobotIcon } from '../../Shared/Icons/icons'
+import { Typewriter } from '../../Shared/Typewriter/Typewriter'
 
 // PHASE_LABELS (step 40) — a human-readable sentence per fine-grained
 // crawl_runs.phase value (step 39). A plain lookup, not a switch,
@@ -114,6 +115,10 @@ export function CrawlPanel({
   // plan/ai/tools/career/step-33-ai-generated-crawl-instructions.md.
   const [aiPending, setAiPending] = useState(false)
   const [aiLocalError, setAiLocalError] = useState<string | undefined>(undefined)
+  // The conversation "Check Progress - AI" reopens (step 60) — set the
+  // moment one is created (fresh run) or discovered still running on
+  // mount (resumed run), cleared once it finishes either way.
+  const [aiConversationId, setAiConversationId] = useState<string | null>(null)
 
   const [instructionsExpanded, setInstructionsExpanded] = useState(false)
   const [instructionsDraft, setInstructionsDraft] = useState('')
@@ -141,6 +146,23 @@ export function CrawlPanel({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [link.hasActiveCrawlRun])
+
+  // Same reload-resilience as the "Crawl now" resume effect above, for
+  // "Generate with AI" (step 60): link.instructionsAiConversationId is
+  // the durable trace of a still-in-flight run surviving a page
+  // reload/reopen — resumedAiRef guards it the same way resumedRef
+  // does, for the same reason (an unrelated reload elsewhere on the
+  // page must never reopen a check this instance's own finish handling
+  // already cleared). See
+  // plan/ai/tools/career/step-60-generate-with-ai-live-chat-window.md.
+  const resumedAiRef = useRef(false)
+  useEffect(() => {
+    if (link.instructionsAiConversationId && !resumedAiRef.current) {
+      resumedAiRef.current = true
+      void resumeGenerateInstructions(link.instructionsAiConversationId)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [link.instructionsAiConversationId])
 
   // watchCrawlRun polls GET .../crawl-now/active until the run reaches
   // a terminal status, writing every observed row into `run` as it
@@ -244,15 +266,99 @@ export function CrawlPanel({
       })
   }
 
+  // finishGenerateInstructions is the shared "a generate-instructions
+  // run just ended" handling (step 60) — used by both a fresh run
+  // (handleGenerateInstructionsWithAI below) and a resumed one
+  // (resumeGenerateInstructions), so a run that finishes while this
+  // tab was away is handled identically to one that finishes while
+  // it's open. err is the failure from awaitTurnCompletion, if any;
+  // undefined means success.
+  function finishGenerateInstructions(err?: unknown) {
+    setAiPending(false)
+    setAiConversationId(null)
+
+    if (!err) {
+      void updatePortalLink(link.id, { instructionsAiError: '', instructionsAiConversationId: '' })
+        .catch((recordErr: unknown) => {
+          console.error('failed to clear instructions-AI conversation on portal link', link.id, recordErr)
+        })
+        .then(onReload)
+      return
+    }
+
+    const text =
+      err instanceof CoreApiError && (err.status === 401 || err.status === 403)
+        ? 'Ask an admin to grant you access to AI conversations.'
+        : err instanceof Error
+          ? err.message
+          : 'Failed to generate crawl instructions.'
+    // Shown immediately, regardless of whether the durable write below
+    // succeeds — a network failure recording the error must never
+    // leave the failure completely invisible.
+    setAiLocalError(text)
+    void updatePortalLink(link.id, { instructionsAiError: text, instructionsAiConversationId: '' })
+      .catch((recordErr: unknown) => {
+        // Recording the failure durably itself also failed — the
+        // local error above still shows for this session; see
+        // step 33's own Open Question 1 for the reliability limit
+        // durable recording already has (e.g. across a reload).
+        console.error('failed to record instructions-AI error on portal link', link.id, recordErr)
+      })
+      .then(onReload)
+  }
+
+  // resumeGenerateInstructions picks a still-in-flight run back up
+  // after a reload/reopen — link.instructionsAiConversationId is the
+  // durable trace a fresh run's own handleGenerateInstructionsWithAI
+  // wrote below. Checks whether it's actually still running before
+  // committing to "Check Progress - AI": a run that finished while
+  // this tab was away is reconciled immediately via the same finish
+  // path a run finishing live already uses, instead of leaving the
+  // button stuck on "Check Progress - AI" forever. A status-check
+  // failure (network error, not "no turn found") is treated as "still
+  // running" — optimistic, since silently reverting to "Generate with
+  // AI" here would lose the durable conversation id for no reason; see
+  // this step's own design doc "Open questions".
+  async function resumeGenerateInstructions(conversationId: string) {
+    setAiConversationId(conversationId)
+    let status
+    try {
+      status = await fetchTurnStatus(conversationId)
+    } catch {
+      status = 'running' as const
+    }
+    if (status !== 'running') {
+      awaitTurnCompletion(conversationId).then(
+        () => {
+          finishGenerateInstructions()
+        },
+        (err: unknown) => {
+          finishGenerateInstructions(err)
+        },
+      )
+      return
+    }
+    setAiPending(true)
+    awaitTurnCompletion(conversationId).then(
+      () => {
+        finishGenerateInstructions()
+      },
+      (err: unknown) => {
+        finishGenerateInstructions(err)
+      },
+    )
+  }
+
   // "Generate with AI" (step 33) — creates a conversation the same way
   // handleCrawlWithAI does, but hidden (never shown in the normal
   // conversation list) and instructed to write/update this link's own
   // crawl_instructions instead of running a crawl. Runs in the
   // background regardless of this tab staying open
-  // (plan/ai/conversation/step-23-detach-turn-execution-from-request.md);
-  // only a failure is durably recorded (updatePortalLink's own
-  // instructionsAiError field) — success clears any previous failure
-  // and needs no further trace.
+  // (plan/ai/conversation/step-23-detach-turn-execution-from-request.md).
+  // Opens the small floating chat widget immediately (step 60) so the
+  // user can watch the AI work instead of only seeing a disabled
+  // button — see this step's own design doc for why that widget needs
+  // no changes of its own to support this.
   function handleGenerateInstructionsWithAI() {
     if (aiPending || !selectedPlatform) return
     const platformId = selectedPlatform.id
@@ -260,34 +366,35 @@ export function CrawlPanel({
     setAiPending(true)
     setAiLocalError(undefined)
 
-    void createConversation({ title: generateInstructionsConversationTitle(link), platformId, model, hidden: true })
-      .then((conversation) => sendMessage(conversation.id, buildGenerateInstructionsMessage(link)))
-      .then(() => updatePortalLink(link.id, { instructionsAiError: '' }))
-      .catch((err: unknown) => {
-        const text =
-          err instanceof CoreApiError && (err.status === 401 || err.status === 403)
-            ? 'Ask an admin to grant you access to AI conversations.'
-            : err instanceof Error
-              ? err.message
-              : 'Failed to generate crawl instructions.'
-        // Shown immediately, regardless of whether the durable write
-        // below succeeds — a network failure recording the error must
-        // never leave the failure completely invisible.
-        setAiLocalError(text)
-        return updatePortalLink(link.id, { instructionsAiError: text }).catch((recordErr: unknown) => {
-          // Recording the failure durably itself also failed — the
-          // local error above still shows for this session; see
-          // step 33's own Open Question 1 for the reliability limit
-          // durable recording already has (e.g. across a reload).
-          console.error('failed to record instructions-AI error on portal link', link.id, recordErr)
-        })
+    createConversation({ title: generateInstructionsConversationTitle(link), platformId, model, hidden: true })
+      .then((conversation) => {
+        setAiConversationId(conversation.id)
+        window.__cinqoToolBridge.openConversation(conversation.id)
+        return updatePortalLink(link.id, { instructionsAiConversationId: conversation.id })
+          .catch(() => {
+            // Best-effort — a failure here only costs reload-resilience
+            // for this one run, not the run itself.
+          })
+          .then(() => sendMessage(conversation.id, buildGenerateInstructionsMessage(link)))
       })
-      .then(() => {
-        onReload()
-      })
-      .finally(() => {
-        setAiPending(false)
-      })
+      .then(
+        () => {
+          finishGenerateInstructions()
+        },
+        (err: unknown) => {
+          finishGenerateInstructions(err)
+        },
+      )
+  }
+
+  // handleCheckProgress never starts a new run — it only reopens the
+  // widget onto the one already tracked in aiConversationId (set by
+  // either handleGenerateInstructionsWithAI or
+  // resumeGenerateInstructions above).
+  function handleCheckProgress() {
+    if (aiConversationId) {
+      window.__cinqoToolBridge.openConversation(aiConversationId)
+    }
   }
 
   function handleViewConversation() {
@@ -323,17 +430,28 @@ export function CrawlPanel({
       {' · '}
       <button
         type="button"
-        onClick={handleGenerateInstructionsWithAI}
-        disabled={aiPending || !hasPlatforms}
+        onClick={aiPending ? handleCheckProgress : handleGenerateInstructionsWithAI}
+        disabled={!hasPlatforms || (aiPending && !aiConversationId)}
         title={
           !hasPlatforms
             ? 'No AI platform configured — add one on the Platforms page first'
-            : 'Let the AI inspect this page and write (or update) its crawl instructions for you'
+            : aiPending
+              ? "Open the chat window to watch the AI work on this link's crawl instructions"
+              : 'Let the AI inspect this page and write (or update) its crawl instructions for you'
         }
         className="inline-flex items-center gap-1 text-xs text-gray-500 underline hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
       >
-        <SparkleIcon />
-        {aiPending ? 'Generating…' : 'Generate with AI'}
+        {aiPending ? (
+          <span className="inline-flex items-center gap-1 [animation:robot-bob_1.6s_ease-in-out_infinite]">
+            <RobotIcon />
+            <Typewriter text="Check Progress - AI" />
+          </span>
+        ) : (
+          <>
+            <SparkleIcon />
+            Generate with AI
+          </>
+        )}
       </button>
       {(aiLocalError ?? link.instructionsAiError) && (
         <p className="mt-1 text-xs text-red-700">

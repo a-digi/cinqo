@@ -4,6 +4,7 @@ import { useConversationContext } from '../config/conversation/ConversationConte
 import { fetchPlatforms, type Platform } from '../api/platforms'
 import { ApiError } from '../api/client'
 import type { Conversation } from '../api/conversations'
+import { setToolConversationOpener } from '../config/tools/toolConversationOpener'
 import { useConfirm } from '../Shared/Components/Modal/useConfirm'
 import { IconButton } from '../Shared/Components/IconButton/IconButton'
 import { TrashIcon } from '../Shared/Components/IconButton/icons'
@@ -71,6 +72,28 @@ export function GlobalChatWidget() {
         setPlatformsError(err instanceof ApiError ? err.message : 'Failed to load platforms.')
       })
   }, [])
+
+  // Lets a tool (a separate React root, same page — see
+  // config/tools/toolBridge.ts's own openConversation) tell this
+  // widget "open yourself, show conversation X" — selectConversation
+  // itself already resumes a live turn watch if one is running, so
+  // nothing further is needed here for that. Registered unconditionally
+  // (runs regardless of the /conversations early-return below, which
+  // only affects this component's own render output) and always torn
+  // down on unmount, same convention ToolRouteOutlet.tsx's own
+  // setToolNavigator wiring already uses. See
+  // plan/ai/tools/career/step-60-generate-with-ai-live-chat-window.md.
+  useEffect(() => {
+    setToolConversationOpener((conversationId) => {
+      setCreatingNew(false)
+      setShowList(false)
+      selectConversation(conversationId)
+      setIsOpen(true)
+    })
+    return () => {
+      setToolConversationOpener(null)
+    }
+  }, [selectConversation])
 
   // Hidden entirely on /conversations itself — that page already shows
   // this same conversation full-size; a second copy of it floating on

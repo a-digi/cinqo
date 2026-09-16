@@ -94,11 +94,14 @@ async function fetchConversationDetail(conversationId: string): Promise<Conversa
   return httpClient.responseBody<ConversationDetail>(res, 'load conversation')
 }
 
-export async function sendMessage(conversationId: string, content: string): Promise<SendMessageResult> {
-  const res = await httpClient.post(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`, { content })
-
-  await httpClient.responseBody<StartedTurnRun>(res, 'send message')
-
+// awaitTurnCompletion polls .../turns/active until the conversation's
+// most recent turn leaves "running", then reads back the final
+// message — the shared tail end both a fresh send (sendMessage below)
+// and a resumed one (CrawlPanel.tsx's own "Check Progress - AI" path,
+// picking a still-running generate-instructions run back up after a
+// reload) need. See
+// plan/ai/tools/career/step-60-generate-with-ai-live-chat-window.md.
+export async function awaitTurnCompletion(conversationId: string): Promise<SendMessageResult> {
   for (;;) {
     const turn = await fetchActiveTurn(conversationId)
     if (turn.status !== 'running') break
@@ -118,4 +121,26 @@ export async function sendMessage(conversationId: string, content: string): Prom
   }
 
   return { role: last.role, content: last.content, createdAt: last.createdAt, durationMs: last.durationMs }
+}
+
+export async function sendMessage(conversationId: string, content: string): Promise<SendMessageResult> {
+  const res = await httpClient.post(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`, { content })
+  await httpClient.responseBody<StartedTurnRun>(res, 'send message')
+  return awaitTurnCompletion(conversationId)
+}
+
+// fetchTurnStatus is the resume path's own "is it still going" check
+// (CrawlPanel.tsx, on mount) — null means no turn has ever been
+// started for this conversation id (a 404 from .../turns/active),
+// treated as "not running," never as an error to surface.
+export async function fetchTurnStatus(conversationId: string): Promise<TurnRunStatus | null> {
+  try {
+    const turn = await fetchActiveTurn(conversationId)
+    return turn.status
+  } catch (err) {
+    if (err instanceof CoreApiError && err.status === 404) {
+      return null
+    }
+    throw err
+  }
 }

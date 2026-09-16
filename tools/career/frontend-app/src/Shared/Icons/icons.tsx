@@ -81,3 +81,20 @@ export function ChevronDownIcon() {
     </svg>
   )
 }
+
+// RobotIcon (step 60) — marks "Check Progress - AI" (a
+// generate-crawl-instructions conversation currently in flight),
+// distinct from SparkleIcon's own "start this with AI" meaning.
+export function RobotIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-3.5 w-3.5">
+      <path d="M10 3v2" strokeWidth="1.3" strokeLinecap="round" />
+      <circle cx="10" cy="4.2" r="0.7" fill="currentColor" stroke="none" />
+      <rect x="4.5" y="6" width="11" height="9" rx="2" strokeWidth="1.3" />
+      <circle cx="7.5" cy="10.2" r="0.9" fill="currentColor" stroke="none" />
+      <circle cx="12.5" cy="10.2" r="0.9" fill="currentColor" stroke="none" />
+      <path d="M7.5 13h5" strokeWidth="1.2" strokeLinecap="round" />
+      <path d="M4.5 9.5h-1.2M16.7 9.5h-1.2" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  )
+}

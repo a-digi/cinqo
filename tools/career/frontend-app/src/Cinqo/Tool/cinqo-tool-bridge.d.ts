@@ -20,6 +20,11 @@ interface CinqoToolBridge {
   registerMenuEntry(entry: CinqoToolMenuEntry): void
   registerRoute(route: CinqoToolRoute): void
   navigate(path: string): void
+  // Opens the main app's floating chat widget (if mounted) showing
+  // this conversation, resuming its live turn watch automatically if
+  // one is still running. See
+  // plan/ai/tools/career/step-60-generate-with-ai-live-chat-window.md.
+  openConversation(conversationId: string): void
 }
 
 declare global {

@@ -118,6 +118,12 @@ export interface PortalLink {
   // updatePortalLink's own instructionsAiError field.
   instructionsAiError: string | null
   instructionsAiErrorAt: string | null
+  // The hidden conversation currently generating/updating this link's
+  // own crawl instructions, if one is in flight (step 60) — null once
+  // it finishes (success or failure). Read-only; written only via
+  // updatePortalLink's own instructionsAiConversationId field. See
+  // plan/ai/tools/career/step-60-generate-with-ai-live-chat-window.md.
+  instructionsAiConversationId: string | null
   // True while a detached "Crawl now" run is in progress for this link
   // (step 37) — read-only, derived from crawl_runs server-side. Lets
   // the frontend resume watching a run still going after a page
@@ -476,7 +482,7 @@ export async function addPortalLink(portalId: string, url: string, title: string
 
 export async function updatePortalLink(
   id: string,
-  args: { url?: string; title?: string; crawlInstructions?: string; instructionsAiError?: string },
+  args: { url?: string; title?: string; crawlInstructions?: string; instructionsAiError?: string; instructionsAiConversationId?: string },
 ): Promise<void> {
   const res = await fetch(`${PROXY_BASE}/portal-links`, {
     method: 'PUT',

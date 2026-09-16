@@ -79,6 +79,15 @@ type portalLink struct {
 	// plan/ai/tools/career/step-33-ai-generated-crawl-instructions.md.
 	InstructionsAIError   string `json:"instructionsAiError,omitempty"`
 	InstructionsAIErrorAt string `json:"instructionsAiErrorAt,omitempty"`
+	// InstructionsAIConversationID (step 60) — the hidden conversation
+	// currently generating/updating this link's own crawl
+	// instructions, if one is in flight; empty once it finishes
+	// (success or failure). Checked from the frontend (GET
+	// .../turns/active on the main app), never from this tool's own
+	// backend — a separate process/database with no visibility into
+	// the main app's own turn_runs. See
+	// plan/ai/tools/career/step-60-generate-with-ai-live-chat-window.md.
+	InstructionsAIConversationID string `json:"instructionsAiConversationId,omitempty"`
 	// HasActiveCrawlRun (step 37) is true while a detached "Crawl now"
 	// run is in progress for this link — read-only, derived from
 	// crawl_runs, never itself written. Lets the frontend resume
@@ -180,7 +189,7 @@ func listPortals() ([]portal, error) {
 	}
 
 	linkRows, err := jobsDB.Query(
-		`SELECT id, portal_id, url, title, crawl_instructions, instructions_ai_error, instructions_ai_error_at, created_at, updated_at
+		`SELECT id, portal_id, url, title, crawl_instructions, instructions_ai_error, instructions_ai_error_at, instructions_ai_conversation_id, created_at, updated_at
 		 FROM portal_links ORDER BY created_at ASC`,
 	)
 	if err != nil {
@@ -190,14 +199,15 @@ func listPortals() ([]portal, error) {
 	byPortal := make(map[string][]portalLink, len(portals))
 	for linkRows.Next() {
 		var l portalLink
-		var title, crawlInstructions, instructionsAIError, instructionsAIErrorAt, updatedAt sql.NullString
-		if err := linkRows.Scan(&l.ID, &l.PortalID, &l.URL, &title, &crawlInstructions, &instructionsAIError, &instructionsAIErrorAt, &l.CreatedAt, &updatedAt); err != nil {
+		var title, crawlInstructions, instructionsAIError, instructionsAIErrorAt, instructionsAIConversationID, updatedAt sql.NullString
+		if err := linkRows.Scan(&l.ID, &l.PortalID, &l.URL, &title, &crawlInstructions, &instructionsAIError, &instructionsAIErrorAt, &instructionsAIConversationID, &l.CreatedAt, &updatedAt); err != nil {
 			return nil, err
 		}
 		l.Title = title.String
 		l.CrawlInstructions = crawlInstructions.String
 		l.InstructionsAIError = instructionsAIError.String
 		l.InstructionsAIErrorAt = instructionsAIErrorAt.String
+		l.InstructionsAIConversationID = instructionsAIConversationID.String
 		l.UpdatedAt = updatedAt.String
 		l.LastCrawledAt = lastCrawled[l.ID]
 		l.HasActiveCrawlRun = activeCrawlRuns[l.ID]
@@ -311,6 +321,23 @@ func updatePortalLinkInstructionsAIStatus(id string, errText *string) error {
 		`UPDATE portal_links SET instructions_ai_error = ?, instructions_ai_error_at = datetime('now') WHERE id = ?`,
 		*errText, id,
 	)
+	return err
+}
+
+// updatePortalLinkInstructionsAIConversationID records (or clears)
+// which hidden conversation is currently generating/updating this
+// link's own crawl instructions. Nil or "" clears it (the run
+// finished, one way or another); non-empty records the newly started
+// one. See plan/ai/tools/career/step-60-generate-with-ai-live-chat-window.md.
+func updatePortalLinkInstructionsAIConversationID(id string, convID *string) error {
+	if err := requirePortalLinkExists(id); err != nil {
+		return err
+	}
+	if convID == nil || *convID == "" {
+		_, err := jobsDB.Exec(`UPDATE portal_links SET instructions_ai_conversation_id = NULL WHERE id = ?`, id)
+		return err
+	}
+	_, err := jobsDB.Exec(`UPDATE portal_links SET instructions_ai_conversation_id = ? WHERE id = ?`, *convID, id)
 	return err
 }
 

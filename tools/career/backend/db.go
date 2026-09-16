@@ -183,15 +183,16 @@ CREATE TABLE IF NOT EXISTS portals (
 );
 
 CREATE TABLE IF NOT EXISTS portal_links (
-    id                        TEXT PRIMARY KEY,
-    portal_id                 TEXT NOT NULL REFERENCES portals(id) ON DELETE CASCADE,
-    url                       TEXT NOT NULL,
-    title                     TEXT,
-    crawl_instructions        TEXT,
-    instructions_ai_error     TEXT,
-    instructions_ai_error_at  TEXT,
-    created_at                TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at                TEXT,
+    id                                TEXT PRIMARY KEY,
+    portal_id                         TEXT NOT NULL REFERENCES portals(id) ON DELETE CASCADE,
+    url                               TEXT NOT NULL,
+    title                             TEXT,
+    crawl_instructions                TEXT,
+    instructions_ai_error             TEXT,
+    instructions_ai_error_at          TEXT,
+    instructions_ai_conversation_id   TEXT,
+    created_at                        TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at                        TEXT,
     UNIQUE(portal_id, url)
 );
 
@@ -549,6 +550,9 @@ func migrateJobsDB(db *sql.DB) error {
 	if err := migratePortalLinksInstructionsAIStatus(db); err != nil {
 		return err
 	}
+	if err := migratePortalLinksInstructionsAIConversationID(db); err != nil {
+		return err
+	}
 	return migrateCrawlRunsPhase(db)
 }
 
@@ -601,15 +605,16 @@ CREATE TABLE IF NOT EXISTS portals (
     updated_at  TEXT
 );
 CREATE TABLE IF NOT EXISTS portal_links (
-    id                        TEXT PRIMARY KEY,
-    portal_id                 TEXT NOT NULL REFERENCES portals(id) ON DELETE CASCADE,
-    url                       TEXT NOT NULL,
-    title                     TEXT,
-    crawl_instructions        TEXT,
-    instructions_ai_error     TEXT,
-    instructions_ai_error_at  TEXT,
-    created_at                TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at                TEXT,
+    id                                TEXT PRIMARY KEY,
+    portal_id                         TEXT NOT NULL REFERENCES portals(id) ON DELETE CASCADE,
+    url                               TEXT NOT NULL,
+    title                             TEXT,
+    crawl_instructions                TEXT,
+    instructions_ai_error             TEXT,
+    instructions_ai_error_at          TEXT,
+    instructions_ai_conversation_id   TEXT,
+    created_at                        TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at                        TEXT,
     UNIQUE(portal_id, url)
 );
 `); err != nil {
@@ -659,6 +664,24 @@ func migratePortalLinksInstructionsAIStatus(db *sql.DB) error {
 		return err
 	}
 	_, err = db.Exec(`ALTER TABLE portal_links ADD COLUMN instructions_ai_error_at TEXT`)
+	return err
+}
+
+// migratePortalLinksInstructionsAIConversationID adds the nullable
+// column tracking which hidden conversation is currently generating/
+// updating a link's own crawl instructions, if one is in flight — same
+// plain ALTER TABLE ADD COLUMN shape as
+// migratePortalLinksInstructionsAIStatus above, guarded the same way.
+// See plan/ai/tools/career/step-60-generate-with-ai-live-chat-window.md.
+func migratePortalLinksInstructionsAIConversationID(db *sql.DB) error {
+	exists, hasColumn, err := tableHasColumn(db, "portal_links", "instructions_ai_conversation_id")
+	if err != nil {
+		return err
+	}
+	if !exists || hasColumn {
+		return nil
+	}
+	_, err = db.Exec(`ALTER TABLE portal_links ADD COLUMN instructions_ai_conversation_id TEXT`)
 	return err
 }
 

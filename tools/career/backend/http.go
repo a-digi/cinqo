@@ -857,6 +857,13 @@ type portalLinkUpdateRequest struct {
 	// succeeded). Present non-empty: record this as the most recent
 	// failure. Same presence-gated shape CrawlInstructions above uses.
 	InstructionsAIError *string `json:"instructionsAiError,omitempty"`
+	// InstructionsAIConversationID (step 60) — nil: don't touch.
+	// Present with "": clear (the run just finished, one way or
+	// another). Present non-empty: record the hidden conversation that
+	// just started generating/updating this link's own crawl
+	// instructions. Same presence-gated shape InstructionsAIError above
+	// uses.
+	InstructionsAIConversationID *string `json:"instructionsAiConversationId,omitempty"`
 }
 
 func portalLinksHandler(w http.ResponseWriter, r *http.Request) {
@@ -893,8 +900,8 @@ func portalLinksHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "id is required", http.StatusBadRequest)
 			return
 		}
-		if body.URL == nil && body.Title == nil && body.CrawlInstructions == nil && body.InstructionsAIError == nil {
-			http.Error(w, "url, title, crawlInstructions, or instructionsAiError is required", http.StatusBadRequest)
+		if body.URL == nil && body.Title == nil && body.CrawlInstructions == nil && body.InstructionsAIError == nil && body.InstructionsAIConversationID == nil {
+			http.Error(w, "url, title, crawlInstructions, instructionsAiError, or instructionsAiConversationId is required", http.StatusBadRequest)
 			return
 		}
 		if body.URL != nil && *body.URL == "" {
@@ -920,6 +927,12 @@ func portalLinksHandler(w http.ResponseWriter, r *http.Request) {
 		if body.InstructionsAIError != nil {
 			if err := updatePortalLinkInstructionsAIStatus(body.ID, body.InstructionsAIError); err != nil {
 				writePortalLinkAwareError(w, "update portal link instructions AI status", err)
+				return
+			}
+		}
+		if body.InstructionsAIConversationID != nil {
+			if err := updatePortalLinkInstructionsAIConversationID(body.ID, body.InstructionsAIConversationID); err != nil {
+				writePortalLinkAwareError(w, "update portal link instructions AI conversation id", err)
 				return
 			}
 		}

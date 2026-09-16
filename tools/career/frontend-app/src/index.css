@@ -50,3 +50,17 @@
 .accordion-body > div {
   overflow: hidden;
 }
+
+/* "Check Progress - AI"'s own robot icon (step 60) — a small, slow,
+   infinite vertical bob signaling "this is live/ongoing" without being
+   distracting. See
+   plan/ai/tools/career/step-60-generate-with-ai-live-chat-window.md. */
+@keyframes robot-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+}
