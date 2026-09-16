@@ -45,6 +45,23 @@ build-frontend:
 	cd frontend-app && npm install && npm run build
 	@echo "built: frontend/bundle.js (from frontend-app/)"
 
+# Lints frontend-app/ — ESLint (typescript-eslint strict type-checked +
+# react-hooks + react-refresh + jsx-a11y) and a Prettier format check,
+# same two checks the root Makefile's own lint-frontend runs for the
+# main Cinqo frontend. See
+# plan/ai/frontend/frontend/step-14-lint-and-code-quality-gates.md.
+.PHONY: lint-frontend
+lint-frontend:
+	cd frontend-app && npm run lint
+	cd frontend-app && npm run format:check
+
+# Same as lint-frontend, but auto-fixes what it can (eslint --fix,
+# prettier --write) instead of just reporting.
+.PHONY: lint-frontend-fix
+lint-frontend-fix:
+	cd frontend-app && npm run lint:fix
+	cd frontend-app && npm run format
+
 .PHONY: build-darwin
 build-darwin: build-frontend
 	@mkdir -p $(BUILD_DIR)/darwin-arm64/backend
