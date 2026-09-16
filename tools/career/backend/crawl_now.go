@@ -56,31 +56,6 @@ import (
 // Open Question 2.
 var crawlNowHTTPClient = &http.Client{Timeout: 35 * time.Minute}
 
-// expectedSelectorsFromCrawlRequest derives the "expected content"
-// selector list (step 36) from a parsed crawl request's own
-// container/fields — a single strong "does the repeating item wrapper
-// exist" signal when a container is set (step 18/30), rather than
-// several narrower selectors only meaningful nested inside it;
-// otherwise every field's own selector. Mirrors browser's own
-// identically-reasoned expectedSelectorsFromFields
-// (tools/browser/backend/cloudflare.go) exactly — two separate Go
-// modules, same logic, independently declared by hand, same reason
-// every other cross-tool shape in this tool already is (crawlRequest/
-// browserCrawlError, etc.). See
-// plan/ai/tools/browser/step-36-content-based-cloudflare-override.md.
-func expectedSelectorsFromCrawlRequest(req crawlRequest) []string {
-	if req.Container != "" {
-		return []string{req.Container}
-	}
-	selectors := make([]string, 0, len(req.Fields))
-	for _, f := range req.Fields {
-		if f.Selector != "" {
-			selectors = append(selectors, f.Selector)
-		}
-	}
-	return selectors
-}
-
 // coreAPIURL reads CORE_API_URL — set for every tool subprocess
 // (api/src/tool/manager/manager.go's ToolEnvVars) but, until this file,
 // never actually used by this tool's own backend.
@@ -359,47 +334,35 @@ func runCrawlNow(ctx context.Context, runID, portalLinkID, accessToken string) {
 		return
 	}
 
-	_ = appendCrawlRunLog(runID, "navigating to "+linkURL)
+	// step 37 — navigate and extract are now ONE call, not two: a real,
+	// confirmed race existed here before this fix. Career used to call
+	// POST /crawl (navigate) and, moments later, POST /crawl-paginated
+	// (extract) as two fully separate HTTP round trips — browser's own
+	// shared-session lock (sessionMu) was released completely in
+	// between, so a DIFFERENT concurrent "Crawl now" run's own navigate
+	// call could land in that gap and silently redirect THIS run's own
+	// extraction to the wrong link's own page. Sending url alongside
+	// the paginated request means browser's own handler navigates
+	// there under the SAME lock acquisition that immediately precedes
+	// extraction — the two steps are now atomic. See
+	// plan/ai/tools/browser/step-37-atomic-navigate-and-extract.md.
+	//
 	// requestId (step 39) — runID doubles as the id browser's own
 	// GET /crawl-status tracks this operation under; ties Career's own
 	// crawl_runs row directly to browser's own in-memory phase, no new
-	// id generation needed.
-	//
-	// expectedSelectors (step 36) — this navigate call is exactly where
-	// every stuck-log report investigated this session actually
-	// happened (browser's own human-wait fallback runs here, BEFORE
-	// crawl-paginated is ever called), so it's the one place this
-	// tool's own crawl request shape genuinely needed a new field to
-	// carry this — /crawl-paginated already gets the same information
-	// for free via its own existing Container/Fields.
-	navBody, err := json.Marshal(struct {
-		URL               string   `json:"url"`
-		RequestID         string   `json:"requestId"`
-		ExpectedSelectors []string `json:"expectedSelectors,omitempty"`
-	}{URL: linkURL, RequestID: runID, ExpectedSelectors: expectedSelectorsFromCrawlRequest(req)})
-	if err != nil {
-		fail(err)
-		return
-	}
-	stopPoll := pollBrowserPhase(ctx, coreURL, runID, accessToken)
-	_, err = callBrowserProxy(ctx, coreURL, "/api/v1/tools/browser/proxy/crawl", navBody, accessToken)
-	stopPoll()
-	if err != nil {
-		fail(err)
-		return
-	}
-
-	_ = appendCrawlRunLog(runID, "running crawl_paginated")
+	// id generation needed. expectedSelectors (step 36) — already
+	// exactly what req's own Container/Fields carry.
 	pagRequest := struct {
 		crawlRequest
+		URL       string `json:"url"`
 		RequestID string `json:"requestId"`
-	}{crawlRequest: req, RequestID: runID}
+	}{crawlRequest: req, URL: linkURL, RequestID: runID}
 	pagBody, err := json.Marshal(pagRequest)
 	if err != nil {
 		fail(err)
 		return
 	}
-	stopPoll = pollBrowserPhase(ctx, coreURL, runID, accessToken)
+	stopPoll := pollBrowserPhase(ctx, coreURL, runID, accessToken)
 	respBody, err := callBrowserProxy(ctx, coreURL, "/api/v1/tools/browser/proxy/crawl-paginated", pagBody, accessToken)
 	stopPoll()
 	if err != nil {

@@ -117,6 +117,19 @@ type paginatedCrawlResponse struct {
 // by the time it crosses this boundary, same convention as every
 // other feature's own callSibling request.
 type paginatedCrawlRequest struct {
+	// URL (step 37) is optional — when set, the shared session
+	// navigates there FIRST, still holding sessionMu, immediately
+	// before extraction begins, making navigate-then-extract one
+	// atomic operation instead of two separately-locked HTTP calls.
+	// Absent for every AI-driven call (crawl_paginated operates on
+	// whatever page is already loaded, unchanged) — a real, confirmed
+	// bug fix for Career's own "Crawl now", which used to call POST
+	// /crawl then, moments later, this endpoint: sessionMu was
+	// released completely in between, so a DIFFERENT concurrent
+	// crawl's own navigate could — and, live-reported, did — sneak in
+	// and leave this call extracting the wrong link's own page. See
+	// plan/ai/tools/browser/step-37-atomic-navigate-and-extract.md.
+	URL               string            `json:"url,omitempty"`
 	Container         string            `json:"container,omitempty"`
 	Fields            []extractField    `json:"fields"`
 	Mapping           map[string]string `json:"mapping,omitempty"`
@@ -145,6 +158,16 @@ func paginatedCrawlHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "fields, nextSelector, and a positive maxPages are all required", http.StatusBadRequest)
 		return
 	}
+	// step 37 — the same SSRF guard crawlHandler's own url already
+	// gets; a URL reaching this new field is no less capable of
+	// driving the shared session somewhere it shouldn't than /crawl's
+	// own url is.
+	if body.URL != "" {
+		if err := validateCrawlURL(body.URL); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
 
 	// Step 22 — read once, up front: both whether to log at all
 	// (DebugEnabled) and whether to also capture each page's own raw
@@ -157,7 +180,7 @@ func paginatedCrawlHandler(w http.ResponseWriter, r *http.Request) {
 	settings, _ := loadBrowserSettings()
 	captureHTML := settings.DebugEnabled && settings.DebugLogHTML
 
-	result, pageHTML, err := performPaginatedCrawl(body.Container, body.Fields, body.Mapping, body.NextSelector, body.RequestedMaxPages, body.EffectiveMaxPages, captureHTML, body.RequestID)
+	result, pageHTML, err := performPaginatedCrawl(body.URL, body.Container, body.Fields, body.Mapping, body.NextSelector, body.RequestedMaxPages, body.EffectiveMaxPages, captureHTML, body.RequestID)
 	if err != nil {
 		setCrawlPhase(body.RequestID, phaseFailed, err.Error())
 		var cfErr *crawlError
@@ -360,7 +383,18 @@ func runPaginatedCrawlLoop(ctx context.Context, container string, fields []extra
 // page it should have been looking at, since crawl_paginated itself
 // never takes a URL. See
 // plan/ai/tools/browser/step-26-headed-fallback-for-paginated-crawl.md.
-func performPaginatedCrawl(container string, fields []extractField, mapping map[string]string, nextSelector string, requestedMaxPages, effectiveMaxPages int, captureHTML bool, requestID string) (paginatedCrawlResponse, []string, error) {
+//
+// url (step 37) is optional — when set, navigates the shared session
+// there FIRST, still inside this same sessionMu acquisition, before
+// ever running the cache check or the extraction loop. This is what
+// makes navigate-then-extract one atomic operation instead of two
+// separately-locked HTTP calls: verified directly that Career's own
+// prior two-call approach (a separate POST /crawl, then this endpoint)
+// released sessionMu completely in between, letting a DIFFERENT
+// concurrent crawl's own navigate land in the gap and silently redirect
+// this call's own extraction to the wrong page. See
+// plan/ai/tools/browser/step-37-atomic-navigate-and-extract.md.
+func performPaginatedCrawl(url, container string, fields []extractField, mapping map[string]string, nextSelector string, requestedMaxPages, effectiveMaxPages int, captureHTML bool, requestID string) (paginatedCrawlResponse, []string, error) {
 	result, pageHTML, blockedURL, err := func() (paginatedCrawlResponse, []string, string, error) {
 		sessionMu.Lock()
 		defer sessionMu.Unlock()
@@ -368,24 +402,37 @@ func performPaginatedCrawl(container string, fields []extractField, mapping map[
 		ctx, cancel := context.WithTimeout(sessionCtx, paginatedCrawlTimeout)
 		defer cancel()
 
-		// step 29 — crawl_paginated never takes a URL of its own (it
-		// operates on whatever the shared session already has loaded),
-		// so the domain check reads the session's own CURRENT location
-		// first, before running the extraction loop at all. A
-		// known-Cloudflare domain skips straight to the headed fallback
-		// via the same errors.As dispatch below, reusing a synthetic
-		// crawlError rather than duplicating the fallback-invocation
-		// logic — "known-cloudflare-cache" is deliberately distinct
-		// from cloudflareCheck's own detection reasons, so a human
-		// reading a recorded reason can tell "we actually saw it this
-		// time" apart from "we skipped straight to headed because of a
-		// past detection." See
+		if url != "" {
+			setCrawlPhase(requestID, phaseNavigating, "navigating to "+url)
+			if err := chromedp.Run(ctx, chromedp.Navigate(url), chromedp.Sleep(settleDelay)); err != nil {
+				return paginatedCrawlResponse{}, nil, "", err
+			}
+		}
+
+		// step 29 — a known-Cloudflare domain skips straight to the
+		// headed fallback. Step 37 — when url was provided, use it
+		// directly for this check (we just navigated there, under this
+		// same lock, so it's authoritative); only fall back to reading
+		// the session's own current location when no url was given at
+		// all (the AI's own crawl_paginated calls, which still operate
+		// on whatever page is already loaded). A known-Cloudflare
+		// domain skips straight to the headed fallback via the same
+		// errors.As dispatch below, reusing a synthetic crawlError
+		// rather than duplicating the fallback-invocation logic —
+		// "known-cloudflare-cache" is deliberately distinct from
+		// cloudflareCheck's own detection reasons, so a human reading a
+		// recorded reason can tell "we actually saw it this time" apart
+		// from "we skipped straight to headed because of a past
+		// detection." See
 		// plan/ai/tools/browser/step-29-skip-headless-for-known-cloudflare-domains.md.
-		var startURL string
-		if locErr := chromedp.Run(ctx, chromedp.Location(&startURL)); locErr == nil {
-			if domain, hostErr := hostnameOf(startURL); hostErr == nil {
+		checkURL := url
+		if checkURL == "" {
+			_ = chromedp.Run(ctx, chromedp.Location(&checkURL))
+		}
+		if checkURL != "" {
+			if domain, hostErr := hostnameOf(checkURL); hostErr == nil {
 				if known, cacheErr := isDomainKnownCloudflare(domain); cacheErr == nil && known {
-					return paginatedCrawlResponse{}, nil, startURL, newCloudflareUnresolvedError("known-cloudflare-cache")
+					return paginatedCrawlResponse{}, nil, checkURL, newCloudflareUnresolvedError("known-cloudflare-cache")
 				}
 			}
 		}
