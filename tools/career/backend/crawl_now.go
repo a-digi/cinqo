@@ -46,6 +46,47 @@ import (
 	"time"
 )
 
+// errBrowserSessionInterrupted is what callBrowserProxy returns
+// (wrapped, so errors.Is still matches) when browser's own response
+// carries its crawlError "browser_session_interrupted" Code —
+// browser's own shared session was torn down mid-crawl by its own
+// SIGTERM handler (a restart/stop/crash-recovery of that subprocess),
+// not a genuine navigation/extraction failure. runCrawlNow's own
+// retry loop below is the only place this is ever checked. See
+// plan/ai/tools/browser/step-38-session-interrupted-retry.md.
+var errBrowserSessionInterrupted = errors.New("browser tool session was interrupted")
+
+// crawlNowSessionRetryInterval/maxCrawlNowSessionRetries bound
+// runCrawlNow's own retry of a single errBrowserSessionInterrupted
+// failure — a short, fixed-count budget, deliberately NOT this
+// codebase's own wall-clock-deadline convention
+// (waitForHumanToClearCloudflare's 30-minute human-solve wait,
+// browser tool): that convention exists because a human's own
+// reaction time is unbounded and unpredictable, whereas a subprocess
+// restart is a short, mechanical operation (manager.go's own process
+// relaunch plus startSharedSession() typically completes in low
+// single-digit seconds). Three attempts across ~10-15s rides out a
+// normal restart; anything beyond that is more likely a genuine
+// crash-loop, which should surface as a real failure (matching
+// manager.go's own maxCrashRestarts — bounded, not infinite, retry)
+// rather than retry silently forever. var, not const, for the same
+// testing reason browser's own humanSolveRetryInterval is a var.
+//
+// This is deliberately NOT the whole-sequence retry step 35 removed
+// (plan/ai/tools/career/step-35-crawl-now-single-long-lived-attempt.md):
+// that retry re-ran the entire navigate+crawl sequence every 15s,
+// which kept closing and reopening the headed Cloudflare-fallback
+// window mid-wait — a real, named regression. This retry only ever
+// fires once browser's own previous session (headless or headed) is
+// already gone (the subprocess that owned it was killed), so there is
+// no "window still trying to solve a challenge" to preserve — a fresh
+// /crawl-paginated call is the only way to make further progress at
+// all.
+var (
+	crawlNowSessionRetryInterval = 5 * time.Second
+	maxCrawlNowSessionRetries    = 2 // 3 total attempts
+)
+
 // crawlNowHTTPClient's own Timeout must exceed browser's own longest
 // possible single-call duration on either /crawl or /crawl-paginated —
 // both can internally run the up-to-~30-minute headed-Chrome/human-wait
@@ -362,12 +403,27 @@ func runCrawlNow(ctx context.Context, runID, portalLinkID, accessToken string) {
 		fail(err)
 		return
 	}
-	stopPoll := pollBrowserPhase(ctx, coreURL, runID, accessToken)
-	respBody, err := callBrowserProxy(ctx, coreURL, "/api/v1/tools/browser/proxy/crawl-paginated", pagBody, accessToken)
-	stopPoll()
-	if err != nil {
-		fail(err)
-		return
+	// step 38 — retried up to maxCrawlNowSessionRetries times, but only
+	// for errBrowserSessionInterrupted: every other failure (Cloudflare
+	// blocked, session expired, a genuine navigation/extraction error)
+	// still fails on the first attempt, exactly as before.
+	var respBody []byte
+	for attempt := 0; ; attempt++ {
+		stopPoll := pollBrowserPhase(ctx, coreURL, runID, accessToken)
+		respBody, err = callBrowserProxy(ctx, coreURL, "/api/v1/tools/browser/proxy/crawl-paginated", pagBody, accessToken)
+		stopPoll()
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, errBrowserSessionInterrupted) || attempt >= maxCrawlNowSessionRetries {
+			fail(err)
+			return
+		}
+		_ = appendCrawlRunLog(runID, fmt.Sprintf(
+			"browser tool session was interrupted — retrying (%d/%d) in %s",
+			attempt+1, maxCrawlNowSessionRetries, crawlNowSessionRetryInterval,
+		))
+		time.Sleep(crawlNowSessionRetryInterval)
 	}
 
 	var result crawlNowPaginatedResult
@@ -438,6 +494,9 @@ func callBrowserProxy(ctx context.Context, coreURL, path string, body []byte, ac
 			Reason  string `json:"reason"`
 		}
 		if jsonErr := json.Unmarshal(respBody, &cfErr); jsonErr == nil && cfErr.Code != "" {
+			if cfErr.Code == "browser_session_interrupted" {
+				return nil, fmt.Errorf("%w: %s", errBrowserSessionInterrupted, cfErr.Message)
+			}
 			reasonSuffix := ""
 			if cfErr.Reason != "" {
 				reasonSuffix = fmt.Sprintf(" (%s)", cfErr.Reason)

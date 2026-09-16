@@ -405,7 +405,7 @@ func performPaginatedCrawl(url, container string, fields []extractField, mapping
 		if url != "" {
 			setCrawlPhase(requestID, phaseNavigating, "navigating to "+url)
 			if err := chromedp.Run(ctx, chromedp.Navigate(url), chromedp.Sleep(settleDelay)); err != nil {
-				return paginatedCrawlResponse{}, nil, "", err
+				return paginatedCrawlResponse{}, nil, "", wrapIfSessionInterrupted(err)
 			}
 		}
 
@@ -441,7 +441,7 @@ func performPaginatedCrawl(url, container string, fields []extractField, mapping
 
 		var cfErr *crawlError
 		if !errors.As(err, &cfErr) {
-			return result, pageHTML, "", err
+			return result, pageHTML, "", wrapIfSessionInterrupted(err)
 		}
 
 		var currentURL string

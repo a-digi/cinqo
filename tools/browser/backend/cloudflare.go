@@ -11,6 +11,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -312,4 +313,38 @@ func newCloudflareUnresolvedError(reason string) *crawlError {
 		Message: "Cloudflare challenge could not be cleared",
 		Reason:  reason,
 	}
+}
+
+// newSessionInterruptedError is returned when the shared browser
+// session's own root context (sessionCtx, main.go) was canceled out
+// from under an in-flight crawl — i.e. this process's own SIGTERM
+// handler ran (stopSharedSession), because the manager restarted,
+// stopped, or crash-recovered this tool's subprocess mid-crawl. A
+// distinct Code lets a caller (Career's own "Crawl now") tell this
+// apart from every other failure and retry automatically, since the
+// underlying cause is almost always transient (the tool relaunches
+// within seconds) — unlike a genuine navigation/extraction failure,
+// which retrying would not fix. See
+// plan/ai/tools/browser/step-38-session-interrupted-retry.md.
+func newSessionInterruptedError(cause error) *crawlError {
+	return &crawlError{
+		Code:    "browser_session_interrupted",
+		Message: "The browser tool's session was interrupted (it may have restarted) while this crawl was running",
+		Reason:  cause.Error(),
+	}
+}
+
+// wrapIfSessionInterrupted turns a raw context.Canceled — the shared
+// session's own root context (sessionCtx) was torn down mid-crawl,
+// never anything else on this specific derived ctx — into the
+// distinct, structured crawlError above, so callers (crawlHandler,
+// paginatedCrawlHandler) return it as JSON like any other crawlError
+// instead of a generic plain-text 502. A no-op for every other error,
+// including context.DeadlineExceeded (an ordinary, already-handled
+// budget expiry, not a torn-down session).
+func wrapIfSessionInterrupted(err error) error {
+	if err != nil && errors.Is(err, context.Canceled) {
+		return newSessionInterruptedError(err)
+	}
+	return err
 }

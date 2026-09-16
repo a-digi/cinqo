@@ -248,7 +248,12 @@ func crawlPage(rawURL, requestID string, expectedSelectors []string) (crawlRespo
 		}
 		return crawlWithNormalSession(rawURL, requestID, expectedSelectors)
 	}
-	return result, err
+	// step 38 — deliberately wrapped only here, after the Cloudflare
+	// dispatch above: a session-interrupted error must never trigger
+	// crawlWithNormalSession's own fresh headed-Chrome fallback (the
+	// whole subprocess — and its one shared session — is what just
+	// died; launching a second, unrelated browser fixes nothing here).
+	return result, wrapIfSessionInterrupted(err)
 }
 
 // crawlWithNormalSession retries rawURL in a freshly launched, non-
