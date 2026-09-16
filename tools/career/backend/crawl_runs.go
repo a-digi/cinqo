@@ -13,6 +13,7 @@ package main
 import (
 	"database/sql"
 	"errors"
+	"log"
 	"strings"
 	"time"
 
@@ -208,4 +209,76 @@ func reconcileOrphanedCrawlRuns() error {
 		time.Now().UTC().Format(time.RFC3339),
 	)
 	return err
+}
+
+// staleCrawlRunThreshold (step 47.4) bounds how long a crawl_runs row
+// may legitimately stay 'running' before the periodic reaper below
+// treats it as stuck and marks it 'failed' — WITHOUT requiring a
+// process restart the way reconcileOrphanedCrawlRuns (above) does. Set
+// comfortably above the longest single attempt this process can
+// legitimately take: browser's own normalSessionPaginatedCrawlTimeout
+// (32 minutes — the headed Cloudflare fallback, including up to 30
+// minutes of human-solve wait) is the real ceiling; every retry
+// runCrawlNow's own loop performs (step 38/47.3) is for a fast-failing
+// transient error, never a second full-budget wait stacked on top of
+// the first. var, not const, so a test can shrink it — matching this
+// codebase's own established convention (crawlNowSessionRetryInterval,
+// above; browser's own humanSolveRetryInterval).
+var staleCrawlRunThreshold = 40 * time.Minute
+
+// staleCrawlRunReapInterval (step 47.4) is how often the reaper below
+// sweeps for stuck rows — far less frequent than staleCrawlRunThreshold
+// itself needs to be enforced precisely; a few minutes of slack before
+// a stuck row is actually caught is an acceptable trade for not
+// hammering the database on a tight loop. var, same testing reason as
+// staleCrawlRunThreshold.
+var staleCrawlRunReapInterval = 5 * time.Minute
+
+// reapStaleCrawlRuns marks every crawl_runs row still 'running' well
+// past staleCrawlRunThreshold as 'failed' — the in-process complement
+// to reconcileOrphanedCrawlRuns (which only ever runs once, at boot):
+// this catches a goroutine that is hung but never crashed the process
+// (step 47's own root cause — a chromedp.Run call blocked past its own
+// context deadline because the underlying renderer itself is wedged),
+// which reconcileOrphanedCrawlRuns can never see since nothing about
+// this process actually restarted. Returns the number of rows reaped,
+// for observability/testing — 0 is the ordinary, expected case. Two
+// separate `time.Now()` reads (one for the cutoff comparison, one for
+// finished_at) are deliberate, not a bug: they're each other's own
+// truthful value for what they represent (when a row is considered
+// stale vs. when this sweep actually ran), not required to match.
+func reapStaleCrawlRuns() (int, error) {
+	cutoff := time.Now().UTC().Add(-staleCrawlRunThreshold).Format(time.RFC3339)
+	result, err := jobsDB.Exec(
+		`UPDATE crawl_runs SET status = 'failed', finished_at = ?, error_message = 'Crawl timed out — stuck for longer than the maximum expected duration and was automatically marked failed'
+		 WHERE status = 'running' AND started_at < ?`,
+		time.Now().UTC().Format(time.RFC3339), cutoff,
+	)
+	if err != nil {
+		return 0, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	return int(affected), nil
+}
+
+// startStaleCrawlRunReaper launches the periodic sweep above as a
+// background goroutine for this process's entire lifetime — no stop
+// mechanism, matching reconcileOrphanedCrawlRuns being meant to run
+// exactly once at boot: this one is meant to run for as long as the
+// process itself does.
+func startStaleCrawlRunReaper() {
+	go func() {
+		ticker := time.NewTicker(staleCrawlRunReapInterval)
+		defer ticker.Stop()
+		for range ticker.C {
+			if n, err := reapStaleCrawlRuns(); err != nil {
+				log.Printf("stale crawl run reaper: sweep failed: %v", err)
+			} else if n > 0 {
+				log.Printf("stale crawl run reaper: marked %d stuck crawl run(s) as failed", n)
+			}
+		}
+	}()
 }

@@ -51,6 +51,12 @@ func runHTTPServer() {
 	if err := reconcileOrphanedCrawlRuns(); err != nil {
 		log.Fatalf("failed to reconcile orphaned crawl runs: %v", err)
 	}
+	// step 47.4 — reconcileOrphanedCrawlRuns above only ever runs once,
+	// at boot, so it can't help a goroutine that's genuinely hung
+	// without this process itself restarting. This periodic sweep is
+	// the in-process complement: it catches that case too, without
+	// requiring a restart.
+	startStaleCrawlRunReaper()
 
 	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

@@ -453,6 +453,17 @@ func crawlPage(rawURL, requestID string, expectedSelectors, removeSelectors, rem
 		sessionMu.Lock()
 		defer sessionMu.Unlock()
 
+		// step 47.2/47.3 — fail fast on a tab left wedged by a previous,
+		// unrelated caller instead of discovering it only after burning
+		// crawlTimeout on a navigate that was never going to complete,
+		// and replace the wedged tab immediately (still holding
+		// sessionMu) so the NEXT caller gets a fresh, healthy session
+		// instead of inheriting the same wedge.
+		if err := probeSessionLiveness(sessionCtx); err != nil {
+			recreateErr := recreateSharedSessionLocked()
+			return crawlResponse{}, newSessionWedgedError(err, recreateErr)
+		}
+
 		ctx, cancel := context.WithTimeout(sessionCtx, crawlTimeout)
 		defer cancel()
 
@@ -470,7 +481,15 @@ func crawlPage(rawURL, requestID string, expectedSelectors, removeSelectors, rem
 	}()
 
 	var cfErr *crawlError
-	if errors.As(err, &cfErr) {
+	// step 47.3 — checking cfErr.Code, not just the *crawlError type, is
+	// required now that a second, unrelated *crawlError variant exists
+	// (browser_session_wedged) that can come out of this same closure —
+	// without this, a wedged-tab error would incorrectly trigger the
+	// headed Cloudflare fallback below (and wrongly record this domain
+	// as "known Cloudflare"). paginate.go's equivalent dispatch is
+	// already safe via its own separate blockedURL != "" guard; this
+	// file had no second guard, so the Code check is the fix here.
+	if errors.As(err, &cfErr) && cfErr.Code == "cloudflare_challenge_unresolved" {
 		// step 28 — best-effort: a failed cache write must never turn
 		// an otherwise-working fallback into a failure.
 		if domain, hostErr := hostnameOf(rawURL); hostErr == nil {

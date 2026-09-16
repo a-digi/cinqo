@@ -67,6 +67,17 @@ func findLoginElements() (findLoginElementsResponse, error) {
 	sessionMu.Lock()
 	defer sessionMu.Unlock()
 
+	// step 47.2/47.3 — fail fast on a tab left wedged by a previous,
+	// unrelated caller instead of discovering it only after burning
+	// findLoginElementsTimeout on an evaluation that was never going to
+	// complete, and replace the wedged tab immediately (still holding
+	// sessionMu) so the NEXT caller gets a fresh, healthy session
+	// instead of inheriting the same wedge.
+	if err := probeSessionLiveness(sessionCtx); err != nil {
+		recreateErr := recreateSharedSessionLocked()
+		return findLoginElementsResponse{}, newSessionWedgedError(err, recreateErr)
+	}
+
 	ctx, cancel := context.WithTimeout(sessionCtx, findLoginElementsTimeout)
 	defer cancel()
 

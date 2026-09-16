@@ -36,6 +36,7 @@ import (
 	"path/filepath"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
@@ -156,6 +157,77 @@ func ensureSharedSession() error {
 	return startSharedSessionLocked()
 }
 
+// installDialogAutoDismiss (step 47.1) auto-accepts any native
+// alert()/confirm()/beforeunload dialog that appears on ctx's own
+// page, for the lifetime of ctx. A native dialog freezes its target's
+// JS engine and CDP responsiveness while it's open — and since every
+// caller of the shared headless session (sessionCtx) or the headed
+// fallback session inherits whatever state the previous caller left
+// the tab in (sessionMu/normalSessionMu only serialize access, they
+// never reset the tab — see
+// plan/ai/tools/browser/step-47-shared-tab-wedge-and-stuck-crawl-fix.md's
+// own root-cause writeup), an unhandled dialog left open by one caller
+// would otherwise wedge every subsequent caller indefinitely, with no
+// way to recover short of restarting this whole process. Registered
+// once, at session creation — not per request — so it stays armed for
+// that session's entire lifetime. The actual dismissal runs in its own
+// goroutine because chromedp.ListenTarget's callback runs synchronously
+// on the CDP event-read loop; blocking it on another chromedp.Run call
+// (page.HandleJavaScriptDialog needs the browser to respond) would
+// deadlock that loop. label distinguishes the shared headless session
+// from the headed fallback in logs.
+func installDialogAutoDismiss(ctx context.Context, label string) {
+	chromedp.ListenTarget(ctx, func(ev interface{}) {
+		if _, ok := ev.(*page.EventJavascriptDialogOpening); ok {
+			go func() {
+				if err := chromedp.Run(ctx, page.HandleJavaScriptDialog(true)); err != nil {
+					log.Printf("%s: failed to auto-dismiss JS dialog: %v", label, err)
+				}
+			}()
+		}
+	})
+}
+
+// sessionLivenessProbeTimeout (step 47.2) bounds how long
+// probeSessionLiveness is allowed to take before concluding the shared
+// tab is wedged. Short and fixed since a healthy tab evaluates a
+// trivial expression near-instantly — anything past a few seconds
+// already means something is wrong, not just "a bit slow."
+const sessionLivenessProbeTimeout = 5 * time.Second
+
+// probeSessionLiveness (step 47.2) runs a trivial, non-navigating,
+// non-mutating JS evaluation against parentCtx (the shared session's
+// own sessionCtx) to confirm the tab is actually still responsive
+// BEFORE a caller starts its own real work — every caller of the
+// shared session inherits whatever state the previous caller left the
+// tab in (sessionMu only serializes access, it never resets the tab —
+// see installDialogAutoDismiss's own doc comment and
+// plan/ai/tools/browser/step-47-shared-tab-wedge-and-stuck-crawl-fix.md),
+// so a wedge left behind by one caller (a still-in-flight navigation,
+// an unusually slow script, or anything else that leaves the renderer
+// unresponsive) would otherwise only be discovered by the *next*
+// unrelated caller after it burns its own full — often much longer —
+// timeout on real work that was never going to complete either way.
+//
+// Deliberately does NOT navigate: findLoginElements, performExtraction,
+// and performLogin all operate on whatever page the shared session
+// already has loaded and must never have that page changed out from
+// under them, so a Navigate-based reset (which would otherwise double
+// as a liveness check) is not an option for a probe shared across
+// every sessionMu-guarded caller. A trivial chromedp.Evaluate leaves
+// the page completely untouched while still exercising the exact same
+// CDP round-trip (Runtime.evaluate) that would hang if the tab itself
+// were wedged.
+func probeSessionLiveness(parentCtx context.Context) error {
+	ctx, cancel := context.WithTimeout(parentCtx, sessionLivenessProbeTimeout)
+	defer cancel()
+	var discard int
+	if err := chromedp.Run(ctx, chromedp.Evaluate("1", &discard)); err != nil {
+		return fmt.Errorf("shared browser session appears unresponsive: %w", err)
+	}
+	return nil
+}
+
 // startSharedSessionLocked creates the one chromedp browser context
 // this whole process holds for its entire lifetime — assumes the
 // caller (ensureSharedSession, above) already holds sessionMu. A real,
@@ -166,6 +238,7 @@ func ensureSharedSession() error {
 func startSharedSessionLocked() error {
 	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), allocatorOptions()...)
 	ctx, ctxCancel := chromedp.NewContext(allocCtx)
+	installDialogAutoDismiss(ctx, "shared headless session")
 
 	// Build actions using the native cdproto/page Action wrapper
 	actions := []chromedp.Action{
@@ -187,6 +260,39 @@ func startSharedSessionLocked() error {
 	sessionCtx = ctx
 	sessionCancel = []context.CancelFunc{ctxCancel, allocCancel}
 	return nil
+}
+
+// recreateSharedSessionLocked (step 47.3) tears down the current
+// shared session — whatever state it's actually in — and immediately
+// attempts to start a fresh one in its place, while the caller still
+// holds sessionMu, so no other request can observe or acquire the
+// wedged tab in between. Called only after probeSessionLiveness (step
+// 47.2) has already confirmed the current tab is unresponsive. Assumes
+// the caller already holds sessionMu, same precondition as
+// startSharedSessionLocked itself.
+//
+// If the fresh start itself fails, sessionCtx/sessionCancel are left
+// nil/empty rather than pointing back at the now-torn-down old
+// session — matching ensureSharedSession's own lazy-start convention
+// (`if sessionCtx != nil { return nil }`), so the very next caller's
+// ensureSharedSession call attempts a completely fresh start from
+// scratch instead of being fooled by a stale non-nil sessionCtx into
+// skipping straight to a session that no longer exists.
+//
+// Deliberately a full relaunch (a brand new chromedp allocator and
+// browser process, via startSharedSessionLocked) rather than only
+// opening a new tab on the existing browser process — simpler and
+// reuses already-verified code (including installDialogAutoDismiss
+// and the stealth script injection) instead of introducing a second,
+// narrower "just replace the tab" path for what should be a rare
+// recovery case.
+func recreateSharedSessionLocked() error {
+	for _, cancel := range sessionCancel {
+		cancel()
+	}
+	sessionCtx = nil
+	sessionCancel = nil
+	return startSharedSessionLocked()
 }
 
 func stopSharedSession() {
@@ -228,6 +334,7 @@ func startSharedNormalSession() (context.Context, []context.CancelFunc, error) {
 
 	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), normalAllocatorOptions(profileDir)...)
 	ctx, ctxCancel := chromedp.NewContext(allocCtx)
+	installDialogAutoDismiss(ctx, "headed fallback session")
 
 	actions := []chromedp.Action{
 		chromedp.Navigate("about:blank"),

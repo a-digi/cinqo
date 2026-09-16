@@ -512,3 +512,36 @@ func wrapIfSessionInterrupted(err error) error {
 
 	return err
 }
+
+// newSessionWedgedError (step 47.3) is returned when probeSessionLiveness
+// (step 47.2, main.go) found the shared session's own tab unresponsive —
+// almost always leftover state from an earlier, unrelated caller (a
+// wedged renderer, an unhandled dialog that predates step 47.1's fix,
+// or an interrupted navigation) rather than anything about THIS call's
+// own request. recreateErr is the result of this process's own
+// immediate attempt to replace the wedged tab with a fresh one
+// (recreateSharedSessionLocked, main.go) — folded into Reason so a
+// human reading logs/Career's own crawl_runs log can tell "wedged, but
+// already fixed for the next attempt" apart from "wedged, and the
+// automatic recovery itself failed too" (materially worse — worth
+// escalating, not just retrying blindly).
+//
+// A distinct Code from browser_session_interrupted (step 38, above) —
+// that one means the whole process was restarted; this one means the
+// process is fine but this one tab needed replacing. Callers like
+// Career's own retry logic can reasonably treat both as "transient,
+// worth one retry," but they are not the same underlying event.
+func newSessionWedgedError(probeErr, recreateErr error) *crawlError {
+	if recreateErr != nil {
+		return &crawlError{
+			Code:    "browser_session_wedged",
+			Message: "The browser session's tab was unresponsive and the automatic attempt to replace it also failed",
+			Reason:  fmt.Sprintf("probe: %v; recreate: %v", probeErr, recreateErr),
+		}
+	}
+	return &crawlError{
+		Code:    "browser_session_wedged",
+		Message: "The browser session's tab was unresponsive; it has been automatically replaced with a fresh one for the next attempt",
+		Reason:  probeErr.Error(),
+	}
+}

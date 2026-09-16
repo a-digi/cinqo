@@ -421,6 +421,22 @@ func performPaginatedCrawl(url, container string, fields []extractField, mapping
 		sessionMu.Lock()
 		defer sessionMu.Unlock()
 
+		// step 47.2/47.3 — fail fast on a tab left wedged by a previous,
+		// unrelated caller instead of discovering it only after burning
+		// paginatedCrawlTimeout on a navigate that was never going to
+		// complete, and replace the wedged tab immediately (still
+		// holding sessionMu) so the NEXT caller gets a fresh, healthy
+		// session instead of inheriting the same wedge. blockedURL is
+		// deliberately left "" here — the dispatch below
+		// (errors.As(err, &cfErr) && blockedURL != "") only routes to
+		// the headed Cloudflare fallback when both are true, so this
+		// wedge error (a *crawlError, same as the Cloudflare one) can
+		// never accidentally trigger it.
+		if err := probeSessionLiveness(sessionCtx); err != nil {
+			recreateErr := recreateSharedSessionLocked()
+			return paginatedCrawlResponse{}, nil, "", newSessionWedgedError(err, recreateErr)
+		}
+
 		ctx, cancel := context.WithTimeout(sessionCtx, paginatedCrawlTimeout)
 		defer cancel()
 

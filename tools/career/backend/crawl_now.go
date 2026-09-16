@@ -56,6 +56,20 @@ import (
 // plan/ai/tools/browser/step-38-session-interrupted-retry.md.
 var errBrowserSessionInterrupted = errors.New("browser tool session was interrupted")
 
+// errBrowserSessionWedged (step 47.3) is what callBrowserProxy returns
+// (wrapped, so errors.Is still matches) when browser's own response
+// carries its crawlError "browser_session_wedged" Code — the shared
+// session's own process is fine, but its one tab was left unresponsive
+// by an earlier, unrelated caller (an unhandled dialog, a wedged
+// renderer, an interrupted navigation) and has already been
+// automatically replaced with a fresh one before this response was
+// even sent. Distinct from errBrowserSessionInterrupted (a whole-
+// process restart) but handled identically by runCrawlNow's own retry
+// loop below — both are transient, self-healing failures where a
+// retry is expected to land on a healthy session. See
+// plan/ai/tools/browser/step-47-shared-tab-wedge-and-stuck-crawl-fix.md.
+var errBrowserSessionWedged = errors.New("browser tool session's tab was wedged")
+
 // crawlNowSessionRetryInterval/maxCrawlNowSessionRetries bound
 // runCrawlNow's own retry of a single errBrowserSessionInterrupted
 // failure — a short, fixed-count budget, deliberately NOT this
@@ -403,8 +417,10 @@ func runCrawlNow(ctx context.Context, runID, portalLinkID, accessToken string) {
 		fail(err)
 		return
 	}
-	// step 38 — retried up to maxCrawlNowSessionRetries times, but only
-	// for errBrowserSessionInterrupted: every other failure (Cloudflare
+	// step 38/47.3 — retried up to maxCrawlNowSessionRetries times, but
+	// only for errBrowserSessionInterrupted (the whole subprocess was
+	// restarted) or errBrowserSessionWedged (just the one tab was
+	// wedged and already replaced): every other failure (Cloudflare
 	// blocked, session expired, a genuine navigation/extraction error)
 	// still fails on the first attempt, exactly as before.
 	var respBody []byte
@@ -415,13 +431,14 @@ func runCrawlNow(ctx context.Context, runID, portalLinkID, accessToken string) {
 		if err == nil {
 			break
 		}
-		if !errors.Is(err, errBrowserSessionInterrupted) || attempt >= maxCrawlNowSessionRetries {
+		transient := errors.Is(err, errBrowserSessionInterrupted) || errors.Is(err, errBrowserSessionWedged)
+		if !transient || attempt >= maxCrawlNowSessionRetries {
 			fail(err)
 			return
 		}
 		_ = appendCrawlRunLog(runID, fmt.Sprintf(
-			"browser tool session was interrupted — retrying (%d/%d) in %s",
-			attempt+1, maxCrawlNowSessionRetries, crawlNowSessionRetryInterval,
+			"%s — retrying (%d/%d) in %s",
+			err.Error(), attempt+1, maxCrawlNowSessionRetries, crawlNowSessionRetryInterval,
 		))
 		time.Sleep(crawlNowSessionRetryInterval)
 	}
@@ -496,6 +513,9 @@ func callBrowserProxy(ctx context.Context, coreURL, path string, body []byte, ac
 		if jsonErr := json.Unmarshal(respBody, &cfErr); jsonErr == nil && cfErr.Code != "" {
 			if cfErr.Code == "browser_session_interrupted" {
 				return nil, fmt.Errorf("%w: %s", errBrowserSessionInterrupted, cfErr.Message)
+			}
+			if cfErr.Code == "browser_session_wedged" {
+				return nil, fmt.Errorf("%w: %s", errBrowserSessionWedged, cfErr.Message)
 			}
 			reasonSuffix := ""
 			if cfErr.Reason != "" {
