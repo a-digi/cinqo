@@ -14,8 +14,12 @@ export function ToolRouteOutlet() {
   const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    setToolNavigator(navigate)
-    return () => setToolNavigator(null)
+    setToolNavigator((path) => {
+      void navigate(path)
+    })
+    return () => {
+      setToolNavigator(null)
+    }
   }, [navigate])
 
   useEffect(() => {

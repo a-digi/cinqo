@@ -8,7 +8,7 @@ import {
   removeProfileExternalLink,
   type Profile,
 } from '../../api'
-import { PlusIcon, XIcon } from '../../icons'
+import { PlusIcon, XIcon } from '../../Shared/Icons/icons'
 
 // The job seeker layer, one level above Persona (step 10) — the
 // natural new entry point now that nothing else (Personas, and

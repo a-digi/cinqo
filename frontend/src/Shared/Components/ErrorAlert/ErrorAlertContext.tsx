@@ -51,7 +51,9 @@ export function ErrorAlertProvider({ children }: { children: ReactNode }) {
     setErrors((prev) => prev.filter((e) => e.message !== text))
   }, [])
 
-  const clearErrors = useCallback(() => setErrors([]), [])
+  const clearErrors = useCallback(() => {
+    setErrors([])
+  }, [])
 
   return (
     <ErrorAlertContext.Provider value={{ errors, showError, dismissError, dismissMessage, clearErrors }}>
@@ -60,6 +62,10 @@ export function ErrorAlertProvider({ children }: { children: ReactNode }) {
   )
 }
 
+// Context + hook co-located deliberately (same convention as every other
+// *Context.tsx in this codebase) — costs this file Fast Refresh for the
+// hook specifically, never a runtime issue.
+// eslint-disable-next-line react-refresh/only-export-components
 export function useErrorAlert(): ErrorAlertContextProps {
   const ctx = useContext(ErrorAlertContext)
   if (!ctx) {

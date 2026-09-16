@@ -10,6 +10,10 @@ export interface ToolRegistryValue {
 
 const ToolRegistryContext = createContext<ToolRegistryValue>({ menuEntries: [], routes: [] })
 
+// Context + hook co-located deliberately (same convention as every other
+// *Context.tsx in this codebase) — costs this file Fast Refresh for the
+// hook specifically, never a runtime issue.
+// eslint-disable-next-line react-refresh/only-export-components
 export function useToolRegistry(): ToolRegistryValue {
   return useContext(ToolRegistryContext)
 }
@@ -30,8 +34,12 @@ export function ToolRegistryProvider({ children }: { children: ReactNode }) {
     if (!isAuthenticated || loadedRef.current) return
     loadedRef.current = true
     void loadTools({
-      onRegisterMenuEntry: (entry) => setMenuEntries((prev) => [...prev, entry]),
-      onRegisterRoute: (route) => setRoutes((prev) => [...prev, route]),
+      onRegisterMenuEntry: (entry) => {
+        setMenuEntries((prev) => [...prev, entry])
+      },
+      onRegisterRoute: (route) => {
+        setRoutes((prev) => [...prev, route])
+      },
     })
   }, [isAuthenticated])
 

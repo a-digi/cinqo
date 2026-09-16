@@ -1,5 +1,12 @@
 import { useEffect, useState } from 'react'
-import { fetchPlatforms, fetchPlatformKeys, createPlatformKey, deletePlatformKey, type Platform, type PlatformKey } from '../../../api/platforms'
+import {
+  fetchPlatforms,
+  fetchPlatformKeys,
+  createPlatformKey,
+  deletePlatformKey,
+  type Platform,
+  type PlatformKey,
+} from '../../../api/platforms'
 import { ApiError } from '../../../api/client'
 import { LoadingSpinner } from '../../../Shared/Components/Loading/LoadingSpinner'
 import { ScopeGate } from '../../../Shared/Components/Access/ScopeGate'
@@ -27,7 +34,7 @@ export function PlatformKeysPage() {
         setPlatforms(p)
         setKeys(k)
       })
-      .catch((err) => {
+      .catch((err: unknown) => {
         setError(err instanceof ApiError ? err.message : 'Failed to load platforms and keys.')
       })
   }
@@ -103,7 +110,9 @@ export function PlatformKeysPage() {
                   <ScopeGate scopes={[AppScopes.PlatformManage]}>
                     <button
                       type="button"
-                      onClick={() => handleDelete(key)}
+                      onClick={() => {
+                        void handleDelete(key)
+                      }}
                       disabled={busyId === key.id}
                       className="text-xs font-medium text-red-600 hover:text-red-800 disabled:opacity-50"
                     >
@@ -120,8 +129,12 @@ export function PlatformKeysPage() {
       <ScopeGate scopes={[AppScopes.PlatformManage]}>
         <AddKeyForm
           platforms={platforms}
-          onCreated={(key) => setKeys((prev) => (prev ? [key, ...prev] : [key]))}
-          onError={(message) => setError(message)}
+          onCreated={(key) => {
+            setKeys((prev) => (prev ? [key, ...prev] : [key]))
+          }}
+          onError={(message) => {
+            setError(message)
+          }}
         />
       </ScopeGate>
       {dialog}
@@ -147,7 +160,7 @@ function AddKeyForm({
   const [key, setKey] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault()
     if (!platform) {
       onError('Select a platform.')
@@ -167,14 +180,21 @@ function AddKeyForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="rounded-lg border border-gray-200 p-4 space-y-3">
+    <form
+      onSubmit={(e) => {
+        void handleSubmit(e)
+      }}
+      className="rounded-lg border border-gray-200 p-4 space-y-3"
+    >
       <h2 className="text-sm font-semibold text-gray-900">Add API key</h2>
       <div className="flex flex-wrap gap-3">
         <input
           type="text"
           placeholder="Label"
           value={label}
-          onChange={(e) => setLabel(e.target.value)}
+          onChange={(e) => {
+            setLabel(e.target.value)
+          }}
           required
           className="min-w-40 flex-1 rounded border border-gray-300 px-3 py-1.5 text-sm"
         />
@@ -190,7 +210,9 @@ function AddKeyForm({
           type="password"
           placeholder="API key"
           value={key}
-          onChange={(e) => setKey(e.target.value)}
+          onChange={(e) => {
+            setKey(e.target.value)
+          }}
           required
           className="min-w-48 flex-1 rounded border border-gray-300 px-3 py-1.5 text-sm"
         />

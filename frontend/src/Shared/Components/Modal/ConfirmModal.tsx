@@ -38,22 +38,30 @@ export function ConfirmModal({
       if (e.key === 'Escape') onCancel()
     }
     window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+    }
   }, [open, onCancel])
 
   if (!open) return null
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
-      onClick={onCancel}
-    >
+    // Click-outside-to-dismiss is a mouse-only convenience — Escape
+    // (handled above) is the fully equivalent keyboard path, so no
+    // onKeyDown is needed here.
+    // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onCancel}>
+      {/* Not a real interaction — only stops the backdrop's own
+          onClick from treating a click inside the dialog as "outside". */}
+      {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-noninteractive-element-interactions */}
       <div
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="confirm-modal-title"
         className="w-full max-w-sm rounded-lg bg-white p-5 shadow-lg"
-        onClick={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation()
+        }}
       >
         <h2 id="confirm-modal-title" className="text-base font-semibold text-gray-900">
           {title}

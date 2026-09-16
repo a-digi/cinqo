@@ -41,8 +41,12 @@ export function ThinkingIndicator({ startedAt, clockOffsetMs }: { startedAt: str
   // Dots — its own fast interval, a lively "typing" feel; unrelated to
   // the once-a-second timer below.
   useEffect(() => {
-    const id = setInterval(() => setDotCount((d) => (d + 1) % 4), 400)
-    return () => clearInterval(id)
+    const id = setInterval(() => {
+      setDotCount((d) => (d + 1) % 4)
+    }, 400)
+    return () => {
+      clearInterval(id)
+    }
   }, [])
 
   // Elapsed seconds + 15s word rotation — a separate, once-a-second
@@ -63,7 +67,9 @@ export function ThinkingIndicator({ startedAt, clockOffsetMs }: { startedAt: str
         setWord(randomWord())
       }
     }, 1000)
-    return () => clearInterval(id)
+    return () => {
+      clearInterval(id)
+    }
   }, [])
 
   return (

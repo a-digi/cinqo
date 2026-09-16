@@ -18,7 +18,9 @@ export function LoginPage() {
   const attemptLogin = () => {
     attempted.current = true
     setError(null)
-    void login().catch(() => setError('Could not start sign-in.'))
+    void login().catch(() => {
+      setError('Could not start sign-in.')
+    })
   }
 
   useEffect(() => {

@@ -31,7 +31,7 @@ export class ApiError extends Error {
 }
 
 function errorMessageFromBody(body: unknown, fallback: string): string {
-  if (body && typeof body === 'object' && 'message' in body && typeof (body as { message: unknown }).message === 'string') {
+  if (body && typeof body === 'object' && 'message' in body && typeof body.message === 'string') {
     return (body as { message: string }).message
   }
   return fallback
@@ -53,13 +53,18 @@ async function rawRequest(path: string, init: RequestInit): Promise<Response> {
   // Content-Type — the browser sets its own, including the multipart
   // boundary, only when Content-Type is left unset.
   const isFormData = init.body instanceof FormData
+  // init.headers is typed HeadersInit — a plain object, a Headers
+  // instance, or a string[][] — so it's built via the Headers
+  // constructor (which handles all three) rather than object-spread,
+  // which would silently produce garbage for the latter two shapes.
+  const headers = new Headers(init.headers)
+  if (!isFormData && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json')
+  }
   return fetch(path, {
     ...init,
     credentials: 'include',
-    headers: {
-      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
-      ...(init.headers ?? {}),
-    },
+    headers,
   })
 }
 

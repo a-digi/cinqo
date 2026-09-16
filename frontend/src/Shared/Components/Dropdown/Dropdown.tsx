@@ -78,14 +78,18 @@ export function Dropdown<V extends string = string>(props: DropdownProps<V>) {
     }
   }
 
-  const buttonLabel = props.multiple ? summarize(options, props.value, placeholder) : (options.find((o) => o.value === props.value)?.label ?? placeholder ?? '')
+  const buttonLabel = props.multiple
+    ? summarize(options, props.value, placeholder)
+    : (options.find((o) => o.value === props.value)?.label ?? placeholder ?? '')
 
   return (
     <div ref={containerRef} className="relative">
       <button
         type="button"
         disabled={disabled}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          setOpen((v) => !v)
+        }}
         aria-haspopup="listbox"
         aria-expanded={open}
         className="w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-left text-sm disabled:opacity-50"
@@ -101,12 +105,22 @@ export function Dropdown<V extends string = string>(props: DropdownProps<V>) {
           {options.map((opt, i) => {
             const selected = props.multiple ? props.value.includes(opt.value) : opt.value === props.value
             return (
+              // No onKeyDown here by design: focus never moves onto an
+              // option <li> in this widget (options are activated by
+              // mouse, or by Enter/Space via the document-level
+              // keydown listener above while the trigger button holds
+              // focus) — a per-item handler would never fire.
+              // eslint-disable-next-line jsx-a11y/click-events-have-key-events
               <li
                 key={opt.value}
                 role="option"
                 aria-selected={selected}
-                onClick={() => selectOption(opt)}
-                onMouseEnter={() => setHighlighted(i)}
+                onClick={() => {
+                  selectOption(opt)
+                }}
+                onMouseEnter={() => {
+                  setHighlighted(i)
+                }}
                 className={`flex cursor-pointer items-center px-2 py-1.5 text-sm ${i === highlighted ? 'bg-gray-100' : ''} ${
                   opt.disabled ? 'cursor-not-allowed opacity-50' : ''
                 }`}

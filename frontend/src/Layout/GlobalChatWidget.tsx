@@ -25,8 +25,18 @@ import { TurnStatusBadge } from '../Components/Conversation/TurnStatusBadge'
 export function GlobalChatWidget() {
   const location = useLocation()
   const [isOpen, setIsOpen] = useState(false)
-  const { conversations, selectedId, detail, error, turnWatches, selectConversation, createConversation, sendMessage, stopTurn, deleteConversation } =
-    useConversationContext()
+  const {
+    conversations,
+    selectedId,
+    detail,
+    error,
+    turnWatches,
+    selectConversation,
+    createConversation,
+    sendMessage,
+    stopTurn,
+    deleteConversation,
+  } = useConversationContext()
   // Derived from the shared per-conversation-ID registry
   // (plan/ai/conversation/step-29-frontend-per-conversation-turn-watch-registry.md)
   // for whichever conversation is currently selected in this widget —
@@ -54,7 +64,9 @@ export function GlobalChatWidget() {
   useEffect(() => {
     fetchPlatforms()
       .then(setPlatforms)
-      .catch((err) => setPlatformsError(err instanceof ApiError ? err.message : 'Failed to load platforms.'))
+      .catch((err: unknown) => {
+        setPlatformsError(err instanceof ApiError ? err.message : 'Failed to load platforms.')
+      })
   }, [])
 
   // Hidden entirely on /conversations itself — that page already shows
@@ -115,7 +127,9 @@ export function GlobalChatWidget() {
         <div className="pointer-events-none fixed bottom-4 right-4 z-50">
           <button
             type="button"
-            onClick={() => setIsOpen(true)}
+            onClick={() => {
+              setIsOpen(true)
+            }}
             aria-label="Open chat"
             className="pointer-events-auto flex h-12 w-12 items-center justify-center rounded-full bg-gray-900 text-white shadow-lg hover:bg-gray-800"
           >
@@ -134,88 +148,100 @@ export function GlobalChatWidget() {
     <>
       <div className="pointer-events-none fixed bottom-4 right-4 z-50">
         <div className="pointer-events-auto flex max-h-[70vh] w-[380px] max-w-[calc(100vw-2rem)] flex-col rounded-lg border border-gray-200 bg-white shadow-xl">
-        <div className="flex items-center gap-1 border-b border-gray-200 px-2 py-2">
-          <button
-            type="button"
-            onClick={openList}
-            aria-label="Show conversations"
-            title="Show conversations"
-            className="shrink-0 rounded p-1.5 text-gray-500 hover:bg-gray-100"
-          >
-            <ListIcon />
-          </button>
-          <button
-            type="button"
-            onClick={openNew}
-            aria-label="Start a new conversation"
-            title="Start a new conversation"
-            className="shrink-0 rounded p-1.5 text-gray-500 hover:bg-gray-100"
-          >
-            <PlusIcon />
-          </button>
-          <div className="min-w-0 flex-1 truncate px-1 text-sm font-medium text-gray-900">{headerTitle}</div>
-          <Link
-            to="/conversations"
-            aria-label="Open full conversation view"
-            title="Open full conversation view"
-            className="shrink-0 rounded p-1.5 text-gray-500 hover:bg-gray-100"
-            onClick={() => setIsOpen(false)}
-          >
-            <ExpandIcon />
-          </Link>
-          <button
-            type="button"
-            onClick={() => setIsOpen(false)}
-            aria-label="Close chat"
-            title="Close chat"
-            className="shrink-0 rounded p-1.5 text-gray-500 hover:bg-gray-100"
-          >
-            <CloseIcon />
-          </button>
-        </div>
+          <div className="flex items-center gap-1 border-b border-gray-200 px-2 py-2">
+            <button
+              type="button"
+              onClick={openList}
+              aria-label="Show conversations"
+              title="Show conversations"
+              className="shrink-0 rounded p-1.5 text-gray-500 hover:bg-gray-100"
+            >
+              <ListIcon />
+            </button>
+            <button
+              type="button"
+              onClick={openNew}
+              aria-label="Start a new conversation"
+              title="Start a new conversation"
+              className="shrink-0 rounded p-1.5 text-gray-500 hover:bg-gray-100"
+            >
+              <PlusIcon />
+            </button>
+            <div className="min-w-0 flex-1 truncate px-1 text-sm font-medium text-gray-900">{headerTitle}</div>
+            <Link
+              to="/conversations"
+              aria-label="Open full conversation view"
+              title="Open full conversation view"
+              className="shrink-0 rounded p-1.5 text-gray-500 hover:bg-gray-100"
+              onClick={() => {
+                setIsOpen(false)
+              }}
+            >
+              <ExpandIcon />
+            </Link>
+            <button
+              type="button"
+              onClick={() => {
+                setIsOpen(false)
+              }}
+              aria-label="Close chat"
+              title="Close chat"
+              className="shrink-0 rounded p-1.5 text-gray-500 hover:bg-gray-100"
+            >
+              <CloseIcon />
+            </button>
+          </div>
 
-        {(error || platformsError) && (
-          <p className="border-b border-red-100 bg-red-50 px-3 py-1.5 text-xs text-red-600">{error ?? platformsError}</p>
-        )}
+          {(error ?? platformsError) && (
+            <p className="border-b border-red-100 bg-red-50 px-3 py-1.5 text-xs text-red-600">{error ?? platformsError}</p>
+          )}
 
-        {creatingNew ? (
-          platforms.length === 0 ? (
-            <div className="flex flex-1 items-center justify-center p-4 text-center text-sm text-gray-400">
-              {platformsError ? 'Could not load AI platforms.' : 'No AI platform configured yet.'}
+          {creatingNew ? (
+            platforms.length === 0 ? (
+              <div className="flex flex-1 items-center justify-center p-4 text-center text-sm text-gray-400">
+                {platformsError ? 'Could not load AI platforms.' : 'No AI platform configured yet.'}
+              </div>
+            ) : (
+              <NewConversationForm
+                platforms={platforms}
+                onCreate={(input) => {
+                  void handleCreate(input)
+                }}
+                onCancel={openList}
+              />
+            )
+          ) : showList || !selectedId ? (
+            <ConversationList
+              conversations={conversations}
+              selectedId={selectedId}
+              busyId={busyId}
+              onSelect={handleSelect}
+              onDelete={(c) => {
+                void handleDelete(c)
+              }}
+            />
+          ) : !detail ? (
+            <div className="flex flex-1 items-center justify-center p-6">
+              <LoadingSpinner label="Loading conversation…" />
             </div>
           ) : (
-            <NewConversationForm platforms={platforms} onCreate={handleCreate} onCancel={openList} />
-          )
-        ) : showList || !selectedId ? (
-          <ConversationList
-            conversations={conversations}
-            selectedId={selectedId}
-            busyId={busyId}
-            onSelect={handleSelect}
-            onDelete={handleDelete}
-          />
-        ) : !detail ? (
-          <div className="flex flex-1 items-center justify-center p-6">
-            <LoadingSpinner label="Loading conversation…" />
-          </div>
-        ) : (
-          <>
-            <MessageThread
-              messages={detail.messages}
-              pendingUserContent={pendingUserContent}
-              sending={sending}
-              turnStartedAt={turnStartedAt}
-              turnClockOffsetMs={turnClockOffsetMs}
-              onResend={(content) => void sendMessage(detail.id, content)}
-            />
-            <MessageComposer
-              platformLabel={`${detail.platformId} · ${detail.model}`}
-              onSend={(content) => void sendMessage(detail.id, content)}
-              onStop={() => void stopTurn(detail.id)}
-              disabled={sending}
-            />
-          </>
-        )}
+            <>
+              <MessageThread
+                messages={detail.messages}
+                pendingUserContent={pendingUserContent}
+                sending={sending}
+                turnStartedAt={turnStartedAt}
+                turnClockOffsetMs={turnClockOffsetMs}
+                onResend={(content) => void sendMessage(detail.id, content)}
+              />
+              <MessageComposer
+                platformLabel={`${detail.platformId} · ${detail.model}`}
+                onSend={(content) => void sendMessage(detail.id, content)}
+                onStop={() => void stopTurn(detail.id)}
+                disabled={sending}
+              />
+            </>
+          )}
         </div>
       </div>
       {dialog}
@@ -253,7 +279,9 @@ function ConversationList({
         >
           <button
             type="button"
-            onClick={() => onSelect(c.id)}
+            onClick={() => {
+              onSelect(c.id)
+            }}
             className={`min-w-0 flex-1 px-3 py-2 text-left text-sm ${c.id === selectedId ? 'font-medium text-gray-900' : 'text-gray-700'}`}
           >
             <div className="truncate">{c.title}</div>
@@ -261,7 +289,15 @@ function ConversationList({
             <TurnStatusBadge activeTurn={c.activeTurn} />
           </button>
           <div className="mr-1 shrink-0">
-            <IconButton icon={<TrashIcon />} label="Delete" onClick={() => onDelete(c)} disabled={busyId === c.id} variant="danger" />
+            <IconButton
+              icon={<TrashIcon />}
+              label="Delete"
+              onClick={() => {
+                onDelete(c)
+              }}
+              disabled={busyId === c.id}
+              variant="danger"
+            />
           </div>
         </div>
       ))}

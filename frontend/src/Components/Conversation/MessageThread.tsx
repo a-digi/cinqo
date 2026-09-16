@@ -32,11 +32,7 @@ export function MessageThread({
   onResend: (content: string) => void
 }) {
   if (messages.length === 0 && !pendingUserContent) {
-    return (
-      <div className="flex flex-1 items-center justify-center text-sm text-gray-400">
-        Send a message to start the conversation.
-      </div>
-    )
+    return <div className="flex flex-1 items-center justify-center text-sm text-gray-400">Send a message to start the conversation.</div>
   }
 
   return (
@@ -81,7 +77,9 @@ function Bubble({
             <span className="text-red-700">Failed to send</span>
             <button
               type="button"
-              onClick={() => onResend(message.content)}
+              onClick={() => {
+                onResend(message.content)
+              }}
               disabled={resendDisabled}
               className="font-medium underline disabled:opacity-50"
             >
@@ -89,7 +87,9 @@ function Bubble({
             </button>
             <button
               type="button"
-              onClick={() => setShowError((v) => !v)}
+              onClick={() => {
+                setShowError((v) => !v)
+              }}
               aria-label={showError ? 'Hide error details' : 'Show error details'}
               className="ml-auto text-red-700 hover:text-red-900"
             >

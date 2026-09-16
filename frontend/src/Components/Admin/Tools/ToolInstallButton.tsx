@@ -34,7 +34,9 @@ export function ToolInstallButton() {
         type="file"
         accept=".zip,application/zip"
         className="hidden"
-        onChange={handleChange}
+        onChange={(e) => {
+          void handleChange(e)
+        }}
         disabled={busy}
       />
       <button

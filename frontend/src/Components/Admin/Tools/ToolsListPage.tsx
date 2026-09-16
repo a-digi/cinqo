@@ -28,7 +28,7 @@ export function ToolsListPage() {
       .then((result) => {
         if (!cancelled) setTools(result)
       })
-      .catch((err) => {
+      .catch((err: unknown) => {
         if (!cancelled) setError(err instanceof ApiError ? err.message : 'Failed to load tools.')
       })
     return () => {
@@ -100,7 +100,9 @@ export function ToolsListPage() {
         <input
           type="text"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => {
+            setQuery(e.target.value)
+          }}
           placeholder="Search tools…"
           className="w-full max-w-xs rounded border border-gray-300 px-3 py-1.5 text-sm focus:border-gray-500 focus:outline-none"
         />
@@ -158,13 +160,17 @@ export function ToolsListPage() {
                       <IconButton
                         icon={<PowerIcon />}
                         label={tool.enabled ? 'Disable' : 'Enable'}
-                        onClick={() => handleToggle(tool)}
+                        onClick={() => {
+                          void handleToggle(tool)
+                        }}
                         disabled={busySlug === tool.slug}
                       />
                       <IconButton
                         icon={<TrashIcon />}
                         label="Delete"
-                        onClick={() => handleDelete(tool)}
+                        onClick={() => {
+                          void handleDelete(tool)
+                        }}
                         disabled={busySlug === tool.slug}
                         variant="danger"
                       />

@@ -17,12 +17,18 @@ export function ErrorAlert({ errors, onDismiss }: ErrorAlertProps) {
       {errors.map((e) => (
         <div key={e.id} role="alert" className="flex items-start gap-3 text-sm text-red-800">
           <svg className="mt-0.5 h-5 w-5 shrink-0 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m0 3.75h.008M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M12 9v3.75m0 3.75h.008M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"
+            />
           </svg>
           <span className="flex-1 pt-0.5">{e.message}</span>
           <button
             type="button"
-            onClick={() => onDismiss(e.id)}
+            onClick={() => {
+              onDismiss(e.id)
+            }}
             aria-label="Close"
             className="shrink-0 rounded p-0.5 text-red-500 transition-colors hover:bg-red-100 hover:text-red-700"
           >

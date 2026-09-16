@@ -49,7 +49,9 @@ export function ConversationSidebar({
   // before Save/Cancel's onClick runs — a click on either button would
   // otherwise blur the input first, silently committing even a Cancel
   // click. See plan/ai/conversation/step-10-sidebar-action-icons.md.
-  const preventBlur = (e: React.MouseEvent) => e.preventDefault()
+  const preventBlur = (e: React.MouseEvent) => {
+    e.preventDefault()
+  }
 
   const handleDelete = async (c: Conversation) => {
     const confirmed = await confirm({
@@ -79,10 +81,18 @@ export function ConversationSidebar({
             >
               {renamingId === c.id ? (
                 <input
+                  // Deliberate: entering rename mode should focus the
+                  // input immediately, the same convention GitHub/most
+                  // inline-rename UIs use.
+                  // eslint-disable-next-line jsx-a11y/no-autofocus
                   autoFocus
                   value={renameValue}
-                  onChange={(e) => setRenameValue(e.target.value)}
-                  onBlur={() => commitRename(c.id)}
+                  onChange={(e) => {
+                    setRenameValue(e.target.value)
+                  }}
+                  onBlur={() => {
+                    commitRename(c.id)
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') commitRename(c.id)
                     if (e.key === 'Escape') cancelRename()
@@ -92,8 +102,12 @@ export function ConversationSidebar({
               ) : (
                 <button
                   type="button"
-                  onClick={() => onSelect(c.id)}
-                  onDoubleClick={() => startRename(c)}
+                  onClick={() => {
+                    onSelect(c.id)
+                  }}
+                  onDoubleClick={() => {
+                    startRename(c)
+                  }}
                   disabled={busyId === c.id}
                   className="min-w-0 flex-1 text-left text-gray-800 disabled:opacity-50"
                   title={c.title}
@@ -104,13 +118,35 @@ export function ConversationSidebar({
               )}
               {renamingId === c.id ? (
                 <div className="flex shrink-0 gap-0.5">
-                  <IconButton icon={<CheckIcon />} label="Save" onMouseDown={preventBlur} onClick={() => commitRename(c.id)} />
+                  <IconButton
+                    icon={<CheckIcon />}
+                    label="Save"
+                    onMouseDown={preventBlur}
+                    onClick={() => {
+                      commitRename(c.id)
+                    }}
+                  />
                   <IconButton icon={<XIcon />} label="Cancel" onMouseDown={preventBlur} onClick={cancelRename} />
                 </div>
               ) : (
                 <div className="flex shrink-0 gap-0.5 opacity-0 group-hover:opacity-100">
-                  <IconButton icon={<PencilIcon />} label="Rename" onClick={() => startRename(c)} disabled={busyId === c.id} />
-                  <IconButton icon={<TrashIcon />} label="Delete" onClick={() => handleDelete(c)} disabled={busyId === c.id} variant="danger" />
+                  <IconButton
+                    icon={<PencilIcon />}
+                    label="Rename"
+                    onClick={() => {
+                      startRename(c)
+                    }}
+                    disabled={busyId === c.id}
+                  />
+                  <IconButton
+                    icon={<TrashIcon />}
+                    label="Delete"
+                    onClick={() => {
+                      void handleDelete(c)
+                    }}
+                    disabled={busyId === c.id}
+                    variant="danger"
+                  />
                 </div>
               )}
             </li>

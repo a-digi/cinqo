@@ -59,7 +59,9 @@ export function ConversationPage() {
   useEffect(() => {
     fetchPlatforms()
       .then(setPlatforms)
-      .catch((err) => setPlatformsError(err instanceof ApiError ? err.message : 'Failed to load platforms.'))
+      .catch((err: unknown) => {
+        setPlatformsError(err instanceof ApiError ? err.message : 'Failed to load platforms.')
+      })
   }, [])
 
   const handleSelect = (id: string) => {
@@ -122,8 +124,12 @@ export function ConversationPage() {
           busyId={busyId}
           onSelect={handleSelect}
           onCreate={handleStartCreate}
-          onRename={handleRename}
-          onDelete={handleDelete}
+          onRename={(id, title) => {
+            void handleRename(id, title)
+          }}
+          onDelete={(id) => {
+            void handleDelete(id)
+          }}
         />
       )}
 
@@ -131,7 +137,9 @@ export function ConversationPage() {
         <div className="flex items-center border-b border-gray-200 px-3 py-2">
           <button
             type="button"
-            onClick={() => setIsSidebarCollapsed((v) => !v)}
+            onClick={() => {
+              setIsSidebarCollapsed((v) => !v)
+            }}
             aria-label={isSidebarCollapsed ? 'Show conversation list' : 'Hide conversation list'}
             className="rounded p-1.5 text-gray-500 hover:bg-gray-100"
           >
@@ -141,12 +149,20 @@ export function ConversationPage() {
 
         {combinedError && <p className="border-b border-red-100 bg-red-50 px-4 py-2 text-sm text-red-600">{combinedError}</p>}
 
-        {creatingNew && <NewConversationForm platforms={platforms} onCreate={handleCreate} onCancel={() => setCreatingNew(false)} />}
+        {creatingNew && (
+          <NewConversationForm
+            platforms={platforms}
+            onCreate={(input) => {
+              void handleCreate(input)
+            }}
+            onCancel={() => {
+              setCreatingNew(false)
+            }}
+          />
+        )}
 
         {!creatingNew && !selectedId && (
-          <div className="flex flex-1 items-center justify-center text-sm text-gray-400">
-            Select or create a conversation.
-          </div>
+          <div className="flex flex-1 items-center justify-center text-sm text-gray-400">Select or create a conversation.</div>
         )}
 
         {!creatingNew && selectedId && !detail && (

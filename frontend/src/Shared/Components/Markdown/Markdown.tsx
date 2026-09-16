@@ -75,7 +75,7 @@ const components: Components = {
     // text) — since a hallucinated label could otherwise pair a
     // legitimate href with a misleading save-as name. See this file's
     // step-07 doc, "Amendment" section.
-    const filename = isProxyDownload ? proxyDownloadFilename(href as string) : null
+    const filename = isProxyDownload ? proxyDownloadFilename(href) : null
 
     return (
       <a

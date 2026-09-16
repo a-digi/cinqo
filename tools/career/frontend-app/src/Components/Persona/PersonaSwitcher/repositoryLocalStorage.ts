@@ -1,4 +1,6 @@
-// personaStore.ts — the current persona id, kept in localStorage as a
+// repositoryLocalStorage.ts — PersonaSwitcher's own current-persona-id
+// localStorage repository (moved out of the tool-wide personaStore.ts,
+// step 50, once PersonaSwitcher turned out to be its only caller): a
 // per-viewer convenience (not required for correctness: every page
 // re-resolves an "effective" persona id on its own mount via
 // PersonaSwitcher, falling back to the first available persona if the
@@ -9,7 +11,7 @@
 // plan/ai/tools/career/step-09-persona-frontend.md.
 const STORAGE_KEY = 'career.currentPersonaId'
 
-export function getStoredPersonaId(): string | null {
+export function getPersonaIdFromLocalStorage(): string | null {
   try {
     return localStorage.getItem(STORAGE_KEY)
   } catch {
@@ -17,7 +19,7 @@ export function getStoredPersonaId(): string | null {
   }
 }
 
-export function setStoredPersonaId(id: string): void {
+export function setPersonaIdInLocalStorage(id: string): void {
   try {
     localStorage.setItem(STORAGE_KEY, id)
   } catch {

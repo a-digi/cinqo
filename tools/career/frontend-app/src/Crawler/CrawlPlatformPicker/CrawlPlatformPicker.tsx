@@ -1,5 +1,5 @@
 import { Dropdown } from '../../Components/Dropdown/Dropdown'
-import type { Platform } from '../../coreApi'
+import type { Platform } from '../../Cinqo/Platform/platformRepository'
 
 // The shared AI-platform/model choice CrawlPanel's own "Crawl with
 // AI"/"Generate with AI" both use — picked once per page, not per

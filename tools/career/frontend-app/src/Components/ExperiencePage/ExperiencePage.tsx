@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { fetchExperience, addExperience, updateExperience, removeExperience, type CareerExperience } from '../../api'
 import { Field } from '../Field/Field'
-import { PlusIcon } from '../../icons'
-import { PersonaSwitcher } from '../PersonaSwitcher/PersonaSwitcher'
+import { PlusIcon } from '../../Shared/Icons/icons'
+import { PersonaSwitcher } from '../Persona/PersonaSwitcher/PersonaSwitcher'
 
 const emptyEntry = { company: '', title: '', startDate: '', endDate: '', description: '' }
 

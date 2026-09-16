@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { fetchPersonas, createPersona, updatePersona, deletePersona, type Persona } from '../../api'
-import { PlusIcon } from '../../icons'
-import { ProfileSwitcher } from '../ProfileSwitcher/ProfileSwitcher'
+import { fetchPersonas, createPersona, updatePersona, deletePersona, type Persona } from '../../../api'
+import { PlusIcon } from '../../../Shared/Icons/icons'
+import { ProfileSwitcher } from '../../ProfileSwitcher/ProfileSwitcher'
 
 // Full persona CRUD — since step 10, every persona belongs to a
 // profile (job seeker), so this page now scopes its own list and its

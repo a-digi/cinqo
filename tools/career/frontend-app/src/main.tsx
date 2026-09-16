@@ -23,8 +23,8 @@
 // plan/ai/tools/career/step-12-nested-profiles-menu.md.
 import { createRoot, type Root } from 'react-dom/client'
 import { ProfilesPage } from './Components/ProfilesPage/ProfilesPage'
-import { PersonasPage } from './Components/PersonasPage/PersonasPage'
-import { PersonaDetailsPage } from './Components/PersonaDetailsPage/PersonaDetailsPage'
+import { PersonasPage } from './Components/Persona/PersonasPage/PersonasPage'
+import { PersonaDetailsPage } from './Components/Persona/PersonaDetailsPage/PersonaDetailsPage'
 import { SkillsPage } from './Components/SkillsPage/SkillsPage'
 import { ExperiencePage } from './Components/ExperiencePage/ExperiencePage'
 import { JobsPage } from './Components/JobsPage/JobsPage'

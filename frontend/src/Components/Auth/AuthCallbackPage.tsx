@@ -48,7 +48,7 @@ export function AuthCallbackPage() {
         await completeAuthCallback({ code, codeVerifier: verifier, state })
         sessionStorage.removeItem(PKCE_VERIFIER_STORAGE_KEY)
         await refreshAuthState()
-        navigate('/', { replace: true })
+        void navigate('/', { replace: true })
       } catch {
         setStatus('error')
         errorMessage('Sign-in failed. Please try again.')

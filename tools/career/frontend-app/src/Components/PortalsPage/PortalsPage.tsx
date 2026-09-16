@@ -10,10 +10,10 @@ import {
   type Portal,
   type PortalLink,
 } from '../../api'
-import { fetchPlatforms, type Platform } from '../../coreApi'
+import { fetchPlatforms, type Platform } from '../../Cinqo/Platform/platformRepository'
 import { CrawlPlatformPicker } from '../../Crawler/CrawlPlatformPicker/CrawlPlatformPicker'
 import { CrawlPanel } from '../../Crawler/CrawlPanel/CrawlPanel'
-import { PlusIcon } from '../../icons'
+import { PlusIcon } from '../../Shared/Icons/icons'
 
 // Portals are tool-wide, not persona/profile-scoped — same reasoning
 // Jobs/Companies already document. No Dropdown call site here: a

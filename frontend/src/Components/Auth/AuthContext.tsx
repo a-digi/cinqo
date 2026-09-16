@@ -37,7 +37,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const renewTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Holds the latest refreshAuthState so the setTimeout callback (set up
   // once per schedule call) never closes over a stale version of it.
-  const refreshAuthStateRef = useRef<() => Promise<void>>(async () => {})
+  const refreshAuthStateRef = useRef<() => Promise<void>>(() => Promise.resolve())
   // Latest isAuthenticated for the session-expiry subscriber (set up once), so it
   // never closes over a stale value and never fires on the pre-login bootstrap.
   const isAuthenticatedRef = useRef(false)
@@ -114,7 +114,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [clearSession, errorMessage])
 
   useEffect(() => {
-    void refreshAuthState().finally(() => setIsLoading(false))
+    void refreshAuthState().finally(() => {
+      setIsLoading(false)
+    })
     return () => {
       if (renewTimer.current) clearTimeout(renewTimer.current)
     }
@@ -179,6 +181,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
+// Context + hook co-located deliberately (same convention as every other
+// *Context.tsx in this codebase) — costs this file Fast Refresh for the
+// hook specifically (editing useAuth alone forces a full reload instead of
+// a hot patch), never a runtime issue.
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth(): AuthContextValue {
   const ctx = useContext(AuthContext)
   if (!ctx) {

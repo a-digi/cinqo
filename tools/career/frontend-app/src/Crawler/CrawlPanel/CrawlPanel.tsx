@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { updatePortalLink, type PortalLink } from '../../api'
-import { createConversation, sendMessage, CoreApiError, type Platform } from '../../coreApi'
+import type { Platform } from '../../Cinqo/Platform/platformRepository'
+import { CoreApiError } from '../../Cinqo/Http/client'
+import { createConversation, sendMessage } from '../../Cinqo/Conversation/conversation'
 import { buildCrawlMessage, crawlConversationTitle } from '../crawl'
 import { buildGenerateInstructionsMessage, generateInstructionsConversationTitle } from '../generateInstructions'
 import { startCrawlNow, fetchActiveCrawlRun, type CrawlRun } from '../crawlNow'
-import { PlayIcon, SparkleIcon, LogIcon, AlertIcon } from '../../icons'
+import { PlayIcon, SparkleIcon, LogIcon, AlertIcon } from '../../Shared/Icons/icons'
 
 // PHASE_LABELS (step 40) — a human-readable sentence per fine-grained
 // crawl_runs.phase value (step 39). A plain lookup, not a switch,

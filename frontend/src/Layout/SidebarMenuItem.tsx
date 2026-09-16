@@ -2,11 +2,7 @@ import { useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import type { MenuEntry } from '../config/menu/menu'
 import { SidebarIcon } from './SidebarIcon'
-
-export function hasActiveDescendant(entry: MenuEntry, pathname: string): boolean {
-  if (entry.path && (pathname === entry.path || pathname.startsWith(entry.path + '/'))) return true
-  return entry.children?.some((child) => hasActiveDescendant(child, pathname)) ?? false
-}
+import { hasActiveDescendant } from './hasActiveDescendant'
 
 // Calculated, not looked up — depth * step reproduces the old fixed
 // pl-3/pl-6/pl-9 progression exactly for depths 1-3 (Tailwind's own
@@ -54,7 +50,9 @@ export function SidebarMenuItem({ entry, depth }: { entry: MenuEntry; depth: num
         ) : (
           <button
             type="button"
-            onClick={() => setIsExpanded((prev) => !prev)}
+            onClick={() => {
+              setIsExpanded((prev) => !prev)
+            }}
             aria-expanded={isExpanded}
             style={{ paddingLeft }}
             className="flex flex-1 items-center gap-2 rounded-md py-2 pr-3 text-left text-sm font-medium text-gray-500"
@@ -66,7 +64,9 @@ export function SidebarMenuItem({ entry, depth }: { entry: MenuEntry; depth: num
         {hasChildren && (
           <button
             type="button"
-            onClick={() => setIsExpanded((prev) => !prev)}
+            onClick={() => {
+              setIsExpanded((prev) => !prev)
+            }}
             aria-expanded={isExpanded}
             aria-label={isExpanded ? `Collapse ${entry.label}` : `Expand ${entry.label}`}
             className="px-2 py-2 text-gray-400 hover:text-gray-600"
@@ -77,7 +77,7 @@ export function SidebarMenuItem({ entry, depth }: { entry: MenuEntry; depth: num
       </div>
       {hasChildren && isExpanded && (
         <ul>
-          {entry.children!.map((child) => (
+          {entry.children?.map((child) => (
             <SidebarMenuItem key={child.label} entry={child} depth={depth + 1} />
           ))}
         </ul>
@@ -88,12 +88,12 @@ export function SidebarMenuItem({ entry, depth }: { entry: MenuEntry; depth: num
 
 function CaretIcon({ open }: { open: boolean }) {
   return (
-    <svg
-      viewBox="0 0 20 20"
-      fill="currentColor"
-      className={`h-4 w-4 transition-transform ${open ? 'rotate-90' : ''}`}
-    >
-      <path fillRule="evenodd" d="M7.293 4.293a1 1 0 0 1 1.414 0l5 5a1 1 0 0 1 0 1.414l-5 5a1 1 0 0 1-1.414-1.414L11.586 10 7.293 5.707a1 1 0 0 1 0-1.414Z" clipRule="evenodd" />
+    <svg viewBox="0 0 20 20" fill="currentColor" className={`h-4 w-4 transition-transform ${open ? 'rotate-90' : ''}`}>
+      <path
+        fillRule="evenodd"
+        d="M7.293 4.293a1 1 0 0 1 1.414 0l5 5a1 1 0 0 1 0 1.414l-5 5a1 1 0 0 1-1.414-1.414L11.586 10 7.293 5.707a1 1 0 0 1 0-1.414Z"
+        clipRule="evenodd"
+      />
     </svg>
   )
 }

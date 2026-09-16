@@ -131,10 +131,7 @@ export async function deleteConversation(id: string): Promise<void> {
 // caller is responsible for polling fetchActiveTurn until it leaves
 // "running", then calling fetchConversation for the real message.
 export async function sendMessage(conversationId: string, input: { content: string }): Promise<StartedTurnRun> {
-  const raw = await apiPost<{ message: StartedTurnRun }>(
-    `/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`,
-    input,
-  )
+  const raw = await apiPost<{ message: StartedTurnRun }>(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`, input)
   return raw.message
 }
 

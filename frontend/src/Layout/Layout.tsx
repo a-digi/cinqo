@@ -20,7 +20,11 @@ export function Layout() {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-gray-50">
-      <Navbar onToggleSidebar={() => setIsSidebarCollapsed((v) => !v)} />
+      <Navbar
+        onToggleSidebar={() => {
+          setIsSidebarCollapsed((v) => !v)
+        }}
+      />
       <ErrorAlert errors={errors} onDismiss={dismissError} />
       <div className="flex flex-1 overflow-hidden">
         {!isSidebarCollapsed && <Sidebar />}

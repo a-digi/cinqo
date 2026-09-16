@@ -9,7 +9,7 @@ import {
   type Company,
 } from '../../api'
 import { Dropdown } from '../Dropdown/Dropdown'
-import { PlusIcon } from '../../icons'
+import { PlusIcon } from '../../Shared/Icons/icons'
 
 const COMPANIES_PATH = '/tools/career/companies'
 

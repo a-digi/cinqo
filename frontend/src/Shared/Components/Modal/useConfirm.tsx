@@ -20,7 +20,7 @@ export function useConfirm(): {
   dialog: React.ReactNode
 } {
   const [options, setOptions] = useState<ConfirmOptions | null>(null)
-  const resolveRef = useRef<(value: boolean) => void>(() => {})
+  const resolveRef = useRef<(value: boolean) => void>(() => undefined)
 
   const confirm = useCallback((opts: ConfirmOptions) => {
     return new Promise<boolean>((resolve) => {
@@ -42,8 +42,12 @@ export function useConfirm(): {
       confirmLabel={options?.confirmLabel}
       cancelLabel={options?.cancelLabel}
       danger={options?.danger}
-      onConfirm={() => settle(true)}
-      onCancel={() => settle(false)}
+      onConfirm={() => {
+        settle(true)
+      }}
+      onCancel={() => {
+        settle(false)
+      }}
     />
   )
 

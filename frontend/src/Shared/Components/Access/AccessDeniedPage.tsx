@@ -20,7 +20,9 @@ export function AccessDeniedPage() {
       <p className="mb-6 max-w-sm text-sm text-gray-500">You don't have permission to view this page.</p>
       <button
         type="button"
-        onClick={() => navigate(-1)}
+        onClick={() => {
+          void navigate(-1)
+        }}
         className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
       >
         Go Back

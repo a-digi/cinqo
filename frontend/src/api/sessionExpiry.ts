@@ -26,7 +26,9 @@ let emitting = false
 export function emitSessionExpired(): void {
   if (emitting) return
   emitting = true
-  listeners.forEach((l) => l())
+  listeners.forEach((l) => {
+    l()
+  })
   setTimeout(() => {
     emitting = false
   }, 0)

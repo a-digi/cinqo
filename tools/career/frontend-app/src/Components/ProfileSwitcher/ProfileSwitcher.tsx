@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { fetchProfiles, type Profile } from '../../api'
-import { getStoredProfileId, setStoredProfileId } from '../../profileStore'
+import { getProfileIdFromLocalStorage, setProfileIdInLocalStorage } from './repositoryLocalStorage'
 import { Dropdown } from '../Dropdown/Dropdown'
 
 const PROFILES_PATH = '/tools/career/profiles'
@@ -26,7 +26,7 @@ export function ProfileSwitcher({
       .then((list) => {
         setProfiles(list)
         if (list.length === 0) return
-        const stored = getStoredProfileId()
+        const stored = getProfileIdFromLocalStorage()
         const effective = list.find((p) => p.id === stored) ?? list[0]
         onChange(effective.id)
       })
@@ -61,7 +61,7 @@ export function ProfileSwitcher({
         options={profiles.map((p) => ({ value: p.id, label: profileLabel(p) }))}
         value={profileId}
         onChange={(id) => {
-          setStoredProfileId(id)
+          setProfileIdInLocalStorage(id)
           onChange(id)
         }}
       />

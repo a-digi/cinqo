@@ -54,17 +54,27 @@ export function SnackBarProvider({ children }: { children: ReactNode }) {
     (text: string, variant: SnackBarVariant, duration = DEFAULT_DURATION_MS, position = DEFAULT_POSITION) => {
       const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`
       setMessages((prev) => [...prev, { id, text, variant, position }])
-      const timer = setTimeout(() => removeMessage(id), duration)
+      const timer = setTimeout(() => {
+        removeMessage(id)
+      }, duration)
       timers.current.set(id, timer)
     },
     [removeMessage],
   )
 
   const value: SnackBarContextProps = {
-    infoMessage: (message, duration, position) => pushMessage(message, 'info', duration, position),
-    dangerMessage: (message, duration, position) => pushMessage(message, 'danger', duration, position),
-    successMessage: (message, duration, position) => pushMessage(message, 'success', duration, position),
-    errorMessage: (message, duration, position) => pushMessage(message, 'error', duration, position),
+    infoMessage: (message, duration, position) => {
+      pushMessage(message, 'info', duration, position)
+    },
+    dangerMessage: (message, duration, position) => {
+      pushMessage(message, 'danger', duration, position)
+    },
+    successMessage: (message, duration, position) => {
+      pushMessage(message, 'success', duration, position)
+    },
+    errorMessage: (message, duration, position) => {
+      pushMessage(message, 'error', duration, position)
+    },
     removeMessage,
   }
 
@@ -74,10 +84,7 @@ export function SnackBarProvider({ children }: { children: ReactNode }) {
     <SnackBarContext.Provider value={value}>
       {children}
       {(['top-right', 'bottom-right'] as SnackBarPosition[]).map((position) => (
-        <div
-          key={position}
-          className={`pointer-events-none fixed z-50 flex flex-col gap-2 ${POSITION_CLASSES[position]}`}
-        >
+        <div key={position} className={`pointer-events-none fixed z-50 flex flex-col gap-2 ${POSITION_CLASSES[position]}`}>
           {messagesByPosition(position).map((m) => (
             <div
               key={m.id}
@@ -93,6 +100,10 @@ export function SnackBarProvider({ children }: { children: ReactNode }) {
   )
 }
 
+// Context + hook co-located deliberately (same convention as every other
+// *Context.tsx in this codebase) — costs this file Fast Refresh for the
+// hook specifically, never a runtime issue.
+// eslint-disable-next-line react-refresh/only-export-components
 export function useSnackBar(): SnackBarContextProps {
   const ctx = useContext(SnackBarContext)
   if (!ctx) {

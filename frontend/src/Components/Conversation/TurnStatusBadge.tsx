@@ -18,7 +18,7 @@ import { formatDuration } from './formatDuration'
 // one conversation actually open). See
 // plan/ai/conversation/step-28-frontend-conversation-list-status-badges.md.
 export function TurnStatusBadge({ activeTurn }: { activeTurn?: ActiveTurnSummary }) {
-  if (!activeTurn || activeTurn.status !== 'running') return null
+  if (activeTurn?.status !== 'running') return null
 
   const elapsedMs = elapsedMsFromSummary(activeTurn)
 

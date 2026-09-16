@@ -81,6 +81,10 @@ export interface ConversationContextValue {
 
 const ConversationContext = createContext<ConversationContextValue | null>(null)
 
+// Context + hook co-located deliberately (same convention as every other
+// *Context.tsx in this codebase) — costs this file Fast Refresh for the
+// hook specifically, never a runtime issue.
+// eslint-disable-next-line react-refresh/only-export-components
 export function useConversationContext(): ConversationContextValue {
   const ctx = useContext(ConversationContext)
   if (!ctx) {
@@ -131,6 +135,10 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     setTurnWatches((prev) => ({
       ...prev,
       [conversationId]: {
+        // `noUncheckedIndexedAccess` isn't on, so TS types prev[conversationId]
+        // as always-defined — it genuinely isn't here (this can be the very
+        // first watch for this id), so the optional chain stays.
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         pendingUserContent: prev[conversationId]?.pendingUserContent ?? null,
         turnStartedAt: null,
         turnClockOffsetMs: 0,
@@ -151,8 +159,19 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       // and keeps the client's own clock-offset estimate fresh for the
       // whole (potentially long) duration of a run.
       setTurnWatches((prev) =>
+        // Same noUncheckedIndexedAccess caveat as above — this entry can
+        // genuinely be gone by the time a poll response comes back (e.g.
+        // deleteConversation ran concurrently).
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         prev[conversationId]
-          ? { ...prev, [conversationId]: { ...prev[conversationId], turnStartedAt: turn.startedAt, turnClockOffsetMs: Date.parse(turn.serverNow) - Date.now() } }
+          ? {
+              ...prev,
+              [conversationId]: {
+                ...prev[conversationId],
+                turnStartedAt: turn.startedAt,
+                turnClockOffsetMs: Date.parse(turn.serverNow) - Date.now(),
+              },
+            }
           : prev,
       )
       if (turn.status !== 'running') break
@@ -167,7 +186,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         // actually looking at this conversation — a background watch
         // finishing must not clobber whatever conversation is
         // currently selected.
-        setDetail((prev) => (prev && prev.id === conversationId ? d : prev))
+        setDetail((prev) => (prev?.id === conversationId ? d : prev))
       }
     } catch {
       // Best-effort refresh — matches this codebase's own established
@@ -177,7 +196,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         setTurnWatches((prev) => {
           if (!(conversationId in prev)) return prev
           const next = { ...prev }
-          delete next[conversationId]
+          Reflect.deleteProperty(next, conversationId)
           return next
         })
       }
@@ -222,7 +241,9 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     const id = setInterval(() => {
       void refreshConversationsSilently()
     }, LIST_POLL_INTERVAL_MS)
-    return () => clearInterval(id)
+    return () => {
+      clearInterval(id)
+    }
   }, [isAuthenticated, refreshConversations, refreshConversationsSilently])
 
   // turnWatchesRef mirrors turnWatches so a plain membership check
@@ -258,7 +279,9 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
             void watchTurn(id)
           }
         })
-        .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load conversation.'))
+        .catch((err: unknown) => {
+          setError(err instanceof ApiError ? err.message : 'Failed to load conversation.')
+        })
     },
     [watchTurn, turnWatchExists],
   )
@@ -273,7 +296,14 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     // actually dropping live data, just satisfying ConversationDetail's
     // own fuller ActiveTurn type (step-26/27) instead of the lean
     // ActiveTurnSummary Conversation itself now carries.
-    setDetail({ id: created.id, title: created.title, startedAt: created.startedAt, platformId: created.platformId, model: created.model, messages: [] })
+    setDetail({
+      id: created.id,
+      title: created.title,
+      startedAt: created.startedAt,
+      platformId: created.platformId,
+      model: created.model,
+      messages: [],
+    })
     return created
   }, [])
 
@@ -296,7 +326,10 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       // watch) gets the optimistic pendingUserContent entry.
       const alreadyWatching = turnWatchExists(conversationId)
       if (!alreadyWatching) {
-        setTurnWatches((prev) => ({ ...prev, [conversationId]: { pendingUserContent: content, turnStartedAt: null, turnClockOffsetMs: 0 } }))
+        setTurnWatches((prev) => ({
+          ...prev,
+          [conversationId]: { pendingUserContent: content, turnStartedAt: null, turnClockOffsetMs: 0 },
+        }))
       }
       try {
         await sendMessageApi(conversationId, { content })
@@ -306,7 +339,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
           setTurnWatches((prev) => {
             if (!(conversationId in prev)) return prev
             const next = { ...prev }
-            delete next[conversationId]
+            Reflect.deleteProperty(next, conversationId)
             return next
           })
         }
@@ -336,7 +369,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   const renameConversation = useCallback(async (id: string, title: string) => {
     const updated = await renameConversationApi(id, title)
     setConversations((prev) => (prev ? prev.map((c) => (c.id === id ? updated : c)) : prev))
-    setDetail((prev) => (prev && prev.id === id ? { ...prev, title: updated.title } : prev))
+    setDetail((prev) => (prev?.id === id ? { ...prev, title: updated.title } : prev))
   }, [])
 
   const deleteConversation = useCallback(
@@ -351,7 +384,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       setTurnWatches((prev) => {
         if (!(id in prev)) return prev
         const next = { ...prev }
-        delete next[id]
+        Reflect.deleteProperty(next, id)
         return next
       })
       setConversations((prev) => (prev ? prev.filter((c) => c.id !== id) : prev))

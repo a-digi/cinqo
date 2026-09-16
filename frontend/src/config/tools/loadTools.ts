@@ -31,5 +31,7 @@ export async function loadTools(callbacks: ToolBridgeCallbacks): Promise<void> {
 // state for every possible lifecycle change. Any install/enable/
 // disable/delete just reloads the whole page instead.
 export function reloadAfterToolChange(): void {
-  setTimeout(() => window.location.reload(), 600)
+  setTimeout(() => {
+    window.location.reload()
+  }, 600)
 }

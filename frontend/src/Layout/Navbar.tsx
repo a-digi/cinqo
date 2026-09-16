@@ -31,7 +31,11 @@ export function Navbar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
 function MenuIcon() {
   return (
     <svg viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
-      <path fillRule="evenodd" d="M2 5.5A.5.5 0 0 1 2.5 5h15a.5.5 0 0 1 0 1h-15a.5.5 0 0 1-.5-.5Zm0 4.5a.5.5 0 0 1 .5-.5h15a.5.5 0 0 1 0 1h-15A.5.5 0 0 1 2 10Zm0 4.5a.5.5 0 0 1 .5-.5h15a.5.5 0 0 1 0 1h-15a.5.5 0 0 1-.5-.5Z" clipRule="evenodd" />
+      <path
+        fillRule="evenodd"
+        d="M2 5.5A.5.5 0 0 1 2.5 5h15a.5.5 0 0 1 0 1h-15a.5.5 0 0 1-.5-.5Zm0 4.5a.5.5 0 0 1 .5-.5h15a.5.5 0 0 1 0 1h-15A.5.5 0 0 1 2 10Zm0 4.5a.5.5 0 0 1 .5-.5h15a.5.5 0 0 1 0 1h-15a.5.5 0 0 1-.5-.5Z"
+        clipRule="evenodd"
+      />
     </svg>
   )
 }

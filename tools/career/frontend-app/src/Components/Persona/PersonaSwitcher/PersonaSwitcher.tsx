@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
-import { fetchPersonas, fetchProfiles, type Persona } from '../../api'
-import { getStoredPersonaId, setStoredPersonaId } from '../../personaStore'
-import { profileLabel } from '../ProfileSwitcher/ProfileSwitcher'
-import { Dropdown } from '../Dropdown/Dropdown'
+import { fetchPersonas, fetchProfiles, type Persona } from '../../../api'
+import { getPersonaIdFromLocalStorage, setPersonaIdInLocalStorage } from './repositoryLocalStorage'
+import { profileLabel } from '../../ProfileSwitcher/ProfileSwitcher'
+import { Dropdown } from '../../Dropdown/Dropdown'
 
 const PERSONAS_PATH = '/tools/career/personas'
 
@@ -36,7 +36,7 @@ export function PersonaSwitcher({
         setPersonas(personaList)
         setProfileNames(Object.fromEntries(profileList.map((p) => [p.id, profileLabel(p)])))
         if (personaList.length === 0) return
-        const stored = getStoredPersonaId()
+        const stored = getPersonaIdFromLocalStorage()
         const effective = personaList.find((p) => p.id === stored) ?? personaList[0]
         onChange(effective.id)
       })
@@ -74,7 +74,7 @@ export function PersonaSwitcher({
         }))}
         value={personaId}
         onChange={(id) => {
-          setStoredPersonaId(id)
+          setPersonaIdInLocalStorage(id)
           onChange(id)
         }}
       />

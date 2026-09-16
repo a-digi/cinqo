@@ -119,6 +119,22 @@ build-caddy:
 run-caddy: build-caddy
 	./api/bin/caddy run --config Caddyfile --adapter caddyfile
 
+# Lints the main Cinqo frontend (frontend/) — ESLint (typescript-eslint
+# strict type-checked + react-hooks + react-refresh + jsx-a11y) and a
+# Prettier format check, the same two checks a CI gate would run. See
+# plan/ai/frontend/frontend/step-14-lint-and-code-quality-gates.md.
+.PHONY: lint-frontend
+lint-frontend:
+	cd frontend && npm run lint
+	cd frontend && npm run format:check
+
+# Same as lint-frontend, but auto-fixes what it can (eslint --fix,
+# prettier --write) instead of just reporting.
+.PHONY: lint-frontend-fix
+lint-frontend-fix:
+	cd frontend && npm run lint:fix
+	cd frontend && npm run format
+
 # Builds the frontend and copies its output under api/cmd/app/webapp/dist
 # so //go:embed (which cannot reach outside the tree of the file
 # containing the directive) can pull it into the single-executable

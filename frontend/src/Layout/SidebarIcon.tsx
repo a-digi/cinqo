@@ -16,18 +16,7 @@ import { useMemo } from 'react'
 // raw markup, so this is generous headroom, not a tight fit.
 const MAX_MENU_ICON_SVG_LENGTH = 2000
 
-const ALLOWED_TAGS = new Set([
-  'svg',
-  'path',
-  'g',
-  'circle',
-  'rect',
-  'line',
-  'polyline',
-  'polygon',
-  'ellipse',
-  'defs',
-])
+const ALLOWED_TAGS = new Set(['svg', 'path', 'g', 'circle', 'rect', 'line', 'polyline', 'polygon', 'ellipse', 'defs'])
 
 const ALLOWED_ATTRIBUTES = new Set([
   'd',
@@ -73,7 +62,7 @@ function sanitize(raw: string): SVGSVGElement | null {
   if (parsed.querySelector('parsererror')) return null
 
   const sourceRoot = parsed.documentElement
-  if (!sourceRoot || sourceRoot.tagName.toLowerCase() !== 'svg') return null
+  if (sourceRoot.tagName.toLowerCase() !== 'svg') return null
 
   function cloneAllowed(node: Element): Element | null {
     const tag = node.tagName.toLowerCase()

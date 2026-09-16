@@ -17,7 +17,7 @@ export function ScopesPage() {
       .then((result) => {
         if (!cancelled) setData(result)
       })
-      .catch((err) => {
+      .catch((err: unknown) => {
         if (!cancelled) setError(err instanceof ApiError ? err.message : 'Failed to load scopes.')
       })
     return () => {
@@ -45,8 +45,8 @@ export function ScopesPage() {
       <div>
         <h1 className="text-xl font-semibold text-gray-900">Scopes</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Every scope this application (and its plugins) defines, and whether it's actually enforced by a route and
-          requested from the identity provider.
+          Every scope this application (and its plugins) defines, and whether it's actually enforced by a route and requested from the
+          identity provider.
         </p>
       </div>
 
