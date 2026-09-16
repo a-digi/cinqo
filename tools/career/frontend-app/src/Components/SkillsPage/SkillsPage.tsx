@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { fetchSkills, addSkill, removeSkill } from './api'
-import { PlusIcon, XIcon } from './icons'
-import { PersonaSwitcher } from './PersonaSwitcher'
+import { fetchSkills, addSkill, removeSkill } from '../../api'
+import { PlusIcon, XIcon } from '../../icons'
+import { PersonaSwitcher } from '../PersonaSwitcher/PersonaSwitcher'
 
 // Its own page as of step 7 (moved out of ProfilePage). "Edit" for a
 // skill is a rename, done as remove-old-then-add-new — a skill is a

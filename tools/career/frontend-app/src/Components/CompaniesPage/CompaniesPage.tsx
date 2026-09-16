@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { fetchCompanies, createCompany, updateCompany, removeCompany, type Company } from './api'
-import { PlusIcon } from './icons'
+import { fetchCompanies, createCompany, updateCompany, removeCompany, type Company } from '../../api'
+import { PlusIcon } from '../../icons'
 
 const JOBS_PATH = '/tools/career/jobs'
 const RECRUITERS_PATH = '/tools/career/recruiters'

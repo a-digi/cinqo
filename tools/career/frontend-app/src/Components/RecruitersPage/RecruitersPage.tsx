@@ -7,9 +7,9 @@ import {
   fetchCompanies,
   type Recruiter,
   type Company,
-} from './api'
-import { Dropdown } from './Dropdown'
-import { PlusIcon } from './icons'
+} from '../../api'
+import { Dropdown } from '../Dropdown/Dropdown'
+import { PlusIcon } from '../../icons'
 
 const COMPANIES_PATH = '/tools/career/companies'
 

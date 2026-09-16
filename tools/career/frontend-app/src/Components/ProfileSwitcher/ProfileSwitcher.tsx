@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { fetchProfiles, type Profile } from './api'
-import { getStoredProfileId, setStoredProfileId } from './profileStore'
-import { Dropdown } from './Dropdown'
+import { fetchProfiles, type Profile } from '../../api'
+import { getStoredProfileId, setStoredProfileId } from '../../profileStore'
+import { Dropdown } from '../Dropdown/Dropdown'
 
 const PROFILES_PATH = '/tools/career/profiles'
 

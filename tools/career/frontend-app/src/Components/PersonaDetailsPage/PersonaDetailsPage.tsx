@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { fetchPersonaDetails, updatePersonaDetails } from './api'
-import { Field } from './Field'
-import { PersonaSwitcher } from './PersonaSwitcher'
+import { fetchPersonaDetails, updatePersonaDetails } from '../../api'
+import { Field } from '../Field/Field'
+import { PersonaSwitcher } from '../PersonaSwitcher/PersonaSwitcher'
 
 const emptyForm = {
   headline: '',

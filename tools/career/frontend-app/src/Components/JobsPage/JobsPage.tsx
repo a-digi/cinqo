@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { fetchJobs, removeJob, fetchCompanies, linkJobToCompany, type Job, type Company } from './api'
-import { Dropdown } from './Dropdown'
+import { fetchJobs, removeJob, fetchCompanies, linkJobToCompany, type Job, type Company } from '../../api'
+import { Dropdown } from '../Dropdown/Dropdown'
 
 // No "add job" affordance — jobs are populated by the AI's own
 // crawling workflow (step 4), never hand-entered here. See this

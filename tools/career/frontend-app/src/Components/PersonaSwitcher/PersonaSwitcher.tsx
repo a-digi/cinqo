@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
-import { fetchPersonas, fetchProfiles, type Persona } from './api'
-import { getStoredPersonaId, setStoredPersonaId } from './personaStore'
-import { profileLabel } from './ProfileSwitcher'
-import { Dropdown } from './Dropdown'
+import { fetchPersonas, fetchProfiles, type Persona } from '../../api'
+import { getStoredPersonaId, setStoredPersonaId } from '../../personaStore'
+import { profileLabel } from '../ProfileSwitcher/ProfileSwitcher'
+import { Dropdown } from '../Dropdown/Dropdown'
 
 const PERSONAS_PATH = '/tools/career/personas'
 
