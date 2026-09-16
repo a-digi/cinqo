@@ -26,8 +26,10 @@ import { AccordionItem } from '../../Shared/Accordion/AccordionItem'
 // Portals render as a 2-column (1 on mobile) grid of accordions, and
 // "New portal" opens in a modal instead of a bottom-of-page form —
 // see plan/ai/tools/career/step-21-portals-frontend.md,
-// plan/ai/tools/career/step-42-crawler-folder-reorganization.md, and
-// plan/ai/tools/career/step-58-portals-page-modal-accordion-redesign.md.
+// plan/ai/tools/career/step-42-crawler-folder-reorganization.md,
+// plan/ai/tools/career/step-58-portals-page-modal-accordion-redesign.md,
+// and plan/ai/tools/career/step-59-portals-add-link-container-overlay.md
+// ("Add link" as an in-card overlay instead of an always-visible row).
 export function PortalsPage() {
   const [portals, setPortals] = useState<Portal[]>([])
   const [isNewPortalModalOpen, setIsNewPortalModalOpen] = useState(false)
@@ -35,6 +37,10 @@ export function PortalsPage() {
   const [openPortalIds, setOpenPortalIds] = useState<Set<string>>(new Set())
   const [editingPortalId, setEditingPortalId] = useState<string | null>(null)
   const [editPortalName, setEditPortalName] = useState('')
+  // Only one portal's own "Add link" overlay is open at a time —
+  // opening a second closes the first (see the design doc's flagged
+  // default).
+  const [addingLinkPortalId, setAddingLinkPortalId] = useState<string | null>(null)
   const [linkUrlDrafts, setLinkUrlDrafts] = useState<Record<string, string>>({})
   const [linkTitleDrafts, setLinkTitleDrafts] = useState<Record<string, string>>({})
   const [editingLinkId, setEditingLinkId] = useState<string | null>(null)
@@ -75,6 +81,25 @@ export function PortalsPage() {
         // enough signal on its own.
       })
   }, [])
+
+  // Escape closes the "Add link" overlay — mirrors Modal's own
+  // convention (step 58). Only armed while the overlay is actually
+  // open.
+  useEffect(() => {
+    if (addingLinkPortalId === null) {
+      return
+    }
+    const portalId = addingLinkPortalId
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        cancelAddLink(portalId)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [addingLinkPortalId])
 
   const selectedPlatform = platforms.find((p) => p.id === selectedPlatformId) ?? null
 
@@ -174,11 +199,19 @@ export function PortalsPage() {
       .then(() => {
         setLinkUrlDrafts((prev) => ({ ...prev, [portalId]: '' }))
         setLinkTitleDrafts((prev) => ({ ...prev, [portalId]: '' }))
+        setAddingLinkPortalId(null)
         load()
       })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : String(err))
       })
+  }
+
+  function cancelAddLink(portalId: string) {
+    setAddingLinkPortalId(null)
+    setError('')
+    setLinkUrlDrafts((prev) => ({ ...prev, [portalId]: '' }))
+    setLinkTitleDrafts((prev) => ({ ...prev, [portalId]: '' }))
   }
 
   function startEditLink(link: PortalLink) {
@@ -349,6 +382,62 @@ export function PortalsPage() {
             // Staggered mount cascade — animation-delay set inline since
             // Tailwind's own utilities have no per-index dynamic value.
             style={{ animationDelay: `${index * 90}ms` }}
+            overlay={
+              addingLinkPortalId === p.id ? (
+                <>
+                  <h3 className="mb-3 text-sm font-semibold text-gray-900">Add link</h3>
+                  {/* No flex-1 here — that would stretch to fill the overlay's
+                      own min-h (added so the form isn't clipped on a portal
+                      with few/no links) and push the buttons down to the
+                      bottom instead of right under the URL field. See
+                      plan/ai/tools/career/step-59-portals-add-link-container-overlay.md. */}
+                  <div className="flex flex-col gap-2">
+                    <input
+                      // Deliberate: opening the overlay should focus the
+                      // first field immediately, same convention every
+                      // other inline form on this page already uses.
+                      // eslint-disable-next-line jsx-a11y/no-autofocus
+                      autoFocus
+                      value={linkTitleDraft(p.id)}
+                      onChange={(e) => {
+                        setLinkTitleDrafts((prev) => ({ ...prev, [p.id]: e.target.value }))
+                      }}
+                      placeholder="Title, e.g. Software Engineer jobs, Hamburg"
+                      className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
+                    />
+                    <input
+                      value={linkUrlDraft(p.id)}
+                      onChange={(e) => {
+                        setLinkUrlDrafts((prev) => ({ ...prev, [p.id]: e.target.value }))
+                      }}
+                      placeholder="URL to crawl"
+                      className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
+                    />
+                  </div>
+                  <div className="mt-3 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleAddLink(p.id)
+                      }}
+                      className="flex items-center gap-1 rounded-md bg-gray-900 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800"
+                    >
+                      <PlusIcon />
+                      Create link
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        cancelAddLink(p.id)
+                      }}
+                      className="rounded-md border border-gray-200 px-3.5 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </>
+              ) : undefined
+            }
           >
             <div className="space-y-2">
               {p.links.map((link) => (
@@ -445,27 +534,11 @@ export function PortalsPage() {
               ))}
             </div>
 
-            <div className="mt-2 flex flex-wrap gap-2">
-              <input
-                value={linkTitleDraft(p.id)}
-                onChange={(e) => {
-                  setLinkTitleDrafts((prev) => ({ ...prev, [p.id]: e.target.value }))
-                }}
-                placeholder="Title, e.g. Software Engineer jobs, Hamburg"
-                className="min-w-[220px] flex-1 rounded-md border border-gray-300 px-2.5 py-1.5 text-xs text-gray-900 focus:border-gray-500 focus:outline-none"
-              />
-              <input
-                value={linkUrlDraft(p.id)}
-                onChange={(e) => {
-                  setLinkUrlDrafts((prev) => ({ ...prev, [p.id]: e.target.value }))
-                }}
-                placeholder="URL to crawl"
-                className="min-w-[220px] flex-1 rounded-md border border-gray-300 px-2.5 py-1.5 text-xs text-gray-900 focus:border-gray-500 focus:outline-none"
-              />
+            <div className="mt-2">
               <button
                 type="button"
                 onClick={() => {
-                  handleAddLink(p.id)
+                  setAddingLinkPortalId(p.id)
                 }}
                 className="flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
               >

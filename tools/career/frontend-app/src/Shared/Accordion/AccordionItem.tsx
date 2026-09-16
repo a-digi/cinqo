@@ -10,6 +10,13 @@ interface AccordionItemProps {
   // fade-in's own per-item animationDelay (PortalsPage) has no
   // Tailwind utility equivalent, since it's a dynamic, per-index value.
   style?: React.CSSProperties
+  // When non-null, rendered as an opaque white layer covering the
+  // entire card (header included) — header/children stay mounted
+  // underneath (no state loss) but are fully hidden. AccordionItem has
+  // no idea what overlay contains or why it's shown — purely a
+  // controlled "cover this card" primitive, same as isOpen/onToggle.
+  // See plan/ai/tools/career/step-59-portals-add-link-container-overlay.md.
+  overlay?: React.ReactNode
 }
 
 // Shared accordion item — controlled (isOpen/onToggle only), no
@@ -26,7 +33,7 @@ interface AccordionItemProps {
 // nested controls stop click propagation themselves so clicking them
 // doesn't also toggle the accordion. See
 // plan/ai/tools/career/step-58-portals-page-modal-accordion-redesign.md.
-export function AccordionItem({ isOpen, onToggle, header, children, className, style }: AccordionItemProps) {
+export function AccordionItem({ isOpen, onToggle, header, children, className, style, overlay }: AccordionItemProps) {
   function handleHeaderKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault()
@@ -37,7 +44,16 @@ export function AccordionItem({ isOpen, onToggle, header, children, className, s
   return (
     <div
       style={style}
-      className={`rounded-xl border border-gray-200 bg-white transition-all hover:border-gray-300 hover:shadow-md ${className ?? ''}`}
+      // min-h only while overlay is active: the overlay is
+      // absolute/inset-0, so it's exactly as tall as this card's own
+      // normal-flow content (header + body) — a portal with no links
+      // yet has a very short body, shorter than the add-link form's
+      // own content, so without a floor here the overlay clips its
+      // own bottom (Create/Cancel buttons cut off). Not applied
+      // unconditionally so a normal, overlay-less card keeps sizing to
+      // its real content. See
+      // plan/ai/tools/career/step-59-portals-add-link-container-overlay.md.
+      className={`relative rounded-xl border border-gray-200 bg-white transition-all hover:border-gray-300 hover:shadow-md ${overlay ? 'min-h-[280px] overflow-hidden' : ''} ${className ?? ''}`}
     >
       <div
         role="button"
@@ -57,6 +73,9 @@ export function AccordionItem({ isOpen, onToggle, header, children, className, s
           <div className="px-4 pb-4">{children}</div>
         </div>
       </div>
+      {overlay && (
+        <div className="absolute inset-0 z-10 flex flex-col rounded-xl bg-white p-4 [animation:backdrop-in_150ms_ease-out]">{overlay}</div>
+      )}
     </div>
   )
 }
