@@ -220,9 +220,21 @@ func runDetachedTurn(
 	// <conversationsDir>/<id>_conversation.md) — TraceLogPath then adds
 	// the new <id>/<turnRunID>.txt layout underneath it. Best-effort:
 	// a trace-log write failure must never fail the turn itself.
-	tracePath := TraceLogPath(filepath.Dir(conv.FilePath), conversationID, turnRunID)
-	logExchange := func(iteration int, msgs []chatcompleter.Message, toolDefs []chatcompleter.ToolDef, result *chatcompleter.ChatCompletionResult, callErr error) {
-		_ = appendTraceEntry(tracePath, iteration, msgs, toolDefs, result, callErr)
+	//
+	// Gated by conversation_settings.ai_trace_logs_enabled (step 37) —
+	// checked ONCE per turn here, not once per iteration, since the
+	// setting doesn't need mid-turn-granularity live-toggling and a
+	// turn can run up to maxToolIterations model calls. Off (the
+	// default): logExchange stays nil, and runToolLoop's own existing
+	// nil-guard means literally nothing is written — not merely
+	// hidden. A settings-load failure is treated the same as "off,"
+	// never as a reason to fail the turn.
+	var logExchange func(iteration int, msgs []chatcompleter.Message, toolDefs []chatcompleter.ToolDef, result *chatcompleter.ChatCompletionResult, callErr error)
+	if settings, settingsErr := conversation_query.NewSettingsQueryRepo(conversationDB).Load(); settingsErr == nil && settings.AITraceLogsEnabled {
+		tracePath := TraceLogPath(filepath.Dir(conv.FilePath), conversationID, turnRunID)
+		logExchange = func(iteration int, msgs []chatcompleter.Message, toolDefs []chatcompleter.ToolDef, result *chatcompleter.ChatCompletionResult, callErr error) {
+			_ = appendTraceEntry(tracePath, iteration, msgs, toolDefs, result, callErr)
+		}
 	}
 	assistantContent, err := runToolLoop(ctx, httpClient, entry, plainKey, model, messages, tools, mainDB, callerScopes, corePort, logStep, reportUsage, logExchange)
 	if err != nil {

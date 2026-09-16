@@ -9,6 +9,7 @@ import { ToolsListPage } from '../../Components/Admin/Tools/ToolsListPage'
 import { PlatformKeysPage } from '../../Components/Admin/Platforms/PlatformKeysPage'
 import { ConversationPage } from '../../Components/Conversation/ConversationPage'
 import { AiLogsPage } from '../../Components/Conversation/AiLogsPage'
+import { AiDebugSettingsPage } from '../../Components/Admin/Conversation/AiDebugSettingsPage'
 import { ToolRouteOutlet } from '../../Components/Tools/ToolRouteOutlet'
 import { AppScopes } from '../security/scopes'
 
@@ -65,6 +66,14 @@ export const router = createBrowserRouter([
             element: (
               <AuthGuard scopes={[AppScopes.ConversationUse]}>
                 <AiLogsPage />
+              </AuthGuard>
+            ),
+          },
+          {
+            path: '/admin/conversation-debug',
+            element: (
+              <AuthGuard scopes={[AppScopes.SuperAdmin]}>
+                <AiDebugSettingsPage />
               </AuthGuard>
             ),
           },

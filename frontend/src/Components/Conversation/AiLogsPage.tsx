@@ -1,52 +1,32 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { fetchAiTraceLogDetail, fetchAiTraceLogs, type AiTraceLogSummary } from '../../api/conversations'
+import { fetchAiTraceLogs, type AiTraceLogSummary } from '../../api/conversations'
 
-// Read-only diagnostic viewer — the full raw request/response exchange
-// with the AI model, one entry per turn, for understanding excessive
-// token usage. Same list + lazy-expand-to-detail-with-cache pattern as
-// the Browser tool's own CrawlLogsPage. See
-// plan/ai/conversation/step-36-ai-trace-logs.md.
+// Read-only summary — deliberately shows only WHERE this conversation's
+// own AI trace logs live on disk and HOW MANY exist, never opens/
+// renders a file's own content (that's a job for a text editor/curl
+// against the folder path shown here, not this page). One row per
+// turn: its own id, size, and last-modified time. See
+// plan/ai/conversation/step-36-ai-trace-logs.md and
+// plan/ai/conversation/step-37-ai-debug-logging-toggle.md (the setting
+// that gates whether these files get written at all).
 export function AiLogsPage() {
   const { id } = useParams<{ id: string }>()
+  const [folder, setFolder] = useState('')
   const [logs, setLogs] = useState<AiTraceLogSummary[]>([])
   const [error, setError] = useState('')
-  const [expandedId, setExpandedId] = useState<string | null>(null)
-  const [details, setDetails] = useState<Record<string, string | undefined>>({})
-  const [detailErrors, setDetailErrors] = useState<Record<string, string | undefined>>({})
-  const [loadingIds, setLoadingIds] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     if (!id) return
     fetchAiTraceLogs(id)
-      .then(setLogs)
+      .then((result) => {
+        setFolder(result.folder)
+        setLogs(result.logs)
+      })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : String(err))
       })
   }, [id])
-
-  function toggleExpand(turnRunId: string) {
-    const next = expandedId === turnRunId ? null : turnRunId
-    setExpandedId(next)
-    if (!next || !id || details[next] || loadingIds.has(next)) return
-
-    setLoadingIds((prev) => new Set(prev).add(next))
-    setDetailErrors((prev) => ({ ...prev, [next]: undefined }))
-    fetchAiTraceLogDetail(id, next)
-      .then((detail) => {
-        setDetails((prev) => ({ ...prev, [next]: detail }))
-      })
-      .catch((err: unknown) => {
-        setDetailErrors((prev) => ({ ...prev, [next]: err instanceof Error ? err.message : String(err) }))
-      })
-      .finally(() => {
-        setLoadingIds((prev) => {
-          const nextSet = new Set(prev)
-          nextSet.delete(next)
-          return nextSet
-        })
-      })
-  }
 
   return (
     <div className="max-w-3xl p-6 font-sans text-gray-900">
@@ -57,51 +37,49 @@ export function AiLogsPage() {
       </div>
       <h1 className="mb-1.5 text-xl font-semibold">AI Trace Logs</h1>
       <p className="mb-5 text-sm text-gray-500">
-        The full raw request and response exchanged with the AI model for each turn of this conversation — every iteration of that turn's
-        own tool-calling loop, in order. Useful for understanding exactly what's driving token usage.
+        Where this conversation's own AI request/response trace files live — one file per turn, only written while AI debug logging is
+        turned on (see Admin → AI Debug Logging). Open a file directly (a text editor, or the API) to read it; this page only reports what
+        exists and where.
       </p>
 
       <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
 
-      {logs.length === 0 && !error && <p className="text-sm text-gray-400">No trace logs for this conversation yet.</p>}
+      {folder && (
+        <div className="mb-4 rounded-md border border-gray-200 bg-gray-50 p-3">
+          <div className="text-xs font-medium text-gray-500">Folder</div>
+          <div className="break-all font-mono text-sm text-gray-900">{folder}</div>
+          <div className="mt-1 text-xs text-gray-500">
+            {logs.length} log file{logs.length === 1 ? '' : 's'}
+          </div>
+        </div>
+      )}
 
-      <div className="space-y-2">
-        {logs.map((entry) => {
-          const expanded = expandedId === entry.turnRunId
-          const detail = details[entry.turnRunId]
-          return (
-            <div key={entry.turnRunId} className="rounded-md border border-gray-200 p-3">
-              <button
-                type="button"
-                onClick={() => {
-                  toggleExpand(entry.turnRunId)
-                }}
-                className="flex w-full items-center justify-between gap-3 text-left"
-              >
-                <div className="min-w-0">
-                  <div className="truncate text-xs font-medium text-gray-900">{entry.turnRunId}</div>
-                  <div className="text-xs text-gray-500">
-                    {new Date(entry.modifiedAt).toLocaleString()} · {(entry.sizeBytes / 1024).toFixed(1)} KB
-                  </div>
-                </div>
-                <span className="shrink-0 text-xs text-gray-500 underline">{expanded ? 'hide' : 'view'}</span>
-              </button>
+      {folder && logs.length === 0 && !error && (
+        <p className="text-sm text-gray-400">No trace logs for this conversation yet — either none exist, or AI debug logging was off.</p>
+      )}
 
-              {expanded && (
-                <div className="mt-3 border-t border-gray-100 pt-3">
-                  {loadingIds.has(entry.turnRunId) && <p className="text-xs text-gray-400">Loading…</p>}
-                  {detailErrors[entry.turnRunId] && <p className="text-xs text-red-700">{detailErrors[entry.turnRunId]}</p>}
-                  {detail && (
-                    <pre className="max-h-[32rem] overflow-auto whitespace-pre-wrap break-words rounded bg-gray-50 p-2 text-xs text-gray-700">
-                      {detail}
-                    </pre>
-                  )}
-                </div>
-              )}
-            </div>
-          )
-        })}
-      </div>
+      {logs.length > 0 && (
+        <div className="overflow-hidden rounded-md border border-gray-200">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-gray-200 bg-gray-50 text-xs uppercase text-gray-500">
+                <th className="px-4 py-2 font-medium">Turn (prompt)</th>
+                <th className="px-4 py-2 font-medium">Size</th>
+                <th className="px-4 py-2 font-medium">Last modified</th>
+              </tr>
+            </thead>
+            <tbody>
+              {logs.map((entry) => (
+                <tr key={entry.turnRunId} className="border-b border-gray-100 last:border-0">
+                  <td className="px-4 py-2 font-mono text-xs">{entry.turnRunId}.txt</td>
+                  <td className="px-4 py-2 text-xs text-gray-600">{(entry.sizeBytes / 1024).toFixed(1)} KB</td>
+                  <td className="px-4 py-2 text-xs text-gray-500">{new Date(entry.modifiedAt).toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }

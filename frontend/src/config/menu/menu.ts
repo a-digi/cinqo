@@ -59,6 +59,7 @@ export const menuEntries: MenuEntry[] = [
         // SidebarMenuItem's own reserved icon-slot width).
         children: [{ label: 'Scopes', path: '/admin/security/scopes', scopes: [AppScopes.SuperAdmin] }],
       },
+      { label: 'AI Debug Logging', path: '/admin/conversation-debug', scopes: [AppScopes.SuperAdmin] },
     ],
   },
 ]

@@ -88,3 +88,22 @@ routes:
     scopes:
       - cinqo:conversation:use
       - cinqo:super:admin
+
+  # step-37-ai-debug-logging-toggle.md — the global switch controlling
+  # whether the AI trace logs above ever get written at all.
+  # Admin-only: unlike every other route in this file, NOT also
+  # cinqo:conversation:use — this affects every user's conversations
+  # at once, not just the caller's own.
+  - path: /api/v1/conversations/settings
+    method: GET
+    executor: ConversationGetSettings
+    security: authenticated
+    scopes:
+      - cinqo:super:admin
+
+  - path: /api/v1/conversations/settings
+    method: PUT
+    executor: ConversationUpdateSettings
+    security: authenticated
+    scopes:
+      - cinqo:super:admin

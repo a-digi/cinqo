@@ -37,11 +37,15 @@ type traceLogSummaryResponse struct {
 // caller's own conversation only (wrong owner and nonexistent both
 // read as the same 404, matching every other handler in this
 // feature). With no ?turnId= query param, lists every turn that has a
-// trace file, newest first, reading only directory metadata. With
-// ?turnId=<id>, streams that one turn's own raw .txt file via
-// http.ServeContent (chunked/Range-capable for free, no manual
-// pagination) — 404 if that specific file doesn't exist, distinct from
-// "conversation not found."
+// trace file plus the trace folder's own absolute path, newest first,
+// reading only directory metadata — the frontend's own AiLogsPage
+// deliberately shows only this (where the files are, how many exist),
+// never fetching/rendering a file's own content. With ?turnId=<id>,
+// streams that one turn's own raw .txt file via http.ServeContent
+// (chunked/Range-capable for free, no manual pagination) — kept as a
+// real, working capability for direct API/curl access even though no
+// frontend page calls it — 404 if that specific file doesn't exist,
+// distinct from "conversation not found."
 func GetLogsHandler(reqCtx request.RequestContext) {
 	w := reqCtx.GetWriter()
 	id := reqCtx.GetURI().GetPathVariable("id")
@@ -90,12 +94,20 @@ func GetLogsHandler(reqCtx request.RequestContext) {
 		return
 	}
 
+	absTraceDir, err := filepath.Abs(traceDir)
+	if err != nil {
+		absTraceDir = traceDir
+	}
+
 	entries, err := os.ReadDir(traceDir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			// No turn for this conversation has ever produced a trace
-			// file yet — an empty list, not an error.
-			response.SuccessResponse(w, http.StatusOK, map[string]any{"logs": []traceLogSummaryResponse{}})
+			// file yet — an empty list, not an error. The folder path
+			// is still reported (it's where a file WOULD land the next
+			// time a turn runs with logging enabled), even though
+			// nothing exists there yet.
+			response.SuccessResponse(w, http.StatusOK, map[string]any{"folder": absTraceDir, "logs": []traceLogSummaryResponse{}})
 			return
 		}
 		response.ErrorResponse(w, http.StatusInternalServerError, "failed to list trace logs")
@@ -121,5 +133,5 @@ func GetLogsHandler(reqCtx request.RequestContext) {
 	}
 	sort.Slice(logs, func(i, j int) bool { return logs[i].ModifiedAt > logs[j].ModifiedAt })
 
-	response.SuccessResponse(w, http.StatusOK, map[string]any{"logs": logs})
+	response.SuccessResponse(w, http.StatusOK, map[string]any{"folder": absTraceDir, "logs": logs})
 }

@@ -1,4 +1,4 @@
-import { apiDelete, apiGet, apiGetText, apiPatch, apiPost } from './client'
+import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from './client'
 
 // Already camelCase on the wire (api/src/conversation/handler's own
 // response DTOs) — no snake_case *Raw mapping needed, same as
@@ -173,21 +173,42 @@ export async function stopActiveTurn(conversationId: string): Promise<void> {
 
 // AiTraceLogSummary is one turn's own trace file, listed without ever
 // reading its content (plan/ai/conversation/step-36-ai-trace-logs.md)
-// — a diagnostic view of the full raw request/response exchange with
-// the AI model, for understanding excessive token usage.
+// — a diagnostic record of the full raw request/response exchange with
+// the AI model, for understanding excessive token usage. The frontend
+// deliberately never fetches/renders a file's own content — only where
+// it lives (AiTraceLogsResult.folder) and how many exist; the backend
+// still supports fetching one file's raw content directly (?turnId=)
+// for anyone reading it outside this UI (e.g. a text editor, curl).
 export interface AiTraceLogSummary {
   turnRunId: string
   sizeBytes: number
   modifiedAt: string
 }
 
-export async function fetchAiTraceLogs(conversationId: string): Promise<AiTraceLogSummary[]> {
-  const raw = await apiGet<{ message: { logs: AiTraceLogSummary[] } }>(`/api/v1/conversations/${encodeURIComponent(conversationId)}/logs`)
-  return raw.message.logs
+export interface AiTraceLogsResult {
+  folder: string
+  logs: AiTraceLogSummary[]
 }
 
-// Raw plain text, not JSON — the backend streams the .txt file
-// straight through (http.ServeContent), not a {message: ...} envelope.
-export async function fetchAiTraceLogDetail(conversationId: string, turnRunId: string): Promise<string> {
-  return apiGetText(`/api/v1/conversations/${encodeURIComponent(conversationId)}/logs?turnId=${encodeURIComponent(turnRunId)}`)
+export async function fetchAiTraceLogs(conversationId: string): Promise<AiTraceLogsResult> {
+  const raw = await apiGet<{ message: AiTraceLogsResult }>(`/api/v1/conversations/${encodeURIComponent(conversationId)}/logs`)
+  return raw.message
+}
+
+// ConversationSettings (step 37) — the conversation feature's own
+// single, global settings object, admin-only (unlike every other
+// endpoint in this file): turning aiTraceLogsEnabled on captures raw
+// model I/O for every user's conversations, not just the caller's own.
+export interface ConversationSettings {
+  aiTraceLogsEnabled: boolean
+}
+
+export async function fetchConversationSettings(): Promise<ConversationSettings> {
+  const raw = await apiGet<{ message: ConversationSettings }>('/api/v1/conversations/settings')
+  return raw.message
+}
+
+export async function updateConversationSettings(settings: ConversationSettings): Promise<ConversationSettings> {
+  const raw = await apiPut<{ message: ConversationSettings }>('/api/v1/conversations/settings', settings)
+  return raw.message
 }
