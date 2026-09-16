@@ -100,6 +100,28 @@ type crawlRequest struct {
 	// today's existing behavior. See
 	// plan/ai/tools/browser/step-41-remove-html-elements.md.
 	RemoveSelectors []string `json:"removeSelectors,omitempty"`
+	// RemoveAttributes (step 46) — optional attribute names to strip
+	// from every element that has them, regardless of value (e.g.
+	// "style", "onclick", "data-testid"). Absent means no
+	// named-attribute stripping.
+	RemoveAttributes []string `json:"removeAttributes,omitempty"`
+	// MaxAttributeLength (step 46) — optional; when > 0, any attribute
+	// (any name, on any element) whose own value is longer than this
+	// many characters is removed. <= 0 (including absent) disables
+	// this — there's no way to ask for "strip every non-empty
+	// attribute" via 0 specifically; pass 1 for that instead. Checking
+	// every element's every attribute like this can be noticeably
+	// slower on a large page — a deliberate, caller-accepted trade-off
+	// for the token savings it can produce, not something this tool
+	// tries to make cheap.
+	MaxAttributeLength int `json:"maxAttributeLength,omitempty"`
+	// IgnoreAttributesForMaxLength (step 46) — optional attribute names
+	// exempt from MaxAttributeLength's own length check, in addition to
+	// the built-in default (href, src — a link/image/script/iframe's
+	// own resource locator, where a long value is legitimate, not
+	// noise). Has no effect at all when MaxAttributeLength isn't set.
+	// See defaultMaxLengthIgnoredAttributes's own doc comment.
+	IgnoreAttributesForMaxLength []string `json:"ignoreAttributesForMaxLength,omitempty"`
 }
 
 type crawlResponse struct {
@@ -128,7 +150,7 @@ func crawlHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := crawlPage(body.URL, body.RequestID, body.ExpectedSelectors, body.RemoveSelectors)
+	result, err := crawlPage(body.URL, body.RequestID, body.ExpectedSelectors, body.RemoveSelectors, body.RemoveAttributes, body.MaxAttributeLength, body.IgnoreAttributesForMaxLength)
 	if err != nil {
 		setCrawlPhase(body.RequestID, phaseFailed, err.Error())
 		var cfErr *crawlError
@@ -155,13 +177,30 @@ func crawlHandler(w http.ResponseWriter, r *http.Request) {
 // can read the page once cleared, without either needing to
 // re-navigate — which would discard whatever a human just did in a
 // visible window to clear the challenge.
-func readCrawlResponse(ctx context.Context, removeSelectors []string) (crawlResponse, error) {
+func readCrawlResponse(ctx context.Context, removeSelectors, removeAttributes []string, maxAttributeLength int, ignoreAttributesForMaxLength []string) (crawlResponse, error) {
 	allRemoveSelectors := append(append([]string{}, defaultRemoveSelectors...), removeSelectors...)
 	script, err := removeElementsJS(allRemoveSelectors)
 	if err != nil {
 		return crawlResponse{}, err
 	}
 	actions := []chromedp.Action{chromedp.Evaluate(script, nil)}
+
+	// step 46 — run after element removal (above), never before: an
+	// element removeElementsJS already deleted doesn't need its own
+	// attributes checked, so this necessarily-expensive (checks every
+	// element's every attribute when maxAttributeLength > 0) walk does
+	// less work against an already-shrunk DOM. A no-op when neither
+	// field is set (empty names + maxAttributeLength 0 just walks the
+	// DOM removing nothing) — cheap enough not to bother special-casing
+	// away entirely.
+	if len(removeAttributes) > 0 || maxAttributeLength > 0 {
+		allIgnoreForMaxLength := append(append([]string{}, defaultMaxLengthIgnoredAttributes...), ignoreAttributesForMaxLength...)
+		attrScript, err := removeAttributesJS(removeAttributes, maxAttributeLength, allIgnoreForMaxLength)
+		if err != nil {
+			return crawlResponse{}, err
+		}
+		actions = append(actions, chromedp.Evaluate(attrScript, nil))
+	}
 
 	var html, title, finalURL string
 	actions = append(actions,
@@ -187,16 +226,39 @@ func readCrawlResponse(ctx context.Context, removeSelectors []string) (crawlResp
 	}, nil
 }
 
-// defaultRemoveSelectors (step 44) are always stripped from crawled
-// HTML before it ever reaches an AI model's own context — <head>,
-// <script>, and <style> content is never useful to a model reading a
-// page's own visible/structural content, and on a real page these can
-// easily account for the majority of a crawl's own token cost. Merged
-// with (not replaced by) any caller-supplied removeSelectors in
-// readCrawlResponse, below — a caller can still ask for MORE removed,
-// never less. See plan/ai/tools/browser/step-44-default-html-element-
-// removal.md.
-var defaultRemoveSelectors = []string{"head", "script", "style"}
+// defaultRemoveSelectors (step 44, svg added step 62) are always
+// stripped from crawled HTML before it ever reaches an AI model's own
+// context — <head>, <script>, <style>, and <svg> content is never
+// useful to a model reading a page's own visible/structural content,
+// and on a real page these can easily account for the majority of a
+// crawl's own token cost. svg specifically: inline icon
+// sprites/illustrations are pure path/coordinate data, arguably even
+// less useful to a model than <style> is. Merged with (not replaced
+// by) any caller-supplied removeSelectors in readCrawlResponse, below
+// — a caller can still ask for MORE removed, never less. This is a
+// global default — every fetch_page_html caller gets it, not just
+// Career's own conversations, since the Browser tool has no concept
+// of which portal/tool prompted a given AI conversation. See
+// plan/ai/tools/browser/step-44-default-html-element-removal.md and
+// plan/ai/tools/career/step-62-svg-removal-and-attribute-length-enforcement.md.
+var defaultRemoveSelectors = []string{"head", "script", "style", "svg"}
+
+// defaultMaxLengthIgnoredAttributes (step 46) are always exempt from
+// maxAttributeLength's own length-based stripping, regardless of
+// whether the caller sets ignoreAttributesForMaxLength at all — href
+// and src are how a link/image/script/iframe element actually points
+// at its own resource; a long URL there is a real, legitimate value
+// (query strings, tracking params, signed/expiring links routinely run
+// well past an arbitrary character count), not noise the way a long
+// inline style or data-* blob usually is, so removing it wholesale on
+// length alone would silently break the element's own function
+// instead of just shrinking harmless bulk. Merged with (not replaced
+// by) any caller-supplied ignoreAttributesForMaxLength in
+// readCrawlResponse, below — same "caller can only ask for MORE
+// ignored, never less" shape defaultRemoveSelectors above already
+// established. See
+// plan/ai/tools/browser/step-46-remove-attributes-plan.md.
+var defaultMaxLengthIgnoredAttributes = []string{"href", "src"}
 
 // removeElementsJS returns a JS snippet that removes every element
 // matching any of selectors from the current document — run
@@ -223,6 +285,79 @@ func removeElementsJS(selectors []string) (string, error) {
 	})()`, selectorsJSON), nil
 }
 
+// removeAttributesJS returns a JS snippet that, for every element
+// still in the document, removes any attribute named in names and —
+// when maxLength > 0 — any attribute (any name) whose own value is
+// longer than maxLength characters. Both checks run in one DOM walk,
+// not two, since a caller opting into maxLength has already accepted
+// the cost of checking every element's every attribute (its own doc
+// comment on the caller-facing field says so) — there's no reason to
+// pay for a second full traversal on top of that.
+//
+// Run this AFTER removeElementsJS in the same caller (readCrawlResponse),
+// never before: elements already removed by that pass don't need their
+// own attributes checked at all, so ordering it second measurably
+// shrinks the work this necessarily-"excessive" (per this feature's
+// own design doc) walk has to do.
+//
+// names/maxLength are embedded via json.Marshal, the same
+// safe-embedding technique removeElementsJS itself already uses —
+// never string-concatenated raw. Each element's own attributes are
+// snapshotted into a plain array before any removal: attempting to
+// remove while iterating the live attributes NamedNodeMap directly
+// skips entries out from under the loop, a real DOM footgun, not
+// hypothetical. See
+// plan/ai/tools/browser/step-46-remove-attributes-plan.md.
+func removeAttributesJS(names []string, maxLength int, ignoreForMaxLength []string) (string, error) {
+	// A nil names/ignoreForMaxLength (the common case: a caller who
+	// only sets maxAttributeLength never populates RemoveAttributes at
+	// all, and a caller who never overrides the default ignore list
+	// passes nil for the "additional" half of it) marshals to the JSON
+	// literal null, not [] — caught directly by a real test, not
+	// assumed: the generated script would then do `var names = null;
+	// names.forEach(...)`, throwing before ever reaching the maxLength
+	// check. Normalizing here means every call site stays simple;
+	// removeElementsJS never hits this because its own caller always
+	// builds its selectors via append(append([]string{}, ...), ...),
+	// which is never nil regardless of what's appended — this function
+	// has no equivalent guarantee from any of its own callers.
+	if names == nil {
+		names = []string{}
+	}
+	if ignoreForMaxLength == nil {
+		ignoreForMaxLength = []string{}
+	}
+	namesJSON, err := json.Marshal(names)
+	if err != nil {
+		return "", err
+	}
+	ignoreJSON, err := json.Marshal(ignoreForMaxLength)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf(`(function() {
+		var names = %s;
+		var maxLength = %d;
+		var ignoreForMaxLength = %s;
+		document.querySelectorAll('*').forEach(function(el) {
+			names.forEach(function(name) {
+				try {
+					if (el.hasAttribute(name)) el.removeAttribute(name);
+				} catch (e) {}
+			});
+			if (maxLength > 0) {
+				var attrs = Array.prototype.slice.call(el.attributes);
+				attrs.forEach(function(attr) {
+					try {
+						if (ignoreForMaxLength.indexOf(attr.name) !== -1) return;
+						if (attr.value && attr.value.length > maxLength) el.removeAttribute(attr.name);
+					} catch (e) {}
+				});
+			}
+		});
+	})()`, namesJSON, maxLength, ignoreJSON), nil
+}
+
 // navigateAndReadWithCloudflareCheck runs the shared navigate → settle
 // → Cloudflare-wait → read-HTML sequence against ctx — extracted so
 // both the primary (shared headless session) and fallback (ephemeral
@@ -231,7 +366,7 @@ func removeElementsJS(selectors []string) (string, error) {
 // crawlError (cloudflare_challenge_unresolved) as before when the
 // challenge is still present once ctx's own wait budget is spent. See
 // plan/ai/tools/browser/step-24-headed-chrome-cloudflare-fallback.md.
-func navigateAndReadWithCloudflareCheck(ctx context.Context, rawURL, requestID string, expectedSelectors, removeSelectors []string) (crawlResponse, error) {
+func navigateAndReadWithCloudflareCheck(ctx context.Context, rawURL, requestID string, expectedSelectors, removeSelectors, removeAttributes []string, maxAttributeLength int, ignoreAttributesForMaxLength []string) (crawlResponse, error) {
 	setCrawlPhase(requestID, phaseNavigating, "navigating to "+rawURL)
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(rawURL),
@@ -249,7 +384,7 @@ func navigateAndReadWithCloudflareCheck(ctx context.Context, rawURL, requestID s
 		return crawlResponse{}, newCloudflareUnresolvedError(cf.Reason)
 	}
 
-	return readCrawlResponse(ctx, removeSelectors)
+	return readCrawlResponse(ctx, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
 }
 
 // crawlPage navigates the one shared headless session to rawURL and
@@ -266,7 +401,7 @@ func navigateAndReadWithCloudflareCheck(ctx context.Context, rawURL, requestID s
 // real, headed browser is often materially harder for Cloudflare to
 // flag as automated than headless Chrome, even with this tool's own
 // existing stealth patches applied.
-func crawlPage(rawURL, requestID string, expectedSelectors, removeSelectors []string) (crawlResponse, error) {
+func crawlPage(rawURL, requestID string, expectedSelectors, removeSelectors, removeAttributes []string, maxAttributeLength int, ignoreAttributesForMaxLength []string) (crawlResponse, error) {
 	// step 29 — a known-Cloudflare domain skips the headless attempt
 	// entirely, straight to the headed fallback: the only signal
 	// available before ever navigating anywhere is the cache (nothing
@@ -277,9 +412,14 @@ func crawlPage(rawURL, requestID string, expectedSelectors, removeSelectors []st
 	// plan/ai/tools/browser/step-29-skip-headless-for-known-cloudflare-domains.md.
 	if domain, err := hostnameOf(rawURL); err == nil {
 		if known, err := isDomainKnownCloudflare(domain); err == nil && known {
-			return crawlWithNormalSession(rawURL, requestID, expectedSelectors, removeSelectors)
+			return crawlWithNormalSession(rawURL, requestID, expectedSelectors, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
 		}
 	}
+
+	// step 46 — same reasoning as removeSelectors below: a caller-
+	// supplied attribute-strip setting changes the output, so it must
+	// never be served from (or written to) a cache keyed only by URL.
+	skipCache := len(removeSelectors) > 0 || len(removeAttributes) > 0 || maxAttributeLength > 0
 
 	result, err := func() (crawlResponse, error) {
 		// step 45 — served for free only when the shared session is
@@ -292,10 +432,11 @@ func crawlPage(rawURL, requestID string, expectedSelectors, removeSelectors []st
 		// through to the exact same real navigate/settle/Cloudflare-
 		// wait/read sequence as before this step, unchanged. Never
 		// consulted at all when the caller supplied its own
-		// removeSelectors — see fetch_cache.go's own top comment for
-		// why. See
-		// plan/ai/tools/browser/step-45-fetch-html-caching-plan.md.
-		if len(removeSelectors) == 0 {
+		// removeSelectors/removeAttributes/maxAttributeLength — see
+		// fetch_cache.go's own top comment for why. See
+		// plan/ai/tools/browser/step-45-fetch-html-caching-plan.md and
+		// plan/ai/tools/browser/step-46-remove-attributes-plan.md.
+		if !skipCache {
 			if cached, ok := fetchCacheLookup(rawURL); ok {
 				sessionMu.Lock()
 				alreadyThere := lastHeadlessFetchURL == rawURL
@@ -315,12 +456,12 @@ func crawlPage(rawURL, requestID string, expectedSelectors, removeSelectors []st
 		ctx, cancel := context.WithTimeout(sessionCtx, crawlTimeout)
 		defer cancel()
 
-		resp, err := navigateAndReadWithCloudflareCheck(ctx, rawURL, requestID, expectedSelectors, removeSelectors)
+		resp, err := navigateAndReadWithCloudflareCheck(ctx, rawURL, requestID, expectedSelectors, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
 		if err != nil {
 			return crawlResponse{}, err
 		}
 		lastHeadlessFetchURL = rawURL
-		if len(removeSelectors) == 0 {
+		if !skipCache {
 			// Best-effort — a failed cache write must never turn an
 			// otherwise-successful crawl into a failure.
 			_ = fetchCacheStore(rawURL, resp)
@@ -335,7 +476,7 @@ func crawlPage(rawURL, requestID string, expectedSelectors, removeSelectors []st
 		if domain, hostErr := hostnameOf(rawURL); hostErr == nil {
 			_ = recordCloudflareDomain(domain, cfErr.Reason)
 		}
-		return crawlWithNormalSession(rawURL, requestID, expectedSelectors, removeSelectors)
+		return crawlWithNormalSession(rawURL, requestID, expectedSelectors, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
 	}
 	// step 38 — deliberately wrapped only here, after the Cloudflare
 	// dispatch above: a session-interrupted error must never trigger
@@ -356,7 +497,7 @@ func crawlPage(rawURL, requestID string, expectedSelectors, removeSelectors []st
 // immediately. See
 // plan/ai/tools/browser/step-24-headed-chrome-cloudflare-fallback.md
 // and plan/ai/tools/browser/step-25-human-assisted-cloudflare-retry.md.
-func crawlWithNormalSession(rawURL, requestID string, expectedSelectors, removeSelectors []string) (crawlResponse, error) {
+func crawlWithNormalSession(rawURL, requestID string, expectedSelectors, removeSelectors, removeAttributes []string, maxAttributeLength int, ignoreAttributesForMaxLength []string) (crawlResponse, error) {
 	normalSessionMu.Lock()
 	defer normalSessionMu.Unlock()
 
@@ -373,13 +514,13 @@ func crawlWithNormalSession(rawURL, requestID string, expectedSelectors, removeS
 	ctx, cancel := context.WithTimeout(ctx, normalSessionCrawlTimeout)
 	defer cancel()
 
-	result, err := navigateAndReadWithCloudflareCheck(ctx, rawURL, requestID, expectedSelectors, removeSelectors)
+	result, err := navigateAndReadWithCloudflareCheck(ctx, rawURL, requestID, expectedSelectors, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
 
 	var cfErr *crawlError
 	if !errors.As(err, &cfErr) {
 		return result, err
 	}
-	return waitForHumanToSolveCloudflare(ctx, cfErr, requestID, expectedSelectors, removeSelectors)
+	return waitForHumanToSolveCloudflare(ctx, cfErr, requestID, expectedSelectors, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
 }
 
 // waitForHumanToClearCloudflare polls detectCloudflareChallenge every
@@ -478,7 +619,7 @@ func waitForHumanToClearCloudflare(ctx context.Context, requestID, initialReason
 // Cloudflare challenge and solve it themselves, then reads the page
 // once cleared. See
 // plan/ai/tools/browser/step-25-human-assisted-cloudflare-retry.md.
-func waitForHumanToSolveCloudflare(ctx context.Context, fallback *crawlError, requestID string, expectedSelectors, removeSelectors []string) (crawlResponse, error) {
+func waitForHumanToSolveCloudflare(ctx context.Context, fallback *crawlError, requestID string, expectedSelectors, removeSelectors, removeAttributes []string, maxAttributeLength int, ignoreAttributesForMaxLength []string) (crawlResponse, error) {
 	cleared, err := waitForHumanToClearCloudflare(ctx, requestID, fallback.Reason, expectedSelectors)
 	if err != nil {
 		return crawlResponse{}, err
@@ -486,7 +627,7 @@ func waitForHumanToSolveCloudflare(ctx context.Context, fallback *crawlError, re
 	if !cleared {
 		return crawlResponse{}, fallback
 	}
-	return readCrawlResponse(ctx, removeSelectors)
+	return readCrawlResponse(ctx, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
 }
 
 // validateCrawlURL is this tool's own SSRF guard — a page-fetching
@@ -529,8 +670,11 @@ func isDisallowedIP(ip net.IP) bool {
 }
 
 type fetchPageHTMLArgs struct {
-	URL             string   `json:"url" jsonschema:"the absolute http(s) URL to navigate to and read"`
-	RemoveSelectors []string `json:"removeSelectors,omitempty" jsonschema:"optional CSS selectors for ANY elements to strip from the returned HTML before it's read — e.g. [\"header\", \"footer\", \"nav\", \"script\", \"style\", \".cookie-banner\", \"#ads\"]. Not limited to these examples: any valid CSS selector is matched and removed. Use this to cut boilerplate/noise you don't need out of the result; omit to get the page exactly as rendered."`
+	URL                          string   `json:"url" jsonschema:"the absolute http(s) URL to navigate to and read"`
+	RemoveSelectors              []string `json:"removeSelectors,omitempty" jsonschema:"optional CSS selectors for ANY elements to strip from the returned HTML before it's read — e.g. [\"header\", \"footer\", \"nav\", \"script\", \"style\", \".cookie-banner\", \"#ads\"]. Not limited to these examples: any valid CSS selector is matched and removed. Use this to cut boilerplate/noise you don't need out of the result; omit to get the page exactly as rendered."`
+	RemoveAttributes             []string `json:"removeAttributes,omitempty" jsonschema:"optional attribute names to strip from EVERY element that has them, regardless of the attribute's own value — e.g. [\"style\", \"onclick\", \"data-testid\"]. Use this to cut attribute noise you know the name of; omit to leave those attributes as rendered."`
+	MaxAttributeLength           int      `json:"maxAttributeLength,omitempty" jsonschema:"optional — when set above 0, ANY attribute (any name, on any element) whose own value is longer than this many characters is removed — useful for stripping long inline noise (base64 data URIs, huge inline style/class blobs) you don't know the name of in advance. href and src are always exempt (see ignoreAttributesForMaxLength to exempt more) since a long URL there is often legitimate, not noise, and removing it would break the element. This checks every element's every attribute, which can take noticeably longer on a large page; omit or leave at 0 to disable."`
+	IgnoreAttributesForMaxLength []string `json:"ignoreAttributesForMaxLength,omitempty" jsonschema:"optional attribute names to additionally exempt from maxAttributeLength's own check, on top of the built-in href/src exemption — e.g. [\"poster\", \"action\"] if some other URL-valued attribute on this particular page also needs protecting from removal. Has no effect unless maxAttributeLength is also set."`
 }
 
 // registerFetchPageHTML adds the fetch_page_html MCP tool — thin: it
@@ -541,8 +685,9 @@ func registerFetchPageHTML(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "fetch_page_html",
 		Description: "Navigate the shared browser session to a URL and return the page's rendered HTML, title, and final URL (after any redirect). " +
-			"Calling this again for the exact same URL within about 5 minutes, without calling it for any other URL in between, returns a short-lived cached copy of what was fetched last time instead of navigating again — useful to know if you call this tool repeatedly for the same page, since you won't see the page's own content change again until either 5 minutes pass or you fetch a different URL first. Passing removeSelectors always fetches a fresh copy — caching only ever applies to a plain re-fetch with no removeSelectors. " +
+			"Calling this again for the exact same URL within about 5 minutes, without calling it for any other URL in between, returns a short-lived cached copy of what was fetched last time instead of navigating again — useful to know if you call this tool repeatedly for the same page, since you won't see the page's own content change again until either 5 minutes pass or you fetch a different URL first. Passing removeSelectors, removeAttributes, or maxAttributeLength always fetches a fresh copy — caching only ever applies to a plain re-fetch with none of those set. " +
 			"Pass removeSelectors to strip elements you don't want out of the HTML before it's returned to you — any valid CSS selector works (tag names like \"header\", \"script\", \"style\", \"nav\", \"footer\"; classes like \".cookie-banner\"; ids like \"#ads\"; or anything else CSS can target). Use this whenever you only need part of the page, to cut boilerplate/noise out of your own result instead of reading past it. " +
+			"Pass removeAttributes (a list of attribute names, e.g. [\"style\", \"onclick\", \"data-testid\"]) to strip those attributes from EVERY element that has them, keeping the element itself. Pass maxAttributeLength (a number of characters) to strip ANY attribute on ANY element whose own value is longer than that — useful for cutting long inline noise (base64 data URIs, huge inline style/class blobs) you don't know the name of ahead of time; this checks every element's every attribute, so it can take noticeably longer on a large page. href and src are always left alone by maxAttributeLength regardless of their own length, since a link/image/script's own URL is often legitimately long and removing it would break the element, not just shrink it — pass ignoreAttributesForMaxLength (more attribute names) if some other URL-like attribute on this page needs the same protection. Both removeAttributes and maxAttributeLength can be used together, and neither touches the elements themselves, only their attributes. " +
 			"If the page is behind a Cloudflare challenge, this waits briefly for it to clear before reading the page; if it's still blocking once the wait runs out, this automatically retries in a normal (non-headless) browser window and can wait up to about 30 minutes for a person to notice and solve the challenge there before giving up — meaning this call can take up to roughly 30 minutes in that case, almost certainly longer than this AI tool-calling session's own timeout, so a Cloudflare-blocked page is effectively only recoverable through this path by a human watching for the window, not by an AI call waiting on the result. If it's still blocked after that, this call fails with a cloudflare_challenge_unresolved error instead of returning the interstitial as if it were the real page.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args fetchPageHTMLArgs) (*mcp.CallToolResult, any, error) {
 		if args.URL == "" {
@@ -552,7 +697,13 @@ func registerFetchPageHTML(server *mcp.Server) {
 			}, nil, nil
 		}
 
-		reqBody, err := json.Marshal(crawlRequest{URL: args.URL, RemoveSelectors: args.RemoveSelectors})
+		reqBody, err := json.Marshal(crawlRequest{
+			URL:                          args.URL,
+			RemoveSelectors:              args.RemoveSelectors,
+			RemoveAttributes:             args.RemoveAttributes,
+			MaxAttributeLength:           args.MaxAttributeLength,
+			IgnoreAttributesForMaxLength: args.IgnoreAttributesForMaxLength,
+		})
 		if err != nil {
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("failed to build request: %v", err)}},
