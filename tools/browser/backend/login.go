@@ -164,8 +164,20 @@ func performLogin(req loginRequest) (loginResponse, error) {
 		return loginResponse{}, err
 	}
 
+	// Same unconditional <head>/<script>/<style> removal as crawl.go's
+	// own readCrawlResponse (step 44) — this HTML reaches the AI model
+	// exactly like fetch_page_html's own does (see registerLogin's own
+	// handler, below), so it gets the same token-reduction treatment.
+	// No caller-configurable removeSelectors here — nothing asked for
+	// one, and loginRequest carries no such field.
+	removeScript, err := removeElementsJS(defaultRemoveSelectors)
+	if err != nil {
+		return loginResponse{}, err
+	}
+
 	var html, finalURL string
 	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(removeScript, nil),
 		chromedp.Location(&finalURL),
 		chromedp.OuterHTML("html", &html),
 	); err != nil {

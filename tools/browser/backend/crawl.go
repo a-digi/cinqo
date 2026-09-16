@@ -156,14 +156,12 @@ func crawlHandler(w http.ResponseWriter, r *http.Request) {
 // re-navigate — which would discard whatever a human just did in a
 // visible window to clear the challenge.
 func readCrawlResponse(ctx context.Context, removeSelectors []string) (crawlResponse, error) {
-	var actions []chromedp.Action
-	if len(removeSelectors) > 0 {
-		script, err := removeElementsJS(removeSelectors)
-		if err != nil {
-			return crawlResponse{}, err
-		}
-		actions = append(actions, chromedp.Evaluate(script, nil))
+	allRemoveSelectors := append(append([]string{}, defaultRemoveSelectors...), removeSelectors...)
+	script, err := removeElementsJS(allRemoveSelectors)
+	if err != nil {
+		return crawlResponse{}, err
 	}
+	actions := []chromedp.Action{chromedp.Evaluate(script, nil)}
 
 	var html, title, finalURL string
 	actions = append(actions,
@@ -188,6 +186,17 @@ func readCrawlResponse(ctx context.Context, removeSelectors []string) (crawlResp
 		Truncated: truncated,
 	}, nil
 }
+
+// defaultRemoveSelectors (step 44) are always stripped from crawled
+// HTML before it ever reaches an AI model's own context — <head>,
+// <script>, and <style> content is never useful to a model reading a
+// page's own visible/structural content, and on a real page these can
+// easily account for the majority of a crawl's own token cost. Merged
+// with (not replaced by) any caller-supplied removeSelectors in
+// readCrawlResponse, below — a caller can still ask for MORE removed,
+// never less. See plan/ai/tools/browser/step-44-default-html-element-
+// removal.md.
+var defaultRemoveSelectors = []string{"head", "script", "style"}
 
 // removeElementsJS returns a JS snippet that removes every element
 // matching any of selectors from the current document — run
