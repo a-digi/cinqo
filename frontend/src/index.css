@@ -57,6 +57,37 @@ body {
   }
 }
 
+/* Continuous, looping color pulse on ThinkingIndicator's own word text
+   (step — ThinkingIndicator polish) — distinct from thinking-wave
+   above (which only plays once, on a word change every 15s): this
+   runs indefinitely regardless of the word itself changing, a
+   lightweight "something is happening" cue. gray-400 (#9ca3af, this
+   indicator's own normal text color) to gray-300 (#d1d5db, lighter)
+   and back. */
+@keyframes thinking-shimmer {
+  0%,
+  100% {
+    color: #9ca3af;
+  }
+  50% {
+    color: #d1d5db;
+  }
+}
+
+/* Fade-in for ThinkingIndicator's own long-wait reassurance text
+   ("Still thinking…" / "This is taking a little bit longer…") —
+   softens their sudden appearance rather than an abrupt pop-in. */
+@keyframes thinking-fade-in {
+  0% {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* Tailwind's Preflight resets <button>/[role=button] cursor to
    "default", overriding the browser's own native pointer cursor — so
    every button in the app needs it restored explicitly, not per

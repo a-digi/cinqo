@@ -13,9 +13,11 @@ import {
 import { Dropdown } from '../Dropdown/Dropdown'
 import { Pagination } from '../Pagination/Pagination'
 import { FilterIcon, XIcon } from '../../Shared/Icons/icons'
+import { truncate } from '../../Shared/Text/transform'
 
 const PAGE_SIZE = 50
 const SEARCH_DEBOUNCE_MS = 300
+const MAX_LOCATION_DISPLAY_LENGTH = 50
 
 // No "add job" affordance — jobs are populated by the AI's own
 // crawling workflow (step 4), never hand-entered here. See this
@@ -166,7 +168,7 @@ export function JobsPage() {
   if (location)
     activeFilters.push({
       key: 'location',
-      label: `Location: ${location}`,
+      label: `Location: ${truncate(location, MAX_LOCATION_DISPLAY_LENGTH)}`,
       onClear: () => {
         handleLocationFilterChange('')
       },
@@ -214,6 +216,41 @@ export function JobsPage() {
         </div>
       )}
 
+      {showFilters && (
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          {locations.length > 0 && (
+            <Dropdown
+              placeholder="Any location"
+              options={[
+                { value: '', label: 'Any location' },
+                ...locations.map((loc) => ({ value: loc, label: truncate(loc, MAX_LOCATION_DISPLAY_LENGTH) })),
+              ]}
+              value={location}
+              onChange={handleLocationFilterChange}
+              searchable
+            />
+          )}
+          {companies.length > 0 && (
+            <Dropdown
+              placeholder="Any company"
+              options={[{ value: '', label: 'Any company' }, ...companies.map((c) => ({ value: c.id, label: c.name }))]}
+              value={companyId}
+              onChange={handleCompanyFilterChange}
+              searchable
+            />
+          )}
+          {portals.length > 0 && (
+            <Dropdown
+              placeholder="Any platform"
+              options={[{ value: '', label: 'Any platform' }, ...portals.map((p) => ({ value: p.id, label: p.name }))]}
+              value={portalId}
+              onChange={handlePortalFilterChange}
+              searchable
+            />
+          )}
+        </div>
+      )}
+
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <input
           value={query}
@@ -234,37 +271,6 @@ export function JobsPage() {
           <FilterIcon />
           Filters
         </button>
-        {showFilters && (
-          <>
-            {locations.length > 0 && (
-              <Dropdown
-                placeholder="Any location"
-                options={[{ value: '', label: 'Any location' }, ...locations.map((loc) => ({ value: loc, label: loc }))]}
-                value={location}
-                onChange={handleLocationFilterChange}
-                searchable
-              />
-            )}
-            {companies.length > 0 && (
-              <Dropdown
-                placeholder="Any company"
-                options={[{ value: '', label: 'Any company' }, ...companies.map((c) => ({ value: c.id, label: c.name }))]}
-                value={companyId}
-                onChange={handleCompanyFilterChange}
-                searchable
-              />
-            )}
-            {portals.length > 0 && (
-              <Dropdown
-                placeholder="Any platform"
-                options={[{ value: '', label: 'Any platform' }, ...portals.map((p) => ({ value: p.id, label: p.name }))]}
-                value={portalId}
-                onChange={handlePortalFilterChange}
-                searchable
-              />
-            )}
-          </>
-        )}
       </div>
 
       <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>

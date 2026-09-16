@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.33.88",
+  "version": "0.33.91",
   "mcp": true,
   "requires_tools": [
     {
@@ -130,6 +130,11 @@
     {
       "method": "GET",
       "path_suffix": "jobs",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "job-locations",
       "required_scope": "tool:career:jobs"
     },
     {
