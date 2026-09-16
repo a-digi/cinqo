@@ -594,6 +594,25 @@ func jobsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// jobLocationsHandler handles GET /job-locations — the Jobs page's own
+// Location filter dropdown's data source (step — see
+// listDistinctJobLocations's own doc comment). Read-only, no
+// query params: every distinct location is always returned, the same
+// "fetch everything, no pagination" shape fetchCompanies/fetchPortals
+// already use for their own filter dropdowns.
+func jobLocationsHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	locations, err := listDistinctJobLocations()
+	if err != nil {
+		http.Error(w, "failed to list job locations: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]any{"locations": locations})
+}
+
 // --- /companies ---
 
 type companyRequest struct {

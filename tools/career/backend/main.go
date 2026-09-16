@@ -63,6 +63,7 @@ func runHTTPServer() {
 	http.HandleFunc("/skills", skillsHandler)
 	http.HandleFunc("/experience", experienceHandler)
 	http.HandleFunc("/jobs", jobsHandler)
+	http.HandleFunc("/job-locations", jobLocationsHandler)
 	http.HandleFunc("/companies", companiesHandler)
 	http.HandleFunc("/recruiters", recruitersHandler)
 	http.HandleFunc("/portals", portalsHandler)

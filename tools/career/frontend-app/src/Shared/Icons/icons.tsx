@@ -60,3 +60,13 @@ export function AlertIcon() {
     </svg>
   )
 }
+
+// FilterIcon (step 55) — a plain funnel glyph marking the Jobs page's
+// own "Filters" toggle button.
+export function FilterIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-3.5 w-3.5">
+      <path d="M3 4h14l-5.5 6.5v4.5l-3 1.5v-6z" strokeWidth="1.3" strokeLinejoin="round" />
+    </svg>
+  )
+}

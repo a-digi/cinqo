@@ -13,6 +13,7 @@ type DropdownProps =
       onChange: (value: string) => void
       label?: string
       placeholder?: string
+      searchable?: boolean
     }
   | {
       multiple: true
@@ -21,6 +22,7 @@ type DropdownProps =
       onChange: (value: string[]) => void
       label?: string
       placeholder?: string
+      searchable?: boolean
     }
 
 // Shared single/multiple-select dropdown — a real popover listbox,
@@ -31,10 +33,18 @@ type DropdownProps =
 // `multiple` gives every call site a correctly-typed `value`/
 // `onChange` (string vs. string[]) with no cast needed. See
 // plan/ai/tools/career/step-13-dropdown-component.md.
+//
+// `searchable` (step 54) adds a text input at the top of the open
+// popover that filters `options` by label — opt-in and fully
+// backward-compatible, every existing call site behaves exactly as
+// before unless it passes `searchable`. See
+// plan/ai/tools/career/step-54-jobs-page-searchable-dropdown-filters-toggle.md.
 export function Dropdown(props: DropdownProps) {
-  const { options, label, placeholder = 'Select…' } = props
+  const { options, label, placeholder = 'Select…', searchable = false } = props
   const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
   const containerRef = useRef<HTMLDivElement>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
   const id = useId()
 
   useEffect(() => {
@@ -55,6 +65,14 @@ export function Dropdown(props: DropdownProps) {
     }
   }, [open])
 
+  useEffect(() => {
+    if (!open) {
+      setSearch('')
+      return
+    }
+    if (searchable) searchInputRef.current?.focus()
+  }, [open, searchable])
+
   function isSelected(value: string): boolean {
     if (props.multiple) return props.value.includes(value)
     return props.value === value
@@ -73,6 +91,7 @@ export function Dropdown(props: DropdownProps) {
 
   const selectedLabels = options.filter((o) => isSelected(o.value)).map((o) => o.label)
   const triggerText = selectedLabels.length > 0 ? selectedLabels.join(', ') : placeholder
+  const visibleOptions = searchable ? options.filter((o) => o.label.toLowerCase().includes(search.toLowerCase())) : options
 
   return (
     <div ref={containerRef} className="relative inline-block text-sm">
@@ -101,39 +120,52 @@ export function Dropdown(props: DropdownProps) {
         <CaretIcon open={open} />
       </button>
       {open && (
-        <ul
-          role="listbox"
-          aria-multiselectable={props.multiple ? true : undefined}
-          className="absolute z-10 mt-1 max-h-60 min-w-full overflow-auto rounded-md border border-gray-200 bg-white py-1 shadow-sm"
-        >
-          {options.map((o) => {
-            const selected = isSelected(o.value)
-            return (
-              <li key={o.value} role="option" aria-selected={selected}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    handleSelect(o.value)
-                  }}
-                  className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-gray-50 ${
-                    selected ? 'font-medium text-gray-900' : 'text-gray-700'
-                  }`}
-                >
-                  {props.multiple && (
-                    <span
-                      className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border ${
-                        selected ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-300'
-                      }`}
-                    >
-                      {selected && <CheckIcon />}
-                    </span>
-                  )}
-                  <span className="truncate">{o.label}</span>
-                </button>
-              </li>
-            )
-          })}
-        </ul>
+        <div className="absolute z-10 mt-1 min-w-full overflow-hidden rounded-md border border-gray-200 bg-white shadow-sm">
+          {searchable && (
+            <div className="border-b border-gray-200 p-1.5">
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value)
+                }}
+                placeholder="Search…"
+                className="w-full rounded border border-gray-200 px-2 py-1 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
+              />
+            </div>
+          )}
+          <ul role="listbox" aria-multiselectable={props.multiple ? true : undefined} className="max-h-60 overflow-auto py-1">
+            {visibleOptions.length === 0 && <li className="px-3 py-1.5 text-sm text-gray-400">No matches</li>}
+            {visibleOptions.map((o) => {
+              const selected = isSelected(o.value)
+              return (
+                <li key={o.value} role="option" aria-selected={selected}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleSelect(o.value)
+                    }}
+                    className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-gray-50 ${
+                      selected ? 'font-medium text-gray-900' : 'text-gray-700'
+                    }`}
+                  >
+                    {props.multiple && (
+                      <span
+                        className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border ${
+                          selected ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-300'
+                        }`}
+                      >
+                        {selected && <CheckIcon />}
+                      </span>
+                    )}
+                    <span className="truncate">{o.label}</span>
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
       )}
     </div>
   )

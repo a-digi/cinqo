@@ -336,6 +336,12 @@ export async function fetchJobs(
   return jsonOrThrow<JobsResult>(res, 'load jobs')
 }
 
+export async function fetchJobLocations(): Promise<string[]> {
+  const res = await fetch(`${PROXY_BASE}/job-locations`, { credentials: 'include' })
+  const data = await jsonOrThrow<{ locations: string[] }>(res, 'load job locations')
+  return data.locations
+}
+
 export async function removeJob(id: string): Promise<void> {
   const res = await fetch(`${PROXY_BASE}/jobs?id=${encodeURIComponent(id)}`, {
     method: 'DELETE',

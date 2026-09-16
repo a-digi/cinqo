@@ -130,13 +130,16 @@ func listJobs(companyId, portalLinkId, portalId string, limit, offset int) (jobs
 	return queryJobs(where, args, limit, offset)
 }
 
-// searchJobs matches query against title/company/description and
-// location against location — both optional; companyId/portalLinkId/
+// searchJobs matches query against title/company/description; location
+// restricts to an exact location value (step — Jobs page Location
+// dropdown: the frontend now offers a fixed list of distinct location
+// values via listDistinctJobLocations, rather than free text, so
+// partial LIKE matching no longer applies). companyId/portalLinkId/
 // portalId, if non-empty, additionally restrict as documented on
 // listJobs, above. Omitting every filter is equivalent to listJobs.
-// Plain parameterized LIKE, case-insensitive via LOWER(...) — no
-// full-text-search extension for a first pass (see this step's own
-// open question 1).
+// Plain parameterized LIKE for query, case-insensitive via LOWER(...)
+// — no full-text-search extension for a first pass (see this step's
+// own open question 1).
 func searchJobs(query, location, companyId, portalLinkId, portalId string, limit, offset int) (jobsListResult, error) {
 	where := `WHERE 1=1`
 	args := []any{}
@@ -146,8 +149,8 @@ func searchJobs(query, location, companyId, portalLinkId, portalId string, limit
 		args = append(args, pattern, pattern, pattern)
 	}
 	if location != "" {
-		where += ` AND LOWER(j.location) LIKE ?`
-		args = append(args, "%"+toLower(location)+"%")
+		where += ` AND j.location = ?`
+		args = append(args, location)
 	}
 	if companyId != "" {
 		where += ` AND j.company_id = ?`
@@ -217,6 +220,34 @@ func queryJobs(where string, whereArgs []any, limit, offset int) (jobsListResult
 func deleteJob(id string) error {
 	_, err := jobsDB.Exec(`DELETE FROM jobs WHERE id = ?`, id)
 	return err
+}
+
+// listDistinctJobLocations returns every distinct non-empty location
+// value across all saved jobs, alphabetically — the Jobs page's own
+// Location filter dropdown's data source. Raw, unnormalized strings as
+// crawled (e.g. "Berlin" and "Berlin, Germany" are two separate
+// values, never grouped) — exact match is what searchJobs's own
+// location filter now expects. See plan/ai/tools/career/step-55-jobs-
+// page-location-dropdown-active-filters-live-search.md.
+func listDistinctJobLocations() ([]string, error) {
+	rows, err := jobsDB.Query(`SELECT DISTINCT location FROM jobs WHERE location IS NOT NULL AND location != '' ORDER BY location`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	locations := []string{}
+	for rows.Next() {
+		var loc string
+		if err := rows.Scan(&loc); err != nil {
+			return nil, err
+		}
+		locations = append(locations, loc)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return locations, nil
 }
 
 // linkJobToCompany sets (or, if companyId is "", clears) a job's own
@@ -385,7 +416,7 @@ func registerListJobs(server *mcp.Server) {
 
 type searchJobsArgs struct {
 	Query        string `json:"query,omitempty" jsonschema:"matches against title/company/description"`
-	Location     string `json:"location,omitempty" jsonschema:"matches against the posting's own location"`
+	Location     string `json:"location,omitempty" jsonschema:"restrict to postings whose location is exactly this value (case-sensitive, no partial match) — see list_jobs's own results for real values"`
 	CompanyID    string `json:"companyId,omitempty" jsonschema:"restrict to jobs linked to this company (see link_job_to_company); omit for every matching job"`
 	PortalLinkID string `json:"portalLinkId,omitempty" jsonschema:"restrict to jobs found via this specific portal link (see save_portal_job); omit for every matching job"`
 	PortalID     string `json:"portalId,omitempty" jsonschema:"restrict to jobs found via ANY link belonging to this portal (see list_portals); omit for every matching job"`
