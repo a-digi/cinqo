@@ -58,6 +58,45 @@ export async function startCrawlNow(portalLinkId: string): Promise<StartedCrawlR
   return res.json() as Promise<StartedCrawlRun>
 }
 
+// StoppedCrawlRun (step 63) is the narrow shape
+// POST .../crawl-now/cancel actually returns — NOT a full CrawlRun
+// (no startedAt/log/resultSummary/errorMessage/phase). Deliberately
+// kept this narrow rather than widened to match CrawlRun: the caller
+// (CrawlPanel.tsx's own handleStopCrawlNow) already has the real,
+// current CrawlRun in its own `run` state and only needs to know THIS
+// call actually found and cancelled something — it merges this result
+// into the existing `run` rather than replacing it wholesale, which
+// would otherwise discard the log/phase the panel was already showing.
+export interface StoppedCrawlRun {
+  crawlRunId: string
+  status: 'cancelled'
+}
+
+// stopCrawlNow asks Career's own backend to actually stop this link's
+// active crawl — a real, server-effecting cancellation (interrupts
+// both Career's own detached goroutine and the browser tool's
+// in-flight chromedp work for it), unlike the pre-existing "Stop
+// watching" button in CrawlPanel.tsx, which only ever stops this one
+// tab's own polling. Returns null (not an error) on 404 — that status
+// means there was nothing running to cancel, almost always because the
+// run already reached a terminal state on its own in the gap between
+// the click and this request landing; the caller re-fetches to show
+// whatever it actually became instead of treating this as a failure.
+// See plan/ai/tools/career/step-63-stop-crawling-now.md.
+export async function stopCrawlNow(portalLinkId: string): Promise<StoppedCrawlRun | null> {
+  const res = await fetch(`${CRAWL_NOW_BASE}/cancel`, {
+    method: 'POST',
+    credentials: 'include',
+    body: JSON.stringify({ portalLinkId }),
+  })
+  if (res.status === 404) return null
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(text || `failed to stop crawl (${res.status})`)
+  }
+  return res.json() as Promise<StoppedCrawlRun>
+}
+
 // fetchActiveCrawlRun returns the most recent crawl run for this link
 // — running or terminal — or null if none has ever existed. Mirrors
 // the AI conversation feature's own GET .../turns/active contract:

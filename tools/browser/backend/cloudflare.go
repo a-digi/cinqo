@@ -500,16 +500,49 @@ func newSessionInterruptedError(cause error) *crawlError {
 	}
 }
 
-// wrapIfSessionInterrupted turns context.Canceled into the structured
-// browser_session_interrupted error.
+// newCrawlCancelledError (step 63.3) is returned when a request's own
+// per-request context (reqCtx — crawl_cancel.go, registered by
+// crawlPage/crawlWithNormalSession/performPaginatedCrawl/
+// performPaginatedCrawlWithNormalSession) was canceled via
+// cancelCrawl(requestID) — a deliberate, user-requested stop (Career's
+// own "Stop crawl" button), never a transient failure worth retrying.
+func newCrawlCancelledError() *crawlError {
+	return &crawlError{
+		Code:    "crawl_cancelled_by_user",
+		Message: "Crawl was stopped by the user",
+	}
+}
+
+// classifyCancellation replaces this file's own former
+// wrapIfSessionInterrupted (step 38, removed by step 63.3 — this
+// function is a strict superset: with reqCtx never canceled, its
+// behavior for a session-interrupted context.Canceled is identical) —
+// a plain context.Canceled can now mean one of TWO materially different
+// things once a per-request context exists alongside the shared
+// session's own sessionCtx, and conflating them would make a
+// deliberate Stop click look like a transient, auto-retried failure
+// (exactly backwards from what a Stop button must do). Checks
+// sessionCtx FIRST: a torn-down session also cancels every in-flight
+// request's own reqCtx as a side effect (reqCtx's own linked ctx —
+// see crawlPage's own doc comment — is ultimately still rooted through
+// sessionCtx), so if the whole session died, that explanation wins
+// regardless of reqCtx's own state; the two are not mutually
+// exclusive, so order matters here.
 //
-// context.DeadlineExceeded is deliberately left alone: it represents an
-// ordinary timeout rather than an explicitly interrupted browser session.
-func wrapIfSessionInterrupted(err error) error {
-	if err != nil && errors.Is(err, context.Canceled) {
+// err is returned unchanged when it isn't context.Canceled at all
+// (e.g. context.DeadlineExceeded, or any ordinary navigation/
+// extraction failure) — this function only ever disambiguates
+// cancellation, never anything else.
+func classifyCancellation(err error, reqCtx, sessionCtx context.Context) error {
+	if err == nil || !errors.Is(err, context.Canceled) {
+		return err
+	}
+	if sessionCtx.Err() != nil {
 		return newSessionInterruptedError(err)
 	}
-
+	if reqCtx.Err() != nil {
+		return newCrawlCancelledError()
+	}
 	return err
 }
 

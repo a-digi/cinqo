@@ -414,12 +414,33 @@ func runPaginatedCrawlLoop(ctx context.Context, container string, fields []extra
 // this call's own extraction to the wrong page. See
 // plan/ai/tools/browser/step-37-atomic-navigate-and-extract.md.
 func performPaginatedCrawl(url, container string, fields []extractField, mapping map[string]string, nextSelector string, requestedMaxPages, effectiveMaxPages int, captureHTML bool, requestID string) (paginatedCrawlResponse, []string, error) {
+	// step 63.2 — registered before anything else in this call, same
+	// reasoning as crawlPage's own identical registration (crawl.go):
+	// cancellable via cancelCrawl(requestID) from the instant this call
+	// arrives, even before sessionMu is ever touched. A no-op when
+	// requestID is "" (the AI's own crawl_paginated calls never set
+	// one). See plan/ai/tools/career/step-63-stop-crawling-now.md.
+	reqCtx, reqCancel := context.WithCancel(context.Background())
+	registerCrawlCancel(requestID, reqCancel)
+	defer func() {
+		unregisterCrawlCancel(requestID)
+		reqCancel()
+	}()
+
 	result, pageHTML, blockedURL, err := func() (paginatedCrawlResponse, []string, string, error) {
 		if err := ensureSharedSession(); err != nil {
 			return paginatedCrawlResponse{}, nil, "", err
 		}
 		sessionMu.Lock()
 		defer sessionMu.Unlock()
+
+		// step 63.2 — this request may have been canceled while it sat
+		// queued waiting for sessionMu — bail out immediately after
+		// acquiring the lock, before any real chromedp work, same
+		// reasoning as crawlPage's own identical check (crawl.go).
+		if reqCtx.Err() != nil {
+			return paginatedCrawlResponse{}, nil, "", reqCtx.Err()
+		}
 
 		// step 47.2/47.3 — fail fast on a tab left wedged by a previous,
 		// unrelated caller instead of discovering it only after burning
@@ -439,11 +460,27 @@ func performPaginatedCrawl(url, container string, fields []extractField, mapping
 
 		ctx, cancel := context.WithTimeout(sessionCtx, paginatedCrawlTimeout)
 		defer cancel()
+		// step 63.2 — links this call's own ctx to reqCtx, same pattern
+		// as crawlPage's own identical goroutine (crawl.go) — every
+		// chromedp.Run call below (the navigate here, and everything
+		// inside runPaginatedCrawlLoop) already respects ctx.Done()
+		// internally, so no changes are needed inside that loop itself.
+		go func() {
+			select {
+			case <-reqCtx.Done():
+				cancel()
+				// step 63.2 — see crawl.go's identical comment: without
+				// this, Chrome itself keeps loading after this call has
+				// already given up waiting.
+				stopBrowserLoad(sessionCtx)
+			case <-ctx.Done():
+			}
+		}()
 
 		if url != "" {
 			setCrawlPhase(requestID, phaseNavigating, "navigating to "+url)
 			if err := chromedp.Run(ctx, chromedp.Navigate(url), chromedp.Sleep(settleDelay)); err != nil {
-				return paginatedCrawlResponse{}, nil, "", wrapIfSessionInterrupted(err)
+				return paginatedCrawlResponse{}, nil, "", classifyCancellation(err, reqCtx, sessionCtx)
 			}
 			// step 45 — this is the shared session (performPaginatedCrawl
 			// only ever runs against sessionCtx), navigated outside
@@ -489,7 +526,7 @@ func performPaginatedCrawl(url, container string, fields []extractField, mapping
 
 		var cfErr *crawlError
 		if !errors.As(err, &cfErr) {
-			return result, pageHTML, "", wrapIfSessionInterrupted(err)
+			return result, pageHTML, "", classifyCancellation(err, reqCtx, sessionCtx)
 		}
 
 		var currentURL string
@@ -509,7 +546,7 @@ func performPaginatedCrawl(url, container string, fields []extractField, mapping
 
 	var cfErr *crawlError
 	if errors.As(err, &cfErr) && blockedURL != "" {
-		return performPaginatedCrawlWithNormalSession(blockedURL, container, fields, mapping, nextSelector, requestedMaxPages, effectiveMaxPages, captureHTML, requestID)
+		return performPaginatedCrawlWithNormalSession(reqCtx, blockedURL, container, fields, mapping, nextSelector, requestedMaxPages, effectiveMaxPages, captureHTML, requestID)
 	}
 	return result, pageHTML, err
 }
@@ -528,9 +565,17 @@ func performPaginatedCrawl(url, container string, fields []extractField, mapping
 // plan/ai/tools/browser/step-24-headed-chrome-cloudflare-fallback.md,
 // step-25-human-assisted-cloudflare-retry.md, and
 // step-26-headed-fallback-for-paginated-crawl.md.
-func performPaginatedCrawlWithNormalSession(blockedURL, container string, fields []extractField, mapping map[string]string, nextSelector string, requestedMaxPages, effectiveMaxPages int, captureHTML bool, requestID string) (paginatedCrawlResponse, []string, error) {
+func performPaginatedCrawlWithNormalSession(reqCtx context.Context, blockedURL, container string, fields []extractField, mapping map[string]string, nextSelector string, requestedMaxPages, effectiveMaxPages int, captureHTML bool, requestID string) (paginatedCrawlResponse, []string, error) {
 	normalSessionMu.Lock()
 	defer normalSessionMu.Unlock()
+
+	// step 63.2 — bail out before ever launching a headed Chrome
+	// process if this request was already canceled while queued
+	// waiting for normalSessionMu, same reasoning as
+	// crawlWithNormalSession's own identical check (crawl.go).
+	if reqCtx.Err() != nil {
+		return paginatedCrawlResponse{}, nil, reqCtx.Err()
+	}
 
 	ctx, cancels, err := startSharedNormalSession()
 	if err != nil {
@@ -542,24 +587,40 @@ func performPaginatedCrawlWithNormalSession(blockedURL, container string, fields
 		}
 	}()
 
+	baseCtx := ctx
 	ctx, cancel := context.WithTimeout(ctx, normalSessionPaginatedCrawlTimeout)
 	defer cancel()
+	// step 63.2 — same "cancel A when B cancels" link as
+	// performPaginatedCrawl's own headless attempt, above: a Stop click
+	// now reaches this up-to-32-minute headed/human-solve wait too.
+	go func() {
+		select {
+		case <-reqCtx.Done():
+			cancel()
+			stopBrowserLoad(baseCtx)
+		case <-ctx.Done():
+		}
+	}()
 
 	setCrawlPhase(requestID, phaseNavigating, "navigating to "+blockedURL)
 	if err := chromedp.Run(ctx, chromedp.Navigate(blockedURL), chromedp.Sleep(settleDelay)); err != nil {
-		return paginatedCrawlResponse{}, nil, err
+		return paginatedCrawlResponse{}, nil, classifyCancellation(err, reqCtx, sessionCtx)
 	}
 
 	result, pageHTML, err := runPaginatedCrawlLoop(ctx, container, fields, mapping, nextSelector, requestedMaxPages, effectiveMaxPages, captureHTML, requestID)
 
 	var cfErr *crawlError
 	if !errors.As(err, &cfErr) {
-		return result, pageHTML, err
+		// step 63.3 — this function's own ctx isn't sessionCtx, but
+		// classifyCancellation's sessionCtx check still correctly
+		// covers the (rare) case where the shared headless session
+		// ALSO died at the same moment.
+		return result, pageHTML, classifyCancellation(err, reqCtx, sessionCtx)
 	}
 
 	cleared, waitErr := waitForHumanToClearCloudflare(ctx, requestID, cfErr.Reason, expectedSelectorsFromFields(container, fields))
 	if waitErr != nil {
-		return paginatedCrawlResponse{}, nil, waitErr
+		return paginatedCrawlResponse{}, nil, classifyCancellation(waitErr, reqCtx, sessionCtx)
 	}
 	if !cleared {
 		return paginatedCrawlResponse{}, nil, cfErr

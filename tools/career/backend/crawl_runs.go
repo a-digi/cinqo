@@ -103,10 +103,23 @@ func orNull(s *string) any {
 // finishCrawlRun marks a run terminal — status plus finished_at, and
 // exactly one of resultSummary/errorMessage populated (the caller's
 // own responsibility; this function itself doesn't enforce which).
+//
+// AND status = 'running' (step 63.5) — a general idempotency
+// hardening, not specific to any one feature: this table should never
+// allow a second terminal write to silently overwrite an
+// already-terminal row. Made necessary in practice by step 63's own
+// "Stop crawl" handler (crawl_now.go) and runCrawlNow's own goroutine
+// now being able to both attempt a terminal write for the same row at
+// roughly the same moment (the handler writes 'cancelled' while the
+// goroutine, moments later, may still be mid-flight and try to write
+// something else) — without this guard, whichever writes LAST would
+// win, silently replacing a correct 'cancelled' outcome. With it,
+// whichever writes FIRST wins and the second call becomes a harmless,
+// zero-row-affected no-op.
 func finishCrawlRun(id, status string, resultSummary, errorMessage *string) error {
 	finishedAt := time.Now().UTC().Format(time.RFC3339)
 	_, err := jobsDB.Exec(
-		`UPDATE crawl_runs SET status = ?, finished_at = ?, result_summary = ?, error_message = ? WHERE id = ?`,
+		`UPDATE crawl_runs SET status = ?, finished_at = ?, result_summary = ?, error_message = ? WHERE id = ? AND status = 'running'`,
 		status, finishedAt, orNull(resultSummary), orNull(errorMessage), id,
 	)
 	return err

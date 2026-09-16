@@ -25,6 +25,19 @@ export function PlayIcon() {
   )
 }
 
+// StopIcon (step 63) — marks a real, backend-effecting "stop this
+// crawl" action, distinct from PlayIcon's own "start/resume" meaning.
+// A filled square, the universal stop glyph — the only icon in this
+// file using fill instead of stroke, deliberately, so it reads
+// distinctly at a glance from every other action icon here.
+export function StopIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5">
+      <rect x="5" y="5" width="10" height="10" rx="1.5" />
+    </svg>
+  )
+}
+
 // SparkleIcon (step 33) — marks the "generate/edit with AI" action,
 // distinct from PlayIcon's own "run something" meaning.
 export function SparkleIcon() {

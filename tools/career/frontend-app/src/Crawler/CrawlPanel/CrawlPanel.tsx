@@ -5,8 +5,8 @@ import { CoreApiError } from '../../Cinqo/Http/client'
 import { createConversation, sendMessage, awaitTurnCompletion, fetchTurnStatus } from '../../Cinqo/Conversation/conversation'
 import { buildCrawlMessage, crawlConversationTitle } from '../crawl'
 import { buildGenerateInstructionsMessage, generateInstructionsConversationTitle } from '../generateInstructions'
-import { startCrawlNow, fetchActiveCrawlRun, type CrawlRun } from '../crawlNow'
-import { PlayIcon, SparkleIcon, LogIcon, AlertIcon, RobotIcon } from '../../Shared/Icons/icons'
+import { startCrawlNow, stopCrawlNow, fetchActiveCrawlRun, type CrawlRun } from '../crawlNow'
+import { PlayIcon, StopIcon, SparkleIcon, LogIcon, AlertIcon, RobotIcon } from '../../Shared/Icons/icons'
 import { Typewriter } from '../../Shared/Typewriter/Typewriter'
 
 // PHASE_LABELS (step 40) — a human-readable sentence per fine-grained
@@ -90,6 +90,12 @@ export function CrawlPanel({
   // in-flight poll loop cleanly without an AbortController.
   const watchTokenRef = useRef(0)
   const [logExpanded, setLogExpanded] = useState(false)
+  // isStoppingCrawl (step 63) — true only while the real "Stop crawl"
+  // request itself is in flight, so a double-click can't fire two
+  // cancel requests. Independent of isBusy()/isCrawling — "Stop
+  // watching" and "Crawl with AI" both remain clickable while this is
+  // true.
+  const [isStoppingCrawl, setIsStoppingCrawl] = useState(false)
 
   // isBusy is the one place "is this link already crawling" is
   // decided — true while either mechanism is active, so starting one
@@ -221,9 +227,9 @@ export function CrawlPanel({
 
   // "Stop watching" only ever bumps the token so this instance stops
   // polling and clears its own local view of the run — it does NOT
-  // cancel anything server-side (Career's own goroutine has no cancel
-  // path at all, per step-37's own design: a crawl run has no natural
-  // mid-flight abort point the way an LLM tool-calling loop does).
+  // cancel anything server-side. (Until step 63, Career's own
+  // goroutine had no cancel path at all; handleStopCrawlNow, below, is
+  // the real, server-effecting stop this button was never able to be.)
   // Reopening this page later re-discovers the run via
   // hasActiveCrawlRun/the resume effect above if it's still going, or
   // shows its finished result if it already completed.
@@ -234,6 +240,50 @@ export function CrawlPanel({
       ok: false,
       text: 'Stopped watching in this tab — the crawl may still be running in the background; reopen this page to check its latest status.',
     })
+  }
+
+  // "Stop crawl" (step 63) — a real, server-effecting cancellation:
+  // interrupts both Career's own detached goroutine and, in turn, the
+  // browser tool's in-flight chromedp work for it. Fires immediately,
+  // no confirmation — matches "Stop watching"'s own immediate
+  // behavior, and the action is safe (stops work, destroys no data).
+  // See plan/ai/tools/career/step-63-stop-crawling-now.md.
+  function handleStopCrawlNow() {
+    setIsStoppingCrawl(true)
+    stopCrawlNow(link.id)
+      .then((cancelled) => {
+        if (cancelled) {
+          // Merged into the EXISTING run, not replaced wholesale — the
+          // cancel endpoint only ever returns {crawlRunId, status},
+          // not a full CrawlRun; this preserves the log/phase the
+          // panel was already showing at the moment of cancellation.
+          setRun((prev) => (prev ? { ...prev, status: 'cancelled', finishedAt: new Date().toISOString() } : prev))
+        } else {
+          // 404 — nothing was active to cancel; the run already reached
+          // a terminal state on its own in the gap between this click
+          // and the request landing. Not a failure: re-fetch to show
+          // whatever it actually became instead of leaving stale
+          // 'running' state on screen.
+          fetchActiveCrawlRun(link.id)
+            .then(setRun)
+            .catch(() => {
+              // Best-effort refresh — nothing sensible to show here
+              // beyond what the failed generic .catch below already
+              // reports if the original stopCrawlNow call itself
+              // fails; this inner one only re-fetches after a 404.
+            })
+        }
+        // Supersede any in-flight watchCrawlRun poll loop — it would
+        // otherwise race this update on its own next tick with a
+        // possibly-stale intermediate read.
+        watchTokenRef.current += 1
+      })
+      .catch((err: unknown) => {
+        setCrawlResult({ ok: false, text: err instanceof Error ? err.message : 'Failed to stop crawl.' })
+      })
+      .finally(() => {
+        setIsStoppingCrawl(false)
+      })
   }
 
   // "Crawl with AI" (steps 24-26, kept per step 27) — creates a
@@ -463,15 +513,27 @@ export function CrawlPanel({
         <div className="mt-1.5">
           <div className="flex flex-wrap gap-2">
             {run?.status === 'running' ? (
-              <button
-                type="button"
-                onClick={handleCancelCrawlNow}
-                title="Stop watching this crawl in this tab — it keeps running on the server regardless, and reopening this page later will show its latest status. See plan/ai/tools/career/step-37-detached-crawl-now-orchestration.md."
-                className="flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50"
-              >
-                <PlayIcon />
-                Stop watching
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={handleStopCrawlNow}
+                  disabled={isStoppingCrawl}
+                  title="Actually stop this crawl — interrupts it on the server (both Career's own goroutine and the browser tool's in-flight work), not just this tab's own view of it."
+                  className="flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <StopIcon />
+                  {isStoppingCrawl ? 'Stopping…' : 'Stop crawl'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCancelCrawlNow}
+                  title="Stop watching this crawl in this tab — it keeps running on the server regardless, and reopening this page later will show its latest status. See plan/ai/tools/career/step-37-detached-crawl-now-orchestration.md."
+                  className="flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                >
+                  <PlayIcon />
+                  Stop watching
+                </button>
+              </>
             ) : (
               <button
                 type="button"

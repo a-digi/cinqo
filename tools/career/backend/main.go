@@ -78,6 +78,7 @@ func runHTTPServer() {
 	http.HandleFunc("/portal-links/ingest-crawl-results", ingestCrawlResultsHandler)
 	http.HandleFunc("/portal-links/crawl-now", crawlNowHandler)
 	http.HandleFunc("/portal-links/crawl-now/active", crawlNowActiveHandler)
+	http.HandleFunc("/portal-links/crawl-now/cancel", crawlNowCancelHandler)
 
 	if err := http.ListenAndServe("127.0.0.1:"+port, nil); err != nil {
 		os.Exit(1)

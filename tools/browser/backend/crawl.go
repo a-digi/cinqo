@@ -402,6 +402,20 @@ func navigateAndReadWithCloudflareCheck(ctx context.Context, rawURL, requestID s
 // flag as automated than headless Chrome, even with this tool's own
 // existing stealth patches applied.
 func crawlPage(rawURL, requestID string, expectedSelectors, removeSelectors, removeAttributes []string, maxAttributeLength int, ignoreAttributesForMaxLength []string) (crawlResponse, error) {
+	// step 63.2 — registered before anything else in this call,
+	// including the known-Cloudflare shortcut below, so this exact
+	// call is cancellable (via cancelCrawl(requestID), crawl_cancel.go)
+	// from the very instant it arrives — even before sessionMu is ever
+	// touched. A no-op registration when requestID is "" (the AI's own
+	// MCP-driven calls never set one — registerCrawlCancel's own doc
+	// comment). See plan/ai/tools/career/step-63-stop-crawling-now.md.
+	reqCtx, reqCancel := context.WithCancel(context.Background())
+	registerCrawlCancel(requestID, reqCancel)
+	defer func() {
+		unregisterCrawlCancel(requestID)
+		reqCancel()
+	}()
+
 	// step 29 — a known-Cloudflare domain skips the headless attempt
 	// entirely, straight to the headed fallback: the only signal
 	// available before ever navigating anywhere is the cache (nothing
@@ -412,7 +426,7 @@ func crawlPage(rawURL, requestID string, expectedSelectors, removeSelectors, rem
 	// plan/ai/tools/browser/step-29-skip-headless-for-known-cloudflare-domains.md.
 	if domain, err := hostnameOf(rawURL); err == nil {
 		if known, err := isDomainKnownCloudflare(domain); err == nil && known {
-			return crawlWithNormalSession(rawURL, requestID, expectedSelectors, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
+			return crawlWithNormalSession(reqCtx, rawURL, requestID, expectedSelectors, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
 		}
 	}
 
@@ -453,6 +467,19 @@ func crawlPage(rawURL, requestID string, expectedSelectors, removeSelectors, rem
 		sessionMu.Lock()
 		defer sessionMu.Unlock()
 
+		// step 63.2 — this request may have been canceled while it sat
+		// queued waiting for sessionMu (a plain sync.Mutex isn't itself
+		// cancellable/selectable, so that wait can't be interrupted
+		// early — see step 63's own Open Question 1) — bail out here,
+		// immediately after acquiring the lock, before doing any real
+		// chromedp work, rather than only discovering the cancellation
+		// once crawlTimeout's own budget is spent. Checked before the
+		// liveness probe below: no point recreating a perfectly healthy
+		// session for a request nobody wants an answer for anymore.
+		if reqCtx.Err() != nil {
+			return crawlResponse{}, reqCtx.Err()
+		}
+
 		// step 47.2/47.3 — fail fast on a tab left wedged by a previous,
 		// unrelated caller instead of discovering it only after burning
 		// crawlTimeout on a navigate that was never going to complete,
@@ -466,6 +493,27 @@ func crawlPage(rawURL, requestID string, expectedSelectors, removeSelectors, rem
 
 		ctx, cancel := context.WithTimeout(sessionCtx, crawlTimeout)
 		defer cancel()
+		// step 63.2 — links this call's own ctx to reqCtx: the moment
+		// cancelCrawl(requestID) fires reqCancel (crawl_cancel.go), this
+		// goroutine cancels ctx too, which every chromedp.Run call below
+		// already respects internally — no changes needed inside
+		// navigateAndReadWithCloudflareCheck/readCrawlResponse
+		// themselves. Exits via whichever side finishes first, leaking
+		// nothing. Go's stdlib context package has no built-in "cancel
+		// when either of two contexts is done" combinator, so this is
+		// the standard idiomatic substitute.
+		go func() {
+			select {
+			case <-reqCtx.Done():
+				cancel()
+				// step 63.2 — canceling ctx above only stops THIS call
+				// from waiting; Chrome itself keeps loading otherwise,
+				// leaving the tab busy for a beat afterward (caught
+				// directly by a disposable test, not assumed).
+				stopBrowserLoad(sessionCtx)
+			case <-ctx.Done():
+			}
+		}()
 
 		resp, err := navigateAndReadWithCloudflareCheck(ctx, rawURL, requestID, expectedSelectors, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
 		if err != nil {
@@ -495,14 +543,16 @@ func crawlPage(rawURL, requestID string, expectedSelectors, removeSelectors, rem
 		if domain, hostErr := hostnameOf(rawURL); hostErr == nil {
 			_ = recordCloudflareDomain(domain, cfErr.Reason)
 		}
-		return crawlWithNormalSession(rawURL, requestID, expectedSelectors, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
+		return crawlWithNormalSession(reqCtx, rawURL, requestID, expectedSelectors, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
 	}
-	// step 38 — deliberately wrapped only here, after the Cloudflare
-	// dispatch above: a session-interrupted error must never trigger
-	// crawlWithNormalSession's own fresh headed-Chrome fallback (the
-	// whole subprocess — and its one shared session — is what just
-	// died; launching a second, unrelated browser fixes nothing here).
-	return result, wrapIfSessionInterrupted(err)
+	// step 38/63.3 — deliberately classified only here, after the
+	// Cloudflare dispatch above: neither a session-interrupted NOR a
+	// user-cancelled error may ever trigger crawlWithNormalSession's
+	// own fresh headed-Chrome fallback (the whole subprocess died in
+	// the first case; the user explicitly asked to stop in the
+	// second — launching a second, unrelated browser fixes nothing in
+	// either case, and would directly defeat the second one).
+	return result, classifyCancellation(err, reqCtx, sessionCtx)
 }
 
 // crawlWithNormalSession retries rawURL in a freshly launched, non-
@@ -516,9 +566,17 @@ func crawlPage(rawURL, requestID string, expectedSelectors, removeSelectors, rem
 // immediately. See
 // plan/ai/tools/browser/step-24-headed-chrome-cloudflare-fallback.md
 // and plan/ai/tools/browser/step-25-human-assisted-cloudflare-retry.md.
-func crawlWithNormalSession(rawURL, requestID string, expectedSelectors, removeSelectors, removeAttributes []string, maxAttributeLength int, ignoreAttributesForMaxLength []string) (crawlResponse, error) {
+func crawlWithNormalSession(reqCtx context.Context, rawURL, requestID string, expectedSelectors, removeSelectors, removeAttributes []string, maxAttributeLength int, ignoreAttributesForMaxLength []string) (crawlResponse, error) {
 	normalSessionMu.Lock()
 	defer normalSessionMu.Unlock()
+
+	// step 63.2 — bail out before ever launching a headed Chrome
+	// process at all if this request was already canceled while
+	// queued waiting for normalSessionMu — no point spending several
+	// seconds spinning up a whole browser window nobody wants anymore.
+	if reqCtx.Err() != nil {
+		return crawlResponse{}, reqCtx.Err()
+	}
 
 	ctx, cancels, err := startSharedNormalSession()
 	if err != nil {
@@ -530,16 +588,38 @@ func crawlWithNormalSession(rawURL, requestID string, expectedSelectors, removeS
 		}
 	}()
 
+	baseCtx := ctx
 	ctx, cancel := context.WithTimeout(ctx, normalSessionCrawlTimeout)
 	defer cancel()
+	// step 63.2 — same "cancel A when B cancels" link as crawlPage's
+	// own headless attempt, above: cancelCrawl(requestID) now reaches
+	// this up-to-31-minute headed/human-solve wait too, so a Stop
+	// click during that wait actually interrupts it instead of only
+	// ever being able to time out.
+	go func() {
+		select {
+		case <-reqCtx.Done():
+			cancel()
+			stopBrowserLoad(baseCtx)
+		case <-ctx.Done():
+		}
+	}()
 
 	result, err := navigateAndReadWithCloudflareCheck(ctx, rawURL, requestID, expectedSelectors, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
 
 	var cfErr *crawlError
 	if !errors.As(err, &cfErr) {
-		return result, err
+		// step 63.3 — this function's own ctx isn't sessionCtx (it's
+		// rooted in the ephemeral headed session's own baseCtx), but
+		// classifyCancellation's sessionCtx check still correctly
+		// covers the (rare) case where the whole shared headless
+		// session ALSO died at the same moment — never a false
+		// positive, since that check only ever fires when sessionCtx
+		// itself is actually done.
+		return result, classifyCancellation(err, reqCtx, sessionCtx)
 	}
-	return waitForHumanToSolveCloudflare(ctx, cfErr, requestID, expectedSelectors, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
+	result, err = waitForHumanToSolveCloudflare(ctx, cfErr, requestID, expectedSelectors, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
+	return result, classifyCancellation(err, reqCtx, sessionCtx)
 }
 
 // waitForHumanToClearCloudflare polls detectCloudflareChallenge every

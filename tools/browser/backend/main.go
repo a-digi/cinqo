@@ -74,11 +74,13 @@ var (
 	// verified directly, not assumed (grep confirms exactly one
 	// caller of crawlPage, and every other MCP tool in this process
 	// only ever reads the page the session is already on). Guarded by
-	// sessionMu, same as sessionCtx itself. Never explicitly reset:
-	// sessionCtx itself is established at most once per process
-	// lifetime (there is no in-process session-relaunch path — see
-	// wrapIfSessionInterrupted's own doc comment), so a fresh zero
-	// value on process start is already correct. See
+	// sessionMu, same as sessionCtx itself. Never reset on a normal
+	// navigation, but explicitly cleared to "" whenever sessionCtx
+	// itself is replaced (recreateSharedSessionLocked, step 47.3/63.3 —
+	// a wedged-tab recovery is the one in-process session-relaunch path
+	// that exists; see that function's own doc comment) — a fresh
+	// chromedp context can never already be showing whatever URL this
+	// field last held. See
 	// plan/ai/tools/browser/step-45-fetch-html-caching-plan.md.
 	lastHeadlessFetchURL string
 )
@@ -114,6 +116,7 @@ func runHTTPServer() {
 	http.HandleFunc("/browser-settings", browserSettingsHandler)
 	http.HandleFunc("/cloudflare-domains", cloudflareDomainsHandler)
 	http.HandleFunc("/crawl-status", crawlStatusHandler)
+	http.HandleFunc("/crawl-cancel", crawlCancelHandler)
 	http.HandleFunc("/login", loginHandler)
 	// Deliberately not exposed as an MCP tool — see
 	// login_credentials.go's own top comment. Reachable only via the
@@ -292,6 +295,15 @@ func recreateSharedSessionLocked() error {
 	}
 	sessionCtx = nil
 	sessionCancel = nil
+	// step 63.3 — real bug fix, caught while reviewing this function's
+	// own doc comment, not hypothetical: without this, fetch_cache.go's
+	// own "is the shared session already showing this URL" check
+	// (crawlPage, crawl.go) would still see whatever URL the OLD,
+	// now-discarded tab was last navigated to — wrongly believing the
+	// brand new, blank tab this function just created is already
+	// showing it, and serving a stale cached result instead of ever
+	// navigating the new tab there at all.
+	lastHeadlessFetchURL = ""
 	return startSharedSessionLocked()
 }
 

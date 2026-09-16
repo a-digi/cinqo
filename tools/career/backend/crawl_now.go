@@ -70,6 +70,17 @@ var errBrowserSessionInterrupted = errors.New("browser tool session was interrup
 // plan/ai/tools/browser/step-47-shared-tab-wedge-and-stuck-crawl-fix.md.
 var errBrowserSessionWedged = errors.New("browser tool session's tab was wedged")
 
+// errCrawlCancelledByUser (step 63.4) is what callBrowserProxy returns
+// (wrapped, so errors.Is still matches) when browser's own response
+// carries its crawlError "crawl_cancelled_by_user" Code — the user
+// clicked "Stop crawl" (crawlNowCancelHandler, below) and browser
+// already interrupted its own in-flight chromedp work for this exact
+// runID. Deliberately NOT treated as transient by runCrawlNow's own
+// retry loop below — the opposite of a retry-worthy failure, since
+// retrying would silently un-cancel a crawl the user explicitly
+// stopped. See plan/ai/tools/career/step-63-stop-crawling-now.md.
+var errCrawlCancelledByUser = errors.New("crawl was cancelled by the user")
+
 // crawlNowSessionRetryInterval/maxCrawlNowSessionRetries bound
 // runCrawlNow's own retry of a single errBrowserSessionInterrupted
 // failure — a short, fixed-count budget, deliberately NOT this
@@ -173,7 +184,18 @@ func crawlNowHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	go runCrawlNow(context.Background(), run.ID, body.PortalLinkID, accessCookie.Value)
+	// step 63.4 — a cancellable ctx, registered before the goroutine
+	// even starts, so a Stop click racing right after this response is
+	// never lost. Unregistered once the goroutine itself returns —
+	// crawlNowCancelHandler treats "not found" the same as "already
+	// finished," so a slightly-too-late cancel attempt is always a
+	// harmless no-op, never an error.
+	runCtx, runCancel := context.WithCancel(context.Background())
+	registerCrawlNowCancel(run.ID, runCancel)
+	go func() {
+		defer unregisterCrawlNowCancel(run.ID)
+		runCrawlNow(runCtx, run.ID, body.PortalLinkID, accessCookie.Value)
+	}()
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
@@ -209,6 +231,70 @@ func crawlNowActiveHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, toCrawlRunResponse(run))
+}
+
+// crawlNowCancelHandler handles POST /portal-links/crawl-now/cancel —
+// a real "Stop crawl," not to be confused with the frontend's own
+// pre-existing client-side-only "Stop watching" (which never reached
+// this backend at all). Two cooperating halves, both best-effort in
+// the sense that neither blocks the other:
+//
+//  1. Local: cancelCrawlNowRun unblocks runCrawlNow's own goroutine
+//     immediately — its in-flight HTTP call to browser aborts
+//     (postWithBearer uses http.NewRequestWithContext), or its
+//     retry-backoff sleep wakes early.
+//  2. Remote: a direct call to browser's own POST /crawl-cancel,
+//     telling it to interrupt its in-flight chromedp work for this
+//     exact runID too — without this, browser would keep the shared
+//     session busy for up to its own full timeout regardless of what
+//     Career just decided. A failure here (browser unreachable, or
+//     the request had already finished naturally moments earlier)
+//     must never block marking this row cancelled below.
+//
+// finishCrawlRun's own WHERE status='running' guard (crawl_runs.go)
+// makes this handler's own write race-safe against runCrawlNow's own
+// goroutine also reaching a terminal state at roughly the same
+// moment — whichever writes first wins, the second is a silent no-op.
+// See plan/ai/tools/career/step-63-stop-crawling-now.md.
+func crawlNowCancelHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		PortalLinkID string `json:"portalLinkId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.PortalLinkID == "" {
+		http.Error(w, "portalLinkId is required", http.StatusBadRequest)
+		return
+	}
+
+	run, err := findActiveCrawlRun(body.PortalLinkID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, "no active crawl to cancel for this link", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "failed to look up crawl run: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	cancelCrawlNowRun(run.ID)
+
+	if coreURL, err := coreAPIURL(); err == nil {
+		if accessCookie, err := r.Cookie("access_token"); err == nil {
+			cancelBody, _ := json.Marshal(map[string]string{"requestId": run.ID})
+			_, _, _ = postWithBearer(context.Background(), coreURL+"/api/v1/tools/browser/proxy/crawl-cancel", cancelBody, accessCookie.Value)
+		}
+	}
+
+	msg := "Cancelled by user"
+	if err := finishCrawlRun(run.ID, "cancelled", nil, &msg); err != nil {
+		http.Error(w, "failed to mark crawl cancelled: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	_ = appendCrawlRunLog(run.ID, msg)
+	writeJSON(w, map[string]string{"crawlRunId": run.ID, "status": "cancelled"})
 }
 
 // crawlRunResponse is the wire shape crawlNowActiveHandler returns —
@@ -431,6 +517,20 @@ func runCrawlNow(ctx context.Context, runID, portalLinkID, accessToken string) {
 		if err == nil {
 			break
 		}
+		// step 63.4 — a deliberate user-requested stop is the OPPOSITE
+		// of transient: never retried, and crawlNowCancelHandler (below)
+		// has already written the terminal 'cancelled' row itself by the
+		// time this is ever observed here — this goroutine's only
+		// remaining job is to stop touching that row, not to also call
+		// fail() (which would try to overwrite it with 'failed';
+		// finishCrawlRun's own WHERE status='running' guard would make
+		// that a harmless no-op regardless, but returning here directly
+		// is the honest, intended behavior, not one relying on that
+		// guard to paper over a wrong call).
+		if errors.Is(err, errCrawlCancelledByUser) {
+			_ = appendCrawlRunLog(runID, err.Error())
+			return
+		}
 		transient := errors.Is(err, errBrowserSessionInterrupted) || errors.Is(err, errBrowserSessionWedged)
 		if !transient || attempt >= maxCrawlNowSessionRetries {
 			fail(err)
@@ -440,7 +540,21 @@ func runCrawlNow(ctx context.Context, runID, portalLinkID, accessToken string) {
 			"%s — retrying (%d/%d) in %s",
 			err.Error(), attempt+1, maxCrawlNowSessionRetries, crawlNowSessionRetryInterval,
 		))
-		time.Sleep(crawlNowSessionRetryInterval)
+		// step 63.4 — ctx-aware: a Stop click arriving during this
+		// backoff wait now takes effect immediately instead of waiting
+		// out the full interval first. ctx.Err() here is always
+		// context.Canceled (this goroutine's own cancelCrawlNowRun,
+		// below — nothing else ever cancels it), not a genuine
+		// "browser session died" case, so it's reported directly as a
+		// plain failure rather than routed through the Cloudflare/
+		// session-interrupted error-Code machinery that only exists on
+		// browser's own side of this call.
+		select {
+		case <-time.After(crawlNowSessionRetryInterval):
+		case <-ctx.Done():
+			_ = appendCrawlRunLog(runID, "cancelled while waiting to retry")
+			return
+		}
 	}
 
 	var result crawlNowPaginatedResult
@@ -516,6 +630,9 @@ func callBrowserProxy(ctx context.Context, coreURL, path string, body []byte, ac
 			}
 			if cfErr.Code == "browser_session_wedged" {
 				return nil, fmt.Errorf("%w: %s", errBrowserSessionWedged, cfErr.Message)
+			}
+			if cfErr.Code == "crawl_cancelled_by_user" {
+				return nil, fmt.Errorf("%w: %s", errCrawlCancelledByUser, cfErr.Message)
 			}
 			reasonSuffix := ""
 			if cfErr.Reason != "" {
