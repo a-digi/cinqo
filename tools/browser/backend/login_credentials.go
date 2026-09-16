@@ -40,6 +40,12 @@ var (
 	// save/fetch/delete paths. See
 	// plan/ai/tools/browser/step-39-crawl-log-file-storage.md.
 	crawlLogsDir string
+	// fetchCacheDir holds fetch_page_html's own short-lived on-disk
+	// cache (step 45) — one index.json manifest plus one .cache file
+	// per distinct cached URL, set once here, read/written by
+	// fetch_cache.go's own lookup/store functions. See
+	// plan/ai/tools/browser/step-45-fetch-html-caching-plan.md.
+	fetchCacheDir string
 )
 
 // initBrowserDB opens (creating if needed) browser.db and this tool's
@@ -65,6 +71,11 @@ func initBrowserDB() error {
 	crawlLogsDir = filepath.Join(dbDir, "crawl_logs")
 	if err := os.MkdirAll(crawlLogsDir, 0o755); err != nil {
 		return fmt.Errorf("failed to create crawl_logs directory: %w", err)
+	}
+
+	fetchCacheDir = filepath.Join(dbDir, "fetch_cache")
+	if err := os.MkdirAll(fetchCacheDir, 0o755); err != nil {
+		return fmt.Errorf("failed to create fetch_cache directory: %w", err)
 	}
 
 	db, err := sql.Open("sqlite", filepath.Join(dbDir, "browser.db"))

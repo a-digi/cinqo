@@ -349,6 +349,19 @@ func runPaginatedCrawlLoop(ctx context.Context, container string, fields []extra
 			stoppedReason = "click_failed"
 			break
 		}
+		// step 45 — this click just navigated whichever session ctx
+		// belongs to (the shared headless one, when called from
+		// performPaginatedCrawl; the ephemeral headed fallback,
+		// harmless-but-unnecessary to clear, when called from
+		// performPaginatedCrawlWithNormalSession) somewhere fetch_page_html's
+		// own cache has no idea about. Unconditionally invalidating
+		// here — rather than only when this is provably the shared
+		// session — is the safe default: a real, previously-missed gap
+		// in crawlPage's own "crawlPage is the only thing that
+		// navigates the shared session" assumption, caught in this
+		// step's own final review. See
+		// plan/ai/tools/browser/step-45-fetch-html-caching-plan.md.
+		lastHeadlessFetchURL = ""
 
 		var urlAfterClick string
 		if err := chromedp.Run(ctx, chromedp.Location(&urlAfterClick)); err != nil {
@@ -416,6 +429,16 @@ func performPaginatedCrawl(url, container string, fields []extractField, mapping
 			if err := chromedp.Run(ctx, chromedp.Navigate(url), chromedp.Sleep(settleDelay)); err != nil {
 				return paginatedCrawlResponse{}, nil, "", wrapIfSessionInterrupted(err)
 			}
+			// step 45 — this is the shared session (performPaginatedCrawl
+			// only ever runs against sessionCtx), navigated outside
+			// crawlPage entirely; fetch_page_html's own cache check needs
+			// to know where the session actually is now. Set precisely
+			// (not just cleared) since the destination is known exactly,
+			// unlike runPaginatedCrawlLoop's own pagination-click
+			// invalidation below, which doesn't know what URL a click
+			// landed on until after this point in the surrounding call
+			// graph.
+			lastHeadlessFetchURL = url
 		}
 
 		// step 29 — a known-Cloudflare domain skips straight to the

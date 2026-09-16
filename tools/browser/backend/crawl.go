@@ -282,6 +282,30 @@ func crawlPage(rawURL, requestID string, expectedSelectors, removeSelectors []st
 	}
 
 	result, err := func() (crawlResponse, error) {
+		// step 45 — served for free only when the shared session is
+		// already showing this exact URL (lastHeadlessFetchURL, set
+		// below on every real navigation): the only case where a
+		// stale-relative-to-the-live-DOM result can't happen, since
+		// nothing has navigated the session away since the cached
+		// fetch. Any other case — no cache entry, an expired one, or
+		// a fresh one but the session has moved on — falls straight
+		// through to the exact same real navigate/settle/Cloudflare-
+		// wait/read sequence as before this step, unchanged. Never
+		// consulted at all when the caller supplied its own
+		// removeSelectors — see fetch_cache.go's own top comment for
+		// why. See
+		// plan/ai/tools/browser/step-45-fetch-html-caching-plan.md.
+		if len(removeSelectors) == 0 {
+			if cached, ok := fetchCacheLookup(rawURL); ok {
+				sessionMu.Lock()
+				alreadyThere := lastHeadlessFetchURL == rawURL
+				sessionMu.Unlock()
+				if alreadyThere {
+					return cached, nil
+				}
+			}
+		}
+
 		if err := ensureSharedSession(); err != nil {
 			return crawlResponse{}, err
 		}
@@ -291,7 +315,17 @@ func crawlPage(rawURL, requestID string, expectedSelectors, removeSelectors []st
 		ctx, cancel := context.WithTimeout(sessionCtx, crawlTimeout)
 		defer cancel()
 
-		return navigateAndReadWithCloudflareCheck(ctx, rawURL, requestID, expectedSelectors, removeSelectors)
+		resp, err := navigateAndReadWithCloudflareCheck(ctx, rawURL, requestID, expectedSelectors, removeSelectors)
+		if err != nil {
+			return crawlResponse{}, err
+		}
+		lastHeadlessFetchURL = rawURL
+		if len(removeSelectors) == 0 {
+			// Best-effort — a failed cache write must never turn an
+			// otherwise-successful crawl into a failure.
+			_ = fetchCacheStore(rawURL, resp)
+		}
+		return resp, nil
 	}()
 
 	var cfErr *crawlError
@@ -507,6 +541,7 @@ func registerFetchPageHTML(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "fetch_page_html",
 		Description: "Navigate the shared browser session to a URL and return the page's rendered HTML, title, and final URL (after any redirect). " +
+			"Calling this again for the exact same URL within about 5 minutes, without calling it for any other URL in between, returns a short-lived cached copy of what was fetched last time instead of navigating again — useful to know if you call this tool repeatedly for the same page, since you won't see the page's own content change again until either 5 minutes pass or you fetch a different URL first. Passing removeSelectors always fetches a fresh copy — caching only ever applies to a plain re-fetch with no removeSelectors. " +
 			"Pass removeSelectors to strip elements you don't want out of the HTML before it's returned to you — any valid CSS selector works (tag names like \"header\", \"script\", \"style\", \"nav\", \"footer\"; classes like \".cookie-banner\"; ids like \"#ads\"; or anything else CSS can target). Use this whenever you only need part of the page, to cut boilerplate/noise out of your own result instead of reading past it. " +
 			"If the page is behind a Cloudflare challenge, this waits briefly for it to clear before reading the page; if it's still blocking once the wait runs out, this automatically retries in a normal (non-headless) browser window and can wait up to about 30 minutes for a person to notice and solve the challenge there before giving up — meaning this call can take up to roughly 30 minutes in that case, almost certainly longer than this AI tool-calling session's own timeout, so a Cloudflare-blocked page is effectively only recoverable through this path by a human watching for the window, not by an AI call waiting on the result. If it's still blocked after that, this call fails with a cloudflare_challenge_unresolved error instead of returning the interstitial as if it were the real page.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args fetchPageHTMLArgs) (*mcp.CallToolResult, any, error) {

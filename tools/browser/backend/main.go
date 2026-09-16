@@ -62,6 +62,24 @@ var (
 	sessionMu     sync.Mutex
 	sessionCtx    context.Context
 	sessionCancel []context.CancelFunc
+	// lastHeadlessFetchURL is the exact URL string fetch_page_html
+	// last successfully navigated the shared headless session to —
+	// crawlPage's own fetch-cache check (fetch_cache.go, step 45) uses
+	// it to tell "the shared session is already showing this URL"
+	// (safe to serve a cached result with zero browser work) apart
+	// from "it's showing something else" (must navigate for real
+	// regardless of cache freshness). Correct because crawlPage is the
+	// *only* thing that ever navigates this shared session anywhere —
+	// verified directly, not assumed (grep confirms exactly one
+	// caller of crawlPage, and every other MCP tool in this process
+	// only ever reads the page the session is already on). Guarded by
+	// sessionMu, same as sessionCtx itself. Never explicitly reset:
+	// sessionCtx itself is established at most once per process
+	// lifetime (there is no in-process session-relaunch path — see
+	// wrapIfSessionInterrupted's own doc comment), so a fresh zero
+	// value on process start is already correct. See
+	// plan/ai/tools/browser/step-45-fetch-html-caching-plan.md.
+	lastHeadlessFetchURL string
 )
 
 func runHTTPServer() {
