@@ -93,9 +93,30 @@ var registry = []Entry{
 		DefaultModel: "openrouter/free", // unchanged; harmless to keep set even though CreateHandler no longer falls back to it now that SelectableModels is non-empty
 		// A real select list, starting with just the one verified
 		// model (plan/ai/platform/step-10-openrouter-model-selection.md).
-		// More entries are a later, separate addition.
-		SelectableModels: []string{"openrouter/free"},
-		Completer:        openrouter.Client{},
+		// Four pinned Claude models added (step 40) so
+		// openrouter/client.go's own Anthropic prompt-caching support
+		// has a real, consistent (non-random) model to actually cache
+		// against — openrouter/free's own random-model-per-request
+		// routing can never benefit from caching at all. IDs verified
+		// directly against OpenRouter's own public, no-auth-required
+		// GET https://openrouter.ai/api/v1/models (not guessed, not
+		// assumed to mirror the direct Anthropic API's own dated/
+		// hyphenated slugs — two of these four don't: OpenRouter's own
+		// naming uses dots, not hyphens, for fable-5.1/haiku-4.5, and
+		// haiku's own OpenRouter slug carries no date suffix at all).
+		// Each confirmed to advertise "tools" in its own
+		// supported_parameters at the same time. DefaultModel stays
+		// openrouter/free, unchanged — this only adds a choice, it
+		// doesn't change what a caller gets without picking one. See
+		// plan/ai/conversation/step-40-anthropic-prompt-caching.md.
+		SelectableModels: []string{
+			"openrouter/free",
+			"anthropic/claude-fable-5.1", // demanding reasoning, long-horizon agentic work
+			"anthropic/claude-opus-5",    // complex agentic coding and enterprise work
+			"anthropic/claude-sonnet-5",  // best combination of speed and intelligence
+			"anthropic/claude-haiku-4.5", // fastest, near-frontier intelligence
+		},
+		Completer: openrouter.Client{},
 	},
 }
 

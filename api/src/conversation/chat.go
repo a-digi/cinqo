@@ -304,6 +304,21 @@ func runToolLoop(
 	// ever risking a dangling tool_call_id — see that invariant spelled
 	// out on buildToolLoopMessages itself.
 	prefix := messages
+	// step 40 — prefix is byte-identical across every iteration of
+	// this loop (only groups grows), so its own last message is marked
+	// as a prompt-caching breakpoint: the Anthropic client caches
+	// everything up to and including it, meaning iteration 2 onward
+	// only pays full price for the one new tool-call group, not the
+	// whole history again. A copy, never an in-place mutation of the
+	// caller's own messages slice/backing array. No-op for providers
+	// that ignore CacheBreakpoint (OpenAI already caches automatically;
+	// OpenRouter isn't addressed by this step). See
+	// plan/ai/conversation/step-40-anthropic-prompt-caching.md.
+	if len(prefix) > 0 {
+		lastPrefixMsg := prefix[len(prefix)-1]
+		lastPrefixMsg.CacheBreakpoint = true
+		prefix = append(append([]chatcompleter.Message{}, prefix[:len(prefix)-1]...), lastPrefixMsg)
+	}
 	var groups [][]chatcompleter.Message
 	var lastPromptTokens int
 
@@ -335,7 +350,16 @@ func runToolLoop(
 			reportUsage(result.Usage.PromptTokens, result.Usage.CompletionTokens)
 		}
 		if logStep != nil {
-			logStep(fmt.Sprintf("iteration %d: %d prompt + %d completion tokens", i+1, result.Usage.PromptTokens, result.Usage.CompletionTokens))
+			usageLine := fmt.Sprintf("iteration %d: %d prompt + %d completion tokens", i+1, result.Usage.PromptTokens, result.Usage.CompletionTokens)
+			// step 40 — surfaced only when non-zero (any provider that
+			// never sets these, or an Anthropic call that hit neither a
+			// cache write nor a cache read, leaves both at 0) so this
+			// line reads exactly as it always has everywhere caching
+			// isn't actually happening.
+			if result.Usage.CacheCreationTokens > 0 || result.Usage.CacheReadTokens > 0 {
+				usageLine += fmt.Sprintf(" (%d cache write, %d cache read)", result.Usage.CacheCreationTokens, result.Usage.CacheReadTokens)
+			}
+			logStep(usageLine)
 		}
 		if len(result.ToolCalls) == 0 {
 			return appendResourceLinks(result.Message.Content, allLinks), nil

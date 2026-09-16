@@ -35,6 +35,15 @@ type Message struct {
 	Content    string     `json:"content"`
 	ToolCalls  []ToolCall `json:"-"`
 	ToolCallID string     `json:"-"`
+	// CacheBreakpoint (step 40) marks this message as the end of a
+	// cacheable prefix — set by runToolLoop (chat.go) on the last
+	// message of its own byte-identical-across-iterations prefix, so a
+	// multi-iteration tool-calling turn doesn't pay full price to
+	// reprocess the same history on every call. Only the Anthropic
+	// client (the one provider with no automatic prompt caching) acts
+	// on this; every other client ignores it entirely. See
+	// plan/ai/conversation/step-40-anthropic-prompt-caching.md.
+	CacheBreakpoint bool `json:"-"`
 }
 
 // ToolDef is one tool offered to the model — translated from a
@@ -63,6 +72,14 @@ type Usage struct {
 	PromptTokens     int
 	CompletionTokens int
 	TotalTokens      int
+	// CacheCreationTokens/CacheReadTokens (step 40) — Anthropic-only,
+	// always 0 for every other provider (and 0 for Anthropic calls
+	// that set no CacheBreakpoint). Surfaced so prompt caching's real
+	// effect is directly observable from the provider's own reported
+	// numbers, not inferred or assumed. See
+	// plan/ai/conversation/step-40-anthropic-prompt-caching.md.
+	CacheCreationTokens int
+	CacheReadTokens     int
 }
 
 // ChatCompletionResult is what a ChatCompleter returns for one turn.

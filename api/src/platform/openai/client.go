@@ -69,6 +69,25 @@ type chatResponse struct {
 		PromptTokens     int `json:"prompt_tokens"`
 		CompletionTokens int `json:"completion_tokens"`
 		TotalTokens      int `json:"total_tokens"`
+		// PromptTokensDetails (step 40) — OpenAI caches repeated
+		// prompt prefixes automatically, server-side; no request-side
+		// marker like Anthropic's cache_control exists or is needed
+		// here. Both sub-fields verified directly against OpenAI's own
+		// current Chat Completions API reference (not assumed from
+		// older/general knowledge, which only remembered cached_tokens
+		// — cache_write_tokens is a real, newer, separately-priced
+		// field for this app's own gpt-5.6/6-astra generation, not a
+		// legacy no-cost concept). Both are documented as optional —
+		// absent on a response that didn't cache anything, which
+		// unmarshal to Go's own zero value, exactly "no caching
+		// happened" with no special-casing needed. PromptTokens above
+		// already IS the true total (these are a breakdown within it,
+		// not additive on top — confirmed directly, unlike Anthropic's
+		// own input_tokens, which excludes them).
+		PromptTokensDetails struct {
+			CachedTokens     int `json:"cached_tokens"`
+			CacheWriteTokens int `json:"cache_write_tokens"`
+		} `json:"prompt_tokens_details"`
 	} `json:"usage"`
 }
 
@@ -127,9 +146,11 @@ func (Client) ChatCompletion(ctx context.Context, client *http.Client, baseURL, 
 		ToolCalls:    toolCalls,
 		FinishReason: choice.FinishReason,
 		Usage: chatcompleter.Usage{
-			PromptTokens:     parsed.Usage.PromptTokens,
-			CompletionTokens: parsed.Usage.CompletionTokens,
-			TotalTokens:      parsed.Usage.TotalTokens,
+			PromptTokens:        parsed.Usage.PromptTokens,
+			CompletionTokens:    parsed.Usage.CompletionTokens,
+			TotalTokens:         parsed.Usage.TotalTokens,
+			CacheCreationTokens: parsed.Usage.PromptTokensDetails.CacheWriteTokens,
+			CacheReadTokens:     parsed.Usage.PromptTokensDetails.CachedTokens,
 		},
 	}, nil
 }

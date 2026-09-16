@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/a-digi/cinqo/src/platform/chatcompleter"
 )
@@ -37,11 +38,63 @@ type Client struct{}
 // (each platform client package stays independent, per this
 // codebase's own established convention) — deliberately duplicated,
 // not imported from the openai package.
+//
+// Content is `any`, not `string` (step 40's own extension) — normally
+// still a plain string (identical wire output to before), but becomes
+// a one-element content-part array carrying a cache_control marker
+// for the one message runToolLoop (chat.go) flags with
+// CacheBreakpoint, when routing to a model OpenRouter can actually
+// apply it for (see supportsAnthropicCacheControl below). Go's
+// encoding/json marshals either underlying value correctly with no
+// custom MarshalJSON needed.
 type wireMessage struct {
 	Role       string         `json:"role"`
-	Content    string         `json:"content"`
+	Content    any            `json:"content"`
 	ToolCalls  []wireToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string         `json:"tool_call_id,omitempty"`
+}
+
+// wireContentPart/wireCacheControl (step 40) — OpenRouter's own
+// documented shape for marking a prompt-caching breakpoint when the
+// request is routed to an Anthropic model: content becomes an array
+// of parts instead of a plain string, and the part to cache up through
+// carries cache_control. Mirrors anthropic.Client's own identical
+// concept (a separate, independent implementation — see this
+// package's own top comment on why nothing is shared across platform
+// clients).
+type wireContentPart struct {
+	Type         string            `json:"type"` // "text"
+	Text         string            `json:"text"`
+	CacheControl *wireCacheControl `json:"cache_control,omitempty"`
+}
+
+type wireCacheControl struct {
+	Type string `json:"type"` // "ephemeral"
+}
+
+// supportsAnthropicCacheControl reports whether model is routed to an
+// Anthropic model — OpenRouter's own model-ID convention is
+// "provider/model-name" (e.g. "anthropic/claude-sonnet-5"), verified
+// against this app's own registry.go, which uses exactly that shape
+// for every non-OpenRouter-native model slug. Gated this narrowly
+// (not "always emit cache_control regardless of model") since sending
+// an Anthropic-specific marker to a non-Claude provider's own API is
+// unverified territory — could be silently ignored, could be rejected
+// by a stricter provider; this codebase doesn't guess at behavior it
+// hasn't confirmed.
+//
+// Flagged, not silently assumed: this app's own OpenRouter registry
+// entry (registry.go) currently offers exactly one selectable model,
+// "openrouter/free" — a router that picks a random free underlying
+// model on every call, with no guarantee the same one serves two
+// consecutive requests. This function correctly returns false for it
+// (no "anthropic/" prefix), so this whole mechanism is dormant under
+// today's actual configuration — implemented for when a real, pinned
+// Claude-via-OpenRouter model is added to SelectableModels, not
+// something that does anything with the config as it stands. See
+// plan/ai/conversation/step-40-anthropic-prompt-caching.md.
+func supportsAnthropicCacheControl(model string) bool {
+	return strings.HasPrefix(model, "anthropic/")
 }
 
 type wireToolCall struct {
@@ -91,7 +144,7 @@ type chatResponse struct {
 // simply never returns tool_calls (a plain text reply, same as today),
 // not an error.
 func (Client) ChatCompletion(ctx context.Context, client *http.Client, baseURL, apiKey, model string, messages []chatcompleter.Message, tools []chatcompleter.ToolDef) (*chatcompleter.ChatCompletionResult, error) {
-	body, err := json.Marshal(chatRequest{Model: model, Messages: toWireMessages(messages), Tools: toWireTools(tools)})
+	body, err := json.Marshal(chatRequest{Model: model, Messages: toWireMessages(messages, supportsAnthropicCacheControl(model)), Tools: toWireTools(tools)})
 	if err != nil {
 		return nil, fmt.Errorf("openrouter: marshal request: %w", err)
 	}
@@ -136,10 +189,16 @@ func (Client) ChatCompletion(ctx context.Context, client *http.Client, baseURL, 
 		})
 	}
 
+	// choice.Message.Content is always a plain JSON string in a real
+	// OpenRouter response (the array-of-parts shape is a request-only
+	// concept, for cache_control) — a failed assertion (content
+	// somehow absent/non-string) degrades to "", never a panic.
+	responseContent, _ := choice.Message.Content.(string)
+
 	return &chatcompleter.ChatCompletionResult{
 		Message: chatcompleter.Message{
 			Role:      "assistant",
-			Content:   choice.Message.Content,
+			Content:   responseContent,
 			ToolCalls: toolCalls,
 		},
 		ToolCalls:    toolCalls,
@@ -152,10 +211,15 @@ func (Client) ChatCompletion(ctx context.Context, client *http.Client, baseURL, 
 	}, nil
 }
 
-func toWireMessages(messages []chatcompleter.Message) []wireMessage {
+func toWireMessages(messages []chatcompleter.Message, cacheControlSupported bool) []wireMessage {
 	out := make([]wireMessage, 0, len(messages))
 	for _, m := range messages {
-		wm := wireMessage{Role: m.Role, Content: m.Content, ToolCallID: m.ToolCallID}
+		wm := wireMessage{Role: m.Role, ToolCallID: m.ToolCallID}
+		if m.CacheBreakpoint && cacheControlSupported {
+			wm.Content = []wireContentPart{{Type: "text", Text: m.Content, CacheControl: &wireCacheControl{Type: "ephemeral"}}}
+		} else {
+			wm.Content = m.Content
+		}
 		for _, tc := range m.ToolCalls {
 			wtc := wireToolCall{ID: tc.ID, Type: "function"}
 			wtc.Function.Name = tc.Name

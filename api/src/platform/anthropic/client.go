@@ -55,6 +55,21 @@ type anthropicContentBlock struct {
 
 	ToolUseID string `json:"tool_use_id,omitempty"` // "tool_result"
 	Content   string `json:"content,omitempty"`     // "tool_result"
+
+	// CacheControl (step 40) marks this block as a prompt-caching
+	// breakpoint — Anthropic caches everything up to and including
+	// whichever block carries this. Set only when the neutral
+	// chatcompleter.Message it came from has CacheBreakpoint: true
+	// (toAnthropicMessages, below). See
+	// plan/ai/conversation/step-40-anthropic-prompt-caching.md.
+	CacheControl *anthropicCacheControl `json:"cache_control,omitempty"`
+}
+
+// anthropicCacheControl's Type is always "ephemeral" (Anthropic's
+// standard, ~5-minute-TTL cache) — no extended-TTL beta feature used
+// here, kept to the simplest, always-available option.
+type anthropicCacheControl struct {
+	Type string `json:"type"`
 }
 
 type anthropicMessage struct {
@@ -80,8 +95,16 @@ type anthropicResponse struct {
 	Content    []anthropicContentBlock `json:"content"`
 	StopReason string                  `json:"stop_reason"`
 	Usage      struct {
-		InputTokens  int `json:"input_tokens"`
-		OutputTokens int `json:"output_tokens"`
+		InputTokens int `json:"input_tokens"`
+		// CacheCreationInputTokens/CacheReadInputTokens (step 40) —
+		// present only when a request actually used cache_control;
+		// zero value (Go's own JSON-unmarshal default for an absent
+		// field) otherwise, which is exactly "no caching happened"
+		// with no special-casing needed. Field names verified against
+		// Anthropic's own Messages API docs, not guessed.
+		CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
+		CacheReadInputTokens     int `json:"cache_read_input_tokens"`
+		OutputTokens             int `json:"output_tokens"`
 	} `json:"usage"`
 }
 
@@ -147,6 +170,21 @@ func (Client) ChatCompletion(ctx context.Context, client *http.Client, baseURL, 
 		}
 	}
 
+	// PromptTokens is the TRUE total prompt size (input_tokens +
+	// cache_creation_input_tokens + cache_read_input_tokens), not just
+	// Anthropic's own input_tokens field alone — input_tokens only
+	// counts the newly-processed, non-cached portion once caching is
+	// active, which would silently under-report the real context size
+	// runToolLoop's own maxToolLoopContextTokens trim-decision
+	// (chat.go) relies on. Without this fix, caching would make that
+	// trim logic progressively less accurate the more a cache hit
+	// covers, right at the exact moment (a long-running tool loop)
+	// it matters most. CacheCreationTokens/CacheReadTokens are kept as
+	// their own separate fields purely for observability — real,
+	// provider-reported proof caching is or isn't happening. See
+	// plan/ai/conversation/step-40-anthropic-prompt-caching.md.
+	promptTokens := wire.Usage.InputTokens + wire.Usage.CacheCreationInputTokens + wire.Usage.CacheReadInputTokens
+
 	return &chatcompleter.ChatCompletionResult{
 		Message: chatcompleter.Message{
 			Role:      "assistant",
@@ -156,9 +194,11 @@ func (Client) ChatCompletion(ctx context.Context, client *http.Client, baseURL, 
 		ToolCalls:    toolCalls,
 		FinishReason: wire.StopReason,
 		Usage: chatcompleter.Usage{
-			PromptTokens:     wire.Usage.InputTokens,
-			CompletionTokens: wire.Usage.OutputTokens,
-			TotalTokens:      wire.Usage.InputTokens + wire.Usage.OutputTokens,
+			PromptTokens:        promptTokens,
+			CompletionTokens:    wire.Usage.OutputTokens,
+			TotalTokens:         promptTokens + wire.Usage.OutputTokens,
+			CacheCreationTokens: wire.Usage.CacheCreationInputTokens,
+			CacheReadTokens:     wire.Usage.CacheReadInputTokens,
 		},
 	}, nil
 }
@@ -190,6 +230,9 @@ func toAnthropicMessages(messages []chatcompleter.Message) (string, []anthropicM
 
 		case m.Role == "tool":
 			block := anthropicContentBlock{Type: "tool_result", ToolUseID: m.ToolCallID, Content: m.Content}
+			if m.CacheBreakpoint {
+				block.CacheControl = &anthropicCacheControl{Type: "ephemeral"}
+			}
 			if last := len(turns) - 1; last >= 0 && turns[last].Role == "user" && isToolResultOnly(turns[last]) {
 				turns[last].Content = append(turns[last].Content, block)
 			} else {
@@ -204,10 +247,24 @@ func toAnthropicMessages(messages []chatcompleter.Message) (string, []anthropicM
 			for _, tc := range m.ToolCalls {
 				blocks = append(blocks, anthropicContentBlock{Type: "tool_use", ID: tc.ID, Name: tc.Name, Input: tc.Arguments})
 			}
+			// step 40 — the cache breakpoint always goes on the LAST
+			// block this message contributes, never an earlier one:
+			// Anthropic caches everything up to and including the
+			// marked block, so marking anywhere else would either
+			// under-cache (miss this message's own trailing content)
+			// or require Anthropic to accept a breakpoint mid-message,
+			// which it doesn't.
+			if m.CacheBreakpoint && len(blocks) > 0 {
+				blocks[len(blocks)-1].CacheControl = &anthropicCacheControl{Type: "ephemeral"}
+			}
 			turns = append(turns, anthropicMessage{Role: m.Role, Content: blocks})
 
 		default:
-			turns = append(turns, anthropicMessage{Role: m.Role, Content: []anthropicContentBlock{{Type: "text", Text: m.Content}}})
+			block := anthropicContentBlock{Type: "text", Text: m.Content}
+			if m.CacheBreakpoint {
+				block.CacheControl = &anthropicCacheControl{Type: "ephemeral"}
+			}
+			turns = append(turns, anthropicMessage{Role: m.Role, Content: []anthropicContentBlock{block}})
 		}
 	}
 
