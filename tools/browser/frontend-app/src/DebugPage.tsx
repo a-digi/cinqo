@@ -22,10 +22,14 @@ export function DebugPage() {
   useEffect(() => {
     fetchBrowserSettings()
       .then(setSettings)
-      .catch((err: Error) => setError(err.message))
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+      })
     fetchCloudflareDomains()
       .then(setCloudflareDomains)
-      .catch((err: Error) => setCloudflareDomainsError(err.message))
+      .catch((err: unknown) => {
+        setCloudflareDomainsError(err instanceof Error ? err.message : String(err))
+      })
   }, [])
 
   function update(next: BrowserSettings) {
@@ -34,8 +38,12 @@ export function DebugPage() {
     setSettings(next) // optimistic — reverted below if the save fails
     saveBrowserSettings(next)
       .then(setSettings)
-      .catch((err: Error) => setError(err.message))
-      .finally(() => setSaving(false))
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+      })
+      .finally(() => {
+        setSaving(false)
+      })
   }
 
   if (!settings) {
@@ -50,44 +58,55 @@ export function DebugPage() {
     <div className="max-w-2xl p-6 font-sans text-gray-900">
       <h1 className="mb-1.5 text-xl font-semibold">Debug</h1>
       <p className="mb-5 text-sm text-gray-500">
-        Controls whether the Browser tool records anything to Crawl Logs at all. Off by default —
-        turn Debug on to start logging crawl_paginated calls again.
+        Controls whether the Browser tool records anything to Crawl Logs at all. Off by default — turn Debug on to start logging
+        crawl_paginated calls again.
       </p>
 
       <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
 
       <div className="space-y-4 rounded-md border border-gray-200 bg-gray-50 p-6 shadow-sm">
-        <label className="flex items-start gap-3">
+        {/* aria-label given explicitly — the visible label text is nested
+            two <span> levels deep, past what jsx-a11y's own accessible-text
+            detection reliably walks. */}
+        <label htmlFor="cinqo-browser-debug-enabled" aria-label="Debug active" className="flex items-start gap-3">
           <input
+            id="cinqo-browser-debug-enabled"
             type="checkbox"
             checked={settings.debugEnabled}
             disabled={saving}
-            onChange={(e) => update({ ...settings, debugEnabled: e.target.checked })}
+            onChange={(e) => {
+              update({ ...settings, debugEnabled: e.target.checked })
+            }}
             className="mt-0.5 h-4 w-4 rounded border-gray-300"
           />
           <span>
             <span className="block text-sm font-medium">Debug active</span>
             <span className="block text-xs text-gray-500">
-              When off, no crawl is ever logged — nothing is written to Crawl Logs, not just
-              hidden from view.
+              When off, no crawl is ever logged — nothing is written to Crawl Logs, not just hidden from view.
             </span>
           </span>
         </label>
 
-        <label className={`flex items-start gap-3 ${settings.debugEnabled ? '' : 'opacity-50'}`}>
+        <label
+          htmlFor="cinqo-browser-debug-log-html"
+          aria-label="Log HTML"
+          className={`flex items-start gap-3 ${settings.debugEnabled ? '' : 'opacity-50'}`}
+        >
           <input
+            id="cinqo-browser-debug-log-html"
             type="checkbox"
             checked={settings.debugLogHtml}
             disabled={saving || !settings.debugEnabled}
-            onChange={(e) => update({ ...settings, debugLogHtml: e.target.checked })}
+            onChange={(e) => {
+              update({ ...settings, debugLogHtml: e.target.checked })
+            }}
             className="mt-0.5 h-4 w-4 rounded border-gray-300"
           />
           <span>
             <span className="block text-sm font-medium">Log HTML</span>
             <span className="block text-xs text-gray-500">
-              Only takes effect while Debug is active. Also captures each logged page's own raw
-              rendered HTML — useful for understanding what a crawl actually saw (e.g. a
-              Cloudflare challenge), but meaningfully larger and slower to log than results alone.
+              Only takes effect while Debug is active. Also captures each logged page's own raw rendered HTML — useful for understanding
+              what a crawl actually saw (e.g. a Cloudflare challenge), but meaningfully larger and slower to log than results alone.
             </span>
           </span>
         </label>
@@ -95,17 +114,14 @@ export function DebugPage() {
 
       <h2 className="mb-1.5 mt-8 text-lg font-semibold">Known Cloudflare domains</h2>
       <p className="mb-3 text-sm text-gray-500">
-        Every domain that has ever given the headless session an unresolved Cloudflare challenge —
-        crawls against these now skip straight to the headed (non-headless) fallback instead of
-        trying headless first. Read-only; there is currently no way to remove a domain from this
-        list once it's been recorded.
+        Every domain that has ever given the headless session an unresolved Cloudflare challenge — crawls against these now skip straight to
+        the headed (non-headless) fallback instead of trying headless first. Read-only; there is currently no way to remove a domain from
+        this list once it's been recorded.
       </p>
 
       {cloudflareDomainsError && <div className="mb-3 text-sm text-red-700">{cloudflareDomainsError}</div>}
 
-      {cloudflareDomains && cloudflareDomains.length === 0 && (
-        <p className="text-sm text-gray-400">No domains recorded yet.</p>
-      )}
+      {cloudflareDomains?.length === 0 && <p className="text-sm text-gray-400">No domains recorded yet.</p>}
 
       {cloudflareDomains && cloudflareDomains.length > 0 && (
         <div className="overflow-x-auto rounded-md border border-gray-200 bg-gray-50 shadow-sm">

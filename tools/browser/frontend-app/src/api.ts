@@ -4,6 +4,13 @@
 // while designing step 10), so a plain JSON.stringify body is safe —
 // no hand-templated YAML, no injection risk from a domain/username/
 // password containing YAML-special characters.
+// res.json() is typed Promise<any> — this is the one place that's cast to
+// a concrete type, so every call site below gets a real type without its
+// own scattered unsafe assignment.
+async function readJson<T>(res: Response): Promise<T> {
+  return (await res.json()) as T
+}
+
 const PROXY_BASE = '/api/v1/tools/browser/proxy/login-credentials'
 
 export interface CredentialSummary {
@@ -12,13 +19,16 @@ export interface CredentialSummary {
 }
 
 interface CredentialsListResponse {
-  credentials: CredentialSummary[]
+  // Optional, not required — matches the `data.credentials ?? []` at
+  // every call site: a Go `omitempty` slice field is genuinely absent
+  // from the JSON when there are zero credentials, not sent as `[]`.
+  credentials?: CredentialSummary[]
 }
 
 export async function fetchCredentials(): Promise<CredentialSummary[]> {
   const res = await fetch(PROXY_BASE, { credentials: 'include' })
   if (!res.ok) throw new Error(`failed to load credentials (${res.status})`)
-  const data: CredentialsListResponse = await res.json()
+  const data = await readJson<CredentialsListResponse>(res)
   return data.credentials ?? []
 }
 
@@ -29,7 +39,7 @@ export async function saveCredential(domain: string, username: string, password:
     body: JSON.stringify({ login_credentials: [{ domain, username, password }] }),
   })
   if (!res.ok) throw new Error(`failed to save credential (${res.status})`)
-  const data: CredentialsListResponse = await res.json()
+  const data = await readJson<CredentialsListResponse>(res)
   return data.credentials ?? []
 }
 
@@ -80,7 +90,7 @@ export interface CrawlLogEntry {
 export async function fetchCrawlLogs(): Promise<CrawlLogEntry[]> {
   const res = await fetch(CRAWL_LOGS_BASE, { credentials: 'include' })
   if (!res.ok) throw new Error(`failed to load crawl logs (${res.status})`)
-  const data: { logs: CrawlLogEntry[] } = await res.json()
+  const data = await readJson<{ logs?: CrawlLogEntry[] }>(res)
   return data.logs ?? []
 }
 
@@ -116,7 +126,7 @@ export interface BrowserSettings {
 export async function fetchBrowserSettings(): Promise<BrowserSettings> {
   const res = await fetch(SETTINGS_BASE, { credentials: 'include' })
   if (!res.ok) throw new Error(`failed to load settings (${res.status})`)
-  return res.json()
+  return readJson<BrowserSettings>(res)
 }
 
 export async function saveBrowserSettings(settings: BrowserSettings): Promise<BrowserSettings> {
@@ -126,7 +136,7 @@ export async function saveBrowserSettings(settings: BrowserSettings): Promise<Br
     body: JSON.stringify(settings),
   })
   if (!res.ok) throw new Error(`failed to save settings (${res.status})`)
-  return res.json()
+  return readJson<BrowserSettings>(res)
 }
 
 // --- Cloudflare domain cache (step 30) ---
@@ -148,7 +158,7 @@ export interface CloudflareDomain {
 export async function fetchCloudflareDomains(): Promise<CloudflareDomain[]> {
   const res = await fetch(CLOUDFLARE_DOMAINS_BASE, { credentials: 'include' })
   if (!res.ok) throw new Error(`failed to load cloudflare domains (${res.status})`)
-  const data: { domains: CloudflareDomain[] } = await res.json()
+  const data = await readJson<{ domains?: CloudflareDomain[] }>(res)
   return data.domains ?? []
 }
 

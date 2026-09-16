@@ -15,7 +15,9 @@ export function CrawlLogsPage() {
   function load() {
     fetchCrawlLogs()
       .then(setLogs)
-      .catch((err: Error) => setError(err.message))
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+      })
   }
 
   useEffect(load, [])
@@ -24,7 +26,9 @@ export function CrawlLogsPage() {
     setError('')
     deleteCrawlLog(id)
       .then(load)
-      .catch((err: Error) => setError(err.message))
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+      })
   }
 
   function handleClearAll() {
@@ -36,7 +40,9 @@ export function CrawlLogsPage() {
     setError('')
     clearAllCrawlLogs()
       .then(load)
-      .catch((err: Error) => setError(err.message))
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+      })
   }
 
   return (
@@ -44,20 +50,15 @@ export function CrawlLogsPage() {
       <div className="mb-1.5 flex items-center justify-between gap-3">
         <h1 className="text-xl font-semibold">Crawl Logs</h1>
         {logs.length > 0 && (
-          <button
-            type="button"
-            onClick={handleClearAll}
-            className="shrink-0 text-xs text-red-700 underline"
-          >
+          <button type="button" onClick={handleClearAll} className="shrink-0 text-xs text-red-700 underline">
             Clear all
           </button>
         )}
       </div>
       <p className="mb-5 text-sm text-gray-500">
-        The most recent paginated crawls — what fields/selectors were used, which URLs were actually
-        visited, what was extracted, and which field labels matched nothing on the page. Kept for the
-        last {logs.length > 0 ? 'up to 100' : '100'} crawls, newest first. Nothing is logged here
-        unless Debug is turned on (see the Debug page).
+        The most recent paginated crawls — what fields/selectors were used, which URLs were actually visited, what was extracted, and which
+        field labels matched nothing on the page. Kept for the last {logs.length > 0 ? 'up to 100' : '100'} crawls, newest first. Nothing is
+        logged here unless Debug is turned on (see the Debug page).
       </p>
 
       <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
@@ -73,16 +74,15 @@ export function CrawlLogsPage() {
               <div className="flex w-full items-center justify-between gap-3">
                 <button
                   type="button"
-                  onClick={() => setExpandedId(expanded ? null : entry.id)}
+                  onClick={() => {
+                    setExpandedId(expanded ? null : entry.id)
+                  }}
                   className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left"
                 >
                   <div className="min-w-0">
-                    <div className="truncate text-xs font-medium text-gray-900">
-                      {entry.pages[0]?.url || '(no page reached)'}
-                    </div>
+                    <div className="truncate text-xs font-medium text-gray-900">{entry.pages[0]?.url || '(no page reached)'}</div>
                     <div className="text-xs text-gray-500">
-                      {new Date(entry.createdAt).toLocaleString()} · {entry.pagesVisited} page(s) ·{' '}
-                      {entry.stoppedReason}
+                      {new Date(entry.createdAt).toLocaleString()} · {entry.pagesVisited} page(s) · {entry.stoppedReason}
                       {totalNotFound > 0 && <span className="text-red-700"> · {totalNotFound} field(s) not found</span>}
                     </div>
                   </div>
@@ -90,7 +90,9 @@ export function CrawlLogsPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleDelete(entry.id)}
+                  onClick={() => {
+                    handleDelete(entry.id)
+                  }}
                   className="shrink-0 text-xs text-red-700 underline"
                 >
                   delete
@@ -115,15 +117,15 @@ export function CrawlLogsPage() {
                           <tr key={i}>
                             <td className="pr-2 font-mono">{f.label}</td>
                             <td className="pr-2 font-mono">{f.selector}</td>
-                            <td className="pr-2 font-mono">{f.attribute || '(text)'}</td>
+                            <td className="pr-2 font-mono">{f.attribute ?? '(text)'}</td>
                             <td>{f.multiple ? 'yes' : 'no'}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                     <div className="mt-1 text-xs text-gray-500">
-                      Pagination: <span className="font-mono">{entry.nextSelector}</span>, requested{' '}
-                      {entry.requestedMaxPages} page(s), capped at {entry.effectiveMaxPages}
+                      Pagination: <span className="font-mono">{entry.nextSelector}</span>, requested {entry.requestedMaxPages} page(s),
+                      capped at {entry.effectiveMaxPages}
                     </div>
                     {entry.container && (
                       <div className="mt-1 text-xs text-gray-500">
@@ -140,7 +142,8 @@ export function CrawlLogsPage() {
                       </div>
                       {page.cloudflareDetected && (
                         <p className="mb-1 text-xs font-medium text-amber-700">
-                          ⚠️ Cloudflare challenge detected on this page (reason: {page.cloudflareReason}) — results below may reflect the challenge interstitial, not real content.
+                          ⚠️ Cloudflare challenge detected on this page (reason: {page.cloudflareReason}) — results below may reflect the
+                          challenge interstitial, not real content.
                         </p>
                       )}
                       <pre className="overflow-x-auto whitespace-pre-wrap break-words text-xs text-gray-700">

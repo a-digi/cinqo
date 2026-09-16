@@ -74,7 +74,9 @@ function unmountReact(container: HTMLElement) {
 
 window.__cinqoToolBridge.registerRoute({
   path: LIST_PATH,
-  mount: (container) => mountReact(container, <ListPage />),
+  mount: (container) => {
+    mountReact(container, <ListPage />)
+  },
   unmount: unmountReact,
 })
 
@@ -83,18 +85,24 @@ window.__cinqoToolBridge.registerRoute({
 // unchanged by this rewrite).
 window.__cinqoToolBridge.registerRoute({
   path: ADD_PATH,
-  mount: (container) => mountReact(container, <AddPage />),
+  mount: (container) => {
+    mountReact(container, <AddPage />)
+  },
   unmount: unmountReact,
 })
 
 window.__cinqoToolBridge.registerRoute({
   path: CRAWL_LOGS_PATH,
-  mount: (container) => mountReact(container, <CrawlLogsPage />),
+  mount: (container) => {
+    mountReact(container, <CrawlLogsPage />)
+  },
   unmount: unmountReact,
 })
 
 window.__cinqoToolBridge.registerRoute({
   path: DEBUG_PATH,
-  mount: (container) => mountReact(container, <DebugPage />),
+  mount: (container) => {
+    mountReact(container, <DebugPage />)
+  },
   unmount: unmountReact,
 })

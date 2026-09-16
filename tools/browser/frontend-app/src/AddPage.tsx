@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useState, type SyntheticEvent } from 'react'
 import { normalizeDomain, saveCredential } from './api'
 
 const LIST_PATH = '/tools/browser/credentials'
@@ -9,7 +9,7 @@ export function AddPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
 
-  function handleSubmit(event: FormEvent) {
+  function handleSubmit(event: SyntheticEvent<HTMLFormElement>) {
     event.preventDefault()
     setError('')
 
@@ -25,34 +25,31 @@ export function AddPage() {
         setPassword('')
         window.__cinqoToolBridge.navigate(LIST_PATH)
       })
-      .catch((err: Error) => setError(err.message))
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+      })
   }
 
   return (
     <div className="max-w-2xl p-6 font-sans text-gray-900">
-      <a
-        href="#"
-        onClick={(e) => {
-          e.preventDefault()
+      <button
+        type="button"
+        onClick={() => {
           window.__cinqoToolBridge.navigate(LIST_PATH)
         }}
         className="mb-4 inline-block text-sm text-gray-500 hover:underline"
       >
         &larr; Back to Login Credentials
-      </a>
+      </button>
 
       <h1 className="mb-1.5 text-xl font-semibold">Add / Update Credential</h1>
       <p className="mb-5 text-sm text-gray-500">
-        Saving an existing domain again updates its stored credential. The AI never sees the
-        username or password entered here.
+        Saving an existing domain again updates its stored credential. The AI never sees the username or password entered here.
       </p>
 
       <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
 
-      <form
-        onSubmit={handleSubmit}
-        className="rounded-md border border-gray-200 bg-gray-50 p-6 shadow-sm"
-      >
+      <form onSubmit={handleSubmit} className="rounded-md border border-gray-200 bg-gray-50 p-6 shadow-sm">
         <div className="mb-4">
           <label htmlFor="cinqo-browser-cred-domain" className="mb-1.5 block text-sm font-medium">
             Domain
@@ -63,7 +60,9 @@ export function AddPage() {
             placeholder="example.com"
             required
             value={domain}
-            onChange={(e) => setDomain(e.target.value)}
+            onChange={(e) => {
+              setDomain(e.target.value)
+            }}
             className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm transition-shadow focus:border-gray-900 focus:outline-none focus:ring-3 focus:ring-gray-900/10"
           />
         </div>
@@ -76,7 +75,9 @@ export function AddPage() {
             type="text"
             required
             value={username}
-            onChange={(e) => setUsername(e.target.value)}
+            onChange={(e) => {
+              setUsername(e.target.value)
+            }}
             className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm transition-shadow focus:border-gray-900 focus:outline-none focus:ring-3 focus:ring-gray-900/10"
           />
         </div>
@@ -89,7 +90,9 @@ export function AddPage() {
             type="password"
             required
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={(e) => {
+              setPassword(e.target.value)
+            }}
             className="w-full rounded-md border border-gray-200 bg-white px-3 py-2.5 text-sm transition-shadow focus:border-gray-900 focus:outline-none focus:ring-3 focus:ring-gray-900/10"
           />
         </div>
