@@ -28,3 +28,20 @@ export async function fetchPlatforms(): Promise<Platform[]> {
   const res = await httpClient.get('/api/v1/platforms')
   return httpClient.responseBody<Platform[]>(res, 'load AI platforms')
 }
+
+// PlatformKey (step 61) — only the field PortalsPage's own "prefer a
+// platform that already has a key" selection needs; the wire response
+// also carries label/maskedKey/createdAt, simply ignored here (never
+// under-fetched — same JSON either way, just a narrower TS shape).
+// GET /api/v1/platforms/keys needs the exact same cinqo:platform:read
+// scope fetchPlatforms above already relies on — no new capability,
+// just a new caller. See
+// plan/ai/tools/career/step-61-portals-prefer-platform-with-key.md.
+export interface PlatformKey {
+  platform: string
+}
+
+export async function fetchPlatformKeys(): Promise<PlatformKey[]> {
+  const res = await httpClient.get('/api/v1/platforms/keys')
+  return httpClient.responseBody<PlatformKey[]>(res, 'load AI platform keys')
+}

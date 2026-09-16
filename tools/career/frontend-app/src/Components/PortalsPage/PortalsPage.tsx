@@ -10,7 +10,7 @@ import {
   type Portal,
   type PortalLink,
 } from '../../api'
-import { fetchPlatforms, type Platform } from '../../Cinqo/Platform/platformRepository'
+import { fetchPlatforms, fetchPlatformKeys, type Platform } from '../../Cinqo/Platform/platformRepository'
 import { CrawlPlatformPicker } from '../../Crawler/CrawlPlatformPicker/CrawlPlatformPicker'
 import { CrawlPanel } from '../../Crawler/CrawlPanel/CrawlPanel'
 import { PlusIcon } from '../../Shared/Icons/icons'
@@ -66,12 +66,20 @@ export function PortalsPage() {
 
   useEffect(() => {
     load()
-    fetchPlatforms()
-      .then((list) => {
+    // Prefers whichever platform already has at least one key
+    // registered — a fresh key list load failure degrades to today's
+    // exact "just pick the first platform" behavior rather than
+    // blocking selection or surfacing a page-level error, since this
+    // is a selection preference, not a correctness requirement. See
+    // plan/ai/tools/career/step-61-portals-prefer-platform-with-key.md.
+    Promise.all([fetchPlatforms(), fetchPlatformKeys().catch(() => [])])
+      .then(([list, keys]) => {
         setPlatforms(list)
         if (list.length > 0) {
-          setSelectedPlatformId(list[0].id)
-          setSelectedModel(list[0].models.length > 0 ? list[0].models[0] : null)
+          const withKey = list.find((p) => keys.some((k) => k.platform === p.id))
+          const chosen = withKey ?? list[0]
+          setSelectedPlatformId(chosen.id)
+          setSelectedModel(chosen.models.length > 0 ? chosen.models[0] : null)
         }
       })
       .catch(() => {
