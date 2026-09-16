@@ -35,6 +35,11 @@ var (
 	browserDB *sql.DB
 	browserMu sync.Mutex
 	cryptoKey []byte
+	// crawlLogsDir holds one JSON file per crawl_logs row (step 39),
+	// named <id>.json — set once here, read by crawl_log.go's own
+	// save/fetch/delete paths. See
+	// plan/ai/tools/browser/step-39-crawl-log-file-storage.md.
+	crawlLogsDir string
 )
 
 // initBrowserDB opens (creating if needed) browser.db and this tool's
@@ -57,6 +62,11 @@ func initBrowserDB() error {
 	}
 	cryptoKey = key
 
+	crawlLogsDir = filepath.Join(dbDir, "crawl_logs")
+	if err := os.MkdirAll(crawlLogsDir, 0o755); err != nil {
+		return fmt.Errorf("failed to create crawl_logs directory: %w", err)
+	}
+
 	db, err := sql.Open("sqlite", filepath.Join(dbDir, "browser.db"))
 	if err != nil {
 		return fmt.Errorf("failed to open browser database: %w", err)
@@ -78,28 +88,28 @@ func initBrowserDB() error {
 		return fmt.Errorf("failed to prepare login_credentials schema: %w", err)
 	}
 
-	// crawl_logs (step 17) — diagnostic record of every /crawl-paginated
-	// call, AI-driven or deterministic; see crawl_log.go. container
-	// (step 18) added inline here for a fresh install; migrateCrawlLogsContainer
-	// below adds it to an already-existing table (this tool has no
-	// migration runner — CREATE TABLE IF NOT EXISTS alone never adds a
-	// column to a table that already exists).
+	// crawl_logs (step 17, restructured step 39) — diagnostic record of
+	// every /crawl-paginated call, AI-driven or deterministic. Holds
+	// only what the list view's own collapsed row needs to render
+	// without ever touching a file — the full entry (container, fields,
+	// next selector, max pages, and each page's own results/notFound/
+	// Cloudflare flags/HTML) lives in log_file_path instead, one JSON
+	// file per row under crawlLogsDir, named by this row's own id. See
+	// crawl_log.go and
+	// plan/ai/tools/browser/step-39-crawl-log-file-storage.md.
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS crawl_logs (
-		id                  TEXT PRIMARY KEY,
-		created_at          TEXT NOT NULL,
-		container           TEXT,
-		request_fields      TEXT NOT NULL,
-		next_selector       TEXT NOT NULL,
-		requested_max_pages INTEGER NOT NULL,
-		effective_max_pages INTEGER NOT NULL,
-		pages               TEXT NOT NULL,
-		stopped_reason      TEXT NOT NULL,
-		pages_visited       INTEGER NOT NULL
+		id              TEXT PRIMARY KEY,
+		created_at      TEXT NOT NULL,
+		stopped_reason  TEXT NOT NULL,
+		pages_visited   INTEGER NOT NULL,
+		first_page_url  TEXT,
+		not_found_count INTEGER NOT NULL DEFAULT 0,
+		log_file_path   TEXT NOT NULL
 	)`); err != nil {
 		db.Close()
 		return fmt.Errorf("failed to prepare crawl_logs schema: %w", err)
 	}
-	if err := migrateCrawlLogsContainer(db); err != nil {
+	if err := migrateCrawlLogsFileStorage(db); err != nil {
 		db.Close()
 		return fmt.Errorf("failed to migrate crawl_logs schema: %w", err)
 	}

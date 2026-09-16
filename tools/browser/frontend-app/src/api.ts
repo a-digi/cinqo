@@ -72,7 +72,26 @@ export interface CrawlLogPage {
   html?: string
 }
 
+// CrawlLogEntry (step 39) is the lightweight list-row shape —
+// everything listCrawlLogs' own collapsed row needs (backend/crawl_log.go's
+// own crawlLogSummary), computed server-side at write time so fetching
+// the list never has to open a single log file. The full body (fields/
+// results/notFound/Cloudflare flags/HTML) is fetched separately, only
+// for whichever one row is actually expanded — see CrawlLogDetail and
+// fetchCrawlLogDetail below. See
+// plan/ai/tools/browser/step-39-crawl-log-file-storage.md.
 export interface CrawlLogEntry {
+  id: string
+  createdAt: string
+  stoppedReason: string
+  pagesVisited: number
+  firstPageUrl?: string
+  notFoundCount: number
+}
+
+// CrawlLogDetail is one entry's full body — fetched on demand
+// (fetchCrawlLogDetail), never as part of the list.
+export interface CrawlLogDetail {
   id: string
   createdAt: string
   // Empty when this crawl used flat (non-grouped) extraction — see
@@ -92,6 +111,17 @@ export async function fetchCrawlLogs(): Promise<CrawlLogEntry[]> {
   if (!res.ok) throw new Error(`failed to load crawl logs (${res.status})`)
   const data = await readJson<{ logs?: CrawlLogEntry[] }>(res)
   return data.logs ?? []
+}
+
+// fetchCrawlLogDetail (step 39) — GET ?id=<id> streams that one
+// entry's full file straight from disk on the backend
+// (http.ServeContent, crawlLogsHandler), so a huge captured-HTML entry
+// is only ever fetched when a caller actually expands that specific
+// row, never as part of the list.
+export async function fetchCrawlLogDetail(id: string): Promise<CrawlLogDetail> {
+  const res = await fetch(`${CRAWL_LOGS_BASE}?id=${encodeURIComponent(id)}`, { credentials: 'include' })
+  if (!res.ok) throw new Error(`failed to load crawl log (${res.status})`)
+  return readJson<CrawlLogDetail>(res)
 }
 
 // deleteCrawlLog/clearAllCrawlLogs (step 22) — clearAllCrawlLogs
