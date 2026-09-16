@@ -126,9 +126,11 @@ type crawlRequestField struct {
 
 // writeFileAtomically writes data to path via a temp file + rename —
 // cheap insurance against a truncated/corrupt file if the process is
-// killed mid-write, a real (if rare) possibility once a captured
-// page's own HTML can be up to maxHTMLBytes per page. See
-// plan/ai/tools/browser/step-39-crawl-log-file-storage.md.
+// killed mid-write, a real (if rare) possibility given a captured
+// page's own HTML is written here untruncated (step 40) and can be
+// several MB for a real page. See
+// plan/ai/tools/browser/step-39-crawl-log-file-storage.md and
+// plan/ai/tools/browser/step-40-log-html-truncation-fix.md.
 func writeFileAtomically(path string, data []byte) error {
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, data, 0o644); err != nil {

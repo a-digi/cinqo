@@ -289,9 +289,15 @@ func runPaginatedCrawlLoop(ctx context.Context, container string, fields []extra
 				}
 				return paginatedCrawlResponse{}, nil, err
 			}
-			if len(html) > maxHTMLBytes {
-				html = html[:maxHTMLBytes]
-			}
+			// Step 40 — deliberately NOT truncated to maxHTMLBytes (crawl.go):
+			// that limit exists to protect an LLM's context budget on the
+			// live /crawl response; this HTML never reaches one (see this
+			// function's own top comment) and, since step 39, is written
+			// straight to its own file on disk, not held in a response
+			// payload. Clipping it here was carried over unexamined from
+			// crawl.go's own constant and was clipping most real pages'
+			// captured HTML in the log to well under half its real size.
+			// See plan/ai/tools/browser/step-40-log-html-truncation-fix.md.
 			pageHTML = append(pageHTML, html)
 		}
 
