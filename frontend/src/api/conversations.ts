@@ -195,6 +195,25 @@ export async function fetchAiTraceLogs(conversationId: string): Promise<AiTraceL
   return raw.message
 }
 
+// AllAiTraceLogsEntry is one conversation's own trace-log summary in
+// the admin-wide overview (plan/ai/conversation/step-38-ai-logs-overview-page.md)
+// — every conversation that has ever produced at least one AI trace
+// log, not just the caller's own (unlike fetchAiTraceLogs above).
+// title is "" when that conversation has since been deleted but its
+// own trace folder wasn't.
+export interface AllAiTraceLogsEntry {
+  conversationId: string
+  title?: string
+  folder: string
+  logCount: number
+  modifiedAt: string
+}
+
+export async function fetchAllAiTraceLogs(): Promise<AllAiTraceLogsEntry[]> {
+  const raw = await apiGet<{ message: { conversations: AllAiTraceLogsEntry[] } }>('/api/v1/conversations/logs')
+  return raw.message.conversations
+}
+
 // ConversationSettings (step 37) — the conversation feature's own
 // single, global settings object, admin-only (unlike every other
 // endpoint in this file): turning aiTraceLogsEnabled on captures raw

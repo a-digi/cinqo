@@ -89,6 +89,16 @@ routes:
       - cinqo:conversation:use
       - cinqo:super:admin
 
+  # step-38-ai-logs-overview-page.md — admin-wide overview of every
+  # conversation that has ever produced an AI trace log, not just the
+  # caller's own. Admin-only, same reasoning as .../settings below.
+  - path: /api/v1/conversations/logs
+    method: GET
+    executor: ConversationGetAllLogs
+    security: authenticated
+    scopes:
+      - cinqo:super:admin
+
   # step-37-ai-debug-logging-toggle.md — the global switch controlling
   # whether the AI trace logs above ever get written at all.
   # Admin-only: unlike every other route in this file, NOT also

@@ -98,6 +98,7 @@ func Init(ctx serverdi.Context) {
 		"ConversationGetActiveTurn":  local_routing.HandlerFunc(conversation_handler.GetActiveTurnHandler),
 		"ConversationStopActiveTurn": local_routing.HandlerFunc(conversation_handler.StopActiveTurnHandler),
 		"ConversationGetLogs":        local_routing.HandlerFunc(conversation_handler.GetLogsHandler),
+		"ConversationGetAllLogs":     local_routing.HandlerFunc(conversation_handler.GetAllLogsHandler),
 		"ConversationGetSettings":    local_routing.HandlerFunc(conversation_handler.GetSettingsHandler),
 		"ConversationUpdateSettings": local_routing.HandlerFunc(conversation_handler.UpdateSettingsHandler),
 	}

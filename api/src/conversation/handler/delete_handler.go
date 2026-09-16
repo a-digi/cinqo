@@ -5,20 +5,25 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"path/filepath"
 
 	"github.com/a-digi/coco-server/server/request"
 	"github.com/a-digi/coco-server/server/response"
 
+	"github.com/a-digi/cinqo/src/conversation"
 	conversation_persistent "github.com/a-digi/cinqo/src/conversation/repository/persistent"
 	conversation_query "github.com/a-digi/cinqo/src/conversation/repository/query"
 )
 
 // DeleteHandler handles DELETE /api/v1/conversations/{id}. Hard
 // delete — no soft-delete flag. The database row is removed first,
-// then its Markdown file: if the file removal then fails, an orphaned
-// file with no owning row is harmless dead weight, not a security or
-// consistency problem. See
-// plan/ai/conversation/step-03-conversation-api.md.
+// then its Markdown file and its own AI trace-log folder (step 39 —
+// previously left behind indefinitely, showing up as "(deleted
+// conversation)" in the admin-wide AI Logs overview forever): if
+// either removal then fails, an orphaned file/folder with no owning
+// row is harmless dead weight, not a security or consistency problem.
+// See plan/ai/conversation/step-03-conversation-api.md and
+// plan/ai/conversation/step-39-delete-trace-logs-with-conversation.md.
 func DeleteHandler(reqCtx request.RequestContext) {
 	w := reqCtx.GetWriter()
 	id := reqCtx.GetURI().GetPathVariable("id")
@@ -57,6 +62,11 @@ func DeleteHandler(reqCtx request.RequestContext) {
 
 	if err := os.Remove(conv.FilePath); err != nil && !os.IsNotExist(err) {
 		reqCtx.GetDI().GetLogger().Warning("conversation %q deleted but failed to remove its log file: %v", id, err)
+	}
+
+	traceDir := conversation.TraceLogDir(filepath.Dir(conv.FilePath), id)
+	if err := os.RemoveAll(traceDir); err != nil {
+		reqCtx.GetDI().GetLogger().Warning("conversation %q deleted but failed to remove its AI trace-log folder: %v", id, err)
 	}
 
 	w.WriteHeader(http.StatusNoContent)
