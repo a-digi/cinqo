@@ -168,6 +168,17 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
               ...prev,
               [conversationId]: {
                 ...prev[conversationId],
+                // step 32 — reconciled on every poll, not just seeded
+                // once at watch-start: a watch resumed after a page
+                // reload has no other way to recover the user's own
+                // just-sent prompt (sendMessage's own optimistic seed,
+                // above, only ever existed in that now-gone page's
+                // memory), but fetchActiveTurn already returns it
+                // every single poll (turn_runs.user_content, saved
+                // synchronously before the async turn even starts).
+                // See plan/ai/conversation/step-32-restore-pending-
+                // user-message-after-reload.md.
+                pendingUserContent: turn.userContent,
                 turnStartedAt: turn.startedAt,
                 turnClockOffsetMs: Date.parse(turn.serverNow) - Date.now(),
               },
