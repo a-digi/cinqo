@@ -1,8 +1,9 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import type { Conversation } from '../../api/conversations'
 import { useConfirm } from '../../Shared/Components/Modal/useConfirm'
 import { IconButton } from '../../Shared/Components/IconButton/IconButton'
-import { PencilIcon, TrashIcon, CheckIcon, XIcon, PlusIcon } from '../../Shared/Components/IconButton/icons'
+import { PencilIcon, TrashIcon, CheckIcon, XIcon, PlusIcon, LogsIcon } from '../../Shared/Components/IconButton/icons'
 import { TurnStatusBadge } from './TurnStatusBadge'
 
 // List, "New conversation", inline rename, delete-behind-confirm — same
@@ -28,6 +29,7 @@ export function ConversationSidebar({
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const { confirm, dialog } = useConfirm()
+  const navigate = useNavigate()
 
   const startRename = (c: Conversation) => {
     setRenamingId(c.id)
@@ -130,6 +132,13 @@ export function ConversationSidebar({
                 </div>
               ) : (
                 <div className="flex shrink-0 gap-0.5 opacity-0 group-hover:opacity-100">
+                  <IconButton
+                    icon={<LogsIcon />}
+                    label="View AI logs"
+                    onClick={() => {
+                      void navigate(`/conversations/${c.id}/logs`)
+                    }}
+                  />
                   <IconButton
                     icon={<PencilIcon />}
                     label="Rename"

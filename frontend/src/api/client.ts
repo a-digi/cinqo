@@ -139,3 +139,32 @@ export function apiDelete<T>(path: string): Promise<T> {
 export function apiUpload<T>(path: string, formData: FormData): Promise<T> {
   return request<T>(path, { method: 'POST', body: formData })
 }
+
+// apiGetText reads the response body as plain text instead of JSON —
+// for an endpoint that streams a raw file straight through
+// (http.ServeContent on the backend, e.g. a conversation's own AI
+// trace log), not the {message: ...} JSON envelope every other
+// endpoint here returns. Same auth/renewal handling as request<T>
+// above, deliberately duplicated rather than shared (that function is
+// hardcoded to JSON-parse the body on every path, including its own
+// error path).
+export async function apiGetText(path: string): Promise<string> {
+  const resp = await rawRequest(path, { method: 'GET' })
+  if (resp.status === 401) {
+    const renewed = await renewSession()
+    if (renewed) {
+      const retry = await rawRequest(path, { method: 'GET' })
+      if (!retry.ok) {
+        throw new ApiError(retry.status, `Request to ${path} failed with status ${retry.status}`)
+      }
+      return retry.text()
+    }
+    if (!isAuthEndpoint(path)) {
+      emitSessionExpired()
+    }
+  }
+  if (!resp.ok) {
+    throw new ApiError(resp.status, `Request to ${path} failed with status ${resp.status}`)
+  }
+  return resp.text()
+}

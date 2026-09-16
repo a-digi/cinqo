@@ -178,7 +178,7 @@ func SendMessage(
 		return nil, fmt.Errorf("conversation: look up offerable tools: %w", err)
 	}
 
-	assistantContent, err := runToolLoop(ctx, httpClient, entry, plainKey, model, messages, tools, mainDB, callerScopes, corePort, nil, nil)
+	assistantContent, err := runToolLoop(ctx, httpClient, entry, plainKey, model, messages, tools, mainDB, callerScopes, corePort, nil, nil, nil)
 	if err != nil {
 		// Record the user's own message AND the real failure reason —
 		// a real, recognized "## error —" block (step 8), not a
@@ -263,6 +263,12 @@ func offerableTools(mainDB *sql.DB, callerScopes []string) ([]chatcompleter.Tool
 // Never receives raw model/tool content, only fixed, backend-authored
 // strings — see that step's own Security considerations for why.
 //
+// logExchange, when non-nil, is called once per iteration — the exact
+// opposite of logStep: it receives the FULL raw request
+// (messages/tools) and response (result/err) for that iteration,
+// unredacted. See runner.go's own use of this (writing one .txt file
+// per turn) and plan/ai/conversation/step-36-ai-trace-logs.md.
+//
 // reportUsage, when non-nil, is called once per loop iteration with
 // that iteration's own real, provider-reported
 // PromptTokens/CompletionTokens — a per-iteration increment, not a
@@ -282,6 +288,7 @@ func runToolLoop(
 	corePort int,
 	logStep func(step string),
 	reportUsage func(promptTokens, completionTokens int),
+	logExchange func(iteration int, messages []chatcompleter.Message, tools []chatcompleter.ToolDef, result *chatcompleter.ChatCompletionResult, err error),
 ) (string, error) {
 	var allLinks []tool_mcp.ResourceLink
 
@@ -315,6 +322,9 @@ func runToolLoop(
 			logStep(fmt.Sprintf("iteration %d: calling model", i+1))
 		}
 		result, err := entry.Completer.ChatCompletion(ctx, httpClient, entry.DefaultBaseURL, apiKey, model, current, tools)
+		if logExchange != nil {
+			logExchange(i+1, current, tools, result, err)
+		}
 		if err != nil {
 			return "", err
 		}

@@ -1,4 +1,4 @@
-import { apiDelete, apiGet, apiPatch, apiPost } from './client'
+import { apiDelete, apiGet, apiGetText, apiPatch, apiPost } from './client'
 
 // Already camelCase on the wire (api/src/conversation/handler's own
 // response DTOs) — no snake_case *Raw mapping needed, same as
@@ -169,4 +169,25 @@ export async function fetchActiveTurn(conversationId: string): Promise<ActiveTur
 // "cancelled", not "failed").
 export async function stopActiveTurn(conversationId: string): Promise<void> {
   await apiPost<{ message: { status: string } }>(`/api/v1/conversations/${encodeURIComponent(conversationId)}/turns/active/stop`)
+}
+
+// AiTraceLogSummary is one turn's own trace file, listed without ever
+// reading its content (plan/ai/conversation/step-36-ai-trace-logs.md)
+// — a diagnostic view of the full raw request/response exchange with
+// the AI model, for understanding excessive token usage.
+export interface AiTraceLogSummary {
+  turnRunId: string
+  sizeBytes: number
+  modifiedAt: string
+}
+
+export async function fetchAiTraceLogs(conversationId: string): Promise<AiTraceLogSummary[]> {
+  const raw = await apiGet<{ message: { logs: AiTraceLogSummary[] } }>(`/api/v1/conversations/${encodeURIComponent(conversationId)}/logs`)
+  return raw.message.logs
+}
+
+// Raw plain text, not JSON — the backend streams the .txt file
+// straight through (http.ServeContent), not a {message: ...} envelope.
+export async function fetchAiTraceLogDetail(conversationId: string, turnRunId: string): Promise<string> {
+  return apiGetText(`/api/v1/conversations/${encodeURIComponent(conversationId)}/logs?turnId=${encodeURIComponent(turnRunId)}`)
 }

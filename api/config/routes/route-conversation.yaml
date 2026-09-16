@@ -76,3 +76,15 @@ routes:
     scopes:
       - cinqo:conversation:use
       - cinqo:super:admin
+
+  # step-36-ai-trace-logs.md — diagnostic view of the full raw
+  # request/response exchange with the AI model, one .txt file per
+  # turn. No ?turnId= lists every turn with a trace file; ?turnId=<id>
+  # streams that one file's raw content.
+  - path: /api/v1/conversations/{id}/logs
+    method: GET
+    executor: ConversationGetLogs
+    security: authenticated
+    scopes:
+      - cinqo:conversation:use
+      - cinqo:super:admin

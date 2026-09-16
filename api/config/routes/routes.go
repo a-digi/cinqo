@@ -97,6 +97,7 @@ func Init(ctx serverdi.Context) {
 		"ConversationSendMessage":    local_routing.HandlerFunc(conversation_handler.SendMessageHandler),
 		"ConversationGetActiveTurn":  local_routing.HandlerFunc(conversation_handler.GetActiveTurnHandler),
 		"ConversationStopActiveTurn": local_routing.HandlerFunc(conversation_handler.StopActiveTurnHandler),
+		"ConversationGetLogs":        local_routing.HandlerFunc(conversation_handler.GetLogsHandler),
 	}
 
 	var inner *lift_security.ScopeSecurityLayer

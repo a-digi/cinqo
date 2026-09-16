@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -210,7 +211,20 @@ func runDetachedTurn(
 		totalCompletionTokens += completionTokens
 		_ = runs.AddTokenUsage(turnRunID, promptTokens, completionTokens)
 	}
-	assistantContent, err := runToolLoop(ctx, httpClient, entry, plainKey, model, messages, tools, mainDB, callerScopes, corePort, logStep, reportUsage)
+	// logExchange (step 36) writes this turn's own full raw request/
+	// response trace, one .txt file per turn, one appended block per
+	// iteration — a diagnostic aid for understanding excessive token
+	// usage, distinct from reportUsage's own aggregate-numbers-only
+	// tracking above. filepath.Dir(conv.FilePath) is the conversations/
+	// directory itself (conv.FilePath is
+	// <conversationsDir>/<id>_conversation.md) — TraceLogPath then adds
+	// the new <id>/<turnRunID>.txt layout underneath it. Best-effort:
+	// a trace-log write failure must never fail the turn itself.
+	tracePath := TraceLogPath(filepath.Dir(conv.FilePath), conversationID, turnRunID)
+	logExchange := func(iteration int, msgs []chatcompleter.Message, toolDefs []chatcompleter.ToolDef, result *chatcompleter.ChatCompletionResult, callErr error) {
+		_ = appendTraceEntry(tracePath, iteration, msgs, toolDefs, result, callErr)
+	}
+	assistantContent, err := runToolLoop(ctx, httpClient, entry, plainKey, model, messages, tools, mainDB, callerScopes, corePort, logStep, reportUsage, logExchange)
 	if err != nil {
 		failedTurn := Turn{
 			UserTimestamp:    userTimestamp,

@@ -61,3 +61,15 @@ export function PlusIcon() {
     </svg>
   )
 }
+
+// LogsIcon (step 36) — a plain lined-document glyph marking "view this
+// conversation's own AI trace logs," distinct from every other row
+// action (Rename/Delete) in ConversationSidebar.tsx.
+export function LogsIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-4 w-4">
+      <rect x="4.5" y="3" width="11" height="14" rx="1.2" strokeWidth="1.3" />
+      <path d="M7 7h6M7 10h6M7 13h3.5" strokeWidth="1.3" strokeLinecap="round" />
+    </svg>
+  )
+}
