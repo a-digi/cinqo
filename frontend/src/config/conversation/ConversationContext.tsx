@@ -38,6 +38,13 @@ export interface TurnWatch {
   pendingUserContent: string | null
   turnStartedAt: string | null
   turnClockOffsetMs: number
+  // promptTokens/completionTokens/totalTokens (step 34) — reconciled
+  // on every poll alongside turnStartedAt/turnClockOffsetMs, from the
+  // same fetchActiveTurn response. 0 until the first iteration's
+  // response has actually landed.
+  promptTokens: number
+  completionTokens: number
+  totalTokens: number
 }
 
 export interface ConversationContextValue {
@@ -142,6 +149,9 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         pendingUserContent: prev[conversationId]?.pendingUserContent ?? null,
         turnStartedAt: null,
         turnClockOffsetMs: 0,
+        promptTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0,
       },
     }))
 
@@ -181,6 +191,15 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
                 pendingUserContent: turn.userContent,
                 turnStartedAt: turn.startedAt,
                 turnClockOffsetMs: Date.parse(turn.serverNow) - Date.now(),
+                // step 34 — same reasoning as pendingUserContent just
+                // above: reconciled on every poll from the same
+                // fetchActiveTurn response, since turn_runs' own
+                // columns are already updated live, once per tool-loop
+                // iteration (AddTokenUsage), not only once the turn
+                // finishes.
+                promptTokens: turn.promptTokens,
+                completionTokens: turn.completionTokens,
+                totalTokens: turn.totalTokens,
               },
             }
           : prev,
@@ -339,7 +358,14 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       if (!alreadyWatching) {
         setTurnWatches((prev) => ({
           ...prev,
-          [conversationId]: { pendingUserContent: content, turnStartedAt: null, turnClockOffsetMs: 0 },
+          [conversationId]: {
+            pendingUserContent: content,
+            turnStartedAt: null,
+            turnClockOffsetMs: 0,
+            promptTokens: 0,
+            completionTokens: 0,
+            totalTokens: 0,
+          },
         }))
       }
       try {

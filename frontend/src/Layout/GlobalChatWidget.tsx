@@ -48,6 +48,9 @@ export function GlobalChatWidget() {
   const pendingUserContent = watch?.pendingUserContent ?? null
   const turnStartedAt = watch?.turnStartedAt ?? null
   const turnClockOffsetMs = watch?.turnClockOffsetMs ?? 0
+  const turnPromptTokens = watch?.promptTokens ?? 0
+  const turnCompletionTokens = watch?.completionTokens ?? 0
+  const turnTotalTokens = watch?.totalTokens ?? 0
   const { confirm, dialog } = useConfirm()
   const [busyId, setBusyId] = useState<string | null>(null)
 
@@ -232,6 +235,9 @@ export function GlobalChatWidget() {
                 sending={sending}
                 turnStartedAt={turnStartedAt}
                 turnClockOffsetMs={turnClockOffsetMs}
+                turnPromptTokens={turnPromptTokens}
+                turnCompletionTokens={turnCompletionTokens}
+                turnTotalTokens={turnTotalTokens}
                 onResend={(content) => void sendMessage(detail.id, content)}
               />
               <MessageComposer

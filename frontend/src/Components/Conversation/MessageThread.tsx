@@ -18,6 +18,9 @@ export function MessageThread({
   sending,
   turnStartedAt,
   turnClockOffsetMs,
+  turnPromptTokens,
+  turnCompletionTokens,
+  turnTotalTokens,
   onResend,
 }: {
   messages: ConversationMessage[]
@@ -29,6 +32,12 @@ export function MessageThread({
   // null only when `sending` is false (nothing to show a timer for).
   turnStartedAt: string | null
   turnClockOffsetMs: number
+  // Real, provider-reported token usage accumulated so far this turn —
+  // 0 until the first iteration's response has actually landed. See
+  // plan/ai/conversation/step-34-realtime-token-usage-budget-and-display.md.
+  turnPromptTokens: number
+  turnCompletionTokens: number
+  turnTotalTokens: number
   onResend: (content: string) => void
 }) {
   if (messages.length === 0 && !pendingUserContent) {
@@ -45,7 +54,13 @@ export function MessageThread({
       )}
       {sending && turnStartedAt && (
         <div className="flex justify-start">
-          <ThinkingIndicator startedAt={turnStartedAt} clockOffsetMs={turnClockOffsetMs} />
+          <ThinkingIndicator
+            startedAt={turnStartedAt}
+            clockOffsetMs={turnClockOffsetMs}
+            promptTokens={turnPromptTokens}
+            completionTokens={turnCompletionTokens}
+            totalTokens={turnTotalTokens}
+          />
         </div>
       )}
     </div>

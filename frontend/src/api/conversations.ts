@@ -79,6 +79,14 @@ export interface ActiveTurnSummary {
 export interface ActiveTurn extends ActiveTurnSummary {
   userContent: string
   log: string[]
+  // promptTokens/completionTokens/totalTokens (step 34) are the real,
+  // provider-reported token counts accumulated so far this turn —
+  // already correct and live-updating on every poll while the turn is
+  // still "running", not only once it finishes. See
+  // plan/ai/conversation/step-34-realtime-token-usage-budget-and-display.md.
+  promptTokens: number
+  completionTokens: number
+  totalTokens: number
 }
 
 export interface ConversationDetail extends Conversation {

@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { THINKING_WORDS } from './thinkingWords'
 import { formatDuration } from './formatDuration'
+import { formatTokenCount } from './formatTokenCount'
+import { useAnimatedNumber } from './useAnimatedNumber'
 import { effectiveStartMs } from './turnTiming'
 
 function randomWord(): string {
@@ -47,7 +49,26 @@ function RobotIcon() {
 // plan/ai/conversation/step-24-server-tracked-turn-elapsed-time.md,
 // which supersedes this component's original Date.now()-at-mount
 // design (step-21-thinking-indicator-timer.md).
-export function ThinkingIndicator({ startedAt, clockOffsetMs }: { startedAt: string; clockOffsetMs: number }) {
+//
+// promptTokens/completionTokens/totalTokens (step 34) are the real,
+// provider-reported token counts accumulated so far this turn — live,
+// reconciled on the same poll as startedAt/clockOffsetMs (see
+// ConversationContext.tsx's own watchTurn). 0 until the first
+// iteration's response has actually landed. See
+// plan/ai/conversation/step-34-realtime-token-usage-budget-and-display.md.
+export function ThinkingIndicator({
+  startedAt,
+  clockOffsetMs,
+  promptTokens,
+  completionTokens,
+  totalTokens,
+}: {
+  startedAt: string
+  clockOffsetMs: number
+  promptTokens: number
+  completionTokens: number
+  totalTokens: number
+}) {
   const startRef = useRef(effectiveStartMs(startedAt, clockOffsetMs))
   const wordSlotRef = useRef(0)
   const [word, setWord] = useState(() => randomWord())
@@ -101,6 +122,10 @@ export function ThinkingIndicator({ startedAt, clockOffsetMs }: { startedAt: str
 
   const showStillThinking = elapsedMs >= STILL_THINKING_AT_MS && elapsedMs < STILL_THINKING_HIDE_AT_MS
   const showTakingLonger = elapsedMs >= TAKING_LONGER_AT_MS
+  // Animated, not the raw prop — counts up smoothly to each new value
+  // instead of jumping instantly on every 2s poll.
+  const animatedPromptTokens = useAnimatedNumber(promptTokens)
+  const animatedCompletionTokens = useAnimatedNumber(completionTokens)
 
   return (
     <div className="max-w-lg text-sm text-gray-400">
@@ -134,6 +159,15 @@ export function ThinkingIndicator({ startedAt, clockOffsetMs }: { startedAt: str
         {/* Skipped for the first second — a near-instant reply doesn't
             need a "(0.3s)" flash before the row disappears. */}
         {elapsedMs >= 1000 && <span className="ml-1.5 tabular-nums text-gray-400">({formatDuration(elapsedMs)})</span>}
+        {/* Skipped until the first iteration's response has actually
+            landed — no "0" flash while the very first model call is
+            still in flight. ↑ = upstream/prompt tokens sent to the
+            model, ↓ = downstream/completion tokens received back. */}
+        {totalTokens > 0 && (
+          <span className="ml-1.5 tabular-nums text-gray-400">
+            ↑{formatTokenCount(animatedPromptTokens)} ↓{formatTokenCount(animatedCompletionTokens)}
+          </span>
+        )}
       </div>
       {/* Long-wait reassurance text — "Still thinking" auto-hides again
           10s after it appears (showStillThinking's own derivation),

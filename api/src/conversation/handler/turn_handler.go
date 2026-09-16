@@ -53,6 +53,13 @@ type activeTurnResponse struct {
 	// Markdown log until the whole run finishes.
 	UserContent string   `json:"userContent"`
 	Log         []string `json:"log"`
+	// PromptTokens/CompletionTokens/TotalTokens (step 34) are read
+	// straight off the TurnRun row — already correct and up-to-date
+	// while a turn is still "running" (AddTokenUsage increments them
+	// live, once per tool-loop iteration), not only once it finishes.
+	PromptTokens     int `json:"promptTokens"`
+	CompletionTokens int `json:"completionTokens"`
+	TotalTokens      int `json:"totalTokens"`
 }
 
 func toActiveTurnSummaryResponse(t *conversation_entity.TurnRun) activeTurnSummaryResponse {
@@ -73,6 +80,9 @@ func toActiveTurnResponse(t *conversation_entity.TurnRun) activeTurnResponse {
 		activeTurnSummaryResponse: toActiveTurnSummaryResponse(t),
 		UserContent:               t.UserContent,
 		Log:                       lines,
+		PromptTokens:              t.PromptTokens,
+		CompletionTokens:          t.CompletionTokens,
+		TotalTokens:               t.TotalTokens,
 	}
 }
 

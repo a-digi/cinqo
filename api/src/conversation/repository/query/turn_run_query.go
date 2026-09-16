@@ -17,11 +17,14 @@ func NewTurnRunQueryRepo(db *sql.DB) *TurnRunQueryRepo {
 	return &TurnRunQueryRepo{db: db}
 }
 
-const turnRunColumns = `id, conversation_id, user_content, status, started_at, finished_at, log, cancel_requested`
+const turnRunColumns = `id, conversation_id, user_content, status, started_at, finished_at, log, cancel_requested, prompt_tokens, completion_tokens, total_tokens`
 
 func scanTurnRun(scan func(dest ...any) error) (*conversation_entity.TurnRun, error) {
 	var t conversation_entity.TurnRun
-	if err := scan(&t.ID, &t.ConversationID, &t.UserContent, &t.Status, &t.StartedAt, &t.FinishedAt, &t.Log, &t.CancelRequested); err != nil {
+	if err := scan(
+		&t.ID, &t.ConversationID, &t.UserContent, &t.Status, &t.StartedAt, &t.FinishedAt, &t.Log, &t.CancelRequested,
+		&t.PromptTokens, &t.CompletionTokens, &t.TotalTokens,
+	); err != nil {
 		return nil, err
 	}
 	return &t, nil

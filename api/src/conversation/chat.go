@@ -61,6 +61,22 @@ const ContextTurns = 4
 // cuts the per-job multiplier out entirely.
 const maxToolIterations = 15
 
+// maxToolLoopContextTokens bounds how large runToolLoop's own
+// accumulated messages is allowed to grow, measured by the real,
+// provider-reported prompt token count from the previous iteration's
+// response (chatcompleter.Usage.PromptTokens) — never a local
+// estimate. Without this, a multi-iteration tool-calling turn can
+// accumulate large tool results (e.g. the Browser tool's own
+// up-to-200,000-byte crawled HTML) across enough iterations to exceed
+// a model's context window well before maxToolIterations is ever
+// reached — a real, reproduced failure (context_length_exceeded from
+// OpenRouter at 294,446 tokens against a 262,144-token model limit),
+// not a hypothetical one. No per-model context-window size is tracked
+// anywhere in this codebase today, so this is a conservative, plain
+// constant rather than per-model configuration. See
+// plan/ai/conversation/step-34-realtime-token-usage-budget-and-display.md.
+const maxToolLoopContextTokens = 100_000
+
 var (
 	ErrEmptyContent         = errors.New("conversation: content is empty")
 	ErrContentTooLong       = errors.New("conversation: content exceeds maximum length")
@@ -162,7 +178,7 @@ func SendMessage(
 		return nil, fmt.Errorf("conversation: look up offerable tools: %w", err)
 	}
 
-	assistantContent, err := runToolLoop(ctx, httpClient, entry, plainKey, model, messages, tools, mainDB, callerScopes, corePort, nil)
+	assistantContent, err := runToolLoop(ctx, httpClient, entry, plainKey, model, messages, tools, mainDB, callerScopes, corePort, nil, nil)
 	if err != nil {
 		// Record the user's own message AND the real failure reason —
 		// a real, recognized "## error —" block (step 8), not a
@@ -246,6 +262,14 @@ func offerableTools(mainDB *sql.DB, callerScopes []string) ([]chatcompleter.Tool
 // by plan/ai/conversation/step-23-detach-turn-execution-from-request.md).
 // Never receives raw model/tool content, only fixed, backend-authored
 // strings — see that step's own Security considerations for why.
+//
+// reportUsage, when non-nil, is called once per loop iteration with
+// that iteration's own real, provider-reported
+// PromptTokens/CompletionTokens — a per-iteration increment, not a
+// cumulative total (the caller, runner.go's runDetachedTurn, persists
+// it via TurnRunPersistentRepo.AddTokenUsage's own atomic `col = col +
+// ?`). See plan/ai/conversation/step-34-realtime-token-usage-budget-
+// and-display.md.
 func runToolLoop(
 	ctx context.Context,
 	httpClient *http.Client,
@@ -257,37 +281,92 @@ func runToolLoop(
 	callerScopes []string,
 	corePort int,
 	logStep func(step string),
+	reportUsage func(promptTokens, completionTokens int),
 ) (string, error) {
 	var allLinks []tool_mcp.ResourceLink
 
+	// prefix (the ContextTurns history + the new user message) never
+	// contains a tool call. groups holds one entry per iteration —
+	// [assistant-with-ToolCalls, its own matching tool-result(s)] — a
+	// complete, self-contained unit. Rebuilding the actual request
+	// payload fresh each iteration as prefix+groups (buildToolLoopMessages,
+	// below), rather than appending onto one growing slice, is what
+	// lets the whole-loop budget check drop whole OLD groups without
+	// ever risking a dangling tool_call_id — see that invariant spelled
+	// out on buildToolLoopMessages itself.
+	prefix := messages
+	var groups [][]chatcompleter.Message
+	var lastPromptTokens int
+
 	for i := 0; i < maxToolIterations; i++ {
+		// Trimmed BEFORE sending, using the real token count the
+		// provider reported for the PREVIOUS call — never a local
+		// estimate. One iteration behind the true current size
+		// (there's no earlier real number to use), but self-correcting:
+		// trims again next iteration if still over budget. Never drops
+		// the most recent group, so the model never loses its own
+		// just-produced tool results.
+		for lastPromptTokens > maxToolLoopContextTokens && len(groups) > 1 {
+			groups = groups[1:]
+		}
+		current := buildToolLoopMessages(prefix, groups)
+
 		if logStep != nil {
 			logStep(fmt.Sprintf("iteration %d: calling model", i+1))
 		}
-		result, err := entry.Completer.ChatCompletion(ctx, httpClient, entry.DefaultBaseURL, apiKey, model, messages, tools)
+		result, err := entry.Completer.ChatCompletion(ctx, httpClient, entry.DefaultBaseURL, apiKey, model, current, tools)
 		if err != nil {
 			return "", err
+		}
+		lastPromptTokens = result.Usage.PromptTokens
+		if reportUsage != nil {
+			reportUsage(result.Usage.PromptTokens, result.Usage.CompletionTokens)
+		}
+		if logStep != nil {
+			logStep(fmt.Sprintf("iteration %d: %d prompt + %d completion tokens", i+1, result.Usage.PromptTokens, result.Usage.CompletionTokens))
 		}
 		if len(result.ToolCalls) == 0 {
 			return appendResourceLinks(result.Message.Content, allLinks), nil
 		}
 
-		messages = append(messages, chatcompleter.Message{
+		group := []chatcompleter.Message{{
 			Role:      "assistant",
 			Content:   result.Message.Content,
 			ToolCalls: result.ToolCalls,
-		})
-
+		}}
 		for _, call := range result.ToolCalls {
 			if logStep != nil {
 				logStep(fmt.Sprintf("iteration %d: invoking tool %s", i+1, call.Name))
 			}
 			text, links := invokeToolCall(ctx, mainDB, callerScopes, call, corePort)
-			messages = append(messages, chatcompleter.Message{Role: "tool", ToolCallID: call.ID, Content: truncateToolResult(text)})
+			group = append(group, chatcompleter.Message{Role: "tool", ToolCallID: call.ID, Content: truncateToolResult(text)})
 			allLinks = append(allLinks, links...)
 		}
+		groups = append(groups, group)
 	}
 	return "", ErrToolIterationLimitReached
+}
+
+// buildToolLoopMessages assembles one iteration's actual request
+// payload: prefix, followed by every currently-retained group, oldest
+// first. Every group is a complete, self-contained (assistant-with-
+// ToolCalls, its own matching tool-result(s)) unit, and runToolLoop's
+// own trimming only ever drops whole groups, never splits one — so the
+// result here is always a valid alternating conversation for any
+// provider: no tool-role message can ever reference a removed
+// assistant message, regardless of how many old groups have been
+// trimmed away.
+func buildToolLoopMessages(prefix []chatcompleter.Message, groups [][]chatcompleter.Message) []chatcompleter.Message {
+	total := len(prefix)
+	for _, g := range groups {
+		total += len(g)
+	}
+	out := make([]chatcompleter.Message, 0, total)
+	out = append(out, prefix...)
+	for _, g := range groups {
+		out = append(out, g...)
+	}
+	return out
 }
 
 // appendResourceLinks deterministically adds every real file link

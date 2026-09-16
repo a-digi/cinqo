@@ -30,6 +30,17 @@ type TurnRun struct {
 	// regardless of this flag (ReconcileOrphanedTurnRuns already
 	// handles that case by marking any still-"running" row "failed").
 	CancelRequested bool `db:"cancel_requested" dbtype:"INTEGER" nullable:"false" json:"-"`
+	// PromptTokens/CompletionTokens/TotalTokens (step 34) are the real,
+	// provider-reported token counts accumulated across this turn's own
+	// tool-calling loop — incremented atomically once per iteration
+	// (TurnRunPersistentRepo.AddTokenUsage), so they're already correct
+	// and readable live while the run is still "running", not only
+	// once it finishes. Zero for every turn run before this column
+	// existed. See plan/ai/conversation/step-34-realtime-token-usage-
+	// budget-and-display.md.
+	PromptTokens     int `db:"prompt_tokens" dbtype:"INTEGER" nullable:"false" json:"promptTokens"`
+	CompletionTokens int `db:"completion_tokens" dbtype:"INTEGER" nullable:"false" json:"completionTokens"`
+	TotalTokens      int `db:"total_tokens" dbtype:"INTEGER" nullable:"false" json:"totalTokens"`
 }
 
 // TurnRunSummary is a lean projection of TurnRun for read paths that

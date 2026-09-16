@@ -196,7 +196,10 @@ func runDetachedTurn(
 		return
 	}
 
-	assistantContent, err := runToolLoop(ctx, httpClient, entry, plainKey, model, messages, tools, mainDB, callerScopes, corePort, logStep)
+	reportUsage := func(promptTokens, completionTokens int) {
+		_ = runs.AddTokenUsage(turnRunID, promptTokens, completionTokens)
+	}
+	assistantContent, err := runToolLoop(ctx, httpClient, entry, plainKey, model, messages, tools, mainDB, callerScopes, corePort, logStep, reportUsage)
 	if err != nil {
 		failedTurn := Turn{
 			UserTimestamp:  userTimestamp,

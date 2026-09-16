@@ -43,9 +43,27 @@ func (r *TurnRunPersistentRepo) AppendLog(id, line string) error {
 
 // SetTerminalStatus marks a run finished — status must be one of
 // "completed"/"failed"/"cancelled" (never "running", which only
-// Insert ever sets).
+// Insert ever sets). Does not touch prompt_tokens/completion_tokens/
+// total_tokens — AddTokenUsage (below) already accumulated the
+// correct final totals live, once per iteration, by the time a run
+// reaches a terminal status.
 func (r *TurnRunPersistentRepo) SetTerminalStatus(id, status, finishedAt string) error {
 	_, err := r.db.Exec(`UPDATE turn_runs SET status = ?, finished_at = ? WHERE id = ?`, status, finishedAt, id)
+	return err
+}
+
+// AddTokenUsage atomically increments this run's own running token
+// totals — one call per tool-calling loop iteration, live during a
+// run, same "never a read-modify-write" idiom as AppendLog above (`col
+// = col + ?`, not a read-then-write). promptTokens/completionTokens
+// are that ONE iteration's own real, provider-reported usage, not a
+// cumulative total — the accumulation happens here, in SQL. See
+// plan/ai/conversation/step-34-realtime-token-usage-budget-and-display.md.
+func (r *TurnRunPersistentRepo) AddTokenUsage(id string, promptTokens, completionTokens int) error {
+	_, err := r.db.Exec(
+		`UPDATE turn_runs SET prompt_tokens = prompt_tokens + ?, completion_tokens = completion_tokens + ?, total_tokens = total_tokens + ? WHERE id = ?`,
+		promptTokens, completionTokens, promptTokens+completionTokens, id,
+	)
 	return err
 }
 
