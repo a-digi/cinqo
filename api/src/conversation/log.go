@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -37,6 +38,15 @@ type Turn struct {
 	Failed             bool
 	ErrorTimestamp     string
 	ErrorMessage       string
+	// PromptTokens/CompletionTokens (step 35) are this turn's own real,
+	// provider-reported token usage, accumulated across its whole
+	// tool-calling loop (runner.go's runDetachedTurn) — set for both a
+	// successful turn (accumulated up to the final reply) and a failed
+	// one (whatever was accumulated up to the point of failure). Zero
+	// for every turn logged before this field existed. See
+	// plan/ai/conversation/step-35-persist-per-turn-token-usage.md.
+	PromptTokens     int
+	CompletionTokens int
 }
 
 // DurationMs returns how long this turn took to resolve — from the
@@ -103,11 +113,49 @@ var (
 // turn correctly.
 func formatTurn(t Turn) string {
 	if t.Failed {
-		return fmt.Sprintf("## user — %s\n\n%s\n\n## error — %s\n\n%s\n\n",
-			t.UserTimestamp, t.UserContent, t.ErrorTimestamp, t.ErrorMessage)
+		return fmt.Sprintf("## user — %s\n\n%s\n\n## error — %s%s\n\n%s\n\n",
+			t.UserTimestamp, t.UserContent, t.ErrorTimestamp, tokenSuffix(t.PromptTokens, t.CompletionTokens), t.ErrorMessage)
 	}
-	return fmt.Sprintf("## user — %s\n\n%s\n\n## assistant — %s\n\n%s\n\n",
-		t.UserTimestamp, t.UserContent, t.AssistantTimestamp, t.AssistantContent)
+	return fmt.Sprintf("## user — %s\n\n%s\n\n## assistant — %s%s\n\n%s\n\n",
+		t.UserTimestamp, t.UserContent, t.AssistantTimestamp, tokenSuffix(t.PromptTokens, t.CompletionTokens), t.AssistantContent)
+}
+
+// tokenSuffix (step 35) appends " prompt=N completion=N" to an
+// "## assistant —"/"## error —" header line — omitted entirely
+// (returns "") when both are 0, so an old turn logged before this
+// field existed, or one whose provider never reported usage, renders
+// byte-identical to today. See parseHeaderTimestampAndTokens, below,
+// for the matching read side.
+func tokenSuffix(promptTokens, completionTokens int) string {
+	if promptTokens == 0 && completionTokens == 0 {
+		return ""
+	}
+	return fmt.Sprintf(" prompt=%d completion=%d", promptTokens, completionTokens)
+}
+
+// parseHeaderTimestampAndTokens splits an "## assistant —"/"## error —"
+// header's own already-captured rest-of-line text into its timestamp
+// plus an optional " prompt=N completion=N" suffix (step 35) — never
+// applied to the "## user —" header, which never carries tokens. An
+// old entry with only a bare timestamp (no suffix) parses identically
+// to before this step: both token fields default to 0. No regex
+// change needed anywhere — userHeaderRe/assistantHeaderRe/errorHeaderRe
+// already capture the whole rest of the line via `(.*)$`.
+func parseHeaderTimestampAndTokens(raw string) (timestamp string, promptTokens, completionTokens int) {
+	fields := strings.Fields(raw)
+	if len(fields) == 0 {
+		return "", 0, 0
+	}
+	timestamp = fields[0]
+	for _, f := range fields[1:] {
+		if v, ok := strings.CutPrefix(f, "prompt="); ok {
+			promptTokens, _ = strconv.Atoi(v)
+		}
+		if v, ok := strings.CutPrefix(f, "completion="); ok {
+			completionTokens, _ = strconv.Atoi(v)
+		}
+	}
+	return timestamp, promptTokens, completionTokens
 }
 
 func renderTurns(turns []Turn) string {
@@ -146,22 +194,28 @@ func parseTurns(content string) []Turn {
 		}
 
 		if assistantHeader := assistantHeaderRe.FindStringSubmatchIndex(block); assistantHeader != nil {
+			ts, promptTokens, completionTokens := parseHeaderTimestampAndTokens(block[assistantHeader[2]:assistantHeader[3]])
 			turns = append(turns, Turn{
 				UserTimestamp:      block[userHeader[2]:userHeader[3]],
 				UserContent:        strings.TrimSpace(block[userHeader[1]:assistantHeader[0]]),
-				AssistantTimestamp: block[assistantHeader[2]:assistantHeader[3]],
+				AssistantTimestamp: ts,
 				AssistantContent:   strings.TrimSpace(block[assistantHeader[1]:]),
+				PromptTokens:       promptTokens,
+				CompletionTokens:   completionTokens,
 			})
 			continue
 		}
 
 		if errorHeader := errorHeaderRe.FindStringSubmatchIndex(block); errorHeader != nil {
+			ts, promptTokens, completionTokens := parseHeaderTimestampAndTokens(block[errorHeader[2]:errorHeader[3]])
 			turns = append(turns, Turn{
-				UserTimestamp:  block[userHeader[2]:userHeader[3]],
-				UserContent:    strings.TrimSpace(block[userHeader[1]:errorHeader[0]]),
-				Failed:         true,
-				ErrorTimestamp: block[errorHeader[2]:errorHeader[3]],
-				ErrorMessage:   strings.TrimSpace(block[errorHeader[1]:]),
+				UserTimestamp:    block[userHeader[2]:userHeader[3]],
+				UserContent:      strings.TrimSpace(block[userHeader[1]:errorHeader[0]]),
+				Failed:           true,
+				ErrorTimestamp:   ts,
+				ErrorMessage:     strings.TrimSpace(block[errorHeader[1]:]),
+				PromptTokens:     promptTokens,
+				CompletionTokens: completionTokens,
 			})
 			continue
 		}

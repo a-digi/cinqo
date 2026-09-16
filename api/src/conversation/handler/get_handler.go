@@ -26,6 +26,13 @@ type messageResponse struct {
 	Failed     bool    `json:"failed,omitempty"`
 	Error      *string `json:"error,omitempty"`
 	DurationMs *int64  `json:"durationMs,omitempty"`
+	// PromptTokens/CompletionTokens (step 35) — same "set on the
+	// assistant entry of a successful turn and the user entry of a
+	// failed one" placement as DurationMs, above; nil (not 0) for a
+	// turn logged before this field existed, or one whose provider
+	// never reported usage — see tokenPtr, below.
+	PromptTokens     *int `json:"promptTokens,omitempty"`
+	CompletionTokens *int `json:"completionTokens,omitempty"`
 }
 
 // ActiveTurn is present only when a turn is actually still running for
@@ -90,12 +97,16 @@ func GetHandler(reqCtx request.RequestContext) {
 			messages = append(messages, messageResponse{
 				Role: "user", Content: t.UserContent, CreatedAt: t.UserTimestamp,
 				Failed: true, Error: &errMsg, DurationMs: t.DurationMs(),
+				PromptTokens: tokenPtr(t.PromptTokens), CompletionTokens: tokenPtr(t.CompletionTokens),
 			})
 			continue
 		}
 		messages = append(messages,
 			messageResponse{Role: "user", Content: t.UserContent, CreatedAt: t.UserTimestamp},
-			messageResponse{Role: "assistant", Content: t.AssistantContent, CreatedAt: t.AssistantTimestamp, DurationMs: t.DurationMs()},
+			messageResponse{
+				Role: "assistant", Content: t.AssistantContent, CreatedAt: t.AssistantTimestamp, DurationMs: t.DurationMs(),
+				PromptTokens: tokenPtr(t.PromptTokens), CompletionTokens: tokenPtr(t.CompletionTokens),
+			},
 		)
 	}
 
@@ -113,4 +124,15 @@ func GetHandler(reqCtx request.RequestContext) {
 		Messages:             messages,
 		ActiveTurn:           activeTurn,
 	})
+}
+
+// tokenPtr (step 35) returns nil for 0 — distinguishing "no token data
+// for this turn" (logged before this field existed, or a provider
+// that never reported usage) from a genuine value, same reasoning
+// DurationMs's own *int64 return already applies.
+func tokenPtr(n int) *int {
+	if n == 0 {
+		return nil
+	}
+	return &n
 }

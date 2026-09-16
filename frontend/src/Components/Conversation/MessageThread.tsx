@@ -3,6 +3,7 @@ import type { ConversationMessage } from '../../api/conversations'
 import { Markdown } from '../../Shared/Components/Markdown/Markdown'
 import { ThinkingIndicator } from './ThinkingIndicator'
 import { formatDuration } from './formatDuration'
+import { formatTokenCount } from './formatTokenCount'
 
 // Renders the active conversation's messages in order, user/assistant
 // styled distinctly. No streaming — a sent message shows a
@@ -120,6 +121,8 @@ function Bubble({
         <div className="mt-1 px-1 text-xs text-gray-400">
           {formatTimestamp(message.createdAt)}
           {message.durationMs != null && ` · ${formatDuration(message.durationMs)}`}
+          {message.promptTokens != null &&
+            ` · ↑${formatTokenCount(message.promptTokens)} ↓${formatTokenCount(message.completionTokens ?? 0)}`}
         </div>
       )}
     </div>

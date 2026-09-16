@@ -196,17 +196,30 @@ func runDetachedTurn(
 		return
 	}
 
+	// totalPromptTokens/totalCompletionTokens (step 35) accumulate this
+	// turn's own real usage across its whole tool-calling loop, in
+	// addition to reportUsage's own existing live write into turn_runs
+	// (step 34) — reused, not duplicated: this is the same callback,
+	// just also summing locally so the Markdown-log Turn appended below
+	// (success or failure) can carry the same total that's already
+	// live in turn_runs by the time either AppendTurn call happens. See
+	// plan/ai/conversation/step-35-persist-per-turn-token-usage.md.
+	var totalPromptTokens, totalCompletionTokens int
 	reportUsage := func(promptTokens, completionTokens int) {
+		totalPromptTokens += promptTokens
+		totalCompletionTokens += completionTokens
 		_ = runs.AddTokenUsage(turnRunID, promptTokens, completionTokens)
 	}
 	assistantContent, err := runToolLoop(ctx, httpClient, entry, plainKey, model, messages, tools, mainDB, callerScopes, corePort, logStep, reportUsage)
 	if err != nil {
 		failedTurn := Turn{
-			UserTimestamp:  userTimestamp,
-			UserContent:    content,
-			Failed:         true,
-			ErrorTimestamp: time.Now().UTC().Format(time.RFC3339),
-			ErrorMessage:   truncateError(errorMessageFor(ctx, err)),
+			UserTimestamp:    userTimestamp,
+			UserContent:      content,
+			Failed:           true,
+			ErrorTimestamp:   time.Now().UTC().Format(time.RFC3339),
+			ErrorMessage:     truncateError(errorMessageFor(ctx, err)),
+			PromptTokens:     totalPromptTokens,
+			CompletionTokens: totalCompletionTokens,
 		}
 		if appendErr := AppendTurn(conv.FilePath, failedTurn); appendErr != nil {
 			finishTurnRun(runs, turnRunID, "failed")
@@ -225,6 +238,8 @@ func runDetachedTurn(
 		UserContent:        content,
 		AssistantTimestamp: time.Now().UTC().Format(time.RFC3339),
 		AssistantContent:   assistantContent,
+		PromptTokens:       totalPromptTokens,
+		CompletionTokens:   totalCompletionTokens,
 	}
 	if err := AppendTurn(conv.FilePath, turn); err != nil {
 		finishTurnRun(runs, turnRunID, "failed")
@@ -333,11 +348,13 @@ func ReconcileOrphanedTurnRuns(conversationDB *sql.DB, warn func(format string, 
 		}
 
 		failedTurn := Turn{
-			UserTimestamp:  run.StartedAt,
-			UserContent:    run.UserContent,
-			Failed:         true,
-			ErrorTimestamp: now,
-			ErrorMessage:   "Interrupted by a server restart",
+			UserTimestamp:    run.StartedAt,
+			UserContent:      run.UserContent,
+			Failed:           true,
+			ErrorTimestamp:   now,
+			ErrorMessage:     "Interrupted by a server restart",
+			PromptTokens:     run.PromptTokens,
+			CompletionTokens: run.CompletionTokens,
 		}
 		if err := AppendTurn(conv.FilePath, failedTurn); err != nil {
 			warn("conversation: orphaned turn run %q marked failed, but recording the error turn failed: %v", run.ID, err)

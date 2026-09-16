@@ -42,6 +42,13 @@ export interface ConversationMessage {
   failed?: boolean
   error?: string
   durationMs?: number
+  // promptTokens/completionTokens (step 35) — the real, provider-
+  // reported token usage this turn accumulated, same placement as
+  // durationMs (set on the assistant entry of a successful turn and
+  // the user entry of a failed one). Absent for a turn logged before
+  // this field existed, or one whose provider never reported usage.
+  promptTokens?: number
+  completionTokens?: number
 }
 
 // TurnRunStatus mirrors the backend's own turn_runs.status CHECK

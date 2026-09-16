@@ -579,21 +579,40 @@ func openBrowser(url string) (int, error) {
 	}
 }
 
-// launchPrivateChrome spawns a genuinely separate, private (Incognito)
-// Chrome instance — not a new tab in whatever Chrome window already
-// happens to be open. Verified directly: invoking the real binary with
-// a fresh --user-data-dir forces Chrome's own single-instance check to
-// treat this as an independent instance (its own PID, own process
-// tree), which is also what makes returning a trackable PID possible at
-// all — the OS-handoff commands (`open`, `xdg-open`, `cmd /c start`)
-// used elsewhere in this file never give one back. A normal window
-// (tab strip, address bar, reload button) is opened, not Chrome's
-// chromeless "app mode" — that was tried (step 11) and reverted (step
-// 15) once real usage showed two concrete costs: no download-shelf
-// indicator at all (a successful download gives no visible
-// confirmation), and no visible reload control on a single-page app
-// that only picks up new code on an actual reload. See
+// launchPrivateChrome spawns a genuinely separate Chrome instance — not
+// a new tab in whatever Chrome window already happens to be open.
+// Verified directly: invoking the real binary with a fresh
+// --user-data-dir forces Chrome's own single-instance check to treat
+// this as an independent instance (its own PID, own process tree),
+// which is also what makes returning a trackable PID possible at all —
+// the OS-handoff commands (`open`, `xdg-open`, `cmd /c start`) used
+// elsewhere in this file never give one back. A normal window (tab
+// strip, address bar, reload button) is opened, not Chrome's chromeless
+// "app mode" — that was tried (step 11) and reverted (step 15) once
+// real usage showed two concrete costs: no download-shelf indicator at
+// all (a successful download gives no visible confirmation), and no
+// visible reload control on a single-page app that only picks up new
+// code on an actual reload. See
 // plan/ai/build/app/step-15-revert-to-normal-private-chrome-window.md.
+//
+// No longer passes --incognito, and no longer passes
+// --no-startup-window (both tried and reverted in the same debugging
+// session): profileDir is a brand-new os.MkdirTemp dir on every single
+// launch, so Chrome always sees this as a first-ever-used default
+// profile. --incognito on the command line against a fresh profile
+// caused some Chrome versions to open a SECOND, empty, tab-less window
+// for the automatic default-profile startup in addition to the
+// requested incognito one. --no-startup-window, tried to suppress that
+// automatic window, instead suppressed the ENTIRE launch — no window
+// opened at all — because this is a brand-new process every time, with
+// no already-running Chrome instance for the trailing `url` argument to
+// be handed off to (the mechanism --no-startup-window actually assumes,
+// e.g. an OS "open with Chrome" handler talking to an already-launched
+// background instance). Neither flag survives here. A fresh, ephemeral
+// --user-data-dir alone already gives the same practical isolation from
+// the user's own regular Chrome profile (no persisted history/cookies
+// survive between launches either way, incognito or not) without
+// either of those two Incognito-adjacent quirks.
 func launchPrivateChrome(chromePath, url string) (int, error) {
 	profileDir, err := os.MkdirTemp("", "cinqo-chrome-profile-*")
 	if err != nil {
@@ -608,7 +627,6 @@ func launchPrivateChrome(chromePath, url string) (int, error) {
 
 	cmd := exec.Command(chromePath,
 		"--user-data-dir="+profileDir,
-		"--incognito",
 		"--no-first-run",
 		"--no-default-browser-check",
 		fmt.Sprintf("--remote-debugging-port=%d", debugPort),
