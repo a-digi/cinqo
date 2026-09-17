@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"embed"
 	"encoding/json"
 	"flag"
@@ -37,6 +38,7 @@ import (
 	"github.com/a-digi/cinqo/config/di"
 	auth_config "github.com/a-digi/cinqo/src/auth/config"
 	"github.com/a-digi/cinqo/src/backendapp"
+	tool_manager "github.com/a-digi/cinqo/src/tool/manager"
 )
 
 //go:embed embedded.Caddyfile
@@ -197,7 +199,7 @@ func run() error {
 		}
 	}
 
-	waitForShutdown(shutdownCh, srv, cfg.PidFile, log, frontendDir)
+	waitForShutdown(shutdownCh, srv, cfg.PidFile, log, frontendDir, ctx.GetDatabaseManager().Connector.DB)
 	return nil
 }
 
@@ -741,7 +743,7 @@ func hasVisiblePage(client *http.Client, debugPort int) bool {
 // spawned browser — then stops Caddy before the backend, since Caddy is
 // the public-facing listener and stopping the backend first would leave
 // it still accepting connections it can no longer proxy anywhere.
-func waitForShutdown(ch <-chan os.Signal, srv *http.Server, pidFile string, log logger.Logger, frontendDir string) {
+func waitForShutdown(ch <-chan os.Signal, srv *http.Server, pidFile string, log logger.Logger, frontendDir string, toolDB *sql.DB) {
 	sig := <-ch
 	log.Info("Received signal %s, shutting down...", sig)
 
@@ -749,10 +751,21 @@ func waitForShutdown(ch <-chan os.Signal, srv *http.Server, pidFile string, log 
 		log.Warning("caddy stop: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// Stopped before the backend's own HTTP shutdown below: a tool's
+	// subprocess is a child of THIS process, never of Caddy or the
+	// backend's http.Server, so nothing else here would ever reap it —
+	// left unstopped, it (and anything it in turn spawned, e.g. a
+	// headless Chrome instance a crawl started) becomes a permanently
+	// orphaned process once this one exits. Reproduced and confirmed
+	// live before this fix.
+	tool_manager.StopAll(toolDB, func(format string, args ...any) {
+		log.Warning(format, args...)
+	})
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if srv != nil {
-		if err := srv.Shutdown(ctx); err != nil {
+		if err := srv.Shutdown(shutdownCtx); err != nil {
 			log.Error("backend graceful shutdown failed: %v", err)
 		}
 	}

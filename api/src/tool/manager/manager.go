@@ -295,6 +295,29 @@ func Stop(db *sql.DB, toolID string) error {
 	return setStatusAndPID(db, toolID, "stopped", 0)
 }
 
+// StopAll stops every tool this process currently tracks as running —
+// the shutdown-time counterpart to StartAllEnabled, called once from
+// waitForShutdown (api/cmd/app/main.go) so a tool's own child OS
+// process (and anything IT in turn spawned, e.g. a headless Chrome
+// instance) doesn't outlive this process as an orphan. Best-effort per
+// tool, matching StartAllEnabled's own convention: one tool failing to
+// stop cleanly is reported through warn and does not stop the rest
+// from being attempted.
+func StopAll(db *sql.DB, warn func(format string, args ...any)) {
+	mu.Lock()
+	ids := make([]string, 0, len(processes))
+	for id := range processes {
+		ids = append(ids, id)
+	}
+	mu.Unlock()
+
+	for _, id := range ids {
+		if err := Stop(db, id); err != nil {
+			warn("tool manager: failed to stop tool %q during shutdown: %v", id, err)
+		}
+	}
+}
+
 func nextPort() int {
 	mu.Lock()
 	defer mu.Unlock()
