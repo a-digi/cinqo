@@ -175,12 +175,12 @@ func SendMessage(
 	userTimestamp := time.Now().UTC().Format(time.RFC3339)
 	messages = append(messages, chatcompleter.Message{Role: "user", Content: content})
 
-	tools, err := offerableTools(mainDB, callerScopes)
+	tools, err := offerableTools(mainDB, callerScopes, false)
 	if err != nil {
 		return nil, fmt.Errorf("conversation: look up offerable tools: %w", err)
 	}
 
-	assistantContent, err := runToolLoop(ctx, httpClient, entry, plainKey, model, messages, tools, mainDB, callerScopes, dataDir, corePort, conversationID, nil, nil, nil)
+	assistantContent, err := runToolLoop(ctx, httpClient, entry, plainKey, model, messages, tools, mainDB, callerScopes, dataDir, corePort, conversationID, conversationDB, "", 0, nil, nil, nil)
 	if err != nil {
 		// Record the user's own message AND the real failure reason —
 		// a real, recognized "## error —" block (step 8), not a
@@ -222,12 +222,21 @@ func SendMessage(
 // runToolLoop/invokeToolCall re-check again immediately before
 // actually spawning anything. See
 // plan/ai/tools/pdf-generator/step-04-ai-model-invocation.md.
-func offerableTools(mainDB *sql.DB, callerScopes []string) ([]chatcompleter.ToolDef, error) {
+// includeSubAgent controls whether the built-in spawn_subagent tool
+// (subagent.go) is appended alongside whatever real MCP tools the
+// caller's scopes unlock — true for an orchestrator turn (which has a
+// turn_runs row a spawned sub-agent can attach to), false for a
+// sub-agent's own nested loop (which must not be able to spawn a
+// sub-agent of its own — see subagent.go's own doc comment for why
+// this is the whole recursion guard, not just a default) and for
+// SendMessage's dead-but-still-compiling call site (no turn_runs row
+// to attach to at all).
+func offerableTools(mainDB *sql.DB, callerScopes []string, includeSubAgent bool) ([]chatcompleter.ToolDef, error) {
 	mcpTools, err := tool_query.NewToolMCPToolQueryRepo(mainDB).FindAllEnabled()
 	if err != nil {
 		return nil, err
 	}
-	out := make([]chatcompleter.ToolDef, 0, len(mcpTools))
+	out := make([]chatcompleter.ToolDef, 0, len(mcpTools)+3)
 	for _, t := range mcpTools {
 		if !hasScope(callerScopes, t.RequiredScope) {
 			continue
@@ -237,6 +246,9 @@ func offerableTools(mainDB *sql.DB, callerScopes []string) ([]chatcompleter.Tool
 			Description: t.Description,
 			InputSchema: json.RawMessage(t.InputSchema),
 		})
+	}
+	if includeSubAgent {
+		out = append(out, subAgentToolDef, checkSubAgentToolDef, listSubAgentsToolDef, cancelSubAgentToolDef)
 	}
 	return out, nil
 }
@@ -290,6 +302,25 @@ func runToolLoop(
 	dataDir string,
 	corePort int,
 	conversationID string,
+	// conversationDB/turnRunID/depth (step 41 — Sub Agents) are needed
+	// only to dispatch a spawn_subagent/check_subagent/list_subagents/
+	// cancel_subagent tool call: conversationDB is where sub_agent_runs
+	// lives, turnRunID is the ORIGINAL orchestrator turn every sub-agent
+	// at every nesting depth is recorded flat under (see subagent.go's
+	// own "Recursive sub-agents" doc comment), and depth is this loop's
+	// own current nesting level (0 for the orchestrator itself), passed
+	// to a spawned sub-agent as depth+1 so IT can decide whether it's
+	// still allowed to spawn further (subagent.go's own
+	// maxSubAgentDepth). turnRunID == "" (SendMessage's own dead call
+	// site only) means "no parent to attach to" — offerableTools is
+	// never asked to include the sub-agent tools in that case, so these
+	// branches are simply never reached there, not merely guarded. A
+	// spawned sub-agent runs under its own, fully independent context
+	// (see subagent.go's own "the reply returns early" doc comment) —
+	// this loop never needs to track or wait for one it spawns.
+	conversationDB *sql.DB,
+	turnRunID string,
+	depth int,
 	logStep func(step string),
 	reportUsage func(promptTokens, completionTokens int),
 	logExchange func(iteration int, messages []chatcompleter.Message, tools []chatcompleter.ToolDef, result *chatcompleter.ChatCompletionResult, err error),
@@ -376,7 +407,20 @@ func runToolLoop(
 			if logStep != nil {
 				logStep(fmt.Sprintf("iteration %d: invoking tool %s", i+1, call.Name))
 			}
-			text, links := invokeToolCall(ctx, mainDB, callerScopes, call, dataDir, corePort, conversationID)
+			var text string
+			var links []tool_mcp.ResourceLink
+			switch {
+			case call.Name == subAgentToolName && turnRunID != "":
+				text = invokeSubAgentCall(httpClient, entry, apiKey, model, mainDB, conversationDB, callerScopes, dataDir, corePort, conversationID, turnRunID, call, depth)
+			case call.Name == checkSubAgentToolName && turnRunID != "":
+				text = checkSubAgentCall(conversationDB, call)
+			case call.Name == listSubAgentsToolName && turnRunID != "":
+				text = listSubAgentsCall(conversationDB, turnRunID)
+			case call.Name == cancelSubAgentToolName && turnRunID != "":
+				text = cancelSubAgentCall(conversationDB, call)
+			default:
+				text, links = invokeToolCall(ctx, mainDB, callerScopes, call, dataDir, corePort, conversationID)
+			}
 			group = append(group, chatcompleter.Message{Role: "tool", ToolCallID: call.ID, Content: truncateToolResult(text)})
 			allLinks = append(allLinks, links...)
 		}

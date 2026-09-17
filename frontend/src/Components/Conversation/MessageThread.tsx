@@ -1,7 +1,9 @@
 import { useState } from 'react'
-import type { ConversationMessage } from '../../api/conversations'
+import { fetchSubAgentsForTurn, type ConversationMessage, type SubAgentRun } from '../../api/conversations'
+import { ApiError } from '../../api/client'
 import { Markdown } from '../../Shared/Components/Markdown/Markdown'
 import { ThinkingIndicator } from './ThinkingIndicator'
+import { SubAgentRow } from './SubAgentRow'
 import { formatDuration } from './formatDuration'
 import { formatTokenCount } from './formatTokenCount'
 
@@ -14,6 +16,7 @@ import { formatTokenCount } from './formatTokenCount'
 // live session's own transient state. See
 // plan/ai/conversation/step-05-frontend-chat-ui.md.
 export function MessageThread({
+  conversationId,
   messages,
   pendingUserContent,
   sending,
@@ -22,8 +25,13 @@ export function MessageThread({
   turnPromptTokens,
   turnCompletionTokens,
   turnTotalTokens,
+  turnSubAgents,
   onResend,
 }: {
+  // Needed only to fetch a past message's own historical sub-agent
+  // detail on demand (step 41 — Sub Agents, Bubble's own click-through)
+  // — fetchSubAgentsForTurn takes both the conversation and turn id.
+  conversationId: string
   messages: ConversationMessage[]
   pendingUserContent: string | null
   sending: boolean
@@ -39,6 +47,10 @@ export function MessageThread({
   turnPromptTokens: number
   turnCompletionTokens: number
   turnTotalTokens: number
+  // Every sub-agent the current turn has spawned so far (step 41 —
+  // Sub Agents) — [] when none have been, same live-reconciled-on-
+  // every-poll data source as the token fields above.
+  turnSubAgents: SubAgentRun[]
   onResend: (content: string) => void
 }) {
   if (messages.length === 0 && !pendingUserContent) {
@@ -48,10 +60,23 @@ export function MessageThread({
   return (
     <div className="flex-1 space-y-4 overflow-y-auto p-4">
       {messages.map((m) => (
-        <Bubble key={m.createdAt + m.role} message={m} onResend={onResend} resendDisabled={sending} />
+        <Bubble key={m.createdAt + m.role} conversationId={conversationId} message={m} onResend={onResend} resendDisabled={sending} />
       ))}
-      {pendingUserContent && (
-        <Bubble message={{ role: 'user', content: pendingUserContent, createdAt: '' }} onResend={onResend} resendDisabled={sending} />
+      {/* Gated on `sending`, not just pendingUserContent's own
+          truthiness: once the real reply is ready (sending goes false —
+          see ConversationPage.tsx's own mainReplyReady comment),
+          pendingUserContent still holds its last value until the watch
+          entry is fully torn down (which now waits for any outliving
+          sub-agents too), and the real user+assistant messages already
+          render above via `messages` — showing this too would duplicate
+          the just-sent message. */}
+      {sending && pendingUserContent && (
+        <Bubble
+          conversationId={conversationId}
+          message={{ role: 'user', content: pendingUserContent, createdAt: '' }}
+          onResend={onResend}
+          resendDisabled={sending}
+        />
       )}
       {sending && turnStartedAt && (
         <div className="flex justify-start">
@@ -64,21 +89,61 @@ export function MessageThread({
           />
         </div>
       )}
+      {/* Deliberately NOT gated on `sending` — a turn's own sub-agents
+          can keep running well after its own reply already appeared
+          above (step 41's "the reply returns early" change), and this
+          is what keeps that visible live instead of only being
+          reachable via a past message's own one-click historical
+          lookup (Bubble's own toggleSubAgents, below). */}
+      {turnSubAgents.length > 0 && (
+        <div className="flex justify-start">
+          <div className="max-w-lg space-y-1 rounded-md border border-gray-200 bg-white p-2 text-xs text-gray-400">
+            <p className="font-medium text-gray-500">
+              {turnSubAgents.some((a) => a.status === 'running') ? 'Sub-agents still working…' : 'Sub-agents'}
+            </p>
+            {turnSubAgents.map((agent) => (
+              <SubAgentRow key={agent.id} agent={agent} />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
 function Bubble({
+  conversationId,
   message,
   onResend,
   resendDisabled,
 }: {
+  conversationId: string
   message: ConversationMessage
   onResend: (content: string) => void
   resendDisabled: boolean
 }) {
   const [showError, setShowError] = useState(false)
+  // Historical sub-agent detail (step 41) — fetched lazily, only on
+  // the first click of "N sub-agents" below, never eagerly for every
+  // message in the thread. undefined = not yet fetched, null = fetch
+  // failed, [] = fetched, none found (shouldn't happen if
+  // subAgentCount > 0, but handled rather than assumed).
+  const [subAgents, setSubAgents] = useState<SubAgentRun[] | null | undefined>(undefined)
+  const [subAgentsError, setSubAgentsError] = useState('')
+  const [showSubAgents, setShowSubAgents] = useState(false)
   const isUser = message.role === 'user'
+
+  function toggleSubAgents() {
+    const next = !showSubAgents
+    setShowSubAgents(next)
+    if (next && subAgents === undefined && message.turnRunId) {
+      fetchSubAgentsForTurn(conversationId, message.turnRunId)
+        .then(setSubAgents)
+        .catch((err: unknown) => {
+          setSubAgentsError(err instanceof ApiError ? err.message : 'Failed to load sub-agents.')
+        })
+    }
+  }
 
   return (
     <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'}`}>
@@ -123,6 +188,22 @@ function Bubble({
           {message.durationMs != null && ` · ${formatDuration(message.durationMs)}`}
           {message.promptTokens != null &&
             ` · ↑${formatTokenCount(message.promptTokens)} ↓${formatTokenCount(message.completionTokens ?? 0)}`}
+          {message.subAgentCount != null && message.turnRunId && (
+            <>
+              {' · '}
+              <button type="button" onClick={toggleSubAgents} className="underline hover:text-gray-600">
+                {message.subAgentCount} sub-agent{message.subAgentCount === 1 ? '' : 's'}
+              </button>
+            </>
+          )}
+        </div>
+      )}
+      {showSubAgents && (
+        <div className="mt-1 max-w-lg space-y-1 rounded-md border border-gray-200 bg-white p-2">
+          {subAgentsError && <p className="text-xs text-red-600">{subAgentsError}</p>}
+          {subAgents === undefined && !subAgentsError && <p className="text-xs text-gray-400">Loading…</p>}
+          {subAgents?.length === 0 && <p className="text-xs text-gray-400">No sub-agents found.</p>}
+          {subAgents?.map((agent) => <SubAgentRow key={agent.id} agent={agent} />)}
         </div>
       )}
     </div>

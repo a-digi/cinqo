@@ -173,6 +173,10 @@ func Start(opts Options) (srv *http.Server, cfg *server.Config, ctx *di.ContextB
 	// simply vanishing. See
 	// plan/ai/conversation/step-23-detach-turn-execution-from-request.md.
 	conversation.ReconcileOrphanedTurnRuns(conversationManager.Connector.DB, func(format string, args ...any) { log.Warning(format, args...) })
+	// Sub Agents (step 41) — same "a goroutine has no PID to reattach
+	// to" reasoning, one level down: a sub-agent run orphaned by this
+	// same restart needs its own reconciliation pass.
+	conversation.ReconcileOrphanedSubAgentRuns(conversationManager.Connector.DB, func(format string, args ...any) { log.Warning(format, args...) })
 
 	// Platform API-key encryption key — loaded/generated once at
 	// bootstrap, deliberately never sourced from config.json (step 2),

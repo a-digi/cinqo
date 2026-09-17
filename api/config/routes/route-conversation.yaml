@@ -77,6 +77,19 @@ routes:
       - cinqo:conversation:use
       - cinqo:super:admin
 
+  # step-41-sub-agents.md — historical sub-agent detail for ANY past
+  # turn of this conversation (turnRunId is caller-supplied and
+  # ownership-checked against {id} in the handler itself), unlike
+  # .../turns/active above which only ever covers the conversation's
+  # current/most-recent turn.
+  - path: /api/v1/conversations/{id}/turns/{turnRunId}/subagents
+    method: GET
+    executor: ConversationGetTurnSubAgents
+    security: authenticated
+    scopes:
+      - cinqo:conversation:use
+      - cinqo:super:admin
+
   # step-36-ai-trace-logs.md — diagnostic view of the full raw
   # request/response exchange with the AI model, one .txt file per
   # turn. No ?turnId= lists every turn with a trace file; ?turnId=<id>

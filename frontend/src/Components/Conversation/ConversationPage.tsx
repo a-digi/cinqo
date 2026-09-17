@@ -46,13 +46,19 @@ export function ConversationPage() {
   // still only ever shows one conversation's own thread at a time,
   // even though the registry can track several concurrently.
   const watch = selectedId ? turnWatches[selectedId] : undefined
-  const sending = !!watch
+  // !watch.mainReplyReady (step 41 follow-up): once the orchestrator's
+  // own reply is fetched, the watch entry can stay alive (still
+  // tracking any sub-agents that outlive it), but ThinkingIndicator
+  // should stop showing — the real reply already exists as its own
+  // message by then.
+  const sending = !!watch && !watch.mainReplyReady
   const pendingUserContent = watch?.pendingUserContent ?? null
   const turnStartedAt = watch?.turnStartedAt ?? null
   const turnClockOffsetMs = watch?.turnClockOffsetMs ?? 0
   const turnPromptTokens = watch?.promptTokens ?? 0
   const turnCompletionTokens = watch?.completionTokens ?? 0
   const turnTotalTokens = watch?.totalTokens ?? 0
+  const turnSubAgents = watch?.subAgents ?? []
   const [platforms, setPlatforms] = useState<Platform[] | null>(null)
   const [platformsError, setPlatformsError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -177,6 +183,7 @@ export function ConversationPage() {
         {!creatingNew && selectedId && detail && (
           <>
             <MessageThread
+              conversationId={selectedId}
               messages={detail.messages}
               pendingUserContent={pendingUserContent}
               sending={sending}
@@ -185,6 +192,7 @@ export function ConversationPage() {
               turnPromptTokens={turnPromptTokens}
               turnCompletionTokens={turnCompletionTokens}
               turnTotalTokens={turnTotalTokens}
+              turnSubAgents={turnSubAgents}
               onResend={(content) => void sendMessage(selectedId, content)}
             />
             <MessageComposer

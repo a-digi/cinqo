@@ -47,6 +47,22 @@ type Turn struct {
 	// plan/ai/conversation/step-35-persist-per-turn-token-usage.md.
 	PromptTokens     int
 	CompletionTokens int
+	// SubAgentCount (step 41 — Sub Agents) is how many sub-agents this
+	// turn spawned, persisted so the historical view still shows that
+	// this turn used them after its own live sub_agent_runs panel
+	// (GetActiveTurnHandler's own subAgents[]) stops being polled. The
+	// full per-sub-agent detail (task/result/log) stays in sub_agent_runs
+	// itself, keyed by turn_runs.id — not duplicated into this Markdown
+	// log, which only ever needed a count. Zero for every turn logged
+	// before this field existed, or one that spawned none.
+	SubAgentCount int
+	// TurnRunID (step 41 — Sub Agents) is this turn's own turn_runs.id
+	// — persisted so a client can look up that turn's own sub-agents
+	// later via GET .../turns/{turnRunId}/subagents, even long after
+	// this turn is no longer "the conversation's most recent turn"
+	// (the only one GetActiveTurnHandler itself ever covers). Empty for
+	// every turn logged before this field existed.
+	TurnRunID string
 }
 
 // DurationMs returns how long this turn took to resolve — from the
@@ -113,11 +129,11 @@ var (
 // turn correctly.
 func formatTurn(t Turn) string {
 	if t.Failed {
-		return fmt.Sprintf("## user — %s\n\n%s\n\n## error — %s%s\n\n%s\n\n",
-			t.UserTimestamp, t.UserContent, t.ErrorTimestamp, tokenSuffix(t.PromptTokens, t.CompletionTokens), t.ErrorMessage)
+		return fmt.Sprintf("## user — %s\n\n%s\n\n## error — %s%s%s%s\n\n%s\n\n",
+			t.UserTimestamp, t.UserContent, t.ErrorTimestamp, tokenSuffix(t.PromptTokens, t.CompletionTokens), subAgentSuffix(t.SubAgentCount), turnRunIDSuffix(t.TurnRunID), t.ErrorMessage)
 	}
-	return fmt.Sprintf("## user — %s\n\n%s\n\n## assistant — %s%s\n\n%s\n\n",
-		t.UserTimestamp, t.UserContent, t.AssistantTimestamp, tokenSuffix(t.PromptTokens, t.CompletionTokens), t.AssistantContent)
+	return fmt.Sprintf("## user — %s\n\n%s\n\n## assistant — %s%s%s%s\n\n%s\n\n",
+		t.UserTimestamp, t.UserContent, t.AssistantTimestamp, tokenSuffix(t.PromptTokens, t.CompletionTokens), subAgentSuffix(t.SubAgentCount), turnRunIDSuffix(t.TurnRunID), t.AssistantContent)
 }
 
 // tokenSuffix (step 35) appends " prompt=N completion=N" to an
@@ -133,18 +149,42 @@ func tokenSuffix(promptTokens, completionTokens int) string {
 	return fmt.Sprintf(" prompt=%d completion=%d", promptTokens, completionTokens)
 }
 
+// subAgentSuffix (step 41 — Sub Agents) appends " subagents=N" the same
+// way tokenSuffix appends its own fields — omitted entirely when N is
+// 0, so a turn that never spawned one renders byte-identical to before
+// this field existed.
+func subAgentSuffix(count int) string {
+	if count == 0 {
+		return ""
+	}
+	return fmt.Sprintf(" subagents=%d", count)
+}
+
+// turnRunIDSuffix (step 41 — Sub Agents) appends " turn=<id>" — a
+// bare UUID, no spaces, so it round-trips through the same
+// whitespace-split parsing every other suffix here already uses.
+// Omitted entirely when empty, matching every sibling suffix's own
+// "renders byte-identical to before this field existed" convention.
+func turnRunIDSuffix(turnRunID string) string {
+	if turnRunID == "" {
+		return ""
+	}
+	return " turn=" + turnRunID
+}
+
 // parseHeaderTimestampAndTokens splits an "## assistant —"/"## error —"
 // header's own already-captured rest-of-line text into its timestamp
-// plus an optional " prompt=N completion=N" suffix (step 35) — never
-// applied to the "## user —" header, which never carries tokens. An
-// old entry with only a bare timestamp (no suffix) parses identically
-// to before this step: both token fields default to 0. No regex
+// plus optional " prompt=N completion=N" (step 35), " subagents=N",
+// and " turn=<id>" (step 41) suffixes — never applied to the "## user
+// —" header, which never carries any of them. An old entry with only
+// a bare timestamp (no suffix) parses identically to before every one
+// of these steps: every field defaults to its zero value. No regex
 // change needed anywhere — userHeaderRe/assistantHeaderRe/errorHeaderRe
 // already capture the whole rest of the line via `(.*)$`.
-func parseHeaderTimestampAndTokens(raw string) (timestamp string, promptTokens, completionTokens int) {
+func parseHeaderTimestampAndTokens(raw string) (timestamp string, promptTokens, completionTokens, subAgentCount int, turnRunID string) {
 	fields := strings.Fields(raw)
 	if len(fields) == 0 {
-		return "", 0, 0
+		return "", 0, 0, 0, ""
 	}
 	timestamp = fields[0]
 	for _, f := range fields[1:] {
@@ -154,8 +194,14 @@ func parseHeaderTimestampAndTokens(raw string) (timestamp string, promptTokens, 
 		if v, ok := strings.CutPrefix(f, "completion="); ok {
 			completionTokens, _ = strconv.Atoi(v)
 		}
+		if v, ok := strings.CutPrefix(f, "turn="); ok {
+			turnRunID = v
+		}
+		if v, ok := strings.CutPrefix(f, "subagents="); ok {
+			subAgentCount, _ = strconv.Atoi(v)
+		}
 	}
-	return timestamp, promptTokens, completionTokens
+	return timestamp, promptTokens, completionTokens, subAgentCount, turnRunID
 }
 
 func renderTurns(turns []Turn) string {
@@ -194,7 +240,7 @@ func parseTurns(content string) []Turn {
 		}
 
 		if assistantHeader := assistantHeaderRe.FindStringSubmatchIndex(block); assistantHeader != nil {
-			ts, promptTokens, completionTokens := parseHeaderTimestampAndTokens(block[assistantHeader[2]:assistantHeader[3]])
+			ts, promptTokens, completionTokens, subAgentCount, turnRunID := parseHeaderTimestampAndTokens(block[assistantHeader[2]:assistantHeader[3]])
 			turns = append(turns, Turn{
 				UserTimestamp:      block[userHeader[2]:userHeader[3]],
 				UserContent:        strings.TrimSpace(block[userHeader[1]:assistantHeader[0]]),
@@ -202,12 +248,14 @@ func parseTurns(content string) []Turn {
 				AssistantContent:   strings.TrimSpace(block[assistantHeader[1]:]),
 				PromptTokens:       promptTokens,
 				CompletionTokens:   completionTokens,
+				SubAgentCount:      subAgentCount,
+				TurnRunID:          turnRunID,
 			})
 			continue
 		}
 
 		if errorHeader := errorHeaderRe.FindStringSubmatchIndex(block); errorHeader != nil {
-			ts, promptTokens, completionTokens := parseHeaderTimestampAndTokens(block[errorHeader[2]:errorHeader[3]])
+			ts, promptTokens, completionTokens, subAgentCount, turnRunID := parseHeaderTimestampAndTokens(block[errorHeader[2]:errorHeader[3]])
 			turns = append(turns, Turn{
 				UserTimestamp:    block[userHeader[2]:userHeader[3]],
 				UserContent:      strings.TrimSpace(block[userHeader[1]:errorHeader[0]]),
@@ -216,6 +264,8 @@ func parseTurns(content string) []Turn {
 				ErrorMessage:     strings.TrimSpace(block[errorHeader[1]:]),
 				PromptTokens:     promptTokens,
 				CompletionTokens: completionTokens,
+				SubAgentCount:    subAgentCount,
+				TurnRunID:        turnRunID,
 			})
 			continue
 		}

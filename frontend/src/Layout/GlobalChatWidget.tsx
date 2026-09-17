@@ -45,13 +45,16 @@ export function GlobalChatWidget() {
   // a time, even though the registry can track several concurrently
   // (e.g. one started from this widget, another from the full page).
   const watch = selectedId ? turnWatches[selectedId] : undefined
-  const sending = !!watch
+  // !watch.mainReplyReady (step 41 follow-up) — see ConversationPage.tsx's
+  // own identical comment.
+  const sending = !!watch && !watch.mainReplyReady
   const pendingUserContent = watch?.pendingUserContent ?? null
   const turnStartedAt = watch?.turnStartedAt ?? null
   const turnClockOffsetMs = watch?.turnClockOffsetMs ?? 0
   const turnPromptTokens = watch?.promptTokens ?? 0
   const turnCompletionTokens = watch?.completionTokens ?? 0
   const turnTotalTokens = watch?.totalTokens ?? 0
+  const turnSubAgents = watch?.subAgents ?? []
   const { confirm, dialog } = useConfirm()
   const [busyId, setBusyId] = useState<string | null>(null)
 
@@ -253,6 +256,7 @@ export function GlobalChatWidget() {
           ) : (
             <>
               <MessageThread
+                conversationId={selectedId}
                 messages={detail.messages}
                 pendingUserContent={pendingUserContent}
                 sending={sending}
@@ -261,6 +265,7 @@ export function GlobalChatWidget() {
                 turnPromptTokens={turnPromptTokens}
                 turnCompletionTokens={turnCompletionTokens}
                 turnTotalTokens={turnTotalTokens}
+                turnSubAgents={turnSubAgents}
                 onResend={(content) => void sendMessage(detail.id, content)}
               />
               <MessageComposer

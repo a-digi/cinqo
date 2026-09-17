@@ -49,6 +49,16 @@ export interface ConversationMessage {
   // this field existed, or one whose provider never reported usage.
   promptTokens?: number
   completionTokens?: number
+  // subAgentCount (step 41 — Sub Agents) — how many sub-agents this
+  // turn spawned, persisted so it's still visible once the turn's own
+  // live subAgents[] panel (ActiveTurn, above) stops being polled.
+  // Full per-sub-agent detail (task/result) isn't repeated here —
+  // fetch it on demand via fetchSubAgentsForTurn(turnRunId) below.
+  subAgentCount?: number
+  // turnRunId (step 41) — present whenever subAgentCount is; the key
+  // fetchSubAgentsForTurn needs to look up this turn's own full
+  // sub-agent detail, however long ago this turn finished.
+  turnRunId?: string
 }
 
 // TurnRunStatus mirrors the backend's own turn_runs.status CHECK
@@ -83,6 +93,26 @@ export interface ActiveTurnSummary {
 // this turn once it finishes, so a page reopened mid-turn needs this
 // to show it) and a coarse, step-by-step trace of the tool-calling
 // loop's own progress — never raw model/tool output.
+// SubAgentRun (step 41 — Sub Agents) is one sub-task the orchestrator's
+// own tool-calling loop delegated to a separate, independent loop —
+// same live-updating-while-running shape as ActiveTurn itself (its own
+// log/token fields), since it's backed by the same polling response.
+// result is '' while status is 'running', and stays '' for a
+// 'failed'/'cancelled' run (see api/src/conversation/subagent.go's own
+// reasoning: the error text goes into `log`, matching how a normal
+// turn's own failure never becomes its "result" either).
+export interface SubAgentRun {
+  id: string
+  task: string
+  status: TurnRunStatus
+  result: string
+  log: string[]
+  startedAt: string
+  promptTokens: number
+  completionTokens: number
+  totalTokens: number
+}
+
 export interface ActiveTurn extends ActiveTurnSummary {
   userContent: string
   log: string[]
@@ -94,6 +124,10 @@ export interface ActiveTurn extends ActiveTurnSummary {
   promptTokens: number
   completionTokens: number
   totalTokens: number
+  // subAgents (step 41) — every sub-agent this turn has spawned so
+  // far, oldest first. Absent (never an empty array) when none have
+  // been spawned.
+  subAgents?: SubAgentRun[]
 }
 
 export interface ConversationDetail extends Conversation {
@@ -158,6 +192,18 @@ export async function sendMessage(conversationId: string, input: { content: stri
 // when no turn has ever been started for this conversation.
 export async function fetchActiveTurn(conversationId: string): Promise<ActiveTurn> {
   const raw = await apiGet<{ message: ActiveTurn }>(`/api/v1/conversations/${encodeURIComponent(conversationId)}/turns/active`)
+  return raw.message
+}
+
+// fetchSubAgentsForTurn (step 41 — Sub Agents) looks up a SPECIFIC
+// past turn's own sub-agents, however long ago it finished — unlike
+// fetchActiveTurn above, which only ever covers the conversation's
+// current/most-recent turn. Backs the click-through from a historical
+// message's own "N sub-agents" indicator (MessageThread.tsx).
+export async function fetchSubAgentsForTurn(conversationId: string, turnRunId: string): Promise<SubAgentRun[]> {
+  const raw = await apiGet<{ message: SubAgentRun[] }>(
+    `/api/v1/conversations/${encodeURIComponent(conversationId)}/turns/${encodeURIComponent(turnRunId)}/subagents`,
+  )
   return raw.message
 }
 

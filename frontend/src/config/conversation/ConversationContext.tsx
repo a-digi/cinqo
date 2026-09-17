@@ -11,6 +11,7 @@ import {
   deleteConversation as deleteConversationApi,
   type Conversation,
   type ConversationDetail,
+  type SubAgentRun,
 } from '../../api/conversations'
 import { ApiError } from '../../api/client'
 
@@ -45,6 +46,22 @@ export interface TurnWatch {
   promptTokens: number
   completionTokens: number
   totalTokens: number
+  // subAgents (step 41 — Sub Agents) — reconciled on every poll, same
+  // as promptTokens/completionTokens/totalTokens above, straight from
+  // the same fetchActiveTurn response.
+  subAgents: SubAgentRun[]
+  // mainReplyReady (step 41 follow-up — sub-agents outlive the reply)
+  // — false while the orchestrator's own reply is still in flight,
+  // true from the moment it's been fetched into `detail`. Sending/
+  // ThinkingIndicator should stop showing once this flips (the real
+  // reply already exists as its own message) — but this watch entry
+  // stays alive, and subAgents keeps being polled, until every
+  // sub-agent it lists has ALSO left "running": since step 41's own
+  // "the reply returns early" change, a turn's own sub-agents can keep
+  // working well after the turn itself finishes, and this is what
+  // keeps that visible live instead of freezing into a stale snapshot
+  // the moment the reply appears.
+  mainReplyReady: boolean
 }
 
 export interface ConversationContextValue {
@@ -128,14 +145,25 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   const watchTokensRef = useRef<Record<string, number>>({})
 
   // watchTurn polls GET .../turns/active for conversationId every
-  // TURN_POLL_INTERVAL_MS until the run leaves "running", then
-  // refetches the full conversation for the real, finished message —
-  // the per-conversation-ID replacement for the old single-scalar
-  // pollUntilFinished (plan/ai/conversation/step-23). Safe to call
-  // either right after starting a new turn, or on selection to resume
-  // watching one already in progress. Runs to completion independently
-  // of any other conversation's own watchTurn call, and independently
-  // of whether conversationId stays selected for its whole duration.
+  // TURN_POLL_INTERVAL_MS until the run AND every sub-agent it spawned
+  // have both left "running" — the per-conversation-ID replacement for
+  // the old single-scalar pollUntilFinished (plan/ai/conversation/step-23).
+  // Safe to call either right after starting a new turn, or on
+  // selection to resume watching one already in progress. Runs to
+  // completion independently of any other conversation's own watchTurn
+  // call, and independently of whether conversationId stays selected
+  // for its whole duration.
+  //
+  // Two-phase since step 41's own "the reply returns early" backend
+  // change: the turn itself can finish (and its real reply become
+  // fetchable) well before its own sub-agents do. mainReplyFetched
+  // marks the moment that first happens — the conversation is refetched
+  // ONCE right then (so the real reply appears immediately, not delayed
+  // by however much longer any sub-agent takes), and mainReplyReady is
+  // set on the watch entry so sending/ThinkingIndicator stop showing a
+  // now-redundant "thinking" placeholder — but the loop itself keeps
+  // going, still polling subAgents, until every one of them has ALSO
+  // left "running". Only then is the watch entry actually removed.
   const watchTurn = useCallback(async (conversationId: string) => {
     const myToken = (watchTokensRef.current[conversationId] ?? 0) + 1
     watchTokensRef.current[conversationId] = myToken
@@ -152,8 +180,28 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         promptTokens: 0,
         completionTokens: 0,
         totalTokens: 0,
+        subAgents: [],
+        mainReplyReady: false,
       },
     }))
+
+    let mainReplyFetched = false
+
+    const fetchMainReply = async () => {
+      try {
+        const d = await fetchConversation(conversationId)
+        if (watchTokensRef.current[conversationId] === myToken) {
+          // Only overwrites the open detail pane if the user is still
+          // actually looking at this conversation — a background watch
+          // finishing must not clobber whatever conversation is
+          // currently selected.
+          setDetail((prev) => (prev?.id === conversationId ? d : prev))
+        }
+      } catch {
+        // Best-effort refresh — matches this codebase's own established
+        // "a failure here doesn't need its own error message" convention.
+      }
+    }
 
     for (;;) {
       let turn
@@ -200,36 +248,44 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
                 promptTokens: turn.promptTokens,
                 completionTokens: turn.completionTokens,
                 totalTokens: turn.totalTokens,
+                subAgents: turn.subAgents ?? [],
               },
             }
           : prev,
       )
-      if (turn.status !== 'running') break
+
+      const subAgentsStillRunning = (turn.subAgents ?? []).some((a) => a.status === 'running')
+
+      if (turn.status !== 'running' && !mainReplyFetched) {
+        mainReplyFetched = true
+        await fetchMainReply()
+        if (watchTokensRef.current[conversationId] !== myToken) return // superseded
+        setTurnWatches((prev) =>
+          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+          prev[conversationId] ? { ...prev, [conversationId]: { ...prev[conversationId], mainReplyReady: true } } : prev,
+        )
+      }
+
+      if (turn.status !== 'running' && !subAgentsStillRunning) break
       await new Promise((resolve) => setTimeout(resolve, TURN_POLL_INTERVAL_MS))
       if (watchTokensRef.current[conversationId] !== myToken) return // superseded
     }
 
-    try {
-      const d = await fetchConversation(conversationId)
-      if (watchTokensRef.current[conversationId] === myToken) {
-        // Only overwrites the open detail pane if the user is still
-        // actually looking at this conversation — a background watch
-        // finishing must not clobber whatever conversation is
-        // currently selected.
-        setDetail((prev) => (prev?.id === conversationId ? d : prev))
-      }
-    } catch {
-      // Best-effort refresh — matches this codebase's own established
-      // "a failure here doesn't need its own error message" convention.
-    } finally {
-      if (watchTokensRef.current[conversationId] === myToken) {
-        setTurnWatches((prev) => {
-          if (!(conversationId in prev)) return prev
-          const next = { ...prev }
-          Reflect.deleteProperty(next, conversationId)
-          return next
-        })
-      }
+    // Reached once the turn AND every sub-agent it spawned have both
+    // left "running" — or the poll loop broke early on a lookup
+    // failure, in which case mainReplyFetched may still be false and
+    // this is the same one-shot best-effort refresh watchTurn always
+    // did before sub-agents could outlive the turn itself.
+    if (!mainReplyFetched) {
+      await fetchMainReply()
+    }
+    if (watchTokensRef.current[conversationId] === myToken) {
+      setTurnWatches((prev) => {
+        if (!(conversationId in prev)) return prev
+        const next = { ...prev }
+        Reflect.deleteProperty(next, conversationId)
+        return next
+      })
     }
   }, [])
 
@@ -365,6 +421,8 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
             promptTokens: 0,
             completionTokens: 0,
             totalTokens: 0,
+            subAgents: [],
+            mainReplyReady: false,
           },
         }))
       }

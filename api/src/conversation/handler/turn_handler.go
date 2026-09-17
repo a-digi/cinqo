@@ -60,6 +60,50 @@ type activeTurnResponse struct {
 	PromptTokens     int `json:"promptTokens"`
 	CompletionTokens int `json:"completionTokens"`
 	TotalTokens      int `json:"totalTokens"`
+	// SubAgents (step 41 — Sub Agents) — every sub-agent this turn has
+	// spawned so far, oldest first, live-updating on every poll exactly
+	// like the parent turn's own Log/token fields already do. Omitted
+	// (never an empty array) when this turn has spawned none, so older
+	// clients that don't render it see no change in the response shape.
+	SubAgents []subAgentRunResponse `json:"subAgents,omitempty"`
+}
+
+// subAgentRunResponse mirrors activeTurnResponse's own shape for one
+// sub_agent_runs row — Task instead of UserContent, Result instead of
+// "the conversation's own Markdown log gains it once finished" (a
+// sub-agent has no Markdown log of its own to gain it in).
+type subAgentRunResponse struct {
+	ID               string   `json:"id"`
+	Task             string   `json:"task"`
+	Status           string   `json:"status"`
+	Result           string   `json:"result,omitempty"`
+	Log              []string `json:"log"`
+	StartedAt        string   `json:"startedAt"`
+	PromptTokens     int      `json:"promptTokens"`
+	CompletionTokens int      `json:"completionTokens"`
+	TotalTokens      int      `json:"totalTokens"`
+}
+
+func toSubAgentRunResponse(s *conversation_entity.SubAgentRun) subAgentRunResponse {
+	lines := strings.Split(strings.TrimRight(s.Log, "\n"), "\n")
+	if len(lines) == 1 && lines[0] == "" {
+		lines = []string{}
+	}
+	result := ""
+	if s.Result != nil {
+		result = *s.Result
+	}
+	return subAgentRunResponse{
+		ID:               s.ID,
+		Task:             s.Task,
+		Status:           s.Status,
+		Result:           result,
+		Log:              lines,
+		StartedAt:        s.StartedAt,
+		PromptTokens:     s.PromptTokens,
+		CompletionTokens: s.CompletionTokens,
+		TotalTokens:      s.TotalTokens,
+	}
 }
 
 func toActiveTurnSummaryResponse(t *conversation_entity.TurnRun) activeTurnSummaryResponse {
@@ -71,10 +115,17 @@ func toActiveTurnSummaryResponse(t *conversation_entity.TurnRun) activeTurnSumma
 	}
 }
 
-func toActiveTurnResponse(t *conversation_entity.TurnRun) activeTurnResponse {
+func toActiveTurnResponse(t *conversation_entity.TurnRun, subAgents []*conversation_entity.SubAgentRun) activeTurnResponse {
 	lines := strings.Split(strings.TrimRight(t.Log, "\n"), "\n")
 	if len(lines) == 1 && lines[0] == "" {
 		lines = []string{}
+	}
+	var subAgentResponses []subAgentRunResponse
+	if len(subAgents) > 0 {
+		subAgentResponses = make([]subAgentRunResponse, 0, len(subAgents))
+		for _, s := range subAgents {
+			subAgentResponses = append(subAgentResponses, toSubAgentRunResponse(s))
+		}
 	}
 	return activeTurnResponse{
 		activeTurnSummaryResponse: toActiveTurnSummaryResponse(t),
@@ -83,6 +134,7 @@ func toActiveTurnResponse(t *conversation_entity.TurnRun) activeTurnResponse {
 		PromptTokens:              t.PromptTokens,
 		CompletionTokens:          t.CompletionTokens,
 		TotalTokens:               t.TotalTokens,
+		SubAgents:                 subAgentResponses,
 	}
 }
 
@@ -138,7 +190,71 @@ func GetActiveTurnHandler(reqCtx request.RequestContext) {
 		return
 	}
 
-	response.SuccessResponse(w, http.StatusOK, toActiveTurnResponse(run))
+	subAgents, err := conversation_query.NewSubAgentRunQueryRepo(db).FindByParentTurnRunID(run.ID)
+	if err != nil {
+		response.ErrorResponse(w, http.StatusInternalServerError, "failed to look up sub-agent runs")
+		return
+	}
+
+	response.SuccessResponse(w, http.StatusOK, toActiveTurnResponse(run, subAgents))
+}
+
+// GetTurnSubAgentsHandler handles GET
+// /api/v1/conversations/{id}/turns/{turnRunId}/subagents — historical
+// sub-agent detail for ANY past turn of this conversation, not just
+// its current/most-recent one (GetActiveTurnHandler's own scope).
+// turnRunId is caller-supplied, so its own conversation_id is verified
+// against {id} before returning anything — otherwise a caller could
+// probe another conversation's turn_runs by guessing/copying an id
+// (ownership of {id} alone isn't enough, since a valid, owned {id}
+// paired with an arbitrary turnRunId would otherwise still work).
+func GetTurnSubAgentsHandler(reqCtx request.RequestContext) {
+	w := reqCtx.GetWriter()
+	id := reqCtx.GetURI().GetPathVariable("id")
+	turnRunID := reqCtx.GetURI().GetPathVariable("turnRunId")
+	if id == "" || turnRunID == "" {
+		response.ErrorResponse(w, http.StatusBadRequest, "id and turnRunId are required")
+		return
+	}
+
+	userID, err := callerUserID(reqCtx)
+	if err != nil {
+		response.ErrorResponse(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	db, err := conversationDB(reqCtx)
+	if err != nil {
+		response.ErrorResponse(w, http.StatusInternalServerError, "conversation database not configured")
+		return
+	}
+
+	if _, err := conversation_query.NewConversationQueryRepo(db).FindOwnedByID(id, userID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			response.ErrorResponse(w, http.StatusNotFound, "conversation not found")
+			return
+		}
+		response.ErrorResponse(w, http.StatusInternalServerError, "failed to look up conversation")
+		return
+	}
+
+	run, err := conversation_query.NewTurnRunQueryRepo(db).FindByID(turnRunID)
+	if err != nil || run.ConversationID != id {
+		response.ErrorResponse(w, http.StatusNotFound, "turn not found")
+		return
+	}
+
+	subAgents, err := conversation_query.NewSubAgentRunQueryRepo(db).FindByParentTurnRunID(turnRunID)
+	if err != nil {
+		response.ErrorResponse(w, http.StatusInternalServerError, "failed to look up sub-agent runs")
+		return
+	}
+
+	out := make([]subAgentRunResponse, 0, len(subAgents))
+	for _, s := range subAgents {
+		out = append(out, toSubAgentRunResponse(s))
+	}
+	response.SuccessResponse(w, http.StatusOK, out)
 }
 
 type stopTurnResponse struct {
@@ -149,14 +265,18 @@ type stopTurnResponse struct {
 // /api/v1/conversations/{id}/turns/active/stop — the caller's own
 // conversation only (wrong owner and nonexistent both read as the same
 // 404, matching every other handler in this feature). Idempotent: a
-// doubled click, or a stop arriving just after the turn already
-// finished on its own, both 404 rather than erroring — there is
-// nothing left to stop either way. Cancellation itself is
-// asynchronous (see conversation.CancelActiveTurn's own doc comment):
-// this responds 202 the moment the signal is sent, not once the run
-// has actually stopped — the caller is expected to keep polling GET
-// .../turns/active until its status leaves "running". See
-// plan/ai/conversation/step-25-cancel-in-progress-turn.md.
+// doubled click, or a stop arriving once there's genuinely nothing left
+// running (turn finished AND no sub-agents still going), both 404
+// rather than erroring. Looks up the conversation's most recent turn
+// regardless of its own status (not "running only") — since step 41's
+// "the reply returns early" change, that turn's own sub-agents can
+// still be running well after it itself shows terminal, and stopping
+// those is still a real, meaningful action even though the turn's own
+// reply already came back. Cancellation itself is asynchronous (see
+// conversation.CancelActiveTurn's own doc comment): this responds 202
+// the moment the signal is sent, not once everything has actually
+// stopped. See plan/ai/conversation/step-25-cancel-in-progress-turn.md
+// and plan/ai/conversation/step-41-sub-agents.md.
 func StopActiveTurnHandler(reqCtx request.RequestContext) {
 	w := reqCtx.GetWriter()
 	id := reqCtx.GetURI().GetPathVariable("id")
@@ -186,21 +306,33 @@ func StopActiveTurnHandler(reqCtx request.RequestContext) {
 		return
 	}
 
-	run, err := conversation_query.NewTurnRunQueryRepo(db).FindActiveByConversationID(id)
+	// FindMostRecentByConversationID, not FindActiveByConversationID —
+	// since step 41's "the reply returns early" change, a turn's own
+	// sub-agents can still be running well after the turn itself already
+	// shows terminal, and there's still something real to stop in that
+	// case. CancelActiveTurn itself now decides what, if anything, is
+	// actually cancellable (the turn, its sub-agents, both, or neither).
+	run, err := conversation_query.NewTurnRunQueryRepo(db).FindMostRecentByConversationID(id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			response.ErrorResponse(w, http.StatusNotFound, "no turn is currently running for this conversation")
+			response.ErrorResponse(w, http.StatusNotFound, "no turn has been started for this conversation")
 			return
 		}
 		response.ErrorResponse(w, http.StatusInternalServerError, "failed to look up active turn")
 		return
 	}
 
-	if err := conversation_persistent.NewTurnRunPersistentRepo(db).SetCancelRequested(run.ID); err != nil {
-		response.ErrorResponse(w, http.StatusInternalServerError, "failed to record cancel request")
+	if run.Status == "running" {
+		if err := conversation_persistent.NewTurnRunPersistentRepo(db).SetCancelRequested(run.ID); err != nil {
+			response.ErrorResponse(w, http.StatusInternalServerError, "failed to record cancel request")
+			return
+		}
+	}
+
+	if !conversation.CancelActiveTurn(db, run.ID) {
+		response.ErrorResponse(w, http.StatusNotFound, "nothing is currently running for this conversation")
 		return
 	}
-	conversation.CancelActiveTurn(run.ID)
 
 	response.SuccessResponse(w, http.StatusAccepted, stopTurnResponse{Status: "cancelling"})
 }

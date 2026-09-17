@@ -33,6 +33,18 @@ type messageResponse struct {
 	// never reported usage — see tokenPtr, below.
 	PromptTokens     *int `json:"promptTokens,omitempty"`
 	CompletionTokens *int `json:"completionTokens,omitempty"`
+	// SubAgentCount (step 41 — Sub Agents) — same nil-for-0/placement
+	// convention as PromptTokens/CompletionTokens above; the durable
+	// indicator that this turn used sub-agents, once its own live
+	// sub_agent_runs panel (GetActiveTurnHandler's own subAgents[])
+	// stops being polled. Full per-sub-agent detail isn't repeated
+	// here — see log.go's own Turn.SubAgentCount doc comment.
+	SubAgentCount *int `json:"subAgentCount,omitempty"`
+	// TurnRunID (step 41) — this turn's own turn_runs.id, present
+	// whenever SubAgentCount is, so a client can fetch the full detail
+	// via GET .../turns/{turnRunId}/subagents on demand instead of it
+	// being inlined into every message response.
+	TurnRunID string `json:"turnRunId,omitempty"`
 }
 
 // ActiveTurn is present only when a turn is actually still running for
@@ -98,6 +110,7 @@ func GetHandler(reqCtx request.RequestContext) {
 				Role: "user", Content: t.UserContent, CreatedAt: t.UserTimestamp,
 				Failed: true, Error: &errMsg, DurationMs: t.DurationMs(),
 				PromptTokens: tokenPtr(t.PromptTokens), CompletionTokens: tokenPtr(t.CompletionTokens),
+				SubAgentCount: tokenPtr(t.SubAgentCount), TurnRunID: t.TurnRunID,
 			})
 			continue
 		}
@@ -106,13 +119,19 @@ func GetHandler(reqCtx request.RequestContext) {
 			messageResponse{
 				Role: "assistant", Content: t.AssistantContent, CreatedAt: t.AssistantTimestamp, DurationMs: t.DurationMs(),
 				PromptTokens: tokenPtr(t.PromptTokens), CompletionTokens: tokenPtr(t.CompletionTokens),
+				SubAgentCount: tokenPtr(t.SubAgentCount), TurnRunID: t.TurnRunID,
 			},
 		)
 	}
 
 	var activeTurn *activeTurnResponse
 	if run, err := conversation_query.NewTurnRunQueryRepo(db).FindActiveByConversationID(id); err == nil {
-		resp := toActiveTurnResponse(run)
+		subAgents, err := conversation_query.NewSubAgentRunQueryRepo(db).FindByParentTurnRunID(run.ID)
+		if err != nil {
+			response.ErrorResponse(w, http.StatusInternalServerError, "failed to look up sub-agent runs")
+			return
+		}
+		resp := toActiveTurnResponse(run, subAgents)
 		activeTurn = &resp
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		response.ErrorResponse(w, http.StatusInternalServerError, "failed to look up active turn")

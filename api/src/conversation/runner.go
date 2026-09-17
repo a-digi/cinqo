@@ -193,7 +193,7 @@ func runDetachedTurn(
 	userTimestamp := time.Now().UTC().Format(time.RFC3339)
 	messages = append(messages, chatcompleter.Message{Role: "user", Content: content})
 
-	tools, err := offerableTools(mainDB, callerScopes)
+	tools, err := offerableTools(mainDB, callerScopes, true)
 	if err != nil {
 		finishTurnRun(runs, turnRunID, "failed")
 		return
@@ -238,7 +238,22 @@ func runDetachedTurn(
 			_ = appendTraceEntry(tracePath, iteration, msgs, toolDefs, result, callErr)
 		}
 	}
-	assistantContent, err := runToolLoop(ctx, httpClient, entry, plainKey, model, messages, tools, mainDB, callerScopes, dataDir, corePort, conversationID, logStep, reportUsage, logExchange)
+	// The reply returns early (step 41 — Sub Agents): this turn's own
+	// spawned sub-agents (if any) keep running under their own,
+	// independent contexts (subagent.go's own doc comment) — this turn
+	// is marked terminal the moment runToolLoop returns, below, without
+	// waiting for any of them. subAgentCount reflects however many had
+	// been spawned by that moment (every spawn_subagent call already
+	// happened synchronously inside runToolLoop's own iterations before
+	// it could return) — persisted onto the Turn itself (log.go's own
+	// subAgentSuffix) so the historical view still shows it; a lookup
+	// failure here is non-fatal — worth a durable count, not worth
+	// failing an otherwise-successful turn over.
+	assistantContent, err := runToolLoop(ctx, httpClient, entry, plainKey, model, messages, tools, mainDB, callerScopes, dataDir, corePort, conversationID, conversationDB, turnRunID, 0, logStep, reportUsage, logExchange)
+	subAgentCount := 0
+	if spawned, countErr := conversation_query.NewSubAgentRunQueryRepo(conversationDB).FindByParentTurnRunID(turnRunID); countErr == nil {
+		subAgentCount = len(spawned)
+	}
 	if err != nil {
 		failedTurn := Turn{
 			UserTimestamp:    userTimestamp,
@@ -248,6 +263,8 @@ func runDetachedTurn(
 			ErrorMessage:     truncateError(errorMessageFor(ctx, err)),
 			PromptTokens:     totalPromptTokens,
 			CompletionTokens: totalCompletionTokens,
+			SubAgentCount:    subAgentCount,
+			TurnRunID:        turnRunID,
 		}
 		if appendErr := AppendTurn(conv.FilePath, failedTurn); appendErr != nil {
 			finishTurnRun(runs, turnRunID, "failed")
@@ -268,6 +285,8 @@ func runDetachedTurn(
 		AssistantContent:   assistantContent,
 		PromptTokens:       totalPromptTokens,
 		CompletionTokens:   totalCompletionTokens,
+		SubAgentCount:      subAgentCount,
+		TurnRunID:          turnRunID,
 	}
 	if err := AppendTurn(conv.FilePath, turn); err != nil {
 		finishTurnRun(runs, turnRunID, "failed")
@@ -278,26 +297,46 @@ func runDetachedTurn(
 }
 
 // CancelActiveTurn requests cancellation of turnRunID's own detached
-// goroutine — the direct analog of tool/manager.go's own Stop, adapted
-// for an in-process goroutine (no PID/signal involved) rather than a
-// supervised OS subprocess. Returns false if turnRunID isn't currently
-// tracked (already finished, or belongs to a run this process never
-// started — e.g. a restart already reconciled it away), in which case
-// the caller has nothing left to do. Cancellation is asynchronous: the
+// goroutine AND every sub-agent it has spawned — the direct analog of
+// tool/manager.go's own Stop, adapted for an in-process goroutine (no
+// PID/signal involved) rather than a supervised OS subprocess. The
+// sub-agent cascade is explicit, not automatic: since step 41's "the
+// reply returns early" change, a sub-agent runs under its own
+// independent context (subagent.go's own doc comment), so it's no
+// longer cancelled "for free" just because the turn's own context is —
+// without this, "stop" would only ever stop the half of the work the
+// user can currently see. Returns true if EITHER the turn itself or at
+// least one sub-agent was actually cancelled — false only when there
+// was genuinely nothing left running to stop (the turn already
+// finished, or belongs to a run this process never started, e.g. a
+// restart already reconciled it away, AND it has no still-running
+// sub-agents either). Cancellation is asynchronous throughout: a
 // goroutine only observes ctx.Done() at its next context-aware
 // checkpoint (the in-flight LLM HTTP call or MCP tool invocation
-// returning) — this returning true means "the stop signal was sent,"
-// not "the run has stopped." See
-// plan/ai/conversation/step-25-cancel-in-progress-turn.md.
-func CancelActiveTurn(turnRunID string) bool {
+// returning) — a true return means "the stop signal(s) were sent," not
+// "everything has actually stopped." See
+// plan/ai/conversation/step-25-cancel-in-progress-turn.md and
+// plan/ai/conversation/step-41-sub-agents.md.
+func CancelActiveTurn(conversationDB *sql.DB, turnRunID string) bool {
+	cancelledSomething := false
+
 	runnerMu.Lock()
 	cancel, ok := active[turnRunID]
 	runnerMu.Unlock()
-	if !ok {
-		return false
+	if ok {
+		cancel()
+		cancelledSomething = true
 	}
-	cancel()
-	return true
+
+	if spawned, err := conversation_query.NewSubAgentRunQueryRepo(conversationDB).FindByParentTurnRunID(turnRunID); err == nil {
+		for _, sub := range spawned {
+			if sub.Status == "running" && CancelSubAgent(sub.ID) {
+				cancelledSomething = true
+			}
+		}
+	}
+
+	return cancelledSomething
 }
 
 // errorMessageFor prefers a recognizable "cancelled" message over the
