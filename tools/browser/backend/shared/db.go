@@ -15,33 +15,39 @@ var (
 	DB *sql.DB
 	// CrawlLogsDir holds one JSON file per crawl_logs row (step 39),
 	// named <id>.json — set once here, read by crawl_log.go's own
-	// save/fetch/delete paths. See
+	// save/fetch/delete paths. Lives under TOOL_LOGS_DIR, not
+	// TOOL_DB_DIR — this is diagnostic/history data, not this tool's
+	// own SQLite database. See
 	// plan/ai/tools/browser/step-39-crawl-log-file-storage.md.
 	CrawlLogsDir string
 	// FetchCacheDir holds fetch_page_html's own short-lived on-disk
 	// cache (step 45) — one index.json manifest plus one .cache file
 	// per distinct cached URL, set once here, read/written by
-	// fetch_cache.go's own lookup/store functions. See
+	// fetch_cache.go's own lookup/store functions. Deliberately still
+	// under TOOL_DB_DIR, not TOOL_LOGS_DIR — a performance cache, not a
+	// diagnostic log, unlike CrawlLogsDir/ChallengeLogsDir. See
 	// plan/ai/tools/browser/step-45-fetch-html-caching-plan.md.
 	FetchCacheDir string
 	// ChallengeLogsDir holds one subfolder per crawl session's own
 	// requestID, each containing one raw-HTML .txt file per tick of the
 	// Cloudflare human-wait loop (Debug + Log HTML only) — set once
-	// here, read/written by crawler/challenge_log.go. Unlike
-	// CrawlLogsDir/FetchCacheDir above, the per-session subfolder itself
-	// is created lazily on first actual write, not eagerly here — most
+	// here, read/written by crawler/challenge_log.go. Lives under
+	// TOOL_LOGS_DIR, same reasoning as CrawlLogsDir above. Unlike
+	// CrawlLogsDir/FetchCacheDir, the per-session subfolder itself is
+	// created lazily on first actual write, not eagerly here — most
 	// crawls never reach that wait loop at all.
 	ChallengeLogsDir string
 )
 
-// InitDB opens (creating if needed) browser.db, both under
-// TOOL_DB_DIR. TOOL_DB_DIR itself is never pre-created by the host —
-// same convention pdf_generator's own main() already established for
-// TOOL_TMP_DIR/TOOL_UPLOADS_DIR — so this tool creates it itself. Does
-// NOT load/generate this tool's own credential-encryption key — that
-// stays login_credentials.go's own concern (main package), loaded
-// separately via its own initCryptoKey, since it has nothing to do
-// with the DB/schema this function owns.
+// InitDB opens (creating if needed) browser.db under TOOL_DB_DIR, and
+// CrawlLogsDir/ChallengeLogsDir under the separate TOOL_LOGS_DIR —
+// neither pre-created by the host — same convention pdf_generator's
+// own main() already established for TOOL_TMP_DIR/TOOL_UPLOADS_DIR —
+// so this tool creates them itself. Does NOT load/generate this tool's
+// own credential-encryption key — that stays login_credentials.go's
+// own concern (main package), loaded separately via its own
+// initCryptoKey, since it has nothing to do with the DB/schema this
+// function owns.
 func InitDB() error {
 	dbDir := os.Getenv("TOOL_DB_DIR")
 	if dbDir == "" {
@@ -51,7 +57,15 @@ func InitDB() error {
 		return fmt.Errorf("failed to create TOOL_DB_DIR: %w", err)
 	}
 
-	CrawlLogsDir = filepath.Join(dbDir, "crawl_logs")
+	logsDir := os.Getenv("TOOL_LOGS_DIR")
+	if logsDir == "" {
+		return fmt.Errorf("TOOL_LOGS_DIR is not set")
+	}
+	if err := os.MkdirAll(logsDir, 0o755); err != nil {
+		return fmt.Errorf("failed to create TOOL_LOGS_DIR: %w", err)
+	}
+
+	CrawlLogsDir = filepath.Join(logsDir, "crawl_logs")
 	if err := os.MkdirAll(CrawlLogsDir, 0o755); err != nil {
 		return fmt.Errorf("failed to create crawl_logs directory: %w", err)
 	}
@@ -61,7 +75,7 @@ func InitDB() error {
 		return fmt.Errorf("failed to create fetch_cache directory: %w", err)
 	}
 
-	ChallengeLogsDir = filepath.Join(dbDir, "challenge_logs")
+	ChallengeLogsDir = filepath.Join(logsDir, "challenge_logs")
 	if err := os.MkdirAll(ChallengeLogsDir, 0o755); err != nil {
 		return fmt.Errorf("failed to create challenge_logs directory: %w", err)
 	}
