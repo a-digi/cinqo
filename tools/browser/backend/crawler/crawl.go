@@ -644,27 +644,33 @@ func crawlWithNormalSession(reqCtx context.Context, rawURL, requestID string, ex
 // very first status a poller ever sees already says which signal
 // triggered this wait, not a generic placeholder.
 //
-// expectedSelectors (step 36) corroborates BOTH directions here, on
-// purpose asymmetrically:
-//   - forward: already handled inside detectCloudflareChallenge itself
-//     — the moment the crawl's own target content is visibly present,
-//     the heuristic's own "detected" result is overridden before this
-//     loop ever sees it.
-//   - reverse: handled explicitly in this loop below — a heuristic
-//     "clear" result does NOT immediately end the wait; it must also
-//     be corroborated by the expected content actually being found.
-//     Deliberately scoped to THIS function alone, never
-//     waitForCloudflareClearance's own short automated wait, and never
-//     a fresh crawl's very first check: by the time this loop is
-//     running at all, a real Cloudflare issue was already independently
-//     confirmed moments earlier, so "clear but content missing" is
-//     being asked in a context that's already Cloudflare-adjacent —
-//     not on an arbitrary, unrelated page, where "content not found
-//     yet" is the ordinary, everyday signature of a wrong selector or
-//     an empty results page, not evidence of a hidden block. This does
-//     NOT extend maxHumanSolveDuration — it only changes what counts as
-//     "cleared" within the wait that's already happening. See
-//     plan/ai/tools/browser/step-36-content-based-cloudflare-override.md.
+// expectedSelectors (step 36, strengthened step 66) is checked FIRST,
+// unconditionally, on every tick — a match ends the wait immediately,
+// regardless of what detectCloudflareChallenge's own heuristic still
+// thinks is on the page. This is deliberately no longer gated behind
+// the heuristic's own "not detected" verdict: a real, reproduced bug
+// (a human genuinely solved a challenge, yet this loop kept reporting
+// "still detected" — challenge-text, then visible-widget — for
+// upwards of a minute) showed that some Cloudflare-looking DOM
+// fragment (a lingering Turnstile "verified" checkbox, a cookie/trust
+// banner, cached challenge markup Cloudflare doesn't always fully tear
+// down) can keep the heuristic itself convinced a challenge is still
+// active even after the real, already-loaded target content is
+// visible underneath it. detectCloudflareChallenge's own internal
+// "expected content found" override (cloudflare.go) only ever runs
+// once the heuristic ALREADY concluded detected=true within that same
+// evaluate call — it cannot help here, because it's nested inside the
+// very verdict this loop needs to be able to override from the
+// outside. Checking expectedContentVisible directly, first, makes "the
+// crawl's own target content is actually there" the authoritative
+// signal, exactly as it already is for a fresh crawl's very first
+// navigation (readCrawlResponse is reached the instant the target
+// content is confirmed, without waiting on Cloudflare's own DOM to
+// admit anything). Deliberately scoped to THIS function alone, never
+// waitForCloudflareClearance's own short automated wait — that one
+// still leans on detectCloudflareChallenge's own internal override,
+// which is sufficient for its far shorter 8s budget. See
+// plan/ai/tools/browser/step-36-content-based-cloudflare-override.md.
 func waitForHumanToClearCloudflare(ctx context.Context, requestID, initialReason string, expectedSelectors []string) (bool, error) {
 	setCrawlPhase(requestID, phaseAwaitingHumanChallenge, fmt.Sprintf(
 		"Cloudflare challenge detected (%s) — waiting for a person to solve it in the open browser window", initialReason,
@@ -676,25 +682,21 @@ func waitForHumanToClearCloudflare(ctx context.Context, requestID, initialReason
 		if err := chromedp.Run(ctx, chromedp.Sleep(humanSolveRetryInterval)); err != nil {
 			return false, err
 		}
+
+		if len(expectedSelectors) > 0 {
+			if found, err := expectedContentVisible(ctx, expectedSelectors); err != nil {
+				return false, err
+			} else if found {
+				return true, nil
+			}
+		}
+
 		check, err := detectCloudflareChallenge(ctx, expectedSelectors)
 		if err != nil {
 			return false, err
 		}
 		if !check.Detected {
-			if len(expectedSelectors) == 0 {
-				return true, nil
-			}
-			found, err := expectedContentVisible(ctx, expectedSelectors)
-			if err != nil {
-				return false, err
-			}
-			if found {
-				return true, nil
-			}
-			setCrawlPhase(requestID, phaseAwaitingHumanChallenge, fmt.Sprintf(
-				"Cloudflare check reports clear, but expected content not yet found — check #%d, continuing to wait", attempt,
-			))
-			continue
+			return true, nil
 		}
 		// Reported every tick, not just once at the top — a real gap
 		// fixed here: without this, this function's own live status
