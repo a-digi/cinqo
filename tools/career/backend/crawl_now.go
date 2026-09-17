@@ -114,13 +114,19 @@ var (
 
 // crawlNowHTTPClient's own Timeout must exceed browser's own longest
 // possible single-call duration on either /crawl or /crawl-paginated —
-// both can internally run the up-to-~30-minute headed-Chrome/human-wait
-// Cloudflare fallback (tools/browser/backend/crawl.go's
-// normalSessionCrawlTimeout=31min, paginate.go's
-// normalSessionPaginatedCrawlTimeout=32min) before returning. 35 minutes
-// leaves margin on top of the larger of the two. See this step's own
+// both can internally run the headed-Chrome/human-wait Cloudflare
+// fallback before returning (tools/browser/backend/crawl.go's
+// normalSessionCrawlTimeout=31min; paginate.go's
+// normalSessionPaginatedCrawlTimeout, the larger of the two, is now
+// derived from maxHumanWaitRounds×maxHumanSolveDuration — currently
+// ~96min, since that fallback can retry the human-wait itself up to
+// maxHumanWaitRounds times, see that constant's own doc comment). 100
+// minutes leaves margin on top of the larger of the two. A real,
+// reproduced bug otherwise: raising browser's own ceiling to
+// accommodate multiple wait rounds is pointless if this client's own
+// shorter timeout aborts the connection first. See this step's own
 // Open Question 2.
-var crawlNowHTTPClient = &http.Client{Timeout: 35 * time.Minute}
+var crawlNowHTTPClient = &http.Client{Timeout: 100 * time.Minute}
 
 // coreAPIURL reads CORE_API_URL — set for every tool subprocess
 // (api/src/tool/manager/manager.go's ToolEnvVars) but, until this file,

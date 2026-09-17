@@ -36,18 +36,31 @@ import (
 const paginatedCrawlTimeout = 35 * time.Second
 
 // normalSessionPaginatedCrawlTimeout bounds one headed-Chrome
-// paginated-crawl fallback end to end: process launch + navigate +
-// settle (~4s) + a full pagination loop through effectiveMaxPages
-// pages (up to ~30s, matching paginatedCrawlTimeout's own sizing) +
-// maxHumanSolveDuration (crawl.go, 30 min as of step 27) + a SECOND
-// full pagination loop once cleared (up to ~30s more) — 32 minutes
-// leaves margin. Raised from step 26's original 150s specifically so
-// the SAME headed window stays open for the whole human-wait instead
-// of closing and reopening mid-attempt — a real bug that shorter
-// budget caused when paired with Career's own now-removed outer retry
-// loop. See
+// paginated-crawl fallback end to end. Raised from step 26's original
+// 150s specifically so the SAME headed window stays open for the whole
+// human-wait instead of closing and reopening mid-attempt — a real bug
+// that shorter budget caused when paired with Career's own now-removed
+// outer retry loop. See
 // plan/ai/tools/browser/step-27-long-lived-headed-fallback-session.md.
-const normalSessionPaginatedCrawlTimeout = 32 * time.Minute
+//
+// Deliberately derived from maxHumanWaitRounds × maxHumanSolveDuration
+// rather than a hand-picked number — a real, reproduced bug: this used
+// to be a flat 32 minutes (sized for exactly ONE human-wait round, per
+// this const's own original doc comment), but performPaginatedCrawlWithNormalSession
+// can now retry the wait up to maxHumanWaitRounds times (see that
+// function's own doc comment for why a "solved" declaration can turn
+// out to be premature). A flat ceiling sized for one round silently
+// cut a legitimate second/third round short — closing the visible
+// Chrome window on a person actively still solving the challenge. The
+// 90s/round overhead covers process launch/navigate/settle plus one
+// full pagination loop through effectiveMaxPages pages each round; the
+// trailing +90s covers the final successful pagination loop once
+// actually cleared.
+//
+// A var, not a const, for the same reason maxHumanSolveDuration
+// (crawl.go) itself is one: it's derived from that var, and a const
+// can't reference one.
+var normalSessionPaginatedCrawlTimeout = time.Duration(maxHumanWaitRounds)*(maxHumanSolveDuration+90*time.Second) + 90*time.Second
 
 // maxAllowedPaginationPages is the real, non-negotiable ceiling on how
 // many pages a single call ever visits, regardless of what the

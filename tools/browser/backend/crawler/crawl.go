@@ -697,18 +697,30 @@ func waitForHumanToClearCloudflare(ctx context.Context, requestID, initialReason
 	settings, _ := shared.LoadBrowserSettings()
 	logHTML := settings.DebugEnabled && settings.DebugLogHTML
 
+	// baselineHTMLLen is captured ONCE, right here, at the moment this
+	// challenge was confirmed detected — before the retry loop's first
+	// sleep, not after it. Every later tick's size-delta check below
+	// compares against THIS one fixed snapshot of the actual challenge
+	// page, never a moving "previous tick" target: the challenge page
+	// itself is expected to be static while genuinely still active, so
+	// comparing against its own true starting size (not whatever the
+	// immediately preceding tick happened to measure, which could
+	// already be partway through a transition) is the correct
+	// reference point. -1 means the capture itself failed; the delta
+	// check below is skipped in that case, same as any other haveHTML
+	// failure. A fresh call to this function (each retry round in
+	// performPaginatedCrawlWithNormalSession) captures its own fresh
+	// baseline — the "version" being compared against is always THIS
+	// specific challenge occurrence, not a stale one from an earlier
+	// round.
+	baselineHTMLLen := -1
+	var baselineHTML string
+	if chromedp.Run(ctx, chromedp.OuterHTML("html", &baselineHTML)) == nil {
+		baselineHTMLLen = len(baselineHTML)
+	}
+
 	deadline := time.Now().Add(maxHumanSolveDuration)
 	attempt := 0
-	// prevHTMLLen is the immediately preceding tick's own captured HTML
-	// length — -1 means "no sample yet" (the very first tick has
-	// nothing to compare against). Deliberately pairwise (this tick vs.
-	// the ONE immediately before it), not compared against a running
-	// baseline or minimum — re-anchoring every tick means one
-	// unusually small or large sample only ever affects a single
-	// comparison, never every comparison after it. See
-	// minSolvedHTMLGrowthBytes's own doc comment for the full
-	// reasoning.
-	prevHTMLLen := -1
 	for time.Now().Before(deadline) {
 		attempt++
 		if err := chromedp.Run(ctx, chromedp.Sleep(humanSolveRetryInterval)); err != nil {
@@ -745,18 +757,14 @@ func waitForHumanToClearCloudflare(ctx context.Context, requestID, initialReason
 		// underneath it — and if THIS crawl's own configured selectors
 		// happen not to match that specific page's real structure
 		// either, the loop would otherwise keep waiting the full
-		// maxHumanSolveDuration with no way out. Skipped on the very
-		// first tick (prevHTMLLen < 0) — nothing to compare against
-		// yet.
-		if haveHTML && prevHTMLLen >= 0 && len(html)-prevHTMLLen >= minSolvedHTMLGrowthBytes {
+		// maxHumanSolveDuration with no way out. Skipped when
+		// baselineHTMLLen itself couldn't be captured (< 0).
+		if haveHTML && baselineHTMLLen >= 0 && len(html)-baselineHTMLLen >= minSolvedHTMLGrowthBytes {
 			setCrawlPhase(requestID, phaseAwaitingHumanChallenge, fmt.Sprintf(
-				"expected content not found, but HTML size grew by %d bytes since the last check (%d → %d) — treating as solved",
-				len(html)-prevHTMLLen, prevHTMLLen, len(html),
+				"expected content not found, but HTML size grew by %d bytes since the challenge was first detected (%d → %d) — treating as solved",
+				len(html)-baselineHTMLLen, baselineHTMLLen, len(html),
 			))
 			return true, nil
-		}
-		if haveHTML {
-			prevHTMLLen = len(html)
 		}
 
 		check, err := detectCloudflareChallenge(ctx, expectedSelectors)
