@@ -23,9 +23,11 @@ var (
 	// FetchCacheDir holds fetch_page_html's own short-lived on-disk
 	// cache (step 45) — one index.json manifest plus one .cache file
 	// per distinct cached URL, set once here, read/written by
-	// fetch_cache.go's own lookup/store functions. Deliberately still
-	// under TOOL_DB_DIR, not TOOL_LOGS_DIR — a performance cache, not a
-	// diagnostic log, unlike CrawlLogsDir/ChallengeLogsDir. See
+	// fetch_cache.go's own lookup/store functions. Lives under
+	// TOOL_CACHE_DIR, not TOOL_DB_DIR/TOOL_LOGS_DIR — a performance
+	// cache is neither this tool's own SQLite database nor diagnostic/
+	// history data; it's disposable optimization data this tool can
+	// regenerate from scratch at any time. See
 	// plan/ai/tools/browser/step-45-fetch-html-caching-plan.md.
 	FetchCacheDir string
 	// ChallengeLogsDir holds one subfolder per crawl session's own
@@ -39,15 +41,15 @@ var (
 	ChallengeLogsDir string
 )
 
-// InitDB opens (creating if needed) browser.db under TOOL_DB_DIR, and
-// CrawlLogsDir/ChallengeLogsDir under the separate TOOL_LOGS_DIR —
-// neither pre-created by the host — same convention pdf_generator's
-// own main() already established for TOOL_TMP_DIR/TOOL_UPLOADS_DIR —
-// so this tool creates them itself. Does NOT load/generate this tool's
-// own credential-encryption key — that stays login_credentials.go's
-// own concern (main package), loaded separately via its own
-// initCryptoKey, since it has nothing to do with the DB/schema this
-// function owns.
+// InitDB opens (creating if needed) browser.db under TOOL_DB_DIR,
+// CrawlLogsDir/ChallengeLogsDir under TOOL_LOGS_DIR, and FetchCacheDir
+// under TOOL_CACHE_DIR — none pre-created by the host — same
+// convention pdf_generator's own main() already established for
+// TOOL_TMP_DIR/TOOL_UPLOADS_DIR — so this tool creates them itself.
+// Does NOT load/generate this tool's own credential-encryption key —
+// that stays login_credentials.go's own concern (main package), loaded
+// separately via its own initCryptoKey, since it has nothing to do
+// with the DB/schema this function owns.
 func InitDB() error {
 	dbDir := os.Getenv("TOOL_DB_DIR")
 	if dbDir == "" {
@@ -70,7 +72,15 @@ func InitDB() error {
 		return fmt.Errorf("failed to create crawl_logs directory: %w", err)
 	}
 
-	FetchCacheDir = filepath.Join(dbDir, "fetch_cache")
+	cacheDir := os.Getenv("TOOL_CACHE_DIR")
+	if cacheDir == "" {
+		return fmt.Errorf("TOOL_CACHE_DIR is not set")
+	}
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		return fmt.Errorf("failed to create TOOL_CACHE_DIR: %w", err)
+	}
+
+	FetchCacheDir = filepath.Join(cacheDir, "fetch_cache")
 	if err := os.MkdirAll(FetchCacheDir, 0o755); err != nil {
 		return fmt.Errorf("failed to create fetch_cache directory: %w", err)
 	}

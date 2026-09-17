@@ -101,8 +101,8 @@ func StartAllEnabled(db *sql.DB, dataDir string, corePort int, warn func(format 
 }
 
 // ToolEnvVars returns the fixed TOOL_DB_DIR/TOOL_UPLOADS_DIR/
-// TOOL_TMP_DIR/TOOL_LOGS_DIR/CORE_API_URL env vars every tool
-// subprocess gets —
+// TOOL_TMP_DIR/TOOL_LOGS_DIR/TOOL_CACHE_DIR/CORE_API_URL env vars every
+// tool subprocess gets —
 // shared by this package's own long-running HTTP-mode spawn and
 // tool/mcp's separate on-demand --mcp-mode spawn (discovery/
 // invocation), so both give a tool's own code the exact same,
@@ -146,11 +146,22 @@ func ToolEnvVars(dataDir, slug string, corePort int) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	// cacheDir — a dedicated, forced location for a tool's own
+	// performance caches (e.g. the browser tool's fetch_page_html
+	// result cache), distinct from both TOOL_DB_DIR (not this tool's
+	// own SQLite database) and TOOL_LOGS_DIR (not diagnostic/history
+	// data — a cache is disposable optimization data a tool can
+	// regenerate from scratch at any time, neither of those).
+	cacheDir, err := filepath.Abs(filepath.Join(dataDir, "cache", "tools", slug))
+	if err != nil {
+		return nil, err
+	}
 	return []string{
 		"TOOL_DB_DIR=" + dbDir,
 		"TOOL_UPLOADS_DIR=" + uploadsDir,
 		"TOOL_TMP_DIR=" + tmpDir,
 		"TOOL_LOGS_DIR=" + logsDir,
+		"TOOL_CACHE_DIR=" + cacheDir,
 		fmt.Sprintf("CORE_API_URL=http://127.0.0.1:%d", corePort),
 	}, nil
 }

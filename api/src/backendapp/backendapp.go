@@ -9,7 +9,9 @@ package backendapp
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"os"
 	"path/filepath"
 
 	dbmanager "github.com/a-digi/coco-orm/orm"
@@ -98,6 +100,16 @@ func Start(opts Options) (srv *http.Server, cfg *server.Config, ctx *di.ContextB
 	logsDir := filepath.Join(dataDir, "logs")
 	dbDir := filepath.Join(dataDir, "db")
 	keyPath := filepath.Join(dataDir, "keys", "platform-encryption.key")
+	// The app's own cache — data/cache/app, a sibling of data/cache/tools/{slug}
+	// (tool_manager.ToolEnvVars' own TOOL_CACHE_DIR) rather than a bare
+	// data/cache, so the app's own cache can never collide with (or be
+	// mistaken for) any tool's. Unlike logsDir/dbDir above, nothing else
+	// creates this directory as a side effect (no logger/DB manager
+	// consumes it yet), so it's MkdirAll'd here explicitly.
+	cacheDir := filepath.Join(dataDir, "cache", "app")
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("create app cache directory: %w", err)
+	}
 
 	log, err = logger.NewLogger(server.LogFileName("cinqo"), logsDir)
 	if err != nil {
@@ -179,6 +191,13 @@ func Start(opts Options) (srv *http.Server, cfg *server.Config, ctx *di.ContextB
 	// their own "data/..." literal. See
 	// plan/ai/build/app/step-17-configurable-data-directory.md.
 	ctx.Set("data_dir", dataDir)
+
+	// The app's own resolved cache directory — same reasoning as
+	// data_dir above: registered once here so any future core-app code
+	// needing a persistent (but freely regenerable) cache location
+	// resolves it from DI rather than recomputing/hardcoding
+	// filepath.Join(dataDir, "cache", "app") itself.
+	ctx.Set("cache_dir", cacheDir)
 
 	// The running app's own version — resolved once here from
 	// whatever the caller supplied (embedded, for cmd/app; read fresh
