@@ -13,13 +13,18 @@ import (
 	media_query "github.com/a-digi/cinqo/src/media/repository/query"
 )
 
-// DeleteHandler handles DELETE /api/v1/media/{id} — cinqo:super:admin
-// only (route-media.yaml's own static scope declaration). Removes the
-// on-disk file first (best-effort, log-and-continue — mirrors
-// pdf_tools' own pdfCacheStore failure handling: a filesystem error
-// here is not a reason to leave the DB row dangling), then the row
-// itself. Irreversible; the admin Media page's own delete button
-// confirms first (MediaListPage.tsx).
+// DeleteHandler handles DELETE /api/v1/media/{id} — no static scope
+// (route-media.yaml): a caller may delete a media file if they hold
+// cinqo:super:admin (the admin Media page's own use, MediaListPage.tsx)
+// OR they are the row's own uploader (a tool's own "delete my own
+// upload" flow, e.g. Career's import history — see
+// plan/ai/media/step-05-career-history.md). Dynamic, same reasoning as
+// UploadHandler/MineHandler: "am I this row's owner" can't be
+// expressed as a static YAML scope. Removes the on-disk file first
+// (best-effort, log-and-continue — mirrors pdf_tools' own
+// pdfCacheStore failure handling: a filesystem error here is not a
+// reason to leave the DB row dangling), then the row itself.
+// Irreversible.
 func DeleteHandler(reqCtx request.RequestContext) {
 	w := reqCtx.GetWriter()
 	r := reqCtx.GetRequest()
@@ -35,6 +40,12 @@ func DeleteHandler(reqCtx request.RequestContext) {
 		return
 	}
 
+	userID, scopes, err := callerIdentity(reqCtx)
+	if err != nil {
+		response.ErrorResponse(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
 	db := reqCtx.GetDI().GetDatabaseManager().Connector.DB
 	queryRepo := media_query.NewMediaQueryRepo(db)
 
@@ -45,6 +56,11 @@ func DeleteHandler(reqCtx request.RequestContext) {
 			return
 		}
 		response.ErrorResponse(w, http.StatusInternalServerError, "failed to look up media")
+		return
+	}
+
+	if !hasScope(scopes, "cinqo:super:admin") && userID != m.UploadedByUserID {
+		response.ErrorResponse(w, http.StatusForbidden, "not authorized to delete this media file")
 		return
 	}
 

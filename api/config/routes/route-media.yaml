@@ -19,10 +19,10 @@ routes:
     executor: MediaMine
     security: authenticated
 
-  # List/delete ARE genuinely global admin operations (browse/clean up
-  # every tool's own media at once), unlike upload — so, unlike it,
-  # these declare a normal static scope here and never re-check it in
-  # the handler, matching route-tool.yaml's ToolInstall/ToolDelete.
+  # List IS a genuinely global admin operation (browse every tool's own
+  # media at once), unlike upload/mine — so, unlike them, it declares a
+  # normal static scope here and never re-checks it in the handler,
+  # matching route-tool.yaml's ToolInstall/ToolDelete.
   - path: /api/v1/media
     method: GET
     executor: MediaList
@@ -30,9 +30,11 @@ routes:
     scopes:
       - cinqo:super:admin
 
+  # No static scopes: delete is dynamic like upload/mine — allowed for
+  # cinqo:super:admin (the admin Media page) OR the row's own uploader
+  # (a tool's own "delete my own upload" flow, e.g. Career's import
+  # history) — see MediaDeleteHandler's own doc comment.
   - path: /api/v1/media/{id}
     method: DELETE
     executor: MediaDelete
     security: authenticated
-    scopes:
-      - cinqo:super:admin

@@ -180,6 +180,32 @@ CREATE TABLE IF NOT EXISTS cv_import_files (
     expires_at  TEXT NOT NULL,
     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- cv_import_runs tracks one completed CV analysis: the AI's own
+-- proposal, and — once the user acts on it — what was actually saved.
+-- Created only once the AI's reply has been successfully parsed (an
+-- abandoned upload that never got a reply leaves no row here, matching
+-- cv_import_files' own TTL-bounded, otherwise-forgotten lifecycle).
+-- media_file_id is a plain string reference to the core Media
+-- feature's own file id, not a real FK (Media lives in cinqo's own
+-- database, not this one) — kept so "process again" can reuse the same
+-- file and Delete can best-effort forward a cleanup call to Media.
+-- original_filename is denormalized here specifically so history stays
+-- legible even after the Media row itself expires or is deleted.
+-- save_summary_json is NULL until the user's first "Insert" attempt —
+-- a real, distinct history state from "inserted everything" or
+-- "inserted some, some failed". See
+-- plan/ai/media/step-05-career-history.md.
+CREATE TABLE IF NOT EXISTS cv_import_runs (
+    id                TEXT PRIMARY KEY,
+    media_file_id     TEXT NOT NULL,
+    original_filename TEXT NOT NULL,
+    conversation_id   TEXT NOT NULL,
+    ai_proposal_json  TEXT NOT NULL,
+    save_summary_json TEXT,
+    created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at        TEXT
+);
 `
 
 const jobsSchema = `

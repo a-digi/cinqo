@@ -1,5 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import { uploadCV, fetchUploadedCVs, type CVUploadResult, type UploadedCV } from '../../api'
+import {
+  uploadCV,
+  fetchCVImportRuns,
+  createCVImportRun,
+  updateCVImportRunSaveSummary,
+  deleteCVImportRun,
+  type CVUploadResult,
+  type CVImportRun,
+} from '../../api'
 import { createConversation, sendMessage } from '../../Cinqo/Conversation/conversation'
 import { fetchPlatforms, fetchPlatformKeys, type Platform } from '../../Cinqo/Platform/platformRepository'
 import { Dropdown } from '../Dropdown/Dropdown'
@@ -7,8 +15,10 @@ import { PDFIcon, UploadIcon } from '../../Shared/Icons/icons'
 import { buildImportPrompt } from './buildImportPrompt'
 import { parseProposal, isInitiallyChecked, type CVImportProposal, type ProposalItem } from './parseProposal'
 import { resolveDuplicateLabels, type DuplicateLabels } from './resolveDuplicateLabels'
-import { insertSelected } from './insertProposal'
+import { insertSelected, type InsertResult, type ItemResult } from './insertProposal'
 import { ProposalRow } from './ProposalRow'
+import { ImportRunDetail } from './ImportRunDetail'
+import { experienceLabel } from './experienceLabel'
 
 // The 5 areas a CV import populates — Profile/Personas/Personal
 // Details/Skills/Experience, matching the real Career entities these
@@ -18,16 +28,38 @@ const AREAS = ['Profile', 'Personas', 'Personal Details', 'Skills', 'Experience'
 
 type PageState = 'upload' | 'analyzing' | 'review' | 'error'
 
-// formatFileSize/isExpired are local to this page — no shared helper
-// for either exists elsewhere in this frontend-app.
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
-
-function isExpired(expiresAt: string): boolean {
-  return expiresAt !== '' && new Date(expiresAt).getTime() <= Date.now()
+// buildFullSaveSummary reconstructs the InsertResult shape
+// cv_import_runs.go's own save_summary_json stores, from this
+// component's own accumulated insertedKeys/insertErrors state — not
+// from insertSelected's own per-call return value, which only ever
+// covers items attempted in THAT call. Takes the two maps as explicit
+// params (not read from component state) so a caller can pass the
+// just-computed next state before it's actually committed via
+// setState — React state updates aren't synchronously readable
+// immediately after being requested.
+function buildFullSaveSummary(p: CVImportProposal, insertedKeys: Record<string, boolean>, insertErrors: Record<string, string>): InsertResult {
+  function itemResult(key: string): ItemResult | undefined {
+    if (insertedKeys[key]) return { ok: true }
+    if (insertErrors[key]) return { ok: false, error: insertErrors[key] }
+    return undefined
+  }
+  const skills: (ItemResult & { index: number; value: string })[] = []
+  p.skills.forEach((s, i) => {
+    const r = itemResult(`skill-${i}`)
+    if (r) skills.push({ ...r, index: i, value: s.value })
+  })
+  const experience: (ItemResult & { index: number; label: string })[] = []
+  p.experience.forEach((e, i) => {
+    const r = itemResult(`experience-${i}`)
+    if (r) experience.push({ ...r, index: i, label: experienceLabel(e) })
+  })
+  return {
+    profile: itemResult('profile'),
+    persona: itemResult('persona'),
+    personalDetails: itemResult('personalDetails'),
+    skills,
+    experience,
+  }
 }
 
 function buildInitialChecked(p: CVImportProposal): Record<string, boolean> {
@@ -60,14 +92,21 @@ export function ImportCvPage() {
   const [error, setError] = useState('')
   const [uploadResult, setUploadResult] = useState<CVUploadResult | null>(null)
   const [conversationId, setConversationId] = useState<string | null>(null)
-  // Previously uploaded CVs — relayed from the core Media feature,
-  // filtered to this user's own career uploads (api.ts's own
-  // fetchUploadedCVs). View-only: no re-open/re-download/delete here
-  // (delete already exists on the core Media admin page). Almost every
-  // entry will show as expired shortly after upload (cv_import.go's
-  // own 30-minute TTL) — this is a short audit trail, not a re-usable
-  // archive.
-  const [uploadedCVs, setUploadedCVs] = useState<UploadedCV[] | null>(null)
+  // The cv_import_runs row for the CURRENTLY in-progress analysis (set
+  // once the AI's reply is successfully parsed) — handleInsert persists
+  // its own save summary onto this id after every attempt.
+  const [currentRunId, setCurrentRunId] = useState<string | null>(null)
+  // Import history — every past analysis (AI proposal + eventual save
+  // outcome), newest first. Deletable, viewable read-only, and
+  // reprocessable (re-runs the AI against the same underlying upload,
+  // skipping re-upload) — see plan/ai/media/step-05-career-history.md.
+  const [runs, setRuns] = useState<CVImportRun[] | null>(null)
+  // Set while the read-only history detail view is open; null closes
+  // it. A plain state field, not a route — this page has no router of
+  // its own (main.tsx's own top-level menu paths are the only routes
+  // this tool declares).
+  const [viewingRun, setViewingRun] = useState<CVImportRun | null>(null)
+  const [runActionError, setRunActionError] = useState('')
   // The AI's own raw final reply — kept even after a successful parse
   // so the 'error' state can still show it if something later fails
   // (e.g. duplicate-label resolution), and shown collapsed either way
@@ -142,43 +181,33 @@ export function ImportCvPage() {
       })
   }, [])
 
-  function loadUploadedCVs() {
-    fetchUploadedCVs()
-      .then(setUploadedCVs)
+  function loadRuns() {
+    fetchCVImportRuns()
+      .then(setRuns)
       .catch(() => {
         // Non-fatal, matches the platforms effect's own reasoning above
         // — the upload flow itself doesn't depend on this list, so a
         // failed load just leaves the section empty rather than
         // blocking anything.
-        setUploadedCVs([])
+        setRuns([])
       })
   }
 
   useEffect(() => {
-    loadUploadedCVs()
+    loadRuns()
   }, [])
 
-  async function handleUpload() {
-    if (!file) return
-    setUploading(true)
-    setError('')
-
-    let upload: CVUploadResult
-    try {
-      upload = await uploadCV(file)
-      setUploadResult(upload)
-      setFileName(file.name)
-      setUploading(false)
-      loadUploadedCVs()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-      setUploading(false)
-      return // stays on the 'upload' state — the inline error above already shows it
-    }
-
-    // The upload itself succeeded — any failure from here on is a real
-    // 'error' state, not an inline retry-in-place message, since the
-    // uploaded file (and its capability URL) are already consumed.
+  // runAnalysis is the shared tail of both a fresh upload
+  // (handleUpload) and reprocessing an existing one
+  // (handleProcessAgain) — everything from "we have a fileId" onward:
+  // create the AI conversation, send the prompt, parse the reply,
+  // record a new cv_import_runs row, and enter the review state. A
+  // reprocess of an upload whose underlying Media file has since
+  // expired surfaces as a normal 'error' state here (pdf_to_markdown's
+  // own tool-unavailable text) — no separate "is this still live"
+  // check is made beforehand.
+  async function runAnalysis(fileId: string, originalFilename: string) {
+    setFileName(originalFilename)
     setState('analyzing')
     try {
       if (!platform) {
@@ -186,13 +215,13 @@ export function ImportCvPage() {
       }
       const model = platform.models.length > 0 ? platform.models[0] : undefined
       const conversation = await createConversation({
-        title: `Import CV: ${file.name}`,
+        title: `Import CV: ${originalFilename}`,
         platformId: platform.id,
         model,
       })
       setConversationId(conversation.id)
 
-      const result = await sendMessage(conversation.id, buildImportPrompt(upload.fileId))
+      const result = await sendMessage(conversation.id, buildImportPrompt(fileId))
       setRawReply(result.content)
 
       const parsed = parseProposal(result.content)
@@ -210,10 +239,58 @@ export function ImportCvPage() {
         const guess = parsed.persona.possibleDuplicateOf
         if (labels.personaList.some((p) => p.id === guess)) setExistingPersonaId(guess)
       }
+
+      const runId = await createCVImportRun({
+        fileId,
+        originalFilename,
+        conversationId: conversation.id,
+        aiProposal: parsed,
+      }).catch(() => null) // non-fatal — the review flow itself doesn't depend on history being recorded
+      setCurrentRunId(runId)
+      loadRuns()
+
       setState('review')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
       setState('error')
+    }
+  }
+
+  async function handleUpload() {
+    if (!file) return
+    setUploading(true)
+    setError('')
+
+    let upload: CVUploadResult
+    try {
+      upload = await uploadCV(file)
+      setUploadResult(upload)
+      setUploading(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+      setUploading(false)
+      return // stays on the 'upload' state — the inline error above already shows it
+    }
+
+    // The upload itself succeeded — any failure from here on is a real
+    // 'error' state, not an inline retry-in-place message, since the
+    // uploaded file (and its capability URL) are already consumed.
+    await runAnalysis(upload.fileId, file.name)
+  }
+
+  async function handleProcessAgain(run: CVImportRun) {
+    setRunActionError('')
+    await runAnalysis(run.mediaFileId, run.originalFilename)
+  }
+
+  async function handleDeleteRun(run: CVImportRun) {
+    setRunActionError('')
+    try {
+      await deleteCVImportRun(run.id)
+      setRuns((prev) => (prev ? prev.filter((r) => r.id !== run.id) : prev))
+      if (viewingRun?.id === run.id) setViewingRun(null)
+    } catch (err) {
+      setRunActionError(err instanceof Error ? err.message : String(err))
     }
   }
 
@@ -246,40 +323,49 @@ export function ImportCvPage() {
       setResolvedProfileId(profileId)
       setResolvedPersonaId(personaId)
 
-      setInsertedKeys((prev) => {
-        const next = { ...prev }
-        if (result.profile?.ok) next.profile = true
-        if (result.persona?.ok) next.persona = true
-        if (result.personalDetails?.ok) next.personalDetails = true
-        result.skills.forEach((s) => {
-          if (s.ok) next[`skill-${s.index}`] = true
-        })
-        result.experience.forEach((e) => {
-          if (e.ok) next[`experience-${e.index}`] = true
-        })
-        return next
+      // Computed as plain local values (not via setState's own
+      // functional-updater form) because buildFullSaveSummary below
+      // needs the just-computed NEXT state immediately — a React state
+      // update isn't synchronously readable right after being
+      // requested.
+      const nextInsertedKeys = { ...insertedKeys }
+      if (result.profile?.ok) nextInsertedKeys.profile = true
+      if (result.persona?.ok) nextInsertedKeys.persona = true
+      if (result.personalDetails?.ok) nextInsertedKeys.personalDetails = true
+      result.skills.forEach((s) => {
+        if (s.ok) nextInsertedKeys[`skill-${s.index}`] = true
       })
+      result.experience.forEach((e) => {
+        if (e.ok) nextInsertedKeys[`experience-${e.index}`] = true
+      })
+      setInsertedKeys(nextInsertedKeys)
 
-      setInsertErrors((prev) => {
-        const next = { ...prev }
-        const apply = (key: string, r?: { ok: boolean; error?: string }) => {
-          if (!r) return
-          // '' clears a stale error from a previous failed attempt —
-          // ProposalRow only renders errorMessage when truthy, so this
-          // reads identically to "no error" without a dynamic delete.
-          next[key] = r.ok ? '' : (r.error ?? '')
-        }
-        apply('profile', result.profile)
-        apply('persona', result.persona)
-        apply('personalDetails', result.personalDetails)
-        result.skills.forEach((s) => {
-          apply(`skill-${s.index}`, s)
-        })
-        result.experience.forEach((e) => {
-          apply(`experience-${e.index}`, e)
-        })
-        return next
+      const nextInsertErrors = { ...insertErrors }
+      const apply = (key: string, r?: { ok: boolean; error?: string }) => {
+        if (!r) return
+        // '' clears a stale error from a previous failed attempt —
+        // ProposalRow only renders errorMessage when truthy, so this
+        // reads identically to "no error" without a dynamic delete.
+        nextInsertErrors[key] = r.ok ? '' : (r.error ?? '')
+      }
+      apply('profile', result.profile)
+      apply('persona', result.persona)
+      apply('personalDetails', result.personalDetails)
+      result.skills.forEach((s) => {
+        apply(`skill-${s.index}`, s)
       })
+      result.experience.forEach((e) => {
+        apply(`experience-${e.index}`, e)
+      })
+      setInsertErrors(nextInsertErrors)
+
+      if (currentRunId) {
+        const summary = buildFullSaveSummary(proposal, nextInsertedKeys, nextInsertErrors)
+        updateCVImportRunSaveSummary(currentRunId, summary).catch(() => {
+          // Non-fatal — the actual insert already succeeded; losing the
+          // history record of it shouldn't error the user's own review.
+        })
+      }
     } finally {
       setInserting(false)
     }
@@ -291,6 +377,7 @@ export function ImportCvPage() {
     setFileName('')
     setUploadResult(null)
     setConversationId(null)
+    setCurrentRunId(null)
     setRawReply('')
     setProposal(null)
     setDuplicateLabels(null)
@@ -308,11 +395,6 @@ export function ImportCvPage() {
     if (conversationId) window.__cinqoToolBridge.openConversation(conversationId)
   }
 
-  function experienceLabel(item: { title: string; company: string; startDate: string; endDate: string }): string {
-    const when = item.startDate || item.endDate ? ` (${item.startDate || '?'} – ${item.endDate || 'present'})` : ''
-    return `${item.title} at ${item.company}${when}`
-  }
-
   function resolvedLabelFor(item: ProposalItem, kind: 'persona' | 'experience' | 'skill'): string | undefined {
     if (item.possibleDuplicateOf === null) return undefined
     if (kind === 'skill') return item.possibleDuplicateOf
@@ -327,7 +409,7 @@ export function ImportCvPage() {
         Upload a CV and let the AI propose Profile, Persona, Personal Details, Skills, and Experience entries from it.
       </p>
 
-      {state === 'upload' && (
+      {state === 'upload' && !viewingRun && (
         <section className="rounded-lg border border-gray-200 p-4 shadow-sm">
           <div
             role="button"
@@ -387,21 +469,59 @@ export function ImportCvPage() {
         </section>
       )}
 
-      {state === 'upload' && uploadedCVs !== null && uploadedCVs.length > 0 && (
+      {state === 'upload' && !viewingRun && runs !== null && runs.length > 0 && (
         <section className="mt-4 rounded-lg border border-gray-200 p-4 shadow-sm">
-          <h2 className="mb-2 text-sm font-semibold text-gray-900">Previously uploaded</h2>
+          <h2 className="mb-2 text-sm font-semibold text-gray-900">Import history</h2>
+          <div className="mb-2 min-h-[1.2em] text-sm text-red-700">{runActionError}</div>
           <ul className="divide-y divide-gray-100">
-            {uploadedCVs.map((cv) => (
-              <li key={cv.id} className="flex items-center justify-between gap-3 py-2 text-sm">
-                <span className="truncate text-gray-700">{cv.originalFilename}</span>
-                <span className="shrink-0 text-xs text-gray-400">
-                  {formatFileSize(cv.sizeBytes)} · {new Date(cv.createdAt).toLocaleString()} ·{' '}
-                  {isExpired(cv.expiresAt) ? 'Expired' : `Expires ${new Date(cv.expiresAt).toLocaleTimeString()}`}
-                </span>
+            {runs.map((run) => (
+              <li key={run.id} className="flex items-center justify-between gap-3 py-2 text-sm">
+                <div className="min-w-0">
+                  <p className="truncate text-gray-700">{run.originalFilename}</p>
+                  <p className="text-xs text-gray-400">{new Date(run.createdAt).toLocaleString()}</p>
+                </div>
+                <div className="flex shrink-0 items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setViewingRun(run)
+                    }}
+                    className="text-xs font-medium text-gray-600 underline hover:text-gray-900"
+                  >
+                    View
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void handleProcessAgain(run)
+                    }}
+                    className="text-xs font-medium text-gray-600 underline hover:text-gray-900"
+                  >
+                    Process again
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void handleDeleteRun(run)
+                    }}
+                    className="text-xs font-medium text-red-600 underline hover:text-red-800"
+                  >
+                    Delete
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
         </section>
+      )}
+
+      {state === 'upload' && viewingRun && (
+        <ImportRunDetail
+          run={viewingRun}
+          onClose={() => {
+            setViewingRun(null)
+          }}
+        />
       )}
 
       {state === 'analyzing' && (

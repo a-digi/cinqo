@@ -530,25 +530,63 @@ export async function uploadCV(file: File): Promise<CVUploadResult> {
   return jsonOrThrow<CVUploadResult>(res, 'upload cv')
 }
 
-// One of the current user's own previously uploaded CVs — relayed
-// through this tool's own backend from the core Media feature's own
-// GET /api/v1/media/mine?toolSlug=career (never fetched directly by
-// this frontend). expiresAt is always set today (cv_import.go's own
-// cvImportTTLSeconds), but read as possibly empty in case a future
-// non-expiring upload path is ever added.
-export interface UploadedCV {
+// One completed CV analysis: the AI's own proposal, and — once the
+// user acts on it — what was actually saved. aiProposal/saveSummary
+// are kept as `unknown` here deliberately — api.ts stays decoupled
+// from Components/ImportCv's own CVImportProposal/InsertResult shapes
+// (matching this file's own "no cross-imports" convention); the caller
+// casts to whichever shape it actually needs. saveSummary is null
+// until the user's first "Insert" attempt for this run.
+export interface CVImportRun {
   id: string
+  mediaFileId: string
   originalFilename: string
-  sizeBytes: number
+  conversationId: string
+  aiProposal: unknown
+  saveSummary: unknown
   createdAt: string
-  expiresAt: string
+  updatedAt: string
 }
 
-export async function fetchUploadedCVs(): Promise<UploadedCV[]> {
-  const res = await fetch(`${PROXY_BASE}/cv-import/uploads`, {
+export async function fetchCVImportRuns(): Promise<CVImportRun[]> {
+  const res = await fetch(`${PROXY_BASE}/cv-import/runs`, {
     method: 'GET',
     credentials: 'include',
   })
-  const body = await jsonOrThrow<{ uploads: UploadedCV[] }>(res, 'list uploaded cvs')
-  return body.uploads
+  const body = await jsonOrThrow<{ runs: CVImportRun[] }>(res, 'list cv import runs')
+  return body.runs
+}
+
+export async function createCVImportRun(params: {
+  fileId: string
+  originalFilename: string
+  conversationId: string
+  aiProposal: unknown
+}): Promise<string> {
+  const res = await fetch(`${PROXY_BASE}/cv-import/runs`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  })
+  const body = await jsonOrThrow<{ id: string }>(res, 'create cv import run')
+  return body.id
+}
+
+export async function updateCVImportRunSaveSummary(id: string, saveSummary: unknown): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/cv-import/runs`, {
+    method: 'PUT',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, saveSummary }),
+  })
+  if (!res.ok && res.status !== 204) throw new Error(`failed to update cv import run (${res.status})`)
+}
+
+export async function deleteCVImportRun(id: string): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/cv-import/runs?id=${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  })
+  if (!res.ok && res.status !== 204) throw new Error(`failed to delete cv import run (${res.status})`)
 }

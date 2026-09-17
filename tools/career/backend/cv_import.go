@@ -14,8 +14,10 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log"
 	"mime/multipart"
 	"net/http"
 	"os"
@@ -29,11 +31,14 @@ import (
 const maxCVUploadBytes = 10 * 1024 * 1024
 
 // cvImportTTLSeconds bounds how long the uploaded CV stays resolvable
-// by the AI's own pdf_to_markdown call — long enough to cover a full AI
-// turn (fetch + extraction + duplicate comparison + JSON composition),
-// short enough to bound how long an abandoned upload lingers on disk.
-// Passed straight to Media's own ttlSeconds field.
-const cvImportTTLSeconds = 30 * 60
+// by the AI's own pdf_to_markdown call — and now also how long
+// "process again" (cv_import_runs.go) can reuse the same upload
+// instead of asking for a fresh one, now that reprocessing is a real
+// feature. 24h, not indefinite: long enough that revisiting an import
+// a day later still works, short enough to still bound how long a CV's
+// own PII sits on disk. Passed straight to Media's own ttlSeconds
+// field.
+const cvImportTTLSeconds = 24 * 60 * 60
 
 type uploadCVResponse struct {
 	FileID string `json:"fileId"`
@@ -149,58 +154,101 @@ func forwardToMedia(originalReq *http.Request, file io.Reader, filename string) 
 	return result.Message.FileID, nil
 }
 
-// uploadedCVResponse is a Career-specific reshaping of Media's own
-// mediaFileResponse — toolSlug/uploadedByUserId are dropped since
-// they're redundant here (always "career", always "me").
-type uploadedCVResponse struct {
-	ID               string `json:"id"`
-	OriginalFilename string `json:"originalFilename"`
-	SizeBytes        int64  `json:"sizeBytes"`
-	CreatedAt        string `json:"createdAt"`
-	ExpiresAt        string `json:"expiresAt"`
+// --- cv-import/runs — history: what the AI suggested, what was saved ---
+//
+// Superseded this feature's own previous GET cv-import/uploads (a bare
+// Media-file listing with no domain knowledge of what an upload was
+// even for) — see plan/ai/media/step-05-career-history.md. One
+// handler, dispatched by method, matching profilesHandler's own
+// established convention elsewhere in this tool.
+
+type createCVImportRunRequest struct {
+	FileID           string          `json:"fileId"`
+	OriginalFilename string          `json:"originalFilename"`
+	ConversationID   string          `json:"conversationId"`
+	AIProposal       json.RawMessage `json:"aiProposal"`
 }
 
-// mediaMineEnvelope mirrors GET /api/v1/media/mine's own response
-// shape — same {"success":true,"message":[...]} envelope as
-// mediaUploadEnvelope above, just an array of the fuller
-// media.mediaFileResponse shape instead of one upload result.
-type mediaMineEnvelope struct {
-	Message []struct {
-		ID               string `json:"id"`
-		OriginalFilename string `json:"original_filename"`
-		SizeBytes        int64  `json:"size_bytes"`
-		CreatedAt        string `json:"created_at"`
-		ExpiresAt        string `json:"expires_at"`
-	} `json:"message"`
+type updateCVImportRunRequest struct {
+	ID          string          `json:"id"`
+	SaveSummary json.RawMessage `json:"saveSummary"`
 }
 
-// listCVUploadsHandler handles GET cv-import/uploads — relays to the
-// core Media feature's own GET /api/v1/media/mine?toolSlug=career,
-// forwarding the ORIGINAL caller's own Authorization/Cookie header the
-// same way forwardToMedia does, so Media's own "list only my own
-// uploads" check sees the same real, currently-authenticated user.
-// Backs ImportCvPage.tsx's own "Previously uploaded" list. See
-// plan/ai/media/step-04-career-uploaded-list.md.
-func listCVUploadsHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+// cvImportRunsHandler handles GET/POST/PUT/DELETE cv-import/runs.
+func cvImportRunsHandler(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		runs, err := listCVImportRuns()
+		if err != nil {
+			http.Error(w, "failed to list cv import runs: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, map[string]any{"runs": runs})
+
+	case http.MethodPost:
+		var body createCVImportRunRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.FileID == "" || body.ConversationID == "" || len(body.AIProposal) == 0 {
+			http.Error(w, "fileId, conversationId, and aiProposal are all required", http.StatusBadRequest)
+			return
+		}
+		id, err := createCVImportRun(body.FileID, body.OriginalFilename, body.ConversationID, body.AIProposal)
+		if err != nil {
+			http.Error(w, "failed to record cv import run: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, map[string]any{"id": id})
+
+	case http.MethodPut:
+		var body updateCVImportRunRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.ID == "" || len(body.SaveSummary) == 0 {
+			http.Error(w, "id and saveSummary are both required", http.StatusBadRequest)
+			return
+		}
+		if err := updateCVImportRunSaveSummary(body.ID, body.SaveSummary); err != nil {
+			if errors.Is(err, errUnknownCVImportRun) {
+				http.Error(w, "unknown cv import run id", http.StatusBadRequest)
+				return
+			}
+			http.Error(w, "failed to update cv import run: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+
+	case http.MethodDelete:
+		id := r.URL.Query().Get("id")
+		if id == "" {
+			http.Error(w, "id query parameter is required", http.StatusBadRequest)
+			return
+		}
+		mediaFileID, err := deleteCVImportRun(id)
+		if err != nil {
+			if errors.Is(err, errUnknownCVImportRun) {
+				http.Error(w, "unknown cv import run id", http.StatusBadRequest)
+				return
+			}
+			http.Error(w, "failed to delete cv import run: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		// Best-effort — the history row is gone either way; a lingering
+		// orphaned Media file just expires on its own TTL if this fails.
+		// Forwards the ORIGINAL caller's own Authorization/Cookie so
+		// Media's own ownership check (DeleteHandler, api/src/media) sees
+		// the same real, currently-authenticated user.
+		if err := forwardDeleteToMedia(r, mediaFileID); err != nil {
+			log.Printf("cv_import_runs: failed to delete media file %q for run %q: %v", mediaFileID, id, err)
+		}
+		w.WriteHeader(http.StatusNoContent)
+
+	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
 	}
-
-	uploads, err := fetchMyUploadsFromMedia(r)
-	if err != nil {
-		http.Error(w, "failed to list uploads: "+err.Error(), http.StatusBadGateway)
-		return
-	}
-
-	writeJSON(w, map[string]any{"uploads": uploads})
 }
 
-func fetchMyUploadsFromMedia(originalReq *http.Request) ([]uploadedCVResponse, error) {
-	mineURL := os.Getenv("CORE_API_URL") + "/api/v1/media/mine?toolSlug=career"
-	req, err := http.NewRequest(http.MethodGet, mineURL, nil)
+func forwardDeleteToMedia(originalReq *http.Request, mediaFileID string) error {
+	deleteURL := os.Getenv("CORE_API_URL") + "/api/v1/media/" + mediaFileID
+	req, err := http.NewRequest(http.MethodDelete, deleteURL, nil)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if auth := originalReq.Header.Get("Authorization"); auth != "" {
 		req.Header.Set("Authorization", auth)
@@ -211,29 +259,13 @@ func fetchMyUploadsFromMedia(originalReq *http.Request) ([]uploadedCVResponse, e
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusNotFound {
 		respBody, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("media list failed: %s: %s", resp.Status, string(respBody))
+		return fmt.Errorf("media delete failed: %s: %s", resp.Status, string(respBody))
 	}
-
-	var result mediaMineEnvelope
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, err
-	}
-
-	out := make([]uploadedCVResponse, 0, len(result.Message))
-	for _, m := range result.Message {
-		out = append(out, uploadedCVResponse{
-			ID:               m.ID,
-			OriginalFilename: m.OriginalFilename,
-			SizeBytes:        m.SizeBytes,
-			CreatedAt:        m.CreatedAt,
-			ExpiresAt:        m.ExpiresAt,
-		})
-	}
-	return out, nil
+	return nil
 }
