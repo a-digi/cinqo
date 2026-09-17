@@ -1,2 +1,0 @@
-/***Statement***/
-ALTER TABLE conversations ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0;
