@@ -103,7 +103,7 @@ func run() error {
 	// own data/ default, next to the running executable. See
 	// plan/ai/build/app/step-17-configurable-data-directory.md and
 	// plan/ai/build/app/step-22-data-dir-always-executable-relative.md.
-	dataDir := flag.String("data", "", `path to the data directory (default: "data", next to the executable)`)
+	dataDirFlag := flag.String("data", "", `path to the data directory (default: "data", next to the executable)`)
 	flag.Parse()
 
 	// Armed before anything else starts (backend, Caddy, or the
@@ -127,12 +127,30 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("resolve app home: %w", err)
 	}
-	configPath := filepath.Join(home, "config.json")
-	if err := ensureConfigFile(configPath, home); err != nil {
+
+	// Resolved once, here, up front — before config.json/config/
+	// chrome.pid are computed, since these all live under this same
+	// directory (making --data the one override point for this app's
+	// entire persistent footprint, not just the backend's own
+	// db/logs/tools subset — config.json/config/ still resolve
+	// relative to home for now, folded in by a later step). MkdirAll'd
+	// immediately since nothing downstream (ensureConfigFile,
+	// extractEmbeddedConfig) can assume it already exists the way
+	// backendapp.Start's own dataDir setup normally guarantees.
+	dataDefault := filepath.Join(home, "data")
+	resolvedDataDir := backendapp.ResolveDataDir(*dataDirFlag, dataDefault)
+	if err := os.MkdirAll(resolvedDataDir, 0o755); err != nil {
+		return fmt.Errorf("create data directory: %w", err)
+	}
+
+	// config.json (and, via ensureConfigFile's own pid_file override
+	// below, server.pid too) lives under the resolved data directory,
+	// not home directly — see resolvedDataDir's own doc comment above.
+	configPath := filepath.Join(resolvedDataDir, "config.json")
+	if err := ensureConfigFile(configPath, resolvedDataDir); err != nil {
 		return fmt.Errorf("create default config: %w", err)
 	}
-	dataDefault := filepath.Join(home, "data")
-	chromePidPath := filepath.Join(home, "chrome.pid")
+	chromePidPath := filepath.Join(resolvedDataDir, "chrome.pid")
 
 	// migrations/route YAML/the auth config.json/iam.yaml/
 	// system-tools.yaml all live under api/config/ today, resolved via
@@ -142,8 +160,10 @@ func run() error {
 	// and pointing CINQO_CONFIG_DIR (the override candidateDefaults()
 	// already respects) at it fixes every one of those in one shot —
 	// no changes needed to backendapp.Start or the config package
-	// itself. See plan/ai/build/app/step-19-embedded-config-directory.md.
-	configDir := filepath.Join(home, "config")
+	// itself. Lives under the resolved data directory, not home
+	// directly — see resolvedDataDir's own doc comment above. See
+	// plan/ai/build/app/step-19-embedded-config-directory.md.
+	configDir := filepath.Join(resolvedDataDir, "config")
 	if err := extractEmbeddedConfig(configDir); err != nil {
 		return fmt.Errorf("extract embedded config: %w", err)
 	}
@@ -163,7 +183,7 @@ func run() error {
 	closeStaleChromeInstance(chromePidPath)
 
 	srv, cfg, ctx, log, err := backendapp.Start(backendapp.Options{
-		DataDir:    backendapp.ResolveDataDir(*dataDir, dataDefault),
+		DataDir:    resolvedDataDir,
 		ConfigPath: configPath,
 		AppVersion: strings.TrimSpace(embeddedAppVersion),
 	})
@@ -236,7 +256,7 @@ func resolveAppHome() (home string, err error) {
 // nothing is there yet — never overwrites an existing file, so a
 // user's own later edits (e.g. a different port) persist across
 // restarts, the same expectation the checked-in dev config.json
-// already has. pid_file is overridden to an absolute, home-relative
+// already has. pid_file is overridden to an absolute, dataDir-relative
 // path before writing — parsed and re-marshaled, not string-
 // templated, since verified directly (coco-server's own pid.go)
 // that PidFile is used as a genuinely opaque path (os.Create/
@@ -244,7 +264,7 @@ func resolveAppHome() (home string, err error) {
 // so an absolute value here is safe and resolves correctly regardless
 // of process CWD at any future launch. See
 // plan/ai/build/app/step-18-embedded-default-config-and-app-home.md.
-func ensureConfigFile(path, home string) error {
+func ensureConfigFile(path, dataDir string) error {
 	if _, err := os.Stat(path); err == nil {
 		return nil
 	}
@@ -253,7 +273,7 @@ func ensureConfigFile(path, home string) error {
 	if err := json.Unmarshal(embeddedConfigJSON, &cfg); err != nil {
 		return fmt.Errorf("parse embedded default config: %w", err)
 	}
-	cfg["pid_file"] = filepath.Join(home, "server.pid")
+	cfg["pid_file"] = filepath.Join(dataDir, "server.pid")
 
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
