@@ -46,7 +46,15 @@ export const menuEntries: MenuEntry[] = [
   { label: 'Home', path: '/', icon: homeIcon },
   { label: 'Conversations', path: '/conversations', scopes: [AppScopes.ConversationUse], icon: conversationsIcon },
   { label: 'Tools', path: '/admin/tools', scopes: [AppScopes.ToolManage], icon: toolsIcon },
-  { label: 'Platforms', path: '/admin/platforms', scopes: [AppScopes.PlatformRead], icon: platformsIcon },
+  {
+    label: 'AI',
+    icon: aiIcon,
+    children: [
+      { label: 'Platform', path: '/admin/platforms', scopes: [AppScopes.PlatformRead], icon: platformsIcon },
+      { label: 'Settings', path: '/admin/conversation-debug', scopes: [AppScopes.SuperAdmin] },
+      { label: 'Logs', path: '/admin/conversation-logs', scopes: [AppScopes.SuperAdmin] },
+    ],
+  },
   {
     label: 'System',
     icon: systemIcon,
@@ -61,14 +69,6 @@ export const menuEntries: MenuEntry[] = [
         // icon-less entry still aligns correctly (see
         // SidebarMenuItem's own reserved icon-slot width).
         children: [{ label: 'Scopes', path: '/admin/security/scopes', scopes: [AppScopes.SuperAdmin] }],
-      },
-      {
-        label: 'AI',
-        icon: aiIcon,
-        children: [
-          { label: 'Settings', path: '/admin/conversation-debug', scopes: [AppScopes.SuperAdmin] },
-          { label: 'Logs', path: '/admin/conversation-logs', scopes: [AppScopes.SuperAdmin] },
-        ],
       },
     ],
   },
