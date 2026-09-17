@@ -675,12 +675,34 @@ func waitForHumanToClearCloudflare(ctx context.Context, requestID, initialReason
 	setCrawlPhase(requestID, phaseAwaitingHumanChallenge, fmt.Sprintf(
 		"Cloudflare challenge detected (%s) — waiting for a person to solve it in the open browser window", initialReason,
 	))
+
+	// Read once, up front — same "read once, not re-checked per tick"
+	// convention paginatedCrawlHandler's own settings.DebugEnabled read
+	// already establishes. A read failure is treated the same as "off"
+	// — this is pure debug observability, never allowed to interrupt
+	// the wait itself.
+	settings, _ := shared.LoadBrowserSettings()
+	logHTML := settings.DebugEnabled && settings.DebugLogHTML
+
 	deadline := time.Now().Add(maxHumanSolveDuration)
 	attempt := 0
 	for time.Now().Before(deadline) {
 		attempt++
 		if err := chromedp.Run(ctx, chromedp.Sleep(humanSolveRetryInterval)); err != nil {
 			return false, err
+		}
+
+		// Captured BEFORE the checks below, so the logged HTML is
+		// exactly what expectedContentVisible/detectCloudflareChallenge
+		// are about to evaluate on this same tick, not a stale snapshot
+		// from a moment earlier. Best-effort and skipped entirely (no
+		// extra chromedp round trip at all) unless Debug + Log HTML are
+		// both on.
+		if logHTML {
+			var html string
+			if err := chromedp.Run(ctx, chromedp.OuterHTML("html", &html)); err == nil {
+				logChallengeDetectorHTML(requestID, attempt, html)
+			}
 		}
 
 		if len(expectedSelectors) > 0 {

@@ -24,6 +24,14 @@ var (
 	// fetch_cache.go's own lookup/store functions. See
 	// plan/ai/tools/browser/step-45-fetch-html-caching-plan.md.
 	FetchCacheDir string
+	// ChallengeLogsDir holds one subfolder per crawl session's own
+	// requestID, each containing one raw-HTML .txt file per tick of the
+	// Cloudflare human-wait loop (Debug + Log HTML only) — set once
+	// here, read/written by crawler/challenge_log.go. Unlike
+	// CrawlLogsDir/FetchCacheDir above, the per-session subfolder itself
+	// is created lazily on first actual write, not eagerly here — most
+	// crawls never reach that wait loop at all.
+	ChallengeLogsDir string
 )
 
 // InitDB opens (creating if needed) browser.db, both under
@@ -51,6 +59,11 @@ func InitDB() error {
 	FetchCacheDir = filepath.Join(dbDir, "fetch_cache")
 	if err := os.MkdirAll(FetchCacheDir, 0o755); err != nil {
 		return fmt.Errorf("failed to create fetch_cache directory: %w", err)
+	}
+
+	ChallengeLogsDir = filepath.Join(dbDir, "challenge_logs")
+	if err := os.MkdirAll(ChallengeLogsDir, 0o755); err != nil {
+		return fmt.Errorf("failed to create challenge_logs directory: %w", err)
 	}
 
 	db, err := sql.Open("sqlite", filepath.Join(dbDir, "browser.db"))
