@@ -1,0 +1,10 @@
+routes:
+  # No static scopes: like route-tool.yaml's own proxy route, the real
+  # requirement is dynamic (whichever scope the target toolSlug itself
+  # declared, checked inside MediaUploadHandler) — not something this
+  # YAML can express. See media/handler/upload_handler.go's own doc
+  # comment.
+  - path: /api/v1/media/upload
+    method: POST
+    executor: MediaUpload
+    security: authenticated

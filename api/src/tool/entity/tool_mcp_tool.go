@@ -14,4 +14,7 @@ type ToolMCPTool struct {
 	// (never from live MCP discovery, which has no scope concept at
 	// all) — see manifest.MCPToolDecl.
 	RequiredScope string `db:"required_scope" dbtype:"TEXT" nullable:"false" json:"required_scope"`
+	// MediaParam mirrors manifest.MCPToolDecl's own field of the same
+	// name — see its doc comment. Empty string means "not applicable".
+	MediaParam string `db:"media_param" dbtype:"TEXT" nullable:"false" json:"media_param"`
 }

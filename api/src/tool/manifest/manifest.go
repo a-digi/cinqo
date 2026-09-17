@@ -72,6 +72,15 @@ type RouteDecl struct {
 type MCPToolDecl struct {
 	Name          string `json:"name"`
 	RequiredScope string `json:"required_scope"`
+	// MediaParam names the argument of this MCP tool (by its JSON key)
+	// that accepts a Media reference — a "media:<fileId>" string
+	// conversation/chat.go's own invokeToolCall resolves server-side,
+	// in-process, into a real "file://<absolute path>" value before the
+	// tool is ever invoked, so the tool itself never performs — and can
+	// never be asked to authenticate — an HTTP fetch for that value.
+	// Empty (the default) means this tool has no such argument. See
+	// plan/ai/media/step-02-career-media-migration.md.
+	MediaParam string `json:"media_param,omitempty"`
 }
 
 // RequiredToolDecl is one other tool this manifest's own tool depends

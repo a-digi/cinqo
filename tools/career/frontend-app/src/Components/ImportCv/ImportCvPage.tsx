@@ -155,7 +155,7 @@ export function ImportCvPage() {
       })
       setConversationId(conversation.id)
 
-      const result = await sendMessage(conversation.id, buildImportPrompt(upload.url))
+      const result = await sendMessage(conversation.id, buildImportPrompt(upload.fileId))
       setRawReply(result.content)
 
       const parsed = parseProposal(result.content)
@@ -353,7 +353,7 @@ export function ImportCvPage() {
       {state === 'analyzing' && (
         <div className="space-y-4">
           <p className="text-sm text-gray-500">
-            Analyzing “{fileName}”…{uploadResult && <span className="ml-1 font-mono text-xs text-gray-400">({uploadResult.id})</span>}
+            Analyzing “{fileName}”…{uploadResult && <span className="ml-1 font-mono text-xs text-gray-400">({uploadResult.fileId})</span>}
           </p>
           {conversationId && (
             <p className="text-xs text-gray-400">

@@ -17,6 +17,8 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/ledongthuc/pdf"
@@ -69,7 +71,7 @@ func ToMarkdown(ctx context.Context, rawURL string) (markdown string, cached boo
 	ctx, cancel := context.WithTimeout(ctx, convertTimeout)
 	defer cancel()
 
-	pdfBytes, err := fetchPDF(ctx, rawURL)
+	pdfBytes, err := readSource(ctx, rawURL)
 	if err != nil {
 		return "", false, "", err
 	}
@@ -121,6 +123,43 @@ func extractText(pdfBytes []byte) (string, error) {
 	}
 
 	return buf.String(), nil
+}
+
+// localFileScheme is what the host (cinqo core's own
+// conversation/chat.go, invokeToolCall's resolveMediaArgument)
+// rewrites a "media:<fileId>" reference into before this tool is ever
+// invoked — never a value the AI model or any caller of this MCP tool
+// constructs itself. Reading it directly off local disk, rather than
+// fetching it over HTTP the way every other rawURL is, is what makes a
+// 401 structurally impossible for this path: there's no request to
+// authenticate. See plan/ai/media/step-02-career-media-migration.md.
+const localFileScheme = "file://"
+
+// readSource dispatches to a local disk read for a file:// reference,
+// or the existing SSRF-guarded HTTP fetch for everything else.
+func readSource(ctx context.Context, rawURL string) ([]byte, error) {
+	if path, ok := strings.CutPrefix(rawURL, localFileScheme); ok {
+		return readLocalFile(path)
+	}
+	return fetchPDF(ctx, rawURL)
+}
+
+// readLocalFile enforces the same maxPDFSourceBytes ceiling fetchPDF
+// does, just via a stat instead of a LimitReader (no streaming response
+// body to bound here).
+func readLocalFile(path string) ([]byte, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read local file: %w", err)
+	}
+	if info.Size() > maxPDFSourceBytes {
+		return nil, fmt.Errorf("pdf exceeds max size of %d bytes", maxPDFSourceBytes)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read local file: %w", err)
+	}
+	return data, nil
 }
 
 // fetchPDF downloads rawURL, enforcing the SSRF hygiene and size cap

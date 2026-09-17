@@ -16,6 +16,7 @@ import (
 	"github.com/a-digi/cinqo/src/conversation"
 	conversation_handler "github.com/a-digi/cinqo/src/conversation/handler"
 	"github.com/a-digi/cinqo/src/health"
+	media_handler "github.com/a-digi/cinqo/src/media/handler"
 	"github.com/a-digi/cinqo/src/ping"
 	"github.com/a-digi/cinqo/src/platform"
 	platform_handler "github.com/a-digi/cinqo/src/platform/handler"
@@ -101,6 +102,8 @@ func Init(ctx serverdi.Context) {
 		"ConversationGetAllLogs":     local_routing.HandlerFunc(conversation_handler.GetAllLogsHandler),
 		"ConversationGetSettings":    local_routing.HandlerFunc(conversation_handler.GetSettingsHandler),
 		"ConversationUpdateSettings": local_routing.HandlerFunc(conversation_handler.UpdateSettingsHandler),
+
+		"MediaUpload": local_routing.HandlerFunc(media_handler.UploadHandler),
 	}
 
 	var inner *lift_security.ScopeSecurityLayer

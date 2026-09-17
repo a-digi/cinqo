@@ -44,9 +44,6 @@ func runHTTPServer() {
 	if err := initDatabases(); err != nil {
 		log.Fatalf("failed to open career/jobs databases: %v", err)
 	}
-	if err := initCVImportsDir(); err != nil {
-		log.Fatalf("failed to init cv_imports directory: %v", err)
-	}
 	// A goroutine, unlike an OS process, has no PID to find or
 	// reattach after a restart — any crawl_runs row still 'running'
 	// from before this process started is definitely orphaned. See
@@ -83,7 +80,6 @@ func runHTTPServer() {
 	http.HandleFunc("/portal-links/crawl-now/active", crawlNowActiveHandler)
 	http.HandleFunc("/portal-links/crawl-now/cancel", crawlNowCancelHandler)
 	http.HandleFunc("/cv-import/upload", uploadCVHandler)
-	http.HandleFunc("/cv-import/file", serveCVFileHandler)
 
 	if err := http.ListenAndServe("127.0.0.1:"+port, nil); err != nil {
 		os.Exit(1)

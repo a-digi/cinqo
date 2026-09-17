@@ -1,7 +1,7 @@
 {
   "slug": "pdf_tools",
   "name": "PDF Tools",
-  "version": "0.2.11",
+  "version": "0.2.13",
   "mcp": true,
   "scopes": [
     {
@@ -37,7 +37,8 @@
   "mcp_tools": [
     {
       "name": "pdf_to_markdown",
-      "required_scope": "tool:pdf_tools:convert"
+      "required_scope": "tool:pdf_tools:convert",
+      "media_param": "url"
     },
     {
       "name": "generate_pdf",

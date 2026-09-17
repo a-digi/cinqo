@@ -1,33 +1,26 @@
-// cv_import.go — Import CV (step 2): accepting an uploaded CV PDF and
-// serving it back via a capability token instead of the normal
-// scope-gated proxy auth. pdf_tools' own fetch has no session to
-// present (it's a stateless subprocess), so the usual "caller must
-// hold tool:career:cv_import" check can never pass for that one fetch
-// — a random, unguessable, short-lived token substitutes for it on
-// that one route only. See
-// plan/ai/tools/career/import-cv/step-02-cv-upload-and-capability-token-serving.md.
+// cv_import.go — Import CV: accepting an uploaded CV PDF and handing
+// it to the core Media feature, which stores it centrally and returns
+// an opaque file id. The AI only ever sees that id (embedded as
+// "media:<fileId>" in buildImportPrompt.ts's own initial instruction
+// message) — never a fetchable URL — so pdf_tools' own pdf_to_markdown
+// call never performs an HTTP fetch for it at all, and can never 401.
+// Replaces this feature's own previous capability-token mechanism
+// (a per-file random token this tool minted, hashed, and checked
+// itself against a route the reverse proxy had to specially exempt
+// from its normal auth check) — that mechanism is gone; see
+// plan/ai/media/step-02-career-media-migration.md.
 package main
 
 import (
-	"crypto/rand"
-	"crypto/sha256"
-	"crypto/subtle"
-	"encoding/base64"
-	"encoding/hex"
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
-	"time"
-
-	"github.com/google/uuid"
 )
-
-// cvImportsDir holds uploaded CV files, under TOOL_UPLOADS_DIR — not
-// pre-created by the host, same convention every other tool's own
-// main() already follows.
-var cvImportsDir string
 
 // maxCVUploadBytes bounds the uploaded file — a resume PDF has no
 // business being larger. Plain constant, not configurable, matching
@@ -35,41 +28,30 @@ var cvImportsDir string
 // convention.
 const maxCVUploadBytes = 10 * 1024 * 1024
 
-// cvImportTokenTTL bounds how long a capability URL stays servable —
-// long enough to cover a full AI turn (fetch + extraction + duplicate
-// comparison + JSON composition), short enough to bound how long a
-// leaked URL would expose real PII.
-const cvImportTokenTTL = 30 * time.Minute
-
-// initCVImportsDir creates this feature's own upload subdirectory —
-// called once from runHTTPServer, mirroring initDatabases' own
-// TOOL_DB_DIR pattern.
-func initCVImportsDir() error {
-	uploadsDir := os.Getenv("TOOL_UPLOADS_DIR")
-	if uploadsDir == "" {
-		return fmt.Errorf("TOOL_UPLOADS_DIR is not set")
-	}
-	dir := filepath.Join(uploadsDir, "cv_imports")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("failed to create cv_imports directory: %w", err)
-	}
-	cvImportsDir = dir
-	return nil
-}
+// cvImportTTLSeconds bounds how long the uploaded CV stays resolvable
+// by the AI's own pdf_to_markdown call — long enough to cover a full AI
+// turn (fetch + extraction + duplicate comparison + JSON composition),
+// short enough to bound how long an abandoned upload lingers on disk.
+// Passed straight to Media's own ttlSeconds field.
+const cvImportTTLSeconds = 30 * 60
 
 type uploadCVResponse struct {
-	ID  string `json:"id"`
-	URL string `json:"url"`
+	FileID string `json:"fileId"`
+}
+
+type mediaUploadResponse struct {
+	FileID string `json:"fileId"`
 }
 
 // uploadCVHandler handles POST cv-import/upload — multipart, single
-// field "cv". Generates a random token (crypto/rand, never
-// math/rand — this gates a real capability, not a cosmetic id),
-// stores its hash (never the raw token) alongside the file, and
-// returns a ready-to-use absolute URL the frontend embeds verbatim
-// into the AI's own initial instruction message — the AI never has to
-// construct this URL itself, only copy it into its own
-// pdf_to_markdown tool call.
+// field "cv". Forwards the file to the core Media feature
+// (POST {CORE_API_URL}/api/v1/media/upload, toolSlug="career"),
+// re-presenting the ORIGINAL caller's own Authorization/Cookie header
+// on that outbound call: the reverse proxy already forwarded it onto
+// this handler unmodified (httputil.ReverseProxy preserves it by
+// default), and Media's own authorization check needs to see the same
+// real, currently-authenticated user's scopes — this handler never
+// invents its own service-to-service credential for that call.
 func uploadCVHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -94,113 +76,68 @@ func uploadCVHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id := uuid.NewString()
-	token, err := generateCVImportToken()
+	fileID, err := forwardToMedia(r, file, header.Filename)
 	if err != nil {
-		http.Error(w, "failed to generate upload token: "+err.Error(), http.StatusInternalServerError)
+		http.Error(w, "failed to store cv: "+err.Error(), http.StatusBadGateway)
 		return
 	}
 
-	destPath := filepath.Join(cvImportsDir, id+".pdf")
-	dest, err := os.Create(destPath)
-	if err != nil {
-		http.Error(w, "failed to store cv: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if _, err := io.Copy(dest, file); err != nil {
-		dest.Close()
-		http.Error(w, "failed to store cv: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	dest.Close()
-
-	tokenHash := hashCVImportToken(token)
-	expiresAt := time.Now().Add(cvImportTokenTTL).UTC().Format(time.RFC3339)
-	if _, err := careerDB.Exec(
-		`INSERT INTO cv_import_files (id, token_hash, file_path, expires_at) VALUES (?, ?, ?, ?)`,
-		id, tokenHash, destPath, expiresAt,
-	); err != nil {
-		http.Error(w, "failed to record cv upload: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	// CORE_API_URL is the same fixed, host-injected env var every tool
-	// subprocess receives — used here (not just by the host itself) so
-	// the URL handed back is genuinely reachable by another tool's own
-	// subprocess (pdf_tools), not just by a human's browser.
-	url := os.Getenv("CORE_API_URL") + "/api/v1/tools/career/proxy/cv-import/file?id=" + id + "&token=" + token
-
-	writeJSON(w, uploadCVResponse{ID: id, URL: url})
+	writeJSON(w, uploadCVResponse{FileID: fileID})
 }
 
-// serveCVFileHandler handles GET cv-import/file. Declared scope is
-// tool:career:cv_import (manifest.json), but this handler checks the
-// capability token FIRST and, on a valid match, serves the file
-// without the caller needing to hold that scope at all — the token is
-// the substitute security boundary for this one route, since
-// pdf_tools' own fetch presents no Authorization/cookie to check
-// against. An invalid/missing/expired token is indistinguishable from
-// a real 404, not a 401/403 — an expired capability URL should look
-// exactly like one that never existed.
-func serveCVFileHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
+// forwardToMedia builds a fresh multipart request to Media's own
+// upload endpoint and returns the file id it hands back. CORE_API_URL
+// is the same fixed, host-injected env var every tool subprocess
+// receives — used the same way this file's own previous
+// capability-token URL used it.
+func forwardToMedia(originalReq *http.Request, file io.Reader, filename string) (string, error) {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
 
-	id := r.URL.Query().Get("id")
-	token := r.URL.Query().Get("token")
-	if id == "" || token == "" {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-
-	var tokenHash, filePath, expiresAt string
-	err := careerDB.QueryRow(
-		`SELECT token_hash, file_path, expires_at FROM cv_import_files WHERE id = ?`, id,
-	).Scan(&tokenHash, &filePath, &expiresAt)
+	part, err := writer.CreateFormFile("file", filename)
 	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-
-	if subtle.ConstantTimeCompare([]byte(hashCVImportToken(token)), []byte(tokenHash)) != 1 {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-
-	expiry, err := time.Parse(time.RFC3339, expiresAt)
-	if err != nil || time.Now().UTC().After(expiry) {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/pdf")
-	w.Write(data)
-}
-
-// generateCVImportToken returns a real-random (crypto/rand), 32-byte,
-// base64url-encoded token — high-entropy, unguessable, the substitute
-// security boundary serveCVFileHandler checks.
-func generateCVImportToken() (string, error) {
-	buf := make([]byte, 32)
-	if _, err := rand.Read(buf); err != nil {
 		return "", err
 	}
-	return base64.RawURLEncoding.EncodeToString(buf), nil
-}
+	if _, err := io.Copy(part, file); err != nil {
+		return "", err
+	}
+	if err := writer.WriteField("toolSlug", "career"); err != nil {
+		return "", err
+	}
+	if err := writer.WriteField("ttlSeconds", fmt.Sprintf("%d", cvImportTTLSeconds)); err != nil {
+		return "", err
+	}
+	if err := writer.Close(); err != nil {
+		return "", err
+	}
 
-// hashCVImportToken — the raw token is never stored, only its hash;
-// this isn't a low-entropy secret needing bcrypt's slow-hash treatment
-// (unlike a human password), it's a high-entropy random value being
-// protected against DB-read disclosure, so a plain SHA-256 is enough.
-func hashCVImportToken(token string) string {
-	sum := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(sum[:])
+	uploadURL := os.Getenv("CORE_API_URL") + "/api/v1/media/upload"
+	req, err := http.NewRequest(http.MethodPost, uploadURL, &body)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	if auth := originalReq.Header.Get("Authorization"); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
+	if cookie := originalReq.Header.Get("Cookie"); cookie != "" {
+		req.Header.Set("Cookie", cookie)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		respBody, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("media upload failed: %s: %s", resp.Status, string(respBody))
+	}
+
+	var result mediaUploadResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", err
+	}
+	return result.FileID, nil
 }

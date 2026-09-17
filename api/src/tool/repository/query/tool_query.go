@@ -137,6 +137,31 @@ func (r *ToolQueryRepo) AllScopesGroupedByTool() (map[string][]tool_entity.ToolS
 	return out, rows.Err()
 }
 
+// ScopesForTool returns the bare scope strings toolID itself declared
+// in its own manifest — used by the media package's own upload
+// authorization check (a caller may upload into a tool's media
+// namespace only if it holds one of that tool's own declared scopes),
+// so it deliberately returns just the scope names, not the full
+// ToolScope rows AllScopesGroupedByTool already serves the security
+// admin page.
+func (r *ToolQueryRepo) ScopesForTool(toolID string) ([]string, error) {
+	rows, err := r.db.Query(`SELECT scope FROM tool_scopes WHERE tool_id = ?`, toolID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]string, 0)
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
 // EnabledRouteScopes returns every required_scope declared across
 // every ENABLED tool's own routes — tool_routes are never part of any
 // route-*.yaml, so config.AllEnforcedScopes() can't see them on its

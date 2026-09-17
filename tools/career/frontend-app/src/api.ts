@@ -510,11 +510,13 @@ export async function removePortalLink(id: string): Promise<void> {
 // --- CV import ---
 
 export interface CVUploadResult {
-  id: string
-  // Ready-to-use absolute URL — the frontend embeds this verbatim into
-  // the AI's own initial instruction message (step 5); it never has to
-  // be constructed client-side.
-  url: string
+  // Opaque id from the core Media feature — the frontend embeds this as
+  // "media:<fileId>" into the AI's own initial instruction message
+  // (buildImportPrompt.ts). Never a fetchable URL: pdf_to_markdown's
+  // own url argument is resolved server-side, in-process, from this id
+  // before the tool is ever invoked, so there is no HTTP fetch (and no
+  // possible 401) for the AI's own reference to the CV.
+  fileId: string
 }
 
 export async function uploadCV(file: File): Promise<CVUploadResult> {

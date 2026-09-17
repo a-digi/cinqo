@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	media_query "github.com/a-digi/cinqo/src/media/repository/query"
 	"github.com/a-digi/cinqo/src/platform"
 	"github.com/a-digi/cinqo/src/platform/chatcompleter"
 	platform_crypto "github.com/a-digi/cinqo/src/platform/crypto"
@@ -179,7 +180,7 @@ func SendMessage(
 		return nil, fmt.Errorf("conversation: look up offerable tools: %w", err)
 	}
 
-	assistantContent, err := runToolLoop(ctx, httpClient, entry, plainKey, model, messages, tools, mainDB, callerScopes, dataDir, corePort, nil, nil, nil)
+	assistantContent, err := runToolLoop(ctx, httpClient, entry, plainKey, model, messages, tools, mainDB, callerScopes, dataDir, corePort, conversationID, nil, nil, nil)
 	if err != nil {
 		// Record the user's own message AND the real failure reason —
 		// a real, recognized "## error —" block (step 8), not a
@@ -288,6 +289,7 @@ func runToolLoop(
 	callerScopes []string,
 	dataDir string,
 	corePort int,
+	conversationID string,
 	logStep func(step string),
 	reportUsage func(promptTokens, completionTokens int),
 	logExchange func(iteration int, messages []chatcompleter.Message, tools []chatcompleter.ToolDef, result *chatcompleter.ChatCompletionResult, err error),
@@ -374,7 +376,7 @@ func runToolLoop(
 			if logStep != nil {
 				logStep(fmt.Sprintf("iteration %d: invoking tool %s", i+1, call.Name))
 			}
-			text, links := invokeToolCall(ctx, mainDB, callerScopes, call, dataDir, corePort)
+			text, links := invokeToolCall(ctx, mainDB, callerScopes, call, dataDir, corePort, conversationID)
 			group = append(group, chatcompleter.Message{Role: "tool", ToolCallID: call.ID, Content: truncateToolResult(text)})
 			allLinks = append(allLinks, links...)
 		}
@@ -437,7 +439,7 @@ func appendResourceLinks(content string, links []tool_mcp.ResourceLink) string {
 // stranding the conversation. See
 // plan/ai/tools/pdf-generator/step-04-ai-model-invocation.md's
 // "Invocation, concretely".
-func invokeToolCall(ctx context.Context, mainDB *sql.DB, callerScopes []string, call chatcompleter.ToolCall, dataDir string, corePort int) (string, []tool_mcp.ResourceLink) {
+func invokeToolCall(ctx context.Context, mainDB *sql.DB, callerScopes []string, call chatcompleter.ToolCall, dataDir string, corePort int, conversationID string) (string, []tool_mcp.ResourceLink) {
 	mcpTool, err := tool_query.NewToolMCPToolQueryRepo(mainDB).FindMCPToolByName(call.Name)
 	if err != nil {
 		return "tool unavailable", nil
@@ -467,8 +469,65 @@ func invokeToolCall(ctx context.Context, mainDB *sql.DB, callerScopes []string, 
 		return fmt.Sprintf("tool invocation failed: %v", err), nil
 	}
 
-	text, _, links := tool_mcp.Invoke(ctx, execPath, call.Name, call.Arguments, envVars)
+	args := call.Arguments
+	if mcpTool.MediaParam != "" {
+		resolvedArgs, err := resolveMediaArgument(mainDB, args, mcpTool.MediaParam, conversationID)
+		if err != nil {
+			return "tool unavailable", nil
+		}
+		args = resolvedArgs
+	}
+
+	text, _, links := tool_mcp.Invoke(ctx, execPath, call.Name, args, envVars)
 	return text, links
+}
+
+// mediaArgumentScheme is the opaque, non-fetchable reference the AI is
+// given in place of a real URL — e.g. Career's own CV import prompt
+// embeds `url="media:<fileId>"` (buildImportPrompt.ts). Never a real
+// URL a tool subprocess could dial out to itself: resolveMediaArgument
+// below always resolves and substitutes it before the tool is ever
+// invoked, so a tool never has to authenticate an HTTP fetch for it —
+// there is no such fetch. See
+// plan/ai/media/step-02-career-media-migration.md.
+const mediaArgumentScheme = "media:"
+
+// resolveMediaArgument rewrites args[paramName], if present and
+// prefixed with mediaArgumentScheme, from a Media file id into a real
+// "file://<absolute path>" value the target tool's own code can read
+// directly off local disk — the mechanism that makes an unauthenticated
+// 401 structurally impossible for this argument, rather than bypassing
+// the check that used to produce one. A value with no
+// mediaArgumentScheme prefix (e.g. a plain http(s) URL some future
+// caller still passes) is left untouched.
+func resolveMediaArgument(mainDB *sql.DB, args json.RawMessage, paramName, conversationID string) (json.RawMessage, error) {
+	var argMap map[string]any
+	if len(args) > 0 {
+		if err := json.Unmarshal(args, &argMap); err != nil {
+			return nil, err
+		}
+	}
+	if argMap == nil {
+		return args, nil
+	}
+
+	raw, ok := argMap[paramName]
+	if !ok {
+		return args, nil
+	}
+	value, ok := raw.(string)
+	if !ok || !strings.HasPrefix(value, mediaArgumentScheme) {
+		return args, nil
+	}
+	fileID := strings.TrimPrefix(value, mediaArgumentScheme)
+
+	m, err := media_query.NewMediaQueryRepo(mainDB).Resolve(fileID, conversationID)
+	if err != nil {
+		return nil, err
+	}
+
+	argMap[paramName] = "file://" + m.StoredPath
+	return json.Marshal(argMap)
 }
 
 // hasScope matches proxy_handler.go's own established

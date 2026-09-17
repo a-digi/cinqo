@@ -238,7 +238,7 @@ func runDetachedTurn(
 			_ = appendTraceEntry(tracePath, iteration, msgs, toolDefs, result, callErr)
 		}
 	}
-	assistantContent, err := runToolLoop(ctx, httpClient, entry, plainKey, model, messages, tools, mainDB, callerScopes, dataDir, corePort, logStep, reportUsage, logExchange)
+	assistantContent, err := runToolLoop(ctx, httpClient, entry, plainKey, model, messages, tools, mainDB, callerScopes, dataDir, corePort, conversationID, logStep, reportUsage, logExchange)
 	if err != nil {
 		failedTurn := Turn{
 			UserTimestamp:    userTimestamp,
