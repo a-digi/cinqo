@@ -11,11 +11,12 @@ import { Card } from '../../../Shared/Components/Card/Card'
 import { AppScopes } from '../../../config/security/scopes'
 import { reloadAfterToolChange } from '../../../config/tools/loadTools'
 import { ToolInstallButton } from './ToolInstallButton'
+import { colorForTool } from './toolCardColors'
 
-// Caps how many MCP-function pills render inline per tool card before
-// collapsing the rest into a single "+N more" pill — Career alone
-// declares ~35 MCP tools, which would otherwise blow out the card.
-const MAX_VISIBLE_FUNCTIONS = 4
+// Bounds the functions-pill area's own height — every function pill is
+// shown now (no cap), so a tool declaring many (Career: ~35) needs a
+// scrollable box instead of letting the card grow unbounded tall.
+const FUNCTIONS_MAX_HEIGHT = 'max-h-28'
 
 // Admin-only view of installed tools (api/src/tool) — see
 // plan/ai/tools/step-08-frontend-admin-ui.md. Every mutating action
@@ -96,7 +97,7 @@ export function ToolsListPage() {
   const filtered = q ? tools.filter((t) => t.name.toLowerCase().includes(q) || t.slug.toLowerCase().includes(q)) : tools
 
   return (
-    <div className="max-w-5xl space-y-6 p-6">
+    <div className="max-w-6xl space-y-6 p-6">
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-xl font-semibold text-gray-900">Tools</h1>
@@ -127,71 +128,90 @@ export function ToolsListPage() {
       )}
 
       {filtered.length > 0 && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {filtered.map((tool) => (
-            <Card
-              key={tool.id}
-              media={
-                <div className="relative flex h-28 items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
-                  <span className="text-3xl font-bold text-gray-300">{tool.name.charAt(0).toUpperCase()}</span>
-                  <div className="absolute left-3 top-3">
-                    <Pill variant={statusVariant[tool.status]}>{tool.status}</Pill>
-                  </div>
-                  <ScopeGate scopes={[AppScopes.ToolManage]}>
-                    <div className="absolute right-3 top-3 flex gap-2">
-                      <IconButton
-                        floating
-                        icon={<PowerIcon />}
-                        label={tool.enabled ? 'Disable' : 'Enable'}
-                        onClick={() => {
-                          void handleToggle(tool)
-                        }}
-                        disabled={busySlug === tool.slug}
-                      />
-                      <IconButton
-                        floating
-                        icon={<TrashIcon />}
-                        label="Delete"
-                        onClick={() => {
-                          void handleDelete(tool)
-                        }}
-                        disabled={busySlug === tool.slug}
-                        variant="danger"
-                      />
+        <>
+          {/* A plain Tailwind `grid grid-cols-1 md:grid-cols-3` here would
+              share class names with any installed frontend_and_backend
+              tool's own, separately-built, globally-injected Tailwind
+              stylesheet (each tool's bundle.js injects a <style> tag with
+              zero scoping) — confirmed live: Career's own bundle happens
+              to redeclare a bare `.grid-cols-1` with no responsive variant,
+              and since it's injected after this page's own stylesheet, it
+              wins the cascade and silently collapses this grid back to one
+              column regardless of viewport width. A uniquely-named class,
+              declared right here, can't collide with anything a tool's own
+              Tailwind build would ever generate. */}
+          <style>{`
+            .tools-card-grid { display: grid; grid-template-columns: 1fr; gap: 1rem; }
+            @media (min-width: 768px) {
+              .tools-card-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+            }
+          `}</style>
+          <div className="tools-card-grid">
+          {filtered.map((tool) => {
+            const cardColor = colorForTool(tool.id)
+            return (
+              <Card
+                key={tool.id}
+                media={
+                  <div
+                    className="relative flex h-28 items-center justify-center px-12 text-center"
+                    style={{ background: cardColor.background, color: cardColor.color }}
+                  >
+                    <h3 className="truncate text-lg font-bold">{tool.name}</h3>
+                    <div className="absolute left-3 top-3">
+                      <Pill variant={statusVariant[tool.status]}>{tool.status}</Pill>
                     </div>
-                  </ScopeGate>
+                    <ScopeGate scopes={[AppScopes.ToolManage]}>
+                      <div className="absolute right-3 top-3 flex gap-2">
+                        <IconButton
+                          floating
+                          icon={<PowerIcon />}
+                          label={tool.enabled ? 'Disable' : 'Enable'}
+                          onClick={() => {
+                            void handleToggle(tool)
+                          }}
+                          disabled={busySlug === tool.slug}
+                        />
+                        <IconButton
+                          floating
+                          icon={<TrashIcon />}
+                          label="Delete"
+                          onClick={() => {
+                            void handleDelete(tool)
+                          }}
+                          disabled={busySlug === tool.slug}
+                          variant="danger"
+                        />
+                      </div>
+                    </ScopeGate>
+                  </div>
+                }
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <p className="truncate font-mono text-xs text-gray-500">{tool.slug}</p>
+                  <span className="shrink-0 text-sm font-semibold text-gray-900">v{tool.version}</span>
                 </div>
-              }
-            >
-              <div className="flex items-start justify-between gap-2">
-                <h3 className="truncate text-lg font-bold text-gray-900">{tool.name}</h3>
-                <span className="shrink-0 text-lg font-bold text-gray-900">v{tool.version}</span>
-              </div>
-              <p className="truncate font-mono text-xs text-gray-500">{tool.slug}</p>
 
-              <div className="mt-3 flex flex-wrap gap-2">
-                <Pill outline>{tool.kind}</Pill>
-                <Pill outline>{tool.enabled ? 'Enabled' : 'Disabled'}</Pill>
-                <Pill outline>
-                  {tool.mcpTools.length} function{tool.mcpTools.length === 1 ? '' : 's'}
-                </Pill>
-              </div>
-
-              {tool.mcpTools.length > 0 && (
-                <div className="mt-3 flex flex-wrap gap-1">
-                  {tool.mcpTools.slice(0, MAX_VISIBLE_FUNCTIONS).map((name) => (
-                    <Pill key={name}>{name}</Pill>
-                  ))}
-                  {tool.mcpTools.length > MAX_VISIBLE_FUNCTIONS && (
-                    <Pill title={tool.mcpTools.slice(MAX_VISIBLE_FUNCTIONS).join(', ')}>
-                      +{tool.mcpTools.length - MAX_VISIBLE_FUNCTIONS} more
-                    </Pill>
-                  )}
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Pill outline>{tool.kind}</Pill>
+                  <Pill outline>{tool.enabled ? 'Enabled' : 'Disabled'}</Pill>
+                  <Pill outline>
+                    {tool.mcpTools.length} function{tool.mcpTools.length === 1 ? '' : 's'}
+                  </Pill>
                 </div>
-              )}
-            </Card>
-          ))}
-        </div>
+
+                {tool.mcpTools.length > 0 && (
+                  <div className={`mt-3 flex flex-wrap gap-1 overflow-y-auto pr-1 ${FUNCTIONS_MAX_HEIGHT}`}>
+                    {tool.mcpTools.map((name) => (
+                      <Pill key={name}>{name}</Pill>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            )
+          })}
+          </div>
+        </>
       )}
       {dialog}
     </div>
