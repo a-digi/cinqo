@@ -9,7 +9,7 @@
 // fields like extract_page_data — this tool's whole reason to exist
 // is the pagination loop, so its args reflect that directly. See
 // plan/ai/tools/browser/step-16-paginated-crawl-instructions.md.
-package main
+package crawler
 
 import (
 	"context"
@@ -23,6 +23,8 @@ import (
 	"github.com/chromedp/chromedp"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"gopkg.in/yaml.v3"
+
+	"browser-tool-backend/shared"
 )
 
 // paginatedCrawlTimeout bounds the whole multi-page loop — deliberately
@@ -51,7 +53,7 @@ const normalSessionPaginatedCrawlTimeout = 32 * time.Minute
 // many pages a single call ever visits, regardless of what the
 // instruction requests — sized against paginatedCrawlTimeout: a
 // conservative ~3s per page/transition (extraction itself is fast;
-// settleDelay alone is 1.5s, plus real navigation time) puts 10 pages
+// SettleDelay alone is 1.5s, plus real navigation time) puts 10 pages
 // at roughly 30s in the worst realistic case, inside budget with
 // margin. An over-ceiling request is clamped, not rejected — the
 // effective value used is reported back in the response.
@@ -115,16 +117,16 @@ type paginatedCrawlResponse struct {
 // paginatedCrawlRequest is the internal JSON shape the --mcp adapter
 // sends to its own HTTP-mode sibling — already-parsed-and-validated
 // by the time it crosses this boundary, same convention as every
-// other feature's own callSibling request.
+// other feature's own shared.CallSibling request.
 type paginatedCrawlRequest struct {
 	// URL (step 37) is optional — when set, the shared session
-	// navigates there FIRST, still holding sessionMu, immediately
+	// navigates there FIRST, still holding shared.Mu, immediately
 	// before extraction begins, making navigate-then-extract one
 	// atomic operation instead of two separately-locked HTTP calls.
 	// Absent for every AI-driven call (crawl_paginated operates on
 	// whatever page is already loaded, unchanged) — a real, confirmed
 	// bug fix for Career's own "Crawl now", which used to call POST
-	// /crawl then, moments later, this endpoint: sessionMu was
+	// /crawl then, moments later, this endpoint: shared.Mu was
 	// released completely in between, so a DIFFERENT concurrent
 	// crawl's own navigate could — and, live-reported, did — sneak in
 	// and leave this call extracting the wrong link's own page. See
@@ -141,9 +143,9 @@ type paginatedCrawlRequest struct {
 	RequestID string `json:"requestId,omitempty"`
 }
 
-// paginatedCrawlHandler handles POST /crawl-paginated — the --mcp
+// PaginatedCrawlHandler handles POST /crawl-paginated — the --mcp
 // adapter's own real target for crawl_paginated.
-func paginatedCrawlHandler(w http.ResponseWriter, r *http.Request) {
+func PaginatedCrawlHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -158,7 +160,7 @@ func paginatedCrawlHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "fields, nextSelector, and a positive maxPages are all required", http.StatusBadRequest)
 		return
 	}
-	// step 37 — the same SSRF guard crawlHandler's own url already
+	// step 37 — the same SSRF guard CrawlHandler's own url already
 	// gets; a URL reaching this new field is no less capable of
 	// driving the shared session somewhere it shouldn't than /crawl's
 	// own url is.
@@ -177,7 +179,7 @@ func paginatedCrawlHandler(w http.ResponseWriter, r *http.Request) {
 	// "Debug off" — logging is best-effort observability, never allowed
 	// to turn a successful crawl into a failed response. See
 	// plan/ai/tools/browser/step-22-debug-mode-and-log-management.md.
-	settings, _ := loadBrowserSettings()
+	settings, _ := shared.LoadBrowserSettings()
 	captureHTML := settings.DebugEnabled && settings.DebugLogHTML
 
 	result, pageHTML, err := performPaginatedCrawl(body.URL, body.Container, body.Fields, body.Mapping, body.NextSelector, body.RequestedMaxPages, body.EffectiveMaxPages, captureHTML, body.RequestID)
@@ -225,7 +227,7 @@ func paginatedCrawlHandler(w http.ResponseWriter, r *http.Request) {
 // returned response's own Pages (one entry per page, empty string when
 // captureHTML is false) and is never embedded in paginatedCrawlResponse
 // itself — kept as a separate return value specifically so it cannot
-// reach the live AI-facing JSON response; only paginatedCrawlHandler's
+// reach the live AI-facing JSON response; only PaginatedCrawlHandler's
 // own saveCrawlLog call (crawl_log.go) ever sees it. See
 // plan/ai/tools/browser/step-22-debug-mode-and-log-management.md.
 func runPaginatedCrawlLoop(ctx context.Context, container string, fields []extractField, mapping map[string]string, nextSelector string, requestedMaxPages, effectiveMaxPages int, captureHTML bool, requestID string) (paginatedCrawlResponse, []string, error) {
@@ -289,7 +291,7 @@ func runPaginatedCrawlLoop(ctx context.Context, container string, fields []extra
 				}
 				return paginatedCrawlResponse{}, nil, err
 			}
-			// Step 40 — deliberately NOT truncated to maxHTMLBytes (crawl.go):
+			// Step 40 — deliberately NOT truncated to MaxHTMLBytes (crawl.go):
 			// that limit exists to protect an LLM's context budget on the
 			// live /crawl response; this HTML never reaches one (see this
 			// function's own top comment) and, since step 39, is written
@@ -341,7 +343,7 @@ func runPaginatedCrawlLoop(ctx context.Context, container string, fields []extra
 			break
 		}
 
-		if err := chromedp.Run(ctx, chromedp.Click(nextSelector), chromedp.Sleep(settleDelay)); err != nil {
+		if err := chromedp.Run(ctx, chromedp.Click(nextSelector), chromedp.Sleep(SettleDelay)); err != nil {
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 				stoppedReason = "time_budget_reached"
 				break
@@ -361,7 +363,7 @@ func runPaginatedCrawlLoop(ctx context.Context, container string, fields []extra
 		// navigates the shared session" assumption, caught in this
 		// step's own final review. See
 		// plan/ai/tools/browser/step-45-fetch-html-caching-plan.md.
-		lastHeadlessFetchURL = ""
+		shared.LastHeadlessFetchURL = ""
 
 		var urlAfterClick string
 		if err := chromedp.Run(ctx, chromedp.Location(&urlAfterClick)); err != nil {
@@ -389,27 +391,27 @@ func runPaginatedCrawlLoop(ctx context.Context, container string, fields []extra
 
 // performPaginatedCrawl runs runPaginatedCrawlLoop against the shared
 // headless session. The headless attempt itself is scoped to an inner
-// function so sessionMu is released the moment it concludes — BEFORE
+// function so shared.Mu is released the moment it concludes — BEFORE
 // performPaginatedCrawlWithNormalSession (a wholly separate browser,
-// guarded by its own normalSessionMu) ever starts. Without this,
-// sessionMu would stay held for the fallback's own up-to-150s retry
+// guarded by its own shared.NormalSessionMu) ever starts. Without this,
+// shared.Mu would stay held for the fallback's own up-to-150s retry
 // budget (step 26) too, serializing every other crawl request behind
 // one slow, unrelated Cloudflare fallback — same fix step 25 already
 // applied to crawlPage, for the same reason. On a page-1-blocked
 // result, captures the shared session's own current URL (still
-// holding sessionMu at that point) before releasing it — the
+// holding shared.Mu at that point) before releasing it — the
 // fallback, a fresh separate browser, has no other way to know what
 // page it should have been looking at, since crawl_paginated itself
 // never takes a URL. See
 // plan/ai/tools/browser/step-26-headed-fallback-for-paginated-crawl.md.
 //
 // url (step 37) is optional — when set, navigates the shared session
-// there FIRST, still inside this same sessionMu acquisition, before
+// there FIRST, still inside this same shared.Mu acquisition, before
 // ever running the cache check or the extraction loop. This is what
 // makes navigate-then-extract one atomic operation instead of two
 // separately-locked HTTP calls: verified directly that Career's own
 // prior two-call approach (a separate POST /crawl, then this endpoint)
-// released sessionMu completely in between, letting a DIFFERENT
+// released shared.Mu completely in between, letting a DIFFERENT
 // concurrent crawl's own navigate land in the gap and silently redirect
 // this call's own extraction to the wrong page. See
 // plan/ai/tools/browser/step-37-atomic-navigate-and-extract.md.
@@ -417,7 +419,7 @@ func performPaginatedCrawl(url, container string, fields []extractField, mapping
 	// step 63.2 — registered before anything else in this call, same
 	// reasoning as crawlPage's own identical registration (crawl.go):
 	// cancellable via cancelCrawl(requestID) from the instant this call
-	// arrives, even before sessionMu is ever touched. A no-op when
+	// arrives, even before shared.Mu is ever touched. A no-op when
 	// requestID is "" (the AI's own crawl_paginated calls never set
 	// one). See plan/ai/tools/career/step-63-stop-crawling-now.md.
 	reqCtx, reqCancel := context.WithCancel(context.Background())
@@ -428,14 +430,14 @@ func performPaginatedCrawl(url, container string, fields []extractField, mapping
 	}()
 
 	result, pageHTML, blockedURL, err := func() (paginatedCrawlResponse, []string, string, error) {
-		if err := ensureSharedSession(); err != nil {
+		if err := shared.EnsureSharedSession(); err != nil {
 			return paginatedCrawlResponse{}, nil, "", err
 		}
-		sessionMu.Lock()
-		defer sessionMu.Unlock()
+		shared.Mu.Lock()
+		defer shared.Mu.Unlock()
 
 		// step 63.2 — this request may have been canceled while it sat
-		// queued waiting for sessionMu — bail out immediately after
+		// queued waiting for shared.Mu — bail out immediately after
 		// acquiring the lock, before any real chromedp work, same
 		// reasoning as crawlPage's own identical check (crawl.go).
 		if reqCtx.Err() != nil {
@@ -446,19 +448,19 @@ func performPaginatedCrawl(url, container string, fields []extractField, mapping
 		// unrelated caller instead of discovering it only after burning
 		// paginatedCrawlTimeout on a navigate that was never going to
 		// complete, and replace the wedged tab immediately (still
-		// holding sessionMu) so the NEXT caller gets a fresh, healthy
+		// holding shared.Mu) so the NEXT caller gets a fresh, healthy
 		// session instead of inheriting the same wedge. blockedURL is
 		// deliberately left "" here — the dispatch below
 		// (errors.As(err, &cfErr) && blockedURL != "") only routes to
 		// the headed Cloudflare fallback when both are true, so this
 		// wedge error (a *crawlError, same as the Cloudflare one) can
 		// never accidentally trigger it.
-		if err := probeSessionLiveness(sessionCtx); err != nil {
-			recreateErr := recreateSharedSessionLocked()
-			return paginatedCrawlResponse{}, nil, "", newSessionWedgedError(err, recreateErr)
+		if err := shared.ProbeSessionLiveness(shared.Ctx); err != nil {
+			recreateErr := shared.RecreateSharedSessionLocked()
+			return paginatedCrawlResponse{}, nil, "", NewSessionWedgedError(err, recreateErr)
 		}
 
-		ctx, cancel := context.WithTimeout(sessionCtx, paginatedCrawlTimeout)
+		ctx, cancel := context.WithTimeout(shared.Ctx, paginatedCrawlTimeout)
 		defer cancel()
 		// step 63.2 — links this call's own ctx to reqCtx, same pattern
 		// as crawlPage's own identical goroutine (crawl.go) — every
@@ -472,18 +474,18 @@ func performPaginatedCrawl(url, container string, fields []extractField, mapping
 				// step 63.2 — see crawl.go's identical comment: without
 				// this, Chrome itself keeps loading after this call has
 				// already given up waiting.
-				stopBrowserLoad(sessionCtx)
+				stopBrowserLoad(shared.Ctx)
 			case <-ctx.Done():
 			}
 		}()
 
 		if url != "" {
 			setCrawlPhase(requestID, phaseNavigating, "navigating to "+url)
-			if err := chromedp.Run(ctx, chromedp.Navigate(url), chromedp.Sleep(settleDelay)); err != nil {
-				return paginatedCrawlResponse{}, nil, "", classifyCancellation(err, reqCtx, sessionCtx)
+			if err := chromedp.Run(ctx, chromedp.Navigate(url), chromedp.Sleep(SettleDelay)); err != nil {
+				return paginatedCrawlResponse{}, nil, "", classifyCancellation(err, reqCtx, shared.Ctx)
 			}
 			// step 45 — this is the shared session (performPaginatedCrawl
-			// only ever runs against sessionCtx), navigated outside
+			// only ever runs against shared.Ctx), navigated outside
 			// crawlPage entirely; fetch_page_html's own cache check needs
 			// to know where the session actually is now. Set precisely
 			// (not just cleared) since the destination is known exactly,
@@ -491,7 +493,7 @@ func performPaginatedCrawl(url, container string, fields []extractField, mapping
 			// invalidation below, which doesn't know what URL a click
 			// landed on until after this point in the surrounding call
 			// graph.
-			lastHeadlessFetchURL = url
+			shared.LastHeadlessFetchURL = url
 		}
 
 		// step 29 — a known-Cloudflare domain skips straight to the
@@ -526,7 +528,7 @@ func performPaginatedCrawl(url, container string, fields []extractField, mapping
 
 		var cfErr *crawlError
 		if !errors.As(err, &cfErr) {
-			return result, pageHTML, "", classifyCancellation(err, reqCtx, sessionCtx)
+			return result, pageHTML, "", classifyCancellation(err, reqCtx, shared.Ctx)
 		}
 
 		var currentURL string
@@ -566,18 +568,18 @@ func performPaginatedCrawl(url, container string, fields []extractField, mapping
 // step-25-human-assisted-cloudflare-retry.md, and
 // step-26-headed-fallback-for-paginated-crawl.md.
 func performPaginatedCrawlWithNormalSession(reqCtx context.Context, blockedURL, container string, fields []extractField, mapping map[string]string, nextSelector string, requestedMaxPages, effectiveMaxPages int, captureHTML bool, requestID string) (paginatedCrawlResponse, []string, error) {
-	normalSessionMu.Lock()
-	defer normalSessionMu.Unlock()
+	shared.NormalSessionMu.Lock()
+	defer shared.NormalSessionMu.Unlock()
 
 	// step 63.2 — bail out before ever launching a headed Chrome
 	// process if this request was already canceled while queued
-	// waiting for normalSessionMu, same reasoning as
+	// waiting for shared.NormalSessionMu, same reasoning as
 	// crawlWithNormalSession's own identical check (crawl.go).
 	if reqCtx.Err() != nil {
 		return paginatedCrawlResponse{}, nil, reqCtx.Err()
 	}
 
-	ctx, cancels, err := startSharedNormalSession()
+	ctx, cancels, err := shared.StartSharedNormalSession()
 	if err != nil {
 		return paginatedCrawlResponse{}, nil, fmt.Errorf("normal-session fallback: failed to start: %w", err)
 	}
@@ -603,24 +605,24 @@ func performPaginatedCrawlWithNormalSession(reqCtx context.Context, blockedURL, 
 	}()
 
 	setCrawlPhase(requestID, phaseNavigating, "navigating to "+blockedURL)
-	if err := chromedp.Run(ctx, chromedp.Navigate(blockedURL), chromedp.Sleep(settleDelay)); err != nil {
-		return paginatedCrawlResponse{}, nil, classifyCancellation(err, reqCtx, sessionCtx)
+	if err := chromedp.Run(ctx, chromedp.Navigate(blockedURL), chromedp.Sleep(SettleDelay)); err != nil {
+		return paginatedCrawlResponse{}, nil, classifyCancellation(err, reqCtx, shared.Ctx)
 	}
 
 	result, pageHTML, err := runPaginatedCrawlLoop(ctx, container, fields, mapping, nextSelector, requestedMaxPages, effectiveMaxPages, captureHTML, requestID)
 
 	var cfErr *crawlError
 	if !errors.As(err, &cfErr) {
-		// step 63.3 — this function's own ctx isn't sessionCtx, but
-		// classifyCancellation's sessionCtx check still correctly
+		// step 63.3 — this function's own ctx isn't shared.Ctx, but
+		// classifyCancellation's shared.Ctx check still correctly
 		// covers the (rare) case where the shared headless session
 		// ALSO died at the same moment.
-		return result, pageHTML, classifyCancellation(err, reqCtx, sessionCtx)
+		return result, pageHTML, classifyCancellation(err, reqCtx, shared.Ctx)
 	}
 
 	cleared, waitErr := waitForHumanToClearCloudflare(ctx, requestID, cfErr.Reason, expectedSelectorsFromFields(container, fields))
 	if waitErr != nil {
-		return paginatedCrawlResponse{}, nil, classifyCancellation(waitErr, reqCtx, sessionCtx)
+		return paginatedCrawlResponse{}, nil, classifyCancellation(waitErr, reqCtx, shared.Ctx)
 	}
 	if !cleared {
 		return paginatedCrawlResponse{}, nil, cfErr
@@ -642,11 +644,11 @@ type crawlPaginatedArgs struct {
 	Instructions string `json:"instructions" jsonschema:"a YAML document describing fields to extract (same shape as extract_page_data) plus a pagination block, and — for a LISTING page — a top-level container. BEFORE writing this, check whether the page lists multiple similar items at once (a search-results/job-listing page, the common case) or describes a single item. Single-item example:\nfields:\n  - label: title\n    selector: h1\npagination:\n  nextSelector: a.next-page\n  maxPages: 5\nmaxPages counts the currently loaded page as page 1. Never navigates to a starting URL itself — call fetch_page_html first. LISTING-page example (use this whenever more than one field describes the same repeating item, e.g. a job listing's own title, company, and link — this is the default correct approach for a listing page, not only a fix for when something looks wrong):\ncontainer: \".job-result\"\nfields:\n  - label: title\n    selector: h2\n  - label: url\n    selector: a\n    attribute: href\npagination:\n  nextSelector: a.next-page\n  maxPages: 5\nWithout container on a listing page, fields describing multiple items are returned as separate arrays (in results) that may NOT actually correspond position-for-position to the same real item — with it, the result is one correctly-grouped object per item (in items). Optionally add a top-level mapping ({sourceLabel: targetKey}) to rename fields to specific output keys before they're returned — e.g. a consuming tool expects title/url/company but this page's own natural fields are better labeled job_title/link/employer:\ncontainer: \".job-result\"\nfields:\n  - label: job_title\n    selector: h2\n  - label: employer\n    selector: .company\nmapping:\n  job_title: title\n  employer: company\npagination:\n  nextSelector: a.next-page\n  maxPages: 5"`
 }
 
-// registerCrawlPaginated adds the crawl_paginated MCP tool — thin,
+// RegisterCrawlPaginated adds the crawl_paginated MCP tool — thin,
 // like the other MCP-facing registrations: parses the YAML
 // instructions, validates, builds the internal JSON request, and
-// calls callSibling.
-func registerCrawlPaginated(server *mcp.Server) {
+// calls shared.CallSibling.
+func RegisterCrawlPaginated(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "crawl_paginated",
 		Description: "Extract fields from the currently loaded page, then follow a pagination control and repeat, up to a maximum number of pages — instructed via a YAML document (fields + pagination). Read-only; submits nothing. " +
@@ -715,7 +717,7 @@ func registerCrawlPaginated(server *mcp.Server) {
 			}, nil, nil
 		}
 
-		respBody, err := callSibling("crawl-paginated", reqBody)
+		respBody, err := shared.CallSibling("crawl-paginated", reqBody)
 		if err != nil {
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},

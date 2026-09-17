@@ -13,7 +13,7 @@
 // life of this process.
 //
 // See plan/ai/tools/career/step-63-stop-crawling-now.md.
-package main
+package crawler
 
 import (
 	"context"
@@ -78,7 +78,7 @@ func cancelCrawl(requestID string) bool {
 
 // stopBrowserLoad issues a best-effort CDP Page.stopLoading against
 // baseCtx — the ACTUAL underlying browser session a request's own
-// per-request ctx was derived from (sessionCtx for the shared headless
+// per-request ctx was derived from (shared.Ctx for the shared headless
 // singleton, or the ephemeral headed session's own base ctx for the
 // normal-session fallback), never the per-request ctx that was just
 // canceled.
@@ -89,7 +89,7 @@ func cancelCrawl(requestID string) bool {
 // remain busy (still actually loading the page the user asked to
 // stop) for a beat after cancelCrawl already returned — caught
 // directly, not assumed: a disposable test observed
-// probeSessionLiveness still timing out immediately after a
+// shared.ProbeSessionLiveness still timing out immediately after a
 // "successful" cancellation before this fix existed.
 //
 // Best-effort and bounded by its own short timeout, independent of
@@ -97,7 +97,7 @@ func cancelCrawl(requestID string) bool {
 // (the tab already gone, nothing was actually loading, the session
 // itself is mid-teardown) is never worth surfacing anywhere — this is
 // strictly an optimization to free the tab sooner, not a correctness
-// requirement on its own (probeSessionLiveness's own short, bounded
+// requirement on its own (shared.ProbeSessionLiveness's own short, bounded
 // timeout is what actually protects every future caller either way,
 // with or without this).
 func stopBrowserLoad(baseCtx context.Context) {
@@ -106,13 +106,13 @@ func stopBrowserLoad(baseCtx context.Context) {
 	_ = chromedp.Run(stopCtx, page.StopLoading())
 }
 
-// crawlCancelHandler handles POST /crawl-cancel — Career's own "Stop
+// CrawlCancelHandler handles POST /crawl-cancel — Career's own "Stop
 // crawl" button's real, browser-side counterpart (crawl_now.go's
 // crawlNowCancelHandler is the caller). Deliberately NOT registered as
 // an MCP tool (see runMCPServer, main.go) — mirrors crawl-status's own
 // "Career's own consumer only" framing: the AI has no reason to stop a
 // crawl it itself is driving one tool call at a time.
-func crawlCancelHandler(w http.ResponseWriter, r *http.Request) {
+func CrawlCancelHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return

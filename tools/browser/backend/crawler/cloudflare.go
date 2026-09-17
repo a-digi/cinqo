@@ -31,7 +31,7 @@
 // expectedSelectors are only used with querySelector(), consistent with the
 // existing extraction trust boundary.
 
-package main
+package crawler
 
 import (
 	"context"
@@ -519,13 +519,13 @@ func newCrawlCancelledError() *crawlError {
 // behavior for a session-interrupted context.Canceled is identical) —
 // a plain context.Canceled can now mean one of TWO materially different
 // things once a per-request context exists alongside the shared
-// session's own sessionCtx, and conflating them would make a
+// session's own shared.Ctx, and conflating them would make a
 // deliberate Stop click look like a transient, auto-retried failure
 // (exactly backwards from what a Stop button must do). Checks
-// sessionCtx FIRST: a torn-down session also cancels every in-flight
+// shared.Ctx FIRST: a torn-down session also cancels every in-flight
 // request's own reqCtx as a side effect (reqCtx's own linked ctx —
 // see crawlPage's own doc comment — is ultimately still rooted through
-// sessionCtx), so if the whole session died, that explanation wins
+// shared.Ctx), so if the whole session died, that explanation wins
 // regardless of reqCtx's own state; the two are not mutually
 // exclusive, so order matters here.
 //
@@ -546,14 +546,14 @@ func classifyCancellation(err error, reqCtx, sessionCtx context.Context) error {
 	return err
 }
 
-// newSessionWedgedError (step 47.3) is returned when probeSessionLiveness
+// NewSessionWedgedError (step 47.3) is returned when shared.ProbeSessionLiveness
 // (step 47.2, main.go) found the shared session's own tab unresponsive —
 // almost always leftover state from an earlier, unrelated caller (a
 // wedged renderer, an unhandled dialog that predates step 47.1's fix,
 // or an interrupted navigation) rather than anything about THIS call's
 // own request. recreateErr is the result of this process's own
 // immediate attempt to replace the wedged tab with a fresh one
-// (recreateSharedSessionLocked, main.go) — folded into Reason so a
+// (shared.RecreateSharedSessionLocked, main.go) — folded into Reason so a
 // human reading logs/Career's own crawl_runs log can tell "wedged, but
 // already fixed for the next attempt" apart from "wedged, and the
 // automatic recovery itself failed too" (materially worse — worth
@@ -564,7 +564,7 @@ func classifyCancellation(err error, reqCtx, sessionCtx context.Context) error {
 // process is fine but this one tab needed replacing. Callers like
 // Career's own retry logic can reasonably treat both as "transient,
 // worth one retry," but they are not the same underlying event.
-func newSessionWedgedError(probeErr, recreateErr error) *crawlError {
+func NewSessionWedgedError(probeErr, recreateErr error) *crawlError {
 	if recreateErr != nil {
 		return &crawlError{
 			Code:    "browser_session_wedged",

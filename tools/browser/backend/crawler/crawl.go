@@ -1,7 +1,7 @@
 // crawl.go implements the HTML crawler feature — the AI navigates the
 // shared browser session to a URL and gets back the page's rendered
 // HTML. See plan/ai/tools/browser/step-03-html-crawler-feature.md.
-package main
+package crawler
 
 import (
 	"context"
@@ -15,23 +15,25 @@ import (
 
 	"github.com/chromedp/chromedp"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"browser-tool-backend/shared"
 )
 
-// maxHTMLBytes bounds how much of a crawled page's HTML is ever
+// MaxHTMLBytes bounds how much of a crawled page's HTML is ever
 // returned — an arbitrary page's rendered HTML can be megabytes, far
 // more than worth spending an LLM's own context budget on in one tool
 // result. A fixed, non-configurable cap for this first pass, matching
 // this codebase's own established precedent (defaultMaxTokens in
 // api/src/platform/anthropic) of plain constants over
 // premature configurability.
-const maxHTMLBytes = 200_000
+const MaxHTMLBytes = 200_000
 
 // crawlTimeout bounds one navigation — shorter than pdf_generator's
 // own 30s render budget, since crawling has no print-to-PDF step of
 // its own to also account for.
 const crawlTimeout = 20 * time.Second
 
-const settleDelay = 1500 * time.Millisecond
+const SettleDelay = 1500 * time.Millisecond
 
 // normalSessionCrawlTimeout bounds one headed-Chrome fallback attempt
 // end to end — deliberately its OWN budget, not nested inside or
@@ -77,7 +79,7 @@ type crawlRequest struct {
 	// live phase (navigating/checking_cloudflare/awaiting_human_challenge/
 	// completed/failed) is tracked under this id and readable via
 	// GET /crawl-status?requestId=... while this call is still in
-	// flight. Absent for every AI-driven call (callSibling never sets
+	// flight. Absent for every AI-driven call (shared.CallSibling never sets
 	// it) — a no-op in that case, see crawl_status.go's own doc
 	// comment. See plan/ai/tools/browser/step-31-crawl-phase-status-endpoint.md.
 	RequestID string `json:"requestId,omitempty"`
@@ -131,9 +133,9 @@ type crawlResponse struct {
 	Truncated bool   `json:"truncated"`
 }
 
-// crawlHandler handles POST /crawl — the --mcp adapter's own real
-// target for fetch_page_html, reached only via callSibling.
-func crawlHandler(w http.ResponseWriter, r *http.Request) {
+// CrawlHandler handles POST /crawl — the --mcp adapter's own real
+// target for fetch_page_html, reached only via shared.CallSibling.
+func CrawlHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -178,15 +180,15 @@ func crawlHandler(w http.ResponseWriter, r *http.Request) {
 // re-navigate — which would discard whatever a human just did in a
 // visible window to clear the challenge.
 func readCrawlResponse(ctx context.Context, removeSelectors, removeAttributes []string, maxAttributeLength int, ignoreAttributesForMaxLength []string) (crawlResponse, error) {
-	allRemoveSelectors := append(append([]string{}, defaultRemoveSelectors...), removeSelectors...)
-	script, err := removeElementsJS(allRemoveSelectors)
+	allRemoveSelectors := append(append([]string{}, DefaultRemoveSelectors...), removeSelectors...)
+	script, err := RemoveElementsJS(allRemoveSelectors)
 	if err != nil {
 		return crawlResponse{}, err
 	}
 	actions := []chromedp.Action{chromedp.Evaluate(script, nil)}
 
 	// step 46 — run after element removal (above), never before: an
-	// element removeElementsJS already deleted doesn't need its own
+	// element RemoveElementsJS already deleted doesn't need its own
 	// attributes checked, so this necessarily-expensive (checks every
 	// element's every attribute when maxAttributeLength > 0) walk does
 	// less work against an already-shrunk DOM. A no-op when neither
@@ -213,8 +215,8 @@ func readCrawlResponse(ctx context.Context, removeSelectors, removeAttributes []
 	}
 
 	truncated := false
-	if len(html) > maxHTMLBytes {
-		html = html[:maxHTMLBytes]
+	if len(html) > MaxHTMLBytes {
+		html = html[:MaxHTMLBytes]
 		truncated = true
 	}
 
@@ -226,7 +228,7 @@ func readCrawlResponse(ctx context.Context, removeSelectors, removeAttributes []
 	}, nil
 }
 
-// defaultRemoveSelectors (step 44, svg added step 62) are always
+// DefaultRemoveSelectors (step 44, svg added step 62) are always
 // stripped from crawled HTML before it ever reaches an AI model's own
 // context — <head>, <script>, <style>, and <svg> content is never
 // useful to a model reading a page's own visible/structural content,
@@ -241,7 +243,7 @@ func readCrawlResponse(ctx context.Context, removeSelectors, removeAttributes []
 // of which portal/tool prompted a given AI conversation. See
 // plan/ai/tools/browser/step-44-default-html-element-removal.md and
 // plan/ai/tools/career/step-62-svg-removal-and-attribute-length-enforcement.md.
-var defaultRemoveSelectors = []string{"head", "script", "style", "svg"}
+var DefaultRemoveSelectors = []string{"head", "script", "style", "svg"}
 
 // defaultMaxLengthIgnoredAttributes (step 46) are always exempt from
 // maxAttributeLength's own length-based stripping, regardless of
@@ -255,12 +257,12 @@ var defaultRemoveSelectors = []string{"head", "script", "style", "svg"}
 // instead of just shrinking harmless bulk. Merged with (not replaced
 // by) any caller-supplied ignoreAttributesForMaxLength in
 // readCrawlResponse, below — same "caller can only ask for MORE
-// ignored, never less" shape defaultRemoveSelectors above already
+// ignored, never less" shape DefaultRemoveSelectors above already
 // established. See
 // plan/ai/tools/browser/step-46-remove-attributes-plan.md.
 var defaultMaxLengthIgnoredAttributes = []string{"href", "src"}
 
-// removeElementsJS returns a JS snippet that removes every element
+// RemoveElementsJS returns a JS snippet that removes every element
 // matching any of selectors from the current document — run
 // immediately before OuterHTML captures it, so the returned HTML never
 // includes them. Selectors are embedded via json.Marshal (a valid JS
@@ -270,7 +272,7 @@ var defaultMaxLengthIgnoredAttributes = []string{"href", "src"}
 // selector that fails to parse (querySelectorAll throws) is skipped,
 // not fatal to the others or to the crawl itself. See
 // plan/ai/tools/browser/step-41-remove-html-elements.md.
-func removeElementsJS(selectors []string) (string, error) {
+func RemoveElementsJS(selectors []string) (string, error) {
 	selectorsJSON, err := json.Marshal(selectors)
 	if err != nil {
 		return "", err
@@ -294,14 +296,14 @@ func removeElementsJS(selectors []string) (string, error) {
 // comment on the caller-facing field says so) — there's no reason to
 // pay for a second full traversal on top of that.
 //
-// Run this AFTER removeElementsJS in the same caller (readCrawlResponse),
+// Run this AFTER RemoveElementsJS in the same caller (readCrawlResponse),
 // never before: elements already removed by that pass don't need their
 // own attributes checked at all, so ordering it second measurably
 // shrinks the work this necessarily-"excessive" (per this feature's
 // own design doc) walk has to do.
 //
 // names/maxLength are embedded via json.Marshal, the same
-// safe-embedding technique removeElementsJS itself already uses —
+// safe-embedding technique RemoveElementsJS itself already uses —
 // never string-concatenated raw. Each element's own attributes are
 // snapshotted into a plain array before any removal: attempting to
 // remove while iterating the live attributes NamedNodeMap directly
@@ -317,7 +319,7 @@ func removeAttributesJS(names []string, maxLength int, ignoreForMaxLength []stri
 	// assumed: the generated script would then do `var names = null;
 	// names.forEach(...)`, throwing before ever reaching the maxLength
 	// check. Normalizing here means every call site stays simple;
-	// removeElementsJS never hits this because its own caller always
+	// RemoveElementsJS never hits this because its own caller always
 	// builds its selectors via append(append([]string{}, ...), ...),
 	// which is never nil regardless of what's appended — this function
 	// has no equivalent guarantee from any of its own callers.
@@ -370,7 +372,7 @@ func navigateAndReadWithCloudflareCheck(ctx context.Context, rawURL, requestID s
 	setCrawlPhase(requestID, phaseNavigating, "navigating to "+rawURL)
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(rawURL),
-		chromedp.Sleep(settleDelay),
+		chromedp.Sleep(SettleDelay),
 	); err != nil {
 		return crawlResponse{}, err
 	}
@@ -389,11 +391,11 @@ func navigateAndReadWithCloudflareCheck(ctx context.Context, rawURL, requestID s
 
 // crawlPage navigates the one shared headless session to rawURL and
 // reads back its rendered HTML/title/final URL. The headless attempt
-// itself is scoped to an inner function so sessionMu (see that
+// itself is scoped to an inner function so shared.Mu (see that
 // variable's own doc comment in main.go) is released the moment that
 // attempt concludes — BEFORE crawlWithNormalSession (a wholly separate
-// browser, guarded by its own normalSessionMu) ever starts. Without
-// this, sessionMu would stay held for the fallback's own up-to-90s
+// browser, guarded by its own shared.NormalSessionMu) ever starts. Without
+// this, shared.Mu would stay held for the fallback's own up-to-90s
 // retry budget (step 25) too, serializing every other crawl request
 // behind one slow, unrelated Cloudflare fallback. When the headless
 // attempt hits an unresolved Cloudflare challenge, retries via
@@ -405,7 +407,7 @@ func crawlPage(rawURL, requestID string, expectedSelectors, removeSelectors, rem
 	// step 63.2 — registered before anything else in this call,
 	// including the known-Cloudflare shortcut below, so this exact
 	// call is cancellable (via cancelCrawl(requestID), crawl_cancel.go)
-	// from the very instant it arrives — even before sessionMu is ever
+	// from the very instant it arrives — even before shared.Mu is ever
 	// touched. A no-op registration when requestID is "" (the AI's own
 	// MCP-driven calls never set one — registerCrawlCancel's own doc
 	// comment). See plan/ai/tools/career/step-63-stop-crawling-now.md.
@@ -437,7 +439,7 @@ func crawlPage(rawURL, requestID string, expectedSelectors, removeSelectors, rem
 
 	result, err := func() (crawlResponse, error) {
 		// step 45 — served for free only when the shared session is
-		// already showing this exact URL (lastHeadlessFetchURL, set
+		// already showing this exact URL (shared.LastHeadlessFetchURL, set
 		// below on every real navigation): the only case where a
 		// stale-relative-to-the-live-DOM result can't happen, since
 		// nothing has navigated the session away since the cached
@@ -452,23 +454,23 @@ func crawlPage(rawURL, requestID string, expectedSelectors, removeSelectors, rem
 		// plan/ai/tools/browser/step-46-remove-attributes-plan.md.
 		if !skipCache {
 			if cached, ok := fetchCacheLookup(rawURL); ok {
-				sessionMu.Lock()
-				alreadyThere := lastHeadlessFetchURL == rawURL
-				sessionMu.Unlock()
+				shared.Mu.Lock()
+				alreadyThere := shared.LastHeadlessFetchURL == rawURL
+				shared.Mu.Unlock()
 				if alreadyThere {
 					return cached, nil
 				}
 			}
 		}
 
-		if err := ensureSharedSession(); err != nil {
+		if err := shared.EnsureSharedSession(); err != nil {
 			return crawlResponse{}, err
 		}
-		sessionMu.Lock()
-		defer sessionMu.Unlock()
+		shared.Mu.Lock()
+		defer shared.Mu.Unlock()
 
 		// step 63.2 — this request may have been canceled while it sat
-		// queued waiting for sessionMu (a plain sync.Mutex isn't itself
+		// queued waiting for shared.Mu (a plain sync.Mutex isn't itself
 		// cancellable/selectable, so that wait can't be interrupted
 		// early — see step 63's own Open Question 1) — bail out here,
 		// immediately after acquiring the lock, before doing any real
@@ -484,14 +486,14 @@ func crawlPage(rawURL, requestID string, expectedSelectors, removeSelectors, rem
 		// unrelated caller instead of discovering it only after burning
 		// crawlTimeout on a navigate that was never going to complete,
 		// and replace the wedged tab immediately (still holding
-		// sessionMu) so the NEXT caller gets a fresh, healthy session
+		// shared.Mu) so the NEXT caller gets a fresh, healthy session
 		// instead of inheriting the same wedge.
-		if err := probeSessionLiveness(sessionCtx); err != nil {
-			recreateErr := recreateSharedSessionLocked()
-			return crawlResponse{}, newSessionWedgedError(err, recreateErr)
+		if err := shared.ProbeSessionLiveness(shared.Ctx); err != nil {
+			recreateErr := shared.RecreateSharedSessionLocked()
+			return crawlResponse{}, NewSessionWedgedError(err, recreateErr)
 		}
 
-		ctx, cancel := context.WithTimeout(sessionCtx, crawlTimeout)
+		ctx, cancel := context.WithTimeout(shared.Ctx, crawlTimeout)
 		defer cancel()
 		// step 63.2 — links this call's own ctx to reqCtx: the moment
 		// cancelCrawl(requestID) fires reqCancel (crawl_cancel.go), this
@@ -510,7 +512,7 @@ func crawlPage(rawURL, requestID string, expectedSelectors, removeSelectors, rem
 				// from waiting; Chrome itself keeps loading otherwise,
 				// leaving the tab busy for a beat afterward (caught
 				// directly by a disposable test, not assumed).
-				stopBrowserLoad(sessionCtx)
+				stopBrowserLoad(shared.Ctx)
 			case <-ctx.Done():
 			}
 		}()
@@ -519,7 +521,7 @@ func crawlPage(rawURL, requestID string, expectedSelectors, removeSelectors, rem
 		if err != nil {
 			return crawlResponse{}, err
 		}
-		lastHeadlessFetchURL = rawURL
+		shared.LastHeadlessFetchURL = rawURL
 		if !skipCache {
 			// Best-effort — a failed cache write must never turn an
 			// otherwise-successful crawl into a failure.
@@ -552,7 +554,7 @@ func crawlPage(rawURL, requestID string, expectedSelectors, removeSelectors, rem
 	// the first case; the user explicitly asked to stop in the
 	// second — launching a second, unrelated browser fixes nothing in
 	// either case, and would directly defeat the second one).
-	return result, classifyCancellation(err, reqCtx, sessionCtx)
+	return result, classifyCancellation(err, reqCtx, shared.Ctx)
 }
 
 // crawlWithNormalSession retries rawURL in a freshly launched, non-
@@ -567,18 +569,18 @@ func crawlPage(rawURL, requestID string, expectedSelectors, removeSelectors, rem
 // plan/ai/tools/browser/step-24-headed-chrome-cloudflare-fallback.md
 // and plan/ai/tools/browser/step-25-human-assisted-cloudflare-retry.md.
 func crawlWithNormalSession(reqCtx context.Context, rawURL, requestID string, expectedSelectors, removeSelectors, removeAttributes []string, maxAttributeLength int, ignoreAttributesForMaxLength []string) (crawlResponse, error) {
-	normalSessionMu.Lock()
-	defer normalSessionMu.Unlock()
+	shared.NormalSessionMu.Lock()
+	defer shared.NormalSessionMu.Unlock()
 
 	// step 63.2 — bail out before ever launching a headed Chrome
 	// process at all if this request was already canceled while
-	// queued waiting for normalSessionMu — no point spending several
+	// queued waiting for shared.NormalSessionMu — no point spending several
 	// seconds spinning up a whole browser window nobody wants anymore.
 	if reqCtx.Err() != nil {
 		return crawlResponse{}, reqCtx.Err()
 	}
 
-	ctx, cancels, err := startSharedNormalSession()
+	ctx, cancels, err := shared.StartSharedNormalSession()
 	if err != nil {
 		return crawlResponse{}, fmt.Errorf("normal-session fallback: failed to start: %w", err)
 	}
@@ -609,17 +611,17 @@ func crawlWithNormalSession(reqCtx context.Context, rawURL, requestID string, ex
 
 	var cfErr *crawlError
 	if !errors.As(err, &cfErr) {
-		// step 63.3 — this function's own ctx isn't sessionCtx (it's
+		// step 63.3 — this function's own ctx isn't shared.Ctx (it's
 		// rooted in the ephemeral headed session's own baseCtx), but
-		// classifyCancellation's sessionCtx check still correctly
+		// classifyCancellation's shared.Ctx check still correctly
 		// covers the (rare) case where the whole shared headless
 		// session ALSO died at the same moment — never a false
-		// positive, since that check only ever fires when sessionCtx
+		// positive, since that check only ever fires when shared.Ctx
 		// itself is actually done.
-		return result, classifyCancellation(err, reqCtx, sessionCtx)
+		return result, classifyCancellation(err, reqCtx, shared.Ctx)
 	}
 	result, err = waitForHumanToSolveCloudflare(ctx, cfErr, requestID, expectedSelectors, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
-	return result, classifyCancellation(err, reqCtx, sessionCtx)
+	return result, classifyCancellation(err, reqCtx, shared.Ctx)
 }
 
 // waitForHumanToClearCloudflare polls detectCloudflareChallenge every
@@ -776,11 +778,11 @@ type fetchPageHTMLArgs struct {
 	IgnoreAttributesForMaxLength []string `json:"ignoreAttributesForMaxLength,omitempty" jsonschema:"optional attribute names to additionally exempt from maxAttributeLength's own check, on top of the built-in href/src exemption — e.g. [\"poster\", \"action\"] if some other URL-valued attribute on this particular page also needs protecting from removal. Has no effect unless maxAttributeLength is also set."`
 }
 
-// registerFetchPageHTML adds the fetch_page_html MCP tool — thin: it
-// only ever calls callSibling and formats the result, never touches
-// sessionCtx directly (this --mcp subprocess never holds it — see
+// RegisterFetchPageHTML adds the fetch_page_html MCP tool — thin: it
+// only ever calls shared.CallSibling and formats the result, never touches
+// shared.Ctx directly (this --mcp subprocess never holds it — see
 // main.go's own runMCPServer doc comment).
-func registerFetchPageHTML(server *mcp.Server) {
+func RegisterFetchPageHTML(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "fetch_page_html",
 		Description: "Navigate the shared browser session to a URL and return the page's rendered HTML, title, and final URL (after any redirect). " +
@@ -810,7 +812,7 @@ func registerFetchPageHTML(server *mcp.Server) {
 			}, nil, nil
 		}
 
-		respBody, err := callSibling("crawl", reqBody)
+		respBody, err := shared.CallSibling("crawl", reqBody)
 		if err != nil {
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},

@@ -16,7 +16,7 @@
 // process and its session state are gone too), so persisting phase
 // history past that point would describe a session that no longer
 // exists. See plan/ai/tools/browser/step-31-crawl-phase-status-endpoint.md.
-package main
+package crawler
 
 import (
 	"encoding/json"
@@ -57,13 +57,13 @@ var (
 
 // setCrawlPhase records requestId's own current phase — a no-op when
 // requestId is empty, which is what makes this whole feature opt-in:
-// the AI's own MCP-driven calls (callSibling, no requestId of their
+// the AI's own MCP-driven calls (shared.CallSibling, no requestId of their
 // own) never populate crawlStatuses at all. Also opportunistically
 // sweeps any entry older than crawlStatusTTL on every call, so this
 // map can never grow unboundedly across the life of this process — a
 // plain, inline sweep rather than a separate goroutine/ticker, sized
 // for this tool's own realistic concurrency (at most a small number of
-// simultaneous crawls, matching sessionMu/normalSessionMu's own
+// simultaneous crawls, matching shared.Mu/shared.NormalSessionMu's own
 // single-shared-session model).
 func setCrawlPhase(requestID string, phase crawlPhase, message string) {
 	if requestID == "" {
@@ -95,13 +95,13 @@ type crawlStatusResponse struct {
 	UpdatedAt string `json:"updatedAt"`
 }
 
-// crawlStatusHandler handles GET /crawl-status?requestId=... — a
+// CrawlStatusHandler handles GET /crawl-status?requestId=... — a
 // read-only view of setCrawlPhase's own in-memory state. 404 for an
 // unknown requestId (never started, already swept by crawlStatusTTL,
 // or this process restarted since it was set) rather than a zero-value
 // 200, so a poller can distinguish "nothing to report yet" from "this
 // requestId was never tracked at all."
-func crawlStatusHandler(w http.ResponseWriter, r *http.Request) {
+func CrawlStatusHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return

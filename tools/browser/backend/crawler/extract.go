@@ -6,7 +6,7 @@
 // navigates anywhere itself — same shape as find_login_elements. Kept
 // entirely separate from login/login_credentials.go by design — see
 // plan/ai/tools/browser/step-09-yaml-instructed-extraction.md.
-package main
+package crawler
 
 import (
 	"context"
@@ -19,6 +19,8 @@ import (
 
 	"github.com/chromedp/chromedp"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"browser-tool-backend/shared"
 )
 
 //go:embed extract.js
@@ -31,13 +33,13 @@ const extractPayloadPlaceholder = "__EXTRACT_PAYLOAD__"
 
 // extractTimeout bounds one extraction — generous even though the DOM
 // read itself is fast, matching findLoginElementsTimeout's own
-// reasoning (it still has to wait its turn on sessionMu).
+// reasoning (it still has to wait its turn on shared.Mu).
 const extractTimeout = 10 * time.Second
 
 // maxExtractedItems bounds how many matches a single `multiple: true`
 // field ever returns — an overly broad selector (e.g. "div") could
 // otherwise return thousands of values. A plain, non-configurable
-// constant, matching maxHTMLBytes's own first-pass-number precedent.
+// constant, matching MaxHTMLBytes's own first-pass-number precedent.
 const maxExtractedItems = 200
 
 // maxExtractedValueLength bounds a single matched value's own length —
@@ -48,7 +50,7 @@ const maxExtractedItems = 200
 // of a small title) could still return one enormous string. Measured
 // in UTF-16 code units (JS string length, applied browser-side in
 // extract.js) — the same "good enough, not grapheme-boundary-precise"
-// approximation maxHTMLBytes's own byte-slicing already accepts for
+// approximation MaxHTMLBytes's own byte-slicing already accepts for
 // crawlPage.
 const maxExtractedValueLength = 5000
 
@@ -93,9 +95,9 @@ type extractResponse struct {
 	NotFound []string         `json:"notFound"`
 }
 
-// extractHandler handles POST /extract — the --mcp adapter's own real
+// ExtractHandler handles POST /extract — the --mcp adapter's own real
 // target for extract_page_data.
-func extractHandler(w http.ResponseWriter, r *http.Request) {
+func ExtractHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -133,29 +135,29 @@ func extractHandler(w http.ResponseWriter, r *http.Request) {
 
 // performExtraction runs the caller-supplied fields against whatever
 // page the shared session currently has loaded — never navigates,
-// never submits anything. Holds sessionMu for the whole operation,
+// never submits anything. Holds shared.Mu for the whole operation,
 // same as crawlPage/findLoginElements. A thin lock+timeout wrapper
 // around runExtractionOnCurrentPage — see that function's own doc
 // comment for why the split exists.
 func performExtraction(container string, fields []extractField, mapping map[string]string) (extractResponse, error) {
-	if err := ensureSharedSession(); err != nil {
+	if err := shared.EnsureSharedSession(); err != nil {
 		return extractResponse{}, err
 	}
-	sessionMu.Lock()
-	defer sessionMu.Unlock()
+	shared.Mu.Lock()
+	defer shared.Mu.Unlock()
 
 	// step 47.2/47.3 — fail fast on a tab left wedged by a previous,
 	// unrelated caller instead of discovering it only after burning
 	// extractTimeout on an evaluation that was never going to complete,
-	// and replace the wedged tab immediately (still holding sessionMu)
+	// and replace the wedged tab immediately (still holding shared.Mu)
 	// so the NEXT caller gets a fresh, healthy session instead of
 	// inheriting the same wedge.
-	if err := probeSessionLiveness(sessionCtx); err != nil {
-		recreateErr := recreateSharedSessionLocked()
-		return extractResponse{}, newSessionWedgedError(err, recreateErr)
+	if err := shared.ProbeSessionLiveness(shared.Ctx); err != nil {
+		recreateErr := shared.RecreateSharedSessionLocked()
+		return extractResponse{}, NewSessionWedgedError(err, recreateErr)
 	}
 
-	ctx, cancel := context.WithTimeout(sessionCtx, extractTimeout)
+	ctx, cancel := context.WithTimeout(shared.Ctx, extractTimeout)
 	defer cancel()
 
 	return runExtractionOnCurrentPage(ctx, container, fields, mapping)
@@ -163,9 +165,9 @@ func performExtraction(container string, fields []extractField, mapping map[stri
 
 // runExtractionOnCurrentPage is performExtraction's own actual logic,
 // factored out lock-free and context-free (the caller supplies both)
-// so a caller that already holds sessionMu for a longer-lived
+// so a caller that already holds shared.Mu for a longer-lived
 // operation — paginate.go's own multi-page crawl loop (step 16) —
-// can invoke it directly without deadlocking sessionMu (sync.Mutex is
+// can invoke it directly without deadlocking shared.Mu (sync.Mutex is
 // not reentrant; performExtraction locking it again from inside an
 // already-locked caller would hang forever). performExtraction's own
 // external behavior/contract is unchanged by this split. See
@@ -284,10 +286,10 @@ type extractPageDataArgs struct {
 	Mapping   map[string]string `json:"mapping,omitempty" jsonschema:"optional {sourceLabel: targetKey} — renames extracted fields to specific output key names before they're returned, e.g. when a consumer expects a fixed schema (title/url/company/...) but this page's own natural fields are better labeled job_title/link/employer. Fields not listed pass through under their own label."`
 }
 
-// registerExtractPageData adds the extract_page_data MCP tool — thin,
-// like find_login_elements: only ever calls callSibling and formats
+// RegisterExtractPageData adds the extract_page_data MCP tool — thin,
+// like find_login_elements: only ever calls shared.CallSibling and formats
 // the result.
-func registerExtractPageData(server *mcp.Server) {
+func RegisterExtractPageData(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "extract_page_data",
 		Description: "Read specific fields (by CSS selector) off the currently loaded page (see fetch_page_html) and return them structured, instead of the whole page's HTML. Read-only; submits nothing. " +
@@ -323,7 +325,7 @@ func registerExtractPageData(server *mcp.Server) {
 			}, nil, nil
 		}
 
-		respBody, err := callSibling("extract", reqBody)
+		respBody, err := shared.CallSibling("extract", reqBody)
 		if err != nil {
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},

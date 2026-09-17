@@ -4,44 +4,36 @@
 // elements, log in). See
 // plan/ai/tools/browser/step-01-manifest-and-package-skeleton.md.
 //
-// This file holds step 2's own architecture — the shared session
-// itself and the --mcp adapter that reaches it
-// (plan/ai/tools/browser/step-02-shared-browser-session.md) — plus
-// the HTTP-mode wiring for each feature, implemented in its own file
-// (crawl.go for step 3, login_elements.go for step 4, login.go
-// originally for step 5, login_credentials.go + crypto.go for step 7
-// — step 7 retired step 5's own allowlist.go entirely, see
+// This file holds this process's own --mcp adapter and the HTTP-mode
+// route wiring for each feature. The shared headless session itself
+// (originally step 2's own architecture) and this tool's own SQLite
+// handle/sibling-HTTP-call helper now live in the shared package —
+// carved out so the crawler package (crawl.go for step 3, extract.go
+// for step 9, paginate.go for step 16, and the rest of the crawl-
+// adjacent files) can be its own package without importing this one.
+// login_elements.go for step 4, login.go originally for step 5,
+// login_credentials.go + crypto.go for step 7 — step 7 retired step
+// 5's own allowlist.go entirely, see
 // plan/ai/tools/browser/step-07-login-profiles-and-credential-isolation.md
-// — login.go rewritten again by step 8 around domain + selectors
-// only, no credential fields on the wire at all, see
-// plan/ai/tools/browser/step-08-ai-instructed-login.md — extract.go
-// for step 9, deliberately independent of login/
-// login_credentials.go, see
-// plan/ai/tools/browser/step-09-yaml-instructed-extraction.md —
-// paginate.go for step 16, a multi-page crawl loop built on top of
-// extract.go's own per-page extraction, see
-// plan/ai/tools/browser/step-16-paginated-crawl-instructions.md).
+// — login.go rewritten again by step 8 around domain + selectors only,
+// no credential fields on the wire at all, see
+// plan/ai/tools/browser/step-08-ai-instructed-login.md — remain in
+// this package, deliberately independent of the crawler package. See
+// plan/ai/tools/browser/step-65-crawler-package-extraction.md.
 package main
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
-	"sync"
 	"syscall"
-	"time"
 
-	"github.com/chromedp/cdproto/page"
-	"github.com/chromedp/chromedp"
-	stealth "github.com/go-rod/stealth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"browser-tool-backend/crawler"
+	"browser-tool-backend/shared"
 )
 
 func main() {
@@ -52,48 +44,18 @@ func main() {
 	runHTTPServer()
 }
 
-// sessionMu guards every access to sessionCtx — every HTTP handler
-// that touches the shared page must hold this for the duration of its
-// own chromedp actions, so two requests never race on the same tab.
-// sessionCtx itself is nil until ensureSharedSession's first successful
-// call (lazy start, step-43-lazy-shared-session.md) — every handler
-// that needs it calls ensureSharedSession first, never assumes it's
-// already set.
-var (
-	sessionMu     sync.Mutex
-	sessionCtx    context.Context
-	sessionCancel []context.CancelFunc
-	// lastHeadlessFetchURL is the exact URL string fetch_page_html
-	// last successfully navigated the shared headless session to —
-	// crawlPage's own fetch-cache check (fetch_cache.go, step 45) uses
-	// it to tell "the shared session is already showing this URL"
-	// (safe to serve a cached result with zero browser work) apart
-	// from "it's showing something else" (must navigate for real
-	// regardless of cache freshness). Correct because crawlPage is the
-	// *only* thing that ever navigates this shared session anywhere —
-	// verified directly, not assumed (grep confirms exactly one
-	// caller of crawlPage, and every other MCP tool in this process
-	// only ever reads the page the session is already on). Guarded by
-	// sessionMu, same as sessionCtx itself. Never reset on a normal
-	// navigation, but explicitly cleared to "" whenever sessionCtx
-	// itself is replaced (recreateSharedSessionLocked, step 47.3/63.3 —
-	// a wedged-tab recovery is the one in-process session-relaunch path
-	// that exists; see that function's own doc comment) — a fresh
-	// chromedp context can never already be showing whatever URL this
-	// field last held. See
-	// plan/ai/tools/browser/step-45-fetch-html-caching-plan.md.
-	lastHeadlessFetchURL string
-)
-
 func runHTTPServer() {
 	port := os.Getenv("PORT")
 
 	// The shared headless session is no longer started here — see
-	// ensureSharedSession's own doc comment. /healthz (and every other
-	// route) is reachable the moment this process is listening,
+	// shared.EnsureSharedSession's own doc comment. /healthz (and every
+	// other route) is reachable the moment this process is listening,
 	// regardless of whether a browser has ever been launched.
-	if err := initBrowserDB(); err != nil {
+	if err := shared.InitDB(); err != nil {
 		log.Fatalf("failed to open browser database: %v", err)
+	}
+	if err := initCryptoKey(); err != nil {
+		log.Fatalf("failed to load credential encryption key: %v", err)
 	}
 
 	sigCh := make(chan os.Signal, 1)
@@ -101,22 +63,22 @@ func runHTTPServer() {
 	go func() {
 		<-sigCh
 		log.Print("shutting down, closing browser session")
-		stopSharedSession()
+		shared.StopSharedSession()
 		os.Exit(0)
 	}()
 
 	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	http.HandleFunc("/crawl", crawlHandler)
+	http.HandleFunc("/crawl", crawler.CrawlHandler)
 	http.HandleFunc("/find-login-elements", findLoginElementsHandler)
-	http.HandleFunc("/extract", extractHandler)
-	http.HandleFunc("/crawl-paginated", paginatedCrawlHandler)
-	http.HandleFunc("/crawl-logs", crawlLogsHandler)
-	http.HandleFunc("/browser-settings", browserSettingsHandler)
-	http.HandleFunc("/cloudflare-domains", cloudflareDomainsHandler)
-	http.HandleFunc("/crawl-status", crawlStatusHandler)
-	http.HandleFunc("/crawl-cancel", crawlCancelHandler)
+	http.HandleFunc("/extract", crawler.ExtractHandler)
+	http.HandleFunc("/crawl-paginated", crawler.PaginatedCrawlHandler)
+	http.HandleFunc("/crawl-logs", crawler.CrawlLogsHandler)
+	http.HandleFunc("/browser-settings", shared.BrowserSettingsHandler)
+	http.HandleFunc("/cloudflare-domains", crawler.CloudflareDomainsHandler)
+	http.HandleFunc("/crawl-status", crawler.CrawlStatusHandler)
+	http.HandleFunc("/crawl-cancel", crawler.CrawlCancelHandler)
 	http.HandleFunc("/login", loginHandler)
 	// Deliberately not exposed as an MCP tool — see
 	// login_credentials.go's own top comment. Reachable only via the
@@ -134,395 +96,22 @@ func runHTTPServer() {
 
 	log.Printf("browser tool listening on 127.0.0.1:%s", port)
 	if err := http.ListenAndServe("127.0.0.1:"+port, nil); err != nil {
-		stopSharedSession()
+		shared.StopSharedSession()
 		log.Fatal(err)
 	}
-}
-
-// ensureSharedSession lazily starts the shared headless session on
-// first actual need — replacing this tool's previous behavior of
-// launching it unconditionally at process boot (before this process
-// ever reported itself healthy), regardless of whether any browser
-// feature was ever going to be used. A no-op once already started, so
-// every call site below can call this unconditionally on every
-// request at negligible cost (a single mutex lock/unlock) once warm.
-// Must be called BEFORE the caller's own sessionMu.Lock() for its
-// actual crawl/login/extract operation — this function fully acquires
-// and releases sessionMu itself, so calling it while already holding
-// sessionMu would deadlock (sync.Mutex isn't reentrant). See
-// plan/ai/tools/browser/step-43-lazy-shared-session.md.
-func ensureSharedSession() error {
-	sessionMu.Lock()
-	defer sessionMu.Unlock()
-	if sessionCtx != nil {
-		return nil
-	}
-	return startSharedSessionLocked()
-}
-
-// installDialogAutoDismiss (step 47.1) auto-accepts any native
-// alert()/confirm()/beforeunload dialog that appears on ctx's own
-// page, for the lifetime of ctx. A native dialog freezes its target's
-// JS engine and CDP responsiveness while it's open — and since every
-// caller of the shared headless session (sessionCtx) or the headed
-// fallback session inherits whatever state the previous caller left
-// the tab in (sessionMu/normalSessionMu only serialize access, they
-// never reset the tab — see
-// plan/ai/tools/browser/step-47-shared-tab-wedge-and-stuck-crawl-fix.md's
-// own root-cause writeup), an unhandled dialog left open by one caller
-// would otherwise wedge every subsequent caller indefinitely, with no
-// way to recover short of restarting this whole process. Registered
-// once, at session creation — not per request — so it stays armed for
-// that session's entire lifetime. The actual dismissal runs in its own
-// goroutine because chromedp.ListenTarget's callback runs synchronously
-// on the CDP event-read loop; blocking it on another chromedp.Run call
-// (page.HandleJavaScriptDialog needs the browser to respond) would
-// deadlock that loop. label distinguishes the shared headless session
-// from the headed fallback in logs.
-func installDialogAutoDismiss(ctx context.Context, label string) {
-	chromedp.ListenTarget(ctx, func(ev interface{}) {
-		if _, ok := ev.(*page.EventJavascriptDialogOpening); ok {
-			go func() {
-				if err := chromedp.Run(ctx, page.HandleJavaScriptDialog(true)); err != nil {
-					log.Printf("%s: failed to auto-dismiss JS dialog: %v", label, err)
-				}
-			}()
-		}
-	})
-}
-
-// sessionLivenessProbeTimeout (step 47.2) bounds how long
-// probeSessionLiveness is allowed to take before concluding the shared
-// tab is wedged. Short and fixed since a healthy tab evaluates a
-// trivial expression near-instantly — anything past a few seconds
-// already means something is wrong, not just "a bit slow."
-const sessionLivenessProbeTimeout = 5 * time.Second
-
-// probeSessionLiveness (step 47.2) runs a trivial, non-navigating,
-// non-mutating JS evaluation against parentCtx (the shared session's
-// own sessionCtx) to confirm the tab is actually still responsive
-// BEFORE a caller starts its own real work — every caller of the
-// shared session inherits whatever state the previous caller left the
-// tab in (sessionMu only serializes access, it never resets the tab —
-// see installDialogAutoDismiss's own doc comment and
-// plan/ai/tools/browser/step-47-shared-tab-wedge-and-stuck-crawl-fix.md),
-// so a wedge left behind by one caller (a still-in-flight navigation,
-// an unusually slow script, or anything else that leaves the renderer
-// unresponsive) would otherwise only be discovered by the *next*
-// unrelated caller after it burns its own full — often much longer —
-// timeout on real work that was never going to complete either way.
-//
-// Deliberately does NOT navigate: findLoginElements, performExtraction,
-// and performLogin all operate on whatever page the shared session
-// already has loaded and must never have that page changed out from
-// under them, so a Navigate-based reset (which would otherwise double
-// as a liveness check) is not an option for a probe shared across
-// every sessionMu-guarded caller. A trivial chromedp.Evaluate leaves
-// the page completely untouched while still exercising the exact same
-// CDP round-trip (Runtime.evaluate) that would hang if the tab itself
-// were wedged.
-func probeSessionLiveness(parentCtx context.Context) error {
-	ctx, cancel := context.WithTimeout(parentCtx, sessionLivenessProbeTimeout)
-	defer cancel()
-	var discard int
-	if err := chromedp.Run(ctx, chromedp.Evaluate("1", &discard)); err != nil {
-		return fmt.Errorf("shared browser session appears unresponsive: %w", err)
-	}
-	return nil
-}
-
-// startSharedSessionLocked creates the one chromedp browser context
-// this whole process holds for its entire lifetime — assumes the
-// caller (ensureSharedSession, above) already holds sessionMu. A real,
-// empty navigation (not just allocator/context creation) forces the
-// browser to actually launch now rather than deferring even further,
-// so a genuinely live browser (not just constructed Go-side handles)
-// is confirmed before this returns successfully.
-func startSharedSessionLocked() error {
-	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), allocatorOptions()...)
-	ctx, ctxCancel := chromedp.NewContext(allocCtx)
-	installDialogAutoDismiss(ctx, "shared headless session")
-
-	// Build actions using the native cdproto/page Action wrapper
-	actions := []chromedp.Action{
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			// stealth.JS enthält das vollständige, aus puppeteer-extra extrahierte Skript.
-			// Es injiziert über 17 komplexe Patches (WebGL, Plugins, Navigator, Codecs, etc.) via CDP.
-			_, err := page.AddScriptToEvaluateOnNewDocument(stealth.JS).Do(ctx)
-			return err
-		}),
-		chromedp.Navigate("about:blank"),
-	}
-
-	if err := chromedp.Run(ctx, actions...); err != nil {
-		ctxCancel()
-		allocCancel()
-		return err
-	}
-
-	sessionCtx = ctx
-	sessionCancel = []context.CancelFunc{ctxCancel, allocCancel}
-	return nil
-}
-
-// recreateSharedSessionLocked (step 47.3) tears down the current
-// shared session — whatever state it's actually in — and immediately
-// attempts to start a fresh one in its place, while the caller still
-// holds sessionMu, so no other request can observe or acquire the
-// wedged tab in between. Called only after probeSessionLiveness (step
-// 47.2) has already confirmed the current tab is unresponsive. Assumes
-// the caller already holds sessionMu, same precondition as
-// startSharedSessionLocked itself.
-//
-// If the fresh start itself fails, sessionCtx/sessionCancel are left
-// nil/empty rather than pointing back at the now-torn-down old
-// session — matching ensureSharedSession's own lazy-start convention
-// (`if sessionCtx != nil { return nil }`), so the very next caller's
-// ensureSharedSession call attempts a completely fresh start from
-// scratch instead of being fooled by a stale non-nil sessionCtx into
-// skipping straight to a session that no longer exists.
-//
-// Deliberately a full relaunch (a brand new chromedp allocator and
-// browser process, via startSharedSessionLocked) rather than only
-// opening a new tab on the existing browser process — simpler and
-// reuses already-verified code (including installDialogAutoDismiss
-// and the stealth script injection) instead of introducing a second,
-// narrower "just replace the tab" path for what should be a rare
-// recovery case.
-func recreateSharedSessionLocked() error {
-	for _, cancel := range sessionCancel {
-		cancel()
-	}
-	sessionCtx = nil
-	sessionCancel = nil
-	// step 63.3 — real bug fix, caught while reviewing this function's
-	// own doc comment, not hypothetical: without this, fetch_cache.go's
-	// own "is the shared session already showing this URL" check
-	// (crawlPage, crawl.go) would still see whatever URL the OLD,
-	// now-discarded tab was last navigated to — wrongly believing the
-	// brand new, blank tab this function just created is already
-	// showing it, and serving a stale cached result instead of ever
-	// navigating the new tab there at all.
-	lastHeadlessFetchURL = ""
-	return startSharedSessionLocked()
-}
-
-func stopSharedSession() {
-	sessionMu.Lock()
-	defer sessionMu.Unlock()
-	for _, cancel := range sessionCancel {
-		cancel()
-	}
-}
-
-// normalSessionMu serializes headed-Chrome fallback attempts (crawl.go's
-// crawlWithNormalSession) — at most one headed Chrome window is ever
-// open at a time, regardless of how many concurrent crawl requests hit
-// a Cloudflare block simultaneously. Separate from sessionMu (which
-// guards the always-on shared headless session's own state) since this
-// guards a completely different, ephemeral resource. See
-// plan/ai/tools/browser/step-24-headed-chrome-cloudflare-fallback.md.
-var normalSessionMu sync.Mutex
-
-// startSharedNormalSession launches a fresh, non-headless ("normal")
-// Chrome instance — used only as a fallback when the lazily-started
-// shared headless session (ensureSharedSession/startSharedSessionLocked,
-// above — never called by this function, never modified by this
-// feature) fails to get past a Cloudflare challenge. Unlike that
-// session, this does NOT store its context/cancel funcs into the
-// package-level sessionCtx/sessionCancel — those remain exclusively
-// the shared headless session's own state — and is never called at
-// boot (nothing browser-related is started at boot anymore — see
-// step-43-lazy-shared-session.md). The caller owns the returned
-// cancel funcs and must call every one of them once done with this
-// instance ("close after it is finished") — see crawl.go's
-// crawlWithNormalSession, the one caller.
-func startSharedNormalSession() (context.Context, []context.CancelFunc, error) {
-	profileDir, err := normalSessionProfileDir()
-	if err != nil {
-		return nil, nil, err
-	}
-	removeStaleChromeSingletonLock(profileDir)
-
-	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), normalAllocatorOptions(profileDir)...)
-	ctx, ctxCancel := chromedp.NewContext(allocCtx)
-	installDialogAutoDismiss(ctx, "headed fallback session")
-
-	actions := []chromedp.Action{
-		chromedp.Navigate("about:blank"),
-	}
-
-	if err := chromedp.Run(ctx, actions...); err != nil {
-		ctxCancel()
-		allocCancel()
-		return nil, nil, err
-	}
-
-	return ctx, []context.CancelFunc{ctxCancel, allocCancel}, nil
-}
-
-// normalSessionProfileDir resolves (and ensures exists) the persistent
-// Chrome profile directory the headed fallback session reuses across
-// every invocation — under TOOL_DB_DIR, this tool's own established
-// convention for durable, tool-owned storage (see initBrowserDB,
-// login_credentials.go). A REAL, persistent profile — not the fresh
-// temporary one chromedp creates by default when no UserDataDir is
-// given — so cookies/local storage (in particular, whatever
-// cf_clearance cookie a human manually earns by solving a challenge
-// once) survive into the next fallback attempt against the same site,
-// and the window looks and behaves like an ordinary standing Chrome
-// profile a human recognizes, not a blank "private"-feeling one. Safe
-// to reuse across sequential invocations only because normalSessionMu
-// (crawl.go) already guarantees at most one headed instance is ever
-// running at a time — two Chrome processes sharing one user-data-dir
-// concurrently would conflict. See
-// plan/ai/tools/browser/step-25-human-assisted-cloudflare-retry.md.
-func normalSessionProfileDir() (string, error) {
-	dbDir := os.Getenv("TOOL_DB_DIR")
-	if dbDir == "" {
-		return "", fmt.Errorf("TOOL_DB_DIR is not set")
-	}
-	dir := filepath.Join(dbDir, "normal-chrome-profile")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", fmt.Errorf("failed to create normal-session Chrome profile directory: %w", err)
-	}
-	return dir, nil
-}
-
-// removeStaleChromeSingletonLock deletes Chrome's own SingletonLock/
-// SingletonCookie/SingletonSocket files from profileDir before a new
-// launch — a real, reproduced bug fix, not a hypothetical: Chrome's
-// own singleton-instance protection is normally self-healing (it
-// detects a dead owner via SingletonSocket and removes a stale lock
-// itself), but that self-healing races against the previous headed
-// Chrome process's own OS-level teardown — normalSessionMu (crawl.go)
-// only guarantees the *Go-level* call that owned the previous instance
-// has returned (its own chromedp cancel() already invoked, per this
-// function's own caller), not that the OS process it spawned has
-// actually finished exiting and released its lock file by the time
-// the very next call acquires the mutex and reaches here. Observed
-// directly: "chrome failed to start ... Failed to create
-// .../normal-chrome-profile/SingletonLock: File exists (17) ...
-// Aborting now to avoid profile corruption" on a retry attempted only
-// seconds after a previous headed session ended.
-//
-// Safe to remove unconditionally at this exact point, not just a
-// best-effort guess: normalSessionMu (crawl.go) is already held by the
-// caller before this function runs, and this same package never
-// launches a second headed Chrome instance against this profile
-// directory while the mutex is held — so any lock files present here
-// cannot belong to a session this process still considers live; they
-// are, by construction, leftovers from an already-concluded (or
-// externally terminated, e.g. a human closing the window directly)
-// previous instance. Best-effort: a removal failure (e.g. the files
-// genuinely don't exist) is not itself an error worth failing the
-// whole launch over — chromedp's own subsequent Chrome launch will
-// surface a real, actionable error if something else is wrong.
-func removeStaleChromeSingletonLock(profileDir string) {
-	for _, name := range []string{"SingletonLock", "SingletonCookie", "SingletonSocket"} {
-		_ = os.Remove(filepath.Join(profileDir, name))
-	}
-}
-
-// normalAllocatorOptions mirrors allocatorOptions' own stealth-oriented
-// flags exactly, except headless is explicitly forced off and a real,
-// persistent profileDir is used instead of chromedp's own default
-// fresh-temp-dir-per-launch behavior. A deliberate, separate duplicate
-// of allocatorOptions — not a shared helper with a headless bool
-// parameter — specifically so allocatorOptions itself, and therefore
-// startSharedSessionLocked's own behavior, is never touched by this
-// feature.
-func normalAllocatorOptions(profileDir string) []chromedp.ExecAllocatorOption {
-	opts := chromedp.DefaultExecAllocatorOptions[:]
-	if p := os.Getenv("BROWSER_TOOL_CHROME_PATH"); p != "" {
-		opts = append(opts, chromedp.ExecPath(p))
-	}
-
-	opts = append(opts,
-		chromedp.UserDataDir(profileDir),
-		chromedp.Flag("disable-blink-features", "AutomationControlled"),
-		chromedp.Flag("excludeSwitches", "enable-automation"),
-		chromedp.Flag("use-mock-keychain", true),
-		chromedp.Flag("headless", false), // the whole point of this fallback
-		chromedp.Flag("disable-infobars", true),
-		chromedp.Flag("disable-notifications", true),
-		chromedp.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
-		chromedp.Flag("lang", "en-US,en;q=0.9"),
-	)
-	return opts
-}
-
-func allocatorOptions() []chromedp.ExecAllocatorOption {
-	opts := chromedp.DefaultExecAllocatorOptions[:]
-	if p := os.Getenv("BROWSER_TOOL_CHROME_PATH"); p != "" {
-		opts = append(opts, chromedp.ExecPath(p))
-	}
-
-	opts = append(opts,
-		// 1. Strip the standard automation controls and markers
-		chromedp.Flag("disable-blink-features", "AutomationControlled"),
-
-		// KORREKTUR: In chromedp müssen Flags mit '=' oder als separates Argument übergeben werden.
-		// 'excludeSwitches=enable-automation' stellt sicher, dass Chrome das Banner nicht rendert.
-		chromedp.Flag("excludeSwitches", "enable-automation"),
-		chromedp.Flag("use-mock-keychain", true),
-
-		// 2. Erase core headless indicators and sandbox configurations
-		chromedp.Flag("headless", "new"), // Modern headless engine is harder to spot than "old" headless
-		chromedp.Flag("disable-infobars", true),
-		chromedp.Flag("disable-notifications", true),
-
-		// 3. Set a standard, non-headless consumer User Agent matching current browser iterations
-		chromedp.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
-
-		// 4. OPTIMIERUNG FÜR CLOUDFLARE: Sprache explizit mitsenden, da Headless Chrome hier oft 'null' liefert
-		chromedp.Flag("lang", "en-US,en;q=0.9"),
-	)
-	return opts
 }
 
 func runMCPServer() {
 	server := mcp.NewServer(&mcp.Implementation{Name: "browser", Version: "0.1.0"}, nil)
 
-	registerFetchPageHTML(server)
+	crawler.RegisterFetchPageHTML(server)
 	registerFindLoginElements(server)
-	registerExtractPageData(server)
-	registerCrawlPaginated(server)
+	crawler.RegisterExtractPageData(server)
+	crawler.RegisterCrawlPaginated(server)
 	registerHasLoginCredential(server)
 	registerLogin(server)
 
 	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
 		log.Fatal(err)
 	}
-}
-
-func callSibling(route string, body []byte) ([]byte, error) {
-	portStr := os.Getenv("TOOL_OWN_PORT")
-	if portStr == "" {
-		return nil, fmt.Errorf("browser session is not currently running — enable the tool first")
-	}
-
-	url := fmt.Sprintf("http://127.0.0.1:%s/%s", portStr, route)
-	resp, err := http.Post(url, "application/json", bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("browser session is not reachable: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read browser session response: %w", err)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		var cfErr struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-			Reason  string `json:"reason"`
-		}
-		if err := json.Unmarshal(respBody, &cfErr); err == nil && cfErr.Code != "" {
-			return nil, fmt.Errorf("%s (%s: %s)", cfErr.Message, cfErr.Code, cfErr.Reason)
-		}
-		return nil, fmt.Errorf("browser session returned status %d: %s", resp.StatusCode, string(respBody))
-	}
-	return respBody, nil
 }

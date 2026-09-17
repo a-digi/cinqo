@@ -15,6 +15,9 @@ import (
 
 	"github.com/chromedp/chromedp"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"browser-tool-backend/crawler"
+	"browser-tool-backend/shared"
 )
 
 //go:embed loginheuristic.js
@@ -22,7 +25,7 @@ var loginHeuristicJS string
 
 // findLoginElementsTimeout bounds the DOM search itself — generous
 // even though the search is fast, since it still has to wait its turn
-// on sessionMu behind whatever else the shared session is doing.
+// on shared.Mu behind whatever else the shared session is doing.
 const findLoginElementsTimeout = 10 * time.Second
 
 type loginElementCandidate struct {
@@ -58,27 +61,27 @@ func findLoginElementsHandler(w http.ResponseWriter, r *http.Request) {
 
 // findLoginElements runs the heuristic against whatever page the
 // shared session currently has loaded — never navigates, never
-// submits anything. Holds sessionMu for the whole operation, same as
+// submits anything. Holds shared.Mu for the whole operation, same as
 // crawlPage.
 func findLoginElements() (findLoginElementsResponse, error) {
-	if err := ensureSharedSession(); err != nil {
+	if err := shared.EnsureSharedSession(); err != nil {
 		return findLoginElementsResponse{}, err
 	}
-	sessionMu.Lock()
-	defer sessionMu.Unlock()
+	shared.Mu.Lock()
+	defer shared.Mu.Unlock()
 
 	// step 47.2/47.3 — fail fast on a tab left wedged by a previous,
 	// unrelated caller instead of discovering it only after burning
 	// findLoginElementsTimeout on an evaluation that was never going to
 	// complete, and replace the wedged tab immediately (still holding
-	// sessionMu) so the NEXT caller gets a fresh, healthy session
+	// shared.Mu) so the NEXT caller gets a fresh, healthy session
 	// instead of inheriting the same wedge.
-	if err := probeSessionLiveness(sessionCtx); err != nil {
-		recreateErr := recreateSharedSessionLocked()
-		return findLoginElementsResponse{}, newSessionWedgedError(err, recreateErr)
+	if err := shared.ProbeSessionLiveness(shared.Ctx); err != nil {
+		recreateErr := shared.RecreateSharedSessionLocked()
+		return findLoginElementsResponse{}, crawler.NewSessionWedgedError(err, recreateErr)
 	}
 
-	ctx, cancel := context.WithTimeout(sessionCtx, findLoginElementsTimeout)
+	ctx, cancel := context.WithTimeout(shared.Ctx, findLoginElementsTimeout)
 	defer cancel()
 
 	var candidates []loginElementCandidate
@@ -95,14 +98,14 @@ func findLoginElements() (findLoginElementsResponse, error) {
 type findLoginElementsArgs struct{}
 
 // registerFindLoginElements adds the find_login_elements MCP tool —
-// thin, like fetch_page_html: only ever calls callSibling and formats
+// thin, like fetch_page_html: only ever calls shared.CallSibling and formats
 // the result.
 func registerFindLoginElements(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "find_login_elements",
 		Description: "Inspect the currently loaded page (see fetch_page_html) for probable login form fields — username, password, and submit selectors. Read-only; submits nothing.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args findLoginElementsArgs) (*mcp.CallToolResult, any, error) {
-		respBody, err := callSibling("find-login-elements", []byte("{}"))
+		respBody, err := shared.CallSibling("find-login-elements", []byte("{}"))
 		if err != nil {
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},

@@ -9,7 +9,7 @@
 // never fails the crawl itself — this is observability, not a
 // correctness dependency. See
 // plan/ai/tools/browser/step-17-crawl-diagnostic-logging.md.
-package main
+package crawler
 
 import (
 	"database/sql"
@@ -21,6 +21,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"browser-tool-backend/shared"
 )
 
 // maxCrawlLogEntries bounds crawl_logs' own growth — this is
@@ -57,62 +59,6 @@ type crawlLogPageEntry struct {
 	HTML string `json:"html,omitempty"`
 }
 
-// migrateCrawlLogsFileStorage detects a pre-step-39 crawl_logs table
-// (has a "pages" column — every entry's full body stored inline) and
-// drops it, letting the CREATE TABLE IF NOT EXISTS just above (in
-// initBrowserDB) recreate it fresh in the new, file-backed shape.
-// crawl_logs is this tool's own explicitly disposable diagnostic data
-// (capped at maxCrawlLogEntries, "not a record anyone needs kept
-// forever" per this file's own top comment) and this tool has no
-// migration runner at all, so a real per-row migration — reading each
-// old row's own inline pages JSON and writing it out to a new file —
-// isn't worth the complexity here. This deliberately discards any
-// existing crawl log history on upgrade. A no-op on a brand-new
-// install (the CREATE TABLE above already created the current shape)
-// or an already-migrated one. See
-// plan/ai/tools/browser/step-39-crawl-log-file-storage.md.
-func migrateCrawlLogsFileStorage(db *sql.DB) error {
-	rows, err := db.Query(`PRAGMA table_info(crawl_logs)`)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-
-	hasPages := false
-	for rows.Next() {
-		var cid int
-		var name, ctype string
-		var notNull, pk int
-		var dflt sql.NullString
-		if err := rows.Scan(&cid, &name, &ctype, &notNull, &dflt, &pk); err != nil {
-			return err
-		}
-		if name == "pages" {
-			hasPages = true
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	if !hasPages {
-		return nil
-	}
-
-	if _, err := db.Exec(`DROP TABLE crawl_logs`); err != nil {
-		return err
-	}
-	_, err = db.Exec(`CREATE TABLE crawl_logs (
-		id              TEXT PRIMARY KEY,
-		created_at      TEXT NOT NULL,
-		stopped_reason  TEXT NOT NULL,
-		pages_visited   INTEGER NOT NULL,
-		first_page_url  TEXT,
-		not_found_count INTEGER NOT NULL DEFAULT 0,
-		log_file_path   TEXT NOT NULL
-	)`)
-	return err
-}
-
 // crawlRequestField mirrors extractField (extract.go) — declared
 // separately here rather than reused directly, so this log's own wire
 // shape doesn't silently change if extractField's own jsonschema tags
@@ -144,7 +90,7 @@ func writeFileAtomically(path string, data []byte) error {
 // the real crawl has already succeeded, so a failure here is logged
 // nowhere further and never surfaces to the crawl's own caller — this
 // must never turn a successful crawl into a failed HTTP response.
-// Called only when Debug is on at all (step 22) — paginatedCrawlHandler
+// Called only when Debug is on at all (step 22) — PaginatedCrawlHandler
 // itself decides that, once, before ever calling this. pageHTML is nil
 // unless "Log HTML" was also on, in which case it's parallel to
 // result.Pages (one entry per page) — attached per page below, never
@@ -154,7 +100,7 @@ func writeFileAtomically(path string, data []byte) error {
 //
 // Step 39 — the full entry (container/fields/next selector/max pages/
 // every page's own results, notFound, Cloudflare flags, and HTML) is
-// written to its own file under crawlLogsDir, named by this entry's
+// written to its own file under shared.CrawlLogsDir, named by this entry's
 // own id; crawl_logs itself only ever stores what listCrawlLogs' own
 // collapsed row needs (firstPageURL/notFoundCount, computed here once
 // from result.Pages, replace what the frontend used to compute
@@ -209,12 +155,12 @@ func saveCrawlLog(container string, fields []extractField, nextSelector string, 
 		return
 	}
 
-	path := filepath.Join(crawlLogsDir, id+".json")
+	path := filepath.Join(shared.CrawlLogsDir, id+".json")
 	if err := writeFileAtomically(path, entryJSON); err != nil {
 		return
 	}
 
-	if _, err := browserDB.Exec(
+	if _, err := shared.DB.Exec(
 		`INSERT INTO crawl_logs (id, created_at, stopped_reason, pages_visited, first_page_url, not_found_count, log_file_path)
 		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		id, createdAt, result.StoppedReason, result.PagesVisited, firstPageURL, notFoundCount, path,
@@ -227,7 +173,7 @@ func saveCrawlLog(container string, fields []extractField, nextSelector string, 
 	}
 
 	prunedPaths, _ := crawlLogPathsBeyondLimit(maxCrawlLogEntries)
-	_, _ = browserDB.Exec(
+	_, _ = shared.DB.Exec(
 		`DELETE FROM crawl_logs WHERE id NOT IN (SELECT id FROM crawl_logs ORDER BY created_at DESC LIMIT ?)`,
 		maxCrawlLogEntries,
 	)
@@ -239,7 +185,7 @@ func saveCrawlLog(container string, fields []extractField, nextSelector string, 
 // before the DELETE runs, since the row (and its own path) is gone
 // once it does.
 func crawlLogPathsBeyondLimit(limit int) ([]string, error) {
-	rows, err := browserDB.Query(
+	rows, err := shared.DB.Query(
 		`SELECT log_file_path FROM crawl_logs WHERE id NOT IN (SELECT id FROM crawl_logs ORDER BY created_at DESC LIMIT ?)`,
 		limit,
 	)
@@ -299,7 +245,7 @@ type crawlLogSummary struct {
 // listCrawlLogs returns every retained entry's own lightweight
 // summary, newest first — no file I/O at all.
 func listCrawlLogs() ([]crawlLogSummary, error) {
-	rows, err := browserDB.Query(
+	rows, err := shared.DB.Query(
 		`SELECT id, created_at, stopped_reason, pages_visited, first_page_url, not_found_count
 		 FROM crawl_logs ORDER BY created_at DESC`,
 	)
@@ -329,14 +275,14 @@ func listCrawlLogs() ([]crawlLogSummary, error) {
 var errCrawlLogNotFound = errors.New("crawl log not found")
 
 // fetchCrawlLogDetail resolves id's own log_file_path and opens that
-// file — the caller (crawlLogsHandler) streams it directly to the HTTP
+// file — the caller (CrawlLogsHandler) streams it directly to the HTTP
 // response via http.ServeContent rather than this function
 // unmarshaling/remarshaling it, so a huge captured-HTML entry is never
 // held whole in memory twice over on this path. The caller is
 // responsible for closing the returned *os.File.
 func fetchCrawlLogDetail(id string) (*os.File, os.FileInfo, error) {
 	var path string
-	err := browserDB.QueryRow(`SELECT log_file_path FROM crawl_logs WHERE id = ?`, id).Scan(&path)
+	err := shared.DB.QueryRow(`SELECT log_file_path FROM crawl_logs WHERE id = ?`, id).Scan(&path)
 	if err == sql.ErrNoRows {
 		return nil, nil, errCrawlLogNotFound
 	}
@@ -364,10 +310,10 @@ func fetchCrawlLogDetail(id string) (*os.File, os.FileInfo, error) {
 // the row (and its own log_file_path) is gone once it runs.
 func deleteCrawlLog(id string) error {
 	var path string
-	if err := browserDB.QueryRow(`SELECT log_file_path FROM crawl_logs WHERE id = ?`, id).Scan(&path); err != nil {
+	if err := shared.DB.QueryRow(`SELECT log_file_path FROM crawl_logs WHERE id = ?`, id).Scan(&path); err != nil {
 		return err
 	}
-	if _, err := browserDB.Exec(`DELETE FROM crawl_logs WHERE id = ?`, id); err != nil {
+	if _, err := shared.DB.Exec(`DELETE FROM crawl_logs WHERE id = ?`, id); err != nil {
 		return err
 	}
 	deleteCrawlLogFilesAsync([]string{path})
@@ -375,12 +321,12 @@ func deleteCrawlLog(id string) error {
 }
 
 // deleteAllCrawlLogs clears every entry — only ever reached via the
-// explicit ?all=true query parameter (crawlLogsHandler below), never
+// explicit ?all=true query parameter (CrawlLogsHandler below), never
 // as the default of a bare DELETE with no parameters. Step 39 — also
 // asynchronously removes every entry's own file, same reasoning as
 // deleteCrawlLog above.
 func deleteAllCrawlLogs() error {
-	rows, err := browserDB.Query(`SELECT log_file_path FROM crawl_logs`)
+	rows, err := shared.DB.Query(`SELECT log_file_path FROM crawl_logs`)
 	if err != nil {
 		return err
 	}
@@ -399,14 +345,14 @@ func deleteAllCrawlLogs() error {
 	}
 	rows.Close()
 
-	if _, err := browserDB.Exec(`DELETE FROM crawl_logs`); err != nil {
+	if _, err := shared.DB.Exec(`DELETE FROM crawl_logs`); err != nil {
 		return err
 	}
 	deleteCrawlLogFilesAsync(paths)
 	return nil
 }
 
-// crawlLogsHandler handles GET/DELETE /crawl-logs — the human-facing
+// CrawlLogsHandler handles GET/DELETE /crawl-logs — the human-facing
 // viewer this tool's own frontend calls; not an MCP tool (nothing about
 // reading or clearing past crawl history needs the AI's own
 // involvement). DELETE (step 22) requires either ?id=<id> (removes one
@@ -420,7 +366,7 @@ func deleteAllCrawlLogs() error {
 // results/notFound/Cloudflare flags/HTML) straight from disk via
 // http.ServeContent, never loading it into a Go struct first. See
 // plan/ai/tools/browser/step-39-crawl-log-file-storage.md.
-func crawlLogsHandler(w http.ResponseWriter, r *http.Request) {
+func CrawlLogsHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		if id := r.URL.Query().Get("id"); id != "" {

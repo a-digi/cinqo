@@ -5,7 +5,7 @@
 // (step 29) instead of re-discovering the same failure every time via
 // a slow, doomed headless attempt. See
 // plan/ai/tools/browser/step-28-cloudflare-domain-cache.md.
-package main
+package crawler
 
 import (
 	"database/sql"
@@ -14,6 +14,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"browser-tool-backend/shared"
 )
 
 // hostnameOf extracts and lowercases rawURL's own hostname — the
@@ -36,7 +38,7 @@ func hostnameOf(rawURL string) (string, error) {
 // recorded as Cloudflare-protected.
 func isDomainKnownCloudflare(domain string) (bool, error) {
 	var exists int
-	err := browserDB.QueryRow(`SELECT 1 FROM cloudflare_domains WHERE domain = ?`, domain).Scan(&exists)
+	err := shared.DB.QueryRow(`SELECT 1 FROM cloudflare_domains WHERE domain = ?`, domain).Scan(&exists)
 	if err == sql.ErrNoRows {
 		return false, nil
 	}
@@ -52,7 +54,7 @@ func isDomainKnownCloudflare(domain string) (bool, error) {
 // later re-detection with a different reason does not overwrite the
 // first one.
 func recordCloudflareDomain(domain, reason string) error {
-	_, err := browserDB.Exec(`INSERT OR IGNORE INTO cloudflare_domains (domain, reason) VALUES (?, ?)`, domain, reason)
+	_, err := shared.DB.Exec(`INSERT OR IGNORE INTO cloudflare_domains (domain, reason) VALUES (?, ?)`, domain, reason)
 	return err
 }
 
@@ -69,7 +71,7 @@ type cloudflareDomainRecord struct {
 // listCloudflareDomains returns every recorded domain, most recently
 // detected first.
 func listCloudflareDomains() ([]cloudflareDomainRecord, error) {
-	rows, err := browserDB.Query(`SELECT domain, reason, first_detected_at FROM cloudflare_domains ORDER BY first_detected_at DESC`)
+	rows, err := shared.DB.Query(`SELECT domain, reason, first_detected_at FROM cloudflare_domains ORDER BY first_detected_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -86,11 +88,11 @@ func listCloudflareDomains() ([]cloudflareDomainRecord, error) {
 	return out, rows.Err()
 }
 
-// cloudflareDomainsHandler handles GET /cloudflare-domains — a
+// CloudflareDomainsHandler handles GET /cloudflare-domains — a
 // read-only diagnostic list, same shape of route as crawl_logs.go's
-// own crawlLogsHandler (a {"domains": [...]} envelope, matching that
+// own CrawlLogsHandler (a {"domains": [...]} envelope, matching that
 // handler's own {"logs": [...]} convention).
-func cloudflareDomainsHandler(w http.ResponseWriter, r *http.Request) {
+func CloudflareDomainsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return

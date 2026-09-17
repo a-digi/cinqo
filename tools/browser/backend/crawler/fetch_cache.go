@@ -9,7 +9,7 @@
 // need an HTML-parsing dependency this module doesn't have, for a
 // case real AI-driven calls essentially never hit. See
 // plan/ai/tools/browser/step-45-fetch-html-caching-plan.md.
-package main
+package crawler
 
 import (
 	"crypto/md5" //nolint:gosec // cache key, not a security boundary — no collision-resistance requirement
@@ -21,12 +21,14 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"browser-tool-backend/shared"
 )
 
 // fetchCacheTTL bounds how long a cached fetch_page_html result stays
 // fresh — a plain constant, matching this codebase's own established
 // "plain constants over premature configurability" convention (e.g.
-// crawl.go's own maxHTMLBytes/crawlTimeout).
+// crawl.go's own MaxHTMLBytes/crawlTimeout).
 const fetchCacheTTL = 5 * time.Minute
 
 // fetchCacheMaxEntries bounds this cache's own growth — mirrors
@@ -43,7 +45,7 @@ const fetchCacheMaxEntries = 200
 
 // fetchCacheIndexEntry is one manifest row, keyed by md5(url) in the
 // index map itself — File is a bare filename (no directory), relative
-// to fetchCacheDir, and holds only the HTML itself (per this
+// to shared.FetchCacheDir, and holds only the HTML itself (per this
 // feature's own spec: "cache the HTML in a {file}.cache"). Title/
 // FinalURL/Truncated are the small remainder of crawlResponse that
 // can't be re-derived from the HTML alone once it's read back off
@@ -74,7 +76,7 @@ type fetchCacheIndexEntry struct {
 var fetchCacheMu sync.Mutex
 
 func fetchCacheIndexPath() string {
-	return filepath.Join(fetchCacheDir, "index.json")
+	return filepath.Join(shared.FetchCacheDir, "index.json")
 }
 
 // fetchCacheKey is the manifest key and the first half of a stored
@@ -143,7 +145,7 @@ func fetchCacheLookup(url string) (crawlResponse, bool) {
 	if time.Since(time.Unix(0, entry.CachedAt)) > fetchCacheTTL {
 		return crawlResponse{}, false
 	}
-	html, err := os.ReadFile(filepath.Join(fetchCacheDir, entry.File))
+	html, err := os.ReadFile(filepath.Join(shared.FetchCacheDir, entry.File))
 	if err != nil {
 		return crawlResponse{}, false
 	}
@@ -179,10 +181,10 @@ func fetchCacheStore(url string, resp crawlResponse) error {
 	fileName := fmt.Sprintf("%s_%d.cache", key, now.Unix())
 
 	if previous, ok := index[key]; ok && previous.File != fileName {
-		_ = os.Remove(filepath.Join(fetchCacheDir, previous.File))
+		_ = os.Remove(filepath.Join(shared.FetchCacheDir, previous.File))
 	}
 
-	if err := os.WriteFile(filepath.Join(fetchCacheDir, fileName), []byte(resp.HTML), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(shared.FetchCacheDir, fileName), []byte(resp.HTML), 0o644); err != nil {
 		return err
 	}
 
@@ -249,7 +251,7 @@ func fetchCacheDeleteFilesAsync(fileNames []string) {
 	}
 	go func(fileNames []string) {
 		for _, name := range fileNames {
-			_ = os.Remove(filepath.Join(fetchCacheDir, name))
+			_ = os.Remove(filepath.Join(shared.FetchCacheDir, name))
 		}
 	}(fileNames)
 }

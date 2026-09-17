@@ -26,6 +26,9 @@ import (
 	"github.com/chromedp/chromedp"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"gopkg.in/yaml.v3"
+
+	"browser-tool-backend/crawler"
+	"browser-tool-backend/shared"
 )
 
 // loginTimeout bounds one fill+submit+settle cycle.
@@ -93,27 +96,27 @@ func loginHandler(w http.ResponseWriter, r *http.Request) {
 // difference from how the human typed the domain when registering
 // it) and makes a lookup failure's own error message unambiguous
 // about which domain it checked. See this step's own "Open
-// questions". Holds sessionMu for the whole operation, same as
+// questions". Holds shared.Mu for the whole operation, same as
 // crawlPage/findLoginElements.
 func performLogin(req loginRequest) (loginResponse, error) {
-	if err := ensureSharedSession(); err != nil {
+	if err := shared.EnsureSharedSession(); err != nil {
 		return loginResponse{}, err
 	}
-	sessionMu.Lock()
-	defer sessionMu.Unlock()
+	shared.Mu.Lock()
+	defer shared.Mu.Unlock()
 
 	// step 47.2/47.3 — fail fast on a tab left wedged by a previous,
 	// unrelated caller instead of discovering it only after burning
 	// loginTimeout on a fill/submit that was never going to complete,
-	// and replace the wedged tab immediately (still holding sessionMu)
+	// and replace the wedged tab immediately (still holding shared.Mu)
 	// so the NEXT caller gets a fresh, healthy session instead of
 	// inheriting the same wedge.
-	if err := probeSessionLiveness(sessionCtx); err != nil {
-		recreateErr := recreateSharedSessionLocked()
-		return loginResponse{}, newSessionWedgedError(err, recreateErr)
+	if err := shared.ProbeSessionLiveness(shared.Ctx); err != nil {
+		recreateErr := shared.RecreateSharedSessionLocked()
+		return loginResponse{}, crawler.NewSessionWedgedError(err, recreateErr)
 	}
 
-	ctx, cancel := context.WithTimeout(sessionCtx, loginTimeout)
+	ctx, cancel := context.WithTimeout(shared.Ctx, loginTimeout)
 	defer cancel()
 
 	// normalizeDomain (login_credentials.go, built for
@@ -169,9 +172,9 @@ func performLogin(req loginRequest) (loginResponse, error) {
 	}
 
 	// Give the submit's own navigation/response a moment to settle —
-	// same reasoning as crawlPage's own settleDelay (step 3's own
+	// same reasoning as crawlPage's own crawler.SettleDelay (step 3's own
 	// amendment).
-	if err := chromedp.Run(ctx, chromedp.Sleep(settleDelay)); err != nil {
+	if err := chromedp.Run(ctx, chromedp.Sleep(crawler.SettleDelay)); err != nil {
 		return loginResponse{}, err
 	}
 
@@ -181,7 +184,7 @@ func performLogin(req loginRequest) (loginResponse, error) {
 	// handler, below), so it gets the same token-reduction treatment.
 	// No caller-configurable removeSelectors here — nothing asked for
 	// one, and loginRequest carries no such field.
-	removeScript, err := removeElementsJS(defaultRemoveSelectors)
+	removeScript, err := crawler.RemoveElementsJS(crawler.DefaultRemoveSelectors)
 	if err != nil {
 		return loginResponse{}, err
 	}
@@ -194,8 +197,8 @@ func performLogin(req loginRequest) (loginResponse, error) {
 	); err != nil {
 		return loginResponse{}, err
 	}
-	if len(html) > maxHTMLBytes {
-		html = html[:maxHTMLBytes]
+	if len(html) > crawler.MaxHTMLBytes {
+		html = html[:crawler.MaxHTMLBytes]
 	}
 
 	return loginResponse{Success: true, FinalURL: finalURL, HTML: html}, nil
@@ -268,7 +271,7 @@ func registerLogin(server *mcp.Server) {
 			}, nil, nil
 		}
 
-		respBody, err := callSibling("login", reqBody)
+		respBody, err := shared.CallSibling("login", reqBody)
 		if err != nil {
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
