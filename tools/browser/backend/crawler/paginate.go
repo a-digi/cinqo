@@ -338,8 +338,25 @@ func runPaginatedCrawlLoop(ctx context.Context, container string, fields []extra
 		// "no_next_link" (today's misleading bug: the interstitial page
 		// has no next-page selector either, so the loop used to just
 		// end as if pagination were naturally exhausted).
+		//
+		// In grouped mode (container set), NotFound is NOT a valid
+		// signal on its own — a real, reproduced bug: extract.js's own
+		// container loop (`for (var c = 0; c < containers.length...)`)
+		// never runs at all when the container selector matches ZERO
+		// elements (exactly what happens on a Cloudflare interstitial,
+		// which has no `.job-listing`-style divs), so notFoundSeen stays
+		// completely empty and NotFound comes back as `[]` — which
+		// len(result.NotFound) < len(fields) then misread as "0 missing
+		// fields out of 5, so content was found," exactly backwards.
+		// Only len(result.Items) can tell "found vs. blocked" apart in
+		// grouped mode; NotFound only means something in flat mode,
+		// where extractFieldsFrom(document, ...) always runs regardless
+		// of what matched.
 		if cf.Detected {
-			foundRealContent := len(result.Items) > 0 || len(result.NotFound) < len(fields)
+			foundRealContent := len(result.Items) > 0
+			if container == "" {
+				foundRealContent = foundRealContent || len(result.NotFound) < len(fields)
+			}
 			if len(pages) == 1 {
 				if !foundRealContent {
 					return paginatedCrawlResponse{}, nil, newCloudflareUnresolvedError(cf.Reason)
