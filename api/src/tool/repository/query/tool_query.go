@@ -103,11 +103,11 @@ func (r *ToolQueryRepo) ExistingScopesExcludingTool(excludeToolID string) (map[s
 // plan/ai/tools/step-05-reverse-proxy-and-request-enforcement.md.
 func (r *ToolQueryRepo) FindRoute(toolID, method, pathSuffix string) (*tool_entity.ToolRoute, error) {
 	row := r.db.QueryRow(
-		`SELECT tool_id, method, path_suffix, required_scope FROM tool_routes WHERE tool_id = ? AND method = ? AND path_suffix = ? LIMIT 1`,
+		`SELECT tool_id, method, path_suffix, required_scope, allow_capability_token FROM tool_routes WHERE tool_id = ? AND method = ? AND path_suffix = ? LIMIT 1`,
 		toolID, method, pathSuffix,
 	)
 	var rt tool_entity.ToolRoute
-	if err := row.Scan(&rt.ToolID, &rt.Method, &rt.PathSuffix, &rt.RequiredScope); err != nil {
+	if err := row.Scan(&rt.ToolID, &rt.Method, &rt.PathSuffix, &rt.RequiredScope, &rt.AllowCapabilityToken); err != nil {
 		return nil, err
 	}
 	return &rt, nil

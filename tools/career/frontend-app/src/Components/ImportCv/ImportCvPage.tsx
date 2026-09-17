@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { uploadCV, type CVUploadResult } from '../../api'
 import { createConversation, sendMessage } from '../../Cinqo/Conversation/conversation'
 import { fetchPlatforms, fetchPlatformKeys, type Platform } from '../../Cinqo/Platform/platformRepository'
 import { Dropdown } from '../Dropdown/Dropdown'
+import { PDFIcon, UploadIcon } from '../../Shared/Icons/icons'
 import { buildImportPrompt } from './buildImportPrompt'
 import { parseProposal, isInitiallyChecked, type CVImportProposal, type ProposalItem } from './parseProposal'
 import { resolveDuplicateLabels, type DuplicateLabels } from './resolveDuplicateLabels'
@@ -89,6 +90,18 @@ export function ImportCvPage() {
   // if the key list fails to load.
   const [platform, setPlatform] = useState<Platform | null>(null)
   const [platformsLoaded, setPlatformsLoaded] = useState(false)
+
+  // Dropzone state — visual only (the click-to-browse path already
+  // worked before; this adds a real drag-and-drop path to match the
+  // dropzone's own dashed-border affordance, since offering that look
+  // without the behavior would be a little deceptive).
+  const [isDragOver, setIsDragOver] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  function pickFile(next: File | null) {
+    setError('')
+    setFile(next)
+  }
 
   useEffect(() => {
     Promise.all([fetchPlatforms(), fetchPlatformKeys().catch(() => [])])
@@ -278,23 +291,59 @@ export function ImportCvPage() {
       </p>
 
       {state === 'upload' && (
-        <section className="rounded-md border border-gray-200 p-4 shadow-sm">
-          <input
-            type="file"
-            accept=".pdf,application/pdf"
-            onChange={(e) => {
-              setFile(e.target.files?.[0] ?? null)
+        <section className="rounded-lg border border-gray-200 p-4 shadow-sm">
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => {
+              fileInputRef.current?.click()
             }}
-            className="mb-3 block text-sm"
-          />
-          <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') fileInputRef.current?.click()
+            }}
+            onDragOver={(e) => {
+              e.preventDefault()
+              setIsDragOver(true)
+            }}
+            onDragLeave={() => {
+              setIsDragOver(false)
+            }}
+            onDrop={(e) => {
+              e.preventDefault()
+              setIsDragOver(false)
+              pickFile(e.dataTransfer.files.length > 0 ? e.dataTransfer.files[0] : null)
+            }}
+            className={`flex cursor-pointer flex-col items-center rounded-md border-2 border-dashed px-6 py-10 text-center transition-colors ${
+              isDragOver ? 'border-gray-400 bg-gray-100' : 'border-gray-300 bg-gray-50 hover:border-gray-400 hover:bg-gray-100'
+            }`}
+          >
+            <div className="relative mb-3 h-16 w-16 text-gray-300">
+              <PDFIcon className="h-16 w-16" />
+              <span className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full bg-gray-900 text-white">
+                <UploadIcon className="h-3.5 w-3.5" />
+              </span>
+            </div>
+            <p className="mb-1 text-sm font-medium text-gray-700">{file ? file.name : 'Click to choose a PDF, or drag one here'}</p>
+            <p className="text-xs text-gray-400">PDF up to 10MB</p>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,application/pdf"
+              onChange={(e) => {
+                pickFile(e.target.files?.[0] ?? null)
+              }}
+              className="hidden"
+            />
+          </div>
+
+          <div className="mt-3 min-h-[1.2em] text-sm text-red-700">{error}</div>
           <button
             type="button"
             onClick={() => {
               void handleUpload()
             }}
             disabled={!file || uploading || !platformsLoaded}
-            className="rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+            className="mt-1 rounded-md bg-gray-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {uploading ? 'Uploading…' : 'Upload'}
           </button>

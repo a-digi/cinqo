@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.0.153",
+  "version": "0.0.156",
   "mcp": true,
   "requires_tools": [
     {
@@ -263,7 +263,8 @@
     {
       "method": "GET",
       "path_suffix": "cv-import/file",
-      "required_scope": "tool:career:cv_import"
+      "required_scope": "tool:career:cv_import",
+      "allow_capability_token": true
     }
   ],
   "mcp_tools": [

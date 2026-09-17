@@ -92,14 +92,22 @@ func ProxyHandler(reqCtx request.RequestContext) {
 		return
 	}
 
-	scopes, err := callerScopes(reqCtx)
-	if err != nil {
-		response.ErrorResponse(w, http.StatusUnauthorized, "unauthorized")
-		return
-	}
-	if !hasScope(scopes, "cinqo:super:admin") && !hasScope(scopes, route.RequiredScope) {
-		response.ErrorResponse(w, http.StatusForbidden, "missing required scope")
-		return
+	// A route may opt out of this check entirely (route.AllowCapabilityToken)
+	// when its caller is a stateless tool subprocess that can never present
+	// a session token — e.g. pdf_tools fetching a career cv-import/file
+	// URL. Security for such a route is delegated wholesale to the
+	// downstream tool's own handler (a random capability token in the
+	// query string); this proxy forwards the request unauthenticated.
+	if !route.AllowCapabilityToken {
+		scopes, err := callerScopes(reqCtx)
+		if err != nil {
+			response.ErrorResponse(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		if !hasScope(scopes, "cinqo:super:admin") && !hasScope(scopes, route.RequiredScope) {
+			response.ErrorResponse(w, http.StatusForbidden, "missing required scope")
+			return
+		}
 	}
 
 	port, running := manager.Port(tool.ID)

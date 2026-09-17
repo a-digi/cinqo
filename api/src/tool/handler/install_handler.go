@@ -389,7 +389,7 @@ func childRowsFromManifest(m manifest.Manifest) ([]tool_entity.ToolScope, []tool
 	}
 	routes := make([]tool_entity.ToolRoute, 0, len(m.Routes))
 	for _, rt := range m.Routes {
-		routes = append(routes, tool_entity.ToolRoute{Method: rt.Method, PathSuffix: rt.PathSuffix, RequiredScope: rt.RequiredScope})
+		routes = append(routes, tool_entity.ToolRoute{Method: rt.Method, PathSuffix: rt.PathSuffix, RequiredScope: rt.RequiredScope, AllowCapabilityToken: rt.AllowCapabilityToken})
 	}
 	required := make([]tool_entity.ToolRequiredScope, 0, len(m.RequiredScopes))
 	for _, s := range m.RequiredScopes {

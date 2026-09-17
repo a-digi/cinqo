@@ -62,6 +62,11 @@ type RouteDecl struct {
 	Method        string `json:"method"`
 	PathSuffix    string `json:"path_suffix"`
 	RequiredScope string `json:"required_scope"`
+	// AllowCapabilityToken — see tool_entity.ToolRoute's own field of
+	// the same name, which this maps directly onto at install/update
+	// time. Defaults to false (the normal, scope-gated proxy path) when
+	// omitted, so it's opt-in per route.
+	AllowCapabilityToken bool `json:"allow_capability_token,omitempty"`
 }
 
 type MCPToolDecl struct {

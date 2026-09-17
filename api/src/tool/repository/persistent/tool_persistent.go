@@ -150,8 +150,8 @@ func insertChildRows(
 	}
 	for _, rt := range routes {
 		if _, err := tx.Exec(
-			`INSERT INTO tool_routes (tool_id, method, path_suffix, required_scope) VALUES (?, ?, ?, ?)`,
-			toolID, rt.Method, rt.PathSuffix, rt.RequiredScope,
+			`INSERT INTO tool_routes (tool_id, method, path_suffix, required_scope, allow_capability_token) VALUES (?, ?, ?, ?, ?)`,
+			toolID, rt.Method, rt.PathSuffix, rt.RequiredScope, rt.AllowCapabilityToken,
 		); err != nil {
 			return err
 		}

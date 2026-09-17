@@ -95,6 +95,36 @@ export function ChevronDownIcon() {
   )
 }
 
+// PDFIcon — the Import CV page's own dropzone centerpiece (a plain
+// document-with-folded-corner glyph, no "PDF" text baked in since this
+// is an SVG path, not a font glyph — the surrounding UI copy already
+// says "PDF"). Deliberately larger than every other icon in this file
+// (those are small inline action icons; this is a big, empty-state
+// centerpiece), so it takes an explicit className rather than a
+// hardcoded size.
+export function PDFIcon({ className = 'h-16 w-16' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" className={className}>
+      <path d="M6 2.5h8.5L19 7v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1z" strokeWidth="1.2" strokeLinejoin="round" />
+      <path d="M14.5 2.5V7H19" strokeWidth="1.2" strokeLinejoin="round" />
+      <path d="M8 13h8M8 16.2h8M8 9.8h4" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+// UploadIcon — an upward arrow into a tray, the standard upload glyph.
+// Paired with PDFIcon as a small badge overlapping its corner on the
+// Import CV dropzone. Same explicit-className convention as PDFIcon,
+// for the same reason.
+export function UploadIcon({ className = 'h-4 w-4' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" className={className}>
+      <path d="M12 15.5V4.5M8.2 8.3L12 4.5l3.8 3.8" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M4.5 15.5v3a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
 // RobotIcon (step 60) — marks "Check Progress - AI" (a
 // generate-crawl-instructions conversation currently in flight),
 // distinct from SparkleIcon's own "start this with AI" meaning.
