@@ -303,25 +303,43 @@ func runPaginatedCrawlLoop(ctx context.Context, container string, fields []extra
 			pageHTML = append(pageHTML, html)
 		}
 
-		// A Cloudflare challenge/block on this page means the extraction
-		// above ran against interstitial DOM, not real content — the
-		// page just appended is noise. On the very first page nothing
-		// useful was collected at all, so this is a hard error (same
-		// contract as crawlPage's own unresolved-challenge case). On a
-		// later page, real items were already collected on earlier
-		// pages — stop pagination but keep and return what's already
-		// there, distinctly flagged, rather than silently falling
-		// through to "no_next_link" (today's misleading bug: the
-		// interstitial page has no next-page selector either, so the
-		// loop used to just end as if pagination were naturally
-		// exhausted).
+		// A Cloudflare challenge/block on this page normally means the
+		// extraction above ran against interstitial DOM, not real
+		// content — but not always: some sites embed a permanently-
+		// present, non-blocking Cloudflare/Turnstile trust badge
+		// (e.g. a small "protected by Cloudflare" widget) even on
+		// their real, fully-loaded page, which detectCloudflareChallenge's
+		// own heuristics can't distinguish from an active block —
+		// confirmed directly against a real site that never once
+		// reported "clear" even while genuinely showing real content.
+		// foundRealContent corroborates cf.Detected against the
+		// extraction that just ran on THIS SAME page: if it actually
+		// matched real data, trust that over the heuristic rather than
+		// discarding an already-correct result. Only when extraction
+		// ALSO found nothing is this treated as a genuine block — on
+		// the very first page that's a hard error (same contract as
+		// crawlPage's own unresolved-challenge case); on a later page,
+		// real items were already collected on earlier pages, so stop
+		// pagination but keep and return what's already there,
+		// distinctly flagged, rather than silently falling through to
+		// "no_next_link" (today's misleading bug: the interstitial page
+		// has no next-page selector either, so the loop used to just
+		// end as if pagination were naturally exhausted).
 		if cf.Detected {
+			foundRealContent := len(result.Items) > 0 || len(result.NotFound) < len(fields)
 			if len(pages) == 1 {
-				return paginatedCrawlResponse{}, nil, newCloudflareUnresolvedError(cf.Reason)
+				if !foundRealContent {
+					return paginatedCrawlResponse{}, nil, newCloudflareUnresolvedError(cf.Reason)
+				}
+			} else if !foundRealContent {
+				stoppedReason = "cloudflare_blocked"
+				blockedReason = cf.Reason
+				break
 			}
-			stoppedReason = "cloudflare_blocked"
-			blockedReason = cf.Reason
-			break
+			// else: real data was found on this page despite cf.Detected
+			// — already recorded via this page's own CloudflareDetected/
+			// CloudflareReason fields above; keep going rather than
+			// stopping or failing.
 		}
 
 		if page >= effectiveMaxPages {
