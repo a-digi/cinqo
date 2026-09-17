@@ -80,6 +80,7 @@ func runHTTPServer() {
 	http.HandleFunc("/portal-links/crawl-now/active", crawlNowActiveHandler)
 	http.HandleFunc("/portal-links/crawl-now/cancel", crawlNowCancelHandler)
 	http.HandleFunc("/cv-import/upload", uploadCVHandler)
+	http.HandleFunc("/cv-import/uploads", listCVUploadsHandler)
 
 	if err := http.ListenAndServe("127.0.0.1:"+port, nil); err != nil {
 		os.Exit(1)

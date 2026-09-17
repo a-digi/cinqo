@@ -529,3 +529,26 @@ export async function uploadCV(file: File): Promise<CVUploadResult> {
   })
   return jsonOrThrow<CVUploadResult>(res, 'upload cv')
 }
+
+// One of the current user's own previously uploaded CVs — relayed
+// through this tool's own backend from the core Media feature's own
+// GET /api/v1/media/mine?toolSlug=career (never fetched directly by
+// this frontend). expiresAt is always set today (cv_import.go's own
+// cvImportTTLSeconds), but read as possibly empty in case a future
+// non-expiring upload path is ever added.
+export interface UploadedCV {
+  id: string
+  originalFilename: string
+  sizeBytes: number
+  createdAt: string
+  expiresAt: string
+}
+
+export async function fetchUploadedCVs(): Promise<UploadedCV[]> {
+  const res = await fetch(`${PROXY_BASE}/cv-import/uploads`, {
+    method: 'GET',
+    credentials: 'include',
+  })
+  const body = await jsonOrThrow<{ uploads: UploadedCV[] }>(res, 'list uploaded cvs')
+  return body.uploads
+}

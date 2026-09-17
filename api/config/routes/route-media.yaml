@@ -9,6 +9,16 @@ routes:
     executor: MediaUpload
     security: authenticated
 
+  # No static scopes, same reasoning as the upload route above: any
+  # authenticated caller may list THEIR OWN media, regardless of which
+  # tool-specific scope they hold — MineHandler enforces "own data
+  # only" itself (by uploaded_by_user_id, never a caller-supplied
+  # value), which a static YAML scope list can't express.
+  - path: /api/v1/media/mine
+    method: GET
+    executor: MediaMine
+    security: authenticated
+
   # List/delete ARE genuinely global admin operations (browse/clean up
   # every tool's own media at once), unlike upload — so, unlike it,
   # these declare a normal static scope here and never re-check it in

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { uploadCV, type CVUploadResult } from '../../api'
+import { uploadCV, fetchUploadedCVs, type CVUploadResult, type UploadedCV } from '../../api'
 import { createConversation, sendMessage } from '../../Cinqo/Conversation/conversation'
 import { fetchPlatforms, fetchPlatformKeys, type Platform } from '../../Cinqo/Platform/platformRepository'
 import { Dropdown } from '../Dropdown/Dropdown'
@@ -17,6 +17,18 @@ import { ProposalRow } from './ProposalRow'
 const AREAS = ['Profile', 'Personas', 'Personal Details', 'Skills', 'Experience'] as const
 
 type PageState = 'upload' | 'analyzing' | 'review' | 'error'
+
+// formatFileSize/isExpired are local to this page — no shared helper
+// for either exists elsewhere in this frontend-app.
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function isExpired(expiresAt: string): boolean {
+  return expiresAt !== '' && new Date(expiresAt).getTime() <= Date.now()
+}
 
 function buildInitialChecked(p: CVImportProposal): Record<string, boolean> {
   const checked: Record<string, boolean> = {
@@ -48,6 +60,14 @@ export function ImportCvPage() {
   const [error, setError] = useState('')
   const [uploadResult, setUploadResult] = useState<CVUploadResult | null>(null)
   const [conversationId, setConversationId] = useState<string | null>(null)
+  // Previously uploaded CVs — relayed from the core Media feature,
+  // filtered to this user's own career uploads (api.ts's own
+  // fetchUploadedCVs). View-only: no re-open/re-download/delete here
+  // (delete already exists on the core Media admin page). Almost every
+  // entry will show as expired shortly after upload (cv_import.go's
+  // own 30-minute TTL) — this is a short audit trail, not a re-usable
+  // archive.
+  const [uploadedCVs, setUploadedCVs] = useState<UploadedCV[] | null>(null)
   // The AI's own raw final reply — kept even after a successful parse
   // so the 'error' state can still show it if something later fails
   // (e.g. duplicate-label resolution), and shown collapsed either way
@@ -122,6 +142,22 @@ export function ImportCvPage() {
       })
   }, [])
 
+  function loadUploadedCVs() {
+    fetchUploadedCVs()
+      .then(setUploadedCVs)
+      .catch(() => {
+        // Non-fatal, matches the platforms effect's own reasoning above
+        // — the upload flow itself doesn't depend on this list, so a
+        // failed load just leaves the section empty rather than
+        // blocking anything.
+        setUploadedCVs([])
+      })
+  }
+
+  useEffect(() => {
+    loadUploadedCVs()
+  }, [])
+
   async function handleUpload() {
     if (!file) return
     setUploading(true)
@@ -133,6 +169,7 @@ export function ImportCvPage() {
       setUploadResult(upload)
       setFileName(file.name)
       setUploading(false)
+      loadUploadedCVs()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
       setUploading(false)
@@ -347,6 +384,23 @@ export function ImportCvPage() {
           >
             {uploading ? 'Uploading…' : 'Upload'}
           </button>
+        </section>
+      )}
+
+      {state === 'upload' && uploadedCVs !== null && uploadedCVs.length > 0 && (
+        <section className="mt-4 rounded-lg border border-gray-200 p-4 shadow-sm">
+          <h2 className="mb-2 text-sm font-semibold text-gray-900">Previously uploaded</h2>
+          <ul className="divide-y divide-gray-100">
+            {uploadedCVs.map((cv) => (
+              <li key={cv.id} className="flex items-center justify-between gap-3 py-2 text-sm">
+                <span className="truncate text-gray-700">{cv.originalFilename}</span>
+                <span className="shrink-0 text-xs text-gray-400">
+                  {formatFileSize(cv.sizeBytes)} · {new Date(cv.createdAt).toLocaleString()} ·{' '}
+                  {isExpired(cv.expiresAt) ? 'Expired' : `Expires ${new Date(cv.expiresAt).toLocaleTimeString()}`}
+                </span>
+              </li>
+            ))}
+          </ul>
         </section>
       )}
 

@@ -73,6 +73,42 @@ func (r *MediaQueryRepo) FindAll(toolSlug string) ([]*media_entity.MediaFile, er
 	return out, rows.Err()
 }
 
+// FindAllForUser returns every media_files row uploaded by userID,
+// newest first, optionally filtered to one tool's own namespace — the
+// data source for a tool's own "my uploads" list (e.g. Career's
+// Import CV page). Unlike FindAll (the admin-only, everyone's-media
+// view), this is scoped by data, not by privilege: userID must come
+// from the caller's own validated token (handler.callerIdentity),
+// never from a query param — see mine_handler.go's own doc comment.
+// Same "never checks expiry" reasoning as FindAll: a user should still
+// see their own expired uploads listed (if only to know they expired),
+// not have them silently vanish.
+func (r *MediaQueryRepo) FindAllForUser(userID, toolSlug string) ([]*media_entity.MediaFile, error) {
+	query := `SELECT ` + mediaFileColumns + ` FROM media_files WHERE uploaded_by_user_id = ?`
+	args := []any{userID}
+	if toolSlug != "" {
+		query += ` AND tool_slug = ?`
+		args = append(args, toolSlug)
+	}
+	query += ` ORDER BY created_at DESC`
+
+	rows, err := r.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]*media_entity.MediaFile, 0)
+	for rows.Next() {
+		m, err := scanMediaFile(rows.Scan)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
 // ErrNotResolvable collapses every reason a media reference can't be
 // resolved (missing row, expired, wrong conversation) into one error —
 // deliberately indistinguishable from the caller's own point of view,

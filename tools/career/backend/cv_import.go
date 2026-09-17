@@ -148,3 +148,92 @@ func forwardToMedia(originalReq *http.Request, file io.Reader, filename string) 
 	}
 	return result.Message.FileID, nil
 }
+
+// uploadedCVResponse is a Career-specific reshaping of Media's own
+// mediaFileResponse — toolSlug/uploadedByUserId are dropped since
+// they're redundant here (always "career", always "me").
+type uploadedCVResponse struct {
+	ID               string `json:"id"`
+	OriginalFilename string `json:"originalFilename"`
+	SizeBytes        int64  `json:"sizeBytes"`
+	CreatedAt        string `json:"createdAt"`
+	ExpiresAt        string `json:"expiresAt"`
+}
+
+// mediaMineEnvelope mirrors GET /api/v1/media/mine's own response
+// shape — same {"success":true,"message":[...]} envelope as
+// mediaUploadEnvelope above, just an array of the fuller
+// media.mediaFileResponse shape instead of one upload result.
+type mediaMineEnvelope struct {
+	Message []struct {
+		ID               string `json:"id"`
+		OriginalFilename string `json:"original_filename"`
+		SizeBytes        int64  `json:"size_bytes"`
+		CreatedAt        string `json:"created_at"`
+		ExpiresAt        string `json:"expires_at"`
+	} `json:"message"`
+}
+
+// listCVUploadsHandler handles GET cv-import/uploads — relays to the
+// core Media feature's own GET /api/v1/media/mine?toolSlug=career,
+// forwarding the ORIGINAL caller's own Authorization/Cookie header the
+// same way forwardToMedia does, so Media's own "list only my own
+// uploads" check sees the same real, currently-authenticated user.
+// Backs ImportCvPage.tsx's own "Previously uploaded" list. See
+// plan/ai/media/step-04-career-uploaded-list.md.
+func listCVUploadsHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	uploads, err := fetchMyUploadsFromMedia(r)
+	if err != nil {
+		http.Error(w, "failed to list uploads: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	writeJSON(w, map[string]any{"uploads": uploads})
+}
+
+func fetchMyUploadsFromMedia(originalReq *http.Request) ([]uploadedCVResponse, error) {
+	mineURL := os.Getenv("CORE_API_URL") + "/api/v1/media/mine?toolSlug=career"
+	req, err := http.NewRequest(http.MethodGet, mineURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	if auth := originalReq.Header.Get("Authorization"); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
+	if cookie := originalReq.Header.Get("Cookie"); cookie != "" {
+		req.Header.Set("Cookie", cookie)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("media list failed: %s: %s", resp.Status, string(respBody))
+	}
+
+	var result mediaMineEnvelope
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+
+	out := make([]uploadedCVResponse, 0, len(result.Message))
+	for _, m := range result.Message {
+		out = append(out, uploadedCVResponse{
+			ID:               m.ID,
+			OriginalFilename: m.OriginalFilename,
+			SizeBytes:        m.SizeBytes,
+			CreatedAt:        m.CreatedAt,
+			ExpiresAt:        m.ExpiresAt,
+		})
+	}
+	return out, nil
+}
