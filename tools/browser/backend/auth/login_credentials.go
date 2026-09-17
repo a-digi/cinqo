@@ -10,7 +10,7 @@
 // Supersedes allowlist.go (step 5) — a stored credential's own
 // existence for a domain now IS the login approval; there is no
 // separate allow/deny list to keep in sync with it.
-package main
+package auth
 
 import (
 	"context"
@@ -36,13 +36,13 @@ var (
 	cryptoKey []byte
 )
 
-// initCryptoKey loads (or generates, on first run) this tool's own
+// InitCryptoKey loads (or generates, on first run) this tool's own
 // login-credential encryption key file under TOOL_DB_DIR — separate
 // from shared.InitDB (which owns browser.db/schema only) since key
 // material is this feature's own concern, not the shared DB's. TOOL_DB_DIR
 // itself is not assumed to already exist — same convention every other
 // TOOL_DB_DIR consumer in this tool follows.
-func initCryptoKey() error {
+func InitCryptoKey() error {
 	dbDir := os.Getenv("TOOL_DB_DIR")
 	if dbDir == "" {
 		return fmt.Errorf("TOOL_DB_DIR is not set")
@@ -168,10 +168,10 @@ type credentialsListResponse struct {
 	Credentials []credentialSummary `json:"credentials"`
 }
 
-// loginCredentialsHandler handles GET/POST/DELETE /login-credentials
+// LoginCredentialsHandler handles GET/POST/DELETE /login-credentials
 // — see this file's own top comment for why this is deliberately
 // HTTP-route-only, never an MCP tool.
-func loginCredentialsHandler(w http.ResponseWriter, r *http.Request) {
+func LoginCredentialsHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		summaries, err := listCredentialSummaries()
@@ -273,10 +273,10 @@ type hasCredentialResponse struct {
 	Exists bool `json:"exists"`
 }
 
-// hasCredentialHandler handles POST /has-login-credential — the
+// HasCredentialHandler handles POST /has-login-credential — the
 // --mcp adapter's own real target for has_login_credential. Never
 // reads cred.Username/cred.Password beyond the nil check itself.
-func hasCredentialHandler(w http.ResponseWriter, r *http.Request) {
+func HasCredentialHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -302,14 +302,14 @@ type hasCredentialArgs struct {
 	Domain string `json:"domain" jsonschema:"the domain to check — a bare hostname (e.g. example.com), not a full URL"`
 }
 
-// registerHasLoginCredential adds the has_login_credential MCP tool —
+// RegisterHasLoginCredential adds the has_login_credential MCP tool —
 // the only credential-adjacent action the AI can take that isn't
 // gated behind a human having already registered one. Deliberately
 // scoped narrower than tool:browser:login (see manifest.json's own
 // scope description for tool:browser:login:status) — this tool can
 // never fill/submit anything or leak a credential, only report
 // whether one exists.
-func registerHasLoginCredential(server *mcp.Server) {
+func RegisterHasLoginCredential(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "has_login_credential",
 		Description: "Check whether a login credential is already stored for a domain. Returns yes/no only — never the credential itself. If no credential is stored, ask the user to add one on the Browser tool's own \"Login Credentials\" page; the AI cannot create or see this data itself.",

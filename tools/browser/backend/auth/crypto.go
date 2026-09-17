@@ -5,7 +5,7 @@
 // structurally identical duplicate — same small-helper-duplication
 // convention this codebase already uses elsewhere). See
 // plan/ai/tools/browser/step-07-login-profiles-and-credential-isolation.md.
-package main
+package auth
 
 import (
 	"crypto/aes"

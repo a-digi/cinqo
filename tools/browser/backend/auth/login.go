@@ -13,7 +13,7 @@
 // login" shape from the original request, now applied to the MCP
 // wire args themselves, not just the human-facing credential store.
 // See plan/ai/tools/browser/step-08-ai-instructed-login.md.
-package main
+package auth
 
 import (
 	"context"
@@ -45,7 +45,7 @@ type loginRequest struct {
 // filled and submitted" — NOT that the login itself succeeded on the
 // target site (a failed login often just re-renders the same form
 // with an error message, still a normal page load). That judgment is
-// left to whoever reads FinalURL/HTML — see registerLogin's own
+// left to whoever reads FinalURL/HTML — see RegisterLogin's own
 // prompt text below. Reason is set instead of Success/FinalURL/HTML
 // when the credential lookup itself is what stopped this from
 // proceeding at all (no stored credential for the given domain).
@@ -56,9 +56,9 @@ type loginResponse struct {
 	HTML     string `json:"html,omitempty"`
 }
 
-// loginHandler handles POST /login — the --mcp adapter's own real
+// LoginHandler handles POST /login — the --mcp adapter's own real
 // target for the login MCP tool.
-func loginHandler(w http.ResponseWriter, r *http.Request) {
+func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -180,7 +180,7 @@ func performLogin(req loginRequest) (loginResponse, error) {
 
 	// Same unconditional <head>/<script>/<style> removal as crawl.go's
 	// own readCrawlResponse (step 44) — this HTML reaches the AI model
-	// exactly like fetch_page_html's own does (see registerLogin's own
+	// exactly like fetch_page_html's own does (see RegisterLogin's own
 	// handler, below), so it gets the same token-reduction treatment.
 	// No caller-configurable removeSelectors here — nothing asked for
 	// one, and loginRequest carries no such field.
@@ -226,13 +226,13 @@ type loginArgs struct {
 	Instructions string `json:"instructions" jsonschema:"a YAML document describing how to log in — domain, usernameSelector, passwordSelector, submitSelector (the selectors come from find_login_elements). Example:\ndomain: example.com\nusernameSelector: \"#username\"\npasswordSelector: \"#password\"\nsubmitSelector: \"#submit\"\nNever include a username or password here — this tool resolves the real credential itself; any such fields would be silently ignored."`
 }
 
-// registerLogin adds the login MCP tool — the only credential-
+// RegisterLogin adds the login MCP tool — the only credential-
 // submitting action in this whole tool, and, as of step 8, one whose
 // args have no field capable of carrying a credential at all: the
 // model only ever instructs WHICH elements matter, never what to fill
 // them with. Deliberately does not itself run find_login_elements or
 // navigate anywhere; the model is expected to have already done both.
-func registerLogin(server *mcp.Server) {
+func RegisterLogin(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "login",
 		Description: "Log into the currently loaded page, instructed via a YAML document (domain + selectors from find_login_elements). Only proceeds if a credential has already been registered for the given domain (via /login-credentials, outside any AI tool call) — the tool fills and submits it itself; the AI never sees the credential.",

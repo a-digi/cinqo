@@ -3,7 +3,7 @@
 // elements on whatever page the shared session currently has loaded.
 // Never navigates anywhere itself and never submits anything — see
 // plan/ai/tools/browser/step-04-find-login-elements-feature.md.
-package main
+package auth
 
 import (
 	"context"
@@ -41,9 +41,9 @@ type findLoginElementsResponse struct {
 	Candidates []loginElementCandidate `json:"candidates"`
 }
 
-// findLoginElementsHandler handles POST /find-login-elements — the
+// FindLoginElementsHandler handles POST /find-login-elements — the
 // --mcp adapter's own real target for find_login_elements.
-func findLoginElementsHandler(w http.ResponseWriter, r *http.Request) {
+func FindLoginElementsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -97,10 +97,10 @@ func findLoginElements() (findLoginElementsResponse, error) {
 
 type findLoginElementsArgs struct{}
 
-// registerFindLoginElements adds the find_login_elements MCP tool —
+// RegisterFindLoginElements adds the find_login_elements MCP tool —
 // thin, like fetch_page_html: only ever calls shared.CallSibling and formats
 // the result.
-func registerFindLoginElements(server *mcp.Server) {
+func RegisterFindLoginElements(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "find_login_elements",
 		Description: "Inspect the currently loaded page (see fetch_page_html) for probable login form fields — username, password, and submit selectors. Read-only; submits nothing.",
