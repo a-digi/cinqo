@@ -321,58 +321,6 @@ func detectCloudflareChallenge(
 	return result, nil
 }
 
-// expectedContentVisible checks whether ANY expected selector currently
-// matches a visibly rendered element.
-//
-// This is intentionally separate from detectCloudflareChallenge because it
-// is useful after handing a challenge page to a human: the success condition
-// is the application's real content appearing, not merely Cloudflare's
-// challenge DOM disappearing.
-func expectedContentVisible(
-	ctx context.Context,
-	expectedSelectors []string,
-) (bool, error) {
-	if len(expectedSelectors) == 0 {
-		return false, nil
-	}
-
-	selectorsJSON, err := json.Marshal(expectedSelectors)
-	if err != nil {
-		return false, err
-	}
-
-	script := fmt.Sprintf(`(function(selectors) {
-		%s
-
-		for (var i = 0; i < selectors.length; i++) {
-			var el;
-
-			try {
-				el = document.querySelector(selectors[i]);
-			} catch (e) {
-				continue;
-			}
-
-			if (el && isRenderedVisible(el)) {
-				return true;
-			}
-		}
-
-		return false;
-	})(%s)`, isRenderedVisibleJS, string(selectorsJSON))
-
-	var found bool
-
-	if err := chromedp.Run(
-		ctx,
-		chromedp.Evaluate(script, &found),
-	); err != nil {
-		return false, err
-	}
-
-	return found, nil
-}
-
 // expectedSelectorsFromFields derives the "expected content" selector list
 // from a crawl instruction's container/fields.
 //

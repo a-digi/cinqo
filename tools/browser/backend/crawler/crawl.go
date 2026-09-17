@@ -28,18 +28,13 @@ import (
 // premature configurability.
 const MaxHTMLBytes = 200_000
 
-// minSolvedHTMLGrowthBytes is the size-DELTA fallback threshold
-// waitForHumanToClearCloudflare uses when none of a crawl's own
-// expected selectors match — see that function's own doc comment at
-// its use site for the full reasoning. Deliberately relative (this
-// tick's HTML vs. the immediately preceding tick's), not an absolute
-// floor: a genuinely still-active Cloudflare interstitial is static
-// between two 15s polls (a spinner animates via CSS, not by growing
-// the DOM), so a jump this large between two consecutive polls is a
-// strong, self-calibrating signal that something real changed
-// underneath — without needing to know in advance how big any
-// particular site's own challenge or real page happens to be.
-const minSolvedHTMLGrowthBytes = 5_000
+// minSolvedHTMLBytes is the single, explicit rule
+// waitForHumanToClearCloudflare uses to decide a Cloudflare challenge
+// has been solved: the page's own HTML must exceed this many bytes.
+// Empirically anchored: a real captured Cloudflare "managed challenge"
+// interstitial for a real domain this tool crawls was 28,909 bytes;
+// this is set above that.
+const minSolvedHTMLBytes = 45_000
 
 // crawlTimeout bounds one navigation — shorter than pdf_generator's
 // own 30s render budget, since crawling has no print-to-PDF step of
@@ -633,7 +628,7 @@ func crawlWithNormalSession(reqCtx context.Context, rawURL, requestID string, ex
 		// itself is actually done.
 		return result, classifyCancellation(err, reqCtx, shared.Ctx)
 	}
-	result, err = waitForHumanToSolveCloudflare(ctx, cfErr, requestID, expectedSelectors, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
+	result, err = waitForHumanToSolveCloudflare(ctx, cfErr, requestID, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
 	return result, classifyCancellation(err, reqCtx, shared.Ctx)
 }
 
@@ -657,34 +652,20 @@ func crawlWithNormalSession(reqCtx context.Context, rawURL, requestID string, ex
 // very first status a poller ever sees already says which signal
 // triggered this wait, not a generic placeholder.
 //
-// expectedSelectors (step 36, strengthened step 66) is checked FIRST,
-// unconditionally, on every tick — a match ends the wait immediately,
-// regardless of what detectCloudflareChallenge's own heuristic still
-// thinks is on the page. This is deliberately no longer gated behind
-// the heuristic's own "not detected" verdict: a real, reproduced bug
-// (a human genuinely solved a challenge, yet this loop kept reporting
-// "still detected" — challenge-text, then visible-widget — for
-// upwards of a minute) showed that some Cloudflare-looking DOM
-// fragment (a lingering Turnstile "verified" checkbox, a cookie/trust
-// banner, cached challenge markup Cloudflare doesn't always fully tear
-// down) can keep the heuristic itself convinced a challenge is still
-// active even after the real, already-loaded target content is
-// visible underneath it. detectCloudflareChallenge's own internal
-// "expected content found" override (cloudflare.go) only ever runs
-// once the heuristic ALREADY concluded detected=true within that same
-// evaluate call — it cannot help here, because it's nested inside the
-// very verdict this loop needs to be able to override from the
-// outside. Checking expectedContentVisible directly, first, makes "the
-// crawl's own target content is actually there" the authoritative
-// signal, exactly as it already is for a fresh crawl's very first
-// navigation (readCrawlResponse is reached the instant the target
-// content is confirmed, without waiting on Cloudflare's own DOM to
-// admit anything). Deliberately scoped to THIS function alone, never
-// waitForCloudflareClearance's own short automated wait — that one
-// still leans on detectCloudflareChallenge's own internal override,
-// which is sufficient for its far shorter 8s budget. See
-// plan/ai/tools/browser/step-36-content-based-cloudflare-override.md.
-func waitForHumanToClearCloudflare(ctx context.Context, requestID, initialReason string, expectedSelectors []string) (bool, error) {
+// "Solved" is decided by exactly one rule here: the page's own HTML
+// exceeds minSolvedHTMLBytes (see that constant's own doc comment) —
+// checked on every tick, nothing else. Deliberately NOT gated behind
+// detectCloudflareChallenge's own heuristic verdict: a real, reproduced
+// bug showed some Cloudflare-looking DOM fragment (a lingering
+// Turnstile "verified" checkbox, a cookie/trust banner, cached
+// challenge markup Cloudflare doesn't always fully tear down) can keep
+// that heuristic convinced a challenge is still active even after the
+// real, already-loaded page is visible underneath it — so this loop
+// no longer consults it at all for the solved/not-solved decision.
+// Deliberately scoped to THIS function alone, never
+// waitForCloudflareClearance's own short automated wait, which is
+// unaffected.
+func waitForHumanToClearCloudflare(ctx context.Context, requestID, initialReason string) (bool, error) {
 	setCrawlPhase(requestID, phaseAwaitingHumanChallenge, fmt.Sprintf(
 		"Cloudflare challenge detected (%s) — waiting for a person to solve it in the open browser window", initialReason,
 	))
@@ -697,28 +678,6 @@ func waitForHumanToClearCloudflare(ctx context.Context, requestID, initialReason
 	settings, _ := shared.LoadBrowserSettings()
 	logHTML := settings.DebugEnabled && settings.DebugLogHTML
 
-	// baselineHTMLLen is captured ONCE, right here, at the moment this
-	// challenge was confirmed detected — before the retry loop's first
-	// sleep, not after it. Every later tick's size-delta check below
-	// compares against THIS one fixed snapshot of the actual challenge
-	// page, never a moving "previous tick" target: the challenge page
-	// itself is expected to be static while genuinely still active, so
-	// comparing against its own true starting size (not whatever the
-	// immediately preceding tick happened to measure, which could
-	// already be partway through a transition) is the correct
-	// reference point. -1 means the capture itself failed; the delta
-	// check below is skipped in that case, same as any other haveHTML
-	// failure. A fresh call to this function (each retry round in
-	// performPaginatedCrawlWithNormalSession) captures its own fresh
-	// baseline — the "version" being compared against is always THIS
-	// specific challenge occurrence, not a stale one from an earlier
-	// round.
-	baselineHTMLLen := -1
-	var baselineHTML string
-	if chromedp.Run(ctx, chromedp.OuterHTML("html", &baselineHTML)) == nil {
-		baselineHTMLLen = len(baselineHTML)
-	}
-
 	deadline := time.Now().Add(maxHumanSolveDuration)
 	attempt := 0
 	for time.Now().Before(deadline) {
@@ -727,12 +686,6 @@ func waitForHumanToClearCloudflare(ctx context.Context, requestID, initialReason
 			return false, err
 		}
 
-		// Captured unconditionally (not just when logHTML is on) —
-		// besides feeding the debug dump below, it's now also this
-		// tick's own input to the size-delta fallback check further
-		// down. Captured BEFORE the checks below, so both consumers see
-		// exactly what's on the page at this instant, not a stale
-		// snapshot from a moment earlier.
 		var html string
 		haveHTML := chromedp.Run(ctx, chromedp.OuterHTML("html", &html)) == nil
 
@@ -740,54 +693,34 @@ func waitForHumanToClearCloudflare(ctx context.Context, requestID, initialReason
 			logChallengeDetectorHTML(requestID, attempt, html)
 		}
 
-		if len(expectedSelectors) > 0 {
-			if found, err := expectedContentVisible(ctx, expectedSelectors); err != nil {
-				return false, err
-			} else if found {
-				return true, nil
-			}
-		}
-
-		// minSolvedHTMLGrowthBytes fallback — reached only once neither
-		// of this crawl's own expected selectors matched above. A real,
-		// reproduced bug: some Cloudflare-looking DOM fragment (a
-		// lingering Turnstile "verified" badge, a cookie/trust banner)
-		// can keep detectCloudflareChallenge convinced a challenge is
-		// still active even after the real, already-loaded page is
-		// underneath it — and if THIS crawl's own configured selectors
-		// happen not to match that specific page's real structure
-		// either, the loop would otherwise keep waiting the full
-		// maxHumanSolveDuration with no way out. Skipped when
-		// baselineHTMLLen itself couldn't be captured (< 0).
-		if haveHTML && baselineHTMLLen >= 0 && len(html)-baselineHTMLLen >= minSolvedHTMLGrowthBytes {
+		// The single, explicit rule this loop uses to decide "solved":
+		// the page's own HTML is over minSolvedHTMLBytes long. Nothing
+		// else — not expectedSelectors, not detectCloudflareChallenge's
+		// own heuristic — decides "done" here. A genuine Cloudflare
+		// interstitial's own HTML stays well under this size; once the
+		// real page has loaded, its HTML reliably exceeds it. If
+		// haveHTML is false (a capture failure this tick), this is
+		// "not done" the same as being under the threshold.
+		if haveHTML && len(html) > minSolvedHTMLBytes {
 			setCrawlPhase(requestID, phaseAwaitingHumanChallenge, fmt.Sprintf(
-				"expected content not found, but HTML size grew by %d bytes since the challenge was first detected (%d → %d) — treating as solved",
-				len(html)-baselineHTMLLen, baselineHTMLLen, len(html),
+				"HTML size (%d bytes) exceeds %d — treating as solved", len(html), minSolvedHTMLBytes,
 			))
 			return true, nil
 		}
 
-		check, err := detectCloudflareChallenge(ctx, expectedSelectors)
-		if err != nil {
-			return false, err
-		}
-		if !check.Detected {
-			return true, nil
-		}
 		// Reported every tick, not just once at the top — a real gap
 		// fixed here: without this, this function's own live status
 		// never changed for the ENTIRE wait (up to 30 minutes), no
 		// matter how many times the check underneath actually re-ran,
 		// making a perfectly-alive retry loop look frozen from any
-		// poller's own point of view. Including check.Reason on every
-		// tick (not just the first) also surfaces a reason that
-		// CHANGES between ticks — e.g. a page that first shows the
-		// resolvable JS challenge (reason "title") and later, after a
-		// redirect, shows a harder WAF block (reason
-		// "waf-block-params") — as a real, visible signal rather than
-		// silently indistinguishable "still detected" text.
+		// poller's own point of view.
+		htmlLen := 0
+		if haveHTML {
+			htmlLen = len(html)
+		}
 		setCrawlPhase(requestID, phaseAwaitingHumanChallenge, fmt.Sprintf(
-			"still detected (%s) — check #%d, waiting for a person to solve it in the open browser window", check.Reason, attempt,
+			"not solved yet (HTML size %d bytes, need > %d) — check #%d, waiting for a person to solve it in the open browser window",
+			htmlLen, minSolvedHTMLBytes, attempt,
 		))
 	}
 	return false, nil
@@ -798,8 +731,8 @@ func waitForHumanToClearCloudflare(ctx context.Context, requestID, initialReason
 // Cloudflare challenge and solve it themselves, then reads the page
 // once cleared. See
 // plan/ai/tools/browser/step-25-human-assisted-cloudflare-retry.md.
-func waitForHumanToSolveCloudflare(ctx context.Context, fallback *crawlError, requestID string, expectedSelectors, removeSelectors, removeAttributes []string, maxAttributeLength int, ignoreAttributesForMaxLength []string) (crawlResponse, error) {
-	cleared, err := waitForHumanToClearCloudflare(ctx, requestID, fallback.Reason, expectedSelectors)
+func waitForHumanToSolveCloudflare(ctx context.Context, fallback *crawlError, requestID string, removeSelectors, removeAttributes []string, maxAttributeLength int, ignoreAttributesForMaxLength []string) (crawlResponse, error) {
+	cleared, err := waitForHumanToClearCloudflare(ctx, requestID, fallback.Reason)
 	if err != nil {
 		return crawlResponse{}, err
 	}

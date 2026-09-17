@@ -610,11 +610,11 @@ const maxHumanWaitRounds = 3
 // step-26-headed-fallback-for-paginated-crawl.md.
 //
 // waitForHumanToClearCloudflare can declare "solved" without
-// detectCloudflareChallenge's own agreement (expectedContentVisible or
-// the HTML-size-growth fallback matching first — see that function's
-// own doc comment) — deliberately, since detectCloudflareChallenge
-// itself can stay wrongly convinced a challenge is still active on a
-// genuinely already-solved page. That means the very next line below,
+// detectCloudflareChallenge's own agreement (its own HTML-size rule —
+// see that function's own doc comment) — deliberately, since
+// detectCloudflareChallenge itself can stay wrongly convinced a
+// challenge is still active on a genuinely already-solved page. That
+// means the very next line below,
 // runPaginatedCrawlLoop's own independent per-page Cloudflare check,
 // can occasionally disagree with a "solved" verdict that was in fact
 // premature (a residual widget still settling, a transitional
@@ -683,7 +683,7 @@ func performPaginatedCrawlWithNormalSession(reqCtx context.Context, blockedURL, 
 	}
 
 	for round := 1; round <= maxHumanWaitRounds; round++ {
-		cleared, waitErr := waitForHumanToClearCloudflare(ctx, requestID, cfErr.Reason, expectedSelectorsFromFields(container, fields))
+		cleared, waitErr := waitForHumanToClearCloudflare(ctx, requestID, cfErr.Reason)
 		if waitErr != nil {
 			return paginatedCrawlResponse{}, nil, classifyCancellation(waitErr, reqCtx, shared.Ctx)
 		}
