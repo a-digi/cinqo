@@ -1,4 +1,4 @@
-module pdf-generator-backend
+module pdf-tools-backend
 
 go 1.26.0
 
@@ -6,7 +6,8 @@ require (
 	github.com/chromedp/cdproto v0.0.0-20260714215040-dc233986426f
 	github.com/chromedp/chromedp v0.16.0
 	github.com/google/uuid v1.6.0
-	github.com/modelcontextprotocol/go-sdk v1.7.0
+	github.com/ledongthuc/pdf v0.0.0-20260907135840-6c8c28e0e8a0
+	github.com/modelcontextprotocol/go-sdk v1.8.0
 )
 
 require (
