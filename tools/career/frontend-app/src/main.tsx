@@ -31,8 +31,10 @@ import { JobsPage } from './Components/JobsPage/JobsPage'
 import { CompaniesPage } from './Components/CompaniesPage/CompaniesPage'
 import { RecruitersPage } from './Components/RecruitersPage/RecruitersPage'
 import { PortalsPage } from './Components/PortalsPage/PortalsPage'
+import { ImportCvPage } from './Components/ImportCv/ImportCvPage'
 import './index.css'
 
+const IMPORT_CV_PATH = '/tools/career/import-cv'
 const PROFILES_PATH = '/tools/career/profiles'
 const PERSONAS_PATH = '/tools/career/personas'
 const PERSONA_DETAILS_PATH = '/tools/career/persona-details'
@@ -50,6 +52,11 @@ window.__cinqoToolBridge.registerMenuEntry({
   // plan/ai/tools/step-15-menu-icons-for-browser-and-career.md.
   icon: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor"><rect x="3" y="7" width="14" height="9" rx="1.5" stroke-width="1.3"/><path d="M7 7V5.5a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 13 5.5V7" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><line x1="3" y1="11" x2="17" y2="11" stroke-width="1.3"/></svg>',
   children: [
+    {
+      label: 'Import CV',
+      path: IMPORT_CV_PATH,
+      scopes: ['tool:career:cv_import'],
+    },
     {
       label: 'Profiles',
       path: PROFILES_PATH,
@@ -114,6 +121,14 @@ function unmountReact(container: HTMLElement) {
   roots.get(container)?.unmount()
   roots.delete(container)
 }
+
+window.__cinqoToolBridge.registerRoute({
+  path: IMPORT_CV_PATH,
+  mount: (container) => {
+    mountReact(container, <ImportCvPage />)
+  },
+  unmount: unmountReact,
+})
 
 window.__cinqoToolBridge.registerRoute({
   path: PROFILES_PATH,

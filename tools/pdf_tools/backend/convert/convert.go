@@ -180,6 +180,26 @@ func fetchPDF(ctx context.Context, rawURL string) ([]byte, error) {
 	return data, nil
 }
 
+// allowedInternalHost is the one loopback address this tool's own SSRF
+// guard makes an explicit, narrow exception for — the host process's
+// own CORE_API_URL, which every tool subprocess receives as a fixed,
+// trusted env var (never caller/model-controlled) and needs to reach
+// for exactly one reason: fetching a CV another tool (career) has made
+// available through its own capability-token route. Every other
+// loopback/private/link-local target stays rejected exactly as
+// before. Empty by default (SetAllowedInternalHost not called, or
+// called with an empty value) — dialContextRejectingPrivateIPs then
+// behaves identically to before this exception existed. See
+// plan/ai/tools/career/import-cv/step-03-pdf-tools-ssrf-exception.md.
+var allowedInternalHost string
+
+// SetAllowedInternalHost is called once from main() with
+// CORE_API_URL's own parsed host:port — see allowedInternalHost's own
+// doc for why this is safe to exempt and nothing else.
+func SetAllowedInternalHost(hostPort string) {
+	allowedInternalHost = hostPort
+}
+
 // dialContextRejectingPrivateIPs is wired into fetchPDF's own
 // http.Transport so the SSRF check applies to the address actually
 // resolved and dialed, not just the scheme of the URL string — a
@@ -200,6 +220,10 @@ func dialContextRejectingPrivateIPs(ctx context.Context, network, addr string) (
 		return nil, fmt.Errorf("no addresses found for %s", host)
 	}
 	for _, ip := range ips {
+		resolved := net.JoinHostPort(ip.IP.String(), port)
+		if allowedInternalHost != "" && resolved == allowedInternalHost {
+			continue // the one explicit, narrow exception — see allowedInternalHost's own doc
+		}
 		if isDisallowedIP(ip.IP) {
 			return nil, fmt.Errorf("refusing to connect to disallowed address %s", ip.IP)
 		}

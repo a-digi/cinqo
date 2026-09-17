@@ -155,14 +155,17 @@ export async function fetchProfiles(): Promise<Profile[]> {
   return data.profiles
 }
 
-export async function createProfile(firstName: string, lastName: string): Promise<Profile[]> {
+// The backend's own POST response already includes the new row's id
+// alongside the refreshed list (http.go's profilesHandler) — surfaced
+// here since Import CV's own insert flow (step 7) needs a reliable id
+// to chain a persona creation onto, not "guess via array order/name."
+export async function createProfile(firstName: string, lastName: string): Promise<{ id: string; profiles: Profile[] }> {
   const res = await fetch(`${PROXY_BASE}/profiles`, {
     method: 'POST',
     credentials: 'include',
     body: JSON.stringify({ firstName, lastName }),
   })
-  const data = await jsonOrThrow<{ profiles: Profile[] }>(res, 'create profile')
-  return data.profiles
+  return jsonOrThrow<{ id: string; profiles: Profile[] }>(res, 'create profile')
 }
 
 export async function updateProfile(id: string, args: { firstName?: string; lastName?: string }): Promise<Profile[]> {
@@ -209,14 +212,15 @@ export async function fetchPersonas(profileId?: string): Promise<Persona[]> {
   return data.personas
 }
 
-export async function createPersona(profileId: string, name: string, description?: string): Promise<Persona[]> {
+// Same reasoning as createProfile above — the backend already returns
+// the new persona's own id, surfaced here for the same reason.
+export async function createPersona(profileId: string, name: string, description?: string): Promise<{ id: string; personas: Persona[] }> {
   const res = await fetch(`${PROXY_BASE}/personas`, {
     method: 'POST',
     credentials: 'include',
     body: JSON.stringify({ profileId, name, description }),
   })
-  const data = await jsonOrThrow<{ personas: Persona[] }>(res, 'create persona')
-  return data.personas
+  return jsonOrThrow<{ id: string; personas: Persona[] }>(res, 'create persona')
 }
 
 export async function updatePersona(id: string, args: { name?: string; description?: string }): Promise<Persona[]> {
@@ -501,4 +505,25 @@ export async function removePortalLink(id: string): Promise<void> {
     credentials: 'include',
   })
   if (!res.ok && res.status !== 204) throw new Error(`failed to remove portal link (${res.status})`)
+}
+
+// --- CV import ---
+
+export interface CVUploadResult {
+  id: string
+  // Ready-to-use absolute URL — the frontend embeds this verbatim into
+  // the AI's own initial instruction message (step 5); it never has to
+  // be constructed client-side.
+  url: string
+}
+
+export async function uploadCV(file: File): Promise<CVUploadResult> {
+  const formData = new FormData()
+  formData.append('cv', file)
+  const res = await fetch(`${PROXY_BASE}/cv-import/upload`, {
+    method: 'POST',
+    credentials: 'include',
+    body: formData,
+  })
+  return jsonOrThrow<CVUploadResult>(res, 'upload cv')
 }

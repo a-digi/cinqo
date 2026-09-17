@@ -50,7 +50,7 @@ export function ProfilesPage() {
     setError('')
     createProfile(firstName, lastName)
       .then((result) => {
-        setProfiles(result)
+        setProfiles(result.profiles)
         setNewFirstName('')
         setNewLastName('')
       })

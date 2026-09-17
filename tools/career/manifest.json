@@ -1,11 +1,15 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.0.148",
+  "version": "0.0.153",
   "mcp": true,
   "requires_tools": [
     {
       "slug": "browser"
+    },
+    {
+      "slug": "pdf_tools",
+      "min_version": "0.2.0"
     }
   ],
   "scopes": [
@@ -24,6 +28,10 @@
     {
       "scope": "tool:career:portals",
       "description": "Create, read, update, and delete job portals and their crawl target links."
+    },
+    {
+      "scope": "tool:career:cv_import",
+      "description": "Upload a CV and let the AI propose profile/persona/skill/experience entries from it."
     }
   ],
   "routes": [
@@ -246,6 +254,16 @@
       "method": "POST",
       "path_suffix": "portal-links/crawl-now/cancel",
       "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "cv-import/upload",
+      "required_scope": "tool:career:cv_import"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "cv-import/file",
+      "required_scope": "tool:career:cv_import"
     }
   ],
   "mcp_tools": [

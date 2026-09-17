@@ -164,6 +164,22 @@ CREATE TABLE IF NOT EXISTS career_experience (
     description TEXT,
     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- cv_import_files (Import CV, step 2) tracks one uploaded CV awaiting
+-- AI analysis. token_hash is sha256(token) — the raw token is never
+-- stored, only ever returned once, at upload time, to the caller who
+-- embeds it in the capability URL. This is the one deliberate
+-- exception to "every route enforces its own scope": pdf_tools' own
+-- fetch has no session to present, so cv-import/file's own handler
+-- checks this token instead of the normal scope gate for that one
+-- route. See plan/ai/tools/career/import-cv/step-02-cv-upload-and-capability-token-serving.md.
+CREATE TABLE IF NOT EXISTS cv_import_files (
+    id          TEXT PRIMARY KEY,
+    token_hash  TEXT NOT NULL,
+    file_path   TEXT NOT NULL,
+    expires_at  TEXT NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `
 
 const jobsSchema = `

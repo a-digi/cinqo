@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 
 	"github.com/google/uuid"
@@ -32,6 +33,17 @@ import (
 func main() {
 	if err := convert.Init(os.Getenv("TOOL_CACHE_DIR")); err != nil {
 		log.Fatalf("failed to init pdf_to_md cache: %v", err)
+	}
+
+	// CORE_API_URL is always http://127.0.0.1:<corePort> (manager.go's
+	// ToolEnvVars) — the one, narrow, explicit SSRF exception
+	// convert.SetAllowedInternalHost documents. A parse failure here
+	// just means no exception is set (empty string), not a fatal error
+	// — this tool's own core fetch functionality doesn't depend on it.
+	if coreAPIURL := os.Getenv("CORE_API_URL"); coreAPIURL != "" {
+		if parsed, err := url.Parse(coreAPIURL); err == nil {
+			convert.SetAllowedInternalHost(parsed.Host)
+		}
 	}
 
 	tmpDir := os.Getenv("TOOL_TMP_DIR")
