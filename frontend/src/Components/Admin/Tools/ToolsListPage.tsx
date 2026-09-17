@@ -6,15 +6,28 @@ import { ScopeGate } from '../../../Shared/Components/Access/ScopeGate'
 import { useConfirm } from '../../../Shared/Components/Modal/useConfirm'
 import { IconButton } from '../../../Shared/Components/IconButton/IconButton'
 import { PowerIcon, TrashIcon } from '../../../Shared/Components/IconButton/icons'
+import { Pill } from '../../../Shared/Components/Pill/Pill'
+import { Card } from '../../../Shared/Components/Card/Card'
 import { AppScopes } from '../../../config/security/scopes'
 import { reloadAfterToolChange } from '../../../config/tools/loadTools'
 import { ToolInstallButton } from './ToolInstallButton'
+
+// Caps how many MCP-function pills render inline per tool card before
+// collapsing the rest into a single "+N more" pill — Career alone
+// declares ~35 MCP tools, which would otherwise blow out the card.
+const MAX_VISIBLE_FUNCTIONS = 4
 
 // Admin-only view of installed tools (api/src/tool) — see
 // plan/ai/tools/step-08-frontend-admin-ui.md. Every mutating action
 // reloads the whole page afterward — the tool registry is append-only
 // (step 7), so this is the simplest correct way to reflect a lifecycle
-// change, matching coco-mda's own reasoning.
+// change, matching coco-mda's own reasoning. Rendered as a card grid
+// (Shared/Components/Card), not a table — each card's banner mirrors a
+// real-estate-listing layout: a placeholder "photo" area with floating
+// circular action buttons top-right and a status ribbon top-left, a
+// name/version header row, a slug subtitle, then a row of neutral
+// outline stat chips (kind/enabled/function count) before the
+// function-name pills themselves.
 export function ToolsListPage() {
   const [tools, setTools] = useState<Tool[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -83,7 +96,7 @@ export function ToolsListPage() {
   const filtered = q ? tools.filter((t) => t.name.toLowerCase().includes(q) || t.slug.toLowerCase().includes(q)) : tools
 
   return (
-    <div className="max-w-4xl space-y-6 p-6">
+    <div className="max-w-5xl space-y-6 p-6">
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-xl font-semibold text-gray-900">Tools</h1>
@@ -108,56 +121,26 @@ export function ToolsListPage() {
         />
       )}
 
-      <div className="rounded-lg border border-gray-200">
-        <table className="w-full text-left text-sm">
-          <thead>
-            <tr className="text-xs uppercase text-gray-400">
-              <th className="px-4 py-2 font-medium">Name</th>
-              <th className="px-4 py-2 font-medium">Slug</th>
-              <th className="px-4 py-2 font-medium">Version</th>
-              <th className="px-4 py-2 font-medium">Kind</th>
-              <th className="px-4 py-2 font-medium">Status</th>
-              <th className="px-4 py-2 font-medium">Enabled</th>
-              <th className="px-4 py-2 font-medium" />
-            </tr>
-          </thead>
-          <tbody>
-            {tools.length === 0 && (
-              <tr>
-                <td colSpan={7} className="px-4 py-6 text-center text-gray-400">
-                  No tools installed.
-                </td>
-              </tr>
-            )}
-            {tools.length > 0 && filtered.length === 0 && (
-              <tr>
-                <td colSpan={7} className="px-4 py-6 text-center text-gray-400">
-                  No tools match your search.
-                </td>
-              </tr>
-            )}
-            {filtered.map((tool) => (
-              <tr key={tool.id} className="border-t border-gray-100">
-                <td className="px-4 py-2 text-gray-900">{tool.name}</td>
-                <td className="px-4 py-2 font-mono text-xs text-gray-700">{tool.slug}</td>
-                <td className="px-4 py-2 text-gray-600">{tool.version}</td>
-                <td className="px-4 py-2 text-gray-600">{tool.kind}</td>
-                <td className="px-4 py-2">
-                  <StatusBadge status={tool.status} />
-                </td>
-                <td className="px-4 py-2">
-                  <span
-                    className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-                      tool.enabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
-                    }`}
-                  >
-                    {tool.enabled ? 'Enabled' : 'Disabled'}
-                  </span>
-                </td>
-                <td className="px-4 py-2 text-right">
+      {tools.length === 0 && <p className="py-6 text-center text-sm text-gray-400">No tools installed.</p>}
+      {tools.length > 0 && filtered.length === 0 && (
+        <p className="py-6 text-center text-sm text-gray-400">No tools match your search.</p>
+      )}
+
+      {filtered.length > 0 && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {filtered.map((tool) => (
+            <Card
+              key={tool.id}
+              media={
+                <div className="relative flex h-28 items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
+                  <span className="text-3xl font-bold text-gray-300">{tool.name.charAt(0).toUpperCase()}</span>
+                  <div className="absolute left-3 top-3">
+                    <Pill variant={statusVariant[tool.status]}>{tool.status}</Pill>
+                  </div>
                   <ScopeGate scopes={[AppScopes.ToolManage]}>
-                    <div className="flex justify-end gap-1">
+                    <div className="absolute right-3 top-3 flex gap-2">
                       <IconButton
+                        floating
                         icon={<PowerIcon />}
                         label={tool.enabled ? 'Disable' : 'Enable'}
                         onClick={() => {
@@ -166,6 +149,7 @@ export function ToolsListPage() {
                         disabled={busySlug === tool.slug}
                       />
                       <IconButton
+                        floating
                         icon={<TrashIcon />}
                         label="Delete"
                         onClick={() => {
@@ -176,24 +160,48 @@ export function ToolsListPage() {
                       />
                     </div>
                   </ScopeGate>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+                </div>
+              }
+            >
+              <div className="flex items-start justify-between gap-2">
+                <h3 className="truncate text-lg font-bold text-gray-900">{tool.name}</h3>
+                <span className="shrink-0 text-lg font-bold text-gray-900">v{tool.version}</span>
+              </div>
+              <p className="truncate font-mono text-xs text-gray-500">{tool.slug}</p>
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Pill outline>{tool.kind}</Pill>
+                <Pill outline>{tool.enabled ? 'Enabled' : 'Disabled'}</Pill>
+                <Pill outline>
+                  {tool.mcpTools.length} function{tool.mcpTools.length === 1 ? '' : 's'}
+                </Pill>
+              </div>
+
+              {tool.mcpTools.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-1">
+                  {tool.mcpTools.slice(0, MAX_VISIBLE_FUNCTIONS).map((name) => (
+                    <Pill key={name}>{name}</Pill>
+                  ))}
+                  {tool.mcpTools.length > MAX_VISIBLE_FUNCTIONS && (
+                    <Pill title={tool.mcpTools.slice(MAX_VISIBLE_FUNCTIONS).join(', ')}>
+                      +{tool.mcpTools.length - MAX_VISIBLE_FUNCTIONS} more
+                    </Pill>
+                  )}
+                </div>
+              )}
+            </Card>
+          ))}
+        </div>
+      )}
       {dialog}
     </div>
   )
 }
 
-function StatusBadge({ status }: { status: Tool['status'] }) {
-  const colors: Record<Tool['status'], string> = {
-    installed: 'bg-gray-100 text-gray-600',
-    starting: 'bg-amber-100 text-amber-700',
-    running: 'bg-green-100 text-green-700',
-    stopped: 'bg-gray-100 text-gray-600',
-    error: 'bg-red-100 text-red-700',
-  }
-  return <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${colors[status]}`}>{status}</span>
+const statusVariant: Record<Tool['status'], 'gray' | 'green' | 'amber' | 'red'> = {
+  installed: 'gray',
+  starting: 'amber',
+  running: 'green',
+  stopped: 'gray',
+  error: 'red',
 }

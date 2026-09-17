@@ -24,5 +24,10 @@ func ListHandler(reqCtx request.RequestContext) {
 		response.ErrorResponse(w, http.StatusInternalServerError, "failed to list tools")
 		return
 	}
-	response.SuccessResponse(w, http.StatusOK, toToolResponses(tools, systemToolsConfigFrom(reqCtx)))
+	out, err := toToolResponses(db, tools, systemToolsConfigFrom(reqCtx))
+	if err != nil {
+		response.ErrorResponse(w, http.StatusInternalServerError, "failed to load tool functions")
+		return
+	}
+	response.SuccessResponse(w, http.StatusOK, out)
 }

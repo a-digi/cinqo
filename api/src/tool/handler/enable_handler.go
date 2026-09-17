@@ -96,5 +96,10 @@ func EnableHandler(reqCtx request.RequestContext) {
 		response.ErrorResponse(w, http.StatusInternalServerError, "tool enabled but failed to reload")
 		return
 	}
-	response.SuccessResponse(w, http.StatusOK, toToolResponse(reloaded, systemToolsConfigFrom(reqCtx)))
+	mcpTools, err := mcpToolNamesFor(db, reloaded.ID)
+	if err != nil {
+		response.ErrorResponse(w, http.StatusInternalServerError, "tool enabled but failed to load functions")
+		return
+	}
+	response.SuccessResponse(w, http.StatusOK, toToolResponse(reloaded, systemToolsConfigFrom(reqCtx), mcpTools))
 }

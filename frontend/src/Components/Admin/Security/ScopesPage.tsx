@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { fetchSecurityScopes, type SecurityScopes } from '../../../api/security'
 import { ApiError } from '../../../api/client'
 import { LoadingSpinner } from '../../../Shared/Components/Loading/LoadingSpinner'
+import { Pill } from '../../../Shared/Components/Pill/Pill'
 import { referencedScopeIds } from '../../../config/security/scopeConformance'
 
 // Admin-only view of the scope registry (api/src/security/scopes) — see
@@ -96,10 +97,10 @@ export function ScopesPage() {
                     <td className="px-4 py-2 font-mono text-xs text-gray-700">{scope.id}</td>
                     <td className="px-4 py-2 text-gray-600">{scope.description}</td>
                     <td className="px-4 py-2">
-                      <Badge ok={scope.enforced} />
+                      <Pill variant={scope.enforced ? 'green' : 'red'}>{scope.enforced ? 'Yes' : 'No'}</Pill>
                     </td>
                     <td className="px-4 py-2">
-                      <Badge ok={scope.requested} />
+                      <Pill variant={scope.requested ? 'green' : 'red'}>{scope.requested ? 'Yes' : 'No'}</Pill>
                     </td>
                   </tr>
                 ))}
@@ -109,18 +110,6 @@ export function ScopesPage() {
         ))}
       </div>
     </div>
-  )
-}
-
-function Badge({ ok }: { ok: boolean }) {
-  return (
-    <span
-      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-        ok ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-      }`}
-    >
-      {ok ? 'Yes' : 'No'}
-    </span>
   )
 }
 

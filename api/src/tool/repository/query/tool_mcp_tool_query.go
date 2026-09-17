@@ -43,6 +43,29 @@ func (r *ToolMCPToolQueryRepo) FindByToolID(toolID string) ([]tool_entity.ToolMC
 	return out, rows.Err()
 }
 
+// FindAll returns every cached MCP tool for every installed tool,
+// regardless of that tool's own enabled state — the admin tools list
+// (ListHandler) reads this, not FindAllEnabled, since an admin
+// viewing installed tools should see what a disabled tool declares
+// too, not only what's currently offerable to a live conversation.
+func (r *ToolMCPToolQueryRepo) FindAll() ([]tool_entity.ToolMCPTool, error) {
+	rows, err := r.db.Query(`SELECT ` + toolMCPToolColumns + ` FROM tool_mcp_tools`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]tool_entity.ToolMCPTool, 0)
+	for rows.Next() {
+		t, err := scanToolMCPTool(rows.Scan)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
 // FindAllEnabled returns every cached MCP tool belonging to a
 // currently-enabled installed tool — the pre-scope-filter candidate
 // set "offering tools to the model" reads from. Per-caller scope

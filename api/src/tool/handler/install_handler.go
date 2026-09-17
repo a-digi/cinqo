@@ -284,7 +284,12 @@ func InstallHandler(reqCtx request.RequestContext) {
 			response.ErrorResponse(w, http.StatusInternalServerError, "tool installed but failed to reload")
 			return
 		}
-		response.SuccessResponse(w, http.StatusCreated, toToolResponse(created, systemToolsConfigFrom(reqCtx)))
+		mcpTools, err := mcpToolNamesFor(db, created.ID)
+		if err != nil {
+			response.ErrorResponse(w, http.StatusInternalServerError, "tool installed but failed to load functions")
+			return
+		}
+		response.SuccessResponse(w, http.StatusCreated, toToolResponse(created, systemToolsConfigFrom(reqCtx), mcpTools))
 		return
 	}
 
@@ -369,7 +374,12 @@ func InstallHandler(reqCtx request.RequestContext) {
 		response.ErrorResponse(w, http.StatusInternalServerError, "tool updated but failed to reload")
 		return
 	}
-	response.SuccessResponse(w, http.StatusOK, toToolResponse(reloaded, systemToolsConfigFrom(reqCtx)))
+	mcpTools, err := mcpToolNamesFor(db, reloaded.ID)
+	if err != nil {
+		response.ErrorResponse(w, http.StatusInternalServerError, "tool updated but failed to load functions")
+		return
+	}
+	response.SuccessResponse(w, http.StatusOK, toToolResponse(reloaded, systemToolsConfigFrom(reqCtx), mcpTools))
 }
 
 func childRowsFromManifest(m manifest.Manifest) ([]tool_entity.ToolScope, []tool_entity.ToolRoute, []tool_entity.ToolRequiredScope, []tool_entity.ToolRequiredTool) {

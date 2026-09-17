@@ -17,6 +17,9 @@ export interface Tool {
   maxAppVersion: string
   createdAt: string
   updatedAt: string
+  // Names only, not description/inputSchema/requiredScope — the Tools
+  // page's own pills just need a label. See ToolsListPage.tsx.
+  mcpTools: string[]
 }
 
 interface ToolRaw {
@@ -32,6 +35,7 @@ interface ToolRaw {
   max_app_version: string
   created_at: string
   updated_at: string
+  mcp_tools: string[]
 }
 
 function fromRaw(raw: ToolRaw): Tool {
@@ -48,6 +52,7 @@ function fromRaw(raw: ToolRaw): Tool {
     maxAppVersion: raw.max_app_version,
     createdAt: raw.created_at,
     updatedAt: raw.updated_at,
+    mcpTools: raw.mcp_tools,
   }
 }
 
