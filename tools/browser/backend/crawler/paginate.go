@@ -553,6 +553,16 @@ func performPaginatedCrawl(url, container string, fields []extractField, mapping
 	return result, pageHTML, err
 }
 
+// maxHumanWaitRounds bounds how many times this function will re-enter
+// waitForHumanToClearCloudflare after a "solved" declaration turns out
+// to be premature — see this function's own doc comment for why that
+// can happen. Belt-and-suspenders only: normalSessionPaginatedCrawlTimeout's
+// own ctx deadline already bounds total elapsed time regardless of how
+// many rounds run, so this just prevents pathologically looping
+// through many fast, cheap disagreements instead of stopping at a
+// clear, small number.
+const maxHumanWaitRounds = 3
+
 // performPaginatedCrawlWithNormalSession retries the whole paginated
 // crawl in a freshly launched headed Chrome instance, navigated to
 // blockedURL (the shared headless session's own last-known location)
@@ -567,6 +577,27 @@ func performPaginatedCrawl(url, container string, fields []extractField, mapping
 // plan/ai/tools/browser/step-24-headed-chrome-cloudflare-fallback.md,
 // step-25-human-assisted-cloudflare-retry.md, and
 // step-26-headed-fallback-for-paginated-crawl.md.
+//
+// waitForHumanToClearCloudflare can declare "solved" without
+// detectCloudflareChallenge's own agreement (expectedContentVisible or
+// the HTML-size-growth fallback matching first — see that function's
+// own doc comment) — deliberately, since detectCloudflareChallenge
+// itself can stay wrongly convinced a challenge is still active on a
+// genuinely already-solved page. That means the very next line below,
+// runPaginatedCrawlLoop's own independent per-page Cloudflare check,
+// can occasionally disagree with a "solved" verdict that was in fact
+// premature (a residual widget still settling, a transitional
+// re-render). A real, reproduced case: waitForHumanToClearCloudflare
+// declared solved, and the immediate re-extraction attempt hit the
+// same challenge again seconds later — with nothing here to retry, that
+// used to surface as an immediate, unrecoverable hard failure straight
+// to the caller, discarding the entire up-to-32-minute fallback budget
+// over what was really just one bad tick. Bounded at maxHumanWaitRounds
+// total rounds — not required to agree with detectCloudflareChallenge
+// on every occasion (that would undo the fix this function's own
+// waitForHumanToClearCloudflare change exists for), just given another
+// chance to actually clear when the first "solved" call turns out to
+// have been wrong.
 func performPaginatedCrawlWithNormalSession(reqCtx context.Context, blockedURL, container string, fields []extractField, mapping map[string]string, nextSelector string, requestedMaxPages, effectiveMaxPages int, captureHTML bool, requestID string) (paginatedCrawlResponse, []string, error) {
 	shared.NormalSessionMu.Lock()
 	defer shared.NormalSessionMu.Unlock()
@@ -620,14 +651,30 @@ func performPaginatedCrawlWithNormalSession(reqCtx context.Context, blockedURL, 
 		return result, pageHTML, classifyCancellation(err, reqCtx, shared.Ctx)
 	}
 
-	cleared, waitErr := waitForHumanToClearCloudflare(ctx, requestID, cfErr.Reason, expectedSelectorsFromFields(container, fields))
-	if waitErr != nil {
-		return paginatedCrawlResponse{}, nil, classifyCancellation(waitErr, reqCtx, shared.Ctx)
+	for round := 1; round <= maxHumanWaitRounds; round++ {
+		cleared, waitErr := waitForHumanToClearCloudflare(ctx, requestID, cfErr.Reason, expectedSelectorsFromFields(container, fields))
+		if waitErr != nil {
+			return paginatedCrawlResponse{}, nil, classifyCancellation(waitErr, reqCtx, shared.Ctx)
+		}
+		if !cleared {
+			return paginatedCrawlResponse{}, nil, cfErr
+		}
+
+		result, pageHTML, err = runPaginatedCrawlLoop(ctx, container, fields, mapping, nextSelector, requestedMaxPages, effectiveMaxPages, captureHTML, requestID)
+		if !errors.As(err, &cfErr) {
+			return result, pageHTML, classifyCancellation(err, reqCtx, shared.Ctx)
+		}
+		// "Solved" was premature — cfErr is now this round's own fresh
+		// re-detection. Report it distinctly before looping back, so a
+		// human reading crawl_runs.log can see this happened rather
+		// than silently repeating "Cloudflare challenge detected"
+		// text that looks unchanged from the round before.
+		setCrawlPhase(requestID, phaseAwaitingHumanChallenge, fmt.Sprintf(
+			"page reported solved but Cloudflare challenge reappeared (%s) — waiting again (round %d/%d)",
+			cfErr.Reason, round, maxHumanWaitRounds,
+		))
 	}
-	if !cleared {
-		return paginatedCrawlResponse{}, nil, cfErr
-	}
-	return runPaginatedCrawlLoop(ctx, container, fields, mapping, nextSelector, requestedMaxPages, effectiveMaxPages, captureHTML, requestID)
+	return paginatedCrawlResponse{}, nil, cfErr
 }
 
 // jsStringLiteral marshals a Go string into a JSON string literal for

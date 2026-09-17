@@ -28,15 +28,18 @@ import (
 // premature configurability.
 const MaxHTMLBytes = 200_000
 
-// minSolvedHTMLBytes is the size-based fallback threshold
+// minSolvedHTMLGrowthBytes is the size-DELTA fallback threshold
 // waitForHumanToClearCloudflare uses when none of a crawl's own
 // expected selectors match — see that function's own doc comment at
-// its use site for the full reasoning. Empirically anchored: a real
-// captured Cloudflare "managed challenge" interstitial for a real
-// domain this tool crawls was 28,909 bytes; this is set well above
-// that, not just above it, since a false positive here (declaring a
-// still-active challenge "solved") is worse than the bug it fixes.
-const minSolvedHTMLBytes = 45_000
+// its use site for the full reasoning. Deliberately relative (this
+// tick's HTML vs. the immediately preceding tick's), not an absolute
+// floor: a genuinely still-active Cloudflare interstitial is static
+// between two 15s polls (a spinner animates via CSS, not by growing
+// the DOM), so a jump this large between two consecutive polls is a
+// strong, self-calibrating signal that something real changed
+// underneath — without needing to know in advance how big any
+// particular site's own challenge or real page happens to be.
+const minSolvedHTMLGrowthBytes = 5_000
 
 // crawlTimeout bounds one navigation — shorter than pdf_generator's
 // own 30s render budget, since crawling has no print-to-PDF step of
@@ -696,6 +699,16 @@ func waitForHumanToClearCloudflare(ctx context.Context, requestID, initialReason
 
 	deadline := time.Now().Add(maxHumanSolveDuration)
 	attempt := 0
+	// prevHTMLLen is the immediately preceding tick's own captured HTML
+	// length — -1 means "no sample yet" (the very first tick has
+	// nothing to compare against). Deliberately pairwise (this tick vs.
+	// the ONE immediately before it), not compared against a running
+	// baseline or minimum — re-anchoring every tick means one
+	// unusually small or large sample only ever affects a single
+	// comparison, never every comparison after it. See
+	// minSolvedHTMLGrowthBytes's own doc comment for the full
+	// reasoning.
+	prevHTMLLen := -1
 	for time.Now().Before(deadline) {
 		attempt++
 		if err := chromedp.Run(ctx, chromedp.Sleep(humanSolveRetryInterval)); err != nil {
@@ -704,7 +717,7 @@ func waitForHumanToClearCloudflare(ctx context.Context, requestID, initialReason
 
 		// Captured unconditionally (not just when logHTML is on) —
 		// besides feeding the debug dump below, it's now also this
-		// tick's own input to the size-based fallback check further
+		// tick's own input to the size-delta fallback check further
 		// down. Captured BEFORE the checks below, so both consumers see
 		// exactly what's on the page at this instant, not a stale
 		// snapshot from a moment earlier.
@@ -723,8 +736,8 @@ func waitForHumanToClearCloudflare(ctx context.Context, requestID, initialReason
 			}
 		}
 
-		// minSolvedHTMLBytes fallback — reached only once neither of
-		// this crawl's own expected selectors matched above. A real,
+		// minSolvedHTMLGrowthBytes fallback — reached only once neither
+		// of this crawl's own expected selectors matched above. A real,
 		// reproduced bug: some Cloudflare-looking DOM fragment (a
 		// lingering Turnstile "verified" badge, a cookie/trust banner)
 		// can keep detectCloudflareChallenge convinced a challenge is
@@ -732,23 +745,18 @@ func waitForHumanToClearCloudflare(ctx context.Context, requestID, initialReason
 		// underneath it — and if THIS crawl's own configured selectors
 		// happen not to match that specific page's real structure
 		// either, the loop would otherwise keep waiting the full
-		// maxHumanSolveDuration with no way out. A genuine Cloudflare
-		// interstitial's own HTML is comparatively small even for a
-		// heavier "managed challenge" variant (confirmed directly
-		// against a real captured challenge page for a real domain
-		// this tool crawls: 28,909 bytes) — a page that's grown well
-		// past that is far more likely to be real, unrelated content
-		// than an oversized interstitial. Deliberately conservative
-		// (kept well above that one confirmed real sample, not tuned to
-		// sit just above it) since a false positive here is worse than
-		// today's bug: it would hand the crawl the interstitial itself
-		// as if it were the real page, instead of just continuing to
-		// wait.
-		if haveHTML && len(html) >= minSolvedHTMLBytes {
+		// maxHumanSolveDuration with no way out. Skipped on the very
+		// first tick (prevHTMLLen < 0) — nothing to compare against
+		// yet.
+		if haveHTML && prevHTMLLen >= 0 && len(html)-prevHTMLLen >= minSolvedHTMLGrowthBytes {
 			setCrawlPhase(requestID, phaseAwaitingHumanChallenge, fmt.Sprintf(
-				"expected content not found, but page size (%d bytes) suggests it has loaded — treating as solved", len(html),
+				"expected content not found, but HTML size grew by %d bytes since the last check (%d → %d) — treating as solved",
+				len(html)-prevHTMLLen, prevHTMLLen, len(html),
 			))
 			return true, nil
+		}
+		if haveHTML {
+			prevHTMLLen = len(html)
 		}
 
 		check, err := detectCloudflareChallenge(ctx, expectedSelectors)
