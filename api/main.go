@@ -9,7 +9,7 @@ import (
 
 	"github.com/a-digi/coco-server/server"
 
-	"github.com/a-digi/cinqo/src/backendapp"
+	"github.com/a-digi/cinqo/src/cinqo"
 
 	"github.com/a-digi/coco-logger/logger"
 )
@@ -35,7 +35,7 @@ func main() {
 	// setup problem worth failing loudly on, not smoothing over. Both
 	// calls below pass the literal "config.json" and an empty data-dir
 	// fallback ("") for exactly that reason.
-	resolvedDataDir := backendapp.ResolveDataDir(*dataDir, "")
+	resolvedDataDir := cinqo.ResolveDataDir(*dataDir, "")
 
 	if action == "shutdown" {
 		log, err := logger.NewLogger(server.LogFileName("cinqo"), filepath.Join(resolvedDataDir, "logs"))
@@ -51,7 +51,7 @@ func main() {
 		return
 	}
 
-	srv, cfg, _, log, err := backendapp.Start(backendapp.Options{
+	srv, cfg, _, log, err := cinqo.Start(cinqo.Options{
 		DataDir:    resolvedDataDir,
 		ConfigPath: "config.json",
 		AppVersion: readAppVersionFile(),

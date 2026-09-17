@@ -6,7 +6,7 @@
 # registration actually produces. See
 # plan/ai/backend/auth/step-01-iam-config-and-registration.md.
 #
-# Loaded by backendapp.Start() on startup
+# Loaded by cinqo.Start() on startup
 # (config.ReadConfigFile("iam.yaml")); if present and parseable,
 # IamConfig.Apply() derives the real issuer/authorize/token/userinfo/jwks
 # URLs from org_slug/workspace_slug/app_slug/app_id and overlays them

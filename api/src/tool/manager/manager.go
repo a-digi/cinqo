@@ -114,7 +114,7 @@ func StartAllEnabled(db *sql.DB, dataDir string, corePort int, warn func(format 
 // function (see this package's own git history / the pdf-generator
 // step-02 design doc's "Implemented and verified" section).
 //
-// dataDir must be the same resolved data directory backendapp.Start
+// dataDir must be the same resolved data directory cinqo.Start
 // registered as "data_dir" (defaults to executable-relative, overridden
 // via --data) — every caller resolves it from there rather than this
 // function assuming a bare "data" CWD-relative literal, which used to

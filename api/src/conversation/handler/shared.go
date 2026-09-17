@@ -105,7 +105,7 @@ func callerScopes(reqCtx request.RequestContext) ([]string, error) {
 }
 
 // conversationDB resolves the conversation feature's own separate
-// database (backendapp.Start registers it into DI as
+// database (cinqo.Start registers it into DI as
 // "conversation_db_manager" — plan/ai/conversation/step-01).
 func conversationDB(reqCtx request.RequestContext) (*sql.DB, error) {
 	storeCtx, ok := reqCtx.GetDI().(diStore)
@@ -125,7 +125,7 @@ func conversationDB(reqCtx request.RequestContext) (*sql.DB, error) {
 
 // encryptionKey resolves the platform API-key encryption key
 // (plan/ai/platform/step-02's platform_crypto.LoadOrGenerateKey,
-// registered into DI by backendapp.Start under the same
+// registered into DI by cinqo.Start under the same
 // "platform_encryption_key" key plan/ai/platform/step-05's handlers
 // use).
 func encryptionKey(reqCtx request.RequestContext) ([]byte, error) {
@@ -144,10 +144,10 @@ func encryptionKey(reqCtx request.RequestContext) ([]byte, error) {
 	return key, nil
 }
 
-// defaultDataDir mirrors backendapp.ResolveDataDir's own fallback
+// defaultDataDir mirrors cinqo.ResolveDataDir's own fallback
 // ("data") for the case "data_dir" isn't in DI at all — should never
-// happen once backendapp.Start has run, but this package staying
-// self-contained (not importing backendapp just for one string
+// happen once cinqo.Start has run, but this package staying
+// self-contained (not importing cinqo just for one string
 // constant) is worth a one-line duplicated literal.
 const defaultDataDir = "data"
 
@@ -182,7 +182,7 @@ func corePort(reqCtx request.RequestContext) (int, error) {
 	return p, nil
 }
 
-// resolvedDataDir resolves whatever backendapp.Start registered as
+// resolvedDataDir resolves whatever cinqo.Start registered as
 // "data_dir" (defaults to "data", next to the running executable,
 // unless overridden via --data) — the same root logsRoot's own
 // "conversations" subdirectory and every tool subprocess's own

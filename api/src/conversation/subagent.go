@@ -540,7 +540,7 @@ func finishSubAgent(runs *conversation_persistent.SubAgentRunPersistentRepo, id,
 // sub-agent's own "result" lives entirely in this row (never a
 // conversation's own Markdown log), so there is no matching
 // failed-turn append to also perform here. Called once at boot,
-// alongside ReconcileOrphanedTurnRuns. See backendapp.Start.
+// alongside ReconcileOrphanedTurnRuns. See cinqo.Start.
 func ReconcileOrphanedSubAgentRuns(conversationDB *sql.DB, warn func(format string, args ...any)) {
 	runningRuns, err := conversation_query.NewSubAgentRunQueryRepo(conversationDB).FindAllRunning()
 	if err != nil {

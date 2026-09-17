@@ -7,7 +7,7 @@ import (
 )
 
 // resolvedDataDir mirrors tool/handler.resolvedDataDir exactly — same
-// "data_dir" DI key backendapp.Start registers, same small, deliberate
+// "data_dir" DI key cinqo.Start registers, same small, deliberate
 // duplication convention already established for handler packages that
 // need this one value without importing tool/handler wholesale (see
 // conversation/handler/shared.go's own copy).

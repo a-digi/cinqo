@@ -1,11 +1,11 @@
-// Package backendapp holds cinqo's backend bootstrap, extracted out of
+// Package cinqo holds cinqo's backend bootstrap, extracted out of
 // api/main.go so it can be called from more than one entrypoint —
 // api/main.go itself (unchanged behavior) and, from
 // plan/ai/build/app/step-04-combined-entrypoint.md on, the combined
 // single-executable's api/cmd/app/main.go. A package main file cannot be
 // imported by another package main, which is why this exists as its own
 // importable package rather than staying inline in main().
-package backendapp
+package cinqo
 
 import (
 	"context"

@@ -37,7 +37,7 @@ import (
 	"github.com/a-digi/cinqo/config"
 	"github.com/a-digi/cinqo/config/di"
 	auth_config "github.com/a-digi/cinqo/src/auth/config"
-	"github.com/a-digi/cinqo/src/backendapp"
+	"github.com/a-digi/cinqo/src/cinqo"
 	tool_manager "github.com/a-digi/cinqo/src/tool/manager"
 )
 
@@ -136,9 +136,9 @@ func run() error {
 	// relative to home for now, folded in by a later step). MkdirAll'd
 	// immediately since nothing downstream (ensureConfigFile,
 	// extractEmbeddedConfig) can assume it already exists the way
-	// backendapp.Start's own dataDir setup normally guarantees.
+	// cinqo.Start's own dataDir setup normally guarantees.
 	dataDefault := filepath.Join(home, "data")
-	resolvedDataDir := backendapp.ResolveDataDir(*dataDirFlag, dataDefault)
+	resolvedDataDir := cinqo.ResolveDataDir(*dataDirFlag, dataDefault)
 	if err := os.MkdirAll(resolvedDataDir, 0o755); err != nil {
 		return fmt.Errorf("create data directory: %w", err)
 	}
@@ -159,7 +159,7 @@ func run() error {
 	// shipped next to this binary at all. Extracting the embedded copy
 	// and pointing CINQO_CONFIG_DIR (the override candidateDefaults()
 	// already respects) at it fixes every one of those in one shot —
-	// no changes needed to backendapp.Start or the config package
+	// no changes needed to cinqo.Start or the config package
 	// itself. Lives under the resolved data directory, not home
 	// directly — see resolvedDataDir's own doc comment above. See
 	// plan/ai/build/app/step-19-embedded-config-directory.md.
@@ -182,7 +182,7 @@ func run() error {
 	}
 	closeStaleChromeInstance(chromePidPath)
 
-	srv, cfg, ctx, log, err := backendapp.Start(backendapp.Options{
+	srv, cfg, ctx, log, err := cinqo.Start(cinqo.Options{
 		DataDir:    resolvedDataDir,
 		ConfigPath: configPath,
 		AppVersion: strings.TrimSpace(embeddedAppVersion),
@@ -324,7 +324,7 @@ func extractEmbeddedConfig(dest string) error {
 // stray `make run-dev` backend, since it writes the exact same PID file
 // via the same server.StartServer call — is still running, signals it
 // to stop, and waits until this app's own ports are actually free before
-// returning. Runs before backendapp.Start() creates the structured
+// returning. Runs before cinqo.Start() creates the structured
 // logger, so progress is reported directly to stdout: the interactive,
 // "watch it happen" signal this is meant to be, not something to bury in
 // a log file nobody's tailing live. Returns the stopped PID (0 if there

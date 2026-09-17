@@ -72,7 +72,7 @@ func callerUserID(reqCtx request.RequestContext) (string, error) {
 }
 
 // encryptionKey resolves the platform API-key encryption key
-// (backendapp.Start loads it once via platform_crypto.LoadOrGenerateKey
+// (cinqo.Start loads it once via platform_crypto.LoadOrGenerateKey
 // and registers it into DI as "platform_encryption_key" — step 2/5).
 func encryptionKey(reqCtx request.RequestContext) ([]byte, error) {
 	storeCtx, ok := reqCtx.GetDI().(diStore)

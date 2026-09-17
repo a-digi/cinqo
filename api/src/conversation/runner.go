@@ -381,7 +381,7 @@ func isUniqueConstraintErr(err error) bool {
 // ReconcileOrphanedTurnRuns marks every still-"running" turn_runs row
 // as "failed" and records a matching error turn in that conversation's
 // own Markdown log — run once at application boot
-// (backendapp.Start), since a goroutine has no PID to reattach to
+// (cinqo.Start), since a goroutine has no PID to reattach to
 // after a process restart the way tool/manager.go's supervised OS
 // subprocesses do; every row still "running" when this runs is, by
 // definition, dead. Best-effort per row, matching

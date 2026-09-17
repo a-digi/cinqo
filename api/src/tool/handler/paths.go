@@ -10,7 +10,7 @@ import (
 )
 
 // resolvedDataDir resolves the backend's own resolved data directory —
-// backendapp.Start's "data_dir", the same one data/db, data/logs, and
+// cinqo.Start's "data_dir", the same one data/db, data/logs, and
 // every tool subprocess's own TOOL_DB_DIR/TOOL_UPLOADS_DIR/TOOL_TMP_DIR
 // (manager.ToolEnvVars) derive from — defaults to "data", next to the
 // running executable, unless overridden via --data. Extracted out of
@@ -40,10 +40,10 @@ func toolsRoot(reqCtx request.RequestContext) string {
 	return filepath.Join(resolvedDataDir(reqCtx), "tools")
 }
 
-// defaultDataDirFallback mirrors backendapp.ResolveDataDir's own
+// defaultDataDirFallback mirrors cinqo.ResolveDataDir's own
 // fallback ("data") for the case "data_dir" isn't in DI at all —
-// should never happen once backendapp.Start has run, but a handler
-// package staying self-contained (not importing backendapp just for
+// should never happen once cinqo.Start has run, but a handler
+// package staying self-contained (not importing cinqo just for
 // one string constant) is worth a one-line duplicated literal.
 const defaultDataDirFallback = "data"
 
@@ -83,7 +83,7 @@ func chmodBackendExecutableIfPresent(installDir string) error {
 
 // errAppVersionUnavailable is returned by appVersion whenever
 // "app_version" isn't resolvable via DI — either it was never
-// registered (shouldn't happen once backendapp.Start has run) or it
+// registered (shouldn't happen once cinqo.Start has run) or it
 // resolved to an empty string (api/main.go's own non-fatal
 // api/VERSION read failure, step 20). Both collapse to the same
 // install_handler.go error text this tool-install path has always
@@ -92,7 +92,7 @@ func chmodBackendExecutableIfPresent(installDir string) error {
 var errAppVersionUnavailable = errors.New("app version unavailable")
 
 // appVersion resolves the running app's own version — registered into
-// DI once, at boot, by backendapp.Start (embedded and always present
+// DI once, at boot, by cinqo.Start (embedded and always present
 // for cmd/app; read fresh from api/VERSION, possibly empty on
 // failure, for the dev binary) — rather than re-reading a bare
 // "VERSION" file off CWD on every tool-install request the way
@@ -126,7 +126,7 @@ func appVersion(reqCtx request.RequestContext) (string, error) {
 var errCorePortUnavailable = errors.New("core port unavailable")
 
 // corePort resolves the backend's own listening port — registered
-// into DI once, at boot, by backendapp.Start (it already loads
+// into DI once, at boot, by cinqo.Start (it already loads
 // config.json via the correctly-resolved configPath for its own
 // tool_manager.StartAllEnabled call; this reuses that same value
 // rather than re-reading config.json a second time here).
