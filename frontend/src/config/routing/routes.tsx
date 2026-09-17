@@ -11,6 +11,7 @@ import { ConversationPage } from '../../Components/Conversation/ConversationPage
 import { AiLogsPage } from '../../Components/Conversation/AiLogsPage'
 import { AiDebugSettingsPage } from '../../Components/Admin/Conversation/AiDebugSettingsPage'
 import { AiLogsOverviewPage } from '../../Components/Admin/Conversation/AiLogsOverviewPage'
+import { MediaListPage } from '../../Components/Admin/Media/MediaListPage'
 import { ToolRouteOutlet } from '../../Components/Tools/ToolRouteOutlet'
 import { AppScopes } from '../security/scopes'
 
@@ -83,6 +84,14 @@ export const router = createBrowserRouter([
             element: (
               <AuthGuard scopes={[AppScopes.SuperAdmin]}>
                 <AiLogsOverviewPage />
+              </AuthGuard>
+            ),
+          },
+          {
+            path: '/admin/media',
+            element: (
+              <AuthGuard scopes={[AppScopes.SuperAdmin]}>
+                <MediaListPage />
               </AuthGuard>
             ),
           },

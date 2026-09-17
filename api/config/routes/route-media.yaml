@@ -8,3 +8,21 @@ routes:
     method: POST
     executor: MediaUpload
     security: authenticated
+
+  # List/delete ARE genuinely global admin operations (browse/clean up
+  # every tool's own media at once), unlike upload — so, unlike it,
+  # these declare a normal static scope here and never re-check it in
+  # the handler, matching route-tool.yaml's ToolInstall/ToolDelete.
+  - path: /api/v1/media
+    method: GET
+    executor: MediaList
+    security: authenticated
+    scopes:
+      - cinqo:super:admin
+
+  - path: /api/v1/media/{id}
+    method: DELETE
+    executor: MediaDelete
+    security: authenticated
+    scopes:
+      - cinqo:super:admin

@@ -39,6 +39,9 @@ const systemIcon =
 const securityIcon =
   '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor"><path d="M10 3l6 2.2v4.3c0 4-2.6 6.8-6 7.5-3.4-.7-6-3.5-6-7.5V5.2L10 3z" stroke-width="1.3" stroke-linejoin="round" stroke-linecap="round"/></svg>'
 
+const mediaIcon =
+  '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor"><rect x="3.5" y="4" width="13" height="12" rx="1.3" stroke-width="1.3"/><path d="M3.5 12.5l3.5-3.5 3 3 2-2 4.5 4.5" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="7.2" cy="7.5" r="1" fill="currentColor" stroke="none"/></svg>'
+
 const aiIcon =
   '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor"><rect x="5" y="6" width="10" height="8" rx="1.5" stroke-width="1.3"/><path d="M10 6V3.5" stroke-width="1.3" stroke-linecap="round"/><circle cx="10" cy="2.8" r="0.9" fill="currentColor" stroke="none"/><circle cx="7.7" cy="10" r="0.9" fill="currentColor" stroke="none"/><circle cx="12.3" cy="10" r="0.9" fill="currentColor" stroke="none"/><path d="M7.5 12.5h5" stroke-width="1.3" stroke-linecap="round"/></svg>'
 
@@ -70,6 +73,7 @@ export const menuEntries: MenuEntry[] = [
         // SidebarMenuItem's own reserved icon-slot width).
         children: [{ label: 'Scopes', path: '/admin/security/scopes', scopes: [AppScopes.SuperAdmin] }],
       },
+      { label: 'Media', path: '/admin/media', scopes: [AppScopes.SuperAdmin], icon: mediaIcon },
     ],
   },
 ]

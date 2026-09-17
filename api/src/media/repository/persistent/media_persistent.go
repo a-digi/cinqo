@@ -33,3 +33,13 @@ func (r *MediaPersistentRepo) Insert(m *media_entity.MediaFile) error {
 func nullIfEmpty(s string) sql.NullString {
 	return sql.NullString{String: s, Valid: s != ""}
 }
+
+// Delete removes one media_files row. Deleting the underlying file
+// itself is the caller's own responsibility (MediaDeleteHandler) — a
+// row and its file are two separate resources, and the handler already
+// needs the row's own StoredPath (via FindByID) before this is even
+// called.
+func (r *MediaPersistentRepo) Delete(id string) error {
+	_, err := r.db.Exec(`DELETE FROM media_files WHERE id = ?`, id)
+	return err
+}

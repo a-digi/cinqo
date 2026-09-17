@@ -104,6 +104,8 @@ func Init(ctx serverdi.Context) {
 		"ConversationUpdateSettings": local_routing.HandlerFunc(conversation_handler.UpdateSettingsHandler),
 
 		"MediaUpload": local_routing.HandlerFunc(media_handler.UploadHandler),
+		"MediaList":   local_routing.HandlerFunc(media_handler.ListHandler),
+		"MediaDelete": local_routing.HandlerFunc(media_handler.DeleteHandler),
 	}
 
 	var inner *lift_security.ScopeSecurityLayer

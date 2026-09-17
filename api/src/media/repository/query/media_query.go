@@ -42,6 +42,37 @@ func (r *MediaQueryRepo) FindByID(id string) (*media_entity.MediaFile, error) {
 	return scanMediaFile(row.Scan)
 }
 
+// FindAll returns every media_files row, newest first, optionally
+// filtered to one tool's own namespace — the admin Media page's own
+// data source (MediaListPage.tsx). Unlike Resolve, this never checks
+// expiry or conversation scoping: an admin browsing/cleaning up media
+// needs to see expired rows too, not have them silently disappear.
+func (r *MediaQueryRepo) FindAll(toolSlug string) ([]*media_entity.MediaFile, error) {
+	query := `SELECT ` + mediaFileColumns + ` FROM media_files`
+	args := []any{}
+	if toolSlug != "" {
+		query += ` WHERE tool_slug = ?`
+		args = append(args, toolSlug)
+	}
+	query += ` ORDER BY created_at DESC`
+
+	rows, err := r.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]*media_entity.MediaFile, 0)
+	for rows.Next() {
+		m, err := scanMediaFile(rows.Scan)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
 // ErrNotResolvable collapses every reason a media reference can't be
 // resolved (missing row, expired, wrong conversation) into one error —
 // deliberately indistinguishable from the caller's own point of view,

@@ -39,8 +39,15 @@ type uploadCVResponse struct {
 	FileID string `json:"fileId"`
 }
 
-type mediaUploadResponse struct {
-	FileID string `json:"fileId"`
+// mediaUploadEnvelope mirrors the core app's own response.SuccessResponse
+// shape ({"success":true,"message":<payload>}) — every core API
+// response is wrapped this way, unlike this tool's own plain writeJSON
+// convention, so the real payload has to be unwrapped from "message"
+// rather than decoded as if it were top-level.
+type mediaUploadEnvelope struct {
+	Message struct {
+		FileID string `json:"fileId"`
+	} `json:"message"`
 }
 
 // uploadCVHandler handles POST cv-import/upload — multipart, single
@@ -135,9 +142,9 @@ func forwardToMedia(originalReq *http.Request, file io.Reader, filename string) 
 		return "", fmt.Errorf("media upload failed: %s: %s", resp.Status, string(respBody))
 	}
 
-	var result mediaUploadResponse
+	var result mediaUploadEnvelope
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return "", err
 	}
-	return result.FileID, nil
+	return result.Message.FileID, nil
 }
