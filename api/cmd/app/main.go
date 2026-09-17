@@ -50,8 +50,8 @@ var embeddedCaddyfile []byte
 // config file: open config.json: no such file or directory" when
 // opened from somewhere other than api/. Its own pid_file value is a
 // template only: ensureConfigFile overrides it to an absolute,
-// apphome-relative path before ever writing the file to disk. See
-// plan/ai/build/app/step-18-embedded-default-config-and-app-home.md.
+// data-directory-relative path before ever writing the file to disk.
+// See plan/ai/build/app/step-18-embedded-default-config-and-app-home.md.
 //
 //go:embed embedded-config.json
 var embeddedConfigJSON []byte
@@ -115,12 +115,12 @@ func run() error {
 	shutdownCh := make(chan os.Signal, 1)
 	signal.Notify(shutdownCh, os.Interrupt, syscall.SIGTERM)
 
-	// Resolved first, before anything else touches config.json — always
-	// the running executable's own directory, regardless of the
-	// process's CWD or launch method, so every launch from anywhere
-	// finds the same persistent state instead of starting fresh each
-	// time or landing in an OS-user-scoped home directory the user
-	// never asked for. See
+	// Resolved first, before anything else touches the data directory
+	// (and, inside it, config.json) — always the running executable's
+	// own directory, regardless of the process's CWD or launch method,
+	// so every launch from anywhere finds the same persistent state
+	// instead of starting fresh each time or landing in an OS-user-
+	// scoped home directory the user never asked for. See
 	// plan/ai/build/app/step-18-embedded-default-config-and-app-home.md
 	// and plan/ai/build/app/step-22-data-dir-always-executable-relative.md.
 	home, err := resolveAppHome()
@@ -223,18 +223,19 @@ func run() error {
 	return nil
 }
 
-// resolveAppHome decides where this run's own config.json — and,
-// absent an explicit --data, its data/ directory and chrome.pid too —
-// live: always the running executable's own directory, never the
-// process's CWD and never an OS-user-scoped home directory. This is
-// deliberately one unified tree, matching this app's own existing
-// convention of config.json sitting next to data/ rather than
-// splitting config/data/cache across OS-specific locations, and
-// guarantees every path this app writes to (databases, its own logs,
-// every tool's own database/uploads/tmp directories — see
-// plan/ai/build/app/step-22-data-dir-always-executable-relative.md)
-// resolves under the same one directory regardless of how or from
-// where the binary was launched. See
+// resolveAppHome decides where this run's own data directory lives,
+// absent an explicit --data: always home/data, home itself being the
+// running executable's own directory, never the process's CWD and
+// never an OS-user-scoped home directory. data/ is this app's one
+// central, unified state tree — config.json, the extracted config/
+// directory, chrome.pid, and server.pid all live inside it (not beside
+// it — see resolvedDataDir's own doc comment in run(), which folded
+// those three in), alongside the databases, logs, and every tool's own
+// database/uploads/tmp directories (see
+// plan/ai/build/app/step-22-data-dir-always-executable-relative.md).
+// Anchoring the search on the executable's own directory rather than
+// the CWD guarantees this same one directory resolves regardless of
+// how or from where the binary was launched. See
 // plan/ai/build/app/step-18-embedded-default-config-and-app-home.md.
 func resolveAppHome() (home string, err error) {
 	exePath, err := os.Executable()
@@ -406,9 +407,9 @@ func portFree(port int) bool {
 }
 
 // closeStaleChromeInstance closes a private Chrome instance left behind
-// by a previous cinqo-app run (tracked via chromePidPath — resolveAppHome's
-// own executable-relative path), if one is still open, before this run
-// opens its own fresh one. Much simpler
+// by a previous cinqo-app run (tracked via chromePidPath — a path under
+// the resolved data directory, itself resolveAppHome-relative), if one
+// is still open, before this run opens its own fresh one. Much simpler
 // than stopStaleInstance: there's no port/listening contract to wait
 // on, so a short fixed grace period is enough instead of a polling
 // loop, and no stdout progress output — closing a leftover browser

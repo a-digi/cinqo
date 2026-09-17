@@ -218,18 +218,19 @@ endif
 # see api/cmd/app/main.go's waitForShutdown) and cleans up the extracted
 # frontend temp dir and PID file.
 #
-# Run with CWD=api/ — same convention run-dev already uses — NOT the
-# repo root. cinqo-app's backend half still resolves its own
-# config.json/config/ relative to its working directory (only the
-# frontend build is actually embedded/portable today); running it from
-# the repo root instead silently creates a fresh DEFAULT config.json
-# there (coco-server's own port-2026 fallback, not this app's real
-# 7026) rather than using the real api/config.json. Caught by testing
-# this exact target, not assumed.
+# Run directly from the repo root, NOT cd'd into api/ — a stale
+# assumption this target used to make (and a stale comment here used to
+# claim) that cinqo-app resolves config.json/config/ relative to its
+# own working directory. It doesn't: resolveAppHome (api/cmd/app/main.go,
+# step 18) resolves everything relative to the EXECUTABLE's own
+# location (app/cinqo-app), via os.Executable(), regardless of CWD —
+# the same executable-relative data/ directory (which also now holds
+# config.json/config/chrome.pid/server.pid) resolves identically no
+# matter where this is launched from.
 .PHONY: run-app
 run-app:
 	$(MAKE) build-app NO_BUMP=1
-	cd api && ../app/cinqo-app
+	./app/cinqo-app
 
 # Packages a tools/<name>/ source directory into the .zip the install
 # endpoint (POST /api/v1/tools/install) expects — builds the backend
