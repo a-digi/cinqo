@@ -110,6 +110,30 @@ export function DebugPage() {
             </span>
           </span>
         </label>
+
+        <label
+          htmlFor="cinqo-browser-debug-log-challenge"
+          aria-label="Challenge logs"
+          className={`flex items-start gap-3 ${settings.debugEnabled ? '' : 'opacity-50'}`}
+        >
+          <input
+            id="cinqo-browser-debug-log-challenge"
+            type="checkbox"
+            checked={settings.debugLogChallenge}
+            disabled={saving || !settings.debugEnabled}
+            onChange={(e) => {
+              update({ ...settings, debugLogChallenge: e.target.checked })
+            }}
+            className="mt-0.5 h-4 w-4 rounded border-gray-300"
+          />
+          <span>
+            <span className="block text-sm font-medium">Challenge logs</span>
+            <span className="block text-xs text-gray-500">
+              Only takes effect while Debug is active. Independent of Log HTML — captures the raw HTML analyzed on each retry while waiting
+              for a Cloudflare challenge to be solved, useful specifically for debugging why a challenge wasn't recognized as solved.
+            </span>
+          </span>
+        </label>
       </div>
 
       <h2 className="mb-1.5 mt-8 text-lg font-semibold">Known Cloudflare domains</h2>

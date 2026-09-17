@@ -118,18 +118,27 @@ func InitDB() error {
 	// now gated behind. INSERT OR IGNORE right after CREATE TABLE IF NOT
 	// EXISTS so both a fresh install and an existing one always end up
 	// with exactly one row, defaulted OFF — every read downstream is a
-	// plain SELECT with no "no rows yet" special-casing. See
+	// plain SELECT with no "no rows yet" special-casing. debug_log_challenge
+	// (step 68) is a separate, independent toggle from debug_log_html —
+	// the challenge-detector HTML dump (waitForHumanToClearCloudflare,
+	// crawler/crawl.go) is its own concern from the regular crawl_logs
+	// HTML capture (paginatedCrawlHandler), not implied by it. See
 	// plan/ai/tools/browser/step-22-debug-mode-and-log-management.md.
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS browser_settings (
-		id             INTEGER PRIMARY KEY CHECK (id = 1),
-		debug_enabled  INTEGER NOT NULL DEFAULT 0,
-		debug_log_html INTEGER NOT NULL DEFAULT 0,
-		updated_at     TEXT
+		id                  INTEGER PRIMARY KEY CHECK (id = 1),
+		debug_enabled       INTEGER NOT NULL DEFAULT 0,
+		debug_log_html      INTEGER NOT NULL DEFAULT 0,
+		debug_log_challenge INTEGER NOT NULL DEFAULT 0,
+		updated_at          TEXT
 	)`); err != nil {
 		db.Close()
 		return fmt.Errorf("failed to prepare browser_settings schema: %w", err)
 	}
-	if _, err := db.Exec(`INSERT OR IGNORE INTO browser_settings (id, debug_enabled, debug_log_html) VALUES (1, 0, 0)`); err != nil {
+	if err := migrateBrowserSettingsChallengeColumn(db); err != nil {
+		db.Close()
+		return fmt.Errorf("failed to migrate browser_settings schema: %w", err)
+	}
+	if _, err := db.Exec(`INSERT OR IGNORE INTO browser_settings (id, debug_enabled, debug_log_html, debug_log_challenge) VALUES (1, 0, 0, 0)`); err != nil {
 		db.Close()
 		return fmt.Errorf("failed to seed browser_settings: %w", err)
 	}
@@ -205,5 +214,43 @@ func migrateCrawlLogsFileStorage(db *sql.DB) error {
 		not_found_count INTEGER NOT NULL DEFAULT 0,
 		log_file_path   TEXT NOT NULL
 	)`)
+	return err
+}
+
+// migrateBrowserSettingsChallengeColumn adds debug_log_challenge to an
+// existing browser_settings table that predates it — the CREATE TABLE
+// IF NOT EXISTS above only creates the column's current, full shape on
+// a brand-new install; an already-existing table (debug_enabled/
+// debug_log_html only) needs this ALTER TABLE to catch up. Defaults
+// existing rows to 0 (off), same as a fresh install's own seed row. A
+// no-op if the column is already present.
+func migrateBrowserSettingsChallengeColumn(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA table_info(browser_settings)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	hasColumn := false
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notNull, pk int
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &ctype, &notNull, &dflt, &pk); err != nil {
+			return err
+		}
+		if name == "debug_log_challenge" {
+			hasColumn = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if hasColumn {
+		return nil
+	}
+
+	_, err = db.Exec(`ALTER TABLE browser_settings ADD COLUMN debug_log_challenge INTEGER NOT NULL DEFAULT 0`)
 	return err
 }

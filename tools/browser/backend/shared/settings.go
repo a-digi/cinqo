@@ -1,13 +1,19 @@
 // settings.go implements the Browser tool's own single settings object
-// — currently just the Debug toggle (step 22): crawl logging (see
-// crawler/crawl_log.go) only ever happens when DebugEnabled is true,
-// and only captures each page's own raw HTML (a much larger, more
-// sensitive payload) when DebugLogHTML is also true. Human/frontend-
-// only, like crawl_logs itself — never an MCP tool, nothing about this
-// needs the AI's own involvement. Lives in shared, not crawler, even
-// though the crawler package is its only real reader today
-// (paginate.go) — it isn't crawl-specific behavior itself, just a
-// tool-wide toggle crawl logging happens to be gated behind. See
+// — currently the Debug toggle (step 22) plus two independent,
+// Debug-gated sub-toggles: crawl logging (see crawler/crawl_log.go)
+// only ever happens when DebugEnabled is true; DebugLogHTML additionally
+// captures each logged crawl page's own raw HTML (a much larger, more
+// sensitive payload); DebugLogChallenge (step 68) separately gates the
+// Cloudflare human-wait loop's own raw-HTML dump
+// (waitForHumanToClearCloudflare, crawler/crawl.go) — a distinct
+// concern from DebugLogHTML, not implied by it, since one is about
+// regular crawl results and the other is about debugging a stuck
+// challenge. Human/frontend-only, like crawl_logs itself — never an
+// MCP tool, nothing about this needs the AI's own involvement. Lives
+// in shared, not crawler, even though the crawler package is its only
+// real reader today (paginate.go, crawl.go) — it isn't crawl-specific
+// behavior itself, just a tool-wide toggle crawl logging happens to be
+// gated behind. See
 // plan/ai/tools/browser/step-22-debug-mode-and-log-management.md.
 package shared
 
@@ -17,8 +23,9 @@ import (
 )
 
 type BrowserSettings struct {
-	DebugEnabled bool `json:"debugEnabled"`
-	DebugLogHTML bool `json:"debugLogHtml"`
+	DebugEnabled      bool `json:"debugEnabled"`
+	DebugLogHTML      bool `json:"debugLogHtml"`
+	DebugLogChallenge bool `json:"debugLogChallenge"`
 }
 
 // LoadBrowserSettings always reads fresh from the database — never
@@ -27,19 +34,23 @@ type BrowserSettings struct {
 // sibling process keeps running; a cached value would go stale the
 // moment someone actually used the settings page.
 func LoadBrowserSettings() (BrowserSettings, error) {
-	var debugEnabled, debugLogHTML int
-	err := DB.QueryRow(`SELECT debug_enabled, debug_log_html FROM browser_settings WHERE id = 1`).
-		Scan(&debugEnabled, &debugLogHTML)
+	var debugEnabled, debugLogHTML, debugLogChallenge int
+	err := DB.QueryRow(`SELECT debug_enabled, debug_log_html, debug_log_challenge FROM browser_settings WHERE id = 1`).
+		Scan(&debugEnabled, &debugLogHTML, &debugLogChallenge)
 	if err != nil {
 		return BrowserSettings{}, err
 	}
-	return BrowserSettings{DebugEnabled: debugEnabled != 0, DebugLogHTML: debugLogHTML != 0}, nil
+	return BrowserSettings{
+		DebugEnabled:      debugEnabled != 0,
+		DebugLogHTML:      debugLogHTML != 0,
+		DebugLogChallenge: debugLogChallenge != 0,
+	}, nil
 }
 
 func SaveBrowserSettings(s BrowserSettings) error {
 	_, err := DB.Exec(
-		`UPDATE browser_settings SET debug_enabled = ?, debug_log_html = ?, updated_at = datetime('now') WHERE id = 1`,
-		boolToInt(s.DebugEnabled), boolToInt(s.DebugLogHTML),
+		`UPDATE browser_settings SET debug_enabled = ?, debug_log_html = ?, debug_log_challenge = ?, updated_at = datetime('now') WHERE id = 1`,
+		boolToInt(s.DebugEnabled), boolToInt(s.DebugLogHTML), boolToInt(s.DebugLogChallenge),
 	)
 	return err
 }

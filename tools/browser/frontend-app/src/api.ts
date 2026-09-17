@@ -151,6 +151,11 @@ const SETTINGS_BASE = '/api/v1/tools/browser/proxy/browser-settings'
 export interface BrowserSettings {
   debugEnabled: boolean
   debugLogHtml: boolean
+  // debugLogChallenge (step 68) is a separate, independent toggle from
+  // debugLogHtml — it gates the Cloudflare human-wait loop's own raw
+  // HTML dump (debugging a stuck challenge), not the regular crawl-log
+  // HTML capture debugLogHtml gates.
+  debugLogChallenge: boolean
 }
 
 export async function fetchBrowserSettings(): Promise<BrowserSettings> {

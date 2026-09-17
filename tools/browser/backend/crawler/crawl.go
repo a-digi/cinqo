@@ -674,9 +674,12 @@ func waitForHumanToClearCloudflare(ctx context.Context, requestID, initialReason
 	// convention paginatedCrawlHandler's own settings.DebugEnabled read
 	// already establishes. A read failure is treated the same as "off"
 	// — this is pure debug observability, never allowed to interrupt
-	// the wait itself.
+	// the wait itself. DebugLogChallenge (step 68) is its own, separate
+	// toggle from DebugLogHTML — this dump is about debugging a stuck
+	// Cloudflare challenge, not about the regular crawl-log HTML
+	// capture paginatedCrawlHandler gates behind DebugLogHTML.
 	settings, _ := shared.LoadBrowserSettings()
-	logHTML := settings.DebugEnabled && settings.DebugLogHTML
+	logChallengeHTML := settings.DebugEnabled && settings.DebugLogChallenge
 
 	deadline := time.Now().Add(maxHumanSolveDuration)
 	attempt := 0
@@ -689,7 +692,7 @@ func waitForHumanToClearCloudflare(ctx context.Context, requestID, initialReason
 		var html string
 		haveHTML := chromedp.Run(ctx, chromedp.OuterHTML("html", &html)) == nil
 
-		if logHTML && haveHTML {
+		if logChallengeHTML && haveHTML {
 			logChallengeDetectorHTML(requestID, attempt, html)
 		}
 
