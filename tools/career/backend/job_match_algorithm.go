@@ -14,10 +14,14 @@ import (
 	"unicode"
 )
 
-// jobMatchTitleWeight/jobMatchDescriptionWeight are the per-skill
-// weights computeJobMatch applies depending on WHERE a skill was
-// found. Plain constants, not configurable — matching this codebase's
-// own "constants over premature configurability" convention.
+// jobMatchTitleWeight/jobMatchRequirementsWeight/jobMatchDescriptionWeight
+// are the per-skill weights computeJobMatch applies depending on WHERE
+// a skill was found — title, a detected requirements/qualifications
+// zone (splitByRequirementsZone, below), or the rest of the
+// description, in descending order of how strong a relevance signal
+// each location is. Plain constants, not configurable — matching this
+// codebase's own "constants over premature configurability"
+// convention.
 //
 // jobMatchSemanticWeight/jobMatchSemanticThreshold (step XX) are the
 // same idea for a skill that ISN'T literally present anywhere in the
@@ -25,14 +29,58 @@ import (
 // meaning — see semantic_vectors.go. Weighted below
 // jobMatchDescriptionWeight deliberately: a semantic match is a
 // fuzzier, lower-confidence signal than an actual literal mention, so
-// it should never outweigh one. Both are initial estimates, not
-// derived from any real tuning data — expect to revisit once there's
-// enough real match history to compare against.
+// it should never outweigh one. All are initial estimates, not derived
+// from any real tuning data — expect to revisit once there's enough
+// real match history to compare against.
+//
+// jobMatchSemanticThreshold was lowered from an initial 0.55 to 0.4 —
+// still a guess, not a tuned number (no real match history existed to
+// tune it against either time) — because 0.55 is a demanding bar for
+// cosine similarity between two SHORT, averaged bag-of-words phrase
+// vectors (a multi-word skill vs. one sentence): even a clearly related
+// pair (e.g. "Kubernetes" vs. a sentence about container orchestration)
+// can score well under that in practice, since averaging just a few
+// words is a much noisier signal than averaging a large corpus of
+// text. 0.4 is a deliberately more permissive starting point for the
+// sentence-level comparison introduced alongside this change,
+// expected to need further real-world adjustment in either direction.
+//
+// jobMatchWeightCap (step XX) replaced BOTH dividing by the raw
+// len(skills) AND a flat, persona-size-independent ceiling as
+// computeJobMatch's own score denominator — each of those two earlier
+// attempts traded one failure mode for its opposite:
+//
+//   - Dividing by len(skills) directly meant a persona with a broad,
+//     diverse skill set could never score highly against any single
+//     job, no matter how precisely their relevant skills matched,
+//     purely because their OTHER, irrelevant skills silently counted
+//     against the denominator (the AI scored a real case 94, this
+//     algorithm scored it 15).
+//   - A flat ceiling (an earlier version of this constant, 3.5,
+//     independent of the persona's own skill count) overcorrected:
+//     ordinary tech job postings routinely contain 5+ literal
+//     mentions of common skill terms ("Git," "Agile," "API,"
+//     "Testing"), so almost ANY halfway-relevant persona/job pair blew
+//     past a small fixed number and clamped to 100% — a real,
+//     observed regression ("100% everywhere"), not just miscalibration.
+//
+// The denominator here is min(len(skills), jobMatchWeightCap) instead
+// — scales with the persona's own skill count (so a persona with only
+// 3 tightly-relevant skills can still reach 100% off those 3 alone,
+// unlike a flat ceiling) but never exceeds jobMatchWeightCap (so a
+// persona with 20 skills isn't required to match anywhere near all of
+// them, unlike dividing by the raw count). 5 is, again, a reasoned
+// estimate, not a value tuned against real match data — this is the
+// third iteration of this constant, and further adjustment in either
+// direction should be expected once more real cases are checked
+// against it.
 const (
-	jobMatchTitleWeight       = 1.0
-	jobMatchDescriptionWeight = 0.6
-	jobMatchSemanticWeight    = 0.35
-	jobMatchSemanticThreshold = 0.55
+	jobMatchTitleWeight        = 1.0
+	jobMatchRequirementsWeight = 0.85
+	jobMatchDescriptionWeight  = 0.6
+	jobMatchSemanticWeight     = 0.35
+	jobMatchSemanticThreshold  = 0.4
+	jobMatchWeightCap          = 5.0
 )
 
 // skillMatch is one matched skill plus HOW it was matched — persisted
@@ -55,14 +103,17 @@ const (
 
 // computeJobMatch scores how well a persona's own skills match a
 // job's own title+description. Each skill is checked for a
-// case-insensitive, whole-word/phrase match against title and
-// description separately (title first — a skill present in both only
-// ever counts once, at the higher weight); matchedSkills is every
-// skill found in either, in the SAME order as skills itself (never
-// reordered), so a caller can rely on it being a stable subsequence.
-// score is round(100 * sum(weights) / len(skills)), clamped 0-100. A
-// persona with no skills at all scores 0 with no matched skills
-// (never divides by zero).
+// case-insensitive, whole-word/phrase match against title, a detected
+// requirements/qualifications zone, and the rest of the description,
+// in that priority order (a skill present in more than one only ever
+// counts once, at the highest-weighted location it was found);
+// matchedSkills is every skill found anywhere, in the SAME order as
+// skills itself (never reordered), so a caller can rely on it being a
+// stable subsequence. score is round(100 * min(1, sum(weights) /
+// min(len(skills), jobMatchWeightCap))) — see that constant's own doc
+// comment for why the denominator is capped rather than either the
+// persona's raw skill count or a flat number. A persona with no skills
+// at all scores 0 with no matched skills.
 //
 // vectors (step XX) is the currently active semantic model's own word
 // vectors (semantic_vectors.go's acquireActiveVectors), or nil if no
@@ -70,26 +121,34 @@ const (
 // reproducing this function's own pre-existing literal-only behavior
 // exactly, so a deployment that never downloads a model is unaffected.
 //
-// When non-nil, a skill that doesn't literally match either field
-// falls back to a semantic check against the job description — but
-// NOT by averaging the whole description into one vector (an earlier,
-// weaker version of this function did exactly that, and diluted any
-// one specific concept into the text's overall generic "gist" badly
-// enough that the semantic step rarely fired in practice). Instead the
-// description is split into sentences (splitIntoSentences,
-// semantic_vectors.go) and the skill is compared against EACH one,
-// keeping the best (maximum) similarity — a skill mentioned or implied
-// in one specific sentence is compared against that sentence alone,
-// not smeared across the whole posting.
+// When non-nil, a skill that doesn't literally match anywhere falls
+// back to a semantic check — but NOT by averaging the whole
+// description into one vector (an earlier, weaker version of this
+// function did exactly that, and diluted any one specific concept into
+// the text's overall generic "gist" badly enough that the semantic
+// step rarely fired in practice). Instead the requirements zone (or,
+// if none was detected, the whole description) is split into sentences
+// (splitIntoSentences, semantic_vectors.go) and the skill is compared
+// against EACH one, keeping the best (maximum) similarity — a skill
+// mentioned or implied in one specific sentence is compared against
+// that sentence alone, not smeared across the whole posting, and
+// restricted to the requirements zone when one exists so "About us"/
+// benefits prose can't contribute a spurious semantic hit either.
 func computeJobMatch(jobTitle, jobDescription string, skills []string, vectors map[string][]float32) (score int, matchedSkills []skillMatch) {
 	matchedSkills = []skillMatch{}
 	if len(skills) == 0 {
 		return 0, matchedSkills
 	}
 
+	requirementsText, hasRequirementsZone := splitByRequirementsZone(jobDescription)
+
 	var sentenceVectors [][]float32
 	if vectors != nil {
-		for _, sentence := range splitIntoSentences(jobDescription) {
+		semanticSource := jobDescription
+		if hasRequirementsZone {
+			semanticSource = requirementsText
+		}
+		for _, sentence := range splitIntoSentences(semanticSource) {
 			if v, ok := phraseVector(sentence, vectors); ok {
 				sentenceVectors = append(sentenceVectors, v)
 			}
@@ -105,6 +164,9 @@ func computeJobMatch(jobTitle, jobDescription string, skills []string, vectors m
 		switch {
 		case re.MatchString(jobTitle):
 			totalWeight += jobMatchTitleWeight
+			matchedSkills = append(matchedSkills, skillMatch{Skill: skill, Kind: matchKindLiteral})
+		case hasRequirementsZone && re.MatchString(requirementsText):
+			totalWeight += jobMatchRequirementsWeight
 			matchedSkills = append(matchedSkills, skillMatch{Skill: skill, Kind: matchKindLiteral})
 		case re.MatchString(jobDescription):
 			totalWeight += jobMatchDescriptionWeight
@@ -127,7 +189,14 @@ func computeJobMatch(jobTitle, jobDescription string, skills []string, vectors m
 		}
 	}
 
-	raw := 100*totalWeight/float64(len(skills)) + 0.5 // round to nearest integer
+	denominator := float64(len(skills))
+	if denominator > jobMatchWeightCap {
+		denominator = jobMatchWeightCap
+	}
+	if totalWeight > denominator {
+		totalWeight = denominator
+	}
+	raw := 100*totalWeight/denominator + 0.5 // round to nearest integer
 	score = int(raw)
 	if score > 100 {
 		score = 100

@@ -16,6 +16,7 @@ import (
 	"log"
 	"math"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -185,6 +186,74 @@ func phraseVector(text string, vectors map[string][]float32) (vec []float32, ok 
 		sum[i] /= float32(count)
 	}
 	return sum, true
+}
+
+// requirementsHeadingPattern/headingLikePattern/bulletLinePattern are
+// the heuristics splitByRequirementsZone (below) uses to find a job
+// posting's own requirements/qualifications section — deliberately
+// simple pattern matching, not a real document-structure parser, since
+// job postings have no standard format to parse against in the first
+// place.
+//
+// bulletLinePattern is deliberately NOT, by itself, enough to open a
+// zone — an earlier version of this function treated any bulleted
+// line anywhere as in-zone regardless of context, which was a real,
+// observed bug: most real job postings are bulleted THROUGHOUT
+// (responsibilities, benefits, "nice to haves"), not just their actual
+// requirements section, so that version boosted most of a typical
+// posting's content to the higher requirements weight and — combined
+// with the score formula's own denominator issue at the time —
+// produced a match score of 100% for nearly everything. A bullet line
+// now only counts as in-zone once a real requirements-style heading
+// has already opened one; it still doesn't automatically close the
+// zone the way a genuinely different heading does, since a
+// requirements section is commonly ALL bullets with no further prose.
+var (
+	requirementsHeadingPattern = regexp.MustCompile(`(?i)^(requirements?|qualifications?|what you.?ll need|what we.?re looking for|must[- ]haves?|skills?( required| needed)?|about you|you have|your (background|profile|experience))\s*:?\s*$`)
+	headingLikePattern         = regexp.MustCompile(`^[A-Za-z][A-Za-z /&']{2,40}:\s*$`)
+	bulletLinePattern          = regexp.MustCompile(`^\s*([-•*]|\d+[.)])\s+`)
+)
+
+// splitByRequirementsZone scans a job description line by line for a
+// requirements/qualifications section — a heading matching
+// requirementsHeadingPattern opens the zone; a different, unrelated
+// short heading-like line closes it; a bullet line stays in-zone only
+// while a zone is already open (see bulletLinePattern's own doc
+// comment for why it can't open one by itself) — and returns the
+// concatenated text of every in-zone line, plus whether any zone was
+// found at all. hasZone=false means requirementsText is empty and
+// callers should fall back to treating the WHOLE description as before
+// this feature — most real job postings do have a clear requirements
+// section, but this must never make computeJobMatch weaker for the
+// ones that don't.
+func splitByRequirementsZone(description string) (requirementsText string, hasZone bool) {
+	var buf strings.Builder
+	inZone := false
+	for _, line := range strings.Split(description, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if requirementsHeadingPattern.MatchString(trimmed) {
+			inZone = true
+			hasZone = true
+			continue
+		}
+		if inZone && bulletLinePattern.MatchString(line) {
+			buf.WriteString(trimmed)
+			buf.WriteString(". ")
+			continue
+		}
+		if inZone && headingLikePattern.MatchString(trimmed) {
+			inZone = false
+			continue
+		}
+		if inZone {
+			buf.WriteString(trimmed)
+			buf.WriteString(" ")
+		}
+	}
+	return buf.String(), hasZone
 }
 
 // splitIntoSentences breaks text on '.', '!', '?', and newlines — a
