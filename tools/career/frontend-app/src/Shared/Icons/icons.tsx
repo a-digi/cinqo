@@ -167,6 +167,18 @@ export function TrashIcon() {
   )
 }
 
+// MatchIcon — marks the "Job Match" action, a target/bullseye glyph
+// distinct from every other icon in this file.
+export function MatchIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-3.5 w-3.5">
+      <circle cx="10" cy="10" r="7" strokeWidth="1.3" />
+      <circle cx="10" cy="10" r="4" strokeWidth="1.3" />
+      <circle cx="10" cy="10" r="1" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
 // RobotIcon (step 60) — marks "Check Progress - AI" (a
 // generate-crawl-instructions conversation currently in flight),
 // distinct from SparkleIcon's own "start this with AI" meaning.

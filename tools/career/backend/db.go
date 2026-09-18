@@ -317,6 +317,31 @@ CREATE INDEX IF NOT EXISTS crawl_runs_portal_link_idx ON crawl_runs(portal_link_
 
 CREATE UNIQUE INDEX IF NOT EXISTS crawl_runs_one_running_idx
     ON crawl_runs(portal_link_id) WHERE status = 'running';
+
+-- job_matches (step XX) tracks the most recent "Job Match" attempt for
+-- one job — one row per job (job_id itself is the primary key, no
+-- separate id/history), re-matching overwrites. profile_id/persona_id
+-- are OPAQUE ids into career.db's own profiles/personas tables — this
+-- tool's own two SQLite databases (career.db, jobs.db) are genuinely
+-- separate files/connections (see initDatabases), so no real SQL
+-- FOREIGN KEY or JOIN is possible across them; these are plain,
+-- unenforced TEXT references. score/persona_id are written ONLY by
+-- the AI-facing save_job_match MCP tool (job_match.go) — the
+-- human/frontend-facing PUT /jobs/match endpoint structurally cannot
+-- set either, so a compromised or buggy frontend call can never
+-- fabricate a match result. See
+-- plan/ai/tools/career/step-XX-job-match.md.
+CREATE TABLE IF NOT EXISTS job_matches (
+    job_id          TEXT PRIMARY KEY REFERENCES jobs(id) ON DELETE CASCADE,
+    profile_id      TEXT NOT NULL,
+    persona_id      TEXT,
+    score           INTEGER,
+    status          TEXT NOT NULL DEFAULT 'matching'
+                      CHECK (status IN ('matching','completed','failed')),
+    conversation_id TEXT,
+    error           TEXT,
+    updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `
 
 // migrateCareerDB runs, in order, every past schema migration this

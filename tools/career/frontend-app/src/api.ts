@@ -82,6 +82,15 @@ export interface Job {
   // produced this row. See plan/ai/tools/career/step-XX-job-detail-
   // crawl-status-eye-icon.md.
   detailCrawlStatus?: 'failed' | 'success'
+  // matchScore/matchStatus/matchConversationId/matchError (step XX) —
+  // mirror detailCrawlStatus's own "undefined means never attempted"
+  // posture, for the separate "Job Match" feature. matchScore is only
+  // ever present once matchStatus is 'completed'. See
+  // plan/ai/tools/career/step-XX-job-match.md.
+  matchScore?: number
+  matchStatus?: 'matching' | 'completed' | 'failed'
+  matchConversationId?: string
+  matchError?: string
 }
 
 export interface JobsResult {
@@ -397,6 +406,28 @@ export async function linkJobToCompany(jobId: string, companyId: string): Promis
     body: JSON.stringify({ id: jobId, companyId }),
   })
   if (!res.ok && res.status !== 204) throw new Error(`failed to link job to company (${res.status})`)
+}
+
+// updateJobMatch tracks a "Job Match" attempt's own lifecycle —
+// starting one (status: 'matching', profileId + conversationId set)
+// or recording a client-observed failure (status: 'failed', error
+// set). Deliberately cannot set score or a persona — those are
+// written exclusively by the AI's own save_job_match tool call
+// (tools/career/backend/job_match.go), never by this endpoint. See
+// plan/ai/tools/career/step-XX-job-match.md.
+export async function updateJobMatch(
+  jobId: string,
+  args: { profileId?: string; status: 'matching' | 'failed'; conversationId?: string; error?: string },
+): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/jobs/match`, {
+    method: 'PUT',
+    credentials: 'include',
+    body: JSON.stringify({ jobId, ...args }),
+  })
+  if (!res.ok && res.status !== 204) {
+    const text = await res.text().catch(() => '')
+    throw new Error(text || `failed to update job match (${res.status})`)
+  }
 }
 
 // --- companies ---

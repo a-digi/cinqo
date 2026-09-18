@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.0.172",
+  "version": "0.0.174",
   "mcp": true,
   "requires_tools": [
     {
@@ -143,6 +143,11 @@
     {
       "method": "GET",
       "path_suffix": "job-locations",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "jobs/match",
       "required_scope": "tool:career:jobs"
     },
     {
@@ -378,6 +383,14 @@
     },
     {
       "name": "save_job_detail_extraction",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "name": "get_job",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "name": "save_job_match",
       "required_scope": "tool:career:jobs"
     },
     {

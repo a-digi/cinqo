@@ -71,6 +71,17 @@ type job struct {
 	// markJobDetailCrawlFailed. See
 	// plan/ai/tools/career/step-XX-job-detail-crawl-status-eye-icon.md.
 	DetailCrawlStatus string `json:"detailCrawlStatus,omitempty"`
+	// MatchScore/MatchStatus/MatchConversationID/MatchError (step XX)
+	// mirror DetailCrawlStatus's own "read-only, written only via a
+	// dedicated function" posture — resolved via a LEFT JOIN to
+	// job_matches (job_match.go) in queryJobs/getJobByID, below.
+	// MatchScore is nil until a match completes; MatchStatus is ""
+	// (never "null") when this job has never been matched at all. See
+	// plan/ai/tools/career/step-XX-job-match.md.
+	MatchScore          *int   `json:"matchScore,omitempty"`
+	MatchStatus         string `json:"matchStatus,omitempty"`
+	MatchConversationID string `json:"matchConversationId,omitempty"`
+	MatchError          string `json:"matchError,omitempty"`
 }
 
 // saveJob upserts by source_url — re-saving a posting already known
@@ -184,7 +195,8 @@ func searchJobs(query, location, companyId, portalLinkId, portalId string, limit
 // portal, having since been deleted out from under it.
 const jobsFromClause = `FROM jobs j
 	LEFT JOIN portal_links pl ON pl.id = j.portal_link_id
-	LEFT JOIN portals p ON p.id = pl.portal_id`
+	LEFT JOIN portals p ON p.id = pl.portal_id
+	LEFT JOIN job_matches jm ON jm.job_id = j.id`
 
 func queryJobs(where string, whereArgs []any, limit, offset int) (jobsListResult, error) {
 	var total int
@@ -195,7 +207,8 @@ func queryJobs(where string, whereArgs []any, limit, offset int) (jobsListResult
 
 	pageArgs := append(append([]any{}, whereArgs...), limit, offset)
 	rows, err := jobsDB.Query(
-		`SELECT j.id, j.source_url, j.title, j.company, j.company_id, j.portal_link_id, p.id, p.name, j.location, j.description, j.posted_at, j.crawled_at, j.detail_crawl_status
+		`SELECT j.id, j.source_url, j.title, j.company, j.company_id, j.portal_link_id, p.id, p.name, j.location, j.description, j.posted_at, j.crawled_at, j.detail_crawl_status,
+			jm.score, jm.status, jm.conversation_id, jm.error
 		 `+jobsFromClause+` `+where+` ORDER BY j.crawled_at DESC LIMIT ? OFFSET ?`,
 		pageArgs...,
 	)
@@ -208,7 +221,10 @@ func queryJobs(where string, whereArgs []any, limit, offset int) (jobsListResult
 	for rows.Next() {
 		var j job
 		var company, companyID, portalLinkID, portalID, portalName, location, description, postedAt, detailCrawlStatus sql.NullString
-		if err := rows.Scan(&j.ID, &j.SourceURL, &j.Title, &company, &companyID, &portalLinkID, &portalID, &portalName, &location, &description, &postedAt, &j.CrawledAt, &detailCrawlStatus); err != nil {
+		var matchStatus, matchConversationID, matchError sql.NullString
+		var matchScore sql.NullInt64
+		if err := rows.Scan(&j.ID, &j.SourceURL, &j.Title, &company, &companyID, &portalLinkID, &portalID, &portalName, &location, &description, &postedAt, &j.CrawledAt, &detailCrawlStatus,
+			&matchScore, &matchStatus, &matchConversationID, &matchError); err != nil {
 			return jobsListResult{}, err
 		}
 		j.Company = company.String
@@ -220,6 +236,13 @@ func queryJobs(where string, whereArgs []any, limit, offset int) (jobsListResult
 		j.Description = description.String
 		j.DetailCrawlStatus = detailCrawlStatus.String
 		j.PostedAt = postedAt.String
+		if matchScore.Valid {
+			score := int(matchScore.Int64)
+			j.MatchScore = &score
+		}
+		j.MatchStatus = matchStatus.String
+		j.MatchConversationID = matchConversationID.String
+		j.MatchError = matchError.String
 		jobs = append(jobs, j)
 	}
 	if err := rows.Err(); err != nil {
@@ -240,13 +263,17 @@ func deleteJob(id string) error {
 // (already declared for save_job_detail_extraction, above) on no rows.
 func getJobByID(id string) (job, error) {
 	row := jobsDB.QueryRow(
-		`SELECT j.id, j.source_url, j.title, j.company, j.company_id, j.portal_link_id, p.id, p.name, j.location, j.description, j.posted_at, j.crawled_at, j.detail_crawl_status
+		`SELECT j.id, j.source_url, j.title, j.company, j.company_id, j.portal_link_id, p.id, p.name, j.location, j.description, j.posted_at, j.crawled_at, j.detail_crawl_status,
+			jm.score, jm.status, jm.conversation_id, jm.error
 		 `+jobsFromClause+` WHERE j.id = ?`,
 		id,
 	)
 	var j job
 	var company, companyID, portalLinkID, portalID, portalName, location, description, postedAt, detailCrawlStatus sql.NullString
-	err := row.Scan(&j.ID, &j.SourceURL, &j.Title, &company, &companyID, &portalLinkID, &portalID, &portalName, &location, &description, &postedAt, &j.CrawledAt, &detailCrawlStatus)
+	var matchStatus, matchConversationID, matchError sql.NullString
+	var matchScore sql.NullInt64
+	err := row.Scan(&j.ID, &j.SourceURL, &j.Title, &company, &companyID, &portalLinkID, &portalID, &portalName, &location, &description, &postedAt, &j.CrawledAt, &detailCrawlStatus,
+		&matchScore, &matchStatus, &matchConversationID, &matchError)
 	switch {
 	case err == sql.ErrNoRows:
 		return job{}, errUnknownJob
@@ -262,6 +289,13 @@ func getJobByID(id string) (job, error) {
 	j.Description = description.String
 	j.DetailCrawlStatus = detailCrawlStatus.String
 	j.PostedAt = postedAt.String
+	if matchScore.Valid {
+		score := int(matchScore.Int64)
+		j.MatchScore = &score
+	}
+	j.MatchStatus = matchStatus.String
+	j.MatchConversationID = matchConversationID.String
+	j.MatchError = matchError.String
 	return j, nil
 }
 
