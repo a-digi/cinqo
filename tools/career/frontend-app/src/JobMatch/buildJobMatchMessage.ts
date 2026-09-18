@@ -23,7 +23,7 @@ export function buildJobMatchMessage(job: { id: string; title: string; company: 
     `3. Call list_personas with profileId ${profileId} to see every persona under this profile.`,
     '4. For each persona, call get_persona_details to read its own skills, experience, and personal details (headline, summary, desired titles/locations, minimum salary).',
     "5. Decide which ONE persona is the best fit for this specific job, and how well it matches overall, as a single integer 0-100 (100 = perfect match) — weigh the job's own actual requirements (from its description/title) against that persona's own skills and experience realistically, not generously.",
-    `6. Call save_job_match ONCE with jobId ${job.id}, profileId ${profileId}, the best-fit persona's own id, and your score.`,
+    `6. Call save_job_match ONCE with jobId ${job.id}, profileId ${profileId}, the best-fit persona's own id, your score, and matchedSkills — the specific skills from that persona's own get_persona_details skills list that most directly explain the score. matchedSkills entries MUST be exact, verbatim strings copied from that list — never paraphrase, rename, or invent a skill; an empty array is fine if nothing in that persona's own skills genuinely explains the score.`,
     '',
     'When done, reply with a short one-line confirmation — this reply is never shown to any user, so keep it brief.',
   ].join('\n')

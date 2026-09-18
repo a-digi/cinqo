@@ -82,6 +82,15 @@ type job struct {
 	MatchStatus         string `json:"matchStatus,omitempty"`
 	MatchConversationID string `json:"matchConversationId,omitempty"`
 	MatchError          string `json:"matchError,omitempty"`
+	// MatchedSkills (step XX) — the specific skills (verbatim, from
+	// that persona's own career.db skills list) that explain
+	// MatchScore, from the one-to-many job_match_skills table
+	// (job_match.go) a single LEFT JOIN can't attach here without
+	// multiplying this row — resolved via a separate batched query in
+	// queryJobs and a separate single query in getJobByID, below.
+	// Always [] (never omitted/null) so frontend code never has to
+	// special-case "field absent" vs "no matched skills".
+	MatchedSkills []string `json:"matchedSkills"`
 }
 
 // saveJob upserts by source_url — re-saving a posting already known
@@ -243,10 +252,29 @@ func queryJobs(where string, whereArgs []any, limit, offset int) (jobsListResult
 		j.MatchStatus = matchStatus.String
 		j.MatchConversationID = matchConversationID.String
 		j.MatchError = matchError.String
+		j.MatchedSkills = []string{}
 		jobs = append(jobs, j)
 	}
 	if err := rows.Err(); err != nil {
 		return jobsListResult{}, err
+	}
+
+	// One batched query for the whole page rather than one per job —
+	// job_match_skills is one-to-many, so a single LEFT JOIN above
+	// can't attach it without multiplying each job row. See
+	// getJobMatchSkillsBatch's own doc comment (job_match.go).
+	jobIDs := make([]string, len(jobs))
+	for i, j := range jobs {
+		jobIDs[i] = j.ID
+	}
+	skillsByJob, err := getJobMatchSkillsBatch(jobIDs)
+	if err != nil {
+		return jobsListResult{}, err
+	}
+	for i := range jobs {
+		if skills, ok := skillsByJob[jobs[i].ID]; ok {
+			jobs[i].MatchedSkills = skills
+		}
 	}
 
 	return jobsListResult{Jobs: jobs, Total: total}, nil
@@ -296,6 +324,11 @@ func getJobByID(id string) (job, error) {
 	j.MatchStatus = matchStatus.String
 	j.MatchConversationID = matchConversationID.String
 	j.MatchError = matchError.String
+	skills, err := getJobMatchSkills(j.ID)
+	if err != nil {
+		return job{}, err
+	}
+	j.MatchedSkills = skills
 	return j, nil
 }
 

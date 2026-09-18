@@ -342,6 +342,24 @@ CREATE TABLE IF NOT EXISTS job_matches (
     error           TEXT,
     updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- job_match_skills (step XX) holds the specific skills (verbatim
+-- strings, from that persona's own career.db skills list) that
+-- explain a job_matches row's own score — a proper one-to-many child
+-- table, not a JSON blob column, matching career_skills' own
+-- established convention for "a list of skill strings" elsewhere in
+-- this tool. Replaced wholesale (delete + re-insert) on every
+-- save_job_match call, same "no history, most recent overwrite"
+-- semantics job_matches itself already has. No FK enforcement against
+-- career.db's own career_skills possible (separate SQLite file) —
+-- saveJobMatchResult (job_match.go) validates each skill against that
+-- persona's own real skills in Go code instead, at write time. See
+-- plan/ai/tools/career/step-XX-job-match-skills.md.
+CREATE TABLE IF NOT EXISTS job_match_skills (
+    job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    skill  TEXT NOT NULL,
+    PRIMARY KEY (job_id, skill)
+);
 `
 
 // migrateCareerDB runs, in order, every past schema migration this

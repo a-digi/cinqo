@@ -23,6 +23,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -84,16 +85,51 @@ func updateJobMatchStatus(jobId, status string, errText *string) error {
 // startJobMatch row to already exist) so the AI's own call is
 // self-sufficient even if, for whatever reason, no tracking row was
 // created ahead of it.
+//
+// matchedSkills is validated against that PERSONA's own real skills
+// (career.db, via fetchPersonaDetails — already used by
+// get_persona_details itself) — not just requested by this tool's own
+// description: "exactly the same as the ones the user provided" is a
+// real, enforced constraint here, not merely prompt guidance. Any
+// entry that isn't an exact (case-sensitive) match against that
+// persona's own stored skill list is rejected, naming the offending
+// value, before anything is written.
 var errInvalidMatchScore = errors.New("score must be an integer between 0 and 100")
 
-func saveJobMatchResult(jobId, profileId, personaId string, score int) error {
+func saveJobMatchResult(jobId, profileId, personaId string, score int, matchedSkills []string) error {
 	if err := requireJobExists(jobId); err != nil {
 		return err
 	}
 	if score < 0 || score > 100 {
 		return errInvalidMatchScore
 	}
-	_, err := jobsDB.Exec(
+
+	details, err := fetchPersonaDetails(personaId)
+	if err != nil {
+		return err
+	}
+	knownSkills := make(map[string]bool, len(details.Skills))
+	for _, s := range details.Skills {
+		knownSkills[s] = true
+	}
+	for _, s := range matchedSkills {
+		if !knownSkills[s] {
+			return fmt.Errorf("%w: %q is not one of persona %q's own skills — matchedSkills must be exact, verbatim entries from get_persona_details' own skills list, never paraphrased or invented", errInvalidMatchSkill, s, personaId)
+		}
+	}
+
+	tx, err := jobsDB.Begin()
+	if err != nil {
+		return err
+	}
+	// A harmless no-op once Commit succeeds below (Rollback on an
+	// already-committed tx just returns sql.ErrTxDone, always ignored
+	// by this exact idiom) — the real safety net for every OTHER
+	// return path above/below, so a mid-transaction error never leaves
+	// job_matches and job_match_skills disagreeing with each other.
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.Exec(
 		`INSERT INTO job_matches (job_id, profile_id, persona_id, score, status, conversation_id, error, updated_at)
 		 VALUES (?, ?, ?, ?, 'completed', NULL, NULL, datetime('now'))
 		 ON CONFLICT(job_id) DO UPDATE SET
@@ -105,8 +141,83 @@ func saveJobMatchResult(jobId, profileId, personaId string, score int) error {
 			error = NULL,
 			updated_at = datetime('now')`,
 		jobId, profileId, personaId, score,
+	); err != nil {
+		return err
+	}
+
+	// Replaced wholesale — same "no history, most recent overwrite"
+	// semantics job_matches itself already has.
+	if _, err := tx.Exec(`DELETE FROM job_match_skills WHERE job_id = ?`, jobId); err != nil {
+		return err
+	}
+	for _, s := range matchedSkills {
+		if _, err := tx.Exec(`INSERT INTO job_match_skills (job_id, skill) VALUES (?, ?)`, jobId, s); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+// errInvalidMatchSkill wraps a specific, actionable detail (via
+// fmt.Errorf's own %w, saveJobMatchResult above) — a real, enforced
+// validation failure, not a shape check.
+var errInvalidMatchSkill = errors.New("invalid matched skill")
+
+// getJobMatchSkills reads one job's own matched skills, alphabetically
+// — empty (never nil) when the job has no completed match, or its
+// match had no matching skills at all.
+func getJobMatchSkills(jobId string) ([]string, error) {
+	rows, err := jobsDB.Query(`SELECT skill FROM job_match_skills WHERE job_id = ? ORDER BY skill ASC`, jobId)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	skills := []string{}
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return nil, err
+		}
+		skills = append(skills, s)
+	}
+	return skills, rows.Err()
+}
+
+// getJobMatchSkillsBatch is queryJobs' own (jobs.go) batched
+// counterpart to getJobMatchSkills — one query for a whole page of
+// jobs rather than one per row (avoiding N+1), since job_match_skills
+// is a one-to-many relation a single LEFT JOIN can't attach to a job
+// row without multiplying it. A jobId with no entries simply has no
+// key in the returned map, exactly like lastCrawledByPortalLink's own
+// established "absent, not empty-value" convention (portals.go).
+func getJobMatchSkillsBatch(jobIds []string) (map[string][]string, error) {
+	result := make(map[string][]string, len(jobIds))
+	if len(jobIds) == 0 {
+		return result, nil
+	}
+	placeholders := make([]string, len(jobIds))
+	args := make([]any, len(jobIds))
+	for i, id := range jobIds {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	rows, err := jobsDB.Query(
+		`SELECT job_id, skill FROM job_match_skills WHERE job_id IN (`+strings.Join(placeholders, ",")+`) ORDER BY job_id, skill ASC`,
+		args...,
 	)
-	return err
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var jobId, skill string
+		if err := rows.Scan(&jobId, &skill); err != nil {
+			return nil, err
+		}
+		result[jobId] = append(result[jobId], skill)
+	}
+	return result, rows.Err()
 }
 
 // reconcileOrphanedJobMatches mirrors reconcileOrphanedCrawlRuns
@@ -127,10 +238,11 @@ func reconcileOrphanedJobMatches() error {
 // --- MCP registration ---
 
 type saveJobMatchArgs struct {
-	JobID     string `json:"jobId" jsonschema:"the job's own id, from get_job/list_jobs/search_jobs"`
-	ProfileID string `json:"profileId" jsonschema:"the profile this match was requested against"`
-	PersonaID string `json:"personaId" jsonschema:"the single persona under this profile you judged the best fit for this job, from list_personas"`
-	Score     int    `json:"score" jsonschema:"how well this job matches that persona, as an integer 0-100 (100 = perfect match)"`
+	JobID         string   `json:"jobId" jsonschema:"the job's own id, from get_job/list_jobs/search_jobs"`
+	ProfileID     string   `json:"profileId" jsonschema:"the profile this match was requested against"`
+	PersonaID     string   `json:"personaId" jsonschema:"the single persona under this profile you judged the best fit for this job, from list_personas"`
+	Score         int      `json:"score" jsonschema:"how well this job matches that persona, as an integer 0-100 (100 = perfect match)"`
+	MatchedSkills []string `json:"matchedSkills" jsonschema:"the specific skills (from this persona's own get_persona_details skills list) that explain this score — MUST be exact, verbatim entries from that list, never paraphrased, reworded, or invented; an empty array is fine if no skill overlap explains the score"`
 }
 
 func registerSaveJobMatch(server *mcp.Server) {
@@ -139,8 +251,10 @@ func registerSaveJobMatch(server *mcp.Server) {
 		Description: "Record the result of assessing how well a job matches a career profile — call this ONCE, " +
 			"after you've read the job's own description (get_job), inspected every persona under the given " +
 			"profile (list_personas, then get_persona_details for each to see its own skills/experience/personal " +
-			"details), and decided which single persona fits best and how well. Fails if jobId is unknown or " +
-			"score isn't an integer 0-100.",
+			"details), and decided which single persona fits best and how well. matchedSkills must be exact, " +
+			"verbatim strings from that persona's own get_persona_details skills list — never invented or " +
+			"reworded; any entry that doesn't match exactly is rejected. Fails if jobId is unknown, score isn't " +
+			"an integer 0-100, or matchedSkills contains anything not in that persona's own skills.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args saveJobMatchArgs) (*mcp.CallToolResult, any, error) {
 		if args.JobID == "" {
 			return errResult("jobId is required"), nil, nil
@@ -151,11 +265,11 @@ func registerSaveJobMatch(server *mcp.Server) {
 		if args.PersonaID == "" {
 			return errResult("personaId is required"), nil, nil
 		}
-		if err := saveJobMatchResult(args.JobID, args.ProfileID, args.PersonaID, args.Score); err != nil {
+		if err := saveJobMatchResult(args.JobID, args.ProfileID, args.PersonaID, args.Score, args.MatchedSkills); err != nil {
 			if errors.Is(err, errUnknownJob) {
 				return errResult(fmt.Sprintf("unknown job id %q", args.JobID)), nil, nil
 			}
-			if errors.Is(err, errInvalidMatchScore) {
+			if errors.Is(err, errInvalidMatchScore) || errors.Is(err, errInvalidMatchSkill) {
 				return errResult(err.Error()), nil, nil
 			}
 			return errResult(fmt.Sprintf("failed to save job match: %v", err)), nil, nil

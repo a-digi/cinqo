@@ -91,6 +91,12 @@ export interface Job {
   matchStatus?: 'matching' | 'completed' | 'failed'
   matchConversationId?: string
   matchError?: string
+  // matchedSkills (step XX) — the specific skills (verbatim, from the
+  // matched persona's own skills list) that explain matchScore.
+  // Always present as an array (possibly empty), never undefined —
+  // the backend guarantees this field, unlike the optional ones above.
+  // See plan/ai/tools/career/step-XX-job-match-skills.md.
+  matchedSkills: string[]
 }
 
 export interface JobsResult {

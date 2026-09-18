@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { fetchJob, type Job } from '../../api'
 import { ExternalLinkIcon } from '../../Shared/Icons/icons'
+import { MatchScoreBar } from '../../Shared/MatchScoreBar/MatchScoreBar'
 
 const JOBS_PATH = '/tools/career/jobs'
 
@@ -45,7 +46,7 @@ export function JobDetailsPage() {
   }
 
   return (
-    <div className="max-w-3xl p-6 font-sans text-gray-900">
+    <div className="max-w-5xl p-6 font-sans text-gray-900">
       <button type="button" onClick={handleBack} className="mb-4 text-sm text-gray-500 underline hover:text-gray-700">
         ← Back to Jobs
       </button>
@@ -55,51 +56,71 @@ export function JobDetailsPage() {
       {!error && !job && <p className="text-sm text-gray-500">Loading…</p>}
 
       {job && (
-        <div className="rounded-md border border-gray-200 bg-white p-6 shadow-sm">
-          <div className="flex items-start justify-between gap-4">
-            <h1 className="text-xl font-semibold">{job.title}</h1>
-            <a
-              href={job.sourceUrl}
-              target="_blank"
-              rel="noreferrer"
-              title="Open the original posting"
-              className="flex shrink-0 items-center gap-1.5 rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-700 transition-colors hover:bg-gray-50"
-            >
-              <ExternalLinkIcon />
-              Open original
-            </a>
+        <div className="flex flex-col gap-6 md:flex-row md:items-start">
+          <div className="min-w-0 flex-1 rounded-md border border-gray-200 bg-white p-6 shadow-sm">
+            <div className="flex items-start justify-between gap-4">
+              <h1 className="text-xl font-semibold">{job.title}</h1>
+              <a
+                href={job.sourceUrl}
+                target="_blank"
+                rel="noreferrer"
+                title="Open the original posting"
+                className="flex shrink-0 items-center gap-1.5 rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-700 transition-colors hover:bg-gray-50"
+              >
+                <ExternalLinkIcon />
+                Open original
+              </a>
+            </div>
+
+            <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-sm text-gray-500">
+              {job.company && (
+                <div>
+                  <dt className="inline font-medium text-gray-700">Company: </dt>
+                  <dd className="inline">{job.company}</dd>
+                </div>
+              )}
+              {job.portalName && (
+                <div>
+                  <dt className="inline font-medium text-gray-700">Platform: </dt>
+                  <dd className="inline">{job.portalName}</dd>
+                </div>
+              )}
+              {job.location && (
+                <div>
+                  <dt className="inline font-medium text-gray-700">Location: </dt>
+                  <dd className="inline">{job.location}</dd>
+                </div>
+              )}
+              {job.postedAt && (
+                <div>
+                  <dt className="inline font-medium text-gray-700">Posted: </dt>
+                  <dd className="inline">{job.postedAt}</dd>
+                </div>
+              )}
+            </dl>
+
+            <hr className="my-4 border-gray-200" />
+
+            <p className="whitespace-pre-wrap text-sm text-gray-800">{job.description || 'No description available.'}</p>
           </div>
 
-          <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-sm text-gray-500">
-            {job.company && (
-              <div>
-                <dt className="inline font-medium text-gray-700">Company: </dt>
-                <dd className="inline">{job.company}</dd>
-              </div>
-            )}
-            {job.portalName && (
-              <div>
-                <dt className="inline font-medium text-gray-700">Platform: </dt>
-                <dd className="inline">{job.portalName}</dd>
-              </div>
-            )}
-            {job.location && (
-              <div>
-                <dt className="inline font-medium text-gray-700">Location: </dt>
-                <dd className="inline">{job.location}</dd>
-              </div>
-            )}
-            {job.postedAt && (
-              <div>
-                <dt className="inline font-medium text-gray-700">Posted: </dt>
-                <dd className="inline">{job.postedAt}</dd>
-              </div>
-            )}
-          </dl>
-
-          <hr className="my-4 border-gray-200" />
-
-          <p className="whitespace-pre-wrap text-sm text-gray-800">{job.description || 'No description available.'}</p>
+          {job.matchStatus === 'completed' && job.matchScore !== undefined && (
+            <div className="w-full shrink-0 rounded-md border border-gray-200 bg-white p-5 shadow-sm md:w-64">
+              <h2 className="mb-3 text-sm font-semibold text-gray-900">Job Match</h2>
+              <MatchScoreBar score={job.matchScore} skills={job.matchedSkills} jobTitle={job.title} />
+              {job.matchedSkills.length > 0 ? (
+                <div className="mt-4 flex flex-wrap gap-1.5">
+                  {job.matchedSkills.map((skill) => (
+                    <span key={skill} className="rounded-full border border-gray-200 bg-gray-100 px-2.5 py-1 text-xs text-gray-700">
+                      {skill}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-4 text-xs text-gray-400">No specific skills matched.</p>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

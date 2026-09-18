@@ -570,7 +570,7 @@ export function JobsPage() {
                           Failed
                         </span>
                       ) : job.matchStatus === 'completed' && job.matchScore !== undefined ? (
-                        <MatchScoreBar score={job.matchScore} />
+                        <MatchScoreBar score={job.matchScore} skills={job.matchedSkills} jobTitle={job.title} />
                       ) : (
                         <span className="text-xs text-gray-300">—</span>
                       )}
