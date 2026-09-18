@@ -80,12 +80,12 @@ import (
 // but the CURVE SHAPE itself (no hard clamp) is the structural fix,
 // independent of the exact scale chosen.
 const (
-	jobMatchTitleWeight        = 0.4
-	jobMatchRequirementsWeight = 0.85
-	jobMatchDescriptionWeight  = 0.6
-	jobMatchSemanticWeight     = 0.35
-	jobMatchSemanticThreshold  = 0.4
-	jobMatchScale              = 8.0
+	jobMatchTitleWeight        = 0.2
+	jobMatchRequirementsWeight = 0.25
+	jobMatchDescriptionWeight  = 0.1
+	jobMatchSemanticWeight     = 0.1
+	jobMatchSemanticThreshold  = 0.1
+	jobMatchScale              = 4.0
 )
 
 // skillMatch is one matched skill plus HOW it was matched — persisted
