@@ -9,6 +9,7 @@
 package main
 
 import (
+	"math"
 	"regexp"
 	"strings"
 	"unicode"
@@ -45,42 +46,46 @@ import (
 // sentence-level comparison introduced alongside this change,
 // expected to need further real-world adjustment in either direction.
 //
-// jobMatchWeightCap (step XX) replaced BOTH dividing by the raw
-// len(skills) AND a flat, persona-size-independent ceiling as
-// computeJobMatch's own score denominator — each of those two earlier
-// attempts traded one failure mode for its opposite:
+// jobMatchScale (step XX) replaced every earlier attempt at a
+// denominator (raw len(skills), a flat ceiling, a capped denominator)
+// — all three shared the same underlying flaw: each was a HARD CLAMP
+// at 100 once matched weight crossed some threshold, which collapses
+// every match at or beyond that threshold into the exact same score.
+// For real job postings with a "Requirements:" section listing 6+
+// items, a genuinely good (but not perfect) match crosses almost any
+// reasonably-chosen threshold easily — so a wide range of actually
+// different match qualities all showed 100%, which looked identical to
+// the original bug from the outside even though the threshold itself
+// had changed each time.
 //
-//   - Dividing by len(skills) directly meant a persona with a broad,
-//     diverse skill set could never score highly against any single
-//     job, no matter how precisely their relevant skills matched,
-//     purely because their OTHER, irrelevant skills silently counted
-//     against the denominator (the AI scored a real case 94, this
-//     algorithm scored it 15).
-//   - A flat ceiling (an earlier version of this constant, 3.5,
-//     independent of the persona's own skill count) overcorrected:
-//     ordinary tech job postings routinely contain 5+ literal
-//     mentions of common skill terms ("Git," "Agile," "API,"
-//     "Testing"), so almost ANY halfway-relevant persona/job pair blew
-//     past a small fixed number and clamped to 100% — a real,
-//     observed regression ("100% everywhere"), not just miscalibration.
+// score is now round(100 * (1 - e^(-totalWeight / jobMatchScale))) — a
+// smooth, strictly increasing curve with no denominator and no clamp
+// at all. It never divides by the persona's own skill count (so a
+// broad, diverse skill set still isn't punished — the original 94-vs-
+// 15 bug), and it never hits a hard ceiling for realistic amounts of
+// matched weight (so different match qualities keep producing
+// different scores instead of collapsing together) — reaching a
+// score that ROUNDS to literal 100 requires totalWeight roughly 5x
+// jobMatchScale, i.e. ~20 weight units at the current scale, far
+// beyond what any real job/persona pair accumulates.
 //
-// The denominator here is min(len(skills), jobMatchWeightCap) instead
-// — scales with the persona's own skill count (so a persona with only
-// 3 tightly-relevant skills can still reach 100% off those 3 alone,
-// unlike a flat ceiling) but never exceeds jobMatchWeightCap (so a
-// persona with 20 skills isn't required to match anywhere near all of
-// them, unlike dividing by the raw count). 5 is, again, a reasoned
-// estimate, not a value tuned against real match data — this is the
-// third iteration of this constant, and further adjustment in either
-// direction should be expected once more real cases are checked
-// against it.
+// jobMatchScale=4.0 means: one title match (weight 1.0) alone scores
+// ~22%; title + 4 requirements matches (weight 4.4) scores ~67%; a
+// very thorough match (weight 12, e.g. title + ~13 requirements-level
+// matches) scores ~95%. Doubled from an initial 2.0 specifically
+// because that first value still let a solid-but-unremarkable match
+// climb into the high 80s/90s too easily — this is, again, a reasoned
+// estimate, not tuned against real data, and the number most likely to
+// still need adjustment once more real cases are checked against it —
+// but the CURVE SHAPE itself (no hard clamp) is the structural fix,
+// independent of the exact scale chosen.
 const (
-	jobMatchTitleWeight        = 1.0
+	jobMatchTitleWeight        = 0.4
 	jobMatchRequirementsWeight = 0.85
 	jobMatchDescriptionWeight  = 0.6
 	jobMatchSemanticWeight     = 0.35
 	jobMatchSemanticThreshold  = 0.4
-	jobMatchWeightCap          = 5.0
+	jobMatchScale              = 8.0
 )
 
 // skillMatch is one matched skill plus HOW it was matched — persisted
@@ -109,11 +114,10 @@ const (
 // counts once, at the highest-weighted location it was found);
 // matchedSkills is every skill found anywhere, in the SAME order as
 // skills itself (never reordered), so a caller can rely on it being a
-// stable subsequence. score is round(100 * min(1, sum(weights) /
-// min(len(skills), jobMatchWeightCap))) — see that constant's own doc
-// comment for why the denominator is capped rather than either the
-// persona's raw skill count or a flat number. A persona with no skills
-// at all scores 0 with no matched skills.
+// stable subsequence. score is round(100 * (1 - e^(-sum(weights) /
+// jobMatchScale))) — see that constant's own doc comment for why this
+// is a smooth saturating curve rather than any form of hard clamp. A
+// persona with no skills at all scores 0 with no matched skills.
 //
 // vectors (step XX) is the currently active semantic model's own word
 // vectors (semantic_vectors.go's acquireActiveVectors), or nil if no
@@ -189,14 +193,7 @@ func computeJobMatch(jobTitle, jobDescription string, skills []string, vectors m
 		}
 	}
 
-	denominator := float64(len(skills))
-	if denominator > jobMatchWeightCap {
-		denominator = jobMatchWeightCap
-	}
-	if totalWeight > denominator {
-		totalWeight = denominator
-	}
-	raw := 100*totalWeight/denominator + 0.5 // round to nearest integer
+	raw := 100*(1-math.Exp(-totalWeight/jobMatchScale)) + 0.5 // round to nearest integer
 	score = int(raw)
 	if score > 100 {
 		score = 100
