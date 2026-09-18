@@ -769,14 +769,19 @@ export function JobsPage() {
                             <MatchIcon />
                           </button>
                         )}
-                        {job.cvStatus === 'generating' ? (
+                        {job.cvStatus === 'generating' || job.cvStatus === 'rendered' ? (
                           <button
                             type="button"
                             onClick={() => {
                               handleCheckCvProgress(job)
                             }}
-                            title="Open the chat window to watch the AI generate this CV"
-                            className="rounded-md p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900"
+                            disabled={job.cvStatus === 'rendered'}
+                            title={
+                              job.cvStatus === 'rendered'
+                                ? 'The AI finished — saving the generated CV…'
+                                : 'Open the chat window to watch the AI generate this CV'
+                            }
+                            className="rounded-md p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-40"
                           >
                             <RobotIcon />
                           </button>
