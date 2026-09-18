@@ -57,12 +57,6 @@ func runHTTPServer() {
 	if err := reconcileOrphanedJobMatches(); err != nil {
 		log.Fatalf("failed to reconcile orphaned job matches: %v", err)
 	}
-	// Same reasoning again, one level further — a semantic model
-	// download's own goroutine is not a subprocess this Go process
-	// could ever reattach to after a restart either.
-	if err := reconcileOrphanedModelDownloads(); err != nil {
-		log.Fatalf("failed to reconcile orphaned model downloads: %v", err)
-	}
 	// step 47.4 — reconcileOrphanedCrawlRuns above only ever runs once,
 	// at boot, so it can't help a goroutine that's genuinely hung
 	// without this process itself restarting. This periodic sweep is
@@ -83,11 +77,6 @@ func runHTTPServer() {
 	http.HandleFunc("/jobs", jobsHandler)
 	http.HandleFunc("/job-locations", jobLocationsHandler)
 	http.HandleFunc("/jobs/match", jobMatchHandler)
-	http.HandleFunc("/jobs/match/now", jobMatchNowHandler)
-	http.HandleFunc("/jobs/model/catalog", modelCatalogHandler)
-	http.HandleFunc("/jobs/model/download", modelDownloadHandler)
-	http.HandleFunc("/jobs/model/select", modelSelectHandler)
-	http.HandleFunc("/jobs/model", modelRemoveHandler)
 	http.HandleFunc("/companies", companiesHandler)
 	http.HandleFunc("/recruiters", recruitersHandler)
 	http.HandleFunc("/portals", portalsHandler)

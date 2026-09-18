@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { Modal } from '../Modal/Modal'
-import type { MatchedSkill } from '../../api'
 
 // MatchScoreBar — a shared, reusable progress bar showing a 0-100
 // "Job Match" score (job_match.go), colored by tier, with the
@@ -18,16 +17,8 @@ import type { MatchedSkill } from '../../api'
 // 40-59 violet, 0-39 red. See
 // plan/ai/tools/career/step-XX-job-match.md and
 // plan/ai/tools/career/step-XX-job-match-skills.md.
-// Only literal (exact-wording) matches are shown here — a semantic
-// match (matched by meaning, not exact text) is a fuzzier, lower-
-// confidence signal that's still allowed to contribute to the score
-// itself (job_match_algorithm.go), but is deliberately excluded from
-// this display: matched skills shown to the user should be the ones
-// that unambiguously and literally appear in the job's own text, not
-// an approximate, sometimes-hard-to-justify semantic guess.
-export function MatchScoreBar({ score, skills, jobTitle }: { score: number; skills: MatchedSkill[]; jobTitle: string }) {
+export function MatchScoreBar({ score, skills, jobTitle }: { score: number; skills: string[]; jobTitle: string }) {
   const [modalOpen, setModalOpen] = useState(false)
-  const literalSkills = skills.filter((s) => s.kind === 'literal')
   const clamped = Math.max(0, Math.min(100, score))
   const isExceptional = clamped >= 91
   const barColor = isExceptional
@@ -40,8 +31,8 @@ export function MatchScoreBar({ score, skills, jobTitle }: { score: number; skil
           ? 'bg-violet-400'
           : 'bg-red-500'
   const tooltip =
-    literalSkills.length > 0
-      ? `Match score: ${clamped}%\nMatched skills: ${literalSkills.map((s) => s.skill).join(', ')}`
+    skills.length > 0
+      ? `Match score: ${clamped}%\nMatched skills: ${skills.join(', ')}`
       : `Match score: ${clamped}%\nNo specific skills matched`
 
   return (
@@ -69,11 +60,11 @@ export function MatchScoreBar({ score, skills, jobTitle }: { score: number; skil
         }}
       >
         <p className="mb-3 text-sm text-gray-500">Match score: {clamped}%</p>
-        {literalSkills.length > 0 ? (
+        {skills.length > 0 ? (
           <div className="flex flex-wrap gap-1.5">
-            {literalSkills.map((skill) => (
-              <span key={skill.skill} className="rounded-full border border-gray-200 bg-gray-100 px-2.5 py-1 text-xs text-gray-700">
-                {skill.skill}
+            {skills.map((skill) => (
+              <span key={skill} className="rounded-full border border-gray-200 bg-gray-100 px-2.5 py-1 text-xs text-gray-700">
+                {skill}
               </span>
             ))}
           </div>

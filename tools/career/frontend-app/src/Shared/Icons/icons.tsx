@@ -179,48 +179,6 @@ export function MatchIcon() {
   )
 }
 
-// BoltIcon — marks the deterministic, no-AI "Match now" action,
-// distinct from MatchIcon's own AI-conversation-driven meaning. A
-// plain lightning-bolt glyph, the standard "instant/automatic" signal.
-export function BoltIcon() {
-  return (
-    <svg viewBox="0 0 20 20" fill="currentColor" stroke="none" className="h-3.5 w-3.5">
-      <path d="M11 2.5L4.5 11.5h4l-1 6L15.5 8.5h-4l0.5-6z" />
-    </svg>
-  )
-}
-
-// GearIcon — marks the "Job Settings" nav entry, a plain settings
-// glyph distinct from every action icon in this file.
-export function GearIcon() {
-  return (
-    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-3.5 w-3.5">
-      <circle cx="10" cy="10" r="2.6" strokeWidth="1.3" />
-      <path
-        d="M10 3.5v1.6M10 14.9v1.6M16.5 10h-1.6M5.1 10H3.5M14.6 5.4l-1.1 1.1M6.5 13.5l-1.1 1.1M14.6 14.6l-1.1-1.1M6.5 6.5L5.4 5.4"
-        strokeWidth="1.3"
-        strokeLinecap="round"
-      />
-    </svg>
-  )
-}
-
-// DownloadIcon — a downward arrow into a tray, the mirror image of
-// UploadIcon above, marking "download this file" actions.
-export function DownloadIcon() {
-  return (
-    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-3.5 w-3.5">
-      <path d="M10 3.5v8M6.5 8.3L10 11.8l3.5-3.5" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-      <path
-        d="M3.5 13.5v1.5a1.5 1.5 0 0 0 1.5 1.5h10a1.5 1.5 0 0 0 1.5-1.5v-1.5"
-        strokeWidth="1.3"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  )
-}
-
 // RobotIcon (step 60) — marks "Check Progress - AI" (a
 // generate-crawl-instructions conversation currently in flight),
 // distinct from SparkleIcon's own "start this with AI" meaning.

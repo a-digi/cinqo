@@ -9,7 +9,6 @@ import {
   linkJobToCompany,
   fetchProfiles,
   updateJobMatch,
-  startJobMatchNow,
   type Job,
   type Company,
   type Portal,
@@ -24,7 +23,7 @@ import { Dropdown } from '../Dropdown/Dropdown'
 import { Pagination } from '../Pagination/Pagination'
 import { Modal } from '../../Shared/Modal/Modal'
 import { MatchScoreBar } from '../../Shared/MatchScoreBar/MatchScoreBar'
-import { FilterIcon, XIcon, EyeIcon, ExternalLinkIcon, TrashIcon, MatchIcon, BoltIcon, RobotIcon } from '../../Shared/Icons/icons'
+import { FilterIcon, XIcon, EyeIcon, ExternalLinkIcon, TrashIcon, MatchIcon, RobotIcon } from '../../Shared/Icons/icons'
 import { Typewriter } from '../../Shared/Typewriter/Typewriter'
 import { truncate } from '../../Shared/Text/transform'
 
@@ -32,11 +31,6 @@ const PAGE_SIZE = 50
 const SEARCH_DEBOUNCE_MS = 300
 const MAX_LOCATION_DISPLAY_LENGTH = 50
 const JOB_DETAILS_PATH = '/tools/career/job-details'
-// DETERMINISTIC_MATCH_POLL_INTERVAL_MS (step XX) — the deterministic
-// "Match now" mechanism has no AI turn to await, so its own "is it
-// done yet" check is plain polling (mirrors CrawlPanel.tsx's own
-// watchCrawlRun) rather than the AI path's conversation-turn polling.
-const DETERMINISTIC_MATCH_POLL_INTERVAL_MS = 3000
 
 // No "add job" affordance — jobs are populated by the AI's own
 // crawling workflow (step 4), never hand-entered here. See this
@@ -87,11 +81,6 @@ export function JobsPage() {
   const [selectedPlatformId, setSelectedPlatformId] = useState<string | null>(null)
   const [selectedModel, setSelectedModel] = useState<string | null>(null)
   const [matchPickerJob, setMatchPickerJob] = useState<Job | null>(null)
-  // matchPickerMode (step XX) — which mechanism the open picker Modal
-  // is choosing a profile FOR: the AI-conversation path (handleMatchClick)
-  // or the deterministic, no-AI one (handleMatchNowClick). Only read
-  // once matchPickerJob is non-null.
-  const [matchPickerMode, setMatchPickerMode] = useState<'ai' | 'deterministic'>('ai')
 
   function load(companyIdOverride?: string, portalIdOverride?: string, pageOverride?: number, locationOverride?: string) {
     setError('')
@@ -315,34 +304,6 @@ export function JobsPage() {
     )
   }
 
-  // pollMatchNow is the deterministic ("Match now") path's own
-  // "is it done yet" check — there is no AI conversation/turn to await
-  // at all here, so this is plain, self-rescheduling polling (mirrors
-  // CrawlPanel.tsx's own watchCrawlRun) rather than resumeMatchWatch's
-  // own conversation-turn polling above. A failure server-side is
-  // already recorded by the backend goroutine itself
-  // (runJobMatchNow's own fail() closure, job_match_now.go) — this
-  // function only ever needs to notice the row left 'matching' and
-  // reload once it doesn't, never write anything itself.
-  function pollMatchNow(jobId: string) {
-    fetchJob(jobId)
-      .then((fetched) => {
-        if (fetched.matchStatus === 'matching') {
-          window.setTimeout(() => {
-            pollMatchNow(jobId)
-          }, DETERMINISTIC_MATCH_POLL_INTERVAL_MS)
-          return
-        }
-        load()
-      })
-      .catch((err: unknown) => {
-        // Best-effort — stop polling on a persistent error rather than
-        // looping forever; a later manual reload will pick up
-        // whatever the real state ends up being.
-        console.error('failed to poll job match status', jobId, err)
-      })
-  }
-
   // resumedMatchesRef tracks which jobs' own matches this instance has
   // already started (re)watching — a Set, not a single boolean (every
   // other resume-on-reload effect in this tool guards, e.g.
@@ -350,17 +311,13 @@ export function JobsPage() {
   // many independently-matching rows, not one entity's own single
   // panel. Once a job id is added it's never removed, so a later
   // unrelated reload (e.g. a filter change) never reopens a watch this
-  // instance already has in flight. Branches on matchKind: a
-  // deterministic match has no conversation id to resume watching via
-  // — it only ever needs pollMatchNow, above.
+  // instance already has in flight.
   const resumedMatchesRef = useRef<Set<string>>(new Set())
   useEffect(() => {
     for (const job of jobs) {
       if (job.matchStatus !== 'matching' || resumedMatchesRef.current.has(job.id)) continue
       resumedMatchesRef.current.add(job.id)
-      if (job.matchKind === 'deterministic') {
-        pollMatchNow(job.id)
-      } else if (job.matchConversationId) {
+      if (job.matchConversationId) {
         void resumeMatchWatch(job.id, job.matchConversationId)
       }
     }
@@ -409,42 +366,9 @@ export function JobsPage() {
     // Reflect "matching" immediately rather than waiting for the round
     // trip above to land — load() after the round trip already
     // reconciles with the server's own real state regardless.
-    // matchKind is set here too — without it, re-matching via AI right
-    // after an earlier DETERMINISTIC match would leave the stale
-    // 'deterministic' kind showing until the next reload, which would
-    // incorrectly render this row's own "Matching…" indicator as the
-    // non-clickable deterministic spinner instead of the clickable
-    // AI one.
     setJobs((prev) =>
-      prev.map((j) =>
-        j.id === job.id ? { ...j, matchStatus: 'matching', matchKind: 'ai', matchScore: undefined, matchError: undefined } : j,
-      ),
+      prev.map((j) => (j.id === job.id ? { ...j, matchStatus: 'matching', matchScore: undefined, matchError: undefined } : j)),
     )
-  }
-
-  // startMatchNow mirrors startMatch above, but for the deterministic
-  // ("Match now") mechanism — a single fire-and-forget request
-  // (job_match_now.go runs the whole thing server-side, no
-  // conversation to create or track client-side at all), followed by
-  // plain polling (pollMatchNow) instead of awaiting an AI turn. A
-  // failure starting the request itself (e.g. the chosen profile has
-  // no personas) never got a job_matches row created at all — reverted
-  // via a plain reload rather than trying to record a failure for a
-  // row that was never started.
-  function startMatchNow(job: Job, profileId: string) {
-    setJobs((prev) =>
-      prev.map((j) =>
-        j.id === job.id ? { ...j, matchStatus: 'matching', matchKind: 'deterministic', matchScore: undefined, matchError: undefined } : j,
-      ),
-    )
-    startJobMatchNow(job.id, profileId)
-      .then(() => {
-        pollMatchNow(job.id)
-      })
-      .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : 'Failed to start job match.')
-        load()
-      })
   }
 
   function handleMatchClick(job: Job) {
@@ -454,18 +378,6 @@ export function JobsPage() {
       startMatch(job, profiles[0].id)
       return
     }
-    setMatchPickerMode('ai')
-    setMatchPickerJob(job)
-  }
-
-  function handleMatchNowClick(job: Job) {
-    if (job.matchStatus === 'matching') return
-    if (profiles.length === 0) return
-    if (profiles.length === 1) {
-      startMatchNow(job, profiles[0].id)
-      return
-    }
-    setMatchPickerMode('deterministic')
     setMatchPickerJob(job)
   }
 
@@ -649,15 +561,7 @@ export function JobsPage() {
                     <td className="border-b border-gray-200 p-3">{job.portalName ?? '—'}</td>
                     <td className="border-b border-gray-200 p-3">{job.postedAt}</td>
                     <td className="border-b border-gray-200 p-3">
-                      {job.matchStatus === 'matching' && job.matchKind === 'deterministic' ? (
-                        // No AI conversation exists for a deterministic
-                        // match — nothing to open, so this is plain,
-                        // non-interactive status text, not a button.
-                        <span className="inline-flex items-center gap-1.5 text-xs text-gray-500">
-                          <BoltIcon />
-                          Matching…
-                        </span>
-                      ) : job.matchStatus === 'matching' ? (
+                      {job.matchStatus === 'matching' ? (
                         <button
                           type="button"
                           onClick={() => {
@@ -700,19 +604,6 @@ export function JobsPage() {
                             className="rounded-md p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-40"
                           >
                             <MatchIcon />
-                          </button>
-                        )}
-                        {job.matchStatus !== 'matching' && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              handleMatchNowClick(job)
-                            }}
-                            disabled={profiles.length === 0}
-                            title={profiles.length === 0 ? 'Create a profile first' : 'Match now — deterministic, no AI conversation'}
-                            className="rounded-md p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-40"
-                          >
-                            <BoltIcon />
                           </button>
                         )}
                         <a
@@ -785,11 +676,7 @@ export function JobsPage() {
               type="button"
               onClick={() => {
                 if (matchPickerJob) {
-                  if (matchPickerMode === 'ai') {
-                    startMatch(matchPickerJob, profile.id)
-                  } else {
-                    startMatchNow(matchPickerJob, profile.id)
-                  }
+                  startMatch(matchPickerJob, profile.id)
                 }
                 setMatchPickerJob(null)
               }}

@@ -108,26 +108,16 @@ export function JobDetailsPage() {
             <div className="w-full shrink-0 rounded-md border border-gray-200 bg-white p-5 shadow-sm md:w-64">
               <h2 className="mb-3 text-sm font-semibold text-gray-900">Job Match</h2>
               <MatchScoreBar score={job.matchScore} skills={job.matchedSkills} jobTitle={job.title} />
-              {/* Only literal (exact-wording) matches are shown — same reasoning as MatchScoreBar's own filter. */}
-              {job.matchedSkills.filter((skill) => skill.kind === 'literal').length > 0 ? (
+              {job.matchedSkills.length > 0 ? (
                 <div className="mt-4 flex flex-wrap gap-1.5">
-                  {job.matchedSkills
-                    .filter((skill) => skill.kind === 'literal')
-                    .map((skill) => (
-                      <span key={skill.skill} className="rounded-full border border-gray-200 bg-gray-100 px-2.5 py-1 text-xs text-gray-700">
-                        {skill.skill}
-                      </span>
-                    ))}
+                  {job.matchedSkills.map((skill) => (
+                    <span key={skill} className="rounded-full border border-gray-200 bg-gray-100 px-2.5 py-1 text-xs text-gray-700">
+                      {skill}
+                    </span>
+                  ))}
                 </div>
               ) : (
                 <p className="mt-4 text-xs text-gray-400">No specific skills matched.</p>
-              )}
-              {job.semanticModelId ? (
-                <p className="mt-3 text-xs text-gray-400">Semantic model used: {job.semanticModelId}</p>
-              ) : (
-                job.matchKind === 'deterministic' && (
-                  <p className="mt-3 text-xs text-gray-400">No semantic model was active for this match.</p>
-                )
               )}
             </div>
           )}

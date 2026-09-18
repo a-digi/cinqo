@@ -655,7 +655,7 @@ func jobMatchHandler(w http.ResponseWriter, r *http.Request) {
 		// the deterministic mechanism has its own separate endpoint
 		// (POST /jobs/match/now, job_match_now.go) that calls
 		// startJobMatch directly with kind="deterministic".
-		if err := startJobMatch(body.JobID, body.ProfileID, body.ConversationID, "ai"); err != nil {
+		if err := startJobMatch(body.JobID, body.ProfileID, body.ConversationID); err != nil {
 			if errors.Is(err, errUnknownJob) {
 				http.Error(w, "unknown job id", http.StatusNotFound)
 				return

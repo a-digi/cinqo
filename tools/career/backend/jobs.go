@@ -82,28 +82,15 @@ type job struct {
 	MatchStatus         string `json:"matchStatus,omitempty"`
 	MatchConversationID string `json:"matchConversationId,omitempty"`
 	MatchError          string `json:"matchError,omitempty"`
-	// MatchKind (step XX) — "ai" or "deterministic" (db.go's own
-	// job_matches.kind doc comment); "" (never "null") when this job
-	// has never been matched at all, same convention MatchStatus
-	// itself already uses.
-	MatchKind string `json:"matchKind,omitempty"`
-	// SemanticModelID (step XX) — the semantic_models catalog id that
-	// was actually loaded and used to produce the current match, or ""
-	// (never present in the JSON at all, via omitempty) if the match was
-	// literal-keyword-only. This is the direct, user-visible answer to
-	// "how do I know a model was actually used for this match." See
-	// db.go's own job_matches.semantic_model_id doc comment.
-	SemanticModelID string `json:"semanticModelId,omitempty"`
 	// MatchedSkills (step XX) — the specific skills (verbatim, from
 	// that persona's own career.db skills list) that explain
-	// MatchScore, each tagged with HOW it was matched (skillMatch.Kind
-	// — job_match_algorithm.go), from the one-to-many job_match_skills
-	// table (job_match.go) a single LEFT JOIN can't attach here without
+	// MatchScore, from the one-to-many job_match_skills table
+	// (job_match.go) a single LEFT JOIN can't attach here without
 	// multiplying this row — resolved via a separate batched query in
 	// queryJobs and a separate single query in getJobByID, below.
 	// Always [] (never omitted/null) so frontend code never has to
 	// special-case "field absent" vs "no matched skills".
-	MatchedSkills []skillMatch `json:"matchedSkills"`
+	MatchedSkills []string `json:"matchedSkills"`
 }
 
 // saveJob upserts by source_url — re-saving a posting already known
@@ -230,7 +217,7 @@ func queryJobs(where string, whereArgs []any, limit, offset int) (jobsListResult
 	pageArgs := append(append([]any{}, whereArgs...), limit, offset)
 	rows, err := jobsDB.Query(
 		`SELECT j.id, j.source_url, j.title, j.company, j.company_id, j.portal_link_id, p.id, p.name, j.location, j.description, j.posted_at, j.crawled_at, j.detail_crawl_status,
-			jm.score, jm.status, jm.conversation_id, jm.error, jm.kind, jm.semantic_model_id
+			jm.score, jm.status, jm.conversation_id, jm.error
 		 `+jobsFromClause+` `+where+` ORDER BY j.crawled_at DESC LIMIT ? OFFSET ?`,
 		pageArgs...,
 	)
@@ -243,10 +230,10 @@ func queryJobs(where string, whereArgs []any, limit, offset int) (jobsListResult
 	for rows.Next() {
 		var j job
 		var company, companyID, portalLinkID, portalID, portalName, location, description, postedAt, detailCrawlStatus sql.NullString
-		var matchStatus, matchConversationID, matchError, matchKind, semanticModelID sql.NullString
+		var matchStatus, matchConversationID, matchError sql.NullString
 		var matchScore sql.NullInt64
 		if err := rows.Scan(&j.ID, &j.SourceURL, &j.Title, &company, &companyID, &portalLinkID, &portalID, &portalName, &location, &description, &postedAt, &j.CrawledAt, &detailCrawlStatus,
-			&matchScore, &matchStatus, &matchConversationID, &matchError, &matchKind, &semanticModelID); err != nil {
+			&matchScore, &matchStatus, &matchConversationID, &matchError); err != nil {
 			return jobsListResult{}, err
 		}
 		j.Company = company.String
@@ -265,9 +252,7 @@ func queryJobs(where string, whereArgs []any, limit, offset int) (jobsListResult
 		j.MatchStatus = matchStatus.String
 		j.MatchConversationID = matchConversationID.String
 		j.MatchError = matchError.String
-		j.MatchKind = matchKind.String
-		j.SemanticModelID = semanticModelID.String
-		j.MatchedSkills = []skillMatch{}
+		j.MatchedSkills = []string{}
 		jobs = append(jobs, j)
 	}
 	if err := rows.Err(); err != nil {
@@ -307,16 +292,16 @@ func deleteJob(id string) error {
 func getJobByID(id string) (job, error) {
 	row := jobsDB.QueryRow(
 		`SELECT j.id, j.source_url, j.title, j.company, j.company_id, j.portal_link_id, p.id, p.name, j.location, j.description, j.posted_at, j.crawled_at, j.detail_crawl_status,
-			jm.score, jm.status, jm.conversation_id, jm.error, jm.kind, jm.semantic_model_id
+			jm.score, jm.status, jm.conversation_id, jm.error
 		 `+jobsFromClause+` WHERE j.id = ?`,
 		id,
 	)
 	var j job
 	var company, companyID, portalLinkID, portalID, portalName, location, description, postedAt, detailCrawlStatus sql.NullString
-	var matchStatus, matchConversationID, matchError, matchKind, semanticModelID sql.NullString
+	var matchStatus, matchConversationID, matchError sql.NullString
 	var matchScore sql.NullInt64
 	err := row.Scan(&j.ID, &j.SourceURL, &j.Title, &company, &companyID, &portalLinkID, &portalID, &portalName, &location, &description, &postedAt, &j.CrawledAt, &detailCrawlStatus,
-		&matchScore, &matchStatus, &matchConversationID, &matchError, &matchKind, &semanticModelID)
+		&matchScore, &matchStatus, &matchConversationID, &matchError)
 	switch {
 	case err == sql.ErrNoRows:
 		return job{}, errUnknownJob
@@ -339,8 +324,6 @@ func getJobByID(id string) (job, error) {
 	j.MatchStatus = matchStatus.String
 	j.MatchConversationID = matchConversationID.String
 	j.MatchError = matchError.String
-	j.MatchKind = matchKind.String
-	j.SemanticModelID = semanticModelID.String
 	skills, err := getJobMatchSkills(j.ID)
 	if err != nil {
 		return job{}, err

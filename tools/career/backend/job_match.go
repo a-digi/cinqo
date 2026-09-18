@@ -28,22 +28,22 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// startJobMatch begins tracking a new match attempt for jobId, of the
-// given kind ("ai" or "deterministic" — db.go's own job_matches.kind
-// doc comment) — upserts a fresh 'matching' row, clearing any previous
-// score/persona/error from an earlier attempt (re-matching always
-// starts clean, no history kept, regardless of whether this attempt
-// or the previous one was AI-driven). Called from the human-facing PUT
-// /jobs/match handler (http.go, always kind="ai") and from
-// runJobMatchNow (job_match_now.go, always kind="deterministic") —
-// never by the AI itself.
-func startJobMatch(jobId, profileId, conversationId, kind string) error {
+// startJobMatch begins tracking a new AI-driven match attempt for
+// jobId — upserts a fresh 'matching' row, clearing any previous score/
+// persona/error from an earlier attempt (re-matching always starts
+// clean, no history kept). Called only from the human-facing PUT
+// /jobs/match handler (http.go) — never by the AI itself. kind/
+// semantic_model_id are left unset, taking their column defaults
+// ('ai'/NULL) — job_matches.kind's own doc comment (db.go) explains
+// why those columns still exist even though this is the only
+// match-producing mechanism left.
+func startJobMatch(jobId, profileId, conversationId string) error {
 	if err := requireJobExists(jobId); err != nil {
 		return err
 	}
 	_, err := jobsDB.Exec(
-		`INSERT INTO job_matches (job_id, profile_id, persona_id, score, status, conversation_id, error, kind, updated_at)
-		 VALUES (?, ?, NULL, NULL, 'matching', ?, NULL, ?, datetime('now'))
+		`INSERT INTO job_matches (job_id, profile_id, persona_id, score, status, conversation_id, error, updated_at)
+		 VALUES (?, ?, NULL, NULL, 'matching', ?, NULL, datetime('now'))
 		 ON CONFLICT(job_id) DO UPDATE SET
 			profile_id = excluded.profile_id,
 			persona_id = NULL,
@@ -51,9 +51,8 @@ func startJobMatch(jobId, profileId, conversationId, kind string) error {
 			status = 'matching',
 			conversation_id = excluded.conversation_id,
 			error = NULL,
-			kind = excluded.kind,
 			updated_at = datetime('now')`,
-		jobId, profileId, conversationId, kind,
+		jobId, profileId, conversationId,
 	)
 	return err
 }
@@ -101,18 +100,12 @@ func updateJobMatchStatus(jobId, status string, errText *string) error {
 // value, before anything is written.
 var errInvalidMatchScore = errors.New("score must be an integer between 0 and 100")
 
-// nullIfEmpty turns "" into a real SQL NULL — used for
-// semantic_model_id below, which is meaningful precisely because it
-// distinguishes "no model used" (NULL) from any real model id, never a
-// literal empty string in the column.
-func nullIfEmpty(s string) any {
-	if s == "" {
-		return nil
-	}
-	return s
-}
-
-func saveJobMatchResult(jobId, profileId, personaId string, score int, matchedSkills []skillMatch, kind, semanticModelId string) error {
+// saveJobMatchResult writes kind/semantic_model_id/match_kind at their
+// column defaults ('ai'/NULL/'literal') — this is the only
+// match-producing mechanism left, so there's nothing else to record in
+// any of those. See job_matches.kind's own doc comment (db.go) for why
+// the columns themselves still exist.
+func saveJobMatchResult(jobId, profileId, personaId string, score int, matchedSkills []string) error {
 	if err := requireJobExists(jobId); err != nil {
 		return err
 	}
@@ -129,8 +122,8 @@ func saveJobMatchResult(jobId, profileId, personaId string, score int, matchedSk
 		knownSkills[s] = true
 	}
 	for _, s := range matchedSkills {
-		if !knownSkills[s.Skill] {
-			return fmt.Errorf("%w: %q is not one of persona %q's own skills — matchedSkills must be exact, verbatim entries from get_persona_details' own skills list, never paraphrased or invented", errInvalidMatchSkill, s.Skill, personaId)
+		if !knownSkills[s] {
+			return fmt.Errorf("%w: %q is not one of persona %q's own skills — matchedSkills must be exact, verbatim entries from get_persona_details' own skills list, never paraphrased or invented", errInvalidMatchSkill, s, personaId)
 		}
 	}
 
@@ -146,8 +139,8 @@ func saveJobMatchResult(jobId, profileId, personaId string, score int, matchedSk
 	defer func() { _ = tx.Rollback() }()
 
 	if _, err := tx.Exec(
-		`INSERT INTO job_matches (job_id, profile_id, persona_id, score, status, conversation_id, error, kind, semantic_model_id, updated_at)
-		 VALUES (?, ?, ?, ?, 'completed', NULL, NULL, ?, ?, datetime('now'))
+		`INSERT INTO job_matches (job_id, profile_id, persona_id, score, status, conversation_id, error, updated_at)
+		 VALUES (?, ?, ?, ?, 'completed', NULL, NULL, datetime('now'))
 		 ON CONFLICT(job_id) DO UPDATE SET
 			profile_id = excluded.profile_id,
 			persona_id = excluded.persona_id,
@@ -155,10 +148,8 @@ func saveJobMatchResult(jobId, profileId, personaId string, score int, matchedSk
 			status = 'completed',
 			conversation_id = NULL,
 			error = NULL,
-			kind = excluded.kind,
-			semantic_model_id = excluded.semantic_model_id,
 			updated_at = datetime('now')`,
-		jobId, profileId, personaId, score, kind, nullIfEmpty(semanticModelId),
+		jobId, profileId, personaId, score,
 	); err != nil {
 		return err
 	}
@@ -169,7 +160,7 @@ func saveJobMatchResult(jobId, profileId, personaId string, score int, matchedSk
 		return err
 	}
 	for _, s := range matchedSkills {
-		if _, err := tx.Exec(`INSERT INTO job_match_skills (job_id, skill, match_kind) VALUES (?, ?, ?)`, jobId, s.Skill, s.Kind); err != nil {
+		if _, err := tx.Exec(`INSERT INTO job_match_skills (job_id, skill) VALUES (?, ?)`, jobId, s); err != nil {
 			return err
 		}
 	}
@@ -185,16 +176,16 @@ var errInvalidMatchSkill = errors.New("invalid matched skill")
 // getJobMatchSkills reads one job's own matched skills, alphabetically
 // — empty (never nil) when the job has no completed match, or its
 // match had no matching skills at all.
-func getJobMatchSkills(jobId string) ([]skillMatch, error) {
-	rows, err := jobsDB.Query(`SELECT skill, match_kind FROM job_match_skills WHERE job_id = ? ORDER BY skill ASC`, jobId)
+func getJobMatchSkills(jobId string) ([]string, error) {
+	rows, err := jobsDB.Query(`SELECT skill FROM job_match_skills WHERE job_id = ? ORDER BY skill ASC`, jobId)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	skills := []skillMatch{}
+	skills := []string{}
 	for rows.Next() {
-		var s skillMatch
-		if err := rows.Scan(&s.Skill, &s.Kind); err != nil {
+		var s string
+		if err := rows.Scan(&s); err != nil {
 			return nil, err
 		}
 		skills = append(skills, s)
@@ -209,8 +200,8 @@ func getJobMatchSkills(jobId string) ([]skillMatch, error) {
 // row without multiplying it. A jobId with no entries simply has no
 // key in the returned map, exactly like lastCrawledByPortalLink's own
 // established "absent, not empty-value" convention (portals.go).
-func getJobMatchSkillsBatch(jobIds []string) (map[string][]skillMatch, error) {
-	result := make(map[string][]skillMatch, len(jobIds))
+func getJobMatchSkillsBatch(jobIds []string) (map[string][]string, error) {
+	result := make(map[string][]string, len(jobIds))
 	if len(jobIds) == 0 {
 		return result, nil
 	}
@@ -221,7 +212,7 @@ func getJobMatchSkillsBatch(jobIds []string) (map[string][]skillMatch, error) {
 		args[i] = id
 	}
 	rows, err := jobsDB.Query(
-		`SELECT job_id, skill, match_kind FROM job_match_skills WHERE job_id IN (`+strings.Join(placeholders, ",")+`) ORDER BY job_id, skill ASC`,
+		`SELECT job_id, skill FROM job_match_skills WHERE job_id IN (`+strings.Join(placeholders, ",")+`) ORDER BY job_id, skill ASC`,
 		args...,
 	)
 	if err != nil {
@@ -229,12 +220,11 @@ func getJobMatchSkillsBatch(jobIds []string) (map[string][]skillMatch, error) {
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var jobId string
-		var s skillMatch
-		if err := rows.Scan(&jobId, &s.Skill, &s.Kind); err != nil {
+		var jobId, skill string
+		if err := rows.Scan(&jobId, &skill); err != nil {
 			return nil, err
 		}
-		result[jobId] = append(result[jobId], s)
+		result[jobId] = append(result[jobId], skill)
 	}
 	return result, rows.Err()
 }
@@ -284,21 +274,7 @@ func registerSaveJobMatch(server *mcp.Server) {
 		if args.PersonaID == "" {
 			return errResult("personaId is required"), nil, nil
 		}
-		// kind is always "ai" here — never an argument the model itself
-		// provides, so it can never claim its own match was produced by
-		// the deterministic ("Match now") mechanism instead. See
-		// db.go's own job_matches.kind doc comment. semanticModelId is
-		// always "" — the AI path never uses a semantic model at all, so
-		// there is nothing to record. Every skill here defaults to
-		// matchKindLiteral: the AI path has no literal/semantic
-		// distinction of its own (that's a property of the deterministic
-		// algorithm only), and the frontend never renders this column for
-		// a kind='ai' job_matches row regardless.
-		skillMatches := make([]skillMatch, len(args.MatchedSkills))
-		for i, s := range args.MatchedSkills {
-			skillMatches[i] = skillMatch{Skill: s, Kind: matchKindLiteral}
-		}
-		if err := saveJobMatchResult(args.JobID, args.ProfileID, args.PersonaID, args.Score, skillMatches, "ai", ""); err != nil {
+		if err := saveJobMatchResult(args.JobID, args.ProfileID, args.PersonaID, args.Score, args.MatchedSkills); err != nil {
 			if errors.Is(err, errUnknownJob) {
 				return errResult(fmt.Sprintf("unknown job id %q", args.JobID)), nil, nil
 			}

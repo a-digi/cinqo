@@ -341,28 +341,17 @@ CREATE TABLE IF NOT EXISTS job_matches (
     conversation_id TEXT,
     error           TEXT,
     updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
-    -- kind (step XX) distinguishes an AI-conversation-driven match
-    -- ('ai', the original and default) from the deterministic,
-    -- no-AI "Match now" mechanism ('deterministic') — same
-    -- "kind column, no CHECK constraint, validated in Go instead"
-    -- convention crawl_runs.kind already established. conversation_id
-    -- is only ever meaningful for kind='ai' — a deterministic match
-    -- has no conversation at all. See
-    -- plan/ai/tools/career/step-XX-deterministic-job-match.md.
-    kind            TEXT NOT NULL DEFAULT 'ai',
-    -- semantic_model_id (step XX) records WHICH semantic_models row
-    -- (semantic_model.go) was actually loaded and used while producing
-    -- this match — NULL means the match was literal-keyword-only,
-    -- either because kind='ai' (the AI path never uses a semantic
-    -- model at all) or because no model was active/loaded at the time
-    -- of a kind='deterministic' run. This is the direct, queryable
-    -- answer to "how do I know a model was actually used for this
-    -- match" — previously there was no way to tell at all. Not a
-    -- REFERENCES semantic_models(id): a model can be removed
-    -- (semantic_model.go's removeModel) after having been used for a
-    -- past match, and that past match's own record should still show
-    -- which id it used, not be cascaded away. See
-    -- plan/ai/tools/career/step-XX-semantic-match-observability.md.
+    -- kind/semantic_model_id (step XX) — VESTIGIAL. These originally
+    -- distinguished an AI-conversation-driven match ('ai') from a
+    -- deterministic, no-AI "Match now" mechanism ('deterministic') that
+    -- also had an optional semantic-similarity model behind it — both
+    -- were removed in favor of keeping only the AI-driven match. Left
+    -- in place (rather than dropped via a migration) purely so
+    -- existing rows already carrying a non-default value stay
+    -- readable/inspectable; Go code never writes anything but each
+    -- column's own default ('ai'/NULL) going forward. See
+    -- plan/ai/tools/career/step-XX-remove-deterministic-job-match.md.
+    kind              TEXT NOT NULL DEFAULT 'ai',
     semantic_model_id TEXT
 );
 
@@ -379,54 +368,18 @@ CREATE TABLE IF NOT EXISTS job_matches (
 -- persona's own real skills in Go code instead, at write time. See
 -- plan/ai/tools/career/step-XX-job-match-skills.md.
 --
--- match_kind (step XX) — 'literal' (an exact keyword/phrase hit,
--- job_match_algorithm.go's own original behavior) or 'semantic' (no
--- literal hit anywhere, but the skill's own meaning was close enough
--- to the job description per the active semantic model). Same "kind
--- column, no CHECK constraint, validated in Go instead" convention as
--- job_matches.kind. DEFAULT 'literal' backfills every pre-existing row
--- correctly: the semantic path didn't exist before this step, so every
--- row saved before it is, by definition, a literal match — this
--- includes every AI-path ('kind'='ai' on the parent job_matches row)
--- skill too, for which this column simply doesn't apply; the frontend
--- only ever renders it for a 'deterministic' job_matches row. See
--- plan/ai/tools/career/step-XX-semantic-match-observability.md.
+-- match_kind (step XX) — VESTIGIAL, same reasoning as job_matches.kind/
+-- semantic_model_id above: originally distinguished a literal keyword
+-- hit from a semantic (meaning-based) one, back when the now-removed
+-- deterministic match mechanism could produce either. Every row this
+-- tool writes now is 'literal' (its own column default) — kept only so
+-- existing rows stay readable.
 CREATE TABLE IF NOT EXISTS job_match_skills (
     job_id     TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
     skill      TEXT NOT NULL,
     match_kind TEXT NOT NULL DEFAULT 'literal',
     PRIMARY KEY (job_id, skill)
 );
-
--- semantic_models (step XX) tracks the on-disk download/cache state of
--- one entry from this backend's own hardcoded model catalog
--- (semantic_model.go's modelCatalog) — a pretrained GloVe word-vector
--- file used to give the deterministic "Match now" algorithm a fuzzy,
--- meaning-based fallback for skills that don't literally appear in a
--- job's text (job_match_algorithm.go). A row is created lazily, on the
--- first download attempt for that catalog id — there is no row at all
--- for a model never downloaded. file_path/downloaded_at are set only
--- once status reaches 'ready'. active (step XX) marks the single model
--- currently used for matching — the partial unique index below is the
--- real, DB-enforced guarantee (not an app-level check-then-update,
--- which would race) that at most one row can ever be active at a time,
--- same reasoning as crawl_runs_one_running_idx above. Being active
--- never implies the vectors are actually loaded into memory right
--- now — semantic_vectors.go loads/unloads them on demand, independent
--- of this table. See plan/ai/tools/career/step-XX-semantic-match-models.md.
-CREATE TABLE IF NOT EXISTS semantic_models (
-    id               TEXT PRIMARY KEY,
-    status           TEXT NOT NULL DEFAULT 'not_downloaded'
-                       CHECK (status IN ('not_downloaded','downloading','extracting','ready','failed')),
-    progress_percent INTEGER NOT NULL DEFAULT 0,
-    error_message    TEXT,
-    file_path        TEXT,
-    downloaded_at    TEXT,
-    active           INTEGER NOT NULL DEFAULT 0
-);
-
-CREATE UNIQUE INDEX IF NOT EXISTS semantic_models_one_active_idx
-    ON semantic_models(active) WHERE active = 1;
 `
 
 // migrateCareerDB runs, in order, every past schema migration this

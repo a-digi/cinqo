@@ -91,41 +91,12 @@ export interface Job {
   matchStatus?: 'matching' | 'completed' | 'failed'
   matchConversationId?: string
   matchError?: string
-  // matchKind (step XX) — "ai" (a hidden AI conversation) or
-  // "deterministic" (a plain keyword-matching algorithm, no AI
-  // conversation at all — job_match_now.go) distinguishes which
-  // mechanism produced the current match, since a deterministic match
-  // has no conversation to open/poll. undefined when never matched.
-  // See plan/ai/tools/career/step-XX-deterministic-job-match.md.
-  matchKind?: 'ai' | 'deterministic'
-  // semanticModelId (step XX) — which semantic model catalog entry
-  // (JobSettingsPage) was actually loaded and used to produce the
-  // current match, undefined if the match was literal-keyword-only
-  // (no model active, or matchKind is 'ai' — the AI path never uses
-  // one). The direct, user-visible answer to "how do I know a model
-  // was actually used for this match." See
-  // plan/ai/tools/career/step-XX-semantic-match-observability.md.
-  semanticModelId?: string
   // matchedSkills (step XX) — the specific skills (verbatim, from the
-  // matched persona's own skills list) that explain matchScore, each
-  // tagged with HOW it was matched. Always present as an array
-  // (possibly empty), never undefined — the backend guarantees this
-  // field, unlike the optional ones above. See
-  // plan/ai/tools/career/step-XX-job-match-skills.md and
-  // plan/ai/tools/career/step-XX-semantic-match-observability.md.
-  matchedSkills: MatchedSkill[]
-}
-
-// MatchedSkill (step XX) — 'literal' (an exact keyword/phrase hit) or
-// 'semantic' (no literal hit, but the skill's own meaning was close
-// enough to some sentence of the job description per the active
-// model). Only meaningful for matchKind === 'deterministic' — an
-// 'ai' match's own skills always report 'literal' from the backend
-// (it has no literal/semantic distinction of its own), so callers
-// should not render this badge for an 'ai' match.
-export interface MatchedSkill {
-  skill: string
-  kind: 'literal' | 'semantic'
+  // matched persona's own skills list) that explain matchScore. Always
+  // present as an array (possibly empty), never undefined — the
+  // backend guarantees this field, unlike the optional ones above. See
+  // plan/ai/tools/career/step-XX-job-match-skills.md.
+  matchedSkills: string[]
 }
 
 export interface JobsResult {
@@ -462,92 +433,6 @@ export async function updateJobMatch(
   if (!res.ok && res.status !== 204) {
     const text = await res.text().catch(() => '')
     throw new Error(text || `failed to update job match (${res.status})`)
-  }
-}
-
-// startJobMatchNow triggers the deterministic, no-AI "Match now"
-// mechanism (job_match_now.go) — the backend starts tracking the
-// attempt and runs it in a detached goroutine itself; unlike the AI
-// path, there is no conversation to create/track client-side at all,
-// so this is a single fire-and-forget call. The caller polls
-// fetchJob(jobId) until matchStatus leaves 'matching'. See
-// plan/ai/tools/career/step-XX-deterministic-job-match.md.
-export async function startJobMatchNow(jobId: string, profileId: string): Promise<void> {
-  const res = await fetch(`${PROXY_BASE}/jobs/match/now`, {
-    method: 'POST',
-    credentials: 'include',
-    body: JSON.stringify({ jobId, profileId }),
-  })
-  if (!res.ok) {
-    const text = await res.text().catch(() => '')
-    throw new Error(text || `failed to start job match (${res.status})`)
-  }
-}
-
-// --- semantic match models (Job Settings page) ---
-//
-// A small, hardcoded catalog of pretrained word-vector files
-// (tools/career/backend/semantic_model.go) "Match now" can optionally
-// use for a fuzzy, meaning-based fallback on skills that don't
-// literally appear in a job's text. Downloaded on demand into the
-// backend's own data directory (never bundled into the binary), and
-// loaded into memory only while a match is actually running. See
-// plan/ai/tools/career/step-XX-semantic-match-models.md.
-export type SemanticModelStatus = 'not_downloaded' | 'downloading' | 'extracting' | 'ready' | 'failed'
-
-export interface SemanticModelCatalogEntry {
-  id: string
-  label: string
-  dimensions: number
-  corpus: string
-  quality: string
-  approxDownloadMb: number
-  approxExtractedMb: number
-  status: SemanticModelStatus
-  progressPercent: number
-  errorMessage?: string
-  active: boolean
-  downloadedAt?: string
-}
-
-export async function fetchModelCatalog(): Promise<SemanticModelCatalogEntry[]> {
-  const res = await fetch(`${PROXY_BASE}/jobs/model/catalog`, { credentials: 'include' })
-  return jsonOrThrow<SemanticModelCatalogEntry[]>(res, 'load semantic model catalog')
-}
-
-export async function startModelDownload(modelId: string): Promise<void> {
-  const res = await fetch(`${PROXY_BASE}/jobs/model/download`, {
-    method: 'POST',
-    credentials: 'include',
-    body: JSON.stringify({ modelId }),
-  })
-  if (!res.ok) {
-    const text = await res.text().catch(() => '')
-    throw new Error(text || `failed to start model download (${res.status})`)
-  }
-}
-
-export async function selectModel(modelId: string): Promise<void> {
-  const res = await fetch(`${PROXY_BASE}/jobs/model/select`, {
-    method: 'POST',
-    credentials: 'include',
-    body: JSON.stringify({ modelId }),
-  })
-  if (!res.ok && res.status !== 204) {
-    const text = await res.text().catch(() => '')
-    throw new Error(text || `failed to select model (${res.status})`)
-  }
-}
-
-export async function removeModel(modelId: string): Promise<void> {
-  const res = await fetch(`${PROXY_BASE}/jobs/model`, {
-    method: 'DELETE',
-    credentials: 'include',
-    body: JSON.stringify({ modelId }),
-  })
-  if (!res.ok && res.status !== 204) {
-    const text = await res.text().catch(() => '')
-    throw new Error(text || `failed to remove model (${res.status})`)
   }
 }
 
