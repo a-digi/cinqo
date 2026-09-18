@@ -319,22 +319,13 @@ type crawlRunResponse struct {
 }
 
 func toCrawlRunResponse(r *crawlRun) crawlRunResponse {
-	var lines []string
-	for _, line := range strings.Split(strings.TrimRight(r.Log, "\n"), "\n") {
-		if line != "" {
-			lines = append(lines, line)
-		}
-	}
-	if lines == nil {
-		lines = []string{}
-	}
 	return crawlRunResponse{
 		CrawlRunID:    r.ID,
 		Kind:          r.Kind,
 		Status:        r.Status,
 		StartedAt:     r.StartedAt,
 		FinishedAt:    r.FinishedAt,
-		Log:           lines,
+		Log:           splitCrawlRunLog(r.Log),
 		ResultSummary: r.ResultSummary,
 		ErrorMessage:  r.ErrorMessage,
 		Phase:         r.Phase,
@@ -482,6 +473,14 @@ func runCrawlNow(ctx context.Context, runID, portalLinkID, accessToken string) {
 		fail(err)
 		return
 	}
+	// portal_pacing.go — the owning portal's own id, not the link's:
+	// browser's own rateLimitKey paces page fetches across EVERY link
+	// belonging to this portal, not just within this one run.
+	portalID, err := getPortalIDForLink(portalLinkID)
+	if err != nil {
+		fail(err)
+		return
+	}
 
 	// step 37 — navigate and extract are now ONE call, not two: a real,
 	// confirmed race existed here before this fix. Career used to call
@@ -503,9 +502,10 @@ func runCrawlNow(ctx context.Context, runID, portalLinkID, accessToken string) {
 	// exactly what req's own Container/Fields carry.
 	pagRequest := struct {
 		crawlRequest
-		URL       string `json:"url"`
-		RequestID string `json:"requestId"`
-	}{crawlRequest: req, URL: linkURL, RequestID: runID}
+		URL          string `json:"url"`
+		RequestID    string `json:"requestId"`
+		RateLimitKey string `json:"rateLimitKey"`
+	}{crawlRequest: req, URL: linkURL, RequestID: runID, RateLimitKey: portalID}
 	pagBody, err := json.Marshal(pagRequest)
 	if err != nil {
 		fail(err)

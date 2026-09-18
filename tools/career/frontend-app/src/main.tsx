@@ -31,6 +31,7 @@ import { JobsPage } from './Components/JobsPage/JobsPage'
 import { CompaniesPage } from './Components/CompaniesPage/CompaniesPage'
 import { RecruitersPage } from './Components/RecruitersPage/RecruitersPage'
 import { PortalsPage } from './Components/PortalsPage/PortalsPage'
+import { CrawlMonitorPage } from './Crawler/CrawlMonitor/CrawlMonitorPage'
 import { ImportCvPage } from './Components/ImportCv/ImportCvPage'
 import './index.css'
 
@@ -44,6 +45,7 @@ const JOBS_PATH = '/tools/career/jobs'
 const COMPANIES_PATH = '/tools/career/companies'
 const RECRUITERS_PATH = '/tools/career/recruiters'
 const PORTALS_PATH = '/tools/career/portals'
+const CRAWL_MONITOR_PATH = '/tools/career/crawl-monitor'
 
 window.__cinqoToolBridge.registerMenuEntry({
   label: 'Career',
@@ -102,6 +104,11 @@ window.__cinqoToolBridge.registerMenuEntry({
         {
           label: 'Portals',
           path: PORTALS_PATH,
+          scopes: ['tool:career:portals'],
+        },
+        {
+          label: 'Crawl Monitor',
+          path: CRAWL_MONITOR_PATH,
           scopes: ['tool:career:portals'],
         },
       ],
@@ -198,6 +205,14 @@ window.__cinqoToolBridge.registerRoute({
   path: PORTALS_PATH,
   mount: (container) => {
     mountReact(container, <PortalsPage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: CRAWL_MONITOR_PATH,
+  mount: (container) => {
+    mountReact(container, <CrawlMonitorPage />)
   },
   unmount: unmountReact,
 })

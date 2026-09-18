@@ -38,8 +38,8 @@ export interface CrawlRun {
   errorMessage: string | null
   // phase (step 39) is the single most recent fine-grained step this
   // run has reached — a plain string, not a TS union: it only ever
-  // needs a lookup-table label (see PortalsPage.tsx's own
-  // PHASE_LABELS) and a special case for 'awaiting_human_challenge',
+  // needs a lookup-table label (see crawlPhase.ts's own PHASE_LABELS)
+  // and a special case for 'awaiting_human_challenge',
   // and a union would need updating here every time the backend's own
   // fixed vocabulary changes, for no real type-safety benefit (the
   // value always comes from the network). null until the first phase
@@ -139,4 +139,35 @@ export async function fetchActiveCrawlRun(portalLinkId: string): Promise<CrawlRu
   if (res.status === 404) return null
   if (!res.ok) throw new Error(`failed to load crawl status (${res.status})`)
   return res.json() as Promise<CrawlRun>
+}
+
+// ActiveCrawlRunSummary mirrors tools/career/backend/crawl_monitor.go's
+// own activeCrawlRunSummary — one currently-running crawl_runs row
+// (of either kind) plus its own owning portal link/portal context, the
+// Crawl Monitor page's own data source.
+export interface ActiveCrawlRunSummary {
+  crawlRunId: string
+  kind: 'listing' | 'job_detail'
+  portalId: string
+  portalName: string
+  portalLinkId: string
+  portalLinkTitle?: string
+  portalLinkUrl: string
+  status: 'running'
+  startedAt: string
+  phase: string | null
+  log: string[]
+}
+
+const CRAWL_MONITOR_URL = '/api/v1/tools/career/proxy/portal-links/crawl-runs/active'
+
+// fetchActiveCrawlRuns returns EVERY currently-running crawl run across
+// every portal/link, oldest-started first — the centralized monitoring
+// view's own data source. See
+// plan/ai/tools/career/step-XX-portal-crawl-pacing.md.
+export async function fetchActiveCrawlRuns(): Promise<ActiveCrawlRunSummary[]> {
+  const res = await fetch(CRAWL_MONITOR_URL, { credentials: 'include' })
+  if (!res.ok) throw new Error(`failed to load active crawl runs (${res.status})`)
+  const body = (await res.json()) as { runs: ActiveCrawlRunSummary[] }
+  return body.runs
 }

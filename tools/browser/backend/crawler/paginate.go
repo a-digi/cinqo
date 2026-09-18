@@ -35,6 +35,24 @@ import (
 // kills the call outright.
 const paginatedCrawlTimeout = 35 * time.Second
 
+// paginatedCrawlTimeoutWithPacing replaces paginatedCrawlTimeout
+// whenever rateLimitKey is set (portal_pacing.go) — i.e. only ever for
+// Career's own deterministic calls, never the AI-driven path (which
+// never sets rateLimitKey and is completely unaffected by this
+// constant). paginatedCrawlTimeout's own 35s budget is sized for the
+// AI path's hard external ceiling (the MCP host's own 45s invoke
+// timeout) and has no slack at all for maxAllowedPaginationPages pages
+// each also waiting up to maxPortalCrawlDelay between them — a real
+// conflict, not a hypothetical: without this, pacing would make a
+// multi-page listing crawl reliably stop after 1 page with
+// "time_budget_reached" the moment the first pacing wait alone
+// approached this budget. Career's own outbound HTTP call has no such
+// external ceiling (crawlNowHTTPClient's own 100-minute timeout,
+// crawl_now.go), so this can be generous: sized for
+// maxAllowedPaginationPages pages at up to maxPortalCrawlDelay pacing
+// plus real navigate/extract time each, with margin.
+const paginatedCrawlTimeoutWithPacing = 10 * time.Minute
+
 // normalSessionPaginatedCrawlTimeout bounds one headed-Chrome
 // paginated-crawl fallback end to end. Raised from step 26's original
 // 150s specifically so the SAME headed window stays open for the whole
@@ -154,6 +172,15 @@ type paginatedCrawlRequest struct {
 	// RequestID (step 31) — same optional, opt-in phase-tracking field
 	// crawlRequest (crawl.go) carries; see that field's own doc comment.
 	RequestID string `json:"requestId,omitempty"`
+	// RateLimitKey (step XX) is optional — when set, a randomized
+	// 10-30s pacing delay (portal_pacing.go) is enforced before every
+	// page fetch this call performs, shared across every OTHER call
+	// using the same key (Career sets this to the owning portal's own
+	// id, across every link belonging to it). Absent for every
+	// AI-driven call — crawl_paginated's own MCP-facing args never set
+	// this, so that path is completely unaffected. See
+	// plan/ai/tools/career/step-XX-portal-crawl-pacing.md.
+	RateLimitKey string `json:"rateLimitKey,omitempty"`
 }
 
 // PaginatedCrawlHandler handles POST /crawl-paginated — the --mcp
@@ -202,7 +229,7 @@ func PaginatedCrawlHandler(w http.ResponseWriter, r *http.Request) {
 	settings, _ := shared.LoadBrowserSettings()
 	captureHTML := settings.DebugEnabled && settings.DebugLogHTML
 
-	result, pageHTML, err := performPaginatedCrawl(body.URL, body.Container, body.Fields, body.Mapping, body.NextSelector, body.RequestedMaxPages, body.EffectiveMaxPages, captureHTML, body.RequestID)
+	result, pageHTML, err := performPaginatedCrawl(body.URL, body.Container, body.Fields, body.Mapping, body.NextSelector, body.RequestedMaxPages, body.EffectiveMaxPages, captureHTML, body.RequestID, body.RateLimitKey)
 	if err != nil {
 		setCrawlPhase(body.RequestID, phaseFailed, err.Error())
 		var cfErr *crawlError
@@ -250,7 +277,7 @@ func PaginatedCrawlHandler(w http.ResponseWriter, r *http.Request) {
 // reach the live AI-facing JSON response; only PaginatedCrawlHandler's
 // own saveCrawlLog call (crawl_log.go) ever sees it. See
 // plan/ai/tools/browser/step-22-debug-mode-and-log-management.md.
-func runPaginatedCrawlLoop(ctx context.Context, container string, fields []extractField, mapping map[string]string, nextSelector string, requestedMaxPages, effectiveMaxPages int, captureHTML bool, requestID string) (paginatedCrawlResponse, []string, error) {
+func runPaginatedCrawlLoop(ctx context.Context, container string, fields []extractField, mapping map[string]string, nextSelector string, requestedMaxPages, effectiveMaxPages int, captureHTML bool, requestID, rateLimitKey string) (paginatedCrawlResponse, []string, error) {
 	pages := make([]pageExtractResult, 0, effectiveMaxPages)
 	var pageHTML []string
 	if captureHTML {
@@ -398,6 +425,18 @@ func runPaginatedCrawlLoop(ctx context.Context, container string, fields []extra
 			break
 		}
 
+		// portal_pacing.go — a no-op when rateLimitKey is "" (every
+		// AI-driven call). Checked here, right before clicking through
+		// to the NEXT page, not at the top of the loop — page 1 was
+		// already paced by performPaginatedCrawl's own pre-navigate
+		// call, and there's nothing to pace an ALREADY-stopped loop
+		// for (the break above already handles "no more pages").
+		awaitPortalCrawlPacing(ctx, rateLimitKey)
+		if ctx.Err() != nil {
+			stoppedReason = "time_budget_reached"
+			break
+		}
+
 		if err := chromedp.Run(ctx, chromedp.Click(nextSelector), chromedp.Sleep(SettleDelay)); err != nil {
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 				stoppedReason = "time_budget_reached"
@@ -470,7 +509,7 @@ func runPaginatedCrawlLoop(ctx context.Context, container string, fields []extra
 // concurrent crawl's own navigate land in the gap and silently redirect
 // this call's own extraction to the wrong page. See
 // plan/ai/tools/browser/step-37-atomic-navigate-and-extract.md.
-func performPaginatedCrawl(url, container string, fields []extractField, mapping map[string]string, nextSelector string, requestedMaxPages, effectiveMaxPages int, captureHTML bool, requestID string) (paginatedCrawlResponse, []string, error) {
+func performPaginatedCrawl(url, container string, fields []extractField, mapping map[string]string, nextSelector string, requestedMaxPages, effectiveMaxPages int, captureHTML bool, requestID, rateLimitKey string) (paginatedCrawlResponse, []string, error) {
 	// step 63.2 — registered before anything else in this call, same
 	// reasoning as crawlPage's own identical registration (crawl.go):
 	// cancellable via cancelCrawl(requestID) from the instant this call
@@ -515,7 +554,11 @@ func performPaginatedCrawl(url, container string, fields []extractField, mapping
 			return paginatedCrawlResponse{}, nil, "", NewSessionWedgedError(err, recreateErr)
 		}
 
-		ctx, cancel := context.WithTimeout(shared.Ctx, paginatedCrawlTimeout)
+		timeout := paginatedCrawlTimeout
+		if rateLimitKey != "" {
+			timeout = paginatedCrawlTimeoutWithPacing
+		}
+		ctx, cancel := context.WithTimeout(shared.Ctx, timeout)
 		defer cancel()
 		// step 63.2 — links this call's own ctx to reqCtx, same pattern
 		// as crawlPage's own identical goroutine (crawl.go) — every
@@ -535,6 +578,15 @@ func performPaginatedCrawl(url, container string, fields []extractField, mapping
 		}()
 
 		if url != "" {
+			// portal_pacing.go — a no-op when rateLimitKey is "" (every
+			// AI-driven call). Paces THIS call's own first/only page
+			// against every other call sharing the same key, whether
+			// that's a different link under the same portal or an
+			// earlier page of this exact multi-page sequence.
+			awaitPortalCrawlPacing(ctx, rateLimitKey)
+			if ctx.Err() != nil {
+				return paginatedCrawlResponse{}, nil, "", classifyCancellation(ctx.Err(), reqCtx, shared.Ctx)
+			}
 			setCrawlPhase(requestID, phaseNavigating, "navigating to "+url)
 			if err := chromedp.Run(ctx, chromedp.Navigate(url), chromedp.Sleep(SettleDelay)); err != nil {
 				return paginatedCrawlResponse{}, nil, "", classifyCancellation(err, reqCtx, shared.Ctx)
@@ -579,7 +631,7 @@ func performPaginatedCrawl(url, container string, fields []extractField, mapping
 			}
 		}
 
-		result, pageHTML, err := runPaginatedCrawlLoop(ctx, container, fields, mapping, nextSelector, requestedMaxPages, effectiveMaxPages, captureHTML, requestID)
+		result, pageHTML, err := runPaginatedCrawlLoop(ctx, container, fields, mapping, nextSelector, requestedMaxPages, effectiveMaxPages, captureHTML, requestID, rateLimitKey)
 
 		var cfErr *crawlError
 		if !errors.As(err, &cfErr) {
@@ -603,7 +655,7 @@ func performPaginatedCrawl(url, container string, fields []extractField, mapping
 
 	var cfErr *crawlError
 	if errors.As(err, &cfErr) && blockedURL != "" {
-		return performPaginatedCrawlWithNormalSession(reqCtx, blockedURL, container, fields, mapping, nextSelector, requestedMaxPages, effectiveMaxPages, captureHTML, requestID)
+		return performPaginatedCrawlWithNormalSession(reqCtx, blockedURL, container, fields, mapping, nextSelector, requestedMaxPages, effectiveMaxPages, captureHTML, requestID, rateLimitKey)
 	}
 	return result, pageHTML, err
 }
@@ -653,7 +705,7 @@ const maxHumanWaitRounds = 3
 // waitForHumanToClearCloudflare change exists for), just given another
 // chance to actually clear when the first "solved" call turns out to
 // have been wrong.
-func performPaginatedCrawlWithNormalSession(reqCtx context.Context, blockedURL, container string, fields []extractField, mapping map[string]string, nextSelector string, requestedMaxPages, effectiveMaxPages int, captureHTML bool, requestID string) (paginatedCrawlResponse, []string, error) {
+func performPaginatedCrawlWithNormalSession(reqCtx context.Context, blockedURL, container string, fields []extractField, mapping map[string]string, nextSelector string, requestedMaxPages, effectiveMaxPages int, captureHTML bool, requestID, rateLimitKey string) (paginatedCrawlResponse, []string, error) {
 	shared.NormalSessionMu.Lock()
 	defer shared.NormalSessionMu.Unlock()
 
@@ -695,7 +747,7 @@ func performPaginatedCrawlWithNormalSession(reqCtx context.Context, blockedURL, 
 		return paginatedCrawlResponse{}, nil, classifyCancellation(err, reqCtx, shared.Ctx)
 	}
 
-	result, pageHTML, err := runPaginatedCrawlLoop(ctx, container, fields, mapping, nextSelector, requestedMaxPages, effectiveMaxPages, captureHTML, requestID)
+	result, pageHTML, err := runPaginatedCrawlLoop(ctx, container, fields, mapping, nextSelector, requestedMaxPages, effectiveMaxPages, captureHTML, requestID, rateLimitKey)
 
 	var cfErr *crawlError
 	if !errors.As(err, &cfErr) {
@@ -715,7 +767,7 @@ func performPaginatedCrawlWithNormalSession(reqCtx context.Context, blockedURL, 
 			return paginatedCrawlResponse{}, nil, cfErr
 		}
 
-		result, pageHTML, err = runPaginatedCrawlLoop(ctx, container, fields, mapping, nextSelector, requestedMaxPages, effectiveMaxPages, captureHTML, requestID)
+		result, pageHTML, err = runPaginatedCrawlLoop(ctx, container, fields, mapping, nextSelector, requestedMaxPages, effectiveMaxPages, captureHTML, requestID, rateLimitKey)
 		if !errors.As(err, &cfErr) {
 			return result, pageHTML, classifyCancellation(err, reqCtx, shared.Ctx)
 		}

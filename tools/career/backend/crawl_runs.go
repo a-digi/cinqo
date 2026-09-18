@@ -133,6 +133,27 @@ func finishCrawlRun(id, status string, resultSummary, errorMessage *string) erro
 	return err
 }
 
+// splitCrawlRunLog splits a crawl_runs.log column's own raw,
+// newline-delimited "RFC3339<TAB>message" string into individual
+// entries — shared by toCrawlRunResponse (crawl_now.go) and the
+// crawl-monitor endpoint (crawl_monitor.go), both of which need the
+// same "one log line per entry, no trailing empty line" shape. Never
+// nil — an empty log becomes [], not null, so callers' own JSON
+// encoding is consistent regardless of whether any log lines exist
+// yet.
+func splitCrawlRunLog(log string) []string {
+	var lines []string
+	for _, line := range strings.Split(strings.TrimRight(log, "\n"), "\n") {
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+	if lines == nil {
+		lines = []string{}
+	}
+	return lines
+}
+
 // scanCrawlRun is the one shared Scan shape findActiveCrawlRun/
 // findMostRecentCrawlRun both use.
 func scanCrawlRun(row *sql.Row) (*crawlRun, error) {

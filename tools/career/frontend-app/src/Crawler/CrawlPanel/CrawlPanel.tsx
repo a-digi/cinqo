@@ -11,29 +11,9 @@ import {
   generateJobDetailInstructionsConversationTitle,
 } from '../generateInstructions'
 import { startCrawlNow, startCrawlJobDetailsNow, stopCrawlNow, fetchActiveCrawlRun, type CrawlRun } from '../crawlNow'
+import { phaseLabel, latestCrawlLogMessage } from '../crawlPhase'
 import { PlayIcon, StopIcon, SparkleIcon, LogIcon, AlertIcon, RobotIcon } from '../../Shared/Icons/icons'
 import { Typewriter } from '../../Shared/Typewriter/Typewriter'
-
-// PHASE_LABELS (step 40) — a human-readable sentence per fine-grained
-// crawl_runs.phase value (step 39). A plain lookup, not a switch,
-// since crawlNow.ts's own CrawlRun.phase is deliberately a plain
-// string, not a TS union — see that field's own doc comment.
-const PHASE_LABELS: Record<string, string> = {
-  building_request: 'Preparing crawl instructions',
-  navigating: 'Opening the page',
-  checking_cloudflare: 'Checking for a Cloudflare challenge',
-  awaiting_human_challenge: 'Waiting for you to solve a Cloudflare challenge',
-  extracting: 'Extracting job listings',
-  ingesting_jobs: 'Saving jobs',
-}
-
-// phaseLabel falls back to the raw phase string for a value not yet in
-// PHASE_LABELS (e.g. a phase the backend adds later than this table) —
-// still shows *something* meaningful rather than nothing.
-function phaseLabel(phase: string | null): string | null {
-  if (!phase) return null
-  return PHASE_LABELS[phase] ?? phase
-}
 
 // A crawl run's own log is sparse (four or five entries total), so a
 // tighter poll than this (coarser than the AI conversation feature's
@@ -42,18 +22,6 @@ const CRAWL_POLL_INTERVAL_MS = 3000
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-// latestCrawlLogMessage strips the leading "RFC3339<TAB>" the
-// backend's own log entries carry (crawl_runs.go's appendCrawlRunLog)
-// and returns just the human-readable message part of the most recent
-// one — the live "what's happening right now" text shown next to the
-// "Stop watching" button while a run is still in progress.
-function latestCrawlLogMessage(log: string[]): string | null {
-  if (log.length === 0) return null
-  const last = log[log.length - 1]
-  const tabIndex = last.indexOf('\t')
-  return tabIndex >= 0 ? last.slice(tabIndex + 1) : last
 }
 
 // CrawlPanel — one instance per portal link (extracted out of

@@ -78,6 +78,7 @@ func runHTTPServer() {
 	http.HandleFunc("/portal-links/ingest-crawl-results", ingestCrawlResultsHandler)
 	http.HandleFunc("/portal-links/crawl-now", crawlNowHandler)
 	http.HandleFunc("/portal-links/crawl-job-details-now", crawlJobDetailsNowHandler)
+	http.HandleFunc("/portal-links/crawl-runs/active", crawlMonitorHandler)
 	http.HandleFunc("/portal-links/crawl-now/active", crawlNowActiveHandler)
 	http.HandleFunc("/portal-links/crawl-now/cancel", crawlNowCancelHandler)
 	http.HandleFunc("/cv-import/upload", uploadCVHandler)

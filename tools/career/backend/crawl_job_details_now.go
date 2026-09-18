@@ -140,6 +140,15 @@ func runJobDetailCrawlNow(ctx context.Context, runID, portalLinkID string, targe
 		fail(err)
 		return
 	}
+	// portal_pacing.go — the owning portal's own id, not the link's:
+	// browser's own rateLimitKey paces page fetches (here, one per job)
+	// across EVERY link belonging to this portal, not just this link's
+	// own jobs.
+	portalID, err := getPortalIDForLink(portalLinkID)
+	if err != nil {
+		fail(err)
+		return
+	}
 
 	updated, skipped := 0, 0
 	for i, target := range targets {
@@ -156,9 +165,10 @@ func runJobDetailCrawlNow(ctx context.Context, runID, portalLinkID string, targe
 
 		pagRequest := struct {
 			crawlRequest
-			URL       string `json:"url"`
-			RequestID string `json:"requestId"`
-		}{crawlRequest: req, URL: target.SourceURL, RequestID: runID}
+			URL          string `json:"url"`
+			RequestID    string `json:"requestId"`
+			RateLimitKey string `json:"rateLimitKey"`
+		}{crawlRequest: req, URL: target.SourceURL, RequestID: runID, RateLimitKey: portalID}
 		pagBody, err := json.Marshal(pagRequest)
 		if err != nil {
 			skipped++

@@ -544,6 +544,23 @@ func getPortalLinkURL(id string) (string, error) {
 	return url, nil
 }
 
+// getPortalIDForLink reads just a link's own owning portal_id — the
+// deterministic crawl goroutines (crawl_now.go, crawl_job_details_now.go)
+// need it to set browser's own rateLimitKey (portal_pacing.go,
+// tools/browser/backend/crawler), which paces page fetches across
+// EVERY link belonging to the same portal, not just within one link's
+// own run. See plan/ai/tools/career/step-XX-portal-crawl-pacing.md.
+func getPortalIDForLink(id string) (string, error) {
+	if err := requirePortalLinkExists(id); err != nil {
+		return "", err
+	}
+	var portalID string
+	if err := jobsDB.QueryRow(`SELECT portal_id FROM portal_links WHERE id = ?`, id).Scan(&portalID); err != nil {
+		return "", err
+	}
+	return portalID, nil
+}
+
 func getPortalLinkCrawlInstructions(id string) (string, error) {
 	if err := requirePortalLinkExists(id); err != nil {
 		return "", err
