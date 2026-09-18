@@ -19,9 +19,18 @@ const SIDEBAR_INDENT_STEP_PX = 12
 // (System, Security) is a plain toggle button, not a link — clicking it
 // expands/collapses its children instead of navigating anywhere. See
 // plan/ai/frontend/frontend/step-06-nested-menu-system.md.
-export function SidebarMenuItem({ entry, depth }: { entry: MenuEntry; depth: number }) {
+//
+// forceExpanded (sidebar search) overrides the local manual toggle
+// state while a search query is active — a matched grandchild must
+// stay reachable even under an ancestor the user never explicitly
+// expanded. isExpanded's own state is left untouched underneath, so
+// clearing the search query restores whatever the user had manually
+// expanded/collapsed before searching, unchanged. See
+// plan/ai/frontend/frontend/step-XX-sidebar-search-and-scroll.md.
+export function SidebarMenuItem({ entry, depth, forceExpanded }: { entry: MenuEntry; depth: number; forceExpanded?: boolean }) {
   const location = useLocation()
   const [isExpanded, setIsExpanded] = useState(() => hasActiveDescendant(entry, location.pathname))
+  const expanded = forceExpanded ? true : isExpanded
   const hasChildren = !!entry.children?.length
   const paddingLeft = depth * SIDEBAR_INDENT_STEP_PX
 
@@ -53,7 +62,7 @@ export function SidebarMenuItem({ entry, depth }: { entry: MenuEntry; depth: num
             onClick={() => {
               setIsExpanded((prev) => !prev)
             }}
-            aria-expanded={isExpanded}
+            aria-expanded={expanded}
             style={{ paddingLeft }}
             className="flex flex-1 items-center gap-2 rounded-md py-2 pr-3 text-left text-sm font-medium text-gray-500"
           >
@@ -67,18 +76,18 @@ export function SidebarMenuItem({ entry, depth }: { entry: MenuEntry; depth: num
             onClick={() => {
               setIsExpanded((prev) => !prev)
             }}
-            aria-expanded={isExpanded}
-            aria-label={isExpanded ? `Collapse ${entry.label}` : `Expand ${entry.label}`}
+            aria-expanded={expanded}
+            aria-label={expanded ? `Collapse ${entry.label}` : `Expand ${entry.label}`}
             className="px-2 py-2 text-gray-400 hover:text-gray-600"
           >
-            <CaretIcon open={isExpanded} />
+            <CaretIcon open={expanded} />
           </button>
         )}
       </div>
-      {hasChildren && isExpanded && (
+      {hasChildren && expanded && (
         <ul>
           {entry.children?.map((child) => (
-            <SidebarMenuItem key={child.label} entry={child} depth={depth + 1} />
+            <SidebarMenuItem key={child.label} entry={child} depth={depth + 1} forceExpanded={forceExpanded} />
           ))}
         </ul>
       )}
