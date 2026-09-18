@@ -28,6 +28,7 @@ import (
 
 	"career-tool-backend/db"
 	"career-tool-backend/jobs"
+	"career-tool-backend/persona"
 )
 
 // startJobMatch begins tracking a new AI-driven match attempt for
@@ -115,7 +116,7 @@ func saveJobMatchResult(jobId, profileId, personaId string, score int, matchedSk
 		return errInvalidMatchScore
 	}
 
-	details, err := fetchPersonaDetails(personaId)
+	details, err := persona.FetchPersonaDetails(personaId)
 	if err != nil {
 		return err
 	}

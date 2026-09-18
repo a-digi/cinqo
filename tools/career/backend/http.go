@@ -32,15 +32,15 @@ import (
 	"career-tool-backend/companies"
 	"career-tool-backend/db"
 	"career-tool-backend/jobs"
+	"career-tool-backend/persona"
 	"career-tool-backend/portal"
 )
 
-// writePersonaAwareError maps errUnknownPersona to a 400 (a caller
-// mistake) and everything else to a 500, matching
-// persona_details.go's own personaAwareErrResult reasoning on the MCP
-// side.
+// writePersonaAwareError maps persona.ErrUnknownPersona to a 400 (a
+// caller mistake) and everything else to a 500, matching the persona
+// package's own personaAwareErrResult reasoning on the MCP side.
 func writePersonaAwareError(w http.ResponseWriter, action string, err error) {
-	if errors.Is(err, errUnknownPersona) {
+	if errors.Is(err, persona.ErrUnknownPersona) {
 		http.Error(w, "unknown persona id", http.StatusBadRequest)
 		return
 	}
@@ -224,7 +224,7 @@ type personaUpdateRequest struct {
 func personasHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		personas, err := listPersonas(r.URL.Query().Get("profileId"))
+		personas, err := persona.ListPersonas(r.URL.Query().Get("profileId"))
 		if err != nil {
 			http.Error(w, "failed to list personas: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -241,12 +241,16 @@ func personasHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "profileId is required", http.StatusBadRequest)
 			return
 		}
-		id, err := createPersona(body.ProfileID, body.Name, body.Description)
+		id, err := persona.CreatePersona(body.ProfileID, body.Name, body.Description)
 		if err != nil {
-			writeProfileAwareError(w, "create persona", err)
+			if errors.Is(err, persona.ErrUnknownProfile) {
+				http.Error(w, "unknown profile id", http.StatusBadRequest)
+				return
+			}
+			http.Error(w, "failed to create persona: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		personas, err := listPersonas("")
+		personas, err := persona.ListPersonas("")
 		if err != nil {
 			http.Error(w, "persona created but failed to reload: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -259,11 +263,11 @@ func personasHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "id is required", http.StatusBadRequest)
 			return
 		}
-		if err := updatePersona(body.ID, body.Name, body.Description); err != nil {
+		if err := persona.UpdatePersona(body.ID, body.Name, body.Description); err != nil {
 			writePersonaAwareError(w, "update persona", err)
 			return
 		}
-		personas, err := listPersonas("")
+		personas, err := persona.ListPersonas("")
 		if err != nil {
 			http.Error(w, "persona updated but failed to reload: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -276,7 +280,7 @@ func personasHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "id query parameter is required", http.StatusBadRequest)
 			return
 		}
-		if err := deletePersona(id); err != nil {
+		if err := persona.DeletePersona(id); err != nil {
 			http.Error(w, "failed to delete persona: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -297,7 +301,7 @@ func personaDetailsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "personaId query parameter is required", http.StatusBadRequest)
 			return
 		}
-		result, err := fetchPersonaDetails(personaID)
+		result, err := persona.FetchPersonaDetails(personaID)
 		if err != nil {
 			writePersonaAwareError(w, "read persona details", err)
 			return
@@ -305,7 +309,7 @@ func personaDetailsHandler(w http.ResponseWriter, r *http.Request) {
 		db.WriteJSON(w, result)
 
 	case http.MethodPost:
-		var body updatePersonaDetailsArgs
+		var body persona.UpdatePersonaDetailsArgs
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, "invalid request body", http.StatusBadRequest)
 			return
@@ -314,11 +318,11 @@ func personaDetailsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "personaId is required", http.StatusBadRequest)
 			return
 		}
-		if err := updatePersonaDetails(body); err != nil {
+		if err := persona.UpdatePersonaDetails(body); err != nil {
 			writePersonaAwareError(w, "update persona details", err)
 			return
 		}
-		result, err := fetchPersonaDetails(body.PersonaID)
+		result, err := persona.FetchPersonaDetails(body.PersonaID)
 		if err != nil {
 			http.Error(w, "persona details updated but failed to reload: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -345,7 +349,7 @@ func skillsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "personaId query parameter is required", http.StatusBadRequest)
 			return
 		}
-		result, err := fetchPersonaDetails(personaID)
+		result, err := persona.FetchPersonaDetails(personaID)
 		if err != nil {
 			writePersonaAwareError(w, "read skills", err)
 			return
@@ -362,11 +366,11 @@ func skillsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "personaId is required", http.StatusBadRequest)
 			return
 		}
-		if err := addCareerSkill(body.PersonaID, body.Skill); err != nil {
+		if err := persona.AddCareerSkill(body.PersonaID, body.Skill); err != nil {
 			writePersonaAwareError(w, "add skill", err)
 			return
 		}
-		result, err := fetchPersonaDetails(body.PersonaID)
+		result, err := persona.FetchPersonaDetails(body.PersonaID)
 		if err != nil {
 			http.Error(w, "skill added but failed to reload: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -384,7 +388,7 @@ func skillsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "skill query parameter is required", http.StatusBadRequest)
 			return
 		}
-		if err := removeCareerSkill(personaID, skill); err != nil {
+		if err := persona.RemoveCareerSkill(personaID, skill); err != nil {
 			writePersonaAwareError(w, "remove skill", err)
 			return
 		}
@@ -424,7 +428,7 @@ func experienceHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "personaId query parameter is required", http.StatusBadRequest)
 			return
 		}
-		result, err := fetchPersonaDetails(personaID)
+		result, err := persona.FetchPersonaDetails(personaID)
 		if err != nil {
 			writePersonaAwareError(w, "read experience", err)
 			return
@@ -441,11 +445,11 @@ func experienceHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "personaId is required", http.StatusBadRequest)
 			return
 		}
-		if _, err := addCareerExperience(body.PersonaID, body.Company, body.Title, body.StartDate, body.EndDate, body.Description); err != nil {
+		if _, err := persona.AddCareerExperience(body.PersonaID, body.Company, body.Title, body.StartDate, body.EndDate, body.Description); err != nil {
 			writePersonaAwareError(w, "add experience", err)
 			return
 		}
-		result, err := fetchPersonaDetails(body.PersonaID)
+		result, err := persona.FetchPersonaDetails(body.PersonaID)
 		if err != nil {
 			http.Error(w, "experience added but failed to reload: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -462,7 +466,7 @@ func experienceHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "personaId is required", http.StatusBadRequest)
 			return
 		}
-		if err := updateCareerExperience(updateCareerExperienceArgs{
+		if err := persona.UpdateCareerExperience(persona.UpdateCareerExperienceArgs{
 			PersonaID:   body.PersonaID,
 			ID:          body.ID,
 			Company:     body.Company,
@@ -474,7 +478,7 @@ func experienceHandler(w http.ResponseWriter, r *http.Request) {
 			writePersonaAwareError(w, "update experience", err)
 			return
 		}
-		result, err := fetchPersonaDetails(body.PersonaID)
+		result, err := persona.FetchPersonaDetails(body.PersonaID)
 		if err != nil {
 			http.Error(w, "experience updated but failed to reload: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -492,7 +496,7 @@ func experienceHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "id query parameter is required", http.StatusBadRequest)
 			return
 		}
-		if err := removeCareerExperience(personaID, id); err != nil {
+		if err := persona.RemoveCareerExperience(personaID, id); err != nil {
 			writePersonaAwareError(w, "remove experience", err)
 			return
 		}

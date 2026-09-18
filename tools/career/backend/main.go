@@ -33,6 +33,7 @@ import (
 	"career-tool-backend/crawl"
 	"career-tool-backend/db"
 	"career-tool-backend/jobs"
+	"career-tool-backend/persona"
 	"career-tool-backend/portal"
 )
 
@@ -123,17 +124,17 @@ func runMCPServer() {
 	registerDeleteProfile(server)
 	registerAddProfileExternalLink(server)
 	registerRemoveProfileExternalLink(server)
-	registerCreatePersona(server)
-	registerListPersonas(server)
-	registerUpdatePersona(server)
-	registerDeletePersona(server)
-	registerGetPersonaDetails(server)
-	registerUpdatePersonaDetails(server)
-	registerAddCareerSkill(server)
-	registerRemoveCareerSkill(server)
-	registerAddCareerExperience(server)
-	registerRemoveCareerExperience(server)
-	registerUpdateCareerExperience(server)
+	persona.RegisterCreatePersona(server)
+	persona.RegisterListPersonas(server)
+	persona.RegisterUpdatePersona(server)
+	persona.RegisterDeletePersona(server)
+	persona.RegisterGetPersonaDetails(server)
+	persona.RegisterUpdatePersonaDetails(server)
+	persona.RegisterAddCareerSkill(server)
+	persona.RegisterRemoveCareerSkill(server)
+	persona.RegisterAddCareerExperience(server)
+	persona.RegisterRemoveCareerExperience(server)
+	persona.RegisterUpdateCareerExperience(server)
 	jobs.RegisterSaveJob(server)
 	jobs.RegisterListJobs(server)
 	jobs.RegisterSearchJobs(server)

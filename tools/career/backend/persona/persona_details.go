@@ -4,15 +4,15 @@
 // location, desired titles/locations, min salary), skills, and
 // experience. Renamed from profile.go/career_profile as of step 10:
 // this was never the job seeker's own profile, it was that persona's
-// own career details — "Profile" now means the job seeker (see the
-// new profile.go). Unlike browser's own login_credentials.go, there
-// is no isolation boundary here at all — the AI reads and writes this
-// data directly and freely, by design: this isn't a secret, it's the
-// thing the AI is meant to help build and use. See
+// own career details — "Profile" now means the job seeker (see
+// profile.go, package main). Unlike browser's own login_credentials.go,
+// there is no isolation boundary here at all — the AI reads and writes
+// this data directly and freely, by design: this isn't a secret, it's
+// the thing the AI is meant to help build and use. See
 // plan/ai/tools/career/step-03-career-profile-tools.md,
 // plan/ai/tools/career/step-08-persona.md, and
 // plan/ai/tools/career/step-10-job-seeker-profile.md.
-package main
+package persona
 
 import (
 	"context"
@@ -51,14 +51,14 @@ type getPersonaDetailsResult struct {
 	Experience     []careerExperience `json:"experience"`
 }
 
-// fetchPersonaDetails reads the given persona's own details row (nil,
+// FetchPersonaDetails reads the given persona's own details row (nil,
 // not an error, if none has been set yet on an otherwise-valid
 // persona — "not configured yet" is a normal, representable state,
 // matching browser's own lookupCredential convention), every skill,
 // and every experience entry, all scoped to personaId. Requires
 // personaId to already exist — an unknown one is a real error, not an
 // empty result, per step 8's own "forced to be mapped" design.
-func fetchPersonaDetails(personaId string) (getPersonaDetailsResult, error) {
+func FetchPersonaDetails(personaId string) (getPersonaDetailsResult, error) {
 	var result getPersonaDetailsResult
 
 	if err := requirePersonaExists(personaId); err != nil {
@@ -121,10 +121,10 @@ func fetchPersonaDetails(personaId string) (getPersonaDetailsResult, error) {
 	return result, expRows.Err()
 }
 
-// updatePersonaDetailsArgs is a partial update — only fields present
+// UpdatePersonaDetailsArgs is a partial update — only fields present
 // (via the *string/*int64 pointers) are touched. Upserts the row
 // keyed by PersonaID, which must already exist.
-type updatePersonaDetailsArgs struct {
+type UpdatePersonaDetailsArgs struct {
 	PersonaID        string  `json:"personaId"`
 	Headline         *string `json:"headline,omitempty"`
 	Summary          *string `json:"summary,omitempty"`
@@ -134,7 +134,7 @@ type updatePersonaDetailsArgs struct {
 	MinSalary        *int64  `json:"minSalary,omitempty"`
 }
 
-func updatePersonaDetails(args updatePersonaDetailsArgs) error {
+func UpdatePersonaDetails(args UpdatePersonaDetailsArgs) error {
 	if err := requirePersonaExists(args.PersonaID); err != nil {
 		return err
 	}
@@ -144,7 +144,7 @@ func updatePersonaDetails(args updatePersonaDetailsArgs) error {
 	// simplest correct way to express "partial update" against
 	// SQLite's own INSERT ... ON CONFLICT without hand-building a
 	// dynamic SET clause.
-	existing, err := fetchPersonaDetails(args.PersonaID)
+	existing, err := FetchPersonaDetails(args.PersonaID)
 	if err != nil {
 		return err
 	}
@@ -187,7 +187,7 @@ func updatePersonaDetails(args updatePersonaDetailsArgs) error {
 	return err
 }
 
-func addCareerSkill(personaId, skill string) error {
+func AddCareerSkill(personaId, skill string) error {
 	if err := requirePersonaExists(personaId); err != nil {
 		return err
 	}
@@ -198,7 +198,7 @@ func addCareerSkill(personaId, skill string) error {
 	return err
 }
 
-func removeCareerSkill(personaId, skill string) error {
+func RemoveCareerSkill(personaId, skill string) error {
 	if err := requirePersonaExists(personaId); err != nil {
 		return err
 	}
@@ -206,7 +206,7 @@ func removeCareerSkill(personaId, skill string) error {
 	return err
 }
 
-func addCareerExperience(personaId, company, title, startDate, endDate, description string) (string, error) {
+func AddCareerExperience(personaId, company, title, startDate, endDate, description string) (string, error) {
 	if err := requirePersonaExists(personaId); err != nil {
 		return "", err
 	}
@@ -221,7 +221,7 @@ func addCareerExperience(personaId, company, title, startDate, endDate, descript
 	return id, nil
 }
 
-func removeCareerExperience(personaId, id string) error {
+func RemoveCareerExperience(personaId, id string) error {
 	if err := requirePersonaExists(personaId); err != nil {
 		return err
 	}
@@ -229,12 +229,12 @@ func removeCareerExperience(personaId, id string) error {
 	return err
 }
 
-// updateCareerExperienceArgs mirrors updatePersonaDetailsArgs's own
+// UpdateCareerExperienceArgs mirrors UpdatePersonaDetailsArgs's own
 // partial-update shape — only fields provided are changed. ID is
 // required and must belong to PersonaID; updating an unknown id (or
 // one belonging to a different persona) is a benign no-op (0 rows
-// affected), the same posture removeCareerExperience already has.
-type updateCareerExperienceArgs struct {
+// affected), the same posture RemoveCareerExperience already has.
+type UpdateCareerExperienceArgs struct {
 	PersonaID   string
 	ID          string
 	Company     *string
@@ -244,7 +244,7 @@ type updateCareerExperienceArgs struct {
 	Description *string
 }
 
-func updateCareerExperience(args updateCareerExperienceArgs) error {
+func UpdateCareerExperience(args UpdateCareerExperienceArgs) error {
 	if err := requirePersonaExists(args.PersonaID); err != nil {
 		return err
 	}
@@ -294,7 +294,7 @@ type getPersonaDetailsArgs struct {
 	PersonaID string `json:"personaId" jsonschema:"the persona whose details to read, from create_persona or list_personas"`
 }
 
-func registerGetPersonaDetails(server *mcp.Server) {
+func RegisterGetPersonaDetails(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "get_persona_details",
 		Description: "Read a persona's own career details (headline/summary/location/desired titles/desired locations/min salary), skills, and experience. personaDetails is null if none has been set yet.",
@@ -302,7 +302,7 @@ func registerGetPersonaDetails(server *mcp.Server) {
 		if args.PersonaID == "" {
 			return db.ErrResult("personaId is required"), nil, nil
 		}
-		result, err := fetchPersonaDetails(args.PersonaID)
+		result, err := FetchPersonaDetails(args.PersonaID)
 		if err != nil {
 			return personaAwareErrResult("read persona details", args.PersonaID, err), nil, nil
 		}
@@ -320,7 +320,7 @@ type updatePersonaDetailsToolArgs struct {
 	MinSalary        *int64  `json:"minSalary,omitempty" jsonschema:"the user's own minimum acceptable salary"`
 }
 
-func registerUpdatePersonaDetails(server *mcp.Server) {
+func RegisterUpdatePersonaDetails(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "update_persona_details",
 		Description: "Update a persona's own career details. Only the fields provided are changed — omitted fields keep their current value.",
@@ -328,7 +328,7 @@ func registerUpdatePersonaDetails(server *mcp.Server) {
 		if args.PersonaID == "" {
 			return db.ErrResult("personaId is required"), nil, nil
 		}
-		err := updatePersonaDetails(updatePersonaDetailsArgs{
+		err := UpdatePersonaDetails(UpdatePersonaDetailsArgs{
 			PersonaID:        args.PersonaID,
 			Headline:         args.Headline,
 			Summary:          args.Summary,
@@ -340,7 +340,7 @@ func registerUpdatePersonaDetails(server *mcp.Server) {
 		if err != nil {
 			return personaAwareErrResult("update persona details", args.PersonaID, err), nil, nil
 		}
-		result, err := fetchPersonaDetails(args.PersonaID)
+		result, err := FetchPersonaDetails(args.PersonaID)
 		if err != nil {
 			return db.ErrResult(fmt.Sprintf("persona details updated but failed to reload: %v", err)), nil, nil
 		}
@@ -353,7 +353,7 @@ type addCareerSkillArgs struct {
 	Skill     string `json:"skill" jsonschema:"the skill to add, e.g. \"Go\""`
 }
 
-func registerAddCareerSkill(server *mcp.Server) {
+func RegisterAddCareerSkill(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "add_career_skill",
 		Description: "Add a skill to a persona's own career details. A no-op if it's already there.",
@@ -364,7 +364,7 @@ func registerAddCareerSkill(server *mcp.Server) {
 		if args.Skill == "" {
 			return db.ErrResult("skill is required"), nil, nil
 		}
-		if err := addCareerSkill(args.PersonaID, args.Skill); err != nil {
+		if err := AddCareerSkill(args.PersonaID, args.Skill); err != nil {
 			return personaAwareErrResult("add skill", args.PersonaID, err), nil, nil
 		}
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("added skill %q", args.Skill)}}}, nil, nil
@@ -376,7 +376,7 @@ type removeCareerSkillArgs struct {
 	Skill     string `json:"skill" jsonschema:"the skill to remove"`
 }
 
-func registerRemoveCareerSkill(server *mcp.Server) {
+func RegisterRemoveCareerSkill(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "remove_career_skill",
 		Description: "Remove a skill from a persona's own career details.",
@@ -387,7 +387,7 @@ func registerRemoveCareerSkill(server *mcp.Server) {
 		if args.Skill == "" {
 			return db.ErrResult("skill is required"), nil, nil
 		}
-		if err := removeCareerSkill(args.PersonaID, args.Skill); err != nil {
+		if err := RemoveCareerSkill(args.PersonaID, args.Skill); err != nil {
 			return personaAwareErrResult("remove skill", args.PersonaID, err), nil, nil
 		}
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("removed skill %q", args.Skill)}}}, nil, nil
@@ -403,7 +403,7 @@ type addCareerExperienceArgs struct {
 	Description string `json:"description,omitempty" jsonschema:"what the role involved"`
 }
 
-func registerAddCareerExperience(server *mcp.Server) {
+func RegisterAddCareerExperience(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "add_career_experience",
 		Description: "Add a work experience entry to a persona's own career details. Returns the new entry's own id.",
@@ -414,7 +414,7 @@ func registerAddCareerExperience(server *mcp.Server) {
 		if args.Company == "" || args.Title == "" {
 			return db.ErrResult("company and title are both required"), nil, nil
 		}
-		id, err := addCareerExperience(args.PersonaID, args.Company, args.Title, args.StartDate, args.EndDate, args.Description)
+		id, err := AddCareerExperience(args.PersonaID, args.Company, args.Title, args.StartDate, args.EndDate, args.Description)
 		if err != nil {
 			return personaAwareErrResult("add experience", args.PersonaID, err), nil, nil
 		}
@@ -427,7 +427,7 @@ type removeCareerExperienceArgs struct {
 	ID        string `json:"id" jsonschema:"the experience entry's own id, from add_career_experience or get_persona_details"`
 }
 
-func registerRemoveCareerExperience(server *mcp.Server) {
+func RegisterRemoveCareerExperience(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "remove_career_experience",
 		Description: "Remove a work experience entry from a persona's own career details.",
@@ -438,7 +438,7 @@ func registerRemoveCareerExperience(server *mcp.Server) {
 		if args.ID == "" {
 			return db.ErrResult("id is required"), nil, nil
 		}
-		if err := removeCareerExperience(args.PersonaID, args.ID); err != nil {
+		if err := RemoveCareerExperience(args.PersonaID, args.ID); err != nil {
 			return personaAwareErrResult("remove experience", args.PersonaID, err), nil, nil
 		}
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "removed"}}}, nil, nil
@@ -455,7 +455,7 @@ type updateCareerExperienceToolArgs struct {
 	Description *string `json:"description,omitempty" jsonschema:"what the role involved"`
 }
 
-func registerUpdateCareerExperience(server *mcp.Server) {
+func RegisterUpdateCareerExperience(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "update_career_experience",
 		Description: "Update a work experience entry on a persona's own career details. Only the fields provided are changed — omitted fields keep their current value. A no-op if id is unknown or belongs to a different persona.",
@@ -466,7 +466,7 @@ func registerUpdateCareerExperience(server *mcp.Server) {
 		if args.ID == "" {
 			return db.ErrResult("id is required"), nil, nil
 		}
-		if err := updateCareerExperience(updateCareerExperienceArgs{
+		if err := UpdateCareerExperience(UpdateCareerExperienceArgs{
 			PersonaID:   args.PersonaID,
 			ID:          args.ID,
 			Company:     args.Company,
@@ -477,7 +477,7 @@ func registerUpdateCareerExperience(server *mcp.Server) {
 		}); err != nil {
 			return personaAwareErrResult("update experience", args.PersonaID, err), nil, nil
 		}
-		result, err := fetchPersonaDetails(args.PersonaID)
+		result, err := FetchPersonaDetails(args.PersonaID)
 		if err != nil {
 			return db.ErrResult(fmt.Sprintf("experience updated but failed to reload: %v", err)), nil, nil
 		}
@@ -487,11 +487,11 @@ func registerUpdateCareerExperience(server *mcp.Server) {
 
 // --- small shared helpers ---
 
-// personaAwareErrResult gives errUnknownPersona a clearer message than
+// personaAwareErrResult gives ErrUnknownPersona a clearer message than
 // the bare "unknown persona id" — every persona-scoped MCP tool routes
 // its own requirePersonaExists failure through this.
 func personaAwareErrResult(action, personaID string, err error) *mcp.CallToolResult {
-	if errors.Is(err, errUnknownPersona) {
+	if errors.Is(err, ErrUnknownPersona) {
 		return db.ErrResult(fmt.Sprintf("failed to %s: unknown persona id %q", action, personaID))
 	}
 	return db.ErrResult(fmt.Sprintf("failed to %s: %v", action, err))
