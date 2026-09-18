@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   fetchJobs,
+  fetchJob,
   removeJob,
   fetchCompanies,
   fetchPortals,
@@ -218,27 +219,51 @@ export function JobsPage() {
   // — used by both a freshly-started match (startMatch, below) and a
   // resumed one (resumeMatchWatch), so a match that finishes while
   // this tab was away is handled identically to one that finishes
-  // live. err is the failure from awaitTurnCompletion, if any;
-  // undefined means the turn itself completed successfully — NOT that
-  // a score was necessarily saved: save_job_match is the AI's own
-  // tool call, made (or not) entirely at its own discretion during
-  // that turn, so a "successful" turn that never called it simply
-  // leaves matchStatus stuck at 'matching' after reload, same as any
-  // other silently-incomplete AI task in this tool.
+  // live. err is the failure from awaitTurnCompletion, if any.
+  //
+  // undefined does NOT mean the match itself finished — only that the
+  // ORCHESTRATOR's own turn did. Under this codebase's own "reply
+  // returns early" architecture (api/src/conversation/subagent.go), a
+  // turn is marked complete the moment the orchestrator's own model
+  // call finishes, even if a sub-agent it spawned (e.g. to crawl a
+  // missing description) is still running — and separately, the model
+  // may simply end its own turn without ever getting around to calling
+  // save_job_match. Either way, job_matches would still be sitting at
+  // 'matching' with nothing left watching it, so the real, server-side
+  // outcome is checked directly here rather than assumed from the turn
+  // alone; a turn that ended without producing a completed match is
+  // recorded as failed, matching this tool's own established
+  // "reconcile/reap what never finished" philosophy elsewhere
+  // (crawl_runs' own stale-run reaper) rather than leaving an
+  // indefinite, silently-stuck "Matching…" state.
   function finishMatch(jobId: string, err?: unknown) {
-    if (!err) {
-      load()
+    if (err) {
+      const text =
+        err instanceof CoreApiError && (err.status === 401 || err.status === 403)
+          ? 'Ask an admin to grant you access to AI conversations.'
+          : err instanceof Error
+            ? err.message
+            : 'Job match failed.'
+      void updateJobMatch(jobId, { status: 'failed', error: text })
+        .catch((recordErr: unknown) => {
+          console.error('failed to record job match failure', jobId, recordErr)
+        })
+        .then(() => {
+          load()
+        })
       return
     }
-    const text =
-      err instanceof CoreApiError && (err.status === 401 || err.status === 403)
-        ? 'Ask an admin to grant you access to AI conversations.'
-        : err instanceof Error
-          ? err.message
-          : 'Job match failed.'
-    void updateJobMatch(jobId, { status: 'failed', error: text })
+    void fetchJob(jobId)
+      .then((job) => {
+        if (job.matchStatus === 'matching') {
+          return updateJobMatch(jobId, {
+            status: 'failed',
+            error: 'The AI finished without completing the match — try again.',
+          })
+        }
+      })
       .catch((recordErr: unknown) => {
-        console.error('failed to record job match failure', jobId, recordErr)
+        console.error('failed to verify job match outcome', jobId, recordErr)
       })
       .then(() => {
         load()
