@@ -19,6 +19,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"career-tool-backend/db"
 )
 
 // errUnknownPersona is returned by requirePersonaExists — and
@@ -33,7 +35,7 @@ var errUnknownPersona = errors.New("unknown persona id")
 // function (persona_details.go) calls before doing anything else.
 func requirePersonaExists(id string) error {
 	var exists int
-	err := careerDB.QueryRow(`SELECT 1 FROM personas WHERE id = ?`, id).Scan(&exists)
+	err := db.CareerDB.QueryRow(`SELECT 1 FROM personas WHERE id = ?`, id).Scan(&exists)
 	switch {
 	case err == sql.ErrNoRows:
 		return errUnknownPersona
@@ -57,7 +59,7 @@ func createPersona(profileId, name, description string) (string, error) {
 		return "", err
 	}
 	id := uuid.NewString()
-	_, err := careerDB.Exec(
+	_, err := db.CareerDB.Exec(
 		`INSERT INTO personas (id, profile_id, name, description, created_at) VALUES (?, ?, ?, ?, datetime('now'))`,
 		id, profileId, name, description,
 	)
@@ -80,7 +82,7 @@ func listPersonas(profileId string) ([]persona, error) {
 	}
 	query += ` ORDER BY created_at ASC`
 
-	rows, err := careerDB.Query(query, args...)
+	rows, err := db.CareerDB.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +123,7 @@ func updatePersona(id string, name, description *string) error {
 	setClauses += "updated_at = datetime('now')"
 	args = append(args, id)
 
-	_, err := careerDB.Exec(`UPDATE personas SET `+setClauses+` WHERE id = ?`, args...)
+	_, err := db.CareerDB.Exec(`UPDATE personas SET `+setClauses+` WHERE id = ?`, args...)
 	return err
 }
 
@@ -131,7 +133,7 @@ func updatePersona(id string, name, description *string) error {
 // A benign no-op if id is unknown, matching this tool's existing
 // posture for every other delete-by-id operation.
 func deletePersona(id string) error {
-	_, err := careerDB.Exec(`DELETE FROM personas WHERE id = ?`, id)
+	_, err := db.CareerDB.Exec(`DELETE FROM personas WHERE id = ?`, id)
 	return err
 }
 
@@ -149,19 +151,19 @@ func registerCreatePersona(server *mcp.Server) {
 		Description: "Create a new persona — a named \"hat\" a job seeker (profile) wears, each owning its own details, skills, and experience. Must belong to an existing profile.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args createPersonaArgs) (*mcp.CallToolResult, any, error) {
 		if args.ProfileID == "" {
-			return errResult("profileId is required"), nil, nil
+			return db.ErrResult("profileId is required"), nil, nil
 		}
 		if args.Name == "" {
-			return errResult("name is required"), nil, nil
+			return db.ErrResult("name is required"), nil, nil
 		}
 		id, err := createPersona(args.ProfileID, args.Name, args.Description)
 		if err != nil {
 			if errors.Is(err, errUnknownProfile) {
-				return errResult(fmt.Sprintf("unknown profile id %q", args.ProfileID)), nil, nil
+				return db.ErrResult(fmt.Sprintf("unknown profile id %q", args.ProfileID)), nil, nil
 			}
-			return errResult(fmt.Sprintf("failed to create persona: %v", err)), nil, nil
+			return db.ErrResult(fmt.Sprintf("failed to create persona: %v", err)), nil, nil
 		}
-		return jsonResult(map[string]string{"id": id, "profileId": args.ProfileID, "name": args.Name, "description": args.Description})
+		return db.JSONResult(map[string]string{"id": id, "profileId": args.ProfileID, "name": args.Name, "description": args.Description})
 	})
 }
 
@@ -176,9 +178,9 @@ func registerListPersonas(server *mcp.Server) {
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args listPersonasArgs) (*mcp.CallToolResult, any, error) {
 		personas, err := listPersonas(args.ProfileID)
 		if err != nil {
-			return errResult(fmt.Sprintf("failed to list personas: %v", err)), nil, nil
+			return db.ErrResult(fmt.Sprintf("failed to list personas: %v", err)), nil, nil
 		}
-		return jsonResult(map[string]any{"personas": personas})
+		return db.JSONResult(map[string]any{"personas": personas})
 	})
 }
 
@@ -194,13 +196,13 @@ func registerUpdatePersona(server *mcp.Server) {
 		Description: "Update a persona's name or description. Only the fields provided are changed. Fails if id is unknown.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args updatePersonaArgs) (*mcp.CallToolResult, any, error) {
 		if args.ID == "" {
-			return errResult("id is required"), nil, nil
+			return db.ErrResult("id is required"), nil, nil
 		}
 		if err := updatePersona(args.ID, args.Name, args.Description); err != nil {
 			if errors.Is(err, errUnknownPersona) {
-				return errResult(fmt.Sprintf("unknown persona id %q", args.ID)), nil, nil
+				return db.ErrResult(fmt.Sprintf("unknown persona id %q", args.ID)), nil, nil
 			}
-			return errResult(fmt.Sprintf("failed to update persona: %v", err)), nil, nil
+			return db.ErrResult(fmt.Sprintf("failed to update persona: %v", err)), nil, nil
 		}
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "updated"}}}, nil, nil
 	})
@@ -216,10 +218,10 @@ func registerDeletePersona(server *mcp.Server) {
 		Description: "Delete a persona. This also permanently deletes that persona's own details, every skill, and every experience entry — there is no separate confirmation step.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args deletePersonaArgs) (*mcp.CallToolResult, any, error) {
 		if args.ID == "" {
-			return errResult("id is required"), nil, nil
+			return db.ErrResult("id is required"), nil, nil
 		}
 		if err := deletePersona(args.ID); err != nil {
-			return errResult(fmt.Sprintf("failed to delete persona: %v", err)), nil, nil
+			return db.ErrResult(fmt.Sprintf("failed to delete persona: %v", err)), nil, nil
 		}
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "deleted"}}}, nil, nil
 	})

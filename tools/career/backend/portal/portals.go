@@ -1,9 +1,9 @@
-// portals.go is the AI-facing (and HTTP-mirrored) surface over
+// Package portal is the AI-facing (and HTTP-mirrored) surface over
 // jobs.db's own portals/portal_links tables — a small, curated list of
 // job-board sources the AI should crawl, and the URLs on each one to
 // visit. A Portal Link is forced to be mapped to an existing Portal,
-// never implicit — the same pattern profile.go/persona.go/
-// recruiters.go already use for their own parent references.
+// never implicit — the same pattern the profile/persona and recruiters
+// domains already use for their own parent references.
 //
 // Step 19 added crawl_instructions read/write — an AI-authored YAML
 // document in the exact same shape browser's own crawl_paginated MCP
@@ -15,49 +15,64 @@
 // instruction actually works against a real page. See
 // plan/ai/tools/career/step-18-portals.md and
 // plan/ai/tools/career/step-19-portal-crawl-instructions.md.
-package main
+//
+// Extracted into its own package (step XX) as part of this backend's
+// split into subpackages mirroring tools/browser/backend's own auth/
+// crawler/shared layout. Imports jobs (SavePortalJob, for
+// IngestCrawlResults below) — one-directional: the jobs package
+// deliberately does NOT import this package back (see jobs.go's own
+// top comment for why that would be a cycle). See
+// plan/ai/tools/career/step-XX-package-split.md.
+package portal
 
 import (
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"gopkg.in/yaml.v3"
+
+	"career-tool-backend/db"
+	"career-tool-backend/jobs"
 )
 
-var errUnknownPortal = errors.New("unknown portal id")
+var ErrUnknownPortal = errors.New("unknown portal id")
 
 func requirePortalExists(id string) error {
 	var exists int
-	err := jobsDB.QueryRow(`SELECT 1 FROM portals WHERE id = ?`, id).Scan(&exists)
+	err := db.JobsDB.QueryRow(`SELECT 1 FROM portals WHERE id = ?`, id).Scan(&exists)
 	switch {
 	case err == sql.ErrNoRows:
-		return errUnknownPortal
+		return ErrUnknownPortal
 	case err != nil:
 		return err
 	}
 	return nil
 }
 
-var errUnknownPortalLink = errors.New("unknown portal link id")
+var ErrUnknownPortalLink = errors.New("unknown portal link id")
 
-func requirePortalLinkExists(id string) error {
+// RequirePortalLinkExists is exported — the crawl package's own
+// startCrawlRun (crawl_runs.go) needs it, in addition to every use
+// within this package.
+func RequirePortalLinkExists(id string) error {
 	var exists int
-	err := jobsDB.QueryRow(`SELECT 1 FROM portal_links WHERE id = ?`, id).Scan(&exists)
+	err := db.JobsDB.QueryRow(`SELECT 1 FROM portal_links WHERE id = ?`, id).Scan(&exists)
 	switch {
 	case err == sql.ErrNoRows:
-		return errUnknownPortalLink
+		return ErrUnknownPortalLink
 	case err != nil:
 		return err
 	}
 	return nil
 }
 
-var errDuplicatePortalLink = errors.New("this url is already a link on this portal")
+var ErrDuplicatePortalLink = errors.New("this url is already a link on this portal")
 
 type portalLink struct {
 	ID                string `json:"id"`
@@ -126,9 +141,9 @@ type portal struct {
 	UpdatedAt string       `json:"updatedAt,omitempty"`
 }
 
-func createPortal(name string) (string, error) {
+func CreatePortal(name string) (string, error) {
 	id := uuid.NewString()
-	_, err := jobsDB.Exec(
+	_, err := db.JobsDB.Exec(
 		`INSERT INTO portals (id, name, created_at) VALUES (?, ?, datetime('now'))`,
 		id, name,
 	)
@@ -139,13 +154,13 @@ func createPortal(name string) (string, error) {
 }
 
 // lastCrawledByPortalLink (step 26) reads the most recent
-// jobs.crawled_at per portal_link_id, in one query — the same jobsDB
-// handle listPortals already uses, no new database or cross-DB join.
-// A link with no saved job at all simply has no entry in the returned
-// map (not a zero-value string), so callers' own map lookup naturally
-// leaves portalLink.LastCrawledAt empty/omitted.
+// jobs.crawled_at per portal_link_id, in one query — the same
+// db.JobsDB handle ListPortals already uses, no new database or
+// cross-DB join. A link with no saved job at all simply has no entry
+// in the returned map (not a zero-value string), so callers' own map
+// lookup naturally leaves portalLink.LastCrawledAt empty/omitted.
 func lastCrawledByPortalLink() (map[string]string, error) {
-	rows, err := jobsDB.Query(
+	rows, err := db.JobsDB.Query(
 		`SELECT portal_link_id, MAX(crawled_at) FROM jobs
 		 WHERE portal_link_id IS NOT NULL
 		 GROUP BY portal_link_id`,
@@ -169,12 +184,39 @@ func lastCrawledByPortalLink() (map[string]string, error) {
 	return result, nil
 }
 
-// listPortals returns every portal with its own links nested — same
+// activeCrawlRunPortalLinkIDsRef is a deliberately independent local
+// copy of the crawl package's own activeCrawlRunPortalLinkIDs — same
+// "two separate concerns, kept in sync by hand" reasoning as
+// findPortalLinkURL in the jobs package (see that function's own doc
+// comment): the crawl package needs this package (RequirePortalLinkExists,
+// BuildCrawlRequest, etc.), so this package importing crawl back for
+// one trivial one-line query would be a real cycle. Kept here as its
+// own tiny, independent query against the same crawl_runs table rather
+// than fragmenting crawl_runs.go's own substantially larger logic out
+// of the crawl package just to share this one lookup.
+func activeCrawlRunPortalLinkIDsRef() (map[string]bool, error) {
+	rows, err := db.JobsDB.Query(`SELECT portal_link_id FROM crawl_runs WHERE status = 'running'`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make(map[string]bool)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		result[id] = true
+	}
+	return result, rows.Err()
+}
+
+// ListPortals returns every portal with its own links nested — same
 // "list is enough, no standalone getter" reasoning listProfiles/
-// listCompanies already use; a portal's own realistic link count is
+// ListCompanies already use; a portal's own realistic link count is
 // small.
-func listPortals() ([]portal, error) {
-	rows, err := jobsDB.Query(
+func ListPortals() ([]portal, error) {
+	rows, err := db.JobsDB.Query(
 		`SELECT id, name, created_at, updated_at FROM portals ORDER BY created_at ASC`,
 	)
 	if err != nil {
@@ -202,12 +244,12 @@ func listPortals() ([]portal, error) {
 	if err != nil {
 		return nil, err
 	}
-	activeCrawlRuns, err := activeCrawlRunPortalLinkIDs()
+	activeCrawlRuns, err := activeCrawlRunPortalLinkIDsRef()
 	if err != nil {
 		return nil, err
 	}
 
-	linkRows, err := jobsDB.Query(
+	linkRows, err := db.JobsDB.Query(
 		`SELECT id, portal_id, url, title, crawl_instructions, job_detail_crawl_instructions, instructions_ai_error, instructions_ai_error_at, instructions_ai_conversation_id, job_detail_instructions_ai_error, job_detail_instructions_ai_error_at, job_detail_instructions_ai_conversation_id, created_at, updated_at
 		 FROM portal_links ORDER BY created_at ASC`,
 	)
@@ -247,53 +289,53 @@ func listPortals() ([]portal, error) {
 	return portals, nil
 }
 
-func updatePortal(id, name string) error {
+func UpdatePortal(id, name string) error {
 	if err := requirePortalExists(id); err != nil {
 		return err
 	}
-	_, err := jobsDB.Exec(
+	_, err := db.JobsDB.Exec(
 		`UPDATE portals SET name = ?, updated_at = datetime('now') WHERE id = ?`,
 		name, id,
 	)
 	return err
 }
 
-// deletePortal cascades (ON DELETE CASCADE, db.go's own schema) to
-// every link it owns; step 20 makes this also un-link (never delete)
-// any jobs those links produced. A benign no-op if id is unknown,
-// matching every other delete-by-id operation in this tool.
-func deletePortal(id string) error {
-	_, err := jobsDB.Exec(`DELETE FROM portals WHERE id = ?`, id)
+// DeletePortal cascades (ON DELETE CASCADE, db's own schema) to every
+// link it owns; step 20 makes this also un-link (never delete) any
+// jobs those links produced. A benign no-op if id is unknown, matching
+// every other delete-by-id operation in this tool.
+func DeletePortal(id string) error {
+	_, err := db.JobsDB.Exec(`DELETE FROM portals WHERE id = ?`, id)
 	return err
 }
 
-func addPortalLink(portalId, url, title string) (string, error) {
+func AddPortalLink(portalId, url, title string) (string, error) {
 	if err := requirePortalExists(portalId); err != nil {
 		return "", err
 	}
 	id := uuid.NewString()
-	_, err := jobsDB.Exec(
+	_, err := db.JobsDB.Exec(
 		`INSERT INTO portal_links (id, portal_id, url, title, created_at) VALUES (?, ?, ?, ?, datetime('now'))`,
 		id, portalId, url, title,
 	)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
-			return "", errDuplicatePortalLink
+			return "", ErrDuplicatePortalLink
 		}
 		return "", err
 	}
 	return id, nil
 }
 
-// updatePortalLink corrects a link's own url and/or title — both
+// UpdatePortalLink corrects a link's own url and/or title — both
 // independently optional, partial-update style (matching
-// updateCompany/updateRecruiter's own established shape). crawl_
+// UpdateCompany/updateRecruiter's own established shape). crawl_
 // instructions (step 19) is deliberately not touched by this function
 // — that column's own validated read/write path is step 19's own
 // contribution, kept separate so this step can't accidentally store
 // an unvalidated YAML document through a generic update path.
-func updatePortalLink(id string, url, title *string) error {
-	if err := requirePortalLinkExists(id); err != nil {
+func UpdatePortalLink(id string, url, title *string) error {
+	if err := RequirePortalLinkExists(id); err != nil {
 		return err
 	}
 	if url == nil && title == nil {
@@ -313,87 +355,87 @@ func updatePortalLink(id string, url, title *string) error {
 	setClauses += "updated_at = datetime('now')"
 	args = append(args, id)
 
-	_, err := jobsDB.Exec(`UPDATE portal_links SET `+setClauses+` WHERE id = ?`, args...)
+	_, err := db.JobsDB.Exec(`UPDATE portal_links SET `+setClauses+` WHERE id = ?`, args...)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed") {
-		return errDuplicatePortalLink
+		return ErrDuplicatePortalLink
 	}
 	return err
 }
 
-func removePortalLink(id string) error {
-	_, err := jobsDB.Exec(`DELETE FROM portal_links WHERE id = ?`, id)
+func RemovePortalLink(id string) error {
+	_, err := db.JobsDB.Exec(`DELETE FROM portal_links WHERE id = ?`, id)
 	return err
 }
 
-// updatePortalLinkInstructionsAIStatus records (or clears) the outcome
+// UpdatePortalLinkInstructionsAIStatus records (or clears) the outcome
 // of the most recent AI-driven crawl-instructions generation/edit
 // attempt for this link — errText nil or empty clears any previously
 // recorded failure (a fresh attempt succeeded, or the caller is
 // explicitly resetting it); non-empty records it, alongside the
 // current timestamp. See
 // plan/ai/tools/career/step-33-ai-generated-crawl-instructions.md.
-func updatePortalLinkInstructionsAIStatus(id string, errText *string) error {
-	if err := requirePortalLinkExists(id); err != nil {
+func UpdatePortalLinkInstructionsAIStatus(id string, errText *string) error {
+	if err := RequirePortalLinkExists(id); err != nil {
 		return err
 	}
 	if errText == nil || *errText == "" {
-		_, err := jobsDB.Exec(`UPDATE portal_links SET instructions_ai_error = NULL, instructions_ai_error_at = NULL WHERE id = ?`, id)
+		_, err := db.JobsDB.Exec(`UPDATE portal_links SET instructions_ai_error = NULL, instructions_ai_error_at = NULL WHERE id = ?`, id)
 		return err
 	}
-	_, err := jobsDB.Exec(
+	_, err := db.JobsDB.Exec(
 		`UPDATE portal_links SET instructions_ai_error = ?, instructions_ai_error_at = datetime('now') WHERE id = ?`,
 		*errText, id,
 	)
 	return err
 }
 
-// updatePortalLinkInstructionsAIConversationID records (or clears)
+// UpdatePortalLinkInstructionsAIConversationID records (or clears)
 // which hidden conversation is currently generating/updating this
 // link's own crawl instructions. Nil or "" clears it (the run
 // finished, one way or another); non-empty records the newly started
 // one. See plan/ai/tools/career/step-60-generate-with-ai-live-chat-window.md.
-func updatePortalLinkInstructionsAIConversationID(id string, convID *string) error {
-	if err := requirePortalLinkExists(id); err != nil {
+func UpdatePortalLinkInstructionsAIConversationID(id string, convID *string) error {
+	if err := RequirePortalLinkExists(id); err != nil {
 		return err
 	}
 	if convID == nil || *convID == "" {
-		_, err := jobsDB.Exec(`UPDATE portal_links SET instructions_ai_conversation_id = NULL WHERE id = ?`, id)
+		_, err := db.JobsDB.Exec(`UPDATE portal_links SET instructions_ai_conversation_id = NULL WHERE id = ?`, id)
 		return err
 	}
-	_, err := jobsDB.Exec(`UPDATE portal_links SET instructions_ai_conversation_id = ? WHERE id = ?`, *convID, id)
+	_, err := db.JobsDB.Exec(`UPDATE portal_links SET instructions_ai_conversation_id = ? WHERE id = ?`, *convID, id)
 	return err
 }
 
-// updatePortalLinkJobDetailInstructionsAIStatus mirrors
-// updatePortalLinkInstructionsAIStatus above exactly, for the
+// UpdatePortalLinkJobDetailInstructionsAIStatus mirrors
+// UpdatePortalLinkInstructionsAIStatus above exactly, for the
 // SEPARATE job-detail-crawl-instructions document instead.
-func updatePortalLinkJobDetailInstructionsAIStatus(id string, errText *string) error {
-	if err := requirePortalLinkExists(id); err != nil {
+func UpdatePortalLinkJobDetailInstructionsAIStatus(id string, errText *string) error {
+	if err := RequirePortalLinkExists(id); err != nil {
 		return err
 	}
 	if errText == nil || *errText == "" {
-		_, err := jobsDB.Exec(`UPDATE portal_links SET job_detail_instructions_ai_error = NULL, job_detail_instructions_ai_error_at = NULL WHERE id = ?`, id)
+		_, err := db.JobsDB.Exec(`UPDATE portal_links SET job_detail_instructions_ai_error = NULL, job_detail_instructions_ai_error_at = NULL WHERE id = ?`, id)
 		return err
 	}
-	_, err := jobsDB.Exec(
+	_, err := db.JobsDB.Exec(
 		`UPDATE portal_links SET job_detail_instructions_ai_error = ?, job_detail_instructions_ai_error_at = datetime('now') WHERE id = ?`,
 		*errText, id,
 	)
 	return err
 }
 
-// updatePortalLinkJobDetailInstructionsAIConversationID mirrors
-// updatePortalLinkInstructionsAIConversationID above exactly, for the
+// UpdatePortalLinkJobDetailInstructionsAIConversationID mirrors
+// UpdatePortalLinkInstructionsAIConversationID above exactly, for the
 // SEPARATE job-detail-crawl-instructions document instead.
-func updatePortalLinkJobDetailInstructionsAIConversationID(id string, convID *string) error {
-	if err := requirePortalLinkExists(id); err != nil {
+func UpdatePortalLinkJobDetailInstructionsAIConversationID(id string, convID *string) error {
+	if err := RequirePortalLinkExists(id); err != nil {
 		return err
 	}
 	if convID == nil || *convID == "" {
-		_, err := jobsDB.Exec(`UPDATE portal_links SET job_detail_instructions_ai_conversation_id = NULL WHERE id = ?`, id)
+		_, err := db.JobsDB.Exec(`UPDATE portal_links SET job_detail_instructions_ai_conversation_id = NULL WHERE id = ?`, id)
 		return err
 	}
-	_, err := jobsDB.Exec(`UPDATE portal_links SET job_detail_instructions_ai_conversation_id = ? WHERE id = ?`, *convID, id)
+	_, err := db.JobsDB.Exec(`UPDATE portal_links SET job_detail_instructions_ai_conversation_id = ? WHERE id = ?`, *convID, id)
 	return err
 }
 
@@ -404,7 +446,7 @@ func updatePortalLinkJobDetailInstructionsAIConversationID(id string, convID *st
 // Attribute/Multiple were tolerated but ignored, since only
 // browser's own crawl_paginated ever consumed the full instruction.
 // Step 27 changes that: this tool's own backend now also *runs* a
-// crawl (deterministically, via buildCrawlRequest below), so it needs
+// crawl (deterministically, via BuildCrawlRequest below), so it needs
 // every field crawl_paginated itself needs, not just the two this
 // step validates the presence of. See
 // plan/ai/tools/career/step-27-ai-free-manual-crawl.md.
@@ -425,7 +467,7 @@ type crawlInstructionsDoc struct {
 	// repeating item's own wrapping element (e.g. one job listing's
 	// own <div>). When set, every field's own selector is evaluated
 	// relative to each matched container instead of the whole page,
-	// and ingestCrawlResults below consumes the resulting Items
+	// and IngestCrawlResults below consumes the resulting Items
 	// directly instead of zipping parallel arrays by index. See
 	// plan/ai/tools/career/step-30-grouped-crawl-ingestion.md and
 	// plan/ai/tools/browser/step-18-grouped-container-extraction.md.
@@ -433,13 +475,13 @@ type crawlInstructionsDoc struct {
 	Fields    []crawlInstructionsField `yaml:"fields"`
 	// Mapping (step 32) is optional {sourceLabel: targetKey} — renames
 	// a field's own label to a specific output key before
-	// ingestCrawlResults ever sees it (browser's own crawl_paginated
+	// IngestCrawlResults ever sees it (browser's own crawl_paginated
 	// applies the rename, not this tool — see
 	// plan/ai/tools/browser/step-20-output-field-mapping.md). Lets an
 	// AI author fields under whatever labels are natural for a given
 	// page (e.g. "job_title") while still satisfying the fixed
-	// "title"/"url"/... vocabulary ingestCrawlResults reads by.
-	// validateCrawlInstructions below checks the *effective* output
+	// "title"/"url"/... vocabulary IngestCrawlResults reads by.
+	// validateCrawlOutputSchema below checks the *effective* output
 	// (label, or its mapping target when present) produces the
 	// required keys. See
 	// plan/ai/tools/career/step-32-required-schema-and-mapping.md.
@@ -447,46 +489,46 @@ type crawlInstructionsDoc struct {
 	Pagination *crawlInstructionsPagination `yaml:"pagination"`
 }
 
-// requiredCrawlOutputKeys mirrors ingestCrawlResults' own hard
+// requiredCrawlOutputKeys mirrors IngestCrawlResults' own hard
 // requirement exactly (title == "" || sourceURL == "" → skipped,
 // company/location/description/postedAt all optional) — the single
-// source of truth for what validateCrawlInstructions checks the
+// source of truth for what validateCrawlOutputSchema checks the
 // effective (post-mapping) field labels against.
 var requiredCrawlOutputKeys = []string{"title", "url"}
 
-// errInvalidCrawlInstructions wraps a specific, actionable detail
+// ErrInvalidCrawlInstructions wraps a specific, actionable detail
 // message (via fmt.Errorf's own %w) — a shape check, not a
 // correctness check: this only confirms the required keys are present,
 // never that the instruction actually works against a real page (that
 // can only be proven by the AI itself later calling browser's own
 // crawl_paginated). See
 // plan/ai/tools/career/step-19-portal-crawl-instructions.md.
-var errInvalidCrawlInstructions = errors.New("invalid crawl instructions")
+var ErrInvalidCrawlInstructions = errors.New("invalid crawl instructions")
 
 func validateCrawlInstructions(yamlText string) error {
 	var doc crawlInstructionsDoc
 	if err := yaml.Unmarshal([]byte(yamlText), &doc); err != nil {
-		return fmt.Errorf("%w: not valid YAML: %v", errInvalidCrawlInstructions, err)
+		return fmt.Errorf("%w: not valid YAML: %v", ErrInvalidCrawlInstructions, err)
 	}
 	if len(doc.Fields) == 0 {
-		return fmt.Errorf("%w: fields must have at least one entry", errInvalidCrawlInstructions)
+		return fmt.Errorf("%w: fields must have at least one entry", ErrInvalidCrawlInstructions)
 	}
 	for i, f := range doc.Fields {
 		if f.Label == "" {
-			return fmt.Errorf("%w: fields[%d].label is required", errInvalidCrawlInstructions, i)
+			return fmt.Errorf("%w: fields[%d].label is required", ErrInvalidCrawlInstructions, i)
 		}
 		if f.Selector == "" {
-			return fmt.Errorf("%w: fields[%d].selector is required", errInvalidCrawlInstructions, i)
+			return fmt.Errorf("%w: fields[%d].selector is required", ErrInvalidCrawlInstructions, i)
 		}
 	}
 	if doc.Pagination == nil {
-		return fmt.Errorf("%w: pagination is required", errInvalidCrawlInstructions)
+		return fmt.Errorf("%w: pagination is required", ErrInvalidCrawlInstructions)
 	}
 	if doc.Pagination.NextSelector == "" {
-		return fmt.Errorf("%w: pagination.nextSelector is required", errInvalidCrawlInstructions)
+		return fmt.Errorf("%w: pagination.nextSelector is required", ErrInvalidCrawlInstructions)
 	}
 	if doc.Pagination.MaxPages <= 0 {
-		return fmt.Errorf("%w: pagination.maxPages is required", errInvalidCrawlInstructions)
+		return fmt.Errorf("%w: pagination.maxPages is required", ErrInvalidCrawlInstructions)
 	}
 	if err := validateCrawlOutputSchema(doc); err != nil {
 		return err
@@ -502,7 +544,7 @@ func validateCrawlInstructions(yamlText string) error {
 // "job_title"/"employer" (a perfectly reasonable, arguably better choice
 // for a real page's own vocabulary) passed this function's shape checks
 // cleanly, saved without error, and then silently produced zero saved
-// jobs on every future deterministic crawl — ingestCrawlResults only
+// jobs on every future deterministic crawl — IngestCrawlResults only
 // ever reads the literal keys "title"/"url"/etc. and has no fallback.
 // Still a shape check, not a correctness check, per this function's own
 // sibling comment above: this only proves the *keys* would be right,
@@ -521,71 +563,71 @@ func validateCrawlOutputSchema(doc crawlInstructionsDoc) error {
 		if !effective[required] {
 			return fmt.Errorf(
 				"%w: no field produces the required %q key (add a field labeled %q, or add a mapping entry renaming one of your existing fields — e.g. mapping: { <your label>: %s })",
-				errInvalidCrawlInstructions, required, required, required,
+				ErrInvalidCrawlInstructions, required, required, required,
 			)
 		}
 	}
 	return nil
 }
 
-// getPortalLinkURL (step 37) reads just a link's own url — the
-// detached crawl-now orchestration needs it to navigate browser's
-// shared session, the one field listPortals' own per-link struct
-// already exposes to the frontend but no standalone reader returned
-// until now.
-func getPortalLinkURL(id string) (string, error) {
-	if err := requirePortalLinkExists(id); err != nil {
+// GetPortalLinkURL (step 37) reads just a link's own url — the
+// detached crawl-now orchestration (crawl package) needs it to
+// navigate browser's shared session, the one field ListPortals' own
+// per-link struct already exposes to the frontend but no standalone
+// reader returned until now.
+func GetPortalLinkURL(id string) (string, error) {
+	if err := RequirePortalLinkExists(id); err != nil {
 		return "", err
 	}
 	var url string
-	if err := jobsDB.QueryRow(`SELECT url FROM portal_links WHERE id = ?`, id).Scan(&url); err != nil {
+	if err := db.JobsDB.QueryRow(`SELECT url FROM portal_links WHERE id = ?`, id).Scan(&url); err != nil {
 		return "", err
 	}
 	return url, nil
 }
 
-// getPortalIDForLink reads just a link's own owning portal_id — the
-// deterministic crawl goroutines (crawl_now.go, crawl_job_details_now.go)
-// need it to set browser's own rateLimitKey (portal_pacing.go,
-// tools/browser/backend/crawler), which paces page fetches across
-// EVERY link belonging to the same portal, not just within one link's
-// own run. See plan/ai/tools/career/step-XX-portal-crawl-pacing.md.
-func getPortalIDForLink(id string) (string, error) {
-	if err := requirePortalLinkExists(id); err != nil {
+// GetPortalIDForLink reads just a link's own owning portal_id — the
+// deterministic crawl goroutines (crawl package) need it to set
+// browser's own rateLimitKey (portal_pacing.go, tools/browser/backend/
+// crawler), which paces page fetches across EVERY link belonging to
+// the same portal, not just within one link's own run. See
+// plan/ai/tools/career/step-XX-portal-crawl-pacing.md.
+func GetPortalIDForLink(id string) (string, error) {
+	if err := RequirePortalLinkExists(id); err != nil {
 		return "", err
 	}
 	var portalID string
-	if err := jobsDB.QueryRow(`SELECT portal_id FROM portal_links WHERE id = ?`, id).Scan(&portalID); err != nil {
+	if err := db.JobsDB.QueryRow(`SELECT portal_id FROM portal_links WHERE id = ?`, id).Scan(&portalID); err != nil {
 		return "", err
 	}
 	return portalID, nil
 }
 
-func getPortalLinkCrawlInstructions(id string) (string, error) {
-	if err := requirePortalLinkExists(id); err != nil {
+func GetPortalLinkCrawlInstructions(id string) (string, error) {
+	if err := RequirePortalLinkExists(id); err != nil {
 		return "", err
 	}
 	var crawlInstructions sql.NullString
-	err := jobsDB.QueryRow(`SELECT crawl_instructions FROM portal_links WHERE id = ?`, id).Scan(&crawlInstructions)
+	err := db.JobsDB.QueryRow(`SELECT crawl_instructions FROM portal_links WHERE id = ?`, id).Scan(&crawlInstructions)
 	if err != nil {
 		return "", err
 	}
 	return crawlInstructions.String, nil
 }
 
-// updatePortalLinkCrawlInstructions is the one shared persistent-layer
-// function both the HTTP human-editing path (PUT /portal-links'
-// own optional crawlInstructions field) and the AI-facing
+// UpdatePortalLinkCrawlInstructions is the one shared persistent-layer
+// function both the HTTP human-editing path (PUT /portal-links' own
+// optional crawlInstructions field) and the AI-facing
 // set_portal_link_crawl_instructions MCP tool call — validation lives
 // here, once, so neither path can bypass it.
-func updatePortalLinkCrawlInstructions(id, yamlText string) error {
-	if err := requirePortalLinkExists(id); err != nil {
+func UpdatePortalLinkCrawlInstructions(id, yamlText string) error {
+	if err := RequirePortalLinkExists(id); err != nil {
 		return err
 	}
 	if err := validateCrawlInstructions(yamlText); err != nil {
 		return err
 	}
-	_, err := jobsDB.Exec(
+	_, err := db.JobsDB.Exec(
 		`UPDATE portal_links SET crawl_instructions = ?, updated_at = datetime('now') WHERE id = ?`,
 		yamlText, id,
 	)
@@ -621,17 +663,17 @@ var requiredJobDetailCrawlOutputKeys = []string{"description"}
 func validateJobDetailCrawlInstructions(yamlText string) error {
 	var doc jobDetailCrawlInstructionsDoc
 	if err := yaml.Unmarshal([]byte(yamlText), &doc); err != nil {
-		return fmt.Errorf("%w: not valid YAML: %v", errInvalidCrawlInstructions, err)
+		return fmt.Errorf("%w: not valid YAML: %v", ErrInvalidCrawlInstructions, err)
 	}
 	if len(doc.Fields) == 0 {
-		return fmt.Errorf("%w: fields must have at least one entry", errInvalidCrawlInstructions)
+		return fmt.Errorf("%w: fields must have at least one entry", ErrInvalidCrawlInstructions)
 	}
 	for i, f := range doc.Fields {
 		if f.Label == "" {
-			return fmt.Errorf("%w: fields[%d].label is required", errInvalidCrawlInstructions, i)
+			return fmt.Errorf("%w: fields[%d].label is required", ErrInvalidCrawlInstructions, i)
 		}
 		if f.Selector == "" {
-			return fmt.Errorf("%w: fields[%d].selector is required", errInvalidCrawlInstructions, i)
+			return fmt.Errorf("%w: fields[%d].selector is required", ErrInvalidCrawlInstructions, i)
 		}
 	}
 	effective := make(map[string]bool, len(doc.Fields))
@@ -642,38 +684,38 @@ func validateJobDetailCrawlInstructions(yamlText string) error {
 		if !effective[required] {
 			return fmt.Errorf(
 				"%w: no field produces the required %q key (add a field labeled %q)",
-				errInvalidCrawlInstructions, required, required,
+				ErrInvalidCrawlInstructions, required, required,
 			)
 		}
 	}
 	return nil
 }
 
-func getPortalLinkJobDetailCrawlInstructions(id string) (string, error) {
-	if err := requirePortalLinkExists(id); err != nil {
+func GetPortalLinkJobDetailCrawlInstructions(id string) (string, error) {
+	if err := RequirePortalLinkExists(id); err != nil {
 		return "", err
 	}
 	var instructions sql.NullString
-	err := jobsDB.QueryRow(`SELECT job_detail_crawl_instructions FROM portal_links WHERE id = ?`, id).Scan(&instructions)
+	err := db.JobsDB.QueryRow(`SELECT job_detail_crawl_instructions FROM portal_links WHERE id = ?`, id).Scan(&instructions)
 	if err != nil {
 		return "", err
 	}
 	return instructions.String, nil
 }
 
-// updatePortalLinkJobDetailCrawlInstructions is the one shared
+// UpdatePortalLinkJobDetailCrawlInstructions is the one shared
 // persistent-layer function the AI-facing
 // set_portal_link_job_detail_crawl_instructions MCP tool call goes
 // through — validation lives here, once, same reasoning as
-// updatePortalLinkCrawlInstructions above.
-func updatePortalLinkJobDetailCrawlInstructions(id, yamlText string) error {
-	if err := requirePortalLinkExists(id); err != nil {
+// UpdatePortalLinkCrawlInstructions above.
+func UpdatePortalLinkJobDetailCrawlInstructions(id, yamlText string) error {
+	if err := RequirePortalLinkExists(id); err != nil {
 		return err
 	}
 	if err := validateJobDetailCrawlInstructions(yamlText); err != nil {
 		return err
 	}
-	_, err := jobsDB.Exec(
+	_, err := db.JobsDB.Exec(
 		`UPDATE portal_links SET job_detail_crawl_instructions = ?, updated_at = datetime('now') WHERE id = ?`,
 		yamlText, id,
 	)
@@ -682,10 +724,10 @@ func updatePortalLinkJobDetailCrawlInstructions(id, yamlText string) error {
 
 // --- deterministic ("Crawl now") crawl support (step 27) ---
 
-// errNoCrawlInstructions is a 400, not a 500 — this is a caller
+// ErrNoCrawlInstructions is a 400, not a 500 — this is a caller
 // mistake (the UI's own "Crawl now" button is already gated on
 // link.crawlInstructions being set), not a server failure.
-var errNoCrawlInstructions = errors.New("this portal link has no crawl instructions set")
+var ErrNoCrawlInstructions = errors.New("this portal link has no crawl instructions set")
 
 // maxAllowedPaginationPages mirrors browser's own identically-named
 // constant (tools/browser/backend/paginate.go) exactly — that ceiling
@@ -699,52 +741,52 @@ var errNoCrawlInstructions = errors.New("this portal link has no crawl instructi
 // question 3, plan/ai/tools/career/step-27-ai-free-manual-crawl.md.
 const maxAllowedPaginationPages = 10
 
-// crawlRequestField/crawlRequest are the exact JSON shape browser's
+// CrawlRequestField/CrawlRequest are the exact JSON shape browser's
 // own POST /crawl-paginated expects as its request body
 // (tools/browser/backend/paginate.go's paginatedCrawlRequest) — this
 // tool has no dependency on that package, so the shape is
 // independently declared here, kept in sync by hand.
-type crawlRequestField struct {
+type CrawlRequestField struct {
 	Label     string `json:"label"`
 	Selector  string `json:"selector"`
 	Attribute string `json:"attribute,omitempty"`
 	Multiple  bool   `json:"multiple,omitempty"`
 }
 
-type crawlRequest struct {
+type CrawlRequest struct {
 	Container         string              `json:"container,omitempty"`
-	Fields            []crawlRequestField `json:"fields"`
+	Fields            []CrawlRequestField `json:"fields"`
 	Mapping           map[string]string   `json:"mapping,omitempty"`
 	NextSelector      string              `json:"nextSelector"`
 	RequestedMaxPages int                 `json:"requestedMaxPages"`
 	EffectiveMaxPages int                 `json:"effectiveMaxPages"`
 }
 
-// buildCrawlRequest turns a portal link's own stored crawl_instructions
+// BuildCrawlRequest turns a portal link's own stored crawl_instructions
 // YAML into the JSON shape browser's own /crawl-paginated route
 // expects — reusing validateCrawlInstructions' own parsing/shape
 // check (defensive: normally already validated at write time, but this
 // re-checks in case a row predates that check or was hand-edited)
-// rather than re-implementing it. Returns errNoCrawlInstructions when
+// rather than re-implementing it. Returns ErrNoCrawlInstructions when
 // the link has no crawl instructions at all — the deterministic
 // "Crawl now" button has nothing to run in that case.
-func buildCrawlRequest(id string) (crawlRequest, error) {
-	yamlText, err := getPortalLinkCrawlInstructions(id)
+func BuildCrawlRequest(id string) (CrawlRequest, error) {
+	yamlText, err := GetPortalLinkCrawlInstructions(id)
 	if err != nil {
-		return crawlRequest{}, err
+		return CrawlRequest{}, err
 	}
 	if yamlText == "" {
-		return crawlRequest{}, errNoCrawlInstructions
+		return CrawlRequest{}, ErrNoCrawlInstructions
 	}
 	if err := validateCrawlInstructions(yamlText); err != nil {
-		return crawlRequest{}, err
+		return CrawlRequest{}, err
 	}
 
 	var doc crawlInstructionsDoc
 	if err := yaml.Unmarshal([]byte(yamlText), &doc); err != nil {
 		// Unreachable in practice — validateCrawlInstructions above
 		// already parsed this same text successfully.
-		return crawlRequest{}, fmt.Errorf("%w: %v", errInvalidCrawlInstructions, err)
+		return CrawlRequest{}, fmt.Errorf("%w: %v", ErrInvalidCrawlInstructions, err)
 	}
 
 	requested := doc.Pagination.MaxPages
@@ -753,12 +795,12 @@ func buildCrawlRequest(id string) (crawlRequest, error) {
 		effective = maxAllowedPaginationPages
 	}
 
-	fields := make([]crawlRequestField, len(doc.Fields))
+	fields := make([]CrawlRequestField, len(doc.Fields))
 	for i, f := range doc.Fields {
-		fields[i] = crawlRequestField{Label: f.Label, Selector: f.Selector, Attribute: f.Attribute, Multiple: f.Multiple}
+		fields[i] = CrawlRequestField{Label: f.Label, Selector: f.Selector, Attribute: f.Attribute, Multiple: f.Multiple}
 	}
 
-	return crawlRequest{
+	return CrawlRequest{
 		Container:         doc.Container,
 		Fields:            fields,
 		Mapping:           doc.Mapping,
@@ -768,45 +810,45 @@ func buildCrawlRequest(id string) (crawlRequest, error) {
 	}, nil
 }
 
-// errNoJobDetailCrawlInstructions is buildJobDetailCrawlRequest's own
-// counterpart to errNoCrawlInstructions above — the deterministic
+// ErrNoJobDetailCrawlInstructions is BuildJobDetailCrawlRequest's own
+// counterpart to ErrNoCrawlInstructions above — the deterministic
 // "Crawl job details now" button has nothing to run without a stored
 // job_detail_crawl_instructions document.
-var errNoJobDetailCrawlInstructions = errors.New("this portal link has no job detail crawl instructions set")
+var ErrNoJobDetailCrawlInstructions = errors.New("this portal link has no job detail crawl instructions set")
 
-// buildJobDetailCrawlRequest mirrors buildCrawlRequest above, sourcing
+// BuildJobDetailCrawlRequest mirrors BuildCrawlRequest above, sourcing
 // from job_detail_crawl_instructions instead of crawl_instructions —
 // deliberately simpler: no container (one job per page, nothing to
 // group) and no pagination (NextSelector always "", RequestedMaxPages/
 // EffectiveMaxPages always 1 — a job's own detail page is a single
-// page, never paginated). The caller (crawl_job_details_now.go) fills
-// in URL itself, per job, since — unlike the listing page's own fixed
-// url — a job detail crawl visits a DIFFERENT url per job.
-func buildJobDetailCrawlRequest(id string) (crawlRequest, error) {
-	yamlText, err := getPortalLinkJobDetailCrawlInstructions(id)
+// page, never paginated). The caller (crawl package) fills in URL
+// itself, per job, since — unlike the listing page's own fixed url —
+// a job detail crawl visits a DIFFERENT url per job.
+func BuildJobDetailCrawlRequest(id string) (CrawlRequest, error) {
+	yamlText, err := GetPortalLinkJobDetailCrawlInstructions(id)
 	if err != nil {
-		return crawlRequest{}, err
+		return CrawlRequest{}, err
 	}
 	if yamlText == "" {
-		return crawlRequest{}, errNoJobDetailCrawlInstructions
+		return CrawlRequest{}, ErrNoJobDetailCrawlInstructions
 	}
 	if err := validateJobDetailCrawlInstructions(yamlText); err != nil {
-		return crawlRequest{}, err
+		return CrawlRequest{}, err
 	}
 
 	var doc jobDetailCrawlInstructionsDoc
 	if err := yaml.Unmarshal([]byte(yamlText), &doc); err != nil {
 		// Unreachable in practice — validateJobDetailCrawlInstructions
 		// above already parsed this same text successfully.
-		return crawlRequest{}, fmt.Errorf("%w: %v", errInvalidCrawlInstructions, err)
+		return CrawlRequest{}, fmt.Errorf("%w: %v", ErrInvalidCrawlInstructions, err)
 	}
 
-	fields := make([]crawlRequestField, len(doc.Fields))
+	fields := make([]CrawlRequestField, len(doc.Fields))
 	for i, f := range doc.Fields {
-		fields[i] = crawlRequestField{Label: f.Label, Selector: f.Selector, Attribute: f.Attribute, Multiple: f.Multiple}
+		fields[i] = CrawlRequestField{Label: f.Label, Selector: f.Selector, Attribute: f.Attribute, Multiple: f.Multiple}
 	}
 
-	return crawlRequest{
+	return CrawlRequest{
 		Fields:            fields,
 		NextSelector:      "",
 		RequestedMaxPages: 1,
@@ -814,29 +856,29 @@ func buildJobDetailCrawlRequest(id string) (crawlRequest, error) {
 	}, nil
 }
 
-// crawlResultPage mirrors browser's own pageExtractResult
+// CrawlResultPage mirrors browser's own pageExtractResult
 // (tools/browser/backend/paginate.go) — one page's worth of extracted
 // values, keyed by the field label the crawl instructions declared.
 // Results[label] is either a single string (Multiple: false) or a
-// []any of strings (Multiple: true) — extractResultStrings below
+// []any of strings (Multiple: true) — ExtractResultStrings below
 // normalizes either shape to a []string. Items (step 30) is populated
 // instead of Results when the crawl instructions set a container —
 // each entry is already one real job's own correctly-grouped fields;
 // exactly one of Results/Items is ever non-empty, mirroring browser's
 // own contract exactly.
-type crawlResultPage struct {
+type CrawlResultPage struct {
 	URL      string           `json:"url"`
 	Results  map[string]any   `json:"results,omitempty"`
 	Items    []map[string]any `json:"items,omitempty"`
 	NotFound []string         `json:"notFound"`
 }
 
-// extractResultStrings normalizes one field's extracted value (a
+// ExtractResultStrings normalizes one field's extracted value (a
 // plain string for a non-multiple field, a []any for a multiple one,
-// or absent) to a []string — the one shape ingestCrawlResults' own
-// per-index zip below needs regardless of which the field was
-// authored as.
-func extractResultStrings(v any) []string {
+// or absent) to a []string — the one shape IngestCrawlResults' own
+// per-index zip below (and the crawl package's own extractResultValues)
+// needs regardless of which the field was authored as.
+func ExtractResultStrings(v any) []string {
 	switch t := v.(type) {
 	case string:
 		if t == "" {
@@ -856,31 +898,31 @@ func extractResultStrings(v any) []string {
 	}
 }
 
-// at returns s[i], or "" when i is out of range — lets
-// ingestCrawlResults zip several independently-lengthed field arrays
+// At returns s[i], or "" when i is out of range — lets
+// IngestCrawlResults zip several independently-lengthed field arrays
 // (a page listing 12 jobs might have 12 titles and 12 urls, but only
 // 9 of them also matched a "location" selector) without a bounds
 // check at every call site.
-func at(s []string, i int) string {
+func At(s []string, i int) string {
 	if i < len(s) {
 		return s[i]
 	}
 	return ""
 }
 
-type ingestCrawlResultsResult struct {
+type IngestCrawlResultsResult struct {
 	JobsSaved   int `json:"jobsSaved"`
 	JobsUpdated int `json:"jobsUpdated"`
 	JobsSkipped int `json:"jobsSkipped"`
 }
 
-// ingestCrawlResults maps a completed deterministic crawl's own raw
+// IngestCrawlResults maps a completed deterministic crawl's own raw
 // results (browser's own /crawl-paginated response body, forwarded
 // here unmodified by the frontend) onto job rows via the fixed label
 // vocabulary decided in step 27 (title/url required; company/
 // location/description/postedAt optional, used verbatim with no date
 // normalization or other AI-style interpretation) and persists each
-// one through the exact same savePortalJob (step 20) the AI-based
+// one through the exact same jobs.SavePortalJob (step 20) the AI-based
 // "Crawl with AI" path already uses — one shared insert path for both
 // crawl mechanisms, only how a job's own fields were produced differs.
 //
@@ -895,34 +937,34 @@ type ingestCrawlResultsResult struct {
 // unchanged: "title"/"url" are typically authored with Multiple:
 // true, yielding one array per field rather than one scalar; this
 // walks index 0..len(titles) (title is the required anchor field) and
-// zips every other field positionally via at() — a title with no
+// zips every other field positionally via At() — a title with no
 // matching url at the same index is skipped (JobsSkipped), never
 // inserted with an empty sourceUrl. Both branches count a save the
 // same way flat mode always has: only `created` is ever checked
-// (savePortalJob's own `duplicate` result is intentionally not
+// (jobs.SavePortalJob's own `duplicate` result is intentionally not
 // tracked as a separate outcome here, matching the pre-existing
 // behavior exactly — a duplicate is counted as JobsUpdated, same as a
 // genuine update).
-func ingestCrawlResults(portalLinkID string, pages []crawlResultPage) (ingestCrawlResultsResult, error) {
-	if err := requirePortalLinkExists(portalLinkID); err != nil {
-		return ingestCrawlResultsResult{}, err
+func IngestCrawlResults(portalLinkID string, pages []CrawlResultPage) (IngestCrawlResultsResult, error) {
+	if err := RequirePortalLinkExists(portalLinkID); err != nil {
+		return IngestCrawlResultsResult{}, err
 	}
 
-	var result ingestCrawlResultsResult
+	var result IngestCrawlResultsResult
 	for _, page := range pages {
 		if len(page.Items) > 0 {
 			for _, item := range page.Items {
-				title := at(extractResultStrings(item["title"]), 0)
-				sourceURL := at(extractResultStrings(item["url"]), 0)
+				title := At(ExtractResultStrings(item["title"]), 0)
+				sourceURL := At(ExtractResultStrings(item["url"]), 0)
 				if title == "" || sourceURL == "" {
 					result.JobsSkipped++
 					continue
 				}
-				company := at(extractResultStrings(item["company"]), 0)
-				location := at(extractResultStrings(item["location"]), 0)
-				description := at(extractResultStrings(item["description"]), 0)
-				postedAt := at(extractResultStrings(item["postedAt"]), 0)
-				_, created, _, err := savePortalJob(portalLinkID, sourceURL, title, company, location, description, postedAt)
+				company := At(ExtractResultStrings(item["company"]), 0)
+				location := At(ExtractResultStrings(item["location"]), 0)
+				description := At(ExtractResultStrings(item["description"]), 0)
+				postedAt := At(ExtractResultStrings(item["postedAt"]), 0)
+				_, created, _, err := jobs.SavePortalJob(portalLinkID, sourceURL, title, company, location, description, postedAt)
 				if err != nil {
 					return result, err
 				}
@@ -935,20 +977,20 @@ func ingestCrawlResults(portalLinkID string, pages []crawlResultPage) (ingestCra
 			continue
 		}
 
-		titles := extractResultStrings(page.Results["title"])
-		urls := extractResultStrings(page.Results["url"])
-		companies := extractResultStrings(page.Results["company"])
-		locations := extractResultStrings(page.Results["location"])
-		descriptions := extractResultStrings(page.Results["description"])
-		postedAts := extractResultStrings(page.Results["postedAt"])
+		titles := ExtractResultStrings(page.Results["title"])
+		urls := ExtractResultStrings(page.Results["url"])
+		companiesList := ExtractResultStrings(page.Results["company"])
+		locations := ExtractResultStrings(page.Results["location"])
+		descriptions := ExtractResultStrings(page.Results["description"])
+		postedAts := ExtractResultStrings(page.Results["postedAt"])
 
 		for i, title := range titles {
-			sourceURL := at(urls, i)
+			sourceURL := At(urls, i)
 			if title == "" || sourceURL == "" {
 				result.JobsSkipped++
 				continue
 			}
-			_, created, _, err := savePortalJob(portalLinkID, sourceURL, title, at(companies, i), at(locations, i), at(descriptions, i), at(postedAts, i))
+			_, created, _, err := jobs.SavePortalJob(portalLinkID, sourceURL, title, At(companiesList, i), At(locations, i), At(descriptions, i), At(postedAts, i))
 			if err != nil {
 				return result, err
 			}
@@ -962,13 +1004,52 @@ func ingestCrawlResults(portalLinkID string, pages []crawlResultPage) (ingestCra
 	return result, nil
 }
 
+// WritePortalAwareError is the same idea as companies' own
+// WriteCompanyAwareError, for ErrUnknownPortal — moved here from this
+// tool's own http.go (package main) since it's fundamentally
+// portal-domain error mapping, not generic.
+func WritePortalAwareError(w http.ResponseWriter, action string, err error) {
+	if errors.Is(err, ErrUnknownPortal) {
+		http.Error(w, "unknown portal id", http.StatusBadRequest)
+		return
+	}
+	http.Error(w, "failed to "+action+": "+err.Error(), http.StatusInternalServerError)
+}
+
+// WritePortalLinkAwareError additionally maps ErrDuplicatePortalLink
+// (the same url added twice to one portal) and
+// ErrInvalidCrawlInstructions (step 19's own shape check) to a 400 —
+// the latter's own error text already carries the specific, actionable
+// reason (e.g. "pagination.maxPages is required"), so it's passed
+// straight through rather than replaced with a generic message. Moved
+// here from this tool's own http.go (package main), same reasoning as
+// WritePortalAwareError above — the crawl package also calls this.
+func WritePortalLinkAwareError(w http.ResponseWriter, action string, err error) {
+	switch {
+	case errors.Is(err, ErrUnknownPortal):
+		http.Error(w, "unknown portal id", http.StatusBadRequest)
+	case errors.Is(err, ErrUnknownPortalLink):
+		http.Error(w, "unknown portal link id", http.StatusBadRequest)
+	case errors.Is(err, ErrDuplicatePortalLink):
+		http.Error(w, "this url is already a link on this portal", http.StatusBadRequest)
+	case errors.Is(err, ErrInvalidCrawlInstructions):
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	case errors.Is(err, ErrNoCrawlInstructions):
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	case errors.Is(err, ErrNoJobDetailCrawlInstructions):
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	default:
+		http.Error(w, "failed to "+action+": "+err.Error(), http.StatusInternalServerError)
+	}
+}
+
 // --- MCP registration ---
 
 type createPortalArgs struct {
 	Name string `json:"name" jsonschema:"the portal's own name, e.g. the job board's name"`
 }
 
-func registerCreatePortal(server *mcp.Server) {
+func RegisterCreatePortal(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "create_portal",
 		Description: "Create a new job portal — a source to crawl for job postings. Only call this after " +
@@ -977,19 +1058,19 @@ func registerCreatePortal(server *mcp.Server) {
 			"creating a duplicate.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args createPortalArgs) (*mcp.CallToolResult, any, error) {
 		if args.Name == "" {
-			return errResult("name is required"), nil, nil
+			return db.ErrResult("name is required"), nil, nil
 		}
-		id, err := createPortal(args.Name)
+		id, err := CreatePortal(args.Name)
 		if err != nil {
-			return errResult(fmt.Sprintf("failed to create portal: %v", err)), nil, nil
+			return db.ErrResult(fmt.Sprintf("failed to create portal: %v", err)), nil, nil
 		}
-		return jsonResult(map[string]string{"id": id, "name": args.Name})
+		return db.JSONResult(map[string]string{"id": id, "name": args.Name})
 	})
 }
 
 type listPortalsArgs struct{}
 
-func registerListPortals(server *mcp.Server) {
+func RegisterListPortals(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "list_portals",
 		Description: "List every job portal, including each one's own crawl target links (id, title, url, " +
@@ -998,11 +1079,11 @@ func registerListPortals(server *mcp.Server) {
 			"described already exists (by name/title, not just an exact URL match) before creating or asking " +
 			"to create anything new.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args listPortalsArgs) (*mcp.CallToolResult, any, error) {
-		portals, err := listPortals()
+		portals, err := ListPortals()
 		if err != nil {
-			return errResult(fmt.Sprintf("failed to list portals: %v", err)), nil, nil
+			return db.ErrResult(fmt.Sprintf("failed to list portals: %v", err)), nil, nil
 		}
-		return jsonResult(map[string]any{"portals": portals})
+		return db.JSONResult(map[string]any{"portals": portals})
 	})
 }
 
@@ -1011,22 +1092,22 @@ type updatePortalArgs struct {
 	Name string `json:"name" jsonschema:"the portal's own new name"`
 }
 
-func registerUpdatePortal(server *mcp.Server) {
+func RegisterUpdatePortal(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "update_portal",
 		Description: "Rename a job portal. Fails if id is unknown.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args updatePortalArgs) (*mcp.CallToolResult, any, error) {
 		if args.ID == "" {
-			return errResult("id is required"), nil, nil
+			return db.ErrResult("id is required"), nil, nil
 		}
 		if args.Name == "" {
-			return errResult("name is required"), nil, nil
+			return db.ErrResult("name is required"), nil, nil
 		}
-		if err := updatePortal(args.ID, args.Name); err != nil {
-			if errors.Is(err, errUnknownPortal) {
-				return errResult(fmt.Sprintf("unknown portal id %q", args.ID)), nil, nil
+		if err := UpdatePortal(args.ID, args.Name); err != nil {
+			if errors.Is(err, ErrUnknownPortal) {
+				return db.ErrResult(fmt.Sprintf("unknown portal id %q", args.ID)), nil, nil
 			}
-			return errResult(fmt.Sprintf("failed to update portal: %v", err)), nil, nil
+			return db.ErrResult(fmt.Sprintf("failed to update portal: %v", err)), nil, nil
 		}
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "updated"}}}, nil, nil
 	})
@@ -1036,16 +1117,16 @@ type deletePortalArgs struct {
 	ID string `json:"id" jsonschema:"the portal's own id — deleting it also deletes every link it owns"`
 }
 
-func registerDeletePortal(server *mcp.Server) {
+func RegisterDeletePortal(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "delete_portal",
 		Description: "Delete a job portal. This permanently deletes every crawl target link it owns.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args deletePortalArgs) (*mcp.CallToolResult, any, error) {
 		if args.ID == "" {
-			return errResult("id is required"), nil, nil
+			return db.ErrResult("id is required"), nil, nil
 		}
-		if err := deletePortal(args.ID); err != nil {
-			return errResult(fmt.Sprintf("failed to delete portal: %v", err)), nil, nil
+		if err := DeletePortal(args.ID); err != nil {
+			return db.ErrResult(fmt.Sprintf("failed to delete portal: %v", err)), nil, nil
 		}
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "deleted"}}}, nil, nil
 	})
@@ -1057,7 +1138,7 @@ type addPortalLinkArgs struct {
 	Title    string `json:"title" jsonschema:"a short, descriptive title for this link (e.g. 'Software Engineer jobs, Hamburg') so it stays recognizable later"`
 }
 
-func registerAddPortalLink(server *mcp.Server) {
+func RegisterAddPortalLink(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "add_portal_link",
 		Description: "Add a URL to crawl to an existing job portal, with a short, descriptive title (e.g. " +
@@ -1069,25 +1150,25 @@ func registerAddPortalLink(server *mcp.Server) {
 			"editing anything — never guess.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args addPortalLinkArgs) (*mcp.CallToolResult, any, error) {
 		if args.PortalID == "" {
-			return errResult("portalId is required"), nil, nil
+			return db.ErrResult("portalId is required"), nil, nil
 		}
 		if args.URL == "" {
-			return errResult("url is required"), nil, nil
+			return db.ErrResult("url is required"), nil, nil
 		}
 		if args.Title == "" {
-			return errResult("title is required"), nil, nil
+			return db.ErrResult("title is required"), nil, nil
 		}
-		id, err := addPortalLink(args.PortalID, args.URL, args.Title)
+		id, err := AddPortalLink(args.PortalID, args.URL, args.Title)
 		if err != nil {
 			switch {
-			case errors.Is(err, errUnknownPortal):
-				return errResult(fmt.Sprintf("unknown portal id %q", args.PortalID)), nil, nil
-			case errors.Is(err, errDuplicatePortalLink):
-				return errResult("this url is already a link on this portal"), nil, nil
+			case errors.Is(err, ErrUnknownPortal):
+				return db.ErrResult(fmt.Sprintf("unknown portal id %q", args.PortalID)), nil, nil
+			case errors.Is(err, ErrDuplicatePortalLink):
+				return db.ErrResult("this url is already a link on this portal"), nil, nil
 			}
-			return errResult(fmt.Sprintf("failed to add portal link: %v", err)), nil, nil
+			return db.ErrResult(fmt.Sprintf("failed to add portal link: %v", err)), nil, nil
 		}
-		return jsonResult(map[string]string{"id": id})
+		return db.JSONResult(map[string]string{"id": id})
 	})
 }
 
@@ -1097,7 +1178,7 @@ type updatePortalLinkArgs struct {
 	Title *string `json:"title,omitempty" jsonschema:"the link's own new title"`
 }
 
-func registerUpdatePortalLink(server *mcp.Server) {
+func RegisterUpdatePortalLink(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "update_portal_link",
 		Description: "Correct an existing portal link's own title and/or url. This is the right tool when a " +
@@ -1105,25 +1186,25 @@ func registerUpdatePortalLink(server *mcp.Server) {
 			"a duplicate. Fails if id is unknown.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args updatePortalLinkArgs) (*mcp.CallToolResult, any, error) {
 		if args.ID == "" {
-			return errResult("id is required"), nil, nil
+			return db.ErrResult("id is required"), nil, nil
 		}
 		if args.URL == nil && args.Title == nil {
-			return errResult("url or title is required"), nil, nil
+			return db.ErrResult("url or title is required"), nil, nil
 		}
 		if args.URL != nil && *args.URL == "" {
-			return errResult("url cannot be empty"), nil, nil
+			return db.ErrResult("url cannot be empty"), nil, nil
 		}
 		if args.Title != nil && *args.Title == "" {
-			return errResult("title cannot be empty"), nil, nil
+			return db.ErrResult("title cannot be empty"), nil, nil
 		}
-		if err := updatePortalLink(args.ID, args.URL, args.Title); err != nil {
+		if err := UpdatePortalLink(args.ID, args.URL, args.Title); err != nil {
 			switch {
-			case errors.Is(err, errUnknownPortalLink):
-				return errResult(fmt.Sprintf("unknown portal link id %q", args.ID)), nil, nil
-			case errors.Is(err, errDuplicatePortalLink):
-				return errResult("this url is already a link on this portal"), nil, nil
+			case errors.Is(err, ErrUnknownPortalLink):
+				return db.ErrResult(fmt.Sprintf("unknown portal link id %q", args.ID)), nil, nil
+			case errors.Is(err, ErrDuplicatePortalLink):
+				return db.ErrResult("this url is already a link on this portal"), nil, nil
 			}
-			return errResult(fmt.Sprintf("failed to update portal link: %v", err)), nil, nil
+			return db.ErrResult(fmt.Sprintf("failed to update portal link: %v", err)), nil, nil
 		}
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "updated"}}}, nil, nil
 	})
@@ -1133,16 +1214,16 @@ type removePortalLinkArgs struct {
 	ID string `json:"id" jsonschema:"the portal link's own id"`
 }
 
-func registerRemovePortalLink(server *mcp.Server) {
+func RegisterRemovePortalLink(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "remove_portal_link",
 		Description: "Remove a crawl target link from a portal.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args removePortalLinkArgs) (*mcp.CallToolResult, any, error) {
 		if args.ID == "" {
-			return errResult("id is required"), nil, nil
+			return db.ErrResult("id is required"), nil, nil
 		}
-		if err := removePortalLink(args.ID); err != nil {
-			return errResult(fmt.Sprintf("failed to remove portal link: %v", err)), nil, nil
+		if err := RemovePortalLink(args.ID); err != nil {
+			return db.ErrResult(fmt.Sprintf("failed to remove portal link: %v", err)), nil, nil
 		}
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "deleted"}}}, nil, nil
 	})
@@ -1152,25 +1233,25 @@ type getPortalLinkCrawlInstructionsArgs struct {
 	PortalLinkID string `json:"portalLinkId" jsonschema:"the portal link's own id, from add_portal_link or list_portals"`
 }
 
-func registerGetPortalLinkCrawlInstructions(server *mcp.Server) {
+func RegisterGetPortalLinkCrawlInstructions(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "get_portal_link_crawl_instructions",
 		Description: "Read the currently saved YAML crawl instructions for one portal link (null if none saved yet).",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args getPortalLinkCrawlInstructionsArgs) (*mcp.CallToolResult, any, error) {
 		if args.PortalLinkID == "" {
-			return errResult("portalLinkId is required"), nil, nil
+			return db.ErrResult("portalLinkId is required"), nil, nil
 		}
-		instructions, err := getPortalLinkCrawlInstructions(args.PortalLinkID)
+		instructions, err := GetPortalLinkCrawlInstructions(args.PortalLinkID)
 		if err != nil {
-			if errors.Is(err, errUnknownPortalLink) {
-				return errResult(fmt.Sprintf("unknown portal link id %q", args.PortalLinkID)), nil, nil
+			if errors.Is(err, ErrUnknownPortalLink) {
+				return db.ErrResult(fmt.Sprintf("unknown portal link id %q", args.PortalLinkID)), nil, nil
 			}
-			return errResult(fmt.Sprintf("failed to read crawl instructions: %v", err)), nil, nil
+			return db.ErrResult(fmt.Sprintf("failed to read crawl instructions: %v", err)), nil, nil
 		}
 		if instructions == "" {
-			return jsonResult(map[string]any{"crawlInstructions": nil})
+			return db.JSONResult(map[string]any{"crawlInstructions": nil})
 		}
-		return jsonResult(map[string]any{"crawlInstructions": instructions})
+		return db.JSONResult(map[string]any{"crawlInstructions": instructions})
 	})
 }
 
@@ -1179,7 +1260,7 @@ type setPortalLinkCrawlInstructionsArgs struct {
 	Instructions string `json:"instructions" jsonschema:"YAML: fields (>=1 entry, each with label+selector), pagination (nextSelector+maxPages), and optionally container/mapping — the exact shape crawl_paginated expects. The effective output (a field's own label, or its mapping target) must include title and url, see this tool's own description for the full required schema."`
 }
 
-func registerSetPortalLinkCrawlInstructions(server *mcp.Server) {
+func RegisterSetPortalLinkCrawlInstructions(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "set_portal_link_crawl_instructions",
 		Description: "Save the YAML crawl instructions for one portal link — works equally on a link you just " +
@@ -1210,18 +1291,18 @@ func registerSetPortalLinkCrawlInstructions(server *mcp.Server) {
 			"the real page.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args setPortalLinkCrawlInstructionsArgs) (*mcp.CallToolResult, any, error) {
 		if args.PortalLinkID == "" {
-			return errResult("portalLinkId is required"), nil, nil
+			return db.ErrResult("portalLinkId is required"), nil, nil
 		}
 		if args.Instructions == "" {
-			return errResult("instructions is required"), nil, nil
+			return db.ErrResult("instructions is required"), nil, nil
 		}
-		if err := updatePortalLinkCrawlInstructions(args.PortalLinkID, args.Instructions); err != nil {
-			if errors.Is(err, errUnknownPortalLink) {
-				return errResult(fmt.Sprintf("unknown portal link id %q", args.PortalLinkID)), nil, nil
+		if err := UpdatePortalLinkCrawlInstructions(args.PortalLinkID, args.Instructions); err != nil {
+			if errors.Is(err, ErrUnknownPortalLink) {
+				return db.ErrResult(fmt.Sprintf("unknown portal link id %q", args.PortalLinkID)), nil, nil
 			}
-			// errInvalidCrawlInstructions and any other failure already
+			// ErrInvalidCrawlInstructions and any other failure already
 			// carry a specific, actionable message of their own.
-			return errResult(err.Error()), nil, nil
+			return db.ErrResult(err.Error()), nil, nil
 		}
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "updated"}}}, nil, nil
 	})
@@ -1231,7 +1312,7 @@ type getPortalLinkJobDetailCrawlInstructionsArgs struct {
 	PortalLinkID string `json:"portalLinkId" jsonschema:"the portal link's own id, from add_portal_link or list_portals"`
 }
 
-func registerGetPortalLinkJobDetailCrawlInstructions(server *mcp.Server) {
+func RegisterGetPortalLinkJobDetailCrawlInstructions(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "get_portal_link_job_detail_crawl_instructions",
 		Description: "Read the currently saved YAML job-detail crawl instructions for one portal link (null if " +
@@ -1239,19 +1320,19 @@ func registerGetPortalLinkJobDetailCrawlInstructions(server *mcp.Server) {
 			"separate from get_portal_link_crawl_instructions' own listing-page instructions.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args getPortalLinkJobDetailCrawlInstructionsArgs) (*mcp.CallToolResult, any, error) {
 		if args.PortalLinkID == "" {
-			return errResult("portalLinkId is required"), nil, nil
+			return db.ErrResult("portalLinkId is required"), nil, nil
 		}
-		instructions, err := getPortalLinkJobDetailCrawlInstructions(args.PortalLinkID)
+		instructions, err := GetPortalLinkJobDetailCrawlInstructions(args.PortalLinkID)
 		if err != nil {
-			if errors.Is(err, errUnknownPortalLink) {
-				return errResult(fmt.Sprintf("unknown portal link id %q", args.PortalLinkID)), nil, nil
+			if errors.Is(err, ErrUnknownPortalLink) {
+				return db.ErrResult(fmt.Sprintf("unknown portal link id %q", args.PortalLinkID)), nil, nil
 			}
-			return errResult(fmt.Sprintf("failed to read job detail crawl instructions: %v", err)), nil, nil
+			return db.ErrResult(fmt.Sprintf("failed to read job detail crawl instructions: %v", err)), nil, nil
 		}
 		if instructions == "" {
-			return jsonResult(map[string]any{"jobDetailCrawlInstructions": nil})
+			return db.JSONResult(map[string]any{"jobDetailCrawlInstructions": nil})
 		}
-		return jsonResult(map[string]any{"jobDetailCrawlInstructions": instructions})
+		return db.JSONResult(map[string]any{"jobDetailCrawlInstructions": instructions})
 	})
 }
 
@@ -1260,7 +1341,7 @@ type setPortalLinkJobDetailCrawlInstructionsArgs struct {
 	Instructions string `json:"instructions" jsonschema:"YAML: fields (>=1 entry, each with label+selector, optionally attribute/multiple) describing which elements on a single job's own detail page hold job-position-relevant text. No container, no pagination — a detail page is neither a repeating list nor paginated. The effective output must include a field labeled description; leave attribute unset (defaults to the element's own text content) unless you deliberately want an attribute value instead of text."`
 }
 
-func registerSetPortalLinkJobDetailCrawlInstructions(server *mcp.Server) {
+func RegisterSetPortalLinkJobDetailCrawlInstructions(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "set_portal_link_job_detail_crawl_instructions",
 		Description: "Save the YAML job-detail crawl instructions for one portal link — how to extract ONLY the " +
@@ -1285,16 +1366,16 @@ func registerSetPortalLinkJobDetailCrawlInstructions(server *mcp.Server) {
 			"Rejected if it doesn't parse, has no fields, or the effective output doesn't produce description.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args setPortalLinkJobDetailCrawlInstructionsArgs) (*mcp.CallToolResult, any, error) {
 		if args.PortalLinkID == "" {
-			return errResult("portalLinkId is required"), nil, nil
+			return db.ErrResult("portalLinkId is required"), nil, nil
 		}
 		if args.Instructions == "" {
-			return errResult("instructions is required"), nil, nil
+			return db.ErrResult("instructions is required"), nil, nil
 		}
-		if err := updatePortalLinkJobDetailCrawlInstructions(args.PortalLinkID, args.Instructions); err != nil {
-			if errors.Is(err, errUnknownPortalLink) {
-				return errResult(fmt.Sprintf("unknown portal link id %q", args.PortalLinkID)), nil, nil
+		if err := UpdatePortalLinkJobDetailCrawlInstructions(args.PortalLinkID, args.Instructions); err != nil {
+			if errors.Is(err, ErrUnknownPortalLink) {
+				return db.ErrResult(fmt.Sprintf("unknown portal link id %q", args.PortalLinkID)), nil, nil
 			}
-			return errResult(err.Error()), nil, nil
+			return db.ErrResult(err.Error()), nil, nil
 		}
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "updated"}}}, nil, nil
 	})

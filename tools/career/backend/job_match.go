@@ -23,9 +23,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"career-tool-backend/db"
+	"career-tool-backend/jobs"
 )
 
 // startJobMatch begins tracking a new AI-driven match attempt for
@@ -38,10 +40,10 @@ import (
 // why those columns still exist even though this is the only
 // match-producing mechanism left.
 func startJobMatch(jobId, profileId, conversationId string) error {
-	if err := requireJobExists(jobId); err != nil {
+	if err := jobs.RequireJobExists(jobId); err != nil {
 		return err
 	}
-	_, err := jobsDB.Exec(
+	_, err := db.JobsDB.Exec(
 		`INSERT INTO job_matches (job_id, profile_id, persona_id, score, status, conversation_id, error, updated_at)
 		 VALUES (?, ?, NULL, NULL, 'matching', ?, NULL, datetime('now'))
 		 ON CONFLICT(job_id) DO UPDATE SET
@@ -73,10 +75,10 @@ func startJobMatch(jobId, profileId, conversationId string) error {
 // level failure, without the AI ever having called save_job_match at
 // all).
 func updateJobMatchStatus(jobId, status string, errText *string) error {
-	if err := requireJobExists(jobId); err != nil {
+	if err := jobs.RequireJobExists(jobId); err != nil {
 		return err
 	}
-	_, err := jobsDB.Exec(
+	_, err := db.JobsDB.Exec(
 		`UPDATE job_matches SET status = ?, error = ?, conversation_id = NULL, updated_at = datetime('now') WHERE job_id = ?`,
 		status, orNull(errText), jobId,
 	)
@@ -106,7 +108,7 @@ var errInvalidMatchScore = errors.New("score must be an integer between 0 and 10
 // any of those. See job_matches.kind's own doc comment (db.go) for why
 // the columns themselves still exist.
 func saveJobMatchResult(jobId, profileId, personaId string, score int, matchedSkills []string) error {
-	if err := requireJobExists(jobId); err != nil {
+	if err := jobs.RequireJobExists(jobId); err != nil {
 		return err
 	}
 	if score < 0 || score > 100 {
@@ -127,7 +129,7 @@ func saveJobMatchResult(jobId, profileId, personaId string, score int, matchedSk
 		}
 	}
 
-	tx, err := jobsDB.Begin()
+	tx, err := db.JobsDB.Begin()
 	if err != nil {
 		return err
 	}
@@ -173,60 +175,13 @@ func saveJobMatchResult(jobId, profileId, personaId string, score int, matchedSk
 // validation failure, not a shape check.
 var errInvalidMatchSkill = errors.New("invalid matched skill")
 
-// getJobMatchSkills reads one job's own matched skills, alphabetically
-// — empty (never nil) when the job has no completed match, or its
-// match had no matching skills at all.
-func getJobMatchSkills(jobId string) ([]string, error) {
-	rows, err := jobsDB.Query(`SELECT skill FROM job_match_skills WHERE job_id = ? ORDER BY skill ASC`, jobId)
-	if err != nil {
-		return nil, err
+// orNull turns a *string into a value database/sql writes as either
+// the string itself or a real SQL NULL — nil in, nil out.
+func orNull(s *string) any {
+	if s == nil {
+		return nil
 	}
-	defer rows.Close()
-	skills := []string{}
-	for rows.Next() {
-		var s string
-		if err := rows.Scan(&s); err != nil {
-			return nil, err
-		}
-		skills = append(skills, s)
-	}
-	return skills, rows.Err()
-}
-
-// getJobMatchSkillsBatch is queryJobs' own (jobs.go) batched
-// counterpart to getJobMatchSkills — one query for a whole page of
-// jobs rather than one per row (avoiding N+1), since job_match_skills
-// is a one-to-many relation a single LEFT JOIN can't attach to a job
-// row without multiplying it. A jobId with no entries simply has no
-// key in the returned map, exactly like lastCrawledByPortalLink's own
-// established "absent, not empty-value" convention (portals.go).
-func getJobMatchSkillsBatch(jobIds []string) (map[string][]string, error) {
-	result := make(map[string][]string, len(jobIds))
-	if len(jobIds) == 0 {
-		return result, nil
-	}
-	placeholders := make([]string, len(jobIds))
-	args := make([]any, len(jobIds))
-	for i, id := range jobIds {
-		placeholders[i] = "?"
-		args[i] = id
-	}
-	rows, err := jobsDB.Query(
-		`SELECT job_id, skill FROM job_match_skills WHERE job_id IN (`+strings.Join(placeholders, ",")+`) ORDER BY job_id, skill ASC`,
-		args...,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var jobId, skill string
-		if err := rows.Scan(&jobId, &skill); err != nil {
-			return nil, err
-		}
-		result[jobId] = append(result[jobId], skill)
-	}
-	return result, rows.Err()
+	return *s
 }
 
 // reconcileOrphanedJobMatches mirrors reconcileOrphanedCrawlRuns
@@ -237,7 +192,7 @@ func getJobMatchSkillsBatch(jobIds []string) (map[string][]string, error) {
 // alongside reconcileOrphanedCrawlRuns. See
 // plan/ai/tools/career/step-XX-job-match.md.
 func reconcileOrphanedJobMatches() error {
-	_, err := jobsDB.Exec(
+	_, err := db.JobsDB.Exec(
 		`UPDATE job_matches SET status = 'failed', error = 'Interrupted by a server restart', conversation_id = NULL, updated_at = datetime('now')
 		 WHERE status = 'matching'`,
 	)
@@ -266,22 +221,22 @@ func registerSaveJobMatch(server *mcp.Server) {
 			"an integer 0-100, or matchedSkills contains anything not in that persona's own skills.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args saveJobMatchArgs) (*mcp.CallToolResult, any, error) {
 		if args.JobID == "" {
-			return errResult("jobId is required"), nil, nil
+			return db.ErrResult("jobId is required"), nil, nil
 		}
 		if args.ProfileID == "" {
-			return errResult("profileId is required"), nil, nil
+			return db.ErrResult("profileId is required"), nil, nil
 		}
 		if args.PersonaID == "" {
-			return errResult("personaId is required"), nil, nil
+			return db.ErrResult("personaId is required"), nil, nil
 		}
 		if err := saveJobMatchResult(args.JobID, args.ProfileID, args.PersonaID, args.Score, args.MatchedSkills); err != nil {
-			if errors.Is(err, errUnknownJob) {
-				return errResult(fmt.Sprintf("unknown job id %q", args.JobID)), nil, nil
+			if errors.Is(err, jobs.ErrUnknownJob) {
+				return db.ErrResult(fmt.Sprintf("unknown job id %q", args.JobID)), nil, nil
 			}
 			if errors.Is(err, errInvalidMatchScore) || errors.Is(err, errInvalidMatchSkill) {
-				return errResult(err.Error()), nil, nil
+				return db.ErrResult(err.Error()), nil, nil
 			}
-			return errResult(fmt.Sprintf("failed to save job match: %v", err)), nil, nil
+			return db.ErrResult(fmt.Sprintf("failed to save job match: %v", err)), nil, nil
 		}
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "saved"}}}, nil, nil
 	})
@@ -304,15 +259,15 @@ func registerGetJob(server *mcp.Server) {
 		Description: "Read one job posting by id — every field save_job/save_portal_job/list_jobs/search_jobs expose, in one precise call. Fails if jobId is unknown.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args getJobArgs) (*mcp.CallToolResult, any, error) {
 		if args.JobID == "" {
-			return errResult("jobId is required"), nil, nil
+			return db.ErrResult("jobId is required"), nil, nil
 		}
-		j, err := getJobByID(args.JobID)
+		j, err := jobs.GetJobByID(args.JobID)
 		if err != nil {
-			if errors.Is(err, errUnknownJob) {
-				return errResult(fmt.Sprintf("unknown job id %q", args.JobID)), nil, nil
+			if errors.Is(err, jobs.ErrUnknownJob) {
+				return db.ErrResult(fmt.Sprintf("unknown job id %q", args.JobID)), nil, nil
 			}
-			return errResult(fmt.Sprintf("failed to load job: %v", err)), nil, nil
+			return db.ErrResult(fmt.Sprintf("failed to load job: %v", err)), nil, nil
 		}
-		return jsonResult(map[string]any{"job": j})
+		return db.JSONResult(map[string]any{"job": j})
 	})
 }

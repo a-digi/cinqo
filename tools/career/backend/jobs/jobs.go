@@ -1,12 +1,12 @@
-// jobs.go is the AI-facing surface over jobs.db — how a crawled job
-// posting actually gets saved, and how it's read back. Deliberately
+// Package jobs is the AI-facing surface over jobs.db — how a crawled
+// job posting actually gets saved, and how it's read back. Deliberately
 // does not crawl anything itself: browser's own crawl_paginated
 // (plan/ai/tools/browser/step-16-paginated-crawl-instructions.md)
 // already does the actual multi-page extraction; the AI's own real
-// workflow is to call that, then call this file's own save_job once
+// workflow is to call that, then call this package's own save_job once
 // per posting found. See plan/ai/tools/career/step-04-jobs-tools.md.
 //
-// Step 20 added save_portal_job — a separate, dedicated tool for the
+// Step 20 added SavePortalJob — a separate, dedicated tool for the
 // portal-driven crawling workflow (plan/ai/tools/career/
 // step-18-portals.md), deliberately not a new parameter on save_job
 // itself: save_job's own existing source_url-only dedup contract is
@@ -17,7 +17,21 @@
 // posting reaches the AI via more than one portal, each with its own
 // different URL for it. See
 // plan/ai/tools/career/step-20-portal-job-ingestion.md.
-package main
+//
+// Extracted into its own package (step XX) as part of this backend's
+// split into subpackages mirroring tools/browser/backend's own auth/
+// crawler/shared layout. Imports companies (RequireCompanyExists/
+// ErrUnknownCompany, for LinkJobToCompany) — one-directional, companies
+// never imports jobs back. Deliberately does NOT import the portal
+// package even though FindPortalLinkURL conceptually checks "does this
+// portal link exist": the portal package itself needs SavePortalJob
+// (below) for its own IngestCrawlResults, so importing portal from here
+// would be a real cycle — errUnknownPortalLinkRef below is a small,
+// deliberately independent local copy of portal.ErrUnknownPortalLink,
+// same "two separate concerns, kept in sync by hand" convention this
+// tool already uses for browser's own cross-module JSON shapes. See
+// plan/ai/tools/career/step-XX-package-split.md.
+package jobs
 
 import (
 	"context"
@@ -29,6 +43,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"career-tool-backend/companies"
+	"career-tool-backend/db"
 )
 
 // defaultJobsLimit/maxJobsLimit bound list_jobs/search_jobs the same
@@ -68,37 +85,36 @@ type job struct {
 	// this row and says nothing about whether the job's own detail
 	// page was ever separately visited. "failed" | "success". Read-only
 	// — written only via save_job_detail_extraction (this file) and
-	// markJobDetailCrawlFailed. See
+	// MarkJobDetailCrawlFailed. See
 	// plan/ai/tools/career/step-XX-job-detail-crawl-status-eye-icon.md.
 	DetailCrawlStatus string `json:"detailCrawlStatus,omitempty"`
 	// MatchScore/MatchStatus/MatchConversationID/MatchError (step XX)
 	// mirror DetailCrawlStatus's own "read-only, written only via a
 	// dedicated function" posture — resolved via a LEFT JOIN to
-	// job_matches (job_match.go) in queryJobs/getJobByID, below.
-	// MatchScore is nil until a match completes; MatchStatus is ""
-	// (never "null") when this job has never been matched at all. See
-	// plan/ai/tools/career/step-XX-job-match.md.
+	// job_matches (job_match.go, package main) in queryJobs/GetJobByID,
+	// below. MatchScore is nil until a match completes; MatchStatus is
+	// "" (never "null") when this job has never been matched at all.
+	// See plan/ai/tools/career/step-XX-job-match.md.
 	MatchScore          *int   `json:"matchScore,omitempty"`
 	MatchStatus         string `json:"matchStatus,omitempty"`
 	MatchConversationID string `json:"matchConversationId,omitempty"`
 	MatchError          string `json:"matchError,omitempty"`
 	// MatchedSkills (step XX) — the specific skills (verbatim, from
 	// that persona's own career.db skills list) that explain
-	// MatchScore, from the one-to-many job_match_skills table
-	// (job_match.go) a single LEFT JOIN can't attach here without
-	// multiplying this row — resolved via a separate batched query in
-	// queryJobs and a separate single query in getJobByID, below.
+	// MatchScore, from the one-to-many job_match_skills table (this
+	// file's own GetJobMatchSkills/GetJobMatchSkillsBatch, below) a
+	// single LEFT JOIN can't attach here without multiplying this row.
 	// Always [] (never omitted/null) so frontend code never has to
 	// special-case "field absent" vs "no matched skills".
 	MatchedSkills []string `json:"matchedSkills"`
 }
 
-// saveJob upserts by source_url — re-saving a posting already known
+// SaveJob upserts by source_url — re-saving a posting already known
 // updates it (refreshing crawled_at) rather than duplicating it.
 // Returns the row's own id and whether this was a fresh insert.
 func saveJob(sourceURL, title, company, location, description, postedAt string) (id string, created bool, err error) {
 	var existingID string
-	err = jobsDB.QueryRow(`SELECT id FROM jobs WHERE source_url = ?`, sourceURL).Scan(&existingID)
+	err = db.JobsDB.QueryRow(`SELECT id FROM jobs WHERE source_url = ?`, sourceURL).Scan(&existingID)
 	switch {
 	case err == sql.ErrNoRows:
 		id = uuid.NewString()
@@ -110,7 +126,7 @@ func saveJob(sourceURL, title, company, location, description, postedAt string) 
 		created = false
 	}
 
-	_, err = jobsDB.Exec(
+	_, err = db.JobsDB.Exec(
 		`INSERT INTO jobs (id, source_url, title, company, location, description, posted_at, crawled_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
 		 ON CONFLICT(source_url) DO UPDATE SET
@@ -161,17 +177,17 @@ func listJobs(companyId, portalLinkId, portalId string, limit, offset int) (jobs
 	return queryJobs(where, args, limit, offset)
 }
 
-// searchJobs matches query against title/company/description; location
+// SearchJobs matches query against title/company/description; location
 // restricts to an exact location value (step — Jobs page Location
 // dropdown: the frontend now offers a fixed list of distinct location
-// values via listDistinctJobLocations, rather than free text, so
+// values via ListDistinctJobLocations, rather than free text, so
 // partial LIKE matching no longer applies). companyId/portalLinkId/
 // portalId, if non-empty, additionally restrict as documented on
 // listJobs, above. Omitting every filter is equivalent to listJobs.
 // Plain parameterized LIKE for query, case-insensitive via LOWER(...)
 // — no full-text-search extension for a first pass (see this step's
 // own open question 1).
-func searchJobs(query, location, companyId, portalLinkId, portalId string, limit, offset int) (jobsListResult, error) {
+func SearchJobs(query, location, companyId, portalLinkId, portalId string, limit, offset int) (jobsListResult, error) {
 	where := `WHERE 1=1`
 	args := []any{}
 	if query != "" {
@@ -210,12 +226,12 @@ const jobsFromClause = `FROM jobs j
 func queryJobs(where string, whereArgs []any, limit, offset int) (jobsListResult, error) {
 	var total int
 	countArgs := append([]any{}, whereArgs...)
-	if err := jobsDB.QueryRow(`SELECT COUNT(*) `+jobsFromClause+` `+where, countArgs...).Scan(&total); err != nil {
+	if err := db.JobsDB.QueryRow(`SELECT COUNT(*) `+jobsFromClause+` `+where, countArgs...).Scan(&total); err != nil {
 		return jobsListResult{}, err
 	}
 
 	pageArgs := append(append([]any{}, whereArgs...), limit, offset)
-	rows, err := jobsDB.Query(
+	rows, err := db.JobsDB.Query(
 		`SELECT j.id, j.source_url, j.title, j.company, j.company_id, j.portal_link_id, p.id, p.name, j.location, j.description, j.posted_at, j.crawled_at, j.detail_crawl_status,
 			jm.score, jm.status, jm.conversation_id, jm.error
 		 `+jobsFromClause+` `+where+` ORDER BY j.crawled_at DESC LIMIT ? OFFSET ?`,
@@ -262,12 +278,12 @@ func queryJobs(where string, whereArgs []any, limit, offset int) (jobsListResult
 	// One batched query for the whole page rather than one per job —
 	// job_match_skills is one-to-many, so a single LEFT JOIN above
 	// can't attach it without multiplying each job row. See
-	// getJobMatchSkillsBatch's own doc comment (job_match.go).
+	// GetJobMatchSkillsBatch's own doc comment, below.
 	jobIDs := make([]string, len(jobs))
 	for i, j := range jobs {
 		jobIDs[i] = j.ID
 	}
-	skillsByJob, err := getJobMatchSkillsBatch(jobIDs)
+	skillsByJob, err := GetJobMatchSkillsBatch(jobIDs)
 	if err != nil {
 		return jobsListResult{}, err
 	}
@@ -280,17 +296,17 @@ func queryJobs(where string, whereArgs []any, limit, offset int) (jobsListResult
 	return jobsListResult{Jobs: jobs, Total: total}, nil
 }
 
-func deleteJob(id string) error {
-	_, err := jobsDB.Exec(`DELETE FROM jobs WHERE id = ?`, id)
+func DeleteJob(id string) error {
+	_, err := db.JobsDB.Exec(`DELETE FROM jobs WHERE id = ?`, id)
 	return err
 }
 
-// getJobByID reads one job by id, with the exact same portal_links/
+// GetJobByID reads one job by id, with the exact same portal_links/
 // portals join queryJobs' own paged read already uses — the Jobs page's
-// own Eye icon opens a details page keyed by this. errUnknownJob
-// (already declared for save_job_detail_extraction, above) on no rows.
-func getJobByID(id string) (job, error) {
-	row := jobsDB.QueryRow(
+// own Eye icon opens a details page keyed by this. ErrUnknownJob on no
+// rows.
+func GetJobByID(id string) (job, error) {
+	row := db.JobsDB.QueryRow(
 		`SELECT j.id, j.source_url, j.title, j.company, j.company_id, j.portal_link_id, p.id, p.name, j.location, j.description, j.posted_at, j.crawled_at, j.detail_crawl_status,
 			jm.score, jm.status, jm.conversation_id, jm.error
 		 `+jobsFromClause+` WHERE j.id = ?`,
@@ -304,7 +320,7 @@ func getJobByID(id string) (job, error) {
 		&matchScore, &matchStatus, &matchConversationID, &matchError)
 	switch {
 	case err == sql.ErrNoRows:
-		return job{}, errUnknownJob
+		return job{}, ErrUnknownJob
 	case err != nil:
 		return job{}, err
 	}
@@ -324,7 +340,7 @@ func getJobByID(id string) (job, error) {
 	j.MatchStatus = matchStatus.String
 	j.MatchConversationID = matchConversationID.String
 	j.MatchError = matchError.String
-	skills, err := getJobMatchSkills(j.ID)
+	skills, err := GetJobMatchSkills(j.ID)
 	if err != nil {
 		return job{}, err
 	}
@@ -332,11 +348,73 @@ func getJobByID(id string) (job, error) {
 	return j, nil
 }
 
-// jobDetailCrawlTarget is one job's own minimal identity for the
-// deterministic "Crawl job details now" loop (crawl_job_details_now.go)
-// — just enough to navigate to its detail page and, once extracted,
-// name which row to update.
-type jobDetailCrawlTarget struct {
+// GetJobMatchSkills reads one job's own matched skills, alphabetically
+// — empty (never nil) when the job has no completed match, or its
+// match had no matching skills at all. Moved here from job_match.go
+// (package main, step XX package split) since queryJobs/GetJobByID
+// above are this function's own only real callers — job_match.go's own
+// remaining WRITE side (saveJobMatchResult) stays in package main,
+// which can reach db.JobsDB directly; only the READ side needed to move
+// with this package.
+func GetJobMatchSkills(jobId string) ([]string, error) {
+	rows, err := db.JobsDB.Query(`SELECT skill FROM job_match_skills WHERE job_id = ? ORDER BY skill ASC`, jobId)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	skills := []string{}
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			return nil, err
+		}
+		skills = append(skills, s)
+	}
+	return skills, rows.Err()
+}
+
+// GetJobMatchSkillsBatch is queryJobs' own batched counterpart to
+// GetJobMatchSkills — one query for a whole page of jobs rather than
+// one per row (avoiding N+1), since job_match_skills is a one-to-many
+// relation a single LEFT JOIN can't attach to a job row without
+// multiplying it. A jobId with no entries simply has no key in the
+// returned map, exactly like the portal package's own
+// lastCrawledByPortalLink established "absent, not empty-value"
+// convention.
+func GetJobMatchSkillsBatch(jobIds []string) (map[string][]string, error) {
+	result := make(map[string][]string, len(jobIds))
+	if len(jobIds) == 0 {
+		return result, nil
+	}
+	placeholders := make([]string, len(jobIds))
+	args := make([]any, len(jobIds))
+	for i, id := range jobIds {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	rows, err := db.JobsDB.Query(
+		`SELECT job_id, skill FROM job_match_skills WHERE job_id IN (`+strings.Join(placeholders, ",")+`) ORDER BY job_id, skill ASC`,
+		args...,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var jobId, skill string
+		if err := rows.Scan(&jobId, &skill); err != nil {
+			return nil, err
+		}
+		result[jobId] = append(result[jobId], skill)
+	}
+	return result, rows.Err()
+}
+
+// JobDetailCrawlTarget is one job's own minimal identity for the
+// deterministic "Crawl job details now" loop (crawl package) — just
+// enough to navigate to its detail page and, once extracted, name
+// which row to update.
+type JobDetailCrawlTarget struct {
 	ID        string
 	SourceURL string
 	Title     string
@@ -352,10 +430,10 @@ type jobDetailCrawlTarget struct {
 // time a link is over this cap.
 const maxJobDetailCrawlJobs = 200
 
-// listJobsForDetailCrawl returns up to maxJobDetailCrawlJobs jobs
+// ListJobsForDetailCrawl returns up to maxJobDetailCrawlJobs jobs
 // belonging to portalLinkID, oldest-crawled first.
-func listJobsForDetailCrawl(portalLinkID string) ([]jobDetailCrawlTarget, error) {
-	rows, err := jobsDB.Query(
+func ListJobsForDetailCrawl(portalLinkID string) ([]JobDetailCrawlTarget, error) {
+	rows, err := db.JobsDB.Query(
 		`SELECT id, source_url, title FROM jobs WHERE portal_link_id = ? ORDER BY crawled_at ASC LIMIT ?`,
 		portalLinkID, maxJobDetailCrawlJobs,
 	)
@@ -364,9 +442,9 @@ func listJobsForDetailCrawl(portalLinkID string) ([]jobDetailCrawlTarget, error)
 	}
 	defer rows.Close()
 
-	targets := []jobDetailCrawlTarget{}
+	targets := []JobDetailCrawlTarget{}
 	for rows.Next() {
-		var t jobDetailCrawlTarget
+		var t JobDetailCrawlTarget
 		if err := rows.Scan(&t.ID, &t.SourceURL, &t.Title); err != nil {
 			return nil, err
 		}
@@ -375,15 +453,15 @@ func listJobsForDetailCrawl(portalLinkID string) ([]jobDetailCrawlTarget, error)
 	return targets, rows.Err()
 }
 
-// listDistinctJobLocations returns every distinct non-empty location
+// ListDistinctJobLocations returns every distinct non-empty location
 // value across all saved jobs, alphabetically — the Jobs page's own
 // Location filter dropdown's data source. Raw, unnormalized strings as
 // crawled (e.g. "Berlin" and "Berlin, Germany" are two separate
-// values, never grouped) — exact match is what searchJobs's own
+// values, never grouped) — exact match is what SearchJobs's own
 // location filter now expects. See plan/ai/tools/career/step-55-jobs-
 // page-location-dropdown-active-filters-live-search.md.
-func listDistinctJobLocations() ([]string, error) {
-	rows, err := jobsDB.Query(`SELECT DISTINCT location FROM jobs WHERE location IS NOT NULL AND location != '' ORDER BY location`)
+func ListDistinctJobLocations() ([]string, error) {
+	rows, err := db.JobsDB.Query(`SELECT DISTINCT location FROM jobs WHERE location IS NOT NULL AND location != '' ORDER BY location`)
 	if err != nil {
 		return nil, err
 	}
@@ -403,25 +481,34 @@ func listDistinctJobLocations() ([]string, error) {
 	return locations, nil
 }
 
-// linkJobToCompany sets (or, if companyId is "", clears) a job's own
+// LinkJobToCompany sets (or, if companyId is "", clears) a job's own
 // company_id. A non-empty, unknown companyId is a real error
-// (errUnknownCompany), never a silent no-op — same
-// requireCompanyExists pattern profile.go/persona.go already use for
-// their own parent references. See
+// (companies.ErrUnknownCompany), never a silent no-op — same
+// RequireCompanyExists pattern the profile/persona domain already uses
+// for its own parent references. See
 // plan/ai/tools/career/step-14-companies.md.
-func linkJobToCompany(jobId, companyId string) error {
+func LinkJobToCompany(jobId, companyId string) error {
 	if companyId != "" {
-		if err := requireCompanyExists(companyId); err != nil {
+		if err := companies.RequireCompanyExists(companyId); err != nil {
 			return err
 		}
-		_, err := jobsDB.Exec(`UPDATE jobs SET company_id = ? WHERE id = ?`, companyId, jobId)
+		_, err := db.JobsDB.Exec(`UPDATE jobs SET company_id = ? WHERE id = ?`, companyId, jobId)
 		return err
 	}
-	_, err := jobsDB.Exec(`UPDATE jobs SET company_id = NULL WHERE id = ?`, jobId)
+	_, err := db.JobsDB.Exec(`UPDATE jobs SET company_id = NULL WHERE id = ?`, jobId)
 	return err
 }
 
-// savePortalJob is the dedup-aware save for the portal-driven crawling
+// errUnknownPortalLinkRef is a deliberately independent local copy of
+// the portal package's own ErrUnknownPortalLink — see this file's own
+// top comment for why this package can't import portal (a real
+// cycle). Only checked within this package's own MCP tool
+// registrations below (RegisterSavePortalJob/RegisterSavePortalJobs),
+// never by any external caller — nothing outside this package needs it
+// to be the SAME sentinel as portal's own.
+var errUnknownPortalLinkRef = errors.New("unknown portal link id")
+
+// SavePortalJob is the dedup-aware save for the portal-driven crawling
 // workflow — see this file's own top comment and
 // plan/ai/tools/career/step-20-portal-job-ingestion.md for why this is
 // a separate tool from saveJob, and why the dedup key is
@@ -440,7 +527,7 @@ func linkJobToCompany(jobId, companyId string) error {
 // company check below only ever runs for a source_url this function
 // hasn't seen before, which is exactly the cross-portal,
 // different-URL case this step exists for.
-func savePortalJob(portalLinkId, sourceURL, title, company, location, description, postedAt string) (id string, created, duplicate bool, err error) {
+func SavePortalJob(portalLinkId, sourceURL, title, company, location, description, postedAt string) (id string, created, duplicate bool, err error) {
 	portalLinkURL, err := findPortalLinkURL(portalLinkId)
 	if err != nil {
 		return "", false, false, err
@@ -456,7 +543,7 @@ func savePortalJob(portalLinkId, sourceURL, title, company, location, descriptio
 	sourceURL = normalizeJobURL(sourceURL, portalLinkURL)
 
 	var existingBySourceURL string
-	err = jobsDB.QueryRow(`SELECT id FROM jobs WHERE source_url = ?`, sourceURL).Scan(&existingBySourceURL)
+	err = db.JobsDB.QueryRow(`SELECT id FROM jobs WHERE source_url = ?`, sourceURL).Scan(&existingBySourceURL)
 	switch {
 	case err == sql.ErrNoRows:
 		// a source_url this function hasn't seen before — check the
@@ -469,7 +556,7 @@ func savePortalJob(portalLinkId, sourceURL, title, company, location, descriptio
 
 	if id == "" {
 		var existingByTitleCompany string
-		err = jobsDB.QueryRow(
+		err = db.JobsDB.QueryRow(
 			`SELECT id FROM jobs WHERE LOWER(TRIM(title)) = ? AND LOWER(TRIM(company)) = ?`,
 			toLower(strings.TrimSpace(title)), toLower(strings.TrimSpace(company)),
 		).Scan(&existingByTitleCompany)
@@ -484,7 +571,7 @@ func savePortalJob(portalLinkId, sourceURL, title, company, location, descriptio
 		}
 	}
 
-	_, err = jobsDB.Exec(
+	_, err = db.JobsDB.Exec(
 		`INSERT INTO jobs (id, source_url, title, company, portal_link_id, location, description, posted_at, crawled_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
 		 ON CONFLICT(source_url) DO UPDATE SET
@@ -503,18 +590,21 @@ func savePortalJob(portalLinkId, sourceURL, title, company, location, descriptio
 	return id, created, false, nil
 }
 
-// findPortalLinkURL is requirePortalLinkExists's own SELECT, just also
-// returning the row's own url — savePortalJob needs both "does this
-// portal link exist" and "what's its own crawl-target URL" in one
-// round trip. Deliberately not a change to requirePortalLinkExists
-// itself, which nearly a dozen other call sites only ever use for the
+// findPortalLinkURL is portal's own RequirePortalLinkExists SELECT,
+// just also returning the row's own url — SavePortalJob needs both
+// "does this portal link exist" and "what's its own crawl-target URL"
+// in one round trip. A deliberately independent query against
+// portal_links directly (rather than calling into the portal package,
+// which would create the import cycle this file's own top comment
+// explains) — nearly a dozen other call sites in the portal package
+// itself only ever use its own RequirePortalLinkExists for the
 // existence check and don't need the extra column for.
 func findPortalLinkURL(id string) (string, error) {
 	var linkURL string
-	err := jobsDB.QueryRow(`SELECT url FROM portal_links WHERE id = ?`, id).Scan(&linkURL)
+	err := db.JobsDB.QueryRow(`SELECT url FROM portal_links WHERE id = ?`, id).Scan(&linkURL)
 	switch {
 	case err == sql.ErrNoRows:
-		return "", errUnknownPortalLink
+		return "", errUnknownPortalLinkRef
 	case err != nil:
 		return "", err
 	}
@@ -561,10 +651,10 @@ func toLower(s string) string {
 	return string(b)
 }
 
-// clampLimit applies the default/ceiling this step's own design
+// ClampLimit applies the default/ceiling this step's own design
 // specifies — 0 or negative means "use the default," anything above
 // the ceiling is clamped to it.
-func clampLimit(limit int) int {
+func ClampLimit(limit int) int {
 	if limit <= 0 {
 		return defaultJobsLimit
 	}
@@ -585,19 +675,19 @@ type saveJobArgs struct {
 	PostedAt    string `json:"postedAt,omitempty" jsonschema:"when the posting says it went up, as scraped (free text — formats vary too much per site to normalize)"`
 }
 
-func registerSaveJob(server *mcp.Server) {
+func RegisterSaveJob(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "save_job",
 		Description: "Save a crawled job posting. Saving the same sourceUrl again updates the existing entry instead of duplicating it.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args saveJobArgs) (*mcp.CallToolResult, any, error) {
 		if args.SourceURL == "" || args.Title == "" {
-			return errResult("sourceUrl and title are both required"), nil, nil
+			return db.ErrResult("sourceUrl and title are both required"), nil, nil
 		}
 		id, created, err := saveJob(args.SourceURL, args.Title, args.Company, args.Location, args.Description, args.PostedAt)
 		if err != nil {
-			return errResult(fmt.Sprintf("failed to save job: %v", err)), nil, nil
+			return db.ErrResult(fmt.Sprintf("failed to save job: %v", err)), nil, nil
 		}
-		return jsonResult(map[string]any{"id": id, "created": created})
+		return db.JSONResult(map[string]any{"id": id, "created": created})
 	})
 }
 
@@ -609,16 +699,16 @@ type listJobsArgs struct {
 	Offset       int    `json:"offset,omitempty" jsonschema:"how many matching results to skip, for paging"`
 }
 
-func registerListJobs(server *mcp.Server) {
+func RegisterListJobs(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_jobs",
 		Description: "List saved job postings, newest first.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args listJobsArgs) (*mcp.CallToolResult, any, error) {
-		result, err := listJobs(args.CompanyID, args.PortalLinkID, args.PortalID, clampLimit(args.Limit), args.Offset)
+		result, err := listJobs(args.CompanyID, args.PortalLinkID, args.PortalID, ClampLimit(args.Limit), args.Offset)
 		if err != nil {
-			return errResult(fmt.Sprintf("failed to list jobs: %v", err)), nil, nil
+			return db.ErrResult(fmt.Sprintf("failed to list jobs: %v", err)), nil, nil
 		}
-		return jsonResult(result)
+		return db.JSONResult(result)
 	})
 }
 
@@ -632,16 +722,16 @@ type searchJobsArgs struct {
 	Offset       int    `json:"offset,omitempty" jsonschema:"how many matching results to skip, for paging"`
 }
 
-func registerSearchJobs(server *mcp.Server) {
+func RegisterSearchJobs(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "search_jobs",
 		Description: "Search saved job postings by query, location, company, and/or portal (or a specific portal link). Omitting all is equivalent to list_jobs.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args searchJobsArgs) (*mcp.CallToolResult, any, error) {
-		result, err := searchJobs(args.Query, args.Location, args.CompanyID, args.PortalLinkID, args.PortalID, clampLimit(args.Limit), args.Offset)
+		result, err := SearchJobs(args.Query, args.Location, args.CompanyID, args.PortalLinkID, args.PortalID, ClampLimit(args.Limit), args.Offset)
 		if err != nil {
-			return errResult(fmt.Sprintf("failed to search jobs: %v", err)), nil, nil
+			return db.ErrResult(fmt.Sprintf("failed to search jobs: %v", err)), nil, nil
 		}
-		return jsonResult(result)
+		return db.JSONResult(result)
 	})
 }
 
@@ -650,19 +740,19 @@ type linkJobToCompanyArgs struct {
 	CompanyID string `json:"companyId" jsonschema:"the company's own id, from create_company/list_companies; empty string unlinks the job"`
 }
 
-func registerLinkJobToCompany(server *mcp.Server) {
+func RegisterLinkJobToCompany(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "link_job_to_company",
 		Description: "Link a saved job posting to a company (or, with an empty companyId, unlink it).",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args linkJobToCompanyArgs) (*mcp.CallToolResult, any, error) {
 		if args.JobID == "" {
-			return errResult("jobId is required"), nil, nil
+			return db.ErrResult("jobId is required"), nil, nil
 		}
-		if err := linkJobToCompany(args.JobID, args.CompanyID); err != nil {
-			if errors.Is(err, errUnknownCompany) {
-				return errResult(fmt.Sprintf("unknown company id %q", args.CompanyID)), nil, nil
+		if err := LinkJobToCompany(args.JobID, args.CompanyID); err != nil {
+			if errors.Is(err, companies.ErrUnknownCompany) {
+				return db.ErrResult(fmt.Sprintf("unknown company id %q", args.CompanyID)), nil, nil
 			}
-			return errResult(fmt.Sprintf("failed to link job to company: %v", err)), nil, nil
+			return db.ErrResult(fmt.Sprintf("failed to link job to company: %v", err)), nil, nil
 		}
 		if args.CompanyID == "" {
 			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "unlinked"}}}, nil, nil
@@ -681,7 +771,7 @@ type savePortalJobArgs struct {
 	PostedAt     string `json:"postedAt,omitempty" jsonschema:"when the posting says it went up, as scraped (free text — not used for duplicate detection, see this tool's own description)"`
 }
 
-func registerSavePortalJob(server *mcp.Server) {
+func RegisterSavePortalJob(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "save_portal_job",
 		Description: "Save a job posting found via a portal link, with cross-portal duplicate detection: before " +
@@ -692,19 +782,19 @@ func registerSavePortalJob(server *mcp.Server) {
 			"save_job for anything found through a portal link.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args savePortalJobArgs) (*mcp.CallToolResult, any, error) {
 		if args.PortalLinkID == "" {
-			return errResult("portalLinkId is required"), nil, nil
+			return db.ErrResult("portalLinkId is required"), nil, nil
 		}
 		if args.SourceURL == "" || args.Title == "" || args.Company == "" {
-			return errResult("sourceUrl, title, and company are all required"), nil, nil
+			return db.ErrResult("sourceUrl, title, and company are all required"), nil, nil
 		}
-		id, created, duplicate, err := savePortalJob(args.PortalLinkID, args.SourceURL, args.Title, args.Company, args.Location, args.Description, args.PostedAt)
+		id, created, duplicate, err := SavePortalJob(args.PortalLinkID, args.SourceURL, args.Title, args.Company, args.Location, args.Description, args.PostedAt)
 		if err != nil {
-			if errors.Is(err, errUnknownPortalLink) {
-				return errResult(fmt.Sprintf("unknown portal link id %q", args.PortalLinkID)), nil, nil
+			if errors.Is(err, errUnknownPortalLinkRef) {
+				return db.ErrResult(fmt.Sprintf("unknown portal link id %q", args.PortalLinkID)), nil, nil
 			}
-			return errResult(fmt.Sprintf("failed to save portal job: %v", err)), nil, nil
+			return db.ErrResult(fmt.Sprintf("failed to save portal job: %v", err)), nil, nil
 		}
-		return jsonResult(map[string]any{"id": id, "created": created, "duplicate": duplicate})
+		return db.JSONResult(map[string]any{"id": id, "created": created, "duplicate": duplicate})
 	})
 }
 
@@ -728,7 +818,7 @@ type savePortalJobsArgs struct {
 	Jobs         []savePortalJobInput `json:"jobs" jsonschema:"every job found on this crawl — pass them all in one call, never call save_portal_job job-by-job"`
 }
 
-func registerSavePortalJobs(server *mcp.Server) {
+func RegisterSavePortalJobs(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "save_portal_jobs",
 		Description: "Save every job posting found on a crawl in ONE call — pass the whole batch in `jobs`, " +
@@ -739,10 +829,10 @@ func registerSavePortalJobs(server *mcp.Server) {
 			"jobs from needing many separate tool calls.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args savePortalJobsArgs) (*mcp.CallToolResult, any, error) {
 		if args.PortalLinkID == "" {
-			return errResult("portalLinkId is required"), nil, nil
+			return db.ErrResult("portalLinkId is required"), nil, nil
 		}
 		if len(args.Jobs) == 0 {
-			return errResult("jobs must have at least one entry"), nil, nil
+			return db.ErrResult("jobs must have at least one entry"), nil, nil
 		}
 
 		var saved, updated, duplicates, skipped int
@@ -751,12 +841,12 @@ func registerSavePortalJobs(server *mcp.Server) {
 				skipped++
 				continue
 			}
-			_, created, duplicate, err := savePortalJob(args.PortalLinkID, j.SourceURL, j.Title, j.Company, j.Location, j.Description, j.PostedAt)
+			_, created, duplicate, err := SavePortalJob(args.PortalLinkID, j.SourceURL, j.Title, j.Company, j.Location, j.Description, j.PostedAt)
 			if err != nil {
-				if errors.Is(err, errUnknownPortalLink) {
-					return errResult(fmt.Sprintf("unknown portal link id %q", args.PortalLinkID)), nil, nil
+				if errors.Is(err, errUnknownPortalLinkRef) {
+					return db.ErrResult(fmt.Sprintf("unknown portal link id %q", args.PortalLinkID)), nil, nil
 				}
-				return errResult(fmt.Sprintf("failed to save portal job %q: %v", j.Title, err)), nil, nil
+				return db.ErrResult(fmt.Sprintf("failed to save portal job %q: %v", j.Title, err)), nil, nil
 			}
 			switch {
 			case duplicate:
@@ -767,7 +857,7 @@ func registerSavePortalJobs(server *mcp.Server) {
 				updated++
 			}
 		}
-		return jsonResult(map[string]any{
+		return db.JSONResult(map[string]any{
 			"jobsProcessed": len(args.Jobs),
 			"saved":         saved,
 			"updated":       updated,
@@ -781,51 +871,51 @@ type deleteJobArgs struct {
 	ID string `json:"id" jsonschema:"the job's own id, from save_job/list_jobs/search_jobs"`
 }
 
-func registerDeleteJob(server *mcp.Server) {
+func RegisterDeleteJob(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "delete_job",
 		Description: "Delete one saved job posting.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args deleteJobArgs) (*mcp.CallToolResult, any, error) {
 		if args.ID == "" {
-			return errResult("id is required"), nil, nil
+			return db.ErrResult("id is required"), nil, nil
 		}
-		if err := deleteJob(args.ID); err != nil {
-			return errResult(fmt.Sprintf("failed to delete job: %v", err)), nil, nil
+		if err := DeleteJob(args.ID); err != nil {
+			return db.ErrResult(fmt.Sprintf("failed to delete job: %v", err)), nil, nil
 		}
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "deleted"}}}, nil, nil
 	})
 }
 
-// errUnknownJob is a real, actionable error — unlike linkJobToCompany
+// ErrUnknownJob is a real, actionable error — unlike LinkJobToCompany
 // above (a pre-existing silent no-op on an unknown jobId),
-// saveJobDetailExtraction's own caller (eventually a sub-agent spawned
+// SaveJobDetailExtraction's own caller (eventually a sub-agent spawned
 // by crawl_urls_with_subagents, see plan/ai/tools/career/
 // step-XX-job-detail-crawl-instructions.md) needs a real signal that
 // its extraction had nowhere to go, not a silently-ignored write.
-var errUnknownJob = errors.New("unknown job id")
+var ErrUnknownJob = errors.New("unknown job id")
 
-func requireJobExists(id string) error {
+func RequireJobExists(id string) error {
 	var exists int
-	err := jobsDB.QueryRow(`SELECT 1 FROM jobs WHERE id = ?`, id).Scan(&exists)
+	err := db.JobsDB.QueryRow(`SELECT 1 FROM jobs WHERE id = ?`, id).Scan(&exists)
 	switch {
 	case err == sql.ErrNoRows:
-		return errUnknownJob
+		return ErrUnknownJob
 	case err != nil:
 		return err
 	}
 	return nil
 }
 
-// saveJobDetailExtraction persists the output of a single job detail
+// SaveJobDetailExtraction persists the output of a single job detail
 // page's own crawl (step XX) — values is whatever
 // job_detail_crawl_instructions' own fields produced, keyed by their
 // own labels. Only values["description"] is ever written: the
-// listing crawl (savePortalJob) already owns title/company/location/
+// listing crawl (SavePortalJob) already owns title/company/location/
 // postedAt, and job_detail_crawl_instructions' own required output
-// key is description alone (see requiredJobDetailCrawlOutputKeys,
-// portals.go) — any other key present in values (e.g. a "requirements"
-// field the instructions additionally declared) is accepted without
-// error but not currently persisted anywhere.
+// key is description alone (see the portal package's own
+// requiredJobDetailCrawlOutputKeys) — any other key present in values
+// (e.g. a "requirements" field the instructions additionally declared)
+// is accepted without error but not currently persisted anywhere.
 //
 // An empty/missing description records detail_crawl_status='failed'
 // (step XX — the Jobs page's own Eye icon reads this to distinguish
@@ -834,15 +924,15 @@ func requireJobExists(id string) error {
 // (possibly listing-truncated) description with, and crawled_at stays
 // whatever the listing crawl (or a previous successful detail crawl)
 // last set it to.
-func saveJobDetailExtraction(jobId string, values map[string]string) (updated bool, err error) {
-	if err := requireJobExists(jobId); err != nil {
+func SaveJobDetailExtraction(jobId string, values map[string]string) (updated bool, err error) {
+	if err := RequireJobExists(jobId); err != nil {
 		return false, err
 	}
 	description := strings.TrimSpace(values["description"])
 	if description == "" {
-		return false, markJobDetailCrawlFailed(jobId)
+		return false, MarkJobDetailCrawlFailed(jobId)
 	}
-	_, err = jobsDB.Exec(
+	_, err = db.JobsDB.Exec(
 		`UPDATE jobs SET description = ?, crawled_at = datetime('now'), detail_crawl_status = 'success' WHERE id = ?`,
 		description, jobId,
 	)
@@ -852,19 +942,19 @@ func saveJobDetailExtraction(jobId string, values map[string]string) (updated bo
 	return true, nil
 }
 
-// markJobDetailCrawlFailed records that a job-detail-page crawl
+// MarkJobDetailCrawlFailed records that a job-detail-page crawl
 // attempt for jobId was made and did not produce a usable description
-// — called both by saveJobDetailExtraction above (extraction ran but
-// came back empty) and directly by runJobDetailCrawlNow
-// (crawl_job_details_now.go) for a harder failure that never even
-// reached that function (the page fetch itself erroring, or no page
-// extracted at all) — both cases look identical to the Jobs page's own
-// Eye icon, which only needs to know "an attempt was made and it
-// didn't work," not why. Deliberately does not require the caller to
-// re-check requireJobExists — every call site already has a jobId it
-// just successfully used moments earlier.
-func markJobDetailCrawlFailed(jobId string) error {
-	_, err := jobsDB.Exec(`UPDATE jobs SET detail_crawl_status = 'failed' WHERE id = ?`, jobId)
+// — called both by SaveJobDetailExtraction above (extraction ran but
+// came back empty) and directly by the crawl package's own
+// runJobDetailCrawlNow for a harder failure that never even reached
+// that function (the page fetch itself erroring, or no page extracted
+// at all) — both cases look identical to the Jobs page's own Eye icon,
+// which only needs to know "an attempt was made and it didn't work,"
+// not why. Deliberately does not require the caller to re-check
+// RequireJobExists — every call site already has a jobId it just
+// successfully used moments earlier.
+func MarkJobDetailCrawlFailed(jobId string) error {
+	_, err := db.JobsDB.Exec(`UPDATE jobs SET detail_crawl_status = 'failed' WHERE id = ?`, jobId)
 	return err
 }
 
@@ -873,7 +963,7 @@ type saveJobDetailExtractionArgs struct {
 	Values map[string]string `json:"values" jsonschema:"the extracted values, keyed by the label declared in this job's own portal link job_detail_crawl_instructions (see set_portal_link_job_detail_crawl_instructions) — must include description"`
 }
 
-func registerSaveJobDetailExtraction(server *mcp.Server) {
+func RegisterSaveJobDetailExtraction(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "save_job_detail_extraction",
 		Description: "Save the text extracted off one job's own detail page (per its portal link's own " +
@@ -882,18 +972,18 @@ func registerSaveJobDetailExtraction(server *mcp.Server) {
 			"extracting its detail page; values must include a description key. Fails if jobId is unknown.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args saveJobDetailExtractionArgs) (*mcp.CallToolResult, any, error) {
 		if args.JobID == "" {
-			return errResult("jobId is required"), nil, nil
+			return db.ErrResult("jobId is required"), nil, nil
 		}
 		if len(args.Values) == 0 {
-			return errResult("values is required"), nil, nil
+			return db.ErrResult("values is required"), nil, nil
 		}
-		updated, err := saveJobDetailExtraction(args.JobID, args.Values)
+		updated, err := SaveJobDetailExtraction(args.JobID, args.Values)
 		if err != nil {
-			if errors.Is(err, errUnknownJob) {
-				return errResult(fmt.Sprintf("unknown job id %q", args.JobID)), nil, nil
+			if errors.Is(err, ErrUnknownJob) {
+				return db.ErrResult(fmt.Sprintf("unknown job id %q", args.JobID)), nil, nil
 			}
-			return errResult(fmt.Sprintf("failed to save job detail extraction: %v", err)), nil, nil
+			return db.ErrResult(fmt.Sprintf("failed to save job detail extraction: %v", err)), nil, nil
 		}
-		return jsonResult(map[string]any{"updated": updated})
+		return db.JSONResult(map[string]any{"updated": updated})
 	})
 }

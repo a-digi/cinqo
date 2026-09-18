@@ -28,6 +28,12 @@ import (
 	"os"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"career-tool-backend/companies"
+	"career-tool-backend/crawl"
+	"career-tool-backend/db"
+	"career-tool-backend/jobs"
+	"career-tool-backend/portal"
 )
 
 func main() {
@@ -41,14 +47,14 @@ func main() {
 func runHTTPServer() {
 	port := os.Getenv("PORT")
 
-	if err := initDatabases(); err != nil {
+	if err := db.InitDatabases(); err != nil {
 		log.Fatalf("failed to open career/jobs databases: %v", err)
 	}
 	// A goroutine, unlike an OS process, has no PID to find or
 	// reattach after a restart — any crawl_runs row still 'running'
 	// from before this process started is definitely orphaned. See
 	// plan/ai/tools/career/step-37-detached-crawl-now-orchestration.md.
-	if err := reconcileOrphanedCrawlRuns(); err != nil {
+	if err := crawl.ReconcileOrphanedCrawlRuns(); err != nil {
 		log.Fatalf("failed to reconcile orphaned crawl runs: %v", err)
 	}
 	// Same reasoning as reconcileOrphanedCrawlRuns above, one level up
@@ -62,7 +68,7 @@ func runHTTPServer() {
 	// without this process itself restarting. This periodic sweep is
 	// the in-process complement: it catches that case too, without
 	// requiring a restart.
-	startStaleCrawlRunReaper()
+	crawl.StartStaleCrawlRunReaper()
 
 	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -83,11 +89,11 @@ func runHTTPServer() {
 	http.HandleFunc("/portal-links", portalLinksHandler)
 	http.HandleFunc("/portal-links/crawl-request", crawlRequestHandler)
 	http.HandleFunc("/portal-links/ingest-crawl-results", ingestCrawlResultsHandler)
-	http.HandleFunc("/portal-links/crawl-now", crawlNowHandler)
-	http.HandleFunc("/portal-links/crawl-job-details-now", crawlJobDetailsNowHandler)
-	http.HandleFunc("/portal-links/crawl-runs/active", crawlMonitorHandler)
-	http.HandleFunc("/portal-links/crawl-now/active", crawlNowActiveHandler)
-	http.HandleFunc("/portal-links/crawl-now/cancel", crawlNowCancelHandler)
+	http.HandleFunc("/portal-links/crawl-now", crawl.CrawlNowHandler)
+	http.HandleFunc("/portal-links/crawl-job-details-now", crawl.CrawlJobDetailsNowHandler)
+	http.HandleFunc("/portal-links/crawl-runs/active", crawl.CrawlMonitorHandler)
+	http.HandleFunc("/portal-links/crawl-now/active", crawl.CrawlNowActiveHandler)
+	http.HandleFunc("/portal-links/crawl-now/cancel", crawl.CrawlNowCancelHandler)
 	http.HandleFunc("/cv-import/upload", uploadCVHandler)
 	http.HandleFunc("/cv-import/runs", cvImportRunsHandler)
 
@@ -105,7 +111,7 @@ func runHTTPServer() {
 // reads/writes career.db and jobs.db directly, the same as HTTP mode
 // does.
 func runMCPServer() {
-	if err := initDatabases(); err != nil {
+	if err := db.InitDatabases(); err != nil {
 		log.Fatalf("failed to open career/jobs databases: %v", err)
 	}
 
@@ -128,35 +134,35 @@ func runMCPServer() {
 	registerAddCareerExperience(server)
 	registerRemoveCareerExperience(server)
 	registerUpdateCareerExperience(server)
-	registerSaveJob(server)
-	registerListJobs(server)
-	registerSearchJobs(server)
-	registerDeleteJob(server)
-	registerSaveJobDetailExtraction(server)
+	jobs.RegisterSaveJob(server)
+	jobs.RegisterListJobs(server)
+	jobs.RegisterSearchJobs(server)
+	jobs.RegisterDeleteJob(server)
+	jobs.RegisterSaveJobDetailExtraction(server)
 	registerGetJob(server)
 	registerSaveJobMatch(server)
-	registerSavePortalJob(server)
-	registerSavePortalJobs(server)
-	registerCreateCompany(server)
-	registerListCompanies(server)
-	registerUpdateCompany(server)
-	registerDeleteCompany(server)
-	registerLinkJobToCompany(server)
+	jobs.RegisterSavePortalJob(server)
+	jobs.RegisterSavePortalJobs(server)
+	companies.RegisterCreateCompany(server)
+	companies.RegisterListCompanies(server)
+	companies.RegisterUpdateCompany(server)
+	companies.RegisterDeleteCompany(server)
+	jobs.RegisterLinkJobToCompany(server)
 	registerCreateRecruiter(server)
 	registerListRecruiters(server)
 	registerUpdateRecruiter(server)
 	registerDeleteRecruiter(server)
-	registerCreatePortal(server)
-	registerListPortals(server)
-	registerUpdatePortal(server)
-	registerDeletePortal(server)
-	registerAddPortalLink(server)
-	registerUpdatePortalLink(server)
-	registerRemovePortalLink(server)
-	registerGetPortalLinkCrawlInstructions(server)
-	registerSetPortalLinkCrawlInstructions(server)
-	registerGetPortalLinkJobDetailCrawlInstructions(server)
-	registerSetPortalLinkJobDetailCrawlInstructions(server)
+	portal.RegisterCreatePortal(server)
+	portal.RegisterListPortals(server)
+	portal.RegisterUpdatePortal(server)
+	portal.RegisterDeletePortal(server)
+	portal.RegisterAddPortalLink(server)
+	portal.RegisterUpdatePortalLink(server)
+	portal.RegisterRemovePortalLink(server)
+	portal.RegisterGetPortalLinkCrawlInstructions(server)
+	portal.RegisterSetPortalLinkCrawlInstructions(server)
+	portal.RegisterGetPortalLinkJobDetailCrawlInstructions(server)
+	portal.RegisterSetPortalLinkJobDetailCrawlInstructions(server)
 
 	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
 		os.Exit(1)

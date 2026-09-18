@@ -29,7 +29,7 @@
 // honest failure, not a silent one, and not something this file can
 // self-heal given the cookie's own scope. See step-37's own
 // "Correction: no self-renewal" section for the full reasoning.
-package main
+package crawl
 
 import (
 	"bytes"
@@ -44,6 +44,9 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"career-tool-backend/db"
+	"career-tool-backend/portal"
 )
 
 // errBrowserSessionInterrupted is what callBrowserProxy returns
@@ -139,10 +142,10 @@ func coreAPIURL() (string, error) {
 	return v, nil
 }
 
-// crawlNowHandler handles POST /portal-links/crawl-now — starts a
+// CrawlNowHandler handles POST /portal-links/crawl-now — starts a
 // crawl_runs row and launches the detached goroutine, responding
 // immediately rather than waiting on it.
-func crawlNowHandler(w http.ResponseWriter, r *http.Request) {
+func CrawlNowHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -172,8 +175,8 @@ func crawlNowHandler(w http.ResponseWriter, r *http.Request) {
 	// Fail fast on missing/invalid crawl instructions before creating a
 	// crawl_runs row at all — mirrors crawlRequestHandler's own
 	// buildCrawlRequest error mapping exactly.
-	if _, err := buildCrawlRequest(body.PortalLinkID); err != nil {
-		writePortalLinkAwareError(w, "build crawl request", err)
+	if _, err := portal.BuildCrawlRequest(body.PortalLinkID); err != nil {
+		portal.WritePortalLinkAwareError(w, "build crawl request", err)
 		return
 	}
 
@@ -182,7 +185,7 @@ func crawlNowHandler(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, errCrawlAlreadyRunning):
 			http.Error(w, "a crawl is already running for this link", http.StatusConflict)
-		case errors.Is(err, errUnknownPortalLink):
+		case errors.Is(err, portal.ErrUnknownPortalLink):
 			http.Error(w, "unknown portal link id", http.StatusBadRequest)
 		default:
 			http.Error(w, "failed to start crawl: "+err.Error(), http.StatusInternalServerError)
@@ -212,12 +215,12 @@ func crawlNowHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// crawlNowActiveHandler handles GET /portal-links/crawl-now/active?portalLinkId=...
+// CrawlNowActiveHandler handles GET /portal-links/crawl-now/active?portalLinkId=...
 // — returns the most recent crawl_runs row for the link, running or
 // terminal, so a poller reliably observes a just-finished run instead
 // of racing a 404 (mirrors GetActiveTurnHandler's own contract,
 // api/src/conversation/handler/turn_handler.go).
-func crawlNowActiveHandler(w http.ResponseWriter, r *http.Request) {
+func CrawlNowActiveHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -236,10 +239,10 @@ func crawlNowActiveHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to load crawl run: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, toCrawlRunResponse(run))
+	db.WriteJSON(w, toCrawlRunResponse(run))
 }
 
-// crawlNowCancelHandler handles POST /portal-links/crawl-now/cancel —
+// CrawlNowCancelHandler handles POST /portal-links/crawl-now/cancel —
 // a real "Stop crawl," not to be confused with the frontend's own
 // pre-existing client-side-only "Stop watching" (which never reached
 // this backend at all). Two cooperating halves, both best-effort in
@@ -262,7 +265,7 @@ func crawlNowActiveHandler(w http.ResponseWriter, r *http.Request) {
 // goroutine also reaching a terminal state at roughly the same
 // moment — whichever writes first wins, the second is a silent no-op.
 // See plan/ai/tools/career/step-63-stop-crawling-now.md.
-func crawlNowCancelHandler(w http.ResponseWriter, r *http.Request) {
+func CrawlNowCancelHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -300,10 +303,10 @@ func crawlNowCancelHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = appendCrawlRunLog(run.ID, msg)
-	writeJSON(w, map[string]string{"crawlRunId": run.ID, "status": "cancelled"})
+	db.WriteJSON(w, map[string]string{"crawlRunId": run.ID, "status": "cancelled"})
 }
 
-// crawlRunResponse is the wire shape crawlNowActiveHandler returns —
+// crawlRunResponse is the wire shape CrawlNowActiveHandler returns —
 // Log split into individual entries here (the data layer keeps the raw
 // newline-delimited string, see crawl_runs.go's own doc comment).
 type crawlRunResponse struct {
@@ -335,20 +338,17 @@ func toCrawlRunResponse(r *crawlRun) crawlRunResponse {
 // crawlNowPaginatedResult mirrors browser's own paginatedCrawlResponse
 // (tools/browser/backend/paginate.go) — this tool has no dependency on
 // that package, so the shape is independently declared here, kept in
-// sync by hand, the same convention crawlRequest/crawlResultPage
-// (portals.go) already established for this tool's other calls into
-// browser's own JSON contracts. Pages uses this tool's own
-// crawlResultPage (portals.go) directly — its fields are a strict
-// subset of browser's pageExtractResult, so json.Unmarshal simply
-// ignores the extra CloudflareDetected/CloudflareReason keys on each
-// page.
+// sync by hand. Pages uses the portal package's own CrawlResultPage
+// directly — its fields are a strict subset of browser's
+// pageExtractResult, so json.Unmarshal simply ignores the extra
+// CloudflareDetected/CloudflareReason keys on each page.
 type crawlNowPaginatedResult struct {
-	Pages             []crawlResultPage `json:"pages"`
-	StoppedReason     string            `json:"stoppedReason"`
-	PagesVisited      int               `json:"pagesVisited"`
-	RequestedMaxPages int               `json:"requestedMaxPages"`
-	EffectiveMaxPages int               `json:"effectiveMaxPages"`
-	BlockedReason     string            `json:"blockedReason,omitempty"`
+	Pages             []portal.CrawlResultPage `json:"pages"`
+	StoppedReason     string                   `json:"stoppedReason"`
+	PagesVisited      int                      `json:"pagesVisited"`
+	RequestedMaxPages int                      `json:"requestedMaxPages"`
+	EffectiveMaxPages int                      `json:"effectiveMaxPages"`
+	BlockedReason     string                   `json:"blockedReason,omitempty"`
 }
 
 // crawlStatusPollInterval — how often pollBrowserPhase asks browser's
@@ -442,7 +442,7 @@ func fetchBrowserCrawlStatus(ctx context.Context, coreURL, runID, accessToken st
 }
 
 // runCrawlNow is the detached goroutine body — rooted in
-// context.Background() by its caller (crawlNowHandler), not the
+// context.Background() by its caller (CrawlNowHandler), not the
 // request's own context, so it keeps running after the handler has
 // already responded and the initiating tab may have closed. Mirrors
 // the AI conversation feature's own runDetachedTurn
@@ -463,12 +463,12 @@ func runCrawlNow(ctx context.Context, runID, portalLinkID, accessToken string) {
 	}
 
 	_ = setCrawlRunPhase(runID, "building_request", "building crawl request")
-	req, err := buildCrawlRequest(portalLinkID)
+	req, err := portal.BuildCrawlRequest(portalLinkID)
 	if err != nil {
 		fail(err)
 		return
 	}
-	linkURL, err := getPortalLinkURL(portalLinkID)
+	linkURL, err := portal.GetPortalLinkURL(portalLinkID)
 	if err != nil {
 		fail(err)
 		return
@@ -476,7 +476,7 @@ func runCrawlNow(ctx context.Context, runID, portalLinkID, accessToken string) {
 	// portal_pacing.go — the owning portal's own id, not the link's:
 	// browser's own rateLimitKey paces page fetches across EVERY link
 	// belonging to this portal, not just within this one run.
-	portalID, err := getPortalIDForLink(portalLinkID)
+	portalID, err := portal.GetPortalIDForLink(portalLinkID)
 	if err != nil {
 		fail(err)
 		return
@@ -501,11 +501,11 @@ func runCrawlNow(ctx context.Context, runID, portalLinkID, accessToken string) {
 	// id generation needed. expectedSelectors (step 36) — already
 	// exactly what req's own Container/Fields carry.
 	pagRequest := struct {
-		crawlRequest
+		portal.CrawlRequest
 		URL          string `json:"url"`
 		RequestID    string `json:"requestId"`
 		RateLimitKey string `json:"rateLimitKey"`
-	}{crawlRequest: req, URL: linkURL, RequestID: runID, RateLimitKey: portalID}
+	}{CrawlRequest: req, URL: linkURL, RequestID: runID, RateLimitKey: portalID}
 	pagBody, err := json.Marshal(pagRequest)
 	if err != nil {
 		fail(err)
@@ -526,7 +526,7 @@ func runCrawlNow(ctx context.Context, runID, portalLinkID, accessToken string) {
 			break
 		}
 		// step 63.4 — a deliberate user-requested stop is the OPPOSITE
-		// of transient: never retried, and crawlNowCancelHandler (below)
+		// of transient: never retried, and CrawlNowCancelHandler (above)
 		// has already written the terminal 'cancelled' row itself by the
 		// time this is ever observed here — this goroutine's only
 		// remaining job is to stop touching that row, not to also call
@@ -552,7 +552,7 @@ func runCrawlNow(ctx context.Context, runID, portalLinkID, accessToken string) {
 		// backoff wait now takes effect immediately instead of waiting
 		// out the full interval first. ctx.Err() here is always
 		// context.Canceled (this goroutine's own cancelCrawlNowRun,
-		// below — nothing else ever cancels it), not a genuine
+		// above — nothing else ever cancels it), not a genuine
 		// "browser session died" case, so it's reported directly as a
 		// plain failure rather than routed through the Cloudflare/
 		// session-interrupted error-Code machinery that only exists on
@@ -572,7 +572,7 @@ func runCrawlNow(ctx context.Context, runID, portalLinkID, accessToken string) {
 	}
 
 	_ = setCrawlRunPhase(runID, "ingesting_jobs", fmt.Sprintf("saving %d page(s) of results", len(result.Pages)))
-	ingested, err := ingestCrawlResults(portalLinkID, result.Pages)
+	ingested, err := portal.IngestCrawlResults(portalLinkID, result.Pages)
 	if err != nil {
 		fail(fmt.Errorf("failed to save crawled jobs: %w", err))
 		return

@@ -1,31 +1,39 @@
-// http.go is the plain HTTP mirror of profile.go/persona.go/
-// persona_details.go/jobs.go's own MCP tools — needed because a
-// human's own browser session and the AI's own MCP tool-calling loop
-// are two different callers needing two different transports to reach
-// the same underlying data (the same reason browser's own
-// /login-credentials route exists alongside its MCP tools). Every
-// handler here calls the exact same functions those files already
-// built — never independently reimplemented. Deliberately not
-// MCP-exposed themselves (the AI already has the real MCP tools) —
-// scope enforcement happens at the host's own reverse proxy via
-// manifest.json's routes[], same as every other tool's own HTTP
-// routes; nothing here re-checks it. See
+// http.go is the plain HTTP mirror of the profile/persona/persona-
+// details/jobs domains' own MCP tools — needed because a human's own
+// browser session and the AI's own MCP tool-calling loop are two
+// different callers needing two different transports to reach the same
+// underlying data (the same reason browser's own /login-credentials
+// route exists alongside its MCP tools). Every handler here calls the
+// exact same functions those domains already built — never
+// independently reimplemented. Deliberately not MCP-exposed themselves
+// (the AI already has the real MCP tools) — scope enforcement happens
+// at the host's own reverse proxy via manifest.json's routes[], same as
+// every other tool's own HTTP routes; nothing here re-checks it. See
 // plan/ai/tools/career/step-05-react-tailwind-frontend.md,
 // plan/ai/tools/career/step-08-persona.md (personaId threading), and
 // plan/ai/tools/career/step-10-job-seeker-profile.md (/profiles,
 // /profile-links, /profile renamed to /persona-details).
+//
+// As of the package-split refactor (step XX), profile/persona/persona-
+// details/recruiters/job_match's own business logic still lives
+// alongside their own handlers here in package main — only companies/
+// jobs/portals/the crawl-orchestration files moved into their own
+// subpackages (companies/jobs/portal/crawl), mirroring tools/browser/
+// backend's own auth/crawler/shared split. This file's own calls into
+// those four are qualified accordingly; everything else below is
+// unchanged. See plan/ai/tools/career/step-XX-package-split.md.
 package main
 
 import (
 	"encoding/json"
 	"errors"
 	"net/http"
-)
 
-func writeJSON(w http.ResponseWriter, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(v)
-}
+	"career-tool-backend/companies"
+	"career-tool-backend/db"
+	"career-tool-backend/jobs"
+	"career-tool-backend/portal"
+)
 
 // writePersonaAwareError maps errUnknownPersona to a 400 (a caller
 // mistake) and everything else to a 500, matching
@@ -48,15 +56,6 @@ func writeProfileAwareError(w http.ResponseWriter, action string, err error) {
 	http.Error(w, "failed to "+action+": "+err.Error(), http.StatusInternalServerError)
 }
 
-// writeCompanyAwareError is the same idea for errUnknownCompany.
-func writeCompanyAwareError(w http.ResponseWriter, action string, err error) {
-	if errors.Is(err, errUnknownCompany) {
-		http.Error(w, "unknown company id", http.StatusBadRequest)
-		return
-	}
-	http.Error(w, "failed to "+action+": "+err.Error(), http.StatusInternalServerError)
-}
-
 // writeRecruiterAwareError is the same idea for errUnknownRecruiter.
 func writeRecruiterAwareError(w http.ResponseWriter, action string, err error) {
 	if errors.Is(err, errUnknownRecruiter) {
@@ -64,40 +63,6 @@ func writeRecruiterAwareError(w http.ResponseWriter, action string, err error) {
 		return
 	}
 	http.Error(w, "failed to "+action+": "+err.Error(), http.StatusInternalServerError)
-}
-
-// writePortalAwareError is the same idea for errUnknownPortal.
-func writePortalAwareError(w http.ResponseWriter, action string, err error) {
-	if errors.Is(err, errUnknownPortal) {
-		http.Error(w, "unknown portal id", http.StatusBadRequest)
-		return
-	}
-	http.Error(w, "failed to "+action+": "+err.Error(), http.StatusInternalServerError)
-}
-
-// writePortalLinkAwareError additionally maps errDuplicatePortalLink
-// (the same url added twice to one portal) and errInvalidCrawlInstructions
-// (step 19's own shape check) to a 400 — the latter's own error text
-// already carries the specific, actionable reason (e.g. "pagination.
-// maxPages is required"), so it's passed straight through rather than
-// replaced with a generic message.
-func writePortalLinkAwareError(w http.ResponseWriter, action string, err error) {
-	switch {
-	case errors.Is(err, errUnknownPortal):
-		http.Error(w, "unknown portal id", http.StatusBadRequest)
-	case errors.Is(err, errUnknownPortalLink):
-		http.Error(w, "unknown portal link id", http.StatusBadRequest)
-	case errors.Is(err, errDuplicatePortalLink):
-		http.Error(w, "this url is already a link on this portal", http.StatusBadRequest)
-	case errors.Is(err, errInvalidCrawlInstructions):
-		http.Error(w, err.Error(), http.StatusBadRequest)
-	case errors.Is(err, errNoCrawlInstructions):
-		http.Error(w, err.Error(), http.StatusBadRequest)
-	case errors.Is(err, errNoJobDetailCrawlInstructions):
-		http.Error(w, err.Error(), http.StatusBadRequest)
-	default:
-		http.Error(w, "failed to "+action+": "+err.Error(), http.StatusInternalServerError)
-	}
 }
 
 // --- /profiles ---
@@ -121,7 +86,7 @@ func profilesHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "failed to list profiles: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, map[string]any{"profiles": profiles})
+		db.WriteJSON(w, map[string]any{"profiles": profiles})
 
 	case http.MethodPost:
 		var body profileRequest
@@ -139,7 +104,7 @@ func profilesHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "profile created but failed to reload: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, map[string]any{"id": id, "profiles": profiles})
+		db.WriteJSON(w, map[string]any{"id": id, "profiles": profiles})
 
 	case http.MethodPut:
 		var body profileUpdateRequest
@@ -156,7 +121,7 @@ func profilesHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "profile updated but failed to reload: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, map[string]any{"profiles": profiles})
+		db.WriteJSON(w, map[string]any{"profiles": profiles})
 
 	case http.MethodDelete:
 		id := r.URL.Query().Get("id")
@@ -198,7 +163,7 @@ func profileLinksHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		for _, p := range profiles {
 			if p.ID == profileID {
-				writeJSON(w, map[string]any{"externalLinks": p.ExternalLinks})
+				db.WriteJSON(w, map[string]any{"externalLinks": p.ExternalLinks})
 				return
 			}
 		}
@@ -264,7 +229,7 @@ func personasHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "failed to list personas: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, map[string]any{"personas": personas})
+		db.WriteJSON(w, map[string]any{"personas": personas})
 
 	case http.MethodPost:
 		var body personaRequest
@@ -286,7 +251,7 @@ func personasHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "persona created but failed to reload: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, map[string]any{"id": id, "personas": personas})
+		db.WriteJSON(w, map[string]any{"id": id, "personas": personas})
 
 	case http.MethodPut:
 		var body personaUpdateRequest
@@ -303,7 +268,7 @@ func personasHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "persona updated but failed to reload: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, map[string]any{"personas": personas})
+		db.WriteJSON(w, map[string]any{"personas": personas})
 
 	case http.MethodDelete:
 		id := r.URL.Query().Get("id")
@@ -337,7 +302,7 @@ func personaDetailsHandler(w http.ResponseWriter, r *http.Request) {
 			writePersonaAwareError(w, "read persona details", err)
 			return
 		}
-		writeJSON(w, result)
+		db.WriteJSON(w, result)
 
 	case http.MethodPost:
 		var body updatePersonaDetailsArgs
@@ -358,7 +323,7 @@ func personaDetailsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "persona details updated but failed to reload: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, result)
+		db.WriteJSON(w, result)
 
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -385,7 +350,7 @@ func skillsHandler(w http.ResponseWriter, r *http.Request) {
 			writePersonaAwareError(w, "read skills", err)
 			return
 		}
-		writeJSON(w, map[string]any{"skills": result.Skills})
+		db.WriteJSON(w, map[string]any{"skills": result.Skills})
 
 	case http.MethodPost:
 		var body skillRequest
@@ -406,7 +371,7 @@ func skillsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "skill added but failed to reload: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, map[string]any{"skills": result.Skills})
+		db.WriteJSON(w, map[string]any{"skills": result.Skills})
 
 	case http.MethodDelete:
 		personaID := r.URL.Query().Get("personaId")
@@ -464,7 +429,7 @@ func experienceHandler(w http.ResponseWriter, r *http.Request) {
 			writePersonaAwareError(w, "read experience", err)
 			return
 		}
-		writeJSON(w, map[string]any{"experience": result.Experience})
+		db.WriteJSON(w, map[string]any{"experience": result.Experience})
 
 	case http.MethodPost:
 		var body experienceRequest
@@ -485,7 +450,7 @@ func experienceHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "experience added but failed to reload: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, map[string]any{"experience": result.Experience})
+		db.WriteJSON(w, map[string]any{"experience": result.Experience})
 
 	case http.MethodPut:
 		var body experienceUpdateRequest
@@ -514,7 +479,7 @@ func experienceHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "experience updated but failed to reload: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, map[string]any{"experience": result.Experience})
+		db.WriteJSON(w, map[string]any{"experience": result.Experience})
 
 	case http.MethodDelete:
 		personaID := r.URL.Query().Get("personaId")
@@ -545,8 +510,8 @@ type linkJobToCompanyRequest struct {
 	CompanyID string `json:"companyId"`
 }
 
-// jobsHandler's own GET always calls searchJobs — deliberately not a
-// separate list-vs-search branch: searchJobs already degrades to
+// jobsHandler's own GET always calls jobs.SearchJobs — deliberately not
+// a separate list-vs-search branch: SearchJobs already degrades to
 // "return everything" when query/location/companyId are all empty,
 // the same overlap this step's own design doc calls out on the MCP
 // side (list_jobs/search_jobs). PUT is narrow — it only ever sets or
@@ -563,26 +528,26 @@ func jobsHandler(w http.ResponseWriter, r *http.Request) {
 		// "?id= means one item" convention this handler's own DELETE
 		// branch already uses.
 		if id := q.Get("id"); id != "" {
-			j, err := getJobByID(id)
+			j, err := jobs.GetJobByID(id)
 			if err != nil {
-				if errors.Is(err, errUnknownJob) {
+				if errors.Is(err, jobs.ErrUnknownJob) {
 					http.Error(w, "unknown job id", http.StatusNotFound)
 					return
 				}
 				http.Error(w, "failed to load job: "+err.Error(), http.StatusInternalServerError)
 				return
 			}
-			writeJSON(w, map[string]any{"job": j})
+			db.WriteJSON(w, map[string]any{"job": j})
 			return
 		}
 		limit := atoiOrZero(q.Get("limit"))
 		offset := atoiOrZero(q.Get("offset"))
-		result, err := searchJobs(q.Get("query"), q.Get("location"), q.Get("companyId"), q.Get("portalLinkId"), q.Get("portalId"), clampLimit(limit), offset)
+		result, err := jobs.SearchJobs(q.Get("query"), q.Get("location"), q.Get("companyId"), q.Get("portalLinkId"), q.Get("portalId"), jobs.ClampLimit(limit), offset)
 		if err != nil {
 			http.Error(w, "failed to list jobs: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, result)
+		db.WriteJSON(w, result)
 
 	case http.MethodPut:
 		var body linkJobToCompanyRequest
@@ -590,8 +555,8 @@ func jobsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "id is required", http.StatusBadRequest)
 			return
 		}
-		if err := linkJobToCompany(body.ID, body.CompanyID); err != nil {
-			writeCompanyAwareError(w, "link job to company", err)
+		if err := jobs.LinkJobToCompany(body.ID, body.CompanyID); err != nil {
+			companies.WriteCompanyAwareError(w, "link job to company", err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -602,7 +567,7 @@ func jobsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "id query parameter is required", http.StatusBadRequest)
 			return
 		}
-		if err := deleteJob(id); err != nil {
+		if err := jobs.DeleteJob(id); err != nil {
 			http.Error(w, "failed to delete job: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -651,12 +616,8 @@ func jobMatchHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "profileId is required when starting a match", http.StatusBadRequest)
 			return
 		}
-		// PUT /jobs/match is always the AI-conversation-tracking path —
-		// the deterministic mechanism has its own separate endpoint
-		// (POST /jobs/match/now, job_match_now.go) that calls
-		// startJobMatch directly with kind="deterministic".
 		if err := startJobMatch(body.JobID, body.ProfileID, body.ConversationID); err != nil {
-			if errors.Is(err, errUnknownJob) {
+			if errors.Is(err, jobs.ErrUnknownJob) {
 				http.Error(w, "unknown job id", http.StatusNotFound)
 				return
 			}
@@ -665,7 +626,7 @@ func jobMatchHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	case "failed":
 		if err := updateJobMatchStatus(body.JobID, body.Status, body.ErrorText); err != nil {
-			if errors.Is(err, errUnknownJob) {
+			if errors.Is(err, jobs.ErrUnknownJob) {
 				http.Error(w, "unknown job id", http.StatusNotFound)
 				return
 			}
@@ -681,7 +642,7 @@ func jobMatchHandler(w http.ResponseWriter, r *http.Request) {
 
 // jobLocationsHandler handles GET /job-locations — the Jobs page's own
 // Location filter dropdown's data source (step — see
-// listDistinctJobLocations's own doc comment). Read-only, no
+// jobs.ListDistinctJobLocations's own doc comment). Read-only, no
 // query params: every distinct location is always returned, the same
 // "fetch everything, no pagination" shape fetchCompanies/fetchPortals
 // already use for their own filter dropdowns.
@@ -690,12 +651,12 @@ func jobLocationsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	locations, err := listDistinctJobLocations()
+	locations, err := jobs.ListDistinctJobLocations()
 	if err != nil {
 		http.Error(w, "failed to list job locations: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, map[string]any{"locations": locations})
+	db.WriteJSON(w, map[string]any{"locations": locations})
 }
 
 // --- /companies ---
@@ -714,12 +675,12 @@ type companyUpdateRequest struct {
 func companiesHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		companies, err := listCompanies()
+		list, err := companies.ListCompanies()
 		if err != nil {
 			http.Error(w, "failed to list companies: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, map[string]any{"companies": companies})
+		db.WriteJSON(w, map[string]any{"companies": list})
 
 	case http.MethodPost:
 		var body companyRequest
@@ -727,17 +688,17 @@ func companiesHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "name is required", http.StatusBadRequest)
 			return
 		}
-		id, err := createCompany(body.Name, body.Description)
+		id, err := companies.CreateCompany(body.Name, body.Description)
 		if err != nil {
 			http.Error(w, "failed to create company: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		companies, err := listCompanies()
+		list, err := companies.ListCompanies()
 		if err != nil {
 			http.Error(w, "company created but failed to reload: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, map[string]any{"id": id, "companies": companies})
+		db.WriteJSON(w, map[string]any{"id": id, "companies": list})
 
 	case http.MethodPut:
 		var body companyUpdateRequest
@@ -745,16 +706,16 @@ func companiesHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "id is required", http.StatusBadRequest)
 			return
 		}
-		if err := updateCompany(body.ID, body.Name, body.Description); err != nil {
-			writeCompanyAwareError(w, "update company", err)
+		if err := companies.UpdateCompany(body.ID, body.Name, body.Description); err != nil {
+			companies.WriteCompanyAwareError(w, "update company", err)
 			return
 		}
-		companies, err := listCompanies()
+		list, err := companies.ListCompanies()
 		if err != nil {
 			http.Error(w, "company updated but failed to reload: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, map[string]any{"companies": companies})
+		db.WriteJSON(w, map[string]any{"companies": list})
 
 	case http.MethodDelete:
 		id := r.URL.Query().Get("id")
@@ -762,7 +723,7 @@ func companiesHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "id query parameter is required", http.StatusBadRequest)
 			return
 		}
-		if err := deleteCompany(id); err != nil {
+		if err := companies.DeleteCompany(id); err != nil {
 			http.Error(w, "failed to delete company: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -797,7 +758,7 @@ func recruitersHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "failed to list recruiters: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, map[string]any{"recruiters": recruiters})
+		db.WriteJSON(w, map[string]any{"recruiters": recruiters})
 
 	case http.MethodPost:
 		var body recruiterRequest
@@ -807,7 +768,7 @@ func recruitersHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		id, err := createRecruiter(body.CompanyID, body.FirstName, body.LastName, body.Email)
 		if err != nil {
-			writeCompanyAwareError(w, "create recruiter", err)
+			companies.WriteCompanyAwareError(w, "create recruiter", err)
 			return
 		}
 		recruiters, err := listRecruiters("")
@@ -815,7 +776,7 @@ func recruitersHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "recruiter created but failed to reload: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, map[string]any{"id": id, "recruiters": recruiters})
+		db.WriteJSON(w, map[string]any{"id": id, "recruiters": recruiters})
 
 	case http.MethodPut:
 		var body recruiterUpdateRequest
@@ -832,7 +793,7 @@ func recruitersHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "recruiter updated but failed to reload: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, map[string]any{"recruiters": recruiters})
+		db.WriteJSON(w, map[string]any{"recruiters": recruiters})
 
 	case http.MethodDelete:
 		id := r.URL.Query().Get("id")
@@ -865,12 +826,12 @@ type portalUpdateRequest struct {
 func portalsHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		portals, err := listPortals()
+		portals, err := portal.ListPortals()
 		if err != nil {
 			http.Error(w, "failed to list portals: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, map[string]any{"portals": portals})
+		db.WriteJSON(w, map[string]any{"portals": portals})
 
 	case http.MethodPost:
 		var body portalRequest
@@ -878,17 +839,17 @@ func portalsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "name is required", http.StatusBadRequest)
 			return
 		}
-		id, err := createPortal(body.Name)
+		id, err := portal.CreatePortal(body.Name)
 		if err != nil {
 			http.Error(w, "failed to create portal: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		portals, err := listPortals()
+		portals, err := portal.ListPortals()
 		if err != nil {
 			http.Error(w, "portal created but failed to reload: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, map[string]any{"id": id, "portals": portals})
+		db.WriteJSON(w, map[string]any{"id": id, "portals": portals})
 
 	case http.MethodPut:
 		var body portalUpdateRequest
@@ -896,16 +857,16 @@ func portalsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "id and name are both required", http.StatusBadRequest)
 			return
 		}
-		if err := updatePortal(body.ID, body.Name); err != nil {
-			writePortalAwareError(w, "update portal", err)
+		if err := portal.UpdatePortal(body.ID, body.Name); err != nil {
+			portal.WritePortalAwareError(w, "update portal", err)
 			return
 		}
-		portals, err := listPortals()
+		portals, err := portal.ListPortals()
 		if err != nil {
 			http.Error(w, "portal updated but failed to reload: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, map[string]any{"portals": portals})
+		db.WriteJSON(w, map[string]any{"portals": portals})
 
 	case http.MethodDelete:
 		id := r.URL.Query().Get("id")
@@ -913,7 +874,7 @@ func portalsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "id query parameter is required", http.StatusBadRequest)
 			return
 		}
-		if err := deletePortal(id); err != nil {
+		if err := portal.DeletePortal(id); err != nil {
 			http.Error(w, "failed to delete portal: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -978,17 +939,17 @@ func portalLinksHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "title is required", http.StatusBadRequest)
 			return
 		}
-		id, err := addPortalLink(body.PortalID, body.URL, body.Title)
+		id, err := portal.AddPortalLink(body.PortalID, body.URL, body.Title)
 		if err != nil {
-			writePortalLinkAwareError(w, "add portal link", err)
+			portal.WritePortalLinkAwareError(w, "add portal link", err)
 			return
 		}
-		portals, err := listPortals()
+		portals, err := portal.ListPortals()
 		if err != nil {
 			http.Error(w, "portal link added but failed to reload: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, map[string]any{"id": id, "portals": portals})
+		db.WriteJSON(w, map[string]any{"id": id, "portals": portals})
 
 	case http.MethodPut:
 		var body portalLinkUpdateRequest
@@ -1011,53 +972,53 @@ func portalLinksHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if body.URL != nil || body.Title != nil {
-			if err := updatePortalLink(body.ID, body.URL, body.Title); err != nil {
-				writePortalLinkAwareError(w, "update portal link", err)
+			if err := portal.UpdatePortalLink(body.ID, body.URL, body.Title); err != nil {
+				portal.WritePortalLinkAwareError(w, "update portal link", err)
 				return
 			}
 		}
 		if body.CrawlInstructions != nil {
-			if err := updatePortalLinkCrawlInstructions(body.ID, *body.CrawlInstructions); err != nil {
-				writePortalLinkAwareError(w, "update portal link crawl instructions", err)
+			if err := portal.UpdatePortalLinkCrawlInstructions(body.ID, *body.CrawlInstructions); err != nil {
+				portal.WritePortalLinkAwareError(w, "update portal link crawl instructions", err)
 				return
 			}
 		}
 		if body.JobDetailCrawlInstructions != nil {
-			if err := updatePortalLinkJobDetailCrawlInstructions(body.ID, *body.JobDetailCrawlInstructions); err != nil {
-				writePortalLinkAwareError(w, "update portal link job detail crawl instructions", err)
+			if err := portal.UpdatePortalLinkJobDetailCrawlInstructions(body.ID, *body.JobDetailCrawlInstructions); err != nil {
+				portal.WritePortalLinkAwareError(w, "update portal link job detail crawl instructions", err)
 				return
 			}
 		}
 		if body.InstructionsAIError != nil {
-			if err := updatePortalLinkInstructionsAIStatus(body.ID, body.InstructionsAIError); err != nil {
-				writePortalLinkAwareError(w, "update portal link instructions AI status", err)
+			if err := portal.UpdatePortalLinkInstructionsAIStatus(body.ID, body.InstructionsAIError); err != nil {
+				portal.WritePortalLinkAwareError(w, "update portal link instructions AI status", err)
 				return
 			}
 		}
 		if body.InstructionsAIConversationID != nil {
-			if err := updatePortalLinkInstructionsAIConversationID(body.ID, body.InstructionsAIConversationID); err != nil {
-				writePortalLinkAwareError(w, "update portal link instructions AI conversation id", err)
+			if err := portal.UpdatePortalLinkInstructionsAIConversationID(body.ID, body.InstructionsAIConversationID); err != nil {
+				portal.WritePortalLinkAwareError(w, "update portal link instructions AI conversation id", err)
 				return
 			}
 		}
 		if body.JobDetailInstructionsAIError != nil {
-			if err := updatePortalLinkJobDetailInstructionsAIStatus(body.ID, body.JobDetailInstructionsAIError); err != nil {
-				writePortalLinkAwareError(w, "update portal link job detail instructions AI status", err)
+			if err := portal.UpdatePortalLinkJobDetailInstructionsAIStatus(body.ID, body.JobDetailInstructionsAIError); err != nil {
+				portal.WritePortalLinkAwareError(w, "update portal link job detail instructions AI status", err)
 				return
 			}
 		}
 		if body.JobDetailInstructionsAIConversationID != nil {
-			if err := updatePortalLinkJobDetailInstructionsAIConversationID(body.ID, body.JobDetailInstructionsAIConversationID); err != nil {
-				writePortalLinkAwareError(w, "update portal link job detail instructions AI conversation id", err)
+			if err := portal.UpdatePortalLinkJobDetailInstructionsAIConversationID(body.ID, body.JobDetailInstructionsAIConversationID); err != nil {
+				portal.WritePortalLinkAwareError(w, "update portal link job detail instructions AI conversation id", err)
 				return
 			}
 		}
-		portals, err := listPortals()
+		portals, err := portal.ListPortals()
 		if err != nil {
 			http.Error(w, "portal link updated but failed to reload: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, map[string]any{"portals": portals})
+		db.WriteJSON(w, map[string]any{"portals": portals})
 
 	case http.MethodDelete:
 		id := r.URL.Query().Get("id")
@@ -1065,7 +1026,7 @@ func portalLinksHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "id query parameter is required", http.StatusBadRequest)
 			return
 		}
-		if err := removePortalLink(id); err != nil {
+		if err := portal.RemovePortalLink(id); err != nil {
 			http.Error(w, "failed to remove portal link: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -1100,24 +1061,24 @@ func crawlRequestHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "id query parameter is required", http.StatusBadRequest)
 		return
 	}
-	req, err := buildCrawlRequest(id)
+	req, err := portal.BuildCrawlRequest(id)
 	if err != nil {
-		writePortalLinkAwareError(w, "build crawl request", err)
+		portal.WritePortalLinkAwareError(w, "build crawl request", err)
 		return
 	}
-	writeJSON(w, req)
+	db.WriteJSON(w, req)
 }
 
 type ingestCrawlResultsRequest struct {
-	PortalLinkID string            `json:"portalLinkId"`
-	Pages        []crawlResultPage `json:"pages"`
+	PortalLinkID string                   `json:"portalLinkId"`
+	Pages        []portal.CrawlResultPage `json:"pages"`
 }
 
 // ingestCrawlResultsHandler handles POST /portal-links/ingest-crawl-
 // results — the deterministic flow's last step: the frontend forwards
 // browser's own /crawl-paginated response body (plus which portal
 // link it was crawling) here unmodified, and this tool maps it onto
-// job rows via ingestCrawlResults' own fixed label vocabulary.
+// job rows via portal.IngestCrawlResults' own fixed label vocabulary.
 func ingestCrawlResultsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -1128,12 +1089,12 @@ func ingestCrawlResultsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "portalLinkId is required", http.StatusBadRequest)
 		return
 	}
-	result, err := ingestCrawlResults(body.PortalLinkID, body.Pages)
+	result, err := portal.IngestCrawlResults(body.PortalLinkID, body.Pages)
 	if err != nil {
-		writePortalLinkAwareError(w, "ingest crawl results", err)
+		portal.WritePortalLinkAwareError(w, "ingest crawl results", err)
 		return
 	}
-	writeJSON(w, result)
+	db.WriteJSON(w, result)
 }
 
 func atoiOrZero(s string) int {

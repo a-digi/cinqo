@@ -9,7 +9,7 @@
 // retry-backoff sleep wakes early).
 //
 // See plan/ai/tools/career/step-63-stop-crawling-now.md.
-package main
+package crawl
 
 import (
 	"context"

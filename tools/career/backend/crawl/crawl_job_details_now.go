@@ -1,16 +1,16 @@
 // crawl_job_details_now.go is "Crawl now"'s own sibling for the
-// SEPARATE job-detail-crawl-instructions document (portals.go):
+// SEPARATE job-detail-crawl-instructions document (portal package):
 // deterministic (no AI), backend-orchestrated (survives the initiating
 // tab closing, crawl_now.go's own step-37 reasoning applies
 // identically here), and tracked via the exact same crawl_runs table —
 // just under kind='job_detail' instead of the default 'listing'
-// (db.go's own crawl_runs.kind doc comment). Reuses crawl_now.go's own
+// (db's own crawl_runs.kind doc comment). Reuses crawl_now.go's own
 // coreAPIURL/callBrowserProxy/postWithBearer/pollBrowserPhase/
 // crawlNowHTTPClient and crawl_cancel.go's own registerCrawlNowCancel/
 // cancelCrawlNowRun entirely unchanged — those are already generic
 // over "one browser-proxy call tracked under one crawl_runs id," not
-// specific to the listing crawl. crawlNowActiveHandler/
-// crawlNowCancelHandler (crawl_now.go) are similarly already generic
+// specific to the listing crawl. CrawlNowActiveHandler/
+// CrawlNowCancelHandler (crawl_now.go) are similarly already generic
 // per portal link, regardless of kind — this file only ever needs its
 // own START handler and goroutine body.
 //
@@ -21,7 +21,7 @@
 // runCrawlNow's own single-shot fail-fast model. Only cancellation (or
 // a request-building failure before the loop even starts) aborts the
 // run early. See plan/ai/tools/career/step-XX-job-detail-crawl-instructions.md.
-package main
+package crawl
 
 import (
 	"context"
@@ -30,13 +30,16 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"career-tool-backend/jobs"
+	"career-tool-backend/portal"
 )
 
-// crawlJobDetailsNowHandler handles POST /portal-links/crawl-job-details-now
+// CrawlJobDetailsNowHandler handles POST /portal-links/crawl-job-details-now
 // — starts a crawl_runs row (kind='job_detail') and launches the
-// detached goroutine, responding immediately. Mirrors crawlNowHandler
+// detached goroutine, responding immediately. Mirrors CrawlNowHandler
 // (crawl_now.go) exactly in shape.
-func crawlJobDetailsNowHandler(w http.ResponseWriter, r *http.Request) {
+func CrawlJobDetailsNowHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -58,12 +61,12 @@ func crawlJobDetailsNowHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Fail fast — before creating a crawl_runs row at all — on missing
 	// job detail crawl instructions, or on no jobs to crawl. Mirrors
-	// crawlNowHandler's own buildCrawlRequest error mapping.
-	if _, err := buildJobDetailCrawlRequest(body.PortalLinkID); err != nil {
-		writePortalLinkAwareError(w, "build job detail crawl request", err)
+	// CrawlNowHandler's own BuildCrawlRequest error mapping.
+	if _, err := portal.BuildJobDetailCrawlRequest(body.PortalLinkID); err != nil {
+		portal.WritePortalLinkAwareError(w, "build job detail crawl request", err)
 		return
 	}
-	targets, err := listJobsForDetailCrawl(body.PortalLinkID)
+	targets, err := jobs.ListJobsForDetailCrawl(body.PortalLinkID)
 	if err != nil {
 		http.Error(w, "failed to list jobs: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -78,7 +81,7 @@ func crawlJobDetailsNowHandler(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, errCrawlAlreadyRunning):
 			http.Error(w, "a crawl is already running for this link", http.StatusConflict)
-		case errors.Is(err, errUnknownPortalLink):
+		case errors.Is(err, portal.ErrUnknownPortalLink):
 			http.Error(w, "unknown portal link id", http.StatusBadRequest)
 		default:
 			http.Error(w, "failed to start crawl: "+err.Error(), http.StatusInternalServerError)
@@ -105,15 +108,15 @@ func crawlJobDetailsNowHandler(w http.ResponseWriter, r *http.Request) {
 // jobDetailExtractResult mirrors browser's own single-page
 // paginatedCrawlResponse shape closely enough for this file's own
 // purposes — only Pages[0] is ever read (EffectiveMaxPages is always
-// 1, see buildJobDetailCrawlRequest), so this only declares the one
-// field actually used, unlike crawlNowPaginatedResult (crawl_now.go)
+// 1, see portal.BuildJobDetailCrawlRequest), so this only declares the
+// one field actually used, unlike crawlNowPaginatedResult (crawl_now.go)
 // which needs the full shape for its own multi-page result.
 type jobDetailExtractResult struct {
-	Pages []crawlResultPage `json:"pages"`
+	Pages []portal.CrawlResultPage `json:"pages"`
 }
 
 // runJobDetailCrawlNow is the detached goroutine body — rooted in
-// context.Background() by its caller (crawlJobDetailsNowHandler), same
+// context.Background() by its caller (CrawlJobDetailsNowHandler), same
 // reasoning as runCrawlNow (crawl_now.go). Visits each target
 // sequentially (this tool's own single shared browser tab has no room
 // for real concurrency here — same constraint extract_from_url's own
@@ -121,7 +124,7 @@ type jobDetailExtractResult struct {
 // make safe for the AI/sub-agent path); a job whose own extraction
 // fails is logged and skipped, not fatal to the run — only
 // cancellation stops the whole loop early.
-func runJobDetailCrawlNow(ctx context.Context, runID, portalLinkID string, targets []jobDetailCrawlTarget, accessToken string) {
+func runJobDetailCrawlNow(ctx context.Context, runID, portalLinkID string, targets []jobs.JobDetailCrawlTarget, accessToken string) {
 	fail := func(err error) {
 		msg := err.Error()
 		_ = appendCrawlRunLog(runID, "failed: "+msg)
@@ -135,7 +138,7 @@ func runJobDetailCrawlNow(ctx context.Context, runID, portalLinkID string, targe
 	}
 
 	_ = setCrawlRunPhase(runID, "building_request", "building job detail crawl request")
-	req, err := buildJobDetailCrawlRequest(portalLinkID)
+	req, err := portal.BuildJobDetailCrawlRequest(portalLinkID)
 	if err != nil {
 		fail(err)
 		return
@@ -144,7 +147,7 @@ func runJobDetailCrawlNow(ctx context.Context, runID, portalLinkID string, targe
 	// browser's own rateLimitKey paces page fetches (here, one per job)
 	// across EVERY link belonging to this portal, not just this link's
 	// own jobs.
-	portalID, err := getPortalIDForLink(portalLinkID)
+	portalID, err := portal.GetPortalIDForLink(portalLinkID)
 	if err != nil {
 		fail(err)
 		return
@@ -198,24 +201,24 @@ var errNoPageExtracted = errors.New("no page extracted")
 
 // crawlOneJobDetail runs ONE job's own detail-page crawl attempt — the
 // exact per-target work runJobDetailCrawlNow's own loop (above) needs,
-// factored out so the deterministic "Match now" feature (job_match.go)
-// can reuse it for a single job (its own crawl-if-missing step)
-// without duplicating this retry/error-handling logic. Marks the job's
-// own detail_crawl_status='failed' itself on any non-cancellation
+// factored out so any future single-job reuse (the deterministic
+// "Match now" feature, since removed, previously reused this) can do
+// so without duplicating this retry/error-handling logic. Marks the
+// job's own detail_crawl_status='failed' itself on any non-cancellation
 // error (matching every skip path this function replaces) — the
 // caller only needs to decide whether ITS OWN broader operation should
 // keep going (any ordinary error) or stop entirely
 // (errCrawlCancelledByUser, or ctx already cancelled).
-func crawlOneJobDetail(ctx context.Context, coreURL, portalID, runID, accessToken string, req crawlRequest, target jobDetailCrawlTarget) (updated bool, err error) {
+func crawlOneJobDetail(ctx context.Context, coreURL, portalID, runID, accessToken string, req portal.CrawlRequest, target jobs.JobDetailCrawlTarget) (updated bool, err error) {
 	pagRequest := struct {
-		crawlRequest
+		portal.CrawlRequest
 		URL          string `json:"url"`
 		RequestID    string `json:"requestId"`
 		RateLimitKey string `json:"rateLimitKey"`
-	}{crawlRequest: req, URL: target.SourceURL, RequestID: runID, RateLimitKey: portalID}
+	}{CrawlRequest: req, URL: target.SourceURL, RequestID: runID, RateLimitKey: portalID}
 	pagBody, err := json.Marshal(pagRequest)
 	if err != nil {
-		_ = markJobDetailCrawlFailed(target.ID)
+		_ = jobs.MarkJobDetailCrawlFailed(target.ID)
 		return false, err
 	}
 
@@ -225,17 +228,17 @@ func crawlOneJobDetail(ctx context.Context, coreURL, portalID, runID, accessToke
 			return false, err
 		}
 		// A harder failure than "extraction ran but came back empty"
-		// (saveJobDetailExtraction's own case, below) — the page fetch
-		// itself never succeeded, so nothing else here will ever
+		// (jobs.SaveJobDetailExtraction's own case, below) — the page
+		// fetch itself never succeeded, so nothing else here will ever
 		// record an attempt for this job. Marked 'failed' directly so
 		// the Eye icon still distinguishes this from "never crawled."
-		_ = markJobDetailCrawlFailed(target.ID)
+		_ = jobs.MarkJobDetailCrawlFailed(target.ID)
 		return false, err
 	}
 
 	var result jobDetailExtractResult
 	if err := json.Unmarshal(respBody, &result); err != nil || len(result.Pages) == 0 {
-		_ = markJobDetailCrawlFailed(target.ID)
+		_ = jobs.MarkJobDetailCrawlFailed(target.ID)
 		return false, errNoPageExtracted
 	}
 
@@ -243,25 +246,24 @@ func crawlOneJobDetail(ctx context.Context, coreURL, portalID, runID, accessToke
 	for k, v := range extractResultValues(result.Pages[0]) {
 		values[k] = v
 	}
-	didUpdate, err := saveJobDetailExtraction(target.ID, values)
+	didUpdate, err := jobs.SaveJobDetailExtraction(target.ID, values)
 	if err != nil {
-		_ = markJobDetailCrawlFailed(target.ID)
+		_ = jobs.MarkJobDetailCrawlFailed(target.ID)
 		return false, err
 	}
 	return didUpdate, nil
 }
 
 // extractResultValues flattens one page's own Results (label ->
-// string, per extractResultStrings' own single-value convention for a
-// non-multiple field — job detail fields are never declared multiple:
-// true in practice, but a multiple field's own first matched value is
-// still used rather than silently dropped) into a plain
-// map[string]string, the shape saveJobDetailExtraction (jobs.go)
-// expects.
-func extractResultValues(page crawlResultPage) map[string]string {
+// string, per portal.ExtractResultStrings' own single-value convention
+// for a non-multiple field — job detail fields are never declared
+// multiple: true in practice, but a multiple field's own first matched
+// value is still used rather than silently dropped) into a plain
+// map[string]string, the shape jobs.SaveJobDetailExtraction expects.
+func extractResultValues(page portal.CrawlResultPage) map[string]string {
 	out := make(map[string]string, len(page.Results))
 	for label, raw := range page.Results {
-		if v := at(extractResultStrings(raw), 0); v != "" {
+		if v := portal.At(portal.ExtractResultStrings(raw), 0); v != "" {
 			out[label] = v
 		}
 	}

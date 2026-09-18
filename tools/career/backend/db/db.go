@@ -1,5 +1,5 @@
-// db.go opens and initializes this tool's own two SQLite databases —
-// career.db (the job seeker's own profiles/personas/persona
+// Package db opens and initializes this tool's own two SQLite
+// databases — career.db (the job seeker's own profiles/personas/persona
 // details/skills/experience) and jobs.db (crawled job postings) —
 // kept as two separate files, not two schemas in one, because they
 // have genuinely different lifecycles: the profile changes rarely, by
@@ -28,7 +28,17 @@
 // users.db) — see migrateCareerDB below and
 // plan/ai/tools/career/step-08-persona.md /
 // plan/ai/tools/career/step-10-job-seeker-profile.md.
-package main
+//
+// CareerDB/JobsDB and InitDatabases are exported specifically because
+// every one of this backend's own domain packages (profile, cvimport,
+// companies, jobs, portal, crawl) needs to reach one or both of these
+// handles, and this backend was refactored (step XX) from one flat
+// package main into these subpackages, mirroring tools/browser/
+// backend's own shared/auth/crawler split — package main can never be
+// imported by anything, so this package (analogous to browser's own
+// shared package) is what every other package imports instead. See
+// plan/ai/tools/career/step-XX-package-split.md.
+package db
 
 import (
 	"database/sql"
@@ -41,15 +51,15 @@ import (
 )
 
 var (
-	careerDB *sql.DB
-	jobsDB   *sql.DB
+	CareerDB *sql.DB
+	JobsDB   *sql.DB
 )
 
-// initDatabases opens (creating if needed) both database files and
+// InitDatabases opens (creating if needed) both database files and
 // their own schemas. TOOL_DB_DIR itself is never pre-created by the
 // host — same convention every other tool's own main() already
 // follows — so this tool creates it itself.
-func initDatabases() error {
+func InitDatabases() error {
 	dbDir := os.Getenv("TOOL_DB_DIR")
 	if dbDir == "" {
 		return fmt.Errorf("TOOL_DB_DIR is not set")
@@ -58,31 +68,31 @@ func initDatabases() error {
 		return fmt.Errorf("failed to create TOOL_DB_DIR: %w", err)
 	}
 
-	db, err := sql.Open("sqlite", filepath.Join(dbDir, "career.db"))
+	careerDB, err := sql.Open("sqlite", filepath.Join(dbDir, "career.db"))
 	if err != nil {
 		return fmt.Errorf("failed to open career.db: %w", err)
 	}
-	db.SetMaxOpenConns(1)
+	careerDB.SetMaxOpenConns(1)
 	// migrateCareerDB itself owns turning PRAGMA foreign_keys on —
 	// toggled off for the duration of its own table-rebuild surgery,
 	// then back on once done (see its own doc comment for why).
-	if err := migrateCareerDB(db); err != nil {
-		db.Close()
+	if err := migrateCareerDB(careerDB); err != nil {
+		careerDB.Close()
 		return fmt.Errorf("failed to migrate career.db: %w", err)
 	}
-	if _, err := db.Exec(careerSchema); err != nil {
-		db.Close()
+	if _, err := careerDB.Exec(careerSchema); err != nil {
+		careerDB.Close()
 		return fmt.Errorf("failed to prepare career.db schema: %w", err)
 	}
-	careerDB = db
+	CareerDB = careerDB
 
-	jdb, err := sql.Open("sqlite", filepath.Join(dbDir, "jobs.db"))
+	jobsDB, err := sql.Open("sqlite", filepath.Join(dbDir, "jobs.db"))
 	if err != nil {
 		return fmt.Errorf("failed to open jobs.db: %w", err)
 	}
-	jdb.SetMaxOpenConns(1)
+	jobsDB.SetMaxOpenConns(1)
 	// PRAGMA foreign_keys defaults OFF per SQLite connection — unlike
-	// careerDB (whose migrateCareerDB turns it ON at the end of its own
+	// CareerDB (whose migrateCareerDB turns it ON at the end of its own
 	// migration, a real one-time need this DB never had), jobs.db
 	// never previously depended on FK enforcement (jobs.company_id
 	// didn't exist before step 14, and step 14's own SET NULL was
@@ -93,19 +103,19 @@ func initDatabases() error {
 	// linked recruiter and finding the recruiter survived, orphaned,
 	// with a company_id pointing at nothing. See
 	// plan/ai/tools/career/step-16-recruiters.md.
-	if _, err := jdb.Exec(`PRAGMA foreign_keys = ON`); err != nil {
-		jdb.Close()
+	if _, err := jobsDB.Exec(`PRAGMA foreign_keys = ON`); err != nil {
+		jobsDB.Close()
 		return fmt.Errorf("failed to enable foreign keys on jobs.db: %w", err)
 	}
-	if err := migrateJobsDB(jdb); err != nil {
-		jdb.Close()
+	if err := migrateJobsDB(jobsDB); err != nil {
+		jobsDB.Close()
 		return fmt.Errorf("failed to migrate jobs.db: %w", err)
 	}
-	if _, err := jdb.Exec(jobsSchema); err != nil {
-		jdb.Close()
+	if _, err := jobsDB.Exec(jobsSchema); err != nil {
+		jobsDB.Close()
 		return fmt.Errorf("failed to prepare jobs.db schema: %w", err)
 	}
-	jobsDB = jdb
+	JobsDB = jobsDB
 
 	return nil
 }
@@ -323,7 +333,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS crawl_runs_one_running_idx
 -- separate id/history), re-matching overwrites. profile_id/persona_id
 -- are OPAQUE ids into career.db's own profiles/personas tables — this
 -- tool's own two SQLite databases (career.db, jobs.db) are genuinely
--- separate files/connections (see initDatabases), so no real SQL
+-- separate files/connections (see InitDatabases), so no real SQL
 -- FOREIGN KEY or JOIN is possible across them; these are plain,
 -- unenforced TEXT references. score/persona_id are written ONLY by
 -- the AI-facing save_job_match MCP tool (job_match.go) — the

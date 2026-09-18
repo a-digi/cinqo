@@ -14,6 +14,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"career-tool-backend/companies"
+	"career-tool-backend/db"
 )
 
 type recruiter struct {
@@ -27,11 +30,11 @@ type recruiter struct {
 }
 
 func createRecruiter(companyId, firstName, lastName, email string) (string, error) {
-	if err := requireCompanyExists(companyId); err != nil {
+	if err := companies.RequireCompanyExists(companyId); err != nil {
 		return "", err
 	}
 	id := uuid.NewString()
-	_, err := jobsDB.Exec(
+	_, err := db.JobsDB.Exec(
 		`INSERT INTO recruiters (id, company_id, first_name, last_name, email, created_at) VALUES (?, ?, ?, ?, ?, datetime('now'))`,
 		id, companyId, firstName, lastName, email,
 	)
@@ -52,7 +55,7 @@ func listRecruiters(companyId string) ([]recruiter, error) {
 		args = append(args, companyId)
 	}
 
-	rows, err := jobsDB.Query(
+	rows, err := db.JobsDB.Query(
 		`SELECT id, company_id, first_name, last_name, email, created_at, updated_at
 		 FROM recruiters `+where+` ORDER BY created_at ASC`,
 		args...,
@@ -82,7 +85,7 @@ var errUnknownRecruiter = errors.New("unknown recruiter id")
 
 func requireRecruiterExists(id string) error {
 	var exists int
-	err := jobsDB.QueryRow(`SELECT 1 FROM recruiters WHERE id = ?`, id).Scan(&exists)
+	err := db.JobsDB.QueryRow(`SELECT 1 FROM recruiters WHERE id = ?`, id).Scan(&exists)
 	switch {
 	case err == sql.ErrNoRows:
 		return errUnknownRecruiter
@@ -120,12 +123,12 @@ func updateRecruiter(id string, firstName, lastName, email *string) error {
 	setClauses += "updated_at = datetime('now')"
 	args = append(args, id)
 
-	_, err := jobsDB.Exec(`UPDATE recruiters SET `+setClauses+` WHERE id = ?`, args...)
+	_, err := db.JobsDB.Exec(`UPDATE recruiters SET `+setClauses+` WHERE id = ?`, args...)
 	return err
 }
 
 func deleteRecruiter(id string) error {
-	_, err := jobsDB.Exec(`DELETE FROM recruiters WHERE id = ?`, id)
+	_, err := db.JobsDB.Exec(`DELETE FROM recruiters WHERE id = ?`, id)
 	return err
 }
 
@@ -144,16 +147,16 @@ func registerCreateRecruiter(server *mcp.Server) {
 		Description: "Create a recruiter contact at an existing company.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args createRecruiterArgs) (*mcp.CallToolResult, any, error) {
 		if args.CompanyID == "" {
-			return errResult("companyId is required"), nil, nil
+			return db.ErrResult("companyId is required"), nil, nil
 		}
 		id, err := createRecruiter(args.CompanyID, args.FirstName, args.LastName, args.Email)
 		if err != nil {
-			if errors.Is(err, errUnknownCompany) {
-				return errResult(fmt.Sprintf("unknown company id %q", args.CompanyID)), nil, nil
+			if errors.Is(err, companies.ErrUnknownCompany) {
+				return db.ErrResult(fmt.Sprintf("unknown company id %q", args.CompanyID)), nil, nil
 			}
-			return errResult(fmt.Sprintf("failed to create recruiter: %v", err)), nil, nil
+			return db.ErrResult(fmt.Sprintf("failed to create recruiter: %v", err)), nil, nil
 		}
-		return jsonResult(map[string]string{"id": id})
+		return db.JSONResult(map[string]string{"id": id})
 	})
 }
 
@@ -168,9 +171,9 @@ func registerListRecruiters(server *mcp.Server) {
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args listRecruitersArgs) (*mcp.CallToolResult, any, error) {
 		recruiters, err := listRecruiters(args.CompanyID)
 		if err != nil {
-			return errResult(fmt.Sprintf("failed to list recruiters: %v", err)), nil, nil
+			return db.ErrResult(fmt.Sprintf("failed to list recruiters: %v", err)), nil, nil
 		}
-		return jsonResult(map[string]any{"recruiters": recruiters})
+		return db.JSONResult(map[string]any{"recruiters": recruiters})
 	})
 }
 
@@ -187,13 +190,13 @@ func registerUpdateRecruiter(server *mcp.Server) {
 		Description: "Update a recruiter's first/last name or email. Only the fields provided are changed. The recruiter's own company cannot be reassigned this way — delete and recreate instead.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args updateRecruiterArgs) (*mcp.CallToolResult, any, error) {
 		if args.ID == "" {
-			return errResult("id is required"), nil, nil
+			return db.ErrResult("id is required"), nil, nil
 		}
 		if err := updateRecruiter(args.ID, args.FirstName, args.LastName, args.Email); err != nil {
 			if errors.Is(err, errUnknownRecruiter) {
-				return errResult(fmt.Sprintf("unknown recruiter id %q", args.ID)), nil, nil
+				return db.ErrResult(fmt.Sprintf("unknown recruiter id %q", args.ID)), nil, nil
 			}
-			return errResult(fmt.Sprintf("failed to update recruiter: %v", err)), nil, nil
+			return db.ErrResult(fmt.Sprintf("failed to update recruiter: %v", err)), nil, nil
 		}
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "updated"}}}, nil, nil
 	})
@@ -209,10 +212,10 @@ func registerDeleteRecruiter(server *mcp.Server) {
 		Description: "Delete a recruiter contact.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args deleteRecruiterArgs) (*mcp.CallToolResult, any, error) {
 		if args.ID == "" {
-			return errResult("id is required"), nil, nil
+			return db.ErrResult("id is required"), nil, nil
 		}
 		if err := deleteRecruiter(args.ID); err != nil {
-			return errResult(fmt.Sprintf("failed to delete recruiter: %v", err)), nil, nil
+			return db.ErrResult(fmt.Sprintf("failed to delete recruiter: %v", err)), nil, nil
 		}
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "deleted"}}}, nil, nil
 	})

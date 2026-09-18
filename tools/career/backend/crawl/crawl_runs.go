@@ -8,7 +8,7 @@
 // concurrency guard (not an app-level check-then-insert, which would
 // race under two concurrent "Crawl now" clicks for the same link). See
 // plan/ai/tools/career/step-36-crawl-run-data-model.md.
-package main
+package crawl
 
 import (
 	"database/sql"
@@ -18,12 +18,15 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"career-tool-backend/db"
+	"career-tool-backend/portal"
 )
 
 // errCrawlAlreadyRunning is returned by startCrawlRun when
-// crawl_runs_one_running_idx (db.go) would be violated — a caller
-// mistake (the UI's own busy-state should already prevent this), not a
-// server failure.
+// crawl_runs_one_running_idx (db's own schema) would be violated — a
+// caller mistake (the UI's own busy-state should already prevent this),
+// not a server failure.
 var errCrawlAlreadyRunning = errors.New("a crawl is already running for this link")
 
 type crawlRun struct {
@@ -32,7 +35,7 @@ type crawlRun struct {
 	// Kind distinguishes a "Crawl now" run against this link's own
 	// listing page ('listing', the default) from a "Crawl job details
 	// now" run against every already-saved job's own detail page
-	// ('job_detail') — see db.go's own crawl_runs.kind doc comment.
+	// ('job_detail') — see db's own crawl_runs.kind doc comment.
 	Kind       string
 	Status     string
 	StartedAt  string
@@ -46,26 +49,25 @@ type crawlRun struct {
 	ErrorMessage  *string
 	// Phase (step 39) is the single most recent fine-grained step this
 	// run has reached — nil until the first setCrawlRunPhase call
-	// lands, never cleared afterward (see db.go's own crawl_runs
-	// schema comment for why).
+	// lands, never cleared afterward (see db's own crawl_runs schema
+	// comment for why).
 	Phase *string
 }
 
 // startCrawlRun inserts a new running row for portalLinkID, of the
-// given kind ("listing" or "job_detail" — see db.go's own crawl_runs.kind
+// given kind ("listing" or "job_detail" — see db's own crawl_runs.kind
 // doc comment). errCrawlAlreadyRunning if one is already running for
 // this link, of EITHER kind (crawl_runs_one_running_idx's own
-// violation, detected the same way addPortalLink detects
-// errDuplicatePortalLink above) — the two kinds share the one browser
-// tab, so they can never run concurrently for the same link.
-// errUnknownPortalLink if the link itself doesn't exist.
+// violation, detected the same way portal.AddPortalLink detects
+// portal.ErrDuplicatePortalLink). errUnknownPortalLink if the link
+// itself doesn't exist.
 func startCrawlRun(portalLinkID, kind string) (*crawlRun, error) {
-	if err := requirePortalLinkExists(portalLinkID); err != nil {
+	if err := portal.RequirePortalLinkExists(portalLinkID); err != nil {
 		return nil, err
 	}
 	id := uuid.NewString()
 	startedAt := time.Now().UTC().Format(time.RFC3339)
-	_, err := jobsDB.Exec(
+	_, err := db.JobsDB.Exec(
 		`INSERT INTO crawl_runs (id, portal_link_id, kind, status, started_at, log) VALUES (?, ?, ?, 'running', ?, '')`,
 		id, portalLinkID, kind, startedAt,
 	)
@@ -82,7 +84,7 @@ func startCrawlRun(portalLinkID, kind string) (*crawlRun, error) {
 // read-modify-write race, matching turn_runs' own AppendLog contract.
 func appendCrawlRunLog(id, line string) error {
 	entry := time.Now().UTC().Format(time.RFC3339) + "\t" + line + "\n"
-	_, err := jobsDB.Exec(`UPDATE crawl_runs SET log = log || ? WHERE id = ?`, entry, id)
+	_, err := db.JobsDB.Exec(`UPDATE crawl_runs SET log = log || ? WHERE id = ?`, entry, id)
 	return err
 }
 
@@ -92,15 +94,16 @@ func appendCrawlRunLog(id, line string) error {
 // without the other. Superset of a plain appendCrawlRunLog call.
 func setCrawlRunPhase(id, phase, message string) error {
 	entry := time.Now().UTC().Format(time.RFC3339) + "\t" + message + "\n"
-	_, err := jobsDB.Exec(`UPDATE crawl_runs SET phase = ?, log = log || ? WHERE id = ?`, phase, entry, id)
+	_, err := db.JobsDB.Exec(`UPDATE crawl_runs SET phase = ?, log = log || ? WHERE id = ?`, phase, entry, id)
 	return err
 }
 
 // orNull turns a *string into a value database/sql writes as either
 // the string or NULL — explicit rather than relying on database/sql's
 // own pointer-dereferencing conversion, matching this file's own
-// established preference (see updatePortalLinkInstructionsAIStatus)
-// for explicit nil handling over implicit driver behavior.
+// established preference (see updatePortalLinkInstructionsAIStatus,
+// portal package) for explicit nil handling over implicit driver
+// behavior.
 func orNull(s *string) any {
 	if s == nil {
 		return nil
@@ -126,7 +129,7 @@ func orNull(s *string) any {
 // zero-row-affected no-op.
 func finishCrawlRun(id, status string, resultSummary, errorMessage *string) error {
 	finishedAt := time.Now().UTC().Format(time.RFC3339)
-	_, err := jobsDB.Exec(
+	_, err := db.JobsDB.Exec(
 		`UPDATE crawl_runs SET status = ?, finished_at = ?, result_summary = ?, error_message = ? WHERE id = ? AND status = 'running'`,
 		status, finishedAt, orNull(resultSummary), orNull(errorMessage), id,
 	)
@@ -179,11 +182,11 @@ func scanCrawlRun(row *sql.Row) (*crawlRun, error) {
 
 // findActiveCrawlRun returns the one status='running' row for
 // portalLinkID, if any — sql.ErrNoRows otherwise (callers compare
-// directly, same convention getPortalLinkCrawlInstructions' own
-// sql.NullString handling elsewhere in this package already
-// establishes for "absent" values).
+// directly, same convention the portal package's own
+// GetPortalLinkCrawlInstructions sql.NullString handling elsewhere in
+// this tool already establishes for "absent" values).
 func findActiveCrawlRun(portalLinkID string) (*crawlRun, error) {
-	row := jobsDB.QueryRow(
+	row := db.JobsDB.QueryRow(
 		`SELECT id, portal_link_id, kind, status, started_at, finished_at, log, result_summary, error_message, phase
 		 FROM crawl_runs WHERE portal_link_id = ? AND status = 'running'`,
 		portalLinkID,
@@ -208,7 +211,7 @@ func findActiveCrawlRun(portalLinkID string) (*crawlRun, error) {
 // insertion order regardless of timestamp precision, making it the
 // correct tiebreaker (here, the only ordering key at all).
 func findMostRecentCrawlRun(portalLinkID string) (*crawlRun, error) {
-	row := jobsDB.QueryRow(
+	row := db.JobsDB.QueryRow(
 		`SELECT id, portal_link_id, kind, status, started_at, finished_at, log, result_summary, error_message, phase
 		 FROM crawl_runs WHERE portal_link_id = ? ORDER BY rowid DESC LIMIT 1`,
 		portalLinkID,
@@ -216,36 +219,14 @@ func findMostRecentCrawlRun(portalLinkID string) (*crawlRun, error) {
 	return scanCrawlRun(row)
 }
 
-// activeCrawlRunPortalLinkIDs returns the set of portal link ids that
-// currently have a running crawl_runs row — one query, mirroring
-// lastCrawledByPortalLink's own batch-lookup shape (portals.go), so
-// listPortals doesn't need a per-link round trip to populate
-// hasActiveCrawlRun.
-func activeCrawlRunPortalLinkIDs() (map[string]bool, error) {
-	rows, err := jobsDB.Query(`SELECT portal_link_id FROM crawl_runs WHERE status = 'running'`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	result := make(map[string]bool)
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		result[id] = true
-	}
-	return result, rows.Err()
-}
-
-// reconcileOrphanedCrawlRuns runs once at backend startup — a
+// ReconcileOrphanedCrawlRuns runs once at backend startup — a
 // goroutine, unlike an OS process, has no PID to find or reattach
 // after a restart, so any row still 'running' from before this
 // process started is definitely orphaned. Mirrors
 // conversation.ReconcileOrphanedTurnRuns exactly. See
 // plan/ai/tools/career/step-37-detached-crawl-now-orchestration.md.
-func reconcileOrphanedCrawlRuns() error {
-	_, err := jobsDB.Exec(
+func ReconcileOrphanedCrawlRuns() error {
+	_, err := db.JobsDB.Exec(
 		`UPDATE crawl_runs SET status = 'failed', finished_at = ?, error_message = 'Interrupted by a server restart'
 		 WHERE status = 'running'`,
 		time.Now().UTC().Format(time.RFC3339),
@@ -256,7 +237,7 @@ func reconcileOrphanedCrawlRuns() error {
 // staleCrawlRunThreshold (step 47.4) bounds how long a crawl_runs row
 // may legitimately stay 'running' before the periodic reaper below
 // treats it as stuck and marks it 'failed' — WITHOUT requiring a
-// process restart the way reconcileOrphanedCrawlRuns (above) does. Set
+// process restart the way ReconcileOrphanedCrawlRuns (above) does. Set
 // comfortably above the longest single attempt this process can
 // legitimately take: browser's own normalSessionPaginatedCrawlTimeout
 // (32 minutes — the headed Cloudflare fallback, including up to 30
@@ -265,7 +246,7 @@ func reconcileOrphanedCrawlRuns() error {
 // transient error, never a second full-budget wait stacked on top of
 // the first. var, not const, so a test can shrink it — matching this
 // codebase's own established convention (crawlNowSessionRetryInterval,
-// above; browser's own humanSolveRetryInterval).
+// crawl_now.go; browser's own humanSolveRetryInterval).
 var staleCrawlRunThreshold = 40 * time.Minute
 
 // staleCrawlRunReapInterval (step 47.4) is how often the reaper below
@@ -278,11 +259,11 @@ var staleCrawlRunReapInterval = 5 * time.Minute
 
 // reapStaleCrawlRuns marks every crawl_runs row still 'running' well
 // past staleCrawlRunThreshold as 'failed' — the in-process complement
-// to reconcileOrphanedCrawlRuns (which only ever runs once, at boot):
+// to ReconcileOrphanedCrawlRuns (which only ever runs once, at boot):
 // this catches a goroutine that is hung but never crashed the process
 // (step 47's own root cause — a chromedp.Run call blocked past its own
 // context deadline because the underlying renderer itself is wedged),
-// which reconcileOrphanedCrawlRuns can never see since nothing about
+// which ReconcileOrphanedCrawlRuns can never see since nothing about
 // this process actually restarted. Returns the number of rows reaped,
 // for observability/testing — 0 is the ordinary, expected case. Two
 // separate `time.Now()` reads (one for the cutoff comparison, one for
@@ -291,7 +272,7 @@ var staleCrawlRunReapInterval = 5 * time.Minute
 // stale vs. when this sweep actually ran), not required to match.
 func reapStaleCrawlRuns() (int, error) {
 	cutoff := time.Now().UTC().Add(-staleCrawlRunThreshold).Format(time.RFC3339)
-	result, err := jobsDB.Exec(
+	result, err := db.JobsDB.Exec(
 		`UPDATE crawl_runs SET status = 'failed', finished_at = ?, error_message = 'Crawl timed out — stuck for longer than the maximum expected duration and was automatically marked failed'
 		 WHERE status = 'running' AND started_at < ?`,
 		time.Now().UTC().Format(time.RFC3339), cutoff,
@@ -306,12 +287,12 @@ func reapStaleCrawlRuns() (int, error) {
 	return int(affected), nil
 }
 
-// startStaleCrawlRunReaper launches the periodic sweep above as a
+// StartStaleCrawlRunReaper launches the periodic sweep above as a
 // background goroutine for this process's entire lifetime — no stop
-// mechanism, matching reconcileOrphanedCrawlRuns being meant to run
+// mechanism, matching ReconcileOrphanedCrawlRuns being meant to run
 // exactly once at boot: this one is meant to run for as long as the
 // process itself does.
-func startStaleCrawlRunReaper() {
+func StartStaleCrawlRunReaper() {
 	go func() {
 		ticker := time.NewTicker(staleCrawlRunReapInterval)
 		defer ticker.Stop()

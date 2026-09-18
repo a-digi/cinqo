@@ -14,6 +14,8 @@ import (
 	"errors"
 
 	"github.com/google/uuid"
+
+	"career-tool-backend/db"
 )
 
 // errUnknownCVImportRun mirrors errUnknownProfile/errUnknownPersona's
@@ -40,7 +42,7 @@ type cvImportRun struct {
 // own 'review' state.
 func createCVImportRun(mediaFileID, originalFilename, conversationID string, aiProposal []byte) (string, error) {
 	id := uuid.NewString()
-	_, err := careerDB.Exec(
+	_, err := db.CareerDB.Exec(
 		`INSERT INTO cv_import_runs (id, media_file_id, original_filename, conversation_id, ai_proposal_json, created_at)
 		VALUES (?, ?, ?, ?, ?, datetime('now'))`,
 		id, mediaFileID, originalFilename, conversationID, string(aiProposal),
@@ -60,7 +62,7 @@ func updateCVImportRunSaveSummary(id string, saveSummary []byte) error {
 	if err := requireCVImportRunExists(id); err != nil {
 		return err
 	}
-	_, err := careerDB.Exec(
+	_, err := db.CareerDB.Exec(
 		`UPDATE cv_import_runs SET save_summary_json = ?, updated_at = datetime('now') WHERE id = ?`,
 		string(saveSummary), id,
 	)
@@ -69,7 +71,7 @@ func updateCVImportRunSaveSummary(id string, saveSummary []byte) error {
 
 func requireCVImportRunExists(id string) error {
 	var exists int
-	err := careerDB.QueryRow(`SELECT 1 FROM cv_import_runs WHERE id = ?`, id).Scan(&exists)
+	err := db.CareerDB.QueryRow(`SELECT 1 FROM cv_import_runs WHERE id = ?`, id).Scan(&exists)
 	switch {
 	case err == sql.ErrNoRows:
 		return errUnknownCVImportRun
@@ -85,7 +87,7 @@ func requireCVImportRunExists(id string) error {
 // scoped to "the current caller" the way core Media's own
 // GET /api/v1/media/mine is.
 func listCVImportRuns() ([]cvImportRun, error) {
-	rows, err := careerDB.Query(
+	rows, err := db.CareerDB.Query(
 		`SELECT id, media_file_id, original_filename, conversation_id, ai_proposal_json, save_summary_json, created_at, updated_at
 		FROM cv_import_runs ORDER BY created_at DESC`,
 	)
@@ -116,13 +118,13 @@ func listCVImportRuns() ([]cvImportRun, error) {
 // referenced, so the caller (deleteCVImportRunHandler) can best-effort
 // forward a cleanup call to core Media before it's gone.
 func deleteCVImportRun(id string) (mediaFileID string, err error) {
-	if err := careerDB.QueryRow(`SELECT media_file_id FROM cv_import_runs WHERE id = ?`, id).Scan(&mediaFileID); err != nil {
+	if err := db.CareerDB.QueryRow(`SELECT media_file_id FROM cv_import_runs WHERE id = ?`, id).Scan(&mediaFileID); err != nil {
 		if err == sql.ErrNoRows {
 			return "", errUnknownCVImportRun
 		}
 		return "", err
 	}
-	if _, err := careerDB.Exec(`DELETE FROM cv_import_runs WHERE id = ?`, id); err != nil {
+	if _, err := db.CareerDB.Exec(`DELETE FROM cv_import_runs WHERE id = ?`, id); err != nil {
 		return "", err
 	}
 	return mediaFileID, nil

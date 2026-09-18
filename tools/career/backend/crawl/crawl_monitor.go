@@ -1,17 +1,19 @@
 // crawl_monitor.go is the centralized "which portal is being crawled
 // right now" view — a single endpoint aggregating every currently-
-// running crawl_runs row (of either kind, see db.go's own
-// crawl_runs.kind doc comment) across EVERY portal link, joined with
-// its own owning portal link and portal, so a human doesn't have to
-// open each portal's own accordion individually to find out what's
-// active. Read-only; no new data model — a plain join over
-// crawl_runs/portal_links/portals, all already existing. See
+// running crawl_runs row (of either kind, see db's own crawl_runs.kind
+// doc comment) across EVERY portal link, joined with its own owning
+// portal link and portal, so a human doesn't have to open each
+// portal's own accordion individually to find out what's active.
+// Read-only; no new data model — a plain join over crawl_runs/
+// portal_links/portals, all already existing. See
 // plan/ai/tools/career/step-XX-portal-crawl-pacing.md.
-package main
+package crawl
 
 import (
 	"database/sql"
 	"net/http"
+
+	"career-tool-backend/db"
 )
 
 // activeCrawlRunSummary is one row of the crawl-monitor response — a
@@ -34,11 +36,11 @@ type activeCrawlRunSummary struct {
 // listActiveCrawlRuns returns every currently-running crawl_runs row,
 // oldest-started first, joined with its own owning portal link and
 // portal. A crawl_runs row always references a real portal_links row
-// (ON DELETE CASCADE, db.go) which in turn always references a real
-// portals row, so both joins here are plain JOINs, never LEFT JOINs —
-// there is no dangling-reference case to handle.
+// (ON DELETE CASCADE, db's own schema) which in turn always references
+// a real portals row, so both joins here are plain JOINs, never LEFT
+// JOINs — there is no dangling-reference case to handle.
 func listActiveCrawlRuns() ([]activeCrawlRunSummary, error) {
-	rows, err := jobsDB.Query(
+	rows, err := db.JobsDB.Query(
 		`SELECT cr.id, cr.kind, p.id, p.name, pl.id, pl.title, pl.url, cr.status, cr.started_at, cr.phase, cr.log
 		 FROM crawl_runs cr
 		 JOIN portal_links pl ON pl.id = cr.portal_link_id
@@ -69,8 +71,8 @@ func listActiveCrawlRuns() ([]activeCrawlRunSummary, error) {
 	return summaries, rows.Err()
 }
 
-// crawlMonitorHandler handles GET /portal-links/crawl-runs/active.
-func crawlMonitorHandler(w http.ResponseWriter, r *http.Request) {
+// CrawlMonitorHandler handles GET /portal-links/crawl-runs/active.
+func CrawlMonitorHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -80,5 +82,5 @@ func crawlMonitorHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to list active crawl runs: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, map[string]any{"runs": runs})
+	db.WriteJSON(w, map[string]any{"runs": runs})
 }

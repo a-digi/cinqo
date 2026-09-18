@@ -22,6 +22,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"career-tool-backend/db"
 )
 
 type personaDetails struct {
@@ -65,7 +67,7 @@ func fetchPersonaDetails(personaId string) (getPersonaDetailsResult, error) {
 
 	var d personaDetails
 	var minSalary sql.NullInt64
-	err := careerDB.QueryRow(
+	err := db.CareerDB.QueryRow(
 		`SELECT headline, summary, location, desired_titles, desired_locations, min_salary
 		 FROM persona_details WHERE persona_id = ?`, personaId,
 	).Scan(&d.Headline, &d.Summary, &d.Location, &d.DesiredTitles, &d.DesiredLocations, &minSalary)
@@ -80,7 +82,7 @@ func fetchPersonaDetails(personaId string) (getPersonaDetailsResult, error) {
 		result.PersonaDetails = &d
 	}
 
-	skillRows, err := careerDB.Query(`SELECT skill FROM career_skills WHERE persona_id = ? ORDER BY skill ASC`, personaId)
+	skillRows, err := db.CareerDB.Query(`SELECT skill FROM career_skills WHERE persona_id = ? ORDER BY skill ASC`, personaId)
 	if err != nil {
 		return result, err
 	}
@@ -97,7 +99,7 @@ func fetchPersonaDetails(personaId string) (getPersonaDetailsResult, error) {
 		return result, err
 	}
 
-	expRows, err := careerDB.Query(
+	expRows, err := db.CareerDB.Query(
 		`SELECT id, company, title, start_date, end_date, description
 		 FROM career_experience WHERE persona_id = ? ORDER BY created_at DESC`, personaId)
 	if err != nil {
@@ -169,7 +171,7 @@ func updatePersonaDetails(args updatePersonaDetailsArgs) error {
 		d.MinSalary = *args.MinSalary
 	}
 
-	_, err = careerDB.Exec(
+	_, err = db.CareerDB.Exec(
 		`INSERT INTO persona_details (persona_id, headline, summary, location, desired_titles, desired_locations, min_salary, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
 		 ON CONFLICT(persona_id) DO UPDATE SET
@@ -189,7 +191,7 @@ func addCareerSkill(personaId, skill string) error {
 	if err := requirePersonaExists(personaId); err != nil {
 		return err
 	}
-	_, err := careerDB.Exec(
+	_, err := db.CareerDB.Exec(
 		`INSERT INTO career_skills (id, persona_id, skill) VALUES (?, ?, ?) ON CONFLICT(persona_id, skill) DO NOTHING`,
 		uuid.NewString(), personaId, skill,
 	)
@@ -200,7 +202,7 @@ func removeCareerSkill(personaId, skill string) error {
 	if err := requirePersonaExists(personaId); err != nil {
 		return err
 	}
-	_, err := careerDB.Exec(`DELETE FROM career_skills WHERE persona_id = ? AND skill = ?`, personaId, skill)
+	_, err := db.CareerDB.Exec(`DELETE FROM career_skills WHERE persona_id = ? AND skill = ?`, personaId, skill)
 	return err
 }
 
@@ -209,7 +211,7 @@ func addCareerExperience(personaId, company, title, startDate, endDate, descript
 		return "", err
 	}
 	id := uuid.NewString()
-	_, err := careerDB.Exec(
+	_, err := db.CareerDB.Exec(
 		`INSERT INTO career_experience (id, persona_id, company, title, start_date, end_date, description) VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		id, personaId, company, title, startDate, endDate, description,
 	)
@@ -223,7 +225,7 @@ func removeCareerExperience(personaId, id string) error {
 	if err := requirePersonaExists(personaId); err != nil {
 		return err
 	}
-	_, err := careerDB.Exec(`DELETE FROM career_experience WHERE id = ? AND persona_id = ?`, id, personaId)
+	_, err := db.CareerDB.Exec(`DELETE FROM career_experience WHERE id = ? AND persona_id = ?`, id, personaId)
 	return err
 }
 
@@ -249,7 +251,7 @@ func updateCareerExperience(args updateCareerExperienceArgs) error {
 
 	var e careerExperience
 	var startDate, endDate, description sql.NullString
-	err := careerDB.QueryRow(
+	err := db.CareerDB.QueryRow(
 		`SELECT id, company, title, start_date, end_date, description FROM career_experience WHERE id = ? AND persona_id = ?`,
 		args.ID, args.PersonaID,
 	).Scan(&e.ID, &e.Company, &e.Title, &startDate, &endDate, &description)
@@ -279,7 +281,7 @@ func updateCareerExperience(args updateCareerExperienceArgs) error {
 		e.Description = *args.Description
 	}
 
-	_, err = careerDB.Exec(
+	_, err = db.CareerDB.Exec(
 		`UPDATE career_experience SET company = ?, title = ?, start_date = ?, end_date = ?, description = ? WHERE id = ? AND persona_id = ?`,
 		e.Company, e.Title, e.StartDate, e.EndDate, e.Description, args.ID, args.PersonaID,
 	)
@@ -298,13 +300,13 @@ func registerGetPersonaDetails(server *mcp.Server) {
 		Description: "Read a persona's own career details (headline/summary/location/desired titles/desired locations/min salary), skills, and experience. personaDetails is null if none has been set yet.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args getPersonaDetailsArgs) (*mcp.CallToolResult, any, error) {
 		if args.PersonaID == "" {
-			return errResult("personaId is required"), nil, nil
+			return db.ErrResult("personaId is required"), nil, nil
 		}
 		result, err := fetchPersonaDetails(args.PersonaID)
 		if err != nil {
 			return personaAwareErrResult("read persona details", args.PersonaID, err), nil, nil
 		}
-		return jsonResult(result)
+		return db.JSONResult(result)
 	})
 }
 
@@ -324,7 +326,7 @@ func registerUpdatePersonaDetails(server *mcp.Server) {
 		Description: "Update a persona's own career details. Only the fields provided are changed — omitted fields keep their current value.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args updatePersonaDetailsToolArgs) (*mcp.CallToolResult, any, error) {
 		if args.PersonaID == "" {
-			return errResult("personaId is required"), nil, nil
+			return db.ErrResult("personaId is required"), nil, nil
 		}
 		err := updatePersonaDetails(updatePersonaDetailsArgs{
 			PersonaID:        args.PersonaID,
@@ -340,9 +342,9 @@ func registerUpdatePersonaDetails(server *mcp.Server) {
 		}
 		result, err := fetchPersonaDetails(args.PersonaID)
 		if err != nil {
-			return errResult(fmt.Sprintf("persona details updated but failed to reload: %v", err)), nil, nil
+			return db.ErrResult(fmt.Sprintf("persona details updated but failed to reload: %v", err)), nil, nil
 		}
-		return jsonResult(result)
+		return db.JSONResult(result)
 	})
 }
 
@@ -357,10 +359,10 @@ func registerAddCareerSkill(server *mcp.Server) {
 		Description: "Add a skill to a persona's own career details. A no-op if it's already there.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args addCareerSkillArgs) (*mcp.CallToolResult, any, error) {
 		if args.PersonaID == "" {
-			return errResult("personaId is required"), nil, nil
+			return db.ErrResult("personaId is required"), nil, nil
 		}
 		if args.Skill == "" {
-			return errResult("skill is required"), nil, nil
+			return db.ErrResult("skill is required"), nil, nil
 		}
 		if err := addCareerSkill(args.PersonaID, args.Skill); err != nil {
 			return personaAwareErrResult("add skill", args.PersonaID, err), nil, nil
@@ -380,10 +382,10 @@ func registerRemoveCareerSkill(server *mcp.Server) {
 		Description: "Remove a skill from a persona's own career details.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args removeCareerSkillArgs) (*mcp.CallToolResult, any, error) {
 		if args.PersonaID == "" {
-			return errResult("personaId is required"), nil, nil
+			return db.ErrResult("personaId is required"), nil, nil
 		}
 		if args.Skill == "" {
-			return errResult("skill is required"), nil, nil
+			return db.ErrResult("skill is required"), nil, nil
 		}
 		if err := removeCareerSkill(args.PersonaID, args.Skill); err != nil {
 			return personaAwareErrResult("remove skill", args.PersonaID, err), nil, nil
@@ -407,16 +409,16 @@ func registerAddCareerExperience(server *mcp.Server) {
 		Description: "Add a work experience entry to a persona's own career details. Returns the new entry's own id.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args addCareerExperienceArgs) (*mcp.CallToolResult, any, error) {
 		if args.PersonaID == "" {
-			return errResult("personaId is required"), nil, nil
+			return db.ErrResult("personaId is required"), nil, nil
 		}
 		if args.Company == "" || args.Title == "" {
-			return errResult("company and title are both required"), nil, nil
+			return db.ErrResult("company and title are both required"), nil, nil
 		}
 		id, err := addCareerExperience(args.PersonaID, args.Company, args.Title, args.StartDate, args.EndDate, args.Description)
 		if err != nil {
 			return personaAwareErrResult("add experience", args.PersonaID, err), nil, nil
 		}
-		return jsonResult(map[string]string{"id": id})
+		return db.JSONResult(map[string]string{"id": id})
 	})
 }
 
@@ -431,10 +433,10 @@ func registerRemoveCareerExperience(server *mcp.Server) {
 		Description: "Remove a work experience entry from a persona's own career details.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args removeCareerExperienceArgs) (*mcp.CallToolResult, any, error) {
 		if args.PersonaID == "" {
-			return errResult("personaId is required"), nil, nil
+			return db.ErrResult("personaId is required"), nil, nil
 		}
 		if args.ID == "" {
-			return errResult("id is required"), nil, nil
+			return db.ErrResult("id is required"), nil, nil
 		}
 		if err := removeCareerExperience(args.PersonaID, args.ID); err != nil {
 			return personaAwareErrResult("remove experience", args.PersonaID, err), nil, nil
@@ -459,10 +461,10 @@ func registerUpdateCareerExperience(server *mcp.Server) {
 		Description: "Update a work experience entry on a persona's own career details. Only the fields provided are changed — omitted fields keep their current value. A no-op if id is unknown or belongs to a different persona.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args updateCareerExperienceToolArgs) (*mcp.CallToolResult, any, error) {
 		if args.PersonaID == "" {
-			return errResult("personaId is required"), nil, nil
+			return db.ErrResult("personaId is required"), nil, nil
 		}
 		if args.ID == "" {
-			return errResult("id is required"), nil, nil
+			return db.ErrResult("id is required"), nil, nil
 		}
 		if err := updateCareerExperience(updateCareerExperienceArgs{
 			PersonaID:   args.PersonaID,
@@ -477,32 +479,20 @@ func registerUpdateCareerExperience(server *mcp.Server) {
 		}
 		result, err := fetchPersonaDetails(args.PersonaID)
 		if err != nil {
-			return errResult(fmt.Sprintf("experience updated but failed to reload: %v", err)), nil, nil
+			return db.ErrResult(fmt.Sprintf("experience updated but failed to reload: %v", err)), nil, nil
 		}
-		return jsonResult(result)
+		return db.JSONResult(result)
 	})
 }
 
-// --- small shared helpers (used by jobs.go/persona.go/profile.go too) ---
-
-func errResult(text string) *mcp.CallToolResult {
-	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}, IsError: true}
-}
+// --- small shared helpers ---
 
 // personaAwareErrResult gives errUnknownPersona a clearer message than
 // the bare "unknown persona id" — every persona-scoped MCP tool routes
 // its own requirePersonaExists failure through this.
 func personaAwareErrResult(action, personaID string, err error) *mcp.CallToolResult {
 	if errors.Is(err, errUnknownPersona) {
-		return errResult(fmt.Sprintf("failed to %s: unknown persona id %q", action, personaID))
+		return db.ErrResult(fmt.Sprintf("failed to %s: unknown persona id %q", action, personaID))
 	}
-	return errResult(fmt.Sprintf("failed to %s: %v", action, err))
-}
-
-func jsonResult(v any) (*mcp.CallToolResult, any, error) {
-	text, err := jsonMarshalIndent(v)
-	if err != nil {
-		return errResult(fmt.Sprintf("failed to format result: %v", err)), nil, nil
-	}
-	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}, nil, nil
+	return db.ErrResult(fmt.Sprintf("failed to %s: %v", action, err))
 }

@@ -13,6 +13,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"career-tool-backend/db"
 )
 
 // errUnknownProfile is returned by requireProfileExists — the literal
@@ -23,7 +25,7 @@ var errUnknownProfile = errors.New("unknown profile id")
 
 func requireProfileExists(id string) error {
 	var exists int
-	err := careerDB.QueryRow(`SELECT 1 FROM profiles WHERE id = ?`, id).Scan(&exists)
+	err := db.CareerDB.QueryRow(`SELECT 1 FROM profiles WHERE id = ?`, id).Scan(&exists)
 	switch {
 	case err == sql.ErrNoRows:
 		return errUnknownProfile
@@ -49,7 +51,7 @@ type profile struct {
 
 func createProfile(firstName, lastName string) (string, error) {
 	id := uuid.NewString()
-	_, err := careerDB.Exec(
+	_, err := db.CareerDB.Exec(
 		`INSERT INTO profiles (id, first_name, last_name, created_at) VALUES (?, ?, ?, datetime('now'))`,
 		id, firstName, lastName,
 	)
@@ -63,7 +65,7 @@ func createProfile(firstName, lastName string) (string, error) {
 // nested — small expected count per profile, same "list is enough, no
 // standalone getter" reasoning step 8 used for Persona.
 func listProfiles() ([]profile, error) {
-	rows, err := careerDB.Query(
+	rows, err := db.CareerDB.Query(
 		`SELECT id, first_name, last_name, created_at, updated_at FROM profiles ORDER BY created_at ASC`,
 	)
 	if err != nil {
@@ -87,7 +89,7 @@ func listProfiles() ([]profile, error) {
 	}
 	rows.Close()
 
-	linkRows, err := careerDB.Query(
+	linkRows, err := db.CareerDB.Query(
 		`SELECT profile_id, platform, url FROM profile_external_links ORDER BY platform ASC`,
 	)
 	if err != nil {
@@ -135,7 +137,7 @@ func updateProfile(id string, firstName, lastName *string) error {
 	setClauses += "updated_at = datetime('now')"
 	args = append(args, id)
 
-	_, err := careerDB.Exec(`UPDATE profiles SET `+setClauses+` WHERE id = ?`, args...)
+	_, err := db.CareerDB.Exec(`UPDATE profiles SET `+setClauses+` WHERE id = ?`, args...)
 	return err
 }
 
@@ -147,7 +149,7 @@ func updateProfile(id string, firstName, lastName *string) error {
 // footprint. A benign no-op if id is unknown, matching every other
 // delete-by-id operation in this tool.
 func deleteProfile(id string) error {
-	_, err := careerDB.Exec(`DELETE FROM profiles WHERE id = ?`, id)
+	_, err := db.CareerDB.Exec(`DELETE FROM profiles WHERE id = ?`, id)
 	return err
 }
 
@@ -159,7 +161,7 @@ func upsertProfileExternalLink(profileId, platform, url string) error {
 	if err := requireProfileExists(profileId); err != nil {
 		return err
 	}
-	_, err := careerDB.Exec(
+	_, err := db.CareerDB.Exec(
 		`INSERT INTO profile_external_links (id, profile_id, platform, url) VALUES (?, ?, ?, ?)
 		 ON CONFLICT(profile_id, platform) DO UPDATE SET url = excluded.url`,
 		uuid.NewString(), profileId, platform, url,
@@ -171,7 +173,7 @@ func removeProfileExternalLink(profileId, platform string) error {
 	if err := requireProfileExists(profileId); err != nil {
 		return err
 	}
-	_, err := careerDB.Exec(`DELETE FROM profile_external_links WHERE profile_id = ? AND platform = ?`, profileId, platform)
+	_, err := db.CareerDB.Exec(`DELETE FROM profile_external_links WHERE profile_id = ? AND platform = ?`, profileId, platform)
 	return err
 }
 
@@ -189,9 +191,9 @@ func registerCreateProfile(server *mcp.Server) {
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args createProfileArgs) (*mcp.CallToolResult, any, error) {
 		id, err := createProfile(args.FirstName, args.LastName)
 		if err != nil {
-			return errResult(fmt.Sprintf("failed to create profile: %v", err)), nil, nil
+			return db.ErrResult(fmt.Sprintf("failed to create profile: %v", err)), nil, nil
 		}
-		return jsonResult(map[string]string{"id": id, "firstName": args.FirstName, "lastName": args.LastName})
+		return db.JSONResult(map[string]string{"id": id, "firstName": args.FirstName, "lastName": args.LastName})
 	})
 }
 
@@ -204,9 +206,9 @@ func registerListProfiles(server *mcp.Server) {
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args listProfilesArgs) (*mcp.CallToolResult, any, error) {
 		profiles, err := listProfiles()
 		if err != nil {
-			return errResult(fmt.Sprintf("failed to list profiles: %v", err)), nil, nil
+			return db.ErrResult(fmt.Sprintf("failed to list profiles: %v", err)), nil, nil
 		}
-		return jsonResult(map[string]any{"profiles": profiles})
+		return db.JSONResult(map[string]any{"profiles": profiles})
 	})
 }
 
@@ -222,13 +224,13 @@ func registerUpdateProfile(server *mcp.Server) {
 		Description: "Update a profile's first/last name. Only the fields provided are changed. Fails if id is unknown.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args updateProfileArgs) (*mcp.CallToolResult, any, error) {
 		if args.ID == "" {
-			return errResult("id is required"), nil, nil
+			return db.ErrResult("id is required"), nil, nil
 		}
 		if err := updateProfile(args.ID, args.FirstName, args.LastName); err != nil {
 			if errors.Is(err, errUnknownProfile) {
-				return errResult(fmt.Sprintf("unknown profile id %q", args.ID)), nil, nil
+				return db.ErrResult(fmt.Sprintf("unknown profile id %q", args.ID)), nil, nil
 			}
-			return errResult(fmt.Sprintf("failed to update profile: %v", err)), nil, nil
+			return db.ErrResult(fmt.Sprintf("failed to update profile: %v", err)), nil, nil
 		}
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "updated"}}}, nil, nil
 	})
@@ -244,10 +246,10 @@ func registerDeleteProfile(server *mcp.Server) {
 		Description: "Delete a profile. This permanently deletes every persona this profile owns, and everything those personas own in turn (persona details, skills, experience) — the largest deletion this tool can perform in one call. There is no separate confirmation step.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args deleteProfileArgs) (*mcp.CallToolResult, any, error) {
 		if args.ID == "" {
-			return errResult("id is required"), nil, nil
+			return db.ErrResult("id is required"), nil, nil
 		}
 		if err := deleteProfile(args.ID); err != nil {
-			return errResult(fmt.Sprintf("failed to delete profile: %v", err)), nil, nil
+			return db.ErrResult(fmt.Sprintf("failed to delete profile: %v", err)), nil, nil
 		}
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "deleted"}}}, nil, nil
 	})
@@ -265,16 +267,16 @@ func registerAddProfileExternalLink(server *mcp.Server) {
 		Description: "Add or update an external platform link (e.g. LinkedIn) on a profile. Adding the same platform again updates its URL rather than duplicating it.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args addProfileExternalLinkArgs) (*mcp.CallToolResult, any, error) {
 		if args.ProfileID == "" {
-			return errResult("profileId is required"), nil, nil
+			return db.ErrResult("profileId is required"), nil, nil
 		}
 		if args.Platform == "" || args.URL == "" {
-			return errResult("platform and url are both required"), nil, nil
+			return db.ErrResult("platform and url are both required"), nil, nil
 		}
 		if err := upsertProfileExternalLink(args.ProfileID, args.Platform, args.URL); err != nil {
 			if errors.Is(err, errUnknownProfile) {
-				return errResult(fmt.Sprintf("unknown profile id %q", args.ProfileID)), nil, nil
+				return db.ErrResult(fmt.Sprintf("unknown profile id %q", args.ProfileID)), nil, nil
 			}
-			return errResult(fmt.Sprintf("failed to add external link: %v", err)), nil, nil
+			return db.ErrResult(fmt.Sprintf("failed to add external link: %v", err)), nil, nil
 		}
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("saved %s link", args.Platform)}}}, nil, nil
 	})
@@ -291,16 +293,16 @@ func registerRemoveProfileExternalLink(server *mcp.Server) {
 		Description: "Remove an external platform link from a profile.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args removeProfileExternalLinkArgs) (*mcp.CallToolResult, any, error) {
 		if args.ProfileID == "" {
-			return errResult("profileId is required"), nil, nil
+			return db.ErrResult("profileId is required"), nil, nil
 		}
 		if args.Platform == "" {
-			return errResult("platform is required"), nil, nil
+			return db.ErrResult("platform is required"), nil, nil
 		}
 		if err := removeProfileExternalLink(args.ProfileID, args.Platform); err != nil {
 			if errors.Is(err, errUnknownProfile) {
-				return errResult(fmt.Sprintf("unknown profile id %q", args.ProfileID)), nil, nil
+				return db.ErrResult(fmt.Sprintf("unknown profile id %q", args.ProfileID)), nil, nil
 			}
-			return errResult(fmt.Sprintf("failed to remove external link: %v", err)), nil, nil
+			return db.ErrResult(fmt.Sprintf("failed to remove external link: %v", err)), nil, nil
 		}
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("removed %s link", args.Platform)}}}, nil, nil
 	})

@@ -22,6 +22,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+
+	"career-tool-backend/db"
 )
 
 // maxCVUploadBytes bounds the uploaded file — a resume PDF has no
@@ -94,7 +96,7 @@ func uploadCVHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, uploadCVResponse{FileID: fileID})
+	db.WriteJSON(w, uploadCVResponse{FileID: fileID})
 }
 
 // forwardToMedia builds a fresh multipart request to Media's own
@@ -183,7 +185,7 @@ func cvImportRunsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "failed to list cv import runs: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, map[string]any{"runs": runs})
+		db.WriteJSON(w, map[string]any{"runs": runs})
 
 	case http.MethodPost:
 		var body createCVImportRunRequest
@@ -196,7 +198,7 @@ func cvImportRunsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "failed to record cv import run: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, map[string]any{"id": id})
+		db.WriteJSON(w, map[string]any{"id": id})
 
 	case http.MethodPut:
 		var body updateCVImportRunRequest
