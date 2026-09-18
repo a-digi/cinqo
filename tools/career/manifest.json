@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.0.163",
+  "version": "0.0.164",
   "mcp": true,
   "requires_tools": [
     {
@@ -9,7 +9,7 @@
     },
     {
       "slug": "pdf_tools",
-      "min_version": "0.2.0"
+      "min_version": "0.0.1"
     }
   ],
   "scopes": [

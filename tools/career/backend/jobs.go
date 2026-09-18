@@ -24,6 +24,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/google/uuid"
@@ -288,9 +289,19 @@ func linkJobToCompany(jobId, companyId string) error {
 // hasn't seen before, which is exactly the cross-portal,
 // different-URL case this step exists for.
 func savePortalJob(portalLinkId, sourceURL, title, company, location, description, postedAt string) (id string, created, duplicate bool, err error) {
-	if err := requirePortalLinkExists(portalLinkId); err != nil {
+	portalLinkURL, err := findPortalLinkURL(portalLinkId)
+	if err != nil {
 		return "", false, false, err
 	}
+	// Some portals return job posting URLs without a scheme/host (e.g.
+	// "/job/path?query=x") — stored as-is, a browser resolves that
+	// relative to whatever page it's currently on (this app's own
+	// origin), not the portal's, so the link silently opens the wrong
+	// site. Normalized here, once, before it's ever used as the
+	// dedup/conflict key below, so the stored value is always the real,
+	// absolute posting URL going forward. See
+	// plan/ai/tools/career/step-XX-normalize-relative-job-urls.md.
+	sourceURL = normalizeJobURL(sourceURL, portalLinkURL)
 
 	var existingBySourceURL string
 	err = jobsDB.QueryRow(`SELECT id FROM jobs WHERE source_url = ?`, sourceURL).Scan(&existingBySourceURL)
@@ -338,6 +349,51 @@ func savePortalJob(portalLinkId, sourceURL, title, company, location, descriptio
 		return "", false, false, err
 	}
 	return id, created, false, nil
+}
+
+// findPortalLinkURL is requirePortalLinkExists's own SELECT, just also
+// returning the row's own url — savePortalJob needs both "does this
+// portal link exist" and "what's its own crawl-target URL" in one
+// round trip. Deliberately not a change to requirePortalLinkExists
+// itself, which nearly a dozen other call sites only ever use for the
+// existence check and don't need the extra column for.
+func findPortalLinkURL(id string) (string, error) {
+	var linkURL string
+	err := jobsDB.QueryRow(`SELECT url FROM portal_links WHERE id = ?`, id).Scan(&linkURL)
+	switch {
+	case err == sql.ErrNoRows:
+		return "", errUnknownPortalLink
+	case err != nil:
+		return "", err
+	}
+	return linkURL, nil
+}
+
+// normalizeJobURL resolves sourceURL against portalLinkURL (that
+// job's own portal link — the URL that was actually crawled) whenever
+// sourceURL doesn't already carry its own scheme, using the same
+// standard RFC 3986 resolution net/url already implements (the same
+// rule a browser uses to resolve a relative link found on a page
+// against that page's own URL) — correct for a plain path
+// ("/job/x?q=1"), a path without a leading slash, and a
+// protocol-relative URL ("//example.com/x", which already names its
+// own domain, just not the scheme) alike, with no hand-rolled string
+// concatenation. Leaves an already-absolute sourceURL completely
+// unchanged. Falls back to returning sourceURL as-is (rather than
+// erroring) if either URL fails to parse or portalLinkURL itself isn't
+// absolute — this is a best-effort correction, not a validator; a job
+// this can't fix is no worse off than it was before this function
+// existed.
+func normalizeJobURL(sourceURL, portalLinkURL string) string {
+	parsed, err := url.Parse(sourceURL)
+	if err != nil || parsed.IsAbs() {
+		return sourceURL
+	}
+	base, err := url.Parse(portalLinkURL)
+	if err != nil || !base.IsAbs() {
+		return sourceURL
+	}
+	return base.ResolveReference(parsed).String()
 }
 
 // toLower avoids pulling in strings just for this one call site's own
