@@ -149,7 +149,7 @@ func runJobMatchNow(ctx context.Context, jobID, profileID string, personas []per
 			fail(err)
 			return
 		}
-		score, matched := computeJobMatch(job.Title, job.Description, details.Skills, vectors)
+		score, matched := computeJobMatch(job.Title, job.Description, details.Skills, personaTitleCandidates(p, details), vectors)
 		if score > bestScore {
 			bestScore = score
 			bestPersonaID = p.ID
@@ -160,4 +160,28 @@ func runJobMatchNow(ctx context.Context, jobID, profileID string, personas []per
 	if err := saveJobMatchResult(jobID, profileID, bestPersonaID, bestScore, bestSkills, "deterministic", semanticModelID); err != nil {
 		fail(err)
 	}
+}
+
+// personaTitleCandidates builds computeJobMatch's own personaTitles
+// argument (job_match_algorithm.go's matchesPersonaTitle) — the
+// persona's own short Name (e.g. "Backend Engineer") plus every
+// comma-separated entry of its own persona_details.desired_titles
+// (e.g. "Backend Engineer, Platform Engineer"), trimmed, with empty
+// entries dropped. details.PersonaDetails is nil for a persona that
+// has never had its details filled in at all — that's a normal,
+// representable state (fetchPersonaDetails' own doc comment), not an
+// error, so this simply falls back to just p.Name in that case.
+func personaTitleCandidates(p persona, details getPersonaDetailsResult) []string {
+	candidates := []string{}
+	if name := strings.TrimSpace(p.Name); name != "" {
+		candidates = append(candidates, name)
+	}
+	if details.PersonaDetails != nil {
+		for _, title := range strings.Split(details.PersonaDetails.DesiredTitles, ",") {
+			if trimmed := strings.TrimSpace(title); trimmed != "" {
+				candidates = append(candidates, trimmed)
+			}
+		}
+	}
+	return candidates
 }

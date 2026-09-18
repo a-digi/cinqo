@@ -88,6 +88,38 @@ const (
 	jobMatchScale              = 13.0
 )
 
+// jobMatchPersonaTitleInJobTitleWeight/jobMatchPersonaTitleInDescriptionWeight
+// (step XX) are a NEW, separate signal from the skill weights above —
+// deliberately new, own constants, not folded into or replacing any of
+// the skill weights already hand-tuned above: whether the PERSONA's
+// own desired role (persona.Name and/or persona_details.desired_titles
+// — see matchesPersonaTitle, below) shows up in the job's own title or
+// description at all, independent of any individual skill match. A
+// persona whose own stated title IS (or closely names) the job's own
+// title is a strong, holistic "this is literally the role they're
+// looking for" signal a pure skill-keyword count can't capture on its
+// own — weighted higher when found in the job's own TITLE (the
+// strongest possible signal: the job's own name basically matches what
+// the persona is looking for) than when only found somewhere in the
+// description. Reasoned estimates, not tuned against real data, same
+// as every other weight in this file.
+const (
+	jobMatchPersonaTitleInJobTitleWeight    = 0.2
+	jobMatchPersonaTitleInDescriptionWeight = 0.1
+)
+
+// jobMatchSkillCountFloorThreshold/jobMatchSkillCountFloorScore (step
+// XX) — matching 5 or more of the persona's own skills, regardless of
+// exactly how much weight each individual match carried, guarantees a
+// score of at least 70. See computeJobMatch's own use of these two
+// constants for the full reasoning. "4-5" was the requested range;
+// picked the higher end (5) as the threshold — trivial to move to 4 if
+// that turns out too strict once tested against real cases.
+const (
+	jobMatchSkillCountFloorThreshold = 5
+	jobMatchSkillCountFloorScore     = 70
+)
+
 // skillMatch is one matched skill plus HOW it was matched — persisted
 // verbatim via job_match_skills.match_kind (db.go) and surfaced to the
 // frontend so a user can actually tell a semantic match from a literal
@@ -138,7 +170,15 @@ const (
 // that sentence alone, not smeared across the whole posting, and
 // restricted to the requirements zone when one exists so "About us"/
 // benefits prose can't contribute a spurious semantic hit either.
-func computeJobMatch(jobTitle, jobDescription string, skills []string, vectors map[string][]float32) (score int, matchedSkills []skillMatch) {
+//
+// personaTitles (step XX) is the persona's own candidate role names —
+// see matchesPersonaTitle, below — checked once per call (not once per
+// skill) against jobTitle then jobDescription; the higher of the two
+// weights is added to totalWeight at most once, regardless of how many
+// of personaTitles happen to match. A persona with skills but no
+// matching title contributes 0 from this signal, same as before this
+// feature existed.
+func computeJobMatch(jobTitle, jobDescription string, skills []string, personaTitles []string, vectors map[string][]float32) (score int, matchedSkills []skillMatch) {
 	matchedSkills = []skillMatch{}
 	if len(skills) == 0 {
 		return 0, matchedSkills
@@ -193,15 +233,56 @@ func computeJobMatch(jobTitle, jobDescription string, skills []string, vectors m
 		}
 	}
 
+	totalWeight += matchesPersonaTitle(personaTitles, jobTitle, jobDescription)
+
 	raw := 100*(1-math.Exp(-totalWeight/jobMatchScale)) + 0.5 // round to nearest integer
 	score = int(raw)
-	if score > 100 {
-		score = 100
+	score = min(score, 100)
+	score = max(score, 0)
+
+	// jobMatchSkillCountFloorThreshold/jobMatchSkillCountFloorScore
+	// (step XX) is a floor ON TOP OF the weighted formula above, not a
+	// replacement for it — matching more than a handful of the
+	// persona's own skills (regardless of exactly which weight tier
+	// each one landed in) is, by itself, a strong enough signal that
+	// the score should never read as mediocre. Counts EVERY matched
+	// skill (literal or semantic) — the weighted formula above already
+	// distinguishes match quality; this floor only asks "how many,"
+	// not "how strongly." A NEW, separate constant pair, not a
+	// replacement for jobMatchScale or any weight — those still
+	// determine the actual score below this floor.
+	if len(matchedSkills) >= jobMatchSkillCountFloorThreshold {
+		score = max(score, jobMatchSkillCountFloorScore)
 	}
-	if score < 0 {
-		score = 0
-	}
+
 	return score, matchedSkills
+}
+
+// matchesPersonaTitle checks every candidate in personaTitles (the
+// persona's own Name plus each of its own comma-separated
+// persona_details.desired_titles entries — built by the caller,
+// job_match_now.go's runJobMatchNow) against jobTitle first, then
+// jobDescription, using the exact same case-insensitive whole-
+// word/phrase matching as skillMatchPattern (a candidate title
+// containing regex metacharacters, e.g. "C++ Engineer", is matched as
+// its own literal text). Returns the higher-tier weight the instant
+// any candidate matches jobTitle, without checking jobDescription at
+// all; only falls through to jobDescription if nothing matched the
+// title. Returns 0 if personaTitles is empty or nothing matches
+// anywhere — this signal simply doesn't apply then, same as a persona
+// with no skills at all contributing nothing to totalWeight.
+func matchesPersonaTitle(personaTitles []string, jobTitle, jobDescription string) float64 {
+	for _, title := range personaTitles {
+		if re := skillMatchPattern(title); re != nil && re.MatchString(jobTitle) {
+			return jobMatchPersonaTitleInJobTitleWeight
+		}
+	}
+	for _, title := range personaTitles {
+		if re := skillMatchPattern(title); re != nil && re.MatchString(jobDescription) {
+			return jobMatchPersonaTitleInDescriptionWeight
+		}
+	}
+	return 0
 }
 
 // skillMatchPattern compiles a case-insensitive, whole-word/phrase
