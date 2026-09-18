@@ -245,13 +245,27 @@ func computeJobMatch(jobTitle, jobDescription string, skills []string, personaTi
 	// replacement for it — matching more than a handful of the
 	// persona's own skills (regardless of exactly which weight tier
 	// each one landed in) is, by itself, a strong enough signal that
-	// the score should never read as mediocre. Counts EVERY matched
-	// skill (literal or semantic) — the weighted formula above already
-	// distinguishes match quality; this floor only asks "how many,"
-	// not "how strongly." A NEW, separate constant pair, not a
-	// replacement for jobMatchScale or any weight — those still
-	// determine the actual score below this floor.
-	if len(matchedSkills) >= jobMatchSkillCountFloorThreshold {
+	// the score should never read as mediocre. A NEW, separate constant
+	// pair, not a replacement for jobMatchScale or any weight — those
+	// still determine the actual score below this floor.
+	//
+	// Counts ONLY literal matches — NOT every matchedSkills entry. A
+	// real, caught bug: this floor originally counted semantic matches
+	// too, but the frontend (at the user's own request) only ever
+	// DISPLAYS literal matches, hiding semantic ones entirely. That
+	// meant a persona could show as few as 0-3 skills on screen while
+	// 2+ hidden semantic matches silently pushed the total past the
+	// threshold, flooring the score at 70 for what visibly looked like
+	// a weak match — exactly the "I see almost no skills but it says
+	// 70%" report this fixes. The floor now only trusts the same
+	// matches the user can actually see.
+	literalMatchCount := 0
+	for _, m := range matchedSkills {
+		if m.Kind == matchKindLiteral {
+			literalMatchCount++
+		}
+	}
+	if literalMatchCount >= jobMatchSkillCountFloorThreshold {
 		score = max(score, jobMatchSkillCountFloorScore)
 	}
 
