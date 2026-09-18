@@ -19,15 +19,27 @@ function proxyDownloadFilename(href: string): string | null {
 // the user's own typed message, and the upstream AI model's response
 // (never developer-authored, and not something cinqo controls the
 // content of). See plan/ai/frontend/frontend/step-12-markdown-message-rendering.md.
+// break-words (overflow-wrap: break-word) on every text-bearing
+// element below — an unbroken long token (a long URL, file path, or
+// base64 blob) in a user prompt or an AI reply otherwise overflows the
+// floating chat widget's own narrow (380px) container horizontally
+// instead of wrapping, since none of react-markdown's default element
+// renderings set it on their own. Deliberately NOT applied to the
+// fenced code block below (pre/its own block code) — that one already
+// has its own considered "preserve formatting, scroll horizontally
+// instead" behavior (overflow-x-auto), which this would undermine; the
+// same reasoning already established for the sibling failed-message
+// error <pre> in MessageThread.tsx's own Bubble. See
+// plan/ai/frontend/frontend/step-XX-chat-widget-long-message-wrapping.md.
 const components: Components = {
-  p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
-  ul: ({ children }) => <ul className="mb-2 list-disc space-y-1 pl-5 last:mb-0">{children}</ul>,
-  ol: ({ children }) => <ol className="mb-2 list-decimal space-y-1 pl-5 last:mb-0">{children}</ol>,
-  h1: ({ children }) => <h1 className="mb-2 mt-3 text-base font-semibold first:mt-0">{children}</h1>,
-  h2: ({ children }) => <h2 className="mb-2 mt-3 text-sm font-semibold first:mt-0">{children}</h2>,
-  h3: ({ children }) => <h3 className="mb-1 mt-2 text-sm font-semibold first:mt-0">{children}</h3>,
+  p: ({ children }) => <p className="mb-2 break-words last:mb-0">{children}</p>,
+  ul: ({ children }) => <ul className="mb-2 list-disc space-y-1 break-words pl-5 last:mb-0">{children}</ul>,
+  ol: ({ children }) => <ol className="mb-2 list-decimal space-y-1 break-words pl-5 last:mb-0">{children}</ol>,
+  h1: ({ children }) => <h1 className="mb-2 mt-3 break-words text-base font-semibold first:mt-0">{children}</h1>,
+  h2: ({ children }) => <h2 className="mb-2 mt-3 break-words text-sm font-semibold first:mt-0">{children}</h2>,
+  h3: ({ children }) => <h3 className="mb-1 mt-2 break-words text-sm font-semibold first:mt-0">{children}</h3>,
   blockquote: ({ children }) => (
-    <blockquote className="mb-2 border-l-2 border-gray-300 pl-3 italic text-gray-600 last:mb-0">{children}</blockquote>
+    <blockquote className="mb-2 border-l-2 border-gray-300 pl-3 italic text-gray-600 last:mb-0 break-words">{children}</blockquote>
   ),
   pre: ({ children }) => <pre className="mb-2 overflow-x-auto rounded bg-gray-800 p-2 last:mb-0">{children}</pre>,
   code({ className, children, ...rest }) {
@@ -41,14 +53,26 @@ const components: Components = {
         {children}
       </code>
     ) : (
-      <code className="rounded bg-gray-200 px-1 py-0.5 font-mono text-xs" {...rest}>
+      // Inline code (not a fenced block) DOES get break-words, unlike
+      // the block case above — a long inline token (e.g. a path)
+      // should wrap within the bubble rather than push it wide.
+      <code className="break-words rounded bg-gray-200 px-1 py-0.5 font-mono text-xs" {...rest}>
         {children}
       </code>
     )
   },
-  table: ({ children }) => <table className="mb-2 w-full border-collapse text-xs last:mb-0">{children}</table>,
-  th: ({ children }) => <th className="border border-gray-300 bg-gray-100 px-2 py-1 text-left font-medium">{children}</th>,
-  td: ({ children }) => <td className="border border-gray-300 px-2 py-1">{children}</td>,
+  // A table's own layout can still force per-column min-content widths
+  // wider than the narrow chat widget even with break-words on each
+  // cell (e.g. several columns of short-but-numerous content) — wrapped
+  // in its own horizontal scroller, same as the fenced code block
+  // above, rather than letting it push the whole bubble wide.
+  table: ({ children }) => (
+    <div className="mb-2 overflow-x-auto last:mb-0">
+      <table className="w-full border-collapse text-xs">{children}</table>
+    </div>
+  ),
+  th: ({ children }) => <th className="break-words border border-gray-300 bg-gray-100 px-2 py-1 text-left font-medium">{children}</th>,
+  td: ({ children }) => <td className="break-words border border-gray-300 px-2 py-1">{children}</td>,
   a: ({ href, children }) => {
     // Scheme allowlist — React does not itself block a `javascript:`
     // href, so anything other than http(s)/mailto renders as inert

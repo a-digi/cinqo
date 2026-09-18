@@ -148,7 +148,7 @@ function Bubble({
   return (
     <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'}`}>
       <div
-        className={`max-w-lg rounded-lg px-3 py-2 text-sm ${
+        className={`max-w-lg break-words rounded-lg px-3 py-2 text-sm ${
           message.failed ? 'border border-red-300 bg-red-50 text-red-900' : isUser ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-900'
         }`}
       >
@@ -203,7 +203,9 @@ function Bubble({
           {subAgentsError && <p className="text-xs text-red-600">{subAgentsError}</p>}
           {subAgents === undefined && !subAgentsError && <p className="text-xs text-gray-400">Loading…</p>}
           {subAgents?.length === 0 && <p className="text-xs text-gray-400">No sub-agents found.</p>}
-          {subAgents?.map((agent) => <SubAgentRow key={agent.id} agent={agent} />)}
+          {subAgents?.map((agent) => (
+            <SubAgentRow key={agent.id} agent={agent} />
+          ))}
         </div>
       )}
     </div>

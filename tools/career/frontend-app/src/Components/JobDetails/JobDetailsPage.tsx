@@ -130,7 +130,7 @@ export function JobDetailsPage() {
                   href={mediaDownloadUrl(job.cvMediaFileId)}
                   target="_blank"
                   rel="noreferrer"
-                  className="flex items-center gap-1.5 rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-700 transition-colors hover:bg-gray-50"
+                  className="flex items-center gap-1.5 rounded-md border border-green-200 bg-green-50 px-3 py-1.5 text-sm text-green-700 transition-colors hover:bg-green-100"
                 >
                   <PDFIcon className="h-4 w-4" />
                   Download CV

@@ -786,12 +786,18 @@ export function JobsPage() {
                             <RobotIcon />
                           </button>
                         ) : job.cvStatus === 'completed' && job.cvMediaFileId ? (
+                          // Deliberately a distinct color (green), not the
+                          // same muted gray every other action icon in
+                          // this row uses — this is the "at a glance, has
+                          // a CV already" signal the row-scanning user
+                          // relies on, so it has to actually stand out,
+                          // not just differ by tooltip text.
                           <a
                             href={mediaDownloadUrl(job.cvMediaFileId)}
                             target="_blank"
                             rel="noreferrer"
-                            title="Download the generated CV"
-                            className="rounded-md p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900"
+                            title="CV ready — click to download"
+                            className="rounded-md p-1.5 text-green-600 transition-colors hover:bg-green-50 hover:text-green-700"
                           >
                             <PDFIcon className="h-3.5 w-3.5" />
                           </a>
