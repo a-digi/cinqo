@@ -338,6 +338,15 @@ export function JobsPage() {
     createConversation({ title: jobMatchConversationTitle(job), platformId: selectedPlatformId, model, hidden: true })
       .then((conversation) => {
         window.__cinqoToolBridge.openConversation(conversation.id)
+        // The initial optimistic update below (fired synchronously,
+        // before this network round trip even lands) has no
+        // conversation id to set yet — without ALSO updating it here,
+        // the "Matching…" indicator's own click handler
+        // (handleCheckMatchProgress) would keep checking a stale/empty
+        // matchConversationId and silently do nothing until the next
+        // full reload re-fetches the real value from the server. This
+        // is what makes it clickable immediately instead.
+        setJobs((prev) => prev.map((j) => (j.id === job.id ? { ...j, matchConversationId: conversation.id } : j)))
         return updateJobMatch(job.id, { profileId, status: 'matching', conversationId: conversation.id })
           .catch(() => {
             // Best-effort — a failure here only costs reload-resilience
