@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Modal } from '../Modal/Modal'
+import type { MatchedSkill } from '../../api'
 
 // MatchScoreBar — a shared, reusable progress bar showing a 0-100
 // "Job Match" score (job_match.go), colored by tier, with the
@@ -17,7 +18,7 @@ import { Modal } from '../Modal/Modal'
 // 40-59 violet, 0-39 red. See
 // plan/ai/tools/career/step-XX-job-match.md and
 // plan/ai/tools/career/step-XX-job-match-skills.md.
-export function MatchScoreBar({ score, skills, jobTitle }: { score: number; skills: string[]; jobTitle: string }) {
+export function MatchScoreBar({ score, skills, jobTitle }: { score: number; skills: MatchedSkill[]; jobTitle: string }) {
   const [modalOpen, setModalOpen] = useState(false)
   const clamped = Math.max(0, Math.min(100, score))
   const isExceptional = clamped >= 91
@@ -32,7 +33,7 @@ export function MatchScoreBar({ score, skills, jobTitle }: { score: number; skil
           : 'bg-red-500'
   const tooltip =
     skills.length > 0
-      ? `Match score: ${clamped}%\nMatched skills: ${skills.join(', ')}`
+      ? `Match score: ${clamped}%\nMatched skills: ${skills.map((s) => s.skill).join(', ')}`
       : `Match score: ${clamped}%\nNo specific skills matched`
 
   return (
@@ -63,8 +64,17 @@ export function MatchScoreBar({ score, skills, jobTitle }: { score: number; skil
         {skills.length > 0 ? (
           <div className="flex flex-wrap gap-1.5">
             {skills.map((skill) => (
-              <span key={skill} className="rounded-full border border-gray-200 bg-gray-100 px-2.5 py-1 text-xs text-gray-700">
-                {skill}
+              <span
+                key={skill.skill}
+                title={skill.kind === 'semantic' ? 'Matched by meaning, not exact wording' : undefined}
+                className={
+                  skill.kind === 'semantic'
+                    ? 'rounded-full border border-dashed border-gray-300 bg-gray-50 px-2.5 py-1 text-xs text-gray-600'
+                    : 'rounded-full border border-gray-200 bg-gray-100 px-2.5 py-1 text-xs text-gray-700'
+                }
+              >
+                {skill.kind === 'semantic' ? '~ ' : ''}
+                {skill.skill}
               </span>
             ))}
           </div>

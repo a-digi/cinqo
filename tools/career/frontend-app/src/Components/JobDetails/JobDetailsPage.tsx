@@ -111,13 +111,29 @@ export function JobDetailsPage() {
               {job.matchedSkills.length > 0 ? (
                 <div className="mt-4 flex flex-wrap gap-1.5">
                   {job.matchedSkills.map((skill) => (
-                    <span key={skill} className="rounded-full border border-gray-200 bg-gray-100 px-2.5 py-1 text-xs text-gray-700">
-                      {skill}
+                    <span
+                      key={skill.skill}
+                      title={skill.kind === 'semantic' ? 'Matched by meaning, not exact wording' : undefined}
+                      className={
+                        skill.kind === 'semantic'
+                          ? 'rounded-full border border-dashed border-gray-300 bg-gray-50 px-2.5 py-1 text-xs text-gray-600'
+                          : 'rounded-full border border-gray-200 bg-gray-100 px-2.5 py-1 text-xs text-gray-700'
+                      }
+                    >
+                      {skill.kind === 'semantic' ? '~ ' : ''}
+                      {skill.skill}
                     </span>
                   ))}
                 </div>
               ) : (
                 <p className="mt-4 text-xs text-gray-400">No specific skills matched.</p>
+              )}
+              {job.semanticModelId ? (
+                <p className="mt-3 text-xs text-gray-400">Semantic model used: {job.semanticModelId}</p>
+              ) : (
+                job.matchKind === 'deterministic' && (
+                  <p className="mt-3 text-xs text-gray-400">No semantic model was active for this match.</p>
+                )
               )}
             </div>
           )}

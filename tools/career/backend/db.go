@@ -349,7 +349,21 @@ CREATE TABLE IF NOT EXISTS job_matches (
     -- is only ever meaningful for kind='ai' — a deterministic match
     -- has no conversation at all. See
     -- plan/ai/tools/career/step-XX-deterministic-job-match.md.
-    kind            TEXT NOT NULL DEFAULT 'ai'
+    kind            TEXT NOT NULL DEFAULT 'ai',
+    -- semantic_model_id (step XX) records WHICH semantic_models row
+    -- (semantic_model.go) was actually loaded and used while producing
+    -- this match — NULL means the match was literal-keyword-only,
+    -- either because kind='ai' (the AI path never uses a semantic
+    -- model at all) or because no model was active/loaded at the time
+    -- of a kind='deterministic' run. This is the direct, queryable
+    -- answer to "how do I know a model was actually used for this
+    -- match" — previously there was no way to tell at all. Not a
+    -- REFERENCES semantic_models(id): a model can be removed
+    -- (semantic_model.go's removeModel) after having been used for a
+    -- past match, and that past match's own record should still show
+    -- which id it used, not be cascaded away. See
+    -- plan/ai/tools/career/step-XX-semantic-match-observability.md.
+    semantic_model_id TEXT
 );
 
 -- job_match_skills (step XX) holds the specific skills (verbatim
@@ -364,9 +378,23 @@ CREATE TABLE IF NOT EXISTS job_matches (
 -- saveJobMatchResult (job_match.go) validates each skill against that
 -- persona's own real skills in Go code instead, at write time. See
 -- plan/ai/tools/career/step-XX-job-match-skills.md.
+--
+-- match_kind (step XX) — 'literal' (an exact keyword/phrase hit,
+-- job_match_algorithm.go's own original behavior) or 'semantic' (no
+-- literal hit anywhere, but the skill's own meaning was close enough
+-- to the job description per the active semantic model). Same "kind
+-- column, no CHECK constraint, validated in Go instead" convention as
+-- job_matches.kind. DEFAULT 'literal' backfills every pre-existing row
+-- correctly: the semantic path didn't exist before this step, so every
+-- row saved before it is, by definition, a literal match — this
+-- includes every AI-path ('kind'='ai' on the parent job_matches row)
+-- skill too, for which this column simply doesn't apply; the frontend
+-- only ever renders it for a 'deterministic' job_matches row. See
+-- plan/ai/tools/career/step-XX-semantic-match-observability.md.
 CREATE TABLE IF NOT EXISTS job_match_skills (
-    job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
-    skill  TEXT NOT NULL,
+    job_id     TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    skill      TEXT NOT NULL,
+    match_kind TEXT NOT NULL DEFAULT 'literal',
     PRIMARY KEY (job_id, skill)
 );
 
@@ -713,7 +741,51 @@ func migrateJobsDB(db *sql.DB) error {
 	if err := migrateJobsDetailCrawlStatus(db); err != nil {
 		return err
 	}
-	return migrateJobMatchesKind(db)
+	if err := migrateJobMatchesKind(db); err != nil {
+		return err
+	}
+	if err := migrateJobMatchesSemanticModelID(db); err != nil {
+		return err
+	}
+	return migrateJobMatchSkillsMatchKind(db)
+}
+
+// migrateJobMatchesSemanticModelID adds the nullable semantic_model_id
+// column (step XX) to an already-installed job_matches table — same
+// plain ALTER TABLE ADD COLUMN shape as migrateJobMatchesKind above,
+// guarded the same way. NULL backfills every pre-existing row
+// correctly: the semantic model feature didn't exist before this step,
+// so no earlier match could possibly have used one. See
+// plan/ai/tools/career/step-XX-semantic-match-observability.md.
+func migrateJobMatchesSemanticModelID(db *sql.DB) error {
+	exists, hasColumn, err := tableHasColumn(db, "job_matches", "semantic_model_id")
+	if err != nil {
+		return err
+	}
+	if !exists || hasColumn {
+		return nil
+	}
+	_, err = db.Exec(`ALTER TABLE job_matches ADD COLUMN semantic_model_id TEXT`)
+	return err
+}
+
+// migrateJobMatchSkillsMatchKind adds the match_kind column (step XX)
+// to an already-installed job_match_skills table — same plain ALTER
+// TABLE ADD COLUMN shape as every other column addition in this file,
+// guarded the same way. DEFAULT 'literal' backfills every pre-existing
+// row correctly — see this column's own doc comment on the
+// CREATE TABLE above for why. See
+// plan/ai/tools/career/step-XX-semantic-match-observability.md.
+func migrateJobMatchSkillsMatchKind(db *sql.DB) error {
+	exists, hasColumn, err := tableHasColumn(db, "job_match_skills", "match_kind")
+	if err != nil {
+		return err
+	}
+	if !exists || hasColumn {
+		return nil
+	}
+	_, err = db.Exec(`ALTER TABLE job_match_skills ADD COLUMN match_kind TEXT NOT NULL DEFAULT 'literal'`)
+	return err
 }
 
 // migrateJobMatchesKind adds the kind column (step XX) to an

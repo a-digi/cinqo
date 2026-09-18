@@ -35,6 +35,24 @@ const (
 	jobMatchSemanticThreshold = 0.55
 )
 
+// skillMatch is one matched skill plus HOW it was matched — persisted
+// verbatim via job_match_skills.match_kind (db.go) and surfaced to the
+// frontend so a user can actually tell a semantic match from a literal
+// one, instead of the two being indistinguishable in the UI. See
+// plan/ai/tools/career/step-XX-semantic-match-observability.md.
+type skillMatch struct {
+	Skill string `json:"skill"`
+	// Kind is "literal" (an exact keyword/phrase hit) or "semantic" (no
+	// literal hit, but the skill's own meaning was close enough to some
+	// sentence of the job description per the active model).
+	Kind string `json:"kind"`
+}
+
+const (
+	matchKindLiteral  = "literal"
+	matchKindSemantic = "semantic"
+)
+
 // computeJobMatch scores how well a persona's own skills match a
 // job's own title+description. Each skill is checked for a
 // case-insensitive, whole-word/phrase match against title and
@@ -51,20 +69,31 @@ const (
 // model is active/loaded — nil disables the semantic step entirely,
 // reproducing this function's own pre-existing literal-only behavior
 // exactly, so a deployment that never downloads a model is unaffected.
+//
 // When non-nil, a skill that doesn't literally match either field
-// falls back to comparing its own meaning against the job
-// description's — see jobMatchSemanticWeight/jobMatchSemanticThreshold
-// above.
-func computeJobMatch(jobTitle, jobDescription string, skills []string, vectors map[string][]float32) (score int, matchedSkills []string) {
-	matchedSkills = []string{}
+// falls back to a semantic check against the job description — but
+// NOT by averaging the whole description into one vector (an earlier,
+// weaker version of this function did exactly that, and diluted any
+// one specific concept into the text's overall generic "gist" badly
+// enough that the semantic step rarely fired in practice). Instead the
+// description is split into sentences (splitIntoSentences,
+// semantic_vectors.go) and the skill is compared against EACH one,
+// keeping the best (maximum) similarity — a skill mentioned or implied
+// in one specific sentence is compared against that sentence alone,
+// not smeared across the whole posting.
+func computeJobMatch(jobTitle, jobDescription string, skills []string, vectors map[string][]float32) (score int, matchedSkills []skillMatch) {
+	matchedSkills = []skillMatch{}
 	if len(skills) == 0 {
 		return 0, matchedSkills
 	}
 
-	var descriptionVector []float32
-	var descriptionVectorOK bool
+	var sentenceVectors [][]float32
 	if vectors != nil {
-		descriptionVector, descriptionVectorOK = phraseVector(jobDescription, vectors)
+		for _, sentence := range splitIntoSentences(jobDescription) {
+			if v, ok := phraseVector(sentence, vectors); ok {
+				sentenceVectors = append(sentenceVectors, v)
+			}
+		}
 	}
 
 	var totalWeight float64
@@ -76,18 +105,24 @@ func computeJobMatch(jobTitle, jobDescription string, skills []string, vectors m
 		switch {
 		case re.MatchString(jobTitle):
 			totalWeight += jobMatchTitleWeight
-			matchedSkills = append(matchedSkills, skill)
+			matchedSkills = append(matchedSkills, skillMatch{Skill: skill, Kind: matchKindLiteral})
 		case re.MatchString(jobDescription):
 			totalWeight += jobMatchDescriptionWeight
-			matchedSkills = append(matchedSkills, skill)
-		case vectors != nil && descriptionVectorOK:
+			matchedSkills = append(matchedSkills, skillMatch{Skill: skill, Kind: matchKindLiteral})
+		case len(sentenceVectors) > 0:
 			skillVector, ok := phraseVector(skill, vectors)
 			if !ok {
 				continue
 			}
-			if cosineSimilarity(skillVector, descriptionVector) >= jobMatchSemanticThreshold {
+			var best float64
+			for _, sv := range sentenceVectors {
+				if sim := cosineSimilarity(skillVector, sv); sim > best {
+					best = sim
+				}
+			}
+			if best >= jobMatchSemanticThreshold {
 				totalWeight += jobMatchSemanticWeight
-				matchedSkills = append(matchedSkills, skill)
+				matchedSkills = append(matchedSkills, skillMatch{Skill: skill, Kind: matchKindSemantic})
 			}
 		}
 	}

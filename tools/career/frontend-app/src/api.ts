@@ -98,12 +98,34 @@ export interface Job {
   // has no conversation to open/poll. undefined when never matched.
   // See plan/ai/tools/career/step-XX-deterministic-job-match.md.
   matchKind?: 'ai' | 'deterministic'
+  // semanticModelId (step XX) — which semantic model catalog entry
+  // (JobSettingsPage) was actually loaded and used to produce the
+  // current match, undefined if the match was literal-keyword-only
+  // (no model active, or matchKind is 'ai' — the AI path never uses
+  // one). The direct, user-visible answer to "how do I know a model
+  // was actually used for this match." See
+  // plan/ai/tools/career/step-XX-semantic-match-observability.md.
+  semanticModelId?: string
   // matchedSkills (step XX) — the specific skills (verbatim, from the
-  // matched persona's own skills list) that explain matchScore.
-  // Always present as an array (possibly empty), never undefined —
-  // the backend guarantees this field, unlike the optional ones above.
-  // See plan/ai/tools/career/step-XX-job-match-skills.md.
-  matchedSkills: string[]
+  // matched persona's own skills list) that explain matchScore, each
+  // tagged with HOW it was matched. Always present as an array
+  // (possibly empty), never undefined — the backend guarantees this
+  // field, unlike the optional ones above. See
+  // plan/ai/tools/career/step-XX-job-match-skills.md and
+  // plan/ai/tools/career/step-XX-semantic-match-observability.md.
+  matchedSkills: MatchedSkill[]
+}
+
+// MatchedSkill (step XX) — 'literal' (an exact keyword/phrase hit) or
+// 'semantic' (no literal hit, but the skill's own meaning was close
+// enough to some sentence of the job description per the active
+// model). Only meaningful for matchKind === 'deterministic' — an
+// 'ai' match's own skills always report 'literal' from the backend
+// (it has no literal/semantic distinction of its own), so callers
+// should not render this badge for an 'ai' match.
+export interface MatchedSkill {
+  skill: string
+  kind: 'literal' | 'semantic'
 }
 
 export interface JobsResult {

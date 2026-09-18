@@ -40,27 +40,34 @@ var (
 // acquireActiveVectors returns the word vectors for whichever
 // semantic_models row is currently active, loading them into memory
 // first if they aren't already resident, and (re)starting the
-// idle-unload timer either way. Returns nil if no model is active, its
-// file is missing, or loading it fails — every caller (computeJobMatch,
-// via runJobMatchNow) treats a nil map as "no semantic fallback
-// available," falling back to today's literal-only behavior rather than
-// failing the match outright.
-func acquireActiveVectors() map[string][]float32 {
+// idle-unload timer either way. Returns (nil, "") if no model is
+// active, its file is missing, or loading it fails — every caller
+// (computeJobMatch, via runJobMatchNow) treats a nil map as "no
+// semantic fallback available," falling back to today's literal-only
+// behavior rather than failing the match outright.
+//
+// modelID (step XX) is returned alongside vectors specifically so a
+// caller can record WHICH model (or none) was actually used for a
+// given match — see job_matches.semantic_model_id's own doc comment
+// (db.go) for why this matters: without it, there was no way to tell
+// whether a match's own lack of improvement meant "no model was ever
+// active" or "a model was active but didn't help this particular job."
+func acquireActiveVectors() (vectors map[string][]float32, modelID string) {
 	active, err := getActiveModel()
 	if err != nil || active == nil || active.FilePath == nil {
-		return nil
+		return nil, ""
 	}
 
 	activeVectorsMu.Lock()
 	defer activeVectorsMu.Unlock()
 
 	if activeVectorsID != active.ID || activeVectors == nil {
-		vectors, loadErr := loadWordVectors(*active.FilePath)
+		loaded, loadErr := loadWordVectors(*active.FilePath)
 		if loadErr != nil {
 			log.Printf("semantic model %s: failed to load %s: %v", active.ID, *active.FilePath, loadErr)
-			return nil
+			return nil, ""
 		}
-		activeVectors = vectors
+		activeVectors = loaded
 		activeVectorsID = active.ID
 	}
 
@@ -74,7 +81,7 @@ func acquireActiveVectors() map[string][]float32 {
 		activeVectorsID = ""
 	})
 
-	return activeVectors
+	return activeVectors, active.ID
 }
 
 // loadWordVectors parses a GloVe-format text file ("word v1 v2 ... vN",
@@ -178,6 +185,41 @@ func phraseVector(text string, vectors map[string][]float32) (vec []float32, ok 
 		sum[i] /= float32(count)
 	}
 	return sum, true
+}
+
+// splitIntoSentences breaks text on '.', '!', '?', and newlines — a
+// deliberately cheap heuristic (no NLP sentence-boundary library),
+// good enough for this call site's own purpose: giving
+// computeJobMatch's own semantic step something narrower than "the
+// entire job description" to compare a skill against. Averaging every
+// word in a multi-paragraph posting into ONE vector dilutes any single
+// specific concept into the text's overall generic "gist" — a real,
+// observed problem, not a hypothetical one (see this feature's own
+// step-XX doc for the job match quality issue this fixes). Comparing
+// against each sentence separately and keeping the best score instead
+// means a skill mentioned or implied in one specific sentence is
+// compared against that sentence alone, not smeared across the whole
+// posting. Empty/whitespace-only sentences are dropped; a text with no
+// sentence-ending punctuation at all (rare, but not impossible for a
+// short or malformed job description) still yields it as one sentence
+// via the trailing flush.
+func splitIntoSentences(text string) []string {
+	var sentences []string
+	var current strings.Builder
+	flush := func() {
+		if s := strings.TrimSpace(current.String()); s != "" {
+			sentences = append(sentences, s)
+		}
+		current.Reset()
+	}
+	for _, r := range text {
+		current.WriteRune(r)
+		if r == '.' || r == '!' || r == '?' || r == '\n' {
+			flush()
+		}
+	}
+	flush()
+	return sentences
 }
 
 // cosineSimilarity is the standard dot-product-over-magnitudes

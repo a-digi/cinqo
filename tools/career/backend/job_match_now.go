@@ -129,15 +129,20 @@ func runJobMatchNow(ctx context.Context, jobID, profileID string, personas []per
 	// downloaded/selected. Called once per run, not once per persona
 	// below: it's the same job description being compared every time,
 	// and re-acquiring per persona would just restart the same idle-
-	// unload timer redundantly.
-	vectors := acquireActiveVectors()
+	// unload timer redundantly. semanticModelID (step XX) is recorded
+	// on the saved match below regardless of whether the winning
+	// persona's own bestSkills happens to contain any semantic match —
+	// it answers "was a model active and loaded for this run," which is
+	// what job_matches.semantic_model_id's own doc comment (db.go)
+	// promises, not "did semantic scoring change the outcome."
+	vectors, semanticModelID := acquireActiveVectors()
 
 	// bestScore starts at -1 (never a real score) so even a 0-scoring
 	// persona is recorded as "the best available" rather than being
 	// silently skipped by a zero-valued default.
 	var bestPersonaID string
 	var bestScore = -1
-	var bestSkills []string
+	var bestSkills []skillMatch
 	for _, p := range personas {
 		details, err := fetchPersonaDetails(p.ID)
 		if err != nil {
@@ -152,7 +157,7 @@ func runJobMatchNow(ctx context.Context, jobID, profileID string, personas []per
 		}
 	}
 
-	if err := saveJobMatchResult(jobID, profileID, bestPersonaID, bestScore, bestSkills, "deterministic"); err != nil {
+	if err := saveJobMatchResult(jobID, profileID, bestPersonaID, bestScore, bestSkills, "deterministic", semanticModelID); err != nil {
 		fail(err)
 	}
 }
