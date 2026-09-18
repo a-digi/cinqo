@@ -19,6 +19,15 @@ routes:
     executor: MediaMine
     security: authenticated
 
+  # No static scopes, same dynamic-ownership reasoning as the DELETE
+  # route below: a caller may download a media file if they hold
+  # cinqo:super:admin OR are the row's own uploader — see
+  # DownloadHandler's own doc comment.
+  - path: /api/v1/media/{id}/download
+    method: GET
+    executor: MediaDownload
+    security: authenticated
+
   # List IS a genuinely global admin operation (browse every tool's own
   # media at once), unlike upload/mine — so, unlike them, it declares a
   # normal static scope here and never re-checks it in the handler,

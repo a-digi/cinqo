@@ -9,6 +9,9 @@ import {
   linkJobToCompany,
   fetchProfiles,
   updateJobMatch,
+  updateJobCv,
+  persistCvPdf,
+  mediaDownloadUrl,
   type Job,
   type Company,
   type Portal,
@@ -19,11 +22,12 @@ import { createConversation, sendMessage, awaitTurnCompletion, fetchTurnStatus }
 import { CoreApiError } from '../../Cinqo/Http/client'
 import { CrawlPlatformPicker } from '../../Crawler/CrawlPlatformPicker/CrawlPlatformPicker'
 import { buildJobMatchMessage, jobMatchConversationTitle } from '../../JobMatch/buildJobMatchMessage'
+import { buildGenerateCvMessage, generateCvConversationTitle } from '../../CvPdf/buildGenerateCvMessage'
 import { Dropdown } from '../Dropdown/Dropdown'
 import { Pagination } from '../Pagination/Pagination'
 import { Modal } from '../../Shared/Modal/Modal'
 import { MatchScoreBar } from '../../Shared/MatchScoreBar/MatchScoreBar'
-import { FilterIcon, XIcon, EyeIcon, ExternalLinkIcon, TrashIcon, MatchIcon, RobotIcon } from '../../Shared/Icons/icons'
+import { FilterIcon, XIcon, EyeIcon, ExternalLinkIcon, TrashIcon, MatchIcon, RobotIcon, PDFIcon } from '../../Shared/Icons/icons'
 import { Typewriter } from '../../Shared/Typewriter/Typewriter'
 import { truncate } from '../../Shared/Text/transform'
 
@@ -81,6 +85,12 @@ export function JobsPage() {
   const [selectedPlatformId, setSelectedPlatformId] = useState<string | null>(null)
   const [selectedModel, setSelectedModel] = useState<string | null>(null)
   const [matchPickerJob, setMatchPickerJob] = useState<Job | null>(null)
+
+  // "Generate CV PDF" (step XX) own state — cvPickerJob mirrors
+  // matchPickerJob exactly: the job a profile is currently being
+  // picked for (non-null only while 2+ profiles exist and the picker
+  // Modal is open).
+  const [cvPickerJob, setCvPickerJob] = useState<Job | null>(null)
 
   function load(companyIdOverride?: string, portalIdOverride?: string, pageOverride?: number, locationOverride?: string) {
     setError('')
@@ -304,6 +314,89 @@ export function JobsPage() {
     )
   }
 
+  // finishCvGeneration is the shared "a Generate CV PDF conversation
+  // just ended" handling, mirroring finishMatch above exactly — used
+  // by both a freshly-started generation (startCvGeneration, below)
+  // and a resumed one (resumeCvWatch). Unlike finishMatch, a turn that
+  // finished successfully does NOT mean the CV is fully saved yet: the
+  // AI only ever gets as far as cvStatus 'rendered' (save_cv_pdf never
+  // touches Media itself — see cv_pdf.go's own top doc comment), so
+  // this function's own non-error path also performs the actual
+  // persist-to-Media handoff for a 'rendered' job before treating the
+  // attempt as settled.
+  function finishCvGeneration(jobId: string, err?: unknown) {
+    if (err) {
+      const text =
+        err instanceof CoreApiError && (err.status === 401 || err.status === 403)
+          ? 'Ask an admin to grant you access to AI conversations.'
+          : err instanceof Error
+            ? err.message
+            : 'CV generation failed.'
+      void updateJobCv(jobId, { status: 'failed', error: text })
+        .catch((recordErr: unknown) => {
+          console.error('failed to record cv generation failure', jobId, recordErr)
+        })
+        .then(() => {
+          load()
+        })
+      return
+    }
+    void fetchJob(jobId)
+      .then((job) => {
+        if (job.cvStatus === 'rendered' && job.cvPdfToolsFileId) {
+          return persistCvPdf(jobId, job.cvPdfToolsFileId).catch((persistErr: unknown) => {
+            console.error('failed to persist cv pdf', jobId, persistErr)
+            return updateJobCv(jobId, {
+              status: 'failed',
+              error: persistErr instanceof Error ? persistErr.message : 'Failed to save the generated CV.',
+            })
+          })
+        }
+        if (job.cvStatus === 'generating') {
+          return updateJobCv(jobId, {
+            status: 'failed',
+            error: 'The AI finished without producing a CV — try again.',
+          })
+        }
+      })
+      .catch((recordErr: unknown) => {
+        console.error('failed to verify cv generation outcome', jobId, recordErr)
+      })
+      .then(() => {
+        load()
+      })
+  }
+
+  // resumeCvWatch picks a still-in-flight CV generation back up after a
+  // reload — mirrors resumeMatchWatch exactly.
+  async function resumeCvWatch(jobId: string, conversationId: string) {
+    let status
+    try {
+      status = await fetchTurnStatus(conversationId)
+    } catch {
+      status = 'running' as const
+    }
+    if (status !== 'running') {
+      awaitTurnCompletion(conversationId).then(
+        () => {
+          finishCvGeneration(jobId)
+        },
+        (err: unknown) => {
+          finishCvGeneration(jobId, err)
+        },
+      )
+      return
+    }
+    awaitTurnCompletion(conversationId).then(
+      () => {
+        finishCvGeneration(jobId)
+      },
+      (err: unknown) => {
+        finishCvGeneration(jobId, err)
+      },
+    )
+  }
+
   // resumedMatchesRef tracks which jobs' own matches this instance has
   // already started (re)watching — a Set, not a single boolean (every
   // other resume-on-reload effect in this tool guards, e.g.
@@ -319,6 +412,27 @@ export function JobsPage() {
       resumedMatchesRef.current.add(job.id)
       if (job.matchConversationId) {
         void resumeMatchWatch(job.id, job.matchConversationId)
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobs])
+
+  // resumedCvRef mirrors resumedMatchesRef exactly, with one extra
+  // case: a job left sitting at 'rendered' (the AI already called
+  // save_cv_pdf, but this tab closed before the persist-to-Media
+  // handoff ran) is resumed by calling finishCvGeneration directly —
+  // there's no conversation left to watch, only the handoff itself
+  // still needs to happen.
+  const resumedCvRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    for (const job of jobs) {
+      if (resumedCvRef.current.has(job.id)) continue
+      if (job.cvStatus === 'generating' && job.cvConversationId) {
+        resumedCvRef.current.add(job.id)
+        void resumeCvWatch(job.id, job.cvConversationId)
+      } else if (job.cvStatus === 'rendered') {
+        resumedCvRef.current.add(job.id)
+        finishCvGeneration(job.id)
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -384,6 +498,55 @@ export function JobsPage() {
   function handleCheckMatchProgress(job: Job) {
     if (job.matchConversationId) {
       window.__cinqoToolBridge.openConversation(job.matchConversationId)
+    }
+  }
+
+  // startCvGeneration mirrors startMatch exactly — a hidden
+  // conversation, opened immediately, with the conversation id
+  // persisted server-side (updateJobCv) BEFORE the actual instruction
+  // message is sent.
+  function startCvGeneration(job: Job, profileId: string) {
+    if (!selectedPlatformId) return
+    const platform = platforms.find((p) => p.id === selectedPlatformId)
+    const model = platform && platform.models.length > 0 ? (selectedModel ?? platform.models[0]) : undefined
+
+    createConversation({ title: generateCvConversationTitle(job), platformId: selectedPlatformId, model, hidden: true })
+      .then((conversation) => {
+        window.__cinqoToolBridge.openConversation(conversation.id)
+        setJobs((prev) => prev.map((j) => (j.id === job.id ? { ...j, cvConversationId: conversation.id } : j)))
+        return updateJobCv(job.id, { profileId, status: 'generating', conversationId: conversation.id })
+          .catch(() => {
+            // Best-effort — a failure here only costs reload-resilience
+            // for this one attempt, not the attempt itself.
+          })
+          .then(() => sendMessage(conversation.id, buildGenerateCvMessage(job, profileId)))
+      })
+      .then(
+        () => {
+          finishCvGeneration(job.id)
+        },
+        (err: unknown) => {
+          finishCvGeneration(job.id, err)
+        },
+      )
+    setJobs((prev) =>
+      prev.map((j) => (j.id === job.id ? { ...j, cvStatus: 'generating', cvError: undefined, cvMediaFileId: undefined } : j)),
+    )
+  }
+
+  function handleGenerateCvClick(job: Job) {
+    if (job.cvStatus === 'generating' || !selectedPlatformId) return
+    if (profiles.length === 0) return
+    if (profiles.length === 1) {
+      startCvGeneration(job, profiles[0].id)
+      return
+    }
+    setCvPickerJob(job)
+  }
+
+  function handleCheckCvProgress(job: Job) {
+    if (job.cvConversationId) {
+      window.__cinqoToolBridge.openConversation(job.cvConversationId)
     }
   }
 
@@ -606,6 +769,52 @@ export function JobsPage() {
                             <MatchIcon />
                           </button>
                         )}
+                        {job.cvStatus === 'generating' ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleCheckCvProgress(job)
+                            }}
+                            title="Open the chat window to watch the AI generate this CV"
+                            className="rounded-md p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900"
+                          >
+                            <RobotIcon />
+                          </button>
+                        ) : job.cvStatus === 'completed' && job.cvMediaFileId ? (
+                          <a
+                            href={mediaDownloadUrl(job.cvMediaFileId)}
+                            target="_blank"
+                            rel="noreferrer"
+                            title="Download the generated CV"
+                            className="rounded-md p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900"
+                          >
+                            <PDFIcon className="h-3.5 w-3.5" />
+                          </a>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleGenerateCvClick(job)
+                            }}
+                            disabled={!selectedPlatformId || profiles.length === 0}
+                            title={
+                              !selectedPlatformId
+                                ? 'No AI platform configured — add one on the Platforms page first'
+                                : profiles.length === 0
+                                  ? 'Create a profile first'
+                                  : job.cvStatus === 'failed'
+                                    ? (job.cvError ?? 'Failed to generate CV — click to retry')
+                                    : 'Generate a CV PDF tailored to this job'
+                            }
+                            className={
+                              job.cvStatus === 'failed'
+                                ? 'rounded-md p-1.5 text-red-400 transition-colors hover:bg-red-50 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-40'
+                                : 'rounded-md p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-40'
+                            }
+                          >
+                            <PDFIcon className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                         <a
                           href={job.sourceUrl}
                           target="_blank"
@@ -679,6 +888,32 @@ export function JobsPage() {
                   startMatch(matchPickerJob, profile.id)
                 }
                 setMatchPickerJob(null)
+              }}
+              className="rounded-md border border-gray-200 px-3 py-2 text-left text-sm text-gray-900 hover:bg-gray-50"
+            >
+              {profile.firstName} {profile.lastName}
+            </button>
+          ))}
+        </div>
+      </Modal>
+
+      <Modal
+        open={cvPickerJob !== null}
+        title="Choose a profile to build the CV for"
+        onClose={() => {
+          setCvPickerJob(null)
+        }}
+      >
+        <div className="flex flex-col gap-1.5">
+          {profiles.map((profile) => (
+            <button
+              key={profile.id}
+              type="button"
+              onClick={() => {
+                if (cvPickerJob) {
+                  startCvGeneration(cvPickerJob, profile.id)
+                }
+                setCvPickerJob(null)
               }}
               className="rounded-md border border-gray-200 px-3 py-2 text-left text-sm text-gray-900 hover:bg-gray-50"
             >

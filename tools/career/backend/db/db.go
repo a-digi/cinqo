@@ -390,6 +390,36 @@ CREATE TABLE IF NOT EXISTS job_match_skills (
     match_kind TEXT NOT NULL DEFAULT 'literal',
     PRIMARY KEY (job_id, skill)
 );
+
+-- job_cv_pdfs (step XX) tracks the most recent "Generate CV PDF"
+-- attempt for one job — one row per job (job_id itself is the primary
+-- key, no separate id/history), re-generating overwrites, same
+-- "single slot per job, most recent wins" convention job_matches
+-- already established. profile_id is an OPAQUE id into career.db's
+-- own profiles table (see job_matches' own doc comment for why no
+-- real FK/JOIN across the two databases is possible).
+--
+-- The AI-facing save_cv_pdf MCP tool (jobs/cv_pdf.go) can only ever
+-- move a row from 'generating' to 'rendered' (setting
+-- pdf_tools_file_id) — it never talks to Media itself, since it runs
+-- as a stdio MCP subprocess with no caller HTTP session to
+-- authenticate a Media upload with. Moving a 'rendered' row to
+-- 'completed' (setting media_file_id, clearing pdf_tools_file_id) is
+-- done exclusively by the human-authenticated POST /jobs/cv/persist
+-- HTTP handler (routeHandler.go), which DOES have a real session to
+-- forward to Media's own upload endpoint — mirroring cv_import.go's
+-- own forwardToMedia. See plan/ai/tools/career/step-XX-cv-pdf.md.
+CREATE TABLE IF NOT EXISTS job_cv_pdfs (
+    job_id             TEXT PRIMARY KEY REFERENCES jobs(id) ON DELETE CASCADE,
+    profile_id         TEXT NOT NULL,
+    status             TEXT NOT NULL DEFAULT 'generating'
+                         CHECK (status IN ('generating','rendered','completed','failed')),
+    conversation_id    TEXT,
+    pdf_tools_file_id  TEXT,
+    media_file_id      TEXT,
+    error              TEXT,
+    updated_at         TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `
 
 // migrateCareerDB runs, in order, every past schema migration this

@@ -97,6 +97,20 @@ export interface Job {
   // backend guarantees this field, unlike the optional ones above. See
   // plan/ai/tools/career/step-XX-job-match-skills.md.
   matchedSkills: string[]
+  // cvStatus/cvConversationId/cvPdfToolsFileId/cvMediaFileId/cvError
+  // (step XX) mirror matchStatus's own "undefined means never
+  // attempted" posture, for the "Generate CV PDF" feature.
+  // cvPdfToolsFileId is only ever present transiently, while cvStatus
+  // is "rendered" — the frontend uses it to fetch the rendered PDF's
+  // own bytes from pdf_tools' proxy route before persisting them to
+  // Media (see persistCvPdf). cvMediaFileId is the durable one, set
+  // only once cvStatus is "completed" — build a download link from it
+  // via mediaDownloadUrl(). See plan/ai/tools/career/step-XX-cv-pdf.md.
+  cvStatus?: 'generating' | 'rendered' | 'completed' | 'failed'
+  cvConversationId?: string
+  cvPdfToolsFileId?: string
+  cvMediaFileId?: string
+  cvError?: string
 }
 
 export interface JobsResult {
@@ -434,6 +448,64 @@ export async function updateJobMatch(
     const text = await res.text().catch(() => '')
     throw new Error(text || `failed to update job match (${res.status})`)
   }
+}
+
+// updateJobCv tracks a "Generate CV PDF" attempt's own lifecycle —
+// starting one (status: 'generating', profileId + conversationId set)
+// or recording a client-observed failure (status: 'failed', error
+// set). Mirrors updateJobMatch exactly. A successful render is never
+// recorded here — see persistCvPdf, below.
+export async function updateJobCv(
+  jobId: string,
+  args: { profileId?: string; status: 'generating' | 'failed'; conversationId?: string; error?: string },
+): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/jobs/cv`, {
+    method: 'PUT',
+    credentials: 'include',
+    body: JSON.stringify({ jobId, ...args }),
+  })
+  if (!res.ok && res.status !== 204) {
+    const text = await res.text().catch(() => '')
+    throw new Error(text || `failed to update job cv (${res.status})`)
+  }
+}
+
+// persistCvPdf fetches the AI-rendered CV's own bytes from pdf_tools'
+// proxy route (this browser's own live, cookie-authenticated session
+// can reach it directly — no separate auth needed) and forwards them
+// to this tool's own POST /jobs/cv/persist, which re-uploads them into
+// Media permanently and finalizes the job's own job_cv_pdfs row. See
+// cv_pdf.go's own top doc comment for why this two-hop handoff — not a
+// direct Media upload from the AI's own MCP tool call — is how a
+// generated PDF ends up in permanent storage.
+export async function persistCvPdf(jobId: string, pdfToolsFileId: string): Promise<{ mediaFileId: string }> {
+  const pdfRes = await fetch(`/api/v1/tools/pdf_tools/proxy/files?id=${encodeURIComponent(pdfToolsFileId)}`, {
+    credentials: 'include',
+  })
+  if (!pdfRes.ok) {
+    throw new Error(`failed to fetch rendered cv pdf (${pdfRes.status})`)
+  }
+  const blob = await pdfRes.blob()
+
+  const form = new FormData()
+  form.set('jobId', jobId)
+  form.set('file', blob, `${jobId}.pdf`)
+
+  const res = await fetch(`${PROXY_BASE}/jobs/cv/persist`, {
+    method: 'POST',
+    credentials: 'include',
+    body: form,
+  })
+  return jsonOrThrow<{ mediaFileId: string }>(res, 'persist cv pdf')
+}
+
+// mediaDownloadUrl builds a plain, clickable link to a Media file's
+// own bytes — a core platform route (GET /api/v1/media/{id}/download),
+// not one of this tool's own PROXY_BASE routes: Media is core-owned
+// storage every tool shares, not something namespaced under any one
+// tool's own proxy path.
+export function mediaDownloadUrl(mediaFileId: string): string {
+  return `/api/v1/media/${encodeURIComponent(mediaFileId)}/download`
 }
 
 // --- companies ---

@@ -25,9 +25,14 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
+	"mime/multipart"
 	"net/http"
+	"os"
 
 	"career-tool-backend/companies"
 	"career-tool-backend/db"
@@ -646,6 +651,174 @@ func jobMatchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// --- /jobs/cv — "Generate CV PDF" ---
+
+type cvPdfUpdateRequest struct {
+	JobID          string  `json:"jobId"`
+	ProfileID      string  `json:"profileId,omitempty"`
+	Status         string  `json:"status"`
+	ConversationID string  `json:"conversationId,omitempty"`
+	ErrorText      *string `json:"error,omitempty"`
+}
+
+// cvPdfHandler handles PUT /jobs/cv — starts tracking a new CV
+// generation attempt (status: "generating", profileId + conversationId
+// set) or records a client-observed failure (status: "failed", error
+// set). Mirrors jobMatchHandler exactly. A successful render is never
+// recorded here — see cvPdfPersistHandler, below, and cv_pdf.go's own
+// top doc comment for why that's a separate endpoint.
+func cvPdfHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body cvPdfUpdateRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.JobID == "" {
+		http.Error(w, "jobId is required", http.StatusBadRequest)
+		return
+	}
+	switch body.Status {
+	case "generating":
+		if body.ProfileID == "" {
+			http.Error(w, "profileId is required when starting a CV generation", http.StatusBadRequest)
+			return
+		}
+		if err := jobs.StartCvGeneration(body.JobID, body.ProfileID, body.ConversationID); err != nil {
+			if errors.Is(err, jobs.ErrUnknownJob) {
+				http.Error(w, "unknown job id", http.StatusNotFound)
+				return
+			}
+			http.Error(w, "failed to start CV generation: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+	case "failed":
+		if err := jobs.UpdateCvGenerationStatus(body.JobID, body.Status, body.ErrorText); err != nil {
+			if errors.Is(err, jobs.ErrUnknownJob) {
+				http.Error(w, "unknown job id", http.StatusNotFound)
+				return
+			}
+			http.Error(w, "failed to update CV generation: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+	default:
+		http.Error(w, `status must be "generating" or "failed"`, http.StatusBadRequest)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// maxCvPdfUploadBytes bounds the PDF the frontend forwards here — a
+// one/two-page CV has no business being larger. Same "plain constant,
+// not configurable" convention as cv/cv_import.go's own
+// maxCVUploadBytes.
+const maxCvPdfUploadBytes = 10 * 1024 * 1024
+
+// cvPdfPersistHandler handles POST /jobs/cv/persist — multipart,
+// fields "jobId" and "file" (the rendered PDF's own bytes). Called by
+// the frontend right after the AI's own turn finishes and
+// job.cvStatus reaches "rendered": the frontend itself fetched those
+// bytes from pdf_tools' own proxy route (its live, cookie-
+// authenticated session can reach it directly) and forwards them here
+// unmodified. This handler re-uploads them into Media (permanently —
+// no ttlSeconds, see forwardCvPdfToMedia) using THIS request's own
+// Authorization/Cookie header, then finalizes the job_cv_pdfs row.
+func cvPdfPersistHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if err := r.ParseMultipartForm(maxCvPdfUploadBytes); err != nil {
+		http.Error(w, "file is required and must be under 10MB", http.StatusBadRequest)
+		return
+	}
+	jobId := r.FormValue("jobId")
+	if jobId == "" {
+		http.Error(w, "jobId is required", http.StatusBadRequest)
+		return
+	}
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, "file is required", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	mediaFileID, err := forwardCvPdfToMedia(r, file, jobId+".pdf")
+	if err != nil {
+		http.Error(w, "failed to store cv pdf: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	if err := jobs.FinalizeCvPdf(jobId, mediaFileID); err != nil {
+		if errors.Is(err, jobs.ErrUnknownJob) {
+			http.Error(w, "unknown job id", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "cv pdf stored but failed to finalize: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	db.WriteJSON(w, map[string]any{"mediaFileId": mediaFileID})
+}
+
+// forwardCvPdfToMedia mirrors cv/cv_import.go's own forwardToMedia —
+// same CORE_API_URL convention, same original-caller Authorization/
+// Cookie forwarding — but deliberately never sets ttlSeconds: a
+// generated CV is permanent, unlike CV import's own 24h-bounded
+// upload.
+func forwardCvPdfToMedia(originalReq *http.Request, file io.Reader, filename string) (string, error) {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+
+	part, err := writer.CreateFormFile("file", filename)
+	if err != nil {
+		return "", err
+	}
+	if _, err := io.Copy(part, file); err != nil {
+		return "", err
+	}
+	if err := writer.WriteField("toolSlug", "career"); err != nil {
+		return "", err
+	}
+	if err := writer.Close(); err != nil {
+		return "", err
+	}
+
+	uploadURL := os.Getenv("CORE_API_URL") + "/api/v1/media/upload"
+	req, err := http.NewRequest(http.MethodPost, uploadURL, &body)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	if auth := originalReq.Header.Get("Authorization"); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
+	if cookie := originalReq.Header.Get("Cookie"); cookie != "" {
+		req.Header.Set("Cookie", cookie)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		respBody, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("media upload failed: %s: %s", resp.Status, string(respBody))
+	}
+
+	var result struct {
+		Message struct {
+			FileID string `json:"fileId"`
+		} `json:"message"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", err
+	}
+	return result.Message.FileID, nil
 }
 
 // jobLocationsHandler handles GET /job-locations — the Jobs page's own

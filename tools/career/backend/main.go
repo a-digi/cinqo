@@ -67,6 +67,13 @@ func runHTTPServer() {
 	if err := jobs.ReconcileOrphanedJobMatches(); err != nil {
 		log.Fatalf("failed to reconcile orphaned job matches: %v", err)
 	}
+	// Same reasoning as reconcileOrphanedJobMatches above, one level up
+	// — a hidden CV-generation conversation's own turn (or the
+	// frontend's own post-turn Media persist step) is not a subprocess
+	// this Go process could ever reattach to after a restart.
+	if err := jobs.ReconcileOrphanedCvGenerations(); err != nil {
+		log.Fatalf("failed to reconcile orphaned CV generations: %v", err)
+	}
 	// step 47.4 — reconcileOrphanedCrawlRuns above only ever runs once,
 	// at boot, so it can't help a goroutine that's genuinely hung
 	// without this process itself restarting. This periodic sweep is
@@ -87,6 +94,8 @@ func runHTTPServer() {
 	http.HandleFunc("/jobs", jobsHandler)
 	http.HandleFunc("/job-locations", jobLocationsHandler)
 	http.HandleFunc("/jobs/match", jobMatchHandler)
+	http.HandleFunc("/jobs/cv", cvPdfHandler)
+	http.HandleFunc("/jobs/cv/persist", cvPdfPersistHandler)
 	http.HandleFunc("/companies", companiesHandler)
 	http.HandleFunc("/recruiters", recruitersHandler)
 	http.HandleFunc("/portals", portalsHandler)
@@ -145,6 +154,7 @@ func runMCPServer() {
 	jobs.RegisterSaveJobDetailExtraction(server)
 	jobs.RegisterGetJob(server)
 	jobs.RegisterSaveJobMatch(server)
+	jobs.RegisterSaveCvPdf(server)
 	jobs.RegisterSavePortalJob(server)
 	jobs.RegisterSavePortalJobs(server)
 	companies.RegisterCreateCompany(server)

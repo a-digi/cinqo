@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { fetchJob, type Job } from '../../api'
-import { ExternalLinkIcon } from '../../Shared/Icons/icons'
+import { fetchJob, mediaDownloadUrl, type Job } from '../../api'
+import { ExternalLinkIcon, PDFIcon } from '../../Shared/Icons/icons'
 import { MatchScoreBar } from '../../Shared/MatchScoreBar/MatchScoreBar'
 
 const JOBS_PATH = '/tools/career/jobs'
@@ -118,6 +118,27 @@ export function JobDetailsPage() {
                 </div>
               ) : (
                 <p className="mt-4 text-xs text-gray-400">No specific skills matched.</p>
+              )}
+            </div>
+          )}
+
+          {job.cvStatus && (
+            <div className="w-full shrink-0 rounded-md border border-gray-200 bg-white p-5 shadow-sm md:w-64">
+              <h2 className="mb-3 text-sm font-semibold text-gray-900">Generated CV</h2>
+              {job.cvStatus === 'completed' && job.cvMediaFileId ? (
+                <a
+                  href={mediaDownloadUrl(job.cvMediaFileId)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-1.5 rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-700 transition-colors hover:bg-gray-50"
+                >
+                  <PDFIcon className="h-4 w-4" />
+                  Download CV
+                </a>
+              ) : job.cvStatus === 'failed' ? (
+                <p className="text-xs text-red-700">{job.cvError ?? 'CV generation failed.'}</p>
+              ) : (
+                <p className="text-xs text-gray-500">Generating…</p>
               )}
             </div>
           )}
