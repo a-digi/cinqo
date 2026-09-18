@@ -462,6 +462,73 @@ export async function startJobMatchNow(jobId: string, profileId: string): Promis
   }
 }
 
+// --- semantic match models (Job Settings page) ---
+//
+// A small, hardcoded catalog of pretrained word-vector files
+// (tools/career/backend/semantic_model.go) "Match now" can optionally
+// use for a fuzzy, meaning-based fallback on skills that don't
+// literally appear in a job's text. Downloaded on demand into the
+// backend's own data directory (never bundled into the binary), and
+// loaded into memory only while a match is actually running. See
+// plan/ai/tools/career/step-XX-semantic-match-models.md.
+export type SemanticModelStatus = 'not_downloaded' | 'downloading' | 'extracting' | 'ready' | 'failed'
+
+export interface SemanticModelCatalogEntry {
+  id: string
+  label: string
+  dimensions: number
+  corpus: string
+  quality: string
+  approxDownloadMb: number
+  approxExtractedMb: number
+  status: SemanticModelStatus
+  progressPercent: number
+  errorMessage?: string
+  active: boolean
+  downloadedAt?: string
+}
+
+export async function fetchModelCatalog(): Promise<SemanticModelCatalogEntry[]> {
+  const res = await fetch(`${PROXY_BASE}/jobs/model/catalog`, { credentials: 'include' })
+  return jsonOrThrow<SemanticModelCatalogEntry[]>(res, 'load semantic model catalog')
+}
+
+export async function startModelDownload(modelId: string): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/jobs/model/download`, {
+    method: 'POST',
+    credentials: 'include',
+    body: JSON.stringify({ modelId }),
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(text || `failed to start model download (${res.status})`)
+  }
+}
+
+export async function selectModel(modelId: string): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/jobs/model/select`, {
+    method: 'POST',
+    credentials: 'include',
+    body: JSON.stringify({ modelId }),
+  })
+  if (!res.ok && res.status !== 204) {
+    const text = await res.text().catch(() => '')
+    throw new Error(text || `failed to select model (${res.status})`)
+  }
+}
+
+export async function removeModel(modelId: string): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/jobs/model`, {
+    method: 'DELETE',
+    credentials: 'include',
+    body: JSON.stringify({ modelId }),
+  })
+  if (!res.ok && res.status !== 204) {
+    const text = await res.text().catch(() => '')
+    throw new Error(text || `failed to remove model (${res.status})`)
+  }
+}
+
 // --- companies ---
 
 export async function fetchCompanies(): Promise<Company[]> {

@@ -122,6 +122,16 @@ func runJobMatchNow(ctx context.Context, jobID, profileID string, personas []per
 		}
 	}
 
+	// acquireActiveVectors (semantic_vectors.go) loads the active
+	// semantic model on demand and is nil if none is selected/loaded —
+	// computeJobMatch treats nil as "no semantic fallback," so this
+	// call site behaves exactly as before whenever no model has been
+	// downloaded/selected. Called once per run, not once per persona
+	// below: it's the same job description being compared every time,
+	// and re-acquiring per persona would just restart the same idle-
+	// unload timer redundantly.
+	vectors := acquireActiveVectors()
+
 	// bestScore starts at -1 (never a real score) so even a 0-scoring
 	// persona is recorded as "the best available" rather than being
 	// silently skipped by a zero-valued default.
@@ -134,7 +144,7 @@ func runJobMatchNow(ctx context.Context, jobID, profileID string, personas []per
 			fail(err)
 			return
 		}
-		score, matched := computeJobMatch(job.Title, job.Description, details.Skills)
+		score, matched := computeJobMatch(job.Title, job.Description, details.Skills, vectors)
 		if score > bestScore {
 			bestScore = score
 			bestPersonaID = p.ID

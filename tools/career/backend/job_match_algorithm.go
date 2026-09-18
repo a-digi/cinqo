@@ -18,9 +18,21 @@ import (
 // weights computeJobMatch applies depending on WHERE a skill was
 // found. Plain constants, not configurable — matching this codebase's
 // own "constants over premature configurability" convention.
+//
+// jobMatchSemanticWeight/jobMatchSemanticThreshold (step XX) are the
+// same idea for a skill that ISN'T literally present anywhere in the
+// job's text but whose meaning is close to the job description's own
+// meaning — see semantic_vectors.go. Weighted below
+// jobMatchDescriptionWeight deliberately: a semantic match is a
+// fuzzier, lower-confidence signal than an actual literal mention, so
+// it should never outweigh one. Both are initial estimates, not
+// derived from any real tuning data — expect to revisit once there's
+// enough real match history to compare against.
 const (
 	jobMatchTitleWeight       = 1.0
 	jobMatchDescriptionWeight = 0.6
+	jobMatchSemanticWeight    = 0.35
+	jobMatchSemanticThreshold = 0.55
 )
 
 // computeJobMatch scores how well a persona's own skills match a
@@ -33,10 +45,26 @@ const (
 // score is round(100 * sum(weights) / len(skills)), clamped 0-100. A
 // persona with no skills at all scores 0 with no matched skills
 // (never divides by zero).
-func computeJobMatch(jobTitle, jobDescription string, skills []string) (score int, matchedSkills []string) {
+//
+// vectors (step XX) is the currently active semantic model's own word
+// vectors (semantic_vectors.go's acquireActiveVectors), or nil if no
+// model is active/loaded — nil disables the semantic step entirely,
+// reproducing this function's own pre-existing literal-only behavior
+// exactly, so a deployment that never downloads a model is unaffected.
+// When non-nil, a skill that doesn't literally match either field
+// falls back to comparing its own meaning against the job
+// description's — see jobMatchSemanticWeight/jobMatchSemanticThreshold
+// above.
+func computeJobMatch(jobTitle, jobDescription string, skills []string, vectors map[string][]float32) (score int, matchedSkills []string) {
 	matchedSkills = []string{}
 	if len(skills) == 0 {
 		return 0, matchedSkills
+	}
+
+	var descriptionVector []float32
+	var descriptionVectorOK bool
+	if vectors != nil {
+		descriptionVector, descriptionVectorOK = phraseVector(jobDescription, vectors)
 	}
 
 	var totalWeight float64
@@ -52,6 +80,15 @@ func computeJobMatch(jobTitle, jobDescription string, skills []string) (score in
 		case re.MatchString(jobDescription):
 			totalWeight += jobMatchDescriptionWeight
 			matchedSkills = append(matchedSkills, skill)
+		case vectors != nil && descriptionVectorOK:
+			skillVector, ok := phraseVector(skill, vectors)
+			if !ok {
+				continue
+			}
+			if cosineSimilarity(skillVector, descriptionVector) >= jobMatchSemanticThreshold {
+				totalWeight += jobMatchSemanticWeight
+				matchedSkills = append(matchedSkills, skill)
+			}
 		}
 	}
 

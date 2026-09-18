@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.0.179",
+  "version": "0.0.181",
   "mcp": true,
   "requires_tools": [
     {
@@ -153,6 +153,26 @@
     {
       "method": "POST",
       "path_suffix": "jobs/match/now",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "jobs/model/catalog",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "jobs/model/download",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "jobs/model/select",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "jobs/model",
       "required_scope": "tool:career:jobs"
     },
     {

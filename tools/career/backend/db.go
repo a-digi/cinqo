@@ -369,6 +369,36 @@ CREATE TABLE IF NOT EXISTS job_match_skills (
     skill  TEXT NOT NULL,
     PRIMARY KEY (job_id, skill)
 );
+
+-- semantic_models (step XX) tracks the on-disk download/cache state of
+-- one entry from this backend's own hardcoded model catalog
+-- (semantic_model.go's modelCatalog) — a pretrained GloVe word-vector
+-- file used to give the deterministic "Match now" algorithm a fuzzy,
+-- meaning-based fallback for skills that don't literally appear in a
+-- job's text (job_match_algorithm.go). A row is created lazily, on the
+-- first download attempt for that catalog id — there is no row at all
+-- for a model never downloaded. file_path/downloaded_at are set only
+-- once status reaches 'ready'. active (step XX) marks the single model
+-- currently used for matching — the partial unique index below is the
+-- real, DB-enforced guarantee (not an app-level check-then-update,
+-- which would race) that at most one row can ever be active at a time,
+-- same reasoning as crawl_runs_one_running_idx above. Being active
+-- never implies the vectors are actually loaded into memory right
+-- now — semantic_vectors.go loads/unloads them on demand, independent
+-- of this table. See plan/ai/tools/career/step-XX-semantic-match-models.md.
+CREATE TABLE IF NOT EXISTS semantic_models (
+    id               TEXT PRIMARY KEY,
+    status           TEXT NOT NULL DEFAULT 'not_downloaded'
+                       CHECK (status IN ('not_downloaded','downloading','extracting','ready','failed')),
+    progress_percent INTEGER NOT NULL DEFAULT 0,
+    error_message    TEXT,
+    file_path        TEXT,
+    downloaded_at    TEXT,
+    active           INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS semantic_models_one_active_idx
+    ON semantic_models(active) WHERE active = 1;
 `
 
 // migrateCareerDB runs, in order, every past schema migration this
