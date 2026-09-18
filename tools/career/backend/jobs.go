@@ -61,6 +61,16 @@ type job struct {
 	Description string `json:"description,omitempty"`
 	PostedAt    string `json:"postedAt,omitempty"`
 	CrawledAt   string `json:"crawledAt"`
+	// DetailCrawlStatus (step XX) records the outcome of the most
+	// recent job-DETAIL-page crawl attempt — "" (empty, never "null")
+	// means no attempt has ever been made, as opposed to CrawledAt,
+	// which is set unconditionally by the LISTING crawl that produced
+	// this row and says nothing about whether the job's own detail
+	// page was ever separately visited. "failed" | "success". Read-only
+	// — written only via save_job_detail_extraction (this file) and
+	// markJobDetailCrawlFailed. See
+	// plan/ai/tools/career/step-XX-job-detail-crawl-status-eye-icon.md.
+	DetailCrawlStatus string `json:"detailCrawlStatus,omitempty"`
 }
 
 // saveJob upserts by source_url — re-saving a posting already known
@@ -185,7 +195,7 @@ func queryJobs(where string, whereArgs []any, limit, offset int) (jobsListResult
 
 	pageArgs := append(append([]any{}, whereArgs...), limit, offset)
 	rows, err := jobsDB.Query(
-		`SELECT j.id, j.source_url, j.title, j.company, j.company_id, j.portal_link_id, p.id, p.name, j.location, j.description, j.posted_at, j.crawled_at
+		`SELECT j.id, j.source_url, j.title, j.company, j.company_id, j.portal_link_id, p.id, p.name, j.location, j.description, j.posted_at, j.crawled_at, j.detail_crawl_status
 		 `+jobsFromClause+` `+where+` ORDER BY j.crawled_at DESC LIMIT ? OFFSET ?`,
 		pageArgs...,
 	)
@@ -197,8 +207,8 @@ func queryJobs(where string, whereArgs []any, limit, offset int) (jobsListResult
 	jobs := []job{}
 	for rows.Next() {
 		var j job
-		var company, companyID, portalLinkID, portalID, portalName, location, description, postedAt sql.NullString
-		if err := rows.Scan(&j.ID, &j.SourceURL, &j.Title, &company, &companyID, &portalLinkID, &portalID, &portalName, &location, &description, &postedAt, &j.CrawledAt); err != nil {
+		var company, companyID, portalLinkID, portalID, portalName, location, description, postedAt, detailCrawlStatus sql.NullString
+		if err := rows.Scan(&j.ID, &j.SourceURL, &j.Title, &company, &companyID, &portalLinkID, &portalID, &portalName, &location, &description, &postedAt, &j.CrawledAt, &detailCrawlStatus); err != nil {
 			return jobsListResult{}, err
 		}
 		j.Company = company.String
@@ -208,6 +218,7 @@ func queryJobs(where string, whereArgs []any, limit, offset int) (jobsListResult
 		j.PortalName = portalName.String
 		j.Location = location.String
 		j.Description = description.String
+		j.DetailCrawlStatus = detailCrawlStatus.String
 		j.PostedAt = postedAt.String
 		jobs = append(jobs, j)
 	}
@@ -221,6 +232,37 @@ func queryJobs(where string, whereArgs []any, limit, offset int) (jobsListResult
 func deleteJob(id string) error {
 	_, err := jobsDB.Exec(`DELETE FROM jobs WHERE id = ?`, id)
 	return err
+}
+
+// getJobByID reads one job by id, with the exact same portal_links/
+// portals join queryJobs' own paged read already uses — the Jobs page's
+// own Eye icon opens a details page keyed by this. errUnknownJob
+// (already declared for save_job_detail_extraction, above) on no rows.
+func getJobByID(id string) (job, error) {
+	row := jobsDB.QueryRow(
+		`SELECT j.id, j.source_url, j.title, j.company, j.company_id, j.portal_link_id, p.id, p.name, j.location, j.description, j.posted_at, j.crawled_at, j.detail_crawl_status
+		 `+jobsFromClause+` WHERE j.id = ?`,
+		id,
+	)
+	var j job
+	var company, companyID, portalLinkID, portalID, portalName, location, description, postedAt, detailCrawlStatus sql.NullString
+	err := row.Scan(&j.ID, &j.SourceURL, &j.Title, &company, &companyID, &portalLinkID, &portalID, &portalName, &location, &description, &postedAt, &j.CrawledAt, &detailCrawlStatus)
+	switch {
+	case err == sql.ErrNoRows:
+		return job{}, errUnknownJob
+	case err != nil:
+		return job{}, err
+	}
+	j.Company = company.String
+	j.CompanyID = companyID.String
+	j.PortalLinkID = portalLinkID.String
+	j.PortalID = portalID.String
+	j.PortalName = portalName.String
+	j.Location = location.String
+	j.Description = description.String
+	j.DetailCrawlStatus = detailCrawlStatus.String
+	j.PostedAt = postedAt.String
+	return j, nil
 }
 
 // jobDetailCrawlTarget is one job's own minimal identity for the
@@ -716,25 +758,47 @@ func requireJobExists(id string) error {
 // key is description alone (see requiredJobDetailCrawlOutputKeys,
 // portals.go) — any other key present in values (e.g. a "requirements"
 // field the instructions additionally declared) is accepted without
-// error but not currently persisted anywhere. An empty/missing
-// description is a no-op, not an error — nothing to overwrite the
-// existing (possibly listing-truncated) description with.
+// error but not currently persisted anywhere.
+//
+// An empty/missing description records detail_crawl_status='failed'
+// (step XX — the Jobs page's own Eye icon reads this to distinguish
+// "crawled but got nothing" from "never crawled at all") without
+// touching description/crawled_at — nothing to overwrite the existing
+// (possibly listing-truncated) description with, and crawled_at stays
+// whatever the listing crawl (or a previous successful detail crawl)
+// last set it to.
 func saveJobDetailExtraction(jobId string, values map[string]string) (updated bool, err error) {
 	if err := requireJobExists(jobId); err != nil {
 		return false, err
 	}
 	description := strings.TrimSpace(values["description"])
 	if description == "" {
-		return false, nil
+		return false, markJobDetailCrawlFailed(jobId)
 	}
 	_, err = jobsDB.Exec(
-		`UPDATE jobs SET description = ?, crawled_at = datetime('now') WHERE id = ?`,
+		`UPDATE jobs SET description = ?, crawled_at = datetime('now'), detail_crawl_status = 'success' WHERE id = ?`,
 		description, jobId,
 	)
 	if err != nil {
 		return false, err
 	}
 	return true, nil
+}
+
+// markJobDetailCrawlFailed records that a job-detail-page crawl
+// attempt for jobId was made and did not produce a usable description
+// — called both by saveJobDetailExtraction above (extraction ran but
+// came back empty) and directly by runJobDetailCrawlNow
+// (crawl_job_details_now.go) for a harder failure that never even
+// reached that function (the page fetch itself erroring, or no page
+// extracted at all) — both cases look identical to the Jobs page's own
+// Eye icon, which only needs to know "an attempt was made and it
+// didn't work," not why. Deliberately does not require the caller to
+// re-check requireJobExists — every call site already has a jobId it
+// just successfully used moments earlier.
+func markJobDetailCrawlFailed(jobId string) error {
+	_, err := jobsDB.Exec(`UPDATE jobs SET detail_crawl_status = 'failed' WHERE id = ?`, jobId)
+	return err
 }
 
 type saveJobDetailExtractionArgs struct {

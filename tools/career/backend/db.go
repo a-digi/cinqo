@@ -252,7 +252,16 @@ CREATE TABLE IF NOT EXISTS jobs (
     location        TEXT,
     description     TEXT,
     posted_at       TEXT,
-    crawled_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    crawled_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    -- detail_crawl_status (step XX) records the outcome of the most
+    -- recent job-DETAIL-page crawl attempt for this job — NULL means
+    -- no attempt has ever been made (as opposed to crawled_at, which
+    -- is set unconditionally at insert by the LISTING crawl that
+    -- produced this row in the first place, and says nothing about
+    -- whether the job's own detail page was ever separately visited).
+    -- 'failed' | 'success'. See
+    -- plan/ai/tools/career/step-XX-job-detail-crawl-status-eye-icon.md.
+    detail_crawl_status TEXT
 );
 
 CREATE TABLE IF NOT EXISTS recruiters (
@@ -616,7 +625,29 @@ func migrateJobsDB(db *sql.DB) error {
 	if err := migrateCrawlRunsPhase(db); err != nil {
 		return err
 	}
-	return migrateCrawlRunsKind(db)
+	if err := migrateCrawlRunsKind(db); err != nil {
+		return err
+	}
+	return migrateJobsDetailCrawlStatus(db)
+}
+
+// migrateJobsDetailCrawlStatus adds the nullable detail_crawl_status
+// column (step XX) to an already-installed jobs table — same plain
+// ALTER TABLE ADD COLUMN shape as every other column addition in this
+// file, guarded the same way. NULL backfills every pre-existing row
+// correctly: none of them have ever had a detail-crawl attempt
+// recorded, since this column didn't exist before this step. See
+// plan/ai/tools/career/step-XX-job-detail-crawl-status-eye-icon.md.
+func migrateJobsDetailCrawlStatus(db *sql.DB) error {
+	exists, hasColumn, err := tableHasColumn(db, "jobs", "detail_crawl_status")
+	if err != nil {
+		return err
+	}
+	if !exists || hasColumn {
+		return nil
+	}
+	_, err = db.Exec(`ALTER TABLE jobs ADD COLUMN detail_crawl_status TEXT`)
+	return err
 }
 
 func migrateJobsCompanyID(db *sql.DB) error {

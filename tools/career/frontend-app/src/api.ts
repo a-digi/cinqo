@@ -76,6 +76,12 @@ export interface Job {
   description: string
   postedAt: string
   crawledAt: string
+  // detailCrawlStatus (step XX) — undefined means no job-detail-page
+  // crawl attempt has ever been made for this job, as opposed to
+  // crawledAt, which is set unconditionally by the listing crawl that
+  // produced this row. See plan/ai/tools/career/step-XX-job-detail-
+  // crawl-status-eye-icon.md.
+  detailCrawlStatus?: 'failed' | 'success'
 }
 
 export interface JobsResult {
@@ -356,6 +362,18 @@ export async function fetchJobs(
   const qs = params.toString()
   const res = await fetch(`${PROXY_BASE}/jobs${qs ? `?${qs}` : ''}`, { credentials: 'include' })
   return jsonOrThrow<JobsResult>(res, 'load jobs')
+}
+
+// fetchJob reads a single job by id — GET /jobs?id=... short-circuits
+// server-side (jobs.go's own getJobByID) to a single-job read instead
+// of the paged list fetchJobs above returns. Used by JobDetailsPage,
+// reached via the Jobs page's own Eye icon. Throws a plain Error on a
+// 404 (unknown job id) same as every other not-found case in this
+// file — the caller decides how to display it.
+export async function fetchJob(id: string): Promise<Job> {
+  const res = await fetch(`${PROXY_BASE}/jobs?id=${encodeURIComponent(id)}`, { credentials: 'include' })
+  const data = await jsonOrThrow<{ job: Job }>(res, 'load job')
+  return data.job
 }
 
 export async function fetchJobLocations(): Promise<string[]> {

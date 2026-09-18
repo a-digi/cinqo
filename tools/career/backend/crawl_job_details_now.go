@@ -172,6 +172,7 @@ func runJobDetailCrawlNow(ctx context.Context, runID, portalLinkID string, targe
 		pagBody, err := json.Marshal(pagRequest)
 		if err != nil {
 			skipped++
+			_ = markJobDetailCrawlFailed(target.ID)
 			_ = appendCrawlRunLog(runID, fmt.Sprintf("skipped %q: %v", label, err))
 			continue
 		}
@@ -187,6 +188,14 @@ func runJobDetailCrawlNow(ctx context.Context, runID, portalLinkID string, targe
 				return
 			}
 			skipped++
+			// A harder failure than "extraction ran but came back
+			// empty" (saveJobDetailExtraction's own case, below) — the
+			// page fetch itself never succeeded, so nothing else in
+			// this iteration will ever record an attempt for this job.
+			// Marked 'failed' here directly so the Eye icon still
+			// distinguishes this from "never crawled." See
+			// markJobDetailCrawlFailed's own doc comment.
+			_ = markJobDetailCrawlFailed(target.ID)
 			_ = appendCrawlRunLog(runID, fmt.Sprintf("skipped %q: %v", label, err))
 			continue
 		}
@@ -194,6 +203,7 @@ func runJobDetailCrawlNow(ctx context.Context, runID, portalLinkID string, targe
 		var result jobDetailExtractResult
 		if err := json.Unmarshal(respBody, &result); err != nil || len(result.Pages) == 0 {
 			skipped++
+			_ = markJobDetailCrawlFailed(target.ID)
 			_ = appendCrawlRunLog(runID, fmt.Sprintf("skipped %q: no page extracted", label))
 			continue
 		}
@@ -205,6 +215,7 @@ func runJobDetailCrawlNow(ctx context.Context, runID, portalLinkID string, targe
 		didUpdate, err := saveJobDetailExtraction(target.ID, values)
 		if err != nil {
 			skipped++
+			_ = markJobDetailCrawlFailed(target.ID)
 			_ = appendCrawlRunLog(runID, fmt.Sprintf("skipped %q: %v", label, err))
 			continue
 		}

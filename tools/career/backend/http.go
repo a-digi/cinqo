@@ -558,6 +558,23 @@ func jobsHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		q := r.URL.Query()
+		// id (Jobs page's own Eye icon -> job details page) short-circuits
+		// to a single-job read instead of the paged list below — same
+		// "?id= means one item" convention this handler's own DELETE
+		// branch already uses.
+		if id := q.Get("id"); id != "" {
+			j, err := getJobByID(id)
+			if err != nil {
+				if errors.Is(err, errUnknownJob) {
+					http.Error(w, "unknown job id", http.StatusNotFound)
+					return
+				}
+				http.Error(w, "failed to load job: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+			writeJSON(w, map[string]any{"job": j})
+			return
+		}
 		limit := atoiOrZero(q.Get("limit"))
 		offset := atoiOrZero(q.Get("offset"))
 		result, err := searchJobs(q.Get("query"), q.Get("location"), q.Get("companyId"), q.Get("portalLinkId"), q.Get("portalId"), clampLimit(limit), offset)

@@ -125,6 +125,48 @@ export function UploadIcon({ className = 'h-4 w-4' }: { className?: string }) {
   )
 }
 
+// EyeIcon — marks "view details" (a plain, read-only navigation
+// action), distinct from every destructive/action-triggering icon in
+// this file.
+export function EyeIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-3.5 w-3.5">
+      <path d="M2 10s2.8-5 8-5 8 5 8 5-2.8 5-8 5-8-5-8-5z" strokeWidth="1.3" strokeLinejoin="round" />
+      <circle cx="10" cy="10" r="2.2" strokeWidth="1.3" />
+    </svg>
+  )
+}
+
+// ExternalLinkIcon — marks "open the original, external page in a new
+// tab" — a box with an arrow escaping its own corner, the standard
+// external-link glyph.
+export function ExternalLinkIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-3.5 w-3.5">
+      <path
+        d="M8.5 4.5h-4a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-4"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path d="M9 3h5.5V8.5M14.5 3L8 9.5" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+// TrashIcon — marks a destructive delete action, replacing a plain
+// text "Delete"/"Remove" button wherever this file's own icon-button
+// convention applies.
+export function TrashIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-3.5 w-3.5">
+      <path d="M4 6h12M8 6V4.5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1V6" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M5.5 6l0.6 9.2a1 1 0 0 0 1 0.9h5.8a1 1 0 0 0 1-0.9L14.5 6" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M8.3 9v4M11.7 9v4" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 // RobotIcon (step 60) — marks "Check Progress - AI" (a
 // generate-crawl-instructions conversation currently in flight),
 // distinct from SparkleIcon's own "start this with AI" meaning.

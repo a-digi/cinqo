@@ -28,6 +28,7 @@ import { PersonaDetailsPage } from './Components/Persona/PersonaDetailsPage/Pers
 import { SkillsPage } from './Components/SkillsPage/SkillsPage'
 import { ExperiencePage } from './Components/ExperiencePage/ExperiencePage'
 import { JobsPage } from './Components/JobsPage/JobsPage'
+import { JobDetailsPage } from './Components/JobDetails/JobDetailsPage'
 import { CompaniesPage } from './Components/CompaniesPage/CompaniesPage'
 import { RecruitersPage } from './Components/RecruitersPage/RecruitersPage'
 import { PortalsPage } from './Components/PortalsPage/PortalsPage'
@@ -42,6 +43,7 @@ const PERSONA_DETAILS_PATH = '/tools/career/persona-details'
 const SKILLS_PATH = '/tools/career/skills'
 const EXPERIENCE_PATH = '/tools/career/experience'
 const JOBS_PATH = '/tools/career/jobs'
+const JOB_DETAILS_PATH = '/tools/career/job-details'
 const COMPANIES_PATH = '/tools/career/companies'
 const RECRUITERS_PATH = '/tools/career/recruiters'
 const PORTALS_PATH = '/tools/career/portals'
@@ -181,6 +183,18 @@ window.__cinqoToolBridge.registerRoute({
   path: JOBS_PATH,
   mount: (container) => {
     mountReact(container, <JobsPage />)
+  },
+  unmount: unmountReact,
+})
+
+// No menu entry — reached only via JobsPage's own Eye icon, same
+// "filtered/detail destination with no sidebar item of its own"
+// convention CompaniesPage's "N linked jobs" link already established
+// for Jobs itself.
+window.__cinqoToolBridge.registerRoute({
+  path: JOB_DETAILS_PATH,
+  mount: (container) => {
+    mountReact(container, <JobDetailsPage />)
   },
   unmount: unmountReact,
 })

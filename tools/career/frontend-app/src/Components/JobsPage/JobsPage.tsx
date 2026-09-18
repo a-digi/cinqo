@@ -12,12 +12,13 @@ import {
 } from '../../api'
 import { Dropdown } from '../Dropdown/Dropdown'
 import { Pagination } from '../Pagination/Pagination'
-import { FilterIcon, XIcon } from '../../Shared/Icons/icons'
+import { FilterIcon, XIcon, EyeIcon, ExternalLinkIcon, TrashIcon } from '../../Shared/Icons/icons'
 import { truncate } from '../../Shared/Text/transform'
 
 const PAGE_SIZE = 50
 const SEARCH_DEBOUNCE_MS = 300
 const MAX_LOCATION_DISPLAY_LENGTH = 50
+const JOB_DETAILS_PATH = '/tools/career/job-details'
 
 // No "add job" affordance — jobs are populated by the AI's own
 // crawling workflow (step 4), never hand-entered here. See this
@@ -148,6 +149,10 @@ export function JobsPage() {
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : String(err))
       })
+  }
+
+  function handleViewDetails(id: string) {
+    window.__cinqoToolBridge.navigate(`${JOB_DETAILS_PATH}?id=${encodeURIComponent(id)}`)
   }
 
   function handleUnlink(id: string) {
@@ -284,54 +289,94 @@ export function JobsPage() {
                 <th className="border-b border-gray-200 bg-gray-50 p-3 text-left font-medium text-gray-500">Company</th>
                 <th className="border-b border-gray-200 bg-gray-50 p-3 text-left font-medium text-gray-500">Platform</th>
                 <th className="border-b border-gray-200 bg-gray-50 p-3 text-left font-medium text-gray-500">Posted</th>
-                <th className="border-b border-gray-200 bg-gray-50 p-3"></th>
+                <th className="border-b border-gray-200 bg-gray-50 p-3 text-right font-medium text-gray-500">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {jobs.map((job) => (
-                <tr key={job.id} className="last:[&>td]:border-b-0 hover:bg-gray-50">
-                  <td className="border-b border-gray-200 p-3">
-                    <a
-                      href={job.sourceUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-gray-900 underline decoration-gray-300 hover:decoration-gray-600"
-                    >
-                      {job.title}
-                    </a>
-                  </td>
-                  <td className="border-b border-gray-200 p-3">
-                    {job.company}
-                    {job.companyId && (
-                      <div className="mt-0.5 flex items-center gap-1.5 text-xs text-gray-400">
-                        linked to {companyNames[job.companyId] ?? '…'}
+              {jobs.map((job) => {
+                // hasDescription/failed/neverCrawled (step XX) drive the
+                // Eye icon's own three visual states — see
+                // detailCrawlStatus's own doc comment (api.ts) for why
+                // this is a SEPARATE signal from the job's own crawledAt
+                // (which every job has, set unconditionally by the
+                // listing crawl, and says nothing about whether the
+                // job's own DETAIL page was ever separately crawled).
+                const hasDescription = job.description.trim() !== ''
+                const failed = !hasDescription && job.detailCrawlStatus === 'failed'
+                const neverCrawled = !hasDescription && !job.detailCrawlStatus
+                return (
+                  <tr key={job.id} className="last:[&>td]:border-b-0 hover:bg-gray-50">
+                    <td className="border-b border-gray-200 p-3 text-gray-900">{job.title}</td>
+                    <td className="border-b border-gray-200 p-3">
+                      {job.company}
+                      {job.companyId && (
+                        <div className="mt-0.5 flex items-center gap-1.5 text-xs text-gray-400">
+                          linked to {companyNames[job.companyId] ?? '…'}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleUnlink(job.id)
+                            }}
+                            className="text-gray-400 underline hover:text-red-700"
+                          >
+                            unlink
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                    <td className="border-b border-gray-200 p-3">{job.portalName ?? '—'}</td>
+                    <td className="border-b border-gray-200 p-3">{job.postedAt}</td>
+                    <td className="border-b border-gray-200 p-3">
+                      <div className="flex items-center justify-end gap-1">
+                        <a
+                          href={job.sourceUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          title="Open the original posting"
+                          className="rounded-md p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900"
+                        >
+                          <ExternalLinkIcon />
+                        </a>
+                        {failed ? (
+                          <button
+                            type="button"
+                            disabled
+                            title="Failed to crawl"
+                            className="cursor-not-allowed rounded-md p-1.5 text-red-400"
+                          >
+                            <EyeIcon />
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleViewDetails(job.id)
+                            }}
+                            title={neverCrawled ? 'Not crawled yet' : 'View job details'}
+                            className={
+                              neverCrawled
+                                ? 'rounded-md p-1.5 text-yellow-500 transition-colors hover:bg-yellow-50'
+                                : 'rounded-md p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900'
+                            }
+                          >
+                            <EyeIcon />
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => {
-                            handleUnlink(job.id)
+                            handleRemove(job.id)
                           }}
-                          className="text-gray-400 underline hover:text-red-700"
+                          title="Delete this job"
+                          className="rounded-md p-1.5 text-gray-500 transition-colors hover:bg-red-50 hover:text-red-700"
                         >
-                          unlink
+                          <TrashIcon />
                         </button>
                       </div>
-                    )}
-                  </td>
-                  <td className="border-b border-gray-200 p-3">{job.portalName ?? '—'}</td>
-                  <td className="border-b border-gray-200 p-3">{job.postedAt}</td>
-                  <td className="border-b border-gray-200 p-3">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        handleRemove(job.id)
-                      }}
-                      className="rounded-md border border-gray-200 px-3 py-1 text-red-700 transition-colors hover:bg-red-50"
-                    >
-                      Remove
-                    </button>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
