@@ -535,7 +535,7 @@ export function JobsPage() {
                 // (which every job has, set unconditionally by the
                 // listing crawl, and says nothing about whether the
                 // job's own DETAIL page was ever separately crawled).
-                const hasDescription = job.description.trim() !== ''
+                const hasDescription = !!job.description && job.description.trim() !== ''
                 const failed = !hasDescription && job.detailCrawlStatus === 'failed'
                 const neverCrawled = !hasDescription && !job.detailCrawlStatus
                 return (

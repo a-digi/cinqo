@@ -72,8 +72,8 @@ export interface Job {
   companyId?: string
   portalId?: string
   portalName?: string
-  location: string
-  description: string
+  location?: string
+  description?: string
   postedAt: string
   crawledAt: string
   // detailCrawlStatus (step XX) — undefined means no job-detail-page
