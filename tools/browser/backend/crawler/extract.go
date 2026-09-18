@@ -294,7 +294,8 @@ func RegisterExtractPageData(server *mcp.Server) {
 		Name: "extract_page_data",
 		Description: "Read specific fields (by CSS selector) off the currently loaded page (see fetch_page_html) and return them structured, instead of the whole page's HTML. Read-only; submits nothing. " +
 			"Before calling this, check whether the page LISTS MULTIPLE similar items at once (e.g. a job board's own search-results page) or describes just ONE item. For a listing page, always pass container — a selector for one item's own repeating wrapping element — so the result is one correctly-grouped object per item (in `items`); this is the default correct approach for a listing page, not a fallback for when something looks wrong. Omitting container on a listing page returns separate same-length arrays (in `results`) that may NOT actually correspond position-for-position to the same real item. " +
-			"Optionally set mapping to rename extracted fields to specific output keys — e.g. a consuming tool expects title/url but this page's own natural fields are better labeled job_title/link.",
+			"Optionally set mapping to rename extracted fields to specific output keys — e.g. a consuming tool expects title/url but this page's own natural fields are better labeled job_title/link. " +
+			"For crawling a BATCH of many individual pages (e.g. job detail pages) rather than the one page already loaded here, don't call fetch_page_html + this tool yourselves in a loop — use crawl_urls_with_subagents instead, which crawls each one as an isolated, concurrency-safe sub-agent (it uses extract_from_url internally, the atomic single-call equivalent of fetch_page_html + extract_page_data).",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args extractPageDataArgs) (*mcp.CallToolResult, any, error) {
 		if len(args.Fields) == 0 {
 			return &mcp.CallToolResult{

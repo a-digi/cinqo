@@ -13,6 +13,7 @@
 // plan/ai/tools/career/step-38-crawl-now-polling-frontend.md.
 
 const CRAWL_NOW_BASE = '/api/v1/tools/career/proxy/portal-links/crawl-now'
+const CRAWL_JOB_DETAILS_NOW_BASE = '/api/v1/tools/career/proxy/portal-links/crawl-job-details-now'
 
 export interface StartedCrawlRun {
   crawlRunId: string
@@ -22,6 +23,13 @@ export interface StartedCrawlRun {
 
 export interface CrawlRun {
   crawlRunId: string
+  // kind (step XX) distinguishes a "Crawl now" run against this link's
+  // own listing page ('listing') from a "Crawl job details now" run
+  // against every already-saved job's own detail page ('job_detail') —
+  // the two share the one crawl_runs row per link (only one of either
+  // kind may run at a time), so this is how the frontend tells them
+  // apart. See plan/ai/tools/career/step-XX-job-detail-crawl-instructions.md.
+  kind: 'listing' | 'job_detail'
   status: 'running' | 'completed' | 'failed' | 'cancelled'
   startedAt: string
   finishedAt: string | null
@@ -54,6 +62,27 @@ export async function startCrawlNow(portalLinkId: string): Promise<StartedCrawlR
   if (!res.ok) {
     const text = await res.text().catch(() => '')
     throw new Error(text || `failed to start crawl (${res.status})`)
+  }
+  return res.json() as Promise<StartedCrawlRun>
+}
+
+// startCrawlJobDetailsNow mirrors startCrawlNow above exactly, for the
+// SEPARATE deterministic "Crawl job details now" mechanism (kind
+// 'job_detail') — visits every already-saved job's own detail page for
+// this link and updates its description, instead of crawling the
+// listing page. The 409/400/network error handling is identical;
+// stopCrawlNow/fetchActiveCrawlRun below are already generic per
+// portal link and need no job-detail-specific counterpart.
+export async function startCrawlJobDetailsNow(portalLinkId: string): Promise<StartedCrawlRun> {
+  const res = await fetch(CRAWL_JOB_DETAILS_NOW_BASE, {
+    method: 'POST',
+    credentials: 'include',
+    body: JSON.stringify({ portalLinkId }),
+  })
+  if (res.status === 409) throw new Error('A crawl is already running for this link.')
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(text || `failed to start job detail crawl (${res.status})`)
   }
   return res.json() as Promise<StartedCrawlRun>
 }

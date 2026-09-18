@@ -106,6 +106,7 @@ func runMCPServer() {
 	auth.RegisterFindLoginElements(server)
 	crawler.RegisterExtractPageData(server)
 	crawler.RegisterCrawlPaginated(server)
+	crawler.RegisterExtractFromURL(server)
 	auth.RegisterHasLoginCredential(server)
 	auth.RegisterLogin(server)
 

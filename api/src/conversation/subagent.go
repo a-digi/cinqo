@@ -311,15 +311,38 @@ func invokeSubAgentCall(
 		return fmt.Sprintf("Cannot start a new sub-agent: this turn has already reached its limit of %d sub-agents.", maxSubAgentsPerTurn)
 	}
 
-	// maxConcurrentSubAgents — a second, independent gate from the
-	// per-turn count above: acquired here, right before this sub-agent
-	// would actually start executing, and released (below/in the
-	// goroutine) the moment it stops, however it stops. Checked AFTER
-	// the per-turn count so a turn that's already over ITS OWN limit
-	// fails fast on that cheaper, more specific reason without ever
-	// touching global state.
+	_, message := spawnSubAgent(httpClient, entry, apiKey, model, mainDB, conversationDB, callerScopes, dataDir, corePort, conversationID, parentTurnRunID, args.Task, args.AllowedTools, depth)
+	return message
+}
+
+// spawnSubAgent claims a concurrency slot, inserts the sub_agent_runs
+// row, and launches this sub-agent's own detached, independently
+// rooted execution loop — the actual spawn mechanics (slot accounting,
+// run bookkeeping, context lifetime) shared by every caller that ever
+// starts a sub-agent: invokeSubAgentCall above (one spawn_subagent
+// call, one sub-agent) and invokeCrawlURLsWithSubAgentsCall (crawl_
+// fanout.go — many, one per URL, from a single tool call) alike.
+// Returns "" for id (never a valid uuid) when the slot couldn't be
+// claimed or the run couldn't be recorded — callers distinguish
+// "started" from "refused" by checking id, never by parsing message.
+func spawnSubAgent(
+	httpClient *http.Client,
+	entry platform.Entry,
+	apiKey, model string,
+	mainDB, conversationDB *sql.DB,
+	callerScopes []string,
+	dataDir string,
+	corePort int,
+	conversationID, parentTurnRunID string,
+	task string,
+	allowedTools []string,
+	depth int,
+) (id string, message string) {
+	// maxConcurrentSubAgents — acquired here, right before this
+	// sub-agent would actually start executing, and released (below/in
+	// the goroutine) the moment it stops, however it stops.
 	if !tryAcquireSubAgentSlot() {
-		return fmt.Sprintf(
+		return "", fmt.Sprintf(
 			"Cannot start a new sub-agent right now: the maximum of %d sub-agents running at the same time has been reached. Try again shortly, or check on ones already running with check_subagent/list_subagents.",
 			maxConcurrentSubAgents,
 		)
@@ -330,12 +353,12 @@ func invokeSubAgentCall(
 		ID:              uuid.NewString(),
 		ParentTurnRunID: parentTurnRunID,
 		ConversationID:  conversationID,
-		Task:            args.Task,
+		Task:            task,
 		StartedAt:       time.Now().UTC().Format(time.RFC3339),
 	}
 	if err := runs.Insert(run); err != nil {
 		releaseSubAgentSlot() // never actually started — free the slot immediately, not just on the goroutine's own exit
-		return fmt.Sprintf("failed to start sub-agent: %v", err)
+		return "", fmt.Sprintf("failed to start sub-agent: %v", err)
 	}
 
 	// subCtx/cancel — this sub-agent's OWN INDEPENDENT root context, not
@@ -361,12 +384,12 @@ func invokeSubAgentCall(
 			subAgentCancelMu.Unlock()
 			cancel() // release this context's own resources even on the success path
 		}()
-		runSubAgentLoop(subCtx, httpClient, entry, apiKey, model, mainDB, conversationDB, callerScopes, dataDir, corePort, conversationID, run.ID, args.Task, args.AllowedTools, depth+1, parentTurnRunID)
+		runSubAgentLoop(subCtx, httpClient, entry, apiKey, model, mainDB, conversationDB, callerScopes, dataDir, corePort, conversationID, run.ID, task, allowedTools, depth+1, parentTurnRunID)
 	}()
 
-	return fmt.Sprintf(
+	return run.ID, fmt.Sprintf(
 		"Sub-agent %s started in the background for task: %q. It is running concurrently — continue with other work (or spawn more sub-agents), then call check_subagent with id=%q once you need its result.",
-		run.ID, args.Task, run.ID,
+		run.ID, task, run.ID,
 	)
 }
 

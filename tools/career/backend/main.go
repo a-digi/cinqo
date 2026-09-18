@@ -77,6 +77,7 @@ func runHTTPServer() {
 	http.HandleFunc("/portal-links/crawl-request", crawlRequestHandler)
 	http.HandleFunc("/portal-links/ingest-crawl-results", ingestCrawlResultsHandler)
 	http.HandleFunc("/portal-links/crawl-now", crawlNowHandler)
+	http.HandleFunc("/portal-links/crawl-job-details-now", crawlJobDetailsNowHandler)
 	http.HandleFunc("/portal-links/crawl-now/active", crawlNowActiveHandler)
 	http.HandleFunc("/portal-links/crawl-now/cancel", crawlNowCancelHandler)
 	http.HandleFunc("/cv-import/upload", uploadCVHandler)
@@ -123,6 +124,7 @@ func runMCPServer() {
 	registerListJobs(server)
 	registerSearchJobs(server)
 	registerDeleteJob(server)
+	registerSaveJobDetailExtraction(server)
 	registerSavePortalJob(server)
 	registerSavePortalJobs(server)
 	registerCreateCompany(server)
@@ -143,6 +145,8 @@ func runMCPServer() {
 	registerRemovePortalLink(server)
 	registerGetPortalLinkCrawlInstructions(server)
 	registerSetPortalLinkCrawlInstructions(server)
+	registerGetPortalLinkJobDetailCrawlInstructions(server)
+	registerSetPortalLinkJobDetailCrawlInstructions(server)
 
 	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
 		os.Exit(1)

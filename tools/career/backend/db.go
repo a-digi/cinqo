@@ -230,9 +230,13 @@ CREATE TABLE IF NOT EXISTS portal_links (
     url                               TEXT NOT NULL,
     title                             TEXT,
     crawl_instructions                TEXT,
+    job_detail_crawl_instructions     TEXT,
     instructions_ai_error             TEXT,
     instructions_ai_error_at          TEXT,
     instructions_ai_conversation_id   TEXT,
+    job_detail_instructions_ai_error             TEXT,
+    job_detail_instructions_ai_error_at          TEXT,
+    job_detail_instructions_ai_conversation_id   TEXT,
     created_at                        TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at                        TEXT,
     UNIQUE(portal_id, url)
@@ -289,7 +293,15 @@ CREATE TABLE IF NOT EXISTS crawl_runs (
     log            TEXT NOT NULL DEFAULT '',
     result_summary TEXT,
     error_message  TEXT,
-    phase          TEXT
+    phase          TEXT,
+    -- kind (step XX) distinguishes a "Crawl now" run against this
+    -- link's own LISTING page ('listing', the original and default)
+    -- from a "Crawl job details now" run against every already-saved
+    -- job's own detail page ('job_detail') — crawl_runs_one_running_idx
+    -- above still applies across both kinds: they share the one
+    -- browser tab, so only one of either kind may run at a time per
+    -- link. See plan/ai/tools/career/step-XX-job-detail-crawl-instructions.md.
+    kind           TEXT NOT NULL DEFAULT 'listing'
 );
 
 CREATE INDEX IF NOT EXISTS crawl_runs_portal_link_idx ON crawl_runs(portal_link_id);
@@ -595,7 +607,16 @@ func migrateJobsDB(db *sql.DB) error {
 	if err := migratePortalLinksInstructionsAIConversationID(db); err != nil {
 		return err
 	}
-	return migrateCrawlRunsPhase(db)
+	if err := migratePortalLinksJobDetailCrawlInstructions(db); err != nil {
+		return err
+	}
+	if err := migratePortalLinksJobDetailInstructionsAIStatus(db); err != nil {
+		return err
+	}
+	if err := migrateCrawlRunsPhase(db); err != nil {
+		return err
+	}
+	return migrateCrawlRunsKind(db)
 }
 
 func migrateJobsCompanyID(db *sql.DB) error {
@@ -652,9 +673,13 @@ CREATE TABLE IF NOT EXISTS portal_links (
     url                               TEXT NOT NULL,
     title                             TEXT,
     crawl_instructions                TEXT,
+    job_detail_crawl_instructions     TEXT,
     instructions_ai_error             TEXT,
     instructions_ai_error_at          TEXT,
     instructions_ai_conversation_id   TEXT,
+    job_detail_instructions_ai_error             TEXT,
+    job_detail_instructions_ai_error_at          TEXT,
+    job_detail_instructions_ai_conversation_id   TEXT,
     created_at                        TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at                        TEXT,
     UNIQUE(portal_id, url)
@@ -727,6 +752,55 @@ func migratePortalLinksInstructionsAIConversationID(db *sql.DB) error {
 	return err
 }
 
+// migratePortalLinksJobDetailCrawlInstructions adds the nullable
+// column holding a link's own second, separate instruction document —
+// how to extract job-position-relevant text off a single job's own
+// detail page, as opposed to crawl_instructions' own listing-page
+// fields+pagination shape. Same plain ALTER TABLE ADD COLUMN shape as
+// every other column addition in this file, guarded the same way. See
+// plan/ai/tools/career/step-XX-job-detail-crawl-instructions.md.
+func migratePortalLinksJobDetailCrawlInstructions(db *sql.DB) error {
+	exists, hasColumn, err := tableHasColumn(db, "portal_links", "job_detail_crawl_instructions")
+	if err != nil {
+		return err
+	}
+	if !exists || hasColumn {
+		return nil
+	}
+	_, err = db.Exec(`ALTER TABLE portal_links ADD COLUMN job_detail_crawl_instructions TEXT`)
+	return err
+}
+
+// migratePortalLinksJobDetailInstructionsAIStatus adds the three
+// nullable columns that record the outcome of the most recent
+// AI-driven job-detail-crawl-instructions generation/edit attempt for
+// a link — the SEPARATE, job-detail-specific counterpart to
+// migratePortalLinksInstructionsAIStatus/
+// migratePortalLinksInstructionsAIConversationID above, which track
+// the LISTING instructions' own AI generation instead. Kept as their
+// own independent columns (not shared) so generating one document's
+// instructions with AI can never clobber the other's own error/
+// in-flight-conversation tracking. Same plain ALTER TABLE ADD COLUMN
+// shape, guarded the same way. See
+// plan/ai/tools/career/step-XX-job-detail-crawl-instructions.md.
+func migratePortalLinksJobDetailInstructionsAIStatus(db *sql.DB) error {
+	exists, hasColumn, err := tableHasColumn(db, "portal_links", "job_detail_instructions_ai_error")
+	if err != nil {
+		return err
+	}
+	if !exists || hasColumn {
+		return nil
+	}
+	if _, err := db.Exec(`ALTER TABLE portal_links ADD COLUMN job_detail_instructions_ai_error TEXT`); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`ALTER TABLE portal_links ADD COLUMN job_detail_instructions_ai_error_at TEXT`); err != nil {
+		return err
+	}
+	_, err = db.Exec(`ALTER TABLE portal_links ADD COLUMN job_detail_instructions_ai_conversation_id TEXT`)
+	return err
+}
+
 // migrateCrawlRunsPhase adds the fine-grained phase column (step 39)
 // to an already-installed crawl_runs table — same plain ALTER TABLE
 // ADD COLUMN shape as every other column addition in this file, a
@@ -742,5 +816,24 @@ func migrateCrawlRunsPhase(db *sql.DB) error {
 		return nil
 	}
 	_, err = db.Exec(`ALTER TABLE crawl_runs ADD COLUMN phase TEXT`)
+	return err
+}
+
+// migrateCrawlRunsKind adds the kind column (step XX) to an
+// already-installed crawl_runs table — same plain ALTER TABLE ADD
+// COLUMN shape as migrateCrawlRunsPhase above, guarded the same way.
+// DEFAULT 'listing' backfills every pre-existing row correctly: every
+// crawl_runs row before this step was, by definition, a listing crawl
+// — job_detail didn't exist yet. See
+// plan/ai/tools/career/step-XX-job-detail-crawl-instructions.md.
+func migrateCrawlRunsKind(db *sql.DB) error {
+	exists, hasColumn, err := tableHasColumn(db, "crawl_runs", "kind")
+	if err != nil {
+		return err
+	}
+	if !exists || hasColumn {
+		return nil
+	}
+	_, err = db.Exec(`ALTER TABLE crawl_runs ADD COLUMN kind TEXT NOT NULL DEFAULT 'listing'`)
 	return err
 }

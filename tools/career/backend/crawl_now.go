@@ -177,7 +177,7 @@ func crawlNowHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	run, err := startCrawlRun(body.PortalLinkID)
+	run, err := startCrawlRun(body.PortalLinkID, "listing")
 	if err != nil {
 		switch {
 		case errors.Is(err, errCrawlAlreadyRunning):
@@ -308,6 +308,7 @@ func crawlNowCancelHandler(w http.ResponseWriter, r *http.Request) {
 // newline-delimited string, see crawl_runs.go's own doc comment).
 type crawlRunResponse struct {
 	CrawlRunID    string   `json:"crawlRunId"`
+	Kind          string   `json:"kind"`
 	Status        string   `json:"status"`
 	StartedAt     string   `json:"startedAt"`
 	FinishedAt    *string  `json:"finishedAt"`
@@ -329,6 +330,7 @@ func toCrawlRunResponse(r *crawlRun) crawlRunResponse {
 	}
 	return crawlRunResponse{
 		CrawlRunID:    r.ID,
+		Kind:          r.Kind,
 		Status:        r.Status,
 		StartedAt:     r.StartedAt,
 		FinishedAt:    r.FinishedAt,

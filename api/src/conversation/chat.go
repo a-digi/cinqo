@@ -248,7 +248,7 @@ func offerableTools(mainDB *sql.DB, callerScopes []string, includeSubAgent bool)
 		})
 	}
 	if includeSubAgent {
-		out = append(out, subAgentToolDef, checkSubAgentToolDef, listSubAgentsToolDef, cancelSubAgentToolDef)
+		out = append(out, subAgentToolDef, checkSubAgentToolDef, listSubAgentsToolDef, cancelSubAgentToolDef, crawlURLsWithSubagentsToolDef)
 	}
 	return out, nil
 }
@@ -418,6 +418,8 @@ func runToolLoop(
 				text = listSubAgentsCall(conversationDB, turnRunID)
 			case call.Name == cancelSubAgentToolName && turnRunID != "":
 				text = cancelSubAgentCall(conversationDB, call)
+			case call.Name == crawlURLsWithSubagentsToolName && turnRunID != "":
+				text = invokeCrawlURLsWithSubAgentsCall(httpClient, entry, apiKey, model, mainDB, conversationDB, callerScopes, dataDir, corePort, conversationID, turnRunID, call, depth)
 			default:
 				text, links = invokeToolCall(ctx, mainDB, callerScopes, call, dataDir, corePort, conversationID)
 			}

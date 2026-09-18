@@ -109,6 +109,18 @@ export interface PortalLink {
   url: string
   title: string | null
   crawlInstructions: string | null
+  // Separate, second instruction document — how to extract job-
+  // position-relevant text off a single job's own detail page, rather
+  // than crawlInstructions' own listing-page fields+pagination shape.
+  // See plan/ai/tools/career/step-XX-job-detail-crawl-instructions.md.
+  jobDetailCrawlInstructions: string | null
+  // Separate, job-detail-specific counterparts to
+  // instructionsAiError/instructionsAiErrorAt/instructionsAiConversationId
+  // below, which track the LISTING instructions' own AI generation
+  // instead. See plan/ai/tools/career/step-XX-job-detail-crawl-instructions.md.
+  jobDetailInstructionsAiError: string | null
+  jobDetailInstructionsAiErrorAt: string | null
+  jobDetailInstructionsAiConversationId: string | null
   // Most recent job crawled_at against this link (step 26) — null
   // when no job has ever been saved for it. Read-only, derived.
   lastCrawledAt: string | null
@@ -486,7 +498,16 @@ export async function addPortalLink(portalId: string, url: string, title: string
 
 export async function updatePortalLink(
   id: string,
-  args: { url?: string; title?: string; crawlInstructions?: string; instructionsAiError?: string; instructionsAiConversationId?: string },
+  args: {
+    url?: string
+    title?: string
+    crawlInstructions?: string
+    jobDetailCrawlInstructions?: string
+    instructionsAiError?: string
+    instructionsAiConversationId?: string
+    jobDetailInstructionsAiError?: string
+    jobDetailInstructionsAiConversationId?: string
+  },
 ): Promise<void> {
   const res = await fetch(`${PROXY_BASE}/portal-links`, {
     method: 'PUT',

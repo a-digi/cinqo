@@ -1,7 +1,7 @@
 {
   "slug": "browser",
   "name": "Browser",
-  "version": "0.0.154",
+  "version": "0.0.155",
   "mcp": true,
   "scopes": [
     {
@@ -122,6 +122,10 @@
     },
     {
       "name": "crawl_paginated",
+      "required_scope": "tool:browser:crawl"
+    },
+    {
+      "name": "extract_from_url",
       "required_scope": "tool:browser:crawl"
     }
   ]

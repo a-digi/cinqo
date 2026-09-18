@@ -169,8 +169,15 @@ func PaginatedCrawlHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
-	if len(body.Fields) == 0 || body.NextSelector == "" || body.EffectiveMaxPages < 1 {
-		http.Error(w, "fields, nextSelector, and a positive maxPages are all required", http.StatusBadRequest)
+	// nextSelector is only meaningful once there's a second page to find
+	// — runPaginatedCrawlLoop's own maxPages check (below) always breaks
+	// the loop before nextSelector is ever evaluated when
+	// EffectiveMaxPages is 1, so a single-page call (extract_from_url,
+	// this file's own RegisterExtractFromURL) has nothing to supply
+	// there. Still required for any real multi-page request. See
+	// plan/ai/tools/browser/step-XX-atomic-single-page-extract.md.
+	if len(body.Fields) == 0 || body.EffectiveMaxPages < 1 || (body.NextSelector == "" && body.EffectiveMaxPages > 1) {
+		http.Error(w, "fields and a positive maxPages are required; nextSelector is required whenever maxPages > 1", http.StatusBadRequest)
 		return
 	}
 	// step 37 — the same SSRF guard CrawlHandler's own url already

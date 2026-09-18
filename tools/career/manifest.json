@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.0.164",
+  "version": "0.0.166",
   "mcp": true,
   "requires_tools": [
     {
@@ -367,6 +367,10 @@
       "required_scope": "tool:career:jobs"
     },
     {
+      "name": "save_job_detail_extraction",
+      "required_scope": "tool:career:jobs"
+    },
+    {
       "name": "create_company",
       "required_scope": "tool:career:companies"
     },
@@ -436,6 +440,14 @@
     },
     {
       "name": "set_portal_link_crawl_instructions",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "name": "get_portal_link_job_detail_crawl_instructions",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "name": "set_portal_link_job_detail_crawl_instructions",
       "required_scope": "tool:career:portals"
     },
     {

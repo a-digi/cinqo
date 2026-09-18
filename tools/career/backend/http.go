@@ -93,6 +93,8 @@ func writePortalLinkAwareError(w http.ResponseWriter, action string, err error) 
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, errNoCrawlInstructions):
 		http.Error(w, err.Error(), http.StatusBadRequest)
+	case errors.Is(err, errNoJobDetailCrawlInstructions):
+		http.Error(w, err.Error(), http.StatusBadRequest)
 	default:
 		http.Error(w, "failed to "+action+": "+err.Error(), http.StatusInternalServerError)
 	}
@@ -852,6 +854,11 @@ type portalLinkUpdateRequest struct {
 	URL               *string `json:"url,omitempty"`
 	Title             *string `json:"title,omitempty"`
 	CrawlInstructions *string `json:"crawlInstructions,omitempty"`
+	// JobDetailCrawlInstructions (step XX) — same presence-gated shape
+	// as CrawlInstructions above, for the separate job-detail-page
+	// instruction document. See
+	// plan/ai/tools/career/step-XX-job-detail-crawl-instructions.md.
+	JobDetailCrawlInstructions *string `json:"jobDetailCrawlInstructions,omitempty"`
 	// InstructionsAIError (step 33) — nil: don't touch. Present with
 	// "": clear any previously recorded failure (a fresh attempt
 	// succeeded). Present non-empty: record this as the most recent
@@ -864,6 +871,12 @@ type portalLinkUpdateRequest struct {
 	// instructions. Same presence-gated shape InstructionsAIError above
 	// uses.
 	InstructionsAIConversationID *string `json:"instructionsAiConversationId,omitempty"`
+	// JobDetailInstructionsAIError/JobDetailInstructionsAIConversationID
+	// (step XX) — same presence-gated shape as InstructionsAIError/
+	// InstructionsAIConversationID above, for the SEPARATE job-detail
+	// instructions document's own AI generation tracking instead.
+	JobDetailInstructionsAIError          *string `json:"jobDetailInstructionsAiError,omitempty"`
+	JobDetailInstructionsAIConversationID *string `json:"jobDetailInstructionsAiConversationId,omitempty"`
 }
 
 func portalLinksHandler(w http.ResponseWriter, r *http.Request) {
@@ -900,8 +913,10 @@ func portalLinksHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "id is required", http.StatusBadRequest)
 			return
 		}
-		if body.URL == nil && body.Title == nil && body.CrawlInstructions == nil && body.InstructionsAIError == nil && body.InstructionsAIConversationID == nil {
-			http.Error(w, "url, title, crawlInstructions, instructionsAiError, or instructionsAiConversationId is required", http.StatusBadRequest)
+		if body.URL == nil && body.Title == nil && body.CrawlInstructions == nil && body.JobDetailCrawlInstructions == nil &&
+			body.InstructionsAIError == nil && body.InstructionsAIConversationID == nil &&
+			body.JobDetailInstructionsAIError == nil && body.JobDetailInstructionsAIConversationID == nil {
+			http.Error(w, "url, title, crawlInstructions, jobDetailCrawlInstructions, instructionsAiError, instructionsAiConversationId, jobDetailInstructionsAiError, or jobDetailInstructionsAiConversationId is required", http.StatusBadRequest)
 			return
 		}
 		if body.URL != nil && *body.URL == "" {
@@ -924,6 +939,12 @@ func portalLinksHandler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+		if body.JobDetailCrawlInstructions != nil {
+			if err := updatePortalLinkJobDetailCrawlInstructions(body.ID, *body.JobDetailCrawlInstructions); err != nil {
+				writePortalLinkAwareError(w, "update portal link job detail crawl instructions", err)
+				return
+			}
+		}
 		if body.InstructionsAIError != nil {
 			if err := updatePortalLinkInstructionsAIStatus(body.ID, body.InstructionsAIError); err != nil {
 				writePortalLinkAwareError(w, "update portal link instructions AI status", err)
@@ -933,6 +954,18 @@ func portalLinksHandler(w http.ResponseWriter, r *http.Request) {
 		if body.InstructionsAIConversationID != nil {
 			if err := updatePortalLinkInstructionsAIConversationID(body.ID, body.InstructionsAIConversationID); err != nil {
 				writePortalLinkAwareError(w, "update portal link instructions AI conversation id", err)
+				return
+			}
+		}
+		if body.JobDetailInstructionsAIError != nil {
+			if err := updatePortalLinkJobDetailInstructionsAIStatus(body.ID, body.JobDetailInstructionsAIError); err != nil {
+				writePortalLinkAwareError(w, "update portal link job detail instructions AI status", err)
+				return
+			}
+		}
+		if body.JobDetailInstructionsAIConversationID != nil {
+			if err := updatePortalLinkJobDetailInstructionsAIConversationID(body.ID, body.JobDetailInstructionsAIConversationID); err != nil {
+				writePortalLinkAwareError(w, "update portal link job detail instructions AI conversation id", err)
 				return
 			}
 		}

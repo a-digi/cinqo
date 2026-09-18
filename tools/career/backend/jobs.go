@@ -223,6 +223,49 @@ func deleteJob(id string) error {
 	return err
 }
 
+// jobDetailCrawlTarget is one job's own minimal identity for the
+// deterministic "Crawl job details now" loop (crawl_job_details_now.go)
+// — just enough to navigate to its detail page and, once extracted,
+// name which row to update.
+type jobDetailCrawlTarget struct {
+	ID        string
+	SourceURL string
+	Title     string
+}
+
+// maxJobDetailCrawlJobs bounds how many jobs a single "Crawl job
+// details now" run ever visits — a plain, non-configurable ceiling,
+// matching maxJobsLimit's own established precedent. A link with more
+// saved jobs than this needs more than one run to fully backfill;
+// ordering by crawled_at ASC (oldest touched first) means each run
+// still makes forward progress on whichever jobs have gone longest
+// without a detail crawl, rather than re-visiting the same jobs every
+// time a link is over this cap.
+const maxJobDetailCrawlJobs = 200
+
+// listJobsForDetailCrawl returns up to maxJobDetailCrawlJobs jobs
+// belonging to portalLinkID, oldest-crawled first.
+func listJobsForDetailCrawl(portalLinkID string) ([]jobDetailCrawlTarget, error) {
+	rows, err := jobsDB.Query(
+		`SELECT id, source_url, title FROM jobs WHERE portal_link_id = ? ORDER BY crawled_at ASC LIMIT ?`,
+		portalLinkID, maxJobDetailCrawlJobs,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	targets := []jobDetailCrawlTarget{}
+	for rows.Next() {
+		var t jobDetailCrawlTarget
+		if err := rows.Scan(&t.ID, &t.SourceURL, &t.Title); err != nil {
+			return nil, err
+		}
+		targets = append(targets, t)
+	}
+	return targets, rows.Err()
+}
+
 // listDistinctJobLocations returns every distinct non-empty location
 // value across all saved jobs, alphabetically — the Jobs page's own
 // Location filter dropdown's data source. Raw, unnormalized strings as
@@ -641,5 +684,85 @@ func registerDeleteJob(server *mcp.Server) {
 			return errResult(fmt.Sprintf("failed to delete job: %v", err)), nil, nil
 		}
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "deleted"}}}, nil, nil
+	})
+}
+
+// errUnknownJob is a real, actionable error — unlike linkJobToCompany
+// above (a pre-existing silent no-op on an unknown jobId),
+// saveJobDetailExtraction's own caller (eventually a sub-agent spawned
+// by crawl_urls_with_subagents, see plan/ai/tools/career/
+// step-XX-job-detail-crawl-instructions.md) needs a real signal that
+// its extraction had nowhere to go, not a silently-ignored write.
+var errUnknownJob = errors.New("unknown job id")
+
+func requireJobExists(id string) error {
+	var exists int
+	err := jobsDB.QueryRow(`SELECT 1 FROM jobs WHERE id = ?`, id).Scan(&exists)
+	switch {
+	case err == sql.ErrNoRows:
+		return errUnknownJob
+	case err != nil:
+		return err
+	}
+	return nil
+}
+
+// saveJobDetailExtraction persists the output of a single job detail
+// page's own crawl (step XX) — values is whatever
+// job_detail_crawl_instructions' own fields produced, keyed by their
+// own labels. Only values["description"] is ever written: the
+// listing crawl (savePortalJob) already owns title/company/location/
+// postedAt, and job_detail_crawl_instructions' own required output
+// key is description alone (see requiredJobDetailCrawlOutputKeys,
+// portals.go) — any other key present in values (e.g. a "requirements"
+// field the instructions additionally declared) is accepted without
+// error but not currently persisted anywhere. An empty/missing
+// description is a no-op, not an error — nothing to overwrite the
+// existing (possibly listing-truncated) description with.
+func saveJobDetailExtraction(jobId string, values map[string]string) (updated bool, err error) {
+	if err := requireJobExists(jobId); err != nil {
+		return false, err
+	}
+	description := strings.TrimSpace(values["description"])
+	if description == "" {
+		return false, nil
+	}
+	_, err = jobsDB.Exec(
+		`UPDATE jobs SET description = ?, crawled_at = datetime('now') WHERE id = ?`,
+		description, jobId,
+	)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+type saveJobDetailExtractionArgs struct {
+	JobID  string            `json:"jobId" jsonschema:"the job's own id, from save_portal_job/list_jobs/search_jobs — this is the job whose detail page was just crawled"`
+	Values map[string]string `json:"values" jsonschema:"the extracted values, keyed by the label declared in this job's own portal link job_detail_crawl_instructions (see set_portal_link_job_detail_crawl_instructions) — must include description"`
+}
+
+func registerSaveJobDetailExtraction(server *mcp.Server) {
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "save_job_detail_extraction",
+		Description: "Save the text extracted off one job's own detail page (per its portal link's own " +
+			"job_detail_crawl_instructions) back onto that job's existing record — replacing its own " +
+			"(often listing-truncated) description with the full text. Call this once per job, after " +
+			"extracting its detail page; values must include a description key. Fails if jobId is unknown.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args saveJobDetailExtractionArgs) (*mcp.CallToolResult, any, error) {
+		if args.JobID == "" {
+			return errResult("jobId is required"), nil, nil
+		}
+		if len(args.Values) == 0 {
+			return errResult("values is required"), nil, nil
+		}
+		updated, err := saveJobDetailExtraction(args.JobID, args.Values)
+		if err != nil {
+			if errors.Is(err, errUnknownJob) {
+				return errResult(fmt.Sprintf("unknown job id %q", args.JobID)), nil, nil
+			}
+			return errResult(fmt.Sprintf("failed to save job detail extraction: %v", err)), nil, nil
+		}
+		return jsonResult(map[string]any{"updated": updated})
 	})
 }

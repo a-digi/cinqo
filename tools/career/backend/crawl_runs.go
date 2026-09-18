@@ -29,9 +29,14 @@ var errCrawlAlreadyRunning = errors.New("a crawl is already running for this lin
 type crawlRun struct {
 	ID           string
 	PortalLinkID string
-	Status       string
-	StartedAt    string
-	FinishedAt   *string
+	// Kind distinguishes a "Crawl now" run against this link's own
+	// listing page ('listing', the default) from a "Crawl job details
+	// now" run against every already-saved job's own detail page
+	// ('job_detail') — see db.go's own crawl_runs.kind doc comment.
+	Kind       string
+	Status     string
+	StartedAt  string
+	FinishedAt *string
 	// Log is the raw, newline-delimited "RFC3339<TAB>message" trace —
 	// split into individual entries only at the HTTP response layer
 	// (step 37), matching how turn_runs.log is treated on the
@@ -46,20 +51,23 @@ type crawlRun struct {
 	Phase *string
 }
 
-// startCrawlRun inserts a new running row for portalLinkID.
-// errCrawlAlreadyRunning if one is already running for this link
-// (crawl_runs_one_running_idx's own violation, detected the same way
-// addPortalLink detects errDuplicatePortalLink above); errUnknownPortalLink
-// if the link itself doesn't exist.
-func startCrawlRun(portalLinkID string) (*crawlRun, error) {
+// startCrawlRun inserts a new running row for portalLinkID, of the
+// given kind ("listing" or "job_detail" — see db.go's own crawl_runs.kind
+// doc comment). errCrawlAlreadyRunning if one is already running for
+// this link, of EITHER kind (crawl_runs_one_running_idx's own
+// violation, detected the same way addPortalLink detects
+// errDuplicatePortalLink above) — the two kinds share the one browser
+// tab, so they can never run concurrently for the same link.
+// errUnknownPortalLink if the link itself doesn't exist.
+func startCrawlRun(portalLinkID, kind string) (*crawlRun, error) {
 	if err := requirePortalLinkExists(portalLinkID); err != nil {
 		return nil, err
 	}
 	id := uuid.NewString()
 	startedAt := time.Now().UTC().Format(time.RFC3339)
 	_, err := jobsDB.Exec(
-		`INSERT INTO crawl_runs (id, portal_link_id, status, started_at, log) VALUES (?, ?, 'running', ?, '')`,
-		id, portalLinkID, startedAt,
+		`INSERT INTO crawl_runs (id, portal_link_id, kind, status, started_at, log) VALUES (?, ?, ?, 'running', ?, '')`,
+		id, portalLinkID, kind, startedAt,
 	)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
@@ -67,7 +75,7 @@ func startCrawlRun(portalLinkID string) (*crawlRun, error) {
 		}
 		return nil, err
 	}
-	return &crawlRun{ID: id, PortalLinkID: portalLinkID, Status: "running", StartedAt: startedAt}, nil
+	return &crawlRun{ID: id, PortalLinkID: portalLinkID, Kind: kind, Status: "running", StartedAt: startedAt}, nil
 }
 
 // appendCrawlRunLog appends one line atomically (log = log || ?) — no
@@ -130,7 +138,7 @@ func finishCrawlRun(id, status string, resultSummary, errorMessage *string) erro
 func scanCrawlRun(row *sql.Row) (*crawlRun, error) {
 	var r crawlRun
 	var finishedAt, resultSummary, errorMessage, phase sql.NullString
-	if err := row.Scan(&r.ID, &r.PortalLinkID, &r.Status, &r.StartedAt, &finishedAt, &r.Log, &resultSummary, &errorMessage, &phase); err != nil {
+	if err := row.Scan(&r.ID, &r.PortalLinkID, &r.Kind, &r.Status, &r.StartedAt, &finishedAt, &r.Log, &resultSummary, &errorMessage, &phase); err != nil {
 		return nil, err
 	}
 	if finishedAt.Valid {
@@ -155,7 +163,7 @@ func scanCrawlRun(row *sql.Row) (*crawlRun, error) {
 // establishes for "absent" values).
 func findActiveCrawlRun(portalLinkID string) (*crawlRun, error) {
 	row := jobsDB.QueryRow(
-		`SELECT id, portal_link_id, status, started_at, finished_at, log, result_summary, error_message, phase
+		`SELECT id, portal_link_id, kind, status, started_at, finished_at, log, result_summary, error_message, phase
 		 FROM crawl_runs WHERE portal_link_id = ? AND status = 'running'`,
 		portalLinkID,
 	)
@@ -180,7 +188,7 @@ func findActiveCrawlRun(portalLinkID string) (*crawlRun, error) {
 // correct tiebreaker (here, the only ordering key at all).
 func findMostRecentCrawlRun(portalLinkID string) (*crawlRun, error) {
 	row := jobsDB.QueryRow(
-		`SELECT id, portal_link_id, status, started_at, finished_at, log, result_summary, error_message, phase
+		`SELECT id, portal_link_id, kind, status, started_at, finished_at, log, result_summary, error_message, phase
 		 FROM crawl_runs WHERE portal_link_id = ? ORDER BY rowid DESC LIMIT 1`,
 		portalLinkID,
 	)

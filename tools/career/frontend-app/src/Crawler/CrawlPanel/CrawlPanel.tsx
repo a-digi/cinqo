@@ -4,8 +4,13 @@ import type { Platform } from '../../Cinqo/Platform/platformRepository'
 import { CoreApiError } from '../../Cinqo/Http/client'
 import { createConversation, sendMessage, awaitTurnCompletion, fetchTurnStatus } from '../../Cinqo/Conversation/conversation'
 import { buildCrawlMessage, crawlConversationTitle } from '../crawl'
-import { buildGenerateInstructionsMessage, generateInstructionsConversationTitle } from '../generateInstructions'
-import { startCrawlNow, stopCrawlNow, fetchActiveCrawlRun, type CrawlRun } from '../crawlNow'
+import {
+  buildGenerateInstructionsMessage,
+  generateInstructionsConversationTitle,
+  buildGenerateJobDetailInstructionsMessage,
+  generateJobDetailInstructionsConversationTitle,
+} from '../generateInstructions'
+import { startCrawlNow, startCrawlJobDetailsNow, stopCrawlNow, fetchActiveCrawlRun, type CrawlRun } from '../crawlNow'
 import { PlayIcon, StopIcon, SparkleIcon, LogIcon, AlertIcon, RobotIcon } from '../../Shared/Icons/icons'
 import { Typewriter } from '../../Shared/Typewriter/Typewriter'
 
@@ -129,6 +134,25 @@ export function CrawlPanel({
   const [instructionsExpanded, setInstructionsExpanded] = useState(false)
   const [instructionsDraft, setInstructionsDraft] = useState('')
 
+  // jobDetailInstructions* — the SEPARATE, second instruction document
+  // (a single job's own detail page, not the listing page above) —
+  // same toggle/draft/save shape as instructionsExpanded/
+  // instructionsDraft, kept as its own independent pair of state
+  // variables rather than reusing those: the two documents are edited
+  // independently and expanding one should never collapse or clobber
+  // the other. See plan/ai/tools/career/step-XX-job-detail-crawl-instructions.md.
+  const [jobDetailInstructionsExpanded, setJobDetailInstructionsExpanded] = useState(false)
+  const [jobDetailInstructionsDraft, setJobDetailInstructionsDraft] = useState('')
+
+  // "Generate with AI" for the job-detail instructions — the SEPARATE
+  // counterpart to aiPending/aiLocalError/aiConversationId above, same
+  // reasoning as jobDetailInstructionsExpanded/jobDetailInstructionsDraft:
+  // generating one document with AI must never disable or clobber the
+  // other's own independent in-flight state.
+  const [jobDetailAiPending, setJobDetailAiPending] = useState(false)
+  const [jobDetailAiLocalError, setJobDetailAiLocalError] = useState<string | undefined>(undefined)
+  const [jobDetailAiConversationId, setJobDetailAiConversationId] = useState<string | null>(null)
+
   // Resume watching a "Crawl now" run still in progress — the concrete
   // mechanism behind "the user can leave the page, it does not have to
   // be in the tab": reopening/reloading PortalsPage re-fetches
@@ -170,6 +194,19 @@ export function CrawlPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [link.instructionsAiConversationId])
 
+  // Same reload-resilience as the listing "Generate with AI" resume
+  // effect above, for the SEPARATE job-detail instructions' own
+  // "Generate with AI" — link.jobDetailInstructionsAiConversationId is
+  // that run's own independent durable trace.
+  const resumedJobDetailAiRef = useRef(false)
+  useEffect(() => {
+    if (link.jobDetailInstructionsAiConversationId && !resumedJobDetailAiRef.current) {
+      resumedJobDetailAiRef.current = true
+      void resumeGenerateJobDetailInstructions(link.jobDetailInstructionsAiConversationId)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [link.jobDetailInstructionsAiConversationId])
+
   // watchCrawlRun polls GET .../crawl-now/active until the run reaches
   // a terminal status, writing every observed row into `run` as it
   // goes — this is what "the frontend shows the status and the logs"
@@ -210,6 +247,7 @@ export function CrawlPanel({
       .then((started) => {
         setRun({
           crawlRunId: started.crawlRunId,
+          kind: 'listing',
           status: 'running',
           startedAt: started.startedAt,
           finishedAt: null,
@@ -222,6 +260,36 @@ export function CrawlPanel({
       })
       .catch((err: unknown) => {
         setCrawlResult({ ok: false, text: err instanceof Error ? err.message : 'Failed to start crawl.' })
+      })
+  }
+
+  // "Crawl job details now" mirrors handleCrawlNow above exactly — the
+  // SEPARATE deterministic mechanism (kind 'job_detail') that visits
+  // every already-saved job's own detail page for this link instead of
+  // the listing page. Shares `run`/`isBusy()`/watchCrawlRun with the
+  // listing mechanism (crawl_runs_one_running_idx already guarantees
+  // only one of either kind can be active for this link at a time), so
+  // no separate run-tracking state is needed here.
+  function handleCrawlJobDetailsNow() {
+    if (isBusy()) return
+    setCrawlResult(null)
+    startCrawlJobDetailsNow(link.id)
+      .then((started) => {
+        setRun({
+          crawlRunId: started.crawlRunId,
+          kind: 'job_detail',
+          status: 'running',
+          startedAt: started.startedAt,
+          finishedAt: null,
+          log: [],
+          resultSummary: null,
+          errorMessage: null,
+          phase: null,
+        })
+        return watchCrawlRun()
+      })
+      .catch((err: unknown) => {
+        setCrawlResult({ ok: false, text: err instanceof Error ? err.message : 'Failed to start job detail crawl.' })
       })
   }
 
@@ -447,6 +515,110 @@ export function CrawlPanel({
     }
   }
 
+  // finishGenerateJobDetailInstructions mirrors finishGenerateInstructions
+  // above exactly, for the SEPARATE job-detail instructions document's
+  // own AI generation — its own independent ai*/instructionsAi* state
+  // and fields, never the listing instructions' own.
+  function finishGenerateJobDetailInstructions(err?: unknown) {
+    setJobDetailAiPending(false)
+    setJobDetailAiConversationId(null)
+
+    if (!err) {
+      void updatePortalLink(link.id, { jobDetailInstructionsAiError: '', jobDetailInstructionsAiConversationId: '' })
+        .catch((recordErr: unknown) => {
+          console.error('failed to clear job detail instructions-AI conversation on portal link', link.id, recordErr)
+        })
+        .then(onReload)
+      return
+    }
+
+    const text =
+      err instanceof CoreApiError && (err.status === 401 || err.status === 403)
+        ? 'Ask an admin to grant you access to AI conversations.'
+        : err instanceof Error
+          ? err.message
+          : 'Failed to generate job detail crawl instructions.'
+    setJobDetailAiLocalError(text)
+    void updatePortalLink(link.id, { jobDetailInstructionsAiError: text, jobDetailInstructionsAiConversationId: '' })
+      .catch((recordErr: unknown) => {
+        console.error('failed to record job detail instructions-AI error on portal link', link.id, recordErr)
+      })
+      .then(onReload)
+  }
+
+  // resumeGenerateJobDetailInstructions mirrors resumeGenerateInstructions
+  // above exactly, for the SEPARATE job-detail instructions document.
+  async function resumeGenerateJobDetailInstructions(conversationId: string) {
+    setJobDetailAiConversationId(conversationId)
+    let status
+    try {
+      status = await fetchTurnStatus(conversationId)
+    } catch {
+      status = 'running' as const
+    }
+    if (status !== 'running') {
+      awaitTurnCompletion(conversationId).then(
+        () => {
+          finishGenerateJobDetailInstructions()
+        },
+        (err: unknown) => {
+          finishGenerateJobDetailInstructions(err)
+        },
+      )
+      return
+    }
+    setJobDetailAiPending(true)
+    awaitTurnCompletion(conversationId).then(
+      () => {
+        finishGenerateJobDetailInstructions()
+      },
+      (err: unknown) => {
+        finishGenerateJobDetailInstructions(err)
+      },
+    )
+  }
+
+  // handleGenerateJobDetailInstructionsWithAI mirrors
+  // handleGenerateInstructionsWithAI above exactly, but sends
+  // buildGenerateJobDetailInstructionsMessage instead — writes/updates
+  // job_detail_crawl_instructions, never crawl_instructions.
+  function handleGenerateJobDetailInstructionsWithAI() {
+    if (jobDetailAiPending || !selectedPlatform) return
+    const platformId = selectedPlatform.id
+    const model = selectedPlatform.models.length > 0 ? (selectedModel ?? selectedPlatform.models[0]) : undefined
+    setJobDetailAiPending(true)
+    setJobDetailAiLocalError(undefined)
+
+    createConversation({ title: generateJobDetailInstructionsConversationTitle(link), platformId, model, hidden: true })
+      .then((conversation) => {
+        setJobDetailAiConversationId(conversation.id)
+        window.__cinqoToolBridge.openConversation(conversation.id)
+        return updatePortalLink(link.id, { jobDetailInstructionsAiConversationId: conversation.id })
+          .catch(() => {
+            // Best-effort — a failure here only costs reload-resilience
+            // for this one run, not the run itself.
+          })
+          .then(() => sendMessage(conversation.id, buildGenerateJobDetailInstructionsMessage(link)))
+      })
+      .then(
+        () => {
+          finishGenerateJobDetailInstructions()
+        },
+        (err: unknown) => {
+          finishGenerateJobDetailInstructions(err)
+        },
+      )
+  }
+
+  // handleCheckJobDetailProgress mirrors handleCheckProgress above —
+  // reopens the widget onto jobDetailAiConversationId, never
+  // aiConversationId.
+  function handleCheckJobDetailProgress() {
+    if (jobDetailAiConversationId) {
+      window.__cinqoToolBridge.openConversation(jobDetailAiConversationId)
+    }
+  }
+
   function handleViewConversation() {
     window.__cinqoToolBridge.navigate('/conversations')
   }
@@ -464,6 +636,26 @@ export function CrawlPanel({
     updatePortalLink(link.id, { crawlInstructions: instructionsDraft })
       .then(() => {
         setInstructionsExpanded(false)
+        onReload()
+      })
+      .catch((err: unknown) => {
+        onError(err instanceof Error ? err.message : String(err))
+      })
+  }
+
+  function toggleJobDetailCrawlInstructions() {
+    if (jobDetailInstructionsExpanded) {
+      setJobDetailInstructionsExpanded(false)
+      return
+    }
+    setJobDetailInstructionsExpanded(true)
+    setJobDetailInstructionsDraft(link.jobDetailCrawlInstructions ?? '')
+  }
+
+  function handleSaveJobDetailCrawlInstructions() {
+    updatePortalLink(link.id, { jobDetailCrawlInstructions: jobDetailInstructionsDraft })
+      .then(() => {
+        setJobDetailInstructionsExpanded(false)
         onReload()
       })
       .catch((err: unknown) => {
@@ -509,6 +701,51 @@ export function CrawlPanel({
           {!aiLocalError && link.instructionsAiErrorAt && ` (${new Date(link.instructionsAiErrorAt).toLocaleString()})`}
         </p>
       )}
+      <div>
+        <button
+          type="button"
+          onClick={toggleJobDetailCrawlInstructions}
+          title="How to extract the job-position-relevant text off a single job's own detail page (the page a listing's own job URL points to) — separate from the listing crawl instructions above."
+          className="text-xs text-gray-500 underline hover:text-gray-700"
+        >
+          {link.jobDetailCrawlInstructions ? 'Job detail crawl instructions set' : 'No job detail crawl instructions yet'} —{' '}
+          {jobDetailInstructionsExpanded ? 'hide' : link.jobDetailCrawlInstructions ? 'view/edit' : 'add'}
+        </button>
+        {' · '}
+        <button
+          type="button"
+          onClick={jobDetailAiPending ? handleCheckJobDetailProgress : handleGenerateJobDetailInstructionsWithAI}
+          disabled={!hasPlatforms || (jobDetailAiPending && !jobDetailAiConversationId)}
+          title={
+            !hasPlatforms
+              ? 'No AI platform configured — add one on the Platforms page first'
+              : jobDetailAiPending
+                ? "Open the chat window to watch the AI work on this link's job detail crawl instructions"
+                : "Let the AI inspect one already-saved job's own detail page and write (or update) its job detail crawl instructions for you — requires at least one job already saved for this link"
+          }
+          className="inline-flex items-center gap-1 text-xs text-gray-500 underline hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {jobDetailAiPending ? (
+            <span className="inline-flex items-center gap-1 [animation:robot-bob_1.6s_ease-in-out_infinite]">
+              <RobotIcon />
+              <Typewriter text="Check Progress - AI" />
+            </span>
+          ) : (
+            <>
+              <SparkleIcon />
+              Generate with AI
+            </>
+          )}
+        </button>
+        {(jobDetailAiLocalError ?? link.jobDetailInstructionsAiError) && (
+          <p className="mt-1 text-xs text-red-700">
+            AI instructions generation failed: {jobDetailAiLocalError ?? link.jobDetailInstructionsAiError}
+            {!jobDetailAiLocalError &&
+              link.jobDetailInstructionsAiErrorAt &&
+              ` (${new Date(link.jobDetailInstructionsAiErrorAt).toLocaleString()})`}
+          </p>
+        )}
+      </div>
       {link.crawlInstructions && (
         <div className="mt-1.5">
           <div className="flex flex-wrap gap-2">
@@ -574,49 +811,91 @@ export function CrawlPanel({
               )}
             </p>
           )}
-          {/* "Crawl now"'s own live/terminal state (steps 37/38/40) —
-              kept separate from crawlResult above, which only ever
-              carries a start failure or a stop notice for this
-              mechanism. Shown for every status, including while
-              running: the backend now tracks a real, fine-grained
-              phase per step (step 39, sourced from browser's own live
-              status — step 31) and this instance polls it every 3s —
-              surfacing the current phase live, plus the full log on
-              demand, is what "the frontend shows the status and the
-              logs" concretely means (not just on a terminal outcome).
-              awaiting_human_challenge gets its own visually distinct
-              callout — this is the one phase where the user, not the
-              system, is the blocker. */}
-          {run && (
-            <div className="mt-1">
-              {run.status === 'running' &&
-                (run.phase === 'awaiting_human_challenge' ? (
-                  <p className="flex items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800">
-                    <AlertIcon />
-                    Waiting for you to solve a Cloudflare challenge in the browser window
-                  </p>
-                ) : (
-                  <p className="text-xs text-gray-500">{phaseLabel(run.phase) ?? latestCrawlLogMessage(run.log) ?? 'Crawl in progress…'}</p>
-                ))}
-              {run.status === 'completed' && <p className="text-xs text-green-700">{run.resultSummary}</p>}
-              {run.status === 'failed' && <p className="text-xs text-red-700">{run.errorMessage}</p>}
+        </div>
+      )}
+      {link.jobDetailCrawlInstructions && (
+        <div className="mt-1.5">
+          <div className="flex flex-wrap gap-2">
+            {run?.status === 'running' ? (
+              <>
+                <button
+                  type="button"
+                  onClick={handleStopCrawlNow}
+                  disabled={isStoppingCrawl}
+                  title="Actually stop this crawl — interrupts it on the server (both Career's own goroutine and the browser tool's in-flight work), not just this tab's own view of it."
+                  className="flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <StopIcon />
+                  {isStoppingCrawl ? 'Stopping…' : 'Stop crawl'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCancelCrawlNow}
+                  title="Stop watching this crawl in this tab — it keeps running on the server regardless, and reopening this page later will show its latest status."
+                  className="flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                >
+                  <PlayIcon />
+                  Stop watching
+                </button>
+              </>
+            ) : (
               <button
                 type="button"
-                onClick={() => {
-                  setLogExpanded((prev) => !prev)
-                }}
-                title="Show every logged step of this crawl run, from start to its current or final status."
-                className="mt-1 flex items-center gap-1 rounded-md border border-gray-200 px-2 py-0.5 text-xs text-gray-700 hover:bg-gray-50"
+                onClick={handleCrawlJobDetailsNow}
+                disabled={isBusy()}
+                title="Deterministic — no AI, no platform needed. Visits every already-saved job's own detail page for this link (up to 200 at a time, oldest-crawled first) and updates its description using this link's own job detail crawl instructions. Runs on the server, so it keeps going even if you leave this page."
+                className="flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <LogIcon />
-                {logExpanded ? 'Hide log' : 'View log'}
+                <PlayIcon />
+                Crawl job details now
               </button>
-              {logExpanded && (
-                <pre className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap rounded-md bg-gray-900 p-2 text-xs text-gray-100">
-                  {run.log.length > 0 ? run.log.join('\n') : '(no log entries yet)'}
-                </pre>
-              )}
-            </div>
+            )}
+          </div>
+        </div>
+      )}
+      {/* Shared live/terminal state for whichever crawl (listing or job
+          detail — run.kind) is currently tracked for this link
+          (steps 37/38/40; step XX made this generic over both kinds) —
+          crawl_runs_one_running_idx guarantees only one of either kind
+          can ever be active at a time, so one shared display is always
+          unambiguous. Shown for every status, including while running:
+          the backend tracks a real, fine-grained phase per step (step
+          39, sourced from browser's own live status — step 31) and
+          this instance polls it every 3s — surfacing the current phase
+          live, plus the full log on demand, is what "the frontend
+          shows the status and the logs" concretely means (not just on
+          a terminal outcome). awaiting_human_challenge gets its own
+          visually distinct callout — this is the one phase where the
+          user, not the system, is the blocker. */}
+      {run && (
+        <div className="mt-1.5">
+          <p className="text-xs font-medium text-gray-700">{run.kind === 'job_detail' ? 'Job detail crawl' : 'Listing crawl'}:</p>
+          {run.status === 'running' &&
+            (run.phase === 'awaiting_human_challenge' ? (
+              <p className="flex items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800">
+                <AlertIcon />
+                Waiting for you to solve a Cloudflare challenge in the browser window
+              </p>
+            ) : (
+              <p className="text-xs text-gray-500">{phaseLabel(run.phase) ?? latestCrawlLogMessage(run.log) ?? 'Crawl in progress…'}</p>
+            ))}
+          {run.status === 'completed' && <p className="text-xs text-green-700">{run.resultSummary}</p>}
+          {run.status === 'failed' && <p className="text-xs text-red-700">{run.errorMessage}</p>}
+          <button
+            type="button"
+            onClick={() => {
+              setLogExpanded((prev) => !prev)
+            }}
+            title="Show every logged step of this crawl run, from start to its current or final status."
+            className="mt-1 flex items-center gap-1 rounded-md border border-gray-200 px-2 py-0.5 text-xs text-gray-700 hover:bg-gray-50"
+          >
+            <LogIcon />
+            {logExpanded ? 'Hide log' : 'View log'}
+          </button>
+          {logExpanded && (
+            <pre className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap rounded-md bg-gray-900 p-2 text-xs text-gray-100">
+              {run.log.length > 0 ? run.log.join('\n') : '(no log entries yet)'}
+            </pre>
           )}
         </div>
       )}
@@ -644,6 +923,38 @@ export function CrawlPanel({
               type="button"
               onClick={() => {
                 setInstructionsExpanded(false)
+              }}
+              className="rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-white"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+      {jobDetailInstructionsExpanded && (
+        <div className="mt-1.5">
+          <textarea
+            value={jobDetailInstructionsDraft}
+            onChange={(e) => {
+              setJobDetailInstructionsDraft(e.target.value)
+            }}
+            placeholder={'fields:\n  - label: description\n    selector: ".job-description, .job-posting-body"'}
+            rows={6}
+            spellCheck={false}
+            className="w-full rounded-md border border-gray-300 px-2 py-1.5 font-mono text-xs text-gray-900 focus:border-gray-500 focus:outline-none"
+          />
+          <div className="mt-1.5 flex gap-2">
+            <button
+              type="button"
+              onClick={handleSaveJobDetailCrawlInstructions}
+              className="rounded-md bg-gray-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-gray-800"
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setJobDetailInstructionsExpanded(false)
               }}
               className="rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-white"
             >
