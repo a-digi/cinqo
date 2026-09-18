@@ -179,6 +179,17 @@ export function MatchIcon() {
   )
 }
 
+// BoltIcon — marks the deterministic, no-AI "Match now" action,
+// distinct from MatchIcon's own AI-conversation-driven meaning. A
+// plain lightning-bolt glyph, the standard "instant/automatic" signal.
+export function BoltIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="currentColor" stroke="none" className="h-3.5 w-3.5">
+      <path d="M11 2.5L4.5 11.5h4l-1 6L15.5 8.5h-4l0.5-6z" />
+    </svg>
+  )
+}
+
 // RobotIcon (step 60) — marks "Check Progress - AI" (a
 // generate-crawl-instructions conversation currently in flight),
 // distinct from SparkleIcon's own "start this with AI" meaning.

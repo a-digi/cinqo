@@ -77,6 +77,7 @@ func runHTTPServer() {
 	http.HandleFunc("/jobs", jobsHandler)
 	http.HandleFunc("/job-locations", jobLocationsHandler)
 	http.HandleFunc("/jobs/match", jobMatchHandler)
+	http.HandleFunc("/jobs/match/now", jobMatchNowHandler)
 	http.HandleFunc("/companies", companiesHandler)
 	http.HandleFunc("/recruiters", recruitersHandler)
 	http.HandleFunc("/portals", portalsHandler)

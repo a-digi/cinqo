@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.0.177",
+  "version": "0.0.179",
   "mcp": true,
   "requires_tools": [
     {
@@ -148,6 +148,11 @@
     {
       "method": "PUT",
       "path_suffix": "jobs/match",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "jobs/match/now",
       "required_scope": "tool:career:jobs"
     },
     {

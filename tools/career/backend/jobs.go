@@ -82,6 +82,11 @@ type job struct {
 	MatchStatus         string `json:"matchStatus,omitempty"`
 	MatchConversationID string `json:"matchConversationId,omitempty"`
 	MatchError          string `json:"matchError,omitempty"`
+	// MatchKind (step XX) — "ai" or "deterministic" (db.go's own
+	// job_matches.kind doc comment); "" (never "null") when this job
+	// has never been matched at all, same convention MatchStatus
+	// itself already uses.
+	MatchKind string `json:"matchKind,omitempty"`
 	// MatchedSkills (step XX) — the specific skills (verbatim, from
 	// that persona's own career.db skills list) that explain
 	// MatchScore, from the one-to-many job_match_skills table
@@ -217,7 +222,7 @@ func queryJobs(where string, whereArgs []any, limit, offset int) (jobsListResult
 	pageArgs := append(append([]any{}, whereArgs...), limit, offset)
 	rows, err := jobsDB.Query(
 		`SELECT j.id, j.source_url, j.title, j.company, j.company_id, j.portal_link_id, p.id, p.name, j.location, j.description, j.posted_at, j.crawled_at, j.detail_crawl_status,
-			jm.score, jm.status, jm.conversation_id, jm.error
+			jm.score, jm.status, jm.conversation_id, jm.error, jm.kind
 		 `+jobsFromClause+` `+where+` ORDER BY j.crawled_at DESC LIMIT ? OFFSET ?`,
 		pageArgs...,
 	)
@@ -230,10 +235,10 @@ func queryJobs(where string, whereArgs []any, limit, offset int) (jobsListResult
 	for rows.Next() {
 		var j job
 		var company, companyID, portalLinkID, portalID, portalName, location, description, postedAt, detailCrawlStatus sql.NullString
-		var matchStatus, matchConversationID, matchError sql.NullString
+		var matchStatus, matchConversationID, matchError, matchKind sql.NullString
 		var matchScore sql.NullInt64
 		if err := rows.Scan(&j.ID, &j.SourceURL, &j.Title, &company, &companyID, &portalLinkID, &portalID, &portalName, &location, &description, &postedAt, &j.CrawledAt, &detailCrawlStatus,
-			&matchScore, &matchStatus, &matchConversationID, &matchError); err != nil {
+			&matchScore, &matchStatus, &matchConversationID, &matchError, &matchKind); err != nil {
 			return jobsListResult{}, err
 		}
 		j.Company = company.String
@@ -252,6 +257,7 @@ func queryJobs(where string, whereArgs []any, limit, offset int) (jobsListResult
 		j.MatchStatus = matchStatus.String
 		j.MatchConversationID = matchConversationID.String
 		j.MatchError = matchError.String
+		j.MatchKind = matchKind.String
 		j.MatchedSkills = []string{}
 		jobs = append(jobs, j)
 	}
@@ -292,16 +298,16 @@ func deleteJob(id string) error {
 func getJobByID(id string) (job, error) {
 	row := jobsDB.QueryRow(
 		`SELECT j.id, j.source_url, j.title, j.company, j.company_id, j.portal_link_id, p.id, p.name, j.location, j.description, j.posted_at, j.crawled_at, j.detail_crawl_status,
-			jm.score, jm.status, jm.conversation_id, jm.error
+			jm.score, jm.status, jm.conversation_id, jm.error, jm.kind
 		 `+jobsFromClause+` WHERE j.id = ?`,
 		id,
 	)
 	var j job
 	var company, companyID, portalLinkID, portalID, portalName, location, description, postedAt, detailCrawlStatus sql.NullString
-	var matchStatus, matchConversationID, matchError sql.NullString
+	var matchStatus, matchConversationID, matchError, matchKind sql.NullString
 	var matchScore sql.NullInt64
 	err := row.Scan(&j.ID, &j.SourceURL, &j.Title, &company, &companyID, &portalLinkID, &portalID, &portalName, &location, &description, &postedAt, &j.CrawledAt, &detailCrawlStatus,
-		&matchScore, &matchStatus, &matchConversationID, &matchError)
+		&matchScore, &matchStatus, &matchConversationID, &matchError, &matchKind)
 	switch {
 	case err == sql.ErrNoRows:
 		return job{}, errUnknownJob
@@ -324,6 +330,7 @@ func getJobByID(id string) (job, error) {
 	j.MatchStatus = matchStatus.String
 	j.MatchConversationID = matchConversationID.String
 	j.MatchError = matchError.String
+	j.MatchKind = matchKind.String
 	skills, err := getJobMatchSkills(j.ID)
 	if err != nil {
 		return job{}, err

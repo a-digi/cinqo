@@ -163,21 +163,7 @@ func runJobDetailCrawlNow(ctx context.Context, runID, portalLinkID string, targe
 		}
 		_ = setCrawlRunPhase(runID, "extracting", fmt.Sprintf("job %d of %d: %s", i+1, len(targets), label))
 
-		pagRequest := struct {
-			crawlRequest
-			URL          string `json:"url"`
-			RequestID    string `json:"requestId"`
-			RateLimitKey string `json:"rateLimitKey"`
-		}{crawlRequest: req, URL: target.SourceURL, RequestID: runID, RateLimitKey: portalID}
-		pagBody, err := json.Marshal(pagRequest)
-		if err != nil {
-			skipped++
-			_ = markJobDetailCrawlFailed(target.ID)
-			_ = appendCrawlRunLog(runID, fmt.Sprintf("skipped %q: %v", label, err))
-			continue
-		}
-
-		respBody, err := callBrowserProxyWithJobDetailRetry(ctx, coreURL, pagBody, accessToken, runID)
+		didUpdate, err := crawlOneJobDetail(ctx, coreURL, portalID, runID, accessToken, req, target)
 		if err != nil {
 			if errors.Is(err, errCrawlCancelledByUser) {
 				_ = appendCrawlRunLog(runID, err.Error())
@@ -188,34 +174,6 @@ func runJobDetailCrawlNow(ctx context.Context, runID, portalLinkID string, targe
 				return
 			}
 			skipped++
-			// A harder failure than "extraction ran but came back
-			// empty" (saveJobDetailExtraction's own case, below) — the
-			// page fetch itself never succeeded, so nothing else in
-			// this iteration will ever record an attempt for this job.
-			// Marked 'failed' here directly so the Eye icon still
-			// distinguishes this from "never crawled." See
-			// markJobDetailCrawlFailed's own doc comment.
-			_ = markJobDetailCrawlFailed(target.ID)
-			_ = appendCrawlRunLog(runID, fmt.Sprintf("skipped %q: %v", label, err))
-			continue
-		}
-
-		var result jobDetailExtractResult
-		if err := json.Unmarshal(respBody, &result); err != nil || len(result.Pages) == 0 {
-			skipped++
-			_ = markJobDetailCrawlFailed(target.ID)
-			_ = appendCrawlRunLog(runID, fmt.Sprintf("skipped %q: no page extracted", label))
-			continue
-		}
-
-		values := make(map[string]string, len(result.Pages[0].Results))
-		for k, v := range extractResultValues(result.Pages[0]) {
-			values[k] = v
-		}
-		didUpdate, err := saveJobDetailExtraction(target.ID, values)
-		if err != nil {
-			skipped++
-			_ = markJobDetailCrawlFailed(target.ID)
 			_ = appendCrawlRunLog(runID, fmt.Sprintf("skipped %q: %v", label, err))
 			continue
 		}
@@ -230,6 +188,67 @@ func runJobDetailCrawlNow(ctx context.Context, runID, portalLinkID string, targe
 	summary := fmt.Sprintf("Updated %d of %d job(s); skipped %d.", updated, len(targets), skipped)
 	_ = appendCrawlRunLog(runID, "done: "+summary)
 	_ = finishCrawlRun(runID, "completed", &summary, nil)
+}
+
+// errNoPageExtracted is crawlOneJobDetail's own sentinel for "the
+// browser call succeeded but produced no usable page" — distinct from
+// a transport/session-level failure, but treated identically by every
+// caller (mark the job's own detail-crawl attempt failed, skip it).
+var errNoPageExtracted = errors.New("no page extracted")
+
+// crawlOneJobDetail runs ONE job's own detail-page crawl attempt — the
+// exact per-target work runJobDetailCrawlNow's own loop (above) needs,
+// factored out so the deterministic "Match now" feature (job_match.go)
+// can reuse it for a single job (its own crawl-if-missing step)
+// without duplicating this retry/error-handling logic. Marks the job's
+// own detail_crawl_status='failed' itself on any non-cancellation
+// error (matching every skip path this function replaces) — the
+// caller only needs to decide whether ITS OWN broader operation should
+// keep going (any ordinary error) or stop entirely
+// (errCrawlCancelledByUser, or ctx already cancelled).
+func crawlOneJobDetail(ctx context.Context, coreURL, portalID, runID, accessToken string, req crawlRequest, target jobDetailCrawlTarget) (updated bool, err error) {
+	pagRequest := struct {
+		crawlRequest
+		URL          string `json:"url"`
+		RequestID    string `json:"requestId"`
+		RateLimitKey string `json:"rateLimitKey"`
+	}{crawlRequest: req, URL: target.SourceURL, RequestID: runID, RateLimitKey: portalID}
+	pagBody, err := json.Marshal(pagRequest)
+	if err != nil {
+		_ = markJobDetailCrawlFailed(target.ID)
+		return false, err
+	}
+
+	respBody, err := callBrowserProxyWithJobDetailRetry(ctx, coreURL, pagBody, accessToken, runID)
+	if err != nil {
+		if errors.Is(err, errCrawlCancelledByUser) || ctx.Err() != nil {
+			return false, err
+		}
+		// A harder failure than "extraction ran but came back empty"
+		// (saveJobDetailExtraction's own case, below) — the page fetch
+		// itself never succeeded, so nothing else here will ever
+		// record an attempt for this job. Marked 'failed' directly so
+		// the Eye icon still distinguishes this from "never crawled."
+		_ = markJobDetailCrawlFailed(target.ID)
+		return false, err
+	}
+
+	var result jobDetailExtractResult
+	if err := json.Unmarshal(respBody, &result); err != nil || len(result.Pages) == 0 {
+		_ = markJobDetailCrawlFailed(target.ID)
+		return false, errNoPageExtracted
+	}
+
+	values := make(map[string]string, len(result.Pages[0].Results))
+	for k, v := range extractResultValues(result.Pages[0]) {
+		values[k] = v
+	}
+	didUpdate, err := saveJobDetailExtraction(target.ID, values)
+	if err != nil {
+		_ = markJobDetailCrawlFailed(target.ID)
+		return false, err
+	}
+	return didUpdate, nil
 }
 
 // extractResultValues flattens one page's own Results (label ->

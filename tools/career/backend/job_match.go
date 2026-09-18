@@ -28,18 +28,22 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// startJobMatch begins tracking a new match attempt for jobId —
-// upserts a fresh 'matching' row, clearing any previous score/persona/
-// error from an earlier attempt (re-matching always starts clean, no
-// history kept). Called only from the human-facing PUT /jobs/match
-// handler (http.go), never by the AI.
-func startJobMatch(jobId, profileId, conversationId string) error {
+// startJobMatch begins tracking a new match attempt for jobId, of the
+// given kind ("ai" or "deterministic" — db.go's own job_matches.kind
+// doc comment) — upserts a fresh 'matching' row, clearing any previous
+// score/persona/error from an earlier attempt (re-matching always
+// starts clean, no history kept, regardless of whether this attempt
+// or the previous one was AI-driven). Called from the human-facing PUT
+// /jobs/match handler (http.go, always kind="ai") and from
+// runJobMatchNow (job_match_now.go, always kind="deterministic") —
+// never by the AI itself.
+func startJobMatch(jobId, profileId, conversationId, kind string) error {
 	if err := requireJobExists(jobId); err != nil {
 		return err
 	}
 	_, err := jobsDB.Exec(
-		`INSERT INTO job_matches (job_id, profile_id, persona_id, score, status, conversation_id, error, updated_at)
-		 VALUES (?, ?, NULL, NULL, 'matching', ?, NULL, datetime('now'))
+		`INSERT INTO job_matches (job_id, profile_id, persona_id, score, status, conversation_id, error, kind, updated_at)
+		 VALUES (?, ?, NULL, NULL, 'matching', ?, NULL, ?, datetime('now'))
 		 ON CONFLICT(job_id) DO UPDATE SET
 			profile_id = excluded.profile_id,
 			persona_id = NULL,
@@ -47,8 +51,9 @@ func startJobMatch(jobId, profileId, conversationId string) error {
 			status = 'matching',
 			conversation_id = excluded.conversation_id,
 			error = NULL,
+			kind = excluded.kind,
 			updated_at = datetime('now')`,
-		jobId, profileId, conversationId,
+		jobId, profileId, conversationId, kind,
 	)
 	return err
 }
@@ -96,7 +101,7 @@ func updateJobMatchStatus(jobId, status string, errText *string) error {
 // value, before anything is written.
 var errInvalidMatchScore = errors.New("score must be an integer between 0 and 100")
 
-func saveJobMatchResult(jobId, profileId, personaId string, score int, matchedSkills []string) error {
+func saveJobMatchResult(jobId, profileId, personaId string, score int, matchedSkills []string, kind string) error {
 	if err := requireJobExists(jobId); err != nil {
 		return err
 	}
@@ -130,8 +135,8 @@ func saveJobMatchResult(jobId, profileId, personaId string, score int, matchedSk
 	defer func() { _ = tx.Rollback() }()
 
 	if _, err := tx.Exec(
-		`INSERT INTO job_matches (job_id, profile_id, persona_id, score, status, conversation_id, error, updated_at)
-		 VALUES (?, ?, ?, ?, 'completed', NULL, NULL, datetime('now'))
+		`INSERT INTO job_matches (job_id, profile_id, persona_id, score, status, conversation_id, error, kind, updated_at)
+		 VALUES (?, ?, ?, ?, 'completed', NULL, NULL, ?, datetime('now'))
 		 ON CONFLICT(job_id) DO UPDATE SET
 			profile_id = excluded.profile_id,
 			persona_id = excluded.persona_id,
@@ -139,8 +144,9 @@ func saveJobMatchResult(jobId, profileId, personaId string, score int, matchedSk
 			status = 'completed',
 			conversation_id = NULL,
 			error = NULL,
+			kind = excluded.kind,
 			updated_at = datetime('now')`,
-		jobId, profileId, personaId, score,
+		jobId, profileId, personaId, score, kind,
 	); err != nil {
 		return err
 	}
@@ -265,7 +271,11 @@ func registerSaveJobMatch(server *mcp.Server) {
 		if args.PersonaID == "" {
 			return errResult("personaId is required"), nil, nil
 		}
-		if err := saveJobMatchResult(args.JobID, args.ProfileID, args.PersonaID, args.Score, args.MatchedSkills); err != nil {
+		// kind is always "ai" here — never an argument the model itself
+		// provides, so it can never claim its own match was produced by
+		// the deterministic ("Match now") mechanism instead. See
+		// db.go's own job_matches.kind doc comment.
+		if err := saveJobMatchResult(args.JobID, args.ProfileID, args.PersonaID, args.Score, args.MatchedSkills, "ai"); err != nil {
 			if errors.Is(err, errUnknownJob) {
 				return errResult(fmt.Sprintf("unknown job id %q", args.JobID)), nil, nil
 			}

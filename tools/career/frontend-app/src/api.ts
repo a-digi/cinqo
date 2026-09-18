@@ -91,6 +91,13 @@ export interface Job {
   matchStatus?: 'matching' | 'completed' | 'failed'
   matchConversationId?: string
   matchError?: string
+  // matchKind (step XX) — "ai" (a hidden AI conversation) or
+  // "deterministic" (a plain keyword-matching algorithm, no AI
+  // conversation at all — job_match_now.go) distinguishes which
+  // mechanism produced the current match, since a deterministic match
+  // has no conversation to open/poll. undefined when never matched.
+  // See plan/ai/tools/career/step-XX-deterministic-job-match.md.
+  matchKind?: 'ai' | 'deterministic'
   // matchedSkills (step XX) — the specific skills (verbatim, from the
   // matched persona's own skills list) that explain matchScore.
   // Always present as an array (possibly empty), never undefined —
@@ -433,6 +440,25 @@ export async function updateJobMatch(
   if (!res.ok && res.status !== 204) {
     const text = await res.text().catch(() => '')
     throw new Error(text || `failed to update job match (${res.status})`)
+  }
+}
+
+// startJobMatchNow triggers the deterministic, no-AI "Match now"
+// mechanism (job_match_now.go) — the backend starts tracking the
+// attempt and runs it in a detached goroutine itself; unlike the AI
+// path, there is no conversation to create/track client-side at all,
+// so this is a single fire-and-forget call. The caller polls
+// fetchJob(jobId) until matchStatus leaves 'matching'. See
+// plan/ai/tools/career/step-XX-deterministic-job-match.md.
+export async function startJobMatchNow(jobId: string, profileId: string): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/jobs/match/now`, {
+    method: 'POST',
+    credentials: 'include',
+    body: JSON.stringify({ jobId, profileId }),
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(text || `failed to start job match (${res.status})`)
   }
 }
 

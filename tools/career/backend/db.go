@@ -340,7 +340,16 @@ CREATE TABLE IF NOT EXISTS job_matches (
                       CHECK (status IN ('matching','completed','failed')),
     conversation_id TEXT,
     error           TEXT,
-    updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    -- kind (step XX) distinguishes an AI-conversation-driven match
+    -- ('ai', the original and default) from the deterministic,
+    -- no-AI "Match now" mechanism ('deterministic') — same
+    -- "kind column, no CHECK constraint, validated in Go instead"
+    -- convention crawl_runs.kind already established. conversation_id
+    -- is only ever meaningful for kind='ai' — a deterministic match
+    -- has no conversation at all. See
+    -- plan/ai/tools/career/step-XX-deterministic-job-match.md.
+    kind            TEXT NOT NULL DEFAULT 'ai'
 );
 
 -- job_match_skills (step XX) holds the specific skills (verbatim
@@ -671,7 +680,29 @@ func migrateJobsDB(db *sql.DB) error {
 	if err := migrateCrawlRunsKind(db); err != nil {
 		return err
 	}
-	return migrateJobsDetailCrawlStatus(db)
+	if err := migrateJobsDetailCrawlStatus(db); err != nil {
+		return err
+	}
+	return migrateJobMatchesKind(db)
+}
+
+// migrateJobMatchesKind adds the kind column (step XX) to an
+// already-installed job_matches table — same plain ALTER TABLE ADD
+// COLUMN shape as migrateCrawlRunsKind above, no CHECK constraint,
+// guarded the same way. DEFAULT 'ai' backfills every pre-existing row
+// correctly: every job_matches row before this step was, by
+// definition, AI-driven — the deterministic mechanism didn't exist
+// yet. See plan/ai/tools/career/step-XX-deterministic-job-match.md.
+func migrateJobMatchesKind(db *sql.DB) error {
+	exists, hasColumn, err := tableHasColumn(db, "job_matches", "kind")
+	if err != nil {
+		return err
+	}
+	if !exists || hasColumn {
+		return nil
+	}
+	_, err = db.Exec(`ALTER TABLE job_matches ADD COLUMN kind TEXT NOT NULL DEFAULT 'ai'`)
+	return err
 }
 
 // migrateJobsDetailCrawlStatus adds the nullable detail_crawl_status

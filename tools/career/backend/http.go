@@ -651,7 +651,11 @@ func jobMatchHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "profileId is required when starting a match", http.StatusBadRequest)
 			return
 		}
-		if err := startJobMatch(body.JobID, body.ProfileID, body.ConversationID); err != nil {
+		// PUT /jobs/match is always the AI-conversation-tracking path —
+		// the deterministic mechanism has its own separate endpoint
+		// (POST /jobs/match/now, job_match_now.go) that calls
+		// startJobMatch directly with kind="deterministic".
+		if err := startJobMatch(body.JobID, body.ProfileID, body.ConversationID, "ai"); err != nil {
 			if errors.Is(err, errUnknownJob) {
 				http.Error(w, "unknown job id", http.StatusNotFound)
 				return
