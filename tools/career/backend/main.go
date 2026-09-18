@@ -31,10 +31,13 @@ import (
 
 	"career-tool-backend/companies"
 	"career-tool-backend/crawl"
+	"career-tool-backend/cv"
 	"career-tool-backend/db"
 	"career-tool-backend/jobs"
 	"career-tool-backend/persona"
 	"career-tool-backend/portal"
+	"career-tool-backend/profile"
+	"career-tool-backend/recruiters"
 )
 
 func main() {
@@ -61,7 +64,7 @@ func runHTTPServer() {
 	// Same reasoning as reconcileOrphanedCrawlRuns above, one level up
 	// — a hidden Job Match conversation's own turn is not a subprocess
 	// this Go process could ever reattach to after a restart.
-	if err := reconcileOrphanedJobMatches(); err != nil {
+	if err := jobs.ReconcileOrphanedJobMatches(); err != nil {
 		log.Fatalf("failed to reconcile orphaned job matches: %v", err)
 	}
 	// step 47.4 — reconcileOrphanedCrawlRuns above only ever runs once,
@@ -95,8 +98,8 @@ func runHTTPServer() {
 	http.HandleFunc("/portal-links/crawl-runs/active", crawl.CrawlMonitorHandler)
 	http.HandleFunc("/portal-links/crawl-now/active", crawl.CrawlNowActiveHandler)
 	http.HandleFunc("/portal-links/crawl-now/cancel", crawl.CrawlNowCancelHandler)
-	http.HandleFunc("/cv-import/upload", uploadCVHandler)
-	http.HandleFunc("/cv-import/runs", cvImportRunsHandler)
+	http.HandleFunc("/cv-import/upload", cv.UploadCVHandler)
+	http.HandleFunc("/cv-import/runs", cv.CVImportRunsHandler)
 
 	if err := http.ListenAndServe("127.0.0.1:"+port, nil); err != nil {
 		os.Exit(1)
@@ -118,12 +121,12 @@ func runMCPServer() {
 
 	server := mcp.NewServer(&mcp.Implementation{Name: "career", Version: "0.1.0"}, nil)
 
-	registerCreateProfile(server)
-	registerListProfiles(server)
-	registerUpdateProfile(server)
-	registerDeleteProfile(server)
-	registerAddProfileExternalLink(server)
-	registerRemoveProfileExternalLink(server)
+	profile.RegisterCreateProfile(server)
+	profile.RegisterListProfiles(server)
+	profile.RegisterUpdateProfile(server)
+	profile.RegisterDeleteProfile(server)
+	profile.RegisterAddProfileExternalLink(server)
+	profile.RegisterRemoveProfileExternalLink(server)
 	persona.RegisterCreatePersona(server)
 	persona.RegisterListPersonas(server)
 	persona.RegisterUpdatePersona(server)
@@ -140,8 +143,8 @@ func runMCPServer() {
 	jobs.RegisterSearchJobs(server)
 	jobs.RegisterDeleteJob(server)
 	jobs.RegisterSaveJobDetailExtraction(server)
-	registerGetJob(server)
-	registerSaveJobMatch(server)
+	jobs.RegisterGetJob(server)
+	jobs.RegisterSaveJobMatch(server)
 	jobs.RegisterSavePortalJob(server)
 	jobs.RegisterSavePortalJobs(server)
 	companies.RegisterCreateCompany(server)
@@ -149,10 +152,10 @@ func runMCPServer() {
 	companies.RegisterUpdateCompany(server)
 	companies.RegisterDeleteCompany(server)
 	jobs.RegisterLinkJobToCompany(server)
-	registerCreateRecruiter(server)
-	registerListRecruiters(server)
-	registerUpdateRecruiter(server)
-	registerDeleteRecruiter(server)
+	recruiters.RegisterCreateRecruiter(server)
+	recruiters.RegisterListRecruiters(server)
+	recruiters.RegisterUpdateRecruiter(server)
+	recruiters.RegisterDeleteRecruiter(server)
 	portal.RegisterCreatePortal(server)
 	portal.RegisterListPortals(server)
 	portal.RegisterUpdatePortal(server)

@@ -4,20 +4,11 @@
 // named "hat" the user wears — each one owns exactly one set of
 // persona details, one skills set, one experience list (see db.go's
 // own schema). As of step 10, every Persona belongs to exactly one
-// Profile (profile.go, package main) — profileId is required and
-// validated the same "forced to be mapped, never implicit" way
-// personaId already is everywhere else in this tool. See
+// Profile (profile package) — profileId is required and validated the
+// same "forced to be mapped, never implicit" way personaId already is
+// everywhere else in this tool. See
 // plan/ai/tools/career/step-08-persona.md and
 // plan/ai/tools/career/step-10-job-seeker-profile.md.
-//
-// As of the package-split refactor (step XX), this package cannot
-// import package main (profile.go, where Profile itself lives) — Go
-// forbids importing package main from anywhere. requireProfileExistsRef
-// below is a deliberate independent duplicate of profile.go's own
-// requireProfileExists, exactly the same "two separate, independently
-// declared copies kept in sync by hand" convention already used for
-// jobs' own errUnknownPortalLinkRef and portal's own
-// activeCrawlRunPortalLinkIDsRef.
 package persona
 
 import (
@@ -30,6 +21,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"career-tool-backend/db"
+	"career-tool-backend/profile"
 )
 
 // ErrUnknownPersona is returned by requirePersonaExists — and
@@ -55,26 +47,6 @@ func requirePersonaExists(id string) error {
 	return nil
 }
 
-// ErrUnknownProfile mirrors package main's own errUnknownProfile
-// (profile.go) — a deliberate independent duplicate, not an import,
-// since this package can never import package main. Exported so
-// http.go can still map it to a 400.
-var ErrUnknownProfile = errors.New("unknown profile id")
-
-// requireProfileExistsRef is CreatePersona's own copy of profile.go's
-// requireProfileExists — see this file's own doc comment for why.
-func requireProfileExistsRef(id string) error {
-	var exists int
-	err := db.CareerDB.QueryRow(`SELECT 1 FROM profiles WHERE id = ?`, id).Scan(&exists)
-	switch {
-	case err == sql.ErrNoRows:
-		return ErrUnknownProfile
-	case err != nil:
-		return err
-	}
-	return nil
-}
-
 type persona struct {
 	ID          string `json:"id"`
 	ProfileID   string `json:"profileId"`
@@ -85,7 +57,7 @@ type persona struct {
 }
 
 func CreatePersona(profileId, name, description string) (string, error) {
-	if err := requireProfileExistsRef(profileId); err != nil {
+	if err := profile.RequireProfileExists(profileId); err != nil {
 		return "", err
 	}
 	id := uuid.NewString()
@@ -188,7 +160,7 @@ func RegisterCreatePersona(server *mcp.Server) {
 		}
 		id, err := CreatePersona(args.ProfileID, args.Name, args.Description)
 		if err != nil {
-			if errors.Is(err, ErrUnknownProfile) {
+			if errors.Is(err, profile.ErrUnknownProfile) {
 				return db.ErrResult(fmt.Sprintf("unknown profile id %q", args.ProfileID)), nil, nil
 			}
 			return db.ErrResult(fmt.Sprintf("failed to create persona: %v", err)), nil, nil

@@ -4,7 +4,7 @@
 // "forced to be mapped" pattern profile.go/persona.go already use for
 // their own parent references). See
 // plan/ai/tools/career/step-16-recruiters.md.
-package main
+package recruiters
 
 import (
 	"context"
@@ -29,7 +29,7 @@ type recruiter struct {
 	UpdatedAt string `json:"updatedAt,omitempty"`
 }
 
-func createRecruiter(companyId, firstName, lastName, email string) (string, error) {
+func CreateRecruiter(companyId, firstName, lastName, email string) (string, error) {
 	if err := companies.RequireCompanyExists(companyId); err != nil {
 		return "", err
 	}
@@ -44,10 +44,11 @@ func createRecruiter(companyId, firstName, lastName, email string) (string, erro
 	return id, nil
 }
 
-// listRecruiters returns every recruiter, newest first; companyId, if
+// ListRecruiters returns every recruiter, newest first; companyId, if
 // non-empty, restricts to recruiters at that company — the same
-// optional-filter shape listPersonas(profileId string) already uses.
-func listRecruiters(companyId string) ([]recruiter, error) {
+// optional-filter shape persona.ListPersonas(profileId string) already
+// uses.
+func ListRecruiters(companyId string) ([]recruiter, error) {
 	where := `WHERE 1=1`
 	args := []any{}
 	if companyId != "" {
@@ -81,24 +82,26 @@ func listRecruiters(companyId string) ([]recruiter, error) {
 	return recruiters, nil
 }
 
-var errUnknownRecruiter = errors.New("unknown recruiter id")
+// ErrUnknownRecruiter is exported so http.go (package main) can still
+// map it to a 400.
+var ErrUnknownRecruiter = errors.New("unknown recruiter id")
 
 func requireRecruiterExists(id string) error {
 	var exists int
 	err := db.JobsDB.QueryRow(`SELECT 1 FROM recruiters WHERE id = ?`, id).Scan(&exists)
 	switch {
 	case err == sql.ErrNoRows:
-		return errUnknownRecruiter
+		return ErrUnknownRecruiter
 	case err != nil:
 		return err
 	}
 	return nil
 }
 
-// updateRecruiter never reassigns company_id — see this step's own
+// UpdateRecruiter never reassigns company_id — see this step's own
 // open question 1; only delete-and-recreate moves a recruiter to a
 // different company.
-func updateRecruiter(id string, firstName, lastName, email *string) error {
+func UpdateRecruiter(id string, firstName, lastName, email *string) error {
 	if err := requireRecruiterExists(id); err != nil {
 		return err
 	}
@@ -127,7 +130,7 @@ func updateRecruiter(id string, firstName, lastName, email *string) error {
 	return err
 }
 
-func deleteRecruiter(id string) error {
+func DeleteRecruiter(id string) error {
 	_, err := db.JobsDB.Exec(`DELETE FROM recruiters WHERE id = ?`, id)
 	return err
 }
@@ -141,7 +144,7 @@ type createRecruiterArgs struct {
 	Email     string `json:"email" jsonschema:"the recruiter's own email address"`
 }
 
-func registerCreateRecruiter(server *mcp.Server) {
+func RegisterCreateRecruiter(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "create_recruiter",
 		Description: "Create a recruiter contact at an existing company.",
@@ -149,7 +152,7 @@ func registerCreateRecruiter(server *mcp.Server) {
 		if args.CompanyID == "" {
 			return db.ErrResult("companyId is required"), nil, nil
 		}
-		id, err := createRecruiter(args.CompanyID, args.FirstName, args.LastName, args.Email)
+		id, err := CreateRecruiter(args.CompanyID, args.FirstName, args.LastName, args.Email)
 		if err != nil {
 			if errors.Is(err, companies.ErrUnknownCompany) {
 				return db.ErrResult(fmt.Sprintf("unknown company id %q", args.CompanyID)), nil, nil
@@ -164,12 +167,12 @@ type listRecruitersArgs struct {
 	CompanyID string `json:"companyId,omitempty" jsonschema:"restrict to recruiters at this company; omit to list every recruiter"`
 }
 
-func registerListRecruiters(server *mcp.Server) {
+func RegisterListRecruiters(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_recruiters",
 		Description: "List recruiter contacts, optionally restricted to one company.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args listRecruitersArgs) (*mcp.CallToolResult, any, error) {
-		recruiters, err := listRecruiters(args.CompanyID)
+		recruiters, err := ListRecruiters(args.CompanyID)
 		if err != nil {
 			return db.ErrResult(fmt.Sprintf("failed to list recruiters: %v", err)), nil, nil
 		}
@@ -184,7 +187,7 @@ type updateRecruiterArgs struct {
 	Email     *string `json:"email,omitempty" jsonschema:"the recruiter's own email address"`
 }
 
-func registerUpdateRecruiter(server *mcp.Server) {
+func RegisterUpdateRecruiter(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "update_recruiter",
 		Description: "Update a recruiter's first/last name or email. Only the fields provided are changed. The recruiter's own company cannot be reassigned this way — delete and recreate instead.",
@@ -192,8 +195,8 @@ func registerUpdateRecruiter(server *mcp.Server) {
 		if args.ID == "" {
 			return db.ErrResult("id is required"), nil, nil
 		}
-		if err := updateRecruiter(args.ID, args.FirstName, args.LastName, args.Email); err != nil {
-			if errors.Is(err, errUnknownRecruiter) {
+		if err := UpdateRecruiter(args.ID, args.FirstName, args.LastName, args.Email); err != nil {
+			if errors.Is(err, ErrUnknownRecruiter) {
 				return db.ErrResult(fmt.Sprintf("unknown recruiter id %q", args.ID)), nil, nil
 			}
 			return db.ErrResult(fmt.Sprintf("failed to update recruiter: %v", err)), nil, nil
@@ -206,7 +209,7 @@ type deleteRecruiterArgs struct {
 	ID string `json:"id" jsonschema:"the recruiter's own id"`
 }
 
-func registerDeleteRecruiter(server *mcp.Server) {
+func RegisterDeleteRecruiter(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "delete_recruiter",
 		Description: "Delete a recruiter contact.",
@@ -214,7 +217,7 @@ func registerDeleteRecruiter(server *mcp.Server) {
 		if args.ID == "" {
 			return db.ErrResult("id is required"), nil, nil
 		}
-		if err := deleteRecruiter(args.ID); err != nil {
+		if err := DeleteRecruiter(args.ID); err != nil {
 			return db.ErrResult(fmt.Sprintf("failed to delete recruiter: %v", err)), nil, nil
 		}
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "deleted"}}}, nil, nil

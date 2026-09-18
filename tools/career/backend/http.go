@@ -34,6 +34,8 @@ import (
 	"career-tool-backend/jobs"
 	"career-tool-backend/persona"
 	"career-tool-backend/portal"
+	"career-tool-backend/profile"
+	"career-tool-backend/recruiters"
 )
 
 // writePersonaAwareError maps persona.ErrUnknownPersona to a 400 (a
@@ -47,18 +49,20 @@ func writePersonaAwareError(w http.ResponseWriter, action string, err error) {
 	http.Error(w, "failed to "+action+": "+err.Error(), http.StatusInternalServerError)
 }
 
-// writeProfileAwareError is the same idea for errUnknownProfile.
+// writeProfileAwareError is the same idea for
+// profile.ErrUnknownProfile.
 func writeProfileAwareError(w http.ResponseWriter, action string, err error) {
-	if errors.Is(err, errUnknownProfile) {
+	if errors.Is(err, profile.ErrUnknownProfile) {
 		http.Error(w, "unknown profile id", http.StatusBadRequest)
 		return
 	}
 	http.Error(w, "failed to "+action+": "+err.Error(), http.StatusInternalServerError)
 }
 
-// writeRecruiterAwareError is the same idea for errUnknownRecruiter.
+// writeRecruiterAwareError is the same idea for
+// recruiters.ErrUnknownRecruiter.
 func writeRecruiterAwareError(w http.ResponseWriter, action string, err error) {
-	if errors.Is(err, errUnknownRecruiter) {
+	if errors.Is(err, recruiters.ErrUnknownRecruiter) {
 		http.Error(w, "unknown recruiter id", http.StatusBadRequest)
 		return
 	}
@@ -81,7 +85,7 @@ type profileUpdateRequest struct {
 func profilesHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		profiles, err := listProfiles()
+		profiles, err := profile.ListProfiles()
 		if err != nil {
 			http.Error(w, "failed to list profiles: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -94,12 +98,12 @@ func profilesHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid request body", http.StatusBadRequest)
 			return
 		}
-		id, err := createProfile(body.FirstName, body.LastName)
+		id, err := profile.CreateProfile(body.FirstName, body.LastName)
 		if err != nil {
 			http.Error(w, "failed to create profile: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		profiles, err := listProfiles()
+		profiles, err := profile.ListProfiles()
 		if err != nil {
 			http.Error(w, "profile created but failed to reload: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -112,11 +116,11 @@ func profilesHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "id is required", http.StatusBadRequest)
 			return
 		}
-		if err := updateProfile(body.ID, body.FirstName, body.LastName); err != nil {
+		if err := profile.UpdateProfile(body.ID, body.FirstName, body.LastName); err != nil {
 			writeProfileAwareError(w, "update profile", err)
 			return
 		}
-		profiles, err := listProfiles()
+		profiles, err := profile.ListProfiles()
 		if err != nil {
 			http.Error(w, "profile updated but failed to reload: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -129,7 +133,7 @@ func profilesHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "id query parameter is required", http.StatusBadRequest)
 			return
 		}
-		if err := deleteProfile(id); err != nil {
+		if err := profile.DeleteProfile(id); err != nil {
 			http.Error(w, "failed to delete profile: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -156,7 +160,7 @@ func profileLinksHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "profileId query parameter is required", http.StatusBadRequest)
 			return
 		}
-		profiles, err := listProfiles()
+		profiles, err := profile.ListProfiles()
 		if err != nil {
 			http.Error(w, "failed to load external links: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -179,7 +183,7 @@ func profileLinksHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "profileId is required", http.StatusBadRequest)
 			return
 		}
-		if err := upsertProfileExternalLink(body.ProfileID, body.Platform, body.URL); err != nil {
+		if err := profile.UpsertProfileExternalLink(body.ProfileID, body.Platform, body.URL); err != nil {
 			writeProfileAwareError(w, "add external link", err)
 			return
 		}
@@ -196,7 +200,7 @@ func profileLinksHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "platform query parameter is required", http.StatusBadRequest)
 			return
 		}
-		if err := removeProfileExternalLink(profileID, platform); err != nil {
+		if err := profile.RemoveProfileExternalLink(profileID, platform); err != nil {
 			writeProfileAwareError(w, "remove external link", err)
 			return
 		}
@@ -243,7 +247,7 @@ func personasHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		id, err := persona.CreatePersona(body.ProfileID, body.Name, body.Description)
 		if err != nil {
-			if errors.Is(err, persona.ErrUnknownProfile) {
+			if errors.Is(err, profile.ErrUnknownProfile) {
 				http.Error(w, "unknown profile id", http.StatusBadRequest)
 				return
 			}
@@ -620,7 +624,7 @@ func jobMatchHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "profileId is required when starting a match", http.StatusBadRequest)
 			return
 		}
-		if err := startJobMatch(body.JobID, body.ProfileID, body.ConversationID); err != nil {
+		if err := jobs.StartJobMatch(body.JobID, body.ProfileID, body.ConversationID); err != nil {
 			if errors.Is(err, jobs.ErrUnknownJob) {
 				http.Error(w, "unknown job id", http.StatusNotFound)
 				return
@@ -629,7 +633,7 @@ func jobMatchHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case "failed":
-		if err := updateJobMatchStatus(body.JobID, body.Status, body.ErrorText); err != nil {
+		if err := jobs.UpdateJobMatchStatus(body.JobID, body.Status, body.ErrorText); err != nil {
 			if errors.Is(err, jobs.ErrUnknownJob) {
 				http.Error(w, "unknown job id", http.StatusNotFound)
 				return
@@ -757,12 +761,12 @@ type recruiterUpdateRequest struct {
 func recruitersHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		recruiters, err := listRecruiters(r.URL.Query().Get("companyId"))
+		recruiterList, err := recruiters.ListRecruiters(r.URL.Query().Get("companyId"))
 		if err != nil {
 			http.Error(w, "failed to list recruiters: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		db.WriteJSON(w, map[string]any{"recruiters": recruiters})
+		db.WriteJSON(w, map[string]any{"recruiters": recruiterList})
 
 	case http.MethodPost:
 		var body recruiterRequest
@@ -770,17 +774,17 @@ func recruitersHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "companyId is required", http.StatusBadRequest)
 			return
 		}
-		id, err := createRecruiter(body.CompanyID, body.FirstName, body.LastName, body.Email)
+		id, err := recruiters.CreateRecruiter(body.CompanyID, body.FirstName, body.LastName, body.Email)
 		if err != nil {
 			companies.WriteCompanyAwareError(w, "create recruiter", err)
 			return
 		}
-		recruiters, err := listRecruiters("")
+		recruiterList, err := recruiters.ListRecruiters("")
 		if err != nil {
 			http.Error(w, "recruiter created but failed to reload: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		db.WriteJSON(w, map[string]any{"id": id, "recruiters": recruiters})
+		db.WriteJSON(w, map[string]any{"id": id, "recruiters": recruiterList})
 
 	case http.MethodPut:
 		var body recruiterUpdateRequest
@@ -788,16 +792,16 @@ func recruitersHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "id is required", http.StatusBadRequest)
 			return
 		}
-		if err := updateRecruiter(body.ID, body.FirstName, body.LastName, body.Email); err != nil {
+		if err := recruiters.UpdateRecruiter(body.ID, body.FirstName, body.LastName, body.Email); err != nil {
 			writeRecruiterAwareError(w, "update recruiter", err)
 			return
 		}
-		recruiters, err := listRecruiters("")
+		recruiterList, err := recruiters.ListRecruiters("")
 		if err != nil {
 			http.Error(w, "recruiter updated but failed to reload: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		db.WriteJSON(w, map[string]any{"recruiters": recruiters})
+		db.WriteJSON(w, map[string]any{"recruiters": recruiterList})
 
 	case http.MethodDelete:
 		id := r.URL.Query().Get("id")
@@ -805,7 +809,7 @@ func recruitersHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "id query parameter is required", http.StatusBadRequest)
 			return
 		}
-		if err := deleteRecruiter(id); err != nil {
+		if err := recruiters.DeleteRecruiter(id); err != nil {
 			http.Error(w, "failed to delete recruiter: "+err.Error(), http.StatusInternalServerError)
 			return
 		}

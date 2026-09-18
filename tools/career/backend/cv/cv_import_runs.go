@@ -6,7 +6,7 @@
 // (parseProposal.ts's own CVImportProposal, insertProposal.ts's own
 // InsertResult) — so a schema change on either shape needs no backend
 // change here. See plan/ai/media/step-05-career-history.md.
-package main
+package cv
 
 import (
 	"database/sql"

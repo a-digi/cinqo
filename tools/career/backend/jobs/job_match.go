@@ -17,7 +17,7 @@
 //     MCP tool — the ONLY place a score is ever written.
 //
 // See plan/ai/tools/career/step-XX-job-match.md.
-package main
+package jobs
 
 import (
 	"context"
@@ -27,7 +27,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"career-tool-backend/db"
-	"career-tool-backend/jobs"
 	"career-tool-backend/persona"
 )
 
@@ -40,8 +39,8 @@ import (
 // ('ai'/NULL) — job_matches.kind's own doc comment (db.go) explains
 // why those columns still exist even though this is the only
 // match-producing mechanism left.
-func startJobMatch(jobId, profileId, conversationId string) error {
-	if err := jobs.RequireJobExists(jobId); err != nil {
+func StartJobMatch(jobId, profileId, conversationId string) error {
+	if err := RequireJobExists(jobId); err != nil {
 		return err
 	}
 	_, err := db.JobsDB.Exec(
@@ -75,8 +74,8 @@ func startJobMatch(jobId, profileId, conversationId string) error {
 // FAILURE path (a turn that errors, or reaches its own conversation-
 // level failure, without the AI ever having called save_job_match at
 // all).
-func updateJobMatchStatus(jobId, status string, errText *string) error {
-	if err := jobs.RequireJobExists(jobId); err != nil {
+func UpdateJobMatchStatus(jobId, status string, errText *string) error {
+	if err := RequireJobExists(jobId); err != nil {
 		return err
 	}
 	_, err := db.JobsDB.Exec(
@@ -109,7 +108,7 @@ var errInvalidMatchScore = errors.New("score must be an integer between 0 and 10
 // any of those. See job_matches.kind's own doc comment (db.go) for why
 // the columns themselves still exist.
 func saveJobMatchResult(jobId, profileId, personaId string, score int, matchedSkills []string) error {
-	if err := jobs.RequireJobExists(jobId); err != nil {
+	if err := RequireJobExists(jobId); err != nil {
 		return err
 	}
 	if score < 0 || score > 100 {
@@ -192,7 +191,7 @@ func orNull(s *string) any {
 // process started is definitely orphaned. Called once at boot,
 // alongside reconcileOrphanedCrawlRuns. See
 // plan/ai/tools/career/step-XX-job-match.md.
-func reconcileOrphanedJobMatches() error {
+func ReconcileOrphanedJobMatches() error {
 	_, err := db.JobsDB.Exec(
 		`UPDATE job_matches SET status = 'failed', error = 'Interrupted by a server restart', conversation_id = NULL, updated_at = datetime('now')
 		 WHERE status = 'matching'`,
@@ -210,7 +209,7 @@ type saveJobMatchArgs struct {
 	MatchedSkills []string `json:"matchedSkills" jsonschema:"the specific skills (from this persona's own get_persona_details skills list) that explain this score — MUST be exact, verbatim entries from that list, never paraphrased, reworded, or invented; an empty array is fine if no skill overlap explains the score"`
 }
 
-func registerSaveJobMatch(server *mcp.Server) {
+func RegisterSaveJobMatch(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "save_job_match",
 		Description: "Record the result of assessing how well a job matches a career profile — call this ONCE, " +
@@ -231,7 +230,7 @@ func registerSaveJobMatch(server *mcp.Server) {
 			return db.ErrResult("personaId is required"), nil, nil
 		}
 		if err := saveJobMatchResult(args.JobID, args.ProfileID, args.PersonaID, args.Score, args.MatchedSkills); err != nil {
-			if errors.Is(err, jobs.ErrUnknownJob) {
+			if errors.Is(err, ErrUnknownJob) {
 				return db.ErrResult(fmt.Sprintf("unknown job id %q", args.JobID)), nil, nil
 			}
 			if errors.Is(err, errInvalidMatchScore) || errors.Is(err, errInvalidMatchSkill) {
@@ -247,14 +246,14 @@ type getJobArgs struct {
 	JobID string `json:"jobId" jsonschema:"the job's own id, from list_jobs/search_jobs"`
 }
 
-// registerGetJob adds get_job — a precise, single-job counterpart to
+// RegisterGetJob adds get_job — a precise, single-job counterpart to
 // list_jobs/search_jobs, needed by the job-matching workflow to
 // re-check a job's own description after triggering a detail crawl
 // mid-conversation (crawl_urls_with_subagents runs in the background;
 // this is how the AI later confirms whether it actually produced a
-// description). Reuses getJobByID (jobs.go) — the exact function the
+// description). Reuses GetJobByID (jobs.go) — the exact function the
 // Jobs page's own Eye-icon details view already calls over HTTP.
-func registerGetJob(server *mcp.Server) {
+func RegisterGetJob(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "get_job",
 		Description: "Read one job posting by id — every field save_job/save_portal_job/list_jobs/search_jobs expose, in one precise call. Fails if jobId is unknown.",
@@ -262,9 +261,9 @@ func registerGetJob(server *mcp.Server) {
 		if args.JobID == "" {
 			return db.ErrResult("jobId is required"), nil, nil
 		}
-		j, err := jobs.GetJobByID(args.JobID)
+		j, err := GetJobByID(args.JobID)
 		if err != nil {
-			if errors.Is(err, jobs.ErrUnknownJob) {
+			if errors.Is(err, ErrUnknownJob) {
 				return db.ErrResult(fmt.Sprintf("unknown job id %q", args.JobID)), nil, nil
 			}
 			return db.ErrResult(fmt.Sprintf("failed to load job: %v", err)), nil, nil

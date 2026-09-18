@@ -1,9 +1,9 @@
 // profile.go is the AI-facing (and HTTP-mirrored) surface over
 // career.db's own profiles/profile_external_links tables — the actual
 // job seeker using this tool. A Profile owns one-to-many Personas
-// (persona.go); every Persona belongs to exactly one Profile. See
+// (persona package); every Persona belongs to exactly one Profile. See
 // plan/ai/tools/career/step-10-job-seeker-profile.md.
-package main
+package profile
 
 import (
 	"context"
@@ -17,18 +17,23 @@ import (
 	"career-tool-backend/db"
 )
 
-// errUnknownProfile is returned by requireProfileExists — the literal
+// ErrUnknownProfile is returned by RequireProfileExists — the literal
 // enforcement of "a Persona can be linked only to 1 [existing]
 // profile," the same "forced to be mapped, never implicit" pattern
 // step 8 already established one level down for Persona itself.
-var errUnknownProfile = errors.New("unknown profile id")
+// Exported so both http.go (package main) and the persona package can
+// map it to a real error.
+var ErrUnknownProfile = errors.New("unknown profile id")
 
-func requireProfileExists(id string) error {
+// RequireProfileExists is the shared guard every profile-scoped
+// operation calls before doing anything else — including the persona
+// package's own CreatePersona, which requires an existing Profile.
+func RequireProfileExists(id string) error {
 	var exists int
 	err := db.CareerDB.QueryRow(`SELECT 1 FROM profiles WHERE id = ?`, id).Scan(&exists)
 	switch {
 	case err == sql.ErrNoRows:
-		return errUnknownProfile
+		return ErrUnknownProfile
 	case err != nil:
 		return err
 	}
@@ -49,7 +54,7 @@ type profile struct {
 	ExternalLinks []profileExternalLink `json:"externalLinks"`
 }
 
-func createProfile(firstName, lastName string) (string, error) {
+func CreateProfile(firstName, lastName string) (string, error) {
 	id := uuid.NewString()
 	_, err := db.CareerDB.Exec(
 		`INSERT INTO profiles (id, first_name, last_name, created_at) VALUES (?, ?, ?, datetime('now'))`,
@@ -61,10 +66,10 @@ func createProfile(firstName, lastName string) (string, error) {
 	return id, nil
 }
 
-// listProfiles returns every profile with its own external links
+// ListProfiles returns every profile with its own external links
 // nested — small expected count per profile, same "list is enough, no
 // standalone getter" reasoning step 8 used for Persona.
-func listProfiles() ([]profile, error) {
+func ListProfiles() ([]profile, error) {
 	rows, err := db.CareerDB.Query(
 		`SELECT id, first_name, last_name, created_at, updated_at FROM profiles ORDER BY created_at ASC`,
 	)
@@ -116,8 +121,8 @@ func listProfiles() ([]profile, error) {
 	return profiles, nil
 }
 
-func updateProfile(id string, firstName, lastName *string) error {
-	if err := requireProfileExists(id); err != nil {
+func UpdateProfile(id string, firstName, lastName *string) error {
+	if err := RequireProfileExists(id); err != nil {
 		return err
 	}
 	if firstName == nil && lastName == nil {
@@ -141,24 +146,24 @@ func updateProfile(id string, firstName, lastName *string) error {
 	return err
 }
 
-// deleteProfile cascades (ON DELETE CASCADE, db.go's own schema) to
+// DeleteProfile cascades (ON DELETE CASCADE, db.go's own schema) to
 // every Persona that profile owns, and — transitively, via step 8's
 // own cascades — every one of those Personas' own Persona
 // Details/Skills/Experience rows. The largest blast radius this tool
 // has: a single call can delete an entire job seeker's whole
 // footprint. A benign no-op if id is unknown, matching every other
 // delete-by-id operation in this tool.
-func deleteProfile(id string) error {
+func DeleteProfile(id string) error {
 	_, err := db.CareerDB.Exec(`DELETE FROM profiles WHERE id = ?`, id)
 	return err
 }
 
-// upsertProfileExternalLink is an upsert, not a no-op-on-conflict like
-// addCareerSkill — a URL is correction-prone content, so re-adding an
-// already-present platform updates it in place rather than being
-// silently ignored.
-func upsertProfileExternalLink(profileId, platform, url string) error {
-	if err := requireProfileExists(profileId); err != nil {
+// UpsertProfileExternalLink is an upsert, not a no-op-on-conflict like
+// AddCareerSkill (persona package) — a URL is correction-prone content,
+// so re-adding an already-present platform updates it in place rather
+// than being silently ignored.
+func UpsertProfileExternalLink(profileId, platform, url string) error {
+	if err := RequireProfileExists(profileId); err != nil {
 		return err
 	}
 	_, err := db.CareerDB.Exec(
@@ -169,8 +174,8 @@ func upsertProfileExternalLink(profileId, platform, url string) error {
 	return err
 }
 
-func removeProfileExternalLink(profileId, platform string) error {
-	if err := requireProfileExists(profileId); err != nil {
+func RemoveProfileExternalLink(profileId, platform string) error {
+	if err := RequireProfileExists(profileId); err != nil {
 		return err
 	}
 	_, err := db.CareerDB.Exec(`DELETE FROM profile_external_links WHERE profile_id = ? AND platform = ?`, profileId, platform)
@@ -184,12 +189,12 @@ type createProfileArgs struct {
 	LastName  string `json:"lastName" jsonschema:"the job seeker's own last name"`
 }
 
-func registerCreateProfile(server *mcp.Server) {
+func RegisterCreateProfile(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "create_profile",
 		Description: "Create a new profile — represents one job seeker using this tool. A profile owns one or more personas; every persona must belong to an existing profile.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args createProfileArgs) (*mcp.CallToolResult, any, error) {
-		id, err := createProfile(args.FirstName, args.LastName)
+		id, err := CreateProfile(args.FirstName, args.LastName)
 		if err != nil {
 			return db.ErrResult(fmt.Sprintf("failed to create profile: %v", err)), nil, nil
 		}
@@ -199,12 +204,12 @@ func registerCreateProfile(server *mcp.Server) {
 
 type listProfilesArgs struct{}
 
-func registerListProfiles(server *mcp.Server) {
+func RegisterListProfiles(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_profiles",
 		Description: "List every profile (job seeker) using this tool, including each one's own external platform links.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args listProfilesArgs) (*mcp.CallToolResult, any, error) {
-		profiles, err := listProfiles()
+		profiles, err := ListProfiles()
 		if err != nil {
 			return db.ErrResult(fmt.Sprintf("failed to list profiles: %v", err)), nil, nil
 		}
@@ -218,7 +223,7 @@ type updateProfileArgs struct {
 	LastName  *string `json:"lastName,omitempty" jsonschema:"the job seeker's own last name"`
 }
 
-func registerUpdateProfile(server *mcp.Server) {
+func RegisterUpdateProfile(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "update_profile",
 		Description: "Update a profile's first/last name. Only the fields provided are changed. Fails if id is unknown.",
@@ -226,8 +231,8 @@ func registerUpdateProfile(server *mcp.Server) {
 		if args.ID == "" {
 			return db.ErrResult("id is required"), nil, nil
 		}
-		if err := updateProfile(args.ID, args.FirstName, args.LastName); err != nil {
-			if errors.Is(err, errUnknownProfile) {
+		if err := UpdateProfile(args.ID, args.FirstName, args.LastName); err != nil {
+			if errors.Is(err, ErrUnknownProfile) {
 				return db.ErrResult(fmt.Sprintf("unknown profile id %q", args.ID)), nil, nil
 			}
 			return db.ErrResult(fmt.Sprintf("failed to update profile: %v", err)), nil, nil
@@ -240,7 +245,7 @@ type deleteProfileArgs struct {
 	ID string `json:"id" jsonschema:"the profile's own id — deleting it also deletes every persona it owns, and everything those personas own (persona details, skills, experience)"`
 }
 
-func registerDeleteProfile(server *mcp.Server) {
+func RegisterDeleteProfile(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "delete_profile",
 		Description: "Delete a profile. This permanently deletes every persona this profile owns, and everything those personas own in turn (persona details, skills, experience) — the largest deletion this tool can perform in one call. There is no separate confirmation step.",
@@ -248,7 +253,7 @@ func registerDeleteProfile(server *mcp.Server) {
 		if args.ID == "" {
 			return db.ErrResult("id is required"), nil, nil
 		}
-		if err := deleteProfile(args.ID); err != nil {
+		if err := DeleteProfile(args.ID); err != nil {
 			return db.ErrResult(fmt.Sprintf("failed to delete profile: %v", err)), nil, nil
 		}
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "deleted"}}}, nil, nil
@@ -261,7 +266,7 @@ type addProfileExternalLinkArgs struct {
 	URL       string `json:"url" jsonschema:"the profile's own URL on that platform"`
 }
 
-func registerAddProfileExternalLink(server *mcp.Server) {
+func RegisterAddProfileExternalLink(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "add_profile_external_link",
 		Description: "Add or update an external platform link (e.g. LinkedIn) on a profile. Adding the same platform again updates its URL rather than duplicating it.",
@@ -272,8 +277,8 @@ func registerAddProfileExternalLink(server *mcp.Server) {
 		if args.Platform == "" || args.URL == "" {
 			return db.ErrResult("platform and url are both required"), nil, nil
 		}
-		if err := upsertProfileExternalLink(args.ProfileID, args.Platform, args.URL); err != nil {
-			if errors.Is(err, errUnknownProfile) {
+		if err := UpsertProfileExternalLink(args.ProfileID, args.Platform, args.URL); err != nil {
+			if errors.Is(err, ErrUnknownProfile) {
 				return db.ErrResult(fmt.Sprintf("unknown profile id %q", args.ProfileID)), nil, nil
 			}
 			return db.ErrResult(fmt.Sprintf("failed to add external link: %v", err)), nil, nil
@@ -287,7 +292,7 @@ type removeProfileExternalLinkArgs struct {
 	Platform  string `json:"platform" jsonschema:"the platform name to remove"`
 }
 
-func registerRemoveProfileExternalLink(server *mcp.Server) {
+func RegisterRemoveProfileExternalLink(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "remove_profile_external_link",
 		Description: "Remove an external platform link from a profile.",
@@ -298,8 +303,8 @@ func registerRemoveProfileExternalLink(server *mcp.Server) {
 		if args.Platform == "" {
 			return db.ErrResult("platform is required"), nil, nil
 		}
-		if err := removeProfileExternalLink(args.ProfileID, args.Platform); err != nil {
-			if errors.Is(err, errUnknownProfile) {
+		if err := RemoveProfileExternalLink(args.ProfileID, args.Platform); err != nil {
+			if errors.Is(err, ErrUnknownProfile) {
 				return db.ErrResult(fmt.Sprintf("unknown profile id %q", args.ProfileID)), nil, nil
 			}
 			return db.ErrResult(fmt.Sprintf("failed to remove external link: %v", err)), nil, nil

@@ -9,7 +9,7 @@
 // itself against a route the reverse proxy had to specially exempt
 // from its normal auth check) — that mechanism is gone; see
 // plan/ai/media/step-02-career-media-migration.md.
-package main
+package cv
 
 import (
 	"bytes"
@@ -57,7 +57,7 @@ type mediaUploadEnvelope struct {
 	} `json:"message"`
 }
 
-// uploadCVHandler handles POST cv-import/upload — multipart, single
+// UploadCVHandler handles POST cv-import/upload — multipart, single
 // field "cv". Forwards the file to the core Media feature
 // (POST {CORE_API_URL}/api/v1/media/upload, toolSlug="career"),
 // re-presenting the ORIGINAL caller's own Authorization/Cookie header
@@ -66,7 +66,7 @@ type mediaUploadEnvelope struct {
 // default), and Media's own authorization check needs to see the same
 // real, currently-authenticated user's scopes — this handler never
 // invents its own service-to-service credential for that call.
-func uploadCVHandler(w http.ResponseWriter, r *http.Request) {
+func UploadCVHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -176,8 +176,8 @@ type updateCVImportRunRequest struct {
 	SaveSummary json.RawMessage `json:"saveSummary"`
 }
 
-// cvImportRunsHandler handles GET/POST/PUT/DELETE cv-import/runs.
-func cvImportRunsHandler(w http.ResponseWriter, r *http.Request) {
+// CVImportRunsHandler handles GET/POST/PUT/DELETE cv-import/runs.
+func CVImportRunsHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		runs, err := listCVImportRuns()
