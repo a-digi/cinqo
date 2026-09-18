@@ -108,22 +108,16 @@ export function JobDetailsPage() {
             <div className="w-full shrink-0 rounded-md border border-gray-200 bg-white p-5 shadow-sm md:w-64">
               <h2 className="mb-3 text-sm font-semibold text-gray-900">Job Match</h2>
               <MatchScoreBar score={job.matchScore} skills={job.matchedSkills} jobTitle={job.title} />
-              {job.matchedSkills.length > 0 ? (
+              {/* Only literal (exact-wording) matches are shown — same reasoning as MatchScoreBar's own filter. */}
+              {job.matchedSkills.filter((skill) => skill.kind === 'literal').length > 0 ? (
                 <div className="mt-4 flex flex-wrap gap-1.5">
-                  {job.matchedSkills.map((skill) => (
-                    <span
-                      key={skill.skill}
-                      title={skill.kind === 'semantic' ? 'Matched by meaning, not exact wording' : undefined}
-                      className={
-                        skill.kind === 'semantic'
-                          ? 'rounded-full border border-dashed border-gray-300 bg-gray-50 px-2.5 py-1 text-xs text-gray-600'
-                          : 'rounded-full border border-gray-200 bg-gray-100 px-2.5 py-1 text-xs text-gray-700'
-                      }
-                    >
-                      {skill.kind === 'semantic' ? '~ ' : ''}
-                      {skill.skill}
-                    </span>
-                  ))}
+                  {job.matchedSkills
+                    .filter((skill) => skill.kind === 'literal')
+                    .map((skill) => (
+                      <span key={skill.skill} className="rounded-full border border-gray-200 bg-gray-100 px-2.5 py-1 text-xs text-gray-700">
+                        {skill.skill}
+                      </span>
+                    ))}
                 </div>
               ) : (
                 <p className="mt-4 text-xs text-gray-400">No specific skills matched.</p>

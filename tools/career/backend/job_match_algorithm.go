@@ -85,7 +85,7 @@ const (
 	jobMatchDescriptionWeight  = 0.1
 	jobMatchSemanticWeight     = 0.1
 	jobMatchSemanticThreshold  = 0.1
-	jobMatchScale              = 4.0
+	jobMatchScale              = 12.0
 )
 
 // skillMatch is one matched skill plus HOW it was matched — persisted
