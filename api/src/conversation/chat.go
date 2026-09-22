@@ -513,7 +513,7 @@ func invokeToolCall(ctx context.Context, mainDB *sql.DB, callerScopes []string, 
 		return "tool unavailable", nil
 	}
 
-	envVars, err := tool_manager.ToolEnvVars(dataDir, tool.Slug, corePort)
+	envVars, err := tool_manager.ToolEnvVars(dataDir, tool.Slug, corePort, tool.ServiceToken)
 	if err != nil {
 		return fmt.Sprintf("tool invocation failed: %v", err), nil
 	}

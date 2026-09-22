@@ -34,9 +34,15 @@
 package jobs
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
+	"net/http"
+	"os"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -133,6 +139,67 @@ func ReconcileOrphanedCvGenerations() error {
 	return err
 }
 
+// publishCvGeneratedEvent is the Domain Events plan's own step 6
+// dogfood integration
+// (plan/ai/domain-events/step-06-end-to-end-dogfood.md) — the smallest
+// real proof that a TOOL-originated event reaches a core-native
+// listener, complementing step 1's own core-originated dogfood
+// (cinqo.tool.installed). Publishing this event is not part of
+// save_cv_pdf's own contract — the CV is already fully recorded by
+// SaveGeneratedCvPdf by the time this runs — so any failure here is
+// logged and otherwise ignored, never turning an already-successful
+// save_cv_pdf call into a reported failure.
+//
+// Runs synchronously, not as a fire-and-forget goroutine: this MCP
+// tool call executes inside a one-shot "--mcp" subprocess
+// (tool_mcp.Invoke's own "one spawn per call" model) that exits
+// shortly after this handler returns, so a detached goroutine here
+// could easily never get to finish its own HTTP call. Bounded by a
+// short timeout instead, so an unreachable core never hangs
+// save_cv_pdf's own response for long.
+func publishCvGeneratedEvent(jobId, mediaFileId string) {
+	coreURL := os.Getenv("CORE_API_URL")
+	token := os.Getenv("TOOL_SERVICE_TOKEN")
+	if coreURL == "" || token == "" {
+		return
+	}
+
+	payload, err := json.Marshal(map[string]string{"job_id": jobId, "media_file_id": mediaFileId})
+	if err != nil {
+		log.Printf("career.cv.generated: failed to marshal payload: %v", err)
+		return
+	}
+	body, err := json.Marshal(map[string]any{
+		"topic":   "career.cv.generated",
+		"payload": json.RawMessage(payload),
+	})
+	if err != nil {
+		log.Printf("career.cv.generated: failed to marshal request body: %v", err)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, coreURL+"/api/v1/events/publish", bytes.NewReader(body))
+	if err != nil {
+		log.Printf("career.cv.generated: failed to build request: %v", err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "ToolService "+token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		log.Printf("career.cv.generated: publish request failed: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		log.Printf("career.cv.generated: publish responded with status %d", resp.StatusCode)
+	}
+}
+
 // --- MCP registration ---
 
 type saveCvPdfArgs struct {
@@ -172,6 +239,7 @@ func RegisterSaveCvPdf(server *mcp.Server) {
 			}
 			return db.ErrResult(fmt.Sprintf("failed to save CV pdf: %v", err)), nil, nil
 		}
+		publishCvGeneratedEvent(args.JobID, args.PdfResource)
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "saved"}}}, nil, nil
 	})
 }

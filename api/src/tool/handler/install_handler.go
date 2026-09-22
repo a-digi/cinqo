@@ -3,7 +3,9 @@ package handler
 import (
 	"archive/zip"
 	"bytes"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -16,6 +18,7 @@ import (
 	"github.com/a-digi/coco-server/server/request"
 	"github.com/a-digi/coco-server/server/response"
 
+	"github.com/a-digi/cinqo/src/domainevent"
 	tool_entity "github.com/a-digi/cinqo/src/tool/entity"
 	"github.com/a-digi/cinqo/src/tool/manager"
 	"github.com/a-digi/cinqo/src/tool/manifest"
@@ -34,7 +37,7 @@ import (
 // whether the tool's own HTTP surface is currently enabled — MCP
 // discovery spawns its own separate --mcp-mode process. See
 // plan/ai/tools/pdf-generator/step-04-ai-model-invocation.md.
-func discoverMCPToolsIfDeclared(reqCtx request.RequestContext, db *sql.DB, m manifest.Manifest, installDir, toolID string) {
+func discoverMCPToolsIfDeclared(reqCtx request.RequestContext, db *sql.DB, m manifest.Manifest, installDir, toolID, serviceToken string) {
 	if !m.MCP {
 		return
 	}
@@ -54,7 +57,7 @@ func discoverMCPToolsIfDeclared(reqCtx request.RequestContext, db *sql.DB, m man
 		reqCtx.GetDI().GetLogger().Warning("tool %q declared mcp support but its backend port could not be determined: %v", m.Slug, portErr)
 		return
 	}
-	envVars, err := manager.ToolEnvVars(resolvedDataDir(reqCtx), m.Slug, port)
+	envVars, err := manager.ToolEnvVars(resolvedDataDir(reqCtx), m.Slug, port, serviceToken)
 	if err != nil {
 		reqCtx.GetDI().GetLogger().Warning("tool %q declared mcp support but its env vars could not be resolved: %v", m.Slug, err)
 		return
@@ -106,6 +109,66 @@ func discoverMCPToolsIfDeclared(reqCtx request.RequestContext, db *sql.DB, m man
 	if err := tool_persistent.NewToolMCPToolPersistentRepo(db).ReplaceAll(toolID, filtered); err != nil {
 		reqCtx.GetDI().GetLogger().Warning("tool %q mcp discovery succeeded but caching its tools failed: %v", m.Slug, err)
 	}
+}
+
+// discoverEventListenersIfDeclared is a best-effort, non-fatal hook run
+// after a tool's install/update already succeeded — structurally
+// identical to discoverMCPToolsIfDeclared above, for the same reason: a
+// broken event_listeners declaration must never fail an otherwise-
+// successful install. Unlike MCP discovery, this needs no live spawn —
+// the manifest's own declared list IS the cached list, verbatim. See
+// plan/ai/domain-events/step-03-tool-listener-manifest-and-cache.md.
+func discoverEventListenersIfDeclared(reqCtx request.RequestContext, db *sql.DB, m manifest.Manifest, toolID string) {
+	if len(m.EventListeners) == 0 {
+		return
+	}
+	listeners := make([]tool_entity.ToolEventListener, 0, len(m.EventListeners))
+	for _, el := range m.EventListeners {
+		listeners = append(listeners, tool_entity.ToolEventListener{
+			ToolID:     toolID,
+			Topic:      el.Topic,
+			PathSuffix: el.PathSuffix,
+		})
+	}
+	if err := tool_persistent.NewToolEventListenerPersistentRepo(db).ReplaceAll(toolID, listeners); err != nil {
+		reqCtx.GetDI().GetLogger().Warning("tool %q declared event_listeners but caching them failed: %v", m.Slug, err)
+	}
+}
+
+// publishToolInstalledEvent is the Domain Events engine's own dogfood
+// integration (plan/ai/domain-events/step-01-core-event-bus.md): the
+// smallest possible real proof that domainevent.Publish/Subscribe work
+// end to end, before any later step builds on them. Deliberately fires
+// the same "cinqo.tool.installed" topic on BOTH the fresh-install and
+// the update code path — mirroring discoverMCPToolsIfDeclared's own
+// "run after either path already succeeded" placement — rather than a
+// separate "cinqo.tool.updated" topic, since this step's only goal is
+// proving the mechanism works, not designing a real event taxonomy.
+// Best-effort: Publish's own error (payload marshal failure only, in
+// this step) is logged, never fails the surrounding install/update
+// response.
+func publishToolInstalledEvent(reqCtx request.RequestContext, toolID, slug, version string) {
+	_, err := domainevent.Publish(reqCtx.GetRequest().Context(), "cinqo.tool.installed", map[string]any{
+		"tool_id": toolID,
+		"slug":    slug,
+		"version": version,
+	})
+	if err != nil {
+		reqCtx.GetDI().GetLogger().Warning("tool %q installed but publishing cinqo.tool.installed failed: %v", slug, err)
+	}
+}
+
+// generateServiceToken mints a tool's own persistent service_token — 32
+// random bytes, hex-encoded (64 characters). Generated once, at first
+// successful install, or as a one-time backfill on update for a tool
+// installed before this column existed; never regenerated otherwise.
+// See plan/ai/domain-events/step-05-tool-publish-endpoint.md.
+func generateServiceToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("generate service token: %w", err)
+	}
+	return hex.EncodeToString(b), nil
 }
 
 // maxUploadedPackageBytes caps the raw upload before the multipart form
@@ -245,6 +308,13 @@ func InstallHandler(reqCtx request.RequestContext) {
 		tool.MinAppVersion = m.MinAppVersion
 		tool.MaxAppVersion = m.MaxAppVersion
 
+		serviceToken, err := generateServiceToken()
+		if err != nil {
+			response.ErrorResponse(w, http.StatusInternalServerError, "failed to generate tool service token")
+			return
+		}
+		tool.ServiceToken = serviceToken
+
 		if err := os.Rename(stagingDir, finalDir); err != nil {
 			response.ErrorResponse(w, http.StatusInternalServerError, "failed to install package: "+err.Error())
 			return
@@ -283,7 +353,9 @@ func InstallHandler(reqCtx request.RequestContext) {
 			reqCtx.GetDI().GetLogger().Warning("tool %q installed but could not determine backend port to start it: %v", tool.Slug, portErr)
 		}
 
-		discoverMCPToolsIfDeclared(reqCtx, db, m, finalDir, tool.ID)
+		discoverMCPToolsIfDeclared(reqCtx, db, m, finalDir, tool.ID, tool.ServiceToken)
+		discoverEventListenersIfDeclared(reqCtx, db, m, tool.ID)
+		publishToolInstalledEvent(reqCtx, tool.ID, tool.Slug, tool.Version)
 
 		created, err := queryRepo.FindByID(tool.ID)
 		if err != nil {
@@ -349,6 +421,24 @@ func InstallHandler(reqCtx request.RequestContext) {
 	updated.MinAppVersion = m.MinAppVersion
 	updated.MaxAppVersion = m.MaxAppVersion
 
+	// Preserve the tool's own already-issued service_token across an
+	// update (never silently invalidated) — but backfill it if this
+	// tool was installed before this token existed at all (existing
+	// rows default to '', per the migration). Every tool ends up with
+	// one eventually, regardless of whether it actually uses
+	// event_listeners/publishing. See
+	// plan/ai/domain-events/step-05-tool-publish-endpoint.md.
+	if existing.ServiceToken != "" {
+		updated.ServiceToken = existing.ServiceToken
+	} else {
+		serviceToken, err := generateServiceToken()
+		if err != nil {
+			response.ErrorResponse(w, http.StatusInternalServerError, "failed to generate tool service token")
+			return
+		}
+		updated.ServiceToken = serviceToken
+	}
+
 	if err := persistentRepo.UpdateVersion(updated, scopes, routes, required); err != nil {
 		response.ErrorResponse(w, http.StatusInternalServerError, "failed to record updated tool: "+err.Error())
 		return
@@ -373,7 +463,9 @@ func InstallHandler(reqCtx request.RequestContext) {
 	// Unconditional — not gated on updated.Enabled, unlike the restart
 	// above: MCP discovery spawns its own independent --mcp-mode
 	// process regardless of the HTTP surface's enabled state.
-	discoverMCPToolsIfDeclared(reqCtx, db, m, finalDir, updated.ID)
+	discoverMCPToolsIfDeclared(reqCtx, db, m, finalDir, updated.ID, updated.ServiceToken)
+	discoverEventListenersIfDeclared(reqCtx, db, m, updated.ID)
+	publishToolInstalledEvent(reqCtx, updated.ID, updated.Slug, updated.Version)
 
 	reloaded, err := queryRepo.FindByID(updated.ID)
 	if err != nil {

@@ -15,6 +15,7 @@ import (
 	auth_service "github.com/a-digi/cinqo/src/auth/service"
 	"github.com/a-digi/cinqo/src/conversation"
 	conversation_handler "github.com/a-digi/cinqo/src/conversation/handler"
+	domainevent_handler "github.com/a-digi/cinqo/src/domainevent/handler"
 	"github.com/a-digi/cinqo/src/health"
 	media_handler "github.com/a-digi/cinqo/src/media/handler"
 	"github.com/a-digi/cinqo/src/ping"
@@ -109,6 +110,8 @@ func Init(ctx serverdi.Context) {
 		"MediaList":     local_routing.HandlerFunc(media_handler.ListHandler),
 		"MediaDelete":   local_routing.HandlerFunc(media_handler.DeleteHandler),
 		"MediaDownload": local_routing.HandlerFunc(media_handler.DownloadHandler),
+
+		"DomainEventPublish": local_routing.HandlerFunc(domainevent_handler.PublishHandler),
 	}
 
 	var inner *lift_security.ScopeSecurityLayer

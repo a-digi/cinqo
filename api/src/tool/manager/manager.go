@@ -101,8 +101,8 @@ func StartAllEnabled(db *sql.DB, dataDir string, corePort int, warn func(format 
 }
 
 // ToolEnvVars returns the fixed TOOL_DB_DIR/TOOL_UPLOADS_DIR/
-// TOOL_TMP_DIR/TOOL_LOGS_DIR/TOOL_CACHE_DIR/CORE_API_URL env vars every
-// tool subprocess gets —
+// TOOL_TMP_DIR/TOOL_LOGS_DIR/TOOL_CACHE_DIR/CORE_API_URL/
+// TOOL_SERVICE_TOKEN env vars every tool subprocess gets —
 // shared by this package's own long-running HTTP-mode spawn and
 // tool/mcp's separate on-demand --mcp-mode spawn (discovery/
 // invocation), so both give a tool's own code the exact same,
@@ -123,7 +123,14 @@ func StartAllEnabled(db *sql.DB, dataDir string, corePort int, warn func(format 
 // uploads/tmp directories landing somewhere other than the rest of the
 // app's data). See
 // plan/ai/build/app/step-22-data-dir-always-executable-relative.md.
-func ToolEnvVars(dataDir, slug string, corePort int) ([]string, error) {
+//
+// serviceToken is this tool's own persistent tools.service_token
+// (tool_entity.Tool.ServiceToken) — passed through as TOOL_SERVICE_TOKEN
+// so this tool's own backend code can authenticate a call back into
+// core (currently: POST /api/v1/events/publish) without borrowing any
+// end user's own session token. See
+// plan/ai/domain-events/step-05-tool-publish-endpoint.md.
+func ToolEnvVars(dataDir, slug string, corePort int, serviceToken string) ([]string, error) {
 	dbDir, err := filepath.Abs(filepath.Join(dataDir, "db", "tools", slug))
 	if err != nil {
 		return nil, err
@@ -163,6 +170,7 @@ func ToolEnvVars(dataDir, slug string, corePort int) ([]string, error) {
 		"TOOL_LOGS_DIR=" + logsDir,
 		"TOOL_CACHE_DIR=" + cacheDir,
 		fmt.Sprintf("CORE_API_URL=http://127.0.0.1:%d", corePort),
+		"TOOL_SERVICE_TOKEN=" + serviceToken,
 	}, nil
 }
 
@@ -188,7 +196,7 @@ func startProcess(db *sql.DB, dataDir string, t tool_entity.Tool, corePort int) 
 		return err
 	}
 
-	toolEnv, err := ToolEnvVars(dataDir, t.Slug, corePort)
+	toolEnv, err := ToolEnvVars(dataDir, t.Slug, corePort, t.ServiceToken)
 	if err != nil {
 		_ = setStatusAndPID(db, t.ID, "error", 0)
 		return err

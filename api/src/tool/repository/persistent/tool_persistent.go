@@ -31,10 +31,10 @@ func (r *ToolPersistentRepo) InsertFresh(
 
 	if _, err := tx.Exec(
 		`INSERT INTO tools (id, slug, name, version, kind, enabled, status, install_path,
-			backend_executable_relpath, frontend_bundle_relpath, min_app_version, max_app_version, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+			backend_executable_relpath, frontend_bundle_relpath, min_app_version, max_app_version, service_token, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
 		t.ID, t.Slug, t.Name, t.Version, t.Kind, t.Enabled, t.Status, t.InstallPath,
-		t.BackendExecutableRelpath, t.FrontendBundleRelpath, t.MinAppVersion, t.MaxAppVersion,
+		t.BackendExecutableRelpath, t.FrontendBundleRelpath, t.MinAppVersion, t.MaxAppVersion, t.ServiceToken,
 	); err != nil {
 		return err
 	}
@@ -67,11 +67,11 @@ func (r *ToolPersistentRepo) UpdateVersion(
 	if _, err := tx.Exec(
 		`UPDATE tools SET name = ?, version = ?, kind = ?, enabled = ?, status = ?, install_path = ?,
 			backend_executable_relpath = ?, frontend_bundle_relpath = ?, min_app_version = ?, max_app_version = ?,
-			updated_at = CURRENT_TIMESTAMP
+			service_token = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?`,
 		t.Name, t.Version, t.Kind, t.Enabled, t.Status, t.InstallPath,
 		t.BackendExecutableRelpath, t.FrontendBundleRelpath, t.MinAppVersion, t.MaxAppVersion,
-		t.ID,
+		t.ServiceToken, t.ID,
 	); err != nil {
 		return err
 	}
@@ -124,6 +124,9 @@ func (r *ToolPersistentRepo) Delete(id string) error {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM tool_mcp_tools WHERE tool_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM tool_event_listeners WHERE tool_id = ?`, id); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM tools WHERE id = ?`, id); err != nil {

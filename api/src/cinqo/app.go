@@ -23,6 +23,7 @@ import (
 	auth_config "github.com/a-digi/cinqo/src/auth/config"
 	auth_service "github.com/a-digi/cinqo/src/auth/service"
 	"github.com/a-digi/cinqo/src/conversation"
+	"github.com/a-digi/cinqo/src/domainevent"
 	platform_crypto "github.com/a-digi/cinqo/src/platform/crypto"
 	tool_manager "github.com/a-digi/cinqo/src/tool/manager"
 	"github.com/a-digi/cinqo/src/tool/systemtools"
@@ -116,6 +117,32 @@ func Start(opts Options) (srv *http.Server, cfg *server.Config, ctx *di.ContextB
 		return nil, nil, nil, nil, err
 	}
 
+	// Domain Events engine's own wiring, as early as possible once a
+	// logger exists, so neither is ever a race against the first thing
+	// that publishes or dispatches in this process's lifetime.
+	// SetLogger (plan/ai/domain-events/step-02-async-dispatch.md) gives
+	// dispatchOne's own panic/error logging somewhere real to write to,
+	// instead of its safe no-op default. The Subscribe call
+	// (plan/ai/domain-events/step-01-core-event-bus.md) is the engine's
+	// own dogfood listener: the smallest possible real proof that
+	// domainevent.Subscribe's registration and domainevent.Publish's
+	// dispatch (wired from tool/handler/install_handler.go) actually
+	// reach each other, before any later step builds on this mechanism.
+	domainevent.SetLogger(func(format string, args ...any) { log.Warning(format, args...) })
+	domainevent.Subscribe("cinqo.tool.installed", func(_ context.Context, evt domainevent.Event) error {
+		log.Info("domain event: %s: %s", evt.Topic, string(evt.Payload))
+		return nil
+	})
+	// Step 6's own dogfood listener
+	// (plan/ai/domain-events/step-06-end-to-end-dogfood.md) — proves the
+	// half step 1's own dogfood didn't cover: a TOOL-originated event
+	// (published by Career's own save_cv_pdf, via
+	// POST /api/v1/events/publish) reaching a core-native listener.
+	domainevent.Subscribe("career.cv.generated", func(_ context.Context, evt domainevent.Event) error {
+		log.Info("domain event: %s (from %s %s): %s", evt.Topic, evt.SourceKind, evt.SourceID, string(evt.Payload))
+		return nil
+	})
+
 	migrationsPath, err := config.MigrationsPath()
 	if err != nil {
 		return nil, nil, nil, log, err
@@ -129,6 +156,14 @@ func Start(opts Options) (srv *http.Server, cfg *server.Config, ctx *di.ContextB
 	if err := manager.SyncMigrations(); err != nil {
 		return nil, nil, nil, log, err
 	}
+
+	// Domain Events engine's own tool-listener lookup
+	// (plan/ai/domain-events/step-04-core-to-tool-delivery.md) — wired
+	// as soon as cinqo.db's own migrations (tool_event_listeners among
+	// them) are guaranteed to exist, and still before any tool install
+	// could possibly happen (that only becomes reachable once the HTTP
+	// server itself starts, at the very end of this function).
+	domainevent.SetDB(manager.Connector.DB)
 
 	// Reconcile every tool the database says is already enabled — this
 	// package's own tool manager otherwise starts every restart with a

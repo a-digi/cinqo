@@ -24,4 +24,15 @@ type Tool struct {
 	PID                      int      `db:"pid" dbtype:"INTEGER" nullable:"true" json:"-"`
 	CreatedAt                string   `db:"created_at" dbtype:"DATETIME" nullable:"false" json:"created_at"`
 	UpdatedAt                string   `db:"updated_at" dbtype:"DATETIME" nullable:"true" json:"updated_at"`
+	// ServiceToken is this tool's own persistent, machine-identity
+	// bearer credential — never a per-user permission, never exposed to
+	// a frontend caller (json:"-", like InstallPath/PID above). Lets
+	// this tool's own backend process authenticate a call back into
+	// core (currently: POST /api/v1/events/publish) without borrowing
+	// any end user's own session token. Generated once at first
+	// successful install, passed to the tool's own subprocess as
+	// TOOL_SERVICE_TOKEN (tool/manager.go's own ToolEnvVars), preserved
+	// (never silently regenerated) across a version update. See
+	// plan/ai/domain-events/step-05-tool-publish-endpoint.md.
+	ServiceToken string `db:"service_token" dbtype:"TEXT" nullable:"false" json:"-"`
 }

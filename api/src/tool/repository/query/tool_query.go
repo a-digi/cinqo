@@ -16,7 +16,7 @@ func NewToolQueryRepo(db *sql.DB) *ToolQueryRepo {
 
 const toolColumns = `id, slug, name, version, kind, enabled, status, install_path, ` +
 	`backend_executable_relpath, frontend_bundle_relpath, min_app_version, max_app_version, ` +
-	`pid, created_at, updated_at`
+	`pid, created_at, updated_at, service_token`
 
 func scanTool(scan func(dest ...any) error) (*tool_entity.Tool, error) {
 	var t tool_entity.Tool
@@ -24,7 +24,7 @@ func scanTool(scan func(dest ...any) error) (*tool_entity.Tool, error) {
 	var pid sql.NullInt64
 
 	if err := scan(&t.ID, &t.Slug, &t.Name, &t.Version, &t.Kind, &t.Enabled, &t.Status,
-		&t.InstallPath, &backendRel, &frontendRel, &minV, &maxV, &pid, &t.CreatedAt, &updatedAt); err != nil {
+		&t.InstallPath, &backendRel, &frontendRel, &minV, &maxV, &pid, &t.CreatedAt, &updatedAt, &t.ServiceToken); err != nil {
 		return nil, err
 	}
 
@@ -48,6 +48,22 @@ func (r *ToolQueryRepo) FindBySlug(slug string) (*tool_entity.Tool, error) {
 
 func (r *ToolQueryRepo) FindByID(id string) (*tool_entity.Tool, error) {
 	row := r.db.QueryRow(`SELECT `+toolColumns+` FROM tools WHERE id = ? LIMIT 1`, id)
+	return scanTool(row.Scan)
+}
+
+// FindByServiceToken authenticates an inbound tool→core call (currently
+// only POST /api/v1/events/publish) by its own service_token — the
+// tool's slug (on the returned row) becomes that call's established
+// identity. Returns sql.ErrNoRows (unwrapped) for an empty or unknown
+// token — an empty string must never match, since a not-yet-backfilled
+// tool row (see install_handler.go's own backfill rule) legitimately
+// has service_token = "" and must not be treated as "no token
+// required." See plan/ai/domain-events/step-05-tool-publish-endpoint.md.
+func (r *ToolQueryRepo) FindByServiceToken(token string) (*tool_entity.Tool, error) {
+	if token == "" {
+		return nil, sql.ErrNoRows
+	}
+	row := r.db.QueryRow(`SELECT `+toolColumns+` FROM tools WHERE service_token = ? LIMIT 1`, token)
 	return scanTool(row.Scan)
 }
 

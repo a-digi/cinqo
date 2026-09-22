@@ -51,6 +51,21 @@ type Manifest struct {
 	// enforced, at both install and enable time. See
 	// plan/ai/tools/step-14-tool-dependencies.md.
 	RequiresTools []RequiredToolDecl `json:"requires_tools,omitempty"`
+	// EventListeners declares which Domain Events this tool wants
+	// delivered to its own already-running HTTP server, and at which
+	// path. Deliberately independent of Routes above: a listener path is
+	// never reached through the public /api/v1/tools/{slug}/proxy/**
+	// route table at all — it's invoked directly by core's own event
+	// dispatcher over loopback, so there is no external caller to
+	// scope-check against, which is also why EventListenerDecl carries
+	// no RequiredScope field. A tool may declare a listener for ANY
+	// topic, including cinqo's own core-native events or another tool's
+	// own namespace — the "may only ever listen to its own events"
+	// restriction does not exist; only what a tool may PUBLISH is
+	// namespace-restricted (enforced at the publish endpoint, a later
+	// step, not here). See
+	// plan/ai/domain-events/step-03-tool-listener-manifest-and-cache.md.
+	EventListeners []EventListenerDecl `json:"event_listeners,omitempty"`
 }
 
 type ScopeDecl struct {
@@ -96,6 +111,14 @@ type MCPToolDecl struct {
 	// tool has no such argument. See
 	// plan/ai/tools/career/step-XX-cv-pdf.md.
 	PromoteMediaParam string `json:"promote_media_param,omitempty"`
+}
+
+// EventListenerDecl is one Domain Event this tool's own already-running
+// HTTP server wants delivered, and the path (on that same server) it
+// should be POSTed to. See Manifest.EventListeners's own doc comment.
+type EventListenerDecl struct {
+	Topic      string `json:"topic"`
+	PathSuffix string `json:"path_suffix"`
 }
 
 // RequiredToolDecl is one other tool this manifest's own tool depends
@@ -216,6 +239,18 @@ func Validate(m Manifest, in ValidationInput) (kind string, err error) {
 		}
 		if _, ok := declaredScopes[mt.RequiredScope]; !ok {
 			return "", fmt.Errorf("mcp_tools entry %q: required_scope %q must be one of this tool's own declared scopes", mt.Name, mt.RequiredScope)
+		}
+	}
+
+	if len(m.EventListeners) > 0 && !in.HasBackendExecutable {
+		return "", fmt.Errorf("event_listeners requires the package to include a backend executable")
+	}
+	for _, el := range m.EventListeners {
+		if strings.TrimSpace(el.Topic) == "" {
+			return "", fmt.Errorf("event_listeners entries require a topic")
+		}
+		if strings.TrimSpace(el.PathSuffix) == "" {
+			return "", fmt.Errorf("event_listeners entry %q requires a path_suffix", el.Topic)
 		}
 	}
 

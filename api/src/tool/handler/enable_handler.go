@@ -89,7 +89,7 @@ func EnableHandler(reqCtx request.RequestContext) {
 	// own zero value has MCP: false if that read/parse failed, so
 	// discoverMCPToolsIfDeclared's own early-return still applies the
 	// same as if this were a fresh read here.
-	discoverMCPToolsIfDeclared(reqCtx, db, m, tool.InstallPath, tool.ID)
+	discoverMCPToolsIfDeclared(reqCtx, db, m, tool.InstallPath, tool.ID, tool.ServiceToken)
 
 	reloaded, err := queryRepo.FindBySlug(slug)
 	if err != nil {
