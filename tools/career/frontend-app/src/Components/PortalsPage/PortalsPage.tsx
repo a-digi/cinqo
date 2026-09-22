@@ -296,7 +296,10 @@ export function PortalsPage() {
 
       <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+      {/* items-start: without it, CSS Grid's default align-items:stretch
+          forces every card in a row to match the tallest (open) sibling's
+          height, leaving ugly empty space at the bottom of closed cards. */}
+      <div className="grid grid-cols-1 items-start gap-4 md:grid-cols-2">
         {portals.map((p, index) => (
           <AccordionItem
             key={p.id}
