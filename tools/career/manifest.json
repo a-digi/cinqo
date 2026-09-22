@@ -152,6 +152,11 @@
     },
     {
       "method": "PUT",
+      "path_suffix": "jobs/cv",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "PUT",
       "path_suffix": "jobs",
       "required_scope": "tool:career:companies"
     },
