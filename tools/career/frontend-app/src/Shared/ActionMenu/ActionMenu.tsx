@@ -32,11 +32,11 @@ export interface ActionMenuItem {
   // children (step XX) turns this row into an expandable group — a
   // caret-down toggle appears, and clicking it reveals this item's own
   // nested actions indented below it, instead of firing anything
-  // itself. Every entry in children is expected to be a plain LEAF
-  // item (onClick or href set) — nesting only ever goes one level
-  // deep, matching the one real use case this exists for (a job's own
-  // "CV" entry expanding into "Download CV" / "Re-generate with AI"
-  // once a CV already exists). See
+  // itself. Recursive (a child may itself declare its own children),
+  // each level indented 10px further than its own parent — though the
+  // one real use case this exists for today (a job's own "CV" entry
+  // expanding into "Download CV" / "Re-generate with AI" once a CV
+  // already exists) only ever goes one level deep. See
   // plan/ai/tools/career/step-XX-jobs-page-cv-regenerate.md.
   children?: ActionMenuItem[]
 }
@@ -100,7 +100,11 @@ export function ActionMenu({ items, triggerLabel = 'Actions' }: ActionMenuProps)
     if (!open) setExpandedKey(null)
   }, [open])
 
-  function renderLeafItem(item: ActionMenuItem) {
+  // depth — how many ancestor `children` levels this item is nested
+  // under (0 = a top-level item). Each level shifts its own row 10px
+  // further right than its own parent, so nesting reads visually as
+  // nesting no matter how deep it goes.
+  function renderLeafItem(item: ActionMenuItem, depth = 0) {
     const content = (
       <>
         {item.icon && <span className="shrink-0">{item.icon}</span>}
@@ -108,6 +112,7 @@ export function ActionMenu({ items, triggerLabel = 'Actions' }: ActionMenuProps)
       </>
     )
     const className = `flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${variantClassName(item.variant)}`
+    const style = depth > 0 ? { marginLeft: depth * 10 } : undefined
 
     if (item.href) {
       return (
@@ -122,6 +127,7 @@ export function ActionMenu({ items, triggerLabel = 'Actions' }: ActionMenuProps)
             setOpen(false)
           }}
           className={className}
+          style={style}
         >
           {content}
         </a>
@@ -139,15 +145,16 @@ export function ActionMenu({ items, triggerLabel = 'Actions' }: ActionMenuProps)
           item.onClick?.()
         }}
         className={className}
+        style={style}
       >
         {content}
       </button>
     )
   }
 
-  function renderItem(item: ActionMenuItem) {
+  function renderItem(item: ActionMenuItem, depth = 0) {
     if (!item.children || item.children.length === 0) {
-      return renderLeafItem(item)
+      return renderLeafItem(item, depth)
     }
 
     const expanded = expandedKey === item.key
@@ -159,6 +166,7 @@ export function ActionMenu({ items, triggerLabel = 'Actions' }: ActionMenuProps)
       </>
     )
     const rowClassName = `flex flex-1 items-center gap-2 px-3 py-2 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${variantClassName(item.variant)}`
+    const rowStyle = depth > 0 ? { marginLeft: depth * 10 } : undefined
 
     return (
       <div key={item.key}>
@@ -175,6 +183,7 @@ export function ActionMenu({ items, triggerLabel = 'Actions' }: ActionMenuProps)
                   setOpen(false)
                 }}
                 className={rowClassName}
+                style={rowStyle}
               >
                 {rowContent}
               </a>
@@ -189,6 +198,7 @@ export function ActionMenu({ items, triggerLabel = 'Actions' }: ActionMenuProps)
                   item.onClick?.()
                 }}
                 className={rowClassName}
+                style={rowStyle}
               >
                 {rowContent}
               </button>
@@ -201,6 +211,7 @@ export function ActionMenu({ items, triggerLabel = 'Actions' }: ActionMenuProps)
                 setExpandedKey(expanded ? null : item.key)
               }}
               className={rowClassName}
+              style={rowStyle}
             >
               {rowContent}
             </button>
@@ -221,7 +232,7 @@ export function ActionMenu({ items, triggerLabel = 'Actions' }: ActionMenuProps)
         </div>
         {expanded && (
           <div role="group" className="border-t border-gray-100 bg-gray-50 py-1">
-            {item.children.map((child) => renderLeafItem(child))}
+            {item.children.map((child) => renderItem(child, depth + 1))}
           </div>
         )}
       </div>
