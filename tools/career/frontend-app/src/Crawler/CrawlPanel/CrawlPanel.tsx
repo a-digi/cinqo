@@ -12,8 +12,18 @@ import {
 } from '../generateInstructions'
 import { startCrawlNow, startCrawlJobDetailsNow, stopCrawlNow, fetchActiveCrawlRun, type CrawlRun } from '../crawlNow'
 import { phaseLabel, latestCrawlLogMessage } from '../crawlPhase'
-import { PlayIcon, StopIcon, SparkleIcon, LogIcon, AlertIcon, RobotIcon } from '../../Shared/Icons/icons'
+import {
+  PlayIcon,
+  StopIcon,
+  SparkleIcon,
+  LogIcon,
+  AlertIcon,
+  RobotIcon,
+  CrawlInstructionsIcon,
+  JobDetailInstructionsIcon,
+} from '../../Shared/Icons/icons'
 import { Typewriter } from '../../Shared/Typewriter/Typewriter'
+import { Modal } from '../../Shared/Modal/Modal'
 
 // A crawl run's own log is sparse (four or five entries total), so a
 // tighter poll than this (coarser than the AI conversation feature's
@@ -99,17 +109,24 @@ export function CrawlPanel({
   // mount (resumed run), cleared once it finishes either way.
   const [aiConversationId, setAiConversationId] = useState<string | null>(null)
 
-  const [instructionsExpanded, setInstructionsExpanded] = useState(false)
+  // activeInstructionsModal replaces this file's own former pair of
+  // independent expand-booleans (instructionsExpanded/
+  // jobDetailInstructionsExpanded) — the view/edit UI moved from an
+  // inline expanding textarea to a shared Modal (below), and only one
+  // of the two documents can ever be open at a time now that both share
+  // the one modal, so a single tri-state value is simpler and cannot
+  // represent "both open" (a state the old two-boolean shape could,
+  // incorrectly, have allowed). See
+  // plan/ai/tools/career/step-XX-job-detail-crawl-instructions.md.
+  const [activeInstructionsModal, setActiveInstructionsModal] = useState<'crawl' | 'jobDetail' | null>(null)
   const [instructionsDraft, setInstructionsDraft] = useState('')
 
-  // jobDetailInstructions* — the SEPARATE, second instruction document
-  // (a single job's own detail page, not the listing page above) —
-  // same toggle/draft/save shape as instructionsExpanded/
-  // instructionsDraft, kept as its own independent pair of state
-  // variables rather than reusing those: the two documents are edited
-  // independently and expanding one should never collapse or clobber
-  // the other. See plan/ai/tools/career/step-XX-job-detail-crawl-instructions.md.
-  const [jobDetailInstructionsExpanded, setJobDetailInstructionsExpanded] = useState(false)
+  // jobDetailInstructionsDraft — the SEPARATE, second instruction
+  // document's own draft (a single job's own detail page, not the
+  // listing page above) — kept as its own independent state rather
+  // than reusing instructionsDraft: the two documents are edited
+  // independently and opening one must never clobber the other's own
+  // unsaved draft.
   const [jobDetailInstructionsDraft, setJobDetailInstructionsDraft] = useState('')
 
   // "Generate with AI" for the job-detail instructions — the SEPARATE
@@ -591,19 +608,15 @@ export function CrawlPanel({
     window.__cinqoToolBridge.navigate('/conversations')
   }
 
-  function toggleCrawlInstructions() {
-    if (instructionsExpanded) {
-      setInstructionsExpanded(false)
-      return
-    }
-    setInstructionsExpanded(true)
+  function openCrawlInstructionsModal() {
     setInstructionsDraft(link.crawlInstructions ?? '')
+    setActiveInstructionsModal('crawl')
   }
 
   function handleSaveCrawlInstructions() {
     updatePortalLink(link.id, { crawlInstructions: instructionsDraft })
       .then(() => {
-        setInstructionsExpanded(false)
+        setActiveInstructionsModal(null)
         onReload()
       })
       .catch((err: unknown) => {
@@ -611,19 +624,15 @@ export function CrawlPanel({
       })
   }
 
-  function toggleJobDetailCrawlInstructions() {
-    if (jobDetailInstructionsExpanded) {
-      setJobDetailInstructionsExpanded(false)
-      return
-    }
-    setJobDetailInstructionsExpanded(true)
+  function openJobDetailInstructionsModal() {
     setJobDetailInstructionsDraft(link.jobDetailCrawlInstructions ?? '')
+    setActiveInstructionsModal('jobDetail')
   }
 
   function handleSaveJobDetailCrawlInstructions() {
     updatePortalLink(link.id, { jobDetailCrawlInstructions: jobDetailInstructionsDraft })
       .then(() => {
-        setJobDetailInstructionsExpanded(false)
+        setActiveInstructionsModal(null)
         onReload()
       })
       .catch((err: unknown) => {
@@ -633,86 +642,101 @@ export function CrawlPanel({
 
   return (
     <div className="mt-1.5">
-      <button type="button" onClick={toggleCrawlInstructions} className="text-xs text-gray-500 underline hover:text-gray-700">
-        {link.crawlInstructions ? 'Crawl instructions set' : 'No crawl instructions yet'} —{' '}
-        {instructionsExpanded ? 'hide' : link.crawlInstructions ? 'view/edit' : 'add'}
-      </button>
-      {' · '}
-      <button
-        type="button"
-        onClick={aiPending ? handleCheckProgress : handleGenerateInstructionsWithAI}
-        disabled={!hasPlatforms || (aiPending && !aiConversationId)}
-        title={
-          !hasPlatforms
-            ? 'No AI platform configured — add one on the Platforms page first'
-            : aiPending
-              ? "Open the chat window to watch the AI work on this link's crawl instructions"
-              : 'Let the AI inspect this page and write (or update) its crawl instructions for you'
-        }
-        className="inline-flex items-center gap-1 text-xs text-gray-500 underline hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        {aiPending ? (
-          <span className="inline-flex items-center gap-1 [animation:robot-bob_1.6s_ease-in-out_infinite]">
-            <RobotIcon />
-            <Typewriter text="Check Progress - AI" />
-          </span>
-        ) : (
-          <>
-            <SparkleIcon />
-            Generate with AI
-          </>
-        )}
-      </button>
-      {(aiLocalError ?? link.instructionsAiError) && (
-        <p className="mt-1 text-xs text-red-700">
-          AI instructions generation failed: {aiLocalError ?? link.instructionsAiError}
-          {!aiLocalError && link.instructionsAiErrorAt && ` (${new Date(link.instructionsAiErrorAt).toLocaleString()})`}
-        </p>
-      )}
-      <div>
-        <button
-          type="button"
-          onClick={toggleJobDetailCrawlInstructions}
-          title="How to extract the job-position-relevant text off a single job's own detail page (the page a listing's own job URL points to) — separate from the listing crawl instructions above."
-          className="text-xs text-gray-500 underline hover:text-gray-700"
-        >
-          {link.jobDetailCrawlInstructions ? 'Job detail crawl instructions set' : 'No job detail crawl instructions yet'} —{' '}
-          {jobDetailInstructionsExpanded ? 'hide' : link.jobDetailCrawlInstructions ? 'view/edit' : 'add'}
-        </button>
-        {' · '}
-        <button
-          type="button"
-          onClick={jobDetailAiPending ? handleCheckJobDetailProgress : handleGenerateJobDetailInstructionsWithAI}
-          disabled={!hasPlatforms || (jobDetailAiPending && !jobDetailAiConversationId)}
-          title={
-            !hasPlatforms
-              ? 'No AI platform configured — add one on the Platforms page first'
-              : jobDetailAiPending
-                ? "Open the chat window to watch the AI work on this link's job detail crawl instructions"
-                : "Let the AI inspect one already-saved job's own detail page and write (or update) its job detail crawl instructions for you — requires at least one job already saved for this link"
-          }
-          className="inline-flex items-center gap-1 text-xs text-gray-500 underline hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {jobDetailAiPending ? (
-            <span className="inline-flex items-center gap-1 [animation:robot-bob_1.6s_ease-in-out_infinite]">
-              <RobotIcon />
-              <Typewriter text="Check Progress - AI" />
-            </span>
-          ) : (
-            <>
-              <SparkleIcon />
-              Generate with AI
-            </>
+      {/* Two small cards, each exactly half the row (grid-cols-2, not
+          flex-wrap) so they always sit side by side at 50%/50% width
+          regardless of either card's own content length — a flex row
+          would let one card's shorter content shrink it below 50%. */}
+      <div className="grid grid-cols-2 gap-2">
+        <div className="rounded-lg border border-gray-200 bg-gray-50 p-2">
+          <button
+            type="button"
+            onClick={openCrawlInstructionsModal}
+            title={link.crawlInstructions ? 'Crawl instructions — view/edit' : 'Crawl instructions — not set yet, click to add'}
+            className={`flex items-center gap-1.5 text-xs font-medium hover:underline ${link.crawlInstructions ? 'text-gray-700' : 'text-gray-400'}`}
+          >
+            <CrawlInstructionsIcon />
+            Crawl instructions
+          </button>
+          <button
+            type="button"
+            onClick={aiPending ? handleCheckProgress : handleGenerateInstructionsWithAI}
+            disabled={!hasPlatforms || (aiPending && !aiConversationId)}
+            title={
+              !hasPlatforms
+                ? 'No AI platform configured — add one on the Platforms page first'
+                : aiPending
+                  ? "Open the chat window to watch the AI work on this link's crawl instructions"
+                  : 'Let the AI inspect this page and write (or update) its crawl instructions for you'
+            }
+            className="mt-1 inline-flex items-center gap-1 text-xs text-gray-500 underline hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {aiPending ? (
+              <span className="inline-flex items-center gap-1 [animation:robot-bob_1.6s_ease-in-out_infinite]">
+                <RobotIcon />
+                <Typewriter text="Check Progress - AI" />
+              </span>
+            ) : (
+              <>
+                <SparkleIcon />
+                Generate with AI
+              </>
+            )}
+          </button>
+          {(aiLocalError ?? link.instructionsAiError) && (
+            <p className="mt-1 text-xs text-red-700">
+              AI instructions generation failed: {aiLocalError ?? link.instructionsAiError}
+              {!aiLocalError && link.instructionsAiErrorAt && ` (${new Date(link.instructionsAiErrorAt).toLocaleString()})`}
+            </p>
           )}
-        </button>
-        {(jobDetailAiLocalError ?? link.jobDetailInstructionsAiError) && (
-          <p className="mt-1 text-xs text-red-700">
-            AI instructions generation failed: {jobDetailAiLocalError ?? link.jobDetailInstructionsAiError}
-            {!jobDetailAiLocalError &&
-              link.jobDetailInstructionsAiErrorAt &&
-              ` (${new Date(link.jobDetailInstructionsAiErrorAt).toLocaleString()})`}
-          </p>
-        )}
+        </div>
+        <div className="rounded-lg border border-gray-200 bg-gray-50 p-2">
+          <button
+            type="button"
+            onClick={openJobDetailInstructionsModal}
+            title={
+              link.jobDetailCrawlInstructions
+                ? "Job detail crawl instructions — view/edit — how to extract the job-position-relevant text off a single job's own detail page (the page a listing's own job URL points to), separate from the listing crawl instructions."
+                : "Job detail crawl instructions — not set yet, click to add — how to extract the job-position-relevant text off a single job's own detail page (the page a listing's own job URL points to), separate from the listing crawl instructions."
+            }
+            className={`flex items-center gap-1.5 text-xs font-medium hover:underline ${link.jobDetailCrawlInstructions ? 'text-gray-700' : 'text-gray-400'}`}
+          >
+            <JobDetailInstructionsIcon />
+            Job detail crawl instructions
+          </button>
+          <button
+            type="button"
+            onClick={jobDetailAiPending ? handleCheckJobDetailProgress : handleGenerateJobDetailInstructionsWithAI}
+            disabled={!hasPlatforms || (jobDetailAiPending && !jobDetailAiConversationId)}
+            title={
+              !hasPlatforms
+                ? 'No AI platform configured — add one on the Platforms page first'
+                : jobDetailAiPending
+                  ? "Open the chat window to watch the AI work on this link's job detail crawl instructions"
+                  : "Let the AI inspect one already-saved job's own detail page and write (or update) its job detail crawl instructions for you — requires at least one job already saved for this link"
+            }
+            className="mt-1 inline-flex items-center gap-1 text-xs text-gray-500 underline hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {jobDetailAiPending ? (
+              <span className="inline-flex items-center gap-1 [animation:robot-bob_1.6s_ease-in-out_infinite]">
+                <RobotIcon />
+                <Typewriter text="Check Progress - AI" />
+              </span>
+            ) : (
+              <>
+                <SparkleIcon />
+                Generate with AI
+              </>
+            )}
+          </button>
+          {(jobDetailAiLocalError ?? link.jobDetailInstructionsAiError) && (
+            <p className="mt-1 text-xs text-red-700">
+              AI instructions generation failed: {jobDetailAiLocalError ?? link.jobDetailInstructionsAiError}
+              {!jobDetailAiLocalError &&
+                link.jobDetailInstructionsAiErrorAt &&
+                ` (${new Date(link.jobDetailInstructionsAiErrorAt).toLocaleString()})`}
+            </p>
+          )}
+        </div>
       </div>
       {link.crawlInstructions && (
         <div className="mt-1.5">
@@ -867,70 +891,78 @@ export function CrawlPanel({
           )}
         </div>
       )}
-      {instructionsExpanded && (
-        <div className="mt-1.5">
-          <textarea
-            value={instructionsDraft}
-            onChange={(e) => {
-              setInstructionsDraft(e.target.value)
-            }}
-            placeholder={'fields:\n  - label: title\n    selector: h1\npagination:\n  nextSelector: a.next-page\n  maxPages: 5'}
-            rows={6}
-            spellCheck={false}
-            className="w-full rounded-md border border-gray-300 px-2 py-1.5 font-mono text-xs text-gray-900 focus:border-gray-500 focus:outline-none"
-          />
-          <div className="mt-1.5 flex gap-2">
-            <button
-              type="button"
-              onClick={handleSaveCrawlInstructions}
-              className="rounded-md bg-gray-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-gray-800"
-            >
-              Save
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setInstructionsExpanded(false)
+      <Modal
+        open={activeInstructionsModal !== null}
+        title={activeInstructionsModal === 'jobDetail' ? 'Job detail crawl instructions' : 'Crawl instructions'}
+        onClose={() => {
+          setActiveInstructionsModal(null)
+        }}
+      >
+        {activeInstructionsModal === 'crawl' && (
+          <>
+            <textarea
+              value={instructionsDraft}
+              onChange={(e) => {
+                setInstructionsDraft(e.target.value)
               }}
-              className="rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-white"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-      {jobDetailInstructionsExpanded && (
-        <div className="mt-1.5">
-          <textarea
-            value={jobDetailInstructionsDraft}
-            onChange={(e) => {
-              setJobDetailInstructionsDraft(e.target.value)
-            }}
-            placeholder={'fields:\n  - label: description\n    selector: ".job-description, .job-posting-body"'}
-            rows={6}
-            spellCheck={false}
-            className="w-full rounded-md border border-gray-300 px-2 py-1.5 font-mono text-xs text-gray-900 focus:border-gray-500 focus:outline-none"
-          />
-          <div className="mt-1.5 flex gap-2">
-            <button
-              type="button"
-              onClick={handleSaveJobDetailCrawlInstructions}
-              className="rounded-md bg-gray-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-gray-800"
-            >
-              Save
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setJobDetailInstructionsExpanded(false)
+              placeholder={'fields:\n  - label: title\n    selector: h1\npagination:\n  nextSelector: a.next-page\n  maxPages: 5'}
+              rows={10}
+              spellCheck={false}
+              className="w-full rounded-md border border-gray-300 px-2 py-1.5 font-mono text-xs text-gray-900 focus:border-gray-500 focus:outline-none"
+            />
+            <div className="mt-3 flex gap-2">
+              <button
+                type="button"
+                onClick={handleSaveCrawlInstructions}
+                className="rounded-md bg-gray-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-gray-800"
+              >
+                Save
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveInstructionsModal(null)
+                }}
+                className="rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-white"
+              >
+                Cancel
+              </button>
+            </div>
+          </>
+        )}
+        {activeInstructionsModal === 'jobDetail' && (
+          <>
+            <textarea
+              value={jobDetailInstructionsDraft}
+              onChange={(e) => {
+                setJobDetailInstructionsDraft(e.target.value)
               }}
-              className="rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-white"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
+              placeholder={'fields:\n  - label: description\n    selector: ".job-description, .job-posting-body"'}
+              rows={10}
+              spellCheck={false}
+              className="w-full rounded-md border border-gray-300 px-2 py-1.5 font-mono text-xs text-gray-900 focus:border-gray-500 focus:outline-none"
+            />
+            <div className="mt-3 flex gap-2">
+              <button
+                type="button"
+                onClick={handleSaveJobDetailCrawlInstructions}
+                className="rounded-md bg-gray-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-gray-800"
+              >
+                Save
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveInstructionsModal(null)
+                }}
+                className="rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-white"
+              >
+                Cancel
+              </button>
+            </div>
+          </>
+        )}
+      </Modal>
     </div>
   )
 }

@@ -61,6 +61,37 @@ export function LogIcon() {
   )
 }
 
+// CrawlInstructionsIcon — marks "Crawl instructions" (how to read the
+// LISTING page, i.e. many rows at once): a document with several equal
+// horizontal lines, each standing for one row of the list. Distinct
+// from LogIcon's own similar document shape, which means "this run's
+// own log," not "this link's own instructions."
+export function CrawlInstructionsIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-3.5 w-3.5">
+      <rect x="3.5" y="3" width="13" height="14" rx="1.2" strokeWidth="1.3" />
+      <path d="M6.5 6.8h7M6.5 10h7M6.5 13.2h7" strokeWidth="1.3" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+// JobDetailInstructionsIcon — marks "Job detail crawl instructions"
+// (how to read ONE job's own detail page, not the listing): the same
+// document shape as CrawlInstructionsIcon with a magnifying glass
+// overlaid, reading as "one item, zoomed in" — distinct at a glance
+// from CrawlInstructionsIcon's own "every row in the list" meaning,
+// while still visually paired with it (same document base).
+export function JobDetailInstructionsIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-3.5 w-3.5">
+      <rect x="3" y="3" width="10" height="13" rx="1.1" strokeWidth="1.3" />
+      <path d="M5.3 6.5h5.4M5.3 9h5.4" strokeWidth="1.3" strokeLinecap="round" />
+      <circle cx="13.7" cy="13.7" r="3" strokeWidth="1.3" />
+      <path d="M15.9 15.9l1.6 1.6" strokeWidth="1.3" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 // AlertIcon (step 40) — marks the one running-phase state that needs
 // the user's own action (awaiting_human_challenge), distinct from
 // every other, passive status glyph on this page.
