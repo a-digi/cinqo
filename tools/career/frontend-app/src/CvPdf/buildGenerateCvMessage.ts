@@ -62,10 +62,8 @@ export function buildGenerateCvMessage(job: { id: string; title: string; company
     XHTML_SKELETON,
     '```',
     '',
-    '7. Call generate_pdf with that XHTML as the xhtml argument.',
-    '8. Verify the PDF actually rendered correctly before telling anyone it\'s ready: call pdf_to_markdown with url set to the exact same `uri` field generate_pdf just returned. Malformed XHTML (an unescaped & or < in ordinary text, an unclosed tag, broken CSS) can still "succeed" at the generate_pdf step while producing a garbled PDF, so this check is not optional.',
-    '9. Read that markdown back: your name, headline, summary, experience, and skills should all appear as clean, readable text — not raw HTML/XHTML tags, escaped entities like &lt; or &amp;, or content that is missing, duplicated, or cut off. If anything looks wrong, fix the XHTML and repeat steps 7-9. If it still is not right after 2 fix-and-regenerate attempts, proceed with the best version you have rather than looping indefinitely.',
-    '10. Only once verification passes, call save_cv_pdf ONCE, passing this job id and the exact `uri` field from that LAST, verified generate_pdf call, unmodified.',
+    "7. Call generate_pdf with that XHTML as the xhtml argument, then follow generate_pdf's own instructions for verifying it (via pdf_to_markdown) and fixing/regenerating if needed before proceeding.",
+    '8. Only once verified, call save_cv_pdf ONCE, passing this job id and the exact `uri` field from that LAST, verified generate_pdf call, unmodified.',
     '',
     'When done, reply with a short one-line confirmation — this reply is never shown to any user, so keep it brief.',
   ].join('\n')

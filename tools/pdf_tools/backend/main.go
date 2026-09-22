@@ -102,8 +102,9 @@ func runMCPServer(tmpDir, uploadsDir string) {
 	server := mcp.NewServer(&mcp.Implementation{Name: "pdf_tools", Version: "0.2.0"}, nil)
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "pdf_to_markdown",
-		Description: "Fetch a PDF document by URL and convert it to Markdown text.",
+		Name: "pdf_to_markdown",
+		Description: "Fetch a PDF document by URL and convert it to Markdown text. Also the required verification " +
+			"step for generate_pdf — see that tool's own description.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args convertArgs) (*mcp.CallToolResult, any, error) {
 		if args.URL == "" {
 			return &mcp.CallToolResult{
@@ -131,8 +132,17 @@ func runMCPServer(tmpDir, uploadsDir string) {
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "generate_pdf",
-		Description: "Render an XHTML document into a PDF and return a link to the generated file.",
+		Name: "generate_pdf",
+		Description: "Render an XHTML document into a PDF and return a link to the generated file. " +
+			"MANDATORY: malformed XHTML (an unescaped & or < in ordinary text, an unclosed tag, broken CSS) can " +
+			"still \"succeed\" here while producing a garbled, unreadable PDF — this call alone NEVER confirms the " +
+			"PDF is actually correct. Immediately after every call, verify it by calling pdf_to_markdown with url " +
+			"set to the exact same 'uri' this call just returned, and read the result back: real content should " +
+			"appear as clean, readable text — not raw HTML/XHTML tags, escaped entities like &lt; or &amp;, or " +
+			"content that is missing, duplicated, or cut off. If anything looks wrong, fix the XHTML and call " +
+			"generate_pdf again, then verify again — repeat up to 2 times before giving up and proceeding with the " +
+			"best version you have. Never tell the user (or record/save a result) that a PDF is ready without " +
+			"having verified it this way first.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args generatePDFArgs) (*mcp.CallToolResult, any, error) {
 		if args.Xhtml == "" {
 			return &mcp.CallToolResult{
