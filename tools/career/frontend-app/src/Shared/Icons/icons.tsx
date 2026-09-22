@@ -195,3 +195,15 @@ export function RobotIcon() {
     </svg>
   )
 }
+
+// DotsVerticalIcon — the standard "kebab menu" trigger glyph (three
+// vertical dots), used by Shared/ActionMenu/ActionMenu.tsx.
+export function DotsVerticalIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+      <circle cx="10" cy="4.5" r="1.4" />
+      <circle cx="10" cy="10" r="1.4" />
+      <circle cx="10" cy="15.5" r="1.4" />
+    </svg>
+  )
+}

@@ -26,6 +26,7 @@ import { Dropdown } from '../Dropdown/Dropdown'
 import { Pagination } from '../Pagination/Pagination'
 import { Modal } from '../../Shared/Modal/Modal'
 import { MatchScoreBar } from '../../Shared/MatchScoreBar/MatchScoreBar'
+import { ActionMenu, type ActionMenuItem } from '../../Shared/ActionMenu/ActionMenu'
 import { FilterIcon, XIcon, EyeIcon, ExternalLinkIcon, TrashIcon, MatchIcon, RobotIcon, PDFIcon } from '../../Shared/Icons/icons'
 import { Typewriter } from '../../Shared/Typewriter/Typewriter'
 import { truncate } from '../../Shared/Text/transform'
@@ -535,6 +536,125 @@ export function JobsPage() {
     }
   }
 
+  // buildJobActionItems assembles one row's own ActionMenu entries —
+  // the exact same five actions (Job Match, Generate/Download CV, Open
+  // original posting, View details, Delete) and the exact same
+  // enabled/disabled/tooltip/color logic the old inline icon row used,
+  // just expressed as data for the shared ActionMenu component
+  // (Shared/ActionMenu/ActionMenu.tsx) to render instead of JSX
+  // per-icon. hasDescription/failed/neverCrawled are recomputed here
+  // (not threaded in from the row map below) so this function stays a
+  // plain "job in, menu items out" mapping any other caller could
+  // reuse without also having to reach into the row-rendering loop.
+  function buildJobActionItems(job: Job): ActionMenuItem[] {
+    const hasDescription = !!job.description && job.description.trim() !== ''
+    const failed = !hasDescription && job.detailCrawlStatus === 'failed'
+    const neverCrawled = !hasDescription && !job.detailCrawlStatus
+
+    const items: ActionMenuItem[] = []
+
+    if (job.matchStatus === 'matching') {
+      items.push({
+        key: 'match',
+        label: 'Watch AI matching…',
+        icon: <RobotIcon />,
+        onClick: () => {
+          handleCheckMatchProgress(job)
+        },
+        title: "Open the chat window to watch the AI work on this job's own match",
+      })
+    } else {
+      items.push({
+        key: 'match',
+        label: 'Job Match',
+        icon: <MatchIcon />,
+        onClick: () => {
+          handleMatchClick(job)
+        },
+        disabled: !selectedPlatformId || profiles.length === 0,
+        title: !selectedPlatformId
+          ? 'No AI platform configured — add one on the Platforms page first'
+          : profiles.length === 0
+            ? 'Create a profile first'
+            : 'Assess how well this job fits a profile',
+      })
+    }
+
+    if (job.cvStatus === 'generating') {
+      items.push({
+        key: 'cv',
+        label: 'Watch AI generating CV…',
+        icon: <RobotIcon />,
+        onClick: () => {
+          handleCheckCvProgress(job)
+        },
+        title: 'Open the chat window to watch the AI generate this CV',
+      })
+    } else if (job.cvStatus === 'completed' && job.cvMediaFileId) {
+      items.push({
+        key: 'cv',
+        label: 'Download CV',
+        icon: <PDFIcon className="h-3.5 w-3.5" />,
+        href: mediaDownloadUrl(job.cvMediaFileId),
+        target: '_blank',
+        rel: 'noreferrer',
+        title: 'CV ready — click to download',
+        variant: 'success',
+      })
+    } else {
+      items.push({
+        key: 'cv',
+        label: job.cvStatus === 'failed' ? 'Retry CV generation' : 'Generate CV PDF',
+        icon: <PDFIcon className="h-3.5 w-3.5" />,
+        onClick: () => {
+          handleGenerateCvClick(job)
+        },
+        disabled: !selectedPlatformId || profiles.length === 0,
+        title: !selectedPlatformId
+          ? 'No AI platform configured — add one on the Platforms page first'
+          : profiles.length === 0
+            ? 'Create a profile first'
+            : job.cvStatus === 'failed'
+              ? (job.cvError ?? 'Failed to generate CV — click to retry')
+              : 'Generate a CV PDF tailored to this job',
+        variant: job.cvStatus === 'failed' ? 'danger' : 'default',
+      })
+    }
+
+    items.push({
+      key: 'original',
+      label: 'Open original posting',
+      icon: <ExternalLinkIcon />,
+      href: job.sourceUrl,
+      target: '_blank',
+      rel: 'noreferrer',
+    })
+
+    items.push({
+      key: 'details',
+      label: 'View details',
+      icon: <EyeIcon />,
+      onClick: () => {
+        handleViewDetails(job.id)
+      },
+      disabled: failed,
+      title: failed ? 'Failed to crawl' : neverCrawled ? 'Not crawled yet' : 'View job details',
+    })
+
+    items.push({
+      key: 'delete',
+      label: 'Delete',
+      icon: <TrashIcon />,
+      onClick: () => {
+        handleRemove(job.id)
+      },
+      title: 'Delete this job',
+      variant: 'danger',
+    })
+
+    return items
+  }
+
   const companyNames: Record<string, string> = Object.fromEntries(companies.map((c) => [c.id, c.name]))
   const portalNames: Record<string, string> = Object.fromEntries(portals.map((p) => [p.id, p.name]))
 
@@ -676,16 +796,6 @@ export function JobsPage() {
             </thead>
             <tbody>
               {jobs.map((job) => {
-                // hasDescription/failed/neverCrawled (step XX) drive the
-                // Eye icon's own three visual states — see
-                // detailCrawlStatus's own doc comment (api.ts) for why
-                // this is a SEPARATE signal from the job's own crawledAt
-                // (which every job has, set unconditionally by the
-                // listing crawl, and says nothing about whether the
-                // job's own DETAIL page was ever separately crawled).
-                const hasDescription = !!job.description && job.description.trim() !== ''
-                const failed = !hasDescription && job.detailCrawlStatus === 'failed'
-                const neverCrawled = !hasDescription && !job.detailCrawlStatus
                 return (
                   <tr key={job.id} className="last:[&>td]:border-b-0 hover:bg-gray-50">
                     <td className="border-b border-gray-200 p-3 text-gray-900">{job.title}</td>
@@ -733,124 +843,8 @@ export function JobsPage() {
                         <span className="text-xs text-gray-300">—</span>
                       )}
                     </td>
-                    <td className="border-b border-gray-200 p-3">
-                      <div className="flex items-center justify-end gap-1">
-                        {job.matchStatus !== 'matching' && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              handleMatchClick(job)
-                            }}
-                            disabled={!selectedPlatformId || profiles.length === 0}
-                            title={
-                              !selectedPlatformId
-                                ? 'No AI platform configured — add one on the Platforms page first'
-                                : profiles.length === 0
-                                  ? 'Create a profile first'
-                                  : 'Job Match — assess how well this job fits a profile'
-                            }
-                            className="rounded-md p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-40"
-                          >
-                            <MatchIcon />
-                          </button>
-                        )}
-                        {job.cvStatus === 'generating' ? (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              handleCheckCvProgress(job)
-                            }}
-                            title="Open the chat window to watch the AI generate this CV"
-                            className="rounded-md p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900"
-                          >
-                            <RobotIcon />
-                          </button>
-                        ) : job.cvStatus === 'completed' && job.cvMediaFileId ? (
-                          // Deliberately a distinct color (green), not the
-                          // same muted gray every other action icon in
-                          // this row uses — this is the "at a glance, has
-                          // a CV already" signal the row-scanning user
-                          // relies on, so it has to actually stand out,
-                          // not just differ by tooltip text.
-                          <a
-                            href={mediaDownloadUrl(job.cvMediaFileId)}
-                            target="_blank"
-                            rel="noreferrer"
-                            title="CV ready — click to download"
-                            className="rounded-md p-1.5 text-green-600 transition-colors hover:bg-green-50 hover:text-green-700"
-                          >
-                            <PDFIcon className="h-3.5 w-3.5" />
-                          </a>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              handleGenerateCvClick(job)
-                            }}
-                            disabled={!selectedPlatformId || profiles.length === 0}
-                            title={
-                              !selectedPlatformId
-                                ? 'No AI platform configured — add one on the Platforms page first'
-                                : profiles.length === 0
-                                  ? 'Create a profile first'
-                                  : job.cvStatus === 'failed'
-                                    ? (job.cvError ?? 'Failed to generate CV — click to retry')
-                                    : 'Generate a CV PDF tailored to this job'
-                            }
-                            className={
-                              job.cvStatus === 'failed'
-                                ? 'rounded-md p-1.5 text-red-400 transition-colors hover:bg-red-50 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-40'
-                                : 'rounded-md p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-40'
-                            }
-                          >
-                            <PDFIcon className="h-3.5 w-3.5" />
-                          </button>
-                        )}
-                        <a
-                          href={job.sourceUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          title="Open the original posting"
-                          className="rounded-md p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900"
-                        >
-                          <ExternalLinkIcon />
-                        </a>
-                        {failed ? (
-                          <button
-                            type="button"
-                            disabled
-                            title="Failed to crawl"
-                            className="cursor-not-allowed rounded-md p-1.5 text-red-400"
-                          >
-                            <EyeIcon />
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              handleViewDetails(job.id)
-                            }}
-                            title={neverCrawled ? 'Not crawled yet' : 'View job details'}
-                            className={
-                              neverCrawled
-                                ? 'rounded-md p-1.5 text-yellow-500 transition-colors hover:bg-yellow-50'
-                                : 'rounded-md p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900'
-                            }
-                          >
-                            <EyeIcon />
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            handleRemove(job.id)
-                          }}
-                          title="Delete this job"
-                          className="rounded-md p-1.5 text-gray-500 transition-colors hover:bg-red-50 hover:text-red-700"
-                        >
-                          <TrashIcon />
-                        </button>
-                      </div>
+                    <td className="border-b border-gray-200 p-3 text-right">
+                      <ActionMenu triggerLabel={`Actions for ${job.title}`} items={buildJobActionItems(job)} />
                     </td>
                   </tr>
                 )
