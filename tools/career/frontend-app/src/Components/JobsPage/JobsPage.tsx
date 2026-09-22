@@ -591,15 +591,43 @@ export function JobsPage() {
         title: 'Open the chat window to watch the AI generate this CV',
       })
     } else if (job.cvStatus === 'completed' && job.cvMediaFileId) {
+      // A parent entry with no onClick/href of its own — the row
+      // itself is purely a toggle for its two children below (there's
+      // no longer one single default action once a CV already exists:
+      // the user might want to download it, or decide they're not
+      // happy with it and have the AI try again).
       items.push({
         key: 'cv',
-        label: 'Download CV',
+        label: 'CV ready',
         icon: <PDFIcon className="h-3.5 w-3.5" />,
-        href: mediaDownloadUrl(job.cvMediaFileId),
-        target: '_blank',
-        rel: 'noreferrer',
-        title: 'CV ready — click to download',
+        title: 'CV ready — download it, or have the AI try again',
         variant: 'success',
+        children: [
+          {
+            key: 'cv-download',
+            label: 'Download CV',
+            icon: <PDFIcon className="h-3.5 w-3.5" />,
+            href: mediaDownloadUrl(job.cvMediaFileId),
+            target: '_blank',
+            rel: 'noreferrer',
+            title: 'Download the generated CV',
+            variant: 'success',
+          },
+          {
+            key: 'cv-regenerate',
+            label: 'Re-generate with AI',
+            icon: <RobotIcon />,
+            onClick: () => {
+              handleGenerateCvClick(job)
+            },
+            disabled: !selectedPlatformId || profiles.length === 0,
+            title: !selectedPlatformId
+              ? 'No AI platform configured — add one on the Platforms page first'
+              : profiles.length === 0
+                ? 'Create a profile first'
+                : 'Not happy with this CV? Have the AI build a new one.',
+          },
+        ],
       })
     } else {
       items.push({
