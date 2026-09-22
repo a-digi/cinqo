@@ -83,9 +83,11 @@ func discoverMCPToolsIfDeclared(reqCtx request.RequestContext, db *sql.DB, m man
 	// forgot to declare a real tool is a visible, not silent, gap.
 	scopeByName := make(map[string]string, len(m.MCPTools))
 	mediaParamByName := make(map[string]string, len(m.MCPTools))
+	promoteMediaParamByName := make(map[string]string, len(m.MCPTools))
 	for _, mt := range m.MCPTools {
 		scopeByName[mt.Name] = mt.RequiredScope
 		mediaParamByName[mt.Name] = mt.MediaParam
+		promoteMediaParamByName[mt.Name] = mt.PromoteMediaParam
 	}
 	filtered := make([]tool_entity.ToolMCPTool, 0, len(mcpTools))
 	for _, mt := range mcpTools {
@@ -97,6 +99,7 @@ func discoverMCPToolsIfDeclared(reqCtx request.RequestContext, db *sql.DB, m man
 		mt.ToolID = toolID
 		mt.RequiredScope = scope
 		mt.MediaParam = mediaParamByName[mt.Name]
+		mt.PromoteMediaParam = promoteMediaParamByName[mt.Name]
 		filtered = append(filtered, mt)
 	}
 

@@ -17,4 +17,12 @@ type ToolMCPTool struct {
 	// MediaParam mirrors manifest.MCPToolDecl's own field of the same
 	// name — see its doc comment. Empty string means "not applicable".
 	MediaParam string `db:"media_param" dbtype:"TEXT" nullable:"false" json:"media_param"`
+	// PromoteMediaParam mirrors manifest.MCPToolDecl's own field of the
+	// same name — see its doc comment. Empty string means "not
+	// applicable". The symmetric, opposite-direction counterpart to
+	// MediaParam: that one resolves an INPUT media: reference into a
+	// real value before invocation; this one promotes an argument's own
+	// tool-produced resource reference INTO permanent Media storage
+	// before invocation, replacing it with the resulting file id.
+	PromoteMediaParam string `db:"promote_media_param" dbtype:"TEXT" nullable:"false" json:"promote_media_param"`
 }

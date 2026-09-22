@@ -9,21 +9,27 @@
 //     starts/clears the tracking row, records a client-observed
 //     failure.
 //   - SaveGeneratedCvPdf (below) backs the AI-facing save_cv_pdf MCP
-//     tool — the ONLY way a rendered PDF reference is ever recorded.
+//     tool — the ONLY way a completed PDF is ever recorded.
 //
 // pdf_tools' own generate_pdf does not upload to the platform's Media
-// store — it only writes to its own local uploadsDir and hands back a
-// resource link (a URI containing an "id" query parameter, e.g.
-// "/api/v1/tools/pdf_tools/proxy/files?id=<uuid>"). Since save_cv_pdf
-// runs as a stdio MCP subprocess with no caller HTTP session to
-// authenticate a Media upload with (storing a live user token for
+// store itself — it only writes to its own local uploadsDir and hands
+// back a resource link (a URI containing an "id" query parameter,
+// e.g. "/api/v1/tools/pdf_tools/proxy/files?id=<uuid>"). Rather than
+// have save_cv_pdf try to move those bytes into Media itself — it runs
+// as a stdio MCP subprocess with no caller HTTP session to
+// authenticate a Media upload with, and storing a live user token for
 // later reuse would repeat exactly the capability-token anti-pattern
-// cv_import.go's own history already moved away from), the actual
-// move into permanent storage is done by FinalizeCvPdf, called only
-// from the human-authenticated POST /jobs/cv/persist HTTP handler —
-// the frontend fetches the rendered PDF's own bytes from pdf_tools'
-// proxy route (its own live, cookie-authenticated session) and
-// forwards them there right after the AI's turn completes. See
+// cv_import.go's own history already moved away from — the CORE app's
+// own conversation orchestrator (api/src/conversation/chat.go)
+// promotes the pdfResource argument into a real, permanent Media file
+// id in-process (its own trusted, same-process disk read + Media
+// write, never an HTTP round trip or a token) BEFORE this tool call
+// ever reaches this backend at all, via the manifest's own declarative
+// promote_media_param mechanism (tools/career/manifest.json's
+// save_cv_pdf entry). So by the time SaveGeneratedCvPdf runs, its own
+// pdfResource argument already IS a permanent Media file id — this
+// package never talks to Media, over HTTP or otherwise, and the whole
+// flow runs fully detached from any frontend tab. See
 // plan/ai/tools/career/step-XX-cv-pdf.md.
 package jobs
 
@@ -31,7 +37,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -40,23 +45,21 @@ import (
 
 // StartCvGeneration begins tracking a new AI-driven CV generation
 // attempt for jobId — upserts a fresh 'generating' row, clearing any
-// previous conversation/pdf reference/media reference/error from an
-// earlier attempt (re-generating always starts clean, no history
-// kept, same convention job_matches itself already uses). Called only
-// from the human-facing PUT /jobs/cv handler — never by the AI
-// itself.
+// previous conversation/media reference/error from an earlier attempt
+// (re-generating always starts clean, no history kept, same
+// convention job_matches itself already uses). Called only from the
+// human-facing PUT /jobs/cv handler — never by the AI itself.
 func StartCvGeneration(jobId, profileId, conversationId string) error {
 	if err := RequireJobExists(jobId); err != nil {
 		return err
 	}
 	_, err := db.JobsDB.Exec(
-		`INSERT INTO job_cv_pdfs (job_id, profile_id, status, conversation_id, pdf_tools_file_id, media_file_id, error, updated_at)
-		 VALUES (?, ?, 'generating', ?, NULL, NULL, NULL, datetime('now'))
+		`INSERT INTO job_cv_pdfs (job_id, profile_id, status, conversation_id, media_file_id, error, updated_at)
+		 VALUES (?, ?, 'generating', ?, NULL, NULL, datetime('now'))
 		 ON CONFLICT(job_id) DO UPDATE SET
 			profile_id = excluded.profile_id,
 			status = 'generating',
 			conversation_id = excluded.conversation_id,
-			pdf_tools_file_id = NULL,
 			media_file_id = NULL,
 			error = NULL,
 			updated_at = datetime('now')`,
@@ -68,10 +71,10 @@ func StartCvGeneration(jobId, profileId, conversationId string) error {
 // UpdateCvGenerationStatus records a client-observed failure — status
 // is always 'failed' in practice (the human-facing endpoint has no
 // other reason to call this; a successful render is only ever
-// recorded by SaveGeneratedCvPdf below, and finalized by
-// FinalizeCvPdf). Mirrors updateJobMatchStatus's own reasoning
-// exactly: a turn that ends without the AI ever calling save_cv_pdf
-// is a real failure, not a silently-stuck "generating" state.
+// recorded by SaveGeneratedCvPdf below). Mirrors updateJobMatchStatus's
+// own reasoning exactly: a turn that ends without the AI ever calling
+// save_cv_pdf is a real failure, not a silently-stuck "generating"
+// state.
 func UpdateCvGenerationStatus(jobId, status string, errText *string) error {
 	if err := RequireJobExists(jobId); err != nil {
 		return err
@@ -83,68 +86,23 @@ func UpdateCvGenerationStatus(jobId, status string, errText *string) error {
 	return err
 }
 
-// errNoCvGenerationInProgress is returned by SaveGeneratedCvPdf/
-// FinalizeCvPdf when no job_cv_pdfs row exists yet for jobId —
-// StartCvGeneration must always run first (from the human-facing PUT
-// /jobs/cv handler) so profile_id is already recorded before the AI's
-// own tool call arrives.
+// errNoCvGenerationInProgress is returned by SaveGeneratedCvPdf when no
+// job_cv_pdfs row exists yet for jobId — StartCvGeneration must always
+// run first (from the human-facing PUT /jobs/cv handler) so profile_id
+// is already recorded before the AI's own tool call arrives.
 var errNoCvGenerationInProgress = errors.New("no CV generation in progress for this job")
 
-// extractPdfToolsFileID pulls the "id" query parameter out of
-// generate_pdf's own returned resource URI — robust regardless of
-// exactly how the AI passes it along (the full URI, verbatim, is what
-// the prompt asks for), rather than requiring the AI to parse it out
-// itself. Falls back to treating the whole input as a bare id if it
-// doesn't parse as a URI with an "id" param at all.
-func extractPdfToolsFileID(resource string) string {
-	u, err := url.Parse(resource)
-	if err != nil {
-		return resource
-	}
-	if id := u.Query().Get("id"); id != "" {
-		return id
-	}
-	return resource
-}
-
-// SaveGeneratedCvPdf is the ONLY function that ever records a rendered
-// PDF reference — called exclusively by the save_cv_pdf MCP tool
-// (below), never by any human-facing HTTP path. Moves the row from
-// 'generating' to 'rendered'; it does NOT reach 'completed' here — see
-// this file's own top doc comment for why that last step is a
-// separate, human-authenticated HTTP call (FinalizeCvPdf).
-func SaveGeneratedCvPdf(jobId, pdfResource string) error {
-	if err := RequireJobExists(jobId); err != nil {
-		return err
-	}
-	pdfToolsFileID := extractPdfToolsFileID(pdfResource)
-	res, err := db.JobsDB.Exec(
-		`UPDATE job_cv_pdfs SET status = 'rendered', pdf_tools_file_id = ?, conversation_id = NULL, error = NULL, updated_at = datetime('now') WHERE job_id = ?`,
-		pdfToolsFileID, jobId,
-	)
-	if err != nil {
-		return err
-	}
-	affected, err := res.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if affected == 0 {
-		return errNoCvGenerationInProgress
-	}
-	return nil
-}
-
-// FinalizeCvPdf records the CV's own permanent Media file id — called
-// only from POST /jobs/cv/persist (routeHandler.go), the human-
-// authenticated HTTP handler that actually moved the PDF's bytes into
-// Media. Moves the row from 'rendered' to 'completed'.
-func FinalizeCvPdf(jobId, mediaFileId string) error {
+// SaveGeneratedCvPdf is the ONLY function that ever records a
+// completed CV — called exclusively by the save_cv_pdf MCP tool
+// (below), never by any human-facing HTTP path. mediaFileId is already
+// a real, permanent Media file id by the time this runs — see this
+// file's own top doc comment for where that promotion happens.
+func SaveGeneratedCvPdf(jobId, mediaFileId string) error {
 	if err := RequireJobExists(jobId); err != nil {
 		return err
 	}
 	res, err := db.JobsDB.Exec(
-		`UPDATE job_cv_pdfs SET status = 'completed', pdf_tools_file_id = NULL, media_file_id = ?, error = NULL, updated_at = datetime('now') WHERE job_id = ?`,
+		`UPDATE job_cv_pdfs SET status = 'completed', media_file_id = ?, conversation_id = NULL, error = NULL, updated_at = datetime('now') WHERE job_id = ?`,
 		mediaFileId, jobId,
 	)
 	if err != nil {
@@ -161,17 +119,16 @@ func FinalizeCvPdf(jobId, mediaFileId string) error {
 }
 
 // ReconcileOrphanedCvGenerations mirrors ReconcileOrphanedJobMatches
-// exactly, for the same reason: a hidden conversation's own turn (or
-// the frontend's own post-turn Media persist step) is not a subprocess
-// this Go process could ever reattach to after a restart, so any
-// job_cv_pdfs row still 'generating' or 'rendered' from before this
+// exactly, for the same reason: a hidden conversation's own turn is
+// not a subprocess this Go process could ever reattach to after a
+// restart, so any job_cv_pdfs row still 'generating' from before this
 // process started is definitely orphaned. Called once at boot,
 // alongside ReconcileOrphanedJobMatches. See
 // plan/ai/tools/career/step-XX-cv-pdf.md.
 func ReconcileOrphanedCvGenerations() error {
 	_, err := db.JobsDB.Exec(
-		`UPDATE job_cv_pdfs SET status = 'failed', error = 'Interrupted by a server restart', conversation_id = NULL, pdf_tools_file_id = NULL, updated_at = datetime('now')
-		 WHERE status IN ('generating', 'rendered')`,
+		`UPDATE job_cv_pdfs SET status = 'failed', error = 'Interrupted by a server restart', conversation_id = NULL, updated_at = datetime('now')
+		 WHERE status = 'generating'`,
 	)
 	return err
 }
@@ -179,7 +136,14 @@ func ReconcileOrphanedCvGenerations() error {
 // --- MCP registration ---
 
 type saveCvPdfArgs struct {
-	JobID       string `json:"jobId" jsonschema:"the job's own id, from get_job/list_jobs/search_jobs"`
+	JobID string `json:"jobId" jsonschema:"the job's own id, from get_job/list_jobs/search_jobs"`
+	// PdfResource's own JSON key (pdfResource) is what the manifest's
+	// own promote_media_param points at — the AI still passes
+	// generate_pdf's own returned resource URI here, unmodified and
+	// unaware of anything else; the platform's own conversation
+	// orchestrator has already replaced it with a real Media file id
+	// by the time this Go code ever sees it. See this file's own top
+	// doc comment.
 	PdfResource string `json:"pdfResource" jsonschema:"the exact 'uri' field from generate_pdf's own returned resource link, unmodified"`
 }
 

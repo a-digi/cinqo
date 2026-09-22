@@ -10,7 +10,6 @@ import {
   fetchProfiles,
   updateJobMatch,
   updateJobCv,
-  persistCvPdf,
   mediaDownloadUrl,
   type Job,
   type Company,
@@ -317,13 +316,16 @@ export function JobsPage() {
   // finishCvGeneration is the shared "a Generate CV PDF conversation
   // just ended" handling, mirroring finishMatch above exactly — used
   // by both a freshly-started generation (startCvGeneration, below)
-  // and a resumed one (resumeCvWatch). Unlike finishMatch, a turn that
-  // finished successfully does NOT mean the CV is fully saved yet: the
-  // AI only ever gets as far as cvStatus 'rendered' (save_cv_pdf never
-  // touches Media itself — see cv_pdf.go's own top doc comment), so
-  // this function's own non-error path also performs the actual
-  // persist-to-Media handoff for a 'rendered' job before treating the
-  // attempt as settled.
+  // and a resumed one (resumeCvWatch). The AI's own save_cv_pdf MCP
+  // tool call, together with the platform's own conversation
+  // orchestrator (which promotes the rendered PDF into permanent Media
+  // storage in-process before that call even reaches this tool's own
+  // backend — see cv_pdf.go's own top doc comment), already settles
+  // cvStatus at 'completed' by the time a turn finishes successfully —
+  // this function never touches Media or any tool's own proxy route
+  // itself, it only re-verifies the real, server-side outcome (a turn
+  // can end without the model ever calling save_cv_pdf) rather than
+  // assuming success from the turn alone.
   function finishCvGeneration(jobId: string, err?: unknown) {
     if (err) {
       const text =
@@ -343,15 +345,6 @@ export function JobsPage() {
     }
     void fetchJob(jobId)
       .then((job) => {
-        if (job.cvStatus === 'rendered' && job.cvPdfToolsFileId) {
-          return persistCvPdf(jobId, job.cvPdfToolsFileId).catch((persistErr: unknown) => {
-            console.error('failed to persist cv pdf', jobId, persistErr)
-            return updateJobCv(jobId, {
-              status: 'failed',
-              error: persistErr instanceof Error ? persistErr.message : 'Failed to save the generated CV.',
-            })
-          })
-        }
         if (job.cvStatus === 'generating') {
           return updateJobCv(jobId, {
             status: 'failed',
@@ -417,22 +410,14 @@ export function JobsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobs])
 
-  // resumedCvRef mirrors resumedMatchesRef exactly, with one extra
-  // case: a job left sitting at 'rendered' (the AI already called
-  // save_cv_pdf, but this tab closed before the persist-to-Media
-  // handoff ran) is resumed by calling finishCvGeneration directly —
-  // there's no conversation left to watch, only the handoff itself
-  // still needs to happen.
+  // resumedCvRef mirrors resumedMatchesRef exactly.
   const resumedCvRef = useRef<Set<string>>(new Set())
   useEffect(() => {
     for (const job of jobs) {
-      if (resumedCvRef.current.has(job.id)) continue
-      if (job.cvStatus === 'generating' && job.cvConversationId) {
-        resumedCvRef.current.add(job.id)
+      if (job.cvStatus !== 'generating' || resumedCvRef.current.has(job.id)) continue
+      resumedCvRef.current.add(job.id)
+      if (job.cvConversationId) {
         void resumeCvWatch(job.id, job.cvConversationId)
-      } else if (job.cvStatus === 'rendered') {
-        resumedCvRef.current.add(job.id)
-        finishCvGeneration(job.id)
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -769,19 +754,14 @@ export function JobsPage() {
                             <MatchIcon />
                           </button>
                         )}
-                        {job.cvStatus === 'generating' || job.cvStatus === 'rendered' ? (
+                        {job.cvStatus === 'generating' ? (
                           <button
                             type="button"
                             onClick={() => {
                               handleCheckCvProgress(job)
                             }}
-                            disabled={job.cvStatus === 'rendered'}
-                            title={
-                              job.cvStatus === 'rendered'
-                                ? 'The AI finished — saving the generated CV…'
-                                : 'Open the chat window to watch the AI generate this CV'
-                            }
-                            className="rounded-md p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-40"
+                            title="Open the chat window to watch the AI generate this CV"
+                            className="rounded-md p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900"
                           >
                             <RobotIcon />
                           </button>

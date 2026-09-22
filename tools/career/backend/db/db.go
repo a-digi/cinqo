@@ -399,23 +399,23 @@ CREATE TABLE IF NOT EXISTS job_match_skills (
 -- own profiles table (see job_matches' own doc comment for why no
 -- real FK/JOIN across the two databases is possible).
 --
--- The AI-facing save_cv_pdf MCP tool (jobs/cv_pdf.go) can only ever
--- move a row from 'generating' to 'rendered' (setting
--- pdf_tools_file_id) — it never talks to Media itself, since it runs
--- as a stdio MCP subprocess with no caller HTTP session to
--- authenticate a Media upload with. Moving a 'rendered' row to
--- 'completed' (setting media_file_id, clearing pdf_tools_file_id) is
--- done exclusively by the human-authenticated POST /jobs/cv/persist
--- HTTP handler (routeHandler.go), which DOES have a real session to
--- forward to Media's own upload endpoint — mirroring cv_import.go's
--- own forwardToMedia. See plan/ai/tools/career/step-XX-cv-pdf.md.
+-- The AI-facing save_cv_pdf MCP tool (jobs/cv_pdf.go) moves a row
+-- straight from 'generating' to 'completed', setting media_file_id —
+-- it never talks to Media over HTTP itself: the CORE app's own
+-- conversation orchestrator (api/src/conversation/chat.go) promotes
+-- the pdfResource argument into a real, permanent Media file id
+-- in-process (its own trusted, same-process write, never an HTTP
+-- round trip) BEFORE this tool call ever runs, using the manifest's
+-- own declarative promote_media_param mechanism — so by the time this
+-- Go code sees pdfResource, it's already a real Media file id, not a
+-- transient pdf_tools resource reference. See
+-- plan/ai/tools/career/step-XX-cv-pdf.md.
 CREATE TABLE IF NOT EXISTS job_cv_pdfs (
     job_id             TEXT PRIMARY KEY REFERENCES jobs(id) ON DELETE CASCADE,
     profile_id         TEXT NOT NULL,
     status             TEXT NOT NULL DEFAULT 'generating'
-                         CHECK (status IN ('generating','rendered','completed','failed')),
+                         CHECK (status IN ('generating','completed','failed')),
     conversation_id    TEXT,
-    pdf_tools_file_id  TEXT,
     media_file_id      TEXT,
     error              TEXT,
     updated_at         TEXT NOT NULL DEFAULT (datetime('now'))
@@ -740,7 +740,32 @@ func migrateJobsDB(db *sql.DB) error {
 	if err := migrateJobMatchesSemanticModelID(db); err != nil {
 		return err
 	}
-	return migrateJobMatchSkillsMatchKind(db)
+	if err := migrateJobMatchSkillsMatchKind(db); err != nil {
+		return err
+	}
+	return migrateJobCvPdfsSchema(db)
+}
+
+// migrateJobCvPdfsSchema detects an early-shape job_cv_pdfs table (one
+// still carrying the now-removed pdf_tools_file_id column, from before
+// the promote_media_param mechanism made the AI-facing save_cv_pdf
+// tool receive an already-real Media file id directly) and drops it —
+// this feature was still under active development with no real user
+// data in that shape yet, so a rebuild-from-empty is correct here,
+// unlike every other migration in this file (which all preserve
+// existing rows). jobsSchema's own CREATE TABLE IF NOT EXISTS then
+// creates the current, simpler shape immediately after this runs. See
+// plan/ai/tools/career/step-XX-cv-pdf.md.
+func migrateJobCvPdfsSchema(db *sql.DB) error {
+	exists, hasOldColumn, err := tableHasColumn(db, "job_cv_pdfs", "pdf_tools_file_id")
+	if err != nil {
+		return err
+	}
+	if !exists || !hasOldColumn {
+		return nil
+	}
+	_, err = db.Exec(`DROP TABLE job_cv_pdfs`)
+	return err
 }
 
 // migrateJobMatchesSemanticModelID adds the nullable semantic_model_id

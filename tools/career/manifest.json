@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.0.214",
+  "version": "0.0.215",
   "mcp": true,
   "requires_tools": [
     {
@@ -392,6 +392,11 @@
     {
       "name": "save_job_match",
       "required_scope": "tool:career:jobs"
+    },
+    {
+      "name": "save_cv_pdf",
+      "required_scope": "tool:career:jobs",
+      "promote_media_param": "pdfResource"
     },
     {
       "name": "create_company",

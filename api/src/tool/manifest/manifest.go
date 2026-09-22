@@ -81,6 +81,21 @@ type MCPToolDecl struct {
 	// Empty (the default) means this tool has no such argument. See
 	// plan/ai/media/step-02-career-media-migration.md.
 	MediaParam string `json:"media_param,omitempty"`
+	// PromoteMediaParam names the argument of this MCP tool (by its
+	// JSON key) that carries another tool's own local resource
+	// reference (e.g. a "/api/v1/tools/<slug>/proxy/..." link one of
+	// this tool's own MCP tool calls returned earlier in the same
+	// turn) that needs to be promoted into permanent Media storage
+	// BEFORE this tool call happens — conversation/chat.go's own
+	// invokeToolCall resolves it server-side, in-process (reading the
+	// referenced file directly off the producing tool's own uploads
+	// directory, then api/src/media's PersistLocalFile), replacing the
+	// argument's value with the resulting Media file id before the
+	// tool is ever invoked. The symmetric, opposite-direction
+	// counterpart to MediaParam above. Empty (the default) means this
+	// tool has no such argument. See
+	// plan/ai/tools/career/step-XX-cv-pdf.md.
+	PromoteMediaParam string `json:"promote_media_param,omitempty"`
 }
 
 // RequiredToolDecl is one other tool this manifest's own tool depends

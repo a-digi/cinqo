@@ -6,11 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"mime"
 	"net/http"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
+	"github.com/a-digi/cinqo/src/media"
 	media_query "github.com/a-digi/cinqo/src/media/repository/query"
 	"github.com/a-digi/cinqo/src/platform"
 	"github.com/a-digi/cinqo/src/platform/chatcompleter"
@@ -180,7 +183,7 @@ func SendMessage(
 		return nil, fmt.Errorf("conversation: look up offerable tools: %w", err)
 	}
 
-	assistantContent, err := runToolLoop(ctx, httpClient, entry, plainKey, model, messages, tools, mainDB, callerScopes, dataDir, corePort, conversationID, conversationDB, "", 0, nil, nil, nil)
+	assistantContent, err := runToolLoop(ctx, httpClient, entry, plainKey, model, messages, tools, mainDB, callerScopes, conv.UserID, dataDir, corePort, conversationID, conversationDB, "", 0, nil, nil, nil)
 	if err != nil {
 		// Record the user's own message AND the real failure reason —
 		// a real, recognized "## error —" block (step 8), not a
@@ -299,6 +302,17 @@ func runToolLoop(
 	tools []chatcompleter.ToolDef,
 	mainDB *sql.DB,
 	callerScopes []string,
+	// userID is the conversation's own owning user (conv.UserID at
+	// every call site — SendMessage/runDetachedTurn both already fetch
+	// conv for other reasons) — threaded all the way down to
+	// invokeToolCall so a tool invocation can act with this user's own
+	// identity for anything that needs a real, known caller (e.g.
+	// promoting a tool-produced resource into permanent Media storage
+	// in-process, never a live HTTP session's own token). Unused by
+	// invokeToolCall itself until that need lands; carried through now
+	// so every call path (including nested sub-agents, below) already
+	// has it in scope rather than retrofitting it later.
+	userID string,
 	dataDir string,
 	corePort int,
 	conversationID string,
@@ -411,7 +425,7 @@ func runToolLoop(
 			var links []tool_mcp.ResourceLink
 			switch {
 			case call.Name == subAgentToolName && turnRunID != "":
-				text = invokeSubAgentCall(httpClient, entry, apiKey, model, mainDB, conversationDB, callerScopes, dataDir, corePort, conversationID, turnRunID, call, depth)
+				text = invokeSubAgentCall(httpClient, entry, apiKey, model, mainDB, conversationDB, callerScopes, userID, dataDir, corePort, conversationID, turnRunID, call, depth)
 			case call.Name == checkSubAgentToolName && turnRunID != "":
 				text = checkSubAgentCall(conversationDB, call)
 			case call.Name == listSubAgentsToolName && turnRunID != "":
@@ -419,9 +433,9 @@ func runToolLoop(
 			case call.Name == cancelSubAgentToolName && turnRunID != "":
 				text = cancelSubAgentCall(conversationDB, call)
 			case call.Name == crawlURLsWithSubagentsToolName && turnRunID != "":
-				text = invokeCrawlURLsWithSubAgentsCall(httpClient, entry, apiKey, model, mainDB, conversationDB, callerScopes, dataDir, corePort, conversationID, turnRunID, call, depth)
+				text = invokeCrawlURLsWithSubAgentsCall(httpClient, entry, apiKey, model, mainDB, conversationDB, callerScopes, userID, dataDir, corePort, conversationID, turnRunID, call, depth)
 			default:
-				text, links = invokeToolCall(ctx, mainDB, callerScopes, call, dataDir, corePort, conversationID)
+				text, links = invokeToolCall(ctx, mainDB, callerScopes, userID, call, dataDir, corePort, conversationID)
 			}
 			group = append(group, chatcompleter.Message{Role: "tool", ToolCallID: call.ID, Content: truncateToolResult(text)})
 			allLinks = append(allLinks, links...)
@@ -485,7 +499,7 @@ func appendResourceLinks(content string, links []tool_mcp.ResourceLink) string {
 // stranding the conversation. See
 // plan/ai/tools/pdf-generator/step-04-ai-model-invocation.md's
 // "Invocation, concretely".
-func invokeToolCall(ctx context.Context, mainDB *sql.DB, callerScopes []string, call chatcompleter.ToolCall, dataDir string, corePort int, conversationID string) (string, []tool_mcp.ResourceLink) {
+func invokeToolCall(ctx context.Context, mainDB *sql.DB, callerScopes []string, userID string, call chatcompleter.ToolCall, dataDir string, corePort int, conversationID string) (string, []tool_mcp.ResourceLink) {
 	mcpTool, err := tool_query.NewToolMCPToolQueryRepo(mainDB).FindMCPToolByName(call.Name)
 	if err != nil {
 		return "tool unavailable", nil
@@ -523,9 +537,86 @@ func invokeToolCall(ctx context.Context, mainDB *sql.DB, callerScopes []string, 
 		}
 		args = resolvedArgs
 	}
+	if mcpTool.PromoteMediaParam != "" {
+		resolvedArgs, err := resolvePromoteMediaArgument(mainDB, dataDir, tool.Slug, userID, conversationID, args, mcpTool.PromoteMediaParam)
+		if err != nil {
+			return "tool unavailable", nil
+		}
+		args = resolvedArgs
+	}
 
 	text, _, links := tool_mcp.Invoke(ctx, execPath, call.Name, args, envVars)
 	return text, links
+}
+
+// toolProxyResourcePattern matches the resource-link shape a tool's
+// own MCP call result hands back for a file it produced and stored
+// under its own TOOL_UPLOADS_DIR — e.g. pdf_tools' own generate_pdf,
+// "/api/v1/tools/pdf_tools/proxy/files?id=<uuid>". Captures the
+// producing tool's own slug and the resource's own id.
+var toolProxyResourcePattern = regexp.MustCompile(`^/api/v1/tools/([^/]+)/proxy/[^?]*\?id=([^&]+)$`)
+
+// resolvePromoteMediaArgument rewrites args[paramName], if present and
+// shaped like another tool's own proxy resource link, from that
+// transient reference into a real, permanent Media file id — the
+// symmetric, opposite-direction counterpart to resolveMediaArgument:
+// that one turns an INPUT media: reference into a real value; this one
+// turns an argument the AI is ABOUT TO PASS into this tool call INTO a
+// permanent Media file, in-process, entirely before the tool call
+// happens. dataDir is the same resolved data directory
+// tool_manager.ToolEnvVars derives TOOL_UPLOADS_DIR from — the
+// producing tool's own file is found directly on local disk (no HTTP,
+// no auth token) via the exact same "<dataDir>/uploads/tools/<slug>/"
+// convention that env var establishes. uploadedByUserID/
+// conversationID are the conversation's own already-known owner (see
+// runToolLoop's own userID parameter) — this is trusted core code
+// acting on that user's own behalf, never an untrusted request. A
+// value with no matching shape (e.g. the AI passed something else, or
+// this argument was omitted) is left untouched.
+func resolvePromoteMediaArgument(mainDB *sql.DB, dataDir, callingToolSlug, uploadedByUserID, conversationID string, args json.RawMessage, paramName string) (json.RawMessage, error) {
+	var argMap map[string]any
+	if len(args) > 0 {
+		if err := json.Unmarshal(args, &argMap); err != nil {
+			return nil, err
+		}
+	}
+	if argMap == nil {
+		return args, nil
+	}
+
+	raw, ok := argMap[paramName]
+	if !ok {
+		return args, nil
+	}
+	value, ok := raw.(string)
+	if !ok {
+		return args, nil
+	}
+	match := toolProxyResourcePattern.FindStringSubmatch(value)
+	if match == nil {
+		return args, nil
+	}
+	producingSlug, resourceID := match[1], match[2]
+
+	// Glob rather than a fixed extension — this mechanism isn't
+	// specific to any one producing tool/file type; whatever single
+	// file that tool wrote under this id is promoted as-is.
+	candidates, err := filepath.Glob(filepath.Join(dataDir, "uploads", "tools", producingSlug, resourceID+".*"))
+	if err != nil {
+		return nil, err
+	}
+	if len(candidates) == 0 {
+		return nil, fmt.Errorf("promoted resource %q not found on disk", value)
+	}
+	localPath := candidates[0]
+
+	fileID, err := media.PersistLocalFile(mainDB, dataDir, callingToolSlug, uploadedByUserID, conversationID, localPath, filepath.Base(localPath), mime.TypeByExtension(filepath.Ext(localPath)))
+	if err != nil {
+		return nil, err
+	}
+
+	argMap[paramName] = fileID
+	return json.Marshal(argMap)
 }
 
 // mediaArgumentScheme is the opaque, non-fetchable reference the AI is

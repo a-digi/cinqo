@@ -283,6 +283,7 @@ func invokeSubAgentCall(
 	apiKey, model string,
 	mainDB, conversationDB *sql.DB,
 	callerScopes []string,
+	userID string,
 	dataDir string,
 	corePort int,
 	conversationID, parentTurnRunID string,
@@ -311,7 +312,7 @@ func invokeSubAgentCall(
 		return fmt.Sprintf("Cannot start a new sub-agent: this turn has already reached its limit of %d sub-agents.", maxSubAgentsPerTurn)
 	}
 
-	_, message := spawnSubAgent(httpClient, entry, apiKey, model, mainDB, conversationDB, callerScopes, dataDir, corePort, conversationID, parentTurnRunID, args.Task, args.AllowedTools, depth)
+	_, message := spawnSubAgent(httpClient, entry, apiKey, model, mainDB, conversationDB, callerScopes, userID, dataDir, corePort, conversationID, parentTurnRunID, args.Task, args.AllowedTools, depth)
 	return message
 }
 
@@ -331,6 +332,7 @@ func spawnSubAgent(
 	apiKey, model string,
 	mainDB, conversationDB *sql.DB,
 	callerScopes []string,
+	userID string,
 	dataDir string,
 	corePort int,
 	conversationID, parentTurnRunID string,
@@ -384,7 +386,7 @@ func spawnSubAgent(
 			subAgentCancelMu.Unlock()
 			cancel() // release this context's own resources even on the success path
 		}()
-		runSubAgentLoop(subCtx, httpClient, entry, apiKey, model, mainDB, conversationDB, callerScopes, dataDir, corePort, conversationID, run.ID, task, allowedTools, depth+1, parentTurnRunID)
+		runSubAgentLoop(subCtx, httpClient, entry, apiKey, model, mainDB, conversationDB, callerScopes, userID, dataDir, corePort, conversationID, run.ID, task, allowedTools, depth+1, parentTurnRunID)
 	}()
 
 	return run.ID, fmt.Sprintf(
@@ -431,6 +433,7 @@ func runSubAgentLoop(
 	apiKey, model string,
 	mainDB, conversationDB *sql.DB,
 	callerScopes []string,
+	userID string,
 	dataDir string,
 	corePort int,
 	conversationID, runID, task string,
@@ -469,7 +472,7 @@ func runSubAgentLoop(
 
 	messages := []chatcompleter.Message{{Role: "user", Content: task}}
 
-	result, err := runToolLoop(ctx, httpClient, entry, apiKey, model, messages, tools, mainDB, callerScopes, dataDir, corePort, conversationID, conversationDB, parentTurnRunID, depth, logStep, reportUsage, nil)
+	result, err := runToolLoop(ctx, httpClient, entry, apiKey, model, messages, tools, mainDB, callerScopes, userID, dataDir, corePort, conversationID, conversationDB, parentTurnRunID, depth, logStep, reportUsage, nil)
 	if err != nil {
 		status := "failed"
 		if errors.Is(ctx.Err(), context.Canceled) {

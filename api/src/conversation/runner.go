@@ -249,7 +249,7 @@ func runDetachedTurn(
 	// subAgentSuffix) so the historical view still shows it; a lookup
 	// failure here is non-fatal — worth a durable count, not worth
 	// failing an otherwise-successful turn over.
-	assistantContent, err := runToolLoop(ctx, httpClient, entry, plainKey, model, messages, tools, mainDB, callerScopes, dataDir, corePort, conversationID, conversationDB, turnRunID, 0, logStep, reportUsage, logExchange)
+	assistantContent, err := runToolLoop(ctx, httpClient, entry, plainKey, model, messages, tools, mainDB, callerScopes, conv.UserID, dataDir, corePort, conversationID, conversationDB, turnRunID, 0, logStep, reportUsage, logExchange)
 	subAgentCount := 0
 	if spawned, countErr := conversation_query.NewSubAgentRunQueryRepo(conversationDB).FindByParentTurnRunID(turnRunID); countErr == nil {
 		subAgentCount = len(spawned)

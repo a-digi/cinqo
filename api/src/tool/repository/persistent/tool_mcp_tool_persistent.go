@@ -33,8 +33,8 @@ func (r *ToolMCPToolPersistentRepo) ReplaceAll(toolID string, tools []tool_entit
 	}
 	for _, t := range tools {
 		if _, err := tx.Exec(
-			`INSERT INTO tool_mcp_tools (tool_id, name, description, input_schema, required_scope, media_param) VALUES (?, ?, ?, ?, ?, ?)`,
-			toolID, t.Name, t.Description, t.InputSchema, t.RequiredScope, t.MediaParam,
+			`INSERT INTO tool_mcp_tools (tool_id, name, description, input_schema, required_scope, media_param, promote_media_param) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			toolID, t.Name, t.Description, t.InputSchema, t.RequiredScope, t.MediaParam, t.PromoteMediaParam,
 		); err != nil {
 			return err
 		}

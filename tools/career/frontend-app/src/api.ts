@@ -97,18 +97,16 @@ export interface Job {
   // backend guarantees this field, unlike the optional ones above. See
   // plan/ai/tools/career/step-XX-job-match-skills.md.
   matchedSkills: string[]
-  // cvStatus/cvConversationId/cvPdfToolsFileId/cvMediaFileId/cvError
-  // (step XX) mirror matchStatus's own "undefined means never
-  // attempted" posture, for the "Generate CV PDF" feature.
-  // cvPdfToolsFileId is only ever present transiently, while cvStatus
-  // is "rendered" — the frontend uses it to fetch the rendered PDF's
-  // own bytes from pdf_tools' proxy route before persisting them to
-  // Media (see persistCvPdf). cvMediaFileId is the durable one, set
-  // only once cvStatus is "completed" — build a download link from it
-  // via mediaDownloadUrl(). See plan/ai/tools/career/step-XX-cv-pdf.md.
-  cvStatus?: 'generating' | 'rendered' | 'completed' | 'failed'
+  // cvStatus/cvConversationId/cvMediaFileId/cvError (step XX) mirror
+  // matchStatus's own "undefined means never attempted" posture, for
+  // the "Generate CV PDF" feature. The backend's own conversation
+  // orchestrator promotes the AI-rendered PDF into permanent Media
+  // storage entirely server-side (no frontend involvement) before
+  // cvStatus ever reaches "completed" — cvMediaFileId is set at that
+  // point; build a download link from it via mediaDownloadUrl(). See
+  // plan/ai/tools/career/step-XX-cv-pdf.md.
+  cvStatus?: 'generating' | 'completed' | 'failed'
   cvConversationId?: string
-  cvPdfToolsFileId?: string
   cvMediaFileId?: string
   cvError?: string
 }
@@ -454,7 +452,10 @@ export async function updateJobMatch(
 // starting one (status: 'generating', profileId + conversationId set)
 // or recording a client-observed failure (status: 'failed', error
 // set). Mirrors updateJobMatch exactly. A successful render is never
-// recorded here — see persistCvPdf, below.
+// recorded here — the AI's own save_cv_pdf MCP tool call, and the
+// platform's own conversation orchestrator, settle cvStatus at
+// 'completed' entirely server-side, with no frontend involvement. See
+// plan/ai/tools/career/step-XX-cv-pdf.md.
 export async function updateJobCv(
   jobId: string,
   args: { profileId?: string; status: 'generating' | 'failed'; conversationId?: string; error?: string },
@@ -468,35 +469,6 @@ export async function updateJobCv(
     const text = await res.text().catch(() => '')
     throw new Error(text || `failed to update job cv (${res.status})`)
   }
-}
-
-// persistCvPdf fetches the AI-rendered CV's own bytes from pdf_tools'
-// proxy route (this browser's own live, cookie-authenticated session
-// can reach it directly — no separate auth needed) and forwards them
-// to this tool's own POST /jobs/cv/persist, which re-uploads them into
-// Media permanently and finalizes the job's own job_cv_pdfs row. See
-// cv_pdf.go's own top doc comment for why this two-hop handoff — not a
-// direct Media upload from the AI's own MCP tool call — is how a
-// generated PDF ends up in permanent storage.
-export async function persistCvPdf(jobId: string, pdfToolsFileId: string): Promise<{ mediaFileId: string }> {
-  const pdfRes = await fetch(`/api/v1/tools/pdf_tools/proxy/files?id=${encodeURIComponent(pdfToolsFileId)}`, {
-    credentials: 'include',
-  })
-  if (!pdfRes.ok) {
-    throw new Error(`failed to fetch rendered cv pdf (${pdfRes.status})`)
-  }
-  const blob = await pdfRes.blob()
-
-  const form = new FormData()
-  form.set('jobId', jobId)
-  form.set('file', blob, `${jobId}.pdf`)
-
-  const res = await fetch(`${PROXY_BASE}/jobs/cv/persist`, {
-    method: 'POST',
-    credentials: 'include',
-    body: form,
-  })
-  return jsonOrThrow<{ mediaFileId: string }>(res, 'persist cv pdf')
 }
 
 // mediaDownloadUrl builds a plain, clickable link to a Media file's
