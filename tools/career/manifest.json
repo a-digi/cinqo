@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.0.215",
+  "version": "0.0.216",
   "mcp": true,
   "requires_tools": [
     {
