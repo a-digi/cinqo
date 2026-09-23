@@ -18,7 +18,14 @@ body {
 }
 /* Normal flow, not fixed: never repeats, and safely continues onto the
    next page like ordinary text if it's long enough to overflow one
-   page, over .sidebar-bg's own repeating color. */
+   page, over .sidebar-bg's own repeating color.
+   box-decoration-break: clone re-applies THIS box's own padding at
+   every page-fragment edge it gets split across — the top padding
+   reappears at the top of its own continuation on page 2, 3, etc, and
+   bottom padding before the cut on the page before. This is scoped to
+   .sidebar alone: unlike a page-level @page margin (which insets
+   .sidebar-bg's fixed background too, reintroducing the old white-gap
+   bug), each box clones only its own padding. */
 .sidebar {
   position: absolute;
   top: 0;
@@ -27,14 +34,19 @@ body {
   box-sizing: border-box;
   color: #e2e8f0;
   padding: 32px 20px;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 .main {
   /* Plain flowing block, not a table cell — paginates like any other
      multi-page document. margin-left matches .sidebar's own width so
-     content never renders underneath it. */
+     content never renders underneath it. Same box-decoration-break
+     reasoning as .sidebar above. */
   margin-left: 34%;
   box-sizing: border-box;
   padding: 32px 28px;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 .sidebar h2 {
   font-size: 10pt;
