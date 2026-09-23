@@ -50,9 +50,9 @@ body {
 }
 .profile-photo {
   display: block;
-  width: 88px;
-  height: 88px;
-  margin: 0 auto 12px auto;
+  width: 150px;
+  height: 150px;
+  margin: 0 auto 16px auto;
   border-radius: 50%;
   object-fit: cover;
   border: 2px solid #475569;

@@ -10,9 +10,9 @@ body {
 }
 .profile-photo {
   display: block;
-  width: 80px;
-  height: 80px;
-  margin: 0 auto 8px auto;
+  width: 140px;
+  height: 140px;
+  margin: 0 auto 12px auto;
   border-radius: 50%;
   object-fit: cover;
 }

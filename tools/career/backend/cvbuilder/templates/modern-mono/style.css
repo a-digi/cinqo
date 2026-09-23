@@ -18,8 +18,8 @@ body {
   min-width: 0;
 }
 .profile-photo {
-  width: 72px;
-  height: 72px;
+  width: 130px;
+  height: 130px;
   border-radius: 50%;
   object-fit: cover;
   flex-shrink: 0;
