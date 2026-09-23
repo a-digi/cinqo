@@ -751,6 +751,7 @@ export function CrawlPanel({
         <InfoBox
           variant="error"
           label="Crawl instructions"
+          labelClassName="bg-blue-100 text-blue-800"
           message={
             (aiLocalError ?? link.instructionsAiError ?? '') +
             (!aiLocalError && link.instructionsAiErrorAt ? ` (${new Date(link.instructionsAiErrorAt).toLocaleString()})` : '')
@@ -762,6 +763,7 @@ export function CrawlPanel({
         <InfoBox
           variant="error"
           label="Job detail crawl instructions"
+          labelClassName="bg-purple-100 text-purple-800"
           message={
             (jobDetailAiLocalError ?? link.jobDetailInstructionsAiError ?? '') +
             (!jobDetailAiLocalError && link.jobDetailInstructionsAiErrorAt
