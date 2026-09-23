@@ -1009,6 +1009,36 @@ func At(s []string, i int) string {
 	return ""
 }
 
+// extractCrawlResultItemFields reads title/url/company/location/
+// description/postedAt from one Items-shape entry (one real job's own
+// already-grouped fields, when a container was set) — the single place
+// both IngestCrawlResults and classifyCrawlResultPages (step 81) read
+// these six fields, so what counts as "extractable" can never drift
+// between what a real crawl saves and what a test crawl predicts. See
+// plan/ai/tools/career/step-80-shared-crawl-extraction-classifier.md.
+func extractCrawlResultItemFields(item map[string]any) (title, sourceURL, company, location, description, postedAt string) {
+	title = At(ExtractResultStrings(item["title"]), 0)
+	sourceURL = At(ExtractResultStrings(item["url"]), 0)
+	company = At(ExtractResultStrings(item["company"]), 0)
+	location = At(ExtractResultStrings(item["location"]), 0)
+	description = At(ExtractResultStrings(item["description"]), 0)
+	postedAt = At(ExtractResultStrings(item["postedAt"]), 0)
+	return
+}
+
+// extractCrawlResultIndexedFields is extractCrawlResultItemFields' own
+// counterpart for the Results shape (no container — parallel arrays
+// zipped by index) — same six fields, same source of truth.
+func extractCrawlResultIndexedFields(page CrawlResultPage, i int) (title, sourceURL, company, location, description, postedAt string) {
+	title = At(ExtractResultStrings(page.Results["title"]), i)
+	sourceURL = At(ExtractResultStrings(page.Results["url"]), i)
+	company = At(ExtractResultStrings(page.Results["company"]), i)
+	location = At(ExtractResultStrings(page.Results["location"]), i)
+	description = At(ExtractResultStrings(page.Results["description"]), i)
+	postedAt = At(ExtractResultStrings(page.Results["postedAt"]), i)
+	return
+}
+
 type IngestCrawlResultsResult struct {
 	JobsSaved   int `json:"jobsSaved"`
 	JobsUpdated int `json:"jobsUpdated"`
@@ -1053,16 +1083,11 @@ func IngestCrawlResults(portalLinkID string, pages []CrawlResultPage) (IngestCra
 	for _, page := range pages {
 		if len(page.Items) > 0 {
 			for _, item := range page.Items {
-				title := At(ExtractResultStrings(item["title"]), 0)
-				sourceURL := At(ExtractResultStrings(item["url"]), 0)
+				title, sourceURL, company, location, description, postedAt := extractCrawlResultItemFields(item)
 				if title == "" || sourceURL == "" {
 					result.JobsSkipped++
 					continue
 				}
-				company := At(ExtractResultStrings(item["company"]), 0)
-				location := At(ExtractResultStrings(item["location"]), 0)
-				description := At(ExtractResultStrings(item["description"]), 0)
-				postedAt := At(ExtractResultStrings(item["postedAt"]), 0)
 				_, created, _, err := jobs.SavePortalJob(portalLinkID, sourceURL, title, company, location, description, postedAt)
 				if err != nil {
 					return result, err
@@ -1077,19 +1102,13 @@ func IngestCrawlResults(portalLinkID string, pages []CrawlResultPage) (IngestCra
 		}
 
 		titles := ExtractResultStrings(page.Results["title"])
-		urls := ExtractResultStrings(page.Results["url"])
-		companiesList := ExtractResultStrings(page.Results["company"])
-		locations := ExtractResultStrings(page.Results["location"])
-		descriptions := ExtractResultStrings(page.Results["description"])
-		postedAts := ExtractResultStrings(page.Results["postedAt"])
-
-		for i, title := range titles {
-			sourceURL := At(urls, i)
+		for i := range titles {
+			title, sourceURL, company, location, description, postedAt := extractCrawlResultIndexedFields(page, i)
 			if title == "" || sourceURL == "" {
 				result.JobsSkipped++
 				continue
 			}
-			_, created, _, err := jobs.SavePortalJob(portalLinkID, sourceURL, title, At(companiesList, i), At(locations, i), At(descriptions, i), At(postedAts, i))
+			_, created, _, err := jobs.SavePortalJob(portalLinkID, sourceURL, title, company, location, description, postedAt)
 			if err != nil {
 				return result, err
 			}
