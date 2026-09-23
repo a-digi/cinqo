@@ -993,6 +993,14 @@ type portalLinkUpdateRequest struct {
 	// plan/ai/tools/career/step-67-frontend-flag-consumption.md.
 	ListingCrawlRequested            *bool `json:"listingCrawlRequested,omitempty"`
 	JobDetailInstructionsAIRequested *bool `json:"jobDetailInstructionsAiRequested,omitempty"`
+	// InstructionsAIErrorDismissedAt/JobDetailInstructionsAIErrorDismissedAt
+	// (step 71) — nil: don't touch. Present with "": clear. Present
+	// non-empty: record when that document's own error banner was
+	// dismissed — the frontend always sends the dismissed error's own
+	// errorAt value here, never "now". See
+	// plan/ai/tools/career/step-71-dismiss-tracking-data-model.md.
+	InstructionsAIErrorDismissedAt          *string `json:"instructionsAiErrorDismissedAt,omitempty"`
+	JobDetailInstructionsAIErrorDismissedAt *string `json:"jobDetailInstructionsAiErrorDismissedAt,omitempty"`
 }
 
 func portalLinksHandler(w http.ResponseWriter, r *http.Request) {
@@ -1032,8 +1040,9 @@ func portalLinksHandler(w http.ResponseWriter, r *http.Request) {
 		if body.URL == nil && body.Title == nil && body.CrawlInstructions == nil && body.JobDetailCrawlInstructions == nil &&
 			body.InstructionsAIError == nil && body.InstructionsAIConversationID == nil &&
 			body.JobDetailInstructionsAIError == nil && body.JobDetailInstructionsAIConversationID == nil &&
-			body.ListingCrawlRequested == nil && body.JobDetailInstructionsAIRequested == nil {
-			http.Error(w, "url, title, crawlInstructions, jobDetailCrawlInstructions, instructionsAiError, instructionsAiConversationId, jobDetailInstructionsAiError, jobDetailInstructionsAiConversationId, listingCrawlRequested, or jobDetailInstructionsAiRequested is required", http.StatusBadRequest)
+			body.ListingCrawlRequested == nil && body.JobDetailInstructionsAIRequested == nil &&
+			body.InstructionsAIErrorDismissedAt == nil && body.JobDetailInstructionsAIErrorDismissedAt == nil {
+			http.Error(w, "url, title, crawlInstructions, jobDetailCrawlInstructions, instructionsAiError, instructionsAiConversationId, jobDetailInstructionsAiError, jobDetailInstructionsAiConversationId, listingCrawlRequested, jobDetailInstructionsAiRequested, instructionsAiErrorDismissedAt, or jobDetailInstructionsAiErrorDismissedAt is required", http.StatusBadRequest)
 			return
 		}
 		if body.URL != nil && *body.URL == "" {
@@ -1095,6 +1104,18 @@ func portalLinksHandler(w http.ResponseWriter, r *http.Request) {
 		if body.JobDetailInstructionsAIRequested != nil {
 			if err := portal.UpdatePortalLinkJobDetailInstructionsAIRequested(body.ID, *body.JobDetailInstructionsAIRequested); err != nil {
 				portal.WritePortalLinkAwareError(w, "update portal link job detail instructions AI requested", err)
+				return
+			}
+		}
+		if body.InstructionsAIErrorDismissedAt != nil {
+			if err := portal.UpdatePortalLinkInstructionsAIErrorDismissedAt(body.ID, body.InstructionsAIErrorDismissedAt); err != nil {
+				portal.WritePortalLinkAwareError(w, "update portal link instructions AI error dismissed at", err)
+				return
+			}
+		}
+		if body.JobDetailInstructionsAIErrorDismissedAt != nil {
+			if err := portal.UpdatePortalLinkJobDetailInstructionsAIErrorDismissedAt(body.ID, body.JobDetailInstructionsAIErrorDismissedAt); err != nil {
+				portal.WritePortalLinkAwareError(w, "update portal link job detail instructions AI error dismissed at", err)
 				return
 			}
 		}

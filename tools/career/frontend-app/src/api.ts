@@ -187,6 +187,15 @@ export interface PortalLink {
   // reload.
   listingCrawlRequested: boolean
   jobDetailInstructionsAiRequested: boolean
+  // instructionsAiErrorDismissedAt/jobDetailInstructionsAiErrorDismissedAt
+  // (step 71) record when the user last dismissed that document's own
+  // AI-generation error banner — compared against
+  // instructionsAiErrorAt/jobDetailInstructionsAiErrorAt at render time:
+  // a dismissal at least as recent as the error means "stay hidden," a
+  // NEWER error means a fresh failure that should show again. See
+  // plan/ai/tools/career/step-71-dismiss-tracking-data-model.md.
+  instructionsAiErrorDismissedAt: string | null
+  jobDetailInstructionsAiErrorDismissedAt: string | null
   createdAt: string
   updatedAt?: string
 }
@@ -620,6 +629,8 @@ export async function updatePortalLink(
     jobDetailInstructionsAiConversationId?: string
     listingCrawlRequested?: boolean
     jobDetailInstructionsAiRequested?: boolean
+    instructionsAiErrorDismissedAt?: string
+    jobDetailInstructionsAiErrorDismissedAt?: string
   },
 ): Promise<void> {
   const res = await fetch(`${PROXY_BASE}/portal-links`, {

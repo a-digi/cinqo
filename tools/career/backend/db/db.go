@@ -728,6 +728,9 @@ func migrateJobsDB(db *sql.DB) error {
 	if err := migratePortalLinksRequestFlags(db); err != nil {
 		return err
 	}
+	if err := migratePortalLinksErrorDismissedAt(db); err != nil {
+		return err
+	}
 	if err := migrateCrawlRunsPhase(db); err != nil {
 		return err
 	}
@@ -1052,6 +1055,30 @@ func migratePortalLinksRequestFlags(db *sql.DB) error {
 		return err
 	}
 	_, err = db.Exec(`ALTER TABLE portal_links ADD COLUMN job_detail_instructions_ai_requested INTEGER NOT NULL DEFAULT 0`)
+	return err
+}
+
+// migratePortalLinksErrorDismissedAt adds the two nullable columns
+// that record when the user last dismissed an AI-generation error
+// banner for this link's own listing/job-detail instructions,
+// respectively — compared against that document's own *_ai_error_at
+// column at render time (dismissed_at >= error_at means "still
+// dismissed"; a NEWER error_at means a fresh failure that should show
+// again). Same plain ALTER TABLE ADD COLUMN shape as every other
+// column addition in this file, guarded the same way. See
+// plan/ai/tools/career/step-71-dismiss-tracking-data-model.md.
+func migratePortalLinksErrorDismissedAt(db *sql.DB) error {
+	exists, hasColumn, err := tableHasColumn(db, "portal_links", "instructions_ai_error_dismissed_at")
+	if err != nil {
+		return err
+	}
+	if !exists || hasColumn {
+		return nil
+	}
+	if _, err := db.Exec(`ALTER TABLE portal_links ADD COLUMN instructions_ai_error_dismissed_at TEXT`); err != nil {
+		return err
+	}
+	_, err = db.Exec(`ALTER TABLE portal_links ADD COLUMN job_detail_instructions_ai_error_dismissed_at TEXT`)
 	return err
 }
 

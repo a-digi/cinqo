@@ -23,6 +23,7 @@ import {
 } from '../../Shared/Icons/icons'
 import { Typewriter } from '../../Shared/Typewriter/Typewriter'
 import { Modal } from '../../Shared/Modal/Modal'
+import { InfoBox } from '../../Shared/InfoBox/InfoBox'
 
 // A crawl run's own log is sparse (four or five entries total), so a
 // tighter poll than this (coarser than the AI conversation feature's
@@ -31,6 +32,21 @@ const CRAWL_POLL_INTERVAL_MS = 3000
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+// shouldShowError decides whether a durable AI-generation error banner
+// should still show, given when it was last dismissed (step 71/72):
+// dismissedAt at least as recent as errorAt means "stay hidden" — a
+// NEWER errorAt (a fresh failure) means it should show again. String
+// comparison is safe here since every one of these timestamps is
+// already stored/serialized in a consistently-ordered format, the same
+// assumption every existing `new Date(link.xAt)` call site in this file
+// already makes. See
+// plan/ai/tools/career/step-72-wire-infobox-into-crawlpanel.md.
+function shouldShowError(errorAt: string | null | undefined, dismissedAt: string | null | undefined): boolean {
+  if (!errorAt) return false
+  if (!dismissedAt) return true
+  return dismissedAt < errorAt
 }
 
 // CrawlPanel — one instance per portal link (extracted out of
@@ -691,6 +707,25 @@ export function CrawlPanel({
       })
   }
 
+  // handleDismissListingError/handleDismissJobDetailError (step 72) —
+  // clear the same-session local copy immediately (so the box
+  // disappears instantly, before the network round trip completes) and
+  // durably record the dismissal against the error's own errorAt value
+  // (never "now" — see step 71's own design doc for why exact equality
+  // matters), falling back to "now" only in the narrow edge case where
+  // a local error exists with no durable errorAt yet.
+  function handleDismissListingError() {
+    setAiLocalError(undefined)
+    const dismissedAt = link.instructionsAiErrorAt ?? new Date().toISOString()
+    void updatePortalLink(link.id, { instructionsAiErrorDismissedAt: dismissedAt }).then(onReload)
+  }
+
+  function handleDismissJobDetailError() {
+    setJobDetailAiLocalError(undefined)
+    const dismissedAt = link.jobDetailInstructionsAiErrorAt ?? new Date().toISOString()
+    void updatePortalLink(link.id, { jobDetailInstructionsAiErrorDismissedAt: dismissedAt }).then(onReload)
+  }
+
   return (
     <div className="mt-1.5">
       {/* Two small cards, each exactly half the row (grid-cols-2, not
@@ -702,6 +737,40 @@ export function CrawlPanel({
           the LISTING instructions only; job-detail instructions are
           entirely automatic (step 67's own event-driven pipeline), so
           neither card has its own manual trigger anymore. */}
+      {/* Error banners live OUTSIDE and ABOVE both cards (not nested
+          inside whichever document happened to fail), each labeled
+          with a pill naming which document failed — up to two can show
+          at once, since the listing and job-detail generations fail
+          independently. Gated on `aiLocalError || shouldShowError(...)`
+          (not shouldShowError alone) to close a narrow timing window:
+          the same-session local copy can be set slightly before its
+          durable errorAt lands in a reloaded `link` prop — see
+          plan/ai/tools/career/step-72-wire-infobox-into-crawlpanel.md's
+          own "Open question". */}
+      {(aiLocalError ?? shouldShowError(link.instructionsAiErrorAt, link.instructionsAiErrorDismissedAt)) && (
+        <InfoBox
+          variant="error"
+          label="Crawl instructions"
+          message={
+            (aiLocalError ?? link.instructionsAiError ?? '') +
+            (!aiLocalError && link.instructionsAiErrorAt ? ` (${new Date(link.instructionsAiErrorAt).toLocaleString()})` : '')
+          }
+          onDismiss={handleDismissListingError}
+        />
+      )}
+      {(jobDetailAiLocalError ?? shouldShowError(link.jobDetailInstructionsAiErrorAt, link.jobDetailInstructionsAiErrorDismissedAt)) && (
+        <InfoBox
+          variant="error"
+          label="Job detail crawl instructions"
+          message={
+            (jobDetailAiLocalError ?? link.jobDetailInstructionsAiError ?? '') +
+            (!jobDetailAiLocalError && link.jobDetailInstructionsAiErrorAt
+              ? ` (${new Date(link.jobDetailInstructionsAiErrorAt).toLocaleString()})`
+              : '')
+          }
+          onDismiss={handleDismissJobDetailError}
+        />
+      )}
       <div className="flex items-start gap-2">
         <div className="grid flex-1 grid-cols-2 gap-2">
           <div className="rounded-lg border border-gray-200 bg-gray-50 p-2">
@@ -714,12 +783,6 @@ export function CrawlPanel({
               <CrawlInstructionsIcon />
               Crawl instructions
             </button>
-            {(aiLocalError ?? link.instructionsAiError) && (
-              <p className="mt-1 text-xs text-red-700">
-                AI instructions generation failed: {aiLocalError ?? link.instructionsAiError}
-                {!aiLocalError && link.instructionsAiErrorAt && ` (${new Date(link.instructionsAiErrorAt).toLocaleString()})`}
-              </p>
-            )}
           </div>
           <div className="rounded-lg border border-gray-200 bg-gray-50 p-2">
             <button
@@ -750,14 +813,6 @@ export function CrawlPanel({
                   <Typewriter text="Check Progress - AI" />
                 </span>
               </button>
-            )}
-            {(jobDetailAiLocalError ?? link.jobDetailInstructionsAiError) && (
-              <p className="mt-1 text-xs text-red-700">
-                AI instructions generation failed: {jobDetailAiLocalError ?? link.jobDetailInstructionsAiError}
-                {!jobDetailAiLocalError &&
-                  link.jobDetailInstructionsAiErrorAt &&
-                  ` (${new Date(link.jobDetailInstructionsAiErrorAt).toLocaleString()})`}
-              </p>
             )}
           </div>
         </div>

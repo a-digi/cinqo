@@ -133,6 +133,16 @@ type portalLink struct {
 	// attempted) the action it asked for.
 	ListingCrawlRequested            bool `json:"listingCrawlRequested"`
 	JobDetailInstructionsAIRequested bool `json:"jobDetailInstructionsAiRequested"`
+	// InstructionsAIErrorDismissedAt/JobDetailInstructionsAIErrorDismissedAt
+	// (step 71) record when the user last dismissed that document's own
+	// AI-generation error banner — compared against
+	// InstructionsAIErrorAt/JobDetailInstructionsAIErrorAt at render
+	// time by the frontend: dismissed_at >= error_at means "still
+	// dismissed," a newer error_at means a fresh failure that should
+	// show again. See
+	// plan/ai/tools/career/step-71-dismiss-tracking-data-model.md.
+	InstructionsAIErrorDismissedAt          string `json:"instructionsAiErrorDismissedAt,omitempty"`
+	JobDetailInstructionsAIErrorDismissedAt string `json:"jobDetailInstructionsAiErrorDismissedAt,omitempty"`
 	// HasActiveCrawlRun (step 37) is true while a detached "Crawl now"
 	// run is in progress for this link — read-only, derived from
 	// crawl_runs, never itself written. Lets the frontend resume
@@ -261,7 +271,7 @@ func ListPortals() ([]portal, error) {
 	}
 
 	linkRows, err := db.JobsDB.Query(
-		`SELECT id, portal_id, url, title, crawl_instructions, job_detail_crawl_instructions, instructions_ai_error, instructions_ai_error_at, instructions_ai_conversation_id, job_detail_instructions_ai_error, job_detail_instructions_ai_error_at, job_detail_instructions_ai_conversation_id, listing_crawl_requested, job_detail_instructions_ai_requested, created_at, updated_at
+		`SELECT id, portal_id, url, title, crawl_instructions, job_detail_crawl_instructions, instructions_ai_error, instructions_ai_error_at, instructions_ai_conversation_id, job_detail_instructions_ai_error, job_detail_instructions_ai_error_at, job_detail_instructions_ai_conversation_id, listing_crawl_requested, job_detail_instructions_ai_requested, instructions_ai_error_dismissed_at, job_detail_instructions_ai_error_dismissed_at, created_at, updated_at
 		 FROM portal_links ORDER BY created_at ASC`,
 	)
 	if err != nil {
@@ -271,8 +281,8 @@ func ListPortals() ([]portal, error) {
 	byPortal := make(map[string][]portalLink, len(portals))
 	for linkRows.Next() {
 		var l portalLink
-		var title, crawlInstructions, jobDetailCrawlInstructions, instructionsAIError, instructionsAIErrorAt, instructionsAIConversationID, jobDetailInstructionsAIError, jobDetailInstructionsAIErrorAt, jobDetailInstructionsAIConversationID, updatedAt sql.NullString
-		if err := linkRows.Scan(&l.ID, &l.PortalID, &l.URL, &title, &crawlInstructions, &jobDetailCrawlInstructions, &instructionsAIError, &instructionsAIErrorAt, &instructionsAIConversationID, &jobDetailInstructionsAIError, &jobDetailInstructionsAIErrorAt, &jobDetailInstructionsAIConversationID, &l.ListingCrawlRequested, &l.JobDetailInstructionsAIRequested, &l.CreatedAt, &updatedAt); err != nil {
+		var title, crawlInstructions, jobDetailCrawlInstructions, instructionsAIError, instructionsAIErrorAt, instructionsAIConversationID, jobDetailInstructionsAIError, jobDetailInstructionsAIErrorAt, jobDetailInstructionsAIConversationID, instructionsAIErrorDismissedAt, jobDetailInstructionsAIErrorDismissedAt, updatedAt sql.NullString
+		if err := linkRows.Scan(&l.ID, &l.PortalID, &l.URL, &title, &crawlInstructions, &jobDetailCrawlInstructions, &instructionsAIError, &instructionsAIErrorAt, &instructionsAIConversationID, &jobDetailInstructionsAIError, &jobDetailInstructionsAIErrorAt, &jobDetailInstructionsAIConversationID, &l.ListingCrawlRequested, &l.JobDetailInstructionsAIRequested, &instructionsAIErrorDismissedAt, &jobDetailInstructionsAIErrorDismissedAt, &l.CreatedAt, &updatedAt); err != nil {
 			return nil, err
 		}
 		l.Title = title.String
@@ -284,6 +294,8 @@ func ListPortals() ([]portal, error) {
 		l.JobDetailInstructionsAIErrorAt = jobDetailInstructionsAIErrorAt.String
 		l.JobDetailInstructionsAIConversationID = jobDetailInstructionsAIConversationID.String
 		l.InstructionsAIConversationID = instructionsAIConversationID.String
+		l.InstructionsAIErrorDismissedAt = instructionsAIErrorDismissedAt.String
+		l.JobDetailInstructionsAIErrorDismissedAt = jobDetailInstructionsAIErrorDismissedAt.String
 		l.UpdatedAt = updatedAt.String
 		l.LastCrawledAt = lastCrawled[l.ID]
 		l.HasActiveCrawlRun = activeCrawlRuns[l.ID]
@@ -471,6 +483,39 @@ func UpdatePortalLinkJobDetailInstructionsAIRequested(id string, requested bool)
 		return err
 	}
 	_, err := db.JobsDB.Exec(`UPDATE portal_links SET job_detail_instructions_ai_requested = ? WHERE id = ?`, requested, id)
+	return err
+}
+
+// UpdatePortalLinkInstructionsAIErrorDismissedAt/
+// UpdatePortalLinkJobDetailInstructionsAIErrorDismissedAt (step 71) let
+// the frontend record when the user dismissed that document's own
+// AI-generation error banner — compared against
+// InstructionsAIErrorAt/JobDetailInstructionsAIErrorAt at render time
+// (a newer error_at than the recorded dismissal means a fresh failure
+// that should show again). Same nil-clears-it shape as
+// UpdatePortalLinkInstructionsAIConversationID above. See
+// plan/ai/tools/career/step-71-dismiss-tracking-data-model.md.
+func UpdatePortalLinkInstructionsAIErrorDismissedAt(id string, dismissedAt *string) error {
+	if err := RequirePortalLinkExists(id); err != nil {
+		return err
+	}
+	if dismissedAt == nil || *dismissedAt == "" {
+		_, err := db.JobsDB.Exec(`UPDATE portal_links SET instructions_ai_error_dismissed_at = NULL WHERE id = ?`, id)
+		return err
+	}
+	_, err := db.JobsDB.Exec(`UPDATE portal_links SET instructions_ai_error_dismissed_at = ? WHERE id = ?`, *dismissedAt, id)
+	return err
+}
+
+func UpdatePortalLinkJobDetailInstructionsAIErrorDismissedAt(id string, dismissedAt *string) error {
+	if err := RequirePortalLinkExists(id); err != nil {
+		return err
+	}
+	if dismissedAt == nil || *dismissedAt == "" {
+		_, err := db.JobsDB.Exec(`UPDATE portal_links SET job_detail_instructions_ai_error_dismissed_at = NULL WHERE id = ?`, id)
+		return err
+	}
+	_, err := db.JobsDB.Exec(`UPDATE portal_links SET job_detail_instructions_ai_error_dismissed_at = ? WHERE id = ?`, *dismissedAt, id)
 	return err
 }
 
