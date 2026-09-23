@@ -10,6 +10,7 @@ import {
 } from '../../api'
 import { PersonaSwitcher } from '../Persona/PersonaSwitcher/PersonaSwitcher'
 import { ActionMenu, type ActionMenuItem } from '../../Shared/ActionMenu/ActionMenu'
+import { ConfirmationModal } from '../../Shared/ConfirmationModal/ConfirmationModal'
 import { EyeIcon, TrashIcon, PlusIcon } from '../../Shared/Icons/icons'
 
 const CV_BUILDER_PATH = '/tools/career/cv-builder'
@@ -21,17 +22,20 @@ const CV_BUILDER_PATH = '/tools/career/cv-builder'
 // for "+ New CV" (?personaId=) or a row's own "Edit" (?id=). See
 // plan/ai/career/cv-builder/step-04-frontend-cv-builder.md.
 //
-// No toast/confirm-dialog primitive exists anywhere in this frontend
-// bundle (confirmed by reading it directly) — errors surface as a
-// plain inline red string, matching every other page here exactly;
-// delete uses a native window.confirm(), a small, zero-dependency
-// safety net this bundle's OTHER delete buttons skip entirely, kept
-// here since destroying a generated PDF is easy to regret.
+// No toast primitive exists anywhere in this frontend bundle (confirmed
+// by reading it directly) — errors surface as a plain inline red
+// string, matching every other page here exactly. Delete goes through
+// the shared ConfirmationModal (not a native window.confirm() any
+// more, per your own instruction) — pendingDelete tracks which
+// document is awaiting confirmation, since the modal is async/
+// callback-based rather than a blocking call this function can just
+// read a return value from.
 export function CvDocumentsPage() {
   const [personaId, setPersonaId] = useState<string | null>(null)
   const [documents, setDocuments] = useState<CvDocument[]>([])
   const [templates, setTemplates] = useState<CvTemplate[]>([])
   const [error, setError] = useState('')
+  const [pendingDelete, setPendingDelete] = useState<CvDocument | null>(null)
 
   useEffect(() => {
     fetchCvTemplates()
@@ -77,7 +81,13 @@ export function CvDocumentsPage() {
   }
 
   function handleDelete(doc: CvDocument) {
-    if (!window.confirm(`Delete "${doc.title}"? This cannot be undone.`)) return
+    setPendingDelete(doc)
+  }
+
+  function confirmDelete() {
+    if (!pendingDelete) return
+    const doc = pendingDelete
+    setPendingDelete(null)
     setError('')
     deleteCvDocument(doc.id)
       .then(() => {
@@ -175,6 +185,18 @@ export function CvDocumentsPage() {
           )}
         </>
       )}
+
+      <ConfirmationModal
+        open={pendingDelete !== null}
+        title="Delete CV document"
+        message={pendingDelete ? `Delete "${pendingDelete.title}"? This cannot be undone.` : ''}
+        confirmLabel="Delete"
+        variant="danger"
+        onConfirm={confirmDelete}
+        onCancel={() => {
+          setPendingDelete(null)
+        }}
+      />
     </div>
   )
 }

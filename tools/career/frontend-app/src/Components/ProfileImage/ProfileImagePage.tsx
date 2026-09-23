@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { fetchProfileImage, uploadProfileImage, deleteProfileImage, mediaDownloadUrl, type ProfileImage } from '../../api'
 import { ProfileSwitcher } from '../ProfileSwitcher/ProfileSwitcher'
+import { ConfirmationModal } from '../../Shared/ConfirmationModal/ConfirmationModal'
 import { UploadIcon, TrashIcon } from '../../Shared/Icons/icons'
 
 // A profile's own photo — always tied to a profile (never uploaded
@@ -24,6 +25,7 @@ export function ProfileImagePage() {
   // its stale preview until a full page reload). Appending this as a
   // query param busts that cache without needing a new id.
   const [cacheBuster, setCacheBuster] = useState(0)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   function load(forProfileId: string) {
@@ -62,7 +64,13 @@ export function ProfileImagePage() {
   }
 
   function handleDelete() {
-    if (!profileId || !window.confirm('Remove this profile photo? This cannot be undone.')) return
+    if (!profileId) return
+    setConfirmingDelete(true)
+  }
+
+  function confirmDelete() {
+    if (!profileId) return
+    setConfirmingDelete(false)
     setError('')
     deleteProfileImage(profileId)
       .then(() => {
@@ -128,6 +136,18 @@ export function ProfileImagePage() {
           </div>
         </section>
       )}
+
+      <ConfirmationModal
+        open={confirmingDelete}
+        title="Remove profile photo"
+        message="Remove this profile photo? This cannot be undone."
+        confirmLabel="Remove"
+        variant="danger"
+        onConfirm={confirmDelete}
+        onCancel={() => {
+          setConfirmingDelete(false)
+        }}
+      />
     </div>
   )
 }
