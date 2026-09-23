@@ -14,7 +14,6 @@ import { SkillsStep } from './SkillsStep'
 import { ExperienceStep } from './ExperienceStep'
 import { TitleAndReviewStep } from './TitleAndReviewStep'
 import { StepIndicator } from './StepIndicator'
-import { CvPreviewModal } from './CvPreviewModal'
 
 const CV_DOCUMENTS_PATH = '/tools/career/cv-documents'
 
@@ -65,7 +64,6 @@ export function CvBuilderPage() {
   const [loading, setLoading] = useState(Boolean(editingId))
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState('')
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [previewing, setPreviewing] = useState(false)
 
   // PersonaSwitcher's own mount effect ALWAYS auto-selects a persona
@@ -158,17 +156,28 @@ export function CvBuilderPage() {
   // pipeline handleGenerate's own first half uses — but creates
   // nothing permanent (no Media file, no cv_documents row), so the
   // user can see exactly what they're about to create and decide
-  // whether to actually commit to it. See
+  // whether to actually commit to it. Opens in a new tab rather than
+  // an in-page overlay, per your own instruction. The tab is opened
+  // synchronously, still inside the click handler, and only pointed at
+  // the real URL once the response arrives — opening it later, inside
+  // the .then(), loses the original click's "user gesture" in most
+  // browsers and gets silently popup-blocked. See
   // plan/ai/career/cv-builder/step-04-frontend-cv-builder.md.
   function handlePreview() {
     if (!cvData || !templateId) return
     setError('')
+    const previewTab = window.open('', '_blank')
     setPreviewing(true)
     previewCvDocument(templateId, cvData)
       .then(({ previewUrl: url }) => {
-        setPreviewUrl(url)
+        if (previewTab) {
+          previewTab.location.href = url
+        } else {
+          setError('Please allow popups for this site to preview the CV in a new tab')
+        }
       })
       .catch((err: unknown) => {
+        previewTab?.close()
         setError(err instanceof Error ? err.message : String(err))
       })
       .finally(() => {
@@ -268,16 +277,6 @@ export function CvBuilderPage() {
           )}
         </div>
       </div>
-
-      {previewUrl && (
-        <CvPreviewModal
-          src={previewUrl}
-          title={title || 'CV preview'}
-          onClose={() => {
-            setPreviewUrl(null)
-          }}
-        />
-      )}
     </div>
   )
 }
