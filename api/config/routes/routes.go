@@ -115,6 +115,7 @@ func Init(ctx serverdi.Context) {
 		"MediaPublicImage":        local_routing.HandlerFunc(media_handler.PublicImageHandler),
 		"MediaUpdateTitle":        local_routing.HandlerFunc(media_handler.UpdateTitleHandler),
 		"MediaUpdateTitleService": local_routing.HandlerFunc(media_handler.UpdateTitleServiceHandler),
+		"MediaExistsService":      local_routing.HandlerFunc(media_handler.ExistsServiceHandler),
 
 		"DomainEventPublish": local_routing.HandlerFunc(domainevent_handler.PublishHandler),
 	}

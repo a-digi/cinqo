@@ -94,3 +94,13 @@ routes:
     method: PATCH
     executor: MediaUpdateTitleService
     security: public
+
+  # Public — same ToolService-bearer pattern as the title route above,
+  # but read-only: lets a Tool's own backend cheaply confirm a Media
+  # file id it's holding onto still refers to a real row it owns. See
+  # media/handler/exists_service_handler.go's own doc comment and
+  # plan/ai/media/step-11-media-exists-check.md.
+  - path: /api/v1/media/{id}/exists
+    method: GET
+    executor: MediaExistsService
+    security: public

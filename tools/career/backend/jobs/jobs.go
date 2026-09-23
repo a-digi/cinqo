@@ -40,12 +40,14 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"sync"
 
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"career-tool-backend/companies"
 	"career-tool-backend/db"
+	"career-tool-backend/media"
 )
 
 // defaultJobsLimit/maxJobsLimit bound list_jobs/search_jobs the same
@@ -235,6 +237,36 @@ const jobsFromClause = `FROM jobs j
 	LEFT JOIN job_matches jm ON jm.job_id = j.id
 	LEFT JOIN job_cv_pdfs cv ON cv.job_id = j.id`
 
+// hideDanglingCvMedia clears CvStatus/CvMediaFileID (in-memory only,
+// on the given slice — never written back to the database from a read
+// path) for any job whose own media_file_id no longer refers to a real
+// Media row, e.g. one deleted from the core admin Media page, or the
+// pre-existing-reference bug step 10 fixed for future saves. Checks
+// run CONCURRENTLY (bounded by however many rows in jobs actually
+// claim a completed CV, typically a small subset of any page) so a
+// jobs-list request's own latency stays close to one round trip
+// regardless of how many rows need checking — media.Exists itself
+// fails open on anything but a definitive 404, so a slow/unreachable
+// core never hides an otherwise-real CV. See
+// plan/ai/media/step-11-media-exists-check.md.
+func hideDanglingCvMedia(jobs []job) {
+	var wg sync.WaitGroup
+	for i := range jobs {
+		if jobs[i].CvStatus != "completed" || jobs[i].CvMediaFileID == "" {
+			continue
+		}
+		wg.Add(1)
+		go func(j *job) {
+			defer wg.Done()
+			if !media.Exists(j.CvMediaFileID) {
+				j.CvStatus = ""
+				j.CvMediaFileID = ""
+			}
+		}(&jobs[i])
+	}
+	wg.Wait()
+}
+
 func queryJobs(where string, whereArgs []any, limit, offset int) (jobsListResult, error) {
 	var total int
 	countArgs := append([]any{}, whereArgs...)
@@ -312,6 +344,8 @@ func queryJobs(where string, whereArgs []any, limit, offset int) (jobsListResult
 		}
 	}
 
+	hideDanglingCvMedia(jobs)
+
 	return jobsListResult{Jobs: jobs, Total: total}, nil
 }
 
@@ -371,7 +405,9 @@ func GetJobByID(id string) (job, error) {
 		return job{}, err
 	}
 	j.MatchedSkills = skills
-	return j, nil
+	single := []job{j}
+	hideDanglingCvMedia(single)
+	return single[0], nil
 }
 
 // GetJobMatchSkills reads one job's own matched skills, alphabetically
