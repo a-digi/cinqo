@@ -97,7 +97,7 @@ export function MessageThread({
           lookup (Bubble's own toggleSubAgents, below). */}
       {turnSubAgents.length > 0 && (
         <div className="flex justify-start">
-          <div className="max-w-lg space-y-1 rounded-md border border-gray-200 bg-white p-2 text-xs text-gray-400">
+          <div className="max-w-[min(32rem,100%)] space-y-1 rounded-md border border-gray-200 bg-white p-2 text-xs text-gray-400">
             <p className="font-medium text-gray-500">
               {turnSubAgents.some((a) => a.status === 'running') ? 'Sub-agents still working…' : 'Sub-agents'}
             </p>
@@ -147,8 +147,26 @@ function Bubble({
 
   return (
     <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'}`}>
+      {/* max-w-[min(32rem,100%)], not a bare max-w-lg (32rem/512px) —
+          this div is a flex item under a non-stretch align-items
+          (items-end/items-start above), so it sizes via shrink-to-fit,
+          capped at whichever of {32rem, 100% of its own actual
+          container} is smaller. A bare max-w-lg is an absolute cap with
+          no relation to the container's own real width: comfortably
+          fits GlobalChatWidget.tsx's wide ConversationPage.tsx context,
+          but the SAME 512px cap is wider than the floating chat
+          widget's own ~380px box, so a message whose content wants that
+          much room (e.g. buildGenerateCvMessage.ts's own embedded XHTML
+          skeleton, rendered as a fenced code block with long CSS lines)
+          sized the bubble itself past the widget's own visible edge —
+          the code block's own overflow-x-auto (Markdown.tsx) only
+          scrolls within whatever width the bubble ends up at, so it
+          couldn't help once the bubble itself was already too wide.
+          Confirmed live: this was reproducible only in the narrow
+          widget, never on /conversations, matching the bug report
+          exactly. See plan/ai/frontend/frontend/step-XX-chat-widget-long-message-wrapping.md. */}
       <div
-        className={`max-w-lg break-words rounded-lg px-3 py-2 text-sm ${
+        className={`max-w-[min(32rem,100%)] break-words rounded-lg px-3 py-2 text-sm ${
           message.failed ? 'border border-red-300 bg-red-50 text-red-900' : isUser ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-900'
         }`}
       >
@@ -199,7 +217,7 @@ function Bubble({
         </div>
       )}
       {showSubAgents && (
-        <div className="mt-1 max-w-lg space-y-1 rounded-md border border-gray-200 bg-white p-2">
+        <div className="mt-1 max-w-[min(32rem,100%)] space-y-1 rounded-md border border-gray-200 bg-white p-2">
           {subAgentsError && <p className="text-xs text-red-600">{subAgentsError}</p>}
           {subAgents === undefined && !subAgentsError && <p className="text-xs text-gray-400">Loading…</p>}
           {subAgents?.length === 0 && <p className="text-xs text-gray-400">No sub-agents found.</p>}
