@@ -103,13 +103,14 @@ export function MediaListPage() {
 
   return (
     <div className="max-w-5xl space-y-6 p-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold text-gray-900">Media</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            Files uploaded by tools (or Cinqo itself) through the core Media feature — audit, upload, and clean up storage here.
-          </p>
-        </div>
+      <div>
+        <h1 className="text-xl font-semibold text-gray-900">Media</h1>
+        <p className="mt-1 text-sm text-gray-500">
+          Files uploaded by tools (or Cinqo itself) through the core Media feature — audit, upload, and clean up storage here.
+        </p>
+      </div>
+
+      <div className="flex items-end justify-between gap-4">
         <div className="flex items-end gap-2">
           <div className="w-40">
             <Dropdown options={uploadTargetOptions} value={uploadToolSlug} onChange={setUploadToolSlug} />
@@ -125,13 +126,13 @@ export function MediaListPage() {
             }}
           />
         </div>
-      </div>
 
-      {tools.length > 0 && (
-        <div className="w-64">
-          <Dropdown options={toolOptions} value={toolSlug} onChange={setToolSlug} placeholder="All tools" />
-        </div>
-      )}
+        {tools.length > 0 && (
+          <div className="w-64">
+            <Dropdown options={toolOptions} value={toolSlug} onChange={setToolSlug} placeholder="All tools" />
+          </div>
+        )}
+      </div>
 
       {media.length === 0 && <p className="py-6 text-center text-sm text-gray-400">No media files.</p>}
 
