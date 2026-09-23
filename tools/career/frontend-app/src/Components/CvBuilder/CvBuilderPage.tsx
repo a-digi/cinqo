@@ -5,6 +5,7 @@ import { PersonalDetailsStep } from './PersonalDetailsStep'
 import { SkillsStep } from './SkillsStep'
 import { ExperienceStep } from './ExperienceStep'
 import { TitleAndReviewStep } from './TitleAndReviewStep'
+import { StepIndicator } from './StepIndicator'
 
 const CV_DOCUMENTS_PATH = '/tools/career/cv-documents'
 
@@ -39,6 +40,14 @@ export function CvBuilderPage() {
   const initialPersonaId = params.get('personaId')
 
   const [step, setStep] = useState(0)
+  // The furthest step actually reached — everything up to and
+  // including it can be revisited freely (StepIndicator's own
+  // clickable steps); anything past it is locked/grayed out, per your
+  // own "can't skip ahead to an unfinished step" instruction. Editing
+  // an existing document starts this at the LAST index (below) since
+  // every step already has real, saved data — nothing about it is
+  // actually "unfinished."
+  const [furthestStep, setFurthestStep] = useState(0)
   const [personaId, setPersonaId] = useState<string | null>(editingId ? null : initialPersonaId)
   const [templateId, setTemplateId] = useState('')
   const [title, setTitle] = useState('')
@@ -80,6 +89,7 @@ export function CvBuilderPage() {
         setTemplateId(doc.templateId)
         setTitle(doc.title)
         setCvData(doc.data)
+        setFurthestStep(STEPS.length - 1)
       })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : String(err))
@@ -114,7 +124,19 @@ export function CvBuilderPage() {
       return
     }
     setError('')
-    setStep((s) => Math.min(STEPS.length - 1, s + 1))
+    const next = Math.min(STEPS.length - 1, step + 1)
+    setStep(next)
+    setFurthestStep((f) => Math.max(f, next))
+  }
+
+  // StepIndicator's own onStepClick — a locked (not-yet-reached) step
+  // renders its button as `disabled`, so this never actually needs to
+  // re-check furthestStep itself, but the check stays here too as a
+  // real guard, not just a UI-only one.
+  function goToStep(index: number) {
+    if (index > furthestStep) return
+    setError('')
+    setStep(index)
   }
 
   function handleCancel() {
@@ -153,10 +175,9 @@ export function CvBuilderPage() {
         ← Back to CV Documents
       </button>
 
-      <h1 className="mb-1 text-xl font-semibold text-gray-900">{editingId ? 'Edit CV' : 'New CV'}</h1>
-      <p className="mb-4 text-xs font-medium uppercase tracking-wide text-gray-400">
-        Step {step + 1} of {STEPS.length}: {STEPS[step].label}
-      </p>
+      <h1 className="mb-4 text-xl font-semibold text-gray-900">{editingId ? 'Edit CV' : 'New CV'}</h1>
+
+      <StepIndicator steps={STEPS} currentStep={step} furthestStep={furthestStep} onStepClick={goToStep} />
 
       {error && <p className="mb-4 text-sm text-red-700">{error}</p>}
 
