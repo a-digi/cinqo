@@ -47,7 +47,8 @@ type uploadImageResponse struct {
 // image-specific sibling of UploadHandler (upload_handler.go), never a
 // replacement for it: that route stays untouched and content-type
 // agnostic for every existing/future non-image caller. Multipart,
-// fields "file" (required) and "toolSlug" (required) — same
+// fields "file" (required), "toolSlug" (required), and "title"
+// (required — see plan/ai/media/step-10-obligatory-title.md) — same
 // toolSlug-scope authorization UploadHandler itself already does (a
 // caller must hold a scope toolSlug itself declares, or
 // cinqo:super:admin).
@@ -83,6 +84,12 @@ func UploadImageHandler(reqCtx request.RequestContext) {
 	toolSlug := strings.TrimSpace(r.FormValue("toolSlug"))
 	if toolSlug == "" {
 		response.ErrorResponse(w, http.StatusBadRequest, "toolSlug is required")
+		return
+	}
+
+	title := strings.TrimSpace(r.FormValue("title"))
+	if title == "" {
+		response.ErrorResponse(w, http.StatusBadRequest, "title is required")
 		return
 	}
 
@@ -173,6 +180,7 @@ func UploadImageHandler(reqCtx request.RequestContext) {
 		UploadedByUserID: userID,
 		Width:            b.Dx(),
 		Height:           b.Dy(),
+		Title:            title,
 	}
 	if err := media_persistent.NewMediaPersistentRepo(db).Insert(m); err != nil {
 		_ = os.Remove(storedPath)

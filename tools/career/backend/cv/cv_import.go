@@ -118,6 +118,14 @@ func forwardToMedia(originalReq *http.Request, file io.Reader, filename string) 
 	if err := writer.WriteField("toolSlug", "career"); err != nil {
 		return "", err
 	}
+	// title is now required by Media (plan/ai/media/step-10-obligatory-title.md)
+	// — no job/portal data exists yet at CV-import time (the CV is
+	// imported BEFORE any job/application record exists), so the
+	// uploaded file's own filename is the only meaningful title
+	// available here.
+	if err := writer.WriteField("title", filename); err != nil {
+		return "", err
+	}
 	if err := writer.WriteField("ttlSeconds", fmt.Sprintf("%d", cvImportTTLSeconds)); err != nil {
 		return "", err
 	}

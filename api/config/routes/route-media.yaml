@@ -83,3 +83,14 @@ routes:
     method: PATCH
     executor: MediaUpdateTitle
     security: authenticated
+
+  # Public — NO end-user auth, same ToolService-bearer pattern as
+  # route-domainevent.yaml's own publish route: a Tool's own backend
+  # retitles a row IT OWNS (same tool_slug only), authenticated as
+  # itself, never as any end user. See
+  # media/handler/update_title_service_handler.go's own doc comment and
+  # plan/ai/media/step-10-obligatory-title.md.
+  - path: /api/v1/media/{id}/title
+    method: PATCH
+    executor: MediaUpdateTitleService
+    security: public

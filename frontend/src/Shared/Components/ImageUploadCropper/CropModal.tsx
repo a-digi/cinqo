@@ -17,8 +17,13 @@ interface CropModalProps {
   // upload/replace is going into (see ImageUploadCropper's own doc
   // comment for sourceLabel).
   sourceLabel: string
+  // True for a new upload (title is required — see
+  // plan/ai/media/step-10-obligatory-title.md); false when replacing an
+  // existing image's own bytes, which keeps its own existing title
+  // untouched, so no title input renders at all in that case.
+  requireTitle: boolean
   onCancel: () => void
-  onSave: (croppedBlob: Blob) => void
+  onSave: (croppedBlob: Blob, title?: string) => void
 }
 
 function loadImage(src: string): Promise<HTMLImageElement> {
@@ -50,12 +55,13 @@ async function cropToBlob(imageSrc: string, area: Area): Promise<Blob> {
   })
 }
 
-export function CropModal({ imageSrc, aspect, sourceLabel, onCancel, onSave }: CropModalProps) {
+export function CropModal({ imageSrc, aspect, sourceLabel, requireTitle, onCancel, onSave }: CropModalProps) {
   const [crop, setCrop] = useState<Point>({ x: 0, y: 0 })
   const [zoom, setZoom] = useState(1)
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [title, setTitle] = useState('')
   // react-easy-crop always needs a numeric aspect — there is no true
   // arbitrary-shape crop area. "aspect omitted" (free-form) is
   // approximated by matching the SOURCE image's own natural ratio
@@ -65,13 +71,16 @@ export function CropModal({ imageSrc, aspect, sourceLabel, onCancel, onSave }: C
   const [naturalAspect, setNaturalAspect] = useState<number | null>(null)
   const effectiveAspect = aspect ?? naturalAspect ?? 1
 
+  const trimmedTitle = title.trim()
+  const canSave = croppedAreaPixels !== null && (!requireTitle || trimmedTitle !== '')
+
   const handleSave = async () => {
-    if (!croppedAreaPixels) return
+    if (!croppedAreaPixels || (requireTitle && trimmedTitle === '')) return
     setSaving(true)
     setError(null)
     try {
       const blob = await cropToBlob(imageSrc, croppedAreaPixels)
-      onSave(blob)
+      onSave(blob, requireTitle ? trimmedTitle : undefined)
     } catch {
       setError('Failed to crop image.')
       setSaving(false)
@@ -130,6 +139,24 @@ export function CropModal({ imageSrc, aspect, sourceLabel, onCancel, onSave }: C
             />
           </div>
 
+          {requireTitle && (
+            <div className="mt-4">
+              <label htmlFor="crop-modal-title" className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                Title
+              </label>
+              <input
+                id="crop-modal-title"
+                type="text"
+                value={title}
+                onChange={(e) => {
+                  setTitle(e.target.value)
+                }}
+                placeholder="Required"
+                className="mt-1 w-full rounded border border-gray-300 px-2 py-1.5 text-sm focus:border-gray-900 focus:outline-none"
+              />
+            </div>
+          )}
+
           {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
         </div>
 
@@ -147,7 +174,7 @@ export function CropModal({ imageSrc, aspect, sourceLabel, onCancel, onSave }: C
             onClick={() => {
               void handleSave()
             }}
-            disabled={saving || !croppedAreaPixels}
+            disabled={saving || !canSave}
             className="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
           >
             {saving ? 'Saving…' : 'Save'}

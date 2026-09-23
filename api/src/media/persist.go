@@ -73,6 +73,15 @@ func PersistLocalFile(db *sql.DB, dataDir, toolSlug, uploadedByUserID, conversat
 		SizeBytes:        written,
 		UploadedByUserID: uploadedByUserID,
 		ConversationID:   conversationID,
+		// Title is obligatory (plan/ai/media/step-10-obligatory-title.md)
+		// but no meaningful title (e.g. a job/portal name) is available
+		// in this generic, tool-agnostic promotion path — originalFilename
+		// is the same placeholder every other required-but-uninformed
+		// field on this struct already falls back to. A caller with real
+		// context (e.g. Career's own save_cv_pdf flow) overwrites this
+		// afterward via the new PATCH /api/v1/media/{id}/title
+		// service-to-service route.
+		Title: originalFilename,
 	}
 	if err := media_persistent.NewMediaPersistentRepo(db).Insert(m); err != nil {
 		_ = os.Remove(storedPath)

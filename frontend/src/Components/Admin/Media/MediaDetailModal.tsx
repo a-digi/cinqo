@@ -42,11 +42,13 @@ export function MediaDetailModal({ file, onClose, onTitleSaved }: MediaDetailMod
   const [saving, setSaving] = useState(false)
   const { successMessage, errorMessage } = useSnackBar()
 
+  const trimmedTitle = title.trim()
+
   const handleSaveTitle = async () => {
-    if (title === file.title) return
+    if (trimmedTitle === '' || trimmedTitle === file.title) return
     setSaving(true)
     try {
-      const updated = await updateMediaTitle(file.id, title)
+      const updated = await updateMediaTitle(file.id, trimmedTitle)
       onTitleSaved(updated)
       successMessage('Title saved.')
     } catch (err) {
@@ -104,7 +106,7 @@ export function MediaDetailModal({ file, onClose, onTitleSaved }: MediaDetailMod
                 onClick={() => {
                   void handleSaveTitle()
                 }}
-                disabled={saving || title === file.title}
+                disabled={saving || trimmedTitle === '' || trimmedTitle === file.title}
                 className="shrink-0 rounded-md bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
               >
                 {saving ? 'Saving…' : 'Save'}

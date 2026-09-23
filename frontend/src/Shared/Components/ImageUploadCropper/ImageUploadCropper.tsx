@@ -40,10 +40,12 @@ export function ImageUploadCropper({ toolSlug, existingFileId, aspect, sourceLab
     setObjectUrl(URL.createObjectURL(file))
   }
 
-  const handleSave = async (croppedBlob: Blob) => {
+  const handleSave = async (croppedBlob: Blob, title?: string) => {
     setBusy(true)
     try {
-      const result = existingFileId ? await replaceImage(existingFileId, croppedBlob) : await uploadImage(croppedBlob, toolSlug)
+      const result = existingFileId
+        ? await replaceImage(existingFileId, croppedBlob)
+        : await uploadImage(croppedBlob, toolSlug, title ?? '')
       closeCropModal()
       onDone(result)
     } catch (err) {
@@ -69,9 +71,10 @@ export function ImageUploadCropper({ toolSlug, existingFileId, aspect, sourceLab
           imageSrc={objectUrl}
           aspect={aspect}
           sourceLabel={sourceLabel ?? toolSlug}
+          requireTitle={!existingFileId}
           onCancel={closeCropModal}
-          onSave={(blob) => {
-            void handleSave(blob)
+          onSave={(blob, title) => {
+            void handleSave(blob, title)
           }}
         />
       )}

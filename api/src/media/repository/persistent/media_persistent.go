@@ -24,15 +24,20 @@ func NewMediaPersistentRepo(db *sql.DB) *MediaPersistentRepo {
 // step 3) simply never sets them, and nullIfZero below stores a real
 // SQL NULL for them, not a literal 0. updated_at is never set here —
 // it stays NULL until UpdateImage (below) first replaces this row's
-// own image bytes.
+// own image bytes. Title is logically required (every caller of
+// Insert now supplies one — enforced in each HTTP handler / in-process
+// caller, not by a SQL constraint; see
+// plan/ai/media/step-10-obligatory-title.md) but still passed through
+// nullIfEmpty defensively, matching this function's own existing
+// convention for every other string column.
 func (r *MediaPersistentRepo) Insert(m *media_entity.MediaFile) error {
 	_, err := r.db.Exec(
 		`INSERT INTO media_files (id, tool_slug, original_filename, extension, stored_path, content_type,
-			size_bytes, uploaded_by_user_id, conversation_id, expires_at, created_at, width, height)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)`,
+			size_bytes, uploaded_by_user_id, conversation_id, expires_at, created_at, width, height, title)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?)`,
 		m.ID, m.ToolSlug, m.OriginalFilename, m.Extension, m.StoredPath, m.ContentType,
 		m.SizeBytes, m.UploadedByUserID, nullIfEmpty(m.ConversationID), nullIfEmpty(m.ExpiresAt),
-		nullIfZero(m.Width), nullIfZero(m.Height),
+		nullIfZero(m.Width), nullIfZero(m.Height), nullIfEmpty(m.Title),
 	)
 	return err
 }

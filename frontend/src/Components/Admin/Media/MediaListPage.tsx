@@ -141,7 +141,6 @@ export function MediaListPage() {
             <thead>
               <tr className="text-xs uppercase text-gray-400">
                 <th className="px-4 py-2 font-medium" />
-                <th className="px-4 py-2 font-medium">Filename</th>
                 <th className="px-4 py-2 font-medium">Title</th>
                 <th className="px-4 py-2 font-medium">Tool</th>
                 <th className="px-4 py-2 font-medium">Uploaded</th>
@@ -172,8 +171,7 @@ export function MediaListPage() {
                       <div className="h-10 w-10 rounded bg-gray-100" />
                     )}
                   </td>
-                  <td className="px-4 py-2 text-gray-900">{file.originalFilename}</td>
-                  <td className="px-4 py-2 text-gray-600">{file.title || <span className="text-gray-300">—</span>}</td>
+                  <td className="px-4 py-2 text-gray-900">{file.title || file.originalFilename}</td>
                   <td className="px-4 py-2">
                     <Pill outline>{file.toolSlug}</Pill>
                   </td>

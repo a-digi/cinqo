@@ -117,10 +117,12 @@ interface ImageUploadResult {
 
 // Creates a new image row — server resizes/re-encodes (see
 // api/src/media/handler/upload_image_handler.go's own doc comment).
-export async function uploadImage(file: Blob, toolSlug: string): Promise<ImageUploadResult> {
+// title is required (plan/ai/media/step-10-obligatory-title.md).
+export async function uploadImage(file: Blob, toolSlug: string, title: string): Promise<ImageUploadResult> {
   const formData = new FormData()
   formData.append('file', file, 'image.jpg')
   formData.append('toolSlug', toolSlug)
+  formData.append('title', title)
   const raw = await apiUpload<{ message: ImageUploadResult }>('/api/v1/media/images', formData)
   return raw.message
 }

@@ -41,7 +41,8 @@ type uploadResponse struct {
 }
 
 // UploadHandler handles POST /api/v1/media/upload — multipart, fields
-// "file" (required), "toolSlug" (required), "conversationId"
+// "file" (required), "toolSlug" (required), "title" (required —
+// see plan/ai/media/step-10-obligatory-title.md), "conversationId"
 // (optional), "ttlSeconds" (optional). Returns only { "fileId" } — the
 // caller (and, through it, whatever AI turn eventually references this
 // file) never sees a path or URL, per the design's own "the AI gets
@@ -69,6 +70,12 @@ func UploadHandler(reqCtx request.RequestContext) {
 	toolSlug := strings.TrimSpace(r.FormValue("toolSlug"))
 	if toolSlug == "" {
 		response.ErrorResponse(w, http.StatusBadRequest, "toolSlug is required")
+		return
+	}
+
+	title := strings.TrimSpace(r.FormValue("title"))
+	if title == "" {
+		response.ErrorResponse(w, http.StatusBadRequest, "title is required")
 		return
 	}
 
@@ -148,6 +155,7 @@ func UploadHandler(reqCtx request.RequestContext) {
 		SizeBytes:        written,
 		UploadedByUserID: userID,
 		ConversationID:   strings.TrimSpace(r.FormValue("conversationId")),
+		Title:            title,
 	}
 	if ttlRaw := strings.TrimSpace(r.FormValue("ttlSeconds")); ttlRaw != "" {
 		if ttl, convErr := strconv.Atoi(ttlRaw); convErr == nil && ttl > 0 {

@@ -28,9 +28,23 @@
 // promote_media_param mechanism (tools/career/manifest.json's
 // save_cv_pdf entry). So by the time SaveGeneratedCvPdf runs, its own
 // pdfResource argument already IS a permanent Media file id — this
-// package never talks to Media, over HTTP or otherwise, and the whole
-// flow runs fully detached from any frontend tab. See
-// plan/ai/tools/career/step-XX-cv-pdf.md.
+// package never CREATES a Media row, over HTTP or otherwise, and the
+// whole flow runs fully detached from any frontend tab.
+//
+// It does retitle that row, right before recording it
+// (prepareCvPdfMediaTitle, below) — the one thing the CORE app's own
+// promotion step can't do itself, since it has no access to this job's
+// own title/portal data. That's a small, service-token-authenticated
+// HTTP callback (career-tool-backend/media.SetTitle), not a departure
+// from the reasoning above: it still never authenticates as any end
+// user. Calling it BEFORE SaveGeneratedCvPdf, not after, also makes it
+// the one reliable way this package can confirm pdfResource is a real,
+// already-promoted row it owns — a bare UUID the AI echoed back
+// without ever going through promotion looks identical, by shape
+// alone, to a real one, and this check catches exactly that (a
+// live-observed bug, see prepareCvPdfMediaTitle's own doc comment). See
+// plan/ai/tools/career/step-XX-cv-pdf.md and
+// plan/ai/media/step-10-obligatory-title.md.
 package jobs
 
 import (
@@ -43,6 +57,7 @@ import (
 
 	"career-tool-backend/db"
 	"career-tool-backend/domainevent"
+	"career-tool-backend/media"
 )
 
 // StartCvGeneration begins tracking a new AI-driven CV generation
@@ -161,6 +176,39 @@ func publishCvGeneratedEvent(jobId, mediaFileId string) {
 	domainevent.Publish("career.cv.generated", map[string]string{"job_id": jobId, "media_file_id": mediaFileId})
 }
 
+// prepareCvPdfMediaTitle computes "{job_title}_{portal_name}.pdf"
+// (just "{job_title}.pdf" when the job has no portal — GetJobByID's
+// own LEFT JOIN leaves PortalName empty in that case) and sets it on
+// mediaFileId via media.SetTitle — called BEFORE SaveGeneratedCvPdf,
+// not after: this doubles as the only way this package can verify
+// mediaFileId is a real, already-promoted Media row it owns, since it
+// has no direct DB access to check that itself (see this file's own
+// top doc comment). A definitive media.ErrMediaNotOwned is passed
+// straight back to the caller, which must reject the whole save_cv_pdf
+// call rather than ever recording a dead reference on the job — this
+// is precisely the live-observed bug this function was added to catch
+// (the AI passing generate_pdf's own bare resource id instead of its
+// full 'uri' field, which never gets promoted by
+// api/src/conversation/chat.go's own resolvePromoteMediaArgument, so
+// it reaches this backend looking like a syntactically valid but
+// entirely unpromoted UUID — indistinguishable from a real one by
+// shape alone). GetJobByID failing here (jobId itself unknown) is NOT
+// surfaced — RegisterSaveCvPdf's own subsequent SaveGeneratedCvPdf call
+// already produces the correct "unknown job" error for that case, so
+// it isn't duplicated; there is also no title to compute without a
+// real job. See plan/ai/media/step-10-obligatory-title.md.
+func prepareCvPdfMediaTitle(jobId, mediaFileId string) error {
+	j, err := GetJobByID(jobId)
+	if err != nil {
+		return nil
+	}
+	title := j.Title + ".pdf"
+	if j.PortalName != "" {
+		title = fmt.Sprintf("%s_%s.pdf", j.Title, j.PortalName)
+	}
+	return media.SetTitle(mediaFileId, title)
+}
+
 // --- MCP registration ---
 
 type saveCvPdfArgs struct {
@@ -217,6 +265,22 @@ func RegisterSaveCvPdf(server *mcp.Server) {
 					"returned 'uri' field straight into this call's pdfResource argument, exactly as returned — do not " +
 					"add a domain/host in front of it or otherwise retype it.",
 			), nil, nil
+		}
+		// Verifies pdfResource is a real, already-promoted Media row this
+		// tool owns BEFORE ever recording it on the job — see
+		// prepareCvPdfMediaTitle's own doc comment for the exact bug this
+		// catches (a syntactically-valid-looking but never-promoted UUID,
+		// which the check above can't distinguish from a real one).
+		if err := prepareCvPdfMediaTitle(args.JobID, args.PdfResource); err != nil {
+			if errors.Is(err, media.ErrMediaNotOwned) {
+				return db.ErrResult(
+					"pdfResource (" + args.PdfResource + ") does not correspond to a real, already-promoted Media file " +
+						"owned by this tool — this usually means only generate_pdf's own resource id was extracted and " +
+						"passed here, instead of its FULL 'uri' field. Call generate_pdf again and pass its own returned " +
+						"'uri' field straight into this call's pdfResource argument, exactly as returned, with nothing " +
+						"added, removed, or retyped.",
+				), nil, nil
+			}
 		}
 		if err := SaveGeneratedCvPdf(args.JobID, args.PdfResource); err != nil {
 			if errors.Is(err, ErrUnknownJob) {
