@@ -334,8 +334,18 @@ func writeCvDocumentAwareError(w http.ResponseWriter, action string, err error) 
 // unmodified) onto a second outbound call, rather than inventing a new
 // credential. See plan/ai/career/cv-builder/step-01-overview-and-data-model.md.
 
+// cvPageMarginInches is CV Builder's own page margin choice, not
+// pdf_tools' — pdf_tools itself no longer applies any default margin,
+// so every caller must ask for the margin it wants. This keeps CV PDFs
+// looking the same as before that change.
+const cvPageMarginInches = 0.4
+
 type generatePdfRequest struct {
-	Xhtml string `json:"xhtml"`
+	Xhtml          string  `json:"xhtml"`
+	MarginTopIn    float64 `json:"marginTopIn,omitempty"`
+	MarginBottomIn float64 `json:"marginBottomIn,omitempty"`
+	MarginLeftIn   float64 `json:"marginLeftIn,omitempty"`
+	MarginRightIn  float64 `json:"marginRightIn,omitempty"`
 }
 
 type generatePdfResponse struct {
@@ -344,7 +354,13 @@ type generatePdfResponse struct {
 }
 
 func forwardGeneratePdf(originalReq *http.Request, xhtml string) (string, error) {
-	body, err := json.Marshal(generatePdfRequest{Xhtml: xhtml})
+	body, err := json.Marshal(generatePdfRequest{
+		Xhtml:          xhtml,
+		MarginTopIn:    cvPageMarginInches,
+		MarginBottomIn: cvPageMarginInches,
+		MarginLeftIn:   cvPageMarginInches,
+		MarginRightIn:  cvPageMarginInches,
+	})
 	if err != nil {
 		return "", err
 	}

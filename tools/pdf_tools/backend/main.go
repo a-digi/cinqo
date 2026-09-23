@@ -89,7 +89,15 @@ type convertResponse struct {
 }
 
 type generatePDFArgs struct {
-	Xhtml string `json:"xhtml" jsonschema:"the XHTML document to render into a PDF"`
+	Xhtml          string  `json:"xhtml" jsonschema:"the XHTML document to render into a PDF"`
+	MarginTopIn    float64 `json:"marginTopIn,omitempty" jsonschema:"optional top page margin in inches; omit for no margin"`
+	MarginBottomIn float64 `json:"marginBottomIn,omitempty" jsonschema:"optional bottom page margin in inches; omit for no margin"`
+	MarginLeftIn   float64 `json:"marginLeftIn,omitempty" jsonschema:"optional left page margin in inches; omit for no margin"`
+	MarginRightIn  float64 `json:"marginRightIn,omitempty" jsonschema:"optional right page margin in inches; omit for no margin"`
+}
+
+func (a generatePDFArgs) margins() generate.Margins {
+	return generate.Margins{Top: a.MarginTopIn, Bottom: a.MarginBottomIn, Left: a.MarginLeftIn, Right: a.MarginRightIn}
 }
 
 // runMCPServer declares this tool's two MCP tools and speaks MCP over
@@ -151,7 +159,7 @@ func runMCPServer(tmpDir, uploadsDir string) {
 			}, nil, nil
 		}
 
-		id, _, err := generate.PDF(tmpDir, uploadsDir, args.Xhtml)
+		id, _, err := generate.PDF(tmpDir, uploadsDir, args.Xhtml, args.margins())
 		if err != nil {
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("render failed: %v", err)}},
@@ -203,7 +211,15 @@ func convertHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 type generateRequest struct {
-	Xhtml string `json:"xhtml"`
+	Xhtml          string  `json:"xhtml"`
+	MarginTopIn    float64 `json:"marginTopIn,omitempty"`
+	MarginBottomIn float64 `json:"marginBottomIn,omitempty"`
+	MarginLeftIn   float64 `json:"marginLeftIn,omitempty"`
+	MarginRightIn  float64 `json:"marginRightIn,omitempty"`
+}
+
+func (b generateRequest) margins() generate.Margins {
+	return generate.Margins{Top: b.MarginTopIn, Bottom: b.MarginBottomIn, Left: b.MarginLeftIn, Right: b.MarginRightIn}
 }
 
 type generateResponse struct {
@@ -227,7 +243,7 @@ func generateHandler(tmpDir, uploadsDir string) http.HandlerFunc {
 			return
 		}
 
-		id, n, err := generate.PDF(tmpDir, uploadsDir, body.Xhtml)
+		id, n, err := generate.PDF(tmpDir, uploadsDir, body.Xhtml, body.margins())
 		if err != nil {
 			http.Error(w, fmt.Sprintf("render failed: %v", err), http.StatusBadGateway)
 			return

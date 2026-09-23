@@ -20,15 +20,34 @@ import (
 	"github.com/google/uuid"
 )
 
+// Margins holds the four page-margin values (in inches) a caller may
+// ask PDF to apply. The zero value means "no margin on that side" —
+// there is no implicit default any more; a margin only ever appears
+// because the caller asked for it.
+type Margins struct {
+	Top    float64
+	Bottom float64
+	Left   float64
+	Right  float64
+}
+
+func (m Margins) isZero() bool {
+	return m.Top == 0 && m.Bottom == 0 && m.Left == 0 && m.Right == 0
+}
+
 // PDF stages xhtml into a real file under tmpDir, points a fresh
 // headless-Chrome context at it via a file:// URL, prints it to PDF,
 // and stores the result under uploadsDir — exact same mechanism as
 // pdf_generator's own generatePDF, renamed to an exported PDF (called
 // as generate.PDF from main.go) since it now lives in its own package.
-func PDF(tmpDir, uploadsDir, xhtml string) (id string, byteCount int, err error) {
+func PDF(tmpDir, uploadsDir, xhtml string, margins Margins) (id string, byteCount int, err error) {
 	id = uuid.NewString()
 	xhtmlPath := filepath.Join(tmpDir, id+".xhtml")
-	if err := os.WriteFile(xhtmlPath, []byte(withDefaultPageMargin(xhtml)), 0o644); err != nil {
+	staged := xhtml
+	if !margins.isZero() {
+		staged = withPageMargin(xhtml, margins)
+	}
+	if err := os.WriteFile(xhtmlPath, []byte(staged), 0o644); err != nil {
 		return "", 0, fmt.Errorf("failed to stage xhtml: %w", err)
 	}
 	defer os.Remove(xhtmlPath)
@@ -38,7 +57,7 @@ func PDF(tmpDir, uploadsDir, xhtml string) (id string, byteCount int, err error)
 		return "", 0, fmt.Errorf("failed to resolve staged xhtml path: %w", err)
 	}
 
-	pdfBytes, err := renderPDF(absPath)
+	pdfBytes, err := renderPDF(absPath, margins)
 	if err != nil {
 		return "", 0, err
 	}
@@ -65,42 +84,25 @@ func ReadFile(uploadsDir, id string) ([]byte, error) {
 	return os.ReadFile(filepath.Join(uploadsDir, id+".pdf"))
 }
 
-// defaultMarginInches is the top/bottom page margin (in inches)
-// applied to every generated PDF, regardless of what the caller's own
-// XHTML/CSS says.
-//
-// This needs two layers, not one — verified empirically against this
-// chromedp/Chrome version, since the two documented mechanisms don't
-// agree with real behavior in isolation:
-//   - Page.printToPDF's own WithMarginTop/WithMarginBottom (set in
-//     renderPDF below) is the baseline: it's honored whenever the
-//     document has no `@page` margin rule of its own.
-//   - But when the document DOES declare its own `@page { margin: 0 }`
-//     (or similar), that CSS rule wins outright — printToPDF's margin
-//     params are silently ignored. So a caller-authored document (e.g.
-//     an AI-generated CV that resets `@page`/`body` margins to make a
-//     full-bleed header) can defeat the printToPDF margin entirely.
-//
-// withDefaultPageMargin below closes that gap by appending our own
-// `@page` rule as the LAST rule in <head>, so normal CSS cascade order
-// makes it win over any earlier `@page` rule the document supplies —
-// making the margin genuinely independent of the caller's own HTML/CSS,
-// not just the common case.
-const defaultMarginInches = 0.4
-
+// withPageMargin only ever runs when the caller explicitly asked for a
+// non-zero margin (see PDF above) — there is no implicit default any
+// more. It appends our own `@page` rule as the LAST rule in <head>, so
+// normal CSS cascade order makes it win over any earlier `@page` rule
+// the document supplies, and over Page.printToPDF's own margin params,
+// which are silently ignored whenever the document declares its own
+// `@page` margin rule — verified empirically against this
+// chromedp/Chrome version. Without this, a caller-authored document
+// (e.g. an AI-generated CV that resets `@page`/`body` margins) could
+// defeat a caller-requested printToPDF margin entirely.
 var headCloseTagPattern = regexp.MustCompile(`(?i)</head>`)
 
-// withDefaultPageMargin appends a `@page` rule pinning the top/bottom
-// margin, inserted immediately before the document's own </head> so it
-// is the last-declared @page rule and therefore wins the cascade over
-// any @page margin rule already in the document. If no </head> is
-// found (a malformed/fragment document), the override is prepended
-// instead so it still applies rather than being silently dropped.
-func withDefaultPageMargin(xhtml string) string {
+func withPageMargin(xhtml string, margins Margins) string {
 	override := fmt.Sprintf(
-		"<style>@page { margin-top: %sin; margin-bottom: %sin; }</style>",
-		strconv.FormatFloat(defaultMarginInches, 'f', -1, 64),
-		strconv.FormatFloat(defaultMarginInches, 'f', -1, 64),
+		"<style>@page { margin-top: %sin; margin-bottom: %sin; margin-left: %sin; margin-right: %sin; }</style>",
+		strconv.FormatFloat(margins.Top, 'f', -1, 64),
+		strconv.FormatFloat(margins.Bottom, 'f', -1, 64),
+		strconv.FormatFloat(margins.Left, 'f', -1, 64),
+		strconv.FormatFloat(margins.Right, 'f', -1, 64),
 	)
 	if loc := headCloseTagPattern.FindStringIndex(xhtml); loc != nil {
 		return xhtml[:loc[0]] + override + xhtml[loc[0]:]
@@ -118,7 +120,7 @@ func withDefaultPageMargin(xhtml string) string {
 // call — same convention pdf_generator's own renderPDF already
 // established. A 30s request-scoped timeout bounds a hung/pathological
 // render.
-func renderPDF(absXhtmlPath string) ([]byte, error) {
+func renderPDF(absXhtmlPath string, margins Margins) ([]byte, error) {
 	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), allocatorOptions()...)
 	defer allocCancel()
 
@@ -132,10 +134,16 @@ func renderPDF(absXhtmlPath string) ([]byte, error) {
 	err := chromedp.Run(ctx,
 		chromedp.Navigate("file://"+absXhtmlPath),
 		chromedp.ActionFunc(func(ctx context.Context) error {
+			// Explicit on every side, even when zero: Page.printToPDF's
+			// own default (when a margin isn't set at all) is 0.4in, not
+			// 0 — leaving any of these unset would silently reintroduce
+			// a margin nobody asked for.
 			buf, _, err := page.PrintToPDF().
 				WithPrintBackground(true).
-				WithMarginTop(defaultMarginInches).
-				WithMarginBottom(defaultMarginInches).
+				WithMarginTop(margins.Top).
+				WithMarginBottom(margins.Bottom).
+				WithMarginLeft(margins.Left).
+				WithMarginRight(margins.Right).
 				Do(ctx)
 			if err != nil {
 				return err
