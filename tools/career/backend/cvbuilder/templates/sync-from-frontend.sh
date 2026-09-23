@@ -26,9 +26,13 @@ set -eu
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 FRONTEND_TEMPLATES="$SCRIPT_DIR/../../../frontend-app/src/Components/CvBuilder/Template"
 
-for id in modern-mono modern-sidebar classic; do
+for id in modern-mono modern-sidebar classic \
+  ats-clean ats-serif-classic ats-minimal-gray ats-executive ats-compact \
+  ats-modern-sans ats-times ats-verdana ats-tahoma ats-calibri \
+  ats-garamond ats-bold-headers ats-two-line-header ats-skills-first ats-academic; do
+  mkdir -p "$SCRIPT_DIR/$id"
   cp "$FRONTEND_TEMPLATES/$id/template.html" "$SCRIPT_DIR/$id/template.html"
   cp "$FRONTEND_TEMPLATES/$id/style.css" "$SCRIPT_DIR/$id/style.css"
 done
 
-echo "synced modern-mono, modern-sidebar, classic from frontend-app"
+echo "synced all CV templates from frontend-app"

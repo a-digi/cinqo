@@ -16,10 +16,34 @@ type TemplateMeta struct {
 	Description string `json:"description"`
 }
 
+// The 15 ats-* designs below are all deliberately single-column, plain-
+// text layouts — no tables, no CSS `columns`, no floats, no absolute/
+// fixed positioning, no profile photo — since any of those can reorder
+// or drop content in an ATS's own PDF text-layer extraction relative to
+// what's visually shown. They differ from each other only in
+// typography, accent color, and (for ats-skills-first) section order —
+// the safe axes of variation once the layout itself is constrained to
+// "real, linear, single-column text." See
+// plan/ai/career/cv-builder/step-05-ats-templates.md.
 var metas = []TemplateMeta{
 	{ID: "modern-mono", Name: "Modern Mono", Description: "Single accent color, minimal, one column."},
 	{ID: "modern-sidebar", Name: "Modern Sidebar", Description: "Two-column layout with a colored sidebar for contact info and skills."},
 	{ID: "classic", Name: "Classic", Description: "Traditional serif layout, closest to a conventional printed resume."},
+	{ID: "ats-clean", Name: "ATS Clean", Description: "Single-column sans-serif with minimal navy accents — built for maximum ATS parsing reliability."},
+	{ID: "ats-serif-classic", Name: "ATS Serif Classic", Description: "Traditional serif resume in black text only, no color at all — the most conservative ATS-safe option."},
+	{ID: "ats-minimal-gray", Name: "ATS Minimal Gray", Description: "Uppercase section headers, generous whitespace, no rules or color accents anywhere."},
+	{ID: "ats-executive", Name: "ATS Executive", Description: "Serif headings with a single rule under the name, charcoal accents, formal tone."},
+	{ID: "ats-compact", Name: "ATS Compact", Description: "Smaller type and tighter spacing to fit more content on a single page."},
+	{ID: "ats-modern-sans", Name: "ATS Modern Sans", Description: "Clean sans-serif body with thin teal underlines on section headings."},
+	{ID: "ats-times", Name: "ATS Times", Description: "Pure Times New Roman with maroon section headings — the most traditional printed-resume look."},
+	{ID: "ats-verdana", Name: "ATS Verdana", Description: "Verdana-based body text, slate-blue accents, wide letter-spacing on headings."},
+	{ID: "ats-tahoma", Name: "ATS Tahoma", Description: "Tahoma-based body text, burgundy accents, compact single-line contact header."},
+	{ID: "ats-calibri", Name: "ATS Calibri Style", Description: "Calibri-style sans-serif with warm brown accents and a soft, rounded feel."},
+	{ID: "ats-garamond", Name: "ATS Garamond Style", Description: "Garamond-style serif with deep green accents — understated and elegant."},
+	{ID: "ats-bold-headers", Name: "ATS Bold Headers", Description: "Grayscale only — bold uppercase headings with a bottom rule, zero color risk."},
+	{ID: "ats-two-line-header", Name: "ATS Two-Line Header", Description: "Name and contact details centered on their own lines, gray accents."},
+	{ID: "ats-skills-first", Name: "ATS Skills First", Description: "Leads with Skills before Experience — suited to skill-heavy or career-change resumes."},
+	{ID: "ats-academic", Name: "ATS Academic", Description: "Centered header, small-caps-style section titles, black-only styling for academic or formal CVs."},
 }
 
 // ListTemplates returns every available design, in a stable, fixed
@@ -46,6 +70,14 @@ func ListTemplates() []TemplateMeta {
 // directory tree, never across into frontend-app/).
 //
 //go:embed modern-mono/template.html modern-mono/style.css modern-sidebar/template.html modern-sidebar/style.css classic/template.html classic/style.css
+//go:embed ats-clean/template.html ats-clean/style.css ats-serif-classic/template.html ats-serif-classic/style.css
+//go:embed ats-minimal-gray/template.html ats-minimal-gray/style.css ats-executive/template.html ats-executive/style.css
+//go:embed ats-compact/template.html ats-compact/style.css ats-modern-sans/template.html ats-modern-sans/style.css
+//go:embed ats-times/template.html ats-times/style.css ats-verdana/template.html ats-verdana/style.css
+//go:embed ats-tahoma/template.html ats-tahoma/style.css ats-calibri/template.html ats-calibri/style.css
+//go:embed ats-garamond/template.html ats-garamond/style.css ats-bold-headers/template.html ats-bold-headers/style.css
+//go:embed ats-two-line-header/template.html ats-two-line-header/style.css ats-skills-first/template.html ats-skills-first/style.css
+//go:embed ats-academic/template.html ats-academic/style.css
 var templateFS embed.FS
 
 func isKnownTemplate(id string) bool {
