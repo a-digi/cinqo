@@ -167,7 +167,7 @@ func PreviewHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resourceID, err := forwardGeneratePdf(r, xhtml)
+	resourceID, err := forwardGeneratePdf(r, body.TemplateID, xhtml)
 	if err != nil {
 		http.Error(w, "failed to generate preview: "+err.Error(), http.StatusBadGateway)
 		return
@@ -255,7 +255,7 @@ func DocumentsHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		resourceID, err := forwardGeneratePdf(r, xhtml)
+		resourceID, err := forwardGeneratePdf(r, body.TemplateID, xhtml)
 		if err != nil {
 			http.Error(w, "failed to generate pdf: "+err.Error(), http.StatusBadGateway)
 			return
@@ -334,18 +334,32 @@ func writeCvDocumentAwareError(w http.ResponseWriter, action string, err error) 
 // unmodified) onto a second outbound call, rather than inventing a new
 // credential. See plan/ai/career/cv-builder/step-01-overview-and-data-model.md.
 
-// cvPageMarginInches is CV Builder's own page margin choice, not
-// pdf_tools' — pdf_tools itself no longer applies any default margin,
-// so every caller must ask for the margin it wants. This keeps CV PDFs
-// looking the same as before that change.
-const cvPageMarginInches = 0.4
+// CV PDFs ask for top/bottom page margin on every template EXCEPT
+// modern-sidebar, a deliberate per-template split, not an oversight:
+//   - Plain-text templates (classic, modern-mono) get a 0.4in top/
+//     bottom margin. Plain CSS padding on body only ever appears once,
+//     at the very start/end of the whole document flow, so a
+//     multi-page CV would otherwise have content running edge-to-edge
+//     on every page break. Page.printToPDF's own margin (unlike body
+//     padding) genuinely repeats on every physical page, which is
+//     exactly what pagination needs here. Left/right stay 0 regardless
+//     (no full-bleed background to protect, but no reason to add one).
+//   - modern-sidebar gets ZERO margin on every side instead — verified
+//     live (real generated PDF, not just page 1) that Chrome insets a
+//     `position: fixed` element's own containing block by whatever
+//     @page margin is set, on EVERY side, not just left/right. Any
+//     nonzero top/bottom here would reintroduce the exact white
+//     band-around-the-colored-sidebar look this template's whole fixed-
+//     sidebar redesign exists to eliminate. Its own template.html/
+//     style.css instead uses `break-inside: avoid` on each entry to
+//     keep page breaks from looking bad without relying on page margin.
+const cvPageMarginTopBottomInches = 0.4
+const cvSidebarTemplateID = "modern-sidebar"
 
 type generatePdfRequest struct {
 	Xhtml          string  `json:"xhtml"`
 	MarginTopIn    float64 `json:"marginTopIn,omitempty"`
 	MarginBottomIn float64 `json:"marginBottomIn,omitempty"`
-	MarginLeftIn   float64 `json:"marginLeftIn,omitempty"`
-	MarginRightIn  float64 `json:"marginRightIn,omitempty"`
 }
 
 type generatePdfResponse struct {
@@ -353,14 +367,13 @@ type generatePdfResponse struct {
 	Bytes int    `json:"bytes"`
 }
 
-func forwardGeneratePdf(originalReq *http.Request, xhtml string) (string, error) {
-	body, err := json.Marshal(generatePdfRequest{
-		Xhtml:          xhtml,
-		MarginTopIn:    cvPageMarginInches,
-		MarginBottomIn: cvPageMarginInches,
-		MarginLeftIn:   cvPageMarginInches,
-		MarginRightIn:  cvPageMarginInches,
-	})
+func forwardGeneratePdf(originalReq *http.Request, templateID, xhtml string) (string, error) {
+	reqBody := generatePdfRequest{Xhtml: xhtml}
+	if templateID != cvSidebarTemplateID {
+		reqBody.MarginTopIn = cvPageMarginTopBottomInches
+		reqBody.MarginBottomIn = cvPageMarginTopBottomInches
+	}
+	body, err := json.Marshal(reqBody)
 	if err != nil {
 		return "", err
 	}

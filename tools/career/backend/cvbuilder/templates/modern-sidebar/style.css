@@ -1,29 +1,40 @@
-html,
-body {
-  height: 100%;
-}
 body {
   font-family: Helvetica, Arial, sans-serif;
   color: #1a1a1a;
   font-size: 10.5pt;
   margin: 0;
 }
-table.layout {
-  width: 100%;
-  height: 100%;
-  border-collapse: collapse;
-}
-td.sidebar {
+/* Fixed AND empty: repeats identically on every physical page (fixing
+   the old table-row sidebar only ever covering page 1) without ever
+   overflowing its own box, since it holds no content at all — see the
+   template.html comment for why that split matters. */
+.sidebar-bg {
+  position: fixed;
+  top: 0;
+  left: 0;
   width: 34%;
+  height: 100%;
   background: #1e293b;
+}
+/* Normal flow, not fixed: never repeats, and safely continues onto the
+   next page like ordinary text if it's long enough to overflow one
+   page, over .sidebar-bg's own repeating color. */
+.sidebar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 34%;
+  box-sizing: border-box;
   color: #e2e8f0;
   padding: 32px 20px;
-  vertical-align: top;
 }
-td.main {
-  width: 66%;
+.main {
+  /* Plain flowing block, not a table cell — paginates like any other
+     multi-page document. margin-left matches .sidebar's own width so
+     content never renders underneath it. */
+  margin-left: 34%;
+  box-sizing: border-box;
   padding: 32px 28px;
-  vertical-align: top;
 }
 .sidebar h2 {
   font-size: 10pt;
@@ -82,6 +93,8 @@ p.summary {
 }
 .entry {
   margin-bottom: 12px;
+  break-inside: avoid;
+  page-break-inside: avoid;
 }
 .entry-title {
   font-weight: bold;

@@ -2,7 +2,11 @@ body {
   font-family: Helvetica, Arial, sans-serif;
   color: #1a1a1a;
   font-size: 10.5pt;
-  margin: 36px;
+  margin: 0;
+  /* Left/right only — top/bottom breathing room comes from the PDF's
+     own per-page margin instead (see cvbuilder/handler.go), since that
+     repeats on every page break and plain padding here would not. */
+  padding: 0 36px;
 }
 h1 {
   font-size: 22pt;
@@ -37,6 +41,8 @@ p.summary {
 }
 .entry {
   margin-bottom: 12px;
+  break-inside: avoid;
+  page-break-inside: avoid;
 }
 .entry-title {
   font-weight: bold;

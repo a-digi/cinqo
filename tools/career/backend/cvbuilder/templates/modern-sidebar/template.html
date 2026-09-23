@@ -6,43 +6,52 @@
     </style>
   </head>
   <body>
-    <table class="layout">
-      <tr>
-        <td class="sidebar">
-          {{if .Location}}
-          <h2>Contact</h2>
-          <p>{{.Location}}</p>
-          {{end}} {{if .ExternalLinks}}
-          <h2>Links</h2>
-          <ul>
-            {{range .ExternalLinks}}
-            <li>{{.Platform}}: {{.URL}}</li>
-            {{end}}
-          </ul>
-          {{end}} {{if .Skills}}
-          <h2>Skills</h2>
-          {{range .Skills}}<span class="skill-pill">{{.}}</span>{{end}} {{end}}
-        </td>
-        <td class="main">
-          <h1>{{.FullName}}</h1>
-          {{if .Headline}}
-          <p class="headline">{{.Headline}}</p>
-          {{end}} {{if .Summary}}
-          <h2>Summary</h2>
-          <p class="summary">{{.Summary}}</p>
-          {{end}} {{if .Experience}}
-          <h2>Experience</h2>
-          {{range .Experience}}
-          <div class="entry">
-            <div class="entry-title">{{.Title}}{{if .Company}} &#8211; {{.Company}}{{end}}</div>
-            <div class="entry-meta">{{.StartDate}} &#8211; {{if .EndDate}}{{.EndDate}}{{else}}Present{{end}}</div>
-            {{if .Description}}
-            <p class="entry-desc">{{.Description}}</p>
-            {{end}}
-          </div>
-          {{end}} {{end}}
-        </td>
-      </tr>
-    </table>
+    <!-- Two separate layers, not one — a `position: fixed` box whose OWN
+         content overflows one page's height gets garbled/duplicated by
+         Chrome's PDF export at the page-break seam (verified live).
+         .sidebar-bg is fixed and purely decorative (no content, so it
+         can never overflow) — it repeats cleanly on every page. The
+         real sidebar content below is `position: absolute`, i.e. normal
+         document flow pinned to the left column: it never repeats
+         (avoiding duplication) and, if long enough to exceed one page,
+         simply continues onto the next page like ordinary text (no
+         garbling), still over the fixed background's color. .main is a
+         normal flowing block (margin-left instead of a table cell), so
+         it paginates exactly like any other multi-page document. -->
+    <div class="sidebar-bg"></div>
+    <div class="sidebar">
+      {{if .Location}}
+      <h2>Contact</h2>
+      <p>{{.Location}}</p>
+      {{end}} {{if .ExternalLinks}}
+      <h2>Links</h2>
+      <ul>
+        {{range .ExternalLinks}}
+        <li>{{.Platform}}: {{.URL}}</li>
+        {{end}}
+      </ul>
+      {{end}} {{if .Skills}}
+      <h2>Skills</h2>
+      {{range .Skills}}<span class="skill-pill">{{.}}</span>{{end}} {{end}}
+    </div>
+    <div class="main">
+      <h1>{{.FullName}}</h1>
+      {{if .Headline}}
+      <p class="headline">{{.Headline}}</p>
+      {{end}} {{if .Summary}}
+      <h2>Summary</h2>
+      <p class="summary">{{.Summary}}</p>
+      {{end}} {{if .Experience}}
+      <h2>Experience</h2>
+      {{range .Experience}}
+      <div class="entry">
+        <div class="entry-title">{{.Title}}{{if .Company}} &#8211; {{.Company}}{{end}}</div>
+        <div class="entry-meta">{{.StartDate}} &#8211; {{if .EndDate}}{{.EndDate}}{{else}}Present{{end}}</div>
+        {{if .Description}}
+        <p class="entry-desc">{{.Description}}</p>
+        {{end}}
+      </div>
+      {{end}} {{end}}
+    </div>
   </body>
 </html>
