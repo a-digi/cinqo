@@ -38,6 +38,7 @@ import (
 	"career-tool-backend/persona"
 	"career-tool-backend/portal"
 	"career-tool-backend/profile"
+	"career-tool-backend/profileimage"
 	"career-tool-backend/recruiters"
 )
 
@@ -88,6 +89,7 @@ func runHTTPServer() {
 
 	http.HandleFunc("/profiles", profilesHandler)
 	http.HandleFunc("/profile-links", profileLinksHandler)
+	http.HandleFunc("/profile-image", profileimage.Handler)
 	http.HandleFunc("/personas", personasHandler)
 	http.HandleFunc("/persona-details", personaDetailsHandler)
 	http.HandleFunc("/skills", skillsHandler)

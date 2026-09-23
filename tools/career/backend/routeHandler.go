@@ -35,6 +35,7 @@ import (
 	"career-tool-backend/persona"
 	"career-tool-backend/portal"
 	"career-tool-backend/profile"
+	"career-tool-backend/profileimage"
 	"career-tool-backend/recruiters"
 )
 
@@ -133,6 +134,11 @@ func profilesHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "id query parameter is required", http.StatusBadRequest)
 			return
 		}
+		// Best-effort, before the profile row (and its own
+		// image_media_file_id column) is gone — same "capture then
+		// forward-delete, never block the parent delete" reasoning
+		// cvbuilder's own cv_documents DELETE case already established.
+		profileimage.DeleteBestEffort(r, id)
 		if err := profile.DeleteProfile(id); err != nil {
 			http.Error(w, "failed to delete profile: "+err.Error(), http.StatusInternalServerError)
 			return

@@ -507,6 +507,49 @@ export function mediaDownloadUrl(mediaFileId: string): string {
   return `/api/v1/media/${encodeURIComponent(mediaFileId)}/download`
 }
 
+// --- profile image ---
+//
+// A profile has at most one photo, stored via the core Media feature
+// and linked from profiles.image_media_file_id (career.db) — always
+// tied to a profile, never uploaded standalone. Re-uploading replaces
+// it in place (same media file id, new bytes) rather than creating a
+// second one.
+
+export interface ProfileImage {
+  profileId: string
+  mediaFileId: string
+}
+
+// 404 (no image set yet) resolves to null — an expected, common state
+// for this UI, not an error condition worth throwing over.
+export async function fetchProfileImage(profileId: string): Promise<ProfileImage | null> {
+  const res = await fetch(`${PROXY_BASE}/profile-image?profileId=${encodeURIComponent(profileId)}`, { credentials: 'include' })
+  if (res.status === 404) return null
+  return jsonOrThrow<ProfileImage>(res, 'load profile image')
+}
+
+export async function uploadProfileImage(profileId: string, file: File): Promise<ProfileImage> {
+  const formData = new FormData()
+  formData.append('profileId', profileId)
+  formData.append('file', file)
+  const res = await fetch(`${PROXY_BASE}/profile-image`, {
+    method: 'POST',
+    credentials: 'include',
+    body: formData,
+  })
+  return jsonOrThrow<ProfileImage>(res, 'upload profile image')
+}
+
+export async function deleteProfileImage(profileId: string): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/profile-image?profileId=${encodeURIComponent(profileId)}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  })
+  if (!res.ok) {
+    throw new Error(`failed to delete profile image (${res.status})`)
+  }
+}
+
 // --- companies ---
 
 export async function fetchCompanies(): Promise<Company[]> {

@@ -121,12 +121,20 @@ func InitDatabases() error {
 }
 
 const careerSchema = `
+-- image_media_file_id (step XX) is a plain string reference to the
+-- core Media feature's own file id, not a real FK — same
+-- "Media lives in cinqo's own database, not this one" convention
+-- cv_documents.media_file_id/cv_import_runs.media_file_id already
+-- established. NULL means "no photo uploaded yet"; a profile has at
+-- most one, re-uploading replaces it in place (see profileimage
+-- package). See plan/ai/career/profile-image/step-01-overview.md.
 CREATE TABLE IF NOT EXISTS profiles (
-    id          TEXT PRIMARY KEY,
-    first_name  TEXT NOT NULL DEFAULT '',
-    last_name   TEXT NOT NULL DEFAULT '',
-    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at  TEXT
+    id                  TEXT PRIMARY KEY,
+    first_name          TEXT NOT NULL DEFAULT '',
+    last_name           TEXT NOT NULL DEFAULT '',
+    image_media_file_id TEXT,
+    created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at          TEXT
 );
 
 CREATE TABLE IF NOT EXISTS profile_external_links (
@@ -480,6 +488,9 @@ func migrateCareerDB(db *sql.DB) error {
 	if err := migratePreStep10Schema(db); err != nil {
 		return err
 	}
+	if err := migrateProfilesImageMediaFileID(db); err != nil {
+		return err
+	}
 
 	if err := checkForeignKeys(db); err != nil {
 		return err
@@ -716,6 +727,26 @@ DROP TABLE career_profile;
 	}
 
 	return tx.Commit()
+}
+
+// migrateProfilesImageMediaFileID adds the nullable image_media_file_id
+// column (profile-image feature) to an already-installed profiles
+// table — same plain ALTER TABLE ADD COLUMN shape as every other
+// column addition in this file, guarded the same way. NULL backfills
+// every pre-existing row correctly: no profile could have had a photo
+// before this column existed. A no-op on a brand-new install (the
+// inline CREATE TABLE IF NOT EXISTS above already includes it). See
+// plan/ai/career/profile-image/step-01-overview.md.
+func migrateProfilesImageMediaFileID(db *sql.DB) error {
+	exists, hasColumn, err := tableHasColumn(db, "profiles", "image_media_file_id")
+	if err != nil {
+		return err
+	}
+	if !exists || hasColumn {
+		return nil
+	}
+	_, err = db.Exec(`ALTER TABLE profiles ADD COLUMN image_media_file_id TEXT`)
+	return err
 }
 
 // migrateJobsDB detects a pre-company jobs.db (a jobs table with no

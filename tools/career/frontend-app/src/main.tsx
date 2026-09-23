@@ -27,6 +27,7 @@ import { PersonasPage } from './Components/Persona/PersonasPage/PersonasPage'
 import { PersonaDetailsPage } from './Components/Persona/PersonaDetailsPage/PersonaDetailsPage'
 import { SkillsPage } from './Components/SkillsPage/SkillsPage'
 import { ExperiencePage } from './Components/ExperiencePage/ExperiencePage'
+import { ProfileImagePage } from './Components/ProfileImage/ProfileImagePage'
 import { CvDocumentsPage } from './Components/CvBuilder/CvDocumentsPage'
 import { CvBuilderPage } from './Components/CvBuilder/CvBuilderPage'
 import { JobsPage } from './Components/JobsPage/JobsPage'
@@ -44,6 +45,7 @@ const PERSONAS_PATH = '/tools/career/personas'
 const PERSONA_DETAILS_PATH = '/tools/career/persona-details'
 const SKILLS_PATH = '/tools/career/skills'
 const EXPERIENCE_PATH = '/tools/career/experience'
+const PROFILE_IMAGE_PATH = '/tools/career/profile-image'
 const CV_DOCUMENTS_PATH = '/tools/career/cv-documents'
 const CV_BUILDER_PATH = '/tools/career/cv-builder'
 const JOBS_PATH = '/tools/career/jobs'
@@ -103,6 +105,11 @@ window.__cinqoToolBridge.registerMenuEntry({
         {
           label: 'Experience',
           path: EXPERIENCE_PATH,
+          scopes: ['tool:career:profile'],
+        },
+        {
+          label: 'Image',
+          path: PROFILE_IMAGE_PATH,
           scopes: ['tool:career:profile'],
         },
       ],
@@ -194,6 +201,14 @@ window.__cinqoToolBridge.registerRoute({
   path: EXPERIENCE_PATH,
   mount: (container) => {
     mountReact(container, <ExperiencePage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: PROFILE_IMAGE_PATH,
+  mount: (container) => {
+    mountReact(container, <ProfileImagePage />)
   },
   unmount: unmountReact,
 })
