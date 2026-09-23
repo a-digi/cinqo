@@ -61,9 +61,24 @@ window.__cinqoToolBridge.registerMenuEntry({
   icon: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor"><rect x="3" y="7" width="14" height="9" rx="1.5" stroke-width="1.3"/><path d="M7 7V5.5a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 13 5.5V7" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><line x1="3" y1="11" x2="17" y2="11" stroke-width="1.3"/></svg>',
   children: [
     {
-      label: 'Import CV',
-      path: IMPORT_CV_PATH,
-      scopes: ['tool:career:cv_import'],
+      label: 'CV',
+      // No path of its own — a pure grouping label (same convention as
+      // this codebase's other path-less parents, e.g. the core menu's
+      // "AI"/"System" and Browser's top-level entry): clicking it only
+      // expands/collapses its children rather than navigating anywhere.
+      scopes: ['tool:career:cv_documents', 'tool:career:cv_import'],
+      children: [
+        {
+          label: 'CV Documents',
+          path: CV_DOCUMENTS_PATH,
+          scopes: ['tool:career:cv_documents'],
+        },
+        {
+          label: 'Import',
+          path: IMPORT_CV_PATH,
+          scopes: ['tool:career:cv_import'],
+        },
+      ],
     },
     {
       label: 'Profiles',
@@ -89,11 +104,6 @@ window.__cinqoToolBridge.registerMenuEntry({
           label: 'Experience',
           path: EXPERIENCE_PATH,
           scopes: ['tool:career:profile'],
-        },
-        {
-          label: 'CV Documents',
-          path: CV_DOCUMENTS_PATH,
-          scopes: ['tool:career:cv_documents'],
         },
       ],
     },
