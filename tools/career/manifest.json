@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.0.279",
+  "version": "0.0.285",
   "mcp": true,
   "requires_tools": [
     {
@@ -32,6 +32,10 @@
     {
       "scope": "tool:career:cv_import",
       "description": "Upload a CV and let the AI propose profile/persona/skill/experience entries from it."
+    },
+    {
+      "scope": "tool:career:cv_documents",
+      "description": "Generate, list, rename, and delete CV documents built from a persona's own data."
     }
   ],
   "routes": [
@@ -299,6 +303,36 @@
       "method": "DELETE",
       "path_suffix": "cv-import/runs",
       "required_scope": "tool:career:cv_import"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "cv-documents/templates",
+      "required_scope": "tool:career:cv_documents"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "cv-documents/persona-defaults",
+      "required_scope": "tool:career:cv_documents"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "cv-documents",
+      "required_scope": "tool:career:cv_documents"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "cv-documents",
+      "required_scope": "tool:career:cv_documents"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "cv-documents",
+      "required_scope": "tool:career:cv_documents"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "cv-documents",
+      "required_scope": "tool:career:cv_documents"
     }
   ],
   "mcp_tools": [

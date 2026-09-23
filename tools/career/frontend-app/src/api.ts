@@ -742,3 +742,111 @@ export async function deleteCVImportRun(id: string): Promise<void> {
   })
   if (!res.ok && res.status !== 204) throw new Error(`failed to delete cv import run (${res.status})`)
 }
+
+// --- cv documents (CV Builder) ---
+//
+// Deterministic (no AI), manual "pick a persona, pick a design, get a
+// PDF" library — distinct from cvStatus/cvMediaFileId above (the
+// AI-tailored per-job CV flow). CvData is this feature's own "JSON
+// schema" — the exact shape every template renders against, mirroring
+// tools/career/backend/cvbuilder/templates.CvData field-for-field. See
+// plan/ai/career/cv-builder/step-01-overview-and-data-model.md.
+export interface CvExternalLink {
+  platform: string
+  url: string
+}
+
+export interface CvExperienceEntry {
+  company: string
+  title: string
+  startDate: string
+  endDate: string
+  description: string
+}
+
+export interface CvData {
+  fullName: string
+  headline: string
+  summary: string
+  location: string
+  externalLinks: CvExternalLink[]
+  skills: string[]
+  experience: CvExperienceEntry[]
+}
+
+export interface CvTemplate {
+  id: string
+  name: string
+  description: string
+}
+
+export interface CvDocument {
+  id: string
+  personaId: string
+  templateId: string
+  title: string
+  data: CvData
+  mediaFileId: string
+  createdAt: string
+  updatedAt?: string
+}
+
+export async function fetchCvTemplates(): Promise<CvTemplate[]> {
+  const res = await fetch(`${PROXY_BASE}/cv-documents/templates`, { credentials: 'include' })
+  const body = await jsonOrThrow<{ templates: CvTemplate[] }>(res, 'load cv templates')
+  return body.templates
+}
+
+// The DEFAULT CvData a new CV starts from — the builder's own sidebar
+// lets the user edit this freely afterward; nothing typed there ever
+// writes back to the persona's own data.
+export async function fetchCvPersonaDefaults(personaId: string): Promise<CvData> {
+  const res = await fetch(`${PROXY_BASE}/cv-documents/persona-defaults?personaId=${encodeURIComponent(personaId)}`, {
+    credentials: 'include',
+  })
+  return jsonOrThrow<CvData>(res, 'load persona defaults')
+}
+
+export async function fetchCvDocuments(personaId: string): Promise<CvDocument[]> {
+  const res = await fetch(`${PROXY_BASE}/cv-documents?personaId=${encodeURIComponent(personaId)}`, { credentials: 'include' })
+  const body = await jsonOrThrow<{ cvDocuments: CvDocument[] }>(res, 'load cv documents')
+  return body.cvDocuments
+}
+
+// Used by the "edit this CV" flow — loads a document's own stored
+// data (not the persona's current live data) back into the builder.
+export async function fetchCvDocument(id: string): Promise<CvDocument> {
+  const res = await fetch(`${PROXY_BASE}/cv-documents?id=${encodeURIComponent(id)}`, { credentials: 'include' })
+  return jsonOrThrow<CvDocument>(res, 'load cv document')
+}
+
+// Renders templateId with data (the builder's own current, possibly
+// edited state — never re-derived from personaId server-side), generates
+// the PDF, uploads it to Media, and records the row.
+export async function createCvDocument(personaId: string, templateId: string, title: string, data: CvData): Promise<CvDocument> {
+  const res = await fetch(`${PROXY_BASE}/cv-documents`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ personaId, templateId, title, data }),
+  })
+  return jsonOrThrow<CvDocument>(res, 'generate cv document')
+}
+
+export async function updateCvDocumentTitle(id: string, title: string): Promise<CvDocument> {
+  const res = await fetch(`${PROXY_BASE}/cv-documents`, {
+    method: 'PUT',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, title }),
+  })
+  return jsonOrThrow<CvDocument>(res, 'update cv document title')
+}
+
+export async function deleteCvDocument(id: string): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/cv-documents?id=${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  })
+  if (!res.ok && res.status !== 204) throw new Error(`failed to delete cv document (${res.status})`)
+}

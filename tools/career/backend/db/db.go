@@ -175,6 +175,31 @@ CREATE TABLE IF NOT EXISTS career_experience (
     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- cv_documents (CV Builder) is a deterministic, manual "generate a CV
+-- PDF from this persona's own data, through a chosen design" library —
+-- distinct from job_cv_pdfs (jobsSchema, an AI-tailored CV per job
+-- posting); both coexist untouched. data_json is the exact CvData
+-- (cvbuilder/templates.CvData, JSON-marshaled) actually used to render
+-- this row, INCLUDING any per-CV edits made in the builder's own
+-- sidebar that never touch persona_details/career_skills/
+-- career_experience — the only record of what a given CV actually
+-- contained, and what "edit this CV" (re-open, tweak, regenerate as a
+-- new row) starts from. media_file_id is a plain string reference to
+-- the core Media feature's own file id, not a real FK (same reasoning
+-- cv_import_runs' own media_file_id above already established — Media
+-- lives in cinqo's own database, not this one). See
+-- plan/ai/career/cv-builder/step-01-overview-and-data-model.md.
+CREATE TABLE IF NOT EXISTS cv_documents (
+    id            TEXT PRIMARY KEY,
+    persona_id    TEXT NOT NULL REFERENCES personas(id) ON DELETE CASCADE,
+    template_id   TEXT NOT NULL,
+    title         TEXT NOT NULL,
+    data_json     TEXT NOT NULL,
+    media_file_id TEXT NOT NULL,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at    TEXT
+);
+
 -- cv_import_files (Import CV, step 2) tracks one uploaded CV awaiting
 -- AI analysis. token_hash is sha256(token) — the raw token is never
 -- stored, only ever returned once, at upload time, to the caller who

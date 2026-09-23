@@ -1,0 +1,32 @@
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta charset="UTF-8" />
+    <style><!--STYLE--></style>
+  </head>
+  <body>
+    <h1>{{.FullName}}</h1>
+    {{if .Headline}}<p class="headline">{{.Headline}}</p>{{end}}
+    {{if .Location}}<p class="links"><span>{{.Location}}</span>{{range .ExternalLinks}}<span>{{.Platform}}: {{.URL}}</span>{{end}}</p>{{else if .ExternalLinks}}<p class="links">{{range .ExternalLinks}}<span>{{.Platform}}: {{.URL}}</span>{{end}}</p>{{end}}
+
+    {{if .Summary}}
+    <h2>Summary</h2>
+    <p class="summary">{{.Summary}}</p>
+    {{end}}
+
+    {{if .Experience}}
+    <h2>Experience</h2>
+    {{range .Experience}}
+    <div class="entry">
+      <div class="entry-title">{{.Title}}{{if .Company}} &#8211; {{.Company}}{{end}}</div>
+      <div class="entry-meta">{{.StartDate}} &#8211; {{if .EndDate}}{{.EndDate}}{{else}}Present{{end}}</div>
+      {{if .Description}}<p class="entry-desc">{{.Description}}</p>{{end}}
+    </div>
+    {{end}}
+    {{end}}
+
+    {{if .Skills}}
+    <h2>Skills</h2>
+    <p class="skills">{{range .Skills}}<span>{{.}}</span>{{end}}</p>
+    {{end}}
+  </body>
+</html>

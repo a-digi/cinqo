@@ -32,6 +32,7 @@ import (
 	"career-tool-backend/companies"
 	"career-tool-backend/crawl"
 	"career-tool-backend/cv"
+	"career-tool-backend/cvbuilder"
 	"career-tool-backend/db"
 	"career-tool-backend/jobs"
 	"career-tool-backend/persona"
@@ -110,6 +111,9 @@ func runHTTPServer() {
 	http.HandleFunc("/events/jobs-crawled", portal.JobsCrawledEventHandler)
 	http.HandleFunc("/cv-import/upload", cv.UploadCVHandler)
 	http.HandleFunc("/cv-import/runs", cv.CVImportRunsHandler)
+	http.HandleFunc("/cv-documents/templates", cvbuilder.TemplatesHandler)
+	http.HandleFunc("/cv-documents/persona-defaults", cvbuilder.PersonaDefaultsHandler)
+	http.HandleFunc("/cv-documents", cvbuilder.DocumentsHandler)
 
 	if err := http.ListenAndServe("127.0.0.1:"+port, nil); err != nil {
 		os.Exit(1)

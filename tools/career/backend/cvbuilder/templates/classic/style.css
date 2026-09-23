@@ -1,0 +1,12 @@
+body { font-family: Georgia, 'Times New Roman', serif; color: #111; font-size: 11pt; margin: 40px; }
+h1 { font-size: 20pt; margin: 0 0 2px 0; text-align: center; }
+.headline { font-size: 12pt; color: #444; margin: 0 0 4px 0; text-align: center; font-style: italic; }
+.links { font-size: 9.5pt; color: #444; margin: 0 0 16px 0; text-align: center; }
+.links span { margin: 0 8px; }
+h2 { font-size: 12pt; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid #999; padding-bottom: 3px; margin: 16px 0 8px 0; }
+.entry { margin-bottom: 10px; }
+.entry-title { font-weight: bold; }
+.entry-meta { color: #555; font-size: 9.5pt; font-style: italic; }
+.entry-desc { margin: 4px 0 0 0; line-height: 1.45; }
+p.summary { margin: 0; line-height: 1.5; }
+ul.skills { margin: 4px 0 0 0; padding-left: 18px; columns: 2; }
