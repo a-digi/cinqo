@@ -9,7 +9,6 @@ import {
   type CvDocument,
 } from '../../api'
 import { PersonaSwitcher } from '../Persona/PersonaSwitcher/PersonaSwitcher'
-import { CvPreviewModal } from './CvPreviewModal'
 import { ActionMenu, type ActionMenuItem } from '../../Shared/ActionMenu/ActionMenu'
 import { EyeIcon, TrashIcon, PlusIcon } from '../../Shared/Icons/icons'
 
@@ -33,7 +32,6 @@ export function CvDocumentsPage() {
   const [documents, setDocuments] = useState<CvDocument[]>([])
   const [templates, setTemplates] = useState<CvTemplate[]>([])
   const [error, setError] = useState('')
-  const [previewDoc, setPreviewDoc] = useState<CvDocument | null>(null)
 
   useEffect(() => {
     fetchCvTemplates()
@@ -97,7 +95,7 @@ export function CvDocumentsPage() {
         label: 'Preview',
         icon: <EyeIcon />,
         onClick: () => {
-          setPreviewDoc(doc)
+          window.open(mediaDownloadUrl(doc.mediaFileId), '_blank', 'noopener,noreferrer')
         },
       },
       {
@@ -176,16 +174,6 @@ export function CvDocumentsPage() {
             </div>
           )}
         </>
-      )}
-
-      {previewDoc && (
-        <CvPreviewModal
-          src={mediaDownloadUrl(previewDoc.mediaFileId)}
-          title={previewDoc.title}
-          onClose={() => {
-            setPreviewDoc(null)
-          }}
-        />
       )}
     </div>
   )
