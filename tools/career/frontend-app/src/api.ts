@@ -821,6 +821,8 @@ export interface CvTemplate {
   id: string
   name: string
   description: string
+  category: string
+  bestFor: string[]
 }
 
 export interface CvDocument {

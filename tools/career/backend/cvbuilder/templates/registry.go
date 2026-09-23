@@ -9,41 +9,102 @@ import (
 )
 
 // TemplateMeta describes one selectable design — returned as-is by
-// ListTemplates for the frontend's own template picker (step 4).
+// ListTemplates for the frontend's own template picker.
+//
+// Category is one fixed style bucket (Classic/Modern/ATS-Friendly/
+// Creative/Executive/Minimalist) — the frontend's own single-select
+// style filter. BestFor is a list of profession tags drawn from a
+// small SHARED vocabulary (see professionTags below) — the frontend's
+// own multi-select profession filter groups by exact string match, so
+// every entry below reuses those exact strings rather than inventing
+// its own free-text variant per template.
 type TemplateMeta struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Category    string   `json:"category"`
+	BestFor     []string `json:"bestFor"`
 }
 
-// The 15 ats-* designs below are all deliberately single-column, plain-
-// text layouts — no tables, no CSS `columns`, no floats, no absolute/
-// fixed positioning, no profile photo — since any of those can reorder
-// or drop content in an ATS's own PDF text-layer extraction relative to
+// professionTags is the fixed, shared vocabulary every metas[].BestFor
+// entry below draws from — kept as one list here (not enforced at
+// compile time, just documented) so the frontend's own profession
+// filter groups templates correctly instead of silently missing one
+// because of a typo'd near-duplicate tag.
+//
+//	Software & IT, Marketing & Sales, Finance & Accounting, Healthcare,
+//	Design & Creative, Executive & Management, Education & Academia,
+//	Customer Service, Legal, Engineering, Entry-Level & Internships,
+//	Human Resources, Project Management
+//
+// The 15 ats-* designs are all deliberately single-column, plain-text
+// layouts — no tables, no CSS `columns`, no floats, no absolute/fixed
+// positioning, no profile photo — since any of those can reorder or
+// drop content in an ATS's own PDF text-layer extraction relative to
 // what's visually shown. They differ from each other only in
-// typography, accent color, and (for ats-skills-first) section order —
-// the safe axes of variation once the layout itself is constrained to
-// "real, linear, single-column text." See
-// plan/ai/career/cv-builder/step-05-ats-templates.md.
+// typography, accent color, and (for ats-skills-first) section order.
+// The 8 templates after them (modern-banner onward) trade that
+// constraint for real visual flair — color blocks, accent rules, a
+// timeline marker — since they're explicitly categorized Modern/
+// Creative/Executive/Minimalist, not ATS-Friendly; they still stay
+// single-column/normal-flow throughout (no position:fixed, no tables),
+// since modern-sidebar already proved that kind of layout risks real
+// pagination bugs for a purely decorative gain. See
+// plan/ai/career/cv-builder/step-05-ats-templates.md and
+// plan/ai/career/cv-builder/step-06-template-gallery-and-filters.md.
 var metas = []TemplateMeta{
-	{ID: "modern-mono", Name: "Modern Mono", Description: "Single accent color, minimal, one column."},
-	{ID: "modern-sidebar", Name: "Modern Sidebar", Description: "Two-column layout with a colored sidebar for contact info and skills."},
-	{ID: "classic", Name: "Classic", Description: "Traditional serif layout, closest to a conventional printed resume."},
-	{ID: "ats-clean", Name: "ATS Clean", Description: "Single-column sans-serif with minimal navy accents — built for maximum ATS parsing reliability."},
-	{ID: "ats-serif-classic", Name: "ATS Serif Classic", Description: "Traditional serif resume in black text only, no color at all — the most conservative ATS-safe option."},
-	{ID: "ats-minimal-gray", Name: "ATS Minimal Gray", Description: "Uppercase section headers, generous whitespace, no rules or color accents anywhere."},
-	{ID: "ats-executive", Name: "ATS Executive", Description: "Serif headings with a single rule under the name, charcoal accents, formal tone."},
-	{ID: "ats-compact", Name: "ATS Compact", Description: "Smaller type and tighter spacing to fit more content on a single page."},
-	{ID: "ats-modern-sans", Name: "ATS Modern Sans", Description: "Clean sans-serif body with thin teal underlines on section headings."},
-	{ID: "ats-times", Name: "ATS Times", Description: "Pure Times New Roman with maroon section headings — the most traditional printed-resume look."},
-	{ID: "ats-verdana", Name: "ATS Verdana", Description: "Verdana-based body text, slate-blue accents, wide letter-spacing on headings."},
-	{ID: "ats-tahoma", Name: "ATS Tahoma", Description: "Tahoma-based body text, burgundy accents, compact single-line contact header."},
-	{ID: "ats-calibri", Name: "ATS Calibri Style", Description: "Calibri-style sans-serif with warm brown accents and a soft, rounded feel."},
-	{ID: "ats-garamond", Name: "ATS Garamond Style", Description: "Garamond-style serif with deep green accents — understated and elegant."},
-	{ID: "ats-bold-headers", Name: "ATS Bold Headers", Description: "Grayscale only — bold uppercase headings with a bottom rule, zero color risk."},
-	{ID: "ats-two-line-header", Name: "ATS Two-Line Header", Description: "Name and contact details centered on their own lines, gray accents."},
-	{ID: "ats-skills-first", Name: "ATS Skills First", Description: "Leads with Skills before Experience — suited to skill-heavy or career-change resumes."},
-	{ID: "ats-academic", Name: "ATS Academic", Description: "Centered header, small-caps-style section titles, black-only styling for academic or formal CVs."},
+	{ID: "modern-mono", Name: "Modern Mono", Description: "Single accent color, minimal, one column.",
+		Category: "Modern", BestFor: []string{"Software & IT", "Marketing & Sales", "Design & Creative"}},
+	{ID: "modern-sidebar", Name: "Modern Sidebar", Description: "Two-column layout with a colored sidebar for contact info and skills.",
+		Category: "Modern", BestFor: []string{"Marketing & Sales", "Design & Creative", "Project Management"}},
+	{ID: "classic", Name: "Classic", Description: "Traditional serif layout, closest to a conventional printed resume.",
+		Category: "Classic", BestFor: []string{"Finance & Accounting", "Legal", "Education & Academia"}},
+	{ID: "ats-clean", Name: "ATS Clean", Description: "Single-column sans-serif with minimal navy accents — built for maximum ATS parsing reliability.",
+		Category: "ATS-Friendly", BestFor: []string{"Software & IT", "Engineering", "Customer Service"}},
+	{ID: "ats-serif-classic", Name: "ATS Serif Classic", Description: "Traditional serif resume in black text only, no color at all — the most conservative ATS-safe option.",
+		Category: "ATS-Friendly", BestFor: []string{"Legal", "Finance & Accounting", "Education & Academia"}},
+	{ID: "ats-minimal-gray", Name: "ATS Minimal Gray", Description: "Uppercase section headers, generous whitespace, no rules or color accents anywhere.",
+		Category: "ATS-Friendly", BestFor: []string{"Human Resources", "Customer Service", "Entry-Level & Internships"}},
+	{ID: "ats-executive", Name: "ATS Executive", Description: "Serif headings with a single rule under the name, charcoal accents, formal tone.",
+		Category: "ATS-Friendly", BestFor: []string{"Executive & Management", "Finance & Accounting"}},
+	{ID: "ats-compact", Name: "ATS Compact", Description: "Smaller type and tighter spacing to fit more content on a single page.",
+		Category: "ATS-Friendly", BestFor: []string{"Engineering", "Software & IT"}},
+	{ID: "ats-modern-sans", Name: "ATS Modern Sans", Description: "Clean sans-serif body with thin teal underlines on section headings.",
+		Category: "ATS-Friendly", BestFor: []string{"Software & IT", "Project Management"}},
+	{ID: "ats-times", Name: "ATS Times", Description: "Pure Times New Roman with maroon section headings — the most traditional printed-resume look.",
+		Category: "ATS-Friendly", BestFor: []string{"Legal", "Education & Academia"}},
+	{ID: "ats-verdana", Name: "ATS Verdana", Description: "Verdana-based body text, slate-blue accents, wide letter-spacing on headings.",
+		Category: "ATS-Friendly", BestFor: []string{"Human Resources", "Customer Service"}},
+	{ID: "ats-tahoma", Name: "ATS Tahoma", Description: "Tahoma-based body text, burgundy accents, compact single-line contact header.",
+		Category: "ATS-Friendly", BestFor: []string{"Finance & Accounting", "Project Management"}},
+	{ID: "ats-calibri", Name: "ATS Calibri Style", Description: "Calibri-style sans-serif with warm brown accents and a soft, rounded feel.",
+		Category: "ATS-Friendly", BestFor: []string{"Marketing & Sales", "Human Resources"}},
+	{ID: "ats-garamond", Name: "ATS Garamond Style", Description: "Garamond-style serif with deep green accents — understated and elegant.",
+		Category: "ATS-Friendly", BestFor: []string{"Education & Academia", "Legal"}},
+	{ID: "ats-bold-headers", Name: "ATS Bold Headers", Description: "Grayscale only — bold uppercase headings with a bottom rule, zero color risk.",
+		Category: "ATS-Friendly", BestFor: []string{"Engineering", "Software & IT"}},
+	{ID: "ats-two-line-header", Name: "ATS Two-Line Header", Description: "Name and contact details centered on their own lines, gray accents.",
+		Category: "ATS-Friendly", BestFor: []string{"Customer Service", "Entry-Level & Internships"}},
+	{ID: "ats-skills-first", Name: "ATS Skills First", Description: "Leads with Skills before Experience — suited to skill-heavy or career-change resumes.",
+		Category: "ATS-Friendly", BestFor: []string{"Software & IT", "Entry-Level & Internships", "Engineering"}},
+	{ID: "ats-academic", Name: "ATS Academic", Description: "Centered header, small-caps-style section titles, black-only styling for academic or formal CVs.",
+		Category: "ATS-Friendly", BestFor: []string{"Education & Academia"}},
+	{ID: "modern-banner", Name: "Modern Banner", Description: "A bold colored header banner behind your name and contact details.",
+		Category: "Modern", BestFor: []string{"Marketing & Sales", "Design & Creative"}},
+	{ID: "modern-timeline", Name: "Modern Timeline", Description: "Experience entries connected by a vertical timeline line and markers.",
+		Category: "Modern", BestFor: []string{"Software & IT", "Project Management", "Engineering"}},
+	{ID: "creative-accent", Name: "Creative Accent", Description: "Playful purple accents, italic headline, rounded skill pills.",
+		Category: "Creative", BestFor: []string{"Design & Creative", "Marketing & Sales"}},
+	{ID: "creative-bold", Name: "Creative Bold", Description: "Oversized name, a bold color block behind your headline, bold section rules.",
+		Category: "Creative", BestFor: []string{"Design & Creative", "Marketing & Sales"}},
+	{ID: "executive-elegant", Name: "Executive Elegant", Description: "Centered, refined serif layout with a rule above and below the contact line.",
+		Category: "Executive", BestFor: []string{"Executive & Management", "Finance & Accounting", "Legal"}},
+	{ID: "executive-serif-bold", Name: "Executive Serif Bold", Description: "Bold serif headings with a double rule under your name — formal and assertive.",
+		Category: "Executive", BestFor: []string{"Executive & Management", "Legal"}},
+	{ID: "minimalist-lines", Name: "Minimalist Lines", Description: "Hairline rules, light section labels, generous whitespace throughout.",
+		Category: "Minimalist", BestFor: []string{"Design & Creative", "Education & Academia", "Engineering"}},
+	{ID: "minimalist-airy", Name: "Minimalist Airy", Description: "No rules at all — just spacing and weight contrast carrying the whole design.",
+		Category: "Minimalist", BestFor: []string{"Design & Creative", "Software & IT"}},
 }
 
 // ListTemplates returns every available design, in a stable, fixed
@@ -78,6 +139,10 @@ func ListTemplates() []TemplateMeta {
 //go:embed ats-garamond/template.html ats-garamond/style.css ats-bold-headers/template.html ats-bold-headers/style.css
 //go:embed ats-two-line-header/template.html ats-two-line-header/style.css ats-skills-first/template.html ats-skills-first/style.css
 //go:embed ats-academic/template.html ats-academic/style.css
+//go:embed modern-banner/template.html modern-banner/style.css modern-timeline/template.html modern-timeline/style.css
+//go:embed creative-accent/template.html creative-accent/style.css creative-bold/template.html creative-bold/style.css
+//go:embed executive-elegant/template.html executive-elegant/style.css executive-serif-bold/template.html executive-serif-bold/style.css
+//go:embed minimalist-lines/template.html minimalist-lines/style.css minimalist-airy/template.html minimalist-airy/style.css
 var templateFS embed.FS
 
 func isKnownTemplate(id string) bool {

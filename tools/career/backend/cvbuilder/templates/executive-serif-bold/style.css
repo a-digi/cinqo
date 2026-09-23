@@ -1,0 +1,31 @@
+body {
+  font-family: Cambria, Georgia, serif;
+  color: #1a1a1a;
+  font-size: 11pt;
+  margin: 0;
+  padding: 0 40px;
+}
+h1 {
+  font-size: 22pt;
+  font-weight: bold;
+  margin: 0 0 4px 0;
+  padding-bottom: 6px;
+  border-bottom: 3px double #333333;
+}
+.headline { font-size: 12pt; color: #444; margin: 6px 0 4px 0; }
+.contact { font-size: 9.5pt; color: #555; margin: 0 0 14px 0; }
+.contact span { margin-right: 10px; }
+h2 {
+  font-size: 12pt;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #1a1a1a;
+  margin: 18px 0 8px 0;
+}
+p.summary { margin: 0; line-height: 1.5; }
+p.skills { margin: 0; line-height: 1.5; }
+.entry { margin-bottom: 10px; break-inside: avoid; page-break-inside: avoid; }
+.entry-title { font-weight: bold; }
+.entry-meta { color: #555; font-size: 9.5pt; font-style: italic; }
+.entry-desc { margin: 3px 0 0 0; line-height: 1.45; }

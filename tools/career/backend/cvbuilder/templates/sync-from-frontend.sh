@@ -29,7 +29,9 @@ FRONTEND_TEMPLATES="$SCRIPT_DIR/../../../frontend-app/src/Components/CvBuilder/T
 for id in modern-mono modern-sidebar classic \
   ats-clean ats-serif-classic ats-minimal-gray ats-executive ats-compact \
   ats-modern-sans ats-times ats-verdana ats-tahoma ats-calibri \
-  ats-garamond ats-bold-headers ats-two-line-header ats-skills-first ats-academic; do
+  ats-garamond ats-bold-headers ats-two-line-header ats-skills-first ats-academic \
+  modern-banner modern-timeline creative-accent creative-bold \
+  executive-elegant executive-serif-bold minimalist-lines minimalist-airy; do
   mkdir -p "$SCRIPT_DIR/$id"
   cp "$FRONTEND_TEMPLATES/$id/template.html" "$SCRIPT_DIR/$id/template.html"
   cp "$FRONTEND_TEMPLATES/$id/style.css" "$SCRIPT_DIR/$id/style.css"
