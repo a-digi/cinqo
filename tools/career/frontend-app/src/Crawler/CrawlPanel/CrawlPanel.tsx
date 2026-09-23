@@ -753,7 +753,7 @@ export function CrawlPanel({
   }
 
   return (
-    <div className="mt-1.5">
+    <div className="mt-3">
       {/* Two small cards, each exactly half the row (grid-cols-2, not
           flex-wrap) so they always sit side by side at 50%/50% width
           regardless of either card's own content length — a flex row
@@ -773,7 +773,8 @@ export function CrawlPanel({
           this outer layer visually sits above its own gray-50
           children, not flush with them. See
           plan/ai/tools/career/step-74-crawl-instructions-grouping.md. */}
-      <div className="rounded-xl border border-gray-200 bg-white p-2">
+      <div className="py-3">
+        <h3 className="mb-2 text-xs font-semibold tracking-wide text-gray-500 uppercase">Crawl instructions</h3>
         {/* Two small cards, each exactly half the row (grid-cols-2, not
             flex-wrap) so they always sit side by side at 50%/50% width
             regardless of either card's own content length — a flex row
@@ -796,7 +797,7 @@ export function CrawlPanel({
         {(aiLocalError ?? shouldShowError(link.instructionsAiErrorAt, link.instructionsAiErrorDismissedAt)) && (
           <InfoBox
             variant="error"
-            label="Crawl instructions"
+            label="Job list crawl instructions"
             labelClassName="bg-blue-100 text-blue-800"
             message={
               (aiLocalError ?? link.instructionsAiError ?? '') +
@@ -819,20 +820,24 @@ export function CrawlPanel({
             onDismiss={handleDismissJobDetailError}
           />
         )}
-        <div className="flex items-start gap-2">
-          <div className="grid flex-1 grid-cols-2 gap-2">
-            <div className="rounded-lg border border-gray-200 bg-gray-50 p-2">
+        <div className="flex items-start gap-3">
+          <div className="grid flex-1 grid-cols-2 gap-3">
+            <div className="flex flex-col items-center justify-center rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-center transition-colors hover:border-gray-300 hover:bg-gray-100/60">
               <button
                 type="button"
                 onClick={openCrawlInstructionsModal}
-                title={link.crawlInstructions ? 'Crawl instructions — view/edit' : 'Crawl instructions — not set yet, click to add'}
-                className={`flex items-center gap-1.5 text-xs font-medium hover:underline ${link.crawlInstructions ? 'text-gray-700' : 'text-gray-400'}`}
+                title={
+                  link.crawlInstructions
+                    ? 'Job list crawl instructions — view/edit'
+                    : 'Job list crawl instructions — not set yet, click to add'
+                }
+                className={`flex flex-col items-center justify-center gap-1 text-xs font-medium hover:underline ${link.crawlInstructions ? 'text-gray-700' : 'text-gray-400'}`}
               >
                 <CrawlInstructionsIcon />
-                Crawl instructions
+                Job list
               </button>
             </div>
-            <div className="rounded-lg border border-gray-200 bg-gray-50 p-2">
+            <div className="flex flex-col items-center justify-center rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-center transition-colors hover:border-gray-300 hover:bg-gray-100/60">
               <button
                 type="button"
                 onClick={openJobDetailInstructionsModal}
@@ -841,10 +846,10 @@ export function CrawlPanel({
                     ? "Job detail crawl instructions — view/edit — how to extract the job-position-relevant text off a single job's own detail page (the page a listing's own job URL points to), separate from the listing crawl instructions."
                     : "Job detail crawl instructions — not set yet, generated automatically once this link's own listing has been crawled — how to extract the job-position-relevant text off a single job's own detail page (the page a listing's own job URL points to), separate from the listing crawl instructions."
                 }
-                className={`flex items-center gap-1.5 text-xs font-medium hover:underline ${link.jobDetailCrawlInstructions ? 'text-gray-700' : 'text-gray-400'}`}
+                className={`flex flex-col items-center justify-center gap-1 text-xs font-medium hover:underline ${link.jobDetailCrawlInstructions ? 'text-gray-700' : 'text-gray-400'}`}
               >
                 <JobDetailInstructionsIcon />
-                Job detail crawl instructions
+                Job details
               </button>
               {/* Passive status only — no manual trigger anymore. This
                   only ever becomes true via jobDetailAiRequestedRef's own
@@ -873,17 +878,17 @@ export function CrawlPanel({
                   ? "Open the chat window to watch the AI work on this link's crawl instructions"
                   : 'Let the AI inspect this page and write (or update) its listing crawl instructions for you — once saved, this link is crawled and its job-detail instructions are generated automatically.'
             }
-            className="flex shrink-0 items-center gap-1 self-stretch rounded-lg border border-gray-200 bg-gray-50 px-3 text-xs font-medium text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex shrink-0 flex-col items-center justify-center gap-1 self-stretch rounded-lg border border-gray-200 bg-gray-50 px-3 text-xs font-medium text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {aiPending ? (
               <>
-                <RobotIcon />
+                <RobotIcon className="h-5 w-5" />
                 Generating...
               </>
             ) : (
               <>
-                <RobotIcon />
-                Generate instructions
+                <RobotIcon className="h-5 w-5" />
+                Generate
               </>
             )}
           </button>
@@ -1029,7 +1034,7 @@ export function CrawlPanel({
       )}
       <Modal
         open={activeInstructionsModal !== null}
-        title={activeInstructionsModal === 'jobDetail' ? 'Job detail crawl instructions' : 'Crawl instructions'}
+        title={activeInstructionsModal === 'jobDetail' ? 'Job detail crawl instructions' : 'Job list crawl instructions'}
         onClose={() => {
           setActiveInstructionsModal(null)
         }}

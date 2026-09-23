@@ -450,9 +450,9 @@ export function PortalsPage() {
               ) : undefined
             }
           >
-            <div className="space-y-2">
+            <div className="space-y-3">
               {p.links.map((link) => (
-                <div key={link.id} className="rounded-md border border-gray-100 bg-gray-50 p-2">
+                <div key={link.id} className="rounded-lg border border-gray-200 bg-gray-50 p-3 transition-colors hover:border-gray-300">
                   {editingLinkId === link.id ? (
                     <div className="space-y-1.5">
                       <input

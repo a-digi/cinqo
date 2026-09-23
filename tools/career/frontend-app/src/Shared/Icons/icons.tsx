@@ -61,14 +61,14 @@ export function LogIcon() {
   )
 }
 
-// CrawlInstructionsIcon — marks "Crawl instructions" (how to read the
+// CrawlInstructionsIcon — marks "Job list crawl instructions" (how to read the
 // LISTING page, i.e. many rows at once): a document with several equal
 // horizontal lines, each standing for one row of the list. Distinct
 // from LogIcon's own similar document shape, which means "this run's
 // own log," not "this link's own instructions."
 export function CrawlInstructionsIcon() {
   return (
-    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-3.5 w-3.5">
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-5 w-5">
       <rect x="3.5" y="3" width="13" height="14" rx="1.2" strokeWidth="1.3" />
       <path d="M6.5 6.8h7M6.5 10h7M6.5 13.2h7" strokeWidth="1.3" strokeLinecap="round" />
     </svg>
@@ -76,18 +76,20 @@ export function CrawlInstructionsIcon() {
 }
 
 // JobDetailInstructionsIcon — marks "Job detail crawl instructions"
-// (how to read ONE job's own detail page, not the listing): the same
-// document shape as CrawlInstructionsIcon with a magnifying glass
-// overlaid, reading as "one item, zoomed in" — distinct at a glance
-// from CrawlInstructionsIcon's own "every row in the list" meaning,
-// while still visually paired with it (same document base).
+// (how to read ONE job's own detail page, not the listing). Previously
+// shared CrawlInstructionsIcon's own plain-rectangle document base with
+// a magnifying glass overlaid — too similar a silhouette to read as a
+// genuinely different icon at a glance, especially once both sit
+// side-by-side at a larger size. Redesigned as a single folded-corner
+// page (a distinct outline, not just a decorated variant of the list
+// icon's own rectangle) with two short lines standing for one focused
+// block of detail text, rather than the list icon's three equal rows.
 export function JobDetailInstructionsIcon() {
   return (
-    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-3.5 w-3.5">
-      <rect x="3" y="3" width="10" height="13" rx="1.1" strokeWidth="1.3" />
-      <path d="M5.3 6.5h5.4M5.3 9h5.4" strokeWidth="1.3" strokeLinecap="round" />
-      <circle cx="13.7" cy="13.7" r="3" strokeWidth="1.3" />
-      <path d="M15.9 15.9l1.6 1.6" strokeWidth="1.3" strokeLinecap="round" />
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-5 w-5">
+      <path d="M6 3h5l4 4v9a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" strokeWidth="1.3" strokeLinejoin="round" />
+      <path d="M11 3v4h4" strokeWidth="1.3" strokeLinejoin="round" />
+      <path d="M7 11.5h6M7 14h4" strokeWidth="1.3" strokeLinecap="round" />
     </svg>
   )
 }
@@ -213,9 +215,9 @@ export function MatchIcon() {
 // RobotIcon (step 60) — marks "Check Progress - AI" (a
 // generate-crawl-instructions conversation currently in flight),
 // distinct from SparkleIcon's own "start this with AI" meaning.
-export function RobotIcon() {
+export function RobotIcon({ className = 'h-3.5 w-3.5' }: { className?: string }) {
   return (
-    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-3.5 w-3.5">
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className={className}>
       <path d="M10 3v2" strokeWidth="1.3" strokeLinecap="round" />
       <circle cx="10" cy="4.2" r="0.7" fill="currentColor" stroke="none" />
       <rect x="4.5" y="6" width="11" height="9" rx="2" strokeWidth="1.3" />
