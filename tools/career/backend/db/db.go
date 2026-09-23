@@ -731,6 +731,9 @@ func migrateJobsDB(db *sql.DB) error {
 	if err := migratePortalLinksErrorDismissedAt(db); err != nil {
 		return err
 	}
+	if err := migratePortalLinksJobDetailCrawlRequested(db); err != nil {
+		return err
+	}
 	if err := migrateCrawlRunsPhase(db); err != nil {
 		return err
 	}
@@ -1079,6 +1082,29 @@ func migratePortalLinksErrorDismissedAt(db *sql.DB) error {
 		return err
 	}
 	_, err = db.Exec(`ALTER TABLE portal_links ADD COLUMN job_detail_instructions_ai_error_dismissed_at TEXT`)
+	return err
+}
+
+// migratePortalLinksJobDetailCrawlRequested adds the boolean
+// request-flag column the existing events/jobs-crawled listener now
+// also sets unconditionally, the moment a listing crawl finishes — the
+// same "backend flags intent, frontend executes under the real user's
+// own live session" pattern migratePortalLinksRequestFlags' own two
+// columns already use. Whether it's actually SAFE to start that crawl
+// yet (job-detail crawl instructions might not exist) is deliberately
+// not this flag's own concern — the frontend's own consuming effect is
+// what waits for readiness. Same plain ALTER TABLE ADD COLUMN shape as
+// every other column addition in this file, guarded the same way. See
+// plan/ai/tools/career/step-76-job-detail-crawl-requested-backend.md.
+func migratePortalLinksJobDetailCrawlRequested(db *sql.DB) error {
+	exists, hasColumn, err := tableHasColumn(db, "portal_links", "job_detail_crawl_requested")
+	if err != nil {
+		return err
+	}
+	if !exists || hasColumn {
+		return nil
+	}
+	_, err = db.Exec(`ALTER TABLE portal_links ADD COLUMN job_detail_crawl_requested INTEGER NOT NULL DEFAULT 0`)
 	return err
 }
 

@@ -133,6 +133,13 @@ type portalLink struct {
 	// attempted) the action it asked for.
 	ListingCrawlRequested            bool `json:"listingCrawlRequested"`
 	JobDetailInstructionsAIRequested bool `json:"jobDetailInstructionsAiRequested"`
+	// JobDetailCrawlRequested (step 76) is the same kind of request flag
+	// as the two above, set unconditionally by the existing
+	// events/jobs-crawled listener the instant a listing crawl finishes
+	// — independently of whether job_detail_instructions_ai_requested
+	// also got set on that same event. See
+	// plan/ai/tools/career/step-76-job-detail-crawl-requested-backend.md.
+	JobDetailCrawlRequested bool `json:"jobDetailCrawlRequested"`
 	// InstructionsAIErrorDismissedAt/JobDetailInstructionsAIErrorDismissedAt
 	// (step 71) record when the user last dismissed that document's own
 	// AI-generation error banner — compared against
@@ -271,7 +278,7 @@ func ListPortals() ([]portal, error) {
 	}
 
 	linkRows, err := db.JobsDB.Query(
-		`SELECT id, portal_id, url, title, crawl_instructions, job_detail_crawl_instructions, instructions_ai_error, instructions_ai_error_at, instructions_ai_conversation_id, job_detail_instructions_ai_error, job_detail_instructions_ai_error_at, job_detail_instructions_ai_conversation_id, listing_crawl_requested, job_detail_instructions_ai_requested, instructions_ai_error_dismissed_at, job_detail_instructions_ai_error_dismissed_at, created_at, updated_at
+		`SELECT id, portal_id, url, title, crawl_instructions, job_detail_crawl_instructions, instructions_ai_error, instructions_ai_error_at, instructions_ai_conversation_id, job_detail_instructions_ai_error, job_detail_instructions_ai_error_at, job_detail_instructions_ai_conversation_id, listing_crawl_requested, job_detail_instructions_ai_requested, instructions_ai_error_dismissed_at, job_detail_instructions_ai_error_dismissed_at, job_detail_crawl_requested, created_at, updated_at
 		 FROM portal_links ORDER BY created_at ASC`,
 	)
 	if err != nil {
@@ -282,7 +289,7 @@ func ListPortals() ([]portal, error) {
 	for linkRows.Next() {
 		var l portalLink
 		var title, crawlInstructions, jobDetailCrawlInstructions, instructionsAIError, instructionsAIErrorAt, instructionsAIConversationID, jobDetailInstructionsAIError, jobDetailInstructionsAIErrorAt, jobDetailInstructionsAIConversationID, instructionsAIErrorDismissedAt, jobDetailInstructionsAIErrorDismissedAt, updatedAt sql.NullString
-		if err := linkRows.Scan(&l.ID, &l.PortalID, &l.URL, &title, &crawlInstructions, &jobDetailCrawlInstructions, &instructionsAIError, &instructionsAIErrorAt, &instructionsAIConversationID, &jobDetailInstructionsAIError, &jobDetailInstructionsAIErrorAt, &jobDetailInstructionsAIConversationID, &l.ListingCrawlRequested, &l.JobDetailInstructionsAIRequested, &instructionsAIErrorDismissedAt, &jobDetailInstructionsAIErrorDismissedAt, &l.CreatedAt, &updatedAt); err != nil {
+		if err := linkRows.Scan(&l.ID, &l.PortalID, &l.URL, &title, &crawlInstructions, &jobDetailCrawlInstructions, &instructionsAIError, &instructionsAIErrorAt, &instructionsAIConversationID, &jobDetailInstructionsAIError, &jobDetailInstructionsAIErrorAt, &jobDetailInstructionsAIConversationID, &l.ListingCrawlRequested, &l.JobDetailInstructionsAIRequested, &instructionsAIErrorDismissedAt, &jobDetailInstructionsAIErrorDismissedAt, &l.JobDetailCrawlRequested, &l.CreatedAt, &updatedAt); err != nil {
 			return nil, err
 		}
 		l.Title = title.String
@@ -483,6 +490,18 @@ func UpdatePortalLinkJobDetailInstructionsAIRequested(id string, requested bool)
 		return err
 	}
 	_, err := db.JobsDB.Exec(`UPDATE portal_links SET job_detail_instructions_ai_requested = ? WHERE id = ?`, requested, id)
+	return err
+}
+
+// UpdatePortalLinkJobDetailCrawlRequested (step 76) lets the frontend
+// clear job_detail_crawl_requested once it has consumed it — same
+// shape as UpdatePortalLinkListingCrawlRequested/
+// UpdatePortalLinkJobDetailInstructionsAIRequested above.
+func UpdatePortalLinkJobDetailCrawlRequested(id string, requested bool) error {
+	if err := RequirePortalLinkExists(id); err != nil {
+		return err
+	}
+	_, err := db.JobsDB.Exec(`UPDATE portal_links SET job_detail_crawl_requested = ? WHERE id = ?`, requested, id)
 	return err
 }
 

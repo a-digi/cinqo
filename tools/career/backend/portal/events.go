@@ -86,7 +86,13 @@ func ListingInstructionsReadyEventHandler(w http.ResponseWriter, r *http.Request
 // the literal "check if there are instructions for this portal to
 // crawl job description; if there are none, ..." from the request:
 // only flags job_detail_instructions_ai_requested when this link
-// doesn't already have job_detail_crawl_instructions set.
+// doesn't already have job_detail_crawl_instructions set. It also
+// unconditionally flags job_detail_crawl_requested, independently of
+// that check — whether it's actually safe to start that crawl yet
+// (job-detail instructions might not exist) is deliberately not this
+// handler's own concern; the frontend's own consuming effect is what
+// waits for readiness. See
+// plan/ai/tools/career/step-76-job-detail-crawl-requested-backend.md.
 func JobsCrawledEventHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -112,17 +118,22 @@ func JobsCrawledEventHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to check job detail instructions", http.StatusInternalServerError)
 		return
 	}
-	if jobDetailInstructions.Valid && jobDetailInstructions.String != "" {
-		// Already has instructions — nothing to do.
-		w.WriteHeader(http.StatusAccepted)
-		return
+
+	if !jobDetailInstructions.Valid || jobDetailInstructions.String == "" {
+		if _, err := db.JobsDB.Exec(
+			`UPDATE portal_links SET job_detail_instructions_ai_requested = 1, updated_at = datetime('now') WHERE id = ?`,
+			portalLinkID,
+		); err != nil {
+			http.Error(w, "failed to record request", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	if _, err := db.JobsDB.Exec(
-		`UPDATE portal_links SET job_detail_instructions_ai_requested = 1, updated_at = datetime('now') WHERE id = ?`,
+		`UPDATE portal_links SET job_detail_crawl_requested = 1, updated_at = datetime('now') WHERE id = ?`,
 		portalLinkID,
 	); err != nil {
-		http.Error(w, "failed to record request", http.StatusInternalServerError)
+		http.Error(w, "failed to record job detail crawl request", http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusAccepted)

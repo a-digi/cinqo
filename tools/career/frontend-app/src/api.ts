@@ -196,6 +196,12 @@ export interface PortalLink {
   // plan/ai/tools/career/step-71-dismiss-tracking-data-model.md.
   instructionsAiErrorDismissedAt: string | null
   jobDetailInstructionsAiErrorDismissedAt: string | null
+  // jobDetailCrawlRequested (step 76) — same request-flag shape as
+  // listingCrawlRequested/jobDetailInstructionsAiRequested above, set
+  // unconditionally by the same events/jobs-crawled listener the
+  // instant a listing crawl finishes. See
+  // plan/ai/tools/career/step-76-job-detail-crawl-requested-backend.md.
+  jobDetailCrawlRequested: boolean
   createdAt: string
   updatedAt?: string
 }
@@ -631,6 +637,7 @@ export async function updatePortalLink(
     jobDetailInstructionsAiRequested?: boolean
     instructionsAiErrorDismissedAt?: string
     jobDetailInstructionsAiErrorDismissedAt?: string
+    jobDetailCrawlRequested?: boolean
   },
 ): Promise<void> {
   const res = await fetch(`${PROXY_BASE}/portal-links`, {

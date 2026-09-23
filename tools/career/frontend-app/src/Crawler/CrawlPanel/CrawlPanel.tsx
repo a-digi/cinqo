@@ -21,7 +21,6 @@ import {
   CrawlInstructionsIcon,
   JobDetailInstructionsIcon,
 } from '../../Shared/Icons/icons'
-import { Typewriter } from '../../Shared/Typewriter/Typewriter'
 import { Modal } from '../../Shared/Modal/Modal'
 import { InfoBox } from '../../Shared/InfoBox/InfoBox'
 
@@ -248,6 +247,33 @@ export function CrawlPanel({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [link.jobDetailInstructionsAiRequested, link.jobDetailCrawlInstructions])
+
+  // jobDetailCrawlRequestedRef consumes link.jobDetailCrawlRequested
+  // (step 76/77) — set unconditionally by the events.go listener the
+  // instant "Crawl now" finishes. This effect is what actually decides
+  // WHEN it's safe to act on that: only once job-detail crawl
+  // instructions actually exist (they might not yet — that's the SAME
+  // event's own other flag's whole job to fill in). If they don't exist
+  // yet, this effect does nothing and does NOT clear the flag — it
+  // simply fires again on a future render once
+  // link.jobDetailCrawlInstructions becomes truthy (e.g. once the
+  // auto-generated instructions land), the same self-healing shape
+  // jobDetailAiRequestedRef already uses. See
+  // plan/ai/tools/career/step-77-auto-crawl-job-details-frontend.md.
+  const jobDetailCrawlRequestedRef = useRef(false)
+  useEffect(() => {
+    if (link.jobDetailCrawlRequested && link.jobDetailCrawlInstructions && !jobDetailCrawlRequestedRef.current) {
+      jobDetailCrawlRequestedRef.current = true
+      void updatePortalLink(link.id, { jobDetailCrawlRequested: false }).catch(() => {
+        // Best-effort — see listingCrawlRequestedRef's own identical
+        // reasoning: if THIS clear fails, the flag simply fires again
+        // next reload, harmless since handleCrawlJobDetailsNow's own
+        // isBusy() guard already no-ops a duplicate trigger.
+      })
+      handleCrawlJobDetailsNow()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [link.jobDetailCrawlRequested, link.jobDetailCrawlInstructions])
 
   // watchCrawlRun polls GET .../crawl-now/active until the run reaches
   // a terminal status, writing every observed row into `run` as it
@@ -737,112 +763,131 @@ export function CrawlPanel({
           the LISTING instructions only; job-detail instructions are
           entirely automatic (step 67's own event-driven pipeline), so
           neither card has its own manual trigger anymore. */}
-      {/* Error banners live OUTSIDE and ABOVE both cards (not nested
-          inside whichever document happened to fail), each labeled
-          with a pill naming which document failed — up to two can show
-          at once, since the listing and job-detail generations fail
-          independently. Gated on `aiLocalError || shouldShowError(...)`
-          (not shouldShowError alone) to close a narrow timing window:
-          the same-session local copy can be set slightly before its
-          durable errorAt lands in a reloaded `link` prop — see
-          plan/ai/tools/career/step-72-wire-infobox-into-crawlpanel.md's
-          own "Open question". */}
-      {(aiLocalError ?? shouldShowError(link.instructionsAiErrorAt, link.instructionsAiErrorDismissedAt)) && (
-        <InfoBox
-          variant="error"
-          label="Crawl instructions"
-          labelClassName="bg-blue-100 text-blue-800"
-          message={
-            (aiLocalError ?? link.instructionsAiError ?? '') +
-            (!aiLocalError && link.instructionsAiErrorAt ? ` (${new Date(link.instructionsAiErrorAt).toLocaleString()})` : '')
-          }
-          onDismiss={handleDismissListingError}
-        />
-      )}
-      {(jobDetailAiLocalError ?? shouldShowError(link.jobDetailInstructionsAiErrorAt, link.jobDetailInstructionsAiErrorDismissedAt)) && (
-        <InfoBox
-          variant="error"
-          label="Job detail crawl instructions"
-          labelClassName="bg-purple-100 text-purple-800"
-          message={
-            (jobDetailAiLocalError ?? link.jobDetailInstructionsAiError ?? '') +
-            (!jobDetailAiLocalError && link.jobDetailInstructionsAiErrorAt
-              ? ` (${new Date(link.jobDetailInstructionsAiErrorAt).toLocaleString()})`
-              : '')
-          }
-          onDismiss={handleDismissJobDetailError}
-        />
-      )}
-      <div className="flex items-start gap-2">
-        <div className="grid flex-1 grid-cols-2 gap-2">
-          <div className="rounded-lg border border-gray-200 bg-gray-50 p-2">
-            <button
-              type="button"
-              onClick={openCrawlInstructionsModal}
-              title={link.crawlInstructions ? 'Crawl instructions — view/edit' : 'Crawl instructions — not set yet, click to add'}
-              className={`flex items-center gap-1.5 text-xs font-medium hover:underline ${link.crawlInstructions ? 'text-gray-700' : 'text-gray-400'}`}
-            >
-              <CrawlInstructionsIcon />
-              Crawl instructions
-            </button>
-          </div>
-          <div className="rounded-lg border border-gray-200 bg-gray-50 p-2">
-            <button
-              type="button"
-              onClick={openJobDetailInstructionsModal}
-              title={
-                link.jobDetailCrawlInstructions
-                  ? "Job detail crawl instructions — view/edit — how to extract the job-position-relevant text off a single job's own detail page (the page a listing's own job URL points to), separate from the listing crawl instructions."
-                  : "Job detail crawl instructions — not set yet, generated automatically once this link's own listing has been crawled — how to extract the job-position-relevant text off a single job's own detail page (the page a listing's own job URL points to), separate from the listing crawl instructions."
-              }
-              className={`flex items-center gap-1.5 text-xs font-medium hover:underline ${link.jobDetailCrawlInstructions ? 'text-gray-700' : 'text-gray-400'}`}
-            >
-              <JobDetailInstructionsIcon />
-              Job detail crawl instructions
-            </button>
-            {/* Passive status only — no manual trigger anymore. This
-                only ever becomes true via jobDetailAiRequestedRef's own
-                automatic effect (step 67), never a direct click. */}
-            {jobDetailAiPending && (
+      {/* Grouping container (step 74) — everything about "this link's
+          own crawl instructions" (its error banners, both small cards,
+          and the one button that generates the listing document) lives
+          inside one shared bordered/backgrounded area, so it reads as
+          a single recognizable concern, distinct from the crawl-
+          execution button rows and the status/log display that follow
+          it below. bg-white (not the small cards' own bg-gray-50) so
+          this outer layer visually sits above its own gray-50
+          children, not flush with them. See
+          plan/ai/tools/career/step-74-crawl-instructions-grouping.md. */}
+      <div className="rounded-xl border border-gray-200 bg-white p-2">
+        {/* Two small cards, each exactly half the row (grid-cols-2, not
+            flex-wrap) so they always sit side by side at 50%/50% width
+            regardless of either card's own content length — a flex row
+            would let one card's shorter content shrink it below 50%. The
+            single "Generate instructions" button (step 68) sits beside
+            this grid, not inside either card — one control now generates
+            the LISTING instructions only; job-detail instructions are
+            entirely automatic (step 67's own event-driven pipeline), so
+            neither card has its own manual trigger anymore. */}
+        {/* Error banners live OUTSIDE and ABOVE both cards (not nested
+            inside whichever document happened to fail), each labeled
+            with a pill naming which document failed — up to two can show
+            at once, since the listing and job-detail generations fail
+            independently. Gated on `aiLocalError || shouldShowError(...)`
+            (not shouldShowError alone) to close a narrow timing window:
+            the same-session local copy can be set slightly before its
+            durable errorAt lands in a reloaded `link` prop — see
+            plan/ai/tools/career/step-72-wire-infobox-into-crawlpanel.md's
+            own "Open question". */}
+        {(aiLocalError ?? shouldShowError(link.instructionsAiErrorAt, link.instructionsAiErrorDismissedAt)) && (
+          <InfoBox
+            variant="error"
+            label="Crawl instructions"
+            labelClassName="bg-blue-100 text-blue-800"
+            message={
+              (aiLocalError ?? link.instructionsAiError ?? '') +
+              (!aiLocalError && link.instructionsAiErrorAt ? ` (${new Date(link.instructionsAiErrorAt).toLocaleString()})` : '')
+            }
+            onDismiss={handleDismissListingError}
+          />
+        )}
+        {(jobDetailAiLocalError ?? shouldShowError(link.jobDetailInstructionsAiErrorAt, link.jobDetailInstructionsAiErrorDismissedAt)) && (
+          <InfoBox
+            variant="error"
+            label="Job detail crawl instructions"
+            labelClassName="bg-purple-100 text-purple-800"
+            message={
+              (jobDetailAiLocalError ?? link.jobDetailInstructionsAiError ?? '') +
+              (!jobDetailAiLocalError && link.jobDetailInstructionsAiErrorAt
+                ? ` (${new Date(link.jobDetailInstructionsAiErrorAt).toLocaleString()})`
+                : '')
+            }
+            onDismiss={handleDismissJobDetailError}
+          />
+        )}
+        <div className="flex items-start gap-2">
+          <div className="grid flex-1 grid-cols-2 gap-2">
+            <div className="rounded-lg border border-gray-200 bg-gray-50 p-2">
               <button
                 type="button"
-                onClick={handleCheckJobDetailProgress}
-                title="Open the chat window to watch the AI work on this link's job detail crawl instructions"
-                className="mt-1 inline-flex items-center gap-1 text-xs text-gray-500 underline hover:text-gray-700"
+                onClick={openCrawlInstructionsModal}
+                title={link.crawlInstructions ? 'Crawl instructions — view/edit' : 'Crawl instructions — not set yet, click to add'}
+                className={`flex items-center gap-1.5 text-xs font-medium hover:underline ${link.crawlInstructions ? 'text-gray-700' : 'text-gray-400'}`}
               >
-                <span className="inline-flex items-center gap-1 [animation:robot-bob_1.6s_ease-in-out_infinite]">
-                  <RobotIcon />
-                  <Typewriter text="Check Progress - AI" />
-                </span>
+                <CrawlInstructionsIcon />
+                Crawl instructions
               </button>
-            )}
+            </div>
+            <div className="rounded-lg border border-gray-200 bg-gray-50 p-2">
+              <button
+                type="button"
+                onClick={openJobDetailInstructionsModal}
+                title={
+                  link.jobDetailCrawlInstructions
+                    ? "Job detail crawl instructions — view/edit — how to extract the job-position-relevant text off a single job's own detail page (the page a listing's own job URL points to), separate from the listing crawl instructions."
+                    : "Job detail crawl instructions — not set yet, generated automatically once this link's own listing has been crawled — how to extract the job-position-relevant text off a single job's own detail page (the page a listing's own job URL points to), separate from the listing crawl instructions."
+                }
+                className={`flex items-center gap-1.5 text-xs font-medium hover:underline ${link.jobDetailCrawlInstructions ? 'text-gray-700' : 'text-gray-400'}`}
+              >
+                <JobDetailInstructionsIcon />
+                Job detail crawl instructions
+              </button>
+              {/* Passive status only — no manual trigger anymore. This
+                  only ever becomes true via jobDetailAiRequestedRef's own
+                  automatic effect (step 67), never a direct click. */}
+              {jobDetailAiPending && (
+                <button
+                  type="button"
+                  onClick={handleCheckJobDetailProgress}
+                  title="Open the chat window to watch the AI work on this link's job detail crawl instructions"
+                  className="mt-1 inline-flex items-center gap-1 text-xs text-gray-500 underline hover:text-gray-700"
+                >
+                  <RobotIcon />
+                  Generating...
+                </button>
+              )}
+            </div>
           </div>
+          <button
+            type="button"
+            onClick={aiPending ? handleCheckProgress : handleGenerateInstructionsWithAI}
+            disabled={!hasPlatforms || (aiPending && !aiConversationId)}
+            title={
+              !hasPlatforms
+                ? 'No AI platform configured — add one on the Platforms page first'
+                : aiPending
+                  ? "Open the chat window to watch the AI work on this link's crawl instructions"
+                  : 'Let the AI inspect this page and write (or update) its listing crawl instructions for you — once saved, this link is crawled and its job-detail instructions are generated automatically.'
+            }
+            className="flex shrink-0 items-center gap-1 self-stretch rounded-lg border border-gray-200 bg-gray-50 px-3 text-xs font-medium text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {aiPending ? (
+              <>
+                <RobotIcon />
+                Generating...
+              </>
+            ) : (
+              <>
+                <RobotIcon />
+                Generate instructions
+              </>
+            )}
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={aiPending ? handleCheckProgress : handleGenerateInstructionsWithAI}
-          disabled={!hasPlatforms || (aiPending && !aiConversationId)}
-          title={
-            !hasPlatforms
-              ? 'No AI platform configured — add one on the Platforms page first'
-              : aiPending
-                ? "Open the chat window to watch the AI work on this link's crawl instructions"
-                : 'Let the AI inspect this page and write (or update) its listing crawl instructions for you — once saved, this link is crawled and its job-detail instructions are generated automatically.'
-          }
-          className="flex shrink-0 items-center gap-1 self-stretch rounded-lg border border-gray-200 bg-gray-50 px-3 text-xs font-medium text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {aiPending ? (
-            <span className="inline-flex items-center gap-1 [animation:robot-bob_1.6s_ease-in-out_infinite]">
-              <RobotIcon />
-              <Typewriter text="Check Progress - AI" />
-            </span>
-          ) : (
-            <>
-              <RobotIcon />
-              Generate instructions
-            </>
-          )}
-        </button>
       </div>
       {link.crawlInstructions && (
         <div className="mt-1.5">
@@ -890,7 +935,7 @@ export function CrawlPanel({
                   ? 'No AI platform configured — add one on the Platforms page first'
                   : 'Lets the AI drive the crawl itself — tolerates instructions that don’t fit "Crawl now"’s fixed fields, but needs a configured AI platform.'
               }
-              className="flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+              className="hidden flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <PlayIcon />
               {isCrawling ? 'Crawling…' : 'Crawl with AI'}
@@ -911,43 +956,28 @@ export function CrawlPanel({
           )}
         </div>
       )}
-      {link.jobDetailCrawlInstructions && (
+      {link.jobDetailCrawlInstructions && run?.status === 'running' && (
         <div className="mt-1.5">
           <div className="flex flex-wrap gap-2">
-            {run?.status === 'running' ? (
-              <>
-                <button
-                  type="button"
-                  onClick={handleStopCrawlNow}
-                  disabled={isStoppingCrawl}
-                  title="Actually stop this crawl — interrupts it on the server (both Career's own goroutine and the browser tool's in-flight work), not just this tab's own view of it."
-                  className="flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <StopIcon />
-                  {isStoppingCrawl ? 'Stopping…' : 'Stop crawl'}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleCancelCrawlNow}
-                  title="Stop watching this crawl in this tab — it keeps running on the server regardless, and reopening this page later will show its latest status."
-                  className="flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50"
-                >
-                  <PlayIcon />
-                  Stop watching
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                onClick={handleCrawlJobDetailsNow}
-                disabled={isBusy()}
-                title="Deterministic — no AI, no platform needed. Visits every already-saved job's own detail page for this link (up to 200 at a time, oldest-crawled first) and updates its description using this link's own job detail crawl instructions. Runs on the server, so it keeps going even if you leave this page."
-                className="flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <PlayIcon />
-                Crawl job details now
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={handleStopCrawlNow}
+              disabled={isStoppingCrawl}
+              title="Actually stop this crawl — interrupts it on the server (both Career's own goroutine and the browser tool's in-flight work), not just this tab's own view of it."
+              className="flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <StopIcon />
+              {isStoppingCrawl ? 'Stopping…' : 'Stop crawl'}
+            </button>
+            <button
+              type="button"
+              onClick={handleCancelCrawlNow}
+              title="Stop watching this crawl in this tab — it keeps running on the server regardless, and reopening this page later will show its latest status."
+              className="flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50"
+            >
+              <PlayIcon />
+              Stop watching
+            </button>
           </div>
         </div>
       )}
