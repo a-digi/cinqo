@@ -62,6 +62,18 @@ export function PlusIcon() {
   )
 }
 
+// EyeIcon (media step 9) — preview glyph, marks "open this file's own
+// preview" (MediaListPage.tsx's row action), distinct from
+// Delete/Trash.
+export function EyeIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-4 w-4">
+      <path d="M2.5 10s2.8-5 7.5-5 7.5 5 7.5 5-2.8 5-7.5 5-7.5-5-7.5-5z" strokeWidth="1.3" strokeLinejoin="round" />
+      <circle cx="10" cy="10" r="2.2" strokeWidth="1.3" />
+    </svg>
+  )
+}
+
 // LogsIcon (step 36) — a plain lined-document glyph marking "view this
 // conversation's own AI trace logs," distinct from every other row
 // action (Rename/Delete) in ConversationSidebar.tsx.

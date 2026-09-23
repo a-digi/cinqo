@@ -15,11 +15,15 @@ interface ImageUploadCropperProps {
   existingFileId?: string
   // Omitted means free-form cropping; pass aspect={1} for a square crop.
   aspect?: number
+  // Human-readable label shown at the top of the crop modal (e.g.
+  // "Cinqo", "Career") so the caller knows which tool_slug bucket
+  // they're uploading into. Defaults to toolSlug itself when omitted.
+  sourceLabel?: string
   onDone: (result: { fileId: string; width: number; height: number }) => void
   onError?: (message: string) => void
 }
 
-export function ImageUploadCropper({ toolSlug, existingFileId, aspect, onDone, onError }: ImageUploadCropperProps) {
+export function ImageUploadCropper({ toolSlug, existingFileId, aspect, sourceLabel, onDone, onError }: ImageUploadCropperProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [objectUrl, setObjectUrl] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -58,12 +62,13 @@ export function ImageUploadCropper({ toolSlug, existingFileId, aspect, onDone, o
         disabled={busy}
         className="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
       >
-        {busy ? 'Uploading…' : existingFileId ? 'Replace image' : 'Upload image'}
+        {busy ? 'Uploading…' : existingFileId ? 'Replace image' : 'Add Image'}
       </button>
       {objectUrl && (
         <CropModal
           imageSrc={objectUrl}
           aspect={aspect}
+          sourceLabel={sourceLabel ?? toolSlug}
           onCancel={closeCropModal}
           onSave={(blob) => {
             void handleSave(blob)

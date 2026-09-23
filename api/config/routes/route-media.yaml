@@ -75,3 +75,11 @@ routes:
     method: DELETE
     executor: MediaDelete
     security: authenticated
+
+  # No static scopes: dynamic ownership, same reasoning as delete above
+  # — see media/handler/update_title_handler.go's own doc comment. See
+  # plan/ai/media/step-09-title-metadata-and-preview.md.
+  - path: /api/v1/media/{id}
+    method: PATCH
+    executor: MediaUpdateTitle
+    security: authenticated

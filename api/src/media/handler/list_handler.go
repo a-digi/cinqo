@@ -32,6 +32,7 @@ type mediaFileResponse struct {
 	Width     int    `json:"width,omitempty"`
 	Height    int    `json:"height,omitempty"`
 	UpdatedAt string `json:"updated_at,omitempty"`
+	Title     string `json:"title,omitempty"`
 }
 
 func toMediaFileResponse(m *media_entity.MediaFile) mediaFileResponse {
@@ -49,6 +50,7 @@ func toMediaFileResponse(m *media_entity.MediaFile) mediaFileResponse {
 		Width:            m.Width,
 		Height:           m.Height,
 		UpdatedAt:        m.UpdatedAt,
+		Title:            m.Title,
 	}
 }
 

@@ -17,15 +17,15 @@ func NewMediaQueryRepo(db *sql.DB) *MediaQueryRepo {
 }
 
 const mediaFileColumns = `id, tool_slug, original_filename, extension, stored_path, content_type, ` +
-	`size_bytes, uploaded_by_user_id, conversation_id, expires_at, created_at, width, height, updated_at`
+	`size_bytes, uploaded_by_user_id, conversation_id, expires_at, created_at, width, height, updated_at, title`
 
 func scanMediaFile(scan func(dest ...any) error) (*media_entity.MediaFile, error) {
 	var m media_entity.MediaFile
-	var conversationID, expiresAt, updatedAt sql.NullString
+	var conversationID, expiresAt, updatedAt, title sql.NullString
 	var width, height sql.NullInt64
 
 	if err := scan(&m.ID, &m.ToolSlug, &m.OriginalFilename, &m.Extension, &m.StoredPath, &m.ContentType,
-		&m.SizeBytes, &m.UploadedByUserID, &conversationID, &expiresAt, &m.CreatedAt, &width, &height, &updatedAt); err != nil {
+		&m.SizeBytes, &m.UploadedByUserID, &conversationID, &expiresAt, &m.CreatedAt, &width, &height, &updatedAt, &title); err != nil {
 		return nil, err
 	}
 
@@ -34,6 +34,7 @@ func scanMediaFile(scan func(dest ...any) error) (*media_entity.MediaFile, error
 	m.Width = int(width.Int64)
 	m.Height = int(height.Int64)
 	m.UpdatedAt = updatedAt.String
+	m.Title = title.String
 
 	return &m, nil
 }

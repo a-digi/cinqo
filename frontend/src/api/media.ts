@@ -1,4 +1,4 @@
-import { apiGet, apiDelete, apiUpload } from './client'
+import { apiGet, apiDelete, apiUpload, apiPatch } from './client'
 
 // Same snake_case-to-camelCase *Raw mapping convention as api/tools.ts,
 // api/auth.ts. storedPath is never sent by the backend (deliberately
@@ -27,6 +27,9 @@ export interface MediaFile {
   // '' when never replaced, matching this file's own existing
   // convention for an absent optional field.
   updatedAt: string
+  // '' when not set — plain, non-localized, admin-editable label. See
+  // plan/ai/media/step-09-title-metadata-and-preview.md.
+  title: string
 }
 
 interface MediaFileRaw {
@@ -43,6 +46,7 @@ interface MediaFileRaw {
   width?: number
   height?: number
   updated_at?: string
+  title?: string
 }
 
 function fromRaw(raw: MediaFileRaw): MediaFile {
@@ -60,6 +64,7 @@ function fromRaw(raw: MediaFileRaw): MediaFile {
     width: raw.width ?? null,
     height: raw.height ?? null,
     updatedAt: raw.updated_at ?? '',
+    title: raw.title ?? '',
   }
 }
 
@@ -72,6 +77,13 @@ export async function fetchMedia(toolSlug?: string): Promise<MediaFile[]> {
 
 export async function deleteMedia(id: string): Promise<void> {
   await apiDelete(`/api/v1/media/${encodeURIComponent(id)}`)
+}
+
+// Empty string clears the title back to "not set" — see
+// api/src/media/handler/update_title_handler.go's own doc comment.
+export async function updateMediaTitle(id: string, title: string): Promise<MediaFile> {
+  const raw = await apiPatch<{ message: MediaFileRaw }>(`/api/v1/media/${encodeURIComponent(id)}`, { title })
+  return fromRaw(raw.message)
 }
 
 // toolSlug omitted or '' lists every tool's own media the CALLER

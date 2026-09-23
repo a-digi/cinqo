@@ -6,10 +6,11 @@ import { LoadingSpinner } from '../../../Shared/Components/Loading/LoadingSpinne
 import { useConfirm } from '../../../Shared/Components/Modal/useConfirm'
 import { useSnackBar } from '../../../Shared/Components/SnackBar/SnackBarContext'
 import { IconButton } from '../../../Shared/Components/IconButton/IconButton'
-import { TrashIcon } from '../../../Shared/Components/IconButton/icons'
+import { TrashIcon, EyeIcon } from '../../../Shared/Components/IconButton/icons'
 import { Pill } from '../../../Shared/Components/Pill/Pill'
 import { Dropdown } from '../../../Shared/Components/Dropdown/Dropdown'
 import { ImageUploadCropper } from '../../../Shared/Components/ImageUploadCropper/ImageUploadCropper'
+import { MediaDetailModal } from './MediaDetailModal'
 
 // Reserved toolSlug for the core app itself (not an installed Tool) —
 // see api/src/media/handler/upload_image_handler.go's own
@@ -17,12 +18,8 @@ import { ImageUploadCropper } from '../../../Shared/Components/ImageUploadCroppe
 // plan/ai/media/step-08-admin-media-upload.md.
 const CINQO_SYSTEM_TOOL_SLUG = 'cinqo'
 
-// formatSize is local to this page — no existing shared helper for it
-// (checked: no other admin page needs a byte count formatted).
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+function isPreviewable(file: MediaFile): boolean {
+  return file.contentType.startsWith('image/') || file.contentType === 'application/pdf'
 }
 
 // Admin-only, read/audit/cleanup view of the core Media feature
@@ -41,6 +38,7 @@ export function MediaListPage() {
   const [uploadToolSlug, setUploadToolSlug] = useState(CINQO_SYSTEM_TOOL_SLUG)
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [selectedFile, setSelectedFile] = useState<MediaFile | null>(null)
   const { confirm, dialog } = useConfirm()
   const { successMessage, errorMessage } = useSnackBar()
 
@@ -117,6 +115,7 @@ export function MediaListPage() {
           </div>
           <ImageUploadCropper
             toolSlug={uploadToolSlug}
+            sourceLabel={uploadTargetOptions.find((o) => o.value === uploadToolSlug)?.label ?? uploadToolSlug}
             onDone={() => {
               successMessage('Image uploaded.')
               load(toolSlug)
@@ -143,16 +142,29 @@ export function MediaListPage() {
               <tr className="text-xs uppercase text-gray-400">
                 <th className="px-4 py-2 font-medium" />
                 <th className="px-4 py-2 font-medium">Filename</th>
+                <th className="px-4 py-2 font-medium">Title</th>
                 <th className="px-4 py-2 font-medium">Tool</th>
-                <th className="px-4 py-2 font-medium">Size</th>
                 <th className="px-4 py-2 font-medium">Uploaded</th>
-                <th className="px-4 py-2 font-medium">Expires</th>
                 <th className="px-4 py-2 font-medium" />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {media.map((file) => (
-                <tr key={file.id}>
+                <tr
+                  key={file.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => {
+                    setSelectedFile(file)
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      setSelectedFile(file)
+                    }
+                  }}
+                  className="cursor-pointer hover:bg-gray-50"
+                >
                   <td className="px-4 py-2">
                     {file.width !== null ? (
                       <img src={mediaDownloadUrl(file.id)} alt="" className="h-10 w-10 rounded object-cover" />
@@ -161,24 +173,36 @@ export function MediaListPage() {
                     )}
                   </td>
                   <td className="px-4 py-2 text-gray-900">{file.originalFilename}</td>
+                  <td className="px-4 py-2 text-gray-600">{file.title || <span className="text-gray-300">—</span>}</td>
                   <td className="px-4 py-2">
                     <Pill outline>{file.toolSlug}</Pill>
                   </td>
-                  <td className="px-4 py-2 text-gray-600">{formatSize(file.sizeBytes)}</td>
                   <td className="px-4 py-2 text-gray-600">{new Date(file.createdAt).toLocaleString()}</td>
-                  <td className="px-4 py-2 text-gray-600">{file.expiresAt ? new Date(file.expiresAt).toLocaleString() : 'Never'}</td>
                   <td className="px-4 py-2">
-                    <div className="flex items-center justify-end gap-2">
-                      {file.width !== null && (
-                        <ImageUploadCropper
-                          toolSlug={file.toolSlug}
-                          existingFileId={file.id}
-                          onDone={() => {
-                            successMessage('Image replaced.')
-                            load(toolSlug)
-                          }}
-                          onError={(msg) => {
-                            errorMessage(msg)
+                    {/* stopPropagation here (not on each IconButton's own onClick,
+                        which has no event parameter) keeps a row action from also
+                        triggering the row's own click-to-open-details behavior. This
+                        div is a pure click-catcher, not itself an interactive
+                        element — the real interactive elements are the native
+                        <button>s inside it, which already have their own keyboard
+                        support. */}
+                    {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events */}
+                    <div
+                      className="flex items-center justify-end gap-2"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                      }}
+                    >
+                      {/* Replace button temporarily removed (not the underlying capability —
+                          ImageUploadCropper's existingFileId path and PUT
+                          /api/v1/media/images/{id} are unchanged) per explicit request
+                          while replace-in-place is investigated. */}
+                      {isPreviewable(file) && (
+                        <IconButton
+                          icon={<EyeIcon />}
+                          label="Preview"
+                          onClick={() => {
+                            setSelectedFile(file)
                           }}
                         />
                       )}
@@ -200,6 +224,18 @@ export function MediaListPage() {
         </div>
       )}
       {dialog}
+      {selectedFile && (
+        <MediaDetailModal
+          file={selectedFile}
+          onClose={() => {
+            setSelectedFile(null)
+          }}
+          onTitleSaved={(updated) => {
+            setSelectedFile(updated)
+            setMedia((prev) => (prev ? prev.map((m) => (m.id === updated.id ? updated : m)) : prev))
+          }}
+        />
+      )}
     </div>
   )
 }

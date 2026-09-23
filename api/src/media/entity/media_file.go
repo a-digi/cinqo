@@ -41,4 +41,9 @@ type MediaFile struct {
 	// create leaves it at its own zero value, same convention as
 	// CreatedAt-only rows already had before this column existed.
 	UpdatedAt string `db:"updated_at" dbtype:"DATETIME" nullable:"true" json:"updated_at"`
+	// Title is a plain, non-localized, admin-settable label (empty
+	// means "not set," same zero-value convention as every other
+	// nullable field here) — see
+	// plan/ai/media/step-09-title-metadata-and-preview.md.
+	Title string `db:"title" dbtype:"TEXT" nullable:"true" json:"title"`
 }

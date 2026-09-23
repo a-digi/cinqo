@@ -63,6 +63,14 @@ func (r *MediaPersistentRepo) UpdateImage(id, storedPath, contentType, extension
 	return err
 }
 
+// UpdateTitle sets a row's own plain, non-localized title — the only
+// field a caller can rename after upload. See
+// plan/ai/media/step-09-title-metadata-and-preview.md.
+func (r *MediaPersistentRepo) UpdateTitle(id, title string) error {
+	_, err := r.db.Exec(`UPDATE media_files SET title = ? WHERE id = ?`, nullIfEmpty(title), id)
+	return err
+}
+
 // Delete removes one media_files row. Deleting the underlying file
 // itself is the caller's own responsibility (MediaDeleteHandler) — a
 // row and its file are two separate resources, and the handler already
