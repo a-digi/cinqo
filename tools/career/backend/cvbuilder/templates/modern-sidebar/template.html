@@ -20,7 +20,9 @@
          it paginates exactly like any other multi-page document. -->
     <div class="sidebar-bg"></div>
     <div class="sidebar">
-      {{if .Location}}
+      {{if .PhotoDataURI}}
+      <img class="profile-photo" src="{{.PhotoDataURI}}" alt="" />
+      {{end}} {{if .Location}}
       <h2>Contact</h2>
       <p>{{.Location}}</p>
       {{end}} {{if .ExternalLinks}}

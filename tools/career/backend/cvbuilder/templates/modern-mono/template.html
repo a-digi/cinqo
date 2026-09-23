@@ -6,14 +6,22 @@
     </style>
   </head>
   <body>
-    <h1>{{.FullName}}</h1>
-    {{if .Headline}}
-    <p class="headline">{{.Headline}}</p>
-    {{end}} {{if .Location}}
-    <p class="links"><span>{{.Location}}</span>{{range .ExternalLinks}}<span>{{.Platform}}: {{.URL}}</span>{{end}}</p>
-    {{else if .ExternalLinks}}
-    <p class="links">{{range .ExternalLinks}}<span>{{.Platform}}: {{.URL}}</span>{{end}}</p>
-    {{end}} {{if .Summary}}
+    <div class="header">
+      <div class="header-text">
+        <h1>{{.FullName}}</h1>
+        {{if .Headline}}
+        <p class="headline">{{.Headline}}</p>
+        {{end}} {{if .Location}}
+        <p class="links"><span>{{.Location}}</span>{{range .ExternalLinks}}<span>{{.Platform}}: {{.URL}}</span>{{end}}</p>
+        {{else if .ExternalLinks}}
+        <p class="links">{{range .ExternalLinks}}<span>{{.Platform}}: {{.URL}}</span>{{end}}</p>
+        {{end}}
+      </div>
+      {{if .PhotoDataURI}}
+      <img class="profile-photo" src="{{.PhotoDataURI}}" alt="" />
+      {{end}}
+    </div>
+    {{if .Summary}}
     <h2>Summary</h2>
     <p class="summary">{{.Summary}}</p>
     {{end}} {{if .Experience}}

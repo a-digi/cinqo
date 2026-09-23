@@ -3,6 +3,7 @@ package cvbuilder
 import (
 	"bytes"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -116,6 +117,7 @@ func PersonaDefaultsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 type previewCvDocumentRequest struct {
+	PersonaID  string           `json:"personaId"`
 	TemplateID string           `json:"templateId"`
 	Data       templates.CvData `json:"data"`
 }
@@ -152,6 +154,10 @@ func PreviewHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
+	if body.PersonaID == "" {
+		http.Error(w, "personaId is required", http.StatusBadRequest)
+		return
+	}
 	if body.TemplateID == "" {
 		http.Error(w, "templateId is required", http.StatusBadRequest)
 		return
@@ -161,7 +167,17 @@ func PreviewHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	xhtml, err := templates.Render(body.TemplateID, body.Data)
+	photoDataURI, err := resolveProfilePhoto(r, body.PersonaID)
+	if err != nil {
+		if errors.Is(err, persona.ErrUnknownPersona) {
+			http.Error(w, "unknown persona id", http.StatusBadRequest)
+			return
+		}
+		http.Error(w, "failed to resolve profile photo: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	xhtml, err := templates.Render(body.TemplateID, body.Data, photoDataURI)
 	if err != nil {
 		http.Error(w, "unknown template id", http.StatusBadRequest)
 		return
@@ -249,7 +265,13 @@ func DocumentsHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		xhtml, err := templates.Render(body.TemplateID, body.Data)
+		photoDataURI, err := resolveProfilePhoto(r, body.PersonaID)
+		if err != nil {
+			http.Error(w, "failed to resolve profile photo: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		xhtml, err := templates.Render(body.TemplateID, body.Data, photoDataURI)
 		if err != nil {
 			http.Error(w, "unknown template id", http.StatusBadRequest)
 			return
@@ -518,4 +540,77 @@ func forwardAuthHeaders(originalReq, req *http.Request) {
 	if cookie := originalReq.Header.Get("Cookie"); cookie != "" {
 		req.Header.Set("Cookie", cookie)
 	}
+}
+
+// resolveProfilePhoto looks up personaID's own profile's current photo
+// (profileimage package, image_media_file_id column) and returns it as
+// a ready-to-use "data:<content-type>;base64,<...>" string for
+// templates.Render's own photoDataURI parameter — "" (no error) if the
+// profile has no photo, which every caller here treats as "just don't
+// show one," not a failure. A genuinely unknown personaID is the one
+// real caller mistake this surfaces as an error; a Media-side fetch
+// failure is deliberately swallowed (logged, not returned) — a photo
+// Media can't currently serve must never block generating or
+// previewing the rest of the CV. Queries career.db directly rather than
+// importing the profileimage package: that package's own HTTP handlers
+// aren't needed here, and a two-line SELECT is simpler than exporting a
+// getter whose only other caller is this one.
+func resolveProfilePhoto(r *http.Request, personaID string) (string, error) {
+	var profileID string
+	switch err := db.CareerDB.QueryRow(`SELECT profile_id FROM personas WHERE id = ?`, personaID).Scan(&profileID); {
+	case err == sql.ErrNoRows:
+		return "", persona.ErrUnknownPersona
+	case err != nil:
+		return "", err
+	}
+
+	var mediaFileID sql.NullString
+	if err := db.CareerDB.QueryRow(`SELECT image_media_file_id FROM profiles WHERE id = ?`, profileID).Scan(&mediaFileID); err != nil {
+		return "", err
+	}
+	if !mediaFileID.Valid || mediaFileID.String == "" {
+		return "", nil
+	}
+
+	dataURI, err := fetchMediaImageDataURI(r, mediaFileID.String)
+	if err != nil {
+		log.Printf("cvbuilder: failed to fetch profile photo %q for cv render: %v", mediaFileID.String, err)
+		return "", nil
+	}
+	return dataURI, nil
+}
+
+// fetchMediaImageDataURI downloads a Media file's own bytes (forwarding
+// the original caller's own auth, same convention as every other
+// forward* helper in this file) and base64-encodes them into a data:
+// URI — pdf_tools' headless-Chrome renderer has no session/cookie of
+// its own to fetch an authenticated Media URL with, so the image has to
+// travel inside the XHTML itself as text, not as a src="/api/..." the
+// renderer would have to fetch separately.
+func fetchMediaImageDataURI(originalReq *http.Request, mediaFileID string) (string, error) {
+	downloadURL := os.Getenv("CORE_API_URL") + "/api/v1/media/" + mediaFileID + "/download"
+	req, err := http.NewRequest(http.MethodGet, downloadURL, nil)
+	if err != nil {
+		return "", err
+	}
+	forwardAuthHeaders(originalReq, req)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("download failed: %s", resp.Status)
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	contentType := resp.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	return "data:" + contentType + ";base64," + base64.StdEncoding.EncodeToString(data), nil
 }

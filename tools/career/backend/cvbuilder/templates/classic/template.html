@@ -6,6 +6,9 @@
     </style>
   </head>
   <body>
+    {{if .PhotoDataURI}}
+    <img class="profile-photo" src="{{.PhotoDataURI}}" alt="" />
+    {{end}}
     <h1>{{.FullName}}</h1>
     {{if .Headline}}
     <p class="headline">{{.Headline}}</p>

@@ -86,6 +86,35 @@ const xmlDeclaration = `<?xml version="1.0" encoding="UTF-8"?>` + "\n"
 // machinery than a plain string.Replace on a fixed marker needs.
 const styleMarker = "<!--STYLE-->"
 
+// renderContext embeds the caller-supplied CvData (so every existing
+// template field, e.g. {{.FullName}}, keeps resolving exactly as
+// before via Go's normal promoted-field lookup) alongside a photo the
+// caller resolved separately. PhotoDataURI is deliberately NOT a field
+// of CvData itself: CvData round-trips through the browser (the CV
+// Builder wizard edits and re-submits it whole, and it's stored
+// verbatim as data_json) — if the photo lived there, a client could
+// submit an arbitrary string claiming to be the profile's photo, and
+// typing it template.URL to make it render (see below) would render
+// that value unvalidated. Keeping it a Render-only parameter means the
+// caller (cvbuilder/handler.go) is the only place that can ever set it,
+// always resolved server-side from the actual persona's own current
+// profile photo — never client-supplied. See
+// plan/ai/career/profile-image/step-02-cv-template-integration.md.
+type renderContext struct {
+	CvData
+	// template.URL, not string: html/template's own contextual escaper
+	// treats a plain string src="{{.}}" through its "safe URL" filter,
+	// which only allow-lists http(s)/mailto schemes and would replace a
+	// data: URI with "#ZgotmplZ" — the exact same class of escaping
+	// gotcha xmlDeclaration/styleMarker above already ran into for XML
+	// declarations and raw CSS. template.URL is how html/template's own
+	// API says "this value is already a safe URL, don't filter it" —
+	// safe here because it's never attacker-controlled (see above), only
+	// ever a data: URI this package base64-encoded itself from Media's
+	// own resized/re-encoded image bytes.
+	PhotoDataURI template.URL
+}
+
 // Render renders data into XHTML using templateID's own design.
 // html/template (NOT text/template) is what makes this safe to call
 // with real user-entered text (company names, descriptions, summaries,
@@ -94,7 +123,13 @@ const styleMarker = "<!--STYLE-->"
 // user's own CV text and malformed or injected markup inside the
 // XHTML pdf_tools goes on to render. An unknown templateID returns an
 // error — never a silent fallback to some default design.
-func Render(templateID string, data CvData) (string, error) {
+//
+// photoDataURI is a ready-to-use "data:<content-type>;base64,<...>"
+// string, or "" if this persona's own profile has no photo uploaded —
+// resolved by the caller (cvbuilder/handler.go), never by this
+// package, which has no HTTP client of its own and no notion of a
+// profile.
+func Render(templateID string, data CvData, photoDataURI string) (string, error) {
 	if !isKnownTemplate(templateID) {
 		return "", fmt.Errorf("unknown template %q", templateID)
 	}
@@ -104,8 +139,9 @@ func Render(templateID string, data CvData) (string, error) {
 		return "", err
 	}
 
+	ctx := renderContext{CvData: data, PhotoDataURI: template.URL(photoDataURI)}
 	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, data); err != nil {
+	if err := tmpl.Execute(&buf, ctx); err != nil {
 		return "", err
 	}
 

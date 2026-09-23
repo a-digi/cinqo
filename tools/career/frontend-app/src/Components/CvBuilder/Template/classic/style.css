@@ -8,6 +8,14 @@ body {
      repeats on every page break and plain padding here would not. */
   padding: 0 40px;
 }
+.profile-photo {
+  display: block;
+  width: 80px;
+  height: 80px;
+  margin: 0 auto 8px auto;
+  border-radius: 50%;
+  object-fit: cover;
+}
 h1 {
   font-size: 20pt;
   margin: 0 0 2px 0;

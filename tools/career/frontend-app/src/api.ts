@@ -881,12 +881,12 @@ export async function createCvDocument(personaId: string, templateId: string, ti
 // row. Lets the wizard show what a CV would actually look like before
 // the user commits to creating it. previewUrl is a temporary
 // pdf_tools-owned URL (never a Media/cv_documents reference).
-export async function previewCvDocument(templateId: string, data: CvData): Promise<{ previewUrl: string }> {
+export async function previewCvDocument(personaId: string, templateId: string, data: CvData): Promise<{ previewUrl: string }> {
   const res = await fetch(`${PROXY_BASE}/cv-documents/preview`, {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ templateId, data }),
+    body: JSON.stringify({ personaId, templateId, data }),
   })
   return jsonOrThrow<{ previewUrl: string }>(res, 'preview cv document')
 }

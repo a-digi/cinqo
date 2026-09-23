@@ -164,11 +164,11 @@ export function CvBuilderPage() {
   // browsers and gets silently popup-blocked. See
   // plan/ai/career/cv-builder/step-04-frontend-cv-builder.md.
   function handlePreview() {
-    if (!cvData || !templateId) return
+    if (!cvData || !templateId || !personaId) return
     setError('')
     const previewTab = window.open('', '_blank')
     setPreviewing(true)
-    previewCvDocument(templateId, cvData)
+    previewCvDocument(personaId, templateId, cvData)
       .then(({ previewUrl: url }) => {
         if (previewTab) {
           previewTab.location.href = url

@@ -48,6 +48,15 @@ body {
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
 }
+.profile-photo {
+  display: block;
+  width: 88px;
+  height: 88px;
+  margin: 0 auto 12px auto;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid #475569;
+}
 .sidebar h2 {
   font-size: 10pt;
   text-transform: uppercase;
