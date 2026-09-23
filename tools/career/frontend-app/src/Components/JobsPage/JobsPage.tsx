@@ -733,13 +733,17 @@ export function JobsPage() {
           (not min-w-0 — tried first, then confirmed live at 390px to
           crush the title down to one wrapped character per line) is a
           usability floor: once the viewport can't fit both columns at
-          once, the row itself scrolls horizontally (overflow-x-auto
-          below), the same tradeoff a fixed-width sidebar next to
-          real content always has on a narrow screen — the picker
-          never moves off the right, but reading the table on a phone
-          means either scrolling sideways or collapsing the sidebar
-          nav first for more room. */}
-      <div className="flex flex-nowrap items-start gap-6 overflow-x-auto">
+          once, the overflow bubbles up to <main> itself (this page's
+          own nearest scrolling ancestor) rather than this row scrolling
+          on its own — deliberately NOT overflow-x-auto on this row:
+          that would make THIS row its own scroll container, and
+          "position: sticky" below sticks relative to its own nearest
+          scrolling ancestor, not necessarily <main> — confirmed live
+          that adding overflow-x-auto here silently broke the sidebar's
+          own sticky-while-scrolling behavior (it now had nothing of
+          its own to scroll, so it never moved), even though <main>
+          still scrolled around it correctly either way. */}
+      <div className="flex flex-nowrap items-start gap-6">
         <div className="min-w-[280px] flex-1">
           <h1 className="mb-1.5 text-xl font-semibold">Saved Jobs</h1>
           <p className="mb-5 text-sm text-gray-500">Job postings the AI has crawled and saved on your behalf.</p>
