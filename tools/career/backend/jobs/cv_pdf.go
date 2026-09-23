@@ -37,6 +37,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -189,6 +190,33 @@ func RegisterSaveCvPdf(server *mcp.Server) {
 		}
 		if args.PdfResource == "" {
 			return db.ErrResult("pdfResource is required"), nil, nil
+		}
+		// Safety net, not the primary fix (that lives in the platform's
+		// own resolvePromoteMediaArgument, api/src/conversation/chat.go —
+		// see its own doc comment): by the time this handler runs,
+		// pdfResource should already have been promoted from a
+		// generate_pdf resource link into a real, permanent Media file id
+		// (a plain UUID, no "/" or "://" anywhere in it — see
+		// media.PersistLocalFile). A value that still looks like a URL or
+		// path means promotion did not happen, for whatever reason — this
+		// package has no way to fix that itself (it doesn't talk to
+		// Media, see this file's own top doc comment), but persisting
+		// that raw value anyway would silently record a job's own CV as
+		// "completed" while its own download link 404s forever, exactly
+		// what was live-observed before this check existed. Rejecting
+		// here instead gives the AI an immediate, actionable error it can
+		// often just retry from (generate_pdf again, then pass that
+		// fresh, unmodified result straight into this call) within the
+		// SAME turn, rather than a human discovering a dead download link
+		// days later. See
+		// plan/ai/tools/career/step-XX-cv-pdf-download-404.md.
+		if strings.Contains(args.PdfResource, "://") || strings.HasPrefix(args.PdfResource, "/") {
+			return db.ErrResult(
+				"pdfResource still looks like a raw resource link (" + args.PdfResource + "), not a promoted Media file id — " +
+					"this usually means it was not passed through unmodified. Call generate_pdf again and pass its own " +
+					"returned 'uri' field straight into this call's pdfResource argument, exactly as returned — do not " +
+					"add a domain/host in front of it or otherwise retype it.",
+			), nil, nil
 		}
 		if err := SaveGeneratedCvPdf(args.JobID, args.PdfResource); err != nil {
 			if errors.Is(err, ErrUnknownJob) {

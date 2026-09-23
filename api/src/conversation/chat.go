@@ -556,6 +556,36 @@ func invokeToolCall(ctx context.Context, mainDB *sql.DB, callerScopes []string, 
 // producing tool's own slug and the resource's own id.
 var toolProxyResourcePattern = regexp.MustCompile(`^/api/v1/tools/([^/]+)/proxy/[^?]*\?id=([^&]+)$`)
 
+// absoluteURLPrefix matches a scheme://host prefix wrongly prepended
+// onto what should be a relative tool proxy resource link.
+var absoluteURLPrefix = regexp.MustCompile(`^https?://[^/]+`)
+
+// normalizeToolProxyResourceValue strips a wrongly-prepended absolute
+// origin off an otherwise-relative tool proxy resource link, if
+// present, before toolProxyResourcePattern ever sees it — a
+// live-observed failure mode: asked to pass a RELATIVE resource link
+// back verbatim (e.g. pdf_tools' own generate_pdf result,
+// "/api/v1/tools/pdf_tools/proxy/files?id=...") into a LATER tool
+// call's own argument, the model instead fabricated an absolute URL
+// with a hallucinated domain in front of it — the same "a model
+// paraphrasing/retyping a URL string across turns is not reliable"
+// class of failure this file's own appendResourceLinks already exists
+// to fix for the FINAL reply text (see that function's own doc
+// comment); no equivalent existed yet for an argument the AI must
+// retype into a SUBSEQUENT tool call. Confirmed live: a real
+// save_cv_pdf call stored
+// "https://flowforge.app/api/v1/tools/pdf_tools/proxy/files?id=..."
+// verbatim as a job's own cv_media_file_id (this regex's own mismatch
+// silently skipped promotion, per this function's own pre-existing
+// "left untouched" contract below) — 404ing forever on download,
+// since that string was never a real Media file id. Leaves an
+// already-relative value, or one with no recognizable absolute-URL
+// prefix, untouched. See
+// plan/ai/tools/career/step-XX-cv-pdf-download-404.md.
+func normalizeToolProxyResourceValue(value string) string {
+	return absoluteURLPrefix.ReplaceAllString(value, "")
+}
+
 // resolvePromoteMediaArgument rewrites args[paramName], if present and
 // shaped like another tool's own proxy resource link, from that
 // transient reference into a real, permanent Media file id — the
@@ -592,6 +622,7 @@ func resolvePromoteMediaArgument(mainDB *sql.DB, dataDir, callingToolSlug, uploa
 	if !ok {
 		return args, nil
 	}
+	value = normalizeToolProxyResourceValue(value)
 	match := toolProxyResourcePattern.FindStringSubmatch(value)
 	if match == nil {
 		return args, nil
