@@ -28,6 +28,7 @@ import { PersonaDetailsPage } from './Components/Persona/PersonaDetailsPage/Pers
 import { SkillsPage } from './Components/SkillsPage/SkillsPage'
 import { ExperiencePage } from './Components/ExperiencePage/ExperiencePage'
 import { CvDocumentsPage } from './Components/CvBuilder/CvDocumentsPage'
+import { CvBuilderPage } from './Components/CvBuilder/CvBuilderPage'
 import { JobsPage } from './Components/JobsPage/JobsPage'
 import { JobDetailsPage } from './Components/JobDetails/JobDetailsPage'
 import { CompaniesPage } from './Components/CompaniesPage/CompaniesPage'
@@ -44,6 +45,7 @@ const PERSONA_DETAILS_PATH = '/tools/career/persona-details'
 const SKILLS_PATH = '/tools/career/skills'
 const EXPERIENCE_PATH = '/tools/career/experience'
 const CV_DOCUMENTS_PATH = '/tools/career/cv-documents'
+const CV_BUILDER_PATH = '/tools/career/cv-builder'
 const JOBS_PATH = '/tools/career/jobs'
 const JOB_DETAILS_PATH = '/tools/career/job-details'
 const COMPANIES_PATH = '/tools/career/companies'
@@ -190,6 +192,17 @@ window.__cinqoToolBridge.registerRoute({
   path: CV_DOCUMENTS_PATH,
   mount: (container) => {
     mountReact(container, <CvDocumentsPage />)
+  },
+  unmount: unmountReact,
+})
+
+// No menu entry — reached only via CvDocumentsPage's own "+ New CV"
+// (?personaId=) and "Edit" (?id=) actions, same "reachable, but
+// menu-less" convention JOB_DETAILS_PATH already established.
+window.__cinqoToolBridge.registerRoute({
+  path: CV_BUILDER_PATH,
+  mount: (container) => {
+    mountReact(container, <CvBuilderPage />)
   },
   unmount: unmountReact,
 })

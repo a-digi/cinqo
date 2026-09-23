@@ -1,32 +1,17 @@
 import { useEffect, useState } from 'react'
-import {
-  fetchCvTemplates,
-  fetchCvPersonaDefaults,
-  fetchCvDocuments,
-  createCvDocument,
-  updateCvDocumentTitle,
-  deleteCvDocument,
-  type CvData,
-  type CvTemplate,
-  type CvDocument,
-} from '../../api'
+import { fetchCvTemplates, fetchCvDocuments, updateCvDocumentTitle, deleteCvDocument, type CvTemplate, type CvDocument } from '../../api'
 import { PersonaSwitcher } from '../Persona/PersonaSwitcher/PersonaSwitcher'
-import { Field } from '../Field/Field'
-import { CvComponentsSidebar } from './CvComponentsSidebar'
 import { CvPreviewModal } from './CvPreviewModal'
 import { ActionMenu, type ActionMenuItem } from '../../Shared/ActionMenu/ActionMenu'
 import { EyeIcon, TrashIcon, PlusIcon } from '../../Shared/Icons/icons'
 
-type Mode = { kind: 'list' } | { kind: 'builder'; editingDocumentId: string | null }
+const CV_BUILDER_PATH = '/tools/career/cv-builder'
 
-// CV Builder — a deterministic (no AI), manual "pick a persona, pick a
-// design, get a PDF" library, distinct from Jobs' own AI-tailored
-// per-job CV flow. One page, two modes (list / builder) rather than
-// two separate routes — this codebase's own existing pages
-// (PersonasPage, etc.) already keep list+create+edit on one page; the
-// builder here just needs meaningfully more screen space (a two-column
-// layout with an editable sidebar) than a plain inline form would fit
-// alongside a list. See
+// CV Builder's own list page — creating/editing a CV now lives on its
+// own dedicated route (CvBuilderPage, a 5-step wizard), per your own
+// instruction. This page is list-only: pick a persona, see that
+// persona's own CV documents, and navigate away to the builder route
+// for "+ New CV" (?personaId=) or a row's own "Edit" (?id=). See
 // plan/ai/career/cv-builder/step-04-frontend-cv-builder.md.
 //
 // No toast/confirm-dialog primitive exists anywhere in this frontend
@@ -39,14 +24,8 @@ export function CvDocumentsPage() {
   const [personaId, setPersonaId] = useState<string | null>(null)
   const [documents, setDocuments] = useState<CvDocument[]>([])
   const [templates, setTemplates] = useState<CvTemplate[]>([])
-  const [mode, setMode] = useState<Mode>({ kind: 'list' })
   const [error, setError] = useState('')
   const [previewDoc, setPreviewDoc] = useState<CvDocument | null>(null)
-
-  const [templateId, setTemplateId] = useState('')
-  const [title, setTitle] = useState('')
-  const [cvData, setCvData] = useState<CvData | null>(null)
-  const [generating, setGenerating] = useState(false)
 
   useEffect(() => {
     fetchCvTemplates()
@@ -71,55 +50,11 @@ export function CvDocumentsPage() {
 
   function startNewCv() {
     if (!personaId) return
-    setError('')
-    setTitle('')
-    setTemplateId(templates[0]?.id ?? '')
-    setCvData(null)
-    setMode({ kind: 'builder', editingDocumentId: null })
-    fetchCvPersonaDefaults(personaId)
-      .then(setCvData)
-      .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : String(err))
-      })
+    window.__cinqoToolBridge.navigate(`${CV_BUILDER_PATH}?personaId=${encodeURIComponent(personaId)}`)
   }
 
   function startEditCv(doc: CvDocument) {
-    setError('')
-    setTitle(doc.title)
-    setTemplateId(doc.templateId)
-    setCvData(doc.data)
-    setMode({ kind: 'builder', editingDocumentId: doc.id })
-  }
-
-  function cancelBuilder() {
-    setMode({ kind: 'list' })
-    setCvData(null)
-  }
-
-  function handleGenerate() {
-    if (!personaId || !cvData) return
-    if (!templateId) {
-      setError('Pick a template')
-      return
-    }
-    if (!title.trim()) {
-      setError('Title is required')
-      return
-    }
-    setError('')
-    setGenerating(true)
-    createCvDocument(personaId, templateId, title.trim(), cvData)
-      .then(() => {
-        loadDocuments(personaId)
-        setMode({ kind: 'list' })
-        setCvData(null)
-      })
-      .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : String(err))
-      })
-      .finally(() => {
-        setGenerating(false)
-      })
+    window.__cinqoToolBridge.navigate(`${CV_BUILDER_PATH}?id=${encodeURIComponent(doc.id)}`)
   }
 
   function handleRename(doc: CvDocument) {
@@ -194,7 +129,7 @@ export function CvDocumentsPage() {
 
       {error && <p className="mb-4 text-sm text-red-700">{error}</p>}
 
-      {mode.kind === 'list' && personaId && (
+      {personaId && (
         <>
           <button
             type="button"
@@ -233,56 +168,6 @@ export function CvDocumentsPage() {
             </div>
           )}
         </>
-      )}
-
-      {mode.kind === 'builder' && (
-        <div className="flex items-start gap-6">
-          <div className="min-w-0 flex-1 space-y-4">
-            <Field label="Title" value={title} onChange={setTitle} />
-
-            <div>
-              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Template</h3>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                {templates.map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => {
-                      setTemplateId(t.id)
-                    }}
-                    className={`rounded-md border p-3 text-left text-sm shadow-sm ${
-                      templateId === t.id ? 'border-gray-900 ring-1 ring-gray-900' : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    <p className="font-medium text-gray-900">{t.name}</p>
-                    <p className="mt-1 text-xs text-gray-500">{t.description}</p>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={handleGenerate}
-                disabled={generating || !cvData || !templateId || !title.trim()}
-                className="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
-              >
-                {generating ? 'Generating…' : 'Generate'}
-              </button>
-              <button
-                type="button"
-                onClick={cancelBuilder}
-                disabled={generating}
-                className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-
-          {cvData && <CvComponentsSidebar data={cvData} onChange={setCvData} />}
-        </div>
       )}
 
       {previewDoc && (

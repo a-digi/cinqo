@@ -1,34 +1,38 @@
 <html xmlns="http://www.w3.org/1999/xhtml">
   <head>
     <meta charset="UTF-8" />
-    <style><!--STYLE--></style>
+    <style>
+      <!--STYLE-->
+    </style>
   </head>
   <body>
     <h1>{{.FullName}}</h1>
-    {{if .Headline}}<p class="headline">{{.Headline}}</p>{{end}}
-    {{if or .Location .ExternalLinks}}
-    <p class="links">{{if .Location}}<span>{{.Location}}</span>{{end}}{{range .ExternalLinks}}<span>{{.Platform}}: {{.URL}}</span>{{end}}</p>
-    {{end}}
-
-    {{if .Summary}}
+    {{if .Headline}}
+    <p class="headline">{{.Headline}}</p>
+    {{end}} {{if or .Location .ExternalLinks}}
+    <p class="links">
+      {{if .Location}}<span>{{.Location}}</span>{{end}}{{range .ExternalLinks}}<span>{{.Platform}}: {{.URL}}</span>{{end}}
+    </p>
+    {{end}} {{if .Summary}}
     <h2>Summary</h2>
     <p class="summary">{{.Summary}}</p>
-    {{end}}
-
-    {{if .Experience}}
+    {{end}} {{if .Experience}}
     <h2>Experience</h2>
     {{range .Experience}}
     <div class="entry">
       <div class="entry-title">{{.Title}}{{if .Company}}, {{.Company}}{{end}}</div>
       <div class="entry-meta">{{.StartDate}} &#8211; {{if .EndDate}}{{.EndDate}}{{else}}Present{{end}}</div>
-      {{if .Description}}<p class="entry-desc">{{.Description}}</p>{{end}}
+      {{if .Description}}
+      <p class="entry-desc">{{.Description}}</p>
+      {{end}}
     </div>
-    {{end}}
-    {{end}}
-
-    {{if .Skills}}
+    {{end}} {{end}} {{if .Skills}}
     <h2>Skills</h2>
-    <ul class="skills">{{range .Skills}}<li>{{.}}</li>{{end}}</ul>
+    <ul class="skills">
+      {{range .Skills}}
+      <li>{{.}}</li>
+      {{end}}
+    </ul>
     {{end}}
   </body>
 </html>

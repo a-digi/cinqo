@@ -1,3 +1,16 @@
 dist
 node_modules
 package-lock.json
+
+# CV Builder template files are Go html/template source (their own
+# {{...}} action syntax, and a literal <!--STYLE--> marker
+# registry.go's own Render function replaces verbatim) — Prettier's
+# HTML/CSS parsers don't understand that syntax and will reformat
+# around it unpredictably (confirmed live: it inserted line breaks
+# splitting adjacent {{end}}/{{if}} actions). Functionally harmless
+# today, but defeats the whole point of this folder ("easy to modify")
+# if every `prettier --write` run keeps reshuffling hand-tuned
+# whitespace inside them. See
+# tools/career/backend/cvbuilder/templates/sync-from-frontend.sh's own
+# doc comment.
+src/Components/CvBuilder/Template/**
