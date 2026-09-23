@@ -48,6 +48,7 @@ const aiIcon =
 export const menuEntries: MenuEntry[] = [
   { label: 'Home', path: '/', icon: homeIcon },
   { label: 'Conversations', path: '/conversations', scopes: [AppScopes.ConversationUse], icon: conversationsIcon },
+  { label: 'Media', path: '/admin/media', scopes: [AppScopes.SuperAdmin], icon: mediaIcon },
   { label: 'Tools', path: '/admin/tools', scopes: [AppScopes.ToolManage], icon: toolsIcon },
   {
     label: 'AI',
@@ -73,7 +74,6 @@ export const menuEntries: MenuEntry[] = [
         // SidebarMenuItem's own reserved icon-slot width).
         children: [{ label: 'Scopes', path: '/admin/security/scopes', scopes: [AppScopes.SuperAdmin] }],
       },
-      { label: 'Media', path: '/admin/media', scopes: [AppScopes.SuperAdmin], icon: mediaIcon },
     ],
   },
 ]

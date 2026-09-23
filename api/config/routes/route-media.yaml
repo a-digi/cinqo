@@ -28,6 +28,34 @@ routes:
     executor: MediaDownload
     security: authenticated
 
+  # No static scopes: same dynamic toolSlug-scope check the generic
+  # upload route above already does — a second, image-specific sibling
+  # of it, never a replacement. See
+  # media/handler/upload_image_handler.go's own doc comment and
+  # plan/ai/media/step-03-image-upload-and-replace-endpoints.md.
+  - path: /api/v1/media/images
+    method: POST
+    executor: MediaUploadImage
+    security: authenticated
+
+  # No static scopes: dynamic ownership, same reasoning as the download
+  # route above (cinqo:super:admin OR the row's own uploader) — see
+  # media/handler/replace_image_handler.go's own doc comment.
+  - path: /api/v1/media/images/{id}
+    method: PUT
+    executor: MediaReplaceImage
+    security: authenticated
+
+  # Public — NO auth check at all, same convention as
+  # route-tool.yaml's own ToolFrontendBundle entry. The id's own
+  # randomness is the only access control; NEVER serves a row that
+  # isn't already an image (see media/handler/public_image_handler.go's
+  # own doc comment). See plan/ai/media/step-06-public-image-url.md.
+  - path: /api/v1/media/images/{id}/public
+    method: GET
+    executor: MediaPublicImage
+    security: public
+
   # List IS a genuinely global admin operation (browse every tool's own
   # media at once), unlike upload/mine — so, unlike them, it declares a
   # normal static scope here and never re-checks it in the handler,

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { fetchMedia, deleteMedia, type MediaFile } from '../../../api/media'
+import { fetchMedia, deleteMedia, mediaDownloadUrl, type MediaFile } from '../../../api/media'
 import { fetchTools, type Tool } from '../../../api/tools'
 import { ApiError } from '../../../api/client'
 import { LoadingSpinner } from '../../../Shared/Components/Loading/LoadingSpinner'
@@ -9,6 +9,13 @@ import { IconButton } from '../../../Shared/Components/IconButton/IconButton'
 import { TrashIcon } from '../../../Shared/Components/IconButton/icons'
 import { Pill } from '../../../Shared/Components/Pill/Pill'
 import { Dropdown } from '../../../Shared/Components/Dropdown/Dropdown'
+import { ImageUploadCropper } from '../../../Shared/Components/ImageUploadCropper/ImageUploadCropper'
+
+// Reserved toolSlug for the core app itself (not an installed Tool) —
+// see api/src/media/handler/upload_image_handler.go's own
+// cinqoSystemToolSlug doc comment and
+// plan/ai/media/step-08-admin-media-upload.md.
+const CINQO_SYSTEM_TOOL_SLUG = 'cinqo'
 
 // formatSize is local to this page — no existing shared helper for it
 // (checked: no other admin page needs a byte count formatted).
@@ -20,16 +27,18 @@ function formatSize(bytes: number): string {
 
 // Admin-only, read/audit/cleanup view of the core Media feature
 // (api/src/media) — every tool's own uploaded files in one place,
-// namespaced by tool. There is no upload button here: uploads only
-// ever happen from within a tool's own flow (e.g. Career's CV import),
-// never manually from this page. Modeled directly on
-// PlatformKeysPage.tsx's plain table (this data is dense/tabular, not
-// a handful of rich cards like ToolsListPage's own grid). See
-// plan/ai/media/step-03-admin-ui.md.
+// namespaced by tool. Non-image files still only ever arrive here from
+// within a tool's own flow (e.g. Career's CV import); images can also
+// be uploaded/replaced directly from this page (step 8 — folded in from
+// the now-removed standalone "My Images" page), tagged by which
+// tool_slug bucket they belong to, including the reserved "Cinqo"
+// bucket for system-level images not owned by any installed Tool. See
+// plan/ai/media/step-08-admin-media-upload.md.
 export function MediaListPage() {
   const [tools, setTools] = useState<Tool[] | null>(null)
   const [media, setMedia] = useState<MediaFile[] | null>(null)
   const [toolSlug, setToolSlug] = useState('')
+  const [uploadToolSlug, setUploadToolSlug] = useState(CINQO_SYSTEM_TOOL_SLUG)
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const { confirm, dialog } = useConfirm()
@@ -88,19 +97,34 @@ export function MediaListPage() {
     )
   }
 
-  const toolOptions = [
-    { value: '', label: 'All tools' },
-    ...tools.map((t) => ({ value: t.slug, label: t.name })),
-  ]
+  const realToolOptions = tools.map((t) => ({ value: t.slug, label: t.name }))
+  const toolOptions = [{ value: '', label: 'All tools' }, { value: CINQO_SYSTEM_TOOL_SLUG, label: 'Cinqo' }, ...realToolOptions]
+  const uploadTargetOptions = [{ value: CINQO_SYSTEM_TOOL_SLUG, label: 'Cinqo' }, ...realToolOptions]
 
   return (
     <div className="max-w-5xl space-y-6 p-6">
-      <div>
-        <h1 className="text-xl font-semibold text-gray-900">Media</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          Files uploaded by tools through the core Media feature — audit and clean up storage here. Uploads only ever happen
-          from within a tool's own flow, never from this page.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-semibold text-gray-900">Media</h1>
+          <p className="mt-1 text-sm text-gray-500">
+            Files uploaded by tools (or Cinqo itself) through the core Media feature — audit, upload, and clean up storage here.
+          </p>
+        </div>
+        <div className="flex items-end gap-2">
+          <div className="w-40">
+            <Dropdown options={uploadTargetOptions} value={uploadToolSlug} onChange={setUploadToolSlug} />
+          </div>
+          <ImageUploadCropper
+            toolSlug={uploadToolSlug}
+            onDone={() => {
+              successMessage('Image uploaded.')
+              load(toolSlug)
+            }}
+            onError={(msg) => {
+              errorMessage(msg)
+            }}
+          />
+        </div>
       </div>
 
       {tools.length > 0 && (
@@ -116,6 +140,7 @@ export function MediaListPage() {
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="text-xs uppercase text-gray-400">
+                <th className="px-4 py-2 font-medium" />
                 <th className="px-4 py-2 font-medium">Filename</th>
                 <th className="px-4 py-2 font-medium">Tool</th>
                 <th className="px-4 py-2 font-medium">Size</th>
@@ -127,6 +152,13 @@ export function MediaListPage() {
             <tbody className="divide-y divide-gray-100">
               {media.map((file) => (
                 <tr key={file.id}>
+                  <td className="px-4 py-2">
+                    {file.width !== null ? (
+                      <img src={mediaDownloadUrl(file.id)} alt="" className="h-10 w-10 rounded object-cover" />
+                    ) : (
+                      <div className="h-10 w-10 rounded bg-gray-100" />
+                    )}
+                  </td>
                   <td className="px-4 py-2 text-gray-900">{file.originalFilename}</td>
                   <td className="px-4 py-2">
                     <Pill outline>{file.toolSlug}</Pill>
@@ -134,16 +166,31 @@ export function MediaListPage() {
                   <td className="px-4 py-2 text-gray-600">{formatSize(file.sizeBytes)}</td>
                   <td className="px-4 py-2 text-gray-600">{new Date(file.createdAt).toLocaleString()}</td>
                   <td className="px-4 py-2 text-gray-600">{file.expiresAt ? new Date(file.expiresAt).toLocaleString() : 'Never'}</td>
-                  <td className="px-4 py-2 text-right">
-                    <IconButton
-                      icon={<TrashIcon />}
-                      label="Delete"
-                      variant="danger"
-                      onClick={() => {
-                        void handleDelete(file)
-                      }}
-                      disabled={busyId === file.id}
-                    />
+                  <td className="px-4 py-2">
+                    <div className="flex items-center justify-end gap-2">
+                      {file.width !== null && (
+                        <ImageUploadCropper
+                          toolSlug={file.toolSlug}
+                          existingFileId={file.id}
+                          onDone={() => {
+                            successMessage('Image replaced.')
+                            load(toolSlug)
+                          }}
+                          onError={(msg) => {
+                            errorMessage(msg)
+                          }}
+                        />
+                      )}
+                      <IconButton
+                        icon={<TrashIcon />}
+                        label="Delete"
+                        variant="danger"
+                        onClick={() => {
+                          void handleDelete(file)
+                        }}
+                        disabled={busyId === file.id}
+                      />
+                    </div>
                   </td>
                 </tr>
               ))}

@@ -26,4 +26,19 @@ type MediaFile struct {
 	ConversationID   string   `db:"conversation_id" dbtype:"TEXT" nullable:"true" json:"conversation_id"`
 	ExpiresAt        string   `db:"expires_at" dbtype:"TEXT" nullable:"true" json:"expires_at"`
 	CreatedAt        string   `db:"created_at" dbtype:"DATETIME" nullable:"false" json:"created_at"`
+	// Width/Height (step 2, image upload/crop/resize plan) — zero for
+	// every non-image row (matching this struct's own existing
+	// zero-value-means-null convention for a nullable column, e.g.
+	// ConversationID/ExpiresAt above), populated only by the new
+	// image-specific upload/replace endpoints (step 3). Lets a caller
+	// know "this row is an image" (and offer crop/replace) without
+	// re-decoding the stored file. See
+	// plan/ai/media/step-02-media-schema-and-image-processing.md.
+	Width  int `db:"width" dbtype:"INTEGER" nullable:"true" json:"width"`
+	Height int `db:"height" dbtype:"INTEGER" nullable:"true" json:"height"`
+	// UpdatedAt is set only the first time this row's own image bytes
+	// are replaced in place (step 3's own PUT endpoint) — a plain
+	// create leaves it at its own zero value, same convention as
+	// CreatedAt-only rows already had before this column existed.
+	UpdatedAt string `db:"updated_at" dbtype:"DATETIME" nullable:"true" json:"updated_at"`
 }

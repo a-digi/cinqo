@@ -25,6 +25,13 @@ type mediaFileResponse struct {
 	ConversationID   string `json:"conversation_id,omitempty"`
 	ExpiresAt        string `json:"expires_at,omitempty"`
 	CreatedAt        string `json:"created_at"`
+	// omitempty on Width/Height matches the entity's own zero-means-null
+	// convention (MediaFile's own doc comment) — a non-image row simply
+	// never emits these fields, exactly like ConversationID/ExpiresAt
+	// above for their own absent-value case.
+	Width     int    `json:"width,omitempty"`
+	Height    int    `json:"height,omitempty"`
+	UpdatedAt string `json:"updated_at,omitempty"`
 }
 
 func toMediaFileResponse(m *media_entity.MediaFile) mediaFileResponse {
@@ -39,6 +46,9 @@ func toMediaFileResponse(m *media_entity.MediaFile) mediaFileResponse {
 		ConversationID:   m.ConversationID,
 		ExpiresAt:        m.ExpiresAt,
 		CreatedAt:        m.CreatedAt,
+		Width:            m.Width,
+		Height:           m.Height,
+		UpdatedAt:        m.UpdatedAt,
 	}
 }
 

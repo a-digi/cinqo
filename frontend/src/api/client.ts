@@ -136,6 +136,8 @@ export function apiDelete<T>(path: string): Promise<T> {
 }
 
 // Multipart file upload — body is a FormData, never JSON.stringify'd.
-export function apiUpload<T>(path: string, formData: FormData): Promise<T> {
-  return request<T>(path, { method: 'POST', body: formData })
+// method defaults to POST; every existing caller omits it and keeps
+// behaving exactly as before PUT support was added for image replace.
+export function apiUpload<T>(path: string, formData: FormData, method: 'POST' | 'PUT' = 'POST'): Promise<T> {
+  return request<T>(path, { method, body: formData })
 }
