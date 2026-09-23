@@ -212,7 +212,7 @@ export function CvBuilderPage() {
   const templateName = templates.find((t) => t.id === templateId)?.name ?? templateId
 
   return (
-    <div className="mx-auto max-w-2xl p-6">
+    <div className="max-w-5xl p-6">
       <button type="button" onClick={handleCancel} className="mb-4 text-sm text-gray-500 underline hover:text-gray-700">
         ← Back to CV Documents
       </button>
