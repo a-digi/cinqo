@@ -1020,6 +1020,45 @@ func At(s []string, i int) string {
 	return ""
 }
 
+// sanitizePostedAt strips a raw scraped postedAt value down to only
+// digits and the three common date delimiters (. / -) — job boards
+// often wrap the actual date in a label and/or surrounding text (e.g.
+// "Veröffentlichungsdatum: 31.08.2026"), which this turns into
+// "31.08.2026". Only ever applied to the DETERMINISTIC crawler's own
+// extraction (via extractCrawlResultItemFields/
+// extractCrawlResultIndexedFields below) — the AI-driven
+// save_job/save_portal_job/save_portal_jobs tools take postedAt
+// directly from the AI's own argument and are deliberately left alone,
+// per those tools' own descriptions ("free text ... not normalized").
+// If nothing that looks even loosely date-shaped survives (no digit at
+// all, or digits with no delimiter — e.g. a relative phrase like "vor
+// 19 Tagen" strips down to a bare "19", not a real date), this returns
+// "" rather than storing a misleading fragment. This is a character
+// filter, not a date validator — it does not check day/month ranges,
+// and it does not attempt to split two real dates concatenated by an
+// overly broad selector (that's a selector-quality problem, the kind
+// plan/ai/tools/career/step-79-ai-crawl-instructions-acceptance-loop.md
+// already addresses at the source, not something a character-level
+// filter can safely disambiguate after the fact).
+func sanitizePostedAt(raw string) string {
+	var b strings.Builder
+	hasDigit, hasDelimiter := false, false
+	for _, r := range raw {
+		switch {
+		case r >= '0' && r <= '9':
+			hasDigit = true
+			b.WriteRune(r)
+		case r == '.' || r == '/' || r == '-':
+			hasDelimiter = true
+			b.WriteRune(r)
+		}
+	}
+	if !hasDigit || !hasDelimiter {
+		return ""
+	}
+	return b.String()
+}
+
 // extractCrawlResultItemFields reads title/url/company/location/
 // description/postedAt from one Items-shape entry (one real job's own
 // already-grouped fields, when a container was set) — the single place
@@ -1033,7 +1072,7 @@ func extractCrawlResultItemFields(item map[string]any) (title, sourceURL, compan
 	company = At(ExtractResultStrings(item["company"]), 0)
 	location = At(ExtractResultStrings(item["location"]), 0)
 	description = At(ExtractResultStrings(item["description"]), 0)
-	postedAt = At(ExtractResultStrings(item["postedAt"]), 0)
+	postedAt = sanitizePostedAt(At(ExtractResultStrings(item["postedAt"]), 0))
 	return
 }
 
@@ -1046,7 +1085,7 @@ func extractCrawlResultIndexedFields(page CrawlResultPage, i int) (title, source
 	company = At(ExtractResultStrings(page.Results["company"]), i)
 	location = At(ExtractResultStrings(page.Results["location"]), i)
 	description = At(ExtractResultStrings(page.Results["description"]), i)
-	postedAt = At(ExtractResultStrings(page.Results["postedAt"]), i)
+	postedAt = sanitizePostedAt(At(ExtractResultStrings(page.Results["postedAt"]), i))
 	return
 }
 
