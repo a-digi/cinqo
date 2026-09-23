@@ -15,18 +15,25 @@ export function CrawlPlatformPicker({
   selectedModel,
   onSelectPlatform,
   onSelectModel,
+  // className (optional) — lets a caller replace the default box
+  // styling entirely (e.g. JobsPage.tsx's own sticky sidebar card, a
+  // deliberately different look from this component's own default).
+  // Omitted, PortalsPage.tsx's own plain horizontal-bar usage is
+  // unchanged.
+  className = 'mb-5 flex flex-wrap items-end gap-3 rounded-md border border-gray-200 bg-gray-50 p-3',
 }: {
   platforms: Platform[]
   selectedPlatformId: string | null
   selectedModel: string | null
   onSelectPlatform: (id: string) => void
   onSelectModel: (model: string) => void
+  className?: string
 }) {
   if (platforms.length <= 1) return null
   const selectedPlatform = platforms.find((p) => p.id === selectedPlatformId) ?? null
 
   return (
-    <div className="mb-5 flex flex-wrap items-end gap-3 rounded-md border border-gray-200 bg-gray-50 p-3">
+    <div className={className}>
       <div className="min-w-[180px]">
         {/* A span, not a <label> — Dropdown renders no native form
             control a label could actually be associated with. */}

@@ -713,176 +713,221 @@ export function JobsPage() {
     })
 
   return (
-    <div className="max-w-5xl p-6 font-sans text-gray-900">
-      <h1 className="mb-1.5 text-xl font-semibold">Saved Jobs</h1>
-      <p className="mb-5 text-sm text-gray-500">Job postings the AI has crawled and saved on your behalf.</p>
+    <div className="max-w-6xl p-6 font-sans text-gray-900">
+      {/* Two page-level areas, side by side (per direct request — a
+          right-hand column next to ALL the content below, not just
+          the title row): the left column owns everything this page is
+          actually about (title, search/filters, the jobs table,
+          pagination); the right column is just the crawl provider/model
+          picker, top-aligned beside it, sized to its own content
+          (shrink-0) rather than stretching to match the left column's
+          own height. CrawlPlatformPicker is shared with
+          PortalsPage.tsx (which still stacks it full-width below its
+          own title), so this wraps it at the call site here rather
+          than changing the component's own layout, leaving that other
+          page untouched. max-w-6xl (up from max-w-5xl) gives the new
+          right column room without squeezing the table. flex-nowrap,
+          deliberately, not flex-wrap: per explicit direction, the
+          picker must stay on the right at every width, never stack
+          below the content. The content column's own min-w-[280px]
+          (not min-w-0 — tried first, then confirmed live at 390px to
+          crush the title down to one wrapped character per line) is a
+          usability floor: once the viewport can't fit both columns at
+          once, the row itself scrolls horizontally (overflow-x-auto
+          below), the same tradeoff a fixed-width sidebar next to
+          real content always has on a narrow screen — the picker
+          never moves off the right, but reading the table on a phone
+          means either scrolling sideways or collapsing the sidebar
+          nav first for more room. */}
+      <div className="flex flex-nowrap items-start gap-6 overflow-x-auto">
+        <div className="min-w-[280px] flex-1">
+          <h1 className="mb-1.5 text-xl font-semibold">Saved Jobs</h1>
+          <p className="mb-5 text-sm text-gray-500">Job postings the AI has crawled and saved on your behalf.</p>
 
-      <CrawlPlatformPicker
-        platforms={platforms}
-        selectedPlatformId={selectedPlatformId}
-        selectedModel={selectedModel}
-        onSelectPlatform={(id) => {
-          setSelectedPlatformId(id)
-          const next = platforms.find((p) => p.id === id)
-          setSelectedModel(next && next.models.length > 0 ? next.models[0] : null)
-        }}
-        onSelectModel={setSelectedModel}
-      />
+          {activeFilters.length > 0 && (
+            <div className="mb-2 flex flex-wrap gap-1.5">
+              {activeFilters.map((filter) => (
+                <span
+                  key={filter.key}
+                  className="flex items-center gap-1 rounded-full border border-gray-200 bg-gray-100 py-1 pl-2.5 pr-1.5 text-xs text-gray-700"
+                >
+                  {filter.label}
+                  <button
+                    type="button"
+                    onClick={filter.onClear}
+                    aria-label={`Clear ${filter.label}`}
+                    className="text-gray-400 hover:text-gray-700"
+                  >
+                    <XIcon />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
 
-      {activeFilters.length > 0 && (
-        <div className="mb-2 flex flex-wrap gap-1.5">
-          {activeFilters.map((filter) => (
-            <span
-              key={filter.key}
-              className="flex items-center gap-1 rounded-full border border-gray-200 bg-gray-100 py-1 pl-2.5 pr-1.5 text-xs text-gray-700"
+          {showFilters && (
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              {locations.length > 0 && (
+                <Dropdown
+                  placeholder="Any location"
+                  options={[
+                    { value: '', label: 'Any location' },
+                    ...locations.map((loc) => ({ value: loc, label: truncate(loc, MAX_LOCATION_DISPLAY_LENGTH) })),
+                  ]}
+                  value={location}
+                  onChange={handleLocationFilterChange}
+                  searchable
+                />
+              )}
+              {companies.length > 0 && (
+                <Dropdown
+                  placeholder="Any company"
+                  options={[{ value: '', label: 'Any company' }, ...companies.map((c) => ({ value: c.id, label: c.name }))]}
+                  value={companyId}
+                  onChange={handleCompanyFilterChange}
+                  searchable
+                />
+              )}
+              {portals.length > 0 && (
+                <Dropdown
+                  placeholder="Any platform"
+                  options={[{ value: '', label: 'Any platform' }, ...portals.map((p) => ({ value: p.id, label: p.name }))]}
+                  value={portalId}
+                  onChange={handlePortalFilterChange}
+                  searchable
+                />
+              )}
+            </div>
+          )}
+
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <input
+              value={query}
+              onChange={(e) => {
+                setQuery(e.target.value)
+              }}
+              placeholder="Search title, company, description…"
+              className="flex-1 min-w-[180px] rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
+            />
+            <button
+              type="button"
+              aria-expanded={showFilters}
+              onClick={() => {
+                setShowFilters((prev) => !prev)
+              }}
+              className="flex items-center gap-1.5 rounded-md border border-gray-300 px-3.5 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
             >
-              {filter.label}
-              <button
-                type="button"
-                onClick={filter.onClear}
-                aria-label={`Clear ${filter.label}`}
-                className="text-gray-400 hover:text-gray-700"
-              >
-                <XIcon />
-              </button>
-            </span>
-          ))}
-        </div>
-      )}
+              <FilterIcon />
+              Filters
+            </button>
+          </div>
 
-      {showFilters && (
-        <div className="mb-2 flex flex-wrap items-center gap-2">
-          {locations.length > 0 && (
-            <Dropdown
-              placeholder="Any location"
-              options={[
-                { value: '', label: 'Any location' },
-                ...locations.map((loc) => ({ value: loc, label: truncate(loc, MAX_LOCATION_DISPLAY_LENGTH) })),
-              ]}
-              value={location}
-              onChange={handleLocationFilterChange}
-              searchable
-            />
-          )}
-          {companies.length > 0 && (
-            <Dropdown
-              placeholder="Any company"
-              options={[{ value: '', label: 'Any company' }, ...companies.map((c) => ({ value: c.id, label: c.name }))]}
-              value={companyId}
-              onChange={handleCompanyFilterChange}
-              searchable
-            />
-          )}
-          {portals.length > 0 && (
-            <Dropdown
-              placeholder="Any platform"
-              options={[{ value: '', label: 'Any platform' }, ...portals.map((p) => ({ value: p.id, label: p.name }))]}
-              value={portalId}
-              onChange={handlePortalFilterChange}
-              searchable
-            />
-          )}
-        </div>
-      )}
+          <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
 
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <input
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value)
-          }}
-          placeholder="Search title, company, description…"
-          className="flex-1 min-w-[180px] rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
-        />
-        <button
-          type="button"
-          aria-expanded={showFilters}
-          onClick={() => {
-            setShowFilters((prev) => !prev)
-          }}
-          className="flex items-center gap-1.5 rounded-md border border-gray-300 px-3.5 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
-        >
-          <FilterIcon />
-          Filters
-        </button>
-      </div>
-
-      <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
-
-      <div className="overflow-hidden rounded-md border border-gray-200 shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr>
-                <th className="border-b border-gray-200 bg-gray-50 p-3 text-left font-medium text-gray-500">Title</th>
-                <th className="border-b border-gray-200 bg-gray-50 p-3 text-left font-medium text-gray-500">Company</th>
-                <th className="border-b border-gray-200 bg-gray-50 p-3 text-left font-medium text-gray-500">Platform</th>
-                <th className="border-b border-gray-200 bg-gray-50 p-3 text-left font-medium text-gray-500">Posted</th>
-                <th className="border-b border-gray-200 bg-gray-50 p-3 text-left font-medium text-gray-500">Match</th>
-                <th className="border-b border-gray-200 bg-gray-50 p-3 text-right font-medium text-gray-500">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {jobs.map((job) => {
-                return (
-                  <tr key={job.id} className="last:[&>td]:border-b-0 hover:bg-gray-50">
-                    <td className="border-b border-gray-200 p-3 text-gray-900">{job.title}</td>
-                    <td className="border-b border-gray-200 p-3">
-                      {job.company}
-                      {job.companyId && (
-                        <div className="mt-0.5 flex items-center gap-1.5 text-xs text-gray-400">
-                          linked to {companyNames[job.companyId] ?? '…'}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              handleUnlink(job.id)
-                            }}
-                            className="text-gray-400 underline hover:text-red-700"
-                          >
-                            unlink
-                          </button>
-                        </div>
-                      )}
-                    </td>
-                    <td className="border-b border-gray-200 p-3">{job.portalName ?? '—'}</td>
-                    <td className="border-b border-gray-200 p-3">{job.postedAt}</td>
-                    <td className="border-b border-gray-200 p-3">
-                      {job.matchStatus === 'matching' ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            handleCheckMatchProgress(job)
-                          }}
-                          title="Open the chat window to watch the AI work on this job's own match"
-                          className="inline-flex items-center gap-1 text-xs text-gray-500 underline hover:text-gray-700"
-                        >
-                          <span className="inline-flex items-center gap-1 [animation:robot-bob_1.6s_ease-in-out_infinite]">
-                            <RobotIcon />
-                            <Typewriter text="Matching…" />
-                          </span>
-                        </button>
-                      ) : job.matchStatus === 'failed' ? (
-                        <span className="text-xs text-red-700" title={job.matchError ?? 'Job match failed'}>
-                          Failed
-                        </span>
-                      ) : job.matchStatus === 'completed' && job.matchScore !== undefined ? (
-                        <MatchScoreBar score={job.matchScore} skills={job.matchedSkills} jobTitle={job.title} />
-                      ) : (
-                        <span className="text-xs text-gray-300">—</span>
-                      )}
-                    </td>
-                    <td className="border-b border-gray-200 p-3 text-right">
-                      <ActionMenu triggerLabel={`Actions for ${job.title}`} items={buildJobActionItems(job)} />
-                    </td>
+          <div className="overflow-hidden rounded-md border border-gray-200 shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr>
+                    <th className="border-b border-gray-200 bg-gray-50 p-3 text-left font-medium text-gray-500">Title</th>
+                    <th className="border-b border-gray-200 bg-gray-50 p-3 text-left font-medium text-gray-500">Company</th>
+                    <th className="border-b border-gray-200 bg-gray-50 p-3 text-left font-medium text-gray-500">Platform</th>
+                    <th className="border-b border-gray-200 bg-gray-50 p-3 text-left font-medium text-gray-500">Posted</th>
+                    <th className="border-b border-gray-200 bg-gray-50 p-3 text-left font-medium text-gray-500">Match</th>
+                    <th className="border-b border-gray-200 bg-gray-50 p-3 text-right font-medium text-gray-500">Actions</th>
                   </tr>
-                )
-              })}
-            </tbody>
-          </table>
+                </thead>
+                <tbody>
+                  {jobs.map((job) => {
+                    return (
+                      <tr key={job.id} className="last:[&>td]:border-b-0 hover:bg-gray-50">
+                        <td className="border-b border-gray-200 p-3 text-gray-900">{job.title}</td>
+                        <td className="border-b border-gray-200 p-3">
+                          {job.company}
+                          {job.companyId && (
+                            <div className="mt-0.5 flex items-center gap-1.5 text-xs text-gray-400">
+                              linked to {companyNames[job.companyId] ?? '…'}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  handleUnlink(job.id)
+                                }}
+                                className="text-gray-400 underline hover:text-red-700"
+                              >
+                                unlink
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                        <td className="border-b border-gray-200 p-3">{job.portalName ?? '—'}</td>
+                        <td className="border-b border-gray-200 p-3">{job.postedAt}</td>
+                        <td className="border-b border-gray-200 p-3">
+                          {job.matchStatus === 'matching' ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleCheckMatchProgress(job)
+                              }}
+                              title="Open the chat window to watch the AI work on this job's own match"
+                              className="inline-flex items-center gap-1 text-xs text-gray-500 underline hover:text-gray-700"
+                            >
+                              <span className="inline-flex items-center gap-1 [animation:robot-bob_1.6s_ease-in-out_infinite]">
+                                <RobotIcon />
+                                <Typewriter text="Matching…" />
+                              </span>
+                            </button>
+                          ) : job.matchStatus === 'failed' ? (
+                            <span className="text-xs text-red-700" title={job.matchError ?? 'Job match failed'}>
+                              Failed
+                            </span>
+                          ) : job.matchStatus === 'completed' && job.matchScore !== undefined ? (
+                            <MatchScoreBar score={job.matchScore} skills={job.matchedSkills} jobTitle={job.title} />
+                          ) : (
+                            <span className="text-xs text-gray-300">—</span>
+                          )}
+                        </td>
+                        <td className="border-b border-gray-200 p-3 text-right">
+                          <ActionMenu triggerLabel={`Actions for ${job.title}`} items={buildJobActionItems(job)} />
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={handlePageChange} />
+        </div>
+
+        {/* w-52 (not just shrink-0): narrow enough that
+            CrawlPlatformPicker's own two min-w-[180px] dropdowns can no
+            longer fit side by side and wrap into a vertical stack via
+            its own existing flex-wrap — turning the shared, horizontal
+            "picker bar" into a proper narrow sidebar column here,
+            without changing the shared component itself (still a wide
+            horizontal bar on PortalsPage.tsx). Confirmed live: without
+            this, the fixed-width sidebar squeezed the table into
+            multi-line-wrapped, truncated columns even on a wide
+            viewport. sticky top-6 (matching the page's own p-6 top
+            inset) keeps it in view while the table scrolls past it —
+            this page's own <main> is the nearest scrolling ancestor, so
+            no extra offset for the app's own top banner is needed. */}
+        <div className="sticky top-6 w-52 shrink-0 self-start">
+          <CrawlPlatformPicker
+            className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-gradient-to-br from-white to-gray-50 p-4 shadow-sm"
+            platforms={platforms}
+            selectedPlatformId={selectedPlatformId}
+            selectedModel={selectedModel}
+            onSelectPlatform={(id) => {
+              setSelectedPlatformId(id)
+              const next = platforms.find((p) => p.id === id)
+              setSelectedModel(next && next.models.length > 0 ? next.models[0] : null)
+            }}
+            onSelectModel={setSelectedModel}
+          />
         </div>
       </div>
-
-      <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={handlePageChange} />
 
       <Modal
         open={matchPickerJob !== null}
