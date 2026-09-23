@@ -833,6 +833,21 @@ export async function createCvDocument(personaId: string, templateId: string, ti
   return jsonOrThrow<CvDocument>(res, 'generate cv document')
 }
 
+// Renders + generates a real PDF, same as createCvDocument's own first
+// half, but creates NOTHING permanent — no Media file, no cv_documents
+// row. Lets the wizard show what a CV would actually look like before
+// the user commits to creating it. previewUrl is a temporary
+// pdf_tools-owned URL (never a Media/cv_documents reference).
+export async function previewCvDocument(templateId: string, data: CvData): Promise<{ previewUrl: string }> {
+  const res = await fetch(`${PROXY_BASE}/cv-documents/preview`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ templateId, data }),
+  })
+  return jsonOrThrow<{ previewUrl: string }>(res, 'preview cv document')
+}
+
 export async function updateCvDocumentTitle(id: string, title: string): Promise<CvDocument> {
   const res = await fetch(`${PROXY_BASE}/cv-documents`, {
     method: 'PUT',

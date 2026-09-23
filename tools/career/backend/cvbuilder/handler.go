@@ -115,6 +115,67 @@ func PersonaDefaultsHandler(w http.ResponseWriter, r *http.Request) {
 	db.WriteJSON(w, data)
 }
 
+type previewCvDocumentRequest struct {
+	TemplateID string           `json:"templateId"`
+	Data       templates.CvData `json:"data"`
+}
+
+type previewCvDocumentResponse struct {
+	PreviewURL string `json:"previewUrl"`
+}
+
+// PreviewHandler handles POST cv-documents/preview — renders and
+// generates a real PDF via pdf_tools, EXACTLY like the first half of
+// DocumentsHandler's own POST (create) case, but deliberately stops
+// there: no forwardUploadToMedia call, no InsertCvDocument call, no
+// permanent record created anywhere. This lets the wizard's own Review
+// step show the user a real rendered preview before they commit to
+// actually creating a CV document.
+//
+// The returned previewUrl points directly at pdf_tools' own temporary
+// files route (GET .../proxy/files?id=<resourceId>) — the exact same
+// transient reference generate_pdf's own MCP tool already hands back
+// mid-conversation, before an AI turn calls save_cv_pdf. Nothing new
+// about this resource's own lifecycle: it lives in pdf_tools' own
+// uploads dir, is never linked to any cv_documents row or Media file,
+// and is cleaned up on whatever schedule pdf_tools already applies to
+// every other unsaved generate_pdf result — no new cleanup mechanism
+// needed here. See plan/ai/career/cv-builder/step-04-frontend-cv-builder.md.
+func PreviewHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var body previewCvDocumentRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if body.TemplateID == "" {
+		http.Error(w, "templateId is required", http.StatusBadRequest)
+		return
+	}
+	if err := validateCvData(body.Data); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	xhtml, err := templates.Render(body.TemplateID, body.Data)
+	if err != nil {
+		http.Error(w, "unknown template id", http.StatusBadRequest)
+		return
+	}
+
+	resourceID, err := forwardGeneratePdf(r, xhtml)
+	if err != nil {
+		http.Error(w, "failed to generate preview: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	db.WriteJSON(w, previewCvDocumentResponse{PreviewURL: "/api/v1/tools/pdf_tools/proxy/files?id=" + resourceID})
+}
+
 type createCvDocumentRequest struct {
 	PersonaID  string           `json:"personaId"`
 	TemplateID string           `json:"templateId"`

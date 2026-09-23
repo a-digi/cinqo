@@ -1,11 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
-import { fetchCvTemplates, fetchCvPersonaDefaults, fetchCvDocument, createCvDocument, type CvData, type CvTemplate } from '../../api'
+import {
+  fetchCvTemplates,
+  fetchCvPersonaDefaults,
+  fetchCvDocument,
+  createCvDocument,
+  previewCvDocument,
+  type CvData,
+  type CvTemplate,
+} from '../../api'
 import { PersonaAndTemplateStep } from './PersonaAndTemplateStep'
 import { PersonalDetailsStep } from './PersonalDetailsStep'
 import { SkillsStep } from './SkillsStep'
 import { ExperienceStep } from './ExperienceStep'
 import { TitleAndReviewStep } from './TitleAndReviewStep'
 import { StepIndicator } from './StepIndicator'
+import { CvPreviewModal } from './CvPreviewModal'
 
 const CV_DOCUMENTS_PATH = '/tools/career/cv-documents'
 
@@ -56,6 +65,8 @@ export function CvBuilderPage() {
   const [loading, setLoading] = useState(Boolean(editingId))
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState('')
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [previewing, setPreviewing] = useState(false)
 
   // PersonaSwitcher's own mount effect ALWAYS auto-selects a persona
   // from localStorage/first-in-list and fires onChange exactly once,
@@ -143,6 +154,28 @@ export function CvBuilderPage() {
     window.__cinqoToolBridge.navigate(CV_DOCUMENTS_PATH)
   }
 
+  // Renders + generates a real, temporary PDF via pdf_tools — same
+  // pipeline handleGenerate's own first half uses — but creates
+  // nothing permanent (no Media file, no cv_documents row), so the
+  // user can see exactly what they're about to create and decide
+  // whether to actually commit to it. See
+  // plan/ai/career/cv-builder/step-04-frontend-cv-builder.md.
+  function handlePreview() {
+    if (!cvData || !templateId) return
+    setError('')
+    setPreviewing(true)
+    previewCvDocument(templateId, cvData)
+      .then(({ previewUrl: url }) => {
+        setPreviewUrl(url)
+      })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+      })
+      .finally(() => {
+        setPreviewing(false)
+      })
+  }
+
   function handleGenerate() {
     if (!personaId || !cvData) return
     if (!title.trim()) {
@@ -195,7 +228,7 @@ export function CvBuilderPage() {
       {step === 3 && cvData && <ExperienceStep data={cvData} onChange={setCvData} />}
       {step === 4 && cvData && <TitleAndReviewStep title={title} onTitleChange={setTitle} data={cvData} templateName={templateName} />}
 
-      <div className="mt-6 flex justify-between">
+      <div className="mt-6 flex items-center justify-between">
         <button
           type="button"
           onClick={goBack}
@@ -204,25 +237,47 @@ export function CvBuilderPage() {
         >
           Back
         </button>
-        {step < STEPS.length - 1 ? (
-          <button
-            type="button"
-            onClick={goNext}
-            className="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-800"
-          >
-            Next
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={handleGenerate}
-            disabled={generating || !title.trim()}
-            className="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
-          >
-            {generating ? 'Generating…' : 'Generate'}
-          </button>
-        )}
+        <div className="flex gap-2">
+          {cvData && templateId && (
+            <button
+              type="button"
+              onClick={handlePreview}
+              disabled={previewing}
+              className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            >
+              {previewing ? 'Preparing preview…' : 'Preview'}
+            </button>
+          )}
+          {step < STEPS.length - 1 ? (
+            <button
+              type="button"
+              onClick={goNext}
+              className="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-800"
+            >
+              Next
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleGenerate}
+              disabled={generating || !title.trim()}
+              className="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+            >
+              {generating ? 'Generating…' : 'Generate'}
+            </button>
+          )}
+        </div>
       </div>
+
+      {previewUrl && (
+        <CvPreviewModal
+          src={previewUrl}
+          title={title || 'CV preview'}
+          onClose={() => {
+            setPreviewUrl(null)
+          }}
+        />
+      )}
     </div>
   )
 }

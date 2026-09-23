@@ -1,5 +1,13 @@
 import { useEffect, useState } from 'react'
-import { fetchCvTemplates, fetchCvDocuments, updateCvDocumentTitle, deleteCvDocument, type CvTemplate, type CvDocument } from '../../api'
+import {
+  fetchCvTemplates,
+  fetchCvDocuments,
+  updateCvDocumentTitle,
+  deleteCvDocument,
+  mediaDownloadUrl,
+  type CvTemplate,
+  type CvDocument,
+} from '../../api'
 import { PersonaSwitcher } from '../Persona/PersonaSwitcher/PersonaSwitcher'
 import { CvPreviewModal } from './CvPreviewModal'
 import { ActionMenu, type ActionMenuItem } from '../../Shared/ActionMenu/ActionMenu'
@@ -172,7 +180,7 @@ export function CvDocumentsPage() {
 
       {previewDoc && (
         <CvPreviewModal
-          mediaFileId={previewDoc.mediaFileId}
+          src={mediaDownloadUrl(previewDoc.mediaFileId)}
           title={previewDoc.title}
           onClose={() => {
             setPreviewDoc(null)

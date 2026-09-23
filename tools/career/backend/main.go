@@ -113,6 +113,7 @@ func runHTTPServer() {
 	http.HandleFunc("/cv-import/runs", cv.CVImportRunsHandler)
 	http.HandleFunc("/cv-documents/templates", cvbuilder.TemplatesHandler)
 	http.HandleFunc("/cv-documents/persona-defaults", cvbuilder.PersonaDefaultsHandler)
+	http.HandleFunc("/cv-documents/preview", cvbuilder.PreviewHandler)
 	http.HandleFunc("/cv-documents", cvbuilder.DocumentsHandler)
 
 	if err := http.ListenAndServe("127.0.0.1:"+port, nil); err != nil {
