@@ -1059,6 +1059,35 @@ func sanitizePostedAt(raw string) string {
 	return b.String()
 }
 
+// sanitizeTitle strips digits and colons from a raw scraped job title,
+// then collapses any resulting run of whitespace to a single space and
+// trims the ends — job listing pages sometimes render a stray
+// index/badge number (and its own separating colon) as part of, or
+// instead of, the real title text (e.g. "2:", "8:"), corrupting what
+// gets saved as job.title. Applied unconditionally to every occurrence
+// (not just a leading run): a title consisting ENTIRELY of digits/
+// colons — the reported bug's own shape — naturally collapses to "",
+// which IngestCrawlResults' own existing title=="" rule then correctly
+// skips, with no separate special case needed. Only digits and colons
+// are removed — other punctuation genuinely meaningful in real titles
+// (parentheses, slashes, hyphens, periods, plus signs — e.g.
+// "(m/w/d)", "Node.js", "C++") is deliberately left untouched; extend
+// this rune set later if another corrupted-title shape turns up. Only
+// ever applied to the deterministic crawler's own extraction (same
+// scoping as sanitizePostedAt above) — the AI-driven
+// save_job/save_portal_job/save_portal_jobs tools take title directly
+// from the AI's own argument and are left alone.
+func sanitizeTitle(raw string) string {
+	var b strings.Builder
+	for _, r := range raw {
+		if (r >= '0' && r <= '9') || r == ':' {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return strings.Join(strings.Fields(b.String()), " ")
+}
+
 // extractCrawlResultItemFields reads title/url/company/location/
 // description/postedAt from one Items-shape entry (one real job's own
 // already-grouped fields, when a container was set) — the single place
@@ -1067,7 +1096,7 @@ func sanitizePostedAt(raw string) string {
 // between what a real crawl saves and what a test crawl predicts. See
 // plan/ai/tools/career/step-80-shared-crawl-extraction-classifier.md.
 func extractCrawlResultItemFields(item map[string]any) (title, sourceURL, company, location, description, postedAt string) {
-	title = At(ExtractResultStrings(item["title"]), 0)
+	title = sanitizeTitle(At(ExtractResultStrings(item["title"]), 0))
 	sourceURL = At(ExtractResultStrings(item["url"]), 0)
 	company = At(ExtractResultStrings(item["company"]), 0)
 	location = At(ExtractResultStrings(item["location"]), 0)
@@ -1080,7 +1109,7 @@ func extractCrawlResultItemFields(item map[string]any) (title, sourceURL, compan
 // counterpart for the Results shape (no container — parallel arrays
 // zipped by index) — same six fields, same source of truth.
 func extractCrawlResultIndexedFields(page CrawlResultPage, i int) (title, sourceURL, company, location, description, postedAt string) {
-	title = At(ExtractResultStrings(page.Results["title"]), i)
+	title = sanitizeTitle(At(ExtractResultStrings(page.Results["title"]), i))
 	sourceURL = At(ExtractResultStrings(page.Results["url"]), i)
 	company = At(ExtractResultStrings(page.Results["company"]), i)
 	location = At(ExtractResultStrings(page.Results["location"]), i)
