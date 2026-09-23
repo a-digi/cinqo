@@ -17,6 +17,13 @@ export function ProfileImagePage() {
   const [loading, setLoading] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
+  // A replace keeps the SAME media file id (see forwardReplaceImage,
+  // profileimage/handler.go) — its download URL never changes, so the
+  // browser's own HTTP cache would otherwise keep showing the old
+  // bytes after a replace (verified live: a same-session <img> kept
+  // its stale preview until a full page reload). Appending this as a
+  // query param busts that cache without needing a new id.
+  const [cacheBuster, setCacheBuster] = useState(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   function load(forProfileId: string) {
@@ -41,7 +48,10 @@ export function ProfileImagePage() {
     setError('')
     setUploading(true)
     uploadProfileImage(profileId, file)
-      .then(setImage)
+      .then((updated) => {
+        setImage(updated)
+        setCacheBuster((n) => n + 1)
+      })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : String(err))
       })
@@ -78,7 +88,7 @@ export function ProfileImagePage() {
         <section className="flex items-start gap-5 rounded-lg border border-gray-200 p-4 shadow-sm">
           <div className="flex h-32 w-32 shrink-0 items-center justify-center overflow-hidden rounded-md border border-gray-200 bg-gray-50">
             {image ? (
-              <img src={mediaDownloadUrl(image.mediaFileId)} alt="Profile" className="h-full w-full object-cover" />
+              <img src={`${mediaDownloadUrl(image.mediaFileId)}?v=${cacheBuster}`} alt="Profile" className="h-full w-full object-cover" />
             ) : (
               <span className="px-2 text-center text-xs text-gray-400">No photo yet</span>
             )}
