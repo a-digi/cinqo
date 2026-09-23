@@ -70,6 +70,24 @@ function variantClassName(variant: ActionMenuItem['variant']): string {
 // plan/ai/tools/career/step-XX-jobs-page-action-menu.md.
 export function ActionMenu({ items, triggerLabel = 'Actions' }: ActionMenuProps) {
   const [open, setOpen] = useState(false)
+  // position (step XX) — the dropdown's own viewport coordinates,
+  // computed from the trigger button's own getBoundingClientRect() the
+  // moment the menu opens. Needed because the dropdown itself renders
+  // as position: fixed (see the menu's own className below) rather
+  // than the CSS-only "absolute right-0" it used before — a plain
+  // absolute-positioned dropdown stays inside its nearest positioned
+  // ancestor's own containing block, which is clipped by JobsPage's
+  // own table wrapper (overflow-hidden, used to clip the table's own
+  // square corners to its rounded border) the moment the dropdown
+  // extends past that wrapper's bottom edge — most visible on a short
+  // table (few rows), where every row sits near that edge. fixed
+  // positioning escapes a plain overflow: hidden ancestor entirely (no
+  // transform/filter/perspective anywhere in this tree establishes a
+  // containing block that would trap it back in) — the same CSS
+  // property Shared/Modal/Modal.tsx's own "fixed inset-0" already
+  // relies on, so no React portal is needed here either. See
+  // plan/ai/tools/career/step-XX-action-menu-overflow-clipping.md.
+  const [position, setPosition] = useState<{ top: number; right: number } | null>(null)
   // expandedKey — at most one parent item's own children are shown at
   // a time (one level of nesting, no reason to allow more than one
   // group open together in a menu this small). Reset whenever the
@@ -88,11 +106,26 @@ export function ActionMenu({ items, triggerLabel = 'Actions' }: ActionMenuProps)
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape') setOpen(false)
     }
+    // Closes on scroll/resize rather than repositioning — simplest
+    // correct behavior for a small kebab menu (matches this menu's own
+    // existing "no fancier than it needs to be" click-outside/Escape
+    // handling above): a stale-positioned dropdown left open through a
+    // scroll would visually detach from its own trigger, and this menu
+    // has no legitimate reason to stay open across a scroll anyway.
+    // capture: true catches scrolling of an ancestor (e.g. the table's
+    // own overflow-x-auto wrapper), not just the window itself.
+    function handleScrollOrResize() {
+      setOpen(false)
+    }
     document.addEventListener('mousedown', handleClickOutside)
     document.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('scroll', handleScrollOrResize, true)
+    window.addEventListener('resize', handleScrollOrResize)
     return () => {
       document.removeEventListener('mousedown', handleClickOutside)
       document.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('scroll', handleScrollOrResize, true)
+      window.removeEventListener('resize', handleScrollOrResize)
     }
   }, [open])
 
@@ -247,16 +280,24 @@ export function ActionMenu({ items, triggerLabel = 'Actions' }: ActionMenuProps)
         aria-expanded={open}
         aria-label={triggerLabel}
         onClick={() => {
-          setOpen((prev) => !prev)
+          setOpen((prev) => {
+            const next = !prev
+            if (next && containerRef.current) {
+              const rect = containerRef.current.getBoundingClientRect()
+              setPosition({ top: rect.bottom + 4, right: window.innerWidth - rect.right })
+            }
+            return next
+          })
         }}
         className="rounded-md p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900"
       >
         <DotsVerticalIcon />
       </button>
-      {open && (
+      {open && position && (
         <div
           role="menu"
-          className="absolute right-0 z-10 mt-1 min-w-48 overflow-hidden rounded-md border border-gray-200 bg-white py-1 shadow-lg"
+          style={{ top: position.top, right: position.right }}
+          className="fixed z-30 min-w-48 overflow-hidden rounded-md border border-gray-200 bg-white py-1 shadow-lg"
         >
           {items.map((item) => renderItem(item))}
         </div>
