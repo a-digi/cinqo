@@ -966,10 +966,21 @@ func BuildJobDetailCrawlRequest(id string) (CrawlRequest, error) {
 // exactly one of Results/Items is ever non-empty, mirroring browser's
 // own contract exactly.
 type CrawlResultPage struct {
-	URL      string           `json:"url"`
-	Results  map[string]any   `json:"results,omitempty"`
-	Items    []map[string]any `json:"items,omitempty"`
-	NotFound []string         `json:"notFound"`
+	URL     string           `json:"url"`
+	Results map[string]any   `json:"results,omitempty"`
+	Items   []map[string]any `json:"items,omitempty"`
+	// NotFound is never read by anything in this package — decoded only
+	// for parity with browser's own pageExtractResult shape. omitempty
+	// (step 81) matters for a reason unrelated to IngestCrawlResults'
+	// own HTTP decode path (unaffected by omitempty either way): the
+	// MCP SDK auto-generates check_crawl_extraction_result's own
+	// argument JSON Schema from this exact struct, and without
+	// omitempty it marked "notFound" a REQUIRED property — rejecting a
+	// well-formed args.pages that simply omitted an unused field before
+	// the handler ever ran, confirmed live (a real tool call failed
+	// schema validation with "missing properties: [\"notFound\"]").
+	// See plan/ai/tools/career/step-81-check-crawl-extraction-result-tool.md.
+	NotFound []string `json:"notFound,omitempty"`
 }
 
 // ExtractResultStrings normalizes one field's extracted value (a
@@ -1406,7 +1417,9 @@ func RegisterSetPortalLinkCrawlInstructions(server *mcp.Server) {
 			"nextSelector: a.next-page\n  maxPages: 5\n\n" +
 			"Rejected if it doesn't parse, is missing required keys, or the effective output (after mapping) " +
 			"wouldn't produce both title and url — this only checks shape, not that it actually works against " +
-			"the real page.",
+			"the real page. Before calling this, you must already have tested your draft via crawl_paginated + " +
+			"check_crawl_extraction_result and seen ok: true — this tool does not re-verify against the real " +
+			"page itself, only shape, so a passing call here is not proof the instructions work.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args setPortalLinkCrawlInstructionsArgs) (*mcp.CallToolResult, any, error) {
 		if args.PortalLinkID == "" {
 			return db.ErrResult("portalLinkId is required"), nil, nil

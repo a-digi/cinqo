@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.0.246",
+  "version": "0.0.250",
   "mcp": true,
   "requires_tools": [
     {
@@ -473,6 +473,10 @@
     },
     {
       "name": "set_portal_link_crawl_instructions",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "name": "check_crawl_extraction_result",
       "required_scope": "tool:career:portals"
     },
     {

@@ -176,6 +176,7 @@ func runMCPServer() {
 	portal.RegisterRemovePortalLink(server)
 	portal.RegisterGetPortalLinkCrawlInstructions(server)
 	portal.RegisterSetPortalLinkCrawlInstructions(server)
+	portal.RegisterCheckCrawlExtractionResult(server)
 	portal.RegisterGetPortalLinkJobDetailCrawlInstructions(server)
 	portal.RegisterSetPortalLinkJobDetailCrawlInstructions(server)
 

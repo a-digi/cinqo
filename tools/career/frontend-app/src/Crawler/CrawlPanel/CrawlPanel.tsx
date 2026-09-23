@@ -892,7 +892,7 @@ export function CrawlPanel({
       {link.crawlInstructions && (
         <div className="mt-1.5">
           <div className="flex flex-wrap gap-2">
-            {run?.status === 'running' ? (
+            {run?.status === 'running' && run.kind === 'listing' ? (
               <>
                 <button
                   type="button"
@@ -956,7 +956,7 @@ export function CrawlPanel({
           )}
         </div>
       )}
-      {link.jobDetailCrawlInstructions && run?.status === 'running' && (
+      {link.jobDetailCrawlInstructions && run?.status === 'running' && run.kind === 'job_detail' && (
         <div className="mt-1.5">
           <div className="flex flex-wrap gap-2">
             <button
