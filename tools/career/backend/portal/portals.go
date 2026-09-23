@@ -38,6 +38,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"career-tool-backend/db"
+	"career-tool-backend/domainevent"
 	"career-tool-backend/jobs"
 )
 
@@ -122,6 +123,16 @@ type portalLink struct {
 	JobDetailInstructionsAIError          string `json:"jobDetailInstructionsAiError,omitempty"`
 	JobDetailInstructionsAIErrorAt        string `json:"jobDetailInstructionsAiErrorAt,omitempty"`
 	JobDetailInstructionsAIConversationID string `json:"jobDetailInstructionsAiConversationId,omitempty"`
+	// ListingCrawlRequested/JobDetailInstructionsAIRequested (step 65)
+	// are request flags a Domain Events listener sets to ask the
+	// frontend to perform a privileged action (start a crawl, start an
+	// AI conversation) under the current user's own live session — see
+	// plan/ai/tools/career/step-65-career-event-listeners.md. Both
+	// false is the default/steady state; the frontend clears each one
+	// once it has successfully started (or, for the listing flag,
+	// attempted) the action it asked for.
+	ListingCrawlRequested            bool `json:"listingCrawlRequested"`
+	JobDetailInstructionsAIRequested bool `json:"jobDetailInstructionsAiRequested"`
 	// HasActiveCrawlRun (step 37) is true while a detached "Crawl now"
 	// run is in progress for this link — read-only, derived from
 	// crawl_runs, never itself written. Lets the frontend resume
@@ -250,7 +261,7 @@ func ListPortals() ([]portal, error) {
 	}
 
 	linkRows, err := db.JobsDB.Query(
-		`SELECT id, portal_id, url, title, crawl_instructions, job_detail_crawl_instructions, instructions_ai_error, instructions_ai_error_at, instructions_ai_conversation_id, job_detail_instructions_ai_error, job_detail_instructions_ai_error_at, job_detail_instructions_ai_conversation_id, created_at, updated_at
+		`SELECT id, portal_id, url, title, crawl_instructions, job_detail_crawl_instructions, instructions_ai_error, instructions_ai_error_at, instructions_ai_conversation_id, job_detail_instructions_ai_error, job_detail_instructions_ai_error_at, job_detail_instructions_ai_conversation_id, listing_crawl_requested, job_detail_instructions_ai_requested, created_at, updated_at
 		 FROM portal_links ORDER BY created_at ASC`,
 	)
 	if err != nil {
@@ -261,7 +272,7 @@ func ListPortals() ([]portal, error) {
 	for linkRows.Next() {
 		var l portalLink
 		var title, crawlInstructions, jobDetailCrawlInstructions, instructionsAIError, instructionsAIErrorAt, instructionsAIConversationID, jobDetailInstructionsAIError, jobDetailInstructionsAIErrorAt, jobDetailInstructionsAIConversationID, updatedAt sql.NullString
-		if err := linkRows.Scan(&l.ID, &l.PortalID, &l.URL, &title, &crawlInstructions, &jobDetailCrawlInstructions, &instructionsAIError, &instructionsAIErrorAt, &instructionsAIConversationID, &jobDetailInstructionsAIError, &jobDetailInstructionsAIErrorAt, &jobDetailInstructionsAIConversationID, &l.CreatedAt, &updatedAt); err != nil {
+		if err := linkRows.Scan(&l.ID, &l.PortalID, &l.URL, &title, &crawlInstructions, &jobDetailCrawlInstructions, &instructionsAIError, &instructionsAIErrorAt, &instructionsAIConversationID, &jobDetailInstructionsAIError, &jobDetailInstructionsAIErrorAt, &jobDetailInstructionsAIConversationID, &l.ListingCrawlRequested, &l.JobDetailInstructionsAIRequested, &l.CreatedAt, &updatedAt); err != nil {
 			return nil, err
 		}
 		l.Title = title.String
@@ -436,6 +447,30 @@ func UpdatePortalLinkJobDetailInstructionsAIConversationID(id string, convID *st
 		return err
 	}
 	_, err := db.JobsDB.Exec(`UPDATE portal_links SET job_detail_instructions_ai_conversation_id = ? WHERE id = ?`, *convID, id)
+	return err
+}
+
+// UpdatePortalLinkListingCrawlRequested/
+// UpdatePortalLinkJobDetailInstructionsAIRequested (step 67) let the
+// frontend clear the two request flags a Domain Events listener sets
+// (events.go) once it has consumed one — see
+// plan/ai/tools/career/step-67-frontend-flag-consumption.md. The
+// backend itself never clears either flag back to false (the listener
+// handlers in events.go only ever set them to true); only the
+// frontend, acting under a real user's own live session, ever does.
+func UpdatePortalLinkListingCrawlRequested(id string, requested bool) error {
+	if err := RequirePortalLinkExists(id); err != nil {
+		return err
+	}
+	_, err := db.JobsDB.Exec(`UPDATE portal_links SET listing_crawl_requested = ? WHERE id = ?`, requested, id)
+	return err
+}
+
+func UpdatePortalLinkJobDetailInstructionsAIRequested(id string, requested bool) error {
+	if err := RequirePortalLinkExists(id); err != nil {
+		return err
+	}
+	_, err := db.JobsDB.Exec(`UPDATE portal_links SET job_detail_instructions_ai_requested = ? WHERE id = ?`, requested, id)
 	return err
 }
 
@@ -1304,6 +1339,14 @@ func RegisterSetPortalLinkCrawlInstructions(server *mcp.Server) {
 			// carry a specific, actionable message of their own.
 			return db.ErrResult(err.Error()), nil, nil
 		}
+		// Publisher 1 of the event-driven crawl-instructions pipeline
+		// (plan/ai/tools/career/step-66-career-event-publishers.md) —
+		// fires every time the AI (re)writes the listing instructions,
+		// including a regeneration of already-working instructions:
+		// intentional, since a regenerated document should also
+		// re-trigger a fresh crawl, the same way a human manually
+		// re-clicking "Generate with AI" then "Crawl now" today would.
+		domainevent.Publish("career.portal_link.listing_instructions_ready", map[string]string{"portal_link_id": args.PortalLinkID})
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "updated"}}}, nil, nil
 	})
 }

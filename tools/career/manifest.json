@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.0.229",
+  "version": "0.0.234",
   "mcp": true,
   "requires_tools": [
     {
@@ -490,6 +490,16 @@
     {
       "name": "save_portal_jobs",
       "required_scope": "tool:career:jobs"
+    }
+  ],
+  "event_listeners": [
+    {
+      "topic": "career.portal_link.listing_instructions_ready",
+      "path_suffix": "events/listing-instructions-ready"
+    },
+    {
+      "topic": "career.portal_link.jobs_crawled",
+      "path_suffix": "events/jobs-crawled"
     }
   ]
 }

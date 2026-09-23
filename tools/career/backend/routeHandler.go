@@ -986,6 +986,13 @@ type portalLinkUpdateRequest struct {
 	// instructions document's own AI generation tracking instead.
 	JobDetailInstructionsAIError          *string `json:"jobDetailInstructionsAiError,omitempty"`
 	JobDetailInstructionsAIConversationID *string `json:"jobDetailInstructionsAiConversationId,omitempty"`
+	// ListingCrawlRequested/JobDetailInstructionsAIRequested (step 67)
+	// — nil: don't touch. Present: set to that exact value. The
+	// frontend only ever sends these as false, to clear a flag a
+	// Domain Events listener (events.go) set to true — see
+	// plan/ai/tools/career/step-67-frontend-flag-consumption.md.
+	ListingCrawlRequested            *bool `json:"listingCrawlRequested,omitempty"`
+	JobDetailInstructionsAIRequested *bool `json:"jobDetailInstructionsAiRequested,omitempty"`
 }
 
 func portalLinksHandler(w http.ResponseWriter, r *http.Request) {
@@ -1024,8 +1031,9 @@ func portalLinksHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		if body.URL == nil && body.Title == nil && body.CrawlInstructions == nil && body.JobDetailCrawlInstructions == nil &&
 			body.InstructionsAIError == nil && body.InstructionsAIConversationID == nil &&
-			body.JobDetailInstructionsAIError == nil && body.JobDetailInstructionsAIConversationID == nil {
-			http.Error(w, "url, title, crawlInstructions, jobDetailCrawlInstructions, instructionsAiError, instructionsAiConversationId, jobDetailInstructionsAiError, or jobDetailInstructionsAiConversationId is required", http.StatusBadRequest)
+			body.JobDetailInstructionsAIError == nil && body.JobDetailInstructionsAIConversationID == nil &&
+			body.ListingCrawlRequested == nil && body.JobDetailInstructionsAIRequested == nil {
+			http.Error(w, "url, title, crawlInstructions, jobDetailCrawlInstructions, instructionsAiError, instructionsAiConversationId, jobDetailInstructionsAiError, jobDetailInstructionsAiConversationId, listingCrawlRequested, or jobDetailInstructionsAiRequested is required", http.StatusBadRequest)
 			return
 		}
 		if body.URL != nil && *body.URL == "" {
@@ -1075,6 +1083,18 @@ func portalLinksHandler(w http.ResponseWriter, r *http.Request) {
 		if body.JobDetailInstructionsAIConversationID != nil {
 			if err := portal.UpdatePortalLinkJobDetailInstructionsAIConversationID(body.ID, body.JobDetailInstructionsAIConversationID); err != nil {
 				portal.WritePortalLinkAwareError(w, "update portal link job detail instructions AI conversation id", err)
+				return
+			}
+		}
+		if body.ListingCrawlRequested != nil {
+			if err := portal.UpdatePortalLinkListingCrawlRequested(body.ID, *body.ListingCrawlRequested); err != nil {
+				portal.WritePortalLinkAwareError(w, "update portal link listing crawl requested", err)
+				return
+			}
+		}
+		if body.JobDetailInstructionsAIRequested != nil {
+			if err := portal.UpdatePortalLinkJobDetailInstructionsAIRequested(body.ID, *body.JobDetailInstructionsAIRequested); err != nil {
+				portal.WritePortalLinkAwareError(w, "update portal link job detail instructions AI requested", err)
 				return
 			}
 		}

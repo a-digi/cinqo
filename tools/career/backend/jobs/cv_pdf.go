@@ -34,19 +34,14 @@
 package jobs
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
-	"net/http"
-	"os"
-	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"career-tool-backend/db"
+	"career-tool-backend/domainevent"
 )
 
 // StartCvGeneration begins tracking a new AI-driven CV generation
@@ -154,50 +149,15 @@ func ReconcileOrphanedCvGenerations() error {
 // tool call executes inside a one-shot "--mcp" subprocess
 // (tool_mcp.Invoke's own "one spawn per call" model) that exits
 // shortly after this handler returns, so a detached goroutine here
-// could easily never get to finish its own HTTP call. Bounded by a
-// short timeout instead, so an unreachable core never hangs
-// save_cv_pdf's own response for long.
+// could easily never get to finish its own HTTP call. domainevent.Publish's
+// own short internal timeout is what keeps an unreachable core from
+// hanging save_cv_pdf's own response for long. See
+// plan/ai/tools/career/step-66-career-event-publishers.md for the
+// shared domainevent.Publish helper this now delegates to (originally
+// a standalone implementation here, factored out once step 66 needed
+// the exact same mechanism from two more call sites).
 func publishCvGeneratedEvent(jobId, mediaFileId string) {
-	coreURL := os.Getenv("CORE_API_URL")
-	token := os.Getenv("TOOL_SERVICE_TOKEN")
-	if coreURL == "" || token == "" {
-		return
-	}
-
-	payload, err := json.Marshal(map[string]string{"job_id": jobId, "media_file_id": mediaFileId})
-	if err != nil {
-		log.Printf("career.cv.generated: failed to marshal payload: %v", err)
-		return
-	}
-	body, err := json.Marshal(map[string]any{
-		"topic":   "career.cv.generated",
-		"payload": json.RawMessage(payload),
-	})
-	if err != nil {
-		log.Printf("career.cv.generated: failed to marshal request body: %v", err)
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, coreURL+"/api/v1/events/publish", bytes.NewReader(body))
-	if err != nil {
-		log.Printf("career.cv.generated: failed to build request: %v", err)
-		return
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "ToolService "+token)
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		log.Printf("career.cv.generated: publish request failed: %v", err)
-		return
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		log.Printf("career.cv.generated: publish responded with status %d", resp.StatusCode)
-	}
+	domainevent.Publish("career.cv.generated", map[string]string{"job_id": jobId, "media_file_id": mediaFileId})
 }
 
 // --- MCP registration ---

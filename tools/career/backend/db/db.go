@@ -725,6 +725,9 @@ func migrateJobsDB(db *sql.DB) error {
 	if err := migratePortalLinksJobDetailInstructionsAIStatus(db); err != nil {
 		return err
 	}
+	if err := migratePortalLinksRequestFlags(db); err != nil {
+		return err
+	}
 	if err := migrateCrawlRunsPhase(db); err != nil {
 		return err
 	}
@@ -1023,6 +1026,32 @@ func migratePortalLinksJobDetailInstructionsAIStatus(db *sql.DB) error {
 		return err
 	}
 	_, err = db.Exec(`ALTER TABLE portal_links ADD COLUMN job_detail_instructions_ai_conversation_id TEXT`)
+	return err
+}
+
+// migratePortalLinksRequestFlags adds the two boolean request-flag
+// columns a Domain Events listener (career-tool-backend's own
+// events/listing-instructions-ready and events/jobs-crawled HTTP
+// handlers) sets to ask the frontend to perform a privileged action
+// (start a crawl, start an AI conversation) under the next real user's
+// own live session — a backend event handler has no live end-user
+// request to act as, so it can never perform either action itself. Same
+// plain ALTER TABLE ADD COLUMN shape as every other column addition in
+// this file, guarded the same way. DEFAULT 0 backfills every
+// pre-existing row correctly: no such request could have existed before
+// this step. See plan/ai/tools/career/step-65-career-event-listeners.md.
+func migratePortalLinksRequestFlags(db *sql.DB) error {
+	exists, hasColumn, err := tableHasColumn(db, "portal_links", "listing_crawl_requested")
+	if err != nil {
+		return err
+	}
+	if !exists || hasColumn {
+		return nil
+	}
+	if _, err := db.Exec(`ALTER TABLE portal_links ADD COLUMN listing_crawl_requested INTEGER NOT NULL DEFAULT 0`); err != nil {
+		return err
+	}
+	_, err = db.Exec(`ALTER TABLE portal_links ADD COLUMN job_detail_instructions_ai_requested INTEGER NOT NULL DEFAULT 0`)
 	return err
 }
 

@@ -175,6 +175,18 @@ export interface PortalLink {
   // reload/reopen. See
   // plan/ai/tools/career/step-38-crawl-now-polling-frontend.md.
   hasActiveCrawlRun: boolean
+  // listingCrawlRequested/jobDetailInstructionsAiRequested (step 65-67)
+  // are request flags a backend Domain Events listener sets to ask the
+  // frontend to perform a privileged action (start a crawl, start an AI
+  // conversation) under the current user's own live session — a
+  // backend event handler has no live end-user session to act as
+  // itself. See
+  // plan/ai/tools/career/step-64-event-driven-crawl-instructions.md.
+  // CrawlPanel.tsx's own resume-style effects consume these the same
+  // way it already resumes an in-flight AI conversation after a
+  // reload.
+  listingCrawlRequested: boolean
+  jobDetailInstructionsAiRequested: boolean
   createdAt: string
   updatedAt?: string
 }
@@ -606,6 +618,8 @@ export async function updatePortalLink(
     instructionsAiConversationId?: string
     jobDetailInstructionsAiError?: string
     jobDetailInstructionsAiConversationId?: string
+    listingCrawlRequested?: boolean
+    jobDetailInstructionsAiRequested?: boolean
   },
 ): Promise<void> {
   const res = await fetch(`${PROXY_BASE}/portal-links`, {

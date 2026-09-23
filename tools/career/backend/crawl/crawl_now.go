@@ -46,6 +46,7 @@ import (
 	"time"
 
 	"career-tool-backend/db"
+	"career-tool-backend/domainevent"
 	"career-tool-backend/portal"
 )
 
@@ -597,6 +598,15 @@ func runCrawlNow(ctx context.Context, runID, portalLinkID, accessToken string) {
 
 	_ = appendCrawlRunLog(runID, "done: "+summary)
 	_ = finishCrawlRun(runID, "completed", &summary, nil)
+	// Publisher 2 of the event-driven crawl-instructions pipeline
+	// (plan/ai/tools/career/step-66-career-event-publishers.md) —
+	// deliberately not published on the cloudflare_blocked/failed path
+	// above: "jobs crawled" means jobs were actually saved, not "a
+	// crawl attempt ran and failed." This function is exclusively the
+	// LISTING-kind crawl path (job-detail crawling lives in
+	// crawl_job_details_now.go), so no additional kind check is needed
+	// here.
+	domainevent.Publish("career.portal_link.jobs_crawled", map[string]string{"portal_link_id": portalLinkID})
 }
 
 // callBrowserProxy POSTs body to coreURL+path (one of browser's own
