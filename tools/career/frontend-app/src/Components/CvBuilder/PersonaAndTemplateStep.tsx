@@ -1,4 +1,5 @@
 import { PersonaSwitcher } from '../Persona/PersonaSwitcher/PersonaSwitcher'
+import { previewImages } from './previewImages'
 import type { CvTemplate } from '../../api'
 
 export interface PersonaAndTemplateStepProps {
@@ -28,7 +29,7 @@ export function PersonaAndTemplateStep({
 
       <div>
         <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Template</h3>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
           {templates.map((t) => (
             <button
               key={t.id}
@@ -36,12 +37,17 @@ export function PersonaAndTemplateStep({
               onClick={() => {
                 onTemplateChange(t.id)
               }}
-              className={`rounded-md border p-3 text-left text-sm shadow-sm ${
+              className={`overflow-hidden rounded-md border text-left text-sm shadow-sm ${
                 templateId === t.id ? 'border-gray-900 ring-1 ring-gray-900' : 'border-gray-200 hover:border-gray-300'
               }`}
             >
-              <p className="font-medium text-gray-900">{t.name}</p>
-              <p className="mt-1 text-xs text-gray-500">{t.description}</p>
+              <div className="aspect-[600/780] w-full bg-gray-50">
+                {previewImages[t.id] && <img src={previewImages[t.id]} alt={`${t.name} preview`} className="h-full w-full object-cover" />}
+              </div>
+              <div className="p-2.5">
+                <p className="font-medium text-gray-900">{t.name}</p>
+                <p className="mt-1 text-xs text-gray-500">{t.description}</p>
+              </div>
             </button>
           ))}
         </div>
