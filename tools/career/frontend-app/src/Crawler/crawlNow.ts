@@ -30,6 +30,10 @@ export interface CrawlRun {
   // kind may run at a time), so this is how the frontend tells them
   // apart. See plan/ai/tools/career/step-XX-job-detail-crawl-instructions.md.
   kind: 'listing' | 'job_detail'
+  // triggeredBy (step 84) is 'manual' (a human clicked "Crawl now"/
+  // "Crawl job details now") or 'auto_discovery' (the auto-discovery
+  // manager started it on its own schedule).
+  triggeredBy: 'manual' | 'auto_discovery'
   status: 'running' | 'completed' | 'failed' | 'cancelled'
   startedAt: string
   finishedAt: string | null
@@ -148,6 +152,8 @@ export async function fetchActiveCrawlRun(portalLinkId: string): Promise<CrawlRu
 export interface ActiveCrawlRunSummary {
   crawlRunId: string
   kind: 'listing' | 'job_detail'
+  // triggeredBy (step 84) — see CrawlRun's own doc comment above.
+  triggeredBy: 'manual' | 'auto_discovery'
   portalId: string
   portalName: string
   portalLinkId: string

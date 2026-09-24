@@ -276,6 +276,22 @@ CREATE TABLE IF NOT EXISTS portals (
     updated_at  TEXT
 );
 
+-- portal_links' own column list below is kept in sync with every
+-- column an existing install ends up with after every migration
+-- function further down this file has run (listing_crawl_requested,
+-- job_detail_instructions_ai_requested,
+-- instructions_ai_error_dismissed_at,
+-- job_detail_instructions_ai_error_dismissed_at,
+-- job_detail_crawl_requested, auto_discovery_enabled) — a genuinely
+-- brand-new install never goes through any of those ALTER TABLE
+-- migrations at all (each one's own tableHasColumn guard sees
+-- portal_links doesn't exist yet, at the point migrateJobsDB runs, and
+-- no-ops), so this CREATE TABLE IF NOT EXISTS is the ONLY thing that
+-- ever actually creates the table for that install — found live, not
+-- assumed, when this file's own auto_discovery_enabled addition (step
+-- 84 follow-up) broke a real test against a freshly initialized
+-- database with "no such column: auto_discovery_enabled" until every
+-- other already-migrated-for-upgrades column was added here too.
 CREATE TABLE IF NOT EXISTS portal_links (
     id                                TEXT PRIMARY KEY,
     portal_id                         TEXT NOT NULL REFERENCES portals(id) ON DELETE CASCADE,
@@ -289,6 +305,12 @@ CREATE TABLE IF NOT EXISTS portal_links (
     job_detail_instructions_ai_error             TEXT,
     job_detail_instructions_ai_error_at          TEXT,
     job_detail_instructions_ai_conversation_id   TEXT,
+    listing_crawl_requested                       INTEGER NOT NULL DEFAULT 0,
+    job_detail_instructions_ai_requested           INTEGER NOT NULL DEFAULT 0,
+    instructions_ai_error_dismissed_at             TEXT,
+    job_detail_instructions_ai_error_dismissed_at  TEXT,
+    job_detail_crawl_requested                     INTEGER NOT NULL DEFAULT 0,
+    auto_discovery_enabled                         INTEGER NOT NULL DEFAULT 1,
     created_at                        TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at                        TEXT,
     UNIQUE(portal_id, url)
@@ -362,7 +384,15 @@ CREATE TABLE IF NOT EXISTS crawl_runs (
     -- above still applies across both kinds: they share the one
     -- browser tab, so only one of either kind may run at a time per
     -- link. See plan/ai/tools/career/step-XX-job-detail-crawl-instructions.md.
-    kind           TEXT NOT NULL DEFAULT 'listing'
+    kind           TEXT NOT NULL DEFAULT 'listing',
+    -- triggered_by (step 84) distinguishes a human's own "Crawl now"/
+    -- "Crawl job details now" click ('manual', the original and only
+    -- value before this step) from one the auto-discovery manager
+    -- started on its own schedule ('auto_discovery') — lets Crawl
+    -- Monitor show which crawls were automatic, using data this
+    -- feature already produces, no new logging table needed. See
+    -- plan/ai/tools/career/step-84-auto-discovery-scheduled-crawling.md.
+    triggered_by   TEXT NOT NULL DEFAULT 'manual'
 );
 
 CREATE INDEX IF NOT EXISTS crawl_runs_portal_link_idx ON crawl_runs(portal_link_id);
@@ -496,6 +526,30 @@ CREATE TABLE IF NOT EXISTS job_cv_generations (
 );
 
 CREATE INDEX IF NOT EXISTS job_cv_generations_job_idx ON job_cv_generations(job_id);
+
+-- auto_discovery_settings (step 84) is a deliberate singleton — exactly
+-- one global on/off + interval setting covering every portal link with
+-- crawl instructions already set, not a per-link schedule (see this
+-- step's own plan doc for why). CHECK (id = 1) is the real, DB-enforced
+-- "never more than one row" guard, not an app-level check-then-insert
+-- (which would race under two concurrent writers). last_run_at is a
+-- unix-seconds INTEGER, not the usual RFC3339 TEXT this file's other
+-- timestamp columns use — the auto-discovery manager's own due-check is
+-- a plain integer subtraction against interval_minutes*60, and unix
+-- seconds is what makes that arithmetic direct instead of a
+-- parse-then-subtract on every tick. NULL means auto-discovery has
+-- never actually run yet — treated as "due immediately" the first time
+-- it's enabled, same as this table's own seed row starts out. See
+-- plan/ai/tools/career/step-84-auto-discovery-scheduled-crawling.md.
+CREATE TABLE IF NOT EXISTS auto_discovery_settings (
+    id               INTEGER PRIMARY KEY CHECK (id = 1),
+    enabled          INTEGER NOT NULL DEFAULT 0,
+    interval_minutes INTEGER NOT NULL DEFAULT 60,
+    last_run_at      INTEGER,
+    updated_at       TEXT
+);
+
+INSERT OR IGNORE INTO auto_discovery_settings (id, enabled, interval_minutes) VALUES (1, 0, 60);
 `
 
 // migrateCareerDB runs, in order, every past schema migration this
@@ -860,6 +914,12 @@ func migrateJobsDB(db *sql.DB) error {
 		return err
 	}
 	if err := migrateCrawlRunsKind(db); err != nil {
+		return err
+	}
+	if err := migrateCrawlRunsTriggeredBy(db); err != nil {
+		return err
+	}
+	if err := migratePortalLinksAutoDiscoveryEnabled(db); err != nil {
 		return err
 	}
 	if err := migrateJobsDetailCrawlStatus(db); err != nil {
@@ -1264,5 +1324,47 @@ func migrateCrawlRunsKind(db *sql.DB) error {
 		return nil
 	}
 	_, err = db.Exec(`ALTER TABLE crawl_runs ADD COLUMN kind TEXT NOT NULL DEFAULT 'listing'`)
+	return err
+}
+
+// migrateCrawlRunsTriggeredBy adds the triggered_by column (step 84) to
+// an already-installed crawl_runs table — same plain ALTER TABLE ADD
+// COLUMN shape as migrateCrawlRunsPhase/migrateCrawlRunsKind above,
+// guarded the same way. DEFAULT 'manual' backfills every pre-existing
+// row correctly: every crawl_runs row before this step was, by
+// definition, a human clicking "Crawl now" — auto-discovery didn't
+// exist yet. See
+// plan/ai/tools/career/step-84-auto-discovery-scheduled-crawling.md.
+func migrateCrawlRunsTriggeredBy(db *sql.DB) error {
+	exists, hasColumn, err := tableHasColumn(db, "crawl_runs", "triggered_by")
+	if err != nil {
+		return err
+	}
+	if !exists || hasColumn {
+		return nil
+	}
+	_, err = db.Exec(`ALTER TABLE crawl_runs ADD COLUMN triggered_by TEXT NOT NULL DEFAULT 'manual'`)
+	return err
+}
+
+// migratePortalLinksAutoDiscoveryEnabled adds the per-link opt-out flag
+// (step 84 follow-up: some links people might not want auto-discovered
+// even while the global schedule is on) — same plain ALTER TABLE ADD
+// COLUMN shape every other portal_links column since step 22 already
+// uses, guarded the same way. DEFAULT 1 (enabled) backfills every
+// pre-existing row correctly — "by default auto-discovery is on" is
+// the explicit instruction this column exists to satisfy, and no link
+// that existed before this step could have opted out of a feature that
+// didn't exist yet. See
+// plan/ai/tools/career/step-84-auto-discovery-scheduled-crawling.md.
+func migratePortalLinksAutoDiscoveryEnabled(db *sql.DB) error {
+	exists, hasColumn, err := tableHasColumn(db, "portal_links", "auto_discovery_enabled")
+	if err != nil {
+		return err
+	}
+	if !exists || hasColumn {
+		return nil
+	}
+	_, err = db.Exec(`ALTER TABLE portal_links ADD COLUMN auto_discovery_enabled INTEGER NOT NULL DEFAULT 1`)
 	return err
 }

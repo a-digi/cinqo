@@ -224,6 +224,15 @@ export interface PortalLink {
   // instant a listing crawl finishes. See
   // plan/ai/tools/career/step-76-job-detail-crawl-requested-backend.md.
   jobDetailCrawlRequested: boolean
+  // autoDiscoveryEnabled (step 84 follow-up) gates whether this
+  // specific link participates in the auto-discovery manager's own
+  // sweeps — the global auto-discovery on/off+interval setting
+  // (Crawler/autoDiscovery.ts) controls whether the mechanism runs at
+  // ALL; this is the per-link override on top of that ("some of the
+  // links people might not want to be auto-discovered"). Defaults
+  // true (on). See
+  // plan/ai/tools/career/step-84-auto-discovery-scheduled-crawling.md.
+  autoDiscoveryEnabled: boolean
   createdAt: string
   updatedAt?: string
 }
@@ -708,6 +717,7 @@ export async function updatePortalLink(
     instructionsAiErrorDismissedAt?: string
     jobDetailInstructionsAiErrorDismissedAt?: string
     jobDetailCrawlRequested?: boolean
+    autoDiscoveryEnabled?: boolean
   },
 ): Promise<void> {
   const res = await fetch(`${PROXY_BASE}/portal-links`, {

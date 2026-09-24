@@ -12,6 +12,7 @@ import {
 } from '../../api'
 import { fetchPlatforms, fetchPlatformKeys, type Platform } from '../../Cinqo/Platform/platformRepository'
 import { CrawlPlatformPicker } from '../../Crawler/CrawlPlatformPicker/CrawlPlatformPicker'
+import { AutoDiscoveryPanel } from '../../Crawler/AutoDiscoveryPanel/AutoDiscoveryPanel'
 import { CrawlPanel } from '../../Crawler/CrawlPanel/CrawlPanel'
 import { PlusIcon } from '../../Shared/Icons/icons'
 import { Modal } from '../../Shared/Modal/Modal'
@@ -293,6 +294,8 @@ export function PortalsPage() {
         onSelectPlatform={handleSelectPlatform}
         onSelectModel={setSelectedModel}
       />
+
+      <AutoDiscoveryPanel />
 
       <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
 

@@ -1051,6 +1051,11 @@ type portalLinkUpdateRequest struct {
 	// JobsCrawledEventHandler set to true. See
 	// plan/ai/tools/career/step-76-job-detail-crawl-requested-backend.md.
 	JobDetailCrawlRequested *bool `json:"jobDetailCrawlRequested,omitempty"`
+	// AutoDiscoveryEnabled (step 84 follow-up) — nil: don't touch.
+	// Present: set to that exact value, gating whether this specific
+	// link participates in the auto-discovery manager's own sweeps.
+	// See portal.portalLink's own AutoDiscoveryEnabled doc comment.
+	AutoDiscoveryEnabled *bool `json:"autoDiscoveryEnabled,omitempty"`
 }
 
 func portalLinksHandler(w http.ResponseWriter, r *http.Request) {
@@ -1092,8 +1097,8 @@ func portalLinksHandler(w http.ResponseWriter, r *http.Request) {
 			body.JobDetailInstructionsAIError == nil && body.JobDetailInstructionsAIConversationID == nil &&
 			body.ListingCrawlRequested == nil && body.JobDetailInstructionsAIRequested == nil &&
 			body.InstructionsAIErrorDismissedAt == nil && body.JobDetailInstructionsAIErrorDismissedAt == nil &&
-			body.JobDetailCrawlRequested == nil {
-			http.Error(w, "url, title, crawlInstructions, jobDetailCrawlInstructions, instructionsAiError, instructionsAiConversationId, jobDetailInstructionsAiError, jobDetailInstructionsAiConversationId, listingCrawlRequested, jobDetailInstructionsAiRequested, instructionsAiErrorDismissedAt, jobDetailInstructionsAiErrorDismissedAt, or jobDetailCrawlRequested is required", http.StatusBadRequest)
+			body.JobDetailCrawlRequested == nil && body.AutoDiscoveryEnabled == nil {
+			http.Error(w, "url, title, crawlInstructions, jobDetailCrawlInstructions, instructionsAiError, instructionsAiConversationId, jobDetailInstructionsAiError, jobDetailInstructionsAiConversationId, listingCrawlRequested, jobDetailInstructionsAiRequested, instructionsAiErrorDismissedAt, jobDetailInstructionsAiErrorDismissedAt, jobDetailCrawlRequested, or autoDiscoveryEnabled is required", http.StatusBadRequest)
 			return
 		}
 		if body.URL != nil && *body.URL == "" {
@@ -1173,6 +1178,12 @@ func portalLinksHandler(w http.ResponseWriter, r *http.Request) {
 		if body.JobDetailCrawlRequested != nil {
 			if err := portal.UpdatePortalLinkJobDetailCrawlRequested(body.ID, *body.JobDetailCrawlRequested); err != nil {
 				portal.WritePortalLinkAwareError(w, "update portal link job detail crawl requested", err)
+				return
+			}
+		}
+		if body.AutoDiscoveryEnabled != nil {
+			if err := portal.UpdatePortalLinkAutoDiscoveryEnabled(body.ID, *body.AutoDiscoveryEnabled); err != nil {
+				portal.WritePortalLinkAwareError(w, "update portal link auto-discovery enabled", err)
 				return
 			}
 		}

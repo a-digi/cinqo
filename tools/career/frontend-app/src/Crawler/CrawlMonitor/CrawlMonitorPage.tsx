@@ -110,7 +110,19 @@ export function CrawlMonitorPage() {
                           {run.portalLinkTitle ?? run.portalLinkUrl}
                         </a>
                       </td>
-                      <td className="border-b border-gray-200 p-3 text-gray-500">{KIND_LABELS[run.kind]}</td>
+                      <td className="border-b border-gray-200 p-3 text-gray-500">
+                        <div className="flex items-center gap-1.5">
+                          {KIND_LABELS[run.kind]}
+                          {run.triggeredBy === 'auto_discovery' && (
+                            <span
+                              title="Started automatically by auto-discovery, not a manual click"
+                              className="rounded-full bg-gray-200 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-600"
+                            >
+                              Auto
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td className="border-b border-gray-200 p-3">
                         {run.phase === 'awaiting_human_challenge' ? (
                           <span className="flex items-center gap-1.5 text-amber-800">

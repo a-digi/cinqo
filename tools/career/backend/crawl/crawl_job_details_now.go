@@ -76,7 +76,7 @@ func CrawlJobDetailsNowHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	run, err := startCrawlRun(body.PortalLinkID, "job_detail")
+	run, err := startCrawlRun(body.PortalLinkID, "job_detail", "manual")
 	if err != nil {
 		switch {
 		case errors.Is(err, errCrawlAlreadyRunning):

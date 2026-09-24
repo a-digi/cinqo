@@ -20,8 +20,11 @@ import (
 // crawlRun plus the portal link/portal context needed to identify it
 // without a separate round trip per row.
 type activeCrawlRunSummary struct {
-	CrawlRunID      string   `json:"crawlRunId"`
-	Kind            string   `json:"kind"`
+	CrawlRunID string `json:"crawlRunId"`
+	Kind       string `json:"kind"`
+	// TriggeredBy (step 84) is "manual" or "auto_discovery" — lets the
+	// frontend show which crawls were automatic.
+	TriggeredBy     string   `json:"triggeredBy"`
 	PortalID        string   `json:"portalId"`
 	PortalName      string   `json:"portalName"`
 	PortalLinkID    string   `json:"portalLinkId"`
@@ -41,7 +44,7 @@ type activeCrawlRunSummary struct {
 // JOINs — there is no dangling-reference case to handle.
 func listActiveCrawlRuns() ([]activeCrawlRunSummary, error) {
 	rows, err := db.JobsDB.Query(
-		`SELECT cr.id, cr.kind, p.id, p.name, pl.id, pl.title, pl.url, cr.status, cr.started_at, cr.phase, cr.log
+		`SELECT cr.id, cr.kind, cr.triggered_by, p.id, p.name, pl.id, pl.title, pl.url, cr.status, cr.started_at, cr.phase, cr.log
 		 FROM crawl_runs cr
 		 JOIN portal_links pl ON pl.id = cr.portal_link_id
 		 JOIN portals p ON p.id = pl.portal_id
@@ -58,7 +61,7 @@ func listActiveCrawlRuns() ([]activeCrawlRunSummary, error) {
 		var s activeCrawlRunSummary
 		var title, phase sql.NullString
 		var log string
-		if err := rows.Scan(&s.CrawlRunID, &s.Kind, &s.PortalID, &s.PortalName, &s.PortalLinkID, &title, &s.PortalLinkURL, &s.Status, &s.StartedAt, &phase, &log); err != nil {
+		if err := rows.Scan(&s.CrawlRunID, &s.Kind, &s.TriggeredBy, &s.PortalID, &s.PortalName, &s.PortalLinkID, &title, &s.PortalLinkURL, &s.Status, &s.StartedAt, &phase, &log); err != nil {
 			return nil, err
 		}
 		s.PortalLinkTitle = title.String

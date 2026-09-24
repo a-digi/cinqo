@@ -29,6 +29,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"career-tool-backend/autodiscovery"
 	"career-tool-backend/companies"
 	"career-tool-backend/crawl"
 	"career-tool-backend/cv"
@@ -82,6 +83,7 @@ func runHTTPServer() {
 	// the in-process complement: it catches that case too, without
 	// requiring a restart.
 	crawl.StartStaleCrawlRunReaper()
+	autodiscovery.StartAutoDiscoveryManager()
 
 	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -110,6 +112,7 @@ func runHTTPServer() {
 	http.HandleFunc("/portal-links/crawl-runs/active", crawl.CrawlMonitorHandler)
 	http.HandleFunc("/portal-links/crawl-now/active", crawl.CrawlNowActiveHandler)
 	http.HandleFunc("/portal-links/crawl-now/cancel", crawl.CrawlNowCancelHandler)
+	http.HandleFunc("/portal-links/auto-discovery", autodiscovery.SettingsHandler)
 	http.HandleFunc("/events/listing-instructions-ready", portal.ListingInstructionsReadyEventHandler)
 	http.HandleFunc("/events/jobs-crawled", portal.JobsCrawledEventHandler)
 	http.HandleFunc("/events/job-created", jobs.JobCreatedEventHandler)
@@ -121,7 +124,13 @@ func runHTTPServer() {
 	http.HandleFunc("/cv-documents/preview", cvbuilder.PreviewHandler)
 	http.HandleFunc("/cv-documents", cvbuilder.DocumentsHandler)
 
-	if err := http.ListenAndServe("127.0.0.1:"+port, nil); err != nil {
+	// autodiscovery.CaptureTokenMiddleware wraps the entire mux here,
+	// once, rather than each individual route registration above — see
+	// that middleware's own doc comment for why this one choke point is
+	// enough. http.DefaultServeMux is what every http.HandleFunc call
+	// above registered into (the previous nil handler argument meant
+	// exactly that).
+	if err := http.ListenAndServe("127.0.0.1:"+port, autodiscovery.CaptureTokenMiddleware(http.DefaultServeMux)); err != nil {
 		os.Exit(1)
 	}
 }

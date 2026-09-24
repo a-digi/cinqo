@@ -36,10 +36,15 @@ type crawlRun struct {
 	// listing page ('listing', the default) from a "Crawl job details
 	// now" run against every already-saved job's own detail page
 	// ('job_detail') — see db's own crawl_runs.kind doc comment.
-	Kind       string
-	Status     string
-	StartedAt  string
-	FinishedAt *string
+	Kind string
+	// TriggeredBy (step 84) is 'manual' (a human clicked "Crawl now"/
+	// "Crawl job details now") or 'auto_discovery' (the auto-discovery
+	// manager started this on its own schedule) — see db's own
+	// crawl_runs.triggered_by doc comment.
+	TriggeredBy string
+	Status      string
+	StartedAt   string
+	FinishedAt  *string
 	// Log is the raw, newline-delimited "RFC3339<TAB>message" trace —
 	// split into individual entries only at the HTTP response layer
 	// (step 37), matching how turn_runs.log is treated on the
@@ -56,20 +61,21 @@ type crawlRun struct {
 
 // startCrawlRun inserts a new running row for portalLinkID, of the
 // given kind ("listing" or "job_detail" — see db's own crawl_runs.kind
-// doc comment). errCrawlAlreadyRunning if one is already running for
-// this link, of EITHER kind (crawl_runs_one_running_idx's own
-// violation, detected the same way portal.AddPortalLink detects
-// portal.ErrDuplicatePortalLink). errUnknownPortalLink if the link
-// itself doesn't exist.
-func startCrawlRun(portalLinkID, kind string) (*crawlRun, error) {
+// doc comment) and triggeredBy ("manual" or "auto_discovery" — see db's
+// own crawl_runs.triggered_by doc comment). errCrawlAlreadyRunning if
+// one is already running for this link, of EITHER kind
+// (crawl_runs_one_running_idx's own violation, detected the same way
+// portal.AddPortalLink detects portal.ErrDuplicatePortalLink).
+// errUnknownPortalLink if the link itself doesn't exist.
+func startCrawlRun(portalLinkID, kind, triggeredBy string) (*crawlRun, error) {
 	if err := portal.RequirePortalLinkExists(portalLinkID); err != nil {
 		return nil, err
 	}
 	id := uuid.NewString()
 	startedAt := time.Now().UTC().Format(time.RFC3339)
 	_, err := db.JobsDB.Exec(
-		`INSERT INTO crawl_runs (id, portal_link_id, kind, status, started_at, log) VALUES (?, ?, ?, 'running', ?, '')`,
-		id, portalLinkID, kind, startedAt,
+		`INSERT INTO crawl_runs (id, portal_link_id, kind, triggered_by, status, started_at, log) VALUES (?, ?, ?, ?, 'running', ?, '')`,
+		id, portalLinkID, kind, triggeredBy, startedAt,
 	)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
@@ -77,7 +83,7 @@ func startCrawlRun(portalLinkID, kind string) (*crawlRun, error) {
 		}
 		return nil, err
 	}
-	return &crawlRun{ID: id, PortalLinkID: portalLinkID, Kind: kind, Status: "running", StartedAt: startedAt}, nil
+	return &crawlRun{ID: id, PortalLinkID: portalLinkID, Kind: kind, TriggeredBy: triggeredBy, Status: "running", StartedAt: startedAt}, nil
 }
 
 // appendCrawlRunLog appends one line atomically (log = log || ?) — no
@@ -162,7 +168,7 @@ func splitCrawlRunLog(log string) []string {
 func scanCrawlRun(row *sql.Row) (*crawlRun, error) {
 	var r crawlRun
 	var finishedAt, resultSummary, errorMessage, phase sql.NullString
-	if err := row.Scan(&r.ID, &r.PortalLinkID, &r.Kind, &r.Status, &r.StartedAt, &finishedAt, &r.Log, &resultSummary, &errorMessage, &phase); err != nil {
+	if err := row.Scan(&r.ID, &r.PortalLinkID, &r.Kind, &r.TriggeredBy, &r.Status, &r.StartedAt, &finishedAt, &r.Log, &resultSummary, &errorMessage, &phase); err != nil {
 		return nil, err
 	}
 	if finishedAt.Valid {
@@ -187,7 +193,7 @@ func scanCrawlRun(row *sql.Row) (*crawlRun, error) {
 // this tool already establishes for "absent" values).
 func findActiveCrawlRun(portalLinkID string) (*crawlRun, error) {
 	row := db.JobsDB.QueryRow(
-		`SELECT id, portal_link_id, kind, status, started_at, finished_at, log, result_summary, error_message, phase
+		`SELECT id, portal_link_id, kind, triggered_by, status, started_at, finished_at, log, result_summary, error_message, phase
 		 FROM crawl_runs WHERE portal_link_id = ? AND status = 'running'`,
 		portalLinkID,
 	)
@@ -212,7 +218,7 @@ func findActiveCrawlRun(portalLinkID string) (*crawlRun, error) {
 // correct tiebreaker (here, the only ordering key at all).
 func findMostRecentCrawlRun(portalLinkID string) (*crawlRun, error) {
 	row := db.JobsDB.QueryRow(
-		`SELECT id, portal_link_id, kind, status, started_at, finished_at, log, result_summary, error_message, phase
+		`SELECT id, portal_link_id, kind, triggered_by, status, started_at, finished_at, log, result_summary, error_message, phase
 		 FROM crawl_runs WHERE portal_link_id = ? ORDER BY rowid DESC LIMIT 1`,
 		portalLinkID,
 	)

@@ -181,7 +181,7 @@ func CrawlNowHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	run, err := startCrawlRun(body.PortalLinkID, "listing")
+	run, err := startCrawlRun(body.PortalLinkID, "listing", "manual")
 	if err != nil {
 		switch {
 		case errors.Is(err, errCrawlAlreadyRunning):
@@ -214,6 +214,45 @@ func CrawlNowHandler(w http.ResponseWriter, r *http.Request) {
 		"status":     run.Status,
 		"startedAt":  run.StartedAt,
 	})
+}
+
+// RunListingCrawlNow starts a "listing" crawl for portalLinkID and
+// BLOCKS the calling goroutine until it finishes — unlike
+// CrawlNowHandler above (which launches runCrawlNow in its own
+// detached goroutine and returns immediately, since it has an HTTP
+// response to send back), this is for a caller that already IS its own
+// background goroutine and wants to run crawls one at a time itself
+// (the auto-discovery manager's own sequential sweep, step 84). The run
+// is still registered in the exact same cancel registry
+// CrawlNowCancelHandler already uses, keyed by the returned runID, so a
+// user can Stop it through that existing endpoint regardless of what
+// triggered it. accessToken is whatever credential the caller already
+// has in hand (the auto-discovery manager's own cached, opportunistic
+// token — see token_cache.go's own doc comment for why that's the best
+// available option for a call with no live HTTP request behind it);
+// this function itself has no opinion on where it came from.
+// triggeredBy is stored on the crawl_runs row as-is ("manual" or
+// "auto_discovery") purely for that row's own audit trail — it changes
+// no behavior here. Only the fast-fail pre-checks (unknown link, no
+// crawl instructions, already running) are returned as an error; the
+// crawl's own success/failure is already fully captured in the
+// crawl_runs row itself by runCrawlNow's existing finishCrawlRun/log
+// machinery, exactly as it is for a manual "Crawl now" run — this
+// function doesn't duplicate any of that.
+func RunListingCrawlNow(portalLinkID, accessToken, triggeredBy string) (runID string, err error) {
+	if _, err := portal.BuildCrawlRequest(portalLinkID); err != nil {
+		return "", err
+	}
+	run, err := startCrawlRun(portalLinkID, "listing", triggeredBy)
+	if err != nil {
+		return "", err
+	}
+	runCtx, runCancel := context.WithCancel(context.Background())
+	registerCrawlNowCancel(run.ID, runCancel)
+	defer unregisterCrawlNowCancel(run.ID)
+	defer runCancel()
+	runCrawlNow(runCtx, run.ID, portalLinkID, accessToken)
+	return run.ID, nil
 }
 
 // CrawlNowActiveHandler handles GET /portal-links/crawl-now/active?portalLinkId=...
@@ -311,8 +350,12 @@ func CrawlNowCancelHandler(w http.ResponseWriter, r *http.Request) {
 // Log split into individual entries here (the data layer keeps the raw
 // newline-delimited string, see crawl_runs.go's own doc comment).
 type crawlRunResponse struct {
-	CrawlRunID    string   `json:"crawlRunId"`
-	Kind          string   `json:"kind"`
+	CrawlRunID string `json:"crawlRunId"`
+	Kind       string `json:"kind"`
+	// TriggeredBy (step 84) is "manual" or "auto_discovery" — lets the
+	// frontend show which crawls were automatic. See db's own
+	// crawl_runs.triggered_by doc comment.
+	TriggeredBy   string   `json:"triggeredBy"`
 	Status        string   `json:"status"`
 	StartedAt     string   `json:"startedAt"`
 	FinishedAt    *string  `json:"finishedAt"`
@@ -326,6 +369,7 @@ func toCrawlRunResponse(r *crawlRun) crawlRunResponse {
 	return crawlRunResponse{
 		CrawlRunID:    r.ID,
 		Kind:          r.Kind,
+		TriggeredBy:   r.TriggeredBy,
 		Status:        r.Status,
 		StartedAt:     r.StartedAt,
 		FinishedAt:    r.FinishedAt,

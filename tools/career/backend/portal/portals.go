@@ -156,9 +156,22 @@ type portalLink struct {
 	// watching a run still going after a page reload/reopen without a
 	// separate round trip per link. See
 	// plan/ai/tools/career/step-37-detached-crawl-now-orchestration.md.
-	HasActiveCrawlRun bool   `json:"hasActiveCrawlRun"`
-	CreatedAt         string `json:"createdAt"`
-	UpdatedAt         string `json:"updatedAt,omitempty"`
+	HasActiveCrawlRun bool `json:"hasActiveCrawlRun"`
+	// AutoDiscoveryEnabled (step 84 follow-up) gates whether this
+	// specific link participates in the auto-discovery manager's own
+	// sweeps — the global auto_discovery_settings on/off+interval
+	// controls whether the mechanism runs at ALL; this is the per-link
+	// override on top of that ("some of the links people might not
+	// want to be auto-discovered"). Defaults true (on) — see this
+	// field's own migration doc comment (db.go) for why. Checked by
+	// ListPortalLinksEligibleForAutoDiscovery below, never by
+	// BuildCrawlRequest — a manual "Crawl now" click still works
+	// regardless of this flag; it only ever suppresses the AUTOMATIC
+	// path. See
+	// plan/ai/tools/career/step-84-auto-discovery-scheduled-crawling.md.
+	AutoDiscoveryEnabled bool   `json:"autoDiscoveryEnabled"`
+	CreatedAt            string `json:"createdAt"`
+	UpdatedAt            string `json:"updatedAt,omitempty"`
 }
 
 type portal struct {
@@ -278,7 +291,7 @@ func ListPortals() ([]portal, error) {
 	}
 
 	linkRows, err := db.JobsDB.Query(
-		`SELECT id, portal_id, url, title, crawl_instructions, job_detail_crawl_instructions, instructions_ai_error, instructions_ai_error_at, instructions_ai_conversation_id, job_detail_instructions_ai_error, job_detail_instructions_ai_error_at, job_detail_instructions_ai_conversation_id, listing_crawl_requested, job_detail_instructions_ai_requested, instructions_ai_error_dismissed_at, job_detail_instructions_ai_error_dismissed_at, job_detail_crawl_requested, created_at, updated_at
+		`SELECT id, portal_id, url, title, crawl_instructions, job_detail_crawl_instructions, instructions_ai_error, instructions_ai_error_at, instructions_ai_conversation_id, job_detail_instructions_ai_error, job_detail_instructions_ai_error_at, job_detail_instructions_ai_conversation_id, listing_crawl_requested, job_detail_instructions_ai_requested, instructions_ai_error_dismissed_at, job_detail_instructions_ai_error_dismissed_at, job_detail_crawl_requested, auto_discovery_enabled, created_at, updated_at
 		 FROM portal_links ORDER BY created_at ASC`,
 	)
 	if err != nil {
@@ -289,7 +302,7 @@ func ListPortals() ([]portal, error) {
 	for linkRows.Next() {
 		var l portalLink
 		var title, crawlInstructions, jobDetailCrawlInstructions, instructionsAIError, instructionsAIErrorAt, instructionsAIConversationID, jobDetailInstructionsAIError, jobDetailInstructionsAIErrorAt, jobDetailInstructionsAIConversationID, instructionsAIErrorDismissedAt, jobDetailInstructionsAIErrorDismissedAt, updatedAt sql.NullString
-		if err := linkRows.Scan(&l.ID, &l.PortalID, &l.URL, &title, &crawlInstructions, &jobDetailCrawlInstructions, &instructionsAIError, &instructionsAIErrorAt, &instructionsAIConversationID, &jobDetailInstructionsAIError, &jobDetailInstructionsAIErrorAt, &jobDetailInstructionsAIConversationID, &l.ListingCrawlRequested, &l.JobDetailInstructionsAIRequested, &instructionsAIErrorDismissedAt, &jobDetailInstructionsAIErrorDismissedAt, &l.JobDetailCrawlRequested, &l.CreatedAt, &updatedAt); err != nil {
+		if err := linkRows.Scan(&l.ID, &l.PortalID, &l.URL, &title, &crawlInstructions, &jobDetailCrawlInstructions, &instructionsAIError, &instructionsAIErrorAt, &instructionsAIConversationID, &jobDetailInstructionsAIError, &jobDetailInstructionsAIErrorAt, &jobDetailInstructionsAIConversationID, &l.ListingCrawlRequested, &l.JobDetailInstructionsAIRequested, &instructionsAIErrorDismissedAt, &jobDetailInstructionsAIErrorDismissedAt, &l.JobDetailCrawlRequested, &l.AutoDiscoveryEnabled, &l.CreatedAt, &updatedAt); err != nil {
 			return nil, err
 		}
 		l.Title = title.String
@@ -505,6 +518,17 @@ func UpdatePortalLinkJobDetailCrawlRequested(id string, requested bool) error {
 	return err
 }
 
+// UpdatePortalLinkAutoDiscoveryEnabled (step 84 follow-up) sets this
+// link's own auto-discovery opt-out flag — see the portalLink struct's
+// own AutoDiscoveryEnabled doc comment for what it gates.
+func UpdatePortalLinkAutoDiscoveryEnabled(id string, enabled bool) error {
+	if err := RequirePortalLinkExists(id); err != nil {
+		return err
+	}
+	_, err := db.JobsDB.Exec(`UPDATE portal_links SET auto_discovery_enabled = ? WHERE id = ?`, enabled, id)
+	return err
+}
+
 // UpdatePortalLinkInstructionsAIErrorDismissedAt/
 // UpdatePortalLinkJobDetailInstructionsAIErrorDismissedAt (step 71) let
 // the frontend record when the user dismissed that document's own
@@ -712,6 +736,42 @@ func GetPortalLinkCrawlInstructions(id string) (string, error) {
 		return "", err
 	}
 	return crawlInstructions.String, nil
+}
+
+// ListPortalLinksEligibleForAutoDiscovery returns every portal link's
+// own id, across ALL portals, eligible for the auto-discovery
+// manager's own sweep (step 84) — has crawl_instructions set (the same
+// eligibility BuildCrawlRequest's own ErrNoCrawlInstructions gate
+// already enforces per-link) AND has not individually opted out via
+// auto_discovery_enabled (step 84 follow-up: "some of the links people
+// might not want to be auto-discovered," even while the global
+// schedule is on). Originally named ListPortalLinksWithCrawlInstructions
+// before that second condition existed — renamed once it did, since
+// the old name would have been misleading about what "eligible" now
+// actually means. Applied here as a set query since the auto-discovery
+// manager needs to consider every eligible link at once, rather than
+// one specific link a caller already knows the id of (every other
+// portal-link query in this file is scoped to one known link or one
+// known portal). See
+// plan/ai/tools/career/step-84-auto-discovery-scheduled-crawling.md.
+func ListPortalLinksEligibleForAutoDiscovery() ([]string, error) {
+	rows, err := db.JobsDB.Query(
+		`SELECT id FROM portal_links WHERE crawl_instructions IS NOT NULL AND crawl_instructions != '' AND auto_discovery_enabled = 1`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	ids := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 // UpdatePortalLinkCrawlInstructions is the one shared persistent-layer

@@ -102,6 +102,24 @@ export function CrawlPanel({
     return isCrawling || run?.status === 'running'
   }
 
+  // autoDiscoveryPending (step 84 follow-up) — true only while THIS
+  // toggle's own write is in flight, so a double-click can't fire two
+  // updates; independent of isBusy() above, since opting a link in or
+  // out of auto-discovery has nothing to do with whether it's
+  // currently crawling.
+  const [autoDiscoveryPending, setAutoDiscoveryPending] = useState(false)
+  function handleToggleAutoDiscovery(nextEnabled: boolean) {
+    setAutoDiscoveryPending(true)
+    updatePortalLink(link.id, { autoDiscoveryEnabled: nextEnabled })
+      .then(onReload)
+      .catch((err: unknown) => {
+        onError(err instanceof Error ? err.message : 'Failed to update auto-discovery for this link.')
+      })
+      .finally(() => {
+        setAutoDiscoveryPending(false)
+      })
+  }
+
   // "Generate with AI" (step 33) own busy/error state — independent of
   // isCrawling above: generating/editing this link's own
   // crawl_instructions is a different operation from crawling it, and
@@ -329,6 +347,7 @@ export function CrawlPanel({
         setRun({
           crawlRunId: started.crawlRunId,
           kind: 'listing',
+          triggeredBy: 'manual',
           status: 'running',
           startedAt: started.startedAt,
           finishedAt: null,
@@ -359,6 +378,7 @@ export function CrawlPanel({
         setRun({
           crawlRunId: started.crawlRunId,
           kind: 'job_detail',
+          triggeredBy: 'manual',
           status: 'running',
           startedAt: started.startedAt,
           finishedAt: null,
@@ -767,6 +787,25 @@ export function CrawlPanel({
 
   return (
     <div className="mt-3">
+      {/* Auto-discovery opt-out (step 84 follow-up) — always visible,
+          outside the collapsible "Crawl instructions" accordion below,
+          since it's a standing setting someone might come looking for
+          without needing to also expand that section. The global
+          on/off+interval (Crawler/AutoDiscoveryPanel) controls whether
+          the mechanism runs at all; this is this ONE link's own
+          override on top of that. */}
+      <label className="mb-2 flex items-center gap-2 text-xs text-gray-600">
+        <input
+          type="checkbox"
+          checked={link.autoDiscoveryEnabled}
+          disabled={autoDiscoveryPending}
+          onChange={(e) => {
+            handleToggleAutoDiscovery(e.target.checked)
+          }}
+          className="h-3.5 w-3.5 rounded border-gray-300 text-gray-900 focus:ring-gray-500"
+        />
+        Auto-discovery
+      </label>
       {/* Two small cards, each exactly half the row (grid-cols-2, not
           flex-wrap) so they always sit side by side at 50%/50% width
           regardless of either card's own content length — a flex row
