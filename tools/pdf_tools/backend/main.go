@@ -110,9 +110,8 @@ func runMCPServer(tmpDir, uploadsDir string) {
 	server := mcp.NewServer(&mcp.Implementation{Name: "pdf_tools", Version: "0.2.0"}, nil)
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "pdf_to_markdown",
-		Description: "Fetch a PDF document by URL and convert it to Markdown text. Also the required verification " +
-			"step for generate_pdf — see that tool's own description.",
+		Name:        "pdf_to_markdown",
+		Description: "Fetch a PDF document by URL and convert it to Markdown text.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args convertArgs) (*mcp.CallToolResult, any, error) {
 		if args.URL == "" {
 			return &mcp.CallToolResult{
@@ -139,18 +138,26 @@ func runMCPServer(tmpDir, uploadsDir string) {
 		}, convertResponse{Markdown: markdown, Cached: cached, MD5: md5Hex}, nil
 	})
 
+	// The old MANDATORY "verify via pdf_to_markdown, retry up to 2
+	// times" instruction that used to live here was written for a world
+	// where the AI hand-authored the XHTML itself, character by
+	// character — real risk of an unescaped &/<, an unclosed tag, or
+	// broken CSS silently producing a garbled PDF. Its one real consumer
+	// (Career's "Generate CV PDF") no longer works that way: the AI only
+	// supplies structured data to cvbuilder's own render_cv_document,
+	// which renders it through Go's html/template — free text fields are
+	// auto-escaped by the template engine itself, so that whole failure
+	// mode can't occur through this path anymore. Removed rather than
+	// kept "just in case" per your own instruction — it was adding a
+	// real round trip (generate_pdf -> pdf_to_markdown -> re-render) to
+	// every single CV generation for a risk that no longer exists on its
+	// only call path. If a FUTURE caller goes back to hand-authoring raw
+	// XHTML itself, that caller's own prompt should reintroduce whatever
+	// verification it actually needs — this tool no longer mandates one
+	// for everyone.
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "generate_pdf",
-		Description: "Render an XHTML document into a PDF and return a link to the generated file. " +
-			"MANDATORY: malformed XHTML (an unescaped & or < in ordinary text, an unclosed tag, broken CSS) can " +
-			"still \"succeed\" here while producing a garbled, unreadable PDF — this call alone NEVER confirms the " +
-			"PDF is actually correct. Immediately after every call, verify it by calling pdf_to_markdown with url " +
-			"set to the exact same 'uri' this call just returned, and read the result back: real content should " +
-			"appear as clean, readable text — not raw HTML/XHTML tags, escaped entities like &lt; or &amp;, or " +
-			"content that is missing, duplicated, or cut off. If anything looks wrong, fix the XHTML and call " +
-			"generate_pdf again, then verify again — repeat up to 2 times before giving up and proceeding with the " +
-			"best version you have. Never tell the user (or record/save a result) that a PDF is ready without " +
-			"having verified it this way first.",
+		Name:        "generate_pdf",
+		Description: "Render an XHTML document into a PDF and return a link to the generated file.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args generatePDFArgs) (*mcp.CallToolResult, any, error) {
 		if args.Xhtml == "" {
 			return &mcp.CallToolResult{

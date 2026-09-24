@@ -1,7 +1,7 @@
 {
   "slug": "pdf_tools",
   "name": "PDF Tools",
-  "version": "0.0.117",
+  "version": "0.0.118",
   "mcp": true,
   "scopes": [
     {

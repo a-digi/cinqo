@@ -120,11 +120,18 @@ type renderCvDocumentArgs struct {
 // RegisterRenderCvDocument adds render_cv_document — renders a CV using
 // one of this tool's own fixed template designs from structured data,
 // so the AI never has to write any HTML/CSS itself. Returns real XHTML
-// text, ready to pass directly as generate_pdf's own xhtml argument
-// (call that next, then verify per its own instructions, then call
-// save_cv_document once verified). A pure, in-process render — no
-// Media/pdf_tools call happens here, and none of this is persisted
-// until save_cv_document runs.
+// text, ready to pass directly as generate_pdf's own xhtml argument,
+// then call save_cv_document once that returns. No verification step
+// in between (there used to be one, calling pdf_to_markdown to check
+// for garbled output) — that existed to catch an AI hand-authoring
+// malformed markup itself, which can't happen here: every free-text
+// field in 'data' goes through Go's html/template, which auto-escapes
+// it, so the failure mode that check existed for is structurally
+// impossible on this path. Removed per your own instruction, since it
+// was adding a real round trip to every single CV generation for a risk
+// that no longer exists here. A pure, in-process render — no Media/
+// pdf_tools call happens here, and none of this is persisted until
+// save_cv_document runs.
 func RegisterRenderCvDocument(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "render_cv_document",
@@ -133,9 +140,9 @@ func RegisterRenderCvDocument(server *mcp.Server) {
 			"Required: personaId (an existing persona, from list_personas), templateId (from list_cv_templates), and " +
 			"data.fullName (every other data field is optional but recommended — call get_persona_cv_defaults first to get a " +
 			"real starting point, then tailor it for the job at hand). Returns the rendered XHTML as plain text — pass it " +
-			"straight into generate_pdf's own xhtml argument next, verify per generate_pdf's own instructions, then call " +
-			"save_cv_document exactly once. NOTE: this never embeds a profile photo, even if one exists — the photo feature " +
-			"requires a live browser session this AI-driven flow doesn't have.",
+			"straight into generate_pdf's own xhtml argument next, then call save_cv_document once that returns (no " +
+			"verification step needed in between). NOTE: this never embeds a profile photo, even if one exists — the photo " +
+			"feature requires a live browser session this AI-driven flow doesn't have.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args renderCvDocumentArgs) (*mcp.CallToolResult, any, error) {
 		if args.PersonaID == "" {
 			return db.ErrResult("personaId is required"), nil, nil

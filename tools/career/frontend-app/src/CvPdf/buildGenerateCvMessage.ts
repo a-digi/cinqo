@@ -15,7 +15,14 @@
 // hand-author a fixed XHTML/CSS skeleton itself — that skeleton is gone
 // entirely; the AI now supplies only structured data (via
 // get_persona_cv_defaults + render_cv_document), and this tool's own
-// 26 template designs handle all layout/styling.
+// 26 template designs handle all layout/styling. No pdf_to_markdown
+// verification step between generate_pdf and save_cv_document either
+// (there used to be one) — that existed to catch the AI's own
+// hand-authored markup coming out malformed, which structurally can't
+// happen once rendering goes through render_cv_document's own
+// html/template pipeline (free text is auto-escaped). Removed since it
+// was adding a real round trip to every single generation for a risk
+// that no longer exists on this path.
 export function buildGenerateCvMessage(job: { id: string; title: string; company: string }, profileId: string): string {
   return [
     `Please build a CV, tailored specifically to this job posting, for career profile ${profileId}, render it as a PDF, and record the result — do not ask which job or profile is meant, both are already specified below.`,
@@ -34,8 +41,8 @@ export function buildGenerateCvMessage(job: { id: string; title: string; company
     '6. Call get_persona_cv_defaults for that persona — this gives you a real starting point (name, headline, summary, location, external links, skills, experience) built from its own actual data.',
     "7. Tailor that data for this specific job before rendering — do not just pass it through unchanged: rewrite the headline and summary to foreground exactly the experience and skills this job's own description/title asks for, and reorder or trim the skills/experience lists so the most relevant ones lead. Never invent a skill, employer, title, or dates that weren't already present in get_persona_cv_defaults' own result.",
     '8. Call render_cv_document with that persona id, your chosen template id, and the tailored data — this returns real XHTML, already fully styled; you never write any HTML/CSS yourself.',
-    "9. Call generate_pdf with that returned XHTML as the xhtml argument, then follow generate_pdf's own instructions for verifying it (via pdf_to_markdown) and fixing/regenerating if needed before proceeding.",
-    '10. Only once verified, call save_cv_document ONCE, passing: this job id, the persona id, the template id, a short human-readable title for the CV (e.g. "{persona name} - {job title}"), the exact SAME tailored data object you passed to render_cv_document, and the `uri` field from that LAST, verified generate_pdf call, unmodified.',
+    '9. Call generate_pdf with that returned XHTML as the xhtml argument.',
+    '10. Immediately call save_cv_document ONCE, passing: this job id, the persona id, the template id, a short human-readable title for the CV (e.g. "{persona name} - {job title}"), the exact SAME tailored data object you passed to render_cv_document, and the `uri` field from that generate_pdf call, unmodified — no verification step needed in between.',
     '',
     'When done, reply with a short one-line confirmation — this reply is never shown to any user, so keep it brief.',
   ].join('\n')
