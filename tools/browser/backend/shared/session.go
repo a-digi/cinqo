@@ -360,7 +360,17 @@ func normalAllocatorOptions(profileDir string) []chromedp.ExecAllocatorOption {
 	opts = append(opts,
 		chromedp.UserDataDir(profileDir),
 		chromedp.Flag("disable-blink-features", "AutomationControlled"),
-		chromedp.Flag("excludeSwitches", "enable-automation"),
+		// "excludeSwitches" is a ChromeDriver/Selenium capability name,
+		// not a real Chrome command-line flag — it's meaningless here
+		// since chromedp launches Chrome directly (no chromedriver in
+		// the picture), so it silently did nothing. The actual flag
+		// that puts Chrome into automation-controlled mode (the "Chrome
+		// is being controlled by automated test software" banner) is
+		// enable-automation itself, already turned on by
+		// chromedp.DefaultExecAllocatorOptions above — overriding it
+		// here (Flag stores by map key, so this replaces that default)
+		// is what actually suppresses it.
+		chromedp.Flag("enable-automation", false),
 		chromedp.Flag("use-mock-keychain", true),
 		chromedp.Flag("headless", false), // the whole point of this fallback
 		chromedp.Flag("disable-infobars", true),
@@ -381,9 +391,17 @@ func allocatorOptions() []chromedp.ExecAllocatorOption {
 		// 1. Strip the standard automation controls and markers
 		chromedp.Flag("disable-blink-features", "AutomationControlled"),
 
-		// KORREKTUR: In chromedp müssen Flags mit '=' oder als separates Argument übergeben werden.
-		// 'excludeSwitches=enable-automation' stellt sicher, dass Chrome das Banner nicht rendert.
-		chromedp.Flag("excludeSwitches", "enable-automation"),
+		// "excludeSwitches" is a ChromeDriver/Selenium capability name,
+		// not a real Chrome command-line flag — it's meaningless here
+		// since chromedp launches Chrome directly (no chromedriver in
+		// the picture), so it silently did nothing. The actual flag
+		// that puts Chrome into automation-controlled mode (the "Chrome
+		// is being controlled by automated test software" banner) is
+		// enable-automation itself, already turned on by
+		// chromedp.DefaultExecAllocatorOptions above — overriding it
+		// here (Flag stores by map key, so this replaces that default)
+		// is what actually suppresses it.
+		chromedp.Flag("enable-automation", false),
 		chromedp.Flag("use-mock-keychain", true),
 
 		// 2. Erase core headless indicators and sandbox configurations
