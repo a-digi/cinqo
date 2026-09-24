@@ -30,6 +30,18 @@ const TURN_POLL_INTERVAL_MS = 2000
 // plan/ai/conversation/step-27-frontend-periodic-list-refresh.md.
 const LIST_POLL_INTERVAL_MS = 8000
 
+// How many times, and how often, selectConversation below retries a
+// freshly-opened conversation that came back with no messages and no
+// running turn — see that function's own comment for why this race
+// exists at all. 5 attempts x 1000ms covers the two sequential HTTP
+// round trips (a tool's own "persist the conversation id" write, then
+// its "send the instruction message" call) a tool-triggered "open
+// immediately, send shortly after" flow like career's Job Match /
+// Generate CV PDF actually takes on a local backend, without retrying
+// forever for a conversation that's genuinely just empty.
+const SELECT_RETRY_ATTEMPTS = 5
+const SELECT_RETRY_INTERVAL_MS = 1000
+
 // TurnWatch is one conversation's own live turn-tracking state —
 // plan/ai/conversation/step-29-frontend-per-conversation-turn-watch-registry.md.
 // Presence of a conversation's own ID as a key in turnWatches IS "this
@@ -340,34 +352,70 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   turnWatchesRef.current = turnWatches
   const turnWatchExists = useCallback((id: string) => id in turnWatchesRef.current, [])
 
+  // Mirrors selectedId (same convention as turnWatchesRef just above)
+  // so selectConversation's own retry loop below can tell, after an
+  // `await`, whether its own id is still the one the user is actually
+  // looking at — a later selectConversation(otherOtherId) call, or
+  // deleteConversation clearing selection, must stop a still-in-flight
+  // retry from clobbering whatever's now selected with stale data.
+  const selectedIdRef = useRef(selectedId)
+  selectedIdRef.current = selectedId
+
   // No longer cancels any other conversation's own watch — switching
   // away from a conversation whose turn is still running leaves that
   // watch running untouched (turnWatches[id] stays populated);
   // switching back to it later finds live data already waiting, no
   // "resuming" needed. See
   // plan/ai/conversation/step-29-frontend-per-conversation-turn-watch-registry.md.
+  //
+  // Retries a few times (SELECT_RETRY_ATTEMPTS/SELECT_RETRY_INTERVAL_MS
+  // above) when the fetched conversation has no messages and no
+  // running turn, before giving up and leaving it showing empty. A
+  // tool's own "Generate CV PDF"/"Job Match" buttons (JobsPage.tsx)
+  // create a conversation and call this (via the tool bridge's
+  // openConversation) IMMEDIATELY, for instant visual feedback — the
+  // tool's own follow-up call that actually sends the instruction
+  // message is a separate, later HTTP round trip through that tool's
+  // own client, invisible to this context. Without retrying, the very
+  // first fetch here almost always wins that race and finds a brand
+  // new, still-empty conversation with no activeTurn yet — this
+  // widget/page would then show an empty thread forever, since nothing
+  // else ever tells it to look again once the message actually goes
+  // out a moment later. See
+  // plan/ai/conversation/step-23-detach-turn-execution-from-request.md.
   const selectConversation = useCallback(
     (id: string) => {
       setSelectedId(id)
       setDetail(null)
       setError(null)
-      fetchConversation(id)
-        .then((d) => {
-          setDetail(d)
-          // A turn was already running when this page/tab opened (or
-          // reopened) — resume watching it instead of leaving the UI
-          // looking idle while the backend keeps working, unless it's
-          // already being watched (e.g. this conversation's own turn
-          // was started from here a moment ago and is still in
-          // flight). See
-          // plan/ai/conversation/step-23-detach-turn-execution-from-request.md.
-          if (d.activeTurn?.status === 'running' && !turnWatchExists(id)) {
-            void watchTurn(id)
-          }
-        })
-        .catch((err: unknown) => {
-          setError(err instanceof ApiError ? err.message : 'Failed to load conversation.')
-        })
+
+      const load = (attemptsLeft: number) => {
+        fetchConversation(id)
+          .then((d) => {
+            if (selectedIdRef.current !== id) return // superseded by a later selection
+            setDetail(d)
+            // A turn was already running when this page/tab opened (or
+            // reopened) — resume watching it instead of leaving the UI
+            // looking idle while the backend keeps working, unless
+            // it's already being watched (e.g. this conversation's own
+            // turn was started from here a moment ago and is still in
+            // flight).
+            if (d.activeTurn?.status === 'running' && !turnWatchExists(id)) {
+              void watchTurn(id)
+              return
+            }
+            if (d.messages.length === 0 && attemptsLeft > 0) {
+              setTimeout(() => {
+                if (selectedIdRef.current === id) load(attemptsLeft - 1)
+              }, SELECT_RETRY_INTERVAL_MS)
+            }
+          })
+          .catch((err: unknown) => {
+            if (selectedIdRef.current !== id) return
+            setError(err instanceof ApiError ? err.message : 'Failed to load conversation.')
+          })
+      }
+      load(SELECT_RETRY_ATTEMPTS)
     },
     [watchTurn, turnWatchExists],
   )
