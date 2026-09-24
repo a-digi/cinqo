@@ -613,9 +613,22 @@ export function JobsPage() {
       })
     }
 
+    // A single "CV" parent entry with no onClick/href of its own — the
+    // row itself is purely a toggle for its own children below, which
+    // vary by job.cvStatus (the in-progress watch link, the ready
+    // download/regenerate pair, or the not-yet-generated/failed
+    // generate link) plus the always-present generation-history link.
+    // Unified from what used to be up to two separate top-level entries
+    // (a bare 'cv' leaf/group plus a standalone 'cv-history' leaf) into
+    // one consistent "CV" entry point regardless of state.
+    const cvChildren: ActionMenuItem[] = []
+    let cvVariant: ActionMenuItem['variant'] = 'default'
+    let cvTitle = 'Generate a CV PDF tailored to this job'
+
     if (job.cvStatus === 'generating') {
-      items.push({
-        key: 'cv',
+      cvTitle = 'AI is generating this CV — click to watch'
+      cvChildren.push({
+        key: 'cv-watch',
         label: 'Watch AI generating CV…',
         icon: <RobotIcon />,
         onClick: () => {
@@ -624,66 +637,58 @@ export function JobsPage() {
         title: 'Open the chat window to watch the AI generate this CV',
       })
     } else if (job.cvStatus === 'completed' && job.cvMediaFileId) {
-      // A parent entry with no onClick/href of its own — the row
-      // itself is purely a toggle for its two children below (there's
-      // no longer one single default action once a CV already exists:
-      // the user might want to download it, or decide they're not
-      // happy with it and have the AI try again).
-      items.push({
-        key: 'cv',
-        label: 'CV ready',
-        icon: <PDFIcon className="h-3.5 w-3.5" />,
-        title: 'CV ready — download it, or have the AI try again',
-        variant: 'success',
-        children: [
-          {
-            key: 'cv-download',
-            label: 'Download CV',
-            icon: <PDFIcon className="h-3.5 w-3.5" />,
-            href: mediaDownloadUrl(job.cvMediaFileId),
-            target: '_blank',
-            rel: 'noreferrer',
-            title: 'Download the generated CV',
-            variant: 'success',
+      cvVariant = 'success'
+      cvTitle = 'CV ready — download it, or have the AI try again'
+      cvChildren.push(
+        {
+          key: 'cv-download',
+          label: 'Download CV',
+          icon: <PDFIcon className="h-3.5 w-3.5" />,
+          href: mediaDownloadUrl(job.cvMediaFileId),
+          target: '_blank',
+          rel: 'noreferrer',
+          title: 'Download the generated CV',
+          variant: 'success',
+        },
+        {
+          key: 'cv-regenerate',
+          label: 'Re-generate with AI',
+          icon: <RobotIcon />,
+          onClick: () => {
+            handleGenerateCvClick(job)
           },
-          {
-            key: 'cv-regenerate',
-            label: 'Re-generate with AI',
-            icon: <RobotIcon />,
-            onClick: () => {
-              handleGenerateCvClick(job)
-            },
-            disabled: !selectedPlatformId || profiles.length === 0,
-            title: !selectedPlatformId
-              ? 'No AI platform configured — add one on the Platforms page first'
-              : profiles.length === 0
-                ? 'Create a profile first'
-                : 'Not happy with this CV? Have the AI build a new one.',
-          },
-        ],
-      })
+          disabled: !selectedPlatformId || profiles.length === 0,
+          title: !selectedPlatformId
+            ? 'No AI platform configured — add one on the Platforms page first'
+            : profiles.length === 0
+              ? 'Create a profile first'
+              : 'Not happy with this CV? Have the AI build a new one.',
+        },
+      )
     } else {
-      items.push({
-        key: 'cv',
+      if (job.cvStatus === 'failed') cvVariant = 'danger'
+      cvTitle = !selectedPlatformId
+        ? 'No AI platform configured — add one on the Platforms page first'
+        : profiles.length === 0
+          ? 'Create a profile first'
+          : job.cvStatus === 'failed'
+            ? (job.cvError ?? 'Failed to generate CV — click to retry')
+            : 'Generate a CV PDF tailored to this job'
+      cvChildren.push({
+        key: 'cv-generate',
         label: job.cvStatus === 'failed' ? 'Retry CV generation' : 'Generate CV PDF',
         icon: <PDFIcon className="h-3.5 w-3.5" />,
         onClick: () => {
           handleGenerateCvClick(job)
         },
         disabled: !selectedPlatformId || profiles.length === 0,
-        title: !selectedPlatformId
-          ? 'No AI platform configured — add one on the Platforms page first'
-          : profiles.length === 0
-            ? 'Create a profile first'
-            : job.cvStatus === 'failed'
-              ? (job.cvError ?? 'Failed to generate CV — click to retry')
-              : 'Generate a CV PDF tailored to this job',
+        title: cvTitle,
         variant: job.cvStatus === 'failed' ? 'danger' : 'default',
       })
     }
 
     if (job.cvStatus) {
-      items.push({
+      cvChildren.push({
         key: 'cv-history',
         label: 'View CV generation history',
         icon: <RobotIcon />,
@@ -693,6 +698,15 @@ export function JobsPage() {
         title: 'Every AI conversation that has ever generated a CV for this job — for auditing',
       })
     }
+
+    items.push({
+      key: 'cv',
+      label: 'CV',
+      icon: <PDFIcon className="h-3.5 w-3.5" />,
+      title: cvTitle,
+      variant: cvVariant,
+      children: cvChildren,
+    })
 
     items.push({
       key: 'original',
