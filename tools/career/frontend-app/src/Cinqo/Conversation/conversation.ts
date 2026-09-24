@@ -31,7 +31,14 @@ export async function createConversation(input: {
   model?: string
   hidden?: boolean
 }): Promise<Conversation> {
-  const res = await httpClient.post('/api/v1/conversations', input)
+  // toolSlug is always "career" here, never caller-supplied — every
+  // conversation this function creates (Job Match, Generate CV PDF,
+  // crawl instructions) IS a Career conversation, and centralizing it
+  // in this one shared wrapper means every current and future call
+  // site is tagged automatically, with nothing to remember at each one.
+  // Lets the core /conversations page filter "by tool" (step 41). See
+  // plan/ai/conversation/step-41-search-and-filter-by-tool.md.
+  const res = await httpClient.post('/api/v1/conversations', { ...input, toolSlug: 'career' })
   return httpClient.responseBody<Conversation>(res, 'create conversation')
 }
 

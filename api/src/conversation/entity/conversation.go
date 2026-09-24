@@ -33,4 +33,17 @@ type Conversation struct {
 	// one to anything that already has its ID. See
 	// plan/ai/conversation/step-30-hidden-conversations.md.
 	Hidden bool `db:"hidden" dbtype:"INTEGER" nullable:"false" json:"-"`
+	// ToolSlug (step 83-style tool attribution) is set once, at
+	// creation, by whichever caller created this conversation on behalf
+	// of a tool (e.g. Career's own Job Match/Generate CV PDF/crawl-
+	// instructions flows pass "career") — empty for a conversation
+	// created directly by a person via the chat widget/full page's own
+	// "+ New conversation", which isn't tied to any tool. Never
+	// validated against the tools table (a tool can be uninstalled and
+	// reinstalled; this is an attribution tag for filtering, not a
+	// referential integrity requirement) — same convention Media's own
+	// tool_slug column already established. Nothing ever updates it
+	// after creation. See
+	// plan/ai/conversation/step-41-search-and-filter-by-tool.md.
+	ToolSlug string `db:"tool_slug" dbtype:"TEXT" nullable:"true" json:"toolSlug,omitempty"`
 }

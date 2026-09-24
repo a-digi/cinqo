@@ -21,8 +21,8 @@ func NewConversationPersistentRepo(db *sql.DB) *ConversationPersistentRepo {
 // creation.
 func (r *ConversationPersistentRepo) Insert(c *conversation_entity.Conversation) error {
 	_, err := r.db.Exec(
-		`INSERT INTO conversations (id, user_id, title, file_path, platform_id, model, hidden) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		c.ID, c.UserID, c.Title, c.FilePath, c.PlatformID, c.Model, c.Hidden,
+		`INSERT INTO conversations (id, user_id, title, file_path, platform_id, model, hidden, tool_slug) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		c.ID, c.UserID, c.Title, c.FilePath, c.PlatformID, c.Model, c.Hidden, c.ToolSlug,
 	)
 	return err
 }

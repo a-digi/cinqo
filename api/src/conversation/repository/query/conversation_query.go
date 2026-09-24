@@ -24,13 +24,15 @@ func NewConversationQueryRepo(db *sql.DB) *ConversationQueryRepo {
 	return &ConversationQueryRepo{db: db}
 }
 
-const conversationColumns = `id, user_id, title, started_at, file_path, platform_id, model, hidden`
+const conversationColumns = `id, user_id, title, started_at, file_path, platform_id, model, hidden, tool_slug`
 
 func scanConversation(scan func(dest ...any) error) (*conversation_entity.Conversation, error) {
 	var c conversation_entity.Conversation
-	if err := scan(&c.ID, &c.UserID, &c.Title, &c.StartedAt, &c.FilePath, &c.PlatformID, &c.Model, &c.Hidden); err != nil {
+	var toolSlug sql.NullString
+	if err := scan(&c.ID, &c.UserID, &c.Title, &c.StartedAt, &c.FilePath, &c.PlatformID, &c.Model, &c.Hidden, &toolSlug); err != nil {
 		return nil, err
 	}
+	c.ToolSlug = toolSlug.String
 	return &c, nil
 }
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { ConversationDetail } from '../../api/conversations'
 import { fetchPlatforms, type Platform } from '../../api/platforms'
+import { fetchTools, type Tool } from '../../api/tools'
 import { ApiError } from '../../api/client'
 import { useConversationContext } from '../../config/conversation/ConversationContext'
 import { LoadingSpinner } from '../../Shared/Components/Loading/LoadingSpinner'
@@ -64,12 +65,23 @@ export function ConversationPage() {
   const [busyId, setBusyId] = useState<string | null>(null)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [creatingNew, setCreatingNew] = useState(false)
+  // tools (step 41) — every installed tool, for the sidebar's own
+  // "filter by tool" dropdown. A fetch failure here just leaves the
+  // dropdown showing no tool options; it never blocks the page the way
+  // a platforms failure does (platforms are required to create a new
+  // conversation at all, tools are only used for an optional filter).
+  const [tools, setTools] = useState<Tool[]>([])
 
   useEffect(() => {
     fetchPlatforms()
       .then(setPlatforms)
       .catch((err: unknown) => {
         setPlatformsError(err instanceof ApiError ? err.message : 'Failed to load platforms.')
+      })
+    fetchTools()
+      .then(setTools)
+      .catch(() => {
+        // Best-effort — see this state's own doc comment above.
       })
   }, [])
 
@@ -129,6 +141,7 @@ export function ConversationPage() {
       {!isSidebarCollapsed && (
         <ConversationSidebar
           conversations={conversations}
+          tools={tools}
           selectedId={selectedId}
           busyId={busyId}
           onSelect={handleSelect}

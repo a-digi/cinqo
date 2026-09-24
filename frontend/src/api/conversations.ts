@@ -12,6 +12,11 @@ import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from './client'
 // absent from create/rename results, whose own backend handlers never
 // set it (see that step's own reasoning for keeping it off the shared
 // response DTO those share).
+// toolSlug (plan/ai/conversation/step-41-search-and-filter-by-tool.md)
+// — the tool this conversation was created on behalf of (e.g.
+// "career"), absent for one a person created directly via "+ New
+// conversation". Set once at creation, by whatever caller made the
+// POST; this app's own UI never sets it itself.
 export interface Conversation {
   id: string
   title: string
@@ -19,6 +24,7 @@ export interface Conversation {
   platformId: string
   model: string
   activeTurn?: ActiveTurnSummary
+  toolSlug?: string
 }
 
 // No `id` field on a message — content lives in a file, not a database

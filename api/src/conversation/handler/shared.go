@@ -227,6 +227,10 @@ type conversationResponse struct {
 	StartedAt  string `json:"startedAt"`
 	PlatformID string `json:"platformId"`
 	Model      string `json:"model"`
+	// ToolSlug (step 41) — omitted entirely for a conversation not tied
+	// to any tool, so the frontend's own "falsy means no tool" check
+	// needs no separate empty-string special case.
+	ToolSlug string `json:"toolSlug,omitempty"`
 }
 
 func toConversationResponse(c *conversation_entity.Conversation) conversationResponse {
@@ -236,5 +240,6 @@ func toConversationResponse(c *conversation_entity.Conversation) conversationRes
 		StartedAt:  c.StartedAt,
 		PlatformID: c.PlatformID,
 		Model:      c.Model,
+		ToolSlug:   c.ToolSlug,
 	}
 }

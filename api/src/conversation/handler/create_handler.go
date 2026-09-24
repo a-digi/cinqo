@@ -24,6 +24,11 @@ type createConversationRequest struct {
 	// own list — omitted (or false) preserves today's exact behavior.
 	// See plan/ai/conversation/step-30-hidden-conversations.md.
 	Hidden bool `json:"hidden"`
+	// ToolSlug (step 41) — the tool this conversation is being created
+	// on behalf of (e.g. "career"), or omitted for a person's own
+	// directly-created conversation. Not validated against the tools
+	// table — see the entity's own doc comment for why.
+	ToolSlug string `json:"toolSlug"`
 }
 
 // CreateHandler handles POST /api/v1/conversations. title defaults to
@@ -92,6 +97,7 @@ func CreateHandler(reqCtx request.RequestContext) {
 		PlatformID: body.PlatformID,
 		Model:      model,
 		Hidden:     body.Hidden,
+		ToolSlug:   body.ToolSlug,
 	}
 
 	if err := conversation_persistent.NewConversationPersistentRepo(db).Insert(c); err != nil {

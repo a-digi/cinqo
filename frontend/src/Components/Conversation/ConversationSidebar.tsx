@@ -1,16 +1,39 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { Conversation } from '../../api/conversations'
+import type { Tool } from '../../api/tools'
 import { useConfirm } from '../../Shared/Components/Modal/useConfirm'
 import { IconButton } from '../../Shared/Components/IconButton/IconButton'
 import { PencilIcon, TrashIcon, CheckIcon, XIcon, PlusIcon, LogsIcon } from '../../Shared/Components/IconButton/icons'
+import { Dropdown, type DropdownOption } from '../../Shared/Components/Dropdown/Dropdown'
 import { TurnStatusBadge } from './TurnStatusBadge'
+
+// NO_TOOL_FILTER is a reserved filter value, never a real installed
+// tool's own slug (every real one is a plain manifest-declared
+// identifier like "career" — this app has no double-underscore-wrapped
+// naming convention for those) — picked so "show only conversations
+// NOT tied to any tool" fits in the same single toolFilter value as
+// "show only this tool's own conversations," rather than needing a
+// second boolean alongside it.
+const NO_TOOL_FILTER = '__no_tool__'
 
 // List, "New conversation", inline rename, delete-behind-confirm — same
 // established pattern ToolsListPage/PlatformKeysPage already use. See
 // plan/ai/conversation/step-05-frontend-chat-ui.md.
+//
+// Search-by-title and filter-by-tool (step 41) are both plain
+// client-side filters over the already-fully-loaded `conversations`
+// prop — this list has no pagination and is already polled in full by
+// the shared context (its own activeTurn badges need every item live),
+// so there's no round trip to save by pushing either filter to the
+// backend. Deliberately titled/labeled as a TITLE search, never a
+// prompt/message search — a conversation's own message content lives
+// in a separate log file this list never loads at all, so searching it
+// here isn't even possible without a very different, heavier feature;
+// see plan/ai/conversation/step-41-search-and-filter-by-tool.md.
 export function ConversationSidebar({
   conversations,
+  tools,
   selectedId,
   busyId,
   onSelect,
@@ -19,6 +42,7 @@ export function ConversationSidebar({
   onDelete,
 }: {
   conversations: Conversation[]
+  tools: Tool[]
   selectedId: string | null
   busyId: string | null
   onSelect: (id: string) => void
@@ -28,8 +52,26 @@ export function ConversationSidebar({
 }) {
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  const [titleQuery, setTitleQuery] = useState('')
+  const [toolFilter, setToolFilter] = useState('')
   const { confirm, dialog } = useConfirm()
   const navigate = useNavigate()
+
+  const toolFilterOptions: DropdownOption[] = [
+    { value: '', label: 'All tools' },
+    { value: NO_TOOL_FILTER, label: 'Not tool-specific' },
+    ...tools.map((t) => ({ value: t.slug, label: t.name })),
+  ]
+
+  const filteredConversations = useMemo(() => {
+    const q = titleQuery.trim().toLowerCase()
+    return conversations.filter((c) => {
+      if (q && !c.title.toLowerCase().includes(q)) return false
+      if (toolFilter === NO_TOOL_FILTER && c.toolSlug) return false
+      if (toolFilter && toolFilter !== NO_TOOL_FILTER && c.toolSlug !== toolFilter) return false
+      return true
+    })
+  }, [conversations, titleQuery, toolFilter])
 
   const startRename = (c: Conversation) => {
     setRenamingId(c.id)
@@ -71,10 +113,33 @@ export function ConversationSidebar({
         <IconButton icon={<PlusIcon />} label="New conversation" onClick={onCreate} />
       </div>
 
+      <div className="flex flex-col gap-1.5 border-b border-gray-100 px-3 py-2">
+        <input
+          type="text"
+          value={titleQuery}
+          onChange={(e) => {
+            setTitleQuery(e.target.value)
+          }}
+          placeholder="Search titles…"
+          aria-label="Search conversation titles"
+          className="w-full rounded border border-gray-300 px-2 py-1 text-sm focus:border-gray-500 focus:outline-none"
+        />
+        {/* Explicit, so it's never mistaken for a search over message
+            content — this only ever matches each conversation's own
+            title, never anything said inside it. */}
+        <p className="text-xs text-gray-400">Searches titles only, not message content</p>
+        {tools.length > 0 && (
+          <Dropdown options={toolFilterOptions} value={toolFilter} onChange={setToolFilter} placeholder="All tools" />
+        )}
+      </div>
+
       <div className="flex-1 overflow-y-auto">
         {conversations.length === 0 && <p className="px-3 py-6 text-center text-sm text-gray-400">No conversations yet.</p>}
+        {conversations.length > 0 && filteredConversations.length === 0 && (
+          <p className="px-3 py-6 text-center text-sm text-gray-400">No conversations match your search.</p>
+        )}
         <ul>
-          {conversations.map((c) => (
+          {filteredConversations.map((c) => (
             <li
               key={c.id}
               className={`group flex items-center gap-1 border-b border-gray-100 px-3 py-2 text-sm ${
