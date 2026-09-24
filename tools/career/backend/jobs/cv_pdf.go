@@ -339,10 +339,13 @@ func RegisterSaveCvDocument(server *mcp.Server) {
 		Name: "save_cv_document",
 		Description: "Record a CV PDF you just rendered for a job via render_cv_document + generate_pdf — call this ONCE, " +
 			"immediately after generate_pdf returns its resource link, passing that link's own 'uri' field unmodified. " +
-			"personaId, templateId, and data must be the EXACT same values you passed to render_cv_document for this CV. " +
-			"title is required (a short, human-readable name for the CV document). Fails if jobId is unknown or no CV " +
-			"generation is currently in progress for it (the human-facing UI always starts one before sending you this " +
-			"request).",
+			"personaId, templateId, and data must be the EXACT same values you passed to render_cv_document for this CV — " +
+			"this whole flow only ever produces a correct CV when render_cv_document's own XHTML output goes to generate_pdf " +
+			"completely unmodified; never hand-author your own XHTML for this task. data's own free-text fields (fullName/" +
+			"headline/summary/location/skills/experience) must be PLAIN TEXT ONLY — no HTML tags/markup — this call rejects " +
+			"one if it finds it, same rule render_cv_document already enforces. title is required (a short, human-readable " +
+			"name for the CV document). Fails if jobId is unknown or no CV generation is currently in progress for it (the " +
+			"human-facing UI always starts one before sending you this request).",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args saveCvDocumentArgs) (*mcp.CallToolResult, any, error) {
 		if args.JobID == "" {
 			return db.ErrResult("jobId is required"), nil, nil

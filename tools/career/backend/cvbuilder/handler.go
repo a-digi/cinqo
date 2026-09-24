@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/textproto"
 	"os"
+	"regexp"
 
 	"career-tool-backend/cvbuilder/templates"
 	"career-tool-backend/db"
@@ -45,11 +46,41 @@ func requirePersonaExists(personaID string) error {
 	return nil
 }
 
+// htmlTagPattern matches a known, common HTML tag name (<strong>,
+// </div>, <br>, <p class="x">, ...), NOT "any letter right after '<'"
+// — a real CV can legitimately contain that shape without meaning HTML
+// at all (a live-caught false positive: "vector<int>", a C++ template,
+// matched a naive "any tag-shaped bracket" pattern). Restricting to an
+// explicit allowlist of actual tag names (word-bounded, so "bold" can
+// never match tag "b") keeps single/short letters like generic type
+// parameters (T, K, V, int) out of scope while still catching the
+// realistic failure mode: an AI reaching for basic HTML formatting
+// (bold/italic/paragraph/line-break/list) in what should be plain text.
+// A bare '<'/'>' used as a comparison ("<5ms", "revenue < $10M") never
+// matches this at all, and html/template already safely escapes it into
+// a literal "<" in the rendered PDF regardless, which is correct.
+var htmlTagPattern = regexp.MustCompile(`(?i)<\/?(?:strong|em|div|span|br|ul|ol|li|blockquote|code|pre|p|h[1-6]|table|tr|td|th|font|center|sub|sup)\b[^<>]*>`)
+
+// hasHTMLTag is ValidateCvData's own live-observed-bug guard: an AI
+// generating a CV occasionally reaches for HTML tags in a free-text
+// field (e.g. "<b>Led a team</b>" in a summary), thinking it's writing
+// into a web page — html/template then does exactly what it's supposed
+// to and ESCAPES that literal text, so the rendered PDF shows the ugly,
+// literal "&lt;b&gt;Led a team&lt;/b&gt;" instead of either bold text or
+// plain text. Rejecting it here, with a clear and immediately
+// actionable error, catches this in one fast round trip — no PDF is
+// ever generated from data that would produce this — rather than a
+// human discovering visibly broken text in an already-downloaded CV.
+func hasHTMLTag(s string) bool {
+	return htmlTagPattern.MatchString(s)
+}
+
 // ValidateCvData bounds a caller-submitted CvData (step 1's own
 // addendum made this frontend-assembled, not server-derived) — html/
 // template (templates.Render) already neutralizes injection, this
 // only guards against an absurdly large payload wasting render time or
-// storage. Generous limits, no legitimate CV comes close to them.
+// storage, and against markup that would render as ugly escaped text
+// (see hasHTMLTag above) rather than actually failing to render.
 // Exported: jobs/cv_pdf.go's own save_cv_document reuses this exact
 // check for AI-submitted CvData too, rather than duplicating it.
 func ValidateCvData(data templates.CvData) error {
@@ -57,12 +88,18 @@ func ValidateCvData(data templates.CvData) error {
 		len(data.Summary) > maxFieldLength || len(data.Location) > maxFieldLength {
 		return fmt.Errorf("a field is too long")
 	}
+	if hasHTMLTag(data.FullName) || hasHTMLTag(data.Headline) || hasHTMLTag(data.Summary) || hasHTMLTag(data.Location) {
+		return fmt.Errorf("fields must be plain text — no HTML/markup tags (found one in fullName, headline, summary, or location)")
+	}
 	if len(data.Skills) > maxSkills {
 		return fmt.Errorf("too many skills (max %d)", maxSkills)
 	}
 	for _, s := range data.Skills {
 		if len(s) > maxFieldLength {
 			return fmt.Errorf("a skill is too long")
+		}
+		if hasHTMLTag(s) {
+			return fmt.Errorf("skills must be plain text — no HTML/markup tags (found one in %q)", s)
 		}
 	}
 	if len(data.Experience) > maxExperienceEntries {
@@ -73,10 +110,16 @@ func ValidateCvData(data templates.CvData) error {
 			len(e.StartDate) > maxFieldLength || len(e.EndDate) > maxFieldLength || len(e.Description) > maxFieldLength {
 			return fmt.Errorf("an experience field is too long")
 		}
+		if hasHTMLTag(e.Company) || hasHTMLTag(e.Title) || hasHTMLTag(e.StartDate) || hasHTMLTag(e.EndDate) || hasHTMLTag(e.Description) {
+			return fmt.Errorf("experience fields must be plain text — no HTML/markup tags (found one in the %q entry)", e.Title)
+		}
 	}
 	for _, l := range data.ExternalLinks {
 		if len(l.Platform) > maxFieldLength || len(l.URL) > maxFieldLength {
 			return fmt.Errorf("an external link field is too long")
+		}
+		if hasHTMLTag(l.Platform) {
+			return fmt.Errorf("external link platform names must be plain text — no HTML/markup tags (found one in %q)", l.Platform)
 		}
 	}
 	return nil

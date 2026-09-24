@@ -156,8 +156,12 @@ func runMCPServer(tmpDir, uploadsDir string) {
 	// verification it actually needs — this tool no longer mandates one
 	// for everyone.
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "generate_pdf",
-		Description: "Render an XHTML document into a PDF and return a link to the generated file.",
+		Name: "generate_pdf",
+		Description: "Render an XHTML document into a PDF and return a link to the generated file. xhtml must be " +
+			"well-formed XML (this is checked up front and rejected immediately if not) — if another tool handed you " +
+			"already-rendered XHTML (e.g. cvbuilder's render_cv_document), pass it straight through completely " +
+			"UNCHANGED; retyping or reformatting it yourself is the most common way to accidentally break its " +
+			"escaping (e.g. a bare \"&\" instead of \"&amp;\") and get this call rejected.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args generatePDFArgs) (*mcp.CallToolResult, any, error) {
 		if args.Xhtml == "" {
 			return &mcp.CallToolResult{

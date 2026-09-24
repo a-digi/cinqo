@@ -7,7 +7,9 @@ package generate
 
 import (
 	"context"
+	"encoding/xml"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -41,6 +43,10 @@ func (m Margins) isZero() bool {
 // pdf_generator's own generatePDF, renamed to an exported PDF (called
 // as generate.PDF from main.go) since it now lives in its own package.
 func PDF(tmpDir, uploadsDir, xhtml string, margins Margins) (id string, byteCount int, err error) {
+	if err := checkWellFormed(xhtml); err != nil {
+		return "", 0, err
+	}
+
 	id = uuid.NewString()
 	xhtmlPath := filepath.Join(tmpDir, id+".xhtml")
 	staged := xhtml
@@ -82,6 +88,41 @@ func ReadFile(uploadsDir, id string) ([]byte, error) {
 		return nil, fmt.Errorf("not found")
 	}
 	return os.ReadFile(filepath.Join(uploadsDir, id+".pdf"))
+}
+
+// checkWellFormed rejects malformed XHTML BEFORE ever staging a file or
+// spawning Chrome — a plain in-process XML parse, not a render/re-parse
+// round trip (that's the pdf_to_markdown verification loop that was
+// deliberately removed; this is ordinary input validation, effectively
+// free by comparison). Without this, renderPDF stages the string as a
+// file with a .xhtml extension: Chrome infers application/xhtml+xml
+// from that extension and parses it with its strict XML (libxml2)
+// parser, not the lenient HTML5 one — a bare, unescaped "&" (the
+// classic symptom of a caller retyping/reconstructing XHTML by hand
+// instead of passing an already-escaped source through unchanged)
+// doesn't fail the call at all; Chrome just renders libxml2's own
+// "xmlParseEntityRef: no name" error banner as the page content, and
+// that banner gets printed to PDF as if it were a normal, successful
+// result. Catching it here turns that silent, confusing failure into an
+// immediate, specific error naming the exact line/column, so a caller
+// (or its own agent loop) can tell the real cause apart from a normal
+// render failure and fix its own input instead of shipping a broken
+// PDF.
+func checkWellFormed(xhtml string) error {
+	dec := xml.NewDecoder(strings.NewReader(xhtml))
+	dec.Strict = true
+	for {
+		_, err := dec.Token()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("xhtml is not well-formed XML: %w — this usually means it was hand-typed or "+
+				"retyped rather than passed through unchanged from whatever produced it (e.g. a bare \"&\" instead "+
+				"of \"&amp;\"); fix the escaping, or if a template/tool generated this XHTML for you, pass its "+
+				"output straight through without editing it", err)
+		}
+	}
 }
 
 // withPageMargin only ever runs when the caller explicitly asked for a
