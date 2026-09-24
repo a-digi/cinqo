@@ -169,9 +169,26 @@ type portalLink struct {
 	// regardless of this flag; it only ever suppresses the AUTOMATIC
 	// path. See
 	// plan/ai/tools/career/step-84-auto-discovery-scheduled-crawling.md.
-	AutoDiscoveryEnabled bool   `json:"autoDiscoveryEnabled"`
-	CreatedAt            string `json:"createdAt"`
-	UpdatedAt            string `json:"updatedAt,omitempty"`
+	AutoDiscoveryEnabled bool `json:"autoDiscoveryEnabled"`
+	// AutoDiscoveryIntervalMinutes (step 85) is this link's own
+	// override on the schedule, checked against its own
+	// AutoDiscoveryLastRunAt instead of the shared
+	// auto_discovery_settings row — nil means "use the global
+	// interval," every link's own default. Only meaningful while
+	// AutoDiscoveryEnabled is also true. Validated against the same
+	// fixed allowlist (15/30/60/180/360/720/1440) the global interval
+	// already uses. See
+	// plan/ai/tools/career/step-85-auto-discovery-per-link-custom-interval.md.
+	AutoDiscoveryIntervalMinutes *int `json:"autoDiscoveryIntervalMinutes,omitempty"`
+	// AutoDiscoveryLastRunAt (step 85) is this link's own independent
+	// unix-seconds clock — read-only, written only by the
+	// auto-discovery manager (RecordPortalLinkAutoDiscoveryRun), and
+	// only ever meaningful while AutoDiscoveryIntervalMinutes is set; a
+	// link using the global interval keeps relying on the shared
+	// auto_discovery_settings.last_run_at instead, unchanged.
+	AutoDiscoveryLastRunAt *int64 `json:"autoDiscoveryLastRunAt,omitempty"`
+	CreatedAt              string `json:"createdAt"`
+	UpdatedAt              string `json:"updatedAt,omitempty"`
 }
 
 type portal struct {
@@ -291,7 +308,7 @@ func ListPortals() ([]portal, error) {
 	}
 
 	linkRows, err := db.JobsDB.Query(
-		`SELECT id, portal_id, url, title, crawl_instructions, job_detail_crawl_instructions, instructions_ai_error, instructions_ai_error_at, instructions_ai_conversation_id, job_detail_instructions_ai_error, job_detail_instructions_ai_error_at, job_detail_instructions_ai_conversation_id, listing_crawl_requested, job_detail_instructions_ai_requested, instructions_ai_error_dismissed_at, job_detail_instructions_ai_error_dismissed_at, job_detail_crawl_requested, auto_discovery_enabled, created_at, updated_at
+		`SELECT id, portal_id, url, title, crawl_instructions, job_detail_crawl_instructions, instructions_ai_error, instructions_ai_error_at, instructions_ai_conversation_id, job_detail_instructions_ai_error, job_detail_instructions_ai_error_at, job_detail_instructions_ai_conversation_id, listing_crawl_requested, job_detail_instructions_ai_requested, instructions_ai_error_dismissed_at, job_detail_instructions_ai_error_dismissed_at, job_detail_crawl_requested, auto_discovery_enabled, auto_discovery_interval_minutes, auto_discovery_last_run_at, created_at, updated_at
 		 FROM portal_links ORDER BY created_at ASC`,
 	)
 	if err != nil {
@@ -302,8 +319,16 @@ func ListPortals() ([]portal, error) {
 	for linkRows.Next() {
 		var l portalLink
 		var title, crawlInstructions, jobDetailCrawlInstructions, instructionsAIError, instructionsAIErrorAt, instructionsAIConversationID, jobDetailInstructionsAIError, jobDetailInstructionsAIErrorAt, jobDetailInstructionsAIConversationID, instructionsAIErrorDismissedAt, jobDetailInstructionsAIErrorDismissedAt, updatedAt sql.NullString
-		if err := linkRows.Scan(&l.ID, &l.PortalID, &l.URL, &title, &crawlInstructions, &jobDetailCrawlInstructions, &instructionsAIError, &instructionsAIErrorAt, &instructionsAIConversationID, &jobDetailInstructionsAIError, &jobDetailInstructionsAIErrorAt, &jobDetailInstructionsAIConversationID, &l.ListingCrawlRequested, &l.JobDetailInstructionsAIRequested, &instructionsAIErrorDismissedAt, &jobDetailInstructionsAIErrorDismissedAt, &l.JobDetailCrawlRequested, &l.AutoDiscoveryEnabled, &l.CreatedAt, &updatedAt); err != nil {
+		var autoDiscoveryIntervalMinutes, autoDiscoveryLastRunAt sql.NullInt64
+		if err := linkRows.Scan(&l.ID, &l.PortalID, &l.URL, &title, &crawlInstructions, &jobDetailCrawlInstructions, &instructionsAIError, &instructionsAIErrorAt, &instructionsAIConversationID, &jobDetailInstructionsAIError, &jobDetailInstructionsAIErrorAt, &jobDetailInstructionsAIConversationID, &l.ListingCrawlRequested, &l.JobDetailInstructionsAIRequested, &instructionsAIErrorDismissedAt, &jobDetailInstructionsAIErrorDismissedAt, &l.JobDetailCrawlRequested, &l.AutoDiscoveryEnabled, &autoDiscoveryIntervalMinutes, &autoDiscoveryLastRunAt, &l.CreatedAt, &updatedAt); err != nil {
 			return nil, err
+		}
+		if autoDiscoveryIntervalMinutes.Valid {
+			v := int(autoDiscoveryIntervalMinutes.Int64)
+			l.AutoDiscoveryIntervalMinutes = &v
+		}
+		if autoDiscoveryLastRunAt.Valid {
+			l.AutoDiscoveryLastRunAt = &autoDiscoveryLastRunAt.Int64
 		}
 		l.Title = title.String
 		l.CrawlInstructions = crawlInstructions.String
@@ -529,6 +554,33 @@ func UpdatePortalLinkAutoDiscoveryEnabled(id string, enabled bool) error {
 	return err
 }
 
+// ErrInvalidAutoDiscoveryInterval is a caller mistake (400), never a
+// server failure — same posture ErrInvalidCrawlInstructions already
+// has.
+var ErrInvalidAutoDiscoveryInterval = errors.New("autoDiscoveryIntervalMinutes must be one of 15, 30, 60, 180, 360, 720, 1440")
+
+// UpdatePortalLinkAutoDiscoveryInterval sets (minutes != nil) or clears
+// (minutes == nil, "use the global interval") this link's own
+// auto-discovery schedule override (step 85). A non-nil value is
+// validated against db.AllowedAutoDiscoveryIntervalMinutes — the exact
+// same allowlist the global interval already uses — rejected outright
+// rather than silently clamped, same convention every other
+// enumerated input on this tool already follows.
+func UpdatePortalLinkAutoDiscoveryInterval(id string, minutes *int) error {
+	if err := RequirePortalLinkExists(id); err != nil {
+		return err
+	}
+	if minutes != nil && !db.AllowedAutoDiscoveryIntervalMinutes[*minutes] {
+		return ErrInvalidAutoDiscoveryInterval
+	}
+	var arg any
+	if minutes != nil {
+		arg = *minutes
+	}
+	_, err := db.JobsDB.Exec(`UPDATE portal_links SET auto_discovery_interval_minutes = ? WHERE id = ?`, arg, id)
+	return err
+}
+
 // UpdatePortalLinkInstructionsAIErrorDismissedAt/
 // UpdatePortalLinkJobDetailInstructionsAIErrorDismissedAt (step 71) let
 // the frontend record when the user dismissed that document's own
@@ -740,23 +792,31 @@ func GetPortalLinkCrawlInstructions(id string) (string, error) {
 
 // ListPortalLinksEligibleForAutoDiscovery returns every portal link's
 // own id, across ALL portals, eligible for the auto-discovery
-// manager's own sweep (step 84) — has crawl_instructions set (the same
-// eligibility BuildCrawlRequest's own ErrNoCrawlInstructions gate
-// already enforces per-link) AND has not individually opted out via
+// manager's own GLOBAL sweep (step 84) — has crawl_instructions set
+// (the same eligibility BuildCrawlRequest's own ErrNoCrawlInstructions
+// gate already enforces per-link), has not individually opted out via
 // auto_discovery_enabled (step 84 follow-up: "some of the links people
 // might not want to be auto-discovered," even while the global
-// schedule is on). Originally named ListPortalLinksWithCrawlInstructions
-// before that second condition existed — renamed once it did, since
-// the old name would have been misleading about what "eligible" now
-// actually means. Applied here as a set query since the auto-discovery
-// manager needs to consider every eligible link at once, rather than
-// one specific link a caller already knows the id of (every other
-// portal-link query in this file is scoped to one known link or one
-// known portal). See
-// plan/ai/tools/career/step-84-auto-discovery-scheduled-crawling.md.
+// schedule is on), AND has no custom interval of its own set (step 85:
+// "the links with auto-discovery activated and a custom period should
+// be excluded from the global auto-discovery" — such a link is instead
+// picked up by ListDuePortalLinksWithCustomInterval below, on its own
+// independent clock). Originally named
+// ListPortalLinksWithCrawlInstructions before the first of these two
+// extra conditions existed — renamed once it did, since the old name
+// would have been misleading about what "eligible" now actually means.
+// Applied here as a set query since the auto-discovery manager needs
+// to consider every eligible link at once, rather than one specific
+// link a caller already knows the id of (every other portal-link query
+// in this file is scoped to one known link or one known portal). See
+// plan/ai/tools/career/step-84-auto-discovery-scheduled-crawling.md and
+// plan/ai/tools/career/step-85-auto-discovery-per-link-custom-interval.md.
 func ListPortalLinksEligibleForAutoDiscovery() ([]string, error) {
 	rows, err := db.JobsDB.Query(
-		`SELECT id FROM portal_links WHERE crawl_instructions IS NOT NULL AND crawl_instructions != '' AND auto_discovery_enabled = 1`,
+		`SELECT id FROM portal_links
+		 WHERE crawl_instructions IS NOT NULL AND crawl_instructions != ''
+		   AND auto_discovery_enabled = 1
+		   AND auto_discovery_interval_minutes IS NULL`,
 	)
 	if err != nil {
 		return nil, err
@@ -772,6 +832,62 @@ func ListPortalLinksEligibleForAutoDiscovery() ([]string, error) {
 		ids = append(ids, id)
 	}
 	return ids, rows.Err()
+}
+
+// ListDuePortalLinksWithCustomInterval returns every portal link's own
+// id, across ALL portals, that has its OWN auto-discovery interval set
+// (step 85) and is individually due for it right now — has
+// crawl_instructions set, is enabled, has a non-NULL
+// auto_discovery_interval_minutes, and either has never run
+// (auto_discovery_last_run_at IS NULL) or enough of its own interval
+// has elapsed since its own last run. This is the per-link analogue of
+// the global due-check (autodiscovery.checkAndRunSweep's own
+// comparison against auto_discovery_settings.last_run_at/
+// interval_minutes) — computed here in SQL, via SQLite's own
+// unixepoch(), rather than fetched-then-filtered in Go, mirroring this
+// file's own existing precedent of doing set-membership work in the
+// query (ListPortalLinksEligibleForAutoDiscovery above). See
+// plan/ai/tools/career/step-85-auto-discovery-per-link-custom-interval.md.
+func ListDuePortalLinksWithCustomInterval() ([]string, error) {
+	rows, err := db.JobsDB.Query(
+		`SELECT id FROM portal_links
+		 WHERE crawl_instructions IS NOT NULL AND crawl_instructions != ''
+		   AND auto_discovery_enabled = 1
+		   AND auto_discovery_interval_minutes IS NOT NULL
+		   AND (
+		     auto_discovery_last_run_at IS NULL
+		     OR unixepoch() - auto_discovery_last_run_at >= auto_discovery_interval_minutes * 60
+		   )`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	ids := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// RecordPortalLinkAutoDiscoveryRun sets auto_discovery_last_run_at to
+// now (unix seconds) for one link — the per-link analogue of
+// autodiscovery.recordSweepStart, called by the auto-discovery manager
+// right when THAT link's own due crawl starts (step 85), never by
+// anything else; a link using the global interval never has this
+// column touched at all, relying on the shared
+// auto_discovery_settings.last_run_at instead.
+func RecordPortalLinkAutoDiscoveryRun(id string) error {
+	_, err := db.JobsDB.Exec(
+		`UPDATE portal_links SET auto_discovery_last_run_at = unixepoch() WHERE id = ?`,
+		id,
+	)
+	return err
 }
 
 // UpdatePortalLinkCrawlInstructions is the one shared persistent-layer
@@ -1294,6 +1410,8 @@ func WritePortalLinkAwareError(w http.ResponseWriter, action string, err error) 
 	case errors.Is(err, ErrNoCrawlInstructions):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrNoJobDetailCrawlInstructions):
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	case errors.Is(err, ErrInvalidAutoDiscoveryInterval):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	default:
 		http.Error(w, "failed to "+action+": "+err.Error(), http.StatusInternalServerError)

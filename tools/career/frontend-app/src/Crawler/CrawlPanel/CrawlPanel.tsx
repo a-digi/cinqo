@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { updatePortalLink, type PortalLink } from '../../api'
+import { Dropdown } from '../../Components/Dropdown/Dropdown'
+import { AUTO_DISCOVERY_INTERVAL_OPTIONS } from '../autoDiscovery'
 import type { Platform } from '../../Cinqo/Platform/platformRepository'
 import { CoreApiError } from '../../Cinqo/Http/client'
 import { createConversation, sendMessage, awaitTurnCompletion, fetchTurnStatus } from '../../Cinqo/Conversation/conversation'
@@ -114,6 +116,30 @@ export function CrawlPanel({
       .then(onReload)
       .catch((err: unknown) => {
         onError(err instanceof Error ? err.message : 'Failed to update auto-discovery for this link.')
+      })
+      .finally(() => {
+        setAutoDiscoveryPending(false)
+      })
+  }
+
+  // AUTO_DISCOVERY_GLOBAL_VALUE (step 85) is the Dropdown's own "use
+  // the global interval" option — a plain empty string, not a real
+  // interval choice, matching the same "" = unselected convention
+  // this tool's other Dropdown call sites already use (e.g. JobsPage's
+  // own "Any company"/"Any location"). Selecting it clears this link's
+  // own override (clearAutoDiscoveryInterval), never sends it as a
+  // literal interval value.
+  const AUTO_DISCOVERY_GLOBAL_VALUE = ''
+  function handleChangeAutoDiscoveryInterval(value: string) {
+    setAutoDiscoveryPending(true)
+    const write =
+      value === AUTO_DISCOVERY_GLOBAL_VALUE
+        ? updatePortalLink(link.id, { clearAutoDiscoveryInterval: true })
+        : updatePortalLink(link.id, { autoDiscoveryIntervalMinutes: Number(value) })
+    write
+      .then(onReload)
+      .catch((err: unknown) => {
+        onError(err instanceof Error ? err.message : "Failed to update this link's own auto-discovery interval.")
       })
       .finally(() => {
         setAutoDiscoveryPending(false)
@@ -794,18 +820,38 @@ export function CrawlPanel({
           on/off+interval (Crawler/AutoDiscoveryPanel) controls whether
           the mechanism runs at all; this is this ONE link's own
           override on top of that. */}
-      <label className="mb-2 flex items-center gap-2 text-xs text-gray-600">
-        <input
-          type="checkbox"
-          checked={link.autoDiscoveryEnabled}
-          disabled={autoDiscoveryPending}
-          onChange={(e) => {
-            handleToggleAutoDiscovery(e.target.checked)
-          }}
-          className="h-3.5 w-3.5 rounded border-gray-300 text-gray-900 focus:ring-gray-500"
-        />
-        Auto-discovery
-      </label>
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <label className="flex items-center gap-2 text-xs text-gray-600">
+          <input
+            type="checkbox"
+            checked={link.autoDiscoveryEnabled}
+            disabled={autoDiscoveryPending}
+            onChange={(e) => {
+              handleToggleAutoDiscovery(e.target.checked)
+            }}
+            className="h-3.5 w-3.5 rounded border-gray-300 text-gray-900 focus:ring-gray-500"
+          />
+          Auto-discovery
+        </label>
+        {/* This link's own interval override (step 85) — shown only
+            while auto-discovery is actually on for this link; hidden,
+            not just disabled, while it's off, since "how often" has no
+            meaning at all until "whether" is yes. "Use global
+            interval" (an empty string, the same "" = unselected
+            convention this tool's other Dropdown call sites already
+            use) clears the override entirely rather than sending a
+            literal interval value. */}
+        {link.autoDiscoveryEnabled && (
+          <Dropdown
+            options={[
+              { value: AUTO_DISCOVERY_GLOBAL_VALUE, label: 'Use global interval' },
+              ...AUTO_DISCOVERY_INTERVAL_OPTIONS.map((o) => ({ value: String(o.value), label: o.label })),
+            ]}
+            value={link.autoDiscoveryIntervalMinutes !== undefined ? String(link.autoDiscoveryIntervalMinutes) : AUTO_DISCOVERY_GLOBAL_VALUE}
+            onChange={handleChangeAutoDiscoveryInterval}
+          />
+        )}
+      </div>
       {/* Two small cards, each exactly half the row (grid-cols-2, not
           flex-wrap) so they always sit side by side at 50%/50% width
           regardless of either card's own content length — a flex row

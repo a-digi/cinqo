@@ -233,6 +233,21 @@ export interface PortalLink {
   // true (on). See
   // plan/ai/tools/career/step-84-auto-discovery-scheduled-crawling.md.
   autoDiscoveryEnabled: boolean
+  // autoDiscoveryIntervalMinutes (step 85) is this link's own override
+  // on the schedule, checked against its own autoDiscoveryLastRunAt
+  // instead of the global setting — absent (the backend's own
+  // `*int` + omitempty means the field is OMITTED, not sent as null,
+  // when unset) means "use the global interval," every link's own
+  // default. Only meaningful while autoDiscoveryEnabled is also true.
+  // See plan/ai/tools/career/step-85-auto-discovery-per-link-custom-interval.md.
+  autoDiscoveryIntervalMinutes?: number
+  // autoDiscoveryLastRunAt (step 85) is this link's own independent
+  // unix-seconds clock — read-only, written only by the auto-discovery
+  // manager, absent the same way until it's ever run; only ever
+  // meaningful while autoDiscoveryIntervalMinutes is set. A link using
+  // the global interval keeps relying on that setting's own
+  // lastRunAt instead (Crawler/autoDiscovery.ts).
+  autoDiscoveryLastRunAt?: number
   createdAt: string
   updatedAt?: string
 }
@@ -718,6 +733,13 @@ export async function updatePortalLink(
     jobDetailInstructionsAiErrorDismissedAt?: string
     jobDetailCrawlRequested?: boolean
     autoDiscoveryEnabled?: boolean
+    // autoDiscoveryIntervalMinutes/clearAutoDiscoveryInterval (step 85)
+    // — set the former to a real value, or send the latter as true to
+    // clear it back to "use global." Sending both is meaningless (the
+    // backend's own PUT handler treats a real value as taking
+    // precedence) — callers should only ever send one or the other.
+    autoDiscoveryIntervalMinutes?: number
+    clearAutoDiscoveryInterval?: boolean
   },
 ): Promise<void> {
   const res = await fetch(`${PROXY_BASE}/portal-links`, {

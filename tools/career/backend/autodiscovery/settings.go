@@ -17,16 +17,6 @@ import (
 	"career-tool-backend/db"
 )
 
-// allowedIntervalMinutes is the fixed set of choices this feature ever
-// offers — 15m/30m/1h/3h/6h/12h/24h, exactly the list from this step's
-// own plan doc. Any other value is rejected outright, never silently
-// clamped to the nearest valid one — same "reject, don't guess"
-// convention this tool already uses for other enumerated inputs (e.g.
-// crawl_runs.kind/status).
-var allowedIntervalMinutes = map[int]bool{
-	15: true, 30: true, 60: true, 180: true, 360: true, 720: true, 1440: true,
-}
-
 // errInvalidInterval is a caller mistake (400), never a server failure.
 var errInvalidInterval = errors.New("intervalMinutes must be one of 15, 30, 60, 180, 360, 720, 1440")
 
@@ -63,7 +53,7 @@ func GetSettings() (Settings, error) {
 // last_run_at — that's the scheduler manager's own field (a later
 // step), not something a settings write should ever reset.
 func UpdateSettings(enabled bool, intervalMinutes int) error {
-	if !allowedIntervalMinutes[intervalMinutes] {
+	if !db.AllowedAutoDiscoveryIntervalMinutes[intervalMinutes] {
 		return errInvalidInterval
 	}
 	_, err := db.JobsDB.Exec(

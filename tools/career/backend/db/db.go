@@ -282,16 +282,20 @@ CREATE TABLE IF NOT EXISTS portals (
 -- job_detail_instructions_ai_requested,
 -- instructions_ai_error_dismissed_at,
 -- job_detail_instructions_ai_error_dismissed_at,
--- job_detail_crawl_requested, auto_discovery_enabled) — a genuinely
--- brand-new install never goes through any of those ALTER TABLE
--- migrations at all (each one's own tableHasColumn guard sees
+-- job_detail_crawl_requested, auto_discovery_enabled,
+-- auto_discovery_interval_minutes, auto_discovery_last_run_at) — a
+-- genuinely brand-new install never goes through any of those ALTER
+-- TABLE migrations at all (each one's own tableHasColumn guard sees
 -- portal_links doesn't exist yet, at the point migrateJobsDB runs, and
 -- no-ops), so this CREATE TABLE IF NOT EXISTS is the ONLY thing that
 -- ever actually creates the table for that install — found live, not
 -- assumed, when this file's own auto_discovery_enabled addition (step
 -- 84 follow-up) broke a real test against a freshly initialized
 -- database with "no such column: auto_discovery_enabled" until every
--- other already-migrated-for-upgrades column was added here too.
+-- other already-migrated-for-upgrades column was added here too. Both
+-- auto_discovery_interval_minutes/auto_discovery_last_run_at (step 85)
+-- were added here from the start, not just their own migration, to
+-- avoid repeating that exact mistake a second time.
 CREATE TABLE IF NOT EXISTS portal_links (
     id                                TEXT PRIMARY KEY,
     portal_id                         TEXT NOT NULL REFERENCES portals(id) ON DELETE CASCADE,
@@ -311,6 +315,8 @@ CREATE TABLE IF NOT EXISTS portal_links (
     job_detail_instructions_ai_error_dismissed_at  TEXT,
     job_detail_crawl_requested                     INTEGER NOT NULL DEFAULT 0,
     auto_discovery_enabled                         INTEGER NOT NULL DEFAULT 1,
+    auto_discovery_interval_minutes                INTEGER,
+    auto_discovery_last_run_at                     INTEGER,
     created_at                        TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at                        TEXT,
     UNIQUE(portal_id, url)
@@ -922,6 +928,9 @@ func migrateJobsDB(db *sql.DB) error {
 	if err := migratePortalLinksAutoDiscoveryEnabled(db); err != nil {
 		return err
 	}
+	if err := migratePortalLinksAutoDiscoveryInterval(db); err != nil {
+		return err
+	}
 	if err := migrateJobsDetailCrawlStatus(db); err != nil {
 		return err
 	}
@@ -1366,5 +1375,32 @@ func migratePortalLinksAutoDiscoveryEnabled(db *sql.DB) error {
 		return nil
 	}
 	_, err = db.Exec(`ALTER TABLE portal_links ADD COLUMN auto_discovery_enabled INTEGER NOT NULL DEFAULT 1`)
+	return err
+}
+
+// migratePortalLinksAutoDiscoveryInterval adds this link's own optional
+// override columns (step 85: "it can also have a custom own period to
+// auto-discovery") — same plain ALTER TABLE ADD COLUMN shape every
+// other portal_links column already uses, guarded the same way (both
+// columns land or neither does, checked via the first one's own
+// presence, matching migratePortalLinksJobDetailInstructionsAIStatus's
+// own two-column precedent above). Both NULL for every pre-existing
+// row: "no custom period set — use the global interval" is every
+// link's own default, and auto_discovery_last_run_at (this link's own
+// independent clock, written only by the auto-discovery manager) has
+// no meaning at all until a custom interval is actually set. See
+// plan/ai/tools/career/step-85-auto-discovery-per-link-custom-interval.md.
+func migratePortalLinksAutoDiscoveryInterval(db *sql.DB) error {
+	exists, hasColumn, err := tableHasColumn(db, "portal_links", "auto_discovery_interval_minutes")
+	if err != nil {
+		return err
+	}
+	if !exists || hasColumn {
+		return nil
+	}
+	if _, err := db.Exec(`ALTER TABLE portal_links ADD COLUMN auto_discovery_interval_minutes INTEGER`); err != nil {
+		return err
+	}
+	_, err = db.Exec(`ALTER TABLE portal_links ADD COLUMN auto_discovery_last_run_at INTEGER`)
 	return err
 }

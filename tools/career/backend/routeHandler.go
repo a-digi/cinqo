@@ -1056,6 +1056,20 @@ type portalLinkUpdateRequest struct {
 	// link participates in the auto-discovery manager's own sweeps.
 	// See portal.portalLink's own AutoDiscoveryEnabled doc comment.
 	AutoDiscoveryEnabled *bool `json:"autoDiscoveryEnabled,omitempty"`
+	// AutoDiscoveryIntervalMinutes/ClearAutoDiscoveryInterval (step 85)
+	// set or clear this link's own auto-discovery schedule override.
+	// nil is genuinely ambiguous for this one field — unlike every
+	// other optional field above, whose own "don't touch" value is
+	// simply omitting a string/bool that already has an unambiguous
+	// zero value, `null` here is a real, meaningful result ("use the
+	// global interval") a bare *int can't tell apart from "the field
+	// was omitted" once decoded (both come out nil) — so clearing it
+	// needs its own explicit signal instead. AutoDiscoveryIntervalMinutes
+	// present (non-nil) sets that value; ClearAutoDiscoveryInterval=true
+	// clears it back to nil. If a caller somehow sends both, the SET
+	// takes precedence — see the handler switch below.
+	AutoDiscoveryIntervalMinutes *int `json:"autoDiscoveryIntervalMinutes,omitempty"`
+	ClearAutoDiscoveryInterval   bool `json:"clearAutoDiscoveryInterval,omitempty"`
 }
 
 func portalLinksHandler(w http.ResponseWriter, r *http.Request) {
@@ -1097,8 +1111,9 @@ func portalLinksHandler(w http.ResponseWriter, r *http.Request) {
 			body.JobDetailInstructionsAIError == nil && body.JobDetailInstructionsAIConversationID == nil &&
 			body.ListingCrawlRequested == nil && body.JobDetailInstructionsAIRequested == nil &&
 			body.InstructionsAIErrorDismissedAt == nil && body.JobDetailInstructionsAIErrorDismissedAt == nil &&
-			body.JobDetailCrawlRequested == nil && body.AutoDiscoveryEnabled == nil {
-			http.Error(w, "url, title, crawlInstructions, jobDetailCrawlInstructions, instructionsAiError, instructionsAiConversationId, jobDetailInstructionsAiError, jobDetailInstructionsAiConversationId, listingCrawlRequested, jobDetailInstructionsAiRequested, instructionsAiErrorDismissedAt, jobDetailInstructionsAiErrorDismissedAt, jobDetailCrawlRequested, or autoDiscoveryEnabled is required", http.StatusBadRequest)
+			body.JobDetailCrawlRequested == nil && body.AutoDiscoveryEnabled == nil &&
+			body.AutoDiscoveryIntervalMinutes == nil && !body.ClearAutoDiscoveryInterval {
+			http.Error(w, "url, title, crawlInstructions, jobDetailCrawlInstructions, instructionsAiError, instructionsAiConversationId, jobDetailInstructionsAiError, jobDetailInstructionsAiConversationId, listingCrawlRequested, jobDetailInstructionsAiRequested, instructionsAiErrorDismissedAt, jobDetailInstructionsAiErrorDismissedAt, jobDetailCrawlRequested, autoDiscoveryEnabled, autoDiscoveryIntervalMinutes, or clearAutoDiscoveryInterval is required", http.StatusBadRequest)
 			return
 		}
 		if body.URL != nil && *body.URL == "" {
@@ -1184,6 +1199,22 @@ func portalLinksHandler(w http.ResponseWriter, r *http.Request) {
 		if body.AutoDiscoveryEnabled != nil {
 			if err := portal.UpdatePortalLinkAutoDiscoveryEnabled(body.ID, *body.AutoDiscoveryEnabled); err != nil {
 				portal.WritePortalLinkAwareError(w, "update portal link auto-discovery enabled", err)
+				return
+			}
+		}
+		// AutoDiscoveryIntervalMinutes (a SET) takes precedence over
+		// ClearAutoDiscoveryInterval if a caller somehow sends both —
+		// see portalLinkUpdateRequest's own doc comment on these two
+		// fields for why clearing this one needs an explicit signal
+		// separate from "field omitted."
+		if body.AutoDiscoveryIntervalMinutes != nil {
+			if err := portal.UpdatePortalLinkAutoDiscoveryInterval(body.ID, body.AutoDiscoveryIntervalMinutes); err != nil {
+				portal.WritePortalLinkAwareError(w, "update portal link auto-discovery interval", err)
+				return
+			}
+		} else if body.ClearAutoDiscoveryInterval {
+			if err := portal.UpdatePortalLinkAutoDiscoveryInterval(body.ID, nil); err != nil {
+				portal.WritePortalLinkAwareError(w, "update portal link auto-discovery interval", err)
 				return
 			}
 		}
