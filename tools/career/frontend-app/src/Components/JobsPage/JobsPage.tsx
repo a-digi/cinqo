@@ -59,7 +59,11 @@ const JOB_DETAILS_PATH = '/tools/career/job-details'
 export function JobsPage() {
   const [query, setQuery] = useState('')
   const [location, setLocation] = useState('')
-  const [companyId, setCompanyId] = useState(() => new URLSearchParams(window.location.search).get('companyId') ?? '')
+  // companyIds (multi-select, step 83) — seeded from every ?companyId=
+  // occurrence in the URL via getAll, so both a single legacy link
+  // (CompaniesPage's own "N linked jobs") and a future multi-value link
+  // arrive pre-filtered identically.
+  const [companyIds, setCompanyIds] = useState<string[]>(() => new URLSearchParams(window.location.search).getAll('companyId'))
   const [portalId, setPortalId] = useState(() => new URLSearchParams(window.location.search).get('portalId') ?? '')
   const [companies, setCompanies] = useState<Company[]>([])
   const [portals, setPortals] = useState<Portal[]>([])
@@ -73,7 +77,7 @@ export function JobsPage() {
   // applied behind a collapsed panel would be confusing.
   const [showFilters, setShowFilters] = useState(() => {
     const params = new URLSearchParams(window.location.search)
-    return params.get('companyId') !== null || params.get('portalId') !== null
+    return params.has('companyId') || params.has('portalId')
   })
 
   // "Job Match" (step XX) own state — profiles to choose from, the
@@ -120,13 +124,13 @@ export function JobsPage() {
       })
   }
 
-  function load(companyIdOverride?: string, portalIdOverride?: string, pageOverride?: number, locationOverride?: string) {
+  function load(companyIdsOverride?: string[], portalIdOverride?: string, pageOverride?: number, locationOverride?: string) {
     setError('')
     const effectivePage = pageOverride ?? page
     fetchJobs(
       query,
       locationOverride ?? location,
-      companyIdOverride ?? companyId,
+      companyIdsOverride ?? companyIds,
       portalIdOverride ?? portalId,
       PAGE_SIZE,
       (effectivePage - 1) * PAGE_SIZE,
@@ -141,7 +145,7 @@ export function JobsPage() {
   }
 
   useEffect(() => {
-    load(companyId, portalId, 1)
+    load(companyIds, portalId, 1)
     fetchCompanies()
       .then(setCompanies)
       .catch((err: unknown) => {
@@ -203,10 +207,10 @@ export function JobsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query])
 
-  function handleCompanyFilterChange(id: string) {
-    setCompanyId(id)
+  function handleCompanyFilterChange(ids: string[]) {
+    setCompanyIds(ids)
     setPage(1)
-    load(id, undefined, 1)
+    load(ids, undefined, 1)
   }
 
   function handlePortalFilterChange(id: string) {
@@ -754,12 +758,12 @@ export function JobsPage() {
         handleLocationFilterChange('')
       },
     })
-  if (companyId)
+  for (const id of companyIds)
     activeFilters.push({
-      key: 'company',
-      label: `Company: ${companyNames[companyId] ?? '…'}`,
+      key: `company-${id}`,
+      label: `Company: ${companyNames[id] ?? '…'}`,
       onClear: () => {
-        handleCompanyFilterChange('')
+        handleCompanyFilterChange(companyIds.filter((c) => c !== id))
       },
     })
   if (portalId)
@@ -844,9 +848,10 @@ export function JobsPage() {
               )}
               {companies.length > 0 && (
                 <Dropdown
+                  multiple
                   placeholder="Any company"
-                  options={[{ value: '', label: 'Any company' }, ...companies.map((c) => ({ value: c.id, label: c.name }))]}
-                  value={companyId}
+                  options={companies.map((c) => ({ value: c.id, label: c.name }))}
+                  value={companyIds}
                   onChange={handleCompanyFilterChange}
                   searchable
                 />

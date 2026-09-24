@@ -217,13 +217,17 @@ func listJobs(companyId, portalLinkId, portalId string, limit, offset int) (jobs
 // restricts to an exact location value (step — Jobs page Location
 // dropdown: the frontend now offers a fixed list of distinct location
 // values via ListDistinctJobLocations, rather than free text, so
-// partial LIKE matching no longer applies). companyId/portalLinkId/
-// portalId, if non-empty, additionally restrict as documented on
-// listJobs, above. Omitting every filter is equivalent to listJobs.
-// Plain parameterized LIKE for query, case-insensitive via LOWER(...)
-// — no full-text-search extension for a first pass (see this step's
-// own open question 1).
-func SearchJobs(query, location, companyId, portalLinkId, portalId string, limit, offset int) (jobsListResult, error) {
+// partial LIKE matching no longer applies). companyIds, if non-empty,
+// restricts to jobs linked to ANY of the given companies (step — Jobs
+// page company filter went from single- to multi-select, so this
+// matches a set rather than one exact value; a single-element slice
+// behaves exactly as the old companyId string parameter did).
+// portalLinkId/portalId, if non-empty, additionally restrict as
+// documented on listJobs, above. Omitting every filter is equivalent to
+// listJobs. Plain parameterized LIKE for query, case-insensitive via
+// LOWER(...) — no full-text-search extension for a first pass (see this
+// step's own open question 1).
+func SearchJobs(query, location string, companyIds []string, portalLinkId, portalId string, limit, offset int) (jobsListResult, error) {
 	where := `WHERE 1=1`
 	args := []any{}
 	if query != "" {
@@ -235,9 +239,13 @@ func SearchJobs(query, location, companyId, portalLinkId, portalId string, limit
 		where += ` AND j.location = ?`
 		args = append(args, location)
 	}
-	if companyId != "" {
-		where += ` AND j.company_id = ?`
-		args = append(args, companyId)
+	if len(companyIds) > 0 {
+		placeholders := make([]string, len(companyIds))
+		for i, companyId := range companyIds {
+			placeholders[i] = "?"
+			args = append(args, companyId)
+		}
+		where += ` AND j.company_id IN (` + strings.Join(placeholders, ",") + `)`
 	}
 	if portalLinkId != "" {
 		where += ` AND j.portal_link_id = ?`
@@ -815,7 +823,11 @@ func RegisterSearchJobs(server *mcp.Server) {
 		Name:        "search_jobs",
 		Description: "Search saved job postings by query, location, company, and/or portal (or a specific portal link). Omitting all is equivalent to list_jobs.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args searchJobsArgs) (*mcp.CallToolResult, any, error) {
-		result, err := SearchJobs(args.Query, args.Location, args.CompanyID, args.PortalLinkID, args.PortalID, ClampLimit(args.Limit), args.Offset)
+		var companyIds []string
+		if args.CompanyID != "" {
+			companyIds = []string{args.CompanyID}
+		}
+		result, err := SearchJobs(args.Query, args.Location, companyIds, args.PortalLinkID, args.PortalID, ClampLimit(args.Limit), args.Offset)
 		if err != nil {
 			return db.ErrResult(fmt.Sprintf("failed to search jobs: %v", err)), nil, nil
 		}

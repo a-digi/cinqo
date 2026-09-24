@@ -556,7 +556,17 @@ func jobsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		limit := atoiOrZero(q.Get("limit"))
 		offset := atoiOrZero(q.Get("offset"))
-		result, err := jobs.SearchJobs(q.Get("query"), q.Get("location"), q.Get("companyId"), q.Get("portalLinkId"), q.Get("portalId"), jobs.ClampLimit(limit), offset)
+		// companyId may be repeated (?companyId=A&companyId=B) since the
+		// Jobs page's own company filter is multi-select — q["companyId"]
+		// (unlike q.Get, which only ever returns the first) is every
+		// value for that key, filtered of any accidental empty entries.
+		var companyIds []string
+		for _, id := range q["companyId"] {
+			if id != "" {
+				companyIds = append(companyIds, id)
+			}
+		}
+		result, err := jobs.SearchJobs(q.Get("query"), q.Get("location"), companyIds, q.Get("portalLinkId"), q.Get("portalId"), jobs.ClampLimit(limit), offset)
 		if err != nil {
 			http.Error(w, "failed to list jobs: "+err.Error(), http.StatusInternalServerError)
 			return

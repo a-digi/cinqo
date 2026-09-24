@@ -423,7 +423,7 @@ export async function removeExperience(personaId: string, id: string): Promise<v
 export async function fetchJobs(
   query: string,
   location: string,
-  companyId?: string,
+  companyIds?: string[],
   portalId?: string,
   limit?: number,
   offset?: number,
@@ -431,7 +431,12 @@ export async function fetchJobs(
   const params = new URLSearchParams()
   if (query) params.set('query', query)
   if (location) params.set('location', location)
-  if (companyId) params.set('companyId', companyId)
+  // Repeated companyId params (?companyId=A&companyId=B) — the backend's
+  // own jobsHandler reads every value for the key, not just the first,
+  // since the company filter is multi-select.
+  for (const id of companyIds ?? []) {
+    if (id) params.append('companyId', id)
+  }
   if (portalId) params.set('portalId', portalId)
   if (limit !== undefined) params.set('limit', String(limit))
   if (offset !== undefined) params.set('offset', String(offset))
