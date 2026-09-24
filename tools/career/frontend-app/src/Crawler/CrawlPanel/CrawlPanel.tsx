@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { updatePortalLink, type PortalLink } from '../../api'
 import { Dropdown } from '../../Components/Dropdown/Dropdown'
+import { Switch } from '../../Shared/Switch/Switch'
 import { AUTO_DISCOVERY_INTERVAL_OPTIONS } from '../autoDiscovery'
 import type { Platform } from '../../Cinqo/Platform/platformRepository'
 import { CoreApiError } from '../../Cinqo/Http/client'
@@ -821,18 +822,13 @@ export function CrawlPanel({
           the mechanism runs at all; this is this ONE link's own
           override on top of that. */}
       <div className="mb-2 flex flex-wrap items-center gap-2">
-        <label className="flex items-center gap-2 text-xs text-gray-600">
-          <input
-            type="checkbox"
-            checked={link.autoDiscoveryEnabled}
-            disabled={autoDiscoveryPending}
-            onChange={(e) => {
-              handleToggleAutoDiscovery(e.target.checked)
-            }}
-            className="h-3.5 w-3.5 rounded border-gray-300 text-gray-900 focus:ring-gray-500"
-          />
-          Auto-discovery
-        </label>
+        <Switch
+          checked={link.autoDiscoveryEnabled}
+          disabled={autoDiscoveryPending}
+          onChange={handleToggleAutoDiscovery}
+          label="Auto-discovery"
+          size="sm"
+        />
         {/* This link's own interval override (step 85) — shown only
             while auto-discovery is actually on for this link; hidden,
             not just disabled, while it's off, since "how often" has no

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Dropdown } from '../../Components/Dropdown/Dropdown'
+import { Switch } from '../../Shared/Switch/Switch'
 import {
   fetchAutoDiscoverySettings,
   updateAutoDiscoverySettings,
@@ -77,18 +78,14 @@ export function AutoDiscoveryPanel() {
 
   return (
     <div className="mb-5 flex flex-wrap items-end gap-3 rounded-md border border-gray-200 bg-gray-50 p-3">
-      <label className="flex items-center gap-2 text-sm text-gray-700">
-        <input
-          type="checkbox"
-          checked={enabled}
-          disabled={saving}
-          onChange={(e) => {
-            save(e.target.checked, intervalMinutes)
-          }}
-          className="h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-gray-500"
-        />
-        Auto-discovery
-      </label>
+      <Switch
+        checked={enabled}
+        disabled={saving}
+        onChange={(nextEnabled) => {
+          save(nextEnabled, intervalMinutes)
+        }}
+        label="Auto-discovery"
+      />
       <div className="min-w-[160px]">
         <span className="mb-1 block text-xs font-medium text-gray-500">Crawl every</span>
         <Dropdown
