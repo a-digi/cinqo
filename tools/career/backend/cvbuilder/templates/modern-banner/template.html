@@ -7,14 +7,19 @@
   </head>
   <body>
     <div class="banner">
-    <h1>{{.FullName}}</h1>
-    {{if .Headline}}
-    <p class="headline">{{.Headline}}</p>
-    {{end}} {{if or .Location .ExternalLinks}}
-    <p class="contact">
-      {{if .Location}}<span>{{.Location}}</span>{{end}}{{range .ExternalLinks}}<span>{{.Platform}}: {{.URL}}</span>{{end}}
-    </p>
-    {{end}}
+      {{if .PhotoDataURI}}
+      <img class="profile-photo" src="{{.PhotoDataURI}}" alt="" />
+      {{end}}
+      <div class="cv-header-text">
+        <h1>{{.FullName}}</h1>
+        {{if .Headline}}
+        <p class="headline">{{.Headline}}</p>
+        {{end}} {{if or .Location .ExternalLinks}}
+        <p class="contact">
+          {{if .Location}}<span>{{.Location}}</span>{{end}}{{range .ExternalLinks}}<span>{{.Platform}}: {{.URL}}</span>{{end}}
+        </p>
+        {{end}}
+      </div>
     </div>
     {{if .Summary}}
     <h2>Summary</h2>

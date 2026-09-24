@@ -852,6 +852,18 @@ export async function fetchCvPersonaDefaults(personaId: string): Promise<CvData>
   return jsonOrThrow<CvData>(res, 'load persona defaults')
 }
 
+// Answers "does this persona's own profile have a photo uploaded?" —
+// a separate, deliberately tiny call rather than folding it into
+// fetchCvPersonaDefaults: this is also called from the "edit an
+// existing CV" load path, which must NOT re-fetch/overwrite that
+// document's own already-loaded CvData the way persona-defaults would.
+export async function fetchCvPhotoStatus(personaId: string): Promise<{ hasPhoto: boolean }> {
+  const res = await fetch(`${PROXY_BASE}/cv-documents/photo-status?personaId=${encodeURIComponent(personaId)}`, {
+    credentials: 'include',
+  })
+  return jsonOrThrow<{ hasPhoto: boolean }>(res, 'check profile photo')
+}
+
 export async function fetchCvDocuments(personaId: string): Promise<CvDocument[]> {
   const res = await fetch(`${PROXY_BASE}/cv-documents?personaId=${encodeURIComponent(personaId)}`, { credentials: 'include' })
   const body = await jsonOrThrow<{ cvDocuments: CvDocument[] }>(res, 'load cv documents')
@@ -868,12 +880,18 @@ export async function fetchCvDocument(id: string): Promise<CvDocument> {
 // Renders templateId with data (the builder's own current, possibly
 // edited state — never re-derived from personaId server-side), generates
 // the PDF, uploads it to Media, and records the row.
-export async function createCvDocument(personaId: string, templateId: string, title: string, data: CvData): Promise<CvDocument> {
+export async function createCvDocument(
+  personaId: string,
+  templateId: string,
+  title: string,
+  data: CvData,
+  attachPhoto: boolean,
+): Promise<CvDocument> {
   const res = await fetch(`${PROXY_BASE}/cv-documents`, {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ personaId, templateId, title, data }),
+    body: JSON.stringify({ personaId, templateId, title, data, attachPhoto }),
   })
   return jsonOrThrow<CvDocument>(res, 'generate cv document')
 }
@@ -883,12 +901,17 @@ export async function createCvDocument(personaId: string, templateId: string, ti
 // row. Lets the wizard show what a CV would actually look like before
 // the user commits to creating it. previewUrl is a temporary
 // pdf_tools-owned URL (never a Media/cv_documents reference).
-export async function previewCvDocument(personaId: string, templateId: string, data: CvData): Promise<{ previewUrl: string }> {
+export async function previewCvDocument(
+  personaId: string,
+  templateId: string,
+  data: CvData,
+  attachPhoto: boolean,
+): Promise<{ previewUrl: string }> {
   const res = await fetch(`${PROXY_BASE}/cv-documents/preview`, {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ personaId, templateId, data }),
+    body: JSON.stringify({ personaId, templateId, data, attachPhoto }),
   })
   return jsonOrThrow<{ previewUrl: string }>(res, 'preview cv document')
 }

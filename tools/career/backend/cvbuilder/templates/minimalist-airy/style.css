@@ -22,3 +22,21 @@ p.skills { margin: 0; }
 .entry-title { font-weight: 600; }
 .entry-meta { color: #a3a3a3; font-size: 9pt; }
 .entry-desc { margin: 4px 0 0 0; }
+
+.profile-photo {
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.cv-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.cv-header-text {
+  flex: 1;
+  min-width: 0;
+}

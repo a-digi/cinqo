@@ -116,10 +116,44 @@ func PersonaDefaultsHandler(w http.ResponseWriter, r *http.Request) {
 	db.WriteJSON(w, data)
 }
 
+type photoStatusResponse struct {
+	HasPhoto bool `json:"hasPhoto"`
+}
+
+// PhotoStatusHandler handles GET cv-documents/photo-status?personaId=
+// — a separate, deliberately tiny endpoint rather than folding this
+// into PersonaDefaultsHandler's own response: it's called from BOTH the
+// "pick a persona for a new CV" step AND the "load an existing CV to
+// edit" path (CvBuilderPage.tsx), and the latter must NOT re-fetch/
+// overwrite the just-loaded document's own CvData the way calling
+// persona-defaults again would.
+func PhotoStatusHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	personaID := r.URL.Query().Get("personaId")
+	if personaID == "" {
+		http.Error(w, "personaId query parameter is required", http.StatusBadRequest)
+		return
+	}
+	hasPhoto, err := personaHasProfilePhoto(personaID)
+	if err != nil {
+		if errors.Is(err, persona.ErrUnknownPersona) {
+			http.Error(w, "unknown persona id", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "failed to check profile photo: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	db.WriteJSON(w, photoStatusResponse{HasPhoto: hasPhoto})
+}
+
 type previewCvDocumentRequest struct {
-	PersonaID  string           `json:"personaId"`
-	TemplateID string           `json:"templateId"`
-	Data       templates.CvData `json:"data"`
+	PersonaID   string           `json:"personaId"`
+	TemplateID  string           `json:"templateId"`
+	Data        templates.CvData `json:"data"`
+	AttachPhoto bool             `json:"attachPhoto"`
 }
 
 type previewCvDocumentResponse struct {
@@ -167,14 +201,18 @@ func PreviewHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	photoDataURI, err := resolveProfilePhoto(r, body.PersonaID)
-	if err != nil {
-		if errors.Is(err, persona.ErrUnknownPersona) {
-			http.Error(w, "unknown persona id", http.StatusBadRequest)
+	var photoDataURI string
+	if body.AttachPhoto {
+		var photoErr error
+		photoDataURI, photoErr = resolveProfilePhoto(r, body.PersonaID)
+		if photoErr != nil {
+			if errors.Is(photoErr, persona.ErrUnknownPersona) {
+				http.Error(w, "unknown persona id", http.StatusBadRequest)
+				return
+			}
+			http.Error(w, "failed to resolve profile photo: "+photoErr.Error(), http.StatusInternalServerError)
 			return
 		}
-		http.Error(w, "failed to resolve profile photo: "+err.Error(), http.StatusInternalServerError)
-		return
 	}
 
 	xhtml, err := templates.Render(body.TemplateID, body.Data, photoDataURI)
@@ -193,10 +231,11 @@ func PreviewHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 type createCvDocumentRequest struct {
-	PersonaID  string           `json:"personaId"`
-	TemplateID string           `json:"templateId"`
-	Title      string           `json:"title"`
-	Data       templates.CvData `json:"data"`
+	PersonaID   string           `json:"personaId"`
+	TemplateID  string           `json:"templateId"`
+	Title       string           `json:"title"`
+	Data        templates.CvData `json:"data"`
+	AttachPhoto bool             `json:"attachPhoto"`
 }
 
 type updateCvDocumentTitleRequest struct {
@@ -265,10 +304,14 @@ func DocumentsHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		photoDataURI, err := resolveProfilePhoto(r, body.PersonaID)
-		if err != nil {
-			http.Error(w, "failed to resolve profile photo: "+err.Error(), http.StatusInternalServerError)
-			return
+		var photoDataURI string
+		if body.AttachPhoto {
+			var photoErr error
+			photoDataURI, photoErr = resolveProfilePhoto(r, body.PersonaID)
+			if photoErr != nil {
+				http.Error(w, "failed to resolve profile photo: "+photoErr.Error(), http.StatusInternalServerError)
+				return
+			}
 		}
 
 		xhtml, err := templates.Render(body.TemplateID, body.Data, photoDataURI)
@@ -542,20 +585,17 @@ func forwardAuthHeaders(originalReq, req *http.Request) {
 	}
 }
 
-// resolveProfilePhoto looks up personaID's own profile's current photo
-// (profileimage package, image_media_file_id column) and returns it as
-// a ready-to-use "data:<content-type>;base64,<...>" string for
-// templates.Render's own photoDataURI parameter — "" (no error) if the
-// profile has no photo, which every caller here treats as "just don't
-// show one," not a failure. A genuinely unknown personaID is the one
-// real caller mistake this surfaces as an error; a Media-side fetch
-// failure is deliberately swallowed (logged, not returned) — a photo
-// Media can't currently serve must never block generating or
-// previewing the rest of the CV. Queries career.db directly rather than
-// importing the profileimage package: that package's own HTTP handlers
-// aren't needed here, and a two-line SELECT is simpler than exporting a
-// getter whose only other caller is this one.
-func resolveProfilePhoto(r *http.Request, personaID string) (string, error) {
+// profileImageMediaFileID looks up personaID's own profile's current
+// photo (profileimage package, image_media_file_id column) — "" (no
+// error) if the profile has none. Shared by resolveProfilePhoto (needs
+// the actual bytes) and personaHasProfilePhoto (only needs to know
+// whether one exists, for the wizard's own "attach photo?" checkbox —
+// no reason to fetch Media bytes just to answer that). Queries
+// career.db directly rather than importing the profileimage package:
+// that package's own HTTP handlers aren't needed here, and a two-line
+// SELECT is simpler than exporting a getter whose only other callers
+// are these two.
+func profileImageMediaFileID(personaID string) (string, error) {
 	var profileID string
 	switch err := db.CareerDB.QueryRow(`SELECT profile_id FROM personas WHERE id = ?`, personaID).Scan(&profileID); {
 	case err == sql.ErrNoRows:
@@ -568,13 +608,46 @@ func resolveProfilePhoto(r *http.Request, personaID string) (string, error) {
 	if err := db.CareerDB.QueryRow(`SELECT image_media_file_id FROM profiles WHERE id = ?`, profileID).Scan(&mediaFileID); err != nil {
 		return "", err
 	}
-	if !mediaFileID.Valid || mediaFileID.String == "" {
+	if !mediaFileID.Valid {
+		return "", nil
+	}
+	return mediaFileID.String, nil
+}
+
+// personaHasProfilePhoto answers the wizard's own "does this persona's
+// profile have a photo at all?" question — the "attach photo?" checkbox
+// (PersonaAndTemplateStep.tsx) only ever renders when this is true, per
+// your own instruction ("the checkbox will show up only if the user has
+// a profile image uploaded").
+func personaHasProfilePhoto(personaID string) (bool, error) {
+	mediaFileID, err := profileImageMediaFileID(personaID)
+	if err != nil {
+		return false, err
+	}
+	return mediaFileID != "", nil
+}
+
+// resolveProfilePhoto returns personaID's own profile photo as a
+// ready-to-use "data:<content-type>;base64,<...>" string for
+// templates.Render's own photoDataURI parameter — "" (no error) if the
+// profile has no photo, which every caller here treats as "just don't
+// show one," not a failure. A genuinely unknown personaID is the one
+// real caller mistake this surfaces as an error; a Media-side fetch
+// failure is deliberately swallowed (logged, not returned) — a photo
+// Media can't currently serve must never block generating or
+// previewing the rest of the CV.
+func resolveProfilePhoto(r *http.Request, personaID string) (string, error) {
+	mediaFileID, err := profileImageMediaFileID(personaID)
+	if err != nil {
+		return "", err
+	}
+	if mediaFileID == "" {
 		return "", nil
 	}
 
-	dataURI, err := fetchMediaImageDataURI(r, mediaFileID.String)
+	dataURI, err := fetchMediaImageDataURI(r, mediaFileID)
 	if err != nil {
-		log.Printf("cvbuilder: failed to fetch profile photo %q for cv render: %v", mediaFileID.String, err)
+		log.Printf("cvbuilder: failed to fetch profile photo %q for cv render: %v", mediaFileID, err)
 		return "", nil
 	}
 	return dataURI, nil

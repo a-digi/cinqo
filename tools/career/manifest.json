@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.0.308",
+  "version": "0.0.313",
   "mcp": true,
   "requires_tools": [
     {
@@ -327,6 +327,11 @@
     {
       "method": "GET",
       "path_suffix": "cv-documents/persona-defaults",
+      "required_scope": "tool:career:cv_documents"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "cv-documents/photo-status",
       "required_scope": "tool:career:cv_documents"
     },
     {

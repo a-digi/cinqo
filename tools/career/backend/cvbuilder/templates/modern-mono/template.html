@@ -7,6 +7,9 @@
   </head>
   <body>
     <div class="header">
+      {{if .PhotoDataURI}}
+      <img class="profile-photo" src="{{.PhotoDataURI}}" alt="" />
+      {{end}}
       <div class="header-text">
         <h1>{{.FullName}}</h1>
         {{if .Headline}}
@@ -17,9 +20,6 @@
         <p class="links">{{range .ExternalLinks}}<span>{{.Platform}}: {{.URL}}</span>{{end}}</p>
         {{end}}
       </div>
-      {{if .PhotoDataURI}}
-      <img class="profile-photo" src="{{.PhotoDataURI}}" alt="" />
-      {{end}}
     </div>
     {{if .Summary}}
     <h2>Summary</h2>

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { PersonaSwitcher } from '../Persona/PersonaSwitcher/PersonaSwitcher'
 import { Dropdown } from '../Dropdown/Dropdown'
+import { EyeIcon } from '../../Shared/Icons/icons'
 import { previewImages } from './previewImages'
 import type { CvTemplate } from '../../api'
 
@@ -10,6 +11,12 @@ export interface PersonaAndTemplateStepProps {
   templates: CvTemplate[]
   templateId: string
   onTemplateChange: (id: string) => void
+  hasProfilePhoto: boolean
+  attachPhoto: boolean
+  onAttachPhotoChange: (attach: boolean) => void
+  canPreview: boolean
+  previewing: boolean
+  onPreviewTemplate: (templateId: string) => void
 }
 
 const ALL_CATEGORIES = 'All'
@@ -35,6 +42,12 @@ export function PersonaAndTemplateStep({
   templates,
   templateId,
   onTemplateChange,
+  hasProfilePhoto,
+  attachPhoto,
+  onAttachPhotoChange,
+  canPreview,
+  previewing,
+  onPreviewTemplate,
 }: PersonaAndTemplateStepProps) {
   const [category, setCategory] = useState<string>(ALL_CATEGORIES)
   const [professions, setProfessions] = useState<string[]>([])
@@ -70,6 +83,20 @@ export function PersonaAndTemplateStep({
   return (
     <div className="space-y-4">
       <PersonaSwitcher personaId={personaId} onChange={onPersonaChange} />
+
+      {hasProfilePhoto && (
+        <label className="flex items-center gap-2 text-sm text-gray-700">
+          <input
+            type="checkbox"
+            checked={attachPhoto}
+            onChange={(e) => {
+              onAttachPhotoChange(e.target.checked)
+            }}
+            className="h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900"
+          />
+          Include this profile's photo in the CV
+        </label>
+      )}
 
       <div>
         <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Template</h3>
@@ -120,25 +147,42 @@ export function PersonaAndTemplateStep({
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
           {filteredTemplates.map((t) => (
-            <button
+            <div
               key={t.id}
-              type="button"
-              onClick={() => {
-                onTemplateChange(t.id)
-              }}
-              className={`overflow-hidden rounded-md border text-left text-sm shadow-sm ${
+              className={`flex h-full flex-col overflow-hidden rounded-md border text-sm shadow-sm ${
                 templateId === t.id ? 'border-gray-900 ring-1 ring-gray-900' : 'border-gray-200 hover:border-gray-300'
               }`}
             >
-              <div className="aspect-[600/780] w-full bg-gray-50">
-                {previewImages[t.id] && <img src={previewImages[t.id]} alt={`${t.name} preview`} className="h-full w-full object-cover" />}
-              </div>
-              <div className="p-2.5">
-                <p className="font-medium text-gray-900">{t.name}</p>
-                <p className="mt-1 text-xs text-gray-500">{t.description}</p>
-                <p className="mt-1.5 text-[11px] text-gray-400">{t.bestFor.join(' · ')}</p>
-              </div>
-            </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onTemplateChange(t.id)
+                }}
+                className="block w-full flex-1 text-left"
+              >
+                <div className="aspect-[600/780] w-full bg-gray-50">
+                  {previewImages[t.id] && (
+                    <img src={previewImages[t.id]} alt={`${t.name} preview`} className="h-full w-full object-cover" />
+                  )}
+                </div>
+                <div className="p-2.5">
+                  <p className="font-medium text-gray-900">{t.name}</p>
+                  <p className="mt-1 text-xs text-gray-500">{t.description}</p>
+                  <p className="mt-1.5 text-[11px] text-gray-400">{t.bestFor.join(' · ')}</p>
+                </div>
+              </button>
+              <button
+                type="button"
+                disabled={!canPreview || previewing}
+                onClick={() => {
+                  onPreviewTemplate(t.id)
+                }}
+                className="flex w-full shrink-0 items-center justify-center gap-1.5 border-t border-gray-200 bg-gray-900 py-1.5 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+              >
+                <EyeIcon />
+                {previewing ? 'Preparing preview…' : 'Preview'}
+              </button>
+            </div>
           ))}
         </div>
       </div>

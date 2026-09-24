@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import {
   fetchCvTemplates,
   fetchCvPersonaDefaults,
+  fetchCvPhotoStatus,
   fetchCvDocument,
   createCvDocument,
   previewCvDocument,
@@ -65,6 +66,16 @@ export function CvBuilderPage() {
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState('')
   const [previewing, setPreviewing] = useState(false)
+  // hasProfilePhoto gates whether the "attach photo?" checkbox even
+  // shows (PersonaAndTemplateStep.tsx) — per your own instruction, no
+  // photo uploaded means no checkbox at all, not a disabled/unchecked
+  // one. attachPhoto defaults true (checked) and resets to true
+  // whenever the persona changes or an existing document is loaded —
+  // there's no stored record of whether a past document actually used
+  // a photo, so edit mode can't restore the original choice; it just
+  // reapplies the same "checked by default" rule new CVs get.
+  const [hasProfilePhoto, setHasProfilePhoto] = useState(false)
+  const [attachPhoto, setAttachPhoto] = useState(true)
 
   // PersonaSwitcher's own mount effect ALWAYS auto-selects a persona
   // from localStorage/first-in-list and fires onChange exactly once,
@@ -99,6 +110,14 @@ export function CvBuilderPage() {
         setTitle(doc.title)
         setCvData(doc.data)
         setFurthestStep(STEPS.length - 1)
+        setAttachPhoto(true)
+        fetchCvPhotoStatus(doc.personaId)
+          .then(({ hasPhoto }) => {
+            setHasProfilePhoto(hasPhoto)
+          })
+          .catch(() => {
+            setHasProfilePhoto(false)
+          })
       })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : String(err))
@@ -115,10 +134,18 @@ export function CvBuilderPage() {
     }
     setPersonaId(id)
     setError('')
+    setAttachPhoto(true)
     fetchCvPersonaDefaults(id)
       .then(setCvData)
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : String(err))
+      })
+    fetchCvPhotoStatus(id)
+      .then(({ hasPhoto }) => {
+        setHasProfilePhoto(hasPhoto)
+      })
+      .catch(() => {
+        setHasProfilePhoto(false)
       })
   }
 
@@ -161,14 +188,19 @@ export function CvBuilderPage() {
   // synchronously, still inside the click handler, and only pointed at
   // the real URL once the response arrives — opening it later, inside
   // the .then(), loses the original click's "user gesture" in most
-  // browsers and gets silently popup-blocked. See
-  // plan/ai/career/cv-builder/step-04-frontend-cv-builder.md.
-  function handlePreview() {
-    if (!cvData || !templateId || !personaId) return
+  // browsers and gets silently popup-blocked. Takes an explicit
+  // template id (not always the currently-selected one) so each
+  // template card's own "Preview" button in step 1 can preview ANY
+  // design with the current persona's data, without first requiring
+  // the user to switch their actual selection to it. See
+  // plan/ai/career/cv-builder/step-04-frontend-cv-builder.md and
+  // plan/ai/career/cv-builder/step-07-per-card-template-preview.md.
+  function handlePreviewTemplate(previewTemplateId: string) {
+    if (!cvData || !previewTemplateId || !personaId) return
     setError('')
     const previewTab = window.open('', '_blank')
     setPreviewing(true)
-    previewCvDocument(personaId, templateId, cvData)
+    previewCvDocument(personaId, previewTemplateId, cvData, attachPhoto)
       .then(({ previewUrl: url }) => {
         if (previewTab) {
           previewTab.location.href = url
@@ -193,7 +225,7 @@ export function CvBuilderPage() {
     }
     setError('')
     setGenerating(true)
-    createCvDocument(personaId, templateId, title.trim(), cvData)
+    createCvDocument(personaId, templateId, title.trim(), cvData, attachPhoto)
       .then(() => {
         window.__cinqoToolBridge.navigate(CV_DOCUMENTS_PATH)
       })
@@ -230,6 +262,12 @@ export function CvBuilderPage() {
           templates={templates}
           templateId={templateId}
           onTemplateChange={setTemplateId}
+          hasProfilePhoto={hasProfilePhoto}
+          attachPhoto={attachPhoto}
+          onAttachPhotoChange={setAttachPhoto}
+          canPreview={Boolean(cvData)}
+          previewing={previewing}
+          onPreviewTemplate={handlePreviewTemplate}
         />
       )}
       {step === 1 && cvData && <PersonalDetailsStep data={cvData} onChange={setCvData} />}
@@ -250,7 +288,9 @@ export function CvBuilderPage() {
           {cvData && templateId && (
             <button
               type="button"
-              onClick={handlePreview}
+              onClick={() => {
+                handlePreviewTemplate(templateId)
+              }}
               disabled={previewing}
               className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
             >
