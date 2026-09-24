@@ -112,6 +112,7 @@ func runHTTPServer() {
 	http.HandleFunc("/portal-links/crawl-now/cancel", crawl.CrawlNowCancelHandler)
 	http.HandleFunc("/events/listing-instructions-ready", portal.ListingInstructionsReadyEventHandler)
 	http.HandleFunc("/events/jobs-crawled", portal.JobsCrawledEventHandler)
+	http.HandleFunc("/events/job-created", jobs.JobCreatedEventHandler)
 	http.HandleFunc("/cv-import/upload", cv.UploadCVHandler)
 	http.HandleFunc("/cv-import/runs", cv.CVImportRunsHandler)
 	http.HandleFunc("/cv-documents/templates", cvbuilder.TemplatesHandler)

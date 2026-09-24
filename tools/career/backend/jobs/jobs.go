@@ -47,6 +47,7 @@ import (
 
 	"career-tool-backend/companies"
 	"career-tool-backend/db"
+	"career-tool-backend/domainevent"
 	"career-tool-backend/media"
 )
 
@@ -122,6 +123,25 @@ type job struct {
 	CvError          string `json:"cvError,omitempty"`
 }
 
+// publishJobCreatedEvent is plan/ai/tools/career/step-83's own
+// dispatch side — fired once per genuinely NEW job row (never on an
+// update-in-place or a detected cross-portal duplicate), so a listener
+// can resolve/create that job's own company without either insert path
+// above having to know anything about companies itself. Mirrors
+// cv_pdf.go's own publishCvGeneratedEvent exactly: runs synchronously
+// (not a detached goroutine) since save_job/save_portal_job(s) execute
+// inside a one-shot "--mcp" subprocess that exits shortly after
+// returning — domainevent.Publish's own short internal timeout is what
+// keeps an unreachable core from hanging that response for long. A
+// job with no company text at all publishes nothing — there is nothing
+// for a listener to look up or create.
+func publishJobCreatedEvent(jobId, company string) {
+	if company == "" {
+		return
+	}
+	domainevent.Publish("career.job.created", map[string]string{"job_id": jobId, "company": company})
+}
+
 // SaveJob upserts by source_url — re-saving a posting already known
 // updates it (refreshing crawled_at) rather than duplicating it.
 // Returns the row's own id and whether this was a fresh insert.
@@ -153,6 +173,9 @@ func saveJob(sourceURL, title, company, location, description, postedAt string) 
 	)
 	if err != nil {
 		return "", false, err
+	}
+	if created {
+		publishJobCreatedEvent(id, company)
 	}
 	return id, created, nil
 }
@@ -648,6 +671,9 @@ func SavePortalJob(portalLinkId, sourceURL, title, company, location, descriptio
 	)
 	if err != nil {
 		return "", false, false, err
+	}
+	if created {
+		publishJobCreatedEvent(id, company)
 	}
 	return id, created, false, nil
 }

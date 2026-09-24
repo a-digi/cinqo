@@ -20,32 +20,16 @@ import (
 	"career-tool-backend/db"
 )
 
-// eventEnvelope mirrors domainevent.Event's own JSON shape
-// (api/src/domainevent/event.go) — this backend is a separate Go
-// module from cinqo's own core API and cannot import that package
-// directly, so this is a small, deliberate local duplicate of just the
-// shape these handlers need, matching the established "package main
-// cannot be imported" convention already used elsewhere in this
-// backend for cross-module duplication.
-type eventEnvelope struct {
-	ID         string          `json:"id"`
-	Topic      string          `json:"topic"`
-	SourceKind string          `json:"source_kind"`
-	SourceID   string          `json:"source_id"`
-	Payload    json.RawMessage `json:"payload"`
-	OccurredAt string          `json:"occurred_at"`
-}
-
 // portalLinkEventPayload is the payload shape both
 // career.portal_link.* topics use — see step-66's own publishers.
 type portalLinkEventPayload struct {
 	PortalLinkID string `json:"portal_link_id"`
 }
 
-// decodePortalLinkEvent reads the request body as an eventEnvelope and
-// extracts its own portal_link_id, shared by both handlers below.
+// decodePortalLinkEvent reads the request body as a db.EventEnvelope
+// and extracts its own portal_link_id, shared by both handlers below.
 func decodePortalLinkEvent(r *http.Request) (portalLinkID string, ok bool) {
-	var evt eventEnvelope
+	var evt db.EventEnvelope
 	if err := json.NewDecoder(r.Body).Decode(&evt); err != nil {
 		return "", false
 	}

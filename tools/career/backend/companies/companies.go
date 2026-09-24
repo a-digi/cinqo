@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -53,6 +54,29 @@ type company struct {
 	RecruiterCount int    `json:"recruiterCount"`
 	CreatedAt      string `json:"createdAt"`
 	UpdatedAt      string `json:"updatedAt,omitempty"`
+}
+
+// FindCompanyByName looks up a company by a case-insensitive, trimmed
+// exact name match — the same matching rule save_portal_job already
+// uses for its own (title, company) dedup (jobs.go's own toLower(
+// strings.TrimSpace(...)) convention, mirrored here in SQL since this
+// package has no reason to share that file's own ASCII-only micro-
+// optimization). found=false (not an error) means no match exists —
+// the Domain Events listener that calls this (jobs/events.go's
+// JobCreatedEventHandler) creates a new company in that case. See
+// plan/ai/tools/career/step-83-job-created-company-linking.md.
+func FindCompanyByName(name string) (id string, found bool, err error) {
+	err = db.JobsDB.QueryRow(
+		`SELECT id FROM companies WHERE LOWER(TRIM(name)) = ?`,
+		strings.ToLower(strings.TrimSpace(name)),
+	).Scan(&id)
+	switch {
+	case err == sql.ErrNoRows:
+		return "", false, nil
+	case err != nil:
+		return "", false, err
+	}
+	return id, true, nil
 }
 
 func CreateCompany(name, description string) (string, error) {
