@@ -479,7 +479,7 @@ export async function updateJobMatch(
 // starting one (status: 'generating', profileId + conversationId set)
 // or recording a client-observed failure (status: 'failed', error
 // set). Mirrors updateJobMatch exactly. A successful render is never
-// recorded here — the AI's own save_cv_pdf MCP tool call, and the
+// recorded here — the AI's own save_cv_document MCP tool call, and the
 // platform's own conversation orchestrator, settle cvStatus at
 // 'completed' entirely server-side, with no frontend involvement. See
 // plan/ai/tools/career/step-XX-cv-pdf.md.
@@ -832,6 +832,10 @@ export interface CvDocument {
   title: string
   data: CvData
   mediaFileId: string
+  // Set only for a CV the AI generated for a specific job (Jobs page's
+  // own "Generate CV PDF"); absent for one created through this
+  // wizard. See plan/ai/career/cv-builder/step-08-ai-generated-cv-documents.md.
+  jobId?: string
   createdAt: string
   updatedAt?: string
 }

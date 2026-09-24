@@ -145,7 +145,13 @@ func ListTemplates() []TemplateMeta {
 //go:embed minimalist-lines/template.html minimalist-lines/style.css minimalist-airy/template.html minimalist-airy/style.css
 var templateFS embed.FS
 
-func isKnownTemplate(id string) bool {
+// IsKnownTemplate is exported so callers that need to validate a
+// caller-submitted templateID WITHOUT actually rendering (e.g.
+// jobs/cv_pdf.go's own save_cv_document, defensively re-checking a
+// value it trusts was already used successfully by an earlier
+// render_cv_document call in the same conversation) don't have to
+// duplicate this list.
+func IsKnownTemplate(id string) bool {
 	for _, m := range metas {
 		if m.ID == id {
 			return true
@@ -227,7 +233,7 @@ type renderContext struct {
 // package, which has no HTTP client of its own and no notion of a
 // profile.
 func Render(templateID string, data CvData, photoDataURI string) (string, error) {
-	if !isKnownTemplate(templateID) {
+	if !IsKnownTemplate(templateID) {
 		return "", fmt.Errorf("unknown template %q", templateID)
 	}
 

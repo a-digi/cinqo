@@ -15,6 +15,10 @@ import (
 // plain columns, Data is data_json unmarshaled back into shape, and
 // MediaFileID is the resulting PDF's own permanent Media file id (see
 // plan/ai/career/cv-builder/step-01-overview-and-data-model.md).
+// JobID is "" for every document the human-facing wizard creates —
+// only ever set for one the AI generated for a specific job posting
+// (jobs/cv_pdf.go's own save_cv_document). See
+// plan/ai/career/cv-builder/step-08-ai-generated-cv-documents.md.
 type CvDocument struct {
 	ID          string           `json:"id"`
 	PersonaID   string           `json:"personaId"`
@@ -22,6 +26,7 @@ type CvDocument struct {
 	Title       string           `json:"title"`
 	Data        templates.CvData `json:"data"`
 	MediaFileID string           `json:"mediaFileId"`
+	JobID       string           `json:"jobId,omitempty"`
 	CreatedAt   string           `json:"createdAt"`
 	UpdatedAt   string           `json:"updatedAt,omitempty"`
 }
@@ -30,15 +35,16 @@ type CvDocument struct {
 // sentinel-error convention.
 var ErrUnknownCvDocument = errors.New("unknown cv document id")
 
-const cvDocumentColumns = `id, persona_id, template_id, title, data_json, media_file_id, created_at, updated_at`
+const cvDocumentColumns = `id, persona_id, template_id, title, data_json, media_file_id, job_id, created_at, updated_at`
 
 func scanCvDocument(scan func(dest ...any) error) (CvDocument, error) {
 	var doc CvDocument
 	var dataJSON string
-	var updatedAt sql.NullString
-	if err := scan(&doc.ID, &doc.PersonaID, &doc.TemplateID, &doc.Title, &dataJSON, &doc.MediaFileID, &doc.CreatedAt, &updatedAt); err != nil {
+	var jobID, updatedAt sql.NullString
+	if err := scan(&doc.ID, &doc.PersonaID, &doc.TemplateID, &doc.Title, &dataJSON, &doc.MediaFileID, &jobID, &doc.CreatedAt, &updatedAt); err != nil {
 		return doc, err
 	}
+	doc.JobID = jobID.String
 	doc.UpdatedAt = updatedAt.String
 	if err := json.Unmarshal([]byte(dataJSON), &doc.Data); err != nil {
 		return doc, err
@@ -80,8 +86,11 @@ func GetCvDocument(id string) (CvDocument, error) {
 
 // InsertCvDocument records a newly generated CV — called only after a
 // real, permanent Media file id already exists (handler.go's own
-// pipeline), so there's no partial/"generating" state to represent.
-func InsertCvDocument(personaID, templateID, title string, data templates.CvData, mediaFileID string) (CvDocument, error) {
+// pipeline, or jobs/cv_pdf.go's own AI-facing save_cv_document), so
+// there's no partial/"generating" state to represent. jobID is ""
+// for every human-driven (wizard) document; only the AI-facing path
+// ever passes a real one.
+func InsertCvDocument(personaID, templateID, title string, data templates.CvData, mediaFileID, jobID string) (CvDocument, error) {
 	dataJSON, err := json.Marshal(data)
 	if err != nil {
 		return CvDocument{}, err
@@ -89,13 +98,24 @@ func InsertCvDocument(personaID, templateID, title string, data templates.CvData
 
 	id := uuid.NewString()
 	if _, err := db.CareerDB.Exec(
-		`INSERT INTO cv_documents (id, persona_id, template_id, title, data_json, media_file_id, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
-		id, personaID, templateID, title, string(dataJSON), mediaFileID,
+		`INSERT INTO cv_documents (id, persona_id, template_id, title, data_json, media_file_id, job_id, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+		id, personaID, templateID, title, string(dataJSON), mediaFileID, sqlNullIfEmpty(jobID),
 	); err != nil {
 		return CvDocument{}, err
 	}
 	return GetCvDocument(id)
+}
+
+// sqlNullIfEmpty turns "" into a real SQL NULL rather than storing a
+// literal empty string in job_id — keeps "no job" queryable the normal
+// way (WHERE job_id IS NULL / WHERE job_id = ?), not two different
+// falsy representations.
+func sqlNullIfEmpty(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
 }
 
 // UpdateCvDocumentTitle is the one field a caller can rename after

@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.0.313",
+  "version": "0.0.314",
   "mcp": true,
   "requires_tools": [
     {
@@ -458,9 +458,21 @@
       "required_scope": "tool:career:jobs"
     },
     {
-      "name": "save_cv_pdf",
+      "name": "save_cv_document",
       "required_scope": "tool:career:jobs",
       "promote_media_param": "pdfResource"
+    },
+    {
+      "name": "list_cv_templates",
+      "required_scope": "tool:career:cv_documents"
+    },
+    {
+      "name": "get_persona_cv_defaults",
+      "required_scope": "tool:career:cv_documents"
+    },
+    {
+      "name": "render_cv_document",
+      "required_scope": "tool:career:cv_documents"
     },
     {
       "name": "create_company",

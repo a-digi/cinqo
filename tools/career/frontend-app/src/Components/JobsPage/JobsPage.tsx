@@ -317,7 +317,7 @@ export function JobsPage() {
   // finishCvGeneration is the shared "a Generate CV PDF conversation
   // just ended" handling, mirroring finishMatch above exactly — used
   // by both a freshly-started generation (startCvGeneration, below)
-  // and a resumed one (resumeCvWatch). The AI's own save_cv_pdf MCP
+  // and a resumed one (resumeCvWatch). The AI's own save_cv_document MCP
   // tool call, together with the platform's own conversation
   // orchestrator (which promotes the rendered PDF into permanent Media
   // storage in-process before that call even reaches this tool's own
@@ -325,7 +325,7 @@ export function JobsPage() {
   // cvStatus at 'completed' by the time a turn finishes successfully —
   // this function never touches Media or any tool's own proxy route
   // itself, it only re-verifies the real, server-side outcome (a turn
-  // can end without the model ever calling save_cv_pdf) rather than
+  // can end without the model ever calling save_cv_document) rather than
   // assuming success from the turn alone.
   function finishCvGeneration(jobId: string, err?: unknown) {
     if (err) {

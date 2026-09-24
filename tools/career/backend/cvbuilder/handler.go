@@ -45,12 +45,14 @@ func requirePersonaExists(personaID string) error {
 	return nil
 }
 
-// validateCvData bounds a client-submitted CvData (step 1's own
+// ValidateCvData bounds a caller-submitted CvData (step 1's own
 // addendum made this frontend-assembled, not server-derived) — html/
 // template (templates.Render) already neutralizes injection, this
 // only guards against an absurdly large payload wasting render time or
 // storage. Generous limits, no legitimate CV comes close to them.
-func validateCvData(data templates.CvData) error {
+// Exported: jobs/cv_pdf.go's own save_cv_document reuses this exact
+// check for AI-submitted CvData too, rather than duplicating it.
+func ValidateCvData(data templates.CvData) error {
 	if len(data.FullName) > maxFieldLength || len(data.Headline) > maxFieldLength ||
 		len(data.Summary) > maxFieldLength || len(data.Location) > maxFieldLength {
 		return fmt.Errorf("a field is too long")
@@ -171,7 +173,7 @@ type previewCvDocumentResponse struct {
 // The returned previewUrl points directly at pdf_tools' own temporary
 // files route (GET .../proxy/files?id=<resourceId>) — the exact same
 // transient reference generate_pdf's own MCP tool already hands back
-// mid-conversation, before an AI turn calls save_cv_pdf. Nothing new
+// mid-conversation, before an AI turn calls save_cv_document. Nothing new
 // about this resource's own lifecycle: it lives in pdf_tools' own
 // uploads dir, is never linked to any cv_documents row or Media file,
 // and is cleaned up on whatever schedule pdf_tools already applies to
@@ -196,7 +198,7 @@ func PreviewHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "templateId is required", http.StatusBadRequest)
 		return
 	}
-	if err := validateCvData(body.Data); err != nil {
+	if err := ValidateCvData(body.Data); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -299,7 +301,7 @@ func DocumentsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "failed to validate persona: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		if err := validateCvData(body.Data); err != nil {
+		if err := ValidateCvData(body.Data); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -336,7 +338,7 @@ func DocumentsHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		doc, err := InsertCvDocument(body.PersonaID, body.TemplateID, body.Title, body.Data, mediaFileID)
+		doc, err := InsertCvDocument(body.PersonaID, body.TemplateID, body.Title, body.Data, mediaFileID, "")
 		if err != nil {
 			http.Error(w, "cv generated but failed to record: "+err.Error(), http.StatusInternalServerError)
 			return

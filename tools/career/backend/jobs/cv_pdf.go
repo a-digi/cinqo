@@ -1,22 +1,25 @@
 // cv_pdf.go — "Generate CV PDF": lets an AI conversation build a CV
 // tailored to one specific job posting (reading that job's own
-// requirements plus a chosen profile's personas/skills/experience),
-// render it as a PDF via pdf_tools' own generate_pdf MCP tool, and
-// record the result. Mirrors job_match.go's own split into two
+// requirements plus a chosen persona's skills/experience), render it
+// as a PDF via the CV Builder's own template system (cvbuilder's
+// render_cv_document, not hand-authored XHTML — see
+// plan/ai/career/cv-builder/step-08-ai-generated-cv-documents.md),
+// generate it via pdf_tools' own generate_pdf, and record the result
+// as a real cv_documents row. Mirrors job_match.go's own split into two
 // persistence paths, deliberately never overlapping:
 //   - StartCvGeneration/UpdateCvGenerationStatus (below) back the
 //     human-facing PUT /jobs/cv endpoint (routeHandler.go) —
 //     starts/clears the tracking row, records a client-observed
 //     failure.
-//   - SaveGeneratedCvPdf (below) backs the AI-facing save_cv_pdf MCP
-//     tool — the ONLY way a completed PDF is ever recorded.
+//   - SaveGeneratedCvPdf (below) backs the AI-facing save_cv_document
+//     MCP tool — the ONLY way a completed PDF is ever recorded.
 //
 // pdf_tools' own generate_pdf does not upload to the platform's Media
 // store itself — it only writes to its own local uploadsDir and hands
 // back a resource link (a URI containing an "id" query parameter,
 // e.g. "/api/v1/tools/pdf_tools/proxy/files?id=<uuid>"). Rather than
-// have save_cv_pdf try to move those bytes into Media itself — it runs
-// as a stdio MCP subprocess with no caller HTTP session to
+// have save_cv_document try to move those bytes into Media itself — it
+// runs as a stdio MCP subprocess with no caller HTTP session to
 // authenticate a Media upload with, and storing a live user token for
 // later reuse would repeat exactly the capability-token anti-pattern
 // cv_import.go's own history already moved away from — the CORE app's
@@ -26,8 +29,8 @@
 // write, never an HTTP round trip or a token) BEFORE this tool call
 // ever reaches this backend at all, via the manifest's own declarative
 // promote_media_param mechanism (tools/career/manifest.json's
-// save_cv_pdf entry). So by the time SaveGeneratedCvPdf runs, its own
-// pdfResource argument already IS a permanent Media file id — this
+// save_cv_document entry). So by the time SaveGeneratedCvPdf runs, its
+// own pdfResource argument already IS a permanent Media file id — this
 // package never CREATES a Media row, over HTTP or otherwise, and the
 // whole flow runs fully detached from any frontend tab.
 //
@@ -55,9 +58,12 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"career-tool-backend/cvbuilder"
+	"career-tool-backend/cvbuilder/templates"
 	"career-tool-backend/db"
 	"career-tool-backend/domainevent"
 	"career-tool-backend/media"
+	"career-tool-backend/persona"
 )
 
 // StartCvGeneration begins tracking a new AI-driven CV generation
@@ -90,7 +96,7 @@ func StartCvGeneration(jobId, profileId, conversationId string) error {
 // other reason to call this; a successful render is only ever
 // recorded by SaveGeneratedCvPdf below). Mirrors updateJobMatchStatus's
 // own reasoning exactly: a turn that ends without the AI ever calling
-// save_cv_pdf is a real failure, not a silently-stuck "generating"
+// save_cv_document is a real failure, not a silently-stuck "generating"
 // state.
 func UpdateCvGenerationStatus(jobId, status string, errText *string) error {
 	if err := RequireJobExists(jobId); err != nil {
@@ -110,7 +116,7 @@ func UpdateCvGenerationStatus(jobId, status string, errText *string) error {
 var errNoCvGenerationInProgress = errors.New("no CV generation in progress for this job")
 
 // SaveGeneratedCvPdf is the ONLY function that ever records a
-// completed CV — called exclusively by the save_cv_pdf MCP tool
+// completed CV — called exclusively by the save_cv_document MCP tool
 // (below), never by any human-facing HTTP path. mediaFileId is already
 // a real, permanent Media file id by the time this runs — see this
 // file's own top doc comment for where that promotion happens.
@@ -156,10 +162,10 @@ func ReconcileOrphanedCvGenerations() error {
 // real proof that a TOOL-originated event reaches a core-native
 // listener, complementing step 1's own core-originated dogfood
 // (cinqo.tool.installed). Publishing this event is not part of
-// save_cv_pdf's own contract — the CV is already fully recorded by
+// save_cv_document's own contract — the CV is already fully recorded by
 // SaveGeneratedCvPdf by the time this runs — so any failure here is
 // logged and otherwise ignored, never turning an already-successful
-// save_cv_pdf call into a reported failure.
+// save_cv_document call into a reported failure.
 //
 // Runs synchronously, not as a fire-and-forget goroutine: this MCP
 // tool call executes inside a one-shot "--mcp" subprocess
@@ -167,7 +173,7 @@ func ReconcileOrphanedCvGenerations() error {
 // shortly after this handler returns, so a detached goroutine here
 // could easily never get to finish its own HTTP call. domainevent.Publish's
 // own short internal timeout is what keeps an unreachable core from
-// hanging save_cv_pdf's own response for long. See
+// hanging save_cv_document's own response for long. See
 // plan/ai/tools/career/step-66-career-event-publishers.md for the
 // shared domainevent.Publish helper this now delegates to (originally
 // a standalone implementation here, factored out once step 66 needed
@@ -184,7 +190,7 @@ func publishCvGeneratedEvent(jobId, mediaFileId string) {
 // mediaFileId is a real, already-promoted Media row it owns, since it
 // has no direct DB access to check that itself (see this file's own
 // top doc comment). A definitive media.ErrMediaNotOwned is passed
-// straight back to the caller, which must reject the whole save_cv_pdf
+// straight back to the caller, which must reject the whole save_cv_document
 // call rather than ever recording a dead reference on the job — this
 // is precisely the live-observed bug this function was added to catch
 // (the AI passing generate_pdf's own bare resource id instead of its
@@ -211,8 +217,12 @@ func prepareCvPdfMediaTitle(jobId, mediaFileId string) error {
 
 // --- MCP registration ---
 
-type saveCvPdfArgs struct {
-	JobID string `json:"jobId" jsonschema:"the job's own id, from get_job/list_jobs/search_jobs"`
+type saveCvDocumentArgs struct {
+	JobID      string                       `json:"jobId" jsonschema:"the job's own id, from get_job/list_jobs/search_jobs"`
+	PersonaID  string                       `json:"personaId" jsonschema:"the same persona id you passed to render_cv_document for this CV"`
+	TemplateID string                       `json:"templateId" jsonschema:"the same templateId you passed to render_cv_document for this CV"`
+	Title      string                       `json:"title" jsonschema:"a short, human-readable name for this CV document, e.g. 'Jane Doe - Senior Backend Engineer @ Acme' — shown in the persona's own CV Documents list"`
+	Data       cvbuilder.CvDocumentDataArgs `json:"data" jsonschema:"the exact SAME data object you passed to render_cv_document for this CV — stored so this CV can be reopened/edited later"`
 	// PdfResource's own JSON key (pdfResource) is what the manifest's
 	// own promote_media_param points at — the AI still passes
 	// generate_pdf's own returned resource URI here, unmodified and
@@ -223,21 +233,53 @@ type saveCvPdfArgs struct {
 	PdfResource string `json:"pdfResource" jsonschema:"the exact 'uri' field from generate_pdf's own returned resource link, unmodified"`
 }
 
-// RegisterSaveCvPdf adds save_cv_pdf — call this exactly once, right
-// after generate_pdf, to record the CV you just rendered for this job.
-func RegisterSaveCvPdf(server *mcp.Server) {
+// RegisterSaveCvDocument adds save_cv_document — call this exactly
+// once, right after generate_pdf, to record the CV you just rendered
+// (via render_cv_document + generate_pdf) for this job. Records a real
+// cv_documents row (visible in the persona's own CV Documents list,
+// same as one created through the human-facing wizard) AND updates
+// this job's own tracking row, so the Jobs page's existing status/
+// download UI keeps working unchanged.
+func RegisterSaveCvDocument(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "save_cv_pdf",
-		Description: "Record a CV PDF you just rendered for a job via generate_pdf — call this ONCE, immediately " +
-			"after generate_pdf returns its resource link, passing that link's own 'uri' field unmodified. Fails if " +
-			"jobId is unknown or no CV generation is currently in progress for it (the human-facing UI always starts " +
-			"one before sending you this request).",
-	}, func(ctx context.Context, req *mcp.CallToolRequest, args saveCvPdfArgs) (*mcp.CallToolResult, any, error) {
+		Name: "save_cv_document",
+		Description: "Record a CV PDF you just rendered for a job via render_cv_document + generate_pdf — call this ONCE, " +
+			"immediately after generate_pdf returns its resource link, passing that link's own 'uri' field unmodified. " +
+			"personaId, templateId, and data must be the EXACT same values you passed to render_cv_document for this CV. " +
+			"title is required (a short, human-readable name for the CV document). Fails if jobId is unknown or no CV " +
+			"generation is currently in progress for it (the human-facing UI always starts one before sending you this " +
+			"request).",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args saveCvDocumentArgs) (*mcp.CallToolResult, any, error) {
 		if args.JobID == "" {
 			return db.ErrResult("jobId is required"), nil, nil
 		}
+		if args.PersonaID == "" {
+			return db.ErrResult("personaId is required"), nil, nil
+		}
+		if args.TemplateID == "" {
+			return db.ErrResult("templateId is required"), nil, nil
+		}
+		if args.Title == "" {
+			return db.ErrResult("title is required"), nil, nil
+		}
+		if args.Data.FullName == "" {
+			return db.ErrResult("data.fullName is required"), nil, nil
+		}
 		if args.PdfResource == "" {
 			return db.ErrResult("pdfResource is required"), nil, nil
+		}
+		if _, err := persona.FetchPersonaDetails(args.PersonaID); err != nil {
+			if errors.Is(err, persona.ErrUnknownPersona) {
+				return db.ErrResult(fmt.Sprintf("unknown persona id %q", args.PersonaID)), nil, nil
+			}
+			return db.ErrResult(fmt.Sprintf("failed to validate persona: %v", err)), nil, nil
+		}
+		if !templates.IsKnownTemplate(args.TemplateID) {
+			return db.ErrResult(fmt.Sprintf("unknown template id %q — call list_cv_templates for valid ids", args.TemplateID)), nil, nil
+		}
+		cvData := args.Data.ToCvData()
+		if err := cvbuilder.ValidateCvData(cvData); err != nil {
+			return db.ErrResult(err.Error()), nil, nil
 		}
 		// Safety net, not the primary fix (that lives in the platform's
 		// own resolvePromoteMediaArgument, api/src/conversation/chat.go —
@@ -282,6 +324,10 @@ func RegisterSaveCvPdf(server *mcp.Server) {
 				), nil, nil
 			}
 		}
+		doc, err := cvbuilder.InsertCvDocument(args.PersonaID, args.TemplateID, args.Title, cvData, args.PdfResource, args.JobID)
+		if err != nil {
+			return db.ErrResult(fmt.Sprintf("failed to record cv document: %v", err)), nil, nil
+		}
 		if err := SaveGeneratedCvPdf(args.JobID, args.PdfResource); err != nil {
 			if errors.Is(err, ErrUnknownJob) {
 				return db.ErrResult(fmt.Sprintf("unknown job id %q", args.JobID)), nil, nil
@@ -292,6 +338,6 @@ func RegisterSaveCvPdf(server *mcp.Server) {
 			return db.ErrResult(fmt.Sprintf("failed to save CV pdf: %v", err)), nil, nil
 		}
 		publishCvGeneratedEvent(args.JobID, args.PdfResource)
-		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "saved"}}}, nil, nil
+		return db.JSONResult(map[string]string{"cvDocumentId": doc.ID, "status": "saved"})
 	})
 }

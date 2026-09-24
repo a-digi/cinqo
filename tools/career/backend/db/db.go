@@ -197,6 +197,14 @@ CREATE TABLE IF NOT EXISTS career_experience (
 -- cv_import_runs' own media_file_id above already established — Media
 -- lives in cinqo's own database, not this one). See
 -- plan/ai/career/cv-builder/step-01-overview-and-data-model.md.
+-- job_id (AI-driven CV generation, step XX) is a plain, unenforced
+-- reference to jobs.db's own jobs table — NULL for every document
+-- created through the human-facing wizard, set only when the AI
+-- generates a CV for a specific job posting (jobs/cv_pdf.go's own
+-- save_cv_document). Same "two genuinely separate SQLite files, no
+-- real cross-database FK possible" reasoning job_matches.profile_id
+-- already established. See
+-- plan/ai/career/cv-builder/step-08-ai-generated-cv-documents.md.
 CREATE TABLE IF NOT EXISTS cv_documents (
     id            TEXT PRIMARY KEY,
     persona_id    TEXT NOT NULL REFERENCES personas(id) ON DELETE CASCADE,
@@ -204,6 +212,7 @@ CREATE TABLE IF NOT EXISTS cv_documents (
     title         TEXT NOT NULL,
     data_json     TEXT NOT NULL,
     media_file_id TEXT NOT NULL,
+    job_id        TEXT,
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at    TEXT
 );
@@ -432,7 +441,7 @@ CREATE TABLE IF NOT EXISTS job_match_skills (
 -- own profiles table (see job_matches' own doc comment for why no
 -- real FK/JOIN across the two databases is possible).
 --
--- The AI-facing save_cv_pdf MCP tool (jobs/cv_pdf.go) moves a row
+-- The AI-facing save_cv_document MCP tool (jobs/cv_pdf.go) moves a row
 -- straight from 'generating' to 'completed', setting media_file_id —
 -- it never talks to Media over HTTP itself: the CORE app's own
 -- conversation orchestrator (api/src/conversation/chat.go) promotes
@@ -489,6 +498,9 @@ func migrateCareerDB(db *sql.DB) error {
 		return err
 	}
 	if err := migrateProfilesImageMediaFileID(db); err != nil {
+		return err
+	}
+	if err := migrateCvDocumentsJobID(db); err != nil {
 		return err
 	}
 
@@ -749,6 +761,26 @@ func migrateProfilesImageMediaFileID(db *sql.DB) error {
 	return err
 }
 
+// migrateCvDocumentsJobID adds the nullable job_id column (AI-generated
+// CV documents) to an already-installed cv_documents table — same
+// plain ALTER TABLE ADD COLUMN shape as every other column addition in
+// this file, guarded the same way. NULL backfills every pre-existing
+// row correctly: no document could have been generated for a job
+// before this column existed. A no-op on a brand-new install (the
+// inline CREATE TABLE IF NOT EXISTS above already includes it). See
+// plan/ai/career/cv-builder/step-08-ai-generated-cv-documents.md.
+func migrateCvDocumentsJobID(db *sql.DB) error {
+	exists, hasColumn, err := tableHasColumn(db, "cv_documents", "job_id")
+	if err != nil {
+		return err
+	}
+	if !exists || hasColumn {
+		return nil
+	}
+	_, err = db.Exec(`ALTER TABLE cv_documents ADD COLUMN job_id TEXT`)
+	return err
+}
+
 // migrateJobsDB detects a pre-company jobs.db (a jobs table with no
 // company_id column) and, if found, creates the companies table (so
 // the column's own REFERENCES target exists before the column is
@@ -813,7 +845,7 @@ func migrateJobsDB(db *sql.DB) error {
 
 // migrateJobCvPdfsSchema detects an early-shape job_cv_pdfs table (one
 // still carrying the now-removed pdf_tools_file_id column, from before
-// the promote_media_param mechanism made the AI-facing save_cv_pdf
+// the promote_media_param mechanism made the AI-facing save_cv_document
 // tool receive an already-real Media file id directly) and drops it —
 // this feature was still under active development with no real user
 // data in that shape yet, so a rebuild-from-empty is correct here,

@@ -668,7 +668,7 @@ type cvPdfUpdateRequest struct {
 // generation attempt (status: "generating", profileId + conversationId
 // set) or records a client-observed failure (status: "failed", error
 // set). Mirrors jobMatchHandler exactly. A successful render is never
-// recorded here — that's the AI-facing save_cv_pdf MCP tool's own job
+// recorded here — that's the AI-facing save_cv_document MCP tool's own job
 // (cv_pdf.go's own top doc comment explains how it ends up with an
 // already-permanent Media file id by the time it runs).
 func cvPdfHandler(w http.ResponseWriter, r *http.Request) {
