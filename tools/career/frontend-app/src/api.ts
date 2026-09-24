@@ -116,6 +116,28 @@ export interface JobsResult {
   total: number
 }
 
+// One past CV generation attempt for a job — the full audit trail,
+// unlike Job's own cvStatus/cvConversationId/cvMediaFileId/cvError
+// (which only ever reflect the CURRENT attempt, wiped to undefined the
+// moment a later one starts). See
+// plan/ai/career/cv-generation-audit/step-05-jobs-page-ui.md.
+export interface CvGeneration {
+  id: string
+  conversationId: string
+  status: 'generating' | 'completed' | 'failed'
+  cvDocumentId?: string
+  mediaFileId?: string
+  error?: string
+  startedAt: string
+  finishedAt?: string
+}
+
+export async function fetchCvGenerations(jobId: string): Promise<CvGeneration[]> {
+  const res = await fetch(`${PROXY_BASE}/jobs/cv-generations?jobId=${encodeURIComponent(jobId)}`, { credentials: 'include' })
+  const body = await jsonOrThrow<{ generations: CvGeneration[] }>(res, 'load cv generations')
+  return body.generations
+}
+
 export interface Company {
   id: string
   name: string

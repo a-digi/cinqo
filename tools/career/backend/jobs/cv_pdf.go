@@ -52,10 +52,12 @@ package jobs
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"career-tool-backend/cvbuilder"
@@ -67,10 +69,15 @@ import (
 )
 
 // StartCvGeneration begins tracking a new AI-driven CV generation
-// attempt for jobId — upserts a fresh 'generating' row, clearing any
-// previous conversation/media reference/error from an earlier attempt
-// (re-generating always starts clean, no history kept, same
-// convention job_matches itself already uses). Called only from the
+// attempt for jobId — upserts a fresh 'generating' row in job_cv_pdfs,
+// clearing any previous conversation/media reference/error from an
+// earlier attempt (that table's own "current state only" contract is
+// unchanged — re-generating still starts it clean, same convention
+// job_matches itself already uses). Also INSERTs a new row into
+// job_cv_generations — the append-only audit counterpart that never
+// gets cleared (see db.go's own doc comment on that table) — so this
+// attempt stays discoverable/auditable long after job_cv_pdfs' own
+// single row has moved on to a later attempt. Called only from the
 // human-facing PUT /jobs/cv handler — never by the AI itself.
 func StartCvGeneration(jobId, profileId, conversationId string) error {
 	if err := RequireJobExists(jobId); err != nil {
@@ -87,6 +94,14 @@ func StartCvGeneration(jobId, profileId, conversationId string) error {
 			error = NULL,
 			updated_at = datetime('now')`,
 		jobId, profileId, conversationId,
+	)
+	if err != nil {
+		return err
+	}
+	_, err = db.JobsDB.Exec(
+		`INSERT INTO job_cv_generations (id, job_id, profile_id, conversation_id, status, started_at)
+		 VALUES (?, ?, ?, ?, 'generating', datetime('now'))`,
+		uuid.NewString(), jobId, profileId, conversationId,
 	)
 	return err
 }
@@ -106,6 +121,13 @@ func UpdateCvGenerationStatus(jobId, status string, errText *string) error {
 		`UPDATE job_cv_pdfs SET status = ?, error = ?, conversation_id = NULL, updated_at = datetime('now') WHERE job_id = ?`,
 		status, orNull(errText), jobId,
 	)
+	if err != nil {
+		return err
+	}
+	_, err = db.JobsDB.Exec(
+		`UPDATE job_cv_generations SET status = ?, error = ?, finished_at = datetime('now') WHERE job_id = ? AND status = 'generating'`,
+		status, orNull(errText), jobId,
+	)
 	return err
 }
 
@@ -120,7 +142,13 @@ var errNoCvGenerationInProgress = errors.New("no CV generation in progress for t
 // (below), never by any human-facing HTTP path. mediaFileId is already
 // a real, permanent Media file id by the time this runs — see this
 // file's own top doc comment for where that promotion happens.
-func SaveGeneratedCvPdf(jobId, mediaFileId string) error {
+// cvDocumentId is the cv_documents row save_cv_document just inserted
+// for this exact attempt — recorded on job_cv_generations (not
+// job_cv_pdfs, which has no such column and doesn't need one) so a past
+// attempt's own audit entry can still point at the exact CV it
+// produced, even after a later attempt overwrites job_cv_pdfs' own
+// "current" pointer.
+func SaveGeneratedCvPdf(jobId, mediaFileId, cvDocumentId string) error {
 	if err := RequireJobExists(jobId); err != nil {
 		return err
 	}
@@ -138,7 +166,11 @@ func SaveGeneratedCvPdf(jobId, mediaFileId string) error {
 	if affected == 0 {
 		return errNoCvGenerationInProgress
 	}
-	return nil
+	_, err = db.JobsDB.Exec(
+		`UPDATE job_cv_generations SET status = 'completed', media_file_id = ?, cv_document_id = ?, finished_at = datetime('now') WHERE job_id = ? AND status = 'generating'`,
+		mediaFileId, cvDocumentId, jobId,
+	)
+	return err
 }
 
 // ReconcileOrphanedCvGenerations mirrors ReconcileOrphanedJobMatches
@@ -153,7 +185,69 @@ func ReconcileOrphanedCvGenerations() error {
 		`UPDATE job_cv_pdfs SET status = 'failed', error = 'Interrupted by a server restart', conversation_id = NULL, updated_at = datetime('now')
 		 WHERE status = 'generating'`,
 	)
+	if err != nil {
+		return err
+	}
+	_, err = db.JobsDB.Exec(
+		`UPDATE job_cv_generations SET status = 'failed', error = 'Interrupted by a server restart', finished_at = datetime('now')
+		 WHERE status = 'generating'`,
+	)
 	return err
+}
+
+// CvGeneration is one past CV generation attempt for a job — the
+// audit-trail read shape backing GET /jobs/cv-generations?jobId=. See
+// plan/ai/career/cv-generation-audit/step-03-backend-wiring.md.
+type CvGeneration struct {
+	ID             string  `json:"id"`
+	ConversationID string  `json:"conversationId"`
+	Status         string  `json:"status"`
+	CvDocumentID   string  `json:"cvDocumentId,omitempty"`
+	MediaFileID    string  `json:"mediaFileId,omitempty"`
+	Error          string  `json:"error,omitempty"`
+	StartedAt      string  `json:"startedAt"`
+	FinishedAt     *string `json:"finishedAt,omitempty"`
+}
+
+// ListCvGenerationsForJob returns every CV generation attempt ever
+// recorded for jobId, newest first — the full audit trail, unlike
+// job_cv_pdfs' own single "current state" row.
+func ListCvGenerationsForJob(jobId string) ([]CvGeneration, error) {
+	if err := RequireJobExists(jobId); err != nil {
+		return nil, err
+	}
+	// ORDER BY started_at alone isn't reliably "newest first": SQLite's
+	// datetime('now') only has second-level resolution, so two attempts
+	// started within the same second (a real, live-caught case, not
+	// hypothetical) would otherwise tie and come back in an unspecified
+	// order. rowid always increases with insertion order regardless, so
+	// it's the correct tiebreaker.
+	rows, err := db.JobsDB.Query(
+		`SELECT id, conversation_id, status, cv_document_id, media_file_id, error, started_at, finished_at
+		 FROM job_cv_generations WHERE job_id = ? ORDER BY started_at DESC, rowid DESC`,
+		jobId,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	generations := []CvGeneration{}
+	for rows.Next() {
+		var g CvGeneration
+		var cvDocumentID, mediaFileID, errText, finishedAt sql.NullString
+		if err := rows.Scan(&g.ID, &g.ConversationID, &g.Status, &cvDocumentID, &mediaFileID, &errText, &g.StartedAt, &finishedAt); err != nil {
+			return nil, err
+		}
+		g.CvDocumentID = cvDocumentID.String
+		g.MediaFileID = mediaFileID.String
+		g.Error = errText.String
+		if finishedAt.Valid {
+			g.FinishedAt = &finishedAt.String
+		}
+		generations = append(generations, g)
+	}
+	return generations, rows.Err()
 }
 
 // publishCvGeneratedEvent is the Domain Events plan's own step 6
@@ -328,7 +422,7 @@ func RegisterSaveCvDocument(server *mcp.Server) {
 		if err != nil {
 			return db.ErrResult(fmt.Sprintf("failed to record cv document: %v", err)), nil, nil
 		}
-		if err := SaveGeneratedCvPdf(args.JobID, args.PdfResource); err != nil {
+		if err := SaveGeneratedCvPdf(args.JobID, args.PdfResource, doc.ID); err != nil {
 			if errors.Is(err, ErrUnknownJob) {
 				return db.ErrResult(fmt.Sprintf("unknown job id %q", args.JobID)), nil, nil
 			}

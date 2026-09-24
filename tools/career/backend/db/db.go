@@ -462,6 +462,40 @@ CREATE TABLE IF NOT EXISTS job_cv_pdfs (
     error              TEXT,
     updated_at         TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- job_cv_generations (CV generation audit trail) is the append-only
+-- counterpart to job_cv_pdfs above: that table is deliberately one row
+-- PER JOB (job_id is its own primary key) tracking only the CURRENT
+-- generation attempt — SaveGeneratedCvPdf/UpdateCvGenerationStatus both
+-- wipe its own conversation_id back to NULL the moment an attempt
+-- finishes, success or failure, so it retains no history at all once a
+-- run completes. This table is one row PER ATTEMPT instead (id is its
+-- own primary key, job_id is just an indexed foreign key) — inserted
+-- once when a generation starts and updated exactly once more in place
+-- when it finishes, never deleted or overwritten — so every conversation
+-- that ever ran for a job's CV can still be found and audited long after
+-- the job's own "current" CV has since been regenerated. cv_document_id/
+-- media_file_id are plain, unenforced references into career.db's own
+-- cv_documents table (same "two separate SQLite files, no real
+-- cross-database FK possible" reasoning job_matches.persona_id already
+-- established) — kept so a past attempt's own link points at exactly
+-- the CV/file IT produced, not whatever the job's current one happens to
+-- be now. See plan/ai/career/cv-generation-audit/step-02-data-model.md.
+CREATE TABLE IF NOT EXISTS job_cv_generations (
+    id              TEXT PRIMARY KEY,
+    job_id          TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    profile_id      TEXT NOT NULL,
+    conversation_id TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'generating'
+                      CHECK (status IN ('generating','completed','failed')),
+    cv_document_id  TEXT,
+    media_file_id   TEXT,
+    error           TEXT,
+    started_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    finished_at     TEXT
+);
+
+CREATE INDEX IF NOT EXISTS job_cv_generations_job_idx ON job_cv_generations(job_id);
 `
 
 // migrateCareerDB runs, in order, every past schema migration this

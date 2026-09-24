@@ -11,10 +11,12 @@ import {
   updateJobMatch,
   updateJobCv,
   mediaDownloadUrl,
+  fetchCvGenerations,
   type Job,
   type Company,
   type Portal,
   type Profile,
+  type CvGeneration,
 } from '../../api'
 import { fetchPlatforms, fetchPlatformKeys, type Platform } from '../../Cinqo/Platform/platformRepository'
 import { createConversation, sendMessage, awaitTurnCompletion, fetchTurnStatus } from '../../Cinqo/Conversation/conversation'
@@ -91,6 +93,32 @@ export function JobsPage() {
   // picked for (non-null only while 2+ profiles exist and the picker
   // Modal is open).
   const [cvPickerJob, setCvPickerJob] = useState<Job | null>(null)
+
+  // CV generation audit trail (step 5) — historyJob is the job whose
+  // history modal is currently open (mirrors matchPickerJob/cvPickerJob's
+  // own "non-null only while its own Modal is open" shape). Fetched
+  // lazily, only when the modal actually opens for a given job — not
+  // eagerly for every job in the list. See
+  // plan/ai/career/cv-generation-audit/step-05-jobs-page-ui.md.
+  const [historyJob, setHistoryJob] = useState<Job | null>(null)
+  const [cvGenerations, setCvGenerations] = useState<CvGeneration[]>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyError, setHistoryError] = useState('')
+
+  function openCvHistory(job: Job) {
+    setHistoryJob(job)
+    setCvGenerations([])
+    setHistoryError('')
+    setHistoryLoading(true)
+    fetchCvGenerations(job.id)
+      .then(setCvGenerations)
+      .catch((err: unknown) => {
+        setHistoryError(err instanceof Error ? err.message : String(err))
+      })
+      .finally(() => {
+        setHistoryLoading(false)
+      })
+  }
 
   function load(companyIdOverride?: string, portalIdOverride?: string, pageOverride?: number, locationOverride?: string) {
     setError('')
@@ -487,16 +515,21 @@ export function JobsPage() {
     }
   }
 
-  // startCvGeneration mirrors startMatch exactly — a hidden
-  // conversation, opened immediately, with the conversation id
-  // persisted server-side (updateJobCv) BEFORE the actual instruction
-  // message is sent.
+  // startCvGeneration mirrors startMatch's own shape (opened
+  // immediately, conversation id persisted server-side via updateJobCv
+  // BEFORE the actual instruction message is sent), with one deliberate
+  // difference: NOT hidden, per your own instruction — this conversation
+  // should show up in the normal /conversations list, for auditability.
+  // `hidden` is set once, at creation, with no toggle path anywhere in
+  // this codebase — conversations created before this change stay
+  // hidden forever; only new ones from here on show up in the list. See
+  // plan/ai/career/cv-generation-audit/step-04-unhide-conversation.md.
   function startCvGeneration(job: Job, profileId: string) {
     if (!selectedPlatformId) return
     const platform = platforms.find((p) => p.id === selectedPlatformId)
     const model = platform && platform.models.length > 0 ? (selectedModel ?? platform.models[0]) : undefined
 
-    createConversation({ title: generateCvConversationTitle(job), platformId: selectedPlatformId, model, hidden: true })
+    createConversation({ title: generateCvConversationTitle(job), platformId: selectedPlatformId, model, hidden: false })
       .then((conversation) => {
         window.__cinqoToolBridge.openConversation(conversation.id)
         setJobs((prev) => prev.map((j) => (j.id === job.id ? { ...j, cvConversationId: conversation.id } : j)))
@@ -646,6 +679,18 @@ export function JobsPage() {
               ? (job.cvError ?? 'Failed to generate CV — click to retry')
               : 'Generate a CV PDF tailored to this job',
         variant: job.cvStatus === 'failed' ? 'danger' : 'default',
+      })
+    }
+
+    if (job.cvStatus) {
+      items.push({
+        key: 'cv-history',
+        label: 'View CV generation history',
+        icon: <RobotIcon />,
+        onClick: () => {
+          openCvHistory(job)
+        },
+        title: 'Every AI conversation that has ever generated a CV for this job — for auditing',
       })
     }
 
@@ -983,6 +1028,72 @@ export function JobsPage() {
             </button>
           ))}
         </div>
+      </Modal>
+
+      <Modal
+        open={historyJob !== null}
+        title={historyJob ? `CV generation history — ${historyJob.title}` : 'CV generation history'}
+        onClose={() => {
+          setHistoryJob(null)
+        }}
+      >
+        {historyLoading && <p className="text-sm text-gray-500">Loading…</p>}
+        {historyError && <p className="text-sm text-red-700">{historyError}</p>}
+        {!historyLoading && !historyError && cvGenerations.length === 0 && (
+          <p className="text-sm text-gray-400">No generation attempts recorded yet.</p>
+        )}
+        {!historyLoading && !historyError && cvGenerations.length > 0 && (
+          <ul className="flex max-h-96 flex-col gap-2 overflow-y-auto">
+            {cvGenerations.map((generation) => (
+              <li key={generation.id} className="rounded-md border border-gray-200 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-medium text-gray-900">{new Date(generation.startedAt).toLocaleString()}</span>
+                  <span
+                    className={`shrink-0 text-xs font-medium ${
+                      generation.status === 'completed'
+                        ? 'text-green-700'
+                        : generation.status === 'failed'
+                          ? 'text-red-700'
+                          : 'text-gray-500'
+                    }`}
+                  >
+                    {generation.status}
+                  </span>
+                </div>
+                {generation.error && <p className="mt-1 text-xs text-red-600">{generation.error}</p>}
+                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      window.__cinqoToolBridge.openConversation(generation.conversationId)
+                    }}
+                    className="text-gray-700 underline hover:text-gray-900"
+                  >
+                    Open conversation
+                  </button>
+                  <a
+                    href={`/conversations/${generation.conversationId}/logs`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-gray-700 underline hover:text-gray-900"
+                  >
+                    View raw logs
+                  </a>
+                  {generation.mediaFileId && (
+                    <a
+                      href={mediaDownloadUrl(generation.mediaFileId)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-gray-700 underline hover:text-gray-900"
+                    >
+                      Download PDF
+                    </a>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
       </Modal>
     </div>
   )
