@@ -492,19 +492,45 @@ func crawlPage(parent context.Context, rawURL, requestID string, expectedSelecto
 	// must never be served from (or written to) a cache keyed only by URL.
 	skipCache := len(removeSelectors) > 0 || len(removeAttributes) > 0 || maxAttributeLength > 0
 
+	// The cloudflare-web-scraper port (library_fallback.go) runs when this
+	// tool's own headless attempt couldn't clear a challenge: for an AI
+	// call right after it, within aiCallBudget (the headless attempt
+	// leaves libraryFallbackReserve for it); for Career's own calls right
+	// before the headed tab — so it also runs for a known-Cloudflare
+	// domain, which skips the headless attempt.
+	fallback := libraryFallbackEnabled()
+	workerDeadline := deadline
+	if fallback && !deadline.IsZero() {
+		workerDeadline = deadline.Add(-libraryFallbackReserve)
+	}
 	worker := func() (crawlResponse, error) {
-		return crawlOnWorkerTab(reqCtx, deadline, rawURL, requestID, expectedSelectors, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
+		return crawlOnWorkerTab(reqCtx, workerDeadline, rawURL, requestID, expectedSelectors, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
+	}
+	library := func() (crawlResponse, error) {
+		return libraryFallbackFetch(reqCtx, deadline, rawURL, requestID, expectedSelectors, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
 	}
 	headed := func() (crawlResponse, error) {
+		if fallback {
+			resp, err := library()
+			var cfErr *crawlError
+			if !errors.As(err, &cfErr) || cfErr.Code != codeCloudflareUnresolved {
+				return resp, err
+			}
+		}
 		return crawlWithNormalSession(reqCtx, rawURL, requestID, expectedSelectors, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
 	}
 	resolve := func(tryWorkerFirst bool) (crawlResponse, error) {
 		if requestID != "" {
 			return escalateChallenge(reqCtx, rawURL, requestID, tryWorkerFirst, worker, headed)
 		}
-		// AI call: one headless worker attempt within aiCallBudget, no
-		// domain lock (nothing headed to serialize), no headed tab.
+		// AI call: one headless worker attempt, then the library fallback,
+		// within aiCallBudget; no domain lock (nothing headed to
+		// serialize), no headed tab.
 		resp, err := worker()
+		var cfErr *crawlError
+		if fallback && errors.As(err, &cfErr) && cfErr.Code == codeCloudflareUnresolved {
+			resp, err = library()
+		}
 		recordIfUnresolved(rawURL, err)
 		if err == nil {
 			syncPrimaryTabAsync(rawURL, resp, skipCache)
