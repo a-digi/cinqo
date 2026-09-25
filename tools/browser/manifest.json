@@ -1,7 +1,7 @@
 {
   "slug": "browser",
   "name": "Browser",
-  "version": "0.0.175",
+  "version": "0.0.178",
   "mcp": true,
   "scopes": [
     {
