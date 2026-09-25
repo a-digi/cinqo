@@ -28,6 +28,8 @@ import (
 type crawlPhase string
 
 const (
+	phaseQueuedForTab           crawlPhase = "queued_for_tab"
+	phaseAwaitingDomain         crawlPhase = "awaiting_domain_resolution"
 	phaseNavigating             crawlPhase = "navigating"
 	phaseCheckingCloudflare     crawlPhase = "checking_cloudflare"
 	phaseAwaitingHumanChallenge crawlPhase = "awaiting_human_challenge"
@@ -63,8 +65,8 @@ var (
 // map can never grow unboundedly across the life of this process — a
 // plain, inline sweep rather than a separate goroutine/ticker, sized
 // for this tool's own realistic concurrency (at most a small number of
-// simultaneous crawls, matching shared.Mu/shared.NormalSessionMu's own
-// single-shared-session model).
+// simultaneous crawls, bounded by the browser's own tab pools —
+// shared.AcquireWorkerTab/AcquireHeadedTab).
 func setCrawlPhase(requestID string, phase crawlPhase, message string) {
 	if requestID == "" {
 		return

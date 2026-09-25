@@ -35,6 +35,11 @@ import (
 // kills the call outright.
 const paginatedCrawlTimeout = 35 * time.Second
 
+// paginatedAutoWaitReserve is how much of ctx's own deadline page 1's
+// automatic Cloudflare wait (runPaginatedCrawlLoop) leaves for the
+// extraction/pagination that follows once it clears.
+const paginatedAutoWaitReserve = 10 * time.Second
+
 // paginatedCrawlTimeoutWithPacing replaces paginatedCrawlTimeout
 // whenever rateLimitKey is set (portal_pacing.go) — i.e. only ever for
 // Career's own deterministic calls, never the AI-driven path (which
@@ -122,12 +127,12 @@ type pageExtractResult struct {
 	Items    []map[string]any `json:"items,omitempty"`
 	NotFound []string         `json:"notFound"`
 	// CloudflareDetected/CloudflareReason (step 21) — a single,
-	// immediate check (detectCloudflareChallenge, cloudflare.go), not
-	// the full wait-then-poll crawlPage's own initial navigation gets
-	// (waitForCloudflareClearance) — this tool's own per-page time
-	// budget (paginatedCrawlTimeout) has far less slack for an extra
-	// multi-second wait per page across up to maxAllowedPaginationPages
-	// pages. See this step's own open question 1,
+	// immediate check (challengeTracker.state, challenge_resolution.go) per
+	// page. Only page 1 additionally gets the automatic wait-then-poll
+	// (challengeTracker, challenge_resolution.go) when it's blocked —
+	// this tool's own per-page time budget (paginatedCrawlTimeout) has
+	// far less slack for an extra multi-second wait on every page
+	// across up to maxAllowedPaginationPages pages. See this step's own open question 1,
 	// plan/ai/tools/browser/step-21-cloudflare-challenge-detection.md.
 	CloudflareDetected bool   `json:"cloudflareDetected,omitempty"`
 	CloudflareReason   string `json:"cloudflareReason,omitempty"`
@@ -229,7 +234,8 @@ func PaginatedCrawlHandler(w http.ResponseWriter, r *http.Request) {
 	settings, _ := shared.LoadBrowserSettings()
 	captureHTML := settings.DebugEnabled && settings.DebugLogHTML
 
-	result, pageHTML, err := performPaginatedCrawl(body.URL, body.Container, body.Fields, body.Mapping, body.NextSelector, body.RequestedMaxPages, body.EffectiveMaxPages, captureHTML, body.RequestID, body.RateLimitKey)
+	// r.Context() — see CrawlHandler's identical comment (crawl.go).
+	result, pageHTML, err := performPaginatedCrawl(r.Context(), body.URL, body.Container, body.Fields, body.Mapping, body.NextSelector, body.RequestedMaxPages, body.EffectiveMaxPages, captureHTML, body.RequestID, body.RateLimitKey)
 	if err != nil {
 		setCrawlPhase(body.RequestID, phaseFailed, err.Error())
 		var cfErr *crawlError
@@ -277,7 +283,23 @@ func PaginatedCrawlHandler(w http.ResponseWriter, r *http.Request) {
 // reach the live AI-facing JSON response; only PaginatedCrawlHandler's
 // own saveCrawlLog call (crawl_log.go) ever sees it. See
 // plan/ai/tools/browser/step-22-debug-mode-and-log-management.md.
-func runPaginatedCrawlLoop(ctx context.Context, container string, fields []extractField, mapping map[string]string, nextSelector string, requestedMaxPages, effectiveMaxPages int, captureHTML bool, requestID, rateLimitKey string) (paginatedCrawlResponse, []string, error) {
+// loopTab is what runPaginatedCrawlLoop needs to know about the tab it
+// runs in: its challenge signals (watched from before navigation),
+// what to invalidate when a pagination click navigates it (onNavigate —
+// only the primary tab has fetch-cache state to clear; nil elsewhere),
+// and how long page 1 may wait for a challenge to clear automatically
+// (primaryAutoWait on the primary tab, cloudflareAutoWait elsewhere).
+type loopTab struct {
+	signals    *challengeSignals
+	onNavigate func()
+	autoWait   time.Duration
+}
+
+func runPaginatedCrawlLoop(ctx context.Context, tab loopTab, args paginatedArgs) (paginatedCrawlResponse, []string, error) {
+	signals := tab.signals
+	container, fields, mapping, nextSelector := args.container, args.fields, args.mapping, args.nextSelector
+	requestedMaxPages, effectiveMaxPages, captureHTML := args.requestedMaxPages, args.effectiveMaxPages, args.captureHTML
+	requestID, rateLimitKey := args.requestID, args.rateLimitKey
 	pages := make([]pageExtractResult, 0, effectiveMaxPages)
 	var pageHTML []string
 	if captureHTML {
@@ -285,6 +307,15 @@ func runPaginatedCrawlLoop(ctx context.Context, container string, fields []extra
 	}
 	stoppedReason := ""
 	blockedReason := ""
+	// tracker checks every page against what Cloudflare sent for it
+	// (challenge_resolution.go); page 1's automatic wait runs at most
+	// once per call (autoWaited) — the same wait crawlPage's own
+	// navigation gets.
+	tracker, err := newChallengeTracker(ctx, signals, expectedSelectorsFromFields(container, fields))
+	if err != nil {
+		return paginatedCrawlResponse{}, nil, err
+	}
+	autoWaited := false
 
 	for page := 1; ; page++ {
 		setCrawlPhase(requestID, phaseExtracting, fmt.Sprintf("extracting page %d", page))
@@ -311,7 +342,7 @@ func runPaginatedCrawlLoop(ctx context.Context, container string, fields []extra
 		// through every caller: this is the one place per page that
 		// actually needs it, and container/fields are already exactly
 		// what expectedSelectorsFromFields wants.
-		cf, err := detectCloudflareChallenge(ctx, expectedSelectorsFromFields(container, fields))
+		cf, err := tracker.state(ctx)
 		if err != nil {
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 				stoppedReason = "time_budget_reached"
@@ -325,8 +356,8 @@ func runPaginatedCrawlLoop(ctx context.Context, container string, fields []extra
 			Results:            result.Results,
 			Items:              result.Items,
 			NotFound:           result.NotFound,
-			CloudflareDetected: cf.Detected,
-			CloudflareReason:   cf.Reason,
+			CloudflareDetected: cf.challenge || cf.blocked,
+			CloudflareReason:   cf.reason,
 		})
 
 		if captureHTML {
@@ -350,28 +381,16 @@ func runPaginatedCrawlLoop(ctx context.Context, container string, fields []extra
 			pageHTML = append(pageHTML, html)
 		}
 
-		// A Cloudflare challenge/block on this page normally means the
-		// extraction above ran against interstitial DOM, not real
-		// content — but not always: some sites embed a permanently-
-		// present, non-blocking Cloudflare/Turnstile trust badge
-		// (e.g. a small "protected by Cloudflare" widget) even on
-		// their real, fully-loaded page, which detectCloudflareChallenge's
-		// own heuristics can't distinguish from an active block —
-		// confirmed directly against a real site that never once
-		// reported "clear" even while genuinely showing real content.
-		// foundRealContent corroborates cf.Detected against the
-		// extraction that just ran on THIS SAME page: if it actually
-		// matched real data, trust that over the heuristic rather than
-		// discarding an already-correct result. Only when extraction
-		// ALSO found nothing is this treated as a genuine block — on
-		// the very first page that's a hard error (same contract as
+		// A Cloudflare challenge/block on this page means the extraction
+		// above ran against challenge DOM, not real content. foundRealContent
+		// corroborates that against the extraction itself: if it matched
+		// real data, keep it. Only when extraction ALSO found nothing is
+		// this treated as a genuine block — on the very first page that's
+		// the automatic wait (then a hard error, same contract as
 		// crawlPage's own unresolved-challenge case); on a later page,
 		// real items were already collected on earlier pages, so stop
-		// pagination but keep and return what's already there,
-		// distinctly flagged, rather than silently falling through to
-		// "no_next_link" (today's misleading bug: the interstitial page
-		// has no next-page selector either, so the loop used to just
-		// end as if pagination were naturally exhausted).
+		// pagination but keep and return what's already there, distinctly
+		// flagged, rather than silently falling through to "no_next_link".
 		//
 		// In grouped mode (container set), NotFound is NOT a valid
 		// signal on its own — a real, reproduced bug: extract.js's own
@@ -386,18 +405,45 @@ func runPaginatedCrawlLoop(ctx context.Context, container string, fields []extra
 		// grouped mode; NotFound only means something in flat mode,
 		// where extractFieldsFrom(document, ...) always runs regardless
 		// of what matched.
-		if cf.Detected {
+		if cf.blocked && len(pages) == 1 {
+			return paginatedCrawlResponse{}, nil, newCloudflareBlockedError(cf.reason)
+		}
+		if cf.challenge || cf.blocked {
 			foundRealContent := len(result.Items) > 0
 			if container == "" {
 				foundRealContent = foundRealContent || len(result.NotFound) < len(fields)
 			}
 			if len(pages) == 1 {
 				if !foundRealContent {
-					return paginatedCrawlResponse{}, nil, newCloudflareUnresolvedError(cf.Reason)
+					if autoWaited {
+						// Already waited once on this call — a challenge
+						// that reappeared after clearing is left to the
+						// caller (headed fallback / human wait).
+						return paginatedCrawlResponse{}, nil, newCloudflareUnresolvedError(cf.reason, tracker)
+					}
+					autoWaited = true
+					outcome, err := tracker.await(ctx, challengeModeAuto, autoWaitBudget(ctx, tab.autoWait, paginatedAutoWaitReserve), requestID, cf.reason)
+					if err != nil {
+						return paginatedCrawlResponse{}, nil, err
+					}
+					if outcome.HardBlocked {
+						return paginatedCrawlResponse{}, nil, newCloudflareBlockedError(outcome.Reason)
+					}
+					if !outcome.Cleared {
+						return paginatedCrawlResponse{}, nil, newCloudflareUnresolvedError(outcome.Reason, tracker)
+					}
+					// Cleared — discard page 1's interstitial result and
+					// extract it again from the real page.
+					pages = pages[:0]
+					if captureHTML {
+						pageHTML = pageHTML[:0]
+					}
+					page = 0
+					continue
 				}
 			} else if !foundRealContent {
 				stoppedReason = "cloudflare_blocked"
-				blockedReason = cf.Reason
+				blockedReason = cf.reason
 				break
 			}
 			// else: real data was found on this page despite cf.Detected
@@ -445,19 +491,13 @@ func runPaginatedCrawlLoop(ctx context.Context, container string, fields []extra
 			stoppedReason = "click_failed"
 			break
 		}
-		// step 45 — this click just navigated whichever session ctx
-		// belongs to (the shared headless one, when called from
-		// performPaginatedCrawl; the ephemeral headed fallback,
-		// harmless-but-unnecessary to clear, when called from
-		// performPaginatedCrawlWithNormalSession) somewhere fetch_page_html's
-		// own cache has no idea about. Unconditionally invalidating
-		// here — rather than only when this is provably the shared
-		// session — is the safe default: a real, previously-missed gap
-		// in crawlPage's own "crawlPage is the only thing that
-		// navigates the shared session" assumption, caught in this
-		// step's own final review. See
+		// step 45 — this click just navigated the tab somewhere
+		// fetch_page_html's own cache has no idea about; only the primary
+		// tab has that state (see loopTab). See
 		// plan/ai/tools/browser/step-45-fetch-html-caching-plan.md.
-		shared.LastHeadlessFetchURL = ""
+		if tab.onNavigate != nil {
+			tab.onNavigate()
+		}
 
 		var urlAfterClick string
 		if err := chromedp.Run(ctx, chromedp.Location(&urlAfterClick)); err != nil {
@@ -483,45 +523,53 @@ func runPaginatedCrawlLoop(ctx context.Context, container string, fields []extra
 	}, pageHTML, nil
 }
 
-// performPaginatedCrawl runs runPaginatedCrawlLoop against the shared
-// headless session. The headless attempt itself is scoped to an inner
-// function so shared.Mu is released the moment it concludes — BEFORE
-// performPaginatedCrawlWithNormalSession (a wholly separate browser,
-// guarded by its own shared.NormalSessionMu) ever starts. Without this,
-// shared.Mu would stay held for the fallback's own up-to-150s retry
-// budget (step 26) too, serializing every other crawl request behind
-// one slow, unrelated Cloudflare fallback — same fix step 25 already
-// applied to crawlPage, for the same reason. On a page-1-blocked
-// result, captures the shared session's own current URL (still
-// holding shared.Mu at that point) before releasing it — the
-// fallback, a fresh separate browser, has no other way to know what
-// page it should have been looking at, since crawl_paginated itself
-// never takes a URL. See
-// plan/ai/tools/browser/step-26-headed-fallback-for-paginated-crawl.md.
+// paginatedResult bundles runPaginatedCrawlLoop's own two results so a
+// paginated attempt fits escalateChallenge's single result type.
+type paginatedResult struct {
+	resp     paginatedCrawlResponse
+	pageHTML []string
+}
+
+// performPaginatedCrawl dispatches one /crawl-paginated call.
 //
-// url (step 37) is optional — when set, navigates the shared session
-// there FIRST, still inside this same shared.Mu acquisition, before
-// ever running the cache check or the extraction loop. This is what
-// makes navigate-then-extract one atomic operation instead of two
-// separately-locked HTTP calls: verified directly that Career's own
-// prior two-call approach (a separate POST /crawl, then this endpoint)
-// released shared.Mu completely in between, letting a DIFFERENT
-// concurrent crawl's own navigate land in the gap and silently redirect
-// this call's own extraction to the wrong page. See
-// plan/ai/tools/browser/step-37-atomic-navigate-and-extract.md.
-func performPaginatedCrawl(url, container string, fields []extractField, mapping map[string]string, nextSelector string, requestedMaxPages, effectiveMaxPages int, captureHTML bool, requestID, rateLimitKey string) (paginatedCrawlResponse, []string, error) {
+// url (step 37) set — a self-contained navigate-then-extract (Career's
+// own crawls, extract_from_url): runs entirely in its own headless
+// worker tab (performPaginatedCrawlForURL), never touching shared.Mu or
+// the primary tab. One tab from navigation to the last page is what
+// keeps it atomic: no other caller can navigate that tab in between
+// (the real, confirmed step-37 bug of Career's former two-call
+// approach), and a paced multi-page crawl (up to
+// paginatedCrawlTimeoutWithPacing) no longer blocks every other
+// operation for its whole duration.
+//
+// url empty — the AI's own crawl_paginated, which extracts from
+// whatever page the primary tab already shows, so it runs there under
+// shared.Mu. A page-1 challenge that doesn't clear within
+// primaryAutoWait is handed to escalateChallenge (worker, then headed)
+// at the primary tab's current URL, and shared.Mu is released first.
+//
+// AI calls (no requestID: crawl_paginated, extract_from_url) are
+// bounded by aiCallBudget and never go headed — see
+// challenge_resolver.go's own top comment. parent is the HTTP request's
+// own context: when the caller disconnects, the crawl stops.
+func performPaginatedCrawl(parent context.Context, url, container string, fields []extractField, mapping map[string]string, nextSelector string, requestedMaxPages, effectiveMaxPages int, captureHTML bool, requestID, rateLimitKey string) (paginatedCrawlResponse, []string, error) {
 	// step 63.2 — registered before anything else in this call, same
 	// reasoning as crawlPage's own identical registration (crawl.go):
 	// cancellable via cancelCrawl(requestID) from the instant this call
-	// arrives, even before shared.Mu is ever touched. A no-op when
-	// requestID is "" (the AI's own crawl_paginated calls never set
-	// one). See plan/ai/tools/career/step-63-stop-crawling-now.md.
-	reqCtx, reqCancel := context.WithCancel(context.Background())
+	// arrives. A no-op when requestID is "" (the AI's own
+	// crawl_paginated calls never set one). See
+	// plan/ai/tools/career/step-63-stop-crawling-now.md.
+	reqCtx, reqCancel := context.WithCancel(parent)
 	registerCrawlCancel(requestID, reqCancel)
 	defer func() {
 		unregisterCrawlCancel(requestID)
 		reqCancel()
 	}()
+
+	args := paginatedArgs{container, fields, mapping, nextSelector, requestedMaxPages, effectiveMaxPages, captureHTML, requestID, rateLimitKey, aiDeadline(requestID, time.Now())}
+	if url != "" {
+		return performPaginatedCrawlForURL(reqCtx, url, args)
+	}
 
 	result, pageHTML, blockedURL, err := func() (paginatedCrawlResponse, []string, string, error) {
 		if err := shared.EnsureSharedSession(); err != nil {
@@ -531,24 +579,16 @@ func performPaginatedCrawl(url, container string, fields []extractField, mapping
 		defer shared.Mu.Unlock()
 
 		// step 63.2 — this request may have been canceled while it sat
-		// queued waiting for shared.Mu — bail out immediately after
-		// acquiring the lock, before any real chromedp work, same
-		// reasoning as crawlPage's own identical check (crawl.go).
+		// queued waiting for shared.Mu — bail out before any real
+		// chromedp work, same as crawlPage's own identical check.
 		if reqCtx.Err() != nil {
 			return paginatedCrawlResponse{}, nil, "", reqCtx.Err()
 		}
 
 		// step 47.2/47.3 — fail fast on a tab left wedged by a previous,
-		// unrelated caller instead of discovering it only after burning
-		// paginatedCrawlTimeout on a navigate that was never going to
-		// complete, and replace the wedged tab immediately (still
-		// holding shared.Mu) so the NEXT caller gets a fresh, healthy
-		// session instead of inheriting the same wedge. blockedURL is
-		// deliberately left "" here — the dispatch below
-		// (errors.As(err, &cfErr) && blockedURL != "") only routes to
-		// the headed Cloudflare fallback when both are true, so this
-		// wedge error (a *crawlError, same as the Cloudflare one) can
-		// never accidentally trigger it.
+		// unrelated caller, and replace it immediately (still holding
+		// shared.Mu). blockedURL stays "" so this wedge error (a
+		// *crawlError too) can never reach the Cloudflare fallback.
 		if err := shared.ProbeSessionLiveness(shared.Ctx); err != nil {
 			recreateErr := shared.RecreateSharedSessionLocked()
 			return paginatedCrawlResponse{}, nil, "", NewSessionWedgedError(err, recreateErr)
@@ -558,83 +598,23 @@ func performPaginatedCrawl(url, container string, fields []extractField, mapping
 		if rateLimitKey != "" {
 			timeout = paginatedCrawlTimeoutWithPacing
 		}
-		ctx, cancel := context.WithTimeout(shared.Ctx, timeout)
+		ctx, cancel := context.WithTimeout(shared.Ctx, capTimeout(timeout, args.deadline))
 		defer cancel()
-		// step 63.2 — links this call's own ctx to reqCtx, same pattern
-		// as crawlPage's own identical goroutine (crawl.go) — every
-		// chromedp.Run call below (the navigate here, and everything
-		// inside runPaginatedCrawlLoop) already respects ctx.Done()
-		// internally, so no changes are needed inside that loop itself.
-		go func() {
-			select {
-			case <-reqCtx.Done():
-				cancel()
-				// step 63.2 — see crawl.go's identical comment: without
-				// this, Chrome itself keeps loading after this call has
-				// already given up waiting.
-				stopBrowserLoad(shared.Ctx)
-			case <-ctx.Done():
-			}
-		}()
+		linkRequestCancel(reqCtx, ctx, cancel, shared.Ctx)
 
-		if url != "" {
-			// portal_pacing.go — a no-op when rateLimitKey is "" (every
-			// AI-driven call). Paces THIS call's own first/only page
-			// against every other call sharing the same key, whether
-			// that's a different link under the same portal or an
-			// earlier page of this exact multi-page sequence.
-			awaitPortalCrawlPacing(ctx, rateLimitKey)
-			if ctx.Err() != nil {
-				return paginatedCrawlResponse{}, nil, "", classifyCancellation(ctx.Err(), reqCtx, shared.Ctx)
-			}
-			setCrawlPhase(requestID, phaseNavigating, "navigating to "+url)
-			if err := chromedp.Run(ctx, chromedp.Navigate(url), chromedp.Sleep(SettleDelay)); err != nil {
-				return paginatedCrawlResponse{}, nil, "", classifyCancellation(err, reqCtx, shared.Ctx)
-			}
-			// step 45 — this is the shared session (performPaginatedCrawl
-			// only ever runs against shared.Ctx), navigated outside
-			// crawlPage entirely; fetch_page_html's own cache check needs
-			// to know where the session actually is now. Set precisely
-			// (not just cleared) since the destination is known exactly,
-			// unlike runPaginatedCrawlLoop's own pagination-click
-			// invalidation below, which doesn't know what URL a click
-			// landed on until after this point in the surrounding call
-			// graph.
-			shared.LastHeadlessFetchURL = url
+		// step 45 — a pagination click navigates the primary tab
+		// somewhere fetch_page_html's own cache has no idea about.
+		tab := loopTab{
+			signals:    watchChallengeSignals(ctx),
+			onNavigate: func() { shared.LastHeadlessFetchURL = "" },
+			autoWait:   primaryAutoWait,
 		}
+		result, pageHTML, err := runPaginatedCrawlLoop(ctx, tab, args)
 
-		// step 29 — a known-Cloudflare domain skips straight to the
-		// headed fallback. Step 37 — when url was provided, use it
-		// directly for this check (we just navigated there, under this
-		// same lock, so it's authoritative); only fall back to reading
-		// the session's own current location when no url was given at
-		// all (the AI's own crawl_paginated calls, which still operate
-		// on whatever page is already loaded). A known-Cloudflare
-		// domain skips straight to the headed fallback via the same
-		// errors.As dispatch below, reusing a synthetic crawlError
-		// rather than duplicating the fallback-invocation logic —
-		// "known-cloudflare-cache" is deliberately distinct from
-		// cloudflareCheck's own detection reasons, so a human reading a
-		// recorded reason can tell "we actually saw it this time" apart
-		// from "we skipped straight to headed because of a past
-		// detection." See
-		// plan/ai/tools/browser/step-29-skip-headless-for-known-cloudflare-domains.md.
-		checkURL := url
-		if checkURL == "" {
-			_ = chromedp.Run(ctx, chromedp.Location(&checkURL))
-		}
-		if checkURL != "" {
-			if domain, hostErr := hostnameOf(checkURL); hostErr == nil {
-				if known, cacheErr := isDomainKnownCloudflare(domain); cacheErr == nil && known {
-					return paginatedCrawlResponse{}, nil, checkURL, newCloudflareUnresolvedError("known-cloudflare-cache")
-				}
-			}
-		}
-
-		result, pageHTML, err := runPaginatedCrawlLoop(ctx, container, fields, mapping, nextSelector, requestedMaxPages, effectiveMaxPages, captureHTML, requestID, rateLimitKey)
-
+		// Only an unresolved challenge goes to the fallback — a block
+		// page (cloudflare_blocked) or a wedged session is returned as-is.
 		var cfErr *crawlError
-		if !errors.As(err, &cfErr) {
+		if !errors.As(err, &cfErr) || cfErr.Code != codeCloudflareUnresolved {
 			return result, pageHTML, "", classifyCancellation(err, reqCtx, shared.Ctx)
 		}
 
@@ -645,19 +625,130 @@ func performPaginatedCrawl(url, container string, fields []extractField, mapping
 			// lookup's own failure.
 			return paginatedCrawlResponse{}, nil, "", err
 		}
-		// step 28 — best-effort: a failed cache write must never turn
-		// an otherwise-working fallback into a failure.
-		if domain, hostErr := hostnameOf(currentURL); hostErr == nil {
-			_ = recordCloudflareDomain(domain, cfErr.Reason)
-		}
+		leavePrimaryTabLocked(shared.Ctx, func() { _ = shared.RecreateSharedSessionLocked() })
 		return paginatedCrawlResponse{}, nil, currentURL, err
 	}()
 
 	var cfErr *crawlError
-	if errors.As(err, &cfErr) && blockedURL != "" {
-		return performPaginatedCrawlWithNormalSession(reqCtx, blockedURL, container, fields, mapping, nextSelector, requestedMaxPages, effectiveMaxPages, captureHTML, requestID, rateLimitKey)
+	if !errors.As(err, &cfErr) || cfErr.Code != codeCloudflareUnresolved || blockedURL == "" {
+		return result, pageHTML, err
 	}
-	return result, pageHTML, err
+	if requestID == "" {
+		// AI call: one headless worker attempt within aiCallBudget, then
+		// — crawl_paginated operates on "the current page" — put the
+		// primary tab back on it for the AI's next call.
+		r, err := paginatedCrawlOnWorkerTab(reqCtx, blockedURL, args)
+		recordIfUnresolved(blockedURL, err)
+		if err == nil {
+			syncPrimaryTabAsync(blockedURL, crawlResponse{}, true)
+		}
+		return r.resp, r.pageHTML, err
+	}
+	r, err := escalateChallenge(reqCtx, blockedURL, requestID, true,
+		func() (paginatedResult, error) { return paginatedCrawlOnWorkerTab(reqCtx, blockedURL, args) },
+		func() (paginatedResult, error) {
+			return performPaginatedCrawlWithNormalSession(reqCtx, blockedURL, args)
+		},
+	)
+	return r.resp, r.pageHTML, err
+}
+
+// paginatedArgs is everything about a paginated crawl except where it
+// runs — passed unchanged to every tab it may end up running in.
+type paginatedArgs struct {
+	container         string
+	fields            []extractField
+	mapping           map[string]string
+	nextSelector      string
+	requestedMaxPages int
+	effectiveMaxPages int
+	captureHTML       bool
+	requestID         string
+	rateLimitKey      string
+	// deadline is the AI call's own budget end (aiDeadline); zero for
+	// Career's own calls.
+	deadline time.Time
+}
+
+// performPaginatedCrawlForURL runs a url-bearing paginated crawl in a
+// headless worker tab, escalating to escalateChallenge (headed, after
+// any other same-domain resolution) only when page 1 stays behind a
+// challenge. step 29 — a known-Cloudflare domain skips the headless
+// attempt unless the headless browser already holds a cf_clearance for
+// url; "known-cloudflare-cache" stays the recorded reason in that case.
+// See plan/ai/tools/browser/step-29-skip-headless-for-known-cloudflare-domains.md.
+func performPaginatedCrawlForURL(reqCtx context.Context, url string, args paginatedArgs) (paginatedCrawlResponse, []string, error) {
+	worker := func() (paginatedResult, error) { return paginatedCrawlOnWorkerTab(reqCtx, url, args) }
+	headed := func() (paginatedResult, error) { return performPaginatedCrawlWithNormalSession(reqCtx, url, args) }
+
+	if args.requestID == "" {
+		// AI call (extract_from_url): one headless worker attempt within
+		// aiCallBudget, never headed.
+		r, err := worker()
+		recordIfUnresolved(url, err)
+		return r.resp, r.pageHTML, err
+	}
+
+	if domain, err := hostnameOf(url); err == nil {
+		if known, err := isDomainKnownCloudflare(domain); err == nil && known {
+			r, err := escalateChallenge(reqCtx, url, args.requestID, shared.HeadlessHasCookie(url, "cf_clearance"), worker, headed)
+			return r.resp, r.pageHTML, err
+		}
+	}
+
+	r, err := worker()
+	var cfErr *crawlError
+	if !errors.As(err, &cfErr) || cfErr.Code != codeCloudflareUnresolved {
+		return r.resp, r.pageHTML, err
+	}
+	// step 28 — best-effort.
+	if domain, hostErr := hostnameOf(url); hostErr == nil {
+		_ = recordCloudflareDomain(domain, cfErr.Reason)
+	}
+	r, err = escalateChallenge(reqCtx, url, args.requestID, false, worker, headed)
+	return r.resp, r.pageHTML, err
+}
+
+// paginatedCrawlOnWorkerTab navigates a fresh worker tab to url and runs
+// the whole paginated loop in it, with page 1's full automatic
+// Cloudflare wait. Portal pacing (portal_pacing.go) for page 1 happens
+// BEFORE a tab is taken, so a paced request doesn't sit on a tab slot
+// while it waits its turn.
+func paginatedCrawlOnWorkerTab(reqCtx context.Context, url string, args paginatedArgs) (paginatedResult, error) {
+	if capTimeout(paginatedCrawlTimeout, args.deadline) < minWorkerAttempt {
+		return paginatedResult{}, newCloudflareUnresolvedError("time budget exhausted before a headless retry", nil)
+	}
+	awaitPortalCrawlPacing(reqCtx, args.rateLimitKey)
+	if reqCtx.Err() != nil {
+		return paginatedResult{}, newCrawlCancelledError()
+	}
+
+	setCrawlPhase(args.requestID, phaseQueuedForTab, "waiting for a free browser tab")
+	tabCtx, release, err := shared.AcquireWorkerTab(reqCtx)
+	if err != nil {
+		if reqCtx.Err() != nil {
+			return paginatedResult{}, newCrawlCancelledError()
+		}
+		return paginatedResult{}, err
+	}
+	defer release()
+
+	timeout := paginatedCrawlTimeout
+	if args.rateLimitKey != "" {
+		timeout = paginatedCrawlTimeoutWithPacing
+	}
+	ctx, cancel := context.WithTimeout(tabCtx, capTimeout(timeout, args.deadline))
+	defer cancel()
+	linkRequestCancel(reqCtx, ctx, cancel, tabCtx)
+
+	signals := watchChallengeSignals(ctx)
+	setCrawlPhase(args.requestID, phaseNavigating, "navigating to "+url)
+	if err := navigateWithHangGuard(ctx, release, chromedp.Navigate(url), chromedp.Sleep(SettleDelay)); err != nil {
+		return paginatedResult{}, classifyCancellation(err, reqCtx, tabCtx)
+	}
+
+	resp, pageHTML, err := runPaginatedCrawlLoop(ctx, loopTab{signals: signals, autoWait: cloudflareAutoWait}, args)
+	return paginatedResult{resp, pageHTML}, classifyCancellation(err, reqCtx, tabCtx)
 }
 
 // maxHumanWaitRounds bounds how many times this function will re-enter
@@ -671,117 +762,86 @@ func performPaginatedCrawl(url, container string, fields []extractField, mapping
 const maxHumanWaitRounds = 3
 
 // performPaginatedCrawlWithNormalSession retries the whole paginated
-// crawl in a freshly launched headed Chrome instance, navigated to
-// blockedURL (the shared headless session's own last-known location)
-// — called only after the headless attempt already failed to clear
-// the same challenge on page 1. If the headed session's own automated
-// wait (inside runPaginatedCrawlLoop's own per-page Cloudflare check)
-// also fails, waits for a human via waitForHumanToClearCloudflare,
-// then runs the full loop again from page 1 — letting pagination
-// proceed normally through page 2..N in the same now-cleared headed
-// session, not just page 1. Always tears the headed instance down
-// before returning. See
-// plan/ai/tools/browser/step-24-headed-chrome-cloudflare-fallback.md,
+// crawl in a headed tab (shared.AcquireHeadedTab), navigated to
+// blockedURL — only ever reached through escalateChallenge, after the
+// headless attempts already failed to clear the same challenge on page
+// 1. If the headed tab's own automatic wait (page 1 of
+// runPaginatedCrawlLoop) also fails, waits for a human via
+// waitForHumanToClearCloudflare, then runs the full loop again from
+// page 1 — letting pagination proceed through page 2..N in the same
+// now-cleared tab. Always closes its tab before returning; on success,
+// copies its cookies into the headless browser (importHeadedCookies).
+// See plan/ai/tools/browser/step-24-headed-chrome-cloudflare-fallback.md,
 // step-25-human-assisted-cloudflare-retry.md, and
 // step-26-headed-fallback-for-paginated-crawl.md.
 //
-// waitForHumanToClearCloudflare can declare "solved" without
-// detectCloudflareChallenge's own agreement (its own HTML-size rule —
-// see that function's own doc comment) — deliberately, since
-// detectCloudflareChallenge itself can stay wrongly convinced a
-// challenge is still active on a genuinely already-solved page. That
-// means the very next line below,
-// runPaginatedCrawlLoop's own independent per-page Cloudflare check,
-// can occasionally disagree with a "solved" verdict that was in fact
-// premature (a residual widget still settling, a transitional
-// re-render). A real, reproduced case: waitForHumanToClearCloudflare
-// declared solved, and the immediate re-extraction attempt hit the
-// same challenge again seconds later — with nothing here to retry, that
-// used to surface as an immediate, unrecoverable hard failure straight
-// to the caller, discarding the entire up-to-32-minute fallback budget
-// over what was really just one bad tick. Bounded at maxHumanWaitRounds
-// total rounds — not required to agree with detectCloudflareChallenge
-// on every occasion (that would undo the fix this function's own
-// waitForHumanToClearCloudflare change exists for), just given another
-// chance to actually clear when the first "solved" call turns out to
-// have been wrong.
-func performPaginatedCrawlWithNormalSession(reqCtx context.Context, blockedURL, container string, fields []extractField, mapping map[string]string, nextSelector string, requestedMaxPages, effectiveMaxPages int, captureHTML bool, requestID, rateLimitKey string) (paginatedCrawlResponse, []string, error) {
-	shared.NormalSessionMu.Lock()
-	defer shared.NormalSessionMu.Unlock()
-
-	// step 63.2 — bail out before ever launching a headed Chrome
-	// process if this request was already canceled while queued
-	// waiting for shared.NormalSessionMu, same reasoning as
-	// crawlWithNormalSession's own identical check (crawl.go).
-	if reqCtx.Err() != nil {
-		return paginatedCrawlResponse{}, nil, reqCtx.Err()
-	}
-
-	ctx, cancels, err := shared.StartSharedNormalSession()
+// A "solved" verdict can occasionally be premature (a residual widget
+// still settling, a transitional re-render): a real, reproduced case
+// had the immediate re-extraction hit the same challenge again seconds
+// later, which used to surface as an unrecoverable hard failure,
+// discarding the entire fallback budget over one bad tick. Bounded at
+// maxHumanWaitRounds total rounds.
+func performPaginatedCrawlWithNormalSession(reqCtx context.Context, blockedURL string, args paginatedArgs) (paginatedResult, error) {
+	requestID := args.requestID
+	setCrawlPhase(requestID, phaseQueuedForTab, "waiting for a free headed browser tab")
+	tabCtx, release, err := shared.AcquireHeadedTab(reqCtx)
 	if err != nil {
-		return paginatedCrawlResponse{}, nil, fmt.Errorf("normal-session fallback: failed to start: %w", err)
-	}
-	defer func() {
-		for _, cancel := range cancels {
-			cancel()
+		if reqCtx.Err() != nil {
+			return paginatedResult{}, newCrawlCancelledError()
 		}
-	}()
+		return paginatedResult{}, err
+	}
+	defer release()
 
-	baseCtx := ctx
-	ctx, cancel := context.WithTimeout(ctx, normalSessionPaginatedCrawlTimeout)
+	ctx, cancel := context.WithTimeout(tabCtx, normalSessionPaginatedCrawlTimeout)
 	defer cancel()
-	// step 63.2 — same "cancel A when B cancels" link as
-	// performPaginatedCrawl's own headless attempt, above: a Stop click
-	// now reaches this up-to-32-minute headed/human-solve wait too.
-	go func() {
-		select {
-		case <-reqCtx.Done():
-			cancel()
-			stopBrowserLoad(baseCtx)
-		case <-ctx.Done():
+	// step 63.2 — a Stop click reaches this up-to-32-minute
+	// headed/human-solve wait too.
+	linkRequestCancel(reqCtx, ctx, cancel, tabCtx)
+
+	result, pageHTML, err := func() (paginatedCrawlResponse, []string, error) {
+		signals := watchChallengeSignals(ctx)
+		setCrawlPhase(requestID, phaseNavigating, "navigating to "+blockedURL)
+		if err := navigateWithHangGuard(ctx, release, chromedp.Navigate(blockedURL), chromedp.Sleep(SettleDelay)); err != nil {
+			return paginatedCrawlResponse{}, nil, err
 		}
+		tab := loopTab{signals: signals, autoWait: cloudflareAutoWait}
+
+		result, pageHTML, err := runPaginatedCrawlLoop(ctx, tab, args)
+		var cfErr *crawlError
+		if !errors.As(err, &cfErr) || cfErr.Code != codeCloudflareUnresolved {
+			return result, pageHTML, err
+		}
+
+		for round := 1; round <= maxHumanWaitRounds; round++ {
+			outcome, waitErr := waitForHumanToClearCloudflare(ctx, requestID, cfErr)
+			if waitErr != nil {
+				return paginatedCrawlResponse{}, nil, waitErr
+			}
+			if outcome.HardBlocked {
+				return paginatedCrawlResponse{}, nil, newCloudflareBlockedError(outcome.Reason)
+			}
+			if !outcome.Cleared {
+				return paginatedCrawlResponse{}, nil, cfErr
+			}
+
+			result, pageHTML, err = runPaginatedCrawlLoop(ctx, tab, args)
+			if !errors.As(err, &cfErr) || cfErr.Code != codeCloudflareUnresolved {
+				return result, pageHTML, err
+			}
+			// "Solved" was premature — cfErr is now this round's own fresh
+			// re-detection. Report it distinctly before looping back.
+			setCrawlPhase(requestID, phaseAwaitingHumanChallenge, fmt.Sprintf(
+				"page reported solved but Cloudflare challenge reappeared (%s) — waiting again (round %d/%d)",
+				cfErr.Reason, round, maxHumanWaitRounds,
+			))
+		}
+		return paginatedCrawlResponse{}, nil, cfErr
 	}()
-
-	setCrawlPhase(requestID, phaseNavigating, "navigating to "+blockedURL)
-	if err := chromedp.Run(ctx, chromedp.Navigate(blockedURL), chromedp.Sleep(SettleDelay)); err != nil {
-		return paginatedCrawlResponse{}, nil, classifyCancellation(err, reqCtx, shared.Ctx)
+	if err == nil {
+		importHeadedCookies(ctx, blockedURL)
 	}
-
-	result, pageHTML, err := runPaginatedCrawlLoop(ctx, container, fields, mapping, nextSelector, requestedMaxPages, effectiveMaxPages, captureHTML, requestID, rateLimitKey)
-
-	var cfErr *crawlError
-	if !errors.As(err, &cfErr) {
-		// step 63.3 — this function's own ctx isn't shared.Ctx, but
-		// classifyCancellation's shared.Ctx check still correctly
-		// covers the (rare) case where the shared headless session
-		// ALSO died at the same moment.
-		return result, pageHTML, classifyCancellation(err, reqCtx, shared.Ctx)
-	}
-
-	for round := 1; round <= maxHumanWaitRounds; round++ {
-		cleared, waitErr := waitForHumanToClearCloudflare(ctx, requestID, cfErr.Reason)
-		if waitErr != nil {
-			return paginatedCrawlResponse{}, nil, classifyCancellation(waitErr, reqCtx, shared.Ctx)
-		}
-		if !cleared {
-			return paginatedCrawlResponse{}, nil, cfErr
-		}
-
-		result, pageHTML, err = runPaginatedCrawlLoop(ctx, container, fields, mapping, nextSelector, requestedMaxPages, effectiveMaxPages, captureHTML, requestID, rateLimitKey)
-		if !errors.As(err, &cfErr) {
-			return result, pageHTML, classifyCancellation(err, reqCtx, shared.Ctx)
-		}
-		// "Solved" was premature — cfErr is now this round's own fresh
-		// re-detection. Report it distinctly before looping back, so a
-		// human reading crawl_runs.log can see this happened rather
-		// than silently repeating "Cloudflare challenge detected"
-		// text that looks unchanged from the round before.
-		setCrawlPhase(requestID, phaseAwaitingHumanChallenge, fmt.Sprintf(
-			"page reported solved but Cloudflare challenge reappeared (%s) — waiting again (round %d/%d)",
-			cfErr.Reason, round, maxHumanWaitRounds,
-		))
-	}
-	return paginatedCrawlResponse{}, nil, cfErr
+	return paginatedResult{result, pageHTML}, classifyCancellation(err, reqCtx, tabCtx)
 }
 
 // jsStringLiteral marshals a Go string into a JSON string literal for

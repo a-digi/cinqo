@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -28,18 +29,17 @@ import (
 // premature configurability.
 const MaxHTMLBytes = 200_000
 
-// minSolvedHTMLBytes is the single, explicit rule
-// waitForHumanToClearCloudflare uses to decide a Cloudflare challenge
-// has been solved: the page's own HTML must exceed this many bytes.
-// Empirically anchored: a real captured Cloudflare "managed challenge"
-// interstitial for a real domain this tool crawls was 28,909 bytes;
-// this is set above that.
-const minSolvedHTMLBytes = 45_000
+// crawlTimeout bounds one headless navigation end to end — raised from
+// 20s so a detected challenge gets its full automatic wait
+// (cloudflareAutoWait, 25s) plus navigate/settle/read overhead before
+// escalating to the headed fallback. Only a page that actually shows a
+// challenge ever uses the extra time; a normal page is unaffected.
+const crawlTimeout = 30 * time.Second
 
-// crawlTimeout bounds one navigation — shorter than pdf_generator's
-// own 30s render budget, since crawling has no print-to-PDF step of
-// its own to also account for.
-const crawlTimeout = 20 * time.Second
+// crawlReadReserve is how much of ctx's own deadline the automatic
+// Cloudflare wait leaves for reading the page afterwards
+// (readCrawlResponse).
+const crawlReadReserve = 3 * time.Second
 
 const SettleDelay = 1500 * time.Millisecond
 
@@ -47,7 +47,7 @@ const SettleDelay = 1500 * time.Millisecond
 // end to end — deliberately its OWN budget, not nested inside or
 // derived from the primary attempt's own ctx (already bounded by
 // crawlTimeout, and likely close to exhausted by the time a fallback
-// is even considered, having just spent up to cloudflareMaxWait
+// is even considered, having just spent up to cloudflareAutoWait
 // waiting inside the headless attempt). Raised again in step 27 to
 // comfortably contain maxHumanSolveDuration (30 min) on top of
 // process launch/navigate/settle/read overhead (~10s) — 31 minutes
@@ -60,16 +60,6 @@ const SettleDelay = 1500 * time.Millisecond
 // retry loop (plan/ai/tools/career/step-35-crawl-now-single-long-lived-attempt.md).
 const normalSessionCrawlTimeout = 31 * time.Minute
 
-// humanSolveRetryInterval — after the automated wait
-// (waitForCloudflareClearance's own cloudflareMaxWait=8s) still finds
-// the challenge present in the now-visible headed window, a human
-// needs real time to notice it and react — checked again every
-// humanSolveRetryInterval (not continuously) rather than one more
-// short automated poll.
-// var, not const, solely so a temporary test can shorten it — see
-// TestWaitForHumanToClearCloudflareReportsEveryTick.
-var humanSolveRetryInterval = 15 * time.Second
-
 // maxHumanSolveDuration bounds the total time waitForHumanToClearCloudflare
 // spends waiting — a wall-clock cap, not a fixed retry count (step
 // 25's original maxHumanSolveRetries=4, a 60s budget). Long enough
@@ -77,8 +67,8 @@ var humanSolveRetryInterval = 15 * time.Second
 // reopen mid-attempt — the window stays open the whole time. See
 // plan/ai/tools/browser/step-27-long-lived-headed-fallback-session.md.
 // An explicit starting estimate, not verified against a real person's
-// own reaction time. var, not const, for the same testing reason as
-// humanSolveRetryInterval above.
+// own reaction time. var, not const, so a temporary test can shorten
+// it.
 var maxHumanSolveDuration = 30 * time.Minute
 
 type crawlRequest struct {
@@ -160,7 +150,10 @@ func CrawlHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := crawlPage(body.URL, body.RequestID, body.ExpectedSelectors, body.RemoveSelectors, body.RemoveAttributes, body.MaxAttributeLength, body.IgnoreAttributesForMaxLength)
+	// r.Context() — ends when the caller disconnects (e.g. the agent
+	// host abandoning a timed-out tool call), which stops this crawl and
+	// frees its tab instead of leaving it working for nobody.
+	result, err := crawlPage(r.Context(), body.URL, body.RequestID, body.ExpectedSelectors, body.RemoveSelectors, body.RemoveAttributes, body.MaxAttributeLength, body.IgnoreAttributesForMaxLength)
 	if err != nil {
 		setCrawlPhase(body.RequestID, phaseFailed, err.Error())
 		var cfErr *crawlError
@@ -193,7 +186,14 @@ func readCrawlResponse(ctx context.Context, removeSelectors, removeAttributes []
 	if err != nil {
 		return crawlResponse{}, err
 	}
-	actions := []chromedp.Action{chromedp.Evaluate(script, nil)}
+	// The title is read BEFORE the removal script runs: <title> lives in
+	// <head>, which DefaultRemoveSelectors strips — reading it afterwards
+	// (as this function used to) returned "" on every crawl.
+	var html, title, finalURL string
+	actions := []chromedp.Action{
+		chromedp.Title(&title),
+		chromedp.Evaluate(script, nil),
+	}
 
 	// step 46 — run after element removal (above), never before: an
 	// element RemoveElementsJS already deleted doesn't need its own
@@ -212,9 +212,7 @@ func readCrawlResponse(ctx context.Context, removeSelectors, removeAttributes []
 		actions = append(actions, chromedp.Evaluate(attrScript, nil))
 	}
 
-	var html, title, finalURL string
 	actions = append(actions,
-		chromedp.Title(&title),
 		chromedp.Location(&finalURL),
 		chromedp.OuterHTML("html", &html),
 	)
@@ -368,50 +366,113 @@ func removeAttributesJS(names []string, maxLength int, ignoreForMaxLength []stri
 	})()`, namesJSON, maxLength, ignoreJSON), nil
 }
 
+// navigateWithHangGuard runs actions (a Navigate plus a trailing settle
+// Sleep, at every call site in this package) against ctx, without
+// trusting chromedp's own context handling alone to guarantee prompt
+// return. Real, observed bug: a page whose own background activity
+// (e.g. a Cloudflare Turnstile widget's own polling, still active even
+// though the rest of the page has visibly finished rendering) can keep
+// Chrome's navigation lifecycle from ever reaching "load complete,"
+// leaving chromedp.Run blocked well past ctx's own deadline — a real
+// Cloudflare Turnstile challenge left one navigate blocked for 370+
+// seconds with no sign of ever returning on its own. On the primary tab
+// that stuck request held shared.Mu, wedging the tab for every other
+// caller tool-wide — including the existing wedge-recovery mechanism
+// (shared.ProbeSessionLiveness/RecreateSharedSessionLocked), which
+// needs the very lock the wedge is holding; on a worker or headed tab
+// it would hold that tab's pool slot forever. Only a full process
+// restart could recover from this before this fix existed.
+//
+// recreate is called, and this function returns ctx.Err() immediately,
+// the moment ctx's own deadline passes — regardless of whether the
+// underlying chromedp.Run call has returned yet. It must forcibly close
+// the tab ctx belongs to (not just abandon the Go-side wait), so the CDP
+// session breaks and the orphaned goroutine below unblocks — with a
+// now-meaningless result, discarded into its own buffered channel —
+// instead of continuing to touch a tab this call's own caller has
+// already moved on from: shared.RecreateSharedSessionLocked for the
+// primary tab (called with shared.Mu already held, its own
+// precondition), or the worker/headed tab's own idempotent release.
+func navigateWithHangGuard(ctx context.Context, recreate func(), actions ...chromedp.Action) error {
+	done := make(chan error, 1)
+	go func() {
+		done <- chromedp.Run(ctx, actions...)
+	}()
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		if recreate != nil {
+			recreate()
+		}
+		return ctx.Err()
+	}
+}
+
 // navigateAndReadWithCloudflareCheck runs the shared navigate → settle
-// → Cloudflare-wait → read-HTML sequence against ctx — extracted so
-// both the primary (shared headless session) and fallback (ephemeral
-// headed session, step 24) crawl attempts share one implementation
-// instead of two copies that could drift apart. Returns the same
-// crawlError (cloudflare_challenge_unresolved) as before when the
-// challenge is still present once ctx's own wait budget is spent. See
+// → Cloudflare-wait → read-HTML sequence against ctx — one
+// implementation for every tab a single-page crawl can run in (the
+// primary tab, a worker tab, a headed tab). maxAutoWait bounds the
+// automatic Cloudflare wait: short for the primary tab (primaryAutoWait
+// — it must not hold shared.Mu while a challenge clears), the full
+// cloudflareAutoWait everywhere else. Returns
+// cloudflare_challenge_unresolved when the challenge is still present
+// after that wait, cloudflare_blocked on a block page. See
 // plan/ai/tools/browser/step-24-headed-chrome-cloudflare-fallback.md.
-func navigateAndReadWithCloudflareCheck(ctx context.Context, rawURL, requestID string, expectedSelectors, removeSelectors, removeAttributes []string, maxAttributeLength int, ignoreAttributesForMaxLength []string) (crawlResponse, error) {
+// recreate (see navigateWithHangGuard's own doc comment) is the
+// caller's own tab-specific recovery action — shared.RecreateSharedSessionLocked
+// for the primary tab, or closing the caller's own worker/headed tab.
+func navigateAndReadWithCloudflareCheck(ctx context.Context, rawURL, requestID string, recreate func(), maxAutoWait time.Duration, expectedSelectors, removeSelectors, removeAttributes []string, maxAttributeLength int, ignoreAttributesForMaxLength []string) (crawlResponse, error) {
+	// Registered before navigating — the challenge response's own
+	// cf-mitigated header is only observable while it arrives.
+	signals := watchChallengeSignals(ctx)
+
 	setCrawlPhase(requestID, phaseNavigating, "navigating to "+rawURL)
-	if err := chromedp.Run(ctx,
-		chromedp.Navigate(rawURL),
-		chromedp.Sleep(SettleDelay),
-	); err != nil {
+	if err := navigateWithHangGuard(ctx, recreate, chromedp.Navigate(rawURL), chromedp.Sleep(SettleDelay)); err != nil {
 		return crawlResponse{}, err
 	}
 
 	setCrawlPhase(requestID, phaseCheckingCloudflare, "checking for a Cloudflare challenge")
-	cf, err := waitForCloudflareClearance(ctx, expectedSelectors)
+	tracker, err := newChallengeTracker(ctx, signals, expectedSelectors)
 	if err != nil {
 		return crawlResponse{}, err
 	}
-	if cf.Detected {
-		return crawlResponse{}, newCloudflareUnresolvedError(cf.Reason)
+	outcome, err := tracker.checkAndAwaitAutoClearance(ctx, requestID, maxAutoWait, crawlReadReserve)
+	if err != nil {
+		return crawlResponse{}, err
+	}
+	if outcome.HardBlocked {
+		return crawlResponse{}, newCloudflareBlockedError(outcome.Reason)
+	}
+	if !outcome.Cleared {
+		return crawlResponse{}, newCloudflareUnresolvedError(outcome.Reason, tracker)
 	}
 
 	return readCrawlResponse(ctx, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
 }
 
-// crawlPage navigates the one shared headless session to rawURL and
-// reads back its rendered HTML/title/final URL. The headless attempt
-// itself is scoped to an inner function so shared.Mu (see that
-// variable's own doc comment in main.go) is released the moment that
-// attempt concludes — BEFORE crawlWithNormalSession (a wholly separate
-// browser, guarded by its own shared.NormalSessionMu) ever starts. Without
-// this, shared.Mu would stay held for the fallback's own up-to-90s
-// retry budget (step 25) too, serializing every other crawl request
-// behind one slow, unrelated Cloudflare fallback. When the headless
-// attempt hits an unresolved Cloudflare challenge, retries via
-// crawlWithNormalSession (step 24) instead of failing immediately — a
-// real, headed browser is often materially harder for Cloudflare to
-// flag as automated than headless Chrome, even with this tool's own
-// existing stealth patches applied.
-func crawlPage(rawURL, requestID string, expectedSelectors, removeSelectors, removeAttributes []string, maxAttributeLength int, ignoreAttributesForMaxLength []string) (crawlResponse, error) {
+// crawlPage navigates the primary tab to rawURL and reads back its
+// rendered HTML/title/final URL — the primary tab, not a worker, because
+// fetch_page_html's own AI callers routinely follow up with calls that
+// operate on "the current page" (extract_page_data, find_login_elements,
+// login).
+//
+// The primary attempt is scoped to an inner function so shared.Mu is
+// released the moment it concludes. When it finds a Cloudflare challenge
+// that doesn't clear within primaryAutoWait, it leaves the challenge page
+// (about:blank) and releases shared.Mu at once; the challenge is then
+// resolved elsewhere (escalateChallenge, challenge_resolver.go: a
+// headless worker tab, then a headed tab) while every other operation
+// keeps using the primary tab. For AI callers (no requestID), the
+// primary tab is afterwards pointed back at the page
+// (syncPrimaryTabAsync). Career's own callers (requestID set) never
+// operate on the current page afterwards, so they skip that.
+//
+// AI calls (no requestID) are bounded by aiCallBudget end to end and
+// never go headed — see challenge_resolver.go's own top comment. parent
+// is the HTTP request's own context: when the caller disconnects, the
+// crawl stops.
+func crawlPage(parent context.Context, rawURL, requestID string, expectedSelectors, removeSelectors, removeAttributes []string, maxAttributeLength int, ignoreAttributesForMaxLength []string) (crawlResponse, error) {
 	// step 63.2 — registered before anything else in this call,
 	// including the known-Cloudflare shortcut below, so this exact
 	// call is cancellable (via cancelCrawl(requestID), crawl_cancel.go)
@@ -419,45 +480,62 @@ func crawlPage(rawURL, requestID string, expectedSelectors, removeSelectors, rem
 	// touched. A no-op registration when requestID is "" (the AI's own
 	// MCP-driven calls never set one — registerCrawlCancel's own doc
 	// comment). See plan/ai/tools/career/step-63-stop-crawling-now.md.
-	reqCtx, reqCancel := context.WithCancel(context.Background())
+	reqCtx, reqCancel := context.WithCancel(parent)
 	registerCrawlCancel(requestID, reqCancel)
 	defer func() {
 		unregisterCrawlCancel(requestID)
 		reqCancel()
 	}()
+	deadline := aiDeadline(requestID, time.Now())
 
-	// step 29 — a known-Cloudflare domain skips the headless attempt
-	// entirely, straight to the headed fallback: the only signal
-	// available before ever navigating anywhere is the cache (nothing
-	// has been loaded yet to inspect live). A lookup failure (e.g. a
-	// transient DB error) is treated the same as "not known" — falls
-	// through to the normal headless attempt rather than blocking the
-	// whole call on a cache problem. See
+	// step 46 — a caller-supplied strip setting changes the output, so it
+	// must never be served from (or written to) a cache keyed only by URL.
+	skipCache := len(removeSelectors) > 0 || len(removeAttributes) > 0 || maxAttributeLength > 0
+
+	worker := func() (crawlResponse, error) {
+		return crawlOnWorkerTab(reqCtx, deadline, rawURL, requestID, expectedSelectors, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
+	}
+	headed := func() (crawlResponse, error) {
+		return crawlWithNormalSession(reqCtx, rawURL, requestID, expectedSelectors, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
+	}
+	resolve := func(tryWorkerFirst bool) (crawlResponse, error) {
+		if requestID != "" {
+			return escalateChallenge(reqCtx, rawURL, requestID, tryWorkerFirst, worker, headed)
+		}
+		// AI call: one headless worker attempt within aiCallBudget, no
+		// domain lock (nothing headed to serialize), no headed tab.
+		resp, err := worker()
+		recordIfUnresolved(rawURL, err)
+		if err == nil {
+			syncPrimaryTabAsync(rawURL, resp, skipCache)
+		}
+		return resp, err
+	}
+
+	// step 29 — a known-Cloudflare domain skips the primary tab entirely:
+	// the only signal available before ever navigating anywhere is the
+	// cache. It still tries a headless worker first when the headless
+	// browser already holds a cf_clearance for this URL (earned earlier,
+	// or imported from the headed browser) — otherwise straight to
+	// headed, as before. (An AI call always goes to the worker — see
+	// resolve.) A lookup failure (e.g. a transient DB error) is
+	// treated the same as "not known". See
 	// plan/ai/tools/browser/step-29-skip-headless-for-known-cloudflare-domains.md.
 	if domain, err := hostnameOf(rawURL); err == nil {
 		if known, err := isDomainKnownCloudflare(domain); err == nil && known {
-			return crawlWithNormalSession(reqCtx, rawURL, requestID, expectedSelectors, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
+			return resolve(shared.HeadlessHasCookie(rawURL, "cf_clearance"))
 		}
 	}
 
-	// step 46 — same reasoning as removeSelectors below: a caller-
-	// supplied attribute-strip setting changes the output, so it must
-	// never be served from (or written to) a cache keyed only by URL.
-	skipCache := len(removeSelectors) > 0 || len(removeAttributes) > 0 || maxAttributeLength > 0
-
 	result, err := func() (crawlResponse, error) {
-		// step 45 — served for free only when the shared session is
-		// already showing this exact URL (shared.LastHeadlessFetchURL, set
-		// below on every real navigation): the only case where a
+		// step 45 — served for free only when the primary tab is already
+		// showing this exact URL (shared.LastHeadlessFetchURL, set below
+		// on every real navigation): the only case where a
 		// stale-relative-to-the-live-DOM result can't happen, since
-		// nothing has navigated the session away since the cached
-		// fetch. Any other case — no cache entry, an expired one, or
-		// a fresh one but the session has moved on — falls straight
-		// through to the exact same real navigate/settle/Cloudflare-
-		// wait/read sequence as before this step, unchanged. Never
-		// consulted at all when the caller supplied its own
-		// removeSelectors/removeAttributes/maxAttributeLength — see
-		// fetch_cache.go's own top comment for why. See
+		// nothing has navigated the tab away since the cached fetch. Any
+		// other case falls straight through to a real navigation. Never
+		// consulted when the caller supplied its own strip settings — see
+		// fetch_cache.go's own top comment. See
 		// plan/ai/tools/browser/step-45-fetch-html-caching-plan.md and
 		// plan/ai/tools/browser/step-46-remove-attributes-plan.md.
 		if !skipCache {
@@ -478,55 +556,34 @@ func crawlPage(rawURL, requestID string, expectedSelectors, removeSelectors, rem
 		defer shared.Mu.Unlock()
 
 		// step 63.2 — this request may have been canceled while it sat
-		// queued waiting for shared.Mu (a plain sync.Mutex isn't itself
-		// cancellable/selectable, so that wait can't be interrupted
-		// early — see step 63's own Open Question 1) — bail out here,
-		// immediately after acquiring the lock, before doing any real
-		// chromedp work, rather than only discovering the cancellation
-		// once crawlTimeout's own budget is spent. Checked before the
-		// liveness probe below: no point recreating a perfectly healthy
-		// session for a request nobody wants an answer for anymore.
+		// queued waiting for shared.Mu (a plain sync.Mutex isn't
+		// cancellable) — bail out before doing any real chromedp work.
+		// Checked before the liveness probe below: no point recreating a
+		// perfectly healthy tab for a request nobody wants anymore.
 		if reqCtx.Err() != nil {
 			return crawlResponse{}, reqCtx.Err()
 		}
 
 		// step 47.2/47.3 — fail fast on a tab left wedged by a previous,
-		// unrelated caller instead of discovering it only after burning
-		// crawlTimeout on a navigate that was never going to complete,
-		// and replace the wedged tab immediately (still holding
-		// shared.Mu) so the NEXT caller gets a fresh, healthy session
-		// instead of inheriting the same wedge.
+		// unrelated caller, and replace it immediately (still holding
+		// shared.Mu) so the NEXT caller gets a healthy one.
 		if err := shared.ProbeSessionLiveness(shared.Ctx); err != nil {
 			recreateErr := shared.RecreateSharedSessionLocked()
 			return crawlResponse{}, NewSessionWedgedError(err, recreateErr)
 		}
 
-		ctx, cancel := context.WithTimeout(shared.Ctx, crawlTimeout)
+		ctx, cancel := context.WithTimeout(shared.Ctx, capTimeout(crawlTimeout, deadline))
 		defer cancel()
-		// step 63.2 — links this call's own ctx to reqCtx: the moment
-		// cancelCrawl(requestID) fires reqCancel (crawl_cancel.go), this
-		// goroutine cancels ctx too, which every chromedp.Run call below
-		// already respects internally — no changes needed inside
-		// navigateAndReadWithCloudflareCheck/readCrawlResponse
-		// themselves. Exits via whichever side finishes first, leaking
-		// nothing. Go's stdlib context package has no built-in "cancel
-		// when either of two contexts is done" combinator, so this is
-		// the standard idiomatic substitute.
-		go func() {
-			select {
-			case <-reqCtx.Done():
-				cancel()
-				// step 63.2 — canceling ctx above only stops THIS call
-				// from waiting; Chrome itself keeps loading otherwise,
-				// leaving the tab busy for a beat afterward (caught
-				// directly by a disposable test, not assumed).
-				stopBrowserLoad(shared.Ctx)
-			case <-ctx.Done():
-			}
-		}()
+		// step 63.2 — cancelCrawl(requestID) reaches this attempt too.
+		linkRequestCancel(reqCtx, ctx, cancel, shared.Ctx)
 
-		resp, err := navigateAndReadWithCloudflareCheck(ctx, rawURL, requestID, expectedSelectors, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
+		recreate := func() { _ = shared.RecreateSharedSessionLocked() }
+		resp, err := navigateAndReadWithCloudflareCheck(ctx, rawURL, requestID, recreate, primaryAutoWait, expectedSelectors, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
 		if err != nil {
+			var cfErr *crawlError
+			if errors.As(err, &cfErr) && cfErr.Code == codeCloudflareUnresolved {
+				leavePrimaryTabLocked(shared.Ctx, recreate)
+			}
 			return crawlResponse{}, err
 		}
 		shared.LastHeadlessFetchURL = rawURL
@@ -538,195 +595,96 @@ func crawlPage(rawURL, requestID string, expectedSelectors, removeSelectors, rem
 		return resp, nil
 	}()
 
+	// step 47.3 — checking the Code, not just the *crawlError type: a
+	// wedged-tab or block-page error must never trigger the challenge
+	// fallback.
 	var cfErr *crawlError
-	// step 47.3 — checking cfErr.Code, not just the *crawlError type, is
-	// required now that a second, unrelated *crawlError variant exists
-	// (browser_session_wedged) that can come out of this same closure —
-	// without this, a wedged-tab error would incorrectly trigger the
-	// headed Cloudflare fallback below (and wrongly record this domain
-	// as "known Cloudflare"). paginate.go's equivalent dispatch is
-	// already safe via its own separate blockedURL != "" guard; this
-	// file had no second guard, so the Code check is the fix here.
-	if errors.As(err, &cfErr) && cfErr.Code == "cloudflare_challenge_unresolved" {
-		// step 28 — best-effort: a failed cache write must never turn
-		// an otherwise-working fallback into a failure.
-		if domain, hostErr := hostnameOf(rawURL); hostErr == nil {
-			_ = recordCloudflareDomain(domain, cfErr.Reason)
-		}
-		return crawlWithNormalSession(reqCtx, rawURL, requestID, expectedSelectors, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
+	if errors.As(err, &cfErr) && cfErr.Code == codeCloudflareUnresolved {
+		return resolve(true)
 	}
-	// step 38/63.3 — deliberately classified only here, after the
-	// Cloudflare dispatch above: neither a session-interrupted NOR a
-	// user-cancelled error may ever trigger crawlWithNormalSession's
-	// own fresh headed-Chrome fallback (the whole subprocess died in
-	// the first case; the user explicitly asked to stop in the
-	// second — launching a second, unrelated browser fixes nothing in
-	// either case, and would directly defeat the second one).
+	// step 38/63.3 — classified only here, after the Cloudflare dispatch
+	// above: neither a session-interrupted NOR a user-cancelled error may
+	// ever trigger the fallback.
 	return result, classifyCancellation(err, reqCtx, shared.Ctx)
 }
 
-// crawlWithNormalSession retries rawURL in a freshly launched, non-
-// headless Chrome instance — called only after the shared headless
-// session (crawlPage, above) already failed to clear the same
-// Cloudflare challenge. Always tears the headed instance down before
-// returning, on every exit path (success, still blocked, or any other
-// error) — "close after it is finished." If the automated wait inside
-// navigateAndReadWithCloudflareCheck also fails to clear it, hands off
-// to waitForHumanToSolveCloudflare (step 25) instead of giving up
-// immediately. See
+// crawlWithNormalSession retries rawURL in a tab of the headed browser
+// (shared.AcquireHeadedTab) — only ever reached through
+// escalateChallenge, after the headless attempts already failed to
+// clear the same challenge. Always closes its tab before returning, on
+// every exit path. If the automatic wait also fails there, hands off to
+// waitForHumanToSolveCloudflare (step 25). On success, copies the headed
+// tab's cookies for rawURL into the headless browser
+// (importHeadedCookies), so the primary tab and later headless attempts
+// can reach the site without a headed tab. See
 // plan/ai/tools/browser/step-24-headed-chrome-cloudflare-fallback.md
 // and plan/ai/tools/browser/step-25-human-assisted-cloudflare-retry.md.
 func crawlWithNormalSession(reqCtx context.Context, rawURL, requestID string, expectedSelectors, removeSelectors, removeAttributes []string, maxAttributeLength int, ignoreAttributesForMaxLength []string) (crawlResponse, error) {
-	shared.NormalSessionMu.Lock()
-	defer shared.NormalSessionMu.Unlock()
-
-	// step 63.2 — bail out before ever launching a headed Chrome
-	// process at all if this request was already canceled while
-	// queued waiting for shared.NormalSessionMu — no point spending several
-	// seconds spinning up a whole browser window nobody wants anymore.
-	if reqCtx.Err() != nil {
-		return crawlResponse{}, reqCtx.Err()
-	}
-
-	ctx, cancels, err := shared.StartSharedNormalSession()
+	setCrawlPhase(requestID, phaseQueuedForTab, "waiting for a free headed browser tab")
+	tabCtx, release, err := shared.AcquireHeadedTab(reqCtx)
 	if err != nil {
-		return crawlResponse{}, fmt.Errorf("normal-session fallback: failed to start: %w", err)
+		if reqCtx.Err() != nil {
+			return crawlResponse{}, newCrawlCancelledError()
+		}
+		return crawlResponse{}, err
 	}
-	defer func() {
-		for _, cancel := range cancels {
-			cancel()
-		}
-	}()
+	defer release()
 
-	baseCtx := ctx
-	ctx, cancel := context.WithTimeout(ctx, normalSessionCrawlTimeout)
+	ctx, cancel := context.WithTimeout(tabCtx, normalSessionCrawlTimeout)
 	defer cancel()
-	// step 63.2 — same "cancel A when B cancels" link as crawlPage's
-	// own headless attempt, above: cancelCrawl(requestID) now reaches
-	// this up-to-31-minute headed/human-solve wait too, so a Stop
-	// click during that wait actually interrupts it instead of only
-	// ever being able to time out.
-	go func() {
-		select {
-		case <-reqCtx.Done():
-			cancel()
-			stopBrowserLoad(baseCtx)
-		case <-ctx.Done():
-		}
-	}()
+	// step 63.2 — cancelCrawl(requestID) reaches this up-to-31-minute
+	// headed/human-solve wait too.
+	linkRequestCancel(reqCtx, ctx, cancel, tabCtx)
 
-	result, err := navigateAndReadWithCloudflareCheck(ctx, rawURL, requestID, expectedSelectors, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
+	result, err := navigateAndReadWithCloudflareCheck(ctx, rawURL, requestID, release, cloudflareAutoWait, expectedSelectors, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
 
 	var cfErr *crawlError
-	if !errors.As(err, &cfErr) {
-		// step 63.3 — this function's own ctx isn't shared.Ctx (it's
-		// rooted in the ephemeral headed session's own baseCtx), but
-		// classifyCancellation's shared.Ctx check still correctly
-		// covers the (rare) case where the whole shared headless
-		// session ALSO died at the same moment — never a false
-		// positive, since that check only ever fires when shared.Ctx
-		// itself is actually done.
-		return result, classifyCancellation(err, reqCtx, shared.Ctx)
+	if errors.As(err, &cfErr) && cfErr.Code == codeCloudflareUnresolved {
+		result, err = waitForHumanToSolveCloudflare(ctx, cfErr, requestID, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
 	}
-	result, err = waitForHumanToSolveCloudflare(ctx, cfErr, requestID, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
-	return result, classifyCancellation(err, reqCtx, shared.Ctx)
+	if err == nil {
+		importHeadedCookies(ctx, rawURL)
+	}
+	return result, classifyCancellation(err, reqCtx, tabCtx)
 }
 
-// waitForHumanToClearCloudflare polls detectCloudflareChallenge every
-// humanSolveRetryInterval, until either it clears or
-// maxHumanSolveDuration is spent, giving a human at a now-visible
-// headed window real time to solve a challenge themselves — the SAME
-// window stays open for the whole wait, never closing and reopening
-// mid-attempt (step 27). Returns (true, nil) the moment it clears,
-// (false, nil) if the budget is spent with the challenge still
-// present, or a real error only if a chromedp action itself failed.
-// Extracted out of this file's own original crawlWithNormalSession-
-// specific version so both the single-page (/crawl, this file) and
-// paginated (/crawl-paginated, paginate.go) fallbacks share one
-// implementation. See
+// waitForHumanToClearCloudflare gives a person at the now-visible
+// headed window real time to solve a challenge the automatic wait
+// couldn't clear — the SAME window stays open for the whole wait, never
+// closing and reopening mid-attempt (step 27). Shared by the single-page
+// (/crawl, this file) and paginated (/crawl-paginated, paginate.go)
+// fallbacks. See
 // plan/ai/tools/browser/step-25-human-assisted-cloudflare-retry.md,
 // step-26-headed-fallback-for-paginated-crawl.md, and
 // step-27-long-lived-headed-fallback-session.md.
-// initialReason is the Reason the caller's own initial detection
-// already found (crawlError.Reason) — reported immediately so the
-// very first status a poller ever sees already says which signal
-// triggered this wait, not a generic placeholder.
 //
-// "Solved" is decided by exactly one rule here: the page's own HTML
-// exceeds minSolvedHTMLBytes (see that constant's own doc comment) —
-// checked on every tick, nothing else. Deliberately NOT gated behind
-// detectCloudflareChallenge's own heuristic verdict: a real, reproduced
-// bug showed some Cloudflare-looking DOM fragment (a lingering
-// Turnstile "verified" checkbox, a cookie/trust banner, cached
-// challenge markup Cloudflare doesn't always fully tear down) can keep
-// that heuristic convinced a challenge is still active even after the
-// real, already-loaded page is visible underneath it — so this loop
-// no longer consults it at all for the solved/not-solved decision.
-// Deliberately scoped to THIS function alone, never
-// waitForCloudflareClearance's own short automated wait, which is
-// unaffected.
-func waitForHumanToClearCloudflare(ctx context.Context, requestID, initialReason string) (bool, error) {
+// A thin wrapper since the clearance rules moved to
+// challenge_resolution.go (challengeTracker.await, human mode): polls
+// every humanPollInterval for up to maxHumanSolveDuration, using every
+// clearance signal the automatic wait uses — including the Turnstile
+// token and cf_clearance cookie, which catch the silent "Success!" pass
+// the former HTML-growth/widget-gone rules alone could never see — and
+// returns a HardBlocked outcome immediately on a block page instead of
+// waiting out the budget. cfErr.tracker carries the automatic wait's own
+// detection-time baseline for this same tab; nil (the known-Cloudflare-
+// domain shortcut) starts a fresh one here.
+func waitForHumanToClearCloudflare(ctx context.Context, requestID string, cfErr *crawlError) (challengeOutcome, error) {
 	setCrawlPhase(requestID, phaseAwaitingHumanChallenge, fmt.Sprintf(
-		"Cloudflare challenge detected (%s) — waiting for a person to solve it in the open browser window", initialReason,
+		"Cloudflare challenge detected (%s) — waiting for a person to solve it in the open browser window", cfErr.Reason,
 	))
+	// Several headed tabs can share one window — show this one to the
+	// person. Best-effort.
+	_ = chromedp.Run(ctx, page.BringToFront())
 
-	// Read once, up front — same "read once, not re-checked per tick"
-	// convention paginatedCrawlHandler's own settings.DebugEnabled read
-	// already establishes. A read failure is treated the same as "off"
-	// — this is pure debug observability, never allowed to interrupt
-	// the wait itself. DebugLogChallenge (step 68) is its own, separate
-	// toggle from DebugLogHTML — this dump is about debugging a stuck
-	// Cloudflare challenge, not about the regular crawl-log HTML
-	// capture paginatedCrawlHandler gates behind DebugLogHTML.
-	settings, _ := shared.LoadBrowserSettings()
-	logChallengeHTML := settings.DebugEnabled && settings.DebugLogChallenge
-
-	deadline := time.Now().Add(maxHumanSolveDuration)
-	attempt := 0
-	for time.Now().Before(deadline) {
-		attempt++
-		if err := chromedp.Run(ctx, chromedp.Sleep(humanSolveRetryInterval)); err != nil {
-			return false, err
+	tracker := cfErr.tracker
+	if tracker == nil {
+		var err error
+		if tracker, err = newChallengeTracker(ctx, nil, nil); err != nil {
+			return challengeOutcome{}, err
 		}
-
-		var html string
-		haveHTML := chromedp.Run(ctx, chromedp.OuterHTML("html", &html)) == nil
-
-		if logChallengeHTML && haveHTML {
-			logChallengeDetectorHTML(requestID, attempt, html)
-		}
-
-		// The single, explicit rule this loop uses to decide "solved":
-		// the page's own HTML is over minSolvedHTMLBytes long. Nothing
-		// else — not expectedSelectors, not detectCloudflareChallenge's
-		// own heuristic — decides "done" here. A genuine Cloudflare
-		// interstitial's own HTML stays well under this size; once the
-		// real page has loaded, its HTML reliably exceeds it. If
-		// haveHTML is false (a capture failure this tick), this is
-		// "not done" the same as being under the threshold.
-		if haveHTML && len(html) > minSolvedHTMLBytes {
-			setCrawlPhase(requestID, phaseAwaitingHumanChallenge, fmt.Sprintf(
-				"HTML size (%d bytes) exceeds %d — treating as solved", len(html), minSolvedHTMLBytes,
-			))
-			return true, nil
-		}
-
-		// Reported every tick, not just once at the top — a real gap
-		// fixed here: without this, this function's own live status
-		// never changed for the ENTIRE wait (up to 30 minutes), no
-		// matter how many times the check underneath actually re-ran,
-		// making a perfectly-alive retry loop look frozen from any
-		// poller's own point of view.
-		htmlLen := 0
-		if haveHTML {
-			htmlLen = len(html)
-		}
-		setCrawlPhase(requestID, phaseAwaitingHumanChallenge, fmt.Sprintf(
-			"not solved yet (HTML size %d bytes, need > %d) — check #%d, waiting for a person to solve it in the open browser window",
-			htmlLen, minSolvedHTMLBytes, attempt,
-		))
+		tracker.captureBaseline()
 	}
-	return false, nil
+	return tracker.await(ctx, challengeModeHuman, maxHumanSolveDuration, requestID, cfErr.Reason)
 }
 
 // waitForHumanToSolveCloudflare gives a person sitting at the now-
@@ -735,11 +693,14 @@ func waitForHumanToClearCloudflare(ctx context.Context, requestID, initialReason
 // once cleared. See
 // plan/ai/tools/browser/step-25-human-assisted-cloudflare-retry.md.
 func waitForHumanToSolveCloudflare(ctx context.Context, fallback *crawlError, requestID string, removeSelectors, removeAttributes []string, maxAttributeLength int, ignoreAttributesForMaxLength []string) (crawlResponse, error) {
-	cleared, err := waitForHumanToClearCloudflare(ctx, requestID, fallback.Reason)
+	outcome, err := waitForHumanToClearCloudflare(ctx, requestID, fallback)
 	if err != nil {
 		return crawlResponse{}, err
 	}
-	if !cleared {
+	if outcome.HardBlocked {
+		return crawlResponse{}, newCloudflareBlockedError(outcome.Reason)
+	}
+	if !outcome.Cleared {
 		return crawlResponse{}, fallback
 	}
 	return readCrawlResponse(ctx, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)

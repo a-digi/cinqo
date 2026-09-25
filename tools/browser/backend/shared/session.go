@@ -9,7 +9,13 @@
 //
 // This file holds the shared headless session itself — originally
 // main.go's own architecture (step 2,
-// plan/ai/tools/browser/step-02-shared-browser-session.md).
+// plan/ai/tools/browser/step-02-shared-browser-session.md). Since the
+// browser-pool step, "the shared session" is ONE headless browser
+// process (browserCtx, tabs.go) holding a primary tab (Ctx, below) for
+// every caller that depends on "whatever page is currently loaded",
+// plus short-lived worker tabs (AcquireWorkerTab, tabs.go) for
+// self-contained URL operations; the headed fallback browser lives in
+// headed.go.
 package shared
 
 import (
@@ -18,24 +24,29 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/chromedp/cdproto/browser"
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
-	stealth "github.com/go-rod/stealth"
 )
 
-// Mu guards every access to Ctx — every HTTP handler that touches the
-// shared page must hold this for the duration of its own chromedp
-// actions, so two requests never race on the same tab. Ctx itself is
+// Mu guards every access to Ctx — the PRIMARY tab: every HTTP handler
+// that touches the shared page must hold this for the duration of its
+// own chromedp actions, so two requests never race on the same tab.
+// Worker tabs (tabs.go) are never guarded by Mu — each belongs to
+// exactly one request. Ctx itself is
 // nil until EnsureSharedSession's first successful call (lazy start,
 // step-43-lazy-shared-session.md) — every handler that needs it calls
 // EnsureSharedSession first, never assumes it's already set.
 var (
-	Mu     sync.Mutex
-	Ctx    context.Context
-	Cancel []context.CancelFunc
+	Mu  sync.Mutex
+	Ctx context.Context
+	// primaryCancel closes the primary tab only (never the browser) —
+	// see RecreateSharedSessionLocked. Guarded by Mu.
+	primaryCancel context.CancelFunc
 	// LastHeadlessFetchURL is the exact URL string fetch_page_html last
 	// successfully navigated the shared headless session to —
 	// crawlPage's own fetch-cache check (fetch_cache.go, step 45) uses
@@ -70,12 +81,17 @@ var (
 // releases Mu itself, so calling it while already holding Mu would
 // deadlock (sync.Mutex isn't reentrant). See
 // plan/ai/tools/browser/step-43-lazy-shared-session.md.
+//
+// A primary tab whose context is already done (the browser process died
+// or was killed underneath this process) counts as "not started": it is
+// torn down and relaunched here instead of being handed out dead.
 func EnsureSharedSession() error {
 	Mu.Lock()
 	defer Mu.Unlock()
-	if Ctx != nil {
+	if Ctx != nil && Ctx.Err() == nil {
 		return nil
 	}
+	stopHeadlessLocked()
 	return startSharedSessionLocked()
 }
 
@@ -85,7 +101,7 @@ func EnsureSharedSession() error {
 // JS engine and CDP responsiveness while it's open — and since every
 // caller of the shared headless session (Ctx) or the headed fallback
 // session inherits whatever state the previous caller left the tab in
-// (Mu/NormalSessionMu only serialize access, they never reset the tab
+// (Mu and the tab pools only serialize access, they never reset a tab
 // — see
 // plan/ai/tools/browser/step-47-shared-tab-wedge-and-stuck-crawl-fix.md's
 // own root-cause writeup), an unhandled dialog left open by one caller
@@ -150,6 +166,35 @@ func ProbeSessionLiveness(parentCtx context.Context) error {
 	return nil
 }
 
+// headlessUserAgent caches the User-Agent string startSharedSessionLocked
+// launches the shared headless session with — the browser's OWN native
+// UA with only the "HeadlessChrome/" token rewritten to "Chrome/"
+// (deriveHeadlessUserAgent). Empty until the first launch derives it.
+// Guarded by Mu, same as Ctx, since only startSharedSessionLocked (which
+// already requires Mu) ever reads or writes it.
+//
+// Replaces a hard-coded "Windows NT 10.0 ... Chrome/120" UA flag — a
+// real, measured fingerprint mismatch, not a hypothetical one (captured
+// directly against a local test server, Chrome 153 on macOS): the
+// --user-agent flag only changes the User-Agent header and
+// navigator.userAgent, while Sec-CH-UA/Sec-CH-UA-Platform and
+// navigator.userAgentData/navigator.platform kept reporting the REAL
+// browser ("Google Chrome";v="153", "macOS", "MacIntel") — a Windows,
+// 33-versions-old UA sitting next to macOS/153 client hints, exactly
+// the kind of internal inconsistency Cloudflare's bot scoring flags,
+// pushing otherwise-silent managed challenges into interactive ones.
+//
+// Deliberately still a --user-agent FLAG (not a CDP
+// Emulation.setUserAgentOverride call per tab): also measured directly —
+// a CDP override (a) wipes Sec-CH-UA and navigator.userAgentData.brands
+// entirely unless full UserAgentMetadata is supplied too, and (b) never
+// reaches a cross-site iframe (an out-of-process frame with its own
+// target), which kept reporting "HeadlessChrome/153" — and a cross-site
+// iframe is exactly where Cloudflare's Turnstile widget runs. The flag
+// applies process-wide, every frame included, and leaves the browser's
+// own (already-correct) client hints untouched.
+var headlessUserAgent string
+
 // startSharedSessionLocked creates the one chromedp browser context
 // this whole process holds for its entire lifetime — assumes the
 // caller (EnsureSharedSession, above) already holds Mu. A real, empty
@@ -157,127 +202,205 @@ func ProbeSessionLiveness(parentCtx context.Context) error {
 // to actually launch now rather than deferring even further, so a
 // genuinely live browser (not just constructed Go-side handles) is
 // confirmed before this returns successfully.
+//
+// The UA is derived from the browser itself (see headlessUserAgent), so
+// the very first launch in this process has nothing to pass yet: it
+// launches with Chrome's native UA, reads it, and — only if it actually
+// contains the "HeadlessChrome/" token — relaunches once with the
+// rewritten one. Every later launch (e.g. RecreateSharedSessionLocked)
+// reuses the cached value directly, unless the browser's real major
+// version no longer matches it (Chrome auto-updated underneath this
+// long-running process), in which case it's re-derived the same way —
+// a stale cached version would recreate the very UA/client-hint
+// mismatch this exists to prevent.
 func startSharedSessionLocked() error {
-	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), allocatorOptions()...)
-	ctx, ctxCancel := chromedp.NewContext(allocCtx)
-	installDialogAutoDismiss(ctx, "shared headless session")
-
-	// Build actions using the native cdproto/page Action wrapper
-	actions := []chromedp.Action{
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			// stealth.JS enthält das vollständige, aus puppeteer-extra extrahierte Skript.
-			// Es injiziert über 17 komplexe Patches (WebGL, Plugins, Navigator, Codecs, etc.) via CDP.
-			_, err := page.AddScriptToEvaluateOnNewDocument(stealth.JS).Do(ctx)
+	if headlessUserAgent != "" {
+		ctx, cancels, product, err := launchHeadlessBrowser(headlessUserAgent)
+		if err != nil {
 			return err
-		}),
-		chromedp.Navigate("about:blank"),
+		}
+		if majorVersion(product) == majorVersion(headlessUserAgent) {
+			return adoptBrowserLocked(ctx, cancels)
+		}
+		log.Printf("shared headless session: browser is now %s, re-deriving user agent (cached: %q)", product, headlessUserAgent)
+		cancelAll(cancels)
+		headlessUserAgent = ""
 	}
 
-	if err := chromedp.Run(ctx, actions...); err != nil {
-		ctxCancel()
-		allocCancel()
+	ctx, cancels, _, err := launchHeadlessBrowser("")
+	if err != nil {
+		return err
+	}
+	var nativeUA string
+	if err := chromedp.Run(ctx, chromedp.ActionFunc(func(ctx context.Context) error {
+		var err error
+		_, _, _, nativeUA, _, err = browser.GetVersion().Do(ctx)
+		return err
+	})); err != nil {
+		cancelAll(cancels)
 		return err
 	}
 
-	Ctx = ctx
-	Cancel = []context.CancelFunc{ctxCancel, allocCancel}
+	headlessUserAgent = deriveHeadlessUserAgent(nativeUA)
+	if headlessUserAgent == nativeUA {
+		return adoptBrowserLocked(ctx, cancels)
+	}
+
+	cancelAll(cancels)
+	ctx, cancels, _, err = launchHeadlessBrowser(headlessUserAgent)
+	if err != nil {
+		return err
+	}
+	return adoptBrowserLocked(ctx, cancels)
+}
+
+// adoptBrowserLocked publishes a freshly launched browser (root ctx +
+// its cancel funcs) as the shared one and opens the primary tab in it.
+// On a primary-tab failure the browser is torn down again, leaving
+// everything nil for the next EnsureSharedSession to retry from scratch.
+func adoptBrowserLocked(root context.Context, cancels []context.CancelFunc) error {
+	setBrowser(root, cancels)
+	return openPrimaryTabLocked()
+}
+
+// openPrimaryTabLocked opens a fresh primary tab in the current browser.
+func openPrimaryTabLocked() error {
+	root, _ := currentBrowser()
+	ctx, cancel, err := newTab(root, "shared headless session (primary tab)")
+	if err != nil {
+		stopHeadlessLocked()
+		return err
+	}
+	Ctx, primaryCancel = ctx, cancel
 	return nil
 }
 
-// RecreateSharedSessionLocked (step 47.3) tears down the current
-// shared session — whatever state it's actually in — and immediately
-// attempts to start a fresh one in its place, while the caller still
-// holds Mu, so no other request can observe or acquire the wedged tab
-// in between. Called only after ProbeSessionLiveness (step 47.2) has
-// already confirmed the current tab is unresponsive. Assumes the
-// caller already holds Mu, same precondition as startSharedSessionLocked
-// itself.
-//
-// If the fresh start itself fails, Ctx/Cancel are left nil/empty
-// rather than pointing back at the now-torn-down old session —
-// matching EnsureSharedSession's own lazy-start convention (`if Ctx !=
-// nil { return nil }`), so the very next caller's EnsureSharedSession
-// call attempts a completely fresh start from scratch instead of being
-// fooled by a stale non-nil Ctx into skipping straight to a session
-// that no longer exists.
-//
-// Deliberately a full relaunch (a brand new chromedp allocator and
-// browser process, via startSharedSessionLocked) rather than only
-// opening a new tab on the existing browser process — simpler and
-// reuses already-verified code (including installDialogAutoDismiss
-// and the stealth script injection) instead of introducing a second,
-// narrower "just replace the tab" path for what should be a rare
-// recovery case.
-func RecreateSharedSessionLocked() error {
-	for _, cancel := range Cancel {
-		cancel()
-	}
-	Ctx = nil
-	Cancel = nil
-	// step 63.3 — real bug fix, caught while reviewing this function's
-	// own doc comment, not hypothetical: without this, fetch_cache.go's
-	// own "is the shared session already showing this URL" check
-	// (crawlPage, crawl.go) would still see whatever URL the OLD,
-	// now-discarded tab was last navigated to — wrongly believing the
-	// brand new, blank tab this function just created is already
-	// showing it, and serving a stale cached result instead of ever
-	// navigating the new tab there at all.
-	LastHeadlessFetchURL = ""
-	return startSharedSessionLocked()
-}
-
-func StopSharedSession() {
-	Mu.Lock()
-	defer Mu.Unlock()
-	for _, cancel := range Cancel {
-		cancel()
-	}
-}
-
-// NormalSessionMu serializes headed-Chrome fallback attempts (crawl.go's
-// crawlWithNormalSession) — at most one headed Chrome window is ever
-// open at a time, regardless of how many concurrent crawl requests hit
-// a Cloudflare block simultaneously. Separate from Mu (which guards the
-// always-on shared headless session's own state) since this guards a
-// completely different, ephemeral resource. See
-// plan/ai/tools/browser/step-24-headed-chrome-cloudflare-fallback.md.
-var NormalSessionMu sync.Mutex
-
-// StartSharedNormalSession launches a fresh, non-headless ("normal")
-// Chrome instance — used only as a fallback when the lazily-started
-// shared headless session (EnsureSharedSession/startSharedSessionLocked,
-// above — never called by this function, never modified by this
-// feature) fails to get past a Cloudflare challenge. Unlike that
-// session, this does NOT store its context/cancel funcs into the
-// package-level Ctx/Cancel — those remain exclusively the shared
-// headless session's own state — and is never called at boot (nothing
-// browser-related is started at boot anymore — see
-// step-43-lazy-shared-session.md). The caller owns the returned cancel
-// funcs and must call every one of them once done with this instance
-// ("close after it is finished") — see crawl.go's crawlWithNormalSession,
-// the one caller.
-func StartSharedNormalSession() (context.Context, []context.CancelFunc, error) {
-	profileDir, err := normalSessionProfileDir()
-	if err != nil {
-		return nil, nil, err
-	}
-	removeStaleChromeSingletonLock(profileDir)
-
-	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), normalAllocatorOptions(profileDir)...)
+// launchHeadlessBrowser starts one headless Chrome process and returns
+// its ROOT context (the process's own first tab, which is never used
+// for pages — every real tab is opened from it via newTab, which also
+// installs the stealth script and dialog auto-dismiss per tab), its
+// cancel funcs, and the browser's
+// real product string ("Chrome/153.0.8010.53") — the only reliable
+// version source once userAgent is set, since Browser.getVersion's own
+// userAgent field then just echoes the flag back. userAgent "" launches
+// with Chrome's native UA.
+func launchHeadlessBrowser(userAgent string) (context.Context, []context.CancelFunc, string, error) {
+	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), allocatorOptions(userAgent)...)
 	ctx, ctxCancel := chromedp.NewContext(allocCtx)
-	installDialogAutoDismiss(ctx, "headed fallback session")
+	cancels := []context.CancelFunc{ctxCancel, allocCancel}
 
+	var product string
 	actions := []chromedp.Action{
 		chromedp.Navigate("about:blank"),
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			var err error
+			_, product, _, _, _, err = browser.GetVersion().Do(ctx)
+			return err
+		}),
 	}
 
 	if err := chromedp.Run(ctx, actions...); err != nil {
-		ctxCancel()
-		allocCancel()
-		return nil, nil, err
+		cancelAll(cancels)
+		return nil, nil, "", err
 	}
+	return ctx, cancels, product, nil
+}
 
-	return ctx, []context.CancelFunc{ctxCancel, allocCancel}, nil
+// deriveHeadlessUserAgent rewrites headless Chrome's native UA into the
+// one the same browser reports when headed — verified directly (Chrome
+// 153, macOS) to differ ONLY in the "HeadlessChrome/" product token;
+// platform, version and client hints are already identical between the
+// two modes. Returns nativeUA unchanged when the token isn't present.
+func deriveHeadlessUserAgent(nativeUA string) string {
+	return strings.Replace(nativeUA, "HeadlessChrome/", "Chrome/", 1)
+}
+
+// majorVersion extracts the Chrome major version from either a product
+// string ("Chrome/153.0.8010.53") or a full UA ("... Chrome/153.0.0.0
+// Safari/537.36") — "" when neither contains a "Chrome/" token.
+func majorVersion(s string) string {
+	i := strings.Index(s, "Chrome/")
+	if i < 0 {
+		return ""
+	}
+	v := s[i+len("Chrome/"):]
+	if j := strings.IndexByte(v, '.'); j >= 0 {
+		v = v[:j]
+	}
+	return v
+}
+
+func cancelAll(cancels []context.CancelFunc) {
+	for _, cancel := range cancels {
+		cancel()
+	}
+}
+
+// RecreateSharedSessionLocked (step 47.3) replaces a wedged primary
+// tab while the caller still holds Mu, so no other request can observe
+// or acquire the wedged tab in between. Called after
+// ProbeSessionLiveness (step 47.2) found the primary tab unresponsive,
+// and by navigateWithHangGuard (crawl.go) when a navigation outlives its
+// own deadline. Assumes the caller already holds Mu.
+//
+// Replaces ONLY the primary tab when the browser process itself still
+// answers (probeBrowser) — closing a tab is a browser-level CDP command,
+// which works even when that tab's own renderer is hung, and it leaves
+// every worker tab (tabs.go) running in the same process untouched.
+// Only when the browser itself doesn't answer (or opening the new tab
+// fails) does this fall back to a full relaunch, which also ends every
+// in-flight worker tab (their requests fail as
+// browser_session_interrupted and can be retried).
+//
+// If the fresh start itself fails, Ctx is left nil rather than
+// pointing back at the torn-down session — matching
+// EnsureSharedSession's own lazy-start convention, so the next caller
+// attempts a completely fresh start instead of being handed a session
+// that no longer exists.
+func RecreateSharedSessionLocked() error {
+	// step 63.3 — without this, fetch_cache.go's own "is the shared
+	// session already showing this URL" check (crawlPage, crawl.go)
+	// would still see whatever URL the OLD tab was last navigated to —
+	// wrongly believing the brand new, blank tab is already showing it,
+	// and serving a stale cached result instead of ever navigating the
+	// new tab there at all.
+	LastHeadlessFetchURL = ""
+
+	if primaryCancel != nil {
+		primaryCancel()
+	}
+	Ctx, primaryCancel = nil, nil
+
+	if root, _ := currentBrowser(); root != nil && probeBrowser(root) == nil {
+		err := openPrimaryTabLocked()
+		if err == nil {
+			return nil
+		}
+		log.Printf("shared headless session: replacing the primary tab failed (%v) — relaunching the browser", err)
+	}
+	stopHeadlessLocked()
+	return startSharedSessionLocked()
+}
+
+// StopSharedSession shuts down both browsers — the headless one (its
+// primary tab and every worker tab with it) and the headed fallback
+// browser, if one is open.
+func StopSharedSession() {
+	Mu.Lock()
+	stopHeadlessLocked()
+	Mu.Unlock()
+	StopHeadedBrowser()
+}
+
+// stopHeadlessLocked tears down the headless browser process (and with
+// it the primary tab and every worker tab). Assumes Mu is held.
+func stopHeadlessLocked() {
+	if primaryCancel != nil {
+		primaryCancel()
+	}
+	Ctx, primaryCancel = nil, nil
+	LastHeadlessFetchURL = ""
+	clearBrowser()
 }
 
 // normalSessionProfileDir resolves (and ensures exists) the persistent
@@ -290,11 +413,10 @@ func StartSharedNormalSession() (context.Context, []context.CancelFunc, error) {
 // manually earns by solving a challenge once) survive into the next
 // fallback attempt against the same site, and the window looks and
 // behaves like an ordinary standing Chrome profile a human recognizes,
-// not a blank "private"-feeling one. Safe to reuse across sequential
-// invocations only because NormalSessionMu (crawl.go) already
-// guarantees at most one headed instance is ever running at a time —
-// two Chrome processes sharing one user-data-dir concurrently would
-// conflict. See
+// not a blank "private"-feeling one. Safe only because headed.go keeps
+// at most one headed Chrome process running at a time (its tabs are
+// what run concurrently) — two Chrome processes sharing one
+// user-data-dir concurrently would conflict. See
 // plan/ai/tools/browser/step-25-human-assisted-cloudflare-retry.md.
 func normalSessionProfileDir() (string, error) {
 	dbDir := os.Getenv("TOOL_DB_DIR")
@@ -314,10 +436,10 @@ func normalSessionProfileDir() (string, error) {
 // own singleton-instance protection is normally self-healing (it
 // detects a dead owner via SingletonSocket and removes a stale lock
 // itself), but that self-healing races against the previous headed
-// Chrome process's own OS-level teardown — NormalSessionMu (crawl.go)
-// only guarantees the *Go-level* call that owned the previous instance
-// has returned (its own chromedp cancel() already invoked, per this
-// function's own caller), not that the OS process it spawned has
+// Chrome process's own OS-level teardown — headed.go only guarantees
+// the *Go-level* owner of the previous instance has let go of it (its
+// own chromedp cancel() already invoked), not that the OS process it
+// spawned has
 // actually finished exiting and released its lock file by the time
 // the very next call acquires the mutex and reaches here. Observed
 // directly: "chrome failed to start ... Failed to create
@@ -326,10 +448,8 @@ func normalSessionProfileDir() (string, error) {
 // seconds after a previous headed session ended.
 //
 // Safe to remove unconditionally at this exact point, not just a
-// best-effort guess: NormalSessionMu (crawl.go) is already held by the
-// caller before this function runs, and this same package never
-// launches a second headed Chrome instance against this profile
-// directory while the mutex is held — so any lock files present here
+// best-effort guess: headed.go only calls this with headedMu held and
+// no headed browser of its own running — so any lock files present here
 // cannot belong to a session this process still considers live; they
 // are, by construction, leftovers from an already-concluded (or
 // externally terminated, e.g. a human closing the window directly)
@@ -375,13 +495,33 @@ func normalAllocatorOptions(profileDir string) []chromedp.ExecAllocatorOption {
 		chromedp.Flag("headless", false), // the whole point of this fallback
 		chromedp.Flag("disable-infobars", true),
 		chromedp.Flag("disable-notifications", true),
-		chromedp.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
+		// Several tabs share this window (headed.go) — keep background
+		// tabs running at full speed; see backgroundThrottlingFlags.
+		backgroundThrottlingFlags[0], backgroundThrottlingFlags[1], backgroundThrottlingFlags[2],
+		// No UA override at all: a headed browser's native UA already
+		// matches its own client hints exactly (see headlessUserAgent's
+		// own doc comment for the measured mismatch the former hard-coded
+		// "Windows ... Chrome/120" override caused here).
 		chromedp.Flag("lang", "en-US,en;q=0.9"),
 	)
 	return opts
 }
 
-func allocatorOptions() []chromedp.ExecAllocatorOption {
+// backgroundThrottlingFlags stop Chrome from throttling timers and
+// deprioritizing renderers of tabs that aren't in the foreground — with
+// several tabs open at once (worker tabs, several headed tabs sharing
+// one window), all but one are "background", and a throttled Turnstile
+// widget stalls instead of passing.
+var backgroundThrottlingFlags = []chromedp.ExecAllocatorOption{
+	chromedp.Flag("disable-background-timer-throttling", true),
+	chromedp.Flag("disable-backgrounding-occluded-windows", true),
+	chromedp.Flag("disable-renderer-backgrounding", true),
+}
+
+// allocatorOptions builds the shared headless session's launch flags.
+// userAgent "" keeps Chrome's native UA — see startSharedSessionLocked
+// for why the very first launch has to run that way once.
+func allocatorOptions(userAgent string) []chromedp.ExecAllocatorOption {
 	opts := chromedp.DefaultExecAllocatorOptions[:]
 	if p := os.Getenv("BROWSER_TOOL_CHROME_PATH"); p != "" {
 		opts = append(opts, chromedp.ExecPath(p))
@@ -408,12 +548,15 @@ func allocatorOptions() []chromedp.ExecAllocatorOption {
 		chromedp.Flag("headless", "new"), // Modern headless engine is harder to spot than "old" headless
 		chromedp.Flag("disable-infobars", true),
 		chromedp.Flag("disable-notifications", true),
-
-		// 3. Set a standard, non-headless consumer User Agent matching current browser iterations
-		chromedp.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
+		backgroundThrottlingFlags[0], backgroundThrottlingFlags[1], backgroundThrottlingFlags[2],
 
 		// 4. OPTIMIERUNG FÜR CLOUDFLARE: Sprache explizit mitsenden, da Headless Chrome hier oft 'null' liefert
 		chromedp.Flag("lang", "en-US,en;q=0.9"),
 	)
+	// 3. The browser's own UA with only "HeadlessChrome/" rewritten —
+	// see headlessUserAgent's own doc comment.
+	if userAgent != "" {
+		opts = append(opts, chromedp.UserAgent(userAgent))
+	}
 	return opts
 }

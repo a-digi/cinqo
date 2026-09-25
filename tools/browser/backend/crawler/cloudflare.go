@@ -1,65 +1,19 @@
-// cloudflare.go implements Cloudflare challenge-interstitial detection.
+// cloudflare.go holds the Cloudflare-related error types and the page
+// helpers shared by challenge_resolution.go, which decides whether a page
+// is behind a challenge from what Cloudflare sends (`cf-mitigated`,
+// `cf_clearance`) — see that file's own top comment.
 //
-// The important distinction made here is:
-//
-//   1. Cloudflare assets being present does NOT necessarily mean a challenge
-//      is currently being shown.
-//   2. A challenge is considered active only when there is stronger evidence
-//      that the user is actually looking at an interstitial.
-//   3. Expected crawl content is treated as an authoritative "the real page
-//      is here" signal.
-//
-// This is intentionally heuristic. Cloudflare can change its challenge DOM,
-// titles, and wording at any time, so no individual selector/text check should
-// be treated as a permanent API.
-//
-// The normal flow is:
-//
-//   navigate
-//      |
-//      +--> expected content already visible -> continue
-//      |
-//      +--> Cloudflare challenge detected
-//                |
-//                +--> wait briefly for automatic clearance
-//                |
-//                +--> cleared -> continue
-//                |
-//                +--> still present -> caller can hand the browser to user
-//
-// The fixed detector never uses caller-supplied arbitrary JavaScript.
-// expectedSelectors are only used with querySelector(), consistent with the
-// existing extraction trust boundary.
+// expectedSelectors are only ever used with querySelector(), consistent
+// with the existing extraction trust boundary.
 
 package crawler
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
-	"time"
-
-	"github.com/chromedp/chromedp"
 )
-
-// cloudflarePollInterval/cloudflareMaxWait control the short automatic wait
-// after a challenge is detected.
-//
-// This is intentionally separate from the longer human-resolution wait that
-// a caller may perform after handing the browser to a user.
-const (
-	cloudflarePollInterval = 1 * time.Second
-	cloudflareMaxWait      = 8 * time.Second
-)
-
-// cloudflareCheck is one point-in-time read of whether the currently loaded
-// page looks like a Cloudflare challenge interstitial.
-type cloudflareCheck struct {
-	Detected bool   `json:"detected"`
-	Reason   string `json:"reason"`
-}
 
 // isRenderedVisibleJS is shared by all DOM visibility checks.
 //
@@ -86,240 +40,30 @@ const isRenderedVisibleJS = `
 	}
 `
 
-// buildCloudflareDetectJS creates the fixed Cloudflare detection script.
-//
-// Detection intentionally follows this order:
-//
-//  1. The page title is a strong signal.
-//  2. Known challenge DOM elements, but only when actually rendered.
-//  3. Known challenge wording combined with Cloudflare evidence.
-//  4. A visible Cloudflare/Turnstile widget combined with Cloudflare evidence.
-//  5. A Cloudflare challenge-platform script combined with a very thin body.
-//
-// Cloudflare scripts and __CF$cv$params are NOT sufficient on their own.
-//
-// expectedSelectors provide an important override:
-//
-//	if the user's actual target content is visibly present, the page is not
-//	considered blocked, even if a generic Cloudflare heuristic happens to
-//	match.
-func buildCloudflareDetectJS(expectedSelectors []string) (string, error) {
-	selectorsJSON, err := json.Marshal(expectedSelectors)
-	if err != nil {
-		return "", err
-	}
+// challengeWidgetSelectorsJS lists Turnstile/challenge widget elements.
+// Used only by the human wait's stalled-widget recovery on a page that
+// is already known to be a challenge (challengeProbe.WidgetVisible) —
+// never to decide whether a page IS a challenge.
+const challengeWidgetSelectorsJS = `[
+	'iframe[src*="challenges.cloudflare.com"]',
+	'iframe[src*="turnstile"]',
+	".cf-turnstile",
+	"[class*='cf-turnstile']",
+	"#challenge-stage"
+].join(",")`
 
-	return fmt.Sprintf(`(function() {
-		%s
-
-		var detected = false;
-		var reason = "";
-
-		var title = (document.title || "").trim().toLowerCase();
-
-		var bodyText = (
-			(document.body && document.body.innerText) || ""
-		).trim();
-
-		var bodyTextLower = bodyText.toLowerCase();
-
-		// ------------------------------------------------------------
-		// 1. Strong title signals
-		// ------------------------------------------------------------
-
-		if (
-			title === "just a moment..." ||
-			title === "just a moment"
-		) {
-			detected = true;
-			reason = "title";
-		}
-
-		// ------------------------------------------------------------
-		// 2. Known Cloudflare challenge DOM
-		//
-		// These are deliberately checked for visibility rather than mere
-		// presence. DOM remnants can survive after the challenge clears.
-		// ------------------------------------------------------------
-
-		if (!detected) {
-			var challengeCandidates = document.querySelectorAll(
-				[
-					"#cf-challenge-running",
-					".cf-browser-verification",
-					"#challenge-stage",
-					"#challenge-error-text"
-				].join(",")
-			);
-
-			for (var i = 0; i < challengeCandidates.length; i++) {
-				if (isRenderedVisible(challengeCandidates[i])) {
-					detected = true;
-					reason = "challenge-element";
-					break;
-				}
-			}
-		}
-
-		// ------------------------------------------------------------
-		// 3. Establish whether Cloudflare is actually involved.
-		//
-		// These signals are NOT themselves enough to declare a challenge.
-		// They are corroborating evidence for the weaker checks below.
-		// ------------------------------------------------------------
-
-		var hasChallengeScript =
-			!!document.querySelector(
-				'script[src*="challenges.cloudflare.com"]'
-			) ||
-			!!document.querySelector(
-				'script[src*="/cdn-cgi/challenge-platform/"]'
-			);
-
-		var hasCloudflareURL =
-			(window.location.pathname || "").indexOf(
-				"/cdn-cgi/challenge-platform/"
-			) !== -1;
-
-		var hasCloudflareEvidence =
-			hasChallengeScript || hasCloudflareURL;
-
-		// ------------------------------------------------------------
-		// 4. Challenge wording.
-		//
-		// Text alone is not sufficient because normal sites can mention
-		// Cloudflare/security verification in their own content.
-		// Require Cloudflare evidence as well.
-		// ------------------------------------------------------------
-
-		if (!detected && hasCloudflareEvidence) {
-			var challengeText =
-				bodyTextLower.indexOf("checking your browser") !== -1 ||
-				bodyTextLower.indexOf("checking if the site connection is secure") !== -1 ||
-				bodyTextLower.indexOf("verify you are human") !== -1 ||
-				bodyTextLower.indexOf("performing security verification") !== -1 ||
-				bodyTextLower.indexOf("security verification") !== -1 ||
-				bodyTextLower.indexOf("ray id") !== -1;
-
-			if (challengeText) {
-				detected = true;
-				reason = "challenge-text";
-			}
-		}
-
-		// ------------------------------------------------------------
-		// 5. Visible Turnstile/challenge widget.
-		//
-		// Invisible Turnstile must NOT trigger detection merely because
-		// its iframe exists.
-		// ------------------------------------------------------------
-
-		if (!detected && hasCloudflareEvidence) {
-			var widgetCandidates = document.querySelectorAll(
-				[
-					'iframe[src*="challenges.cloudflare.com"]',
-					'iframe[src*="turnstile"]',
-					".cf-turnstile",
-					"[class*='cf-turnstile']",
-					"#challenge-stage"
-				].join(",")
-			);
-
-			var visibleWidget = false;
-
-			for (var j = 0; j < widgetCandidates.length; j++) {
-				if (isRenderedVisible(widgetCandidates[j])) {
-					visibleWidget = true;
-					break;
-				}
-			}
-
-			if (visibleWidget) {
-				detected = true;
-				reason = "visible-widget";
-			}
-		}
-
-		// ------------------------------------------------------------
-		// 6. Very small Cloudflare page.
-		//
-		// This is intentionally conservative. A challenge/block page often
-		// has almost no text. A real application page normally has much more.
-		//
-		// Cloudflare evidence is required.
-		// ------------------------------------------------------------
-
-		if (!detected && hasCloudflareEvidence) {
-			if (bodyText.length > 0 && bodyText.length < 200) {
-				detected = true;
-				reason = "thin-cloudflare-page";
-			}
-		}
-
-		// ------------------------------------------------------------
-		// Expected-content override.
-		//
-		// If the crawl's own target content is visibly present, consider
-		// the page successfully loaded. This prevents generic Cloudflare
-		// remnants from blocking an otherwise usable page.
-		// ------------------------------------------------------------
-
-		if (detected) {
-			var expected = %s;
-
-			if (expected && expected.length > 0) {
-				for (var k = 0; k < expected.length; k++) {
-					var el;
-
-					try {
-						el = document.querySelector(expected[k]);
-					} catch (e) {
-						continue;
-					}
-
-					if (el && isRenderedVisible(el)) {
-						return {
-							detected: false,
-							reason: "expected-content-found"
-						};
-					}
-				}
-			}
-		}
-
-		return {
-			detected: detected,
-			reason: reason
-		};
-	})()`, isRenderedVisibleJS, string(selectorsJSON)), nil
-}
-
-// detectCloudflareChallenge runs the detection script against whatever page
-// the supplied browser context currently has loaded.
-//
-// expectedSelectors may be nil/empty. When supplied, the selectors are only
-// used to determine whether the crawl's expected target content is already
-// visible.
-func detectCloudflareChallenge(
-	ctx context.Context,
-	expectedSelectors []string,
-) (cloudflareCheck, error) {
-	script, err := buildCloudflareDetectJS(expectedSelectors)
-	if err != nil {
-		return cloudflareCheck{}, err
-	}
-
-	var result cloudflareCheck
-
-	if err := chromedp.Run(
-		ctx,
-		chromedp.Evaluate(script, &result),
-	); err != nil {
-		return cloudflareCheck{}, err
-	}
-
-	return result, nil
-}
+// challengeContainerSelectorsJS is the SUBSET of challengeWidgetSelectorsJS
+// that identifies the widget's own CONTAINER element (the div Cloudflare's
+// script injects its interactive iframe into) — deliberately excludes the
+// two iframe-src selectors from that list, since a container is what
+// challengeProbe.WidgetStalled (challenge_resolution.go) checks for a
+// MISSING iframe child inside, and an iframe element can never itself be
+// that container.
+const challengeContainerSelectorsJS = `[
+	".cf-turnstile",
+	"[class*='cf-turnstile']",
+	"#challenge-stage"
+].join(",")`
 
 // expectedSelectorsFromFields derives the "expected content" selector list
 // from a crawl instruction's container/fields.
@@ -345,63 +89,12 @@ func expectedSelectorsFromFields(
 	return selectors
 }
 
-// waitForCloudflareClearance performs a short automatic wait.
-//
-// It checks immediately. For normal pages this therefore adds essentially
-// zero latency.
-//
-// If a Cloudflare challenge is detected, it polls until:
-//
-//   - the challenge disappears, or
-//   - cloudflareMaxWait is exhausted.
-//
-// A cleared challenge returns an empty cloudflareCheck. A still-active
-// challenge is returned to the caller so it can hand the browser to a human
-// or return a structured error.
-func waitForCloudflareClearance(
-	ctx context.Context,
-	expectedSelectors []string,
-) (cloudflareCheck, error) {
-	check, err := detectCloudflareChallenge(ctx, expectedSelectors)
-	if err != nil {
-		return cloudflareCheck{}, err
-	}
-
-	if !check.Detected {
-		return cloudflareCheck{}, nil
-	}
-
-	deadline := time.Now().Add(cloudflareMaxWait)
-
-	for time.Now().Before(deadline) {
-		if err := chromedp.Run(
-			ctx,
-			chromedp.Sleep(cloudflarePollInterval),
-		); err != nil {
-			return cloudflareCheck{}, err
-		}
-
-		check, err = detectCloudflareChallenge(
-			ctx,
-			expectedSelectors,
-		)
-		if err != nil {
-			return cloudflareCheck{}, err
-		}
-
-		if !check.Detected {
-			return cloudflareCheck{}, nil
-		}
-	}
-
-	return check, nil
-}
-
 // crawlError is a distinct typed crawl failure.
 //
-// Today the Cloudflare-specific code is:
+// The Cloudflare-specific codes are:
 //
-//	cloudflare_challenge_unresolved
+//	cloudflare_challenge_unresolved — still present after the wait budget
+//	cloudflare_blocked              — a block page nobody can get past
 //
 // This allows callers to branch on Code rather than string-matching an error
 // message.
@@ -409,6 +102,13 @@ type crawlError struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
 	Reason  string `json:"reason"`
+	// tracker (only meaningful for cloudflare_challenge_unresolved)
+	// carries the detection-time baseline and network signals from the
+	// automatic wait into the human wait for the SAME tab — see
+	// challengeTracker (challenge_resolution.go). nil when the error
+	// wasn't produced by a live detection (the known-Cloudflare-domain
+	// shortcut); the human wait then starts a fresh tracker.
+	tracker *challengeTracker
 }
 
 func (e *crawlError) Error() string {
@@ -420,10 +120,29 @@ func (e *crawlError) Error() string {
 //
 // The caller can use this signal to expose the existing browser to a user
 // for manual completion.
-func newCloudflareUnresolvedError(reason string) *crawlError {
+func newCloudflareUnresolvedError(reason string, tracker *challengeTracker) *crawlError {
 	return &crawlError{
-		Code:    "cloudflare_challenge_unresolved",
+		Code:    codeCloudflareUnresolved,
 		Message: "Cloudflare challenge could not be cleared",
+		Reason:  reason,
+		tracker: tracker,
+	}
+}
+
+const (
+	codeCloudflareUnresolved = "cloudflare_challenge_unresolved"
+	codeCloudflareBlocked    = "cloudflare_blocked"
+)
+
+// newCloudflareBlockedError is returned the moment a Cloudflare BLOCK
+// page is recognized (challengeProbe.HardBlocked, or a `cf-mitigated:
+// block` response) — distinct from an unresolved challenge because no
+// wait, headed retry, or human can get past it: callers never route it
+// to the headed fallback or the human wait.
+func newCloudflareBlockedError(reason string) *crawlError {
+	return &crawlError{
+		Code:    codeCloudflareBlocked,
+		Message: "Cloudflare blocked access to this page",
 		Reason:  reason,
 	}
 }

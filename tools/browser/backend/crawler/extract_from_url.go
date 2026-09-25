@@ -10,9 +10,10 @@
 // caller's own navigate can land in between this caller's own
 // navigate and its own extract, silently extracting the WRONG page's
 // content. This tool closes that window entirely by reusing
-// performPaginatedCrawl's own existing url-then-extract-under-one-
-// shared.Mu-hold behavior (paginate.go, step 37,
-// plan/ai/tools/browser/step-37-atomic-navigate-and-extract.md) with
+// performPaginatedCrawl's own url-then-extract path (paginate.go, step
+// 37, plan/ai/tools/browser/step-37-atomic-navigate-and-extract.md),
+// which runs start to finish in its own worker tab — so concurrent
+// sub-agents also actually run in parallel instead of queuing — with
 // pagination effectively disabled (a single page, no next-page
 // control) — no new locking/navigation logic of its own. See
 // plan/ai/tools/career/step-XX-job-detail-crawl-instructions.md.
