@@ -527,6 +527,42 @@ func crawlPage(parent context.Context, rawURL, requestID string, expectedSelecto
 		}
 	}
 
+	// Playwright (playwright_engine.go) is the PRIMARY engine for a
+	// domain with no known Cloudflare history — tried before the
+	// chromedp primary tab below. On success, this performs the exact
+	// same bookkeeping the chromedp primary tab's own success path does
+	// (fetchCacheStore, and — for an AI caller only, matching resolve's
+	// own identical distinction just above — syncPrimaryTabAsync, so a
+	// follow-up call that assumes "the current page" still sees it even
+	// though a Playwright page, not the chromedp primary tab, actually
+	// served this one). A real Cloudflare verdict escalates through the
+	// exact same resolve(...) the chromedp primary tab's own equivalent
+	// verdict uses below. Only a Playwright-specific failure (not a
+	// *crawlError: the shared browser wouldn't start, the page crashed)
+	// falls through to the existing, unchanged chromedp primary-tab
+	// attempt that follows.
+	pwResp, pwErr := fetchWithPlaywright(reqCtx, rawURL, requestID, expectedSelectors, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
+	var pwCfErr *crawlError
+	switch {
+	case pwErr == nil:
+		if !skipCache {
+			_ = fetchCacheStore(rawURL, pwResp)
+		}
+		if requestID == "" {
+			syncPrimaryTabAsync(rawURL, pwResp, skipCache)
+		}
+		return pwResp, nil
+	case errors.As(pwErr, &pwCfErr) && pwCfErr.Code == codeCloudflareUnresolved:
+		recordIfUnresolved(rawURL, pwErr)
+		return resolve(true)
+	case pwCfErr != nil:
+		// A hard block or a cancellation — final, same as the chromedp
+		// primary tab's own handling of these further down.
+		return crawlResponse{}, pwErr
+	}
+	// Any other error is Playwright-specific: fall through to the
+	// existing chromedp primary-tab attempt below, unchanged.
+
 	result, err := func() (crawlResponse, error) {
 		// step 45 — served for free only when the primary tab is already
 		// showing this exact URL (shared.LastHeadlessFetchURL, set below

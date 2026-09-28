@@ -62,6 +62,7 @@ func runHTTPServer() {
 		<-sigCh
 		log.Print("shutting down, closing browser session")
 		shared.StopSharedSession()
+		crawler.StopPlaywrightEngine()
 		os.Exit(0)
 	}()
 
@@ -95,6 +96,7 @@ func runHTTPServer() {
 	log.Printf("browser tool listening on 127.0.0.1:%s", port)
 	if err := http.ListenAndServe("127.0.0.1:"+port, nil); err != nil {
 		shared.StopSharedSession()
+		crawler.StopPlaywrightEngine()
 		log.Fatal(err)
 	}
 }

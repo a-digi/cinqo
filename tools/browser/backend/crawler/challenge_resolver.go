@@ -187,7 +187,13 @@ func linkRequestCancel(reqCtx, ctx context.Context, cancel context.CancelFunc, b
 
 // crawlOnWorkerTab runs one full single-page crawl — navigate, full
 // automatic Cloudflare wait, read — in its own headless worker tab,
-// finishing by deadline (zero: no cap beyond crawlTimeout).
+// finishing by deadline (zero: no cap beyond crawlTimeout). Reached only
+// through escalateChallenge, i.e. only once crawlPage's own Playwright-
+// primary attempt (playwright_engine.go) already reported a real
+// Cloudflare verdict for this URL — trying Playwright again here would
+// almost certainly just reproduce the same verdict, so this stays
+// purely chromedp-based: full automatic wait, then (escalateChallenge's
+// own next step) a headed tab a person can help.
 func crawlOnWorkerTab(reqCtx context.Context, deadline time.Time, rawURL, requestID string, expectedSelectors, removeSelectors, removeAttributes []string, maxAttributeLength int, ignoreAttributesForMaxLength []string) (crawlResponse, error) {
 	timeout := capTimeout(crawlTimeout, deadline)
 	if timeout < minWorkerAttempt {
