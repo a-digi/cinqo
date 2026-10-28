@@ -1,0 +1,45 @@
+* { box-sizing: border-box; }
+body {
+  font-family: "Avenir Next", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  color: #1f2937;
+  font-size: 10pt;
+  line-height: 1.45;
+  margin: 0;
+  /* Left/right only — top/bottom breathing room comes from the PDF's
+     own per-page margin (see cvbuilder/handler.go). */
+  padding: 0 40px;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+h1, h2, p, ul { margin: 0; padding: 0; }
+ul { list-style: none; }
+.profile-photo { display: block; object-fit: cover; flex-shrink: 0; }
+.contact { display: flex; flex-wrap: wrap; }
+.entry { display: grid; break-inside: avoid; page-break-inside: avoid; }
+.entry-title { grid-area: title; }
+.entry-company { grid-area: company; }
+.entry-meta { grid-area: meta; }
+.entry-desc { grid-area: desc; white-space: pre-line; }
+.summary { white-space: pre-line; }
+/* stacked entry: title + date on one line */
+.entry { grid-template-columns: 1fr auto; column-gap: 16px;
+  grid-template-areas: "title meta" "company company" "desc desc"; }
+
+.band { height: 92px; background: linear-gradient(120deg, #ff6b57 0%, #ff9966 100%); border-radius: 22px; }
+.idcard { text-align: center; margin-bottom: 4px; }
+.profile-photo { width: 116px; height: 116px; border-radius: 50%; border: 5px solid #fff; margin: -58px auto 12px;
+  box-shadow: 0 6px 18px rgba(255,107,87,0.35); }
+.band + .idcard h1:first-child { margin-top: 20px; }
+h1 { font-size: 27pt; font-weight: 800; color: #1f2937; letter-spacing: -0.02em; line-height: 1.1; }
+.headline { margin-top: 5px; font-size: 12.5pt; color: #ff6b57; font-weight: 600; }
+.contact { justify-content: center; gap: 3px 18px; margin-top: 10px; font-size: 9pt; color: #6b7280; }
+h2 { font-size: 10.5pt; text-transform: uppercase; letter-spacing: 0.16em; color: #1f2937; font-weight: 800; margin: 26px 0 13px; }
+h2::after { content: ""; display: block; width: 28px; height: 4px; border-radius: 2px; background: #ff6b57; margin-top: 6px; }
+.summary { line-height: 1.65; color: #374151; font-size: 10.3pt; }
+.entry { margin-bottom: 15px; }
+.entry-title { font-size: 11.3pt; font-weight: 700; color: #1f2937; }
+.entry-company { font-size: 10pt; color: #ff6b57; font-weight: 600; }
+.entry-meta { font-size: 8.8pt; color: #9ca3af; padding-top: 3px; }
+.entry-desc { margin-top: 5px; color: #4b5563; line-height: 1.55; font-size: 9.7pt; }
+.skills li { display: inline-block; background: #ff6b57; color: #fff; font-size: 9pt; font-weight: 600;
+  padding: 4px 12px; border-radius: 8px; margin: 0 6px 7px 0; }

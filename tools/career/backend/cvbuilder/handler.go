@@ -464,7 +464,35 @@ func writeCvDocumentAwareError(w http.ResponseWriter, action string, err error) 
 //     style.css instead uses `break-inside: avoid` on each entry to
 //     keep page breaks from looking bad without relying on page margin.
 const cvPageMarginTopBottomInches = 0.4
-const cvSidebarTemplateID = "modern-sidebar"
+
+// cvZeroMarginTemplateIDs are the full-height colored-sidebar designs —
+// see the modern-sidebar bullet above; the sidebar-* templates share the
+// exact same fixed-background + absolute-sidebar structure.
+var cvZeroMarginTemplateIDs = map[string]bool{
+	"modern-sidebar":            true,
+	"side-navy":                 true,
+	"side-sage":                 true,
+	"side-graphite-right":       true,
+	"side-coral":                true,
+	"side-slate-wide":           true,
+	"side-sand-serif":           true,
+	"side-teal-banner":          true,
+	"side-night-mono":           true,
+	"clean-blue-sidebar":        true,
+	"corporate-gold-sidebar":    true,
+	"contemporary-navy-sidebar": true,
+	"maker-dark-sidebar":        true,
+	"refined-red-sidebar":       true,
+	"leadership-brown-sidebar":  true,
+	"green-gradient-sidebar":    true,
+	"bold-blue-sidebar":         true,
+	"midnight-gold-sidebar":     true,
+	"grey-pro-sidebar":          true,
+	"friendly-orange-sidebar":   true,
+	"night-mode":                true,
+	"rich-gold-cream":           true,
+	"retro-green-double":        true,
+}
 
 type generatePdfRequest struct {
 	Xhtml          string  `json:"xhtml"`
@@ -479,7 +507,7 @@ type generatePdfResponse struct {
 
 func forwardGeneratePdf(originalReq *http.Request, templateID, xhtml string) (string, error) {
 	reqBody := generatePdfRequest{Xhtml: xhtml}
-	if templateID != cvSidebarTemplateID {
+	if !cvZeroMarginTemplateIDs[templateID] {
 		reqBody.MarginTopIn = cvPageMarginTopBottomInches
 		reqBody.MarginBottomIn = cvPageMarginTopBottomInches
 	}

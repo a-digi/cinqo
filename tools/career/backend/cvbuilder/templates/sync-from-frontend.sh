@@ -31,7 +31,28 @@ for id in modern-mono modern-sidebar classic \
   ats-modern-sans ats-times ats-verdana ats-tahoma ats-calibri \
   ats-garamond ats-bold-headers ats-two-line-header ats-skills-first ats-academic \
   modern-banner modern-timeline creative-accent creative-bold \
-  executive-elegant executive-serif-bold minimalist-lines minimalist-airy; do
+  executive-elegant executive-serif-bold minimalist-lines minimalist-airy \
+  modern-gradient modern-split-header modern-card modern-dark-header \
+  modern-dots modern-photo-hero creative-pastel creative-monogram \
+  creative-duotone creative-stripe creative-sunset executive-navy \
+  executive-monogram-rule executive-charcoal minimalist-photo-left minimalist-whitespace \
+  minimalist-mono-caps classic-portrait classic-ribbon classic-centered-photo \
+  modern-slate-line modern-indigo-strip modern-ocean-banner modern-berry-tint \
+  modern-emerald-timeline modern-copper-right modern-sky-hero modern-graphite-frame \
+  creative-plum-duo creative-amber-overlap creative-rose-rule creative-teal-tint \
+  creative-olive-banner creative-violet-center executive-crimson-center executive-navy-rule \
+  executive-gold-dark executive-forest-frame executive-steel-strip executive-charcoal-right \
+  minimalist-plain-left minimalist-plain-center minimalist-line-right minimalist-sage-rule \
+  minimalist-steel-strip minimalist-sand-frame classic-navy-right classic-berry-center \
+  classic-ink-left classic-forest-strip classic-gold-tint classic-crimson-rule \
+  side-navy side-sage side-graphite-right side-coral \
+  side-slate-wide side-sand-serif side-teal-banner side-night-mono \
+  clean-blue-sidebar corporate-gold-sidebar contemporary-navy-sidebar maker-dark-sidebar \
+  refined-red-sidebar leadership-brown-sidebar green-gradient-sidebar bold-blue-sidebar \
+  midnight-gold-sidebar grey-pro-sidebar friendly-orange-sidebar photo-panel-steel \
+  paint-splash square-teal orange-frame dotted-lime \
+  night-mode gilded-frame green-colorful classic-red-columns \
+  rich-gold-cream retro-green-double gradient-blue-diagonal skills-first-orange; do
   mkdir -p "$SCRIPT_DIR/$id"
   cp "$FRONTEND_TEMPLATES/$id/template.html" "$SCRIPT_DIR/$id/template.html"
   cp "$FRONTEND_TEMPLATES/$id/style.css" "$SCRIPT_DIR/$id/style.css"

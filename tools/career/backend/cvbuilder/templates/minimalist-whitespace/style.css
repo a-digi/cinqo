@@ -1,0 +1,46 @@
+* { box-sizing: border-box; }
+body {
+  font-family: "Avenir Next", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  color: #171717;
+  font-size: 9.8pt;
+  line-height: 1.45;
+  margin: 0;
+  /* Left/right only — top/bottom breathing room comes from the PDF's
+     own per-page margin (see cvbuilder/handler.go). */
+  padding: 0 40px;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+h1, h2, p, ul { margin: 0; padding: 0; }
+ul { list-style: none; }
+.profile-photo { display: block; object-fit: cover; flex-shrink: 0; }
+.contact { display: flex; flex-wrap: wrap; }
+.entry { display: grid; break-inside: avoid; page-break-inside: avoid; }
+.entry-title { grid-area: title; }
+.entry-company { grid-area: company; }
+.entry-meta { grid-area: meta; }
+.entry-desc { grid-area: desc; white-space: pre-line; }
+.summary { white-space: pre-line; }
+/* stacked entry: title + date on one line */
+.entry { grid-template-columns: 1fr auto; column-gap: 16px;
+  grid-template-areas: "title meta" "company company" "desc desc"; }
+
+.head { text-align: center; padding: 10px 0 8px; }
+.profile-photo { width: 66px; height: 66px; border-radius: 50%; margin: 0 auto 16px; }
+h1 { font-size: 29pt; font-weight: 200; letter-spacing: 0.01em; line-height: 1.1; }
+.headline { margin-top: 8px; font-size: 10.5pt; color: #737373; letter-spacing: 0.04em; }
+.contact { justify-content: center; gap: 3px 22px; margin-top: 14px; font-size: 8.6pt; color: #a3a3a3; }
+h2 { font-size: 8pt; text-transform: uppercase; letter-spacing: 0.3em; font-weight: 700; margin: 38px 0 16px; text-align: center; color: #171717; }
+.summary { line-height: 1.8; font-size: 10.2pt; color: #404040; text-align: center; padding: 0 30px; }
+
+.entry { grid-template-columns: 100px 1fr; column-gap: 18px;
+  grid-template-areas: "meta title" "meta company" "meta desc"; }
+
+.entry { margin-bottom: 20px; }
+.entry-meta { font-size: 8.8pt; color: #a3a3a3; padding-top: 2px; }
+.entry-title { font-size: 10.8pt; font-weight: 600; }
+.entry-company { font-size: 9.8pt; color: #737373; }
+.entry-desc { margin-top: 5px; color: #525252; line-height: 1.65; font-size: 9.6pt; }
+.skills { text-align: center; }
+.skills li { display: inline; font-size: 9.8pt; color: #404040; }
+.skills li:not(:last-child)::after { content: "  \00B7  "; color: #a3a3a3; }

@@ -1,0 +1,33 @@
+* { box-sizing: border-box; }
+body { font-family: Palatino, "Palatino Linotype", "Book Antiqua", Georgia, serif; color: #1f2937; font-size: 10pt; line-height: 1.45; margin: 0;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+h1, h2, h3, p, ul { margin: 0; padding: 0; }
+ul { list-style: none; }
+/* Fixed AND empty: repeats on every physical page without ever overflowing
+   its own box (see modern-sidebar/template.html for why that split matters). */
+.sidebar-bg { position: fixed; top: 0; left: 0; width: 27%; height: 100%; background: #faf7f6; }
+.sidebar { position: absolute; top: 0; left: 0; width: 27%; padding: 40px 24px; color: #3a3030;
+  -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.main { margin-left: 27%; padding: 40px 36px; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.profile-photo { display: block; object-fit: cover; width: 100px; height: 100px; border-radius: 50%; margin: 0 auto 20px; box-shadow: 0 0 0 3px #fff, 0 0 0 4.5px #b4142a; }
+.sidebar h1 { font-size: 20pt; line-height: 1.12; font-weight: 800; letter-spacing: -0.01em; color: #2a1f1f; }
+.sidebar .headline { margin-top: 5px; font-size: 10.5pt; color: #b4142a; }
+.sidebar h2 { font-size: 8.5pt; text-transform: uppercase; letter-spacing: 0.18em; color: #b4142a; font-weight: 800;
+  margin: 24px 0 9px; padding-bottom: 5px; border-bottom: 1px solid rgba(180,20,42,0.25); }
+.sidebar h2:first-of-type { margin-top: 0; }
+.sidebar .contact li { font-size: 9pt; line-height: 1.5; margin-bottom: 4px; word-break: break-word; }
+.sidebar .skills li { font-size: 9.4pt; padding: 4px 0; border-bottom: 1px solid rgba(180,20,42,0.15); }
+.main h1 { font-size: 27pt; font-weight: 800; letter-spacing: -0.02em; line-height: 1.08; color: #2a1f1f; }
+.main .headline { margin: 5px 0 18px; font-size: 12.5pt; color: #b4142a; font-weight: 500; }
+.main h2 { font-size: 13pt; font-variant: small-caps; letter-spacing: 0.08em; color: #2a1f1f; font-weight: 700; margin: 22px 0 10px; padding-bottom: 3px; border-bottom: 1px solid #b4142a; }
+.summary { white-space: pre-line; line-height: 1.65; font-size: 10.2pt; color: #374151; }
+.entry { display: grid; break-inside: avoid; page-break-inside: avoid; margin-bottom: 15px; }
+.entry { grid-template-columns: 1fr auto; column-gap: 14px; grid-template-areas: "title meta" "company company" "desc desc"; }
+.entry-title { grid-area: title; font-size: 11.2pt; font-weight: 700; color: #2a1f1f; }
+.entry-company { grid-area: company; font-size: 10pt; color: #b4142a; font-weight: 500; }
+.entry-meta { grid-area: meta; font-size: 8.8pt; color: #6b7280; padding-top: 3px; }
+.entry-desc { grid-area: desc; margin-top: 5px; white-space: pre-line; color: #4b5563; line-height: 1.55; font-size: 9.7pt; }
+.sidebar-bg { border-right: 4px solid #b4142a; }
+.entry-meta, .sidebar .contact { font-family: "Avenir Next", "Helvetica Neue", Helvetica, Arial, sans-serif; }
+.entry-meta, .sidebar .contact { font-family: "Avenir Next", "Helvetica Neue", Helvetica, Arial, sans-serif; }
+.entry-company { font-style: italic; }

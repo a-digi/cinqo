@@ -1,0 +1,31 @@
+* { box-sizing: border-box; }
+body { font-family: "SF Mono", Menlo, Consolas, "Courier New", monospace; color: #1f2937; font-size: 10pt; line-height: 1.45; margin: 0;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+h1, h2, h3, p, ul { margin: 0; padding: 0; }
+ul { list-style: none; }
+/* Fixed AND empty: repeats on every physical page without ever overflowing
+   its own box (see modern-sidebar/template.html for why that split matters). */
+.sidebar-bg { position: fixed; top: 0; left: 0; width: 32%; height: 100%; background: #111111; }
+.sidebar { position: absolute; top: 0; left: 0; width: 32%; padding: 40px 24px; color: #d4d4d4;
+  -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.main { margin-left: 32%; padding: 40px 36px; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.profile-photo { display: block; object-fit: cover; width: 120px; height: 120px; border-radius: 0; margin: 0 auto 20px; filter: grayscale(1); }
+.sidebar h1 { font-size: 20pt; line-height: 1.12; font-weight: 800; letter-spacing: -0.01em; color: #fff; }
+.sidebar .headline { margin-top: 5px; font-size: 10.5pt; color: #bef264; }
+.sidebar h2 { font-size: 8.5pt; text-transform: uppercase; letter-spacing: 0.18em; color: #bef264; font-weight: 800;
+  margin: 24px 0 9px; padding-bottom: 5px; border-bottom: 1px solid rgba(255,255,255,0.18); }
+.sidebar h2:first-of-type { margin-top: 0; }
+.sidebar .contact li { font-size: 9pt; line-height: 1.5; margin-bottom: 4px; word-break: break-word; }
+.sidebar .skills li { font-size: 9.4pt; padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.15); }
+.main h1 { font-size: 27pt; font-weight: 800; letter-spacing: -0.02em; line-height: 1.08; color: #0a0a0a; }
+.main .headline { margin: 5px 0 18px; font-size: 12.5pt; color: #4d7c0f; font-weight: 500; }
+.main h2 { font-size: 9.5pt; text-transform: uppercase; letter-spacing: 0.18em; color: #0a0a0a; font-weight: 800; margin: 22px 0 12px; padding-bottom: 5px; border-bottom: 2px solid #4d7c0f; }
+.summary { white-space: pre-line; line-height: 1.65; font-size: 10.2pt; color: #374151; }
+.entry { display: grid; break-inside: avoid; page-break-inside: avoid; margin-bottom: 15px; }
+.entry { grid-template-columns: 1fr auto; column-gap: 14px; grid-template-areas: "title meta" "company company" "desc desc"; }
+.entry-title { grid-area: title; font-size: 11.2pt; font-weight: 700; color: #0a0a0a; }
+.entry-company { grid-area: company; font-size: 10pt; color: #4d7c0f; font-weight: 500; }
+.entry-meta { grid-area: meta; font-size: 8.8pt; color: #6b7280; padding-top: 3px; }
+.entry-desc { grid-area: desc; margin-top: 5px; white-space: pre-line; color: #4b5563; line-height: 1.55; font-size: 9.7pt; }
+
+.main h1 { font-size: 23pt; text-transform: uppercase; letter-spacing: 0.04em; }

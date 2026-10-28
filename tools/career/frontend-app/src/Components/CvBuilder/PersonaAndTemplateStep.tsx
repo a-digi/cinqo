@@ -72,11 +72,24 @@ export function PersonaAndTemplateStep({
     return [...all].sort().map((p) => ({ value: p, label: p }))
   }, [templates])
 
-  const filteredTemplates = templates.filter((t) => {
-    if (category !== ALL_CATEGORIES && t.category !== category) return false
-    if (professions.length > 0 && !professions.some((p) => t.bestFor.includes(p))) return false
-    return true
-  })
+  const matchesProfessions = (t: (typeof templates)[number]) =>
+    professions.length === 0 || professions.some((p) => t.bestFor.includes(p))
+
+  const filteredTemplates = templates.filter((t) => (category === ALL_CATEGORIES || t.category === category) && matchesProfessions(t))
+
+  // Per-pill counts honour the active profession filter (not the selected
+  // category), so each pill shows exactly how many templates clicking it
+  // would display — and the "All" pill always equals the profession-filtered
+  // total, never a stale unfiltered number.
+  const categoryCounts = useMemo(() => {
+    const counts: Record<string, number> = { [ALL_CATEGORIES]: 0 }
+    for (const t of templates) {
+      if (professions.length > 0 && !professions.some((p) => t.bestFor.includes(p))) continue
+      counts[ALL_CATEGORIES] += 1
+      counts[t.category] = (counts[t.category] ?? 0) + 1
+    }
+    return counts
+  }, [templates, professions])
 
   const filtersActive = category !== ALL_CATEGORIES || professions.length > 0
 
@@ -114,7 +127,7 @@ export function PersonaAndTemplateStep({
                   category === c ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 text-gray-600 hover:border-gray-300'
                 }`}
               >
-                {c}
+                {c} <span className="opacity-70">({categoryCounts[c] ?? 0})</span>
               </button>
             ))}
           </div>
@@ -142,6 +155,12 @@ export function PersonaAndTemplateStep({
             </button>
           )}
         </div>
+
+        <p className="mb-2 text-xs text-gray-500" aria-live="polite">
+          {filtersActive
+            ? `Showing ${String(filteredTemplates.length)} of ${String(templates.length)} templates`
+            : `${String(templates.length)} templates`}
+        </p>
 
         {filteredTemplates.length === 0 && <p className="text-sm text-gray-400">No templates match these filters.</p>}
 
