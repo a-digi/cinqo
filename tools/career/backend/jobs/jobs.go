@@ -81,6 +81,10 @@ type job struct {
 	Description string `json:"description,omitempty"`
 	PostedAt    string `json:"postedAt,omitempty"`
 	CrawledAt   string `json:"crawledAt"`
+	// Source (step 97) is "crawled" (a crawl or the AI saved it) or "manual" (a
+	// person added it by hand). A manual job may have no posting URL, in which
+	// case SourceURL is "".
+	Source string `json:"source"`
 	// DetailCrawlStatus (step XX) records the outcome of the most
 	// recent job-DETAIL-page crawl attempt — "" (empty, never "null")
 	// means no attempt has ever been made, as opposed to CrawledAt,
@@ -142,6 +146,19 @@ func publishJobCreatedEvent(jobId, company string) {
 	domainevent.Publish("career.job.created", map[string]string{"job_id": jobId, "company": company})
 }
 
+// upsertKeepingManualText is the shared part of both crawl upserts' DO UPDATE
+// SET (step 97). A crawl refreshes a crawled job as it always did. For a job a
+// person added by hand it NEVER replaces text they typed: a field the person
+// filled keeps its value; a field they left empty takes the crawled one, so a
+// crawl can complete a half-entered job but not overwrite it. The title is
+// always the person's (it is required).
+const upsertKeepingManualText = `
+			title = CASE WHEN jobs.source = 'manual' THEN jobs.title ELSE excluded.title END,
+			company = CASE WHEN jobs.source = 'manual' AND COALESCE(jobs.company, '') <> '' THEN jobs.company ELSE excluded.company END,
+			location = CASE WHEN jobs.source = 'manual' AND COALESCE(jobs.location, '') <> '' THEN jobs.location ELSE excluded.location END,
+			description = CASE WHEN jobs.source = 'manual' AND COALESCE(jobs.description, '') <> '' THEN jobs.description ELSE excluded.description END,
+			posted_at = CASE WHEN jobs.source = 'manual' AND COALESCE(jobs.posted_at, '') <> '' THEN jobs.posted_at ELSE excluded.posted_at END,`
+
 // SaveJob upserts by source_url — re-saving a posting already known
 // updates it (refreshing crawled_at) rather than duplicating it.
 // Returns the row's own id and whether this was a fresh insert.
@@ -163,12 +180,8 @@ func saveJob(sourceURL, title, company, location, description, postedAt string) 
 		`INSERT INTO jobs (id, source_url, title, company, location, description, posted_at, crawled_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
 		 ON CONFLICT(source_url) DO UPDATE SET
-			title = excluded.title,
-			company = excluded.company,
-			location = excluded.location,
-			description = excluded.description,
-			posted_at = excluded.posted_at,
-			crawled_at = excluded.crawled_at`,
+			`+upsertKeepingManualText+`
+			crawled_at = CASE WHEN jobs.source = 'manual' THEN jobs.crawled_at ELSE excluded.crawled_at END`,
 		id, sourceURL, title, company, location, description, postedAt,
 	)
 	if err != nil {
@@ -307,7 +320,7 @@ func queryJobs(where string, whereArgs []any, limit, offset int) (jobsListResult
 
 	pageArgs := append(append([]any{}, whereArgs...), limit, offset)
 	rows, err := db.JobsDB.Query(
-		`SELECT j.id, j.source_url, j.title, j.company, j.company_id, j.portal_link_id, p.id, p.name, j.location, j.description, j.posted_at, j.crawled_at, j.detail_crawl_status,
+		`SELECT j.id, j.source_url, j.title, j.company, j.company_id, j.portal_link_id, p.id, p.name, j.location, j.description, j.posted_at, j.crawled_at, j.detail_crawl_status, j.source,
 			jm.score, jm.status, jm.conversation_id, jm.error,
 			cv.status, cv.conversation_id, cv.media_file_id, cv.error
 		 `+jobsFromClause+` `+where+` ORDER BY j.crawled_at DESC LIMIT ? OFFSET ?`,
@@ -325,11 +338,12 @@ func queryJobs(where string, whereArgs []any, limit, offset int) (jobsListResult
 		var matchStatus, matchConversationID, matchError sql.NullString
 		var matchScore sql.NullInt64
 		var cvStatus, cvConversationID, cvMediaFileID, cvError sql.NullString
-		if err := rows.Scan(&j.ID, &j.SourceURL, &j.Title, &company, &companyID, &portalLinkID, &portalID, &portalName, &location, &description, &postedAt, &j.CrawledAt, &detailCrawlStatus,
+		if err := rows.Scan(&j.ID, &j.SourceURL, &j.Title, &company, &companyID, &portalLinkID, &portalID, &portalName, &location, &description, &postedAt, &j.CrawledAt, &detailCrawlStatus, &j.Source,
 			&matchScore, &matchStatus, &matchConversationID, &matchError,
 			&cvStatus, &cvConversationID, &cvMediaFileID, &cvError); err != nil {
 			return jobsListResult{}, err
 		}
+		j.SourceURL = publicSourceURL(j.SourceURL)
 		j.Company = company.String
 		j.CompanyID = companyID.String
 		j.PortalLinkID = portalLinkID.String
@@ -391,7 +405,7 @@ func DeleteJob(id string) error {
 // rows.
 func GetJobByID(id string) (job, error) {
 	row := db.JobsDB.QueryRow(
-		`SELECT j.id, j.source_url, j.title, j.company, j.company_id, j.portal_link_id, p.id, p.name, j.location, j.description, j.posted_at, j.crawled_at, j.detail_crawl_status,
+		`SELECT j.id, j.source_url, j.title, j.company, j.company_id, j.portal_link_id, p.id, p.name, j.location, j.description, j.posted_at, j.crawled_at, j.detail_crawl_status, j.source,
 			jm.score, jm.status, jm.conversation_id, jm.error,
 			cv.status, cv.conversation_id, cv.media_file_id, cv.error
 		 `+jobsFromClause+` WHERE j.id = ?`,
@@ -402,7 +416,7 @@ func GetJobByID(id string) (job, error) {
 	var matchStatus, matchConversationID, matchError sql.NullString
 	var matchScore sql.NullInt64
 	var cvStatus, cvConversationID, cvMediaFileID, cvError sql.NullString
-	err := row.Scan(&j.ID, &j.SourceURL, &j.Title, &company, &companyID, &portalLinkID, &portalID, &portalName, &location, &description, &postedAt, &j.CrawledAt, &detailCrawlStatus,
+	err := row.Scan(&j.ID, &j.SourceURL, &j.Title, &company, &companyID, &portalLinkID, &portalID, &portalName, &location, &description, &postedAt, &j.CrawledAt, &detailCrawlStatus, &j.Source,
 		&matchScore, &matchStatus, &matchConversationID, &matchError,
 		&cvStatus, &cvConversationID, &cvMediaFileID, &cvError)
 	switch {
@@ -411,6 +425,7 @@ func GetJobByID(id string) (job, error) {
 	case err != nil:
 		return job{}, err
 	}
+	j.SourceURL = publicSourceURL(j.SourceURL)
 	j.Company = company.String
 	j.CompanyID = companyID.String
 	j.PortalLinkID = portalLinkID.String
@@ -668,13 +683,9 @@ func SavePortalJob(portalLinkId, sourceURL, title, company, location, descriptio
 		`INSERT INTO jobs (id, source_url, title, company, portal_link_id, location, description, posted_at, crawled_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
 		 ON CONFLICT(source_url) DO UPDATE SET
-			title = excluded.title,
-			company = excluded.company,
-			portal_link_id = excluded.portal_link_id,
-			location = excluded.location,
-			description = excluded.description,
-			posted_at = excluded.posted_at,
-			crawled_at = excluded.crawled_at`,
+			`+upsertKeepingManualText+`
+			portal_link_id = CASE WHEN jobs.source = 'manual' AND COALESCE(jobs.portal_link_id, '') <> '' THEN jobs.portal_link_id ELSE excluded.portal_link_id END,
+			crawled_at = CASE WHEN jobs.source = 'manual' THEN jobs.crawled_at ELSE excluded.crawled_at END`,
 		id, sourceURL, title, company, portalLinkId, location, description, postedAt,
 	)
 	if err != nil {
@@ -1033,7 +1044,11 @@ func SaveJobDetailExtraction(jobId string, values map[string]string) (updated bo
 		return false, MarkJobDetailCrawlFailed(jobId)
 	}
 	_, err = db.JobsDB.Exec(
-		`UPDATE jobs SET description = ?, crawled_at = datetime('now'), detail_crawl_status = 'success' WHERE id = ?`,
+		`UPDATE jobs SET
+			description = CASE WHEN source = 'manual' AND COALESCE(description, '') <> '' THEN description ELSE ? END,
+			crawled_at = CASE WHEN source = 'manual' THEN crawled_at ELSE datetime('now') END,
+			detail_crawl_status = 'success'
+		 WHERE id = ?`,
 		description, jobId,
 	)
 	if err != nil {

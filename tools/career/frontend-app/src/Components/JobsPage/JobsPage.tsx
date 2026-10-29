@@ -29,7 +29,9 @@ import { Pagination } from '../Pagination/Pagination'
 import { Modal } from '../../Shared/Modal/Modal'
 import { MatchScoreBar } from '../../Shared/MatchScoreBar/MatchScoreBar'
 import { ActionMenu, type ActionMenuItem } from '../../Shared/ActionMenu/ActionMenu'
-import { FilterIcon, XIcon, EyeIcon, ExternalLinkIcon, TrashIcon, MatchIcon, RobotIcon, PDFIcon } from '../../Shared/Icons/icons'
+import { FilterIcon, XIcon, EyeIcon, ExternalLinkIcon, TrashIcon, MatchIcon, RobotIcon, PDFIcon, PlusIcon } from '../../Shared/Icons/icons'
+import { AddJobModal } from './AddJobModal'
+import { canOpenOriginal, detailsState, isManualJob, platformLabel } from './manualJob'
 import { Typewriter } from '../../Shared/Typewriter/Typewriter'
 import { truncate } from '../../Shared/Text/transform'
 
@@ -38,9 +40,8 @@ const SEARCH_DEBOUNCE_MS = 300
 const MAX_LOCATION_DISPLAY_LENGTH = 50
 const JOB_DETAILS_PATH = '/tools/career/job-details'
 
-// No "add job" affordance — jobs are populated by the AI's own
-// crawling workflow (step 4), never hand-entered here. See this
-// step's own open question 2.
+// Jobs are populated by the AI's own crawling workflow (step 4); step 97
+// added "Add job" for one a person found themselves (see AddJobModal).
 //
 // Step 15 added an optional companyId filter — read once from the
 // URL on mount (so CompaniesPage's own "N linked jobs" link arrives
@@ -91,6 +92,9 @@ export function JobsPage() {
   const [selectedPlatformId, setSelectedPlatformId] = useState<string | null>(null)
   const [selectedModel, setSelectedModel] = useState<string | null>(null)
   const [matchPickerJob, setMatchPickerJob] = useState<Job | null>(null)
+
+  // "Add job" (step 97) — the modal for a job added by hand.
+  const [addOpen, setAddOpen] = useState(false)
 
   // "Generate CV PDF" (step XX) own state — cvPickerJob mirrors
   // matchPickerJob exactly: the job a profile is currently being
@@ -584,9 +588,9 @@ export function JobsPage() {
   // plain "job in, menu items out" mapping any other caller could
   // reuse without also having to reach into the row-rendering loop.
   function buildJobActionItems(job: Job): ActionMenuItem[] {
-    const hasDescription = !!job.description && job.description.trim() !== ''
-    const failed = !hasDescription && job.detailCrawlStatus === 'failed'
-    const neverCrawled = !hasDescription && !job.detailCrawlStatus
+    const details = detailsState(job) // a manual job's details are always available (step 97)
+    const failed = details === 'failed'
+    const neverCrawled = details === 'not-crawled'
 
     const items: ActionMenuItem[] = []
 
@@ -712,14 +716,17 @@ export function JobsPage() {
       children: cvChildren,
     })
 
-    items.push({
-      key: 'original',
-      label: 'Open original posting',
-      icon: <ExternalLinkIcon />,
-      href: job.sourceUrl,
-      target: '_blank',
-      rel: 'noreferrer',
-    })
+    // A job added by hand without a link has nothing to open (step 97).
+    if (canOpenOriginal(job)) {
+      items.push({
+        key: 'original',
+        label: 'Open original posting',
+        icon: <ExternalLinkIcon />,
+        href: job.sourceUrl,
+        target: '_blank',
+        rel: 'noreferrer',
+      })
+    }
 
     items.push({
       key: 'details',
@@ -809,7 +816,9 @@ export function JobsPage() {
       <div className="flex flex-nowrap items-start gap-6">
         <div className="min-w-[280px] flex-1">
           <h1 className="mb-1.5 text-xl font-semibold">Saved Jobs</h1>
-          <p className="mb-5 text-sm text-gray-500">Job postings the AI has crawled and saved on your behalf.</p>
+          <p className="mb-5 text-sm text-gray-500">
+            Job postings the AI has crawled and saved on your behalf, and any you added yourself.
+          </p>
 
           {activeFilters.length > 0 && (
             <div className="mb-2 flex flex-wrap gap-1.5">
@@ -888,6 +897,16 @@ export function JobsPage() {
               <FilterIcon />
               Filters
             </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAddOpen(true)
+              }}
+              className="flex items-center gap-1.5 rounded-md bg-gray-800 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-900"
+            >
+              <PlusIcon />
+              Add job
+            </button>
           </div>
 
           <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
@@ -909,7 +928,17 @@ export function JobsPage() {
                   {jobs.map((job) => {
                     return (
                       <tr key={job.id} className="last:[&>td]:border-b-0 hover:bg-gray-50">
-                        <td className="border-b border-gray-200 p-3 text-gray-900">{job.title}</td>
+                        <td className="border-b border-gray-200 p-3 text-gray-900">
+                          {job.title}
+                          {isManualJob(job) && (
+                            <span
+                              title="You added this job yourself"
+                              className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800"
+                            >
+                              Manual
+                            </span>
+                          )}
+                        </td>
                         <td className="border-b border-gray-200 p-3">
                           {job.company}
                           {job.companyId && (
@@ -927,7 +956,7 @@ export function JobsPage() {
                             </div>
                           )}
                         </td>
-                        <td className="border-b border-gray-200 p-3">{job.portalName ?? '—'}</td>
+                        <td className="border-b border-gray-200 p-3">{platformLabel(job)}</td>
                         <td className="border-b border-gray-200 p-3">{job.postedAt}</td>
                         <td className="border-b border-gray-200 p-3">
                           {job.matchStatus === 'matching' ? (
@@ -997,6 +1026,18 @@ export function JobsPage() {
         </div>
       </div>
 
+      <AddJobModal
+        open={addOpen}
+        onClose={() => {
+          setAddOpen(false)
+        }}
+        onAdded={() => {
+          setAddOpen(false)
+          setPage(1)
+          load(undefined, undefined, 1)
+        }}
+        onOpenExisting={handleViewDetails}
+      />
       <Modal
         open={matchPickerJob !== null}
         title="Choose a profile to match against"

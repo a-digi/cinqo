@@ -66,7 +66,11 @@ export interface PersonaDetailsResult {
 
 export interface Job {
   id: string
+  // sourceUrl is "" for a job added by hand without a posting URL (step 97).
   sourceUrl: string
+  // source (step 97) — "crawled" (a crawl or the AI saved it) or "manual" (a
+  // person added it). Absent from a backend that predates it.
+  source?: 'crawled' | 'manual'
   title: string
   company: string
   companyId?: string
@@ -543,6 +547,46 @@ export async function fetchJobLocations(): Promise<string[]> {
   const res = await fetch(`${PROXY_BASE}/job-locations`, { credentials: 'include' })
   const data = await jsonOrThrow<{ locations: string[] }>(res, 'load job locations')
   return data.locations
+}
+
+// --- Adding a job by hand (step 97) ---
+
+export interface NewJobInput {
+  title: string
+  company?: string
+  location?: string
+  description?: string
+  postedAt?: string
+  sourceUrl?: string
+}
+
+// DuplicateJobError is the server's 409: the job already exists. existingJobId
+// lets the page open it.
+export class DuplicateJobError extends Error {
+  readonly existingJobId: string
+  constructor(message: string, existingJobId: string) {
+    super(message)
+    this.name = 'DuplicateJobError'
+    this.existingJobId = existingJobId
+  }
+}
+
+export async function addJob(input: NewJobInput): Promise<Job> {
+  const res = await fetch(`${PROXY_BASE}/jobs`, {
+    method: 'POST',
+    credentials: 'include',
+    body: JSON.stringify(input),
+  })
+  if (res.status === 409) {
+    const body = (await res.json().catch(() => ({}))) as { message?: string; existingJobId?: string }
+    throw new DuplicateJobError(body.message ?? 'A job like this already exists', body.existingJobId ?? '')
+  }
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(text.trim() || `failed to add job (${res.status})`)
+  }
+  const data = await jsonOrThrow<{ job: Job }>(res, 'add job')
+  return data.job
 }
 
 export async function removeJob(id: string): Promise<void> {

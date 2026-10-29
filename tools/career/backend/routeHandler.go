@@ -573,6 +573,44 @@ func jobsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		db.WriteJSON(w, result)
 
+	// Step 97: a person adds a job by hand.
+	case http.MethodPost:
+		var body struct {
+			Title       string `json:"title"`
+			Company     string `json:"company"`
+			Location    string `json:"location"`
+			Description string `json:"description"`
+			PostedAt    string `json:"postedAt"`
+			SourceURL   string `json:"sourceUrl"`
+		}
+		// A description is at most 100,000 characters; leave room for the rest.
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid request body", http.StatusBadRequest)
+			return
+		}
+		j, err := jobs.AddManualJob(jobs.ManualJobInput{
+			Title: body.Title, Company: body.Company, Location: body.Location,
+			Description: body.Description, PostedAt: body.PostedAt, SourceURL: body.SourceURL,
+		})
+		if v, ok := jobs.IsValidationError(err); ok {
+			http.Error(w, v.Error(), http.StatusBadRequest)
+			return
+		}
+		if d, ok := jobs.IsDuplicate(err); ok {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "duplicate", "reason": d.Reason, "message": d.Error(), "existingJobId": d.ExistingID})
+			return
+		}
+		if err != nil {
+			http.Error(w, "failed to add job: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]any{"job": j})
+
 	case http.MethodPut:
 		var body linkJobToCompanyRequest
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.ID == "" {

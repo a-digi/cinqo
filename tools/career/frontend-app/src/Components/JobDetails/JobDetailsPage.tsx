@@ -60,16 +60,19 @@ export function JobDetailsPage() {
           <div className="min-w-0 flex-1 rounded-md border border-gray-200 bg-white p-6 shadow-sm">
             <div className="flex items-start justify-between gap-4">
               <h1 className="text-xl font-semibold">{job.title}</h1>
-              <a
-                href={job.sourceUrl}
-                target="_blank"
-                rel="noreferrer"
-                title="Open the original posting"
-                className="flex shrink-0 items-center gap-1.5 rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-700 transition-colors hover:bg-gray-50"
-              >
-                <ExternalLinkIcon />
-                Open original
-              </a>
+              {/* A job added by hand without a link has nothing to open (step 97). */}
+              {job.sourceUrl !== '' && (
+                <a
+                  href={job.sourceUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  title="Open the original posting"
+                  className="flex shrink-0 items-center gap-1.5 rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-700 transition-colors hover:bg-gray-50"
+                >
+                  <ExternalLinkIcon />
+                  Open original
+                </a>
+              )}
             </div>
 
             <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-sm text-gray-500">

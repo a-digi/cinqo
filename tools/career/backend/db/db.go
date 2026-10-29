@@ -356,7 +356,13 @@ CREATE TABLE IF NOT EXISTS jobs (
     -- whether the job's own detail page was ever separately visited).
     -- 'failed' | 'success'. See
     -- plan/ai/tools/career/step-XX-job-detail-crawl-status-eye-icon.md.
-    detail_crawl_status TEXT
+    detail_crawl_status TEXT,
+    -- source (step 97): 'crawled' for every job a crawl or the AI saved (the
+    -- default, so existing rows keep their meaning), 'manual' for a job a
+    -- person added by hand. A manual job with no posting URL stores
+    -- source_url = 'manual:<id>' (the column is NOT NULL UNIQUE); reads blank
+    -- that placeholder. Also added to existing installs by migrateJobsSource.
+    source TEXT NOT NULL DEFAULT 'crawled' CHECK (source IN ('crawled','manual'))
 );
 
 CREATE TABLE IF NOT EXISTS recruiters (
@@ -1018,6 +1024,9 @@ func migrateJobsDB(db *sql.DB) error {
 	if err := migrateJobsDetailCrawlStatus(db); err != nil {
 		return err
 	}
+	if err := migrateJobsSource(db); err != nil {
+		return err
+	}
 	if err := migrateJobMatchesKind(db); err != nil {
 		return err
 	}
@@ -1125,6 +1134,22 @@ func migrateJobsDetailCrawlStatus(db *sql.DB) error {
 		return nil
 	}
 	_, err = db.Exec(`ALTER TABLE jobs ADD COLUMN detail_crawl_status TEXT`)
+	return err
+}
+
+// migrateJobsSource (step 97) adds jobs.source to an install that already has
+// jobs (a fresh one gets it from the base schema). Every existing row is a job a
+// crawl or the AI saved, which is what the default 'crawled' says. A no-op when
+// the column is present.
+func migrateJobsSource(db *sql.DB) error {
+	exists, hasColumn, err := tableHasColumn(db, "jobs", "source")
+	if err != nil {
+		return err
+	}
+	if !exists || hasColumn {
+		return nil
+	}
+	_, err = db.Exec(`ALTER TABLE jobs ADD COLUMN source TEXT NOT NULL DEFAULT 'crawled' CHECK (source IN ('crawled','manual'))`)
 	return err
 }
 

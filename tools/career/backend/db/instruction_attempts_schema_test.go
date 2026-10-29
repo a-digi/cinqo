@@ -318,3 +318,55 @@ func TestPortalLinksJobsQuestionOnFreshAndUpgradedInstalls(t *testing.T) {
 		t.Errorf("existing links must start with nothing pending: %v %v %v", asked, note, err)
 	}
 }
+
+func TestJobsSourceColumnOnFreshAndUpgradedInstalls(t *testing.T) {
+	// Fresh install: from the base schema, with its CHECK.
+	t.Setenv("TOOL_DB_DIR", t.TempDir())
+	if err := InitDatabases(); err != nil {
+		t.Fatal(err)
+	}
+	if _, has, err := tableHasColumn(JobsDB, "jobs", "source"); err != nil || !has {
+		t.Fatalf("fresh install lacks jobs.source (%v)", err)
+	}
+	if _, err := JobsDB.Exec(`INSERT INTO jobs (id, source_url, title) VALUES ('j1', 'https://x/1', 'T')`); err != nil {
+		t.Fatal(err)
+	}
+	var src string
+	if err := JobsDB.QueryRow(`SELECT source FROM jobs WHERE id = 'j1'`).Scan(&src); err != nil || src != "crawled" {
+		t.Errorf("a row without a source must default to crawled: %q %v", src, err)
+	}
+	if _, err := JobsDB.Exec(`INSERT INTO jobs (id, source_url, title, source) VALUES ('j2', 'https://x/2', 'T', 'weird')`); err == nil {
+		t.Error("an unknown source must be rejected by the CHECK")
+	}
+	if _, err := JobsDB.Exec(`INSERT INTO jobs (id, source_url, title, source) VALUES ('j3', 'manual:j3', 'T', 'manual')`); err != nil {
+		t.Errorf("manual must be accepted: %v", err)
+	}
+	JobsDB.Close()
+	CareerDB.Close()
+
+	// Upgrade: a jobs table from before this step keeps its rows as 'crawled'.
+	dir := t.TempDir()
+	legacy, err := sql.Open("sqlite", filepath.Join(dir, "jobs.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer legacy.Close()
+	if _, err := legacy.Exec(`CREATE TABLE jobs (id TEXT PRIMARY KEY, source_url TEXT NOT NULL UNIQUE, title TEXT NOT NULL);
+		INSERT INTO jobs VALUES ('old', 'https://x/old', 'Old job')`); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ { // idempotent
+		if err := migrateJobsSource(legacy); err != nil {
+			t.Fatalf("migrate (run %d): %v", i+1, err)
+		}
+	}
+	if err := legacy.QueryRow(`SELECT source FROM jobs WHERE id = 'old'`).Scan(&src); err != nil || src != "crawled" {
+		t.Errorf("an existing job must read as crawled: %q %v", src, err)
+	}
+	// And no jobs table at all is not an error.
+	empty, _ := sql.Open("sqlite", filepath.Join(t.TempDir(), "empty.db"))
+	defer empty.Close()
+	if err := migrateJobsSource(empty); err != nil {
+		t.Errorf("no table: %v", err)
+	}
+}
