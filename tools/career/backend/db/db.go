@@ -428,7 +428,15 @@ CREATE TABLE IF NOT EXISTS instruction_attempts (
     started_at      TEXT NOT NULL DEFAULT (datetime('now')),
     finished_at     TEXT,
     saved_at        TEXT,
-    error_message   TEXT
+    error_message   TEXT,
+    -- failure_reason (step 87) says WHY a failed attempt failed:
+    -- 'not_saved' = the run ended cleanly but the AI saved no
+    -- instructions (it gave up — the only kind that suggests the page
+    -- can't be crawled), 'error' = the turn itself errored (provider
+    -- outage, no key, no permission), 'interrupted' = the tab or app
+    -- closed mid-run. NULL for running and succeeded rows. Also added
+    -- to existing installs by migrateInstructionAttemptsFailureReason.
+    failure_reason  TEXT CHECK (failure_reason IS NULL OR failure_reason IN ('not_saved','error','interrupted'))
 );
 
 CREATE INDEX IF NOT EXISTS instruction_attempts_link_kind_idx
@@ -962,6 +970,9 @@ func migrateJobsDB(db *sql.DB) error {
 	if err := migratePortalLinksAutoDiscoveryInterval(db); err != nil {
 		return err
 	}
+	if err := migrateInstructionAttemptsFailureReason(db); err != nil {
+		return err
+	}
 	if err := migrateJobsDetailCrawlStatus(db); err != nil {
 		return err
 	}
@@ -1407,6 +1418,43 @@ func migratePortalLinksAutoDiscoveryEnabled(db *sql.DB) error {
 	}
 	_, err = db.Exec(`ALTER TABLE portal_links ADD COLUMN auto_discovery_enabled INTEGER NOT NULL DEFAULT 1`)
 	return err
+}
+
+// migrateInstructionAttemptsFailureReason (step 87) adds
+// instruction_attempts.failure_reason to an install that already has
+// the table (a fresh install gets it from the base schema instead) and
+// backfills it for the failures already recorded. The backfill keys on
+// the two fixed messages step 86 wrote — "The AI finished without
+// saving instructions." and the "Interrupted: …" stale-run text — and
+// calls every other failure 'error'; no history is guessed. Runs the
+// backfill only in the same call that adds the column, so a later start
+// never rewrites rows. See
+// plan/ai/tools/career/step-87-likely-uncrawlable-pill.md.
+func migrateInstructionAttemptsFailureReason(db *sql.DB) error {
+	exists, hasColumn, err := tableHasColumn(db, "instruction_attempts", "failure_reason")
+	if err != nil {
+		return err
+	}
+	if !exists || hasColumn {
+		return nil
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	for _, stmt := range []string{
+		`ALTER TABLE instruction_attempts ADD COLUMN failure_reason TEXT CHECK (failure_reason IS NULL OR failure_reason IN ('not_saved','error','interrupted'))`,
+		`UPDATE instruction_attempts SET failure_reason = 'not_saved' WHERE status = 'failed' AND error_message = 'The AI finished without saving instructions.'`,
+		`UPDATE instruction_attempts SET failure_reason = 'interrupted' WHERE status = 'failed' AND error_message LIKE 'Interrupted:%'`,
+		`UPDATE instruction_attempts SET failure_reason = 'error' WHERE status = 'failed' AND failure_reason IS NULL`,
+	} {
+		if _, err := tx.Exec(stmt); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // migratePortalLinksAutoDiscoveryInterval adds this link's own optional

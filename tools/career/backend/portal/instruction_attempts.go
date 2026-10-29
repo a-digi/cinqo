@@ -48,6 +48,13 @@ const (
 	defaultInstructionAttemptError = "The AI finished without saving instructions."
 
 	interruptedInstructionAttemptError = "Interrupted: the app or tab closed before the run finished."
+
+	// Why a failed attempt failed (instruction_attempts.failure_reason,
+	// step 87). Only InstructionFailureNotSaved — the run ended cleanly
+	// but the AI saved nothing — says anything about the page itself.
+	InstructionFailureNotSaved    = "not_saved"
+	InstructionFailureError       = "error"
+	InstructionFailureInterrupted = "interrupted"
 )
 
 // staleInstructionAttemptThreshold bounds how long an attempt may stay
@@ -97,9 +104,9 @@ func ReconcileStaleInstructionAttempts() (int64, error) {
 		return 0, err
 	}
 	failed, err := db.JobsDB.Exec(
-		`UPDATE instruction_attempts SET status = 'failed', finished_at = datetime('now'), error_message = ?
+		`UPDATE instruction_attempts SET status = 'failed', finished_at = datetime('now'), error_message = ?, failure_reason = ?
 		 WHERE status = 'running' AND saved_at IS NULL AND started_at < datetime('now', ?)`,
-		interruptedInstructionAttemptError, cutoff,
+		interruptedInstructionAttemptError, InstructionFailureInterrupted, cutoff,
 	)
 	if err != nil {
 		return 0, err
@@ -197,13 +204,17 @@ func FinishInstructionAttempt(portalLinkID, kind, errText string) (status string
 		return InstructionAttemptSucceeded, err
 	}
 
+	// An error text from the client means the turn itself failed; none
+	// means it ended cleanly without saving (the AI gave up).
 	msg := truncateRunes(errText, maxInstructionAttemptTextLength)
+	reason := InstructionFailureError
 	if msg == "" {
 		msg = defaultInstructionAttemptError
+		reason = InstructionFailureNotSaved
 	}
 	_, err = db.JobsDB.Exec(
-		`UPDATE instruction_attempts SET status = 'failed', finished_at = datetime('now'), error_message = ? WHERE id = ? AND status = 'running'`,
-		msg, id,
+		`UPDATE instruction_attempts SET status = 'failed', finished_at = datetime('now'), error_message = ?, failure_reason = ? WHERE id = ? AND status = 'running'`,
+		msg, reason, id,
 	)
 	return InstructionAttemptFailed, err
 }
@@ -244,6 +255,13 @@ type InstructionKindStats struct {
 	Running       bool   `json:"running"`
 	LastFailureAt string `json:"lastFailureAt,omitempty"`
 	LastError     string `json:"lastError,omitempty"`
+	// ConsecutiveFailures (step 87) is how many failures of kind
+	// 'not_saved' (the run ended cleanly but the AI saved nothing) this
+	// link has had since its most recent success — the signal that a
+	// page probably can't be crawled. A failure caused by an error or an
+	// interruption is neutral: it neither adds to the streak nor resets
+	// it. See plan/ai/tools/career/step-87-likely-uncrawlable-pill.md.
+	ConsecutiveFailures int `json:"consecutiveFailures"`
 }
 
 type InstructionStats struct {
@@ -310,10 +328,10 @@ func InstructionStatsByLink() (map[string]InstructionStats, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer failRows.Close()
 	for failRows.Next() {
 		var linkID, kind, at, msg string
 		if err := failRows.Scan(&linkID, &kind, &at, &msg); err != nil {
+			failRows.Close()
 			return nil, err
 		}
 		stats := out[linkID]
@@ -321,5 +339,39 @@ func InstructionStatsByLink() (map[string]InstructionStats, error) {
 		k.LastFailureAt, k.LastError = at, msg
 		out[linkID] = stats
 	}
-	return out, failRows.Err()
+	if err := failRows.Err(); err != nil {
+		failRows.Close()
+		return nil, err
+	}
+	// Closed before the next query: jobs.db is a single connection.
+	failRows.Close()
+
+	// The streak: 'not_saved' failures after the link's latest success
+	// (rowid is insert order, and a link and kind never run two attempts
+	// at once, so it is also finish order). Errors and interruptions are
+	// excluded by the filter, which is what makes them neutral.
+	streakRows, err := db.JobsDB.Query(
+		`SELECT a.portal_link_id, a.kind, COUNT(*)
+		 FROM instruction_attempts a
+		 WHERE a.status = 'failed' AND a.failure_reason = 'not_saved'
+		   AND a.rowid > COALESCE((
+		         SELECT MAX(s.rowid) FROM instruction_attempts s
+		         WHERE s.portal_link_id = a.portal_link_id AND s.kind = a.kind AND s.status = 'succeeded'), 0)
+		 GROUP BY a.portal_link_id, a.kind`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer streakRows.Close()
+	for streakRows.Next() {
+		var linkID, kind string
+		var streak int
+		if err := streakRows.Scan(&linkID, &kind, &streak); err != nil {
+			return nil, err
+		}
+		stats := out[linkID]
+		stats.forKind(kind).ConsecutiveFailures = streak
+		out[linkID] = stats
+	}
+	return out, streakRows.Err()
 }

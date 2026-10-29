@@ -268,6 +268,10 @@ export interface InstructionKindStats {
   running: boolean
   lastFailureAt?: string
   lastError?: string
+  // consecutiveFailures (step 87) — runs since the last success that
+  // ended without the AI saving instructions; provider errors and
+  // interruptions don't count and don't reset it.
+  consecutiveFailures: number
 }
 
 export interface InstructionStats {

@@ -428,3 +428,215 @@ func TestStartReapsStaleRowBeforeCheckingForRunning(t *testing.T) {
 		t.Errorf("stale row status = %q, want failed", status)
 	}
 }
+
+func failureReason(t *testing.T, id string) *string {
+	t.Helper()
+	var reason *string
+	if err := db.JobsDB.QueryRow(`SELECT failure_reason FROM instruction_attempts WHERE id = ?`, id).Scan(&reason); err != nil {
+		t.Fatal(err)
+	}
+	return reason
+}
+
+func TestFailureReasonIsRecordedOnEveryFinishPath(t *testing.T) {
+	setupAttemptsDB(t, "l1")
+
+	// Ended cleanly, nothing saved: the AI gave up.
+	gaveUp := mustStart(t, "l1", InstructionKindListing)
+	FinishInstructionAttempt("l1", InstructionKindListing, "")
+	if r := failureReason(t, gaveUp); r == nil || *r != InstructionFailureNotSaved {
+		t.Errorf("clean end without a save = %v, want not_saved", r)
+	}
+
+	// The turn itself errored.
+	errored := mustStart(t, "l1", InstructionKindListing)
+	FinishInstructionAttempt("l1", InstructionKindListing, "provider returned 500")
+	if r := failureReason(t, errored); r == nil || *r != InstructionFailureError {
+		t.Errorf("turn error = %v, want error", r)
+	}
+
+	// Saved: a success has no failure reason, even if the client also sent an error.
+	ok := mustStart(t, "l1", InstructionKindListing)
+	MarkInstructionSaved("l1", InstructionKindListing)
+	FinishInstructionAttempt("l1", InstructionKindListing, "late error")
+	if r := failureReason(t, ok); r != nil {
+		t.Errorf("a success must have no failure reason, got %v", *r)
+	}
+
+	// Left running until stale.
+	stale := mustStart(t, "l1", InstructionKindListing)
+	backdateAttempt(t, stale, 40)
+	if _, err := ReconcileStaleInstructionAttempts(); err != nil {
+		t.Fatal(err)
+	}
+	if r := failureReason(t, stale); r == nil || *r != InstructionFailureInterrupted {
+		t.Errorf("a reaped attempt = %v, want interrupted", r)
+	}
+
+	// A stale one that had already saved is a success, with no reason.
+	savedStale := mustStart(t, "l1", InstructionKindListing)
+	MarkInstructionSaved("l1", InstructionKindListing)
+	backdateAttempt(t, savedStale, 50)
+	if _, err := ReconcileStaleInstructionAttempts(); err != nil {
+		t.Fatal(err)
+	}
+	if r := failureReason(t, savedStale); r != nil {
+		t.Errorf("a stale attempt that had saved must stay reasonless, got %v", *r)
+	}
+}
+
+// finishAs runs one full attempt for a link and kind and ends it the
+// given way: "gave-up" (clean end, nothing saved), "error", "interrupted"
+// (left running past the stale window) or "success".
+func finishAs(t *testing.T, link, kind, how string) {
+	t.Helper()
+	id := mustStart(t, link, kind)
+	switch how {
+	case "gave-up":
+		FinishInstructionAttempt(link, kind, "")
+	case "error":
+		FinishInstructionAttempt(link, kind, "provider returned 500")
+	case "success":
+		MarkInstructionSaved(link, kind)
+		FinishInstructionAttempt(link, kind, "")
+	case "interrupted":
+		backdateAttempt(t, id, 40)
+		if _, err := ReconcileStaleInstructionAttempts(); err != nil {
+			t.Fatal(err)
+		}
+	default:
+		t.Fatalf("unknown outcome %q", how)
+	}
+}
+
+func streak(t *testing.T, link, kind string) int {
+	t.Helper()
+	stats, err := InstructionStatsByLink()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := stats[link]
+	return s.forKind(kind).ConsecutiveFailures
+}
+
+func TestConsecutiveFailuresCountOnlyGaveUpRunsSinceTheLastSuccess(t *testing.T) {
+	setupAttemptsDB(t, "l1")
+	const kind = InstructionKindListing
+
+	finishAs(t, "l1", kind, "gave-up")
+	finishAs(t, "l1", kind, "gave-up")
+	if got := streak(t, "l1", kind); got != 2 {
+		t.Fatalf("two gave-up runs = %d, want 2", got)
+	}
+
+	// A success ends the streak; a failure after it starts a new one.
+	finishAs(t, "l1", kind, "success")
+	if got := streak(t, "l1", kind); got != 0 {
+		t.Fatalf("after a success = %d, want 0", got)
+	}
+	finishAs(t, "l1", kind, "gave-up")
+	if got := streak(t, "l1", kind); got != 1 {
+		t.Fatalf("one failure after the success = %d, want 1", got)
+	}
+}
+
+func TestErrorsAndInterruptionsAreNeutral(t *testing.T) {
+	setupAttemptsDB(t, "l1")
+	const kind = InstructionKindListing
+
+	finishAs(t, "l1", kind, "gave-up")
+	finishAs(t, "l1", kind, "error")       // neither adds…
+	finishAs(t, "l1", kind, "interrupted") // …nor resets
+	finishAs(t, "l1", kind, "gave-up")
+	if got := streak(t, "l1", kind); got != 2 {
+		t.Fatalf("gave-up, error, interrupted, gave-up = %d, want 2", got)
+	}
+
+	// Only errors, never a gave-up run: no streak at all.
+	setupAttemptsDBMore(t, "l2")
+	finishAs(t, "l2", kind, "error")
+	finishAs(t, "l2", kind, "error")
+	finishAs(t, "l2", kind, "error")
+	if got := streak(t, "l2", kind); got != 0 {
+		t.Fatalf("three provider errors must not look like an uncrawlable page, got %d", got)
+	}
+}
+
+func TestStreaksAreIndependentPerKindAndLink(t *testing.T) {
+	setupAttemptsDB(t, "l1", "l2")
+
+	finishAs(t, "l1", InstructionKindListing, "gave-up")
+	finishAs(t, "l1", InstructionKindListing, "gave-up")
+	finishAs(t, "l1", InstructionKindJobDetail, "gave-up")
+	finishAs(t, "l2", InstructionKindListing, "success")
+
+	if got := streak(t, "l1", InstructionKindListing); got != 2 {
+		t.Errorf("l1 listing = %d, want 2", got)
+	}
+	if got := streak(t, "l1", InstructionKindJobDetail); got != 1 {
+		t.Errorf("l1 job_detail = %d, want 1", got)
+	}
+	if got := streak(t, "l2", InstructionKindListing); got != 0 {
+		t.Errorf("l2 listing = %d, want 0", got)
+	}
+	// A success of one kind never resets the other kind's streak.
+	finishAs(t, "l1", InstructionKindJobDetail, "success")
+	if got := streak(t, "l1", InstructionKindListing); got != 2 {
+		t.Errorf("a job_detail success must not reset the listing streak, got %d", got)
+	}
+}
+
+func TestARunningAttemptDoesNotChangeTheStreak(t *testing.T) {
+	setupAttemptsDB(t, "l1")
+	finishAs(t, "l1", InstructionKindListing, "gave-up")
+	finishAs(t, "l1", InstructionKindListing, "gave-up")
+	mustStart(t, "l1", InstructionKindListing) // still running
+
+	stats, err := InstructionStatsByLink()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if k := stats["l1"].Listing; k.ConsecutiveFailures != 2 || !k.Running {
+		t.Fatalf("a run in flight must not count or reset: %+v", k)
+	}
+}
+
+func TestListPortalsExposesConsecutiveFailures(t *testing.T) {
+	setupAttemptsDB(t, "l1", "l2")
+	finishAs(t, "l1", InstructionKindListing, "gave-up")
+	finishAs(t, "l1", InstructionKindListing, "gave-up")
+	finishAs(t, "l1", InstructionKindListing, "gave-up")
+
+	portals, err := ListPortals()
+	if err != nil {
+		t.Fatal(err)
+	}
+	byID := map[string]portalLink{}
+	for _, l := range portals[0].Links {
+		byID[l.ID] = l
+	}
+	if got := byID["l1"].InstructionStats.Listing.ConsecutiveFailures; got != 3 {
+		t.Errorf("l1 = %d, want 3", got)
+	}
+
+	for id, want := range map[string]float64{"l1": 3, "l2": 0} {
+		raw, _ := json.Marshal(byID[id])
+		var decoded map[string]any
+		_ = json.Unmarshal(raw, &decoded)
+		listing := decoded["instructionStats"].(map[string]any)["listing"].(map[string]any)
+		if listing["consecutiveFailures"] != want {
+			t.Errorf("%s JSON consecutiveFailures = %v, want %v", id, listing["consecutiveFailures"], want)
+		}
+		if _, ok := decoded["instructionStats"].(map[string]any)["jobDetail"].(map[string]any)["consecutiveFailures"]; !ok {
+			t.Errorf("%s: jobDetail must also carry consecutiveFailures", id)
+		}
+	}
+}
+
+// setupAttemptsDBMore adds another link to an already-initialised test DB.
+func setupAttemptsDBMore(t *testing.T, linkID string) {
+	t.Helper()
+	if _, err := db.JobsDB.Exec(`INSERT INTO portal_links (id, portal_id, url) VALUES (?, 'p1', ?)`, linkID, "https://x/"+linkID); err != nil {
+		t.Fatal(err)
+	}
+}

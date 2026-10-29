@@ -15,7 +15,7 @@ import {
 } from '../generateInstructions'
 import { startCrawlNow, startCrawlJobDetailsNow, stopCrawlNow, fetchActiveCrawlRun, type CrawlRun } from '../crawlNow'
 import { phaseLabel, latestCrawlLogMessage } from '../crawlPhase'
-import { attemptsLabel, instructionAlertAttempts } from '../instructionStats'
+import { attemptsLabel, instructionAlertAttempts, isLikelyUncrawlable, uncrawlableTooltip } from '../instructionStats'
 import { InstructionAttemptStats } from './InstructionAttemptStats'
 import {
   PlayIcon,
@@ -800,6 +800,10 @@ export function CrawlPanel({
   // doesn't exist. Computed from the server-side counters plus this
   // tab's own in-flight state.
   const listingAlertAttempts = instructionAlertAttempts(link.instructionStats.listing, Boolean(link.crawlInstructions), aiPending)
+  // Step 87 — once the AI has given up on the listing three times in a
+  // row, the stronger "probably can't be crawled" pill replaces the
+  // generic alert for the listing.
+  const listingUncrawlable = isLikelyUncrawlable(link.instructionStats.listing, Boolean(link.crawlInstructions), aiPending)
   const jobDetailAlertAttempts = instructionAlertAttempts(
     link.instructionStats.jobDetail,
     Boolean(link.jobDetailCrawlInstructions),
@@ -941,7 +945,16 @@ export function CrawlPanel({
             >
               {link.crawlInstructions ? 'Instructed' : 'Not instructed'}
             </span>
-            {listingAlertAttempts > 0 && (
+            {listingUncrawlable && (
+              <span
+                role="status"
+                title={uncrawlableTooltip(link.instructionStats.listing)}
+                className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800"
+              >
+                Probably can&apos;t be crawled
+              </span>
+            )}
+            {!listingUncrawlable && listingAlertAttempts > 0 && (
               <span role="status" className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">
                 Job list: no instructions after {attemptsLabel(listingAlertAttempts)}
               </span>
@@ -1020,7 +1033,11 @@ export function CrawlPanel({
                     <CrawlInstructionsIcon />
                     Job list
                   </button>
-                  <InstructionAttemptStats stats={link.instructionStats.listing} alertAttempts={listingAlertAttempts} />
+                  <InstructionAttemptStats
+                    stats={link.instructionStats.listing}
+                    alertAttempts={listingAlertAttempts}
+                    uncrawlable={listingUncrawlable}
+                  />
                 </div>
                 <div className="flex flex-col items-center justify-center rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-center transition-colors hover:border-gray-300 hover:bg-gray-100/60">
                   <button

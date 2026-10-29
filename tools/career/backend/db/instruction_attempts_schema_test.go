@@ -1,6 +1,8 @@
 package db
 
 import (
+	"database/sql"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -62,5 +64,138 @@ func TestInstructionAttemptsSchema(t *testing.T) {
 	var n int
 	if err := JobsDB.QueryRow(`SELECT COUNT(*) FROM instruction_attempts`).Scan(&n); err != nil || n != 0 {
 		t.Fatalf("cascade delete left %d rows (err=%v)", n, err)
+	}
+}
+
+func TestFailureReasonColumnOnAFreshInstall(t *testing.T) {
+	t.Setenv("TOOL_DB_DIR", t.TempDir())
+	if err := InitDatabases(); err != nil {
+		t.Fatal(err)
+	}
+	defer JobsDB.Close()
+	defer CareerDB.Close()
+
+	if _, err := JobsDB.Exec(`INSERT INTO portals (id, name) VALUES ('p1', 'P')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := JobsDB.Exec(`INSERT INTO portal_links (id, portal_id, url) VALUES ('l1', 'p1', 'https://x')`); err != nil {
+		t.Fatal(err)
+	}
+	for _, reason := range []string{"not_saved", "error", "interrupted"} {
+		if _, err := JobsDB.Exec(`INSERT INTO instruction_attempts (id, portal_link_id, kind, status, failure_reason) VALUES (?, 'l1', 'listing', 'failed', ?)`, reason, reason); err != nil {
+			t.Errorf("%s: %v", reason, err)
+		}
+	}
+	if _, err := JobsDB.Exec(`INSERT INTO instruction_attempts (id, portal_link_id, kind, status, failure_reason) VALUES ('bad', 'l1', 'listing', 'failed', 'whatever')`); err == nil {
+		t.Error("an unknown failure_reason must be rejected by the CHECK constraint")
+	}
+}
+
+// A database created by step 86 has no failure_reason column; the
+// migration must add it and classify the failures already recorded.
+func TestMigrateInstructionAttemptsFailureReasonBackfills(t *testing.T) {
+	database, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "jobs.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+
+	if _, err := database.Exec(`CREATE TABLE instruction_attempts (
+		id TEXT PRIMARY KEY, portal_link_id TEXT NOT NULL, kind TEXT NOT NULL, triggered_by TEXT NOT NULL DEFAULT 'manual',
+		status TEXT NOT NULL DEFAULT 'running', conversation_id TEXT, started_at TEXT NOT NULL DEFAULT (datetime('now')),
+		finished_at TEXT, saved_at TEXT, error_message TEXT)`); err != nil {
+		t.Fatal(err)
+	}
+	rows := []struct{ id, status, msg string }{
+		{"gave-up", "failed", "The AI finished without saving instructions."},
+		{"interrupted", "failed", "Interrupted: the app or tab closed before the run finished."},
+		{"turn-error", "failed", "provider returned 500"},
+		{"ok", "succeeded", ""},
+		{"running", "running", ""},
+	}
+	for _, r := range rows {
+		var msg any
+		if r.msg != "" {
+			msg = r.msg
+		}
+		if _, err := database.Exec(`INSERT INTO instruction_attempts (id, portal_link_id, kind, status, error_message) VALUES (?, 'l1', 'listing', ?, ?)`, r.id, r.status, msg); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := migrateInstructionAttemptsFailureReason(database); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	want := map[string]*string{"gave-up": ptr("not_saved"), "interrupted": ptr("interrupted"), "turn-error": ptr("error"), "ok": nil, "running": nil}
+	for id, w := range want {
+		var got *string
+		if err := database.QueryRow(`SELECT failure_reason FROM instruction_attempts WHERE id = ?`, id).Scan(&got); err != nil {
+			t.Fatal(err)
+		}
+		if (got == nil) != (w == nil) || (got != nil && *got != *w) {
+			t.Errorf("%s: failure_reason = %v, want %v", id, deref(got), deref(w))
+		}
+	}
+
+	// Idempotent, and a later start never rewrites rows.
+	if _, err := database.Exec(`UPDATE instruction_attempts SET failure_reason = 'error' WHERE id = 'gave-up'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateInstructionAttemptsFailureReason(database); err != nil {
+		t.Fatal(err)
+	}
+	var got string
+	if err := database.QueryRow(`SELECT failure_reason FROM instruction_attempts WHERE id = 'gave-up'`).Scan(&got); err != nil || got != "error" {
+		t.Errorf("a second run must not backfill again: %q, %v", got, err)
+	}
+
+	// No table at all (a fresh install at migration time) is a no-op.
+	empty, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "empty.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer empty.Close()
+	if err := migrateInstructionAttemptsFailureReason(empty); err != nil {
+		t.Errorf("missing table must be a no-op: %v", err)
+	}
+}
+
+func ptr(s string) *string { return &s }
+
+func deref(s *string) string {
+	if s == nil {
+		return "<nil>"
+	}
+	return *s
+}
+
+// The full startup path on an install that already has step 86's table
+// (migrations run before the base schema): the column must appear.
+func TestInitDatabasesUpgradesAStepEightySixInstall(t *testing.T) {
+	dir := t.TempDir()
+	legacy, err := sql.Open("sqlite", filepath.Join(dir, "jobs.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := legacy.Exec(`CREATE TABLE instruction_attempts (
+		id TEXT PRIMARY KEY, portal_link_id TEXT NOT NULL, kind TEXT NOT NULL, triggered_by TEXT NOT NULL DEFAULT 'manual',
+		status TEXT NOT NULL DEFAULT 'running', conversation_id TEXT, started_at TEXT NOT NULL DEFAULT (datetime('now')),
+		finished_at TEXT, saved_at TEXT, error_message TEXT);
+		INSERT INTO instruction_attempts (id, portal_link_id, kind, status, error_message) VALUES ('a', 'l1', 'listing', 'failed', 'The AI finished without saving instructions.')`); err != nil {
+		t.Fatal(err)
+	}
+	legacy.Close()
+
+	t.Setenv("TOOL_DB_DIR", dir)
+	if err := InitDatabases(); err != nil {
+		t.Fatalf("upgrade start: %v", err)
+	}
+	defer JobsDB.Close()
+	defer CareerDB.Close()
+
+	var reason string
+	if err := JobsDB.QueryRow(`SELECT failure_reason FROM instruction_attempts WHERE id = 'a'`).Scan(&reason); err != nil || reason != "not_saved" {
+		t.Fatalf("upgraded row: %q, %v", reason, err)
 	}
 }
