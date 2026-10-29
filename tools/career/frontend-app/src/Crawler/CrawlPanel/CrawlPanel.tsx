@@ -15,9 +15,10 @@ import {
 } from '../generateInstructions'
 import { startCrawlNow, startCrawlJobDetailsNow, stopCrawlNow, fetchActiveCrawlRun, type CrawlRun } from '../crawlNow'
 import { phaseLabel, latestCrawlLogMessage } from '../crawlPhase'
-import { attemptsLabel, instructionAlertAttempts, isLikelyUncrawlable, uncrawlableTooltip } from '../instructionStats'
+import { instructionAlertAttempts, isLikelyUncrawlable } from '../instructionStats'
 import { hasListingInstructions } from '../autoDiscoveryVisibility'
 import { InstructionAttemptStats } from './InstructionAttemptStats'
+import { AccordionItem } from '../../Shared/Accordion/AccordionItem'
 import {
   PlayIcon,
   StopIcon,
@@ -26,7 +27,6 @@ import {
   RobotIcon,
   CrawlInstructionsIcon,
   JobDetailInstructionsIcon,
-  ChevronDownIcon,
 } from '../../Shared/Icons/icons'
 import { Modal } from '../../Shared/Modal/Modal'
 import { InfoBox } from '../../Shared/InfoBox/InfoBox'
@@ -529,11 +529,19 @@ export function CrawlPanel({
   }
 
   // recordAttemptStart (step 86) — same never-rejects contract: a
-  // failure to count an attempt must not stop the attempt itself.
+  // failure to count an attempt must not stop the attempt itself. The
+  // reload that follows (step 89) is what turns this link's server-side
+  // "running" flag on in the link's accordion header, which sits outside
+  // this component and has no access to aiPending — without it a stale
+  // "probably can't be crawled" pill would linger during a retry.
   function recordAttemptStart(kind: InstructionKind, triggeredBy: 'manual' | 'auto'): Promise<void> {
-    return startInstructionAttempt(link.id, kind, triggeredBy).catch((recordErr: unknown) => {
-      console.error('failed to record instruction attempt start for portal link', link.id, recordErr)
-    })
+    return startInstructionAttempt(link.id, kind, triggeredBy)
+      .catch((recordErr: unknown) => {
+        console.error('failed to record instruction attempt start for portal link', link.id, recordErr)
+      })
+      .then(() => {
+        onReload()
+      })
   }
 
   // finishGenerateInstructions is the shared "a generate-instructions
@@ -929,54 +937,22 @@ export function CrawlPanel({
           display that follow it below. See
           plan/ai/tools/career/step-74-crawl-instructions-grouping.md. */}
       <div className="py-3">
-        {/* Accordion (step XX) — closed by default once this link
-            already has listing crawl instructions (nothing here needs
-            the user's attention), open by default when it doesn't
+        {/* The shared AccordionItem (step 89, replacing a hand-rolled
+            button + chevron + conditional) — closed by default once this
+            link already has listing crawl instructions (nothing here
+            needs the user's attention), open by default when it doesn't
             (exactly what does). See crawlInstructionsOpen's own doc
             comment above for why this is a one-time initial value, not
-            a value kept in sync with link.crawlInstructions forever. */}
-        <button
-          type="button"
-          onClick={() => {
+            a value kept in sync with link.crawlInstructions forever.
+            The body stays mounted while closed. */}
+        <AccordionItem
+          variant="plain"
+          isOpen={crawlInstructionsOpen}
+          onToggle={() => {
             setCrawlInstructionsOpen((prev) => !prev)
           }}
-          aria-expanded={crawlInstructionsOpen}
-          className="flex w-full items-center justify-between gap-2 text-left"
+          header={<h3 className="text-xs font-semibold tracking-wide text-gray-500 uppercase">Crawl instructions</h3>}
         >
-          <span className="flex items-center gap-2">
-            <h3 className="text-xs font-semibold tracking-wide text-gray-500 uppercase">Crawl instructions</h3>
-            <span
-              className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                link.crawlInstructions ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-              }`}
-            >
-              {link.crawlInstructions ? 'Instructed' : 'Not instructed'}
-            </span>
-            {listingUncrawlable && (
-              <span
-                role="status"
-                title={uncrawlableTooltip(link.instructionStats.listing)}
-                className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800"
-              >
-                Probably can&apos;t be crawled
-              </span>
-            )}
-            {!listingUncrawlable && listingAlertAttempts > 0 && (
-              <span role="status" className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">
-                Job list: no instructions after {attemptsLabel(listingAlertAttempts)}
-              </span>
-            )}
-            {jobDetailAlertAttempts > 0 && (
-              <span role="status" className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">
-                Job details: no instructions after {attemptsLabel(jobDetailAlertAttempts)}
-              </span>
-            )}
-          </span>
-          <span className={`shrink-0 text-gray-400 transition-transform duration-200 ${crawlInstructionsOpen ? 'rotate-180' : ''}`}>
-            <ChevronDownIcon />
-          </span>
-        </button>
-        {crawlInstructionsOpen && (
           <div className="mt-2">
             {/* Two small cards, each exactly half the row (grid-cols-2, not
             flex-wrap) so they always sit side by side at 50%/50% width
@@ -1104,7 +1080,7 @@ export function CrawlPanel({
               </button>
             </div>
           </div>
-        )}
+        </AccordionItem>
       </div>
       {link.crawlInstructions && (
         <div className="mt-1.5">

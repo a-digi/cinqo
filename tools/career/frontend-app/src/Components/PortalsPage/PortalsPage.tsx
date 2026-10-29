@@ -18,6 +18,7 @@ import { CrawlPanel } from '../../Crawler/CrawlPanel/CrawlPanel'
 import { PlusIcon } from '../../Shared/Icons/icons'
 import { Modal } from '../../Shared/Modal/Modal'
 import { AccordionItem } from '../../Shared/Accordion/AccordionItem'
+import { PortalLinkHeader } from './PortalLinkHeader'
 
 // Portals are tool-wide, not persona/profile-scoped — same reasoning
 // Jobs/Companies already document. No Dropdown call site here: a
@@ -117,6 +118,21 @@ export function PortalsPage() {
     setSelectedPlatformId(id)
     const next = platforms.find((p) => p.id === id)
     setSelectedModel(next && next.models.length > 0 ? next.models[0] : null)
+  }
+
+  // Link accordions (step 89) start closed — an empty set, same pattern
+  // as openPortalIds. Keyed by link id, so it survives load() reloads.
+  const [openLinkIds, setOpenLinkIds] = useState<Set<string>>(new Set())
+  function toggleLinkOpen(id: string) {
+    setOpenLinkIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
   }
 
   function togglePortalOpen(id: string) {
@@ -457,88 +473,40 @@ export function PortalsPage() {
             }
           >
             <div className="space-y-3">
+              {/* Each link is a nested accordion, closed by default (step 89):
+                  the header carries what you need at a glance and its
+                  Edit/Remove, the body is the link's whole CrawlPanel. The
+                  body stays mounted while closed, so a closed link still
+                  resumes/finishes generations and crawls. */}
               {p.links.map((link) => (
-                <div key={link.id} className="rounded-lg border border-gray-200 bg-gray-50 p-3 transition-colors hover:border-gray-300">
-                  {editingLinkId === link.id ? (
-                    <div className="space-y-1.5">
-                      <input
-                        // Deliberate: entering edit mode should focus the input
-                        // immediately, the same convention most inline-rename UIs use.
-                        // eslint-disable-next-line jsx-a11y/no-autofocus
-                        autoFocus
-                        value={editLinkTitle}
-                        onChange={(e) => {
-                          setEditLinkTitle(e.target.value)
-                        }}
-                        placeholder="Title, e.g. Software Engineer jobs, Hamburg"
-                        className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-900 focus:border-gray-500 focus:outline-none"
-                      />
-                      <input
-                        value={editLinkUrl}
-                        onChange={(e) => {
-                          setEditLinkUrl(e.target.value)
-                        }}
-                        placeholder="URL"
-                        className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-900 focus:border-gray-500 focus:outline-none"
-                      />
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            saveEditLink(link.id)
-                          }}
-                          className="rounded-md bg-gray-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-gray-800"
-                        >
-                          Save
-                        </button>
-                        <button
-                          type="button"
-                          onClick={cancelEditLink}
-                          className="rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-white"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="min-w-0">
-                        <a
-                          href={link.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="block truncate text-xs font-medium text-gray-900 underline hover:text-gray-700"
-                        >
-                          {link.title ?? '(untitled link)'}
-                        </a>
-                        <div className="truncate text-xs text-gray-500">{link.url}</div>
-                        <div className="truncate text-xs text-gray-400">
-                          {link.lastCrawledAt ? `Last crawled: ${new Date(link.lastCrawledAt).toLocaleString()}` : 'Never crawled'}
-                        </div>
-                      </div>
-                      <div className="flex shrink-0 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            startEditLink(link)
-                          }}
-                          className="text-xs text-gray-500 underline hover:text-gray-700"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            handleRemoveLink(link.id)
-                          }}
-                          className="text-xs text-red-700 underline hover:text-red-800"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
+                <AccordionItem
+                  key={link.id}
+                  variant="nested"
+                  isOpen={openLinkIds.has(link.id)}
+                  onToggle={() => {
+                    toggleLinkOpen(link.id)
+                  }}
+                  header={
+                    <PortalLinkHeader
+                      link={link}
+                      isEditing={editingLinkId === link.id}
+                      editTitle={editLinkTitle}
+                      editUrl={editLinkUrl}
+                      onEditTitleChange={setEditLinkTitle}
+                      onEditUrlChange={setEditLinkUrl}
+                      onStartEdit={() => {
+                        startEditLink(link)
+                      }}
+                      onSaveEdit={() => {
+                        saveEditLink(link.id)
+                      }}
+                      onCancelEdit={cancelEditLink}
+                      onRemove={() => {
+                        handleRemoveLink(link.id)
+                      }}
+                    />
+                  }
+                >
                   <CrawlPanel
                     link={link}
                     selectedPlatform={selectedPlatform}
@@ -547,7 +515,7 @@ export function PortalsPage() {
                     onReload={load}
                     onError={setError}
                   />
-                </div>
+                </AccordionItem>
               ))}
             </div>
 

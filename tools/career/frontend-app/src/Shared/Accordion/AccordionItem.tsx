@@ -17,7 +17,40 @@ interface AccordionItemProps {
   // controlled "cover this card" primitive, same as isOpen/onToggle.
   // See plan/ai/tools/career/step-59-portals-add-link-container-overlay.md.
   overlay?: React.ReactNode
+  // variant (step 89) — 'card' (the default, and the only look before
+  // this prop existed) is a free-standing card; 'nested' is the compact
+  // look for an accordion that sits inside another card (a portal
+  // link inside its portal): smaller radius and padding, a tinted
+  // background, no hover shadow; 'plain' is a bare labeled, collapsible
+  // group with no border, background or padding (a section inside a
+  // panel, e.g. CrawlPanel's "Crawl instructions"). Purely visual —
+  // behavior is identical.
+  // See plan/ai/tools/career/step-89-portal-link-accordion.md.
+  variant?: 'card' | 'nested' | 'plain'
 }
+
+// Per-variant class sets. 'card' is byte-for-byte what AccordionItem
+// rendered before variants existed.
+const VARIANT_CLASSES = {
+  card: {
+    outer: 'rounded-xl border border-gray-200 bg-white transition-all hover:border-gray-300 hover:shadow-md',
+    header: 'rounded-xl px-4 py-3',
+    body: 'px-4 pb-4',
+    overlay: 'rounded-xl',
+  },
+  nested: {
+    outer: 'rounded-lg border border-gray-200 bg-gray-50 transition-colors hover:border-gray-300',
+    header: 'rounded-lg px-3 py-2',
+    body: 'px-3 pb-3',
+    overlay: 'rounded-lg',
+  },
+  plain: {
+    outer: '',
+    header: 'rounded-md',
+    body: '',
+    overlay: 'rounded-md',
+  },
+} as const
 
 // Shared accordion item — controlled (isOpen/onToggle only), no
 // internal open state, no "only one open at a time" group logic (see
@@ -33,8 +66,14 @@ interface AccordionItemProps {
 // nested controls stop click propagation themselves so clicking them
 // doesn't also toggle the accordion. See
 // plan/ai/tools/career/step-58-portals-page-modal-accordion-redesign.md.
-export function AccordionItem({ isOpen, onToggle, header, children, className, style, overlay }: AccordionItemProps) {
+export function AccordionItem({ isOpen, onToggle, header, children, className, style, overlay, variant = 'card' }: AccordionItemProps) {
+  const v = VARIANT_CLASSES[variant]
   function handleHeaderKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    // Only the header row's own key presses toggle it. A key pressed in
+    // an input or button INSIDE the header (inline rename, Edit/Remove)
+    // bubbles up here too, and must neither toggle the accordion nor
+    // have its default (typing a space, activating a button) prevented.
+    if (e.target !== e.currentTarget) return
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault()
       onToggle()
@@ -53,7 +92,7 @@ export function AccordionItem({ isOpen, onToggle, header, children, className, s
       // unconditionally so a normal, overlay-less card keeps sizing to
       // its real content. See
       // plan/ai/tools/career/step-59-portals-add-link-container-overlay.md.
-      className={`relative rounded-xl border border-gray-200 bg-white transition-all hover:border-gray-300 hover:shadow-md ${overlay ? 'min-h-[280px] overflow-hidden' : ''} ${className ?? ''}`}
+      className={`relative ${v.outer} ${overlay ? 'min-h-[280px] overflow-hidden' : ''} ${className ?? ''}`}
     >
       <div
         role="button"
@@ -61,7 +100,7 @@ export function AccordionItem({ isOpen, onToggle, header, children, className, s
         onClick={onToggle}
         onKeyDown={handleHeaderKeyDown}
         aria-expanded={isOpen}
-        className="flex w-full cursor-pointer items-center justify-between gap-3 rounded-xl px-4 py-3 text-left"
+        className={`flex w-full cursor-pointer items-center justify-between gap-3 text-left ${v.header}`}
       >
         <div className="min-w-0 flex-1">{header}</div>
         <span className={`shrink-0 text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}>
@@ -70,11 +109,13 @@ export function AccordionItem({ isOpen, onToggle, header, children, className, s
       </div>
       <div className="accordion-body" data-open={isOpen}>
         <div>
-          <div className="px-4 pb-4">{children}</div>
+          <div className={v.body}>{children}</div>
         </div>
       </div>
       {overlay && (
-        <div className="absolute inset-0 z-10 flex flex-col rounded-xl bg-white p-4 [animation:backdrop-in_150ms_ease-out]">{overlay}</div>
+        <div className={`absolute inset-0 z-10 flex flex-col bg-white p-4 [animation:backdrop-in_150ms_ease-out] ${v.overlay}`}>
+          {overlay}
+        </div>
       )}
     </div>
   )
