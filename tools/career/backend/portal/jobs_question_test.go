@@ -2,6 +2,7 @@ package portal
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -235,5 +236,53 @@ func TestAnswerNoDropsTheRunningAttemptAndYesKeepsIt(t *testing.T) {
 	}
 	if s := stats["l1"].Listing; s.Failed != 0 || s.Attempts != 0 {
 		t.Errorf("answer no must not count as an attempt: %+v", s)
+	}
+}
+
+func itemsPage(n int) []CrawlResultPage {
+	items := make([]map[string]any, n)
+	for i := range items {
+		items[i] = map[string]any{"title": "Job", "url": "https://x/" + string(rune('a'+i))}
+	}
+	return []CrawlResultPage{{Items: items}}
+}
+
+func TestLowItemCountWarnsButNeverChangesOK(t *testing.T) {
+	for n, wantWarning := range map[int]bool{1: true, 2: true, 3: false, 25: false} {
+		r := classifyCrawlResultPages(itemsPage(n))
+		if (r.Warning != "") != wantWarning {
+			t.Errorf("%d items: warning = %q, want a warning: %v", n, r.Warning, wantWarning)
+		}
+		if !r.OK {
+			t.Errorf("%d usable items: ok must stay true", n)
+		}
+		if wantWarning && !strings.Contains(r.Warning, "container selector") {
+			t.Errorf("%d items: warning must point at the container selector: %q", n, r.Warning)
+		}
+	}
+}
+
+func TestLowItemCountIsTheTotalAcrossPages(t *testing.T) {
+	pages := append(itemsPage(2), itemsPage(2)...)
+	if r := classifyCrawlResultPages(pages); r.Warning != "" || r.ItemsFound != 4 {
+		t.Errorf("two pages of two items are 4 in total, no warning: %+v", r)
+	}
+}
+
+func TestZeroItemsKeepTheirOwnMessageAndNoLowCountWarning(t *testing.T) {
+	r := classifyCrawlResultPages([]CrawlResultPage{{}})
+	if r.Warning != "" || r.OK || !strings.Contains(r.Message, "No items were extracted") {
+		t.Errorf("0 items: %+v", r)
+	}
+}
+
+func TestWarningIsOmittedFromTheJSONWhenThereIsNone(t *testing.T) {
+	b, err := json.Marshal(classifyCrawlResultPages(itemsPage(5)))
+	if err != nil || strings.Contains(string(b), "warning") {
+		t.Errorf("no warning expected in %s (%v)", b, err)
+	}
+	b, _ = json.Marshal(classifyCrawlResultPages(itemsPage(1)))
+	if !strings.Contains(string(b), `"warning"`) {
+		t.Errorf("warning expected in %s", b)
 	}
 }

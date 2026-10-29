@@ -186,7 +186,7 @@ func runScripted(t *testing.T, mode string) *scriptedCompleter {
 	}
 	completer := &scriptedCompleter{callName: "list_jobs"}
 	got, err := runToolLoop(context.Background(), http.DefaultClient, platform.Entry{Completer: completer}, "k", "m",
-		[]chatcompleter.Message{{Role: "user", Content: "hi"}}, tools, db, scopes, "u1", t.TempDir(), 0, "conv", nil, "", 0, mode, nil, nil, nil)
+		[]chatcompleter.Message{{Role: "user", Content: "hi"}}, tools, db, scopes, "u1", t.TempDir(), 0, "conv", nil, "", 0, mode, nil, nil, nil, 0)
 	if err != nil || got != "final answer" {
 		t.Fatalf("loop: %q, %v", got, err)
 	}

@@ -60,6 +60,9 @@ type chatRequest struct {
 	Tools    []wireTool    `json:"tools,omitempty"`
 }
 
+// providerName prefixes this client's error messages.
+const providerName = "openai"
+
 type chatResponse struct {
 	Choices []struct {
 		Message      wireMessage `json:"message"`
@@ -106,17 +109,17 @@ func (Client) ChatCompletion(ctx context.Context, client *http.Client, baseURL, 
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("openai: request failed: %w", err)
+		return nil, chatcompleter.TransportError(providerName, "request failed", err)
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("openai: read response: %w", err)
+		return nil, chatcompleter.TransportError(providerName, "read response", err)
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("openai: unexpected status %d: %s", resp.StatusCode, string(respBody))
+		return nil, chatcompleter.StatusError(providerName, resp.StatusCode, string(respBody))
 	}
 
 	var parsed chatResponse
@@ -124,7 +127,7 @@ func (Client) ChatCompletion(ctx context.Context, client *http.Client, baseURL, 
 		return nil, fmt.Errorf("openai: parse response: %w", err)
 	}
 	if len(parsed.Choices) == 0 {
-		return nil, fmt.Errorf("openai: response had no choices")
+		return nil, chatcompleter.NoChoicesError(providerName, "")
 	}
 
 	choice := parsed.Choices[0]
@@ -137,7 +140,7 @@ func (Client) ChatCompletion(ctx context.Context, client *http.Client, baseURL, 
 		})
 	}
 
-	return &chatcompleter.ChatCompletionResult{
+	result := &chatcompleter.ChatCompletionResult{
 		Message: chatcompleter.Message{
 			Role:      "assistant",
 			Content:   choice.Message.Content,
@@ -152,7 +155,13 @@ func (Client) ChatCompletion(ctx context.Context, client *http.Client, baseURL, 
 			CacheCreationTokens: parsed.Usage.PromptTokensDetails.CacheWriteTokens,
 			CacheReadTokens:     parsed.Usage.PromptTokensDetails.CachedTokens,
 		},
-	}, nil
+	}
+	// An empty answer that ended with a failing finish reason (step 92)
+	// is a failed call, not the model's final reply.
+	if err := chatcompleter.ClassifyResult(providerName, result, ""); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 // toWireMessages serializes the neutral history into OpenAI's own

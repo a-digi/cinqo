@@ -108,6 +108,9 @@ type anthropicResponse struct {
 	} `json:"usage"`
 }
 
+// providerName prefixes this client's error messages.
+const providerName = "anthropic"
+
 type anthropicError struct {
 	Error struct {
 		Message string `json:"message"`
@@ -138,21 +141,21 @@ func (Client) ChatCompletion(ctx context.Context, client *http.Client, baseURL, 
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("anthropic: request failed: %w", err)
+		return nil, chatcompleter.TransportError(providerName, "request failed", err)
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("anthropic: read response: %w", err)
+		return nil, chatcompleter.TransportError(providerName, "read response", err)
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		var wireErr anthropicError
 		if json.Unmarshal(respBody, &wireErr) == nil && wireErr.Error.Message != "" {
-			return nil, fmt.Errorf("anthropic: unexpected status %d: %s", resp.StatusCode, wireErr.Error.Message)
+			return nil, chatcompleter.StatusError(providerName, resp.StatusCode, wireErr.Error.Message)
 		}
-		return nil, fmt.Errorf("anthropic: unexpected status %d: %s", resp.StatusCode, string(respBody))
+		return nil, chatcompleter.StatusError(providerName, resp.StatusCode, string(respBody))
 	}
 
 	var wire anthropicResponse
@@ -185,7 +188,7 @@ func (Client) ChatCompletion(ctx context.Context, client *http.Client, baseURL, 
 	// plan/ai/conversation/step-40-anthropic-prompt-caching.md.
 	promptTokens := wire.Usage.InputTokens + wire.Usage.CacheCreationInputTokens + wire.Usage.CacheReadInputTokens
 
-	return &chatcompleter.ChatCompletionResult{
+	result := &chatcompleter.ChatCompletionResult{
 		Message: chatcompleter.Message{
 			Role:      "assistant",
 			Content:   concatenateTextBlocks(wire.Content),
@@ -200,7 +203,13 @@ func (Client) ChatCompletion(ctx context.Context, client *http.Client, baseURL, 
 			CacheCreationTokens: wire.Usage.CacheCreationInputTokens,
 			CacheReadTokens:     wire.Usage.CacheReadInputTokens,
 		},
-	}, nil
+	}
+	// An empty answer that ended with a failing stop reason (step 92) is
+	// a failed call, not the model's final reply.
+	if err := chatcompleter.ClassifyResult(providerName, result, ""); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 // toAnthropicMessages pulls any {role:"system"} entries out into

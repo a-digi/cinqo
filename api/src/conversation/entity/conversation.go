@@ -56,6 +56,25 @@ type Conversation struct {
 	// exposes it; nothing branches on it yet. See
 	// plan/ai/conversation/step-42-orchestrator-composer-mode.md.
 	OrchestrationMode string `db:"orchestration_mode" dbtype:"TEXT" nullable:"false" json:"orchestrationMode"`
+	// ToolIterationLimit (step 93) caps how many model calls one turn of
+	// this conversation may make while calling tools. nil means the global
+	// default; a conversation can only LOWER its budget (the create handler
+	// rejects anything above the global ceiling). Set once at creation,
+	// like PlatformID and Model. See
+	// plan/ai/tools/career/step-93-tool-call-budget-and-weak-models.md.
+	ToolIterationLimit *int `db:"tool_iteration_limit" dbtype:"INTEGER" nullable:"true" json:"toolIterationLimit,omitempty"`
+}
+
+// MaxToolIterationLimit mirrors the conversation package's own ceiling
+// (conversation.MaxToolIterations; the entity package cannot import it).
+// A test in the conversation package pins the two together.
+const MaxToolIterationLimit = 15
+
+// ValidToolIterationLimit reports whether a client-supplied limit is
+// acceptable: absent (nil) means "use the default"; otherwise 1 to
+// MaxToolIterationLimit.
+func ValidToolIterationLimit(limit *int) bool {
+	return limit == nil || (*limit >= 1 && *limit <= MaxToolIterationLimit)
 }
 
 const (

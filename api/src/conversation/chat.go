@@ -66,6 +66,15 @@ const ContextTurns = 4
 // cuts the per-job multiplier out entirely.
 const maxToolIterations = 15
 
+// invokeToolFn is invokeToolCall behind a variable so tests can script what a
+// tool answers (e.g. a rejected call) without installing a real tool.
+var invokeToolFn = invokeToolCall
+
+// MaxToolIterations is the ceiling a conversation's own tool-iteration limit
+// (step 93) may not exceed: a conversation can lower its budget, never raise
+// it above this.
+const MaxToolIterations = maxToolIterations
+
 // maxToolLoopContextTokens bounds how large runToolLoop's own
 // accumulated messages is allowed to grow, measured by the real,
 // provider-reported prompt token count from the previous iteration's
@@ -99,7 +108,57 @@ var (
 	// visible failure mode (mapped to its own response at the HTTP
 	// layer), not silently swallowed.
 	ErrToolIterationLimitReached = errors.New("conversation: model kept calling tools without a final reply")
+	// ErrEmptyModelReply fires when the model ends its turn with no text
+	// and no generated file to show (step 92). A turn that said nothing and
+	// produced nothing is a failure, never a success: it used to complete
+	// with an empty assistant message and no reason, which left a
+	// background task (e.g. Career's "Generate instructions") looking like
+	// the agent had simply given up.
+	ErrEmptyModelReply = errors.New("the model returned an empty response")
 )
+
+// ToolLimitError is ErrToolIterationLimitReached with what happened (step
+// 93): how many rounds the budget allowed and, when the wrap-up call
+// produced one, the model's own explanation. errors.Is(err,
+// ErrToolIterationLimitReached) still holds, so every existing check works.
+type ToolLimitError struct {
+	Limit       int
+	Explanation string
+}
+
+func (e *ToolLimitError) Error() string {
+	msg := fmt.Sprintf("%s: stopped after %d rounds of tool calls without a final reply", ErrToolIterationLimitReached.Error(), e.Limit)
+	if e.Explanation != "" {
+		msg += ". The model said: " + e.Explanation
+	}
+	return msg
+}
+
+func (e *ToolLimitError) Is(target error) bool { return target == ErrToolIterationLimitReached }
+
+// maxToolLimitExplanationLen bounds the model's wrap-up text kept in the error.
+const maxToolLimitExplanationLen = 600
+
+// toolLimitWrapUpPrompt is the one instruction sent, with no tools offered,
+// when the budget runs out.
+const toolLimitWrapUpPrompt = "You have used your tool-call budget. Do not call any tools. In two or three sentences say what you tried, what failed, and what is blocking you."
+
+// toolLimitOf returns a conversation's own lowered budget, 0 when none is set.
+func toolLimitOf(c *conversation_entity.Conversation) int {
+	if c == nil || c.ToolIterationLimit == nil {
+		return 0
+	}
+	return *c.ToolIterationLimit
+}
+
+// effectiveToolLimit resolves a conversation's own limit (0 = none set) to
+// the number of model calls the loop may make.
+func effectiveToolLimit(limit int) int {
+	if limit <= 0 || limit > maxToolIterations {
+		return maxToolIterations
+	}
+	return limit
+}
 
 // SendMessage resolves the conversation's own fixed platform+model
 // (set once at creation, never mutated — see
@@ -184,7 +243,7 @@ func SendMessage(
 		return nil, fmt.Errorf("conversation: look up offerable tools: %w", err)
 	}
 
-	assistantContent, err := runToolLoop(ctx, httpClient, entry, plainKey, model, messages, tools, mainDB, callerScopes, conv.UserID, dataDir, corePort, conversationID, conversationDB, "", 0, conversation_entity.OrchestrationModeDirect, nil, nil, nil)
+	assistantContent, err := runToolLoop(ctx, httpClient, entry, plainKey, model, messages, tools, mainDB, callerScopes, conv.UserID, dataDir, corePort, conversationID, conversationDB, "", 0, conversation_entity.OrchestrationModeDirect, nil, nil, nil, toolLimitOf(conv))
 	if err != nil {
 		// Record the user's own message AND the real failure reason —
 		// a real, recognized "## error —" block (step 8), not a
@@ -345,7 +404,13 @@ func runToolLoop(
 	logStep func(step string),
 	reportUsage func(promptTokens, completionTokens int),
 	logExchange func(iteration int, messages []chatcompleter.Message, tools []chatcompleter.ToolDef, result *chatcompleter.ChatCompletionResult, err error),
+	// toolIterationLimit (step 93) is the conversation's own lowered budget,
+	// 0 for none. Sub-agent loops pass 0.
+	toolIterationLimit int,
 ) (string, error) {
+	limit := effectiveToolLimit(toolIterationLimit)
+	var rejections argumentRejections // step 93: rejected tool calls this turn
+	var lastRejectedTool, lastRejection string
 	var allLinks []tool_mcp.ResourceLink
 
 	// prefix (the ContextTurns history + the new user message) never
@@ -376,7 +441,7 @@ func runToolLoop(
 	var groups [][]chatcompleter.Message
 	var lastPromptTokens int
 
-	for i := 0; i < maxToolIterations; i++ {
+	for i := 0; i < limit; i++ {
 		// Trimmed BEFORE sending, using the real token count the
 		// provider reported for the PREVIOUS call — never a local
 		// estimate. One iteration behind the true current size
@@ -392,9 +457,24 @@ func runToolLoop(
 		if logStep != nil {
 			logStep(fmt.Sprintf("iteration %d: calling model", i+1))
 		}
-		result, err := entry.Completer.ChatCompletion(ctx, httpClient, entry.DefaultBaseURL, apiKey, model, current, tools)
-		if logExchange != nil {
-			logExchange(i+1, current, tools, result, err)
+		// A transient provider failure (step 92) is retried a couple of
+		// times instead of losing the whole run; every attempt is traced.
+		var result *chatcompleter.ChatCompletionResult
+		var err error
+		for attempt := 0; ; attempt++ {
+			result, err = entry.Completer.ChatCompletion(ctx, httpClient, entry.DefaultBaseURL, apiKey, model, current, tools)
+			if logExchange != nil {
+				logExchange(i+1, current, tools, result, err)
+			}
+			if err == nil || attempt >= len(chatcompleter.RetryWaits) || !chatcompleter.IsRetryable(err) {
+				break
+			}
+			if logStep != nil {
+				logStep(fmt.Sprintf("iteration %d: provider error (%s), retry %d/%d", i+1, err.Error(), attempt+1, len(chatcompleter.RetryWaits)))
+			}
+			if sleepErr := chatcompleter.Sleep(ctx, chatcompleter.RetryWaits[attempt]); sleepErr != nil {
+				return "", sleepErr
+			}
 		}
 		if err != nil {
 			return "", err
@@ -416,6 +496,9 @@ func runToolLoop(
 			logStep(usageLine)
 		}
 		if len(result.ToolCalls) == 0 {
+			if strings.TrimSpace(result.Message.Content) == "" && len(allLinks) == 0 {
+				return "", ErrEmptyModelReply
+			}
 			return appendResourceLinks(result.Message.Content, allLinks), nil
 		}
 
@@ -451,7 +534,11 @@ func runToolLoop(
 				text = invokeCrawlURLsWithSubAgentsCall(httpClient, entry, apiKey, model, mainDB, conversationDB, callerScopes, userID, dataDir, corePort, conversationID, turnRunID, call, depth)
 			default:
 				var pending *pendingDelegation
-				text, links, pending = invokeToolCall(ctx, mainDB, callerScopes, userID, call, dataDir, corePort, conversationID)
+				text, links, pending = invokeToolFn(ctx, mainDB, callerScopes, userID, call, dataDir, corePort, conversationID)
+				if isArgumentRejection(text) {
+					lastRejectedTool, lastRejection = call.Name, text
+					text = rejections.record(tools, call.Name, text)
+				}
 				if pending != nil && turnRunID != "" {
 					text += executeDelegation(httpClient, entry, apiKey, model, mainDB, conversationDB, callerScopes, userID, dataDir, corePort, conversationID, turnRunID, pending, depth)
 				}
@@ -460,8 +547,44 @@ func runToolLoop(
 			allLinks = append(allLinks, links...)
 		}
 		groups = append(groups, group)
+		// A model that keeps sending invalid arguments is stopped here
+		// instead of spending the rest of its budget (step 93).
+		if rejections.exhausted() {
+			return "", &ArgumentRejectionError{Tool: lastRejectedTool, Count: rejections.total, Detail: rejectionDetail(lastRejection)}
+		}
 	}
-	return "", ErrToolIterationLimitReached
+	return "", &ToolLimitError{Limit: limit, Explanation: toolLimitExplanation(ctx, httpClient, entry, apiKey, model, buildToolLoopMessages(prefix, groups), limit, logStep, logExchange)}
+}
+
+// toolLimitExplanation makes the one tools-free wrap-up call (step 93) so a
+// run that ran out of budget says why instead of just failing. Best-effort:
+// any failure or an empty answer yields "" and the error simply has no quote.
+func toolLimitExplanation(
+	ctx context.Context,
+	httpClient *http.Client,
+	entry platform.Entry,
+	apiKey, model string,
+	messages []chatcompleter.Message,
+	limit int,
+	logStep func(step string),
+	logExchange func(iteration int, messages []chatcompleter.Message, tools []chatcompleter.ToolDef, result *chatcompleter.ChatCompletionResult, err error),
+) string {
+	if logStep != nil {
+		logStep(fmt.Sprintf("tool-call budget of %d reached: asking the model to explain, without tools", limit))
+	}
+	wrapUp := append(append([]chatcompleter.Message{}, messages...), chatcompleter.Message{Role: "user", Content: toolLimitWrapUpPrompt})
+	result, err := entry.Completer.ChatCompletion(ctx, httpClient, entry.DefaultBaseURL, apiKey, model, wrapUp, nil)
+	if logExchange != nil {
+		logExchange(limit+1, wrapUp, nil, result, err)
+	}
+	if err != nil || result == nil {
+		return ""
+	}
+	text := strings.TrimSpace(result.Message.Content)
+	if r := []rune(text); len(r) > maxToolLimitExplanationLen {
+		text = string(r[:maxToolLimitExplanationLen]) + "…"
+	}
+	return text
 }
 
 // buildToolLoopMessages assembles one iteration's actual request

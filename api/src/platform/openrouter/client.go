@@ -123,11 +123,33 @@ type chatRequest struct {
 	Tools    []wireTool    `json:"tools,omitempty"`
 }
 
+// wireError is the {code, message} object OpenRouter attaches to failures.
+type wireError struct {
+	Message string `json:"message"`
+}
+
+func (e *wireError) text() string {
+	if e == nil {
+		return ""
+	}
+	return e.Message
+}
+
+// providerName prefixes this client's error messages.
+const providerName = "openrouter"
+
 type chatResponse struct {
 	Choices []struct {
 		Message      wireMessage `json:"message"`
 		FinishReason string      `json:"finish_reason"`
+		// Error is OpenRouter's own description of an upstream failure
+		// on this choice, when it sends one. Read only to make an error
+		// message specific; never required.
+		Error *wireError `json:"error,omitempty"`
 	} `json:"choices"`
+	// Error is a top-level failure object some 2xx answers carry instead
+	// of choices.
+	Error *wireError `json:"error,omitempty"`
 	Usage struct {
 		PromptTokens     int `json:"prompt_tokens"`
 		CompletionTokens int `json:"completion_tokens"`
@@ -158,17 +180,17 @@ func (Client) ChatCompletion(ctx context.Context, client *http.Client, baseURL, 
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("openrouter: request failed: %w", err)
+		return nil, chatcompleter.TransportError(providerName, "request failed", err)
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("openrouter: read response: %w", err)
+		return nil, chatcompleter.TransportError(providerName, "read response", err)
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("openrouter: unexpected status %d: %s", resp.StatusCode, string(respBody))
+		return nil, chatcompleter.StatusError(providerName, resp.StatusCode, string(respBody))
 	}
 
 	var parsed chatResponse
@@ -176,7 +198,7 @@ func (Client) ChatCompletion(ctx context.Context, client *http.Client, baseURL, 
 		return nil, fmt.Errorf("openrouter: parse response: %w", err)
 	}
 	if len(parsed.Choices) == 0 {
-		return nil, fmt.Errorf("openrouter: response had no choices")
+		return nil, chatcompleter.NoChoicesError(providerName, parsed.Error.text())
 	}
 
 	choice := parsed.Choices[0]
@@ -195,7 +217,7 @@ func (Client) ChatCompletion(ctx context.Context, client *http.Client, baseURL, 
 	// somehow absent/non-string) degrades to "", never a panic.
 	responseContent, _ := choice.Message.Content.(string)
 
-	return &chatcompleter.ChatCompletionResult{
+	result := &chatcompleter.ChatCompletionResult{
 		Message: chatcompleter.Message{
 			Role:      "assistant",
 			Content:   responseContent,
@@ -208,7 +230,13 @@ func (Client) ChatCompletion(ctx context.Context, client *http.Client, baseURL, 
 			CompletionTokens: parsed.Usage.CompletionTokens,
 			TotalTokens:      parsed.Usage.TotalTokens,
 		},
-	}, nil
+	}
+	// An empty answer that ended with a failing finish reason (step 92)
+	// is a failed call, not the model's final reply.
+	if err := chatcompleter.ClassifyResult(providerName, result, choice.Error.text()); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 func toWireMessages(messages []chatcompleter.Message, cacheControlSupported bool) []wireMessage {

@@ -24,9 +24,13 @@ func (r *ConversationPersistentRepo) Insert(c *conversation_entity.Conversation)
 	if mode == "" {
 		mode = conversation_entity.OrchestrationModeDirect
 	}
+	var limit any // NULL unless the creator asked for a lower budget (step 93)
+	if c.ToolIterationLimit != nil {
+		limit = *c.ToolIterationLimit
+	}
 	_, err := r.db.Exec(
-		`INSERT INTO conversations (id, user_id, title, file_path, platform_id, model, hidden, tool_slug, orchestration_mode) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		c.ID, c.UserID, c.Title, c.FilePath, c.PlatformID, c.Model, c.Hidden, c.ToolSlug, mode,
+		`INSERT INTO conversations (id, user_id, title, file_path, platform_id, model, hidden, tool_slug, orchestration_mode, tool_iteration_limit) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		c.ID, c.UserID, c.Title, c.FilePath, c.PlatformID, c.Model, c.Hidden, c.ToolSlug, mode, limit,
 	)
 	return err
 }

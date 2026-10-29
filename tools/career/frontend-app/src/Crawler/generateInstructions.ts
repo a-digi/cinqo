@@ -16,6 +16,11 @@
 // svg removal (now a Browser-tool default applying regardless of this
 // prompt). See
 // plan/ai/tools/career/step-62-svg-removal-and-attribute-length-enforcement.md.
+// GENERATE_TOOL_ITERATION_LIMIT (step 93) is the tool-call budget enforced on
+// every "Generate instructions" conversation. It is the same number the prompt
+// tells the agent ("at most 10 tool calls"), so the promise and the limit agree.
+export const GENERATE_TOOL_ITERATION_LIMIT = 10
+
 export function buildGenerateInstructionsMessage(
   link: { id: string; title: string | null; url: string },
   // jobsConfirmed (step 91): the stored instructions were already used for a
@@ -38,6 +43,8 @@ export function buildGenerateInstructionsMessage(
     '',
     'Tool-call budget: you have at most 10 tool calls total for this ENTIRE task — every call counts toward it (get_portal_link_crawl_instructions, fetch_page_html, crawl_paginated, check_crawl_extraction_result, and anything else), not only the crawl_paginated/check_crawl_extraction_result pairs in step 5. Do not use extract_page_data, or repeated fetch_page_html calls, to iteratively probe or guess individual selectors one attribute at a time — read the HTML text from your one fetch_page_html call in step 2 closely enough to write real selectors the first time. crawl_paginated + check_crawl_extraction_result (step 5) is your only intended way to verify a selector actually works against the real page. If you reach this budget without success, stop immediately and follow step 8, even if you have not used all 4 attempts from step 6 yet.',
     '',
+    'Tool arguments (a call with anything else is rejected before it runs and still costs you a call): crawl_paginated takes ONLY "instructions" — the YAML text; put pagination.maxPages inside that YAML, never as a separate argument, and do not add portalLinkId. check_crawl_extraction_result takes ONLY "pages" — the exact "pages" array returned by the crawl_paginated call you just made, passed through unchanged as an array (do not retype it or wrap it in quotes). Do not test the same draft twice: if a test did not work, change something before you test again.',
+    '',
     'Steps:',
     '1. Call get_portal_link_crawl_instructions for this link id to see whatever is currently stored (may be empty).',
     '2. Navigate to the URL (fetch_page_html — always pass maxAttributeLength: 200) and inspect the page CAREFULLY: does it list MULTIPLE similar items at once (a search-results/job-listing page), or does it describe a single item (a one-job detail page)? Read the returned HTML closely enough now to identify real selectors — this is your only planned fetch of this page.',
@@ -46,7 +53,8 @@ export function buildGenerateInstructionsMessage(
     '5. TEST before saving — this is mandatory, not optional: call crawl_paginated with your draft instructions (you may temporarily set pagination.maxPages: 1 for this test call only, to keep it fast — testing page 1 is enough to judge whether your container/field selectors actually work; keep the real maxPages value for the version you eventually save in step 7), then call check_crawl_extraction_result with that exact response\'s own "pages" array. Do not count skipped/extracted items yourself by reading the raw JSON — check_crawl_extraction_result\'s own ok/itemsSkipped/skippedSamples is the one source of truth for whether your draft actually works.',
     '6. If ok is not true and itemsFound is above 0, you have not finished — fix your container/field selectors/mapping using skippedSamples (it shows the raw fields of items that came back empty) and repeat step 5. Try up to 4 times in total (1 initial attempt + 3 fix-and-retry cycles), but stop sooner if you hit the tool-call budget above first.',
     '6a. ZERO ITEMS means something is wrong, and you cannot tell by yourself whether the selectors are wrong or the page simply has no jobs. If check_crawl_extraction_result reports itemsFound: 0, make exactly ONE fix attempt (the container selector first, then the field selectors; re-read the HTML from step 2) and test again. If itemsFound is still 0, STOP fixing: call ask_user_if_page_has_jobs once, with a one-line note of what you tried (e.g. "2 attempts, container .job-result matched nothing"), make no further tool calls, do NOT call set_portal_link_crawl_instructions, and end your turn with one short line. The user will answer yes or no; the answer arrives as a new message in this conversation. Ask at most once in this whole task, and never save instructions that extract 0 items.',
-    '7. Only once check_crawl_extraction_result reports ok: true, call set_portal_link_crawl_instructions ONCE with the finished YAML (using your real, intended maxPages — not the maxPages: 1 you may have used only for testing) for this exact portal link id.',
+    '6b. LOW COUNT: if check_crawl_extraction_result returns a "warning" (only 1 or 2 items extracted), ok: true is NOT enough to save. Count the repeating job entries in the HTML you fetched in step 2: if the page shows more than the tool extracted, your container selector matches only a wrapper or part of the page, so fix it and test again (this counts as a fix attempt in step 6). Save only when the extracted count matches what the page shows.',
+    '7. Only once check_crawl_extraction_result reports ok: true (and any warning from step 6b is resolved), call set_portal_link_crawl_instructions ONCE with the finished YAML (using your real, intended maxPages — not the maxPages: 1 you may have used only for testing) for this exact portal link id.',
     '8. If you still cannot reach ok: true after 4 attempts (with itemsFound above 0), or you have reached the tool-call budget, do NOT call set_portal_link_crawl_instructions — these instructions are not ready. Reply immediately explaining specifically what is blocking it (quote the skippedSamples you saw) instead of saving something broken or continuing to probe.',
     '',
     'When done, reply with a short one-line confirmation (or, per step 6a, one line saying you asked the user; or, per step 8, a short explanation of why it could not be finished) — keep it brief.',

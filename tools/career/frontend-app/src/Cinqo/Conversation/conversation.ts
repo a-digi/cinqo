@@ -30,6 +30,9 @@ export async function createConversation(input: {
   platformId: string
   model?: string
   hidden?: boolean
+  // toolIterationLimit (step 93) lowers how many model calls one turn may make
+  // (1 to 15; omitted means the server default of 15). Only lowers, never raises.
+  toolIterationLimit?: number
 }): Promise<Conversation> {
   // toolSlug is always "career" here, never caller-supplied — every
   // conversation this function creates (Job Match, Generate CV PDF,

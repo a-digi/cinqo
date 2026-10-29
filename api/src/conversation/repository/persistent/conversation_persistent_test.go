@@ -105,3 +105,37 @@ func TestExistingRowsDefaultToDirect(t *testing.T) {
 		t.Fatalf("mode=%q err=%v, want direct", got.OrchestrationMode, err)
 	}
 }
+
+func TestToolIterationLimitRoundTripAndDefault(t *testing.T) {
+	db := openConversationDB(t)
+	repo := conversation_persistent.NewConversationPersistentRepo(db)
+	q := conversation_query.NewConversationQueryRepo(db)
+
+	plain := newConversation("c-default", conversation_entity.OrchestrationModeDirect)
+	limited := newConversation("c-limited", conversation_entity.OrchestrationModeDirect)
+	ten := 10
+	limited.ToolIterationLimit = &ten
+	for _, c := range []*conversation_entity.Conversation{plain, limited} {
+		if err := repo.Insert(c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := q.FindByID("c-default")
+	if err != nil || got.ToolIterationLimit != nil {
+		t.Fatalf("an unset limit must read back as nil: %+v %v", got, err)
+	}
+	got, err = q.FindByID("c-limited")
+	if err != nil || got.ToolIterationLimit == nil || *got.ToolIterationLimit != 10 {
+		t.Fatalf("limit must round-trip: %+v %v", got, err)
+	}
+}
+
+func TestToolIterationLimitRejectsZeroAtTheDatabase(t *testing.T) {
+	db := openConversationDB(t)
+	zero := 0
+	c := newConversation("c-zero", conversation_entity.OrchestrationModeDirect)
+	c.ToolIterationLimit = &zero
+	if err := conversation_persistent.NewConversationPersistentRepo(db).Insert(c); err == nil {
+		t.Error("a limit of 0 must be rejected by the CHECK constraint")
+	}
+}

@@ -384,7 +384,7 @@ func TestComposerTurnEndToEnd(t *testing.T) {
 	tools, _ := offerableToolsForMode(mainDB, scopes, conversation_entity.OrchestrationModeComposer)
 	got, err := runToolLoop(context.Background(), http.DefaultClient, platform.Entry{Completer: completer}, "k", "m",
 		[]chatcompleter.Message{{Role: "user", Content: "how many jobs?"}}, tools, mainDB, scopes, "u1", t.TempDir(), 0, "conv", convDB, "turn1", 0,
-		conversation_entity.OrchestrationModeComposer, nil, nil, nil)
+		conversation_entity.OrchestrationModeComposer, nil, nil, nil, 0)
 	if err != nil || got != "composed answer" {
 		t.Fatalf("loop: %q, %v", got, err)
 	}
@@ -488,7 +488,7 @@ func TestPlanWorkersGetTheWorkerPromptOnEveryAttempt(t *testing.T) {
 	tools, _ := offerableToolsForMode(mainDB, scopes, conversation_entity.OrchestrationModeComposer)
 	if _, err := runToolLoop(context.Background(), http.DefaultClient, platform.Entry{Completer: completer}, "k", "m",
 		[]chatcompleter.Message{{Role: "user", Content: "go"}}, tools, mainDB, scopes, "u1", t.TempDir(), 0, "conv", convDB, "turn1", 0,
-		conversation_entity.OrchestrationModeComposer, nil, nil, nil); err != nil {
+		conversation_entity.OrchestrationModeComposer, nil, nil, nil, 0); err != nil {
 		t.Fatal(err)
 	}
 
@@ -534,7 +534,7 @@ func runComposer(t *testing.T, completer *plannerCompleter, mainDB, convDB *sql.
 	tools, _ := offerableToolsForMode(mainDB, scopes, conversation_entity.OrchestrationModeComposer)
 	got, err := runToolLoop(context.Background(), http.DefaultClient, platform.Entry{Completer: completer}, "k", "m",
 		[]chatcompleter.Message{{Role: "user", Content: "go"}}, tools, mainDB, scopes, "u1", t.TempDir(), 0, "conv", convDB, "turn1", 0,
-		conversation_entity.OrchestrationModeComposer, nil, reportUsage, nil)
+		conversation_entity.OrchestrationModeComposer, nil, reportUsage, nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

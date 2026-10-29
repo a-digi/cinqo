@@ -17,6 +17,7 @@ import { buildCrawlMessage, crawlConversationTitle } from '../crawl'
 import {
   buildGenerateInstructionsMessage,
   buildJobsConfirmedMessage,
+  GENERATE_TOOL_ITERATION_LIMIT,
   generateInstructionsConversationTitle,
   buildGenerateJobDetailInstructionsMessage,
   generateJobDetailInstructionsConversationTitle,
@@ -26,6 +27,7 @@ import { phaseLabel, latestCrawlLogMessage } from '../crawlPhase'
 import { instructionAlertAttempts, isLikelyUncrawlable } from '../instructionStats'
 import { hasListingInstructions } from '../autoDiscoveryVisibility'
 import { diagnoseEmptyCrawl, emptyCrawlFacts, emptyCrawlFor } from '../emptyCrawl'
+import { FREE_ROUTER_HINT, isFreeRouter } from '../modelHint'
 import { findJobsQuestion, pendingJobsQuestion, JOBS_QUESTION_NO_HINT, JOBS_QUESTION_TITLE, JOBS_QUESTION_YES_HINT } from '../jobsQuestion'
 import { InstructionAttemptStats } from './InstructionAttemptStats'
 import { AccordionItem } from '../../Shared/Accordion/AccordionItem'
@@ -676,7 +678,15 @@ export function CrawlPanel({
     // create it still shows up as a failed attempt (step 86). Only the
     // user's own click starts a listing run.
     recordAttemptStart('listing', 'manual')
-      .then(() => createConversation({ title: generateInstructionsConversationTitle(link), platformId, model, hidden: true }))
+      .then(() =>
+        createConversation({
+          title: generateInstructionsConversationTitle(link),
+          platformId,
+          model,
+          hidden: true,
+          toolIterationLimit: GENERATE_TOOL_ITERATION_LIMIT,
+        }),
+      )
       .then((conversation) => {
         setAiConversationId(conversation.id)
         window.__cinqoToolBridge.openConversation(conversation.id)
@@ -799,7 +809,15 @@ export function CrawlPanel({
     // starts a job-detail run — there is no manual button — so this is
     // always counted as 'auto' (step 86).
     recordAttemptStart('job_detail', 'auto')
-      .then(() => createConversation({ title: generateJobDetailInstructionsConversationTitle(link), platformId, model, hidden: true }))
+      .then(() =>
+        createConversation({
+          title: generateJobDetailInstructionsConversationTitle(link),
+          platformId,
+          model,
+          hidden: true,
+          toolIterationLimit: GENERATE_TOOL_ITERATION_LIMIT,
+        }),
+      )
       .then((conversation) => {
         setJobDetailAiConversationId(conversation.id)
         window.__cinqoToolBridge.openConversation(conversation.id)
@@ -1166,6 +1184,13 @@ export function CrawlPanel({
           </div>
         </AccordionItem>
       </div>
+      {/* Step 93: shown where Generate is the next action (no listing instructions
+          yet), only while the random free router is the selected model. */}
+      {!link.crawlInstructions && isFreeRouter(selectedPlatform, selectedModel) && (
+        <p role="note" className="mt-2 text-xs text-amber-700">
+          {FREE_ROUTER_HINT}
+        </p>
+      )}
       {jobsQuestion && (
         <div className="mt-2">
           <InfoBox

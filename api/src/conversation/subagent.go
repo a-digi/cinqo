@@ -516,7 +516,7 @@ func runSubAgentLoop(
 	var result string
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		var err error
-		result, err = runToolLoop(ctx, httpClient, entry, apiKey, model, messages, tools, mainDB, callerScopes, userID, dataDir, corePort, conversationID, conversationDB, parentTurnRunID, depth, conversation_entity.OrchestrationModeDirect, logStep, reportUsage, nil)
+		result, err = runToolLoop(ctx, httpClient, entry, apiKey, model, messages, tools, mainDB, callerScopes, userID, dataDir, corePort, conversationID, conversationDB, parentTurnRunID, depth, conversation_entity.OrchestrationModeDirect, logStep, reportUsage, nil, 0)
 		if err != nil {
 			status := "failed"
 			if errors.Is(ctx.Err(), context.Canceled) {

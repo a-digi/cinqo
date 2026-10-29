@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 
@@ -34,6 +35,9 @@ type createConversationRequest struct {
 	// conversation's lifetime, like platformId/model. See
 	// plan/ai/conversation/step-42-orchestrator-composer-mode.md.
 	OrchestrationMode string `json:"orchestrationMode"`
+	// ToolIterationLimit (step 93) — optional, 1 to entity.MaxToolIterationLimit.
+	// Lowers how many model calls one turn may make; omitted means the default.
+	ToolIterationLimit *int `json:"toolIterationLimit"`
 }
 
 // CreateHandler handles POST /api/v1/conversations. title defaults to
@@ -81,6 +85,11 @@ func CreateHandler(reqCtx request.RequestContext) {
 		return
 	}
 
+	if !conversation_entity.ValidToolIterationLimit(body.ToolIterationLimit) {
+		response.ErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("toolIterationLimit must be between 1 and %d", conversation_entity.MaxToolIterationLimit))
+		return
+	}
+
 	userID, err := callerUserID(reqCtx)
 	if err != nil {
 		response.ErrorResponse(w, http.StatusUnauthorized, "unauthorized")
@@ -110,7 +119,8 @@ func CreateHandler(reqCtx request.RequestContext) {
 		Hidden:     body.Hidden,
 		ToolSlug:   body.ToolSlug,
 
-		OrchestrationMode: orchestrationMode,
+		OrchestrationMode:  orchestrationMode,
+		ToolIterationLimit: body.ToolIterationLimit,
 	}
 
 	if err := conversation_persistent.NewConversationPersistentRepo(db).Insert(c); err != nil {

@@ -24,15 +24,20 @@ func NewConversationQueryRepo(db *sql.DB) *ConversationQueryRepo {
 	return &ConversationQueryRepo{db: db}
 }
 
-const conversationColumns = `id, user_id, title, started_at, file_path, platform_id, model, hidden, tool_slug, orchestration_mode`
+const conversationColumns = `id, user_id, title, started_at, file_path, platform_id, model, hidden, tool_slug, orchestration_mode, tool_iteration_limit`
 
 func scanConversation(scan func(dest ...any) error) (*conversation_entity.Conversation, error) {
 	var c conversation_entity.Conversation
 	var toolSlug sql.NullString
-	if err := scan(&c.ID, &c.UserID, &c.Title, &c.StartedAt, &c.FilePath, &c.PlatformID, &c.Model, &c.Hidden, &toolSlug, &c.OrchestrationMode); err != nil {
+	var toolLimit sql.NullInt64
+	if err := scan(&c.ID, &c.UserID, &c.Title, &c.StartedAt, &c.FilePath, &c.PlatformID, &c.Model, &c.Hidden, &toolSlug, &c.OrchestrationMode, &toolLimit); err != nil {
 		return nil, err
 	}
 	c.ToolSlug = toolSlug.String
+	if toolLimit.Valid {
+		v := int(toolLimit.Int64)
+		c.ToolIterationLimit = &v
+	}
 	return &c, nil
 }
 
