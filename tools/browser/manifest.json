@@ -64,6 +64,11 @@
       "required_scope": "tool:browser:crawl"
     },
     {
+      "method": "POST",
+      "path_suffix": "find-repeating-items",
+      "required_scope": "tool:browser:crawl"
+    },
+    {
       "method": "GET",
       "path_suffix": "crawl-logs",
       "required_scope": "tool:browser:crawl"
@@ -141,6 +146,10 @@
     },
     {
       "name": "extract_from_url",
+      "required_scope": "tool:browser:crawl"
+    },
+    {
+      "name": "find_repeating_items",
       "required_scope": "tool:browser:crawl"
     }
   ]

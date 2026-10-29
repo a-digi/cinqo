@@ -122,6 +122,11 @@ type crawlRequest struct {
 	// noise). Has no effect at all when MaxAttributeLength isn't set.
 	// See defaultMaxLengthIgnoredAttributes's own doc comment.
 	IgnoreAttributesForMaxLength []string `json:"ignoreAttributesForMaxLength,omitempty"`
+	// Offset (step 94) — optional; when set (0 included), the response
+	// carries only a window of the HTML starting at this character, served
+	// from a short-lived in-memory copy of the last identical fetch when one
+	// exists (see fetch_window.go). Absent means the whole page, as before.
+	Offset *int `json:"offset,omitempty"`
 }
 
 type crawlResponse struct {
@@ -129,6 +134,9 @@ type crawlResponse struct {
 	Title     string `json:"title"`
 	FinalURL  string `json:"finalUrl"`
 	Truncated bool   `json:"truncated"`
+	// Window (step 94) is set only when the request asked for an offset: which
+	// characters of the page's HTML this response carries.
+	Window *htmlWindow `json:"window,omitempty"`
 }
 
 // CrawlHandler handles POST /crawl — the --mcp adapter's own real
@@ -150,10 +158,30 @@ func CrawlHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// r.Context() — ends when the caller disconnects (e.g. the agent
-	// host abandoning a timed-out tool call), which stops this crawl and
-	// frees its tab instead of leaving it working for nobody.
-	result, err := crawlPage(r.Context(), body.URL, body.RequestID, body.ExpectedSelectors, body.RemoveSelectors, body.RemoveAttributes, body.MaxAttributeLength, body.IgnoreAttributesForMaxLength)
+	if body.Offset != nil && *body.Offset < 0 {
+		http.Error(w, "offset must not be negative", http.StatusBadRequest)
+		return
+	}
+
+	// Step 94: an AI caller asking for a window of the page is served from the
+	// last identical fetch when it is still fresh, so walking through a long
+	// page costs one navigation, not one per window.
+	memoKey := ""
+	if body.RequestID == "" {
+		memoKey = fetchMemoKey(body)
+	}
+	var result crawlResponse
+	var err error
+	fromMemo := false
+	if body.Offset != nil && memoKey != "" {
+		result, fromMemo = fetchMemoLookup(memoKey)
+	}
+	if !fromMemo {
+		// r.Context() — ends when the caller disconnects (e.g. the agent
+		// host abandoning a timed-out tool call), which stops this crawl and
+		// frees its tab instead of leaving it working for nobody.
+		result, err = crawlPageFn(r.Context(), body.URL, body.RequestID, body.ExpectedSelectors, body.RemoveSelectors, body.RemoveAttributes, body.MaxAttributeLength, body.IgnoreAttributesForMaxLength)
+	}
 	if err != nil {
 		setCrawlPhase(body.RequestID, phaseFailed, err.Error())
 		var cfErr *crawlError
@@ -167,10 +195,23 @@ func CrawlHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !fromMemo && memoKey != "" {
+		fetchMemoStore(memoKey, result)
+	}
+	if body.Offset != nil {
+		var win htmlWindow
+		result.HTML, win = windowHTML(result.HTML, *body.Offset)
+		result.Window = &win
+	}
+
 	setCrawlPhase(body.RequestID, phaseCompleted, "HTML crawled")
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(result)
 }
+
+// crawlPageFn is crawlPage behind a variable so tests can script a fetch
+// without a browser.
+var crawlPageFn = crawlPage
 
 // readCrawlResponse reads back the currently loaded page's rendered
 // HTML/title/final URL — assumes the caller has already confirmed (or
@@ -785,11 +826,12 @@ func isDisallowedIP(ip net.IP) bool {
 }
 
 type fetchPageHTMLArgs struct {
-	URL                          string   `json:"url" jsonschema:"the absolute http(s) URL to navigate to and read"`
-	RemoveSelectors              []string `json:"removeSelectors,omitempty" jsonschema:"optional CSS selectors for ANY elements to strip from the returned HTML before it's read — e.g. [\"header\", \"footer\", \"nav\", \"script\", \"style\", \".cookie-banner\", \"#ads\"]. Not limited to these examples: any valid CSS selector is matched and removed. Use this to cut boilerplate/noise you don't need out of the result; omit to get the page exactly as rendered."`
-	RemoveAttributes             []string `json:"removeAttributes,omitempty" jsonschema:"optional attribute names to strip from EVERY element that has them, regardless of the attribute's own value — e.g. [\"style\", \"onclick\", \"data-testid\"]. Use this to cut attribute noise you know the name of; omit to leave those attributes as rendered."`
-	MaxAttributeLength           int      `json:"maxAttributeLength,omitempty" jsonschema:"optional — when set above 0, ANY attribute (any name, on any element) whose own value is longer than this many characters is removed — useful for stripping long inline noise (base64 data URIs, huge inline style/class blobs) you don't know the name of in advance. href and src are always exempt (see ignoreAttributesForMaxLength to exempt more) since a long URL there is often legitimate, not noise, and removing it would break the element. This checks every element's every attribute, which can take noticeably longer on a large page; omit or leave at 0 to disable."`
-	IgnoreAttributesForMaxLength []string `json:"ignoreAttributesForMaxLength,omitempty" jsonschema:"optional attribute names to additionally exempt from maxAttributeLength's own check, on top of the built-in href/src exemption — e.g. [\"poster\", \"action\"] if some other URL-valued attribute on this particular page also needs protecting from removal. Has no effect unless maxAttributeLength is also set."`
+	URL                          string            `json:"url" jsonschema:"the absolute http(s) URL to navigate to and read"`
+	RemoveSelectors              SelectorList      `json:"removeSelectors,omitempty" jsonschema:"optional CSS selectors for ANY elements to strip from the returned HTML before it's read — e.g. [\"header\", \"footer\", \"nav\", \"script\", \"style\", \".cookie-banner\", \"#ads\"]. Not limited to these examples: any valid CSS selector is matched and removed. Use this to cut boilerplate/noise you don't need out of the result; omit to get the page exactly as rendered."`
+	RemoveAttributes             AttributeNameList `json:"removeAttributes,omitempty" jsonschema:"optional attribute names to strip from EVERY element that has them, regardless of the attribute's own value — e.g. [\"style\", \"onclick\", \"data-testid\"]. Use this to cut attribute noise you know the name of; omit to leave those attributes as rendered."`
+	MaxAttributeLength           int               `json:"maxAttributeLength,omitempty" jsonschema:"optional — when set above 0, ANY attribute (any name, on any element) whose own value is longer than this many characters is removed — useful for stripping long inline noise (base64 data URIs, huge inline style/class blobs) you don't know the name of in advance. href and src are always exempt (see ignoreAttributesForMaxLength to exempt more) since a long URL there is often legitimate, not noise, and removing it would break the element. This checks every element's every attribute, which can take noticeably longer on a large page; omit or leave at 0 to disable."`
+	IgnoreAttributesForMaxLength []string          `json:"ignoreAttributesForMaxLength,omitempty" jsonschema:"optional attribute names to additionally exempt from maxAttributeLength's own check, on top of the built-in href/src exemption — e.g. [\"poster\", \"action\"] if some other URL-valued attribute on this particular page also needs protecting from removal. Has no effect unless maxAttributeLength is also set."`
+	Offset                       *int              `json:"offset,omitempty" jsonschema:"optional — read the page in parts: return only a window of about 18,000 characters of the HTML starting at this character (0 for the start). The page's HTML is often far longer than what you can see in one result, so a long page's later content (e.g. the job list below a header and filters) is only reachable this way. Use the same url and strip options as your earlier call to read the next part of the same page without navigating again (a short-lived copy is reused); the response tells you the next offset. Omit to get the page as before."`
 }
 
 // RegisterFetchPageHTML adds the fetch_page_html MCP tool — thin: it
@@ -797,13 +839,19 @@ type fetchPageHTMLArgs struct {
 // shared.Ctx directly (this --mcp subprocess never holds it — see
 // main.go's own runMCPServer doc comment).
 func RegisterFetchPageHTML(server *mcp.Server) {
+	schema, err := fetchPageHTMLSchema()
+	if err != nil {
+		panic(err) // a programming error caught by the first test run, not a runtime condition
+	}
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "fetch_page_html",
+		Name:        "fetch_page_html",
+		InputSchema: schema,
 		Description: "Navigate the shared browser session to a URL and return the page's rendered HTML, title, and final URL (after any redirect). " +
 			"Calling this again for the exact same URL within about 5 minutes, without calling it for any other URL in between, returns a short-lived cached copy of what was fetched last time instead of navigating again — useful to know if you call this tool repeatedly for the same page, since you won't see the page's own content change again until either 5 minutes pass or you fetch a different URL first. Passing removeSelectors, removeAttributes, or maxAttributeLength always fetches a fresh copy — caching only ever applies to a plain re-fetch with none of those set. " +
 			"Pass removeSelectors to strip elements you don't want out of the HTML before it's returned to you — any valid CSS selector works (tag names like \"header\", \"script\", \"style\", \"nav\", \"footer\"; classes like \".cookie-banner\"; ids like \"#ads\"; or anything else CSS can target). Use this whenever you only need part of the page, to cut boilerplate/noise out of your own result instead of reading past it. " +
 			"Pass removeAttributes (a list of attribute names, e.g. [\"style\", \"onclick\", \"data-testid\"]) to strip those attributes from EVERY element that has them, keeping the element itself. Pass maxAttributeLength (a number of characters) to strip ANY attribute on ANY element whose own value is longer than that — useful for cutting long inline noise (base64 data URIs, huge inline style/class blobs) you don't know the name of ahead of time; this checks every element's every attribute, so it can take noticeably longer on a large page. href and src are always left alone by maxAttributeLength regardless of their own length, since a link/image/script's own URL is often legitimately long and removing it would break the element, not just shrink it — pass ignoreAttributesForMaxLength (more attribute names) if some other URL-like attribute on this page needs the same protection. Both removeAttributes and maxAttributeLength can be used together, and neither touches the elements themselves, only their attributes. " +
 			"If the page is behind a Cloudflare challenge, this waits briefly for it to clear before reading the page; if it's still blocking once the wait runs out, this automatically retries in a normal (non-headless) browser window and can wait up to about 30 minutes for a person to notice and solve the challenge there before giving up — meaning this call can take up to roughly 30 minutes in that case, almost certainly longer than this AI tool-calling session's own timeout, so a Cloudflare-blocked page is effectively only recoverable through this path by a human watching for the window, not by an AI call waiting on the result. If it's still blocked after that, this call fails with a cloudflare_challenge_unresolved error instead of returning the interstitial as if it were the real page. " +
+			"A long page's HTML is far longer than what you can see in one result (anything beyond the first part is cut off), so what you want may be further down: pass offset (characters, starting at 0) to read the page in windows of about 18,000 characters — the response tells you the next offset, and repeating the same url and options reuses a short-lived copy instead of navigating again. To find the repeating items of a listing page (job cards, results) use find_repeating_items instead of reading raw HTML. " +
 			"For crawling a BATCH of many individual pages (e.g. job detail pages), don't call this yourself in a loop — use crawl_urls_with_subagents instead, which crawls each one as an isolated, concurrency-safe sub-agent.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args fetchPageHTMLArgs) (*mcp.CallToolResult, any, error) {
 		if args.URL == "" {
@@ -815,10 +863,11 @@ func RegisterFetchPageHTML(server *mcp.Server) {
 
 		reqBody, err := json.Marshal(crawlRequest{
 			URL:                          args.URL,
-			RemoveSelectors:              args.RemoveSelectors,
-			RemoveAttributes:             args.RemoveAttributes,
+			RemoveSelectors:              []string(args.RemoveSelectors),
+			RemoveAttributes:             []string(args.RemoveAttributes),
 			MaxAttributeLength:           args.MaxAttributeLength,
 			IgnoreAttributesForMaxLength: args.IgnoreAttributesForMaxLength,
+			Offset:                       args.Offset,
 		})
 		if err != nil {
 			return &mcp.CallToolResult{
@@ -843,12 +892,36 @@ func RegisterFetchPageHTML(server *mcp.Server) {
 			}, nil, nil
 		}
 
-		text := fmt.Sprintf("Title: %s\nURL: %s\n", result.Title, result.FinalURL)
-		if result.Truncated {
-			text += "(HTML truncated to fit the response size limit)\n"
-		}
-		text += "\n" + result.HTML
-
-		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}, nil, nil
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: fetchPageText(result)}}}, nil, nil
 	})
+}
+
+// fetchPageText renders fetch_page_html's result for the model. The lines
+// before the HTML always stay visible (the conversation layer cuts only the
+// tail of a long result), so they carry what the model needs to read on:
+// for a window, which part this is and the next offset; for a long page read
+// without offset, that only the start is visible and how to read further.
+// See fetch_window.go.
+func fetchPageText(result crawlResponse) string {
+	text := fmt.Sprintf("Title: %s\nURL: %s\n", result.Title, result.FinalURL)
+	if result.Truncated {
+		text += "(HTML truncated to fit the response size limit)\n"
+	}
+	switch {
+	case result.Window != nil:
+		w := result.Window
+		switch {
+		case w.Start >= w.Total:
+			text += fmt.Sprintf("(offset %d is past the end of the page: its HTML is %d characters long)\n", w.Start, w.Total)
+		case w.End >= w.Total:
+			text += fmt.Sprintf("(Showing characters %d-%d of %d: the end of the page.)\n", w.Start, w.End, w.Total)
+		default:
+			text += fmt.Sprintf("(Showing characters %d-%d of %d. To read the next part, call again with the same url and options and offset=%d.)\n", w.Start, w.End, w.Total, w.End)
+		}
+	default:
+		if total := len([]rune(result.HTML)); total > fetchWindowChars {
+			text += fmt.Sprintf("(The page's HTML is %d characters long and you only see the beginning of it below. To read further, call again with the same url and options and offset=%d.)\n", total, fetchWindowChars)
+		}
+	}
+	return text + "\n" + result.HTML
 }

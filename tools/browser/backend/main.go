@@ -74,6 +74,7 @@ func runHTTPServer() {
 	http.HandleFunc("/find-login-elements", auth.FindLoginElementsHandler)
 	http.HandleFunc("/extract", crawler.ExtractHandler)
 	http.HandleFunc("/crawl-paginated", crawler.PaginatedCrawlHandler)
+	http.HandleFunc("/find-repeating-items", crawler.FindRepeatingItemsHandler)
 	http.HandleFunc("/crawl-logs", crawler.CrawlLogsHandler)
 	http.HandleFunc("/browser-settings", shared.BrowserSettingsHandler)
 	http.HandleFunc("/engine-status", crawler.EngineStatusHandler)
@@ -114,6 +115,7 @@ func runMCPServer() {
 	crawler.RegisterExtractPageData(server)
 	crawler.RegisterCrawlPaginated(server)
 	crawler.RegisterExtractFromURL(server)
+	crawler.RegisterFindRepeatingItems(server)
 	auth.RegisterHasLoginCredential(server)
 	auth.RegisterLogin(server)
 
