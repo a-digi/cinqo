@@ -23,6 +23,7 @@ import (
 	tool_mcp "github.com/a-digi/cinqo/src/tool/mcp"
 	tool_query "github.com/a-digi/cinqo/src/tool/repository/query"
 
+	conversation_entity "github.com/a-digi/cinqo/src/conversation/entity"
 	conversation_query "github.com/a-digi/cinqo/src/conversation/repository/query"
 )
 
@@ -183,7 +184,7 @@ func SendMessage(
 		return nil, fmt.Errorf("conversation: look up offerable tools: %w", err)
 	}
 
-	assistantContent, err := runToolLoop(ctx, httpClient, entry, plainKey, model, messages, tools, mainDB, callerScopes, conv.UserID, dataDir, corePort, conversationID, conversationDB, "", 0, nil, nil, nil)
+	assistantContent, err := runToolLoop(ctx, httpClient, entry, plainKey, model, messages, tools, mainDB, callerScopes, conv.UserID, dataDir, corePort, conversationID, conversationDB, "", 0, conversation_entity.OrchestrationModeDirect, nil, nil, nil)
 	if err != nil {
 		// Record the user's own message AND the real failure reason —
 		// a real, recognized "## error —" block (step 8), not a
@@ -335,6 +336,12 @@ func runToolLoop(
 	conversationDB *sql.DB,
 	turnRunID string,
 	depth int,
+	// orchestrationMode (composer step 2) is the CONVERSATION's own
+	// mode for the orchestrator loop (depth 0); every sub-agent loop
+	// passes OrchestrationModeDirect, so the composer restriction below
+	// only ever applies to the orchestrator itself. See
+	// plan/ai/conversation/step-42-orchestrator-composer-mode.md.
+	orchestrationMode string,
 	logStep func(step string),
 	reportUsage func(promptTokens, completionTokens int),
 	logExchange func(iteration int, messages []chatcompleter.Message, tools []chatcompleter.ToolDef, result *chatcompleter.ChatCompletionResult, err error),
@@ -424,6 +431,14 @@ func runToolLoop(
 			var text string
 			var links []tool_mcp.ResourceLink
 			switch {
+			case refusesUnofferedCall(orchestrationMode, depth, call.Name, tools):
+				// Defense in depth: a composer orchestrator and every
+				// sub-agent may only call what they were actually
+				// offered, so a hallucinated or remembered tool name
+				// can never reach a real tool.
+				text = "tool unavailable"
+			case call.Name == runPlanToolName && turnRunID != "" && depth == 0:
+				text = invokeRunPlanCall(ctx, httpClient, entry, apiKey, model, mainDB, conversationDB, callerScopes, userID, dataDir, corePort, conversationID, turnRunID, call)
 			case call.Name == subAgentToolName && turnRunID != "":
 				text = invokeSubAgentCall(httpClient, entry, apiKey, model, mainDB, conversationDB, callerScopes, userID, dataDir, corePort, conversationID, turnRunID, call, depth)
 			case call.Name == checkSubAgentToolName && turnRunID != "":

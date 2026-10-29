@@ -46,4 +46,32 @@ type Conversation struct {
 	// after creation. See
 	// plan/ai/conversation/step-41-search-and-filter-by-tool.md.
 	ToolSlug string `db:"tool_slug" dbtype:"TEXT" nullable:"true" json:"toolSlug,omitempty"`
+	// OrchestrationMode (composer step 1) is OrchestrationModeDirect —
+	// the orchestrator model works with the tools itself, exactly as
+	// before this field existed — or OrchestrationModeComposer, where
+	// the orchestrator only plans and sub-agents do the work. Set once
+	// at creation and never updated by any code path afterward
+	// (structurally: no Update method exists), the same "fixed at
+	// creation" rule as PlatformID/Model. Step 1 only stores and
+	// exposes it; nothing branches on it yet. See
+	// plan/ai/conversation/step-42-orchestrator-composer-mode.md.
+	OrchestrationMode string `db:"orchestration_mode" dbtype:"TEXT" nullable:"false" json:"orchestrationMode"`
+}
+
+const (
+	OrchestrationModeDirect   = "direct"
+	OrchestrationModeComposer = "composer"
+)
+
+// ParseOrchestrationMode normalizes a client-supplied mode: empty means
+// the default (direct, today's behavior). ok is false for anything
+// that is not exactly one of the two known modes.
+func ParseOrchestrationMode(raw string) (mode string, ok bool) {
+	switch raw {
+	case "", OrchestrationModeDirect:
+		return OrchestrationModeDirect, true
+	case OrchestrationModeComposer:
+		return OrchestrationModeComposer, true
+	}
+	return "", false
 }

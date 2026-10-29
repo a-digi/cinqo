@@ -132,7 +132,7 @@ func executeDelegation(
 			fmt.Fprintf(&b, "Task %d refused: none of its requested tools may be granted.\n", i+1)
 			continue
 		}
-		id, message := spawnSubAgent(httpClient, entry, apiKey, model, mainDB, conversationDB, callerScopes, userID, dataDir, corePort, conversationID, parentTurnRunID, task, tools, newAcceptanceSpec(t.AcceptanceCriteria, t.MaxAttempts), p.ToolName, depth)
+		id, message := spawnSubAgent(httpClient, entry, apiKey, model, mainDB, conversationDB, callerScopes, userID, dataDir, corePort, conversationID, parentTurnRunID, task, tools, newAcceptanceSpec(t.AcceptanceCriteria, t.MaxAttempts), "", p.ToolName, depth)
 		if id == "" {
 			fmt.Fprintf(&b, "Task %d not started: %s\n", i+1, message)
 			continue

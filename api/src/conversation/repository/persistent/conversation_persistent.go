@@ -20,9 +20,13 @@ func NewConversationPersistentRepo(db *sql.DB) *ConversationPersistentRepo {
 // (step 30) is likewise set only here — nothing ever flips it after
 // creation.
 func (r *ConversationPersistentRepo) Insert(c *conversation_entity.Conversation) error {
+	mode := c.OrchestrationMode
+	if mode == "" {
+		mode = conversation_entity.OrchestrationModeDirect
+	}
 	_, err := r.db.Exec(
-		`INSERT INTO conversations (id, user_id, title, file_path, platform_id, model, hidden, tool_slug) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		c.ID, c.UserID, c.Title, c.FilePath, c.PlatformID, c.Model, c.Hidden, c.ToolSlug,
+		`INSERT INTO conversations (id, user_id, title, file_path, platform_id, model, hidden, tool_slug, orchestration_mode) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		c.ID, c.UserID, c.Title, c.FilePath, c.PlatformID, c.Model, c.Hidden, c.ToolSlug, mode,
 	)
 	return err
 }

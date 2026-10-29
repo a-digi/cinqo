@@ -90,6 +90,18 @@ routes:
       - cinqo:conversation:use
       - cinqo:super:admin
 
+  # step-42-orchestrator-composer-mode.md (step 6) — the composer plan
+  # of ANY past turn, same ownership checks and scopes as the
+  # sub-agents route above. The live/most-recent turn's plan also
+  # rides on .../turns/active and the conversation's own activeTurn.
+  - path: /api/v1/conversations/{id}/turns/{turnRunId}/plan
+    method: GET
+    executor: ConversationGetTurnPlan
+    security: authenticated
+    scopes:
+      - cinqo:conversation:use
+      - cinqo:super:admin
+
   # step-36-ai-trace-logs.md — diagnostic view of the full raw
   # request/response exchange with the AI model, one .txt file per
   # turn. No ?turnId= lists every turn with a trace file; ?turnId=<id>

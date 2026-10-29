@@ -29,6 +29,11 @@ type createConversationRequest struct {
 	// directly-created conversation. Not validated against the tools
 	// table — see the entity's own doc comment for why.
 	ToolSlug string `json:"toolSlug"`
+	// OrchestrationMode (composer step 1) — "direct" (the default when
+	// omitted, today's behavior) or "composer". Fixed for the
+	// conversation's lifetime, like platformId/model. See
+	// plan/ai/conversation/step-42-orchestrator-composer-mode.md.
+	OrchestrationMode string `json:"orchestrationMode"`
 }
 
 // CreateHandler handles POST /api/v1/conversations. title defaults to
@@ -70,6 +75,12 @@ func CreateHandler(reqCtx request.RequestContext) {
 		model = entry.DefaultModel
 	}
 
+	orchestrationMode, ok := conversation_entity.ParseOrchestrationMode(body.OrchestrationMode)
+	if !ok {
+		response.ErrorResponse(w, http.StatusBadRequest, "orchestrationMode must be \"direct\" or \"composer\"")
+		return
+	}
+
 	userID, err := callerUserID(reqCtx)
 	if err != nil {
 		response.ErrorResponse(w, http.StatusUnauthorized, "unauthorized")
@@ -98,6 +109,8 @@ func CreateHandler(reqCtx request.RequestContext) {
 		Model:      model,
 		Hidden:     body.Hidden,
 		ToolSlug:   body.ToolSlug,
+
+		OrchestrationMode: orchestrationMode,
 	}
 
 	if err := conversation_persistent.NewConversationPersistentRepo(db).Insert(c); err != nil {

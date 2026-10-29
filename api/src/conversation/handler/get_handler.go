@@ -131,7 +131,12 @@ func GetHandler(reqCtx request.RequestContext) {
 			response.ErrorResponse(w, http.StatusInternalServerError, "failed to look up sub-agent runs")
 			return
 		}
-		resp := toActiveTurnResponse(run, subAgents)
+		plan, err := loadPlan(db, run.ID)
+		if err != nil {
+			response.ErrorResponse(w, http.StatusInternalServerError, "failed to look up the turn's plan")
+			return
+		}
+		resp := toActiveTurnResponse(run, subAgents, plan)
 		activeTurn = &resp
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		response.ErrorResponse(w, http.StatusInternalServerError, "failed to look up active turn")

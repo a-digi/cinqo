@@ -1,0 +1,107 @@
+package persistent_test
+
+import (
+	"database/sql"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"testing"
+
+	_ "github.com/mattn/go-sqlite3"
+
+	conversation_entity "github.com/a-digi/cinqo/src/conversation/entity"
+	conversation_persistent "github.com/a-digi/cinqo/src/conversation/repository/persistent"
+	conversation_query "github.com/a-digi/cinqo/src/conversation/repository/query"
+)
+
+// openConversationDB applies every real conversation migration, in
+// file-name order, to a fresh in-memory database — the same SQL the
+// running app applies.
+func openConversationDB(t *testing.T) *sql.DB {
+	t.Helper()
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.SetMaxOpenConns(1)
+	t.Cleanup(func() { db.Close() })
+
+	dir := filepath.Join("..", "..", "..", "..", "config", "db", "migrations-conversation")
+	files, err := filepath.Glob(filepath.Join(dir, "*.sql"))
+	if err != nil || len(files) == 0 {
+		t.Fatalf("no migrations found in %s (err %v)", dir, err)
+	}
+	sort.Strings(files)
+	for _, f := range files {
+		raw, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, stmt := range strings.Split(string(raw), "/***Statement***/") {
+			if strings.TrimSpace(stmt) == "" {
+				continue
+			}
+			if _, err := db.Exec(stmt); err != nil {
+				t.Fatalf("%s: %v", filepath.Base(f), err)
+			}
+		}
+	}
+	return db
+}
+
+func newConversation(id, mode string) *conversation_entity.Conversation {
+	return &conversation_entity.Conversation{
+		ID: id, UserID: "u1", Title: "t", FilePath: "/tmp/" + id, PlatformID: "p", Model: "m",
+		OrchestrationMode: mode,
+	}
+}
+
+func TestOrchestrationModeRoundTrip(t *testing.T) {
+	db := openConversationDB(t)
+	repo := conversation_persistent.NewConversationPersistentRepo(db)
+	q := conversation_query.NewConversationQueryRepo(db)
+
+	for id, c := range map[string]struct{ in, want string }{
+		"c-direct":   {conversation_entity.OrchestrationModeDirect, conversation_entity.OrchestrationModeDirect},
+		"c-composer": {conversation_entity.OrchestrationModeComposer, conversation_entity.OrchestrationModeComposer},
+		"c-empty":    {"", conversation_entity.OrchestrationModeDirect}, // unset means today's behavior
+	} {
+		if err := repo.Insert(newConversation(id, c.in)); err != nil {
+			t.Fatalf("%s: insert: %v", id, err)
+		}
+		got, err := q.FindOwnedByID(id, "u1")
+		if err != nil || got.OrchestrationMode != c.want {
+			t.Errorf("%s: mode=%q err=%v, want %q", id, got.OrchestrationMode, err, c.want)
+		}
+		byID, err := q.FindByID(id)
+		if err != nil || byID.OrchestrationMode != c.want {
+			t.Errorf("%s: FindByID mode=%q err=%v, want %q", id, byID.OrchestrationMode, err, c.want)
+		}
+	}
+
+	list, err := q.ListOwnedBy("u1")
+	if err != nil || len(list) != 3 {
+		t.Fatalf("list: %d rows, err %v", len(list), err)
+	}
+}
+
+func TestOrchestrationModeRejectsUnknownValueAtTheDatabase(t *testing.T) {
+	db := openConversationDB(t)
+	repo := conversation_persistent.NewConversationPersistentRepo(db)
+	if err := repo.Insert(newConversation("bad", "swarm")); err == nil {
+		t.Fatal("the CHECK constraint must reject an unknown mode")
+	}
+}
+
+func TestExistingRowsDefaultToDirect(t *testing.T) {
+	db := openConversationDB(t)
+	// A row written without the column, as every pre-existing row was.
+	if _, err := db.Exec(`INSERT INTO conversations (id, user_id, title, file_path, platform_id, model, hidden) VALUES ('old', 'u1', 't', '/tmp/old', 'p', 'm', 0)`); err != nil {
+		t.Fatal(err)
+	}
+	got, err := conversation_query.NewConversationQueryRepo(db).FindByID("old")
+	if err != nil || got.OrchestrationMode != conversation_entity.OrchestrationModeDirect {
+		t.Fatalf("mode=%q err=%v, want direct", got.OrchestrationMode, err)
+	}
+}

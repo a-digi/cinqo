@@ -1,8 +1,16 @@
 import { useState } from 'react'
-import { fetchSubAgentsForTurn, type ConversationMessage, type SubAgentRun } from '../../api/conversations'
+import {
+  fetchPlanForTurn,
+  fetchSubAgentsForTurn,
+  type ConversationMessage,
+  type OrchestrationMode,
+  type PlanStep,
+  type SubAgentRun,
+} from '../../api/conversations'
 import { ApiError } from '../../api/client'
 import { Markdown } from '../../Shared/Components/Markdown/Markdown'
 import { ThinkingIndicator } from './ThinkingIndicator'
+import { PlanPanel } from './PlanPanel'
 import { SubAgentRow } from './SubAgentRow'
 import { formatDuration } from './formatDuration'
 import { formatTokenCount } from './formatTokenCount'
@@ -26,6 +34,8 @@ export function MessageThread({
   turnCompletionTokens,
   turnTotalTokens,
   turnSubAgents,
+  turnPlan,
+  orchestrationMode,
   onResend,
 }: {
   // Needed only to fetch a past message's own historical sub-agent
@@ -51,6 +61,12 @@ export function MessageThread({
   // Sub Agents) — [] when none have been, same live-reconciled-on-
   // every-poll data source as the token fields above.
   turnSubAgents: SubAgentRun[]
+  // The current turn's composer plan (composer step 7) — [] for a
+  // direct-mode turn, or a composer turn that has not planned (yet).
+  turnPlan: PlanStep[]
+  // Only used to decide whether a past message's click-through also
+  // needs to fetch its plan — a direct conversation never has one.
+  orchestrationMode: OrchestrationMode
   onResend: (content: string) => void
 }) {
   if (messages.length === 0 && !pendingUserContent) {
@@ -60,7 +76,14 @@ export function MessageThread({
   return (
     <div className="flex-1 space-y-4 overflow-y-auto p-4">
       {messages.map((m) => (
-        <Bubble key={m.createdAt + m.role} conversationId={conversationId} message={m} onResend={onResend} resendDisabled={sending} />
+        <Bubble
+          key={m.createdAt + m.role}
+          conversationId={conversationId}
+          orchestrationMode={orchestrationMode}
+          message={m}
+          onResend={onResend}
+          resendDisabled={sending}
+        />
       ))}
       {/* Gated on `sending`, not just pendingUserContent's own
           truthiness: once the real reply is ready (sending goes false —
@@ -73,6 +96,7 @@ export function MessageThread({
       {sending && pendingUserContent && (
         <Bubble
           conversationId={conversationId}
+          orchestrationMode={orchestrationMode}
           message={{ role: 'user', content: pendingUserContent, createdAt: '' }}
           onResend={onResend}
           resendDisabled={sending}
@@ -95,17 +119,25 @@ export function MessageThread({
           is what keeps that visible live instead of only being
           reachable via a past message's own one-click historical
           lookup (Bubble's own toggleSubAgents, below). */}
-      {turnSubAgents.length > 0 && (
+      {turnPlan.length > 0 ? (
         <div className="flex justify-start">
           <div className="max-w-[min(32rem,100%)] space-y-1 rounded-md border border-gray-200 bg-white p-2 text-xs text-gray-400">
-            <p className="font-medium text-gray-500">
-              {turnSubAgents.some((a) => a.status === 'running') ? 'Sub-agents still working…' : 'Sub-agents'}
-            </p>
-            {turnSubAgents.map((agent) => (
-              <SubAgentRow key={agent.id} agent={agent} />
-            ))}
+            <PlanPanel plan={turnPlan} subAgents={turnSubAgents} />
           </div>
         </div>
+      ) : (
+        turnSubAgents.length > 0 && (
+          <div className="flex justify-start">
+            <div className="max-w-[min(32rem,100%)] space-y-1 rounded-md border border-gray-200 bg-white p-2 text-xs text-gray-400">
+              <p className="font-medium text-gray-500">
+                {turnSubAgents.some((a) => a.status === 'running') ? 'Sub-agents still working…' : 'Sub-agents'}
+              </p>
+              {turnSubAgents.map((agent) => (
+                <SubAgentRow key={agent.id} agent={agent} />
+              ))}
+            </div>
+          </div>
+        )
       )}
     </div>
   )
@@ -113,11 +145,13 @@ export function MessageThread({
 
 function Bubble({
   conversationId,
+  orchestrationMode,
   message,
   onResend,
   resendDisabled,
 }: {
   conversationId: string
+  orchestrationMode: OrchestrationMode
   message: ConversationMessage
   onResend: (content: string) => void
   resendDisabled: boolean
@@ -129,6 +163,7 @@ function Bubble({
   // failed, [] = fetched, none found (shouldn't happen if
   // subAgentCount > 0, but handled rather than assumed).
   const [subAgents, setSubAgents] = useState<SubAgentRun[] | null | undefined>(undefined)
+  const [plan, setPlan] = useState<PlanStep[]>([])
   const [subAgentsError, setSubAgentsError] = useState('')
   const [showSubAgents, setShowSubAgents] = useState(false)
   const isUser = message.role === 'user'
@@ -137,8 +172,18 @@ function Bubble({
     const next = !showSubAgents
     setShowSubAgents(next)
     if (next && subAgents === undefined && message.turnRunId) {
-      fetchSubAgentsForTurn(conversationId, message.turnRunId)
-        .then(setSubAgents)
+      // A composer conversation's turn may have a plan; fetch it
+      // alongside the workers so they can be shown as the plan's steps.
+      // A plan lookup failure just falls back to the flat worker list.
+      const planRequest =
+        orchestrationMode === 'composer'
+          ? fetchPlanForTurn(conversationId, message.turnRunId).catch((): PlanStep[] => [])
+          : Promise.resolve<PlanStep[]>([])
+      Promise.all([fetchSubAgentsForTurn(conversationId, message.turnRunId), planRequest])
+        .then(([agents, steps]) => {
+          setPlan(steps)
+          setSubAgents(agents)
+        })
         .catch((err: unknown) => {
           setSubAgentsError(err instanceof ApiError ? err.message : 'Failed to load sub-agents.')
         })
@@ -221,9 +266,13 @@ function Bubble({
           {subAgentsError && <p className="text-xs text-red-600">{subAgentsError}</p>}
           {subAgents === undefined && !subAgentsError && <p className="text-xs text-gray-400">Loading…</p>}
           {subAgents?.length === 0 && <p className="text-xs text-gray-400">No sub-agents found.</p>}
-          {subAgents?.map((agent) => (
-            <SubAgentRow key={agent.id} agent={agent} />
-          ))}
+          {subAgents && plan.length > 0 ? (
+            <div className="text-xs text-gray-400">
+              <PlanPanel plan={plan} subAgents={subAgents} />
+            </div>
+          ) : (
+            subAgents?.map((agent) => <SubAgentRow key={agent.id} agent={agent} />)
+          )}
         </div>
       )}
     </div>

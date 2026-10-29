@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { ConversationDetail } from '../../api/conversations'
+import type { ConversationDetail, OrchestrationMode } from '../../api/conversations'
 import { fetchPlatforms, type Platform } from '../../api/platforms'
 import { fetchTools, type Tool } from '../../api/tools'
 import { ApiError } from '../../api/client'
@@ -60,6 +60,7 @@ export function ConversationPage() {
   const turnCompletionTokens = watch?.completionTokens ?? 0
   const turnTotalTokens = watch?.totalTokens ?? 0
   const turnSubAgents = watch?.subAgents ?? []
+  const turnPlan = watch?.plan ?? []
   const [platforms, setPlatforms] = useState<Platform[] | null>(null)
   const [platformsError, setPlatformsError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -94,7 +95,7 @@ export function ConversationPage() {
     setCreatingNew(true)
   }
 
-  const handleCreate = async (input: { platformId: string; model?: string }) => {
+  const handleCreate = async (input: { platformId: string; model?: string; orchestrationMode: OrchestrationMode }) => {
     try {
       await createConversation(input)
       setCreatingNew(false)
@@ -206,6 +207,8 @@ export function ConversationPage() {
               turnCompletionTokens={turnCompletionTokens}
               turnTotalTokens={turnTotalTokens}
               turnSubAgents={turnSubAgents}
+              turnPlan={turnPlan}
+              orchestrationMode={detail.orchestrationMode}
               onResend={(content) => void sendMessage(selectedId, content)}
             />
             <MessageComposer
@@ -223,7 +226,7 @@ export function ConversationPage() {
 
 function platformLabel(platforms: Platform[], detail: ConversationDetail): string {
   const name = platforms.find((p) => p.id === detail.platformId)?.name ?? detail.platformId
-  return `${name} · ${detail.model}`
+  return `${name} · ${detail.model}${detail.orchestrationMode === 'composer' ? ' · composer' : ''}`
 }
 
 // A panel outline with its left "sidebar" strip filled when the

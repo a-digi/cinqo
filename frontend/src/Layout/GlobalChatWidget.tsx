@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { useConversationContext } from '../config/conversation/ConversationContext'
 import { fetchPlatforms, type Platform } from '../api/platforms'
 import { ApiError } from '../api/client'
-import type { Conversation } from '../api/conversations'
+import type { Conversation, OrchestrationMode } from '../api/conversations'
 import { setToolConversationOpener } from '../config/tools/toolConversationOpener'
 import { useConfirm } from '../Shared/Components/Modal/useConfirm'
 import { IconButton } from '../Shared/Components/IconButton/IconButton'
@@ -55,6 +55,7 @@ export function GlobalChatWidget() {
   const turnCompletionTokens = watch?.completionTokens ?? 0
   const turnTotalTokens = watch?.totalTokens ?? 0
   const turnSubAgents = watch?.subAgents ?? []
+  const turnPlan = watch?.plan ?? []
   const { confirm, dialog } = useConfirm()
   const [busyId, setBusyId] = useState<string | null>(null)
 
@@ -121,7 +122,7 @@ export function GlobalChatWidget() {
     selectConversation(id)
   }
 
-  async function handleCreate(input: { platformId: string; model?: string }) {
+  async function handleCreate(input: { platformId: string; model?: string; orchestrationMode: OrchestrationMode }) {
     try {
       await createConversation(input)
       setCreatingNew(false)
@@ -266,10 +267,12 @@ export function GlobalChatWidget() {
                 turnCompletionTokens={turnCompletionTokens}
                 turnTotalTokens={turnTotalTokens}
                 turnSubAgents={turnSubAgents}
+                turnPlan={turnPlan}
+                orchestrationMode={detail.orchestrationMode}
                 onResend={(content) => void sendMessage(detail.id, content)}
               />
               <MessageComposer
-                platformLabel={`${detail.platformId} · ${detail.model}`}
+                platformLabel={`${detail.platformId} · ${detail.model}${detail.orchestrationMode === 'composer' ? ' · composer' : ''}`}
                 onSend={(content) => void sendMessage(detail.id, content)}
                 onStop={() => void stopTurn(detail.id)}
                 disabled={sending}

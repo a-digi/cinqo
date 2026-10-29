@@ -193,7 +193,16 @@ func runDetachedTurn(
 	userTimestamp := time.Now().UTC().Format(time.RFC3339)
 	messages = append(messages, chatcompleter.Message{Role: "user", Content: content})
 
-	tools, err := offerableTools(mainDB, callerScopes, true)
+	tools, err := offerableToolsForMode(mainDB, callerScopes, conv.OrchestrationMode)
+	if err != nil {
+		finishTurnRun(runs, turnRunID, "failed")
+		return
+	}
+	// A composer orchestrator gets the system prompt that makes it
+	// plan and delegate, including the catalog of tools its workers
+	// can use; a direct conversation gets none, exactly as before
+	// (composer step 4).
+	messages, err = withComposerPrompt(mainDB, callerScopes, conv.OrchestrationMode, messages)
 	if err != nil {
 		finishTurnRun(runs, turnRunID, "failed")
 		return
@@ -249,7 +258,7 @@ func runDetachedTurn(
 	// subAgentSuffix) so the historical view still shows it; a lookup
 	// failure here is non-fatal — worth a durable count, not worth
 	// failing an otherwise-successful turn over.
-	assistantContent, err := runToolLoop(ctx, httpClient, entry, plainKey, model, messages, tools, mainDB, callerScopes, conv.UserID, dataDir, corePort, conversationID, conversationDB, turnRunID, 0, logStep, reportUsage, logExchange)
+	assistantContent, err := runToolLoop(ctx, httpClient, entry, plainKey, model, messages, tools, mainDB, callerScopes, conv.UserID, dataDir, corePort, conversationID, conversationDB, turnRunID, 0, conv.OrchestrationMode, logStep, reportUsage, logExchange)
 	subAgentCount := 0
 	if spawned, countErr := conversation_query.NewSubAgentRunQueryRepo(conversationDB).FindByParentTurnRunID(turnRunID); countErr == nil {
 		subAgentCount = len(spawned)

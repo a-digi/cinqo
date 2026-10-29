@@ -17,12 +17,20 @@ import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from './client'
 // "career"), absent for one a person created directly via "+ New
 // conversation". Set once at creation, by whatever caller made the
 // POST; this app's own UI never sets it itself.
+//
+// orchestrationMode (plan/ai/conversation/step-42-orchestrator-composer-
+// mode.md) — 'direct': the orchestrator model works with tools itself;
+// 'composer': it only plans and sub-agents do the work. Fixed at
+// creation, like platformId/model; always present on the wire.
+export type OrchestrationMode = 'direct' | 'composer'
+
 export interface Conversation {
   id: string
   title: string
   startedAt: string
   platformId: string
   model: string
+  orchestrationMode: OrchestrationMode
   activeTurn?: ActiveTurnSummary
   toolSlug?: string
 }
@@ -119,6 +127,21 @@ export interface SubAgentRun {
   totalTokens: number
 }
 
+// PlanStep (composer step 6) is one step of a composer turn's run_plan
+// call: planNo 1 is the first plan, 2 a re-plan. subAgentId links the
+// worker running it — absent while pending, or for a skipped step that
+// never started. dependsOn lists the step ids it waited for.
+export type PlanStepStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped'
+
+export interface PlanStep {
+  planNo: number
+  id: string
+  task: string
+  dependsOn: string[]
+  status: PlanStepStatus
+  subAgentId?: string
+}
+
 export interface ActiveTurn extends ActiveTurnSummary {
   userContent: string
   log: string[]
@@ -134,6 +157,10 @@ export interface ActiveTurn extends ActiveTurnSummary {
   // far, oldest first. Absent (never an empty array) when none have
   // been spawned.
   subAgents?: SubAgentRun[]
+  // plan (composer step 6) — this turn's run_plan steps in plan order.
+  // Absent (never an empty array) for a turn with no plan, which is
+  // every direct-mode turn.
+  plan?: PlanStep[]
 }
 
 export interface ConversationDetail extends Conversation {
@@ -161,7 +188,12 @@ export async function fetchConversations(): Promise<Conversation[]> {
   return raw.message
 }
 
-export async function createConversation(input: { title?: string; platformId: string; model?: string }): Promise<Conversation> {
+export async function createConversation(input: {
+  title?: string
+  platformId: string
+  model?: string
+  orchestrationMode?: OrchestrationMode
+}): Promise<Conversation> {
   const raw = await apiPost<{ message: Conversation }>('/api/v1/conversations', input)
   return raw.message
 }
@@ -209,6 +241,16 @@ export async function fetchActiveTurn(conversationId: string): Promise<ActiveTur
 export async function fetchSubAgentsForTurn(conversationId: string, turnRunId: string): Promise<SubAgentRun[]> {
   const raw = await apiGet<{ message: SubAgentRun[] }>(
     `/api/v1/conversations/${encodeURIComponent(conversationId)}/turns/${encodeURIComponent(turnRunId)}/subagents`,
+  )
+  return raw.message
+}
+
+// fetchPlanForTurn (composer step 6) looks up a SPECIFIC past turn's
+// plan, however long ago it finished — the plan counterpart of
+// fetchSubAgentsForTurn above. [] for a turn that had no plan.
+export async function fetchPlanForTurn(conversationId: string, turnRunId: string): Promise<PlanStep[]> {
+  const raw = await apiGet<{ message: PlanStep[] }>(
+    `/api/v1/conversations/${encodeURIComponent(conversationId)}/turns/${encodeURIComponent(turnRunId)}/plan`,
   )
   return raw.message
 }

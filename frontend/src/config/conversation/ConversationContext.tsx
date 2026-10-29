@@ -11,6 +11,8 @@ import {
   deleteConversation as deleteConversationApi,
   type Conversation,
   type ConversationDetail,
+  type OrchestrationMode,
+  type PlanStep,
   type SubAgentRun,
 } from '../../api/conversations'
 import { ApiError } from '../../api/client'
@@ -62,6 +64,9 @@ export interface TurnWatch {
   // as promptTokens/completionTokens/totalTokens above, straight from
   // the same fetchActiveTurn response.
   subAgents: SubAgentRun[]
+  // plan (composer step 6) — reconciled on every poll like subAgents,
+  // from the same fetchActiveTurn response; [] for a direct-mode turn.
+  plan: PlanStep[]
   // mainReplyReady (step 41 follow-up — sub-agents outlive the reply)
   // — false while the orchestrator's own reply is still in flight,
   // true from the moment it's been fetched into `detail`. Sending/
@@ -95,7 +100,12 @@ export interface ConversationContextValue {
   // plan/ai/conversation/step-29-frontend-per-conversation-turn-watch-registry.md.
   turnWatches: Record<string, TurnWatch>
   selectConversation: (id: string) => void
-  createConversation: (input: { title?: string; platformId: string; model?: string }) => Promise<Conversation>
+  createConversation: (input: {
+    title?: string
+    platformId: string
+    model?: string
+    orchestrationMode?: OrchestrationMode
+  }) => Promise<Conversation>
   // Explicit conversationId (not implicitly "the selected one") — the
   // literal shape multi-conversation infrastructure requires: a caller
   // can now start a turn in a conversation that isn't currently
@@ -193,6 +203,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         completionTokens: 0,
         totalTokens: 0,
         subAgents: [],
+        plan: [],
         mainReplyReady: false,
       },
     }))
@@ -261,6 +272,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
                 completionTokens: turn.completionTokens,
                 totalTokens: turn.totalTokens,
                 subAgents: turn.subAgents ?? [],
+                plan: turn.plan ?? [],
               },
             }
           : prev,
@@ -420,26 +432,30 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     [watchTurn, turnWatchExists],
   )
 
-  const createConversation = useCallback(async (input: { title?: string; platformId: string; model?: string }) => {
-    const created = await createConversationApi(input)
-    setConversations((prev) => (prev ? [created, ...prev] : [created]))
-    setSelectedId(created.id)
-    // A freshly created conversation can never already have a turn
-    // running — created.activeTurn is always undefined here (the
-    // create endpoint's own response never sets it), so this is never
-    // actually dropping live data, just satisfying ConversationDetail's
-    // own fuller ActiveTurn type (step-26/27) instead of the lean
-    // ActiveTurnSummary Conversation itself now carries.
-    setDetail({
-      id: created.id,
-      title: created.title,
-      startedAt: created.startedAt,
-      platformId: created.platformId,
-      model: created.model,
-      messages: [],
-    })
-    return created
-  }, [])
+  const createConversation = useCallback(
+    async (input: { title?: string; platformId: string; model?: string; orchestrationMode?: OrchestrationMode }) => {
+      const created = await createConversationApi(input)
+      setConversations((prev) => (prev ? [created, ...prev] : [created]))
+      setSelectedId(created.id)
+      // A freshly created conversation can never already have a turn
+      // running — created.activeTurn is always undefined here (the
+      // create endpoint's own response never sets it), so this is never
+      // actually dropping live data, just satisfying ConversationDetail's
+      // own fuller ActiveTurn type (step-26/27) instead of the lean
+      // ActiveTurnSummary Conversation itself now carries.
+      setDetail({
+        id: created.id,
+        title: created.title,
+        startedAt: created.startedAt,
+        platformId: created.platformId,
+        model: created.model,
+        orchestrationMode: created.orchestrationMode,
+        messages: [],
+      })
+      return created
+    },
+    [],
+  )
 
   // POST .../messages now only starts a detached turn run and returns
   // immediately (plan/ai/conversation/step-23) — the actual "wait for
@@ -470,6 +486,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
             completionTokens: 0,
             totalTokens: 0,
             subAgents: [],
+            plan: [],
             mainReplyReady: false,
           },
         }))

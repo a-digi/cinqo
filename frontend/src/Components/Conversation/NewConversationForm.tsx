@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
+import type { OrchestrationMode } from '../../api/conversations'
 import type { Platform } from '../../api/platforms'
 import { Dropdown } from '../../Shared/Components/Dropdown/Dropdown'
 
@@ -14,11 +15,16 @@ export function NewConversationForm({
   onCancel,
 }: {
   platforms: Platform[]
-  onCreate: (input: { platformId: string; model?: string }) => void
+  onCreate: (input: { platformId: string; model?: string; orchestrationMode: OrchestrationMode }) => void
   onCancel: () => void
 }) {
   const [platformId, setPlatformId] = useState(platforms[0]?.id ?? '')
   const [model, setModel] = useState(platforms[0]?.models[0] ?? '')
+  // Composer mode (composer step 7): the AI plans and sub-agents do the
+  // work, instead of the AI using tools itself. On by default; fixed
+  // for the conversation's lifetime like the platform and model.
+  const [composer, setComposer] = useState(true)
+  const composerId = useId()
 
   const selectedPlatform = platforms.find((p) => p.id === platformId)
   const needsModel = (selectedPlatform?.models.length ?? 0) > 0
@@ -31,7 +37,7 @@ export function NewConversationForm({
 
   const handleSubmit = (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault()
-    onCreate({ platformId, model: needsModel ? model : undefined })
+    onCreate({ platformId, model: needsModel ? model : undefined, orchestrationMode: composer ? 'composer' : 'direct' })
   }
 
   return (
@@ -50,7 +56,26 @@ export function NewConversationForm({
             <Dropdown options={(selectedPlatform?.models ?? []).map((m) => ({ value: m, label: m }))} value={model} onChange={setModel} />
           </div>
         )}
-        <p className="text-xs text-gray-400">The platform and model can&apos;t be changed after the conversation is created.</p>
+        <div className="flex items-start gap-2 text-xs text-gray-600">
+          <input
+            id={composerId}
+            type="checkbox"
+            checked={composer}
+            onChange={(e) => {
+              setComposer(e.target.checked)
+            }}
+            className="mt-0.5"
+          />
+          <label htmlFor={composerId}>
+            <span className="font-medium text-gray-700">Delegate work to sub-agents</span>
+            <span className="block text-gray-400">
+              The AI plans and sub-agents do the work with the installed tools. Turn off to let the AI use the tools itself.
+            </span>
+          </label>
+        </div>
+        <p className="text-xs text-gray-400">
+          The platform, model and this setting can&apos;t be changed after the conversation is created.
+        </p>
         <div className="flex justify-end gap-2">
           <button
             type="button"

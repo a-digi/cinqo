@@ -66,6 +66,11 @@ type activeTurnResponse struct {
 	// (never an empty array) when this turn has spawned none, so older
 	// clients that don't render it see no change in the response shape.
 	SubAgents []subAgentRunResponse `json:"subAgents,omitempty"`
+	// Plan (composer step 6) — the run_plan steps of this turn, in plan
+	// order, with each step's dependencies, status and linked worker.
+	// Omitted (never an empty array) for a turn with no plan, which is
+	// every direct-mode turn.
+	Plan []planStepResponse `json:"plan,omitempty"`
 }
 
 // subAgentRunResponse mirrors activeTurnResponse's own shape for one
@@ -115,7 +120,7 @@ func toActiveTurnSummaryResponse(t *conversation_entity.TurnRun) activeTurnSumma
 	}
 }
 
-func toActiveTurnResponse(t *conversation_entity.TurnRun, subAgents []*conversation_entity.SubAgentRun) activeTurnResponse {
+func toActiveTurnResponse(t *conversation_entity.TurnRun, subAgents []*conversation_entity.SubAgentRun, plan []planStepResponse) activeTurnResponse {
 	lines := strings.Split(strings.TrimRight(t.Log, "\n"), "\n")
 	if len(lines) == 1 && lines[0] == "" {
 		lines = []string{}
@@ -135,6 +140,7 @@ func toActiveTurnResponse(t *conversation_entity.TurnRun, subAgents []*conversat
 		CompletionTokens:          t.CompletionTokens,
 		TotalTokens:               t.TotalTokens,
 		SubAgents:                 subAgentResponses,
+		Plan:                      plan,
 	}
 }
 
@@ -196,7 +202,13 @@ func GetActiveTurnHandler(reqCtx request.RequestContext) {
 		return
 	}
 
-	response.SuccessResponse(w, http.StatusOK, toActiveTurnResponse(run, subAgents))
+	plan, err := loadPlan(db, run.ID)
+	if err != nil {
+		response.ErrorResponse(w, http.StatusInternalServerError, "failed to look up the turn's plan")
+		return
+	}
+
+	response.SuccessResponse(w, http.StatusOK, toActiveTurnResponse(run, subAgents, plan))
 }
 
 // GetTurnSubAgentsHandler handles GET
@@ -255,6 +267,60 @@ func GetTurnSubAgentsHandler(reqCtx request.RequestContext) {
 		out = append(out, toSubAgentRunResponse(s))
 	}
 	response.SuccessResponse(w, http.StatusOK, out)
+}
+
+// GetTurnPlanHandler handles GET
+// /api/v1/conversations/{id}/turns/{turnRunId}/plan — the composer plan
+// of ANY past turn of this conversation (composer step 6), the same way
+// GetTurnSubAgentsHandler serves historical sub-agents. Same ownership
+// checks: the conversation must be the caller's, and turnRunId's own
+// conversation_id is verified against {id}. A turn with no plan returns
+// an empty array.
+func GetTurnPlanHandler(reqCtx request.RequestContext) {
+	w := reqCtx.GetWriter()
+	id := reqCtx.GetURI().GetPathVariable("id")
+	turnRunID := reqCtx.GetURI().GetPathVariable("turnRunId")
+	if id == "" || turnRunID == "" {
+		response.ErrorResponse(w, http.StatusBadRequest, "id and turnRunId are required")
+		return
+	}
+
+	userID, err := callerUserID(reqCtx)
+	if err != nil {
+		response.ErrorResponse(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	db, err := conversationDB(reqCtx)
+	if err != nil {
+		response.ErrorResponse(w, http.StatusInternalServerError, "conversation database not configured")
+		return
+	}
+
+	if _, err := conversation_query.NewConversationQueryRepo(db).FindOwnedByID(id, userID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			response.ErrorResponse(w, http.StatusNotFound, "conversation not found")
+			return
+		}
+		response.ErrorResponse(w, http.StatusInternalServerError, "failed to look up conversation")
+		return
+	}
+
+	run, err := conversation_query.NewTurnRunQueryRepo(db).FindByID(turnRunID)
+	if err != nil || run.ConversationID != id {
+		response.ErrorResponse(w, http.StatusNotFound, "turn not found")
+		return
+	}
+
+	plan, err := loadPlan(db, turnRunID)
+	if err != nil {
+		response.ErrorResponse(w, http.StatusInternalServerError, "failed to look up the turn's plan")
+		return
+	}
+	if plan == nil {
+		plan = []planStepResponse{}
+	}
+	response.SuccessResponse(w, http.StatusOK, plan)
 }
 
 type stopTurnResponse struct {

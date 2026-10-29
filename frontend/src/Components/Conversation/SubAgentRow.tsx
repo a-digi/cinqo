@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { SubAgentRun } from '../../api/conversations'
+import type { PlanStep, SubAgentRun } from '../../api/conversations'
 import { formatTokenCount } from './formatTokenCount'
 
 // Shared by ThinkingIndicator (the live, currently-running turn's own
@@ -31,14 +31,23 @@ function lastLogStep(log: string[]): string | undefined {
   return tab === -1 ? line : line.slice(tab + 1)
 }
 
-export function SubAgentRow({ agent }: { agent: SubAgentRun }) {
+// step (composer step 7), when given, is the plan step this worker is
+// running: its id and dependencies are shown, and a step the plan
+// marked failed (e.g. its result was never accepted) shows as failed
+// even though the worker itself completed.
+export function SubAgentRow({ agent, step }: { agent: SubAgentRun; step?: PlanStep }) {
   const [showResult, setShowResult] = useState(false)
+  const dotStatus = step?.status === 'failed' ? 'failed' : agent.status
 
   return (
     <div className="flex items-start gap-1.5 text-xs text-gray-400">
-      <span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${SUB_AGENT_DOT_CLASSES[agent.status]}`} />
+      <span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${SUB_AGENT_DOT_CLASSES[dotStatus]}`} />
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-gray-500">{agent.task}</span>
+        <span className="block truncate text-gray-500">
+          {step && <span className="mr-1 font-medium text-gray-600">{step.id}</span>}
+          {agent.task}
+        </span>
+        {step && step.dependsOn.length > 0 && <span className="block">after {step.dependsOn.join(', ')}</span>}
         {agent.status === 'running' && agent.totalTokens > 0 && (
           <span className="tabular-nums">
             ↑{formatTokenCount(agent.promptTokens)} ↓{formatTokenCount(agent.completionTokens)}

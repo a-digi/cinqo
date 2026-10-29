@@ -231,6 +231,9 @@ type conversationResponse struct {
 	// to any tool, so the frontend's own "falsy means no tool" check
 	// needs no separate empty-string special case.
 	ToolSlug string `json:"toolSlug,omitempty"`
+	// OrchestrationMode (composer step 1) — "direct" or "composer";
+	// fixed at creation. Always present.
+	OrchestrationMode string `json:"orchestrationMode"`
 }
 
 func toConversationResponse(c *conversation_entity.Conversation) conversationResponse {
@@ -241,5 +244,7 @@ func toConversationResponse(c *conversation_entity.Conversation) conversationRes
 		PlatformID: c.PlatformID,
 		Model:      c.Model,
 		ToolSlug:   c.ToolSlug,
+
+		OrchestrationMode: c.OrchestrationMode,
 	}
 }

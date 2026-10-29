@@ -324,7 +324,7 @@ func invokeSubAgentCall(
 		return fmt.Sprintf("Cannot start a new sub-agent: this turn has already reached its limit of %d sub-agents.", maxSubAgentsPerTurn)
 	}
 
-	_, message := spawnSubAgent(httpClient, entry, apiKey, model, mainDB, conversationDB, callerScopes, userID, dataDir, corePort, conversationID, parentTurnRunID, args.Task, args.AllowedTools, newAcceptanceSpec(args.AcceptanceCriteria, args.MaxAttempts), "", depth)
+	_, message := spawnSubAgent(httpClient, entry, apiKey, model, mainDB, conversationDB, callerScopes, userID, dataDir, corePort, conversationID, parentTurnRunID, args.Task, args.AllowedTools, newAcceptanceSpec(args.AcceptanceCriteria, args.MaxAttempts), "", "", depth)
 	return message
 }
 
@@ -351,6 +351,12 @@ func spawnSubAgent(
 	task string,
 	allowedTools []string,
 	acceptance *acceptanceSpec,
+	// systemPrompt (composer step 4), when non-empty, is sent as this
+	// sub-agent's own first, system-role message on every attempt —
+	// only composer plan workers set it (composer_prompt.go); every
+	// other spawn passes "" and runs with no system prompt, exactly as
+	// before.
+	systemPrompt string,
 	originTool string,
 	depth int,
 ) (id string, message string) {
@@ -408,7 +414,7 @@ func spawnSubAgent(
 			subAgentCancelMu.Unlock()
 			cancel() // release this context's own resources even on the success path
 		}()
-		runSubAgentLoop(subCtx, httpClient, entry, apiKey, model, mainDB, conversationDB, callerScopes, userID, dataDir, corePort, conversationID, run.ID, task, allowedTools, acceptance, depth+1, parentTurnRunID)
+		runSubAgentLoop(subCtx, httpClient, entry, apiKey, model, mainDB, conversationDB, callerScopes, userID, dataDir, corePort, conversationID, run.ID, task, allowedTools, acceptance, systemPrompt, depth+1, parentTurnRunID)
 	}()
 
 	return run.ID, fmt.Sprintf(
@@ -461,6 +467,7 @@ func runSubAgentLoop(
 	conversationID, runID, task string,
 	allowedTools []string,
 	acceptance *acceptanceSpec,
+	systemPrompt string,
 	depth int,
 	// parentTurnRunID is passed straight through from
 	// invokeSubAgentCall's own — every sub-agent at every depth is
@@ -493,7 +500,7 @@ func runSubAgentLoop(
 	}
 	tools = filterToolsByName(tools, allowedTools)
 
-	messages := []chatcompleter.Message{{Role: "user", Content: task}}
+	messages := withSystemPrompt(systemPrompt, []chatcompleter.Message{{Role: "user", Content: task}})
 
 	maxAttempts := 1
 	if acceptance != nil {
@@ -509,7 +516,7 @@ func runSubAgentLoop(
 	var result string
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		var err error
-		result, err = runToolLoop(ctx, httpClient, entry, apiKey, model, messages, tools, mainDB, callerScopes, userID, dataDir, corePort, conversationID, conversationDB, parentTurnRunID, depth, logStep, reportUsage, nil)
+		result, err = runToolLoop(ctx, httpClient, entry, apiKey, model, messages, tools, mainDB, callerScopes, userID, dataDir, corePort, conversationID, conversationDB, parentTurnRunID, depth, conversation_entity.OrchestrationModeDirect, logStep, reportUsage, nil)
 		if err != nil {
 			status := "failed"
 			if errors.Is(ctx.Err(), context.Canceled) {
@@ -547,7 +554,7 @@ func runSubAgentLoop(
 		_ = runs.SetAcceptance(runID, false, v.Feedback)
 		if attempt < maxAttempts {
 			_ = runs.SetAttempts(runID, attempt+1)
-			messages = buildRetryMessages(task, result, v.Feedback)
+			messages = withSystemPrompt(systemPrompt, buildRetryMessages(task, result, v.Feedback))
 		}
 	}
 
