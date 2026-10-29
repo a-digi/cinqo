@@ -248,8 +248,31 @@ export interface PortalLink {
   // the global interval keeps relying on that setting's own
   // lastRunAt instead (Crawler/autoDiscovery.ts).
   autoDiscoveryLastRunAt?: number
+  // instructionStats (step 86) — this link's "Generate with AI"
+  // attempt counts per instruction kind; read-only, always present
+  // (all zeros for a link with no attempts).
+  instructionStats: InstructionStats
   createdAt: string
   updatedAt?: string
+}
+
+export type InstructionKind = 'listing' | 'job_detail'
+
+// attempts counts finished runs (succeeded + failed); a run still in
+// flight is only reflected in running. See
+// plan/ai/tools/career/step-86-instruction-attempt-tracking.md.
+export interface InstructionKindStats {
+  attempts: number
+  succeeded: number
+  failed: number
+  running: boolean
+  lastFailureAt?: string
+  lastError?: string
+}
+
+export interface InstructionStats {
+  listing: InstructionKindStats
+  jobDetail: InstructionKindStats
 }
 
 export interface Portal {
@@ -750,6 +773,36 @@ export async function updatePortalLink(
   if (!res.ok) {
     const text = await res.text()
     throw new Error(text || `failed to update portal link (${res.status})`)
+  }
+}
+
+// startInstructionAttempt/finishInstructionAttempt (step 86) record one
+// "Generate with AI" run against a link's instruction counters. Both
+// are idempotent server-side (a repeated start returns the running
+// attempt; a finish with nothing running is a no-op), and the OUTCOME
+// is decided by the server — finish only passes the failure reason to
+// show if the run did not end up saving instructions.
+export async function startInstructionAttempt(portalLinkId: string, kind: InstructionKind, triggeredBy: 'manual' | 'auto'): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/portal-links/instruction-attempts/start`, {
+    method: 'POST',
+    credentials: 'include',
+    body: JSON.stringify({ portalLinkId, kind, triggeredBy }),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(text || `failed to start instruction attempt (${res.status})`)
+  }
+}
+
+export async function finishInstructionAttempt(portalLinkId: string, kind: InstructionKind, error?: string): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/portal-links/instruction-attempts/finish`, {
+    method: 'POST',
+    credentials: 'include',
+    body: JSON.stringify({ portalLinkId, kind, error }),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(text || `failed to finish instruction attempt (${res.status})`)
   }
 }
 

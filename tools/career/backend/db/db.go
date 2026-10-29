@@ -406,6 +406,37 @@ CREATE INDEX IF NOT EXISTS crawl_runs_portal_link_idx ON crawl_runs(portal_link_
 CREATE UNIQUE INDEX IF NOT EXISTS crawl_runs_one_running_idx
     ON crawl_runs(portal_link_id) WHERE status = 'running';
 
+-- instruction_attempts (step 86) counts every "Generate with AI" run
+-- (kind 'listing' = crawl_instructions, 'job_detail' =
+-- job_detail_crawl_instructions) per portal link, so the UI can show
+-- how many succeeded or failed and alert when attempts were made but
+-- the link still has no instructions. saved_at is set ONLY by the
+-- save MCP tools (never by a frontend call), so 'succeeded' cannot be
+-- claimed by a client; an attempt that ends without saved_at is
+-- 'failed' (the AI errored or gave up). The partial unique index
+-- allows at most one running attempt per link and kind, same idiom as
+-- crawl_runs_one_running_idx above. A new table, so this base schema
+-- text alone covers both fresh and existing installs. See
+-- plan/ai/tools/career/step-86-instruction-attempt-tracking.md.
+CREATE TABLE IF NOT EXISTS instruction_attempts (
+    id              TEXT PRIMARY KEY,
+    portal_link_id  TEXT NOT NULL REFERENCES portal_links(id) ON DELETE CASCADE,
+    kind            TEXT NOT NULL CHECK (kind IN ('listing','job_detail')),
+    triggered_by    TEXT NOT NULL DEFAULT 'manual' CHECK (triggered_by IN ('manual','auto')),
+    status          TEXT NOT NULL DEFAULT 'running' CHECK (status IN ('running','succeeded','failed')),
+    conversation_id TEXT,
+    started_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    finished_at     TEXT,
+    saved_at        TEXT,
+    error_message   TEXT
+);
+
+CREATE INDEX IF NOT EXISTS instruction_attempts_link_kind_idx
+    ON instruction_attempts(portal_link_id, kind);
+
+CREATE UNIQUE INDEX IF NOT EXISTS instruction_attempts_one_running_idx
+    ON instruction_attempts(portal_link_id, kind) WHERE status = 'running';
+
 -- job_matches (step XX) tracks the most recent "Job Match" attempt for
 -- one job — one row per job (job_id itself is the primary key, no
 -- separate id/history), re-matching overwrites. profile_id/persona_id

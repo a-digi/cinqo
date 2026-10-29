@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { updatePortalLink, type PortalLink } from '../../api'
+import { updatePortalLink, startInstructionAttempt, finishInstructionAttempt, type InstructionKind, type PortalLink } from '../../api'
 import { Dropdown } from '../../Components/Dropdown/Dropdown'
 import { Switch } from '../../Shared/Switch/Switch'
 import { AUTO_DISCOVERY_INTERVAL_OPTIONS } from '../autoDiscovery'
@@ -15,6 +15,8 @@ import {
 } from '../generateInstructions'
 import { startCrawlNow, startCrawlJobDetailsNow, stopCrawlNow, fetchActiveCrawlRun, type CrawlRun } from '../crawlNow'
 import { phaseLabel, latestCrawlLogMessage } from '../crawlPhase'
+import { attemptsLabel, instructionAlertAttempts } from '../instructionStats'
+import { InstructionAttemptStats } from './InstructionAttemptStats'
 import {
   PlayIcon,
   StopIcon,
@@ -512,6 +514,27 @@ export function CrawlPanel({
       })
   }
 
+  // recordAttemptFinish (step 86) tells the backend a Generate-with-AI
+  // run for this kind just ended; the backend decides whether it
+  // succeeded (an AI save tool saved instructions during the run) —
+  // errorText is only the reason to show if it did not. Never rejects:
+  // counting must never break the run's own finish handling, and the
+  // returned promise lets callers wait for it before reloading so the
+  // fresh counts are what the reload shows.
+  function recordAttemptFinish(kind: InstructionKind, errorText?: string): Promise<void> {
+    return finishInstructionAttempt(link.id, kind, errorText).catch((recordErr: unknown) => {
+      console.error('failed to record instruction attempt finish for portal link', link.id, recordErr)
+    })
+  }
+
+  // recordAttemptStart (step 86) — same never-rejects contract: a
+  // failure to count an attempt must not stop the attempt itself.
+  function recordAttemptStart(kind: InstructionKind, triggeredBy: 'manual' | 'auto'): Promise<void> {
+    return startInstructionAttempt(link.id, kind, triggeredBy).catch((recordErr: unknown) => {
+      console.error('failed to record instruction attempt start for portal link', link.id, recordErr)
+    })
+  }
+
   // finishGenerateInstructions is the shared "a generate-instructions
   // run just ended" handling (step 60) — used by both a fresh run
   // (handleGenerateInstructionsWithAI below) and a resumed one
@@ -524,10 +547,12 @@ export function CrawlPanel({
     setAiConversationId(null)
 
     if (!err) {
+      const attemptRecorded = recordAttemptFinish('listing')
       void updatePortalLink(link.id, { instructionsAiError: '', instructionsAiConversationId: '' })
         .catch((recordErr: unknown) => {
           console.error('failed to clear instructions-AI conversation on portal link', link.id, recordErr)
         })
+        .then(() => attemptRecorded)
         .then(onReload)
       return
     }
@@ -542,6 +567,7 @@ export function CrawlPanel({
     // succeeds — a network failure recording the error must never
     // leave the failure completely invisible.
     setAiLocalError(text)
+    const attemptRecorded = recordAttemptFinish('listing', text)
     void updatePortalLink(link.id, { instructionsAiError: text, instructionsAiConversationId: '' })
       .catch((recordErr: unknown) => {
         // Recording the failure durably itself also failed — the
@@ -550,6 +576,7 @@ export function CrawlPanel({
         // durable recording already has (e.g. across a reload).
         console.error('failed to record instructions-AI error on portal link', link.id, recordErr)
       })
+      .then(() => attemptRecorded)
       .then(onReload)
   }
 
@@ -612,7 +639,11 @@ export function CrawlPanel({
     setAiPending(true)
     setAiLocalError(undefined)
 
-    createConversation({ title: generateInstructionsConversationTitle(link), platformId, model, hidden: true })
+    // Counted before the conversation exists, so a failure to even
+    // create it still shows up as a failed attempt (step 86). Only the
+    // user's own click starts a listing run.
+    recordAttemptStart('listing', 'manual')
+      .then(() => createConversation({ title: generateInstructionsConversationTitle(link), platformId, model, hidden: true }))
       .then((conversation) => {
         setAiConversationId(conversation.id)
         window.__cinqoToolBridge.openConversation(conversation.id)
@@ -658,6 +689,7 @@ export function CrawlPanel({
       // page retries the automatic generation again (see
       // jobDetailAiRequestedRef's own effect above), with no manual
       // fallback button needed.
+      const attemptRecorded = recordAttemptFinish('job_detail')
       void updatePortalLink(link.id, {
         jobDetailInstructionsAiError: '',
         jobDetailInstructionsAiConversationId: '',
@@ -666,6 +698,7 @@ export function CrawlPanel({
         .catch((recordErr: unknown) => {
           console.error('failed to clear job detail instructions-AI conversation on portal link', link.id, recordErr)
         })
+        .then(() => attemptRecorded)
         .then(onReload)
       return
     }
@@ -677,10 +710,12 @@ export function CrawlPanel({
           ? err.message
           : 'Failed to generate job detail crawl instructions.'
     setJobDetailAiLocalError(text)
+    const attemptRecorded = recordAttemptFinish('job_detail', text)
     void updatePortalLink(link.id, { jobDetailInstructionsAiError: text, jobDetailInstructionsAiConversationId: '' })
       .catch((recordErr: unknown) => {
         console.error('failed to record job detail instructions-AI error on portal link', link.id, recordErr)
       })
+      .then(() => attemptRecorded)
       .then(onReload)
   }
 
@@ -727,7 +762,11 @@ export function CrawlPanel({
     setJobDetailAiPending(true)
     setJobDetailAiLocalError(undefined)
 
-    createConversation({ title: generateJobDetailInstructionsConversationTitle(link), platformId, model, hidden: true })
+    // Only the automatic trigger (jobDetailAiRequestedRef's effect)
+    // starts a job-detail run — there is no manual button — so this is
+    // always counted as 'auto' (step 86).
+    recordAttemptStart('job_detail', 'auto')
+      .then(() => createConversation({ title: generateJobDetailInstructionsConversationTitle(link), platformId, model, hidden: true }))
       .then((conversation) => {
         setJobDetailAiConversationId(conversation.id)
         window.__cinqoToolBridge.openConversation(conversation.id)
@@ -756,6 +795,16 @@ export function CrawlPanel({
       window.__cinqoToolBridge.openConversation(jobDetailAiConversationId)
     }
   }
+
+  // Alert pills (step 86): attempts were made but this document still
+  // doesn't exist. Computed from the server-side counters plus this
+  // tab's own in-flight state.
+  const listingAlertAttempts = instructionAlertAttempts(link.instructionStats.listing, Boolean(link.crawlInstructions), aiPending)
+  const jobDetailAlertAttempts = instructionAlertAttempts(
+    link.instructionStats.jobDetail,
+    Boolean(link.jobDetailCrawlInstructions),
+    jobDetailAiPending,
+  )
 
   function handleViewConversation() {
     window.__cinqoToolBridge.navigate('/conversations')
@@ -843,7 +892,9 @@ export function CrawlPanel({
               { value: AUTO_DISCOVERY_GLOBAL_VALUE, label: 'Use global interval' },
               ...AUTO_DISCOVERY_INTERVAL_OPTIONS.map((o) => ({ value: String(o.value), label: o.label })),
             ]}
-            value={link.autoDiscoveryIntervalMinutes !== undefined ? String(link.autoDiscoveryIntervalMinutes) : AUTO_DISCOVERY_GLOBAL_VALUE}
+            value={
+              link.autoDiscoveryIntervalMinutes !== undefined ? String(link.autoDiscoveryIntervalMinutes) : AUTO_DISCOVERY_GLOBAL_VALUE
+            }
             onChange={handleChangeAutoDiscoveryInterval}
           />
         )}
@@ -890,6 +941,16 @@ export function CrawlPanel({
             >
               {link.crawlInstructions ? 'Instructed' : 'Not instructed'}
             </span>
+            {listingAlertAttempts > 0 && (
+              <span role="status" className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">
+                Job list: no instructions after {attemptsLabel(listingAlertAttempts)}
+              </span>
+            )}
+            {jobDetailAlertAttempts > 0 && (
+              <span role="status" className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">
+                Job details: no instructions after {attemptsLabel(jobDetailAlertAttempts)}
+              </span>
+            )}
           </span>
           <span className={`shrink-0 text-gray-400 transition-transform duration-200 ${crawlInstructionsOpen ? 'rotate-180' : ''}`}>
             <ChevronDownIcon />
@@ -959,6 +1020,7 @@ export function CrawlPanel({
                     <CrawlInstructionsIcon />
                     Job list
                   </button>
+                  <InstructionAttemptStats stats={link.instructionStats.listing} alertAttempts={listingAlertAttempts} />
                 </div>
                 <div className="flex flex-col items-center justify-center rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-center transition-colors hover:border-gray-300 hover:bg-gray-100/60">
                   <button
@@ -974,6 +1036,7 @@ export function CrawlPanel({
                     <JobDetailInstructionsIcon />
                     Job details
                   </button>
+                  <InstructionAttemptStats stats={link.instructionStats.jobDetail} alertAttempts={jobDetailAlertAttempts} />
                   {/* Passive status only — no manual trigger anymore. This
                   only ever becomes true via jobDetailAiRequestedRef's own
                   automatic effect (step 67), never a direct click. */}

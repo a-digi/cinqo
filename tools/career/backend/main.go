@@ -77,6 +77,15 @@ func runHTTPServer() {
 	if err := jobs.ReconcileOrphanedCvGenerations(); err != nil {
 		log.Fatalf("failed to reconcile orphaned CV generations: %v", err)
 	}
+	// step 86 — an instruction attempt's own run lives in the core app,
+	// so a restart here does not orphan it; only ones stuck 'running'
+	// past the stale threshold (tab closed, app crashed) are ended.
+	// Never fatal: this is a counter, not core state.
+	if n, err := portal.ReconcileStaleInstructionAttempts(); err != nil {
+		log.Printf("failed to reconcile stale instruction attempts: %v", err)
+	} else if n > 0 {
+		log.Printf("ended %d stale instruction attempt(s)", n)
+	}
 	// step 47.4 — reconcileOrphanedCrawlRuns above only ever runs once,
 	// at boot, so it can't help a goroutine that's genuinely hung
 	// without this process itself restarting. This periodic sweep is
@@ -107,6 +116,8 @@ func runHTTPServer() {
 	http.HandleFunc("/portal-links", portalLinksHandler)
 	http.HandleFunc("/portal-links/crawl-request", crawlRequestHandler)
 	http.HandleFunc("/portal-links/ingest-crawl-results", ingestCrawlResultsHandler)
+	http.HandleFunc("/portal-links/instruction-attempts/start", instructionAttemptStartHandler)
+	http.HandleFunc("/portal-links/instruction-attempts/finish", instructionAttemptFinishHandler)
 	http.HandleFunc("/portal-links/crawl-now", crawl.CrawlNowHandler)
 	http.HandleFunc("/portal-links/crawl-job-details-now", crawl.CrawlJobDetailsNowHandler)
 	http.HandleFunc("/portal-links/crawl-runs/active", crawl.CrawlMonitorHandler)

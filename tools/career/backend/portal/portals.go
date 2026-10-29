@@ -187,8 +187,15 @@ type portalLink struct {
 	// link using the global interval keeps relying on the shared
 	// auto_discovery_settings.last_run_at instead, unchanged.
 	AutoDiscoveryLastRunAt *int64 `json:"autoDiscoveryLastRunAt,omitempty"`
-	CreatedAt              string `json:"createdAt"`
-	UpdatedAt              string `json:"updatedAt,omitempty"`
+	// InstructionStats (step 86) counts this link's finished "Generate
+	// with AI" attempts per instruction kind (succeeded / failed, plus
+	// whether one is running now and the latest failure) — read-only,
+	// derived from instruction_attempts, never itself written. Always
+	// present: a link with no attempts is all zeros. See
+	// plan/ai/tools/career/step-86-instruction-attempt-tracking.md.
+	InstructionStats InstructionStats `json:"instructionStats"`
+	CreatedAt        string           `json:"createdAt"`
+	UpdatedAt        string           `json:"updatedAt,omitempty"`
 }
 
 type portal struct {
@@ -306,6 +313,10 @@ func ListPortals() ([]portal, error) {
 	if err != nil {
 		return nil, err
 	}
+	instructionStats, err := InstructionStatsByLink()
+	if err != nil {
+		return nil, err
+	}
 
 	linkRows, err := db.JobsDB.Query(
 		`SELECT id, portal_id, url, title, crawl_instructions, job_detail_crawl_instructions, instructions_ai_error, instructions_ai_error_at, instructions_ai_conversation_id, job_detail_instructions_ai_error, job_detail_instructions_ai_error_at, job_detail_instructions_ai_conversation_id, listing_crawl_requested, job_detail_instructions_ai_requested, instructions_ai_error_dismissed_at, job_detail_instructions_ai_error_dismissed_at, job_detail_crawl_requested, auto_discovery_enabled, auto_discovery_interval_minutes, auto_discovery_last_run_at, created_at, updated_at
@@ -344,6 +355,7 @@ func ListPortals() ([]portal, error) {
 		l.UpdatedAt = updatedAt.String
 		l.LastCrawledAt = lastCrawled[l.ID]
 		l.HasActiveCrawlRun = activeCrawlRuns[l.ID]
+		l.InstructionStats = instructionStats[l.ID]
 		byPortal[l.PortalID] = append(byPortal[l.PortalID], l)
 	}
 	if err := linkRows.Err(); err != nil {
@@ -1413,6 +1425,8 @@ func WritePortalLinkAwareError(w http.ResponseWriter, action string, err error) 
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrInvalidAutoDiscoveryInterval):
 		http.Error(w, err.Error(), http.StatusBadRequest)
+	case errors.Is(err, ErrInvalidInstructionKind), errors.Is(err, ErrInvalidInstructionTrigger):
+		http.Error(w, err.Error(), http.StatusBadRequest)
 	default:
 		http.Error(w, "failed to "+action+": "+err.Error(), http.StatusInternalServerError)
 	}
@@ -1681,6 +1695,11 @@ func RegisterSetPortalLinkCrawlInstructions(server *mcp.Server) {
 			// carry a specific, actionable message of their own.
 			return db.ErrResult(err.Error()), nil, nil
 		}
+		// Step 86 — recorded here, in the AI-facing tool, not in
+		// UpdatePortalLinkCrawlInstructions: that function is shared
+		// with the human PUT /portal-links edit, which is not an AI
+		// attempt.
+		markInstructionsSavedByAI(args.PortalLinkID, InstructionKindListing)
 		// Publisher 1 of the event-driven crawl-instructions pipeline
 		// (plan/ai/tools/career/step-66-career-event-publishers.md) —
 		// fires every time the AI (re)writes the listing instructions,
@@ -1762,6 +1781,7 @@ func RegisterSetPortalLinkJobDetailCrawlInstructions(server *mcp.Server) {
 			}
 			return db.ErrResult(err.Error()), nil, nil
 		}
+		markInstructionsSavedByAI(args.PortalLinkID, InstructionKindJobDetail)
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "updated"}}}, nil, nil
 	})
 }
