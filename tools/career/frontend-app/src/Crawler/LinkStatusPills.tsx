@@ -1,4 +1,5 @@
 import type { PortalLink } from '../api'
+import { diagnoseEmptyCrawl, emptyCrawlFor } from './emptyCrawl'
 import { attemptsLabel, instructionAlertAttempts, isLikelyUncrawlable, uncrawlableTooltip } from './instructionStats'
 
 interface LinkStatusPillsProps {
@@ -36,6 +37,8 @@ export function LinkStatusPills({
   const hasListing = Boolean(link.crawlInstructions)
   const listingUncrawlable = isLikelyUncrawlable(link.instructionStats.listing, hasListing, listingGenerating)
   const listingAlertAttempts = instructionAlertAttempts(link.instructionStats.listing, hasListing, listingGenerating)
+  // Step 90: the latest listing crawl completed but found no jobs.
+  const emptyCrawl = emptyCrawlFor(link)
   const jobDetailAlertAttempts = instructionAlertAttempts(
     link.instructionStats.jobDetail,
     Boolean(link.jobDetailCrawlInstructions),
@@ -62,6 +65,15 @@ export function LinkStatusPills({
       {jobDetailAlertAttempts > 0 && (
         <span role="status" className={RED_PILL}>
           Job details: no instructions after {attemptsLabel(jobDetailAlertAttempts)}
+        </span>
+      )}
+      {emptyCrawl && (
+        <span
+          role="status"
+          title={diagnoseEmptyCrawl(emptyCrawl).text}
+          className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-800"
+        >
+          Crawled 0 jobs
         </span>
       )}
       {showCrawling && link.hasActiveCrawlRun && (

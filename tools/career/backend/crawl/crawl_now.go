@@ -641,7 +641,8 @@ func runCrawlNow(ctx context.Context, runID, portalLinkID, accessToken string) {
 	}
 
 	_ = appendCrawlRunLog(runID, "done: "+summary)
-	_ = finishCrawlRun(runID, "completed", &summary, nil)
+	// Summary text plus the structured outcome (step 90), one write.
+	_ = finishListingCrawlRun(runID, summary, buildListingOutcome(ingested, result))
 	// Publisher 2 of the event-driven crawl-instructions pipeline
 	// (plan/ai/tools/career/step-66-career-event-publishers.md) —
 	// deliberately not published on the cloudflare_blocked/failed path

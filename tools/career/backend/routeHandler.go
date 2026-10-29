@@ -1070,6 +1070,11 @@ type portalLinkUpdateRequest struct {
 	// takes precedence — see the handler switch below.
 	AutoDiscoveryIntervalMinutes *int `json:"autoDiscoveryIntervalMinutes,omitempty"`
 	ClearAutoDiscoveryInterval   bool `json:"clearAutoDiscoveryInterval,omitempty"`
+	// EmptyCrawlAcknowledged (step 90) — true marks this link's current
+	// run of zero-job crawls as expected ("this page has no jobs"),
+	// false clears it; nil leaves it alone. See
+	// plan/ai/tools/career/step-90-zero-jobs-crawl-flag.md.
+	EmptyCrawlAcknowledged *bool `json:"emptyCrawlAcknowledged,omitempty"`
 }
 
 func portalLinksHandler(w http.ResponseWriter, r *http.Request) {
@@ -1112,8 +1117,8 @@ func portalLinksHandler(w http.ResponseWriter, r *http.Request) {
 			body.ListingCrawlRequested == nil && body.JobDetailInstructionsAIRequested == nil &&
 			body.InstructionsAIErrorDismissedAt == nil && body.JobDetailInstructionsAIErrorDismissedAt == nil &&
 			body.JobDetailCrawlRequested == nil && body.AutoDiscoveryEnabled == nil &&
-			body.AutoDiscoveryIntervalMinutes == nil && !body.ClearAutoDiscoveryInterval {
-			http.Error(w, "url, title, crawlInstructions, jobDetailCrawlInstructions, instructionsAiError, instructionsAiConversationId, jobDetailInstructionsAiError, jobDetailInstructionsAiConversationId, listingCrawlRequested, jobDetailInstructionsAiRequested, instructionsAiErrorDismissedAt, jobDetailInstructionsAiErrorDismissedAt, jobDetailCrawlRequested, autoDiscoveryEnabled, autoDiscoveryIntervalMinutes, or clearAutoDiscoveryInterval is required", http.StatusBadRequest)
+			body.AutoDiscoveryIntervalMinutes == nil && !body.ClearAutoDiscoveryInterval && body.EmptyCrawlAcknowledged == nil {
+			http.Error(w, "url, title, crawlInstructions, jobDetailCrawlInstructions, instructionsAiError, instructionsAiConversationId, jobDetailInstructionsAiError, jobDetailInstructionsAiConversationId, listingCrawlRequested, jobDetailInstructionsAiRequested, instructionsAiErrorDismissedAt, jobDetailInstructionsAiErrorDismissedAt, jobDetailCrawlRequested, autoDiscoveryEnabled, autoDiscoveryIntervalMinutes, clearAutoDiscoveryInterval, or emptyCrawlAcknowledged is required", http.StatusBadRequest)
 			return
 		}
 		if body.URL != nil && *body.URL == "" {
@@ -1215,6 +1220,12 @@ func portalLinksHandler(w http.ResponseWriter, r *http.Request) {
 		} else if body.ClearAutoDiscoveryInterval {
 			if err := portal.UpdatePortalLinkAutoDiscoveryInterval(body.ID, nil); err != nil {
 				portal.WritePortalLinkAwareError(w, "update portal link auto-discovery interval", err)
+				return
+			}
+		}
+		if body.EmptyCrawlAcknowledged != nil {
+			if err := portal.SetEmptyCrawlAcknowledged(body.ID, *body.EmptyCrawlAcknowledged); err != nil {
+				portal.WritePortalLinkAwareError(w, "update portal link empty-crawl acknowledgement", err)
 				return
 			}
 		}

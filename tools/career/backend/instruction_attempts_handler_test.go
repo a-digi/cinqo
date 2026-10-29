@@ -158,3 +158,61 @@ func TestManifestDeclaresInstructionAttemptRoutes(t *testing.T) {
 		}
 	}
 }
+
+func putPortalLink(body string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPut, "/", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	portalLinksHandler(rec, req)
+	return rec
+}
+
+func TestPutPortalLinkEmptyCrawlAcknowledgement(t *testing.T) {
+	setupHandlerDB(t)
+	if _, err := db.JobsDB.Exec(`INSERT INTO crawl_runs (id, portal_link_id, kind, status, finished_at, triggered_by, jobs_saved, jobs_updated, jobs_skipped, pages_visited, stopped_reason, not_found_fields)
+		VALUES ('r1', 'l1', 'listing', 'completed', '2026-01-01T00:00:00Z', 'manual', 0, 0, 0, 1, 'no_next_link', '[]')`); err != nil {
+		t.Fatal(err)
+	}
+
+	ack := func() string {
+		portals, err := portal.ListPortals()
+		if err != nil || len(portals) == 0 || len(portals[0].Links) == 0 || portals[0].Links[0].LastListingCrawl == nil {
+			t.Fatalf("no summary: %v", err)
+		}
+		return portals[0].Links[0].LastListingCrawl.AcknowledgedAt
+	}
+
+	if rec := putPortalLink(`{"id":"l1","emptyCrawlAcknowledged":true}`); rec.Code != http.StatusOK {
+		t.Fatalf("acknowledge: %d %s", rec.Code, rec.Body.String())
+	}
+	if ack() == "" {
+		t.Fatal("acknowledging must set the timestamp")
+	}
+	// The response is the refreshed list, carrying the summary.
+	var resp struct {
+		Portals []struct {
+			Links []struct {
+				LastListingCrawl *struct {
+					AcknowledgedAt string `json:"acknowledgedAt"`
+				} `json:"lastListingCrawl"`
+			} `json:"links"`
+		} `json:"portals"`
+	}
+	rec := putPortalLink(`{"id":"l1","emptyCrawlAcknowledged":true}`)
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil || resp.Portals[0].Links[0].LastListingCrawl == nil || resp.Portals[0].Links[0].LastListingCrawl.AcknowledgedAt == "" {
+		t.Fatalf("response must carry the summary: %s (%v)", rec.Body.String(), err)
+	}
+
+	if rec := putPortalLink(`{"id":"l1","emptyCrawlAcknowledged":false}`); rec.Code != http.StatusOK {
+		t.Fatalf("clear: %d %s", rec.Code, rec.Body.String())
+	}
+	if ack() != "" {
+		t.Fatal("false must clear the acknowledgement")
+	}
+
+	if rec := putPortalLink(`{"id":"zzz","emptyCrawlAcknowledged":true}`); rec.Code != http.StatusBadRequest {
+		t.Errorf("unknown link: %d", rec.Code)
+	}
+	if rec := putPortalLink(`{"id":"l1"}`); rec.Code != http.StatusBadRequest {
+		t.Errorf("a PUT with nothing to update must still be rejected: %d", rec.Code)
+	}
+}

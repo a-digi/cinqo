@@ -199,3 +199,87 @@ func TestInitDatabasesUpgradesAStepEightySixInstall(t *testing.T) {
 		t.Fatalf("upgraded row: %q, %v", reason, err)
 	}
 }
+
+func TestCrawlRunsListingOutcomeColumnsOnFreshAndUpgradedInstalls(t *testing.T) {
+	columns := []string{"jobs_saved", "jobs_updated", "jobs_skipped", "pages_visited", "stopped_reason", "not_found_fields"}
+
+	// Fresh install: from the base schema.
+	t.Setenv("TOOL_DB_DIR", t.TempDir())
+	if err := InitDatabases(); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range columns {
+		if _, has, err := tableHasColumn(JobsDB, "crawl_runs", c); err != nil || !has {
+			t.Errorf("fresh install lacks crawl_runs.%s (%v)", c, err)
+		}
+	}
+	JobsDB.Close()
+	CareerDB.Close()
+
+	// Upgrade: an existing crawl_runs table without them, with a row.
+	dir := t.TempDir()
+	legacy, err := sql.Open("sqlite", filepath.Join(dir, "jobs.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := legacy.Exec(`CREATE TABLE crawl_runs (id TEXT PRIMARY KEY, portal_link_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'running',
+		started_at TEXT NOT NULL DEFAULT (datetime('now')), finished_at TEXT, log TEXT NOT NULL DEFAULT '', result_summary TEXT,
+		error_message TEXT, phase TEXT, kind TEXT NOT NULL DEFAULT 'listing', triggered_by TEXT NOT NULL DEFAULT 'manual');
+		INSERT INTO crawl_runs (id, portal_link_id, status, result_summary) VALUES ('old', 'l1', 'completed', 'Saved 0 new, updated 0, skipped 0')`); err != nil {
+		t.Fatal(err)
+	}
+	legacy.Close()
+
+	t.Setenv("TOOL_DB_DIR", dir)
+	if err := InitDatabases(); err != nil {
+		t.Fatalf("upgrade start: %v", err)
+	}
+	defer JobsDB.Close()
+	defer CareerDB.Close()
+	for _, c := range columns {
+		if _, has, err := tableHasColumn(JobsDB, "crawl_runs", c); err != nil || !has {
+			t.Errorf("upgraded install lacks crawl_runs.%s (%v)", c, err)
+		}
+	}
+	// No guessing: the pre-existing run has no structured data.
+	var saved *int
+	if err := JobsDB.QueryRow(`SELECT jobs_saved FROM crawl_runs WHERE id = 'old'`).Scan(&saved); err != nil || saved != nil {
+		t.Errorf("an old run must stay NULL, got %v (%v)", saved, err)
+	}
+}
+
+func TestPortalLinksEmptyCrawlAcknowledgedAtOnFreshAndUpgradedInstalls(t *testing.T) {
+	// Fresh install: from the base schema.
+	t.Setenv("TOOL_DB_DIR", t.TempDir())
+	if err := InitDatabases(); err != nil {
+		t.Fatal(err)
+	}
+	if _, has, err := tableHasColumn(JobsDB, "portal_links", "empty_crawl_acknowledged_at"); err != nil || !has {
+		t.Errorf("fresh install lacks portal_links.empty_crawl_acknowledged_at (%v)", err)
+	}
+	JobsDB.Close()
+	CareerDB.Close()
+
+	// Upgrade: a portal_links table without it (the migration only adds it).
+	dir := t.TempDir()
+	legacy, err := sql.Open("sqlite", filepath.Join(dir, "jobs.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := legacy.Exec(`CREATE TABLE portals (id TEXT PRIMARY KEY, name TEXT NOT NULL);
+		CREATE TABLE portal_links (id TEXT PRIMARY KEY, portal_id TEXT NOT NULL, url TEXT NOT NULL, UNIQUE(portal_id, url));
+		INSERT INTO portals VALUES ('p1', 'P'); INSERT INTO portal_links VALUES ('l1', 'p1', 'https://x')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := migratePortalLinksEmptyCrawlAcknowledgedAt(legacy); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	if err := migratePortalLinksEmptyCrawlAcknowledgedAt(legacy); err != nil {
+		t.Fatalf("migrate must be idempotent: %v", err)
+	}
+	var ack *string
+	if err := legacy.QueryRow(`SELECT empty_crawl_acknowledged_at FROM portal_links WHERE id = 'l1'`).Scan(&ack); err != nil || ack != nil {
+		t.Errorf("existing links must start unacknowledged: %v %v", ack, err)
+	}
+	legacy.Close()
+}

@@ -252,8 +252,30 @@ export interface PortalLink {
   // attempt counts per instruction kind; read-only, always present
   // (all zeros for a link with no attempts).
   instructionStats: InstructionStats
+  // lastListingCrawl (step 90) — the latest completed listing crawl and
+  // what is known about a zero-job result; absent when there is no
+  // structured data (never crawled, or only runs from before step 90).
+  lastListingCrawl?: LastListingCrawl
   createdAt: string
   updatedAt?: string
+}
+
+export interface LastListingCrawl {
+  finishedAt: string
+  triggeredBy: 'manual' | 'auto_discovery'
+  jobsSaved: number
+  jobsUpdated: number
+  jobsSkipped: number
+  pagesVisited: number
+  stoppedReason: string
+  // Field labels that matched nothing on every visited page. Empty in
+  // grouped mode (a container is set), where the browser doesn't report
+  // them — empty there does NOT mean everything matched.
+  notFoundFields: string[]
+  zeroStreak: number
+  lastJobsAt?: string
+  jobsFromThisLink: number
+  acknowledgedAt?: string
 }
 
 export type InstructionKind = 'listing' | 'job_detail'
@@ -767,6 +789,10 @@ export async function updatePortalLink(
     // precedence) — callers should only ever send one or the other.
     autoDiscoveryIntervalMinutes?: number
     clearAutoDiscoveryInterval?: boolean
+    // emptyCrawlAcknowledged (step 90) — true marks this link's current
+    // run of zero-job crawls as expected ("this page has no jobs"),
+    // false clears it.
+    emptyCrawlAcknowledged?: boolean
   },
 ): Promise<void> {
   const res = await fetch(`${PROXY_BASE}/portal-links`, {

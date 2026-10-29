@@ -12,8 +12,10 @@ package crawl
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"log"
+	"sort"
 	"strings"
 	"time"
 
@@ -138,6 +140,85 @@ func finishCrawlRun(id, status string, resultSummary, errorMessage *string) erro
 	_, err := db.JobsDB.Exec(
 		`UPDATE crawl_runs SET status = ?, finished_at = ?, result_summary = ?, error_message = ? WHERE id = ? AND status = 'running'`,
 		status, finishedAt, orNull(resultSummary), orNull(errorMessage), id,
+	)
+	return err
+}
+
+// listingOutcome is the structured result of a COMPLETED listing crawl
+// (step 90), stored beside the free-text summary so the UI can tell
+// "found nothing" from "found jobs". NotFoundFields are the field labels
+// that matched nothing on every visited page.
+type listingOutcome struct {
+	JobsSaved      int
+	JobsUpdated    int
+	JobsSkipped    int
+	PagesVisited   int
+	StoppedReason  string
+	NotFoundFields []string
+}
+
+// buildListingOutcome assembles the outcome from what runCrawlNow has in
+// hand once a crawl is ingested.
+func buildListingOutcome(ingested portal.IngestCrawlResultsResult, result crawlNowPaginatedResult) listingOutcome {
+	return listingOutcome{
+		JobsSaved:      ingested.JobsSaved,
+		JobsUpdated:    ingested.JobsUpdated,
+		JobsSkipped:    ingested.JobsSkipped,
+		PagesVisited:   result.PagesVisited,
+		StoppedReason:  result.StoppedReason,
+		NotFoundFields: notFoundOnEveryPage(result.Pages),
+	}
+}
+
+// notFoundOnEveryPage returns, sorted, the field labels listed in
+// `notFound` on every one of pages — a field that matched on even one
+// page is not "matching nothing". Empty (never nil) when there are no
+// pages. In grouped mode (a container is set) the browser leaves notFound
+// empty, so this is empty there; the caller must not read that as "all
+// fields matched".
+func notFoundOnEveryPage(pages []portal.CrawlResultPage) []string {
+	out := []string{}
+	if len(pages) == 0 {
+		return out
+	}
+	counts := map[string]int{}
+	for _, p := range pages {
+		seen := map[string]bool{}
+		for _, label := range p.NotFound {
+			if !seen[label] {
+				seen[label] = true
+				counts[label]++
+			}
+		}
+	}
+	for label, n := range counts {
+		if n == len(pages) {
+			out = append(out, label)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// finishListingCrawlRun marks a listing run completed and stores its
+// summary and structured outcome in one write, with the same
+// "WHERE status = 'running'" guard finishCrawlRun has, so a run already
+// cancelled or failed is never overwritten.
+func finishListingCrawlRun(id, resultSummary string, o listingOutcome) error {
+	finishedAt := time.Now().UTC().Format(time.RFC3339)
+	notFound := o.NotFoundFields
+	if notFound == nil {
+		notFound = []string{}
+	}
+	encoded, err := json.Marshal(notFound)
+	if err != nil {
+		return err
+	}
+	_, err = db.JobsDB.Exec(
+		`UPDATE crawl_runs SET status = 'completed', finished_at = ?, result_summary = ?, error_message = NULL,
+		        jobs_saved = ?, jobs_updated = ?, jobs_skipped = ?, pages_visited = ?, stopped_reason = ?, not_found_fields = ?
+		 WHERE id = ? AND status = 'running'`,
+		finishedAt, resultSummary, o.JobsSaved, o.JobsUpdated, o.JobsSkipped, o.PagesVisited, o.StoppedReason, string(encoded), id,
 	)
 	return err
 }

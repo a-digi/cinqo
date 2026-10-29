@@ -17,6 +17,7 @@ import { startCrawlNow, startCrawlJobDetailsNow, stopCrawlNow, fetchActiveCrawlR
 import { phaseLabel, latestCrawlLogMessage } from '../crawlPhase'
 import { instructionAlertAttempts, isLikelyUncrawlable } from '../instructionStats'
 import { hasListingInstructions } from '../autoDiscoveryVisibility'
+import { diagnoseEmptyCrawl, emptyCrawlFacts, emptyCrawlFor } from '../emptyCrawl'
 import { InstructionAttemptStats } from './InstructionAttemptStats'
 import { AccordionItem } from '../../Shared/Accordion/AccordionItem'
 import {
@@ -819,6 +820,19 @@ export function CrawlPanel({
     jobDetailAiPending,
   )
 
+  // Step 90 — the latest listing crawl completed but found no jobs: what
+  // is known about why, and the user's way to say "this page has no jobs".
+  const emptyCrawl = emptyCrawlFor(link)
+  const emptyDiagnosis = emptyCrawl ? diagnoseEmptyCrawl(emptyCrawl) : undefined
+
+  function handleAcknowledgeEmptyCrawl() {
+    updatePortalLink(link.id, { emptyCrawlAcknowledged: true })
+      .then(onReload)
+      .catch((err: unknown) => {
+        onError(err instanceof Error ? err.message : String(err))
+      })
+  }
+
   function handleViewConversation() {
     window.__cinqoToolBridge.navigate('/conversations')
   }
@@ -1082,6 +1096,47 @@ export function CrawlPanel({
           </div>
         </AccordionItem>
       </div>
+      {emptyCrawl && emptyDiagnosis && (
+        <div className="mt-2">
+          <InfoBox
+            variant="warning"
+            label="Crawled 0 jobs"
+            message={emptyDiagnosis.text}
+            details={emptyCrawlFacts(emptyCrawl)}
+            actions={
+              <>
+                <a
+                  href={link.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-md border border-orange-200 bg-white px-2.5 py-1 text-xs text-orange-800 hover:bg-orange-100"
+                >
+                  Open the page
+                </a>
+                <button
+                  type="button"
+                  onClick={handleGenerateInstructionsWithAI}
+                  disabled={!hasPlatforms || aiPending}
+                  title={!hasPlatforms ? 'No AI platform configured — add one on the Platforms page first' : undefined}
+                  className="rounded-md border border-orange-200 bg-white px-2.5 py-1 text-xs text-orange-800 hover:bg-orange-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Regenerate instructions
+                </button>
+                {!emptyDiagnosis.conclusive && (
+                  <button
+                    type="button"
+                    onClick={handleAcknowledgeEmptyCrawl}
+                    title="The page really has no jobs right now. This hides the notice until a crawl finds a job."
+                    className="rounded-md border border-orange-200 bg-white px-2.5 py-1 text-xs text-orange-800 hover:bg-orange-100"
+                  >
+                    Mark as expected — this page has no jobs
+                  </button>
+                )}
+              </>
+            }
+          />
+        </div>
+      )}
       {link.crawlInstructions && (
         <div className="mt-1.5">
           <div className="flex flex-wrap gap-2">

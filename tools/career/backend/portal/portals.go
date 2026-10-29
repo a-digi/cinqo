@@ -194,8 +194,12 @@ type portalLink struct {
 	// present: a link with no attempts is all zeros. See
 	// plan/ai/tools/career/step-86-instruction-attempt-tracking.md.
 	InstructionStats InstructionStats `json:"instructionStats"`
-	CreatedAt        string           `json:"createdAt"`
-	UpdatedAt        string           `json:"updatedAt,omitempty"`
+	// LastListingCrawl (step 90) summarises the latest completed listing
+	// crawl and what is known about a zero-job result — read-only,
+	// derived from crawl_runs, absent when there is no structured data.
+	LastListingCrawl *LastListingCrawl `json:"lastListingCrawl,omitempty"`
+	CreatedAt        string            `json:"createdAt"`
+	UpdatedAt        string            `json:"updatedAt,omitempty"`
 }
 
 type portal struct {
@@ -317,6 +321,10 @@ func ListPortals() ([]portal, error) {
 	if err != nil {
 		return nil, err
 	}
+	lastListingCrawls, err := LastListingCrawlByLink()
+	if err != nil {
+		return nil, err
+	}
 
 	linkRows, err := db.JobsDB.Query(
 		`SELECT id, portal_id, url, title, crawl_instructions, job_detail_crawl_instructions, instructions_ai_error, instructions_ai_error_at, instructions_ai_conversation_id, job_detail_instructions_ai_error, job_detail_instructions_ai_error_at, job_detail_instructions_ai_conversation_id, listing_crawl_requested, job_detail_instructions_ai_requested, instructions_ai_error_dismissed_at, job_detail_instructions_ai_error_dismissed_at, job_detail_crawl_requested, auto_discovery_enabled, auto_discovery_interval_minutes, auto_discovery_last_run_at, created_at, updated_at
@@ -356,6 +364,10 @@ func ListPortals() ([]portal, error) {
 		l.LastCrawledAt = lastCrawled[l.ID]
 		l.HasActiveCrawlRun = activeCrawlRuns[l.ID]
 		l.InstructionStats = instructionStats[l.ID]
+		if c, ok := lastListingCrawls[l.ID]; ok {
+			c := c
+			l.LastListingCrawl = &c
+		}
 		byPortal[l.PortalID] = append(byPortal[l.PortalID], l)
 	}
 	if err := linkRows.Err(); err != nil {

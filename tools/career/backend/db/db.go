@@ -317,6 +317,13 @@ CREATE TABLE IF NOT EXISTS portal_links (
     auto_discovery_enabled                         INTEGER NOT NULL DEFAULT 1,
     auto_discovery_interval_minutes                INTEGER,
     auto_discovery_last_run_at                     INTEGER,
+    -- empty_crawl_acknowledged_at (step 90): when the user marked this
+    -- link's current run of zero-job crawls as "expected, this page has
+    -- no jobs" (RFC3339 UTC). Only a timestamp: whether it still applies
+    -- is decided by comparing it with the last time a crawl found a job.
+    -- Also added to existing installs by
+    -- migratePortalLinksEmptyCrawlAcknowledgedAt.
+    empty_crawl_acknowledged_at                    TEXT,
     created_at                        TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at                        TEXT,
     UNIQUE(portal_id, url)
@@ -398,7 +405,25 @@ CREATE TABLE IF NOT EXISTS crawl_runs (
     -- Monitor show which crawls were automatic, using data this
     -- feature already produces, no new logging table needed. See
     -- plan/ai/tools/career/step-84-auto-discovery-scheduled-crawling.md.
-    triggered_by   TEXT NOT NULL DEFAULT 'manual'
+    triggered_by   TEXT NOT NULL DEFAULT 'manual',
+    -- Listing-crawl outcome (step 90): filled only when a 'listing' run
+    -- COMPLETES; NULL for every other run and for runs that finished
+    -- before these columns existed, meaning "no data". jobs_saved/
+    -- jobs_updated/jobs_skipped are IngestCrawlResults' own counts
+    -- (a skipped item had no title or no URL); pages_visited and
+    -- stopped_reason come from the browser's own response;
+    -- not_found_fields is a JSON array of the field labels that matched
+    -- nothing on EVERY visited page ('[]' when none). Lets the UI tell
+    -- "found nothing" apart from "found jobs", which the free-text
+    -- result_summary cannot. Also added to existing installs by
+    -- migrateCrawlRunsListingOutcome. See
+    -- plan/ai/tools/career/step-90-zero-jobs-crawl-flag.md.
+    jobs_saved       INTEGER,
+    jobs_updated     INTEGER,
+    jobs_skipped     INTEGER,
+    pages_visited    INTEGER,
+    stopped_reason   TEXT,
+    not_found_fields TEXT
 );
 
 CREATE INDEX IF NOT EXISTS crawl_runs_portal_link_idx ON crawl_runs(portal_link_id);
@@ -964,6 +989,12 @@ func migrateJobsDB(db *sql.DB) error {
 	if err := migrateCrawlRunsTriggeredBy(db); err != nil {
 		return err
 	}
+	if err := migrateCrawlRunsListingOutcome(db); err != nil {
+		return err
+	}
+	if err := migratePortalLinksEmptyCrawlAcknowledgedAt(db); err != nil {
+		return err
+	}
 	if err := migratePortalLinksAutoDiscoveryEnabled(db); err != nil {
 		return err
 	}
@@ -1395,6 +1426,56 @@ func migrateCrawlRunsTriggeredBy(db *sql.DB) error {
 		return nil
 	}
 	_, err = db.Exec(`ALTER TABLE crawl_runs ADD COLUMN triggered_by TEXT NOT NULL DEFAULT 'manual'`)
+	return err
+}
+
+// migrateCrawlRunsListingOutcome (step 90) adds the structured listing-
+// crawl outcome columns to an install that already has crawl_runs (a
+// fresh install gets them from the base schema). All nullable, no
+// backfill: runs that finished before this have no structured data, and
+// nothing is guessed from their free-text summary. See
+// plan/ai/tools/career/step-90-zero-jobs-crawl-flag.md.
+func migrateCrawlRunsListingOutcome(db *sql.DB) error {
+	exists, hasColumn, err := tableHasColumn(db, "crawl_runs", "jobs_saved")
+	if err != nil {
+		return err
+	}
+	if !exists || hasColumn {
+		return nil
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, stmt := range []string{
+		`ALTER TABLE crawl_runs ADD COLUMN jobs_saved INTEGER`,
+		`ALTER TABLE crawl_runs ADD COLUMN jobs_updated INTEGER`,
+		`ALTER TABLE crawl_runs ADD COLUMN jobs_skipped INTEGER`,
+		`ALTER TABLE crawl_runs ADD COLUMN pages_visited INTEGER`,
+		`ALTER TABLE crawl_runs ADD COLUMN stopped_reason TEXT`,
+		`ALTER TABLE crawl_runs ADD COLUMN not_found_fields TEXT`,
+	} {
+		if _, err := tx.Exec(stmt); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// migratePortalLinksEmptyCrawlAcknowledgedAt (step 90) adds the
+// "marked as expected" timestamp to an install that already has
+// portal_links (a fresh one gets it from the base schema). Nullable, no
+// backfill: nothing has been acknowledged yet.
+func migratePortalLinksEmptyCrawlAcknowledgedAt(db *sql.DB) error {
+	exists, hasColumn, err := tableHasColumn(db, "portal_links", "empty_crawl_acknowledged_at")
+	if err != nil {
+		return err
+	}
+	if !exists || hasColumn {
+		return nil
+	}
+	_, err = db.Exec(`ALTER TABLE portal_links ADD COLUMN empty_crawl_acknowledged_at TEXT`)
 	return err
 }
 
