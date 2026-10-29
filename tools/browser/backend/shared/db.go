@@ -153,6 +153,13 @@ func InitDB() error {
 		debug_enabled       INTEGER NOT NULL DEFAULT 0,
 		debug_log_html      INTEGER NOT NULL DEFAULT 0,
 		debug_log_challenge INTEGER NOT NULL DEFAULT 0,
+		-- fetch_engine (step 50): which engine serves the primary single-page
+		-- fetch — 'rod' (the default; pure Go over CDP) or 'playwright'
+		-- (needs its Node-based driver). Read on every fetch by the
+		-- crawler. A fresh install gets it here; an existing table gets it
+		-- from migrateBrowserSettingsFetchEngineColumn. See
+		-- plan/ai/tools/browser/step-50-fetch-engine-setting-page.md.
+		fetch_engine        TEXT NOT NULL DEFAULT 'rod' CHECK (fetch_engine IN ('rod','playwright')),
 		updated_at          TEXT
 	)`); err != nil {
 		db.Close()
@@ -161,6 +168,10 @@ func InitDB() error {
 	if err := migrateBrowserSettingsChallengeColumn(db); err != nil {
 		db.Close()
 		return fmt.Errorf("failed to migrate browser_settings schema: %w", err)
+	}
+	if err := migrateBrowserSettingsFetchEngineColumn(db); err != nil {
+		db.Close()
+		return fmt.Errorf("failed to migrate browser_settings fetch_engine column: %w", err)
 	}
 	if _, err := db.Exec(`INSERT OR IGNORE INTO browser_settings (id, debug_enabled, debug_log_html, debug_log_challenge) VALUES (1, 0, 0, 0)`); err != nil {
 		db.Close()
@@ -238,6 +249,43 @@ func migrateCrawlLogsFileStorage(db *sql.DB) error {
 		not_found_count INTEGER NOT NULL DEFAULT 0,
 		log_file_path   TEXT NOT NULL
 	)`)
+	return err
+}
+
+// migrateBrowserSettingsFetchEngineColumn (step 50) adds fetch_engine to
+// an existing browser_settings table that predates it (a fresh install
+// gets it from the CREATE TABLE above). The existing singleton row
+// takes the column default, 'rod', which is the default engine; the
+// Debug values already stored are untouched. A no-op if the column is
+// already present.
+func migrateBrowserSettingsFetchEngineColumn(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA table_info(browser_settings)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	hasColumn := false
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notNull, pk int
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &ctype, &notNull, &dflt, &pk); err != nil {
+			return err
+		}
+		if name == "fetch_engine" {
+			hasColumn = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if hasColumn {
+		return nil
+	}
+
+	_, err = db.Exec(`ALTER TABLE browser_settings ADD COLUMN fetch_engine TEXT NOT NULL DEFAULT 'rod' CHECK (fetch_engine IN ('rod','playwright'))`)
 	return err
 }
 

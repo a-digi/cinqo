@@ -11,12 +11,14 @@ import { ListPage } from './ListPage'
 import { AddPage } from './AddPage'
 import { CrawlLogsPage } from './CrawlLogsPage'
 import { DebugPage } from './DebugPage'
+import { EnginePage } from './EnginePage'
 import './index.css'
 
 const LIST_PATH = '/tools/browser/credentials'
 const ADD_PATH = '/tools/browser/credentials/new'
 const CRAWL_LOGS_PATH = '/tools/browser/crawl-logs'
 const DEBUG_PATH = '/tools/browser/debug'
+const ENGINE_PATH = '/tools/browser/engine'
 
 window.__cinqoToolBridge.registerMenuEntry({
   label: 'Browser',
@@ -41,6 +43,15 @@ window.__cinqoToolBridge.registerMenuEntry({
       path: CRAWL_LOGS_PATH,
       // Reuses tool:browser:crawl — the same permission already
       // needed to run a crawl at all (step 17's own design).
+      scopes: ['tool:browser:crawl'],
+    },
+    {
+      label: 'Engine',
+      path: ENGINE_PATH,
+      // Reuses tool:browser:crawl (step 50's own design) — the engine
+      // decides how pages are fetched, the same permission tier as the
+      // Debug toggles and Crawl Logs, and the same scope that already
+      // gates the /browser-settings route this page reads and writes.
       scopes: ['tool:browser:crawl'],
     },
     {
@@ -95,6 +106,14 @@ window.__cinqoToolBridge.registerRoute({
   path: CRAWL_LOGS_PATH,
   mount: (container) => {
     mountReact(container, <CrawlLogsPage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: ENGINE_PATH,
+  mount: (container) => {
+    mountReact(container, <EnginePage />)
   },
   unmount: unmountReact,
 })

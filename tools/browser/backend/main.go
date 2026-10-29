@@ -63,6 +63,7 @@ func runHTTPServer() {
 		log.Print("shutting down, closing browser session")
 		shared.StopSharedSession()
 		crawler.StopPlaywrightEngine()
+		crawler.StopRodEngine()
 		os.Exit(0)
 	}()
 
@@ -75,6 +76,8 @@ func runHTTPServer() {
 	http.HandleFunc("/crawl-paginated", crawler.PaginatedCrawlHandler)
 	http.HandleFunc("/crawl-logs", crawler.CrawlLogsHandler)
 	http.HandleFunc("/browser-settings", shared.BrowserSettingsHandler)
+	http.HandleFunc("/engine-status", crawler.EngineStatusHandler)
+	http.HandleFunc("/engine-test", crawler.EngineTestHandler)
 	http.HandleFunc("/cloudflare-domains", crawler.CloudflareDomainsHandler)
 	http.HandleFunc("/crawl-status", crawler.CrawlStatusHandler)
 	http.HandleFunc("/crawl-cancel", crawler.CrawlCancelHandler)
@@ -97,6 +100,7 @@ func runHTTPServer() {
 	if err := http.ListenAndServe("127.0.0.1:"+port, nil); err != nil {
 		shared.StopSharedSession()
 		crawler.StopPlaywrightEngine()
+		crawler.StopRodEngine()
 		log.Fatal(err)
 	}
 }

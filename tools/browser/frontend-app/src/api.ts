@@ -148,7 +148,17 @@ export async function clearAllCrawlLogs(): Promise<void> {
 
 const SETTINGS_BASE = '/api/v1/tools/browser/proxy/browser-settings'
 
+// FetchEngine (step 50) — which engine serves the primary single-page
+// fetch: 'rod' (the default; pure Go over the Chrome DevTools Protocol) or
+// 'playwright' (needs its Node-based driver). See
+// plan/ai/tools/browser/step-50-fetch-engine-setting-page.md.
+export type FetchEngine = 'rod' | 'playwright'
+
 export interface BrowserSettings {
+  // fetchEngine — always sent back unchanged by every page that saves this
+  // object (the backend overwrites the whole object on a PUT, and treats a
+  // missing fetchEngine as "keep the stored one").
+  fetchEngine: FetchEngine
   debugEnabled: boolean
   debugLogHtml: boolean
   // debugLogChallenge (step 68) is a separate, independent toggle from
@@ -172,6 +182,56 @@ export async function saveBrowserSettings(settings: BrowserSettings): Promise<Br
   })
   if (!res.ok) throw new Error(`failed to save settings (${res.status})`)
   return readJson<BrowserSettings>(res)
+}
+
+// --- Engine availability (step 51) ---
+//
+// Whether each fetch engine can actually run on this machine right now,
+// from GET /engine-status. Rod needs a Chrome binary. Playwright needs its
+// driver (which bundles its own Node) installed beforehand — it does NOT use
+// the Node installed in the OS. `detail` is a short sentence from the
+// backend, safe to show as text. See
+// plan/ai/tools/browser/step-51-engine-availability.md.
+
+const ENGINE_STATUS_BASE = '/api/v1/tools/browser/proxy/engine-status'
+
+export interface EngineStatus {
+  available: boolean
+  detail: string
+}
+
+export interface EngineStatusResponse {
+  rod: EngineStatus
+  playwright: EngineStatus
+}
+
+export async function fetchEngineStatus(): Promise<EngineStatusResponse> {
+  const res = await fetch(ENGINE_STATUS_BASE, { credentials: 'include' })
+  if (!res.ok) throw new Error(`failed to load engine status (${res.status})`)
+  return readJson<EngineStatusResponse>(res)
+}
+
+// "Test Playwright" (step 52) — really launches Playwright's Chromium and
+// loads a local page, so a driver installed without its browser is caught
+// (the availability check above cannot see that). Takes a few seconds; the
+// backend allows one test at a time (409 otherwise). `detail` is one fixed
+// sentence from the backend.
+
+export interface EngineTestResult {
+  ok: boolean
+  detail: string
+  durationMs: number
+}
+
+export async function testPlaywrightEngine(): Promise<EngineTestResult> {
+  const res = await fetch('/api/v1/tools/browser/proxy/engine-test', {
+    method: 'POST',
+    credentials: 'include',
+    body: JSON.stringify({ engine: 'playwright' }),
+  })
+  if (res.status === 409) throw new Error('A Playwright test is already running — try again in a moment.')
+  if (!res.ok) throw new Error(`failed to run the Playwright test (${res.status})`)
+  return readJson<EngineTestResult>(res)
 }
 
 // --- Cloudflare domain cache (step 30) ---

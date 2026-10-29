@@ -527,40 +527,43 @@ func crawlPage(parent context.Context, rawURL, requestID string, expectedSelecto
 		}
 	}
 
-	// Playwright (playwright_engine.go) is the PRIMARY engine for a
-	// domain with no known Cloudflare history — tried before the
-	// chromedp primary tab below. On success, this performs the exact
+	// The primary single-page fetch engine (fetchWithEngine,
+	// fetch_engine.go: go-rod/rod by default, or Playwright when the
+	// Engine page's stored setting says so — see rod_fetch.go and
+	// playwright_engine.go, both with the same contract) is tried for a domain
+	// with no known Cloudflare history, before the chromedp primary tab
+	// below. On success, this performs the exact
 	// same bookkeeping the chromedp primary tab's own success path does
 	// (fetchCacheStore, and — for an AI caller only, matching resolve's
 	// own identical distinction just above — syncPrimaryTabAsync, so a
 	// follow-up call that assumes "the current page" still sees it even
-	// though a Playwright page, not the chromedp primary tab, actually
+	// though the engine's own page, not the chromedp primary tab, actually
 	// served this one). A real Cloudflare verdict escalates through the
 	// exact same resolve(...) the chromedp primary tab's own equivalent
-	// verdict uses below. Only a Playwright-specific failure (not a
+	// verdict uses below. Only an engine-specific failure (not a
 	// *crawlError: the shared browser wouldn't start, the page crashed)
 	// falls through to the existing, unchanged chromedp primary-tab
 	// attempt that follows.
-	pwResp, pwErr := fetchWithPlaywright(reqCtx, rawURL, requestID, expectedSelectors, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
-	var pwCfErr *crawlError
+	engineResp, engineErr := fetchWithEngine(reqCtx, rawURL, requestID, expectedSelectors, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
+	var engineCfErr *crawlError
 	switch {
-	case pwErr == nil:
+	case engineErr == nil:
 		if !skipCache {
-			_ = fetchCacheStore(rawURL, pwResp)
+			_ = fetchCacheStore(rawURL, engineResp)
 		}
 		if requestID == "" {
-			syncPrimaryTabAsync(rawURL, pwResp, skipCache)
+			syncPrimaryTabAsync(rawURL, engineResp, skipCache)
 		}
-		return pwResp, nil
-	case errors.As(pwErr, &pwCfErr) && pwCfErr.Code == codeCloudflareUnresolved:
-		recordIfUnresolved(rawURL, pwErr)
+		return engineResp, nil
+	case errors.As(engineErr, &engineCfErr) && engineCfErr.Code == codeCloudflareUnresolved:
+		recordIfUnresolved(rawURL, engineErr)
 		return resolve(true)
-	case pwCfErr != nil:
+	case engineCfErr != nil:
 		// A hard block or a cancellation — final, same as the chromedp
 		// primary tab's own handling of these further down.
-		return crawlResponse{}, pwErr
+		return crawlResponse{}, engineErr
 	}
-	// Any other error is Playwright-specific: fall through to the
+	// Any other error is engine-specific: fall through to the
 	// existing chromedp primary-tab attempt below, unchanged.
 
 	result, err := func() (crawlResponse, error) {

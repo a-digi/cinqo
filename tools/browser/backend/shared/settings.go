@@ -19,13 +19,46 @@ package shared
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 )
+
+// The two engines that can serve the primary single-page fetch (step 50;
+// see crawler/fetch_engine.go). Rod is the default.
+const (
+	FetchEngineRod        = "rod"
+	FetchEnginePlaywright = "playwright"
+	DefaultFetchEngine    = FetchEngineRod
+)
+
+// ErrInvalidFetchEngine is a caller mistake (a 400), never a server failure.
+var ErrInvalidFetchEngine = errors.New(`fetchEngine must be "rod" or "playwright"`)
+
+// ValidFetchEngine reports whether v is exactly one of the two engines.
+func ValidFetchEngine(v string) bool {
+	return v == FetchEngineRod || v == FetchEnginePlaywright
+}
+
+// fetchEngineOrDefault reads a stored value through the allow-list: a
+// value that is somehow not one of the two engines (the column has a
+// CHECK constraint, so only a hand-edited or foreign database could hold
+// one) is treated as the default, never used as-is.
+func fetchEngineOrDefault(stored string) string {
+	if ValidFetchEngine(stored) {
+		return stored
+	}
+	return DefaultFetchEngine
+}
 
 type BrowserSettings struct {
 	DebugEnabled      bool `json:"debugEnabled"`
 	DebugLogHTML      bool `json:"debugLogHtml"`
 	DebugLogChallenge bool `json:"debugLogChallenge"`
+	// FetchEngine (step 50) is "rod" or "playwright". On a PUT, an empty
+	// or missing value means "leave the stored engine as it is" — so a
+	// client that predates this field (or the Debug page saving the rest of
+	// the object) can never reset it — and any other value is rejected.
+	FetchEngine string `json:"fetchEngine"`
 }
 
 // LoadBrowserSettings always reads fresh from the database — never
@@ -35,8 +68,9 @@ type BrowserSettings struct {
 // moment someone actually used the settings page.
 func LoadBrowserSettings() (BrowserSettings, error) {
 	var debugEnabled, debugLogHTML, debugLogChallenge int
-	err := DB.QueryRow(`SELECT debug_enabled, debug_log_html, debug_log_challenge FROM browser_settings WHERE id = 1`).
-		Scan(&debugEnabled, &debugLogHTML, &debugLogChallenge)
+	var fetchEngine string
+	err := DB.QueryRow(`SELECT debug_enabled, debug_log_html, debug_log_challenge, fetch_engine FROM browser_settings WHERE id = 1`).
+		Scan(&debugEnabled, &debugLogHTML, &debugLogChallenge, &fetchEngine)
 	if err != nil {
 		return BrowserSettings{}, err
 	}
@@ -44,13 +78,21 @@ func LoadBrowserSettings() (BrowserSettings, error) {
 		DebugEnabled:      debugEnabled != 0,
 		DebugLogHTML:      debugLogHTML != 0,
 		DebugLogChallenge: debugLogChallenge != 0,
+		FetchEngine:       fetchEngineOrDefault(fetchEngine),
 	}, nil
 }
 
+// SaveBrowserSettings stores every field. FetchEngine must be one of the
+// two engines (ErrInvalidFetchEngine otherwise — nothing is written);
+// callers that mean "keep the stored engine" resolve that BEFORE calling
+// (see the PUT handler).
 func SaveBrowserSettings(s BrowserSettings) error {
+	if !ValidFetchEngine(s.FetchEngine) {
+		return ErrInvalidFetchEngine
+	}
 	_, err := DB.Exec(
-		`UPDATE browser_settings SET debug_enabled = ?, debug_log_html = ?, debug_log_challenge = ?, updated_at = datetime('now') WHERE id = 1`,
-		boolToInt(s.DebugEnabled), boolToInt(s.DebugLogHTML), boolToInt(s.DebugLogChallenge),
+		`UPDATE browser_settings SET debug_enabled = ?, debug_log_html = ?, debug_log_challenge = ?, fetch_engine = ?, updated_at = datetime('now') WHERE id = 1`,
+		boolToInt(s.DebugEnabled), boolToInt(s.DebugLogHTML), boolToInt(s.DebugLogChallenge), s.FetchEngine,
 	)
 	return err
 }
@@ -78,6 +120,20 @@ func BrowserSettingsHandler(w http.ResponseWriter, r *http.Request) {
 		var settings BrowserSettings
 		if err := json.NewDecoder(r.Body).Decode(&settings); err != nil {
 			http.Error(w, "invalid request body", http.StatusBadRequest)
+			return
+		}
+		// A missing/empty fetchEngine keeps the stored one (a client that
+		// predates the field must never reset it); anything else must be
+		// one of the two engines.
+		if settings.FetchEngine == "" {
+			current, err := LoadBrowserSettings()
+			if err != nil {
+				http.Error(w, "failed to load settings: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+			settings.FetchEngine = current.FetchEngine
+		} else if !ValidFetchEngine(settings.FetchEngine) {
+			http.Error(w, ErrInvalidFetchEngine.Error(), http.StatusBadRequest)
 			return
 		}
 		if err := SaveBrowserSettings(settings); err != nil {
