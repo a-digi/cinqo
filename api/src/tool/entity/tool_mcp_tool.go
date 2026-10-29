@@ -25,4 +25,10 @@ type ToolMCPTool struct {
 	// tool-produced resource reference INTO permanent Media storage
 	// before invocation, replacing it with the resulting file id.
 	PromoteMediaParam string `db:"promote_media_param" dbtype:"TEXT" nullable:"false" json:"promote_media_param"`
+	// CanDelegate/DelegateAllowedTools mirror manifest.MCPToolDecl's
+	// Delegates — whether this tool's result may carry a delegation
+	// directive (see conversation/delegation.go), and the JSON array of
+	// tool names its spawned sub-agents may at most be granted.
+	CanDelegate          bool   `db:"can_delegate" dbtype:"INTEGER" nullable:"false" json:"can_delegate"`
+	DelegateAllowedTools string `db:"delegate_allowed_tools" dbtype:"TEXT" nullable:"false" json:"delegate_allowed_tools"`
 }

@@ -435,7 +435,11 @@ func runToolLoop(
 			case call.Name == crawlURLsWithSubagentsToolName && turnRunID != "":
 				text = invokeCrawlURLsWithSubAgentsCall(httpClient, entry, apiKey, model, mainDB, conversationDB, callerScopes, userID, dataDir, corePort, conversationID, turnRunID, call, depth)
 			default:
-				text, links = invokeToolCall(ctx, mainDB, callerScopes, userID, call, dataDir, corePort, conversationID)
+				var pending *pendingDelegation
+				text, links, pending = invokeToolCall(ctx, mainDB, callerScopes, userID, call, dataDir, corePort, conversationID)
+				if pending != nil && turnRunID != "" {
+					text += executeDelegation(httpClient, entry, apiKey, model, mainDB, conversationDB, callerScopes, userID, dataDir, corePort, conversationID, turnRunID, pending, depth)
+				}
 			}
 			group = append(group, chatcompleter.Message{Role: "tool", ToolCallID: call.ID, Content: truncateToolResult(text)})
 			allLinks = append(allLinks, links...)
@@ -499,23 +503,23 @@ func appendResourceLinks(content string, links []tool_mcp.ResourceLink) string {
 // stranding the conversation. See
 // plan/ai/tools/pdf-generator/step-04-ai-model-invocation.md's
 // "Invocation, concretely".
-func invokeToolCall(ctx context.Context, mainDB *sql.DB, callerScopes []string, userID string, call chatcompleter.ToolCall, dataDir string, corePort int, conversationID string) (string, []tool_mcp.ResourceLink) {
+func invokeToolCall(ctx context.Context, mainDB *sql.DB, callerScopes []string, userID string, call chatcompleter.ToolCall, dataDir string, corePort int, conversationID string) (string, []tool_mcp.ResourceLink, *pendingDelegation) {
 	mcpTool, err := tool_query.NewToolMCPToolQueryRepo(mainDB).FindMCPToolByName(call.Name)
 	if err != nil {
-		return "tool unavailable", nil
+		return "tool unavailable", nil, nil
 	}
 	if !hasScope(callerScopes, mcpTool.RequiredScope) {
-		return "tool unavailable", nil
+		return "tool unavailable", nil, nil
 	}
 
 	tool, err := tool_query.NewToolQueryRepo(mainDB).FindByID(mcpTool.ToolID)
 	if err != nil || !tool.Enabled {
-		return "tool unavailable", nil
+		return "tool unavailable", nil, nil
 	}
 
 	envVars, err := tool_manager.ToolEnvVars(dataDir, tool.Slug, corePort, tool.ServiceToken)
 	if err != nil {
-		return fmt.Sprintf("tool invocation failed: %v", err), nil
+		return fmt.Sprintf("tool invocation failed: %v", err), nil, nil
 	}
 	// See install_handler.go's identical addition and
 	// plan/ai/tools/browser/step-02-shared-browser-session.md — lets a
@@ -526,27 +530,37 @@ func invokeToolCall(ctx context.Context, mainDB *sql.DB, callerScopes []string, 
 	}
 	execPath, err := filepath.Abs(filepath.Join(tool.InstallPath, tool.BackendExecutableRelpath))
 	if err != nil {
-		return fmt.Sprintf("tool invocation failed: %v", err), nil
+		return fmt.Sprintf("tool invocation failed: %v", err), nil, nil
 	}
 
 	args := call.Arguments
 	if mcpTool.MediaParam != "" {
 		resolvedArgs, err := resolveMediaArgument(mainDB, args, mcpTool.MediaParam, conversationID)
 		if err != nil {
-			return "tool unavailable", nil
+			return "tool unavailable", nil, nil
 		}
 		args = resolvedArgs
 	}
 	if mcpTool.PromoteMediaParam != "" {
 		resolvedArgs, err := resolvePromoteMediaArgument(mainDB, dataDir, tool.Slug, userID, conversationID, args, mcpTool.PromoteMediaParam)
 		if err != nil {
-			return "tool unavailable", nil
+			return "tool unavailable", nil, nil
 		}
 		args = resolvedArgs
 	}
 
-	text, _, links := tool_mcp.Invoke(ctx, execPath, call.Name, args, envVars)
-	return text, links
+	text, _, links, directive := tool_mcp.Invoke(ctx, execPath, call.Name, args, envVars)
+	// A directive is honored only for a tool whose manifest opted in
+	// (can_delegate); anyone else's is dropped here, never reaching
+	// the loop.
+	if directive != nil && mcpTool.CanDelegate {
+		return text, links, &pendingDelegation{
+			ToolName:     call.Name,
+			AllowedTools: parseDelegateAllowedTools(mcpTool.DelegateAllowedTools),
+			Directive:    directive,
+		}
+	}
+	return text, links, nil
 }
 
 // toolProxyResourcePattern matches the resource-link shape a tool's

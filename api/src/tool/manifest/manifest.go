@@ -111,6 +111,19 @@ type MCPToolDecl struct {
 	// tool has no such argument. See
 	// plan/ai/tools/career/step-XX-cv-pdf.md.
 	PromoteMediaParam string `json:"promote_media_param,omitempty"`
+	// Delegates opts this MCP tool into returning a delegation
+	// directive (a structuredContent {"delegate": {...}} block) that
+	// the host executes by spawning sub-agents on the tool's own
+	// behalf — see conversation/delegation.go. nil (the default) means
+	// any directive this tool returns is ignored.
+	Delegates *DelegatesDecl `json:"delegates,omitempty"`
+}
+
+// DelegatesDecl bounds what a delegating tool may hand its sub-agents:
+// AllowedTools is the most any directive may grant (the host further
+// intersects it with the caller's own scopes), never more.
+type DelegatesDecl struct {
+	AllowedTools []string `json:"allowed_tools"`
 }
 
 // EventListenerDecl is one Domain Event this tool's own already-running
@@ -239,6 +252,19 @@ func Validate(m Manifest, in ValidationInput) (kind string, err error) {
 		}
 		if _, ok := declaredScopes[mt.RequiredScope]; !ok {
 			return "", fmt.Errorf("mcp_tools entry %q: required_scope %q must be one of this tool's own declared scopes", mt.Name, mt.RequiredScope)
+		}
+		if mt.Delegates != nil {
+			if len(mt.Delegates.AllowedTools) == 0 {
+				return "", fmt.Errorf("mcp_tools entry %q: delegates requires a non-empty allowed_tools", mt.Name)
+			}
+			for _, name := range mt.Delegates.AllowedTools {
+				switch strings.TrimSpace(name) {
+				case "":
+					return "", fmt.Errorf("mcp_tools entry %q: delegates.allowed_tools entries must be non-empty", mt.Name)
+				case "spawn_subagent", "check_subagent", "list_subagents", "cancel_subagent", "crawl_urls_with_subagents":
+					return "", fmt.Errorf("mcp_tools entry %q: delegates.allowed_tools may not grant the built-in sub-agent tool %q", mt.Name, name)
+				}
+			}
 		}
 	}
 

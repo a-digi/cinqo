@@ -14,11 +14,11 @@ func NewToolMCPToolQueryRepo(db *sql.DB) *ToolMCPToolQueryRepo {
 	return &ToolMCPToolQueryRepo{db: db}
 }
 
-const toolMCPToolColumns = `tool_id, name, description, input_schema, required_scope, media_param, promote_media_param`
+const toolMCPToolColumns = `tool_id, name, description, input_schema, required_scope, media_param, promote_media_param, can_delegate, delegate_allowed_tools`
 
 func scanToolMCPTool(scan func(dest ...any) error) (tool_entity.ToolMCPTool, error) {
 	var t tool_entity.ToolMCPTool
-	err := scan(&t.ToolID, &t.Name, &t.Description, &t.InputSchema, &t.RequiredScope, &t.MediaParam, &t.PromoteMediaParam)
+	err := scan(&t.ToolID, &t.Name, &t.Description, &t.InputSchema, &t.RequiredScope, &t.MediaParam, &t.PromoteMediaParam, &t.CanDelegate, &t.DelegateAllowedTools)
 	return t, err
 }
 
@@ -74,7 +74,7 @@ func (r *ToolMCPToolQueryRepo) FindAll() ([]tool_entity.ToolMCPTool, error) {
 // query free of any caller-identity concept.
 func (r *ToolMCPToolQueryRepo) FindAllEnabled() ([]tool_entity.ToolMCPTool, error) {
 	rows, err := r.db.Query(
-		`SELECT m.tool_id, m.name, m.description, m.input_schema, m.required_scope, m.media_param, m.promote_media_param
+		`SELECT m.tool_id, m.name, m.description, m.input_schema, m.required_scope, m.media_param, m.promote_media_param, m.can_delegate, m.delegate_allowed_tools
 		FROM tool_mcp_tools m
 		JOIN tools t ON t.id = m.tool_id
 		WHERE t.enabled = 1`,

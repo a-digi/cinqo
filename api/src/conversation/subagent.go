@@ -214,6 +214,14 @@ var subAgentToolDef = chatcompleter.ToolDef{
 				"type": "array",
 				"items": { "type": "string" },
 				"description": "Optional. Restrict the sub-agent to only these tool names (e.g. only tools that read data, not ones that change anything), for a task where you want to bound what it's able to do. Omit to give it the same full set of tools you have. Naming a tool you don't have access to has no effect — this can only narrow what the sub-agent can do, never widen it."
+			},
+			"acceptanceCriteria": {
+				"type": "string",
+				"description": "Optional. A plain-language definition of what an ACCEPTABLE result looks like. When set, a separate reviewer checks the sub-agent's result against it and, if it falls short, the sub-agent is automatically re-run with the reviewer's feedback, up to maxAttempts times, before check_subagent returns. If the attempts run out, check_subagent says the result was NOT ACCEPTED and includes the last feedback and the best result. Omit for a single, unreviewed run."
+			},
+			"maxAttempts": {
+				"type": "integer",
+				"description": "Optional, only with acceptanceCriteria. Maximum number of attempts (default 3, at most 5)."
 			}
 		},
 		"required": ["task"]
@@ -266,6 +274,10 @@ type spawnSubAgentArgs struct {
 	// tool set the orchestrator itself has" — this feature's original
 	// default behavior, unchanged for any caller that doesn't set this.
 	AllowedTools []string `json:"allowedTools,omitempty"`
+	// AcceptanceCriteria/MaxAttempts opt this spawn into the
+	// acceptance loop (acceptance.go). Blank criteria = no loop.
+	AcceptanceCriteria string `json:"acceptanceCriteria,omitempty"`
+	MaxAttempts        int    `json:"maxAttempts,omitempty"`
 }
 
 type checkSubAgentArgs struct {
@@ -312,7 +324,7 @@ func invokeSubAgentCall(
 		return fmt.Sprintf("Cannot start a new sub-agent: this turn has already reached its limit of %d sub-agents.", maxSubAgentsPerTurn)
 	}
 
-	_, message := spawnSubAgent(httpClient, entry, apiKey, model, mainDB, conversationDB, callerScopes, userID, dataDir, corePort, conversationID, parentTurnRunID, args.Task, args.AllowedTools, depth)
+	_, message := spawnSubAgent(httpClient, entry, apiKey, model, mainDB, conversationDB, callerScopes, userID, dataDir, corePort, conversationID, parentTurnRunID, args.Task, args.AllowedTools, newAcceptanceSpec(args.AcceptanceCriteria, args.MaxAttempts), "", depth)
 	return message
 }
 
@@ -338,6 +350,8 @@ func spawnSubAgent(
 	conversationID, parentTurnRunID string,
 	task string,
 	allowedTools []string,
+	acceptance *acceptanceSpec,
+	originTool string,
 	depth int,
 ) (id string, message string) {
 	// maxConcurrentSubAgents — acquired here, right before this
@@ -357,6 +371,14 @@ func spawnSubAgent(
 		ConversationID:  conversationID,
 		Task:            task,
 		StartedAt:       time.Now().UTC().Format(time.RFC3339),
+		MaxAttempts:     1,
+	}
+	if acceptance != nil {
+		run.AcceptanceCriteria = &acceptance.Criteria
+		run.MaxAttempts = acceptance.MaxAttempts
+	}
+	if originTool != "" {
+		run.OriginTool = &originTool
 	}
 	if err := runs.Insert(run); err != nil {
 		releaseSubAgentSlot() // never actually started — free the slot immediately, not just on the goroutine's own exit
@@ -386,7 +408,7 @@ func spawnSubAgent(
 			subAgentCancelMu.Unlock()
 			cancel() // release this context's own resources even on the success path
 		}()
-		runSubAgentLoop(subCtx, httpClient, entry, apiKey, model, mainDB, conversationDB, callerScopes, userID, dataDir, corePort, conversationID, run.ID, task, allowedTools, depth+1, parentTurnRunID)
+		runSubAgentLoop(subCtx, httpClient, entry, apiKey, model, mainDB, conversationDB, callerScopes, userID, dataDir, corePort, conversationID, run.ID, task, allowedTools, acceptance, depth+1, parentTurnRunID)
 	}()
 
 	return run.ID, fmt.Sprintf(
@@ -438,6 +460,7 @@ func runSubAgentLoop(
 	corePort int,
 	conversationID, runID, task string,
 	allowedTools []string,
+	acceptance *acceptanceSpec,
 	depth int,
 	// parentTurnRunID is passed straight through from
 	// invokeSubAgentCall's own — every sub-agent at every depth is
@@ -472,14 +495,60 @@ func runSubAgentLoop(
 
 	messages := []chatcompleter.Message{{Role: "user", Content: task}}
 
-	result, err := runToolLoop(ctx, httpClient, entry, apiKey, model, messages, tools, mainDB, callerScopes, userID, dataDir, corePort, conversationID, conversationDB, parentTurnRunID, depth, logStep, reportUsage, nil)
-	if err != nil {
-		status := "failed"
-		if errors.Is(ctx.Err(), context.Canceled) {
-			status = "cancelled"
+	maxAttempts := 1
+	if acceptance != nil {
+		maxAttempts = acceptance.MaxAttempts
+	}
+
+	// Acceptance loop (acceptance.go): with no acceptance spec this is
+	// exactly one pass — run, finish "completed". With one, each pass
+	// is judged and a rejected result is re-run with the judge's
+	// feedback. Every attempt shares ctx, so the single
+	// maxTurnRunDuration ceiling bounds the whole loop; an error or
+	// cancellation in any attempt ends the run without retrying.
+	var result string
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		var err error
+		result, err = runToolLoop(ctx, httpClient, entry, apiKey, model, messages, tools, mainDB, callerScopes, userID, dataDir, corePort, conversationID, conversationDB, parentTurnRunID, depth, logStep, reportUsage, nil)
+		if err != nil {
+			status := "failed"
+			if errors.Is(ctx.Err(), context.Canceled) {
+				status = "cancelled"
+			}
+			finishSubAgent(runs, runID, status, nil)
+			return
 		}
-		finishSubAgent(runs, runID, status, nil)
-		return
+		if acceptance == nil {
+			break
+		}
+
+		v, usage, jerr := judgeResult(ctx, httpClient, entry, apiKey, model, task, acceptance.Criteria, result)
+		reportUsage(usage.PromptTokens, usage.CompletionTokens)
+		if ctx.Err() != nil {
+			status := "failed"
+			if errors.Is(ctx.Err(), context.Canceled) {
+				status = "cancelled"
+			}
+			finishSubAgent(runs, runID, status, nil)
+			return
+		}
+		if jerr != nil {
+			// Fail open: a broken judge must not burn every attempt.
+			logStep(fmt.Sprintf("attempt %d: judge failed (%v) — accepting result unreviewed", attempt, jerr))
+			_ = runs.SetAcceptance(runID, true, "reviewer unavailable: result accepted without review")
+			break
+		}
+		if v.Accepted {
+			logStep(fmt.Sprintf("attempt %d: accepted", attempt))
+			_ = runs.SetAcceptance(runID, true, v.Feedback)
+			break
+		}
+		logStep(fmt.Sprintf("attempt %d: rejected — %s", attempt, v.Feedback))
+		_ = runs.SetAcceptance(runID, false, v.Feedback)
+		if attempt < maxAttempts {
+			_ = runs.SetAttempts(runID, attempt+1)
+			messages = buildRetryMessages(task, result, v.Feedback)
+		}
 	}
 
 	finishSubAgent(runs, runID, "completed", &result)
@@ -505,10 +574,18 @@ func checkSubAgentCall(conversationDB *sql.DB, call chatcompleter.ToolCall) stri
 	case "running":
 		return fmt.Sprintf("Sub-agent %s is still running. Check back later.", run.ID)
 	case "completed":
+		result := ""
 		if run.Result != nil {
-			return *run.Result
+			result = *run.Result
 		}
-		return ""
+		if run.Accepted != nil && !*run.Accepted {
+			feedback := ""
+			if run.AcceptanceFeedback != nil {
+				feedback = *run.AcceptanceFeedback
+			}
+			return fmt.Sprintf("NOT ACCEPTED after %d attempts. Last feedback: %s\n\nBest result:\n%s", run.Attempts, feedback, result)
+		}
+		return result
 	default: // "failed" / "cancelled"
 		return fmt.Sprintf("Sub-agent %s %s.", run.ID, run.Status)
 	}

@@ -46,7 +46,7 @@ type ResourceLink struct {
 // envVars is the same manager.ToolEnvVars contract Discover requires
 // — see that function's own doc comment for the real failure this
 // fixes.
-func Invoke(ctx context.Context, execPath, toolName string, args json.RawMessage, envVars []string) (resultText string, isError bool, links []ResourceLink) {
+func Invoke(ctx context.Context, execPath, toolName string, args json.RawMessage, envVars []string) (resultText string, isError bool, links []ResourceLink, delegate *Delegate) {
 	ctx, cancel := context.WithTimeout(ctx, invokeTimeout)
 	defer cancel()
 
@@ -65,23 +65,26 @@ func Invoke(ctx context.Context, execPath, toolName string, args json.RawMessage
 
 	session, err := client.Connect(ctx, transport, nil)
 	if err != nil {
-		return fmt.Sprintf("tool failed to start: %v", err), true, nil
+		return fmt.Sprintf("tool failed to start: %v", err), true, nil, nil
 	}
 	defer session.Close()
 
 	var argMap map[string]any
 	if len(args) > 0 {
 		if err := json.Unmarshal(args, &argMap); err != nil {
-			return fmt.Sprintf("invalid tool arguments: %v", err), true, nil
+			return fmt.Sprintf("invalid tool arguments: %v", err), true, nil, nil
 		}
 	}
 
 	res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: toolName, Arguments: argMap})
 	if err != nil {
-		return fmt.Sprintf("tool call failed: %v", err), true, nil
+		return fmt.Sprintf("tool call failed: %v", err), true, nil, nil
 	}
 	text, links := renderContent(res.Content)
-	return text, res.IsError, links
+	if res.IsError {
+		return text, true, links, nil
+	}
+	return text, false, links, parseDelegate(res.StructuredContent)
 }
 
 // renderContent turns MCP's own content items into the plain text a
@@ -103,4 +106,41 @@ func renderContent(content []mcp.Content) (string, []ResourceLink) {
 		}
 	}
 	return strings.Join(parts, "\n"), links
+}
+
+// DelegateTask is one sub-agent a delegating tool asks the host to
+// start on its behalf.
+type DelegateTask struct {
+	Task               string   `json:"task"`
+	AllowedTools       []string `json:"allowedTools,omitempty"`
+	AcceptanceCriteria string   `json:"acceptanceCriteria,omitempty"`
+	MaxAttempts        int      `json:"maxAttempts,omitempty"`
+}
+
+// Delegate is a tool's delegation directive, carried ONLY in an MCP
+// result's structuredContent under the key "delegate" — never parsed
+// from free text, so page content a tool relays can't forge one. The
+// host (conversation/delegation.go) decides whether to honor it.
+type Delegate struct {
+	Tasks   []DelegateTask `json:"tasks"`
+	Message string         `json:"message,omitempty"`
+}
+
+// parseDelegate returns nil when structured has no well-formed
+// "delegate" block.
+func parseDelegate(structured any) *Delegate {
+	if structured == nil {
+		return nil
+	}
+	raw, err := json.Marshal(structured)
+	if err != nil {
+		return nil
+	}
+	var wrapper struct {
+		Delegate *Delegate `json:"delegate"`
+	}
+	if err := json.Unmarshal(raw, &wrapper); err != nil || wrapper.Delegate == nil || len(wrapper.Delegate.Tasks) == 0 {
+		return nil
+	}
+	return wrapper.Delegate
 }

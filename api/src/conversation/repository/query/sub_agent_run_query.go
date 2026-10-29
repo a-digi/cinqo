@@ -16,13 +16,14 @@ func NewSubAgentRunQueryRepo(db *sql.DB) *SubAgentRunQueryRepo {
 	return &SubAgentRunQueryRepo{db: db}
 }
 
-const subAgentRunColumns = `id, parent_turn_run_id, conversation_id, task, status, result, started_at, finished_at, log, cancel_requested, prompt_tokens, completion_tokens, total_tokens`
+const subAgentRunColumns = `id, parent_turn_run_id, conversation_id, task, status, result, started_at, finished_at, log, cancel_requested, prompt_tokens, completion_tokens, total_tokens, acceptance_criteria, max_attempts, attempts, accepted, acceptance_feedback, origin_tool`
 
 func scanSubAgentRun(scan func(dest ...any) error) (*conversation_entity.SubAgentRun, error) {
 	var s conversation_entity.SubAgentRun
 	if err := scan(
 		&s.ID, &s.ParentTurnRunID, &s.ConversationID, &s.Task, &s.Status, &s.Result, &s.StartedAt, &s.FinishedAt, &s.Log,
 		&s.CancelRequested, &s.PromptTokens, &s.CompletionTokens, &s.TotalTokens,
+		&s.AcceptanceCriteria, &s.MaxAttempts, &s.Attempts, &s.Accepted, &s.AcceptanceFeedback, &s.OriginTool,
 	); err != nil {
 		return nil, err
 	}

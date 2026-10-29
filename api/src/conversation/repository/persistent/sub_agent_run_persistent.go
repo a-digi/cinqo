@@ -21,8 +21,8 @@ func NewSubAgentRunPersistentRepo(db *sql.DB) *SubAgentRunPersistentRepo {
 // own convention.
 func (r *SubAgentRunPersistentRepo) Insert(s *conversation_entity.SubAgentRun) error {
 	_, err := r.db.Exec(
-		`INSERT INTO sub_agent_runs (id, parent_turn_run_id, conversation_id, task, status, started_at, log) VALUES (?, ?, ?, ?, 'running', ?, '')`,
-		s.ID, s.ParentTurnRunID, s.ConversationID, s.Task, s.StartedAt,
+		`INSERT INTO sub_agent_runs (id, parent_turn_run_id, conversation_id, task, status, started_at, log, acceptance_criteria, max_attempts, origin_tool) VALUES (?, ?, ?, ?, 'running', ?, '', ?, ?, ?)`,
+		s.ID, s.ParentTurnRunID, s.ConversationID, s.Task, s.StartedAt, s.AcceptanceCriteria, s.MaxAttempts, s.OriginTool,
 	)
 	return err
 }
@@ -65,5 +65,18 @@ func (r *SubAgentRunPersistentRepo) SetTerminalStatus(id, status string, result 
 // row's own history.
 func (r *SubAgentRunPersistentRepo) SetCancelRequested(id string) error {
 	_, err := r.db.Exec(`UPDATE sub_agent_runs SET cancel_requested = 1 WHERE id = ? AND status = 'running'`, id)
+	return err
+}
+
+// SetAttempts records which acceptance-loop attempt is now running
+// (see acceptance.go).
+func (r *SubAgentRunPersistentRepo) SetAttempts(id string, attempts int) error {
+	_, err := r.db.Exec(`UPDATE sub_agent_runs SET attempts = ? WHERE id = ?`, attempts, id)
+	return err
+}
+
+// SetAcceptance records the acceptance loop's final verdict.
+func (r *SubAgentRunPersistentRepo) SetAcceptance(id string, accepted bool, feedback string) error {
+	_, err := r.db.Exec(`UPDATE sub_agent_runs SET accepted = ?, acceptance_feedback = ? WHERE id = ?`, accepted, feedback, id)
 	return err
 }

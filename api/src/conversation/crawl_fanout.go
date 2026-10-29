@@ -236,7 +236,7 @@ func invokeCrawlURLsWithSubAgentsCall(
 				"values. Report back a short confirmation of what you saved.",
 			url, string(fieldsJSON), args.SaveToolName, args.SaveToolArgsKey, args.SaveToolArgsByURL[url],
 		)
-		id, message := spawnSubAgent(httpClient, entry, apiKey, model, mainDB, conversationDB, callerScopes, userID, dataDir, corePort, conversationID, parentTurnRunID, task, allowedTools, depth)
+		id, message := spawnSubAgent(httpClient, entry, apiKey, model, mainDB, conversationDB, callerScopes, userID, dataDir, corePort, conversationID, parentTurnRunID, task, allowedTools, nil, "", depth)
 		if id == "" {
 			fmt.Fprintf(&sb, "- %s: NOT started — %s\n", url, message)
 			continue

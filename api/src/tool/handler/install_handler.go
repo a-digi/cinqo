@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -87,10 +88,12 @@ func discoverMCPToolsIfDeclared(reqCtx request.RequestContext, db *sql.DB, m man
 	scopeByName := make(map[string]string, len(m.MCPTools))
 	mediaParamByName := make(map[string]string, len(m.MCPTools))
 	promoteMediaParamByName := make(map[string]string, len(m.MCPTools))
+	delegatesByName := make(map[string]*manifest.DelegatesDecl, len(m.MCPTools))
 	for _, mt := range m.MCPTools {
 		scopeByName[mt.Name] = mt.RequiredScope
 		mediaParamByName[mt.Name] = mt.MediaParam
 		promoteMediaParamByName[mt.Name] = mt.PromoteMediaParam
+		delegatesByName[mt.Name] = mt.Delegates
 	}
 	filtered := make([]tool_entity.ToolMCPTool, 0, len(mcpTools))
 	for _, mt := range mcpTools {
@@ -103,6 +106,13 @@ func discoverMCPToolsIfDeclared(reqCtx request.RequestContext, db *sql.DB, m man
 		mt.RequiredScope = scope
 		mt.MediaParam = mediaParamByName[mt.Name]
 		mt.PromoteMediaParam = promoteMediaParamByName[mt.Name]
+		mt.DelegateAllowedTools = "[]"
+		if d := delegatesByName[mt.Name]; d != nil {
+			if encoded, err := json.Marshal(d.AllowedTools); err == nil {
+				mt.CanDelegate = true
+				mt.DelegateAllowedTools = string(encoded)
+			}
+		}
 		filtered = append(filtered, mt)
 	}
 

@@ -35,4 +35,17 @@ type SubAgentRun struct {
 	PromptTokens     int  `db:"prompt_tokens" dbtype:"INTEGER" nullable:"false" json:"promptTokens"`
 	CompletionTokens int  `db:"completion_tokens" dbtype:"INTEGER" nullable:"false" json:"completionTokens"`
 	TotalTokens      int  `db:"total_tokens" dbtype:"INTEGER" nullable:"false" json:"totalTokens"`
+	// Acceptance loop (conversation/acceptance.go) — all unset/default
+	// for a spawn without acceptanceCriteria. Accepted is nil when no
+	// criteria were given, otherwise the final verdict; a run that
+	// exhausted its attempts is Status "completed" with Accepted false.
+	AcceptanceCriteria *string `db:"acceptance_criteria" dbtype:"TEXT" nullable:"true" json:"acceptanceCriteria,omitempty"`
+	MaxAttempts        int     `db:"max_attempts" dbtype:"INTEGER" nullable:"false" json:"maxAttempts"`
+	Attempts           int     `db:"attempts" dbtype:"INTEGER" nullable:"false" json:"attempts"`
+	Accepted           *bool   `db:"accepted" dbtype:"INTEGER" nullable:"true" json:"accepted,omitempty"`
+	AcceptanceFeedback *string `db:"acceptance_feedback" dbtype:"TEXT" nullable:"true" json:"acceptanceFeedback,omitempty"`
+	// OriginTool is the installed tool's MCP tool name whose delegation
+	// directive started this sub-agent (conversation/delegation.go);
+	// nil when the orchestrator model itself spawned it.
+	OriginTool *string `db:"origin_tool" dbtype:"TEXT" nullable:"true" json:"originTool,omitempty"`
 }
