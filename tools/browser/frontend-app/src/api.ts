@@ -211,6 +211,29 @@ export async function fetchEngineStatus(): Promise<EngineStatusResponse> {
   return readJson<EngineStatusResponse>(res)
 }
 
+// --- Chrome / Chromium (step 53) ---
+//
+// Whether a Chrome or Chromium is installed on the computer where Cinqo and
+// this tool run, from GET /chrome-status. Rod and the built-in browser path
+// both launch it; Playwright uses its own separate Chromium. `os` is the
+// SERVER's operating system (so the page shows the right install
+// instructions); `detail` is a short sentence from the backend, safe to show
+// as text. See plan/ai/tools/browser/step-53-chromium-page-and-gate.md.
+
+export interface ChromeStatus {
+  installed: boolean
+  path: string
+  version: string
+  os: string
+  detail: string
+}
+
+export async function fetchChromeStatus(): Promise<ChromeStatus> {
+  const res = await fetch('/api/v1/tools/browser/proxy/chrome-status', { credentials: 'include' })
+  if (!res.ok) throw new Error(`failed to load Chrome status (${res.status})`)
+  return readJson<ChromeStatus>(res)
+}
+
 // "Test Playwright" (step 52) — really launches Playwright's Chromium and
 // loads a local page, so a driver installed without its browser is caught
 // (the availability check above cannot see that). Takes a few seconds; the

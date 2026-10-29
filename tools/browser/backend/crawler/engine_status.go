@@ -26,6 +26,8 @@ import (
 	"time"
 
 	"github.com/mxschmitt/playwright-go"
+
+	"browser-tool-backend/shared"
 )
 
 // engineStatusTimeout bounds the one process call the Playwright check
@@ -53,9 +55,9 @@ func RodStatus() EngineStatus {
 	case err == nil:
 		return EngineStatus{Available: true, Detail: "Chrome found at " + path}
 	case errors.Is(err, errRodNoChrome):
-		return EngineStatus{Detail: "Chrome was not found (install Chrome, or set BROWSER_TOOL_CHROME_PATH)"}
+		return EngineStatus{Detail: "Chrome was not found (install Chrome, or set " + shared.ChromePathEnv + ")"}
 	default:
-		return EngineStatus{Detail: fmt.Sprintf("BROWSER_TOOL_CHROME_PATH is set but not usable (%s)", strings.TrimSpace(os.Getenv("BROWSER_TOOL_CHROME_PATH")))}
+		return EngineStatus{Detail: fmt.Sprintf("%s is set but not usable (%s)", shared.ChromePathEnv, strings.TrimSpace(os.Getenv(shared.ChromePathEnv)))}
 	}
 }
 

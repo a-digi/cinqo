@@ -16,7 +16,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -25,6 +24,8 @@ import (
 	"github.com/go-rod/rod/lib/launcher"
 	"github.com/go-rod/rod/lib/launcher/flags"
 	"github.com/go-rod/rod/lib/proto"
+
+	"browser-tool-backend/shared"
 )
 
 // errRodNoChrome: no Chrome binary could be found. A plain error — never
@@ -36,10 +37,6 @@ var errRodNoChrome = errors.New("rod engine: no Chrome/Chromium binary found (se
 // rodLivenessTimeout bounds the cheap CDP round trip that proves the
 // shared browser is still alive before a caller is handed it.
 const rodLivenessTimeout = 5 * time.Second
-
-// rodLookPath is launcher.LookPath, a var so a test can simulate a
-// machine with no browser installed.
-var rodLookPath = launcher.LookPath
 
 var (
 	rodMu       sync.Mutex
@@ -59,21 +56,22 @@ var (
 	rodUAFlag    bool
 )
 
-// rodChromePath resolves the Chrome binary: BROWSER_TOOL_CHROME_PATH if
-// set (and it must exist), else rod's own search of the usual install
-// locations. Never empty on success — an empty path would make rod's
-// launcher DOWNLOAD a Chromium of its own, which this tool must never do.
+// rodChromePath resolves the Chrome binary through the shared resolver
+// (shared/chrome.go — the same one the chromedp sessions use, so both
+// libraries launch the same browser): BROWSER_TOOL_CHROME_PATH if set (and it
+// must exist), else the per-OS list of Chrome and Chromium locations. Never
+// empty on success — an empty path would make rod's launcher DOWNLOAD a
+// Chromium of its own, which this tool must never do.
 func rodChromePath() (string, error) {
-	if p := strings.TrimSpace(os.Getenv("BROWSER_TOOL_CHROME_PATH")); p != "" {
-		if _, err := os.Stat(p); err != nil {
-			return "", fmt.Errorf("rod engine: BROWSER_TOOL_CHROME_PATH %q is not usable: %w", p, err)
-		}
-		return p, nil
+	path, err := shared.ChromePath()
+	switch {
+	case err == nil:
+		return path, nil
+	case errors.Is(err, shared.ErrChromeNotFound):
+		return "", errRodNoChrome
+	default:
+		return "", fmt.Errorf("rod engine: %w", err)
 	}
-	if p, ok := rodLookPath(); ok && p != "" {
-		return p, nil
-	}
-	return "", errRodNoChrome
 }
 
 // deriveRodUserAgent is deriveHeadlessUserAgent (shared/session.go): the

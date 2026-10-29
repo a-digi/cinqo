@@ -285,9 +285,9 @@ func TestFetchWithEngineDefaultWithoutChromeFallsThroughAsAPlainError(t *testing
 	recordStops(t)
 	useBrowserSettings(t, shared.FetchEngineRod)
 	t.Setenv("BROWSER_TOOL_CHROME_PATH", "")
-	origLook := rodLookPath
-	rodLookPath = func() (string, bool) { return "", false }
-	t.Cleanup(func() { rodLookPath = origLook })
+	origLook := shared.LookChrome
+	shared.LookChrome = func() (string, bool) { return "", false }
+	t.Cleanup(func() { shared.LookChrome = origLook })
 
 	_, err := fetchWithEngine(context.Background(), "https://x.test/", "", nil, nil, nil, 0, nil)
 	if !errors.Is(err, errRodNoChrome) {

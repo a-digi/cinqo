@@ -1,6 +1,7 @@
 package crawler
 
 import (
+	"browser-tool-backend/shared"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -150,16 +151,16 @@ func TestPlaywrightHonoursTheNodeAndCLIOverrides(t *testing.T) {
 }
 
 func TestRodStatus(t *testing.T) {
-	orig := rodLookPath
-	t.Cleanup(func() { rodLookPath = orig })
+	orig := shared.LookChrome
+	t.Cleanup(func() { shared.LookChrome = orig })
 
 	t.Setenv("BROWSER_TOOL_CHROME_PATH", "")
-	rodLookPath = func() (string, bool) { return "/opt/chrome/chrome", true }
+	shared.LookChrome = func() (string, bool) { return "/opt/chrome/chrome", true }
 	if st := RodStatus(); !st.Available || st.Detail != "Chrome found at /opt/chrome/chrome" {
 		t.Errorf("found: %+v", st)
 	}
 
-	rodLookPath = func() (string, bool) { return "", false }
+	shared.LookChrome = func() (string, bool) { return "", false }
 	if st := RodStatus(); st.Available || !strings.Contains(st.Detail, "not found") {
 		t.Errorf("missing: %+v", st)
 	}
@@ -182,9 +183,9 @@ func TestRodStatus(t *testing.T) {
 func TestEngineStatusHandler(t *testing.T) {
 	version := expectedPlaywrightVersion(t)
 	fakeDriver(t, `echo "Version `+version+`"`)
-	orig := rodLookPath
-	rodLookPath = func() (string, bool) { return "", false }
-	t.Cleanup(func() { rodLookPath = orig })
+	orig := shared.LookChrome
+	shared.LookChrome = func() (string, bool) { return "", false }
+	t.Cleanup(func() { shared.LookChrome = orig })
 	t.Setenv("BROWSER_TOOL_CHROME_PATH", "")
 
 	rec := httptest.NewRecorder()
@@ -250,4 +251,37 @@ func readManifest(t *testing.T) []map[string]string {
 		t.Fatal(err)
 	}
 	return m.Routes
+}
+
+// Rod and the chromedp sessions must be handed the same Chrome: the
+// status page can never say "installed" while the fallback cannot start.
+func TestRodAndChromedpResolveTheSameChrome(t *testing.T) {
+	t.Setenv("BROWSER_TOOL_CHROME_PATH", "")
+	orig := shared.LookChrome
+	shared.LookChrome = func() (string, bool) { return "/opt/chrome/chrome", true }
+	t.Cleanup(func() { shared.LookChrome = orig })
+
+	rodPath, err := rodChromePath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	launch, ok := shared.ChromeLaunchPath()
+	if !ok || launch != rodPath {
+		t.Errorf("rod uses %q, chromedp launches %q", rodPath, launch)
+	}
+	if st := shared.CurrentChromeStatus(); !st.Installed || st.Path != rodPath {
+		t.Errorf("the Chromium page would report %+v", st)
+	}
+}
+
+func TestManifestDeclaresTheChromeStatusRouteWithItsScope(t *testing.T) {
+	for _, r := range readManifest(t) {
+		if r["path_suffix"] == "chrome-status" {
+			if r["method"] != "GET" || r["required_scope"] != "tool:browser:crawl" {
+				t.Errorf("route: %+v", r)
+			}
+			return
+		}
+	}
+	t.Error("manifest.json does not declare the chrome-status route")
 }

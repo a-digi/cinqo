@@ -77,6 +77,7 @@ func runHTTPServer() {
 	http.HandleFunc("/crawl-logs", crawler.CrawlLogsHandler)
 	http.HandleFunc("/browser-settings", shared.BrowserSettingsHandler)
 	http.HandleFunc("/engine-status", crawler.EngineStatusHandler)
+	http.HandleFunc("/chrome-status", shared.ChromeStatusHandler)
 	http.HandleFunc("/engine-test", crawler.EngineTestHandler)
 	http.HandleFunc("/cloudflare-domains", crawler.CloudflareDomainsHandler)
 	http.HandleFunc("/crawl-status", crawler.CrawlStatusHandler)

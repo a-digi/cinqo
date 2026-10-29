@@ -473,7 +473,9 @@ func removeStaleChromeSingletonLock(profileDir string) {
 // feature.
 func normalAllocatorOptions(profileDir string) []chromedp.ExecAllocatorOption {
 	opts := chromedp.DefaultExecAllocatorOptions[:]
-	if p := os.Getenv("BROWSER_TOOL_CHROME_PATH"); p != "" {
+	// The one resolver (chrome.go): the same Chrome Rod launches, so the two
+	// libraries can never disagree about which browser exists.
+	if p, ok := ChromeLaunchPath(); ok {
 		opts = append(opts, chromedp.ExecPath(p))
 	}
 
@@ -523,7 +525,9 @@ var backgroundThrottlingFlags = []chromedp.ExecAllocatorOption{
 // for why the very first launch has to run that way once.
 func allocatorOptions(userAgent string) []chromedp.ExecAllocatorOption {
 	opts := chromedp.DefaultExecAllocatorOptions[:]
-	if p := os.Getenv("BROWSER_TOOL_CHROME_PATH"); p != "" {
+	// The one resolver (chrome.go): the same Chrome Rod launches, so the two
+	// libraries can never disagree about which browser exists.
+	if p, ok := ChromeLaunchPath(); ok {
 		opts = append(opts, chromedp.ExecPath(p))
 	}
 

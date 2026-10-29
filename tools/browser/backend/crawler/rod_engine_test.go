@@ -1,6 +1,7 @@
 package crawler
 
 import (
+	"browser-tool-backend/shared"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -51,9 +52,9 @@ func TestDeriveRodUserAgentAndMajorVersion(t *testing.T) {
 
 func TestRodMissingChromeIsAPlainError(t *testing.T) {
 	t.Setenv("BROWSER_TOOL_CHROME_PATH", "")
-	orig := rodLookPath
-	rodLookPath = func() (string, bool) { return "", false }
-	t.Cleanup(func() { rodLookPath = orig })
+	orig := shared.LookChrome
+	shared.LookChrome = func() (string, bool) { return "", false }
+	t.Cleanup(func() { shared.LookChrome = orig })
 
 	_, err := ensureRodEngine()
 	if !errors.Is(err, errRodNoChrome) {
