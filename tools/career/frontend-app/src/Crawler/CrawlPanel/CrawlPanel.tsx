@@ -16,6 +16,7 @@ import {
 import { startCrawlNow, startCrawlJobDetailsNow, stopCrawlNow, fetchActiveCrawlRun, type CrawlRun } from '../crawlNow'
 import { phaseLabel, latestCrawlLogMessage } from '../crawlPhase'
 import { attemptsLabel, instructionAlertAttempts, isLikelyUncrawlable, uncrawlableTooltip } from '../instructionStats'
+import { hasListingInstructions } from '../autoDiscoveryVisibility'
 import { InstructionAttemptStats } from './InstructionAttemptStats'
 import {
   PlayIcon,
@@ -874,35 +875,41 @@ export function CrawlPanel({
           on/off+interval (Crawler/AutoDiscoveryPanel) controls whether
           the mechanism runs at all; this is this ONE link's own
           override on top of that. */}
-      <div className="mb-2 flex flex-wrap items-center gap-2">
-        <Switch
-          checked={link.autoDiscoveryEnabled}
-          disabled={autoDiscoveryPending}
-          onChange={handleToggleAutoDiscovery}
-          label="Auto-discovery"
-          size="sm"
-        />
-        {/* This link's own interval override (step 85) — shown only
-            while auto-discovery is actually on for this link; hidden,
-            not just disabled, while it's off, since "how often" has no
-            meaning at all until "whether" is yes. "Use global
-            interval" (an empty string, the same "" = unselected
-            convention this tool's other Dropdown call sites already
-            use) clears the override entirely rather than sending a
-            literal interval value. */}
-        {link.autoDiscoveryEnabled && (
-          <Dropdown
-            options={[
-              { value: AUTO_DISCOVERY_GLOBAL_VALUE, label: 'Use global interval' },
-              ...AUTO_DISCOVERY_INTERVAL_OPTIONS.map((o) => ({ value: String(o.value), label: o.label })),
-            ]}
-            value={
-              link.autoDiscoveryIntervalMinutes !== undefined ? String(link.autoDiscoveryIntervalMinutes) : AUTO_DISCOVERY_GLOBAL_VALUE
-            }
-            onChange={handleChangeAutoDiscoveryInterval}
+      {/* Step 88 — only for a link that has listing crawl instructions:
+          auto-discovery crawls the listing with them, and the backend
+          never auto-crawls a link without. Hiding this never changes the
+          stored setting. */}
+      {hasListingInstructions(link) && (
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <Switch
+            checked={link.autoDiscoveryEnabled}
+            disabled={autoDiscoveryPending}
+            onChange={handleToggleAutoDiscovery}
+            label="Auto-discovery"
+            size="sm"
           />
-        )}
-      </div>
+          {/* This link's own interval override (step 85) — shown only
+              while auto-discovery is actually on for this link; hidden,
+              not just disabled, while it's off, since "how often" has no
+              meaning at all until "whether" is yes. "Use global
+              interval" (an empty string, the same "" = unselected
+              convention this tool's other Dropdown call sites already
+              use) clears the override entirely rather than sending a
+              literal interval value. */}
+          {link.autoDiscoveryEnabled && (
+            <Dropdown
+              options={[
+                { value: AUTO_DISCOVERY_GLOBAL_VALUE, label: 'Use global interval' },
+                ...AUTO_DISCOVERY_INTERVAL_OPTIONS.map((o) => ({ value: String(o.value), label: o.label })),
+              ]}
+              value={
+                link.autoDiscoveryIntervalMinutes !== undefined ? String(link.autoDiscoveryIntervalMinutes) : AUTO_DISCOVERY_GLOBAL_VALUE
+              }
+              onChange={handleChangeAutoDiscoveryInterval}
+            />
+          )}
+        </div>
+      )}
       {/* Two small cards, each exactly half the row (grid-cols-2, not
           flex-wrap) so they always sit side by side at 50%/50% width
           regardless of either card's own content length — a flex row

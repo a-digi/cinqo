@@ -13,6 +13,7 @@ import {
 import { fetchPlatforms, fetchPlatformKeys, type Platform } from '../../Cinqo/Platform/platformRepository'
 import { CrawlPlatformPicker } from '../../Crawler/CrawlPlatformPicker/CrawlPlatformPicker'
 import { AutoDiscoveryPanel } from '../../Crawler/AutoDiscoveryPanel/AutoDiscoveryPanel'
+import { anyLinkAutoDiscoverable } from '../../Crawler/autoDiscoveryVisibility'
 import { CrawlPanel } from '../../Crawler/CrawlPanel/CrawlPanel'
 import { PlusIcon } from '../../Shared/Icons/icons'
 import { Modal } from '../../Shared/Modal/Modal'
@@ -295,7 +296,9 @@ export function PortalsPage() {
         onSelectModel={setSelectedModel}
       />
 
-      <AutoDiscoveryPanel />
+      {/* Step 88 — only while some link has crawl instructions: with none,
+          there is nothing the global auto-discovery could crawl. */}
+      {anyLinkAutoDiscoverable(portals) && <AutoDiscoveryPanel />}
 
       <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
 
