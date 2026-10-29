@@ -148,6 +148,12 @@ type paginatedCrawlResponse struct {
 	// (cloudflare.go) when StoppedReason is "cloudflare_blocked" — set
 	// only on that one stop reason, empty otherwise.
 	BlockedReason string `json:"blockedReason,omitempty"`
+	// AdvancedBy (step 95) lists how each page after the first was reached,
+	// but only when something other than a plain click was needed ("js_click":
+	// an overlay swallowed the mouse click, so the control's own script click
+	// was used; "href": its link was followed). Absent when every page came
+	// from a plain click.
+	AdvancedBy []string `json:"advancedBy,omitempty"`
 }
 
 // paginatedCrawlRequest is the internal JSON shape the --mcp adapter
@@ -307,6 +313,7 @@ func runPaginatedCrawlLoop(ctx context.Context, tab loopTab, args paginatedArgs)
 	}
 	stoppedReason := ""
 	blockedReason := ""
+	var advancedBy []string // methods used, kept only if one was not a plain click
 	// tracker checks every page against what Cloudflare sent for it
 	// (challenge_resolution.go); page 1's automatic wait runs at most
 	// once per call (autoWaited) — the same wait crawlPage's own
@@ -483,34 +490,35 @@ func runPaginatedCrawlLoop(ctx context.Context, tab loopTab, args paginatedArgs)
 			break
 		}
 
-		if err := chromedp.Run(ctx, chromedp.Click(nextSelector), chromedp.Sleep(SettleDelay)); err != nil {
-			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				stoppedReason = "time_budget_reached"
-				break
-			}
-			stoppedReason = "click_failed"
-			break
-		}
-		// step 45 — this click just navigated the tab somewhere
-		// fetch_page_html's own cache has no idea about; only the primary
-		// tab has that state (see loopTab). See
-		// plan/ai/tools/browser/step-45-fetch-html-caching-plan.md.
-		if tab.onNavigate != nil {
-			tab.onNavigate()
-		}
-
-		var urlAfterClick string
-		if err := chromedp.Run(ctx, chromedp.Location(&urlAfterClick)); err != nil {
+		// Step 95: click, and when an overlay swallowed it, the control's own
+		// script click or link (paginate_advance.go).
+		adv, err := advanceToNextPage(ctx, nextSelector, currentURL)
+		if err != nil {
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 				stoppedReason = "time_budget_reached"
 				break
 			}
 			return paginatedCrawlResponse{}, nil, err
 		}
-		if urlAfterClick == currentURL {
-			stoppedReason = "url_unchanged"
+		// step 45 — the tab may just have navigated somewhere
+		// fetch_page_html's own cache has no idea about; only the primary
+		// tab has that state (see loopTab). See
+		// plan/ai/tools/browser/step-45-fetch-html-caching-plan.md.
+		if tab.onNavigate != nil {
+			tab.onNavigate()
+		}
+		if adv.By == "" {
+			if adv.ClickErr != nil {
+				stoppedReason = "click_failed"
+			} else {
+				stoppedReason = "url_unchanged"
+			}
 			break
 		}
+		advancedBy = append(advancedBy, adv.By)
+	}
+	if !anyFallback(advancedBy) {
+		advancedBy = nil
 	}
 
 	return paginatedCrawlResponse{
@@ -520,6 +528,7 @@ func runPaginatedCrawlLoop(ctx context.Context, tab loopTab, args paginatedArgs)
 		RequestedMaxPages: requestedMaxPages,
 		EffectiveMaxPages: effectiveMaxPages,
 		BlockedReason:     blockedReason,
+		AdvancedBy:        advancedBy,
 	}, pageHTML, nil
 }
 

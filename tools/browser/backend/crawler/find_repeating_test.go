@@ -229,7 +229,7 @@ func TestAListRenderedAfterLoadIsFoundByTheRetry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(resp.Candidates) != 1 || resp.Candidates[0].Count != 5 || resp.Note != "" {
+	if len(resp.Candidates) != 1 || resp.Candidates[0].Count != 5 || strings.Contains(resp.Note, "No repeating group") {
 		t.Fatalf("the retry should find the late list: %+v", resp)
 	}
 }
@@ -386,5 +386,167 @@ func TestPresentationAttributesAreStrippedFromTheSample(t *testing.T) {
 	}
 	if !strings.Contains(c.SampleHTML, `class="c"`) || !strings.Contains(c.SampleHTML, `data-id=`) || !strings.Contains(c.SampleHTML, "href=") {
 		t.Errorf("class, data-* and href must stay (they are what selectors use): %s", c.SampleHTML)
+	}
+}
+
+// --- next-page control candidates (step 95) -----------------------------------
+
+func pageWithJobs(extraHead, extraBody string) string {
+	return `<html><head>` + extraHead + `</head><body><main>` + jobs(5, "job-card") + `</main>` + extraBody + `</body></html>`
+}
+
+func TestARelNextLinkIsTheTopCandidateAndGivesTheNextPageURL(t *testing.T) {
+	ctx := pageCtx(t, pageWithJobs(`<link rel="next" href="/jobs?page=2">`, `<nav class="pagination"><a href="/jobs?page=1">1</a><a rel="next" href="/jobs?page=2">Next</a></nav>`))
+	res := analyze(t, ctx, 3, 5)
+	if len(res.NextCandidates) == 0 {
+		t.Fatalf("no next candidates: %+v", res)
+	}
+	n := res.NextCandidates[0]
+	if !strings.Contains(n.Selector, `rel~="next"`) || n.Reason != "rel=next" || !strings.HasSuffix(n.Href, "/jobs?page=2") {
+		t.Errorf("top candidate: %+v", n)
+	}
+	if !strings.HasSuffix(res.NextPageURL, "/jobs?page=2") {
+		t.Errorf("nextPageUrl = %q", res.NextPageURL)
+	}
+}
+
+// The real Stepstone shape: a generated class and an aria-label. The selector
+// must be the stable label, not the class.
+func TestTheAriaLabelIsPreferredOverAGeneratedClass(t *testing.T) {
+	ctx := pageCtx(t, pageWithJobs("", `<nav aria-label="pagination" id="p:1"><ul><li><a class="res-9e3779" aria-label="Nächste" href="/jobs?page=2"></a></li></ul></nav>`))
+	res := analyze(t, ctx, 3, 5)
+	if len(res.NextCandidates) == 0 || res.NextCandidates[0].Selector != `a[aria-label="Nächste"]` {
+		t.Fatalf("candidates: %+v", res.NextCandidates)
+	}
+	if res.NextCandidates[0].Label != "Nächste" || res.NextCandidates[0].Matches != 1 {
+		t.Errorf("%+v", res.NextCandidates[0])
+	}
+}
+
+func TestTheControlAfterTheCurrentPageNumberIsACandidate(t *testing.T) {
+	ctx := pageCtx(t, pageWithJobs("", `<ul class="pager"><li><a href="/j?p=1">1</a></li><li class="active"><a href="/j?p=2" aria-current="page">2</a></li><li><a href="/j?p=3">3</a></li></ul>`))
+	res := analyze(t, ctx, 3, 5)
+	if len(res.NextCandidates) == 0 {
+		t.Fatalf("no candidates: %+v", res)
+	}
+	found := false
+	for _, n := range res.NextCandidates {
+		if n.Reason == "follows the current page number" && strings.HasSuffix(n.Href, "/j?p=3") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("want the link after page 2: %+v", res.NextCandidates)
+	}
+}
+
+func TestAnArrowInAPaginationBarIsFound(t *testing.T) {
+	ctx := pageCtx(t, pageWithJobs("", `<div class="pagination"><a href="/j?p=1">‹</a><a href="/j?p=3">›</a></div>`))
+	res := analyze(t, ctx, 3, 5)
+	if len(res.NextCandidates) != 1 || res.NextCandidates[0].Text != "›" || !strings.HasSuffix(res.NextCandidates[0].Href, "/j?p=3") {
+		t.Fatalf("only the right arrow is next: %+v", res.NextCandidates)
+	}
+}
+
+func TestADisabledOrHiddenNextIsNotACandidate(t *testing.T) {
+	ctx := pageCtx(t, pageWithJobs("", `<div class="pagination">
+	  <a class="next disabled" href="/j?p=9">Next</a>
+	  <button aria-disabled="true" aria-label="Next page">Next</button>
+	  <a style="display: none" href="/j?p=2" rel="next">Next</a></div>`))
+	res := analyze(t, ctx, 3, 5)
+	if len(res.NextCandidates) != 0 {
+		t.Fatalf("disabled and hidden controls must not be offered: %+v", res.NextCandidates)
+	}
+}
+
+func TestAReadMoreLinkInsideAJobCardIsNotANextControl(t *testing.T) {
+	ctx := pageCtx(t, `<html><body>`+strings.ReplaceAll(jobs(5, "job-card"), "Open job", "Weiter lesen")+`</body></html>`)
+	res := analyze(t, ctx, 3, 5)
+	if len(res.NextCandidates) != 0 {
+		t.Fatalf("a card's own link is not pagination: %+v", res.NextCandidates)
+	}
+}
+
+func TestAPaginationBarShownTwiceIsOneCandidateThatMatchesTwice(t *testing.T) {
+	bar := `<nav class="pagination"><a rel="next" href="/j?p=2">Next</a></nav>`
+	ctx := pageCtx(t, `<html><body>`+bar+`<main>`+jobs(5, "job-card")+`</main>`+bar+`</body></html>`)
+	res := analyze(t, ctx, 3, 5)
+	if len(res.NextCandidates) != 1 || res.NextCandidates[0].Matches != 2 {
+		t.Fatalf("top and bottom bars are one selector matching twice: %+v", res.NextCandidates)
+	}
+}
+
+func TestEveryNextSelectorMatchesExactlyWhatItReportsOnTheLivePage(t *testing.T) {
+	ctx := pageCtx(t, pageWithJobs("", `<a class="link" href="/x/1">Other link one</a><a class="link" href="/x/2">Other link two</a>
+	  <nav class="pagination"><a class="link" aria-label="Next" href="/j?p=2">go</a></nav>`))
+	res := analyze(t, ctx, 3, 5)
+	if len(res.NextCandidates) == 0 {
+		t.Fatalf("no candidates: %+v", res)
+	}
+	for _, n := range res.NextCandidates {
+		if got := countMatches(t, ctx, n.Selector); got != n.Matches {
+			t.Errorf("selector %q matches %d elements, reported %d", n.Selector, got, n.Matches)
+		}
+	}
+}
+
+func TestNoPaginationGivesNoCandidatesAndANoteWhenItemsWereFound(t *testing.T) {
+	ctx := pageCtx(t, pageWithJobs("", ""))
+	resp, err := analyzeCurrentPage(ctx, 3, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Candidates) == 0 || len(resp.NextCandidates) != 0 || !strings.Contains(resp.Note, "No next-page control was found") {
+		t.Fatalf("%+v", resp)
+	}
+	if resp.NextPageURL != "" {
+		t.Errorf("nextPageUrl = %q", resp.NextPageURL)
+	}
+}
+
+func TestThePaginationNoteIsAddedToAnExistingNoteNotInstead(t *testing.T) {
+	// No items and no pagination: the "no list" note stands alone, with no
+	// pagination remark (there is nothing to paginate).
+	ctx := pageCtx(t, `<html><body><p>Nothing here.</p></body></html>`)
+	resp, err := analyzeCurrentPage(ctx, 3, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(resp.Note, "next-page") || !strings.Contains(resp.Note, "No repeating group") {
+		t.Errorf("note: %q", resp.Note)
+	}
+}
+
+// "The control after the current page" must keep meaning that as pages advance:
+// move the current-page marker and the same selector must follow it.
+func TestTheFollowsCurrentSelectorMovesWithTheCurrentPage(t *testing.T) {
+	ctx := pageCtx(t, pageWithJobs("", `<ul class="pager"><li><a href="/j?p=1">1</a></li><li class="active"><a href="/j?p=2">2</a></li><li><a href="/j?p=3">3</a></li><li><a href="/j?p=4">4</a></li></ul>`))
+	var selector string
+	for _, n := range analyze(t, ctx, 3, 5).NextCandidates {
+		if n.Reason == "follows the current page number" {
+			selector = n.Selector
+		}
+	}
+	if selector == "" {
+		t.Fatal("no follows-current candidate")
+	}
+	var href string
+	js := `(function(){document.querySelector('.pager li.active').classList.remove('active');document.querySelectorAll('.pager li')[2].classList.add('active');var a=document.querySelector(` + string(mustJSON(selector)) + `);return a?a.getAttribute('href'):'none'})()`
+	if err := chromedp.Run(ctx, chromedp.Evaluate(js, &href)); err != nil {
+		t.Fatal(err)
+	}
+	if href != "/j?p=4" {
+		t.Errorf("with page 3 current the selector %q should reach page 4, got %q", selector, href)
+	}
+}
+
+func TestBareArrowsInListItemsAreToldApartByPosition(t *testing.T) {
+	ctx := pageCtx(t, pageWithJobs("", `<ul class="pagination"><li><a href="/j?p=1">‹</a></li><li><a href="/j?p=3">›</a></li></ul>`))
+	res := analyze(t, ctx, 3, 5)
+	if len(res.NextCandidates) != 1 || !strings.HasSuffix(res.NextCandidates[0].Href, "/j?p=3") {
+		t.Fatalf("only the right arrow: %+v", res.NextCandidates)
+	}
+	if got := countMatches(t, ctx, res.NextCandidates[0].Selector); got != 1 {
+		t.Errorf("selector %q matches %d", res.NextCandidates[0].Selector, got)
 	}
 }

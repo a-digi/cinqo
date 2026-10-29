@@ -250,8 +250,213 @@
     for (var j = 0; j < kids.length && !truncated; j++) walk(kids[j]);
   }
 
+  // --- next-page control candidates (step 95) -------------------------------
+  // crawl_paginated advances by clicking `pagination.nextSelector`; the agent
+  // otherwise has to guess one. Found here by what the control says it is
+  // (rel=next, an aria-label or attribute naming "next", an arrow or "Weiter"
+  // text, the element after the current page number), each as a selector
+  // verified on the live page.
+  var NEXT_TEXT = /^(next|next page|weiter|nächste|nächste seite|naechste|suivant|page suivante|siguiente|volgende|avanti|seguinte|[›»→>]|>>)$/i;
+  var NEXT_HINT = /(^|[\s_\-:.])(next|weiter|naechste|nächste|suivant|siguiente|volgende|avanti)([\s_\-:.]|$)/i;
+  var PAGINATION = /pagin|pager|page-nav|pagenav|seitennavigation/i;
+
+  function attrText(el) {
+    return [el.id, el.getAttribute("class"), el.getAttribute("role"), el.getAttribute("aria-label"), el.getAttribute("data-at"), el.getAttribute("data-testid"), el.getAttribute("data-test")]
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  function inPagination(el) {
+    for (var a = el.parentElement, i = 0; a && i < 8; a = a.parentElement, i++) {
+      if (PAGINATION.test(attrText(a))) return true;
+    }
+    return false;
+  }
+
+  function isDisabledControl(el) {
+    if (el.disabled || el.getAttribute("aria-disabled") === "true") return true;
+    return /(^|\s)(disabled|is-disabled|inactive)(\s|$)/i.test(el.getAttribute("class") || "");
+  }
+
+  function usableControl(el) {
+    if (!el || el.nodeType !== 1 || isDisabledControl(el) || isHidden(el)) return false;
+    var tag = el.tagName.toUpperCase();
+    return tag === "A" ? usableHref(el) : tag === "BUTTON" || el.getAttribute("role") === "button" || /(^|\s)next(\s|$)/i.test(el.getAttribute("rel") || "");
+  }
+
+  function controlLabel(el) {
+    return collapse(el.getAttribute("aria-label") || el.getAttribute("title") || "");
+  }
+
+  function nextScore(el) {
+    var rel = el.getAttribute("rel") || "";
+    if (/(^|\s)next(\s|$)/i.test(rel)) return { score: 3, reason: "rel=next" };
+    var paged = inPagination(el);
+    var text = collapse(el.innerText || el.textContent).slice(0, 40);
+    var hint = attrText(el);
+    if (NEXT_HINT.test(hint) && (paged || /next|weiter/i.test(el.getAttribute("data-at") || el.getAttribute("data-testid") || ""))) {
+      return { score: 2.5 + (paged ? 0.3 : 0), reason: "an attribute, class or label says next" };
+    }
+    if (NEXT_HINT.test(controlLabel(el)) && paged) return { score: 2.2, reason: "aria-label or title says next" };
+    if (NEXT_TEXT.test(text) && (paged || text.length <= 2)) return { score: 2 + (paged ? 0.3 : 0), reason: "text says next" };
+    return null;
+  }
+
+  // currentMarker is a position-independent selector for the current-page
+  // item (the marker moves as pages advance, a plain nth-child would not).
+  function currentMarker(cur, node) {
+    var tag = node.tagName.toLowerCase();
+    if (node === cur) {
+      var ac = cur.getAttribute("aria-current");
+      if (ac === "page" || ac === "true") return tag + '[aria-current="' + ac + '"]';
+    } else {
+      var inner = cur.getAttribute("aria-current");
+      if (inner === "page" || inner === "true") return tag + ':has([aria-current="' + inner + '"])';
+    }
+    var tokens = classTokens(node);
+    for (var k = 0; k < tokens.length; k++) {
+      if (/^(active|current|selected|is-active|is-current|is-selected)$/i.test(tokens[k])) return tag + "." + esc(tokens[k]);
+    }
+    return "";
+  }
+
+  function paginationAncestor(el) {
+    for (var a = el.parentElement, i = 0; a && i < 8; a = a.parentElement, i++) {
+      if (PAGINATION.test(attrText(a))) return simple(a);
+    }
+    return "";
+  }
+
+  // followsCurrent: in a pagination container, the control right after the
+  // current page number, found with a selector that always means "the control
+  // after the current page" (current marker + adjacent sibling), verified to
+  // select exactly that control. A positional selector would click the same
+  // page again from page 3 on, so it is never offered.
+  function followsCurrent() {
+    var out = [];
+    var currents = document.querySelectorAll('[aria-current="page"], [aria-current="true"], .active, .current, .selected');
+    for (var i = 0; i < currents.length; i++) {
+      var cur = currents[i];
+      if (!inPagination(cur) && !PAGINATION.test(attrText(cur))) continue;
+      var node = cur;
+      for (var up = 0; up < 3 && node; up++) {
+        var sib = node.nextElementSibling;
+        if (!sib) { node = node.parentElement; continue; }
+        var ctl = sib.matches("a[href], button") ? sib : sib.querySelector("a[href], button");
+        var marker = ctl ? currentMarker(cur, node) : "";
+        if (ctl && marker) {
+          var rel = marker + " + " + sib.tagName.toLowerCase() + (ctl === sib ? "" : " " + ctl.tagName.toLowerCase());
+          var container = paginationAncestor(cur);
+          var tries = container ? [container + " " + rel, rel] : [rel];
+          for (var t = 0; t < tries.length; t++) {
+            var found;
+            try { found = Array.prototype.slice.call(document.querySelectorAll(tries[t])); } catch (e) { continue; }
+            if (found.length === 1 && found[0] === ctl) { out.push({ el: ctl, selector: tries[t] }); break; }
+          }
+        }
+        break;
+      }
+    }
+    return out;
+  }
+
+  // nextBases lists the selectors to try for one control, most stable first: a
+  // rel=next attribute, a stable data-* attribute, its aria-label or title (a
+  // word like "Nächste" survives a redeploy; a generated class does not), and
+  // only then its classes.
+  function nextBases(el) {
+    var tag = el.tagName.toLowerCase();
+    var out = [];
+    if (/(^|\s)next(\s|$)/i.test(el.getAttribute("rel") || "")) out.push(tag + '[rel~="next"]');
+    var stable = stableAttr(el);
+    if (stable) out.push(tag + stable);
+    ["aria-label", "title"].forEach(function (name) {
+      var v = el.getAttribute(name);
+      if (v && v.length <= 40) out.push(tag + "[" + name + '="' + v.replace(/"/g, '\\"') + '"]');
+    });
+    var plain = memberSelector([el]);
+    out.push(plain);
+    // A bare arrow with nothing to tell it apart from the "previous" arrow
+    // beside it: the next control is the last one in its bar.
+    out.push(plain + ":last-child");
+    out.push(tag + ":last-child");
+    return out;
+  }
+
+  function exactNext(el, foundSet) {
+    var bases = nextBases(el);
+    for (var b = 0; b < bases.length; b++) {
+      var tries = [bases[b]];
+      var anc = el.parentElement;
+      var prefix = "";
+      for (var depth = 0; depth < 4 && anc && anc !== document.documentElement; depth++) {
+        if (depth === 0) tries.push(simple(anc) + ":last-child > " + bases[b]);
+        prefix = simple(anc) + " > " + prefix;
+        tries.push(prefix + bases[b]);
+        anc = anc.parentElement;
+      }
+      for (var i = 0; i < tries.length; i++) {
+        var found;
+        try { found = Array.prototype.slice.call(document.querySelectorAll(tries[i])); } catch (e) { continue; }
+        if (found.length && found.indexOf(el) >= 0 && found.every(function (f) { return foundSet.has(f); })) {
+          return { selector: tries[i], matches: found.length };
+        }
+      }
+    }
+    return null;
+  }
+
+  function findNextControls() {
+    var scored = [];
+    var seen = new Set();
+    var all = document.querySelectorAll('a[href], button, [role="button"], [rel~="next"]');
+    for (var i = 0; i < all.length && i < 6000; i++) {
+      var el = all[i];
+      if (seen.has(el) || !usableControl(el)) continue;
+      var sc = nextScore(el);
+      if (sc) { seen.add(el); scored.push({ el: el, score: sc.score, reason: sc.reason, order: i }); }
+    }
+    followsCurrent().forEach(function (f, k) {
+      if (!usableControl(f.el)) return;
+      // Already found by what it says (e.g. an aria-label): that entry stays,
+      // its selector is the position-independent one only when it has none.
+      if (seen.has(f.el)) {
+        scored.forEach(function (c) { if (c.el === f.el && !c.dynamic) c.dynamic = f.selector; });
+        return;
+      }
+      seen.add(f.el);
+      scored.push({ el: f.el, score: 1.8, reason: "follows the current page number", order: 100000 + k, dynamic: f.selector });
+    });
+    var foundSet = new Set(scored.map(function (c) { return c.el; }));
+    scored.sort(function (a, b) { return b.score - a.score || a.order - b.order; });
+    var out = [];
+    var selectors = {};
+    for (var j = 0; j < scored.length && out.length < 3; j++) {
+      var c = scored[j];
+      var ex = c.reason === "follows the current page number" ? { selector: c.dynamic, matches: 1 } : exactNext(c.el, foundSet);
+      if (!ex || !ex.selector || selectors[ex.selector]) continue;
+      selectors[ex.selector] = 1;
+      out.push({
+        selector: ex.selector,
+        matches: ex.matches,
+        text: collapse(c.el.innerText || c.el.textContent).slice(0, 40),
+        label: controlLabel(c.el).slice(0, 60),
+        href: c.el.tagName.toUpperCase() === "A" ? c.el.href : "",
+        reason: c.reason,
+      });
+    }
+    return out;
+  }
+
+  function nextPageUrl() {
+    var l = document.querySelector('link[rel~="next"][href]');
+    if (l) return l.href;
+    var a = document.querySelector('a[rel~="next"][href]');
+    return a ? a.href : "";
+  }
+
   var root = document.body || document.documentElement;
-  if (!root) return { candidates: [], truncated: false };
+  if (!root) return { candidates: [], nextCandidates: [], nextPageUrl: "", truncated: false };
   walk(root);
 
   groups.sort(function (a, b) { return b.score - a.score; });
@@ -284,7 +489,12 @@
     });
   }
 
+  var nextCandidates = [];
+  try { nextCandidates = findNextControls(); } catch (e) { nextCandidates = []; }
+
   return {
+    nextCandidates: nextCandidates,
+    nextPageUrl: nextPageUrl(),
     candidates: chosen.map(function (c) {
       return {
         selector: c.selector,

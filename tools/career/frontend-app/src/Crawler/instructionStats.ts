@@ -3,7 +3,15 @@
 // kept free of React so the rules (when the alert shows, how counts
 // read) live in one place. See
 // plan/ai/tools/career/step-86-instruction-attempt-tracking.md.
-import type { InstructionKindStats } from '../api'
+import type { InstructionAttemptOutcome, InstructionKindStats } from '../api'
+
+// savedDespiteError (step 95): a turn can end in an error (the budget ran out on
+// the very round that saved, say) although the agent already saved its
+// instructions. The backend's verdict on the attempt is the truth: when it says
+// 'succeeded', the run is a success and the turn's error must not be shown.
+export function savedDespiteError(outcome: InstructionAttemptOutcome | undefined): boolean {
+  return outcome === 'succeeded'
+}
 
 export function attemptsLabel(count: number): string {
   return `${count} attempt${count === 1 ? '' : 's'}`

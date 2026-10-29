@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import {
   updatePortalLink,
   fetchPortals,
+  type InstructionAttemptOutcome,
   startInstructionAttempt,
   finishInstructionAttempt,
   type InstructionKind,
@@ -24,7 +25,7 @@ import {
 } from '../generateInstructions'
 import { startCrawlNow, startCrawlJobDetailsNow, stopCrawlNow, fetchActiveCrawlRun, type CrawlRun } from '../crawlNow'
 import { phaseLabel, latestCrawlLogMessage } from '../crawlPhase'
-import { instructionAlertAttempts, isLikelyUncrawlable } from '../instructionStats'
+import { instructionAlertAttempts, isLikelyUncrawlable, savedDespiteError } from '../instructionStats'
 import { hasListingInstructions } from '../autoDiscoveryVisibility'
 import { diagnoseEmptyCrawl, emptyCrawlFacts, emptyCrawlFor } from '../emptyCrawl'
 import { FREE_ROUTER_HINT, isFreeRouter } from '../modelHint'
@@ -535,8 +536,17 @@ export function CrawlPanel({
   // returned promise lets callers wait for it before reloading so the
   // fresh counts are what the reload shows.
   function recordAttemptFinish(kind: InstructionKind, errorText?: string): Promise<void> {
+    return recordAttemptOutcome(kind, errorText).then(() => undefined)
+  }
+
+  // recordAttemptOutcome is recordAttemptFinish that also returns the backend's
+  // verdict (undefined when it could not be read). Step 95: a turn that ended
+  // in an error may still have saved the instructions on its last round; the
+  // verdict, not the turn, decides whether that is shown as a failure.
+  function recordAttemptOutcome(kind: InstructionKind, errorText?: string): Promise<InstructionAttemptOutcome | undefined> {
     return finishInstructionAttempt(link.id, kind, errorText).catch((recordErr: unknown) => {
       console.error('failed to record instruction attempt finish for portal link', link.id, recordErr)
+      return undefined
     })
   }
 
@@ -598,21 +608,34 @@ export function CrawlPanel({
         : err instanceof Error
           ? err.message
           : 'Failed to generate crawl instructions.'
-    // Shown immediately, regardless of whether the durable write below
-    // succeeds — a network failure recording the error must never
+    // Step 95: ask the backend how the attempt ended BEFORE showing the error.
+    // The agent may have saved its instructions on the very round the budget
+    // ran out, which ends the turn in an error although the run succeeded.
+    // Only when the verdict is not 'succeeded' (or cannot be read) is the
+    // error shown — and then immediately, regardless of whether the durable
+    // write below succeeds: a network failure recording the error must never
     // leave the failure completely invisible.
-    setAiLocalError(text)
-    const attemptRecorded = recordAttemptFinish('listing', text)
-    void updatePortalLink(link.id, { instructionsAiError: text, instructionsAiConversationId: '' })
-      .catch((recordErr: unknown) => {
-        // Recording the failure durably itself also failed — the
-        // local error above still shows for this session; see
-        // step 33's own Open Question 1 for the reliability limit
-        // durable recording already has (e.g. across a reload).
-        console.error('failed to record instructions-AI error on portal link', link.id, recordErr)
-      })
-      .then(() => attemptRecorded)
-      .then(onReload)
+    void recordAttemptOutcome('listing', text).then((outcome) => {
+      if (savedDespiteError(outcome)) {
+        setAiLocalError(undefined)
+        void updatePortalLink(link.id, { instructionsAiError: '', instructionsAiConversationId: '' })
+          .catch((recordErr: unknown) => {
+            console.error('failed to clear instructions-AI conversation on portal link', link.id, recordErr)
+          })
+          .then(onReload)
+        return
+      }
+      setAiLocalError(text)
+      void updatePortalLink(link.id, { instructionsAiError: text, instructionsAiConversationId: '' })
+        .catch((recordErr: unknown) => {
+          // Recording the failure durably itself also failed — the
+          // local error above still shows for this session; see
+          // step 33's own Open Question 1 for the reliability limit
+          // durable recording already has (e.g. across a reload).
+          console.error('failed to record instructions-AI error on portal link', link.id, recordErr)
+        })
+        .then(onReload)
+    })
   }
 
   // resumeGenerateInstructions picks a still-in-flight run back up
@@ -752,14 +775,29 @@ export function CrawlPanel({
         : err instanceof Error
           ? err.message
           : 'Failed to generate job detail crawl instructions.'
-    setJobDetailAiLocalError(text)
-    const attemptRecorded = recordAttemptFinish('job_detail', text)
-    void updatePortalLink(link.id, { jobDetailInstructionsAiError: text, jobDetailInstructionsAiConversationId: '' })
-      .catch((recordErr: unknown) => {
-        console.error('failed to record job detail instructions-AI error on portal link', link.id, recordErr)
-      })
-      .then(() => attemptRecorded)
-      .then(onReload)
+    // Step 95: as for the listing instructions above — the backend's verdict
+    // decides, since a turn can end in an error after a successful save.
+    void recordAttemptOutcome('job_detail', text).then((outcome) => {
+      if (savedDespiteError(outcome)) {
+        setJobDetailAiLocalError(undefined)
+        void updatePortalLink(link.id, {
+          jobDetailInstructionsAiError: '',
+          jobDetailInstructionsAiConversationId: '',
+          jobDetailInstructionsAiRequested: false,
+        })
+          .catch((recordErr: unknown) => {
+            console.error('failed to clear job detail instructions-AI conversation on portal link', link.id, recordErr)
+          })
+          .then(onReload)
+        return
+      }
+      setJobDetailAiLocalError(text)
+      void updatePortalLink(link.id, { jobDetailInstructionsAiError: text, jobDetailInstructionsAiConversationId: '' })
+        .catch((recordErr: unknown) => {
+          console.error('failed to record job detail instructions-AI error on portal link', link.id, recordErr)
+        })
+        .then(onReload)
+    })
   }
 
   // resumeGenerateJobDetailInstructions mirrors resumeGenerateInstructions

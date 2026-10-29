@@ -59,9 +59,24 @@ type RepeatingCandidate struct {
 	SampleHTML      string   `json:"sampleHtml"`
 }
 
+// NextCandidate is a control that looks like the "next page" button or link,
+// as a selector verified on the live page (step 95).
+type NextCandidate struct {
+	Selector string `json:"selector"`
+	// Matches is how many elements the selector selects (a pagination bar
+	// shown above and below the list matches twice; the first is clicked).
+	Matches int    `json:"matches"`
+	Text    string `json:"text"`
+	Label   string `json:"label,omitempty"`
+	Href    string `json:"href,omitempty"`
+	Reason  string `json:"reason"`
+}
+
 type findRepeatingScriptResult struct {
-	Candidates []RepeatingCandidate `json:"candidates"`
-	Truncated  bool                 `json:"truncated"`
+	Candidates     []RepeatingCandidate `json:"candidates"`
+	NextCandidates []NextCandidate      `json:"nextCandidates"`
+	NextPageURL    string               `json:"nextPageUrl"`
+	Truncated      bool                 `json:"truncated"`
 }
 
 type findRepeatingRequest struct {
@@ -74,7 +89,13 @@ type findRepeatingResponse struct {
 	PageTitle  string               `json:"pageTitle"`
 	FinalURL   string               `json:"finalUrl"`
 	Candidates []RepeatingCandidate `json:"candidates"`
-	Note       string               `json:"note,omitempty"`
+	// NextCandidates (step 95) are the likely next-page controls, best first;
+	// use one as pagination.nextSelector. NextPageURL is the page's own
+	// rel=next link when it declares one (informational: crawl_paginated
+	// clicks a control, it does not navigate to a URL).
+	NextCandidates []NextCandidate `json:"nextCandidates"`
+	NextPageURL    string          `json:"nextPageUrl,omitempty"`
+	Note           string          `json:"note,omitempty"`
 }
 
 // normalizeFindRepeating applies the defaults and bounds: minItems at least 2
@@ -113,6 +134,9 @@ func runFindRepeatingScript(ctx context.Context, minItems, maxCandidates int) (f
 	if result.Candidates == nil {
 		result.Candidates = []RepeatingCandidate{}
 	}
+	if result.NextCandidates == nil {
+		result.NextCandidates = []NextCandidate{}
+	}
 	return result, nil
 }
 
@@ -140,10 +164,19 @@ func analyzeCurrentPage(ctx context.Context, minItems, maxCandidates int) (findR
 		return findRepeatingResponse{}, err
 	}
 	resp.Candidates = script.Candidates
+	resp.NextCandidates = script.NextCandidates
+	resp.NextPageURL = script.NextPageURL
 	if len(resp.Candidates) == 0 {
 		resp.Note = fmt.Sprintf("No repeating group of at least %d items with their own links and some text was found. The page may not list items, may not have finished loading, or may be showing a challenge page.", minItems)
 	} else if script.Truncated {
 		resp.Note = "The page is very large; only part of it was analysed."
+	}
+	if len(resp.Candidates) > 0 && len(resp.NextCandidates) == 0 {
+		msg := "No next-page control was found: the list may be a single page, or paginated by infinite scroll or a \"load more\" button, which crawl_paginated cannot page through (then crawl one page only)."
+		if resp.Note != "" {
+			msg = resp.Note + " " + msg
+		}
+		resp.Note = msg
 	}
 	return resp, nil
 }
@@ -245,7 +278,7 @@ func RegisterFindRepeatingItems(server *mcp.Server) {
 			"Use this FIRST when writing listing crawl instructions, instead of reading raw page HTML: a long page's HTML is cut off long before the job list, so reading it shows only the header and filters. " +
 			"Take the candidate whose sample looks like one job posting; its selector is your crawl_paginated `container`, and its sampleHtml shows what to select inside it (title, link, company, location, ...). " +
 			"Navigates to the URL itself; read-only, submits nothing. An empty result means no list was found — the page may not list items, may not have finished loading, or may be a challenge page. " +
-			"This finds the items only, not the pagination control.",
+			"It also returns nextCandidates: the likely next-page controls, each a selector verified on the page — use one as pagination.nextSelector instead of guessing.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args findRepeatingItemsArgs) (*mcp.CallToolResult, any, error) {
 		if strings.TrimSpace(args.URL) == "" {
 			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "url is required"}}, IsError: true}, nil, nil

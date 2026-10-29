@@ -836,7 +836,16 @@ export async function startInstructionAttempt(portalLinkId: string, kind: Instru
   }
 }
 
-export async function finishInstructionAttempt(portalLinkId: string, kind: InstructionKind, error?: string): Promise<void> {
+// InstructionAttemptOutcome is how the backend ended a run (step 95): 'succeeded'
+// when an AI save tool saved instructions during it — whatever the turn itself
+// reported — 'failed' when it did not, 'none' when no attempt was running.
+export type InstructionAttemptOutcome = 'succeeded' | 'failed' | 'none'
+
+export async function finishInstructionAttempt(
+  portalLinkId: string,
+  kind: InstructionKind,
+  error?: string,
+): Promise<InstructionAttemptOutcome | undefined> {
   const res = await fetch(`${PROXY_BASE}/portal-links/instruction-attempts/finish`, {
     method: 'POST',
     credentials: 'include',
@@ -846,6 +855,8 @@ export async function finishInstructionAttempt(portalLinkId: string, kind: Instr
     const text = await res.text()
     throw new Error(text || `failed to finish instruction attempt (${res.status})`)
   }
+  const body = (await res.json().catch(() => ({}))) as { status?: string }
+  return body.status === 'succeeded' || body.status === 'failed' || body.status === 'none' ? body.status : undefined
 }
 
 export async function removePortalLink(id: string): Promise<void> {
