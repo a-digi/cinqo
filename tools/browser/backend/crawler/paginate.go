@@ -415,6 +415,21 @@ func runPaginatedCrawlLoop(ctx context.Context, tab loopTab, args paginatedArgs)
 		if cf.blocked && len(pages) == 1 {
 			return paginatedCrawlResponse{}, nil, newCloudflareBlockedError(cf.reason)
 		}
+		// Step 96: a rate limit or another vendor's wall (no wait changes it).
+		// On a later page the pages already collected are kept and the crawl
+		// stops, saying why.
+		if cf.final != nil {
+			if len(pages) == 1 {
+				return paginatedCrawlResponse{}, nil, cf.final
+			}
+			stoppedReason = cf.final.Code
+			blockedReason = cf.reason
+			pages = pages[:len(pages)-1]
+			if captureHTML && len(pageHTML) > 0 {
+				pageHTML = pageHTML[:len(pageHTML)-1]
+			}
+			break
+		}
 		if cf.challenge || cf.blocked {
 			foundRealContent := len(result.Items) > 0
 			if container == "" {
@@ -435,6 +450,9 @@ func runPaginatedCrawlLoop(ctx context.Context, tab loopTab, args paginatedArgs)
 					}
 					if outcome.HardBlocked {
 						return paginatedCrawlResponse{}, nil, newCloudflareBlockedError(outcome.Reason)
+					}
+					if outcome.Final != nil {
+						return paginatedCrawlResponse{}, nil, outcome.Final
 					}
 					if !outcome.Cleared {
 						return paginatedCrawlResponse{}, nil, newCloudflareUnresolvedError(outcome.Reason, tracker)
@@ -695,7 +713,8 @@ func performPaginatedCrawlForURL(reqCtx context.Context, url string, args pagina
 		// aiCallBudget, never headed.
 		r, err := worker()
 		recordIfUnresolved(url, err)
-		return r.resp, r.pageHTML, err
+		// Step 96: ask a person, without making the agent wait (human_assist.go).
+		return r.resp, r.pageHTML, humanAssistedError(url, args.requestID, err)
 	}
 
 	if domain, err := hostnameOf(url); err == nil {
@@ -751,6 +770,7 @@ func paginatedCrawlOnWorkerTab(reqCtx context.Context, url string, args paginate
 	linkRequestCancel(reqCtx, ctx, cancel, tabCtx)
 
 	signals := watchChallengeSignals(ctx)
+	seedStoredClearance(ctx, url) // step 96
 	setCrawlPhase(args.requestID, phaseNavigating, "navigating to "+url)
 	if err := navigateWithHangGuard(ctx, release, chromedp.Navigate(url), chromedp.Sleep(SettleDelay)); err != nil {
 		return paginatedResult{}, classifyCancellation(err, reqCtx, tabCtx)
@@ -829,6 +849,9 @@ func performPaginatedCrawlWithNormalSession(reqCtx context.Context, blockedURL s
 			}
 			if outcome.HardBlocked {
 				return paginatedCrawlResponse{}, nil, newCloudflareBlockedError(outcome.Reason)
+			}
+			if outcome.Final != nil {
+				return paginatedCrawlResponse{}, nil, outcome.Final
 			}
 			if !outcome.Cleared {
 				return paginatedCrawlResponse{}, nil, cfErr

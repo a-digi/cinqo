@@ -123,6 +123,18 @@ func (m *mainDocumentResponse) record(status int, headers proto.NetworkHeaders) 
 	m.mu.Unlock()
 }
 
+// statusAndHeaders returns the last main document's status and a copy of its
+// lower-cased headers (step 96).
+func (m *mainDocumentResponse) statusAndHeaders() (int, map[string]string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	cp := make(map[string]string, len(m.headers))
+	for k, v := range m.headers {
+		cp[k] = v
+	}
+	return m.status, cp
+}
+
 func (m *mainDocumentResponse) header(name string) (value string, status int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -188,6 +200,7 @@ func fetchWithRod(ctx context.Context, rawURL, requestID string, expectedSelecto
 		},
 	)()
 
+	seedStoredClearanceRod(p, rawURL) // step 96
 	setCrawlPhase(requestID, phaseNavigating, "navigating to "+rawURL+" (rod)")
 	if err := p.Navigate(rawURL); err != nil {
 		return crawlResponse{}, rodNavigationError(ctx, err)
@@ -227,6 +240,11 @@ func fetchWithRod(ctx context.Context, rawURL, requestID string, expectedSelecto
 	}
 	if probe.ChallengePage && !probe.Expected {
 		return crawlResponse{}, newCloudflareUnresolvedError("cloudflare challenge page", nil)
+	}
+	// Step 96: a deny page, a rate limit, or another vendor's wall.
+	status, headers := main.statusAndHeaders()
+	if cfErr := accessErrorFromSingleShot(status, headers, probe); cfErr != nil {
+		return crawlResponse{}, cfErr
 	}
 
 	// Only now — after every Cloudflare verdict — let the page finish

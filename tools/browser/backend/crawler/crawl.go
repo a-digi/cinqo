@@ -137,6 +137,9 @@ type crawlResponse struct {
 	// Window (step 94) is set only when the request asked for an offset: which
 	// characters of the page's HTML this response carries.
 	Window *htmlWindow `json:"window,omitempty"`
+	// Access (step 96) is set only when something happened that the caller
+	// should know about, e.g. a challenge the browser cleared by itself.
+	Access *accessNote `json:"access,omitempty"`
 }
 
 // CrawlHandler handles POST /crawl — the --mcp adapter's own real
@@ -468,6 +471,9 @@ func navigateAndReadWithCloudflareCheck(ctx context.Context, rawURL, requestID s
 	// cf-mitigated header is only observable while it arrives.
 	signals := watchChallengeSignals(ctx)
 
+	// Step 96: a clearance a person earned earlier, if one is kept for this site.
+	seedStoredClearance(ctx, rawURL)
+
 	setCrawlPhase(requestID, phaseNavigating, "navigating to "+rawURL)
 	if err := navigateWithHangGuard(ctx, recreate, chromedp.Navigate(rawURL), chromedp.Sleep(SettleDelay)); err != nil {
 		return crawlResponse{}, err
@@ -485,11 +491,18 @@ func navigateAndReadWithCloudflareCheck(ctx context.Context, rawURL, requestID s
 	if outcome.HardBlocked {
 		return crawlResponse{}, newCloudflareBlockedError(outcome.Reason)
 	}
+	if outcome.Final != nil {
+		return crawlResponse{}, outcome.Final
+	}
 	if !outcome.Cleared {
 		return crawlResponse{}, newCloudflareUnresolvedError(outcome.Reason, tracker)
 	}
 
-	return readCrawlResponse(ctx, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
+	resp, err := readCrawlResponse(ctx, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
+	if err == nil {
+		resp.Access = noteClearedAutomatically(outcome.ClearedBy, outcome.Waited)
+	}
+	return resp, err
 }
 
 // crawlPage navigates the primary tab to rawURL and reads back its
@@ -550,7 +563,9 @@ func crawlPage(parent context.Context, rawURL, requestID string, expectedSelecto
 		if err == nil {
 			syncPrimaryTabAsync(rawURL, resp, skipCache)
 		}
-		return resp, err
+		// Step 96: an unresolved challenge on an AI call asks a person, without
+		// making the agent wait for them.
+		return resp, humanAssistedError(rawURL, requestID, err)
 	}
 
 	// step 29 — a known-Cloudflare domain skips the primary tab entirely:
@@ -780,6 +795,9 @@ func waitForHumanToSolveCloudflare(ctx context.Context, fallback *crawlError, re
 	if outcome.HardBlocked {
 		return crawlResponse{}, newCloudflareBlockedError(outcome.Reason)
 	}
+	if outcome.Final != nil {
+		return crawlResponse{}, outcome.Final
+	}
 	if !outcome.Cleared {
 		return crawlResponse{}, fallback
 	}
@@ -907,6 +925,7 @@ func fetchPageText(result crawlResponse) string {
 	if result.Truncated {
 		text += "(HTML truncated to fit the response size limit)\n"
 	}
+	text += accessNoteText(result.Access)
 	switch {
 	case result.Window != nil:
 		w := result.Window

@@ -102,6 +102,10 @@ type crawlError struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
 	Reason  string `json:"reason"`
+	// Outcome and Advice (step 96) say what the site did in terms a caller can
+	// act on, and what to do about it; see access_outcome.go.
+	Outcome string `json:"outcome,omitempty"`
+	Advice  string `json:"advice,omitempty"`
 	// tracker (only meaningful for cloudflare_challenge_unresolved)
 	// carries the detection-time baseline and network signals from the
 	// automatic wait into the human wait for the SAME tab — see
@@ -125,6 +129,8 @@ func newCloudflareUnresolvedError(reason string, tracker *challengeTracker) *cra
 		Code:    codeCloudflareUnresolved,
 		Message: "Cloudflare challenge could not be cleared",
 		Reason:  reason,
+		Outcome: outcomeInteractiveRequired,
+		Advice:  adviceFor(outcomeInteractiveRequired, 0, ""),
 		tracker: tracker,
 	}
 }
@@ -144,6 +150,8 @@ func newCloudflareBlockedError(reason string) *crawlError {
 		Code:    codeCloudflareBlocked,
 		Message: "Cloudflare blocked access to this page",
 		Reason:  reason,
+		Outcome: outcomeBlocked,
+		Advice:  adviceFor(outcomeBlocked, 0, ""),
 	}
 }
 

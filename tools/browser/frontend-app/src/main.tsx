@@ -13,6 +13,7 @@ import { ChromeGate } from './ChromeRequired'
 import { ChromiumPage } from './ChromiumPage'
 import { CrawlLogsPage } from './CrawlLogsPage'
 import { DebugPage } from './DebugPage'
+import { DomainsPage } from './DomainsPage'
 import { EnginePage } from './EnginePage'
 import { fetchChromeStatus } from './api'
 import './index.css'
@@ -23,6 +24,7 @@ const CRAWL_LOGS_PATH = '/tools/browser/crawl-logs'
 const DEBUG_PATH = '/tools/browser/debug'
 const ENGINE_PATH = '/tools/browser/engine'
 const CHROMIUM_PATH = '/tools/browser/chromium'
+const DOMAINS_PATH = '/tools/browser/domains'
 
 // The gate (step 53): the other pages only make sense with a Chrome or
 // Chromium installed. A tool's menu can only be appended to, so the decision is
@@ -59,6 +61,13 @@ const chromeDependentEntries = [
     path: CRAWL_LOGS_PATH,
     // Reuses tool:browser:crawl — the same permission already
     // needed to run a crawl at all (step 17's own design).
+    scopes: ['tool:browser:crawl'],
+  },
+  {
+    label: 'Domains',
+    path: DOMAINS_PATH,
+    // Step 96 — sites that asked for a check, and clearing them. Same scope as
+    // the routes it calls (domains, domains/clear, crawl-cancel).
     scopes: ['tool:browser:crawl'],
   },
   {
@@ -156,6 +165,19 @@ window.__cinqoToolBridge.registerRoute({
   path: CHROMIUM_PATH,
   mount: (container) => {
     mountReact(container, <ChromiumPage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: DOMAINS_PATH,
+  mount: (container) => {
+    mountReact(
+      container,
+      <ChromeGate ready={chromeReady}>
+        <DomainsPage />
+      </ChromeGate>,
+    )
   },
   unmount: unmountReact,
 })

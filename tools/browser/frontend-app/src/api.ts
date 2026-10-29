@@ -166,6 +166,11 @@ export interface BrowserSettings {
   // HTML dump (debugging a stuck challenge), not the regular crawl-log
   // HTML capture debugLogHtml gates.
   debugLogChallenge: boolean
+  // humanAssist (step 96) — when an AI call meets a challenge only a person
+  // can clear, open a browser window for that person instead of just failing.
+  // On by default; a backend that predates it sends none, and a body without
+  // it leaves the stored value alone.
+  humanAssist: boolean
 }
 
 export async function fetchBrowserSettings(): Promise<BrowserSettings> {
@@ -278,6 +283,71 @@ export async function fetchCloudflareDomains(): Promise<CloudflareDomain[]> {
   if (!res.ok) throw new Error(`failed to load cloudflare domains (${res.status})`)
   const data = await readJson<{ domains?: CloudflareDomain[] }>(res)
   return data.domains ?? []
+}
+
+// --- Domains: sites that asked for a check, and kept clearances (step 96) ---
+//
+// What the tool knows about each site that showed a Cloudflare check: whether a
+// person's clearance is kept (and until when), and whether a Chrome window is
+// open for someone right now. The clearance itself is never returned. See
+// plan/ai/tools/browser/step-96-cloudflare-outcomes-and-kept-clearance.md.
+
+const DOMAINS_BASE = '/api/v1/tools/browser/proxy/domains'
+const CRAWL_CANCEL_BASE = '/api/v1/tools/browser/proxy/crawl-cancel'
+
+export interface DomainClearance {
+  state: 'valid' | 'expired' | 'none'
+  expiresAt?: string
+  source?: string
+}
+
+export interface DomainRequest {
+  // waiting: a window is open for a person; gave_up: the wait ended without a
+  // clearance; failed: no window could be opened (or it was cancelled).
+  state: 'waiting' | 'cleared' | 'gave_up' | 'failed'
+  requestId?: string
+  startedAt?: string
+  finishedAt?: string
+  detail?: string
+}
+
+export interface DomainEntry {
+  domain: string
+  reason?: string
+  firstDetectedAt?: string
+  clearance: DomainClearance
+  request?: DomainRequest
+}
+
+export async function fetchDomains(): Promise<DomainEntry[]> {
+  const res = await fetch(DOMAINS_BASE, { credentials: 'include' })
+  if (!res.ok) throw new Error(`failed to load domains (${res.status})`)
+  const data = await readJson<{ domains?: DomainEntry[] }>(res)
+  return data.domains ?? []
+}
+
+// clearDomainNow opens the Chrome window for a person to clear the site.
+export async function clearDomainNow(domain: string): Promise<void> {
+  const res = await fetch(`${DOMAINS_BASE}/clear`, {
+    method: 'POST',
+    credentials: 'include',
+    body: JSON.stringify({ domain }),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(text.trim() || `failed to open the window (${res.status})`)
+  }
+}
+
+export async function forgetDomain(domain: string): Promise<void> {
+  const res = await fetch(`${DOMAINS_BASE}?domain=${encodeURIComponent(domain)}`, { method: 'DELETE', credentials: 'include' })
+  if (!res.ok && res.status !== 204) throw new Error(`failed to forget the domain (${res.status})`)
+}
+
+export async function cancelDomainRequest(requestId: string): Promise<void> {
+  const res = await fetch(CRAWL_CANCEL_BASE, { method: 'POST', credentials: 'include', body: JSON.stringify({ requestId }) })
+  // 404 means it already ended: nothing left to cancel.
+  if (!res.ok && res.status !== 404) throw new Error(`failed to cancel (${res.status})`)
 }
 
 export async function removeCredential(domain: string): Promise<void> {

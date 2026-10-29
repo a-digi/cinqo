@@ -182,6 +182,14 @@ func fetchWithPlaywright(ctx context.Context, rawURL, requestID string, expected
 	if probe.ChallengePage && !probe.Expected {
 		return crawlResponse{}, newCloudflareUnresolvedError("cloudflare challenge page", nil)
 	}
+	// Step 96: a deny page, a rate limit, or another vendor's wall.
+	if resp != nil {
+		if hdrs, herr := resp.AllHeaders(); herr == nil {
+			if cfErr := accessErrorFromSingleShot(resp.Status(), hdrs, probe); cfErr != nil {
+				return crawlResponse{}, cfErr
+			}
+		}
+	}
 
 	return readCrawlResponseWithPlaywright(page, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
 }

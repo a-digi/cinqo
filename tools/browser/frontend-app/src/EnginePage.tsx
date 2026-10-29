@@ -71,12 +71,18 @@ export function EnginePage() {
   }
 
   function update(engine: FetchEngine) {
+    save({ fetchEngine: engine })
+  }
+
+  // save applies a change on top of the loaded settings and sends the whole
+  // object (the backend overwrites it on a PUT).
+  function save(change: Partial<BrowserSettings>) {
     if (!settings) return
     const previous = settings
     setError('')
     setSaving(true)
-    setSettings({ ...settings, fetchEngine: engine }) // optimistic — reverted below if the save fails
-    saveBrowserSettings({ ...settings, fetchEngine: engine })
+    setSettings({ ...settings, ...change }) // optimistic — reverted below if the save fails
+    saveBrowserSettings({ ...settings, ...change })
       .then(setSettings)
       .catch((err: unknown) => {
         setSettings(previous)
@@ -98,6 +104,7 @@ export function EnginePage() {
   // A backend that predates the setting sends no fetchEngine: that is Rod,
   // the default.
   const useRod = settings.fetchEngine !== 'playwright'
+  const humanAssist = settings.humanAssist
   const playwrightUnavailable = status !== null && !status.playwright.available
   const rodUnavailable = status !== null && !status.rod.available
   // Unchecking would select Playwright: only offered when it can run. A
@@ -166,6 +173,31 @@ export function EnginePage() {
           Currently using: <span className="font-medium text-gray-700">{useRod ? 'Rod' : 'Playwright'}</span>. A change applies to the next
           page fetched — no restart needed, and a fetch already running is not interrupted.
         </p>
+      </div>
+
+      <h2 className="mb-1.5 mt-8 text-lg font-semibold">When a site asks for a check</h2>
+      <div className="space-y-2 rounded-md border border-gray-200 bg-gray-50 p-6 shadow-sm">
+        <label htmlFor="cinqo-browser-human-assist" aria-label="Ask me to clear it" className="flex items-start gap-3">
+          <input
+            id="cinqo-browser-human-assist"
+            type="checkbox"
+            checked={humanAssist}
+            disabled={saving}
+            onChange={(e) => {
+              save({ humanAssist: e.target.checked })
+            }}
+            className="mt-0.5 h-4 w-4 rounded border-gray-300"
+          />
+          <span>
+            <span className="block text-sm font-medium">Open a browser window for me to clear it (recommended)</span>
+            <span className="block text-xs text-gray-500">
+              When an AI agent reaches a site that asks for a check only a person can pass, a Chrome window opens on this computer so you
+              can clear it. The agent is told right away that you were asked, so it does not wait. Once you have cleared it, the clearance
+              is kept until it expires and the agent&apos;s next call works. The tool never solves the check itself. Unchecked: the agent
+              just gets told that the site needs a person.
+            </span>
+          </span>
+        </label>
       </div>
 
       <h2 className="mb-1.5 mt-8 text-lg font-semibold">Availability</h2>

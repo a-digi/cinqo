@@ -3,6 +3,7 @@ package shared
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -36,9 +37,15 @@ func CallSibling(route string, body []byte) ([]byte, error) {
 			Code    string `json:"code"`
 			Message string `json:"message"`
 			Reason  string `json:"reason"`
+			// Advice (step 96) says what the caller should do about it.
+			Advice string `json:"advice"`
 		}
 		if err := json.Unmarshal(respBody, &cfErr); err == nil && cfErr.Code != "" {
-			return nil, fmt.Errorf("%s (%s: %s)", cfErr.Message, cfErr.Code, cfErr.Reason)
+			msg := fmt.Sprintf("%s (%s: %s)", cfErr.Message, cfErr.Code, cfErr.Reason)
+			if cfErr.Advice != "" {
+				msg += ". " + cfErr.Advice
+			}
+			return nil, errors.New(msg)
 		}
 		return nil, fmt.Errorf("browser session returned status %d: %s", resp.StatusCode, string(respBody))
 	}

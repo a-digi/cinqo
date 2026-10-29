@@ -160,6 +160,11 @@ func InitDB() error {
 		-- from migrateBrowserSettingsFetchEngineColumn. See
 		-- plan/ai/tools/browser/step-50-fetch-engine-setting-page.md.
 		fetch_engine        TEXT NOT NULL DEFAULT 'rod' CHECK (fetch_engine IN ('rod','playwright')),
+		-- human_assist (step 96): when an AI call meets a challenge only a
+		-- person can clear, open a browser window for them (instead of just
+		-- failing). On by default; an existing table gets it from
+		-- migrateBrowserSettingsHumanAssistColumn.
+		human_assist        INTEGER NOT NULL DEFAULT 1,
 		updated_at          TEXT
 	)`); err != nil {
 		db.Close()
@@ -172,6 +177,10 @@ func InitDB() error {
 	if err := migrateBrowserSettingsFetchEngineColumn(db); err != nil {
 		db.Close()
 		return fmt.Errorf("failed to migrate browser_settings fetch_engine column: %w", err)
+	}
+	if err := migrateBrowserSettingsHumanAssistColumn(db); err != nil {
+		db.Close()
+		return fmt.Errorf("failed to migrate browser_settings human_assist column: %w", err)
 	}
 	if _, err := db.Exec(`INSERT OR IGNORE INTO browser_settings (id, debug_enabled, debug_log_html, debug_log_challenge) VALUES (1, 0, 0, 0)`); err != nil {
 		db.Close()
@@ -193,8 +202,60 @@ func InitDB() error {
 		return fmt.Errorf("failed to prepare cloudflare_domains schema: %w", err)
 	}
 
+	// domain_clearance (step 96) — the cf_clearance cookie a person earned by
+	// clearing a site's challenge, kept so agents and auto-discovery can reuse
+	// it until it expires (across restarts). Only cf_clearance, never exposed
+	// by any route. See
+	// plan/ai/tools/browser/step-96-cloudflare-outcomes-and-kept-clearance.md.
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS domain_clearance (
+		domain      TEXT NOT NULL,
+		name        TEXT NOT NULL,
+		value       TEXT NOT NULL,
+		path        TEXT NOT NULL,
+		secure      INTEGER NOT NULL,
+		http_only   INTEGER NOT NULL,
+		same_site   TEXT,
+		expires_at  TEXT NOT NULL,
+		user_agent  TEXT NOT NULL,
+		source      TEXT NOT NULL CHECK (source IN ('human','automatic')),
+		obtained_at TEXT NOT NULL DEFAULT (datetime('now')),
+		PRIMARY KEY (domain, name, path)
+	)`); err != nil {
+		db.Close()
+		return fmt.Errorf("failed to prepare domain_clearance schema: %w", err)
+	}
+
 	DB = db
 	return nil
+}
+
+// migrateBrowserSettingsHumanAssistColumn (step 96) adds human_assist to an
+// existing browser_settings table that predates it. The existing row takes the
+// column default, 1 (on). A no-op if the column is already present.
+func migrateBrowserSettingsHumanAssistColumn(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA table_info(browser_settings)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notNull, pk int
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &ctype, &notNull, &dflt, &pk); err != nil {
+			return err
+		}
+		if name == "human_assist" {
+			return nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	rows.Close()
+	_, err = db.Exec(`ALTER TABLE browser_settings ADD COLUMN human_assist INTEGER NOT NULL DEFAULT 1`)
+	return err
 }
 
 // migrateCrawlLogsFileStorage detects a pre-step-39 crawl_logs table

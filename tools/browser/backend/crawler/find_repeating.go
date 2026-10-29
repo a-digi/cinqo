@@ -200,6 +200,7 @@ func performFindRepeating(reqCtx context.Context, req findRepeatingRequest) (fin
 	linkRequestCancel(reqCtx, ctx, cancel, tabCtx)
 
 	signals := watchChallengeSignals(ctx)
+	seedStoredClearance(ctx, req.URL) // step 96
 	if err := navigateWithHangGuard(ctx, release, chromedp.Navigate(req.URL), chromedp.Sleep(SettleDelay)); err != nil {
 		return findRepeatingResponse{}, classifyCancellation(err, reqCtx, tabCtx)
 	}
@@ -208,11 +209,19 @@ func performFindRepeating(reqCtx context.Context, req findRepeatingRequest) (fin
 		return findRepeatingResponse{}, classifyCancellation(err, reqCtx, tabCtx)
 	}
 	// An empty result on a challenge page is a different story from an empty
-	// page; say so when the tracker sees one.
+	// page: report it as the error every other tool reports, which for a
+	// challenge a person can clear also asks that person (human_assist.go).
 	if len(resp.Candidates) == 0 {
 		if tracker, terr := newChallengeTracker(ctx, signals, nil); terr == nil {
-			if st, serr := tracker.state(ctx); serr == nil && (st.challenge || st.blocked) {
-				resp.Note = "The page is showing a bot challenge or block (" + st.reason + "), so no list could be read. This tool never waits for a person to clear it."
+			if st, serr := tracker.state(ctx); serr == nil {
+				switch {
+				case st.blocked:
+					return findRepeatingResponse{}, newCloudflareBlockedError(st.reason)
+				case st.final != nil:
+					return findRepeatingResponse{}, st.final
+				case st.challenge:
+					return findRepeatingResponse{}, humanAssistedError(req.URL, "", newCloudflareUnresolvedError(st.reason, nil))
+				}
 			}
 		}
 	}

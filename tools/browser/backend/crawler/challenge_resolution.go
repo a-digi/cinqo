@@ -111,6 +111,12 @@ type challengeOutcome struct {
 	ClearedBy   string
 	HardBlocked bool
 	Reason      string
+	// Final (step 96) is a final access error that is neither a Cloudflare
+	// challenge nor a Cloudflare block: a rate limit, or a bot-protection wall
+	// from another vendor. No wait changes it, so it is returned at once.
+	Final *crawlError
+	// Waited is how long the automatic wait ran before the challenge cleared.
+	Waited time.Duration
 }
 
 // challengeSignals records, for one tab, what Cloudflare said on the
@@ -126,6 +132,11 @@ type challengeSignals struct {
 	docSeen      bool
 	docMitigated string
 	docStatus    int64
+	// docServer/docCFRay/docRetryAfter (step 96): headers of that document,
+	// for classifying a rate limit and for diagnostics.
+	docServer     string
+	docCFRay      string
+	docRetryAfter string
 
 	clearanceIssued int
 }
@@ -136,6 +147,14 @@ type wireState struct {
 	mitigated       string
 	status          int64
 	clearanceIssued int
+	server          string
+	cfRay           string
+	retryAfter      string
+}
+
+// evidence is the wire state as the classifier's input.
+func (w wireState) evidence() accessEvidence {
+	return accessEvidence{DocSeen: w.docSeen, Status: w.status, Mitigated: w.mitigated, Server: w.server, CFRay: w.cfRay, RetryAfter: w.retryAfter}
 }
 
 // watchChallengeSignals starts recording ctx's own tab for the lifetime
@@ -164,6 +183,9 @@ func watchChallengeSignals(ctx context.Context) *challengeSignals {
 			s.docSeen = true
 			s.docMitigated = strings.ToLower(strings.TrimSpace(headerValue(e.Response.Headers, "cf-mitigated")))
 			s.docStatus = e.Response.Status
+			s.docServer = strings.ToLower(strings.TrimSpace(headerValue(e.Response.Headers, "server")))
+			s.docCFRay = strings.TrimSpace(headerValue(e.Response.Headers, "cf-ray"))
+			s.docRetryAfter = strings.TrimSpace(headerValue(e.Response.Headers, "retry-after"))
 			s.mu.Unlock()
 		case *network.EventResponseReceivedExtraInfo:
 			// Raw headers — the only place Set-Cookie is visible.
@@ -183,7 +205,7 @@ func (s *challengeSignals) snapshot() wireState {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return wireState{docSeen: s.docSeen, mitigated: s.docMitigated, status: s.docStatus, clearanceIssued: s.clearanceIssued}
+	return wireState{docSeen: s.docSeen, mitigated: s.docMitigated, status: s.docStatus, clearanceIssued: s.clearanceIssued, server: s.docServer, cfRay: s.docCFRay, retryAfter: s.docRetryAfter}
 }
 
 // headerValue is a case-insensitive lookup — HTTP/2 delivers header
@@ -246,7 +268,16 @@ type challengeProbe struct {
 	// `cf-mitigated: block` response was observed).
 	BlockPage bool `json:"blockPage"`
 	// Expected — one of the caller's own expected selectors is visible.
-	Expected      bool   `json:"expected"`
+	Expected bool `json:"expected"`
+	// ErrorCode (step 96) is the code on a Cloudflare error page ("1020" access
+	// denied, "1015" rate limited, ...); empty on any other page.
+	ErrorCode string `json:"errorCode"`
+	// Vendor (step 96) names a bot-protection wall from another vendor
+	// ("datadome", "perimeterx", "akamai", "imperva") or "captcha" for a
+	// near-empty page that is just a CAPTCHA; empty when none is recognized.
+	Vendor string `json:"vendor"`
+	// BodyLen is the visible text length, for diagnostics.
+	BodyLen       int    `json:"bodyLen"`
 	WidgetVisible bool   `json:"widgetVisible"`
 	WidgetStalled bool   `json:"widgetStalled"`
 	ReadyState    string `json:"readyState"`
@@ -260,6 +291,8 @@ type pageState struct {
 	reason    string
 	probe     challengeProbe
 	wire      wireState
+	// final (step 96) is set for a rate limit or another vendor's wall.
+	final *crawlError
 }
 
 func buildChallengeProbeJS(expectedSelectors []string) (string, error) {
@@ -299,7 +332,36 @@ func buildChallengeProbeJS(expectedSelectors []string) (string, error) {
 			}
 		}
 
+		// Step 96 — what kind of wall this is, from what the page itself says.
+		var bodyLen = body.replace(/\s+/g, " ").trim().length;
+
+		// A Cloudflare error page ("Error code 1020"): only on a page that is
+		// recognizably Cloudflare's own.
+		var errorCode = "";
+		var cfErrorPage = !!document.querySelector("#cf-error-details, .cf-error-details, #cf-wrapper") ||
+			(body.indexOf("cloudflare ray id") !== -1);
+		if (cfErrorPage) {
+			var m = body.match(/error code\s*:?\s*(\d{3,4})/);
+			if (m) errorCode = m[1];
+		}
+
+		// Another vendor's wall. Their scripts are also loaded by perfectly
+		// normal pages, so a script tag alone proves nothing: each rule needs
+		// the wall's own visible element or its own wording.
+		var vendor = "";
+		if (!expected) {
+			var ddFrame = document.querySelector('iframe[src*="captcha-delivery.com"]');
+			if (ddFrame && isRenderedVisible(ddFrame)) vendor = "datadome";
+			else if (anyVisible("#px-captcha, [id^='px-captcha']") || (/press\s*&\s*hold/.test(body) && bodyLen < 800)) vendor = "perimeterx";
+			else if (title.indexOf("access denied") !== -1 && (/reference\s*#?\s*\d+\.[0-9a-f]+/.test(body) || body.indexOf("errors.edgesuite.net") !== -1)) vendor = "akamai";
+			else if (body.indexOf("incapsula incident id") !== -1 || !!document.querySelector('iframe[src*="_Incapsula_Resource"]')) vendor = "imperva";
+			else if (bodyLen < 200 && anyVisible('iframe[src*="recaptcha"], iframe[src*="hcaptcha"]') && !anyVisible("input:not([type=hidden]), textarea, select")) vendor = "captcha";
+		}
+
 		return {
+			errorCode: errorCode,
+			vendor: vendor,
+			bodyLen: bodyLen,
 			challengePage:
 				typeof window._cf_chl_opt !== "undefined" ||
 				!!document.querySelector('a[href*="utm_source=challenge"]'),
@@ -335,6 +397,16 @@ func (t *challengeTracker) state(ctx context.Context) (pageState, error) {
 		st.challenge, st.reason = true, fmt.Sprintf("cf-mitigated: challenge (HTTP %d)", w.status)
 	case p.ChallengePage:
 		st.challenge, st.reason = true, "cloudflare challenge page"
+	}
+	// Step 96: a Cloudflare deny page (error 1020 and friends), a rate limit, or
+	// another vendor's wall. Cloudflare challenges stay with the tracker above.
+	if !st.blocked && !st.challenge {
+		if v := classifyAccess(w.evidence(), p); v.Kind == outcomeBlocked {
+			st.blocked, st.reason = true, v.Reason
+		} else if v.Kind != "" {
+			st.final = newAccessError(v)
+			st.reason = v.Reason
+		}
 	}
 	return st, nil
 }
@@ -372,11 +444,17 @@ func (t *challengeTracker) checkAndAwaitAutoClearance(ctx context.Context, reque
 	if st.blocked {
 		return challengeOutcome{HardBlocked: true, Reason: st.reason}, nil
 	}
+	if st.final != nil {
+		return challengeOutcome{Final: st.final, Reason: st.reason}, nil
+	}
 	if !st.challenge {
 		return challengeOutcome{Cleared: true, ClearedBy: "not-detected"}, nil
 	}
 	t.captureBaseline()
-	return t.await(ctx, challengeModeAuto, autoWaitBudget(ctx, maxWait, reserve), requestID, st.reason)
+	started := time.Now()
+	out, err := t.await(ctx, challengeModeAuto, autoWaitBudget(ctx, maxWait, reserve), requestID, st.reason)
+	out.Waited = time.Since(started)
+	return out, err
 }
 
 // autoWaitBudget caps maxWait by ctx's own remaining time minus
@@ -437,6 +515,10 @@ func (t *challengeTracker) await(ctx context.Context, mode challengeMode, budget
 			if st.blocked {
 				setCrawlPhase(requestID, phase, "Cloudflare block page — no automatic or human clearance possible")
 				return challengeOutcome{HardBlocked: true, Reason: st.reason}, nil
+			}
+			if st.final != nil {
+				setCrawlPhase(requestID, phase, st.final.Message+" — no wait can change that")
+				return challengeOutcome{Final: st.final, Reason: st.reason}, nil
 			}
 
 			if !st.challenge && st.probe.ReadyState == "complete" {

@@ -310,4 +310,6 @@ func importHeadedCookies(ctx context.Context, rawURL string) {
 		return
 	}
 	_ = shared.ImportCookiesToHeadless(cookies)
+	// Step 96: also keep the clearance beyond this process, for the next run.
+	storeHumanClearance(ctx, rawURL, cookies)
 }

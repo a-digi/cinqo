@@ -20,6 +20,7 @@ package shared
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 )
 
@@ -59,6 +60,11 @@ type BrowserSettings struct {
 	// client that predates this field (or the Debug page saving the rest of
 	// the object) can never reset it — and any other value is rejected.
 	FetchEngine string `json:"fetchEngine"`
+	// HumanAssist (step 96) — when an AI call meets a challenge only a person
+	// can clear, open a browser window for that person instead of just
+	// failing. On by default. On a PUT, a body without the key leaves the
+	// stored value alone (a client that predates it must never switch it off).
+	HumanAssist bool `json:"humanAssist"`
 }
 
 // LoadBrowserSettings always reads fresh from the database — never
@@ -67,10 +73,10 @@ type BrowserSettings struct {
 // sibling process keeps running; a cached value would go stale the
 // moment someone actually used the settings page.
 func LoadBrowserSettings() (BrowserSettings, error) {
-	var debugEnabled, debugLogHTML, debugLogChallenge int
+	var debugEnabled, debugLogHTML, debugLogChallenge, humanAssist int
 	var fetchEngine string
-	err := DB.QueryRow(`SELECT debug_enabled, debug_log_html, debug_log_challenge, fetch_engine FROM browser_settings WHERE id = 1`).
-		Scan(&debugEnabled, &debugLogHTML, &debugLogChallenge, &fetchEngine)
+	err := DB.QueryRow(`SELECT debug_enabled, debug_log_html, debug_log_challenge, fetch_engine, human_assist FROM browser_settings WHERE id = 1`).
+		Scan(&debugEnabled, &debugLogHTML, &debugLogChallenge, &fetchEngine, &humanAssist)
 	if err != nil {
 		return BrowserSettings{}, err
 	}
@@ -79,6 +85,7 @@ func LoadBrowserSettings() (BrowserSettings, error) {
 		DebugLogHTML:      debugLogHTML != 0,
 		DebugLogChallenge: debugLogChallenge != 0,
 		FetchEngine:       fetchEngineOrDefault(fetchEngine),
+		HumanAssist:       humanAssist != 0,
 	}, nil
 }
 
@@ -91,8 +98,8 @@ func SaveBrowserSettings(s BrowserSettings) error {
 		return ErrInvalidFetchEngine
 	}
 	_, err := DB.Exec(
-		`UPDATE browser_settings SET debug_enabled = ?, debug_log_html = ?, debug_log_challenge = ?, fetch_engine = ?, updated_at = datetime('now') WHERE id = 1`,
-		boolToInt(s.DebugEnabled), boolToInt(s.DebugLogHTML), boolToInt(s.DebugLogChallenge), s.FetchEngine,
+		`UPDATE browser_settings SET debug_enabled = ?, debug_log_html = ?, debug_log_challenge = ?, fetch_engine = ?, human_assist = ?, updated_at = datetime('now') WHERE id = 1`,
+		boolToInt(s.DebugEnabled), boolToInt(s.DebugLogHTML), boolToInt(s.DebugLogChallenge), s.FetchEngine, boolToInt(s.HumanAssist),
 	)
 	return err
 }
@@ -118,9 +125,21 @@ func BrowserSettingsHandler(w http.ResponseWriter, r *http.Request) {
 
 	case http.MethodPut:
 		var settings BrowserSettings
-		if err := json.NewDecoder(r.Body).Decode(&settings); err != nil {
+		raw, err := io.ReadAll(r.Body)
+		if err != nil || json.Unmarshal(raw, &settings) != nil {
 			http.Error(w, "invalid request body", http.StatusBadRequest)
 			return
+		}
+		// Step 96: a body without humanAssist keeps the stored value.
+		var present map[string]json.RawMessage
+		_ = json.Unmarshal(raw, &present)
+		if _, ok := present["humanAssist"]; !ok {
+			current, err := LoadBrowserSettings()
+			if err != nil {
+				http.Error(w, "failed to load settings: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+			settings.HumanAssist = current.HumanAssist
 		}
 		// A missing/empty fetchEngine keeps the stored one (a client that
 		// predates the field must never reset it); anything else must be
