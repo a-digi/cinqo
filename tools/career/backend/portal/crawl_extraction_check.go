@@ -76,7 +76,7 @@ func classifyCrawlResultPages(pages []CrawlResultPage) CrawlExtractionReport {
 	report.OK = report.ItemsFound > 0 && report.ItemsSkipped == 0
 	switch {
 	case report.ItemsFound == 0:
-		report.Message = "No items were extracted at all — check the container selector (it matched nothing), or the field selectors if this is a single detail page. The page's real content may also not be present in a plain fetch_page_html (client-side-rendered content) — re-inspect the actual HTML you fetched."
+		report.Message = "No items were extracted at all — check the container selector (it matched nothing), or the field selectors if this is a single detail page. The page's real content may also not be present in a plain fetch_page_html (client-side-rendered content) — re-inspect the actual HTML you fetched. This is a failure to resolve, never a result to save: make ONE fix attempt, and if a second test still finds 0 items, call ask_user_if_page_has_jobs (once) instead of retrying further."
 	case report.ItemsSkipped > 0:
 		report.Message = fmt.Sprintf("%d of %d extracted item(s) are missing a title and/or a url — see skippedSamples for the raw fields that came back empty. Every item must produce both before these instructions can be saved.", report.ItemsSkipped, report.ItemsFound)
 	default:

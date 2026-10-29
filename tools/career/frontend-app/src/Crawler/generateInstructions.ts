@@ -16,8 +16,20 @@
 // svg removal (now a Browser-tool default applying regardless of this
 // prompt). See
 // plan/ai/tools/career/step-62-svg-removal-and-attribute-length-enforcement.md.
-export function buildGenerateInstructionsMessage(link: { id: string; title: string | null; url: string }): string {
+export function buildGenerateInstructionsMessage(
+  link: { id: string; title: string | null; url: string },
+  // jobsConfirmed (step 91): the stored instructions were already used for a
+  // real crawl that found 0 jobs and the user confirmed the page DOES list
+  // jobs — so they are wrong, and the agent must not ask the question again.
+  options: { jobsConfirmed?: boolean } = {},
+): string {
   return [
+    ...(options.jobsConfirmed
+      ? [
+          'IMPORTANT: the instructions currently stored for this link were used for a real crawl that found 0 jobs, and the user has confirmed that this page DOES list jobs. The stored instructions are therefore wrong — do not keep them, find a different approach. The question "does this page have jobs?" is already answered: do NOT call ask_user_if_page_has_jobs. If you still extract 0 items after your attempts, follow step 8 (save nothing and explain what you tried).',
+          '',
+        ]
+      : []),
     'Please create or update the stored crawl instructions for this existing portal link only — do not create a new portal or link, and do not ask which link is meant (it is already specified below). Do not save any jobs yourself — only crawl_paginated calls made to TEST your draft (step 5 below) and the final set_portal_link_crawl_instructions call are expected.',
     '',
     `Portal link ID: ${link.id}`,
@@ -32,11 +44,31 @@ export function buildGenerateInstructionsMessage(link: { id: string; title: stri
     "3. For a listing page, always include a top-level container (a CSS selector for one item's own repeating wrapping element) so results group correctly — the normal, expected shape for a listing page, not something to add only if something looks wrong.",
     '4. Work out the fields (and, for a listing page, mapping to title/url/company/location/description/postedAt where possible) and, if the page paginates, a pagination block (nextSelector + a reasonable maxPages for real future crawls).',
     '5. TEST before saving — this is mandatory, not optional: call crawl_paginated with your draft instructions (you may temporarily set pagination.maxPages: 1 for this test call only, to keep it fast — testing page 1 is enough to judge whether your container/field selectors actually work; keep the real maxPages value for the version you eventually save in step 7), then call check_crawl_extraction_result with that exact response\'s own "pages" array. Do not count skipped/extracted items yourself by reading the raw JSON — check_crawl_extraction_result\'s own ok/itemsSkipped/skippedSamples is the one source of truth for whether your draft actually works.',
-    '6. If ok is not true, you have not finished — fix your container/field selectors/mapping using skippedSamples (it shows the raw fields of items that came back empty) and repeat step 5. Try up to 4 times in total (1 initial attempt + 3 fix-and-retry cycles), but stop sooner if you hit the tool-call budget above first.',
+    '6. If ok is not true and itemsFound is above 0, you have not finished — fix your container/field selectors/mapping using skippedSamples (it shows the raw fields of items that came back empty) and repeat step 5. Try up to 4 times in total (1 initial attempt + 3 fix-and-retry cycles), but stop sooner if you hit the tool-call budget above first.',
+    '6a. ZERO ITEMS means something is wrong, and you cannot tell by yourself whether the selectors are wrong or the page simply has no jobs. If check_crawl_extraction_result reports itemsFound: 0, make exactly ONE fix attempt (the container selector first, then the field selectors; re-read the HTML from step 2) and test again. If itemsFound is still 0, STOP fixing: call ask_user_if_page_has_jobs once, with a one-line note of what you tried (e.g. "2 attempts, container .job-result matched nothing"), make no further tool calls, do NOT call set_portal_link_crawl_instructions, and end your turn with one short line. The user will answer yes or no; the answer arrives as a new message in this conversation. Ask at most once in this whole task, and never save instructions that extract 0 items.',
     '7. Only once check_crawl_extraction_result reports ok: true, call set_portal_link_crawl_instructions ONCE with the finished YAML (using your real, intended maxPages — not the maxPages: 1 you may have used only for testing) for this exact portal link id.',
-    '8. If you still cannot reach ok: true after 4 attempts, or you have reached the tool-call budget, do NOT call set_portal_link_crawl_instructions — these instructions are not ready. Reply immediately explaining specifically what is blocking it (quote the skippedSamples you saw) instead of saving something broken or continuing to probe.',
+    '8. If you still cannot reach ok: true after 4 attempts (with itemsFound above 0), or you have reached the tool-call budget, do NOT call set_portal_link_crawl_instructions — these instructions are not ready. Reply immediately explaining specifically what is blocking it (quote the skippedSamples you saw) instead of saving something broken or continuing to probe.',
     '',
-    'When done, reply with a short one-line confirmation (or, per step 8, a short explanation of why it could not be finished) — this reply is never shown to any user, so keep it brief.',
+    'When done, reply with a short one-line confirmation (or, per step 6a, one line saying you asked the user; or, per step 8, a short explanation of why it could not be finished) — keep it brief.',
+  ].join('\n')
+}
+
+// buildJobsConfirmedMessage (step 91) is sent into the SAME conversation
+// after the user answered "yes, this page has jobs" to the question the
+// agent asked in step 6a. It tells the agent its approach was wrong, gives it
+// a fresh budget, and forbids asking again, so a second 0-item result ends
+// as a reported failure (the existing error InfoBox and step 86's attempt
+// count) instead of a second question.
+export function buildJobsConfirmedMessage(link: { id: string; title: string | null; url: string }): string {
+  return [
+    'The user confirmed that this page DOES list jobs, so your previous selectors and approach are wrong — 0 items is not a valid result for this page.',
+    '',
+    `Portal link ID: ${link.id}`,
+    `Title: ${link.title ?? '(untitled)'}`,
+    `URL: ${link.url}`,
+    '',
+    'You have a fresh budget of at most 10 tool calls. You may fetch the page ONE more time (fetch_page_html with maxAttributeLength: 200) and must look for a different approach than before: a different container, different field selectors, or content that a plain fetch does not contain because it is rendered by JavaScript (say so if that is what you find). Then continue from step 5: test with crawl_paginated + check_crawl_extraction_result, and call set_portal_link_crawl_instructions once, only when ok is true.',
+    'Do NOT call ask_user_if_page_has_jobs again. If you still extract 0 items, do not save anything: reply with a short explanation of what you tried and what the page looks like (this is shown to the user as the reason it failed).',
   ].join('\n')
 }
 

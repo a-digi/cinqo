@@ -324,6 +324,14 @@ CREATE TABLE IF NOT EXISTS portal_links (
     -- Also added to existing installs by
     -- migratePortalLinksEmptyCrawlAcknowledgedAt.
     empty_crawl_acknowledged_at                    TEXT,
+    -- jobs_question_asked_at / jobs_question_note (step 91): a pending
+    -- "does this page list jobs?" question the generation agent asked the
+    -- user after finding 0 items (RFC3339 UTC; NULL = nothing pending),
+    -- and the agent's one-line observation. The answer is not stored —
+    -- "no" becomes empty_crawl_acknowledged_at. Also added to existing
+    -- installs by migratePortalLinksJobsQuestion.
+    jobs_question_asked_at                         TEXT,
+    jobs_question_note                             TEXT,
     created_at                        TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at                        TEXT,
     UNIQUE(portal_id, url)
@@ -995,6 +1003,9 @@ func migrateJobsDB(db *sql.DB) error {
 	if err := migratePortalLinksEmptyCrawlAcknowledgedAt(db); err != nil {
 		return err
 	}
+	if err := migratePortalLinksJobsQuestion(db); err != nil {
+		return err
+	}
 	if err := migratePortalLinksAutoDiscoveryEnabled(db); err != nil {
 		return err
 	}
@@ -1477,6 +1488,25 @@ func migratePortalLinksEmptyCrawlAcknowledgedAt(db *sql.DB) error {
 	}
 	_, err = db.Exec(`ALTER TABLE portal_links ADD COLUMN empty_crawl_acknowledged_at TEXT`)
 	return err
+}
+
+// migratePortalLinksJobsQuestion (step 91) adds the pending-question
+// columns to an install that already has portal_links (a fresh one gets
+// them from the base schema). Nullable, no backfill: nothing is pending.
+func migratePortalLinksJobsQuestion(db *sql.DB) error {
+	for _, col := range []string{"jobs_question_asked_at", "jobs_question_note"} {
+		exists, hasColumn, err := tableHasColumn(db, "portal_links", col)
+		if err != nil {
+			return err
+		}
+		if !exists || hasColumn {
+			continue
+		}
+		if _, err := db.Exec(`ALTER TABLE portal_links ADD COLUMN ` + col + ` TEXT`); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // migratePortalLinksAutoDiscoveryEnabled adds the per-link opt-out flag

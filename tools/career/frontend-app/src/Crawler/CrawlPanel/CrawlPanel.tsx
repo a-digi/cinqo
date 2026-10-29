@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { updatePortalLink, startInstructionAttempt, finishInstructionAttempt, type InstructionKind, type PortalLink } from '../../api'
+import {
+  updatePortalLink,
+  fetchPortals,
+  startInstructionAttempt,
+  finishInstructionAttempt,
+  type InstructionKind,
+  type PortalLink,
+} from '../../api'
 import { Dropdown } from '../../Components/Dropdown/Dropdown'
 import { Switch } from '../../Shared/Switch/Switch'
 import { AUTO_DISCOVERY_INTERVAL_OPTIONS } from '../autoDiscovery'
@@ -9,6 +16,7 @@ import { createConversation, sendMessage, awaitTurnCompletion, fetchTurnStatus }
 import { buildCrawlMessage, crawlConversationTitle } from '../crawl'
 import {
   buildGenerateInstructionsMessage,
+  buildJobsConfirmedMessage,
   generateInstructionsConversationTitle,
   buildGenerateJobDetailInstructionsMessage,
   generateJobDetailInstructionsConversationTitle,
@@ -18,6 +26,7 @@ import { phaseLabel, latestCrawlLogMessage } from '../crawlPhase'
 import { instructionAlertAttempts, isLikelyUncrawlable } from '../instructionStats'
 import { hasListingInstructions } from '../autoDiscoveryVisibility'
 import { diagnoseEmptyCrawl, emptyCrawlFacts, emptyCrawlFor } from '../emptyCrawl'
+import { findJobsQuestion, pendingJobsQuestion, JOBS_QUESTION_NO_HINT, JOBS_QUESTION_TITLE, JOBS_QUESTION_YES_HINT } from '../jobsQuestion'
 import { InstructionAttemptStats } from './InstructionAttemptStats'
 import { AccordionItem } from '../../Shared/Accordion/AccordionItem'
 import {
@@ -557,13 +566,27 @@ export function CrawlPanel({
     setAiConversationId(null)
 
     if (!err) {
-      const attemptRecorded = recordAttemptFinish('listing')
-      void updatePortalLink(link.id, { instructionsAiError: '', instructionsAiConversationId: '' })
-        .catch((recordErr: unknown) => {
-          console.error('failed to clear instructions-AI conversation on portal link', link.id, recordErr)
+      // Step 91: a turn that ended on the agent's question is neither a
+      // success nor a failure — it is waiting for the user's answer. The
+      // attempt stays open and the conversation id is kept, because the
+      // answer is sent into that same conversation. Any failure to read
+      // the portals falls through to the ordinary success handling.
+      void fetchPortals()
+        .then((portals) => findJobsQuestion(portals, link.id))
+        .catch(() => undefined)
+        .then((question) => {
+          if (question) {
+            onReload()
+            return
+          }
+          const attemptRecorded = recordAttemptFinish('listing')
+          void updatePortalLink(link.id, { instructionsAiError: '', instructionsAiConversationId: '' })
+            .catch((recordErr: unknown) => {
+              console.error('failed to clear instructions-AI conversation on portal link', link.id, recordErr)
+            })
+            .then(() => attemptRecorded)
+            .then(onReload)
         })
-        .then(() => attemptRecorded)
-        .then(onReload)
       return
     }
 
@@ -642,7 +665,7 @@ export function CrawlPanel({
   // user can watch the AI work instead of only seeing a disabled
   // button — see this step's own design doc for why that widget needs
   // no changes of its own to support this.
-  function handleGenerateInstructionsWithAI() {
+  function handleGenerateInstructionsWithAI(options: { jobsConfirmed?: boolean } = {}) {
     if (aiPending || !selectedPlatform) return
     const platformId = selectedPlatform.id
     const model = selectedPlatform.models.length > 0 ? (selectedModel ?? selectedPlatform.models[0]) : undefined
@@ -662,7 +685,7 @@ export function CrawlPanel({
             // Best-effort — a failure here only costs reload-resilience
             // for this one run, not the run itself.
           })
-          .then(() => sendMessage(conversation.id, buildGenerateInstructionsMessage(link)))
+          .then(() => sendMessage(conversation.id, buildGenerateInstructionsMessage(link, options)))
       })
       .then(
         () => {
@@ -819,6 +842,45 @@ export function CrawlPanel({
     Boolean(link.jobDetailCrawlInstructions),
     jobDetailAiPending,
   )
+
+  // Step 91 — the generation agent asked whether this page has jobs and is
+  // waiting for the answer. Shown instead of the step 90 box (same
+  // situation, one question).
+  const jobsQuestion = pendingJobsQuestion(link)
+
+  // "Yes" tells the agent in the same conversation that its approach was
+  // wrong and lets it retry (the attempt stays open and ends with that
+  // turn). "No" only records the answer: the page has no jobs.
+  function handleAnswerJobsQuestion(answer: 'yes' | 'no') {
+    const conversationId = link.instructionsAiConversationId
+    if (answer === 'yes' && !conversationId) {
+      onError('The conversation with the AI is no longer available. Use Generate to start again.')
+      return
+    }
+    updatePortalLink(link.id, { jobsQuestionAnswer: answer })
+      .then(() => {
+        if (answer === 'no' || !conversationId) {
+          return updatePortalLink(link.id, { instructionsAiConversationId: '' }).then(onReload)
+        }
+        setAiPending(true)
+        setAiLocalError(undefined)
+        setAiConversationId(conversationId)
+        window.__cinqoToolBridge.openConversation(conversationId)
+        onReload()
+        void sendMessage(conversationId, buildJobsConfirmedMessage(link)).then(
+          () => {
+            finishGenerateInstructions()
+          },
+          (err: unknown) => {
+            finishGenerateInstructions(err)
+          },
+        )
+        return undefined
+      })
+      .catch((err: unknown) => {
+        onError(err instanceof Error ? err.message : String(err))
+      })
+  }
 
   // Step 90 — the latest listing crawl completed but found no jobs: what
   // is known about why, and the user's way to say "this page has no jobs".
@@ -1069,14 +1131,22 @@ export function CrawlPanel({
               </div>
               <button
                 type="button"
-                onClick={aiPending ? handleCheckProgress : handleGenerateInstructionsWithAI}
-                disabled={!hasPlatforms || (aiPending && !aiConversationId)}
+                onClick={
+                  aiPending
+                    ? handleCheckProgress
+                    : () => {
+                        handleGenerateInstructionsWithAI()
+                      }
+                }
+                disabled={!hasPlatforms || (aiPending && !aiConversationId) || Boolean(jobsQuestion)}
                 title={
                   !hasPlatforms
                     ? 'No AI platform configured — add one on the Platforms page first'
-                    : aiPending
-                      ? "Open the chat window to watch the AI work on this link's crawl instructions"
-                      : 'Let the AI inspect this page and write (or update) its listing crawl instructions for you — once saved, this link is crawled and its job-detail instructions are generated automatically.'
+                    : jobsQuestion
+                      ? 'Answer the question below first'
+                      : aiPending
+                        ? "Open the chat window to watch the AI work on this link's crawl instructions"
+                        : 'Let the AI inspect this page and write (or update) its listing crawl instructions for you — once saved, this link is crawled and its job-detail instructions are generated automatically.'
                 }
                 className="flex shrink-0 flex-col items-center justify-center gap-1 self-stretch rounded-lg border border-gray-200 bg-gray-50 px-3 text-xs font-medium text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
               >
@@ -1096,13 +1166,20 @@ export function CrawlPanel({
           </div>
         </AccordionItem>
       </div>
-      {emptyCrawl && emptyDiagnosis && (
+      {jobsQuestion && (
         <div className="mt-2">
           <InfoBox
             variant="warning"
-            label="Crawled 0 jobs"
-            message={emptyDiagnosis.text}
-            details={emptyCrawlFacts(emptyCrawl)}
+            label="Question for you"
+            message={JOBS_QUESTION_TITLE}
+            details={
+              <>
+                {jobsQuestion.note && <p>The AI says: {jobsQuestion.note}</p>}
+                <p className="mt-1">
+                  {JOBS_QUESTION_YES_HINT} {JOBS_QUESTION_NO_HINT}
+                </p>
+              </>
+            }
             actions={
               <>
                 <a
@@ -1115,22 +1192,90 @@ export function CrawlPanel({
                 </a>
                 <button
                   type="button"
-                  onClick={handleGenerateInstructionsWithAI}
-                  disabled={!hasPlatforms || aiPending}
-                  title={!hasPlatforms ? 'No AI platform configured — add one on the Platforms page first' : undefined}
-                  className="rounded-md border border-orange-200 bg-white px-2.5 py-1 text-xs text-orange-800 hover:bg-orange-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  onClick={() => {
+                    handleAnswerJobsQuestion('yes')
+                  }}
+                  className="rounded-md border border-orange-200 bg-white px-2.5 py-1 text-xs font-medium text-orange-800 hover:bg-orange-100"
                 >
-                  Regenerate instructions
+                  Yes, it has jobs
                 </button>
-                {!emptyDiagnosis.conclusive && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleAnswerJobsQuestion('no')
+                  }}
+                  className="rounded-md border border-orange-200 bg-white px-2.5 py-1 text-xs font-medium text-orange-800 hover:bg-orange-100"
+                >
+                  No, it has none
+                </button>
+              </>
+            }
+          />
+        </div>
+      )}
+      {emptyCrawl && emptyDiagnosis && !jobsQuestion && (
+        <div className="mt-2">
+          <InfoBox
+            variant="warning"
+            label="Crawled 0 jobs"
+            message={emptyDiagnosis.text}
+            details={
+              <>
+                {emptyCrawlFacts(emptyCrawl)}
+                {!emptyDiagnosis.conclusive && <p className="mt-1 font-medium">Does this page list jobs?</p>}
+              </>
+            }
+            actions={
+              <>
+                <a
+                  href={link.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-md border border-orange-200 bg-white px-2.5 py-1 text-xs text-orange-800 hover:bg-orange-100"
+                >
+                  Open the page
+                </a>
+                {emptyDiagnosis.conclusive ? (
                   <button
                     type="button"
-                    onClick={handleAcknowledgeEmptyCrawl}
-                    title="The page really has no jobs right now. This hides the notice until a crawl finds a job."
-                    className="rounded-md border border-orange-200 bg-white px-2.5 py-1 text-xs text-orange-800 hover:bg-orange-100"
+                    onClick={() => {
+                      handleGenerateInstructionsWithAI()
+                    }}
+                    disabled={!hasPlatforms || aiPending}
+                    title={!hasPlatforms ? 'No AI platform configured — add one on the Platforms page first' : undefined}
+                    className="rounded-md border border-orange-200 bg-white px-2.5 py-1 text-xs text-orange-800 hover:bg-orange-100 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    Mark as expected — this page has no jobs
+                    Regenerate instructions
                   </button>
+                ) : (
+                  <>
+                    {/* Step 91: the crawler cannot tell "no jobs" from "wrong
+                        selectors", so the user is asked. Yes regenerates with
+                        that fact in the prompt; No is the old "mark as expected". */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleGenerateInstructionsWithAI({ jobsConfirmed: true })
+                      }}
+                      disabled={!hasPlatforms || aiPending}
+                      title={
+                        hasPlatforms
+                          ? 'The instructions are wrong: the AI is told the page has jobs and writes new ones.'
+                          : 'No AI platform configured — add one on the Platforms page first'
+                      }
+                      className="rounded-md border border-orange-200 bg-white px-2.5 py-1 text-xs font-medium text-orange-800 hover:bg-orange-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Yes, it has jobs
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleAcknowledgeEmptyCrawl}
+                      title="Nothing is wrong. This hides the notice until a crawl finds a job."
+                      className="rounded-md border border-orange-200 bg-white px-2.5 py-1 text-xs font-medium text-orange-800 hover:bg-orange-100"
+                    >
+                      No, it has none
+                    </button>
+                  </>
                 )}
               </>
             }

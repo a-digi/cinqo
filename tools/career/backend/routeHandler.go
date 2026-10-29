@@ -1075,6 +1075,12 @@ type portalLinkUpdateRequest struct {
 	// false clears it; nil leaves it alone. See
 	// plan/ai/tools/career/step-90-zero-jobs-crawl-flag.md.
 	EmptyCrawlAcknowledged *bool `json:"emptyCrawlAcknowledged,omitempty"`
+	// JobsQuestionAnswer (step 91) — nil: don't touch. "yes" or "no"
+	// answers the pending "does this page list jobs?" question the
+	// generation agent asked; both clear it, "no" also acknowledges the
+	// zero-job streak. Any other value is a 400; answering with nothing
+	// pending is a 400.
+	JobsQuestionAnswer *string `json:"jobsQuestionAnswer,omitempty"`
 }
 
 func portalLinksHandler(w http.ResponseWriter, r *http.Request) {
@@ -1117,8 +1123,8 @@ func portalLinksHandler(w http.ResponseWriter, r *http.Request) {
 			body.ListingCrawlRequested == nil && body.JobDetailInstructionsAIRequested == nil &&
 			body.InstructionsAIErrorDismissedAt == nil && body.JobDetailInstructionsAIErrorDismissedAt == nil &&
 			body.JobDetailCrawlRequested == nil && body.AutoDiscoveryEnabled == nil &&
-			body.AutoDiscoveryIntervalMinutes == nil && !body.ClearAutoDiscoveryInterval && body.EmptyCrawlAcknowledged == nil {
-			http.Error(w, "url, title, crawlInstructions, jobDetailCrawlInstructions, instructionsAiError, instructionsAiConversationId, jobDetailInstructionsAiError, jobDetailInstructionsAiConversationId, listingCrawlRequested, jobDetailInstructionsAiRequested, instructionsAiErrorDismissedAt, jobDetailInstructionsAiErrorDismissedAt, jobDetailCrawlRequested, autoDiscoveryEnabled, autoDiscoveryIntervalMinutes, clearAutoDiscoveryInterval, or emptyCrawlAcknowledged is required", http.StatusBadRequest)
+			body.AutoDiscoveryIntervalMinutes == nil && !body.ClearAutoDiscoveryInterval && body.EmptyCrawlAcknowledged == nil && body.JobsQuestionAnswer == nil {
+			http.Error(w, "url, title, crawlInstructions, jobDetailCrawlInstructions, instructionsAiError, instructionsAiConversationId, jobDetailInstructionsAiError, jobDetailInstructionsAiConversationId, listingCrawlRequested, jobDetailInstructionsAiRequested, instructionsAiErrorDismissedAt, jobDetailInstructionsAiErrorDismissedAt, jobDetailCrawlRequested, autoDiscoveryEnabled, autoDiscoveryIntervalMinutes, clearAutoDiscoveryInterval, emptyCrawlAcknowledged, or jobsQuestionAnswer is required", http.StatusBadRequest)
 			return
 		}
 		if body.URL != nil && *body.URL == "" {
@@ -1226,6 +1232,16 @@ func portalLinksHandler(w http.ResponseWriter, r *http.Request) {
 		if body.EmptyCrawlAcknowledged != nil {
 			if err := portal.SetEmptyCrawlAcknowledged(body.ID, *body.EmptyCrawlAcknowledged); err != nil {
 				portal.WritePortalLinkAwareError(w, "update portal link empty-crawl acknowledgement", err)
+				return
+			}
+		}
+		if body.JobsQuestionAnswer != nil {
+			if err := portal.AnswerJobsQuestion(body.ID, *body.JobsQuestionAnswer); err != nil {
+				if errors.Is(err, portal.ErrInvalidJobsQuestionAnswer) || errors.Is(err, portal.ErrNoPendingJobsQuestion) {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				portal.WritePortalLinkAwareError(w, "answer portal link jobs question", err)
 				return
 			}
 		}

@@ -283,3 +283,38 @@ func TestPortalLinksEmptyCrawlAcknowledgedAtOnFreshAndUpgradedInstalls(t *testin
 	}
 	legacy.Close()
 }
+
+func TestPortalLinksJobsQuestionOnFreshAndUpgradedInstalls(t *testing.T) {
+	t.Setenv("TOOL_DB_DIR", t.TempDir())
+	if err := InitDatabases(); err != nil {
+		t.Fatal(err)
+	}
+	for _, col := range []string{"jobs_question_asked_at", "jobs_question_note"} {
+		if _, has, err := tableHasColumn(JobsDB, "portal_links", col); err != nil || !has {
+			t.Errorf("fresh install lacks portal_links.%s (%v)", col, err)
+		}
+	}
+	JobsDB.Close()
+	CareerDB.Close()
+
+	dir := t.TempDir()
+	legacy, err := sql.Open("sqlite", filepath.Join(dir, "jobs.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer legacy.Close()
+	if _, err := legacy.Exec(`CREATE TABLE portals (id TEXT PRIMARY KEY, name TEXT NOT NULL);
+		CREATE TABLE portal_links (id TEXT PRIMARY KEY, portal_id TEXT NOT NULL, url TEXT NOT NULL, UNIQUE(portal_id, url));
+		INSERT INTO portals VALUES ('p1', 'P'); INSERT INTO portal_links VALUES ('l1', 'p1', 'https://x')`); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ { // idempotent
+		if err := migratePortalLinksJobsQuestion(legacy); err != nil {
+			t.Fatalf("migrate (run %d): %v", i+1, err)
+		}
+	}
+	var asked, note *string
+	if err := legacy.QueryRow(`SELECT jobs_question_asked_at, jobs_question_note FROM portal_links WHERE id = 'l1'`).Scan(&asked, &note); err != nil || asked != nil || note != nil {
+		t.Errorf("existing links must start with nothing pending: %v %v %v", asked, note, err)
+	}
+}

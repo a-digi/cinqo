@@ -210,6 +210,7 @@ func runMCPServer() {
 	portal.RegisterGetPortalLinkCrawlInstructions(server)
 	portal.RegisterSetPortalLinkCrawlInstructions(server)
 	portal.RegisterCheckCrawlExtractionResult(server)
+	portal.RegisterAskUserIfPageHasJobs(server)
 	portal.RegisterGetPortalLinkJobDetailCrawlInstructions(server)
 	portal.RegisterSetPortalLinkJobDetailCrawlInstructions(server)
 

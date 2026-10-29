@@ -67,7 +67,16 @@ export function LinkStatusPills({
           Job details: no instructions after {attemptsLabel(jobDetailAlertAttempts)}
         </span>
       )}
-      {emptyCrawl && (
+      {link.jobsQuestion && (
+        <span
+          role="status"
+          title="The AI is waiting for your answer: does this page list jobs?"
+          className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800"
+        >
+          Question for you
+        </span>
+      )}
+      {emptyCrawl && !link.jobsQuestion && (
         <span
           role="status"
           title={diagnoseEmptyCrawl(emptyCrawl).text}

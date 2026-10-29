@@ -158,6 +158,11 @@ export interface Recruiter {
   updatedAt?: string
 }
 
+export interface JobsQuestion {
+  askedAt: string
+  note: string
+}
+
 export interface PortalLink {
   id: string
   portalId: string
@@ -256,6 +261,10 @@ export interface PortalLink {
   // what is known about a zero-job result; absent when there is no
   // structured data (never crawled, or only runs from before step 90).
   lastListingCrawl?: LastListingCrawl
+  // jobsQuestion (step 91) — the pending "does this page list jobs?"
+  // question the generation agent asked; absent when nothing is pending.
+  // note is the agent's own text: show it as plain text only.
+  jobsQuestion?: JobsQuestion
   createdAt: string
   updatedAt?: string
 }
@@ -793,6 +802,9 @@ export async function updatePortalLink(
     // run of zero-job crawls as expected ("this page has no jobs"),
     // false clears it.
     emptyCrawlAcknowledged?: boolean
+    // jobsQuestionAnswer (step 91) — answers the pending question. Both
+    // clear it; "no" also marks the zero-job streak as expected.
+    jobsQuestionAnswer?: 'yes' | 'no'
   },
 ): Promise<void> {
   const res = await fetch(`${PROXY_BASE}/portal-links`, {

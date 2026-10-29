@@ -216,3 +216,64 @@ func TestPutPortalLinkEmptyCrawlAcknowledgement(t *testing.T) {
 		t.Errorf("a PUT with nothing to update must still be rejected: %d", rec.Code)
 	}
 }
+
+func TestPutPortalLinkJobsQuestionAnswer(t *testing.T) {
+	setupHandlerDB(t)
+
+	// Nothing pending yet.
+	if rec := putPortalLink(`{"id":"l1","jobsQuestionAnswer":"yes"}`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("answer with nothing pending: %d %s", rec.Code, rec.Body.String())
+	}
+	if err := portal.AskJobsQuestion("l1", "2 attempts"); err != nil {
+		t.Fatal(err)
+	}
+	if rec := putPortalLink(`{"id":"l1","jobsQuestionAnswer":"maybe"}`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("invalid answer: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := putPortalLink(`{"id":"zzz","jobsQuestionAnswer":"yes"}`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("unknown link: %d %s", rec.Code, rec.Body.String())
+	}
+
+	rec := putPortalLink(`{"id":"l1","jobsQuestionAnswer":"yes"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("answer yes: %d %s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		Portals []struct {
+			Links []struct {
+				JobsQuestion *struct{} `json:"jobsQuestion"`
+			} `json:"links"`
+		} `json:"portals"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Portals[0].Links[0].JobsQuestion != nil {
+		t.Error("the refreshed list must no longer carry the question")
+	}
+}
+
+func TestManifestDeclaresTheAskUserTool(t *testing.T) {
+	raw, err := os.ReadFile("../manifest.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m struct {
+		MCPTools []struct {
+			Name          string `json:"name"`
+			RequiredScope string `json:"required_scope"`
+		} `json:"mcp_tools"`
+	}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range m.MCPTools {
+		if tool.Name == "ask_user_if_page_has_jobs" {
+			if tool.RequiredScope != "tool:career:portals" {
+				t.Errorf("scope = %q", tool.RequiredScope)
+			}
+			return
+		}
+	}
+	t.Error("manifest.json does not declare ask_user_if_page_has_jobs")
+}
