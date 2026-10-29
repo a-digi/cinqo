@@ -72,8 +72,7 @@ export function PersonaAndTemplateStep({
     return [...all].sort().map((p) => ({ value: p, label: p }))
   }, [templates])
 
-  const matchesProfessions = (t: (typeof templates)[number]) =>
-    professions.length === 0 || professions.some((p) => t.bestFor.includes(p))
+  const matchesProfessions = (t: (typeof templates)[number]) => professions.length === 0 || professions.some((p) => t.bestFor.includes(p))
 
   const filteredTemplates = templates.filter((t) => (category === ALL_CATEGORIES || t.category === category) && matchesProfessions(t))
 
