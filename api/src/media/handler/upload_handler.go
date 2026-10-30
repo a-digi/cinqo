@@ -80,26 +80,38 @@ func UploadHandler(reqCtx request.RequestContext) {
 	}
 
 	db := reqCtx.GetDI().GetDatabaseManager().Connector.DB
-	tool, err := tool_query.NewToolQueryRepo(db).FindBySlug(toolSlug)
-	if err != nil {
-		response.ErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("unknown tool %q", toolSlug))
-		return
-	}
 
-	// Authorization: the caller must hold at least one scope toolSlug
-	// itself declared (or cinqo:super:admin) — see
-	// plan/ai/media/step-01-media-feature.md's "Scope requirements".
-	// This ties the caller-asserted toolSlug back to a real check
-	// instead of trusting it outright; Media itself declares no scope
-	// of its own.
-	toolScopes, err := tool_query.NewToolQueryRepo(db).ScopesForTool(tool.ID)
-	if err != nil {
-		response.ErrorResponse(w, http.StatusInternalServerError, "failed to resolve tool scopes")
-		return
-	}
-	if !hasScope(callerScopes, "cinqo:super:admin") && !hasAnyScope(callerScopes, toolScopes) {
-		response.ErrorResponse(w, http.StatusForbidden, "missing required scope")
-		return
+	// The reserved "cinqo" slug is the core app itself, not an installed
+	// Tool — there is no tools row to look scopes up from, so it needs
+	// cinqo:super:admin directly. Same rule as UploadImageHandler's own
+	// cinqoSystemToolSlug branch.
+	if toolSlug == cinqoSystemToolSlug {
+		if !hasScope(callerScopes, "cinqo:super:admin") {
+			response.ErrorResponse(w, http.StatusForbidden, "missing required scope")
+			return
+		}
+	} else {
+		tool, err := tool_query.NewToolQueryRepo(db).FindBySlug(toolSlug)
+		if err != nil {
+			response.ErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("unknown tool %q", toolSlug))
+			return
+		}
+
+		// Authorization: the caller must hold at least one scope toolSlug
+		// itself declared (or cinqo:super:admin) — see
+		// plan/ai/media/step-01-media-feature.md's "Scope requirements".
+		// This ties the caller-asserted toolSlug back to a real check
+		// instead of trusting it outright; Media itself declares no scope
+		// of its own.
+		toolScopes, err := tool_query.NewToolQueryRepo(db).ScopesForTool(tool.ID)
+		if err != nil {
+			response.ErrorResponse(w, http.StatusInternalServerError, "failed to resolve tool scopes")
+			return
+		}
+		if !hasScope(callerScopes, "cinqo:super:admin") && !hasAnyScope(callerScopes, toolScopes) {
+			response.ErrorResponse(w, http.StatusForbidden, "missing required scope")
+			return
+		}
 	}
 
 	file, header, err := r.FormFile("file")

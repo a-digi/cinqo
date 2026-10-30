@@ -6,7 +6,8 @@ import { LoadingSpinner } from '../../../Shared/Components/Loading/LoadingSpinne
 import { useConfirm } from '../../../Shared/Components/Modal/useConfirm'
 import { useSnackBar } from '../../../Shared/Components/SnackBar/SnackBarContext'
 import { Dropdown } from '../../../Shared/Components/Dropdown/Dropdown'
-import { ImageUploadCropper } from '../../../Shared/Components/ImageUploadCropper/ImageUploadCropper'
+import { PlusIcon } from '../../../Shared/Components/IconButton/icons'
+import { MediaUploadModal } from './MediaUploadModal'
 import { MediaDetailModal } from './MediaDetailModal'
 import { MediaTile } from './MediaTile'
 import { applyMediaFilters, bulkDeleteMessage, defaultMediaFilters, sortOptions, typeOptions, type MediaFilters } from './mediaFilters'
@@ -30,7 +31,7 @@ export function MediaListPage() {
   const [tools, setTools] = useState<Tool[] | null>(null)
   const [media, setMedia] = useState<MediaFile[] | null>(null)
   const [toolSlug, setToolSlug] = useState('')
-  const [uploadToolSlug, setUploadToolSlug] = useState(CINQO_SYSTEM_TOOL_SLUG)
+  const [uploadOpen, setUploadOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [selectedFile, setSelectedFile] = useState<MediaFile | null>(null)
@@ -150,22 +151,16 @@ export function MediaListPage() {
       </div>
 
       <div className="flex items-end justify-between gap-4">
-        <div className="flex items-end gap-2">
-          <div className="w-40">
-            <Dropdown options={uploadTargetOptions} value={uploadToolSlug} onChange={setUploadToolSlug} />
-          </div>
-          <ImageUploadCropper
-            toolSlug={uploadToolSlug}
-            sourceLabel={uploadTargetOptions.find((o) => o.value === uploadToolSlug)?.label ?? uploadToolSlug}
-            onDone={() => {
-              successMessage('Image uploaded.')
-              load(toolSlug)
-            }}
-            onError={(msg) => {
-              errorMessage(msg)
-            }}
-          />
-        </div>
+        <button
+          type="button"
+          onClick={() => {
+            setUploadOpen(true)
+          }}
+          className="inline-flex items-center gap-1.5 rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-800"
+        >
+          <PlusIcon />
+          Media
+        </button>
 
         {tools.length > 0 && (
           <div className="w-64">
@@ -175,7 +170,7 @@ export function MediaListPage() {
       </div>
 
       {media.length > 0 && (
-        <div className="flex flex-wrap items-end gap-3 rounded-xl border border-gray-200 bg-gray-100 shadow-sm">
+        <div className="flex flex-wrap items-end gap-3">
           <label className="min-w-48 flex-1 text-xs font-medium text-gray-600">
             Name
             <input
@@ -185,7 +180,7 @@ export function MediaListPage() {
                 setFilters((f) => ({ ...f, query: e.target.value }))
               }}
               placeholder="Search by title or filename"
-              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900"
+              className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900"
             />
           </label>
           <div className="w-40">
@@ -273,6 +268,19 @@ export function MediaListPage() {
         </div>
       )}
       {dialog}
+      {uploadOpen && (
+        <MediaUploadModal
+          targets={uploadTargetOptions}
+          defaultTarget={toolSlug || CINQO_SYSTEM_TOOL_SLUG}
+          onClose={() => {
+            setUploadOpen(false)
+          }}
+          onUploaded={(count) => {
+            successMessage(count === 1 ? 'Media uploaded.' : `${count} media files uploaded.`)
+            load(toolSlug)
+          }}
+        />
+      )}
       {selectedFile && (
         <MediaDetailModal
           file={selectedFile}

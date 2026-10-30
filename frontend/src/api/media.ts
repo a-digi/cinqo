@@ -135,3 +135,15 @@ export async function replaceImage(id: string, file: Blob): Promise<ImageUploadR
   const raw = await apiUpload<{ message: ImageUploadResult }>(`/api/v1/media/images/${encodeURIComponent(id)}`, formData, 'PUT')
   return raw.message
 }
+
+// Stores any file as-is (no image processing) — POST /api/v1/media/upload.
+// toolSlug "cinqo" (the core app's own bucket) needs cinqo:super:admin;
+// any other slug needs a scope that tool itself declared. title is required.
+export async function uploadMediaFile(file: File, toolSlug: string, title: string): Promise<string> {
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('toolSlug', toolSlug)
+  formData.append('title', title)
+  const raw = await apiUpload<{ message: { fileId: string } }>('/api/v1/media/upload', formData)
+  return raw.message.fileId
+}
