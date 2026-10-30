@@ -1,26 +1,21 @@
-import { useEffect, useState } from 'react'
-import { fetchMedia, deleteMedia, mediaDownloadUrl, type MediaFile } from '../../../api/media'
+import { useEffect, useMemo, useState } from 'react'
+import { fetchMedia, deleteMedia, type MediaFile } from '../../../api/media'
 import { fetchTools, type Tool } from '../../../api/tools'
 import { ApiError } from '../../../api/client'
 import { LoadingSpinner } from '../../../Shared/Components/Loading/LoadingSpinner'
 import { useConfirm } from '../../../Shared/Components/Modal/useConfirm'
 import { useSnackBar } from '../../../Shared/Components/SnackBar/SnackBarContext'
-import { IconButton } from '../../../Shared/Components/IconButton/IconButton'
-import { TrashIcon, EyeIcon } from '../../../Shared/Components/IconButton/icons'
-import { Pill } from '../../../Shared/Components/Pill/Pill'
 import { Dropdown } from '../../../Shared/Components/Dropdown/Dropdown'
 import { ImageUploadCropper } from '../../../Shared/Components/ImageUploadCropper/ImageUploadCropper'
 import { MediaDetailModal } from './MediaDetailModal'
+import { MediaTile } from './MediaTile'
+import { applyMediaFilters, bulkDeleteMessage, defaultMediaFilters, sortOptions, typeOptions, type MediaFilters } from './mediaFilters'
 
 // Reserved toolSlug for the core app itself (not an installed Tool) —
 // see api/src/media/handler/upload_image_handler.go's own
 // cinqoSystemToolSlug doc comment and
 // plan/ai/media/step-08-admin-media-upload.md.
 const CINQO_SYSTEM_TOOL_SLUG = 'cinqo'
-
-function isPreviewable(file: MediaFile): boolean {
-  return file.contentType.startsWith('image/') || file.contentType === 'application/pdf'
-}
 
 // Admin-only, read/audit/cleanup view of the core Media feature
 // (api/src/media) — every tool's own uploaded files in one place,
@@ -39,6 +34,9 @@ export function MediaListPage() {
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [selectedFile, setSelectedFile] = useState<MediaFile | null>(null)
+  const [filters, setFilters] = useState<MediaFilters>(defaultMediaFilters)
+  const [checked, setChecked] = useState<Set<string>>(new Set())
+  const [bulkBusy, setBulkBusy] = useState(false)
   const { confirm, dialog } = useConfirm()
   const { successMessage, errorMessage } = useSnackBar()
 
@@ -56,7 +54,7 @@ export function MediaListPage() {
       .then(setTools)
       .catch(() => {
         // Non-fatal: the tool filter dropdown just stays empty — the
-        // page's own table (unfiltered) still works without it.
+        // page's own grid (unfiltered) still works without it.
         setTools([])
       })
   }, [])
@@ -75,12 +73,55 @@ export function MediaListPage() {
     try {
       await deleteMedia(file.id)
       setMedia((prev) => (prev ? prev.filter((m) => m.id !== file.id) : prev))
+      setChecked((prev) => {
+        const next = new Set(prev)
+        next.delete(file.id)
+        return next
+      })
       successMessage('Media file deleted.')
     } catch (err) {
       errorMessage(err instanceof ApiError ? err.message : 'Failed to delete media file.')
     } finally {
       setBusyId(null)
     }
+  }
+
+  const visible = useMemo(() => (media ? applyMediaFilters(media, filters) : []), [media, filters])
+  const checkedFiles = visible.filter((f) => checked.has(f.id))
+  const allChecked = visible.length > 0 && checkedFiles.length === visible.length
+
+  const toggle = (id: string) => {
+    setChecked((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const handleBulkDelete = async () => {
+    const targets = checkedFiles
+    if (targets.length === 0) return
+    const confirmed = await confirm({
+      title: `Delete ${targets.length} media file${targets.length === 1 ? '' : 's'}`,
+      message: bulkDeleteMessage(targets),
+    })
+    if (!confirmed) return
+    setBulkBusy(true)
+    const failed = new Set<string>()
+    for (const file of targets) {
+      try {
+        await deleteMedia(file.id)
+      } catch {
+        failed.add(file.id)
+      }
+    }
+    const deleted = new Set(targets.filter((f) => !failed.has(f.id)).map((f) => f.id))
+    setMedia((prev) => (prev ? prev.filter((m) => !deleted.has(m.id)) : prev))
+    setChecked(failed)
+    setBulkBusy(false)
+    if (failed.size === 0) successMessage(`Deleted ${deleted.size} media file${deleted.size === 1 ? '' : 's'}.`)
+    else errorMessage(`Deleted ${deleted.size}, ${failed.size} failed.`)
   }
 
   if (error) {
@@ -100,7 +141,7 @@ export function MediaListPage() {
   const uploadTargetOptions = [{ value: CINQO_SYSTEM_TOOL_SLUG, label: 'Cinqo' }, ...realToolOptions]
 
   return (
-    <div className="max-w-5xl space-y-6 p-6">
+    <div className="max-w-7xl space-y-6 p-6">
       <div>
         <h1 className="text-xl font-semibold text-gray-900">Media</h1>
         <p className="mt-1 text-sm text-gray-500">
@@ -133,92 +174,101 @@ export function MediaListPage() {
         )}
       </div>
 
-      {media.length === 0 && <p className="py-6 text-center text-sm text-gray-400">No media files.</p>}
-
       {media.length > 0 && (
-        <div className="rounded-lg border border-gray-200">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="text-xs uppercase text-gray-400">
-                <th className="px-4 py-2 font-medium" />
-                <th className="px-4 py-2 font-medium">Title</th>
-                <th className="px-4 py-2 font-medium">Tool</th>
-                <th className="px-4 py-2 font-medium">Uploaded</th>
-                <th className="px-4 py-2 font-medium" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {media.map((file) => (
-                <tr
-                  key={file.id}
-                  role="button"
-                  tabIndex={0}
+        <div className="flex flex-wrap items-end gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+          <label className="min-w-48 flex-1 text-xs font-medium text-gray-600">
+            Name
+            <input
+              type="search"
+              value={filters.query}
+              onChange={(e) => {
+                setFilters((f) => ({ ...f, query: e.target.value }))
+              }}
+              placeholder="Search by title or filename"
+              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900"
+            />
+          </label>
+          <div className="w-40">
+            <Dropdown
+              options={typeOptions}
+              value={filters.type}
+              onChange={(type) => {
+                setFilters((f) => ({ ...f, type }))
+              }}
+            />
+          </div>
+          <div className="w-44">
+            <Dropdown
+              options={sortOptions}
+              value={filters.sort}
+              onChange={(sort) => {
+                setFilters((f) => ({ ...f, sort }))
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {media.length === 0 && <p className="py-6 text-center text-sm text-gray-400">No media files.</p>}
+      {media.length > 0 && visible.length === 0 && (
+        <p className="py-6 text-center text-sm text-gray-400">No media files match these filters.</p>
+      )}
+
+      {visible.length > 0 && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between gap-4 rounded-lg bg-gray-100 px-4 py-2.5">
+            <label className="flex cursor-pointer items-center gap-3 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={allChecked}
+                onChange={() => {
+                  setChecked(allChecked ? new Set() : new Set(visible.map((f) => f.id)))
+                }}
+                className="h-4 w-4 cursor-pointer accent-blue-600"
+              />
+              Select all media ({visible.length})
+            </label>
+            {checkedFiles.length > 0 && (
+              <div className="flex items-center gap-3 text-sm">
+                <span className="text-gray-600">{checkedFiles.length} selected</span>
+                <button
+                  type="button"
+                  disabled={bulkBusy}
                   onClick={() => {
-                    setSelectedFile(file)
+                    void handleBulkDelete()
                   }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault()
-                      setSelectedFile(file)
-                    }
-                  }}
-                  className="cursor-pointer hover:bg-gray-50"
+                  className="rounded-md border border-red-200 bg-white px-3 py-1 text-red-600 hover:bg-red-50 disabled:opacity-50"
                 >
-                  <td className="px-4 py-2">
-                    {file.width !== null ? (
-                      <img src={mediaDownloadUrl(file.id)} alt="" className="h-10 w-10 rounded object-cover" />
-                    ) : (
-                      <div className="h-10 w-10 rounded bg-gray-100" />
-                    )}
-                  </td>
-                  <td className="px-4 py-2 text-gray-900">{file.title || file.originalFilename}</td>
-                  <td className="px-4 py-2">
-                    <Pill outline>{file.toolSlug}</Pill>
-                  </td>
-                  <td className="px-4 py-2 text-gray-600">{new Date(file.createdAt).toLocaleString()}</td>
-                  <td className="px-4 py-2">
-                    {/* stopPropagation here (not on each IconButton's own onClick,
-                        which has no event parameter) keeps a row action from also
-                        triggering the row's own click-to-open-details behavior. This
-                        div is a pure click-catcher, not itself an interactive
-                        element — the real interactive elements are the native
-                        <button>s inside it, which already have their own keyboard
-                        support. */}
-                    {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events */}
-                    <div
-                      className="flex items-center justify-end gap-2"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                      }}
-                    >
-                      {/* Replace button temporarily removed (not the underlying capability —
-                          ImageUploadCropper's existingFileId path and PUT
-                          /api/v1/media/images/{id} are unchanged) per explicit request
-                          while replace-in-place is investigated. */}
-                      {isPreviewable(file) && (
-                        <IconButton
-                          icon={<EyeIcon />}
-                          label="Preview"
-                          onClick={() => {
-                            setSelectedFile(file)
-                          }}
-                        />
-                      )}
-                      <IconButton
-                        icon={<TrashIcon />}
-                        label="Delete"
-                        variant="danger"
-                        onClick={() => {
-                          void handleDelete(file)
-                        }}
-                        disabled={busyId === file.id}
-                      />
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  Delete selected
+                </button>
+              </div>
+            )}
+          </div>
+          {/* A uniquely-named grid class, for the same reason as the card grids:
+              an installed tool's globally-injected Tailwind stylesheet can
+              redeclare a bare `.grid-cols-*` and collapse a plain Tailwind grid. */}
+          <style>{`
+            .media-tile-grid { display: grid; gap: 1.5rem 1rem; grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr)); }
+          `}</style>
+          <div className="media-tile-grid">
+            {visible.map((file) => (
+              <MediaTile
+                key={file.id}
+                file={file}
+                selected={checked.has(file.id)}
+                busy={busyId === file.id || bulkBusy}
+                onToggle={() => {
+                  toggle(file.id)
+                }}
+                onOpen={() => {
+                  setSelectedFile(file)
+                }}
+                onDelete={() => {
+                  void handleDelete(file)
+                }}
+              />
+            ))}
+          </div>
         </div>
       )}
       {dialog}
