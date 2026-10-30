@@ -18,3 +18,8 @@ export function summarizePersonas(personas: PersonaLike[]): PersonaSummary {
   }
   return s
 }
+
+// The personas that still have no description (blank counts as none), in the order given.
+export function undescribedPersonas<T extends PersonaLike>(personas: T[]): T[] {
+  return personas.filter((p) => (p.description ?? '').trim() === '')
+}

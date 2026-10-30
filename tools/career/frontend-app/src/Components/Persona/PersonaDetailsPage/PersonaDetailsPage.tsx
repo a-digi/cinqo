@@ -3,12 +3,12 @@ import { fetchPersonaDetails, updatePersonaDetails } from '../../../api'
 import { TargetIcon } from '../../../Shared/Icons/icons'
 import { inputClass } from '../../../Shared/inputClass'
 import { PageHeaderCard } from '../../../Shared/PageHeader/PageHeaderCard'
-import { SummaryRail } from '../../../Shared/SummaryRail/SummaryRail'
 import { EXPERIENCE_PATH, SKILLS_PATH } from '../../../paths'
 import { Field } from '../../Field/Field'
-import { ACCENTS, PAGE_ACCENT } from '../../JobsPage/jobsTheme'
+import { PAGE_ACCENT } from '../../JobsPage/jobsTheme'
 import { PersonaSwitcher } from '../PersonaSwitcher/PersonaSwitcher'
-import { detailsCompleteness } from './detailsStats'
+import { FieldStepper } from './FieldStepper'
+import { detailsCompleteness, detailsSteps, type DetailsKey } from './detailsStats'
 
 const emptyForm = {
   headline: '',
@@ -20,11 +20,6 @@ const emptyForm = {
 }
 
 const cardStyle = { borderColor: PAGE_ACCENT.soft, background: `linear-gradient(160deg, #ffffff 45%, ${PAGE_ACCENT.soft} 100%)` }
-
-function go(e: React.MouseEvent, path: string) {
-  e.preventDefault()
-  window.__cinqoToolBridge.navigate(path)
-}
 
 // Renamed from ProfilePage.tsx as of step 11, matching the backend's
 // own step 10 rename: this was never the job seeker's own profile
@@ -105,6 +100,13 @@ export function PersonaDetailsPage() {
 
   const completeness = detailsCompleteness(saved)
 
+  // The stepper's click: bring that field into view and put the cursor in it.
+  function focusField(key: DetailsKey) {
+    const el = document.getElementById(`details-${key}`)
+    el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    el?.focus({ preventScroll: true })
+  }
+
   return (
     <div className="max-w-7xl p-6 font-sans text-gray-900">
       <PageHeaderCard
@@ -126,6 +128,7 @@ export function PersonaDetailsPage() {
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <Field
                   label="Headline"
+                  id="details-headline"
                   value={form.headline}
                   onChange={(v) => {
                     edit({ headline: v })
@@ -133,6 +136,7 @@ export function PersonaDetailsPage() {
                 />
                 <Field
                   label="Location"
+                  id="details-location"
                   value={form.location}
                   onChange={(v) => {
                     edit({ location: v })
@@ -142,6 +146,7 @@ export function PersonaDetailsPage() {
               <label className="mt-3 block text-xs font-medium text-gray-500">
                 Summary
                 <textarea
+                  id="details-summary"
                   value={form.summary}
                   onChange={(e) => {
                     edit({ summary: e.target.value })
@@ -155,6 +160,7 @@ export function PersonaDetailsPage() {
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <Field
                   label="Desired titles"
+                  id="details-desiredTitles"
                   value={form.desiredTitles}
                   onChange={(v) => {
                     edit({ desiredTitles: v })
@@ -162,6 +168,7 @@ export function PersonaDetailsPage() {
                 />
                 <Field
                   label="Desired locations"
+                  id="details-desiredLocations"
                   value={form.desiredLocations}
                   onChange={(v) => {
                     edit({ desiredLocations: v })
@@ -169,6 +176,7 @@ export function PersonaDetailsPage() {
                 />
                 <Field
                   label="Minimum salary"
+                  id="details-minSalary"
                   type="number"
                   value={form.minSalary}
                   onChange={(v) => {
@@ -192,56 +200,22 @@ export function PersonaDetailsPage() {
           )}
         </div>
 
-        <aside className="order-2 w-full shrink-0 lg:order-1 lg:sticky lg:top-6 lg:w-56">
-          {personaId && (
-            <SummaryRail
-              title="Overview"
-              segments={[
-                { value: completeness.filled, color: '#16a34a' },
-                { value: completeness.total - completeness.filled, color: '#cbd5e1' },
-              ]}
-              centerValue={`${completeness.percent}%`}
-              centerLabel="complete"
-              rows={[
-                { label: 'Fields filled', value: `${completeness.filled} of ${completeness.total}`, color: '#16a34a' },
-                {
-                  label: 'Missing',
-                  value: String(completeness.missing.length),
-                  color: ACCENTS[2].to,
-                  emphasis: completeness.missing.length > 0,
-                },
-                { label: 'Skills', value: String(skillCount), color: ACCENTS[4].to },
-                { label: 'Experience', value: String(experienceCount), color: ACCENTS[6].to },
-              ]}
-            >
-              {completeness.missing.length > 0 && (
-                <p className="mt-3 text-xs text-gray-500">Still empty: {completeness.missing.join(', ')}.</p>
-              )}
-              <div className="mt-3 flex gap-4 text-xs font-medium">
-                <a
-                  href={SKILLS_PATH}
-                  onClick={(e) => {
-                    go(e, SKILLS_PATH)
-                  }}
-                  className="hover:underline"
-                  style={{ color: PAGE_ACCENT.text }}
-                >
-                  Skills →
-                </a>
-                <a
-                  href={EXPERIENCE_PATH}
-                  onClick={(e) => {
-                    go(e, EXPERIENCE_PATH)
-                  }}
-                  className="hover:underline"
-                  style={{ color: PAGE_ACCENT.text }}
-                >
-                  Experience →
-                </a>
-              </div>
-            </SummaryRail>
-          )}
-        </aside>
+        {personaId && (
+          <aside className="order-2 w-full shrink-0 lg:order-1 lg:sticky lg:top-6 lg:w-56">
+            <FieldStepper
+              steps={detailsSteps(saved)}
+              skillCount={skillCount}
+              experienceCount={experienceCount}
+              onPick={focusField}
+              onOpenSkills={() => {
+                window.__cinqoToolBridge.navigate(SKILLS_PATH)
+              }}
+              onOpenExperience={() => {
+                window.__cinqoToolBridge.navigate(EXPERIENCE_PATH)
+              }}
+            />
+          </aside>
+        )}
       </div>
     </div>
   )

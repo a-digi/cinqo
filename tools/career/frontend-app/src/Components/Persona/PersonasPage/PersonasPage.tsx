@@ -3,12 +3,12 @@ import { fetchPersonas, updatePersona, deletePersona, type Persona } from '../..
 import { LayersIcon, PlusIcon } from '../../../Shared/Icons/icons'
 import { inputClass } from '../../../Shared/inputClass'
 import { PageHeaderCard } from '../../../Shared/PageHeader/PageHeaderCard'
-import { SummaryRail } from '../../../Shared/SummaryRail/SummaryRail'
 import { NEW_PERSONA_PATH } from '../../../paths'
-import { percentOrNull, plural } from '../../CompaniesPage/companyStats'
-import { ACCENTS, PAGE_ACCENT, accentFor, initialOf } from '../../JobsPage/jobsTheme'
+import { plural } from '../../CompaniesPage/companyStats'
+import { PAGE_ACCENT, accentFor, initialOf } from '../../JobsPage/jobsTheme'
 import { ProfileSwitcher } from '../../ProfileSwitcher/ProfileSwitcher'
-import { summarizePersonas } from './personaStats'
+import { NeedsAttention } from './NeedsAttention'
+import { summarizePersonas, undescribedPersonas } from './personaStats'
 
 // Full persona CRUD — since step 10, every persona belongs to a
 // profile (job seeker), so this page now scopes its own list and its
@@ -17,7 +17,8 @@ import { summarizePersonas } from './personaStats'
 // level up from step 8's own personaId requirement. See
 // plan/ai/tools/career/step-09-persona-frontend.md and
 // plan/ai/tools/career/step-11-job-seeker-profile-frontend.md. Same layout as
-// Companies: header card, an overview on the left, the personas on the right;
+// Companies, but mirrored: header card, the personas on the left and the "needs
+// attention" panel on the right;
 // "New persona" opens its own page.
 export function PersonasPage() {
   const [profileId, setProfileId] = useState<string | null>(null)
@@ -81,7 +82,17 @@ export function PersonasPage() {
   }
 
   const summary = summarizePersonas(personas)
-  const describedPercent = percentOrNull(summary.withDescription, summary.personas)
+  const undescribed = undescribedPersonas(personas)
+
+  // The panel's "Add one": opens that persona's inline edit and brings it into view.
+  function editFromPanel(id: string) {
+    const persona = personas.find((p) => p.id === id)
+    if (!persona) return
+    startEdit(persona)
+    requestAnimationFrame(() => {
+      document.getElementById(`persona-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    })
+  }
 
   return (
     <div className="max-w-7xl p-6 font-sans text-gray-900">
@@ -95,7 +106,7 @@ export function PersonasPage() {
       />
 
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
-        <div className="order-1 min-w-0 flex-1 lg:order-2">
+        <div className="min-w-0 flex-1">
           <ProfileSwitcher profileId={profileId} onChange={setProfileId} />
 
           {profileId && (
@@ -132,6 +143,7 @@ export function PersonasPage() {
               {personas.map((p) => (
                 <div
                   key={p.id}
+                  id={`persona-${p.id}`}
                   className="rounded-3xl border p-4 shadow-sm transition-shadow hover:shadow-md"
                   style={{ borderColor: PAGE_ACCENT.soft, background: `linear-gradient(160deg, #ffffff 45%, ${PAGE_ACCENT.soft} 100%)` }}
                 >
@@ -218,27 +230,11 @@ export function PersonasPage() {
           )}
         </div>
 
-        <aside className="order-2 w-full shrink-0 lg:order-1 lg:sticky lg:top-6 lg:w-56">
-          <SummaryRail
-            title="Overview"
-            segments={[
-              { value: summary.withDescription, color: '#16a34a' },
-              { value: summary.withoutDescription, color: '#cbd5e1' },
-            ]}
-            centerValue={describedPercent === null ? '–' : `${describedPercent}%`}
-            centerLabel="have a description"
-            rows={[
-              { label: 'Personas', value: String(summary.personas), color: ACCENTS[0].to },
-              { label: 'With description', value: String(summary.withDescription), color: '#16a34a' },
-              {
-                label: 'Without',
-                value: String(summary.withoutDescription),
-                color: ACCENTS[2].to,
-                emphasis: summary.withoutDescription > 0,
-              },
-            ]}
-          />
-        </aside>
+        {profileId && (
+          <aside className="w-full shrink-0 lg:sticky lg:top-6 lg:w-72">
+            <NeedsAttention total={summary.personas} undescribed={undescribed} onEdit={editFromPanel} />
+          </aside>
+        )}
       </div>
     </div>
   )

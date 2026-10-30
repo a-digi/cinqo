@@ -7,16 +7,20 @@ export function Field({
   value,
   onChange,
   type = 'text',
+  id,
 }: {
   label: string
   value: string
   onChange: (v: string) => void
   type?: string
+  // Lets a page focus the input (the Summary & Goals stepper does).
+  id?: string
 }) {
   return (
     <label className="block text-xs font-medium text-gray-500">
       {label}
       <input
+        id={id}
         type={type}
         value={value}
         onChange={(e) => {

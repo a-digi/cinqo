@@ -2,16 +2,16 @@ import { useEffect, useState } from 'react'
 import { fetchExperience, removeExperience, type CareerExperience } from '../../api'
 import { PlusIcon, TimelineIcon } from '../../Shared/Icons/icons'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
-import { SummaryRail } from '../../Shared/SummaryRail/SummaryRail'
 import { EXPERIENCE_ENTRY_PATH } from '../../paths'
-import { percentOrNull, plural } from '../CompaniesPage/companyStats'
-import { ACCENTS, PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
+import { plural } from '../CompaniesPage/companyStats'
+import { PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
 import { PersonaSwitcher } from '../Persona/PersonaSwitcher/PersonaSwitcher'
+import { CareerTimeline } from './CareerTimeline'
 import { summarizeExperience } from './experienceStats'
 
 // Its own page as of step 7 (moved out of ProfilePage). Step 9 added the persona
-// switcher — experience entries are per-persona as of step 8. Same layout as the
-// other list pages: header card, an overview on the left, the entries on the right;
+// switcher — experience entries are per-persona as of step 8. Header card, a career
+// timeline as the overview, then the entries;
 // adding and editing an entry open ExperienceEntryPage. See
 // plan/ai/tools/career/step-07-dedicated-skills-and-experience-pages.md
 // and plan/ai/tools/career/step-09-persona-frontend.md.
@@ -51,7 +51,6 @@ export function ExperiencePage() {
   }
 
   const summary = summarizeExperience(experience)
-  const currentPercent = percentOrNull(summary.current, summary.entries)
 
   return (
     <div className="max-w-7xl p-6 font-sans text-gray-900">
@@ -62,9 +61,11 @@ export function ExperiencePage() {
         pill={personaId ? { text: plural(summary.entries, 'entry', 'entries') } : undefined}
       />
 
-      <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
-        <div className="order-1 min-w-0 flex-1 lg:order-2">
+      <div>
+        <div className="min-w-0">
           <PersonaSwitcher personaId={personaId} onChange={setPersonaId} />
+
+          {personaId && <CareerTimeline entries={experience} today={new Date()} />}
 
           {personaId && (
             <div className="mb-3 flex items-center justify-between gap-3">
@@ -154,26 +155,6 @@ export function ExperiencePage() {
             </div>
           )}
         </div>
-
-        <aside className="order-2 w-full shrink-0 lg:order-1 lg:sticky lg:top-6 lg:w-56">
-          {personaId && (
-            <SummaryRail
-              title="Overview"
-              segments={[
-                { value: summary.current, color: '#16a34a' },
-                { value: summary.past, color: '#cbd5e1' },
-              ]}
-              centerValue={currentPercent === null ? '–' : `${currentPercent}%`}
-              centerLabel="current"
-              rows={[
-                { label: 'Entries', value: String(summary.entries), color: ACCENTS[0].to },
-                { label: 'Current', value: String(summary.current), color: '#16a34a' },
-                { label: 'Earliest start', value: summary.earliestStart ?? '–', color: ACCENTS[4].to },
-                { label: 'Latest end', value: summary.latestEnd ?? '–', color: ACCENTS[6].to },
-              ]}
-            />
-          )}
-        </aside>
       </div>
     </div>
   )

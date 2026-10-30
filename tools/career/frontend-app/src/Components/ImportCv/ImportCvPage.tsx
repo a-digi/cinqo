@@ -21,6 +21,8 @@ import { resolveDuplicateLabels, type DuplicateLabels } from './resolveDuplicate
 import { insertSelected, type InsertResult, type ItemResult } from './insertProposal'
 import { ProposalRow } from './ProposalRow'
 import { ImportRunDetail } from './ImportRunDetail'
+import { ImportPipeline } from './ImportPipeline'
+import { pipelineStages } from './pipelineRules'
 import { experienceLabel } from './experienceLabel'
 
 // The 5 areas a CV import populates — Profile/Personas/Personal
@@ -388,17 +390,16 @@ export function ImportCvPage() {
     return kind === 'persona' ? duplicateLabels.personas[item.possibleDuplicateOf] : duplicateLabels.experience[item.possibleDuplicateOf]
   }
 
-  // What the header's pill says about where the import is.
-  const headerPill =
-    state === 'analyzing'
-      ? { text: 'Analyzing' }
-      : state === 'review'
-        ? { text: 'Review' }
-        : state === 'error'
-          ? { text: 'Failed' }
-          : runs !== null && runs.length > 0
-            ? { text: plural(runs.length, 'past import', 'past imports') }
-            : undefined
+  // The header's pill is the history count; where the import is lives in the pipeline.
+  const headerPill = runs !== null && runs.length > 0 ? { text: plural(runs.length, 'past import', 'past imports') } : undefined
+  const stages = pipelineStages({
+    state,
+    uploadError: state === 'upload' && error !== '',
+    uploading,
+    inserting,
+    insertedCount: Object.values(insertedKeys).filter(Boolean).length,
+    insertErrorCount: Object.values(insertErrors).filter(Boolean).length,
+  })
 
   return (
     <div className="max-w-5xl p-6 font-sans text-gray-900">
@@ -408,6 +409,8 @@ export function ImportCvPage() {
         description="Upload a CV and let the AI propose a profile, persona, summary, skills and experience from it. You review everything before it is saved."
         pill={headerPill}
       />
+
+      {!viewingRun && <ImportPipeline stages={stages} onStartOver={startOver} />}
 
       {state === 'upload' && !viewingRun && (
         <section className={cardClassName} style={cardStyle}>

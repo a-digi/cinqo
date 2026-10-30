@@ -5,6 +5,8 @@ import { inputClass } from '../../Shared/inputClass'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { plural } from '../CompaniesPage/companyStats'
 import { PAGE_ACCENT, accentFor } from '../JobsPage/jobsTheme'
+import { LetterIndex } from './LetterIndex'
+import { filterByLetter, letterIndex } from './skillRules'
 import { PersonaSwitcher } from '../Persona/PersonaSwitcher/PersonaSwitcher'
 
 // Its own page as of step 7 (moved out of ProfilePage). "Edit" for a
@@ -15,11 +17,12 @@ import { PersonaSwitcher } from '../Persona/PersonaSwitcher/PersonaSwitcher'
 // step 8. See
 // plan/ai/tools/career/step-07-dedicated-skills-and-experience-pages.md
 // and plan/ai/tools/career/step-09-persona-frontend.md. Header card and a tinted
-// card of coloured chips; no overview rail, since a skill count alone would only
-// repeat the header pill.
+// card of coloured chips, with an A-Z index above them as its overview.
 export function SkillsPage() {
   const [personaId, setPersonaId] = useState<string | null>(null)
   const [skills, setSkills] = useState<string[]>([])
+  // The letter the index is filtering by, or null for all skills.
+  const [activeLetter, setActiveLetter] = useState<string | null>(null)
   const [newSkill, setNewSkill] = useState('')
   const [editing, setEditing] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
@@ -94,6 +97,11 @@ export function SkillsPage() {
       })
   }
 
+  const index = letterIndex(skills)
+  // A letter whose skills are all gone (removed or renamed) stops filtering.
+  const letter = activeLetter !== null && index.some((l) => l.letter === activeLetter && l.count > 0) ? activeLetter : null
+  const visibleSkills = letter === null ? skills : filterByLetter(skills, letter)
+
   return (
     <div className="max-w-7xl p-6 font-sans text-gray-900">
       <PageHeaderCard
@@ -112,9 +120,10 @@ export function SkillsPage() {
           className="rounded-3xl border p-5 shadow-sm"
           style={{ borderColor: PAGE_ACCENT.soft, background: `linear-gradient(160deg, #ffffff 45%, ${PAGE_ACCENT.soft} 100%)` }}
         >
+          {skills.length > 0 && <LetterIndex index={index} active={letter} total={skills.length} onPick={setActiveLetter} />}
           {skills.length === 0 && <p className="mb-3 text-sm text-gray-500">No skills yet. Add the first one below.</p>}
           <div className="mb-4 flex flex-wrap gap-2">
-            {skills.map((skill) => {
+            {visibleSkills.map((skill) => {
               const accent = accentFor(skill)
               return editing === skill ? (
                 <span

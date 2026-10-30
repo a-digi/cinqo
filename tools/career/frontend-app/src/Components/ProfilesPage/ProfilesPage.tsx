@@ -3,11 +3,12 @@ import { fetchProfiles, updateProfile, deleteProfile, addProfileExternalLink, re
 import { PlusIcon, UserIcon, XIcon } from '../../Shared/Icons/icons'
 import { inputClass } from '../../Shared/inputClass'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
-import { SummaryRail } from '../../Shared/SummaryRail/SummaryRail'
 import { NEW_PROFILE_PATH } from '../../paths'
-import { percentOrNull, plural } from '../CompaniesPage/companyStats'
-import { ACCENTS, PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
+import { plural } from '../CompaniesPage/companyStats'
+import { PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
 import { profileLabel } from '../ProfileSwitcher/profileLabel'
+import { PlatformShelf } from './PlatformShelf'
+import { firstWithoutLinks, platformCounts } from './profileRules'
 import { summarizeProfiles } from './profileStats'
 
 // The job seeker layer, one level above Persona (step 10) — the
@@ -15,8 +16,8 @@ import { summarizeProfiles } from './profileStats'
 // everything below Personas) can be used without a profile already
 // existing. Reuses SkillsPage's own "chips + inline add form" pattern
 // directly for external links — the same repeatable, key-like
-// collection shape. Same layout as Companies: header card, an overview on
-// the left, the profiles on the right; "New profile" opens its own page. See
+// collection shape. Header card, an overview (the platform shelf) on
+// above, the profiles below; "New profile" opens its own page. See
 // plan/ai/tools/career/step-11-job-seeker-profile-frontend.md.
 export function ProfilesPage() {
   const [profiles, setProfiles] = useState<Profile[]>([])
@@ -108,7 +109,13 @@ export function ProfilesPage() {
   }
 
   const summary = summarizeProfiles(profiles)
-  const linksPercent = percentOrNull(summary.withLinks, summary.profiles)
+  const platforms = platformCounts(profiles)
+
+  // Scrolls to the first profile without any link, so the shelf's dashed card leads to work.
+  function showFirstWithoutLinks() {
+    const id = firstWithoutLinks(profiles)
+    if (id) document.getElementById(`profile-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
 
   return (
     <div className="max-w-7xl p-6 font-sans text-gray-900">
@@ -119,8 +126,10 @@ export function ProfilesPage() {
         pill={{ text: plural(summary.profiles, 'profile', 'profiles') }}
       />
 
-      <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
-        <div className="order-1 min-w-0 flex-1 lg:order-2">
+      <PlatformShelf platforms={platforms} withoutLinks={summary.withoutLinks} onShowWithoutLinks={showFirstWithoutLinks} />
+
+      <div>
+        <div className="min-w-0">
           <div className="mb-3 flex items-center justify-between gap-3">
             <p className="text-xs text-gray-500">
               Deleting a profile permanently deletes its personas and everything they own (details, skills, experience), with no further
@@ -156,6 +165,7 @@ export function ProfilesPage() {
               return (
                 <div
                   key={p.id}
+                  id={`profile-${p.id}`}
                   className="rounded-3xl border p-4 shadow-sm transition-shadow hover:shadow-md"
                   style={{ borderColor: PAGE_ACCENT.soft, background: `linear-gradient(160deg, #ffffff 45%, ${PAGE_ACCENT.soft} 100%)` }}
                 >
@@ -294,24 +304,6 @@ export function ProfilesPage() {
             })}
           </div>
         </div>
-
-        <aside className="order-2 w-full shrink-0 lg:order-1 lg:sticky lg:top-6 lg:w-56">
-          <SummaryRail
-            title="Overview"
-            segments={[
-              { value: summary.withLinks, color: '#16a34a' },
-              { value: summary.withoutLinks, color: '#cbd5e1' },
-            ]}
-            centerValue={linksPercent === null ? '–' : `${linksPercent}%`}
-            centerLabel="have links"
-            rows={[
-              { label: 'Profiles', value: String(summary.profiles), color: ACCENTS[0].to },
-              { label: 'With links', value: String(summary.withLinks), color: '#16a34a' },
-              { label: 'Links', value: String(summary.links), color: ACCENTS[6].to },
-              { label: 'Without links', value: String(summary.withoutLinks), color: ACCENTS[2].to, emphasis: summary.withoutLinks > 0 },
-            ]}
-          />
-        </aside>
       </div>
     </div>
   )
