@@ -30,8 +30,20 @@ import { Pagination } from '../Pagination/Pagination'
 import { Modal } from '../../Shared/Modal/Modal'
 import { MatchScoreBar } from '../../Shared/MatchScoreBar/MatchScoreBar'
 import { ActionMenu, type ActionMenuItem } from '../../Shared/ActionMenu/ActionMenu'
-import { FilterIcon, XIcon, EyeIcon, ExternalLinkIcon, TrashIcon, MatchIcon, RobotIcon, PDFIcon, PlusIcon } from '../../Shared/Icons/icons'
+import {
+  BriefcaseIcon,
+  FilterIcon,
+  XIcon,
+  EyeIcon,
+  ExternalLinkIcon,
+  TrashIcon,
+  MatchIcon,
+  RobotIcon,
+  PDFIcon,
+  PlusIcon,
+} from '../../Shared/Icons/icons'
 import { AddJobModal } from './AddJobModal'
+import { PAGE_ACCENT, accentFor, gradient, initialOf } from './jobsTheme'
 import { SelectCvModal } from './SelectCvModal'
 import { ConfirmationModal } from '../../Shared/ConfirmationModal/ConfirmationModal'
 import {
@@ -898,10 +910,39 @@ export function JobsPage() {
           still scrolled around it correctly either way. */}
       <div className="flex flex-nowrap items-start gap-6">
         <div className="min-w-[280px] flex-1">
-          <h1 className="mb-1.5 text-xl font-semibold">Saved Jobs</h1>
-          <p className="mb-5 text-sm text-gray-500">
-            Job postings the AI has crawled and saved on your behalf, and any you added yourself.
-          </p>
+          <div
+            className="relative mb-5 overflow-hidden rounded-3xl border p-5"
+            style={{ borderColor: PAGE_ACCENT.soft, background: `linear-gradient(160deg, #ffffff 40%, ${PAGE_ACCENT.soft} 100%)` }}
+          >
+            <div
+              className="pointer-events-none absolute -right-6 -top-8 h-32 w-32 rounded-full opacity-15"
+              style={{ background: gradient(PAGE_ACCENT) }}
+            />
+            <div
+              className="pointer-events-none absolute right-24 top-10 h-10 w-10 rotate-45 rounded-xl opacity-20"
+              style={{ background: gradient(PAGE_ACCENT) }}
+            />
+            <div className="relative flex items-center gap-4">
+              <span
+                className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-white shadow-sm"
+                style={{ background: gradient(PAGE_ACCENT) }}
+              >
+                <BriefcaseIcon />
+              </span>
+              <div className="min-w-0 flex-1">
+                <h1 className="text-xl font-semibold">Saved Jobs</h1>
+                <p className="mt-0.5 text-sm text-gray-500">
+                  Job postings the AI has crawled and saved on your behalf, and any you added yourself.
+                </p>
+              </div>
+              <span
+                className="shrink-0 rounded-full px-3 py-1 text-sm font-semibold"
+                style={{ background: PAGE_ACCENT.soft, color: PAGE_ACCENT.text }}
+              >
+                {total} {total === 1 ? 'job' : 'jobs'}
+              </span>
+            </div>
+          </div>
 
           {activeFilters.length > 0 && (
             <div className="mb-2 flex flex-wrap gap-1.5">
@@ -994,35 +1035,51 @@ export function JobsPage() {
 
           <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
 
-          <div className="overflow-hidden rounded-md border border-gray-200 shadow-sm">
-            <div className="overflow-x-auto">
+          <div
+            className="relative overflow-hidden rounded-3xl border shadow-sm"
+            style={{ borderColor: PAGE_ACCENT.soft, background: `linear-gradient(170deg, #ffffff 55%, ${PAGE_ACCENT.soft} 100%)` }}
+          >
+            <div
+              className="pointer-events-none absolute -bottom-12 -right-10 h-40 w-40 rounded-full border-[16px] opacity-10"
+              style={{ borderColor: PAGE_ACCENT.from }}
+            />
+            <div className="relative overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr>
-                    <th className="border-b border-gray-200 bg-gray-50 p-3 text-left font-medium text-gray-500">Title</th>
-                    <th className="border-b border-gray-200 bg-gray-50 p-3 text-left font-medium text-gray-500">Company</th>
-                    <th className="border-b border-gray-200 bg-gray-50 p-3 text-left font-medium text-gray-500">Platform</th>
-                    <th className="border-b border-gray-200 bg-gray-50 p-3 text-left font-medium text-gray-500">Posted</th>
-                    <th className="border-b border-gray-200 bg-gray-50 p-3 text-left font-medium text-gray-500">Match</th>
-                    <th className="border-b border-gray-200 bg-gray-50 p-3 text-right font-medium text-gray-500">Actions</th>
+                    <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Title</th>
+                    <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Company</th>
+                    <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Platform</th>
+                    <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Posted</th>
+                    <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Match</th>
+                    <th className="bg-blue-50/70 p-3 text-right text-xs font-semibold uppercase tracking-wide text-blue-700">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {jobs.map((job) => {
                     return (
-                      <tr key={job.id} className="last:[&>td]:border-b-0 hover:bg-gray-50">
-                        <td className="border-b border-gray-200 p-3 text-gray-900">
-                          {job.title}
-                          {isManualJob(job) && (
+                      <tr key={job.id} className="transition-colors last:[&>td]:border-b-0 hover:bg-blue-50/50">
+                        <td className="border-b border-blue-50 p-3 text-gray-900">
+                          <div className="flex items-center gap-3">
                             <span
-                              title="You added this job yourself"
-                              className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800"
+                              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white shadow-sm"
+                              style={{ background: gradient(accentFor(job.company || job.title)) }}
+                              aria-hidden="true"
                             >
-                              Manual
+                              {initialOf(job.company || job.title)}
                             </span>
-                          )}
+                            <span className="font-medium">{job.title}</span>
+                            {isManualJob(job) && (
+                              <span
+                                title="You added this job yourself"
+                                className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-800"
+                              >
+                                Manual
+                              </span>
+                            )}
+                          </div>
                         </td>
-                        <td className="border-b border-gray-200 p-3">
+                        <td className="border-b border-blue-50 p-3">
                           {job.company}
                           {job.companyId && (
                             <div className="mt-0.5 flex items-center gap-1.5 text-xs text-gray-400">
@@ -1039,9 +1096,24 @@ export function JobsPage() {
                             </div>
                           )}
                         </td>
-                        <td className="border-b border-gray-200 p-3">{platformLabel(job)}</td>
-                        <td className="border-b border-gray-200 p-3">{job.postedAt}</td>
-                        <td className="border-b border-gray-200 p-3">
+                        <td className="border-b border-blue-50 p-3">
+                          {platformLabel(job) === '—' ? (
+                            <span className="text-gray-300">—</span>
+                          ) : (
+                            <span
+                              className="inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium"
+                              style={{ background: accentFor(platformLabel(job)).soft, color: accentFor(platformLabel(job)).text }}
+                            >
+                              {platformLabel(job)}
+                            </span>
+                          )}
+                        </td>
+                        <td className="border-b border-blue-50 p-3">
+                          {job.postedAt ? (
+                            <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs text-gray-600">{job.postedAt}</span>
+                          ) : null}
+                        </td>
+                        <td className="border-b border-blue-50 p-3">
                           {job.matchStatus === 'matching' ? (
                             <button
                               type="button"
@@ -1066,7 +1138,7 @@ export function JobsPage() {
                             <span className="text-xs text-gray-300">—</span>
                           )}
                         </td>
-                        <td className="border-b border-gray-200 p-3 text-right">
+                        <td className="border-b border-blue-50 p-3 text-right">
                           <ActionMenu triggerLabel={`Actions for ${job.title}`} items={buildJobActionItems(job)} />
                         </td>
                       </tr>

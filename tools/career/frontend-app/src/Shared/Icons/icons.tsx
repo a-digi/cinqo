@@ -240,3 +240,22 @@ export function DotsVerticalIcon() {
     </svg>
   )
 }
+
+// BriefcaseIcon — the Career tool's own mark (page headers).
+export function BriefcaseIcon({ className = 'h-6 w-6' }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={className}
+    >
+      <rect x="3.5" y="7.5" width="17" height="12" rx="2.5" />
+      <path d="M9 7.5V6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v1.5M3.5 13h17" />
+    </svg>
+  )
+}
