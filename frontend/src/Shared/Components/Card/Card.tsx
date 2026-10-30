@@ -13,12 +13,17 @@ export interface CardProps {
   // Omit entirely for a plain padded card with no banner.
   media?: React.ReactNode
   className?: string
+  // Slides the card in from the left when it mounts. Off by default.
+  animate?: boolean
+  // Start delay for `animate`, in ms — lets a grid of cards stagger.
+  animationDelayMs?: number
 }
 
-export function Card({ children, media, className = '' }: CardProps) {
+export function Card({ children, media, className = '', animate = false, animationDelayMs = 0 }: CardProps) {
   return (
     <div
-      className={`overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm transition-shadow hover:shadow-md ${className}`}
+      className={`overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm transition-shadow hover:shadow-md ${animate ? 'cinqo-card-enter' : ''} ${className}`}
+      style={animate && animationDelayMs > 0 ? { animationDelay: `${animationDelayMs}ms` } : undefined}
     >
       {media}
       <div className="p-4">{children}</div>

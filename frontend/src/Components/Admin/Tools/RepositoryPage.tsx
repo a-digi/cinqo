@@ -220,12 +220,14 @@ export function RepositoryPage() {
             }
           `}</style>
           <div className="repository-card-grid">
-            {detail.tools.map((tool) => {
+            {detail.tools.map((tool, index) => {
               const color = colorForTool(tool.id)
               const action = actionFor(tool)
               return (
                 <Card
                   key={tool.id}
+                  animate
+                  animationDelayMs={Math.min(index, 12) * 120}
                   media={
                     <div
                       className="relative flex h-28 items-center justify-center px-12 text-center"
