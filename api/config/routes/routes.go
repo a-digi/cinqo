@@ -18,6 +18,7 @@ import (
 	conversation_handler "github.com/a-digi/cinqo/src/conversation/handler"
 	dashboard_handler "github.com/a-digi/cinqo/src/dashboard/handler"
 	domainevent_handler "github.com/a-digi/cinqo/src/domainevent/handler"
+	filereader_handler "github.com/a-digi/cinqo/src/filereader/handler"
 	"github.com/a-digi/cinqo/src/health"
 	media_handler "github.com/a-digi/cinqo/src/media/handler"
 	"github.com/a-digi/cinqo/src/ping"
@@ -116,6 +117,10 @@ func Init(ctx serverdi.Context) {
 		"ConversationGetTurnPlan":      local_routing.HandlerFunc(conversation_handler.GetTurnPlanHandler),
 		"ConversationGetLogs":          local_routing.HandlerFunc(conversation_handler.GetLogsHandler),
 		"ConversationGetAllLogs":       local_routing.HandlerFunc(conversation_handler.GetAllLogsHandler),
+		"ConversationGetTraceFiles":    local_routing.HandlerFunc(conversation_handler.GetTraceFilesHandler),
+		"FileReaderInfo":               local_routing.HandlerFunc(filereader_handler.InfoHandler),
+		"FileReaderLines":              local_routing.HandlerFunc(filereader_handler.LinesHandler),
+		"FileReaderSearch":             local_routing.HandlerFunc(filereader_handler.SearchHandler),
 		"ConversationGetSettings":      local_routing.HandlerFunc(conversation_handler.GetSettingsHandler),
 		"ConversationUpdateSettings":   local_routing.HandlerFunc(conversation_handler.UpdateSettingsHandler),
 

@@ -13,6 +13,7 @@ import (
 	"github.com/a-digi/cinqo/src/comments"
 	"github.com/a-digi/cinqo/src/dashboard"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -77,6 +78,10 @@ type Manifest struct {
 	// who may read and write those comments. Needs no backend: core stores them.
 	// See CommentTypeDecl and plan/ai/comments/comments-engine.md.
 	Comments []CommentTypeDecl `json:"comments,omitempty"`
+	// FileSources declares text files of this tool (its own logs, say) that Cinqo's file reader may show to
+	// people holding the declared scope. Needs no backend route: core reads the files. See FileSourceDecl and
+	// plan/ai/file-reader/file-reader-engine.md.
+	FileSources []FileSourceDecl `json:"file_sources,omitempty"`
 }
 
 type ScopeDecl struct {
@@ -170,6 +175,16 @@ type CommentTypeDecl struct {
 	EntityType string `json:"entity_type"`
 	ReadScope  string `json:"read_scope"`
 	WriteScope string `json:"write_scope"`
+}
+
+// FileSourceDecl is one place in this tool's own data that the file reader may open. ID names it (the reader's
+// source becomes "tool:<slug>:<id>"); Dir is which of the tool's own data folders it lives in (one of
+// FileSourceDirs; never the database folder); Scope is the scope that may read it and must be one this tool
+// declares. A file is then named by a path relative to that folder, which core checks stays inside it.
+type FileSourceDecl struct {
+	ID    string `json:"id"`
+	Dir   string `json:"dir"`
+	Scope string `json:"scope"`
 }
 
 // RequiredToolDecl is one other tool this manifest's own tool depends
@@ -324,6 +339,9 @@ func Validate(m Manifest, in ValidationInput) (kind string, err error) {
 	if err := ValidateComments(m); err != nil {
 		return "", err
 	}
+	if err := ValidateFileSources(m); err != nil {
+		return "", err
+	}
 
 	switch {
 	case in.HasFrontendBundle && in.HasBackendExecutable:
@@ -426,6 +444,48 @@ func ValidateComments(m Manifest) error {
 			if _, ok := declared[f.scope]; !ok {
 				return fmt.Errorf("comments: entity_type %q: %s %q must be one of this tool's own declared scopes", c.EntityType, f.name, f.scope)
 			}
+		}
+	}
+	return nil
+}
+
+// FileSourceDirs are the tool data folders a file source may point at. The database folder is left out on
+// purpose: its files are binary and hold everything the tool stores.
+var FileSourceDirs = []string{"logs", "uploads", "cache", "tmp"}
+
+// MaxFileSources bounds how many sources one tool may declare.
+const MaxFileSources = 8
+
+var fileSourceIDPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,31}$`)
+
+// ValidFileSourceID reports whether id may name a file source.
+func ValidFileSourceID(id string) bool { return fileSourceIDPattern.MatchString(id) }
+
+// ValidateFileSources checks m.FileSources: each id is a valid name and declared once, each dir is one of
+// FileSourceDirs, and each scope is one this tool itself declares (the same rule comments and mcp_tools have),
+// so a tool cannot expose its files under a scope that belongs to someone else.
+func ValidateFileSources(m Manifest) error {
+	if len(m.FileSources) > MaxFileSources {
+		return fmt.Errorf("file_sources: at most %d sources may be declared", MaxFileSources)
+	}
+	declared := make(map[string]struct{}, len(m.Scopes))
+	for _, s := range m.Scopes {
+		declared[s.Scope] = struct{}{}
+	}
+	seen := map[string]struct{}{}
+	for _, f := range m.FileSources {
+		if !ValidFileSourceID(f.ID) {
+			return fmt.Errorf("file_sources: id %q must start with a lower-case letter and contain only lower-case letters, digits, - and _ (at most 32 characters)", f.ID)
+		}
+		if _, dup := seen[f.ID]; dup {
+			return fmt.Errorf("file_sources: id %q is declared twice", f.ID)
+		}
+		seen[f.ID] = struct{}{}
+		if !slices.Contains(FileSourceDirs, f.Dir) {
+			return fmt.Errorf("file_sources: id %q: dir %q must be one of %s", f.ID, f.Dir, strings.Join(FileSourceDirs, ", "))
+		}
+		if _, ok := declared[f.Scope]; !ok {
+			return fmt.Errorf("file_sources: id %q: scope %q must be one of this tool's own declared scopes", f.ID, f.Scope)
 		}
 	}
 	return nil

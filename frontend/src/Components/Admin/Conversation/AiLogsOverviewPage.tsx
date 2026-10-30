@@ -4,6 +4,7 @@ import { ApiError } from '../../../api/client'
 import { AiLogsStats } from './AiLogsStats'
 import { AiLogsTable } from './AiLogsTable'
 import { AiLogsToolbar } from './AiLogsToolbar'
+import { AiLogViewerModal } from './AiLogViewerModal'
 import { filterEntries, sortEntries, type SortKey } from './aiLogsRules'
 
 // Admin-wide overview: every conversation that has ever produced an AI
@@ -28,6 +29,7 @@ export function AiLogsOverviewPage() {
   const [now] = useState(() => new Date())
   const [query, setQuery] = useState('')
   const [shown, setShown] = useState(PAGE_SIZE)
+  const [opened, setOpened] = useState<AllAiTraceLogsEntry | null>(null)
   const sorted = useMemo(() => sortEntries(filterEntries(entries, query), sortKey), [entries, query, sortKey])
   const visible = sorted.slice(0, shown)
 
@@ -57,14 +59,15 @@ export function AiLogsOverviewPage() {
       <div>
         <h1 className="text-xl font-semibold">AI Logs</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Every conversation that has produced an AI trace log, and where its files live. Only filled while AI trace logging is on
+          Every conversation that has produced an AI trace log. Open one to read its files here. Only filled while AI trace logging is on
           (Settings).
         </p>
         <details className="mt-2 text-sm text-gray-500">
           <summary className="cursor-pointer select-none text-blue-600 hover:underline">How this works</summary>
           <p className="mt-2 max-w-3xl">
-            One row per conversation, with the folder holding its log files and how many exist. Nothing here opens a file&apos;s content:
-            open the folder directly (a text editor, or the API) to read one.
+            One row per conversation, with the folder holding its log files and how many exist. Open shows the newest file in a
+            terminal-style reader and lists the others; big files are read a window of up to 500 lines at a time, never loaded whole.
+            Opening a file is written to the server log (who and which file, never the content).
           </p>
         </details>
       </div>
@@ -94,6 +97,7 @@ export function AiLogsOverviewPage() {
             sortKey={sortKey}
             onSortChange={changeSort}
             now={now}
+            onOpen={setOpened}
           />
           {sorted.length > shown && (
             <div className="flex items-center justify-center gap-3 text-sm text-gray-500">
@@ -112,6 +116,14 @@ export function AiLogsOverviewPage() {
             </div>
           )}
         </>
+      )}
+      {opened && (
+        <AiLogViewerModal
+          entry={opened}
+          onClose={() => {
+            setOpened(null)
+          }}
+        />
       )}
     </div>
   )

@@ -124,6 +124,16 @@ routes:
     scopes:
       - cinqo:super:admin
 
+  # file-reader-engine.md, step 2 — the trace files of ONE conversation (names,
+  # sizes, times; never content), for the admin AI Logs page to open one in the
+  # file reader. Admin-only, like the overview above.
+  - path: /api/v1/conversations/logs/{conversationId}
+    method: GET
+    executor: ConversationGetTraceFiles
+    security: authenticated
+    scopes:
+      - cinqo:super:admin
+
   # step-37-ai-debug-logging-toggle.md — the global switch controlling
   # whether the AI trace logs above ever get written at all.
   # Admin-only: unlike every other route in this file, NOT also

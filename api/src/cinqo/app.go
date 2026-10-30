@@ -30,8 +30,13 @@ import (
 	dashboard_system "github.com/a-digi/cinqo/src/dashboard/system"
 	dashboard_toolwidgets "github.com/a-digi/cinqo/src/dashboard/toolwidgets"
 	"github.com/a-digi/cinqo/src/domainevent"
+	"github.com/a-digi/cinqo/src/filereader"
+	filereader_handler "github.com/a-digi/cinqo/src/filereader/handler"
+	filereader_source "github.com/a-digi/cinqo/src/filereader/source"
 	platform_crypto "github.com/a-digi/cinqo/src/platform/crypto"
+	tool_filesource "github.com/a-digi/cinqo/src/tool/filesource"
 	tool_manager "github.com/a-digi/cinqo/src/tool/manager"
+	tool_query "github.com/a-digi/cinqo/src/tool/repository/query"
 	"github.com/a-digi/cinqo/src/tool/systemtools"
 	toolrepository_fetch "github.com/a-digi/cinqo/src/toolrepository/fetch"
 	"github.com/a-digi/cinqo/src/toolrepository/nativeconfig"
@@ -318,6 +323,15 @@ func Start(opts Options) (srv *http.Server, cfg *server.Config, ctx *di.ContextB
 		comments_access.NewResolver(comments_access.NewSystemTypes(), comments_access.NewToolTypes(manager.Connector.DB)),
 		dashboardLog,
 	)
+	// File reader engine (plan/ai/file-reader/file-reader-engine.md): one shared engine, so its limits
+	// (reads at once, cached indexes) are global; the sources say which files it may open.
+	fileSources := filereader_source.NewRegistry()
+	if err := fileSources.Register(filereader_source.NewAITrace(filepath.Join(dataDir, "conversations"))); err != nil {
+		return nil, nil, nil, log, err
+	}
+	// An installed tool's declared file sources ("tool:<slug>:<id>"), found on demand and only while it is enabled.
+	fileSources.AddResolver(filereader_source.ToolPrefix, tool_filesource.NewResolver(tool_query.NewToolQueryRepo(manager.Connector.DB), dataDir))
+	filereader_handler.Configure(filereader.New(filereader.DefaultLimits()), fileSources, func(format string, args ...any) { log.Info(format, args...) })
 	toolWidgets := dashboard_toolwidgets.NewSource(manager.Connector.DB, tool_manager.Port).WithLogger(dashboardLog)
 	dashboard.SetDefault(dashboard.NewEngine(widgetRegistry, toolWidgets).WithLogger(dashboardLog))
 

@@ -1,0 +1,22 @@
+routes:
+  # file-reader-engine.md — read a big text file a window of lines at a time. Both routes are
+  # authenticated with NO static scope, on purpose: the scope depends on the source being read
+  # (ai-trace needs cinqo:super:admin; an installed tool's source needs the scope that tool
+  # declared), so it is checked per request inside the handler, deny by default. The client
+  # never sends a path: only a source id and a reference the source resolves under its own root.
+  - path: /api/v1/file-reader/{source}/info
+    method: GET
+    executor: FileReaderInfo
+    security: authenticated
+
+  - path: /api/v1/file-reader/{source}/lines
+    method: GET
+    executor: FileReaderLines
+    security: authenticated
+
+  # Looks for plain text (never a pattern) in the file; every call is bounded in matches, bytes and time
+  # and says where to continue.
+  - path: /api/v1/file-reader/{source}/search
+    method: GET
+    executor: FileReaderSearch
+    security: authenticated

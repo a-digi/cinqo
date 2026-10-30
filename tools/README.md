@@ -346,6 +346,59 @@ because a reply below it matched a filter), and `canEdit` / `canDelete` for the 
   `example-full/backend/main_test.go`, is enough).
 - Bump the tool's `version`, rebuild the zips and regenerate `repository.json` so users get it.
 
+## Showing a big text file (the file reader)
+
+Cinqo has a file reader: a terminal-style viewer that reads a big text file a window of up to
+500 lines at a time, with search, and never loads the file whole. Your tool can use it to show
+its own logs or exports. It needs no backend route: core reads the file.
+
+### 1. Declare the source in `manifest.json`
+
+```json
+"file_sources": [
+  { "id": "crawl-logs", "dir": "logs", "scope": "tool:browser:read" }
+]
+```
+
+| Field | Meaning |
+|---|---|
+| `id` | A name for the place (lower-case letters, digits, `-` and `_`, at most 32 characters, starting with a letter). |
+| `dir` | Which of **your tool's own data folders** it lives in: `logs`, `uploads`, `cache` or `tmp`. The database folder is never allowed. Cinqo works out the real folder from its data directory and your slug; the manifest never supplies a path. |
+| `scope` | Who may read it. Must be a scope **your tool declares** in `scopes`. `cinqo:super:admin` may always read. |
+
+At most 8 sources. A tool must be **enabled** for its sources to work; an update that removes
+a source stops it at once (the manifest on disk is what counts).
+
+### 2. Show a file
+
+```js
+var unmount = window.__cinqoToolBridge.mountFileReader(container, {
+  tool: 'browser',                       // your slug
+  source: 'crawl-logs',                  // declared in manifest.json "file_sources"
+  ref: 'crawl/2026-10-31/run-1.log',     // the file, relative to that folder
+  title: 'Crawl run 1',                  // optional, shown in the title bar
+  initialWindow: 200                     // optional: 50, 100, 200 or 500 lines
+})
+```
+
+- `ref` is a **relative path** of up to 6 parts; each part is letters, digits, dots, dashes and
+  underscores and starts with a letter or digit. No `..`, no leading dot, no absolute path, no
+  symlink that leaves the folder: Cinqo answers "not found" for all of them.
+- Call the function `mountFileReader` returns when your page goes away. Mounting into a
+  container that already has a reader replaces it. A bad option is refused with a console error
+  and returns a function that does nothing.
+- Hosts older than this feature do not have `mountFileReader`; check
+  `typeof window.__cinqoToolBridge.mountFileReader === 'function'` first.
+
+### 3. Limits and behaviour to know about
+
+- Text only: a file with NUL bytes is refused ("not a text file"); files over 1 GiB are refused.
+  A line longer than 16 KiB is cut in the view (and in search), and says how much is hidden.
+- Search is plain text (never a pattern), case-insensitive unless the person turns "Aa" on.
+- Each time someone opens a file, Cinqo writes one line to its server log: who, which source and
+  file, never the content.
+- Who can read is decided by the server from `scope` on every request.
+
 ## Previewing a PDF from Media
 
 A tool bundle is one file, so it cannot ship pdf.js and its worker. To show the first page of a PDF

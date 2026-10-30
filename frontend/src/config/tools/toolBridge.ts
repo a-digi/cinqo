@@ -97,6 +97,21 @@ export interface ToolCommentsOptions {
   title?: string
 }
 
+// Where to draw the file reader and which file it shows.
+export interface ToolFileReaderOptions {
+  // The tool's own slug, e.g. "browser".
+  tool: string
+  // A file source the tool declared in manifest.json's "file_sources", e.g. "crawl-logs".
+  source: string
+  // The file, as a path relative to that source's folder in the tool's own data, e.g. "crawl/2026-10-31/run-1.log".
+  // Never an absolute path: core refuses anything that would leave the folder.
+  ref: string
+  // The name in the window's title bar (default: the ref).
+  title?: string
+  // How many lines are shown at once: 50, 100, 200 or 500 (default 200).
+  initialWindow?: number
+}
+
 export interface ToolBridge {
   registerMenuEntry(entry: ToolMenuEntry): void
   registerRoute(route: ToolRoute): void
@@ -112,6 +127,12 @@ export interface ToolBridge {
   // Mounting into a container that already has a panel replaces it. A bad option is
   // refused with a console error and returns a function that does nothing.
   mountComments(container: HTMLElement, options: ToolCommentsOptions): () => void
+  // Draws Cinqo's terminal-style file reader for one text file of the tool's own data into container and
+  // returns a function that removes it (call it from your route's unmount). It reads big files a window of up to
+  // 500 lines at a time, with search, never loading a file whole. Who may read is decided by the server from the
+  // scope in manifest.json's "file_sources". A bad option is refused with a console error and returns a function
+  // that does nothing.
+  mountFileReader(container: HTMLElement, options: ToolFileReaderOptions): () => void
   // The first page of a PDF in Media as a JPEG data URL, rendered by Cinqo (a tool bundle is a
   // single file and cannot ship pdf.js and its worker), or null when it cannot be previewed
   // (not a PDF, deleted, unreadable, an id that is not a Media file id). The file is fetched with
@@ -138,6 +159,8 @@ export interface ToolBridgeCallbacks {
   // Supplied by the app, which owns the React side of the comments panel; this file
   // stays free of React so a tool author can copy it on its own.
   onMountComments: (container: HTMLElement, options: ToolCommentsOptions) => () => void
+  // Supplied by the app, which owns the React side of the file reader.
+  onMountFileReader: (container: HTMLElement, options: ToolFileReaderOptions) => () => void
   // Supplied by the app, which owns the PDF renderer (pdf.js is only loaded when first needed).
   onPdfThumbnail: (mediaFileId: string, version?: string) => Promise<string | null>
 }
@@ -169,6 +192,9 @@ export function createToolBridge(callbacks: ToolBridgeCallbacks): ToolBridge {
     },
     mountComments(container, options) {
       return callbacks.onMountComments(container, options)
+    },
+    mountFileReader(container, options) {
+      return callbacks.onMountFileReader(container, options)
     },
     pdfThumbnail(mediaFileId, version) {
       // Anything that is not a Media file id gets no request at all.

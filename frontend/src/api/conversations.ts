@@ -325,3 +325,15 @@ export async function updateConversationSettings(settings: ConversationSettings)
   const raw = await apiPut<{ message: ConversationSettings }>('/api/v1/conversations/settings', settings)
   return raw.message
 }
+
+// One turn's trace file in a conversation's folder, for the admin viewer (file-reader-engine.md, step 2).
+export interface TraceFileEntry {
+  turnRunId: string
+  sizeBytes: number
+  modifiedAt: string
+}
+
+export async function fetchTraceFiles(conversationId: string): Promise<TraceFileEntry[]> {
+  const raw = await apiGet<{ message: { logs: TraceFileEntry[] } }>(`/api/v1/conversations/logs/${encodeURIComponent(conversationId)}`)
+  return raw.message.logs
+}

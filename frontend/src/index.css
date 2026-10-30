@@ -589,3 +589,19 @@ button:not(:disabled),
     animation: none;
   }
 }
+
+/* The blinking block after the terminal viewer's prompt (Shared/Components/Terminal). Still for people who
+   ask for less motion. */
+@keyframes cinqo-caret {
+  50% {
+    opacity: 0;
+  }
+}
+.cinqo-caret {
+  animation: cinqo-caret 1.1s steps(1) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cinqo-caret {
+    animation: none;
+  }
+}

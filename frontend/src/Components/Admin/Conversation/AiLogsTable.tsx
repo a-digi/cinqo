@@ -19,6 +19,8 @@ export interface AiLogsTableProps {
   sortKey: SortKey
   onSortChange: (key: SortKey) => void
   now: Date
+  // Open a conversation's trace files in the file reader.
+  onOpen: (entry: AllAiTraceLogsEntry) => void
 }
 
 function CopyIcon() {
@@ -118,6 +120,24 @@ function Folder({ path }: { path: string }) {
   )
 }
 
+function OpenButton({ entry, onOpen }: { entry: AllAiTraceLogsEntry; onOpen: (entry: AllAiTraceLogsEntry) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        onOpen(entry)
+      }}
+      aria-label={`Open the logs of ${hasTitle(entry) ? entry.title : entry.conversationId}`}
+      className="inline-flex items-center gap-1.5 rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+    >
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" className="h-3.5 w-3.5" aria-hidden="true">
+        <path d="m5 7 3 3-3 3M10 14h5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      Open
+    </button>
+  )
+}
+
 function SortHeader({
   label,
   active,
@@ -167,7 +187,7 @@ function Message({ children }: { children: ReactNode }) {
   return <div className="px-6 py-14 text-center text-sm text-gray-500">{children}</div>
 }
 
-export function AiLogsTable({ entries, loading, query, onClearQuery, sortKey, onSortChange, now }: AiLogsTableProps) {
+export function AiLogsTable({ entries, loading, query, onClearQuery, sortKey, onSortChange, now, onOpen }: AiLogsTableProps) {
   const byDate = sortKey === 'newest' || sortKey === 'oldest'
   const groups = byDate ? groupByDay(entries, now) : [{ label: '', entries }]
   const ariaSort = (key: SortKey | SortKey[]): 'ascending' | 'descending' | 'none' => {
@@ -202,7 +222,7 @@ export function AiLogsTable({ entries, loading, query, onClearQuery, sortKey, on
           <table className="w-full table-fixed text-left max-md:hidden">
             <thead className="sticky top-0 z-10 bg-gray-50/95 backdrop-blur">
               <tr className="border-b border-gray-200">
-                <th scope="col" aria-sort={ariaSort('title')} className="w-[42%] px-5 py-3">
+                <th scope="col" aria-sort={ariaSort('title')} className="w-[38%] px-5 py-3">
                   <SortHeader
                     label="Conversation"
                     active={sortKey === 'title'}
@@ -232,8 +252,11 @@ export function AiLogsTable({ entries, loading, query, onClearQuery, sortKey, on
                     }}
                   />
                 </th>
-                <th scope="col" className="w-[26%] px-3 py-3 pr-5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                <th scope="col" className="w-[22%] px-3 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
                   Folder
+                </th>
+                <th scope="col" className="w-[10%] px-3 py-3 pr-5">
+                  <span className="sr-only">Open</span>
                 </th>
               </tr>
             </thead>
@@ -242,7 +265,7 @@ export function AiLogsTable({ entries, loading, query, onClearQuery, sortKey, on
                 <Fragment key={group.label || 'all'}>
                   {group.label !== '' && (
                     <tr className="bg-gray-50/60">
-                      <th scope="colgroup" colSpan={4} className="px-5 py-1.5 text-left text-xs font-semibold text-gray-500">
+                      <th scope="colgroup" colSpan={5} className="px-5 py-1.5 text-left text-xs font-semibold text-gray-500">
                         {group.label}
                       </th>
                     </tr>
@@ -262,8 +285,11 @@ export function AiLogsTable({ entries, loading, query, onClearQuery, sortKey, on
                       <td className="px-3 py-3">
                         <When iso={e.modifiedAt} now={now} />
                       </td>
-                      <td className="min-w-0 px-3 py-3 pr-5">
+                      <td className="min-w-0 px-3 py-3">
                         <Folder path={e.folder} />
+                      </td>
+                      <td className="px-3 py-3 pr-5 text-right">
+                        <OpenButton entry={e} onOpen={onOpen} />
                       </td>
                     </tr>
                   ))}
@@ -286,6 +312,7 @@ export function AiLogsTable({ entries, loading, query, onClearQuery, sortKey, on
                       </div>
                       <Id id={e.conversationId} />
                       <Folder path={e.folder} />
+                      <OpenButton entry={e} onOpen={onOpen} />
                     </li>
                   ))}
                 </ul>
