@@ -1,0 +1,20 @@
+routes:
+  # Both need tool:manage, like every repository route: the answer reveals which
+  # repositories an administrator uses, and the POST makes the server send
+  # requests. The path is deliberately not under /api/v1/tools/..., which has
+  # /tools/{slug} routes. See plan/ai/tools/repository/check-for-updates.md.
+  - path: /api/v1/tool-updates
+    method: GET
+    executor: ToolUpdatesGet
+    security: authenticated
+    scopes:
+      - tool:manage
+      - cinqo:super:admin
+
+  - path: /api/v1/tool-updates/check
+    method: POST
+    executor: ToolUpdatesCheck
+    security: authenticated
+    scopes:
+      - tool:manage
+      - cinqo:super:admin

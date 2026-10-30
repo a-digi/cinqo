@@ -39,6 +39,7 @@ import (
 	auth_config "github.com/a-digi/cinqo/src/auth/config"
 	"github.com/a-digi/cinqo/src/cinqo"
 	tool_manager "github.com/a-digi/cinqo/src/tool/manager"
+	"github.com/a-digi/cinqo/src/toolrepository/updatecheck"
 )
 
 //go:embed embedded.Caddyfile
@@ -219,7 +220,13 @@ func run() error {
 		}
 	}
 
-	waitForShutdown(shutdownCh, srv, cfg.PidFile, log, frontendDir, ctx.GetDatabaseManager().Connector.DB)
+	var stopBackground func()
+	if raw, ok := ctx.Get("tool_update_checker"); ok {
+		if checker, ok := raw.(*updatecheck.Checker); ok {
+			stopBackground = checker.Stop
+		}
+	}
+	waitForShutdown(shutdownCh, srv, cfg.PidFile, log, frontendDir, ctx.GetDatabaseManager().Connector.DB, stopBackground)
 	return nil
 }
 
@@ -764,9 +771,15 @@ func hasVisiblePage(client *http.Client, debugPort int) bool {
 // spawned browser — then stops Caddy before the backend, since Caddy is
 // the public-facing listener and stopping the backend first would leave
 // it still accepting connections it can no longer proxy anywhere.
-func waitForShutdown(ch <-chan os.Signal, srv *http.Server, pidFile string, log logger.Logger, frontendDir string, toolDB *sql.DB) {
+func waitForShutdown(ch <-chan os.Signal, srv *http.Server, pidFile string, log logger.Logger, frontendDir string, toolDB *sql.DB, stopBackground func()) {
 	sig := <-ch
 	log.Info("Received signal %s, shutting down...", sig)
+
+	// A running update check is cancelled first, so no repository fetch outlives
+	// the shutdown. stopBackground may be nil.
+	if stopBackground != nil {
+		stopBackground()
+	}
 
 	if err := caddycore.Stop(); err != nil {
 		log.Warning("caddy stop: %v", err)

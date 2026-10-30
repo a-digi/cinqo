@@ -87,6 +87,9 @@ func Init(ctx serverdi.Context) {
 		"ToolFrontendBundle": local_routing.HandlerFunc(tool_handler.FrontendBundleHandler),
 		"ToolProxy":          local_routing.HandlerFunc(tool_handler.ProxyHandler),
 
+		"ToolUpdatesGet":   local_routing.HandlerFunc(toolrepository_handler.UpdatesHandler),
+		"ToolUpdatesCheck": local_routing.HandlerFunc(toolrepository_handler.CheckUpdatesHandler),
+
 		"ToolRepositoryList":    local_routing.HandlerFunc(toolrepository_handler.ListHandler),
 		"ToolRepositoryGet":     local_routing.HandlerFunc(toolrepository_handler.GetHandler),
 		"ToolRepositoryInstall": local_routing.HandlerFunc(toolrepository_handler.InstallHandler),

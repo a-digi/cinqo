@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { fetchTools, enableTool, disableTool, deleteTool, type Tool } from '../../../api/tools'
 import { ApiError } from '../../../api/client'
 import { LoadingSpinner } from '../../../Shared/Components/Loading/LoadingSpinner'
 import { ScopeGate } from '../../../Shared/Components/Access/ScopeGate'
+import type { ToolUpdatesResponse } from '../../../api/toolUpdates'
 import { useConfirm } from '../../../Shared/Components/Modal/useConfirm'
 import { IconButton } from '../../../Shared/Components/IconButton/IconButton'
 import { PowerIcon, TrashIcon } from '../../../Shared/Components/IconButton/icons'
@@ -11,6 +13,20 @@ import { Card } from '../../../Shared/Components/Card/Card'
 import { AppScopes } from '../../../config/security/scopes'
 import { reloadAfterToolChange } from '../../../config/tools/loadTools'
 import { ToolInstallButton } from './ToolInstallButton'
+import { repositoryPath } from './repositoryDisplay'
+import {
+  bannerKind,
+  bannerText,
+  buttonLabel,
+  failureDetails,
+  failureText,
+  isRunning,
+  lastCheckedText,
+  progressText,
+  updateFor,
+  updateLabel,
+} from './updateCheckDisplay'
+import { useUpdateCheck } from './useUpdateCheck'
 import { colorForTool } from './toolCardColors'
 
 // Bounds the functions-pill area's own height — every function pill is
@@ -35,6 +51,7 @@ export function ToolsListPage() {
   const [busySlug, setBusySlug] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const { confirm, dialog } = useConfirm()
+  const updateCheck = useUpdateCheck()
 
   useEffect(() => {
     let cancelled = false
@@ -106,9 +123,42 @@ export function ToolsListPage() {
           </p>
         </div>
         <ScopeGate scopes={[AppScopes.ToolManage]}>
-          <ToolInstallButton />
+          <div className="flex items-start gap-4">
+            <div className="text-right">
+              <button
+                type="button"
+                disabled={updateCheck.starting || (updateCheck.data !== null && isRunning(updateCheck.data.check))}
+                onClick={() => {
+                  void updateCheck.start()
+                }}
+                className="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                {updateCheck.data ? buttonLabel(updateCheck.data.check) : 'Check for updates'}
+              </button>
+              {updateCheck.data && (
+                <p className="mt-1 text-xs text-gray-400">
+                  {isRunning(updateCheck.data.check)
+                    ? progressText(updateCheck.data.check)
+                    : lastCheckedText(updateCheck.data.lastCheckedAt)}
+                </p>
+              )}
+            </div>
+            <ToolInstallButton />
+          </div>
         </ScopeGate>
       </div>
+
+      {updateCheck.error && (
+        <p role="alert" className="text-sm text-red-600">
+          {updateCheck.error}
+        </p>
+      )}
+      {updateCheck.gaveUp && (
+        <p role="status" className="text-sm text-gray-500">
+          Still checking; try again later.
+        </p>
+      )}
+      {updateCheck.data && <UpdateBanner response={updateCheck.data} />}
 
       {tools.length > 0 && (
         <input
@@ -149,6 +199,7 @@ export function ToolsListPage() {
           <div className="tools-card-grid">
           {filtered.map((tool) => {
             const cardColor = colorForTool(tool.id)
+            const update = updateCheck.data ? updateFor(updateCheck.data.updates, tool.slug) : undefined
             return (
               <Card
                 key={tool.id}
@@ -198,7 +249,17 @@ export function ToolsListPage() {
                   <Pill outline>
                     {tool.mcpTools.length} function{tool.mcpTools.length === 1 ? '' : 's'}
                   </Pill>
+                  {update && <Pill variant="amber">{updateLabel(update)}</Pill>}
                 </div>
+
+                {update && (
+                  <p className="mt-3 text-xs text-gray-500">
+                    <Link to={repositoryPath(update.repositoryId)} className="font-medium text-gray-900 hover:underline">
+                      Review update
+                    </Link>{' '}
+                    in {update.repositoryName}
+                  </p>
+                )}
 
                 {tool.mcpTools.length > 0 && (
                   <div className={`mt-3 flex flex-wrap gap-1 overflow-y-auto pr-1 ${FUNCTIONS_MAX_HEIGHT}`}>
@@ -224,4 +285,31 @@ const statusVariant: Record<Tool['status'], 'gray' | 'green' | 'amber' | 'red'> 
   running: 'green',
   stopped: 'gray',
   error: 'red',
+}
+
+// The result of the check: how many updates there are, or that everything is up
+// to date, plus a quieter line for repositories that could not be checked. A
+// failure never hides the updates found.
+function UpdateBanner({ response }: { response: ToolUpdatesResponse }) {
+  const kind = bannerKind(response.check, response.updates)
+  const failures = failureText(response.check.failed)
+  if (kind === 'none' && failures === '' && response.check.error === '') return null
+  return (
+    <div className="space-y-1">
+      {kind !== 'none' && (
+        <p
+          role="status"
+          className={`rounded-md px-4 py-2 text-sm font-medium ${kind === 'update' ? 'bg-amber-50 text-amber-800' : 'bg-green-50 text-green-800'}`}
+        >
+          {bannerText(kind, response.updates)}
+        </p>
+      )}
+      {failures !== '' && (
+        <p className="text-xs text-gray-500" title={failureDetails(response.check.failed)}>
+          {failures}
+        </p>
+      )}
+      {response.check.error !== '' && <p className="text-xs text-gray-500">{response.check.error}</p>}
+    </div>
+  )
 }

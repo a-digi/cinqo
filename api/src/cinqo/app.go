@@ -27,8 +27,10 @@ import (
 	platform_crypto "github.com/a-digi/cinqo/src/platform/crypto"
 	tool_manager "github.com/a-digi/cinqo/src/tool/manager"
 	"github.com/a-digi/cinqo/src/tool/systemtools"
+	toolrepository_fetch "github.com/a-digi/cinqo/src/toolrepository/fetch"
 	"github.com/a-digi/cinqo/src/toolrepository/nativeconfig"
 	toolrepository_service "github.com/a-digi/cinqo/src/toolrepository/service"
+	"github.com/a-digi/cinqo/src/toolrepository/updatecheck"
 
 	"github.com/a-digi/coco-logger/logger"
 )
@@ -270,9 +272,18 @@ func Start(opts Options) (srv *http.Server, cfg *server.Config, ctx *di.ContextB
 		log.Warning("%s", nativeRepo.Warning)
 	}
 	ctx.Set("native_tool_repository_url", nativeRepo.URL)
-	if err := toolrepository_service.New(manager.Connector.DB, nil).SyncNative(nativeRepo.URL); err != nil {
+	repositoryService := toolrepository_service.New(manager.Connector.DB, toolrepository_fetch.New())
+	if err := repositoryService.SyncNative(nativeRepo.URL); err != nil {
 		log.Warning("could not set up the built-in tool repository: %v", err)
 	}
+
+	// The background update check: refreshes every repository, one at a time, in
+	// its own goroutine, once now (without delaying startup) and again whenever
+	// the Tools page asks. Stopped at shutdown (cmd/app). See
+	// plan/ai/tools/repository/check-for-updates.md.
+	updateChecker := updatecheck.New(context.Background(), repositoryService)
+	ctx.Set("tool_update_checker", updateChecker)
+	updateChecker.Start(updatecheck.TriggerLaunch)
 
 	// Auth bootstrap: config.json's "auth" block is always present (dev
 	// HS256 secret); iam.yaml does not exist on disk yet (see
