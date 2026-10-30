@@ -22,6 +22,9 @@ import (
 	"github.com/a-digi/cinqo/config/routes"
 	auth_config "github.com/a-digi/cinqo/src/auth/config"
 	auth_service "github.com/a-digi/cinqo/src/auth/service"
+	"github.com/a-digi/cinqo/src/comments"
+	comments_access "github.com/a-digi/cinqo/src/comments/access"
+	comments_handler "github.com/a-digi/cinqo/src/comments/handler"
 	"github.com/a-digi/cinqo/src/conversation"
 	"github.com/a-digi/cinqo/src/dashboard"
 	dashboard_system "github.com/a-digi/cinqo/src/dashboard/system"
@@ -305,6 +308,16 @@ func Start(opts Options) (srv *http.Server, cfg *server.Config, ctx *di.ContextB
 		}
 	}
 	dashboardLog := func(format string, args ...any) { log.Warning(format, args...) }
+
+	// Comments engine (plan/ai/comments/comments-engine.md): one database file per
+	// owner under the data directory, opened on first use; the resolver knows the
+	// system's own entity types (none yet) and installed tools' declared ones.
+	commentStores := comments.NewManager(dataDir)
+	comments_handler.Configure(
+		commentStores,
+		comments_access.NewResolver(comments_access.NewSystemTypes(), comments_access.NewToolTypes(manager.Connector.DB)),
+		dashboardLog,
+	)
 	toolWidgets := dashboard_toolwidgets.NewSource(manager.Connector.DB, tool_manager.Port).WithLogger(dashboardLog)
 	dashboard.SetDefault(dashboard.NewEngine(widgetRegistry, toolWidgets).WithLogger(dashboardLog))
 

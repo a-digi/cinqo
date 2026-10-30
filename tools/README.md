@@ -48,8 +48,9 @@ can additionally have its own `Makefile` — see
   frontend calls its own backend through the reverse proxy (never the
   raw port directly), which is enforced per-request against the scope
   declared for that route in `manifest.json`. It also carries three Home
-  dashboard widgets (a stat, a list and a custom one) — see
-  "Adding a widget to the Home dashboard" below.
+  dashboard widgets (a stat, a list and a custom one) and comments on an
+  example item — see "Adding a widget to the Home dashboard" and
+  "Comments on your tool's entities" below.
 
 Both are reference examples, not real features — copy one as your
 starting point.
@@ -200,6 +201,143 @@ window.__cinqoToolBridge.registerDashboardWidget({
   and the limits above; `example-full/backend/main_test.go` shows the shape.
 - Bump your tool's `version`, rebuild the zips and regenerate `repository.json` so users get the
   widget on their next update.
+
+## Comments on your tool's entities
+
+Cinqo has a comments engine: your tool can let people comment on its own things (a
+Career job, an invoice, a ticket) without any storage, API or UI of its own. You say
+which entities can be commented on, drop one line of code into the page that shows an
+entity, and Cinqo draws the whole panel: list, add, edit, delete and filters.
+
+Where the comments live: in Cinqo, in a database that belongs to **your tool alone**
+(`<data>/db/tools/<your slug>/comments.db`). No other tool's or the system's comments are
+ever in that file, and your comments are not mixed with theirs. They are **kept when your
+tool is uninstalled** (like the rest of its data) and come back if it is reinstalled. A
+tool needs no backend for this; a frontend-only tool can use comments.
+
+The working example is `example-full/` (`manifest.json`, `frontend/bundle.js`,
+`backend/main.go`).
+
+### 1. Declare the entity types in `manifest.json`
+
+```json
+"comments": [
+  { "entity_type": "job", "read_scope": "tool:mytool:read", "write_scope": "tool:mytool:write" }
+]
+```
+
+| Field | Meaning |
+|---|---|
+| `entity_type` | A name for the kind of thing: lower-case letters, digits and underscores, starting with a letter, at most 40 characters (`job`, `invoice`). Declared once per type. |
+| `read_scope` | Who may see the comments. Must be a scope **your tool declares** in `scopes`. |
+| `write_scope` | Who may add comments (and edit or delete their own). Also one of your tool's own scopes; it may be the same scope as `read_scope`. |
+
+An install is refused if a name is invalid, a type is declared twice, or a scope is not one of
+your tool's own. An update that no longer lists a type stops accepting comments for it (the
+stored comments stay on disk).
+
+### 2. Show the panel where the entity is shown
+
+```js
+var unmount = window.__cinqoToolBridge.mountComments(container, {
+  owner: 'mytool',                 // your tool's own slug
+  entityType: 'job',               // declared in manifest.json "comments"
+  entityId: job.id,                // the entity's UUID
+  title: 'Comments',               // optional
+})
+// later, e.g. from your route's unmount():
+unmount()
+```
+
+- `entityId` must be a **UUID** (any case; Cinqo stores it lower-case). Comments belong to
+  the combination of your tool, the entity type and that UUID.
+- Call the function `mountComments` returns when your page goes away. Mounting into a container
+  that already has a panel replaces it. A bad option is refused with a console error, and the
+  returned function then does nothing.
+- Hosts older than the comments feature do not have `mountComments`. Check
+  `typeof window.__cinqoToolBridge.mountComments === 'function'` first (the example does) and
+  show nothing otherwise.
+- The panel draws itself with Cinqo's own styles; give it a container with some room (a
+  full-width block below the entity works well).
+
+### 3. Who can do what
+
+| Action | Needs |
+|---|---|
+| See the comments | `read_scope` |
+| Add a comment | `write_scope` |
+| Edit a comment | being its author, and still holding `write_scope` (nobody rewrites someone else's words, not even an administrator) |
+| Delete a comment | being its author (holding `write_scope`), or `cinqo:super:admin` |
+
+A user without `read_scope` gets "not found" for everything, the same answer as for a type that
+does not exist, so nothing about the comments is revealed (the panel shows an error instead of
+comments). A user with `read_scope` but not `write_scope` sees the comments, and a note in place of
+the box to add one. If your tool is **disabled**, its
+comments are unreachable (even for an administrator) until it is enabled again. The panel only
+shows Edit and Delete where the server says the user may, so it never offers something that
+would be refused.
+
+### 4. Clean up when an entity is deleted
+
+Cinqo cannot know when your entity disappears, so tell it. From your backend, when you delete an
+entity:
+
+```go
+body, _ := json.Marshal(map[string]string{"entityType": "job", "entityId": id})
+req, _ := http.NewRequestWithContext(ctx, http.MethodPost, os.Getenv("CORE_API_URL")+"/api/v1/comments/purge", bytes.NewReader(body))
+req.Header.Set("Authorization", "ToolService "+os.Getenv("TOOL_SERVICE_TOKEN")) // not "Bearer"
+req.Header.Set("Content-Type", "application/json")
+// then http.DefaultClient.Do(req), and log (do not fail the delete) if it errors
+```
+
+- It answers `200 {"deleted": n}`. Purging an entity with no comments is a `200` with `0`, so you
+  can call it on every delete without checking.
+- The comments removed are **your tool's own**: Cinqo takes the owner from the service token, so
+  nothing in the request names one (and a name in the body is ignored). It is refused (`403`) for
+  an entity type you did not declare or while your tool is disabled; `401` for a missing or
+  unknown token.
+- Keep it best effort with a short timeout, as the example does. If it fails the comments stay on
+  disk but nothing shows them any more.
+
+### 5. Behaviour to know about
+
+- **Plain text only**, 1 to 4000 characters, shown exactly as written (never interpreted as HTML
+  or markdown). Comments are flat: no replies, mentions, reactions or attachments.
+- **Newest first**, 20 at a time with a "Show older comments" button.
+- **Author:** the id of the signed-in user, taken from their login (never from anything the page
+  sends). Shown name: Cinqo's login tokens carry only an id, so the name comes from the profile the
+  identity provider returned at sign-in; when there is none the panel shows "User". That name is a
+  label only: it is not verified, and no permission ever depends on it.
+- **Filters** in the panel: Everyone / Only mine, and a From / To date (the viewer's own days; the
+  To day is included in full).
+- Comments are visible to everyone who may read the entity; there are no private comments.
+- Cinqo does not check that the UUID belongs to a real entity of yours; it trusts your page to
+  mount the panel only for entities that exist, and your backend to purge when they are deleted.
+
+### 6. The routes, if you need them
+
+The panel uses these; you do not normally call them yourself. All need a signed-in user, except
+purge.
+
+| Route | |
+|---|---|
+| `GET /api/v1/comments/{owner}/{entityType}/{entityId}` | List. Optional `limit` (max 100), `before` (a comment id, for the next older page), `authorId` (a user id, exact), `createdFrom` (inclusive) and `createdTo` (exclusive) as RFC 3339 timestamps or `YYYY-MM-DD`. Answers `{comments, total, nextBefore}`; `total` counts what matches the filters. |
+| `POST` the same path, body `{"body": "…"}` | Add a comment. |
+| `PATCH …/{entityId}/{commentId}`, body `{"body": "…"}` | Edit one (the author). |
+| `DELETE …/{entityId}/{commentId}` | Delete one. |
+| `POST /api/v1/comments/purge` | Tool only (`ToolService` token): remove all comments of an entity. |
+
+Each comment comes back with `id, entityType, entityId, body, authorId, authorName, createdAt,
+updatedAt` and `canEdit` / `canDelete` for the caller.
+
+### 7. Check it
+
+- Install the tool, open the page that shows an entity, and add a comment as a user with the write
+  scope; then as one with only the read scope (the comments and a note instead of the box), and as one with
+  neither (an error where the comments would be).
+- Delete the entity and confirm your backend calls purge (a unit test with a fake core, like
+  `example-full/backend/main_test.go`, is enough).
+- Bump the tool's `version`, rebuild the zips and regenerate `repository.json` so users get it.
 
 ## Publishing a repository
 

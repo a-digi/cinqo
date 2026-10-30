@@ -124,13 +124,43 @@ func (s *JwksService) Start(ctx context.Context, log func(string, ...any)) {
 	}()
 }
 
+// Identity is what a validated token says about its holder.
+type Identity struct {
+	Subject string
+	Scopes  []string
+	Expires time.Time
+	// Name is a human-readable label if the token carries one ("name", else
+	// "preferred_username", else "email"), otherwise empty.
+	Name string
+}
+
+// displayName picks the most readable label a token offers.
+func displayName(claims jwt.MapClaims) string {
+	for _, key := range []string{"name", "preferred_username", "email"} {
+		if v, ok := claims[key].(string); ok && strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
+}
+
 // Validate parses and verifies token, returning its subject, scopes, and
-// expiry. RS256 tokens are verified against the cached JWKS (one on-demand
+// expiry; see ValidateIdentity for the full picture.
+func (s *JwksService) Validate(token string) (string, []string, time.Time, error) {
+	id, err := s.ValidateIdentity(token)
+	if err != nil {
+		return "", nil, time.Time{}, err
+	}
+	return id.Subject, id.Scopes, id.Expires, nil
+}
+
+// ValidateIdentity parses and verifies token, returning its subject, scopes,
+// expiry and display name. RS256 tokens are verified against the cached JWKS (one on-demand
 // refetch if the kid isn't cached yet); HS256 tokens are verified against
 // the configured shared secret.
-func (s *JwksService) Validate(token string) (string, []string, time.Time, error) {
+func (s *JwksService) ValidateIdentity(token string) (Identity, error) {
 	if token == "" {
-		return "", nil, time.Time{}, fmt.Errorf("token empty")
+		return Identity{}, fmt.Errorf("token empty")
 	}
 
 	parser := jwt.NewParser(jwt.WithValidMethods([]string{"RS256", "HS256"}))
@@ -163,30 +193,30 @@ func (s *JwksService) Validate(token string) (string, []string, time.Time, error
 		}
 	})
 	if err != nil || !tok.Valid {
-		return "", nil, time.Time{}, fmt.Errorf("invalid token: %w", err)
+		return Identity{}, fmt.Errorf("invalid token: %w", err)
 	}
 
 	claims, ok := tok.Claims.(jwt.MapClaims)
 	if !ok {
-		return "", nil, time.Time{}, fmt.Errorf("invalid claims")
+		return Identity{}, fmt.Errorf("invalid claims")
 	}
 
 	if s.issuer != "" {
 		iss, _ := claims["iss"].(string)
 		if strings.TrimRight(iss, "/") != strings.TrimRight(s.issuer, "/") {
-			return "", nil, time.Time{}, fmt.Errorf("issuer mismatch: token=%q config=%q", iss, s.issuer)
+			return Identity{}, fmt.Errorf("issuer mismatch: token=%q config=%q", iss, s.issuer)
 		}
 	}
 	if s.audience != "" {
 		aud := claimAud(claims)
 		if aud != s.audience {
-			return "", nil, time.Time{}, fmt.Errorf("audience mismatch: token=%q config=%q", aud, s.audience)
+			return Identity{}, fmt.Errorf("audience mismatch: token=%q config=%q", aud, s.audience)
 		}
 	}
 
 	sub, _ := claims["sub"].(string)
 	if sub == "" {
-		return "", nil, time.Time{}, fmt.Errorf("subject missing")
+		return Identity{}, fmt.Errorf("subject missing")
 	}
 
 	// make(..., 0), not var (nil slice) — a nil slice marshals to JSON
@@ -207,7 +237,7 @@ func (s *JwksService) Validate(token string) (string, []string, time.Time, error
 		exp = time.Unix(int64(e), 0)
 	}
 
-	return sub, scopes, exp, nil
+	return Identity{Subject: sub, Scopes: scopes, Expires: exp, Name: displayName(claims)}, nil
 }
 
 func parseJWK(n, e string) (*rsa.PublicKey, error) {

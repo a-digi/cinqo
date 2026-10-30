@@ -43,7 +43,8 @@ import {
   PlusIcon,
 } from '../../Shared/Icons/icons'
 import { AddJobModal } from './AddJobModal'
-import { PAGE_ACCENT, accentFor, gradient, initialOf } from './jobsTheme'
+import { ACCENTS, PAGE_ACCENT, accentFor, gradient, initialOf } from './jobsTheme'
+import { JobStatsStrip } from './JobStatsStrip'
 import { SelectCvModal } from './SelectCvModal'
 import { ConfirmationModal } from '../../Shared/ConfirmationModal/ConfirmationModal'
 import {
@@ -63,6 +64,9 @@ const PAGE_SIZE = 50
 const SEARCH_DEBOUNCE_MS = 300
 const MAX_LOCATION_DISPLAY_LENGTH = 50
 const JOB_DETAILS_PATH = '/tools/career/job-details'
+
+// The crawler card's own colour (violet, like the AI cards on Home).
+const CRAWLER_ACCENT = ACCENTS[4]
 
 // Jobs are populated by the AI's own crawling workflow (step 4); step 97
 // added "Add job" for one a person found themselves (see AddJobModal).
@@ -944,6 +948,12 @@ export function JobsPage() {
             </div>
           </div>
 
+          {/* Refetched when a job is added, deleted or finishes matching / its CV: the page's
+              own total, and how many jobs on this page have a completed match or CV. */}
+          <JobStatsStrip
+            refreshKey={`${total}:${jobs.filter((j) => j.matchStatus === 'completed').length}:${jobs.filter((j) => j.cvStatus === 'completed').length}`}
+          />
+
           {activeFilters.length > 0 && (
             <div className="mb-2 flex flex-wrap gap-1.5">
               {activeFilters.map((filter) => (
@@ -1063,7 +1073,7 @@ export function JobsPage() {
                           <div className="flex items-center gap-3">
                             <span
                               className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white shadow-sm"
-                              style={{ background: gradient(accentFor(job.company || job.title)) }}
+                              style={{ background: accentFor(job.company || job.title).to }}
                               aria-hidden="true"
                             >
                               {initialOf(job.company || job.title)}
@@ -1166,18 +1176,55 @@ export function JobsPage() {
             this page's own <main> is the nearest scrolling ancestor, so
             no extra offset for the app's own top banner is needed. */}
         <div className="sticky top-6 w-52 shrink-0 self-start">
-          <CrawlPlatformPicker
-            className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-gradient-to-br from-white to-gray-50 p-4 shadow-sm"
-            platforms={platforms}
-            selectedPlatformId={selectedPlatformId}
-            selectedModel={selectedModel}
-            onSelectPlatform={(id) => {
-              setSelectedPlatformId(id)
-              const next = platforms.find((p) => p.id === id)
-              setSelectedModel(next && next.models.length > 0 ? next.models[0] : null)
-            }}
-            onSelectModel={setSelectedModel}
-          />
+          {platforms.length > 1 && (
+            <div
+              className="relative overflow-hidden rounded-3xl border p-4 shadow-sm"
+              style={{ borderColor: CRAWLER_ACCENT.soft, background: `linear-gradient(160deg, #ffffff 35%, ${CRAWLER_ACCENT.soft} 100%)` }}
+            >
+              <div
+                className="pointer-events-none absolute -right-6 -top-6 h-24 w-24 rounded-full opacity-15"
+                style={{ background: CRAWLER_ACCENT.to }}
+              />
+              <div
+                className="pointer-events-none absolute -bottom-5 -left-5 h-16 w-16 rotate-45 rounded-2xl opacity-10"
+                style={{ background: CRAWLER_ACCENT.to }}
+              />
+              <div className="relative flex items-center gap-2.5">
+                <span
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white shadow-sm"
+                  style={{ background: CRAWLER_ACCENT.to }}
+                >
+                  <RobotIcon className="h-5 w-5" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-gray-900">Crawler</p>
+                  <p className="text-xs text-gray-500">AI used to crawl and match</p>
+                </div>
+              </div>
+              <CrawlPlatformPicker
+                className="relative mt-4 flex flex-col gap-3 [&>div]:min-w-0 [&>div>div]:block [&>div>div>button]:w-full [&>div>div>button]:min-w-0"
+                platforms={platforms}
+                selectedPlatformId={selectedPlatformId}
+                selectedModel={selectedModel}
+                onSelectPlatform={(id) => {
+                  setSelectedPlatformId(id)
+                  const next = platforms.find((p) => p.id === id)
+                  setSelectedModel(next && next.models.length > 0 ? next.models[0] : null)
+                }}
+                onSelectModel={setSelectedModel}
+              />
+              {selectedPlatformId && (
+                <p
+                  className="relative mt-3 break-words rounded-2xl px-3 py-1.5 text-center text-xs font-medium"
+                  style={{ background: CRAWLER_ACCENT.soft, color: CRAWLER_ACCENT.text }}
+                  title="The platform and model the next crawl or match will use"
+                >
+                  {platforms.find((p) => p.id === selectedPlatformId)?.name}
+                  {selectedModel ? ` · ${selectedModel}` : ''}
+                </p>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

@@ -84,6 +84,18 @@ export interface ToolDashboardWidget {
   unmount?: (container: HTMLElement) => void
 }
 
+// Where to draw the comments panel and which entity it is about.
+export interface ToolCommentsOptions {
+  // The tool's own slug, e.g. "career" (comments are kept per owner).
+  owner: string
+  // An entity type the tool declared in manifest.json's "comments", e.g. "job".
+  entityType: string
+  // The entity's UUID.
+  entityId: string
+  // Heading of the panel (default "Comments").
+  title?: string
+}
+
 export interface ToolBridge {
   registerMenuEntry(entry: ToolMenuEntry): void
   registerRoute(route: ToolRoute): void
@@ -92,6 +104,13 @@ export interface ToolBridge {
   // with a console error. A throwing mount/update shows a "couldn't be
   // displayed" note in that card and nothing else on the page is affected.
   registerDashboardWidget(widget: ToolDashboardWidget): void
+  // Draws Cinqo's comments panel for one of the tool's entities into container
+  // and returns a function that removes it (call it from your route's unmount).
+  // The panel handles listing, adding, editing, deleting and filtering; who may do
+  // what is decided by the server from the scopes in manifest.json's "comments".
+  // Mounting into a container that already has a panel replaces it. A bad option is
+  // refused with a console error and returns a function that does nothing.
+  mountComments(container: HTMLElement, options: ToolCommentsOptions): () => void
   navigate(path: string): void
   // Opens the floating chat widget (GlobalChatWidget), if currently
   // mounted, showing this conversation — resuming its live turn watch
@@ -107,6 +126,9 @@ export interface ToolBridgeCallbacks {
   onRegisterMenuEntry: (entry: ToolMenuEntry) => void
   onRegisterRoute: (route: ToolRoute) => void
   onRegisterDashboardWidget: (widget: ToolDashboardWidget) => void
+  // Supplied by the app, which owns the React side of the comments panel; this file
+  // stays free of React so a tool author can copy it on its own.
+  onMountComments: (container: HTMLElement, options: ToolCommentsOptions) => () => void
 }
 
 const widgetIdPattern = /^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/
@@ -133,6 +155,9 @@ export function createToolBridge(callbacks: ToolBridgeCallbacks): ToolBridge {
         return
       }
       callbacks.onRegisterDashboardWidget(widget)
+    },
+    mountComments(container, options) {
+      return callbacks.onMountComments(container, options)
     },
     navigate(path) {
       toolNavigate(path)

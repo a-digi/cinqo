@@ -4,19 +4,50 @@ window.__cinqoToolBridge.registerMenuEntry({
   scopes: ['tool:example_full:read'],
 })
 
+// The id of the example item the comments below are about. In a real tool this is the
+// UUID of whatever the page shows (a job, an invoice, a ticket…); comments belong to
+// (your tool, an entity type from manifest.json's "comments", that UUID).
+var EXAMPLE_ITEM_ID = '8d3c5b1e-2f4a-4c6d-9e7f-0a1b2c3d4e5f'
+
 window.__cinqoToolBridge.registerRoute({
   path: '/tools/example_full/home',
   mount: function (container) {
-    container.innerHTML = '<h1>Example Full Tool</h1><p>Loading items from its own backend…</p>'
+    var heading = document.createElement('h1')
+    heading.textContent = 'Example Full Tool'
+    var items = document.createElement('pre')
+    items.textContent = 'Loading items from its own backend…'
+    var commentsBox = document.createElement('div')
+    commentsBox.style.marginTop = '24px'
+    container.appendChild(heading)
+    container.appendChild(items)
+    container.appendChild(commentsBox)
+
     fetch('/api/v1/tools/example_full/proxy/items', { credentials: 'include' })
       .then(function (r) {
         return r.json()
       })
       .then(function (data) {
-        container.innerHTML = '<h1>Example Full Tool</h1><pre>' + JSON.stringify(data, null, 2) + '</pre>'
+        items.textContent = JSON.stringify(data, null, 2)
       })
+
+    // Comments: Cinqo draws the whole panel (list, add, edit, delete, filters) and
+    // decides who may do what from the scopes in manifest.json. Older hosts do not have
+    // this bridge method, so check for it. It returns a function that removes the panel.
+    var bridge = window.__cinqoToolBridge
+    if (typeof bridge.mountComments === 'function') {
+      container.__unmountComments = bridge.mountComments(commentsBox, {
+        owner: 'example_full', // this tool's own slug
+        entityType: 'item', // declared in manifest.json "comments"
+        entityId: EXAMPLE_ITEM_ID,
+        title: 'Comments on this item',
+      })
+    }
   },
   unmount: function (container) {
+    if (container.__unmountComments) {
+      container.__unmountComments()
+      delete container.__unmountComments
+    }
     container.innerHTML = ''
   },
 })

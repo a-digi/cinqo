@@ -45,6 +45,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"career-tool-backend/comments"
 	"career-tool-backend/companies"
 	"career-tool-backend/db"
 	"career-tool-backend/domainevent"
@@ -404,9 +405,18 @@ func queryJobs(where string, whereArgs []any, limit, offset int) (jobsListResult
 	return jobsListResult{Jobs: jobs, Total: total}, nil
 }
 
+// DeleteJob removes a job. When a job was really removed, the comments about it are
+// removed too (best effort, see comments.PurgeEntity). Both the Jobs page and the
+// AI's delete_job tool come through here.
 func DeleteJob(id string) error {
-	_, err := db.JobsDB.Exec(`DELETE FROM jobs WHERE id = ?`, id)
-	return err
+	res, err := db.JobsDB.Exec(`DELETE FROM jobs WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		comments.PurgeEntity(comments.JobType, id)
+	}
+	return nil
 }
 
 // GetJobByID reads one job by id, with the exact same portal_links/

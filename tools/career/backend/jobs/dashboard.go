@@ -65,9 +65,15 @@ func truncate(s string, max int) string {
 	return string(r[:max-1]) + "…"
 }
 
-// newJobsChart counts jobs by the day they were added, for the last `days` days
+// DayCount is how many jobs were added on one day (label like "2 Jan").
+type DayCount struct {
+	Day   string `json:"day"`
+	Count int    `json:"count"`
+}
+
+// jobsPerDay counts jobs by the day they were added, for the last `days` days
 // ending today (UTC), oldest first, with a zero for days that had none.
-func newJobsChart(now time.Time, days int) (chartPayload, error) {
+func jobsPerDay(now time.Time, days int) ([]DayCount, error) {
 	today := now.UTC().Truncate(24 * time.Hour)
 	first := today.AddDate(0, 0, -(days - 1))
 
@@ -76,7 +82,7 @@ func newJobsChart(now time.Time, days int) (chartPayload, error) {
 		first.Format("2006-01-02"),
 	)
 	if err != nil {
-		return chartPayload{}, err
+		return nil, err
 	}
 	defer rows.Close()
 
@@ -85,18 +91,31 @@ func newJobsChart(now time.Time, days int) (chartPayload, error) {
 		var day string
 		var n int
 		if err := rows.Scan(&day, &n); err != nil {
-			return chartPayload{}, err
+			return nil, err
 		}
 		counts[day] = n
 	}
 	if err := rows.Err(); err != nil {
-		return chartPayload{}, err
+		return nil, err
 	}
 
-	points := make([]chartPoint, 0, days)
+	out := make([]DayCount, 0, days)
 	for i := 0; i < days; i++ {
 		d := first.AddDate(0, 0, i)
-		points = append(points, chartPoint{X: d.Format("2 Jan"), Y: float64(counts[d.Format("2006-01-02")])})
+		out = append(out, DayCount{Day: d.Format("2 Jan"), Count: counts[d.Format("2006-01-02")]})
+	}
+	return out, nil
+}
+
+// newJobsChart is the Home dashboard's "New jobs" chart: jobsPerDay as a bar chart.
+func newJobsChart(now time.Time, days int) (chartPayload, error) {
+	perDay, err := jobsPerDay(now, days)
+	if err != nil {
+		return chartPayload{}, err
+	}
+	points := make([]chartPoint, 0, len(perDay))
+	for _, d := range perDay {
+		points = append(points, chartPoint{X: d.Day, Y: float64(d.Count)})
 	}
 	return chartPayload{Type: "bar", Series: []chartSeries{{Name: "New jobs", Points: points}}}, nil
 }

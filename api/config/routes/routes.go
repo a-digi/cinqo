@@ -13,6 +13,7 @@ import (
 	local_routing "github.com/a-digi/cinqo/config/routing"
 	auth_handler "github.com/a-digi/cinqo/src/auth/handler"
 	auth_service "github.com/a-digi/cinqo/src/auth/service"
+	comments_handler "github.com/a-digi/cinqo/src/comments/handler"
 	"github.com/a-digi/cinqo/src/conversation"
 	conversation_handler "github.com/a-digi/cinqo/src/conversation/handler"
 	dashboard_handler "github.com/a-digi/cinqo/src/dashboard/handler"
@@ -129,6 +130,12 @@ func Init(ctx serverdi.Context) {
 		"MediaUpdateTitle":        local_routing.HandlerFunc(media_handler.UpdateTitleHandler),
 		"MediaUpdateTitleService": local_routing.HandlerFunc(media_handler.UpdateTitleServiceHandler),
 		"MediaExistsService":      local_routing.HandlerFunc(media_handler.ExistsServiceHandler),
+
+		"CommentsList":   local_routing.HandlerFunc(comments_handler.ListHandler),
+		"CommentsCreate": local_routing.HandlerFunc(comments_handler.CreateHandler),
+		"CommentsEdit":   local_routing.HandlerFunc(comments_handler.EditHandler),
+		"CommentsDelete": local_routing.HandlerFunc(comments_handler.DeleteHandler),
+		"CommentsPurge":  local_routing.HandlerFunc(comments_handler.PurgeHandler),
 
 		"DashboardWidgets":    local_routing.HandlerFunc(dashboard_handler.WidgetsHandler),
 		"DashboardWidgetData": local_routing.HandlerFunc(dashboard_handler.WidgetDataHandler),

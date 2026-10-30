@@ -132,6 +132,11 @@ func (r *ToolPersistentRepo) Delete(id string) error {
 	if _, err := tx.Exec(`DELETE FROM tool_dashboard_widgets WHERE tool_id = ?`, id); err != nil {
 		return err
 	}
+	// The declaration goes with the tool; the comments themselves (a file in the
+	// tool's own database directory) stay, like the rest of its data.
+	if _, err := tx.Exec(`DELETE FROM tool_comment_types WHERE tool_id = ?`, id); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(`DELETE FROM tools WHERE id = ?`, id); err != nil {
 		return err
 	}

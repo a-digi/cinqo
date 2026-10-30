@@ -1,7 +1,7 @@
 {
   "slug": "example_full",
   "name": "Example Full Tool",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "scopes": [
     {
       "scope": "tool:example_full:read",
@@ -20,6 +20,11 @@
     },
     {
       "method": "POST",
+      "path_suffix": "items",
+      "required_scope": "tool:example_full:write"
+    },
+    {
+      "method": "DELETE",
       "path_suffix": "items",
       "required_scope": "tool:example_full:write"
     },
@@ -63,6 +68,13 @@
       "kind": "custom",
       "data_path": "dashboard/custom-demo",
       "width": 2
+    }
+  ],
+  "comments": [
+    {
+      "entity_type": "item",
+      "read_scope": "tool:example_full:read",
+      "write_scope": "tool:example_full:write"
     }
   ]
 }

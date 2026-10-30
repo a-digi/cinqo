@@ -1,0 +1,35 @@
+routes:
+  # No static scopes on any of these: which scope applies depends on the owner's
+  # entity type (a tool's manifest comments[], or a type the system registers), so the
+  # handler resolves it per request — the same pattern as media. A caller who cannot
+  # read the comments gets 404, the same as for a type that does not exist. See
+  # plan/ai/comments/comments-engine.md.
+  - path: /api/v1/comments/{owner}/{entityType}/{entityId}
+    method: GET
+    executor: CommentsList
+    security: authenticated
+
+  - path: /api/v1/comments/{owner}/{entityType}/{entityId}
+    method: POST
+    executor: CommentsCreate
+    security: authenticated
+
+  - path: /api/v1/comments/{owner}/{entityType}/{entityId}/{commentId}
+    method: PATCH
+    executor: CommentsEdit
+    security: authenticated
+
+  - path: /api/v1/comments/{owner}/{entityType}/{entityId}/{commentId}
+    method: DELETE
+    executor: CommentsDelete
+    security: authenticated
+
+  # security: public — deliberately not gated by the user/scope layer, exactly like
+  # POST /api/v1/events/publish. Its only legitimate caller is a tool's own backend
+  # holding a service token only core ever handed it; PurgeHandler checks the token
+  # itself and treats the tool that owns it as the owner. Static path, so it never
+  # collides with the {owner}/{entityType}/{entityId} routes above.
+  - path: /api/v1/comments/purge
+    method: POST
+    executor: CommentsPurge
+    security: public

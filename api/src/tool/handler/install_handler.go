@@ -169,6 +169,21 @@ func cacheDashboardWidgets(reqCtx request.RequestContext, db *sql.DB, m manifest
 	}
 }
 
+// cacheCommentTypes stores the manifest's comments[] for the comments engine.
+// Like cacheDashboardWidgets it always runs, even for an empty list, so a type
+// dropped in an update stops accepting comments; non-fatal for the same reason.
+func cacheCommentTypes(reqCtx request.RequestContext, db *sql.DB, m manifest.Manifest, toolID string) {
+	types := make([]tool_entity.ToolCommentType, 0, len(m.Comments))
+	for _, c := range m.Comments {
+		types = append(types, tool_entity.ToolCommentType{
+			ToolID: toolID, EntityType: c.EntityType, ReadScope: c.ReadScope, WriteScope: c.WriteScope,
+		})
+	}
+	if err := tool_persistent.NewToolCommentTypePersistentRepo(db).ReplaceAll(toolID, types); err != nil {
+		reqCtx.GetDI().GetLogger().Warning("tool %q declared comments but caching them failed: %v", m.Slug, err)
+	}
+}
+
 // publishToolInstalledEvent is the Domain Events engine's own dogfood
 // integration (plan/ai/domain-events/step-01-core-event-bus.md): the
 // smallest possible real proof that domainevent.Publish/Subscribe work
@@ -425,6 +440,7 @@ func InstallPackage(reqCtx request.RequestContext, data []byte, expect *PackageE
 		discoverMCPToolsIfDeclared(reqCtx, db, m, finalDir, tool.ID, tool.ServiceToken)
 		discoverEventListenersIfDeclared(reqCtx, db, m, tool.ID)
 		cacheDashboardWidgets(reqCtx, db, m, tool.ID)
+		cacheCommentTypes(reqCtx, db, m, tool.ID)
 		publishToolInstalledEvent(reqCtx, tool.ID, tool.Slug, tool.Version)
 
 		created, err := queryRepo.FindByID(tool.ID)
@@ -525,6 +541,7 @@ func InstallPackage(reqCtx request.RequestContext, data []byte, expect *PackageE
 	discoverMCPToolsIfDeclared(reqCtx, db, m, finalDir, updated.ID, updated.ServiceToken)
 	discoverEventListenersIfDeclared(reqCtx, db, m, updated.ID)
 	cacheDashboardWidgets(reqCtx, db, m, updated.ID)
+	cacheCommentTypes(reqCtx, db, m, updated.ID)
 	publishToolInstalledEvent(reqCtx, updated.ID, updated.Slug, updated.Version)
 
 	reloaded, err := queryRepo.FindByID(updated.ID)

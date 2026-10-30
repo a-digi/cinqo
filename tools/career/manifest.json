@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.0.349",
+  "version": "0.0.352",
   "mcp": true,
   "requires_tools": [
     {
@@ -202,6 +202,11 @@
     {
       "method": "DELETE",
       "path_suffix": "jobs",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "jobs/stats",
       "required_scope": "tool:career:jobs"
     },
     {
@@ -655,6 +660,13 @@
       "width": 2,
       "height": 2,
       "refresh_seconds": 120
+    }
+  ],
+  "comments": [
+    {
+      "entity_type": "job",
+      "read_scope": "tool:career:jobs",
+      "write_scope": "tool:career:jobs"
     }
   ]
 }

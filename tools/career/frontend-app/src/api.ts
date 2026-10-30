@@ -549,6 +549,14 @@ export async function fetchJob(id: string): Promise<Job> {
   return data.job
 }
 
+// The Jobs page's statistics strip (GET /jobs/stats): totals, what was added
+// recently, how many jobs were matched (and the average), how many have a CV, the
+// last 14 days and where the jobs come from. Validated with parseJobStats.
+export async function fetchJobStatsRaw(): Promise<unknown> {
+  const res = await fetch(`${PROXY_BASE}/jobs/stats`, { credentials: 'include' })
+  return jsonOrThrow<unknown>(res, 'load job statistics')
+}
+
 export async function fetchJobLocations(): Promise<string[]> {
   const res = await fetch(`${PROXY_BASE}/job-locations`, { credentials: 'include' })
   const data = await jsonOrThrow<{ locations: string[] }>(res, 'load job locations')

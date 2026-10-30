@@ -10,6 +10,7 @@ package manifest
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/a-digi/cinqo/src/comments"
 	"github.com/a-digi/cinqo/src/dashboard"
 	"regexp"
 	"strconv"
@@ -72,6 +73,10 @@ type Manifest struct {
 	// scope is that route's required_scope. See WidgetDecl and
 	// plan/ai/dashboard/home-dashboard.md.
 	Widgets []WidgetDecl `json:"widgets,omitempty"`
+	// Comments declares which of this tool's entities can be commented on, and
+	// who may read and write those comments. Needs no backend: core stores them.
+	// See CommentTypeDecl and plan/ai/comments/comments-engine.md.
+	Comments []CommentTypeDecl `json:"comments,omitempty"`
 }
 
 type ScopeDecl struct {
@@ -155,6 +160,16 @@ type WidgetDecl struct {
 	Width          int    `json:"width,omitempty"`
 	Height         int    `json:"height,omitempty"`
 	RefreshSeconds int    `json:"refresh_seconds,omitempty"`
+}
+
+// CommentTypeDecl is one kind of entity of this tool that can have comments
+// (for example Career's "job"). ReadScope may list and see the comments;
+// WriteScope may add them and edit or delete its own. Both must be scopes this
+// tool declares.
+type CommentTypeDecl struct {
+	EntityType string `json:"entity_type"`
+	ReadScope  string `json:"read_scope"`
+	WriteScope string `json:"write_scope"`
 }
 
 // RequiredToolDecl is one other tool this manifest's own tool depends
@@ -306,6 +321,9 @@ func Validate(m Manifest, in ValidationInput) (kind string, err error) {
 	if err := ValidateWidgets(m, in.HasBackendExecutable); err != nil {
 		return "", err
 	}
+	if err := ValidateComments(m); err != nil {
+		return "", err
+	}
 
 	switch {
 	case in.HasFrontendBundle && in.HasBackendExecutable:
@@ -381,6 +399,33 @@ func ValidateWidgets(m Manifest, hasBackend bool) error {
 		}
 		if strings.TrimSpace(scope) == "" {
 			return fmt.Errorf("widgets: widget %q data_path %q must name a route with a required_scope", w.Key, w.DataPath)
+		}
+	}
+	return nil
+}
+
+// ValidateComments checks m.Comments: each entity type is a valid name (the same
+// rule the comments engine applies), declared once, and both scopes are scopes this
+// tool itself declares (the same rule mcp_tools has), so a tool cannot hand out
+// access under a scope that belongs to someone else.
+func ValidateComments(m Manifest) error {
+	declared := make(map[string]struct{}, len(m.Scopes))
+	for _, s := range m.Scopes {
+		declared[s.Scope] = struct{}{}
+	}
+	seen := map[string]struct{}{}
+	for _, c := range m.Comments {
+		if !comments.ValidEntityType(c.EntityType) {
+			return fmt.Errorf("comments: entity_type %q must start with a lower-case letter and contain only lower-case letters, digits and underscores (at most %d characters)", c.EntityType, comments.MaxEntityTypeRunes)
+		}
+		if _, dup := seen[c.EntityType]; dup {
+			return fmt.Errorf("comments: entity_type %q is declared twice", c.EntityType)
+		}
+		seen[c.EntityType] = struct{}{}
+		for _, f := range []struct{ name, scope string }{{"read_scope", c.ReadScope}, {"write_scope", c.WriteScope}} {
+			if _, ok := declared[f.scope]; !ok {
+				return fmt.Errorf("comments: entity_type %q: %s %q must be one of this tool's own declared scopes", c.EntityType, f.name, f.scope)
+			}
 		}
 	}
 	return nil

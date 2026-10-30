@@ -16,6 +16,13 @@ interface CinqoToolRoute {
   unmount?: (container: HTMLElement) => void
 }
 
+interface CinqoCommentsOptions {
+  owner: string
+  entityType: string
+  entityId: string
+  title?: string
+}
+
 interface CinqoToolBridge {
   registerMenuEntry(entry: CinqoToolMenuEntry): void
   registerRoute(route: CinqoToolRoute): void
@@ -25,6 +32,11 @@ interface CinqoToolBridge {
   // one is still running. See
   // plan/ai/tools/career/step-60-generate-with-ai-live-chat-window.md.
   openConversation(conversationId: string): void
+  // Draws Cinqo's comments panel for one of this tool's entities into container
+  // (an entity type declared in manifest.json's "comments") and returns a function
+  // that removes it. Optional: a host older than the comments feature does not
+  // have it, and callers must check before using it.
+  mountComments?(container: HTMLElement, options: CinqoCommentsOptions): () => void
 }
 
 declare global {
