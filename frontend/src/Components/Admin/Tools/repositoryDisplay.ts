@@ -46,6 +46,18 @@ export function summaryText(counts: RepositoryCounts): string {
   return `${upToDate}; ${counts.updatable} can be updated.`
 }
 
+// The repository table's one-line summary: "3 tools · 1 update available".
+export function countsCell(counts: RepositoryCounts): string {
+  if (counts.tools === 0) return 'No tools'
+  const tools = `${counts.tools} ${plural(counts.tools, 'tool', 'tools')}`
+  if (counts.updatable === 0) return tools
+  return `${tools} · ${counts.updatable} ${plural(counts.updatable, 'update', 'updates')} available`
+}
+
+export function repositoryPath(id: string): string {
+  return `/admin/tool-repositories/${encodeURIComponent(id)}`
+}
+
 export function repositoryStatusVariant(status: ToolRepository['lastStatus']): PillVariant {
   if (status === 'ok') return 'green'
   if (status === 'error') return 'red'

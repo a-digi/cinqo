@@ -1,47 +1,31 @@
 import { useCallback, useEffect, useState } from 'react'
-import {
-  addRepository,
-  fetchRepositories,
-  fetchRepository,
-  installFromRepository,
-  refreshRepository,
-  removeRepository,
-  type RepositoryTool,
-  type ToolRepository,
-  type ToolRepositoryDetail,
-} from '../../../api/toolRepositories'
-import { ApiError } from '../../../api/client'
+import { Link } from 'react-router-dom'
+import { addRepository, fetchRepositories, refreshRepository, removeRepository, type ToolRepository } from '../../../api/toolRepositories'
 import { LoadingSpinner } from '../../../Shared/Components/Loading/LoadingSpinner'
 import { useConfirm } from '../../../Shared/Components/Modal/useConfirm'
 import { Pill } from '../../../Shared/Components/Pill/Pill'
-import { reloadAfterToolChange } from '../../../config/tools/loadTools'
+import { errorText } from './repositoryErrors'
 import {
-  actionFor,
   addLinkProblem,
+  countsCell,
   formatFetched,
-  installConfirmMessage,
+  repositoryPath,
   repositoryStatusLabel,
   repositoryStatusVariant,
-  statusLabel,
-  statusVariant,
-  summaryText,
 } from './repositoryDisplay'
 
-function errorText(err: unknown, fallback: string): string {
-  return err instanceof ApiError ? err.message : fallback
-}
-
-// Admin page for tool repositories (api/src/toolrepository): add a link to a
-// repository file, see which of its tools are installed, up to date or can be
-// updated, and install or update them. Installs go through the same pipeline as
-// an upload and reload the page afterwards, like every other tool change. See
-// plan/ai/tools/repository/tool-repositories.md.
+// Admin list of tool repositories (api/src/toolrepository): add a link to a
+// repository file, then open one on its own page (RepositoryPage) to see its
+// tools. See plan/ai/tools/repository/tool-repositories.md.
 export function RepositoriesPage() {
   const [repositories, setRepositories] = useState<ToolRepository[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [link, setLink] = useState('')
   const [adding, setAdding] = useState(false)
   const [addError, setAddError] = useState<string | null>(null)
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [rowError, setRowError] = useState<string | null>(null)
+  const { confirm, dialog } = useConfirm()
 
   const load = useCallback(async () => {
     try {
@@ -76,6 +60,39 @@ export function RepositoriesPage() {
     }
   }
 
+  const handleRefresh = async (repository: ToolRepository) => {
+    setBusyId(repository.id)
+    setRowError(null)
+    try {
+      await refreshRepository(repository.id)
+      await load()
+    } catch (err) {
+      setRowError(errorText(err, 'Failed to refresh.'))
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const handleRemove = async (repository: ToolRepository) => {
+    const ok = await confirm({
+      title: 'Remove repository',
+      message: `Remove "${repository.name}"? Tools already installed from it stay installed.`,
+      confirmLabel: 'Remove',
+      danger: true,
+    })
+    if (!ok) return
+    setBusyId(repository.id)
+    setRowError(null)
+    try {
+      await removeRepository(repository.id)
+      await load()
+    } catch (err) {
+      setRowError(errorText(err, 'Failed to remove.'))
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   if (error) return <p className="p-6 text-sm text-red-600">{error}</p>
 
   if (!repositories) {
@@ -87,12 +104,12 @@ export function RepositoriesPage() {
   }
 
   return (
-    <div className="max-w-5xl space-y-6 p-6">
+    <div className="max-w-6xl space-y-6 p-6">
       <div>
         <h1 className="text-xl font-semibold text-gray-900">Repositories</h1>
         <p className="mt-1 text-sm text-gray-500">
-          A repository is a link to a JSON file that lists tools. Add one to see which of its tools you have, which are up to date and which
-          can be updated. Nothing installs or updates by itself.
+          A repository is a link to a JSON file that lists tools. Add one, then open it to see which of its tools you have, which are up to
+          date and which can be updated. Nothing installs or updates by itself.
         </p>
       </div>
 
@@ -129,191 +146,85 @@ export function RepositoriesPage() {
         )}
       </form>
 
-      {repositories.length === 0 && <p className="py-6 text-center text-sm text-gray-400">No repositories added.</p>}
-
-      {repositories.map((repository) => (
-        <RepositoryCard key={repository.id} repository={repository} onChanged={load} />
-      ))}
-    </div>
-  )
-}
-
-function RepositoryCard({ repository, onChanged }: { repository: ToolRepository; onChanged: () => Promise<void> }) {
-  const [detail, setDetail] = useState<ToolRepositoryDetail | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
-  const { confirm, dialog } = useConfirm()
-
-  const loadDetail = useCallback(async () => {
-    try {
-      setDetail(await fetchRepository(repository.id))
-    } catch (err) {
-      setError(errorText(err, 'Failed to load this repository.'))
-    }
-  }, [repository.id])
-
-  useEffect(() => {
-    void loadDetail()
-  }, [loadDetail, repository.lastFetchedAt])
-
-  const handleRefresh = async () => {
-    setBusy(true)
-    setError(null)
-    try {
-      await refreshRepository(repository.id)
-      await onChanged()
-      await loadDetail()
-    } catch (err) {
-      setError(errorText(err, 'Failed to refresh.'))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const handleRemove = async () => {
-    const ok = await confirm({
-      title: 'Remove repository',
-      message: `Remove "${repository.name}"? Tools already installed from it stay installed.`,
-      confirmLabel: 'Remove',
-      danger: true,
-    })
-    if (!ok) return
-    setBusy(true)
-    try {
-      await removeRepository(repository.id)
-      await onChanged()
-    } catch (err) {
-      setError(errorText(err, 'Failed to remove.'))
-      setBusy(false)
-    }
-  }
-
-  const handleInstall = async (tool: RepositoryTool) => {
-    const ok = await confirm({
-      title: tool.installedVersion !== '' ? 'Update tool' : 'Install tool',
-      message: installConfirmMessage(tool, repository),
-      confirmLabel: tool.installedVersion !== '' ? 'Update' : 'Install',
-    })
-    if (!ok) return
-    setBusy(true)
-    setError(null)
-    try {
-      await installFromRepository(repository.id, tool.id)
-      reloadAfterToolChange()
-    } catch (err) {
-      setError(errorText(err, 'Failed to install.'))
-      setBusy(false)
-    }
-  }
-
-  return (
-    <section className="rounded-lg border border-gray-200 bg-white">
-      <div className="flex items-start justify-between gap-4 border-b border-gray-100 p-4">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="truncate text-base font-semibold text-gray-900">{repository.name}</h2>
-            <Pill variant={repositoryStatusVariant(repository.lastStatus)} title={repository.lastError || undefined}>
-              {repositoryStatusLabel(repository.lastStatus)}
-            </Pill>
-            {repository.isLocal && <Pill outline>Local network</Pill>}
-          </div>
-          <p className="mt-1 break-all font-mono text-xs text-gray-500">{repository.url}</p>
-          {repository.description && <p className="mt-1 text-sm text-gray-600">{repository.description}</p>}
-          <p className="mt-1 text-xs text-gray-400">Last checked: {formatFetched(repository.lastFetchedAt)}</p>
-        </div>
-        <div className="flex shrink-0 gap-2">
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => {
-              void handleRefresh()
-            }}
-            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-          >
-            Refresh
-          </button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => {
-              void handleRemove()
-            }}
-            className="rounded-md border border-red-200 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50"
-          >
-            Remove
-          </button>
-        </div>
-      </div>
-
-      {repository.lastStatus === 'error' && (
-        <p role="alert" className="border-b border-red-100 bg-red-50 px-4 py-2 text-sm text-red-700">
-          The last refresh failed: {repository.lastError} The tools below are from the last file that loaded.
-        </p>
-      )}
-      {error && (
-        <p role="alert" className="border-b border-red-100 bg-red-50 px-4 py-2 text-sm text-red-700">
-          {error}
+      {rowError && (
+        <p role="alert" className="text-sm text-red-600">
+          {rowError}
         </p>
       )}
 
-      <div className="p-4">
-        {!detail && !error && <LoadingSpinner label="Loading tools…" />}
-        {detail && (
-          <>
-            <p className="mb-3 text-sm text-gray-600">{summaryText(detail.counts)}</p>
-            {detail.tools.length > 0 && (
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="border-b border-gray-100 text-xs uppercase text-gray-400">
-                    <th className="py-2 pr-3 font-medium">Tool</th>
-                    <th className="py-2 pr-3 font-medium">Installed</th>
-                    <th className="py-2 pr-3 font-medium">Latest</th>
-                    <th className="py-2 pr-3 font-medium">Status</th>
-                    <th className="py-2 font-medium" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {detail.tools.map((tool) => {
-                    const action = actionFor(tool)
-                    return (
-                      <tr key={tool.id} className="border-b border-gray-50 align-top">
-                        <td className="py-2 pr-3">
-                          <div className="font-medium text-gray-900">{tool.name}</div>
-                          <div className="font-mono text-xs text-gray-400">{tool.id}</div>
-                          {tool.description && <div className="mt-0.5 text-xs text-gray-500">{tool.description}</div>}
-                        </td>
-                        <td className="py-2 pr-3 text-gray-700">{tool.installedVersion || '—'}</td>
-                        <td className="py-2 pr-3 text-gray-700">{tool.currentVersion}</td>
-                        <td className="py-2 pr-3">
-                          <Pill variant={statusVariant[tool.status]} title={tool.reason || undefined}>
-                            {statusLabel[tool.status]}
-                          </Pill>
-                          {tool.status === 'unavailable' && tool.reason && <div className="mt-1 text-xs text-gray-500">{tool.reason}</div>}
-                        </td>
-                        <td className="py-2 text-right">
-                          {action && (
-                            <button
-                              type="button"
-                              disabled={busy}
-                              onClick={() => {
-                                void handleInstall(tool)
-                              }}
-                              className="rounded-md bg-gray-900 px-3 py-1 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50"
-                            >
-                              {action === 'update' ? 'Update' : 'Install'}
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
+      <div className="rounded-lg border border-gray-200">
+        <table className="w-full text-left text-sm">
+          <thead>
+            <tr className="text-xs uppercase text-gray-400">
+              <th className="px-4 py-2 font-medium">Repository</th>
+              <th className="px-4 py-2 font-medium">Tools</th>
+              <th className="px-4 py-2 font-medium">Status</th>
+              <th className="px-4 py-2 font-medium">Last checked</th>
+              <th className="px-4 py-2 font-medium" />
+            </tr>
+          </thead>
+          <tbody>
+            {repositories.length === 0 && (
+              <tr>
+                <td colSpan={5} className="px-4 py-6 text-center text-gray-400">
+                  No repositories added.
+                </td>
+              </tr>
             )}
-          </>
-        )}
+            {repositories.map((repository) => (
+              <tr key={repository.id} className="border-t border-gray-100 align-top">
+                <td className="px-4 py-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Link to={repositoryPath(repository.id)} className="font-medium text-gray-900 hover:underline">
+                      {repository.name}
+                    </Link>
+                    {repository.isLocal && <Pill outline>Local network</Pill>}
+                  </div>
+                  <div className="break-all font-mono text-xs text-gray-500">{repository.url}</div>
+                </td>
+                <td className="px-4 py-3 text-gray-700">{countsCell(repository.counts)}</td>
+                <td className="px-4 py-3">
+                  <Pill variant={repositoryStatusVariant(repository.lastStatus)} title={repository.lastError || undefined}>
+                    {repositoryStatusLabel(repository.lastStatus)}
+                  </Pill>
+                </td>
+                <td className="px-4 py-3 text-gray-500">{formatFetched(repository.lastFetchedAt)}</td>
+                <td className="px-4 py-3">
+                  <div className="flex justify-end gap-2">
+                    <Link
+                      to={repositoryPath(repository.id)}
+                      className="rounded-md bg-gray-900 px-3 py-1 text-xs font-medium text-white hover:bg-gray-800"
+                    >
+                      Open
+                    </Link>
+                    <button
+                      type="button"
+                      disabled={busyId === repository.id}
+                      onClick={() => {
+                        void handleRefresh(repository)
+                      }}
+                      className="rounded-md border border-gray-300 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      Refresh
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busyId === repository.id}
+                      onClick={() => {
+                        void handleRemove(repository)
+                      }}
+                      className="rounded-md border border-red-200 px-3 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
       {dialog}
-    </section>
+    </div>
   )
 }
