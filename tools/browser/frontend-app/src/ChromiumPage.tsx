@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { fetchChromeStatus, type ChromeStatus } from './api'
 
-// Chromium page (step 53) — is a Chrome or Chromium installed on the
+// Chrome section of the "Browser & Engine" page (step 53, merged into one page
+// with the engine settings) — is a Chrome or Chromium installed on the
 // computer where Cinqo (and this tool) runs? Rod and the built-in browser
 // path both launch it, so without it the Browser tool cannot fetch pages at
 // all. When it is missing this page asks the user to install it and explains
@@ -12,7 +13,9 @@ import { fetchChromeStatus, type ChromeStatus } from './api'
 // pages only show up after a reload. Playwright is separate — it launches its
 // own downloaded Chromium, not this one. See
 // plan/ai/tools/browser/step-53-chromium-page-and-gate.md.
-export function ChromiumPage() {
+// onStatus reports whether Chrome is installed (true/false), or null when the
+// status could not be read, so the page around this can decide what else to show.
+export function ChromeSection({ onStatus }: { onStatus?: (installed: boolean | null) => void }) {
   const [status, setStatus] = useState<ChromeStatus | null>(null)
   const [error, setError] = useState('')
   const [checking, setChecking] = useState(true)
@@ -20,29 +23,33 @@ export function ChromiumPage() {
   // (after the user installed it) can offer the Reload.
   const [wasMissing, setWasMissing] = useState(false)
 
-  function check() {
+  // Stable as long as onStatus is (a state setter is), so the effect below runs
+  // once on mount and Check again re-runs the same function.
+  const check = useCallback(() => {
     setChecking(true)
     setError('')
     fetchChromeStatus()
       .then((next) => {
         setStatus(next)
         if (!next.installed) setWasMissing(true)
+        onStatus?.(next.installed)
       })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : String(err))
+        onStatus?.(null)
       })
       .finally(() => {
         setChecking(false)
       })
-  }
+  }, [onStatus])
 
   useEffect(() => {
     check()
-  }, [])
+  }, [check])
 
   return (
-    <div className="max-w-2xl p-6 font-sans text-gray-900">
-      <h1 className="mb-1.5 text-xl font-semibold">Chromium</h1>
+    <section className="mb-10">
+      <h2 className="mb-1.5 text-lg font-semibold">Chrome</h2>
       <p className="mb-5 text-sm text-gray-500">
         The Browser tool drives a real Chrome or Chromium to fetch pages. It must be installed on the computer where Cinqo is running.
       </p>
@@ -78,7 +85,7 @@ export function ChromiumPage() {
           {checking ? 'Checking…' : 'Check again'}
         </button>
       </div>
-    </div>
+    </section>
   )
 }
 

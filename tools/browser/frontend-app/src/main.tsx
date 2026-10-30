@@ -10,11 +10,10 @@ import { createRoot, type Root } from 'react-dom/client'
 import { ListPage } from './ListPage'
 import { AddPage } from './AddPage'
 import { ChromeGate } from './ChromeRequired'
-import { ChromiumPage } from './ChromiumPage'
+import { BrowserEnginePage } from './BrowserEnginePage'
 import { CrawlLogsPage } from './CrawlLogsPage'
 import { DebugPage } from './DebugPage'
 import { DomainsPage } from './DomainsPage'
-import { EnginePage } from './EnginePage'
 import { fetchChromeStatus } from './api'
 import './index.css'
 
@@ -22,6 +21,10 @@ const LIST_PATH = '/tools/browser/credentials'
 const ADD_PATH = '/tools/browser/credentials/new'
 const CRAWL_LOGS_PATH = '/tools/browser/crawl-logs'
 const DEBUG_PATH = '/tools/browser/debug'
+// "Browser & Engine" replaced the separate Chromium and Engine pages. The two old
+// paths stay registered (bookmarks, and the link in the "Chrome is required"
+// notice) and show the same page.
+const BROWSER_ENGINE_PATH = '/tools/browser/browser-engine'
 const ENGINE_PATH = '/tools/browser/engine'
 const CHROMIUM_PATH = '/tools/browser/chromium'
 const DOMAINS_PATH = '/tools/browser/domains'
@@ -30,14 +33,14 @@ const DOMAINS_PATH = '/tools/browser/domains'
 // Chromium installed. A tool's menu can only be appended to, so the decision is
 // made once, here, when the bundle loads — after installing Chrome the page
 // needs a reload. Fail open: if the status cannot be read, assume Chrome is
-// there (the Chromium page shows the error) rather than hide the tool.
+// there (the Browser & Engine page shows the error) rather than hide the tool.
 const chromeReady: Promise<boolean> = fetchChromeStatus()
   .then((status) => status.installed)
   .catch(() => true)
 
-const chromiumEntry = {
-  label: 'Chromium',
-  path: CHROMIUM_PATH,
+const browserEngineEntry = {
+  label: 'Browser & Engine',
+  path: BROWSER_ENGINE_PATH,
   // Either existing scope: a user who has only the Login scope still
   // needs the one page that explains why nothing else works without
   // Chrome (menu visibility is "any of" — filterVisible.ts).
@@ -71,15 +74,6 @@ const chromeDependentEntries = [
     scopes: ['tool:browser:crawl'],
   },
   {
-    label: 'Engine',
-    path: ENGINE_PATH,
-    // Reuses tool:browser:crawl (step 50's own design) — the engine
-    // decides how pages are fetched, the same permission tier as the
-    // Debug toggles and Crawl Logs, and the same scope that already
-    // gates the /browser-settings route this page reads and writes.
-    scopes: ['tool:browser:crawl'],
-  },
-  {
     label: 'Debug',
     path: DEBUG_PATH,
     // Reuses tool:browser:crawl (step 22's own design) — same
@@ -97,7 +91,7 @@ void chromeReady.then((installed) => {
     // so this is built only from those primitives. See
     // plan/ai/tools/step-15-menu-icons-for-browser-and-career.md.
     icon: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor"><circle cx="10" cy="10" r="7" stroke-width="1.3"/><ellipse cx="10" cy="10" rx="3" ry="7" stroke-width="1.3"/><line x1="3" y1="10" x2="17" y2="10" stroke-width="1.3"/></svg>',
-    children: installed ? [chromiumEntry, ...chromeDependentEntries] : [chromiumEntry],
+    children: installed ? [browserEngineEntry, ...chromeDependentEntries] : [browserEngineEntry],
   })
 })
 
@@ -161,13 +155,17 @@ window.__cinqoToolBridge.registerRoute({
   unmount: unmountReact,
 })
 
-window.__cinqoToolBridge.registerRoute({
-  path: CHROMIUM_PATH,
-  mount: (container) => {
-    mountReact(container, <ChromiumPage />)
-  },
-  unmount: unmountReact,
-})
+// The merged page is reachable at its own path and at the two old ones, and is
+// never gated: it is where the tool explains that Chrome is required.
+for (const path of [BROWSER_ENGINE_PATH, CHROMIUM_PATH, ENGINE_PATH]) {
+  window.__cinqoToolBridge.registerRoute({
+    path,
+    mount: (container) => {
+      mountReact(container, <BrowserEnginePage />)
+    },
+    unmount: unmountReact,
+  })
+}
 
 window.__cinqoToolBridge.registerRoute({
   path: DOMAINS_PATH,
@@ -176,19 +174,6 @@ window.__cinqoToolBridge.registerRoute({
       container,
       <ChromeGate ready={chromeReady}>
         <DomainsPage />
-      </ChromeGate>,
-    )
-  },
-  unmount: unmountReact,
-})
-
-window.__cinqoToolBridge.registerRoute({
-  path: ENGINE_PATH,
-  mount: (container) => {
-    mountReact(
-      container,
-      <ChromeGate ready={chromeReady}>
-        <EnginePage />
       </ChromeGate>,
     )
   },

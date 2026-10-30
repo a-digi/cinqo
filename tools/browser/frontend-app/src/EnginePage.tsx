@@ -11,7 +11,7 @@ import {
   type FetchEngine,
 } from './api'
 
-// Engine settings page (step 50, availability added in step 51) — one
+// Engine section of the "Browser & Engine" page (step 50, availability added in step 51) — one
 // checkbox choosing which engine fetches pages. Checked means Rod (the
 // default), unchecked means Playwright. Stored in the same settings object
 // as the Debug toggles and read by the backend on every fetch, so the
@@ -27,7 +27,7 @@ import {
 // lives in the page. See
 // plan/ai/tools/browser/step-50-fetch-engine-setting-page.md and
 // step-51-engine-availability.md.
-export function EnginePage() {
+export function EngineSection() {
   const [settings, setSettings] = useState<BrowserSettings | null>(null)
   const [status, setStatus] = useState<EngineStatusResponse | null>(null)
   const [statusError, setStatusError] = useState('')
@@ -95,9 +95,10 @@ export function EnginePage() {
 
   if (!settings) {
     return (
-      <div className="max-w-2xl p-6 font-sans text-gray-900">
-        <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
-      </div>
+      <section>
+        <h2 className="mb-1.5 text-lg font-semibold">Engine</h2>
+        <div className="min-h-[1.2em] text-sm text-red-700">{error || 'Loading…'}</div>
+      </section>
     )
   }
 
@@ -113,8 +114,8 @@ export function EnginePage() {
   const lockedOnRod = useRod && playwrightUnavailable
 
   return (
-    <div className="max-w-2xl p-6 font-sans text-gray-900">
-      <h1 className="mb-1.5 text-xl font-semibold">Engine</h1>
+    <section>
+      <h2 className="mb-1.5 text-lg font-semibold">Engine</h2>
       <p className="mb-5 text-sm text-gray-500">
         Chooses which engine fetches a page the first time. Rod is the default. Both need Chrome installed, and if the chosen engine
         can&apos;t start, the fetch falls back to the built-in browser path automatically.
@@ -175,7 +176,7 @@ export function EnginePage() {
         </p>
       </div>
 
-      <h2 className="mb-1.5 mt-8 text-lg font-semibold">When a site asks for a check</h2>
+      <h3 className="mb-1.5 mt-8 text-base font-semibold">When a site asks for a check</h3>
       <div className="space-y-2 rounded-md border border-gray-200 bg-gray-50 p-6 shadow-sm">
         <label htmlFor="cinqo-browser-human-assist" aria-label="Ask me to clear it" className="flex items-start gap-3">
           <input
@@ -200,7 +201,7 @@ export function EnginePage() {
         </label>
       </div>
 
-      <h2 className="mb-1.5 mt-8 text-lg font-semibold">Availability</h2>
+      <h3 className="mb-1.5 mt-8 text-base font-semibold">Availability</h3>
       <p className="mb-3 text-sm text-gray-500">What each engine needs, and whether it is there right now.</p>
       {statusError && <div className="mb-3 text-sm text-red-700">{statusError}</div>}
       {status ? (
@@ -234,7 +235,7 @@ export function EnginePage() {
         )}
         {testError && <span className="text-sm text-red-700">{testError}</span>}
       </div>
-    </div>
+    </section>
   )
 }
 

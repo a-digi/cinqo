@@ -13,8 +13,8 @@ export function ChromeRequired() {
           The Browser tool needs Chrome or Chromium installed on the computer where Cinqo is running, and none was found. Until it is
           installed, this page is not available.
         </p>
-        <a href="/tools/browser/chromium" className="font-medium text-blue-700 underline hover:text-blue-900">
-          Open the Chromium page
+        <a href="/tools/browser/browser-engine" className="font-medium text-blue-700 underline hover:text-blue-900">
+          Open Browser & Engine
         </a>
         <span className="text-gray-700"> to see how to install it.</span>
       </div>
