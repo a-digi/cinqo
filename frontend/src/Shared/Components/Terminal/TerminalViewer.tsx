@@ -85,6 +85,8 @@ export function TerminalViewer({
   const total = info?.totalLines ?? 0
   const complete = info?.complete ?? false
   const shown = lines.length
+  // The line-number column grows with the biggest number it can show (a 6-million-line file needs more room).
+  const gutterDigits = Math.max(4, String(Math.max(total, shownFrom + shown)).length)
   const name = title ?? fileRef
 
   // A new window starts at the top of the pane, unless the person asked for a line in it: then that line is
@@ -446,7 +448,8 @@ export function TerminalViewer({
                   className={`flex ${wrap ? '' : 'min-w-max'} ${isTarget ? 'bg-emerald-400/15' : 'hover:bg-white/[0.03]'}`}
                 >
                   <span
-                    className={`sticky left-0 w-16 shrink-0 select-none pr-3 text-right ${
+                    style={{ width: `${gutterDigits + 2}ch` }}
+                    className={`sticky left-0 shrink-0 select-none pr-3 text-right ${
                       isTarget ? 'bg-[#10241d] text-emerald-300' : 'bg-[#0b0f14] text-[#8b95a5]'
                     }`}
                   >

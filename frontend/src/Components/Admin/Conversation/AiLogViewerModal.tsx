@@ -67,7 +67,7 @@ export function AiLogViewerModal({ entry, onClose }: { entry: AllAiTraceLogsEntr
         ) : files.length === 0 ? (
           <p className="text-sm text-gray-500">This conversation has no trace files.</p>
         ) : (
-          <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[16rem_minmax(0,1fr)]">
+          <div className="grid gap-4 lg:grid-cols-[16rem_minmax(0,1fr)]">
             <ul aria-label="Trace files" className="max-h-48 space-y-1 overflow-auto lg:max-h-none">
               {files.map((f, i) => {
                 const active = f.turnRunId === selected

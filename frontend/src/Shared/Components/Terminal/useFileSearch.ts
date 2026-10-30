@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError } from '../../../api/client'
-import { fetchFileSearch, type SearchMatch } from '../../../api/fileReader'
+import { fetchFileSearch, type SearchMatch, type SearchResult } from '../../../api/fileReader'
 import { describeFailure, startMatch, stepMatch } from './terminalRules'
 
 const WAIT_MS = 400
 const MAX_WAITS = 150
+// Each empty page covers up to 64 MiB, so this reaches far beyond the largest file the reader accepts (1 GiB).
+const MAX_EMPTY_PAGES = 64
 
 function sleep(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
@@ -94,6 +96,25 @@ export function useFileSearch(source: string, fileRef: string): FileSearchState 
     [source, fileRef],
   )
 
+  // A page can come back empty yet not done: the server stopped after its byte or time budget without finding
+  // anything. That is not "no matches" (the rest of a big file has not been looked at), so keep going until a
+  // match turns up, the file ends, or the search is cancelled.
+  const fetchUntilMatch = useCallback(
+    async (text: string, sensitive: boolean, startFrom: number, signal: AbortSignal) => {
+      let from = startFrom
+      let last: SearchResult | null = null
+      for (let pages = 0; pages < MAX_EMPTY_PAGES; pages++) {
+        const page = await fetchPage(text, sensitive, from, signal)
+        if (!page) return null
+        last = page
+        if (page.matches.length > 0 || page.done || page.nextFrom <= from) break
+        from = page.nextFrom
+      }
+      return last
+    },
+    [fetchPage],
+  )
+
   const run = useCallback(
     (text: string, sensitive: boolean, anchorLine: number) => {
       cancel()
@@ -110,7 +131,7 @@ export function useFileSearch(source: string, fileRef: string): FileSearchState 
       setSearching(true)
       void (async () => {
         try {
-          const page = await fetchPage(text, sensitive, 1, mine.signal)
+          const page = await fetchUntilMatch(text, sensitive, 1, mine.signal)
           if (!page || cancelled()) return
           nextFrom.current = page.nextFrom
           setMatches(page.matches)
@@ -129,7 +150,7 @@ export function useFileSearch(source: string, fileRef: string): FileSearchState 
         }
       })()
     },
-    [cancel, fetchPage],
+    [cancel, fetchUntilMatch],
   )
 
   const next = useCallback(() => {
@@ -145,7 +166,7 @@ export function useFileSearch(source: string, fileRef: string): FileSearchState 
     setSearching(true)
     void (async () => {
       try {
-        const page = await fetchPage(query, caseSensitive, nextFrom.current, mine.signal)
+        const page = await fetchUntilMatch(query, caseSensitive, nextFrom.current, mine.signal)
         if (!page || cancelled()) return
         nextFrom.current = page.nextFrom
         setMatches((prev) => [...prev, ...page.matches])
@@ -158,7 +179,7 @@ export function useFileSearch(source: string, fileRef: string): FileSearchState 
         setSearching(false)
       }
     })()
-  }, [index, matches.length, done, searching, query, caseSensitive, fetchPage])
+  }, [index, matches.length, done, searching, query, caseSensitive, fetchUntilMatch])
 
   const prev = useCallback(() => {
     if (matches.length > 0) setIndex(stepMatch(index, matches.length, -1))
