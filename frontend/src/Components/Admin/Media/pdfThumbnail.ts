@@ -5,7 +5,7 @@
 // no annotations.
 import { mediaDownloadUrl } from '../../../api/media'
 
-const THUMB_WIDTH = 720
+const THUMB_WIDTH = 540
 
 type Result = string | null
 

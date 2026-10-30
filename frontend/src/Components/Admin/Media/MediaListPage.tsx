@@ -175,7 +175,7 @@ export function MediaListPage() {
       </div>
 
       {media.length > 0 && (
-        <div className="flex flex-wrap items-end gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-wrap items-end gap-3 rounded-xl border border-gray-200 bg-gray-100 shadow-sm">
           <label className="min-w-48 flex-1 text-xs font-medium text-gray-600">
             Name
             <input
@@ -248,13 +248,14 @@ export function MediaListPage() {
               an installed tool's globally-injected Tailwind stylesheet can
               redeclare a bare `.grid-cols-*` and collapse a plain Tailwind grid. */}
           <style>{`
-            .media-tile-grid { display: grid; gap: 1.5rem 1rem; grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr)); }
+            .media-tile-grid { display: grid; gap: 1.5rem 1rem; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); }
           `}</style>
           <div className="media-tile-grid">
-            {visible.map((file) => (
+            {visible.map((file, index) => (
               <MediaTile
                 key={file.id}
                 file={file}
+                animationDelayMs={Math.min(index, 12) * 200}
                 selected={checked.has(file.id)}
                 busy={busyId === file.id || bulkBusy}
                 onToggle={() => {

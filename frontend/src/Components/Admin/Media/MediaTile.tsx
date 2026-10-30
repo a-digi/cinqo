@@ -14,18 +14,20 @@ export interface MediaTileProps {
   onToggle: () => void
   onOpen: () => void
   onDelete: () => void
+  // Start delay (ms) for the slide-in, so a grid of tiles staggers.
+  animationDelayMs?: number
 }
 
 // One media file as a tile: thumbnail on top (image, PDF first page or a file
 // glyph), name and facts below. The checkbox and the edit/delete actions fade
 // in on hover or focus, and stay visible while the tile is selected.
-export function MediaTile({ file, selected, busy, onToggle, onOpen, onDelete }: MediaTileProps) {
+export function MediaTile({ file, selected, busy, onToggle, onOpen, onDelete, animationDelayMs = 0 }: MediaTileProps) {
   const name = displayName(file)
   const controls = selected
     ? 'opacity-100'
     : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100'
   return (
-    <div className="group min-w-0">
+    <div className="cinqo-card-enter group min-w-0" style={{ animationDelay: `${animationDelayMs}ms` }}>
       <div
         className={`relative aspect-[4/3] overflow-hidden rounded-xl bg-gray-100 shadow-sm transition duration-200 group-hover:-translate-y-0.5 group-hover:shadow-md ${
           selected ? 'ring-2 ring-blue-600 ring-offset-2' : ''
