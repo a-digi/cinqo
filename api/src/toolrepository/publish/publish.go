@@ -45,6 +45,11 @@ type Options struct {
 	// empty they are relative to the repository file, so the folder can be hosted
 	// anywhere.
 	BaseURL string
+	// InPlace writes the repository file into ToolsDir itself and links each
+	// package where it already is (<tool>/versions/<zip>), copying nothing. Serve
+	// ToolsDir as a static folder and the file works as it stands. OutDir is
+	// ignored.
+	InPlace bool
 }
 
 // Result describes what was written.
@@ -56,13 +61,15 @@ type Result struct {
 
 type found struct {
 	zipPath string
-	file    string
-	os      string
-	arch    string
-	m       manifest.Manifest
-	sum     string
-	size    int64
-	date    string
+	// rel is zipPath relative to the tools folder, slash-separated.
+	rel  string
+	file string
+	os   string
+	arch string
+	m    manifest.Manifest
+	sum  string
+	size int64
+	date string
 }
 
 // Generate writes the repository file and copies the packages next to it.
@@ -70,12 +77,23 @@ func Generate(opts Options) (*Result, error) {
 	if opts.FileName == "" {
 		opts.FileName = FileName
 	}
+	if opts.InPlace {
+		opts.OutDir = opts.ToolsDir
+	}
 	pkgs, err := scan(opts.ToolsDir)
 	if err != nil {
 		return nil, err
 	}
 	if len(pkgs) == 0 {
 		return nil, fmt.Errorf("no packages found: expected tools/<tool>/versions/tool-<tool>-<os>-<arch>.zip under %s", opts.ToolsDir)
+	}
+
+	for i := range pkgs {
+		rel, err := filepath.Rel(opts.ToolsDir, pkgs[i].zipPath)
+		if err != nil {
+			return nil, err
+		}
+		pkgs[i].rel = filepath.ToSlash(rel)
 	}
 
 	c := build(pkgs, opts)
@@ -91,12 +109,14 @@ func Generate(opts Options) (*Result, error) {
 		return nil, fmt.Errorf("generated file is not a valid repository: %w", err)
 	}
 
-	if err := os.MkdirAll(filepath.Join(opts.OutDir, FilesDir), 0o755); err != nil {
-		return nil, err
-	}
-	for _, p := range pkgs {
-		if err := copyFile(p.zipPath, filepath.Join(opts.OutDir, FilesDir, p.file)); err != nil {
+	if !opts.InPlace {
+		if err := os.MkdirAll(filepath.Join(opts.OutDir, FilesDir), 0o755); err != nil {
 			return nil, err
+		}
+		for _, p := range pkgs {
+			if err := copyFile(p.zipPath, filepath.Join(opts.OutDir, FilesDir, p.file)); err != nil {
+				return nil, err
+			}
 		}
 	}
 	out := filepath.Join(opts.OutDir, opts.FileName)
@@ -222,7 +242,7 @@ func build(pkgs []found, opts Options) *catalog.Catalog {
 			}
 			for _, p := range group {
 				ver.Packages = append(ver.Packages, catalog.Package{
-					OS: p.os, Arch: p.arch, URL: packageURL(opts.BaseURL, p.file), SHA256: p.sum, SizeBytes: p.size,
+					OS: p.os, Arch: p.arch, URL: packageURL(opts, p), SHA256: p.sum, SizeBytes: p.size,
 				})
 			}
 			tool.Versions = append(tool.Versions, ver)
@@ -232,12 +252,15 @@ func build(pkgs []found, opts Options) *catalog.Catalog {
 	return c
 }
 
-func packageURL(base, file string) string {
-	rel := path.Join(FilesDir, file)
-	if base == "" {
+func packageURL(opts Options, p found) string {
+	rel := path.Join(FilesDir, p.file)
+	if opts.InPlace {
+		rel = p.rel
+	}
+	if opts.BaseURL == "" {
 		return rel
 	}
-	return strings.TrimRight(base, "/") + "/" + rel
+	return strings.TrimRight(opts.BaseURL, "/") + "/" + rel
 }
 
 func latestDate(group []found) string {

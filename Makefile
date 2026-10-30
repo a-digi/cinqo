@@ -263,3 +263,11 @@ REPO_DESCRIPTION ?=
 repository:
 	cd api && go run ./cmd/repotool -tools-dir ../tools -out-dir ../dist/repository \
 		-name "$(REPO_NAME)" -description "$(REPO_DESCRIPTION)" $(if $(BASE_URL),-base-url "$(BASE_URL)")
+
+# Writes tools/repository.json, linking each package where it already is under
+# tools/<tool>/versions/ and copying nothing. Serve the tools/ folder statically
+# and add the link to repository.json on the Repositories page.
+.PHONY: repository-in-place
+repository-in-place:
+	cd api && go run ./cmd/repotool -in-place -tools-dir ../tools \
+		-name "$(REPO_NAME)" -description "$(REPO_DESCRIPTION)" $(if $(BASE_URL),-base-url "$(BASE_URL)")

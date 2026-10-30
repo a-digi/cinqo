@@ -66,3 +66,7 @@ is the current one) plus a `files/` folder with the packages. Host that folder w
 any static file server and add the link to `repository.json` on the Repositories page
 (`Repositories` in the menu). The file is checked with the app's own validator before
 it is written. See `plan/ai/tools/repository/tool-repositories.md`.
+
+`make repository-in-place` instead writes `tools/repository.json` and links each
+package where it already is (`<tool>/versions/<zip>`), copying nothing; serve the
+`tools/` folder and add the link to `repository.json`.

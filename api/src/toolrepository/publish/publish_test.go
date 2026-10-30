@@ -216,3 +216,48 @@ func TestOutputFolderServesAsARepository(t *testing.T) {
 		t.Error("downloaded package does not match its listed checksum")
 	}
 }
+
+func TestInPlaceLinksPackagesWhereTheyAreAndCopiesNothing(t *testing.T) {
+	tools := fixture(t)
+	res, err := Generate(Options{ToolsDir: tools, InPlace: true, Name: "In place"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.File != filepath.Join(tools, "repository.json") {
+		t.Errorf("file: %s", res.File)
+	}
+	if _, err := os.Stat(filepath.Join(tools, FilesDir)); !os.IsNotExist(err) {
+		t.Error("in-place must not create a files folder")
+	}
+	browser, _ := res.Catalog.Tool("browser")
+	if u := browser.Versions[0].Packages[0].URL; u != "browser/versions/tool-browser-darwin-arm64.zip" {
+		t.Errorf("link: %s", u)
+	}
+
+	// served as a static folder, the links resolve and the checksums hold
+	srv := httptest.NewServer(http.FileServer(http.Dir(tools)))
+	defer srv.Close()
+	f := &fetch.Fetcher{Timeout: 5 * time.Second}
+	link := srv.URL + "/repository.json"
+	got, err := f.Get(context.Background(), link, catalog.MaxFileBytes, fetch.LocalByFirstHop)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := catalog.Parse(got.Body, link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tl := range c.Tools {
+		cur, _ := tl.Current()
+		for _, p := range cur.Packages {
+			dl, err := f.Get(context.Background(), p.URL, catalog.MaxPackageSizeBytes, fetch.LocalAllowed)
+			if err != nil {
+				t.Fatalf("%s: %v", p.URL, err)
+			}
+			sum := sha256.Sum256(dl.Body)
+			if hex.EncodeToString(sum[:]) != p.SHA256 {
+				t.Errorf("checksum mismatch for %s", p.URL)
+			}
+		}
+	}
+}

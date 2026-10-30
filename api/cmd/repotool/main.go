@@ -3,6 +3,9 @@
 //
 //	go run ./cmd/repotool -tools-dir ../tools -out-dir ../dist/repository
 //
+// With -in-place the file lands in the tools folder itself and links each package
+// at <tool>/versions/<zip>, so serving that folder is enough.
+//
 // Host the output folder with any static file server and add the link to
 // repository.json on the Repositories page.
 package main
@@ -23,6 +26,7 @@ func main() {
 	flag.StringVar(&opts.Name, "name", "", "repository name shown in the app")
 	flag.StringVar(&opts.Description, "description", "", "repository description")
 	flag.StringVar(&opts.BaseURL, "base-url", "", "address the output folder will be served from; leave empty for links relative to the repository file")
+	flag.BoolVar(&opts.InPlace, "in-place", false, "write the repository file into -tools-dir and link packages where they are, copying nothing")
 	flag.Parse()
 
 	res, err := publish.Generate(opts)
