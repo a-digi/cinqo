@@ -1,7 +1,10 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { fetchActiveCrawlRuns, stopCrawlNow, type ActiveCrawlRunSummary } from '../crawlNow'
 import { phaseLabel, latestCrawlLogMessage } from '../crawlPhase'
-import { StopIcon, LogIcon, AlertIcon } from '../../Shared/Icons/icons'
+import { StopIcon, LogIcon, AlertIcon, PulseIcon } from '../../Shared/Icons/icons'
+import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
+import { SummaryRail } from '../../Shared/SummaryRail/SummaryRail'
+import { ACCENTS, accentFor, initialOf } from '../../Components/JobsPage/jobsTheme'
 
 // CrawlMonitorPage is the centralized "which portal is being crawled
 // right now" view — one place to see every currently-running crawl
@@ -17,8 +20,16 @@ import { StopIcon, LogIcon, AlertIcon } from '../../Shared/Icons/icons'
 const CRAWL_MONITOR_POLL_INTERVAL_MS = 3000
 
 const KIND_LABELS: Record<ActiveCrawlRunSummary['kind'], string> = {
-  listing: 'Listing crawl',
-  job_detail: 'Job detail crawl',
+  listing: 'Listing',
+  job_detail: 'Job detail',
+}
+
+// "20:53" for a crawl that started today, "29.10. 20:53" for an older one; the full date
+// and time are in the tooltip.
+function shortStarted(iso: string): string {
+  const d = new Date(iso)
+  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  return d.toDateString() === new Date().toDateString() ? time : `${d.toLocaleDateString([], { day: '2-digit', month: '2-digit' })} ${time}`
 }
 
 export function CrawlMonitorPage() {
@@ -68,116 +79,194 @@ export function CrawlMonitorPage() {
       })
   }
 
+  const listing = runs.filter((r) => r.kind === 'listing').length
+  const detail = runs.length - listing
+  const waiting = runs.filter((r) => r.phase === 'awaiting_human_challenge').length
+  const automatic = runs.filter((r) => r.triggeredBy === 'auto_discovery').length
+
   return (
-    <div className="max-w-5xl p-6 font-sans text-gray-900">
-      <h1 className="mb-1.5 text-xl font-semibold">Crawl Monitor</h1>
-      <p className="mb-5 text-sm text-gray-500">Every portal currently being crawled, across every link — refreshes automatically.</p>
+    <div className="max-w-7xl p-6 font-sans text-gray-900">
+      <PageHeaderCard
+        icon={<PulseIcon />}
+        title="Crawl Monitor"
+        description="Every portal currently being crawled, across every link. Refreshes automatically."
+        pill={{ text: runs.length === 0 ? 'Idle' : `${runs.length} running`, accent: runs.length === 0 ? ACCENTS[6] : ACCENTS[1] }}
+      />
 
-      <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
+        <div className="min-w-0 flex-1">
+          <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
 
-      {loaded && runs.length === 0 && !error && (
-        <div className="rounded-md border border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">
-          No crawls are currently running.
-        </div>
-      )}
+          {loaded && runs.length === 0 && !error && (
+            <div
+              className="flex flex-col items-center rounded-3xl border p-10 text-center"
+              style={{ borderColor: ACCENTS[0].soft, background: `linear-gradient(160deg, #ffffff 45%, ${ACCENTS[0].soft} 100%)` }}
+            >
+              <span
+                className="inline-flex h-14 w-14 items-center justify-center rounded-2xl text-white shadow-sm"
+                style={{ background: ACCENTS[0].to }}
+              >
+                <PulseIcon className="h-7 w-7" />
+              </span>
+              <p className="mt-4 text-base font-semibold text-gray-900">No crawls are running</p>
+              <p className="mt-1 text-sm text-gray-500">
+                Start one from a portal link, or let auto-discovery do it. It shows up here as soon as it begins.
+              </p>
+            </div>
+          )}
 
-      {runs.length > 0 && (
-        <div className="overflow-hidden rounded-md border border-gray-200 shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr>
-                  <th className="border-b border-gray-200 bg-gray-50 p-3 text-left font-medium text-gray-500">Portal</th>
-                  <th className="border-b border-gray-200 bg-gray-50 p-3 text-left font-medium text-gray-500">Link</th>
-                  <th className="border-b border-gray-200 bg-gray-50 p-3 text-left font-medium text-gray-500">Kind</th>
-                  <th className="border-b border-gray-200 bg-gray-50 p-3 text-left font-medium text-gray-500">Status</th>
-                  <th className="border-b border-gray-200 bg-gray-50 p-3 text-left font-medium text-gray-500">Started</th>
-                  <th className="border-b border-gray-200 bg-gray-50 p-3"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {runs.map((run) => (
-                  <Fragment key={run.crawlRunId}>
-                    <tr className="last:[&>td]:border-b-0 hover:bg-gray-50">
-                      <td className="border-b border-gray-200 p-3 font-medium">{run.portalName}</td>
-                      <td className="border-b border-gray-200 p-3">
-                        <a
-                          href={run.portalLinkUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-gray-900 underline decoration-gray-300 hover:decoration-gray-600"
-                        >
-                          {run.portalLinkTitle ?? run.portalLinkUrl}
-                        </a>
-                      </td>
-                      <td className="border-b border-gray-200 p-3 text-gray-500">
-                        <div className="flex items-center gap-1.5">
-                          {KIND_LABELS[run.kind]}
-                          {run.triggeredBy === 'auto_discovery' && (
-                            <span
-                              title="Started automatically by auto-discovery, not a manual click"
-                              className="rounded-full bg-gray-200 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-600"
-                            >
-                              Auto
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="border-b border-gray-200 p-3">
-                        {run.phase === 'awaiting_human_challenge' ? (
-                          <span className="flex items-center gap-1.5 text-amber-800">
-                            <AlertIcon />
-                            Waiting for a Cloudflare challenge to be solved
-                          </span>
-                        ) : (
-                          <span className="text-gray-500">{phaseLabel(run.phase) ?? latestCrawlLogMessage(run.log) ?? 'Running…'}</span>
-                        )}
-                      </td>
-                      <td className="border-b border-gray-200 p-3 text-gray-500">{new Date(run.startedAt).toLocaleString()}</td>
-                      <td className="border-b border-gray-200 p-3">
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setExpandedRunId((prev) => (prev === run.crawlRunId ? null : run.crawlRunId))
-                            }}
-                            title="Show every logged step of this crawl run."
-                            className="flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-700 hover:bg-white"
-                          >
-                            <LogIcon />
-                            {expandedRunId === run.crawlRunId ? 'Hide log' : 'View log'}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              handleStop(run.portalLinkId)
-                            }}
-                            disabled={stoppingLinkId === run.portalLinkId}
-                            title="Actually stop this crawl — interrupts it on the server, not just this view."
-                            className="flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-700 hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            <StopIcon />
-                            {stoppingLinkId === run.portalLinkId ? 'Stopping…' : 'Stop'}
-                          </button>
-                        </div>
-                      </td>
+          {runs.length > 0 && (
+            <div
+              className="relative overflow-hidden rounded-3xl border shadow-sm"
+              style={{ borderColor: ACCENTS[0].soft, background: `linear-gradient(170deg, #ffffff 55%, ${ACCENTS[0].soft} 100%)` }}
+            >
+              <div className="relative overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr>
+                      <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Portal</th>
+                      <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Kind</th>
+                      <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Status</th>
+                      <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Started</th>
+                      <th className="bg-blue-50/70 p-3"></th>
                     </tr>
-                    {expandedRunId === run.crawlRunId && (
-                      <tr>
-                        <td colSpan={6} className="border-b border-gray-200 bg-gray-900 p-0">
-                          <pre className="max-h-40 overflow-y-auto whitespace-pre-wrap p-3 text-xs text-gray-100">
-                            {run.log.length > 0 ? run.log.join('\n') : '(no log entries yet)'}
-                          </pre>
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                  </thead>
+                  <tbody>
+                    {runs.map((run) => {
+                      const kindAccent = run.kind === 'listing' ? ACCENTS[4] : ACCENTS[5]
+                      return (
+                        <Fragment key={run.crawlRunId}>
+                          <tr className="transition-colors last:[&>td]:border-b-0 hover:bg-blue-50/50">
+                            <td className="border-b border-blue-50 p-3">
+                              <div className="flex items-center gap-3">
+                                <span
+                                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white shadow-sm"
+                                  style={{ background: accentFor(run.portalName).to }}
+                                  aria-hidden="true"
+                                >
+                                  {initialOf(run.portalName)}
+                                </span>
+                                <div className="min-w-0">
+                                  <p className="truncate font-medium">{run.portalName}</p>
+                                  <a
+                                    href={run.portalLinkUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    title={run.portalLinkUrl}
+                                    className="block max-w-[190px] truncate text-xs text-blue-700 underline decoration-blue-200 hover:decoration-blue-500"
+                                  >
+                                    {run.portalLinkTitle ?? run.portalLinkUrl}
+                                  </a>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="border-b border-blue-50 p-3">
+                              <div className="flex items-center gap-1.5">
+                                <span
+                                  className="inline-flex whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium"
+                                  style={{ background: kindAccent.soft, color: kindAccent.text }}
+                                >
+                                  {KIND_LABELS[run.kind]}
+                                </span>
+                                {run.triggeredBy === 'auto_discovery' && (
+                                  <span
+                                    title="Started automatically by auto-discovery, not a manual click"
+                                    className="whitespace-nowrap rounded-full bg-gray-200 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-600"
+                                  >
+                                    Auto
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="border-b border-blue-50 p-3">
+                              {run.phase === 'awaiting_human_challenge' ? (
+                                <span
+                                  title="Waiting for you to solve a Cloudflare challenge"
+                                  className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-800"
+                                >
+                                  <AlertIcon />
+                                  Needs you
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1.5 text-xs text-gray-600">
+                                  <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-green-500" aria-hidden="true" />
+                                  {phaseLabel(run.phase) ?? latestCrawlLogMessage(run.log) ?? 'Running…'}
+                                </span>
+                              )}
+                            </td>
+                            <td className="border-b border-blue-50 p-3">
+                              <span
+                                title={new Date(run.startedAt).toLocaleString()}
+                                className="whitespace-nowrap rounded-full bg-gray-100 px-2.5 py-0.5 text-xs text-gray-600"
+                              >
+                                {shortStarted(run.startedAt)}
+                              </span>
+                            </td>
+                            <td className="border-b border-blue-50 p-3">
+                              <div className="flex items-center justify-end gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setExpandedRunId((prev) => (prev === run.crawlRunId ? null : run.crawlRunId))
+                                  }}
+                                  title="Show every logged step of this crawl run."
+                                  className="flex items-center gap-1 whitespace-nowrap rounded-full border border-blue-200 px-3 py-1 text-xs text-blue-700 hover:bg-blue-50"
+                                >
+                                  <LogIcon />
+                                  {expandedRunId === run.crawlRunId ? 'Hide log' : 'Log'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    handleStop(run.portalLinkId)
+                                  }}
+                                  disabled={stoppingLinkId === run.portalLinkId}
+                                  title="Actually stop this crawl — interrupts it on the server, not just this view."
+                                  className="flex items-center gap-1 whitespace-nowrap rounded-full border border-red-200 px-3 py-1 text-xs text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  <StopIcon />
+                                  {stoppingLinkId === run.portalLinkId ? 'Stopping…' : 'Stop'}
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                          {expandedRunId === run.crawlRunId && (
+                            <tr>
+                              <td colSpan={5} className="border-b border-blue-50 bg-gray-900 p-0">
+                                <pre className="max-h-40 overflow-y-auto whitespace-pre-wrap p-3 text-xs text-gray-100">
+                                  {run.log.length > 0 ? run.log.join('\n') : '(no log entries yet)'}
+                                </pre>
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
-      )}
+
+        <aside className="w-full shrink-0 lg:sticky lg:top-6 lg:w-56">
+          <SummaryRail
+            title="Right now"
+            segments={[
+              { value: listing, color: ACCENTS[4].to },
+              { value: detail, color: ACCENTS[5].to },
+            ]}
+            centerValue={String(runs.length)}
+            centerLabel={runs.length === 1 ? 'crawl running' : 'crawls running'}
+            rows={[
+              { label: 'Listing crawls', value: String(listing), color: ACCENTS[4].to },
+              { label: 'Job detail crawls', value: String(detail), color: ACCENTS[5].to },
+              { label: 'Auto-started', value: String(automatic), color: ACCENTS[6].to },
+              { label: 'Needs you', value: String(waiting), color: ACCENTS[2].to, emphasis: waiting > 0 },
+            ]}
+          />
+        </aside>
+      </div>
     </div>
   )
 }

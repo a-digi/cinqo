@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Dropdown } from '../../Components/Dropdown/Dropdown'
+import { BoltIcon } from '../../Shared/Icons/icons'
 import { Switch } from '../../Shared/Switch/Switch'
 import { fetchAutoDiscoverySettings, updateAutoDiscoverySettings, AUTO_DISCOVERY_INTERVAL_OPTIONS } from '../autoDiscovery'
 
@@ -73,29 +74,37 @@ export function AutoDiscoveryPanel() {
   if (!loaded) return null
 
   return (
-    <div className="mb-5 flex flex-wrap items-end gap-3 rounded-md border border-gray-200 bg-gray-50 p-3">
-      <Switch
-        checked={enabled}
-        disabled={saving}
-        onChange={(nextEnabled) => {
-          save(nextEnabled, intervalMinutes)
-        }}
-        label="Auto-discovery"
-      />
-      <div className="min-w-[160px]">
-        <span className="mb-1 block text-xs font-medium text-gray-500">Crawl every</span>
-        <Dropdown
-          options={AUTO_DISCOVERY_INTERVAL_OPTIONS.map((o) => ({ value: String(o.value), label: o.label }))}
-          value={String(intervalMinutes)}
-          onChange={(value) => {
-            save(enabled, Number(value))
-          }}
-        />
+    <div className="mt-6 border-t border-gray-200 pt-4">
+      <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+        <span style={{ color: '#7c3aed' }}>
+          <BoltIcon className="h-4 w-4" />
+        </span>
+        Auto-discovery
       </div>
-      <span className="text-xs text-gray-500">
-        {lastRunAt === null ? 'Never run yet.' : `Last run: ${new Date(lastRunAt * 1000).toLocaleString()}`}
-      </span>
-      {error && <span className="text-xs text-red-700">{error}</span>}
+      <div className="flex flex-col gap-3">
+        <Switch
+          checked={enabled}
+          disabled={saving}
+          onChange={(nextEnabled) => {
+            save(nextEnabled, intervalMinutes)
+          }}
+          label={enabled ? 'On: crawls on a schedule' : 'Off'}
+        />
+        <div className="[&>div]:block [&>div>button]:w-full [&>div>button]:min-w-0">
+          <span className="mb-1 block text-xs font-medium text-gray-500">Crawl every</span>
+          <Dropdown
+            options={AUTO_DISCOVERY_INTERVAL_OPTIONS.map((o) => ({ value: String(o.value), label: o.label }))}
+            value={String(intervalMinutes)}
+            onChange={(value) => {
+              save(enabled, Number(value))
+            }}
+          />
+        </div>
+        <span className="text-xs text-gray-500">
+          {lastRunAt === null ? 'Never run yet.' : `Last run: ${new Date(lastRunAt * 1000).toLocaleString()}`}
+        </span>
+        {error && <span className="text-xs text-red-700">{error}</span>}
+      </div>
     </div>
   )
 }

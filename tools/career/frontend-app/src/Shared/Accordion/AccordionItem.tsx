@@ -26,7 +26,7 @@ interface AccordionItemProps {
   // panel, e.g. CrawlPanel's "Crawl instructions"). Purely visual —
   // behavior is identical.
   // See plan/ai/tools/career/step-89-portal-link-accordion.md.
-  variant?: 'card' | 'nested' | 'plain'
+  variant?: 'card' | 'nested' | 'plain' | 'portal'
 }
 
 // Per-variant class sets. 'card' is byte-for-byte what AccordionItem
@@ -39,10 +39,18 @@ const VARIANT_CLASSES = {
     overlay: 'rounded-xl',
   },
   nested: {
-    outer: 'rounded-lg border border-gray-200 bg-gray-50 transition-colors hover:border-gray-300',
-    header: 'rounded-lg px-3 py-2',
-    body: 'px-3 pb-3',
-    overlay: 'rounded-lg',
+    outer: 'rounded-2xl border border-blue-100 bg-blue-50/40 transition-colors hover:border-blue-200',
+    header: 'rounded-2xl px-3.5 py-2.5',
+    body: 'px-3.5 pb-3.5',
+    overlay: 'rounded-2xl',
+  },
+  // A portal: a big rounded card like the Jobs page's cards. Its tint (border colour and
+  // background gradient) comes from the caller's style, since it depends on the portal.
+  portal: {
+    outer: 'rounded-3xl border shadow-sm transition-shadow hover:shadow-md',
+    header: 'rounded-3xl px-4 py-3.5',
+    body: 'px-4 pb-4',
+    overlay: 'rounded-3xl',
   },
   plain: {
     outer: '',

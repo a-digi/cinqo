@@ -259,3 +259,90 @@ export function BriefcaseIcon({ className = 'h-6 w-6' }: { className?: string })
     </svg>
   )
 }
+
+// Page-header and stat-card glyphs for the Portals and Crawl Monitor pages.
+function Glyph({ children, className = 'h-6 w-6' }: { children: React.ReactNode; className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={className}
+    >
+      {children}
+    </svg>
+  )
+}
+
+export function GlobeIcon({ className }: { className?: string }) {
+  return (
+    <Glyph className={className}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18M12 3c2.6 2.7 3.8 5.7 3.8 9s-1.2 6.3-3.8 9c-2.6-2.7-3.8-5.7-3.8-9S9.4 5.7 12 3z" />
+    </Glyph>
+  )
+}
+
+export function PulseIcon({ className }: { className?: string }) {
+  return (
+    <Glyph className={className}>
+      <path d="M3 12h4l2.5-6 4 12 2.5-6H21" />
+    </Glyph>
+  )
+}
+
+export function LinkGlyphIcon({ className }: { className?: string }) {
+  return (
+    <Glyph className={className}>
+      <path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" />
+    </Glyph>
+  )
+}
+
+export function CheckCircleIcon({ className }: { className?: string }) {
+  return (
+    <Glyph className={className}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="m8 12.5 3 3 5-6" />
+    </Glyph>
+  )
+}
+
+export function ClockIcon({ className }: { className?: string }) {
+  return (
+    <Glyph className={className}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </Glyph>
+  )
+}
+
+export function BoltIcon({ className }: { className?: string }) {
+  return (
+    <Glyph className={className}>
+      <path d="M13 3 5 13.5h6L10 21l8-10.5h-6z" />
+    </Glyph>
+  )
+}
+
+export function BuildingIcon({ className }: { className?: string }) {
+  return (
+    <Glyph className={className}>
+      <path d="M5 21V5.5A1.5 1.5 0 0 1 6.5 4h7A1.5 1.5 0 0 1 15 5.5V21M15 10h3.5A1.5 1.5 0 0 1 20 11.5V21M3 21h18" />
+      <path d="M8.5 8h3M8.5 12h3M8.5 16h3" />
+    </Glyph>
+  )
+}
+
+export function UsersIcon({ className }: { className?: string }) {
+  return (
+    <Glyph className={className}>
+      <circle cx="9" cy="8.5" r="3.2" />
+      <path d="M3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5M16 5.6a3.2 3.2 0 0 1 0 5.8M18 14.8c1.9.7 3 2.4 3 5.2" />
+    </Glyph>
+  )
+}

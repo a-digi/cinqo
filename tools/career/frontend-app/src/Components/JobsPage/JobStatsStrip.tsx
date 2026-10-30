@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { fetchJobStatsRaw } from '../../api'
 import { BriefcaseIcon } from '../../Shared/Icons/icons'
-import { ACCENTS, accentFor, initialOf, type Accent } from './jobsTheme'
+import { StatCard } from '../../Shared/StatCard/StatCard'
+import { ACCENTS, accentFor, initialOf } from './jobsTheme'
 import { parseJobStats, percentOf, platformBars, scoreTone, weekTrend, type JobStats } from './jobStats'
 
 // The Jobs page's statistics cards, stacked in the column to the right of the list:
@@ -48,57 +49,6 @@ const DocumentIcon = () => (
     <path d="M14 3v5h5M10 13h6M10 17h6" />
   </Icon>
 )
-
-// One compact card: icon, what it is (with its small print) and the number.
-function StatCard({
-  accent,
-  icon,
-  label,
-  value,
-  caption,
-  trend,
-}: {
-  accent: Accent
-  icon: React.ReactNode
-  label: string
-  value: string
-  caption: string
-  trend?: { arrow: string; text: string; tone: 'good' | 'neutral' } | null
-}) {
-  return (
-    <div
-      className="relative overflow-hidden rounded-3xl border p-3.5 shadow-sm"
-      style={{ borderColor: accent.soft, background: `linear-gradient(160deg, #ffffff 40%, ${accent.soft} 100%)` }}
-    >
-      <div className="pointer-events-none absolute -right-5 -top-6 h-16 w-16 rounded-full opacity-15" style={{ background: accent.to }} />
-      <div className="relative flex items-center gap-3">
-        <span
-          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white shadow-sm"
-          style={{ background: accent.to }}
-        >
-          {icon}
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm text-gray-600">{label}</p>
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-500">
-            {trend && (
-              <span
-                className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium"
-                style={trend.tone === 'good' ? { background: '#dcfce7', color: '#15803d' } : { background: '#f3f4f6', color: '#6b7280' }}
-              >
-                {trend.arrow} {trend.text}
-              </span>
-            )}
-            {caption && <span>{caption}</span>}
-          </div>
-        </div>
-        <p className="shrink-0 text-2xl font-bold tracking-tight" style={{ color: accent.text }}>
-          {value}
-        </p>
-      </div>
-    </div>
-  )
-}
 
 function PlatformCard({ stats }: { stats: JobStats }) {
   const bars = platformBars(stats.byPlatform)

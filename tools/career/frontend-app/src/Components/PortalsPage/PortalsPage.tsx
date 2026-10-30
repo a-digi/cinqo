@@ -11,6 +11,11 @@ import {
   type PortalLink,
 } from '../../api'
 import { useAiChoice } from '../../Cinqo/Platform/useAiChoice'
+import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
+import { SummaryRail } from '../../Shared/SummaryRail/SummaryRail'
+import { GlobeIcon } from '../../Shared/Icons/icons'
+import { ACCENTS, PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
+import { plural, summarizePortals } from './portalStats'
 import { AutoDiscoveryPanel } from '../../Crawler/AutoDiscoveryPanel/AutoDiscoveryPanel'
 import { anyLinkAutoDiscoverable } from '../../Crawler/autoDiscoveryVisibility'
 import { CrawlPanel } from '../../Crawler/CrawlPanel/CrawlPanel'
@@ -250,248 +255,291 @@ export function PortalsPage() {
       })
   }
 
+  const summary = summarizePortals(portals)
+
   return (
-    <div className="max-w-5xl p-6 font-sans text-gray-900">
-      <div className="mb-1.5 flex items-start justify-between gap-3">
-        <h1 className="text-xl font-semibold">Portals</h1>
-        <button
-          type="button"
-          onClick={() => {
-            setIsNewPortalModalOpen(true)
-          }}
-          className="flex shrink-0 items-center gap-1 rounded-md bg-gray-900 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800"
-        >
-          <PlusIcon />
-          New portal
-        </button>
-      </div>
-      <p className="mb-5 text-sm text-gray-500">
-        Job portals to crawl — each portal owns one or more links, and each link can carry its own YAML crawl instructions (the exact shape
-        the browser tool's own crawl_paginated expects), normally prepared by the AI. Deleting a portal permanently deletes every link it
-        owns.
-      </p>
+    <div className="max-w-7xl p-6 font-sans text-gray-900">
+      <PageHeaderCard
+        icon={<GlobeIcon />}
+        title="Portals"
+        description="Job portals to crawl. Each portal has links, and each link can carry its own crawl instructions, normally prepared by the AI."
+        pill={{ text: plural(summary.portals, 'portal', 'portals') }}
+      />
 
-      {/* Step 88 — only while some link has crawl instructions: with none,
-          there is nothing the global auto-discovery could crawl. */}
-      {anyLinkAutoDiscoverable(portals) && <AutoDiscoveryPanel />}
+      {/* Two columns like the Jobs page: the portals on the left, the numbers and the
+          auto-discovery switch on the right (under the list on a narrow window). */}
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
+        <div className="order-1 min-w-0 flex-1 lg:order-2">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <p className="text-xs text-gray-500">Deleting a portal permanently deletes every link it owns.</p>
+            <button
+              type="button"
+              onClick={() => {
+                setIsNewPortalModalOpen(true)
+              }}
+              className="flex shrink-0 items-center gap-1.5 rounded-md bg-gray-800 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-900"
+            >
+              <PlusIcon />
+              New portal
+            </button>
+          </div>
 
-      <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
+          <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
 
-      {/* items-start: without it, CSS Grid's default align-items:stretch
+          {/* items-start: without it, CSS Grid's default align-items:stretch
           forces every card in a row to match the tallest (open) sibling's
           height, leaving ugly empty space at the bottom of closed cards. */}
-      <div className="grid grid-cols-1 items-start gap-4 md:grid-cols-2">
-        {portals.map((p, index) => (
-          <AccordionItem
-            key={p.id}
-            isOpen={openPortalIds.has(p.id)}
-            onToggle={() => {
-              togglePortalOpen(p.id)
-            }}
-            // "both" fill mode, not "backwards" alone: "backwards" only
-            // holds the from-keyframe (opacity:0) during the delay
-            // *before* the animation starts — once it finishes, fill
-            // stops applying entirely and the element falls back to its
-            // own static styles. Without a forwards-inclusive fill mode
-            // there'd be nothing left setting opacity back to 1, so every
-            // card would render, animate in, then vanish the instant the
-            // animation ends. "both" = "backwards" (delay) + "forwards"
-            // (after it ends) — this was the actual bug, found live via
-            // Playwright. See
-            // plan/ai/tools/career/step-58-portals-page-modal-accordion-redesign.md.
-            className="[animation:fade-in-up_600ms_ease-out_both]"
-            header={
-              editingPortalId === p.id ? (
-                // Not a real interaction — only stops the header row's own
-                // onClick (AccordionItem's toggle) from firing while editing.
-                // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
-                <div
-                  className="flex items-center gap-2"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                  }}
-                >
-                  <input
-                    // Deliberate: entering edit mode should focus the input
-                    // immediately, the same convention most inline-rename UIs use.
-                    // eslint-disable-next-line jsx-a11y/no-autofocus
-                    autoFocus
-                    value={editPortalName}
-                    onChange={(e) => {
-                      setEditPortalName(e.target.value)
-                    }}
-                    placeholder="Name"
-                    className="min-w-0 flex-1 rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      saveEditPortal(p.id)
-                    }}
-                    className="shrink-0 rounded-md bg-gray-900 px-3 py-1 text-xs font-medium text-white hover:bg-gray-800"
-                  >
-                    Save
-                  </button>
-                  <button
-                    type="button"
-                    onClick={cancelEditPortal}
-                    className="shrink-0 rounded-md border border-gray-200 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              ) : (
-                <div className="flex min-w-0 items-center gap-2">
-                  <span className="truncate text-sm font-medium">{p.name}</span>
-                  <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
-                    {p.links.length} {p.links.length === 1 ? 'link' : 'links'}
-                  </span>
-                  <span className="ml-auto flex shrink-0 gap-2">
-                    <button
-                      type="button"
+          <div className="space-y-4">
+            {portals.map((p, index) => (
+              <AccordionItem
+                key={p.id}
+                variant="portal"
+                isOpen={openPortalIds.has(p.id)}
+                onToggle={() => {
+                  togglePortalOpen(p.id)
+                }}
+                // "both" fill mode, not "backwards" alone: "backwards" only
+                // holds the from-keyframe (opacity:0) during the delay
+                // *before* the animation starts — once it finishes, fill
+                // stops applying entirely and the element falls back to its
+                // own static styles. Without a forwards-inclusive fill mode
+                // there'd be nothing left setting opacity back to 1, so every
+                // card would render, animate in, then vanish the instant the
+                // animation ends. "both" = "backwards" (delay) + "forwards"
+                // (after it ends) — this was the actual bug, found live via
+                // Playwright. See
+                // plan/ai/tools/career/step-58-portals-page-modal-accordion-redesign.md.
+                className="[animation:fade-in-up_600ms_ease-out_both]"
+                header={
+                  editingPortalId === p.id ? (
+                    // Not a real interaction — only stops the header row's own
+                    // onClick (AccordionItem's toggle) from firing while editing.
+                    // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
+                    <div
+                      className="flex items-center gap-2"
                       onClick={(e) => {
                         e.stopPropagation()
-                        startEditPortal(p)
                       }}
-                      className="rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50"
                     >
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleDeletePortal(p.id)
-                      }}
-                      className="rounded-md border border-gray-200 px-2.5 py-1 text-xs text-red-700 hover:bg-red-50"
-                    >
-                      Delete
-                    </button>
-                  </span>
-                </div>
-              )
-            }
-            // Staggered mount cascade — animation-delay set inline since
-            // Tailwind's own utilities have no per-index dynamic value.
-            style={{ animationDelay: `${index * 90}ms` }}
-            overlay={
-              addingLinkPortalId === p.id ? (
-                <>
-                  <h3 className="mb-3 text-sm font-semibold text-gray-900">Add link</h3>
-                  {/* No flex-1 here — that would stretch to fill the overlay's
+                      <input
+                        // Deliberate: entering edit mode should focus the input
+                        // immediately, the same convention most inline-rename UIs use.
+                        // eslint-disable-next-line jsx-a11y/no-autofocus
+                        autoFocus
+                        value={editPortalName}
+                        onChange={(e) => {
+                          setEditPortalName(e.target.value)
+                        }}
+                        placeholder="Name"
+                        className="min-w-0 flex-1 rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          saveEditPortal(p.id)
+                        }}
+                        className="shrink-0 rounded-md bg-gray-900 px-3 py-1 text-xs font-medium text-white hover:bg-gray-800"
+                      >
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        onClick={cancelEditPortal}
+                        className="shrink-0 rounded-md border border-gray-200 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex min-w-0 items-center gap-3">
+                      <span
+                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white shadow-sm"
+                        style={{ background: accentFor(p.name).to }}
+                        aria-hidden="true"
+                      >
+                        {initialOf(p.name)}
+                      </span>
+                      <span className="truncate text-sm font-semibold">{p.name}</span>
+                      <span
+                        className="shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium"
+                        style={{ background: PAGE_ACCENT.soft, color: PAGE_ACCENT.text }}
+                      >
+                        {plural(p.links.length, 'link', 'links')}
+                      </span>
+                      <span className="ml-auto flex shrink-0 gap-2">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            startEditPortal(p)
+                          }}
+                          className="rounded-full border border-blue-200 px-3 py-1 text-xs text-blue-700 hover:bg-blue-50"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleDeletePortal(p.id)
+                          }}
+                          className="rounded-full border border-red-200 px-3 py-1 text-xs text-red-700 hover:bg-red-50"
+                        >
+                          Delete
+                        </button>
+                      </span>
+                    </div>
+                  )
+                }
+                // Staggered mount cascade — animation-delay set inline since
+                // Tailwind's own utilities have no per-index dynamic value.
+                style={{
+                  animationDelay: `${index * 90}ms`,
+                  borderColor: PAGE_ACCENT.soft,
+                  background: `linear-gradient(160deg, #ffffff 45%, ${PAGE_ACCENT.soft} 100%)`,
+                }}
+                overlay={
+                  addingLinkPortalId === p.id ? (
+                    <>
+                      <h3 className="mb-3 text-sm font-semibold text-gray-900">Add link</h3>
+                      {/* No flex-1 here — that would stretch to fill the overlay's
                       own min-h (added so the form isn't clipped on a portal
                       with few/no links) and push the buttons down to the
                       bottom instead of right under the URL field. See
                       plan/ai/tools/career/step-59-portals-add-link-container-overlay.md. */}
-                  <div className="flex flex-col gap-2">
-                    <input
-                      // Deliberate: opening the overlay should focus the
-                      // first field immediately, same convention every
-                      // other inline form on this page already uses.
-                      // eslint-disable-next-line jsx-a11y/no-autofocus
-                      autoFocus
-                      value={linkTitleDraft(p.id)}
-                      onChange={(e) => {
-                        setLinkTitleDrafts((prev) => ({ ...prev, [p.id]: e.target.value }))
-                      }}
-                      placeholder="Title, e.g. Software Engineer jobs, Hamburg"
-                      className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
-                    />
-                    <input
-                      value={linkUrlDraft(p.id)}
-                      onChange={(e) => {
-                        setLinkUrlDrafts((prev) => ({ ...prev, [p.id]: e.target.value }))
-                      }}
-                      placeholder="URL to crawl"
-                      className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
-                    />
-                  </div>
-                  <div className="mt-3 flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        handleAddLink(p.id)
-                      }}
-                      className="flex items-center gap-1 rounded-md bg-gray-900 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800"
-                    >
-                      <PlusIcon />
-                      Create link
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        cancelAddLink(p.id)
-                      }}
-                      className="rounded-md border border-gray-200 px-3.5 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </>
-              ) : undefined
-            }
-          >
-            <div className="space-y-3">
-              {/* Each link is a nested accordion, closed by default (step 89):
+                      <div className="flex flex-col gap-2">
+                        <input
+                          // Deliberate: opening the overlay should focus the
+                          // first field immediately, same convention every
+                          // other inline form on this page already uses.
+                          // eslint-disable-next-line jsx-a11y/no-autofocus
+                          autoFocus
+                          value={linkTitleDraft(p.id)}
+                          onChange={(e) => {
+                            setLinkTitleDrafts((prev) => ({ ...prev, [p.id]: e.target.value }))
+                          }}
+                          placeholder="Title, e.g. Software Engineer jobs, Hamburg"
+                          className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
+                        />
+                        <input
+                          value={linkUrlDraft(p.id)}
+                          onChange={(e) => {
+                            setLinkUrlDrafts((prev) => ({ ...prev, [p.id]: e.target.value }))
+                          }}
+                          placeholder="URL to crawl"
+                          className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
+                        />
+                      </div>
+                      <div className="mt-3 flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleAddLink(p.id)
+                          }}
+                          className="flex items-center gap-1 rounded-md bg-gray-900 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800"
+                        >
+                          <PlusIcon />
+                          Create link
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            cancelAddLink(p.id)
+                          }}
+                          className="rounded-md border border-gray-200 px-3.5 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </>
+                  ) : undefined
+                }
+              >
+                <div className="space-y-3">
+                  {/* Each link is a nested accordion, closed by default (step 89):
                   the header carries what you need at a glance and its
                   Edit/Remove, the body is the link's whole CrawlPanel. The
                   body stays mounted while closed, so a closed link still
                   resumes/finishes generations and crawls. */}
-              {p.links.map((link) => (
-                <AccordionItem
-                  key={link.id}
-                  variant="nested"
-                  isOpen={openLinkIds.has(link.id)}
-                  onToggle={() => {
-                    toggleLinkOpen(link.id)
-                  }}
-                  header={
-                    <PortalLinkHeader
-                      link={link}
-                      isEditing={editingLinkId === link.id}
-                      editTitle={editLinkTitle}
-                      editUrl={editLinkUrl}
-                      onEditTitleChange={setEditLinkTitle}
-                      onEditUrlChange={setEditLinkUrl}
-                      onStartEdit={() => {
-                        startEditLink(link)
+                  {p.links.map((link) => (
+                    <AccordionItem
+                      key={link.id}
+                      variant="nested"
+                      isOpen={openLinkIds.has(link.id)}
+                      onToggle={() => {
+                        toggleLinkOpen(link.id)
                       }}
-                      onSaveEdit={() => {
-                        saveEditLink(link.id)
-                      }}
-                      onCancelEdit={cancelEditLink}
-                      onRemove={() => {
-                        handleRemoveLink(link.id)
-                      }}
-                    />
-                  }
-                >
-                  <CrawlPanel
-                    link={link}
-                    selectedPlatform={ai.platform}
-                    selectedModel={ai.model}
-                    hasPlatforms={ai.platforms.length > 0}
-                    onReload={load}
-                    onError={setError}
-                  />
-                </AccordionItem>
-              ))}
-            </div>
+                      header={
+                        <PortalLinkHeader
+                          link={link}
+                          isEditing={editingLinkId === link.id}
+                          editTitle={editLinkTitle}
+                          editUrl={editLinkUrl}
+                          onEditTitleChange={setEditLinkTitle}
+                          onEditUrlChange={setEditLinkUrl}
+                          onStartEdit={() => {
+                            startEditLink(link)
+                          }}
+                          onSaveEdit={() => {
+                            saveEditLink(link.id)
+                          }}
+                          onCancelEdit={cancelEditLink}
+                          onRemove={() => {
+                            handleRemoveLink(link.id)
+                          }}
+                        />
+                      }
+                    >
+                      <CrawlPanel
+                        link={link}
+                        selectedPlatform={ai.platform}
+                        selectedModel={ai.model}
+                        hasPlatforms={ai.platforms.length > 0}
+                        onReload={load}
+                        onError={setError}
+                      />
+                    </AccordionItem>
+                  ))}
+                </div>
 
-            <div className="mt-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setAddingLinkPortalId(p.id)
-                }}
-                className="flex items-center gap-1 rounded-md border border-gray-200 px-2.5 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
-              >
-                <PlusIcon />
-                Add link
-              </button>
-            </div>
-          </AccordionItem>
-        ))}
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAddingLinkPortalId(p.id)
+                    }}
+                    className="flex items-center gap-1 rounded-full border border-blue-200 px-3 py-1.5 text-xs text-blue-700 hover:bg-blue-50"
+                  >
+                    <PlusIcon />
+                    Add link
+                  </button>
+                </div>
+              </AccordionItem>
+            ))}
+          </div>
+        </div>
+
+        <aside className="order-2 w-full shrink-0 lg:order-1 lg:sticky lg:top-6 lg:w-56">
+          <SummaryRail
+            title="Overview"
+            segments={[
+              { value: summary.withInstructions, color: '#16a34a' },
+              { value: summary.links - summary.withInstructions, color: '#cbd5e1' },
+            ]}
+            centerValue={summary.links === 0 ? '–' : `${Math.round((summary.withInstructions / summary.links) * 100)}%`}
+            centerLabel="ready to crawl"
+            rows={[
+              { label: 'Portals', value: String(summary.portals), color: ACCENTS[0].to },
+              { label: 'Links', value: String(summary.links), color: ACCENTS[6].to },
+              { label: 'With instructions', value: String(summary.withInstructions), color: '#16a34a' },
+              { label: 'Never crawled', value: String(summary.neverCrawled), color: ACCENTS[2].to, emphasis: summary.neverCrawled > 0 },
+            ]}
+          >
+            {/* Step 88 — only while some link has crawl instructions: with none,
+                there is nothing the global auto-discovery could crawl. */}
+            {anyLinkAutoDiscoverable(portals) && <AutoDiscoveryPanel />}
+          </SummaryRail>
+        </aside>
       </div>
 
       <Modal

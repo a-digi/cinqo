@@ -99,7 +99,7 @@ export function PortalLinkHeader({
           onClick={(e) => {
             e.stopPropagation()
           }}
-          className="block truncate text-xs font-medium text-gray-900 underline hover:text-gray-700"
+          className="block truncate text-xs font-semibold text-blue-700 underline decoration-blue-200 hover:decoration-blue-500"
         >
           {link.title ?? '(untitled link)'}
         </a>
@@ -116,7 +116,7 @@ export function PortalLinkHeader({
             e.stopPropagation()
             onStartEdit()
           }}
-          className="text-xs text-gray-500 underline hover:text-gray-700"
+          className="rounded-full border border-blue-200 bg-white px-2.5 py-0.5 text-xs text-blue-700 hover:bg-blue-50"
         >
           Edit
         </button>
@@ -126,7 +126,7 @@ export function PortalLinkHeader({
             e.stopPropagation()
             onRemove()
           }}
-          className="text-xs text-red-700 underline hover:text-red-800"
+          className="rounded-full border border-red-200 bg-white px-2.5 py-0.5 text-xs text-red-700 hover:bg-red-50"
         >
           Remove
         </button>

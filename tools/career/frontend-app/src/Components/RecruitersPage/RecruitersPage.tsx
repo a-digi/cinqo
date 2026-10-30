@@ -1,19 +1,30 @@
 import { useEffect, useState } from 'react'
 import { fetchRecruiters, createRecruiter, updateRecruiter, removeRecruiter, fetchCompanies, type Recruiter, type Company } from '../../api'
 import { Dropdown } from '../Dropdown/Dropdown'
-import { PlusIcon } from '../../Shared/Icons/icons'
+import { PlusIcon, UsersIcon } from '../../Shared/Icons/icons'
+import { Modal } from '../../Shared/Modal/Modal'
+import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
+import { SummaryRail } from '../../Shared/SummaryRail/SummaryRail'
+import { ACCENTS, PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
+import { percentOrNull, plural } from '../CompaniesPage/companyStats'
+import { recruiterName, summarizeRecruiters } from './recruiterStats'
 
 const COMPANIES_PATH = '/tools/career/companies'
+
+const inputClass = 'w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none'
 
 // Recruiters are forced to be mapped to an existing Company, never
 // implicit — the same pattern step 8/10 already established for
 // Persona->Profile. No company reassignment on edit, matching the
-// backend's own update_recruiter. See
+// backend's own update_recruiter. The page has the same layout as Portals and
+// Companies: header card, an overview on the left, the recruiters on the right,
+// "New recruiter" in a dialog. See
 // plan/ai/tools/career/step-17-recruiters-frontend.md.
 export function RecruitersPage() {
   const [companies, setCompanies] = useState<Company[]>([])
   const [recruiters, setRecruiters] = useState<Recruiter[]>([])
   const [filterCompanyId, setFilterCompanyId] = useState(() => new URLSearchParams(window.location.search).get('companyId') ?? '')
+  const [isNewOpen, setIsNewOpen] = useState(false)
   const [newCompanyId, setNewCompanyId] = useState('')
   const [newFirstName, setNewFirstName] = useState('')
   const [newLastName, setNewLastName] = useState('')
@@ -48,6 +59,13 @@ export function RecruitersPage() {
     load(id)
   }
 
+  function closeNew() {
+    setIsNewOpen(false)
+    setNewFirstName('')
+    setNewLastName('')
+    setNewEmail('')
+  }
+
   function handleCreate() {
     const firstName = newFirstName.trim()
     const lastName = newLastName.trim()
@@ -63,9 +81,7 @@ export function RecruitersPage() {
     setError('')
     createRecruiter(newCompanyId, firstName, lastName, email)
       .then(() => {
-        setNewFirstName('')
-        setNewLastName('')
-        setNewEmail('')
+        closeNew()
         load()
       })
       .catch((err: unknown) => {
@@ -116,170 +132,240 @@ export function RecruitersPage() {
   }
 
   const companyNames: Record<string, string> = Object.fromEntries(companies.map((c) => [c.id, c.name]))
+  const summary = summarizeRecruiters(recruiters)
+  const withEmailPercent = percentOrNull(summary.withEmail, summary.recruiters)
+  const filtered = filterCompanyId !== ''
 
   return (
-    <div className="max-w-2xl p-6 font-sans text-gray-900">
-      <h1 className="mb-1.5 text-xl font-semibold">Recruiters</h1>
-      <p className="mb-5 text-sm text-gray-500">
-        Recruiter contacts, each tied to an existing company. A recruiter's own company cannot be changed after creation — delete and
-        recreate instead.
-      </p>
+    <div className="max-w-7xl p-6 font-sans text-gray-900">
+      <PageHeaderCard
+        icon={<UsersIcon />}
+        title="Recruiters"
+        description="Recruiter contacts, each tied to an existing company. A recruiter's company cannot be changed after creation: delete and recreate instead."
+        pill={{ text: plural(summary.recruiters, 'recruiter', 'recruiters') }}
+      />
 
-      <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
-
-      {companies.length > 0 && (
-        <div className="mb-4">
-          <Dropdown
-            label="Filter by company"
-            placeholder="All companies"
-            options={[{ value: '', label: 'All companies' }, ...companies.map((c) => ({ value: c.id, label: c.name }))]}
-            value={filterCompanyId}
-            onChange={handleFilterChange}
-          />
-        </div>
-      )}
-
-      <div className="mb-4 space-y-3">
-        {recruiters.map((r) => (
-          <div key={r.id} className="rounded-md border border-gray-200 p-3">
-            {editingId === r.id ? (
-              <div>
-                <input
-                  // Deliberate: entering edit mode should focus the input
-                  // immediately, the same convention most inline-rename UIs use.
-                  // eslint-disable-next-line jsx-a11y/no-autofocus
-                  autoFocus
-                  value={editFirstName}
-                  onChange={(e) => {
-                    setEditFirstName(e.target.value)
-                  }}
-                  placeholder="First name"
-                  className="mb-2 w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
-                />
-                <input
-                  value={editLastName}
-                  onChange={(e) => {
-                    setEditLastName(e.target.value)
-                  }}
-                  placeholder="Last name"
-                  className="mb-2 w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
-                />
-                <input
-                  value={editEmail}
-                  onChange={(e) => {
-                    setEditEmail(e.target.value)
-                  }}
-                  placeholder="Email"
-                  className="mb-2 w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
-                />
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      saveEdit(r.id)
-                    }}
-                    className="rounded-md bg-gray-900 px-3 py-1 text-xs font-medium text-white hover:bg-gray-800"
-                  >
-                    Save
-                  </button>
-                  <button
-                    type="button"
-                    onClick={cancelEdit}
-                    className="rounded-md border border-gray-200 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
+        <div className="order-1 min-w-0 flex-1 lg:order-2">
+          <div className="mb-3 flex items-end justify-between gap-3">
+            {companies.length > 0 ? (
+              <Dropdown
+                label="Filter by company"
+                placeholder="All companies"
+                options={[{ value: '', label: 'All companies' }, ...companies.map((c) => ({ value: c.id, label: c.name }))]}
+                value={filterCompanyId}
+                onChange={handleFilterChange}
+              />
             ) : (
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-sm font-medium">
-                    {r.firstName || r.lastName ? `${r.firstName} ${r.lastName}`.trim() : '(unnamed)'}
-                  </div>
-                  {r.email && <div className="mt-0.5 text-xs text-gray-500">{r.email}</div>}
-                  <div className="mt-0.5 text-xs text-gray-400">{companyNames[r.companyId] ?? '…'}</div>
-                </div>
-                <div className="flex shrink-0 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      startEdit(r)
-                    }}
-                    className="rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      handleDelete(r.id)
-                    }}
-                    className="rounded-md border border-gray-200 px-2.5 py-1 text-xs text-red-700 hover:bg-red-50"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
+              <span />
+            )}
+            {companies.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsNewOpen(true)
+                }}
+                className="flex shrink-0 items-center gap-1.5 rounded-md bg-gray-800 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-900"
+              >
+                <PlusIcon />
+                New recruiter
+              </button>
             )}
           </div>
-        ))}
+
+          <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
+
+          {companies.length === 0 && (
+            <div
+              className="rounded-3xl border p-6 text-sm text-gray-700"
+              style={{ borderColor: PAGE_ACCENT.soft, background: PAGE_ACCENT.soft }}
+            >
+              No companies yet.{' '}
+              <a href={COMPANIES_PATH} onClick={navigateToCompanies} className="font-medium underline">
+                Create one first
+              </a>
+              .
+            </div>
+          )}
+
+          {companies.length > 0 && recruiters.length === 0 && !error && (
+            <div
+              className="rounded-3xl border p-8 text-center text-sm text-gray-500"
+              style={{ borderColor: PAGE_ACCENT.soft, background: PAGE_ACCENT.soft }}
+            >
+              {filtered ? 'This company has no recruiters yet.' : 'No recruiters yet. Add the first one with “New recruiter”.'}
+            </div>
+          )}
+
+          <div className="space-y-3">
+            {recruiters.map((r) => {
+              const name = recruiterName(r)
+              const companyName = companyNames[r.companyId] ?? '…'
+              const companyAccent = accentFor(companyName)
+              return (
+                <div
+                  key={r.id}
+                  className="rounded-3xl border p-4 shadow-sm transition-shadow hover:shadow-md"
+                  style={{ borderColor: PAGE_ACCENT.soft, background: `linear-gradient(160deg, #ffffff 45%, ${PAGE_ACCENT.soft} 100%)` }}
+                >
+                  {editingId === r.id ? (
+                    <div>
+                      <input
+                        // Deliberate: entering edit mode should focus the input
+                        // immediately, the same convention most inline-rename UIs use.
+                        // eslint-disable-next-line jsx-a11y/no-autofocus
+                        autoFocus
+                        value={editFirstName}
+                        onChange={(e) => {
+                          setEditFirstName(e.target.value)
+                        }}
+                        placeholder="First name"
+                        className={`mb-2 ${inputClass}`}
+                      />
+                      <input
+                        value={editLastName}
+                        onChange={(e) => {
+                          setEditLastName(e.target.value)
+                        }}
+                        placeholder="Last name"
+                        className={`mb-2 ${inputClass}`}
+                      />
+                      <input
+                        value={editEmail}
+                        onChange={(e) => {
+                          setEditEmail(e.target.value)
+                        }}
+                        placeholder="Email"
+                        className={`mb-2 ${inputClass}`}
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            saveEdit(r.id)
+                          }}
+                          className="rounded-md bg-gray-900 px-3 py-1 text-xs font-medium text-white hover:bg-gray-800"
+                        >
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          onClick={cancelEdit}
+                          className="rounded-md border border-gray-200 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-start gap-3">
+                      <span
+                        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-base font-bold text-white shadow-sm"
+                        style={{ background: accentFor(name).to }}
+                        aria-hidden="true"
+                      >
+                        {initialOf(name)}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-semibold">{name}</div>
+                        {r.email && <div className="mt-0.5 truncate text-xs text-gray-500">{r.email}</div>}
+                        <span
+                          className="mt-2 inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium"
+                          style={{ background: companyAccent.soft, color: companyAccent.text }}
+                        >
+                          {companyName}
+                        </span>
+                      </div>
+                      <div className="flex shrink-0 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            startEdit(r)
+                          }}
+                          className="rounded-full border border-blue-200 px-3 py-1 text-xs text-blue-700 hover:bg-blue-50"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleDelete(r.id)
+                          }}
+                          className="rounded-full border border-red-200 px-3 py-1 text-xs text-red-700 hover:bg-red-50"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        <aside className="order-2 w-full shrink-0 lg:order-1 lg:sticky lg:top-6 lg:w-56">
+          <SummaryRail
+            title={filtered ? 'Overview (filtered)' : 'Overview'}
+            segments={[
+              { value: summary.withEmail, color: '#16a34a' },
+              { value: summary.withoutEmail, color: '#cbd5e1' },
+            ]}
+            centerValue={withEmailPercent === null ? '–' : `${withEmailPercent}%`}
+            centerLabel="have an email"
+            rows={[
+              { label: 'Recruiters', value: String(summary.recruiters), color: ACCENTS[0].to },
+              { label: 'With email', value: String(summary.withEmail), color: '#16a34a' },
+              { label: 'Without email', value: String(summary.withoutEmail), color: ACCENTS[2].to, emphasis: summary.withoutEmail > 0 },
+              { label: 'Companies', value: String(summary.companies), color: ACCENTS[4].to },
+            ]}
+          />
+        </aside>
       </div>
 
-      {companies.length === 0 ? (
-        <div className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
-          No companies yet.{' '}
-          <a href={COMPANIES_PATH} onClick={navigateToCompanies} className="font-medium underline">
-            Create one first
-          </a>
-          .
+      <Modal open={isNewOpen} title="New recruiter" onClose={closeNew}>
+        <div className="mb-2">
+          <Dropdown
+            label="Company"
+            placeholder="Select a company"
+            options={companies.map((c) => ({ value: c.id, label: c.name }))}
+            value={newCompanyId}
+            onChange={setNewCompanyId}
+          />
         </div>
-      ) : (
-        <section className="rounded-md border border-gray-200 p-4 shadow-sm">
-          <h2 className="mb-3 text-sm font-semibold">New recruiter</h2>
-          <div className="mb-2">
-            <Dropdown
-              label="Company"
-              placeholder="Select a company"
-              options={companies.map((c) => ({ value: c.id, label: c.name }))}
-              value={newCompanyId}
-              onChange={setNewCompanyId}
-            />
-          </div>
-          <input
-            value={newFirstName}
-            onChange={(e) => {
-              setNewFirstName(e.target.value)
-            }}
-            placeholder="First name"
-            className="mb-2 w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
-          />
-          <input
-            value={newLastName}
-            onChange={(e) => {
-              setNewLastName(e.target.value)
-            }}
-            placeholder="Last name"
-            className="mb-2 w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
-          />
-          <input
-            value={newEmail}
-            onChange={(e) => {
-              setNewEmail(e.target.value)
-            }}
-            placeholder="Email"
-            className="mb-2 w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
-          />
-          <button
-            type="button"
-            onClick={handleCreate}
-            className="flex items-center gap-1 rounded-md bg-gray-900 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800"
-          >
-            <PlusIcon />
-            Create recruiter
-          </button>
-        </section>
-      )}
+        <input
+          value={newFirstName}
+          onChange={(e) => {
+            setNewFirstName(e.target.value)
+          }}
+          placeholder="First name"
+          className={`mb-2 ${inputClass}`}
+        />
+        <input
+          value={newLastName}
+          onChange={(e) => {
+            setNewLastName(e.target.value)
+          }}
+          placeholder="Last name"
+          className={`mb-2 ${inputClass}`}
+        />
+        <input
+          value={newEmail}
+          onChange={(e) => {
+            setNewEmail(e.target.value)
+          }}
+          placeholder="Email"
+          className={`mb-3 ${inputClass}`}
+        />
+        <button
+          type="button"
+          onClick={handleCreate}
+          className="flex items-center gap-1 rounded-md bg-gray-900 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800"
+        >
+          <PlusIcon />
+          Create recruiter
+        </button>
+      </Modal>
     </div>
   )
 }
