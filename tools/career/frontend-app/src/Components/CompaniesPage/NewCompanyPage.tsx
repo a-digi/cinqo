@@ -47,7 +47,7 @@ export function NewCompanyPage() {
           e.preventDefault()
           handleCreate()
         }}
-        className="rounded-3xl border p-5 shadow-sm"
+        className="career-enter career-delay-1 rounded-3xl border p-5 shadow-sm"
         style={{ borderColor: PAGE_ACCENT.soft, background: `linear-gradient(160deg, #ffffff 45%, ${PAGE_ACCENT.soft} 100%)` }}
       >
         <label className="mb-1 block text-xs font-medium text-gray-600" htmlFor="company-name">

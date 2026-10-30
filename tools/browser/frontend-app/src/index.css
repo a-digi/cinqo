@@ -1,1 +1,76 @@
 @import 'tailwindcss';
+
+/* Page entrance, the same look as the Career tool's (its own copy, under its own names so the two
+   tools' stylesheets, which share one page, never touch each other). Slow on purpose (900 ms): an
+   element rises a few pixels while it fades in. .browser-enter animates one element
+   (browser-delay-N pushes it back); .browser-stagger animates the children of a list one after
+   another. backwards fill, not both: once finished the element keeps no transform, so nothing
+   inside it is left in a transformed containing block. Off for people who ask for less motion. */
+@keyframes browser-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.browser-enter,
+.browser-stagger > * {
+  animation: browser-rise 900ms cubic-bezier(0.22, 0.61, 0.36, 1) backwards;
+}
+
+.browser-delay-1 {
+  animation-delay: 150ms;
+}
+
+.browser-delay-2 {
+  animation-delay: 300ms;
+}
+
+.browser-delay-3 {
+  animation-delay: 450ms;
+}
+
+.browser-stagger > :nth-child(1) {
+  animation-delay: 150ms;
+}
+.browser-stagger > :nth-child(2) {
+  animation-delay: 280ms;
+}
+.browser-stagger > :nth-child(3) {
+  animation-delay: 410ms;
+}
+.browser-stagger > :nth-child(4) {
+  animation-delay: 540ms;
+}
+.browser-stagger > :nth-child(5) {
+  animation-delay: 670ms;
+}
+.browser-stagger > :nth-child(6) {
+  animation-delay: 800ms;
+}
+.browser-stagger > :nth-child(7) {
+  animation-delay: 930ms;
+}
+.browser-stagger > :nth-child(8) {
+  animation-delay: 1060ms;
+}
+.browser-stagger > :nth-child(9) {
+  animation-delay: 1190ms;
+}
+.browser-stagger > :nth-child(10) {
+  animation-delay: 1320ms;
+}
+.browser-stagger > :nth-child(n + 11) {
+  animation-delay: 1450ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .browser-enter,
+  .browser-stagger > * {
+    animation: none;
+  }
+}

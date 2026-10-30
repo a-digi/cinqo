@@ -139,7 +139,7 @@ export function PersonasPage() {
           )}
 
           {profileId && (
-            <div className="space-y-3">
+            <div className="career-stagger space-y-3">
               {personas.map((p) => (
                 <div
                   key={p.id}

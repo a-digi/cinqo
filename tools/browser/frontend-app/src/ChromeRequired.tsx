@@ -21,7 +21,7 @@ export function ChromeRequired() {
   return (
     <div className="flex justify-center p-6 font-sans text-gray-900">
       <div
-        className="mt-6 w-full max-w-xl rounded-3xl border p-7 text-center shadow-sm"
+        className="browser-enter mt-6 w-full max-w-xl rounded-3xl border p-7 text-center shadow-sm"
         style={{ borderColor: rose.soft, background: `linear-gradient(160deg, #ffffff 40%, ${rose.soft} 100%)` }}
       >
         <span

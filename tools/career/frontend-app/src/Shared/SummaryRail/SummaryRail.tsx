@@ -34,7 +34,7 @@ export function SummaryRail({
 }) {
   const arcs = ringArcs(segments, CIRCUMFERENCE)
   return (
-    <div>
+    <div className="career-enter career-delay-2">
       <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-gray-400">{title}</p>
 
       <div className="relative mx-auto h-36 w-36">

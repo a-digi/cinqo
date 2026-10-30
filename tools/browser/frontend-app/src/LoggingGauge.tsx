@@ -16,7 +16,7 @@ export function LoggingGauge({ layers, level }: { layers: Layer[]; level: number
   // Most detailed on top, the base at the bottom.
   const stacked = [...layers].reverse()
   return (
-    <section className="rounded-3xl border bg-white p-4 shadow-sm" style={{ borderColor: PAGE_ACCENT.soft }}>
+    <section className="browser-enter browser-delay-1 rounded-3xl border bg-white p-4 shadow-sm" style={{ borderColor: PAGE_ACCENT.soft }}>
       <div className="flex items-baseline justify-between">
         <h2 className="text-sm font-semibold text-gray-800">Logging level</h2>
         <span className={`text-xs font-semibold ${level === 0 ? 'text-gray-500' : 'text-green-700'}`}>

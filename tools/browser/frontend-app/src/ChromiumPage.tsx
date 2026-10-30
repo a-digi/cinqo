@@ -17,7 +17,7 @@ import { cardClassName, cardStyle } from './Shared/cardStyle'
 export function ChromeSection({ chrome }: { chrome: ReturnType<typeof useChromeStatus> }) {
   const { status, error, wasMissing } = chrome
   return (
-    <section className={`mb-5 ${cardClassName}`} style={cardStyle}>
+    <section className={`browser-enter browser-delay-2 mb-5 ${cardClassName}`} style={cardStyle}>
       <h2 className="mb-1 text-base font-semibold text-gray-900">Chrome</h2>
       <p className="mb-4 text-sm text-gray-500">
         The Browser tool drives a real Chrome or Chromium to fetch pages. It must be installed on the computer where Cinqo is running.

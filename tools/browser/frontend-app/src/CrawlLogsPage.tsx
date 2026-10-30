@@ -139,7 +139,7 @@ export function CrawlLogsPage() {
             </div>
           )}
 
-          <div className="space-y-3">
+          <div className="browser-stagger space-y-3">
             {shown.map((entry) => {
               const expanded = expandedId === entry.id
               const detail = details[entry.id]

@@ -158,7 +158,7 @@ export function ProfilesPage() {
             </div>
           )}
 
-          <div className="space-y-3">
+          <div className="career-stagger space-y-3">
             {profiles.map((p) => {
               const draft = linkDraft(p.id)
               const name = profileLabel(p)

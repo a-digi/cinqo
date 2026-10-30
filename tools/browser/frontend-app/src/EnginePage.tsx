@@ -52,7 +52,7 @@ export function EngineSection({ engine }: { engine: ReturnType<typeof useEngine>
   }
 
   return (
-    <div className="space-y-5">
+    <div className="browser-stagger space-y-5">
       <section className={cardClassName} style={cardStyle}>
         <h2 className="mb-1 text-base font-semibold text-gray-900">Engine</h2>
         <p className="mb-4 text-sm text-gray-500">

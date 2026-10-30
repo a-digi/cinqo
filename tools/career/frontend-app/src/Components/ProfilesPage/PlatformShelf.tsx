@@ -16,7 +16,7 @@ export function PlatformShelf({
 }) {
   if (platforms.length === 0 && withoutLinks === 0) return null
   return (
-    <div className="mb-5">
+    <div className="career-enter career-delay-1 mb-5">
       <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Links by platform</div>
       <div className="flex gap-3 overflow-x-auto pb-1">
         {platforms.map((p) => {

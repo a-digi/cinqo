@@ -99,7 +99,7 @@ export function CrawlMonitorPage() {
 
           {loaded && runs.length === 0 && !error && (
             <div
-              className="flex flex-col items-center rounded-3xl border p-10 text-center"
+              className="career-enter career-delay-1 flex flex-col items-center rounded-3xl border p-10 text-center"
               style={{ borderColor: ACCENTS[0].soft, background: `linear-gradient(160deg, #ffffff 45%, ${ACCENTS[0].soft} 100%)` }}
             >
               <span
@@ -117,7 +117,7 @@ export function CrawlMonitorPage() {
 
           {runs.length > 0 && (
             <div
-              className="relative overflow-hidden rounded-3xl border shadow-sm"
+              className="career-enter career-delay-1 relative overflow-hidden rounded-3xl border shadow-sm"
               style={{ borderColor: ACCENTS[0].soft, background: `linear-gradient(170deg, #ffffff 55%, ${ACCENTS[0].soft} 100%)` }}
             >
               <div className="relative overflow-x-auto">

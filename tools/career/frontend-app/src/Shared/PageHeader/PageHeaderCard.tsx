@@ -20,7 +20,7 @@ export function PageHeaderCard({
   const pillAccent = pill?.accent ?? accent
   return (
     <div
-      className="relative mb-5 overflow-hidden rounded-3xl border p-5"
+      className="career-enter relative mb-5 overflow-hidden rounded-3xl border p-5"
       style={{ borderColor: accent.soft, background: `linear-gradient(160deg, #ffffff 40%, ${accent.soft} 100%)` }}
     >
       <div

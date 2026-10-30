@@ -17,7 +17,7 @@ export function CvReadiness({
 }) {
   const done = readyCount(items)
   return (
-    <section className="rounded-3xl border bg-white p-4 shadow-sm" style={{ borderColor: PAGE_ACCENT.soft }}>
+    <section className="career-enter career-delay-2 rounded-3xl border bg-white p-4 shadow-sm" style={{ borderColor: PAGE_ACCENT.soft }}>
       <div className="flex items-baseline justify-between">
         <h2 className="text-sm font-semibold text-gray-800">CV readiness</h2>
         {status !== 'loading' && (

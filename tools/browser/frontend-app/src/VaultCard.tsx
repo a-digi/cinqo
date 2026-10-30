@@ -7,7 +7,7 @@ import type { SuffixCount } from './credentialRules'
 // cannot see of them.
 export function VaultCard({ total, suffixes }: { total: number; suffixes: SuffixCount[] }) {
   return (
-    <section className="rounded-3xl border bg-white p-4 shadow-sm" style={{ borderColor: PAGE_ACCENT.soft }}>
+    <section className="browser-enter browser-delay-1 rounded-3xl border bg-white p-4 shadow-sm" style={{ borderColor: PAGE_ACCENT.soft }}>
       <div className="flex items-center gap-3">
         <span
           className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-white"

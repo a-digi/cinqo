@@ -95,7 +95,7 @@ export function ExperiencePage() {
           )}
 
           {personaId && (
-            <div className="space-y-3">
+            <div className="career-stagger space-y-3">
               {experience.map((exp) => {
                 const isCurrent = exp.endDate.trim() === ''
                 return (

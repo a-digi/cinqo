@@ -105,7 +105,7 @@ export function CompanyViewPage() {
               No jobs are linked to this company yet. Link one from the Jobs page.
             </div>
           )}
-          <div className="space-y-3">
+          <div className="career-stagger space-y-3">
             {jobs.map((job) => (
               <div
                 key={job.id}

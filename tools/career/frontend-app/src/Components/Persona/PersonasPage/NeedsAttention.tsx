@@ -13,7 +13,7 @@ export function NeedsAttention({ total, undescribed, onEdit }: { total: number; 
   const percent = total === 0 ? 0 : Math.round((described / total) * 100)
   const allDone = total > 0 && undescribed.length === 0
   return (
-    <section className="rounded-3xl border bg-white p-4 shadow-sm" style={{ borderColor: PAGE_ACCENT.soft }}>
+    <section className="career-enter career-delay-2 rounded-3xl border bg-white p-4 shadow-sm" style={{ borderColor: PAGE_ACCENT.soft }}>
       <div className="flex items-baseline justify-between">
         <h2 className="text-sm font-semibold text-gray-800">Needs attention</h2>
         <span className="text-xs text-gray-500">

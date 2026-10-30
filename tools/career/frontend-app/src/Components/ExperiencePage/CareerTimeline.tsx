@@ -15,7 +15,10 @@ export function CareerTimeline({ entries, today }: { entries: CareerExperience[]
   const undated = timeline.undated.map((id) => byId.get(id)).filter((e): e is CareerExperience => e !== undefined)
 
   return (
-    <section className="mb-5 rounded-3xl border bg-white p-4 shadow-sm" style={{ borderColor: PAGE_ACCENT.soft }}>
+    <section
+      className="career-enter career-delay-1 mb-5 rounded-3xl border bg-white p-4 shadow-sm"
+      style={{ borderColor: PAGE_ACCENT.soft }}
+    >
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-sm font-semibold text-gray-800">Career timeline</h2>
         {timeline.segments.length > 0 && (

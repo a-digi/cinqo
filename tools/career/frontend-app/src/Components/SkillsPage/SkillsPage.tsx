@@ -117,7 +117,7 @@ export function SkillsPage() {
 
       {personaId && (
         <section
-          className="rounded-3xl border p-5 shadow-sm"
+          className="career-enter career-delay-1 rounded-3xl border p-5 shadow-sm"
           style={{ borderColor: PAGE_ACCENT.soft, background: `linear-gradient(160deg, #ffffff 45%, ${PAGE_ACCENT.soft} 100%)` }}
         >
           {skills.length > 0 && <LetterIndex index={index} active={letter} total={skills.length} onPick={setActiveLetter} />}

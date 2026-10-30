@@ -84,7 +84,7 @@ export function DebugPage() {
           <LoggingGauge layers={loggingLayers(settings)} level={loggingLevel(settings)} />
         </aside>
 
-        <div className="min-w-0 flex-1 space-y-4">
+        <div className="browser-stagger min-w-0 flex-1 space-y-4">
           <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
 
           <section className={cardClassName} style={cardStyle}>

@@ -116,7 +116,7 @@ export function ExperienceEntryPage() {
             e.preventDefault()
             handleSave()
           }}
-          className="rounded-3xl border p-5 shadow-sm"
+          className="career-enter career-delay-1 rounded-3xl border p-5 shadow-sm"
           style={{ borderColor: PAGE_ACCENT.soft, background: `linear-gradient(160deg, #ffffff 45%, ${PAGE_ACCENT.soft} 100%)` }}
         >
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

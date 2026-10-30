@@ -73,7 +73,7 @@ export function AddPage() {
         <div className="min-w-0 flex-1">
           <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
 
-          <form onSubmit={handleSubmit} className={cardClassName} style={cardStyle}>
+          <form onSubmit={handleSubmit} className={`browser-enter browser-delay-1 ${cardClassName}`} style={cardStyle}>
             <div className="mb-4">
               <label htmlFor="cinqo-browser-cred-domain" className="mb-1.5 block text-sm font-medium">
                 Domain

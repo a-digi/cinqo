@@ -68,7 +68,7 @@ export function SettingsPage() {
       <p className="mt-1 mb-5 text-sm text-gray-500">How the Career tool uses AI.</p>
 
       <section
-        className="relative overflow-hidden rounded-3xl border p-6 shadow-sm"
+        className="career-enter career-delay-1 relative overflow-hidden rounded-3xl border p-6 shadow-sm"
         style={{ borderColor: ACCENT.soft, background: `linear-gradient(160deg, #ffffff 40%, ${ACCENT.soft} 100%)` }}
       >
         <div className="pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full opacity-15" style={{ background: ACCENT.to }} />

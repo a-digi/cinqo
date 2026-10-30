@@ -7,7 +7,7 @@ import { PAGE_ACCENT } from '../../Components/JobsPage/jobsTheme'
 export function ScopeBar({ children, managePath, actions }: { children: React.ReactNode; managePath: string; actions?: React.ReactNode }) {
   return (
     <div
-      className="mb-4 flex items-end gap-3 rounded-3xl border px-4 py-3 text-sm"
+      className="career-enter career-delay-1 mb-4 flex items-end gap-3 rounded-3xl border px-4 py-3 text-sm"
       style={{ borderColor: PAGE_ACCENT.soft, background: PAGE_ACCENT.soft }}
     >
       {children}
@@ -32,7 +32,7 @@ export function ScopeBar({ children, managePath, actions }: { children: React.Re
 export function ScopeNotice({ noun, path }: { noun: string; path: string }) {
   return (
     <div
-      className="mb-4 rounded-3xl border p-4 text-sm text-gray-700"
+      className="career-enter career-delay-1 mb-4 rounded-3xl border p-4 text-sm text-gray-700"
       style={{ borderColor: PAGE_ACCENT.soft, background: PAGE_ACCENT.soft }}
     >
       No {noun} yet.{' '}

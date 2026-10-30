@@ -123,7 +123,7 @@ export function PersonaDetailsPage() {
           <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
 
           {personaId && (
-            <section className="rounded-3xl border p-5 shadow-sm" style={cardStyle}>
+            <section className="career-enter career-delay-1 rounded-3xl border p-5 shadow-sm" style={cardStyle}>
               <h2 className="mb-3 text-sm font-semibold text-gray-700">Positioning</h2>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <Field

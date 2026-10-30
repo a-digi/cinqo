@@ -16,7 +16,7 @@ export function LetterIndex({
   onPick: (letter: string | null) => void
 }) {
   return (
-    <nav aria-label="Skills by first letter" className="mb-3 flex flex-wrap items-center gap-1.5">
+    <nav aria-label="Skills by first letter" className="career-enter career-delay-1 mb-3 flex flex-wrap items-center gap-1.5">
       <button
         type="button"
         aria-pressed={active === null}

@@ -68,7 +68,7 @@ export function HealthStrip({
     label: engineTone === 'bad' ? `${selected?.name ?? 'Engine'} cannot start` : selected ? `Using ${selected.name}` : 'Unknown',
   }
   return (
-    <div className="mb-5 grid gap-4 md:grid-cols-2">
+    <div className="browser-stagger mb-5 grid gap-4 md:grid-cols-2">
       <Tile icon={<ChromeIcon />} title="Chrome" light={chromeLight}>
         {chrome?.installed && (
           <dl className="space-y-0.5 text-xs text-gray-600">

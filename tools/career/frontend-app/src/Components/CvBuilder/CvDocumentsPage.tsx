@@ -198,7 +198,7 @@ export function CvDocumentsPage() {
           )}
 
           {documents.length > 0 && (
-            <div className="cv-card-grid">
+            <div className="career-stagger cv-card-grid">
               {documents.map((doc) => (
                 <CvCard
                   key={doc.id}

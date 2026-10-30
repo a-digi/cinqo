@@ -17,7 +17,7 @@ export function OutcomePanel({
   onToggleUnmatched: (on: boolean) => void
 }) {
   return (
-    <section className="rounded-3xl border bg-white p-4 shadow-sm" style={{ borderColor: PAGE_ACCENT.soft }}>
+    <section className="browser-enter browser-delay-2 rounded-3xl border bg-white p-4 shadow-sm" style={{ borderColor: PAGE_ACCENT.soft }}>
       <h2 className="mb-3 text-sm font-semibold text-gray-800">Why crawls stopped</h2>
 
       {summary.total === 0 && <p className="text-xs text-gray-500">Nothing to count yet.</p>}

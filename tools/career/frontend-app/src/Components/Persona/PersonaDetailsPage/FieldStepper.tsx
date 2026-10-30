@@ -22,7 +22,7 @@ export function FieldStepper({
 }) {
   const filled = steps.filter((s) => s.filled).length
   return (
-    <section className="rounded-3xl border bg-white p-4 shadow-sm" style={{ borderColor: PAGE_ACCENT.soft }}>
+    <section className="career-enter career-delay-2 rounded-3xl border bg-white p-4 shadow-sm" style={{ borderColor: PAGE_ACCENT.soft }}>
       <div className="flex items-baseline justify-between">
         <h2 className="text-sm font-semibold text-gray-800">Fields</h2>
         <span className="text-xs text-gray-500">

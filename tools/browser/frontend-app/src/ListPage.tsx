@@ -81,7 +81,7 @@ export function ListPage() {
             </div>
           )}
 
-          <div className="space-y-3">
+          <div className="browser-stagger space-y-3">
             {credentials.map((cred) => (
               <div
                 key={cred.domain}

@@ -59,7 +59,7 @@ export function JobDetailsPage() {
       {job && (
         <>
           <div className="flex flex-col gap-6 md:flex-row md:items-start">
-            <div className="min-w-0 flex-1 rounded-md border border-gray-200 bg-white p-6 shadow-sm">
+            <div className="career-enter career-delay-1 min-w-0 flex-1 rounded-md border border-gray-200 bg-white p-6 shadow-sm">
               <div className="flex items-start justify-between gap-4">
                 <h1 className="text-xl font-semibold">{job.title}</h1>
                 {/* A job added by hand without a link has nothing to open (step 97). */}
@@ -110,7 +110,7 @@ export function JobDetailsPage() {
             </div>
 
             {job.matchStatus === 'completed' && job.matchScore !== undefined && (
-              <div className="w-full shrink-0 rounded-md border border-gray-200 bg-white p-5 shadow-sm md:w-64">
+              <div className="career-enter career-delay-2 w-full shrink-0 rounded-md border border-gray-200 bg-white p-5 shadow-sm md:w-64">
                 <h2 className="mb-3 text-sm font-semibold text-gray-900">Job Match</h2>
                 <MatchScoreBar score={job.matchScore} skills={job.matchedSkills} jobTitle={job.title} />
                 {job.matchedSkills.length > 0 ? (
@@ -128,7 +128,7 @@ export function JobDetailsPage() {
             )}
 
             {job.cvStatus && (
-              <div className="w-full shrink-0 rounded-md border border-gray-200 bg-white p-5 shadow-sm md:w-64">
+              <div className="career-enter career-delay-2 w-full shrink-0 rounded-md border border-gray-200 bg-white p-5 shadow-sm md:w-64">
                 <h2 className="mb-3 text-sm font-semibold text-gray-900">Generated CV</h2>
                 {job.cvStatus === 'completed' && job.cvMediaFileId ? (
                   <a

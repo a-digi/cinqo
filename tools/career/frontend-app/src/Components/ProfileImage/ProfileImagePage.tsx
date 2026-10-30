@@ -176,7 +176,7 @@ export function ProfileImagePage() {
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
           {!loading && (
             <section
-              className="flex min-w-0 flex-1 flex-col items-center gap-6 rounded-3xl border p-6 shadow-sm sm:flex-row sm:items-center"
+              className="career-enter career-delay-1 flex min-w-0 flex-1 flex-col items-center gap-6 rounded-3xl border p-6 shadow-sm sm:flex-row sm:items-center"
               style={{ borderColor: PAGE_ACCENT.soft, background: `linear-gradient(160deg, #ffffff 45%, ${PAGE_ACCENT.soft} 100%)` }}
             >
               <div className="flex h-36 w-36 shrink-0 items-center justify-center overflow-hidden rounded-full border-4 border-white shadow-md">

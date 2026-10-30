@@ -110,7 +110,7 @@ export function CompaniesPage() {
             </div>
           )}
 
-          <div className="space-y-3">
+          <div className="career-stagger space-y-3">
             {companies.map((c) => {
               const accent = accentFor(c.name)
               return (

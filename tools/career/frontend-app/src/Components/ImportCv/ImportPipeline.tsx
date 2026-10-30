@@ -20,7 +20,7 @@ const WORD: Record<StageStatus, string> = { done: 'Done', current: 'In progress'
 // Analyze stage offers "Start over".
 export function ImportPipeline({ stages, onStartOver }: { stages: Stage[]; onStartOver: () => void }) {
   return (
-    <ol className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4" aria-label="Import progress">
+    <ol className="career-enter mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4" aria-label="Import progress">
       {stages.map((stage, i) => {
         const style = STYLE[stage.status]
         return (

@@ -64,3 +64,77 @@
     transform: translateY(-2px);
   }
 }
+
+/* Page entrance. Slow on purpose (900 ms) and gentle: a card rises a few pixels while it fades in.
+   .career-enter animates one element (career-delay-N pushes it back); .career-stagger animates the
+   children of a list one after another. backwards fill, not both: once finished the element keeps
+   no transform, so nothing inside it (a fixed-position menu, a sticky column) is left in a
+   transformed containing block. Switched off for people who ask their system for less motion. */
+@keyframes career-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.career-enter,
+.career-stagger > * {
+  animation: career-rise 900ms cubic-bezier(0.22, 0.61, 0.36, 1) backwards;
+}
+
+.career-delay-1 {
+  animation-delay: 150ms;
+}
+
+.career-delay-2 {
+  animation-delay: 300ms;
+}
+
+.career-delay-3 {
+  animation-delay: 450ms;
+}
+
+.career-stagger > :nth-child(1) {
+  animation-delay: 150ms;
+}
+.career-stagger > :nth-child(2) {
+  animation-delay: 280ms;
+}
+.career-stagger > :nth-child(3) {
+  animation-delay: 410ms;
+}
+.career-stagger > :nth-child(4) {
+  animation-delay: 540ms;
+}
+.career-stagger > :nth-child(5) {
+  animation-delay: 670ms;
+}
+.career-stagger > :nth-child(6) {
+  animation-delay: 800ms;
+}
+.career-stagger > :nth-child(7) {
+  animation-delay: 930ms;
+}
+.career-stagger > :nth-child(8) {
+  animation-delay: 1060ms;
+}
+.career-stagger > :nth-child(9) {
+  animation-delay: 1190ms;
+}
+.career-stagger > :nth-child(10) {
+  animation-delay: 1320ms;
+}
+.career-stagger > :nth-child(n + 11) {
+  animation-delay: 1450ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .career-enter,
+  .career-stagger > * {
+    animation: none;
+  }
+}

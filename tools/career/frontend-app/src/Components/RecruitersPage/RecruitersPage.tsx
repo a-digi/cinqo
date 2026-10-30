@@ -147,7 +147,7 @@ export function RecruitersPage() {
             </div>
           )}
 
-          <div className="space-y-3">
+          <div className="career-stagger space-y-3">
             {recruiters.map((r) => {
               const name = recruiterName(r)
               const companyName = companyNames[r.companyId] ?? '…'

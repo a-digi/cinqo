@@ -21,7 +21,7 @@ export function WillHappenCard({ plan, listKnown }: { plan: CredentialPlan; list
           : { box: 'border-gray-200 bg-gray-50 text-gray-600', mark: '…', title: 'Waiting for a domain' }
 
   return (
-    <section className="rounded-3xl border bg-white p-4 shadow-sm" style={{ borderColor: PAGE_ACCENT.soft }}>
+    <section className="browser-enter browser-delay-2 rounded-3xl border bg-white p-4 shadow-sm" style={{ borderColor: PAGE_ACCENT.soft }}>
       <h2 className="mb-3 text-sm font-semibold text-gray-800">What will happen</h2>
 
       <div className={`rounded-2xl border p-3 text-sm ${tone.box}`} role="status">

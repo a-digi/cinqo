@@ -413,7 +413,7 @@ export function ImportCvPage() {
       {!viewingRun && <ImportPipeline stages={stages} onStartOver={startOver} />}
 
       {state === 'upload' && !viewingRun && (
-        <section className={cardClassName} style={cardStyle}>
+        <section className={`career-enter career-delay-1 ${cardClassName}`} style={cardStyle}>
           <div
             role="button"
             tabIndex={0}
@@ -473,7 +473,7 @@ export function ImportCvPage() {
       )}
 
       {state === 'upload' && !viewingRun && runs !== null && runs.length > 0 && (
-        <section className={`mt-4 ${cardClassName}`} style={cardStyle}>
+        <section className={`career-enter career-delay-2 mt-4 ${cardClassName}`} style={cardStyle}>
           <h2 className="mb-2 text-sm font-semibold text-gray-900">Import history</h2>
           <div className="mb-2 min-h-[1.2em] text-sm text-red-700">{runActionError}</div>
           <ul className="divide-y divide-gray-100">
@@ -528,7 +528,7 @@ export function ImportCvPage() {
       )}
 
       {state === 'analyzing' && (
-        <div className="space-y-4">
+        <div className="career-stagger space-y-4">
           <p className="text-sm text-gray-500">
             Analyzing “{fileName}”…{uploadResult && <span className="ml-1 font-mono text-xs text-gray-400">({uploadResult.fileId})</span>}
           </p>
@@ -549,7 +549,7 @@ export function ImportCvPage() {
       )}
 
       {state === 'review' && proposal && (
-        <div className="space-y-4">
+        <div className="career-stagger space-y-4">
           <p className="text-sm text-gray-500">Reviewed “{fileName}”</p>
           {conversationId && (
             <p className="text-xs text-gray-400">

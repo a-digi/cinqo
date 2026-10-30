@@ -861,7 +861,7 @@ export function JobsPage() {
     <div className="max-w-7xl p-6 font-sans text-gray-900">
       <div className="min-w-0">
         <div
-          className="relative mb-5 overflow-hidden rounded-3xl border p-5"
+          className="career-enter relative mb-5 overflow-hidden rounded-3xl border p-5"
           style={{ borderColor: PAGE_ACCENT.soft, background: `linear-gradient(160deg, #ffffff 40%, ${PAGE_ACCENT.soft} 100%)` }}
         >
           <div
@@ -897,7 +897,7 @@ export function JobsPage() {
         {/* Two columns: the jobs on the left (the point of the page), the statistics cards
             on the right. Below the large breakpoint the cards drop under the list. */}
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
-          <div className="min-w-0 flex-1">
+          <div className="career-enter career-delay-1 min-w-0 flex-1">
             {activeFilters.length > 0 && (
               <div className="mb-2 flex flex-wrap gap-1.5">
                 {activeFilters.map((filter) => (
@@ -1108,7 +1108,7 @@ export function JobsPage() {
 
           {/* Refetched when a job is added, deleted or finishes matching / its CV: the page's
               own total, and how many jobs on this page have a completed match or CV. */}
-          <aside className="w-full shrink-0 lg:sticky lg:top-6 lg:w-72">
+          <aside className="career-enter career-delay-2 w-full shrink-0 lg:sticky lg:top-6 lg:w-72">
             <JobStatsStrip
               refreshKey={`${total}:${jobs.filter((j) => j.matchStatus === 'completed').length}:${jobs.filter((j) => j.cvStatus === 'completed').length}`}
             />

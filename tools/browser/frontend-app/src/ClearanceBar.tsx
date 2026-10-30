@@ -10,7 +10,10 @@ export function ClearanceBar({ summary, now }: { summary: DomainSummary; now: Da
   if (summary.total === 0) return null
   const segments = clearanceSegments(summary)
   return (
-    <section className="mb-5 rounded-3xl border bg-white p-4 shadow-sm" style={{ borderColor: PAGE_ACCENT.soft }}>
+    <section
+      className="browser-enter browser-delay-1 mb-5 rounded-3xl border bg-white p-4 shadow-sm"
+      style={{ borderColor: PAGE_ACCENT.soft }}
+    >
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-sm font-semibold text-gray-800">Clearances</h2>
         <div className="flex flex-wrap items-center gap-2 text-xs">

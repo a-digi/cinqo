@@ -94,7 +94,7 @@ export function DomainsPage() {
       {error && <div className="mb-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
 
       <div
-        className="mb-5 flex flex-wrap items-center gap-2 rounded-3xl border p-3"
+        className="browser-enter browser-delay-2 mb-5 flex flex-wrap items-center gap-2 rounded-3xl border p-3"
         style={{ borderColor: PAGE_ACCENT.soft, background: PAGE_ACCENT.soft }}
       >
         <label htmlFor="cinqo-browser-new-domain" className="text-sm font-medium">
@@ -133,7 +133,7 @@ export function DomainsPage() {
         </div>
       )}
 
-      <div className="space-y-3">
+      <div className="browser-stagger space-y-3">
         {domains?.map((d) => (
           <DomainRow
             key={d.domain}
