@@ -6,7 +6,7 @@ import { SummaryRail } from '../../Shared/SummaryRail/SummaryRail'
 import { ACCENTS, PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
 import { percentOrNull, plural, summarizeCompanies } from './companyStats'
 
-import { JOBS_PATH, NEW_COMPANY_PATH, RECRUITERS_PATH } from '../../paths'
+import { JOBS_PATH, NEW_COMPANY_PATH, RECRUITERS_PATH, VIEW_COMPANY_PATH } from '../../paths'
 
 const inputClass = 'w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none'
 
@@ -184,7 +184,16 @@ export function CompaniesPage() {
                         {initialOf(c.name)}
                       </span>
                       <div className="min-w-0 flex-1">
-                        <div className="text-sm font-semibold">{c.name}</div>
+                        <a
+                          href={`${VIEW_COMPANY_PATH}?id=${encodeURIComponent(c.id)}`}
+                          onClick={(e) => {
+                            e.preventDefault()
+                            window.__cinqoToolBridge.navigate(`${VIEW_COMPANY_PATH}?id=${encodeURIComponent(c.id)}`)
+                          }}
+                          className="text-sm font-semibold hover:underline"
+                        >
+                          {c.name}
+                        </a>
                         {c.description && <div className="mt-0.5 text-xs text-gray-500">{c.description}</div>}
                         <div className="mt-2 flex flex-wrap gap-2">
                           <a
@@ -210,6 +219,15 @@ export function CompaniesPage() {
                         </div>
                       </div>
                       <div className="flex shrink-0 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            window.__cinqoToolBridge.navigate(`${VIEW_COMPANY_PATH}?id=${encodeURIComponent(c.id)}`)
+                          }}
+                          className="rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                        >
+                          View
+                        </button>
                         <button
                           type="button"
                           onClick={() => {

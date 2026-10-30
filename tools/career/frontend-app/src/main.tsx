@@ -34,6 +34,7 @@ import { JobsPage } from './Components/JobsPage/JobsPage'
 import { JobDetailsPage } from './Components/JobDetails/JobDetailsPage'
 import { CompaniesPage } from './Components/CompaniesPage/CompaniesPage'
 import { RecruitersPage } from './Components/RecruitersPage/RecruitersPage'
+import { CompanyViewPage } from './Components/CompaniesPage/CompanyViewPage'
 import { NewCompanyPage } from './Components/CompaniesPage/NewCompanyPage'
 import { NewRecruiterPage } from './Components/RecruitersPage/NewRecruiterPage'
 import { PortalsPage } from './Components/PortalsPage/PortalsPage'
@@ -57,6 +58,7 @@ import {
   COMPANIES_PATH,
   RECRUITERS_PATH,
   NEW_COMPANY_PATH,
+  VIEW_COMPANY_PATH,
   NEW_RECRUITER_PATH,
   SETTINGS_PATH,
   PORTALS_PATH,
@@ -175,6 +177,14 @@ window.__cinqoToolBridge.registerRoute({
 
 // No menu entry — reached only via the lists' own "New company" / "New recruiter"
 // buttons, same "reachable, but menu-less" convention JOB_DETAILS_PATH has.
+window.__cinqoToolBridge.registerRoute({
+  path: VIEW_COMPANY_PATH,
+  mount: (container) => {
+    mountReact(container, <CompanyViewPage />)
+  },
+  unmount: unmountReact,
+})
+
 window.__cinqoToolBridge.registerRoute({
   path: NEW_COMPANY_PATH,
   mount: (container) => {
