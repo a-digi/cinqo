@@ -227,7 +227,7 @@ export function RepositoryPage() {
                 <Card
                   key={tool.id}
                   animate
-                  animationDelayMs={Math.min(index, 12) * 120}
+                  animationDelayMs={Math.min(index, 12) * 200}
                   media={
                     <div
                       className="relative flex h-28 items-center justify-center px-12 text-center"

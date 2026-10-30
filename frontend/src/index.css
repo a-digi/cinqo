@@ -12,7 +12,7 @@
   }
 }
 .cinqo-card-enter {
-  animation: cinqo-card-in 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: cinqo-card-in 1.6s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 @media (prefers-reduced-motion: reduce) {
   .cinqo-card-enter {

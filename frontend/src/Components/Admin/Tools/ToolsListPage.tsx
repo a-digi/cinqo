@@ -197,12 +197,14 @@ export function ToolsListPage() {
             }
           `}</style>
           <div className="tools-card-grid">
-          {filtered.map((tool) => {
+          {filtered.map((tool, index) => {
             const cardColor = colorForTool(tool.id)
             const update = updateCheck.data ? updateFor(updateCheck.data.updates, tool.slug) : undefined
             return (
               <Card
                 key={tool.id}
+                animate
+                animationDelayMs={Math.min(index, 12) * 200}
                 media={
                   <div
                     className="relative flex h-28 items-center justify-center px-12 text-center"
