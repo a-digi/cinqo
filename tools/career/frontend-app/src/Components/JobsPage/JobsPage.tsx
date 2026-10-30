@@ -858,7 +858,7 @@ export function JobsPage() {
     })
 
   return (
-    <div className="max-w-6xl p-6 font-sans text-gray-900">
+    <div className="max-w-7xl p-6 font-sans text-gray-900">
       <div className="min-w-0">
         <div
           className="relative mb-5 overflow-hidden rounded-3xl border p-5"
@@ -894,218 +894,226 @@ export function JobsPage() {
           </div>
         </div>
 
-        {/* Refetched when a job is added, deleted or finishes matching / its CV: the page's
-              own total, and how many jobs on this page have a completed match or CV. */}
-        <JobStatsStrip
-          refreshKey={`${total}:${jobs.filter((j) => j.matchStatus === 'completed').length}:${jobs.filter((j) => j.cvStatus === 'completed').length}`}
-        />
+        {/* Two columns: the jobs on the left (the point of the page), the statistics cards
+            on the right. Below the large breakpoint the cards drop under the list. */}
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
+          <div className="min-w-0 flex-1">
+            {activeFilters.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-1.5">
+                {activeFilters.map((filter) => (
+                  <span
+                    key={filter.key}
+                    className="flex items-center gap-1 rounded-full border border-gray-200 bg-gray-100 py-1 pl-2.5 pr-1.5 text-xs text-gray-700"
+                  >
+                    {filter.label}
+                    <button
+                      type="button"
+                      onClick={filter.onClear}
+                      aria-label={`Clear ${filter.label}`}
+                      className="text-gray-400 hover:text-gray-700"
+                    >
+                      <XIcon />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
 
-        {activeFilters.length > 0 && (
-          <div className="mb-2 flex flex-wrap gap-1.5">
-            {activeFilters.map((filter) => (
-              <span
-                key={filter.key}
-                className="flex items-center gap-1 rounded-full border border-gray-200 bg-gray-100 py-1 pl-2.5 pr-1.5 text-xs text-gray-700"
+            {showFilters && (
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                {locations.length > 0 && (
+                  <Dropdown
+                    placeholder="Any location"
+                    options={[
+                      { value: '', label: 'Any location' },
+                      ...locations.map((loc) => ({ value: loc, label: truncate(loc, MAX_LOCATION_DISPLAY_LENGTH) })),
+                    ]}
+                    value={location}
+                    onChange={handleLocationFilterChange}
+                    searchable
+                  />
+                )}
+                {companies.length > 0 && (
+                  <Dropdown
+                    multiple
+                    placeholder="Any company"
+                    options={companies.map((c) => ({ value: c.id, label: c.name }))}
+                    value={companyIds}
+                    onChange={handleCompanyFilterChange}
+                    searchable
+                  />
+                )}
+                {portals.length > 0 && (
+                  <Dropdown
+                    placeholder="Any platform"
+                    options={[{ value: '', label: 'Any platform' }, ...portals.map((p) => ({ value: p.id, label: p.name }))]}
+                    value={portalId}
+                    onChange={handlePortalFilterChange}
+                    searchable
+                  />
+                )}
+              </div>
+            )}
+
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+              <input
+                value={query}
+                onChange={(e) => {
+                  setQuery(e.target.value)
+                }}
+                placeholder="Search title, company, description…"
+                className="flex-1 min-w-[180px] rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
+              />
+              <button
+                type="button"
+                aria-expanded={showFilters}
+                onClick={() => {
+                  setShowFilters((prev) => !prev)
+                }}
+                className="flex items-center gap-1.5 rounded-md border border-gray-300 px-3.5 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
               >
-                {filter.label}
-                <button
-                  type="button"
-                  onClick={filter.onClear}
-                  aria-label={`Clear ${filter.label}`}
-                  className="text-gray-400 hover:text-gray-700"
-                >
-                  <XIcon />
-                </button>
-              </span>
-            ))}
-          </div>
-        )}
+                <FilterIcon />
+                Filters
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAddOpen(true)
+                }}
+                className="flex items-center gap-1.5 rounded-md bg-gray-800 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-900"
+              >
+                <PlusIcon />
+                Add job
+              </button>
+            </div>
 
-        {showFilters && (
-          <div className="mb-2 flex flex-wrap items-center gap-2">
-            {locations.length > 0 && (
-              <Dropdown
-                placeholder="Any location"
-                options={[
-                  { value: '', label: 'Any location' },
-                  ...locations.map((loc) => ({ value: loc, label: truncate(loc, MAX_LOCATION_DISPLAY_LENGTH) })),
-                ]}
-                value={location}
-                onChange={handleLocationFilterChange}
-                searchable
+            <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
+
+            <div
+              className="relative overflow-hidden rounded-3xl border shadow-sm"
+              style={{ borderColor: PAGE_ACCENT.soft, background: `linear-gradient(170deg, #ffffff 55%, ${PAGE_ACCENT.soft} 100%)` }}
+            >
+              <div
+                className="pointer-events-none absolute -bottom-12 -right-10 h-40 w-40 rounded-full border-[16px] opacity-10"
+                style={{ borderColor: PAGE_ACCENT.from }}
               />
-            )}
-            {companies.length > 0 && (
-              <Dropdown
-                multiple
-                placeholder="Any company"
-                options={companies.map((c) => ({ value: c.id, label: c.name }))}
-                value={companyIds}
-                onChange={handleCompanyFilterChange}
-                searchable
-              />
-            )}
-            {portals.length > 0 && (
-              <Dropdown
-                placeholder="Any platform"
-                options={[{ value: '', label: 'Any platform' }, ...portals.map((p) => ({ value: p.id, label: p.name }))]}
-                value={portalId}
-                onChange={handlePortalFilterChange}
-                searchable
-              />
-            )}
-          </div>
-        )}
-
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <input
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value)
-            }}
-            placeholder="Search title, company, description…"
-            className="flex-1 min-w-[180px] rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
-          />
-          <button
-            type="button"
-            aria-expanded={showFilters}
-            onClick={() => {
-              setShowFilters((prev) => !prev)
-            }}
-            className="flex items-center gap-1.5 rounded-md border border-gray-300 px-3.5 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
-          >
-            <FilterIcon />
-            Filters
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setAddOpen(true)
-            }}
-            className="flex items-center gap-1.5 rounded-md bg-gray-800 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-900"
-          >
-            <PlusIcon />
-            Add job
-          </button>
-        </div>
-
-        <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
-
-        <div
-          className="relative overflow-hidden rounded-3xl border shadow-sm"
-          style={{ borderColor: PAGE_ACCENT.soft, background: `linear-gradient(170deg, #ffffff 55%, ${PAGE_ACCENT.soft} 100%)` }}
-        >
-          <div
-            className="pointer-events-none absolute -bottom-12 -right-10 h-40 w-40 rounded-full border-[16px] opacity-10"
-            style={{ borderColor: PAGE_ACCENT.from }}
-          />
-          <div className="relative overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr>
-                  <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Title</th>
-                  <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Company</th>
-                  <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Platform</th>
-                  <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Posted</th>
-                  <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Match</th>
-                  <th className="bg-blue-50/70 p-3 text-right text-xs font-semibold uppercase tracking-wide text-blue-700">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {jobs.map((job) => {
-                  return (
-                    <tr key={job.id} className="transition-colors last:[&>td]:border-b-0 hover:bg-blue-50/50">
-                      <td className="border-b border-blue-50 p-3 text-gray-900">
-                        <div className="flex items-center gap-3">
-                          <span
-                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white shadow-sm"
-                            style={{ background: accentFor(job.company || job.title).to }}
-                            aria-hidden="true"
-                          >
-                            {initialOf(job.company || job.title)}
-                          </span>
-                          <span className="font-medium">{job.title}</span>
-                          {isManualJob(job) && (
-                            <span
-                              title="You added this job yourself"
-                              className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-800"
-                            >
-                              Manual
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="border-b border-blue-50 p-3">
-                        {job.company}
-                        {job.companyId && (
-                          <div className="mt-0.5 flex items-center gap-1.5 text-xs text-gray-400">
-                            linked to {companyNames[job.companyId] ?? '…'}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                handleUnlink(job.id)
-                              }}
-                              className="text-gray-400 underline hover:text-red-700"
-                            >
-                              unlink
-                            </button>
-                          </div>
-                        )}
-                      </td>
-                      <td className="border-b border-blue-50 p-3">
-                        {platformLabel(job) === '—' ? (
-                          <span className="text-gray-300">—</span>
-                        ) : (
-                          <span
-                            className="inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium"
-                            style={{ background: accentFor(platformLabel(job)).soft, color: accentFor(platformLabel(job)).text }}
-                          >
-                            {platformLabel(job)}
-                          </span>
-                        )}
-                      </td>
-                      <td className="border-b border-blue-50 p-3">
-                        {job.postedAt ? (
-                          <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs text-gray-600">{job.postedAt}</span>
-                        ) : null}
-                      </td>
-                      <td className="border-b border-blue-50 p-3">
-                        {job.matchStatus === 'matching' ? (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              handleCheckMatchProgress(job)
-                            }}
-                            title="Open the chat window to watch the AI work on this job's own match"
-                            className="inline-flex items-center gap-1 text-xs text-gray-500 underline hover:text-gray-700"
-                          >
-                            <span className="inline-flex items-center gap-1 [animation:robot-bob_1.6s_ease-in-out_infinite]">
-                              <RobotIcon />
-                              <Typewriter text="Matching…" />
-                            </span>
-                          </button>
-                        ) : job.matchStatus === 'failed' ? (
-                          <span className="text-xs text-red-700" title={job.matchError ?? 'Job match failed'}>
-                            Failed
-                          </span>
-                        ) : job.matchStatus === 'completed' && job.matchScore !== undefined ? (
-                          <MatchScoreBar score={job.matchScore} skills={job.matchedSkills} jobTitle={job.title} />
-                        ) : (
-                          <span className="text-xs text-gray-300">—</span>
-                        )}
-                      </td>
-                      <td className="border-b border-blue-50 p-3 text-right">
-                        <ActionMenu triggerLabel={`Actions for ${job.title}`} items={buildJobActionItems(job)} />
-                      </td>
+              <div className="relative overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr>
+                      <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Title</th>
+                      <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Company</th>
+                      <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Platform</th>
+                      <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Posted</th>
+                      <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Match</th>
+                      <th className="bg-blue-50/70 p-3 text-right text-xs font-semibold uppercase tracking-wide text-blue-700">Actions</th>
                     </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
+                  </thead>
+                  <tbody>
+                    {jobs.map((job) => {
+                      return (
+                        <tr key={job.id} className="transition-colors last:[&>td]:border-b-0 hover:bg-blue-50/50">
+                          <td className="border-b border-blue-50 p-3 text-gray-900">
+                            <div className="flex items-center gap-3">
+                              <span
+                                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white shadow-sm"
+                                style={{ background: accentFor(job.company || job.title).to }}
+                                aria-hidden="true"
+                              >
+                                {initialOf(job.company || job.title)}
+                              </span>
+                              <span className="font-medium">{job.title}</span>
+                              {isManualJob(job) && (
+                                <span
+                                  title="You added this job yourself"
+                                  className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-800"
+                                >
+                                  Manual
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="border-b border-blue-50 p-3">
+                            {job.company}
+                            {job.companyId && (
+                              <div className="mt-0.5 flex items-center gap-1.5 text-xs text-gray-400">
+                                linked to {companyNames[job.companyId] ?? '…'}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    handleUnlink(job.id)
+                                  }}
+                                  className="text-gray-400 underline hover:text-red-700"
+                                >
+                                  unlink
+                                </button>
+                              </div>
+                            )}
+                          </td>
+                          <td className="border-b border-blue-50 p-3">
+                            {platformLabel(job) === '—' ? (
+                              <span className="text-gray-300">—</span>
+                            ) : (
+                              <span
+                                className="inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium"
+                                style={{ background: accentFor(platformLabel(job)).soft, color: accentFor(platformLabel(job)).text }}
+                              >
+                                {platformLabel(job)}
+                              </span>
+                            )}
+                          </td>
+                          <td className="border-b border-blue-50 p-3">
+                            {job.postedAt ? (
+                              <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs text-gray-600">{job.postedAt}</span>
+                            ) : null}
+                          </td>
+                          <td className="border-b border-blue-50 p-3">
+                            {job.matchStatus === 'matching' ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  handleCheckMatchProgress(job)
+                                }}
+                                title="Open the chat window to watch the AI work on this job's own match"
+                                className="inline-flex items-center gap-1 text-xs text-gray-500 underline hover:text-gray-700"
+                              >
+                                <span className="inline-flex items-center gap-1 [animation:robot-bob_1.6s_ease-in-out_infinite]">
+                                  <RobotIcon />
+                                  <Typewriter text="Matching…" />
+                                </span>
+                              </button>
+                            ) : job.matchStatus === 'failed' ? (
+                              <span className="text-xs text-red-700" title={job.matchError ?? 'Job match failed'}>
+                                Failed
+                              </span>
+                            ) : job.matchStatus === 'completed' && job.matchScore !== undefined ? (
+                              <MatchScoreBar score={job.matchScore} skills={job.matchedSkills} jobTitle={job.title} />
+                            ) : (
+                              <span className="text-xs text-gray-300">—</span>
+                            )}
+                          </td>
+                          <td className="border-b border-blue-50 p-3 text-right">
+                            <ActionMenu triggerLabel={`Actions for ${job.title}`} items={buildJobActionItems(job)} />
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
 
-        <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={handlePageChange} />
+            <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={handlePageChange} />
+          </div>
+
+          {/* Refetched when a job is added, deleted or finishes matching / its CV: the page's
+              own total, and how many jobs on this page have a completed match or CV. */}
+          <aside className="w-full shrink-0 lg:sticky lg:top-6 lg:w-72">
+            <JobStatsStrip
+              refreshKey={`${total}:${jobs.filter((j) => j.matchStatus === 'completed').length}:${jobs.filter((j) => j.cvStatus === 'completed').length}`}
+            />
+          </aside>
+        </div>
       </div>
 
       <AddJobModal

@@ -77,60 +77,6 @@ export function scoreTone(avg: number): 'high' | 'mid' | 'low' {
   return 'low'
 }
 
-export interface ChartBox {
-  width: number
-  height: number
-  padX: number
-  padTop: number
-  padBottom: number
-}
-
-export interface DayBar {
-  x: number
-  y: number
-  w: number
-  h: number
-  count: number
-  // Whether the day is in the last 7 (drawn stronger than the week before).
-  recent: boolean
-}
-
-export interface DayChart {
-  bars: DayBar[]
-  labels: { x: number; text: string }[]
-  baselineY: number
-  max: number
-}
-
-const MAX_BAR_WIDTH = 28
-
-function round(n: number): number {
-  return Math.round(n * 100) / 100
-}
-
-// Lays the per-day counts out as bars in a width x height box. The y axis starts at
-// zero; a day with no jobs gets a zero-height bar (kept, so the days line up).
-export function dayChart(perDay: DayCount[], box: ChartBox): DayChart {
-  const innerW = box.width - box.padX * 2
-  const innerH = box.height - box.padTop - box.padBottom
-  const max = Math.max(1, ...perDay.map((d) => d.count))
-  const baselineY = round(box.padTop + innerH)
-  const band = perDay.length === 0 ? 0 : innerW / perDay.length
-  const barW = Math.min(band * 0.62, MAX_BAR_WIDTH)
-  const step = perDay.length > 8 ? 2 : 1
-
-  const bars: DayBar[] = []
-  const labels: { x: number; text: string }[] = []
-  perDay.forEach((d, i) => {
-    const h = round((d.count / max) * innerH)
-    const x = round(box.padX + band * i + (band - barW) / 2)
-    bars.push({ x, y: round(baselineY - h), w: round(barW), h, count: d.count, recent: i >= perDay.length - 7 })
-    // Counted back from the last day, so the newest day is always labelled and its neighbour never collides with it.
-    if ((perDay.length - 1 - i) % step === 0) labels.push({ x: round(x + barW / 2), text: d.day })
-  })
-  return { bars, labels, baselineY, max }
-}
-
 export interface PlatformBar {
   name: string
   count: number
