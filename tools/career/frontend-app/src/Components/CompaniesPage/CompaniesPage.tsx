@@ -97,19 +97,7 @@ export function CompaniesPage() {
 
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
         <div className="order-1 min-w-0 flex-1 lg:order-2">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <p className="text-xs text-gray-500">Link a job to a company from the Jobs page.</p>
-            <button
-              type="button"
-              onClick={() => {
-                window.__cinqoToolBridge.navigate(NEW_COMPANY_PATH)
-              }}
-              className="flex shrink-0 items-center gap-1.5 rounded-md bg-gray-800 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-900"
-            >
-              <PlusIcon />
-              New company
-            </button>
-          </div>
+          <p className="mb-3 text-xs text-gray-500">Link a job to a company from the Jobs page.</p>
 
           <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
 
@@ -255,6 +243,16 @@ export function CompaniesPage() {
         </div>
 
         <aside className="order-2 w-full shrink-0 lg:order-1 lg:sticky lg:top-6 lg:w-56">
+          <button
+            type="button"
+            onClick={() => {
+              window.__cinqoToolBridge.navigate(NEW_COMPANY_PATH)
+            }}
+            className="mb-4 flex w-full items-center justify-center gap-1.5 rounded-md bg-gray-800 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-900"
+          >
+            <PlusIcon />
+            New company
+          </button>
           <SummaryRail
             title="Overview"
             segments={[

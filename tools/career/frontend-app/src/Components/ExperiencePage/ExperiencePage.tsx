@@ -68,8 +68,7 @@ export function ExperiencePage() {
           {personaId && <CareerTimeline entries={experience} today={new Date()} />}
 
           {personaId && (
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <p className="text-xs text-gray-500">An entry without an end date counts as your current role.</p>
+            <div className="mb-3 flex items-center justify-start gap-3">
               <button
                 type="button"
                 onClick={() => {
@@ -80,6 +79,7 @@ export function ExperiencePage() {
                 <PlusIcon />
                 Add experience
               </button>
+              <p className="min-w-0 flex-1 text-xs text-gray-500">An entry without an end date counts as your current role.</p>
             </div>
           )}
 

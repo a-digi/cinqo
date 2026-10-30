@@ -130,11 +130,7 @@ export function ProfilesPage() {
 
       <div>
         <div className="min-w-0">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <p className="text-xs text-gray-500">
-              Deleting a profile permanently deletes its personas and everything they own (details, skills, experience), with no further
-              confirmation.
-            </p>
+          <div className="mb-3 flex items-center justify-start gap-3">
             <button
               type="button"
               onClick={() => {
@@ -145,6 +141,10 @@ export function ProfilesPage() {
               <PlusIcon />
               New profile
             </button>
+            <p className="min-w-0 flex-1 text-xs text-gray-500">
+              Deleting a profile permanently deletes its personas and everything they own (details, skills, experience), with no further
+              confirmation.
+            </p>
           </div>
 
           <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>

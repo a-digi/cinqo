@@ -110,10 +110,7 @@ export function PersonasPage() {
           <ProfileSwitcher profileId={profileId} onChange={setProfileId} />
 
           {profileId && (
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <p className="text-xs text-gray-500">
-                Deleting a persona permanently deletes its details, every skill and every experience entry, with no further confirmation.
-              </p>
+            <div className="mb-3 flex items-center justify-start gap-3">
               <button
                 type="button"
                 onClick={() => {
@@ -124,6 +121,9 @@ export function PersonasPage() {
                 <PlusIcon />
                 New persona
               </button>
+              <p className="min-w-0 flex-1 text-xs text-gray-500">
+                Deleting a persona permanently deletes its details, every skill and every experience entry, with no further confirmation.
+              </p>
             </div>
           )}
 

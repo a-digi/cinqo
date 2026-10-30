@@ -109,7 +109,7 @@ export function RecruitersPage() {
 
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
         <div className="order-1 min-w-0 flex-1 lg:order-2">
-          <div className="mb-3 flex items-end justify-between gap-3">
+          <div className="mb-3 flex items-end gap-3">
             {companies.length > 0 ? (
               <Dropdown
                 label="Filter by company"
@@ -120,19 +120,6 @@ export function RecruitersPage() {
               />
             ) : (
               <span />
-            )}
-            {companies.length > 0 && (
-              <button
-                type="button"
-                onClick={() => {
-                  const suffix = filtered ? `?companyId=${encodeURIComponent(filterCompanyId)}` : ''
-                  window.__cinqoToolBridge.navigate(`${NEW_RECRUITER_PATH}${suffix}`)
-                }}
-                className="flex shrink-0 items-center gap-1.5 rounded-md bg-gray-800 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-900"
-              >
-                <PlusIcon />
-                New recruiter
-              </button>
             )}
           </div>
 
@@ -268,6 +255,19 @@ export function RecruitersPage() {
         </div>
 
         <aside className="order-2 w-full shrink-0 lg:order-1 lg:sticky lg:top-6 lg:w-56">
+          {companies.length > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                const suffix = filtered ? `?companyId=${encodeURIComponent(filterCompanyId)}` : ''
+                window.__cinqoToolBridge.navigate(`${NEW_RECRUITER_PATH}${suffix}`)
+              }}
+              className="mb-4 flex w-full items-center justify-center gap-1.5 rounded-md bg-gray-800 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-900"
+            >
+              <PlusIcon />
+              New recruiter
+            </button>
+          )}
           <SummaryRail
             title={filtered ? 'Overview (filtered)' : 'Overview'}
             segments={[

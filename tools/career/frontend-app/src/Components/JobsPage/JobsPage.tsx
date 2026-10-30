@@ -956,6 +956,16 @@ export function JobsPage() {
             )}
 
             <div className="mb-4 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setAddOpen(true)
+                }}
+                className="flex items-center gap-1.5 rounded-md bg-gray-800 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-900"
+              >
+                <PlusIcon />
+                Add job
+              </button>
               <input
                 value={query}
                 onChange={(e) => {
@@ -974,16 +984,6 @@ export function JobsPage() {
               >
                 <FilterIcon />
                 Filters
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setAddOpen(true)
-                }}
-                className="flex items-center gap-1.5 rounded-md bg-gray-800 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-900"
-              >
-                <PlusIcon />
-                Add job
               </button>
             </div>
 
