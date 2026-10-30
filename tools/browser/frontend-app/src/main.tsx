@@ -50,14 +50,20 @@ const browserEngineEntry = {
 // Pages shown only when Chrome is installed.
 const chromeDependentEntries = [
   {
-    label: 'Login',
-    path: LIST_PATH,
-    // Reuses the existing tool:browser:login scope — the same
-    // permission that already gates writing a credential via the
-    // underlying route, deliberately not a separate scope: a user
-    // who can't submit a credential shouldn't see a page whose
-    // only purpose is submitting one.
-    scopes: ['tool:browser:login'],
+    // Login sits in an Authentication group.
+    label: 'Authentication',
+    children: [
+      {
+        label: 'Login',
+        path: LIST_PATH,
+        // Reuses the existing tool:browser:login scope — the same
+        // permission that already gates writing a credential via the
+        // underlying route, deliberately not a separate scope: a user
+        // who can't submit a credential shouldn't see a page whose
+        // only purpose is submitting one.
+        scopes: ['tool:browser:login'],
+      },
+    ],
   },
   {
     label: 'Domains',
