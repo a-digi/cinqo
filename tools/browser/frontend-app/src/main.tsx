@@ -66,11 +66,17 @@ const chromeDependentEntries = [
     ],
   },
   {
-    label: 'Domains',
-    path: DOMAINS_PATH,
-    // Step 96 — sites that asked for a check, and clearing them. Same scope as
-    // the routes it calls (domains, domains/clear, crawl-cancel).
-    scopes: ['tool:browser:crawl'],
+    // Challenges: the sites that asked for a check only a person can pass.
+    label: 'Challenges',
+    children: [
+      {
+        label: 'Domains',
+        path: DOMAINS_PATH,
+        // Step 96 — sites that asked for a check, and clearing them. Same scope as
+        // the routes it calls (domains, domains/clear, crawl-cancel).
+        scopes: ['tool:browser:crawl'],
+      },
+    ],
   },
   {
     // Debug and Crawl Logs are one group: the Debug page controls the logging that
