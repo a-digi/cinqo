@@ -15,6 +15,7 @@ import (
 	auth_service "github.com/a-digi/cinqo/src/auth/service"
 	"github.com/a-digi/cinqo/src/conversation"
 	conversation_handler "github.com/a-digi/cinqo/src/conversation/handler"
+	dashboard_handler "github.com/a-digi/cinqo/src/dashboard/handler"
 	domainevent_handler "github.com/a-digi/cinqo/src/domainevent/handler"
 	"github.com/a-digi/cinqo/src/health"
 	media_handler "github.com/a-digi/cinqo/src/media/handler"
@@ -128,6 +129,10 @@ func Init(ctx serverdi.Context) {
 		"MediaUpdateTitle":        local_routing.HandlerFunc(media_handler.UpdateTitleHandler),
 		"MediaUpdateTitleService": local_routing.HandlerFunc(media_handler.UpdateTitleServiceHandler),
 		"MediaExistsService":      local_routing.HandlerFunc(media_handler.ExistsServiceHandler),
+
+		"DashboardWidgets":    local_routing.HandlerFunc(dashboard_handler.WidgetsHandler),
+		"DashboardWidgetData": local_routing.HandlerFunc(dashboard_handler.WidgetDataHandler),
+		"DashboardLayout":     local_routing.HandlerFunc(dashboard_handler.LayoutHandler),
 
 		"DomainEventPublish": local_routing.HandlerFunc(domainevent_handler.PublishHandler),
 	}

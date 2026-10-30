@@ -76,6 +76,7 @@ func runHTTPServer() {
 	http.HandleFunc("/crawl-paginated", crawler.PaginatedCrawlHandler)
 	http.HandleFunc("/find-repeating-items", crawler.FindRepeatingItemsHandler)
 	http.HandleFunc("/diagnose-url", crawler.DiagnoseURLHandler)
+	http.HandleFunc("/dashboard/status", crawler.DashboardStatusHandler)
 	http.HandleFunc("/domains", crawler.DomainsHandler)
 	http.HandleFunc("/domains/clear", crawler.DomainsClearHandler)
 	http.HandleFunc("/crawl-logs", crawler.CrawlLogsHandler)

@@ -110,6 +110,8 @@ func runHTTPServer() {
 	http.HandleFunc("/experience", experienceHandler)
 	http.HandleFunc("/jobs", jobsHandler)
 	http.HandleFunc("/job-locations", jobLocationsHandler)
+	http.HandleFunc("/dashboard/new-jobs", jobs.NewJobsWidgetHandler)
+	http.HandleFunc("/dashboard/recent-jobs", jobs.RecentJobsWidgetHandler)
 	http.HandleFunc("/jobs/match", jobMatchHandler)
 	http.HandleFunc("/jobs/cv", cvPdfHandler)
 	http.HandleFunc("/jobs/cv-generations", cvGenerationsHandler)

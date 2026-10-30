@@ -146,6 +146,29 @@ func discoverEventListenersIfDeclared(reqCtx request.RequestContext, db *sql.DB,
 	}
 }
 
+// cacheDashboardWidgets stores the manifest's widgets[] for the Home dashboard.
+// Unlike the listeners above it always runs, even for an empty list, so a widget
+// dropped in an update disappears. Non-fatal for the same reason: a caching
+// failure must never fail an otherwise-successful install.
+func cacheDashboardWidgets(reqCtx request.RequestContext, db *sql.DB, m manifest.Manifest, toolID string) {
+	widgets := make([]tool_entity.ToolDashboardWidget, 0, len(m.Widgets))
+	for _, w := range m.Widgets {
+		def := manifest.WidgetDefinition(m.Slug, w)
+		version := w.SchemaVersion
+		if version == 0 {
+			version = 1
+		}
+		widgets = append(widgets, tool_entity.ToolDashboardWidget{
+			ToolID: toolID, Key: def.Key, Title: def.Title, Description: def.Description,
+			Kind: string(def.Kind), SchemaVersion: version, DataPath: w.DataPath,
+			Width: def.Size.W, Height: def.Size.H, RefreshSeconds: def.RefreshSeconds,
+		})
+	}
+	if err := tool_persistent.NewToolDashboardWidgetPersistentRepo(db).ReplaceAll(toolID, widgets); err != nil {
+		reqCtx.GetDI().GetLogger().Warning("tool %q declared widgets but caching them failed: %v", m.Slug, err)
+	}
+}
+
 // publishToolInstalledEvent is the Domain Events engine's own dogfood
 // integration (plan/ai/domain-events/step-01-core-event-bus.md): the
 // smallest possible real proof that domainevent.Publish/Subscribe work
@@ -401,6 +424,7 @@ func InstallPackage(reqCtx request.RequestContext, data []byte, expect *PackageE
 
 		discoverMCPToolsIfDeclared(reqCtx, db, m, finalDir, tool.ID, tool.ServiceToken)
 		discoverEventListenersIfDeclared(reqCtx, db, m, tool.ID)
+		cacheDashboardWidgets(reqCtx, db, m, tool.ID)
 		publishToolInstalledEvent(reqCtx, tool.ID, tool.Slug, tool.Version)
 
 		created, err := queryRepo.FindByID(tool.ID)
@@ -500,6 +524,7 @@ func InstallPackage(reqCtx request.RequestContext, data []byte, expect *PackageE
 	// process regardless of the HTTP surface's enabled state.
 	discoverMCPToolsIfDeclared(reqCtx, db, m, finalDir, updated.ID, updated.ServiceToken)
 	discoverEventListenersIfDeclared(reqCtx, db, m, updated.ID)
+	cacheDashboardWidgets(reqCtx, db, m, updated.ID)
 	publishToolInstalledEvent(reqCtx, updated.ID, updated.Slug, updated.Version)
 
 	reloaded, err := queryRepo.FindByID(updated.ID)

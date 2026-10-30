@@ -85,3 +85,32 @@ export function LogsIcon() {
     </svg>
   )
 }
+
+// ArrowUpIcon / ArrowDownIcon — "move this item up/down in its list"
+// (Home's Customize view).
+export function ArrowUpIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-4 w-4">
+      <path d="M10 15V5M5.5 9.5 10 5l4.5 4.5" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+export function ArrowDownIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-4 w-4">
+      <path d="M10 5v10M5.5 10.5 10 15l4.5-4.5" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+// EyeOffIcon — the EyeIcon with a slash: "this is hidden, click to show".
+export function EyeOffIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-4 w-4">
+      <path d="M2.5 10s2.8-5 7.5-5 7.5 5 7.5 5-2.8 5-7.5 5-7.5-5-7.5-5z" strokeWidth="1.3" strokeLinejoin="round" />
+      <circle cx="10" cy="10" r="2.2" strokeWidth="1.3" />
+      <path d="M4 16 16 4" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  )
+}

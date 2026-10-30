@@ -1,13 +1,68 @@
 {
   "slug": "example_full",
   "name": "Example Full Tool",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "scopes": [
-    {"scope": "tool:example_full:read", "description": "View example items."},
-    {"scope": "tool:example_full:write", "description": "Create example items."}
+    {
+      "scope": "tool:example_full:read",
+      "description": "View example items."
+    },
+    {
+      "scope": "tool:example_full:write",
+      "description": "Create example items."
+    }
   ],
   "routes": [
-    {"method": "GET", "path_suffix": "items", "required_scope": "tool:example_full:read"},
-    {"method": "POST", "path_suffix": "items", "required_scope": "tool:example_full:write"}
+    {
+      "method": "GET",
+      "path_suffix": "items",
+      "required_scope": "tool:example_full:read"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "items",
+      "required_scope": "tool:example_full:write"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "dashboard/items-count",
+      "required_scope": "tool:example_full:read"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "dashboard/latest-items",
+      "required_scope": "tool:example_full:read"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "dashboard/custom-demo",
+      "required_scope": "tool:example_full:read"
+    }
+  ],
+  "widgets": [
+    {
+      "key": "items_count",
+      "title": "Example items",
+      "description": "How many example items exist.",
+      "kind": "stat",
+      "data_path": "dashboard/items-count"
+    },
+    {
+      "key": "latest_items",
+      "title": "Latest items",
+      "kind": "list",
+      "data_path": "dashboard/latest-items",
+      "width": 2,
+      "height": 2,
+      "refresh_seconds": 120
+    },
+    {
+      "key": "custom_demo",
+      "title": "Custom widget",
+      "description": "Drawn by this tool's own bundle.",
+      "kind": "custom",
+      "data_path": "dashboard/custom-demo",
+      "width": 2
+    }
   ]
 }

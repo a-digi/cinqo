@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.0.347",
+  "version": "0.0.348",
   "mcp": true,
   "requires_tools": [
     {
@@ -398,6 +398,16 @@
       "method": "DELETE",
       "path_suffix": "cv-documents",
       "required_scope": "tool:career:cv_documents"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "dashboard/new-jobs",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "dashboard/recent-jobs",
+      "required_scope": "tool:career:jobs"
     }
   ],
   "mcp_tools": [
@@ -623,6 +633,28 @@
     {
       "topic": "career.job.created",
       "path_suffix": "events/job-created"
+    }
+  ],
+  "widgets": [
+    {
+      "key": "new_jobs",
+      "title": "New jobs",
+      "description": "Jobs added per day over the last two weeks.",
+      "kind": "chart",
+      "data_path": "dashboard/new-jobs",
+      "width": 2,
+      "height": 1,
+      "refresh_seconds": 300
+    },
+    {
+      "key": "recent_jobs",
+      "title": "Recent jobs",
+      "description": "The latest jobs that were added.",
+      "kind": "list",
+      "data_path": "dashboard/recent-jobs",
+      "width": 2,
+      "height": 2,
+      "refresh_seconds": 120
     }
   ]
 }

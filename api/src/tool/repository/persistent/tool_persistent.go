@@ -129,6 +129,9 @@ func (r *ToolPersistentRepo) Delete(id string) error {
 	if _, err := tx.Exec(`DELETE FROM tool_event_listeners WHERE tool_id = ?`, id); err != nil {
 		return err
 	}
+	if _, err := tx.Exec(`DELETE FROM tool_dashboard_widgets WHERE tool_id = ?`, id); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(`DELETE FROM tools WHERE id = ?`, id); err != nil {
 		return err
 	}

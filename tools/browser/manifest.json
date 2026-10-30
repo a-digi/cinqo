@@ -1,7 +1,7 @@
 {
   "slug": "browser",
   "name": "Browser",
-  "version": "0.0.193",
+  "version": "0.0.194",
   "mcp": true,
   "scopes": [
     {
@@ -137,6 +137,11 @@
       "method": "POST",
       "path_suffix": "crawl-cancel",
       "required_scope": "tool:browser:crawl"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "dashboard/status",
+      "required_scope": "tool:browser:crawl"
     }
   ],
   "mcp_tools": [
@@ -171,6 +176,18 @@
     {
       "name": "find_repeating_items",
       "required_scope": "tool:browser:crawl"
+    }
+  ],
+  "widgets": [
+    {
+      "key": "status",
+      "title": "Browser",
+      "description": "Whether Chrome is available for crawling.",
+      "kind": "stat",
+      "data_path": "dashboard/status",
+      "width": 1,
+      "height": 1,
+      "refresh_seconds": 60
     }
   ]
 }

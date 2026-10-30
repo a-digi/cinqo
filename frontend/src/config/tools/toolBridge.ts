@@ -65,9 +65,33 @@ export interface ToolRoute {
   unmount?: (container: HTMLElement) => void
 }
 
+// A tool's own display for one of its Home dashboard widgets, for a widget the
+// tool declared with kind "custom" (manifest widgets[]). Core fetches and
+// validates the widget's data exactly as for any other widget and hands it to
+// the tool, which draws it into the card's body. The same rules as ToolRoute's
+// mount apply: no Tailwind classes, only inline styles and the --cinqo-tool-*
+// CSS variables listed there.
+export interface ToolDashboardWidget {
+  // The widget's id: "<tool slug>.<widget key>", e.g. "career.new_jobs".
+  id: string
+  // Draw into container. data is the JSON object the tool's own data route
+  // returned (a plain object, at most 8 levels deep).
+  mount: (container: HTMLElement, data: Record<string, unknown>) => void
+  // Called when fresh data arrives. Omit it and core will unmount and mount
+  // again instead.
+  update?: (container: HTMLElement, data: Record<string, unknown>) => void
+  // Clean up (timers, listeners). Core also empties the container afterwards.
+  unmount?: (container: HTMLElement) => void
+}
+
 export interface ToolBridge {
   registerMenuEntry(entry: ToolMenuEntry): void
   registerRoute(route: ToolRoute): void
+  // Registers the display for a "custom" dashboard widget. The first
+  // registration of an id wins; a malformed id or a missing mount is refused
+  // with a console error. A throwing mount/update shows a "couldn't be
+  // displayed" note in that card and nothing else on the page is affected.
+  registerDashboardWidget(widget: ToolDashboardWidget): void
   navigate(path: string): void
   // Opens the floating chat widget (GlobalChatWidget), if currently
   // mounted, showing this conversation — resuming its live turn watch
@@ -82,7 +106,10 @@ export interface ToolBridge {
 export interface ToolBridgeCallbacks {
   onRegisterMenuEntry: (entry: ToolMenuEntry) => void
   onRegisterRoute: (route: ToolRoute) => void
+  onRegisterDashboardWidget: (widget: ToolDashboardWidget) => void
 }
+
+const widgetIdPattern = /^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/
 
 export function createToolBridge(callbacks: ToolBridgeCallbacks): ToolBridge {
   return {
@@ -95,6 +122,17 @@ export function createToolBridge(callbacks: ToolBridgeCallbacks): ToolBridge {
         return
       }
       callbacks.onRegisterRoute(route)
+    },
+    registerDashboardWidget(widget) {
+      if (typeof widget.id !== 'string' || !widgetIdPattern.test(widget.id)) {
+        console.error(`Dashboard widget id ${JSON.stringify(widget.id)} must look like "<tool>.<key>" — ignoring registration.`)
+        return
+      }
+      if (typeof widget.mount !== 'function') {
+        console.error(`Dashboard widget "${widget.id}" must provide a mount function — ignoring registration.`)
+        return
+      }
+      callbacks.onRegisterDashboardWidget(widget)
     },
     navigate(path) {
       toolNavigate(path)

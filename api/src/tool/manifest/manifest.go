@@ -10,6 +10,7 @@ package manifest
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/a-digi/cinqo/src/dashboard"
 	"regexp"
 	"strconv"
 	"strings"
@@ -66,6 +67,11 @@ type Manifest struct {
 	// step, not here). See
 	// plan/ai/domain-events/step-03-tool-listener-manifest-and-cache.md.
 	EventListeners []EventListenerDecl `json:"event_listeners,omitempty"`
+	// Widgets declares Home dashboard widgets this tool provides. Each names one
+	// of the tool's own declared GET routes as its data source; the widget's
+	// scope is that route's required_scope. See WidgetDecl and
+	// plan/ai/dashboard/home-dashboard.md.
+	Widgets []WidgetDecl `json:"widgets,omitempty"`
 }
 
 type ScopeDecl struct {
@@ -132,6 +138,23 @@ type DelegatesDecl struct {
 type EventListenerDecl struct {
 	Topic      string `json:"topic"`
 	PathSuffix string `json:"path_suffix"`
+}
+
+// WidgetDecl is one Home dashboard widget. Kind is one of the core-owned kinds
+// (stat, list, chart): the tool supplies data matching that kind's schema, core
+// draws it. DataPath is the path_suffix of a GET route declared in this
+// manifest's routes[]. SchemaVersion, Width, Height and RefreshSeconds are
+// optional (defaults: 1, 1, 1, 60).
+type WidgetDecl struct {
+	Key            string `json:"key"`
+	Title          string `json:"title"`
+	Description    string `json:"description,omitempty"`
+	Kind           string `json:"kind"`
+	SchemaVersion  int    `json:"schema_version,omitempty"`
+	DataPath       string `json:"data_path"`
+	Width          int    `json:"width,omitempty"`
+	Height         int    `json:"height,omitempty"`
+	RefreshSeconds int    `json:"refresh_seconds,omitempty"`
 }
 
 // RequiredToolDecl is one other tool this manifest's own tool depends
@@ -280,6 +303,10 @@ func Validate(m Manifest, in ValidationInput) (kind string, err error) {
 		}
 	}
 
+	if err := ValidateWidgets(m, in.HasBackendExecutable); err != nil {
+		return "", err
+	}
+
 	switch {
 	case in.HasFrontendBundle && in.HasBackendExecutable:
 		return "frontend_and_backend", nil
@@ -290,6 +317,73 @@ func Validate(m Manifest, in ValidationInput) (kind string, err error) {
 	default:
 		return "", fmt.Errorf("package must contain frontend/bundle.js and/or backend/tool")
 	}
+}
+
+// WidgetDefinition is d with its optional fields defaulted, as a dashboard
+// Definition for slug — the one place the declaration is turned into the
+// engine's own type, so Validate and the install cache cannot disagree.
+func WidgetDefinition(slug string, d WidgetDecl) dashboard.Definition {
+	def := dashboard.Definition{
+		Provider:       slug,
+		Key:            d.Key,
+		Title:          d.Title,
+		Description:    d.Description,
+		Kind:           dashboard.Kind(d.Kind),
+		Size:           dashboard.Size{W: d.Width, H: d.Height},
+		RefreshSeconds: d.RefreshSeconds,
+	}
+	if def.Size.W == 0 {
+		def.Size.W = dashboard.MinWidth
+	}
+	if def.Size.H == 0 {
+		def.Size.H = dashboard.MinHeight
+	}
+	if def.RefreshSeconds == 0 {
+		def.RefreshSeconds = dashboard.DefaultRefreshSeconds
+	}
+	return def
+}
+
+// ValidateWidgets checks m.Widgets: a backend must exist to serve them, every
+// definition must be valid (names, kind, size and refresh ranges), keys must be
+// unique, the schema version must be one the engine knows, and the data path
+// must be a GET route this manifest declares, with a non-empty required_scope
+// (the widget inherits it, so a route without one would show the widget to
+// everyone).
+func ValidateWidgets(m Manifest, hasBackend bool) error {
+	if len(m.Widgets) == 0 {
+		return nil
+	}
+	if !hasBackend {
+		return fmt.Errorf("widgets requires the package to include a backend executable")
+	}
+	routeScope := map[string]string{}
+	for _, r := range m.Routes {
+		if strings.EqualFold(r.Method, "GET") {
+			routeScope[r.PathSuffix] = r.RequiredScope
+		}
+	}
+	seen := map[string]struct{}{}
+	for _, w := range m.Widgets {
+		if err := WidgetDefinition(m.Slug, w).Validate(); err != nil {
+			return fmt.Errorf("widgets: %w", err)
+		}
+		if _, dup := seen[w.Key]; dup {
+			return fmt.Errorf("widgets: key %q is declared twice", w.Key)
+		}
+		seen[w.Key] = struct{}{}
+		if w.SchemaVersion != 0 && w.SchemaVersion != dashboard.SchemaVersion {
+			return fmt.Errorf("widgets: widget %q uses unsupported schema_version %d", w.Key, w.SchemaVersion)
+		}
+		scope, ok := routeScope[w.DataPath]
+		if !ok {
+			return fmt.Errorf("widgets: widget %q data_path %q must be a GET route declared in routes", w.Key, w.DataPath)
+		}
+		if strings.TrimSpace(scope) == "" {
+			return fmt.Errorf("widgets: widget %q data_path %q must name a route with a required_scope", w.Key, w.DataPath)
+		}
+	}
+	return nil
 }
 
 // ValidateRequiredTools checks m's own RequiresTools against

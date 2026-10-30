@@ -160,3 +160,34 @@ func (r *MediaQueryRepo) Resolve(id, conversationID string) (*media_entity.Media
 
 	return m, nil
 }
+
+// ToolUsage is how much storage one tool's namespace uses.
+type ToolUsage struct {
+	ToolSlug string
+	Files    int
+	Bytes    int64
+}
+
+// UsageByTool returns file count and total size per tool_slug, largest first —
+// the data behind the Home dashboard's media widget. Counts every row, expired
+// or not: they still occupy disk.
+func (r *MediaQueryRepo) UsageByTool() ([]ToolUsage, error) {
+	rows, err := r.db.Query(
+		`SELECT tool_slug, COUNT(*), COALESCE(SUM(size_bytes), 0)
+		FROM media_files GROUP BY tool_slug ORDER BY SUM(size_bytes) DESC, tool_slug ASC`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]ToolUsage, 0)
+	for rows.Next() {
+		var u ToolUsage
+		if err := rows.Scan(&u.ToolSlug, &u.Files, &u.Bytes); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}

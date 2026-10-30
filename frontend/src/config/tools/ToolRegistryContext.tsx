@@ -1,14 +1,16 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useAuth } from '../../Components/Auth/AuthContext'
 import { loadTools } from './loadTools'
-import type { ToolMenuEntry, ToolRoute } from './toolBridge'
+import type { ToolDashboardWidget, ToolMenuEntry, ToolRoute } from './toolBridge'
 
 export interface ToolRegistryValue {
   menuEntries: ToolMenuEntry[]
   routes: ToolRoute[]
+  // Tool-drawn dashboard widgets by widget id; the first registration of an id wins.
+  dashboardWidgets: Record<string, ToolDashboardWidget>
 }
 
-const ToolRegistryContext = createContext<ToolRegistryValue>({ menuEntries: [], routes: [] })
+const ToolRegistryContext = createContext<ToolRegistryValue>({ menuEntries: [], routes: [], dashboardWidgets: {} })
 
 // Context + hook co-located deliberately (same convention as every other
 // *Context.tsx in this codebase) — costs this file Fast Refresh for the
@@ -28,6 +30,7 @@ export function ToolRegistryProvider({ children }: { children: ReactNode }) {
   const { isAuthenticated } = useAuth()
   const [menuEntries, setMenuEntries] = useState<ToolMenuEntry[]>([])
   const [routes, setRoutes] = useState<ToolRoute[]>([])
+  const [dashboardWidgets, setDashboardWidgets] = useState<Record<string, ToolDashboardWidget>>({})
   const loadedRef = useRef(false)
 
   useEffect(() => {
@@ -40,8 +43,17 @@ export function ToolRegistryProvider({ children }: { children: ReactNode }) {
       onRegisterRoute: (route) => {
         setRoutes((prev) => [...prev, route])
       },
+      onRegisterDashboardWidget: (widget) => {
+        setDashboardWidgets((prev) => {
+          if (widget.id in prev) {
+            console.error(`Dashboard widget "${widget.id}" is already registered — ignoring the second registration.`)
+            return prev
+          }
+          return { ...prev, [widget.id]: widget }
+        })
+      },
     })
   }, [isAuthenticated])
 
-  return <ToolRegistryContext.Provider value={{ menuEntries, routes }}>{children}</ToolRegistryContext.Provider>
+  return <ToolRegistryContext.Provider value={{ menuEntries, routes, dashboardWidgets }}>{children}</ToolRegistryContext.Provider>
 }

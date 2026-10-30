@@ -23,6 +23,9 @@ import (
 	auth_config "github.com/a-digi/cinqo/src/auth/config"
 	auth_service "github.com/a-digi/cinqo/src/auth/service"
 	"github.com/a-digi/cinqo/src/conversation"
+	"github.com/a-digi/cinqo/src/dashboard"
+	dashboard_system "github.com/a-digi/cinqo/src/dashboard/system"
+	dashboard_toolwidgets "github.com/a-digi/cinqo/src/dashboard/toolwidgets"
 	"github.com/a-digi/cinqo/src/domainevent"
 	platform_crypto "github.com/a-digi/cinqo/src/platform/crypto"
 	tool_manager "github.com/a-digi/cinqo/src/tool/manager"
@@ -284,6 +287,26 @@ func Start(opts Options) (srv *http.Server, cfg *server.Config, ctx *di.ContextB
 	updateChecker := updatecheck.New(context.Background(), repositoryService)
 	ctx.Set("tool_update_checker", updateChecker)
 	updateChecker.Start(updatecheck.TriggerLaunch)
+
+	// Home dashboard engine (plan/ai/dashboard/home-dashboard.md): the system's
+	// own widgets register in the registry, installed tools' widgets come
+	// from the tool source (their manifest widgets[], cached at install).
+	// Wired after the conversation database and the repository service exist,
+	// since some system widgets read from them.
+	widgetRegistry := dashboard.NewRegistry()
+	for _, w := range []dashboard.Provider{
+		dashboard_system.NewToolsOverview(manager.Connector.DB),
+		dashboard_system.NewUpdatesAvailable(manager.Connector.DB, repositoryService, opts.AppVersion),
+		dashboard_system.NewRecentConversations(conversationManager.Connector.DB),
+		dashboard_system.NewMediaUsage(manager.Connector.DB),
+	} {
+		if err := widgetRegistry.Register(w); err != nil {
+			return nil, nil, nil, log, err
+		}
+	}
+	dashboardLog := func(format string, args ...any) { log.Warning(format, args...) }
+	toolWidgets := dashboard_toolwidgets.NewSource(manager.Connector.DB, tool_manager.Port).WithLogger(dashboardLog)
+	dashboard.SetDefault(dashboard.NewEngine(widgetRegistry, toolWidgets).WithLogger(dashboardLog))
 
 	// Auth bootstrap: config.json's "auth" block is always present (dev
 	// HS256 secret); iam.yaml does not exist on disk yet (see
