@@ -21,8 +21,6 @@ type DropdownProps<V extends string = string> =
       onChange: (value: V) => void
       placeholder?: string
       disabled?: boolean
-      // Chevron on the trigger (pointing up while open) so it reads as a dropdown. On by default; pass false to hide it.
-      caret?: boolean
     }
   | {
       multiple: true
@@ -31,12 +29,10 @@ type DropdownProps<V extends string = string> =
       onChange: (value: V[]) => void
       placeholder?: string
       disabled?: boolean
-      // Chevron on the trigger (pointing up while open) so it reads as a dropdown. On by default; pass false to hide it.
-      caret?: boolean
     }
 
 export function Dropdown<V extends string = string>(props: DropdownProps<V>) {
-  const { options, disabled, placeholder, caret = true } = props
+  const { options, disabled, placeholder } = props
   const [open, setOpen] = useState(false)
   const [highlighted, setHighlighted] = useState(0)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -96,22 +92,19 @@ export function Dropdown<V extends string = string>(props: DropdownProps<V>) {
         }}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className={`w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-left text-sm disabled:opacity-50 ${
-          caret ? 'flex items-center justify-between gap-2' : ''
-        }`}
+        className="flex w-full items-center justify-between gap-2 rounded border border-gray-300 bg-white px-2 py-1.5 text-left text-sm disabled:opacity-50"
       >
         <span className="truncate">{buttonLabel}</span>
-        {caret && (
-          <svg
-            viewBox="0 0 20 20"
-            fill="none"
-            stroke="currentColor"
-            aria-hidden="true"
-            className={`h-4 w-4 shrink-0 text-gray-500 transition-transform ${open ? 'rotate-180' : ''}`}
-          >
-            <path d="M5 8l5 5 5-5" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        )}
+        {/* Always shown, so the trigger reads as a dropdown; points up while open. */}
+        <svg
+          viewBox="0 0 20 20"
+          fill="none"
+          stroke="currentColor"
+          aria-hidden="true"
+          className={`h-4 w-4 shrink-0 text-gray-500 transition-transform ${open ? 'rotate-180' : ''}`}
+        >
+          <path d="M5 8l5 5 5-5" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
       </button>
       {open && (
         <ul
