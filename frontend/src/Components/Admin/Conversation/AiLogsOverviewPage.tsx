@@ -1,7 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { fetchAllAiTraceLogs, type AllAiTraceLogsEntry } from '../../../api/conversations'
 import { ApiError } from '../../../api/client'
-import { CountUp } from '../../../Shared/Components/Motion/CountUp'
+import { AiLogsStats } from './AiLogsStats'
+import { AiLogsTable } from './AiLogsTable'
+import { AiLogsToolbar } from './AiLogsToolbar'
+import { filterEntries, sortEntries, type SortKey } from './aiLogsRules'
 
 // Admin-wide overview: every conversation that has ever produced an AI
 // trace log, where its own folder lives, and how many files exist —
@@ -15,9 +18,28 @@ import { CountUp } from '../../../Shared/Components/Motion/CountUp'
 // this admin doesn't own would 404 — this overview already shows the
 // same folder/count inline, so no link adds anything. See
 // plan/ai/conversation/step-38-ai-logs-overview-page.md.
+const PAGE_SIZE = 25
+
 export function AiLogsOverviewPage() {
   const [entries, setEntries] = useState<AllAiTraceLogsEntry[]>([])
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [sortKey, setSortKey] = useState<SortKey>('newest')
+  const [now] = useState(() => new Date())
+  const [query, setQuery] = useState('')
+  const [shown, setShown] = useState(PAGE_SIZE)
+  const sorted = useMemo(() => sortEntries(filterEntries(entries, query), sortKey), [entries, query, sortKey])
+  const visible = sorted.slice(0, shown)
+
+  // A new search or sort starts again from the first page.
+  const changeQuery = (value: string) => {
+    setQuery(value)
+    setShown(PAGE_SIZE)
+  }
+  const changeSort = (key: SortKey) => {
+    setSortKey(key)
+    setShown(PAGE_SIZE)
+  }
 
   useEffect(() => {
     fetchAllAiTraceLogs()
@@ -25,51 +47,71 @@ export function AiLogsOverviewPage() {
       .catch((err: unknown) => {
         setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err))
       })
+      .finally(() => {
+        setLoading(false)
+      })
   }, [])
 
   return (
-    <div className="cinqo-stagger cinqo-v-swing cinqo-t-type max-w-4xl p-6 font-sans text-gray-900">
-      <h1 className="mb-1.5 text-xl font-semibold">AI Logs</h1>
-      <p className="mb-5 text-sm text-gray-500">
-        Every conversation that has ever produced an AI trace log — one row per conversation, showing where its own log files live and how
-        many exist. Only populated while AI trace logging is turned on (Settings). Nothing here opens a file's own content; open the folder
-        directly (a text editor, or the API) to read one.
-      </p>
+    <div className="cinqo-stagger cinqo-v-swing cinqo-t-type space-y-5 p-6 font-sans text-gray-900">
+      <div>
+        <h1 className="text-xl font-semibold">AI Logs</h1>
+        <p className="mt-1 text-sm text-gray-500">
+          Every conversation that has produced an AI trace log, and where its files live. Only filled while AI trace logging is on
+          (Settings).
+        </p>
+        <details className="mt-2 text-sm text-gray-500">
+          <summary className="cursor-pointer select-none text-blue-600 hover:underline">How this works</summary>
+          <p className="mt-2 max-w-3xl">
+            One row per conversation, with the folder holding its log files and how many exist. Nothing here opens a file&apos;s content:
+            open the folder directly (a text editor, or the API) to read one.
+          </p>
+        </details>
+      </div>
 
-      <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
-
-      {entries.length === 0 && !error && <p className="text-sm text-gray-400">No conversation has produced an AI trace log yet.</p>}
-
-      {entries.length > 0 && (
-        <div className="overflow-hidden rounded-md border border-gray-200">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-gray-200 bg-gray-50 text-xs uppercase text-gray-500">
-                <th className="px-4 py-2 font-medium">Conversation</th>
-                <th className="px-4 py-2 font-medium">Folder</th>
-                <th className="px-4 py-2 font-medium">Files</th>
-                <th className="px-4 py-2 font-medium">Last modified</th>
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map((e) => (
-                <tr key={e.conversationId} className="border-b border-gray-100 last:border-0">
-                  <td className="px-4 py-2 text-xs text-gray-900">
-                    <div className="truncate">{e.title ?? '(deleted conversation)'}</div>
-                    <div className="font-mono text-gray-400">{e.conversationId}</div>
-                  </td>
-                  <td className="max-w-xs truncate px-4 py-2 font-mono text-xs text-gray-600" title={e.folder}>
-                    {e.folder}
-                  </td>
-                  <td className="px-4 py-2 text-xs text-gray-600">
-                    <CountUp value={String(e.logCount)} delayMs={600} />
-                  </td>
-                  <td className="px-4 py-2 text-xs text-gray-500">{e.modifiedAt ? new Date(e.modifiedAt).toLocaleString() : '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      {error ? (
+        <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          {error}
+        </p>
+      ) : (
+        <>
+          <AiLogsStats entries={entries} loading={loading} now={now} />
+          <AiLogsToolbar
+            query={query}
+            onQueryChange={changeQuery}
+            sortKey={sortKey}
+            onSortChange={changeSort}
+            matching={sorted.length}
+            total={entries.length}
+          />
+          <AiLogsTable
+            entries={visible}
+            loading={loading}
+            query={query}
+            onClearQuery={() => {
+              changeQuery('')
+            }}
+            sortKey={sortKey}
+            onSortChange={changeSort}
+            now={now}
+          />
+          {sorted.length > shown && (
+            <div className="flex items-center justify-center gap-3 text-sm text-gray-500">
+              <span>
+                Showing {shown} of {sorted.length}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setShown((n) => n + PAGE_SIZE)
+                }}
+                className="rounded-lg border border-gray-300 bg-white px-4 py-2 font-medium text-gray-800 hover:bg-gray-50"
+              >
+                Show {Math.min(PAGE_SIZE, sorted.length - shown)} more
+              </button>
+            </div>
+          )}
+        </>
       )}
     </div>
   )
