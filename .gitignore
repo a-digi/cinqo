@@ -97,3 +97,6 @@ plan/
 
 .playwright-mcp
 *.pid
+
+# make repository output (a tool repository file and its package copies).
+/dist/repository/

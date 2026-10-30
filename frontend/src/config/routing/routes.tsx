@@ -6,6 +6,7 @@ import { LoginPage } from '../../Components/Auth/LoginPage'
 import { Layout } from '../../Layout/Layout'
 import { ScopesPage } from '../../Components/Admin/Security/ScopesPage'
 import { ToolsListPage } from '../../Components/Admin/Tools/ToolsListPage'
+import { RepositoriesPage } from '../../Components/Admin/Tools/RepositoriesPage'
 import { PlatformKeysPage } from '../../Components/Admin/Platforms/PlatformKeysPage'
 import { ConversationPage } from '../../Components/Conversation/ConversationPage'
 import { AiLogsPage } from '../../Components/Conversation/AiLogsPage'
@@ -44,6 +45,14 @@ export const router = createBrowserRouter([
             element: (
               <AuthGuard scopes={[AppScopes.ToolManage]}>
                 <ToolsListPage />
+              </AuthGuard>
+            ),
+          },
+          {
+            path: '/admin/tool-repositories',
+            element: (
+              <AuthGuard scopes={[AppScopes.ToolManage]}>
+                <RepositoriesPage />
               </AuthGuard>
             ),
           },

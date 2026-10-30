@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/google/uuid"
 
@@ -212,40 +213,85 @@ func InstallHandler(reqCtx request.RequestContext) {
 		return
 	}
 
+	result, installErr := InstallPackage(reqCtx, data, nil)
+	if installErr != nil {
+		response.ErrorResponse(w, installErr.Status, installErr.Message)
+		return
+	}
+	status := http.StatusOK
+	if result.Created {
+		status = http.StatusCreated
+	}
+	response.SuccessResponse(w, status, result.Tool)
+}
+
+// InstallError is a failed install with the HTTP status it maps to.
+type InstallError struct {
+	Status  int
+	Message string
+}
+
+func (e *InstallError) Error() string { return e.Message }
+
+// InstallResult is a successful install: Created is true for a fresh install
+// and false for an update; Tool is the same JSON shape the list returns.
+type InstallResult struct {
+	Created bool
+	Tool    any
+}
+
+// PackageExpectation lets a caller that knows what it asked for (a repository
+// install) make sure the package really is that: the manifest's slug and
+// version must equal it.
+type PackageExpectation struct {
+	Slug    string
+	Version string
+}
+
+// installMu serialises installs: an upload and a repository install of the
+// same tool must not swap its directory at the same time.
+var installMu sync.Mutex
+
+// InstallPackage runs the install/update pipeline on a tool package's zip
+// bytes — extract into a staging directory, validate the manifest, then a fresh
+// install or a strictly-newer update — shared by the upload route and the
+// repository install. expect is nil for an upload.
+func InstallPackage(reqCtx request.RequestContext, data []byte, expect *PackageExpectation) (*InstallResult, *InstallError) {
+	installMu.Lock()
+	defer installMu.Unlock()
+
 	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
-		response.ErrorResponse(w, http.StatusBadRequest, "not a valid zip file")
-		return
+		return nil, &InstallError{Status: http.StatusBadRequest, Message: "not a valid zip file"}
 	}
 
 	if err := os.MkdirAll(toolsRoot(reqCtx), 0o755); err != nil {
-		response.ErrorResponse(w, http.StatusInternalServerError, "failed to prepare the tools directory")
-		return
+		return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to prepare the tools directory"}
 	}
 
 	stagingDir := filepath.Join(toolsRoot(reqCtx), ".staging", uuid.NewString())
 	if err := os.MkdirAll(stagingDir, 0o755); err != nil {
-		response.ErrorResponse(w, http.StatusInternalServerError, "failed to prepare a staging directory")
-		return
+		return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to prepare a staging directory"}
 	}
 	// Unconditional cleanup — nothing staged ever leaks on a rejected
 	// upload, regardless of where the pipeline below fails.
 	defer os.RemoveAll(stagingDir)
 
 	if err := sandbox.ExtractZip(zr, stagingDir); err != nil {
-		response.ErrorResponse(w, http.StatusBadRequest, "package failed validation: "+err.Error())
-		return
+		return nil, &InstallError{Status: http.StatusBadRequest, Message: "package failed validation: " + err.Error()}
 	}
 
 	manifestBytes, err := os.ReadFile(filepath.Join(stagingDir, "manifest.json"))
 	if err != nil {
-		response.ErrorResponse(w, http.StatusBadRequest, "package is missing manifest.json")
-		return
+		return nil, &InstallError{Status: http.StatusBadRequest, Message: "package is missing manifest.json"}
 	}
 	m, err := manifest.Parse(manifestBytes)
 	if err != nil {
-		response.ErrorResponse(w, http.StatusBadRequest, err.Error())
-		return
+		return nil, &InstallError{Status: http.StatusBadRequest, Message: err.Error()}
+	}
+	if expect != nil && (m.Slug != expect.Slug || m.Version != expect.Version) {
+		return nil, &InstallError{Status: http.StatusBadRequest,
+			Message: fmt.Sprintf("the package is %s %s but the repository lists %s %s", m.Slug, m.Version, expect.Slug, expect.Version)}
 	}
 
 	db := reqCtx.GetDI().GetDatabaseManager().Connector.DB
@@ -255,8 +301,7 @@ func InstallHandler(reqCtx request.RequestContext) {
 	existing, findErr := queryRepo.FindBySlug(m.Slug)
 	found := findErr == nil
 	if findErr != nil && !errors.Is(findErr, sql.ErrNoRows) {
-		response.ErrorResponse(w, http.StatusInternalServerError, "failed to check for an existing tool")
-		return
+		return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to check for an existing tool"}
 	}
 
 	excludeID := ""
@@ -265,14 +310,12 @@ func InstallHandler(reqCtx request.RequestContext) {
 	}
 	existingScopes, err := queryRepo.ExistingScopesExcludingTool(excludeID)
 	if err != nil {
-		response.ErrorResponse(w, http.StatusInternalServerError, "failed to check for scope conflicts")
-		return
+		return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to check for scope conflicts"}
 	}
 
 	installedTools, err := installedToolsMap(queryRepo)
 	if err != nil {
-		response.ErrorResponse(w, http.StatusInternalServerError, "failed to check installed tool dependencies")
-		return
+		return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to check installed tool dependencies"}
 	}
 
 	_, frontendErr := os.Stat(filepath.Join(stagingDir, frontendBundleFilename))
@@ -280,8 +323,7 @@ func InstallHandler(reqCtx request.RequestContext) {
 
 	currentAppVersion, err := appVersion(reqCtx)
 	if err != nil {
-		response.ErrorResponse(w, http.StatusInternalServerError, "failed to determine the running app version")
-		return
+		return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to determine the running app version"}
 	}
 
 	kind, err := manifest.Validate(m, manifest.ValidationInput{
@@ -292,8 +334,7 @@ func InstallHandler(reqCtx request.RequestContext) {
 		InstalledTools:       installedTools,
 	})
 	if err != nil {
-		response.ErrorResponse(w, http.StatusBadRequest, err.Error())
-		return
+		return nil, &InstallError{Status: http.StatusBadRequest, Message: err.Error()}
 	}
 
 	scopes, routes, required, requiredTools := childRowsFromManifest(m)
@@ -320,21 +361,18 @@ func InstallHandler(reqCtx request.RequestContext) {
 
 		serviceToken, err := generateServiceToken()
 		if err != nil {
-			response.ErrorResponse(w, http.StatusInternalServerError, "failed to generate tool service token")
-			return
+			return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to generate tool service token"}
 		}
 		tool.ServiceToken = serviceToken
 
 		if err := os.Rename(stagingDir, finalDir); err != nil {
-			response.ErrorResponse(w, http.StatusInternalServerError, "failed to install package: "+err.Error())
-			return
+			return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to install package: " + err.Error()}
 		}
 		tool.InstallPath = finalDir
 
 		if err := chmodBackendExecutableIfPresent(finalDir); err != nil {
 			os.RemoveAll(finalDir)
-			response.ErrorResponse(w, http.StatusInternalServerError, "failed to finalize install: "+err.Error())
-			return
+			return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to finalize install: " + err.Error()}
 		}
 
 		if err := persistentRepo.InsertFresh(tool, scopes, routes, required); err != nil {
@@ -342,13 +380,11 @@ func InstallHandler(reqCtx request.RequestContext) {
 			// undo the move so a retry isn't blocked by an orphaned
 			// directory with no matching row.
 			os.RemoveAll(finalDir)
-			response.ErrorResponse(w, http.StatusInternalServerError, "failed to record installed tool: "+err.Error())
-			return
+			return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to record installed tool: " + err.Error()}
 		}
 		if err := tool_persistent.NewToolRequiredToolPersistentRepo(db).ReplaceAll(tool.ID, requiredTools); err != nil {
 			os.RemoveAll(finalDir)
-			response.ErrorResponse(w, http.StatusInternalServerError, "failed to record tool dependencies: "+err.Error())
-			return
+			return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to record tool dependencies: " + err.Error()}
 		}
 
 		// Best-effort start, matching the reference: a start failure
@@ -369,28 +405,23 @@ func InstallHandler(reqCtx request.RequestContext) {
 
 		created, err := queryRepo.FindByID(tool.ID)
 		if err != nil {
-			response.ErrorResponse(w, http.StatusInternalServerError, "tool installed but failed to reload")
-			return
+			return nil, &InstallError{Status: http.StatusInternalServerError, Message: "tool installed but failed to reload"}
 		}
 		mcpTools, err := mcpToolNamesFor(db, created.ID)
 		if err != nil {
-			response.ErrorResponse(w, http.StatusInternalServerError, "tool installed but failed to load functions")
-			return
+			return nil, &InstallError{Status: http.StatusInternalServerError, Message: "tool installed but failed to load functions"}
 		}
-		response.SuccessResponse(w, http.StatusCreated, toToolResponse(created, systemToolsConfigFrom(reqCtx), mcpTools))
-		return
+		return &InstallResult{Created: true, Tool: toToolResponse(created, systemToolsConfigFrom(reqCtx), mcpTools)}, nil
 	}
 
 	// Update path: same slug, must be a strictly newer version.
 	cmp, err := manifest.CompareVersions(m.Version, existing.Version)
 	if err != nil {
-		response.ErrorResponse(w, http.StatusBadRequest, err.Error())
-		return
+		return nil, &InstallError{Status: http.StatusBadRequest, Message: err.Error()}
 	}
 	if cmp <= 0 {
-		response.ErrorResponse(w, http.StatusBadRequest,
-			"version must be greater than the currently installed version ("+existing.Version+")")
-		return
+		return nil, &InstallError{Status: http.StatusBadRequest,
+			Message: "version must be greater than the currently installed version (" + existing.Version + ")"}
 	}
 
 	// Stop the tool's currently running backend before swapping its
@@ -398,18 +429,15 @@ func InstallHandler(reqCtx request.RequestContext) {
 	// still hold open, and a clean stop/restart is simpler to reason
 	// about than a live swap.
 	if err := manager.Stop(db, existing.ID); err != nil {
-		response.ErrorResponse(w, http.StatusInternalServerError, "failed to stop the running tool before updating: "+err.Error())
-		return
+		return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to stop the running tool before updating: " + err.Error()}
 	}
 
 	if err := replaceInstallDir(stagingDir, finalDir); err != nil {
-		response.ErrorResponse(w, http.StatusInternalServerError, "failed to update package: "+err.Error())
-		return
+		return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to update package: " + err.Error()}
 	}
 
 	if err := chmodBackendExecutableIfPresent(finalDir); err != nil {
-		response.ErrorResponse(w, http.StatusInternalServerError, "failed to finalize update: "+err.Error())
-		return
+		return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to finalize update: " + err.Error()}
 	}
 
 	updated := &tool_entity.Tool{
@@ -443,19 +471,16 @@ func InstallHandler(reqCtx request.RequestContext) {
 	} else {
 		serviceToken, err := generateServiceToken()
 		if err != nil {
-			response.ErrorResponse(w, http.StatusInternalServerError, "failed to generate tool service token")
-			return
+			return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to generate tool service token"}
 		}
 		updated.ServiceToken = serviceToken
 	}
 
 	if err := persistentRepo.UpdateVersion(updated, scopes, routes, required); err != nil {
-		response.ErrorResponse(w, http.StatusInternalServerError, "failed to record updated tool: "+err.Error())
-		return
+		return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to record updated tool: " + err.Error()}
 	}
 	if err := tool_persistent.NewToolRequiredToolPersistentRepo(db).ReplaceAll(updated.ID, requiredTools); err != nil {
-		response.ErrorResponse(w, http.StatusInternalServerError, "failed to record tool dependencies: "+err.Error())
-		return
+		return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to record tool dependencies: " + err.Error()}
 	}
 
 	// Restart on the new code only if it was enabled before — an
@@ -479,15 +504,13 @@ func InstallHandler(reqCtx request.RequestContext) {
 
 	reloaded, err := queryRepo.FindByID(updated.ID)
 	if err != nil {
-		response.ErrorResponse(w, http.StatusInternalServerError, "tool updated but failed to reload")
-		return
+		return nil, &InstallError{Status: http.StatusInternalServerError, Message: "tool updated but failed to reload"}
 	}
 	mcpTools, err := mcpToolNamesFor(db, reloaded.ID)
 	if err != nil {
-		response.ErrorResponse(w, http.StatusInternalServerError, "tool updated but failed to load functions")
-		return
+		return nil, &InstallError{Status: http.StatusInternalServerError, Message: "tool updated but failed to load functions"}
 	}
-	response.SuccessResponse(w, http.StatusOK, toToolResponse(reloaded, systemToolsConfigFrom(reqCtx), mcpTools))
+	return &InstallResult{Created: false, Tool: toToolResponse(reloaded, systemToolsConfigFrom(reqCtx), mcpTools)}, nil
 }
 
 func childRowsFromManifest(m manifest.Manifest) ([]tool_entity.ToolScope, []tool_entity.ToolRoute, []tool_entity.ToolRequiredScope, []tool_entity.ToolRequiredTool) {

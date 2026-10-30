@@ -25,6 +25,7 @@ import (
 	security_handler "github.com/a-digi/cinqo/src/security/scopes/handler"
 	"github.com/a-digi/cinqo/src/tool"
 	tool_handler "github.com/a-digi/cinqo/src/tool/handler"
+	toolrepository_handler "github.com/a-digi/cinqo/src/toolrepository/handler"
 )
 
 // diStore mirrors src/auth/handler.diStore — Get isn't part of
@@ -85,6 +86,13 @@ func Init(ctx serverdi.Context) {
 		"ToolDisable":        local_routing.HandlerFunc(tool_handler.DisableHandler),
 		"ToolFrontendBundle": local_routing.HandlerFunc(tool_handler.FrontendBundleHandler),
 		"ToolProxy":          local_routing.HandlerFunc(tool_handler.ProxyHandler),
+
+		"ToolRepositoryList":    local_routing.HandlerFunc(toolrepository_handler.ListHandler),
+		"ToolRepositoryGet":     local_routing.HandlerFunc(toolrepository_handler.GetHandler),
+		"ToolRepositoryInstall": local_routing.HandlerFunc(toolrepository_handler.InstallHandler),
+		"ToolRepositoryAdd":     local_routing.HandlerFunc(toolrepository_handler.AddHandler),
+		"ToolRepositoryDelete":  local_routing.HandlerFunc(toolrepository_handler.DeleteHandler),
+		"ToolRepositoryRefresh": local_routing.HandlerFunc(toolrepository_handler.RefreshHandler),
 
 		"PlatformList":      local_routing.HandlerFunc(platform_handler.ListPlatformsHandler),
 		"PlatformKeyList":   local_routing.HandlerFunc(platform_handler.ListKeysHandler),

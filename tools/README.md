@@ -51,3 +51,18 @@ can additionally have its own `Makefile` — see
 
 Both are reference examples, not real features — copy one as your
 starting point.
+
+## Publishing a repository
+
+```
+make repository                       # all tools with packaged versions/
+make repository BASE_URL=https://example.com/cinqo REPO_NAME="My tools"
+```
+
+Reads every `tools/<tool>/versions/tool-<tool>-<os>-<arch>.zip`, takes the tool id,
+name and version from each package's own `manifest.json`, and writes
+`dist/repository/repository.json` (SHA-256 and size per package; the highest version
+is the current one) plus a `files/` folder with the packages. Host that folder with
+any static file server and add the link to `repository.json` on the Repositories page
+(`Repositories` in the menu). The file is checked with the app's own validator before
+it is written. See `plan/ai/tools/repository/tool-repositories.md`.

@@ -250,3 +250,16 @@ package-tool:
 	@mkdir -p versions
 	cd tools/$(TOOL)/build/generic && zip -r ../../../../versions/tool-$(TOOL).zip . >/dev/null
 	@echo "packaged: versions/tool-$(TOOL).zip"
+
+# Build a tool repository from the packaged tools in tools/*/versions/: a
+# repository.json plus a files/ folder with every package, in dist/repository/.
+# Host that folder with any static file server and add the link to
+# repository.json on the Repositories page. BASE_URL (where the folder will be
+# served from) is optional; without it package links are relative to the file.
+# See plan/ai/tools/repository/tool-repositories.md.
+REPO_NAME        ?= Cinqo tools
+REPO_DESCRIPTION ?=
+.PHONY: repository
+repository:
+	cd api && go run ./cmd/repotool -tools-dir ../tools -out-dir ../dist/repository \
+		-name "$(REPO_NAME)" -description "$(REPO_DESCRIPTION)" $(if $(BASE_URL),-base-url "$(BASE_URL)")
