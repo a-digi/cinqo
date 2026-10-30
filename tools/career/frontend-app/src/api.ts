@@ -557,6 +557,28 @@ export async function fetchJobStatsRaw(): Promise<unknown> {
   return jsonOrThrow<unknown>(res, 'load job statistics')
 }
 
+// The one AI platform and model the whole tool uses (Settings page). Empty strings
+// mean "not chosen": callers then fall back to the first platform that has a key
+// (see Cinqo/Platform/aiChoice.ts).
+export interface AiSettings {
+  platformId: string
+  model: string
+}
+
+export async function fetchAiSettings(): Promise<AiSettings> {
+  const res = await fetch(`${PROXY_BASE}/settings/ai`, { credentials: 'include' })
+  return jsonOrThrow<AiSettings>(res, 'load the AI settings')
+}
+
+export async function saveAiSettings(settings: AiSettings): Promise<AiSettings> {
+  const res = await fetch(`${PROXY_BASE}/settings/ai`, {
+    method: 'PUT',
+    credentials: 'include',
+    body: JSON.stringify(settings),
+  })
+  return jsonOrThrow<AiSettings>(res, 'save the AI settings')
+}
+
 export async function fetchJobLocations(): Promise<string[]> {
   const res = await fetch(`${PROXY_BASE}/job-locations`, { credentials: 'include' })
   const data = await jsonOrThrow<{ locations: string[] }>(res, 'load job locations')

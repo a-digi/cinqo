@@ -9,7 +9,7 @@ import {
   type CVImportRun,
 } from '../../api'
 import { createConversation, sendMessage } from '../../Cinqo/Conversation/conversation'
-import { fetchPlatforms, fetchPlatformKeys, type Platform } from '../../Cinqo/Platform/platformRepository'
+import { useAiChoice } from '../../Cinqo/Platform/useAiChoice'
 import { Dropdown } from '../Dropdown/Dropdown'
 import { PDFIcon, UploadIcon } from '../../Shared/Icons/icons'
 import { buildImportPrompt } from './buildImportPrompt'
@@ -37,7 +37,11 @@ type PageState = 'upload' | 'analyzing' | 'review' | 'error'
 // just-computed next state before it's actually committed via
 // setState — React state updates aren't synchronously readable
 // immediately after being requested.
-function buildFullSaveSummary(p: CVImportProposal, insertedKeys: Record<string, boolean>, insertErrors: Record<string, string>): InsertResult {
+function buildFullSaveSummary(
+  p: CVImportProposal,
+  insertedKeys: Record<string, boolean>,
+  insertErrors: Record<string, string>,
+): InsertResult {
   function itemResult(key: string): ItemResult | undefined {
     if (insertedKeys[key]) return { ok: true }
     if (insertErrors[key]) return { ok: false, error: insertErrors[key] }
@@ -141,14 +145,12 @@ export function ImportCvPage() {
   const [inserting, setInserting] = useState(false)
   const [insertValidationError, setInsertValidationError] = useState('')
 
-  // Platform/model selection is silent, not a picker UI (unlike
-  // CrawlPanel's own CrawlPlatformPicker) — Import CV is a one-shot,
-  // fully automatic flow with no per-run reason to compare platforms.
-  // Same "prefer whichever platform already has a key" preference
-  // PortalsPage already established; falls back to the first platform
-  // if the key list fails to load.
-  const [platform, setPlatform] = useState<Platform | null>(null)
-  const [platformsLoaded, setPlatformsLoaded] = useState(false)
+  // The AI platform and model are the one saved setting for the whole tool
+  // (Career ▸ Settings). Import CV is a one-shot, fully automatic flow, so it never
+  // shows a picker; handleUpload surfaces "no platform" as a real error if there is none.
+  const ai = useAiChoice()
+  const platform = ai.platform
+  const platformsLoaded = ai.loaded
 
   // Dropzone state — visual only (the click-to-browse path already
   // worked before; this adds a real drag-and-drop path to match the
@@ -161,25 +163,6 @@ export function ImportCvPage() {
     setError('')
     setFile(next)
   }
-
-  useEffect(() => {
-    Promise.all([fetchPlatforms(), fetchPlatformKeys().catch(() => [])])
-      .then(([list, keys]) => {
-        if (list.length > 0) {
-          const withKey = list.find((p) => keys.some((k) => k.platform === p.id))
-          setPlatform(withKey ?? list[0])
-        }
-      })
-      .catch(() => {
-        // Left null — handleUpload's own check surfaces "no AI platform
-        // configured" as a real error at the point it actually matters,
-        // rather than a page-level error before the user has even
-        // chosen a file.
-      })
-      .finally(() => {
-        setPlatformsLoaded(true)
-      })
-  }, [])
 
   function loadRuns() {
     fetchCVImportRuns()
@@ -213,7 +196,7 @@ export function ImportCvPage() {
       if (!platform) {
         throw new Error('No AI platform is configured — ask an admin to add one under Platforms.')
       }
-      const model = platform.models.length > 0 ? platform.models[0] : undefined
+      const model = ai.model ?? undefined
       const conversation = await createConversation({
         title: `Import CV: ${originalFilename}`,
         platformId: platform.id,

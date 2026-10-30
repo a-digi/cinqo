@@ -640,6 +640,22 @@ CREATE TABLE IF NOT EXISTS auto_discovery_settings (
 );
 
 INSERT OR IGNORE INTO auto_discovery_settings (id, enabled, interval_minutes) VALUES (1, 0, 60);
+
+-- ai_settings is a singleton like auto_discovery_settings: the one AI platform and
+-- model this whole tool uses (crawling portals, generating crawl instructions, Job
+-- Match, Generate CV, Import CV), chosen on the Settings page. Both columns empty
+-- means "not chosen": the tool then falls back to the first platform that has an API
+-- key. Only the platform id and model name are stored here; the keys live in core. A
+-- stored id that no longer exists in core is simply treated as not chosen by the
+-- frontend. CHECK (id = 1) is the DB-enforced "never more than one row" guard.
+CREATE TABLE IF NOT EXISTS ai_settings (
+    id          INTEGER PRIMARY KEY CHECK (id = 1),
+    platform_id TEXT NOT NULL DEFAULT '',
+    model       TEXT NOT NULL DEFAULT '',
+    updated_at  TEXT
+);
+
+INSERT OR IGNORE INTO ai_settings (id) VALUES (1);
 `
 
 // migrateCareerDB runs, in order, every past schema migration this

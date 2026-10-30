@@ -10,8 +10,7 @@ import {
   type Portal,
   type PortalLink,
 } from '../../api'
-import { fetchPlatforms, fetchPlatformKeys, type Platform } from '../../Cinqo/Platform/platformRepository'
-import { CrawlPlatformPicker } from '../../Crawler/CrawlPlatformPicker/CrawlPlatformPicker'
+import { useAiChoice } from '../../Cinqo/Platform/useAiChoice'
 import { AutoDiscoveryPanel } from '../../Crawler/AutoDiscoveryPanel/AutoDiscoveryPanel'
 import { anyLinkAutoDiscoverable } from '../../Crawler/autoDiscoveryVisibility'
 import { CrawlPanel } from '../../Crawler/CrawlPanel/CrawlPanel'
@@ -51,12 +50,10 @@ export function PortalsPage() {
   const [editLinkTitle, setEditLinkTitle] = useState('')
   const [error, setError] = useState('')
 
-  // The shared AI-platform/model choice CrawlPanel's own "Crawl with
-  // AI"/"Generate with AI" both need — picked once per page, not per
-  // link, so this state lives here rather than in CrawlPanel itself.
-  const [platforms, setPlatforms] = useState<Platform[]>([])
-  const [selectedPlatformId, setSelectedPlatformId] = useState<string | null>(null)
-  const [selectedModel, setSelectedModel] = useState<string | null>(null)
+  // The AI platform and model CrawlPanel's "Crawl with AI" / "Generate with AI" use
+  // are the one saved setting for the whole tool (Career ▸ Settings), not a choice
+  // made on this page.
+  const ai = useAiChoice()
 
   function load() {
     setError('')
@@ -69,28 +66,6 @@ export function PortalsPage() {
 
   useEffect(() => {
     load()
-    // Prefers whichever platform already has at least one key
-    // registered — a fresh key list load failure degrades to today's
-    // exact "just pick the first platform" behavior rather than
-    // blocking selection or surfacing a page-level error, since this
-    // is a selection preference, not a correctness requirement. See
-    // plan/ai/tools/career/step-61-portals-prefer-platform-with-key.md.
-    Promise.all([fetchPlatforms(), fetchPlatformKeys().catch(() => [])])
-      .then(([list, keys]) => {
-        setPlatforms(list)
-        if (list.length > 0) {
-          const withKey = list.find((p) => keys.some((k) => k.platform === p.id))
-          const chosen = withKey ?? list[0]
-          setSelectedPlatformId(chosen.id)
-          setSelectedModel(chosen.models.length > 0 ? chosen.models[0] : null)
-        }
-      })
-      .catch(() => {
-        // Left empty (no platforms) rather than surfacing this as a
-        // page-level error — every "Crawl now" button already
-        // disables itself when platforms.length === 0, which is
-        // enough signal on its own.
-      })
   }, [])
 
   // Escape closes the "Add link" overlay — mirrors Modal's own
@@ -111,14 +86,6 @@ export function PortalsPage() {
       window.removeEventListener('keydown', handleKeyDown)
     }
   }, [addingLinkPortalId])
-
-  const selectedPlatform = platforms.find((p) => p.id === selectedPlatformId) ?? null
-
-  function handleSelectPlatform(id: string) {
-    setSelectedPlatformId(id)
-    const next = platforms.find((p) => p.id === id)
-    setSelectedModel(next && next.models.length > 0 ? next.models[0] : null)
-  }
 
   // Link accordions (step 89) start closed — an empty set, same pattern
   // as openPortalIds. Keyed by link id, so it survives load() reloads.
@@ -303,14 +270,6 @@ export function PortalsPage() {
         the browser tool's own crawl_paginated expects), normally prepared by the AI. Deleting a portal permanently deletes every link it
         owns.
       </p>
-
-      <CrawlPlatformPicker
-        platforms={platforms}
-        selectedPlatformId={selectedPlatformId}
-        selectedModel={selectedModel}
-        onSelectPlatform={handleSelectPlatform}
-        onSelectModel={setSelectedModel}
-      />
 
       {/* Step 88 — only while some link has crawl instructions: with none,
           there is nothing the global auto-discovery could crawl. */}
@@ -509,9 +468,9 @@ export function PortalsPage() {
                 >
                   <CrawlPanel
                     link={link}
-                    selectedPlatform={selectedPlatform}
-                    selectedModel={selectedModel}
-                    hasPlatforms={platforms.length > 0}
+                    selectedPlatform={ai.platform}
+                    selectedModel={ai.model}
+                    hasPlatforms={ai.platforms.length > 0}
                     onReload={load}
                     onError={setError}
                   />

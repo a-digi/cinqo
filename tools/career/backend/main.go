@@ -41,6 +41,7 @@ import (
 	"career-tool-backend/profile"
 	"career-tool-backend/profileimage"
 	"career-tool-backend/recruiters"
+	"career-tool-backend/settings"
 )
 
 func main() {
@@ -131,6 +132,7 @@ func runHTTPServer() {
 	http.HandleFunc("/portal-links/crawl-now/active", crawl.CrawlNowActiveHandler)
 	http.HandleFunc("/portal-links/crawl-now/cancel", crawl.CrawlNowCancelHandler)
 	http.HandleFunc("/portal-links/auto-discovery", autodiscovery.SettingsHandler)
+	http.HandleFunc("/settings/ai", settings.AIHandler)
 	http.HandleFunc("/events/listing-instructions-ready", portal.ListingInstructionsReadyEventHandler)
 	http.HandleFunc("/events/jobs-crawled", portal.JobsCrawledEventHandler)
 	http.HandleFunc("/events/job-created", jobs.JobCreatedEventHandler)

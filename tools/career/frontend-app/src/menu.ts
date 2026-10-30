@@ -11,6 +11,7 @@ import {
   PROFILES_PATH,
   PROFILE_IMAGE_PATH,
   RECRUITERS_PATH,
+  SETTINGS_PATH,
   SKILLS_PATH,
 } from './paths'
 
@@ -59,5 +60,7 @@ export const careerMenuEntry: MenuEntry = {
         { label: 'Import from CV', path: IMPORT_CV_PATH, scopes: ['tool:career:cv_import'] },
       ],
     },
+    // The AI platform and model every Career feature uses (crawling, Job Match, CVs).
+    { label: 'Settings', path: SETTINGS_PATH, scopes: ['tool:career:jobs'] },
   ],
 }

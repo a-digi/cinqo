@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.0.352",
+  "version": "0.0.353",
   "mcp": true,
   "requires_tools": [
     {
@@ -207,6 +207,16 @@
     {
       "method": "GET",
       "path_suffix": "jobs/stats",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "settings/ai",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "settings/ai",
       "required_scope": "tool:career:jobs"
     },
     {

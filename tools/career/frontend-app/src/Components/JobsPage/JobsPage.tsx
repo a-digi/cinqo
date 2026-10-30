@@ -19,10 +19,9 @@ import {
   type Profile,
   type CvGeneration,
 } from '../../api'
-import { fetchPlatforms, fetchPlatformKeys, type Platform } from '../../Cinqo/Platform/platformRepository'
+import { useAiChoice } from '../../Cinqo/Platform/useAiChoice'
 import { createConversation, sendMessage, awaitTurnCompletion, fetchTurnStatus } from '../../Cinqo/Conversation/conversation'
 import { CoreApiError } from '../../Cinqo/Http/client'
-import { CrawlPlatformPicker } from '../../Crawler/CrawlPlatformPicker/CrawlPlatformPicker'
 import { buildJobMatchMessage, jobMatchConversationTitle } from '../../JobMatch/buildJobMatchMessage'
 import { buildGenerateCvMessage, generateCvConversationTitle } from '../../CvPdf/buildGenerateCvMessage'
 import { Dropdown } from '../Dropdown/Dropdown'
@@ -43,7 +42,7 @@ import {
   PlusIcon,
 } from '../../Shared/Icons/icons'
 import { AddJobModal } from './AddJobModal'
-import { ACCENTS, PAGE_ACCENT, accentFor, gradient, initialOf } from './jobsTheme'
+import { PAGE_ACCENT, accentFor, gradient, initialOf } from './jobsTheme'
 import { JobStatsStrip } from './JobStatsStrip'
 import { SelectCvModal } from './SelectCvModal'
 import { ConfirmationModal } from '../../Shared/ConfirmationModal/ConfirmationModal'
@@ -64,9 +63,6 @@ const PAGE_SIZE = 50
 const SEARCH_DEBOUNCE_MS = 300
 const MAX_LOCATION_DISPLAY_LENGTH = 50
 const JOB_DETAILS_PATH = '/tools/career/job-details'
-
-// The crawler card's own colour (violet, like the AI cards on Home).
-const CRAWLER_ACCENT = ACCENTS[4]
 
 // Jobs are populated by the AI's own crawling workflow (step 4); step 97
 // added "Add job" for one a person found themselves (see AddJobModal).
@@ -110,15 +106,16 @@ export function JobsPage() {
   })
 
   // "Job Match" (step XX) own state — profiles to choose from, the
-  // shared AI-platform/model choice (same CrawlPlatformPicker
+  // shared AI-platform/model choice (the saved Settings choice, via useAiChoice
   // PortalsPage.tsx already uses), and matchPickerJob: the job a
   // profile is currently being picked for (non-null only while 2+
   // profiles exist and the picker Modal is open — a single profile is
   // auto-chosen without ever setting this).
   const [profiles, setProfiles] = useState<Profile[]>([])
-  const [platforms, setPlatforms] = useState<Platform[]>([])
-  const [selectedPlatformId, setSelectedPlatformId] = useState<string | null>(null)
-  const [selectedModel, setSelectedModel] = useState<string | null>(null)
+  // The AI platform and model are no longer chosen on this page: they are one
+  // saved setting for the whole tool (Settings). Job Match and Generate CV use it.
+  const ai = useAiChoice()
+  const selectedPlatformId = ai.platform?.id ?? null
   const [matchPickerJob, setMatchPickerJob] = useState<Job | null>(null)
 
   // "Add job" (step 97) — the modal for a job added by hand.
@@ -204,25 +201,6 @@ export function JobsPage() {
       .then(setProfiles)
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : String(err))
-      })
-    // Same "prefer whichever platform already has a key" preference
-    // PortalsPage.tsx's own identical effect uses — a key-list load
-    // failure degrades to plain "pick the first platform" rather than
-    // blocking selection. See
-    // plan/ai/tools/career/step-61-portals-prefer-platform-with-key.md.
-    Promise.all([fetchPlatforms(), fetchPlatformKeys().catch(() => [])])
-      .then(([list, keys]) => {
-        setPlatforms(list)
-        if (list.length > 0) {
-          const withKey = list.find((p) => keys.some((k) => k.platform === p.id))
-          const chosen = withKey ?? list[0]
-          setSelectedPlatformId(chosen.id)
-          setSelectedModel(chosen.models.length > 0 ? chosen.models[0] : null)
-        }
-      })
-      .catch(() => {
-        // Left empty (no platforms) — the Job Match icon already
-        // disables itself when platforms.length === 0.
       })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -503,11 +481,10 @@ export function JobsPage() {
   // brief window between those two calls still has something to
   // resume from.
   function startMatch(job: Job, profileId: string) {
-    if (!selectedPlatformId) return
-    const platform = platforms.find((p) => p.id === selectedPlatformId)
-    const model = platform && platform.models.length > 0 ? (selectedModel ?? platform.models[0]) : undefined
+    if (!ai.platform) return
+    const model = ai.model ?? undefined
 
-    createConversation({ title: jobMatchConversationTitle(job), platformId: selectedPlatformId, model, hidden: true })
+    createConversation({ title: jobMatchConversationTitle(job), platformId: ai.platform.id, model, hidden: true })
       .then((conversation) => {
         window.__cinqoToolBridge.openConversation(conversation.id)
         // The initial optimistic update below (fired synchronously,
@@ -568,11 +545,10 @@ export function JobsPage() {
   // hidden forever; only new ones from here on show up in the list. See
   // plan/ai/career/cv-generation-audit/step-04-unhide-conversation.md.
   function startCvGeneration(job: Job, profileId: string) {
-    if (!selectedPlatformId) return
-    const platform = platforms.find((p) => p.id === selectedPlatformId)
-    const model = platform && platform.models.length > 0 ? (selectedModel ?? platform.models[0]) : undefined
+    if (!ai.platform) return
+    const model = ai.model ?? undefined
 
-    createConversation({ title: generateCvConversationTitle(job), platformId: selectedPlatformId, model, hidden: false })
+    createConversation({ title: generateCvConversationTitle(job), platformId: ai.platform.id, model, hidden: false })
       .then((conversation) => {
         window.__cinqoToolBridge.openConversation(conversation.id)
         setJobs((prev) => prev.map((j) => (j.id === job.id ? { ...j, cvConversationId: conversation.id } : j)))
@@ -673,7 +649,7 @@ export function JobsPage() {
         },
         disabled: !selectedPlatformId || profiles.length === 0,
         title: !selectedPlatformId
-          ? 'No AI platform configured — add one on the Platforms page first'
+          ? 'No AI platform configured — add one in Cinqo first (see Career ▸ Settings)'
           : profiles.length === 0
             ? 'Create a profile first'
             : 'Assess how well this job fits a profile',
@@ -751,7 +727,7 @@ export function JobsPage() {
           },
           disabled: !selectedPlatformId || profiles.length === 0,
           title: !selectedPlatformId
-            ? 'No AI platform configured — add one on the Platforms page first'
+            ? 'No AI platform configured — add one in Cinqo first (see Career ▸ Settings)'
             : profiles.length === 0
               ? 'Create a profile first'
               : 'Not happy with this CV? Have the AI build a new one.',
@@ -774,7 +750,7 @@ export function JobsPage() {
     } else {
       if (job.cvStatus === 'failed') cvVariant = 'danger'
       cvTitle = !selectedPlatformId
-        ? 'No AI platform configured — add one on the Platforms page first'
+        ? 'No AI platform configured — add one in Cinqo first (see Career ▸ Settings)'
         : profiles.length === 0
           ? 'Create a profile first'
           : job.cvStatus === 'failed'
@@ -883,349 +859,253 @@ export function JobsPage() {
 
   return (
     <div className="max-w-6xl p-6 font-sans text-gray-900">
-      {/* Two page-level areas, side by side (per direct request — a
-          right-hand column next to ALL the content below, not just
-          the title row): the left column owns everything this page is
-          actually about (title, search/filters, the jobs table,
-          pagination); the right column is just the crawl provider/model
-          picker, top-aligned beside it, sized to its own content
-          (shrink-0) rather than stretching to match the left column's
-          own height. CrawlPlatformPicker is shared with
-          PortalsPage.tsx (which still stacks it full-width below its
-          own title), so this wraps it at the call site here rather
-          than changing the component's own layout, leaving that other
-          page untouched. max-w-6xl (up from max-w-5xl) gives the new
-          right column room without squeezing the table. flex-nowrap,
-          deliberately, not flex-wrap: per explicit direction, the
-          picker must stay on the right at every width, never stack
-          below the content. The content column's own min-w-[280px]
-          (not min-w-0 — tried first, then confirmed live at 390px to
-          crush the title down to one wrapped character per line) is a
-          usability floor: once the viewport can't fit both columns at
-          once, the overflow bubbles up to <main> itself (this page's
-          own nearest scrolling ancestor) rather than this row scrolling
-          on its own — deliberately NOT overflow-x-auto on this row:
-          that would make THIS row its own scroll container, and
-          "position: sticky" below sticks relative to its own nearest
-          scrolling ancestor, not necessarily <main> — confirmed live
-          that adding overflow-x-auto here silently broke the sidebar's
-          own sticky-while-scrolling behavior (it now had nothing of
-          its own to scroll, so it never moved), even though <main>
-          still scrolled around it correctly either way. */}
-      <div className="flex flex-nowrap items-start gap-6">
-        <div className="min-w-[280px] flex-1">
+      <div className="min-w-0">
+        <div
+          className="relative mb-5 overflow-hidden rounded-3xl border p-5"
+          style={{ borderColor: PAGE_ACCENT.soft, background: `linear-gradient(160deg, #ffffff 40%, ${PAGE_ACCENT.soft} 100%)` }}
+        >
           <div
-            className="relative mb-5 overflow-hidden rounded-3xl border p-5"
-            style={{ borderColor: PAGE_ACCENT.soft, background: `linear-gradient(160deg, #ffffff 40%, ${PAGE_ACCENT.soft} 100%)` }}
-          >
-            <div
-              className="pointer-events-none absolute -right-6 -top-8 h-32 w-32 rounded-full opacity-15"
-              style={{ background: gradient(PAGE_ACCENT) }}
-            />
-            <div
-              className="pointer-events-none absolute right-24 top-10 h-10 w-10 rotate-45 rounded-xl opacity-20"
-              style={{ background: gradient(PAGE_ACCENT) }}
-            />
-            <div className="relative flex items-center gap-4">
-              <span
-                className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-white shadow-sm"
-                style={{ background: gradient(PAGE_ACCENT) }}
-              >
-                <BriefcaseIcon />
-              </span>
-              <div className="min-w-0 flex-1">
-                <h1 className="text-xl font-semibold">Saved Jobs</h1>
-                <p className="mt-0.5 text-sm text-gray-500">
-                  Job postings the AI has crawled and saved on your behalf, and any you added yourself.
-                </p>
-              </div>
-              <span
-                className="shrink-0 rounded-full px-3 py-1 text-sm font-semibold"
-                style={{ background: PAGE_ACCENT.soft, color: PAGE_ACCENT.text }}
-              >
-                {total} {total === 1 ? 'job' : 'jobs'}
-              </span>
-            </div>
-          </div>
-
-          {/* Refetched when a job is added, deleted or finishes matching / its CV: the page's
-              own total, and how many jobs on this page have a completed match or CV. */}
-          <JobStatsStrip
-            refreshKey={`${total}:${jobs.filter((j) => j.matchStatus === 'completed').length}:${jobs.filter((j) => j.cvStatus === 'completed').length}`}
+            className="pointer-events-none absolute -right-6 -top-8 h-32 w-32 rounded-full opacity-15"
+            style={{ background: gradient(PAGE_ACCENT) }}
           />
-
-          {activeFilters.length > 0 && (
-            <div className="mb-2 flex flex-wrap gap-1.5">
-              {activeFilters.map((filter) => (
-                <span
-                  key={filter.key}
-                  className="flex items-center gap-1 rounded-full border border-gray-200 bg-gray-100 py-1 pl-2.5 pr-1.5 text-xs text-gray-700"
-                >
-                  {filter.label}
-                  <button
-                    type="button"
-                    onClick={filter.onClear}
-                    aria-label={`Clear ${filter.label}`}
-                    className="text-gray-400 hover:text-gray-700"
-                  >
-                    <XIcon />
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
-
-          {showFilters && (
-            <div className="mb-2 flex flex-wrap items-center gap-2">
-              {locations.length > 0 && (
-                <Dropdown
-                  placeholder="Any location"
-                  options={[
-                    { value: '', label: 'Any location' },
-                    ...locations.map((loc) => ({ value: loc, label: truncate(loc, MAX_LOCATION_DISPLAY_LENGTH) })),
-                  ]}
-                  value={location}
-                  onChange={handleLocationFilterChange}
-                  searchable
-                />
-              )}
-              {companies.length > 0 && (
-                <Dropdown
-                  multiple
-                  placeholder="Any company"
-                  options={companies.map((c) => ({ value: c.id, label: c.name }))}
-                  value={companyIds}
-                  onChange={handleCompanyFilterChange}
-                  searchable
-                />
-              )}
-              {portals.length > 0 && (
-                <Dropdown
-                  placeholder="Any platform"
-                  options={[{ value: '', label: 'Any platform' }, ...portals.map((p) => ({ value: p.id, label: p.name }))]}
-                  value={portalId}
-                  onChange={handlePortalFilterChange}
-                  searchable
-                />
-              )}
-            </div>
-          )}
-
-          <div className="mb-4 flex flex-wrap items-center gap-2">
-            <input
-              value={query}
-              onChange={(e) => {
-                setQuery(e.target.value)
-              }}
-              placeholder="Search title, company, description…"
-              className="flex-1 min-w-[180px] rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
-            />
-            <button
-              type="button"
-              aria-expanded={showFilters}
-              onClick={() => {
-                setShowFilters((prev) => !prev)
-              }}
-              className="flex items-center gap-1.5 rounded-md border border-gray-300 px-3.5 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
-            >
-              <FilterIcon />
-              Filters
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setAddOpen(true)
-              }}
-              className="flex items-center gap-1.5 rounded-md bg-gray-800 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-900"
-            >
-              <PlusIcon />
-              Add job
-            </button>
-          </div>
-
-          <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
-
           <div
-            className="relative overflow-hidden rounded-3xl border shadow-sm"
-            style={{ borderColor: PAGE_ACCENT.soft, background: `linear-gradient(170deg, #ffffff 55%, ${PAGE_ACCENT.soft} 100%)` }}
+            className="pointer-events-none absolute right-24 top-10 h-10 w-10 rotate-45 rounded-xl opacity-20"
+            style={{ background: gradient(PAGE_ACCENT) }}
+          />
+          <div className="relative flex items-center gap-4">
+            <span
+              className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-white shadow-sm"
+              style={{ background: gradient(PAGE_ACCENT) }}
+            >
+              <BriefcaseIcon />
+            </span>
+            <div className="min-w-0 flex-1">
+              <h1 className="text-xl font-semibold">Saved Jobs</h1>
+              <p className="mt-0.5 text-sm text-gray-500">
+                Job postings the AI has crawled and saved on your behalf, and any you added yourself.
+              </p>
+            </div>
+            <span
+              className="shrink-0 rounded-full px-3 py-1 text-sm font-semibold"
+              style={{ background: PAGE_ACCENT.soft, color: PAGE_ACCENT.text }}
+            >
+              {total} {total === 1 ? 'job' : 'jobs'}
+            </span>
+          </div>
+        </div>
+
+        {/* Refetched when a job is added, deleted or finishes matching / its CV: the page's
+              own total, and how many jobs on this page have a completed match or CV. */}
+        <JobStatsStrip
+          refreshKey={`${total}:${jobs.filter((j) => j.matchStatus === 'completed').length}:${jobs.filter((j) => j.cvStatus === 'completed').length}`}
+        />
+
+        {activeFilters.length > 0 && (
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {activeFilters.map((filter) => (
+              <span
+                key={filter.key}
+                className="flex items-center gap-1 rounded-full border border-gray-200 bg-gray-100 py-1 pl-2.5 pr-1.5 text-xs text-gray-700"
+              >
+                {filter.label}
+                <button
+                  type="button"
+                  onClick={filter.onClear}
+                  aria-label={`Clear ${filter.label}`}
+                  className="text-gray-400 hover:text-gray-700"
+                >
+                  <XIcon />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+
+        {showFilters && (
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            {locations.length > 0 && (
+              <Dropdown
+                placeholder="Any location"
+                options={[
+                  { value: '', label: 'Any location' },
+                  ...locations.map((loc) => ({ value: loc, label: truncate(loc, MAX_LOCATION_DISPLAY_LENGTH) })),
+                ]}
+                value={location}
+                onChange={handleLocationFilterChange}
+                searchable
+              />
+            )}
+            {companies.length > 0 && (
+              <Dropdown
+                multiple
+                placeholder="Any company"
+                options={companies.map((c) => ({ value: c.id, label: c.name }))}
+                value={companyIds}
+                onChange={handleCompanyFilterChange}
+                searchable
+              />
+            )}
+            {portals.length > 0 && (
+              <Dropdown
+                placeholder="Any platform"
+                options={[{ value: '', label: 'Any platform' }, ...portals.map((p) => ({ value: p.id, label: p.name }))]}
+                value={portalId}
+                onChange={handlePortalFilterChange}
+                searchable
+              />
+            )}
+          </div>
+        )}
+
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <input
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value)
+            }}
+            placeholder="Search title, company, description…"
+            className="flex-1 min-w-[180px] rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
+          />
+          <button
+            type="button"
+            aria-expanded={showFilters}
+            onClick={() => {
+              setShowFilters((prev) => !prev)
+            }}
+            className="flex items-center gap-1.5 rounded-md border border-gray-300 px-3.5 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
           >
-            <div
-              className="pointer-events-none absolute -bottom-12 -right-10 h-40 w-40 rounded-full border-[16px] opacity-10"
-              style={{ borderColor: PAGE_ACCENT.from }}
-            />
-            <div className="relative overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr>
-                    <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Title</th>
-                    <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Company</th>
-                    <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Platform</th>
-                    <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Posted</th>
-                    <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Match</th>
-                    <th className="bg-blue-50/70 p-3 text-right text-xs font-semibold uppercase tracking-wide text-blue-700">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {jobs.map((job) => {
-                    return (
-                      <tr key={job.id} className="transition-colors last:[&>td]:border-b-0 hover:bg-blue-50/50">
-                        <td className="border-b border-blue-50 p-3 text-gray-900">
-                          <div className="flex items-center gap-3">
+            <FilterIcon />
+            Filters
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setAddOpen(true)
+            }}
+            className="flex items-center gap-1.5 rounded-md bg-gray-800 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-900"
+          >
+            <PlusIcon />
+            Add job
+          </button>
+        </div>
+
+        <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
+
+        <div
+          className="relative overflow-hidden rounded-3xl border shadow-sm"
+          style={{ borderColor: PAGE_ACCENT.soft, background: `linear-gradient(170deg, #ffffff 55%, ${PAGE_ACCENT.soft} 100%)` }}
+        >
+          <div
+            className="pointer-events-none absolute -bottom-12 -right-10 h-40 w-40 rounded-full border-[16px] opacity-10"
+            style={{ borderColor: PAGE_ACCENT.from }}
+          />
+          <div className="relative overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr>
+                  <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Title</th>
+                  <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Company</th>
+                  <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Platform</th>
+                  <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Posted</th>
+                  <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Match</th>
+                  <th className="bg-blue-50/70 p-3 text-right text-xs font-semibold uppercase tracking-wide text-blue-700">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {jobs.map((job) => {
+                  return (
+                    <tr key={job.id} className="transition-colors last:[&>td]:border-b-0 hover:bg-blue-50/50">
+                      <td className="border-b border-blue-50 p-3 text-gray-900">
+                        <div className="flex items-center gap-3">
+                          <span
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white shadow-sm"
+                            style={{ background: accentFor(job.company || job.title).to }}
+                            aria-hidden="true"
+                          >
+                            {initialOf(job.company || job.title)}
+                          </span>
+                          <span className="font-medium">{job.title}</span>
+                          {isManualJob(job) && (
                             <span
-                              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white shadow-sm"
-                              style={{ background: accentFor(job.company || job.title).to }}
-                              aria-hidden="true"
+                              title="You added this job yourself"
+                              className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-800"
                             >
-                              {initialOf(job.company || job.title)}
-                            </span>
-                            <span className="font-medium">{job.title}</span>
-                            {isManualJob(job) && (
-                              <span
-                                title="You added this job yourself"
-                                className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-800"
-                              >
-                                Manual
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="border-b border-blue-50 p-3">
-                          {job.company}
-                          {job.companyId && (
-                            <div className="mt-0.5 flex items-center gap-1.5 text-xs text-gray-400">
-                              linked to {companyNames[job.companyId] ?? '…'}
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  handleUnlink(job.id)
-                                }}
-                                className="text-gray-400 underline hover:text-red-700"
-                              >
-                                unlink
-                              </button>
-                            </div>
-                          )}
-                        </td>
-                        <td className="border-b border-blue-50 p-3">
-                          {platformLabel(job) === '—' ? (
-                            <span className="text-gray-300">—</span>
-                          ) : (
-                            <span
-                              className="inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium"
-                              style={{ background: accentFor(platformLabel(job)).soft, color: accentFor(platformLabel(job)).text }}
-                            >
-                              {platformLabel(job)}
+                              Manual
                             </span>
                           )}
-                        </td>
-                        <td className="border-b border-blue-50 p-3">
-                          {job.postedAt ? (
-                            <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs text-gray-600">{job.postedAt}</span>
-                          ) : null}
-                        </td>
-                        <td className="border-b border-blue-50 p-3">
-                          {job.matchStatus === 'matching' ? (
+                        </div>
+                      </td>
+                      <td className="border-b border-blue-50 p-3">
+                        {job.company}
+                        {job.companyId && (
+                          <div className="mt-0.5 flex items-center gap-1.5 text-xs text-gray-400">
+                            linked to {companyNames[job.companyId] ?? '…'}
                             <button
                               type="button"
                               onClick={() => {
-                                handleCheckMatchProgress(job)
+                                handleUnlink(job.id)
                               }}
-                              title="Open the chat window to watch the AI work on this job's own match"
-                              className="inline-flex items-center gap-1 text-xs text-gray-500 underline hover:text-gray-700"
+                              className="text-gray-400 underline hover:text-red-700"
                             >
-                              <span className="inline-flex items-center gap-1 [animation:robot-bob_1.6s_ease-in-out_infinite]">
-                                <RobotIcon />
-                                <Typewriter text="Matching…" />
-                              </span>
+                              unlink
                             </button>
-                          ) : job.matchStatus === 'failed' ? (
-                            <span className="text-xs text-red-700" title={job.matchError ?? 'Job match failed'}>
-                              Failed
+                          </div>
+                        )}
+                      </td>
+                      <td className="border-b border-blue-50 p-3">
+                        {platformLabel(job) === '—' ? (
+                          <span className="text-gray-300">—</span>
+                        ) : (
+                          <span
+                            className="inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium"
+                            style={{ background: accentFor(platformLabel(job)).soft, color: accentFor(platformLabel(job)).text }}
+                          >
+                            {platformLabel(job)}
+                          </span>
+                        )}
+                      </td>
+                      <td className="border-b border-blue-50 p-3">
+                        {job.postedAt ? (
+                          <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs text-gray-600">{job.postedAt}</span>
+                        ) : null}
+                      </td>
+                      <td className="border-b border-blue-50 p-3">
+                        {job.matchStatus === 'matching' ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleCheckMatchProgress(job)
+                            }}
+                            title="Open the chat window to watch the AI work on this job's own match"
+                            className="inline-flex items-center gap-1 text-xs text-gray-500 underline hover:text-gray-700"
+                          >
+                            <span className="inline-flex items-center gap-1 [animation:robot-bob_1.6s_ease-in-out_infinite]">
+                              <RobotIcon />
+                              <Typewriter text="Matching…" />
                             </span>
-                          ) : job.matchStatus === 'completed' && job.matchScore !== undefined ? (
-                            <MatchScoreBar score={job.matchScore} skills={job.matchedSkills} jobTitle={job.title} />
-                          ) : (
-                            <span className="text-xs text-gray-300">—</span>
-                          )}
-                        </td>
-                        <td className="border-b border-blue-50 p-3 text-right">
-                          <ActionMenu triggerLabel={`Actions for ${job.title}`} items={buildJobActionItems(job)} />
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
+                          </button>
+                        ) : job.matchStatus === 'failed' ? (
+                          <span className="text-xs text-red-700" title={job.matchError ?? 'Job match failed'}>
+                            Failed
+                          </span>
+                        ) : job.matchStatus === 'completed' && job.matchScore !== undefined ? (
+                          <MatchScoreBar score={job.matchScore} skills={job.matchedSkills} jobTitle={job.title} />
+                        ) : (
+                          <span className="text-xs text-gray-300">—</span>
+                        )}
+                      </td>
+                      <td className="border-b border-blue-50 p-3 text-right">
+                        <ActionMenu triggerLabel={`Actions for ${job.title}`} items={buildJobActionItems(job)} />
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
-
-          <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={handlePageChange} />
         </div>
 
-        {/* w-52 (not just shrink-0): narrow enough that
-            CrawlPlatformPicker's own two min-w-[180px] dropdowns can no
-            longer fit side by side and wrap into a vertical stack via
-            its own existing flex-wrap — turning the shared, horizontal
-            "picker bar" into a proper narrow sidebar column here,
-            without changing the shared component itself (still a wide
-            horizontal bar on PortalsPage.tsx). Confirmed live: without
-            this, the fixed-width sidebar squeezed the table into
-            multi-line-wrapped, truncated columns even on a wide
-            viewport. sticky top-6 (matching the page's own p-6 top
-            inset) keeps it in view while the table scrolls past it —
-            this page's own <main> is the nearest scrolling ancestor, so
-            no extra offset for the app's own top banner is needed. */}
-        <div className="sticky top-6 w-52 shrink-0 self-start">
-          {platforms.length > 1 && (
-            <div
-              className="relative overflow-hidden rounded-3xl border p-4 shadow-sm"
-              style={{ borderColor: CRAWLER_ACCENT.soft, background: `linear-gradient(160deg, #ffffff 35%, ${CRAWLER_ACCENT.soft} 100%)` }}
-            >
-              <div
-                className="pointer-events-none absolute -right-6 -top-6 h-24 w-24 rounded-full opacity-15"
-                style={{ background: CRAWLER_ACCENT.to }}
-              />
-              <div
-                className="pointer-events-none absolute -bottom-5 -left-5 h-16 w-16 rotate-45 rounded-2xl opacity-10"
-                style={{ background: CRAWLER_ACCENT.to }}
-              />
-              <div className="relative flex items-center gap-2.5">
-                <span
-                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white shadow-sm"
-                  style={{ background: CRAWLER_ACCENT.to }}
-                >
-                  <RobotIcon className="h-5 w-5" />
-                </span>
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-gray-900">Crawler</p>
-                  <p className="text-xs text-gray-500">AI used to crawl and match</p>
-                </div>
-              </div>
-              <CrawlPlatformPicker
-                className="relative mt-4 flex flex-col gap-3 [&>div]:min-w-0 [&>div>div]:block [&>div>div>button]:w-full [&>div>div>button]:min-w-0"
-                platforms={platforms}
-                selectedPlatformId={selectedPlatformId}
-                selectedModel={selectedModel}
-                onSelectPlatform={(id) => {
-                  setSelectedPlatformId(id)
-                  const next = platforms.find((p) => p.id === id)
-                  setSelectedModel(next && next.models.length > 0 ? next.models[0] : null)
-                }}
-                onSelectModel={setSelectedModel}
-              />
-              {selectedPlatformId && (
-                <p
-                  className="relative mt-3 break-words rounded-2xl px-3 py-1.5 text-center text-xs font-medium"
-                  style={{ background: CRAWLER_ACCENT.soft, color: CRAWLER_ACCENT.text }}
-                  title="The platform and model the next crawl or match will use"
-                >
-                  {platforms.find((p) => p.id === selectedPlatformId)?.name}
-                  {selectedModel ? ` · ${selectedModel}` : ''}
-                </p>
-              )}
-            </div>
-          )}
-        </div>
+        <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={handlePageChange} />
       </div>
 
       <AddJobModal

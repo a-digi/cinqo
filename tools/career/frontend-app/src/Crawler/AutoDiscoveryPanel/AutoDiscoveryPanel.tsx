@@ -1,19 +1,15 @@
 import { useEffect, useState } from 'react'
 import { Dropdown } from '../../Components/Dropdown/Dropdown'
 import { Switch } from '../../Shared/Switch/Switch'
-import {
-  fetchAutoDiscoverySettings,
-  updateAutoDiscoverySettings,
-  AUTO_DISCOVERY_INTERVAL_OPTIONS,
-} from '../autoDiscovery'
+import { fetchAutoDiscoverySettings, updateAutoDiscoverySettings, AUTO_DISCOVERY_INTERVAL_OPTIONS } from '../autoDiscovery'
 
 // AutoDiscoveryPanel is the one global on/off + interval control for
 // the auto-discovery scheduled-crawling feature (step 84) — a single
 // setting covering every portal link that already has crawl
 // instructions set, not a per-link schedule (see that step's own plan
-// doc for why). Lives on PortalsPage.tsx, right alongside
-// CrawlPlatformPicker, since both are page-wide crawling configuration
-// rather than anything scoped to one portal or link. See
+// doc for why). Lives on PortalsPage.tsx as page-wide crawling
+// configuration rather than anything scoped to one portal or link (the AI
+// platform and model it uses are the tool-wide Settings choice). See
 // plan/ai/tools/career/step-84-auto-discovery-scheduled-crawling.md.
 export function AutoDiscoveryPanel() {
   const [enabled, setEnabled] = useState(false)
