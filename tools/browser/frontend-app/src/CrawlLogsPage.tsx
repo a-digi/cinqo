@@ -4,6 +4,7 @@ import { reasonLabel, reasonTone, summarizeCrawlLogs, visibleLogs, type ReasonTo
 import { ListIcon } from './icons'
 import { OutcomePanel } from './OutcomePanel'
 import { PageHeaderCard } from './Shared/PageHeaderCard'
+import { RawLog } from './RawLog'
 import { plural } from './Shared/plural'
 import { PAGE_ACCENT } from './Shared/theme'
 
@@ -256,6 +257,7 @@ export function CrawlLogsPage() {
                           ))}
                         </>
                       )}
+                      <RawLog id={entry.id} />
                     </div>
                   )}
                 </div>

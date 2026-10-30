@@ -150,7 +150,7 @@ func saveCrawlLog(container string, fields []extractField, nextSelector string, 
 		StoppedReason:     result.StoppedReason,
 		PagesVisited:      result.PagesVisited,
 	}
-	entryJSON, err := json.Marshal(entry)
+	entryJSON, err := encodeCrawlLog(entry)
 	if err != nil {
 		return
 	}
@@ -224,6 +224,15 @@ func deleteCrawlLogFilesAsync(paths []string) {
 			_ = os.Remove(p)
 		}
 	}(paths)
+}
+
+// encodeCrawlLog is how a crawl log is written to its file: indented, so each field, selector and page sits on
+// its own lines. Cinqo's file reader (manifest.json "file_sources") shows these files line by line, and one
+// compact line of several hundred KB would be no use there. Reading them back (fetchCrawlLogDetail) is
+// unaffected; files written before this change are compact and still read the same. A captured page's HTML is
+// still one long string, so one line, which the reader cuts and says so.
+func encodeCrawlLog(entry crawlLogEntry) ([]byte, error) {
+	return json.MarshalIndent(entry, "", "  ")
 }
 
 // crawlLogSummary is what listCrawlLogs returns — exactly what the

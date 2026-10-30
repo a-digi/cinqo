@@ -5,41 +5,41 @@
   "tools": [
     {
       "id": "browser",
-      "currentVersionId": "0.0.203",
+      "currentVersionId": "0.0.204",
       "versions": [
         {
-          "versionId": "0.0.203",
+          "versionId": "0.0.204",
           "name": "Browser",
-          "version": "0.0.203",
+          "version": "0.0.204",
           "releasedAt": "2026-10-30",
           "packages": [
             {
               "os": "darwin",
               "arch": "arm64",
               "url": "https://raw.githubusercontent.com/a-digi/cinqo/0.0.1/tools/browser/versions/tool-browser-darwin-arm64.zip",
-              "sha256": "52eb2cc567cced1d3fcbf319ccb1d82636b103b5acea20e0b084367c10dc2412",
-              "sizeBytes": 15347028
+              "sha256": "bd4d342039a9bbb7b8842b7402c26c9c787bd1d07dd6b77527d7c58f1ee52def",
+              "sizeBytes": 15346827
             },
             {
               "os": "linux",
               "arch": "amd64",
               "url": "https://raw.githubusercontent.com/a-digi/cinqo/0.0.1/tools/browser/versions/tool-browser-linux-amd64.zip",
-              "sha256": "cdaed88b397a2b28c708719dbf32b50d04a20f0ae325a1f3a10617dfab8a7c0b",
-              "sizeBytes": 15423015
+              "sha256": "488192d5f82adb35b8ae4a6874f12b0dec13ba4ac6d68fc06952aad7139d5d2a",
+              "sizeBytes": 15423807
             },
             {
               "os": "linux",
               "arch": "arm64",
               "url": "https://raw.githubusercontent.com/a-digi/cinqo/0.0.1/tools/browser/versions/tool-browser-linux-arm64.zip",
-              "sha256": "56801fc29a7ef664031815ccc75f4a0a3099d764f8fb7a03dfbc245a64ec649b",
-              "sizeBytes": 14505890
+              "sha256": "3e59e8ddf9064c2fbbc0a28280e8bf88da4e74a9222712f0263cbdc1d0890b6a",
+              "sizeBytes": 14505837
             },
             {
               "os": "windows",
               "arch": "amd64",
               "url": "https://raw.githubusercontent.com/a-digi/cinqo/0.0.1/tools/browser/versions/tool-browser-windows-amd64.zip",
-              "sha256": "f6a0320872ecaf70e1e041bf63c1fab6252f26788c73f145fa0e8ebb6bebe66e",
-              "sizeBytes": 14818791
+              "sha256": "1df68ba67472606cb1b9429a84ab77cf93028eb55fc3cd8628ee9d68bdcb3de7",
+              "sizeBytes": 14820351
             }
           ]
         }
