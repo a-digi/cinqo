@@ -1,14 +1,12 @@
 import { useEffect, useState } from 'react'
-import { fetchCompanies, createCompany, updateCompany, removeCompany, type Company } from '../../api'
+import { fetchCompanies, updateCompany, removeCompany, type Company } from '../../api'
 import { BuildingIcon, PlusIcon } from '../../Shared/Icons/icons'
-import { Modal } from '../../Shared/Modal/Modal'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { SummaryRail } from '../../Shared/SummaryRail/SummaryRail'
 import { ACCENTS, PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
 import { percentOrNull, plural, summarizeCompanies } from './companyStats'
 
-const JOBS_PATH = '/tools/career/jobs'
-const RECRUITERS_PATH = '/tools/career/recruiters'
+import { JOBS_PATH, NEW_COMPANY_PATH, RECRUITERS_PATH } from '../../paths'
 
 const inputClass = 'w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none'
 
@@ -18,14 +16,11 @@ const inputClass = 'w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-
 // Step 17 added recruiterCount alongside jobCount, linking to
 // RecruitersPage the same one-way ?companyId= pre-filter way. The page
 // has the same layout as Portals and Jobs: header card, an overview on
-// the left, the companies on the right, "New company" in a dialog. See
+// the left, the companies on the right; "New company" opens its own page. See
 // plan/ai/tools/career/step-15-companies-frontend.md and
 // plan/ai/tools/career/step-17-recruiters-frontend.md.
 export function CompaniesPage() {
   const [companies, setCompanies] = useState<Company[]>([])
-  const [isNewOpen, setIsNewOpen] = useState(false)
-  const [newName, setNewName] = useState('')
-  const [newDescription, setNewDescription] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
   const [editDescription, setEditDescription] = useState('')
@@ -43,29 +38,6 @@ export function CompaniesPage() {
   useEffect(() => {
     load()
   }, [])
-
-  function closeNew() {
-    setIsNewOpen(false)
-    setNewName('')
-    setNewDescription('')
-  }
-
-  function handleCreate() {
-    const name = newName.trim()
-    if (!name) {
-      setError('Name is required')
-      return
-    }
-    setError('')
-    createCompany(name, newDescription.trim())
-      .then((result) => {
-        setCompanies(result)
-        closeNew()
-      })
-      .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : String(err))
-      })
-  }
 
   function startEdit(c: Company) {
     setEditingId(c.id)
@@ -131,7 +103,7 @@ export function CompaniesPage() {
             <button
               type="button"
               onClick={() => {
-                setIsNewOpen(true)
+                window.__cinqoToolBridge.navigate(NEW_COMPANY_PATH)
               }}
               className="flex shrink-0 items-center gap-1.5 rounded-md bg-gray-800 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-900"
             >
@@ -283,39 +255,6 @@ export function CompaniesPage() {
           />
         </aside>
       </div>
-
-      <Modal open={isNewOpen} title="New company" onClose={closeNew}>
-        <input
-          // eslint-disable-next-line jsx-a11y/no-autofocus
-          autoFocus
-          value={newName}
-          onChange={(e) => {
-            setNewName(e.target.value)
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') handleCreate()
-          }}
-          placeholder="Name"
-          className={`mb-2 ${inputClass}`}
-        />
-        <textarea
-          value={newDescription}
-          onChange={(e) => {
-            setNewDescription(e.target.value)
-          }}
-          placeholder="Description"
-          rows={2}
-          className={`mb-3 ${inputClass}`}
-        />
-        <button
-          type="button"
-          onClick={handleCreate}
-          className="flex items-center gap-1 rounded-md bg-gray-900 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800"
-        >
-          <PlusIcon />
-          Create company
-        </button>
-      </Modal>
     </div>
   )
 }

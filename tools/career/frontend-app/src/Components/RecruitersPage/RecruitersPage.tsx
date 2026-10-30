@@ -1,15 +1,13 @@
 import { useEffect, useState } from 'react'
-import { fetchRecruiters, createRecruiter, updateRecruiter, removeRecruiter, fetchCompanies, type Recruiter, type Company } from '../../api'
+import { fetchRecruiters, updateRecruiter, removeRecruiter, fetchCompanies, type Recruiter, type Company } from '../../api'
 import { Dropdown } from '../Dropdown/Dropdown'
 import { PlusIcon, UsersIcon } from '../../Shared/Icons/icons'
-import { Modal } from '../../Shared/Modal/Modal'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { SummaryRail } from '../../Shared/SummaryRail/SummaryRail'
 import { ACCENTS, PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
 import { percentOrNull, plural } from '../CompaniesPage/companyStats'
+import { COMPANIES_PATH, NEW_RECRUITER_PATH } from '../../paths'
 import { recruiterName, summarizeRecruiters } from './recruiterStats'
-
-const COMPANIES_PATH = '/tools/career/companies'
 
 const inputClass = 'w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none'
 
@@ -18,17 +16,12 @@ const inputClass = 'w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-
 // Persona->Profile. No company reassignment on edit, matching the
 // backend's own update_recruiter. The page has the same layout as Portals and
 // Companies: header card, an overview on the left, the recruiters on the right,
-// "New recruiter" in a dialog. See
+// "New recruiter" opens its own page. See
 // plan/ai/tools/career/step-17-recruiters-frontend.md.
 export function RecruitersPage() {
   const [companies, setCompanies] = useState<Company[]>([])
   const [recruiters, setRecruiters] = useState<Recruiter[]>([])
   const [filterCompanyId, setFilterCompanyId] = useState(() => new URLSearchParams(window.location.search).get('companyId') ?? '')
-  const [isNewOpen, setIsNewOpen] = useState(false)
-  const [newCompanyId, setNewCompanyId] = useState('')
-  const [newFirstName, setNewFirstName] = useState('')
-  const [newLastName, setNewLastName] = useState('')
-  const [newEmail, setNewEmail] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editFirstName, setEditFirstName] = useState('')
   const [editLastName, setEditLastName] = useState('')
@@ -57,36 +50,6 @@ export function RecruitersPage() {
   function handleFilterChange(id: string) {
     setFilterCompanyId(id)
     load(id)
-  }
-
-  function closeNew() {
-    setIsNewOpen(false)
-    setNewFirstName('')
-    setNewLastName('')
-    setNewEmail('')
-  }
-
-  function handleCreate() {
-    const firstName = newFirstName.trim()
-    const lastName = newLastName.trim()
-    const email = newEmail.trim()
-    if (!newCompanyId) {
-      setError('Company is required')
-      return
-    }
-    if (!firstName && !lastName) {
-      setError('First or last name is required')
-      return
-    }
-    setError('')
-    createRecruiter(newCompanyId, firstName, lastName, email)
-      .then(() => {
-        closeNew()
-        load()
-      })
-      .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : String(err))
-      })
   }
 
   function startEdit(r: Recruiter) {
@@ -163,7 +126,8 @@ export function RecruitersPage() {
               <button
                 type="button"
                 onClick={() => {
-                  setIsNewOpen(true)
+                  const suffix = filtered ? `?companyId=${encodeURIComponent(filterCompanyId)}` : ''
+                  window.__cinqoToolBridge.navigate(`${NEW_RECRUITER_PATH}${suffix}`)
                 }}
                 className="flex shrink-0 items-center gap-1.5 rounded-md bg-gray-800 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-900"
               >
@@ -322,50 +286,6 @@ export function RecruitersPage() {
           />
         </aside>
       </div>
-
-      <Modal open={isNewOpen} title="New recruiter" onClose={closeNew}>
-        <div className="mb-2">
-          <Dropdown
-            label="Company"
-            placeholder="Select a company"
-            options={companies.map((c) => ({ value: c.id, label: c.name }))}
-            value={newCompanyId}
-            onChange={setNewCompanyId}
-          />
-        </div>
-        <input
-          value={newFirstName}
-          onChange={(e) => {
-            setNewFirstName(e.target.value)
-          }}
-          placeholder="First name"
-          className={`mb-2 ${inputClass}`}
-        />
-        <input
-          value={newLastName}
-          onChange={(e) => {
-            setNewLastName(e.target.value)
-          }}
-          placeholder="Last name"
-          className={`mb-2 ${inputClass}`}
-        />
-        <input
-          value={newEmail}
-          onChange={(e) => {
-            setNewEmail(e.target.value)
-          }}
-          placeholder="Email"
-          className={`mb-3 ${inputClass}`}
-        />
-        <button
-          type="button"
-          onClick={handleCreate}
-          className="flex items-center gap-1 rounded-md bg-gray-900 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800"
-        >
-          <PlusIcon />
-          Create recruiter
-        </button>
-      </Modal>
     </div>
   )
 }
