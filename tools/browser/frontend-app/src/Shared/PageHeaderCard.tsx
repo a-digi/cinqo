@@ -22,7 +22,7 @@ export function PageHeaderCard({
   const pillAccent = pill?.accent ?? accent
   return (
     <div
-      className="browser-enter relative mb-5 overflow-hidden rounded-3xl border p-5"
+      className="browser-enter browser-hd relative mb-5 overflow-hidden rounded-3xl border p-5"
       style={{ borderColor: accent.soft, background: `linear-gradient(160deg, #ffffff 40%, ${accent.soft} 100%)` }}
     >
       <div
@@ -35,18 +35,20 @@ export function PageHeaderCard({
       />
       <div className="relative flex items-center gap-4">
         <span
-          className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-white shadow-sm"
+          className="browser-hd-icon inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-white shadow-sm"
           style={{ background: gradient(accent) }}
         >
           {icon}
         </span>
         <div className="min-w-0 flex-1">
-          <h1 className="text-xl font-semibold">{title}</h1>
+          <h1 className="browser-hd-title text-xl font-semibold" aria-label={title}>
+            <TitleLetters text={title} />
+          </h1>
           <p className="mt-0.5 text-sm text-gray-500">{description}</p>
         </div>
         {pill && (
           <span
-            className="shrink-0 rounded-full px-3 py-1 text-sm font-semibold"
+            className="browser-hd-pill shrink-0 rounded-full px-3 py-1 text-sm font-semibold"
             style={{ background: pillAccent.soft, color: pillAccent.text }}
           >
             {pill.text}
@@ -54,5 +56,29 @@ export function PageHeaderCard({
         )}
       </div>
     </div>
+  )
+}
+
+// The title split into letters, so a page can type it out or run a wave through it (the classes
+// browser-t-type and browser-t-wave on the page's root switch that on; without one the letters just sit
+// there). Words stay whole, so a long title still wraps between words; the screen reader reads the
+// heading's aria-label, not the pieces.
+function TitleLetters({ text }: { text: string }) {
+  let index = 0
+  return (
+    <span aria-hidden="true">
+      {text.split(' ').map((word, w) => (
+        <span key={w}>
+          {w > 0 && ' '}
+          <span className="inline-block whitespace-nowrap">
+            {Array.from(word).map((ch) => (
+              <span key={index} className="browser-ch" style={{ '--i': index++ } as React.CSSProperties}>
+                {ch}
+              </span>
+            ))}
+          </span>
+        </span>
+      ))}
+    </span>
   )
 }

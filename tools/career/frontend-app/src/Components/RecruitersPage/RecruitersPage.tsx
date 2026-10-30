@@ -99,7 +99,7 @@ export function RecruitersPage() {
   const filtered = filterCompanyId !== ''
 
   return (
-    <div className="career-v-drop max-w-7xl p-6 font-sans text-gray-900">
+    <div className="career-v-drop career-a-float career-t-underline max-w-7xl p-6 font-sans text-gray-900">
       <PageHeaderCard
         icon={<UsersIcon />}
         title="Recruiters"
@@ -140,7 +140,7 @@ export function RecruitersPage() {
 
           {companies.length > 0 && recruiters.length === 0 && !error && (
             <div
-              className="rounded-3xl border p-8 text-center text-sm text-gray-500"
+              className="career-wiggle rounded-3xl border p-8 text-center text-sm text-gray-500"
               style={{ borderColor: PAGE_ACCENT.soft, background: PAGE_ACCENT.soft }}
             >
               {filtered ? 'This company has no recruiters yet.' : 'No recruiters yet. Add the first one with “New recruiter”.'}

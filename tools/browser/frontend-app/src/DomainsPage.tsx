@@ -81,7 +81,7 @@ export function DomainsPage() {
   const summary = summarizeDomains(domains ?? [], now)
 
   return (
-    <div className="browser-v-wipe max-w-5xl p-6 font-sans text-gray-900">
+    <div className="browser-v-wipe browser-a-glow browser-t-wave max-w-5xl p-6 font-sans text-gray-900">
       <PageHeaderCard
         icon={<GlobeIcon />}
         title="Domains"
@@ -126,7 +126,7 @@ export function DomainsPage() {
       {domains === null && !error && <p className="text-sm text-gray-400">Loading…</p>}
       {domains?.length === 0 && (
         <div
-          className="rounded-3xl border p-8 text-center text-sm text-gray-500"
+          className="browser-wiggle rounded-3xl border p-8 text-center text-sm text-gray-500"
           style={{ borderColor: PAGE_ACCENT.soft, background: PAGE_ACCENT.soft }}
         >
           No site has asked for a check yet. When one does, it appears here — or add one above to clear it ahead of time.

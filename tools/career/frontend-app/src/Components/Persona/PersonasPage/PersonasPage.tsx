@@ -95,7 +95,7 @@ export function PersonasPage() {
   }
 
   return (
-    <div className="career-v-flip max-w-7xl p-6 font-sans text-gray-900">
+    <div className="career-v-flip career-a-sheen career-t-wave max-w-7xl p-6 font-sans text-gray-900">
       <PageHeaderCard
         icon={<LayersIcon />}
         title="Personas"
@@ -131,7 +131,7 @@ export function PersonasPage() {
 
           {profileId && personas.length === 0 && !error && (
             <div
-              className="rounded-3xl border p-8 text-center text-sm text-gray-500"
+              className="career-wiggle rounded-3xl border p-8 text-center text-sm text-gray-500"
               style={{ borderColor: PAGE_ACCENT.soft, background: PAGE_ACCENT.soft }}
             >
               This profile has no personas yet. Create the first one with “New persona”.

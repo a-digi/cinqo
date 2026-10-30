@@ -1,4 +1,5 @@
 import { LockIcon } from './icons'
+import { CountUp } from './Shared/Motion/CountUp'
 import { ACCENTS, PAGE_ACCENT, accentFor } from './Shared/theme'
 import type { SuffixCount } from './credentialRules'
 
@@ -16,7 +17,9 @@ export function VaultCard({ total, suffixes }: { total: number; suffixes: Suffix
           <LockIcon />
         </span>
         <div>
-          <div className="text-2xl font-bold leading-none text-gray-900">{total}</div>
+          <div className="text-2xl font-bold leading-none text-gray-900">
+            <CountUp value={String(total)} delayMs={400} />
+          </div>
           <div className="mt-1 text-xs text-gray-500">{total === 1 ? 'saved login' : 'saved logins'}</div>
         </div>
       </div>
@@ -25,13 +28,13 @@ export function VaultCard({ total, suffixes }: { total: number; suffixes: Suffix
         <>
           <div className="mb-1.5 mt-4 text-xs font-semibold uppercase tracking-wide text-gray-400">By site type</div>
           <div className="flex flex-wrap gap-1.5">
-            {suffixes.map((s) => {
+            {suffixes.map((s, idx) => {
               const accent = accentFor(s.suffix)
               return (
                 <span
                   key={s.suffix}
-                  className="rounded-full px-2.5 py-0.5 text-xs font-medium"
-                  style={{ background: accent.soft, color: accent.text }}
+                  className="browser-chip rounded-full px-2.5 py-0.5 text-xs font-medium"
+                  style={{ background: accent.soft, color: accent.text, '--i': idx } as React.CSSProperties}
                 >
                   {s.suffix} <span className="font-bold">{s.count}</span>
                 </span>

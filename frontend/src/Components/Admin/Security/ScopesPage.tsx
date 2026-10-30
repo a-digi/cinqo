@@ -42,7 +42,7 @@ export function ScopesPage() {
   const unknownFrontendScopes = referencedScopeIds().filter((id) => !registeredIds.has(id))
 
   return (
-    <div className="max-w-4xl space-y-8 p-6">
+    <div className="cinqo-stagger cinqo-v-wipe cinqo-t-type max-w-4xl space-y-8 p-6">
       <div>
         <h1 className="text-xl font-semibold text-gray-900">Scopes</h1>
         <p className="mt-1 text-sm text-gray-500">
@@ -115,7 +115,7 @@ export function ScopesPage() {
 
 function DiagnosticBanner({ title, description, scopes }: { title: string; description: string; scopes: string[] }) {
   return (
-    <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3">
+    <div className="cinqo-fx-sheen rounded-md border border-amber-200 bg-amber-50 px-4 py-3">
       <h3 className="text-sm font-semibold text-amber-800">{title}</h3>
       <p className="mt-0.5 text-sm text-amber-700">{description}</p>
       <ul className="mt-2 space-y-0.5">

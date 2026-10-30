@@ -140,7 +140,7 @@ export function CvDocumentsPage() {
   }
 
   return (
-    <div className="career-v-zoom max-w-7xl p-6 font-sans text-gray-900">
+    <div className="career-v-pop career-a-float career-t-type max-w-7xl p-6 font-sans text-gray-900">
       <PageHeaderCard
         icon={<PDFIcon className="h-6 w-6" />}
         title="CV Documents"
@@ -190,7 +190,7 @@ export function CvDocumentsPage() {
 
           {!loading && documents.length === 0 && (
             <div
-              className="rounded-3xl border p-8 text-center text-sm text-gray-500"
+              className="career-wiggle rounded-3xl border p-8 text-center text-sm text-gray-500"
               style={{ borderColor: PAGE_ACCENT.soft, background: PAGE_ACCENT.soft }}
             >
               No CV documents yet. Create the first one with “New CV”.

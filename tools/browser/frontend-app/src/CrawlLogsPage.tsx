@@ -101,7 +101,7 @@ export function CrawlLogsPage() {
   const shown = visibleLogs(logs, onlyUnmatched)
 
   return (
-    <div className="browser-v-right max-w-6xl p-6 font-sans text-gray-900">
+    <div className="browser-v-right browser-a-float browser-t-type max-w-6xl p-6 font-sans text-gray-900">
       <PageHeaderCard
         icon={<ListIcon />}
         title="Crawl Logs"
@@ -132,7 +132,7 @@ export function CrawlLogsPage() {
 
           {logs.length === 0 && !error && (
             <div
-              className="rounded-3xl border p-8 text-center text-sm text-gray-500"
+              className="browser-wiggle rounded-3xl border p-8 text-center text-sm text-gray-500"
               style={{ borderColor: PAGE_ACCENT.soft, background: PAGE_ACCENT.soft }}
             >
               No crawls logged yet.

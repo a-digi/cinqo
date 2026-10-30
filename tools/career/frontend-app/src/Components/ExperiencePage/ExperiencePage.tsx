@@ -53,7 +53,7 @@ export function ExperiencePage() {
   const summary = summarizeExperience(experience)
 
   return (
-    <div className="career-v-fade max-w-7xl p-6 font-sans text-gray-900">
+    <div className="career-v-fade career-a-sheen career-t-type max-w-7xl p-6 font-sans text-gray-900">
       <PageHeaderCard
         icon={<TimelineIcon />}
         title="Experience"
@@ -87,7 +87,7 @@ export function ExperiencePage() {
 
           {personaId && experience.length === 0 && !error && (
             <div
-              className="rounded-3xl border p-8 text-center text-sm text-gray-500"
+              className="career-wiggle rounded-3xl border p-8 text-center text-sm text-gray-500"
               style={{ borderColor: PAGE_ACCENT.soft, background: PAGE_ACCENT.soft }}
             >
               No experience yet. Add the first entry with “Add experience”.

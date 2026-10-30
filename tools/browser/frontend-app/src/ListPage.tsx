@@ -38,7 +38,7 @@ export function ListPage() {
   }
 
   return (
-    <div className="browser-v-left max-w-6xl p-6 font-sans text-gray-900">
+    <div className="browser-v-left browser-a-sheen browser-t-wave max-w-6xl p-6 font-sans text-gray-900">
       <PageHeaderCard
         icon={<KeyIcon />}
         title="Login Credentials"
@@ -74,7 +74,7 @@ export function ListPage() {
 
           {credentials.length === 0 && !error && (
             <div
-              className="rounded-3xl border p-8 text-center text-sm text-gray-500"
+              className="browser-wiggle rounded-3xl border p-8 text-center text-sm text-gray-500"
               style={{ borderColor: PAGE_ACCENT.soft, background: PAGE_ACCENT.soft }}
             >
               No logins yet. Add the first one with “Add login”.

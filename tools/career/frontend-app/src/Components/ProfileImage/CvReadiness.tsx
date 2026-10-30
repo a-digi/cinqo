@@ -30,13 +30,14 @@ export function CvReadiness({
       {status !== 'loading' && (
         <>
           <ul className="mt-3 space-y-2.5">
-            {items.map((item) => (
+            {items.map((item, idx) => (
               <li key={item.key} className="flex items-start gap-2.5">
                 <span
                   aria-hidden="true"
-                  className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 text-[11px] font-bold ${
+                  className={`career-tick mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 text-[11px] font-bold ${
                     item.done ? 'border-green-600 bg-green-600 text-white' : 'border-gray-300 bg-white text-transparent'
                   }`}
+                  style={{ '--i': idx } as React.CSSProperties}
                 >
                   ✓
                 </span>

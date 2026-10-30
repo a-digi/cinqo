@@ -1,4 +1,5 @@
 import type { Accent } from '../../Components/JobsPage/jobsTheme'
+import { CountUp } from '../Motion/CountUp'
 
 // One compact statistics card: a solid-colour icon badge, what it is (with its small
 // print) and the number. Used in the column beside the list on the Jobs, Portals and
@@ -46,7 +47,7 @@ export function StatCard({
           </div>
         </div>
         <p className="shrink-0 text-2xl font-bold tracking-tight" style={{ color: accent.text }}>
-          {value}
+          <CountUp value={value} delayMs={400} />
         </p>
       </div>
     </div>

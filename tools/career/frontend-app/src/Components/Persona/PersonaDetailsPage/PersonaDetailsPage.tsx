@@ -108,7 +108,7 @@ export function PersonaDetailsPage() {
   }
 
   return (
-    <div className="career-v-wipe max-w-7xl p-6 font-sans text-gray-900">
+    <div className="career-v-wipe career-a-float career-t-underline max-w-7xl p-6 font-sans text-gray-900">
       <PageHeaderCard
         icon={<TargetIcon />}
         title="Summary & Goals"

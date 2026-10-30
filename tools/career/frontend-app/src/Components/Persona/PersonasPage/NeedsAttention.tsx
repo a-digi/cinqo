@@ -21,7 +21,10 @@ export function NeedsAttention({ total, undescribed, onEdit }: { total: number; 
         </span>
       </div>
       <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-gray-100" role="presentation">
-        <div className="h-full rounded-full" style={{ width: `${percent}%`, background: allDone ? '#16a34a' : PAGE_ACCENT.to }} />
+        <div
+          className="career-grow h-full rounded-full"
+          style={{ width: `${percent}%`, background: allDone ? '#16a34a' : PAGE_ACCENT.to }}
+        />
       </div>
 
       {total === 0 && <p className="mt-3 text-xs text-gray-500">Nothing to check yet.</p>}

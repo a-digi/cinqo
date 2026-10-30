@@ -402,7 +402,7 @@ export function ImportCvPage() {
   })
 
   return (
-    <div className="career-v-swing max-w-5xl p-6 font-sans text-gray-900">
+    <div className="career-v-swing career-a-glow career-t-underline max-w-5xl p-6 font-sans text-gray-900">
       <PageHeaderCard
         icon={<UploadIcon className="h-6 w-6" />}
         title="Import from CV"

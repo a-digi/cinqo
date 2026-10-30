@@ -128,7 +128,7 @@ export function RepositoriesPage() {
   }
 
   return (
-    <div className="max-w-6xl space-y-6 p-6">
+    <div className="cinqo-stagger cinqo-v-left cinqo-t-underline max-w-6xl space-y-6 p-6">
       <div>
         <h1 className="text-xl font-semibold text-gray-900">Repositories</h1>
         <p className="mt-1 text-sm text-gray-500">

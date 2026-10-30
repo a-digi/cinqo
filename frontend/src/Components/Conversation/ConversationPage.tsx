@@ -138,7 +138,7 @@ export function ConversationPage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-4rem)]">
+    <div className="cinqo-stagger cinqo-v-fade flex h-[calc(100vh-4rem)]">
       {!isSidebarCollapsed && (
         <ConversationSidebar
           conversations={conversations}

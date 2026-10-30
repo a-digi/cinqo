@@ -19,7 +19,7 @@ function Tile({ icon, title, light, children }: { icon: React.ReactNode; title: 
         <div className="min-w-0 flex-1">
           <div className="text-sm font-semibold text-gray-900">{title}</div>
           <div className={`flex items-center gap-1.5 text-xs font-medium ${TEXT[light.tone]}`}>
-            <span aria-hidden="true" className={`h-2 w-2 rounded-full ${DOT[light.tone]}`} />
+            <span aria-hidden="true" className={`h-2 w-2 rounded-full ${DOT[light.tone]} ${light.tone === 'ok' ? 'browser-ping' : ''}`} />
             {light.label}
           </div>
         </div>
@@ -96,7 +96,10 @@ export function HealthStrip({
         <ul className="space-y-1.5">
           {engines.map((e) => (
             <li key={e.name} className="flex items-start gap-2 text-xs">
-              <span aria-hidden="true" className={`mt-1 h-2 w-2 shrink-0 rounded-full ${DOT[e.tone]}`} />
+              <span
+                aria-hidden="true"
+                className={`mt-1 h-2 w-2 shrink-0 rounded-full ${DOT[e.tone]} ${e.tone === 'ok' ? 'browser-ping' : ''}`}
+              />
               <span className="min-w-0">
                 <span className="font-medium text-gray-900">{e.name}</span>
                 {e.selected && (

@@ -30,18 +30,19 @@ export function LoggingGauge({ layers, level }: { layers: Layer[]; level: number
             {i < stacked.length - 1 && (
               <span
                 aria-hidden="true"
-                className="absolute left-[19px] top-10 h-[calc(100%-2.25rem)] w-0.5"
-                style={{ background: stacked[i + 1].on ? '#16a34a' : '#e5e7eb' }}
+                className="browser-draw absolute left-[19px] top-10 h-[calc(100%-2.25rem)] w-0.5"
+                style={{ background: stacked[i + 1].on ? '#16a34a' : '#e5e7eb', '--i': stacked.length - 2 - i } as React.CSSProperties}
               />
             )}
             <span
-              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
+              className={`${layer.on ? 'browser-light' : ''} flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
                 layer.on
                   ? 'bg-green-500 text-white shadow-sm'
                   : layer.pending
                     ? 'border-2 border-dashed border-amber-400 bg-amber-50 text-amber-600'
                     : 'bg-gray-100 text-gray-400'
               }`}
+              style={{ '--i': stacked.length - 1 - i } as React.CSSProperties}
             >
               {ICON[layer.key]}
             </span>

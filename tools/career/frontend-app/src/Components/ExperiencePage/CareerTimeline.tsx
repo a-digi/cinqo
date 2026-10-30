@@ -40,7 +40,7 @@ export function CareerTimeline({ entries, today }: { entries: CareerExperience[]
                 <div
                   key={s.id}
                   title={`${e.title} · ${e.company} (${e.startDate} – ${e.endDate || 'present'})`}
-                  className="absolute flex items-center overflow-hidden px-2 text-xs font-medium text-white shadow-sm"
+                  className="career-grow absolute flex items-center overflow-hidden px-2 text-xs font-medium text-white shadow-sm"
                   style={{
                     left: `${s.left}%`,
                     width: `${s.width}%`,

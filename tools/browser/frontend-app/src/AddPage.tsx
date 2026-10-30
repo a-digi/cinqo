@@ -52,7 +52,7 @@ export function AddPage() {
   const plan = credentialPlan(normalizeDomain(domain.trim()), saved ?? [])
 
   return (
-    <div className="browser-v-drop max-w-5xl p-6 font-sans text-gray-900">
+    <div className="browser-v-drop browser-a-float browser-t-underline max-w-5xl p-6 font-sans text-gray-900">
       <button
         type="button"
         onClick={() => {

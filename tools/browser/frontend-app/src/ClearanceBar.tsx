@@ -1,4 +1,5 @@
 import { clearanceSegments, formatIn, type DomainSummary } from './domainRules'
+import { CountUp } from './Shared/Motion/CountUp'
 import { PAGE_ACCENT } from './Shared/theme'
 
 const COLOR = { valid: '#16a34a', expired: '#d97706', none: '#cbd5e1' } as const
@@ -32,7 +33,12 @@ export function ClearanceBar({ summary, now }: { summary: DomainSummary; now: Da
         {segments
           .filter((s) => s.count > 0)
           .map((s) => (
-            <div key={s.key} style={{ width: `${s.percent}%`, background: COLOR[s.key] }} title={`${s.label}: ${s.count}`} />
+            <div
+              key={s.key}
+              className="browser-grow"
+              style={{ width: `${s.percent}%`, background: COLOR[s.key] }}
+              title={`${s.label}: ${s.count}`}
+            />
           ))}
       </div>
 
@@ -40,7 +46,10 @@ export function ClearanceBar({ summary, now }: { summary: DomainSummary; now: Da
         {segments.map((s) => (
           <li key={s.key} className="flex items-center gap-1.5">
             <span aria-hidden="true" className="h-2.5 w-2.5 rounded-full" style={{ background: COLOR[s.key] }} />
-            {s.label} <span className="font-bold text-gray-900">{s.count}</span>
+            {s.label}{' '}
+            <span className="font-bold text-gray-900">
+              <CountUp value={String(s.count)} delayMs={600} />
+            </span>
           </li>
         ))}
       </ul>

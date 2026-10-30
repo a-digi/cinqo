@@ -36,7 +36,10 @@ export function ImportPipeline({ stages, onStartOver }: { stages: Stage[]; onSta
               />
             )}
             <div className="flex items-center gap-2">
-              <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold ${style.dot}`}>
+              <span
+                className={`career-tick flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold ${style.dot}`}
+                style={{ '--i': i } as React.CSSProperties}
+              >
                 {stage.status === 'done' ? '✓' : stage.status === 'failed' ? '!' : i + 1}
               </span>
               <span className={`text-sm font-semibold ${style.text}`}>{stage.label}</span>

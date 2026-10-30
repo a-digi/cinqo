@@ -35,15 +35,16 @@ export function FieldStepper({
             {i < steps.length - 1 && (
               <span
                 aria-hidden="true"
-                className="absolute left-[11px] top-6 h-[calc(100%-1rem)] w-0.5"
-                style={{ background: step.filled ? '#16a34a' : '#e5e7eb' }}
+                className="career-draw absolute left-[11px] top-6 h-[calc(100%-1rem)] w-0.5"
+                style={{ background: step.filled ? '#16a34a' : '#e5e7eb', '--i': i } as React.CSSProperties}
               />
             )}
             <span
               aria-hidden="true"
-              className={`absolute left-0 top-0.5 flex h-6 w-6 items-center justify-center rounded-full border-2 text-xs font-bold ${
+              className={`career-tick absolute left-0 top-0.5 flex h-6 w-6 items-center justify-center rounded-full border-2 text-xs font-bold ${
                 step.filled ? 'border-green-600 bg-green-600 text-white' : 'border-gray-300 bg-white text-transparent'
               }`}
+              style={{ '--i': i } as React.CSSProperties}
             >
               ✓
             </span>

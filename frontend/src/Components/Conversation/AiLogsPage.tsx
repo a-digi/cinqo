@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { fetchAiTraceLogs, type AiTraceLogSummary } from '../../api/conversations'
+import { CountUp } from '../../Shared/Components/Motion/CountUp'
 
 // Read-only summary — deliberately shows only WHERE this conversation's
 // own AI trace logs live on disk and HOW MANY exist, never opens/
@@ -29,7 +30,7 @@ export function AiLogsPage() {
   }, [id])
 
   return (
-    <div className="max-w-3xl p-6 font-sans text-gray-900">
+    <div className="cinqo-stagger cinqo-v-tilt cinqo-t-underline max-w-3xl p-6 font-sans text-gray-900">
       <div className="mb-1.5 flex items-center gap-3">
         <Link to="/conversations" className="text-sm text-gray-500 underline">
           ← Back to conversations
@@ -49,7 +50,7 @@ export function AiLogsPage() {
           <div className="text-xs font-medium text-gray-500">Folder</div>
           <div className="break-all font-mono text-sm text-gray-900">{folder}</div>
           <div className="mt-1 text-xs text-gray-500">
-            {logs.length} log file{logs.length === 1 ? '' : 's'}
+            <CountUp value={String(logs.length)} /> log file{logs.length === 1 ? '' : 's'}
           </div>
         </div>
       )}

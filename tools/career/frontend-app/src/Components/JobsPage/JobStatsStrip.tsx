@@ -76,7 +76,7 @@ function PlatformCard({ stats }: { stats: JobStats }) {
                     <span className="shrink-0 text-gray-500">{b.count}</span>
                   </div>
                   <div className="mt-1 h-1.5 overflow-hidden rounded-full" style={{ background: accent.soft }}>
-                    <div className="h-full rounded-full" style={{ width: `${b.widthPct}%`, background: accent.to }} />
+                    <div className="career-grow h-full rounded-full" style={{ width: `${b.widthPct}%`, background: accent.to }} />
                   </div>
                 </div>
               </li>

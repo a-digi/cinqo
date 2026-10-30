@@ -63,7 +63,7 @@ export function SettingsPage() {
   }
 
   return (
-    <div className="career-v-spin max-w-3xl p-6 font-sans text-gray-900">
+    <div className="career-v-spin career-a-sheen career-t-type max-w-3xl p-6 font-sans text-gray-900">
       <h1 className="text-xl font-semibold">Settings</h1>
       <p className="mt-1 mb-5 text-sm text-gray-500">How the Career tool uses AI.</p>
 

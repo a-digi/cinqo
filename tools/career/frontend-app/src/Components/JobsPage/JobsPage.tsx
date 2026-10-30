@@ -42,7 +42,8 @@ import {
   PlusIcon,
 } from '../../Shared/Icons/icons'
 import { AddJobModal } from './AddJobModal'
-import { PAGE_ACCENT, accentFor, gradient, initialOf } from './jobsTheme'
+import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
+import { PAGE_ACCENT, accentFor, initialOf } from './jobsTheme'
 import { JobStatsStrip } from './JobStatsStrip'
 import { SelectCvModal } from './SelectCvModal'
 import { ConfirmationModal } from '../../Shared/ConfirmationModal/ConfirmationModal'
@@ -858,41 +859,14 @@ export function JobsPage() {
     })
 
   return (
-    <div className="max-w-7xl p-6 font-sans text-gray-900">
+    <div className="career-a-sheen career-t-underline max-w-7xl p-6 font-sans text-gray-900">
       <div className="min-w-0">
-        <div
-          className="career-enter relative mb-5 overflow-hidden rounded-3xl border p-5"
-          style={{ borderColor: PAGE_ACCENT.soft, background: `linear-gradient(160deg, #ffffff 40%, ${PAGE_ACCENT.soft} 100%)` }}
-        >
-          <div
-            className="pointer-events-none absolute -right-6 -top-8 h-32 w-32 rounded-full opacity-15"
-            style={{ background: gradient(PAGE_ACCENT) }}
-          />
-          <div
-            className="pointer-events-none absolute right-24 top-10 h-10 w-10 rotate-45 rounded-xl opacity-20"
-            style={{ background: gradient(PAGE_ACCENT) }}
-          />
-          <div className="relative flex items-center gap-4">
-            <span
-              className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-white shadow-sm"
-              style={{ background: gradient(PAGE_ACCENT) }}
-            >
-              <BriefcaseIcon />
-            </span>
-            <div className="min-w-0 flex-1">
-              <h1 className="text-xl font-semibold">Saved Jobs</h1>
-              <p className="mt-0.5 text-sm text-gray-500">
-                Job postings the AI has crawled and saved on your behalf, and any you added yourself.
-              </p>
-            </div>
-            <span
-              className="shrink-0 rounded-full px-3 py-1 text-sm font-semibold"
-              style={{ background: PAGE_ACCENT.soft, color: PAGE_ACCENT.text }}
-            >
-              {total} {total === 1 ? 'job' : 'jobs'}
-            </span>
-          </div>
-        </div>
+        <PageHeaderCard
+          icon={<BriefcaseIcon />}
+          title="Saved Jobs"
+          description="Job postings the AI has crawled and saved on your behalf, and any you added yourself."
+          pill={{ text: `${total} ${total === 1 ? 'job' : 'jobs'}` }}
+        />
 
         {/* Two columns: the jobs on the left (the point of the page), the statistics cards
             on the right. Below the large breakpoint the cards drop under the list. */}

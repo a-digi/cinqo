@@ -103,7 +103,7 @@ export function SkillsPage() {
   const visibleSkills = letter === null ? skills : filterByLetter(skills, letter)
 
   return (
-    <div className="career-v-tilt max-w-7xl p-6 font-sans text-gray-900">
+    <div className="career-v-tilt career-a-glow career-t-wave max-w-7xl p-6 font-sans text-gray-900">
       <PageHeaderCard
         icon={<SparkIcon />}
         title="Skills"
@@ -123,7 +123,7 @@ export function SkillsPage() {
           {skills.length > 0 && <LetterIndex index={index} active={letter} total={skills.length} onPick={setActiveLetter} />}
           {skills.length === 0 && <p className="mb-3 text-sm text-gray-500">No skills yet. Add the first one below.</p>}
           <div className="mb-4 flex flex-wrap gap-2">
-            {visibleSkills.map((skill) => {
+            {visibleSkills.map((skill, idx) => {
               const accent = accentFor(skill)
               return editing === skill ? (
                 <span
@@ -163,8 +163,8 @@ export function SkillsPage() {
               ) : (
                 <span
                   key={skill}
-                  className="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium"
-                  style={{ background: accent.soft, color: accent.text }}
+                  className="career-chip flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium"
+                  style={{ background: accent.soft, color: accent.text, '--i': idx } as React.CSSProperties}
                 >
                   <span aria-hidden="true" className="h-2 w-2 rounded-full" style={{ background: accent.to }} />
                   <button

@@ -44,7 +44,7 @@ export function AiDebugSettingsPage() {
   }
 
   return (
-    <div className="max-w-2xl p-6 font-sans text-gray-900">
+    <div className="cinqo-stagger cinqo-v-flip cinqo-t-shimmer max-w-2xl p-6 font-sans text-gray-900">
       <h1 className="mb-1.5 text-xl font-semibold">AI Debug Logging</h1>
       <p className="mb-5 text-sm text-gray-500">
         Controls whether the full raw request and response exchanged with the AI model is ever written to disk, one file per turn, for every
@@ -53,7 +53,7 @@ export function AiDebugSettingsPage() {
 
       <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
 
-      <div className="rounded-md border border-gray-200 bg-gray-50 p-6 shadow-sm">
+      <div className="cinqo-fx-glow rounded-md border border-gray-200 bg-gray-50 p-6 shadow-sm">
         <label htmlFor="cinqo-ai-trace-logs-enabled" aria-label="AI trace logging" className="flex items-start gap-3">
           <input
             id="cinqo-ai-trace-logs-enabled"

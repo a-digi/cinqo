@@ -118,7 +118,7 @@ export function ProfilesPage() {
   }
 
   return (
-    <div className="career-v-pop max-w-7xl p-6 font-sans text-gray-900">
+    <div className="career-v-pop career-a-glow career-t-type max-w-7xl p-6 font-sans text-gray-900">
       <PageHeaderCard
         icon={<UserIcon />}
         title="Profiles"
@@ -151,7 +151,7 @@ export function ProfilesPage() {
 
           {profiles.length === 0 && !error && (
             <div
-              className="rounded-3xl border p-8 text-center text-sm text-gray-500"
+              className="career-wiggle rounded-3xl border p-8 text-center text-sm text-gray-500"
               style={{ borderColor: PAGE_ACCENT.soft, background: PAGE_ACCENT.soft }}
             >
               No profiles yet. Create the first one with “New profile”.

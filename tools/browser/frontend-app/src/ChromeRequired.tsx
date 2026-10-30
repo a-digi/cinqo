@@ -19,13 +19,13 @@ const STEPS = [
 export function ChromeRequired() {
   const rose = ACCENTS[3]
   return (
-    <div className="browser-v-pop flex justify-center p-6 font-sans text-gray-900">
+    <div className="browser-v-pop browser-a-float flex justify-center p-6 font-sans text-gray-900">
       <div
         className="browser-enter mt-6 w-full max-w-xl rounded-3xl border p-7 text-center shadow-sm"
         style={{ borderColor: rose.soft, background: `linear-gradient(160deg, #ffffff 40%, ${rose.soft} 100%)` }}
       >
         <span
-          className="mx-auto mb-4 inline-flex h-14 w-14 items-center justify-center rounded-2xl text-white shadow-sm"
+          className="browser-hero-icon mx-auto mb-4 inline-flex h-14 w-14 items-center justify-center rounded-2xl text-white shadow-sm"
           style={{ background: gradient(rose) }}
         >
           <ShieldIcon />

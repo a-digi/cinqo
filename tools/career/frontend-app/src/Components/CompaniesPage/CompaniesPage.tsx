@@ -87,7 +87,7 @@ export function CompaniesPage() {
   const withJobsPercent = percentOrNull(summary.withJobs, summary.companies)
 
   return (
-    <div className="career-v-right max-w-7xl p-6 font-sans text-gray-900">
+    <div className="career-v-right career-a-sheen career-t-wave max-w-7xl p-6 font-sans text-gray-900">
       <PageHeaderCard
         icon={<BuildingIcon />}
         title="Companies"
@@ -103,7 +103,7 @@ export function CompaniesPage() {
 
           {companies.length === 0 && !error && (
             <div
-              className="rounded-3xl border p-8 text-center text-sm text-gray-500"
+              className="career-wiggle rounded-3xl border p-8 text-center text-sm text-gray-500"
               style={{ borderColor: PAGE_ACCENT.soft, background: PAGE_ACCENT.soft }}
             >
               No companies yet. Create the first one with “New company”.

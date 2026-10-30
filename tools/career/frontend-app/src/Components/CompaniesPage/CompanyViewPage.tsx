@@ -84,7 +84,7 @@ export function CompanyViewPage() {
   const matched = jobs.filter((j) => j.matchStatus === 'completed' && j.matchScore !== undefined).length
 
   return (
-    <div className="career-v-tilt max-w-7xl p-6 font-sans text-gray-900">
+    <div className="career-v-tilt career-a-float career-t-wave max-w-7xl p-6 font-sans text-gray-900">
       {backLink}
       <PageHeaderCard
         icon={<BuildingIcon />}
@@ -99,7 +99,7 @@ export function CompanyViewPage() {
           {error && <div className="mb-2 text-sm text-red-700">{error}</div>}
           {jobs.length === 0 && (
             <div
-              className="rounded-3xl border p-8 text-center text-sm text-gray-500"
+              className="career-wiggle rounded-3xl border p-8 text-center text-sm text-gray-500"
               style={{ borderColor: PAGE_ACCENT.soft, background: PAGE_ACCENT.soft }}
             >
               No jobs are linked to this company yet. Link one from the Jobs page.

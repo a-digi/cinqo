@@ -160,7 +160,7 @@ export function ProfileImagePage() {
   }
 
   return (
-    <div className="career-v-stretch max-w-5xl p-6 font-sans text-gray-900">
+    <div className="career-v-stretch career-a-float career-t-wave max-w-5xl p-6 font-sans text-gray-900">
       <PageHeaderCard
         icon={<CameraIcon />}
         title="Photo"

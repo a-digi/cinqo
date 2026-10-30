@@ -73,7 +73,7 @@ export function PlatformKeysPage() {
   }
 
   return (
-    <div className="max-w-4xl space-y-6 p-6">
+    <div className="cinqo-stagger cinqo-v-zoom cinqo-t-shimmer max-w-4xl space-y-6 p-6">
       <div>
         <h1 className="text-xl font-semibold text-gray-900">Platforms</h1>
         <p className="mt-1 text-sm text-gray-500">

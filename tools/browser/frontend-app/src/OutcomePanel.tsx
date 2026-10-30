@@ -1,4 +1,5 @@
 import { Switch } from './Shared/Switch'
+import { CountUp } from './Shared/Motion/CountUp'
 import { PAGE_ACCENT } from './Shared/theme'
 import type { CrawlLogSummary, ReasonTone } from './crawlLogRules'
 
@@ -28,10 +29,12 @@ export function OutcomePanel({
               <span className="min-w-0 truncate text-gray-700" title={r.code}>
                 {r.label}
               </span>
-              <span className="shrink-0 font-bold text-gray-900">{r.count}</span>
+              <span className="shrink-0 font-bold text-gray-900">
+                <CountUp value={String(r.count)} delayMs={500} />
+              </span>
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-gray-100">
-              <div className="h-full rounded-full" style={{ width: `${r.percent}%`, background: BAR[r.tone] }} />
+              <div className="browser-grow h-full rounded-full" style={{ width: `${r.percent}%`, background: BAR[r.tone] }} />
             </div>
           </li>
         ))}
@@ -41,11 +44,15 @@ export function OutcomePanel({
         <div className="mt-4 space-y-2 border-t pt-3 text-xs text-gray-600" style={{ borderColor: PAGE_ACCENT.soft }}>
           <div className="flex justify-between">
             <span>Pages visited</span>
-            <span className="font-bold text-gray-900">{summary.pages}</span>
+            <span className="font-bold text-gray-900">
+              <CountUp value={String(summary.pages)} delayMs={700} />
+            </span>
           </div>
           <div className="flex justify-between">
             <span>Crawls with fields not found</span>
-            <span className={`font-bold ${summary.withUnmatched > 0 ? 'text-red-700' : 'text-gray-900'}`}>{summary.withUnmatched}</span>
+            <span className={`font-bold ${summary.withUnmatched > 0 ? 'text-red-700' : 'text-gray-900'}`}>
+              <CountUp value={String(summary.withUnmatched)} delayMs={800} />
+            </span>
           </div>
           {summary.withUnmatched > 0 && <Switch size="sm" checked={onlyUnmatched} onChange={onToggleUnmatched} label="Show only those" />}
         </div>

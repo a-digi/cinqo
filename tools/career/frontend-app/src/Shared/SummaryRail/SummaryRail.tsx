@@ -1,3 +1,4 @@
+import { CountUp } from '../Motion/CountUp'
 import { ringArcs, type RingSegment } from './ringMath'
 
 const RADIUS = 46
@@ -51,11 +52,15 @@ export function SummaryRail({
               strokeWidth={STROKE}
               strokeDasharray={`${a.dash} ${CIRCUMFERENCE - a.dash}`}
               strokeDashoffset={a.offset}
+              className="career-ring-arc"
+              style={{ '--circ': CIRCUMFERENCE, '--k': i } as React.CSSProperties}
             />
           ))}
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-xl font-bold leading-none text-gray-900">{centerValue}</span>
+          <span className="text-xl font-bold leading-none text-gray-900">
+            <CountUp value={centerValue} delayMs={300} />
+          </span>
           <span className="mt-1 text-[11px] text-gray-500">{centerLabel}</span>
         </div>
       </div>
@@ -66,7 +71,9 @@ export function SummaryRail({
             <span className="h-2 w-2 shrink-0 translate-y-[-1px] rounded-full" style={{ background: r.color }} aria-hidden="true" />
             <span className={r.emphasis ? 'font-semibold text-gray-900' : 'text-gray-600'}>{r.label}</span>
             <span className="min-w-3 flex-1 translate-y-[-3px] border-b border-dotted border-gray-300" aria-hidden="true" />
-            <span className={`tabular-nums ${r.emphasis ? 'font-bold text-gray-900' : 'font-semibold text-gray-800'}`}>{r.value}</span>
+            <span className={`tabular-nums ${r.emphasis ? 'font-bold text-gray-900' : 'font-semibold text-gray-800'}`}>
+              <CountUp value={r.value} delayMs={500} />
+            </span>
           </li>
         ))}
       </ul>

@@ -59,9 +59,9 @@ export function WillHappenCard({ plan, listKnown }: { plan: CredentialPlan; list
           'Stored encrypted by the Browser tool, on the computer where Cinqo runs.',
           'The AI can ask whether a login exists for a site, but never sees the username or password.',
           'The password cannot be read back here; to change it, save the domain again.',
-        ].map((line) => (
+        ].map((line, idx) => (
           <li key={line} className="flex gap-2">
-            <span aria-hidden="true" className="mt-0.5 text-green-600">
+            <span aria-hidden="true" className="browser-tick mt-0.5 text-green-600" style={{ '--i': idx } as React.CSSProperties}>
               ✓
             </span>
             {line}
