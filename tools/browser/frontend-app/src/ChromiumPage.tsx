@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
-import { fetchChromeStatus, type ChromeStatus } from './api'
+import type { useChromeStatus } from './useBrowserStatus'
+import type { ChromeStatus } from './api'
+import { cardClassName, cardStyle } from './Shared/cardStyle'
 
 // Chrome section of the "Browser & Engine" page (step 53, merged into one page
 // with the engine settings) — is a Chrome or Chromium installed on the
@@ -7,111 +8,47 @@ import { fetchChromeStatus, type ChromeStatus } from './api'
 // path both launch it, so without it the Browser tool cannot fetch pages at
 // all. When it is missing this page asks the user to install it and explains
 // how for the server's operating system; the tool never installs anything
-// itself. "Check again" re-reads the status without restarting anything.
-// Once Chrome appears after having been missing, the page offers a Reload:
-// a tool's menu is registered once when the app loads, so the other Browser
-// pages only show up after a reload. Playwright is separate — it launches its
-// own downloaded Chromium, not this one. See
-// plan/ai/tools/browser/step-53-chromium-page-and-gate.md.
-// onStatus reports whether Chrome is installed (true/false), or null when the
-// status could not be read, so the page around this can decide what else to show.
-export function ChromeSection({ onStatus }: { onStatus?: (installed: boolean | null) => void }) {
-  const [status, setStatus] = useState<ChromeStatus | null>(null)
-  const [error, setError] = useState('')
-  const [checking, setChecking] = useState(true)
-  // True once this page has seen Chrome missing — so that finding it later
-  // (after the user installed it) can offer the Reload.
-  const [wasMissing, setWasMissing] = useState(false)
-
-  // Stable as long as onStatus is (a state setter is), so the effect below runs
-  // once on mount and Check again re-runs the same function.
-  const check = useCallback(() => {
-    setChecking(true)
-    setError('')
-    fetchChromeStatus()
-      .then((next) => {
-        setStatus(next)
-        if (!next.installed) setWasMissing(true)
-        onStatus?.(next.installed)
-      })
-      .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : String(err))
-        onStatus?.(null)
-      })
-      .finally(() => {
-        setChecking(false)
-      })
-  }, [onStatus])
-
-  useEffect(() => {
-    check()
-  }, [check])
-
+// itself. The status itself, its light and "Check again" are in the health strip
+// above; this card keeps the explanation and the install steps. Once Chrome
+// appears after having been missing, the page offers a Reload: a tool's menu is
+// registered once when the app loads, so the other Browser pages only show up
+// after a reload. Playwright is separate — it launches its own downloaded
+// Chromium, not this one. See plan/ai/tools/browser/step-53-chromium-page-and-gate.md.
+export function ChromeSection({ chrome }: { chrome: ReturnType<typeof useChromeStatus> }) {
+  const { status, error, wasMissing } = chrome
   return (
-    <section className="mb-10">
-      <h2 className="mb-1.5 text-lg font-semibold">Chrome</h2>
-      <p className="mb-5 text-sm text-gray-500">
+    <section className={`mb-5 ${cardClassName}`} style={cardStyle}>
+      <h2 className="mb-1 text-base font-semibold text-gray-900">Chrome</h2>
+      <p className="mb-4 text-sm text-gray-500">
         The Browser tool drives a real Chrome or Chromium to fetch pages. It must be installed on the computer where Cinqo is running.
       </p>
 
-      {error && <div className="mb-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+      {error && <div className="mb-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
 
-      {status?.installed && <InstalledCard status={status} />}
+      {status?.installed && (
+        <p className="text-xs text-gray-500">
+          Rod and the built-in browser path both launch this browser. The Playwright engine is separate: it uses its own downloaded
+          Chromium.
+        </p>
+      )}
       {status && !status.installed && <MissingCard status={status} />}
       {!status && !error && <p className="text-sm text-gray-400">Checking…</p>}
 
       {status?.installed && wasMissing && (
-        <div className="mt-4 rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-800">
+        <div className="mt-4 rounded-2xl border border-green-200 bg-green-50 p-3 text-sm text-green-800">
           Chrome was found. Reload the page to show the rest of the Browser tool&apos;s pages.
           <button
             type="button"
             onClick={() => {
               window.location.reload()
             }}
-            className="ml-3 rounded-md bg-green-700 px-3 py-1 text-xs font-medium text-white hover:bg-green-800"
+            className="ml-3 rounded-full bg-green-700 px-3 py-1 text-xs font-medium text-white hover:bg-green-800"
           >
             Reload
           </button>
         </div>
       )}
-
-      <div className="mt-4">
-        <button
-          type="button"
-          onClick={check}
-          disabled={checking}
-          className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {checking ? 'Checking…' : 'Check again'}
-        </button>
-      </div>
     </section>
-  )
-}
-
-function InstalledCard({ status }: { status: ChromeStatus }) {
-  return (
-    <div className="rounded-md border border-green-200 bg-green-50 p-5 shadow-sm">
-      <p className="mb-2 flex items-center gap-2 text-sm font-medium text-green-800">
-        <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs">Installed</span>
-        Chrome or Chromium is installed.
-      </p>
-      <dl className="space-y-1 text-xs text-gray-700">
-        {status.version && (
-          <div className="flex gap-2">
-            <dt className="w-16 shrink-0 text-gray-500">Version</dt>
-            <dd>{status.version}</dd>
-          </div>
-        )}
-        <div className="flex gap-2">
-          <dt className="w-16 shrink-0 text-gray-500">Location</dt>
-          <dd className="break-all font-mono">{status.path}</dd>
-        </div>
-      </dl>
-      <p className="mt-3 text-xs text-gray-500">
-        Rod and the built-in browser path both launch this browser. The Playwright engine is separate: it uses its own downloaded Chromium.
-      </p>
-    </div>
   )
 }
 
@@ -120,7 +57,7 @@ function MissingCard({ status }: { status: ChromeStatus }) {
   // unusable — a different problem from "nothing installed".
   const overrideProblem = status.detail.includes('BROWSER_TOOL_CHROME_PATH')
   return (
-    <div className="rounded-md border border-red-200 bg-red-50 p-5 shadow-sm">
+    <div className="rounded-2xl border border-red-200 bg-red-50 p-5">
       <p className="mb-2 flex items-center gap-2 text-sm font-medium text-red-800">
         <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs">Not installed</span>
         {overrideProblem ? 'The configured Chrome cannot be used.' : 'Chrome or Chromium is not installed.'}
