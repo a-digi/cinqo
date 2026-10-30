@@ -2,8 +2,9 @@ import { PAGE_ACCENT } from '../../Components/JobsPage/jobsTheme'
 
 // The bar above a page's content that says whose data the page shows (the profile or
 // persona picked in a switcher), with a "Manage" link to where that list is kept. It is
-// a filter on the page, so it sits next to the content, not inside the header card.
-export function ScopeBar({ children, managePath }: { children: React.ReactNode; managePath: string }) {
+// a filter on the page, so it sits next to the content, not inside the header card. A page
+// can put its main action ("New CV") at the right end of the bar through `actions`.
+export function ScopeBar({ children, managePath, actions }: { children: React.ReactNode; managePath: string; actions?: React.ReactNode }) {
   return (
     <div
       className="mb-4 flex items-end gap-3 rounded-3xl border px-4 py-3 text-sm"
@@ -21,6 +22,7 @@ export function ScopeBar({ children, managePath }: { children: React.ReactNode; 
       >
         Manage
       </a>
+      {actions && <div className="ml-auto self-center">{actions}</div>}
     </div>
   )
 }

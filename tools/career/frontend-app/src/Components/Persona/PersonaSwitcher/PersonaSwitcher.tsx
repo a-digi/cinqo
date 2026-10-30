@@ -20,7 +20,16 @@ const PERSONAS_PATH = '/tools/career/personas'
 // deliberate middle ground short of full profile-scoped filtering.
 // See plan/ai/tools/career/step-09-persona-frontend.md and
 // plan/ai/tools/career/step-11-job-seeker-profile-frontend.md.
-export function PersonaSwitcher({ personaId, onChange }: { personaId: string | null; onChange: (id: string) => void }) {
+export function PersonaSwitcher({
+  personaId,
+  onChange,
+  actions,
+}: {
+  personaId: string | null
+  onChange: (id: string) => void
+  // Shown at the right end of the bar (a page's main action, e.g. "New CV").
+  actions?: React.ReactNode
+}) {
   const [personas, setPersonas] = useState<Persona[] | null>(null)
   const [profileNames, setProfileNames] = useState<Record<string, string>>({})
   const [error, setError] = useState('')
@@ -54,7 +63,7 @@ export function PersonaSwitcher({ personaId, onChange }: { personaId: string | n
   }
 
   return (
-    <ScopeBar managePath={PERSONAS_PATH}>
+    <ScopeBar managePath={PERSONAS_PATH} actions={actions}>
       <Dropdown
         label="Persona"
         options={personas.map((p) => ({

@@ -148,14 +148,11 @@ export function CvDocumentsPage() {
         pill={personaId && !loading ? { text: plural(documents.length, 'CV', 'CVs') } : undefined}
       />
 
-      <PersonaSwitcher personaId={personaId} onChange={setPersonaId} />
-
-      {error && <p className="mb-4 text-sm text-red-700">{error}</p>}
-
-      {personaId && (
-        <>
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <p className="text-xs text-gray-500">Click a CV to edit it; hover for preview, rename and delete.</p>
+      <PersonaSwitcher
+        personaId={personaId}
+        onChange={setPersonaId}
+        actions={
+          personaId ? (
             <button
               type="button"
               onClick={startNewCv}
@@ -163,7 +160,15 @@ export function CvDocumentsPage() {
             >
               <PlusIcon /> New CV
             </button>
-          </div>
+          ) : undefined
+        }
+      />
+
+      {error && <p className="mb-4 text-sm text-red-700">{error}</p>}
+
+      {personaId && (
+        <>
+          <p className="mb-4 text-xs text-gray-500">Click a CV to edit it; hover for preview, rename and delete.</p>
 
           {/* A uniquely-named grid class, as the Media page does: an installed tool's globally-injected
               Tailwind stylesheet can redeclare a bare `.grid-cols-*` and collapse a plain Tailwind grid. */}

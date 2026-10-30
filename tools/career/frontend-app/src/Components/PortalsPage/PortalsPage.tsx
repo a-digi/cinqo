@@ -266,23 +266,11 @@ export function PortalsPage() {
         pill={{ text: plural(summary.portals, 'portal', 'portals') }}
       />
 
-      {/* Two columns like the Jobs page: the portals on the left, the numbers and the
-          auto-discovery switch on the right (under the list on a narrow window). */}
+      {/* Two columns: the portals on the right; on the left the "New portal" button, the numbers
+          and the auto-discovery switch (under the list on a narrow window). */}
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
         <div className="order-1 min-w-0 flex-1 lg:order-2">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <p className="text-xs text-gray-500">Deleting a portal permanently deletes every link it owns.</p>
-            <button
-              type="button"
-              onClick={() => {
-                setIsNewPortalModalOpen(true)
-              }}
-              className="flex shrink-0 items-center gap-1.5 rounded-md bg-gray-800 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-900"
-            >
-              <PlusIcon />
-              New portal
-            </button>
-          </div>
+          <p className="mb-3 text-xs text-gray-500">Deleting a portal permanently deletes every link it owns.</p>
 
           <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
 
@@ -520,6 +508,16 @@ export function PortalsPage() {
         </div>
 
         <aside className="order-2 w-full shrink-0 lg:order-1 lg:sticky lg:top-6 lg:w-56">
+          <button
+            type="button"
+            onClick={() => {
+              setIsNewPortalModalOpen(true)
+            }}
+            className="mb-4 flex w-full items-center justify-center gap-1.5 rounded-md bg-gray-800 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-900"
+          >
+            <PlusIcon />
+            New portal
+          </button>
           <SummaryRail
             title="Overview"
             segments={[

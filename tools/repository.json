@@ -47,41 +47,41 @@
     },
     {
       "id": "career",
-      "currentVersionId": "0.0.368",
+      "currentVersionId": "0.0.370",
       "versions": [
         {
-          "versionId": "0.0.368",
+          "versionId": "0.0.370",
           "name": "Career",
-          "version": "0.0.368",
+          "version": "0.0.370",
           "releasedAt": "2026-10-30",
           "packages": [
             {
               "os": "darwin",
               "arch": "arm64",
               "url": "https://raw.githubusercontent.com/a-digi/cinqo/0.0.1/tools/career/versions/tool-career-darwin-arm64.zip",
-              "sha256": "86a4454ce61f6052ffa0d2dcfda200f201b064b740f407ae0a4eea29b91d7787",
-              "sizeBytes": 16463826
+              "sha256": "4cd16e0288d7d730e5e8478370ff374a2d0d6f0ac0f38d83b5ca843461d154d7",
+              "sizeBytes": 16463849
             },
             {
               "os": "linux",
               "arch": "amd64",
               "url": "https://raw.githubusercontent.com/a-digi/cinqo/0.0.1/tools/career/versions/tool-career-linux-amd64.zip",
-              "sha256": "cdc49c9ce41758b594b66622ae44cd3be22f686611c31a1d4bc67d3c9509ae11",
-              "sizeBytes": 16612699
+              "sha256": "97479b34dc5a71c6165f97d6b0f07dc88dc059fcf7f368cbc94edde0fef1afe2",
+              "sizeBytes": 16612744
             },
             {
               "os": "linux",
               "arch": "arm64",
               "url": "https://raw.githubusercontent.com/a-digi/cinqo/0.0.1/tools/career/versions/tool-career-linux-arm64.zip",
-              "sha256": "5d2eea228253c071f9d75499f739271f8006af89c4532b6aa221223b83cea104",
-              "sizeBytes": 15738402
+              "sha256": "7b696a6ff2ad70b648f7f460d3b83ff47810554c0cba2a97fadc8928cc033874",
+              "sizeBytes": 15738461
             },
             {
               "os": "windows",
               "arch": "amd64",
               "url": "https://raw.githubusercontent.com/a-digi/cinqo/0.0.1/tools/career/versions/tool-career-windows-amd64.zip",
-              "sha256": "f1fc27fad778645abae0837451fd3a1dc8050d65c47c499f468705880dde1d26",
-              "sizeBytes": 16939590
+              "sha256": "b6a892bc517697fe7ede510805dbabf6d57b13736e763dcb501f5f030f1db0cf",
+              "sizeBytes": 16939649
             }
           ]
         }
