@@ -11,19 +11,24 @@ import {
   type CvDocument,
 } from '../../api'
 import { PersonaSwitcher } from '../Persona/PersonaSwitcher/PersonaSwitcher'
-import { ActionMenu, type ActionMenuItem } from '../../Shared/ActionMenu/ActionMenu'
 import { ConfirmationModal } from '../../Shared/ConfirmationModal/ConfirmationModal'
 import { Modal } from '../../Shared/Modal/Modal'
 import { inUseFooter, inUseHeading, inUseLines } from './cvDeleteDisplay'
-import { EyeIcon, TrashIcon, PlusIcon } from '../../Shared/Icons/icons'
+import { PDFIcon, PlusIcon } from '../../Shared/Icons/icons'
+import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
+import { plural } from '../CompaniesPage/companyStats'
+import { PAGE_ACCENT } from '../JobsPage/jobsTheme'
+import { CvCard } from './CvCard'
+import { CARD_MIN_REM, templateLabel } from './cvCardRules'
 
 const CV_BUILDER_PATH = '/tools/career/cv-builder'
 
 // CV Builder's own list page — creating/editing a CV now lives on its
 // own dedicated route (CvBuilderPage, a 5-step wizard), per your own
 // instruction. This page is list-only: pick a persona, see that
-// persona's own CV documents, and navigate away to the builder route
-// for "+ New CV" (?personaId=) or a row's own "Edit" (?id=). See
+// persona's own CV documents as cards with a preview (the way the Media page
+// shows its files), and navigate away to the builder route for "+ New CV"
+// (?personaId=) or a card's own "Edit" (?id=). See
 // plan/ai/career/cv-builder/step-04-frontend-cv-builder.md.
 //
 // No toast primitive exists anywhere in this frontend bundle (confirmed
@@ -37,6 +42,8 @@ const CV_BUILDER_PATH = '/tools/career/cv-builder'
 export function CvDocumentsPage() {
   const [personaId, setPersonaId] = useState<string | null>(null)
   const [documents, setDocuments] = useState<CvDocument[]>([])
+  // True while a persona's documents are being read (the grid shows placeholder tiles).
+  const [loading, setLoading] = useState(false)
   const [templates, setTemplates] = useState<CvTemplate[]>([])
   const [error, setError] = useState('')
   const [pendingDelete, setPendingDelete] = useState<CvDocument | null>(null)
@@ -54,10 +61,14 @@ export function CvDocumentsPage() {
 
   function loadDocuments(forPersonaId: string) {
     setError('')
+    setLoading(true)
     fetchCvDocuments(forPersonaId)
       .then(setDocuments)
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : String(err))
+      })
+      .finally(() => {
+        setLoading(false)
       })
   }
 
@@ -124,48 +135,18 @@ export function CvDocumentsPage() {
       })
   }
 
-  function buildDocumentActionItems(doc: CvDocument): ActionMenuItem[] {
-    return [
-      {
-        key: 'preview',
-        label: 'Preview',
-        icon: <EyeIcon />,
-        onClick: () => {
-          window.open(mediaDownloadUrl(doc.mediaFileId), '_blank', 'noopener,noreferrer')
-        },
-      },
-      {
-        key: 'edit',
-        label: 'Edit',
-        onClick: () => {
-          startEditCv(doc)
-        },
-      },
-      {
-        key: 'rename',
-        label: 'Rename',
-        onClick: () => {
-          handleRename(doc)
-        },
-      },
-      {
-        key: 'delete',
-        label: 'Delete',
-        icon: <TrashIcon />,
-        variant: 'danger',
-        onClick: () => {
-          handleDelete(doc)
-        },
-      },
-    ]
+  function previewPdf(doc: CvDocument) {
+    window.open(mediaDownloadUrl(doc.mediaFileId), '_blank', 'noopener,noreferrer')
   }
 
-  const templateName = (id: string) => templates.find((t) => t.id === id)?.name ?? id
-
   return (
-    <div className="p-6">
-      <h1 className="mb-1 text-xl font-semibold text-gray-900">CV Documents</h1>
-      <p className="mb-4 text-sm text-gray-500">Generate a CV PDF from a persona's own data, using one of a few fixed designs.</p>
+    <div className="max-w-7xl p-6 font-sans text-gray-900">
+      <PageHeaderCard
+        icon={<PDFIcon className="h-6 w-6" />}
+        title="CV Documents"
+        description="Generate a CV PDF from a persona's own data, using one of a few fixed designs."
+        pill={personaId && !loading ? { text: plural(documents.length, 'CV', 'CVs') } : undefined}
+      />
 
       <PersonaSwitcher personaId={personaId} onChange={setPersonaId} />
 
@@ -173,40 +154,65 @@ export function CvDocumentsPage() {
 
       {personaId && (
         <>
-          <button
-            type="button"
-            onClick={startNewCv}
-            className="mb-4 flex items-center gap-1 rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-800"
-          >
-            <PlusIcon /> New CV
-          </button>
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <p className="text-xs text-gray-500">Click a CV to edit it; hover for preview, rename and delete.</p>
+            <button
+              type="button"
+              onClick={startNewCv}
+              className="flex shrink-0 items-center gap-1.5 rounded-md bg-gray-800 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-900"
+            >
+              <PlusIcon /> New CV
+            </button>
+          </div>
 
-          {documents.length === 0 && <p className="text-sm text-gray-400">No CV documents yet.</p>}
+          {/* A uniquely-named grid class, as the Media page does: an installed tool's globally-injected
+              Tailwind stylesheet can redeclare a bare `.grid-cols-*` and collapse a plain Tailwind grid. */}
+          <style>{`
+            .cv-card-grid { display: grid; gap: 1.5rem 1rem; grid-template-columns: repeat(auto-fill, minmax(${CARD_MIN_REM}rem, 1fr)); }
+          `}</style>
+
+          {loading && documents.length === 0 && (
+            <div className="cv-card-grid" aria-label="Loading CVs">
+              {[0, 1, 2, 3].map((i) => (
+                <div key={i} className="animate-pulse">
+                  <div className="aspect-[3/4] rounded-xl bg-gray-100" />
+                  <div className="mt-2 h-3 w-3/4 rounded bg-gray-100" />
+                  <div className="mt-2 h-3 w-1/2 rounded bg-gray-100" />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!loading && documents.length === 0 && (
+            <div
+              className="rounded-3xl border p-8 text-center text-sm text-gray-500"
+              style={{ borderColor: PAGE_ACCENT.soft, background: PAGE_ACCENT.soft }}
+            >
+              No CV documents yet. Create the first one with “New CV”.
+            </div>
+          )}
 
           {documents.length > 0 && (
-            <div className="overflow-hidden rounded-md border border-gray-200">
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="bg-gray-50 text-xs uppercase text-gray-500">
-                    <th className="p-3 font-medium">Title</th>
-                    <th className="p-3 font-medium">Template</th>
-                    <th className="p-3 font-medium">Created</th>
-                    <th className="p-3 font-medium" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {documents.map((doc) => (
-                    <tr key={doc.id}>
-                      <td className="border-b border-gray-200 p-3 text-gray-900">{doc.title}</td>
-                      <td className="border-b border-gray-200 p-3 text-gray-600">{templateName(doc.templateId)}</td>
-                      <td className="border-b border-gray-200 p-3 text-gray-600">{new Date(doc.createdAt).toLocaleString()}</td>
-                      <td className="border-b border-gray-200 p-3 text-right">
-                        <ActionMenu triggerLabel={`Actions for ${doc.title}`} items={buildDocumentActionItems(doc)} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="cv-card-grid">
+              {documents.map((doc) => (
+                <CvCard
+                  key={doc.id}
+                  doc={doc}
+                  templateName={templateLabel(templates, doc.templateId)}
+                  onPreview={() => {
+                    previewPdf(doc)
+                  }}
+                  onEdit={() => {
+                    startEditCv(doc)
+                  }}
+                  onRename={() => {
+                    handleRename(doc)
+                  }}
+                  onDelete={() => {
+                    handleDelete(doc)
+                  }}
+                />
+              ))}
             </div>
           )}
         </>

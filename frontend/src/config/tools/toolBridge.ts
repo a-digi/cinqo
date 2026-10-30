@@ -1,5 +1,6 @@
 import { toolNavigate } from './toolNavigator'
 import { openToolConversation } from './toolConversationOpener'
+import { isMediaId } from './mediaThumbnailRules'
 
 // Deliberately dependency-free (no React import, no cinqo-internal
 // types beyond plain interfaces) — a tool author can copy just this
@@ -111,6 +112,14 @@ export interface ToolBridge {
   // Mounting into a container that already has a panel replaces it. A bad option is
   // refused with a console error and returns a function that does nothing.
   mountComments(container: HTMLElement, options: ToolCommentsOptions): () => void
+  // The first page of a PDF in Media as a JPEG data URL, rendered by Cinqo (a tool bundle is a
+  // single file and cannot ship pdf.js and its worker), or null when it cannot be previewed
+  // (not a PDF, deleted, unreadable, an id that is not a Media file id). The file is fetched with
+  // the signed-in user's own session, exactly as the Media page and a download link do; only an
+  // id is accepted, never a URL. version is anything that changes when the file does (a
+  // document's updatedAt): it only keeps a replaced file from being shown stale. Renders run one
+  // at a time and are cached per id and version. Call it when the preview scrolls into view.
+  pdfThumbnail(mediaFileId: string, version?: string): Promise<string | null>
   navigate(path: string): void
   // Opens the floating chat widget (GlobalChatWidget), if currently
   // mounted, showing this conversation — resuming its live turn watch
@@ -129,6 +138,8 @@ export interface ToolBridgeCallbacks {
   // Supplied by the app, which owns the React side of the comments panel; this file
   // stays free of React so a tool author can copy it on its own.
   onMountComments: (container: HTMLElement, options: ToolCommentsOptions) => () => void
+  // Supplied by the app, which owns the PDF renderer (pdf.js is only loaded when first needed).
+  onPdfThumbnail: (mediaFileId: string, version?: string) => Promise<string | null>
 }
 
 const widgetIdPattern = /^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/
@@ -158,6 +169,11 @@ export function createToolBridge(callbacks: ToolBridgeCallbacks): ToolBridge {
     },
     mountComments(container, options) {
       return callbacks.onMountComments(container, options)
+    },
+    pdfThumbnail(mediaFileId, version) {
+      // Anything that is not a Media file id gets no request at all.
+      if (!isMediaId(mediaFileId)) return Promise.resolve(null)
+      return callbacks.onPdfThumbnail(mediaFileId, typeof version === 'string' ? version : undefined)
     },
     navigate(path) {
       toolNavigate(path)

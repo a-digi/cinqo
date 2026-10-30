@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useAuth } from '../../Components/Auth/AuthContext'
+import { pdfThumbnail } from '../../Components/Admin/Media/pdfThumbnail'
 import { mountComments } from '../../Components/Comments/mountComments'
 import { loadTools } from './loadTools'
 import type { ToolDashboardWidget, ToolMenuEntry, ToolRoute } from './toolBridge'
@@ -45,6 +46,7 @@ export function ToolRegistryProvider({ children }: { children: ReactNode }) {
         setRoutes((prev) => [...prev, route])
       },
       onMountComments: mountComments,
+      onPdfThumbnail: pdfThumbnail,
       onRegisterDashboardWidget: (widget) => {
         setDashboardWidgets((prev) => {
           if (widget.id in prev) {

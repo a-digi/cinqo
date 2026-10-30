@@ -404,3 +404,12 @@ export function CameraIcon({ className }: { className?: string }) {
     </Glyph>
   )
 }
+
+// PencilIcon — marks "edit" on a card's hover actions (a small outline pencil, the same 20px grid as EyeIcon).
+export function PencilIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-3.5 w-3.5">
+      <path d="M12.5 4.5l3 3L7 16l-3.5.5L4 13l8.5-8.5z" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}

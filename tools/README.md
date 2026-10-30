@@ -346,6 +346,30 @@ because a reply below it matched a filter), and `canEdit` / `canDelete` for the 
   `example-full/backend/main_test.go`, is enough).
 - Bump the tool's `version`, rebuild the zips and regenerate `repository.json` so users get it.
 
+## Previewing a PDF from Media
+
+A tool bundle is one file, so it cannot ship pdf.js and its worker. To show the first page of a PDF
+that is stored in Media (a generated CV, an invoice), ask Cinqo to render it:
+
+```js
+var bridge = window.__cinqoToolBridge
+if (typeof bridge.pdfThumbnail === 'function') {
+  bridge.pdfThumbnail(mediaFileId, doc.updatedAt).then(function (dataUrl) {
+    if (dataUrl) img.src = dataUrl // a JPEG data URL; null = cannot be previewed, keep your own placeholder
+  })
+}
+```
+
+- Pass the **Media file id** (a UUID) and nothing else: an id that is not a UUID is answered with `null`
+  without any request, and the bridge never takes a URL.
+- The file is fetched with the signed-in user's own session, exactly like the Media page and a download link,
+  so a user who cannot open the file gets `null`.
+- The second argument is any string that changes when the file does (a document's `updatedAt`); it only keeps
+  a file replaced under the same id from being shown stale. Renders run one at a time and are cached per id and
+  version, so call it when the preview scrolls into view, not for a whole list at once.
+- `null` also means "not a PDF", "deleted", "too large to preview" or "unreadable": show a placeholder.
+- Hosts older than this feature have no `pdfThumbnail`; check with `typeof` first and fall back to your own image.
+
 ## Publishing a repository
 
 ```

@@ -37,6 +37,10 @@ interface CinqoToolBridge {
   // that removes it. Optional: a host older than the comments feature does not
   // have it, and callers must check before using it.
   mountComments?(container: HTMLElement, options: CinqoCommentsOptions): () => void
+  // The first page of a PDF in Media as a JPEG data URL, rendered by Cinqo, or null when it cannot
+  // be previewed. Optional: a host older than this feature does not have it, and callers must check
+  // before using it. version (e.g. a document's updatedAt) only separates cached renders.
+  pdfThumbnail?(mediaFileId: string, version?: string): Promise<string | null>
 }
 
 declare global {

@@ -4,6 +4,7 @@
 // not fetch or render the same PDF twice. Page 1 only: no scripting, no eval,
 // no annotations.
 import { mediaDownloadUrl } from '../../../api/media'
+import { isKeyForId, thumbnailCacheKey } from '../../../config/tools/mediaThumbnailRules'
 
 const THUMB_WIDTH = 540
 
@@ -39,9 +40,12 @@ async function render(id: string): Promise<Result> {
 }
 
 // Resolves to a data URL, or null when the PDF cannot be previewed (corrupt,
-// encrypted, unreachable) so the tile keeps its placeholder.
-export function pdfThumbnail(id: string): Promise<Result> {
-  let result = cache.get(id)
+// encrypted, unreachable) so the tile keeps its placeholder. version only separates
+// cache entries (a tool passes a document's updatedAt through the tool bridge, so a
+// replaced file is rendered again); it is never sent anywhere.
+export function pdfThumbnail(id: string, version?: string): Promise<Result> {
+  const key = thumbnailCacheKey(id, version)
+  let result = cache.get(key)
   if (!result) {
     result = new Promise<Result>((resolve) => {
       queue = queue.then(() =>
@@ -50,11 +54,13 @@ export function pdfThumbnail(id: string): Promise<Result> {
         }),
       )
     })
-    cache.set(id, result)
+    cache.set(key, result)
   }
   return result
 }
 
 export function forgetPdfThumbnail(id: string): void {
-  cache.delete(id)
+  for (const key of [...cache.keys()]) {
+    if (isKeyForId(key, id)) cache.delete(key)
+  }
 }
