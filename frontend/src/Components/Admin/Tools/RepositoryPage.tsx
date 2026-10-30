@@ -20,10 +20,12 @@ import {
   canRemove,
   formatFetched,
   installConfirmMessage,
+  installedState,
   nativeLabel,
   needsFirstLoad,
   repositoryStatusLabel,
   repositoryStatusVariant,
+  showStatusPill,
   statusLabel,
   statusVariant,
   summaryText,
@@ -228,9 +230,7 @@ export function RepositoryPage() {
                     >
                       <h3 className="truncate text-lg font-bold">{tool.name}</h3>
                       <div className="absolute left-3 top-3">
-                        <Pill variant={statusVariant[tool.status]} title={tool.reason || undefined}>
-                          {statusLabel[tool.status]}
-                        </Pill>
+                        <Pill variant={installedState(tool).variant}>{installedState(tool).label}</Pill>
                       </div>
                     </div>
                   }
@@ -240,7 +240,12 @@ export function RepositoryPage() {
                     <span className="shrink-0 text-sm font-semibold text-gray-900">v{tool.currentVersion}</span>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    <Pill outline>{tool.installedVersion ? `Installed v${tool.installedVersion}` : 'Not installed'}</Pill>
+                    {tool.installedVersion !== '' && <Pill outline>{`Installed v${tool.installedVersion}`}</Pill>}
+                    {showStatusPill(tool) && (
+                      <Pill variant={statusVariant[tool.status]} title={tool.reason || undefined}>
+                        {statusLabel[tool.status]}
+                      </Pill>
+                    )}
                   </div>
                   {tool.description && <p className="mt-3 text-sm text-gray-600">{tool.description}</p>}
                   {tool.status === 'unavailable' && tool.reason && <p className="mt-3 text-xs text-gray-500">{tool.reason}</p>}

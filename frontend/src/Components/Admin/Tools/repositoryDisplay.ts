@@ -21,6 +21,18 @@ export const statusVariant: Record<ToolStatus, PillVariant> = {
   unavailable: 'red',
 }
 
+// Whether the tool is installed on this machine, whatever its update status: a
+// filled green badge for installed, gray for not installed.
+export function installedState(tool: Pick<RepositoryTool, 'installedVersion'>): { label: string; variant: PillVariant } {
+  return tool.installedVersion !== '' ? { label: 'Installed', variant: 'green' } : { label: 'Not installed', variant: 'gray' }
+}
+
+// The update status says something beyond installed or not only when the tool is
+// installed, or cannot be installed; "Not installed" is already the badge.
+export function showStatusPill(tool: Pick<RepositoryTool, 'status'>): boolean {
+  return tool.status !== 'not_installed'
+}
+
 export type ToolAction = 'install' | 'update'
 
 // Only a tool that can actually be installed or updated gets a button; an
