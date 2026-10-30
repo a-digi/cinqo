@@ -1,11 +1,10 @@
 import { useState } from 'react'
 import { createCompany } from '../../api'
 import { BuildingIcon, PlusIcon } from '../../Shared/Icons/icons'
+import { inputClass } from '../../Shared/inputClass'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { COMPANIES_PATH } from '../../paths'
 import { PAGE_ACCENT } from '../JobsPage/jobsTheme'
-
-const inputClass = 'w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none'
 
 // The page behind the Companies list's "New company" button. Reachable, but
 // menu-less, like the job details and CV builder pages; saving or cancelling

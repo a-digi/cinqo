@@ -12,6 +12,9 @@ import { createConversation, sendMessage } from '../../Cinqo/Conversation/conver
 import { useAiChoice } from '../../Cinqo/Platform/useAiChoice'
 import { Dropdown } from '../Dropdown/Dropdown'
 import { PDFIcon, UploadIcon } from '../../Shared/Icons/icons'
+import { cardClassName, cardStyle } from '../../Shared/cardStyle'
+import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
+import { plural } from '../CompaniesPage/companyStats'
 import { buildImportPrompt } from './buildImportPrompt'
 import { parseProposal, isInitiallyChecked, type CVImportProposal, type ProposalItem } from './parseProposal'
 import { resolveDuplicateLabels, type DuplicateLabels } from './resolveDuplicateLabels'
@@ -385,15 +388,29 @@ export function ImportCvPage() {
     return kind === 'persona' ? duplicateLabels.personas[item.possibleDuplicateOf] : duplicateLabels.experience[item.possibleDuplicateOf]
   }
 
+  // What the header's pill says about where the import is.
+  const headerPill =
+    state === 'analyzing'
+      ? { text: 'Analyzing' }
+      : state === 'review'
+        ? { text: 'Review' }
+        : state === 'error'
+          ? { text: 'Failed' }
+          : runs !== null && runs.length > 0
+            ? { text: plural(runs.length, 'past import', 'past imports') }
+            : undefined
+
   return (
-    <div className="max-w-2xl p-6 font-sans text-gray-900">
-      <h1 className="mb-1.5 text-xl font-semibold">Import CV</h1>
-      <p className="mb-5 text-sm text-gray-500">
-        Upload a CV and let the AI propose Profile, Persona, Personal Details, Skills, and Experience entries from it.
-      </p>
+    <div className="max-w-5xl p-6 font-sans text-gray-900">
+      <PageHeaderCard
+        icon={<UploadIcon className="h-6 w-6" />}
+        title="Import from CV"
+        description="Upload a CV and let the AI propose a profile, persona, summary, skills and experience from it. You review everything before it is saved."
+        pill={headerPill}
+      />
 
       {state === 'upload' && !viewingRun && (
-        <section className="rounded-lg border border-gray-200 p-4 shadow-sm">
+        <section className={cardClassName} style={cardStyle}>
           <div
             role="button"
             tabIndex={0}
@@ -415,8 +432,8 @@ export function ImportCvPage() {
               setIsDragOver(false)
               pickFile(e.dataTransfer.files.length > 0 ? e.dataTransfer.files[0] : null)
             }}
-            className={`flex cursor-pointer flex-col items-center rounded-md border-2 border-dashed px-6 py-10 text-center transition-colors ${
-              isDragOver ? 'border-gray-400 bg-gray-100' : 'border-gray-300 bg-gray-50 hover:border-gray-400 hover:bg-gray-100'
+            className={`flex cursor-pointer flex-col items-center rounded-2xl border-2 border-dashed px-6 py-10 text-center transition-colors ${
+              isDragOver ? 'border-blue-400 bg-blue-50' : 'border-blue-200 bg-white hover:border-blue-400 hover:bg-blue-50'
             }`}
           >
             <div className="relative mb-3 h-16 w-16 text-gray-300">
@@ -453,7 +470,7 @@ export function ImportCvPage() {
       )}
 
       {state === 'upload' && !viewingRun && runs !== null && runs.length > 0 && (
-        <section className="mt-4 rounded-lg border border-gray-200 p-4 shadow-sm">
+        <section className={`mt-4 ${cardClassName}`} style={cardStyle}>
           <h2 className="mb-2 text-sm font-semibold text-gray-900">Import history</h2>
           <div className="mb-2 min-h-[1.2em] text-sm text-red-700">{runActionError}</div>
           <ul className="divide-y divide-gray-100">
@@ -469,7 +486,7 @@ export function ImportCvPage() {
                     onClick={() => {
                       setViewingRun(run)
                     }}
-                    className="text-xs font-medium text-gray-600 underline hover:text-gray-900"
+                    className="rounded-full border border-blue-200 px-3 py-1 text-xs text-blue-700 hover:bg-blue-50"
                   >
                     View
                   </button>
@@ -478,7 +495,7 @@ export function ImportCvPage() {
                     onClick={() => {
                       void handleProcessAgain(run)
                     }}
-                    className="text-xs font-medium text-gray-600 underline hover:text-gray-900"
+                    className="rounded-full border border-blue-200 px-3 py-1 text-xs text-blue-700 hover:bg-blue-50"
                   >
                     Process again
                   </button>
@@ -487,7 +504,7 @@ export function ImportCvPage() {
                     onClick={() => {
                       void handleDeleteRun(run)
                     }}
-                    className="text-xs font-medium text-red-600 underline hover:text-red-800"
+                    className="rounded-full border border-red-200 px-3 py-1 text-xs text-red-700 hover:bg-red-50"
                   >
                     Delete
                   </button>
@@ -540,7 +557,7 @@ export function ImportCvPage() {
             </p>
           )}
 
-          <section className="rounded-md border border-gray-200 p-4 shadow-sm">
+          <section className={cardClassName} style={cardStyle}>
             <h2 className="mb-2 text-base font-semibold text-gray-900">Profile</h2>
             <ProposalRow
               item={proposal.profile}
@@ -557,7 +574,7 @@ export function ImportCvPage() {
             )}
           </section>
 
-          <section className="rounded-md border border-gray-200 p-4 shadow-sm">
+          <section className={cardClassName} style={cardStyle}>
             <h2 className="mb-2 text-base font-semibold text-gray-900">Personas</h2>
             <ProposalRow
               item={proposal.persona}
@@ -585,7 +602,7 @@ export function ImportCvPage() {
             )}
           </section>
 
-          <section className="rounded-md border border-gray-200 p-4 shadow-sm">
+          <section className={cardClassName} style={cardStyle}>
             <h2 className="mb-2 text-base font-semibold text-gray-900">Personal Details</h2>
             <ProposalRow
               item={proposal.personalDetails}
@@ -599,7 +616,7 @@ export function ImportCvPage() {
             />
           </section>
 
-          <section className="rounded-md border border-gray-200 p-4 shadow-sm">
+          <section className={cardClassName} style={cardStyle}>
             <h2 className="mb-2 text-base font-semibold text-gray-900">Skills</h2>
             {proposal.skills.length === 0 && <p className="text-sm text-gray-400">No skills proposed.</p>}
             <div className="space-y-1">
@@ -620,7 +637,7 @@ export function ImportCvPage() {
             </div>
           </section>
 
-          <section className="rounded-md border border-gray-200 p-4 shadow-sm">
+          <section className={cardClassName} style={cardStyle}>
             <h2 className="mb-2 text-base font-semibold text-gray-900">Experience</h2>
             {proposal.experience.length === 0 && <p className="text-sm text-gray-400">No experience proposed.</p>}
             <div className="space-y-1">
@@ -641,7 +658,7 @@ export function ImportCvPage() {
             </div>
           </section>
 
-          <section className="rounded-md border border-gray-200 p-4 shadow-sm">
+          <section className={cardClassName} style={cardStyle}>
             {insertValidationError && <p className="mb-2 text-sm text-red-700">{insertValidationError}</p>}
             <button
               type="button"
@@ -658,7 +675,7 @@ export function ImportCvPage() {
       )}
 
       {state === 'error' && (
-        <section className="rounded-md border border-gray-200 p-4 shadow-sm">
+        <section className={cardClassName} style={cardStyle}>
           <p className="mb-3 text-sm text-red-700">{error}</p>
           {rawReply && (
             <details className="mb-3">
@@ -669,7 +686,7 @@ export function ImportCvPage() {
           <button
             type="button"
             onClick={startOver}
-            className="rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+            className="rounded-full border border-blue-200 bg-white px-3.5 py-1.5 text-sm text-blue-700 hover:bg-blue-50"
           >
             Start over
           </button>

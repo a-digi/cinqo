@@ -23,10 +23,13 @@
 // plan/ai/tools/career/step-12-nested-profiles-menu.md.
 import { createRoot, type Root } from 'react-dom/client'
 import { ProfilesPage } from './Components/ProfilesPage/ProfilesPage'
+import { NewProfilePage } from './Components/ProfilesPage/NewProfilePage'
 import { PersonasPage } from './Components/Persona/PersonasPage/PersonasPage'
+import { NewPersonaPage } from './Components/Persona/PersonasPage/NewPersonaPage'
 import { PersonaDetailsPage } from './Components/Persona/PersonaDetailsPage/PersonaDetailsPage'
 import { SkillsPage } from './Components/SkillsPage/SkillsPage'
 import { ExperiencePage } from './Components/ExperiencePage/ExperiencePage'
+import { ExperienceEntryPage } from './Components/ExperiencePage/ExperienceEntryPage'
 import { ProfileImagePage } from './Components/ProfileImage/ProfileImagePage'
 import { CvDocumentsPage } from './Components/CvBuilder/CvDocumentsPage'
 import { CvBuilderPage } from './Components/CvBuilder/CvBuilderPage'
@@ -58,6 +61,9 @@ import {
   COMPANIES_PATH,
   RECRUITERS_PATH,
   NEW_COMPANY_PATH,
+  NEW_PROFILE_PATH,
+  NEW_PERSONA_PATH,
+  EXPERIENCE_ENTRY_PATH,
   VIEW_COMPANY_PATH,
   NEW_RECRUITER_PATH,
   SETTINGS_PATH,
@@ -177,6 +183,30 @@ window.__cinqoToolBridge.registerRoute({
 
 // No menu entry — reached only via the lists' own "New company" / "New recruiter"
 // buttons, same "reachable, but menu-less" convention JOB_DETAILS_PATH has.
+window.__cinqoToolBridge.registerRoute({
+  path: EXPERIENCE_ENTRY_PATH,
+  mount: (container) => {
+    mountReact(container, <ExperienceEntryPage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: NEW_PERSONA_PATH,
+  mount: (container) => {
+    mountReact(container, <NewPersonaPage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: NEW_PROFILE_PATH,
+  mount: (container) => {
+    mountReact(container, <NewProfilePage />)
+  },
+  unmount: unmountReact,
+})
+
 window.__cinqoToolBridge.registerRoute({
   path: VIEW_COMPANY_PATH,
   mount: (container) => {

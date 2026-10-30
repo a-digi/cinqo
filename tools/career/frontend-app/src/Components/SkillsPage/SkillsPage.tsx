@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react'
 import { fetchSkills, addSkill, removeSkill } from '../../api'
-import { PlusIcon, XIcon } from '../../Shared/Icons/icons'
+import { PlusIcon, SparkIcon, XIcon } from '../../Shared/Icons/icons'
+import { inputClass } from '../../Shared/inputClass'
+import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
+import { plural } from '../CompaniesPage/companyStats'
+import { PAGE_ACCENT, accentFor } from '../JobsPage/jobsTheme'
 import { PersonaSwitcher } from '../Persona/PersonaSwitcher/PersonaSwitcher'
 
 // Its own page as of step 7 (moved out of ProfilePage). "Edit" for a
@@ -10,7 +14,9 @@ import { PersonaSwitcher } from '../Persona/PersonaSwitcher/PersonaSwitcher'
 // Step 9 added the persona switcher — skills are per-persona as of
 // step 8. See
 // plan/ai/tools/career/step-07-dedicated-skills-and-experience-pages.md
-// and plan/ai/tools/career/step-09-persona-frontend.md.
+// and plan/ai/tools/career/step-09-persona-frontend.md. Header card and a tinted
+// card of coloured chips; no overview rail, since a skill count alone would only
+// repeat the header pill.
 export function SkillsPage() {
   const [personaId, setPersonaId] = useState<string | null>(null)
   const [skills, setSkills] = useState<string[]>([])
@@ -89,22 +95,33 @@ export function SkillsPage() {
   }
 
   return (
-    <div className="max-w-2xl p-6 font-sans text-gray-900">
-      <h1 className="mb-1.5 text-xl font-semibold">Skills</h1>
-      <p className="mb-5 text-sm text-gray-500">
-        Skills on this persona's own career profile — what the AI reads when matching you against job postings.
-      </p>
+    <div className="max-w-7xl p-6 font-sans text-gray-900">
+      <PageHeaderCard
+        icon={<SparkIcon />}
+        title="Skills"
+        description="The skills on this persona. The AI reads them when matching you against job postings."
+        pill={personaId ? { text: plural(skills.length, 'skill', 'skills') } : undefined}
+      />
 
       <PersonaSwitcher personaId={personaId} onChange={setPersonaId} />
 
       <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
 
       {personaId && (
-        <section className="rounded-md border border-gray-200 p-4 shadow-sm">
-          <div className="mb-3 flex flex-wrap gap-2">
-            {skills.map((skill) =>
-              editing === skill ? (
-                <span key={skill} className="flex items-center gap-1.5 rounded-full bg-gray-100 px-2 py-1">
+        <section
+          className="rounded-3xl border p-5 shadow-sm"
+          style={{ borderColor: PAGE_ACCENT.soft, background: `linear-gradient(160deg, #ffffff 45%, ${PAGE_ACCENT.soft} 100%)` }}
+        >
+          {skills.length === 0 && <p className="mb-3 text-sm text-gray-500">No skills yet. Add the first one below.</p>}
+          <div className="mb-4 flex flex-wrap gap-2">
+            {skills.map((skill) => {
+              const accent = accentFor(skill)
+              return editing === skill ? (
+                <span
+                  key={skill}
+                  className="flex items-center gap-1.5 rounded-full border bg-white px-2 py-1"
+                  style={{ borderColor: accent.to }}
+                >
                   <input
                     // Deliberate: entering edit mode should focus the input
                     // immediately, the same convention most inline-rename UIs use.
@@ -135,7 +152,12 @@ export function SkillsPage() {
                   </button>
                 </span>
               ) : (
-                <span key={skill} className="flex items-center gap-1.5 rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-700">
+                <span
+                  key={skill}
+                  className="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium"
+                  style={{ background: accent.soft, color: accent.text }}
+                >
+                  <span aria-hidden="true" className="h-2 w-2 rounded-full" style={{ background: accent.to }} />
                   <button
                     type="button"
                     onClick={() => {
@@ -151,13 +173,13 @@ export function SkillsPage() {
                     onClick={() => {
                       handleRemove(skill)
                     }}
-                    className="text-gray-400 hover:text-red-700"
+                    className="opacity-60 hover:text-red-700 hover:opacity-100"
                   >
                     <XIcon />
                   </button>
                 </span>
-              ),
-            )}
+              )
+            })}
           </div>
           <div className="flex gap-2">
             <input
@@ -169,12 +191,12 @@ export function SkillsPage() {
                 if (e.key === 'Enter') handleAdd()
               }}
               placeholder="Add a skill"
-              className="flex-1 rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
+              className={`flex-1 ${inputClass}`}
             />
             <button
               type="button"
               onClick={handleAdd}
-              className="flex items-center gap-1 rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+              className="flex items-center gap-1 rounded-md bg-gray-800 px-3.5 py-1.5 text-sm font-medium text-white transition-colors hover:bg-gray-900"
             >
               <PlusIcon />
               Add

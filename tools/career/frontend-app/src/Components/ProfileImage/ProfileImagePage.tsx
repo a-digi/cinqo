@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { fetchProfileImage, uploadProfileImage, deleteProfileImage, mediaDownloadUrl, type ProfileImage } from '../../api'
+import { fetchProfileImage, fetchProfiles, uploadProfileImage, deleteProfileImage, mediaDownloadUrl, type ProfileImage } from '../../api'
 import { ProfileSwitcher } from '../ProfileSwitcher/ProfileSwitcher'
+import { profileLabel } from '../ProfileSwitcher/profileLabel'
 import { ConfirmationModal } from '../../Shared/ConfirmationModal/ConfirmationModal'
-import { UploadIcon, TrashIcon } from '../../Shared/Icons/icons'
+import { CameraIcon, UploadIcon, TrashIcon } from '../../Shared/Icons/icons'
+import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
+import { PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
 
 // A profile's own photo — always tied to a profile (never uploaded
 // standalone), used from the CV Builder templates. Career's frontend is
@@ -11,7 +14,9 @@ import { UploadIcon, TrashIcon } from '../../Shared/Icons/icons'
 // /profile-image proxy route) rather than importing core's
 // ImageUploadCropper.tsx directly — that component lives in a bundle
 // this one cannot reach. See
-// plan/ai/career/profile-image/step-01-overview.md.
+// plan/ai/career/profile-image/step-01-overview.md. Header card and one tinted
+// card with a round preview (the profile's initial until there is a photo); no
+// overview rail, since there is only one photo to show.
 export function ProfileImagePage() {
   const [profileId, setProfileId] = useState<string | null>(null)
   const [image, setImage] = useState<ProfileImage | null>(null)
@@ -26,6 +31,8 @@ export function ProfileImagePage() {
   // query param busts that cache without needing a new id.
   const [cacheBuster, setCacheBuster] = useState(0)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
+  // The selected profile's name, for the placeholder shown until there is a photo.
+  const [profileName, setProfileName] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   function load(forProfileId: string) {
@@ -42,7 +49,16 @@ export function ProfileImagePage() {
   }
 
   useEffect(() => {
-    if (profileId) load(profileId)
+    if (!profileId) return
+    load(profileId)
+    fetchProfiles()
+      .then((list) => {
+        const found = list.find((p) => p.id === profileId)
+        setProfileName(found ? profileLabel(found) : '')
+      })
+      .catch(() => {
+        setProfileName('')
+      })
   }, [profileId])
 
   function handleFileChange(file: File | null) {
@@ -82,27 +98,41 @@ export function ProfileImagePage() {
   }
 
   return (
-    <div className="max-w-2xl p-6 font-sans text-gray-900">
-      <h1 className="mb-1.5 text-xl font-semibold">Image</h1>
-      <p className="mb-5 text-sm text-gray-500">
-        A profile's own photo, usable from the CV Builder's own templates. Each profile has at most one — uploading a new one replaces it.
-      </p>
+    <div className="max-w-3xl p-6 font-sans text-gray-900">
+      <PageHeaderCard
+        icon={<CameraIcon />}
+        title="Photo"
+        description="A profile's own photo, used by the CV templates. Each profile has at most one; uploading a new one replaces it."
+        pill={profileId && !loading ? { text: image ? 'Photo set' : 'No photo' } : undefined}
+      />
 
       <ProfileSwitcher profileId={profileId} onChange={setProfileId} />
 
       <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
 
       {profileId && !loading && (
-        <section className="flex items-start gap-5 rounded-lg border border-gray-200 p-4 shadow-sm">
-          <div className="flex h-32 w-32 shrink-0 items-center justify-center overflow-hidden rounded-md border border-gray-200 bg-gray-50">
+        <section
+          className="flex flex-col items-center gap-6 rounded-3xl border p-6 shadow-sm sm:flex-row sm:items-center"
+          style={{ borderColor: PAGE_ACCENT.soft, background: `linear-gradient(160deg, #ffffff 45%, ${PAGE_ACCENT.soft} 100%)` }}
+        >
+          <div className="flex h-36 w-36 shrink-0 items-center justify-center overflow-hidden rounded-full border-4 border-white shadow-md">
             {image ? (
               <img src={`${mediaDownloadUrl(image.mediaFileId)}?v=${cacheBuster}`} alt="Profile" className="h-full w-full object-cover" />
             ) : (
-              <span className="px-2 text-center text-xs text-gray-400">No photo yet</span>
+              <span
+                className="flex h-full w-full items-center justify-center text-5xl font-bold text-white"
+                style={{ background: accentFor(profileName).to }}
+                aria-label="No photo yet"
+              >
+                {initialOf(profileName)}
+              </span>
             )}
           </div>
 
           <div className="flex flex-col gap-2">
+            <div className="text-sm text-gray-600">
+              {image ? 'This photo is used on your CVs.' : 'No photo yet. Add one to use it on your CVs.'}
+            </div>
             <button
               type="button"
               onClick={() => {
@@ -118,7 +148,7 @@ export function ProfileImagePage() {
               <button
                 type="button"
                 onClick={handleDelete}
-                className="flex items-center gap-1.5 rounded-md border border-gray-200 px-3.5 py-2 text-sm text-red-700 hover:bg-red-50"
+                className="flex items-center gap-1.5 rounded-md border border-red-200 bg-white px-3.5 py-2 text-sm text-red-700 hover:bg-red-50"
               >
                 <TrashIcon />
                 Remove photo

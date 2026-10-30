@@ -346,3 +346,61 @@ export function UsersIcon({ className }: { className?: string }) {
     </Glyph>
   )
 }
+
+// Glyphs for the My Profile pages.
+export function UserIcon({ className }: { className?: string }) {
+  return (
+    <Glyph className={className}>
+      <circle cx="12" cy="8" r="3.6" />
+      <path d="M4.5 20c.8-3.6 3.8-5.6 7.5-5.6s6.7 2 7.5 5.6" />
+    </Glyph>
+  )
+}
+
+export function LayersIcon({ className }: { className?: string }) {
+  return (
+    <Glyph className={className}>
+      <path d="M12 3.5 3.5 8.2 12 12.9l8.5-4.7L12 3.5z" />
+      <path d="M3.5 12.2 12 16.9l8.5-4.7M3.5 16.2 12 20.9l8.5-4.7" />
+    </Glyph>
+  )
+}
+
+export function TargetIcon({ className }: { className?: string }) {
+  return (
+    <Glyph className={className}>
+      <circle cx="12" cy="12" r="8.5" />
+      <circle cx="12" cy="12" r="4.8" />
+      <circle cx="12" cy="12" r="1.2" />
+    </Glyph>
+  )
+}
+
+export function SparkIcon({ className }: { className?: string }) {
+  return (
+    <Glyph className={className}>
+      <path d="M12 3.5c.6 4.6 2.4 6.4 7 7-4.6.6-6.4 2.4-7 7-.6-4.6-2.4-6.4-7-7 4.6-.6 6.4-2.4 7-7z" />
+      <path d="M19 3.5v3M17.5 5h3" />
+    </Glyph>
+  )
+}
+
+export function TimelineIcon({ className }: { className?: string }) {
+  return (
+    <Glyph className={className}>
+      <path d="M7 4v16" />
+      <circle cx="7" cy="7" r="1.8" />
+      <circle cx="7" cy="17" r="1.8" />
+      <path d="M11.5 7H19M11.5 17H17" />
+    </Glyph>
+  )
+}
+
+export function CameraIcon({ className }: { className?: string }) {
+  return (
+    <Glyph className={className}>
+      <path d="M4 8.5A1.5 1.5 0 0 1 5.5 7H8l1.2-2h5.6L16 7h2.5A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5v-9z" />
+      <circle cx="12" cy="13" r="3.4" />
+    </Glyph>
+  )
+}

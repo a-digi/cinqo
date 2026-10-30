@@ -3,6 +3,7 @@ import { fetchPersonas, fetchProfiles, type Persona } from '../../../api'
 import { getPersonaIdFromLocalStorage, setPersonaIdInLocalStorage } from './repositoryLocalStorage'
 import { profileLabel } from '../../ProfileSwitcher/profileLabel'
 import { Dropdown } from '../../Dropdown/Dropdown'
+import { ScopeBar, ScopeNotice } from '../../../Shared/ScopeBar/ScopeBar'
 
 const PERSONAS_PATH = '/tools/career/personas'
 
@@ -49,19 +50,11 @@ export function PersonaSwitcher({ personaId, onChange }: { personaId: string | n
   }
 
   if (personas.length === 0) {
-    return (
-      <div className="mb-4 rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
-        No personas yet.{' '}
-        <a href={PERSONAS_PATH} onClick={navigateToPersonas} className="font-medium underline">
-          Create one to get started
-        </a>
-        .
-      </div>
-    )
+    return <ScopeNotice noun="personas" path={PERSONAS_PATH} />
   }
 
   return (
-    <div className="mb-4 flex items-end gap-2 text-sm">
+    <ScopeBar managePath={PERSONAS_PATH}>
       <Dropdown
         label="Persona"
         options={personas.map((p) => ({
@@ -74,14 +67,6 @@ export function PersonaSwitcher({ personaId, onChange }: { personaId: string | n
           onChange(id)
         }}
       />
-      <a href={PERSONAS_PATH} onClick={navigateToPersonas} className="pb-1 text-gray-500 underline hover:text-gray-700">
-        Manage
-      </a>
-    </div>
+    </ScopeBar>
   )
-}
-
-function navigateToPersonas(e: React.MouseEvent) {
-  e.preventDefault()
-  window.__cinqoToolBridge.navigate(PERSONAS_PATH)
 }

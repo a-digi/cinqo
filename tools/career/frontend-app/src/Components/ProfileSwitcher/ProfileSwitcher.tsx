@@ -3,6 +3,7 @@ import { fetchProfiles, type Profile } from '../../api'
 import { getProfileIdFromLocalStorage, setProfileIdInLocalStorage } from './repositoryLocalStorage'
 import { profileLabel } from './profileLabel'
 import { Dropdown } from '../Dropdown/Dropdown'
+import { ScopeBar, ScopeNotice } from '../../Shared/ScopeBar/ScopeBar'
 
 const PROFILES_PATH = '/tools/career/profiles'
 
@@ -40,19 +41,11 @@ export function ProfileSwitcher({ profileId, onChange }: { profileId: string | n
   }
 
   if (profiles.length === 0) {
-    return (
-      <div className="mb-4 rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
-        No profiles yet.{' '}
-        <a href={PROFILES_PATH} onClick={navigateToProfiles} className="font-medium underline">
-          Create one to get started
-        </a>
-        .
-      </div>
-    )
+    return <ScopeNotice noun="profiles" path={PROFILES_PATH} />
   }
 
   return (
-    <div className="mb-4 flex items-end gap-2 text-sm">
+    <ScopeBar managePath={PROFILES_PATH}>
       <Dropdown
         label="Profile"
         options={profiles.map((p) => ({ value: p.id, label: profileLabel(p) }))}
@@ -62,14 +55,6 @@ export function ProfileSwitcher({ profileId, onChange }: { profileId: string | n
           onChange(id)
         }}
       />
-      <a href={PROFILES_PATH} onClick={navigateToProfiles} className="pb-1 text-gray-500 underline hover:text-gray-700">
-        Manage
-      </a>
-    </div>
+    </ScopeBar>
   )
-}
-
-function navigateToProfiles(e: React.MouseEvent) {
-  e.preventDefault()
-  window.__cinqoToolBridge.navigate(PROFILES_PATH)
 }

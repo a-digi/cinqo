@@ -476,10 +476,23 @@ export async function removeSkill(personaId: string, skill: string): Promise<voi
   if (!res.ok && res.status !== 204) throw new Error(`failed to remove skill (${res.status})`)
 }
 
+// The backend leaves out an entry's empty text fields (an entry with no end date comes
+// back with no endDate at all), so fill them in: the pages treat all five as strings.
+function normalizeExperience(entries: Partial<CareerExperience>[]): CareerExperience[] {
+  return entries.map((e) => ({
+    id: e.id ?? '',
+    company: e.company ?? '',
+    title: e.title ?? '',
+    startDate: e.startDate ?? '',
+    endDate: e.endDate ?? '',
+    description: e.description ?? '',
+  }))
+}
+
 export async function fetchExperience(personaId: string): Promise<CareerExperience[]> {
   const res = await fetch(`${PROXY_BASE}/experience?personaId=${encodeURIComponent(personaId)}`, { credentials: 'include' })
-  const data = await jsonOrThrow<{ experience: CareerExperience[] }>(res, 'load experience')
-  return data.experience
+  const data = await jsonOrThrow<{ experience: Partial<CareerExperience>[] }>(res, 'load experience')
+  return normalizeExperience(data.experience)
 }
 
 export async function addExperience(personaId: string, entry: Omit<CareerExperience, 'id'>): Promise<CareerExperience[]> {
@@ -488,8 +501,8 @@ export async function addExperience(personaId: string, entry: Omit<CareerExperie
     credentials: 'include',
     body: JSON.stringify({ personaId, ...entry }),
   })
-  const data = await jsonOrThrow<{ experience: CareerExperience[] }>(res, 'add experience')
-  return data.experience
+  const data = await jsonOrThrow<{ experience: Partial<CareerExperience>[] }>(res, 'add experience')
+  return normalizeExperience(data.experience)
 }
 
 export type UpdateExperienceArgs = Partial<Omit<CareerExperience, 'id'>> & { id: string }
@@ -500,8 +513,8 @@ export async function updateExperience(personaId: string, args: UpdateExperience
     credentials: 'include',
     body: JSON.stringify({ personaId, ...args }),
   })
-  const data = await jsonOrThrow<{ experience: CareerExperience[] }>(res, 'update experience')
-  return data.experience
+  const data = await jsonOrThrow<{ experience: Partial<CareerExperience>[] }>(res, 'update experience')
+  return normalizeExperience(data.experience)
 }
 
 export async function removeExperience(personaId: string, id: string): Promise<void> {

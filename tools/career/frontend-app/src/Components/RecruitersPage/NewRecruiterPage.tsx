@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react'
 import { createRecruiter, fetchCompanies, type Company } from '../../api'
 import { PlusIcon, UsersIcon } from '../../Shared/Icons/icons'
+import { inputClass } from '../../Shared/inputClass'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { COMPANIES_PATH, RECRUITERS_PATH } from '../../paths'
 import { Dropdown } from '../Dropdown/Dropdown'
 import { PAGE_ACCENT } from '../JobsPage/jobsTheme'
-
-const inputClass = 'w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none'
 
 // The page behind the Recruiters list's "New recruiter" button. A recruiter must
 // belong to an existing company; ?companyId= pre-selects one (set when the list

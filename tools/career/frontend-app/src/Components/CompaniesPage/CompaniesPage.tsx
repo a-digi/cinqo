@@ -1,14 +1,13 @@
 import { useEffect, useState } from 'react'
 import { fetchCompanies, updateCompany, removeCompany, type Company } from '../../api'
 import { BuildingIcon, PlusIcon } from '../../Shared/Icons/icons'
+import { inputClass } from '../../Shared/inputClass'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { SummaryRail } from '../../Shared/SummaryRail/SummaryRail'
 import { ACCENTS, PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
 import { percentOrNull, plural, summarizeCompanies } from './companyStats'
 
 import { JOBS_PATH, NEW_COMPANY_PATH, RECRUITERS_PATH, VIEW_COMPANY_PATH } from '../../paths'
-
-const inputClass = 'w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none'
 
 // Companies are tool-wide, not persona/profile-scoped — same reasoning
 // JobsPage itself already documents, since a company is about the job

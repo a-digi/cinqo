@@ -2,6 +2,7 @@ import type { CVImportRun } from '../../api'
 import type { CVImportProposal } from './parseProposal'
 import type { InsertResult, ItemResult } from './insertProposal'
 import { experienceLabel } from './experienceLabel'
+import { cardClassName, cardStyle } from '../../Shared/cardStyle'
 
 // 'skipped' covers both "the AI proposed it but the user unchecked it"
 // and "never attempted" alike — a stored InsertResult can't
@@ -64,7 +65,7 @@ export function ImportRunDetail({ run, onClose }: { run: CVImportRun; onClose: (
         <button
           type="button"
           onClick={onClose}
-          className="rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+          className="rounded-full border border-blue-200 bg-white px-3.5 py-1.5 text-sm text-blue-700 hover:bg-blue-50"
         >
           Close
         </button>
@@ -72,14 +73,14 @@ export function ImportRunDetail({ run, onClose }: { run: CVImportRun; onClose: (
 
       {!summary && <p className="text-sm text-gray-400">Nothing was saved from this analysis.</p>}
 
-      <section className="rounded-md border border-gray-200 p-4 shadow-sm">
+      <section className={cardClassName} style={cardStyle}>
         <h2 className="mb-2 text-base font-semibold text-gray-900">Profile</h2>
         <ul>
           <Row label={proposal.profile.name || '(no name proposed)'} result={summary?.profile} />
         </ul>
       </section>
 
-      <section className="rounded-md border border-gray-200 p-4 shadow-sm">
+      <section className={cardClassName} style={cardStyle}>
         <h2 className="mb-2 text-base font-semibold text-gray-900">Personas</h2>
         <ul>
           <Row
@@ -89,14 +90,14 @@ export function ImportRunDetail({ run, onClose }: { run: CVImportRun; onClose: (
         </ul>
       </section>
 
-      <section className="rounded-md border border-gray-200 p-4 shadow-sm">
+      <section className={cardClassName} style={cardStyle}>
         <h2 className="mb-2 text-base font-semibold text-gray-900">Personal Details</h2>
         <ul>
           <Row label={proposal.personalDetails.headline || '(no headline proposed)'} result={summary?.personalDetails} />
         </ul>
       </section>
 
-      <section className="rounded-md border border-gray-200 p-4 shadow-sm">
+      <section className={cardClassName} style={cardStyle}>
         <h2 className="mb-2 text-base font-semibold text-gray-900">Skills</h2>
         {proposal.skills.length === 0 && <p className="text-sm text-gray-400">No skills proposed.</p>}
         <ul className="divide-y divide-gray-100">
@@ -106,7 +107,7 @@ export function ImportRunDetail({ run, onClose }: { run: CVImportRun; onClose: (
         </ul>
       </section>
 
-      <section className="rounded-md border border-gray-200 p-4 shadow-sm">
+      <section className={cardClassName} style={cardStyle}>
         <h2 className="mb-2 text-base font-semibold text-gray-900">Experience</h2>
         {proposal.experience.length === 0 && <p className="text-sm text-gray-400">No experience proposed.</p>}
         <ul className="divide-y divide-gray-100">
