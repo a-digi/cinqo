@@ -38,111 +38,27 @@ import { PortalsPage } from './Components/PortalsPage/PortalsPage'
 import { CrawlMonitorPage } from './Crawler/CrawlMonitor/CrawlMonitorPage'
 import { ImportCvPage } from './Components/ImportCv/ImportCvPage'
 import './index.css'
+import { careerMenuEntry } from './menu'
+import {
+  IMPORT_CV_PATH,
+  PROFILES_PATH,
+  PERSONAS_PATH,
+  PERSONA_DETAILS_PATH,
+  SKILLS_PATH,
+  EXPERIENCE_PATH,
+  PROFILE_IMAGE_PATH,
+  CV_DOCUMENTS_PATH,
+  CV_BUILDER_PATH,
+  JOBS_PATH,
+  JOB_DETAILS_PATH,
+  COMPANIES_PATH,
+  RECRUITERS_PATH,
+  PORTALS_PATH,
+  CRAWL_MONITOR_PATH,
+} from './paths'
 
-const IMPORT_CV_PATH = '/tools/career/import-cv'
-const PROFILES_PATH = '/tools/career/profiles'
-const PERSONAS_PATH = '/tools/career/personas'
-const PERSONA_DETAILS_PATH = '/tools/career/persona-details'
-const SKILLS_PATH = '/tools/career/skills'
-const EXPERIENCE_PATH = '/tools/career/experience'
-const PROFILE_IMAGE_PATH = '/tools/career/profile-image'
-const CV_DOCUMENTS_PATH = '/tools/career/cv-documents'
-const CV_BUILDER_PATH = '/tools/career/cv-builder'
-const JOBS_PATH = '/tools/career/jobs'
-const JOB_DETAILS_PATH = '/tools/career/job-details'
-const COMPANIES_PATH = '/tools/career/companies'
-const RECRUITERS_PATH = '/tools/career/recruiters'
-const PORTALS_PATH = '/tools/career/portals'
-const CRAWL_MONITOR_PATH = '/tools/career/crawl-monitor'
 
-window.__cinqoToolBridge.registerMenuEntry({
-  label: 'Career',
-  // A briefcase glyph — built only from the sidebar's own sanitizer
-  // allowlist (rect, path, line, plus viewBox/stroke-width). See
-  // plan/ai/tools/step-15-menu-icons-for-browser-and-career.md.
-  icon: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor"><rect x="3" y="7" width="14" height="9" rx="1.5" stroke-width="1.3"/><path d="M7 7V5.5a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 13 5.5V7" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><line x1="3" y1="11" x2="17" y2="11" stroke-width="1.3"/></svg>',
-  children: [
-    {
-      label: 'CV',
-      // No path of its own — a pure grouping label (same convention as
-      // this codebase's other path-less parents, e.g. the core menu's
-      // "AI"/"System" and Browser's top-level entry): clicking it only
-      // expands/collapses its children rather than navigating anywhere.
-      scopes: ['tool:career:cv_documents', 'tool:career:cv_import'],
-      children: [
-        {
-          label: 'CV Documents',
-          path: CV_DOCUMENTS_PATH,
-          scopes: ['tool:career:cv_documents'],
-        },
-        {
-          label: 'Import',
-          path: IMPORT_CV_PATH,
-          scopes: ['tool:career:cv_import'],
-        },
-      ],
-    },
-    {
-      label: 'Profiles',
-      path: PROFILES_PATH,
-      scopes: ['tool:career:profile'],
-      children: [
-        {
-          label: 'Personas',
-          path: PERSONAS_PATH,
-          scopes: ['tool:career:profile'],
-        },
-        {
-          label: 'Persona Details',
-          path: PERSONA_DETAILS_PATH,
-          scopes: ['tool:career:profile'],
-        },
-        {
-          label: 'Skills',
-          path: SKILLS_PATH,
-          scopes: ['tool:career:profile'],
-        },
-        {
-          label: 'Experience',
-          path: EXPERIENCE_PATH,
-          scopes: ['tool:career:profile'],
-        },
-        {
-          label: 'Image',
-          path: PROFILE_IMAGE_PATH,
-          scopes: ['tool:career:profile'],
-        },
-      ],
-    },
-    {
-      label: 'Companies',
-      path: COMPANIES_PATH,
-      scopes: ['tool:career:companies'],
-    },
-    {
-      label: 'Recruiters',
-      path: RECRUITERS_PATH,
-      scopes: ['tool:career:companies'],
-    },
-    {
-      label: 'Jobs',
-      path: JOBS_PATH,
-      scopes: ['tool:career:jobs'],
-      children: [
-        {
-          label: 'Portals',
-          path: PORTALS_PATH,
-          scopes: ['tool:career:portals'],
-        },
-        {
-          label: 'Crawl Monitor',
-          path: CRAWL_MONITOR_PATH,
-          scopes: ['tool:career:portals'],
-        },
-      ],
-    },
-  ],
-})
+window.__cinqoToolBridge.registerMenuEntry(careerMenuEntry)
 
 const roots = new WeakMap<HTMLElement, Root>()
 

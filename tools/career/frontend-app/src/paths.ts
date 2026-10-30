@@ -1,0 +1,17 @@
+// Every page path of the Career tool, shared by the route registration (main.tsx)
+// and the menu (menu.ts) so the two cannot drift apart.
+export const IMPORT_CV_PATH = '/tools/career/import-cv'
+export const PROFILES_PATH = '/tools/career/profiles'
+export const PERSONAS_PATH = '/tools/career/personas'
+export const PERSONA_DETAILS_PATH = '/tools/career/persona-details'
+export const SKILLS_PATH = '/tools/career/skills'
+export const EXPERIENCE_PATH = '/tools/career/experience'
+export const PROFILE_IMAGE_PATH = '/tools/career/profile-image'
+export const CV_DOCUMENTS_PATH = '/tools/career/cv-documents'
+export const CV_BUILDER_PATH = '/tools/career/cv-builder'
+export const JOBS_PATH = '/tools/career/jobs'
+export const JOB_DETAILS_PATH = '/tools/career/job-details'
+export const COMPANIES_PATH = '/tools/career/companies'
+export const RECRUITERS_PATH = '/tools/career/recruiters'
+export const PORTALS_PATH = '/tools/career/portals'
+export const CRAWL_MONITOR_PATH = '/tools/career/crawl-monitor'
