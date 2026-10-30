@@ -271,3 +271,20 @@ repository:
 repository-in-place:
 	cd api && go run ./cmd/repotool -in-place -tools-dir ../tools \
 		-name "$(REPO_NAME)" -description "$(REPO_DESCRIPTION)" $(if $(BASE_URL),-base-url "$(BASE_URL)")
+
+# Writes tools/repository.json for a GitHub release: every package link is
+# https://github.com/$(GITHUB_REPO)/releases/download/$(TAG)/<zip>. Prints the
+# commands that publish it (create the release with the zips, then commit and
+# push tools/repository.json to the ref the default tool_repository_url points
+# at); it runs none of them. Usage: make repository-release TAG=tools-2026-10-30
+GITHUB_REPO ?= a-digi/cinqo
+.PHONY: repository-release
+repository-release:
+	@test -n "$(TAG)" || (echo "Usage: make repository-release TAG=<release tag>, e.g. tools-2026-10-30"; exit 1)
+	cd api && go run ./cmd/repotool -in-place -tools-dir ../tools \
+		-assets-url "https://github.com/$(GITHUB_REPO)/releases/download/$(TAG)" \
+		-name "$(REPO_NAME)" -description "$(REPO_DESCRIPTION)"
+	@echo
+	@echo "To publish (not run by this target):"
+	@echo "  gh release create $(TAG) -R $(GITHUB_REPO) --title \"Cinqo tools $(TAG)\" --notes \"Tool packages\" tools/*/versions/tool-*.zip"
+	@echo "  git add tools/repository.json && git commit -m \"Tool repository $(TAG)\" && git push"

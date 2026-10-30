@@ -19,6 +19,9 @@ export interface ToolRepository {
   name: string
   description: string
   isLocal: boolean
+  // Cinqo's own built-in repository (address from config.json): always
+  // present, cannot be removed.
+  isNative: boolean
   lastFetchedAt: string
   lastStatus: 'never' | 'ok' | 'error'
   lastError: string

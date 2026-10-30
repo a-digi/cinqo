@@ -26,6 +26,7 @@ func main() {
 	flag.StringVar(&opts.Name, "name", "", "repository name shown in the app")
 	flag.StringVar(&opts.Description, "description", "", "repository description")
 	flag.StringVar(&opts.BaseURL, "base-url", "", "address the output folder will be served from; leave empty for links relative to the repository file")
+	flag.StringVar(&opts.AssetsURL, "assets-url", "", "serve every package flat from this address, e.g. https://github.com/<owner>/<repo>/releases/download/<tag>; links become <assets-url>/<zip>")
 	flag.BoolVar(&opts.InPlace, "in-place", false, "write the repository file into -tools-dir and link packages where they are, copying nothing")
 	flag.Parse()
 

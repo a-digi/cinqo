@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   fetchRepository,
@@ -17,8 +17,11 @@ import { colorForTool } from './toolCardColors'
 import { errorText } from './repositoryErrors'
 import {
   actionFor,
+  canRemove,
   formatFetched,
   installConfirmMessage,
+  nativeLabel,
+  needsFirstLoad,
   repositoryStatusLabel,
   repositoryStatusVariant,
   statusLabel,
@@ -41,9 +44,23 @@ export function RepositoryPage() {
   const [busy, setBusy] = useState(false)
   const { confirm, dialog } = useConfirm()
 
+  // A never-fetched repository (the built-in one, opened directly) is loaded once.
+  const autoLoaded = useRef(false)
+
   const load = useCallback(async () => {
     try {
-      setDetail(await fetchRepository(id))
+      let result = await fetchRepository(id)
+      if (needsFirstLoad(result) && !autoLoaded.current) {
+        autoLoaded.current = true
+        setDetail(result)
+        try {
+          await refreshRepository(id)
+          result = await fetchRepository(id)
+        } catch {
+          // shown as "Refresh failed" below; the user's Refresh retries
+        }
+      }
+      setDetail(result)
       setLoadError(null)
     } catch (err) {
       setLoadError(errorText(err, 'Failed to load this repository.'))
@@ -140,6 +157,7 @@ export function RepositoryPage() {
             <Pill variant={repositoryStatusVariant(detail.lastStatus)} title={detail.lastError || undefined}>
               {repositoryStatusLabel(detail.lastStatus)}
             </Pill>
+            {detail.isNative && <Pill variant="green">{nativeLabel}</Pill>}
             {detail.isLocal && <Pill outline>Local network</Pill>}
           </div>
           <p className="mt-1 break-all font-mono text-xs text-gray-500">{detail.url}</p>
@@ -157,16 +175,18 @@ export function RepositoryPage() {
           >
             Refresh
           </button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => {
-              void handleRemove()
-            }}
-            className="rounded-md border border-red-200 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50"
-          >
-            Remove
-          </button>
+          {canRemove(detail) && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                void handleRemove()
+              }}
+              className="rounded-md border border-red-200 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50"
+            >
+              Remove
+            </button>
+          )}
         </div>
       </div>
 

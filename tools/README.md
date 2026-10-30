@@ -70,3 +70,11 @@ it is written. See `plan/ai/tools/repository/tool-repositories.md`.
 `make repository-in-place` instead writes `tools/repository.json` and links each
 package where it already is (`<tool>/versions/<zip>`), copying nothing; serve the
 `tools/` folder and add the link to `repository.json`.
+
+`make repository-release TAG=tools-2026-10-30` writes `tools/repository.json` for a GitHub
+release instead: every package link is
+`https://github.com/<repo>/releases/download/<TAG>/<zip>` (`GITHUB_REPO`, default
+`a-digi/cinqo`). It prints the `gh release create` and `git push` commands that publish
+it and runs none of them. The app's built-in repository
+(`tool_repository_url` in `config.json`) reads `tools/repository.json` from the ref in its
+default link, so the file must be pushed there for the built-in repository to see it.

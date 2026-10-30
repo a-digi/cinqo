@@ -50,6 +50,12 @@ type Options struct {
 	// ToolsDir as a static folder and the file works as it stands. OutDir is
 	// ignored.
 	InPlace bool
+	// AssetsURL, when set, makes every package link AssetsURL/<zip> — the
+	// package files served flat from one address, such as a GitHub release's
+	// download address (https://github.com/<owner>/<repo>/releases/download/<tag>).
+	// It takes precedence over BaseURL. Package file names are unique per tool,
+	// version-independent and platform-specific, so they work as release assets.
+	AssetsURL string
 }
 
 // Result describes what was written.
@@ -253,6 +259,9 @@ func build(pkgs []found, opts Options) *catalog.Catalog {
 }
 
 func packageURL(opts Options, p found) string {
+	if opts.AssetsURL != "" {
+		return strings.TrimRight(opts.AssetsURL, "/") + "/" + p.file
+	}
 	rel := path.Join(FilesDir, p.file)
 	if opts.InPlace {
 		rel = p.rel

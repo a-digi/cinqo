@@ -261,3 +261,31 @@ func TestInPlaceLinksPackagesWhereTheyAreAndCopiesNothing(t *testing.T) {
 		}
 	}
 }
+
+func TestAssetsURLLinksEveryPackageFlatAndStaysValid(t *testing.T) {
+	assets := "https://github.com/a-digi/cinqo/releases/download/tools-1/"
+	res, err := Generate(Options{ToolsDir: fixture(t), InPlace: true, AssetsURL: assets})
+	if err != nil {
+		t.Fatal(err)
+	}
+	browser, _ := res.Catalog.Tool("browser")
+	for _, p := range browser.Versions[0].Packages {
+		want := "https://github.com/a-digi/cinqo/releases/download/tools-1/tool-browser-" + p.OS + "-" + p.Arch + ".zip"
+		if p.URL != want {
+			t.Errorf("%s, want %s", p.URL, want)
+		}
+	}
+	// the file on disk parses with the app's own validator, from its raw address
+	data, _ := os.ReadFile(res.File)
+	if _, err := catalog.Parse(data, "https://raw.githubusercontent.com/a-digi/cinqo/0.0.1/tools/repository.json"); err != nil {
+		t.Fatal(err)
+	}
+	// AssetsURL wins over BaseURL, and a plain-http address is refused by the validator
+	if _, err := Generate(Options{ToolsDir: fixture(t), OutDir: t.TempDir(), AssetsURL: "http://example.com/dl"}); err == nil {
+		t.Error("a plain http assets address for a public host must be refused")
+	}
+	res, err = Generate(Options{ToolsDir: fixture(t), OutDir: t.TempDir(), BaseURL: "https://ignored.example.com", AssetsURL: assets})
+	if err != nil || strings.Contains(res.Catalog.Tools[0].Versions[0].Packages[0].URL, "ignored") {
+		t.Errorf("assets url must win: %v", err)
+	}
+}

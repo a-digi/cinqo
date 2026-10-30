@@ -71,6 +71,8 @@ func fail(w http.ResponseWriter, err error) {
 		status = http.StatusNotFound
 	case errors.Is(se.Kind, service.ErrDuplicate):
 		status = http.StatusConflict
+	case errors.Is(se.Kind, service.ErrNativeRemoval):
+		status = http.StatusForbidden
 	case errors.Is(se.Kind, service.ErrDownload):
 		status = http.StatusBadGateway
 	}

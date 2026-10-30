@@ -1,0 +1,11 @@
+# Cinqo's built-in tool repository: always listed on the Repositories page, loaded
+# from this address, and fixed for the people who use the app. It cannot be removed
+# or changed from the app, and this file is app-owned: the packaged app replaces it
+# with its embedded copy at every launch (like system-tools.yaml), so editing it on
+# an installed app has no lasting effect. Change the address here and rebuild.
+#
+# Absent or unparseable: the built-in default below. An empty value means no
+# built-in repository (for a fork that ships none). An invalid value is logged and
+# ignored. Read once at startup. See plan/ai/tools/repository/native-repository.md.
+
+tool_repository_url: "https://raw.githubusercontent.com/a-digi/cinqo/0.0.1/tools/repository.json"

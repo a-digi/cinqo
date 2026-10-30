@@ -27,6 +27,8 @@ import (
 	platform_crypto "github.com/a-digi/cinqo/src/platform/crypto"
 	tool_manager "github.com/a-digi/cinqo/src/tool/manager"
 	"github.com/a-digi/cinqo/src/tool/systemtools"
+	"github.com/a-digi/cinqo/src/toolrepository/nativeconfig"
+	toolrepository_service "github.com/a-digi/cinqo/src/toolrepository/service"
 
 	"github.com/a-digi/coco-logger/logger"
 )
@@ -256,6 +258,21 @@ func Start(opts Options) (srv *http.Server, cfg *server.Config, ctx *di.ContextB
 	// CWD-relative literal, the exact same class of bug app_version
 	// itself had. See plan/ai/build/app/step-20-app-version-via-di.md.
 	ctx.Set("core_port", corePortCfg.Port)
+
+	// Cinqo's own built-in tool repository: its address comes from the
+	// app-owned config/tool-repository.yaml (replaced from the embedded copy at
+	// every launch, so a user cannot change it; absent means the built-in
+	// default, empty means none). Read once, here; a bad value is logged and
+	// ignored, never fatal. Empty string in the bag means "no native repository". See
+	// plan/ai/tools/repository/native-repository.md.
+	nativeRepo := nativeconfig.Load(config.ReadConfigFile)
+	if nativeRepo.Warning != "" {
+		log.Warning("%s", nativeRepo.Warning)
+	}
+	ctx.Set("native_tool_repository_url", nativeRepo.URL)
+	if err := toolrepository_service.New(manager.Connector.DB, nil).SyncNative(nativeRepo.URL); err != nil {
+		log.Warning("could not set up the built-in tool repository: %v", err)
+	}
 
 	// Auth bootstrap: config.json's "auth" block is always present (dev
 	// HS256 secret); iam.yaml does not exist on disk yet (see

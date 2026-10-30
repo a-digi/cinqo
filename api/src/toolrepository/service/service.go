@@ -30,13 +30,14 @@ const (
 )
 
 var (
-	ErrNotFound     = errors.New("repository not found")
-	ErrDuplicate    = errors.New("this repository is already added")
-	ErrTooMany      = errors.New("too many repositories")
-	ErrInvalidLink  = errors.New("invalid repository link")
-	ErrFetchFailed  = errors.New("the repository could not be loaded")
-	ErrInvalidFile  = errors.New("the repository file is not valid")
-	errLinkNotAFile = "this link must point to the JSON file"
+	ErrNotFound      = errors.New("repository not found")
+	ErrDuplicate     = errors.New("this repository is already added")
+	ErrTooMany       = errors.New("too many repositories")
+	ErrInvalidLink   = errors.New("invalid repository link")
+	ErrFetchFailed   = errors.New("the repository could not be loaded")
+	ErrInvalidFile   = errors.New("the repository file is not valid")
+	ErrNativeRemoval = errors.New("the built-in repository cannot be removed")
+	errLinkNotAFile  = "this link must point to the JSON file"
 )
 
 // Error carries a user-facing reason together with its category.
@@ -75,9 +76,12 @@ func New(db *sql.DB, fetcher Fetcher) *Service {
 
 func (s *Service) List() ([]*repo_entity.Repository, error) { return s.query.List() }
 
-// NormalizeLink validates the typed link: absolute, https (http only for a
-// local address), no credentials, and pointing at a file rather than a folder.
-// The link is the repository's identity, so the fragment is dropped.
+// NormalizeLink validates the typed link: absolute, https (http only for a local
+// address), no credentials, and pointing at a file rather than a folder. The
+// link is the repository's identity, so every spelling of the same address maps
+// to one string: scheme and host in lower case, no default port, no trailing dot
+// on the host, no fragment, no empty "?". The path and query are left exactly as
+// typed, because a server may treat them as case-sensitive.
 func NormalizeLink(raw string) (string, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -94,7 +98,21 @@ func NormalizeLink(raw string) (string, error) {
 	if u.Path == "" || strings.HasSuffix(u.Path, "/") || path.Base(u.Path) == "." {
 		return "", &Error{ErrInvalidLink, errLinkNotAFile}
 	}
-	return link, nil
+	u.Scheme = strings.ToLower(u.Scheme)
+	host := strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
+	if strings.Contains(host, ":") {
+		host = "[" + host + "]"
+	}
+	port := u.Port()
+	if (u.Scheme == "https" && port == "443") || (u.Scheme == "http" && port == "80") {
+		port = ""
+	}
+	u.Host = host
+	if port != "" {
+		u.Host = host + ":" + port
+	}
+	u.ForceQuery = false
+	return u.String(), nil
 }
 
 // Add fetches and validates the file at link and stores the repository only if
@@ -109,7 +127,7 @@ func (s *Service) Add(ctx context.Context, rawLink string) (*repo_entity.Reposit
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}
-	n, err := s.query.Count()
+	n, err := s.query.CountUserAdded()
 	if err != nil {
 		return nil, err
 	}
@@ -133,6 +151,9 @@ func (s *Service) Add(ctx context.Context, rawLink string) (*repo_entity.Reposit
 		LastStatus:    repo_entity.StatusOK,
 	}
 	if err := s.persistent.Insert(repo); err != nil {
+		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
+			return nil, &Error{ErrDuplicate, "this repository is already added"}
+		}
 		return nil, err
 	}
 	return s.query.FindByID(repo.ID)
@@ -163,8 +184,12 @@ func (s *Service) Refresh(ctx context.Context, id string) (*repo_entity.Reposito
 
 // Remove deletes the registration only; installed tools are never touched.
 func (s *Service) Remove(id string) error {
-	if _, err := s.find(id); err != nil {
+	repo, err := s.find(id)
+	if err != nil {
 		return err
+	}
+	if repo.IsNative {
+		return &Error{ErrNativeRemoval, "the built-in repository cannot be removed"}
 	}
 	return s.persistent.Delete(id)
 }

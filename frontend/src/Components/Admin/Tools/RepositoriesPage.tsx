@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { addRepository, fetchRepositories, refreshRepository, removeRepository, type ToolRepository } from '../../../api/toolRepositories'
 import { LoadingSpinner } from '../../../Shared/Components/Loading/LoadingSpinner'
@@ -7,8 +7,11 @@ import { Pill } from '../../../Shared/Components/Pill/Pill'
 import { errorText } from './repositoryErrors'
 import {
   addLinkProblem,
+  canRemove,
   countsCell,
   formatFetched,
+  nativeLabel,
+  needsFirstLoad,
   repositoryPath,
   repositoryStatusLabel,
   repositoryStatusVariant,
@@ -27,9 +30,29 @@ export function RepositoriesPage() {
   const [rowError, setRowError] = useState<string | null>(null)
   const { confirm, dialog } = useConfirm()
 
+  // Repositories already loaded once automatically; a failed first load is not
+  // retried in a loop, the user's Refresh does that.
+  const autoLoaded = useRef(new Set<string>())
+
   const load = useCallback(async () => {
     try {
-      setRepositories(await fetchRepositories())
+      let list = await fetchRepositories()
+      const fresh = list.filter((r) => needsFirstLoad(r) && !autoLoaded.current.has(r.id))
+      if (fresh.length > 0) {
+        setRepositories(list)
+        await Promise.all(
+          fresh.map(async (r) => {
+            autoLoaded.current.add(r.id)
+            try {
+              await refreshRepository(r.id)
+            } catch {
+              // shown as "Refresh failed" on the next listing; nothing else to do
+            }
+          }),
+        )
+        list = await fetchRepositories()
+      }
+      setRepositories(list)
       setError(null)
     } catch (err) {
       setError(errorText(err, 'Failed to load repositories.'))
@@ -178,6 +201,7 @@ export function RepositoriesPage() {
                     <Link to={repositoryPath(repository.id)} className="font-medium text-gray-900 hover:underline">
                       {repository.name}
                     </Link>
+                    {repository.isNative && <Pill variant="green">{nativeLabel}</Pill>}
                     {repository.isLocal && <Pill outline>Local network</Pill>}
                   </div>
                   <div className="break-all font-mono text-xs text-gray-500">{repository.url}</div>
@@ -207,16 +231,18 @@ export function RepositoriesPage() {
                     >
                       Refresh
                     </button>
-                    <button
-                      type="button"
-                      disabled={busyId === repository.id}
-                      onClick={() => {
-                        void handleRemove(repository)
-                      }}
-                      className="rounded-md border border-red-200 px-3 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
-                    >
-                      Remove
-                    </button>
+                    {canRemove(repository) && (
+                      <button
+                        type="button"
+                        disabled={busyId === repository.id}
+                        onClick={() => {
+                          void handleRemove(repository)
+                        }}
+                        className="rounded-md border border-red-200 px-3 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
+                      >
+                        Remove
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>

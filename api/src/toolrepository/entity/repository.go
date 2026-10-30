@@ -14,7 +14,10 @@ type Repository struct {
 	// IsLocal is true when the repository was reached on a local address; its
 	// packages are then downloaded with local addresses allowed, a public
 	// repository's never.
-	IsLocal       bool   `json:"isLocal"`
+	IsLocal bool `json:"isLocal"`
+	// IsNative marks Cinqo's own built-in repository, whose address comes from
+	// config.json; at most one row has it, and it cannot be removed.
+	IsNative      bool   `json:"isNative"`
 	LastFetchedAt string `json:"lastFetchedAt"`
 	LastStatus    string `json:"lastStatus"`
 	LastError     string `json:"lastError"`

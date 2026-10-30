@@ -48,3 +48,58 @@ func (r *RepositoryPersistentRepo) Delete(id string) error {
 	_, err := r.db.Exec(`DELETE FROM tool_repositories WHERE id = ?`, id)
 	return err
 }
+
+// InsertNative stores the built-in repository before anything has been fetched:
+// status "never", no catalog. Any earlier native row is demoted first, in the
+// same transaction.
+func (r *RepositoryPersistentRepo) InsertNative(repo *repo_entity.Repository) error {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`UPDATE tool_repositories SET is_native = 0 WHERE is_native = 1`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(
+		`INSERT INTO tool_repositories (id, url, name, description, last_status, last_error, is_native)
+		VALUES (?, ?, ?, '', 'never', '', 1)`,
+		repo.ID, repo.URL, repo.Name,
+	); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// MakeNative makes an existing repository the native one and demotes any other.
+func (r *RepositoryPersistentRepo) MakeNative(id string) error {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`UPDATE tool_repositories SET is_native = 0 WHERE is_native = 1 AND id <> ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE tool_repositories SET is_native = 1 WHERE id = ?`, id); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// ClearNative turns the native repository into an ordinary, removable one.
+func (r *RepositoryPersistentRepo) ClearNative() error {
+	_, err := r.db.Exec(`UPDATE tool_repositories SET is_native = 0 WHERE is_native = 1`)
+	return err
+}
+
+// ResetNativeURL points the native repository at another address. It is a
+// different repository then, so everything fetched from the old one is dropped.
+func (r *RepositoryPersistentRepo) ResetNativeURL(id, url, name string) error {
+	_, err := r.db.Exec(
+		`UPDATE tool_repositories SET url = ?, name = ?, description = '', catalog_json = NULL, last_fetched_at = NULL,
+		last_status = 'never', last_error = '', is_local = 0, updated_at = datetime('now') WHERE id = ?`,
+		url, name, id,
+	)
+	return err
+}

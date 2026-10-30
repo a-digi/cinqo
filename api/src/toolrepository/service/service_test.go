@@ -53,7 +53,7 @@ func newService(t *testing.T, f *fakeFetcher) *Service {
 	}
 	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { db.Close() })
-	for _, name := range []string{"30_10_2026_10_00_00.sql", "30_10_2026_11_00_00.sql"} {
+	for _, name := range []string{"30_10_2026_10_00_00.sql", "30_10_2026_11_00_00.sql", "30_10_2026_12_00_00.sql"} {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "..", "config", "db", "migrations", name))
 		if err != nil {
 			t.Fatal(err)
@@ -333,5 +333,108 @@ func TestRepositoryWithoutCatalogHasNoTools(t *testing.T) {
 	out, _ := json.Marshal(d)
 	if !strings.Contains(string(out), `"tools":[]`) {
 		t.Errorf("tools must be an empty array: %s", out)
+	}
+}
+
+func TestTheSameLinkIsNeverAddedTwice(t *testing.T) {
+	canonical := "https://example.com/a/tools.json"
+	f := &fakeFetcher{files: map[string]string{canonical: repoFile("A", "a.zip")}}
+	s := newService(t, f)
+	if _, err := s.Add(context.Background(), "HTTPS://Example.COM:443/a/tools.json#section"); err != nil {
+		t.Fatal(err)
+	}
+	same := []string{
+		canonical, "  " + canonical + "  ", "https://EXAMPLE.com/a/tools.json", "https://example.com:443/a/tools.json",
+		"https://example.com./a/tools.json", "https://example.com/a/tools.json#other", "https://example.com/a/tools.json?",
+	}
+	for _, l := range same {
+		f.calls = nil
+		_, err := s.Add(context.Background(), l)
+		kind(t, err, ErrDuplicate)
+		if len(f.calls) != 0 {
+			t.Errorf("%q: a duplicate must not be fetched", l)
+		}
+	}
+	if list, _ := s.List(); len(list) != 1 || list[0].URL != canonical {
+		t.Errorf("one row, stored in the canonical form: %+v", list)
+	}
+}
+
+func TestDifferentLinksAreNotDuplicates(t *testing.T) {
+	canonical := "https://example.com/a/tools.json"
+	f := &fakeFetcher{files: map[string]string{}}
+	s := newService(t, f)
+	f.files[canonical] = repoFile("A", "a.zip")
+	if _, err := s.Add(context.Background(), canonical); err != nil {
+		t.Fatal(err)
+	}
+	for _, l := range []string{
+		"https://example.com/A/tools.json", // the path is case-sensitive
+		"https://example.com/a/Tools.json",
+		"https://example.com:8443/a/tools.json", // another port
+		"https://example.com/a/tools.json?v=2",  // another query
+		"https://example.org/a/tools.json",      // another host
+		"https://other.example.com/a/tools.json",
+	} {
+		f.files[mustNormalize(t, l)] = repoFile("B", "a.zip")
+		if _, err := s.Add(context.Background(), l); err != nil {
+			t.Errorf("%q must be accepted: %v", l, err)
+		}
+	}
+}
+
+func mustNormalize(t *testing.T, l string) string {
+	t.Helper()
+	n, err := NormalizeLink(l)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+func TestNormalizeLinkSpellings(t *testing.T) {
+	cases := map[string]string{
+		"HTTPS://Example.COM/a/tools.json":        "https://example.com/a/tools.json",
+		"https://example.com:443/a/tools.json":    "https://example.com/a/tools.json",
+		"http://localhost:80/t.json":              "http://localhost/t.json",
+		"http://localhost:8099/t.json":            "http://localhost:8099/t.json",
+		"https://example.com./t.json":             "https://example.com/t.json",
+		"https://example.com/t.json?":             "https://example.com/t.json",
+		"https://example.com/t.json?a=1#x":        "https://example.com/t.json?a=1",
+		"http://[::1]:8099/t.json":                "http://[::1]:8099/t.json",
+		"https://example.com/Path/With/Case.json": "https://example.com/Path/With/Case.json",
+	}
+	for in, want := range cases {
+		if got, err := NormalizeLink(in); err != nil || got != want {
+			t.Errorf("%q: got %q, %v; want %q", in, got, err, want)
+		}
+	}
+}
+
+// raceFetcher stores the same link while Add is fetching it, like a second
+// request that got past the existence check first.
+type raceFetcher struct {
+	inner *fakeFetcher
+	s     *Service
+	url   string
+}
+
+func (r *raceFetcher) Get(ctx context.Context, url string, max int64, p fetch.LocalPolicy) (*fetch.Result, error) {
+	if _, err := r.s.db.Exec(`INSERT INTO tool_repositories (id, url) VALUES ('raced', ?)`, r.url); err != nil {
+		return nil, err
+	}
+	return r.inner.Get(ctx, url, max, p)
+}
+
+// Two adds racing past the existence check hit the database's unique index; the
+// loser gets the same answer as any duplicate, not a server error.
+func TestDuplicateInsertRaceIsReportedAsADuplicate(t *testing.T) {
+	inner := &fakeFetcher{files: map[string]string{link: repoFile("A", "a.zip")}}
+	s := newService(t, inner)
+	s.fetcher = &raceFetcher{inner: inner, s: s, url: link}
+	_, err := s.Add(context.Background(), link)
+	kind(t, err, ErrDuplicate)
+	if list, _ := s.List(); len(list) != 1 || list[0].ID != "raced" {
+		t.Errorf("only the first insert may remain: %+v", list)
 	}
 }

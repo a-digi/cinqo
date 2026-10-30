@@ -54,6 +54,19 @@ export function countsCell(counts: RepositoryCounts): string {
   return `${tools} · ${counts.updatable} ${plural(counts.updatable, 'update', 'updates')} available`
 }
 
+// The built-in repository cannot be removed (the server refuses it too).
+export function canRemove(repository: Pick<ToolRepository, 'isNative'>): boolean {
+  return !repository.isNative
+}
+
+// A repository that has never been fetched (the built-in one, the first time) is
+// loaded once when the page opens, so it fills itself without a click.
+export function needsFirstLoad(repository: Pick<ToolRepository, 'lastStatus'>): boolean {
+  return repository.lastStatus === 'never'
+}
+
+export const nativeLabel = 'Cinqo'
+
 export function repositoryPath(id: string): string {
   return `/admin/tool-repositories/${encodeURIComponent(id)}`
 }

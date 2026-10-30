@@ -14,12 +14,12 @@ func NewRepositoryQueryRepo(db *sql.DB) *RepositoryQueryRepo {
 	return &RepositoryQueryRepo{db: db}
 }
 
-const repositoryColumns = `id, url, name, description, catalog_json, last_fetched_at, last_status, last_error, created_at, updated_at, is_local`
+const repositoryColumns = `id, url, name, description, catalog_json, last_fetched_at, last_status, last_error, created_at, updated_at, is_local, is_native`
 
 func scanRepository(scan func(dest ...any) error) (*repo_entity.Repository, error) {
 	var r repo_entity.Repository
 	var catalog, fetchedAt, updatedAt sql.NullString
-	if err := scan(&r.ID, &r.URL, &r.Name, &r.Description, &catalog, &fetchedAt, &r.LastStatus, &r.LastError, &r.CreatedAt, &updatedAt, &r.IsLocal); err != nil {
+	if err := scan(&r.ID, &r.URL, &r.Name, &r.Description, &catalog, &fetchedAt, &r.LastStatus, &r.LastError, &r.CreatedAt, &updatedAt, &r.IsLocal, &r.IsNative); err != nil {
 		return nil, err
 	}
 	r.CatalogJSON = catalog.String
@@ -29,7 +29,7 @@ func scanRepository(scan func(dest ...any) error) (*repo_entity.Repository, erro
 }
 
 func (r *RepositoryQueryRepo) List() ([]*repo_entity.Repository, error) {
-	rows, err := r.db.Query(`SELECT ` + repositoryColumns + ` FROM tool_repositories ORDER BY created_at, id`)
+	rows, err := r.db.Query(`SELECT ` + repositoryColumns + ` FROM tool_repositories ORDER BY is_native DESC, created_at, id`)
 	if err != nil {
 		return nil, err
 	}
@@ -59,5 +59,18 @@ func (r *RepositoryQueryRepo) FindByURL(url string) (*repo_entity.Repository, er
 func (r *RepositoryQueryRepo) Count() (int, error) {
 	var n int
 	err := r.db.QueryRow(`SELECT COUNT(*) FROM tool_repositories`).Scan(&n)
+	return n, err
+}
+
+// FindNative returns sql.ErrNoRows when there is no native repository.
+func (r *RepositoryQueryRepo) FindNative() (*repo_entity.Repository, error) {
+	return scanRepository(r.db.QueryRow(`SELECT ` + repositoryColumns + ` FROM tool_repositories WHERE is_native = 1`).Scan)
+}
+
+// CountUserAdded counts the repositories someone added by hand; the native one
+// does not use up their limit.
+func (r *RepositoryQueryRepo) CountUserAdded() (int, error) {
+	var n int
+	err := r.db.QueryRow(`SELECT COUNT(*) FROM tool_repositories WHERE is_native = 0`).Scan(&n)
 	return n, err
 }
