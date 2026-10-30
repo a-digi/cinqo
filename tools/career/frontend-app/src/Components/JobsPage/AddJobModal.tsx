@@ -1,5 +1,8 @@
-import { useState } from 'react'
-import { addJob, DuplicateJobError, type Job } from '../../api'
+import { useEffect, useState } from 'react'
+import { addJob, DuplicateJobError, fetchCompanies, type Company, type Job } from '../../api'
+import { COMPANIES_PATH } from '../../paths'
+import { PlusIcon } from '../../Shared/Icons/icons'
+import { Dropdown } from '../Dropdown/Dropdown'
 import { Field } from '../Field/Field'
 import { Modal } from '../../Shared/Modal/Modal'
 import { InfoBox } from '../../Shared/InfoBox/InfoBox'
@@ -7,7 +10,9 @@ import { EMPTY_NEW_JOB, MANUAL_JOB_LIMITS, hasErrors, validateNewJob, type NewJo
 
 // AddJobModal (step 97) — add a job by hand: one found on LinkedIn, in an email,
 // from a friend. It gets everything a crawled job gets (Job Match, Generate CV,
-// the company link). Only the title is required. A duplicate is refused with a
+// the company link). Only the title is required. The company is picked from the
+// companies that already exist (an "Add company" button leads to the page where
+// they are created), never typed in. A duplicate is refused with a
 // pointer to the job that already exists. See
 // plan/ai/tools/career/step-97-add-jobs-manually.md.
 export function AddJobModal({
@@ -26,6 +31,30 @@ export function AddJobModal({
   const [serverError, setServerError] = useState('')
   const [duplicate, setDuplicate] = useState<DuplicateJobError | null>(null)
   const [saving, setSaving] = useState(false)
+  const [companies, setCompanies] = useState<Company[] | null>(null)
+  const [companiesFailed, setCompaniesFailed] = useState(false)
+
+  // Fresh list each time the modal opens, so a company added meanwhile is there.
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    setCompaniesFailed(false)
+    fetchCompanies()
+      .then((list) => {
+        if (!cancelled) setCompanies(list)
+      })
+      .catch(() => {
+        if (!cancelled) setCompaniesFailed(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [open])
+
+  function addCompany() {
+    close()
+    window.__cinqoToolBridge.navigate(COMPANIES_PATH)
+  }
 
   function set(key: keyof NewJobForm, value: string) {
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -107,26 +136,43 @@ export function AddJobModal({
             }}
           />
         </FieldWithError>
-        <div className="grid grid-cols-2 gap-3">
-          <FieldWithError error={errors.company}>
-            <Field
-              label="Company"
-              value={form.company}
-              onChange={(v) => {
-                set('company', v)
-              }}
-            />
-          </FieldWithError>
-          <FieldWithError error={errors.location}>
-            <Field
-              label="Location"
-              value={form.location}
-              onChange={(v) => {
-                set('location', v)
-              }}
-            />
-          </FieldWithError>
-        </div>
+        <FieldWithError error={errors.company}>
+          <div className="flex items-end gap-2">
+            <div className="min-w-0 flex-1 [&>div]:block [&>div>button]:w-full">
+              <Dropdown
+                label="Company (optional)"
+                placeholder="No company"
+                options={[{ value: '', label: 'No company' }, ...(companies ?? []).map((c) => ({ value: c.name, label: c.name }))]}
+                value={form.company}
+                onChange={(v) => {
+                  set('company', v)
+                }}
+                searchable={(companies?.length ?? 0) > 8}
+              />
+            </div>
+            <button
+              type="button"
+              onClick={addCompany}
+              className="inline-flex shrink-0 items-center gap-1 rounded-md border border-gray-300 px-2.5 py-1 text-sm text-gray-700 hover:bg-gray-50"
+            >
+              <PlusIcon />
+              Add company
+            </button>
+          </div>
+          {companiesFailed && <p className="mt-1 text-xs text-red-700">Couldn&apos;t load the companies.</p>}
+          {companies?.length === 0 && !companiesFailed && (
+            <p className="mt-1 text-xs text-gray-500">There are no companies yet. Add one, then come back to add the job.</p>
+          )}
+        </FieldWithError>
+        <FieldWithError error={errors.location}>
+          <Field
+            label="Location"
+            value={form.location}
+            onChange={(v) => {
+              set('location', v)
+            }}
+          />
+        </FieldWithError>
         <FieldWithError error={errors.sourceUrl}>
           <Field
             label="Link to the posting (optional)"
