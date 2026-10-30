@@ -9,6 +9,7 @@ import { ToolsListPage } from '../../Components/Admin/Tools/ToolsListPage'
 import { RepositoriesPage } from '../../Components/Admin/Tools/RepositoriesPage'
 import { RepositoryPage } from '../../Components/Admin/Tools/RepositoryPage'
 import { PlatformKeysPage } from '../../Components/Admin/Platforms/PlatformKeysPage'
+import { PlatformsPage } from '../../Components/Admin/Platforms/PlatformsPage'
 import { ConversationPage } from '../../Components/Conversation/ConversationPage'
 import { AiLogsPage } from '../../Components/Conversation/AiLogsPage'
 import { AiDebugSettingsPage } from '../../Components/Admin/Conversation/AiDebugSettingsPage'
@@ -67,6 +68,14 @@ export const router = createBrowserRouter([
           },
           {
             path: '/admin/platforms',
+            element: (
+              <AuthGuard scopes={[AppScopes.PlatformRead]}>
+                <PlatformsPage />
+              </AuthGuard>
+            ),
+          },
+          {
+            path: '/admin/api-keys',
             element: (
               <AuthGuard scopes={[AppScopes.PlatformRead]}>
                 <PlatformKeysPage />

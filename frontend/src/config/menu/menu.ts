@@ -33,6 +33,9 @@ const toolsIcon =
 const platformsIcon =
   '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor"><path d="M10 4l6 3-6 3-6-3 6-3z" stroke-width="1.3" stroke-linejoin="round"/><path d="M4 10l6 3 6-3" stroke-width="1.3" stroke-linejoin="round" stroke-linecap="round"/><path d="M4 13.5l6 3 6-3" stroke-width="1.3" stroke-linejoin="round" stroke-linecap="round"/></svg>'
 
+const keysIcon =
+  '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor"><circle cx="7" cy="13" r="3" stroke-width="1.3"/><path d="M9.2 10.8L16 4m-3 3 2 2m-4-1 1.5 1.5" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+
 const systemIcon =
   '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor"><circle cx="10" cy="10" r="2.5" stroke-width="1.3"/><path d="M10 3v2M10 15v2M3 10h2M15 10h2M5.05 5.05l1.4 1.4M13.55 13.55l1.4 1.4M14.95 5.05l-1.4 1.4M6.45 13.55l-1.4 1.4" stroke-width="1.3" stroke-linecap="round"/></svg>'
 
@@ -62,6 +65,7 @@ export const menuEntries: MenuEntry[] = [
     icon: aiIcon,
     children: [
       { label: 'Platform', path: '/admin/platforms', scopes: [AppScopes.PlatformRead], icon: platformsIcon },
+      { label: 'API Keys', path: '/admin/api-keys', scopes: [AppScopes.PlatformRead], icon: keysIcon },
       { label: 'Settings', path: '/admin/conversation-debug', scopes: [AppScopes.SuperAdmin] },
       { label: 'Logs', path: '/admin/conversation-logs', scopes: [AppScopes.SuperAdmin] },
     ],

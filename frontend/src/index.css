@@ -560,3 +560,32 @@ button:not(:disabled),
 [role='button']:not([aria-disabled='true']) {
   cursor: pointer;
 }
+
+/* Shared Slider (Shared/Components/Slider). A slide's text enters when the slide becomes the shown one:
+   Slider marks it data-slide-active, and every .cinqo-slide-in inside plays its entrance, one after another
+   (--i is the order). The backdrop shapes drift slowly and forever (.cinqo-slide-drift). Both stop for people
+   who ask for less motion. backwards fill: nothing is left behind when it ends. */
+@keyframes cinqo-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(22px);
+  }
+}
+[data-slide-active='true'] .cinqo-slide-in {
+  animation: cinqo-slide-in 900ms cubic-bezier(0.22, 0.61, 0.36, 1) backwards;
+  animation-delay: calc(var(--i, 0) * 110ms + 200ms);
+}
+@keyframes cinqo-slide-drift {
+  50% {
+    transform: translate3d(3%, -4%, 0) scale(1.08);
+  }
+}
+.cinqo-slide-drift {
+  animation: cinqo-slide-drift 14s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-slide-active='true'] .cinqo-slide-in,
+  .cinqo-slide-drift {
+    animation: none;
+  }
+}

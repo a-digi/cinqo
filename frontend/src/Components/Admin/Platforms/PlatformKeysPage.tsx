@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   fetchPlatforms,
   fetchPlatformKeys,
@@ -25,6 +26,9 @@ export function PlatformKeysPage() {
   const [keys, setKeys] = useState<PlatformKey[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  // /admin/api-keys?platform=openrouter (the Platforms slides' button) opens with that platform selected.
+  const [searchParams] = useSearchParams()
+  const [platform, setPlatform] = useState(() => searchParams.get('platform') ?? '')
   const { confirm, dialog } = useConfirm()
 
   const load = () => {
@@ -73,15 +77,15 @@ export function PlatformKeysPage() {
   }
 
   return (
-    <div className="cinqo-stagger cinqo-v-zoom cinqo-t-shimmer max-w-4xl space-y-6 p-6">
-      <div>
-        <h1 className="text-xl font-semibold text-gray-900">Platforms</h1>
+    <div className="cinqo-stagger cinqo-v-zoom cinqo-t-shimmer space-y-6 p-6">
+      <div className="max-w-4xl">
+        <h1 className="text-xl font-semibold text-gray-900">API Keys</h1>
         <p className="mt-1 text-sm text-gray-500">
           AI platform API keys used by conversations. Keys are encrypted at rest and only ever shown masked.
         </p>
       </div>
 
-      <div className="rounded-lg border border-gray-200">
+      <div className="max-w-4xl rounded-lg border border-gray-200">
         <table className="w-full text-left text-sm">
           <thead>
             <tr className="text-xs uppercase text-gray-400">
@@ -129,6 +133,8 @@ export function PlatformKeysPage() {
       <ScopeGate scopes={[AppScopes.PlatformManage]}>
         <AddKeyForm
           platforms={platforms}
+          platform={platform}
+          onPlatformChange={setPlatform}
           onCreated={(key) => {
             setKeys((prev) => (prev ? [key, ...prev] : [key]))
           }}
@@ -148,15 +154,18 @@ function platformName(platforms: Platform[], id: string): string {
 
 function AddKeyForm({
   platforms,
+  platform,
+  onPlatformChange,
   onCreated,
   onError,
 }: {
   platforms: Platform[]
+  platform: string
+  onPlatformChange: (id: string) => void
   onCreated: (key: PlatformKey) => void
   onError: (message: string) => void
 }) {
   const [label, setLabel] = useState('')
-  const [platform, setPlatform] = useState('')
   const [key, setKey] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
@@ -184,7 +193,7 @@ function AddKeyForm({
       onSubmit={(e) => {
         void handleSubmit(e)
       }}
-      className="rounded-lg border border-gray-200 p-4 space-y-3"
+      className="max-w-4xl space-y-3 rounded-lg border border-gray-200 p-4"
     >
       <h2 className="text-sm font-semibold text-gray-900">Add API key</h2>
       <div className="flex flex-wrap gap-3">
@@ -202,7 +211,7 @@ function AddKeyForm({
           <Dropdown
             options={platforms.map((p) => ({ value: p.id, label: p.name }))}
             value={platform}
-            onChange={setPlatform}
+            onChange={onPlatformChange}
             placeholder="Select platform…"
           />
         </div>
