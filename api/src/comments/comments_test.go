@@ -546,8 +546,8 @@ func TestPagingIsStableForIdenticalTimestamps(t *testing.T) {
 	defer raw.Close()
 	for i := 1; i <= 5; i++ {
 		if _, err := raw.Exec(
-			`INSERT INTO comments (id, entity_type, entity_id, body, author_id, created_at) VALUES (?, 'job', ?, ?, 'u', '2026-11-01T12:00:00.000Z')`,
-			fmt.Sprintf("00000000-0000-4000-8000-%012d", i), job1, fmt.Sprintf("t%d", i),
+			`INSERT INTO comments (id, root_id, entity_type, entity_id, body, author_id, created_at) VALUES (?, ?, 'job', ?, ?, 'u', '2026-11-01T12:00:00.000Z')`,
+			fmt.Sprintf("00000000-0000-4000-8000-%012d", i), fmt.Sprintf("00000000-0000-4000-8000-%012d", i), job1, fmt.Sprintf("t%d", i),
 		); err != nil {
 			t.Fatal(err)
 		}
@@ -570,5 +570,323 @@ func TestPagingIsStableForIdenticalTimestamps(t *testing.T) {
 	}
 	if got := strings.Join(seen, ","); got != "t5,t4,t3,t2,t1" {
 		t.Errorf("walked %s", got)
+	}
+}
+
+func reply(t *testing.T, s *Store, entityID, parentID, body string) Comment {
+	t.Helper()
+	c, err := s.Create(NewComment{EntityType: "job", EntityID: entityID, Body: body, AuthorID: "u1", AuthorName: "Ada", ParentID: parentID})
+	if err != nil {
+		t.Fatalf("reply(%q): %v", body, err)
+	}
+	return c
+}
+
+func TestMigrationTwoKeepsOldCommentsAsTopLevelThreads(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "db", "tools", "career", "comments.db")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := sql.Open("sqlite3", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A database as the first build left it: only migration 1, one comment.
+	if _, err := raw.Exec(migrations[0]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.Exec(`PRAGMA user_version = 1`); err != nil {
+		t.Fatal(err)
+	}
+	old := "00000000-0000-4000-8000-0000000000aa"
+	if _, err := raw.Exec(`INSERT INTO comments (id, entity_type, entity_id, body, author_id, created_at) VALUES (?, 'job', ?, 'old', 'u1', '2026-10-01T00:00:00.000Z')`, old, job1); err != nil {
+		t.Fatal(err)
+	}
+	raw.Close()
+
+	m := NewManager(dir)
+	defer m.Close()
+	s := store(t, m, "career")
+	got, err := s.Get("job", job1, old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ParentID != "" || got.Depth != 0 || got.RootID != old {
+		t.Errorf("old comment = parent %q depth %d root %q; want a top-level comment of its own thread", got.ParentID, got.Depth, got.RootID)
+	}
+	// And it can now be replied to.
+	r := reply(t, s, job1, old, "hello")
+	if r.RootID != old || r.Depth != 1 {
+		t.Errorf("reply = root %q depth %d", r.RootID, r.Depth)
+	}
+}
+
+func TestReplyFieldsFollowTheParent(t *testing.T) {
+	m, _ := testManager(t)
+	s := store(t, m, "career")
+	top := add(t, s, job1, "top")
+	if top.ParentID != "" || top.Depth != 0 || top.RootID != top.ID {
+		t.Errorf("top-level = %+v", top)
+	}
+	a := reply(t, s, job1, top.ID, "a")
+	b := reply(t, s, job1, a.ID, "b")
+	if a.ParentID != top.ID || a.Depth != 1 || a.RootID != top.ID {
+		t.Errorf("a = %+v", a)
+	}
+	if b.ParentID != a.ID || b.Depth != 2 || b.RootID != top.ID {
+		t.Errorf("b = %+v", b)
+	}
+	got, err := s.Get("job", job1, b.ID)
+	if err != nil || got.ParentID != a.ID || got.Depth != 2 || got.RootID != top.ID {
+		t.Errorf("stored b = %+v, %v", got, err)
+	}
+}
+
+func TestReplyParentMustBeACommentOfTheSameEntity(t *testing.T) {
+	m, _ := testManager(t)
+	s := store(t, m, "career")
+	other := add(t, s, job2, "on another entity")
+	for name, parent := range map[string]string{
+		"missing":      "00000000-0000-4000-8000-00000000ffff",
+		"other entity": other.ID,
+		"not a uuid":   "nope",
+		"hyphen-less":  strings.ReplaceAll(other.ID, "-", ""),
+	} {
+		_, err := s.Create(NewComment{EntityType: "job", EntityID: job1, Body: "x", AuthorID: "u1", ParentID: parent})
+		if v, ok := IsValidation(err); !ok || v.Field != "parentId" {
+			t.Errorf("%s: err = %v, want a parentId validation error", name, err)
+		}
+	}
+	// A parent in another owner's file is simply not there.
+	careerTop := add(t, s, job1, "career")
+	_, err := store(t, m, "cinqo").Create(NewComment{EntityType: "job", EntityID: job1, Body: "x", AuthorID: "u1", ParentID: careerTop.ID})
+	if v, ok := IsValidation(err); !ok || v.Field != "parentId" {
+		t.Errorf("cross-owner: err = %v", err)
+	}
+}
+
+func TestReplyDepthIsCapped(t *testing.T) {
+	m, _ := testManager(t)
+	s := store(t, m, "career")
+	c := add(t, s, job1, "level 0")
+	for d := 1; d <= MaxDepth; d++ {
+		c = reply(t, s, job1, c.ID, fmt.Sprintf("level %d", d))
+		if c.Depth != d {
+			t.Fatalf("depth = %d, want %d", c.Depth, d)
+		}
+	}
+	_, err := s.Create(NewComment{EntityType: "job", EntityID: job1, Body: "too deep", AuthorID: "u1", ParentID: c.ID})
+	if v, ok := IsValidation(err); !ok || v.Field != "parentId" || !strings.Contains(v.Message, "levels deep") {
+		t.Errorf("err = %v, want the depth error", err)
+	}
+}
+
+func TestThreadSizeIsCapped(t *testing.T) {
+	m, _ := testManager(t)
+	s := store(t, m, "career")
+	top := add(t, s, job1, "top")
+	for i := 1; i < MaxThreadSize; i++ {
+		reply(t, s, job1, top.ID, fmt.Sprintf("r%d", i))
+	}
+	_, err := s.Create(NewComment{EntityType: "job", EntityID: job1, Body: "one too many", AuthorID: "u1", ParentID: top.ID})
+	if v, ok := IsValidation(err); !ok || v.Field != "parentId" || !strings.Contains(v.Message, "full") {
+		t.Errorf("err = %v, want the thread-full error", err)
+	}
+	// Another thread of the same entity is unaffected.
+	other := add(t, s, job1, "another thread")
+	reply(t, s, job1, other.ID, "fine")
+}
+
+func TestDeleteRemovesTheWholeSubtreeOnly(t *testing.T) {
+	m, _ := testManager(t)
+	s := store(t, m, "career")
+	top := add(t, s, job1, "top")
+	a := reply(t, s, job1, top.ID, "a")
+	a1 := reply(t, s, job1, a.ID, "a1")
+	a2 := reply(t, s, job1, a1.ID, "a2")
+	b := reply(t, s, job1, top.ID, "b")
+	otherThread := add(t, s, job1, "other thread")
+	onOtherEntity := add(t, s, job2, "other entity")
+
+	n, err := s.DeleteThread("job", job1, a.ID)
+	if err != nil || n != 3 {
+		t.Fatalf("DeleteThread = %d, %v; want 3", n, err)
+	}
+	for _, gone := range []Comment{a, a1, a2} {
+		if _, err := s.Get("job", job1, gone.ID); err != ErrNotFound {
+			t.Errorf("%q should be deleted: %v", gone.Body, err)
+		}
+	}
+	for _, kept := range []Comment{top, b, otherThread} {
+		if _, err := s.Get("job", job1, kept.ID); err != nil {
+			t.Errorf("%q should remain: %v", kept.Body, err)
+		}
+	}
+	if _, err := s.Get("job", job2, onOtherEntity.ID); err != nil {
+		t.Errorf("another entity's comment must remain: %v", err)
+	}
+
+	// A leaf leaves its siblings; deleting what is already gone is not found.
+	if err := s.Delete("job", job1, b.ID); err != nil {
+		t.Errorf("delete leaf: %v", err)
+	}
+	if _, err := s.Get("job", job1, top.ID); err != nil {
+		t.Errorf("parent of a deleted leaf must remain: %v", err)
+	}
+	if err := s.Delete("job", job1, a.ID); err != ErrNotFound {
+		t.Errorf("second delete = %v, want ErrNotFound", err)
+	}
+	// Only through its own entity.
+	if err := s.Delete("job", job2, top.ID); err != ErrNotFound {
+		t.Errorf("delete under the wrong entity = %v, want ErrNotFound", err)
+	}
+}
+
+func TestDatabaseEnforcesDepthItself(t *testing.T) {
+	m, dir := testManager(t)
+	store(t, m, "career")
+	raw, _ := sql.Open("sqlite3", filepath.Join(dir, "db", "tools", "career", "comments.db"))
+	defer raw.Close()
+	_, err := raw.Exec(`INSERT INTO comments (id, entity_type, entity_id, body, author_id, created_at, depth) VALUES ('x','job','y','b','u','t', 6)`)
+	if err == nil {
+		t.Error("the CHECK constraint did not refuse depth 6")
+	}
+}
+
+func TestRepliesShowDirectlyBelowTheirParent(t *testing.T) {
+	m, _ := testManager(t)
+	s := store(t, m, "career")
+	t1 := add(t, s, job1, "t1")
+	a := reply(t, s, job1, t1.ID, "a")
+	t2 := add(t, s, job1, "t2")
+	b := reply(t, s, job1, t1.ID, "b")
+	reply(t, s, job1, a.ID, "a1")
+	reply(t, s, job1, t2.ID, "c")
+	reply(t, s, job1, b.ID, "b1")
+	reply(t, s, job1, a.ID, "a2")
+
+	page, err := s.List("job", job1, ListOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Threads newest first; inside, depth-first with replies oldest first.
+	if got, want := bodies(page), "t2,c,t1,a,a1,a2,b,b1"; got != want {
+		t.Errorf("order = %s, want %s", got, want)
+	}
+	depths := map[string]int{"t1": 0, "a": 1, "a1": 2, "b": 1, "b1": 2}
+	for _, c := range page.Comments {
+		if want, ok := depths[c.Body]; ok && c.Depth != want {
+			t.Errorf("%s depth = %d, want %d", c.Body, c.Depth, want)
+		}
+		if c.Context {
+			t.Errorf("%s is context without a filter", c.Body)
+		}
+	}
+	if page.Total != 8 || page.NextBefore != "" {
+		t.Errorf("total = %d, next = %q", page.Total, page.NextBefore)
+	}
+}
+
+func TestPagingCountsThreadsAndNeverSplitsOne(t *testing.T) {
+	m, _ := testManager(t)
+	s := store(t, m, "career")
+	var tops []Comment
+	for i := 1; i <= 5; i++ {
+		top := add(t, s, job1, fmt.Sprintf("t%d", i))
+		tops = append(tops, top)
+		reply(t, s, job1, top.ID, fmt.Sprintf("t%d-r1", i))
+		reply(t, s, job1, top.ID, fmt.Sprintf("t%d-r2", i))
+	}
+	var walked []string
+	before := ""
+	for i := 0; i < 6; i++ {
+		page, err := s.List("job", job1, ListOptions{Limit: 2, Before: before})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(page.Comments) != 0 && page.NextBefore != "" && len(page.Comments) != 6 {
+			t.Errorf("page %d has %d comments, want 2 whole threads of 3", i, len(page.Comments))
+		}
+		walked = append(walked, bodies(page))
+		if page.NextBefore == "" {
+			break
+		}
+		before = page.NextBefore
+	}
+	want := "t5,t5-r1,t5-r2,t4,t4-r1,t4-r2|t3,t3-r1,t3-r2,t2,t2-r1,t2-r2|t1,t1-r1,t1-r2"
+	if got := strings.Join(walked, "|"); got != want {
+		t.Errorf("walked %s, want %s", got, want)
+	}
+
+	// A reply's id works as a cursor and means its thread.
+	r := reply(t, s, job1, tops[2].ID, "late reply to t3")
+	page, err := s.List("job", job1, ListOptions{Limit: 10, Before: r.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := bodies(page); got != "t2,t2-r1,t2-r2,t1,t1-r1,t1-r2" {
+		t.Errorf("after a reply cursor: %s", got)
+	}
+}
+
+func TestFiltersKeepAncestorsAsContext(t *testing.T) {
+	m, _ := testManager(t)
+	s := store(t, m, "career")
+	mk := func(parent, author, body string) Comment {
+		c, err := s.Create(NewComment{EntityType: "job", EntityID: job1, Body: body, AuthorID: author, ParentID: parent})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c
+	}
+	t1 := mk("", "ann", "t1")
+	a := mk(t1.ID, "bob", "a")
+	mk(a.ID, "ann", "a1") // the only match in thread 1
+	mk("", "bob", "t2")   // a thread with no match at all
+	t3 := mk("", "ann", "t3")
+	mk(t3.ID, "bob", "t3-r")
+
+	page, err := s.List("job", job1, ListOptions{AuthorID: "ann"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := bodies(page), "t3,t1,a,a1"; got != want {
+		t.Fatalf("order = %s, want %s", got, want)
+	}
+	ctx := map[string]bool{}
+	for _, c := range page.Comments {
+		ctx[c.Body] = c.Context
+	}
+	if ctx["a"] != true || ctx["t1"] || ctx["a1"] || ctx["t3"] {
+		t.Errorf("context flags = %v; only a (bob's, shown for ann's reply) is context", ctx)
+	}
+	if page.Total != 3 {
+		t.Errorf("total = %d, want the 3 matches (t1, a1, t3)", page.Total)
+	}
+
+	// A date range works the same way and combines with paging by thread.
+	page, err = s.List("job", job1, ListOptions{AuthorID: "ann", Limit: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bodies(page) != "t3" || page.NextBefore == "" {
+		t.Errorf("first page = %s next %q", bodies(page), page.NextBefore)
+	}
+	page, err = s.List("job", job1, ListOptions{AuthorID: "ann", Limit: 1, Before: page.NextBefore})
+	if err != nil || bodies(page) != "t1,a,a1" || page.NextBefore != "" {
+		t.Errorf("second page = %s next %q, %v", bodies(page), page.NextBefore, err)
+	}
+}
+
+func TestListRejectsACursorFromAnotherEntityOrAThatNeverExisted(t *testing.T) {
+	m, _ := testManager(t)
+	s := store(t, m, "career")
+	other := add(t, s, job2, "elsewhere")
+	for _, before := range []string{other.ID, "00000000-0000-4000-8000-00000000ffff"} {
+		_, err := s.List("job", job1, ListOptions{Before: before})
+		if v, ok := IsValidation(err); !ok || v.Field != "before" {
+			t.Errorf("before %s: err = %v", before, err)
+		}
 	}
 }

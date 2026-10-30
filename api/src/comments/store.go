@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -36,12 +37,24 @@ var migrations = []string{
 		updated_at  TEXT
 	);
 	CREATE INDEX IF NOT EXISTS idx_comments_entity ON comments (entity_type, entity_id, created_at);`,
+	// Replies: a comment may have a parent. root_id is the thread's top-level comment
+	// (its own id for a top-level one) and depth how far down it is; both are written
+	// once at creation, from the parent, and never change. Existing comments are
+	// top-level comments of their own threads. See plan/ai/comments/comment-replies.md.
+	`ALTER TABLE comments ADD COLUMN parent_id TEXT;
+	ALTER TABLE comments ADD COLUMN root_id TEXT NOT NULL DEFAULT '';
+	ALTER TABLE comments ADD COLUMN depth INTEGER NOT NULL DEFAULT 0 CHECK (depth BETWEEN 0 AND 5);
+	UPDATE comments SET root_id = id;
+	CREATE INDEX IF NOT EXISTS idx_comments_root ON comments (entity_type, entity_id, root_id);
+	CREATE INDEX IF NOT EXISTS idx_comments_parent ON comments (parent_id);`,
 }
 
 // timeFormat is fixed-width UTC with milliseconds, so text order is time order.
 const timeFormat = "2006-01-02T15:04:05.000Z"
 
-// Comment is one stored comment. UpdatedAt is empty until it is edited.
+// Comment is one stored comment. UpdatedAt is empty until it is edited. ParentID is
+// empty for a top-level comment; Depth is 0 for one and its parent's depth + 1 for
+// a reply. RootID (the top-level comment of the thread) is internal.
 type Comment struct {
 	ID         string `json:"id"`
 	EntityType string `json:"entityType"`
@@ -51,6 +64,12 @@ type Comment struct {
 	AuthorName string `json:"authorName"`
 	CreatedAt  string `json:"createdAt"`
 	UpdatedAt  string `json:"updatedAt"`
+	ParentID   string `json:"parentId"`
+	Depth      int    `json:"depth"`
+	RootID     string `json:"-"`
+	// Context is true only for a comment shown because a reply below it matched the
+	// list's filters, not because it matched itself.
+	Context bool `json:"context"`
 }
 
 // NewComment is what a caller supplies to add one. The author comes from the
@@ -61,10 +80,15 @@ type NewComment struct {
 	Body       string
 	AuthorID   string
 	AuthorName string
+	// ParentID is the comment replied to ("" for a top-level comment). It must be a
+	// comment of the same entity.
+	ParentID string
 }
 
-// Page is one page of an entity's comments, newest first. NextBefore is the id to
-// pass as `before` for the next (older) page, empty when there is none.
+// Page is one page of an entity's comments: whole threads, newest thread first, each
+// thread depth-first with replies oldest first, so a reply always follows its
+// parent. NextBefore is the id to pass as `before` for the next (older) page of
+// threads, empty when there is none.
 type Page struct {
 	Comments   []Comment `json:"comments"`
 	Total      int       `json:"total"`
@@ -145,11 +169,11 @@ func migrate(db *sql.DB) error {
 	return nil
 }
 
-const columns = `id, entity_type, entity_id, body, author_id, author_name, created_at, COALESCE(updated_at, '')`
+const columns = `id, entity_type, entity_id, body, author_id, author_name, created_at, COALESCE(updated_at, ''), COALESCE(parent_id, ''), depth, root_id`
 
 func scan(row interface{ Scan(...any) error }) (Comment, error) {
 	var c Comment
-	err := row.Scan(&c.ID, &c.EntityType, &c.EntityID, &c.Body, &c.AuthorID, &c.AuthorName, &c.CreatedAt, &c.UpdatedAt)
+	err := row.Scan(&c.ID, &c.EntityType, &c.EntityID, &c.Body, &c.AuthorID, &c.AuthorName, &c.CreatedAt, &c.UpdatedAt, &c.ParentID, &c.Depth, &c.RootID)
 	return c, err
 }
 
@@ -172,14 +196,61 @@ func (s *Store) Create(in NewComment) (Comment, error) {
 		return Comment{}, err
 	}
 
+	var parentID string
+	if strings.TrimSpace(in.ParentID) != "" {
+		if parentID, err = canonicalUUID("parentId", strings.TrimSpace(in.ParentID)); err != nil {
+			return Comment{}, err
+		}
+	}
+
 	c := Comment{
 		ID: s.newID(), EntityType: entityType, EntityID: entityID, Body: body,
 		AuthorID: authorID, AuthorName: authorName, CreatedAt: s.nextCreatedAt(),
+		ParentID: parentID,
 	}
-	if _, err := s.db.Exec(
-		`INSERT INTO comments (id, entity_type, entity_id, body, author_id, author_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		c.ID, c.EntityType, c.EntityID, c.Body, c.AuthorID, c.AuthorName, c.CreatedAt,
+	c.RootID = c.ID
+
+	// One transaction, so a parent deleted meanwhile cannot get a reply.
+	tx, err := s.db.Begin()
+	if err != nil {
+		return Comment{}, fmt.Errorf("store comment: %w", err)
+	}
+	defer tx.Rollback()
+	if parentID != "" {
+		parent, err := scan(tx.QueryRow(
+			`SELECT `+columns+` FROM comments WHERE id = ? AND entity_type = ? AND entity_id = ?`, parentID, entityType, entityID,
+		))
+		if errors.Is(err, sql.ErrNoRows) {
+			return Comment{}, invalid("parentId", "is not a comment of this entity")
+		}
+		if err != nil {
+			return Comment{}, fmt.Errorf("store comment: %w", err)
+		}
+		if parent.Depth+1 > MaxDepth {
+			return Comment{}, invalid("parentId", fmt.Sprintf("replies can go at most %d levels deep", MaxDepth))
+		}
+		var inThread int
+		if err := tx.QueryRow(
+			`SELECT COUNT(*) FROM comments WHERE entity_type = ? AND entity_id = ? AND root_id = ?`, entityType, entityID, parent.RootID,
+		).Scan(&inThread); err != nil {
+			return Comment{}, fmt.Errorf("store comment: %w", err)
+		}
+		if inThread >= MaxThreadSize {
+			return Comment{}, invalid("parentId", fmt.Sprintf("this thread is full (%d comments)", MaxThreadSize))
+		}
+		c.RootID, c.Depth = parent.RootID, parent.Depth+1
+	}
+	var parent any // NULL for a top-level comment
+	if parentID != "" {
+		parent = parentID
+	}
+	if _, err := tx.Exec(
+		`INSERT INTO comments (id, entity_type, entity_id, body, author_id, author_name, created_at, parent_id, root_id, depth) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		c.ID, c.EntityType, c.EntityID, c.Body, c.AuthorID, c.AuthorName, c.CreatedAt, parent, c.RootID, c.Depth,
 	); err != nil {
+		return Comment{}, fmt.Errorf("store comment: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
 		return Comment{}, fmt.Errorf("store comment: %w", err)
 	}
 	return c, nil
@@ -202,11 +273,13 @@ func (s *Store) Get(entityType, entityID, id string) (Comment, error) {
 }
 
 // ListOptions shapes one List call. The zero value means "the newest
-// DefaultPageSize comments, unfiltered".
+// DefaultPageSize threads, unfiltered".
 type ListOptions struct {
-	// Limit <= 0 means DefaultPageSize; it is capped at MaxPageSize.
+	// Limit is the number of threads (top-level comments with everything under
+	// them); <= 0 means DefaultPageSize, and it is capped at MaxPageSize.
 	Limit int
-	// Before is the id of the last comment of the previous page ("" for the first).
+	// Before is the id of a comment of the last thread of the previous page ("" for
+	// the first page); the page continues with the threads older than that one.
 	Before string
 	// AuthorID keeps only comments written by this user (the token subject).
 	AuthorID string
@@ -231,9 +304,60 @@ func parseBound(field, s string) (string, error) {
 	return "", invalid(field, "must be an RFC 3339 timestamp or a date (YYYY-MM-DD)")
 }
 
-// List returns one page of an entity's comments, newest first, optionally
-// filtered by author and creation time (see ListOptions). Total counts the
-// comments that match the filters, not just this page.
+// filter is the validated author / time conditions of a List call.
+type filter struct {
+	author   string
+	from, to string
+}
+
+func (f filter) active() bool { return f.author != "" || f.from != "" || f.to != "" }
+
+// sql returns the conditions (each starting with " AND ") for columns of the given
+// table alias ("" or "m."), and their arguments. Empty when no filter is set.
+func (f filter) sql(alias string) (string, []any) {
+	var out string
+	var args []any
+	if f.author != "" {
+		out += ` AND ` + alias + `author_id = ?`
+		args = append(args, f.author)
+	}
+	if f.from != "" {
+		out += ` AND ` + alias + `created_at >= ?`
+		args = append(args, f.from)
+	}
+	if f.to != "" {
+		out += ` AND ` + alias + `created_at < ?`
+		args = append(args, f.to)
+	}
+	return out, args
+}
+
+func newFilter(opts ListOptions) (filter, error) {
+	var f filter
+	if author := strings.TrimSpace(opts.AuthorID); author != "" {
+		if utf8.RuneCountInString(author) > maxAuthorIDRunes || strings.ContainsRune(author, 0) {
+			return f, invalid("authorId", "is not valid")
+		}
+		f.author = author
+	}
+	var err error
+	if f.from, err = parseBound("createdFrom", opts.CreatedFrom); err != nil {
+		return f, err
+	}
+	if f.to, err = parseBound("createdTo", opts.CreatedTo); err != nil {
+		return f, err
+	}
+	if f.from != "" && f.to != "" && f.from >= f.to {
+		return f, invalid("createdTo", "must be after createdFrom")
+	}
+	return f, nil
+}
+
+// List returns one page of an entity's comments as whole threads (see Page),
+// optionally filtered by author and creation time (see ListOptions). With a filter,
+// a thread is shown when any comment in it matches, and the page keeps the matches
+// plus their ancestors (marked Context) so a reply is never shown without its
+// parent. Total counts the comments that match the filters, in the whole entity.
 func (s *Store) List(entityType, entityID string, opts ListOptions) (Page, error) {
 	entityType, err := cleanEntityType(entityType)
 	if err != nil {
@@ -250,77 +374,156 @@ func (s *Store) List(entityType, entityID string, opts ListOptions) (Page, error
 	if limit > MaxPageSize {
 		limit = MaxPageSize
 	}
-
-	where := ` WHERE entity_type = ? AND entity_id = ?`
-	args := []any{entityType, entityID}
-
-	if author := strings.TrimSpace(opts.AuthorID); author != "" {
-		if utf8.RuneCountInString(author) > maxAuthorIDRunes || strings.ContainsRune(author, 0) {
-			return Page{}, invalid("authorId", "is not valid")
-		}
-		where += ` AND author_id = ?`
-		args = append(args, author)
-	}
-	from, err := parseBound("createdFrom", opts.CreatedFrom)
+	f, err := newFilter(opts)
 	if err != nil {
 		return Page{}, err
-	}
-	to, err := parseBound("createdTo", opts.CreatedTo)
-	if err != nil {
-		return Page{}, err
-	}
-	if from != "" && to != "" && from >= to {
-		return Page{}, invalid("createdTo", "must be after createdFrom")
-	}
-	if from != "" {
-		where += ` AND created_at >= ?`
-		args = append(args, from)
-	}
-	if to != "" {
-		where += ` AND created_at < ?`
-		args = append(args, to)
 	}
 
 	page := Page{Comments: []Comment{}}
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM comments`+where, args...).Scan(&page.Total); err != nil {
+	plain, plainArgs := f.sql("")
+	if err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM comments WHERE entity_type = ? AND entity_id = ?`+plain,
+		append([]any{entityType, entityID}, plainArgs...)...,
+	).Scan(&page.Total); err != nil {
 		return Page{}, err
 	}
 
+	// Which threads: top-level comments, newest first, that have a matching comment
+	// somewhere in their thread, after the cursor's thread.
+	inThread, threadArgs := f.sql("m.")
+	query := `SELECT r.id FROM comments r WHERE r.entity_type = ? AND r.entity_id = ? AND r.parent_id IS NULL` +
+		` AND EXISTS (SELECT 1 FROM comments m WHERE m.entity_type = r.entity_type AND m.entity_id = r.entity_id AND m.root_id = r.id` + inThread + `)`
+	args := append([]any{entityType, entityID}, threadArgs...)
 	if opts.Before != "" {
 		anchor, err := s.Get(entityType, entityID, opts.Before)
+		if err == nil && anchor.ParentID != "" {
+			anchor, err = s.Get(entityType, entityID, anchor.RootID)
+		}
 		if _, bad := IsValidation(err); bad || errors.Is(err, ErrNotFound) {
 			return Page{}, invalid("before", "is not a comment of this entity")
 		}
 		if err != nil {
 			return Page{}, err
 		}
-		where += ` AND (created_at < ? OR (created_at = ? AND id < ?))`
+		query += ` AND (r.created_at < ? OR (r.created_at = ? AND r.id < ?))`
 		args = append(args, anchor.CreatedAt, anchor.CreatedAt, anchor.ID)
 	}
-	// One extra row tells whether another page exists.
-	query := `SELECT ` + columns + ` FROM comments` + where + ` ORDER BY created_at DESC, id DESC LIMIT ?`
+	// One extra row tells whether another page of threads exists.
+	query += ` ORDER BY r.created_at DESC, r.id DESC LIMIT ?`
 	args = append(args, limit+1)
+	roots, err := s.queryIDs(query, args...)
+	if err != nil {
+		return Page{}, err
+	}
+	if len(roots) > limit {
+		roots = roots[:limit]
+		page.NextBefore = roots[limit-1]
+	}
+	if len(roots) == 0 {
+		return page, nil
+	}
 
-	rows, err := s.db.Query(query, args...)
+	// Their comments (all of each thread; arrangeThreads applies the filters).
+	marks := strings.TrimSuffix(strings.Repeat("?, ", len(roots)), ", ")
+	rowArgs := []any{entityType, entityID}
+	for _, id := range roots {
+		rowArgs = append(rowArgs, id)
+	}
+	rows, err := s.db.Query(`SELECT `+columns+` FROM comments WHERE entity_type = ? AND entity_id = ? AND root_id IN (`+marks+`)`, rowArgs...)
 	if err != nil {
 		return Page{}, err
 	}
 	defer rows.Close()
+	var all []Comment
 	for rows.Next() {
 		c, err := scan(rows)
 		if err != nil {
 			return Page{}, err
 		}
-		page.Comments = append(page.Comments, c)
+		all = append(all, c)
 	}
 	if err := rows.Err(); err != nil {
 		return Page{}, err
 	}
-	if len(page.Comments) > limit {
-		page.Comments = page.Comments[:limit]
-		page.NextBefore = page.Comments[limit-1].ID
-	}
+	page.Comments = arrangeThreads(all, roots, f, plainMatcher(f))
 	return page, nil
+}
+
+// plainMatcher reports whether a comment satisfies the filters by itself.
+func plainMatcher(f filter) func(Comment) bool {
+	return func(c Comment) bool {
+		return (f.author == "" || c.AuthorID == f.author) &&
+			(f.from == "" || c.CreatedAt >= f.from) &&
+			(f.to == "" || c.CreatedAt < f.to)
+	}
+}
+
+func (s *Store) queryIDs(query string, args ...any) ([]string, error) {
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// arrangeThreads puts the comments in display order: threads in the order of roots
+// (newest first), each depth-first with siblings oldest first, so every reply is
+// directly below its parent. With a filter only matching comments and their
+// ancestors are kept, the ancestors that do not match marked Context.
+func arrangeThreads(all []Comment, roots []string, f filter, matches func(Comment) bool) []Comment {
+	byID := make(map[string]Comment, len(all))
+	for _, c := range all {
+		byID[c.ID] = c
+	}
+	keep := make(map[string]bool, len(all))
+	for _, c := range all {
+		if f.active() && !matches(c) {
+			continue
+		}
+		// Keep the match and every ancestor, so no reply is shown without its parent.
+		for cur, ok := c, true; ok && !keep[cur.ID]; cur, ok = byID[cur.ParentID] {
+			keep[cur.ID] = true
+		}
+	}
+	children := make(map[string][]Comment)
+	for _, c := range all {
+		if keep[c.ID] {
+			children[c.ParentID] = append(children[c.ParentID], c)
+		}
+	}
+	for _, kids := range children {
+		sort.Slice(kids, func(i, j int) bool {
+			if kids[i].CreatedAt != kids[j].CreatedAt {
+				return kids[i].CreatedAt < kids[j].CreatedAt
+			}
+			return kids[i].ID < kids[j].ID
+		})
+	}
+	out := make([]Comment, 0, len(all))
+	var walk func(c Comment)
+	walk = func(c Comment) {
+		// Kept without matching itself: shown only as the parent of a match.
+		c.Context = f.active() && !matches(c)
+		out = append(out, c)
+		for _, kid := range children[c.ID] {
+			walk(kid)
+		}
+	}
+	for _, id := range roots {
+		if root, ok := byID[id]; ok && keep[id] {
+			walk(root)
+		}
+	}
+	return out
 }
 
 // Update replaces a comment's text and stamps updated_at. Who may do this is the
@@ -347,20 +550,37 @@ func (s *Store) Update(entityType, entityID, id, body string) (Comment, error) {
 	return s.Get(entityType, entityID, id)
 }
 
-// Delete removes one comment of the given entity.
+// Delete removes one comment of the given entity together with all its replies.
 func (s *Store) Delete(entityType, entityID, id string) error {
+	_, err := s.DeleteThread(entityType, entityID, id)
+	return err
+}
+
+// DeleteThread is Delete that also says how many comments went (the comment and
+// every reply under it, at any depth).
+func (s *Store) DeleteThread(entityType, entityID, id string) (int, error) {
 	entityType, entityID, id, err := cleanKey(entityType, entityID, id)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	res, err := s.db.Exec(`DELETE FROM comments WHERE id = ? AND entity_type = ? AND entity_id = ?`, id, entityType, entityID)
+	res, err := s.db.Exec(
+		`DELETE FROM comments WHERE entity_type = ? AND entity_id = ? AND id IN (
+			WITH RECURSIVE subtree(id) AS (
+				SELECT id FROM comments WHERE id = ? AND entity_type = ? AND entity_id = ?
+				UNION ALL
+				SELECT c.id FROM comments c JOIN subtree ON c.parent_id = subtree.id
+				WHERE c.entity_type = ? AND c.entity_id = ?
+			) SELECT id FROM subtree)`,
+		entityType, entityID, id, entityType, entityID, entityType, entityID,
+	)
 	if err != nil {
-		return fmt.Errorf("delete comment: %w", err)
+		return 0, fmt.Errorf("delete comment: %w", err)
 	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return ErrNotFound
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return 0, ErrNotFound
 	}
-	return nil
+	return int(n), nil
 }
 
 // PurgeEntity removes every comment of one entity (it no longer exists) and says

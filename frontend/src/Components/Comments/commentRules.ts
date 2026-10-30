@@ -43,6 +43,63 @@ export function relativeTime(now: Date, iso: string): string {
   return then.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
+// How many levels of replies the server allows (a top-level comment is depth 0).
+export const MAX_DEPTH = 5
+
+// How many indentation steps a comment is drawn at: its depth, kept within what the
+// server allows so a bad value can never push a row off the screen.
+export function indentLevel(depth: number): number {
+  if (!Number.isFinite(depth)) return 0
+  return Math.max(0, Math.min(MAX_DEPTH, Math.floor(depth)))
+}
+
+// Whether a comment can be replied to: not one shown only for context, and not at the
+// deepest level.
+export function canReplyTo(c: Pick<Comment, 'depth' | 'context'>): boolean {
+  return !c.context && c.depth < MAX_DEPTH
+}
+
+type Threaded = Pick<Comment, 'id' | 'depth'>
+
+// Where a comment's subtree ends: the index after the last comment below it (the
+// comments are in display order, so its replies are the deeper run right after it).
+function subtreeEnd(list: Threaded[], index: number): number {
+  let end = index + 1
+  while (end < list.length && list[end].depth > list[index].depth) end++
+  return end
+}
+
+// Puts a new reply after the last comment of its parent's subtree (so it is the
+// parent's newest reply, as the server orders them). A parent that is not shown puts
+// it at the top.
+export function insertReply<T extends Threaded & { parentId: string }>(list: T[], reply: T): T[] {
+  const at = list.findIndex((c) => c.id === reply.parentId)
+  if (at === -1) return [reply, ...list]
+  const end = subtreeEnd(list, at)
+  return [...list.slice(0, end), reply, ...list.slice(end)]
+}
+
+// Drops a comment and everything below it.
+export function removeThread<T extends Threaded>(list: T[], id: string): T[] {
+  const at = list.findIndex((c) => c.id === id)
+  if (at === -1) return list
+  return [...list.slice(0, at), ...list.slice(subtreeEnd(list, at))]
+}
+
+// How many replies are shown below a comment, at any depth.
+export function replyCount(list: Threaded[], id: string): number {
+  const at = list.findIndex((c) => c.id === id)
+  return at === -1 ? 0 : subtreeEnd(list, at) - at - 1
+}
+
+// The delete question: says how many replies go with the comment. When a filter is on
+// the replies shown are only some of them, so the wording does not promise a number.
+export function deleteMessage(shownReplies: number, filtered: boolean): string {
+  if (filtered) return 'Delete this comment and any replies to it? This cannot be undone.'
+  if (shownReplies === 0) return 'Delete this comment? This cannot be undone.'
+  return `Delete this comment and its ${shownReplies} ${shownReplies === 1 ? 'reply' : 'replies'}? This cannot be undone.`
+}
+
 // Appends an older page to what is already shown, dropping anything already there.
 export function mergeOlder(existing: Comment[], older: Comment[]): Comment[] {
   const seen = new Set(existing.map((c) => c.id))

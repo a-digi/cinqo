@@ -207,7 +207,7 @@ window.__cinqoToolBridge.registerDashboardWidget({
 Cinqo has a comments engine: your tool can let people comment on its own things (a
 Career job, an invoice, a ticket) without any storage, API or UI of its own. You say
 which entities can be commented on, drop one line of code into the page that shows an
-entity, and Cinqo draws the whole panel: list, add, edit, delete and filters.
+entity, and Cinqo draws the whole panel: list, add, reply, edit, delete and filters.
 
 Where the comments live: in Cinqo, in a database that belongs to **your tool alone**
 (`<data>/db/tools/<your slug>/comments.db`). No other tool's or the system's comments are
@@ -265,9 +265,9 @@ unmount()
 | Action | Needs |
 |---|---|
 | See the comments | `read_scope` |
-| Add a comment | `write_scope` |
+| Add a comment, or reply to one | `write_scope` |
 | Edit a comment | being its author, and still holding `write_scope` (nobody rewrites someone else's words, not even an administrator) |
-| Delete a comment | being its author (holding `write_scope`), or `cinqo:super:admin` |
+| Delete a comment | being its author (holding `write_scope`), or `cinqo:super:admin`; this also deletes every reply under it |
 
 A user without `read_scope` gets "not found" for everything, the same answer as for a type that
 does not exist, so nothing about the comments is revealed (the panel shows an error instead of
@@ -302,14 +302,20 @@ req.Header.Set("Content-Type", "application/json")
 ### 5. Behaviour to know about
 
 - **Plain text only**, 1 to 4000 characters, shown exactly as written (never interpreted as HTML
-  or markdown). Comments are flat: no replies, mentions, reactions or attachments.
-- **Newest first**, 20 at a time with a "Show older comments" button.
+  or markdown). No mentions, reactions or attachments.
+- **Replies:** a comment can be replied to, and so can a reply, up to 5 levels deep. A reply is always
+  shown directly below its parent, stepped in by its depth. A thread (a top-level comment and
+  everything under it) holds at most 200 comments. A reply cannot be moved to another parent, and
+  deleting a comment deletes its replies too; the panel says how many before it does.
+- **Newest thread first**, 20 threads at a time with a "Show older comments" button. Inside a thread
+  the replies run oldest first, like a conversation.
 - **Author:** the id of the signed-in user, taken from their login (never from anything the page
   sends). Shown name: Cinqo's login tokens carry only an id, so the name comes from the profile the
   identity provider returned at sign-in; when there is none the panel shows "User". That name is a
   label only: it is not verified, and no permission ever depends on it.
 - **Filters** in the panel: Everyone / Only mine, and a From / To date (the viewer's own days; the
-  To day is included in full).
+  To day is included in full). A reply that matches is shown with its parents so it is never
+  orphaned; a parent that does not match itself is dimmed and marked "shown for context".
 - Comments are visible to everyone who may read the entity; there are no private comments.
 - Cinqo does not check that the UUID belongs to a real entity of yours; it trusts your page to
   mount the panel only for entities that exist, and your backend to purge when they are deleted.
@@ -321,14 +327,15 @@ purge.
 
 | Route | |
 |---|---|
-| `GET /api/v1/comments/{owner}/{entityType}/{entityId}` | List. Optional `limit` (max 100), `before` (a comment id, for the next older page), `authorId` (a user id, exact), `createdFrom` (inclusive) and `createdTo` (exclusive) as RFC 3339 timestamps or `YYYY-MM-DD`. Answers `{comments, total, nextBefore}`; `total` counts what matches the filters. |
-| `POST` the same path, body `{"body": "…"}` | Add a comment. |
+| `GET /api/v1/comments/{owner}/{entityType}/{entityId}` | List. Optional `limit` (max 100), `before` (a comment id, for the next older page of threads; `limit` counts threads), `authorId` (a user id, exact), `createdFrom` (inclusive) and `createdTo` (exclusive) as RFC 3339 timestamps or `YYYY-MM-DD`. Answers `{comments, total, nextBefore, canCreate}` with whole threads in display order (replies directly below their parent); `total` counts the comments that match the filters. |
+| `POST` the same path, body `{"body": "…"}` or `{"body": "…", "parentId": "<comment id>"}` | Add a comment, or a reply to that comment of the same entity. |
 | `PATCH …/{entityId}/{commentId}`, body `{"body": "…"}` | Edit one (the author). |
-| `DELETE …/{entityId}/{commentId}` | Delete one. |
+| `DELETE …/{entityId}/{commentId}` | Delete one, with all its replies. |
 | `POST /api/v1/comments/purge` | Tool only (`ToolService` token): remove all comments of an entity. |
 
 Each comment comes back with `id, entityType, entityId, body, authorId, authorName, createdAt,
-updatedAt` and `canEdit` / `canDelete` for the caller.
+updatedAt, parentId` (empty for a top-level comment), `depth` (0 for one) and `context` (true for a comment shown only
+because a reply below it matched a filter), and `canEdit` / `canDelete` for the caller.
 
 ### 7. Check it
 

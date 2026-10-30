@@ -149,7 +149,10 @@ export function JobDetailsPage() {
             )}
           </div>
 
-          <div className="mt-6">
+          {/* Room below the panel: the app's floating chat button sits over the bottom
+              corner of the page, and a reply box opened on the last comment needs space
+              to scroll into view above it. */}
+          <div className="mt-6 pb-24">
             <JobComments jobId={job.id} />
           </div>
         </>

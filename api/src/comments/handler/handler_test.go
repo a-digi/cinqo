@@ -396,3 +396,105 @@ func TestInternalFailuresAre500NotAPermissionAnswer(t *testing.T) {
 		t.Error("the failure was not logged")
 	}
 }
+
+func (e *env) reply(t *testing.T, w identity, parent, text string) result {
+	t.Helper()
+	return e.create(w, "career", "job", job1, `{"body":"`+text+`","parentId":"`+parent+`"}`)
+}
+
+func TestReplyOverTheAPI(t *testing.T) {
+	e := newEnv(t)
+	top := e.add(t, ada, "top")
+
+	r := e.reply(t, grace, top, "a reply")
+	if r.code != http.StatusCreated {
+		t.Fatalf("%d %v", r.code, r.out)
+	}
+	c := r.message()
+	if c["parentId"] != top || c["depth"] != float64(1) || c["authorId"] != "grace-id" || c["context"] != false {
+		t.Errorf("reply = %v", c)
+	}
+	if _, leaked := c["rootId"]; leaked {
+		t.Errorf("the internal root id must not be in the response: %v", c)
+	}
+	nested := e.reply(t, ada, c["id"].(string), "reply to the reply")
+	if nested.code != http.StatusCreated || nested.message()["depth"] != float64(2) {
+		t.Errorf("nested = %d %v", nested.code, nested.out)
+	}
+
+	// A top-level comment has an empty parent, and null means the same as leaving it out.
+	if got := e.create(ada, "career", "job", job1, `{"body":"x","parentId":null}`); got.code != http.StatusCreated || got.message()["parentId"] != "" {
+		t.Errorf("null parent = %d %v", got.code, got.out)
+	}
+
+	// The list shows the reply below its parent, with depth and parent id.
+	list := e.list(ada, "career", "job", job1, "").message()["comments"].([]any)
+	var order []string
+	for _, item := range list {
+		order = append(order, item.(map[string]any)["body"].(string))
+	}
+	if got := strings.Join(order, ","); got != "x,top,a reply,reply to the reply" {
+		t.Errorf("order = %s", got)
+	}
+}
+
+func TestReplyPermissions(t *testing.T) {
+	e := newEnv(t)
+	top := e.add(t, ada, "top")
+	if r := e.reply(t, reader, top, "x"); r.code != http.StatusForbidden {
+		t.Errorf("read-only user: %d %v", r.code, r.out)
+	}
+	if r := e.reply(t, nobody, top, "x"); r.code != http.StatusNotFound {
+		t.Errorf("no read scope: %d %v", r.code, r.out)
+	}
+	if got := e.list(ada, "career", "job", job1, "").message()["total"]; got != float64(1) {
+		t.Errorf("a refused reply stored something: total %v", got)
+	}
+}
+
+func TestReplyBadRequests(t *testing.T) {
+	e := newEnv(t)
+	top := e.add(t, ada, "top")
+	other := e.create(ada, "career", "job", job2, `{"body":"elsewhere"}`).message()["id"].(string)
+	deep := top
+	for i := 0; i < comments.MaxDepth; i++ {
+		deep = e.reply(t, ada, deep, "level").message()["id"].(string)
+	}
+	for name, r := range map[string]result{
+		"not a uuid":      e.reply(t, ada, "nope", "x"),
+		"missing parent":  e.reply(t, ada, "00000000-0000-4000-8000-00000000ffff", "x"),
+		"another entity":  e.reply(t, ada, other, "x"),
+		"too deep":        e.reply(t, ada, deep, "x"),
+		"parent not text": e.create(ada, "career", "job", job1, `{"body":"x","parentId":5}`),
+	} {
+		if r.code != http.StatusBadRequest {
+			t.Errorf("%s: %d %v", name, r.code, r.out)
+		}
+	}
+	if r := e.reply(t, ada, "nope", "x"); !strings.Contains(r.errText(), "parentId") {
+		t.Errorf("the error should name the field: %q", r.errText())
+	}
+}
+
+func TestEditKeepsTheParentAndDeleteTakesTheReplies(t *testing.T) {
+	e := newEnv(t)
+	top := e.add(t, ada, "top")
+	a := e.reply(t, grace, top, "a").message()["id"].(string)
+	e.reply(t, ada, a, "a1")
+	other := e.add(t, ada, "other thread")
+
+	// Editing cannot move a reply: a parentId in the body is ignored.
+	r := e.edit(grace, "career", "job", job1, a, `{"body":"a edited","parentId":"`+other+`"}`)
+	if r.code != http.StatusOK || r.message()["parentId"] != top || r.message()["depth"] != float64(1) {
+		t.Errorf("edit = %d %v", r.code, r.out)
+	}
+
+	// Deleting the top-level comment removes its replies too, and only those.
+	if r := e.remove(ada, "career", "job", job1, top); r.code != http.StatusNoContent {
+		t.Fatalf("delete: %d", r.code)
+	}
+	got := e.list(ada, "career", "job", job1, "").message()
+	if got["total"] != float64(1) || got["comments"].([]any)[0].(map[string]any)["id"] != other {
+		t.Errorf("remaining = %v", got)
+	}
+}

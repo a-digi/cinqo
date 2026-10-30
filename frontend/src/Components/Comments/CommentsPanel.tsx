@@ -12,14 +12,20 @@ import {
   accentForAuthor,
   authorLabel,
   bodyProblem,
+  canReplyTo,
   charsUsed,
+  deleteMessage,
   filterParams,
   hasFilters,
+  indentLevel,
   initialOf,
+  insertReply,
   isEdited,
   mergeOlder,
   rangeProblem,
   relativeTime,
+  removeThread,
+  replyCount,
   type FilterState,
 } from './commentRules'
 
@@ -50,13 +56,21 @@ interface CommentRowProps {
   comment: Comment
   now: Date
   busy: boolean
+  // The accent of the author this is a reply to (for the guide line); undefined for a top-level comment.
+  guide?: string
+  // Whether the signed-in user may reply to this comment here.
+  canReply: boolean
   onEdit: (id: string, body: string) => Promise<boolean>
+  onReply: (parent: Comment, body: string) => Promise<boolean>
   onDelete: (comment: Comment) => void
 }
 
-function CommentRow({ comment, now, busy, onEdit, onDelete }: CommentRowProps) {
+function CommentRow({ comment, now, busy, guide, canReply, onEdit, onReply, onDelete }: CommentRowProps) {
   const [editing, setEditing] = useState(false)
+  const [replying, setReplying] = useState(false)
+  const [replyDraft, setReplyDraft] = useState('')
   const [draft, setDraft] = useState(comment.body)
+  const replyProblem = bodyProblem(replyDraft)
   const label = authorLabel(comment)
   const problem = bodyProblem(draft)
 
@@ -65,8 +79,26 @@ function CommentRow({ comment, now, busy, onEdit, onDelete }: CommentRowProps) {
     if (await onEdit(comment.id, draft)) setEditing(false)
   }
 
+  async function sendReply() {
+    if (replyProblem) return
+    if (await onReply(comment, replyDraft)) {
+      setReplying(false)
+      setReplyDraft('')
+    }
+  }
+
+  const level = indentLevel(comment.depth)
+  const showActions = !editing && !comment.context && (canReply || comment.canEdit || comment.canDelete)
+
   return (
-    <li className="flex gap-3 rounded-2xl bg-white/70 p-3">
+    <li
+      className={`flex gap-3 rounded-2xl bg-white/70 p-3 ${comment.context ? 'opacity-60' : ''}`}
+      // Each level steps in by --comment-indent (narrower on a phone, set on the list).
+      style={{
+        marginLeft: `calc(${level} * var(--comment-indent, 20px))`,
+        ...(guide ? { borderLeft: `3px solid ${guide}` } : undefined),
+      }}
+    >
       <Avatar authorId={comment.authorId} label={label} />
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-baseline gap-x-2">
@@ -74,6 +106,7 @@ function CommentRow({ comment, now, busy, onEdit, onDelete }: CommentRowProps) {
           <span className="text-xs text-gray-500" title={new Date(comment.createdAt).toLocaleString()}>
             {relativeTime(now, comment.createdAt)}
           </span>
+          {comment.context && <span className="text-xs italic text-gray-400">shown for context</span>}
           {isEdited(comment) && (
             <span className="text-xs text-gray-400" title={`Edited ${new Date(comment.updatedAt).toLocaleString()}`}>
               (edited)
@@ -122,8 +155,21 @@ function CommentRow({ comment, now, busy, onEdit, onDelete }: CommentRowProps) {
           <p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-gray-800">{comment.body}</p>
         )}
 
-        {!editing && (comment.canEdit || comment.canDelete) && (
+        {showActions && (
           <div className="mt-1 flex gap-3 text-xs">
+            {canReply && (
+              <button
+                type="button"
+                disabled={busy}
+                aria-expanded={replying}
+                onClick={() => {
+                  setReplying((v) => !v)
+                }}
+                className="text-gray-500 hover:text-gray-900 disabled:opacity-50"
+              >
+                Reply
+              </button>
+            )}
             {comment.canEdit && (
               <button
                 type="button"
@@ -151,6 +197,54 @@ function CommentRow({ comment, now, busy, onEdit, onDelete }: CommentRowProps) {
             )}
           </div>
         )}
+
+        {replying && (
+          <div className="mt-2 space-y-2">
+            <textarea
+              // eslint-disable-next-line jsx-a11y/no-autofocus
+              autoFocus
+              value={replyDraft}
+              rows={2}
+              placeholder={`Reply to ${label}…`}
+              aria-label={`Reply to ${label}`}
+              onChange={(e) => {
+                setReplyDraft(e.target.value)
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault()
+                  void sendReply()
+                }
+              }}
+              className={`w-full ${inputClass}`}
+            />
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={busy || replyProblem !== null}
+                onClick={() => {
+                  void sendReply()
+                }}
+                className="rounded-full px-3 py-1 text-xs font-medium text-white disabled:opacity-50"
+                style={{ background: gradient(PANEL_ACCENT) }}
+              >
+                Reply
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  setReplying(false)
+                  setReplyDraft('')
+                }}
+                className="rounded-full border border-gray-300 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              {replyProblem && replyDraft.trim() !== '' && <span className="text-xs text-red-600">{replyProblem}</span>}
+            </div>
+          </div>
+        )}
       </div>
     </li>
   )
@@ -160,10 +254,12 @@ export interface CommentsPanelProps extends CommentsTarget {
   title?: string
 }
 
-// The comments for one entity: add, edit and delete your own, filter by author and
+// The comments for one entity: add, reply, edit and delete your own, filter by author and
 // date, load older ones. Mounted into a tool's page by bridge.mountComments (see
 // mountComments.tsx). Everything is plain text; the server decides what the signed-in
-// user may do and says so with canEdit / canDelete. See plan/ai/comments/comments-engine.md.
+// user may do and says so with canEdit / canDelete. A reply is drawn directly below its
+// parent, stepped in by its depth. See plan/ai/comments/comments-engine.md and
+// comment-replies.md.
 export function CommentsPanel({ owner, entityType, entityId, title = 'Comments' }: CommentsPanelProps) {
   const target: CommentsTarget = { owner, entityType, entityId }
   const [items, setItems] = useState<Comment[]>([])
@@ -273,6 +369,26 @@ export function CommentsPanel({ owner, entityType, entityId, title = 'Comments' 
     }
   }
 
+  async function reply(parent: Comment, body: string): Promise<boolean> {
+    setBusy(true)
+    setError('')
+    try {
+      const created = await createComment(target, body, parent.id)
+      if (!hasFilters(filters)) {
+        setItems((prev) => insertReply(prev, created))
+        setTotal((t) => t + 1)
+      } else {
+        void load()
+      }
+      return true
+    } catch (err) {
+      setError(errorText(err, "Couldn't add the reply."))
+      return false
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function edit(id: string, body: string): Promise<boolean> {
     setBusy(true)
     setError('')
@@ -291,7 +407,7 @@ export function CommentsPanel({ owner, entityType, entityId, title = 'Comments' 
   async function remove(comment: Comment) {
     const ok = await confirm({
       title: 'Delete comment',
-      message: 'Delete this comment? This cannot be undone.',
+      message: deleteMessage(replyCount(items, comment.id), hasFilters(filters)),
       confirmLabel: 'Delete',
     })
     if (!ok) return
@@ -299,8 +415,14 @@ export function CommentsPanel({ owner, entityType, entityId, title = 'Comments' 
     setError('')
     try {
       await deleteComment(target, comment.id)
-      setItems((prev) => prev.filter((c) => c.id !== comment.id))
-      setTotal((t) => Math.max(0, t - 1))
+      if (hasFilters(filters)) {
+        // Only some of the replies are shown, so the count is not known: ask again.
+        void load()
+      } else {
+        const gone = replyCount(items, comment.id) + 1
+        setItems((prev) => removeThread(prev, comment.id))
+        setTotal((t) => Math.max(0, t - gone))
+      }
     } catch (err) {
       setError(errorText(err, "Couldn't delete the comment."))
     } finally {
@@ -308,6 +430,8 @@ export function CommentsPanel({ owner, entityType, entityId, title = 'Comments' 
     }
   }
 
+  // Who wrote each shown comment, so a reply's guide line takes its parent author's colour.
+  const authorOf = new Map(items.map((c) => [c.id, c.authorId]))
   const draftProblem = bodyProblem(draft)
   const used = charsUsed(draft)
   const filtered = hasFilters(filters)
@@ -463,14 +587,17 @@ export function CommentsPanel({ owner, entityType, entityId, title = 'Comments' 
             </p>
           )
         ) : (
-          <ul className="space-y-2">
+          <ul className="space-y-2 [--comment-indent:12px] sm:[--comment-indent:20px]">
             {items.map((c) => (
               <CommentRow
                 key={c.id}
                 comment={c}
                 now={now}
                 busy={busy}
+                guide={c.parentId ? accentForAuthor(authorOf.get(c.parentId) ?? '').to : undefined}
+                canReply={canCreate && canReplyTo(c)}
                 onEdit={edit}
+                onReply={reply}
                 onDelete={(comment) => {
                   void remove(comment)
                 }}

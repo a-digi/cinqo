@@ -20,6 +20,10 @@ const (
 	maxOwnerRunes      = 64
 	DefaultPageSize    = 50
 	MaxPageSize        = 100
+	// MaxDepth is how many levels of replies there can be (a top-level comment is
+	// depth 0); MaxThreadSize caps a top-level comment plus everything under it.
+	MaxDepth      = 5
+	MaxThreadSize = 200
 )
 
 // SystemOwner is the owner name of Cinqo itself. A tool with this slug would be

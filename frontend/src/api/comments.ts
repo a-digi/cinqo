@@ -16,6 +16,12 @@ export interface Comment {
   // What the signed-in user may do with this comment, decided by the server.
   canEdit: boolean
   canDelete: boolean
+  // The comment this one replies to; '' for a top-level comment.
+  parentId: string
+  // 0 for a top-level comment, its parent's depth + 1 for a reply.
+  depth: number
+  // True only for a comment shown just because a reply below it matched the filters.
+  context: boolean
 }
 
 export interface CommentPage {
@@ -58,8 +64,9 @@ export async function fetchComments(t: CommentsTarget, filters: CommentFilters =
   return raw.message
 }
 
-export async function createComment(t: CommentsTarget, body: string): Promise<Comment> {
-  const raw = await apiPost<{ message: Comment }>(base(t), { body })
+// parentId makes the new comment a reply to that comment; leave it out for a top-level one.
+export async function createComment(t: CommentsTarget, body: string, parentId?: string): Promise<Comment> {
+  const raw = await apiPost<{ message: Comment }>(base(t), parentId ? { body, parentId } : { body })
   return raw.message
 }
 

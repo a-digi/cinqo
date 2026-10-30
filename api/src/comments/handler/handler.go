@@ -64,8 +64,12 @@ type listResponse struct {
 	CanCreate bool `json:"canCreate"`
 }
 
+// bodyRequest is what create and edit read. ParentID only means something to create
+// (a reply's parent, empty or null for a top-level comment); an edit ignores it, since
+// a comment can never move to another parent.
 type bodyRequest struct {
-	Body string `json:"body"`
+	Body     string `json:"body"`
+	ParentID string `json:"parentId"`
 }
 
 func (d *deps) present(t access.EntityType, who identity, c comments.Comment) commentResponse {
@@ -134,7 +138,7 @@ func (d *deps) create(w http.ResponseWriter, r *http.Request, who identity, owne
 		d.fail(w, err)
 		return
 	}
-	body, ok := readBody(w, r)
+	in, ok := readBody(w, r)
 	if !ok {
 		return
 	}
@@ -144,7 +148,7 @@ func (d *deps) create(w http.ResponseWriter, r *http.Request, who identity, owne
 		return
 	}
 	c, err := store.Create(comments.NewComment{
-		EntityType: entityType, EntityID: entityID, Body: body,
+		EntityType: entityType, EntityID: entityID, Body: in.Body, ParentID: in.ParentID,
 		// The author is always the token's, never anything in the request.
 		AuthorID: who.UserID, AuthorName: who.Name,
 	})
@@ -161,7 +165,7 @@ func (d *deps) edit(w http.ResponseWriter, r *http.Request, who identity, owner,
 		d.fail(w, err)
 		return
 	}
-	body, ok := readBody(w, r)
+	in, ok := readBody(w, r)
 	if !ok {
 		return
 	}
@@ -179,7 +183,7 @@ func (d *deps) edit(w http.ResponseWriter, r *http.Request, who identity, owner,
 		d.fail(w, access.ErrForbidden)
 		return
 	}
-	updated, err := store.Update(entityType, entityID, id, body)
+	updated, err := store.Update(entityType, entityID, id, in.Body)
 	if err != nil {
 		d.fail(w, err)
 		return
@@ -214,15 +218,16 @@ func (d *deps) remove(w http.ResponseWriter, who identity, owner, entityType, en
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// readBody decodes {"body": "…"}; it answers 400 itself and returns false on a bad one.
-func readBody(w http.ResponseWriter, r *http.Request) (string, bool) {
+// readBody decodes {"body": "…", "parentId": "…"}; it answers 400 itself and returns
+// false on a bad one.
+func readBody(w http.ResponseWriter, r *http.Request) (bodyRequest, bool) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	var in bodyRequest
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		response.ErrorResponse(w, http.StatusBadRequest, `body must be {"body": "…"}`)
-		return "", false
+		return bodyRequest{}, false
 	}
-	return in.Body, true
+	return in, true
 }
 
 // ---- the routes ----
