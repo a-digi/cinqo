@@ -47,41 +47,41 @@
     },
     {
       "id": "career",
-      "currentVersionId": "0.0.345",
+      "currentVersionId": "0.0.346",
       "versions": [
         {
-          "versionId": "0.0.345",
+          "versionId": "0.0.346",
           "name": "Career",
-          "version": "0.0.345",
-          "releasedAt": "2026-10-29",
+          "version": "0.0.346",
+          "releasedAt": "2026-10-30",
           "packages": [
             {
               "os": "darwin",
               "arch": "arm64",
               "url": "https://raw.githubusercontent.com/a-digi/cinqo/0.0.1/tools/career/versions/tool-career-darwin-arm64.zip",
-              "sha256": "7ff45c3183ef5f31ae89703f08ff0a5fa9cec383b6c5263310b5db16d3d7558c",
-              "sizeBytes": 16404178
+              "sha256": "e4b4e929b3760cc704620f24f443c2475f3bfbbb32ed32edec4c5903c8075c7e",
+              "sizeBytes": 16420564
             },
             {
               "os": "linux",
               "arch": "amd64",
               "url": "https://raw.githubusercontent.com/a-digi/cinqo/0.0.1/tools/career/versions/tool-career-linux-amd64.zip",
-              "sha256": "c01243b09967b8a3ec6690117bdcd55d9d70d2806e91cf9d0642b2cd0922d717",
-              "sizeBytes": 16554547
+              "sha256": "c861ae9164c9f3b75271f5750ca4332bd1c903ada78de8208240abe1d4962db8",
+              "sizeBytes": 16568052
             },
             {
               "os": "linux",
               "arch": "arm64",
               "url": "https://raw.githubusercontent.com/a-digi/cinqo/0.0.1/tools/career/versions/tool-career-linux-arm64.zip",
-              "sha256": "01248336c800687aaac68ea13ca1ce58a200902b81151764f1fdd54b98682b5f",
-              "sizeBytes": 15683737
+              "sha256": "6d6a6663d2691d7b41bfd10c297d69f30d3ba0437237fde0e3a4cb5e5fde2391",
+              "sizeBytes": 15695543
             },
             {
               "os": "windows",
               "arch": "amd64",
               "url": "https://raw.githubusercontent.com/a-digi/cinqo/0.0.1/tools/career/versions/tool-career-windows-amd64.zip",
-              "sha256": "19087bd34c4f3dec1886d54056f40f7c0c0c59c248df10bb4030b04afc84066d",
-              "sizeBytes": 16882500
+              "sha256": "4efc7f2f7d51d53c7ddd7b51a5b0ca97415b665d32db9f49b0a2f14ab6001c71",
+              "sizeBytes": 16902516
             }
           ]
         }

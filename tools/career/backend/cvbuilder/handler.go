@@ -306,6 +306,15 @@ func DocumentsHandler(w http.ResponseWriter, r *http.Request) {
 			db.WriteJSON(w, doc)
 			return
 		}
+		if r.URL.Query().Get("all") == "1" {
+			docs, err := ListAllCvDocuments()
+			if err != nil {
+				http.Error(w, "failed to list cv documents: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+			db.WriteJSON(w, map[string]any{"cvDocuments": docs})
+			return
+		}
 		personaID := r.URL.Query().Get("personaId")
 		if personaID == "" {
 			http.Error(w, "personaId query parameter is required", http.StatusBadRequest)
@@ -411,6 +420,32 @@ func DocumentsHandler(w http.ResponseWriter, r *http.Request) {
 		if id == "" {
 			http.Error(w, "id query parameter is required", http.StatusBadRequest)
 			return
+		}
+		// Jobs that use this CV: refuse with the full list unless the caller
+		// confirmed with unlinkJobs=true, then unlink them before deleting.
+		if jobLinks != nil {
+			doc, err := GetCvDocument(id)
+			if err != nil {
+				writeCvDocumentAwareError(w, "delete cv document", err)
+				return
+			}
+			using, err := jobLinks.JobsUsing(doc.ID, doc.MediaFileID)
+			if err != nil {
+				http.Error(w, "failed to check which jobs use this CV: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if len(using) > 0 {
+				if r.URL.Query().Get("unlinkJobs") != "true" {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusConflict)
+					_ = json.NewEncoder(w).Encode(map[string]any{"error": "in_use", "jobs": using})
+					return
+				}
+				if err := jobLinks.UnlinkDocument(doc.ID, doc.MediaFileID); err != nil {
+					http.Error(w, "failed to unlink jobs from this CV: "+err.Error(), http.StatusInternalServerError)
+					return
+				}
+			}
 		}
 		mediaFileID, err := DeleteCvDocument(id)
 		if err != nil {

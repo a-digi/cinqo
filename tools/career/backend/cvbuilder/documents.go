@@ -27,8 +27,11 @@ type CvDocument struct {
 	Data        templates.CvData `json:"data"`
 	MediaFileID string           `json:"mediaFileId"`
 	JobID       string           `json:"jobId,omitempty"`
-	CreatedAt   string           `json:"createdAt"`
-	UpdatedAt   string           `json:"updatedAt,omitempty"`
+	// PersonaName is filled only by ListAllCvDocuments (the "Select existing"
+	// modal's list), never by the other reads.
+	PersonaName string `json:"personaName,omitempty"`
+	CreatedAt   string `json:"createdAt"`
+	UpdatedAt   string `json:"updatedAt,omitempty"`
 }
 
 // ErrUnknownCvDocument mirrors persona.ErrUnknownPersona's own
@@ -66,6 +69,40 @@ func ListCvDocuments(personaID string) ([]CvDocument, error) {
 	for rows.Next() {
 		doc, err := scanCvDocument(rows.Scan)
 		if err != nil {
+			return nil, err
+		}
+		docs = append(docs, doc)
+	}
+	return docs, rows.Err()
+}
+
+// MaxAllCvDocuments caps ListAllCvDocuments.
+const MaxAllCvDocuments = 200
+
+// ListAllCvDocuments returns every persona's CV documents, newest first, at
+// most MaxAllCvDocuments, each with its persona's name — the library the Jobs
+// page's "Select existing" modal picks from (step 98).
+func ListAllCvDocuments() ([]CvDocument, error) {
+	rows, err := db.CareerDB.Query(
+		`SELECT d.id, d.persona_id, d.template_id, d.title, d.data_json, d.media_file_id, d.job_id, d.created_at, d.updated_at, COALESCE(p.name, '')
+		 FROM cv_documents d LEFT JOIN personas p ON p.id = d.persona_id
+		 ORDER BY d.created_at DESC, d.id LIMIT ?`, MaxAllCvDocuments)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	docs := []CvDocument{}
+	for rows.Next() {
+		var doc CvDocument
+		var dataJSON string
+		var jobID, updatedAt sql.NullString
+		if err := rows.Scan(&doc.ID, &doc.PersonaID, &doc.TemplateID, &doc.Title, &dataJSON, &doc.MediaFileID, &jobID, &doc.CreatedAt, &updatedAt, &doc.PersonaName); err != nil {
+			return nil, err
+		}
+		doc.JobID = jobID.String
+		doc.UpdatedAt = updatedAt.String
+		if err := json.Unmarshal([]byte(dataJSON), &doc.Data); err != nil {
 			return nil, err
 		}
 		docs = append(docs, doc)

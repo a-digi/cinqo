@@ -79,6 +79,12 @@ export function needsFirstLoad(repository: Pick<ToolRepository, 'lastStatus'>): 
 
 export const nativeLabel = 'Cinqo'
 
+// Only http(s) addresses are made into links: the server only stores those, but a
+// link built from data should never be able to run a javascript: or data: address.
+export function isOpenableLink(url: string): boolean {
+  return /^https?:\/\/[^\s]+$/i.test(url)
+}
+
 export function repositoryPath(id: string): string {
   return `/admin/tool-repositories/${encodeURIComponent(id)}`
 }

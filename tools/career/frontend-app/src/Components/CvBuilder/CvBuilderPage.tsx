@@ -4,10 +4,13 @@ import {
   fetchCvPersonaDefaults,
   fetchCvPhotoStatus,
   fetchCvDocument,
+  fetchJob,
+  linkJobCv,
   createCvDocument,
   previewCvDocument,
   type CvData,
   type CvTemplate,
+  type Job,
 } from '../../api'
 import { PersonaAndTemplateStep } from './PersonaAndTemplateStep'
 import { PersonalDetailsStep } from './PersonalDetailsStep'
@@ -15,6 +18,7 @@ import { SkillsStep } from './SkillsStep'
 import { ExperienceStep } from './ExperienceStep'
 import { TitleAndReviewStep } from './TitleAndReviewStep'
 import { StepIndicator } from './StepIndicator'
+import { JOBS_PATH, attachFailedMessage, backLabel, bannerText, defaultCvTitle, jobIdFromSearch } from './cvForJob'
 
 const CV_DOCUMENTS_PATH = '/tools/career/cv-documents'
 
@@ -47,6 +51,9 @@ export function CvBuilderPage() {
   const params = new URLSearchParams(window.location.search)
   const editingId = params.get('id')
   const initialPersonaId = params.get('personaId')
+  // "Generate manually" from the Jobs page (step 98): the job this CV is for. Not
+  // used when editing an existing document.
+  const forJobId = editingId ? null : jobIdFromSearch(window.location.search)
 
   const [step, setStep] = useState(0)
   // The furthest step actually reached — everything up to and
@@ -66,6 +73,10 @@ export function CvBuilderPage() {
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState('')
   const [previewing, setPreviewing] = useState(false)
+  const [forJob, setForJob] = useState<Job | null>(null)
+  // Set once the CV exists but attaching it to the job failed, so Generate then
+  // only retries the attach instead of creating a second CV.
+  const [createdDocumentId, setCreatedDocumentId] = useState<string | null>(null)
   // hasProfilePhoto gates whether the "attach photo?" checkbox even
   // shows (PersonaAndTemplateStep.tsx) — per your own instruction, no
   // photo uploaded means no checkbox at all, not a disabled/unchecked
@@ -100,6 +111,18 @@ export function CvBuilderPage() {
         setError(err instanceof Error ? err.message : String(err))
       })
   }, [])
+
+  useEffect(() => {
+    if (!forJobId) return
+    fetchJob(forJobId)
+      .then((job) => {
+        setForJob(job)
+        setTitle((current) => (current === '' ? defaultCvTitle(job) : current))
+      })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+      })
+  }, [forJobId])
 
   useEffect(() => {
     if (!editingId) return
@@ -176,7 +199,7 @@ export function CvBuilderPage() {
   }
 
   function handleCancel() {
-    window.__cinqoToolBridge.navigate(CV_DOCUMENTS_PATH)
+    window.__cinqoToolBridge.navigate(forJobId ? JOBS_PATH : CV_DOCUMENTS_PATH)
   }
 
   // Renders + generates a real, temporary PDF via pdf_tools — same
@@ -225,9 +248,27 @@ export function CvBuilderPage() {
     }
     setError('')
     setGenerating(true)
-    createCvDocument(personaId, templateId, title.trim(), cvData, attachPhoto)
-      .then(() => {
-        window.__cinqoToolBridge.navigate(CV_DOCUMENTS_PATH)
+    // For a job: create the CV (unless an earlier try already did), attach it to
+    // the job, and return to the Jobs page. Without a job it is the plain wizard.
+    const created = createdDocumentId
+      ? Promise.resolve(createdDocumentId)
+      : createCvDocument(personaId, templateId, title.trim(), cvData, attachPhoto).then((doc) => {
+          if (forJobId) setCreatedDocumentId(doc.id)
+          return doc.id
+        })
+    created
+      .then((documentId) => {
+        if (!forJobId) {
+          window.__cinqoToolBridge.navigate(CV_DOCUMENTS_PATH)
+          return undefined
+        }
+        return linkJobCv(forJobId, documentId, 'manual')
+          .then(() => {
+            window.__cinqoToolBridge.navigate(JOBS_PATH)
+          })
+          .catch((err: unknown) => {
+            setError(attachFailedMessage(err instanceof Error ? err.message : String(err)))
+          })
       })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : String(err))
@@ -246,10 +287,15 @@ export function CvBuilderPage() {
   return (
     <div className="max-w-5xl p-6">
       <button type="button" onClick={handleCancel} className="mb-4 text-sm text-gray-500 underline hover:text-gray-700">
-        ← Back to CV Documents
+        {backLabel(forJobId !== null)}
       </button>
 
       <h1 className="mb-4 text-xl font-semibold text-gray-900">{editingId ? 'Edit CV' : 'New CV'}</h1>
+      {forJob && (
+        <p className="mb-4 rounded-md bg-gray-50 px-3 py-2 text-sm text-gray-700" role="status">
+          {bannerText(forJob)}
+        </p>
+      )}
 
       <StepIndicator steps={STEPS} currentStep={step} furthestStep={furthestStep} onStepClick={goToStep} />
 

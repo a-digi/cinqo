@@ -113,6 +113,12 @@ export interface Job {
   cvConversationId?: string
   cvMediaFileId?: string
   cvError?: string
+  // cvSource/cvDocumentId (step 98) — where the job's current CV came from:
+  // the AI ("ai"), a CV built in the CV Builder for this job ("manual"), or one
+  // picked from the library ("existing"); cvDocumentId is the cv_documents row
+  // when known. Absent when the job has no CV.
+  cvSource?: 'ai' | 'manual' | 'existing'
+  cvDocumentId?: string
 }
 
 export interface JobsResult {
@@ -651,6 +657,34 @@ export async function updateJobCv(
   }
 }
 
+// Attach an existing CV document to a job as its current CV (replacing any
+// other): source "manual" for one just built in the CV Builder for this job,
+// "existing" for one picked from the library. See
+// plan/ai/tools/career/step-98-manual-and-existing-cv-for-a-job.md.
+export async function linkJobCv(jobId: string, cvDocumentId: string, source: 'manual' | 'existing'): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/jobs/cv-link`, {
+    method: 'PUT',
+    credentials: 'include',
+    body: JSON.stringify({ jobId, cvDocumentId, source }),
+  })
+  if (!res.ok && res.status !== 204) {
+    const text = await res.text().catch(() => '')
+    throw new Error(text.trim() || `failed to attach the CV (${res.status})`)
+  }
+}
+
+// Remove the job's current CV; the CV document and its PDF stay.
+export async function unlinkJobCv(jobId: string): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/jobs/cv-link?jobId=${encodeURIComponent(jobId)}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  })
+  if (!res.ok && res.status !== 204) {
+    const text = await res.text().catch(() => '')
+    throw new Error(text.trim() || `failed to remove the CV (${res.status})`)
+  }
+}
+
 // mediaDownloadUrl builds a plain, clickable link to a Media file's
 // own bytes — a core platform route (GET /api/v1/media/{id}/download),
 // not one of this tool's own PROXY_BASE routes: Media is core-owned
@@ -1045,6 +1079,8 @@ export interface CvDocument {
   // own "Generate CV PDF"); absent for one created through this
   // wizard. See plan/ai/career/cv-builder/step-08-ai-generated-cv-documents.md.
   jobId?: string
+  // Filled only by fetchAllCvDocuments (the "Select existing" modal's list).
+  personaName?: string
   createdAt: string
   updatedAt?: string
 }
@@ -1139,10 +1175,43 @@ export async function updateCvDocumentTitle(id: string, title: string): Promise<
   return jsonOrThrow<CvDocument>(res, 'update cv document title')
 }
 
-export async function deleteCvDocument(id: string): Promise<void> {
-  const res = await fetch(`${PROXY_BASE}/cv-documents?id=${encodeURIComponent(id)}`, {
+// A job that uses a CV document, as the delete confirmation lists it.
+export interface CvDocumentJob {
+  id: string
+  title: string
+  company: string
+}
+
+// Thrown by deleteCvDocument when jobs use the CV and the caller has not yet
+// confirmed: nothing was deleted, and jobs lists EVERY job that uses it.
+export class CvDocumentInUseError extends Error {
+  jobs: CvDocumentJob[]
+  constructor(jobs: CvDocumentJob[]) {
+    super('this CV is used by jobs')
+    this.jobs = jobs
+  }
+}
+
+// unlinkJobs: true is the confirmation — the jobs lose their link, then the CV is
+// deleted. Without it, a CV that jobs use answers 409 and is left alone
+// (CvDocumentInUseError). See plan/ai/tools/career/step-98-manual-and-existing-cv-for-a-job.md.
+export async function deleteCvDocument(id: string, opts: { unlinkJobs?: boolean } = {}): Promise<void> {
+  const query = `id=${encodeURIComponent(id)}${opts.unlinkJobs ? '&unlinkJobs=true' : ''}`
+  const res = await fetch(`${PROXY_BASE}/cv-documents?${query}`, {
     method: 'DELETE',
     credentials: 'include',
   })
+  if (res.status === 409) {
+    const body = (await res.json().catch(() => null)) as { error?: string; jobs?: CvDocumentJob[] } | null
+    if (body?.error === 'in_use' && Array.isArray(body.jobs)) throw new CvDocumentInUseError(body.jobs)
+  }
   if (!res.ok && res.status !== 204) throw new Error(`failed to delete cv document (${res.status})`)
+}
+
+// Every persona's CV documents, newest first (at most 200), each with its
+// persona's name — what the Jobs page's "Select existing" modal picks from.
+export async function fetchAllCvDocuments(): Promise<CvDocument[]> {
+  const res = await fetch(`${PROXY_BASE}/cv-documents?all=1`, { credentials: 'include' })
+  const body = await jsonOrThrow<{ cvDocuments: CvDocument[] }>(res, 'load cv documents')
+  return body.cvDocuments
 }

@@ -574,7 +574,13 @@ CREATE TABLE IF NOT EXISTS job_cv_pdfs (
     conversation_id    TEXT,
     media_file_id      TEXT,
     error              TEXT,
-    updated_at         TEXT NOT NULL DEFAULT (datetime('now'))
+    updated_at         TEXT NOT NULL DEFAULT (datetime('now')),
+    -- cv_document_id/source (step 98): where the job's current CV came from.
+    -- 'ai' is the Generate CV PDF conversation; 'manual' a CV built in the CV
+    -- Builder for this job; 'existing' a CV picked from the library. A plain,
+    -- unenforced reference into career.db's cv_documents (no cross-file FK).
+    cv_document_id     TEXT,
+    source             TEXT NOT NULL DEFAULT 'ai' CHECK (source IN ('ai','manual','existing'))
 );
 
 -- job_cv_generations (CV generation audit trail) is the append-only
@@ -1036,7 +1042,40 @@ func migrateJobsDB(db *sql.DB) error {
 	if err := migrateJobMatchSkillsMatchKind(db); err != nil {
 		return err
 	}
-	return migrateJobCvPdfsSchema(db)
+	if err := migrateJobCvPdfsSchema(db); err != nil {
+		return err
+	}
+	return migrateJobCvPdfsLink(db)
+}
+
+// migrateJobCvPdfsLink adds job_cv_pdfs.cv_document_id and .source (step 98)
+// to a jobs.db that already has the table. Existing rows are AI-generated
+// CVs, which is exactly what the 'ai' default says. A no-op on a brand-new
+// install (the inline CREATE TABLE already has both) and when the table does
+// not exist yet. See plan/ai/tools/career/step-98-manual-and-existing-cv-for-a-job.md.
+func migrateJobCvPdfsLink(db *sql.DB) error {
+	exists, hasDocumentID, err := tableHasColumn(db, "job_cv_pdfs", "cv_document_id")
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return nil
+	}
+	if !hasDocumentID {
+		if _, err := db.Exec(`ALTER TABLE job_cv_pdfs ADD COLUMN cv_document_id TEXT`); err != nil {
+			return err
+		}
+	}
+	_, hasSource, err := tableHasColumn(db, "job_cv_pdfs", "source")
+	if err != nil {
+		return err
+	}
+	if !hasSource {
+		if _, err := db.Exec(`ALTER TABLE job_cv_pdfs ADD COLUMN source TEXT NOT NULL DEFAULT 'ai' CHECK (source IN ('ai','manual','existing'))`); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // migrateJobCvPdfsSchema detects an early-shape job_cv_pdfs table (one

@@ -13,6 +13,7 @@ import { useConfirm } from '../../../Shared/Components/Modal/useConfirm'
 import { Card } from '../../../Shared/Components/Card/Card'
 import { Pill } from '../../../Shared/Components/Pill/Pill'
 import { reloadAfterToolChange } from '../../../config/tools/loadTools'
+import { RepositoryLink } from './RepositoryLink'
 import { colorForTool } from './toolCardColors'
 import { errorText } from './repositoryErrors'
 import {
@@ -162,7 +163,9 @@ export function RepositoryPage() {
             {detail.isNative && <Pill variant="green">{nativeLabel}</Pill>}
             {detail.isLocal && <Pill outline>Local network</Pill>}
           </div>
-          <p className="mt-1 break-all font-mono text-xs text-gray-500">{detail.url}</p>
+          <p className="mt-1">
+            <RepositoryLink url={detail.url} />
+          </p>
           {detail.description && <p className="mt-1 text-sm text-gray-600">{detail.description}</p>}
           <p className="mt-1 text-xs text-gray-400">Last checked: {formatFetched(detail.lastFetchedAt)}</p>
         </div>

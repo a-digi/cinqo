@@ -125,6 +125,12 @@ type job struct {
 	CvConversationID string `json:"cvConversationId,omitempty"`
 	CvMediaFileID    string `json:"cvMediaFileId,omitempty"`
 	CvError          string `json:"cvError,omitempty"`
+	// CvSource/CvDocumentID (step 98) say where the job's current CV came
+	// from: "ai", "manual" (built in the CV Builder for this job) or
+	// "existing" (picked from the library); CvDocumentID is the cv_documents
+	// row when known. Empty when the job has no CV row at all.
+	CvSource     string `json:"cvSource,omitempty"`
+	CvDocumentID string `json:"cvDocumentId,omitempty"`
 }
 
 // publishJobCreatedEvent is plan/ai/tools/career/step-83's own
@@ -305,6 +311,8 @@ func hideDanglingCvMedia(jobs []job) {
 			if !media.Exists(j.CvMediaFileID) {
 				j.CvStatus = ""
 				j.CvMediaFileID = ""
+				j.CvSource = ""
+				j.CvDocumentID = ""
 			}
 		}(&jobs[i])
 	}
@@ -322,7 +330,7 @@ func queryJobs(where string, whereArgs []any, limit, offset int) (jobsListResult
 	rows, err := db.JobsDB.Query(
 		`SELECT j.id, j.source_url, j.title, j.company, j.company_id, j.portal_link_id, p.id, p.name, j.location, j.description, j.posted_at, j.crawled_at, j.detail_crawl_status, j.source,
 			jm.score, jm.status, jm.conversation_id, jm.error,
-			cv.status, cv.conversation_id, cv.media_file_id, cv.error
+			cv.status, cv.conversation_id, cv.media_file_id, cv.error, cv.source, cv.cv_document_id
 		 `+jobsFromClause+` `+where+` ORDER BY j.crawled_at DESC LIMIT ? OFFSET ?`,
 		pageArgs...,
 	)
@@ -337,10 +345,10 @@ func queryJobs(where string, whereArgs []any, limit, offset int) (jobsListResult
 		var company, companyID, portalLinkID, portalID, portalName, location, description, postedAt, detailCrawlStatus sql.NullString
 		var matchStatus, matchConversationID, matchError sql.NullString
 		var matchScore sql.NullInt64
-		var cvStatus, cvConversationID, cvMediaFileID, cvError sql.NullString
+		var cvStatus, cvConversationID, cvMediaFileID, cvError, cvSource, cvDocumentID sql.NullString
 		if err := rows.Scan(&j.ID, &j.SourceURL, &j.Title, &company, &companyID, &portalLinkID, &portalID, &portalName, &location, &description, &postedAt, &j.CrawledAt, &detailCrawlStatus, &j.Source,
 			&matchScore, &matchStatus, &matchConversationID, &matchError,
-			&cvStatus, &cvConversationID, &cvMediaFileID, &cvError); err != nil {
+			&cvStatus, &cvConversationID, &cvMediaFileID, &cvError, &cvSource, &cvDocumentID); err != nil {
 			return jobsListResult{}, err
 		}
 		j.SourceURL = publicSourceURL(j.SourceURL)
@@ -365,6 +373,8 @@ func queryJobs(where string, whereArgs []any, limit, offset int) (jobsListResult
 		j.CvConversationID = cvConversationID.String
 		j.CvMediaFileID = cvMediaFileID.String
 		j.CvError = cvError.String
+		j.CvSource = cvSource.String
+		j.CvDocumentID = cvDocumentID.String
 		jobs = append(jobs, j)
 	}
 	if err := rows.Err(); err != nil {
@@ -407,7 +417,7 @@ func GetJobByID(id string) (job, error) {
 	row := db.JobsDB.QueryRow(
 		`SELECT j.id, j.source_url, j.title, j.company, j.company_id, j.portal_link_id, p.id, p.name, j.location, j.description, j.posted_at, j.crawled_at, j.detail_crawl_status, j.source,
 			jm.score, jm.status, jm.conversation_id, jm.error,
-			cv.status, cv.conversation_id, cv.media_file_id, cv.error
+			cv.status, cv.conversation_id, cv.media_file_id, cv.error, cv.source, cv.cv_document_id
 		 `+jobsFromClause+` WHERE j.id = ?`,
 		id,
 	)
@@ -415,10 +425,10 @@ func GetJobByID(id string) (job, error) {
 	var company, companyID, portalLinkID, portalID, portalName, location, description, postedAt, detailCrawlStatus sql.NullString
 	var matchStatus, matchConversationID, matchError sql.NullString
 	var matchScore sql.NullInt64
-	var cvStatus, cvConversationID, cvMediaFileID, cvError sql.NullString
+	var cvStatus, cvConversationID, cvMediaFileID, cvError, cvSource, cvDocumentID sql.NullString
 	err := row.Scan(&j.ID, &j.SourceURL, &j.Title, &company, &companyID, &portalLinkID, &portalID, &portalName, &location, &description, &postedAt, &j.CrawledAt, &detailCrawlStatus, &j.Source,
 		&matchScore, &matchStatus, &matchConversationID, &matchError,
-		&cvStatus, &cvConversationID, &cvMediaFileID, &cvError)
+		&cvStatus, &cvConversationID, &cvMediaFileID, &cvError, &cvSource, &cvDocumentID)
 	switch {
 	case err == sql.ErrNoRows:
 		return job{}, ErrUnknownJob
@@ -446,6 +456,8 @@ func GetJobByID(id string) (job, error) {
 	j.CvConversationID = cvConversationID.String
 	j.CvMediaFileID = cvMediaFileID.String
 	j.CvError = cvError.String
+	j.CvSource = cvSource.String
+	j.CvDocumentID = cvDocumentID.String
 	skills, err := GetJobMatchSkills(j.ID)
 	if err != nil {
 		return job{}, err

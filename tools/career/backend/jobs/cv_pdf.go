@@ -84,13 +84,15 @@ func StartCvGeneration(jobId, profileId, conversationId string) error {
 		return err
 	}
 	_, err := db.JobsDB.Exec(
-		`INSERT INTO job_cv_pdfs (job_id, profile_id, status, conversation_id, media_file_id, error, updated_at)
-		 VALUES (?, ?, 'generating', ?, NULL, NULL, datetime('now'))
+		`INSERT INTO job_cv_pdfs (job_id, profile_id, status, conversation_id, media_file_id, cv_document_id, source, error, updated_at)
+		 VALUES (?, ?, 'generating', ?, NULL, NULL, 'ai', NULL, datetime('now'))
 		 ON CONFLICT(job_id) DO UPDATE SET
 			profile_id = excluded.profile_id,
 			status = 'generating',
 			conversation_id = excluded.conversation_id,
 			media_file_id = NULL,
+			cv_document_id = NULL,
+			source = 'ai',
 			error = NULL,
 			updated_at = datetime('now')`,
 		jobId, profileId, conversationId,
@@ -153,8 +155,8 @@ func SaveGeneratedCvPdf(jobId, mediaFileId, cvDocumentId string) error {
 		return err
 	}
 	res, err := db.JobsDB.Exec(
-		`UPDATE job_cv_pdfs SET status = 'completed', media_file_id = ?, conversation_id = NULL, error = NULL, updated_at = datetime('now') WHERE job_id = ?`,
-		mediaFileId, jobId,
+		`UPDATE job_cv_pdfs SET status = 'completed', media_file_id = ?, cv_document_id = ?, source = 'ai', conversation_id = NULL, error = NULL, updated_at = datetime('now') WHERE job_id = ?`,
+		mediaFileId, orNullString(cvDocumentId), jobId,
 	)
 	if err != nil {
 		return err
@@ -437,4 +439,12 @@ func RegisterSaveCvDocument(server *mcp.Server) {
 		publishCvGeneratedEvent(args.JobID, args.PdfResource)
 		return db.JSONResult(map[string]string{"cvDocumentId": doc.ID, "status": "saved"})
 	})
+}
+
+// orNullString is orNull for a plain string: "" becomes SQL NULL.
+func orNullString(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
 }

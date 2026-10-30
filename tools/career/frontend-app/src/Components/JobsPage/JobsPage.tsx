@@ -10,6 +10,7 @@ import {
   fetchProfiles,
   updateJobMatch,
   updateJobCv,
+  unlinkJobCv,
   mediaDownloadUrl,
   fetchCvGenerations,
   type Job,
@@ -31,6 +32,17 @@ import { MatchScoreBar } from '../../Shared/MatchScoreBar/MatchScoreBar'
 import { ActionMenu, type ActionMenuItem } from '../../Shared/ActionMenu/ActionMenu'
 import { FilterIcon, XIcon, EyeIcon, ExternalLinkIcon, TrashIcon, MatchIcon, RobotIcon, PDFIcon, PlusIcon } from '../../Shared/Icons/icons'
 import { AddJobModal } from './AddJobModal'
+import { SelectCvModal } from './SelectCvModal'
+import { ConfirmationModal } from '../../Shared/ConfirmationModal/ConfirmationModal'
+import {
+  REMOVE_CONFIRMATION,
+  builderPathForJob,
+  choiceLabels,
+  cvChangeDisabledReason,
+  replaceConfirmation,
+  showRemove,
+  sourceNote,
+} from './cvActions'
 import { canOpenOriginal, detailsState, isManualJob, platformLabel } from './manualJob'
 import { Typewriter } from '../../Shared/Typewriter/Typewriter'
 import { truncate } from '../../Shared/Text/transform'
@@ -101,6 +113,13 @@ export function JobsPage() {
   // picked for (non-null only while 2+ profiles exist and the picker
   // Modal is open).
   const [cvPickerJob, setCvPickerJob] = useState<Job | null>(null)
+
+  // "Generate manually" / "Select existing" / "Remove CV" (step 98): the job whose
+  // "Select existing" modal is open, and the jobs awaiting a confirmation before
+  // the CV Builder opens (replacing a CV) or the CV is removed.
+  const [selectCvJob, setSelectCvJob] = useState<Job | null>(null)
+  const [pendingManualCvJob, setPendingManualCvJob] = useState<Job | null>(null)
+  const [pendingRemoveCvJob, setPendingRemoveCvJob] = useState<Job | null>(null)
 
   // CV generation audit trail (step 5) — historyJob is the job whose
   // history modal is currently open (mirrors matchPickerJob/cvPickerJob's
@@ -571,6 +590,30 @@ export function JobsPage() {
     setCvPickerJob(job)
   }
 
+  // "Generate manually" opens the CV Builder for this job; replacing a CV the job
+  // already has asks first.
+  function handleManualCvClick(job: Job) {
+    if (replaceConfirmation(job, 'manual')) {
+      setPendingManualCvJob(job)
+      return
+    }
+    window.__cinqoToolBridge.navigate(builderPathForJob(job.id))
+  }
+
+  function confirmRemoveCv() {
+    if (!pendingRemoveCvJob) return
+    const job = pendingRemoveCvJob
+    setPendingRemoveCvJob(null)
+    setError('')
+    unlinkJobCv(job.id)
+      .then(() => {
+        load()
+      })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+      })
+  }
+
   function handleCheckCvProgress(job: Job) {
     if (job.cvConversationId) {
       window.__cinqoToolBridge.openConversation(job.cvConversationId)
@@ -630,6 +673,30 @@ export function JobsPage() {
     // (a bare 'cv' leaf/group plus a standalone 'cv-history' leaf) into
     // one consistent "CV" entry point regardless of state.
     const cvChildren: ActionMenuItem[] = []
+    // The two choices that do not use the AI (step 98), and removing the CV; all
+    // three are blocked only while an AI generation is running.
+    const choice = choiceLabels(job)
+    const changeBlocked = cvChangeDisabledReason(job)
+    const manualItem: ActionMenuItem = {
+      key: 'cv-manual',
+      label: choice.manual,
+      icon: <PlusIcon />,
+      onClick: () => {
+        handleManualCvClick(job)
+      },
+      disabled: changeBlocked !== undefined,
+      title: changeBlocked ?? 'Build this job’s CV yourself in the CV Builder',
+    }
+    const existingItem: ActionMenuItem = {
+      key: 'cv-existing',
+      label: choice.existing,
+      icon: <PDFIcon className="h-3.5 w-3.5" />,
+      onClick: () => {
+        setSelectCvJob(job)
+      },
+      disabled: changeBlocked !== undefined,
+      title: changeBlocked ?? 'Attach a CV you already made to this job',
+    }
     let cvVariant: ActionMenuItem['variant'] = 'default'
     let cvTitle = 'Generate a CV PDF tailored to this job'
 
@@ -644,6 +711,7 @@ export function JobsPage() {
         },
         title: 'Open the chat window to watch the AI generate this CV',
       })
+      cvChildren.push(manualItem, existingItem)
     } else if (job.cvStatus === 'completed' && job.cvMediaFileId) {
       cvVariant = 'success'
       cvTitle = 'CV ready — download it, or have the AI try again'
@@ -655,12 +723,12 @@ export function JobsPage() {
           href: mediaDownloadUrl(job.cvMediaFileId),
           target: '_blank',
           rel: 'noreferrer',
-          title: 'Download the generated CV',
+          title: sourceNote(job.cvSource) ? `Download the CV — ${sourceNote(job.cvSource).toLowerCase()}` : 'Download the CV',
           variant: 'success',
         },
         {
           key: 'cv-regenerate',
-          label: 'Re-generate with AI',
+          label: choice.ai,
           icon: <RobotIcon />,
           onClick: () => {
             handleGenerateCvClick(job)
@@ -672,7 +740,21 @@ export function JobsPage() {
               ? 'Create a profile first'
               : 'Not happy with this CV? Have the AI build a new one.',
         },
+        manualItem,
+        existingItem,
       )
+      if (showRemove(job)) {
+        cvChildren.push({
+          key: 'cv-remove',
+          label: 'Remove CV from this job',
+          icon: <TrashIcon />,
+          onClick: () => {
+            setPendingRemoveCvJob(job)
+          },
+          title: 'Remove the link to this CV; the CV itself stays in your CV list',
+          variant: 'danger',
+        })
+      }
     } else {
       if (job.cvStatus === 'failed') cvVariant = 'danger'
       cvTitle = !selectedPlatformId
@@ -684,7 +766,7 @@ export function JobsPage() {
             : 'Generate a CV PDF tailored to this job'
       cvChildren.push({
         key: 'cv-generate',
-        label: job.cvStatus === 'failed' ? 'Retry CV generation' : 'Generate CV PDF',
+        label: choice.ai,
         icon: <PDFIcon className="h-3.5 w-3.5" />,
         onClick: () => {
           handleGenerateCvClick(job)
@@ -693,6 +775,7 @@ export function JobsPage() {
         title: cvTitle,
         variant: job.cvStatus === 'failed' ? 'danger' : 'default',
       })
+      cvChildren.push(manualItem, existingItem)
     }
 
     if (job.cvStatus) {
@@ -1089,6 +1172,41 @@ export function JobsPage() {
           ))}
         </div>
       </Modal>
+
+      <SelectCvModal
+        job={selectCvJob}
+        onClose={() => {
+          setSelectCvJob(null)
+        }}
+        onLinked={load}
+      />
+
+      <ConfirmationModal
+        open={pendingManualCvJob !== null}
+        title={pendingManualCvJob ? (replaceConfirmation(pendingManualCvJob, 'manual')?.title ?? '') : ''}
+        message={pendingManualCvJob ? (replaceConfirmation(pendingManualCvJob, 'manual')?.message ?? '') : ''}
+        confirmLabel={pendingManualCvJob ? replaceConfirmation(pendingManualCvJob, 'manual')?.confirmLabel : undefined}
+        onConfirm={() => {
+          const job = pendingManualCvJob
+          setPendingManualCvJob(null)
+          if (job) window.__cinqoToolBridge.navigate(builderPathForJob(job.id))
+        }}
+        onCancel={() => {
+          setPendingManualCvJob(null)
+        }}
+      />
+
+      <ConfirmationModal
+        open={pendingRemoveCvJob !== null}
+        title={REMOVE_CONFIRMATION.title}
+        message={REMOVE_CONFIRMATION.message}
+        confirmLabel={REMOVE_CONFIRMATION.confirmLabel}
+        variant="danger"
+        onConfirm={confirmRemoveCv}
+        onCancel={() => {
+          setPendingRemoveCvJob(null)
+        }}
+      />
 
       <Modal
         open={historyJob !== null}

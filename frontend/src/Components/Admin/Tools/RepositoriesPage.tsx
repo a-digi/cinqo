@@ -4,6 +4,7 @@ import { addRepository, fetchRepositories, refreshRepository, removeRepository, 
 import { LoadingSpinner } from '../../../Shared/Components/Loading/LoadingSpinner'
 import { useConfirm } from '../../../Shared/Components/Modal/useConfirm'
 import { Pill } from '../../../Shared/Components/Pill/Pill'
+import { RepositoryLink } from './RepositoryLink'
 import { errorText } from './repositoryErrors'
 import {
   addLinkProblem,
@@ -204,7 +205,9 @@ export function RepositoriesPage() {
                     {repository.isNative && <Pill variant="green">{nativeLabel}</Pill>}
                     {repository.isLocal && <Pill outline>Local network</Pill>}
                   </div>
-                  <div className="break-all font-mono text-xs text-gray-500">{repository.url}</div>
+                  <div>
+                    <RepositoryLink url={repository.url} />
+                  </div>
                 </td>
                 <td className="px-4 py-3 text-gray-700">{countsCell(repository.counts)}</td>
                 <td className="px-4 py-3">

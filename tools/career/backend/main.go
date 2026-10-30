@@ -57,6 +57,9 @@ func runHTTPServer() {
 	if err := db.InitDatabases(); err != nil {
 		log.Fatalf("failed to open career/jobs databases: %v", err)
 	}
+	// Deleting a CV document must know which jobs use it (step 98); cvbuilder
+	// cannot import jobs, so the implementation is registered here.
+	cvbuilder.UseJobLinks(jobs.DocumentLinks{})
 	// A goroutine, unlike an OS process, has no PID to find or
 	// reattach after a restart — any crawl_runs row still 'running'
 	// from before this process started is definitely orphaned. See
@@ -110,6 +113,7 @@ func runHTTPServer() {
 	http.HandleFunc("/jobs/match", jobMatchHandler)
 	http.HandleFunc("/jobs/cv", cvPdfHandler)
 	http.HandleFunc("/jobs/cv-generations", cvGenerationsHandler)
+	http.HandleFunc("/jobs/cv-link", cvLinkHandler)
 	http.HandleFunc("/companies", companiesHandler)
 	http.HandleFunc("/recruiters", recruitersHandler)
 	http.HandleFunc("/portals", portalsHandler)

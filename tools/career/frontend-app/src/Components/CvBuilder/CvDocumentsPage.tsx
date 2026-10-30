@@ -5,12 +5,16 @@ import {
   updateCvDocumentTitle,
   deleteCvDocument,
   mediaDownloadUrl,
+  CvDocumentInUseError,
+  type CvDocumentJob,
   type CvTemplate,
   type CvDocument,
 } from '../../api'
 import { PersonaSwitcher } from '../Persona/PersonaSwitcher/PersonaSwitcher'
 import { ActionMenu, type ActionMenuItem } from '../../Shared/ActionMenu/ActionMenu'
 import { ConfirmationModal } from '../../Shared/ConfirmationModal/ConfirmationModal'
+import { Modal } from '../../Shared/Modal/Modal'
+import { inUseFooter, inUseHeading, inUseLines } from './cvDeleteDisplay'
 import { EyeIcon, TrashIcon, PlusIcon } from '../../Shared/Icons/icons'
 
 const CV_BUILDER_PATH = '/tools/career/cv-builder'
@@ -36,6 +40,9 @@ export function CvDocumentsPage() {
   const [templates, setTemplates] = useState<CvTemplate[]>([])
   const [error, setError] = useState('')
   const [pendingDelete, setPendingDelete] = useState<CvDocument | null>(null)
+  // Set when the server says jobs use the CV being deleted (step 98): the second
+  // confirmation lists every one of them.
+  const [inUse, setInUse] = useState<{ doc: CvDocument; jobs: CvDocumentJob[] } | null>(null)
 
   useEffect(() => {
     fetchCvTemplates()
@@ -90,6 +97,25 @@ export function CvDocumentsPage() {
     setPendingDelete(null)
     setError('')
     deleteCvDocument(doc.id)
+      .then(() => {
+        setDocuments((prev) => prev.filter((d) => d.id !== doc.id))
+      })
+      .catch((err: unknown) => {
+        if (err instanceof CvDocumentInUseError) {
+          setInUse({ doc, jobs: err.jobs })
+          return
+        }
+        setError(err instanceof Error ? err.message : String(err))
+      })
+  }
+
+  // The second confirmation: the jobs lose their link, then the CV is deleted.
+  function confirmDeleteAndUnlink() {
+    if (!inUse) return
+    const { doc } = inUse
+    setInUse(null)
+    setError('')
+    deleteCvDocument(doc.id, { unlinkJobs: true })
       .then(() => {
         setDocuments((prev) => prev.filter((d) => d.id !== doc.id))
       })
@@ -197,6 +223,44 @@ export function CvDocumentsPage() {
           setPendingDelete(null)
         }}
       />
+
+      <Modal
+        open={inUse !== null}
+        title="Delete CV document"
+        onClose={() => {
+          setInUse(null)
+        }}
+      >
+        {inUse && (
+          <>
+            <p className="mb-2 text-sm font-medium text-gray-900">{inUseHeading(inUse.jobs.length)}</p>
+            <ul className="mb-3 max-h-64 list-disc overflow-y-auto pl-5 pr-1 text-sm text-gray-700">
+              {inUseLines(inUse.jobs).map((line, i) => (
+                <li key={inUse.jobs[i].id}>{line}</li>
+              ))}
+            </ul>
+            <p className="mb-5 text-sm text-gray-600">{inUseFooter(inUse.jobs.length)}</p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setInUse(null)
+                }}
+                className="rounded-md border border-gray-200 px-3.5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteAndUnlink}
+                className="rounded-md bg-red-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-red-700"
+              >
+                Delete and unlink
+              </button>
+            </div>
+          </>
+        )}
+      </Modal>
     </div>
   )
 }
