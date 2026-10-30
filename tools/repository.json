@@ -5,41 +5,41 @@
   "tools": [
     {
       "id": "browser",
-      "currentVersionId": "0.0.190",
+      "currentVersionId": "0.0.191",
       "versions": [
         {
-          "versionId": "0.0.190",
+          "versionId": "0.0.191",
           "name": "Browser",
-          "version": "0.0.190",
+          "version": "0.0.191",
           "releasedAt": "2026-10-30",
           "packages": [
             {
               "os": "darwin",
               "arch": "arm64",
-              "url": "https://github.com/a-digi/cinqo/releases/download/tools-2026-10-30/tool-browser-darwin-arm64.zip",
-              "sha256": "1d54383c9a09eda6493d1a6e2969cf788cc287f3d42d78230691652b29c397b6",
-              "sizeBytes": 15329726
+              "url": "https://github.com/a-digi/cinqo/releases/download/tools-2026-10-30-2/tool-browser-darwin-arm64.zip",
+              "sha256": "232d8410bcbd0ed4eca8026bb178694d73b3021aab73b8ef670401a68ce2541b",
+              "sizeBytes": 15329745
             },
             {
               "os": "linux",
               "arch": "amd64",
-              "url": "https://github.com/a-digi/cinqo/releases/download/tools-2026-10-30/tool-browser-linux-amd64.zip",
-              "sha256": "52497c8dfe7685fb12918b77207ed785064011a83d6176e5dadf33b6a3d7bf1b",
-              "sizeBytes": 15411012
+              "url": "https://github.com/a-digi/cinqo/releases/download/tools-2026-10-30-2/tool-browser-linux-amd64.zip",
+              "sha256": "c753c0b5d1ecb2ec31ef16c2de47dae511736312546a58f84defd99aac8a8279",
+              "sizeBytes": 15411010
             },
             {
               "os": "linux",
               "arch": "arm64",
-              "url": "https://github.com/a-digi/cinqo/releases/download/tools-2026-10-30/tool-browser-linux-arm64.zip",
-              "sha256": "f05951f6fdf17da38ba641b546ef4e698f21555268b4a3e10a1217cadea6591a",
-              "sizeBytes": 14492677
+              "url": "https://github.com/a-digi/cinqo/releases/download/tools-2026-10-30-2/tool-browser-linux-arm64.zip",
+              "sha256": "3a919437554cfff3c11d9b796622997a0769e9c93c4660f8e6f32ff3511c0153",
+              "sizeBytes": 14492685
             },
             {
               "os": "windows",
               "arch": "amd64",
-              "url": "https://github.com/a-digi/cinqo/releases/download/tools-2026-10-30/tool-browser-windows-amd64.zip",
-              "sha256": "1fd718931dc36c37b877cfa924bd8331bfa60c6ace25e71868065aadab6d57e4",
-              "sizeBytes": 14806945
+              "url": "https://github.com/a-digi/cinqo/releases/download/tools-2026-10-30-2/tool-browser-windows-amd64.zip",
+              "sha256": "5236c1a7d484b149cca607d02a5072561f7fdf7130227ad529e89881b161c736",
+              "sizeBytes": 14806957
             }
           ]
         }
@@ -58,28 +58,28 @@
             {
               "os": "darwin",
               "arch": "arm64",
-              "url": "https://github.com/a-digi/cinqo/releases/download/tools-2026-10-30/tool-career-darwin-arm64.zip",
+              "url": "https://github.com/a-digi/cinqo/releases/download/tools-2026-10-30-2/tool-career-darwin-arm64.zip",
               "sha256": "7ff45c3183ef5f31ae89703f08ff0a5fa9cec383b6c5263310b5db16d3d7558c",
               "sizeBytes": 16404178
             },
             {
               "os": "linux",
               "arch": "amd64",
-              "url": "https://github.com/a-digi/cinqo/releases/download/tools-2026-10-30/tool-career-linux-amd64.zip",
+              "url": "https://github.com/a-digi/cinqo/releases/download/tools-2026-10-30-2/tool-career-linux-amd64.zip",
               "sha256": "c01243b09967b8a3ec6690117bdcd55d9d70d2806e91cf9d0642b2cd0922d717",
               "sizeBytes": 16554547
             },
             {
               "os": "linux",
               "arch": "arm64",
-              "url": "https://github.com/a-digi/cinqo/releases/download/tools-2026-10-30/tool-career-linux-arm64.zip",
+              "url": "https://github.com/a-digi/cinqo/releases/download/tools-2026-10-30-2/tool-career-linux-arm64.zip",
               "sha256": "01248336c800687aaac68ea13ca1ce58a200902b81151764f1fdd54b98682b5f",
               "sizeBytes": 15683737
             },
             {
               "os": "windows",
               "arch": "amd64",
-              "url": "https://github.com/a-digi/cinqo/releases/download/tools-2026-10-30/tool-career-windows-amd64.zip",
+              "url": "https://github.com/a-digi/cinqo/releases/download/tools-2026-10-30-2/tool-career-windows-amd64.zip",
               "sha256": "19087bd34c4f3dec1886d54056f40f7c0c0c59c248df10bb4030b04afc84066d",
               "sizeBytes": 16882500
             }
@@ -100,28 +100,28 @@
             {
               "os": "darwin",
               "arch": "arm64",
-              "url": "https://github.com/a-digi/cinqo/releases/download/tools-2026-10-30/tool-pdf_tools-darwin-arm64.zip",
+              "url": "https://github.com/a-digi/cinqo/releases/download/tools-2026-10-30-2/tool-pdf_tools-darwin-arm64.zip",
               "sha256": "8400b485e0018eda0d20ba97394dff214bfc9487f60014b54d3fd4de272a6556",
               "sizeBytes": 7904008
             },
             {
               "os": "linux",
               "arch": "amd64",
-              "url": "https://github.com/a-digi/cinqo/releases/download/tools-2026-10-30/tool-pdf_tools-linux-amd64.zip",
+              "url": "https://github.com/a-digi/cinqo/releases/download/tools-2026-10-30-2/tool-pdf_tools-linux-amd64.zip",
               "sha256": "c3e48a8c8d3bb48cfcc92d1ad0c1a2d47ab2a9f6aa021c5dc1c0194e0a7026a6",
               "sizeBytes": 8157565
             },
             {
               "os": "linux",
               "arch": "arm64",
-              "url": "https://github.com/a-digi/cinqo/releases/download/tools-2026-10-30/tool-pdf_tools-linux-arm64.zip",
+              "url": "https://github.com/a-digi/cinqo/releases/download/tools-2026-10-30-2/tool-pdf_tools-linux-arm64.zip",
               "sha256": "5f933148a3e572381ce5b7786cf305e98e4a9a145fe3a7a4cce0d699beadc2d7",
               "sizeBytes": 7459598
             },
             {
               "os": "windows",
               "arch": "amd64",
-              "url": "https://github.com/a-digi/cinqo/releases/download/tools-2026-10-30/tool-pdf_tools-windows-amd64.zip",
+              "url": "https://github.com/a-digi/cinqo/releases/download/tools-2026-10-30-2/tool-pdf_tools-windows-amd64.zip",
               "sha256": "8d623012985cd723485d7afeae616aec598df2a72f8de17c87ede585a9266097",
               "sizeBytes": 8226024
             }

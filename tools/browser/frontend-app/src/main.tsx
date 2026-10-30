@@ -60,13 +60,6 @@ const chromeDependentEntries = [
     scopes: ['tool:browser:login'],
   },
   {
-    label: 'Crawl Logs',
-    path: CRAWL_LOGS_PATH,
-    // Reuses tool:browser:crawl — the same permission already
-    // needed to run a crawl at all (step 17's own design).
-    scopes: ['tool:browser:crawl'],
-  },
-  {
     label: 'Domains',
     path: DOMAINS_PATH,
     // Step 96 — sites that asked for a check, and clearing them. Same scope as
@@ -74,12 +67,26 @@ const chromeDependentEntries = [
     scopes: ['tool:browser:crawl'],
   },
   {
+    // Debug and Crawl Logs are one group: the Debug page controls the logging that
+    // fills Crawl Logs, so they sit together under a parent of the same name.
     label: 'Debug',
-    path: DEBUG_PATH,
-    // Reuses tool:browser:crawl (step 22's own design) — same
-    // permission tier as Crawl Logs, which this page's own Debug
-    // toggle controls the logging behind.
-    scopes: ['tool:browser:crawl'],
+    children: [
+      {
+        label: 'Debug',
+        path: DEBUG_PATH,
+        // Reuses tool:browser:crawl (step 22's own design) — same
+        // permission tier as Crawl Logs, which this page's own Debug
+        // toggle controls the logging behind.
+        scopes: ['tool:browser:crawl'],
+      },
+      {
+        label: 'Crawl Logs',
+        path: CRAWL_LOGS_PATH,
+        // Reuses tool:browser:crawl — the same permission already
+        // needed to run a crawl at all (step 17's own design).
+        scopes: ['tool:browser:crawl'],
+      },
+    ],
   },
 ]
 

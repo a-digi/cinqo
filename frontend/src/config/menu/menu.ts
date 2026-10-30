@@ -30,9 +30,6 @@ const conversationsIcon =
 const toolsIcon =
   '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor"><path d="M13.5 6.5a2.5 2.5 0 0 1-3.4 2.3l-4.6 4.6a1 1 0 0 1-1.4-1.4l4.6-4.6a2.5 2.5 0 1 1 4.8-2.3z" stroke-width="1.3" stroke-linejoin="round" stroke-linecap="round"/></svg>'
 
-const repositoriesIcon =
-  '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor"><path d="M10 3v9m0 0l-3-3m3 3l3-3" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 13v2.5a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V13" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>'
-
 const platformsIcon =
   '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor"><path d="M10 4l6 3-6 3-6-3 6-3z" stroke-width="1.3" stroke-linejoin="round"/><path d="M4 10l6 3 6-3" stroke-width="1.3" stroke-linejoin="round" stroke-linecap="round"/><path d="M4 13.5l6 3 6-3" stroke-width="1.3" stroke-linejoin="round" stroke-linecap="round"/></svg>'
 
@@ -52,8 +49,14 @@ export const menuEntries: MenuEntry[] = [
   { label: 'Home', path: '/', icon: homeIcon },
   { label: 'Conversations', path: '/conversations', scopes: [AppScopes.ConversationUse], icon: conversationsIcon },
   { label: 'Media', path: '/admin/media', scopes: [AppScopes.SuperAdmin], icon: mediaIcon },
-  { label: 'Tools', path: '/admin/tools', scopes: [AppScopes.ToolManage], icon: toolsIcon },
-  { label: 'Repositories', path: '/admin/tool-repositories', scopes: [AppScopes.ToolManage], icon: repositoriesIcon },
+  {
+    label: 'Tools',
+    icon: toolsIcon,
+    children: [
+      { label: 'Installed Tools', path: '/admin/tools', scopes: [AppScopes.ToolManage] },
+      { label: 'Repositories', path: '/admin/tool-repositories', scopes: [AppScopes.ToolManage] },
+    ],
+  },
   {
     label: 'AI',
     icon: aiIcon,
