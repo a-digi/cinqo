@@ -81,7 +81,7 @@ export function DomainsPage() {
   const summary = summarizeDomains(domains ?? [], now)
 
   return (
-    <div className="max-w-5xl p-6 font-sans text-gray-900">
+    <div className="browser-v-wipe max-w-5xl p-6 font-sans text-gray-900">
       <PageHeaderCard
         icon={<GlobeIcon />}
         title="Domains"

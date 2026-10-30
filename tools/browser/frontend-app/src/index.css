@@ -19,7 +19,7 @@
 
 .browser-enter,
 .browser-stagger > * {
-  animation: browser-rise 900ms cubic-bezier(0.22, 0.61, 0.36, 1) backwards;
+  animation: var(--browser-anim, browser-rise) var(--browser-dur, 900ms) var(--browser-ease, cubic-bezier(0.22, 0.61, 0.36, 1)) backwards;
 }
 
 .browser-delay-1 {
@@ -66,6 +66,239 @@
 }
 .browser-stagger > :nth-child(n + 11) {
   animation-delay: 1450ms;
+}
+
+/* A different entrance for each page: the page's root element carries one of these classes, which
+   only swaps the keyframes, duration and easing the entrance rules above use (the variables are
+   inherited by everything inside the page). A page without one keeps the plain rise. */
+@keyframes browser-slide-left {
+  from {
+    opacity: 0;
+    transform: translateX(-36px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.browser-v-left {
+  --browser-anim: browser-slide-left;
+  --browser-dur: 1000ms;
+  --browser-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@keyframes browser-slide-right {
+  from {
+    opacity: 0;
+    transform: translateX(36px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.browser-v-right {
+  --browser-anim: browser-slide-right;
+  --browser-dur: 1000ms;
+  --browser-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@keyframes browser-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-24px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.browser-v-drop {
+  --browser-anim: browser-drop;
+  --browser-dur: 1000ms;
+  --browser-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@keyframes browser-zoom {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.browser-v-zoom {
+  --browser-anim: browser-zoom;
+  --browser-dur: 1000ms;
+  --browser-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@keyframes browser-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.browser-v-pop {
+  --browser-anim: browser-pop;
+  --browser-dur: 1100ms;
+  --browser-ease: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes browser-blur {
+  from {
+    opacity: 0;
+    filter: blur(10px);
+  }
+  to {
+    opacity: 1;
+    filter: none;
+  }
+}
+
+.browser-v-blur {
+  --browser-anim: browser-blur;
+  --browser-dur: 1200ms;
+  --browser-ease: ease-out;
+}
+
+@keyframes browser-flip {
+  from {
+    opacity: 0;
+    transform: perspective(700px) rotateX(-40deg);
+    transform-origin: top center;
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    transform-origin: top center;
+  }
+}
+
+.browser-v-flip {
+  --browser-anim: browser-flip;
+  --browser-dur: 1100ms;
+  --browser-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@keyframes browser-tilt {
+  from {
+    opacity: 0;
+    transform: translateY(14px) rotate(-2.5deg);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.browser-v-tilt {
+  --browser-anim: browser-tilt;
+  --browser-dur: 1000ms;
+  --browser-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@keyframes browser-wipe {
+  from {
+    opacity: 0;
+    clip-path: inset(0 100% 0 0);
+  }
+  30% {
+    opacity: 1;
+  }
+  to {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+.browser-v-wipe {
+  --browser-anim: browser-wipe;
+  --browser-dur: 1100ms;
+  --browser-ease: cubic-bezier(0.65, 0, 0.35, 1);
+}
+
+@keyframes browser-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.browser-v-fade {
+  --browser-anim: browser-fade;
+  --browser-dur: 1500ms;
+  --browser-ease: ease;
+}
+
+@keyframes browser-stretch {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scaleY(0.85);
+    transform-origin: top center;
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    transform-origin: top center;
+  }
+}
+
+.browser-v-stretch {
+  --browser-anim: browser-stretch;
+  --browser-dur: 1000ms;
+  --browser-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@keyframes browser-swing {
+  from {
+    opacity: 0;
+    transform: translateX(-28px) skewX(-6deg);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.browser-v-swing {
+  --browser-anim: browser-swing;
+  --browser-dur: 1100ms;
+  --browser-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@keyframes browser-spin {
+  from {
+    opacity: 0;
+    transform: rotate(-5deg) scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.browser-v-spin {
+  --browser-anim: browser-spin;
+  --browser-dur: 1100ms;
+  --browser-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 
 @media (prefers-reduced-motion: reduce) {

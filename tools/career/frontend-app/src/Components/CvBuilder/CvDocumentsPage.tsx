@@ -140,7 +140,7 @@ export function CvDocumentsPage() {
   }
 
   return (
-    <div className="max-w-7xl p-6 font-sans text-gray-900">
+    <div className="career-v-zoom max-w-7xl p-6 font-sans text-gray-900">
       <PageHeaderCard
         icon={<PDFIcon className="h-6 w-6" />}
         title="CV Documents"

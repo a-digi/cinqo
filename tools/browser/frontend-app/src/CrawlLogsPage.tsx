@@ -101,7 +101,7 @@ export function CrawlLogsPage() {
   const shown = visibleLogs(logs, onlyUnmatched)
 
   return (
-    <div className="max-w-6xl p-6 font-sans text-gray-900">
+    <div className="browser-v-right max-w-6xl p-6 font-sans text-gray-900">
       <PageHeaderCard
         icon={<ListIcon />}
         title="Crawl Logs"

@@ -83,7 +83,7 @@
 
 .career-enter,
 .career-stagger > * {
-  animation: career-rise 900ms cubic-bezier(0.22, 0.61, 0.36, 1) backwards;
+  animation: var(--career-anim, career-rise) var(--career-dur, 900ms) var(--career-ease, cubic-bezier(0.22, 0.61, 0.36, 1)) backwards;
 }
 
 .career-delay-1 {
@@ -130,6 +130,239 @@
 }
 .career-stagger > :nth-child(n + 11) {
   animation-delay: 1450ms;
+}
+
+/* A different entrance for each page: the page's root element carries one of these classes, which
+   only swaps the keyframes, duration and easing the entrance rules above use (the variables are
+   inherited by everything inside the page). A page without one keeps the plain rise. */
+@keyframes career-slide-left {
+  from {
+    opacity: 0;
+    transform: translateX(-36px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.career-v-left {
+  --career-anim: career-slide-left;
+  --career-dur: 1000ms;
+  --career-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@keyframes career-slide-right {
+  from {
+    opacity: 0;
+    transform: translateX(36px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.career-v-right {
+  --career-anim: career-slide-right;
+  --career-dur: 1000ms;
+  --career-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@keyframes career-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-24px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.career-v-drop {
+  --career-anim: career-drop;
+  --career-dur: 1000ms;
+  --career-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@keyframes career-zoom {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.career-v-zoom {
+  --career-anim: career-zoom;
+  --career-dur: 1000ms;
+  --career-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@keyframes career-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.career-v-pop {
+  --career-anim: career-pop;
+  --career-dur: 1100ms;
+  --career-ease: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes career-blur {
+  from {
+    opacity: 0;
+    filter: blur(10px);
+  }
+  to {
+    opacity: 1;
+    filter: none;
+  }
+}
+
+.career-v-blur {
+  --career-anim: career-blur;
+  --career-dur: 1200ms;
+  --career-ease: ease-out;
+}
+
+@keyframes career-flip {
+  from {
+    opacity: 0;
+    transform: perspective(700px) rotateX(-40deg);
+    transform-origin: top center;
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    transform-origin: top center;
+  }
+}
+
+.career-v-flip {
+  --career-anim: career-flip;
+  --career-dur: 1100ms;
+  --career-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@keyframes career-tilt {
+  from {
+    opacity: 0;
+    transform: translateY(14px) rotate(-2.5deg);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.career-v-tilt {
+  --career-anim: career-tilt;
+  --career-dur: 1000ms;
+  --career-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@keyframes career-wipe {
+  from {
+    opacity: 0;
+    clip-path: inset(0 100% 0 0);
+  }
+  30% {
+    opacity: 1;
+  }
+  to {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+.career-v-wipe {
+  --career-anim: career-wipe;
+  --career-dur: 1100ms;
+  --career-ease: cubic-bezier(0.65, 0, 0.35, 1);
+}
+
+@keyframes career-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.career-v-fade {
+  --career-anim: career-fade;
+  --career-dur: 1500ms;
+  --career-ease: ease;
+}
+
+@keyframes career-stretch {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scaleY(0.85);
+    transform-origin: top center;
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    transform-origin: top center;
+  }
+}
+
+.career-v-stretch {
+  --career-anim: career-stretch;
+  --career-dur: 1000ms;
+  --career-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@keyframes career-swing {
+  from {
+    opacity: 0;
+    transform: translateX(-28px) skewX(-6deg);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.career-v-swing {
+  --career-anim: career-swing;
+  --career-dur: 1100ms;
+  --career-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@keyframes career-spin {
+  from {
+    opacity: 0;
+    transform: rotate(-5deg) scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.career-v-spin {
+  --career-anim: career-spin;
+  --career-dur: 1100ms;
+  --career-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 
 @media (prefers-reduced-motion: reduce) {

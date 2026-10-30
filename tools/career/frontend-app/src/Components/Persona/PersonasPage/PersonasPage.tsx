@@ -95,7 +95,7 @@ export function PersonasPage() {
   }
 
   return (
-    <div className="max-w-7xl p-6 font-sans text-gray-900">
+    <div className="career-v-flip max-w-7xl p-6 font-sans text-gray-900">
       <PageHeaderCard
         icon={<LayersIcon />}
         title="Personas"

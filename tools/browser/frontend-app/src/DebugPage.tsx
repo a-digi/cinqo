@@ -68,7 +68,7 @@ export function DebugPage() {
 
   if (!settings) {
     return (
-      <div className="max-w-5xl p-6 font-sans text-gray-900">
+      <div className="browser-v-flip max-w-5xl p-6 font-sans text-gray-900">
         {header}
         <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
       </div>
@@ -76,7 +76,7 @@ export function DebugPage() {
   }
 
   return (
-    <div className="max-w-5xl p-6 font-sans text-gray-900">
+    <div className="browser-v-flip max-w-5xl p-6 font-sans text-gray-900">
       {header}
 
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">

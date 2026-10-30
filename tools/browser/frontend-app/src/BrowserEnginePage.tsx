@@ -24,7 +24,7 @@ export function BrowserEnginePage() {
   const light = chromeLight(chrome.status, chrome.error, chrome.checking)
 
   return (
-    <div className="max-w-5xl p-6 font-sans text-gray-900">
+    <div className="browser-v-zoom max-w-5xl p-6 font-sans text-gray-900">
       <PageHeaderCard
         icon={<ShieldIcon />}
         title="Browser &amp; Engine"

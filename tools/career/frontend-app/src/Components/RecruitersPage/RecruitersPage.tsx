@@ -99,7 +99,7 @@ export function RecruitersPage() {
   const filtered = filterCompanyId !== ''
 
   return (
-    <div className="max-w-7xl p-6 font-sans text-gray-900">
+    <div className="career-v-drop max-w-7xl p-6 font-sans text-gray-900">
       <PageHeaderCard
         icon={<UsersIcon />}
         title="Recruiters"

@@ -103,7 +103,7 @@ export function SkillsPage() {
   const visibleSkills = letter === null ? skills : filterByLetter(skills, letter)
 
   return (
-    <div className="max-w-7xl p-6 font-sans text-gray-900">
+    <div className="career-v-tilt max-w-7xl p-6 font-sans text-gray-900">
       <PageHeaderCard
         icon={<SparkIcon />}
         title="Skills"

@@ -36,7 +36,7 @@ export function NewProfilePage() {
   }
 
   return (
-    <div className="max-w-3xl p-6 font-sans text-gray-900">
+    <div className="career-v-stretch max-w-3xl p-6 font-sans text-gray-900">
       <PageHeaderCard
         icon={<UserIcon />}
         title="New profile"

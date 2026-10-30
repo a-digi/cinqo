@@ -85,7 +85,7 @@ export function CrawlMonitorPage() {
   const automatic = runs.filter((r) => r.triggeredBy === 'auto_discovery').length
 
   return (
-    <div className="max-w-7xl p-6 font-sans text-gray-900">
+    <div className="career-v-blur max-w-7xl p-6 font-sans text-gray-900">
       <PageHeaderCard
         icon={<PulseIcon />}
         title="Crawl Monitor"

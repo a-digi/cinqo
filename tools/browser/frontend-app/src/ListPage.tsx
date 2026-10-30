@@ -38,7 +38,7 @@ export function ListPage() {
   }
 
   return (
-    <div className="max-w-6xl p-6 font-sans text-gray-900">
+    <div className="browser-v-left max-w-6xl p-6 font-sans text-gray-900">
       <PageHeaderCard
         icon={<KeyIcon />}
         title="Login Credentials"

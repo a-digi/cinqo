@@ -87,7 +87,7 @@ export function CompaniesPage() {
   const withJobsPercent = percentOrNull(summary.withJobs, summary.companies)
 
   return (
-    <div className="max-w-7xl p-6 font-sans text-gray-900">
+    <div className="career-v-right max-w-7xl p-6 font-sans text-gray-900">
       <PageHeaderCard
         icon={<BuildingIcon />}
         title="Companies"

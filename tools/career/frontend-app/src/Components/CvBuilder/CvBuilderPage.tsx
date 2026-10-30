@@ -285,7 +285,7 @@ export function CvBuilderPage() {
   const templateName = templates.find((t) => t.id === templateId)?.name ?? templateId
 
   return (
-    <div className="career-enter max-w-5xl p-6">
+    <div className="career-v-right career-enter max-w-5xl p-6">
       <button type="button" onClick={handleCancel} className="mb-4 text-sm text-gray-500 underline hover:text-gray-700">
         {backLabel(forJobId !== null)}
       </button>

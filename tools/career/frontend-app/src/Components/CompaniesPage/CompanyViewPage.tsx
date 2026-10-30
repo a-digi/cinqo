@@ -84,7 +84,7 @@ export function CompanyViewPage() {
   const matched = jobs.filter((j) => j.matchStatus === 'completed' && j.matchScore !== undefined).length
 
   return (
-    <div className="max-w-7xl p-6 font-sans text-gray-900">
+    <div className="career-v-tilt max-w-7xl p-6 font-sans text-gray-900">
       {backLink}
       <PageHeaderCard
         icon={<BuildingIcon />}

@@ -53,7 +53,7 @@ export function ExperiencePage() {
   const summary = summarizeExperience(experience)
 
   return (
-    <div className="max-w-7xl p-6 font-sans text-gray-900">
+    <div className="career-v-fade max-w-7xl p-6 font-sans text-gray-900">
       <PageHeaderCard
         icon={<TimelineIcon />}
         title="Experience"

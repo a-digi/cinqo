@@ -258,7 +258,7 @@ export function PortalsPage() {
   const summary = summarizePortals(portals)
 
   return (
-    <div className="max-w-7xl p-6 font-sans text-gray-900">
+    <div className="career-v-left max-w-7xl p-6 font-sans text-gray-900">
       <PageHeaderCard
         icon={<GlobeIcon />}
         title="Portals"

@@ -58,7 +58,7 @@ export function NewRecruiterPage() {
   }
 
   return (
-    <div className="max-w-3xl p-6 font-sans text-gray-900">
+    <div className="career-v-blur max-w-3xl p-6 font-sans text-gray-900">
       <PageHeaderCard
         icon={<UsersIcon />}
         title="New recruiter"

@@ -47,7 +47,7 @@ export function JobDetailsPage() {
   }
 
   return (
-    <div className="max-w-5xl p-6 font-sans text-gray-900">
+    <div className="career-v-spin max-w-5xl p-6 font-sans text-gray-900">
       <button type="button" onClick={handleBack} className="mb-4 text-sm text-gray-500 underline hover:text-gray-700">
         ← Back to Jobs
       </button>
