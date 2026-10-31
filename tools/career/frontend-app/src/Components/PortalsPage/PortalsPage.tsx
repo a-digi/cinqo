@@ -331,8 +331,8 @@ export function PortalsPage() {
         pill={{ text: plural(summary.portals, 'portal', 'portals') }}
       />
 
-      {/* Two columns: the portals on the right; on the left the "New portal" button, the numbers
-          and the auto-discovery switch (under the list on a narrow window). */}
+      {/* Two columns: the portals on the right; on the left the "New portal" button, the
+          auto-discovery switch and the numbers, in that order (under the list on a narrow window). */}
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
         <div className="order-1 min-w-0 flex-1 lg:order-2">
           <p className="mb-3 text-xs text-gray-500">Deleting a portal permanently deletes every link it owns.</p>
@@ -625,6 +625,9 @@ export function PortalsPage() {
             <PlusIcon />
             New portal
           </button>
+          {/* Step 88 — only while some link has crawl instructions: with none, there is nothing
+              the global auto-discovery could crawl. Step 104 — above the Overview, not under it. */}
+          {anyLinkAutoDiscoverable(portals) && <AutoDiscoveryPanel />}
           <SummaryRail
             title="Overview"
             segments={[
@@ -639,11 +642,7 @@ export function PortalsPage() {
               { label: 'With instructions', value: String(summary.withInstructions), color: '#16a34a' },
               { label: 'Never crawled', value: String(summary.neverCrawled), color: ACCENTS[2].to, emphasis: summary.neverCrawled > 0 },
             ]}
-          >
-            {/* Step 88 — only while some link has crawl instructions: with none,
-                there is nothing the global auto-discovery could crawl. */}
-            {anyLinkAutoDiscoverable(portals) && <AutoDiscoveryPanel />}
-          </SummaryRail>
+          />
         </aside>
       </div>
 

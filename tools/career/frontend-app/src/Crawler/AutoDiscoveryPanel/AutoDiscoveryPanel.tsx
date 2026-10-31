@@ -10,8 +10,13 @@ import { fetchAutoDiscoverySettings, updateAutoDiscoverySettings, AUTO_DISCOVERY
 // instructions set, not a per-link schedule (see that step's own plan
 // doc for why). Lives on PortalsPage.tsx as page-wide crawling
 // configuration rather than anything scoped to one portal or link (the AI
-// platform and model it uses are the tool-wide Settings choice). See
-// plan/ai/tools/career/step-84-auto-discovery-scheduled-crawling.md.
+// platform and model it uses are the tool-wide Settings choice). It sits
+// at the top of the page's left column, above the Overview (step 104), so
+// it is separated from what follows by a line under it, and keeps its
+// place with an empty block while its settings load, so the Overview does
+// not jump down when they arrive. See
+// plan/ai/tools/career/step-84-auto-discovery-scheduled-crawling.md and
+// plan/ai/tools/career/step-104-auto-discovery-above-the-overview.md.
 export function AutoDiscoveryPanel() {
   const [enabled, setEnabled] = useState(false)
   const [intervalMinutes, setIntervalMinutes] = useState(60)
@@ -71,10 +76,12 @@ export function AutoDiscoveryPanel() {
       })
   }
 
-  if (!loaded) return null
+  // The loaded panel's own height (156px measured live: content, padding and its line), plus
+  // the same space under it, so the Overview does not move when the settings arrive.
+  if (!loaded) return <div className="mb-6 h-[9.75rem]" aria-hidden="true" />
 
   return (
-    <div className="mt-6 border-t border-gray-200 pt-4">
+    <div className="mb-6 border-b border-gray-200 pb-5">
       <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
         <span style={{ color: '#7c3aed' }}>
           <BoltIcon className="h-4 w-4" />
