@@ -42,6 +42,8 @@ import {
   PlusIcon,
 } from '../../Shared/Icons/icons'
 import { AddJobModal } from './AddJobModal'
+import { companyCell } from './companyCell'
+import { VIEW_COMPANY_PATH } from '../../paths'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { PAGE_ACCENT, accentFor, initialOf } from './jobsTheme'
 import { JobStatsStrip } from './JobStatsStrip'
@@ -985,6 +987,7 @@ export function JobsPage() {
                   </thead>
                   <tbody>
                     {jobs.map((job) => {
+                      const cell = companyCell(job, companyNames, VIEW_COMPANY_PATH)
                       return (
                         <tr key={job.id} className="transition-colors last:[&>td]:border-b-0 hover:bg-blue-50/50">
                           <td className="border-b border-blue-50 p-3 text-gray-900">
@@ -1008,10 +1011,24 @@ export function JobsPage() {
                             </div>
                           </td>
                           <td className="border-b border-blue-50 p-3">
-                            {job.company}
-                            {job.companyId && (
+                            {cell.linkTo ? (
+                              <a
+                                href={cell.linkTo}
+                                onClick={(e) => {
+                                  e.preventDefault()
+                                  window.__cinqoToolBridge.navigate(cell.linkTo ?? '')
+                                }}
+                                title="Open this company's page"
+                                className="font-medium text-blue-700 hover:underline focus:outline-none focus-visible:underline"
+                              >
+                                {cell.text}
+                              </a>
+                            ) : (
+                              cell.text
+                            )}
+                            {cell.linkTo && (
                               <div className="mt-0.5 flex items-center gap-1.5 text-xs text-gray-400">
-                                linked to {companyNames[job.companyId] ?? '…'}
+                                {cell.linkedName !== null && <>linked to {cell.linkedName}</>}
                                 <button
                                   type="button"
                                   onClick={() => {
