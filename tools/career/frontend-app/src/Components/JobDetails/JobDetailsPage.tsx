@@ -137,7 +137,7 @@ export function JobDetailsPage() {
               <p className="whitespace-pre-wrap text-sm text-gray-800">{job.description || 'No description available.'}</p>
             </div>
 
-            <JobBoardUsage jobId={job.id} jobTitle={job.title} />
+            <JobBoardUsage jobId={job.id} />
 
             {job.matchStatus === 'completed' && job.matchScore !== undefined && (
               <div className="career-enter career-delay-2 w-full shrink-0 rounded-md border border-gray-200 bg-white p-5 shadow-sm md:w-64">

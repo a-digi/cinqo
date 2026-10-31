@@ -1,77 +1,125 @@
-import { useCallback, useEffect, useState } from 'react'
-import { fetchJobBoardUsage, type JobBoardUsageEntry } from '../../api'
+import { useEffect, useState } from 'react'
+import {
+  fetchJobBoardUsage,
+  fetchJobStatuses,
+  fetchProfiles,
+  removeJobBoardEntry,
+  setJobBoardEntry,
+  type JobBoardUsageEntry,
+  type JobStatusInfo,
+  type Profile,
+} from '../../api'
 import { AppLink } from '../../Shared/AppLink/AppLink'
+import { inputClass } from '../../Shared/inputClass'
 import { jobBoardPathFor } from '../../paths'
-import { AddToBoardModal } from './AddToBoardModal'
-import { columnAccent } from './jobBoardRules'
+import { profileLabel } from '../ProfileSwitcher/profileLabel'
+import { columnAccent, statusOptionsFor } from './jobBoardRules'
 
-// "Profiles using this job" (step 126), on the job's page: every profile whose job board has the job and the job's
-// status on it (the status links to that board), and "Add to board" for the others. See
+// The job's status on each profile's job board (step 126), on the job's page: every profile with a status picker.
+// Picking a status puts the job on that profile's board in that status (it is added when it is not on the board
+// yet, and only changes status when it is); "Not on the board" takes it off again. See
 // plan/ai/tools/career/step-126-job-board-statuses.md.
-export function JobBoardUsage({ jobId, jobTitle }: { jobId: string; jobTitle: string }) {
-  const [usage, setUsage] = useState<JobBoardUsageEntry[] | null>(null)
+export function JobBoardUsage({ jobId }: { jobId: string }) {
+  const [profiles, setProfiles] = useState<Profile[] | null>(null)
+  const [statuses, setStatuses] = useState<JobStatusInfo[]>([])
+  // The status id the job has on each profile's board; a profile that is missing does not have the job.
+  const [current, setCurrent] = useState<ReadonlyMap<string, string>>(new Map())
+  const [saving, setSaving] = useState<string | null>(null)
   const [error, setError] = useState('')
-  const [adding, setAdding] = useState(false)
 
-  const load = useCallback(() => {
+  useEffect(() => {
     setError('')
-    fetchJobBoardUsage(jobId)
-      .then(setUsage)
+    Promise.all([fetchProfiles(), fetchJobStatuses(), fetchJobBoardUsage(jobId)])
+      .then(([profileList, statusList, usage]) => {
+        setProfiles(profileList)
+        setStatuses(statusList)
+        setCurrent(new Map(usage.map((u: JobBoardUsageEntry) => [u.profileId, u.statusId])))
+      })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : String(err))
       })
   }, [jobId])
 
-  useEffect(() => {
-    load()
-  }, [load])
+  function pick(profileId: string, statusId: string) {
+    const before = current.get(profileId)
+    if ((before ?? '') === statusId) return
+    setError('')
+    setSaving(profileId)
+    setCurrent((prev) => withStatus(prev, profileId, statusId === '' ? undefined : statusId))
+    const save = statusId === '' ? removeJobBoardEntry(profileId, jobId) : setJobBoardEntry(profileId, jobId, statusId)
+    save
+      .catch((err: unknown) => {
+        // The change did not save: the picker goes back to what it was.
+        setCurrent((prev) => withStatus(prev, profileId, before))
+        setError(err instanceof Error ? err.message : String(err))
+      })
+      .finally(() => {
+        setSaving(null)
+      })
+  }
+
+  const onBoards = current.size
 
   return (
     <div className="career-enter career-delay-2 w-full shrink-0 rounded-md border border-gray-200 bg-white p-5 shadow-sm md:w-64">
-      <h2 className="mb-3 text-sm font-semibold text-gray-900">
-        Profiles using this job{usage !== null && usage.length > 0 ? ` (${String(usage.length)})` : ''}
-      </h2>
-      {error !== '' && <p className="mb-2 text-xs text-red-700">{error}</p>}
-      {usage === null ? (
+      <h2 className="mb-1 text-sm font-semibold text-gray-900">Job board{onBoards > 0 ? ` (${String(onBoards)})` : ''}</h2>
+      <p className="mb-3 text-xs text-gray-500">Pick a status for a profile to put this job on its board, or to change its status there.</p>
+      {error !== '' && (
+        <p role="alert" className="mb-2 text-xs text-red-700">
+          {error}
+        </p>
+      )}
+      {profiles === null ? (
         error === '' && <p className="text-xs text-gray-500">Loading…</p>
-      ) : usage.length === 0 ? (
-        <p className="text-xs text-gray-500">No profile has this job on its job board yet.</p>
+      ) : profiles.length === 0 ? (
+        <p className="text-xs text-gray-500">There are no profiles yet. Create a profile first.</p>
       ) : (
-        <ul className="space-y-2">
-          {usage.map((u) => {
-            const accent = columnAccent(u.kind, u.statusName)
-            const name = `${u.firstName} ${u.lastName}`.trim() || 'Profile'
+        <ul className="space-y-3">
+          {profiles.map((p) => {
+            const statusId = current.get(p.id)
+            const options = statusOptionsFor(statuses, p.id)
+            const selected = options.find((o) => o.id === statusId)
+            const accent = selected ? columnAccent(selected.kind, selected.name) : null
             return (
-              <li key={u.profileId} className="flex items-center justify-between gap-2 text-sm">
-                <span className="min-w-0 truncate text-gray-800">{name}</span>
-                <AppLink
-                  href={jobBoardPathFor(u.profileId)}
-                  className="shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold hover:underline"
-                  style={{ background: accent.soft, color: accent.text }}
+              <li key={p.id}>
+                <div className="mb-1 flex items-center justify-between gap-2 text-sm">
+                  <span className="min-w-0 truncate text-gray-800">{profileLabel(p)}</span>
+                  {statusId !== undefined && (
+                    <AppLink href={jobBoardPathFor(p.id)} className="shrink-0 text-xs font-medium text-blue-700 hover:underline">
+                      Open board
+                    </AppLink>
+                  )}
+                </div>
+                <select
+                  aria-label={`Status for ${profileLabel(p)}`}
+                  value={statusId ?? ''}
+                  disabled={saving === p.id}
+                  onChange={(e) => {
+                    pick(p.id, e.target.value)
+                  }}
+                  className={`${inputClass} text-xs`}
+                  style={accent ? { background: accent.soft, color: accent.text, borderColor: accent.from } : undefined}
                 >
-                  {u.statusName}
-                </AppLink>
+                  <option value="">Not on the board</option>
+                  {options.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.name}
+                    </option>
+                  ))}
+                </select>
               </li>
             )
           })}
         </ul>
       )}
-      <button
-        type="button"
-        onClick={() => {
-          setAdding(true)
-        }}
-        className="mt-4 w-full rounded-md border border-gray-200 px-3 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
-      >
-        Add to board
-      </button>
-      <AddToBoardModal
-        job={adding ? { id: jobId, title: jobTitle } : null}
-        onClose={() => {
-          setAdding(false)
-        }}
-        onAdded={load}
-      />
     </div>
   )
+}
+
+// The map with one profile's status set, or removed when statusId is undefined.
+function withStatus(map: ReadonlyMap<string, string>, profileId: string, statusId: string | undefined): ReadonlyMap<string, string> {
+  const next = new Map(map)
+  if (statusId === undefined) next.delete(profileId)
+  else next.set(profileId, statusId)
+  return next
 }

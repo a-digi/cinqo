@@ -337,6 +337,32 @@ func GetBoard(profileID string) (Board, error) {
 	return board, jobRows.Err()
 }
 
+// StatusInfo is a status with the profile that owns it (empty for a fixed one).
+type StatusInfo struct {
+	Status
+	ProfileID string `json:"profileId,omitempty"`
+}
+
+// ListStatuses reads every status: the four fixed ones, then the profiles' own, each group in the order
+// they were created. A page that lets a job be put on any profile's board uses it to offer each profile
+// its own list (the fixed ones plus that profile's).
+func ListStatuses() ([]StatusInfo, error) {
+	rows, err := db.JobsDB.Query(`SELECT id, name, kind, COALESCE(profile_id, '') FROM job_statuses ORDER BY (profile_id IS NOT NULL), rowid`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	list := []StatusInfo{}
+	for rows.Next() {
+		var s StatusInfo
+		if err := rows.Scan(&s.ID, &s.Name, &s.Kind, &s.ProfileID); err != nil {
+			return nil, err
+		}
+		list = append(list, s)
+	}
+	return list, rows.Err()
+}
+
 // GetUsage reads a job's status on every board that has it (the caller adds each
 // profile's name; a profile that no longer exists is the caller's to skip).
 func GetUsage(jobID string) ([]Usage, error) {

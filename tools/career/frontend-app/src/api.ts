@@ -1711,3 +1711,18 @@ export async function fetchJobBoardUsage(jobId: string): Promise<JobBoardUsageEn
   const data = await jsonOrThrow<{ profiles: JobBoardUsageEntry[] }>(res, 'load the job’s boards')
   return data.profiles
 }
+
+// A status as the job page offers it: one of the four fixed ones (no profileId) or a profile's own.
+export interface JobStatusInfo {
+  id: string
+  name: string
+  kind: JobStatusKind
+  profileId?: string
+}
+
+// Every status: the fixed ones and every profile's own.
+export async function fetchJobStatuses(): Promise<JobStatusInfo[]> {
+  const res = await fetch(`${PROXY_BASE}/job-statuses`, { credentials: 'include' })
+  const data = await jsonOrThrow<{ statuses: JobStatusInfo[] }>(res, 'load the statuses')
+  return data.statuses
+}

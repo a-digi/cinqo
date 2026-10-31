@@ -158,7 +158,7 @@ func TestJobBoardRouteErrors(t *testing.T) {
 		{"delete fixed", jobStatusesHandler, "DELETE", "/job-statuses?id=" + jobboard.DeclinedID, "", 400},
 		{"delete unknown is a no-op", jobStatusesHandler, "DELETE", "/job-statuses?id=nope", "", 204},
 		{"delete without id", jobStatusesHandler, "DELETE", "/job-statuses", "", 400},
-		{"statuses wrong method", jobStatusesHandler, "GET", "/job-statuses", "", 405},
+		{"statuses wrong method", jobStatusesHandler, "PATCH", "/job-statuses", "", 405},
 		{"entry other profile's status", jobBoardEntriesHandler, "PUT", "/job-board-entries", `{"profileId":"` + p2 + `","jobId":"j1","statusId":"` + mine + `"}`, 400},
 		{"entry unknown job", jobBoardEntriesHandler, "PUT", "/job-board-entries", `{"profileId":"` + p1 + `","jobId":"nope","statusId":"` + mine + `"}`, 404},
 		{"entry unknown status", jobBoardEntriesHandler, "PUT", "/job-board-entries", `{"profileId":"` + p1 + `","jobId":"j1","statusId":"nope"}`, 404},
@@ -227,4 +227,39 @@ func TestUsageSkipsAProfileThatNoLongerExists(t *testing.T) {
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"profiles":[]`) {
 		t.Errorf("%d %s", rec.Code, rec.Body.String())
 	}
+}
+
+func TestListStatusesAnswersFixedThenEveryProfilesOwn(t *testing.T) {
+	p1, p2 := boardFixture(t)
+	a, _ := jobboard.CreateStatus(p1, "Interview")
+	b, _ := jobboard.CreateStatus(p2, "Offer")
+	c, _ := jobboard.CreateStatus(p1, "Phone screen")
+
+	rec := boardCall(t, jobStatusesHandler, "GET", "/job-statuses", "")
+	wantStatus(t, rec, 200)
+	var resp struct {
+		Statuses []struct {
+			ID        string `json:"id"`
+			Name      string `json:"name"`
+			Kind      string `json:"kind"`
+			ProfileID string `json:"profileId"`
+		} `json:"statuses"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, s := range resp.Statuses {
+		got = append(got, s.Name+"/"+s.Kind+"/"+s.ProfileID)
+	}
+	want := []string{
+		"Not Reviewed/not_reviewed/", "Declined/declined/", "Stopped application/stopped/", "Applied/applied/",
+		"Interview/custom/" + p1, "Offer/custom/" + p2, "Phone screen/custom/" + p1,
+	}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("statuses = %v\nwant     %v", got, want)
+	}
+	_ = a
+	_ = b
+	_ = c
 }

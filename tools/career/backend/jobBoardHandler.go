@@ -62,10 +62,18 @@ func jobBoardHandler(w http.ResponseWriter, r *http.Request) {
 	db.WriteJSON(w, board)
 }
 
-// jobStatusesHandler handles POST (add a custom status), PUT (rename) and DELETE (?id=,
-// its jobs move to Not Reviewed) on /job-statuses.
+// jobStatusesHandler handles GET (every status: the fixed ones and every profile's own), POST (add a
+// custom status), PUT (rename) and DELETE (?id=, its jobs move to Not Reviewed) on /job-statuses.
 func jobStatusesHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
+	case http.MethodGet:
+		list, err := jobboard.ListStatuses()
+		if err != nil {
+			writeJobBoardError(w, "list the statuses", err)
+			return
+		}
+		db.WriteJSON(w, map[string]any{"statuses": list})
+
 	case http.MethodPost:
 		var body struct {
 			ProfileID string `json:"profileId"`

@@ -1,4 +1,4 @@
-import type { JobBoard, JobStatusKind } from '../../api'
+import type { JobBoard, JobStatusInfo, JobStatusKind } from '../../api'
 import { ACCENTS, hashString, type Accent } from '../JobsPage/jobsTheme'
 
 const NEUTRAL: Accent = { from: '#9ca3af', to: '#6b7280', soft: '#f3f4f6', text: '#4b5563' }
@@ -75,3 +75,14 @@ export function statusNameProblem(board: JobBoard, name: string, exceptId?: stri
 
 // The id of the fixed status a job starts in on a board (seeded by the backend).
 export const NOT_REVIEWED_ID = 'fixed-not-reviewed'
+
+// The statuses a profile can give a job, in the order of its board's columns: Not Reviewed, the profile's own, then
+// Applied, Declined and Stopped application. Another profile's own statuses are never offered.
+export function statusOptionsFor(statuses: JobStatusInfo[], profileId: string): JobStatusInfo[] {
+  const mine = statuses.filter((s) => s.profileId === undefined || s.profileId === profileId)
+  const rank: Record<JobStatusKind, number> = { not_reviewed: 0, custom: 1, applied: 2, declined: 3, stopped: 4 }
+  return mine
+    .map((s, i) => ({ s, i }))
+    .sort((a, b) => rank[a.s.kind] - rank[b.s.kind] || a.i - b.i)
+    .map(({ s }) => s)
+}
