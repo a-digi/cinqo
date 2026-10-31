@@ -5,10 +5,23 @@ body {
   margin: 0;
   padding: 0 40px;
 }
-h1 { font-size: 20pt; margin: 0 0 2px 0; }
-.headline { font-size: 11.5pt; color: #444; margin: 0 0 4px 0; }
-.contact { font-size: 9.5pt; color: #555; margin: 0 0 14px 0; }
-.contact span { margin-right: 10px; }
+h1 {
+  font-size: 20pt;
+  margin: 0 0 2px 0;
+}
+.headline {
+  font-size: 11.5pt;
+  color: #444;
+  margin: 0 0 4px 0;
+}
+.contact {
+  font-size: 9.5pt;
+  color: #555;
+  margin: 0 0 14px 0;
+}
+.contact span {
+  margin-right: 10px;
+}
 h2 {
   font-size: 11pt;
   color: #0f766e;
@@ -16,9 +29,19 @@ h2 {
   padding-bottom: 3px;
   margin: 16px 0 10px 0;
 }
-p.summary { margin: 0; line-height: 1.5; }
-p.skills { margin: 0; line-height: 1.5; }
-.timeline { border-left: 2px solid #99f6e4; margin-left: 4px; padding-left: 16px; }
+p.summary {
+  margin: 0;
+  line-height: 1.5;
+}
+p.skills {
+  margin: 0;
+  line-height: 1.5;
+}
+.timeline {
+  border-left: 2px solid #99f6e4;
+  margin-left: 4px;
+  padding-left: 16px;
+}
 .entry {
   margin-bottom: 12px;
   position: relative;
@@ -35,9 +58,17 @@ p.skills { margin: 0; line-height: 1.5; }
   border-radius: 50%;
   background: #0f766e;
 }
-.entry-title { font-weight: bold; }
-.entry-meta { color: #555; font-size: 9pt; }
-.entry-desc { margin: 3px 0 0 0; line-height: 1.42; }
+.entry-title {
+  font-weight: bold;
+}
+.entry-meta {
+  color: #555;
+  font-size: 9pt;
+}
+.entry-desc {
+  margin: 3px 0 0 0;
+  line-height: 1.42;
+}
 
 .profile-photo {
   width: 100px;

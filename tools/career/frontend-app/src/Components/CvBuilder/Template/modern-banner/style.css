@@ -18,7 +18,11 @@ body {
   flex: 1;
   min-width: 0;
 }
-.banner h1, .banner .headline, .banner .contact { color: #ffffff; }
+.banner h1,
+.banner .headline,
+.banner .contact {
+  color: #ffffff;
+}
 h1 {
   font-size: 21pt;
   margin: 0 0 2px 0;
@@ -45,11 +49,26 @@ h2 {
   padding-bottom: 3px;
   margin: 16px 0 8px 0;
 }
-p.summary { margin: 0; line-height: 1.5; }
-.entry { margin-bottom: 10px; break-inside: avoid; page-break-inside: avoid; }
-.entry-title { font-weight: bold; }
-.entry-meta { color: #555; font-size: 9pt; }
-.entry-desc { margin: 3px 0 0 0; line-height: 1.42; }
+p.summary {
+  margin: 0;
+  line-height: 1.5;
+}
+.entry {
+  margin-bottom: 10px;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+.entry-title {
+  font-weight: bold;
+}
+.entry-meta {
+  color: #555;
+  font-size: 9pt;
+}
+.entry-desc {
+  margin: 3px 0 0 0;
+  line-height: 1.42;
+}
 .skill-pill {
   display: inline-block;
   background: #eff6ff;

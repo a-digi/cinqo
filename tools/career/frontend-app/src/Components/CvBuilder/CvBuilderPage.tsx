@@ -18,6 +18,7 @@ import { SkillsStep } from './SkillsStep'
 import { ExperienceStep } from './ExperienceStep'
 import { TitleAndReviewStep } from './TitleAndReviewStep'
 import { StepIndicator } from './StepIndicator'
+import { effectiveChoice, photoToSend, type CvPhoto } from './cvPhotoRules'
 import { JOBS_PATH, attachFailedMessage, backLabel, bannerText, defaultCvTitle, jobIdFromSearch } from './cvForJob'
 
 const CV_DOCUMENTS_PATH = '/tools/career/cv-documents'
@@ -83,10 +84,16 @@ export function CvBuilderPage() {
   // one. attachPhoto defaults true (checked) and resets to true
   // whenever the persona changes or an existing document is loaded —
   // there's no stored record of whether a past document actually used
-  // a photo, so edit mode can't restore the original choice; it just
-  // reapplies the same "checked by default" rule new CVs get.
+  // a photo, so edit mode can't restore that; it just reapplies the
+  // same "checked by default" rule new CVs get. WHICH photo was used
+  // is stored (step 111) and restored below.
   const [hasProfilePhoto, setHasProfilePhoto] = useState(false)
   const [attachPhoto, setAttachPhoto] = useState(true)
+  // The profile's photos (the default first) and which one this CV uses; '' means the default.
+  // With several photos the choice is sent on preview and create and remembered on the CV, so
+  // editing it later shows the same photo (step 111). The attach flag itself is still not stored.
+  const [photos, setPhotos] = useState<CvPhoto[]>([])
+  const [photoChoice, setPhotoChoice] = useState('')
 
   // PersonaSwitcher's own mount effect ALWAYS auto-selects a persona
   // from localStorage/first-in-list and fires onChange exactly once,
@@ -134,12 +141,15 @@ export function CvBuilderPage() {
         setCvData(doc.data)
         setFurthestStep(STEPS.length - 1)
         setAttachPhoto(true)
+        setPhotoChoice(doc.photoMediaFileId ?? '')
         fetchCvPhotoStatus(doc.personaId)
-          .then(({ hasPhoto }) => {
+          .then(({ hasPhoto, photos: profilePhotos }) => {
             setHasProfilePhoto(hasPhoto)
+            setPhotos(profilePhotos)
           })
           .catch(() => {
             setHasProfilePhoto(false)
+            setPhotos([])
           })
       })
       .catch((err: unknown) => {
@@ -158,17 +168,21 @@ export function CvBuilderPage() {
     setPersonaId(id)
     setError('')
     setAttachPhoto(true)
+    setPhotoChoice('')
+    setPhotos([])
     fetchCvPersonaDefaults(id)
       .then(setCvData)
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : String(err))
       })
     fetchCvPhotoStatus(id)
-      .then(({ hasPhoto }) => {
+      .then(({ hasPhoto, photos: profilePhotos }) => {
         setHasProfilePhoto(hasPhoto)
+        setPhotos(profilePhotos)
       })
       .catch(() => {
         setHasProfilePhoto(false)
+        setPhotos([])
       })
   }
 
@@ -223,7 +237,7 @@ export function CvBuilderPage() {
     setError('')
     const previewTab = window.open('', '_blank')
     setPreviewing(true)
-    previewCvDocument(personaId, previewTemplateId, cvData, attachPhoto)
+    previewCvDocument(personaId, previewTemplateId, cvData, attachPhoto, photoToSend(attachPhoto, photos, photoChoice))
       .then(({ previewUrl: url }) => {
         if (previewTab) {
           previewTab.location.href = url
@@ -252,10 +266,12 @@ export function CvBuilderPage() {
     // the job, and return to the Jobs page. Without a job it is the plain wizard.
     const created = createdDocumentId
       ? Promise.resolve(createdDocumentId)
-      : createCvDocument(personaId, templateId, title.trim(), cvData, attachPhoto).then((doc) => {
-          if (forJobId) setCreatedDocumentId(doc.id)
-          return doc.id
-        })
+      : createCvDocument(personaId, templateId, title.trim(), cvData, attachPhoto, photoToSend(attachPhoto, photos, photoChoice)).then(
+          (doc) => {
+            if (forJobId) setCreatedDocumentId(doc.id)
+            return doc.id
+          },
+        )
     created
       .then((documentId) => {
         if (!forJobId) {
@@ -311,6 +327,9 @@ export function CvBuilderPage() {
           hasProfilePhoto={hasProfilePhoto}
           attachPhoto={attachPhoto}
           onAttachPhotoChange={setAttachPhoto}
+          photos={photos}
+          photoChoice={effectiveChoice(photos, photoChoice)}
+          onPhotoChoiceChange={setPhotoChoice}
           canPreview={Boolean(cvData)}
           previewing={previewing}
           onPreviewTemplate={handlePreviewTemplate}

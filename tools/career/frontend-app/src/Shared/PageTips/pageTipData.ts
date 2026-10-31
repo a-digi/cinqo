@@ -189,7 +189,7 @@ export const PAGE_TIPS: Record<PageTipsId, PageTipSet> = {
         title: 'Your photo on the CV',
         tone: 'rose',
         icon: 'camera',
-        text: 'The CV templates use the profile’s photo. Add one or pick an existing one on the Photo page; a profile uses one photo at a time.',
+        text: 'The CV templates use the profile’s default photo. With several photos, you choose one when you create a CV. Add and manage photos on the Photo page.',
       },
       {
         id: 'attach',
@@ -525,10 +525,10 @@ export const PAGE_TIPS: Record<PageTipsId, PageTipSet> = {
       {
         id: 'one',
         label: 'One photo',
-        title: 'One photo, many profiles',
+        title: 'Several photos, one default',
         tone: 'blue',
         icon: 'camera',
-        text: 'A profile uses one photo at a time, but one photo can be shared by many profiles. Pick one from your library, or upload a new one.',
+        text: 'A profile can have several photos. The default is used on CVs unless you pick another in the CV builder. One photo can be shared by many profiles.',
       },
       {
         id: 'cv',

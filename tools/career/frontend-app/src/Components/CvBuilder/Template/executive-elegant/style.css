@@ -5,10 +5,30 @@ body {
   margin: 0;
   padding: 0 44px;
 }
-h1 { font-size: 21pt; letter-spacing: 0.03em; margin: 0 0 4px 0; text-align: center; }
-.headline { font-size: 11.5pt; color: #555; text-align: center; margin: 0 0 6px 0; }
-.contact { font-size: 9.5pt; color: #666; text-align: center; margin: 0 0 6px 0; border-top: 1px solid #cccccc; border-bottom: 1px solid #cccccc; padding: 6px 0; }
-.contact span { margin: 0 8px; }
+h1 {
+  font-size: 21pt;
+  letter-spacing: 0.03em;
+  margin: 0 0 4px 0;
+  text-align: center;
+}
+.headline {
+  font-size: 11.5pt;
+  color: #555;
+  text-align: center;
+  margin: 0 0 6px 0;
+}
+.contact {
+  font-size: 9.5pt;
+  color: #666;
+  text-align: center;
+  margin: 0 0 6px 0;
+  border-top: 1px solid #cccccc;
+  border-bottom: 1px solid #cccccc;
+  padding: 6px 0;
+}
+.contact span {
+  margin: 0 8px;
+}
 
 h2 {
   font-size: 11pt;
@@ -18,12 +38,37 @@ h2 {
   text-align: center;
   margin: 18px 0 8px 0;
 }
-p.summary { margin: 0; line-height: 1.6; text-align: center; }
-p.skills { margin: 0; line-height: 1.6; text-align: center; }
-.entry { margin-bottom: 12px; break-inside: avoid; page-break-inside: avoid; }
-.entry-title { font-weight: bold; text-align: center; }
-.entry-meta { color: #666; font-size: 9.5pt; font-style: italic; text-align: center; }
-.entry-desc { margin: 4px auto 0 auto; line-height: 1.5; max-width: 480px; text-align: center; }
+p.summary {
+  margin: 0;
+  line-height: 1.6;
+  text-align: center;
+}
+p.skills {
+  margin: 0;
+  line-height: 1.6;
+  text-align: center;
+}
+.entry {
+  margin-bottom: 12px;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+.entry-title {
+  font-weight: bold;
+  text-align: center;
+}
+.entry-meta {
+  color: #666;
+  font-size: 9.5pt;
+  font-style: italic;
+  text-align: center;
+}
+.entry-desc {
+  margin: 4px auto 0 auto;
+  line-height: 1.5;
+  max-width: 480px;
+  text-align: center;
+}
 
 .profile-photo {
   width: 100px;

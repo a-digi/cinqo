@@ -1,6 +1,8 @@
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
 body {
-  font-family: Palatino, "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  font-family: Palatino, 'Palatino Linotype', 'Book Antiqua', Georgia, serif;
   color: #1f1a1a;
   font-size: 10.8pt;
   line-height: 1.45;
@@ -11,36 +13,137 @@ body {
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
 }
-h1, h2, p, ul { margin: 0; padding: 0; }
-ul { list-style: none; }
-.profile-photo { display: block; object-fit: cover; flex-shrink: 0; }
-.contact { display: flex; flex-wrap: wrap; }
-.entry { display: grid; break-inside: avoid; page-break-inside: avoid; }
-.entry-title { grid-area: title; }
-.entry-company { grid-area: company; }
-.entry-meta { grid-area: meta; }
-.entry-desc { grid-area: desc; white-space: pre-line; }
-.summary { white-space: pre-line; }
+h1,
+h2,
+p,
+ul {
+  margin: 0;
+  padding: 0;
+}
+ul {
+  list-style: none;
+}
+.profile-photo {
+  display: block;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.contact {
+  display: flex;
+  flex-wrap: wrap;
+}
+.entry {
+  display: grid;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+.entry-title {
+  grid-area: title;
+}
+.entry-company {
+  grid-area: company;
+}
+.entry-meta {
+  grid-area: meta;
+}
+.entry-desc {
+  grid-area: desc;
+  white-space: pre-line;
+}
+.summary {
+  white-space: pre-line;
+}
 /* stacked entry: title + date on one line */
-.entry { grid-template-columns: 1fr auto; column-gap: 16px;
-  grid-template-areas: "title meta" "company company" "desc desc"; }
+.entry {
+  grid-template-columns: 1fr auto;
+  column-gap: 16px;
+  grid-template-areas: 'title meta' 'company company' 'desc desc';
+}
 
-.head { text-align: center; padding-bottom: 14px; }
-.profile-photo { width: 98px; height: 98px; border-radius: 50%; margin: 0 auto 14px; box-shadow: 0 0 0 4px #fff, 0 0 0 5.5px #7f1d1d; }
-h1 { font-size: 29pt; font-weight: 700; color: #7f1d1d; line-height: 1.1; }
-.headline { margin-top: 5px; font-style: italic; font-size: 13pt; color: #57534e; }
-.contact { justify-content: center; gap: 2px 18px; margin-top: 10px; font-size: 9.5pt; color: #6b625f; }
-h2 { font-size: 13pt; font-weight: 700; font-variant: small-caps; letter-spacing: 0.1em; color: #7f1d1d; margin: 22px 0 12px;
-  padding-bottom: 4px; border-bottom: 1px solid #d8bcbc; }
-.summary { line-height: 1.7; font-size: 10.8pt; color: #2a2424; }
+.head {
+  text-align: center;
+  padding-bottom: 14px;
+}
+.profile-photo {
+  width: 98px;
+  height: 98px;
+  border-radius: 50%;
+  margin: 0 auto 14px;
+  box-shadow:
+    0 0 0 4px #fff,
+    0 0 0 5.5px #7f1d1d;
+}
+h1 {
+  font-size: 29pt;
+  font-weight: 700;
+  color: #7f1d1d;
+  line-height: 1.1;
+}
+.headline {
+  margin-top: 5px;
+  font-style: italic;
+  font-size: 13pt;
+  color: #57534e;
+}
+.contact {
+  justify-content: center;
+  gap: 2px 18px;
+  margin-top: 10px;
+  font-size: 9.5pt;
+  color: #6b625f;
+}
+h2 {
+  font-size: 13pt;
+  font-weight: 700;
+  font-variant: small-caps;
+  letter-spacing: 0.1em;
+  color: #7f1d1d;
+  margin: 22px 0 12px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #d8bcbc;
+}
+.summary {
+  line-height: 1.7;
+  font-size: 10.8pt;
+  color: #2a2424;
+}
 
-.entry { grid-template-columns: 112px 1fr; column-gap: 18px;
-  grid-template-areas: "meta title" "meta company" "meta desc"; }
+.entry {
+  grid-template-columns: 112px 1fr;
+  column-gap: 18px;
+  grid-template-areas: 'meta title' 'meta company' 'meta desc';
+}
 
-.entry { margin-bottom: 15px; }
-.entry-meta { font-style: italic; color: #7f1d1d; font-size: 10pt; padding-top: 2px; }
-.entry-title { font-size: 11.6pt; font-weight: 700; }
-.entry-company { font-style: italic; color: #57534e; font-size: 10.6pt; }
-.entry-desc { margin-top: 4px; color: #2a2424; line-height: 1.6; font-size: 10.3pt; }
-.skills li { display: inline; font-size: 10.6pt; }
-.skills li:not(:last-child)::after { content: "  \00B7  "; color: #7f1d1d; font-weight: 700; }
+.entry {
+  margin-bottom: 15px;
+}
+.entry-meta {
+  font-style: italic;
+  color: #7f1d1d;
+  font-size: 10pt;
+  padding-top: 2px;
+}
+.entry-title {
+  font-size: 11.6pt;
+  font-weight: 700;
+}
+.entry-company {
+  font-style: italic;
+  color: #57534e;
+  font-size: 10.6pt;
+}
+.entry-desc {
+  margin-top: 4px;
+  color: #2a2424;
+  line-height: 1.6;
+  font-size: 10.3pt;
+}
+.skills li {
+  display: inline;
+  font-size: 10.6pt;
+}
+.skills li:not(:last-child)::after {
+  content: '  \00B7  ';
+  color: #7f1d1d;
+  font-weight: 700;
+}

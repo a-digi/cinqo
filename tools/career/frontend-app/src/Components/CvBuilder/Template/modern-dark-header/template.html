@@ -6,11 +6,53 @@
     </style>
   </head>
   <body>
-    <div class="noir"><div class="noir-text"><h1>{{.FullName}}</h1>{{if .Headline}}<p class="headline">{{.Headline}}</p>{{end}}{{if or .Location .ExternalLinks}}<ul class="contact">{{if .Location}}<li>{{.Location}}</li>{{end}}{{range .ExternalLinks}}<li>{{.Platform}}: {{.URL}}</li>{{end}}</ul>{{end}}</div>{{if .PhotoDataURI}}<img class="profile-photo" src="{{.PhotoDataURI}}" alt="" />{{end}}</div>
-    {{if .Summary}}<div class="section section-summary"><h2>Summary</h2><p class="summary">{{.Summary}}</p></div>{{end}}
-    {{if .Experience}}<div class="section section-experience"><h2>Experience</h2>
-    {{range .Experience}}<div class="entry"><div class="entry-title">{{.Title}}</div>{{if .Company}}<div class="entry-company">{{.Company}}</div>{{end}}<div class="entry-meta">{{.StartDate}} &#8211; {{if .EndDate}}{{.EndDate}}{{else}}Present{{end}}</div>{{if .Description}}<p class="entry-desc">{{.Description}}</p>{{end}}</div>{{end}}
-    </div>{{end}}
-    {{if .Skills}}<div class="section section-skills"><h2>Skills</h2><ul class="skills">{{range .Skills}}<li>{{.}}</li>{{end}}</ul></div>{{end}}
+    <div class="noir">
+      <div class="noir-text">
+        <h1>{{.FullName}}</h1>
+        {{if .Headline}}
+        <p class="headline">{{.Headline}}</p>
+        {{end}}{{if or .Location .ExternalLinks}}
+        <ul class="contact">
+          {{if .Location}}
+          <li>{{.Location}}</li>
+          {{end}}{{range .ExternalLinks}}
+          <li>{{.Platform}}: {{.URL}}</li>
+          {{end}}
+        </ul>
+        {{end}}
+      </div>
+      {{if .PhotoDataURI}}<img class="profile-photo" src="{{.PhotoDataURI}}" alt="" />{{end}}
+    </div>
+    {{if .Summary}}
+    <div class="section section-summary">
+      <h2>Summary</h2>
+      <p class="summary">{{.Summary}}</p>
+    </div>
+    {{end}} {{if .Experience}}
+    <div class="section section-experience">
+      <h2>Experience</h2>
+      {{range .Experience}}
+      <div class="entry">
+        <div class="entry-title">{{.Title}}</div>
+        {{if .Company}}
+        <div class="entry-company">{{.Company}}</div>
+        {{end}}
+        <div class="entry-meta">{{.StartDate}} &#8211; {{if .EndDate}}{{.EndDate}}{{else}}Present{{end}}</div>
+        {{if .Description}}
+        <p class="entry-desc">{{.Description}}</p>
+        {{end}}
+      </div>
+      {{end}}
+    </div>
+    {{end}} {{if .Skills}}
+    <div class="section section-skills">
+      <h2>Skills</h2>
+      <ul class="skills">
+        {{range .Skills}}
+        <li>{{.}}</li>
+        {{end}}
+      </ul>
+    </div>
+    {{end}}
   </body>
 </html>

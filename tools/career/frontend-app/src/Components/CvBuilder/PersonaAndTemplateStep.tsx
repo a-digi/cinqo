@@ -4,6 +4,8 @@ import { Dropdown } from '../Dropdown/Dropdown'
 import { EyeIcon } from '../../Shared/Icons/icons'
 import { previewImages } from './previewImages'
 import type { CvTemplate } from '../../api'
+import { CvPhotoPicker } from './CvPhotoPicker'
+import { showsPicker, type CvPhoto } from './cvPhotoRules'
 
 export interface PersonaAndTemplateStepProps {
   personaId: string | null
@@ -14,6 +16,10 @@ export interface PersonaAndTemplateStepProps {
   hasProfilePhoto: boolean
   attachPhoto: boolean
   onAttachPhotoChange: (attach: boolean) => void
+  // The profile's photos and the one this CV uses; the picker shows only with more than one.
+  photos: CvPhoto[]
+  photoChoice: string
+  onPhotoChoiceChange: (mediaFileId: string) => void
   canPreview: boolean
   previewing: boolean
   onPreviewTemplate: (templateId: string) => void
@@ -45,6 +51,9 @@ export function PersonaAndTemplateStep({
   hasProfilePhoto,
   attachPhoto,
   onAttachPhotoChange,
+  photos,
+  photoChoice,
+  onPhotoChoiceChange,
   canPreview,
   previewing,
   onPreviewTemplate,
@@ -108,6 +117,9 @@ export function PersonaAndTemplateStep({
           />
           Include this profile's photo in the CV
         </label>
+      )}
+      {hasProfilePhoto && showsPicker(attachPhoto, photos) && (
+        <CvPhotoPicker photos={photos} selected={photoChoice} onSelect={onPhotoChoiceChange} />
       )}
 
       <div>

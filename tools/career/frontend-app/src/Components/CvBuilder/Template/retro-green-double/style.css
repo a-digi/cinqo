@@ -1,7 +1,16 @@
-* { box-sizing: border-box; }
-:root { --a: #2f6f4f; --d: #1f2a24; --t: #f0f5f2; --l: #a7c4b3; --mute: #6b7280; --line: #e5e7eb; }
+* {
+  box-sizing: border-box;
+}
+:root {
+  --a: #2f6f4f;
+  --d: #1f2a24;
+  --t: #f0f5f2;
+  --l: #a7c4b3;
+  --mute: #6b7280;
+  --line: #e5e7eb;
+}
 body {
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: Georgia, 'Times New Roman', serif;
   color: #1f2937;
   font-size: 10.4pt;
   line-height: 1.45;
@@ -12,34 +21,159 @@ body {
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
 }
-h1, h2, p, ul { margin: 0; padding: 0; }
-ul { list-style: none; }
-.profile-photo { display: block; object-fit: cover; flex-shrink: 0; }
-.contact { display: flex; flex-wrap: wrap; }
-.entry { display: grid; break-inside: avoid; page-break-inside: avoid; }
-.entry-title { grid-area: title; }
-.entry-company { grid-area: company; }
-.entry-meta { grid-area: meta; }
-.entry-desc { grid-area: desc; white-space: pre-line; }
-.summary { white-space: pre-line; line-height: 1.65; font-size: 10.3pt; color: #374151; }
-.entry-title { font-size: 11.3pt; font-weight: 700; color: var(--d); }
-.entry-company { font-size: 10pt; color: var(--a); font-weight: 500; }
-.entry-meta { font-size: 8.8pt; color: var(--mute); padding-top: 3px; }
-.entry-desc { margin-top: 5px; color: #4b5563; line-height: 1.55; font-size: 9.7pt; }
-html, body { background: #f5efdd; }
-body { padding: 0; }
-.wrap { padding: 38px 42px; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+h1,
+h2,
+p,
+ul {
+  margin: 0;
+  padding: 0;
+}
+ul {
+  list-style: none;
+}
+.profile-photo {
+  display: block;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.contact {
+  display: flex;
+  flex-wrap: wrap;
+}
+.entry {
+  display: grid;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+.entry-title {
+  grid-area: title;
+}
+.entry-company {
+  grid-area: company;
+}
+.entry-meta {
+  grid-area: meta;
+}
+.entry-desc {
+  grid-area: desc;
+  white-space: pre-line;
+}
+.summary {
+  white-space: pre-line;
+  line-height: 1.65;
+  font-size: 10.3pt;
+  color: #374151;
+}
+.entry-title {
+  font-size: 11.3pt;
+  font-weight: 700;
+  color: var(--d);
+}
+.entry-company {
+  font-size: 10pt;
+  color: var(--a);
+  font-weight: 500;
+}
+.entry-meta {
+  font-size: 8.8pt;
+  color: var(--mute);
+  padding-top: 3px;
+}
+.entry-desc {
+  margin-top: 5px;
+  color: #4b5563;
+  line-height: 1.55;
+  font-size: 9.7pt;
+}
+html,
+body {
+  background: #f5efdd;
+}
+body {
+  padding: 0;
+}
+.wrap {
+  padding: 38px 42px;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
 
-.h { display: flex; align-items: center; gap: 22px; border: 5px double #2f6f4f; padding: 20px 24px; background: #fbf7ea; }
-.profile-photo { width: 92px; height: 92px; border-radius: 0; filter: sepia(0.45); border: 2px solid #2f6f4f; }
-h1 { font-family: "SF Mono", Menlo, Consolas, "Courier New", monospace; font-size: 22pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #1f4733; line-height: 1.15; }
-.headline { margin-top: 5px; font-style: italic; font-size: 12pt; color: #2f6f4f; }
-.contact { gap: 2px 16px; margin-top: 10px; font-size: 9pt; color: #5a6a5f; font-family: "SF Mono", Menlo, Consolas, "Courier New", monospace; }
-h2 { display: inline-block; font-family: "SF Mono", Menlo, Consolas, "Courier New", monospace; font-size: 9.5pt; text-transform: uppercase; letter-spacing: 0.2em; font-weight: 700; color: #f5efdd; background: #2f6f4f; margin: 26px 0 12px; padding: 3px 14px; }
-.summary { color: #2d3a31; }
-.entry { grid-template-columns: 1fr auto; column-gap: 16px; margin-bottom: 15px;
-  grid-template-areas: "title meta" "company company" "desc desc"; }
-.entry-title { color: #1f4733; }
-.entry-meta { font-family: "SF Mono", Menlo, Consolas, "Courier New", monospace; font-size: 8.6pt; color: #5a6a5f; }
-.entry-company { font-style: italic; color: #2f6f4f; }
-.skills li { display: inline-block; font-family: "SF Mono", Menlo, Consolas, "Courier New", monospace; font-size: 8.8pt; border: 1px solid #2f6f4f; color: #1f4733; padding: 3px 9px; margin: 0 6px 7px 0; }
+.h {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  border: 5px double #2f6f4f;
+  padding: 20px 24px;
+  background: #fbf7ea;
+}
+.profile-photo {
+  width: 92px;
+  height: 92px;
+  border-radius: 0;
+  filter: sepia(0.45);
+  border: 2px solid #2f6f4f;
+}
+h1 {
+  font-family: 'SF Mono', Menlo, Consolas, 'Courier New', monospace;
+  font-size: 22pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #1f4733;
+  line-height: 1.15;
+}
+.headline {
+  margin-top: 5px;
+  font-style: italic;
+  font-size: 12pt;
+  color: #2f6f4f;
+}
+.contact {
+  gap: 2px 16px;
+  margin-top: 10px;
+  font-size: 9pt;
+  color: #5a6a5f;
+  font-family: 'SF Mono', Menlo, Consolas, 'Courier New', monospace;
+}
+h2 {
+  display: inline-block;
+  font-family: 'SF Mono', Menlo, Consolas, 'Courier New', monospace;
+  font-size: 9.5pt;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  font-weight: 700;
+  color: #f5efdd;
+  background: #2f6f4f;
+  margin: 26px 0 12px;
+  padding: 3px 14px;
+}
+.summary {
+  color: #2d3a31;
+}
+.entry {
+  grid-template-columns: 1fr auto;
+  column-gap: 16px;
+  margin-bottom: 15px;
+  grid-template-areas: 'title meta' 'company company' 'desc desc';
+}
+.entry-title {
+  color: #1f4733;
+}
+.entry-meta {
+  font-family: 'SF Mono', Menlo, Consolas, 'Courier New', monospace;
+  font-size: 8.6pt;
+  color: #5a6a5f;
+}
+.entry-company {
+  font-style: italic;
+  color: #2f6f4f;
+}
+.skills li {
+  display: inline-block;
+  font-family: 'SF Mono', Menlo, Consolas, 'Courier New', monospace;
+  font-size: 8.8pt;
+  border: 1px solid #2f6f4f;
+  color: #1f4733;
+  padding: 3px 9px;
+  margin: 0 6px 7px 0;
+}

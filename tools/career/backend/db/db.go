@@ -89,6 +89,10 @@ func InitDatabases() error {
 		careerDB.Close()
 		return fmt.Errorf("failed to fill the photo library: %w", err)
 	}
+	if err := migrateProfilePhotos(careerDB); err != nil {
+		careerDB.Close()
+		return fmt.Errorf("failed to fill the profiles' photos: %w", err)
+	}
 	CareerDB = careerDB
 
 	jobsDB, err := sql.Open("sqlite", filepath.Join(dbDir, "jobs.db"))
@@ -149,6 +153,17 @@ CREATE TABLE IF NOT EXISTS profiles (
 CREATE TABLE IF NOT EXISTS photos (
     media_file_id TEXT PRIMARY KEY,
     created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Which photos belong to a profile (step 111): any number, and a photo may belong to many
+-- profiles. profiles.image_media_file_id is the profile's default photo and is always one of
+-- these (kept by the profileimage package). media_file_id is a plain reference to the photo
+-- library, no FK, like the other Media references in this tool.
+CREATE TABLE IF NOT EXISTS profile_photos (
+    profile_id    TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    media_file_id TEXT NOT NULL,
+    added_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (profile_id, media_file_id)
 );
 
 CREATE TABLE IF NOT EXISTS profile_external_links (
@@ -227,6 +242,9 @@ CREATE TABLE IF NOT EXISTS cv_documents (
     data_json     TEXT NOT NULL,
     media_file_id TEXT NOT NULL,
     job_id        TEXT,
+    -- The photo the CV was made with (step 111), one of the profile's photos; NULL = none was
+    -- chosen, the profile's default then. A plain reference to the photo library, no FK.
+    photo_media_file_id TEXT,
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at    TEXT
 );
@@ -722,6 +740,9 @@ func migrateCareerDB(db *sql.DB) error {
 	if err := migrateCvDocumentsJobID(db); err != nil {
 		return err
 	}
+	if err := migrateCvDocumentsPhoto(db); err != nil {
+		return err
+	}
 
 	if err := checkForeignKeys(db); err != nil {
 		return err
@@ -992,6 +1013,17 @@ func migratePhotosLibrary(db *sql.DB) error {
 	return err
 }
 
+// migrateProfilePhotos makes every profile's current photo (its default from now on) one
+// of the profile's photos (step 111). Idempotent: it only adds what is missing, so it is
+// safe on every start, and it keeps the invariant "a default is always one of the
+// profile's photos". Runs right after the base schema, like migratePhotosLibrary.
+func migrateProfilePhotos(db *sql.DB) error {
+	_, err := db.Exec(`INSERT OR IGNORE INTO profile_photos (profile_id, media_file_id)
+		SELECT id, image_media_file_id FROM profiles
+		WHERE image_media_file_id IS NOT NULL AND image_media_file_id != ''`)
+	return err
+}
+
 // migrateCvDocumentsJobID adds the nullable job_id column (AI-generated
 // CV documents) to an already-installed cv_documents table — same
 // plain ALTER TABLE ADD COLUMN shape as every other column addition in
@@ -1009,6 +1041,22 @@ func migrateCvDocumentsJobID(db *sql.DB) error {
 		return nil
 	}
 	_, err = db.Exec(`ALTER TABLE cv_documents ADD COLUMN job_id TEXT`)
+	return err
+}
+
+// migrateCvDocumentsPhoto adds the nullable photo_media_file_id column (step 111, the photo a
+// CV was made with) to an already-installed cv_documents table, guarded like the other column
+// additions here. NULL is right for every existing row: they keep using the profile's default.
+// A no-op on a brand-new install (the base schema already has it).
+func migrateCvDocumentsPhoto(db *sql.DB) error {
+	exists, hasColumn, err := tableHasColumn(db, "cv_documents", "photo_media_file_id")
+	if err != nil {
+		return err
+	}
+	if !exists || hasColumn {
+		return nil
+	}
+	_, err = db.Exec(`ALTER TABLE cv_documents ADD COLUMN photo_media_file_id TEXT`)
 	return err
 }
 

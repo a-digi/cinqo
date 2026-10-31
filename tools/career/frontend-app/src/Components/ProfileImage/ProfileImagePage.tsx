@@ -2,21 +2,22 @@ import { useEffect, useRef, useState } from 'react'
 import {
   fetchPersonaDetails,
   fetchPersonas,
-  fetchProfileImage,
+  fetchProfilePhotos,
   fetchProfiles,
   fetchPhotos,
-  linkProfilePhoto,
+  addProfilePhoto,
+  makeDefaultPhoto,
+  removeProfilePhoto,
   deletePhoto,
   uploadProfileImage,
-  deleteProfileImage,
   mediaDownloadUrl,
   type Photo,
-  type ProfileImage,
+  type ProfilePhoto,
 } from '../../api'
 import { ProfileSwitcher } from '../ProfileSwitcher/ProfileSwitcher'
 import { profileLabel } from '../ProfileSwitcher/profileLabel'
 import { ConfirmationModal } from '../../Shared/ConfirmationModal/ConfirmationModal'
-import { CameraIcon, UploadIcon, XIcon } from '../../Shared/Icons/icons'
+import { CameraIcon, UploadIcon } from '../../Shared/Icons/icons'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { EXPERIENCE_PATH, NEW_PERSONA_PATH, PERSONA_DETAILS_PATH, SKILLS_PATH } from '../../paths'
 import { PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
@@ -25,36 +26,30 @@ import { CvReadiness } from './CvReadiness'
 import { readinessItems, type ReadinessItem } from './readinessRules'
 import { PageTips } from '../../Shared/PageTips/PageTips'
 import { PhotoLibrary } from './PhotoLibrary'
-import { deletePhotoMessage } from './photoRules'
+import { ProfilePhotos } from './ProfilePhotos'
+import { defaultPhotoId, deletePhotoMessage, libraryToAdd } from './photoRules'
 
-// A profile's own photo — always tied to a profile (never uploaded
-// standalone), used from the CV Builder templates. Career's frontend is
-// its own separate JS bundle from the core app's, so this reimplements
-// a small uploader against Media's own HTTP API (via this tool's own
-// /profile-image proxy route) rather than importing core's
-// ImageUploadCropper.tsx directly — that component lives in a bundle
-// this one cannot reach. See
-// plan/ai/career/profile-image/step-01-overview.md. Header card, one tinted card
-// with a round preview (the profile's initial until there is a photo) and, on its
-// right, a CV-readiness checklist as the overview.
+// A profile's own photos — always tied to a profile (never uploaded
+// standalone), used from the CV Builder templates. A profile can have several, one of them its
+// default (the one the templates use); a photo can be shared by many profiles and is kept in a
+// library. Career's frontend is its own separate JS bundle from the core app's, so this
+// reimplements a small uploader against Media's own HTTP API (via this tool's own /profile-image
+// proxy route) rather than importing core's ImageUploadCropper.tsx directly — that component lives
+// in a bundle this one cannot reach. See plan/ai/career/profile-image/step-01-overview.md and
+// plan/ai/tools/career/step-111-many-photos-per-profile.md. Header card, one tinted card with a
+// round preview of the default photo (the profile's initial until there is one), then the
+// profile's photos and the library, and a CV-readiness checklist on the right as the overview.
 export function ProfileImagePage() {
   const [profileId, setProfileId] = useState<string | null>(null)
-  const [image, setImage] = useState<ProfileImage | null>(null)
+  // The profile's own photos, the default first; the default is what the hero and the CV show.
+  const [profilePhotos, setProfilePhotos] = useState<ProfilePhoto[]>([])
   const [loading, setLoading] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
-  // A replace keeps the SAME media file id (see forwardReplaceImage,
-  // profileimage/handler.go) — its download URL never changes, so the
-  // browser's own HTTP cache would otherwise keep showing the old
-  // bytes after a replace (verified live: a same-session <img> kept
-  // its stale preview until a full page reload). Appending this as a
-  // query param busts that cache without needing a new id.
-  const [cacheBuster, setCacheBuster] = useState(0)
-  // Unlinking is only this profile's link; deleting a photo is for good, from the library.
-  const [confirmingUnlink, setConfirmingUnlink] = useState(false)
+  // Every photo that exists (the library), for "Add from your library".
   const [photos, setPhotos] = useState<Photo[]>([])
   const [deletingPhoto, setDeletingPhoto] = useState<Photo | null>(null)
-  const [linking, setLinking] = useState(false)
+  const [working, setWorking] = useState(false)
   // The selected profile's name, for the placeholder shown until there is a photo.
   const [profileName, setProfileName] = useState('')
   // The CV-readiness check reads the profile's first persona (one extra read of two
@@ -119,14 +114,24 @@ export function ProfileImagePage() {
   function load(forProfileId: string) {
     setError('')
     setLoading(true)
-    fetchProfileImage(forProfileId)
-      .then(setImage)
+    fetchProfilePhotos(forProfileId)
+      .then(setProfilePhotos)
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : String(err))
       })
       .finally(() => {
         setLoading(false)
       })
+  }
+
+  // After a change: reread this profile's photos and the library, without the page going blank.
+  function refresh(forProfileId: string) {
+    fetchProfilePhotos(forProfileId)
+      .then(setProfilePhotos)
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+      })
+    loadPhotos()
   }
 
   useEffect(() => {
@@ -149,10 +154,8 @@ export function ProfileImagePage() {
     setError('')
     setUploading(true)
     uploadProfileImage(profileId, file)
-      .then((updated) => {
-        setImage(updated)
-        setCacheBuster((n) => n + 1)
-        loadPhotos()
+      .then(() => {
+        refresh(profileId)
       })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : String(err))
@@ -163,39 +166,20 @@ export function ProfileImagePage() {
       })
   }
 
-  function handleUnlink() {
+  // Runs one change to this profile's photos, then rereads them.
+  function change(action: (forProfileId: string) => Promise<unknown>) {
     if (!profileId) return
-    setConfirmingUnlink(true)
-  }
-
-  function confirmUnlink() {
-    if (!profileId) return
-    setConfirmingUnlink(false)
     setError('')
-    deleteProfileImage(profileId)
+    setWorking(true)
+    action(profileId)
       .then(() => {
-        setImage(null)
-        loadPhotos()
-      })
-      .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : String(err))
-      })
-  }
-
-  function handlePick(photo: Photo) {
-    if (!profileId) return
-    setError('')
-    setLinking(true)
-    linkProfilePhoto(profileId, photo.mediaFileId)
-      .then((linked) => {
-        setImage(linked)
-        loadPhotos()
+        refresh(profileId)
       })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : String(err))
       })
       .finally(() => {
-        setLinking(false)
+        setWorking(false)
       })
   }
 
@@ -203,25 +187,22 @@ export function ProfileImagePage() {
     const photo = deletingPhoto
     if (!photo) return
     setDeletingPhoto(null)
-    setError('')
-    deletePhoto(photo.mediaFileId)
-      .then(() => {
-        if (image?.mediaFileId === photo.mediaFileId) setImage(null)
-        loadPhotos()
-        if (profileId) loadReadiness(profileId)
-      })
-      .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : String(err))
-      })
+    change(() => deletePhoto(photo.mediaFileId))
   }
+
+  const defaultId = defaultPhotoId(profilePhotos)
 
   return (
     <div className="career-v-stretch career-a-float career-t-wave max-w-5xl p-6 font-sans text-gray-900">
       <PageHeaderCard
         icon={<CameraIcon />}
         title="Photo"
-        description="A profile's photo, used by the CV templates. A profile uses one photo at a time; one photo can be shared by many profiles."
-        pill={profileId && !loading ? { text: image ? 'Photo set' : 'No photo' } : undefined}
+        description="A profile's photos, used by the CV templates. A profile can have several, one of them the default; one photo can be shared by many profiles."
+        pill={
+          profileId && !loading
+            ? { text: profilePhotos.length === 0 ? 'No photo' : profilePhotos.length === 1 ? '1 photo' : `${profilePhotos.length} photos` }
+            : undefined
+        }
       />
       <ProfileSwitcher profileId={profileId} onChange={setProfileId} />
 
@@ -235,12 +216,8 @@ export function ProfileImagePage() {
               style={{ borderColor: PAGE_ACCENT.soft, background: `linear-gradient(160deg, #ffffff 45%, ${PAGE_ACCENT.soft} 100%)` }}
             >
               <div className="flex h-36 w-36 shrink-0 items-center justify-center overflow-hidden rounded-full border-4 border-white shadow-md">
-                {image ? (
-                  <img
-                    src={`${mediaDownloadUrl(image.mediaFileId)}?v=${cacheBuster}`}
-                    alt="Profile"
-                    className="h-full w-full object-cover"
-                  />
+                {defaultId ? (
+                  <img src={mediaDownloadUrl(defaultId)} alt="Profile" className="h-full w-full object-cover" />
                 ) : (
                   <span
                     className="flex h-full w-full items-center justify-center text-5xl font-bold text-white"
@@ -254,7 +231,7 @@ export function ProfileImagePage() {
 
               <div className="flex flex-col gap-2">
                 <div className="text-sm text-gray-600">
-                  {image ? 'This photo is used on your CVs.' : 'No photo yet. Add one to use it on your CVs.'}
+                  {defaultId ? 'This is the default photo, the one your CVs use.' : 'No photo yet. Add one to use it on your CVs.'}
                 </div>
                 <button
                   type="button"
@@ -265,19 +242,8 @@ export function ProfileImagePage() {
                   className="flex items-center gap-1.5 rounded-md bg-gray-900 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:opacity-50"
                 >
                   <UploadIcon className="h-3.5 w-3.5" />
-                  {uploading ? 'Uploading…' : image ? 'Replace photo' : 'Upload photo'}
+                  {uploading ? 'Uploading…' : defaultId ? 'Add another photo' : 'Upload photo'}
                 </button>
-                {image && (
-                  <button
-                    type="button"
-                    onClick={handleUnlink}
-                    title="This profile stops using the photo. The photo stays in your library."
-                    className="flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-3.5 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                  >
-                    <XIcon />
-                    Unlink photo
-                  </button>
-                )}
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -289,12 +255,22 @@ export function ProfileImagePage() {
                 />
               </div>
             </section>
+            <ProfilePhotos
+              photos={profilePhotos}
+              busy={working || uploading}
+              onMakeDefault={(photo) => {
+                change((id) => makeDefaultPhoto(id, photo.mediaFileId))
+              }}
+              onRemove={(photo) => {
+                change((id) => removeProfilePhoto(id, photo.mediaFileId))
+              }}
+            />
             <PhotoLibrary
-              photos={photos}
-              currentMediaFileId={image?.mediaFileId ?? ''}
-              cacheBuster={cacheBuster}
-              busy={linking || uploading}
-              onPick={handlePick}
+              photos={libraryToAdd(photos, profilePhotos)}
+              busy={working || uploading}
+              onAdd={(photo) => {
+                change((id) => addProfilePhoto(id, photo.mediaFileId))
+              }}
               onDelete={setDeletingPhoto}
             />
           </div>
@@ -304,7 +280,7 @@ export function ProfileImagePage() {
           {profileId && (
             <>
               <CvReadiness
-                items={readinessItems({ hasPhoto: image !== null, personaCount, checked })}
+                items={readinessItems({ hasPhoto: defaultId !== null, personaCount, checked })}
                 status={readinessStatus}
                 personaName={persona?.name ?? ''}
                 onFix={openFix}
@@ -317,16 +293,6 @@ export function ProfileImagePage() {
         </aside>
       </div>
 
-      <ConfirmationModal
-        open={confirmingUnlink}
-        title="Unlink profile photo"
-        message="This profile will stop using this photo. The photo stays in your library, and other profiles that use it keep it."
-        confirmLabel="Unlink"
-        onConfirm={confirmUnlink}
-        onCancel={() => {
-          setConfirmingUnlink(false)
-        }}
-      />
       <ConfirmationModal
         open={deletingPhoto !== null}
         title="Delete photo"

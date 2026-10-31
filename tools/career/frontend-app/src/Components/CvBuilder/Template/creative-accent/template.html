@@ -24,8 +24,7 @@
     {{if .Summary}}
     <h2>Summary</h2>
     <p class="summary">{{.Summary}}</p>
-    {{end}}
-    {{if .Experience}}
+    {{end}} {{if .Experience}}
     <h2>Experience</h2>
     {{range .Experience}}
     <div class="entry">
@@ -35,8 +34,7 @@
       <p class="entry-desc">{{.Description}}</p>
       {{end}}
     </div>
-    {{end}} {{end}}
-    {{if .Skills}}
+    {{end}} {{end}} {{if .Skills}}
     <h2>Skills</h2>
     <p class="skills">{{range .Skills}}<span class="skill-pill">{{.}}</span>{{end}}</p>
     {{end}}

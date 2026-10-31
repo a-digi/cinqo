@@ -54,6 +54,9 @@ func TestPhotos_ListsEachPhotoWithTheProfilesUsingIt(t *testing.T) {
 		('p2', 'Alan', '',        '2026-01-02 10:00:00', 'm1'),
 		('p3', 'Grace', 'Hopper', '2026-01-03 10:00:00', NULL)`)
 	exec(t, `INSERT INTO photos (media_file_id, created_at) VALUES ('m1', '2026-02-01 00:00:00'), ('m2', '2026-03-01 00:00:00')`)
+	// p1 has m1 as its default; p2 has m1 among its photos but another default; p3 has none.
+	exec(t, `UPDATE profiles SET image_media_file_id = 'm2' WHERE id = 'p2'`)
+	exec(t, `INSERT INTO profile_photos (profile_id, media_file_id) VALUES ('p1', 'm1'), ('p2', 'm1'), ('p2', 'm2')`)
 
 	w := httptest.NewRecorder()
 	PhotosHandler(w, httptest.NewRequest(http.MethodGet, "/photos", nil))
@@ -69,19 +72,30 @@ func TestPhotos_ListsEachPhotoWithTheProfilesUsingIt(t *testing.T) {
 	if len(got.Photos) != 2 {
 		t.Fatalf("got %d photos: %s", len(got.Photos), w.Body)
 	}
-	// Newest first; a photo nobody links has an empty (not null) usedBy.
-	if got.Photos[0].MediaFileID != "m2" || got.Photos[0].UsedBy == nil || len(got.Photos[0].UsedBy) != 0 {
-		t.Fatalf("first = %+v", got.Photos[0])
+	// Newest first; "used by" means the profile has it among its photos, and says whether it
+	// is that profile's default.
+	m2 := got.Photos[0]
+	if m2.MediaFileID != "m2" || len(m2.UsedBy) != 1 || m2.UsedBy[0] != (photoUser{ProfileID: "p2", Name: "Alan", IsDefault: true}) {
+		t.Fatalf("m2 = %+v", m2)
 	}
 	m1 := got.Photos[1]
 	if m1.MediaFileID != "m1" || len(m1.UsedBy) != 2 ||
-		m1.UsedBy[0] != (photoUser{ProfileID: "p1", Name: "Ada Lovelace"}) ||
-		m1.UsedBy[1] != (photoUser{ProfileID: "p2", Name: "Alan"}) {
+		m1.UsedBy[0] != (photoUser{ProfileID: "p1", Name: "Ada Lovelace", IsDefault: true}) ||
+		m1.UsedBy[1] != (photoUser{ProfileID: "p2", Name: "Alan", IsDefault: false}) {
 		t.Fatalf("m1 = %+v", m1)
 	}
 }
 
-func TestPhotos_OnlyGet(t *testing.T) {
+func TestPhotos_UnusedPhotoHasAnEmptyUsedBy(t *testing.T) {
+	newLibraryDB(t)
+	exec(t, `INSERT INTO photos (media_file_id) VALUES ('m1')`)
+	photos, err := listPhotos()
+	if err != nil || len(photos) != 1 || photos[0].UsedBy == nil || len(photos[0].UsedBy) != 0 {
+		t.Fatalf("photos=%+v err=%v", photos, err)
+	}
+}
+
+func TestPhotos_OnlyGetAndDelete(t *testing.T) {
 	w := httptest.NewRecorder()
 	PhotosHandler(w, httptest.NewRequest(http.MethodPost, "/photos", nil))
 	if w.Code != http.StatusMethodNotAllowed {
@@ -89,7 +103,7 @@ func TestPhotos_OnlyGet(t *testing.T) {
 	}
 }
 
-func TestLink_SharesOnePhotoBetweenProfiles(t *testing.T) {
+func TestMakeDefault_SharesOnePhotoBetweenProfiles(t *testing.T) {
 	newLibraryDB(t)
 	exec(t, `INSERT INTO profiles (id) VALUES ('p1'), ('p2')`)
 	exec(t, `INSERT INTO photos (media_file_id) VALUES ('m1')`)

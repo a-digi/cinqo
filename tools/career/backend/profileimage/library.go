@@ -1,6 +1,7 @@
 package profileimage
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 type photoUser struct {
 	ProfileID string `json:"profileId"`
 	Name      string `json:"name"`
+	IsDefault bool   `json:"isDefault"`
 }
 
 type photoEntry struct {
@@ -49,9 +51,10 @@ func listHandler(w http.ResponseWriter) {
 
 func listPhotos() ([]photoEntry, error) {
 	rows, err := db.CareerDB.Query(`
-		SELECT ph.media_file_id, ph.created_at, p.id, p.first_name, p.last_name
+		SELECT ph.media_file_id, ph.created_at, p.id, p.first_name, p.last_name, p.image_media_file_id = ph.media_file_id
 		FROM photos ph
-		LEFT JOIN profiles p ON p.image_media_file_id = ph.media_file_id
+		LEFT JOIN profile_photos pp ON pp.media_file_id = ph.media_file_id
+		LEFT JOIN profiles p ON p.id = pp.profile_id
 		ORDER BY ph.created_at DESC, ph.rowid DESC, p.created_at ASC, p.id ASC`)
 	if err != nil {
 		return nil, err
@@ -63,7 +66,8 @@ func listPhotos() ([]photoEntry, error) {
 	for rows.Next() {
 		var mediaFileID, createdAt string
 		var profileID, first, last *string
-		if err := rows.Scan(&mediaFileID, &createdAt, &profileID, &first, &last); err != nil {
+		var isDefault *bool
+		if err := rows.Scan(&mediaFileID, &createdAt, &profileID, &first, &last, &isDefault); err != nil {
 			return nil, err
 		}
 		i, seen := index[mediaFileID]
@@ -73,7 +77,9 @@ func listPhotos() ([]photoEntry, error) {
 			photos = append(photos, photoEntry{MediaFileID: mediaFileID, CreatedAt: createdAt, UsedBy: []photoUser{}})
 		}
 		if profileID != nil {
-			photos[i].UsedBy = append(photos[i].UsedBy, photoUser{ProfileID: *profileID, Name: fullName(first, last)})
+			photos[i].UsedBy = append(photos[i].UsedBy, photoUser{
+				ProfileID: *profileID, Name: fullName(first, last), IsDefault: isDefault != nil && *isDefault,
+			})
 		}
 	}
 	return photos, rows.Err()
@@ -89,10 +95,10 @@ func fullName(first, last *string) string {
 	return strings.Join(parts, " ")
 }
 
-// linkHandler serves PUT /profile-image: link a photo that is already in the library
-// to a profile. Only library photos can be linked, so a caller cannot attach an
-// arbitrary Media file. The profile's previous photo is left alone: it stays in the
-// library.
+// linkHandler serves PUT /profile-image: make a photo that is already in the library the
+// profile's default (adding it to the profile's photos first if it is not one of them).
+// Only library photos can be used, so a caller cannot attach an arbitrary Media file. The
+// profile's previous default stays one of its photos.
 func linkHandler(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		ProfileID   string `json:"profileId"`
@@ -123,8 +129,8 @@ func linkHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unknown photo", http.StatusBadRequest)
 		return
 	}
-	if err := setImage(body.ProfileID, body.MediaFileID); err != nil {
-		http.Error(w, "failed to link the photo: "+err.Error(), http.StatusInternalServerError)
+	if err := makeDefault(body.ProfileID, body.MediaFileID); err != nil {
+		http.Error(w, "failed to set the default photo: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	db.WriteJSON(w, profileImageResponse{ProfileID: body.ProfileID, MediaFileID: body.MediaFileID})
@@ -143,8 +149,7 @@ func addToLibrary(mediaFileID string) error {
 	return err
 }
 
-// deletePhotoHandler deletes a photo for good: every profile that links it is
-// unlinked first, then the library row goes, then the Media file (best effort, like
+// deletePhotoHandler deletes a photo for good: every profile that has it loses it first, then the library row goes, then the Media file (best effort, like
 // every other Media delete here: Media allows only the uploader or an admin, and a
 // Media-side failure must not keep the photo in the library). 204 also when the
 // photo is not in the library, and then Media is not called: only library photos
@@ -166,8 +171,9 @@ func deletePhotoHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// deletePhoto unlinks the photo from every profile and removes its library row in
-// one transaction; false if it was not in the library.
+// deletePhoto removes the photo from every profile's photos and from the library in one
+// transaction; a profile whose default it was gets the next one (see removeProfilePhoto's
+// rule). False if it was not in the library.
 func deletePhoto(mediaFileID string) (bool, error) {
 	tx, err := db.CareerDB.Begin()
 	if err != nil {
@@ -185,11 +191,34 @@ func deletePhoto(mediaFileID string) (bool, error) {
 	if n == 0 {
 		return false, nil
 	}
-	if _, err := tx.Exec(
-		`UPDATE profiles SET image_media_file_id = NULL, updated_at = datetime('now') WHERE image_media_file_id = ?`,
-		mediaFileID,
-	); err != nil {
+	defaultOf, err := profilesWithDefault(tx, mediaFileID)
+	if err != nil {
 		return false, err
 	}
+	if _, err := tx.Exec(`DELETE FROM profile_photos WHERE media_file_id = ?`, mediaFileID); err != nil {
+		return false, err
+	}
+	for _, profileID := range defaultOf {
+		if err := promoteDefault(tx, profileID); err != nil {
+			return false, err
+		}
+	}
 	return true, tx.Commit()
+}
+
+func profilesWithDefault(tx *sql.Tx, mediaFileID string) ([]string, error) {
+	rows, err := tx.Query(`SELECT id FROM profiles WHERE image_media_file_id = ?`, mediaFileID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }

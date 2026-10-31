@@ -6,6 +6,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -69,12 +70,29 @@ func del(t *testing.T, target string) *httptest.ResponseRecorder {
 	t.Helper()
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodDelete, target, nil)
-	if target[:7] == "/photos" {
+	switch {
+	case strings.HasPrefix(target, "/profile-photos"):
+		ProfilePhotosHandler(w, req)
+	case strings.HasPrefix(target, "/photos"):
 		PhotosHandler(w, req)
-	} else {
+	default:
 		Handler(w, req)
 	}
 	return w
+}
+
+// photoIDs is the set of a profile's photos.
+func photoIDs(t *testing.T, profileID string) map[string]bool {
+	t.Helper()
+	photos, err := listProfilePhotos(profileID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := map[string]bool{}
+	for _, p := range photos {
+		ids[p.MediaFileID] = true
+	}
+	return ids
 }
 
 func libraryIDs(t *testing.T) map[string]bool {
@@ -90,19 +108,28 @@ func libraryIDs(t *testing.T) map[string]bool {
 	return ids
 }
 
-// A re-upload makes a new photo and never replaces the file in place: another profile
-// that links the old photo keeps it, and the old photo stays in the library.
-func TestUpload_AlwaysANewPhoto_OthersKeepTheirs(t *testing.T) {
+// An upload makes a new photo and never replaces a file in place: it is added next to the
+// profile's others, the default stays, another profile that has the old photo keeps it, and
+// the old photo stays in the library.
+func TestUpload_AddsANewPhotoNextToTheDefault(t *testing.T) {
 	newLibraryDB(t)
 	media := startFakeMedia(t)
 	exec(t, `INSERT INTO profiles (id, image_media_file_id) VALUES ('p1', 'old'), ('p2', 'old')`)
 	exec(t, `INSERT INTO photos (media_file_id) VALUES ('old')`)
+	exec(t, `INSERT INTO profile_photos (profile_id, media_file_id) VALUES ('p1', 'old'), ('p2', 'old')`)
 
-	if w := upload(t, "p1"); w.Code != http.StatusOK {
+	w := upload(t, "p1")
+	if w.Code != http.StatusOK {
 		t.Fatalf("status %d: %s", w.Code, w.Body)
 	}
-	if got := linkOf(t, "p1"); got != "new-1" {
-		t.Fatalf("p1 links %q, want the new photo", got)
+	if !strings.Contains(w.Body.String(), `"mediaFileId":"new-1"`) || !strings.Contains(w.Body.String(), `"isDefault":false`) {
+		t.Fatalf("response = %s", w.Body)
+	}
+	if got := linkOf(t, "p1"); got != "old" {
+		t.Fatalf("p1's default is %q, must stay old", got)
+	}
+	if photos := photoIDs(t, "p1"); len(photos) != 2 || !photos["old"] || !photos["new-1"] {
+		t.Fatalf("p1's photos = %v, want old and new-1", photos)
 	}
 	if got := linkOf(t, "p2"); got != "old" {
 		t.Fatalf("p2 links %q, must still link old", got)
@@ -117,16 +144,17 @@ func TestUpload_AlwaysANewPhoto_OthersKeepTheirs(t *testing.T) {
 	}
 }
 
-// "Remove photo" only unlinks: the file is not deleted, the photo stays in the library,
-// and a profile sharing it keeps it. Repeating it is fine.
+// Removing a photo from a profile only takes it off that profile: the file is not deleted, the
+// photo stays in the library, and a profile sharing it keeps it. Repeating it is fine.
 func TestRemove_OnlyUnlinks(t *testing.T) {
 	newLibraryDB(t)
 	media := startFakeMedia(t)
 	exec(t, `INSERT INTO profiles (id, image_media_file_id) VALUES ('p1', 'm1'), ('p2', 'm1')`)
 	exec(t, `INSERT INTO photos (media_file_id) VALUES ('m1')`)
+	exec(t, `INSERT INTO profile_photos (profile_id, media_file_id) VALUES ('p1', 'm1'), ('p2', 'm1')`)
 
 	for i := 0; i < 2; i++ {
-		if w := del(t, "/profile-image?profileId=p1"); w.Code != http.StatusNoContent {
+		if w := del(t, "/profile-photos?profileId=p1&mediaFileId=m1"); w.Code != http.StatusNoContent {
 			t.Fatalf("run %d: status %d", i, w.Code)
 		}
 	}
@@ -148,6 +176,7 @@ func TestDeletePhoto_UnlinksEveryProfileAndDeletesTheFile(t *testing.T) {
 	media := startFakeMedia(t)
 	exec(t, `INSERT INTO profiles (id, image_media_file_id) VALUES ('p1', 'm1'), ('p2', 'm1'), ('p3', 'm2')`)
 	exec(t, `INSERT INTO photos (media_file_id) VALUES ('m1'), ('m2')`)
+	exec(t, `INSERT INTO profile_photos (profile_id, media_file_id) VALUES ('p1', 'm1'), ('p2', 'm1'), ('p3', 'm2')`)
 
 	if w := del(t, "/photos?mediaFileId=m1"); w.Code != http.StatusNoContent {
 		t.Fatalf("status %d: %s", w.Code, w.Body)

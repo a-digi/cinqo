@@ -174,3 +174,34 @@ func TestProfilesList_CarriesThePhotoId(t *testing.T) {
 		t.Fatalf("a profile without a photo must not carry the field: %v", has)
 	}
 }
+
+// Deleting a profile removes its photo memberships (cascade) but never a photo: the file stays
+// in the library and another profile that has it keeps it.
+func TestProfileDelete_RemovesItsPhotoLinksOnly(t *testing.T) {
+	setupHandlerDB(t)
+	mustExec(t, `INSERT INTO profiles (id, first_name, image_media_file_id) VALUES ('p1', 'A', 'm1'), ('p2', 'B', 'm1')`)
+	mustExec(t, `INSERT INTO photos (media_file_id) VALUES ('m1')`)
+	mustExec(t, `INSERT INTO profile_photos (profile_id, media_file_id) VALUES ('p1', 'm1'), ('p2', 'm1')`)
+
+	rec := httptest.NewRecorder()
+	profilesHandler(rec, httptest.NewRequest(http.MethodDelete, "/profiles?id=p1", nil))
+	if rec.Code >= 300 {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	count := func(q string) int {
+		var n int
+		if err := db.CareerDB.QueryRow(q).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	if n := count(`SELECT COUNT(*) FROM profile_photos WHERE profile_id = 'p1'`); n != 0 {
+		t.Fatalf("p1 still has %d photo links", n)
+	}
+	if n := count(`SELECT COUNT(*) FROM profile_photos WHERE profile_id = 'p2'`); n != 1 {
+		t.Fatalf("p2 has %d photo links, want 1", n)
+	}
+	if n := count(`SELECT COUNT(*) FROM photos WHERE media_file_id = 'm1'`); n != 1 {
+		t.Fatalf("the photo left the library (%d)", n)
+	}
+}

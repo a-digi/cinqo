@@ -27,6 +27,9 @@ type CvDocument struct {
 	Data        templates.CvData `json:"data"`
 	MediaFileID string           `json:"mediaFileId"`
 	JobID       string           `json:"jobId,omitempty"`
+	// PhotoMediaFileID is the photo the CV was made with (step 111); missing when none was
+	// chosen, which means the profile's default.
+	PhotoMediaFileID string `json:"photoMediaFileId,omitempty"`
 	// PersonaName is filled only by ListAllCvDocuments (the "Select existing"
 	// modal's list), never by the other reads.
 	PersonaName string `json:"personaName,omitempty"`
@@ -38,16 +41,17 @@ type CvDocument struct {
 // sentinel-error convention.
 var ErrUnknownCvDocument = errors.New("unknown cv document id")
 
-const cvDocumentColumns = `id, persona_id, template_id, title, data_json, media_file_id, job_id, created_at, updated_at`
+const cvDocumentColumns = `id, persona_id, template_id, title, data_json, media_file_id, job_id, photo_media_file_id, created_at, updated_at`
 
 func scanCvDocument(scan func(dest ...any) error) (CvDocument, error) {
 	var doc CvDocument
 	var dataJSON string
-	var jobID, updatedAt sql.NullString
-	if err := scan(&doc.ID, &doc.PersonaID, &doc.TemplateID, &doc.Title, &dataJSON, &doc.MediaFileID, &jobID, &doc.CreatedAt, &updatedAt); err != nil {
+	var jobID, photoID, updatedAt sql.NullString
+	if err := scan(&doc.ID, &doc.PersonaID, &doc.TemplateID, &doc.Title, &dataJSON, &doc.MediaFileID, &jobID, &photoID, &doc.CreatedAt, &updatedAt); err != nil {
 		return doc, err
 	}
 	doc.JobID = jobID.String
+	doc.PhotoMediaFileID = photoID.String
 	doc.UpdatedAt = updatedAt.String
 	if err := json.Unmarshal([]byte(dataJSON), &doc.Data); err != nil {
 		return doc, err
@@ -84,7 +88,7 @@ const MaxAllCvDocuments = 200
 // page's "Select existing" modal picks from (step 98).
 func ListAllCvDocuments() ([]CvDocument, error) {
 	rows, err := db.CareerDB.Query(
-		`SELECT d.id, d.persona_id, d.template_id, d.title, d.data_json, d.media_file_id, d.job_id, d.created_at, d.updated_at, COALESCE(p.name, '')
+		`SELECT d.id, d.persona_id, d.template_id, d.title, d.data_json, d.media_file_id, d.job_id, d.photo_media_file_id, d.created_at, d.updated_at, COALESCE(p.name, '')
 		 FROM cv_documents d LEFT JOIN personas p ON p.id = d.persona_id
 		 ORDER BY d.created_at DESC, d.id LIMIT ?`, MaxAllCvDocuments)
 	if err != nil {
@@ -96,11 +100,12 @@ func ListAllCvDocuments() ([]CvDocument, error) {
 	for rows.Next() {
 		var doc CvDocument
 		var dataJSON string
-		var jobID, updatedAt sql.NullString
-		if err := rows.Scan(&doc.ID, &doc.PersonaID, &doc.TemplateID, &doc.Title, &dataJSON, &doc.MediaFileID, &jobID, &doc.CreatedAt, &updatedAt, &doc.PersonaName); err != nil {
+		var jobID, photoID, updatedAt sql.NullString
+		if err := rows.Scan(&doc.ID, &doc.PersonaID, &doc.TemplateID, &doc.Title, &dataJSON, &doc.MediaFileID, &jobID, &photoID, &doc.CreatedAt, &updatedAt, &doc.PersonaName); err != nil {
 			return nil, err
 		}
 		doc.JobID = jobID.String
+		doc.PhotoMediaFileID = photoID.String
 		doc.UpdatedAt = updatedAt.String
 		if err := json.Unmarshal([]byte(dataJSON), &doc.Data); err != nil {
 			return nil, err
@@ -128,6 +133,13 @@ func GetCvDocument(id string) (CvDocument, error) {
 // for every human-driven (wizard) document; only the AI-facing path
 // ever passes a real one.
 func InsertCvDocument(personaID, templateID, title string, data templates.CvData, mediaFileID, jobID string) (CvDocument, error) {
+	return InsertCvDocumentWithPhoto(personaID, templateID, title, data, mediaFileID, jobID, "")
+}
+
+// InsertCvDocumentWithPhoto is InsertCvDocument that also records which of the profile's photos
+// the CV was made with (step 111); "" stores NULL, meaning no photo was chosen and the profile's
+// default is used.
+func InsertCvDocumentWithPhoto(personaID, templateID, title string, data templates.CvData, mediaFileID, jobID, photoMediaFileID string) (CvDocument, error) {
 	dataJSON, err := json.Marshal(data)
 	if err != nil {
 		return CvDocument{}, err
@@ -135,9 +147,9 @@ func InsertCvDocument(personaID, templateID, title string, data templates.CvData
 
 	id := uuid.NewString()
 	if _, err := db.CareerDB.Exec(
-		`INSERT INTO cv_documents (id, persona_id, template_id, title, data_json, media_file_id, job_id, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
-		id, personaID, templateID, title, string(dataJSON), mediaFileID, sqlNullIfEmpty(jobID),
+		`INSERT INTO cv_documents (id, persona_id, template_id, title, data_json, media_file_id, job_id, photo_media_file_id, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+		id, personaID, templateID, title, string(dataJSON), mediaFileID, sqlNullIfEmpty(jobID), sqlNullIfEmpty(photoMediaFileID),
 	); err != nil {
 		return CvDocument{}, err
 	}

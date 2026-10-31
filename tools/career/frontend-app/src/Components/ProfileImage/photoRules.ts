@@ -1,7 +1,7 @@
 // Pure rules for the photo library on the Photo page (step 110): the words about who uses
 // a photo, and what deleting it costs. No React, so they can be script-checked.
 
-import type { PhotoUser } from '../../api'
+import type { Photo, PhotoUser, ProfilePhoto } from '../../api'
 
 const names = (users: PhotoUser[]) => users.map((u) => u.name || '(unnamed)')
 
@@ -22,4 +22,15 @@ export function deletePhotoMessage(users: PhotoUser[]): string {
   if (users.length === 0) return 'Delete this photo for good? No profile uses it. This cannot be undone.'
   const who = users.length === 1 ? '1 profile uses' : `${users.length} profiles use`
   return `Delete this photo for good? ${who} it and will lose it (${names(users).join(', ')}). This cannot be undone.`
+}
+
+// The library photos the profile does not have yet: what "Add from your library" offers.
+export function libraryToAdd(library: Photo[], onProfile: ProfilePhoto[]): Photo[] {
+  const have = new Set(onProfile.map((p) => p.mediaFileId))
+  return library.filter((p) => !have.has(p.mediaFileId))
+}
+
+// The profile's default photo id, or null when it has none.
+export function defaultPhotoId(onProfile: ProfilePhoto[]): string | null {
+  return onProfile.find((p) => p.isDefault)?.mediaFileId ?? null
 }

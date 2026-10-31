@@ -764,26 +764,37 @@ export function mediaDownloadUrl(mediaFileId: string): string {
 
 // --- profile image ---
 //
-// A photo is one file in the core Media feature, kept in the photo library
-// (career.db photos table). Any number of profiles can link the same photo through
-// profiles.image_media_file_id, and a profile has at most one current photo.
-// Uploading always makes a new photo; removing only unlinks it; a photo is deleted
-// for good with deletePhoto. See plan/ai/tools/career/step-110-shared-photo-library.md.
+// A photo is one file in the core Media feature, kept in the photo library (career.db photos
+// table). A profile can have several photos (profile_photos) and one of them is its default
+// (profiles.image_media_file_id); a photo can belong to many profiles. Uploading always makes a
+// new photo and adds it to the profile (the default only when it has none). Removing a photo from
+// a profile only takes it off that profile; a photo is deleted for good with deletePhoto. See
+// plan/ai/tools/career/step-110-shared-photo-library.md and step-111-many-photos-per-profile.md.
 
 export interface ProfileImage {
   profileId: string
   mediaFileId: string
 }
 
-// 404 (no image set yet) resolves to null — an expected, common state
-// for this UI, not an error condition worth throwing over.
-export async function fetchProfileImage(profileId: string): Promise<ProfileImage | null> {
-  const res = await fetch(`${PROXY_BASE}/profile-image?profileId=${encodeURIComponent(profileId)}`, { credentials: 'include' })
-  if (res.status === 404) return null
-  return jsonOrThrow<ProfileImage>(res, 'load profile image')
+export interface ProfilePhoto {
+  mediaFileId: string
+  isDefault: boolean
+  addedAt: string
 }
 
-export async function uploadProfileImage(profileId: string, file: File): Promise<ProfileImage> {
+// What an upload answers: the photo that was added and whether it became the default.
+export interface UploadedPhoto extends ProfileImage {
+  isDefault: boolean
+}
+
+// The profile's photos, the default first, then the newest.
+export async function fetchProfilePhotos(profileId: string): Promise<ProfilePhoto[]> {
+  const res = await fetch(`${PROXY_BASE}/profile-photos?profileId=${encodeURIComponent(profileId)}`, { credentials: 'include' })
+  const data = await jsonOrThrow<{ photos: ProfilePhoto[] }>(res, 'load profile photos')
+  return data.photos
+}
+
+export async function uploadProfileImage(profileId: string, file: File): Promise<UploadedPhoto> {
   const formData = new FormData()
   formData.append('profileId', profileId)
   formData.append('file', file)
@@ -792,23 +803,48 @@ export async function uploadProfileImage(profileId: string, file: File): Promise
     credentials: 'include',
     body: formData,
   })
-  return jsonOrThrow<ProfileImage>(res, 'upload profile image')
+  return jsonOrThrow<UploadedPhoto>(res, 'upload profile image')
 }
 
-// Unlinks the profile's photo; the photo stays in the library.
-export async function deleteProfileImage(profileId: string): Promise<void> {
-  const res = await fetch(`${PROXY_BASE}/profile-image?profileId=${encodeURIComponent(profileId)}`, {
-    method: 'DELETE',
+// Adds a photo that is already in the library to the profile (its default only if it has none).
+export async function addProfilePhoto(profileId: string, mediaFileId: string): Promise<ProfilePhoto[]> {
+  const res = await fetch(`${PROXY_BASE}/profile-photos`, {
+    method: 'PUT',
     credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ profileId, mediaFileId }),
   })
+  const data = await jsonOrThrow<{ photos: ProfilePhoto[] }>(res, 'add photo')
+  return data.photos
+}
+
+// Takes a photo off the profile; the photo stays in the library. If it was the default, the
+// profile's most recently added remaining photo becomes the default.
+export async function removeProfilePhoto(profileId: string, mediaFileId: string): Promise<void> {
+  const res = await fetch(
+    `${PROXY_BASE}/profile-photos?profileId=${encodeURIComponent(profileId)}&mediaFileId=${encodeURIComponent(mediaFileId)}`,
+    { method: 'DELETE', credentials: 'include' },
+  )
   if (!res.ok) {
-    throw new Error(`failed to unlink profile image (${res.status})`)
+    throw new Error(`failed to remove photo (${res.status})`)
   }
+}
+
+// Makes one of the profile's photos (or a library photo, which is then added) its default.
+export async function makeDefaultPhoto(profileId: string, mediaFileId: string): Promise<ProfileImage> {
+  const res = await fetch(`${PROXY_BASE}/profile-image`, {
+    method: 'PUT',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ profileId, mediaFileId }),
+  })
+  return jsonOrThrow<ProfileImage>(res, 'set default photo')
 }
 
 export interface PhotoUser {
   profileId: string
   name: string
+  isDefault: boolean
 }
 
 export interface Photo {
@@ -823,18 +859,7 @@ export async function fetchPhotos(): Promise<Photo[]> {
   return data.photos
 }
 
-// Links a photo that is already in the library to the profile.
-export async function linkProfilePhoto(profileId: string, mediaFileId: string): Promise<ProfileImage> {
-  const res = await fetch(`${PROXY_BASE}/profile-image`, {
-    method: 'PUT',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ profileId, mediaFileId }),
-  })
-  return jsonOrThrow<ProfileImage>(res, 'link photo')
-}
-
-// Deletes a photo for good: every profile using it loses it.
+// Deletes a photo for good: every profile that has it loses it.
 export async function deletePhoto(mediaFileId: string): Promise<void> {
   const res = await fetch(`${PROXY_BASE}/photos?mediaFileId=${encodeURIComponent(mediaFileId)}`, {
     method: 'DELETE',
@@ -1235,6 +1260,9 @@ export interface CvDocument {
   // own "Generate CV PDF"); absent for one created through this
   // wizard. See plan/ai/career/cv-builder/step-08-ai-generated-cv-documents.md.
   jobId?: string
+  // The photo the CV was made with, one of the profile's photos; absent when none was chosen
+  // (the profile's default, or no photo). See plan/ai/tools/career/step-111-many-photos-per-profile.md.
+  photoMediaFileId?: string
   // Filled only by fetchAllCvDocuments (the "Select existing" modal's list).
   personaName?: string
   createdAt: string
@@ -1257,16 +1285,20 @@ export async function fetchCvPersonaDefaults(personaId: string): Promise<CvData>
   return jsonOrThrow<CvData>(res, 'load persona defaults')
 }
 
-// Answers "does this persona's own profile have a photo uploaded?" —
-// a separate, deliberately tiny call rather than folding it into
-// fetchCvPersonaDefaults: this is also called from the "edit an
-// existing CV" load path, which must NOT re-fetch/overwrite that
-// document's own already-loaded CvData the way persona-defaults would.
-export async function fetchCvPhotoStatus(personaId: string): Promise<{ hasPhoto: boolean }> {
+// Answers "does this persona's own profile have a photo uploaded, and which?" — the profile's
+// photos, the default first. A separate, deliberately tiny call rather than folding it into
+// fetchCvPersonaDefaults: this is also called from the "edit an existing CV" load path, which must
+// NOT re-fetch/overwrite that document's own already-loaded CvData the way persona-defaults would.
+export async function fetchCvPhotoStatus(personaId: string): Promise<{ hasPhoto: boolean; photos: CvPhotoInfo[] }> {
   const res = await fetch(`${PROXY_BASE}/cv-documents/photo-status?personaId=${encodeURIComponent(personaId)}`, {
     credentials: 'include',
   })
-  return jsonOrThrow<{ hasPhoto: boolean }>(res, 'check profile photo')
+  return jsonOrThrow<{ hasPhoto: boolean; photos: CvPhotoInfo[] }>(res, 'check profile photo')
+}
+
+export interface CvPhotoInfo {
+  mediaFileId: string
+  isDefault: boolean
 }
 
 export async function fetchCvDocuments(personaId: string): Promise<CvDocument[]> {
@@ -1291,12 +1323,13 @@ export async function createCvDocument(
   title: string,
   data: CvData,
   attachPhoto: boolean,
+  photoMediaFileId?: string,
 ): Promise<CvDocument> {
   const res = await fetch(`${PROXY_BASE}/cv-documents`, {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ personaId, templateId, title, data, attachPhoto }),
+    body: JSON.stringify({ personaId, templateId, title, data, attachPhoto, photoMediaFileId }),
   })
   return jsonOrThrow<CvDocument>(res, 'generate cv document')
 }
@@ -1311,12 +1344,13 @@ export async function previewCvDocument(
   templateId: string,
   data: CvData,
   attachPhoto: boolean,
+  photoMediaFileId?: string,
 ): Promise<{ previewUrl: string }> {
   const res = await fetch(`${PROXY_BASE}/cv-documents/preview`, {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ personaId, templateId, data, attachPhoto }),
+    body: JSON.stringify({ personaId, templateId, data, attachPhoto, photoMediaFileId }),
   })
   return jsonOrThrow<{ previewUrl: string }>(res, 'preview cv document')
 }

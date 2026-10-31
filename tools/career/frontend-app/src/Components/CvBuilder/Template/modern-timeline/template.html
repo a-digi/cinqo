@@ -24,22 +24,20 @@
     {{if .Summary}}
     <h2>Summary</h2>
     <p class="summary">{{.Summary}}</p>
-    {{end}}
-    {{if .Experience}}
+    {{end}} {{if .Experience}}
     <h2>Experience</h2>
     <div class="timeline">
-    {{range .Experience}}
-    <div class="entry">
-      <div class="entry-title">{{.Title}}{{if .Company}}, {{.Company}}{{end}}</div>
-      <div class="entry-meta">{{.StartDate}} - {{if .EndDate}}{{.EndDate}}{{else}}Present{{end}}</div>
-      {{if .Description}}
-      <p class="entry-desc">{{.Description}}</p>
+      {{range .Experience}}
+      <div class="entry">
+        <div class="entry-title">{{.Title}}{{if .Company}}, {{.Company}}{{end}}</div>
+        <div class="entry-meta">{{.StartDate}} - {{if .EndDate}}{{.EndDate}}{{else}}Present{{end}}</div>
+        {{if .Description}}
+        <p class="entry-desc">{{.Description}}</p>
+        {{end}}
+      </div>
       {{end}}
     </div>
-    {{end}}
-    </div>
-    {{end}}
-    {{if .Skills}}
+    {{end}} {{if .Skills}}
     <h2>Skills</h2>
     <p class="skills">{{range $i, $s := .Skills}}{{if $i}}, {{end}}{{$s}}{{end}}</p>
     {{end}}

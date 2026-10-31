@@ -37,12 +37,17 @@ type profileImageResponse struct {
 	MediaFileID string `json:"mediaFileId"`
 }
 
-// Handler dispatches GET (fetch the current image, if any), POST
-// (upload a new photo and link it), PUT (link a photo that is already in
-// the library), and DELETE (unlink it; the photo stays in the library) —
-// GET/POST/DELETE are addressed by ?profileId=, since a profile has at
-// most one current photo (no separate id needed, unlike cv_documents'
-// own ?id=/?personaId= split).
+// uploadResponse says which photo was added and whether it became the default.
+type uploadResponse struct {
+	ProfileID   string `json:"profileId"`
+	MediaFileID string `json:"mediaFileId"`
+	IsDefault   bool   `json:"isDefault"`
+}
+
+// Handler dispatches GET (the profile's default photo, if any, by ?profileId=), POST (upload a
+// new photo and add it to the profile) and PUT (make a photo the profile's default). A profile's
+// other photos are managed through /profile-photos, and a photo is deleted for good through
+// /photos (step 111).
 func Handler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -51,8 +56,6 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		uploadHandler(w, r)
 	case http.MethodPut:
 		linkHandler(w, r)
-	case http.MethodDelete:
-		deleteHandler(w, r)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -110,33 +113,23 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := setImage(profileID, mediaFileID); err != nil {
-		http.Error(w, "image uploaded but failed to save: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	// Keep the library complete (step 110): the new file is a photo others can pick.
+	// The new file is a photo others can pick (step 110) and one of this profile's photos;
+	// it becomes the default only if the profile has none yet (step 111).
 	if err := addToLibrary(mediaFileID); err != nil {
 		http.Error(w, "image uploaded but failed to add to the library: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-
-	db.WriteJSON(w, profileImageResponse{ProfileID: profileID, MediaFileID: mediaFileID})
-}
-
-// deleteHandler unlinks the profile's photo. The photo stays in the library (other
-// profiles may link it, and it can be picked again); deleting it for good is
-// DELETE /photos.
-func deleteHandler(w http.ResponseWriter, r *http.Request) {
-	profileID := r.URL.Query().Get("profileId")
-	if profileID == "" {
-		http.Error(w, "profileId query parameter is required", http.StatusBadRequest)
+	if err := addProfilePhoto(profileID, mediaFileID); err != nil {
+		http.Error(w, "image uploaded but failed to save: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := clearImage(profileID); err != nil {
-		http.Error(w, "failed to unlink profile image: "+err.Error(), http.StatusInternalServerError)
+	defaultID, err := currentImage(profileID)
+	if err != nil {
+		http.Error(w, "image uploaded but failed to reload: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+
+	db.WriteJSON(w, uploadResponse{ProfileID: profileID, MediaFileID: mediaFileID, IsDefault: defaultID == mediaFileID})
 }
 
 func currentImage(profileID string) (string, error) {
@@ -149,22 +142,6 @@ func currentImage(profileID string) (string, error) {
 		return "", err
 	}
 	return mediaFileID.String, nil
-}
-
-func setImage(profileID, mediaFileID string) error {
-	_, err := db.CareerDB.Exec(
-		`UPDATE profiles SET image_media_file_id = ?, updated_at = datetime('now') WHERE id = ?`,
-		mediaFileID, profileID,
-	)
-	return err
-}
-
-func clearImage(profileID string) error {
-	_, err := db.CareerDB.Exec(
-		`UPDATE profiles SET image_media_file_id = NULL, updated_at = datetime('now') WHERE id = ?`,
-		profileID,
-	)
-	return err
 }
 
 // --- Media forwarding ---
