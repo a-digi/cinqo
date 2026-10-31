@@ -1,13 +1,5 @@
-import { useEffect, useState } from 'react'
-import {
-  fetchPersonas,
-  fetchProfiles,
-  updatePersona,
-  deletePersona,
-  deletePersonaAiRun,
-  type Persona,
-  type PersonaAiRun,
-} from '../../../api'
+import { useEffect, useRef, useState } from 'react'
+import { fetchPersonas, fetchProfiles, updatePersona, deletePersona, deletePersonaAiRun, type Persona } from '../../../api'
 import { LayersIcon, PlusIcon, SparkleIcon } from '../../../Shared/Icons/icons'
 import { inputClass } from '../../../Shared/inputClass'
 import { PageHeaderCard } from '../../../Shared/PageHeader/PageHeaderCard'
@@ -22,7 +14,7 @@ import { useAiChoice } from '../../../Cinqo/Platform/useAiChoice'
 import { profileLabel } from '../../ProfileSwitcher/profileLabel'
 import { CreateWithAi } from '../../../PersonaAi/CreateWithAi'
 import { PersonaAiHistory } from '../../../PersonaAi/PersonaAiHistory'
-import { ReviewPersonasDialog } from '../../../PersonaAi/ReviewPersonasDialog'
+import { PersonaSuggestions } from '../../../PersonaAi/PersonaSuggestions'
 import { usePersonaAiRuns } from '../../../PersonaAi/usePersonaAiRuns'
 import { chatOfRun, hasRunningRun } from '../../../PersonaAi/runDisplay'
 
@@ -48,7 +40,6 @@ export function PersonasPage() {
   const ai = useAiChoice()
   const [profileName, setProfileName] = useState('')
   const aiRuns = usePersonaAiRuns(profileId)
-  const [reviewing, setReviewing] = useState<PersonaAiRun | null>(null)
   // The personas the AI just created (step 112): shown highlighted and bigger until dismissed or
   // until another profile is picked, and scrolled to once they are in the list.
   const [newIds, setNewIds] = useState<string[]>([])
@@ -67,6 +58,19 @@ export function PersonasPage() {
     el.scrollIntoView({ behavior: 'smooth', block: 'center' })
     setScrollToNew(false)
   }, [scrollToNew, personas, newIds])
+
+  // When the AI finishes while the user is here, the suggestions are brought into view.
+  const wasWorking = useRef(false)
+  useEffect(() => {
+    if (hasRunningRun(aiRuns.runs)) {
+      wasWorking.current = true
+    } else if (wasWorking.current) {
+      wasWorking.current = false
+      requestAnimationFrame(() => {
+        document.getElementById('persona-suggestions')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      })
+    }
+  }, [aiRuns.runs])
 
   useEffect(() => {
     if (!profileId) return
@@ -214,6 +218,22 @@ export function PersonasPage() {
             </div>
           )}
 
+          {profileId && (
+            <PersonaSuggestions
+              runs={aiRuns.runs}
+              existing={personas.map((p) => ({ id: p.id, name: p.name }))}
+              onAccepted={(created) => {
+                setNewIds((ids) => [...ids, ...created.map((c) => c.id)])
+                setScrollToNew(true)
+                load(profileId)
+                void aiRuns.reload()
+              }}
+              onChanged={() => {
+                void aiRuns.reload()
+              }}
+            />
+          )}
+
           {profileId && personas.length === 0 && !error && (
             <div
               className="career-wiggle rounded-3xl border p-8 text-center text-sm text-gray-500"
@@ -340,7 +360,9 @@ export function PersonasPage() {
             <>
               <PersonaAiHistory
                 runs={aiRuns.runs}
-                onReview={setReviewing}
+                onReview={() => {
+                  document.getElementById('persona-suggestions')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                }}
                 onRemove={(run) =>
                   deletePersonaAiRun(run.id).then(() => {
                     // The personas it created stay, without the link to the run.
@@ -357,23 +379,6 @@ export function PersonasPage() {
           </div>
         </aside>
       </div>
-
-      {reviewing && profileId && (
-        <ReviewPersonasDialog
-          run={reviewing}
-          existing={personas.map((p) => ({ id: p.id, name: p.name }))}
-          onClose={() => {
-            setReviewing(null)
-          }}
-          onCreated={(created) => {
-            setReviewing(null)
-            setNewIds(created.map((c) => c.id))
-            setScrollToNew(true)
-            load(profileId)
-            void aiRuns.reload()
-          }}
-        />
-      )}
     </div>
   )
 }

@@ -1,11 +1,12 @@
-// The tools a "create personas with AI" run may use (step 113): the AI only reads. The server is
+// The tools a "create personas with AI" run may use (step 113): the AI reads, and hands over its
+// suggestions with suggest_persona, which only stores them for the user to accept or decline. The server is
 // asked to restrict the run's conversation to exactly these (createConversation's allowedTools), so
 // that it cannot create, change or delete anything whatever it is told or shown; the personas are
 // created only by the user's own Apply. buildPersonaPrompt.ts names the tools the run needs: keep
 // the two in step (personaTools' own check script fails when the prompt names a tool outside this
 // list).
 
-export const PERSONA_RUN_TOOLS = ['list_profiles', 'list_personas', 'get_persona_details'] as const
+export const PERSONA_RUN_TOOLS = ['list_profiles', 'list_personas', 'get_persona_details', 'suggest_persona'] as const
 
 // Whether the conversation the server created is restricted to exactly the tools asked for. A
 // server that does not know allowedTools ignores the field and answers without it: then the run

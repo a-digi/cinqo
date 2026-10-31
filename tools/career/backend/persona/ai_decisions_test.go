@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -99,15 +100,13 @@ func TestApplyDecisions_AnUndecidedRunHasNoDecidedAtAndAnEmptyDeclinedList(t *te
 	}
 }
 
-// Every proposed persona needs exactly one decision: anything else is refused and nothing changes.
-func TestApplyDecisions_EveryProposedPersonaNeedsExactlyOneDecision(t *testing.T) {
+// A request that is incomplete or contradicts itself is refused, and nothing changes. Each case gets
+// its own run: a request that is valid would decide a persona and change the next case.
+func TestApplyDecisions_RefusesContradictoryRequests(t *testing.T) {
 	pid := setupRunsDB(t)
-	run := runWith(t, pid, "Alpha", "Beta")
 	one := pp("Alpha", nil)
 	cases := map[string][]Decision{
 		"none":                  {},
-		"one missing":           {accept(0, one)},
-		"too many":              {accept(0, one), decline(1), decline(1)},
 		"a duplicate index":     {accept(0, one), decline(0)},
 		"out of range":          {accept(0, one), decline(2)},
 		"negative index":        {accept(0, one), decline(-1)},
@@ -117,15 +116,117 @@ func TestApplyDecisions_EveryProposedPersonaNeedsExactlyOneDecision(t *testing.T
 		"declined with content": {accept(0, one), {Index: 1, Decision: "declined", Persona: &one}},
 	}
 	for name, ds := range cases {
+		run := runWith(t, pid, "Alpha", "Beta")
 		if _, err := ApplyDecisions(run, ds); !errors.Is(err, ErrInvalidProposal) {
 			t.Errorf("%s: %v, want ErrInvalidProposal", name, err)
+		}
+		if decidedAt, _ := runRow(t, run); decidedAt != nil {
+			t.Errorf("%s: a refused call decided the run", name)
 		}
 	}
 	if n := count(t, `SELECT COUNT(*) FROM personas`); n != 0 {
 		t.Fatalf("%d personas created by refused calls", n)
 	}
+	if n := count(t, `SELECT COUNT(*) FROM persona_ai_runs WHERE decided_indexes IS NOT NULL`); n != 0 {
+		t.Fatalf("%d runs have decisions recorded by refused calls", n)
+	}
+}
+
+// The user decides one persona at a time: accepting one creates it at once and the others keep
+// waiting; the run closes only when the last one is decided.
+func TestApplyDecisions_OnePersonaAtATime(t *testing.T) {
+	pid := setupRunsDB(t)
+	run := runWith(t, pid, "Alpha", "Beta", "Gamma")
+	decided := func() []int {
+		runs, _ := ListAiRuns(pid)
+		return runs[0].Decided
+	}
+	same := reflect.DeepEqual
+
+	// accept only the middle one: it exists at once, the run stays open, the others still wait
+	created, err := ApplyDecisions(run, []Decision{accept(1, pp("Beta edited", []string{"Go"}))})
+	if err != nil || len(created) != 1 || created[0].Name != "Beta edited" {
+		t.Fatalf("created=%v err=%v", created, err)
+	}
+	if n := count(t, `SELECT COUNT(*) FROM personas WHERE ai_run_id = ?`, run); n != 1 {
+		t.Fatalf("%d personas after accepting one", n)
+	}
 	if decidedAt, _ := runRow(t, run); decidedAt != nil {
-		t.Fatal("a refused call decided the run")
+		t.Fatal("the run was closed with two personas still waiting")
+	}
+	if !same(decided(), []int{1}) {
+		t.Fatalf("decided = %v, want [1]", decided())
+	}
+
+	// decline the first: nothing is created, the run is still open
+	if created, err := ApplyDecisions(run, []Decision{decline(0)}); err != nil || len(created) != 0 {
+		t.Fatalf("created=%v err=%v", created, err)
+	}
+	if decidedAt, _ := runRow(t, run); decidedAt != nil {
+		t.Fatal("the run was closed with one persona still waiting")
+	}
+	if !same(decided(), []int{0, 1}) {
+		t.Fatalf("decided = %v, want [0 1]", decided())
+	}
+
+	// a persona that was already decided cannot be decided again, whatever the answer
+	for _, d := range []Decision{accept(1, pp("Again", nil)), decline(1), decline(0), accept(0, pp("Again", nil))} {
+		if _, err := ApplyDecisions(run, []Decision{d}); !errors.Is(err, ErrPersonaDecided) {
+			t.Errorf("deciding persona %d again: %v, want ErrPersonaDecided", d.Index, err)
+		}
+	}
+	// a request that mixes a decided persona with a waiting one changes nothing
+	if _, err := ApplyDecisions(run, []Decision{accept(2, pp("Gamma", nil)), decline(0)}); !errors.Is(err, ErrPersonaDecided) {
+		t.Fatalf("mixed request: %v", err)
+	}
+	if n := count(t, `SELECT COUNT(*) FROM personas WHERE ai_run_id = ?`, run); n != 1 {
+		t.Fatalf("%d personas after a refused mixed request, want 1", n)
+	}
+
+	// the last one closes the run, and the history says what happened to each
+	if _, err := ApplyDecisions(run, []Decision{accept(2, pp("Gamma", nil))}); err != nil {
+		t.Fatal(err)
+	}
+	decidedAt, declined := runRow(t, run)
+	if decidedAt == nil || declined == nil || *declined != `[{"name":"Alpha"}]` {
+		t.Fatalf("decided_at=%v declined_json=%v", decidedAt, declined)
+	}
+	runs, _ := ListAiRuns(pid)
+	if runs[0].DecidedAt == "" || !same(runs[0].Decided, []int{0, 1, 2}) || len(runs[0].Personas) != 2 || len(runs[0].Declined) != 1 {
+		t.Fatalf("list = %+v", runs[0])
+	}
+	if _, err := ApplyDecisions(run, []Decision{decline(0)}); !errors.Is(err, ErrAiRunDecided) {
+		t.Fatalf("deciding on a closed run: %v", err)
+	}
+}
+
+// Declines accumulate across requests, in the order they were made.
+func TestApplyDecisions_DeclinesAccumulate(t *testing.T) {
+	pid := setupRunsDB(t)
+	run := runWith(t, pid, "Alpha", "Beta", "Gamma")
+	for _, i := range []int{2, 0, 1} {
+		if _, err := ApplyDecisions(run, []Decision{decline(i)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runs, _ := ListAiRuns(pid)
+	names := []string{}
+	for _, d := range runs[0].Declined {
+		names = append(names, d.Name)
+	}
+	if strings.Join(names, ",") != "Gamma,Alpha,Beta" || runs[0].DecidedAt == "" {
+		t.Fatalf("declined=%v decidedAt=%q", names, runs[0].DecidedAt)
+	}
+}
+
+// A run nobody has decided on yet lists no decided persona, as an empty list.
+func TestListAiRuns_DecidedIsAnEmptyListUntilSomethingIsDecided(t *testing.T) {
+	pid := setupRunsDB(t)
+	runWith(t, pid, "Alpha")
+	runs, _ := ListAiRuns(pid)
+	raw, _ := json.Marshal(runs[0])
+	if !strings.Contains(string(raw), `"decided":[]`) {
+		t.Fatalf("json = %s", raw)
 	}
 }
 
@@ -217,11 +318,11 @@ func TestAiRunApplyHandler_Decisions(t *testing.T) {
 	persona := `{"name":"Alpha","description":"","details":{"headline":"h","summary":"s","location":"","desiredTitles":"","desiredLocations":"","minSalary":0},"skills":["Go"],"experience":[]}`
 
 	for name, body := range map[string]string{
-		"missing decision": `{"runId":"` + run + `","decisions":[{"index":0,"decision":"declined"}]}`,
-		"bad decision":     `{"runId":"` + run + `","decisions":[{"index":0,"decision":"x"},{"index":1,"decision":"declined"}]}`,
-		"unknown run":      `{"runId":"nope","decisions":[{"index":0,"decision":"declined"}]}`,
-		"neither shape":    `{"runId":"` + run + `"}`,
-		"empty decisions":  `{"runId":"` + run + `","decisions":[]}`,
+		"bad decision":    `{"runId":"` + run + `","decisions":[{"index":0,"decision":"x"},{"index":1,"decision":"declined"}]}`,
+		"duplicate index": `{"runId":"` + run + `","decisions":[{"index":0,"decision":"declined"},{"index":0,"decision":"declined"}]}`,
+		"unknown run":     `{"runId":"nope","decisions":[{"index":0,"decision":"declined"}]}`,
+		"neither shape":   `{"runId":"` + run + `"}`,
+		"empty decisions": `{"runId":"` + run + `","decisions":[]}`,
 	} {
 		if w := decide(t, body); w.Code != http.StatusBadRequest {
 			t.Errorf("%s: %d, want 400 (%s)", name, w.Code, w.Body)

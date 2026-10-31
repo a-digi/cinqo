@@ -42,6 +42,7 @@ package db
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -210,10 +211,26 @@ CREATE TABLE IF NOT EXISTS persona_ai_runs (
     -- Step 113: when the user decided on the whole proposal (accepted or declined every persona),
     -- and the proposed personas they declined, as proposed: [{"name": "..."}]. NULL until decided.
     decided_at      TEXT,
-    declined_json   TEXT
+    declined_json   TEXT,
+    -- Which proposed personas (their positions in the proposal) the user has decided on so far, as a
+    -- JSON array. The user decides one persona at a time; the run is closed (decided_at) once every
+    -- persona has a decision. NULL means none yet.
+    decided_indexes TEXT
 );
 
 CREATE INDEX IF NOT EXISTS persona_ai_runs_profile_idx ON persona_ai_runs(profile_id);
+
+-- The personas the AI suggested during a run, one row each, stored by its suggest_persona tool
+-- (which creates no persona) in the order they were made. Finishing the run turns them into its
+-- proposal.
+CREATE TABLE IF NOT EXISTS persona_ai_suggestions (
+    id           TEXT PRIMARY KEY,
+    run_id       TEXT NOT NULL REFERENCES persona_ai_runs(id) ON DELETE CASCADE,
+    position     INTEGER NOT NULL,
+    persona_json TEXT NOT NULL,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(run_id, position)
+);
 
 CREATE TABLE IF NOT EXISTS persona_details (
     persona_id        TEXT PRIMARY KEY REFERENCES personas(id) ON DELETE CASCADE,
@@ -1073,13 +1090,13 @@ func migratePersonasAiRunID(db *sql.DB) error {
 	return err
 }
 
-// migratePersonaAiRunDecisions adds decided_at and declined_json to an installed persona_ai_runs
+// migratePersonaAiRunDecisions adds decided_at, declined_json and decided_indexes to an installed persona_ai_runs
 // table (step 113) and closes the runs that already have personas created from them: those were
 // decided before the columns existed. Idempotent, so it is safe on every start; a run with no
 // personas stays undecided and can still be reviewed. A no-op on a brand-new install (the base
 // schema already has the columns). Runs right after the base schema, which creates the table.
 func migratePersonaAiRunDecisions(db *sql.DB) error {
-	for _, col := range []string{"decided_at", "declined_json"} {
+	for _, col := range []string{"decided_at", "declined_json", "decided_indexes"} {
 		exists, hasColumn, err := tableHasColumn(db, "persona_ai_runs", col)
 		if err != nil {
 			return err
@@ -1093,9 +1110,52 @@ func migratePersonaAiRunDecisions(db *sql.DB) error {
 			}
 		}
 	}
-	_, err := db.Exec(`UPDATE persona_ai_runs SET decided_at = COALESCE(finished_at, created_at)
-		WHERE decided_at IS NULL AND id IN (SELECT ai_run_id FROM personas WHERE ai_run_id IS NOT NULL)`)
-	return err
+	if _, err := db.Exec(`UPDATE persona_ai_runs SET decided_at = COALESCE(finished_at, created_at)
+		WHERE decided_at IS NULL AND id IN (SELECT ai_run_id FROM personas WHERE ai_run_id IS NOT NULL)`); err != nil {
+		return err
+	}
+	// A run that was decided as a whole (before personas could be decided one at a time) has every
+	// persona of its proposal decided.
+	rows, err := db.Query(`SELECT id, proposal_json FROM persona_ai_runs
+		WHERE decided_at IS NOT NULL AND decided_indexes IS NULL AND proposal_json IS NOT NULL`)
+	if err != nil {
+		return err
+	}
+	type fix struct {
+		id      string
+		indexes string
+	}
+	var fixes []fix
+	for rows.Next() {
+		var id, proposal string
+		if err := rows.Scan(&id, &proposal); err != nil {
+			rows.Close()
+			return err
+		}
+		var p struct {
+			Personas []json.RawMessage `json:"personas"`
+		}
+		if json.Unmarshal([]byte(proposal), &p) != nil {
+			continue
+		}
+		indexes := make([]int, len(p.Personas))
+		for i := range indexes {
+			indexes[i] = i
+		}
+		raw, _ := json.Marshal(indexes)
+		fixes = append(fixes, fix{id, string(raw)})
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+	for _, f := range fixes {
+		if _, err := db.Exec(`UPDATE persona_ai_runs SET decided_indexes = ? WHERE id = ?`, f.indexes, f.id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // migrateCvDocumentsJobID adds the nullable job_id column (AI-generated

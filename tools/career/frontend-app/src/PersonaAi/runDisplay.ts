@@ -37,25 +37,28 @@ export function summarizeRun(run: PersonaAiRun): RunSummary {
   const proposed = names(run)
   const created = run.personas
   const declined = run.declined
-  // A run is decided when the server says so; one with personas created from it was decided too.
+  const waiting = waitingCount(run)
+  // Closed (every persona decided), or partly decided: the rest still waits on the page.
   if (run.decidedAt !== undefined || created.length > 0 || declined.length > 0) {
-    const createdText = created.length === 1 ? '1 persona created' : `${created.length} personas created`
-    const declinedText = `${declined.length} declined`
-    const label =
+    const done =
       created.length > 0 && declined.length > 0
         ? `${created.length} created, ${declined.length} declined`
         : created.length > 0
-          ? createdText
+          ? created.length === 1
+            ? '1 persona created'
+            : `${created.length} personas created`
           : declined.length > 0
             ? declined.length === proposed.length
               ? 'All declined'
-              : declinedText
+              : `${declined.length} declined`
             : 'Decided'
     const parts = [
       created.length > 0 ? created.map((p) => p.name).join(', ') : '',
       declined.length > 0 ? `Declined: ${declined.map((p) => p.name).join(', ')}` : '',
     ]
-    return { label, tone: 'ready', detail: parts.filter((x) => x !== '').join('. ') }
+    const label = run.decidedAt === undefined && waiting > 0 ? `${waiting} waiting for you` : done
+    const detail = parts.filter((x) => x !== '').join('. ')
+    return { label, tone: 'ready', detail }
   }
   if (proposed.length === 0) {
     return {
@@ -65,7 +68,7 @@ export function summarizeRun(run: PersonaAiRun): RunSummary {
     }
   }
   return {
-    label: proposed.length === 1 ? '1 persona proposed' : `${proposed.length} personas proposed`,
+    label: waiting === 1 ? '1 waiting for you' : `${waiting} waiting for you`,
     tone: 'ready',
     detail: proposed.join(', '),
   }
@@ -80,9 +83,14 @@ export function hasRunningRun(runs: PersonaAiRun[]): boolean {
   return runs.some((r) => r.status === 'generating')
 }
 
-// A ready run with personas proposed that the user has not decided on yet can be reviewed.
+// How many proposed personas of a run still wait for a decision.
+export function waitingCount(run: PersonaAiRun): number {
+  return Math.max(0, (run.proposal?.personas.length ?? 0) - run.decided.length)
+}
+
+// A ready, open run with personas still waiting has suggestions to show.
 export function canReview(run: PersonaAiRun): boolean {
-  return run.status === 'ready' && (run.proposal?.personas.length ?? 0) > 0 && run.decidedAt === undefined && run.personas.length === 0
+  return run.status === 'ready' && run.decidedAt === undefined && waitingCount(run) > 0
 }
 
 // How many runs the history shows before "Show all".

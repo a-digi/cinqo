@@ -1,64 +1,28 @@
-// Pure rules for deciding on a proposal (steps 112 and 113): the drafts the user edits, who is
-// accepted, declined or still undecided, what stops saving, how skills are added, and the
-// duplicate hints. Nothing is pre-accepted: a persona is created only after the user pressed
-// Accept on it.
+// Pure rules for the AI's suggested personas (steps 112 and 113): which suggestions still wait for
+// the user, the persona exactly as it will be saved, the decisions to send (one persona at a time:
+// Accept creates it at once, Decline creates nothing), how skills are added, and the duplicate
+// hints.
 
-import type { PersonaDecision, PersonaProposal, ProposedPersona } from '../api'
-import { MAX_SKILLS, MAX_SHORT, checkAccepted } from './personaProposal'
+import type { PersonaAiRun, PersonaDecision, ProposedPersona } from '../api'
+import { MAX_SKILLS, MAX_SHORT } from './personaProposal'
 
-export type DraftDecision = 'undecided' | 'accepted' | 'declined'
-
-export interface Draft {
-  decision: DraftDecision
+export interface Suggestion {
+  run: PersonaAiRun
+  index: number
   persona: ProposedPersona
 }
 
-// A copy of every proposed persona to edit, none of them decided.
-export function draftsFrom(proposal: PersonaProposal): Draft[] {
-  return proposal.personas.map((p) => ({ decision: 'undecided', persona: structuredClone(p) }))
-}
-
-// The drafts with the persona at index decided (pressing the same decision again undoes it).
-export function decide(drafts: Draft[], index: number, decision: 'accepted' | 'declined'): Draft[] {
-  return drafts.map((d, i) => (i === index ? { ...d, decision: d.decision === decision ? 'undecided' : decision } : d))
-}
-
-// Every persona declined at once.
-export function declineAll(drafts: Draft[]): Draft[] {
-  return drafts.map((d) => ({ ...d, decision: 'declined' }))
-}
-
-export interface Counts {
-  accepted: number
-  declined: number
-  undecided: number
-}
-
-export function counts(drafts: Draft[]): Counts {
-  const c: Counts = { accepted: 0, declined: 0, undecided: 0 }
-  for (const d of drafts) c[d.decision]++
-  return c
-}
-
-export function countsLabel(drafts: Draft[]): string {
-  const c = counts(drafts)
-  return `${c.accepted} accepted, ${c.declined} declined, ${c.undecided} undecided`
-}
-
-export function accepted(drafts: Draft[]): ProposedPersona[] {
-  return drafts.filter((d) => d.decision === 'accepted').map((d) => d.persona)
-}
-
-// What stops the decisions from being saved, or null: every persona needs a decision, and what was
-// accepted must be valid. Declining everything is fine.
-export function reviewProblem(drafts: Draft[]): string | null {
-  const open = counts(drafts).undecided
-  if (open > 0)
-    return open === 1
-      ? 'One persona still needs a decision: accept or decline it.'
-      : `${open} personas still need a decision: accept or decline each.`
-  const keep = accepted(drafts)
-  return keep.length === 0 ? null : checkAccepted(keep)
+// The suggestions still waiting for a decision: from every ready, open run, the proposed personas
+// whose index is not decided yet, newest run first (the order the runs come in).
+export function waitingSuggestions(runs: PersonaAiRun[]): Suggestion[] {
+  const out: Suggestion[] = []
+  for (const run of runs) {
+    if (run.status !== 'ready' || run.decidedAt !== undefined) continue
+    run.proposal?.personas.forEach((persona, index) => {
+      if (!run.decided.includes(index)) out.push({ run, index, persona })
+    })
+  }
+  return out
 }
 
 // A persona exactly as it will be saved: every text trimmed and the skills trimmed and
@@ -96,45 +60,17 @@ export function finalPersona(p: ProposedPersona): ProposedPersona {
   }
 }
 
-// The decisions to send, one for every proposed persona (accepted ones with their content as it
-// will be saved); null while something is undecided.
-export function toDecisions(drafts: Draft[]): PersonaDecision[] | null {
-  if (counts(drafts).undecided > 0) return null
-  return drafts.map((d, index) =>
-    d.decision === 'accepted' ? { index, decision: 'accepted', persona: finalPersona(d.persona) } : { index, decision: 'declined' },
-  )
+export function acceptDecision(index: number, persona: ProposedPersona): PersonaDecision {
+  return { index, decision: 'accepted', persona: finalPersona(persona) }
 }
 
-// The text of the button that leaves the decisions for the preview.
-export function continueLabel(drafts: Draft[]): string {
-  const c = counts(drafts)
-  return c.undecided === 0 && c.accepted === 0 ? 'Continue: decline all' : 'Continue to preview'
-}
-
-// What the preview says is about to happen, in one line.
-export function previewSummary(drafts: Draft[]): string {
-  const c = counts(drafts)
-  if (c.accepted === 0)
-    return `Nothing will be created: ${c.declined === 1 ? 'the persona is' : `all ${c.declined} personas are`} declined.`
-  const made = c.accepted === 1 ? '1 persona will be created' : `${c.accepted} personas will be created`
-  return c.declined === 0 ? `${made}.` : `${made}, ${c.declined} declined.`
-}
-
-// The names of the declined personas, in proposal order, for the preview.
-export function declinedNames(drafts: Draft[]): string[] {
-  return drafts.filter((d) => d.decision === 'declined').map((d) => d.persona.name.trim() || '(no name)')
+export function declineDecision(index: number): PersonaDecision {
+  return { index, decision: 'declined' }
 }
 
 // The salary as shown in the preview: "Not set" for 0 (nothing was given).
 export function salaryText(minSalary: number): string {
   return minSalary > 0 ? minSalary.toLocaleString('en-US') : 'Not set'
-}
-
-// The save button's text: how many will be created, or that everything is declined.
-export function saveLabel(drafts: Draft[]): string {
-  const c = counts(drafts)
-  if (c.accepted === 0 && c.undecided === 0) return 'Decline all and close'
-  return c.accepted === 1 ? 'Save 1 persona' : `Save ${c.accepted} personas`
 }
 
 // The skills with text added: trimmed, blank and duplicates (any case) ignored, the cap kept.

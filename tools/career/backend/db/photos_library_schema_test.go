@@ -216,12 +216,12 @@ func TestMigratePersonaAiRunDecisions_AddsTheColumnsAndClosesRunsWithPersonas(t 
 		t.Fatalf("no table: %v", err)
 	}
 	for _, q := range []string{
-		`CREATE TABLE persona_ai_runs (id TEXT PRIMARY KEY, status TEXT, created_at TEXT, finished_at TEXT)`,
+		`CREATE TABLE persona_ai_runs (id TEXT PRIMARY KEY, status TEXT, created_at TEXT, finished_at TEXT, proposal_json TEXT)`,
 		`CREATE TABLE personas (id TEXT PRIMARY KEY, ai_run_id TEXT)`,
-		`INSERT INTO persona_ai_runs VALUES ('applied', 'ready', '2026-10-01 10:00:00', '2026-10-01 10:05:00')`,
-		`INSERT INTO persona_ai_runs VALUES ('applied-unfinished', 'ready', '2026-10-02 10:00:00', NULL)`,
-		`INSERT INTO persona_ai_runs VALUES ('pending', 'ready', '2026-10-03 10:00:00', '2026-10-03 10:05:00')`,
-		`INSERT INTO persona_ai_runs VALUES ('working', 'generating', '2026-10-04 10:00:00', NULL)`,
+		`INSERT INTO persona_ai_runs VALUES ('applied', 'ready', '2026-10-01 10:00:00', '2026-10-01 10:05:00', '{"personas":[{},{},{}],"note":""}')`,
+		`INSERT INTO persona_ai_runs VALUES ('applied-unfinished', 'ready', '2026-10-02 10:00:00', NULL, '{"personas":[{}],"note":""}')`,
+		`INSERT INTO persona_ai_runs VALUES ('pending', 'ready', '2026-10-03 10:00:00', '2026-10-03 10:05:00', '{"personas":[{},{}],"note":""}')`,
+		`INSERT INTO persona_ai_runs VALUES ('working', 'generating', '2026-10-04 10:00:00', NULL, NULL)`,
 		`INSERT INTO personas VALUES ('p1', 'applied'), ('p2', 'applied'), ('p3', 'applied-unfinished'), ('p4', NULL)`,
 	} {
 		if _, err := d.Exec(q); err != nil {
@@ -254,6 +254,25 @@ func TestMigratePersonaAiRunDecisions_AddsTheColumnsAndClosesRunsWithPersonas(t 
 	var declined sql.NullString
 	if err := d.QueryRow(`SELECT declined_json FROM persona_ai_runs WHERE id = 'applied'`).Scan(&declined); err != nil || declined.Valid {
 		t.Errorf("declined_json = %v err=%v, want NULL", declined, err)
+	}
+	// A run decided as a whole has every persona of its proposal decided; one still open has none.
+	indexes := func(id string) sql.NullString {
+		var v sql.NullString
+		if err := d.QueryRow(`SELECT decided_indexes FROM persona_ai_runs WHERE id = ?`, id).Scan(&v); err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	if v := indexes("applied"); !v.Valid || v.String != "[0,1,2]" {
+		t.Errorf("applied decided_indexes = %v, want [0,1,2]", v)
+	}
+	if v := indexes("applied-unfinished"); !v.Valid || v.String != "[0]" {
+		t.Errorf("applied-unfinished decided_indexes = %v, want [0]", v)
+	}
+	for _, id := range []string{"pending", "working"} {
+		if v := indexes(id); v.Valid {
+			t.Errorf("%s decided_indexes = %v, want NULL", id, v)
+		}
 	}
 }
 

@@ -111,6 +111,8 @@ export interface PersonaAiRun {
   // When the user decided on the whole proposal (missing until then), and the proposed personas
   // they declined (step 113).
   decidedAt?: string
+  // The indexes of the proposed personas already decided (accepted or declined), one at a time.
+  decided: number[]
   declined: { name: string }[]
 }
 
@@ -160,11 +162,9 @@ export async function deletePersonaAiRun(id: string): Promise<void> {
   }
 }
 
-// Ends a generating run: ready with the AI's proposal, or failed with a reason.
-export async function finishPersonaAiRun(
-  id: string,
-  outcome: { status: 'ready'; proposal: PersonaProposal } | { status: 'failed'; error: string },
-): Promise<void> {
+// Ends a generating run: ready (the proposal is the suggestions the AI stored with its
+// suggest_persona tool), or failed with a reason.
+export async function finishPersonaAiRun(id: string, outcome: { status: 'ready' } | { status: 'failed'; error: string }): Promise<void> {
   const res = await fetch(`${PROXY_BASE}/persona-ai-runs`, {
     method: 'PUT',
     credentials: 'include',

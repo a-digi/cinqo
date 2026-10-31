@@ -196,6 +196,7 @@ func runMCPServer() {
 	persona.RegisterUpdatePersona(server)
 	persona.RegisterDeletePersona(server)
 	persona.RegisterGetPersonaDetails(server)
+	persona.RegisterSuggestPersona(server)
 	persona.RegisterUpdatePersonaDetails(server)
 	persona.RegisterAddCareerSkill(server)
 	persona.RegisterRemoveCareerSkill(server)

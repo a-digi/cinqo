@@ -86,7 +86,7 @@ export function PersonaAiHistory({
                     }}
                     className="rounded-full bg-gray-900 px-3 py-1 text-xs font-medium text-white hover:bg-gray-800"
                   >
-                    Review and create
+                    Show suggestions
                   </button>
                 )}
                 <button

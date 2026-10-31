@@ -4,7 +4,6 @@ import { CoreApiError } from '../Cinqo/Http/client'
 import { awaitTurnCompletion, createConversation, sendMessage, type SendMessageResult } from '../Cinqo/Conversation/conversation'
 import type { AiChoice } from '../Cinqo/Platform/aiChoice'
 import { buildPersonaPrompt, personaAiConversationTitle } from './buildPersonaPrompt'
-import { parseProposalReply } from './personaProposal'
 import { PERSONA_RUN_TOOLS, RESTRICTION_NOT_APPLIED_MESSAGE, restrictionHolds } from './personaTools'
 
 // The runs of one profile's "create personas with AI" (step 112): the list, starting a run, and
@@ -37,17 +36,11 @@ export function usePersonaAiRuns(profileId: string | null) {
     (runId: string, reply: SendMessageResult | undefined, err: unknown) => {
       let outcome: Promise<void>
       if (reply) {
-        const parsed = parseProposalReply(reply.content)
-        outcome = finishPersonaAiRun(
-          runId,
-          parsed.ok
-            ? { status: 'ready', proposal: parsed.proposal }
-            : { status: 'failed', error: `The AI's answer was not a valid proposal: ${parsed.error}. Open the chat to see it.` },
-        ).catch((putErr: unknown) =>
-          // The server refused a proposal this page accepted: record that instead.
+        // The AI handed its suggestions over with suggest_persona; its last message is only text.
+        outcome = finishPersonaAiRun(runId, { status: 'ready' }).catch((putErr: unknown) =>
           finishPersonaAiRun(runId, {
             status: 'failed',
-            error: `The AI's answer was refused: ${putErr instanceof Error ? putErr.message : String(putErr)}`,
+            error: `The suggestions were refused: ${putErr instanceof Error ? putErr.message : String(putErr)}`,
           }),
         )
       } else {
@@ -122,9 +115,8 @@ export function usePersonaAiRuns(profileId: string | null) {
       }
       // Recorded before the first message, so a reload in between still has something to resume.
       const runId = await createPersonaAiRun(profile.id, conversation.id, focus.trim())
-      window.__cinqoToolBridge.openConversation(conversation.id)
       await reload()
-      watch(runId, () => sendMessage(conversation.id, buildPersonaPrompt(profile, focus)))
+      watch(runId, () => sendMessage(conversation.id, buildPersonaPrompt(profile, focus, runId)))
     },
     [reload, watch],
   )
