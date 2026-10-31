@@ -327,6 +327,7 @@ export function PortalsPage() {
     <div className="career-v-left career-a-glow career-t-wave max-w-7xl p-6 font-sans text-gray-900">
       {/* The page has no header card; the heading is kept for screen readers only. */}
       <h1 className="sr-only">Portals</h1>
+      <PageTips page="portals" />
 
       {/* The overview as four cards right under the header (they were a ring and a list in the left column).
           A uniquely-named grid class, as the CV Documents page does: an installed tool's globally-injected
@@ -674,7 +675,6 @@ export function PortalsPage() {
           {/* Step 88 — only while some link has crawl instructions: with none, there is nothing
               the global auto-discovery could crawl. */}
           {anyLinkAutoDiscoverable(portals) && <AutoDiscoveryPanel />}
-          <PageTips page="portals" orientation="vertical" />
         </aside>
       </div>
 
