@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   fetchPersonas,
   fetchProfiles,
@@ -131,19 +131,22 @@ export function PersonasPage() {
   // simply show no CV section.
   const [cvDocs, setCvDocs] = useState<CvDocument[] | null>(null)
   const [cvTemplates, setCvTemplates] = useState<CvTemplate[]>([])
-  useEffect(() => {
-    if (!profileId) return
+  const loadCvs = useCallback(() => {
     fetchAllCvDocuments()
       .then(setCvDocs)
       .catch(() => {
         setCvDocs(null)
       })
+  }, [])
+  useEffect(() => {
+    if (!profileId) return
+    loadCvs()
     fetchCvTemplates()
       .then(setCvTemplates)
       .catch(() => {
         setCvTemplates([])
       })
-  }, [profileId])
+  }, [profileId, loadCvs])
 
   function startEdit(p: Persona) {
     setEditingId(p.id)
@@ -374,7 +377,16 @@ export function PersonasPage() {
                           </div>
                           {p.description && <div className="mt-0.5 text-xs text-gray-500">{p.description}</div>}
                           <div className="mt-1 text-xs text-gray-400">Created {formatDate(p.createdAt)}</div>
-                          {cvDocs !== null && <PersonaCvs personaId={p.id} docs={cvDocs} templates={cvTemplates} />}
+                          {cvDocs !== null && (
+                            <PersonaCvs
+                              personaId={p.id}
+                              personaName={p.name}
+                              docs={cvDocs}
+                              templates={cvTemplates}
+                              ai={ai}
+                              onCvsChanged={loadCvs}
+                            />
+                          )}
                         </div>
                         <div className="flex shrink-0 gap-2">
                           <button

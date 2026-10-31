@@ -28,8 +28,10 @@ import { PageTips } from '../../Shared/PageTips/PageTips'
 import { useAiChoice } from '../../Cinqo/Platform/useAiChoice'
 import { CreateCvWithAi } from '../../CvAi/CreateCvWithAi'
 import { failedRunToShow, hasRunningCvRun, newlyCreatedCv, runOfDocument } from '../../CvAi/cvAiRules'
+import { CvAiChatModal } from '../../CvAi/CvAiChatModal'
+import { CvAiHistory } from '../../CvAi/CvAiHistory'
+import { useDismissedCvRuns } from '../../CvAi/useDismissedCvRuns'
 import { useCvAiRuns } from '../../CvAi/useCvAiRuns'
-import { deleteCvAiRun } from '../../api'
 
 const CV_BUILDER_PATH = '/tools/career/cv-builder'
 
@@ -63,6 +65,10 @@ export function CvDocumentsPage() {
   const handledRuns = useRef(new Set<string>())
   const [scrollToNew, setScrollToNew] = useState(false)
   const aiRuns = useCvAiRuns(personaId)
+  const [dismissedRuns, dismissRun] = useDismissedCvRuns()
+  const [chatRunId, setChatRunId] = useState<string | null>(null)
+  const chatRun = aiRuns.runs.find((r) => r.id === chatRunId) ?? null
+  const workingRun = aiRuns.runs.find((r) => r.status === 'generating') ?? null
   // Every persona, to offer the ones a CV can be attached to (step 114).
   const [allPersonas, setAllPersonas] = useState<Persona[]>([])
   const [error, setError] = useState('')
@@ -264,11 +270,22 @@ export function CvDocumentsPage() {
             >
               <span className="h-2 w-2 animate-pulse rounded-full bg-purple-600" aria-hidden="true" />
               The AI is creating a CV. It appears below as soon as it is done; you can stay on this page.
+              {workingRun && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setChatRunId(workingRun.id)
+                  }}
+                  className="ml-1 text-blue-700 underline"
+                >
+                  Show the chat
+                </button>
+              )}
             </p>
           )}
           {personaId &&
             (() => {
-              const failed = failedRunToShow(aiRuns.runs)
+              const failed = failedRunToShow(aiRuns.runs, dismissedRuns)
               return failed ? (
                 <div role="alert" className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
                   <p className="font-medium">The AI could not create a CV.</p>
@@ -277,20 +294,16 @@ export function CvDocumentsPage() {
                     <button
                       type="button"
                       onClick={() => {
-                        window.__cinqoToolBridge.openConversation(failed.conversationId)
+                        setChatRunId(failed.id)
                       }}
                       className="rounded-full border border-red-200 bg-white px-3 py-1 text-xs font-medium text-red-800 hover:bg-red-100"
                     >
-                      Open chat
+                      Show chat
                     </button>
                     <button
                       type="button"
                       onClick={() => {
-                        deleteCvAiRun(failed.id)
-                          .then(() => aiRuns.reload())
-                          .catch((err: unknown) => {
-                            setError(err instanceof Error ? err.message : String(err))
-                          })
+                        dismissRun(failed.id)
                       }}
                       className="rounded-full border border-red-200 bg-white px-3 py-1 text-xs font-medium text-red-800 hover:bg-red-100"
                     >
@@ -301,6 +314,17 @@ export function CvDocumentsPage() {
               ) : null
             })()}
           {personaId && aiRuns.error !== '' && <p className="mb-4 text-sm text-red-700">{aiRuns.error}</p>}
+          {personaId && (
+            <div className="mb-4">
+              <CvAiHistory
+                runs={aiRuns.runs}
+                docs={documents}
+                onShowChat={(run) => {
+                  setChatRunId(run.id)
+                }}
+              />
+            </div>
+          )}
 
           {personaId && (
             <>
@@ -353,7 +377,14 @@ export function CvDocumentsPage() {
                         handleDelete(doc)
                       }}
                       allPersonas={allPersonas}
-                      aiChatId={runOfDocument(aiRuns.runs, doc.id)?.conversationId}
+                      onShowAiChat={(() => {
+                        const run = runOfDocument(aiRuns.runs, doc.id)
+                        return run
+                          ? () => {
+                              setChatRunId(run.id)
+                            }
+                          : undefined
+                      })()}
                       highlighted={doc.id === newCvId}
                       onAttach={(id) => {
                         changeLink(attachCvToPersona(doc.id, id))
@@ -372,6 +403,13 @@ export function CvDocumentsPage() {
           <PageTips page="cvs" orientation="vertical" />
         </aside>
       </div>
+
+      <CvAiChatModal
+        run={chatRun}
+        onClose={() => {
+          setChatRunId(null)
+        }}
+      />
 
       <ConfirmationModal
         open={pendingDelete !== null}

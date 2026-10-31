@@ -11,9 +11,10 @@ export function hasRunningCvRun(runs: CvAiRun[]): boolean {
 export const NO_CV_SAVED_MESSAGE = 'The AI did not create a CV. Open the chat to see what happened, or try again.'
 
 // The run to tell the user about when it failed: only the newest run counts (the list is newest
-// first), so an old failure does not nag once a later run worked or is working.
-export function failedRunToShow(runs: CvAiRun[]): CvAiRun | null {
-  return runs.length > 0 && runs[0].status === 'failed' ? runs[0] : null
+// first), so an old failure does not nag once a later run worked or is working, and a failure the
+// user dismissed stays dismissed (the run itself stays in the history, with its chat).
+export function failedRunToShow(runs: CvAiRun[], dismissed: ReadonlySet<string> = new Set()): CvAiRun | null {
+  return runs.length > 0 && runs[0].status === 'failed' && !dismissed.has(runs[0].id) ? runs[0] : null
 }
 
 // The run that created a CV, or null for a CV the user made by hand (or whose run was removed).
@@ -26,4 +27,24 @@ export function runOfDocument(runs: CvAiRun[], cvDocumentId: string): CvAiRun | 
 export function newlyCreatedCv(runs: CvAiRun[], watched: ReadonlySet<string>): string | null {
   const done = runs.find((r) => r.status === 'ready' && r.cvDocumentId !== undefined && watched.has(r.id))
   return done?.cvDocumentId ?? null
+}
+
+export interface RunBadge {
+  label: string
+  tone: 'working' | 'ready' | 'failed'
+}
+
+// How the history names a run.
+export function runBadge(run: CvAiRun): RunBadge {
+  if (run.status === 'generating') return { label: 'Working', tone: 'working' }
+  if (run.status === 'failed') return { label: 'Failed', tone: 'failed' }
+  return { label: run.cvDocumentId === undefined ? 'CV created (since deleted)' : 'CV created', tone: 'ready' }
+}
+
+// How many runs the history shows before "Show all".
+export const CV_HISTORY_LIMIT = 3
+
+export function visibleCvRuns<T>(runs: T[], showAll: boolean): { shown: T[]; hidden: number } {
+  if (showAll || runs.length <= CV_HISTORY_LIMIT) return { shown: runs, hidden: 0 }
+  return { shown: runs.slice(0, CV_HISTORY_LIMIT), hidden: runs.length - CV_HISTORY_LIMIT }
 }

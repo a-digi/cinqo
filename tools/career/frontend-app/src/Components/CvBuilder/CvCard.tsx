@@ -24,7 +24,7 @@ export function CvCard({
   allPersonas,
   onAttach,
   onDetach,
-  aiChatId,
+  onShowAiChat,
   highlighted,
 }: {
   doc: CvDocument
@@ -37,8 +37,8 @@ export function CvCard({
   allPersonas: Persona[]
   onAttach: (personaId: string) => void
   onDetach: (personaId: string) => void
-  // The chat of the AI run that created this CV (step 115); undefined for a CV made by hand.
-  aiChatId?: string
+  // Shows the chat of the AI run that created this CV (step 115); undefined for a CV made by hand.
+  onShowAiChat?: () => void
   // The CV the AI just created: ringed, with no entrance animation.
   highlighted?: boolean
 }) {
@@ -96,13 +96,11 @@ export function CvCard({
           {templateName}
         </span>
         {created && <span>{created}</span>}
-        {aiChatId !== undefined && (
+        {onShowAiChat !== undefined && (
           <button
             type="button"
-            title="Open the chat that created this CV"
-            onClick={() => {
-              window.__cinqoToolBridge.openConversation(aiChatId)
-            }}
+            title="Show the chat that created this CV"
+            onClick={onShowAiChat}
             className="inline-flex items-center gap-1 rounded-full bg-purple-50 px-2 py-0.5 text-[11px] font-medium text-purple-700 hover:bg-purple-100"
           >
             <SparkleIcon />
