@@ -626,18 +626,11 @@
 
 /* A page's side column now holds the tips slider as well, which makes some of them tall. A sticky column taller than
    the window has its bottom cut off, so these stick to the top only on a window tall enough to show them whole
-   (a column of about 700px needs a 800px window, the tallest, about 810px, needs 900px); on a shorter window they
+   (a column of about 700px needs a 800px window); on a shorter window they
    scroll with the page. The small columns (the ones that hold only the slider, Personas and Photo) stay sticky as
    before. See plan/ai/tools/career/step-108-vertical-tips-on-every-page.md. */
 @media (min-width: 1024px) and (min-height: 800px) {
   .career-rail-sticky {
-    position: sticky;
-    top: 1.5rem;
-  }
-}
-
-@media (min-width: 1024px) and (min-height: 900px) {
-  .career-rail-sticky-tall {
     position: sticky;
     top: 1.5rem;
   }

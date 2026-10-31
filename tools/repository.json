@@ -8,7 +8,7 @@
       "email": "tafa.andet@googlemail.com"
     }
   ],
-  "generatedAt": "2026-10-31T13:22:39Z",
+  "generatedAt": "2026-10-31T13:34:59Z",
   "tools": [
     {
       "id": "browser",
@@ -30,28 +30,28 @@
             {
               "os": "darwin",
               "arch": "arm64",
-              "url": "https://raw.githubusercontent.com/a-digi/cinqo/0.0.1/tools/browser/versions/tool-browser-darwin-arm64.zip",
+              "url": "browser/versions/tool-browser-darwin-arm64.zip",
               "sha256": "47ebf02f3fa912c83c05040751183d277e0277792fb48362c030a55e9d38d7a2",
               "sizeBytes": 15347085
             },
             {
               "os": "linux",
               "arch": "amd64",
-              "url": "https://raw.githubusercontent.com/a-digi/cinqo/0.0.1/tools/browser/versions/tool-browser-linux-amd64.zip",
+              "url": "browser/versions/tool-browser-linux-amd64.zip",
               "sha256": "2fdc60151c74b80aea2a3127c579bfd675bc5166903d6c81ae69bd29ef7c2e21",
               "sizeBytes": 15423076
             },
             {
               "os": "linux",
               "arch": "arm64",
-              "url": "https://raw.githubusercontent.com/a-digi/cinqo/0.0.1/tools/browser/versions/tool-browser-linux-arm64.zip",
+              "url": "browser/versions/tool-browser-linux-arm64.zip",
               "sha256": "5596f29c3e61e375b34573aaf4eda8d36c7d44061fa1030b3b82e30030f0b2e4",
               "sizeBytes": 14505949
             },
             {
               "os": "windows",
               "arch": "amd64",
-              "url": "https://raw.githubusercontent.com/a-digi/cinqo/0.0.1/tools/browser/versions/tool-browser-windows-amd64.zip",
+              "url": "browser/versions/tool-browser-windows-amd64.zip",
               "sha256": "580833d89a048a4fd29519acce48a3c66e57e9ac1f23fc0d00ff682f7a7ab7b5",
               "sizeBytes": 14818846
             }
@@ -61,7 +61,7 @@
     },
     {
       "id": "career",
-      "currentVersionId": "0.0.398",
+      "currentVersionId": "0.0.402",
       "versions": [
         {
           "authors": [
@@ -71,38 +71,38 @@
             }
           ],
           "license": "Proprietary",
-          "versionId": "0.0.398",
+          "versionId": "0.0.402",
           "name": "Career",
-          "version": "0.0.398",
+          "version": "0.0.402",
           "releasedAt": "2026-10-31",
           "packages": [
             {
               "os": "darwin",
               "arch": "arm64",
-              "url": "https://raw.githubusercontent.com/a-digi/cinqo/0.0.1/tools/career/versions/tool-career-darwin-arm64.zip",
-              "sha256": "69099d871d44bfdab609273a153e5ca4efc34f1946972576578ccedc437ccf2e",
-              "sizeBytes": 16506288
+              "url": "career/versions/tool-career-darwin-arm64.zip",
+              "sha256": "3cf4942d30a6b2c4b8865d70622b30c7c21a58ecf81389a8516a93d26e0ab6e8",
+              "sizeBytes": 16506553
             },
             {
               "os": "linux",
               "arch": "amd64",
-              "url": "https://raw.githubusercontent.com/a-digi/cinqo/0.0.1/tools/career/versions/tool-career-linux-amd64.zip",
-              "sha256": "03c353767d88ba03deca07b736c40d13fd67c4b32173e84a97724c3aa937164f",
-              "sizeBytes": 16657368
+              "url": "career/versions/tool-career-linux-amd64.zip",
+              "sha256": "9fbe27aa324749bd0325b15c195895f0a3538a86ff40a0553aee801b48c4d75e",
+              "sizeBytes": 16657647
             },
             {
               "os": "linux",
               "arch": "arm64",
-              "url": "https://raw.githubusercontent.com/a-digi/cinqo/0.0.1/tools/career/versions/tool-career-linux-arm64.zip",
-              "sha256": "669520774e3141405b1e77f1572c196124f6887a25b12a2188eb49103158a8df",
-              "sizeBytes": 15782589
+              "url": "career/versions/tool-career-linux-arm64.zip",
+              "sha256": "566a2bd1f349768e2a3276c7e8108598c48329b72d7a42d039862a3bf8a143c7",
+              "sizeBytes": 15782868
             },
             {
               "os": "windows",
               "arch": "amd64",
-              "url": "https://raw.githubusercontent.com/a-digi/cinqo/0.0.1/tools/career/versions/tool-career-windows-amd64.zip",
-              "sha256": "9ed74abc0055cdfb68b15b840bf01fa6be464547fcaaf9b2ed46524285d16c2a",
-              "sizeBytes": 16988323
+              "url": "career/versions/tool-career-windows-amd64.zip",
+              "sha256": "fa835e681ff87fca20ea7a42954d6aceda426100278f8939d23c2ffdd7cf8a3e",
+              "sizeBytes": 16988604
             }
           ]
         }
@@ -128,28 +128,28 @@
             {
               "os": "darwin",
               "arch": "arm64",
-              "url": "https://raw.githubusercontent.com/a-digi/cinqo/0.0.1/tools/pdf_tools/versions/tool-pdf_tools-darwin-arm64.zip",
+              "url": "pdf_tools/versions/tool-pdf_tools-darwin-arm64.zip",
               "sha256": "cbaeeddc8da08a816a47f69e4da1190c18fcd2273381712fcb0adc297675c21f",
               "sizeBytes": 7904062
             },
             {
               "os": "linux",
               "arch": "amd64",
-              "url": "https://raw.githubusercontent.com/a-digi/cinqo/0.0.1/tools/pdf_tools/versions/tool-pdf_tools-linux-amd64.zip",
+              "url": "pdf_tools/versions/tool-pdf_tools-linux-amd64.zip",
               "sha256": "a1191cb793ef2007815d5d9d9ebbdda92b6cc5542d34d483aea2d555e319af2a",
               "sizeBytes": 8157622
             },
             {
               "os": "linux",
               "arch": "arm64",
-              "url": "https://raw.githubusercontent.com/a-digi/cinqo/0.0.1/tools/pdf_tools/versions/tool-pdf_tools-linux-arm64.zip",
+              "url": "pdf_tools/versions/tool-pdf_tools-linux-arm64.zip",
               "sha256": "5a9c53a8d9abd0345e1972165d58eefacf30b648ce99d653f188262420b91246",
               "sizeBytes": 7459656
             },
             {
               "os": "windows",
               "arch": "amd64",
-              "url": "https://raw.githubusercontent.com/a-digi/cinqo/0.0.1/tools/pdf_tools/versions/tool-pdf_tools-windows-amd64.zip",
+              "url": "pdf_tools/versions/tool-pdf_tools-windows-amd64.zip",
               "sha256": "65b531ba62218e2cc77aa06907548d052a9186743bf615a6e44a23875933ce17",
               "sizeBytes": 8226080
             }
