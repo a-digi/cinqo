@@ -93,7 +93,8 @@ export function CompaniesPage() {
         icon={<BuildingIcon />}
         title="Companies"
         description="A directory of companies, separate from the free-text name on each crawled job. Deleting a company un-links its jobs; it never deletes them."
-        pill={{ text: plural(summary.companies, 'company', 'companies') }}
+        // The pill links on to the Recruiters page, the other list tied to companies.
+        pill={{ text: plural(summary.companies, 'company', 'companies'), href: RECRUITERS_PATH }}
       />
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
         <div className="order-1 min-w-0 flex-1 lg:order-2">

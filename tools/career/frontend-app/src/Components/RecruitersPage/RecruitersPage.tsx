@@ -7,7 +7,7 @@ import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { SummaryRail } from '../../Shared/SummaryRail/SummaryRail'
 import { ACCENTS, PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
 import { percentOrNull, plural } from '../CompaniesPage/companyStats'
-import { COMPANIES_PATH, NEW_RECRUITER_PATH } from '../../paths'
+import { COMPANIES_PATH, NEW_RECRUITER_PATH, VIEW_COMPANY_PATH } from '../../paths'
 import { recruiterName, summarizeRecruiters } from './recruiterStats'
 import { PageTips } from '../../Shared/PageTips/PageTips'
 
@@ -98,6 +98,7 @@ export function RecruitersPage() {
   const summary = summarizeRecruiters(recruiters)
   const withEmailPercent = percentOrNull(summary.withEmail, summary.recruiters)
   const filtered = filterCompanyId !== ''
+  const filterCompany = companies.find((c) => c.id === filterCompanyId)
 
   return (
     <div className="career-v-drop career-a-float career-t-underline max-w-7xl p-6 font-sans text-gray-900">
@@ -105,7 +106,16 @@ export function RecruitersPage() {
         icon={<UsersIcon />}
         title="Recruiters"
         description="Recruiter contacts, each tied to an existing company. A recruiter's company cannot be changed after creation: delete and recreate instead."
-        pill={{ text: plural(summary.recruiters, 'recruiter', 'recruiters') }}
+        // Filtered to one company, the pill names it and links on to that company's page; otherwise it links to the
+        // Companies page, the other list the recruiters belong to.
+        pill={
+          filtered && filterCompany
+            ? {
+                text: `${plural(summary.recruiters, 'recruiter', 'recruiters')} · ${filterCompany.name}`,
+                href: `${VIEW_COMPANY_PATH}?id=${encodeURIComponent(filterCompany.id)}`,
+              }
+            : { text: plural(summary.recruiters, 'recruiter', 'recruiters'), href: COMPANIES_PATH }
+        }
       />
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
         <div className="order-1 min-w-0 flex-1 lg:order-2">

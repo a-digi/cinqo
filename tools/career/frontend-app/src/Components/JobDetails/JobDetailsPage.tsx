@@ -4,6 +4,8 @@ import { ExternalLinkIcon, PDFIcon } from '../../Shared/Icons/icons'
 import { MatchScoreBar } from '../../Shared/MatchScoreBar/MatchScoreBar'
 import { Comments } from '../../Shared/Comments/Comments'
 import { COMMENT_TYPE_JOB } from '../../Shared/Comments/commentTypes'
+import { AppLink } from '../../Shared/AppLink/AppLink'
+import { VIEW_COMPANY_PATH, VIEW_PORTAL_PATH } from '../../paths'
 import { JobBoardUsage } from '../JobBoard/JobBoardUsage'
 
 const JOBS_PATH = '/tools/career/jobs'
@@ -83,13 +85,37 @@ export function JobDetailsPage() {
                 {job.company && (
                   <div>
                     <dt className="inline font-medium text-gray-700">Company: </dt>
-                    <dd className="inline">{job.company}</dd>
+                    <dd className="inline">
+                      {/* The company's page, when the job is linked to one. */}
+                      {job.companyId ? (
+                        <AppLink
+                          href={`${VIEW_COMPANY_PATH}?id=${encodeURIComponent(job.companyId)}`}
+                          className="text-blue-700 hover:underline"
+                        >
+                          {job.company}
+                        </AppLink>
+                      ) : (
+                        job.company
+                      )}
+                    </dd>
                   </div>
                 )}
                 {job.portalName && (
                   <div>
                     <dt className="inline font-medium text-gray-700">Platform: </dt>
-                    <dd className="inline">{job.portalName}</dd>
+                    <dd className="inline">
+                      {/* The platform's page, when it still exists. */}
+                      {job.portalId ? (
+                        <AppLink
+                          href={`${VIEW_PORTAL_PATH}?id=${encodeURIComponent(job.portalId)}`}
+                          className="text-blue-700 hover:underline"
+                        >
+                          {job.portalName}
+                        </AppLink>
+                      ) : (
+                        job.portalName
+                      )}
+                    </dd>
                   </div>
                 )}
                 {job.location && (

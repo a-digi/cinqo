@@ -6,6 +6,7 @@ import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { SummaryRail } from '../../Shared/SummaryRail/SummaryRail'
 import { ACCENTS, accentFor, initialOf } from '../../Components/JobsPage/jobsTheme'
 import { PageTips } from '../../Shared/PageTips/PageTips'
+import { PORTALS_PATH } from '../../paths'
 
 // CrawlMonitorPage is the centralized "which portal is being crawled
 // right now" view — one place to see every currently-running crawl
@@ -91,7 +92,12 @@ export function CrawlMonitorPage() {
         icon={<PulseIcon />}
         title="Crawl Monitor"
         description="Every portal currently being crawled, across every link. Refreshes automatically."
-        pill={{ text: runs.length === 0 ? 'Idle' : `${runs.length} running`, accent: runs.length === 0 ? ACCENTS[6] : ACCENTS[1] }}
+        // The pill links on to the Portals page, where crawls are started and managed.
+        pill={{
+          text: runs.length === 0 ? 'Idle' : `${runs.length} running`,
+          accent: runs.length === 0 ? ACCENTS[6] : ACCENTS[1],
+          href: PORTALS_PATH,
+        }}
       />
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
         <div className="min-w-0 flex-1">

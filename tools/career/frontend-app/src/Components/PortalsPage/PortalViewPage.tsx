@@ -93,7 +93,8 @@ export function PortalViewPage() {
         icon={<GlobeIcon />}
         title={portal.name}
         description={plural(numbers.links, 'link', 'links')}
-        pill={{ text: plural(total, 'linked job', 'linked jobs') }}
+        // The pill links on to the Jobs page, filtered to this portal's jobs.
+        pill={{ text: plural(total, 'linked job', 'linked jobs'), href: jobsPath }}
       />
 
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">

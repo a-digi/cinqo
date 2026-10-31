@@ -29,7 +29,8 @@ import { PageTips } from '../../Shared/PageTips/PageTips'
 import { CrawlAiModal } from './CrawlAiModal'
 import { aiChip, describeChoice, linkChip, overrideOf } from './aiOverrideDisplay'
 import { PortalLinkHeader } from './PortalLinkHeader'
-import { VIEW_PORTAL_PATH } from '../../paths'
+import { JOBS_PATH, VIEW_PORTAL_PATH } from '../../paths'
+import { AppLink } from '../../Shared/AppLink/AppLink'
 
 // Portals are tool-wide, not persona/profile-scoped — same reasoning
 // Jobs/Companies already document. No Dropdown call site here: a
@@ -333,12 +334,14 @@ export function PortalsPage() {
         <div className="order-1 min-w-0 flex-1 lg:order-2">
           <div className="mb-3 flex items-center justify-between gap-3">
             <p className="text-xs text-gray-500">Deleting a portal permanently deletes every link it owns.</p>
-            <span
-              className="shrink-0 rounded-full px-3 py-1 text-sm font-semibold"
+            {/* Links on to the Jobs page, whose jobs come from these portals. */}
+            <AppLink
+              href={JOBS_PATH}
+              className="shrink-0 rounded-full px-3 py-1 text-sm font-semibold hover:underline"
               style={{ background: PAGE_ACCENT.soft, color: PAGE_ACCENT.text }}
             >
               {plural(summary.portals, 'portal', 'portals')}
-            </span>
+            </AppLink>
           </div>
 
           <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
