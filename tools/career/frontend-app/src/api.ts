@@ -192,35 +192,35 @@ export interface PortalLink {
   id: string
   portalId: string
   url: string
-  title: string | null
-  crawlInstructions: string | null
+  title?: string | null
+  crawlInstructions?: string | null
   // Separate, second instruction document — how to extract job-
   // position-relevant text off a single job's own detail page, rather
   // than crawlInstructions' own listing-page fields+pagination shape.
   // See plan/ai/tools/career/step-XX-job-detail-crawl-instructions.md.
-  jobDetailCrawlInstructions: string | null
+  jobDetailCrawlInstructions?: string | null
   // Separate, job-detail-specific counterparts to
   // instructionsAiError/instructionsAiErrorAt/instructionsAiConversationId
   // below, which track the LISTING instructions' own AI generation
   // instead. See plan/ai/tools/career/step-XX-job-detail-crawl-instructions.md.
-  jobDetailInstructionsAiError: string | null
-  jobDetailInstructionsAiErrorAt: string | null
-  jobDetailInstructionsAiConversationId: string | null
+  jobDetailInstructionsAiError?: string | null
+  jobDetailInstructionsAiErrorAt?: string | null
+  jobDetailInstructionsAiConversationId?: string | null
   // Most recent job crawled_at against this link (step 26) — null
   // when no job has ever been saved for it. Read-only, derived.
-  lastCrawledAt: string | null
+  lastCrawledAt?: string | null
   // Most recent failure of an AI-driven crawl-instructions generation/
   // edit attempt for this link (step 33) — both null when no failure
   // is currently recorded. Read-only; written only via
   // updatePortalLink's own instructionsAiError field.
-  instructionsAiError: string | null
-  instructionsAiErrorAt: string | null
+  instructionsAiError?: string | null
+  instructionsAiErrorAt?: string | null
   // The hidden conversation currently generating/updating this link's
   // own crawl instructions, if one is in flight (step 60) — null once
   // it finishes (success or failure). Read-only; written only via
   // updatePortalLink's own instructionsAiConversationId field. See
   // plan/ai/tools/career/step-60-generate-with-ai-live-chat-window.md.
-  instructionsAiConversationId: string | null
+  instructionsAiConversationId?: string | null
   // True while a detached "Crawl now" run is in progress for this link
   // (step 37) — read-only, derived from crawl_runs server-side. Lets
   // the frontend resume watching a run still going after a page

@@ -33,7 +33,7 @@
 // passes to its own tool calls, unlike svg removal (now a Browser-tool
 // default applying regardless of this prompt). See
 // plan/ai/tools/career/step-62-svg-removal-and-attribute-length-enforcement.md.
-export function buildCrawlMessage(link: { id: string; title: string | null; url: string }): string {
+export function buildCrawlMessage(link: { id: string; title?: string | null; url: string }): string {
   return [
     'Please run a manual crawl for this existing portal link only — do not create a new portal or link, and do not ask which link is meant (it is already specified below).',
     '',
@@ -54,6 +54,6 @@ export function buildCrawlMessage(link: { id: string; title: string | null; url:
   ].join('\n')
 }
 
-export function crawlConversationTitle(link: { title: string | null; url: string }): string {
+export function crawlConversationTitle(link: { title?: string | null; url: string }): string {
   return `Crawl: ${link.title ?? link.url}`
 }

@@ -22,7 +22,7 @@
 export const GENERATE_TOOL_ITERATION_LIMIT = 10
 
 export function buildGenerateInstructionsMessage(
-  link: { id: string; title: string | null; url: string },
+  link: { id: string; title?: string | null; url: string },
   // jobsConfirmed (step 91): the stored instructions were already used for a
   // real crawl that found 0 jobs and the user confirmed the page DOES list
   // jobs — so they are wrong, and the agent must not ask the question again.
@@ -67,7 +67,7 @@ export function buildGenerateInstructionsMessage(
 // a fresh budget, and forbids asking again, so a second 0-item result ends
 // as a reported failure (the existing error InfoBox and step 86's attempt
 // count) instead of a second question.
-export function buildJobsConfirmedMessage(link: { id: string; title: string | null; url: string }): string {
+export function buildJobsConfirmedMessage(link: { id: string; title?: string | null; url: string }): string {
   return [
     'The user confirmed that this page DOES list jobs, so your previous selectors and approach are wrong — 0 items is not a valid result for this page.',
     '',
@@ -80,7 +80,7 @@ export function buildJobsConfirmedMessage(link: { id: string; title: string | nu
   ].join('\n')
 }
 
-export function generateInstructionsConversationTitle(link: { title: string | null; url: string }): string {
+export function generateInstructionsConversationTitle(link: { title?: string | null; url: string }): string {
   return `Generate crawl instructions: ${link.title ?? link.url}`
 }
 
@@ -94,7 +94,7 @@ export function generateInstructionsConversationTitle(link: { title: string | nu
 // saved against this link (a prior listing crawl), so step 1 finds
 // one via list_jobs rather than being handed link.url directly — see
 // plan/ai/tools/career/step-XX-job-detail-crawl-instructions.md.
-export function buildGenerateJobDetailInstructionsMessage(link: { id: string; title: string | null; url: string }): string {
+export function buildGenerateJobDetailInstructionsMessage(link: { id: string; title?: string | null; url: string }): string {
   return [
     'Please create or update the stored JOB DETAIL crawl instructions for this existing portal link only — do not create a new portal or link, and do not ask which link is meant (it is already specified below). Do not run a crawl or save/modify any jobs — this is only about the stored instructions themselves.',
     '',
@@ -113,6 +113,6 @@ export function buildGenerateJobDetailInstructionsMessage(link: { id: string; ti
   ].join('\n')
 }
 
-export function generateJobDetailInstructionsConversationTitle(link: { title: string | null; url: string }): string {
+export function generateJobDetailInstructionsConversationTitle(link: { title?: string | null; url: string }): string {
   return `Generate job detail crawl instructions: ${link.title ?? link.url}`
 }

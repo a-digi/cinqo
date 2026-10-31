@@ -1,8 +1,9 @@
 // Pure numbers for the Portals page's cards, worked out from the portals already loaded
 // (no extra request). No React, so it can be script-checked.
 export interface LinkLike {
-  crawlInstructions: string | null
-  lastCrawledAt: string | null
+  // The backend leaves an empty field out of the JSON, so "none" arrives as undefined as well as null.
+  crawlInstructions?: string | null
+  lastCrawledAt?: string | null
 }
 
 export interface PortalLike {
@@ -25,8 +26,8 @@ export function summarizePortals(portals: PortalLike[]): PortalSummary {
   for (const p of portals) {
     for (const l of p.links) {
       links++
-      if (l.crawlInstructions !== null && l.crawlInstructions.trim() !== '') withInstructions++
-      if (l.lastCrawledAt === null) neverCrawled++
+      if ((l.crawlInstructions ?? '').trim() !== '') withInstructions++
+      if (!l.lastCrawledAt) neverCrawled++
     }
   }
   return { portals: portals.length, links, withInstructions, neverCrawled }

@@ -1,8 +1,9 @@
 // Pure numbers for the portal show page's side rail, worked out from the portal already
 // loaded (no extra request). No React, so it can be script-checked.
 export interface ViewLink {
-  crawlInstructions: string | null
-  lastCrawledAt: string | null
+  // The backend leaves an empty field out of the JSON, so "none" arrives as undefined as well as null.
+  crawlInstructions?: string | null
+  lastCrawledAt?: string | null
 }
 
 export interface PortalViewNumbers {
@@ -21,8 +22,8 @@ export function portalViewNumbers(links: ViewLink[]): PortalViewNumbers {
   let latest: string | null = null
   let latestTime = -Infinity
   for (const l of links) {
-    if (l.crawlInstructions !== null && l.crawlInstructions.trim() !== '') withInstructions++
-    if (l.lastCrawledAt === null) {
+    if ((l.crawlInstructions ?? '').trim() !== '') withInstructions++
+    if (!l.lastCrawledAt) {
       neverCrawled++
       continue
     }
