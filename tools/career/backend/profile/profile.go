@@ -52,6 +52,7 @@ type profile struct {
 	CreatedAt     string                `json:"createdAt"`
 	UpdatedAt     string                `json:"updatedAt,omitempty"`
 	ExternalLinks []profileExternalLink `json:"externalLinks"`
+	Completeness  completeness          `json:"completeness"`
 }
 
 func CreateProfile(firstName, lastName string) (string, error) {
@@ -71,21 +72,23 @@ func CreateProfile(firstName, lastName string) (string, error) {
 // standalone getter" reasoning step 8 used for Persona.
 func ListProfiles() ([]profile, error) {
 	rows, err := db.CareerDB.Query(
-		`SELECT id, first_name, last_name, created_at, updated_at FROM profiles ORDER BY created_at ASC`,
+		`SELECT id, first_name, last_name, created_at, updated_at, image_media_file_id FROM profiles ORDER BY created_at ASC`,
 	)
 	if err != nil {
 		return nil, err
 	}
 	profiles := []profile{}
+	hasImage := map[string]bool{}
 	for rows.Next() {
 		var p profile
-		var updatedAt sql.NullString
-		if err := rows.Scan(&p.ID, &p.FirstName, &p.LastName, &p.CreatedAt, &updatedAt); err != nil {
+		var updatedAt, imageID sql.NullString
+		if err := rows.Scan(&p.ID, &p.FirstName, &p.LastName, &p.CreatedAt, &updatedAt, &imageID); err != nil {
 			rows.Close()
 			return nil, err
 		}
 		p.UpdatedAt = updatedAt.String
 		p.ExternalLinks = []profileExternalLink{}
+		hasImage[p.ID] = imageID.String != ""
 		profiles = append(profiles, p)
 	}
 	if err := rows.Err(); err != nil {
@@ -118,7 +121,74 @@ func ListProfiles() ([]profile, error) {
 			profiles[i].ExternalLinks = links
 		}
 	}
+
+	if err := fillCompleteness(profiles, hasImage); err != nil {
+		return nil, err
+	}
 	return profiles, nil
+}
+
+// fillCompleteness works out every profile's completeness from four grouped queries
+// (one per fact, not one per profile). Skills and experience are counted on the
+// profile's best single persona.
+func fillCompleteness(profiles []profile, hasImage map[string]bool) error {
+	personas, err := countByProfile(`SELECT profile_id, COUNT(*) FROM personas GROUP BY profile_id`)
+	if err != nil {
+		return err
+	}
+	summaries, err := countByProfile(
+		`SELECT p.profile_id, COUNT(*) FROM personas p JOIN persona_details d ON d.persona_id = p.id
+		 WHERE TRIM(d.headline) <> '' AND TRIM(d.summary) <> '' GROUP BY p.profile_id`)
+	if err != nil {
+		return err
+	}
+	skills, err := countByProfile(
+		`SELECT profile_id, MAX(n) FROM (
+		   SELECT p.profile_id AS profile_id, COUNT(s.id) AS n FROM personas p JOIN career_skills s ON s.persona_id = p.id GROUP BY p.id
+		 ) GROUP BY profile_id`)
+	if err != nil {
+		return err
+	}
+	experience, err := countByProfile(
+		`SELECT profile_id, MAX(n) FROM (
+		   SELECT p.profile_id AS profile_id, COUNT(e.id) AS n FROM personas p JOIN career_experience e ON e.persona_id = p.id GROUP BY p.id
+		 ) GROUP BY profile_id`)
+	if err != nil {
+		return err
+	}
+	for i := range profiles {
+		p := &profiles[i]
+		p.Completeness = completenessOf(completenessInput{
+			FirstName:             p.FirstName,
+			LastName:              p.LastName,
+			LinkCount:             len(p.ExternalLinks),
+			HasImage:              hasImage[p.ID],
+			PersonaCount:          personas[p.ID],
+			HasHeadlineAndSummary: summaries[p.ID] > 0,
+			BestSkillCount:        skills[p.ID],
+			BestExperienceCount:   experience[p.ID],
+		})
+	}
+	return nil
+}
+
+// countByProfile runs a query that returns (profile_id, number) rows and returns them as a map.
+func countByProfile(query string) (map[string]int, error) {
+	rows, err := db.CareerDB.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	counts := map[string]int{}
+	for rows.Next() {
+		var id string
+		var n int
+		if err := rows.Scan(&id, &n); err != nil {
+			return nil, err
+		}
+		counts[id] = n
+	}
+	return counts, rows.Err()
 }
 
 func UpdateProfile(id string, firstName, lastName *string) error {

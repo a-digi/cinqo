@@ -21,6 +21,20 @@ export interface ProfileExternalLink {
   url: string
 }
 
+export interface CompletenessItem {
+  key: string
+  label: string
+  weight: number
+  done: boolean
+}
+
+// How complete a profile is, out of 100, worked out by the backend on every read.
+export interface ProfileCompleteness {
+  score: number
+  band: 'just-started' | 'getting-there' | 'strong' | 'complete'
+  items: CompletenessItem[]
+}
+
 export interface Profile {
   id: string
   firstName: string
@@ -28,6 +42,7 @@ export interface Profile {
   createdAt: string
   updatedAt?: string
   externalLinks: ProfileExternalLink[]
+  completeness: ProfileCompleteness
 }
 
 export interface Persona {

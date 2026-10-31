@@ -8,7 +8,7 @@
       "email": "tafa.andet@googlemail.com"
     }
   ],
-  "generatedAt": "2026-10-31T09:39:57Z",
+  "generatedAt": "2026-10-31T09:51:02Z",
   "tools": [
     {
       "id": "browser",
@@ -61,7 +61,7 @@
     },
     {
       "id": "career",
-      "currentVersionId": "0.0.378",
+      "currentVersionId": "0.0.380",
       "versions": [
         {
           "authors": [
@@ -71,38 +71,38 @@
             }
           ],
           "license": "Proprietary",
-          "versionId": "0.0.378",
+          "versionId": "0.0.380",
           "name": "Career",
-          "version": "0.0.378",
+          "version": "0.0.380",
           "releasedAt": "2026-10-31",
           "packages": [
             {
               "os": "darwin",
               "arch": "arm64",
               "url": "https://raw.githubusercontent.com/a-digi/cinqo/0.0.1/tools/career/versions/tool-career-darwin-arm64.zip",
-              "sha256": "d30e208cfbb66b9c4ecda89ab717736ba87e9fa2ab223bd8297da82c1d09e5f9",
-              "sizeBytes": 16467723
+              "sha256": "ab0819ef3e26baec6c6a251f9ee0e6f55a25ae04b1c55a9653f63f0a3e272cfd",
+              "sizeBytes": 16468905
             },
             {
               "os": "linux",
               "arch": "amd64",
               "url": "https://raw.githubusercontent.com/a-digi/cinqo/0.0.1/tools/career/versions/tool-career-linux-amd64.zip",
-              "sha256": "352c6636f64898f946f62410fe3ff315aabdcc940d6b4fa1a8ab8f0bc51acd94",
-              "sizeBytes": 16616617
+              "sha256": "653fbe0a8d10ba13db6bc5aa6c7e2a9ced512de74d928223740a31eb611465f3",
+              "sizeBytes": 16621299
             },
             {
               "os": "linux",
               "arch": "arm64",
               "url": "https://raw.githubusercontent.com/a-digi/cinqo/0.0.1/tools/career/versions/tool-career-linux-arm64.zip",
-              "sha256": "911e8b443756ac1246553c9d618e9e90f325f39df04cdc908e97aad0fbb358d2",
-              "sizeBytes": 15742338
+              "sha256": "343664d4a4c7be778a8171bb26c8df4c71a1fe6d3e8f2a50cbcaaf3add1a380b",
+              "sizeBytes": 15746704
             },
             {
               "os": "windows",
               "arch": "amd64",
               "url": "https://raw.githubusercontent.com/a-digi/cinqo/0.0.1/tools/career/versions/tool-career-windows-amd64.zip",
-              "sha256": "f2800831ad73b5bb864e5de4f586eed4c727b667e4f4e2c5d389cc41ab929518",
-              "sizeBytes": 16943523
+              "sha256": "6d745d5ebc6bce23bdcb9b975aa188918831a09882f2dcde87ee49ec0ebbbadd",
+              "sizeBytes": 16949461
             }
           ]
         }

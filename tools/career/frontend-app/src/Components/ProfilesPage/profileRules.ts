@@ -33,3 +33,39 @@ export function platformCounts(profiles: LinkedProfile[]): PlatformCount[] {
 export function firstWithoutLinks(profiles: LinkedProfile[]): string | null {
   return profiles.find((p) => p.externalLinks.length === 0)?.id ?? null
 }
+
+export interface CompletenessItemLike {
+  label: string
+  weight: number
+  done: boolean
+}
+
+// The words printed next to the percentage, so the band never rests on colour alone.
+export function bandLabel(band: string): string {
+  switch (band) {
+    case 'complete':
+      return 'Complete'
+    case 'strong':
+      return 'Strong'
+    case 'getting-there':
+      return 'Getting there'
+    default:
+      return 'Just started'
+  }
+}
+
+// The missing items, heaviest first (ties keep their order), as the hint list.
+export function missingItems<T extends CompletenessItemLike>(items: T[]): T[] {
+  return items.filter((i) => !i.done).sort((a, b) => b.weight - a.weight)
+}
+
+// What to do next: the heaviest missing item, or null when nothing is missing.
+export function nextStep(items: CompletenessItemLike[]): string | null {
+  return missingItems(items)[0]?.label ?? null
+}
+
+// The average score over all profiles, rounded, or null when there are none.
+export function averageScore(profiles: { completeness: { score: number } }[]): number | null {
+  if (profiles.length === 0) return null
+  return Math.round(profiles.reduce((sum, p) => sum + p.completeness.score, 0) / profiles.length)
+}

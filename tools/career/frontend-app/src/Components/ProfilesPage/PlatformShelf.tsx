@@ -8,10 +8,13 @@ import type { PlatformCount } from './profileRules'
 export function PlatformShelf({
   platforms,
   withoutLinks,
+  average,
   onShowWithoutLinks,
 }: {
   platforms: PlatformCount[]
   withoutLinks: number
+  // The average profile completeness in percent, or null when there are no profiles.
+  average: number | null
   onShowWithoutLinks: () => void
 }) {
   if (platforms.length === 0 && withoutLinks === 0) return null
@@ -43,6 +46,14 @@ export function PlatformShelf({
             </div>
           )
         })}
+        {average !== null && (
+          <div className="flex min-w-36 shrink-0 items-center gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
+            <div>
+              <div className="text-2xl font-bold leading-none text-gray-900">{average}%</div>
+              <div className="mt-1 text-xs text-gray-500">Average completeness</div>
+            </div>
+          </div>
+        )}
         {withoutLinks > 0 && (
           <button
             type="button"

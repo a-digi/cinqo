@@ -7,8 +7,9 @@ import { NEW_PROFILE_PATH } from '../../paths'
 import { plural } from '../CompaniesPage/companyStats'
 import { PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
 import { profileLabel } from '../ProfileSwitcher/profileLabel'
+import { CompletenessMeter } from './CompletenessMeter'
 import { PlatformShelf } from './PlatformShelf'
-import { firstWithoutLinks, platformCounts } from './profileRules'
+import { averageScore, firstWithoutLinks, platformCounts } from './profileRules'
 import { summarizeProfiles } from './profileStats'
 
 // The job seeker layer, one level above Persona (step 10) — the
@@ -25,6 +26,8 @@ export function ProfilesPage() {
   const [editFirstName, setEditFirstName] = useState('')
   const [editLastName, setEditLastName] = useState('')
   const [linkDrafts, setLinkDrafts] = useState<Record<string, { platform: string; url: string }>>({})
+  // The profiles whose add-link form is open; every form starts hidden.
+  const [openLinkFormIds, setOpenLinkFormIds] = useState<Set<string>>(new Set())
   const [error, setError] = useState('')
 
   function load() {
@@ -83,6 +86,15 @@ export function ProfilesPage() {
     setLinkDrafts((prev) => ({ ...prev, [profileId]: draft }))
   }
 
+  function setLinkFormOpen(profileId: string, open: boolean) {
+    setOpenLinkFormIds((prev) => {
+      const next = new Set(prev)
+      if (open) next.add(profileId)
+      else next.delete(profileId)
+      return next
+    })
+  }
+
   function handleAddLink(profileId: string) {
     const draft = linkDraft(profileId)
     const platform = draft.platform.trim()
@@ -92,6 +104,7 @@ export function ProfilesPage() {
     addProfileExternalLink(profileId, platform, url)
       .then(() => {
         setLinkDraft(profileId, { platform: '', url: '' })
+        setLinkFormOpen(profileId, false)
         load()
       })
       .catch((err: unknown) => {
@@ -126,7 +139,12 @@ export function ProfilesPage() {
         pill={{ text: plural(summary.profiles, 'profile', 'profiles') }}
       />
 
-      <PlatformShelf platforms={platforms} withoutLinks={summary.withoutLinks} onShowWithoutLinks={showFirstWithoutLinks} />
+      <PlatformShelf
+        platforms={platforms}
+        withoutLinks={summary.withoutLinks}
+        average={averageScore(profiles)}
+        onShowWithoutLinks={showFirstWithoutLinks}
+      />
 
       <div>
         <div className="min-w-0">
@@ -162,6 +180,7 @@ export function ProfilesPage() {
             {profiles.map((p) => {
               const draft = linkDraft(p.id)
               const name = profileLabel(p)
+              const linkFormOpen = openLinkFormIds.has(p.id) && editingId !== p.id
               return (
                 <div
                   key={p.id}
@@ -246,6 +265,7 @@ export function ProfilesPage() {
                     </div>
                   )}
 
+                  <CompletenessMeter completeness={p.completeness} />
                   <div className="mb-2 flex flex-wrap gap-2">
                     {p.externalLinks.map((link) => (
                       <a
@@ -270,35 +290,53 @@ export function ProfilesPage() {
                         </button>
                       </a>
                     ))}
-                  </div>
-                  <div className="flex gap-2">
-                    <input
-                      value={draft.platform}
-                      onChange={(e) => {
-                        setLinkDraft(p.id, { ...draft, platform: e.target.value })
-                      }}
-                      placeholder="Platform, e.g. linkedin"
-                      className="w-32 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs text-gray-900 focus:border-gray-500 focus:outline-none"
-                    />
-                    <input
-                      value={draft.url}
-                      onChange={(e) => {
-                        setLinkDraft(p.id, { ...draft, url: e.target.value })
-                      }}
-                      placeholder="URL"
-                      className="flex-1 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs text-gray-900 focus:border-gray-500 focus:outline-none"
-                    />
                     <button
                       type="button"
+                      aria-expanded={linkFormOpen}
+                      aria-controls={`link-form-${p.id}`}
                       onClick={() => {
-                        handleAddLink(p.id)
+                        setLinkFormOpen(p.id, !openLinkFormIds.has(p.id))
                       }}
-                      className="flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
+                      className={`flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium ${
+                        p.externalLinks.length === 0
+                          ? 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100'
+                          : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                      }`}
                     >
                       <PlusIcon />
-                      Add
+                      Platform
                     </button>
                   </div>
+                  {linkFormOpen && (
+                    <div id={`link-form-${p.id}`} className="flex gap-2">
+                      <input
+                        value={draft.platform}
+                        onChange={(e) => {
+                          setLinkDraft(p.id, { ...draft, platform: e.target.value })
+                        }}
+                        placeholder="Platform, e.g. linkedin"
+                        className="w-32 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs text-gray-900 focus:border-gray-500 focus:outline-none"
+                      />
+                      <input
+                        value={draft.url}
+                        onChange={(e) => {
+                          setLinkDraft(p.id, { ...draft, url: e.target.value })
+                        }}
+                        placeholder="URL"
+                        className="flex-1 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs text-gray-900 focus:border-gray-500 focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleAddLink(p.id)
+                        }}
+                        className="flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
+                      >
+                        <PlusIcon />
+                        Add
+                      </button>
+                    </div>
+                  )}
                 </div>
               )
             })}
