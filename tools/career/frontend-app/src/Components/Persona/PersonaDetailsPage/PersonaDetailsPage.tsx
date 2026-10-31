@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
-import { fetchPersonaDetails, updatePersonaDetails } from '../../../api'
+import { fetchPersonaDetails, fetchPersonas, fetchProfiles, updatePersonaDetails, type Persona, type Profile } from '../../../api'
 import { TargetIcon } from '../../../Shared/Icons/icons'
 import { inputClass } from '../../../Shared/inputClass'
 import { PageHeaderCard } from '../../../Shared/PageHeader/PageHeaderCard'
-import { experiencePathFor, skillsPathFor } from '../../../paths'
+import { PERSONA_DETAILS_PATH, experiencePathFor, skillsPathFor } from '../../../paths'
 import { Field } from '../../Field/Field'
 import { PAGE_ACCENT } from '../../JobsPage/jobsTheme'
-import { PersonaSwitcher } from '../PersonaSwitcher/PersonaSwitcher'
+import { profileLabel } from '../../ProfileSwitcher/profileLabel'
 import { FieldStepper } from './FieldStepper'
 import { detailsCompleteness, detailsSteps, type DetailsKey } from './detailsStats'
 import { PageTips } from '../../../Shared/PageTips/PageTips'
@@ -31,8 +31,12 @@ const cardStyle = { borderColor: PAGE_ACCENT.soft, background: `linear-gradient(
 // plan/ai/tools/career/step-07-dedicated-skills-and-experience-pages.md,
 // plan/ai/tools/career/step-09-persona-frontend.md, and
 // plan/ai/tools/career/step-11-job-seeker-profile-frontend.md.
-export function PersonaDetailsPage() {
-  const [personaId, setPersonaId] = useState<string | null>(null)
+export function PersonaDetailsPage({ personaId }: { personaId: string }) {
+  // The persona comes from the address (/tools/career/persona-details/:personaId), not from a dropdown.
+  const [persona, setPersona] = useState<Persona | null>(null)
+  const [profile, setProfile] = useState<Profile | null>(null)
+  const [notFound, setNotFound] = useState('')
+  const [personaLoaded, setPersonaLoaded] = useState(false)
   const [form, setForm] = useState(emptyForm)
   // What is saved, so the overview does not move while a field is being typed.
   const [saved, setSaved] = useState(emptyForm)
@@ -66,11 +70,36 @@ export function PersonaDetailsPage() {
   }
 
   useEffect(() => {
-    if (personaId) load(personaId)
+    setPersona(null)
+    setProfile(null)
+    setNotFound('')
+    setPersonaLoaded(false)
+    fetchPersonas()
+      .then((list) => {
+        const found = list.find((p) => p.id === personaId)
+        if (!found) {
+          setNotFound('Persona not found')
+          return
+        }
+        setPersona(found)
+        load(found.id)
+        fetchProfiles()
+          .then((profiles) => {
+            setProfile(profiles.find((p) => p.id === found.profileId) ?? null)
+          })
+          .catch(() => {
+            setProfile(null)
+          })
+      })
+      .catch((err: unknown) => {
+        setNotFound(err instanceof Error ? err.message : String(err))
+      })
+      .finally(() => {
+        setPersonaLoaded(true)
+      })
   }, [personaId])
 
   function handleSave() {
-    if (!personaId) return
     setError('')
     setJustSaved(false)
     setSaving(true)
@@ -108,21 +137,42 @@ export function PersonaDetailsPage() {
     el?.focus({ preventScroll: true })
   }
 
+  const backLink = (
+    <a
+      href={PERSONA_DETAILS_PATH}
+      onClick={(e) => {
+        e.preventDefault()
+        window.__cinqoToolBridge.navigate(PERSONA_DETAILS_PATH)
+      }}
+      className="mb-3 inline-block text-sm font-medium text-blue-700 hover:underline"
+    >
+      ← All summaries
+    </a>
+  )
+
+  if (!persona) {
+    return (
+      <div className="max-w-3xl p-6 font-sans text-gray-900">
+        {backLink}
+        <div className="text-sm text-gray-500">{personaLoaded ? notFound : 'Loading…'}</div>
+      </div>
+    )
+  }
+
   return (
     <div className="career-v-wipe career-a-float career-t-underline max-w-7xl p-6 font-sans text-gray-900">
+      {backLink}
       <PageHeaderCard
         icon={<TargetIcon />}
-        title="Summary & Goals"
-        description="This persona's positioning and what it is looking for. The AI reads it when matching jobs and writing CVs; nothing here is a secret."
+        title={`Summary & Goals: ${persona.name}`}
+        description={`${profile ? `${profileLabel(profile)} · ` : ''}This persona's positioning and what it is looking for. The AI reads it when matching jobs and writing CVs; nothing here is a secret.`}
         pill={{ text: `${completeness.percent}% complete` }}
       />
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
         <div className="order-1 min-w-0 flex-1 lg:order-2">
-          <PersonaSwitcher personaId={personaId} onChange={setPersonaId} />
-
           <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
 
-          {personaId && (
+          {
             <section className="career-enter career-delay-1 rounded-3xl border p-5 shadow-sm" style={cardStyle}>
               <h2 className="mb-3 text-sm font-semibold text-gray-700">Positioning</h2>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -197,11 +247,11 @@ export function PersonaDetailsPage() {
                 {justSaved && <span className="text-sm text-green-700">Saved</span>}
               </div>
             </section>
-          )}
+          }
         </div>
 
         <aside className="order-2 w-full shrink-0 lg:order-1 career-rail-sticky lg:w-72">
-          {personaId && (
+          {
             <>
               <FieldStepper
                 steps={detailsSteps(saved)}
@@ -209,15 +259,15 @@ export function PersonaDetailsPage() {
                 experienceCount={experienceCount}
                 onPick={focusField}
                 onOpenSkills={() => {
-                  if (personaId) window.__cinqoToolBridge.navigate(skillsPathFor(personaId))
+                  window.__cinqoToolBridge.navigate(skillsPathFor(personaId))
                 }}
                 onOpenExperience={() => {
-                  if (personaId) window.__cinqoToolBridge.navigate(experiencePathFor(personaId))
+                  window.__cinqoToolBridge.navigate(experiencePathFor(personaId))
                 }}
               />
             </>
-          )}
-          <div className={personaId ? 'mt-8' : ''}>
+          }
+          <div className="mt-8">
             <PageTips page="summary" orientation="vertical" />
           </div>
         </aside>

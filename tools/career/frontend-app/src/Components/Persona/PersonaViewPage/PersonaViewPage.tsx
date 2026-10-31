@@ -17,7 +17,7 @@ import { Comments } from '../../../Shared/Comments/Comments'
 import { COMMENT_TYPE_PERSONA } from '../../../Shared/Comments/commentTypes'
 import { LayersIcon, SparkleIcon } from '../../../Shared/Icons/icons'
 import { PageHeaderCard } from '../../../Shared/PageHeader/PageHeaderCard'
-import { PERSONAS_PATH, PERSONA_DETAILS_PATH, VIEW_PROFILE_PATH } from '../../../paths'
+import { PERSONAS_PATH, VIEW_PROFILE_PATH, personaDetailsPathFor } from '../../../paths'
 import { chatOfRun } from '../../../PersonaAi/runDisplay'
 import { ProfilePhotosPanel } from '../../ProfileImage/ProfilePhotosPanel'
 import { useProfilePhotos } from '../../ProfileImage/useProfilePhotos'
@@ -27,7 +27,6 @@ import { PAGE_ACCENT } from '../../JobsPage/jobsTheme'
 import { cvsOfProfile, lifetimeText } from '../../ProfilesPage/profileViewRules'
 import { setProfileIdInLocalStorage } from '../../ProfileSwitcher/repositoryLocalStorage'
 import { profileLabel } from '../../ProfileSwitcher/profileLabel'
-import { setPersonaIdInLocalStorage } from '../PersonaSwitcher/repositoryLocalStorage'
 import { detailRows, nothingFilledIn, roleView } from './personaViewRules'
 
 const cardStyle = { borderColor: PAGE_ACCENT.soft, background: `linear-gradient(160deg, #ffffff 45%, ${PAGE_ACCENT.soft} 100%)` }
@@ -206,8 +205,7 @@ export function PersonaViewPage() {
             <button
               type="button"
               onClick={() => {
-                setPersonaIdInLocalStorage(persona.id)
-                window.__cinqoToolBridge.navigate(PERSONA_DETAILS_PATH)
+                window.__cinqoToolBridge.navigate(personaDetailsPathFor(persona.id))
               }}
               className="ml-auto text-xs text-blue-700 hover:underline"
             >

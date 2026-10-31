@@ -5,6 +5,12 @@ export const PROFILES_PATH = '/tools/career/profiles'
 export const VIEW_PROFILE_PATH = '/tools/career/profiles/view'
 export const PERSONAS_PATH = '/tools/career/personas'
 export const PERSONA_DETAILS_PATH = '/tools/career/persona-details'
+// One persona's summary and goals on its own page: a pattern route, the id arrives as the page's route parameter.
+export const PERSONA_DETAILS_ONE_PATH = '/tools/career/persona-details/:personaId'
+// The address of one persona's summary and goals page.
+export function personaDetailsPathFor(personaId: string): string {
+  return `${PERSONA_DETAILS_PATH}/${encodeURIComponent(personaId)}`
+}
 export const VIEW_PERSONA_PATH = '/tools/career/personas/view'
 export const SKILLS_PATH = '/tools/career/skills'
 // One persona's skills on their own page: a pattern route, the id arrives as the page's route parameter.
