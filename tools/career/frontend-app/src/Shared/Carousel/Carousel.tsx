@@ -194,8 +194,12 @@ export function Carousel({
   // The arrows and the active dot wear the colour of the slide that is shown.
   const arrowStyle = { color: activeAccent.text, '--tw-ring-color': activeAccent.from } as CSSProperties
 
-  const arrowBase =
-    'flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/95 shadow-sm ring-1 transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:pointer-events-none disabled:opacity-30'
+  // The arrows and the pause button are hidden until the pointer is over the carousel (the dots always show). They also
+  // show while keyboard focus is anywhere inside it, so a keyboard user can see what they have tabbed to, and always on a
+  // screen that cannot hover (touch), where they would otherwise never appear. A disabled one shows faintly, as before.
+  const revealOnHover =
+    'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 group-hover:disabled:opacity-30 group-focus-within:disabled:opacity-30 [@media(hover:none)]:opacity-100 [@media(hover:none)]:disabled:opacity-30'
+  const arrowBase = `flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/95 shadow-sm ring-1 transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:pointer-events-none ${revealOnHover}`
   const edgeArrow = (direction: Direction, disabled: boolean) => (
     <button
       type="button"
@@ -206,7 +210,7 @@ export function Carousel({
         step(direction)
       }}
       style={arrowStyle}
-      className={`${arrowBase} absolute top-1/2 z-10 -translate-y-1/2 ${direction === 'prev' ? 'left-2' : 'right-2'} disabled:opacity-0`}
+      className={`${arrowBase} absolute top-1/2 z-10 -translate-y-1/2 ${direction === 'prev' ? 'left-2' : 'right-2'}`}
     >
       <Chevron direction={direction} orientation="horizontal" />
     </button>
@@ -322,7 +326,7 @@ export function Carousel({
     <section
       aria-roledescription="carousel"
       aria-label={ariaLabel}
-      className={`relative outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${className}`}
+      className={`group relative outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${className}`}
       // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
       tabIndex={0}
       onKeyDown={onKeyDown}
