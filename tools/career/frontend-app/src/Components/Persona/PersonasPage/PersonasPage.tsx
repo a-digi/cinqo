@@ -19,9 +19,6 @@ import { plural } from '../../CompaniesPage/companyStats'
 import { PAGE_ACCENT, accentFor, initialOf } from '../../JobsPage/jobsTheme'
 import { ProfileSwitcher } from '../../ProfileSwitcher/ProfileSwitcher'
 import { PersonaCvs } from './PersonaCvs'
-import { Comments } from '../../../Shared/Comments/Comments'
-import { COMMENT_TYPE_PERSONA } from '../../../Shared/Comments/commentTypes'
-import { Modal } from '../../../Shared/Modal/Modal'
 import { NeedsAttention } from './NeedsAttention'
 import { summarizePersonas, undescribedPersonas } from './personaStats'
 import { PageTips } from '../../../Shared/PageTips/PageTips'
@@ -56,8 +53,6 @@ export function PersonasPage() {
   const [profileId, setProfileId] = useState<string | null>(null)
   const [personas, setPersonas] = useState<Persona[]>([])
   const [editingId, setEditingId] = useState<string | null>(null)
-  // The persona whose comments are open in the modal.
-  const [commentsFor, setCommentsFor] = useState<Persona | null>(null)
   const [editName, setEditName] = useState('')
   const [editDescription, setEditDescription] = useState('')
   const [error, setError] = useState('')
@@ -406,15 +401,6 @@ export function PersonasPage() {
                           <button
                             type="button"
                             onClick={() => {
-                              setCommentsFor(p)
-                            }}
-                            className="rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
-                          >
-                            Comments
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
                               handleDelete(p.id)
                             }}
                             className="rounded-full border border-red-200 px-3 py-1 text-xs text-red-700 hover:bg-red-50"
@@ -455,17 +441,6 @@ export function PersonasPage() {
           </div>
         </aside>
       </div>
-
-      <Modal
-        open={commentsFor !== null}
-        title={commentsFor ? `Comments: ${commentsFor.name}` : 'Comments'}
-        onClose={() => {
-          setCommentsFor(null)
-        }}
-        size="wide"
-      >
-        {commentsFor && <Comments entityType={COMMENT_TYPE_PERSONA} entityId={commentsFor.id} inModal />}
-      </Modal>
     </div>
   )
 }

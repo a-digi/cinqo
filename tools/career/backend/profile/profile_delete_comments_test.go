@@ -15,7 +15,7 @@ func exec(t *testing.T, q string, args ...any) {
 	}
 }
 
-func TestDeleteProfile_PurgesItsPersonasAndTheirCvs(t *testing.T) {
+func TestDeleteProfile_PurgesItselfItsPersonasAndTheirCvs(t *testing.T) {
 	t.Setenv("TOOL_DB_DIR", t.TempDir())
 	if err := db.InitDatabases(); err != nil {
 		t.Fatal(err)
@@ -40,7 +40,8 @@ func TestDeleteProfile_PurgesItsPersonasAndTheirCvs(t *testing.T) {
 	if err := DeleteProfile(mine); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"cv:c1", "cv:c2", "persona:p1", "persona:p2"}
+	want := []string{"cv:c1", "cv:c2", "persona:p1", "persona:p2", "profile:" + mine}
+	slices.Sort(want)
 	if got := purged(); !slices.Equal(got, want) {
 		t.Fatalf("purged %v, want %v", got, want)
 	}

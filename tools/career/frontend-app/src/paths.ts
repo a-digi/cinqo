@@ -2,6 +2,7 @@
 // and the menu (menu.ts) so the two cannot drift apart.
 export const IMPORT_CV_PATH = '/tools/career/import-cv'
 export const PROFILES_PATH = '/tools/career/profiles'
+export const VIEW_PROFILE_PATH = '/tools/career/profiles/view'
 export const PERSONAS_PATH = '/tools/career/personas'
 export const PERSONA_DETAILS_PATH = '/tools/career/persona-details'
 export const SKILLS_PATH = '/tools/career/skills'

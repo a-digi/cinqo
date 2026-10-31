@@ -15,9 +15,10 @@ import (
 )
 
 // The entity types this tool declares in manifest.json's "comments" (the frontend spells them in
-// Shared/Comments/commentTypes.ts): keep the three in step.
+// Shared/Comments/commentTypes.ts): keep the four in step.
 const (
 	JobType     = "job"
+	ProfileType = "profile"
 	PersonaType = "persona"
 	CvType      = "cv"
 )

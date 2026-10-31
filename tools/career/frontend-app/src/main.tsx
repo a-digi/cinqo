@@ -24,6 +24,7 @@
 import { createRoot, type Root } from 'react-dom/client'
 import { ProfilesPage } from './Components/ProfilesPage/ProfilesPage'
 import { NewProfilePage } from './Components/ProfilesPage/NewProfilePage'
+import { ProfileViewPage } from './Components/ProfilesPage/ProfileViewPage'
 import { PersonasPage } from './Components/Persona/PersonasPage/PersonasPage'
 import { NewPersonaPage } from './Components/Persona/PersonasPage/NewPersonaPage'
 import { PersonaDetailsPage } from './Components/Persona/PersonaDetailsPage/PersonaDetailsPage'
@@ -66,6 +67,7 @@ import {
   NEW_PERSONA_PATH,
   EXPERIENCE_ENTRY_PATH,
   VIEW_COMPANY_PATH,
+  VIEW_PROFILE_PATH,
   NEW_RECRUITER_PATH,
   SETTINGS_PATH,
   PORTALS_PATH,
@@ -205,6 +207,14 @@ window.__cinqoToolBridge.registerRoute({
   path: NEW_PROFILE_PATH,
   mount: (container) => {
     mountReact(container, <NewProfilePage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: VIEW_PROFILE_PATH,
+  mount: (container) => {
+    mountReact(container, <ProfileViewPage />)
   },
   unmount: unmountReact,
 })

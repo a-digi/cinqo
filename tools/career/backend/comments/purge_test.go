@@ -172,7 +172,7 @@ func TestTypesMatchTheManifest(t *testing.T) {
 	for _, c := range m.Comments {
 		declared[c.EntityType] = true
 	}
-	for _, typ := range []string{JobType, PersonaType, CvType} {
+	for _, typ := range []string{JobType, ProfileType, PersonaType, CvType} {
 		if !declared[typ] {
 			t.Errorf("entity type %q is purged by the backend but not declared in manifest.json", typ)
 		}

@@ -229,8 +229,8 @@ func UpdateProfile(id string, firstName, lastName *string) error {
 // footprint. A benign no-op if id is unknown, matching every other
 // delete-by-id operation in this tool.
 //
-// The comments about its personas and about the CVs built from them go too (the cascade deletes
-// both); their ids are read before the delete. Best effort, see comments.PurgeMany.
+// The comments about the profile itself, about its personas and about the CVs built from them go too (the cascade deletes
+// the last two); their ids are read before the delete. Best effort, see comments.PurgeMany.
 func DeleteProfile(id string) error {
 	personaIDs, err := idsOf(`SELECT id FROM personas WHERE profile_id = ?`, id)
 	if err != nil {
@@ -245,7 +245,7 @@ func DeleteProfile(id string) error {
 		return err
 	}
 	if n, _ := res.RowsAffected(); n > 0 {
-		var items []comments.Entity
+		items := []comments.Entity{{Type: comments.ProfileType, ID: id}}
 		for _, p := range personaIDs {
 			items = append(items, comments.Entity{Type: comments.PersonaType, ID: p})
 		}
