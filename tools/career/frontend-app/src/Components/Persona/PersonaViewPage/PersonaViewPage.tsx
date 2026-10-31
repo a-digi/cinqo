@@ -19,6 +19,8 @@ import { LayersIcon, SparkleIcon } from '../../../Shared/Icons/icons'
 import { PageHeaderCard } from '../../../Shared/PageHeader/PageHeaderCard'
 import { PERSONAS_PATH, PERSONA_DETAILS_PATH, VIEW_PROFILE_PATH } from '../../../paths'
 import { chatOfRun } from '../../../PersonaAi/runDisplay'
+import { ProfilePhotosPanel } from '../../ProfileImage/ProfilePhotosPanel'
+import { useProfilePhotos } from '../../ProfileImage/useProfilePhotos'
 import { CvCardGrid } from '../../CvBuilder/CvCardGrid'
 import { chatsByCv } from '../../../CvAi/cvAiRules'
 import { PAGE_ACCENT } from '../../JobsPage/jobsTheme'
@@ -52,6 +54,8 @@ export function PersonaViewPage() {
   // The CVs an AI run made (their ids), to mark them; and the chat of the run that made this persona.
   const [aiChats, setAiChats] = useState<ReadonlyMap<string, string>>(new Map())
   const [personaChatId, setPersonaChatId] = useState<string | null>(null)
+  // The photos are the profile's (a persona has none of its own).
+  const { photos, error: photoError, remove: removePhoto } = useProfilePhotos(persona?.profileId ?? null)
 
   useEffect(() => {
     if (!personaId) {
@@ -272,6 +276,11 @@ export function PersonaViewPage() {
             )}
           </section>
         </div>
+
+        <section aria-label="Photos" className="rounded-3xl border p-5 shadow-sm" style={cardStyle}>
+          <h2 className="mb-3 text-sm font-semibold text-gray-700">Photos ({photos.length})</h2>
+          <ProfilePhotosPanel photos={photos} error={photoError} onRemove={removePhoto} />
+        </section>
 
         <section aria-label="CVs">
           <h2 className="mb-3 text-sm font-semibold text-gray-700">CVs{cvs !== null ? ` (${cvs.length})` : ''}</h2>

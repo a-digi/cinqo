@@ -1,11 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   fetchAllCvDocuments,
   fetchCvAiRuns,
   fetchCvTemplates,
   fetchPersonaDetails,
   fetchPersonas,
-  fetchProfilePhotos,
   fetchProfiles,
   mediaDownloadUrl,
   type CvDocument,
@@ -13,13 +12,14 @@ import {
   type Persona,
   type PersonaDetailsResult,
   type Profile,
-  type ProfilePhoto,
 } from '../../api'
 import { Comments } from '../../Shared/Comments/Comments'
 import { COMMENT_TYPE_PROFILE } from '../../Shared/Comments/commentTypes'
 import { UserIcon } from '../../Shared/Icons/icons'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { PROFILES_PATH, VIEW_PERSONA_PATH } from '../../paths'
+import { ProfilePhotosPanel } from '../ProfileImage/ProfilePhotosPanel'
+import { useProfilePhotos } from '../ProfileImage/useProfilePhotos'
 import { CvCardGrid } from '../CvBuilder/CvCardGrid'
 import { chatsByCv } from '../../CvAi/cvAiRules'
 import { PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
@@ -40,9 +40,18 @@ function formatDate(value: string): string {
 export function ProfileViewPage() {
   const profileId = new URLSearchParams(window.location.search).get('id') ?? ''
   const [profile, setProfile] = useState<Profile | null>(null)
+  // Reads the profile again (its default photo may have changed after a photo was removed).
+  const refreshProfile = useCallback(() => {
+    fetchProfiles()
+      .then((list) => {
+        const found = list.find((p) => p.id === profileId)
+        if (found) setProfile(found)
+      })
+      .catch(() => undefined)
+  }, [profileId])
+  const { photos, error: photoError, remove: removePhoto } = useProfilePhotos(profileId || null, refreshProfile)
   const [error, setError] = useState('')
   const [loaded, setLoaded] = useState(false)
-  const [photos, setPhotos] = useState<ProfilePhoto[]>([])
   const [personas, setPersonas] = useState<Persona[]>([])
   const [details, setDetails] = useState<Record<string, PersonaDetailsResult | null>>({})
   const [cvs, setCvs] = useState<CvDocument[] | null>(null)
@@ -70,11 +79,6 @@ export function ProfileViewPage() {
         setLoaded(true)
       })
     // The rest is best effort: a section that cannot be read is simply left out.
-    fetchProfilePhotos(profileId)
-      .then(setPhotos)
-      .catch(() => {
-        setPhotos([])
-      })
     fetchCvTemplates()
       .then(setTemplates)
       .catch(() => {
@@ -198,26 +202,7 @@ export function ProfileViewPage() {
 
           <section aria-label="Photos" className="rounded-3xl border p-5 shadow-sm" style={cardStyle}>
             <h2 className="mb-2 text-sm font-semibold text-gray-700">Photos</h2>
-            {photos.length === 0 ? (
-              <p className="text-sm text-gray-400">No photos yet.</p>
-            ) : (
-              <ul className="flex flex-wrap gap-2">
-                {photos.map((p) => (
-                  <li key={p.mediaFileId} className="relative">
-                    <img
-                      src={mediaDownloadUrl(p.mediaFileId)}
-                      alt={p.isDefault ? 'Default' : ''}
-                      className={`h-16 w-16 rounded-xl object-cover ${p.isDefault ? 'ring-2 ring-purple-400' : ''}`}
-                    />
-                    {p.isDefault && (
-                      <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 rounded-full bg-purple-600 px-1.5 text-[9px] font-semibold text-white">
-                        Default
-                      </span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
+            <ProfilePhotosPanel photos={photos} error={photoError} onRemove={removePhoto} />
           </section>
         </aside>
 
