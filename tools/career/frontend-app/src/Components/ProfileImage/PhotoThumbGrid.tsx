@@ -1,8 +1,5 @@
 import { mediaDownloadUrl, type ProfilePhoto } from '../../api'
-import { EyeIcon, TrashIcon } from '../../Shared/Icons/icons'
-
-const floatingButton =
-  'flex h-7 w-7 items-center justify-center rounded-lg bg-white text-gray-700 shadow transition-colors hover:bg-blue-50 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500'
+import { PhotoActionButtons } from './PhotoActionButtons'
 
 // A grid of a profile's photos as square thumbnails, the default marked. On hover or focus (always on a
 // touch screen) each thumbnail shows a view icon and, when onRemove is given, a remove icon. Meant for any
@@ -37,30 +34,18 @@ export function PhotoThumbGrid({
               </span>
             )}
             <div className={`absolute right-1 top-1 flex items-center gap-1 transition-opacity ${controls}`}>
-              <button
-                type="button"
-                aria-label={photo.isDefault ? 'View the default photo' : 'View this photo'}
-                title="View"
-                onClick={() => {
+              <PhotoActionButtons
+                isDefault={photo.isDefault}
+                onView={() => {
                   onView(photo)
                 }}
-                className={floatingButton}
-              >
-                <EyeIcon />
-              </button>
-              {onRemove && (
-                <button
-                  type="button"
-                  aria-label={photo.isDefault ? 'Remove the default photo from this profile' : 'Remove this photo from this profile'}
-                  title="Remove from this profile (it stays in the photo library)"
-                  onClick={() => {
+                onRemove={
+                  onRemove &&
+                  (() => {
                     onRemove(photo)
-                  }}
-                  className={`${floatingButton} hover:bg-red-50 hover:text-red-700`}
-                >
-                  <TrashIcon />
-                </button>
-              )}
+                  })
+                }
+              />
             </div>
           </li>
         ))}

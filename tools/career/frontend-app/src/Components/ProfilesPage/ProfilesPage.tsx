@@ -6,7 +6,10 @@ import {
   addProfileExternalLink,
   removeProfileExternalLink,
   mediaDownloadUrl,
+  fetchProfilePhotos,
+  removeProfilePhoto,
   type Profile,
+  type ProfilePhoto,
 } from '../../api'
 import { CameraIcon, PlusIcon, UserIcon, XIcon } from '../../Shared/Icons/icons'
 import { inputClass } from '../../Shared/inputClass'
@@ -17,6 +20,8 @@ import { PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
 import { profileLabel } from '../ProfileSwitcher/profileLabel'
 import { setProfileIdInLocalStorage } from '../ProfileSwitcher/repositoryLocalStorage'
 import { CompletenessMeter } from './CompletenessMeter'
+import { PhotoActionButtons } from '../ProfileImage/PhotoActionButtons'
+import { PhotoViewModal } from '../ProfileImage/PhotoViewModal'
 import { PlatformShelf } from './PlatformShelf'
 import { averageScore, firstWithoutLinks, platformCounts } from './profileRules'
 import { summarizeProfiles } from './profileStats'
@@ -39,6 +44,8 @@ export function ProfilesPage() {
   // The profiles whose add-link form is open; every form starts hidden.
   const [openLinkFormIds, setOpenLinkFormIds] = useState<Set<string>>(new Set())
   const [error, setError] = useState('')
+  // The photo open in the modal (the default photo of a profile whose picture was clicked).
+  const [viewingPhoto, setViewingPhoto] = useState<ProfilePhoto | null>(null)
 
   function load() {
     setError('')
@@ -72,6 +79,31 @@ export function ProfilesPage() {
         setProfiles(result)
         cancelEdit()
       })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+      })
+  }
+
+  // The picture's view icon: the profile's photo entry (it knows when the photo was added), or just the picture
+  // when the list cannot be read.
+  function viewPhoto(profileId: string, mediaFileId: string) {
+    void (async () => {
+      let found: ProfilePhoto | undefined
+      try {
+        found = (await fetchProfilePhotos(profileId)).find((ph) => ph.mediaFileId === mediaFileId)
+      } catch {
+        found = undefined
+      }
+      setViewingPhoto(found ?? { mediaFileId, isDefault: true, addedAt: '' })
+    })()
+  }
+
+  // The picture's remove icon: the photo comes off the profile at once (it stays in the photo library; the
+  // newest remaining photo becomes the default), then the list is read again.
+  function removePhoto(profileId: string, mediaFileId: string) {
+    setError('')
+    removeProfilePhoto(profileId, mediaFileId)
+      .then(load)
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : String(err))
       })
@@ -247,14 +279,24 @@ export function ProfilesPage() {
                       ) : (
                         <div className="mb-3 flex items-start gap-3">
                           {p.imageMediaFileId ? (
-                            <img
-                              src={mediaDownloadUrl(p.imageMediaFileId)}
-                              alt=""
-                              className="h-10 w-10 shrink-0 rounded-full object-cover shadow-sm"
-                            />
+                            <span className="group relative block h-12 w-12 shrink-0 overflow-hidden rounded-full shadow-sm">
+                              <img src={mediaDownloadUrl(p.imageMediaFileId)} alt="" className="h-full w-full object-cover" />
+                              <span className="absolute inset-0 flex items-center justify-center gap-0.5 bg-black/40 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100">
+                                <PhotoActionButtons
+                                  isDefault
+                                  compact
+                                  onView={() => {
+                                    viewPhoto(p.id, p.imageMediaFileId ?? '')
+                                  }}
+                                  onRemove={() => {
+                                    removePhoto(p.id, p.imageMediaFileId ?? '')
+                                  }}
+                                />
+                              </span>
+                            </span>
                           ) : (
                             <span
-                              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-base font-bold text-white shadow-sm"
+                              className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-lg font-bold text-white shadow-sm"
                               style={{ background: accentFor(name).to }}
                               aria-hidden="true"
                             >
@@ -392,6 +434,13 @@ export function ProfilesPage() {
           <PageTips page="profiles" orientation="vertical" />
         </aside>
       </div>
+
+      <PhotoViewModal
+        photo={viewingPhoto}
+        onClose={() => {
+          setViewingPhoto(null)
+        }}
+      />
     </div>
   )
 }
