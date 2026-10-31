@@ -1371,6 +1371,14 @@ export interface CvTemplate {
   bestFor: string[]
 }
 
+// A persona a CV is attached to (step 114); builtFrom marks the one its data came from, which
+// cannot be detached.
+export interface CvPersona {
+  id: string
+  name: string
+  builtFrom: boolean
+}
+
 export interface CvDocument {
   id: string
   personaId: string
@@ -1385,10 +1393,31 @@ export interface CvDocument {
   // The photo the CV was made with, one of the profile's photos; absent when none was chosen
   // (the profile's default, or no photo). See plan/ai/tools/career/step-111-many-photos-per-profile.md.
   photoMediaFileId?: string
+  // Every persona the CV is attached to: the built-from one first, then the others by name.
+  personas: CvPersona[]
   // Filled only by fetchAllCvDocuments (the "Select existing" modal's list).
   personaName?: string
   createdAt: string
   updatedAt?: string
+}
+
+// Attaches a CV to another persona of the same profile (step 114). Idempotent.
+export async function attachCvToPersona(cvDocumentId: string, personaId: string): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/cv-documents/personas`, {
+    method: 'PUT',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cvDocumentId, personaId }),
+  })
+  if (!res.ok) throw new Error((await res.text()).trim() || `failed to attach the CV (${res.status})`)
+}
+
+// Detaches a CV from a persona it was attached to; the CV itself stays. The persona it was built
+// from cannot be detached.
+export async function detachCvFromPersona(cvDocumentId: string, personaId: string): Promise<void> {
+  const query = `cvDocumentId=${encodeURIComponent(cvDocumentId)}&personaId=${encodeURIComponent(personaId)}`
+  const res = await fetch(`${PROXY_BASE}/cv-documents/personas?${query}`, { method: 'DELETE', credentials: 'include' })
+  if (!res.ok) throw new Error((await res.text()).trim() || `failed to detach the CV (${res.status})`)
 }
 
 export async function fetchCvTemplates(): Promise<CvTemplate[]> {

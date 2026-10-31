@@ -320,3 +320,48 @@ func TestInitDatabases_UpgradesAnInstallFromStep112(t *testing.T) {
 		CareerDB.Close()
 	}
 }
+
+// Every CV is linked to the persona it was built from, also on an install from before the link
+// table, and running it again changes nothing (step 114).
+func TestMigrateCvDocumentPersonas_LinksEveryCvToItsPersona(t *testing.T) {
+	t.Setenv("TOOL_DB_DIR", t.TempDir())
+	if err := InitDatabases(); err != nil {
+		t.Fatal(err)
+	}
+	defer JobsDB.Close()
+	defer CareerDB.Close()
+
+	for _, q := range []string{
+		`INSERT INTO profiles (id) VALUES ('pr')`,
+		`INSERT INTO personas (id, profile_id, name) VALUES ('pe1', 'pr', 'One'), ('pe2', 'pr', 'Two')`,
+		`INSERT INTO cv_documents (id, persona_id, template_id, title, data_json, media_file_id) VALUES
+		   ('cv1', 'pe1', 'classic', 'A', '{}', 'm1'), ('cv2', 'pe1', 'classic', 'B', '{}', 'm2'), ('cv3', 'pe2', 'classic', 'C', '{}', 'm3')`,
+		// What an install from before the link table looks like: no links at all.
+		`DELETE FROM cv_document_personas`,
+	} {
+		if _, err := CareerDB.Exec(q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	for i := 0; i < 2; i++ {
+		if err := migrateCvDocumentPersonas(CareerDB); err != nil {
+			t.Fatalf("run %d: %v", i, err)
+		}
+	}
+	rows, err := CareerDB.Query(`SELECT cv_document_id || '>' || persona_id FROM cv_document_personas ORDER BY 1`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var got []string
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, s)
+	}
+	if len(got) != 3 || got[0] != "cv1>pe1" || got[1] != "cv2>pe1" || got[2] != "cv3>pe2" {
+		t.Fatalf("links = %v", got)
+	}
+}

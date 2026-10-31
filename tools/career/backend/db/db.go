@@ -102,6 +102,10 @@ func InitDatabases() error {
 		careerDB.Close()
 		return fmt.Errorf("failed to add the persona AI run decisions: %w", err)
 	}
+	if err := migrateCvDocumentPersonas(careerDB); err != nil {
+		careerDB.Close()
+		return fmt.Errorf("failed to link the CVs to their personas: %w", err)
+	}
 	CareerDB = careerDB
 
 	jobsDB, err := sql.Open("sqlite", filepath.Join(dbDir, "jobs.db"))
@@ -297,6 +301,18 @@ CREATE TABLE IF NOT EXISTS cv_documents (
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at    TEXT
 );
+
+-- The personas a CV is attached to (step 114): the persona it was built from (cv_documents.persona_id,
+-- always linked) and any other persona of the same profile. A persona shows the CVs linked here.
+-- Deleting either end removes the link.
+CREATE TABLE IF NOT EXISTS cv_document_personas (
+    cv_document_id TEXT NOT NULL REFERENCES cv_documents(id) ON DELETE CASCADE,
+    persona_id     TEXT NOT NULL REFERENCES personas(id) ON DELETE CASCADE,
+    created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (cv_document_id, persona_id)
+);
+
+CREATE INDEX IF NOT EXISTS cv_document_personas_persona_idx ON cv_document_personas(persona_id);
 
 -- cv_import_files (Import CV, step 2) tracks one uploaded CV awaiting
 -- AI analysis. token_hash is sha256(token) — the raw token is never
@@ -1070,6 +1086,15 @@ func migrateProfilePhotos(db *sql.DB) error {
 	_, err := db.Exec(`INSERT OR IGNORE INTO profile_photos (profile_id, media_file_id)
 		SELECT id, image_media_file_id FROM profiles
 		WHERE image_media_file_id IS NOT NULL AND image_media_file_id != ''`)
+	return err
+}
+
+// migrateCvDocumentPersonas links every CV to the persona it was built from (step 114), so no CV
+// disappears from its persona's list. Idempotent: it only adds what is missing, so it is safe on
+// every start. Runs right after the base schema, which creates the link table.
+func migrateCvDocumentPersonas(db *sql.DB) error {
+	_, err := db.Exec(`INSERT OR IGNORE INTO cv_document_personas (cv_document_id, persona_id)
+		SELECT id, persona_id FROM cv_documents`)
 	return err
 }
 

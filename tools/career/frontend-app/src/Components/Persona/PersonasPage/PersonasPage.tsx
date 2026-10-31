@@ -1,5 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
-import { fetchPersonas, fetchProfiles, updatePersona, deletePersona, deletePersonaAiRun, type Persona } from '../../../api'
+import {
+  fetchPersonas,
+  fetchProfiles,
+  fetchAllCvDocuments,
+  fetchCvTemplates,
+  updatePersona,
+  deletePersona,
+  deletePersonaAiRun,
+  type Persona,
+  type CvDocument,
+  type CvTemplate,
+} from '../../../api'
 import { LayersIcon, PlusIcon, SparkleIcon } from '../../../Shared/Icons/icons'
 import { inputClass } from '../../../Shared/inputClass'
 import { PageHeaderCard } from '../../../Shared/PageHeader/PageHeaderCard'
@@ -7,6 +18,7 @@ import { NEW_PERSONA_PATH } from '../../../paths'
 import { plural } from '../../CompaniesPage/companyStats'
 import { PAGE_ACCENT, accentFor, initialOf } from '../../JobsPage/jobsTheme'
 import { ProfileSwitcher } from '../../ProfileSwitcher/ProfileSwitcher'
+import { PersonaCvs } from './PersonaCvs'
 import { NeedsAttention } from './NeedsAttention'
 import { summarizePersonas, undescribedPersonas } from './personaStats'
 import { PageTips } from '../../../Shared/PageTips/PageTips'
@@ -113,6 +125,24 @@ export function PersonasPage() {
 
   useEffect(() => {
     if (profileId) load(profileId)
+  }, [profileId])
+
+  // The CVs of the personas (step 114). When they cannot be read (no access to CVs) the personas
+  // simply show no CV section.
+  const [cvDocs, setCvDocs] = useState<CvDocument[] | null>(null)
+  const [cvTemplates, setCvTemplates] = useState<CvTemplate[]>([])
+  useEffect(() => {
+    if (!profileId) return
+    fetchAllCvDocuments()
+      .then(setCvDocs)
+      .catch(() => {
+        setCvDocs(null)
+      })
+    fetchCvTemplates()
+      .then(setCvTemplates)
+      .catch(() => {
+        setCvTemplates([])
+      })
   }, [profileId])
 
   function startEdit(p: Persona) {
@@ -344,6 +374,7 @@ export function PersonasPage() {
                           </div>
                           {p.description && <div className="mt-0.5 text-xs text-gray-500">{p.description}</div>}
                           <div className="mt-1 text-xs text-gray-400">Created {formatDate(p.createdAt)}</div>
+                          {cvDocs !== null && <PersonaCvs personaId={p.id} docs={cvDocs} templates={cvTemplates} />}
                         </div>
                         <div className="flex shrink-0 gap-2">
                           <button

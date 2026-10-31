@@ -1,4 +1,5 @@
 import type { CvDocument, CvTemplate, Job } from '../../api'
+import { personaNames } from '../CvBuilder/cvPersonaRules'
 
 // Pure rules for the Jobs page's CV choices (step 98), kept apart from React so
 // they can be checked with a script: which labels the row's CV menu shows, when
@@ -83,21 +84,21 @@ export function selectableDocuments(documents: CvDocument[]): CvDocument[] {
   return documents.filter((d) => d.mediaFileId !== '')
 }
 
-// Case-insensitive match on the title or the persona's name; blank shows all.
+// Case-insensitive match on the title or any of the CV's persona names; blank shows all.
 export function filterDocuments(documents: CvDocument[], query: string): CvDocument[] {
   const q = query.trim().toLowerCase()
   if (q === '') return documents
-  return documents.filter((d) => d.title.toLowerCase().includes(q) || (d.personaName ?? '').toLowerCase().includes(q))
+  return documents.filter((d) => d.title.toLowerCase().includes(q) || personaNames(d).toLowerCase().includes(q))
 }
 
-// "Backend · Classic · 30 Oct 2026"
+// "Backend, Data Lead · Classic · 30 Oct 2026"
 export function documentSubtitle(doc: CvDocument, templates: Pick<CvTemplate, 'id' | 'name'>[]): string {
   const template = templates.find((t) => t.id === doc.templateId)?.name ?? doc.templateId
   const created = new Date(doc.createdAt.replace(' ', 'T') + (doc.createdAt.includes('T') ? '' : 'Z'))
   const date = Number.isNaN(created.getTime())
     ? doc.createdAt
     : created.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
-  return [doc.personaName, template, date].filter((part) => part).join(' · ')
+  return [personaNames(doc), template, date].filter((part) => part).join(' · ')
 }
 
 export function builderPathForJob(jobId: string): string {

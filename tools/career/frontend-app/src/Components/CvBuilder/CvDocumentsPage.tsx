@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react'
 import {
   fetchCvTemplates,
   fetchCvDocuments,
+  fetchPersonas,
+  attachCvToPersona,
+  detachCvFromPersona,
   updateCvDocumentTitle,
   deleteCvDocument,
   mediaDownloadUrl,
@@ -9,6 +12,7 @@ import {
   type CvDocumentJob,
   type CvTemplate,
   type CvDocument,
+  type Persona,
 } from '../../api'
 import { PersonaSwitcher } from '../Persona/PersonaSwitcher/PersonaSwitcher'
 import { ConfirmationModal } from '../../Shared/ConfirmationModal/ConfirmationModal'
@@ -46,6 +50,8 @@ export function CvDocumentsPage() {
   // True while a persona's documents are being read (the grid shows placeholder tiles).
   const [loading, setLoading] = useState(false)
   const [templates, setTemplates] = useState<CvTemplate[]>([])
+  // Every persona, to offer the ones a CV can be attached to (step 114).
+  const [allPersonas, setAllPersonas] = useState<Persona[]>([])
   const [error, setError] = useState('')
   const [pendingDelete, setPendingDelete] = useState<CvDocument | null>(null)
   // Set when the server says jobs use the CV being deleted (step 98): the second
@@ -59,6 +65,27 @@ export function CvDocumentsPage() {
         setError(err instanceof Error ? err.message : String(err))
       })
   }, [])
+
+  useEffect(() => {
+    fetchPersonas()
+      .then(setAllPersonas)
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+      })
+  }, [])
+
+  // Attaches or detaches, then reads the list again: detaching the persona being looked at takes
+  // the CV out of this list.
+  function changeLink(change: Promise<void>) {
+    setError('')
+    change
+      .then(() => {
+        if (personaId) loadDocuments(personaId)
+      })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+      })
+  }
 
   function loadDocuments(forPersonaId: string) {
     setError('')
@@ -218,6 +245,13 @@ export function CvDocumentsPage() {
                       }}
                       onDelete={() => {
                         handleDelete(doc)
+                      }}
+                      allPersonas={allPersonas}
+                      onAttach={(id) => {
+                        changeLink(attachCvToPersona(doc.id, id))
+                      }}
+                      onDetach={(id) => {
+                        changeLink(detachCvFromPersona(doc.id, id))
                       }}
                     />
                   ))}

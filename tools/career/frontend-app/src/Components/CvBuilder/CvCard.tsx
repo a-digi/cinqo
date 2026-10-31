@@ -3,7 +3,9 @@ import { EyeIcon, PencilIcon, TrashIcon } from '../../Shared/Icons/icons'
 import { PAGE_ACCENT } from '../JobsPage/jobsTheme'
 import { CvPreview } from './CvPreview'
 import { createdLabel } from './cvCardRules'
-import type { CvDocument } from '../../api'
+import type { CvDocument, Persona } from '../../api'
+import { XIcon } from '../../Shared/Icons/icons'
+import { attachablePersonas } from './cvPersonaRules'
 
 const floatingButton =
   'flex h-7 w-7 items-center justify-center rounded-lg bg-white text-gray-700 shadow transition-colors hover:bg-blue-50 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500'
@@ -19,6 +21,9 @@ export function CvCard({
   onEdit,
   onRename,
   onDelete,
+  allPersonas,
+  onAttach,
+  onDetach,
 }: {
   doc: CvDocument
   templateName: string
@@ -26,9 +31,14 @@ export function CvCard({
   onEdit: () => void
   onRename: () => void
   onDelete: () => void
+  // Every persona, to offer the ones the CV can still be attached to (step 114).
+  allPersonas: Persona[]
+  onAttach: (personaId: string) => void
+  onDetach: (personaId: string) => void
 }) {
   const controls = 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100'
   const created = createdLabel(doc.createdAt)
+  const attachable = attachablePersonas(doc, allPersonas)
   return (
     <div className="group min-w-0">
       <div className="relative aspect-[3/4] overflow-hidden rounded-xl bg-gray-100 shadow-sm transition duration-200 group-hover:-translate-y-0.5 group-hover:shadow-md">
@@ -76,6 +86,51 @@ export function CvCard({
         </span>
         {created && <span>{created}</span>}
       </div>
+      <ul className="mt-1.5 flex flex-wrap items-center gap-1.5" aria-label={`Personas of ${doc.title}`}>
+        {doc.personas.map((p) => (
+          <li
+            key={p.id}
+            title={p.builtFrom ? 'The persona this CV was built from' : 'Attached persona'}
+            className={`inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+              p.builtFrom ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-700'
+            }`}
+          >
+            <span className="truncate">{p.name}</span>
+            {!p.builtFrom && (
+              <button
+                type="button"
+                aria-label={`Detach ${doc.title} from ${p.name}`}
+                title="Detach from this persona (the CV stays)"
+                onClick={() => {
+                  onDetach(p.id)
+                }}
+                className="shrink-0 text-gray-400 hover:text-red-700"
+              >
+                <XIcon />
+              </button>
+            )}
+          </li>
+        ))}
+        {attachable.length > 0 && (
+          <li>
+            <select
+              aria-label={`Attach ${doc.title} to a persona`}
+              value=""
+              onChange={(e) => {
+                if (e.target.value !== '') onAttach(e.target.value)
+              }}
+              className="rounded-full border border-dashed border-gray-300 bg-white px-2 py-0.5 text-[11px] text-gray-600 hover:border-gray-400"
+            >
+              <option value="">+ Persona</option>
+              {attachable.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </li>
+        )}
+      </ul>
     </div>
   )
 }

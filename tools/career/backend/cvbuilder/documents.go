@@ -30,11 +30,66 @@ type CvDocument struct {
 	// PhotoMediaFileID is the photo the CV was made with (step 111); missing when none was
 	// chosen, which means the profile's default.
 	PhotoMediaFileID string `json:"photoMediaFileId,omitempty"`
+	// Personas are the personas the CV is attached to (step 114): the one it was built from first,
+	// then the others by name. Always a list, never null.
+	Personas []CvPersona `json:"personas"`
 	// PersonaName is filled only by ListAllCvDocuments (the "Select existing"
 	// modal's list), never by the other reads.
 	PersonaName string `json:"personaName,omitempty"`
 	CreatedAt   string `json:"createdAt"`
 	UpdatedAt   string `json:"updatedAt,omitempty"`
+}
+
+// CvPersona is one persona a CV is attached to; BuiltFrom marks the persona the CV's data came from.
+type CvPersona struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	BuiltFrom bool   `json:"builtFrom"`
+}
+
+// fillPersonas sets Personas on every document in one query. A document with no link row (none
+// should exist) gets an empty list.
+func fillPersonas(q interface {
+	Query(query string, args ...any) (*sql.Rows, error)
+}, docs []CvDocument) error {
+	for i := range docs {
+		docs[i].Personas = []CvPersona{}
+	}
+	if len(docs) == 0 {
+		return nil
+	}
+	at := make(map[string]int, len(docs))
+	args := make([]any, len(docs))
+	marks := make([]byte, 0, len(docs)*2)
+	for i, d := range docs {
+		at[d.ID] = i
+		args[i] = d.ID
+		if i > 0 {
+			marks = append(marks, ',')
+		}
+		marks = append(marks, '?')
+	}
+	rows, err := q.Query(
+		`SELECT l.cv_document_id, p.id, p.name, p.id = d.persona_id
+		 FROM cv_document_personas l
+		 JOIN personas p ON p.id = l.persona_id
+		 JOIN cv_documents d ON d.id = l.cv_document_id
+		 WHERE l.cv_document_id IN (`+string(marks)+`)
+		 ORDER BY (p.id = d.persona_id) DESC, p.name COLLATE NOCASE, p.id`, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var docID string
+		var cp CvPersona
+		if err := rows.Scan(&docID, &cp.ID, &cp.Name, &cp.BuiltFrom); err != nil {
+			return err
+		}
+		i := at[docID]
+		docs[i].Personas = append(docs[i].Personas, cp)
+	}
+	return rows.Err()
 }
 
 // ErrUnknownCvDocument mirrors persona.ErrUnknownPersona's own
@@ -59,11 +114,13 @@ func scanCvDocument(scan func(dest ...any) error) (CvDocument, error) {
 	return doc, nil
 }
 
-// ListCvDocuments returns personaID's own CV documents, newest first —
-// no pagination (step 3's own "a personal library isn't expected to
+// ListCvDocuments returns the CV documents linked to personaID (built from it or attached to it),
+// newest first — no pagination (step 3's own "a personal library isn't expected to
 // grow into the hundreds" reasoning).
 func ListCvDocuments(personaID string) ([]CvDocument, error) {
-	rows, err := db.CareerDB.Query(`SELECT `+cvDocumentColumns+` FROM cv_documents WHERE persona_id = ? ORDER BY created_at DESC`, personaID)
+	rows, err := db.CareerDB.Query(`SELECT `+cvDocumentColumns+` FROM cv_documents
+		 WHERE id IN (SELECT cv_document_id FROM cv_document_personas WHERE persona_id = ?)
+		 ORDER BY created_at DESC, id`, personaID)
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +134,11 @@ func ListCvDocuments(personaID string) ([]CvDocument, error) {
 		}
 		docs = append(docs, doc)
 	}
-	return docs, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+	return docs, fillPersonas(db.CareerDB, docs)
 }
 
 // MaxAllCvDocuments caps ListAllCvDocuments.
@@ -112,7 +173,11 @@ func ListAllCvDocuments() ([]CvDocument, error) {
 		}
 		docs = append(docs, doc)
 	}
-	return docs, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+	return docs, fillPersonas(db.CareerDB, docs)
 }
 
 // GetCvDocument reads one document by id — ErrUnknownCvDocument if it
@@ -123,7 +188,14 @@ func GetCvDocument(id string) (CvDocument, error) {
 	if errors.Is(err, sql.ErrNoRows) {
 		return doc, ErrUnknownCvDocument
 	}
-	return doc, err
+	if err != nil {
+		return doc, err
+	}
+	one := []CvDocument{doc}
+	if err := fillPersonas(db.CareerDB, one); err != nil {
+		return doc, err
+	}
+	return one[0], nil
 }
 
 // InsertCvDocument records a newly generated CV — called only after a
@@ -145,12 +217,25 @@ func InsertCvDocumentWithPhoto(personaID, templateID, title string, data templat
 		return CvDocument{}, err
 	}
 
+	// The CV and its link to the persona it was built from are one transaction: a CV never exists
+	// without that link (step 114).
+	tx, err := db.CareerDB.Begin()
+	if err != nil {
+		return CvDocument{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
 	id := uuid.NewString()
-	if _, err := db.CareerDB.Exec(
+	if _, err := tx.Exec(
 		`INSERT INTO cv_documents (id, persona_id, template_id, title, data_json, media_file_id, job_id, photo_media_file_id, created_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
 		id, personaID, templateID, title, string(dataJSON), mediaFileID, sqlNullIfEmpty(jobID), sqlNullIfEmpty(photoMediaFileID),
 	); err != nil {
+		return CvDocument{}, err
+	}
+	if _, err := tx.Exec(`INSERT INTO cv_document_personas (cv_document_id, persona_id) VALUES (?, ?)`, id, personaID); err != nil {
+		return CvDocument{}, err
+	}
+	if err := tx.Commit(); err != nil {
 		return CvDocument{}, err
 	}
 	return GetCvDocument(id)
