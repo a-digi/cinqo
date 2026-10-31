@@ -8,6 +8,7 @@ import { PAGE_ACCENT, accentFor } from '../JobsPage/jobsTheme'
 import { LetterIndex } from './LetterIndex'
 import { filterByLetter, letterIndex } from './skillRules'
 import { PersonaSwitcher } from '../Persona/PersonaSwitcher/PersonaSwitcher'
+import { PageTips } from '../../Shared/PageTips/PageTips'
 
 // Its own page as of step 7 (moved out of ProfilePage). "Edit" for a
 // skill is a rename, done as remove-old-then-add-new — a skill is a
@@ -110,6 +111,7 @@ export function SkillsPage() {
         description="The skills on this persona. The AI reads them when matching you against job postings."
         pill={personaId ? { text: plural(skills.length, 'skill', 'skills') } : undefined}
       />
+      <PageTips page="skills" />
 
       <PersonaSwitcher personaId={personaId} onChange={setPersonaId} />
 

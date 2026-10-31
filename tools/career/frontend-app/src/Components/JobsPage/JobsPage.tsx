@@ -61,6 +61,7 @@ import {
 import { canOpenOriginal, detailsState, isManualJob, platformLabel } from './manualJob'
 import { Typewriter } from '../../Shared/Typewriter/Typewriter'
 import { truncate } from '../../Shared/Text/transform'
+import { PageTips } from '../../Shared/PageTips/PageTips'
 
 const PAGE_SIZE = 50
 const SEARCH_DEBOUNCE_MS = 300
@@ -869,6 +870,7 @@ export function JobsPage() {
           description="Job postings the AI has crawled and saved on your behalf, and any you added yourself."
           pill={{ text: `${total} ${total === 1 ? 'job' : 'jobs'}` }}
         />
+        <PageTips page="jobs" />
 
         {/* Two columns: the jobs on the left (the point of the page), the statistics cards
             on the right. Below the large breakpoint the cards drop under the list. */}

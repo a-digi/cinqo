@@ -20,6 +20,7 @@ import { plural } from '../CompaniesPage/companyStats'
 import { PAGE_ACCENT } from '../JobsPage/jobsTheme'
 import { CvCard } from './CvCard'
 import { CARD_MIN_REM, templateLabel } from './cvCardRules'
+import { PageTips } from '../../Shared/PageTips/PageTips'
 
 const CV_BUILDER_PATH = '/tools/career/cv-builder'
 
@@ -147,6 +148,7 @@ export function CvDocumentsPage() {
         description="Generate a CV PDF from a persona's own data, using one of a few fixed designs."
         pill={personaId && !loading ? { text: plural(documents.length, 'CV', 'CVs') } : undefined}
       />
+      <PageTips page="cvs" />
 
       <PersonaSwitcher
         personaId={personaId}

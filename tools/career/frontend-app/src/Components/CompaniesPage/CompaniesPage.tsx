@@ -8,6 +8,7 @@ import { ACCENTS, PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsThem
 import { percentOrNull, plural, summarizeCompanies } from './companyStats'
 
 import { JOBS_PATH, NEW_COMPANY_PATH, RECRUITERS_PATH, VIEW_COMPANY_PATH } from '../../paths'
+import { PageTips } from '../../Shared/PageTips/PageTips'
 
 // Companies are tool-wide, not persona/profile-scoped — same reasoning
 // JobsPage itself already documents, since a company is about the job
@@ -94,6 +95,7 @@ export function CompaniesPage() {
         description="A directory of companies, separate from the free-text name on each crawled job. Deleting a company un-links its jobs; it never deletes them."
         pill={{ text: plural(summary.companies, 'company', 'companies') }}
       />
+      <PageTips page="companies" />
 
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
         <div className="order-1 min-w-0 flex-1 lg:order-2">

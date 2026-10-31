@@ -24,6 +24,7 @@ import { ImportRunDetail } from './ImportRunDetail'
 import { ImportPipeline } from './ImportPipeline'
 import { pipelineStages } from './pipelineRules'
 import { experienceLabel } from './experienceLabel'
+import { PageTips } from '../../Shared/PageTips/PageTips'
 
 // The 5 areas a CV import populates — Profile/Personas/Personal
 // Details/Skills/Experience, matching the real Career entities these
@@ -409,6 +410,7 @@ export function ImportCvPage() {
         description="Upload a CV and let the AI propose a profile, persona, summary, skills and experience from it. You review everything before it is saved."
         pill={headerPill}
       />
+      <PageTips page="importCv" />
 
       {!viewingRun && <ImportPipeline stages={stages} onStartOver={startOver} />}
 

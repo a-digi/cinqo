@@ -9,6 +9,7 @@ import { PAGE_ACCENT } from '../../JobsPage/jobsTheme'
 import { PersonaSwitcher } from '../PersonaSwitcher/PersonaSwitcher'
 import { FieldStepper } from './FieldStepper'
 import { detailsCompleteness, detailsSteps, type DetailsKey } from './detailsStats'
+import { PageTips } from '../../../Shared/PageTips/PageTips'
 
 const emptyForm = {
   headline: '',
@@ -115,6 +116,7 @@ export function PersonaDetailsPage() {
         description="This persona's positioning and what it is looking for. The AI reads it when matching jobs and writing CVs; nothing here is a secret."
         pill={{ text: `${completeness.percent}% complete` }}
       />
+      <PageTips page="summary" />
 
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
         <div className="order-1 min-w-0 flex-1 lg:order-2">

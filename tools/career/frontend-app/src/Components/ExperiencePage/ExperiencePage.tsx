@@ -8,6 +8,7 @@ import { PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
 import { PersonaSwitcher } from '../Persona/PersonaSwitcher/PersonaSwitcher'
 import { CareerTimeline } from './CareerTimeline'
 import { summarizeExperience } from './experienceStats'
+import { PageTips } from '../../Shared/PageTips/PageTips'
 
 // Its own page as of step 7 (moved out of ProfilePage). Step 9 added the persona
 // switcher — experience entries are per-persona as of step 8. Header card, a career
@@ -60,6 +61,7 @@ export function ExperiencePage() {
         description="The work history on this persona. The AI reads it when matching you against job postings."
         pill={personaId ? { text: plural(summary.entries, 'entry', 'entries') } : undefined}
       />
+      <PageTips page="experience" />
 
       <div>
         <div className="min-w-0">

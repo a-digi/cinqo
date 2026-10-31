@@ -9,6 +9,7 @@ import { PAGE_ACCENT, accentFor, initialOf } from '../../JobsPage/jobsTheme'
 import { ProfileSwitcher } from '../../ProfileSwitcher/ProfileSwitcher'
 import { NeedsAttention } from './NeedsAttention'
 import { summarizePersonas, undescribedPersonas } from './personaStats'
+import { PageTips } from '../../../Shared/PageTips/PageTips'
 
 // Full persona CRUD — since step 10, every persona belongs to a
 // profile (job seeker), so this page now scopes its own list and its
@@ -104,6 +105,7 @@ export function PersonasPage() {
         }
         pill={{ text: plural(summary.personas, 'persona', 'personas') }}
       />
+      <PageTips page="personas" />
 
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
         <div className="min-w-0 flex-1">

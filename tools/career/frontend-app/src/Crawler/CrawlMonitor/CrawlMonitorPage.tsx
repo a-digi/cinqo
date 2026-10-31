@@ -5,6 +5,7 @@ import { StopIcon, LogIcon, AlertIcon, PulseIcon } from '../../Shared/Icons/icon
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { SummaryRail } from '../../Shared/SummaryRail/SummaryRail'
 import { ACCENTS, accentFor, initialOf } from '../../Components/JobsPage/jobsTheme'
+import { PageTips } from '../../Shared/PageTips/PageTips'
 
 // CrawlMonitorPage is the centralized "which portal is being crawled
 // right now" view — one place to see every currently-running crawl
@@ -92,6 +93,7 @@ export function CrawlMonitorPage() {
         description="Every portal currently being crawled, across every link. Refreshes automatically."
         pill={{ text: runs.length === 0 ? 'Idle' : `${runs.length} running`, accent: runs.length === 0 ? ACCENTS[6] : ACCENTS[1] }}
       />
+      <PageTips page="crawlMonitor" />
 
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
         <div className="min-w-0 flex-1">

@@ -11,6 +11,7 @@ import { CompletenessMeter } from './CompletenessMeter'
 import { PlatformShelf } from './PlatformShelf'
 import { averageScore, firstWithoutLinks, platformCounts } from './profileRules'
 import { summarizeProfiles } from './profileStats'
+import { PageTips } from '../../Shared/PageTips/PageTips'
 
 // The job seeker layer, one level above Persona (step 10) — the
 // natural new entry point now that nothing else (Personas, and
@@ -138,6 +139,7 @@ export function ProfilesPage() {
         description="One profile per job seeker, with links to their platforms. Personas, skills and experience belong to a profile."
         pill={{ text: plural(summary.profiles, 'profile', 'profiles') }}
       />
+      <PageTips page="profiles" />
 
       <PlatformShelf
         platforms={platforms}

@@ -9,6 +9,7 @@ import { ACCENTS, PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsThem
 import { percentOrNull, plural } from '../CompaniesPage/companyStats'
 import { COMPANIES_PATH, NEW_RECRUITER_PATH } from '../../paths'
 import { recruiterName, summarizeRecruiters } from './recruiterStats'
+import { PageTips } from '../../Shared/PageTips/PageTips'
 
 // Recruiters are forced to be mapped to an existing Company, never
 // implicit — the same pattern step 8/10 already established for
@@ -106,6 +107,7 @@ export function RecruitersPage() {
         description="Recruiter contacts, each tied to an existing company. A recruiter's company cannot be changed after creation: delete and recreate instead."
         pill={{ text: plural(summary.recruiters, 'recruiter', 'recruiters') }}
       />
+      <PageTips page="recruiters" />
 
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
         <div className="order-1 min-w-0 flex-1 lg:order-2">

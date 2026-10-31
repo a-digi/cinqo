@@ -6,6 +6,7 @@ import { Dropdown } from '../Dropdown/Dropdown'
 import { InfoBox } from '../../Shared/InfoBox/InfoBox'
 import { RobotIcon } from '../../Shared/Icons/icons'
 import { ACCENTS } from '../JobsPage/jobsTheme'
+import { PageTips } from '../../Shared/PageTips/PageTips'
 
 const ACCENT = ACCENTS[4] // violet, like the AI cards on Home
 
@@ -66,6 +67,8 @@ export function SettingsPage() {
     <div className="career-v-spin career-a-sheen career-t-type max-w-3xl p-6 font-sans text-gray-900">
       <h1 className="text-xl font-semibold">Settings</h1>
       <p className="mt-1 mb-5 text-sm text-gray-500">How the Career tool uses AI.</p>
+
+      <PageTips page="settings" />
 
       <section
         className="career-enter career-delay-1 relative overflow-hidden rounded-3xl border p-6 shadow-sm"

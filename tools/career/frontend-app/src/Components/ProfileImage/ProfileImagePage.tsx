@@ -19,6 +19,7 @@ import { PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
 import { setPersonaIdInLocalStorage } from '../Persona/PersonaSwitcher/repositoryLocalStorage'
 import { CvReadiness } from './CvReadiness'
 import { readinessItems, type ReadinessItem } from './readinessRules'
+import { PageTips } from '../../Shared/PageTips/PageTips'
 
 // A profile's own photo — always tied to a profile (never uploaded
 // standalone), used from the CV Builder templates. Career's frontend is
@@ -167,6 +168,7 @@ export function ProfileImagePage() {
         description="A profile's own photo, used by the CV templates. Each profile has at most one; uploading a new one replaces it."
         pill={profileId && !loading ? { text: image ? 'Photo set' : 'No photo' } : undefined}
       />
+      <PageTips page="photo" />
 
       <ProfileSwitcher profileId={profileId} onChange={setProfileId} />
 

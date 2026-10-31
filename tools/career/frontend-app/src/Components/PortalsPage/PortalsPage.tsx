@@ -27,11 +27,10 @@ import { inheritErrorView, inheritView, type InheritView } from '../../Crawler/i
 import { PlusIcon } from '../../Shared/Icons/icons'
 import { Modal } from '../../Shared/Modal/Modal'
 import { AccordionItem } from '../../Shared/Accordion/AccordionItem'
-import { Carousel } from '../../Shared/Carousel/Carousel'
+import { PageTips } from '../../Shared/PageTips/PageTips'
 import { CrawlAiModal } from './CrawlAiModal'
 import { aiChip, describeChoice, linkChip, overrideOf } from './aiOverrideDisplay'
 import { PortalLinkHeader } from './PortalLinkHeader'
-import { PORTAL_TIPS } from './portalTips'
 import { VIEW_PORTAL_PATH } from '../../paths'
 
 // Portals are tool-wide, not persona/profile-scoped — same reasoning
@@ -337,10 +336,7 @@ export function PortalsPage() {
           auto-discovery switch and the numbers, in that order (under the list on a narrow window). */}
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
         <div className="order-1 min-w-0 flex-1 lg:order-2">
-          {/* Steps 105 and 106 — a few tips, one at a time, in a coloured banner above the portals. */}
-          <div className="career-enter career-delay-1 mb-4">
-            <Carousel orientation="horizontal" ariaLabel="Tips for crawling portals" slides={PORTAL_TIPS} />
-          </div>
+          <PageTips page="portals" />
           <p className="mb-3 text-xs text-gray-500">Deleting a portal permanently deletes every link it owns.</p>
 
           <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
