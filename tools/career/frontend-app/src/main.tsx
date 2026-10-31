@@ -52,6 +52,7 @@ import { NewRecruiterPage } from './Components/RecruitersPage/NewRecruiterPage'
 import { PortalsPage } from './Components/PortalsPage/PortalsPage'
 import { PortalViewPage } from './Components/PortalsPage/PortalViewPage'
 import { CrawlMonitorPage } from './Crawler/CrawlMonitor/CrawlMonitorPage'
+import { CleanupSettingsPage } from './Components/SettingsPage/CleanupSettingsPage'
 import { SettingsPage } from './Components/SettingsPage/SettingsPage'
 import { ImportCvPage } from './Components/ImportCv/ImportCvPage'
 import './index.css'
@@ -88,6 +89,7 @@ import {
   VIEW_PERSONA_ID_PATH,
   viewPersonaPathFor,
   NEW_RECRUITER_PATH,
+  CLEANUP_SETTINGS_PATH,
   SETTINGS_PATH,
   PORTALS_PATH,
   VIEW_PORTAL_PATH,
@@ -388,6 +390,14 @@ window.__cinqoToolBridge.registerRoute({
   path: SETTINGS_PATH,
   mount: (container) => {
     mountReact(container, <SettingsPage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: CLEANUP_SETTINGS_PATH,
+  mount: (container) => {
+    mountReact(container, <CleanupSettingsPage />)
   },
   unmount: unmountReact,
 })

@@ -10,6 +10,7 @@ import {
   PORTALS_PATH,
   PROFILES_PATH,
   RECRUITERS_PATH,
+  CLEANUP_SETTINGS_PATH,
   SETTINGS_PATH,
   SKILLS_PATH,
 } from './paths'
@@ -63,6 +64,8 @@ export const careerMenuEntry: MenuEntry = {
       children: [
         // The AI platform and model every Career feature uses (crawling, Job Match, CVs).
         { label: 'AI', path: SETTINGS_PATH, scopes: ['tool:career:jobs'] },
+        // Delete old jobs and jobs that match no profile, by hand or on a schedule.
+        { label: 'Job cleanup', path: CLEANUP_SETTINGS_PATH, scopes: ['tool:career:jobs'] },
       ],
     },
   ],

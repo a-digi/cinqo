@@ -753,6 +753,89 @@ export async function saveAiSettings(settings: AiSettings): Promise<AiSettings> 
   return jsonOrThrow<AiSettings>(res, 'save the AI settings')
 }
 
+// Job cleanup (Settings → Job cleanup, step 131): the two rules, the automatic run, a preview and a real run.
+export interface CleanupSettings {
+  enabled: boolean
+  olderEnabled: boolean
+  olderThanDays: number
+  lowMatchEnabled: boolean
+  minMatchPercent: number
+  includeManual: boolean
+  intervalHours: number
+  lastRunAt: string
+  lastRunDeleted: number
+  lastRunSummary: string
+}
+
+export type CleanupRule = 'older' | 'low_match' | 'both'
+
+// What the page sends for a preview or a run. The numbers are the ones typed in the form (saved or not), so a
+// preview shows what that form would do; confirm is only for a run.
+export interface CleanupRequest {
+  rule: CleanupRule
+  olderThanDays: number
+  minMatchPercent: number
+  includeManual: boolean
+  confirm?: boolean
+}
+
+export interface CleanupSample {
+  id: string
+  title: string
+  company: string
+  crawledAt: string
+  bestPercent?: number
+}
+
+export interface CleanupPreview {
+  totalJobs: number
+  wouldDelete: number
+  byRule: { older: number; lowMatch: number }
+  kept: { onBoard: number; hasCv: number; inProgress: number; manual: number; unjudged: number }
+  sample: CleanupSample[]
+}
+
+export interface CleanupRunResult {
+  deleted: number
+  byRule: { older: number; lowMatch: number }
+  durationMs: number
+}
+
+export async function fetchCleanupSettings(): Promise<CleanupSettings> {
+  const res = await fetch(`${PROXY_BASE}/settings/cleanup`, { credentials: 'include' })
+  return jsonOrThrow<CleanupSettings>(res, 'load the cleanup settings')
+}
+
+export async function saveCleanupSettings(settings: Omit<CleanupSettings, 'lastRunAt' | 'lastRunDeleted' | 'lastRunSummary'>): Promise<CleanupSettings> {
+  const res = await fetch(`${PROXY_BASE}/settings/cleanup`, {
+    method: 'PUT',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(settings),
+  })
+  return jsonOrThrow<CleanupSettings>(res, 'save the cleanup settings')
+}
+
+export async function previewCleanup(request: CleanupRequest): Promise<CleanupPreview> {
+  const res = await fetch(`${PROXY_BASE}/jobs/cleanup/preview`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  })
+  return jsonOrThrow<CleanupPreview>(res, 'preview the cleanup')
+}
+
+export async function runCleanup(request: CleanupRequest): Promise<CleanupRunResult> {
+  const res = await fetch(`${PROXY_BASE}/jobs/cleanup/run`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...request, confirm: true }),
+  })
+  return jsonOrThrow<CleanupRunResult>(res, 'delete the jobs')
+}
+
 export async function fetchJobLocations(): Promise<string[]> {
   const res = await fetch(`${PROXY_BASE}/job-locations`, { credentials: 'include' })
   const data = await jsonOrThrow<{ locations: string[] }>(res, 'load job locations')

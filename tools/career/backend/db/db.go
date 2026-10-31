@@ -844,6 +844,29 @@ CREATE TABLE IF NOT EXISTS ai_settings (
 );
 
 INSERT OR IGNORE INTO ai_settings (id) VALUES (1);
+
+-- job_cleanup_settings (step 131) is a singleton like ai_settings: the thresholds of the two cleanup rules
+-- (jobs older than N days since crawled_at; jobs under X percent for every profile), whether manual jobs are
+-- included, and whether the background run is on. Everything defaults to off, so an install changes nothing.
+-- The CHECKs repeat the validation of the jobcleanup package so a bad value cannot be stored by any path.
+-- last_run_* are written by the cleanup itself (UTC text), never by the settings endpoint. See
+-- plan/ai/tools/career/step-131-job-cleanup.md.
+CREATE TABLE IF NOT EXISTS job_cleanup_settings (
+    id                INTEGER PRIMARY KEY CHECK (id = 1),
+    enabled           INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
+    older_enabled     INTEGER NOT NULL DEFAULT 0 CHECK (older_enabled IN (0, 1)),
+    older_than_days   INTEGER NOT NULL DEFAULT 90 CHECK (older_than_days BETWEEN 1 AND 3650),
+    low_match_enabled INTEGER NOT NULL DEFAULT 0 CHECK (low_match_enabled IN (0, 1)),
+    min_match_percent INTEGER NOT NULL DEFAULT 60 CHECK (min_match_percent BETWEEN 1 AND 100),
+    include_manual    INTEGER NOT NULL DEFAULT 0 CHECK (include_manual IN (0, 1)),
+    interval_hours    INTEGER NOT NULL DEFAULT 24 CHECK (interval_hours BETWEEN 1 AND 168),
+    last_run_at       TEXT,
+    last_run_deleted  INTEGER,
+    last_run_summary  TEXT,
+    updated_at        TEXT
+);
+
+INSERT OR IGNORE INTO job_cleanup_settings (id) VALUES (1);
 `
 
 // migrateCareerDB runs, in order, every past schema migration this
