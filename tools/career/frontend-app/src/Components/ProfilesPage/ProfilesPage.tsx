@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { fetchProfiles, updateProfile, deleteProfile, addProfileExternalLink, removeProfileExternalLink, type Profile } from '../../api'
-import { PlusIcon, UserIcon, XIcon } from '../../Shared/Icons/icons'
+import { CameraIcon, PlusIcon, UserIcon, XIcon } from '../../Shared/Icons/icons'
 import { inputClass } from '../../Shared/inputClass'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
-import { NEW_PROFILE_PATH } from '../../paths'
+import { NEW_PROFILE_PATH, PROFILE_IMAGE_PATH } from '../../paths'
 import { plural } from '../CompaniesPage/companyStats'
 import { PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
 import { profileLabel } from '../ProfileSwitcher/profileLabel'
+import { setProfileIdInLocalStorage } from '../ProfileSwitcher/repositoryLocalStorage'
 import { CompletenessMeter } from './CompletenessMeter'
 import { PlatformShelf } from './PlatformShelf'
 import { averageScore, firstWithoutLinks, platformCounts } from './profileRules'
@@ -249,6 +250,18 @@ export function ProfilesPage() {
                             <div className="text-xs text-gray-400">Created {formatDate(p.createdAt)}</div>
                           </div>
                           <div className="flex shrink-0 gap-2">
+                            {/* The photo belongs to the profile: open it with this profile already chosen. */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setProfileIdInLocalStorage(p.id)
+                                window.__cinqoToolBridge.navigate(PROFILE_IMAGE_PATH)
+                              }}
+                              className="flex items-center gap-1 rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                            >
+                              <CameraIcon className="h-3 w-3" />
+                              Photo
+                            </button>
                             <button
                               type="button"
                               onClick={() => {

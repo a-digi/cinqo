@@ -9,7 +9,6 @@ import {
   PERSONA_DETAILS_PATH,
   PORTALS_PATH,
   PROFILES_PATH,
-  PROFILE_IMAGE_PATH,
   RECRUITERS_PATH,
   SETTINGS_PATH,
   SKILLS_PATH,
@@ -55,7 +54,6 @@ export const careerMenuEntry: MenuEntry = {
         { label: 'Summary & Goals', path: PERSONA_DETAILS_PATH, scopes: ['tool:career:profile'] },
         { label: 'Skills', path: SKILLS_PATH, scopes: ['tool:career:profile'] },
         { label: 'Experience', path: EXPERIENCE_PATH, scopes: ['tool:career:profile'] },
-        { label: 'Photo', path: PROFILE_IMAGE_PATH, scopes: ['tool:career:profile'] },
         // Moved here from CV: it fills the profile, persona, skills and experience.
         { label: 'Import from CV', path: IMPORT_CV_PATH, scopes: ['tool:career:cv_import'] },
       ],
