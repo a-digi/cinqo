@@ -1,0 +1,29 @@
+// Pure rules for the "create a CV with AI" runs (step 115), kept apart from React so they can be
+// script-checked.
+import type { CvAiRun } from '../api'
+
+// An AI run is already working on the persona (the server refuses a second one; the button waits).
+export function hasRunningCvRun(runs: CvAiRun[]): boolean {
+  return runs.some((r) => r.status === 'generating')
+}
+
+// What the server says when the AI finished without saving a CV, shown to the user.
+export const NO_CV_SAVED_MESSAGE = 'The AI did not create a CV. Open the chat to see what happened, or try again.'
+
+// The run to tell the user about when it failed: only the newest run counts (the list is newest
+// first), so an old failure does not nag once a later run worked or is working.
+export function failedRunToShow(runs: CvAiRun[]): CvAiRun | null {
+  return runs.length > 0 && runs[0].status === 'failed' ? runs[0] : null
+}
+
+// The run that created a CV, or null for a CV the user made by hand (or whose run was removed).
+export function runOfDocument(runs: CvAiRun[], cvDocumentId: string): CvAiRun | null {
+  return runs.find((r) => r.cvDocumentId === cvDocumentId) ?? null
+}
+
+// The CV a finished run created that this page watched work: the run ids seen generating are given.
+// Null while nothing new has finished.
+export function newlyCreatedCv(runs: CvAiRun[], watched: ReadonlySet<string>): string | null {
+  const done = runs.find((r) => r.status === 'ready' && r.cvDocumentId !== undefined && watched.has(r.id))
+  return done?.cvDocumentId ?? null
+}

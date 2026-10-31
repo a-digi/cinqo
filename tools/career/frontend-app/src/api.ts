@@ -1556,3 +1556,58 @@ export async function fetchAllCvDocuments(): Promise<CvDocument[]> {
   const body = await jsonOrThrow<{ cvDocuments: CvDocument[] }>(res, 'load cv documents')
   return body.cvDocuments
 }
+
+// --- create a CV with AI (step 115) ---
+// A run is one AI attempt to create a CV for a persona: the hidden conversation, the optional note
+// on what the CV is for, how it went, and the CV the AI saved.
+
+export type CvAiRunStatus = 'generating' | 'ready' | 'failed'
+
+export interface CvAiRun {
+  id: string
+  personaId: string
+  conversationId: string
+  focus: string
+  status: CvAiRunStatus
+  // The CV the AI saved; missing until it did (and after that CV was deleted).
+  cvDocumentId?: string
+  error?: string
+  createdAt: string
+  finishedAt?: string
+}
+
+export async function fetchCvAiRuns(personaId: string): Promise<CvAiRun[]> {
+  const res = await fetch(`${PROXY_BASE}/cv-ai-runs?personaId=${encodeURIComponent(personaId)}`, { credentials: 'include' })
+  const data = await jsonOrThrow<{ runs: CvAiRun[] }>(res, 'load CV AI runs')
+  return data.runs
+}
+
+// Records the start of a run, before the first message is sent, so a reload can resume it. A 409
+// says another run is already working on the persona.
+export async function createCvAiRun(personaId: string, conversationId: string, focus: string): Promise<string> {
+  const res = await fetch(`${PROXY_BASE}/cv-ai-runs`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ personaId, conversationId, focus }),
+  })
+  if (!res.ok) throw new Error((await res.text()).trim() || `failed to record the CV AI run (${res.status})`)
+  return ((await res.json()) as { id: string }).id
+}
+
+// Ends a generating run: ready (the server refuses it, 400, when the AI saved no CV), or failed
+// with a reason.
+export async function finishCvAiRun(id: string, outcome: { status: 'ready' } | { status: 'failed'; error: string }): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/cv-ai-runs`, {
+    method: 'PUT',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, ...outcome }),
+  })
+  if (!res.ok) throw new Error((await res.text()).trim() || `failed to finish the CV AI run (${res.status})`)
+}
+
+export async function deleteCvAiRun(id: string): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/cv-ai-runs?id=${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'include' })
+  if (!res.ok) throw new Error(`failed to remove the run (${res.status})`)
+}

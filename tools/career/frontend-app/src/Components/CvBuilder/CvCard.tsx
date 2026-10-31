@@ -1,5 +1,5 @@
 import { ActionMenu } from '../../Shared/ActionMenu/ActionMenu'
-import { EyeIcon, PencilIcon, TrashIcon } from '../../Shared/Icons/icons'
+import { EyeIcon, PencilIcon, SparkleIcon, TrashIcon } from '../../Shared/Icons/icons'
 import { PAGE_ACCENT } from '../JobsPage/jobsTheme'
 import { CvPreview } from './CvPreview'
 import { createdLabel } from './cvCardRules'
@@ -24,6 +24,8 @@ export function CvCard({
   allPersonas,
   onAttach,
   onDetach,
+  aiChatId,
+  highlighted,
 }: {
   doc: CvDocument
   templateName: string
@@ -35,12 +37,21 @@ export function CvCard({
   allPersonas: Persona[]
   onAttach: (personaId: string) => void
   onDetach: (personaId: string) => void
+  // The chat of the AI run that created this CV (step 115); undefined for a CV made by hand.
+  aiChatId?: string
+  // The CV the AI just created: ringed, with no entrance animation.
+  highlighted?: boolean
 }) {
   const controls = 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100'
   const created = createdLabel(doc.createdAt)
   const attachable = attachablePersonas(doc, allPersonas)
   return (
-    <div className="group min-w-0">
+    <div
+      id={`cv-${doc.id}`}
+      data-new={highlighted ? 'true' : undefined}
+      className={`group min-w-0 ${highlighted ? 'rounded-2xl bg-purple-50 p-2 ring-2 ring-purple-300' : ''}`}
+      style={highlighted ? { animation: 'none' } : undefined}
+    >
       <div className="relative aspect-[3/4] overflow-hidden rounded-xl bg-gray-100 shadow-sm transition duration-200 group-hover:-translate-y-0.5 group-hover:shadow-md">
         <button type="button" onClick={onEdit} aria-label={`Edit ${doc.title}`} className="block h-full w-full cursor-pointer">
           <CvPreview mediaFileId={doc.mediaFileId} templateId={doc.templateId} version={doc.updatedAt ?? doc.createdAt} title={doc.title} />
@@ -85,6 +96,19 @@ export function CvCard({
           {templateName}
         </span>
         {created && <span>{created}</span>}
+        {aiChatId !== undefined && (
+          <button
+            type="button"
+            title="Open the chat that created this CV"
+            onClick={() => {
+              window.__cinqoToolBridge.openConversation(aiChatId)
+            }}
+            className="inline-flex items-center gap-1 rounded-full bg-purple-50 px-2 py-0.5 text-[11px] font-medium text-purple-700 hover:bg-purple-100"
+          >
+            <SparkleIcon />
+            Created with AI
+          </button>
+        )}
       </div>
       <ul className="mt-1.5 flex flex-wrap items-center gap-1.5" aria-label={`Personas of ${doc.title}`}>
         {doc.personas.map((p) => (

@@ -314,6 +314,26 @@ CREATE TABLE IF NOT EXISTS cv_document_personas (
 
 CREATE INDEX IF NOT EXISTS cv_document_personas_persona_idx ON cv_document_personas(persona_id);
 
+-- One "create a CV with AI" attempt for a persona (step 115): the hidden conversation that did it
+-- (a plain reference into the core conversations, no FK), the optional note on what the CV is for,
+-- how it ended, and the CV the AI saved through its save_persona_cv tool. Deleting the CV keeps the
+-- run; deleting the persona deletes its runs. At most one run per persona works at a time.
+CREATE TABLE IF NOT EXISTS cv_ai_runs (
+    id              TEXT PRIMARY KEY,
+    persona_id      TEXT NOT NULL REFERENCES personas(id) ON DELETE CASCADE,
+    conversation_id TEXT NOT NULL,
+    focus           TEXT NOT NULL DEFAULT '',
+    status          TEXT NOT NULL DEFAULT 'generating' CHECK (status IN ('generating','ready','failed')),
+    cv_document_id  TEXT REFERENCES cv_documents(id) ON DELETE SET NULL,
+    error           TEXT,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    finished_at     TEXT
+);
+
+CREATE INDEX IF NOT EXISTS cv_ai_runs_persona_idx ON cv_ai_runs(persona_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS cv_ai_runs_one_running ON cv_ai_runs(persona_id) WHERE status = 'generating';
+
 -- cv_import_files (Import CV, step 2) tracks one uploaded CV awaiting
 -- AI analysis. token_hash is sha256(token) — the raw token is never
 -- stored, only ever returned once, at upload time, to the caller who

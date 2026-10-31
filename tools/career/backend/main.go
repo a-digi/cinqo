@@ -89,6 +89,12 @@ func runHTTPServer() {
 	} else if n > 0 {
 		log.Printf("ended %d stale persona AI run(s)", n)
 	}
+	// step 115 — same for a CV AI run.
+	if n, err := cvbuilder.ReconcileStaleCvAiRuns(); err != nil {
+		log.Printf("failed to reconcile stale CV AI runs: %v", err)
+	} else if n > 0 {
+		log.Printf("ended %d stale CV AI run(s)", n)
+	}
 	// step 86 — an instruction attempt's own run lives in the core app,
 	// so a restart here does not orphan it; only ones stuck 'running'
 	// past the stale threshold (tab closed, app crashed) are ended.
@@ -158,6 +164,7 @@ func runHTTPServer() {
 	http.HandleFunc("/cv-documents/photo-status", cvbuilder.PhotoStatusHandler)
 	http.HandleFunc("/cv-documents/preview", cvbuilder.PreviewHandler)
 	http.HandleFunc("/cv-documents/personas", cvbuilder.PersonaLinksHandler)
+	http.HandleFunc("/cv-ai-runs", cvbuilder.CvAiRunsHandler)
 	http.HandleFunc("/cv-documents", cvbuilder.DocumentsHandler)
 
 	// autodiscovery.CaptureTokenMiddleware wraps the entire mux here,
@@ -215,6 +222,7 @@ func runMCPServer() {
 	cvbuilder.RegisterListCvTemplates(server)
 	cvbuilder.RegisterGetPersonaCvDefaults(server)
 	cvbuilder.RegisterRenderCvDocument(server)
+	cvbuilder.RegisterSavePersonaCv(server)
 	jobs.RegisterSavePortalJob(server)
 	jobs.RegisterSavePortalJobs(server)
 	companies.RegisterCreateCompany(server)

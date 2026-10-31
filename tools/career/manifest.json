@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.0.432",
+  "version": "0.0.433",
   "authors": [
     { "name": "Anes Detit", "email": "tafa.andet@googlemail.com" }
   ],
@@ -464,6 +464,26 @@
       "required_scope": "tool:career:cv_documents"
     },
     {
+      "method": "GET",
+      "path_suffix": "cv-ai-runs",
+      "required_scope": "tool:career:cv_documents"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "cv-ai-runs",
+      "required_scope": "tool:career:cv_documents"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "cv-ai-runs",
+      "required_scope": "tool:career:cv_documents"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "cv-ai-runs",
+      "required_scope": "tool:career:cv_documents"
+    },
+    {
       "method": "PUT",
       "path_suffix": "cv-documents/personas",
       "required_scope": "tool:career:cv_documents"
@@ -604,6 +624,11 @@
     {
       "name": "save_job_match",
       "required_scope": "tool:career:jobs"
+    },
+    {
+      "name": "save_persona_cv",
+      "required_scope": "tool:career:cv_documents",
+      "promote_media_param": "pdfResource"
     },
     {
       "name": "save_cv_document",

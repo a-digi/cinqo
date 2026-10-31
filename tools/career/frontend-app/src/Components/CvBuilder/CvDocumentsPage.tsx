@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   fetchCvTemplates,
   fetchCvDocuments,
@@ -25,6 +25,11 @@ import { PAGE_ACCENT } from '../JobsPage/jobsTheme'
 import { CvCard } from './CvCard'
 import { CARD_MIN_REM, templateLabel } from './cvCardRules'
 import { PageTips } from '../../Shared/PageTips/PageTips'
+import { useAiChoice } from '../../Cinqo/Platform/useAiChoice'
+import { CreateCvWithAi } from '../../CvAi/CreateCvWithAi'
+import { failedRunToShow, hasRunningCvRun, newlyCreatedCv, runOfDocument } from '../../CvAi/cvAiRules'
+import { useCvAiRuns } from '../../CvAi/useCvAiRuns'
+import { deleteCvAiRun } from '../../api'
 
 const CV_BUILDER_PATH = '/tools/career/cv-builder'
 
@@ -50,6 +55,14 @@ export function CvDocumentsPage() {
   // True while a persona's documents are being read (the grid shows placeholder tiles).
   const [loading, setLoading] = useState(false)
   const [templates, setTemplates] = useState<CvTemplate[]>([])
+  // Create a CV with AI (step 115): the AI in use, the persona's runs, the CV just created.
+  const ai = useAiChoice()
+  const [personaName, setPersonaName] = useState('')
+  const [newCvId, setNewCvId] = useState<string | null>(null)
+  const watchedRuns = useRef(new Set<string>())
+  const handledRuns = useRef(new Set<string>())
+  const [scrollToNew, setScrollToNew] = useState(false)
+  const aiRuns = useCvAiRuns(personaId)
   // Every persona, to offer the ones a CV can be attached to (step 114).
   const [allPersonas, setAllPersonas] = useState<Persona[]>([])
   const [error, setError] = useState('')
@@ -103,6 +116,39 @@ export function CvDocumentsPage() {
   useEffect(() => {
     if (personaId) loadDocuments(personaId)
   }, [personaId])
+
+  // The persona's name, for the AI dialog.
+  useEffect(() => {
+    setPersonaName(allPersonas.find((p) => p.id === personaId)?.name ?? '')
+  }, [allPersonas, personaId])
+
+  useEffect(() => {
+    setNewCvId(null)
+    setScrollToNew(false)
+  }, [personaId])
+
+  // A run this page saw working that has ended: read the CVs again, and show the new one.
+  useEffect(() => {
+    for (const r of aiRuns.runs) if (r.status === 'generating') watchedRuns.current.add(r.id)
+    const ended = aiRuns.runs.filter((r) => r.status !== 'generating' && watchedRuns.current.has(r.id) && !handledRuns.current.has(r.id))
+    if (ended.length === 0 || !personaId) return
+    for (const r of ended) handledRuns.current.add(r.id)
+    loadDocuments(personaId)
+    const created = newlyCreatedCv(aiRuns.runs, watchedRuns.current)
+    if (created !== null) {
+      setNewCvId(created)
+      setScrollToNew(true)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aiRuns.runs])
+
+  useEffect(() => {
+    if (!scrollToNew || newCvId === null) return
+    const el = document.getElementById(`cv-${newCvId}`)
+    if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    setScrollToNew(false)
+  }, [scrollToNew, newCvId, documents])
 
   function startNewCv() {
     if (!personaId) return
@@ -183,18 +229,78 @@ export function CvDocumentsPage() {
             onChange={setPersonaId}
             actions={
               personaId ? (
-                <button
-                  type="button"
-                  onClick={startNewCv}
-                  className="flex shrink-0 items-center gap-1.5 rounded-md bg-gray-800 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-900"
-                >
-                  <PlusIcon /> New CV
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={startNewCv}
+                    className="flex shrink-0 items-center gap-1.5 rounded-md bg-gray-800 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-900"
+                  >
+                    <PlusIcon /> New CV
+                  </button>
+                  <CreateCvWithAi
+                    ai={ai}
+                    personaName={personaName}
+                    disabledReason={
+                      !ai.platform
+                        ? 'No AI platform is available. Choose one in Settings.'
+                        : hasRunningCvRun(aiRuns.runs)
+                          ? 'The AI is already creating a CV for this persona.'
+                          : ''
+                    }
+                    onStart={(focus) => aiRuns.start({ id: personaId, name: personaName }, focus, ai)}
+                  />
+                </>
               ) : undefined
             }
           />
 
           {error && <p className="mb-4 text-sm text-red-700">{error}</p>}
+
+          {personaId && hasRunningCvRun(aiRuns.runs) && (
+            <p
+              role="status"
+              className="mb-4 flex items-center gap-2 rounded-2xl border-2 px-4 py-3 text-sm text-purple-900"
+              style={{ borderColor: '#c4b5fd', background: 'linear-gradient(160deg, #ede9fe 0%, #f5f3ff 100%)' }}
+            >
+              <span className="h-2 w-2 animate-pulse rounded-full bg-purple-600" aria-hidden="true" />
+              The AI is creating a CV. It appears below as soon as it is done; you can stay on this page.
+            </p>
+          )}
+          {personaId &&
+            (() => {
+              const failed = failedRunToShow(aiRuns.runs)
+              return failed ? (
+                <div role="alert" className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+                  <p className="font-medium">The AI could not create a CV.</p>
+                  <p className="mt-0.5 break-words">{failed.error ?? 'No reason was recorded.'}</p>
+                  <div className="mt-2 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        window.__cinqoToolBridge.openConversation(failed.conversationId)
+                      }}
+                      className="rounded-full border border-red-200 bg-white px-3 py-1 text-xs font-medium text-red-800 hover:bg-red-100"
+                    >
+                      Open chat
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        deleteCvAiRun(failed.id)
+                          .then(() => aiRuns.reload())
+                          .catch((err: unknown) => {
+                            setError(err instanceof Error ? err.message : String(err))
+                          })
+                      }}
+                      className="rounded-full border border-red-200 bg-white px-3 py-1 text-xs font-medium text-red-800 hover:bg-red-100"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              ) : null
+            })()}
+          {personaId && aiRuns.error !== '' && <p className="mb-4 text-sm text-red-700">{aiRuns.error}</p>}
 
           {personaId && (
             <>
@@ -247,6 +353,8 @@ export function CvDocumentsPage() {
                         handleDelete(doc)
                       }}
                       allPersonas={allPersonas}
+                      aiChatId={runOfDocument(aiRuns.runs, doc.id)?.conversationId}
+                      highlighted={doc.id === newCvId}
                       onAttach={(id) => {
                         changeLink(attachCvToPersona(doc.id, id))
                       }}
