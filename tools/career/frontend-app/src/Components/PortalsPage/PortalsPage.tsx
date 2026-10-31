@@ -15,10 +15,8 @@ import {
 } from '../../api'
 import { resolveCrawlAi } from '../../Cinqo/Platform/crawlAiChoice'
 import { useAiChoice } from '../../Cinqo/Platform/useAiChoice'
-import { StatCard } from '../../Shared/StatCard/StatCard'
-import { CheckCircleIcon, ClockIcon, GlobeIcon, LinkGlyphIcon } from '../../Shared/Icons/icons'
+import { SummaryRail } from '../../Shared/SummaryRail/SummaryRail'
 import { ACCENTS, PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
-import { percentOrNull } from '../CompaniesPage/companyStats'
 import { plural, summarizePortals } from './portalStats'
 import { AutoDiscoveryPanel } from '../../Crawler/AutoDiscoveryPanel/AutoDiscoveryPanel'
 import { anyLinkAutoDiscoverable } from '../../Crawler/autoDiscoveryVisibility'
@@ -329,49 +327,8 @@ export function PortalsPage() {
       <h1 className="sr-only">Portals</h1>
       <PageTips page="portals" />
 
-      {/* The overview as four cards right under the header (they were a ring and a list in the left column).
-          A uniquely-named grid class, as the CV Documents page does: an installed tool's globally-injected
-          Tailwind stylesheet can redeclare a bare `.grid-cols-*` and collapse a plain Tailwind grid. */}
-      <style>{`
-        .portal-stat-grid { display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fit, minmax(12.5rem, 1fr)); }
-      `}</style>
-      <div className="career-stagger portal-stat-grid mb-5">
-        <StatCard
-          accent={ACCENTS[0]}
-          icon={<GlobeIcon className="h-5 w-5" />}
-          label="Portals"
-          value={String(summary.portals)}
-          caption="job sources to crawl"
-        />
-        <StatCard
-          accent={ACCENTS[6]}
-          icon={<LinkGlyphIcon className="h-5 w-5" />}
-          label="Links"
-          value={String(summary.links)}
-          caption={summary.links === 1 ? 'page to crawl' : 'pages to crawl'}
-        />
-        <StatCard
-          accent={ACCENTS[1]}
-          icon={<CheckCircleIcon className="h-5 w-5" />}
-          label="With instructions"
-          value={String(summary.withInstructions)}
-          caption={
-            percentOrNull(summary.withInstructions, summary.links) === null
-              ? 'no links yet'
-              : `${percentOrNull(summary.withInstructions, summary.links)}% ready to crawl`
-          }
-        />
-        <StatCard
-          accent={summary.neverCrawled > 0 ? ACCENTS[2] : ACCENTS[1]}
-          icon={<ClockIcon className="h-5 w-5" />}
-          label="Never crawled"
-          value={String(summary.neverCrawled)}
-          caption={summary.neverCrawled > 0 ? 'waiting for a first crawl' : summary.links > 0 ? 'every link was crawled' : ''}
-        />
-      </div>
-
-      {/* Two columns: the portals on the right; on the left the "New portal" button and the
-          auto-discovery switch, then the tips (under the list on a narrow window). */}
+      {/* Two columns: the portals on the right; on the left the "New portal" button, the auto-discovery switch
+          and the overview (under the list on a narrow window). */}
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
         <div className="order-1 min-w-0 flex-1 lg:order-2">
           <div className="mb-3 flex items-center justify-between gap-3">
@@ -675,6 +632,21 @@ export function PortalsPage() {
           {/* Step 88 — only while some link has crawl instructions: with none, there is nothing
               the global auto-discovery could crawl. */}
           {anyLinkAutoDiscoverable(portals) && <AutoDiscoveryPanel />}
+          <SummaryRail
+            title="Overview"
+            segments={[
+              { value: summary.withInstructions, color: '#16a34a' },
+              { value: summary.links - summary.withInstructions, color: '#cbd5e1' },
+            ]}
+            centerValue={summary.links === 0 ? '–' : `${Math.round((summary.withInstructions / summary.links) * 100)}%`}
+            centerLabel="ready to crawl"
+            rows={[
+              { label: 'Portals', value: String(summary.portals), color: ACCENTS[0].to },
+              { label: 'Links', value: String(summary.links), color: ACCENTS[6].to },
+              { label: 'With instructions', value: String(summary.withInstructions), color: '#16a34a' },
+              { label: 'Never crawled', value: String(summary.neverCrawled), color: ACCENTS[2].to, emphasis: summary.neverCrawled > 0 },
+            ]}
+          />
         </aside>
       </div>
 
