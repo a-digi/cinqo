@@ -148,10 +148,9 @@ export function CvDocumentsPage() {
         description="Generate a CV PDF from a persona's own data, using one of a few fixed designs."
         pill={personaId && !loading ? { text: plural(documents.length, 'CV', 'CVs') } : undefined}
       />
-      {/* Steps 105 to 107: the tips sit in a column of their own beside the CVs (under them on a narrow window), as on
-          the other list pages, so they do not look like a second header. */}
+      {/* Steps 105 to 108: the tips sit in a column of their own on the right of the CVs (under them on a narrow window). */}
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
-        <div className="order-1 min-w-0 flex-1 lg:order-2">
+        <div className="min-w-0 flex-1">
           <PersonaSwitcher
             personaId={personaId}
             onChange={setPersonaId}
@@ -227,7 +226,7 @@ export function CvDocumentsPage() {
             </>
           )}
         </div>
-        <aside className="order-2 w-full shrink-0 lg:order-1 lg:sticky lg:top-6 lg:w-72">
+        <aside className="w-full shrink-0 lg:sticky lg:top-6 lg:w-72">
           <PageTips page="cvs" orientation="vertical" />
         </aside>
       </div>

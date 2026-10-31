@@ -11,6 +11,7 @@ import {
 } from 'react'
 import {
   autoPlayInterval,
+  showsPauseButton,
   clampIndex,
   keyDirection,
   slideLabel,
@@ -49,8 +50,10 @@ export interface CarouselProps {
   onIndexChange?: (index: number) => void
   // Wrap from the last slide to the first (and back).
   loop?: boolean
-  // Milliseconds between automatic slides; 0 (default) means it never moves on its own. It pauses while the
-  // pointer or keyboard focus is inside, and never runs under prefers-reduced-motion.
+  // Milliseconds between automatic slides; 0 (default) means it never moves on its own. AUTO_PLAY_MS has the usual
+  // times (3000, 5000, 8000); any value from 2000 up works. It pauses while the pointer or keyboard focus is inside,
+  // can be paused with a button of its own (shown only while it is on), waits a full period again after every move,
+  // and never runs under prefers-reduced-motion. Use loop with it, so it goes round instead of stopping at the last slide.
   autoPlayMs?: number
   showArrows?: boolean
   showDots?: boolean
@@ -130,6 +133,8 @@ export function Carousel({
   const [ownIndex, setOwnIndex] = useState(0)
   const index = clampIndex(controlledIndex ?? ownIndex, count)
   const [paused, setPaused] = useState(false)
+  // Paused with the button (the pointer and focus pause it too, through `paused`).
+  const [userPaused, setUserPaused] = useState(false)
   // Said to screen readers after the user (not the timer) moved the carousel.
   const [announcement, setAnnouncement] = useState('')
   const reducedMotion = useReducedMotion()
@@ -169,7 +174,7 @@ export function Carousel({
         },
       }
 
-  const interval = autoPlayInterval(autoPlayMs, count, reducedMotion, paused)
+  const interval = autoPlayInterval(autoPlayMs, count, reducedMotion, paused || userPaused)
   useEffect(() => {
     if (interval === 0) return
     const timer = window.setInterval(() => {
@@ -182,6 +187,7 @@ export function Carousel({
   }, [interval, index, count, loop, goTo])
 
   if (count === 0) return null
+  const canAutoPlay = showsPauseButton(autoPlayMs, count, reducedMotion)
   const atStart = !loop && index === 0
   const atEnd = !loop && index === count - 1
   const activeAccent = slides[index]?.accent ?? PAGE_ACCENT
@@ -222,7 +228,7 @@ export function Carousel({
   )
 
   const dots = (
-    <div className={vertical ? 'flex flex-col items-center gap-1.5' : 'mt-3 flex items-center justify-center gap-1.5'}>
+    <div className={vertical ? 'flex flex-col items-center gap-1.5' : 'flex items-center justify-center gap-1.5'}>
       {slides.map((slide, i) => (
         <button
           key={slide.id}
@@ -242,6 +248,26 @@ export function Carousel({
       ))}
     </div>
   )
+
+  // Stops and restarts the automatic sliding for good (until pressed again), so it can always be stopped, not only
+  // by holding the pointer over it. Shown only while the carousel moves by itself.
+  const pauseButton = canAutoPlay ? (
+    <button
+      type="button"
+      aria-label={userPaused ? 'Resume automatic sliding' : 'Pause automatic sliding'}
+      aria-pressed={userPaused}
+      title={userPaused ? 'Resume automatic sliding' : 'Pause automatic sliding'}
+      onClick={() => {
+        setUserPaused((v) => !v)
+      }}
+      style={arrowStyle}
+      className={`${arrowBase} ${vertical ? 'h-7 w-7' : 'h-6 w-6'}`}
+    >
+      <svg viewBox="0 0 20 20" fill="currentColor" className="h-3 w-3" aria-hidden="true">
+        {userPaused ? <path d="M6 4.5v11l9-5.5z" /> : <path d="M5.5 4h3.2v12H5.5zM11.3 4h3.2v12h-3.2z" />}
+      </svg>
+    </button>
+  ) : null
 
   const slideStyle = (i: number): CSSProperties => {
     const offset = slideOffset(i, index) * 100
@@ -316,11 +342,12 @@ export function Carousel({
       {vertical ? (
         <div className="flex items-stretch gap-2">
           <div className="min-w-0 flex-1">{frame}</div>
-          {count > 1 && (showArrows || showDots) && (
+          {count > 1 && (showArrows || showDots || canAutoPlay) && (
             <div className="flex shrink-0 flex-col items-center justify-center gap-2">
               {showArrows && columnArrow('prev', atStart)}
               {showDots && dots}
               {showArrows && columnArrow('next', atEnd)}
+              {pauseButton}
             </div>
           )}
         </div>
@@ -335,7 +362,12 @@ export function Carousel({
               </>
             )}
           </div>
-          {count > 1 && showDots && dots}
+          {count > 1 && (showDots || canAutoPlay) && (
+            <div className="mt-3 flex items-center justify-center gap-3">
+              {showDots && dots}
+              {pauseButton}
+            </div>
+          )}
         </>
       )}
       <p className="sr-only" aria-live="polite">

@@ -60,10 +60,19 @@ export function slideLabel(index: number, count: number, label?: string): string
 }
 
 // The time between automatic slides, or 0 when it must not run: switched off, not enough slides,
-// the user asked for less motion, or the user is reading (pointer or focus inside).
+// the user asked for less motion, or the user is reading (pointer or focus inside, or the pause button pressed).
 export const MIN_AUTOPLAY_MS = 2000
 
 export function autoPlayInterval(ms: number, count: number, reducedMotion: boolean, paused: boolean): number {
   if (!Number.isFinite(ms) || ms <= 0 || count <= 1 || reducedMotion || paused) return 0
   return Math.max(MIN_AUTOPLAY_MS, ms)
+}
+
+// The usual times between automatic slides (step 109). Any other number works too, from MIN_AUTOPLAY_MS up.
+export const AUTO_PLAY_MS = { fast: 3000, normal: 5000, slow: 8000 } as const
+
+// Whether the pause button is worth showing: only when the carousel would move by itself (it is switched on, there
+// is more than one slide, and the user has not asked for less motion). Whether it is paused right now does not matter.
+export function showsPauseButton(ms: number, count: number, reducedMotion: boolean): boolean {
+  return autoPlayInterval(ms, count, reducedMotion, false) > 0
 }
