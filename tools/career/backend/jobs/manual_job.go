@@ -125,7 +125,7 @@ func ValidateManualJob(in *ManualJobInput) error {
 // AddManualJob validates and stores a job a person entered, refusing a
 // duplicate (the same posting URL, or the same title and company: the rule
 // portal ingestion already uses). A company name publishes the usual
-// job-created event, which links or creates the company.
+// job-created event, which links or creates the company; every new job also publishes job-found.
 func AddManualJob(in ManualJobInput) (job, error) {
 	if err := ValidateManualJob(&in); err != nil {
 		return job{}, err
@@ -177,6 +177,7 @@ func AddManualJob(in ManualJobInput) (job, error) {
 		return job{}, err
 	}
 	publishJobCreatedEvent(id, in.Company)
+	publishJobFoundEvent(id, in.Title, in.Company, SourceManual)
 	return GetJobByID(id)
 }
 

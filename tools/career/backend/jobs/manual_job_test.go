@@ -49,6 +49,19 @@ func captureEvents(t *testing.T) *capturedEvents {
 	return c
 }
 
+// ofTopic is the captured events with this topic.
+func (c *capturedEvents) ofTopic(topic string) []map[string]any {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var out []map[string]any
+	for _, ev := range c.events {
+		if ev["topic"] == topic {
+			out = append(out, ev)
+		}
+	}
+	return out
+}
+
 func (c *capturedEvents) count() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -79,8 +92,8 @@ func TestATitleOnlyJobIsStoredAsManualWithoutAURL(t *testing.T) {
 	if stored != manualURLPrefix+j.ID || source != "manual" {
 		t.Errorf("stored placeholder %q, source %q", stored, source)
 	}
-	if events.count() != 0 {
-		t.Error("no company means no company event")
+	if n := len(events.ofTopic("career.job.created")); n != 0 {
+		t.Errorf("no company means no company event, got %d", n)
 	}
 	if j.MatchedSkills == nil {
 		t.Error("matchedSkills must be [] like any job, never null")
@@ -98,10 +111,11 @@ func TestAFullJobKeepsEveryFieldAndPublishesTheCompanyEvent(t *testing.T) {
 		j.SourceURL != "https://example.com/jobs/42?ref=mail" || j.Source != SourceManual || j.PortalLinkID != "" {
 		t.Fatalf("%+v", j)
 	}
-	if events.count() != 1 {
-		t.Fatalf("events = %d, want 1", events.count())
+	created := events.ofTopic("career.job.created")
+	if len(created) != 1 {
+		t.Fatalf("job.created events = %d, want 1", len(created))
 	}
-	ev := events.events[0]
+	ev := created[0]
 	payload, _ := ev["payload"].(map[string]any)
 	if ev["topic"] != "career.job.created" || payload["job_id"] != j.ID || payload["company"] != "Acme GmbH" {
 		t.Errorf("event: %v", ev)

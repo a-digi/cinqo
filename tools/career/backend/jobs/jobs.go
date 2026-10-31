@@ -157,6 +157,16 @@ func publishJobCreatedEvent(jobId, company string) {
 	domainevent.Publish("career.job.created", map[string]string{"job_id": jobId, "company": company})
 }
 
+// publishJobFoundEvent announces every genuinely NEW job row, with or without a company (step 128): a
+// separate event from career.job.created above, which is left exactly as it was (it stays company-only and
+// is what links or creates the company). Fired from the same three insert paths, once per new row, never
+// on an update-in-place or a detected cross-portal duplicate. Best effort like every domain event: it runs
+// synchronously and domainevent.Publish's own short timeout bounds it. source is SourceCrawled or
+// SourceManual. See plan/ai/tools/career/step-128-job-found-event.md.
+func publishJobFoundEvent(jobId, title, company, source string) {
+	domainevent.Publish("career.job.found", map[string]string{"job_id": jobId, "title": title, "company": company, "source": source})
+}
+
 // upsertKeepingManualText is the shared part of both crawl upserts' DO UPDATE
 // SET (step 97). A crawl refreshes a crawled job as it always did. For a job a
 // person added by hand it NEVER replaces text they typed: a field the person
@@ -200,6 +210,7 @@ func saveJob(sourceURL, title, company, location, description, postedAt string) 
 	}
 	if created {
 		publishJobCreatedEvent(id, company)
+		publishJobFoundEvent(id, title, company, SourceCrawled)
 	}
 	return id, created, nil
 }
@@ -721,6 +732,7 @@ func SavePortalJob(portalLinkId, sourceURL, title, company, location, descriptio
 	}
 	if created {
 		publishJobCreatedEvent(id, company)
+		publishJobFoundEvent(id, title, company, SourceCrawled)
 	}
 	return id, created, false, nil
 }
