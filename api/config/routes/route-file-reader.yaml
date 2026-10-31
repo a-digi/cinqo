@@ -20,3 +20,10 @@ routes:
     method: GET
     executor: FileReaderSearch
     security: authenticated
+
+  # One piece (up to 16 KiB) of a single line, by byte offset: how a line longer than a window shows is read to
+  # its end (a file that is one line, say).
+  - path: /api/v1/file-reader/{source}/segment
+    method: GET
+    executor: FileReaderSegment
+    security: authenticated

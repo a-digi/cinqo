@@ -51,7 +51,8 @@ export function useFileSearch(source: string, fileRef: string): FileSearchState 
   const [done, setDone] = useState(false)
   const [searching, setSearching] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const nextFrom = useRef(1)
+  // Where the next page starts: a line and a byte offset inside it.
+  const nextFrom = useRef({ line: 1, offset: 0 })
   const ctl = useRef<AbortController | null>(null)
 
   const cancel = useCallback(() => {
@@ -67,7 +68,7 @@ export function useFileSearch(source: string, fileRef: string): FileSearchState 
     setDone(false)
     setSearching(false)
     setError(null)
-    nextFrom.current = 1
+    nextFrom.current = { line: 1, offset: 0 }
   }, [cancel])
 
   // A different file: nothing of the old search applies.
@@ -78,11 +79,11 @@ export function useFileSearch(source: string, fileRef: string): FileSearchState 
 
   // One page of results from `from`, waiting for the index when the server says it has not got that far.
   const fetchPage = useCallback(
-    async (text: string, sensitive: boolean, from: number, signal: AbortSignal) => {
+    async (text: string, sensitive: boolean, from: number, offset: number, signal: AbortSignal) => {
       const aborted = () => signal.aborted
       for (let waits = 0; ; waits++) {
         try {
-          return await fetchFileSearch(source, fileRef, text, from, sensitive, signal)
+          return await fetchFileSearch(source, fileRef, text, from, offset, sensitive, signal)
         } catch (err) {
           if (err instanceof ApiError && err.status === 409 && waits < MAX_WAITS && !aborted()) {
             await sleep(WAIT_MS, signal)
@@ -100,15 +101,16 @@ export function useFileSearch(source: string, fileRef: string): FileSearchState 
   // anything. That is not "no matches" (the rest of a big file has not been looked at), so keep going until a
   // match turns up, the file ends, or the search is cancelled.
   const fetchUntilMatch = useCallback(
-    async (text: string, sensitive: boolean, startFrom: number, signal: AbortSignal) => {
-      let from = startFrom
+    async (text: string, sensitive: boolean, start: { line: number; offset: number }, signal: AbortSignal) => {
+      let at = start
       let last: SearchResult | null = null
       for (let pages = 0; pages < MAX_EMPTY_PAGES; pages++) {
-        const page = await fetchPage(text, sensitive, from, signal)
+        const page = await fetchPage(text, sensitive, at.line, at.offset, signal)
         if (!page) return null
         last = page
-        if (page.matches.length > 0 || page.done || page.nextFrom <= from) break
-        from = page.nextFrom
+        const moved = page.nextFrom > at.line || (page.nextFrom === at.line && page.nextOffset > at.offset)
+        if (page.matches.length > 0 || page.done || !moved) break
+        at = { line: page.nextFrom, offset: page.nextOffset }
       }
       return last
     },
@@ -131,9 +133,9 @@ export function useFileSearch(source: string, fileRef: string): FileSearchState 
       setSearching(true)
       void (async () => {
         try {
-          const page = await fetchUntilMatch(text, sensitive, 1, mine.signal)
+          const page = await fetchUntilMatch(text, sensitive, { line: 1, offset: 0 }, mine.signal)
           if (!page || cancelled()) return
-          nextFrom.current = page.nextFrom
+          nextFrom.current = { line: page.nextFrom, offset: page.nextOffset }
           setMatches(page.matches)
           setDone(page.done)
           setIndex(
@@ -168,7 +170,7 @@ export function useFileSearch(source: string, fileRef: string): FileSearchState 
       try {
         const page = await fetchUntilMatch(query, caseSensitive, nextFrom.current, mine.signal)
         if (!page || cancelled()) return
-        nextFrom.current = page.nextFrom
+        nextFrom.current = { line: page.nextFrom, offset: page.nextOffset }
         setMatches((prev) => [...prev, ...page.matches])
         setDone(page.done)
         if (page.matches.length > 0) setIndex(index + 1)

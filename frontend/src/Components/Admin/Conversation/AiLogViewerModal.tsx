@@ -109,7 +109,7 @@ export function AiLogViewerModal({ entry, onClose }: { entry: AllAiTraceLogsEntr
                 fileRef={`${entry.conversationId}/${selected}`}
                 title={`${selected}.txt`}
                 highlight={traceLogHighlight}
-                paneHeight="h-[calc(100vh-19rem)] min-h-[18rem]"
+                paneHeight="h-[calc(100vh-22rem)] min-h-[16rem]"
               />
             )}
           </div>

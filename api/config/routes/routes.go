@@ -121,6 +121,7 @@ func Init(ctx serverdi.Context) {
 		"FileReaderInfo":               local_routing.HandlerFunc(filereader_handler.InfoHandler),
 		"FileReaderLines":              local_routing.HandlerFunc(filereader_handler.LinesHandler),
 		"FileReaderSearch":             local_routing.HandlerFunc(filereader_handler.SearchHandler),
+		"FileReaderSegment":            local_routing.HandlerFunc(filereader_handler.SegmentHandler),
 		"ConversationGetSettings":      local_routing.HandlerFunc(conversation_handler.GetSettingsHandler),
 		"ConversationUpdateSettings":   local_routing.HandlerFunc(conversation_handler.UpdateSettingsHandler),
 

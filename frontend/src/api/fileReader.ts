@@ -49,13 +49,16 @@ export async function fetchFileLines(source: string, ref: string, from: number, 
 
 export interface SearchMatch {
   n: number
+  // How many bytes into the line the match starts.
+  offset: number
   preview: string
 }
 
 export interface SearchResult {
   matches: SearchMatch[]
-  // Where to ask next when `done` is false.
+  // Where to ask next when `done` is false: a line and a byte offset inside it.
   nextFrom: number
+  nextOffset: number
   done: boolean
   scannedBytes: number
 }
@@ -65,13 +68,42 @@ export async function fetchFileSearch(
   ref: string,
   text: string,
   from: number,
+  offset: number,
   caseSensitive: boolean,
   signal?: AbortSignal,
 ): Promise<SearchResult> {
-  const params = new URLSearchParams({ ref, q: text, from: String(from) })
+  const params = new URLSearchParams({ ref, q: text, from: String(from), offset: String(offset) })
   if (caseSensitive) params.set('case', '1')
   const raw = await apiGet<{ message: SearchResult }>(
     `/api/v1/file-reader/${encodeURIComponent(source)}/search?${params.toString()}`,
+    signal,
+  )
+  return raw.message
+}
+
+// One piece of a single line, read by byte offset: how a line longer than a window shows is read to its end.
+export interface FileSegment {
+  line: number
+  // Where the text really starts in the line (moved forward past the middle of a character).
+  offset: number
+  text: string
+  // Where the next segment starts; always on a character boundary.
+  nextOffset: number
+  // The line's whole length in bytes.
+  lineBytes: number
+  hasMore: boolean
+}
+
+export async function fetchFileSegment(
+  source: string,
+  ref: string,
+  line: number,
+  offset: number,
+  signal?: AbortSignal,
+): Promise<FileSegment> {
+  const params = new URLSearchParams({ ref, line: String(line), offset: String(offset) })
+  const raw = await apiGet<{ message: FileSegment }>(
+    `/api/v1/file-reader/${encodeURIComponent(source)}/segment?${params.toString()}`,
     signal,
   )
   return raw.message

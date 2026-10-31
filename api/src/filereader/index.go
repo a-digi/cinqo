@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"sort"
 	"sync"
 	"time"
 )
@@ -27,6 +28,28 @@ type index struct {
 	newlines int64
 	lastByte byte
 	complete bool
+
+	// lineStart is the byte offset where the line being scanned began; longs lists, in order, every line
+	// scanned so far that is longer than LongLineBytes (append-only: readers may use a prefix of it).
+	lineStart int64
+	longs     []longLine
+}
+
+// longLine is a line longer than LongLineBytes: its number, where it starts and how many bytes it holds
+// (up to, not including, its "\n"; a "\r" before it counts).
+type longLine struct {
+	n      int64
+	start  int64
+	length int64
+}
+
+// longAt finds the long-line record for line n in a prefix of the table (sorted by line number).
+func longAt(longs []longLine, n int64) (longLine, bool) {
+	i := sort.Search(len(longs), func(i int) bool { return longs[i].n >= n })
+	if i < len(longs) && longs[i].n == n {
+		return longs[i], true
+	}
+	return longLine{}, false
 }
 
 func newIndex(size int64, modTime time.Time) *index {
@@ -61,7 +84,7 @@ func (ix *index) advance(ctx context.Context, f *os.File, lim Limits) error {
 		}
 		n, err := f.ReadAt(buf, ix.scanned)
 		if n > 0 {
-			ix.scan(buf[:n], lim.CheckpointEvery)
+			ix.scan(buf[:n], lim.CheckpointEvery, int64(lim.LongLineBytes))
 		}
 		if err != nil && !errors.Is(err, io.EOF) {
 			return err
@@ -75,11 +98,15 @@ func (ix *index) advance(ctx context.Context, f *os.File, lim Limits) error {
 	}
 	if ix.scanned >= ix.size {
 		ix.complete = true
+		// a last line with no newline is a line too, and may be the long one
+		if ix.size > ix.lineStart && ix.size-ix.lineStart > int64(lim.LongLineBytes) {
+			ix.longs = append(ix.longs, longLine{n: ix.newlines + 1, start: ix.lineStart, length: ix.size - ix.lineStart})
+		}
 	}
 	return nil
 }
 
-func (ix *index) scan(chunk []byte, every int) {
+func (ix *index) scan(chunk []byte, every int, longMin int64) {
 	pos := 0
 	for {
 		i := bytes.IndexByte(chunk[pos:], '\n')
@@ -87,6 +114,11 @@ func (ix *index) scan(chunk []byte, every int) {
 			break
 		}
 		pos += i + 1
+		end := ix.scanned + int64(pos) - 1 // where this line's "\n" is
+		if end-ix.lineStart > longMin {
+			ix.longs = append(ix.longs, longLine{n: ix.newlines + 1, start: ix.lineStart, length: end - ix.lineStart})
+		}
+		ix.lineStart = end + 1
 		ix.newlines++
 		if ix.newlines%int64(every) == 0 {
 			// the line after this newline is line newlines+1, the start of the next block

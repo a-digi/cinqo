@@ -27,6 +27,8 @@ var (
 	ErrTooLarge = errors.New("filereader: file is too large")
 	// ErrBadQuery: the search text is empty, too long, not valid text, or contains a NUL.
 	ErrBadQuery = errors.New("filereader: invalid search text")
+	// ErrSlow: a read ran past Limits.ReadBudget (a huge line on a slow disk). Ask again, or ask for less.
+	ErrSlow = errors.New("filereader: the read took too long")
 	// ErrNotRegular: the path is not a regular file (a directory, a device, a pipe).
 	ErrNotRegular = errors.New("filereader: not a regular file")
 )
@@ -56,6 +58,14 @@ type Limits struct {
 	// MaxCachedFiles bounds the index cache (least recently used goes first).
 	MaxCachedFiles int
 
+	// LongLineBytes is the length above which the index remembers where a line starts and how long it is, so
+	// windows jump over it instead of reading it through, and a long line can be read in segments by byte offset.
+	LongLineBytes int
+	// MaxSegmentBytes is the most one segment of a long line may hold; ReadBudget is how long one window or
+	// segment read may run before it stops with ErrSlow (also checked in the middle of a long line).
+	MaxSegmentBytes int
+	ReadBudget      time.Duration
+
 	// Search: the most matches one call returns, the most file bytes and the most time one call may spend
 	// scanning (a call that runs out says where to continue), the longest search text, and how many characters
 	// of a matching line a match carries as its preview.
@@ -64,6 +74,8 @@ type Limits struct {
 	SearchBudget     time.Duration
 	MaxQueryBytes    int
 	PreviewRunes     int
+	// SearchChunkBytes is the size of one read while searching.
+	SearchChunkBytes int
 }
 
 func DefaultLimits() Limits {
@@ -79,10 +91,15 @@ func DefaultLimits() Limits {
 		MaxWait:          2 * time.Second,
 		MaxCachedFiles:   64,
 
+		LongLineBytes:   64 << 10,
+		MaxSegmentBytes: 16 << 10,
+		ReadBudget:      5 * time.Second,
+
 		SearchMaxMatches: 50,
 		SearchMaxBytes:   64 << 20,
 		SearchBudget:     time.Second,
 		MaxQueryBytes:    200,
 		PreviewRunes:     200,
+		SearchChunkBytes: 256 << 10,
 	}
 }

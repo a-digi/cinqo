@@ -9,15 +9,42 @@ import (
 	"unicode/utf8"
 )
 
-// readLine reads one line from r without ever holding more than keep bytes of it: the rest of a long
-// line is read and counted but thrown away. total is the line's length in bytes without its line ending;
-// the line ending ("\n" or "\r\n") is consumed and not included. ok is false when r had nothing left.
-// A last line with no newline is still a line. The text is built in scratch (reused, so reading a million lines
-// does not allocate a million slices): it is only valid until the next call with the same scratch.
-func readLine(r *bufio.Reader, keep int, scratch []byte) (text []byte, total int, ok bool, err error) {
+// lineRead is one line as readLine returns it. text holds at most keep bytes of it; total is its length in
+// bytes without the line ending; eol is how many bytes the ending took (0 at the end of a file with no final
+// newline, 1 for "\n", 2 for "\r\n"); ok is false when there was nothing left to read.
+type lineRead struct {
+	text  []byte
+	total int
+	eol   int
+	ok    bool
+}
+
+// readLine reads one line from r without ever holding more than keep bytes of it: the rest of a long line is
+// read and counted but thrown away. A last line with no newline is still a line. The text is built in scratch
+// (reused, so reading a million lines does not allocate a million slices): it is only valid until the next call
+// with the same scratch. g, when set, is checked every few MB of a long line, so a huge line can be cut short.
+func readLine(r *bufio.Reader, keep int, scratch []byte, g *guard) (lineRead, error) {
 	kept := scratch[:0]
+	total := 0
+	var last byte // the last byte of the line seen so far, kept or not: a "\r" before the line ending is found by it
 	read := false
-	for {
+	finish := func(eol int) lineRead {
+		// a "\r" just before the "\n" belongs to the line ending, even when the line is too long to have been kept
+		if total > 0 && last == '\r' {
+			total--
+			eol++
+			if len(kept) > total {
+				kept = kept[:total]
+			}
+		}
+		return lineRead{text: kept, total: total, eol: eol, ok: true}
+	}
+	for chunks := 1; ; chunks++ {
+		if g != nil && chunks%checkEveryChunks == 0 {
+			if err := g.check(); err != nil {
+				return lineRead{}, err
+			}
+		}
 		chunk, e := r.ReadSlice('\n')
 		if len(chunk) > 0 {
 			read = true
@@ -26,6 +53,9 @@ func readLine(r *bufio.Reader, keep int, scratch []byte) (text []byte, total int
 		body := chunk
 		if hasNewline {
 			body = chunk[:len(chunk)-1]
+		}
+		if len(body) > 0 {
+			last = body[len(body)-1]
 		}
 		total += len(body)
 		if room := keep - len(kept); room > 0 {
@@ -37,25 +67,17 @@ func readLine(r *bufio.Reader, keep int, scratch []byte) (text []byte, total int
 		switch {
 		case e == nil:
 			// the newline arrived: the line is complete
-			if total == len(kept) && len(kept) > 0 && kept[len(kept)-1] == '\r' {
-				kept = kept[:len(kept)-1]
-				total--
-			}
-			return kept, total, true, nil
+			return finish(1), nil
 		case errors.Is(e, bufio.ErrBufferFull):
 			// a long line: keep reading the rest of it
 			continue
 		case errors.Is(e, io.EOF):
 			if !read {
-				return nil, 0, false, nil
+				return lineRead{}, nil
 			}
-			if total == len(kept) && len(kept) > 0 && kept[len(kept)-1] == '\r' {
-				kept = kept[:len(kept)-1]
-				total--
-			}
-			return kept, total, true, nil
+			return finish(0), nil
 		default:
-			return nil, 0, false, e
+			return lineRead{}, e
 		}
 	}
 }

@@ -1,7 +1,6 @@
 package filereader
 
 import (
-	"bufio"
 	"container/list"
 	"context"
 	"errors"
@@ -65,6 +64,9 @@ func New(lim Limits) *Engine {
 }
 
 func (e *Engine) acquire(ctx context.Context) (release func(), err error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err // a request already cancelled never takes a place
+	}
 	timer := time.NewTimer(e.lim.MaxWait)
 	defer timer.Stop()
 	select {
@@ -194,82 +196,94 @@ func (e *Engine) ReadLines(ctx context.Context, path string, from int64, count i
 	}
 	defer f.Close()
 
+	c, status := e.cursorAt(ctx, f, ix, from)
+	switch status {
+	case atEnd:
+		return Window{From: from, Lines: []Line{}, NextFrom: from}, nil
+	case notIndexed:
+		return Window{}, ErrNotIndexed
+	}
+	if err := c.skipErr(); err != nil {
+		return Window{}, err
+	}
+	return e.collect(c, from, count)
+}
+
+type startStatus int
+
+const (
+	positioned startStatus = iota
+	atEnd
+	notIndexed
+)
+
+// cursorAt places a cursor at the checkpoint at or before line `from`, with a guard for the read budget and
+// the request's own context. The cursor still has to skip forward to `from` (see skipErr).
+func (e *Engine) cursorAt(ctx context.Context, f *os.File, ix *index, from int64) (*cursor, startStatus) {
 	ix.mu.Lock()
 	offset, line, ok := ix.startOf(from, e.lim.CheckpointEvery)
 	complete, total := ix.complete, ix.totalLines()
+	longs := ix.longs
 	ix.mu.Unlock()
 	if !ok {
 		if complete && from > total {
-			return Window{From: from, Lines: []Line{}, NextFrom: from}, nil
+			return nil, atEnd
 		}
-		return Window{}, ErrNotIndexed
+		return nil, notIndexed
 	}
-
-	r := bufio.NewReaderSize(io.NewSectionReader(f, offset, ix.size-offset), 64<<10)
-	return e.collect(ctx, r, line, from, count)
+	c := newCursor(f, ix.size, offset, line, longs, e.newGuard(ctx))
+	c.target = from
+	return c, positioned
 }
 
-// collect skips lines until `from`, then reads up to count lines, honouring the response size cap.
-func (e *Engine) collect(ctx context.Context, r *bufio.Reader, line, from int64, count int) (Window, error) {
-	ok, err := skipLines(ctx, r, line, from)
-	if err != nil {
-		return Window{}, err
-	}
-	if !ok {
-		return Window{From: from, Lines: []Line{}, NextFrom: from}, nil
-	}
-	line = from
+// skipErr moves the cursor up to its target line. A file that ends first leaves the cursor at the end, which
+// the callers see as "nothing to read".
+func (c *cursor) skipErr() error {
+	_, err := c.skipTo(c.target)
+	return err
+}
 
+// collect reads up to count lines from the cursor (already at line `from`), honouring the response size cap.
+func (e *Engine) collect(c *cursor, from int64, count int) (Window, error) {
 	w := Window{From: from, Lines: make([]Line, 0, min(count, 64))}
+	if c.line != from {
+		// the file ended before `from`
+		w.Lines = []Line{}
+		w.NextFrom = from
+		return w, nil
+	}
 	var scratch []byte
 	used := 0
 	for len(w.Lines) < count {
-		if err := ctx.Err(); err != nil {
+		if err := c.g.check(); err != nil {
 			return Window{}, err
 		}
-		raw, total, ok, err := readLine(r, e.lim.MaxLineBytes, scratch)
+		lr, err := c.next(e.lim.MaxLineBytes, scratch)
 		if err != nil {
 			return Window{}, err
 		}
-		scratch = raw
-		if !ok {
-			w.NextFrom = line
+		scratch = lr.text
+		if !lr.ok {
+			w.NextFrom = c.line
 			return w, nil
 		}
-		truncated := total > len(raw)
+		raw := lr.text
+		truncated := lr.total > len(raw)
 		if truncated {
 			raw = trimPartialRune(raw)
 		}
 		text := sanitize(raw)
+		n := c.line - 1 // c.next has already moved on
 		// the cap ends a window early, but never before it holds one line (so a window always moves on)
 		if len(w.Lines) > 0 && used+len(text) > e.lim.MaxResponseBytes {
-			w.NextFrom, w.HasMore = line, true
+			// give the line back: it is the first of the next window
+			w.NextFrom, w.HasMore = n, true
 			return w, nil
 		}
 		used += len(text)
-		w.Lines = append(w.Lines, Line{N: line, Text: text, Bytes: total, Truncated: truncated})
-		line++
+		w.Lines = append(w.Lines, Line{N: n, Text: text, Bytes: lr.total, Truncated: truncated})
 	}
-	w.NextFrom = line
-	_, peekErr := r.Peek(1)
-	w.HasMore = peekErr == nil
+	w.NextFrom = c.line
+	w.HasMore = c.more()
 	return w, nil
-}
-
-// skipLines reads and drops the lines before `from` (at most CheckpointEvery-1 of them), keeping none of
-// their text. It reports false when the file ends first.
-func skipLines(ctx context.Context, r *bufio.Reader, line, from int64) (bool, error) {
-	for ; line < from; line++ {
-		if err := ctx.Err(); err != nil {
-			return false, err
-		}
-		_, _, ok, err := readLine(r, 0, nil)
-		if err != nil {
-			return false, err
-		}
-		if !ok {
-			return false, nil
-		}
-	}
-	return true, nil
 }

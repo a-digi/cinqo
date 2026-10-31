@@ -260,3 +260,63 @@ export function describeFailure(status: number | undefined): string {
       return 'The file could not be read.'
   }
 }
+
+// ---- long lines, read in segments ----
+
+// How many bytes of a line a window shows (the server cuts a line there); a match further into its line than
+// this is shown in the segment view.
+export const LINE_SHOWN_BYTES = 16 * 1024
+
+// The segment the viewer opens for a match: a little before it, so there is context. The server moves a start
+// that falls inside a character forward to the next boundary.
+export function segmentOffsetFor(matchOffset: number): number {
+  return Math.max(0, matchOffset - 256)
+}
+
+// Whether a match is far enough into its line that a window cannot show it.
+export function needsSegmentView(matchOffset: number): boolean {
+  return matchOffset >= LINE_SHOWN_BYTES
+}
+
+// The start of the segment before the one at `offset`, `size` bytes back (never before the line).
+export function prevSegmentOffset(offset: number, size: number): number {
+  return Math.max(0, offset - size)
+}
+
+// The start of the last segment of a line `lineBytes` long.
+export function lastSegmentOffset(lineBytes: number, size: number): number {
+  return Math.max(0, lineBytes - size)
+}
+
+// A click or drag at `fraction` of the bar (0 top, 1 bottom) centres the segment there, in bytes.
+export function segmentOffsetFromFraction(fraction: number, lineBytes: number, size: number): number {
+  const f = Math.min(1, Math.max(0, Number.isFinite(fraction) ? fraction : 0))
+  return Math.min(lastSegmentOffset(lineBytes, size), Math.max(0, Math.round(f * lineBytes - size / 2)))
+}
+
+// "1,234", "1234" or "50%" as a byte offset in a line `lineBytes` long, or null when it is neither. A number
+// beyond the end is pulled back to the last segment.
+export function parsePositionInput(text: string, lineBytes: number, size: number): number | null {
+  const cleaned = text.replace(/[,\s_]/g, '')
+  const percent = /^(\d{1,3}(?:\.\d+)?)%$/.exec(cleaned)
+  if (percent) {
+    const p = Number(percent[1])
+    if (p > 100) return null
+    return Math.min(lastSegmentOffset(lineBytes, size), Math.floor((p / 100) * lineBytes))
+  }
+  if (!/^\d{1,15}$/.test(cleaned)) return null
+  return Math.min(lastSegmentOffset(lineBytes, size), Number(cleaned))
+}
+
+// "line 1 · bytes 32,768–49,151 of 419,430,014". The end is the last byte shown (nextOffset is the first one
+// after it).
+export function segmentStatus(line: number, offset: number, nextOffset: number, lineBytes: number): string {
+  if (nextOffset <= offset) return `line ${formatCount(line)} · no bytes here · ${formatCount(lineBytes)} bytes`
+  return `line ${formatCount(line)} · bytes ${formatCount(offset)}–${formatCount(nextOffset - 1)} of ${formatCount(lineBytes)}`
+}
+
+// The prompt line in the segment view: `$ view <name> --line 1 --bytes 32768-49151`.
+export function segmentPrompt(name: string, line: number, offset: number, nextOffset: number): string {
+  const label = name.trim() === '' ? 'file' : name.trim().replace(/\s+/g, '-')
+  return nextOffset > offset ? `$ view ${label} --line ${line} --bytes ${offset}-${nextOffset - 1}` : `$ view ${label} --line ${line}`
+}

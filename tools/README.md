@@ -393,8 +393,12 @@ var unmount = window.__cinqoToolBridge.mountFileReader(container, {
 ### 3. Limits and behaviour to know about
 
 - Text only: a file with NUL bytes is refused ("not a text file"); files over 1 GiB are refused.
-  A line longer than 16 KiB is cut in the view (and in search), and says how much is hidden.
-- Search is plain text (never a pattern), case-insensitive unless the person turns "Aa" on.
+  A line longer than 16 KiB is cut in the window and says how much is hidden; "show more" then
+  opens that line in a segment view, 16 KiB at a time by byte offset (with a bar, a position box
+  taking a byte or `50%`, and Prev / Next), so even a file that is one single line can be read to
+  its end. Search looks through every byte of every line, and a match deep inside a long line
+  opens the segment view at it.
+- Search is plain text (never a pattern, and never across a line break), case-insensitive unless the person turns "Aa" on.
 - Each time someone opens a file, Cinqo writes one line to its server log: who, which source and
   file, never the content.
 - Who can read is decided by the server from `scope` on every request.

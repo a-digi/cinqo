@@ -231,7 +231,7 @@ func TestSearchFindsLines(t *testing.T) {
 	}
 	m := res.message()
 	matches := m["matches"].([]any)
-	if len(matches) != 3 || matches[0].(map[string]any)["n"].(float64) != 15 || m["done"] != false || m["nextFrom"].(float64) != 152 {
+	if len(matches) != 3 || matches[0].(map[string]any)["n"].(float64) != 15 || m["done"] != false || m["nextFrom"].(float64) != 151 || m["nextOffset"].(float64) != 7 {
 		t.Fatalf("matches: %v", m)
 	}
 	if first := matches[0].(map[string]any); first["preview"] != "line 15" {
@@ -282,5 +282,91 @@ func TestSearchIsAuditedOncePerWindow(t *testing.T) {
 	}
 	if strings.Contains(e.audit[0], "line") && strings.Contains(e.audit[0], "q=") {
 		t.Fatalf("the search text must not be logged: %v", e.audit)
+	}
+}
+
+func (e *env) segment(who identity, src, ref, query string) result {
+	return call(func(w http.ResponseWriter, r *http.Request) { e.d.segment(w, r, who, src, ref) }, query)
+}
+
+func TestSegmentOfALongLine(t *testing.T) {
+	e := newEnv(t, 3)
+	long := strings.Repeat("0123456789", 5000) // 50,000 bytes
+	other := "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+	os.WriteFile(filepath.Join(e.root, conv, other+".txt"), []byte("short\n"+long+"\nafter\n"), 0o600)
+	ref2 := conv + "/" + other
+
+	res := e.segment(admin, source.AITraceID, ref2, "line=2&offset=16384&length=100")
+	if res.code != 200 {
+		t.Fatalf("%d %v", res.code, res.out)
+	}
+	m := res.message()
+	if m["offset"].(float64) != 16384 || m["lineBytes"].(float64) != 50000 || m["hasMore"] != true || m["nextOffset"].(float64) != 16484 {
+		t.Fatalf("%v", m)
+	}
+	if got := m["text"].(string); got != long[16384:16484] {
+		t.Fatalf("text: %q", got)
+	}
+	// the default length is 16 KiB and the last segment says there is no more
+	res = e.segment(admin, source.AITraceID, ref2, "line=2&offset=40000")
+	m = res.message()
+	if m["hasMore"] != false || m["nextOffset"].(float64) != 50000 || len(m["text"].(string)) != 10000 {
+		t.Fatalf("%v", m)
+	}
+}
+
+func TestSegmentChecksAndValidates(t *testing.T) {
+	e := newEnv(t, 3)
+	if res := e.segment(user, source.AITraceID, ref, "line=1"); res.code != http.StatusForbidden {
+		t.Errorf("no scope: %d", res.code)
+	}
+	if res := e.segment(admin, "nope", ref, "line=1"); res.code != http.StatusNotFound {
+		t.Errorf("unknown source: %d", res.code)
+	}
+	if res := e.segment(admin, source.AITraceID, "../../etc/passwd", "line=1"); res.code != http.StatusNotFound {
+		t.Errorf("bad ref: %d", res.code)
+	}
+	for _, q := range []string{"", "line=0", "line=-1", "line=x", "line=1&offset=-1", "line=1&offset=x", "line=1&length=0", "line=1&length=-5"} {
+		if res := e.segment(admin, source.AITraceID, ref, q); res.code != http.StatusBadRequest {
+			t.Errorf("query %q: %d", q, res.code)
+		}
+	}
+	res := e.segment(admin, source.AITraceID, ref, "line=1&offset=0&length=999999999")
+	if res.code != 200 {
+		t.Errorf("a huge length is clamped, not refused: %d", res.code)
+	}
+	raw, _ := json.Marshal(res.out)
+	if strings.Contains(string(raw), e.root) {
+		t.Errorf("a response leaked the server path: %s", raw)
+	}
+	if len(e.audit) != 1 {
+		t.Errorf("audit lines: %v", e.audit)
+	}
+}
+
+func TestSearchReportsOffsetsAndResumesInsideALine(t *testing.T) {
+	e := newEnv(t, 3)
+	body := strings.Repeat("x", 30000) + "NEEDLE" + strings.Repeat("y", 100) + "NEEDLE"
+	other := "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+	os.WriteFile(filepath.Join(e.root, conv, other+".txt"), []byte("first\n"+body+"\n"), 0o600)
+	ref2 := conv + "/" + other
+	res := e.search(admin, source.AITraceID, ref2, "q=needle&limit=1")
+	m := res.message()
+	matches := m["matches"].([]any)
+	if res.code != 200 || len(matches) != 1 || matches[0].(map[string]any)["n"].(float64) != 2 || matches[0].(map[string]any)["offset"].(float64) != 30000 {
+		t.Fatalf("%d %v", res.code, res.out)
+	}
+	if m["nextFrom"].(float64) != 2 || m["nextOffset"].(float64) != 30006 || m["done"] != false {
+		t.Fatalf("resume point: %v", m)
+	}
+	res = e.search(admin, source.AITraceID, ref2, "q=needle&from=2&offset=30006")
+	matches = res.message()["matches"].([]any)
+	if len(matches) != 1 || matches[0].(map[string]any)["offset"].(float64) != 30106 {
+		t.Fatalf("%v", res.out)
+	}
+	for _, q := range []string{"q=a&offset=-1", "q=a&offset=x", "q=" + "a%0Ab"} {
+		if res := e.search(admin, source.AITraceID, ref2, q); res.code != http.StatusBadRequest {
+			t.Errorf("query %q: %d", q, res.code)
+		}
 	}
 }

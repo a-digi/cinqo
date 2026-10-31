@@ -1,7 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
 import { readWindowSize, readWrap, saveWindowSize, saveWrap } from './terminalPrefs'
+import { SegmentPane } from './SegmentPane'
 import { useFileSearch } from './useFileSearch'
 import { useFileWindow } from './useFileWindow'
+import { useLineSegment } from './useLineSegment'
 import {
   WINDOW_SIZES,
   fromFraction,
@@ -10,8 +12,12 @@ import {
   isSearchable,
   keyToMove,
   matchStatus,
+  needsSegmentView,
   parseLineInput,
   promptText,
+  segmentOffsetFor,
+  segmentPrompt,
+  segmentStatus,
   splitMatches,
   statusText,
   thumb,
@@ -76,6 +82,8 @@ export function TerminalViewer({
   const [notice, setNotice] = useState<{ text: string; ok: boolean } | null>(null)
   const state = useFileWindow(source, fileRef, size)
   const search = useFileSearch(source, fileRef)
+  const segment = useLineSegment(source, fileRef)
+  const inSegment = segment.line !== null
   const { info, lines, shownFrom, target, loading, error } = state
   const paneRef = useRef<HTMLDivElement>(null)
   const trackRef = useRef<HTMLDivElement>(null)
@@ -98,12 +106,22 @@ export function TerminalViewer({
     else pane.scrollTop = 0
   }, [shownFrom, shown, target])
 
-  // Stepping to a match brings its line into view (and marks it, like "go to line").
-  const matchLine = search.index >= 0 ? (search.matches[search.index]?.n ?? null) : null
+  // Stepping to a match brings it into view: its line in the window (marked, like "go to line"), or, for a match
+  // further into a long line than a window shows, that part of the line in the segment view.
+  const match = search.index >= 0 ? (search.matches[search.index] ?? null) : null
+  const matchKey = match ? `${match.n}:${match.offset}` : null
   const goTo = state.goTo
+  const openSegment = segment.open
+  const closeSegment = segment.close
   useEffect(() => {
-    if (matchLine !== null) goTo(matchLine)
-  }, [matchLine, goTo])
+    if (!match) return
+    if (needsSegmentView(match.offset)) openSegment(match.n, segmentOffsetFor(match.offset))
+    else {
+      closeSegment()
+      goTo(match.n)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the match's position, not the object
+  }, [matchKey, goTo, openSegment, closeSegment])
 
   useEffect(() => {
     if (!notice) return
@@ -177,9 +195,10 @@ export function TerminalViewer({
   }
 
   const copy = () => {
-    navigator.clipboard.writeText(lines.map((l) => l.text).join('\n')).then(
+    const text = inSegment ? (segment.segment?.text ?? '') : lines.map((l) => l.text).join('\n')
+    navigator.clipboard.writeText(text).then(
       () => {
-        setNotice({ text: `Copied ${shown} lines`, ok: true })
+        setNotice({ text: inSegment ? 'Copied this segment' : `Copied ${shown} lines`, ok: true })
       },
       () => {
         setNotice({ text: 'Could not copy. Select the text and copy it by hand.', ok: false })
@@ -218,75 +237,79 @@ export function TerminalViewer({
 
       {/* toolbar */}
       <div className="flex flex-wrap items-center gap-2 border-b border-white/10 px-3 py-1.5">
-        <div role="group" aria-label="Window size" className="flex items-center gap-0.5">
-          {WINDOW_SIZES.map((n) => (
-            <button
-              key={n}
-              type="button"
-              aria-pressed={n === size}
-              onClick={() => {
-                setSize(n)
-              }}
-              className={`${buttonClass} ${n === size ? 'bg-emerald-400/20 text-emerald-200' : ''}`}
-            >
-              {n}
+        {!inSegment && (
+          <>
+            <div role="group" aria-label="Window size" className="flex items-center gap-0.5">
+              {WINDOW_SIZES.map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  aria-pressed={n === size}
+                  onClick={() => {
+                    setSize(n)
+                  }}
+                  className={`${buttonClass} ${n === size ? 'bg-emerald-400/20 text-emerald-200' : ''}`}
+                >
+                  {n}
+                </button>
+              ))}
+              <span className="ml-1 text-xs text-[#8b95a5]">lines</span>
+            </div>
+            <span className="mx-1 h-4 w-px bg-white/10" aria-hidden="true" />
+            <button type="button" className={buttonClass} onClick={state.top} aria-label="Go to the start of the file" title="Home or g">
+              ⏮ Start
             </button>
-          ))}
-          <span className="ml-1 text-xs text-[#8b95a5]">lines</span>
-        </div>
-        <span className="mx-1 h-4 w-px bg-white/10" aria-hidden="true" />
-        <button type="button" className={buttonClass} onClick={state.top} aria-label="Go to the start of the file" title="Home or g">
-          ⏮ Start
-        </button>
-        <button
-          type="button"
-          className={buttonClass}
-          onClick={() => {
-            state.page(-1)
-          }}
-          aria-label="Previous window"
-          title="Page Up or b"
-        >
-          ◀ Prev
-        </button>
-        <button
-          type="button"
-          className={buttonClass}
-          onClick={() => {
-            state.page(1)
-          }}
-          aria-label="Next window"
-          title="Page Down, space or f"
-        >
-          Next ▶
-        </button>
-        <button type="button" className={buttonClass} onClick={state.bottom} aria-label="Go to the end of the file" title="End or G">
-          End ⏭
-        </button>
-        <form
-          className="flex items-center gap-1"
-          onSubmit={(e) => {
-            e.preventDefault()
-            jump()
-          }}
-        >
-          <label htmlFor={`goto-${fileRef}`} className="sr-only">
-            Go to line
-          </label>
-          <input
-            id={`goto-${fileRef}`}
-            value={lineInput}
-            onChange={(e) => {
-              setLineInput(e.target.value)
-            }}
-            inputMode="numeric"
-            placeholder="line #"
-            className="w-24 rounded border border-white/15 bg-black/30 px-2 py-1 text-xs text-gray-100 placeholder:text-gray-400 focus:border-emerald-400 focus:outline-none"
-          />
-          <button type="submit" className={buttonClass} disabled={parseLineInput(lineInput, 0) === null}>
-            Go
-          </button>
-        </form>
+            <button
+              type="button"
+              className={buttonClass}
+              onClick={() => {
+                state.page(-1)
+              }}
+              aria-label="Previous window"
+              title="Page Up or b"
+            >
+              ◀ Prev
+            </button>
+            <button
+              type="button"
+              className={buttonClass}
+              onClick={() => {
+                state.page(1)
+              }}
+              aria-label="Next window"
+              title="Page Down, space or f"
+            >
+              Next ▶
+            </button>
+            <button type="button" className={buttonClass} onClick={state.bottom} aria-label="Go to the end of the file" title="End or G">
+              End ⏭
+            </button>
+            <form
+              className="flex items-center gap-1"
+              onSubmit={(e) => {
+                e.preventDefault()
+                jump()
+              }}
+            >
+              <label htmlFor={`goto-${fileRef}`} className="sr-only">
+                Go to line
+              </label>
+              <input
+                id={`goto-${fileRef}`}
+                value={lineInput}
+                onChange={(e) => {
+                  setLineInput(e.target.value)
+                }}
+                inputMode="numeric"
+                placeholder="line #"
+                className="w-24 rounded border border-white/15 bg-black/30 px-2 py-1 text-xs text-gray-100 placeholder:text-gray-400 focus:border-emerald-400 focus:outline-none"
+              />
+              <button type="submit" className={buttonClass} disabled={parseLineInput(lineInput, 0) === null}>
+                Go
+              </button>
+            </form>
+          </>
+        )}
         <div className="ml-auto flex items-center gap-1">
           <button
             type="button"
@@ -301,18 +324,20 @@ export function TerminalViewer({
           >
             Search
           </button>
-          <button
-            type="button"
-            aria-pressed={wrap}
-            onClick={() => {
-              setWrap((w) => !w)
-            }}
-            className={`${buttonClass} ${wrap ? 'bg-emerald-400/20 text-emerald-200' : ''}`}
-            title="Wrap long lines"
-          >
-            Wrap
-          </button>
-          <button type="button" className={buttonClass} onClick={copy} disabled={shown === 0}>
+          {!inSegment && (
+            <button
+              type="button"
+              aria-pressed={wrap}
+              onClick={() => {
+                setWrap((w) => !w)
+              }}
+              className={`${buttonClass} ${wrap ? 'bg-emerald-400/20 text-emerald-200' : ''}`}
+              title="Wrap long lines"
+            >
+              Wrap
+            </button>
+          )}
+          <button type="button" className={buttonClass} onClick={copy} disabled={inSegment ? !segment.segment?.text : shown === 0}>
             Copy visible
           </button>
         </div>
@@ -410,7 +435,21 @@ export function TerminalViewer({
         </div>
       )}
 
-      {error ? (
+      {inSegment ? (
+        <SegmentPane
+          state={segment}
+          name={name}
+          paneHeight={paneHeight}
+          query={search.query}
+          caseSensitive={search.caseSensitive}
+          onSearch={openSearch}
+          onMatch={(direction) => {
+            if (direction === 1) search.next()
+            else search.prev()
+          }}
+          onBack={segment.close}
+        />
+      ) : error ? (
         <div role="alert" className={`flex ${paneHeight} flex-col items-center justify-center gap-3 px-6 text-center text-sm text-red-300`}>
           <p>
             <span aria-hidden="true">✗ </span>
@@ -469,7 +508,18 @@ export function TerminalViewer({
                             part.text
                           ),
                         )}
-                    {hidden > 0 && <span className="ml-2 select-none text-amber-300">… +{hidden.toLocaleString('en-US')} bytes</span>}
+                    {hidden > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          segment.open(l.n, 0)
+                        }}
+                        className="ml-2 select-none rounded text-amber-300 underline decoration-dotted hover:text-amber-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
+                        title="Read the rest of this line"
+                      >
+                        … +{hidden.toLocaleString('en-US')} bytes · show more
+                      </button>
+                    )}
                   </span>
                 </div>
               )
@@ -528,11 +578,21 @@ export function TerminalViewer({
       {/* prompt line: where you are, in terminal words */}
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-white/10 bg-[#11161d] px-4 py-2 text-xs">
         <span className="min-w-0 truncate text-emerald-400">
-          {promptText(name, shownFrom, shown)}
+          {inSegment
+            ? segmentPrompt(name, segment.line ?? 0, segment.segment?.offset ?? 0, segment.segment?.nextOffset ?? 0)
+            : promptText(name, shownFrom, shown)}
           <span className="cinqo-caret ml-1 inline-block h-3.5 w-1.5 translate-y-0.5 bg-emerald-400" aria-hidden="true" />
         </span>
         <span className={notice ? (notice.ok ? 'text-emerald-300' : 'text-red-300') : 'text-[#8b95a5]'} aria-live="polite">
-          {notice ? notice.text : info ? status : 'opening…'}
+          {notice
+            ? notice.text
+            : inSegment
+              ? segment.segment
+                ? segmentStatus(segment.line ?? 0, segment.segment.offset, segment.segment.nextOffset, segment.segment.lineBytes)
+                : 'reading…'
+              : info
+                ? status
+                : 'opening…'}
         </span>
       </div>
     </div>

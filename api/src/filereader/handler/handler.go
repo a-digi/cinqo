@@ -115,8 +115,10 @@ func (d *deps) fail(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, context.Canceled), r.Context().Err() != nil:
 		// the client went away: nobody is listening
+	case errors.Is(err, filereader.ErrSlow):
+		response.ErrorResponse(w, http.StatusGatewayTimeout, "the file took too long to read, try again")
 	case errors.Is(err, filereader.ErrBadQuery):
-		response.ErrorResponse(w, http.StatusBadRequest, "q must be 1 to 200 characters of plain text")
+		response.ErrorResponse(w, http.StatusBadRequest, "q must be 1 to 200 characters of plain text on one line")
 	case errors.Is(err, filereader.ErrBadRange):
 		response.ErrorResponse(w, http.StatusBadRequest, "from and count must be positive numbers")
 	case errors.Is(err, filereader.ErrNotIndexed):
@@ -143,6 +145,19 @@ func positive(r *http.Request, name string, def int64) (int64, bool) {
 	}
 	n, err := strconv.ParseInt(raw, 10, 64)
 	if err != nil || n < 1 {
+		return 0, false
+	}
+	return n, true
+}
+
+// nonNegative reads an optional integer query parameter that may be zero (default 0).
+func nonNegative(r *http.Request, name string) (int64, bool) {
+	raw := r.URL.Query().Get(name)
+	if raw == "" {
+		return 0, true
+	}
+	n, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || n < 0 {
 		return 0, false
 	}
 	return n, true
@@ -195,20 +210,45 @@ func (d *deps) search(w http.ResponseWriter, r *http.Request, who identity, sour
 	q := r.URL.Query().Get("q")
 	from, okFrom := positive(r, "from", 1)
 	limit, okLimit := positive(r, "limit", 50)
-	if !okFrom || !okLimit {
-		response.ErrorResponse(w, http.StatusBadRequest, "from and limit must be positive numbers")
+	offset, okOffset := nonNegative(r, "offset")
+	if !okFrom || !okLimit || !okOffset {
+		response.ErrorResponse(w, http.StatusBadRequest, "from and limit must be positive numbers, offset zero or more")
 		return
 	}
 	if limit > 1<<20 {
 		limit = 1 << 20 // the engine clamps to its own maximum
 	}
-	res, err := d.engine.Search(r.Context(), path, q, from, int(limit), r.URL.Query().Get("case") == "1")
+	res, err := d.engine.Search(r.Context(), path, q, from, offset, int(limit), r.URL.Query().Get("case") == "1")
 	if err != nil {
 		d.fail(w, r, err)
 		return
 	}
 	d.audit(who, sourceID, ref)
 	response.SuccessResponse(w, http.StatusOK, res)
+}
+
+func (d *deps) segment(w http.ResponseWriter, r *http.Request, who identity, sourceID, ref string) {
+	path, ok := d.open(w, who, sourceID, ref)
+	if !ok {
+		return
+	}
+	line, okLine := positive(r, "line", 0)
+	offset, okOffset := nonNegative(r, "offset")
+	length, okLength := positive(r, "length", 16<<10)
+	if !okLine || line < 1 || !okOffset || !okLength {
+		response.ErrorResponse(w, http.StatusBadRequest, "line and length must be positive numbers, offset zero or more")
+		return
+	}
+	if length > 1<<20 {
+		length = 1 << 20 // the engine clamps to its own maximum
+	}
+	seg, err := d.engine.ReadSegment(r.Context(), path, line, offset, int(length))
+	if err != nil {
+		d.fail(w, r, err)
+		return
+	}
+	d.audit(who, sourceID, ref)
+	response.SuccessResponse(w, http.StatusOK, seg)
 }
 
 // ---- the routes ----
@@ -253,5 +293,13 @@ func SearchHandler(reqCtx request.RequestContext) {
 	if d, who, ok := frame(reqCtx); ok {
 		r := reqCtx.GetRequest()
 		d.search(reqCtx.GetWriter(), r, who, reqCtx.GetURI().GetPathVariable("source"), r.URL.Query().Get("ref"))
+	}
+}
+
+// SegmentHandler handles GET /api/v1/file-reader/{source}/segment?ref=&line=&offset=&length=.
+func SegmentHandler(reqCtx request.RequestContext) {
+	if d, who, ok := frame(reqCtx); ok {
+		r := reqCtx.GetRequest()
+		d.segment(reqCtx.GetWriter(), r, who, reqCtx.GetURI().GetPathVariable("source"), r.URL.Query().Get("ref"))
 	}
 }

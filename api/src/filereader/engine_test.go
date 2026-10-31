@@ -37,6 +37,7 @@ func smallLimits() Limits {
 	l := DefaultLimits()
 	l.IndexChunkBytes = 4096
 	l.CheckpointEvery = 100
+	l.SearchChunkBytes = 1024
 	return l
 }
 
