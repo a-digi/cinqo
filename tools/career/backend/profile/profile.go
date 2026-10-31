@@ -10,12 +10,14 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
 
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"career-tool-backend/comments"
 	"career-tool-backend/db"
+	"career-tool-backend/jobboard"
 )
 
 // ErrUnknownProfile is returned by RequireProfileExists — the literal
@@ -253,8 +255,39 @@ func DeleteProfile(id string) error {
 			items = append(items, comments.Entity{Type: comments.CvType, ID: cv})
 		}
 		comments.PurgeMany(items)
+		// The profile's job board lives in jobs.db, which career.db cannot cascade to. Best
+		// effort like the comments: a leftover is harmless (the board route answers 404 for a
+		// profile that is gone, and a job's usage skips profiles that no longer exist).
+		if err := jobboard.PurgeProfile(id); err != nil {
+			log.Printf("career: failed to remove the job board of deleted profile %s: %v", id, err)
+		}
 	}
 	return nil
+}
+
+// Name is a profile's name, as the job board shows it.
+type Name struct {
+	FirstName string `json:"firstName"`
+	LastName  string `json:"lastName"`
+}
+
+// Names reads every profile's name by profile id (one query, for lists that carry profile ids).
+func Names() (map[string]Name, error) {
+	rows, err := db.CareerDB.Query(`SELECT id, first_name, last_name FROM profiles`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	names := map[string]Name{}
+	for rows.Next() {
+		var id string
+		var n Name
+		if err := rows.Scan(&id, &n.FirstName, &n.LastName); err != nil {
+			return nil, err
+		}
+		names[id] = n
+	}
+	return names, rows.Err()
 }
 
 // idsOf reads a single column of ids.

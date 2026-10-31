@@ -48,6 +48,8 @@ import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { PAGE_ACCENT, accentFor, initialOf } from './jobsTheme'
 import { JobStatsStrip } from './JobStatsStrip'
 import { SelectCvModal } from './SelectCvModal'
+import { AddToBoardModal } from '../JobBoard/AddToBoardModal'
+import { plural } from '../CompaniesPage/companyStats'
 import { ConfirmationModal } from '../../Shared/ConfirmationModal/ConfirmationModal'
 import {
   REMOVE_CONFIRMATION,
@@ -137,6 +139,8 @@ export function JobsPage() {
   const [selectCvJob, setSelectCvJob] = useState<Job | null>(null)
   const [pendingManualCvJob, setPendingManualCvJob] = useState<Job | null>(null)
   const [pendingRemoveCvJob, setPendingRemoveCvJob] = useState<Job | null>(null)
+  // The job being added to a profile's job board (step 126).
+  const [addToBoardJob, setAddToBoardJob] = useState<Job | null>(null)
 
   // CV generation audit trail (step 5) — historyJob is the job whose
   // history modal is currently open (mirrors matchPickerJob/cvPickerJob's
@@ -660,6 +664,17 @@ export function JobsPage() {
       })
     }
 
+    items.push({
+      key: 'board',
+      label: 'Add to job board',
+      icon: <BriefcaseIcon className="h-3.5 w-3.5" />,
+      onClick: () => {
+        setAddToBoardJob(job)
+      },
+      disabled: profiles.length === 0,
+      title: profiles.length === 0 ? 'Create a profile first' : 'Put this job on a profile’s job board',
+    })
+
     // A single "CV" parent entry with no onClick/href of its own — the
     // row itself is purely a toggle for its own children below, which
     // vary by job.cvStatus (the in-progress watch link, the ready
@@ -1000,6 +1015,19 @@ export function JobsPage() {
                                 {initialOf(job.company || job.title)}
                               </span>
                               <span className="font-medium">{job.title}</span>
+                              {job.boardProfileCount > 0 && (
+                                <a
+                                  href={`${JOB_DETAILS_PATH}?id=${encodeURIComponent(job.id)}`}
+                                  onClick={(e) => {
+                                    e.preventDefault()
+                                    window.__cinqoToolBridge.navigate(`${JOB_DETAILS_PATH}?id=${encodeURIComponent(job.id)}`)
+                                  }}
+                                  title="Profiles whose job board has this job (open the job to see the status on each)"
+                                  className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800 hover:underline"
+                                >
+                                  On {plural(job.boardProfileCount, 'board', 'boards')}
+                                </a>
+                              )}
                               {isManualJob(job) && (
                                 <span
                                   title="You added this job yourself"
@@ -1186,6 +1214,19 @@ export function JobsPage() {
           ))}
         </div>
       </Modal>
+
+      <AddToBoardModal
+        job={addToBoardJob}
+        onClose={() => {
+          setAddToBoardJob(null)
+        }}
+        onAdded={(count) => {
+          if (addToBoardJob) {
+            const id = addToBoardJob.id
+            setJobs((prev) => prev.map((j) => (j.id === id ? { ...j, boardProfileCount: j.boardProfileCount + count } : j)))
+          }
+        }}
+      />
 
       <SelectCvModal
         job={selectCvJob}

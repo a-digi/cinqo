@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.0.471",
+  "version": "0.0.478",
   "authors": [
     { "name": "Anes Detit", "email": "tafa.andet@googlemail.com" }
   ],
@@ -521,6 +521,41 @@
     {
       "method": "GET",
       "path_suffix": "dashboard/recent-jobs",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "job-board",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "job-statuses",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "job-statuses",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "job-statuses",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "job-board-entries",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "job-board-entries",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "job-board-usage",
       "required_scope": "tool:career:jobs"
     }
   ],

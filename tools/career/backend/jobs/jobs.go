@@ -132,6 +132,10 @@ type job struct {
 	// row when known. Empty when the job has no CV row at all.
 	CvSource     string `json:"cvSource,omitempty"`
 	CvDocumentID string `json:"cvDocumentId,omitempty"`
+	// BoardProfileCount (step 126) is how many profiles' job boards have this job (one
+	// job_board_entries row each); 0 when none. Which status each has comes from GET
+	// /job-board-usage.
+	BoardProfileCount int `json:"boardProfileCount"`
 }
 
 // publishJobCreatedEvent is plan/ai/tools/career/step-83's own
@@ -331,7 +335,8 @@ func queryJobs(where string, whereArgs []any, limit, offset int) (jobsListResult
 	rows, err := db.JobsDB.Query(
 		`SELECT j.id, j.source_url, j.title, j.company, j.company_id, j.portal_link_id, p.id, p.name, j.location, j.description, j.posted_at, j.crawled_at, j.detail_crawl_status, j.source,
 			jm.score, jm.status, jm.conversation_id, jm.error,
-			cv.status, cv.conversation_id, cv.media_file_id, cv.error, cv.source, cv.cv_document_id
+			cv.status, cv.conversation_id, cv.media_file_id, cv.error, cv.source, cv.cv_document_id,
+			(SELECT COUNT(*) FROM job_board_entries be WHERE be.job_id = j.id)
 		 `+jobsFromClause+` `+where+` ORDER BY j.crawled_at DESC LIMIT ? OFFSET ?`,
 		pageArgs...,
 	)
@@ -349,7 +354,7 @@ func queryJobs(where string, whereArgs []any, limit, offset int) (jobsListResult
 		var cvStatus, cvConversationID, cvMediaFileID, cvError, cvSource, cvDocumentID sql.NullString
 		if err := rows.Scan(&j.ID, &j.SourceURL, &j.Title, &company, &companyID, &portalLinkID, &portalID, &portalName, &location, &description, &postedAt, &j.CrawledAt, &detailCrawlStatus, &j.Source,
 			&matchScore, &matchStatus, &matchConversationID, &matchError,
-			&cvStatus, &cvConversationID, &cvMediaFileID, &cvError, &cvSource, &cvDocumentID); err != nil {
+			&cvStatus, &cvConversationID, &cvMediaFileID, &cvError, &cvSource, &cvDocumentID, &j.BoardProfileCount); err != nil {
 			return jobsListResult{}, err
 		}
 		j.SourceURL = publicSourceURL(j.SourceURL)
@@ -427,7 +432,8 @@ func GetJobByID(id string) (job, error) {
 	row := db.JobsDB.QueryRow(
 		`SELECT j.id, j.source_url, j.title, j.company, j.company_id, j.portal_link_id, p.id, p.name, j.location, j.description, j.posted_at, j.crawled_at, j.detail_crawl_status, j.source,
 			jm.score, jm.status, jm.conversation_id, jm.error,
-			cv.status, cv.conversation_id, cv.media_file_id, cv.error, cv.source, cv.cv_document_id
+			cv.status, cv.conversation_id, cv.media_file_id, cv.error, cv.source, cv.cv_document_id,
+			(SELECT COUNT(*) FROM job_board_entries be WHERE be.job_id = j.id)
 		 `+jobsFromClause+` WHERE j.id = ?`,
 		id,
 	)
@@ -438,7 +444,7 @@ func GetJobByID(id string) (job, error) {
 	var cvStatus, cvConversationID, cvMediaFileID, cvError, cvSource, cvDocumentID sql.NullString
 	err := row.Scan(&j.ID, &j.SourceURL, &j.Title, &company, &companyID, &portalLinkID, &portalID, &portalName, &location, &description, &postedAt, &j.CrawledAt, &detailCrawlStatus, &j.Source,
 		&matchScore, &matchStatus, &matchConversationID, &matchError,
-		&cvStatus, &cvConversationID, &cvMediaFileID, &cvError, &cvSource, &cvDocumentID)
+		&cvStatus, &cvConversationID, &cvMediaFileID, &cvError, &cvSource, &cvDocumentID, &j.BoardProfileCount)
 	switch {
 	case err == sql.ErrNoRows:
 		return job{}, ErrUnknownJob

@@ -745,6 +745,44 @@ CREATE TABLE IF NOT EXISTS job_cv_generations (
 
 CREATE INDEX IF NOT EXISTS job_cv_generations_job_idx ON job_cv_generations(job_id);
 
+-- The job board (step 126). job_statuses are the board's columns: the four fixed ones
+-- (profile_id NULL, seeded below with fixed ids) and the custom ones a profile adds
+-- (profile_id = that profile's opaque id into career.db, no FK across the two files).
+-- The CHECK keeps kind and profile_id consistent. job_board_entries is "this profile
+-- uses this job, with this status": one row per (profile, job), so one job can sit on
+-- several profiles' boards with a different status on each. A deleted job takes its
+-- entries with it; a status that still has entries cannot be deleted (RESTRICT), the
+-- jobboard package moves them to Not Reviewed first. See
+-- plan/ai/tools/career/step-126-job-board-statuses.md.
+CREATE TABLE IF NOT EXISTS job_statuses (
+    id         TEXT PRIMARY KEY,
+    profile_id TEXT,
+    name       TEXT NOT NULL,
+    kind       TEXT NOT NULL CHECK (kind IN ('not_reviewed','declined','stopped','applied','custom')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    CHECK ((kind = 'custom') = (profile_id IS NOT NULL))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS job_statuses_profile_name_idx
+    ON job_statuses(profile_id, name COLLATE NOCASE) WHERE profile_id IS NOT NULL;
+
+INSERT OR IGNORE INTO job_statuses (id, profile_id, name, kind) VALUES
+    ('fixed-not-reviewed', NULL, 'Not Reviewed',        'not_reviewed'),
+    ('fixed-declined',     NULL, 'Declined',            'declined'),
+    ('fixed-stopped',      NULL, 'Stopped application', 'stopped'),
+    ('fixed-applied',      NULL, 'Applied',             'applied');
+
+CREATE TABLE IF NOT EXISTS job_board_entries (
+    profile_id TEXT NOT NULL,
+    job_id     TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    status_id  TEXT NOT NULL REFERENCES job_statuses(id) ON DELETE RESTRICT,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (profile_id, job_id)
+);
+
+CREATE INDEX IF NOT EXISTS job_board_entries_job_idx ON job_board_entries(job_id);
+CREATE INDEX IF NOT EXISTS job_board_entries_status_idx ON job_board_entries(status_id);
+
 -- auto_discovery_settings (step 84) is a deliberate singleton — exactly
 -- one global on/off + interval setting covering every portal link with
 -- crawl instructions already set, not a per-link schedule (see this

@@ -4,6 +4,7 @@ import { ExternalLinkIcon, PDFIcon } from '../../Shared/Icons/icons'
 import { MatchScoreBar } from '../../Shared/MatchScoreBar/MatchScoreBar'
 import { Comments } from '../../Shared/Comments/Comments'
 import { COMMENT_TYPE_JOB } from '../../Shared/Comments/commentTypes'
+import { JobBoardUsage } from '../JobBoard/JobBoardUsage'
 
 const JOBS_PATH = '/tools/career/jobs'
 
@@ -109,6 +110,8 @@ export function JobDetailsPage() {
 
               <p className="whitespace-pre-wrap text-sm text-gray-800">{job.description || 'No description available.'}</p>
             </div>
+
+            <JobBoardUsage jobId={job.id} jobTitle={job.title} />
 
             {job.matchStatus === 'completed' && job.matchScore !== undefined && (
               <div className="career-enter career-delay-2 w-full shrink-0 rounded-md border border-gray-200 bg-white p-5 shadow-sm md:w-64">

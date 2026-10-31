@@ -3,6 +3,7 @@ import {
   fetchAllCvDocuments,
   fetchCvAiRuns,
   fetchCvTemplates,
+  fetchJobBoard,
   fetchPersonaDetails,
   fetchPersonas,
   fetchProfiles,
@@ -13,16 +14,18 @@ import {
   type PersonaDetailsResult,
   type Profile,
 } from '../../api'
+import { AppLink } from '../../Shared/AppLink/AppLink'
 import { Comments } from '../../Shared/Comments/Comments'
 import { COMMENT_TYPE_PROFILE } from '../../Shared/Comments/commentTypes'
 import { UserIcon } from '../../Shared/Icons/icons'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
-import { PROFILES_PATH, personasPathFor, viewPersonaPathFor } from '../../paths'
+import { PROFILES_PATH, jobBoardPathFor, personasPathFor, viewPersonaPathFor } from '../../paths'
 import { plural } from '../CompaniesPage/companyStats'
 import { ProfilePhotosPanel } from '../ProfileImage/ProfilePhotosPanel'
 import { useProfilePhotos } from '../ProfileImage/useProfilePhotos'
 import { CvCardGrid } from '../CvBuilder/CvCardGrid'
 import { chatsByCv } from '../../CvAi/cvAiRules'
+import { totalJobs } from '../JobBoard/jobBoardRules'
 import { PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
 import { profileLabel } from '../ProfileSwitcher/profileLabel'
 import { CompletenessMeter } from './CompletenessMeter'
@@ -55,6 +58,8 @@ export function ProfileViewPage() {
   const [loaded, setLoaded] = useState(false)
   const [personas, setPersonas] = useState<Persona[]>([])
   const [personasLoaded, setPersonasLoaded] = useState(false)
+  // How many jobs are on this profile's job board; null until read, or when it cannot be.
+  const [boardJobs, setBoardJobs] = useState<number | null>(null)
   const [details, setDetails] = useState<Record<string, PersonaDetailsResult | null>>({})
   const [cvs, setCvs] = useState<CvDocument[] | null>(null)
   const [totalCvs, setTotalCvs] = useState(0)
@@ -81,6 +86,13 @@ export function ProfileViewPage() {
         setLoaded(true)
       })
     // The rest is best effort: a section that cannot be read is simply left out.
+    fetchJobBoard(profileId)
+      .then((board) => {
+        setBoardJobs(totalJobs(board))
+      })
+      .catch(() => {
+        setBoardJobs(null)
+      })
     fetchCvTemplates()
       .then(setTemplates)
       .catch(() => {
@@ -212,6 +224,25 @@ export function ProfileViewPage() {
         </aside>
 
         <div className="order-2 min-w-0 flex-1 space-y-5">
+          <section aria-label="Job board">
+            <h2 className="mb-3 text-sm font-semibold text-gray-700">Job board</h2>
+            <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-gray-100 bg-white/70 p-3">
+              <p className="min-w-0 flex-1 text-sm text-gray-600">
+                {boardJobs === null
+                  ? 'The jobs this profile is working on, by status.'
+                  : boardJobs === 0
+                    ? 'No jobs on this profile’s board yet.'
+                    : `${plural(boardJobs, 'job', 'jobs')} on this profile’s board.`}
+              </p>
+              <AppLink
+                href={jobBoardPathFor(profile.id)}
+                className="shrink-0 rounded-md bg-gray-800 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-900"
+              >
+                Open job board
+              </AppLink>
+            </div>
+          </section>
+
           <section aria-label="Personas">
             <h2 className="mb-3 text-sm font-semibold text-gray-700">Personas</h2>
             {personas.length === 0 ? (

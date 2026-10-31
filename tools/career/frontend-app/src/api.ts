@@ -258,6 +258,8 @@ export interface Job {
   // when known. Absent when the job has no CV.
   cvSource?: 'ai' | 'manual' | 'existing'
   cvDocumentId?: string
+  // boardProfileCount (step 126) — on how many profiles' job boards this job is; always sent, 0 when none.
+  boardProfileCount: number
 }
 
 export interface JobsResult {
@@ -1610,4 +1612,102 @@ export async function finishCvAiRun(id: string, outcome: { status: 'ready' } | {
 export async function deleteCvAiRun(id: string): Promise<void> {
   const res = await fetch(`${PROXY_BASE}/cv-ai-runs?id=${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'include' })
   if (!res.ok) throw new Error(`failed to remove the run (${res.status})`)
+}
+
+// --- job board (step 126) ---
+
+// One job as a card in a column of a profile's board.
+export interface JobBoardCard {
+  jobId: string
+  title: string
+  company: string
+  location: string
+  updatedAt: string
+}
+
+// A column is a status: one of the four fixed ones or one of the profile's own ('custom').
+export type JobStatusKind = 'not_reviewed' | 'declined' | 'stopped' | 'applied' | 'custom'
+
+export interface JobBoardColumn {
+  id: string
+  name: string
+  kind: JobStatusKind
+  jobs: JobBoardCard[]
+}
+
+export interface JobBoard {
+  profileId: string
+  columns: JobBoardColumn[]
+}
+
+export async function fetchJobBoard(profileId: string): Promise<JobBoard> {
+  const res = await fetch(`${PROXY_BASE}/job-board?profileId=${encodeURIComponent(profileId)}`, { credentials: 'include' })
+  return jsonOrThrow<JobBoard>(res, 'load the job board')
+}
+
+// Puts a job on a profile's board in a status: adds it when it is not on the board yet, moves it otherwise.
+export async function setJobBoardEntry(profileId: string, jobId: string, statusId: string): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/job-board-entries`, {
+    method: 'PUT',
+    credentials: 'include',
+    body: JSON.stringify({ profileId, jobId, statusId }),
+  })
+  if (!res.ok) throw new Error(`failed to move the job (${res.status})`)
+}
+
+// Takes a job off a profile's board.
+export async function removeJobBoardEntry(profileId: string, jobId: string): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/job-board-entries?profileId=${encodeURIComponent(profileId)}&jobId=${encodeURIComponent(jobId)}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  })
+  if (!res.ok) throw new Error(`failed to remove the job from the board (${res.status})`)
+}
+
+// The statuses calls answer a refused name with the reason as plain text ("a status with this name already
+// exists"); that text is what the board shows.
+async function statusFailure(res: Response, action: string): Promise<Error> {
+  const text = (await res.text()).trim()
+  return new Error(
+    res.status === 400 || res.status === 409 ? text || `failed to ${action} (${res.status})` : `failed to ${action} (${res.status})`,
+  )
+}
+
+// Adds a status of the profile's own (a new column on its board).
+export async function createJobStatus(profileId: string, name: string): Promise<{ id: string; name: string }> {
+  const res = await fetch(`${PROXY_BASE}/job-statuses`, {
+    method: 'POST',
+    credentials: 'include',
+    body: JSON.stringify({ profileId, name }),
+  })
+  if (!res.ok) throw await statusFailure(res, 'add the status')
+  return res.json() as Promise<{ id: string; name: string }>
+}
+
+export async function renameJobStatus(id: string, name: string): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/job-statuses`, { method: 'PUT', credentials: 'include', body: JSON.stringify({ id, name }) })
+  if (!res.ok) throw await statusFailure(res, 'rename the status')
+}
+
+// Deletes a status of the profile's own; the jobs in it go back to Not Reviewed.
+export async function deleteJobStatus(id: string): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/job-statuses?id=${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'include' })
+  if (!res.ok) throw await statusFailure(res, 'delete the status')
+}
+
+// One profile's board that has a job, with the job's status on it.
+export interface JobBoardUsageEntry {
+  profileId: string
+  firstName: string
+  lastName: string
+  statusId: string
+  statusName: string
+  kind: JobStatusKind
+}
+
+// The job's status on every profile's board that has it.
+export async function fetchJobBoardUsage(jobId: string): Promise<JobBoardUsageEntry[]> {
+  const res = await fetch(`${PROXY_BASE}/job-board-usage?jobId=${encodeURIComponent(jobId)}`, { credentials: 'include' })
+  const data = await jsonOrThrow<{ profiles: JobBoardUsageEntry[] }>(res, 'load the job’s boards')
+  return data.profiles
 }
