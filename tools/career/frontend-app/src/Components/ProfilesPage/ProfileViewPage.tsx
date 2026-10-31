@@ -19,10 +19,9 @@ import { Comments } from '../../Shared/Comments/Comments'
 import { COMMENT_TYPE_PROFILE } from '../../Shared/Comments/commentTypes'
 import { UserIcon } from '../../Shared/Icons/icons'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
-import { PERSONA_DETAILS_PATH, PROFILES_PATH, VIEW_PERSONA_PATH } from '../../paths'
+import { PROFILES_PATH, VIEW_PERSONA_PATH } from '../../paths'
 import { CvList } from '../CvBuilder/CvList'
 import { PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
-import { setPersonaIdInLocalStorage } from '../Persona/PersonaSwitcher/repositoryLocalStorage'
 import { profileLabel } from '../ProfileSwitcher/profileLabel'
 import { CompletenessMeter } from './CompletenessMeter'
 import { CV_LIST_CAP, countsText, cvListMayBeCut, cvsOfProfile, lifetimeText } from './profileViewRules'
@@ -222,7 +221,7 @@ export function ProfileViewPage() {
         </aside>
 
         <div className="order-2 min-w-0 flex-1 space-y-5">
-          <section aria-label="Personas" className="rounded-3xl border p-5 shadow-sm" style={cardStyle}>
+          <section aria-label="Personas">
             <h2 className="mb-3 text-sm font-semibold text-gray-700">Personas</h2>
             {personas.length === 0 ? (
               <p className="text-sm text-gray-400">This profile has no personas yet.</p>
@@ -246,16 +245,6 @@ export function ProfileViewPage() {
                           {p.name}
                         </a>
                         {d && <span className="text-xs text-gray-500">{countsText(d.skills.length, d.experience.length)}</span>}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setPersonaIdInLocalStorage(p.id)
-                            window.__cinqoToolBridge.navigate(PERSONA_DETAILS_PATH)
-                          }}
-                          className="ml-auto text-xs text-blue-700 hover:underline"
-                        >
-                          Open details
-                        </button>
                       </div>
                       {p.description && <p className="mt-0.5 text-xs text-gray-500">{p.description}</p>}
                       {facts.length > 0 && <p className="mt-1 text-xs text-gray-600">{facts.join(' · ')}</p>}
