@@ -17,7 +17,8 @@ import { Comments } from '../../Shared/Comments/Comments'
 import { COMMENT_TYPE_PROFILE } from '../../Shared/Comments/commentTypes'
 import { UserIcon } from '../../Shared/Icons/icons'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
-import { PROFILES_PATH, viewPersonaPathFor } from '../../paths'
+import { PROFILES_PATH, personasPathFor, viewPersonaPathFor } from '../../paths'
+import { plural } from '../CompaniesPage/companyStats'
 import { ProfilePhotosPanel } from '../ProfileImage/ProfilePhotosPanel'
 import { useProfilePhotos } from '../ProfileImage/useProfilePhotos'
 import { CvCardGrid } from '../CvBuilder/CvCardGrid'
@@ -53,6 +54,7 @@ export function ProfileViewPage() {
   const [error, setError] = useState('')
   const [loaded, setLoaded] = useState(false)
   const [personas, setPersonas] = useState<Persona[]>([])
+  const [personasLoaded, setPersonasLoaded] = useState(false)
   const [details, setDetails] = useState<Record<string, PersonaDetailsResult | null>>({})
   const [cvs, setCvs] = useState<CvDocument[] | null>(null)
   const [totalCvs, setTotalCvs] = useState(0)
@@ -87,6 +89,7 @@ export function ProfileViewPage() {
     fetchPersonas(profileId)
       .then((list) => {
         setPersonas(list)
+        setPersonasLoaded(true)
         void Promise.all(list.map((p) => fetchPersonaDetails(p.id).catch(() => null))).then((all) => {
           setDetails(Object.fromEntries(list.map((p, i) => [p.id, all[i]])))
         })
@@ -109,6 +112,7 @@ export function ProfileViewPage() {
       })
       .catch(() => {
         setPersonas([])
+        setPersonasLoaded(true)
       })
   }, [profileId])
 
@@ -149,7 +153,8 @@ export function ProfileViewPage() {
         icon={<UserIcon />}
         title={name}
         description={lifetimeText(profile.createdAt, profile.updatedAt, formatDate) || 'No dates recorded.'}
-        pill={{ text: `${profile.completeness.score}% complete` }}
+        // The pill links on to this profile's personas (the completeness is in the Overview card below).
+        pill={{ text: personasLoaded ? plural(personas.length, 'persona', 'personas') : 'Personas', href: personasPathFor(profile.id) }}
       />
 
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
