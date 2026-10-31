@@ -41,6 +41,7 @@ import { CompanyViewPage } from './Components/CompaniesPage/CompanyViewPage'
 import { NewCompanyPage } from './Components/CompaniesPage/NewCompanyPage'
 import { NewRecruiterPage } from './Components/RecruitersPage/NewRecruiterPage'
 import { PortalsPage } from './Components/PortalsPage/PortalsPage'
+import { PortalViewPage } from './Components/PortalsPage/PortalViewPage'
 import { CrawlMonitorPage } from './Crawler/CrawlMonitor/CrawlMonitorPage'
 import { SettingsPage } from './Components/SettingsPage/SettingsPage'
 import { ImportCvPage } from './Components/ImportCv/ImportCvPage'
@@ -68,6 +69,7 @@ import {
   NEW_RECRUITER_PATH,
   SETTINGS_PATH,
   PORTALS_PATH,
+  VIEW_PORTAL_PATH,
   CRAWL_MONITOR_PATH,
 } from './paths'
 
@@ -251,6 +253,14 @@ window.__cinqoToolBridge.registerRoute({
   path: PORTALS_PATH,
   mount: (container) => {
     mountReact(container, <PortalsPage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: VIEW_PORTAL_PATH,
+  mount: (container) => {
+    mountReact(container, <PortalViewPage />)
   },
   unmount: unmountReact,
 })

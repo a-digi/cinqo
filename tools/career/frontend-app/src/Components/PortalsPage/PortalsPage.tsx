@@ -23,6 +23,7 @@ import { PlusIcon } from '../../Shared/Icons/icons'
 import { Modal } from '../../Shared/Modal/Modal'
 import { AccordionItem } from '../../Shared/Accordion/AccordionItem'
 import { PortalLinkHeader } from './PortalLinkHeader'
+import { VIEW_PORTAL_PATH } from '../../paths'
 
 // Portals are tool-wide, not persona/profile-scoped — same reasoning
 // Jobs/Companies already document. No Dropdown call site here: a
@@ -355,6 +356,16 @@ export function PortalsPage() {
                         {plural(p.links.length, 'link', 'links')}
                       </span>
                       <span className="ml-auto flex shrink-0 gap-2">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            window.__cinqoToolBridge.navigate(`${VIEW_PORTAL_PATH}?id=${encodeURIComponent(p.id)}`)
+                          }}
+                          className="rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                        >
+                          View
+                        </button>
                         <button
                           type="button"
                           onClick={(e) => {

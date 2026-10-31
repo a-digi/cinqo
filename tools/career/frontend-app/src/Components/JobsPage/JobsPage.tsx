@@ -43,7 +43,7 @@ import {
 } from '../../Shared/Icons/icons'
 import { AddJobModal } from './AddJobModal'
 import { companyCell } from './companyCell'
-import { VIEW_COMPANY_PATH } from '../../paths'
+import { VIEW_COMPANY_PATH, VIEW_PORTAL_PATH } from '../../paths'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { PAGE_ACCENT, accentFor, initialOf } from './jobsTheme'
 import { JobStatsStrip } from './JobStatsStrip'
@@ -1044,6 +1044,19 @@ export function JobsPage() {
                           <td className="border-b border-blue-50 p-3">
                             {platformLabel(job) === '—' ? (
                               <span className="text-gray-300">—</span>
+                            ) : job.portalId ? (
+                              <a
+                                href={`${VIEW_PORTAL_PATH}?id=${encodeURIComponent(job.portalId)}`}
+                                onClick={(e) => {
+                                  e.preventDefault()
+                                  window.__cinqoToolBridge.navigate(`${VIEW_PORTAL_PATH}?id=${encodeURIComponent(job.portalId ?? '')}`)
+                                }}
+                                title="Open this portal's page"
+                                className="inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium hover:underline"
+                                style={{ background: accentFor(platformLabel(job)).soft, color: accentFor(platformLabel(job)).text }}
+                              >
+                                {platformLabel(job)}
+                              </a>
                             ) : (
                               <span
                                 className="inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium"
