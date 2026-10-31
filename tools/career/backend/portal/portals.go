@@ -1093,6 +1093,15 @@ func BuildCrawlRequest(id string) (CrawlRequest, error) {
 	if err != nil {
 		return CrawlRequest{}, err
 	}
+	return BuildCrawlRequestFromYAML(yamlText)
+}
+
+// BuildCrawlRequestFromYAML is BuildCrawlRequest's own body, taking the instructions
+// text directly instead of reading it off a link — so a candidate's instructions
+// can be tried against ANOTHER link's page before being saved on it (step 103).
+// Same checks as above: empty text is ErrNoCrawlInstructions, and the text is
+// validated before it is turned into a request.
+func BuildCrawlRequestFromYAML(yamlText string) (CrawlRequest, error) {
 	if yamlText == "" {
 		return CrawlRequest{}, ErrNoCrawlInstructions
 	}
@@ -1147,6 +1156,13 @@ func BuildJobDetailCrawlRequest(id string) (CrawlRequest, error) {
 	if err != nil {
 		return CrawlRequest{}, err
 	}
+	return BuildJobDetailCrawlRequestFromYAML(yamlText)
+}
+
+// BuildJobDetailCrawlRequestFromYAML is BuildJobDetailCrawlRequest's own body, taking
+// the instructions text directly (step 103), for the same reason as
+// BuildCrawlRequestFromYAML above.
+func BuildJobDetailCrawlRequestFromYAML(yamlText string) (CrawlRequest, error) {
 	if yamlText == "" {
 		return CrawlRequest{}, ErrNoJobDetailCrawlInstructions
 	}

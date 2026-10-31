@@ -918,6 +918,32 @@ export async function addPortalLink(portalId: string, url: string, title: string
   return jsonOrThrow<{ id: string }>(res, 'add portal link')
 }
 
+// What POST /portal-links/inherit-instructions answers (step 103). The refreshed portal list is
+// always in it; every other field may be missing, which the callers treat as "nothing".
+export interface InheritInstructionsResult {
+  inherited?: boolean
+  listing?: boolean
+  jobDetail?: boolean
+  from?: { linkId?: string; title?: string } | null
+  tried?: { linkId?: string; title?: string; listing?: string; jobDetail?: string; reason?: string }[] | null
+  portals: Portal[]
+}
+
+// Tries the instructions of the portal's other links on a link that has none, and saves them
+// on it when they work (the backend does the trial; nothing is saved otherwise).
+export async function inheritPortalInstructions(id: string): Promise<InheritInstructionsResult> {
+  const res = await fetch(`${PROXY_BASE}/portal-links/inherit-instructions`, {
+    method: 'POST',
+    credentials: 'include',
+    body: JSON.stringify({ id }),
+  })
+  if (!res.ok) {
+    const text = (await res.text().catch(() => '')).trim()
+    throw new Error(text || `failed to try the portal's instructions (${res.status})`)
+  }
+  return (await res.json()) as InheritInstructionsResult
+}
+
 // Sets (or, with both empty, removes) a portal's own AI platform and model.
 export async function setPortalAi(id: string, platformId: string, model: string): Promise<Portal[]> {
   const res = await fetch(`${PROXY_BASE}/portals/ai`, {

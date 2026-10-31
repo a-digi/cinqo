@@ -295,6 +295,11 @@
     },
     {
       "method": "POST",
+      "path_suffix": "portal-links/inherit-instructions",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "POST",
       "path_suffix": "portal-links",
       "required_scope": "tool:career:portals"
     },

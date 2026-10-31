@@ -129,6 +129,7 @@ func runHTTPServer() {
 	http.HandleFunc("/portal-links/instruction-attempts/start", instructionAttemptStartHandler)
 	http.HandleFunc("/portal-links/instruction-attempts/finish", instructionAttemptFinishHandler)
 	http.HandleFunc("/portal-links/crawl-now", crawl.CrawlNowHandler)
+	http.HandleFunc("/portal-links/inherit-instructions", crawl.InheritInstructionsHandler)
 	http.HandleFunc("/portal-links/crawl-job-details-now", crawl.CrawlJobDetailsNowHandler)
 	http.HandleFunc("/portal-links/crawl-runs/active", crawl.CrawlMonitorHandler)
 	http.HandleFunc("/portal-links/crawl-now/active", crawl.CrawlNowActiveHandler)

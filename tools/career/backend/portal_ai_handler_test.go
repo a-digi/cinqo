@@ -171,7 +171,7 @@ func TestAIHandlers_RefuseBadRequests(t *testing.T) {
 	}
 }
 
-// The new routes are declared in the manifest with the portals scope, so the host lets them through.
+// The new routes (steps 102 and 103) are declared in the manifest with the portals scope, so the host lets them through.
 func TestAIRoutesAreInTheManifest(t *testing.T) {
 	raw, err := os.ReadFile("../manifest.json")
 	if err != nil {
@@ -187,15 +187,17 @@ func TestAIRoutesAreInTheManifest(t *testing.T) {
 	if err := json.Unmarshal(raw, &m); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"portals/ai", "portal-links/ai"} {
+	for _, want := range []struct{ method, path string }{
+		{"PUT", "portals/ai"}, {"PUT", "portal-links/ai"}, {"POST", "portal-links/inherit-instructions"},
+	} {
 		found := false
 		for _, r := range m.Routes {
-			if r.Method == "PUT" && r.PathSuffix == want && r.RequiredScope == "tool:career:portals" {
+			if r.Method == want.method && r.PathSuffix == want.path && r.RequiredScope == "tool:career:portals" {
 				found = true
 			}
 		}
 		if !found {
-			t.Errorf("manifest has no PUT %s with scope tool:career:portals", want)
+			t.Errorf("manifest has no %s %s with scope tool:career:portals", want.method, want.path)
 		}
 	}
 }

@@ -9,6 +9,7 @@ import {
   removePortalLink,
   setPortalAi,
   setPortalLinkAi,
+  inheritPortalInstructions,
   type Portal,
   type PortalLink,
 } from '../../api'
@@ -22,6 +23,7 @@ import { plural, summarizePortals } from './portalStats'
 import { AutoDiscoveryPanel } from '../../Crawler/AutoDiscoveryPanel/AutoDiscoveryPanel'
 import { anyLinkAutoDiscoverable } from '../../Crawler/autoDiscoveryVisibility'
 import { CrawlPanel } from '../../Crawler/CrawlPanel/CrawlPanel'
+import { inheritErrorView, inheritView, type InheritView } from '../../Crawler/inheritOutcome'
 import { PlusIcon } from '../../Shared/Icons/icons'
 import { Modal } from '../../Shared/Modal/Modal'
 import { AccordionItem } from '../../Shared/Accordion/AccordionItem'
@@ -64,6 +66,10 @@ export function PortalsPage() {
   const [aiPortalId, setAiPortalId] = useState<string | null>(null)
   // The link whose AI choice the modal is editing, or null when it is closed.
   const [aiLinkId, setAiLinkId] = useState<string | null>(null)
+  // Links a trial of the portal's other instructions is running for (step 103), and what each
+  // trial last said. Both are per link and last only as long as this page is open.
+  const [inheriting, setInheriting] = useState<Set<string>>(new Set())
+  const [inheritNotes, setInheritNotes] = useState<Record<string, InheritView>>({})
 
   // The AI platform and model CrawlPanel's "Crawl with AI" / "Generate with AI" use
   // are the one saved setting for the whole tool (Career ▸ Settings), not a choice
@@ -203,6 +209,37 @@ export function PortalsPage() {
     return linkTitleDrafts[portalId] ?? ''
   }
 
+  // Tries the instructions of the link's portal-mates on it (step 103). Resolves true when the
+  // listing instructions were inherited, so the caller can skip the AI run; any failure
+  // resolves false (a failed trial must never block the AI) and is shown as a note.
+  function tryInherit(linkId: string): Promise<boolean> {
+    setInheriting((prev) => new Set(prev).add(linkId))
+    setInheritNotes((prev) => Object.fromEntries(Object.entries(prev).filter(([id]) => id !== linkId)))
+    return inheritPortalInstructions(linkId)
+      .then((res) => {
+        setPortals(res.portals)
+        const view = inheritView(res)
+        if (view.message !== '') setInheritNotes((prev) => ({ ...prev, [linkId]: view }))
+        if (view.skipAi) {
+          // The saved listing publishes an event that sets the crawl request on the link a moment
+          // later; look again once, so the open panel picks the request up and crawls.
+          window.setTimeout(load, 2000)
+        }
+        return view.skipAi
+      })
+      .catch((err: unknown) => {
+        setInheritNotes((prev) => ({ ...prev, [linkId]: inheritErrorView(err) }))
+        return false
+      })
+      .finally(() => {
+        setInheriting((prev) => {
+          const next = new Set(prev)
+          next.delete(linkId)
+          return next
+        })
+      })
+  }
+
   function handleAddLink(portalId: string) {
     const url = linkUrlDraft(portalId).trim()
     const title = linkTitleDraft(portalId).trim()
@@ -216,11 +253,14 @@ export function PortalsPage() {
     }
     setError('')
     addPortalLink(portalId, url, title)
-      .then(() => {
+      .then(({ id }) => {
         setLinkUrlDrafts((prev) => ({ ...prev, [portalId]: '' }))
         setLinkTitleDrafts((prev) => ({ ...prev, [portalId]: '' }))
         setAddingLinkPortalId(null)
         load()
+        // Step 103: the first thing for a new link is to try what the portal's other links already
+        // use. Silent when the portal has nothing to offer; the result shows in the link's panel.
+        void tryInherit(id)
       })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : String(err))
@@ -546,6 +586,9 @@ export function PortalsPage() {
                           selectedPlatform={linkAi.platform}
                           selectedModel={linkAi.model}
                           hasPlatforms={ai.platforms.length > 0}
+                          inheriting={inheriting.has(link.id)}
+                          inheritNote={inheritNotes[link.id] ?? null}
+                          onTryInherit={() => tryInherit(link.id)}
                           onReload={load}
                           onError={setError}
                         />

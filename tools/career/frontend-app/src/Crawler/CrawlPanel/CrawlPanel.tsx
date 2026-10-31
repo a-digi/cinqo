@@ -28,6 +28,7 @@ import { phaseLabel, latestCrawlLogMessage } from '../crawlPhase'
 import { instructionAlertAttempts, isLikelyUncrawlable, savedDespiteError } from '../instructionStats'
 import { hasListingInstructions } from '../autoDiscoveryVisibility'
 import { diagnoseEmptyCrawl, emptyCrawlFacts, emptyCrawlFor } from '../emptyCrawl'
+import { shouldTryInherit, type InheritView } from '../inheritOutcome'
 import { FREE_ROUTER_HINT, isFreeRouter } from '../modelHint'
 import { findJobsQuestion, pendingJobsQuestion, JOBS_QUESTION_NO_HINT, JOBS_QUESTION_TITLE, JOBS_QUESTION_YES_HINT } from '../jobsQuestion'
 import { InstructionAttemptStats } from './InstructionAttemptStats'
@@ -82,6 +83,9 @@ export function CrawlPanel({
   selectedPlatform,
   selectedModel,
   hasPlatforms,
+  inheriting,
+  inheritNote,
+  onTryInherit,
   onReload,
   onError,
 }: {
@@ -89,6 +93,11 @@ export function CrawlPanel({
   selectedPlatform: Platform | null
   selectedModel: string | null
   hasPlatforms: boolean
+  // Step 103: a trial of the portal's other instructions is running for this link; what the last
+  // one said; and how to run one (resolves true when the listing instructions were inherited).
+  inheriting: boolean
+  inheritNote: InheritView | null
+  onTryInherit: () => Promise<boolean>
   onReload: () => void
   onError: (message: string) => void
 }) {
@@ -690,7 +699,24 @@ export function CrawlPanel({
   // user can watch the AI work instead of only seeing a disabled
   // button — see this step's own design doc for why that widget needs
   // no changes of its own to support this.
+  //
+  // Step 103: for a link that has no listing instructions yet, the portal's other links'
+  // instructions are tried on it first (no AI, no tokens). When they work the AI run is
+  // skipped: they are saved and the usual pipeline carries on. When they do not, or the
+  // trial cannot run, the AI run below starts as before. A run that follows the user's
+  // "yes, this page has jobs" answer never tries them: those instructions were proven wrong.
   function handleGenerateInstructionsWithAI(options: { jobsConfirmed?: boolean } = {}) {
+    if (aiPending || inheriting || !selectedPlatform) return
+    if (shouldTryInherit(link) && !options.jobsConfirmed) {
+      void onTryInherit().then((inherited) => {
+        if (!inherited) startGenerateInstructionsWithAI(options)
+      })
+      return
+    }
+    startGenerateInstructionsWithAI(options)
+  }
+
+  function startGenerateInstructionsWithAI(options: { jobsConfirmed?: boolean } = {}) {
     if (aiPending || !selectedPlatform) return
     const platformId = selectedPlatform.id
     const model = selectedPlatform.models.length > 0 ? (selectedModel ?? selectedPlatform.models[0]) : undefined
@@ -1194,15 +1220,17 @@ export function CrawlPanel({
                         handleGenerateInstructionsWithAI()
                       }
                 }
-                disabled={!hasPlatforms || (aiPending && !aiConversationId) || Boolean(jobsQuestion)}
+                disabled={!hasPlatforms || inheriting || (aiPending && !aiConversationId) || Boolean(jobsQuestion)}
                 title={
                   !hasPlatforms
                     ? 'No AI platform configured — add one on the Platforms page first'
                     : jobsQuestion
                       ? 'Answer the question below first'
-                      : aiPending
-                        ? "Open the chat window to watch the AI work on this link's crawl instructions"
-                        : 'Let the AI inspect this page and write (or update) its listing crawl instructions for you — once saved, this link is crawled and its job-detail instructions are generated automatically.'
+                      : inheriting
+                        ? "Trying the instructions of this portal's other links first…"
+                        : aiPending
+                          ? "Open the chat window to watch the AI work on this link's crawl instructions"
+                          : 'Let the AI inspect this page and write (or update) its listing crawl instructions for you — once saved, this link is crawled and its job-detail instructions are generated automatically.'
                 }
                 className="flex shrink-0 flex-col items-center justify-center gap-1 self-stretch rounded-lg border border-gray-200 bg-gray-50 px-3 text-xs font-medium text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
               >
@@ -1222,6 +1250,26 @@ export function CrawlPanel({
           </div>
         </AccordionItem>
       </div>
+      {/* Step 103: the trial of the portal's other instructions, while it runs and what it said. */}
+      {inheriting && (
+        <p role="status" className="mt-2 text-xs text-gray-600">
+          Trying the instructions of this portal's other links on this page…
+        </p>
+      )}
+      {!inheriting && inheritNote && (
+        <p
+          role="status"
+          className={`mt-2 text-xs ${
+            inheritNote.kind === 'success' || inheritNote.kind === 'partial'
+              ? 'text-green-700'
+              : inheritNote.kind === 'error'
+                ? 'text-amber-700'
+                : 'text-gray-600'
+          }`}
+        >
+          {inheritNote.message}
+        </p>
+      )}
       {/* Step 93: shown where Generate is the next action (no listing instructions
           yet), only while the random free router is the selected model. */}
       {!link.crawlInstructions && isFreeRouter(selectedPlatform, selectedModel) && (
