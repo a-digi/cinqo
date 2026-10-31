@@ -39,6 +39,8 @@ type Persona struct {
 	Location         string
 	DesiredTitles    string
 	DesiredLocations string
+	// RemotePreference (step 130) is "" (not set), "onsite", "open" or "remote_only"; anything else reads as not set.
+	RemotePreference string
 	Skills           []string
 	Experience       []Experience
 }
@@ -76,11 +78,14 @@ type Result struct {
 	LowConfidence bool     `json:"lowConfidence"`
 	// RelevanceScale is 1, or less when the job hardly resembles the persona's field (Skills and Title fit earned
 	// under RelevanceFloor points) and the score was scaled down.
-	RelevanceScale float64     `json:"relevanceScale"`
-	Components     []Component `json:"components"`
-	Missing        []Missing   `json:"missing"`
-	Gaps           []string    `json:"gaps"`
-	EngineVersion  string      `json:"engineVersion"`
+	RelevanceScale float64 `json:"relevanceScale"`
+	// DealbreakerScale is 1, or DealbreakerScale when the persona's explicit remote preference rules the job out (a
+	// remote-only persona and an on-site job, an on-site-only persona and a remote job) and the score was scaled down.
+	DealbreakerScale float64     `json:"dealbreakerScale"`
+	Components       []Component `json:"components"`
+	Missing          []Missing   `json:"missing"`
+	Gaps             []string    `json:"gaps"`
+	EngineVersion    string      `json:"engineVersion"`
 }
 
 // ErrNoPersonas is returned for a profile without personas.

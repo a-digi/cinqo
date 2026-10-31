@@ -94,6 +94,10 @@ func InitDatabases() error {
 		careerDB.Close()
 		return fmt.Errorf("failed to fill the profiles' photos: %w", err)
 	}
+	if err := migratePersonaDetailsRemotePreference(careerDB); err != nil {
+		careerDB.Close()
+		return fmt.Errorf("failed to add persona_details.remote_preference: %w", err)
+	}
 	if err := migratePersonasAiRunID(careerDB); err != nil {
 		careerDB.Close()
 		return fmt.Errorf("failed to add personas.ai_run_id: %w", err)
@@ -244,6 +248,11 @@ CREATE TABLE IF NOT EXISTS persona_details (
     desired_titles    TEXT NOT NULL DEFAULT '',
     desired_locations TEXT NOT NULL DEFAULT '',
     min_salary        INTEGER,
+    -- remote_preference (step 130): whether the persona wants remote work: '' (not set, the default: the job match
+    -- reads the free text as it always did), 'onsite' (on-site only), 'open' (open to remote or hybrid as well) or
+    -- 'remote_only'. Also added to existing installs by migratePersonaDetailsRemotePreference. See
+    -- plan/ai/tools/career/step-130-remote-preference-and-location-score.md.
+    remote_preference TEXT NOT NULL DEFAULT '' CHECK (remote_preference IN ('', 'onsite', 'open', 'remote_only')),
     updated_at        TEXT
 );
 
@@ -1174,6 +1183,22 @@ func migrateCvDocumentPersonas(db *sql.DB) error {
 // on a brand-new install (the base schema already has it). It runs right after the base schema,
 // not inside migrateCareerDB, because the column references persona_ai_runs, which the schema
 // creates.
+// migratePersonaDetailsRemotePreference adds the remote_preference column (step 130) to an already-installed
+// persona_details table: the same plain ALTER TABLE ADD COLUMN as every other column added here, guarded the same way.
+// It runs after the base schema, because an install that went through the older table rebuilds has a persona_details
+// the base schema's CREATE TABLE IF NOT EXISTS leaves alone. DEFAULT ” keeps every existing persona "not set".
+func migratePersonaDetailsRemotePreference(db *sql.DB) error {
+	exists, hasColumn, err := tableHasColumn(db, "persona_details", "remote_preference")
+	if err != nil {
+		return err
+	}
+	if !exists || hasColumn {
+		return nil
+	}
+	_, err = db.Exec(`ALTER TABLE persona_details ADD COLUMN remote_preference TEXT NOT NULL DEFAULT '' CHECK (remote_preference IN ('', 'onsite', 'open', 'remote_only'))`)
+	return err
+}
+
 func migratePersonasAiRunID(db *sql.DB) error {
 	exists, hasColumn, err := tableHasColumn(db, "personas", "ai_run_id")
 	if err != nil {

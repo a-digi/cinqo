@@ -186,6 +186,8 @@ export interface PersonaDetails {
   desiredTitles: string
   desiredLocations: string
   minSalary: number
+  // Whether the persona wants remote work (step 130): '' (not set), 'onsite', 'open' or 'remote_only'.
+  remotePreference?: '' | 'onsite' | 'open' | 'remote_only'
 }
 
 export interface CareerExperience {
@@ -594,6 +596,7 @@ export interface UpdatePersonaDetailsArgs {
   desiredTitles?: string
   desiredLocations?: string
   minSalary?: number
+  remotePreference?: '' | 'onsite' | 'open' | 'remote_only'
 }
 
 export async function updatePersonaDetails(personaId: string, args: UpdatePersonaDetailsArgs): Promise<PersonaDetailsResult> {
@@ -1774,6 +1777,9 @@ export interface ManualMatchResult {
   // 1, or less when the job hardly resembles the persona's field and the score was scaled down (absent in results
   // stored before that rule).
   relevanceScale?: number
+  // 1, or less when the persona's explicit remote choice rules the job out (remote only vs an on-site job, on-site only
+  // vs a remote job) and the score was scaled down (absent in results stored before that rule).
+  dealbreakerScale?: number
   components: MatchComponent[]
   missing: MatchMissing[]
   gaps: string[]

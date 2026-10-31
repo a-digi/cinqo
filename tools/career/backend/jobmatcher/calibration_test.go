@@ -143,3 +143,69 @@ func TestCalibrationPrintsTheTable(t *testing.T) {
 		t.Logf("  %-10s %5.1f / %d  %s", comp.Key, comp.Points, comp.Weight, comp.Note)
 	}
 }
+
+// Step 130: the same job text, read as remote, hybrid and on-site, for a persona of each remote preference. The
+// whole scores must order the way a person would expect; the numbers of the table itself are pinned cell by cell in
+// location_preference_test.go and dealbreaker_test.go.
+func TestCalibrationRemotePreferences(t *testing.T) {
+	base := "Du entwickelst Backend-Services in Go, betreibst sie mit Docker und Kubernetes und arbeitest mit PostgreSQL. Mindestens 3 Jahre Berufserfahrung."
+	jobs := map[string]Job{
+		"remote":    {Title: "Backend Engineer (m/w/d) Go", Location: "Remote", Description: base},
+		"hybrid":    {Title: "Backend Engineer (m/w/d) Go", Location: "Hamburg", Description: base + " Hybrid möglich."},
+		"hybridFar": {Title: "Backend Engineer (m/w/d) Go", Location: "München", Description: base + " Hybrid möglich."},
+		"onsite":    {Title: "Backend Engineer (m/w/d) Go", Location: "Hamburg", Description: base + " Arbeit im Büro."},
+		"onsiteFar": {Title: "Backend Engineer (m/w/d) Go", Location: "München", Description: base + " Arbeit im Büro."},
+	}
+	c := NewCorpus([]string{base})
+	score := func(job string, pref string) int {
+		p := goDev()
+		p.RemotePreference = pref
+		p.DesiredLocations = "Hamburg" // the persona does not type "Remote"
+		r := mustScore(t, jobs[job], []Persona{p}, c)
+		t.Logf("%-12s persona, %-10s job: %3d", pref, job, r.Score)
+		return r.Score
+	}
+
+	// remote only: the remote job leads, hybrid is a distant second, on-site (even in the persona's own city) trails
+	ro := map[string]int{}
+	for k := range jobs {
+		ro[k] = score(k, "remote_only")
+	}
+	if !(ro["remote"] > ro["hybrid"] && ro["hybrid"] > ro["onsite"]) || ro["hybrid"] != ro["hybridFar"] || ro["onsite"] != ro["onsiteFar"] {
+		t.Errorf("remote only: place must not matter, mode must: %v", ro)
+	}
+	if ro["remote"]-ro["onsite"] < 30 || ro["onsite"] > 40 {
+		t.Errorf("remote only: an on-site job is a dealbreaker, far below the remote one: %v", ro)
+	}
+
+	// on-site only: the place decides, a remote job does not help
+	on := map[string]int{}
+	for k := range jobs {
+		on[k] = score(k, "onsite")
+	}
+	if !(on["onsite"] > on["remote"] && on["hybrid"] > on["hybridFar"] && on["onsite"] > on["onsiteFar"]) {
+		t.Errorf("on-site only: %v", on)
+	}
+	// a remote job is a dealbreaker for them: worse than even an on-site job in a city they do not want
+	if on["remote"] >= on["onsiteFar"] || on["remote"] > 40 {
+		t.Errorf("on-site only: a remote job must trail an on-site job in another city: %v", on)
+	}
+
+	// open to remote or hybrid: a remote job is as good as one in the persona's city, a far hybrid job is half way
+	op := map[string]int{}
+	for k := range jobs {
+		op[k] = score(k, "open")
+	}
+	if !(op["remote"] >= op["onsite"] && op["hybrid"] >= op["hybridFar"] && op["hybridFar"] > op["onsiteFar"] && op["onsite"] > op["onsiteFar"]) {
+		t.Errorf("open: %v", op)
+	}
+	if op["remote"] != op["onsite"] || op["hybrid"] != op["onsite"] {
+		t.Errorf("open: remote, hybrid in the city and on-site in the city are all a full fit: %v", op)
+	}
+
+	// not set: unchanged, a remote job elsewhere is the old 0.7 (the persona did not type "Remote")
+	un := score("remote", "")
+	if un >= op["remote"] || un <= on["remote"] {
+		t.Errorf("not set sits between: remote %d, open %d, on-site only %d", un, op["remote"], on["remote"])
+	}
+}

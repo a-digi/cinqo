@@ -85,6 +85,7 @@ func loadMatchPersonas(profileID string) ([]jobmatcher.Persona, error) {
 			mp.Location = d.PersonaDetails.Location
 			mp.DesiredTitles = d.PersonaDetails.DesiredTitles
 			mp.DesiredLocations = d.PersonaDetails.DesiredLocations
+			mp.RemotePreference = d.PersonaDetails.RemotePreference
 		}
 		for _, e := range d.Experience {
 			mp.Experience = append(mp.Experience, jobmatcher.Experience{Title: e.Title, Description: e.Description, StartDate: e.StartDate, EndDate: e.EndDate})

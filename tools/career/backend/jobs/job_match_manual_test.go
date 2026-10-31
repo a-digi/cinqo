@@ -290,3 +290,74 @@ func TestTheCorpusIsEveryJobsTitleAndDescription(t *testing.T) {
 		t.Errorf("score = %d", rare.Score)
 	}
 }
+
+func locationNote(t *testing.T, res jobmatcher.Result) (points float64, note string) {
+	t.Helper()
+	for _, c := range res.Components {
+		if c.Key == "location" {
+			return c.Points, c.Note
+		}
+	}
+	t.Fatal("no location component")
+	return 0, ""
+}
+
+func TestTheStoredRemotePreferenceReachesTheEngine(t *testing.T) {
+	setupJobsDB(t)
+	exec(t, `INSERT INTO jobs (id, source_url, title, location, description) VALUES ('remote', 'https://x.example/r', 'Backend Engineer', 'Remote', ?)`, matchJobDesc)
+	exec(t, `INSERT INTO jobs (id, source_url, title, location, description) VALUES ('office', 'https://x.example/o', 'Backend Engineer', 'Hamburg', 'Backend-Services in Go, Docker und Kubernetes. Im Büro.' || ?)`, strings.Repeat(" Wir arbeiten gemeinsam vor Ort im Team.", 5))
+	profileID, personaID := seedProfile(t, "Ada", []string{"Go", "Docker", "Kubernetes"})
+
+	// not set: the old reading. The persona typed "Remote" among its places in seedProfile, which used to mean "wants
+	// remote": full marks for a remote job; without the word a remote job elsewhere is worth 0.7 of the 10 points.
+	res, err := RunManualMatch("remote", profileID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pts, _ := locationNote(t, res); pts != 10 {
+		t.Errorf("not set, typed Remote, remote job: %v points, want 10", pts)
+	}
+	if err := persona.UpdatePersonaDetails(persona.UpdatePersonaDetailsArgs{PersonaID: personaID, DesiredLocations: str("Hamburg")}); err != nil {
+		t.Fatal(err)
+	}
+	res, err = RunManualMatch("remote", profileID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pts, _ := locationNote(t, res); pts != 7 {
+		t.Errorf("not set, remote job: %v points, want 7", pts)
+	}
+
+	for pref, want := range map[string]struct {
+		remoteJob, officeJob float64
+		note                 string
+	}{
+		"remote_only": {10, 0, "remote work only"},
+		"onsite":      {0, 10, "on-site work only"},
+		"open":        {10, 10, "open to"},
+	} {
+		if err := persona.UpdatePersonaDetails(persona.UpdatePersonaDetailsArgs{PersonaID: personaID, RemotePreference: str(pref)}); err != nil {
+			t.Fatal(err)
+		}
+		r1, err := RunManualMatch("remote", profileID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pts, note := locationNote(t, r1)
+		if pts != want.remoteJob || !strings.Contains(note, want.note) {
+			t.Errorf("%s, remote job: %v points, note %q", pref, pts, note)
+		}
+		r2, err := RunManualMatch("office", profileID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if pts, note := locationNote(t, r2); pts != want.officeJob {
+			t.Errorf("%s, office job in the persona's own city: %v points, note %q", pref, pts, note)
+		}
+	}
+	// the note is part of the stored breakdown the job page shows
+	one, err := GetJobByID("office")
+	if err != nil || !strings.Contains(string(one.MatchBreakdown), "persona") {
+		t.Errorf("stored breakdown = %s %v", one.MatchBreakdown, err)
+	}
+}

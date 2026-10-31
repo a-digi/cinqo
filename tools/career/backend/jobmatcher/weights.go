@@ -60,8 +60,14 @@ const (
 	MaxRequiredYears     = 15
 )
 
-// Location.
-const LocationRemote = 0.7 // the job is remote or hybrid and the places differ
+// Location. LocationRemote is the old reading for a persona that has not set a remote preference: the job is remote or
+// hybrid and the places differ. The two below belong to an explicit preference (step 130): a hybrid job for a persona
+// that is remote only, and a hybrid job in another city for a persona that is open to remote or hybrid.
+const (
+	LocationRemote              = 0.7
+	LocationRemoteOnlyHybrid    = 0.3
+	LocationOpenHybridElsewhere = 0.5
+)
 
 // Level: months of experience below which a persona is junior (0) or mid (1); more is senior (2).
 const (
@@ -82,6 +88,18 @@ const (
 // persona's field. When Skills and Title fit together earn fewer than RelevanceFloor points, the whole score is scaled
 // down in proportion, so an unrelated job in the same city at the same level stays low.
 const RelevanceFloor = 12.0
+
+// A job counts as on-site only when its text is long enough to have said so if it were not: at least this many
+// characters of description. A job with a place but little or no text is of unknown work mode (calibration, step 130:
+// on the real jobs many have no description at all, and reading those as on-site would halve the score of every one for
+// a remote-only persona, on a guess).
+const WorkModeMinText = 150
+
+// The dealbreaker scale (step 130): an explicit remote preference that rules the job out (a remote-only persona and an
+// on-site job, an on-site-only persona and a remote job) multiplies the whole score by this, on top of the 10 points of
+// the Location component, because such a choice is meant as a filter. A hybrid job is never ruled out, and a place the
+// persona does not want is not a dealbreaker (there is no notion of relocation).
+const DealbreakerScale = 0.5
 
 // Lists in a result.
 const (

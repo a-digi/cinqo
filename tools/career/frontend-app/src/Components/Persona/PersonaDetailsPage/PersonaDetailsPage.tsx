@@ -8,16 +8,26 @@ import { Field } from '../../Field/Field'
 import { PAGE_ACCENT } from '../../JobsPage/jobsTheme'
 import { profileLabel } from '../../ProfileSwitcher/profileLabel'
 import { FieldStepper } from './FieldStepper'
+import { REMOTE_OPTIONS, asRemotePreference, type RemotePreference } from './remoteRules'
 import { detailsCompleteness, detailsSteps, type DetailsKey } from './detailsStats'
 import { PageTips } from '../../../Shared/PageTips/PageTips'
 
-const emptyForm = {
+const emptyForm: {
+  headline: string
+  summary: string
+  location: string
+  desiredTitles: string
+  desiredLocations: string
+  minSalary: string
+  remotePreference: RemotePreference
+} = {
   headline: '',
   summary: '',
   location: '',
   desiredTitles: '',
   desiredLocations: '',
   minSalary: '',
+  remotePreference: '',
 }
 
 const cardStyle = { borderColor: PAGE_ACCENT.soft, background: `linear-gradient(160deg, #ffffff 45%, ${PAGE_ACCENT.soft} 100%)` }
@@ -58,6 +68,7 @@ export function PersonaDetailsPage({ personaId }: { personaId: string }) {
           desiredTitles: result.personaDetails?.desiredTitles ?? '',
           desiredLocations: result.personaDetails?.desiredLocations ?? '',
           minSalary: result.personaDetails?.minSalary ? String(result.personaDetails.minSalary) : '',
+          remotePreference: asRemotePreference(result.personaDetails?.remotePreference),
         }
         setForm(loaded)
         setSaved(loaded)
@@ -110,6 +121,7 @@ export function PersonaDetailsPage({ personaId }: { personaId: string }) {
       desiredTitles: form.desiredTitles,
       desiredLocations: form.desiredLocations,
       minSalary: form.minSalary ? Number(form.minSalary) : undefined,
+      remotePreference: form.remotePreference,
     })
       .then(() => {
         setSaved(form)
@@ -234,6 +246,39 @@ export function PersonaDetailsPage({ personaId }: { personaId: string }) {
                   }}
                 />
               </div>
+
+              <fieldset className="mt-4">
+                <legend className="text-xs font-medium text-gray-500">Remote work</legend>
+                <p className="mb-1.5 mt-0.5 text-xs text-gray-400">
+                  Whether you want remote work. The job match uses it to judge a job’s place.
+                </p>
+                <div className="space-y-1.5">
+                  {REMOTE_OPTIONS.map((o) => (
+                    <div key={o.value} className="flex items-start gap-2">
+                      <input
+                        id={`details-remote-${o.value === '' ? 'unset' : o.value}`}
+                        type="radio"
+                        name="remote-preference"
+                        value={o.value}
+                        checked={form.remotePreference === o.value}
+                        onChange={() => {
+                          edit({ remotePreference: o.value })
+                        }}
+                        className="mt-1"
+                      />
+                      <div>
+                        <label
+                          htmlFor={`details-remote-${o.value === '' ? 'unset' : o.value}`}
+                          className="cursor-pointer text-sm font-medium text-gray-800"
+                        >
+                          {o.label}
+                        </label>
+                        <p className="text-xs text-gray-500">{o.hint}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </fieldset>
 
               <div className="mt-5 flex items-center gap-3">
                 <button

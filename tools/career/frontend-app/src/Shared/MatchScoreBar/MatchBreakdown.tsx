@@ -1,5 +1,5 @@
 import type { ManualMatchResult } from '../../api'
-import { confidenceText, modeText, pointsShare, pointsText, relevanceText, tierLabel } from './matchRules'
+import { confidenceText, dealbreakerText, modeText, pointsShare, pointsText, relevanceText, tierLabel } from './matchRules'
 
 // A small chip saying which engine made a match: "AI" or "Manual" (nothing for a job without one).
 export function EngineBadge({ label }: { label: string }) {
@@ -41,6 +41,9 @@ export function MatchBreakdown({ result }: { result: ManualMatchResult }) {
         {confidenceText(result.coverage, result.lowConfidence)}.
       </p>
       {relevanceText(result.relevanceScale) !== '' && <p className="font-medium text-amber-700">{relevanceText(result.relevanceScale)}</p>}
+      {dealbreakerText(result.dealbreakerScale) !== '' && (
+        <p className="font-medium text-amber-700">{dealbreakerText(result.dealbreakerScale)}</p>
+      )}
       {result.missing.length > 0 && (
         <div>
           <p className="mb-1 font-medium text-gray-700">Missing requirements</p>

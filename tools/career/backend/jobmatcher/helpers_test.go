@@ -87,6 +87,10 @@ func kitaJob() Job {
 	return Job{Title: "Erzieher / Heilerzieher (m/w/d) für die Kita", Location: "20095 Hamburg-Altona", Description: kitaJobDesc}
 }
 
+// officeText is a job description long enough (WorkModeMinText) for a job to count as on-site when it says nothing
+// about remote work.
+const officeText = "Wir sind ein wachsendes Team und suchen Verstärkung für unseren Standort. Du übernimmst eigene Aufgaben, arbeitest eng mit den Kolleginnen und Kollegen zusammen und bringst deine Erfahrung ein. Wir freuen uns auf deine Bewerbung."
+
 func corpusOf(extra ...string) Corpus {
 	texts := []string{goJobDesc, kitaJobDesc}
 	return NewCorpus(append(texts, extra...))

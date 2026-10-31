@@ -15,6 +15,7 @@ type preparedJob struct {
 	descTokens  []string
 	titleWords  []string // the title cleaned of gender and contract markers, for title, experience and level
 	titleAlts   [][]string
+	workMode    WorkMode // how the job is worked, read from its text
 	reqs        []reqTokens
 }
 
@@ -28,6 +29,7 @@ func prepareJob(j Job) preparedJob {
 		descTokens:  tokenize(j.Description),
 		titleWords:  titleWords(j.Title),
 		titleAlts:   titleAlternatives(j.Title),
+		workMode:    jobWorkMode(j),
 		reqs:        cleanRequirements(j.Requirements),
 	}
 }
@@ -113,22 +115,27 @@ func scorePersona(pj preparedJob, p Persona, c Corpus, now time.Time) (Result, [
 	cov := evaluableWeight / 100
 	// the points Skills and Title fit earned decide whether the job is in the persona's field at all
 	relevance := math.Min(1, (parts[0].pointsEarned()+parts[1].pointsEarned())/RelevanceFloor)
-	score := int(math.Round(base * (ConfidenceBase + ConfidenceSpan*cov) * relevance))
+	dealbreaker := 1.0
+	if rulesOut(pj, p) {
+		dealbreaker = DealbreakerScale
+	}
+	score := int(math.Round(base * (ConfidenceBase + ConfidenceSpan*cov) * relevance * dealbreaker))
 	score = max(0, min(100, score))
 
 	r := Result{
-		Score:          score,
-		PersonaID:      p.ID,
-		PersonaName:    p.Name,
-		MatchedSkills:  nonNil(sk.matched),
-		Mode:           sk.mode,
-		Coverage:       round2(cov),
-		LowConfidence:  cov < LowConfidenceBy,
-		RelevanceScale: round2(relevance),
-		Components:     comps,
-		Missing:        sk.missing,
-		Gaps:           []string{},
-		EngineVersion:  EngineVersion,
+		Score:            score,
+		PersonaID:        p.ID,
+		PersonaName:      p.Name,
+		MatchedSkills:    nonNil(sk.matched),
+		Mode:             sk.mode,
+		Coverage:         round2(cov),
+		LowConfidence:    cov < LowConfidenceBy,
+		RelevanceScale:   round2(relevance),
+		DealbreakerScale: dealbreaker,
+		Components:       comps,
+		Missing:          sk.missing,
+		Gaps:             []string{},
+		EngineVersion:    EngineVersion,
 	}
 	if r.Missing == nil {
 		r.Missing = []Missing{}

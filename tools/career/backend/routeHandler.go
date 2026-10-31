@@ -47,6 +47,10 @@ func writePersonaAwareError(w http.ResponseWriter, action string, err error) {
 		http.Error(w, "unknown persona id", http.StatusBadRequest)
 		return
 	}
+	if errors.Is(err, persona.ErrInvalidRemotePreference) {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	http.Error(w, "failed to "+action+": "+err.Error(), http.StatusInternalServerError)
 }
 

@@ -19,12 +19,33 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"career-tool-backend/db"
 )
+
+// The values of a persona's remote-work preference (step 130): empty means not set.
+const (
+	RemoteOnSite         = "onsite"      // on-site only: remote work does not help
+	RemoteOpen           = "open"        // open to remote or hybrid as well as on-site
+	RemoteOnly           = "remote_only" // only remote work
+	remotePreferenceHelp = "remotePreference must be empty, \"onsite\", \"open\" or \"remote_only\""
+)
+
+// ErrInvalidRemotePreference is returned for a remote preference that is not one of the values above.
+var ErrInvalidRemotePreference = errors.New(remotePreferenceHelp)
+
+// validRemotePreference reports whether v is a remote preference (case-sensitive; empty is "not set").
+func validRemotePreference(v string) bool {
+	switch v {
+	case "", RemoteOnSite, RemoteOpen, RemoteOnly:
+		return true
+	}
+	return false
+}
 
 type personaDetails struct {
 	PersonaID        string `json:"personaId"`
@@ -34,6 +55,8 @@ type personaDetails struct {
 	DesiredTitles    string `json:"desiredTitles"`
 	DesiredLocations string `json:"desiredLocations"`
 	MinSalary        int64  `json:"minSalary,omitempty"`
+	// RemotePreference (step 130): "", "onsite", "open" or "remote_only"; "" means not set.
+	RemotePreference string `json:"remotePreference"`
 }
 
 type careerExperience struct {
@@ -68,9 +91,9 @@ func FetchPersonaDetails(personaId string) (getPersonaDetailsResult, error) {
 	var d personaDetails
 	var minSalary sql.NullInt64
 	err := db.CareerDB.QueryRow(
-		`SELECT headline, summary, location, desired_titles, desired_locations, min_salary
+		`SELECT headline, summary, location, desired_titles, desired_locations, min_salary, remote_preference
 		 FROM persona_details WHERE persona_id = ?`, personaId,
-	).Scan(&d.Headline, &d.Summary, &d.Location, &d.DesiredTitles, &d.DesiredLocations, &minSalary)
+	).Scan(&d.Headline, &d.Summary, &d.Location, &d.DesiredTitles, &d.DesiredLocations, &minSalary, &d.RemotePreference)
 	switch {
 	case err == sql.ErrNoRows:
 		result.PersonaDetails = nil
@@ -132,11 +155,21 @@ type UpdatePersonaDetailsArgs struct {
 	DesiredTitles    *string `json:"desiredTitles,omitempty"`
 	DesiredLocations *string `json:"desiredLocations,omitempty"`
 	MinSalary        *int64  `json:"minSalary,omitempty"`
+	// RemotePreference (step 130) is "", "onsite", "open" or "remote_only"; any other value is refused before anything
+	// is written.
+	RemotePreference *string `json:"remotePreference,omitempty"`
 }
 
 func UpdatePersonaDetails(args UpdatePersonaDetailsArgs) error {
 	if err := requirePersonaExists(args.PersonaID); err != nil {
 		return err
+	}
+	if args.RemotePreference != nil {
+		trimmed := strings.TrimSpace(*args.RemotePreference)
+		if !validRemotePreference(trimmed) {
+			return ErrInvalidRemotePreference
+		}
+		args.RemotePreference = &trimmed
 	}
 
 	// A plain upsert seeded from whatever's already there, then
@@ -170,10 +203,13 @@ func UpdatePersonaDetails(args UpdatePersonaDetailsArgs) error {
 	if args.MinSalary != nil {
 		d.MinSalary = *args.MinSalary
 	}
+	if args.RemotePreference != nil {
+		d.RemotePreference = *args.RemotePreference
+	}
 
 	_, err = db.CareerDB.Exec(
-		`INSERT INTO persona_details (persona_id, headline, summary, location, desired_titles, desired_locations, min_salary, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+		`INSERT INTO persona_details (persona_id, headline, summary, location, desired_titles, desired_locations, min_salary, remote_preference, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
 		 ON CONFLICT(persona_id) DO UPDATE SET
 			headline = excluded.headline,
 			summary = excluded.summary,
@@ -181,8 +217,9 @@ func UpdatePersonaDetails(args UpdatePersonaDetailsArgs) error {
 			desired_titles = excluded.desired_titles,
 			desired_locations = excluded.desired_locations,
 			min_salary = excluded.min_salary,
+			remote_preference = excluded.remote_preference,
 			updated_at = excluded.updated_at`,
-		args.PersonaID, d.Headline, d.Summary, d.Location, d.DesiredTitles, d.DesiredLocations, d.MinSalary,
+		args.PersonaID, d.Headline, d.Summary, d.Location, d.DesiredTitles, d.DesiredLocations, d.MinSalary, d.RemotePreference,
 	)
 	return err
 }
@@ -297,7 +334,7 @@ type getPersonaDetailsArgs struct {
 func RegisterGetPersonaDetails(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "get_persona_details",
-		Description: "Read a persona's own career details (headline/summary/location/desired titles/desired locations/min salary), skills, and experience. personaDetails is null if none has been set yet.",
+		Description: "Read a persona's own career details (headline/summary/location/desired titles/desired locations/min salary/remote preference), skills, and experience. personaDetails is null if none has been set yet. remotePreference is empty (not set), \"onsite\" (on-site only), \"open\" (open to remote or hybrid) or \"remote_only\".",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args getPersonaDetailsArgs) (*mcp.CallToolResult, any, error) {
 		if args.PersonaID == "" {
 			return db.ErrResult("personaId is required"), nil, nil
@@ -318,6 +355,7 @@ type updatePersonaDetailsToolArgs struct {
 	DesiredTitles    *string `json:"desiredTitles,omitempty" jsonschema:"job titles the user is looking for, comma-separated"`
 	DesiredLocations *string `json:"desiredLocations,omitempty" jsonschema:"locations the user is willing to work in, comma-separated"`
 	MinSalary        *int64  `json:"minSalary,omitempty" jsonschema:"the user's own minimum acceptable salary"`
+	RemotePreference *string `json:"remotePreference,omitempty" jsonschema:"whether the user wants remote work: \"onsite\" (on-site only), \"open\" (open to remote or hybrid as well) or \"remote_only\"; an empty string clears it (not set)"`
 }
 
 func RegisterUpdatePersonaDetails(server *mcp.Server) {
@@ -336,6 +374,7 @@ func RegisterUpdatePersonaDetails(server *mcp.Server) {
 			DesiredTitles:    args.DesiredTitles,
 			DesiredLocations: args.DesiredLocations,
 			MinSalary:        args.MinSalary,
+			RemotePreference: args.RemotePreference,
 		})
 		if err != nil {
 			return personaAwareErrResult("update persona details", args.PersonaID, err), nil, nil
