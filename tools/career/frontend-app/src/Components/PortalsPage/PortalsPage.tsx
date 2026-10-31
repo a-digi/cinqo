@@ -27,9 +27,11 @@ import { inheritErrorView, inheritView, type InheritView } from '../../Crawler/i
 import { PlusIcon } from '../../Shared/Icons/icons'
 import { Modal } from '../../Shared/Modal/Modal'
 import { AccordionItem } from '../../Shared/Accordion/AccordionItem'
+import { Carousel } from '../../Shared/Carousel/Carousel'
 import { CrawlAiModal } from './CrawlAiModal'
 import { aiChip, describeChoice, linkChip, overrideOf } from './aiOverrideDisplay'
 import { PortalLinkHeader } from './PortalLinkHeader'
+import { PORTAL_TIPS } from './portalTips'
 import { VIEW_PORTAL_PATH } from '../../paths'
 
 // Portals are tool-wide, not persona/profile-scoped — same reasoning
@@ -332,7 +334,7 @@ export function PortalsPage() {
       />
 
       {/* Two columns: the portals on the right; on the left the "New portal" button, the
-          auto-discovery switch and the numbers, in that order (under the list on a narrow window). */}
+          auto-discovery switch, the numbers and the tips, in that order (under the list on a narrow window). */}
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
         <div className="order-1 min-w-0 flex-1 lg:order-2">
           <p className="mb-3 text-xs text-gray-500">Deleting a portal permanently deletes every link it owns.</p>
@@ -614,7 +616,7 @@ export function PortalsPage() {
           </div>
         </div>
 
-        <aside className="order-2 w-full shrink-0 lg:order-1 lg:sticky lg:top-6 lg:w-56">
+        <aside className="career-rail-sticky order-2 w-full shrink-0 lg:order-1 lg:w-56">
           <button
             type="button"
             onClick={() => {
@@ -643,6 +645,11 @@ export function PortalsPage() {
               { label: 'Never crawled', value: String(summary.neverCrawled), color: ACCENTS[2].to, emphasis: summary.neverCrawled > 0 },
             ]}
           />
+          {/* Step 105 — a few tips, one at a time, in the narrow column (vertical carousel). */}
+          <div className="career-enter career-delay-3 mt-8">
+            <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-gray-400">Tips</p>
+            <Carousel orientation="vertical" ariaLabel="Tips for crawling portals" slides={PORTAL_TIPS} />
+          </div>
         </aside>
       </div>
 
