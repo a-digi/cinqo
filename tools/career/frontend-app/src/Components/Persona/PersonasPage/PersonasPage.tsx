@@ -105,8 +105,6 @@ export function PersonasPage() {
         }
         pill={{ text: plural(summary.personas, 'persona', 'personas') }}
       />
-      <PageTips page="personas" />
-
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
         <div className="min-w-0 flex-1">
           <ProfileSwitcher profileId={profileId} onChange={setProfileId} />
@@ -232,11 +230,16 @@ export function PersonasPage() {
           )}
         </div>
 
-        {profileId && (
-          <aside className="w-full shrink-0 lg:sticky lg:top-6 lg:w-72">
-            <NeedsAttention total={summary.personas} undescribed={undescribed} onEdit={editFromPanel} />
-          </aside>
-        )}
+        <aside className="w-full shrink-0 lg:sticky lg:top-6 lg:w-72">
+          {profileId && (
+            <>
+              <NeedsAttention total={summary.personas} undescribed={undescribed} onEdit={editFromPanel} />
+            </>
+          )}
+          <div className={profileId ? 'mt-8' : ''}>
+            <PageTips page="personas" orientation="vertical" />
+          </div>
+        </aside>
       </div>
     </div>
   )

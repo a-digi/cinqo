@@ -870,8 +870,6 @@ export function JobsPage() {
           description="Job postings the AI has crawled and saved on your behalf, and any you added yourself."
           pill={{ text: `${total} ${total === 1 ? 'job' : 'jobs'}` }}
         />
-        <PageTips page="jobs" />
-
         {/* Two columns: the jobs on the left (the point of the page), the statistics cards
             on the right. Below the large breakpoint the cards drop under the list. */}
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
@@ -1114,10 +1112,13 @@ export function JobsPage() {
 
           {/* Refetched when a job is added, deleted or finishes matching / its CV: the page's
               own total, and how many jobs on this page have a completed match or CV. */}
-          <aside className="career-enter career-delay-2 w-full shrink-0 lg:sticky lg:top-6 lg:w-72">
+          <aside className="career-enter career-delay-2 w-full shrink-0 career-rail-sticky lg:w-72">
             <JobStatsStrip
               refreshKey={`${total}:${jobs.filter((j) => j.matchStatus === 'completed').length}:${jobs.filter((j) => j.cvStatus === 'completed').length}`}
             />
+            <div className="mt-8">
+              <PageTips page="jobs" orientation="vertical" />
+            </div>
           </aside>
         </div>
       </div>

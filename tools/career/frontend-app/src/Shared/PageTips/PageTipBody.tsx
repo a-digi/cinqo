@@ -32,6 +32,7 @@ import {
 import { SETTINGS_PATH } from '../../paths'
 import { gradient } from '../../Components/JobsPage/jobsTheme'
 import { toneAccent, type PageTip, type TipIconName } from './pageTipData'
+import type { TipLayout } from './tipLayout'
 
 // Some of the app's icons come with a fixed size and no className, so the badge sizes whatever icon it holds
 // itself (see the [&>svg] classes below).
@@ -67,14 +68,16 @@ const ICONS: Record<TipIconName, ComponentType> = {
 }
 
 // One tip, laid out like a dashboard card's content: a gradient icon badge, then the title and the text. The card
-// around it (tint, border, shapes) is the carousel's.
-export function PageTipBody({ tip }: { tip: PageTip }) {
+// around it (tint, border, shapes) is the carousel's. 'row' (the horizontal banner) puts the badge beside the words;
+// 'stack' (the narrow vertical slider) puts it above them.
+export function PageTipBody({ tip, layout = 'row' }: { tip: PageTip; layout?: TipLayout }) {
   const accent = toneAccent(tip.tone)
   const Icon = ICONS[tip.icon]
+  const stacked = layout === 'stack'
   return (
-    <div className="flex items-start gap-4">
+    <div className={stacked ? '' : 'flex items-start gap-4'}>
       <span
-        className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-white shadow-sm [&>svg]:h-5 [&>svg]:w-5"
+        className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-white shadow-sm [&>svg]:h-5 [&>svg]:w-5 ${stacked ? 'mb-3' : ''}`}
         style={{ background: gradient(accent) }}
         aria-hidden="true"
       >
@@ -84,7 +87,7 @@ export function PageTipBody({ tip }: { tip: PageTip }) {
         <p className="text-base font-semibold" style={{ color: accent.text }}>
           {tip.title}
         </p>
-        <p className="mt-1 text-sm leading-6 text-gray-600">{tip.text}</p>
+        <p className={`mt-1 text-sm text-gray-600 ${stacked ? 'leading-5' : 'leading-6'}`}>{tip.text}</p>
         {tip.settingsLink && (
           <a
             href={SETTINGS_PATH}

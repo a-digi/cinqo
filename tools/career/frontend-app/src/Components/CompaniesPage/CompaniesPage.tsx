@@ -95,8 +95,6 @@ export function CompaniesPage() {
         description="A directory of companies, separate from the free-text name on each crawled job. Deleting a company un-links its jobs; it never deletes them."
         pill={{ text: plural(summary.companies, 'company', 'companies') }}
       />
-      <PageTips page="companies" />
-
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
         <div className="order-1 min-w-0 flex-1 lg:order-2">
           <p className="mb-3 text-xs text-gray-500">Link a job to a company from the Jobs page.</p>
@@ -244,7 +242,7 @@ export function CompaniesPage() {
           </div>
         </div>
 
-        <aside className="order-2 w-full shrink-0 lg:order-1 lg:sticky lg:top-6 lg:w-56">
+        <aside className="order-2 w-full shrink-0 lg:order-1 career-rail-sticky lg:w-72">
           <button
             type="button"
             onClick={() => {
@@ -270,6 +268,9 @@ export function CompaniesPage() {
               { label: 'Recruiters', value: String(summary.recruiters), color: ACCENTS[4].to },
             ]}
           />
+          <div className="mt-8">
+            <PageTips page="companies" orientation="vertical" />
+          </div>
         </aside>
       </div>
     </div>

@@ -148,82 +148,89 @@ export function CvDocumentsPage() {
         description="Generate a CV PDF from a persona's own data, using one of a few fixed designs."
         pill={personaId && !loading ? { text: plural(documents.length, 'CV', 'CVs') } : undefined}
       />
-      <PageTips page="cvs" />
+      {/* Steps 105 to 107: the tips sit in a column of their own beside the CVs (under them on a narrow window), as on
+          the other list pages, so they do not look like a second header. */}
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
+        <div className="order-1 min-w-0 flex-1 lg:order-2">
+          <PersonaSwitcher
+            personaId={personaId}
+            onChange={setPersonaId}
+            actions={
+              personaId ? (
+                <button
+                  type="button"
+                  onClick={startNewCv}
+                  className="flex shrink-0 items-center gap-1.5 rounded-md bg-gray-800 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-900"
+                >
+                  <PlusIcon /> New CV
+                </button>
+              ) : undefined
+            }
+          />
 
-      <PersonaSwitcher
-        personaId={personaId}
-        onChange={setPersonaId}
-        actions={
-          personaId ? (
-            <button
-              type="button"
-              onClick={startNewCv}
-              className="flex shrink-0 items-center gap-1.5 rounded-md bg-gray-800 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-900"
-            >
-              <PlusIcon /> New CV
-            </button>
-          ) : undefined
-        }
-      />
+          {error && <p className="mb-4 text-sm text-red-700">{error}</p>}
 
-      {error && <p className="mb-4 text-sm text-red-700">{error}</p>}
+          {personaId && (
+            <>
+              <p className="mb-4 text-xs text-gray-500">Click a CV to edit it; hover for preview, rename and delete.</p>
 
-      {personaId && (
-        <>
-          <p className="mb-4 text-xs text-gray-500">Click a CV to edit it; hover for preview, rename and delete.</p>
-
-          {/* A uniquely-named grid class, as the Media page does: an installed tool's globally-injected
+              {/* A uniquely-named grid class, as the Media page does: an installed tool's globally-injected
               Tailwind stylesheet can redeclare a bare `.grid-cols-*` and collapse a plain Tailwind grid. */}
-          <style>{`
+              <style>{`
             .cv-card-grid { display: grid; gap: 1.5rem 1rem; grid-template-columns: repeat(auto-fill, minmax(${CARD_MIN_REM}rem, 1fr)); }
           `}</style>
 
-          {loading && documents.length === 0 && (
-            <div className="cv-card-grid" aria-label="Loading CVs">
-              {[0, 1, 2, 3].map((i) => (
-                <div key={i} className="animate-pulse">
-                  <div className="aspect-[3/4] rounded-xl bg-gray-100" />
-                  <div className="mt-2 h-3 w-3/4 rounded bg-gray-100" />
-                  <div className="mt-2 h-3 w-1/2 rounded bg-gray-100" />
+              {loading && documents.length === 0 && (
+                <div className="cv-card-grid" aria-label="Loading CVs">
+                  {[0, 1, 2, 3].map((i) => (
+                    <div key={i} className="animate-pulse">
+                      <div className="aspect-[3/4] rounded-xl bg-gray-100" />
+                      <div className="mt-2 h-3 w-3/4 rounded bg-gray-100" />
+                      <div className="mt-2 h-3 w-1/2 rounded bg-gray-100" />
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          )}
+              )}
 
-          {!loading && documents.length === 0 && (
-            <div
-              className="career-wiggle rounded-3xl border p-8 text-center text-sm text-gray-500"
-              style={{ borderColor: PAGE_ACCENT.soft, background: PAGE_ACCENT.soft }}
-            >
-              No CV documents yet. Create the first one with “New CV”.
-            </div>
-          )}
+              {!loading && documents.length === 0 && (
+                <div
+                  className="career-wiggle rounded-3xl border p-8 text-center text-sm text-gray-500"
+                  style={{ borderColor: PAGE_ACCENT.soft, background: PAGE_ACCENT.soft }}
+                >
+                  No CV documents yet. Create the first one with “New CV”.
+                </div>
+              )}
 
-          {documents.length > 0 && (
-            <div className="career-stagger cv-card-grid">
-              {documents.map((doc) => (
-                <CvCard
-                  key={doc.id}
-                  doc={doc}
-                  templateName={templateLabel(templates, doc.templateId)}
-                  onPreview={() => {
-                    previewPdf(doc)
-                  }}
-                  onEdit={() => {
-                    startEditCv(doc)
-                  }}
-                  onRename={() => {
-                    handleRename(doc)
-                  }}
-                  onDelete={() => {
-                    handleDelete(doc)
-                  }}
-                />
-              ))}
-            </div>
+              {documents.length > 0 && (
+                <div className="career-stagger cv-card-grid">
+                  {documents.map((doc) => (
+                    <CvCard
+                      key={doc.id}
+                      doc={doc}
+                      templateName={templateLabel(templates, doc.templateId)}
+                      onPreview={() => {
+                        previewPdf(doc)
+                      }}
+                      onEdit={() => {
+                        startEditCv(doc)
+                      }}
+                      onRename={() => {
+                        handleRename(doc)
+                      }}
+                      onDelete={() => {
+                        handleDelete(doc)
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+            </>
           )}
-        </>
-      )}
+        </div>
+        <aside className="order-2 w-full shrink-0 lg:order-1 lg:sticky lg:top-6 lg:w-72">
+          <PageTips page="cvs" orientation="vertical" />
+        </aside>
+      </div>
 
       <ConfirmationModal
         open={pendingDelete !== null}

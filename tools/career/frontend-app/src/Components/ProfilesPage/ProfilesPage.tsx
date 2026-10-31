@@ -139,211 +139,220 @@ export function ProfilesPage() {
         description="One profile per job seeker, with links to their platforms. Personas, skills and experience belong to a profile."
         pill={{ text: plural(summary.profiles, 'profile', 'profiles') }}
       />
-      <PageTips page="profiles" />
+      {/* Steps 105 to 108: the tips sit in a column of their own beside the page (under it on a narrow window). */}
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
+        <div className="order-1 min-w-0 flex-1 lg:order-2">
+          <PlatformShelf
+            platforms={platforms}
+            withoutLinks={summary.withoutLinks}
+            average={averageScore(profiles)}
+            onShowWithoutLinks={showFirstWithoutLinks}
+          />
 
-      <PlatformShelf
-        platforms={platforms}
-        withoutLinks={summary.withoutLinks}
-        average={averageScore(profiles)}
-        onShowWithoutLinks={showFirstWithoutLinks}
-      />
-
-      <div>
-        <div className="min-w-0">
-          <div className="mb-3 flex items-center justify-start gap-3">
-            <button
-              type="button"
-              onClick={() => {
-                window.__cinqoToolBridge.navigate(NEW_PROFILE_PATH)
-              }}
-              className="flex shrink-0 items-center gap-1.5 rounded-md bg-gray-800 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-900"
-            >
-              <PlusIcon />
-              New profile
-            </button>
-            <p className="min-w-0 flex-1 text-xs text-gray-500">
-              Deleting a profile permanently deletes its personas and everything they own (details, skills, experience), with no further
-              confirmation.
-            </p>
-          </div>
-
-          <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
-
-          {profiles.length === 0 && !error && (
-            <div
-              className="career-wiggle rounded-3xl border p-8 text-center text-sm text-gray-500"
-              style={{ borderColor: PAGE_ACCENT.soft, background: PAGE_ACCENT.soft }}
-            >
-              No profiles yet. Create the first one with “New profile”.
-            </div>
-          )}
-
-          <div className="career-stagger space-y-3">
-            {profiles.map((p) => {
-              const draft = linkDraft(p.id)
-              const name = profileLabel(p)
-              const linkFormOpen = openLinkFormIds.has(p.id) && editingId !== p.id
-              return (
-                <div
-                  key={p.id}
-                  id={`profile-${p.id}`}
-                  className="rounded-3xl border p-4 shadow-sm transition-shadow hover:shadow-md"
-                  style={{ borderColor: PAGE_ACCENT.soft, background: `linear-gradient(160deg, #ffffff 45%, ${PAGE_ACCENT.soft} 100%)` }}
+          <div>
+            <div className="min-w-0">
+              <div className="mb-3 flex items-center justify-start gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.__cinqoToolBridge.navigate(NEW_PROFILE_PATH)
+                  }}
+                  className="flex shrink-0 items-center gap-1.5 rounded-md bg-gray-800 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-900"
                 >
-                  {editingId === p.id ? (
-                    <div className="mb-3">
-                      <input
-                        // Deliberate: entering edit mode should focus the input
-                        // immediately, the same convention most inline-rename UIs use.
-                        // eslint-disable-next-line jsx-a11y/no-autofocus
-                        autoFocus
-                        value={editFirstName}
-                        onChange={(e) => {
-                          setEditFirstName(e.target.value)
-                        }}
-                        placeholder="First name"
-                        className={`mb-2 ${inputClass}`}
-                      />
-                      <input
-                        value={editLastName}
-                        onChange={(e) => {
-                          setEditLastName(e.target.value)
-                        }}
-                        placeholder="Last name"
-                        className={`mb-2 ${inputClass}`}
-                      />
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            saveEdit(p.id)
-                          }}
-                          className="rounded-md bg-gray-900 px-3 py-1 text-xs font-medium text-white hover:bg-gray-800"
-                        >
-                          Save
-                        </button>
-                        <button
-                          type="button"
-                          onClick={cancelEdit}
-                          className="rounded-md border border-gray-200 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="mb-3 flex items-start gap-3">
-                      <span
-                        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-base font-bold text-white shadow-sm"
-                        style={{ background: accentFor(name).to }}
-                        aria-hidden="true"
-                      >
-                        {initialOf(name)}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <div className="text-sm font-semibold">{p.firstName || p.lastName ? name : '(unnamed)'}</div>
-                        <div className="text-xs text-gray-400">Created {formatDate(p.createdAt)}</div>
-                      </div>
-                      <div className="flex shrink-0 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            startEdit(p)
-                          }}
-                          className="rounded-full border border-blue-200 px-3 py-1 text-xs text-blue-700 hover:bg-blue-50"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            handleDelete(p.id)
-                          }}
-                          className="rounded-full border border-red-200 px-3 py-1 text-xs text-red-700 hover:bg-red-50"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </div>
-                  )}
+                  <PlusIcon />
+                  New profile
+                </button>
+                <p className="min-w-0 flex-1 text-xs text-gray-500">
+                  Deleting a profile permanently deletes its personas and everything they own (details, skills, experience), with no further
+                  confirmation.
+                </p>
+              </div>
 
-                  <CompletenessMeter completeness={p.completeness} />
-                  <div className="mb-2 flex flex-wrap gap-2">
-                    {p.externalLinks.map((link) => (
-                      <a
-                        key={link.platform}
-                        href={link.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium hover:underline"
-                        style={{ background: PAGE_ACCENT.soft, color: PAGE_ACCENT.text }}
-                      >
-                        {link.platform}
+              <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
+
+              {profiles.length === 0 && !error && (
+                <div
+                  className="career-wiggle rounded-3xl border p-8 text-center text-sm text-gray-500"
+                  style={{ borderColor: PAGE_ACCENT.soft, background: PAGE_ACCENT.soft }}
+                >
+                  No profiles yet. Create the first one with “New profile”.
+                </div>
+              )}
+
+              <div className="career-stagger space-y-3">
+                {profiles.map((p) => {
+                  const draft = linkDraft(p.id)
+                  const name = profileLabel(p)
+                  const linkFormOpen = openLinkFormIds.has(p.id) && editingId !== p.id
+                  return (
+                    <div
+                      key={p.id}
+                      id={`profile-${p.id}`}
+                      className="rounded-3xl border p-4 shadow-sm transition-shadow hover:shadow-md"
+                      style={{
+                        borderColor: PAGE_ACCENT.soft,
+                        background: `linear-gradient(160deg, #ffffff 45%, ${PAGE_ACCENT.soft} 100%)`,
+                      }}
+                    >
+                      {editingId === p.id ? (
+                        <div className="mb-3">
+                          <input
+                            // Deliberate: entering edit mode should focus the input
+                            // immediately, the same convention most inline-rename UIs use.
+                            // eslint-disable-next-line jsx-a11y/no-autofocus
+                            autoFocus
+                            value={editFirstName}
+                            onChange={(e) => {
+                              setEditFirstName(e.target.value)
+                            }}
+                            placeholder="First name"
+                            className={`mb-2 ${inputClass}`}
+                          />
+                          <input
+                            value={editLastName}
+                            onChange={(e) => {
+                              setEditLastName(e.target.value)
+                            }}
+                            placeholder="Last name"
+                            className={`mb-2 ${inputClass}`}
+                          />
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                saveEdit(p.id)
+                              }}
+                              className="rounded-md bg-gray-900 px-3 py-1 text-xs font-medium text-white hover:bg-gray-800"
+                            >
+                              Save
+                            </button>
+                            <button
+                              type="button"
+                              onClick={cancelEdit}
+                              className="rounded-md border border-gray-200 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="mb-3 flex items-start gap-3">
+                          <span
+                            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-base font-bold text-white shadow-sm"
+                            style={{ background: accentFor(name).to }}
+                            aria-hidden="true"
+                          >
+                            {initialOf(name)}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="text-sm font-semibold">{p.firstName || p.lastName ? name : '(unnamed)'}</div>
+                            <div className="text-xs text-gray-400">Created {formatDate(p.createdAt)}</div>
+                          </div>
+                          <div className="flex shrink-0 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                startEdit(p)
+                              }}
+                              className="rounded-full border border-blue-200 px-3 py-1 text-xs text-blue-700 hover:bg-blue-50"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleDelete(p.id)
+                              }}
+                              className="rounded-full border border-red-200 px-3 py-1 text-xs text-red-700 hover:bg-red-50"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      <CompletenessMeter completeness={p.completeness} />
+                      <div className="mb-2 flex flex-wrap gap-2">
+                        {p.externalLinks.map((link) => (
+                          <a
+                            key={link.platform}
+                            href={link.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium hover:underline"
+                            style={{ background: PAGE_ACCENT.soft, color: PAGE_ACCENT.text }}
+                          >
+                            {link.platform}
+                            <button
+                              type="button"
+                              aria-label={`Remove ${link.platform}`}
+                              onClick={(e) => {
+                                e.preventDefault()
+                                handleRemoveLink(p.id, link.platform)
+                              }}
+                              className="text-gray-400 hover:text-red-700"
+                            >
+                              <XIcon />
+                            </button>
+                          </a>
+                        ))}
                         <button
                           type="button"
-                          aria-label={`Remove ${link.platform}`}
-                          onClick={(e) => {
-                            e.preventDefault()
-                            handleRemoveLink(p.id, link.platform)
+                          aria-expanded={linkFormOpen}
+                          aria-controls={`link-form-${p.id}`}
+                          onClick={() => {
+                            setLinkFormOpen(p.id, !openLinkFormIds.has(p.id))
                           }}
-                          className="text-gray-400 hover:text-red-700"
+                          className={`flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium ${
+                            p.externalLinks.length === 0
+                              ? 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100'
+                              : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                          }`}
                         >
-                          <XIcon />
+                          <PlusIcon />
+                          Platform
                         </button>
-                      </a>
-                    ))}
-                    <button
-                      type="button"
-                      aria-expanded={linkFormOpen}
-                      aria-controls={`link-form-${p.id}`}
-                      onClick={() => {
-                        setLinkFormOpen(p.id, !openLinkFormIds.has(p.id))
-                      }}
-                      className={`flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium ${
-                        p.externalLinks.length === 0
-                          ? 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100'
-                          : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
-                      }`}
-                    >
-                      <PlusIcon />
-                      Platform
-                    </button>
-                  </div>
-                  {linkFormOpen && (
-                    <div id={`link-form-${p.id}`} className="flex gap-2">
-                      <input
-                        value={draft.platform}
-                        onChange={(e) => {
-                          setLinkDraft(p.id, { ...draft, platform: e.target.value })
-                        }}
-                        placeholder="Platform, e.g. linkedin"
-                        className="w-32 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs text-gray-900 focus:border-gray-500 focus:outline-none"
-                      />
-                      <input
-                        value={draft.url}
-                        onChange={(e) => {
-                          setLinkDraft(p.id, { ...draft, url: e.target.value })
-                        }}
-                        placeholder="URL"
-                        className="flex-1 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs text-gray-900 focus:border-gray-500 focus:outline-none"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          handleAddLink(p.id)
-                        }}
-                        className="flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
-                      >
-                        <PlusIcon />
-                        Add
-                      </button>
+                      </div>
+                      {linkFormOpen && (
+                        <div id={`link-form-${p.id}`} className="flex gap-2">
+                          <input
+                            value={draft.platform}
+                            onChange={(e) => {
+                              setLinkDraft(p.id, { ...draft, platform: e.target.value })
+                            }}
+                            placeholder="Platform, e.g. linkedin"
+                            className="w-32 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs text-gray-900 focus:border-gray-500 focus:outline-none"
+                          />
+                          <input
+                            value={draft.url}
+                            onChange={(e) => {
+                              setLinkDraft(p.id, { ...draft, url: e.target.value })
+                            }}
+                            placeholder="URL"
+                            className="flex-1 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs text-gray-900 focus:border-gray-500 focus:outline-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleAddLink(p.id)
+                            }}
+                            className="flex items-center gap-1 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
+                          >
+                            <PlusIcon />
+                            Add
+                          </button>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              )
-            })}
+                  )
+                })}
+              </div>
+            </div>
           </div>
         </div>
+        <aside className="order-2 w-full shrink-0 lg:order-1 lg:sticky lg:top-6 lg:w-72">
+          <PageTips page="profiles" orientation="vertical" />
+        </aside>
       </div>
     </div>
   )

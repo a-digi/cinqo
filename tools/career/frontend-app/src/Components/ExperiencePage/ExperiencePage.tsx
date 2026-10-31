@@ -61,102 +61,111 @@ export function ExperiencePage() {
         description="The work history on this persona. The AI reads it when matching you against job postings."
         pill={personaId ? { text: plural(summary.entries, 'entry', 'entries') } : undefined}
       />
-      <PageTips page="experience" />
+      {/* Steps 105 to 108: the tips sit in a column of their own beside the page (under it on a narrow window). */}
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
+        <div className="order-1 min-w-0 flex-1 lg:order-2">
+          <div>
+            <div className="min-w-0">
+              <PersonaSwitcher personaId={personaId} onChange={setPersonaId} />
 
-      <div>
-        <div className="min-w-0">
-          <PersonaSwitcher personaId={personaId} onChange={setPersonaId} />
+              {personaId && <CareerTimeline entries={experience} today={new Date()} />}
 
-          {personaId && <CareerTimeline entries={experience} today={new Date()} />}
-
-          {personaId && (
-            <div className="mb-3 flex items-center justify-start gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  openEntry(personaId)
-                }}
-                className="flex shrink-0 items-center gap-1.5 rounded-md bg-gray-800 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-900"
-              >
-                <PlusIcon />
-                Add experience
-              </button>
-              <p className="min-w-0 flex-1 text-xs text-gray-500">An entry without an end date counts as your current role.</p>
-            </div>
-          )}
-
-          <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
-
-          {personaId && experience.length === 0 && !error && (
-            <div
-              className="career-wiggle rounded-3xl border p-8 text-center text-sm text-gray-500"
-              style={{ borderColor: PAGE_ACCENT.soft, background: PAGE_ACCENT.soft }}
-            >
-              No experience yet. Add the first entry with “Add experience”.
-            </div>
-          )}
-
-          {personaId && (
-            <div className="career-stagger space-y-3">
-              {experience.map((exp) => {
-                const isCurrent = exp.endDate.trim() === ''
-                return (
-                  <div
-                    key={exp.id}
-                    className="rounded-3xl border p-4 shadow-sm transition-shadow hover:shadow-md"
-                    style={{ borderColor: PAGE_ACCENT.soft, background: `linear-gradient(160deg, #ffffff 45%, ${PAGE_ACCENT.soft} 100%)` }}
+              {personaId && (
+                <div className="mb-3 flex items-center justify-start gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      openEntry(personaId)
+                    }}
+                    className="flex shrink-0 items-center gap-1.5 rounded-md bg-gray-800 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-900"
                   >
-                    <div className="flex items-start gap-3">
-                      <span
-                        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-base font-bold text-white shadow-sm"
-                        style={{ background: accentFor(exp.company).to }}
-                        aria-hidden="true"
+                    <PlusIcon />
+                    Add experience
+                  </button>
+                  <p className="min-w-0 flex-1 text-xs text-gray-500">An entry without an end date counts as your current role.</p>
+                </div>
+              )}
+
+              <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
+
+              {personaId && experience.length === 0 && !error && (
+                <div
+                  className="career-wiggle rounded-3xl border p-8 text-center text-sm text-gray-500"
+                  style={{ borderColor: PAGE_ACCENT.soft, background: PAGE_ACCENT.soft }}
+                >
+                  No experience yet. Add the first entry with “Add experience”.
+                </div>
+              )}
+
+              {personaId && (
+                <div className="career-stagger space-y-3">
+                  {experience.map((exp) => {
+                    const isCurrent = exp.endDate.trim() === ''
+                    return (
+                      <div
+                        key={exp.id}
+                        className="rounded-3xl border p-4 shadow-sm transition-shadow hover:shadow-md"
+                        style={{
+                          borderColor: PAGE_ACCENT.soft,
+                          background: `linear-gradient(160deg, #ffffff 45%, ${PAGE_ACCENT.soft} 100%)`,
+                        }}
                       >
-                        {initialOf(exp.company)}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <div className="text-sm font-semibold">{exp.title}</div>
-                        <div className="text-xs text-gray-500">{exp.company}</div>
-                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <div className="flex items-start gap-3">
                           <span
-                            className="rounded-full px-2.5 py-0.5 text-xs font-medium"
-                            style={{ background: PAGE_ACCENT.soft, color: PAGE_ACCENT.text }}
+                            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-base font-bold text-white shadow-sm"
+                            style={{ background: accentFor(exp.company).to }}
+                            aria-hidden="true"
                           >
-                            {exp.startDate || '—'} – {exp.endDate || 'present'}
+                            {initialOf(exp.company)}
                           </span>
-                          {isCurrent && (
-                            <span className="rounded-full bg-green-50 px-2.5 py-0.5 text-xs font-medium text-green-700">Current</span>
-                          )}
+                          <div className="min-w-0 flex-1">
+                            <div className="text-sm font-semibold">{exp.title}</div>
+                            <div className="text-xs text-gray-500">{exp.company}</div>
+                            <div className="mt-2 flex flex-wrap items-center gap-2">
+                              <span
+                                className="rounded-full px-2.5 py-0.5 text-xs font-medium"
+                                style={{ background: PAGE_ACCENT.soft, color: PAGE_ACCENT.text }}
+                              >
+                                {exp.startDate || '—'} – {exp.endDate || 'present'}
+                              </span>
+                              {isCurrent && (
+                                <span className="rounded-full bg-green-50 px-2.5 py-0.5 text-xs font-medium text-green-700">Current</span>
+                              )}
+                            </div>
+                            {exp.description && <div className="mt-2 whitespace-pre-wrap text-xs text-gray-600">{exp.description}</div>}
+                          </div>
+                          <div className="flex shrink-0 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                openEntry(personaId, exp.id)
+                              }}
+                              className="rounded-full border border-blue-200 px-3 py-1 text-xs text-blue-700 hover:bg-blue-50"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleRemove(exp.id)
+                              }}
+                              className="rounded-full border border-red-200 px-3 py-1 text-xs text-red-700 hover:bg-red-50"
+                            >
+                              Remove
+                            </button>
+                          </div>
                         </div>
-                        {exp.description && <div className="mt-2 whitespace-pre-wrap text-xs text-gray-600">{exp.description}</div>}
                       </div>
-                      <div className="flex shrink-0 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            openEntry(personaId, exp.id)
-                          }}
-                          className="rounded-full border border-blue-200 px-3 py-1 text-xs text-blue-700 hover:bg-blue-50"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            handleRemove(exp.id)
-                          }}
-                          className="rounded-full border border-red-200 px-3 py-1 text-xs text-red-700 hover:bg-red-50"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
+                    )
+                  })}
+                </div>
+              )}
             </div>
-          )}
+          </div>
         </div>
+        <aside className="order-2 w-full shrink-0 lg:order-1 lg:sticky lg:top-6 lg:w-72">
+          <PageTips page="experience" orientation="vertical" />
+        </aside>
       </div>
     </div>
   )

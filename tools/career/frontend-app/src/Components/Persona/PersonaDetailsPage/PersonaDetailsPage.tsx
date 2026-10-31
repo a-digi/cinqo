@@ -116,8 +116,6 @@ export function PersonaDetailsPage() {
         description="This persona's positioning and what it is looking for. The AI reads it when matching jobs and writing CVs; nothing here is a secret."
         pill={{ text: `${completeness.percent}% complete` }}
       />
-      <PageTips page="summary" />
-
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
         <div className="order-1 min-w-0 flex-1 lg:order-2">
           <PersonaSwitcher personaId={personaId} onChange={setPersonaId} />
@@ -202,22 +200,27 @@ export function PersonaDetailsPage() {
           )}
         </div>
 
-        {personaId && (
-          <aside className="order-2 w-full shrink-0 lg:order-1 lg:sticky lg:top-6 lg:w-56">
-            <FieldStepper
-              steps={detailsSteps(saved)}
-              skillCount={skillCount}
-              experienceCount={experienceCount}
-              onPick={focusField}
-              onOpenSkills={() => {
-                window.__cinqoToolBridge.navigate(SKILLS_PATH)
-              }}
-              onOpenExperience={() => {
-                window.__cinqoToolBridge.navigate(EXPERIENCE_PATH)
-              }}
-            />
-          </aside>
-        )}
+        <aside className="order-2 w-full shrink-0 lg:order-1 career-rail-sticky lg:w-72">
+          {personaId && (
+            <>
+              <FieldStepper
+                steps={detailsSteps(saved)}
+                skillCount={skillCount}
+                experienceCount={experienceCount}
+                onPick={focusField}
+                onOpenSkills={() => {
+                  window.__cinqoToolBridge.navigate(SKILLS_PATH)
+                }}
+                onOpenExperience={() => {
+                  window.__cinqoToolBridge.navigate(EXPERIENCE_PATH)
+                }}
+              />
+            </>
+          )}
+          <div className={personaId ? 'mt-8' : ''}>
+            <PageTips page="summary" orientation="vertical" />
+          </div>
+        </aside>
       </div>
     </div>
   )

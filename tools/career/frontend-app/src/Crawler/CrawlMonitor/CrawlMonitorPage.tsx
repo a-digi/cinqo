@@ -93,8 +93,6 @@ export function CrawlMonitorPage() {
         description="Every portal currently being crawled, across every link. Refreshes automatically."
         pill={{ text: runs.length === 0 ? 'Idle' : `${runs.length} running`, accent: runs.length === 0 ? ACCENTS[6] : ACCENTS[1] }}
       />
-      <PageTips page="crawlMonitor" />
-
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
         <div className="min-w-0 flex-1">
           <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
@@ -251,7 +249,7 @@ export function CrawlMonitorPage() {
           )}
         </div>
 
-        <aside className="w-full shrink-0 lg:sticky lg:top-6 lg:w-56">
+        <aside className="w-full shrink-0 career-rail-sticky lg:w-72">
           <SummaryRail
             title="Right now"
             segments={[
@@ -267,6 +265,9 @@ export function CrawlMonitorPage() {
               { label: 'Needs you', value: String(waiting), color: ACCENTS[2].to, emphasis: waiting > 0 },
             ]}
           />
+          <div className="mt-8">
+            <PageTips page="crawlMonitor" orientation="vertical" />
+          </div>
         </aside>
       </div>
     </div>

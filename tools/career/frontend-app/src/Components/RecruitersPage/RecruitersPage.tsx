@@ -107,8 +107,6 @@ export function RecruitersPage() {
         description="Recruiter contacts, each tied to an existing company. A recruiter's company cannot be changed after creation: delete and recreate instead."
         pill={{ text: plural(summary.recruiters, 'recruiter', 'recruiters') }}
       />
-      <PageTips page="recruiters" />
-
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
         <div className="order-1 min-w-0 flex-1 lg:order-2">
           <div className="mb-3 flex items-end gap-3">
@@ -256,7 +254,7 @@ export function RecruitersPage() {
           </div>
         </div>
 
-        <aside className="order-2 w-full shrink-0 lg:order-1 lg:sticky lg:top-6 lg:w-56">
+        <aside className="order-2 w-full shrink-0 lg:order-1 career-rail-sticky lg:w-72">
           {companies.length > 0 && (
             <button
               type="button"
@@ -285,6 +283,9 @@ export function RecruitersPage() {
               { label: 'Companies', value: String(summary.companies), color: ACCENTS[4].to },
             ]}
           />
+          <div className="mt-8">
+            <PageTips page="recruiters" orientation="vertical" />
+          </div>
         </aside>
       </div>
     </div>

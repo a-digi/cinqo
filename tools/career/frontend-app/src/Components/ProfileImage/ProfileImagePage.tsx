@@ -168,85 +168,84 @@ export function ProfileImagePage() {
         description="A profile's own photo, used by the CV templates. Each profile has at most one; uploading a new one replaces it."
         pill={profileId && !loading ? { text: image ? 'Photo set' : 'No photo' } : undefined}
       />
-      <PageTips page="photo" />
-
       <ProfileSwitcher profileId={profileId} onChange={setProfileId} />
 
       <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
 
-      {profileId && (
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
-          {!loading && (
-            <section
-              className="career-enter career-delay-1 flex min-w-0 flex-1 flex-col items-center gap-6 rounded-3xl border p-6 shadow-sm sm:flex-row sm:items-center"
-              style={{ borderColor: PAGE_ACCENT.soft, background: `linear-gradient(160deg, #ffffff 45%, ${PAGE_ACCENT.soft} 100%)` }}
-            >
-              <div className="flex h-36 w-36 shrink-0 items-center justify-center overflow-hidden rounded-full border-4 border-white shadow-md">
-                {image ? (
-                  <img
-                    src={`${mediaDownloadUrl(image.mediaFileId)}?v=${cacheBuster}`}
-                    alt="Profile"
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <span
-                    className="flex h-full w-full items-center justify-center text-5xl font-bold text-white"
-                    style={{ background: accentFor(profileName).to }}
-                    aria-label="No photo yet"
-                  >
-                    {initialOf(profileName)}
-                  </span>
-                )}
-              </div>
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
+        {profileId && !loading && (
+          <section
+            className="career-enter career-delay-1 flex min-w-0 flex-1 flex-col items-center gap-6 rounded-3xl border p-6 shadow-sm sm:flex-row sm:items-center"
+            style={{ borderColor: PAGE_ACCENT.soft, background: `linear-gradient(160deg, #ffffff 45%, ${PAGE_ACCENT.soft} 100%)` }}
+          >
+            <div className="flex h-36 w-36 shrink-0 items-center justify-center overflow-hidden rounded-full border-4 border-white shadow-md">
+              {image ? (
+                <img src={`${mediaDownloadUrl(image.mediaFileId)}?v=${cacheBuster}`} alt="Profile" className="h-full w-full object-cover" />
+              ) : (
+                <span
+                  className="flex h-full w-full items-center justify-center text-5xl font-bold text-white"
+                  style={{ background: accentFor(profileName).to }}
+                  aria-label="No photo yet"
+                >
+                  {initialOf(profileName)}
+                </span>
+              )}
+            </div>
 
-              <div className="flex flex-col gap-2">
-                <div className="text-sm text-gray-600">
-                  {image ? 'This photo is used on your CVs.' : 'No photo yet. Add one to use it on your CVs.'}
-                </div>
+            <div className="flex flex-col gap-2">
+              <div className="text-sm text-gray-600">
+                {image ? 'This photo is used on your CVs.' : 'No photo yet. Add one to use it on your CVs.'}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  fileInputRef.current?.click()
+                }}
+                disabled={uploading}
+                className="flex items-center gap-1.5 rounded-md bg-gray-900 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:opacity-50"
+              >
+                <UploadIcon className="h-3.5 w-3.5" />
+                {uploading ? 'Uploading…' : image ? 'Replace photo' : 'Upload photo'}
+              </button>
+              {image && (
                 <button
                   type="button"
-                  onClick={() => {
-                    fileInputRef.current?.click()
-                  }}
-                  disabled={uploading}
-                  className="flex items-center gap-1.5 rounded-md bg-gray-900 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:opacity-50"
+                  onClick={handleDelete}
+                  className="flex items-center gap-1.5 rounded-md border border-red-200 bg-white px-3.5 py-2 text-sm text-red-700 hover:bg-red-50"
                 >
-                  <UploadIcon className="h-3.5 w-3.5" />
-                  {uploading ? 'Uploading…' : image ? 'Replace photo' : 'Upload photo'}
+                  <TrashIcon />
+                  Remove photo
                 </button>
-                {image && (
-                  <button
-                    type="button"
-                    onClick={handleDelete}
-                    className="flex items-center gap-1.5 rounded-md border border-red-200 bg-white px-3.5 py-2 text-sm text-red-700 hover:bg-red-50"
-                  >
-                    <TrashIcon />
-                    Remove photo
-                  </button>
-                )}
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => {
-                    handleFileChange(e.target.files?.[0] ?? null)
-                  }}
-                  className="hidden"
-                />
-              </div>
-            </section>
-          )}
+              )}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  handleFileChange(e.target.files?.[0] ?? null)
+                }}
+                className="hidden"
+              />
+            </div>
+          </section>
+        )}
 
-          <aside className="w-full shrink-0 lg:sticky lg:top-6 lg:w-72">
-            <CvReadiness
-              items={readinessItems({ hasPhoto: image !== null, personaCount, checked })}
-              status={readinessStatus}
-              personaName={persona?.name ?? ''}
-              onFix={openFix}
-            />
-          </aside>
-        </div>
-      )}
+        <aside className="w-full shrink-0 lg:ml-auto lg:sticky lg:top-6 lg:w-72">
+          {profileId && (
+            <>
+              <CvReadiness
+                items={readinessItems({ hasPhoto: image !== null, personaCount, checked })}
+                status={readinessStatus}
+                personaName={persona?.name ?? ''}
+                onFix={openFix}
+              />
+            </>
+          )}
+          <div className={profileId ? 'mt-8' : ''}>
+            <PageTips page="photo" orientation="vertical" />
+          </div>
+        </aside>
+      </div>
 
       <ConfirmationModal
         open={confirmingDelete}

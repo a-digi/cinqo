@@ -111,110 +111,116 @@ export function SkillsPage() {
         description="The skills on this persona. The AI reads them when matching you against job postings."
         pill={personaId ? { text: plural(skills.length, 'skill', 'skills') } : undefined}
       />
-      <PageTips page="skills" />
+      {/* Steps 105 to 108: the tips sit in a column of their own beside the page (under it on a narrow window). */}
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
+        <div className="order-1 min-w-0 flex-1 lg:order-2">
+          <PersonaSwitcher personaId={personaId} onChange={setPersonaId} />
 
-      <PersonaSwitcher personaId={personaId} onChange={setPersonaId} />
+          <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
 
-      <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
-
-      {personaId && (
-        <section
-          className="career-enter career-delay-1 rounded-3xl border p-5 shadow-sm"
-          style={{ borderColor: PAGE_ACCENT.soft, background: `linear-gradient(160deg, #ffffff 45%, ${PAGE_ACCENT.soft} 100%)` }}
-        >
-          {skills.length > 0 && <LetterIndex index={index} active={letter} total={skills.length} onPick={setActiveLetter} />}
-          {skills.length === 0 && <p className="mb-3 text-sm text-gray-500">No skills yet. Add the first one below.</p>}
-          <div className="mb-4 flex flex-wrap gap-2">
-            {visibleSkills.map((skill, idx) => {
-              const accent = accentFor(skill)
-              return editing === skill ? (
-                <span
-                  key={skill}
-                  className="flex items-center gap-1.5 rounded-full border bg-white px-2 py-1"
-                  style={{ borderColor: accent.to }}
-                >
-                  <input
-                    // Deliberate: entering edit mode should focus the input
-                    // immediately, the same convention most inline-rename UIs use.
-                    // eslint-disable-next-line jsx-a11y/no-autofocus
-                    autoFocus
-                    value={editValue}
-                    onChange={(e) => {
-                      setEditValue(e.target.value)
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') saveEdit(skill)
-                      if (e.key === 'Escape') cancelEdit()
-                    }}
-                    className="w-28 rounded border border-gray-300 px-1.5 py-0.5 text-xs text-gray-900 focus:border-gray-500 focus:outline-none"
-                  />
-                  <button
-                    type="button"
-                    aria-label="Save"
-                    onClick={() => {
-                      saveEdit(skill)
-                    }}
-                    className="text-xs font-medium text-gray-700 hover:text-gray-900"
-                  >
-                    Save
-                  </button>
-                  <button type="button" aria-label="Cancel" onClick={cancelEdit} className="text-gray-400 hover:text-red-700">
-                    <XIcon />
-                  </button>
-                </span>
-              ) : (
-                <span
-                  key={skill}
-                  className="career-chip flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium"
-                  style={{ background: accent.soft, color: accent.text, '--i': idx } as React.CSSProperties}
-                >
-                  <span aria-hidden="true" className="h-2 w-2 rounded-full" style={{ background: accent.to }} />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      startEdit(skill)
-                    }}
-                    className="hover:underline"
-                  >
-                    {skill}
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={`Remove ${skill}`}
-                    onClick={() => {
-                      handleRemove(skill)
-                    }}
-                    className="opacity-60 hover:text-red-700 hover:opacity-100"
-                  >
-                    <XIcon />
-                  </button>
-                </span>
-              )
-            })}
-          </div>
-          <div className="flex gap-2">
-            <input
-              value={newSkill}
-              onChange={(e) => {
-                setNewSkill(e.target.value)
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleAdd()
-              }}
-              placeholder="Add a skill"
-              className={`flex-1 ${inputClass}`}
-            />
-            <button
-              type="button"
-              onClick={handleAdd}
-              className="flex items-center gap-1 rounded-md bg-gray-800 px-3.5 py-1.5 text-sm font-medium text-white transition-colors hover:bg-gray-900"
+          {personaId && (
+            <section
+              className="career-enter career-delay-1 rounded-3xl border p-5 shadow-sm"
+              style={{ borderColor: PAGE_ACCENT.soft, background: `linear-gradient(160deg, #ffffff 45%, ${PAGE_ACCENT.soft} 100%)` }}
             >
-              <PlusIcon />
-              Add
-            </button>
-          </div>
-        </section>
-      )}
+              {skills.length > 0 && <LetterIndex index={index} active={letter} total={skills.length} onPick={setActiveLetter} />}
+              {skills.length === 0 && <p className="mb-3 text-sm text-gray-500">No skills yet. Add the first one below.</p>}
+              <div className="mb-4 flex flex-wrap gap-2">
+                {visibleSkills.map((skill, idx) => {
+                  const accent = accentFor(skill)
+                  return editing === skill ? (
+                    <span
+                      key={skill}
+                      className="flex items-center gap-1.5 rounded-full border bg-white px-2 py-1"
+                      style={{ borderColor: accent.to }}
+                    >
+                      <input
+                        // Deliberate: entering edit mode should focus the input
+                        // immediately, the same convention most inline-rename UIs use.
+                        // eslint-disable-next-line jsx-a11y/no-autofocus
+                        autoFocus
+                        value={editValue}
+                        onChange={(e) => {
+                          setEditValue(e.target.value)
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') saveEdit(skill)
+                          if (e.key === 'Escape') cancelEdit()
+                        }}
+                        className="w-28 rounded border border-gray-300 px-1.5 py-0.5 text-xs text-gray-900 focus:border-gray-500 focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        aria-label="Save"
+                        onClick={() => {
+                          saveEdit(skill)
+                        }}
+                        className="text-xs font-medium text-gray-700 hover:text-gray-900"
+                      >
+                        Save
+                      </button>
+                      <button type="button" aria-label="Cancel" onClick={cancelEdit} className="text-gray-400 hover:text-red-700">
+                        <XIcon />
+                      </button>
+                    </span>
+                  ) : (
+                    <span
+                      key={skill}
+                      className="career-chip flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium"
+                      style={{ background: accent.soft, color: accent.text, '--i': idx } as React.CSSProperties}
+                    >
+                      <span aria-hidden="true" className="h-2 w-2 rounded-full" style={{ background: accent.to }} />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          startEdit(skill)
+                        }}
+                        className="hover:underline"
+                      >
+                        {skill}
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Remove ${skill}`}
+                        onClick={() => {
+                          handleRemove(skill)
+                        }}
+                        className="opacity-60 hover:text-red-700 hover:opacity-100"
+                      >
+                        <XIcon />
+                      </button>
+                    </span>
+                  )
+                })}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  value={newSkill}
+                  onChange={(e) => {
+                    setNewSkill(e.target.value)
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleAdd()
+                  }}
+                  placeholder="Add a skill"
+                  className={`flex-1 ${inputClass}`}
+                />
+                <button
+                  type="button"
+                  onClick={handleAdd}
+                  className="flex items-center gap-1 rounded-md bg-gray-800 px-3.5 py-1.5 text-sm font-medium text-white transition-colors hover:bg-gray-900"
+                >
+                  <PlusIcon />
+                  Add
+                </button>
+              </div>
+            </section>
+          )}
+        </div>
+        <aside className="order-2 w-full shrink-0 lg:order-1 lg:sticky lg:top-6 lg:w-72">
+          <PageTips page="skills" orientation="vertical" />
+        </aside>
+      </div>
     </div>
   )
 }

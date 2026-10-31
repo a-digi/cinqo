@@ -403,300 +403,307 @@ export function ImportCvPage() {
   })
 
   return (
-    <div className="career-v-swing career-a-glow career-t-underline max-w-5xl p-6 font-sans text-gray-900">
+    <div className="career-v-swing career-a-glow career-t-underline max-w-7xl p-6 font-sans text-gray-900">
       <PageHeaderCard
         icon={<UploadIcon className="h-6 w-6" />}
         title="Import from CV"
         description="Upload a CV and let the AI propose a profile, persona, summary, skills and experience from it. You review everything before it is saved."
         pill={headerPill}
       />
-      <PageTips page="importCv" />
+      {/* Steps 105 to 108: the tips sit in a column of their own beside the page (under it on a narrow window). */}
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
+        <div className="order-1 min-w-0 flex-1 lg:order-2">
+          {!viewingRun && <ImportPipeline stages={stages} onStartOver={startOver} />}
 
-      {!viewingRun && <ImportPipeline stages={stages} onStartOver={startOver} />}
-
-      {state === 'upload' && !viewingRun && (
-        <section className={`career-enter career-delay-1 ${cardClassName}`} style={cardStyle}>
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => {
-              fileInputRef.current?.click()
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') fileInputRef.current?.click()
-            }}
-            onDragOver={(e) => {
-              e.preventDefault()
-              setIsDragOver(true)
-            }}
-            onDragLeave={() => {
-              setIsDragOver(false)
-            }}
-            onDrop={(e) => {
-              e.preventDefault()
-              setIsDragOver(false)
-              pickFile(e.dataTransfer.files.length > 0 ? e.dataTransfer.files[0] : null)
-            }}
-            className={`flex cursor-pointer flex-col items-center rounded-2xl border-2 border-dashed px-6 py-10 text-center transition-colors ${
-              isDragOver ? 'border-blue-400 bg-blue-50' : 'border-blue-200 bg-white hover:border-blue-400 hover:bg-blue-50'
-            }`}
-          >
-            <div className="relative mb-3 h-16 w-16 text-gray-300">
-              <PDFIcon className="h-16 w-16" />
-              <span className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full bg-gray-900 text-white">
-                <UploadIcon className="h-3.5 w-3.5" />
-              </span>
-            </div>
-            <p className="mb-1 text-sm font-medium text-gray-700">{file ? file.name : 'Click to choose a PDF, or drag one here'}</p>
-            <p className="text-xs text-gray-400">PDF up to 10MB</p>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".pdf,application/pdf"
-              onChange={(e) => {
-                pickFile(e.target.files?.[0] ?? null)
-              }}
-              className="hidden"
-            />
-          </div>
-
-          <div className="mt-3 min-h-[1.2em] text-sm text-red-700">{error}</div>
-          <button
-            type="button"
-            onClick={() => {
-              void handleUpload()
-            }}
-            disabled={!file || uploading || !platformsLoaded}
-            className="mt-1 rounded-md bg-gray-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {uploading ? 'Uploading…' : 'Upload'}
-          </button>
-        </section>
-      )}
-
-      {state === 'upload' && !viewingRun && runs !== null && runs.length > 0 && (
-        <section className={`career-enter career-delay-2 mt-4 ${cardClassName}`} style={cardStyle}>
-          <h2 className="mb-2 text-sm font-semibold text-gray-900">Import history</h2>
-          <div className="mb-2 min-h-[1.2em] text-sm text-red-700">{runActionError}</div>
-          <ul className="divide-y divide-gray-100">
-            {runs.map((run) => (
-              <li key={run.id} className="flex items-center justify-between gap-3 py-2 text-sm">
-                <div className="min-w-0">
-                  <p className="truncate text-gray-700">{run.originalFilename}</p>
-                  <p className="text-xs text-gray-400">{new Date(run.createdAt).toLocaleString()}</p>
+          {state === 'upload' && !viewingRun && (
+            <section className={`career-enter career-delay-1 ${cardClassName}`} style={cardStyle}>
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => {
+                  fileInputRef.current?.click()
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') fileInputRef.current?.click()
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault()
+                  setIsDragOver(true)
+                }}
+                onDragLeave={() => {
+                  setIsDragOver(false)
+                }}
+                onDrop={(e) => {
+                  e.preventDefault()
+                  setIsDragOver(false)
+                  pickFile(e.dataTransfer.files.length > 0 ? e.dataTransfer.files[0] : null)
+                }}
+                className={`flex cursor-pointer flex-col items-center rounded-2xl border-2 border-dashed px-6 py-10 text-center transition-colors ${
+                  isDragOver ? 'border-blue-400 bg-blue-50' : 'border-blue-200 bg-white hover:border-blue-400 hover:bg-blue-50'
+                }`}
+              >
+                <div className="relative mb-3 h-16 w-16 text-gray-300">
+                  <PDFIcon className="h-16 w-16" />
+                  <span className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full bg-gray-900 text-white">
+                    <UploadIcon className="h-3.5 w-3.5" />
+                  </span>
                 </div>
-                <div className="flex shrink-0 items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setViewingRun(run)
-                    }}
-                    className="rounded-full border border-blue-200 px-3 py-1 text-xs text-blue-700 hover:bg-blue-50"
-                  >
-                    View
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void handleProcessAgain(run)
-                    }}
-                    className="rounded-full border border-blue-200 px-3 py-1 text-xs text-blue-700 hover:bg-blue-50"
-                  >
-                    Process again
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void handleDeleteRun(run)
-                    }}
-                    className="rounded-full border border-red-200 px-3 py-1 text-xs text-red-700 hover:bg-red-50"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {state === 'upload' && viewingRun && (
-        <ImportRunDetail
-          run={viewingRun}
-          onClose={() => {
-            setViewingRun(null)
-          }}
-        />
-      )}
-
-      {state === 'analyzing' && (
-        <div className="career-stagger space-y-4">
-          <p className="text-sm text-gray-500">
-            Analyzing “{fileName}”…{uploadResult && <span className="ml-1 font-mono text-xs text-gray-400">({uploadResult.fileId})</span>}
-          </p>
-          {conversationId && (
-            <p className="text-xs text-gray-400">
-              AI conversation:{' '}
-              <button type="button" onClick={viewTranscript} className="underline hover:text-gray-600">
-                view transcript
-              </button>
-            </p>
-          )}
-          {AREAS.map((area) => (
-            <section key={area} className="rounded-md border border-gray-200 p-4 shadow-sm">
-              <h2 className="text-base font-semibold text-gray-900">{area}</h2>
-            </section>
-          ))}
-        </div>
-      )}
-
-      {state === 'review' && proposal && (
-        <div className="career-stagger space-y-4">
-          <p className="text-sm text-gray-500">Reviewed “{fileName}”</p>
-          {conversationId && (
-            <p className="text-xs text-gray-400">
-              AI conversation:{' '}
-              <button type="button" onClick={viewTranscript} className="underline hover:text-gray-600">
-                view transcript
-              </button>
-            </p>
-          )}
-
-          <section className={cardClassName} style={cardStyle}>
-            <h2 className="mb-2 text-base font-semibold text-gray-900">Profile</h2>
-            <ProposalRow
-              item={proposal.profile}
-              label={proposal.profile.name || '(no name proposed)'}
-              checked={checked.profile}
-              onToggle={() => {
-                toggle('profile')
-              }}
-              done={insertedKeys.profile}
-              errorMessage={insertErrors.profile}
-            />
-            {!checked.profile && !insertedKeys.profile && (
-              <p className="mt-2 text-xs text-gray-400">Will attach to your existing profile instead of creating a new one.</p>
-            )}
-          </section>
-
-          <section className={cardClassName} style={cardStyle}>
-            <h2 className="mb-2 text-base font-semibold text-gray-900">Personas</h2>
-            <ProposalRow
-              item={proposal.persona}
-              label={[proposal.persona.name, proposal.persona.title].filter(Boolean).join(' — ') || '(no persona proposed)'}
-              resolvedDuplicateLabel={resolvedLabelFor(proposal.persona, 'persona')}
-              checked={checked.persona}
-              onToggle={() => {
-                toggle('persona')
-              }}
-              done={insertedKeys.persona}
-              errorMessage={insertErrors.persona}
-            />
-            {!checked.persona && !insertedKeys.persona && (
-              <div className="mt-2">
-                <Dropdown
-                  options={duplicateLabels?.personaList.map((p) => ({ value: p.id, label: p.name })) ?? []}
-                  value={existingPersonaId}
-                  onChange={setExistingPersonaId}
-                  placeholder="Select an existing persona…"
+                <p className="mb-1 text-sm font-medium text-gray-700">{file ? file.name : 'Click to choose a PDF, or drag one here'}</p>
+                <p className="text-xs text-gray-400">PDF up to 10MB</p>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,application/pdf"
+                  onChange={(e) => {
+                    pickFile(e.target.files?.[0] ?? null)
+                  }}
+                  className="hidden"
                 />
-                <p className="mt-1 text-xs text-gray-400">
-                  Personal Details, Skills, and Experience below will attach to this persona instead of a new one.
-                </p>
               </div>
-            )}
-          </section>
 
-          <section className={cardClassName} style={cardStyle}>
-            <h2 className="mb-2 text-base font-semibold text-gray-900">Personal Details</h2>
-            <ProposalRow
-              item={proposal.personalDetails}
-              label={proposal.personalDetails.headline || '(no headline proposed)'}
-              checked={checked.personalDetails}
-              onToggle={() => {
-                toggle('personalDetails')
-              }}
-              done={insertedKeys.personalDetails}
-              errorMessage={insertErrors.personalDetails}
-            />
-          </section>
-
-          <section className={cardClassName} style={cardStyle}>
-            <h2 className="mb-2 text-base font-semibold text-gray-900">Skills</h2>
-            {proposal.skills.length === 0 && <p className="text-sm text-gray-400">No skills proposed.</p>}
-            <div className="space-y-1">
-              {proposal.skills.map((skill, i) => (
-                <ProposalRow
-                  key={i}
-                  item={skill}
-                  label={skill.value}
-                  resolvedDuplicateLabel={resolvedLabelFor(skill, 'skill')}
-                  checked={checked[`skill-${i}`]}
-                  onToggle={() => {
-                    toggle(`skill-${i}`)
-                  }}
-                  done={insertedKeys[`skill-${i}`]}
-                  errorMessage={insertErrors[`skill-${i}`]}
-                />
-              ))}
-            </div>
-          </section>
-
-          <section className={cardClassName} style={cardStyle}>
-            <h2 className="mb-2 text-base font-semibold text-gray-900">Experience</h2>
-            {proposal.experience.length === 0 && <p className="text-sm text-gray-400">No experience proposed.</p>}
-            <div className="space-y-1">
-              {proposal.experience.map((exp, i) => (
-                <ProposalRow
-                  key={i}
-                  item={exp}
-                  label={experienceLabel(exp)}
-                  resolvedDuplicateLabel={resolvedLabelFor(exp, 'experience')}
-                  checked={checked[`experience-${i}`]}
-                  onToggle={() => {
-                    toggle(`experience-${i}`)
-                  }}
-                  done={insertedKeys[`experience-${i}`]}
-                  errorMessage={insertErrors[`experience-${i}`]}
-                />
-              ))}
-            </div>
-          </section>
-
-          <section className={cardClassName} style={cardStyle}>
-            {insertValidationError && <p className="mb-2 text-sm text-red-700">{insertValidationError}</p>}
-            <button
-              type="button"
-              onClick={() => {
-                void handleInsert()
-              }}
-              disabled={inserting}
-              className="rounded-md bg-gray-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {inserting ? 'Inserting…' : 'Insert'}
-            </button>
-          </section>
-        </div>
-      )}
-
-      {state === 'error' && (
-        <section className={cardClassName} style={cardStyle}>
-          <p className="mb-3 text-sm text-red-700">{error}</p>
-          {rawReply && (
-            <details className="mb-3">
-              <summary className="cursor-pointer text-xs text-gray-500">Show the AI's raw reply</summary>
-              <pre className="mt-2 whitespace-pre-wrap break-words text-xs text-gray-600">{rawReply}</pre>
-            </details>
+              <div className="mt-3 min-h-[1.2em] text-sm text-red-700">{error}</div>
+              <button
+                type="button"
+                onClick={() => {
+                  void handleUpload()
+                }}
+                disabled={!file || uploading || !platformsLoaded}
+                className="mt-1 rounded-md bg-gray-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {uploading ? 'Uploading…' : 'Upload'}
+              </button>
+            </section>
           )}
-          <button
-            type="button"
-            onClick={startOver}
-            className="rounded-full border border-blue-200 bg-white px-3.5 py-1.5 text-sm text-blue-700 hover:bg-blue-50"
-          >
-            Start over
-          </button>
-        </section>
-      )}
+
+          {state === 'upload' && !viewingRun && runs !== null && runs.length > 0 && (
+            <section className={`career-enter career-delay-2 mt-4 ${cardClassName}`} style={cardStyle}>
+              <h2 className="mb-2 text-sm font-semibold text-gray-900">Import history</h2>
+              <div className="mb-2 min-h-[1.2em] text-sm text-red-700">{runActionError}</div>
+              <ul className="divide-y divide-gray-100">
+                {runs.map((run) => (
+                  <li key={run.id} className="flex items-center justify-between gap-3 py-2 text-sm">
+                    <div className="min-w-0">
+                      <p className="truncate text-gray-700">{run.originalFilename}</p>
+                      <p className="text-xs text-gray-400">{new Date(run.createdAt).toLocaleString()}</p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setViewingRun(run)
+                        }}
+                        className="rounded-full border border-blue-200 px-3 py-1 text-xs text-blue-700 hover:bg-blue-50"
+                      >
+                        View
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void handleProcessAgain(run)
+                        }}
+                        className="rounded-full border border-blue-200 px-3 py-1 text-xs text-blue-700 hover:bg-blue-50"
+                      >
+                        Process again
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void handleDeleteRun(run)
+                        }}
+                        className="rounded-full border border-red-200 px-3 py-1 text-xs text-red-700 hover:bg-red-50"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {state === 'upload' && viewingRun && (
+            <ImportRunDetail
+              run={viewingRun}
+              onClose={() => {
+                setViewingRun(null)
+              }}
+            />
+          )}
+
+          {state === 'analyzing' && (
+            <div className="career-stagger space-y-4">
+              <p className="text-sm text-gray-500">
+                Analyzing “{fileName}”…
+                {uploadResult && <span className="ml-1 font-mono text-xs text-gray-400">({uploadResult.fileId})</span>}
+              </p>
+              {conversationId && (
+                <p className="text-xs text-gray-400">
+                  AI conversation:{' '}
+                  <button type="button" onClick={viewTranscript} className="underline hover:text-gray-600">
+                    view transcript
+                  </button>
+                </p>
+              )}
+              {AREAS.map((area) => (
+                <section key={area} className="rounded-md border border-gray-200 p-4 shadow-sm">
+                  <h2 className="text-base font-semibold text-gray-900">{area}</h2>
+                </section>
+              ))}
+            </div>
+          )}
+
+          {state === 'review' && proposal && (
+            <div className="career-stagger space-y-4">
+              <p className="text-sm text-gray-500">Reviewed “{fileName}”</p>
+              {conversationId && (
+                <p className="text-xs text-gray-400">
+                  AI conversation:{' '}
+                  <button type="button" onClick={viewTranscript} className="underline hover:text-gray-600">
+                    view transcript
+                  </button>
+                </p>
+              )}
+
+              <section className={cardClassName} style={cardStyle}>
+                <h2 className="mb-2 text-base font-semibold text-gray-900">Profile</h2>
+                <ProposalRow
+                  item={proposal.profile}
+                  label={proposal.profile.name || '(no name proposed)'}
+                  checked={checked.profile}
+                  onToggle={() => {
+                    toggle('profile')
+                  }}
+                  done={insertedKeys.profile}
+                  errorMessage={insertErrors.profile}
+                />
+                {!checked.profile && !insertedKeys.profile && (
+                  <p className="mt-2 text-xs text-gray-400">Will attach to your existing profile instead of creating a new one.</p>
+                )}
+              </section>
+
+              <section className={cardClassName} style={cardStyle}>
+                <h2 className="mb-2 text-base font-semibold text-gray-900">Personas</h2>
+                <ProposalRow
+                  item={proposal.persona}
+                  label={[proposal.persona.name, proposal.persona.title].filter(Boolean).join(' — ') || '(no persona proposed)'}
+                  resolvedDuplicateLabel={resolvedLabelFor(proposal.persona, 'persona')}
+                  checked={checked.persona}
+                  onToggle={() => {
+                    toggle('persona')
+                  }}
+                  done={insertedKeys.persona}
+                  errorMessage={insertErrors.persona}
+                />
+                {!checked.persona && !insertedKeys.persona && (
+                  <div className="mt-2">
+                    <Dropdown
+                      options={duplicateLabels?.personaList.map((p) => ({ value: p.id, label: p.name })) ?? []}
+                      value={existingPersonaId}
+                      onChange={setExistingPersonaId}
+                      placeholder="Select an existing persona…"
+                    />
+                    <p className="mt-1 text-xs text-gray-400">
+                      Personal Details, Skills, and Experience below will attach to this persona instead of a new one.
+                    </p>
+                  </div>
+                )}
+              </section>
+
+              <section className={cardClassName} style={cardStyle}>
+                <h2 className="mb-2 text-base font-semibold text-gray-900">Personal Details</h2>
+                <ProposalRow
+                  item={proposal.personalDetails}
+                  label={proposal.personalDetails.headline || '(no headline proposed)'}
+                  checked={checked.personalDetails}
+                  onToggle={() => {
+                    toggle('personalDetails')
+                  }}
+                  done={insertedKeys.personalDetails}
+                  errorMessage={insertErrors.personalDetails}
+                />
+              </section>
+
+              <section className={cardClassName} style={cardStyle}>
+                <h2 className="mb-2 text-base font-semibold text-gray-900">Skills</h2>
+                {proposal.skills.length === 0 && <p className="text-sm text-gray-400">No skills proposed.</p>}
+                <div className="space-y-1">
+                  {proposal.skills.map((skill, i) => (
+                    <ProposalRow
+                      key={i}
+                      item={skill}
+                      label={skill.value}
+                      resolvedDuplicateLabel={resolvedLabelFor(skill, 'skill')}
+                      checked={checked[`skill-${i}`]}
+                      onToggle={() => {
+                        toggle(`skill-${i}`)
+                      }}
+                      done={insertedKeys[`skill-${i}`]}
+                      errorMessage={insertErrors[`skill-${i}`]}
+                    />
+                  ))}
+                </div>
+              </section>
+
+              <section className={cardClassName} style={cardStyle}>
+                <h2 className="mb-2 text-base font-semibold text-gray-900">Experience</h2>
+                {proposal.experience.length === 0 && <p className="text-sm text-gray-400">No experience proposed.</p>}
+                <div className="space-y-1">
+                  {proposal.experience.map((exp, i) => (
+                    <ProposalRow
+                      key={i}
+                      item={exp}
+                      label={experienceLabel(exp)}
+                      resolvedDuplicateLabel={resolvedLabelFor(exp, 'experience')}
+                      checked={checked[`experience-${i}`]}
+                      onToggle={() => {
+                        toggle(`experience-${i}`)
+                      }}
+                      done={insertedKeys[`experience-${i}`]}
+                      errorMessage={insertErrors[`experience-${i}`]}
+                    />
+                  ))}
+                </div>
+              </section>
+
+              <section className={cardClassName} style={cardStyle}>
+                {insertValidationError && <p className="mb-2 text-sm text-red-700">{insertValidationError}</p>}
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handleInsert()
+                  }}
+                  disabled={inserting}
+                  className="rounded-md bg-gray-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {inserting ? 'Inserting…' : 'Insert'}
+                </button>
+              </section>
+            </div>
+          )}
+
+          {state === 'error' && (
+            <section className={cardClassName} style={cardStyle}>
+              <p className="mb-3 text-sm text-red-700">{error}</p>
+              {rawReply && (
+                <details className="mb-3">
+                  <summary className="cursor-pointer text-xs text-gray-500">Show the AI's raw reply</summary>
+                  <pre className="mt-2 whitespace-pre-wrap break-words text-xs text-gray-600">{rawReply}</pre>
+                </details>
+              )}
+              <button
+                type="button"
+                onClick={startOver}
+                className="rounded-full border border-blue-200 bg-white px-3.5 py-1.5 text-sm text-blue-700 hover:bg-blue-50"
+              >
+                Start over
+              </button>
+            </section>
+          )}
+        </div>
+        <aside className="order-2 w-full shrink-0 lg:order-1 lg:sticky lg:top-6 lg:w-72">
+          <PageTips page="importCv" orientation="vertical" />
+        </aside>
+      </div>
     </div>
   )
 }

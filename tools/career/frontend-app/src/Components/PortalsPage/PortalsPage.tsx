@@ -336,7 +336,6 @@ export function PortalsPage() {
           auto-discovery switch and the numbers, in that order (under the list on a narrow window). */}
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
         <div className="order-1 min-w-0 flex-1 lg:order-2">
-          <PageTips page="portals" />
           <p className="mb-3 text-xs text-gray-500">Deleting a portal permanently deletes every link it owns.</p>
 
           <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
@@ -616,7 +615,7 @@ export function PortalsPage() {
           </div>
         </div>
 
-        <aside className="order-2 w-full shrink-0 lg:order-1 lg:sticky lg:top-6 lg:w-56">
+        <aside className="order-2 w-full shrink-0 lg:order-1 career-rail-sticky-tall lg:w-72">
           <button
             type="button"
             onClick={() => {
@@ -645,6 +644,9 @@ export function PortalsPage() {
               { label: 'Never crawled', value: String(summary.neverCrawled), color: ACCENTS[2].to, emphasis: summary.neverCrawled > 0 },
             ]}
           />
+          <div className="mt-8">
+            <PageTips page="portals" orientation="vertical" />
+          </div>
         </aside>
       </div>
 
