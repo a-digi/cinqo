@@ -17,7 +17,7 @@ import { Comments } from '../../../Shared/Comments/Comments'
 import { COMMENT_TYPE_PERSONA } from '../../../Shared/Comments/commentTypes'
 import { LayersIcon, SparkleIcon } from '../../../Shared/Icons/icons'
 import { PageHeaderCard } from '../../../Shared/PageHeader/PageHeaderCard'
-import { PERSONAS_PATH, VIEW_PROFILE_PATH, personaDetailsPathFor } from '../../../paths'
+import { PERSONAS_PATH, VIEW_PROFILE_PATH, personaDetailsPathFor, personasPathFor } from '../../../paths'
 import { chatOfRun } from '../../../PersonaAi/runDisplay'
 import { ProfilePhotosPanel } from '../../ProfileImage/ProfilePhotosPanel'
 import { useProfilePhotos } from '../../ProfileImage/useProfilePhotos'
@@ -25,7 +25,6 @@ import { CvCardGrid } from '../../CvBuilder/CvCardGrid'
 import { chatsByCv } from '../../../CvAi/cvAiRules'
 import { PAGE_ACCENT } from '../../JobsPage/jobsTheme'
 import { cvsOfProfile, lifetimeText } from '../../ProfilesPage/profileViewRules'
-import { setProfileIdInLocalStorage } from '../../ProfileSwitcher/repositoryLocalStorage'
 import { profileLabel } from '../../ProfileSwitcher/profileLabel'
 import { detailRows, nothingFilledIn, roleView } from './personaViewRules'
 
@@ -128,11 +127,9 @@ export function PersonaViewPage() {
 
   const backLink = (
     <a
-      href={PERSONAS_PATH}
+      href={persona ? personasPathFor(persona.profileId) : PERSONAS_PATH}
       onClick={(e) => {
-        go(e, PERSONAS_PATH, () => {
-          if (persona) setProfileIdInLocalStorage(persona.profileId)
-        })
+        go(e, persona ? personasPathFor(persona.profileId) : PERSONAS_PATH)
       }}
       className="mb-3 inline-block text-sm font-medium text-blue-700 hover:underline"
     >

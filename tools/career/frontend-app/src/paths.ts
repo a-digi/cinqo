@@ -4,6 +4,13 @@ export const IMPORT_CV_PATH = '/tools/career/import-cv'
 export const PROFILES_PATH = '/tools/career/profiles'
 export const VIEW_PROFILE_PATH = '/tools/career/profiles/view'
 export const PERSONAS_PATH = '/tools/career/personas'
+// One profile's personas on their own page: a pattern route, the id arrives as the page's route parameter. The
+// exact paths /personas/new and /personas/view win over it; a profile id is never "new" or "view".
+export const PERSONAS_PROFILE_PATH = '/tools/career/personas/:profileId'
+// The address of one profile's personas page.
+export function personasPathFor(profileId: string): string {
+  return `${PERSONAS_PATH}/${encodeURIComponent(profileId)}`
+}
 export const PERSONA_DETAILS_PATH = '/tools/career/persona-details'
 // One persona's summary and goals on its own page: a pattern route, the id arrives as the page's route parameter.
 export const PERSONA_DETAILS_ONE_PATH = '/tools/career/persona-details/:personaId'

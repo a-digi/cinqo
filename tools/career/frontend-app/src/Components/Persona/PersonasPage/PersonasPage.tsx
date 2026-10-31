@@ -14,10 +14,9 @@ import {
 import { LayersIcon, PlusIcon, SparkleIcon } from '../../../Shared/Icons/icons'
 import { inputClass } from '../../../Shared/inputClass'
 import { PageHeaderCard } from '../../../Shared/PageHeader/PageHeaderCard'
-import { NEW_PERSONA_PATH, VIEW_PERSONA_PATH } from '../../../paths'
+import { NEW_PERSONA_PATH, PERSONAS_PATH, VIEW_PERSONA_PATH } from '../../../paths'
 import { plural } from '../../CompaniesPage/companyStats'
 import { PAGE_ACCENT, accentFor, initialOf } from '../../JobsPage/jobsTheme'
-import { ProfileSwitcher } from '../../ProfileSwitcher/ProfileSwitcher'
 import { PhotoAvatar } from '../../ProfileImage/PhotoAvatar'
 import { useProfilePhotos } from '../../ProfileImage/useProfilePhotos'
 import { PersonaCvs } from './PersonaCvs'
@@ -28,7 +27,6 @@ import { useAiChoice } from '../../../Cinqo/Platform/useAiChoice'
 import { profileLabel } from '../../ProfileSwitcher/profileLabel'
 import { CreateWithAi } from '../../../PersonaAi/CreateWithAi'
 import { PersonaAiHistory } from '../../../PersonaAi/PersonaAiHistory'
-import { setProfileIdInLocalStorage } from '../../ProfileSwitcher/repositoryLocalStorage'
 import { PersonaSuggestions } from '../../../PersonaAi/PersonaSuggestions'
 import { usePersonaAiRuns } from '../../../PersonaAi/usePersonaAiRuns'
 import { chatOfRun, hasRunningRun } from '../../../PersonaAi/runDisplay'
@@ -43,16 +41,12 @@ import { chatOfRun, hasRunningRun } from '../../../PersonaAi/runDisplay'
 // Companies, but mirrored: header card, the personas on the left and the "needs
 // attention" panel on the right;
 // "New persona" opens its own page.
-export function PersonasPage() {
-  // A chat link to one suggestion (?profileId=…&suggestion=…): the profile it belongs to is chosen
-  // before the switcher reads its stored one, and the suggestion is scrolled to once it is shown.
-  const [linkedId] = useState(() => {
-    const params = new URLSearchParams(window.location.search)
-    const profile = params.get('profileId')
-    if (profile) setProfileIdInLocalStorage(profile)
-    return params.get('suggestion')
-  })
-  const [profileId, setProfileId] = useState<string | null>(null)
+export function PersonasPage({ profileId }: { profileId: string }) {
+  // A chat link to one suggestion (/personas/:profileId?suggestion=…): the suggestion is scrolled to once it is
+  // shown. The profile comes from the address, not from a dropdown.
+  const [linkedId] = useState(() => new URLSearchParams(window.location.search).get('suggestion'))
+  // The profile's name (for the header and the AI chat's title); missing is null, and unknown once loaded.
+  const [profileLoaded, setProfileLoaded] = useState(false)
   const [personas, setPersonas] = useState<Persona[]>([])
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
@@ -62,6 +56,7 @@ export function PersonasPage() {
   // title), and its runs.
   const ai = useAiChoice()
   const [profileName, setProfileName] = useState('')
+  const [profileFound, setProfileFound] = useState(false)
   const aiRuns = usePersonaAiRuns(profileId)
   // The selected profile's default photo, shown on each persona item (a persona has no photo of its own).
   const profilePhotos = useProfilePhotos(profileId)
@@ -108,14 +103,19 @@ export function PersonasPage() {
   }, [aiRuns.runs])
 
   useEffect(() => {
-    if (!profileId) return
+    setProfileLoaded(false)
     fetchProfiles()
       .then((list) => {
         const found = list.find((p) => p.id === profileId)
         setProfileName(found ? profileLabel(found) : '')
+        setProfileFound(found !== undefined)
       })
       .catch(() => {
         setProfileName('')
+        setProfileFound(false)
+      })
+      .finally(() => {
+        setProfileLoaded(true)
       })
   }, [profileId])
 
@@ -206,20 +206,41 @@ export function PersonasPage() {
     })
   }
 
+  const backLink = (
+    <a
+      href={PERSONAS_PATH}
+      onClick={(e) => {
+        e.preventDefault()
+        window.__cinqoToolBridge.navigate(PERSONAS_PATH)
+      }}
+      className="mb-3 inline-block text-sm font-medium text-blue-700 hover:underline"
+    >
+      ← All profiles
+    </a>
+  )
+
+  if (!profileFound) {
+    return (
+      <div className="max-w-3xl p-6 font-sans text-gray-900">
+        {backLink}
+        <div className="text-sm text-gray-500">{profileLoaded ? 'Profile not found' : 'Loading…'}</div>
+      </div>
+    )
+  }
+
   return (
     <div className="career-v-flip career-a-sheen career-t-wave max-w-7xl p-6 font-sans text-gray-900">
+      {backLink}
       <PageHeaderCard
         icon={<LayersIcon />}
-        title="Personas"
+        title={`Personas: ${profileName}`}
         description={
-          'One persona per role a profile is pursuing, e.g. "Backend Engineer". Each has its own summary, skills and experience.'
+          'One persona per role this profile is pursuing, e.g. "Backend Engineer". Each has its own summary, skills and experience.'
         }
         pill={{ text: plural(summary.personas, 'persona', 'personas') }}
       />
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
         <div className="min-w-0 flex-1">
-          <ProfileSwitcher profileId={profileId} onChange={setProfileId} />
-
           {profileId && (
             <div className="mb-3 flex items-center justify-start gap-3">
               <button

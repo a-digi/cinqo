@@ -3,11 +3,11 @@ import { createPersona, fetchProfiles, type Profile } from '../../../api'
 import { LayersIcon, PlusIcon } from '../../../Shared/Icons/icons'
 import { inputClass } from '../../../Shared/inputClass'
 import { PageHeaderCard } from '../../../Shared/PageHeader/PageHeaderCard'
-import { PERSONAS_PATH, PROFILES_PATH } from '../../../paths'
+import { PERSONAS_PATH, PROFILES_PATH, personasPathFor } from '../../../paths'
 import { Dropdown } from '../../Dropdown/Dropdown'
 import { PAGE_ACCENT } from '../../JobsPage/jobsTheme'
 import { profileLabel } from '../../ProfileSwitcher/profileLabel'
-import { getProfileIdFromLocalStorage, setProfileIdInLocalStorage } from '../../ProfileSwitcher/repositoryLocalStorage'
+import { getProfileIdFromLocalStorage } from '../../ProfileSwitcher/repositoryLocalStorage'
 
 // The page behind the Personas list's "New persona" button. A persona must belong to
 // an existing profile: ?profileId= pre-selects one (the list passes the profile it is
@@ -36,8 +36,9 @@ export function NewPersonaPage() {
       })
   }, [])
 
+  // Back to the personas of the profile the new one is for (the profiles when none is chosen yet).
   function backToList() {
-    window.__cinqoToolBridge.navigate(PERSONAS_PATH)
+    window.__cinqoToolBridge.navigate(profileId ? personasPathFor(profileId) : PERSONAS_PATH)
   }
 
   function handleCreate() {
@@ -54,8 +55,6 @@ export function NewPersonaPage() {
     setIsSaving(true)
     createPersona(profileId, trimmed, description.trim() || undefined)
       .then(() => {
-        // The list shows the remembered profile, so it opens on the one just added to.
-        setProfileIdInLocalStorage(profileId)
         backToList()
       })
       .catch((err: unknown) => {

@@ -26,6 +26,7 @@ import { ProfilesPage } from './Components/ProfilesPage/ProfilesPage'
 import { NewProfilePage } from './Components/ProfilesPage/NewProfilePage'
 import { ProfileViewPage } from './Components/ProfilesPage/ProfileViewPage'
 import { PersonaViewPage } from './Components/Persona/PersonaViewPage/PersonaViewPage'
+import { PersonasListPage } from './Components/Persona/PersonasPage/PersonasListPage'
 import { PersonasPage } from './Components/Persona/PersonasPage/PersonasPage'
 import { NewPersonaPage } from './Components/Persona/PersonasPage/NewPersonaPage'
 import { PersonaDetailsPage } from './Components/Persona/PersonaDetailsPage/PersonaDetailsPage'
@@ -57,6 +58,7 @@ import {
   IMPORT_CV_PATH,
   PROFILES_PATH,
   PERSONAS_PATH,
+  PERSONAS_PROFILE_PATH,
   PERSONA_DETAILS_PATH,
   PERSONA_DETAILS_ONE_PATH,
   SKILLS_PATH,
@@ -118,9 +120,17 @@ window.__cinqoToolBridge.registerRoute({
 })
 
 window.__cinqoToolBridge.registerRoute({
+  path: PERSONAS_PROFILE_PATH,
+  mount: (container, params) => {
+    mountReact(container, <PersonasPage profileId={params.profileId} />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
   path: PERSONAS_PATH,
   mount: (container) => {
-    mountReact(container, <PersonasPage />)
+    mountReact(container, <PersonasListPage />)
   },
   unmount: unmountReact,
 })

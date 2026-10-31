@@ -2,7 +2,7 @@
 // The AI reads (list_personas, get_persona_details) and hands each suggestion over with
 // suggest_persona, which stores it for the user to accept or decline on the Personas page; it
 // creates nothing itself. Its last message is one plain sentence, never data.
-import { PERSONAS_PATH } from '../paths'
+import { personasPathFor } from '../paths'
 
 export function buildPersonaPrompt(profile: { id: string; name: string }, focus: string, runId: string): string {
   const wanted = focus.trim()
@@ -22,7 +22,7 @@ export function buildPersonaPrompt(profile: { id: string; name: string }, focus:
     '',
     'suggest_persona only hands the suggestion to the user, who accepts or declines it. Do NOT call any tool that creates, changes or deletes data.',
     '',
-    `Your FINAL reply must be ONE short plain sentence for the user that names each suggestion as a markdown link to its card: [persona name](${PERSONAS_PATH}?profileId=${profile.id}&suggestion=SUGGESTION_ID), where SUGGESTION_ID is the suggestionId that suggest_persona returned for it. Example: "I suggested [Backend Engineer](${PERSONAS_PATH}?profileId=${profile.id}&suggestion=1234) and [Tech Lead](${PERSONAS_PATH}?profileId=${profile.id}&suggestion=5678): click one to review it." Use exactly this link shape and nothing else as a link. Never put JSON or any of the personas' data in the reply. If the data is too thin to suggest anything sensible, call no tool and say so in that one sentence.`,
+    `Your FINAL reply must be ONE short plain sentence for the user that names each suggestion as a markdown link to its card: [persona name](${personasPathFor(profile.id)}?suggestion=SUGGESTION_ID), where SUGGESTION_ID is the suggestionId that suggest_persona returned for it. Example: "I suggested [Backend Engineer](${personasPathFor(profile.id)}?suggestion=1234) and [Tech Lead](${personasPathFor(profile.id)}?suggestion=5678): click one to review it." Use exactly this link shape and nothing else as a link. Never put JSON or any of the personas' data in the reply. If the data is too thin to suggest anything sensible, call no tool and say so in that one sentence.`,
   ].join('\n')
 }
 

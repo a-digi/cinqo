@@ -1,4 +1,5 @@
 import type { Persona, Profile } from '../../api'
+import { AppLink } from '../../Shared/AppLink/AppLink'
 import { PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
 import { groupPersonasByProfile } from './personaListRules'
 
@@ -46,20 +47,9 @@ export function PersonaList({
                     <ItemBody persona={p} extra={renderExtra?.(p)} />
                   </button>
                 ) : (
-                  <a
-                    href={hrefFor?.(p)}
-                    onClick={(e) => {
-                      // A plain click navigates inside the app; a modified click (new tab, window) keeps the link's own behaviour.
-                      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
-                      e.preventDefault()
-                      const href = hrefFor?.(p)
-                      if (href) window.__cinqoToolBridge.navigate(href)
-                    }}
-                    className={itemClass}
-                    style={itemStyle}
-                  >
+                  <AppLink href={hrefFor?.(p) ?? ''} className={itemClass} style={itemStyle}>
                     <ItemBody persona={p} extra={renderExtra?.(p)} />
-                  </a>
+                  </AppLink>
                 )}
               </li>
             ))}
