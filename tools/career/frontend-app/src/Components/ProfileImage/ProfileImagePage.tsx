@@ -14,7 +14,6 @@ import {
   type Photo,
   type ProfilePhoto,
 } from '../../api'
-import { ProfileSwitcher } from '../ProfileSwitcher/ProfileSwitcher'
 import { profileLabel } from '../ProfileSwitcher/profileLabel'
 import { ConfirmationModal } from '../../Shared/ConfirmationModal/ConfirmationModal'
 import { CameraIcon, UploadIcon } from '../../Shared/Icons/icons'
@@ -23,6 +22,7 @@ import {
   EXPERIENCE_PATH,
   NEW_PERSONA_PATH,
   PERSONA_DETAILS_PATH,
+  PROFILE_IMAGE_PATH,
   SKILLS_PATH,
   experiencePathFor,
   personaDetailsPathFor,
@@ -47,8 +47,10 @@ import { defaultPhotoId, deletePhotoMessage, libraryToAdd } from './photoRules'
 // plan/ai/tools/career/step-111-many-photos-per-profile.md. Header card, one tinted card with a
 // round preview of the default photo (the profile's initial until there is one), then the
 // profile's photos and the library, and a CV-readiness checklist on the right as the overview.
-export function ProfileImagePage() {
-  const [profileId, setProfileId] = useState<string | null>(null)
+export function ProfileImagePage({ profileId }: { profileId: string }) {
+  // The profile comes from the address (/tools/career/profile-image/:profileId), not from a dropdown.
+  const [profileFound, setProfileFound] = useState(false)
+  const [profileLoaded, setProfileLoaded] = useState(false)
   // The profile's own photos, the default first; the default is what the hero and the CV show.
   const [profilePhotos, setProfilePhotos] = useState<ProfilePhoto[]>([])
   const [loading, setLoading] = useState(false)
@@ -155,15 +157,20 @@ export function ProfileImagePage() {
   }
 
   useEffect(() => {
-    if (!profileId) return
+    setProfileLoaded(false)
     load(profileId)
     fetchProfiles()
       .then((list) => {
         const found = list.find((p) => p.id === profileId)
         setProfileName(found ? profileLabel(found) : '')
+        setProfileFound(found !== undefined)
       })
       .catch(() => {
         setProfileName('')
+        setProfileFound(false)
+      })
+      .finally(() => {
+        setProfileLoaded(true)
       })
     loadReadiness(profileId)
     loadPhotos()
@@ -212,20 +219,41 @@ export function ProfileImagePage() {
 
   const defaultId = defaultPhotoId(profilePhotos)
 
+  const backLink = (
+    <a
+      href={PROFILE_IMAGE_PATH}
+      onClick={(e) => {
+        e.preventDefault()
+        window.__cinqoToolBridge.navigate(PROFILE_IMAGE_PATH)
+      }}
+      className="mb-3 inline-block text-sm font-medium text-blue-700 hover:underline"
+    >
+      ← All profiles
+    </a>
+  )
+
+  if (!profileFound) {
+    return (
+      <div className="max-w-3xl p-6 font-sans text-gray-900">
+        {backLink}
+        <div className="text-sm text-gray-500">{profileLoaded ? 'Profile not found' : 'Loading…'}</div>
+      </div>
+    )
+  }
+
   return (
     <div className="career-v-stretch career-a-float career-t-wave max-w-5xl p-6 font-sans text-gray-900">
+      {backLink}
       <PageHeaderCard
         icon={<CameraIcon />}
-        title="Photo"
-        description="A profile's photos, used by the CV templates. A profile can have several, one of them the default; one photo can be shared by many profiles."
+        title={`Photo: ${profileName}`}
+        description="This profile's photos, used by the CV templates. A profile can have several, one of them the default; one photo can be shared by many profiles."
         pill={
           profileId && !loading
             ? { text: profilePhotos.length === 0 ? 'No photo' : profilePhotos.length === 1 ? '1 photo' : `${profilePhotos.length} photos` }
             : undefined
         }
       />
-      <ProfileSwitcher profileId={profileId} onChange={setProfileId} />
-
       <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
 
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">

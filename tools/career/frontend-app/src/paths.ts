@@ -35,6 +35,12 @@ export function experiencePathFor(personaId: string): string {
   return `${EXPERIENCE_PATH}/${encodeURIComponent(personaId)}`
 }
 export const PROFILE_IMAGE_PATH = '/tools/career/profile-image'
+// One profile's photos on their own page: a pattern route, the id arrives as the page's route parameter.
+export const PROFILE_IMAGE_PROFILE_PATH = '/tools/career/profile-image/:profileId'
+// The address of one profile's photo page.
+export function photosPathFor(profileId: string): string {
+  return `${PROFILE_IMAGE_PATH}/${encodeURIComponent(profileId)}`
+}
 export const CV_DOCUMENTS_PATH = '/tools/career/cv-documents'
 // One persona's CVs on their own page: a pattern route, the id arrives as the page's route parameter.
 export const CV_DOCUMENTS_PERSONA_PATH = '/tools/career/cv-documents/:personaId'

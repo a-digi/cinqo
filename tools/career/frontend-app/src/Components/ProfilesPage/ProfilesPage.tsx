@@ -3,11 +3,10 @@ import { fetchProfiles, updateProfile, deleteProfile, addProfileExternalLink, re
 import { CameraIcon, PlusIcon, UserIcon, XIcon } from '../../Shared/Icons/icons'
 import { inputClass } from '../../Shared/inputClass'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
-import { NEW_PROFILE_PATH, PROFILE_IMAGE_PATH, VIEW_PROFILE_PATH } from '../../paths'
+import { NEW_PROFILE_PATH, VIEW_PROFILE_PATH, photosPathFor } from '../../paths'
 import { plural } from '../CompaniesPage/companyStats'
 import { PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
 import { profileLabel } from '../ProfileSwitcher/profileLabel'
-import { setProfileIdInLocalStorage } from '../ProfileSwitcher/repositoryLocalStorage'
 import { CompletenessMeter } from './CompletenessMeter'
 import { PhotoAvatar } from '../ProfileImage/PhotoAvatar'
 import { PlatformShelf } from './PlatformShelf'
@@ -264,12 +263,11 @@ export function ProfilesPage() {
                             >
                               View
                             </button>
-                            {/* The photo belongs to the profile: open it with this profile already chosen. */}
+                            {/* The photo belongs to the profile: its photo page is its own address. */}
                             <button
                               type="button"
                               onClick={() => {
-                                setProfileIdInLocalStorage(p.id)
-                                window.__cinqoToolBridge.navigate(PROFILE_IMAGE_PATH)
+                                window.__cinqoToolBridge.navigate(photosPathFor(p.id))
                               }}
                               className="flex items-center gap-1 rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
                             >
