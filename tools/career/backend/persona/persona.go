@@ -20,6 +20,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"career-tool-backend/comments"
 	"career-tool-backend/db"
 	"career-tool-backend/profile"
 )
@@ -137,9 +138,44 @@ func UpdatePersona(id string, name, description *string) error {
 // — a genuinely larger blast radius than a plain single-row delete.
 // A benign no-op if id is unknown, matching this tool's existing
 // posture for every other delete-by-id operation.
+//
+// The comments about the persona go too, and about every CV built from it (the cascade deletes
+// those CVs); their ids are read before the delete. Best effort, see comments.PurgeMany.
 func DeletePersona(id string) error {
-	_, err := db.CareerDB.Exec(`DELETE FROM personas WHERE id = ?`, id)
-	return err
+	cvIDs, err := idsOf(`SELECT id FROM cv_documents WHERE persona_id = ?`, id)
+	if err != nil {
+		return err
+	}
+	res, err := db.CareerDB.Exec(`DELETE FROM personas WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		items := []comments.Entity{{Type: comments.PersonaType, ID: id}}
+		for _, cv := range cvIDs {
+			items = append(items, comments.Entity{Type: comments.CvType, ID: cv})
+		}
+		comments.PurgeMany(items)
+	}
+	return nil
+}
+
+// idsOf reads a single column of ids.
+func idsOf(query string, args ...any) ([]string, error) {
+	rows, err := db.CareerDB.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 // --- MCP registration ---

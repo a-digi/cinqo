@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { fetchJob, mediaDownloadUrl, type Job } from '../../api'
 import { ExternalLinkIcon, PDFIcon } from '../../Shared/Icons/icons'
 import { MatchScoreBar } from '../../Shared/MatchScoreBar/MatchScoreBar'
-import { JobComments } from './JobComments'
+import { Comments } from '../../Shared/Comments/Comments'
+import { COMMENT_TYPE_JOB } from '../../Shared/Comments/commentTypes'
 
 const JOBS_PATH = '/tools/career/jobs'
 
@@ -149,12 +150,7 @@ export function JobDetailsPage() {
             )}
           </div>
 
-          {/* Room below the panel: the app's floating chat button sits over the bottom
-              corner of the page, and a reply box opened on the last comment needs space
-              to scroll into view above it. */}
-          <div className="mt-6 pb-24">
-            <JobComments jobId={job.id} />
-          </div>
+          <Comments entityType={COMMENT_TYPE_JOB} entityId={job.id} />
         </>
       )}
     </div>

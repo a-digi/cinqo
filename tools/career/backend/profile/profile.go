@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"career-tool-backend/comments"
 	"career-tool-backend/db"
 )
 
@@ -227,9 +228,51 @@ func UpdateProfile(id string, firstName, lastName *string) error {
 // has: a single call can delete an entire job seeker's whole
 // footprint. A benign no-op if id is unknown, matching every other
 // delete-by-id operation in this tool.
+//
+// The comments about its personas and about the CVs built from them go too (the cascade deletes
+// both); their ids are read before the delete. Best effort, see comments.PurgeMany.
 func DeleteProfile(id string) error {
-	_, err := db.CareerDB.Exec(`DELETE FROM profiles WHERE id = ?`, id)
-	return err
+	personaIDs, err := idsOf(`SELECT id FROM personas WHERE profile_id = ?`, id)
+	if err != nil {
+		return err
+	}
+	cvIDs, err := idsOf(`SELECT id FROM cv_documents WHERE persona_id IN (SELECT id FROM personas WHERE profile_id = ?)`, id)
+	if err != nil {
+		return err
+	}
+	res, err := db.CareerDB.Exec(`DELETE FROM profiles WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		var items []comments.Entity
+		for _, p := range personaIDs {
+			items = append(items, comments.Entity{Type: comments.PersonaType, ID: p})
+		}
+		for _, cv := range cvIDs {
+			items = append(items, comments.Entity{Type: comments.CvType, ID: cv})
+		}
+		comments.PurgeMany(items)
+	}
+	return nil
+}
+
+// idsOf reads a single column of ids.
+func idsOf(query string, args ...any) ([]string, error) {
+	rows, err := db.CareerDB.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 // UpsertProfileExternalLink is an upsert, not a no-op-on-conflict like

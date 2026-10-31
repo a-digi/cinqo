@@ -10,6 +10,8 @@ import { PersonaSwitcher } from '../PersonaSwitcher/PersonaSwitcher'
 import { FieldStepper } from './FieldStepper'
 import { detailsCompleteness, detailsSteps, type DetailsKey } from './detailsStats'
 import { PageTips } from '../../../Shared/PageTips/PageTips'
+import { Comments } from '../../../Shared/Comments/Comments'
+import { COMMENT_TYPE_PERSONA } from '../../../Shared/Comments/commentTypes'
 
 const emptyForm = {
   headline: '',
@@ -198,6 +200,8 @@ export function PersonaDetailsPage() {
               </div>
             </section>
           )}
+
+          {personaId && <Comments entityType={COMMENT_TYPE_PERSONA} entityId={personaId} />}
         </div>
 
         <aside className="order-2 w-full shrink-0 lg:order-1 career-rail-sticky lg:w-72">

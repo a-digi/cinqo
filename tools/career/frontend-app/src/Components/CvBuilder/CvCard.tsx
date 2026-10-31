@@ -11,7 +11,8 @@ const floatingButton =
   'flex h-7 w-7 items-center justify-center rounded-lg bg-white text-gray-700 shadow transition-colors hover:bg-blue-50 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500'
 
 // One CV document as a card, the way the Media page shows a file: the preview on top (a portrait
-// page, lifted a little on hover), the title and a few facts under it. Preview, Edit and a "more"
+// page, shadowed on hover; no transform here: it would turn the card into the containing block of the fixed-position
+// menu below and send the menu off-screen), the title and a few facts under it. Preview, Edit and a "more"
 // menu (Rename, Delete) fade in on hover or focus, and stay visible on a touch screen. Clicking the
 // preview opens the editor.
 export function CvCard({
@@ -20,6 +21,7 @@ export function CvCard({
   onPreview,
   onEdit,
   onRename,
+  onComments,
   onDelete,
   allPersonas,
   onAttach,
@@ -32,6 +34,7 @@ export function CvCard({
   onPreview: () => void
   onEdit: () => void
   onRename: () => void
+  onComments: () => void
   onDelete: () => void
   // Every persona, to offer the ones the CV can still be attached to (step 114).
   allPersonas: Persona[]
@@ -52,7 +55,7 @@ export function CvCard({
       className={`group min-w-0 ${highlighted ? 'rounded-2xl bg-purple-50 p-2 ring-2 ring-purple-300' : ''}`}
       style={highlighted ? { animation: 'none' } : undefined}
     >
-      <div className="relative aspect-[3/4] overflow-hidden rounded-xl bg-gray-100 shadow-sm transition duration-200 group-hover:-translate-y-0.5 group-hover:shadow-md">
+      <div className="relative aspect-[3/4] overflow-hidden rounded-xl bg-gray-100 shadow-sm transition-shadow duration-200 group-hover:shadow-md">
         <button type="button" onClick={onEdit} aria-label={`Edit ${doc.title}`} className="block h-full w-full cursor-pointer">
           <CvPreview mediaFileId={doc.mediaFileId} templateId={doc.templateId} version={doc.updatedAt ?? doc.createdAt} title={doc.title} />
         </button>
@@ -82,6 +85,7 @@ export function CvCard({
               triggerLabel={`More actions for ${doc.title}`}
               items={[
                 { key: 'rename', label: 'Rename', onClick: onRename },
+                { key: 'comments', label: 'Comments', onClick: onComments },
                 { key: 'delete', label: 'Delete', icon: <TrashIcon />, variant: 'danger', onClick: onDelete },
               ]}
             />

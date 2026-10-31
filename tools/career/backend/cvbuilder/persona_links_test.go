@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"career-tool-backend/comments/commentstest"
 	"career-tool-backend/cvbuilder/templates"
 	"career-tool-backend/db"
 	"career-tool-backend/persona"
@@ -275,5 +276,26 @@ func TestPersonaLinksHandler(t *testing.T) {
 		if c.got != c.want {
 			t.Errorf("%s: status %d, want %d", c.name, c.got, c.want)
 		}
+	}
+}
+
+func TestDeleteCvDocument_PurgesItsComments_AndSurvivesACoreThatIsDown(t *testing.T) {
+	pid := setupCvDB(t)
+	purged := commentstest.Start(t)
+	doc := insertDoc(t, pid, "CV", "media-1", "")
+	if _, err := DeleteCvDocument(doc.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := purged(); len(got) != 1 || got[0] != "cv:"+doc.ID {
+		t.Fatalf("purged %v, want [cv:%s]", got, doc.ID)
+	}
+
+	t.Setenv("CORE_API_URL", "http://127.0.0.1:1")
+	doc2 := insertDoc(t, pid, "CV2", "media-2", "")
+	if _, err := DeleteCvDocument(doc2.ID); err != nil {
+		t.Fatalf("a failing purge failed the delete: %v", err)
+	}
+	if _, err := GetCvDocument(doc2.ID); !errors.Is(err, ErrUnknownCvDocument) {
+		t.Fatalf("CV still there: %v", err)
 	}
 }

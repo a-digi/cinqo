@@ -3,8 +3,10 @@ package comments
 import (
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"sync"
 	"testing"
 )
@@ -91,4 +93,88 @@ func TestPurgeEntityIsBestEffort(t *testing.T) {
 	PurgeEntity(JobType, "1fbd3006-0831-448c-8962-2851188e9de9")
 	t.Setenv("CORE_API_URL", "://not a url")
 	PurgeEntity(JobType, "1fbd3006-0831-448c-8962-2851188e9de9")
+}
+
+func TestPurgeManySendsEveryEntity(t *testing.T) {
+	srv, seen := fakeCore(t, http.StatusOK)
+	t.Setenv("CORE_API_URL", srv.URL)
+	t.Setenv("TOOL_SERVICE_TOKEN", "tool-secret")
+
+	PurgeMany([]Entity{{PersonaType, "p1"}, {CvType, "c1"}, {CvType, "c2"}})
+
+	got := seen()
+	if len(got) != 3 {
+		t.Fatalf("requests = %d, want 3", len(got))
+	}
+	for i, want := range [][2]string{{"persona", "p1"}, {"cv", "c1"}, {"cv", "c2"}} {
+		if got[i].body["entityType"] != want[0] || got[i].body["entityId"] != want[1] {
+			t.Errorf("request %d = %v, want %v", i, got[i].body, want)
+		}
+	}
+}
+
+func TestPurgeManyStopsAtTheFirstUnreachableCall(t *testing.T) {
+	// A server that drops every connection: the request fails at the network level.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	var mu sync.Mutex
+	attempts := 0
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			mu.Lock()
+			attempts++
+			mu.Unlock()
+			c.Close()
+		}
+	}()
+	t.Setenv("CORE_API_URL", "http://"+ln.Addr().String())
+	t.Setenv("TOOL_SERVICE_TOKEN", "tool-secret")
+
+	PurgeMany([]Entity{{CvType, "a"}, {CvType, "b"}, {CvType, "c"}})
+
+	mu.Lock()
+	got := attempts
+	mu.Unlock()
+	if got != 1 {
+		t.Fatalf("%d connection attempts, want 1 (stop at the first unreachable call)", got)
+	}
+
+	// A refusal still counts as reachable: the rest is sent.
+	srv2, seen2 := fakeCore(t, http.StatusForbidden)
+	t.Setenv("CORE_API_URL", srv2.URL)
+	PurgeMany([]Entity{{CvType, "a"}, {CvType, "b"}})
+	if got := seen2(); len(got) != 2 {
+		t.Fatalf("after a refusal %d requests were sent, want 2", len(got))
+	}
+}
+
+func TestTypesMatchTheManifest(t *testing.T) {
+	raw, err := os.ReadFile("../../manifest.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m struct {
+		Comments []struct {
+			EntityType string `json:"entity_type"`
+		} `json:"comments"`
+	}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	declared := map[string]bool{}
+	for _, c := range m.Comments {
+		declared[c.EntityType] = true
+	}
+	for _, typ := range []string{JobType, PersonaType, CvType} {
+		if !declared[typ] {
+			t.Errorf("entity type %q is purged by the backend but not declared in manifest.json", typ)
+		}
+	}
 }

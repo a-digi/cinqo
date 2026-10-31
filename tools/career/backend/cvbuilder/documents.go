@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"career-tool-backend/comments"
 	"career-tool-backend/cvbuilder/templates"
 	"career-tool-backend/db"
 )
@@ -282,5 +283,7 @@ func DeleteCvDocument(id string) (mediaFileID string, err error) {
 	if _, err := db.CareerDB.Exec(`DELETE FROM cv_documents WHERE id = ?`, id); err != nil {
 		return "", err
 	}
+	// The comments about the CV go too (best effort, see comments.PurgeEntity).
+	comments.PurgeEntity(comments.CvType, id)
 	return doc.MediaFileID, nil
 }

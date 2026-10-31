@@ -25,6 +25,8 @@ import { PAGE_ACCENT } from '../JobsPage/jobsTheme'
 import { CvCard } from './CvCard'
 import { CARD_MIN_REM, templateLabel } from './cvCardRules'
 import { PageTips } from '../../Shared/PageTips/PageTips'
+import { Comments } from '../../Shared/Comments/Comments'
+import { COMMENT_TYPE_CV } from '../../Shared/Comments/commentTypes'
 import { useAiChoice } from '../../Cinqo/Platform/useAiChoice'
 import { CreateCvWithAi } from '../../CvAi/CreateCvWithAi'
 import { failedRunToShow, hasRunningCvRun, newlyCreatedCv, openRunChat, runOfDocument } from '../../CvAi/cvAiRules'
@@ -66,6 +68,8 @@ export function CvDocumentsPage() {
   const aiRuns = useCvAiRuns(personaId)
   const [dismissedRuns, dismissRun] = useDismissedCvRuns()
   const [chatsOpen, setChatsOpen] = useState(false)
+  // The CV whose comments are open in the modal.
+  const [commentsFor, setCommentsFor] = useState<CvDocument | null>(null)
   const workingRun = aiRuns.runs.find((r) => r.status === 'generating') ?? null
   // Every persona, to offer the ones a CV can be attached to (step 114).
   const [allPersonas, setAllPersonas] = useState<Persona[]>([])
@@ -373,6 +377,9 @@ export function CvDocumentsPage() {
                       onRename={() => {
                         handleRename(doc)
                       }}
+                      onComments={() => {
+                        setCommentsFor(doc)
+                      }}
                       onDelete={() => {
                         handleDelete(doc)
                       }}
@@ -403,6 +410,17 @@ export function CvDocumentsPage() {
           <PageTips page="cvs" orientation="vertical" />
         </aside>
       </div>
+
+      <Modal
+        open={commentsFor !== null}
+        title={commentsFor ? `Comments: ${commentsFor.title}` : 'Comments'}
+        onClose={() => {
+          setCommentsFor(null)
+        }}
+        size="wide"
+      >
+        {commentsFor && <Comments entityType={COMMENT_TYPE_CV} entityId={commentsFor.id} inModal />}
+      </Modal>
 
       <CvAiChatsModal
         open={chatsOpen}
