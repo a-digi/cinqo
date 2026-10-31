@@ -43,6 +43,8 @@ export interface Profile {
   updatedAt?: string
   externalLinks: ProfileExternalLink[]
   completeness: ProfileCompleteness
+  // The Media file id of the profile's photo; missing when it has none.
+  imageMediaFileId?: string
 }
 
 export interface Persona {
@@ -762,11 +764,11 @@ export function mediaDownloadUrl(mediaFileId: string): string {
 
 // --- profile image ---
 //
-// A profile has at most one photo, stored via the core Media feature
-// and linked from profiles.image_media_file_id (career.db) — always
-// tied to a profile, never uploaded standalone. Re-uploading replaces
-// it in place (same media file id, new bytes) rather than creating a
-// second one.
+// A photo is one file in the core Media feature, kept in the photo library
+// (career.db photos table). Any number of profiles can link the same photo through
+// profiles.image_media_file_id, and a profile has at most one current photo.
+// Uploading always makes a new photo; removing only unlinks it; a photo is deleted
+// for good with deletePhoto. See plan/ai/tools/career/step-110-shared-photo-library.md.
 
 export interface ProfileImage {
   profileId: string
@@ -793,13 +795,53 @@ export async function uploadProfileImage(profileId: string, file: File): Promise
   return jsonOrThrow<ProfileImage>(res, 'upload profile image')
 }
 
+// Unlinks the profile's photo; the photo stays in the library.
 export async function deleteProfileImage(profileId: string): Promise<void> {
   const res = await fetch(`${PROXY_BASE}/profile-image?profileId=${encodeURIComponent(profileId)}`, {
     method: 'DELETE',
     credentials: 'include',
   })
   if (!res.ok) {
-    throw new Error(`failed to delete profile image (${res.status})`)
+    throw new Error(`failed to unlink profile image (${res.status})`)
+  }
+}
+
+export interface PhotoUser {
+  profileId: string
+  name: string
+}
+
+export interface Photo {
+  mediaFileId: string
+  createdAt: string
+  usedBy: PhotoUser[]
+}
+
+export async function fetchPhotos(): Promise<Photo[]> {
+  const res = await fetch(`${PROXY_BASE}/photos`, { credentials: 'include' })
+  const data = await jsonOrThrow<{ photos: Photo[] }>(res, 'load photos')
+  return data.photos
+}
+
+// Links a photo that is already in the library to the profile.
+export async function linkProfilePhoto(profileId: string, mediaFileId: string): Promise<ProfileImage> {
+  const res = await fetch(`${PROXY_BASE}/profile-image`, {
+    method: 'PUT',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ profileId, mediaFileId }),
+  })
+  return jsonOrThrow<ProfileImage>(res, 'link photo')
+}
+
+// Deletes a photo for good: every profile using it loses it.
+export async function deletePhoto(mediaFileId: string): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/photos?mediaFileId=${encodeURIComponent(mediaFileId)}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  })
+  if (!res.ok) {
+    throw new Error(`failed to delete photo (${res.status})`)
   }
 }
 

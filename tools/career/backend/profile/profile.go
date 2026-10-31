@@ -53,6 +53,9 @@ type profile struct {
 	UpdatedAt     string                `json:"updatedAt,omitempty"`
 	ExternalLinks []profileExternalLink `json:"externalLinks"`
 	Completeness  completeness          `json:"completeness"`
+	// The Media file id of the profile's current photo; missing when it has none. A new
+	// upload is always a new file (step 110), so the id changes whenever the photo does.
+	ImageMediaFileID string `json:"imageMediaFileId,omitempty"`
 }
 
 func CreateProfile(firstName, lastName string) (string, error) {
@@ -88,6 +91,7 @@ func ListProfiles() ([]profile, error) {
 		}
 		p.UpdatedAt = updatedAt.String
 		p.ExternalLinks = []profileExternalLink{}
+		p.ImageMediaFileID = imageID.String
 		hasImage[p.ID] = imageID.String != ""
 		profiles = append(profiles, p)
 	}

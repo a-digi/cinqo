@@ -1,17 +1,20 @@
-// Package profileimage lets a Profile have exactly one uploaded photo,
-// usable from the CV Builder templates — stored in the core app's own
-// Media feature, not in this tool's own database.
-// profiles.image_media_file_id (db.go) is a plain string reference to
-// that Media file id, the same "not a real FK, Media lives in cinqo's
-// own database, not this one" convention cv_documents.media_file_id
-// and cv_import_runs.media_file_id already established.
+// Package profileimage links a Profile to a photo, usable from the CV
+// Builder templates. A photo is one file in the core app's own Media
+// feature, kept in this tool's photos table (the photo library, step
+// 110) on its own: any number of profiles can link the same photo, and a
+// profile has at most one current photo. profiles.image_media_file_id
+// (db.go) is a plain string reference to that Media file id, the same
+// "not a real FK, Media lives in cinqo's own database, not this one"
+// convention cv_documents.media_file_id and cv_import_runs.media_file_id
+// already established.
 //
 // This mirrors cv/cv_import.go's own forwardToMedia shape almost
 // exactly, not cvbuilder/handler.go's — the browser is the one that
 // already has the image bytes (an incoming multipart request), so this
 // handler re-forwards that request rather than generating anything
 // server-side (contrast cvbuilder, which uploads a PDF it generated
-// itself). See plan/ai/career/profile-image/step-01-overview.md.
+// itself). See plan/ai/career/profile-image/step-01-overview.md and
+// plan/ai/tools/career/step-110-shared-photo-library.md.
 package profileimage
 
 import (
@@ -35,9 +38,10 @@ type profileImageResponse struct {
 }
 
 // Handler dispatches GET (fetch the current image, if any), POST
-// (upload a new one, replacing any existing one in place), and DELETE
-// (remove it) — all addressed by ?profileId=, since there is at most
-// one row per profile (no separate id needed, unlike cv_documents'
+// (upload a new photo and link it), PUT (link a photo that is already in
+// the library), and DELETE (unlink it; the photo stays in the library) —
+// GET/POST/DELETE are addressed by ?profileId=, since a profile has at
+// most one current photo (no separate id needed, unlike cv_documents'
 // own ?id=/?personaId= split).
 func Handler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
@@ -45,6 +49,8 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 		getHandler(w, r)
 	case http.MethodPost:
 		uploadHandler(w, r)
+	case http.MethodPut:
+		linkHandler(w, r)
 	case http.MethodDelete:
 		deleteHandler(w, r)
 	default:
@@ -96,18 +102,9 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	existingMediaFileID, err := currentImage(profileID)
-	if err != nil {
-		http.Error(w, "failed to load existing profile image: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	var mediaFileID string
-	if existingMediaFileID != "" {
-		mediaFileID, err = forwardReplaceImage(r, existingMediaFileID, file, header.Filename)
-	} else {
-		mediaFileID, err = forwardUploadImage(r, file, header.Filename)
-	}
+	// Always a new file, never replaced in place: other profiles may link the
+	// current photo, and a replace would change it for all of them.
+	mediaFileID, err := forwardUploadImage(r, file, header.Filename)
 	if err != nil {
 		http.Error(w, "failed to upload image: "+err.Error(), http.StatusBadGateway)
 		return
@@ -117,46 +114,29 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "image uploaded but failed to save: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// Keep the library complete (step 110): the new file is a photo others can pick.
+	if err := addToLibrary(mediaFileID); err != nil {
+		http.Error(w, "image uploaded but failed to add to the library: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	db.WriteJSON(w, profileImageResponse{ProfileID: profileID, MediaFileID: mediaFileID})
 }
 
+// deleteHandler unlinks the profile's photo. The photo stays in the library (other
+// profiles may link it, and it can be picked again); deleting it for good is
+// DELETE /photos.
 func deleteHandler(w http.ResponseWriter, r *http.Request) {
 	profileID := r.URL.Query().Get("profileId")
 	if profileID == "" {
 		http.Error(w, "profileId query parameter is required", http.StatusBadRequest)
 		return
 	}
-	mediaFileID, err := currentImage(profileID)
-	if err != nil {
-		http.Error(w, "failed to load profile image: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if mediaFileID == "" {
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
 	if err := clearImage(profileID); err != nil {
-		http.Error(w, "failed to remove profile image: "+err.Error(), http.StatusInternalServerError)
+		http.Error(w, "failed to unlink profile image: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	forwardDeleteToMedia(r, mediaFileID)
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// DeleteBestEffort is called by routeHandler.go's own profilesHandler
-// DELETE case (package main) before a whole Profile is deleted — the
-// same "capture the media id first, best-effort forward-delete, never
-// block the parent delete on Media's own availability" pattern
-// cvbuilder's DocumentsHandler DELETE case already established for
-// cv_documents. Deliberately swallows every error: a Profile delete
-// must never fail just because Media's own cleanup call did.
-func DeleteBestEffort(r *http.Request, profileID string) {
-	mediaFileID, err := currentImage(profileID)
-	if err != nil || mediaFileID == "" {
-		return
-	}
-	forwardDeleteToMedia(r, mediaFileID)
 }
 
 func currentImage(profileID string) (string, error) {
@@ -208,7 +188,7 @@ type mediaEnvelope struct {
 // reader into a brand-new outbound request — targeting Media's own
 // image-specific upload route (POST /api/v1/media/images), not the
 // generic one, so the image gets resized/re-encoded server-side and a
-// stable file id comes back that forwardReplaceImage can later reuse.
+// file id comes back to store in the photos library.
 func forwardUploadImage(originalReq *http.Request, file multipart.File, filename string) (string, error) {
 	var buf bytes.Buffer
 	writer := multipart.NewWriter(&buf)
@@ -249,49 +229,6 @@ func forwardUploadImage(originalReq *http.Request, file multipart.File, filename
 	var envelope mediaEnvelope
 	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
 		return "", err
-	}
-	return envelope.Message.FileID, nil
-}
-
-// forwardReplaceImage calls Media's own PUT /api/v1/media/images/{id}
-// route — keeps the SAME media file id stable across a re-upload,
-// exactly the "one image per profile, replace in place" behavior
-// wanted here (no orphaned previous file left behind to separately
-// clean up).
-func forwardReplaceImage(originalReq *http.Request, mediaFileID string, file multipart.File, filename string) (string, error) {
-	var buf bytes.Buffer
-	writer := multipart.NewWriter(&buf)
-	part, err := writer.CreateFormFile("file", filename)
-	if err != nil {
-		return "", err
-	}
-	if _, err := io.Copy(part, file); err != nil {
-		return "", err
-	}
-	if err := writer.Close(); err != nil {
-		return "", err
-	}
-
-	replaceURL := os.Getenv("CORE_API_URL") + "/api/v1/media/images/" + mediaFileID
-	req, err := http.NewRequest(http.MethodPut, replaceURL, &buf)
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", writer.FormDataContentType())
-	forwardAuthHeaders(originalReq, req)
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("replace failed: %s: %s", resp.Status, string(respBody))
-	}
-	var envelope mediaEnvelope
-	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil || envelope.Message.FileID == "" {
-		return mediaFileID, nil
 	}
 	return envelope.Message.FileID, nil
 }

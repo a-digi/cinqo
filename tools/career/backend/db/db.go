@@ -84,6 +84,11 @@ func InitDatabases() error {
 		careerDB.Close()
 		return fmt.Errorf("failed to prepare career.db schema: %w", err)
 	}
+	// After the base schema, which creates the photos table (step 110).
+	if err := migratePhotosLibrary(careerDB); err != nil {
+		careerDB.Close()
+		return fmt.Errorf("failed to fill the photo library: %w", err)
+	}
 	CareerDB = careerDB
 
 	jobsDB, err := sql.Open("sqlite", filepath.Join(dbDir, "jobs.db"))
@@ -135,6 +140,15 @@ CREATE TABLE IF NOT EXISTS profiles (
     image_media_file_id TEXT,
     created_at          TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at          TEXT
+);
+
+-- The photo library (step 110): one row per photo, keyed by its Media file id (a
+-- plain string reference, no FK, like profiles.image_media_file_id above). A photo
+-- exists on its own; any number of profiles can link it through
+-- profiles.image_media_file_id.
+CREATE TABLE IF NOT EXISTS photos (
+    media_file_id TEXT PRIMARY KEY,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS profile_external_links (
@@ -963,6 +977,18 @@ func migrateProfilesImageMediaFileID(db *sql.DB) error {
 		return nil
 	}
 	_, err = db.Exec(`ALTER TABLE profiles ADD COLUMN image_media_file_id TEXT`)
+	return err
+}
+
+// migratePhotosLibrary puts every photo a profile already links into the photos
+// library (step 110), so the existing links stay valid and the photos can be
+// picked by other profiles. Idempotent: it only adds what is missing, so it is
+// safe on every start. It runs right after the base schema, which creates the
+// photos table, not inside migrateCareerDB (that runs before the schema).
+func migratePhotosLibrary(db *sql.DB) error {
+	_, err := db.Exec(`INSERT OR IGNORE INTO photos (media_file_id)
+		SELECT DISTINCT image_media_file_id FROM profiles
+		WHERE image_media_file_id IS NOT NULL AND image_media_file_id != ''`)
 	return err
 }
 

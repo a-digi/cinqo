@@ -105,6 +105,7 @@ func runHTTPServer() {
 	http.HandleFunc("/profiles", profilesHandler)
 	http.HandleFunc("/profile-links", profileLinksHandler)
 	http.HandleFunc("/profile-image", profileimage.Handler)
+	http.HandleFunc("/photos", profileimage.PhotosHandler)
 	http.HandleFunc("/personas", personasHandler)
 	http.HandleFunc("/persona-details", personaDetailsHandler)
 	http.HandleFunc("/skills", skillsHandler)

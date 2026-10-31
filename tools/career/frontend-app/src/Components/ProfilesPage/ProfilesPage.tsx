@@ -1,5 +1,13 @@
 import { useEffect, useState } from 'react'
-import { fetchProfiles, updateProfile, deleteProfile, addProfileExternalLink, removeProfileExternalLink, type Profile } from '../../api'
+import {
+  fetchProfiles,
+  updateProfile,
+  deleteProfile,
+  addProfileExternalLink,
+  removeProfileExternalLink,
+  mediaDownloadUrl,
+  type Profile,
+} from '../../api'
 import { CameraIcon, PlusIcon, UserIcon, XIcon } from '../../Shared/Icons/icons'
 import { inputClass } from '../../Shared/inputClass'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
@@ -238,13 +246,21 @@ export function ProfilesPage() {
                         </div>
                       ) : (
                         <div className="mb-3 flex items-start gap-3">
-                          <span
-                            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-base font-bold text-white shadow-sm"
-                            style={{ background: accentFor(name).to }}
-                            aria-hidden="true"
-                          >
-                            {initialOf(name)}
-                          </span>
+                          {p.imageMediaFileId ? (
+                            <img
+                              src={mediaDownloadUrl(p.imageMediaFileId)}
+                              alt=""
+                              className="h-10 w-10 shrink-0 rounded-full object-cover shadow-sm"
+                            />
+                          ) : (
+                            <span
+                              className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-base font-bold text-white shadow-sm"
+                              style={{ background: accentFor(name).to }}
+                              aria-hidden="true"
+                            >
+                              {initialOf(name)}
+                            </span>
+                          )}
                           <div className="min-w-0 flex-1">
                             <div className="text-sm font-semibold">{p.firstName || p.lastName ? name : '(unnamed)'}</div>
                             <div className="text-xs text-gray-400">Created {formatDate(p.createdAt)}</div>

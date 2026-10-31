@@ -4,15 +4,19 @@ import {
   fetchPersonas,
   fetchProfileImage,
   fetchProfiles,
+  fetchPhotos,
+  linkProfilePhoto,
+  deletePhoto,
   uploadProfileImage,
   deleteProfileImage,
   mediaDownloadUrl,
+  type Photo,
   type ProfileImage,
 } from '../../api'
 import { ProfileSwitcher } from '../ProfileSwitcher/ProfileSwitcher'
 import { profileLabel } from '../ProfileSwitcher/profileLabel'
 import { ConfirmationModal } from '../../Shared/ConfirmationModal/ConfirmationModal'
-import { CameraIcon, UploadIcon, TrashIcon } from '../../Shared/Icons/icons'
+import { CameraIcon, UploadIcon, XIcon } from '../../Shared/Icons/icons'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { EXPERIENCE_PATH, NEW_PERSONA_PATH, PERSONA_DETAILS_PATH, SKILLS_PATH } from '../../paths'
 import { PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
@@ -20,6 +24,8 @@ import { setPersonaIdInLocalStorage } from '../Persona/PersonaSwitcher/repositor
 import { CvReadiness } from './CvReadiness'
 import { readinessItems, type ReadinessItem } from './readinessRules'
 import { PageTips } from '../../Shared/PageTips/PageTips'
+import { PhotoLibrary } from './PhotoLibrary'
+import { deletePhotoMessage } from './photoRules'
 
 // A profile's own photo — always tied to a profile (never uploaded
 // standalone), used from the CV Builder templates. Career's frontend is
@@ -44,7 +50,11 @@ export function ProfileImagePage() {
   // its stale preview until a full page reload). Appending this as a
   // query param busts that cache without needing a new id.
   const [cacheBuster, setCacheBuster] = useState(0)
-  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  // Unlinking is only this profile's link; deleting a photo is for good, from the library.
+  const [confirmingUnlink, setConfirmingUnlink] = useState(false)
+  const [photos, setPhotos] = useState<Photo[]>([])
+  const [deletingPhoto, setDeletingPhoto] = useState<Photo | null>(null)
+  const [linking, setLinking] = useState(false)
   // The selected profile's name, for the placeholder shown until there is a photo.
   const [profileName, setProfileName] = useState('')
   // The CV-readiness check reads the profile's first persona (one extra read of two
@@ -97,6 +107,15 @@ export function ProfileImagePage() {
     window.__cinqoToolBridge.navigate(path)
   }
 
+  // The library is shared by every profile; a failed read only hides the picker.
+  function loadPhotos() {
+    fetchPhotos()
+      .then(setPhotos)
+      .catch(() => {
+        setPhotos([])
+      })
+  }
+
   function load(forProfileId: string) {
     setError('')
     setLoading(true)
@@ -122,6 +141,7 @@ export function ProfileImagePage() {
         setProfileName('')
       })
     loadReadiness(profileId)
+    loadPhotos()
   }, [profileId])
 
   function handleFileChange(file: File | null) {
@@ -132,6 +152,7 @@ export function ProfileImagePage() {
       .then((updated) => {
         setImage(updated)
         setCacheBuster((n) => n + 1)
+        loadPhotos()
       })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : String(err))
@@ -142,18 +163,52 @@ export function ProfileImagePage() {
       })
   }
 
-  function handleDelete() {
+  function handleUnlink() {
     if (!profileId) return
-    setConfirmingDelete(true)
+    setConfirmingUnlink(true)
   }
 
-  function confirmDelete() {
+  function confirmUnlink() {
     if (!profileId) return
-    setConfirmingDelete(false)
+    setConfirmingUnlink(false)
     setError('')
     deleteProfileImage(profileId)
       .then(() => {
         setImage(null)
+        loadPhotos()
+      })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+      })
+  }
+
+  function handlePick(photo: Photo) {
+    if (!profileId) return
+    setError('')
+    setLinking(true)
+    linkProfilePhoto(profileId, photo.mediaFileId)
+      .then((linked) => {
+        setImage(linked)
+        loadPhotos()
+      })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+      })
+      .finally(() => {
+        setLinking(false)
+      })
+  }
+
+  function confirmDeletePhoto() {
+    const photo = deletingPhoto
+    if (!photo) return
+    setDeletingPhoto(null)
+    setError('')
+    deletePhoto(photo.mediaFileId)
+      .then(() => {
+        if (image?.mediaFileId === photo.mediaFileId) setImage(null)
+        loadPhotos()
+        if (profileId) loadReadiness(profileId)
       })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : String(err))
@@ -165,7 +220,7 @@ export function ProfileImagePage() {
       <PageHeaderCard
         icon={<CameraIcon />}
         title="Photo"
-        description="A profile's own photo, used by the CV templates. Each profile has at most one; uploading a new one replaces it."
+        description="A profile's photo, used by the CV templates. A profile uses one photo at a time; one photo can be shared by many profiles."
         pill={profileId && !loading ? { text: image ? 'Photo set' : 'No photo' } : undefined}
       />
       <ProfileSwitcher profileId={profileId} onChange={setProfileId} />
@@ -174,60 +229,75 @@ export function ProfileImagePage() {
 
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
         {profileId && !loading && (
-          <section
-            className="career-enter career-delay-1 flex min-w-0 flex-1 flex-col items-center gap-6 rounded-3xl border p-6 shadow-sm sm:flex-row sm:items-center"
-            style={{ borderColor: PAGE_ACCENT.soft, background: `linear-gradient(160deg, #ffffff 45%, ${PAGE_ACCENT.soft} 100%)` }}
-          >
-            <div className="flex h-36 w-36 shrink-0 items-center justify-center overflow-hidden rounded-full border-4 border-white shadow-md">
-              {image ? (
-                <img src={`${mediaDownloadUrl(image.mediaFileId)}?v=${cacheBuster}`} alt="Profile" className="h-full w-full object-cover" />
-              ) : (
-                <span
-                  className="flex h-full w-full items-center justify-center text-5xl font-bold text-white"
-                  style={{ background: accentFor(profileName).to }}
-                  aria-label="No photo yet"
-                >
-                  {initialOf(profileName)}
-                </span>
-              )}
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <div className="text-sm text-gray-600">
-                {image ? 'This photo is used on your CVs.' : 'No photo yet. Add one to use it on your CVs.'}
+          <div className="flex min-w-0 flex-1 flex-col gap-5">
+            <section
+              className="career-enter career-delay-1 flex min-w-0 flex-col items-center gap-6 rounded-3xl border p-6 shadow-sm sm:flex-row sm:items-center"
+              style={{ borderColor: PAGE_ACCENT.soft, background: `linear-gradient(160deg, #ffffff 45%, ${PAGE_ACCENT.soft} 100%)` }}
+            >
+              <div className="flex h-36 w-36 shrink-0 items-center justify-center overflow-hidden rounded-full border-4 border-white shadow-md">
+                {image ? (
+                  <img
+                    src={`${mediaDownloadUrl(image.mediaFileId)}?v=${cacheBuster}`}
+                    alt="Profile"
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <span
+                    className="flex h-full w-full items-center justify-center text-5xl font-bold text-white"
+                    style={{ background: accentFor(profileName).to }}
+                    aria-label="No photo yet"
+                  >
+                    {initialOf(profileName)}
+                  </span>
+                )}
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  fileInputRef.current?.click()
-                }}
-                disabled={uploading}
-                className="flex items-center gap-1.5 rounded-md bg-gray-900 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:opacity-50"
-              >
-                <UploadIcon className="h-3.5 w-3.5" />
-                {uploading ? 'Uploading…' : image ? 'Replace photo' : 'Upload photo'}
-              </button>
-              {image && (
+
+              <div className="flex flex-col gap-2">
+                <div className="text-sm text-gray-600">
+                  {image ? 'This photo is used on your CVs.' : 'No photo yet. Add one to use it on your CVs.'}
+                </div>
                 <button
                   type="button"
-                  onClick={handleDelete}
-                  className="flex items-center gap-1.5 rounded-md border border-red-200 bg-white px-3.5 py-2 text-sm text-red-700 hover:bg-red-50"
+                  onClick={() => {
+                    fileInputRef.current?.click()
+                  }}
+                  disabled={uploading}
+                  className="flex items-center gap-1.5 rounded-md bg-gray-900 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:opacity-50"
                 >
-                  <TrashIcon />
-                  Remove photo
+                  <UploadIcon className="h-3.5 w-3.5" />
+                  {uploading ? 'Uploading…' : image ? 'Replace photo' : 'Upload photo'}
                 </button>
-              )}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                onChange={(e) => {
-                  handleFileChange(e.target.files?.[0] ?? null)
-                }}
-                className="hidden"
-              />
-            </div>
-          </section>
+                {image && (
+                  <button
+                    type="button"
+                    onClick={handleUnlink}
+                    title="This profile stops using the photo. The photo stays in your library."
+                    className="flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-3.5 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                  >
+                    <XIcon />
+                    Unlink photo
+                  </button>
+                )}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    handleFileChange(e.target.files?.[0] ?? null)
+                  }}
+                  className="hidden"
+                />
+              </div>
+            </section>
+            <PhotoLibrary
+              photos={photos}
+              currentMediaFileId={image?.mediaFileId ?? ''}
+              cacheBuster={cacheBuster}
+              busy={linking || uploading}
+              onPick={handlePick}
+              onDelete={setDeletingPhoto}
+            />
+          </div>
         )}
 
         <aside className="w-full shrink-0 lg:ml-auto lg:sticky lg:top-6 lg:w-72">
@@ -248,14 +318,24 @@ export function ProfileImagePage() {
       </div>
 
       <ConfirmationModal
-        open={confirmingDelete}
-        title="Remove profile photo"
-        message="Remove this profile photo? This cannot be undone."
-        confirmLabel="Remove"
-        variant="danger"
-        onConfirm={confirmDelete}
+        open={confirmingUnlink}
+        title="Unlink profile photo"
+        message="This profile will stop using this photo. The photo stays in your library, and other profiles that use it keep it."
+        confirmLabel="Unlink"
+        onConfirm={confirmUnlink}
         onCancel={() => {
-          setConfirmingDelete(false)
+          setConfirmingUnlink(false)
+        }}
+      />
+      <ConfirmationModal
+        open={deletingPhoto !== null}
+        title="Delete photo"
+        message={deletePhotoMessage(deletingPhoto?.usedBy ?? [])}
+        confirmLabel="Delete for good"
+        variant="danger"
+        onConfirm={confirmDeletePhoto}
+        onCancel={() => {
+          setDeletingPhoto(null)
         }}
       />
     </div>

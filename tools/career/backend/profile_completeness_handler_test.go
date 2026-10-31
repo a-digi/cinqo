@@ -110,3 +110,67 @@ func TestProfilesList_CarriesCompleteness(t *testing.T) {
 		t.Error("Empty has no links but links item is done")
 	}
 }
+
+// Deleting a profile never deletes its photo: another profile may link the same one
+// (step 110), and the photo stays in the library.
+func TestProfileDelete_KeepsTheSharedPhoto(t *testing.T) {
+	setupHandlerDB(t)
+	var mediaCalls int
+	media := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mediaCalls++
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer media.Close()
+	t.Setenv("CORE_API_URL", media.URL)
+
+	mustExec(t, `INSERT INTO profiles (id, first_name, image_media_file_id) VALUES ('p1', 'A', 'm1'), ('p2', 'B', 'm1')`)
+	mustExec(t, `INSERT INTO photos (media_file_id) VALUES ('m1')`)
+
+	rec := httptest.NewRecorder()
+	profilesHandler(rec, httptest.NewRequest(http.MethodDelete, "/profiles?id=p1", nil))
+	if rec.Code >= 300 {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	var link string
+	if err := db.CareerDB.QueryRow(`SELECT image_media_file_id FROM profiles WHERE id = 'p2'`).Scan(&link); err != nil || link != "m1" {
+		t.Fatalf("p2 link=%q err=%v", link, err)
+	}
+	var inLibrary int
+	if err := db.CareerDB.QueryRow(`SELECT COUNT(*) FROM photos WHERE media_file_id = 'm1'`).Scan(&inLibrary); err != nil || inLibrary != 1 {
+		t.Fatalf("library count=%d err=%v", inLibrary, err)
+	}
+	if mediaCalls != 0 {
+		t.Fatalf("Media was called %d times", mediaCalls)
+	}
+}
+
+// The list carries the Media file id of a profile's photo so the rows can show it; a
+// profile without one has no such field at all (omitempty), never null or "".
+func TestProfilesList_CarriesThePhotoId(t *testing.T) {
+	setupHandlerDB(t)
+	mustExec(t, `INSERT INTO profiles (id, first_name, image_media_file_id) VALUES ('p1', 'With', 'm1'), ('p2', 'Without', NULL), ('p3', 'Empty', '')`)
+
+	rec := httptest.NewRecorder()
+	profilesHandler(rec, httptest.NewRequest(http.MethodGet, "/profiles", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		Profiles []map[string]any `json:"profiles"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]any{}
+	has := map[string]bool{}
+	for _, p := range resp.Profiles {
+		name := p["firstName"].(string)
+		got[name], has[name] = p["imageMediaFileId"]
+	}
+	if got["With"] != "m1" {
+		t.Fatalf("With = %v", got["With"])
+	}
+	if has["Without"] || has["Empty"] {
+		t.Fatalf("a profile without a photo must not carry the field: %v", has)
+	}
+}
