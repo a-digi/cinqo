@@ -62,7 +62,10 @@ export function CvBuilderPage({ personaIdFromPath }: { personaIdFromPath?: strin
   // used when editing an existing document.
   const forJobId = editingId ? null : jobIdFromSearch(window.location.search)
 
-  const [step, setStep] = useState(0)
+  // A new CV opened for a persona (its address, or an older ?personaId= link) already knows who it is for, so it
+  // starts on the Template step; the Persona step stays one click back. Otherwise it starts on the Persona step.
+  const startsOnTemplate = !editingId && Boolean(initialPersonaId)
+  const [step, setStep] = useState(startsOnTemplate ? 1 : 0)
   // The furthest step actually reached — everything up to and
   // including it can be revisited freely (StepIndicator's own
   // clickable steps); anything past it is locked/grayed out, per your
@@ -70,7 +73,7 @@ export function CvBuilderPage({ personaIdFromPath }: { personaIdFromPath?: strin
   // an existing document starts this at the LAST index (below) since
   // every step already has real, saved data — nothing about it is
   // actually "unfinished."
-  const [furthestStep, setFurthestStep] = useState(0)
+  const [furthestStep, setFurthestStep] = useState(startsOnTemplate ? 1 : 0)
   const [personaId, setPersonaId] = useState<string | null>(editingId ? null : initialPersonaId)
   const [templateId, setTemplateId] = useState('')
   const [title, setTitle] = useState('')
@@ -202,8 +205,16 @@ export function CvBuilderPage({ personaIdFromPath }: { personaIdFromPath?: strin
       setError('Pick a persona')
       return
     }
+    if (step === 1 && !personaId) {
+      setError('Pick a persona first: go back to the Persona step')
+      return
+    }
     if (step === 1 && !templateId) {
       setError('Pick a template')
+      return
+    }
+    if (step === 1 && !cvData) {
+      setError("The persona's data could not be loaded. Go back to the Persona step and pick it again")
       return
     }
     setError('')
