@@ -1,4 +1,5 @@
 import { PAGE_ACCENT, gradient, type Accent } from '../../Components/JobsPage/jobsTheme'
+import { AppLink } from '../AppLink/AppLink'
 
 // The card at the top of a Career list page: a gradient icon badge, the title, a one
 // line description and a count pill on the right, over a softly tinted background with
@@ -13,8 +14,9 @@ export function PageHeaderCard({
   icon: React.ReactNode
   title: string
   description: string
-  // The small pill on the right ("42 jobs", "3 running"); omit for none.
-  pill?: { text: string; accent?: Accent }
+  // The small pill on the right ("42 jobs", "3 running"); omit for none. With an href the pill is a link to that
+  // page of the app (a persona's header links its profile's name this way).
+  pill?: { text: string; accent?: Accent; href?: string }
   accent?: Accent
 }) {
   const pillAccent = pill?.accent ?? accent
@@ -44,14 +46,23 @@ export function PageHeaderCard({
           </h1>
           <p className="mt-0.5 text-sm text-gray-500">{description}</p>
         </div>
-        {pill && (
-          <span
-            className="career-hd-pill shrink-0 rounded-full px-3 py-1 text-sm font-semibold"
-            style={{ background: pillAccent.soft, color: pillAccent.text }}
-          >
-            {pill.text}
-          </span>
-        )}
+        {pill &&
+          (pill.href ? (
+            <AppLink
+              href={pill.href}
+              className="career-hd-pill shrink-0 rounded-full px-3 py-1 text-sm font-semibold hover:underline"
+              style={{ background: pillAccent.soft, color: pillAccent.text }}
+            >
+              {pill.text}
+            </AppLink>
+          ) : (
+            <span
+              className="career-hd-pill shrink-0 rounded-full px-3 py-1 text-sm font-semibold"
+              style={{ background: pillAccent.soft, color: pillAccent.text }}
+            >
+              {pill.text}
+            </span>
+          ))}
       </div>
     </div>
   )
