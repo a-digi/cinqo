@@ -1,4 +1,4 @@
-import type { JobBoard, JobStatusInfo, JobStatusKind } from '../../api'
+import type { BoardSort, JobBoard, JobBoardCard, JobStatusInfo, JobStatusKind } from '../../api'
 import { ACCENTS, hashString, type Accent } from '../JobsPage/jobsTheme'
 
 const NEUTRAL: Accent = { from: '#9ca3af', to: '#6b7280', soft: '#f3f4f6', text: '#4b5563' }
@@ -35,7 +35,7 @@ export function columnOf(board: JobBoard, jobId: string): string | undefined {
 
 // The board after a job moved to another column: it leads that column (the most recently moved comes first, like
 // the backend lists it). The same board when the job is not on it or is already in that column.
-export function moveCard(board: JobBoard, jobId: string, toColumnId: string, updatedAt: string): JobBoard {
+export function moveCard(board: JobBoard, jobId: string, toColumnId: string, updatedAt: string, sort: BoardSort = 'moved'): JobBoard {
   const card = board.columns.flatMap((c) => c.jobs).find((j) => j.jobId === jobId)
   const from = columnOf(board, jobId)
   if (!card || from === undefined || from === toColumnId || !board.columns.some((c) => c.id === toColumnId)) return board
@@ -43,10 +43,26 @@ export function moveCard(board: JobBoard, jobId: string, toColumnId: string, upd
     ...board,
     columns: board.columns.map((c) => {
       if (c.id === from) return { ...c, jobs: c.jobs.filter((j) => j.jobId !== jobId) }
-      if (c.id === toColumnId) return { ...c, jobs: [{ ...card, updatedAt }, ...c.jobs] }
+      if (c.id === toColumnId) return { ...c, jobs: insertCard(c.jobs, { ...card, updatedAt }, sort) }
       return c
     }),
   }
+}
+
+// Where a card goes in a column: first when columns are ordered by when they moved (it just moved); by score when they
+// are ordered by match: before the first card with a lower score or none (equal scores come most recently moved first),
+// and after every scored card when it has no score itself.
+export function insertCard(jobs: JobBoardCard[], card: JobBoardCard, sort: BoardSort): JobBoardCard[] {
+  if (sort !== 'match') return [card, ...jobs]
+  let at = 0
+  if (card.matchScore === undefined) {
+    at = jobs.filter((j) => j.matchScore !== undefined).length
+  } else {
+    const score = card.matchScore
+    const first = jobs.findIndex((j) => j.matchScore === undefined || j.matchScore <= score)
+    at = first === -1 ? jobs.length : first
+  }
+  return [...jobs.slice(0, at), card, ...jobs.slice(at)]
 }
 
 // The board after a job came off it.

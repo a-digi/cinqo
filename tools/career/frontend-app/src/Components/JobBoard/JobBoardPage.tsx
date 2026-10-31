@@ -7,6 +7,7 @@ import {
   removeJobBoardEntry,
   renameJobStatus,
   setJobBoardEntry,
+  type BoardSort,
   type JobBoard,
   type JobBoardCard,
   type JobBoardColumn,
@@ -20,6 +21,7 @@ import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { JOB_DETAILS_PATH, PROFILES_PATH, VIEW_PROFILE_PATH } from '../../paths'
 import { plural } from '../CompaniesPage/companyStats'
 import { PAGE_ACCENT } from '../JobsPage/jobsTheme'
+import { scoreChipClasses } from '../../Shared/MatchScoreBar/matchRules'
 import { profileLabel } from '../ProfileSwitcher/profileLabel'
 import {
   MAX_CUSTOM_STATUSES,
@@ -52,6 +54,8 @@ export function JobBoardPage({ profileId }: { profileId: string }) {
   const [overColumnId, setOverColumnId] = useState<string | null>(null)
   const [pendingRemove, setPendingRemove] = useState<JobBoardCard | null>(null)
   const [pendingDelete, setPendingDelete] = useState<JobBoardColumn | null>(null)
+  // The order of the cards inside each column: most recently moved first, or best match first (step 129).
+  const [sort, setSort] = useState<BoardSort>('moved')
   const [adding, setAdding] = useState(false)
 
   useEffect(() => {
@@ -76,7 +80,7 @@ export function JobBoardPage({ profileId }: { profileId: string }) {
   // After a failed save the board is read again, so it shows what is really stored.
   function reloadAfterFailure(err: unknown) {
     setError(err instanceof Error ? err.message : String(err))
-    fetchJobBoard(profileId)
+    fetchJobBoard(profileId, sort)
       .then(setBoard)
       .catch(() => undefined)
   }
@@ -84,7 +88,7 @@ export function JobBoardPage({ profileId }: { profileId: string }) {
   function moveJob(jobId: string, toColumnId: string) {
     if (!board || columnOf(board, jobId) === undefined) return
     setError('')
-    setBoard(moveCard(board, jobId, toColumnId, new Date().toISOString()))
+    setBoard(moveCard(board, jobId, toColumnId, new Date().toISOString(), sort))
     setJobBoardEntry(profileId, jobId, toColumnId).catch(reloadAfterFailure)
   }
 
@@ -99,21 +103,32 @@ export function JobBoardPage({ profileId }: { profileId: string }) {
   // come from the server). A refused name throws, for the form to show.
   async function addStatus(name: string) {
     await createJobStatus(profileId, name)
-    setBoard(await fetchJobBoard(profileId))
+    setBoard(await fetchJobBoard(profileId, sort))
     setAdding(false)
   }
 
   async function renameStatus(id: string, name: string) {
     await renameJobStatus(id, name)
-    setBoard(await fetchJobBoard(profileId))
+    setBoard(await fetchJobBoard(profileId, sort))
   }
 
   function deleteStatus(id: string) {
     setError('')
     deleteJobStatus(id)
-      .then(() => fetchJobBoard(profileId))
+      .then(() => fetchJobBoard(profileId, sort))
       .then(setBoard)
       .catch(reloadAfterFailure)
+  }
+
+  function changeSort(next: BoardSort) {
+    if (next === sort) return
+    setSort(next)
+    setError('')
+    fetchJobBoard(profileId, next)
+      .then(setBoard)
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+      })
   }
 
   const profileHref = `${VIEW_PROFILE_PATH}?id=${encodeURIComponent(profileId)}`
@@ -152,6 +167,29 @@ export function JobBoardPage({ profileId }: { profileId: string }) {
           No jobs on this board yet. A job shows here once it has been added to it.
         </p>
       )}
+      <div className="mb-3 flex items-center gap-2 text-xs text-gray-500">
+        <span>Order cards by</span>
+        <div role="group" aria-label="Order of the cards" className="inline-flex overflow-hidden rounded-md border border-gray-200">
+          {(
+            [
+              ['moved', 'Recently moved'],
+              ['match', 'Best match'],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={sort === value}
+              onClick={() => {
+                changeSort(value)
+              }}
+              className={`px-3 py-1.5 font-medium ${sort === value ? 'bg-gray-800 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
       <div className="flex items-start gap-4 overflow-x-auto pb-4" role="list" aria-label="Statuses">
         {board.columns.map((column) => (
           <Column
@@ -392,6 +430,14 @@ function Column({
                     </AppLink>
                     {job.company !== '' && <p className="mt-0.5 truncate text-xs text-gray-600">{job.company}</p>}
                     {job.location !== '' && <p className="truncate text-xs text-gray-400">{job.location}</p>}
+                    {job.matchScore !== undefined && (
+                      <span
+                        title="Match score of this profile for this job"
+                        className={`mt-1.5 inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${scoreChipClasses(job.matchScore)}`}
+                      >
+                        {job.matchScore}%
+                      </span>
+                    )}
                   </div>
                   <ActionMenu items={menuItems} triggerLabel={`Actions for ${job.title}`} />
                 </div>

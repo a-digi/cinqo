@@ -391,3 +391,100 @@ func TestSeedIsIdempotentAcrossRestarts(t *testing.T) {
 		db.CareerDB.Close()
 	}
 }
+
+// sortFixture: p1's board has four jobs moved in the order j1..j4 (j4 most recently). j1 and j2 have a completed
+// match made for p1 (60 and 80), j3's completed match (99) was made for another profile, j4's AI match is running (it carries a score, which must not count).
+func sortFixture(t *testing.T) {
+	t.Helper()
+	setup(t)
+	for _, id := range []string{"j1", "j2", "j3", "j4"} {
+		addJob(t, id, "Job "+id)
+		mustSet(t, "p1", id, NotReviewedID)
+	}
+	mustSet(t, "p2", "j3", NotReviewedID)
+	for _, q := range []string{
+		`INSERT INTO job_matches (job_id, profile_id, score, status) VALUES ('j1', 'p1', 60, 'completed')`,
+		`INSERT INTO job_matches (job_id, profile_id, score, status) VALUES ('j2', 'p1', 80, 'completed')`,
+		`INSERT INTO job_matches (job_id, profile_id, score, status) VALUES ('j3', 'p2', 99, 'completed')`,
+		`INSERT INTO job_matches (job_id, profile_id, score, status) VALUES ('j4', 'p1', 90, 'matching')`,
+	} {
+		if _, err := db.JobsDB.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func scoresOf(c Column) string {
+	var s []string
+	for _, j := range c.Jobs {
+		if j.MatchScore == nil {
+			s = append(s, j.JobID+"=-")
+		} else {
+			s = append(s, fmt.Sprintf("%s=%d", j.JobID, *j.MatchScore))
+		}
+	}
+	return strings.Join(s, ",")
+}
+
+func TestBoardOrdersByMovedOrByMatch(t *testing.T) {
+	sortFixture(t)
+	moved, err := GetBoardSorted("p1", SortMoved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := jobIDs(moved.Columns[0]); got != "j4,j3,j2,j1" {
+		t.Errorf("moved order = %s", got)
+	}
+	byMatch, err := GetBoardSorted("p1", SortMatch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// j2 (80), j1 (60), then no score of this profile's: j4 and j3, most recently moved first
+	if got := jobIDs(byMatch.Columns[0]); got != "j2,j1,j4,j3" {
+		t.Errorf("match order = %s", got)
+	}
+	if def, _ := GetBoard("p1"); jobIDs(def.Columns[0]) != "j4,j3,j2,j1" {
+		t.Errorf("GetBoard must stay moved-first: %s", jobIDs(def.Columns[0]))
+	}
+	if empty, _ := GetBoardSorted("p1", ""); jobIDs(empty.Columns[0]) != "j4,j3,j2,j1" {
+		t.Errorf("an empty sort is moved-first: %s", jobIDs(empty.Columns[0]))
+	}
+}
+
+func TestACardShowsOnlyAScoreMadeForThisBoardsProfile(t *testing.T) {
+	sortFixture(t)
+	b1, _ := GetBoardSorted("p1", SortMoved)
+	if got := scoresOf(b1.Columns[0]); got != "j4=-,j3=-,j2=80,j1=60" {
+		t.Errorf("p1's cards = %s (j3's 99 belongs to p2, j4 is still matching)", got)
+	}
+	b2, _ := GetBoardSorted("p2", SortMatch)
+	if got := scoresOf(b2.Columns[0]); got != "j3=99" {
+		t.Errorf("p2's cards = %s", got)
+	}
+}
+
+func TestEqualScoresKeepTheMostRecentlyMovedFirst(t *testing.T) {
+	sortFixture(t)
+	if _, err := db.JobsDB.Exec(`UPDATE job_matches SET score = 80 WHERE job_id = 'j1'`); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := GetBoardSorted("p1", SortMatch)
+	// j1 and j2 both 80: j2 was moved later, so it comes first
+	if got := jobIDs(b.Columns[0]); got != "j2,j1,j4,j3" {
+		t.Errorf("order = %s", got)
+	}
+	mustSet(t, "p1", "j1", NotReviewedID) // moved again: now the most recent
+	b, _ = GetBoardSorted("p1", SortMatch)
+	if got := jobIDs(b.Columns[0]); got != "j1,j2,j4,j3" {
+		t.Errorf("order after moving j1 = %s", got)
+	}
+}
+
+func TestAnUnknownBoardSortIsRefused(t *testing.T) {
+	sortFixture(t)
+	for _, bad := range []string{"newest", "MATCH", "match;DROP TABLE job_board_entries"} {
+		if _, err := GetBoardSorted("p1", bad); !errors.Is(err, ErrInvalidSort) {
+			t.Errorf("%q: %v", bad, err)
+		}
+	}
+}

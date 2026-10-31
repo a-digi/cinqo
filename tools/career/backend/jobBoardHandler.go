@@ -19,7 +19,7 @@ const maxJobBoardBodyBytes = 16 << 10
 // writeJobBoardError maps a jobboard or profile error to its HTTP answer.
 func writeJobBoardError(w http.ResponseWriter, action string, err error) {
 	switch {
-	case errors.Is(err, jobboard.ErrInvalidName), errors.Is(err, jobboard.ErrDuplicateName),
+	case errors.Is(err, jobboard.ErrInvalidSort), errors.Is(err, jobboard.ErrInvalidName), errors.Is(err, jobboard.ErrDuplicateName),
 		errors.Is(err, jobboard.ErrFixedStatus), errors.Is(err, jobboard.ErrStatusNotOnBoard):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, jobboard.ErrTooManyStatuses):
@@ -54,7 +54,7 @@ func jobBoardHandler(w http.ResponseWriter, r *http.Request) {
 		writeJobBoardError(w, "read the job board", err)
 		return
 	}
-	board, err := jobboard.GetBoard(profileID)
+	board, err := jobboard.GetBoardSorted(profileID, r.URL.Query().Get("sort"))
 	if err != nil {
 		writeJobBoardError(w, "read the job board", err)
 		return

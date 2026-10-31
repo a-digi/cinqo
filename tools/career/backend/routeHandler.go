@@ -563,7 +563,11 @@ func jobsHandler(w http.ResponseWriter, r *http.Request) {
 				companyIds = append(companyIds, id)
 			}
 		}
-		result, err := jobs.SearchJobs(q.Get("query"), q.Get("location"), companyIds, q.Get("portalLinkId"), q.Get("portalId"), jobs.ClampLimit(limit), offset)
+		result, err := jobs.SearchJobsSorted(q.Get("query"), q.Get("location"), companyIds, q.Get("portalLinkId"), q.Get("portalId"), jobs.ClampLimit(limit), offset, q.Get("sort"))
+		if errors.Is(err, jobs.ErrInvalidSort) {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		if err != nil {
 			http.Error(w, "failed to list jobs: "+err.Error(), http.StatusInternalServerError)
 			return

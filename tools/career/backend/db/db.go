@@ -635,18 +635,17 @@ CREATE TABLE IF NOT EXISTS job_matches (
     conversation_id TEXT,
     error           TEXT,
     updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
-    -- kind/semantic_model_id (step XX) — VESTIGIAL. These originally
-    -- distinguished an AI-conversation-driven match ('ai') from a
-    -- deterministic, no-AI "Match now" mechanism ('deterministic') that
-    -- also had an optional semantic-similarity model behind it — both
-    -- were removed in favor of keeping only the AI-driven match. Left
-    -- in place (rather than dropped via a migration) purely so
-    -- existing rows already carrying a non-default value stay
-    -- readable/inspectable; Go code never writes anything but each
-    -- column's own default ('ai'/NULL) going forward. See
-    -- plan/ai/tools/career/step-XX-remove-deterministic-job-match.md.
+    -- kind (step 129) records which engine made the result: 'ai' (an AI conversation, the default, so every
+    -- existing row keeps its meaning) or 'manual' (the jobmatcher package, no AI). Whoever writes a result sets
+    -- it, so the last run decides what is shown. semantic_model_id is VESTIGIAL: it belonged to a removed
+    -- earlier manual mechanism, nothing writes it, and it stays only so old rows remain readable. See
+    -- plan/ai/tools/career/step-129-manual-job-match.md.
     kind              TEXT NOT NULL DEFAULT 'ai',
-    semantic_model_id TEXT
+    semantic_model_id TEXT,
+    -- breakdown_json (step 129) is the manual engine's whole result as JSON (components, mode, missing
+    -- requirements or gaps, the best persona's name, the engine version); NULL for an AI result. Also added to
+    -- existing installs by migrateJobMatchesBreakdown.
+    breakdown_json    TEXT
 );
 
 -- job_match_skills (step XX) holds the specific skills (verbatim
@@ -782,6 +781,20 @@ CREATE TABLE IF NOT EXISTS job_board_entries (
 
 CREATE INDEX IF NOT EXISTS job_board_entries_job_idx ON job_board_entries(job_id);
 CREATE INDEX IF NOT EXISTS job_board_entries_status_idx ON job_board_entries(status_id);
+
+-- job_requirements (step 129): what a job asks for, written by hand on the job page (never by an AI): a term or
+-- a short sentence with a tier (3 must-have, 2 important, 1 nice-to-have). The manual job-match engine
+-- (jobmatcher package) scores a persona against them when a job has any. A deleted job takes its
+-- requirements with it. See plan/ai/tools/career/step-129-manual-job-match.md.
+CREATE TABLE IF NOT EXISTS job_requirements (
+    id     TEXT PRIMARY KEY,
+    job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    term   TEXT NOT NULL,
+    tier   INTEGER NOT NULL CHECK (tier IN (1,2,3)),
+    UNIQUE(job_id, term COLLATE NOCASE)
+);
+
+CREATE INDEX IF NOT EXISTS job_requirements_job_idx ON job_requirements(job_id);
 
 -- auto_discovery_settings (step 84) is a deliberate singleton — exactly
 -- one global on/off + interval setting covering every portal link with
@@ -1357,6 +1370,9 @@ func migrateJobsDB(db *sql.DB) error {
 	if err := migrateJobMatchesKind(db); err != nil {
 		return err
 	}
+	if err := migrateJobMatchesBreakdown(db); err != nil {
+		return err
+	}
 	if err := migrateJobMatchesSemanticModelID(db); err != nil {
 		return err
 	}
@@ -1475,6 +1491,21 @@ func migrateJobMatchesKind(db *sql.DB) error {
 		return nil
 	}
 	_, err = db.Exec(`ALTER TABLE job_matches ADD COLUMN kind TEXT NOT NULL DEFAULT 'ai'`)
+	return err
+}
+
+// migrateJobMatchesBreakdown adds the nullable breakdown_json column (step 129) to an already-installed
+// job_matches table, same plain ALTER TABLE ADD COLUMN shape as migrateJobMatchesKind. NULL backfills every
+// pre-existing row correctly: they were all made by the AI, which has no breakdown.
+func migrateJobMatchesBreakdown(db *sql.DB) error {
+	exists, hasColumn, err := tableHasColumn(db, "job_matches", "breakdown_json")
+	if err != nil {
+		return err
+	}
+	if !exists || hasColumn {
+		return nil
+	}
+	_, err = db.Exec(`ALTER TABLE job_matches ADD COLUMN breakdown_json TEXT`)
 	return err
 }
 

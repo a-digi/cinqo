@@ -36,6 +36,7 @@ package jobs
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -115,6 +116,10 @@ type job struct {
 	// Always [] (never omitted/null) so frontend code never has to
 	// special-case "field absent" vs "no matched skills".
 	MatchedSkills []string `json:"matchedSkills"`
+	// MatchKind (step 129) is the engine that made the match, "ai" or "manual" (omitted without a match);
+	// MatchBreakdown is the manual engine's result as it was stored (omitted for an AI result).
+	MatchKind      string          `json:"matchKind,omitempty"`
+	MatchBreakdown json.RawMessage `json:"matchBreakdown,omitempty"`
 	// CvStatus/CvConversationID/CvMediaFileID/CvError (step XX) mirror
 	// MatchStatus's own "read-only, written only via a dedicated
 	// function" posture, for the separate "Generate CV PDF" feature —
@@ -245,7 +250,7 @@ func listJobs(companyId, portalLinkId, portalId string, limit, offset int) (jobs
 		where += ` AND pl.portal_id = ?`
 		args = append(args, portalId)
 	}
-	return queryJobs(where, args, limit, offset)
+	return queryJobs(where, args, limit, offset, "j.crawled_at DESC, j.id")
 }
 
 // SearchJobs matches query against title/company/description; location
@@ -263,6 +268,38 @@ func listJobs(companyId, portalLinkId, portalId string, limit, offset int) (jobs
 // LOWER(...) — no full-text-search extension for a first pass (see this
 // step's own open question 1).
 func SearchJobs(query, location string, companyIds []string, portalLinkId, portalId string, limit, offset int) (jobsListResult, error) {
+	return SearchJobsSorted(query, location, companyIds, portalLinkId, portalId, limit, offset, SortNewest)
+}
+
+// The orders of the jobs list (step 129): newest first (when it was crawled or added; the default and what the
+// AI's list_jobs and search_jobs always return) or best match first.
+const (
+	SortNewest = "newest"
+	SortMatch  = "match"
+)
+
+// ErrInvalidSort is returned for a sort other than SortNewest or SortMatch.
+var ErrInvalidSort = errors.New("sort must be newest or match")
+
+// jobsOrder is the ORDER BY of a sort. Best match first puts the jobs with a completed match by score, highest
+// first, and every job without one after them (an AI match still running or failed has no score); ties and the
+// unscored come newest first, and the id makes the order total, so paging never repeats or skips a job.
+func jobsOrder(sort string) (string, error) {
+	switch sort {
+	case "", SortNewest:
+		return "j.crawled_at DESC, j.id", nil
+	case SortMatch:
+		return "(CASE WHEN jm.status = 'completed' THEN jm.score END) IS NULL, CASE WHEN jm.status = 'completed' THEN jm.score END DESC, j.crawled_at DESC, j.id", nil
+	}
+	return "", ErrInvalidSort
+}
+
+// SearchJobsSorted is SearchJobs with a chosen order (SortNewest or SortMatch).
+func SearchJobsSorted(query, location string, companyIds []string, portalLinkId, portalId string, limit, offset int, sort string) (jobsListResult, error) {
+	order, err := jobsOrder(sort)
+	if err != nil {
+		return jobsListResult{}, err
+	}
 	where := `WHERE 1=1`
 	args := []any{}
 	if query != "" {
@@ -290,7 +327,7 @@ func SearchJobs(query, location string, companyIds []string, portalLinkId, porta
 		where += ` AND pl.portal_id = ?`
 		args = append(args, portalId)
 	}
-	return queryJobs(where, args, limit, offset)
+	return queryJobs(where, args, limit, offset, order)
 }
 
 // jobsFromClause is shared by queryJobs's own COUNT(*) and paged SELECT
@@ -335,7 +372,7 @@ func hideDanglingCvMedia(jobs []job) {
 	wg.Wait()
 }
 
-func queryJobs(where string, whereArgs []any, limit, offset int) (jobsListResult, error) {
+func queryJobs(where string, whereArgs []any, limit, offset int, order string) (jobsListResult, error) {
 	var total int
 	countArgs := append([]any{}, whereArgs...)
 	if err := db.JobsDB.QueryRow(`SELECT COUNT(*) `+jobsFromClause+` `+where, countArgs...).Scan(&total); err != nil {
@@ -345,10 +382,10 @@ func queryJobs(where string, whereArgs []any, limit, offset int) (jobsListResult
 	pageArgs := append(append([]any{}, whereArgs...), limit, offset)
 	rows, err := db.JobsDB.Query(
 		`SELECT j.id, j.source_url, j.title, j.company, j.company_id, j.portal_link_id, p.id, p.name, j.location, j.description, j.posted_at, j.crawled_at, j.detail_crawl_status, j.source,
-			jm.score, jm.status, jm.conversation_id, jm.error,
+			jm.score, jm.status, jm.conversation_id, jm.error, jm.kind, jm.breakdown_json,
 			cv.status, cv.conversation_id, cv.media_file_id, cv.error, cv.source, cv.cv_document_id,
 			(SELECT COUNT(*) FROM job_board_entries be WHERE be.job_id = j.id)
-		 `+jobsFromClause+` `+where+` ORDER BY j.crawled_at DESC LIMIT ? OFFSET ?`,
+		 `+jobsFromClause+` `+where+` ORDER BY `+order+` LIMIT ? OFFSET ?`,
 		pageArgs...,
 	)
 	if err != nil {
@@ -360,11 +397,11 @@ func queryJobs(where string, whereArgs []any, limit, offset int) (jobsListResult
 	for rows.Next() {
 		var j job
 		var company, companyID, portalLinkID, portalID, portalName, location, description, postedAt, detailCrawlStatus sql.NullString
-		var matchStatus, matchConversationID, matchError sql.NullString
+		var matchStatus, matchConversationID, matchError, matchKind, matchBreakdown sql.NullString
 		var matchScore sql.NullInt64
 		var cvStatus, cvConversationID, cvMediaFileID, cvError, cvSource, cvDocumentID sql.NullString
 		if err := rows.Scan(&j.ID, &j.SourceURL, &j.Title, &company, &companyID, &portalLinkID, &portalID, &portalName, &location, &description, &postedAt, &j.CrawledAt, &detailCrawlStatus, &j.Source,
-			&matchScore, &matchStatus, &matchConversationID, &matchError,
+			&matchScore, &matchStatus, &matchConversationID, &matchError, &matchKind, &matchBreakdown,
 			&cvStatus, &cvConversationID, &cvMediaFileID, &cvError, &cvSource, &cvDocumentID, &j.BoardProfileCount); err != nil {
 			return jobsListResult{}, err
 		}
@@ -385,6 +422,10 @@ func queryJobs(where string, whereArgs []any, limit, offset int) (jobsListResult
 		j.MatchStatus = matchStatus.String
 		j.MatchConversationID = matchConversationID.String
 		j.MatchError = matchError.String
+		j.MatchKind = matchKind.String
+		if matchBreakdown.Valid && matchBreakdown.String != "" {
+			j.MatchBreakdown = json.RawMessage(matchBreakdown.String)
+		}
 		j.MatchedSkills = []string{}
 		j.CvStatus = cvStatus.String
 		j.CvConversationID = cvConversationID.String
@@ -442,7 +483,7 @@ func DeleteJob(id string) error {
 func GetJobByID(id string) (job, error) {
 	row := db.JobsDB.QueryRow(
 		`SELECT j.id, j.source_url, j.title, j.company, j.company_id, j.portal_link_id, p.id, p.name, j.location, j.description, j.posted_at, j.crawled_at, j.detail_crawl_status, j.source,
-			jm.score, jm.status, jm.conversation_id, jm.error,
+			jm.score, jm.status, jm.conversation_id, jm.error, jm.kind, jm.breakdown_json,
 			cv.status, cv.conversation_id, cv.media_file_id, cv.error, cv.source, cv.cv_document_id,
 			(SELECT COUNT(*) FROM job_board_entries be WHERE be.job_id = j.id)
 		 `+jobsFromClause+` WHERE j.id = ?`,
@@ -450,11 +491,11 @@ func GetJobByID(id string) (job, error) {
 	)
 	var j job
 	var company, companyID, portalLinkID, portalID, portalName, location, description, postedAt, detailCrawlStatus sql.NullString
-	var matchStatus, matchConversationID, matchError sql.NullString
+	var matchStatus, matchConversationID, matchError, matchKind, matchBreakdown sql.NullString
 	var matchScore sql.NullInt64
 	var cvStatus, cvConversationID, cvMediaFileID, cvError, cvSource, cvDocumentID sql.NullString
 	err := row.Scan(&j.ID, &j.SourceURL, &j.Title, &company, &companyID, &portalLinkID, &portalID, &portalName, &location, &description, &postedAt, &j.CrawledAt, &detailCrawlStatus, &j.Source,
-		&matchScore, &matchStatus, &matchConversationID, &matchError,
+		&matchScore, &matchStatus, &matchConversationID, &matchError, &matchKind, &matchBreakdown,
 		&cvStatus, &cvConversationID, &cvMediaFileID, &cvError, &cvSource, &cvDocumentID, &j.BoardProfileCount)
 	switch {
 	case err == sql.ErrNoRows:
@@ -479,6 +520,10 @@ func GetJobByID(id string) (job, error) {
 	j.MatchStatus = matchStatus.String
 	j.MatchConversationID = matchConversationID.String
 	j.MatchError = matchError.String
+	j.MatchKind = matchKind.String
+	if matchBreakdown.Valid && matchBreakdown.String != "" {
+		j.MatchBreakdown = json.RawMessage(matchBreakdown.String)
+	}
 	j.CvStatus = cvStatus.String
 	j.CvConversationID = cvConversationID.String
 	j.CvMediaFileID = cvMediaFileID.String

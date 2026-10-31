@@ -240,6 +240,10 @@ export interface Job {
   // backend guarantees this field, unlike the optional ones above. See
   // plan/ai/tools/career/step-XX-job-match-skills.md.
   matchedSkills: string[]
+  // matchKind (step 129) is the engine that made the match, 'ai' or 'manual'; matchBreakdown is the manual
+  // engine's stored result (absent for an AI result and for a job without a match).
+  matchKind?: 'ai' | 'manual'
+  matchBreakdown?: ManualMatchResult
   // cvStatus/cvConversationId/cvMediaFileId/cvError (step XX) mirror
   // matchStatus's own "undefined means never attempted" posture, for
   // the "Generate CV PDF" feature. The backend's own conversation
@@ -674,6 +678,9 @@ export async function removeExperience(personaId: string, id: string): Promise<v
   if (!res.ok && res.status !== 204) throw new Error(`failed to remove experience (${res.status})`)
 }
 
+// How the jobs list is ordered: newest first (the default) or best match first (step 129).
+export type JobsSort = 'newest' | 'match'
+
 export async function fetchJobs(
   query: string,
   location: string,
@@ -681,6 +688,7 @@ export async function fetchJobs(
   portalId?: string,
   limit?: number,
   offset?: number,
+  sort?: JobsSort,
 ): Promise<JobsResult> {
   const params = new URLSearchParams()
   if (query) params.set('query', query)
@@ -694,6 +702,7 @@ export async function fetchJobs(
   if (portalId) params.set('portalId', portalId)
   if (limit !== undefined) params.set('limit', String(limit))
   if (offset !== undefined) params.set('offset', String(offset))
+  if (sort === 'match') params.set('sort', sort)
   const qs = params.toString()
   const res = await fetch(`${PROXY_BASE}/jobs${qs ? `?${qs}` : ''}`, { credentials: 'include' })
   return jsonOrThrow<JobsResult>(res, 'load jobs')
@@ -1623,7 +1632,13 @@ export interface JobBoardCard {
   company: string
   location: string
   updatedAt: string
+  // The job's match score when that match was made for this board's profile (a job has one match result);
+  // absent otherwise (step 129).
+  matchScore?: number
 }
+
+// How the cards inside a column are ordered: most recently moved first (the default) or best match first.
+export type BoardSort = 'moved' | 'match'
 
 // A column is a status: one of the four fixed ones or one of the profile's own ('custom').
 export type JobStatusKind = 'not_reviewed' | 'declined' | 'stopped' | 'applied' | 'custom'
@@ -1640,8 +1655,10 @@ export interface JobBoard {
   columns: JobBoardColumn[]
 }
 
-export async function fetchJobBoard(profileId: string): Promise<JobBoard> {
-  const res = await fetch(`${PROXY_BASE}/job-board?profileId=${encodeURIComponent(profileId)}`, { credentials: 'include' })
+export async function fetchJobBoard(profileId: string, sort: BoardSort = 'moved'): Promise<JobBoard> {
+  const res = await fetch(`${PROXY_BASE}/job-board?profileId=${encodeURIComponent(profileId)}${sort === 'match' ? '&sort=match' : ''}`, {
+    credentials: 'include',
+  })
   return jsonOrThrow<JobBoard>(res, 'load the job board')
 }
 
@@ -1725,4 +1742,111 @@ export async function fetchJobStatuses(): Promise<JobStatusInfo[]> {
   const res = await fetch(`${PROXY_BASE}/job-statuses`, { credentials: 'include' })
   const data = await jsonOrThrow<{ statuses: JobStatusInfo[] }>(res, 'load the statuses')
   return data.statuses
+}
+
+// --- manual (no AI) job match (step 129) ---
+
+// One part of a manual score: its weight, the points it gave, or why it could not be judged.
+export interface MatchComponent {
+  key: string
+  label: string
+  weight: number
+  points: number
+  evaluable: boolean
+  note: string
+}
+
+// A requirement of tier 2 or 3 that nothing in the persona covers.
+export interface MatchMissing {
+  term: string
+  tier: number
+}
+
+// What the manual engine answers for one job and one profile (and what the job's matchBreakdown holds).
+export interface ManualMatchResult {
+  score: number
+  personaId: string
+  personaName: string
+  matchedSkills: string[]
+  mode: 'requirements' | 'text'
+  coverage: number
+  lowConfidence: boolean
+  // 1, or less when the job hardly resembles the persona's field and the score was scaled down (absent in results
+  // stored before that rule).
+  relevanceScale?: number
+  components: MatchComponent[]
+  missing: MatchMissing[]
+  gaps: string[]
+  engineVersion: string
+}
+
+// A refused manual match: the reasons a person can act on ("this persona has no skills ...").
+export class ManualMatchError extends Error {
+  readonly reasons: string[]
+  constructor(message: string, reasons: string[]) {
+    super(message)
+    this.reasons = reasons
+  }
+}
+
+// Scores a job against a profile's personas with the manual engine and stores the best result as the job's match.
+// No AI is involved. A 422 (not enough data, no persona) throws a ManualMatchError with the reasons.
+export async function runManualMatch(jobId: string, profileId: string): Promise<ManualMatchResult> {
+  const res = await fetch(`${PROXY_BASE}/jobs/match/run`, {
+    method: 'POST',
+    credentials: 'include',
+    body: JSON.stringify({ jobId, profileId }),
+  })
+  if (res.status === 422) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string; reasons?: string[] }
+    throw new ManualMatchError(body.error ?? 'not enough data to match', body.reasons ?? [])
+  }
+  if (!res.ok) {
+    const text = (await res.text().catch(() => '')).trim()
+    throw new Error(text || `failed to match the job (${res.status})`)
+  }
+  return res.json() as Promise<ManualMatchResult>
+}
+
+// --- job requirements (step 129) ---
+
+// One thing a job asks for, with its tier (3 must-have, 2 important, 1 nice to have). Written by hand on the job
+// page; the manual job match scores a persona against them.
+export interface JobRequirement {
+  id: string
+  term: string
+  tier: number
+}
+
+export interface JobRequirementInput {
+  term: string
+  tier: number
+}
+
+export async function fetchJobRequirements(jobId: string): Promise<JobRequirement[]> {
+  const res = await fetch(`${PROXY_BASE}/job-requirements?jobId=${encodeURIComponent(jobId)}`, { credentials: 'include' })
+  const data = await jsonOrThrow<{ requirements: JobRequirement[] }>(res, 'load the requirements')
+  return data.requirements
+}
+
+// Replaces the job's whole list (an empty list clears it). A refused list comes back as its reason in plain text.
+export async function saveJobRequirements(jobId: string, requirements: JobRequirementInput[]): Promise<JobRequirement[]> {
+  const res = await fetch(`${PROXY_BASE}/job-requirements`, {
+    method: 'PUT',
+    credentials: 'include',
+    body: JSON.stringify({ jobId, requirements }),
+  })
+  if (!res.ok) {
+    const text = (await res.text().catch(() => '')).trim()
+    throw new Error(res.status === 400 && text ? text : `failed to save the requirements (${res.status})`)
+  }
+  const data = (await res.json()) as { requirements: JobRequirement[] }
+  return data.requirements
+}
+
+// The job's most distinctive words as candidate requirements (a word count, never an AI call).
+export async function fetchRequirementSuggestions(jobId: string): Promise<string[]> {
+  const res = await fetch(`${PROXY_BASE}/job-requirements/suggest?jobId=${encodeURIComponent(jobId)}`, { credentials: 'include' })
+  const data = await jsonOrThrow<{ suggestions: string[] }>(res, 'load the suggestions')
+  return data.suggestions
 }

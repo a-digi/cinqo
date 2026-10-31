@@ -2,11 +2,13 @@ import { useEffect, useState } from 'react'
 import { fetchJob, mediaDownloadUrl, type Job } from '../../api'
 import { ExternalLinkIcon, PDFIcon } from '../../Shared/Icons/icons'
 import { MatchScoreBar } from '../../Shared/MatchScoreBar/MatchScoreBar'
+import { MatchBreakdown } from '../../Shared/MatchScoreBar/MatchBreakdown'
 import { Comments } from '../../Shared/Comments/Comments'
 import { COMMENT_TYPE_JOB } from '../../Shared/Comments/commentTypes'
 import { AppLink } from '../../Shared/AppLink/AppLink'
 import { VIEW_COMPANY_PATH, VIEW_PORTAL_PATH } from '../../paths'
 import { JobBoardUsage } from '../JobBoard/JobBoardUsage'
+import { JobRequirements } from './JobRequirements'
 
 const JOBS_PATH = '/tools/career/jobs'
 
@@ -142,7 +144,13 @@ export function JobDetailsPage() {
             {job.matchStatus === 'completed' && job.matchScore !== undefined && (
               <div className="career-enter career-delay-2 w-full shrink-0 rounded-md border border-gray-200 bg-white p-5 shadow-sm md:w-64">
                 <h2 className="mb-3 text-sm font-semibold text-gray-900">Job Match</h2>
-                <MatchScoreBar score={job.matchScore} skills={job.matchedSkills} jobTitle={job.title} />
+                <MatchScoreBar
+                  score={job.matchScore}
+                  skills={job.matchedSkills}
+                  jobTitle={job.title}
+                  kind={job.matchKind}
+                  breakdown={job.matchBreakdown}
+                />
                 {job.matchedSkills.length > 0 ? (
                   <div className="mt-4 flex flex-wrap gap-1.5">
                     {job.matchedSkills.map((skill) => (
@@ -153,6 +161,12 @@ export function JobDetailsPage() {
                   </div>
                 ) : (
                   <p className="mt-4 text-xs text-gray-400">No specific skills matched.</p>
+                )}
+                {job.matchBreakdown && (
+                  <div className="mt-4 border-t border-gray-100 pt-3">
+                    <p className="mb-2 text-xs font-semibold text-gray-800">How this score was made</p>
+                    <MatchBreakdown result={job.matchBreakdown} />
+                  </div>
                 )}
               </div>
             )}
@@ -178,6 +192,8 @@ export function JobDetailsPage() {
               </div>
             )}
           </div>
+
+          <JobRequirements jobId={job.id} />
 
           <Comments entityType={COMMENT_TYPE_JOB} entityId={job.id} />
         </>

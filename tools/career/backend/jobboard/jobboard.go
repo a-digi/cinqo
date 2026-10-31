@@ -65,13 +65,36 @@ type Status struct {
 	Kind string `json:"kind"`
 }
 
-// Card is a job as it shows in a column.
+// Card is a job as it shows in a column. MatchScore is the job's match score when that match was made for this
+// board's profile (a job has one match result, so another profile's score says nothing here); absent otherwise.
 type Card struct {
-	JobID     string `json:"jobId"`
-	Title     string `json:"title"`
-	Company   string `json:"company"`
-	Location  string `json:"location"`
-	UpdatedAt string `json:"updatedAt"`
+	JobID      string `json:"jobId"`
+	Title      string `json:"title"`
+	Company    string `json:"company"`
+	Location   string `json:"location"`
+	UpdatedAt  string `json:"updatedAt"`
+	MatchScore *int   `json:"matchScore,omitempty"`
+}
+
+// The orders of the cards inside a column (step 129): most recently moved first (the default) or best match first.
+const (
+	SortMoved = "moved"
+	SortMatch = "match"
+)
+
+// ErrInvalidSort is returned for a sort other than SortMoved or SortMatch.
+var ErrInvalidSort = errors.New("sort must be moved or match")
+
+// cardsOrder is the ORDER BY of a sort. Best match first puts the cards with a score of this profile's match by
+// score, highest first, and the rest after them; ties and the unscored come most recently moved first.
+func cardsOrder(sort string) (string, error) {
+	switch sort {
+	case "", SortMoved:
+		return "e.updated_at DESC, j.title, j.id", nil
+	case SortMatch:
+		return "m.score IS NULL, m.score DESC, e.updated_at DESC, j.title, j.id", nil
+	}
+	return "", ErrInvalidSort
 }
 
 // Column is a status with the jobs that are in it on one board.
@@ -276,7 +299,14 @@ var kindRank = map[string]int{KindNotReviewed: 0, KindCustom: 1, KindApplied: 2,
 
 // GetBoard reads a profile's board: every column (empty ones too) in order, each with
 // its jobs, most recently moved first.
-func GetBoard(profileID string) (Board, error) {
+func GetBoard(profileID string) (Board, error) { return GetBoardSorted(profileID, SortMoved) }
+
+// GetBoardSorted is GetBoard with a chosen order of the cards inside each column (SortMoved or SortMatch).
+func GetBoardSorted(profileID, sort string) (Board, error) {
+	order, err := cardsOrder(sort)
+	if err != nil {
+		return Board{}, err
+	}
 	rows, err := db.JobsDB.Query(
 		`SELECT id, name, kind FROM job_statuses WHERE profile_id IS NULL OR profile_id = ? ORDER BY rowid`,
 		profileID,
@@ -312,10 +342,11 @@ func GetBoard(profileID string) (Board, error) {
 	}
 
 	jobRows, err := db.JobsDB.Query(
-		`SELECT e.status_id, j.id, j.title, COALESCE(j.company, ''), COALESCE(j.location, ''), e.updated_at
+		`SELECT e.status_id, j.id, j.title, COALESCE(j.company, ''), COALESCE(j.location, ''), e.updated_at, m.score
 		 FROM job_board_entries e JOIN jobs j ON j.id = e.job_id
+		 LEFT JOIN job_matches m ON m.job_id = j.id AND m.profile_id = e.profile_id AND m.status = 'completed'
 		 WHERE e.profile_id = ?
-		 ORDER BY e.updated_at DESC, j.title, j.id`,
+		 ORDER BY `+order,
 		profileID,
 	)
 	if err != nil {
@@ -325,8 +356,13 @@ func GetBoard(profileID string) (Board, error) {
 	for jobRows.Next() {
 		var statusID string
 		var card Card
-		if err := jobRows.Scan(&statusID, &card.JobID, &card.Title, &card.Company, &card.Location, &card.UpdatedAt); err != nil {
+		var score sql.NullInt64
+		if err := jobRows.Scan(&statusID, &card.JobID, &card.Title, &card.Company, &card.Location, &card.UpdatedAt, &score); err != nil {
 			return Board{}, err
+		}
+		if score.Valid {
+			v := int(score.Int64)
+			card.MatchScore = &v
 		}
 		i, ok := index[statusID]
 		if !ok {

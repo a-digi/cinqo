@@ -9,6 +9,9 @@ import {
   linkJobToCompany,
   fetchProfiles,
   updateJobMatch,
+  runManualMatch,
+  type JobsSort,
+  ManualMatchError,
   updateJobCv,
   unlinkJobCv,
   mediaDownloadUrl,
@@ -28,6 +31,7 @@ import { Dropdown } from '../Dropdown/Dropdown'
 import { Pagination } from '../Pagination/Pagination'
 import { Modal } from '../../Shared/Modal/Modal'
 import { MatchScoreBar } from '../../Shared/MatchScoreBar/MatchScoreBar'
+import { refusalText } from '../../Shared/MatchScoreBar/matchRules'
 import { ActionMenu, type ActionMenuItem } from '../../Shared/ActionMenu/ActionMenu'
 import {
   BriefcaseIcon,
@@ -96,6 +100,10 @@ export function JobsPage() {
   // arrive pre-filtered identically.
   const [companyIds, setCompanyIds] = useState<string[]>(() => new URLSearchParams(window.location.search).getAll('companyId'))
   const [portalId, setPortalId] = useState(() => new URLSearchParams(window.location.search).get('portalId') ?? '')
+  // The order of the list: newest first, or best match first (step 129); seeded from ?sort=match like the filters.
+  const [sort, setSort] = useState<JobsSort>(() =>
+    new URLSearchParams(window.location.search).get('sort') === 'match' ? 'match' : 'newest',
+  )
   const [companies, setCompanies] = useState<Company[]>([])
   const [portals, setPortals] = useState<Portal[]>([])
   const [locations, setLocations] = useState<string[]>([])
@@ -122,7 +130,9 @@ export function JobsPage() {
   // saved setting for the whole tool (Settings). Job Match and Generate CV use it.
   const ai = useAiChoice()
   const selectedPlatformId = ai.platform?.id ?? null
-  const [matchPickerJob, setMatchPickerJob] = useState<Job | null>(null)
+  const [matchPicker, setMatchPicker] = useState<{ job: Job; engine: 'ai' | 'manual' } | null>(null)
+  // The jobs a manual (no AI) match is running for; it answers within a moment, so this only guards a double click.
+  const [manualRunning, setManualRunning] = useState<ReadonlySet<string>>(new Set())
 
   // "Add job" (step 97) — the modal for a job added by hand.
   const [addOpen, setAddOpen] = useState(false)
@@ -168,7 +178,13 @@ export function JobsPage() {
       })
   }
 
-  function load(companyIdsOverride?: string[], portalIdOverride?: string, pageOverride?: number, locationOverride?: string) {
+  function load(
+    companyIdsOverride?: string[],
+    portalIdOverride?: string,
+    pageOverride?: number,
+    locationOverride?: string,
+    sortOverride?: JobsSort,
+  ) {
     setError('')
     const effectivePage = pageOverride ?? page
     fetchJobs(
@@ -178,6 +194,7 @@ export function JobsPage() {
       portalIdOverride ?? portalId,
       PAGE_SIZE,
       (effectivePage - 1) * PAGE_SIZE,
+      sortOverride ?? sort,
     )
       .then((result) => {
         setJobs(result.jobs)
@@ -248,6 +265,13 @@ export function JobsPage() {
     setLocation(loc)
     setPage(1)
     load(undefined, undefined, 1, loc)
+  }
+
+  function handleSortChange(value: string) {
+    const next: JobsSort = value === 'match' ? 'match' : 'newest'
+    setSort(next)
+    setPage(1)
+    load(undefined, undefined, 1, undefined, next)
   }
 
   function handlePageChange(nextPage: number) {
@@ -534,7 +558,54 @@ export function JobsPage() {
       startMatch(job, profiles[0].id)
       return
     }
-    setMatchPickerJob(job)
+    setMatchPicker({ job, engine: 'ai' })
+  }
+
+  // The manual engine (step 129): scores the job against the profile's personas in the backend, with no AI and
+  // no conversation, and shows the result at once. A refusal (no persona, nothing to judge) says what to fix.
+  function runManual(job: Job, profileId: string) {
+    setError('')
+    setManualRunning((prev) => new Set(prev).add(job.id))
+    runManualMatch(job.id, profileId)
+      .then((r) => {
+        setJobs((prev) =>
+          prev.map((j) =>
+            j.id === job.id
+              ? {
+                  ...j,
+                  matchScore: r.score,
+                  matchStatus: 'completed',
+                  matchError: undefined,
+                  matchConversationId: undefined,
+                  matchedSkills: r.matchedSkills,
+                  matchKind: 'manual',
+                  matchBreakdown: r,
+                }
+              : j,
+          ),
+        )
+        // The new score may belong elsewhere in a best-match-first list.
+        if (sort === 'match') load()
+      })
+      .catch((err: unknown) => {
+        setError(err instanceof ManualMatchError ? refusalText(err.message, err.reasons) : err instanceof Error ? err.message : String(err))
+      })
+      .finally(() => {
+        setManualRunning((prev) => {
+          const next = new Set(prev)
+          next.delete(job.id)
+          return next
+        })
+      })
+  }
+
+  function handleManualMatchClick(job: Job) {
+    if (profiles.length === 0 || manualRunning.has(job.id)) return
+    if (profiles.length === 1) {
+      runManual(job, profiles[0].id)
+      return
+    }
+    setMatchPicker({ job, engine: 'manual' })
   }
 
   function handleCheckMatchProgress(job: Job) {
@@ -637,32 +708,43 @@ export function JobsPage() {
 
     const items: ActionMenuItem[] = []
 
-    if (job.matchStatus === 'matching') {
-      items.push({
-        key: 'match',
-        label: 'Watch AI matching…',
-        icon: <RobotIcon />,
-        onClick: () => {
-          handleCheckMatchProgress(job)
-        },
-        title: "Open the chat window to watch the AI work on this job's own match",
-      })
-    } else {
-      items.push({
-        key: 'match',
-        label: 'Job Match',
-        icon: <MatchIcon />,
-        onClick: () => {
-          handleMatchClick(job)
-        },
-        disabled: !selectedPlatformId || profiles.length === 0,
-        title: !selectedPlatformId
-          ? 'No AI platform configured — add one in Cinqo first (see Career ▸ Settings)'
-          : profiles.length === 0
-            ? 'Create a profile first'
-            : 'Assess how well this job fits a profile',
-      })
+    // "Job Match" is a group with the two engines: the AI (what it always was) and the manual one, which uses no AI.
+    const aiItem: ActionMenuItem =
+      job.matchStatus === 'matching'
+        ? {
+            key: 'match-ai',
+            label: 'Watch AI matching…',
+            icon: <RobotIcon />,
+            onClick: () => {
+              handleCheckMatchProgress(job)
+            },
+            title: "Open the chat window to watch the AI work on this job's own match",
+          }
+        : {
+            key: 'match-ai',
+            label: 'AI',
+            icon: <RobotIcon />,
+            onClick: () => {
+              handleMatchClick(job)
+            },
+            disabled: !selectedPlatformId || profiles.length === 0,
+            title: !selectedPlatformId
+              ? 'No AI platform configured — add one in Cinqo first (see Career ▸ Settings)'
+              : profiles.length === 0
+                ? 'Create a profile first'
+                : 'Have the AI assess how well this job fits a profile',
+          }
+    const manualMatchItem: ActionMenuItem = {
+      key: 'match-manual',
+      label: 'Manual (no AI)',
+      icon: <MatchIcon />,
+      onClick: () => {
+        handleManualMatchClick(job)
+      },
+      disabled: profiles.length === 0 || manualRunning.has(job.id),
+      title: profiles.length === 0 ? 'Create a profile first' : 'Score this job against a profile without AI: instant and free',
     }
+    items.push({ key: 'match', label: 'Job Match', icon: <MatchIcon />, children: [aiItem, manualMatchItem] })
 
     items.push({
       key: 'board',
@@ -965,6 +1047,15 @@ export function JobsPage() {
                 placeholder="Search title, company, description…"
                 className="flex-1 min-w-[180px] rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
               />
+              <Dropdown
+                placeholder="Newest first"
+                options={[
+                  { value: 'newest', label: 'Newest first' },
+                  { value: 'match', label: 'Best match first' },
+                ]}
+                value={sort}
+                onChange={handleSortChange}
+              />
               <button
                 type="button"
                 aria-expanded={showFilters}
@@ -1100,7 +1191,9 @@ export function JobsPage() {
                             ) : null}
                           </td>
                           <td className="border-b border-blue-50 p-3">
-                            {job.matchStatus === 'matching' ? (
+                            {manualRunning.has(job.id) ? (
+                              <span className="text-xs text-gray-500">Matching…</span>
+                            ) : job.matchStatus === 'matching' ? (
                               <button
                                 type="button"
                                 onClick={() => {
@@ -1119,7 +1212,13 @@ export function JobsPage() {
                                 Failed
                               </span>
                             ) : job.matchStatus === 'completed' && job.matchScore !== undefined ? (
-                              <MatchScoreBar score={job.matchScore} skills={job.matchedSkills} jobTitle={job.title} />
+                              <MatchScoreBar
+                                score={job.matchScore}
+                                skills={job.matchedSkills}
+                                jobTitle={job.title}
+                                kind={job.matchKind}
+                                breakdown={job.matchBreakdown}
+                              />
                             ) : (
                               <span className="text-xs text-gray-300">—</span>
                             )}
@@ -1164,10 +1263,10 @@ export function JobsPage() {
         onOpenExisting={handleViewDetails}
       />
       <Modal
-        open={matchPickerJob !== null}
+        open={matchPicker !== null}
         title="Choose a profile to match against"
         onClose={() => {
-          setMatchPickerJob(null)
+          setMatchPicker(null)
         }}
       >
         <div className="flex flex-col gap-1.5">
@@ -1176,10 +1275,11 @@ export function JobsPage() {
               key={profile.id}
               type="button"
               onClick={() => {
-                if (matchPickerJob) {
-                  startMatch(matchPickerJob, profile.id)
+                if (matchPicker) {
+                  if (matchPicker.engine === 'manual') runManual(matchPicker.job, profile.id)
+                  else startMatch(matchPicker.job, profile.id)
                 }
-                setMatchPickerJob(null)
+                setMatchPicker(null)
               }}
               className="rounded-md border border-gray-200 px-3 py-2 text-left text-sm text-gray-900 hover:bg-gray-50"
             >

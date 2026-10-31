@@ -1,5 +1,8 @@
 import { useState } from 'react'
+import type { ManualMatchResult } from '../../api'
 import { Modal } from '../Modal/Modal'
+import { EngineBadge, MatchBreakdown } from './MatchBreakdown'
+import { engineLabel } from './matchRules'
 
 // MatchScoreBar — a shared, reusable progress bar showing a 0-100
 // "Job Match" score (job_match.go), colored by tier, with the
@@ -17,7 +20,20 @@ import { Modal } from '../Modal/Modal'
 // 40-59 violet, 0-39 red. See
 // plan/ai/tools/career/step-XX-job-match.md and
 // plan/ai/tools/career/step-XX-job-match-skills.md.
-export function MatchScoreBar({ score, skills, jobTitle }: { score: number; skills: string[]; jobTitle: string }) {
+export function MatchScoreBar({
+  score,
+  skills,
+  jobTitle,
+  kind,
+  breakdown,
+}: {
+  score: number
+  skills: string[]
+  jobTitle: string
+  // The engine that made the match ('ai' or 'manual') and, for a manual one, how the score was made (step 129).
+  kind?: 'ai' | 'manual'
+  breakdown?: ManualMatchResult
+}) {
   const [modalOpen, setModalOpen] = useState(false)
   const clamped = Math.max(0, Math.min(100, score))
   const isExceptional = clamped >= 91
@@ -51,6 +67,7 @@ export function MatchScoreBar({ score, skills, jobTitle }: { score: number; skil
         <span className={`text-xs font-medium text-gray-700 ${isExceptional ? '[animation:robot-bob_1.6s_ease-in-out_infinite]' : ''}`}>
           {clamped}%
         </span>
+        <EngineBadge label={engineLabel(kind)} />
       </button>
       <Modal
         open={modalOpen}
@@ -59,7 +76,10 @@ export function MatchScoreBar({ score, skills, jobTitle }: { score: number; skil
           setModalOpen(false)
         }}
       >
-        <p className="mb-3 text-sm text-gray-500">Match score: {clamped}%</p>
+        <p className="mb-3 flex items-center gap-2 text-sm text-gray-500">
+          Match score: {clamped}%
+          <EngineBadge label={engineLabel(kind)} />
+        </p>
         {skills.length > 0 ? (
           <div className="flex flex-wrap gap-1.5">
             {skills.map((skill) => (
@@ -70,6 +90,12 @@ export function MatchScoreBar({ score, skills, jobTitle }: { score: number; skil
           </div>
         ) : (
           <p className="text-sm text-gray-400">No specific skills matched.</p>
+        )}
+        {breakdown && (
+          <div className="mt-4 border-t border-gray-100 pt-3">
+            <p className="mb-2 text-sm font-semibold text-gray-800">How this score was made</p>
+            <MatchBreakdown result={breakdown} />
+          </div>
         )}
       </Modal>
     </>

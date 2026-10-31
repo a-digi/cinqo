@@ -53,6 +53,8 @@ func StartJobMatch(jobId, profileId, conversationId string) error {
 			status = 'matching',
 			conversation_id = excluded.conversation_id,
 			error = NULL,
+			kind = 'ai',
+			breakdown_json = NULL,
 			updated_at = datetime('now')`,
 		jobId, profileId, conversationId,
 	)
@@ -102,11 +104,9 @@ func UpdateJobMatchStatus(jobId, status string, errText *string) error {
 // value, before anything is written.
 var errInvalidMatchScore = errors.New("score must be an integer between 0 and 100")
 
-// saveJobMatchResult writes kind/semantic_model_id/match_kind at their
-// column defaults ('ai'/NULL/'literal') — this is the only
-// match-producing mechanism left, so there's nothing else to record in
-// any of those. See job_matches.kind's own doc comment (db.go) for why
-// the columns themselves still exist.
+// saveJobMatchResult is the AI engine's write: it sets kind = 'ai' and clears breakdown_json, so a result
+// the manual engine (job_match_manual.go) made earlier never leaves its engine label or breakdown behind on
+// an AI score (step 129). match_kind stays at its default 'literal'.
 func saveJobMatchResult(jobId, profileId, personaId string, score int, matchedSkills []string) error {
 	if err := RequireJobExists(jobId); err != nil {
 		return err
@@ -150,6 +150,8 @@ func saveJobMatchResult(jobId, profileId, personaId string, score int, matchedSk
 			status = 'completed',
 			conversation_id = NULL,
 			error = NULL,
+			kind = 'ai',
+			breakdown_json = NULL,
 			updated_at = datetime('now')`,
 		jobId, profileId, personaId, score,
 	); err != nil {
