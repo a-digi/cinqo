@@ -20,7 +20,8 @@ import { COMMENT_TYPE_PROFILE } from '../../Shared/Comments/commentTypes'
 import { UserIcon } from '../../Shared/Icons/icons'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { PROFILES_PATH, VIEW_PERSONA_PATH } from '../../paths'
-import { CvList } from '../CvBuilder/CvList'
+import { CvCardGrid } from '../CvBuilder/CvCardGrid'
+import { chatsByCv } from '../../CvAi/cvAiRules'
 import { PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
 import { profileLabel } from '../ProfileSwitcher/profileLabel'
 import { CompletenessMeter } from './CompletenessMeter'
@@ -47,8 +48,8 @@ export function ProfileViewPage() {
   const [cvs, setCvs] = useState<CvDocument[] | null>(null)
   const [totalCvs, setTotalCvs] = useState(0)
   const [templates, setTemplates] = useState<CvTemplate[]>([])
-  // The CVs an AI run made (their ids), to mark them.
-  const [aiCvIds, setAiCvIds] = useState<ReadonlySet<string>>(new Set())
+  // The CVs an AI run made, with the chat of the run, to mark them.
+  const [aiChats, setAiChats] = useState<ReadonlyMap<string, string>>(new Map())
 
   useEffect(() => {
     if (!profileId) {
@@ -86,7 +87,7 @@ export function ProfileViewPage() {
           setDetails(Object.fromEntries(list.map((p, i) => [p.id, all[i]])))
         })
         void Promise.all(list.map((p) => fetchCvAiRuns(p.id).catch(() => []))).then((all) => {
-          setAiCvIds(new Set(all.flat().flatMap((r) => (r.cvDocumentId === undefined ? [] : [r.cvDocumentId]))))
+          setAiChats(chatsByCv(all.flat()))
         })
         fetchAllCvDocuments()
           .then((docs) => {
@@ -255,14 +256,14 @@ export function ProfileViewPage() {
             )}
           </section>
 
-          <section aria-label="CVs" className="rounded-3xl border p-5 shadow-sm" style={cardStyle}>
+          <section aria-label="CVs">
             <h2 className="mb-3 text-sm font-semibold text-gray-700">CVs{cvs !== null ? ` (${cvs.length})` : ''}</h2>
             {cvs === null ? (
               <p className="text-sm text-gray-400">The CVs could not be read.</p>
             ) : cvs.length === 0 ? (
               <p className="text-sm text-gray-400">No CVs yet for this profile&apos;s personas.</p>
             ) : (
-              <CvList docs={cvs} templates={templates} aiCvIds={aiCvIds} />
+              <CvCardGrid docs={cvs} templates={templates} aiChats={aiChats} />
             )}
             {cvs !== null && cvListMayBeCut(totalCvs) && (
               <p className="mt-2 text-xs text-amber-800">

@@ -19,7 +19,8 @@ import { LayersIcon, SparkleIcon } from '../../../Shared/Icons/icons'
 import { PageHeaderCard } from '../../../Shared/PageHeader/PageHeaderCard'
 import { PERSONAS_PATH, PERSONA_DETAILS_PATH, VIEW_PROFILE_PATH } from '../../../paths'
 import { chatOfRun } from '../../../PersonaAi/runDisplay'
-import { CvList } from '../../CvBuilder/CvList'
+import { CvCardGrid } from '../../CvBuilder/CvCardGrid'
+import { chatsByCv } from '../../../CvAi/cvAiRules'
 import { PAGE_ACCENT } from '../../JobsPage/jobsTheme'
 import { cvsOfProfile, lifetimeText } from '../../ProfilesPage/profileViewRules'
 import { setProfileIdInLocalStorage } from '../../ProfileSwitcher/repositoryLocalStorage'
@@ -49,7 +50,7 @@ export function PersonaViewPage() {
   const [cvs, setCvs] = useState<CvDocument[] | null>(null)
   const [templates, setTemplates] = useState<CvTemplate[]>([])
   // The CVs an AI run made (their ids), to mark them; and the chat of the run that made this persona.
-  const [aiCvIds, setAiCvIds] = useState<ReadonlySet<string>>(new Set())
+  const [aiChats, setAiChats] = useState<ReadonlyMap<string, string>>(new Map())
   const [personaChatId, setPersonaChatId] = useState<string | null>(null)
 
   useEffect(() => {
@@ -109,10 +110,10 @@ export function PersonaViewPage() {
       })
     fetchCvAiRuns(personaId)
       .then((runs) => {
-        setAiCvIds(new Set(runs.flatMap((r) => (r.cvDocumentId === undefined ? [] : [r.cvDocumentId]))))
+        setAiChats(chatsByCv(runs))
       })
       .catch(() => {
-        setAiCvIds(new Set())
+        setAiChats(new Map())
       })
   }, [personaId])
 
@@ -272,14 +273,14 @@ export function PersonaViewPage() {
           </section>
         </div>
 
-        <section aria-label="CVs" className="rounded-3xl border p-5 shadow-sm" style={cardStyle}>
+        <section aria-label="CVs">
           <h2 className="mb-3 text-sm font-semibold text-gray-700">CVs{cvs !== null ? ` (${cvs.length})` : ''}</h2>
           {cvs === null ? (
             <p className="text-sm text-gray-400">The CVs could not be read.</p>
           ) : cvs.length === 0 ? (
             <p className="text-sm text-gray-400">No CVs yet for this persona.</p>
           ) : (
-            <CvList docs={cvs} templates={templates} aiCvIds={aiCvIds} />
+            <CvCardGrid docs={cvs} templates={templates} aiChats={aiChats} />
           )}
         </section>
       </div>

@@ -33,13 +33,15 @@ export function CvCard({
   templateName: string
   onPreview: () => void
   onEdit: () => void
-  onRename: () => void
-  onComments: () => void
-  onDelete: () => void
+  // The management actions are optional: a read-only page (the profile view) leaves them out, and the menu,
+  // the attach picker and the detach buttons are then not drawn.
+  onRename?: () => void
+  onComments?: () => void
+  onDelete?: () => void
   // Every persona, to offer the ones the CV can still be attached to (step 114).
-  allPersonas: Persona[]
-  onAttach: (personaId: string) => void
-  onDetach: (personaId: string) => void
+  allPersonas?: Persona[]
+  onAttach?: (personaId: string) => void
+  onDetach?: (personaId: string) => void
   // Shows the chat of the AI run that created this CV (step 115); undefined for a CV made by hand.
   onShowAiChat?: () => void
   // The CV the AI just created: ringed, with no entrance animation.
@@ -47,7 +49,12 @@ export function CvCard({
 }) {
   const controls = 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100'
   const created = createdLabel(doc.createdAt)
-  const attachable = attachablePersonas(doc, allPersonas)
+  const attachable = allPersonas && onAttach ? attachablePersonas(doc, allPersonas) : []
+  const menuItems = [
+    onRename && { key: 'rename', label: 'Rename', onClick: onRename },
+    onComments && { key: 'comments', label: 'Comments', onClick: onComments },
+    onDelete && { key: 'delete', label: 'Delete', icon: <TrashIcon />, variant: 'danger' as const, onClick: onDelete },
+  ].filter((item) => !!item)
   return (
     <div
       id={`cv-${doc.id}`}
@@ -80,16 +87,11 @@ export function CvCard({
           <button type="button" onClick={onEdit} aria-label={`Edit ${doc.title}`} title="Edit" className={floatingButton}>
             <PencilIcon />
           </button>
-          <div className="rounded-lg bg-white shadow">
-            <ActionMenu
-              triggerLabel={`More actions for ${doc.title}`}
-              items={[
-                { key: 'rename', label: 'Rename', onClick: onRename },
-                { key: 'comments', label: 'Comments', onClick: onComments },
-                { key: 'delete', label: 'Delete', icon: <TrashIcon />, variant: 'danger', onClick: onDelete },
-              ]}
-            />
-          </div>
+          {menuItems.length > 0 && (
+            <div className="rounded-lg bg-white shadow">
+              <ActionMenu triggerLabel={`More actions for ${doc.title}`} items={menuItems} />
+            </div>
+          )}
         </div>
       </div>
       <p className="mt-2 line-clamp-2 break-words text-sm font-medium text-gray-900" title={doc.title}>
@@ -122,7 +124,7 @@ export function CvCard({
             }`}
           >
             <span className="truncate">{p.name}</span>
-            {!p.builtFrom && (
+            {!p.builtFrom && onDetach && (
               <button
                 type="button"
                 aria-label={`Detach ${doc.title} from ${p.name}`}
@@ -143,7 +145,7 @@ export function CvCard({
               aria-label={`Attach ${doc.title} to a persona`}
               value=""
               onChange={(e) => {
-                if (e.target.value !== '') onAttach(e.target.value)
+                if (e.target.value !== '') onAttach?.(e.target.value)
               }}
               className="rounded-full border border-dashed border-gray-300 bg-white px-2 py-0.5 text-[11px] text-gray-600 hover:border-gray-400"
             >

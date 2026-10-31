@@ -7,7 +7,6 @@ import {
   detachCvFromPersona,
   updateCvDocumentTitle,
   deleteCvDocument,
-  mediaDownloadUrl,
   CvDocumentInUseError,
   type CvDocumentJob,
   type CvTemplate,
@@ -22,14 +21,13 @@ import { PDFIcon, PlusIcon } from '../../Shared/Icons/icons'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { plural } from '../CompaniesPage/companyStats'
 import { PAGE_ACCENT } from '../JobsPage/jobsTheme'
-import { CvCard } from './CvCard'
-import { CARD_MIN_REM, templateLabel } from './cvCardRules'
+import { CvCardGrid, CvCardGridSkeleton } from './CvCardGrid'
 import { PageTips } from '../../Shared/PageTips/PageTips'
 import { Comments } from '../../Shared/Comments/Comments'
 import { COMMENT_TYPE_CV } from '../../Shared/Comments/commentTypes'
 import { useAiChoice } from '../../Cinqo/Platform/useAiChoice'
 import { CreateCvWithAi } from '../../CvAi/CreateCvWithAi'
-import { failedRunToShow, hasRunningCvRun, newlyCreatedCv, openRunChat, runOfDocument } from '../../CvAi/cvAiRules'
+import { failedRunToShow, hasRunningCvRun, newlyCreatedCv, openRunChat, chatsByCv } from '../../CvAi/cvAiRules'
 import { CvAiChatsModal } from '../../CvAi/CvAiChatsModal'
 import { useDismissedCvRuns } from '../../CvAi/useDismissedCvRuns'
 import { useCvAiRuns } from '../../CvAi/useCvAiRuns'
@@ -163,10 +161,6 @@ export function CvDocumentsPage() {
     window.__cinqoToolBridge.navigate(`${CV_BUILDER_PATH}?personaId=${encodeURIComponent(personaId)}`)
   }
 
-  function startEditCv(doc: CvDocument) {
-    window.__cinqoToolBridge.navigate(`${CV_BUILDER_PATH}?id=${encodeURIComponent(doc.id)}`)
-  }
-
   function handleRename(doc: CvDocument) {
     const next = window.prompt('New title', doc.title)
     if (!next?.trim() || next.trim() === doc.title) return
@@ -215,10 +209,6 @@ export function CvDocumentsPage() {
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : String(err))
       })
-  }
-
-  function previewPdf(doc: CvDocument) {
-    window.open(mediaDownloadUrl(doc.mediaFileId), '_blank', 'noopener,noreferrer')
   }
 
   return (
@@ -334,23 +324,7 @@ export function CvDocumentsPage() {
             <>
               <p className="mb-4 text-xs text-gray-500">Click a CV to edit it; hover for preview, rename and delete.</p>
 
-              {/* A uniquely-named grid class, as the Media page does: an installed tool's globally-injected
-              Tailwind stylesheet can redeclare a bare `.grid-cols-*` and collapse a plain Tailwind grid. */}
-              <style>{`
-            .cv-card-grid { display: grid; gap: 1.5rem 1rem; grid-template-columns: repeat(auto-fill, minmax(${CARD_MIN_REM}rem, 1fr)); }
-          `}</style>
-
-              {loading && documents.length === 0 && (
-                <div className="cv-card-grid" aria-label="Loading CVs">
-                  {[0, 1, 2, 3].map((i) => (
-                    <div key={i} className="animate-pulse">
-                      <div className="aspect-[3/4] rounded-xl bg-gray-100" />
-                      <div className="mt-2 h-3 w-3/4 rounded bg-gray-100" />
-                      <div className="mt-2 h-3 w-1/2 rounded bg-gray-100" />
-                    </div>
-                  ))}
-                </div>
-              )}
+              {loading && documents.length === 0 && <CvCardGridSkeleton />}
 
               {!loading && documents.length === 0 && (
                 <div
@@ -362,46 +336,25 @@ export function CvDocumentsPage() {
               )}
 
               {documents.length > 0 && (
-                <div className="career-stagger cv-card-grid">
-                  {documents.map((doc) => (
-                    <CvCard
-                      key={doc.id}
-                      doc={doc}
-                      templateName={templateLabel(templates, doc.templateId)}
-                      onPreview={() => {
-                        previewPdf(doc)
-                      }}
-                      onEdit={() => {
-                        startEditCv(doc)
-                      }}
-                      onRename={() => {
-                        handleRename(doc)
-                      }}
-                      onComments={() => {
-                        setCommentsFor(doc)
-                      }}
-                      onDelete={() => {
-                        handleDelete(doc)
-                      }}
-                      allPersonas={allPersonas}
-                      onShowAiChat={(() => {
-                        const run = runOfDocument(aiRuns.runs, doc.id)
-                        return run
-                          ? () => {
-                              openRunChat(run)
-                            }
-                          : undefined
-                      })()}
-                      highlighted={doc.id === newCvId}
-                      onAttach={(id) => {
-                        changeLink(attachCvToPersona(doc.id, id))
-                      }}
-                      onDetach={(id) => {
-                        changeLink(detachCvFromPersona(doc.id, id))
-                      }}
-                    />
-                  ))}
-                </div>
+                <CvCardGrid
+                  className="career-stagger"
+                  docs={documents}
+                  templates={templates}
+                  aiChats={chatsByCv(aiRuns.runs)}
+                  highlightedId={newCvId}
+                  management={{
+                    onRename: handleRename,
+                    onComments: setCommentsFor,
+                    onDelete: handleDelete,
+                    allPersonas,
+                    onAttach: (doc, id) => {
+                      changeLink(attachCvToPersona(doc.id, id))
+                    },
+                    onDetach: (doc, id) => {
+                      changeLink(detachCvFromPersona(doc.id, id))
+                    },
+                  }}
+                />
               )}
             </>
           )}

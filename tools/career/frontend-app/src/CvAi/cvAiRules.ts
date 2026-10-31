@@ -17,9 +17,14 @@ export function failedRunToShow(runs: CvAiRun[], dismissed: ReadonlySet<string> 
   return runs.length > 0 && runs[0].status === 'failed' && !dismissed.has(runs[0].id) ? runs[0] : null
 }
 
-// The run that created a CV, or null for a CV the user made by hand (or whose run was removed).
-export function runOfDocument(runs: CvAiRun[], cvDocumentId: string): CvAiRun | null {
-  return runs.find((r) => r.cvDocumentId === cvDocumentId) ?? null
+// The chat of the run that made each CV (a CV id maps to its run's conversation id); a CV made by hand,
+// or whose run was removed, is not in it. The first (newest) run wins when two name the same CV.
+export function chatsByCv(runs: Pick<CvAiRun, 'cvDocumentId' | 'conversationId'>[]): Map<string, string> {
+  const out = new Map<string, string>()
+  for (const r of runs) {
+    if (r.cvDocumentId !== undefined && !out.has(r.cvDocumentId)) out.set(r.cvDocumentId, r.conversationId)
+  }
+  return out
 }
 
 // The CV a finished run created that this page watched work: the run ids seen generating are given.
