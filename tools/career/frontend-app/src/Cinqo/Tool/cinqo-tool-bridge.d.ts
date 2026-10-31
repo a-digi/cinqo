@@ -11,8 +11,13 @@ interface CinqoToolMenuEntry {
 }
 
 interface CinqoToolRoute {
+  // Exact ("/tools/career/skills") or a pattern with named segments ("/tools/career/skills/:personaId"): a
+  // ":name" segment matches one non-empty segment of the address and arrives in mount's params.
   path: string
-  mount: (container: HTMLElement) => void
+  // params holds the text of each ":name" segment ({} for an exact path); a mount that takes only the
+  // container keeps working. A host older than pattern routes ignores a pattern path (nothing matches it) and
+  // passes no params.
+  mount: (container: HTMLElement, params: Record<string, string>) => void
   unmount?: (container: HTMLElement) => void
 }
 

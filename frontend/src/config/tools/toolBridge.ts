@@ -1,6 +1,7 @@
 import { toolNavigate } from './toolNavigator'
 import { openToolConversation } from './toolConversationOpener'
 import { isMediaId } from './mediaThumbnailRules'
+import { isValidToolRoutePath } from './matchToolRoute'
 
 // Deliberately dependency-free (no React import, no cinqo-internal
 // types beyond plain interfaces) — a tool author can copy just this
@@ -34,7 +35,11 @@ export interface ToolMenuEntry {
 
 export interface ToolRoute {
   // Must start with "/tools/" — enforced at registration time, not
-  // just documented.
+  // just documented. Either exact ("/tools/career/skills") or a pattern
+  // with named segments ("/tools/career/skills/:personaId"): a ":name"
+  // segment matches one non-empty segment of the address, and its
+  // (URL-decoded) text reaches mount as params.name. An exact path wins
+  // over a pattern. See matchToolRoute.ts.
   path: string
   // A tool's own bundle.js is installed at runtime and never passes
   // through this app's Tailwind build — it can never use a Tailwind
@@ -62,7 +67,9 @@ export interface ToolRoute {
   // See plan/ai/tools/browser/step-12-menu-grouping-and-tool-styling-contract.md,
   // step-13-credential-page-visual-refresh.md, and
   // step-14-separate-add-credential-page.md.
-  mount: (container: HTMLElement) => void
+  // params holds the text of each ":name" segment of the path ({} for an
+  // exact path); a mount that takes only the container keeps working.
+  mount: (container: HTMLElement, params: Record<string, string>) => void
   unmount?: (container: HTMLElement) => void
 }
 
@@ -173,8 +180,10 @@ export function createToolBridge(callbacks: ToolBridgeCallbacks): ToolBridge {
       callbacks.onRegisterMenuEntry(entry)
     },
     registerRoute(route) {
-      if (!route.path.startsWith('/tools/')) {
-        console.error(`Tool route "${route.path}" must start with "/tools/" — ignoring registration.`)
+      if (!isValidToolRoutePath(route.path)) {
+        console.error(
+          `Tool route "${route.path}" must start with "/tools/", have no empty segment and use each ":name" once — ignoring registration.`,
+        )
         return
       }
       callbacks.onRegisterRoute(route)

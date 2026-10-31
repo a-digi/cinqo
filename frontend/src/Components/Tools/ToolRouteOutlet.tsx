@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useToolRegistry } from '../../config/tools/ToolRegistryContext'
+import { matchToolRoute } from '../../config/tools/matchToolRoute'
 import { setToolNavigator } from '../../config/tools/toolNavigator'
 
 // The one static SPA route hosting every tool route — a tool never
@@ -23,11 +24,12 @@ export function ToolRouteOutlet() {
   }, [navigate])
 
   useEffect(() => {
-    const route = routes.find((r) => r.path === location.pathname)
+    const match = matchToolRoute(routes, location.pathname)
     const container = containerRef.current
-    if (!route || !container) return
+    if (!match || !container) return
 
-    route.mount(container)
+    const { route, params } = match
+    route.mount(container, params)
     return () => {
       route.unmount?.(container)
     }

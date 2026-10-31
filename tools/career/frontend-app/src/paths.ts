@@ -7,6 +7,12 @@ export const PERSONAS_PATH = '/tools/career/personas'
 export const PERSONA_DETAILS_PATH = '/tools/career/persona-details'
 export const VIEW_PERSONA_PATH = '/tools/career/personas/view'
 export const SKILLS_PATH = '/tools/career/skills'
+// One persona's skills on their own page: a pattern route, the id arrives as the page's route parameter.
+export const SKILL_PERSONA_PATH = '/tools/career/skills/:personaId'
+// The address of one persona's skills page.
+export function skillsPathFor(personaId: string): string {
+  return `${SKILLS_PATH}/${encodeURIComponent(personaId)}`
+}
 export const EXPERIENCE_PATH = '/tools/career/experience'
 export const PROFILE_IMAGE_PATH = '/tools/career/profile-image'
 export const CV_DOCUMENTS_PATH = '/tools/career/cv-documents'

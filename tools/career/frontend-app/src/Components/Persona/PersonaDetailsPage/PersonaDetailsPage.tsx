@@ -3,7 +3,7 @@ import { fetchPersonaDetails, updatePersonaDetails } from '../../../api'
 import { TargetIcon } from '../../../Shared/Icons/icons'
 import { inputClass } from '../../../Shared/inputClass'
 import { PageHeaderCard } from '../../../Shared/PageHeader/PageHeaderCard'
-import { EXPERIENCE_PATH, SKILLS_PATH } from '../../../paths'
+import { EXPERIENCE_PATH, skillsPathFor } from '../../../paths'
 import { Field } from '../../Field/Field'
 import { PAGE_ACCENT } from '../../JobsPage/jobsTheme'
 import { PersonaSwitcher } from '../PersonaSwitcher/PersonaSwitcher'
@@ -209,7 +209,7 @@ export function PersonaDetailsPage() {
                 experienceCount={experienceCount}
                 onPick={focusField}
                 onOpenSkills={() => {
-                  window.__cinqoToolBridge.navigate(SKILLS_PATH)
+                  if (personaId) window.__cinqoToolBridge.navigate(skillsPathFor(personaId))
                 }}
                 onOpenExperience={() => {
                   window.__cinqoToolBridge.navigate(EXPERIENCE_PATH)

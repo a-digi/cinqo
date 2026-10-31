@@ -19,7 +19,7 @@ import { profileLabel } from '../ProfileSwitcher/profileLabel'
 import { ConfirmationModal } from '../../Shared/ConfirmationModal/ConfirmationModal'
 import { CameraIcon, UploadIcon } from '../../Shared/Icons/icons'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
-import { EXPERIENCE_PATH, NEW_PERSONA_PATH, PERSONA_DETAILS_PATH, SKILLS_PATH } from '../../paths'
+import { EXPERIENCE_PATH, NEW_PERSONA_PATH, PERSONA_DETAILS_PATH, SKILLS_PATH, skillsPathFor } from '../../paths'
 import { PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
 import { setPersonaIdInLocalStorage } from '../Persona/PersonaSwitcher/repositoryLocalStorage'
 import { CvReadiness } from './CvReadiness'
@@ -98,7 +98,15 @@ export function ProfileImagePage() {
       return
     }
     if (persona) setPersonaIdInLocalStorage(persona.id)
-    const path = item.fix === 'details' ? PERSONA_DETAILS_PATH : item.fix === 'skills' ? SKILLS_PATH : EXPERIENCE_PATH
+    // A persona's skills have their own address; the other fixes still use the persona remembered above.
+    const path =
+      item.fix === 'details'
+        ? PERSONA_DETAILS_PATH
+        : item.fix === 'skills'
+          ? persona
+            ? skillsPathFor(persona.id)
+            : SKILLS_PATH
+          : EXPERIENCE_PATH
     window.__cinqoToolBridge.navigate(path)
   }
 

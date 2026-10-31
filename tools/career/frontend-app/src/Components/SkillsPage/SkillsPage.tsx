@@ -1,220 +1,112 @@
 import { useEffect, useState } from 'react'
-import { fetchSkills, addSkill, removeSkill } from '../../api'
-import { PlusIcon, SparkIcon, XIcon } from '../../Shared/Icons/icons'
-import { inputClass } from '../../Shared/inputClass'
+import { fetchPersonaDetails, fetchPersonas, fetchProfiles, type Persona, type Profile } from '../../api'
+import { SparkIcon } from '../../Shared/Icons/icons'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
-import { plural } from '../CompaniesPage/companyStats'
-import { PAGE_ACCENT, accentFor } from '../JobsPage/jobsTheme'
-import { LetterIndex } from './LetterIndex'
-import { filterByLetter, letterIndex } from './skillRules'
-import { PersonaSwitcher } from '../Persona/PersonaSwitcher/PersonaSwitcher'
 import { PageTips } from '../../Shared/PageTips/PageTips'
+import { PERSONAS_PATH, skillsPathFor } from '../../paths'
+import { plural } from '../CompaniesPage/companyStats'
+import { accentFor } from '../JobsPage/jobsTheme'
+import { PersonaList } from '../Persona/PersonaList'
+import { previewItems } from '../Persona/personaListRules'
 
-// Its own page as of step 7 (moved out of ProfilePage). "Edit" for a
-// skill is a rename, done as remove-old-then-add-new — a skill is a
-// bare deduplicated string with no separate id an in-place update
-// could target, so this is the simplest correct way to express it.
-// Step 9 added the persona switcher — skills are per-persona as of
-// step 8. See
-// plan/ai/tools/career/step-07-dedicated-skills-and-experience-pages.md
-// and plan/ai/tools/career/step-09-persona-frontend.md. Header card and a tinted
-// card of coloured chips, with an A-Z index above them as its overview.
+// How many of a persona's skills the list shows before "+N more".
+const PREVIEW_SKILLS = 6
+
+// The Skills page: the personas as a list (grouped by profile), each with how many skills it has and a few of
+// them; a click opens that persona's own skills page (/tools/career/skills/:personaId), where they are edited.
+// Nothing is edited here, and there is no dropdown. See plan/ai/tools/career/step-119-skills-per-persona-pages.md.
 export function SkillsPage() {
-  const [personaId, setPersonaId] = useState<string | null>(null)
-  const [skills, setSkills] = useState<string[]>([])
-  // The letter the index is filtering by, or null for all skills.
-  const [activeLetter, setActiveLetter] = useState<string | null>(null)
-  const [newSkill, setNewSkill] = useState('')
-  const [editing, setEditing] = useState<string | null>(null)
-  const [editValue, setEditValue] = useState('')
+  const [personas, setPersonas] = useState<Persona[]>([])
+  const [profiles, setProfiles] = useState<Profile[]>([])
+  // Each persona's skills by persona id; a persona whose skills could not be read is missing.
+  const [skills, setSkills] = useState<Record<string, string[] | undefined>>({})
   const [error, setError] = useState('')
-
-  function load(forPersonaId: string) {
-    setError('')
-    fetchSkills(forPersonaId)
-      .then(setSkills)
-      .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : String(err))
-      })
-  }
+  const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
-    if (personaId) load(personaId)
-  }, [personaId])
-
-  function handleAdd() {
-    if (!personaId) return
-    const skill = newSkill.trim()
-    if (!skill) return
-    setError('')
-    addSkill(personaId, skill)
-      .then((result) => {
-        setSkills(result)
-        setNewSkill('')
+    Promise.all([fetchPersonas(), fetchProfiles()])
+      .then(([personaList, profileList]) => {
+        setPersonas(personaList)
+        setProfiles(profileList)
+        void Promise.all(personaList.map((p) => fetchPersonaDetails(p.id).catch(() => null))).then((all) => {
+          const next: Record<string, string[] | undefined> = {}
+          personaList.forEach((p, i) => {
+            const details = all[i]
+            if (details) next[p.id] = details.skills
+          })
+          setSkills(next)
+        })
       })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : String(err))
       })
-  }
-
-  function handleRemove(skill: string) {
-    if (!personaId) return
-    setError('')
-    removeSkill(personaId, skill)
-      .then(() => {
-        setSkills((prev) => prev.filter((s) => s !== skill))
+      .finally(() => {
+        setLoaded(true)
       })
-      .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : String(err))
-      })
-  }
+  }, [])
 
-  function startEdit(skill: string) {
-    setEditing(skill)
-    setEditValue(skill)
-  }
-
-  function cancelEdit() {
-    setEditing(null)
-    setEditValue('')
-  }
-
-  function saveEdit(oldSkill: string) {
-    if (!personaId) return
-    const newValue = editValue.trim()
-    if (!newValue || newValue === oldSkill) {
-      cancelEdit()
-      return
-    }
-    setError('')
-    addSkill(personaId, newValue)
-      .then(() => removeSkill(personaId, oldSkill))
-      .then(() => {
-        setSkills((prev) => prev.map((s) => (s === oldSkill ? newValue : s)))
-        cancelEdit()
-      })
-      .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : String(err))
-      })
-  }
-
-  const index = letterIndex(skills)
-  // A letter whose skills are all gone (removed or renamed) stops filtering.
-  const letter = activeLetter !== null && index.some((l) => l.letter === activeLetter && l.count > 0) ? activeLetter : null
-  const visibleSkills = letter === null ? skills : filterByLetter(skills, letter)
+  const total = Object.values(skills).reduce((sum, list) => sum + (list?.length ?? 0), 0)
 
   return (
     <div className="career-v-tilt career-a-glow career-t-wave max-w-7xl p-6 font-sans text-gray-900">
       <PageHeaderCard
         icon={<SparkIcon />}
         title="Skills"
-        description="The skills on this persona. The AI reads them when matching you against job postings."
-        pill={personaId ? { text: plural(skills.length, 'skill', 'skills') } : undefined}
+        description="Pick a persona to see and edit its skills. The AI reads them when matching you against job postings."
+        pill={loaded && error === '' ? { text: plural(personas.length, 'persona', 'personas') } : undefined}
       />
-      {/* Steps 105 to 108: the tips sit in a column of their own beside the page (under it on a narrow window). */}
+      {/* The tips sit in a column of their own beside the list (under it on a narrow window). */}
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
         <div className="order-1 min-w-0 flex-1 lg:order-2">
-          <PersonaSwitcher personaId={personaId} onChange={setPersonaId} />
-
-          <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
-
-          {personaId && (
-            <section
-              className="career-enter career-delay-1 rounded-3xl border p-5 shadow-sm"
-              style={{ borderColor: PAGE_ACCENT.soft, background: `linear-gradient(160deg, #ffffff 45%, ${PAGE_ACCENT.soft} 100%)` }}
-            >
-              {skills.length > 0 && <LetterIndex index={index} active={letter} total={skills.length} onPick={setActiveLetter} />}
-              {skills.length === 0 && <p className="mb-3 text-sm text-gray-500">No skills yet. Add the first one below.</p>}
-              <div className="mb-4 flex flex-wrap gap-2">
-                {visibleSkills.map((skill, idx) => {
-                  const accent = accentFor(skill)
-                  return editing === skill ? (
-                    <span
-                      key={skill}
-                      className="flex items-center gap-1.5 rounded-full border bg-white px-2 py-1"
-                      style={{ borderColor: accent.to }}
-                    >
-                      <input
-                        // Deliberate: entering edit mode should focus the input
-                        // immediately, the same convention most inline-rename UIs use.
-                        // eslint-disable-next-line jsx-a11y/no-autofocus
-                        autoFocus
-                        value={editValue}
-                        onChange={(e) => {
-                          setEditValue(e.target.value)
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') saveEdit(skill)
-                          if (e.key === 'Escape') cancelEdit()
-                        }}
-                        className="w-28 rounded border border-gray-300 px-1.5 py-0.5 text-xs text-gray-900 focus:border-gray-500 focus:outline-none"
-                      />
-                      <button
-                        type="button"
-                        aria-label="Save"
-                        onClick={() => {
-                          saveEdit(skill)
-                        }}
-                        className="text-xs font-medium text-gray-700 hover:text-gray-900"
-                      >
-                        Save
-                      </button>
-                      <button type="button" aria-label="Cancel" onClick={cancelEdit} className="text-gray-400 hover:text-red-700">
-                        <XIcon />
-                      </button>
-                    </span>
-                  ) : (
-                    <span
-                      key={skill}
-                      className="career-chip flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium"
-                      style={{ background: accent.soft, color: accent.text, '--i': idx } as React.CSSProperties}
-                    >
-                      <span aria-hidden="true" className="h-2 w-2 rounded-full" style={{ background: accent.to }} />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          startEdit(skill)
-                        }}
-                        className="hover:underline"
-                      >
-                        {skill}
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`Remove ${skill}`}
-                        onClick={() => {
-                          handleRemove(skill)
-                        }}
-                        className="opacity-60 hover:text-red-700 hover:opacity-100"
-                      >
-                        <XIcon />
-                      </button>
+          {error !== '' && <p className="mb-3 text-sm text-red-700">{error}</p>}
+          {loaded && error === '' && personas.length === 0 && (
+            <p className="rounded-3xl border border-gray-100 bg-gray-50 p-8 text-center text-sm text-gray-500">
+              There are no personas yet.{' '}
+              <a
+                href={PERSONAS_PATH}
+                onClick={(e) => {
+                  e.preventDefault()
+                  window.__cinqoToolBridge.navigate(PERSONAS_PATH)
+                }}
+                className="font-medium text-blue-700 hover:underline"
+              >
+                Create one on the Personas page
+              </a>
+              , then add its skills here.
+            </p>
+          )}
+          {personas.length > 0 && (
+            <>
+              <p className="mb-4 text-xs text-gray-500">{plural(total, 'skill', 'skills')} across these personas.</p>
+              <PersonaList
+                personas={personas}
+                profiles={profiles}
+                hrefFor={(p) => skillsPathFor(p.id)}
+                renderExtra={(p) => {
+                  const list = skills[p.id]
+                  if (!list) return null
+                  const { shown, more } = previewItems(list, PREVIEW_SKILLS)
+                  return (
+                    <span className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-gray-500">
+                      <span className="font-medium text-gray-700">{plural(list.length, 'skill', 'skills')}</span>
+                      {shown.map((s) => {
+                        const accent = accentFor(s)
+                        return (
+                          <span
+                            key={s}
+                            className="rounded-full px-2 py-0.5 text-[11px] font-medium"
+                            style={{ background: accent.soft, color: accent.text }}
+                          >
+                            {s}
+                          </span>
+                        )
+                      })}
+                      {more > 0 && <span>+{more} more</span>}
                     </span>
                   )
-                })}
-              </div>
-              <div className="flex gap-2">
-                <input
-                  value={newSkill}
-                  onChange={(e) => {
-                    setNewSkill(e.target.value)
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleAdd()
-                  }}
-                  placeholder="Add a skill"
-                  className={`flex-1 ${inputClass}`}
-                />
-                <button
-                  type="button"
-                  onClick={handleAdd}
-                  className="flex items-center gap-1 rounded-md bg-gray-800 px-3.5 py-1.5 text-sm font-medium text-white transition-colors hover:bg-gray-900"
-                >
-                  <PlusIcon />
-                  Add
-                </button>
-              </div>
-            </section>
+                }}
+              />
+            </>
           )}
         </div>
         <aside className="order-2 w-full shrink-0 lg:order-1 lg:sticky lg:top-6 lg:w-72">
