@@ -5,41 +5,41 @@
   "tools": [
     {
       "id": "browser",
-      "currentVersionId": "0.0.204",
+      "currentVersionId": "0.0.205",
       "versions": [
         {
-          "versionId": "0.0.204",
+          "versionId": "0.0.205",
           "name": "Browser",
-          "version": "0.0.204",
-          "releasedAt": "2026-10-30",
+          "version": "0.0.205",
+          "releasedAt": "2026-10-31",
           "packages": [
             {
               "os": "darwin",
               "arch": "arm64",
               "url": "https://raw.githubusercontent.com/a-digi/cinqo/0.0.1/tools/browser/versions/tool-browser-darwin-arm64.zip",
-              "sha256": "bd4d342039a9bbb7b8842b7402c26c9c787bd1d07dd6b77527d7c58f1ee52def",
-              "sizeBytes": 15346827
+              "sha256": "1194f2467a0c9217d2751e114feb8f54f98d99150d22f201ef8f50945c32beb0",
+              "sizeBytes": 15347028
             },
             {
               "os": "linux",
               "arch": "amd64",
               "url": "https://raw.githubusercontent.com/a-digi/cinqo/0.0.1/tools/browser/versions/tool-browser-linux-amd64.zip",
-              "sha256": "488192d5f82adb35b8ae4a6874f12b0dec13ba4ac6d68fc06952aad7139d5d2a",
-              "sizeBytes": 15423807
+              "sha256": "ceed0b886920c8b67ee757c864ccfd89ebdc860b1ead41d027eb6f0dc9797c03",
+              "sizeBytes": 15423004
             },
             {
               "os": "linux",
               "arch": "arm64",
               "url": "https://raw.githubusercontent.com/a-digi/cinqo/0.0.1/tools/browser/versions/tool-browser-linux-arm64.zip",
-              "sha256": "3e59e8ddf9064c2fbbc0a28280e8bf88da4e74a9222712f0263cbdc1d0890b6a",
-              "sizeBytes": 14505837
+              "sha256": "48324bfa97da83d1dcb8c0d702ca561683781f38512deb21fecab572ef31ada7",
+              "sizeBytes": 14505881
             },
             {
               "os": "windows",
               "arch": "amd64",
               "url": "https://raw.githubusercontent.com/a-digi/cinqo/0.0.1/tools/browser/versions/tool-browser-windows-amd64.zip",
-              "sha256": "1df68ba67472606cb1b9429a84ab77cf93028eb55fc3cd8628ee9d68bdcb3de7",
-              "sizeBytes": 14820351
+              "sha256": "6f95cdf9fd90655044fdcdb8031b0b8fefc91c9a1384ffdcd68e1727a6fbd486",
+              "sizeBytes": 14818793
             }
           ]
         }

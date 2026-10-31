@@ -1,7 +1,7 @@
 {
   "slug": "browser",
   "name": "Browser",
-  "version": "0.0.204",
+  "version": "0.0.205",
   "mcp": true,
   "scopes": [
     {
@@ -188,13 +188,6 @@
       "width": 1,
       "height": 1,
       "refresh_seconds": 60
-    }
-  ],
-  "file_sources": [
-    {
-      "id": "crawl-logs",
-      "dir": "logs",
-      "scope": "tool:browser:crawl"
     }
   ]
 }

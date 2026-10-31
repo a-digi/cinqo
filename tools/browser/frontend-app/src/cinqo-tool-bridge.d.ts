@@ -19,22 +19,10 @@ interface CinqoToolRoute {
   unmount?: (container: HTMLElement) => void
 }
 
-interface CinqoFileReaderOptions {
-  tool: string
-  source: string
-  ref: string
-  title?: string
-  initialWindow?: 50 | 100 | 200 | 500
-}
-
 interface CinqoToolBridge {
   registerMenuEntry(entry: CinqoToolMenuEntry): void
   registerRoute(route: CinqoToolRoute): void
   navigate(path: string): void
-  // Draws Cinqo's terminal-style file reader for one text file of this tool's own data (a source
-  // declared in manifest.json's "file_sources") into container and returns a function that removes
-  // it. Optional: a host older than the file reader does not have it, and callers must check first.
-  mountFileReader?(container: HTMLElement, options: CinqoFileReaderOptions): () => void
 }
 
 declare global {
