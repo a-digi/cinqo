@@ -4,7 +4,7 @@ import { BuildingIcon } from '../../Shared/Icons/icons'
 import { MatchScoreBar } from '../../Shared/MatchScoreBar/MatchScoreBar'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { SummaryRail } from '../../Shared/SummaryRail/SummaryRail'
-import { COMPANIES_PATH, JOB_DETAILS_PATH, RECRUITERS_PATH } from '../../paths'
+import { COMPANIES_PATH, JOBS_PATH, JOB_DETAILS_PATH, RECRUITERS_PATH } from '../../paths'
 import { ACCENTS, PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
 import { plural } from './companyStats'
 
@@ -90,7 +90,11 @@ export function CompanyViewPage() {
         icon={<BuildingIcon />}
         title={company.name}
         description={company.description || 'No description yet.'}
-        pill={{ text: plural(company.jobCount, 'linked job', 'linked jobs') }}
+        // The pill links on to the Jobs page, filtered to this company's jobs.
+        pill={{
+          text: plural(company.jobCount, 'linked job', 'linked jobs'),
+          href: `${JOBS_PATH}?companyId=${encodeURIComponent(company.id)}`,
+        }}
       />
 
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
