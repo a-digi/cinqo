@@ -2,6 +2,13 @@
 // see plan/ai/conversation/step-01-data-model-and-separate-database.md.
 package entity
 
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+)
+
 // Conversation is metadata only — its message content lives entirely
 // in a Markdown log file (see log.go), never in this table. FilePath is
 // always server-derived from the conversation's own ID, never
@@ -63,6 +70,78 @@ type Conversation struct {
 	// like PlatformID and Model. See
 	// plan/ai/tools/career/step-93-tool-call-budget-and-weak-models.md.
 	ToolIterationLimit *int `db:"tool_iteration_limit" dbtype:"INTEGER" nullable:"true" json:"toolIterationLimit,omitempty"`
+	// AllowedTools restricts the tools this conversation is offered and may call: a JSON array of
+	// MCP tool names, empty (NULL) for no restriction. Set once at creation, like PlatformID and
+	// Model, and never updated. It can only narrow what the caller may already use: the scope
+	// check still applies to every tool that is offered. Never echoed back (json:"-"): a caller
+	// that created it knows what it asked for. See
+	// plan/ai/tools/career/step-113-human-in-the-loop-for-ai-personas.md.
+	AllowedTools string `db:"allowed_tools" dbtype:"TEXT" nullable:"true" json:"-"`
+}
+
+// MaxAllowedTools and maxAllowedToolNameLength bound a client-supplied allowlist.
+const (
+	MaxAllowedTools          = 100
+	maxAllowedToolNameLength = 128
+)
+
+// ErrInvalidAllowedTools is returned by ParseAllowedTools; its message is safe to show a caller.
+var ErrInvalidAllowedTools = errors.New("invalid allowedTools")
+
+// ParseAllowedTools normalizes a client-supplied allowlist. nil (the field was omitted) means no
+// restriction and returns nil. An empty list is refused (a conversation that may call nothing is
+// a mistake, not a policy), as are blank or over-long names and too many names. Names are
+// trimmed and de-duplicated, the first order kept.
+func ParseAllowedTools(raw []string) ([]string, error) {
+	if raw == nil {
+		return nil, nil
+	}
+	if len(raw) == 0 {
+		return nil, fmt.Errorf("%w: omit it for no restriction, or list at least one tool", ErrInvalidAllowedTools)
+	}
+	if len(raw) > MaxAllowedTools {
+		return nil, fmt.Errorf("%w: at most %d tools", ErrInvalidAllowedTools, MaxAllowedTools)
+	}
+	seen := make(map[string]struct{}, len(raw))
+	names := make([]string, 0, len(raw))
+	for _, n := range raw {
+		n = strings.TrimSpace(n)
+		if n == "" || len(n) > maxAllowedToolNameLength {
+			return nil, fmt.Errorf("%w: every name must be 1 to %d characters", ErrInvalidAllowedTools, maxAllowedToolNameLength)
+		}
+		if _, dup := seen[n]; dup {
+			continue
+		}
+		seen[n] = struct{}{}
+		names = append(names, n)
+	}
+	return names, nil
+}
+
+// EncodeAllowedTools is the column value for an allowlist: "" for none (stored as NULL).
+func EncodeAllowedTools(names []string) (string, error) {
+	if names == nil {
+		return "", nil
+	}
+	b, err := json.Marshal(names)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+// AllowedToolNames returns the conversation's allowlist, nil when it has none (no restriction).
+// A stored value that cannot be read fails closed: an empty, non-nil list, so nothing is
+// allowed, never everything.
+func (c *Conversation) AllowedToolNames() []string {
+	if c == nil || c.AllowedTools == "" {
+		return nil
+	}
+	var names []string
+	if err := json.Unmarshal([]byte(c.AllowedTools), &names); err != nil || names == nil {
+		return []string{}
+	}
+	return names
 }
 
 // MaxToolIterationLimit mirrors the conversation package's own ceiling

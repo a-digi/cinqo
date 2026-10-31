@@ -198,6 +198,8 @@ func runDetachedTurn(
 		finishTurnRun(runs, turnRunID, "failed")
 		return
 	}
+	// A conversation created with an allowlist (step 113) is offered, and may call, only those.
+	ctx, tools = applyToolAllowlist(ctx, tools, conv)
 	// A composer orchestrator gets the system prompt that makes it
 	// plan and delegate, including the catalog of tools its workers
 	// can use; a direct conversation gets none, exactly as before

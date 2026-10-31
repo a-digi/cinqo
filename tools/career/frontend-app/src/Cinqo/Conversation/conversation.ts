@@ -17,6 +17,9 @@ export interface Conversation {
   startedAt: string
   platformId: string
   model: string
+  // The tools the conversation is restricted to; missing when it is not restricted. Echoed by the
+  // server (step 113) so a caller that asked for a restriction can check it took effect.
+  allowedTools?: string[]
 }
 
 // hidden (step 33, plan/ai/conversation/step-30-hidden-conversations.md)
@@ -33,6 +36,9 @@ export async function createConversation(input: {
   // toolIterationLimit (step 93) lowers how many model calls one turn may make
   // (1 to 15; omitted means the server default of 15). Only lowers, never raises.
   toolIterationLimit?: number
+  // allowedTools (step 113) restricts the conversation to these MCP tools: only they are offered
+  // to the model and any other call is refused. Omitted means no restriction.
+  allowedTools?: string[]
 }): Promise<Conversation> {
   // toolSlug is always "career" here, never caller-supplied — every
   // conversation this function creates (Job Match, Generate CV PDF,

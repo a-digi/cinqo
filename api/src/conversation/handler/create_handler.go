@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -15,6 +17,7 @@ import (
 	conversation_persistent "github.com/a-digi/cinqo/src/conversation/repository/persistent"
 	conversation_query "github.com/a-digi/cinqo/src/conversation/repository/query"
 	"github.com/a-digi/cinqo/src/platform"
+	tool_query "github.com/a-digi/cinqo/src/tool/repository/query"
 )
 
 type createConversationRequest struct {
@@ -38,6 +41,10 @@ type createConversationRequest struct {
 	// ToolIterationLimit (step 93) — optional, 1 to entity.MaxToolIterationLimit.
 	// Lowers how many model calls one turn may make; omitted means the default.
 	ToolIterationLimit *int `json:"toolIterationLimit"`
+	// AllowedTools (step 113) — optional: the MCP tools this conversation is offered and may
+	// call, and nothing else. Omitted means no restriction; an empty list, an unknown tool name
+	// or composer mode is a 400. It can only narrow what the caller may already use.
+	AllowedTools []string `json:"allowedTools"`
 }
 
 // CreateHandler handles POST /api/v1/conversations. title defaults to
@@ -90,6 +97,34 @@ func CreateHandler(reqCtx request.RequestContext) {
 		return
 	}
 
+	allowedTools, err := conversation_entity.ParseAllowedTools(body.AllowedTools)
+	if err != nil {
+		response.ErrorResponse(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if allowedTools != nil && orchestrationMode != conversation_entity.OrchestrationModeDirect {
+		response.ErrorResponse(w, http.StatusBadRequest, "allowedTools is only supported in direct mode")
+		return
+	}
+	if allowedTools != nil {
+		toolRepo := tool_query.NewToolMCPToolQueryRepo(reqCtx.GetDI().GetDatabaseManager().Connector.DB)
+		for _, name := range allowedTools {
+			if _, err := toolRepo.FindMCPToolByName(name); err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					response.ErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("allowedTools: unknown tool %q", name))
+					return
+				}
+				response.ErrorResponse(w, http.StatusInternalServerError, "failed to check allowedTools")
+				return
+			}
+		}
+	}
+	encodedTools, err := conversation_entity.EncodeAllowedTools(allowedTools)
+	if err != nil {
+		response.ErrorResponse(w, http.StatusInternalServerError, "failed to store allowedTools")
+		return
+	}
+
 	userID, err := callerUserID(reqCtx)
 	if err != nil {
 		response.ErrorResponse(w, http.StatusUnauthorized, "unauthorized")
@@ -121,6 +156,7 @@ func CreateHandler(reqCtx request.RequestContext) {
 
 		OrchestrationMode:  orchestrationMode,
 		ToolIterationLimit: body.ToolIterationLimit,
+		AllowedTools:       encodedTools,
 	}
 
 	if err := conversation_persistent.NewConversationPersistentRepo(db).Insert(c); err != nil {

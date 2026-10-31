@@ -242,6 +242,7 @@ func SendMessage(
 	if err != nil {
 		return nil, fmt.Errorf("conversation: look up offerable tools: %w", err)
 	}
+	ctx, tools = applyToolAllowlist(ctx, tools, conv)
 
 	assistantContent, err := runToolLoop(ctx, httpClient, entry, plainKey, model, messages, tools, mainDB, callerScopes, conv.UserID, dataDir, corePort, conversationID, conversationDB, "", 0, conversation_entity.OrchestrationModeDirect, nil, nil, nil, toolLimitOf(conv))
 	if err != nil {
@@ -514,6 +515,11 @@ func runToolLoop(
 			var text string
 			var links []tool_mcp.ResourceLink
 			switch {
+			case refusesDisallowedTool(ctx, call.Name):
+				// The conversation was created with an allowlist (step 113) and this tool is not on
+				// it: refused before anything else can handle the name, the orchestration and
+				// sub-agent tools included.
+				text = "tool unavailable"
 			case refusesUnofferedCall(orchestrationMode, depth, call.Name, tools):
 				// Defense in depth: a composer orchestrator and every
 				// sub-agent may only call what they were actually

@@ -13,63 +13,161 @@ import (
 	"career-tool-backend/db"
 )
 
-// Applying a reviewed proposal (step 112): the personas the user accepted (possibly edited) are
-// created in one transaction, each with its details, skills and experience, under the run's own
-// profile and linked to the run. Either all of them exist afterwards or none. See
-// plan/ai/tools/career/step-112-create-personas-with-ai.md.
+// Deciding on a proposal (steps 112 and 113): every proposed persona is accepted or declined by the
+// user. The accepted ones (possibly edited) are created in one transaction, each with its details,
+// skills and experience, under the run's own profile and linked to the run; the declined ones are
+// recorded on the run. Either all of it happens or none of it, and the run is then closed
+// (decided_at), so it cannot be decided twice. See
+// plan/ai/tools/career/step-112-create-personas-with-ai.md and
+// plan/ai/tools/career/step-113-human-in-the-loop-for-ai-personas.md.
 
 var (
-	ErrAiRunNotReady = errors.New("this run has no proposal to apply")
-	ErrAiRunApplied  = errors.New("this run was already applied")
+	ErrAiRunNotReady = errors.New("this run has no proposal to decide on")
+	ErrAiRunDecided  = errors.New("this run was already decided")
 )
 
-// ApplyAiRun creates the personas under the run's profile and returns them in the order given.
-// The run must be 'ready' and must not have personas yet (applied is read from the personas, not
-// stored twice, so deleting what it created makes it applicable again). The personas are
-// validated exactly like a proposal; skills are trimmed and de-duplicated, text trimmed.
-func ApplyAiRun(runID string, personas []ProposedPersona) ([]aiRunPersona, error) {
-	if len(personas) == 0 {
-		return nil, invalid("there is nothing to apply (no persona was accepted)")
-	}
-	normalized := make([]ProposedPersona, len(personas))
-	for i, p := range personas {
-		normalized[i] = normalizePersona(p)
-	}
-	if err := ValidateProposal(Proposal{Personas: normalized}); err != nil {
-		return nil, err
-	}
+const (
+	decisionAccepted = "accepted"
+	decisionDeclined = "declined"
+)
 
+// Decision is the user's decision on the proposed persona at Index (its position in the run's
+// proposal): accepted with the final, possibly edited content, or declined with none.
+type Decision struct {
+	Index    int              `json:"index"`
+	Decision string           `json:"decision"`
+	Persona  *ProposedPersona `json:"persona,omitempty"`
+}
+
+type decidableRun struct {
+	profileID string
+	proposed  []ProposedPersona
+}
+
+// loadDecidableRun reads the run inside tx and checks it can still be decided: it exists, it is
+// 'ready' with something proposed, and it has not been decided yet.
+func loadDecidableRun(tx *sql.Tx, runID string) (decidableRun, error) {
+	var run decidableRun
+	var status string
+	var decidedAt, proposalJSON sql.NullString
+	switch err := tx.QueryRow(
+		`SELECT profile_id, status, decided_at, proposal_json FROM persona_ai_runs WHERE id = ?`, runID,
+	).Scan(&run.profileID, &status, &decidedAt, &proposalJSON); {
+	case err == sql.ErrNoRows:
+		return run, ErrUnknownAiRun
+	case err != nil:
+		return run, err
+	}
+	if status != runReady {
+		return run, ErrAiRunNotReady
+	}
+	if decidedAt.Valid {
+		return run, ErrAiRunDecided
+	}
+	var proposal Proposal
+	if err := json.Unmarshal([]byte(proposalJSON.String), &proposal); err != nil || len(proposal.Personas) == 0 {
+		return run, ErrAiRunNotReady
+	}
+	run.proposed = proposal.Personas
+	return run, nil
+}
+
+// ApplyDecisions records the user's decision on every proposed persona of the run and creates the
+// accepted ones, returned in the order of the proposal. The decisions must cover every proposed
+// persona exactly once; an accepted one carries its final content (validated like a proposal, with
+// skills trimmed and de-duplicated), a declined one carries none. Declining everything is allowed:
+// nothing is created and the run is closed.
+func ApplyDecisions(runID string, decisions []Decision) ([]aiRunPersona, error) {
 	tx, err := db.CareerDB.Begin()
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback()
 
-	var profileID, status string
-	switch err := tx.QueryRow(`SELECT profile_id, status FROM persona_ai_runs WHERE id = ?`, runID).Scan(&profileID, &status); {
-	case err == sql.ErrNoRows:
-		return nil, ErrUnknownAiRun
-	case err != nil:
+	run, err := loadDecidableRun(tx, runID)
+	if err != nil {
 		return nil, err
 	}
-	if status != runReady {
-		return nil, ErrAiRunNotReady
-	}
-	var already int
-	if err := tx.QueryRow(`SELECT COUNT(*) FROM personas WHERE ai_run_id = ?`, runID).Scan(&already); err != nil {
+	accepted, declined, err := resolveDecisions(run.proposed, decisions)
+	if err != nil {
 		return nil, err
 	}
-	if already > 0 {
-		return nil, ErrAiRunApplied
-	}
+	return commitDecision(tx, run.profileID, runID, accepted, declined)
+}
 
-	created := make([]aiRunPersona, 0, len(normalized))
-	for _, p := range normalized {
+// resolveDecisions checks the decisions against the proposal and splits them: the accepted
+// personas (normalized, in proposal order) and the names of the declined ones (as proposed).
+func resolveDecisions(proposed []ProposedPersona, decisions []Decision) ([]ProposedPersona, []string, error) {
+	if len(decisions) != len(proposed) {
+		return nil, nil, invalid("a decision is needed for every proposed persona (%d), got %d", len(proposed), len(decisions))
+	}
+	byIndex := make(map[int]Decision, len(decisions))
+	for _, d := range decisions {
+		if d.Index < 0 || d.Index >= len(proposed) {
+			return nil, nil, invalid("decision for persona %d: there is no such proposed persona", d.Index)
+		}
+		if _, dup := byIndex[d.Index]; dup {
+			return nil, nil, invalid("persona %d has more than one decision", d.Index)
+		}
+		switch d.Decision {
+		case decisionAccepted:
+			if d.Persona == nil {
+				return nil, nil, invalid("persona %d is accepted but has no content", d.Index)
+			}
+		case decisionDeclined:
+			if d.Persona != nil {
+				return nil, nil, invalid("persona %d is declined, so it must not carry content", d.Index)
+			}
+		default:
+			return nil, nil, invalid("persona %d: the decision must be %q or %q", d.Index, decisionAccepted, decisionDeclined)
+		}
+		byIndex[d.Index] = d
+	}
+	var accepted []ProposedPersona
+	var declined []string
+	for i := range proposed {
+		d := byIndex[i]
+		if d.Decision == decisionAccepted {
+			accepted = append(accepted, normalizePersona(*d.Persona))
+		} else {
+			declined = append(declined, proposed[i].Name)
+		}
+	}
+	if len(accepted) > 0 {
+		if err := ValidateProposal(Proposal{Personas: accepted}); err != nil {
+			return nil, nil, err
+		}
+	}
+	return accepted, declined, nil
+}
+
+// commitDecision creates the accepted personas, records the declined names, closes the run and
+// commits, all in tx.
+func commitDecision(tx *sql.Tx, profileID, runID string, accepted []ProposedPersona, declinedNames []string) ([]aiRunPersona, error) {
+	created := make([]aiRunPersona, 0, len(accepted))
+	for _, p := range accepted {
 		id, err := insertAppliedPersona(tx, profileID, runID, p)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create persona %q: %w", p.Name, err)
 		}
 		created = append(created, aiRunPersona{ID: id, Name: p.Name})
+	}
+	var declinedJSON any // NULL when nothing was declined
+	if len(declinedNames) > 0 {
+		list := make([]aiRunDeclined, len(declinedNames))
+		for i, n := range declinedNames {
+			list[i] = aiRunDeclined{Name: n}
+		}
+		raw, err := json.Marshal(list)
+		if err != nil {
+			return nil, err
+		}
+		declinedJSON = string(raw)
+	}
+	if _, err := tx.Exec(
+		`UPDATE persona_ai_runs SET decided_at = datetime('now'), declined_json = ? WHERE id = ?`, declinedJSON, runID,
+	); err != nil {
+		return nil, err
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
@@ -142,8 +240,10 @@ func normalizePersona(p ProposedPersona) ProposedPersona {
 }
 
 type applyAiRunRequest struct {
-	RunID    string            `json:"runId"`
-	Personas []ProposedPersona `json:"personas"`
+	RunID string `json:"runId"`
+	// Decisions is one decision for every proposed persona. The step 112 body (only the accepted
+	// personas, as "personas") is no longer accepted: it has no decision for the others.
+	Decisions []Decision `json:"decisions"`
 }
 
 // AiRunApplyHandler handles POST persona-ai-runs/apply.
@@ -154,20 +254,24 @@ func AiRunApplyHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	var body applyAiRunRequest
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.RunID == "" {
-		http.Error(w, "runId and personas are required", http.StatusBadRequest)
+		http.Error(w, "runId and decisions are required", http.StatusBadRequest)
 		return
 	}
-	created, err := ApplyAiRun(body.RunID, body.Personas)
+	if body.Decisions == nil {
+		http.Error(w, "decisions is required: a decision for every proposed persona", http.StatusBadRequest)
+		return
+	}
+	created, err := ApplyDecisions(body.RunID, body.Decisions)
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrUnknownAiRun):
 			http.Error(w, "unknown run id", http.StatusBadRequest)
 		case errors.Is(err, ErrInvalidProposal):
 			http.Error(w, err.Error(), http.StatusBadRequest)
-		case errors.Is(err, ErrAiRunNotReady), errors.Is(err, ErrAiRunApplied):
+		case errors.Is(err, ErrAiRunNotReady), errors.Is(err, ErrAiRunDecided):
 			http.Error(w, err.Error(), http.StatusConflict)
 		default:
-			http.Error(w, "failed to apply the run: "+err.Error(), http.StatusInternalServerError)
+			http.Error(w, "failed to decide on the run: "+err.Error(), http.StatusInternalServerError)
 		}
 		return
 	}

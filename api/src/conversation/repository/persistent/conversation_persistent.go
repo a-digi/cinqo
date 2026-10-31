@@ -28,9 +28,13 @@ func (r *ConversationPersistentRepo) Insert(c *conversation_entity.Conversation)
 	if c.ToolIterationLimit != nil {
 		limit = *c.ToolIterationLimit
 	}
+	var allowed any // NULL unless the creator restricted the tools (step 113)
+	if c.AllowedTools != "" {
+		allowed = c.AllowedTools
+	}
 	_, err := r.db.Exec(
-		`INSERT INTO conversations (id, user_id, title, file_path, platform_id, model, hidden, tool_slug, orchestration_mode, tool_iteration_limit) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		c.ID, c.UserID, c.Title, c.FilePath, c.PlatformID, c.Model, c.Hidden, c.ToolSlug, mode, limit,
+		`INSERT INTO conversations (id, user_id, title, file_path, platform_id, model, hidden, tool_slug, orchestration_mode, tool_iteration_limit, allowed_tools) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		c.ID, c.UserID, c.Title, c.FilePath, c.PlatformID, c.Model, c.Hidden, c.ToolSlug, mode, limit, allowed,
 	)
 	return err
 }

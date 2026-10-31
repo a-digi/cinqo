@@ -139,3 +139,50 @@ func TestToolIterationLimitRejectsZeroAtTheDatabase(t *testing.T) {
 		t.Error("a limit of 0 must be rejected by the CHECK constraint")
 	}
 }
+
+func TestAllowedToolsRoundTripAndDefault(t *testing.T) {
+	db := openConversationDB(t)
+	repo := conversation_persistent.NewConversationPersistentRepo(db)
+	q := conversation_query.NewConversationQueryRepo(db)
+
+	enc, err := conversation_entity.EncodeAllowedTools([]string{"list_personas", "get_persona_details"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	restricted := newConversation("c-restricted", conversation_entity.OrchestrationModeDirect)
+	restricted.AllowedTools = enc
+	for _, c := range []*conversation_entity.Conversation{newConversation("c-open", conversation_entity.OrchestrationModeDirect), restricted} {
+		if err := repo.Insert(c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A row written before the column existed has no restriction.
+	if _, err := db.Exec(`INSERT INTO conversations (id, user_id, title, file_path, platform_id, model, hidden) VALUES ('old', 'u1', 't', '/tmp/old', 'p', 'm', 0)`); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, read := range map[string]func(id string) (*conversation_entity.Conversation, error){
+		"FindByID":      func(id string) (*conversation_entity.Conversation, error) { return q.FindByID(id) },
+		"FindOwnedByID": func(id string) (*conversation_entity.Conversation, error) { return q.FindOwnedByID(id, "u1") },
+	} {
+		got, err := read("c-restricted")
+		if err != nil || len(got.AllowedToolNames()) != 2 || got.AllowedToolNames()[0] != "list_personas" {
+			t.Errorf("restricted: names=%v err=%v", got.AllowedToolNames(), err)
+		}
+		for _, id := range []string{"c-open", "old"} {
+			got, err := read(id)
+			if err != nil || got.AllowedToolNames() != nil {
+				t.Errorf("%s: names=%v err=%v, want no restriction (nil)", id, got.AllowedToolNames(), err)
+			}
+		}
+	}
+	list, err := q.ListOwnedBy("u1")
+	if err != nil || len(list) != 3 {
+		t.Fatalf("list: %d rows, err %v", len(list), err)
+	}
+	for _, c := range list {
+		if (c.ID == "c-restricted") != (c.AllowedToolNames() != nil) {
+			t.Errorf("list: %s has names %v", c.ID, c.AllowedToolNames())
+		}
+	}
+}

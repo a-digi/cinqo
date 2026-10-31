@@ -105,9 +105,18 @@ export interface PersonaAiRun {
   error?: string
   createdAt: string
   finishedAt?: string
-  // The personas created from this run; empty until a proposal is applied.
+  // The personas created from this run; empty until the proposal is decided (and when every
+  // persona was declined).
   personas: { id: string; name: string }[]
+  // When the user decided on the whole proposal (missing until then), and the proposed personas
+  // they declined (step 113).
+  decidedAt?: string
+  declined: { name: string }[]
 }
+
+// The user's decision on the proposed persona at `index` (its position in the proposal): accepted
+// with the final, possibly edited content, or declined with none.
+export type PersonaDecision = { index: number; decision: 'accepted'; persona: ProposedPersona } | { index: number; decision: 'declined' }
 
 export async function fetchPersonaAiRuns(profileId: string): Promise<PersonaAiRun[]> {
   const res = await fetch(`${PROXY_BASE}/persona-ai-runs?profileId=${encodeURIComponent(profileId)}`, { credentials: 'include' })
@@ -127,13 +136,14 @@ export async function createPersonaAiRun(profileId: string, conversationId: stri
   return data.id
 }
 
-// Creates the personas the user accepted (possibly edited) from a ready run, in one go: all or none.
-export async function applyPersonaAiRun(runId: string, personas: ProposedPersona[]): Promise<{ id: string; name: string }[]> {
+// Records the user's decision on EVERY proposed persona of a ready run and creates the accepted ones
+// (possibly edited) in one go, all or none. The run is closed afterwards.
+export async function applyPersonaAiRun(runId: string, decisions: PersonaDecision[]): Promise<{ id: string; name: string }[]> {
   const res = await fetch(`${PROXY_BASE}/persona-ai-runs/apply`, {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ runId, personas }),
+    body: JSON.stringify({ runId, decisions }),
   })
   if (!res.ok) {
     throw new Error((await res.text()).trim() || `failed to create the personas (${res.status})`)

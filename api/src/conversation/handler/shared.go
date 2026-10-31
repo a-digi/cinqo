@@ -234,6 +234,10 @@ type conversationResponse struct {
 	// OrchestrationMode (composer step 1) — "direct" or "composer";
 	// fixed at creation. Always present.
 	OrchestrationMode string `json:"orchestrationMode"`
+	// AllowedTools (step 113) — the tools this conversation is restricted to; omitted for an
+	// unrestricted one. Echoed so a caller that asked for a restriction can check it really took
+	// effect (a server that does not know the field would silently ignore it).
+	AllowedTools []string `json:"allowedTools,omitempty"`
 }
 
 func toConversationResponse(c *conversation_entity.Conversation) conversationResponse {
@@ -246,5 +250,6 @@ func toConversationResponse(c *conversation_entity.Conversation) conversationRes
 		ToolSlug:   c.ToolSlug,
 
 		OrchestrationMode: c.OrchestrationMode,
+		AllowedTools:      c.AllowedToolNames(),
 	}
 }

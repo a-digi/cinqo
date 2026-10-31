@@ -46,6 +46,11 @@ type aiRunPersona struct {
 	Name string `json:"name"`
 }
 
+// aiRunDeclined is a proposed persona the user declined, as it was proposed.
+type aiRunDeclined struct {
+	Name string `json:"name"`
+}
+
 type aiRun struct {
 	ID             string          `json:"id"`
 	ProfileID      string          `json:"profileId"`
@@ -56,8 +61,13 @@ type aiRun struct {
 	Error          string          `json:"error,omitempty"`
 	CreatedAt      string          `json:"createdAt"`
 	FinishedAt     string          `json:"finishedAt,omitempty"`
-	// The personas created from this run; empty until a proposal is applied.
+	// The personas created from this run; empty until a proposal is decided (and when every
+	// persona was declined).
 	Personas []aiRunPersona `json:"personas"`
+	// When the user decided on the whole proposal (missing until then), and which proposed
+	// personas they declined.
+	DecidedAt string          `json:"decidedAt,omitempty"`
+	Declined  []aiRunDeclined `json:"declined"`
 }
 
 // CreateAiRun records the start of a run (status 'generating').
@@ -146,7 +156,7 @@ func ListAiRuns(profileID string) ([]aiRun, error) {
 		return nil, err
 	}
 	rows, err := db.CareerDB.Query(
-		`SELECT id, profile_id, conversation_id, focus, status, proposal_json, error, created_at, finished_at
+		`SELECT id, profile_id, conversation_id, focus, status, proposal_json, error, created_at, finished_at, decided_at, declined_json
 		 FROM persona_ai_runs WHERE profile_id = ? ORDER BY created_at DESC, rowid DESC`, profileID)
 	if err != nil {
 		return nil, err
@@ -155,8 +165,8 @@ func ListAiRuns(profileID string) ([]aiRun, error) {
 	index := map[string]int{}
 	for rows.Next() {
 		var r aiRun
-		var proposal, errText, finished sql.NullString
-		if err := rows.Scan(&r.ID, &r.ProfileID, &r.ConversationID, &r.Focus, &r.Status, &proposal, &errText, &r.CreatedAt, &finished); err != nil {
+		var proposal, errText, finished, decided, declinedJSON sql.NullString
+		if err := rows.Scan(&r.ID, &r.ProfileID, &r.ConversationID, &r.Focus, &r.Status, &proposal, &errText, &r.CreatedAt, &finished, &decided, &declinedJSON); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -165,6 +175,11 @@ func ListAiRuns(profileID string) ([]aiRun, error) {
 		}
 		r.Error = errText.String
 		r.FinishedAt = finished.String
+		r.DecidedAt = decided.String
+		r.Declined = []aiRunDeclined{}
+		if declinedJSON.Valid {
+			_ = json.Unmarshal([]byte(declinedJSON.String), &r.Declined)
+		}
 		r.Personas = []aiRunPersona{}
 		index[r.ID] = len(runs)
 		runs = append(runs, r)

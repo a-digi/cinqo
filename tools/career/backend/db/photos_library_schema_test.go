@@ -200,3 +200,104 @@ func TestInitDatabases_UpgradesAnInstallFromBeforeThePersonaAiRuns(t *testing.T)
 		CareerDB.Close()
 	}
 }
+
+// An installed persona_ai_runs table without the decision columns gets them, and a run that already
+// has personas created from it is closed (it was decided before the columns existed), with the time
+// its AI run finished; a run with none stays undecided. Running again, or with no table, is harmless.
+func TestMigratePersonaAiRunDecisions_AddsTheColumnsAndClosesRunsWithPersonas(t *testing.T) {
+	d, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "old.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	d.SetMaxOpenConns(1)
+
+	if err := migratePersonaAiRunDecisions(d); err != nil {
+		t.Fatalf("no table: %v", err)
+	}
+	for _, q := range []string{
+		`CREATE TABLE persona_ai_runs (id TEXT PRIMARY KEY, status TEXT, created_at TEXT, finished_at TEXT)`,
+		`CREATE TABLE personas (id TEXT PRIMARY KEY, ai_run_id TEXT)`,
+		`INSERT INTO persona_ai_runs VALUES ('applied', 'ready', '2026-10-01 10:00:00', '2026-10-01 10:05:00')`,
+		`INSERT INTO persona_ai_runs VALUES ('applied-unfinished', 'ready', '2026-10-02 10:00:00', NULL)`,
+		`INSERT INTO persona_ai_runs VALUES ('pending', 'ready', '2026-10-03 10:00:00', '2026-10-03 10:05:00')`,
+		`INSERT INTO persona_ai_runs VALUES ('working', 'generating', '2026-10-04 10:00:00', NULL)`,
+		`INSERT INTO personas VALUES ('p1', 'applied'), ('p2', 'applied'), ('p3', 'applied-unfinished'), ('p4', NULL)`,
+	} {
+		if _, err := d.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := 0; i < 2; i++ {
+		if err := migratePersonaAiRunDecisions(d); err != nil {
+			t.Fatalf("run %d: %v", i, err)
+		}
+	}
+	decided := func(id string) sql.NullString {
+		var v sql.NullString
+		if err := d.QueryRow(`SELECT decided_at FROM persona_ai_runs WHERE id = ?`, id).Scan(&v); err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	if v := decided("applied"); !v.Valid || v.String != "2026-10-01 10:05:00" {
+		t.Errorf("applied: %v, want the finish time", v)
+	}
+	if v := decided("applied-unfinished"); !v.Valid || v.String != "2026-10-02 10:00:00" {
+		t.Errorf("applied-unfinished: %v, want the creation time", v)
+	}
+	for _, id := range []string{"pending", "working"} {
+		if v := decided(id); v.Valid {
+			t.Errorf("%s: %v, want undecided", id, v)
+		}
+	}
+	var declined sql.NullString
+	if err := d.QueryRow(`SELECT declined_json FROM persona_ai_runs WHERE id = 'applied'`).Scan(&declined); err != nil || declined.Valid {
+		t.Errorf("declined_json = %v err=%v, want NULL", declined, err)
+	}
+}
+
+// An installed career.db from step 112 (the runs table without the decision columns, a persona that
+// came from a run, one run still to decide) is upgraded by the normal start, twice over.
+func TestInitDatabases_UpgradesAnInstallFromStep112(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("TOOL_DB_DIR", dir)
+	old, err := sql.Open("sqlite", filepath.Join(dir, "career.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		`CREATE TABLE profiles (id TEXT PRIMARY KEY, first_name TEXT NOT NULL DEFAULT '', last_name TEXT NOT NULL DEFAULT '', image_media_file_id TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT)`,
+		`CREATE TABLE persona_ai_runs (id TEXT PRIMARY KEY, profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE, conversation_id TEXT NOT NULL, focus TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'generating' CHECK (status IN ('generating','ready','failed')), proposal_json TEXT, error TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')), finished_at TEXT)`,
+		`CREATE TABLE personas (id TEXT PRIMARY KEY, profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE, name TEXT NOT NULL, description TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT, ai_run_id TEXT REFERENCES persona_ai_runs(id) ON DELETE SET NULL)`,
+		`INSERT INTO profiles (id, first_name) VALUES ('pr1', 'Ada')`,
+		`INSERT INTO persona_ai_runs (id, profile_id, conversation_id, status, proposal_json, finished_at) VALUES ('done', 'pr1', 'c1', 'ready', '{"personas":[],"note":""}', '2026-10-31 10:00:00')`,
+		`INSERT INTO persona_ai_runs (id, profile_id, conversation_id, status, proposal_json, finished_at) VALUES ('todo', 'pr1', 'c2', 'ready', '{"personas":[],"note":""}', '2026-10-31 11:00:00')`,
+		`INSERT INTO personas (id, profile_id, name, ai_run_id) VALUES ('pe1', 'pr1', 'From AI', 'done')`,
+	} {
+		if _, err := old.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	old.Close()
+
+	for i := 0; i < 2; i++ {
+		if err := InitDatabases(); err != nil {
+			t.Fatalf("start %d: %v", i, err)
+		}
+		read := func(id string) (decided, declined sql.NullString) {
+			if err := CareerDB.QueryRow(`SELECT decided_at, declined_json FROM persona_ai_runs WHERE id = ?`, id).Scan(&decided, &declined); err != nil {
+				t.Fatalf("start %d: %v", i, err)
+			}
+			return
+		}
+		if d, _ := read("done"); !d.Valid || d.String != "2026-10-31 10:00:00" {
+			t.Errorf("start %d: done decided_at = %v, want the finish time", i, d)
+		}
+		if d, dc := read("todo"); d.Valid || dc.Valid {
+			t.Errorf("start %d: todo decided_at=%v declined_json=%v, want undecided", i, d, dc)
+		}
+		JobsDB.Close()
+		CareerDB.Close()
+	}
+}

@@ -35,12 +35,27 @@ export function summarizeRun(run: PersonaAiRun): RunSummary {
     }
   }
   const proposed = names(run)
-  if (run.personas.length > 0) {
-    return {
-      label: `${run.personas.length === 1 ? '1 persona' : `${run.personas.length} personas`} created`,
-      tone: 'ready',
-      detail: run.personas.map((p) => p.name).join(', '),
-    }
+  const created = run.personas
+  const declined = run.declined
+  // A run is decided when the server says so; one with personas created from it was decided too.
+  if (run.decidedAt !== undefined || created.length > 0 || declined.length > 0) {
+    const createdText = created.length === 1 ? '1 persona created' : `${created.length} personas created`
+    const declinedText = `${declined.length} declined`
+    const label =
+      created.length > 0 && declined.length > 0
+        ? `${created.length} created, ${declined.length} declined`
+        : created.length > 0
+          ? createdText
+          : declined.length > 0
+            ? declined.length === proposed.length
+              ? 'All declined'
+              : declinedText
+            : 'Decided'
+    const parts = [
+      created.length > 0 ? created.map((p) => p.name).join(', ') : '',
+      declined.length > 0 ? `Declined: ${declined.map((p) => p.name).join(', ')}` : '',
+    ]
+    return { label, tone: 'ready', detail: parts.filter((x) => x !== '').join('. ') }
   }
   if (proposed.length === 0) {
     return {
@@ -65,9 +80,9 @@ export function hasRunningRun(runs: PersonaAiRun[]): boolean {
   return runs.some((r) => r.status === 'generating')
 }
 
-// A ready run with personas proposed and none created from it yet can be reviewed.
+// A ready run with personas proposed that the user has not decided on yet can be reviewed.
 export function canReview(run: PersonaAiRun): boolean {
-  return run.status === 'ready' && (run.proposal?.personas.length ?? 0) > 0 && run.personas.length === 0
+  return run.status === 'ready' && (run.proposal?.personas.length ?? 0) > 0 && run.decidedAt === undefined && run.personas.length === 0
 }
 
 // How many runs the history shows before "Show all".

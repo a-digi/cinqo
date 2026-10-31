@@ -97,6 +97,10 @@ func InitDatabases() error {
 		careerDB.Close()
 		return fmt.Errorf("failed to add personas.ai_run_id: %w", err)
 	}
+	if err := migratePersonaAiRunDecisions(careerDB); err != nil {
+		careerDB.Close()
+		return fmt.Errorf("failed to add the persona AI run decisions: %w", err)
+	}
 	CareerDB = careerDB
 
 	jobsDB, err := sql.Open("sqlite", filepath.Join(dbDir, "jobs.db"))
@@ -202,7 +206,11 @@ CREATE TABLE IF NOT EXISTS persona_ai_runs (
     proposal_json   TEXT,
     error           TEXT,
     created_at      TEXT NOT NULL DEFAULT (datetime('now')),
-    finished_at     TEXT
+    finished_at     TEXT,
+    -- Step 113: when the user decided on the whole proposal (accepted or declined every persona),
+    -- and the proposed personas they declined, as proposed: [{"name": "..."}]. NULL until decided.
+    decided_at      TEXT,
+    declined_json   TEXT
 );
 
 CREATE INDEX IF NOT EXISTS persona_ai_runs_profile_idx ON persona_ai_runs(profile_id);
@@ -1062,6 +1070,31 @@ func migratePersonasAiRunID(db *sql.DB) error {
 		return nil
 	}
 	_, err = db.Exec(`ALTER TABLE personas ADD COLUMN ai_run_id TEXT REFERENCES persona_ai_runs(id) ON DELETE SET NULL`)
+	return err
+}
+
+// migratePersonaAiRunDecisions adds decided_at and declined_json to an installed persona_ai_runs
+// table (step 113) and closes the runs that already have personas created from them: those were
+// decided before the columns existed. Idempotent, so it is safe on every start; a run with no
+// personas stays undecided and can still be reviewed. A no-op on a brand-new install (the base
+// schema already has the columns). Runs right after the base schema, which creates the table.
+func migratePersonaAiRunDecisions(db *sql.DB) error {
+	for _, col := range []string{"decided_at", "declined_json"} {
+		exists, hasColumn, err := tableHasColumn(db, "persona_ai_runs", col)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return nil
+		}
+		if !hasColumn {
+			if _, err := db.Exec(`ALTER TABLE persona_ai_runs ADD COLUMN ` + col + ` TEXT`); err != nil {
+				return err
+			}
+		}
+	}
+	_, err := db.Exec(`UPDATE persona_ai_runs SET decided_at = COALESCE(finished_at, created_at)
+		WHERE decided_at IS NULL AND id IN (SELECT ai_run_id FROM personas WHERE ai_run_id IS NOT NULL)`)
 	return err
 }
 

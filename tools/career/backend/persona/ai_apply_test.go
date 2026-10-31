@@ -2,7 +2,6 @@ package persona
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,15 +10,6 @@ import (
 	"career-tool-backend/db"
 	"career-tool-backend/profile"
 )
-
-func readyRun(t *testing.T, profileID string) string {
-	t.Helper()
-	id := mustRun(t, profileID)
-	if err := FinishAiRun(id, "ready", []byte(personasJSON(okPersona)), ""); err != nil {
-		t.Fatal(err)
-	}
-	return id
-}
 
 func pp(name string, skills []string, roles ...ProposedRole) ProposedPersona {
 	return ProposedPersona{
@@ -38,14 +28,14 @@ func count(t *testing.T, q string, args ...any) int {
 	return n
 }
 
-func TestApplyAiRun_CreatesEverythingUnderTheRunsProfile(t *testing.T) {
+func TestApplyDecisions_CreatesEverythingUnderTheRunsProfile(t *testing.T) {
 	pid := setupRunsDB(t)
 	other, _ := profile.CreateProfile("Alan", "Turing")
-	run := readyRun(t, pid)
+	run := runWith(t, pid, "Backend", "Management")
 
-	created, err := ApplyAiRun(run, []ProposedPersona{
-		pp("  Backend  ", []string{" Go ", "go", "SQL", "GO"}, ProposedRole{Company: " Acme ", Title: "Dev", StartDate: "2020", EndDate: "", Description: " built things "}),
-		pp("Management", []string{"Leadership"}),
+	created, err := ApplyDecisions(run, []Decision{
+		accept(0, pp("  Backend  ", []string{" Go ", "go", "SQL", "GO"}, ProposedRole{Company: " Acme ", Title: "Dev", StartDate: "2020", EndDate: "", Description: " built things "})),
+		accept(1, pp("Management", []string{"Leadership"})),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -107,94 +97,14 @@ func TestApplyAiRun_CreatesEverythingUnderTheRunsProfile(t *testing.T) {
 	}
 }
 
-// All or none: a failure while writing the second persona leaves nothing of the first.
-func TestApplyAiRun_IsAllOrNothing(t *testing.T) {
-	pid := setupRunsDB(t)
-	run := readyRun(t, pid)
-	exec(t, `CREATE TRIGGER boom BEFORE INSERT ON career_experience WHEN NEW.company = 'BOOM' BEGIN SELECT RAISE(ABORT, 'boom'); END`)
-
-	_, err := ApplyAiRun(run, []ProposedPersona{
-		pp("First", []string{"Go"}, ProposedRole{Company: "Fine", Title: "T"}),
-		pp("Second", []string{"SQL"}, ProposedRole{Company: "BOOM", Title: "T"}),
-	})
-	if err == nil {
-		t.Fatal("the failing insert was not reported")
-	}
-	for _, q := range []string{
-		`SELECT COUNT(*) FROM personas`, `SELECT COUNT(*) FROM persona_details`,
-		`SELECT COUNT(*) FROM career_skills`, `SELECT COUNT(*) FROM career_experience`,
-	} {
-		if n := count(t, q); n != 0 {
-			t.Fatalf("%s = %d after a failed apply, want 0", q, n)
-		}
-	}
-	// The run is still applicable.
-	exec(t, `DROP TRIGGER boom`)
-	if _, err := ApplyAiRun(run, []ProposedPersona{pp("First", nil)}); err != nil {
-		t.Fatalf("a retry after the failure: %v", err)
-	}
-}
-
-func TestApplyAiRun_Refusals(t *testing.T) {
-	pid := setupRunsDB(t)
-	run := readyRun(t, pid)
-	good := []ProposedPersona{pp("Backend", []string{"Go"})}
-
-	if _, err := ApplyAiRun("nope", good); !errors.Is(err, ErrUnknownAiRun) {
-		t.Errorf("unknown run: %v", err)
-	}
-	// Not ready: still generating, and failed.
-	gen := mustRun(t, pid)
-	if _, err := ApplyAiRun(gen, good); !errors.Is(err, ErrAiRunNotReady) {
-		t.Errorf("generating run: %v", err)
-	}
-	failed := mustRun(t, pid)
-	_ = FinishAiRun(failed, "failed", nil, "boom")
-	if _, err := ApplyAiRun(failed, good); !errors.Is(err, ErrAiRunNotReady) {
-		t.Errorf("failed run: %v", err)
-	}
-	// Invalid requests: nothing accepted, too many, a duplicate name, markup, a missing name.
-	for name, ps := range map[string][]ProposedPersona{
-		"none":        nil,
-		"too many":    {pp("A", nil), pp("B", nil), pp("C", nil), pp("D", nil)},
-		"duplicate":   {pp("Same", nil), pp("same ", nil)},
-		"markup":      {pp("<b>x</b>", nil)},
-		"blank name":  {pp("   ", nil)},
-		"empty skill": {pp("S", []string{" "})},
-		"bad role":    {pp("R", nil, ProposedRole{Company: "", Title: "T"})},
-	} {
-		if _, err := ApplyAiRun(run, ps); !errors.Is(err, ErrInvalidProposal) {
-			t.Errorf("%s: %v", name, err)
-		}
-	}
-	if n := count(t, `SELECT COUNT(*) FROM personas`); n != 0 {
-		t.Fatalf("%d personas after only refusals", n)
-	}
-
-	// Applied once, never twice; deleting what it created makes it applicable again.
-	if _, err := ApplyAiRun(run, good); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := ApplyAiRun(run, good); !errors.Is(err, ErrAiRunApplied) {
-		t.Errorf("second apply: %v", err)
-	}
-	if n := count(t, `SELECT COUNT(*) FROM personas WHERE ai_run_id = ?`, run); n != 1 {
-		t.Fatalf("%d personas after a refused second apply", n)
-	}
-	exec(t, `DELETE FROM personas WHERE ai_run_id = ?`, run)
-	if _, err := ApplyAiRun(run, good); err != nil {
-		t.Errorf("apply after the personas were deleted: %v", err)
-	}
-}
-
 // A name that an existing persona of the profile already has is allowed: the review only hints.
-func TestApplyAiRun_AllowsANameThePersonaAlreadyHas(t *testing.T) {
+func TestApplyDecisions_AllowsANameThePersonaAlreadyHas(t *testing.T) {
 	pid := setupRunsDB(t)
 	if _, err := CreatePersona(pid, "Backend", ""); err != nil {
 		t.Fatal(err)
 	}
-	run := readyRun(t, pid)
-	if _, err := ApplyAiRun(run, []ProposedPersona{pp("Backend", nil)}); err != nil {
+	run := runWith(t, pid, "Backend")
+	if _, err := ApplyDecisions(run, []Decision{accept(0, pp("Backend", nil))}); err != nil {
 		t.Fatal(err)
 	}
 	if n := count(t, `SELECT COUNT(*) FROM personas WHERE name = 'Backend'`); n != 2 {
@@ -209,31 +119,27 @@ func apply(t *testing.T, body string) *httptest.ResponseRecorder {
 	return w
 }
 
-func TestAiRunApplyHandler(t *testing.T) {
+// The step 112 body (only the accepted personas) is gone: it has no decision for the others.
+func TestAiRunApplyHandler_TheOldBodyIsRefused(t *testing.T) {
 	pid := setupRunsDB(t)
-	run := readyRun(t, pid)
-	one := `[{"name":"Backend","description":"","details":{"headline":"h","summary":"s","location":"","desiredTitles":"","desiredLocations":"","minSalary":0},"skills":["Go"],"experience":[]}]`
-
-	for name, body := range map[string]string{"not json": `x`, "no run": `{"personas":` + one + `}`, "unknown run": `{"runId":"nope","personas":` + one + `}`, "nothing": `{"runId":"` + run + `","personas":[]}`, "markup": `{"runId":"` + run + `","personas":[{"name":"<i>x</i>"}]}`} {
+	run := runWith(t, pid, "Alpha", "Beta")
+	one := `[{"name":"Alpha","description":"","details":{"headline":"h","summary":"s","location":"","desiredTitles":"","desiredLocations":"","minSalary":0},"skills":["Go"],"experience":[]}]`
+	for name, body := range map[string]string{
+		"personas only": `{"runId":"` + run + `","personas":` + one + `}`,
+		"not json":      `x`,
+		"no run":        `{"decisions":[]}`,
+	} {
 		if w := apply(t, body); w.Code != http.StatusBadRequest {
 			t.Errorf("%s: %d, want 400 (%s)", name, w.Code, w.Body)
 		}
 	}
-	w := apply(t, `{"runId":"`+run+`","personas":`+one+`}`)
-	var got struct {
-		Personas []aiRunPersona `json:"personas"`
+	if n := count(t, `SELECT COUNT(*) FROM personas`); n != 0 {
+		t.Fatalf("%d personas created by refused bodies", n)
 	}
-	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &got) != nil || len(got.Personas) != 1 || got.Personas[0].Name != "Backend" {
-		t.Fatalf("apply: %d %s", w.Code, w.Body)
+	if decidedAt, _ := runRow(t, run); decidedAt != nil {
+		t.Fatal("a refused body decided the run")
 	}
-	if w := apply(t, `{"runId":"`+run+`","personas":`+one+`}`); w.Code != http.StatusConflict {
-		t.Errorf("second apply: %d, want 409", w.Code)
-	}
-	gen := mustRun(t, pid)
-	if w := apply(t, `{"runId":"`+gen+`","personas":`+one+`}`); w.Code != http.StatusConflict {
-		t.Errorf("generating run: %d, want 409", w.Code)
-	}
-	w = httptest.NewRecorder()
+	w := httptest.NewRecorder()
 	AiRunApplyHandler(w, httptest.NewRequest(http.MethodGet, "/persona-ai-runs/apply", nil))
 	if w.Code != http.StatusMethodNotAllowed {
 		t.Errorf("GET: %d", w.Code)

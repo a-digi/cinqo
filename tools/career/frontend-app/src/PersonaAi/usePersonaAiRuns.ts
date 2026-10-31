@@ -5,6 +5,7 @@ import { awaitTurnCompletion, createConversation, sendMessage, type SendMessageR
 import type { AiChoice } from '../Cinqo/Platform/aiChoice'
 import { buildPersonaPrompt, personaAiConversationTitle } from './buildPersonaPrompt'
 import { parseProposalReply } from './personaProposal'
+import { PERSONA_RUN_TOOLS, RESTRICTION_NOT_APPLIED_MESSAGE, restrictionHolds } from './personaTools'
 
 // The runs of one profile's "create personas with AI" (step 112): the list, starting a run, and
 // finishing it when the AI's turn ends. A run is a hidden conversation (like Job Match), recorded
@@ -105,6 +106,8 @@ export function usePersonaAiRuns(profileId: string | null) {
         platformId: ai.platform.id,
         model: ai.model ?? undefined,
         hidden: true,
+        // The AI only reads in this run (step 113): the server enforces it, not just the prompt.
+        allowedTools: [...PERSONA_RUN_TOOLS],
       }).catch((err: unknown) => {
         // The same friendly message the other AI flows give a person without AI access.
         if (err instanceof CoreApiError && (err.status === 401 || err.status === 403)) {
@@ -112,6 +115,11 @@ export function usePersonaAiRuns(profileId: string | null) {
         }
         throw err
       })
+      // The restriction must really be in place before the AI sees a single message: a server that
+      // does not know it would ignore the field and leave the AI free to write.
+      if (!restrictionHolds(conversation.allowedTools, PERSONA_RUN_TOOLS)) {
+        throw new Error(RESTRICTION_NOT_APPLIED_MESSAGE)
+      }
       // Recorded before the first message, so a reload in between still has something to resume.
       const runId = await createPersonaAiRun(profile.id, conversation.id, focus.trim())
       window.__cinqoToolBridge.openConversation(conversation.id)
