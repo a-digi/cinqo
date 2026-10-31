@@ -1,7 +1,8 @@
 import { Link } from 'react-router-dom'
 import { Pill } from '../../../Shared/Components/Pill/Pill'
 import { safeLink, type ListData, type ListItem } from '../widgetKinds'
-import { initialOf, type Accent } from '../widgetTheme'
+import type { Accent } from '../../../Shared/Components/CardArt/accents'
+import { initialOf } from '../widgetTheme'
 
 function Row({ item, accent }: { item: ListItem; accent: Accent }) {
   const link = safeLink(item.link)

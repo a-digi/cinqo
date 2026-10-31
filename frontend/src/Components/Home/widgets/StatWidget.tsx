@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { deltaDisplay, formatStatValue } from '../widgetDisplay'
 import { safeLink, type StatData } from '../widgetKinds'
-import type { Accent } from '../widgetTheme'
+import type { Accent } from '../../../Shared/Components/CardArt/accents'
 
 const toneColors = { good: '#16a34a', bad: '#dc2626', neutral: '#6b7280' } as const
 const toneSoft = { good: '#dcfce7', bad: '#fee2e2', neutral: '#f3f4f6' } as const

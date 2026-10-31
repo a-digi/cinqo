@@ -1,4 +1,4 @@
-import { IconBadge } from './widgetIcons'
+import { IconBadge } from '../../Shared/Components/CardArt/icons'
 import { widgetTheme } from './widgetTheme'
 import { IconButton } from '../../Shared/Components/IconButton/IconButton'
 import { ArrowDownIcon, ArrowUpIcon, EyeIcon, EyeOffIcon } from '../../Shared/Components/IconButton/icons'

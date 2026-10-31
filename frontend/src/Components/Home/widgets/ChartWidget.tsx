@@ -1,6 +1,6 @@
 import { chartGeometry, formatBarValue, seriesColors, showBarValues, type ChartBox } from '../widgetDisplay'
 import type { ChartData } from '../widgetKinds'
-import type { Accent } from '../widgetTheme'
+import type { Accent } from '../../../Shared/Components/CardArt/accents'
 
 // Room above the plot for the value labels printed over the tallest bars.
 const box: ChartBox = { width: 420, height: 150, padX: 8, padTop: 20, padBottom: 22 }

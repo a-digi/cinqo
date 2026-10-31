@@ -1,4 +1,6 @@
-import type { WidgetIcon } from './widgetTheme'
+// The icon set shared by the dashboard cards and the tool cards.
+export type WidgetIcon =
+  'tools' | 'updates' | 'chat' | 'media' | 'briefcase' | 'globe' | 'chart' | 'list' | 'number' | 'puzzle' | 'document' | 'server' | 'layers'
 
 // Stroke icons drawn in the current colour, 24x24.
 const paths: Record<WidgetIcon, React.ReactNode> = {
@@ -33,6 +35,25 @@ const paths: Record<WidgetIcon, React.ReactNode> = {
   list: <path d="M9 6.5h11M9 12h11M9 17.5h11M4.5 6.5h.01M4.5 12h.01M4.5 17.5h.01" />,
   number: <path d="M9.5 4 8 20M16 4l-1.5 16M4.5 9h16M3.5 15h16" />,
   puzzle: <path d="M10 4a2 2 0 1 1 4 0v2h4v4h-2a2 2 0 1 0 0 4h2v4h-4v-2a2 2 0 1 0-4 0v2H6v-4h2a2 2 0 1 0 0-4H6V6h4z" />,
+  document: (
+    <>
+      <path d="M7 3.5h7l4 4v12a1.5 1.5 0 0 1-1.5 1.5h-9.5A1.5 1.5 0 0 1 5.5 19.5v-14A1.5 1.5 0 0 1 7 3.5z" />
+      <path d="M14 3.5v4h4M8.5 12h7M8.5 15.5h7" />
+    </>
+  ),
+  server: (
+    <>
+      <rect x="3.5" y="4.5" width="17" height="6" rx="2" />
+      <rect x="3.5" y="13.5" width="17" height="6" rx="2" />
+      <path d="M7 7.5h.01M7 16.5h.01M11 7.5h5M11 16.5h5" />
+    </>
+  ),
+  layers: (
+    <>
+      <path d="M12 3.5 3.5 8 12 12.5 20.5 8z" />
+      <path d="m3.5 12 8.5 4.5 8.5-4.5M3.5 16l8.5 4.5 8.5-4.5" />
+    </>
+  ),
 }
 
 export function WidgetIconGlyph({ name, className = 'h-5 w-5' }: { name: WidgetIcon; className?: string }) {

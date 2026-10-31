@@ -3,7 +3,7 @@ import { ApiError } from '../../api/client'
 import { fetchAuthMe } from '../../api/auth'
 import { createComment, deleteComment, editComment, fetchComments, type Comment, type CommentsTarget } from '../../api/comments'
 import { useConfirm } from '../../Shared/Components/Modal/useConfirm'
-import { IconBadge } from '../Home/widgetIcons'
+import { IconBadge } from '../../Shared/Components/CardArt/icons'
 import {
   MAX_BODY,
   NO_FILTERS,

@@ -10,6 +10,7 @@ import { IconButton } from '../../../Shared/Components/IconButton/IconButton'
 import { PowerIcon, TrashIcon } from '../../../Shared/Components/IconButton/icons'
 import { Pill } from '../../../Shared/Components/Pill/Pill'
 import { Card } from '../../../Shared/Components/Card/Card'
+import { CardHead } from '../../../Shared/Components/Card/CardHead'
 import { AppScopes } from '../../../config/security/scopes'
 import { reloadAfterToolChange } from '../../../config/tools/loadTools'
 import { ToolInstallButton } from './ToolInstallButton'
@@ -27,7 +28,7 @@ import {
   updateLabel,
 } from './updateCheckDisplay'
 import { useUpdateCheck } from './useUpdateCheck'
-import { colorForTool } from './toolCardColors'
+import { headGradient, themeForTool } from './toolCardTheme'
 
 // Bounds the functions-pill area's own height — every function pill is
 // shown now (no cap), so a tool declaring many (Career: ~35) needs a
@@ -173,9 +174,7 @@ export function ToolsListPage() {
       )}
 
       {tools.length === 0 && <p className="py-6 text-center text-sm text-gray-400">No tools installed.</p>}
-      {tools.length > 0 && filtered.length === 0 && (
-        <p className="py-6 text-center text-sm text-gray-400">No tools match your search.</p>
-      )}
+      {tools.length > 0 && filtered.length === 0 && <p className="py-6 text-center text-sm text-gray-400">No tools match your search.</p>}
 
       {filtered.length > 0 && (
         <>
@@ -197,82 +196,84 @@ export function ToolsListPage() {
             }
           `}</style>
           <div className="tools-card-grid">
-          {filtered.map((tool, index) => {
-            const cardColor = colorForTool(tool.id)
-            const update = updateCheck.data ? updateFor(updateCheck.data.updates, tool.slug) : undefined
-            return (
-              <Card
-                key={tool.id}
-                animate
-                animationDelayMs={Math.min(index, 12) * 200}
-                media={
-                  <div
-                    className="relative flex h-28 items-center justify-center px-12 text-center"
-                    style={{ background: cardColor.background, color: cardColor.color }}
-                  >
-                    <h3 className="truncate text-lg font-bold">{tool.name}</h3>
-                    <div className="absolute left-3 top-3">
-                      <Pill variant={statusVariant[tool.status]}>{tool.status}</Pill>
+            {filtered.map((tool, index) => {
+              const theme = themeForTool(tool.slug, tool.kind)
+              const update = updateCheck.data ? updateFor(updateCheck.data.updates, tool.slug) : undefined
+              return (
+                <Card
+                  key={tool.id}
+                  animate
+                  className="group"
+                  animationDelayMs={Math.min(index, 12) * 200}
+                  media={
+                    <CardHead
+                      gradient={headGradient(theme.accent)}
+                      accent={theme.accent}
+                      shape={theme.shape}
+                      icon={theme.icon}
+                      title={tool.name}
+                      topLeft={<Pill variant={statusVariant[tool.status]}>{tool.status}</Pill>}
+                      topRight={
+                        <ScopeGate scopes={[AppScopes.ToolManage]}>
+                          <div className="flex gap-2">
+                            <IconButton
+                              floating
+                              icon={<PowerIcon />}
+                              label={tool.enabled ? 'Disable' : 'Enable'}
+                              onClick={() => {
+                                void handleToggle(tool)
+                              }}
+                              disabled={busySlug === tool.slug}
+                            />
+                            <IconButton
+                              floating
+                              icon={<TrashIcon />}
+                              label="Delete"
+                              onClick={() => {
+                                void handleDelete(tool)
+                              }}
+                              disabled={busySlug === tool.slug}
+                              variant="danger"
+                            />
+                          </div>
+                        </ScopeGate>
+                      }
+                    />
+                  }
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="truncate font-mono text-xs text-gray-500">{tool.slug}</p>
+                    <span className="shrink-0 text-sm font-semibold text-gray-900">v{tool.version}</span>
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Pill outline>{tool.kind}</Pill>
+                    <Pill outline>{tool.enabled ? 'Enabled' : 'Disabled'}</Pill>
+                    <Pill outline>
+                      {tool.mcpTools.length} function{tool.mcpTools.length === 1 ? '' : 's'}
+                    </Pill>
+                    {update && <Pill variant="amber">{updateLabel(update)}</Pill>}
+                  </div>
+
+                  {update && (
+                    <p className="mt-3 text-xs text-gray-500">
+                      <Link to={repositoryPath(update.repositoryId)} className="font-medium text-gray-900 hover:underline">
+                        Review update
+                      </Link>{' '}
+                      in {update.repositoryName}
+                    </p>
+                  )}
+
+                  {tool.mcpTools.length > 0 && (
+                    <div className={`mt-3 flex flex-wrap gap-1 overflow-y-auto pr-1 ${FUNCTIONS_MAX_HEIGHT}`}>
+                      {tool.mcpTools.map((name) => (
+                        <Pill key={name}>{name}</Pill>
+                      ))}
                     </div>
-                    <ScopeGate scopes={[AppScopes.ToolManage]}>
-                      <div className="absolute right-3 top-3 flex gap-2">
-                        <IconButton
-                          floating
-                          icon={<PowerIcon />}
-                          label={tool.enabled ? 'Disable' : 'Enable'}
-                          onClick={() => {
-                            void handleToggle(tool)
-                          }}
-                          disabled={busySlug === tool.slug}
-                        />
-                        <IconButton
-                          floating
-                          icon={<TrashIcon />}
-                          label="Delete"
-                          onClick={() => {
-                            void handleDelete(tool)
-                          }}
-                          disabled={busySlug === tool.slug}
-                          variant="danger"
-                        />
-                      </div>
-                    </ScopeGate>
-                  </div>
-                }
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <p className="truncate font-mono text-xs text-gray-500">{tool.slug}</p>
-                  <span className="shrink-0 text-sm font-semibold text-gray-900">v{tool.version}</span>
-                </div>
-
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <Pill outline>{tool.kind}</Pill>
-                  <Pill outline>{tool.enabled ? 'Enabled' : 'Disabled'}</Pill>
-                  <Pill outline>
-                    {tool.mcpTools.length} function{tool.mcpTools.length === 1 ? '' : 's'}
-                  </Pill>
-                  {update && <Pill variant="amber">{updateLabel(update)}</Pill>}
-                </div>
-
-                {update && (
-                  <p className="mt-3 text-xs text-gray-500">
-                    <Link to={repositoryPath(update.repositoryId)} className="font-medium text-gray-900 hover:underline">
-                      Review update
-                    </Link>{' '}
-                    in {update.repositoryName}
-                  </p>
-                )}
-
-                {tool.mcpTools.length > 0 && (
-                  <div className={`mt-3 flex flex-wrap gap-1 overflow-y-auto pr-1 ${FUNCTIONS_MAX_HEIGHT}`}>
-                    {tool.mcpTools.map((name) => (
-                      <Pill key={name}>{name}</Pill>
-                    ))}
-                  </div>
-                )}
-              </Card>
-            )
-          })}
+                  )}
+                </Card>
+              )
+            })}
           </div>
         </>
       )}

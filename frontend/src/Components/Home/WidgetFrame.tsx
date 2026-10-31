@@ -3,10 +3,12 @@ import { ChartWidget } from './widgets/ChartWidget'
 import { CustomWidget } from './widgets/CustomWidget'
 import { ListWidget } from './widgets/ListWidget'
 import { StatWidget } from './widgets/StatWidget'
-import { IconBadge } from './widgetIcons'
+import { IconBadge } from '../../Shared/Components/CardArt/icons'
+import { Decor } from '../../Shared/Components/CardArt/shapes'
 import { stateMessages, unsupportedMessage } from './widgetDisplay'
 import { parseWidgetData } from './widgetKinds'
-import { widgetTheme, type Accent, type DecorShape } from './widgetTheme'
+import type { Accent } from '../../Shared/Components/CardArt/accents'
+import { widgetTheme } from './widgetTheme'
 import { useWidgetData, type WidgetResult } from './useWidgetData'
 
 function Message({ text, onRetry, accent }: { text: string; onRetry?: () => void; accent: Accent }) {
@@ -35,37 +37,6 @@ function Skeleton({ accent }: { accent: Accent }) {
       <div className="h-8 w-1/2 rounded-2xl" style={bar} />
       <div className="h-3 w-2/3 rounded-full" style={bar} />
     </div>
-  )
-}
-
-// Soft shapes tucked behind the content, in the accent colour. Each kind gets its
-// own so the cards do not all look alike.
-function Decor({ shape, accent }: { shape: DecorShape; accent: Accent }) {
-  const fill = (opacity: number) => ({ background: `linear-gradient(135deg, ${accent.from}, ${accent.to})`, opacity })
-  if (shape === 'diamond') {
-    return (
-      <>
-        <div className="pointer-events-none absolute -right-8 -top-8 h-28 w-28 rotate-45 rounded-3xl" style={fill(0.12)} />
-        <div className="pointer-events-none absolute right-10 top-12 h-8 w-8 rotate-45 rounded-lg" style={fill(0.16)} />
-      </>
-    )
-  }
-  if (shape === 'ring') {
-    return (
-      <>
-        <div
-          className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full border-[14px]"
-          style={{ borderColor: accent.from, opacity: 0.14 }}
-        />
-        <div className="pointer-events-none absolute -bottom-6 -left-6 h-20 w-20 rounded-full" style={fill(0.1)} />
-      </>
-    )
-  }
-  return (
-    <>
-      <div className="pointer-events-none absolute -right-6 -top-6 h-28 w-28 rounded-full" style={fill(0.14)} />
-      <div className="pointer-events-none absolute right-14 top-16 h-10 w-10 rounded-full" style={fill(0.2)} />
-    </>
   )
 }
 

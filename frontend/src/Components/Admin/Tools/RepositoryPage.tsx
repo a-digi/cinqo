@@ -11,10 +11,11 @@ import {
 import { LoadingSpinner } from '../../../Shared/Components/Loading/LoadingSpinner'
 import { useConfirm } from '../../../Shared/Components/Modal/useConfirm'
 import { Card } from '../../../Shared/Components/Card/Card'
+import { CardHead } from '../../../Shared/Components/Card/CardHead'
 import { Pill } from '../../../Shared/Components/Pill/Pill'
 import { reloadAfterToolChange } from '../../../config/tools/loadTools'
 import { RepositoryLink } from './RepositoryLink'
-import { colorForTool } from './toolCardColors'
+import { headGradient, themeForTool } from './toolCardTheme'
 import { errorText } from './repositoryErrors'
 import {
   actionFor,
@@ -221,23 +222,23 @@ export function RepositoryPage() {
           `}</style>
           <div className="repository-card-grid">
             {detail.tools.map((tool, index) => {
-              const color = colorForTool(tool.id)
+              const theme = themeForTool(tool.id)
               const action = actionFor(tool)
               return (
                 <Card
                   key={tool.id}
                   animate
+                  className="group"
                   animationDelayMs={Math.min(index, 12) * 200}
                   media={
-                    <div
-                      className="relative flex h-28 items-center justify-center px-12 text-center"
-                      style={{ background: color.background, color: color.color }}
-                    >
-                      <h3 className="truncate text-lg font-bold">{tool.name}</h3>
-                      <div className="absolute left-3 top-3">
-                        <Pill variant={installedState(tool).variant}>{installedState(tool).label}</Pill>
-                      </div>
-                    </div>
+                    <CardHead
+                      gradient={headGradient(theme.accent)}
+                      accent={theme.accent}
+                      shape={theme.shape}
+                      icon={theme.icon}
+                      title={tool.name}
+                      topLeft={<Pill variant={installedState(tool).variant}>{installedState(tool).label}</Pill>}
+                    />
                   }
                 >
                   <div className="flex items-start justify-between gap-2">
