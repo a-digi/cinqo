@@ -7,9 +7,12 @@ import {
   addPortalLink,
   updatePortalLink,
   removePortalLink,
+  setPortalAi,
+  setPortalLinkAi,
   type Portal,
   type PortalLink,
 } from '../../api'
+import { resolveCrawlAi } from '../../Cinqo/Platform/crawlAiChoice'
 import { useAiChoice } from '../../Cinqo/Platform/useAiChoice'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { SummaryRail } from '../../Shared/SummaryRail/SummaryRail'
@@ -22,6 +25,8 @@ import { CrawlPanel } from '../../Crawler/CrawlPanel/CrawlPanel'
 import { PlusIcon } from '../../Shared/Icons/icons'
 import { Modal } from '../../Shared/Modal/Modal'
 import { AccordionItem } from '../../Shared/Accordion/AccordionItem'
+import { CrawlAiModal } from './CrawlAiModal'
+import { aiChip, describeChoice, linkChip, overrideOf } from './aiOverrideDisplay'
 import { PortalLinkHeader } from './PortalLinkHeader'
 import { VIEW_PORTAL_PATH } from '../../paths'
 
@@ -55,11 +60,27 @@ export function PortalsPage() {
   const [editLinkUrl, setEditLinkUrl] = useState('')
   const [editLinkTitle, setEditLinkTitle] = useState('')
   const [error, setError] = useState('')
+  // The portal whose AI choice the modal is editing (step 102), or null when it is closed.
+  const [aiPortalId, setAiPortalId] = useState<string | null>(null)
+  // The link whose AI choice the modal is editing, or null when it is closed.
+  const [aiLinkId, setAiLinkId] = useState<string | null>(null)
 
   // The AI platform and model CrawlPanel's "Crawl with AI" / "Generate with AI" use
   // are the one saved setting for the whole tool (Career ▸ Settings), not a choice
   // made on this page.
   const ai = useAiChoice()
+
+  // The AI choice in effect for a link (its own, else its portal's, else the tool-wide one);
+  // withoutLink leaves the link's own out, which is what removing it would fall back to.
+  function crawlAiFor(portal: Portal, link: PortalLink | null, withoutLink = false) {
+    return resolveCrawlAi({
+      link: link && !withoutLink ? overrideOf(link) : null,
+      portal: overrideOf(portal),
+      platforms: ai.platforms,
+      keyedPlatformIds: ai.keyedPlatformIds,
+      saved: ai.saved,
+    })
+  }
 
   function load() {
     setError('')
@@ -256,6 +277,9 @@ export function PortalsPage() {
       })
   }
 
+  const aiPortal = portals.find((p) => p.id === aiPortalId) ?? null
+  const aiLinkPortal = portals.find((p) => p.links.some((l) => l.id === aiLinkId)) ?? null
+  const aiLink = aiLinkPortal?.links.find((l) => l.id === aiLinkId) ?? null
   const summary = summarizePortals(portals)
 
   return (
@@ -355,6 +379,28 @@ export function PortalsPage() {
                       >
                         {plural(p.links.length, 'link', 'links')}
                       </span>
+                      {(() => {
+                        const chip = aiChip(overrideOf(p), ai.platforms)
+                        return (
+                          <button
+                            type="button"
+                            title="Set the AI platform and model for this portal's links"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setAiPortalId(p.id)
+                            }}
+                            className={`shrink-0 rounded-full border px-2.5 py-0.5 text-xs font-medium ${
+                              chip.kind === 'default'
+                                ? 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                                : chip.kind === 'set'
+                                  ? 'border-violet-200 bg-violet-50 text-violet-800 hover:bg-violet-100'
+                                  : 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100'
+                            }`}
+                          >
+                            {chip.text}
+                          </button>
+                        )
+                      })()}
                       <span className="ml-auto flex shrink-0 gap-2">
                         <button
                           type="button"
@@ -460,45 +506,52 @@ export function PortalsPage() {
                   Edit/Remove, the body is the link's whole CrawlPanel. The
                   body stays mounted while closed, so a closed link still
                   resumes/finishes generations and crawls. */}
-                  {p.links.map((link) => (
-                    <AccordionItem
-                      key={link.id}
-                      variant="nested"
-                      isOpen={openLinkIds.has(link.id)}
-                      onToggle={() => {
-                        toggleLinkOpen(link.id)
-                      }}
-                      header={
-                        <PortalLinkHeader
+                  {p.links.map((link) => {
+                    const linkAi = crawlAiFor(p, link)
+                    return (
+                      <AccordionItem
+                        key={link.id}
+                        variant="nested"
+                        isOpen={openLinkIds.has(link.id)}
+                        onToggle={() => {
+                          toggleLinkOpen(link.id)
+                        }}
+                        header={
+                          <PortalLinkHeader
+                            link={link}
+                            isEditing={editingLinkId === link.id}
+                            editTitle={editLinkTitle}
+                            editUrl={editLinkUrl}
+                            onEditTitleChange={setEditLinkTitle}
+                            onEditUrlChange={setEditLinkUrl}
+                            onStartEdit={() => {
+                              startEditLink(link)
+                            }}
+                            onSaveEdit={() => {
+                              saveEditLink(link.id)
+                            }}
+                            onCancelEdit={cancelEditLink}
+                            onRemove={() => {
+                              handleRemoveLink(link.id)
+                            }}
+                            aiChip={linkChip(linkAi)}
+                            onEditAi={() => {
+                              setAiLinkId(link.id)
+                            }}
+                          />
+                        }
+                      >
+                        <CrawlPanel
                           link={link}
-                          isEditing={editingLinkId === link.id}
-                          editTitle={editLinkTitle}
-                          editUrl={editLinkUrl}
-                          onEditTitleChange={setEditLinkTitle}
-                          onEditUrlChange={setEditLinkUrl}
-                          onStartEdit={() => {
-                            startEditLink(link)
-                          }}
-                          onSaveEdit={() => {
-                            saveEditLink(link.id)
-                          }}
-                          onCancelEdit={cancelEditLink}
-                          onRemove={() => {
-                            handleRemoveLink(link.id)
-                          }}
+                          selectedPlatform={linkAi.platform}
+                          selectedModel={linkAi.model}
+                          hasPlatforms={ai.platforms.length > 0}
+                          onReload={load}
+                          onError={setError}
                         />
-                      }
-                    >
-                      <CrawlPanel
-                        link={link}
-                        selectedPlatform={ai.platform}
-                        selectedModel={ai.model}
-                        hasPlatforms={ai.platforms.length > 0}
-                        onReload={load}
-                        onError={setError}
-                      />
-                    </AccordionItem>
-                  ))}
+                      </AccordionItem>
+                    )
+                  })}
                 </div>
 
                 <div className="mt-2">
@@ -583,6 +636,54 @@ export function PortalsPage() {
           Create portal
         </button>
       </Modal>
+
+      {aiPortal && (
+        <CrawlAiModal
+          open
+          title={`AI for ${aiPortal.name}`}
+          subject="portal"
+          current={overrideOf(aiPortal)}
+          platforms={ai.platforms}
+          fallbackText={describeChoice(crawlAiFor({ ...aiPortal, aiPlatformId: '', aiModel: '' }, null))}
+          onClose={() => {
+            setAiPortalId(null)
+          }}
+          onSave={(platformId, model) =>
+            setPortalAi(aiPortal.id, platformId, model).then((list) => {
+              setPortals(list)
+            })
+          }
+          onRemove={() =>
+            setPortalAi(aiPortal.id, '', '').then((list) => {
+              setPortals(list)
+            })
+          }
+        />
+      )}
+
+      {aiLink && aiLinkPortal && (
+        <CrawlAiModal
+          open
+          title={`AI for ${(aiLink.title ?? '').trim() === '' ? aiLink.url : (aiLink.title ?? '')}`}
+          subject="link"
+          current={overrideOf(aiLink)}
+          platforms={ai.platforms}
+          fallbackText={describeChoice(crawlAiFor(aiLinkPortal, aiLink, true))}
+          onClose={() => {
+            setAiLinkId(null)
+          }}
+          onSave={(platformId, model) =>
+            setPortalLinkAi(aiLink.id, platformId, model).then((list) => {
+              setPortals(list)
+            })
+          }
+          onRemove={() =>
+            setPortalLinkAi(aiLink.id, '', '').then((list) => {
+              setPortals(list)
+            })
+          }
+        />
+      )}
     </div>
   )
 }

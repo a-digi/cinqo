@@ -1,5 +1,6 @@
 import type { PortalLink } from '../../api'
 import { LinkStatusPills } from '../../Crawler/LinkStatusPills'
+import type { AiChip } from './aiOverrideDisplay'
 
 interface PortalLinkHeaderProps {
   link: PortalLink
@@ -12,6 +13,9 @@ interface PortalLinkHeaderProps {
   onSaveEdit: () => void
   onCancelEdit: () => void
   onRemove: () => void
+  // The link's AI chip (step 102) and what clicking it does (opens the AI modal).
+  aiChip: AiChip
+  onEditAi: () => void
 }
 
 // PortalLinkHeader (step 89) — what a portal link's accordion header
@@ -34,6 +38,8 @@ export function PortalLinkHeader({
   onSaveEdit,
   onCancelEdit,
   onRemove,
+  aiChip,
+  onEditAi,
 }: PortalLinkHeaderProps) {
   if (isEditing) {
     return (
@@ -108,6 +114,23 @@ export function PortalLinkHeader({
           {link.lastCrawledAt ? `Last crawled: ${new Date(link.lastCrawledAt).toLocaleString()}` : 'Never crawled'}
         </div>
         <LinkStatusPills link={link} showCrawling className="mt-1.5" />
+        <button
+          type="button"
+          title="Set the AI platform and model for this link"
+          onClick={(e) => {
+            e.stopPropagation()
+            onEditAi()
+          }}
+          className={`mt-1.5 max-w-full truncate rounded-full border px-2.5 py-0.5 text-xs font-medium ${
+            aiChip.kind === 'set'
+              ? 'border-violet-200 bg-violet-50 text-violet-800 hover:bg-violet-100'
+              : aiChip.kind === 'stale'
+                ? 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100'
+                : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+          }`}
+        >
+          {aiChip.text}
+        </button>
       </div>
       <div className="flex shrink-0 gap-2">
         <button

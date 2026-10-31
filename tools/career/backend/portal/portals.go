@@ -133,6 +133,11 @@ type portalLink struct {
 	// attempted) the action it asked for.
 	ListingCrawlRequested            bool `json:"listingCrawlRequested"`
 	JobDetailInstructionsAIRequested bool `json:"jobDetailInstructionsAiRequested"`
+	// AIPlatformID/AIModel (step 102) are this link's own AI choice; "" means
+	// no override (the portal's, then the tool-wide, choice applies). Always
+	// present in the JSON (no omitempty).
+	AIPlatformID string `json:"aiPlatformId"`
+	AIModel      string `json:"aiModel"`
 	// JobDetailCrawlRequested (step 76) is the same kind of request flag
 	// as the two above, set unconditionally by the existing
 	// events/jobs-crawled listener the instant a listing crawl finishes
@@ -206,11 +211,16 @@ type portalLink struct {
 }
 
 type portal struct {
-	ID        string       `json:"id"`
-	Name      string       `json:"name"`
-	Links     []portalLink `json:"links"`
-	CreatedAt string       `json:"createdAt"`
-	UpdatedAt string       `json:"updatedAt,omitempty"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// AIPlatformID/AIModel (step 102) are this portal's own AI choice for
+	// crawling; "" means no override. Always present in the JSON (no omitempty),
+	// so the frontend never meets a missing field.
+	AIPlatformID string       `json:"aiPlatformId"`
+	AIModel      string       `json:"aiModel"`
+	Links        []portalLink `json:"links"`
+	CreatedAt    string       `json:"createdAt"`
+	UpdatedAt    string       `json:"updatedAt,omitempty"`
 }
 
 func CreatePortal(name string) (string, error) {
@@ -289,7 +299,7 @@ func activeCrawlRunPortalLinkIDsRef() (map[string]bool, error) {
 // small.
 func ListPortals() ([]portal, error) {
 	rows, err := db.JobsDB.Query(
-		`SELECT id, name, created_at, updated_at FROM portals ORDER BY created_at ASC`,
+		`SELECT id, name, ai_platform_id, ai_model, created_at, updated_at FROM portals ORDER BY created_at ASC`,
 	)
 	if err != nil {
 		return nil, err
@@ -298,7 +308,7 @@ func ListPortals() ([]portal, error) {
 	for rows.Next() {
 		var p portal
 		var updatedAt sql.NullString
-		if err := rows.Scan(&p.ID, &p.Name, &p.CreatedAt, &updatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.AIPlatformID, &p.AIModel, &p.CreatedAt, &updatedAt); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -330,7 +340,7 @@ func ListPortals() ([]portal, error) {
 	}
 
 	linkRows, err := db.JobsDB.Query(
-		`SELECT id, portal_id, url, title, crawl_instructions, job_detail_crawl_instructions, instructions_ai_error, instructions_ai_error_at, instructions_ai_conversation_id, job_detail_instructions_ai_error, job_detail_instructions_ai_error_at, job_detail_instructions_ai_conversation_id, listing_crawl_requested, job_detail_instructions_ai_requested, instructions_ai_error_dismissed_at, job_detail_instructions_ai_error_dismissed_at, job_detail_crawl_requested, auto_discovery_enabled, auto_discovery_interval_minutes, auto_discovery_last_run_at, jobs_question_asked_at, jobs_question_note, created_at, updated_at
+		`SELECT id, portal_id, url, title, crawl_instructions, job_detail_crawl_instructions, instructions_ai_error, instructions_ai_error_at, instructions_ai_conversation_id, job_detail_instructions_ai_error, job_detail_instructions_ai_error_at, job_detail_instructions_ai_conversation_id, listing_crawl_requested, job_detail_instructions_ai_requested, instructions_ai_error_dismissed_at, job_detail_instructions_ai_error_dismissed_at, job_detail_crawl_requested, auto_discovery_enabled, auto_discovery_interval_minutes, auto_discovery_last_run_at, jobs_question_asked_at, jobs_question_note, ai_platform_id, ai_model, created_at, updated_at
 		 FROM portal_links ORDER BY created_at ASC`,
 	)
 	if err != nil {
@@ -343,7 +353,7 @@ func ListPortals() ([]portal, error) {
 		var title, crawlInstructions, jobDetailCrawlInstructions, instructionsAIError, instructionsAIErrorAt, instructionsAIConversationID, jobDetailInstructionsAIError, jobDetailInstructionsAIErrorAt, jobDetailInstructionsAIConversationID, instructionsAIErrorDismissedAt, jobDetailInstructionsAIErrorDismissedAt, updatedAt sql.NullString
 		var autoDiscoveryIntervalMinutes, autoDiscoveryLastRunAt sql.NullInt64
 		var jobsQuestionAskedAt, jobsQuestionNote sql.NullString
-		if err := linkRows.Scan(&l.ID, &l.PortalID, &l.URL, &title, &crawlInstructions, &jobDetailCrawlInstructions, &instructionsAIError, &instructionsAIErrorAt, &instructionsAIConversationID, &jobDetailInstructionsAIError, &jobDetailInstructionsAIErrorAt, &jobDetailInstructionsAIConversationID, &l.ListingCrawlRequested, &l.JobDetailInstructionsAIRequested, &instructionsAIErrorDismissedAt, &jobDetailInstructionsAIErrorDismissedAt, &l.JobDetailCrawlRequested, &l.AutoDiscoveryEnabled, &autoDiscoveryIntervalMinutes, &autoDiscoveryLastRunAt, &jobsQuestionAskedAt, &jobsQuestionNote, &l.CreatedAt, &updatedAt); err != nil {
+		if err := linkRows.Scan(&l.ID, &l.PortalID, &l.URL, &title, &crawlInstructions, &jobDetailCrawlInstructions, &instructionsAIError, &instructionsAIErrorAt, &instructionsAIConversationID, &jobDetailInstructionsAIError, &jobDetailInstructionsAIErrorAt, &jobDetailInstructionsAIConversationID, &l.ListingCrawlRequested, &l.JobDetailInstructionsAIRequested, &instructionsAIErrorDismissedAt, &jobDetailInstructionsAIErrorDismissedAt, &l.JobDetailCrawlRequested, &l.AutoDiscoveryEnabled, &autoDiscoveryIntervalMinutes, &autoDiscoveryLastRunAt, &jobsQuestionAskedAt, &jobsQuestionNote, &l.AIPlatformID, &l.AIModel, &l.CreatedAt, &updatedAt); err != nil {
 			return nil, err
 		}
 		if autoDiscoveryIntervalMinutes.Valid {

@@ -272,6 +272,12 @@ CREATE TABLE IF NOT EXISTS companies (
 CREATE TABLE IF NOT EXISTS portals (
     id          TEXT PRIMARY KEY,
     name        TEXT NOT NULL,
+    -- ai_platform_id / ai_model (step 102): this portal's own AI platform and
+    -- model for crawling; '' means "no override", so the tool-wide choice
+    -- (ai_settings) is used. A model without a platform is refused by the
+    -- setter. Also added to existing installs by migratePortalsAiOverride.
+    ai_platform_id TEXT NOT NULL DEFAULT '',
+    ai_model       TEXT NOT NULL DEFAULT '',
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at  TEXT
 );
@@ -332,6 +338,11 @@ CREATE TABLE IF NOT EXISTS portal_links (
     -- installs by migratePortalLinksJobsQuestion.
     jobs_question_asked_at                         TEXT,
     jobs_question_note                             TEXT,
+    -- ai_platform_id / ai_model (step 102): this link's own AI platform and
+    -- model; '' means "no override" (the portal's, then the tool-wide, choice
+    -- applies). Also added to existing installs by migratePortalsAiOverride.
+    ai_platform_id                                 TEXT NOT NULL DEFAULT '',
+    ai_model                                       TEXT NOT NULL DEFAULT '',
     created_at                        TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at                        TEXT,
     UNIQUE(portal_id, url)
@@ -1040,6 +1051,9 @@ func migrateJobsDB(db *sql.DB) error {
 	if err := migratePortalLinksAutoDiscoveryInterval(db); err != nil {
 		return err
 	}
+	if err := migratePortalsAiOverride(db); err != nil {
+		return err
+	}
 	if err := migrateInstructionAttemptsFailureReason(db); err != nil {
 		return err
 	}
@@ -1673,4 +1687,26 @@ func migratePortalLinksAutoDiscoveryInterval(db *sql.DB) error {
 	}
 	_, err = db.Exec(`ALTER TABLE portal_links ADD COLUMN auto_discovery_last_run_at INTEGER`)
 	return err
+}
+
+// migratePortalsAiOverride (step 102) adds ai_platform_id and ai_model to portals
+// and to portal_links on an install that already has them (a fresh one gets them
+// from the base schema). Default ” means "no override", so nothing changes for
+// existing rows. Runs after migrateJobsPortalLinkID, which may create the tables.
+func migratePortalsAiOverride(db *sql.DB) error {
+	for _, table := range []string{"portals", "portal_links"} {
+		for _, col := range []string{"ai_platform_id", "ai_model"} {
+			exists, hasColumn, err := tableHasColumn(db, table, col)
+			if err != nil {
+				return err
+			}
+			if !exists || hasColumn {
+				continue
+			}
+			if _, err := db.Exec(`ALTER TABLE ` + table + ` ADD COLUMN ` + col + ` TEXT NOT NULL DEFAULT ''`); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

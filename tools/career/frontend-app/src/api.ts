@@ -190,6 +190,10 @@ export interface JobsQuestion {
 
 export interface PortalLink {
   id: string
+  // This link's own AI platform and model; "" means none set (the portal's, then the
+  // tool-wide, choice applies). Always sent by the backend, never missing.
+  aiPlatformId: string
+  aiModel: string
   portalId: string
   url: string
   title?: string | null
@@ -338,6 +342,10 @@ export interface InstructionStats {
 export interface Portal {
   id: string
   name: string
+  // This portal's own AI platform and model for crawling; "" means none set (the
+  // tool-wide choice applies). Always sent by the backend, never missing.
+  aiPlatformId: string
+  aiModel: string
   links: PortalLink[]
   createdAt: string
   updatedAt?: string
@@ -908,6 +916,28 @@ export async function addPortalLink(portalId: string, url: string, title: string
     body: JSON.stringify({ portalId, url, title }),
   })
   return jsonOrThrow<{ id: string }>(res, 'add portal link')
+}
+
+// Sets (or, with both empty, removes) a portal's own AI platform and model.
+export async function setPortalAi(id: string, platformId: string, model: string): Promise<Portal[]> {
+  const res = await fetch(`${PROXY_BASE}/portals/ai`, {
+    method: 'PUT',
+    credentials: 'include',
+    body: JSON.stringify({ id, platformId, model }),
+  })
+  const data = await jsonOrThrow<{ portals: Portal[] }>(res, "save the portal's AI choice")
+  return data.portals
+}
+
+// Sets (or, with both empty, removes) a link's own AI platform and model.
+export async function setPortalLinkAi(id: string, platformId: string, model: string): Promise<Portal[]> {
+  const res = await fetch(`${PROXY_BASE}/portal-links/ai`, {
+    method: 'PUT',
+    credentials: 'include',
+    body: JSON.stringify({ id, platformId, model }),
+  })
+  const data = await jsonOrThrow<{ portals: Portal[] }>(res, "save the link's AI choice")
+  return data.portals
 }
 
 export async function updatePortalLink(

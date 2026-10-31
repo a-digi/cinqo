@@ -5,6 +5,8 @@ import { fetchPlatformKeys, fetchPlatforms, type Platform } from './platformRepo
 
 export interface UseAiChoice extends AiChoice {
   platforms: Platform[]
+  // Ids of the platforms that have at least one API key (the automatic pick prefers these).
+  keyedPlatformIds: string[]
   // What is saved (empty strings when nothing is), for the Settings page.
   saved: AiSettings
   // False until the first load has finished (so a page can wait before it acts).
@@ -51,5 +53,5 @@ export function useAiChoice(): UseAiChoice {
     setAttempt((n) => n + 1)
   }, [])
 
-  return { ...resolveAiChoice(platforms, keyed, saved), platforms, saved, loaded, reload }
+  return { ...resolveAiChoice(platforms, keyed, saved), platforms, keyedPlatformIds: keyed, saved, loaded, reload }
 }
