@@ -3,6 +3,7 @@ import {
   fetchCvTemplates,
   fetchCvDocuments,
   fetchPersonas,
+  fetchProfiles,
   attachCvToPersona,
   detachCvFromPersona,
   updateCvDocumentTitle,
@@ -12,8 +13,9 @@ import {
   type CvTemplate,
   type CvDocument,
   type Persona,
+  type Profile,
 } from '../../api'
-import { PersonaSwitcher } from '../Persona/PersonaSwitcher/PersonaSwitcher'
+import { profileLabel } from '../ProfileSwitcher/profileLabel'
 import { ConfirmationModal } from '../../Shared/ConfirmationModal/ConfirmationModal'
 import { Modal } from '../../Shared/Modal/Modal'
 import { inUseFooter, inUseHeading, inUseLines } from './cvDeleteDisplay'
@@ -22,6 +24,7 @@ import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { plural } from '../CompaniesPage/companyStats'
 import { PAGE_ACCENT } from '../JobsPage/jobsTheme'
 import { CvCardGrid, CvCardGridSkeleton } from './CvCardGrid'
+import { openCvBuilderFor } from './openCvBuilder'
 import { PageTips } from '../../Shared/PageTips/PageTips'
 import { Comments } from '../../Shared/Comments/Comments'
 import { COMMENT_TYPE_CV } from '../../Shared/Comments/commentTypes'
@@ -32,7 +35,7 @@ import { CvAiChatsModal } from '../../CvAi/CvAiChatsModal'
 import { useDismissedCvRuns } from '../../CvAi/useDismissedCvRuns'
 import { useCvAiRuns } from '../../CvAi/useCvAiRuns'
 
-const CV_BUILDER_PATH = '/tools/career/cv-builder'
+const CV_DOCUMENTS_PATH = '/tools/career/cv-documents'
 
 // CV Builder's own list page — creating/editing a CV now lives on its
 // own dedicated route (CvBuilderPage, a 5-step wizard), per your own
@@ -50,8 +53,10 @@ const CV_BUILDER_PATH = '/tools/career/cv-builder'
 // document is awaiting confirmation, since the modal is async/
 // callback-based rather than a blocking call this function can just
 // read a return value from.
-export function CvDocumentsPage() {
-  const [personaId, setPersonaId] = useState<string | null>(null)
+export function CvDocumentsPage({ personaId }: { personaId: string }) {
+  // The persona comes from the address (/tools/career/cv-documents/:personaId), not from a dropdown.
+  const [profiles, setProfiles] = useState<Profile[]>([])
+  const [personasLoaded, setPersonasLoaded] = useState(false)
   const [documents, setDocuments] = useState<CvDocument[]>([])
   // True while a persona's documents are being read (the grid shows placeholder tiles).
   const [loading, setLoading] = useState(false)
@@ -90,6 +95,14 @@ export function CvDocumentsPage() {
       .then(setAllPersonas)
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : String(err))
+      })
+      .finally(() => {
+        setPersonasLoaded(true)
+      })
+    fetchProfiles()
+      .then(setProfiles)
+      .catch(() => {
+        setProfiles([])
       })
   }, [])
 
@@ -157,8 +170,7 @@ export function CvDocumentsPage() {
   }, [scrollToNew, newCvId, documents])
 
   function startNewCv() {
-    if (!personaId) return
-    window.__cinqoToolBridge.navigate(`${CV_BUILDER_PATH}?personaId=${encodeURIComponent(personaId)}`)
+    openCvBuilderFor(personaId)
   }
 
   function handleRename(doc: CvDocument) {
@@ -211,46 +223,63 @@ export function CvDocumentsPage() {
       })
   }
 
+  const persona = allPersonas.find((p) => p.id === personaId)
+  const profile = profiles.find((p) => p.id === persona?.profileId)
+  const backLink = (
+    <a
+      href={CV_DOCUMENTS_PATH}
+      onClick={(e) => {
+        e.preventDefault()
+        window.__cinqoToolBridge.navigate(CV_DOCUMENTS_PATH)
+      }}
+      className="mb-3 inline-block text-sm font-medium text-blue-700 hover:underline"
+    >
+      ← All CVs
+    </a>
+  )
+
+  if (!persona) {
+    return (
+      <div className="max-w-3xl p-6 font-sans text-gray-900">
+        {backLink}
+        <div className="text-sm text-gray-500">{personasLoaded ? 'Persona not found' : 'Loading…'}</div>
+      </div>
+    )
+  }
+
   return (
     <div className="career-v-pop career-a-float career-t-type max-w-7xl p-6 font-sans text-gray-900">
+      {backLink}
       <PageHeaderCard
         icon={<PDFIcon className="h-6 w-6" />}
-        title="CV Documents"
-        description="Generate a CV PDF from a persona's own data, using one of a few fixed designs."
-        pill={personaId && !loading ? { text: plural(documents.length, 'CV', 'CVs') } : undefined}
+        title={`CVs: ${persona.name}`}
+        description={`${profile ? `${profileLabel(profile)} · ` : ''}Generate a CV PDF from this persona's own data, using one of a few fixed designs.`}
+        pill={!loading ? { text: plural(documents.length, 'CV', 'CVs') } : undefined}
       />
       {/* Steps 105 to 108: the tips sit in a column of their own on the right of the CVs (under them on a narrow window). */}
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
         <div className="min-w-0 flex-1">
-          <PersonaSwitcher
-            personaId={personaId}
-            onChange={setPersonaId}
-            actions={
-              personaId ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={startNewCv}
-                    className="flex shrink-0 items-center gap-1.5 rounded-md bg-gray-800 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-900"
-                  >
-                    <PlusIcon /> New CV
-                  </button>
-                  <CreateCvWithAi
-                    ai={ai}
-                    personaName={personaName}
-                    disabledReason={
-                      !ai.platform
-                        ? 'No AI platform is available. Choose one in Settings.'
-                        : hasRunningCvRun(aiRuns.runs)
-                          ? 'The AI is already creating a CV for this persona.'
-                          : ''
-                    }
-                    onStart={(focus) => aiRuns.start({ id: personaId, name: personaName }, focus, ai)}
-                  />
-                </>
-              ) : undefined
-            }
-          />
+          <div className="mb-3 flex flex-wrap items-center justify-start gap-3">
+            <button
+              type="button"
+              onClick={startNewCv}
+              className="flex shrink-0 items-center gap-1.5 rounded-md bg-gray-800 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-900"
+            >
+              <PlusIcon /> New CV
+            </button>
+            <CreateCvWithAi
+              ai={ai}
+              personaName={personaName}
+              disabledReason={
+                !ai.platform
+                  ? 'No AI platform is available. Choose one in Settings.'
+                  : hasRunningCvRun(aiRuns.runs)
+                    ? 'The AI is already creating a CV for this persona.'
+                    : ''
+              }
+              onStart={(focus) => aiRuns.start({ id: personaId, name: personaName }, focus, ai)}
+            />
+          </div>
 
           {error && <p className="mb-4 text-sm text-red-700">{error}</p>}
 

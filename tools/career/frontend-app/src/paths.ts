@@ -29,6 +29,12 @@ export function experiencePathFor(personaId: string): string {
 }
 export const PROFILE_IMAGE_PATH = '/tools/career/profile-image'
 export const CV_DOCUMENTS_PATH = '/tools/career/cv-documents'
+// One persona's CVs on their own page: a pattern route, the id arrives as the page's route parameter.
+export const CV_DOCUMENTS_PERSONA_PATH = '/tools/career/cv-documents/:personaId'
+// The address of one persona's CV page.
+export function cvDocumentsPathFor(personaId: string): string {
+  return `${CV_DOCUMENTS_PATH}/${encodeURIComponent(personaId)}`
+}
 export const CV_BUILDER_PATH = '/tools/career/cv-builder'
 export const JOBS_PATH = '/tools/career/jobs'
 export const JOB_DETAILS_PATH = '/tools/career/job-details'

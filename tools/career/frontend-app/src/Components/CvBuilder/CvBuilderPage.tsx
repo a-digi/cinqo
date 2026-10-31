@@ -21,6 +21,8 @@ import { StepIndicator } from './StepIndicator'
 import { effectiveChoice, photoToSend, type CvPhoto } from './cvPhotoRules'
 import { JOBS_PATH, attachFailedMessage, backLabel, bannerText, defaultCvTitle, jobIdFromSearch } from './cvForJob'
 
+import { cvDocumentsPathFor } from '../../paths'
+
 const CV_DOCUMENTS_PATH = '/tools/career/cv-documents'
 
 const STEPS = [
@@ -213,7 +215,7 @@ export function CvBuilderPage() {
   }
 
   function handleCancel() {
-    window.__cinqoToolBridge.navigate(forJobId ? JOBS_PATH : CV_DOCUMENTS_PATH)
+    window.__cinqoToolBridge.navigate(forJobId ? JOBS_PATH : personaId ? cvDocumentsPathFor(personaId) : CV_DOCUMENTS_PATH)
   }
 
   // Renders + generates a real, temporary PDF via pdf_tools — same
@@ -275,7 +277,7 @@ export function CvBuilderPage() {
     created
       .then((documentId) => {
         if (!forJobId) {
-          window.__cinqoToolBridge.navigate(CV_DOCUMENTS_PATH)
+          window.__cinqoToolBridge.navigate(cvDocumentsPathFor(personaId))
           return undefined
         }
         return linkJobCv(forJobId, documentId, 'manual')

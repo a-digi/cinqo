@@ -7,10 +7,10 @@ import { CvAiChatsModal } from '../../../CvAi/CvAiChatsModal'
 import { useDismissedCvRuns } from '../../../CvAi/useDismissedCvRuns'
 import { useCvAiRuns } from '../../../CvAi/useCvAiRuns'
 import { mediaDownloadUrl } from '../../../api'
-import { CV_BUILDER_PATH, CV_DOCUMENTS_PATH } from '../../../paths'
+import { CV_BUILDER_PATH, cvDocumentsPathFor } from '../../../paths'
+import { openCvBuilderFor } from '../../CvBuilder/openCvBuilder'
 import { createdLabel, templateLabel } from '../../CvBuilder/cvCardRules'
 import { cvsOfPersona } from '../../CvBuilder/cvPersonaRules'
-import { setPersonaIdInLocalStorage } from '../PersonaSwitcher/repositoryLocalStorage'
 
 // The CVs linked to one persona (step 114), under its card on the Personas page: the ones built
 // from it and the ones attached to it. A row opens the PDF or the editor; the footer opens the CV
@@ -155,8 +155,8 @@ export function PersonaCvs({
         <button
           type="button"
           onClick={() => {
-            setPersonaIdInLocalStorage(personaId)
-            open(rows.length > 0 ? CV_DOCUMENTS_PATH : `${CV_BUILDER_PATH}?personaId=${encodeURIComponent(personaId)}`)
+            if (rows.length > 0) open(cvDocumentsPathFor(personaId))
+            else openCvBuilderFor(personaId)
           }}
           className="text-xs text-blue-700 hover:underline"
         >

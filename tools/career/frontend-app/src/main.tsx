@@ -37,6 +37,7 @@ import { PersonaExperiencePage } from './Components/ExperiencePage/PersonaExperi
 import { ExperienceEntryPage } from './Components/ExperiencePage/ExperienceEntryPage'
 import { ProfileImagePage } from './Components/ProfileImage/ProfileImagePage'
 import { CvDocumentsPage } from './Components/CvBuilder/CvDocumentsPage'
+import { CvDocumentsListPage } from './Components/CvBuilder/CvDocumentsListPage'
 import { CvBuilderPage } from './Components/CvBuilder/CvBuilderPage'
 import { JobsPage } from './Components/JobsPage/JobsPage'
 import { JobDetailsPage } from './Components/JobDetails/JobDetailsPage'
@@ -64,6 +65,7 @@ import {
   EXPERIENCE_PERSONA_PATH,
   PROFILE_IMAGE_PATH,
   CV_DOCUMENTS_PATH,
+  CV_DOCUMENTS_PERSONA_PATH,
   CV_BUILDER_PATH,
   JOBS_PATH,
   JOB_DETAILS_PATH,
@@ -179,9 +181,17 @@ window.__cinqoToolBridge.registerRoute({
 })
 
 window.__cinqoToolBridge.registerRoute({
+  path: CV_DOCUMENTS_PERSONA_PATH,
+  mount: (container, params) => {
+    mountReact(container, <CvDocumentsPage personaId={params.personaId} />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
   path: CV_DOCUMENTS_PATH,
   mount: (container) => {
-    mountReact(container, <CvDocumentsPage />)
+    mountReact(container, <CvDocumentsListPage />)
   },
   unmount: unmountReact,
 })
