@@ -93,6 +93,10 @@ func InitDatabases() error {
 		careerDB.Close()
 		return fmt.Errorf("failed to fill the profiles' photos: %w", err)
 	}
+	if err := migratePersonasAiRunID(careerDB); err != nil {
+		careerDB.Close()
+		return fmt.Errorf("failed to add personas.ai_run_id: %w", err)
+	}
 	CareerDB = careerDB
 
 	jobsDB, err := sql.Open("sqlite", filepath.Join(dbDir, "jobs.db"))
@@ -174,14 +178,34 @@ CREATE TABLE IF NOT EXISTS profile_external_links (
     UNIQUE(profile_id, platform)
 );
 
+-- ai_run_id (step 112) is the "create personas with AI" run a persona came from; NULL for
+-- every persona that did not. Deleting the run keeps the persona.
 CREATE TABLE IF NOT EXISTS personas (
     id          TEXT PRIMARY KEY,
     profile_id  TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
     name        TEXT NOT NULL,
     description TEXT,
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at  TEXT
+    updated_at  TEXT,
+    ai_run_id   TEXT REFERENCES persona_ai_runs(id) ON DELETE SET NULL
 );
+
+-- One "create personas with AI" attempt of a profile (step 112): the hidden conversation that
+-- did it (a plain reference into the core conversations, no FK), what the user asked for, how it
+-- ended, and the AI's proposal as JSON. The history of these is shown on the Personas page only.
+CREATE TABLE IF NOT EXISTS persona_ai_runs (
+    id              TEXT PRIMARY KEY,
+    profile_id      TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    conversation_id TEXT NOT NULL,
+    focus           TEXT NOT NULL DEFAULT '',
+    status          TEXT NOT NULL DEFAULT 'generating' CHECK (status IN ('generating','ready','failed')),
+    proposal_json   TEXT,
+    error           TEXT,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    finished_at     TEXT
+);
+
+CREATE INDEX IF NOT EXISTS persona_ai_runs_profile_idx ON persona_ai_runs(profile_id);
 
 CREATE TABLE IF NOT EXISTS persona_details (
     persona_id        TEXT PRIMARY KEY REFERENCES personas(id) ON DELETE CASCADE,
@@ -1021,6 +1045,23 @@ func migrateProfilePhotos(db *sql.DB) error {
 	_, err := db.Exec(`INSERT OR IGNORE INTO profile_photos (profile_id, media_file_id)
 		SELECT id, image_media_file_id FROM profiles
 		WHERE image_media_file_id IS NOT NULL AND image_media_file_id != ''`)
+	return err
+}
+
+// migratePersonasAiRunID adds the nullable ai_run_id column (step 112, the AI run a persona came
+// from) to an already-installed personas table. NULL is right for every existing persona. A no-op
+// on a brand-new install (the base schema already has it). It runs right after the base schema,
+// not inside migrateCareerDB, because the column references persona_ai_runs, which the schema
+// creates.
+func migratePersonasAiRunID(db *sql.DB) error {
+	exists, hasColumn, err := tableHasColumn(db, "personas", "ai_run_id")
+	if err != nil {
+		return err
+	}
+	if !exists || hasColumn {
+		return nil
+	}
+	_, err = db.Exec(`ALTER TABLE personas ADD COLUMN ai_run_id TEXT REFERENCES persona_ai_runs(id) ON DELETE SET NULL`)
 	return err
 }
 

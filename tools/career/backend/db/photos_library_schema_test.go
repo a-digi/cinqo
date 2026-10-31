@@ -121,3 +121,82 @@ func TestMigrateCvDocumentsPhoto_AddsTheColumnToAnOldTable(t *testing.T) {
 		t.Fatalf("photo = %v err=%v, want NULL", photo, err)
 	}
 }
+
+// An installed personas table without ai_run_id gets it (NULL for every existing persona);
+// running it again, or on a database with no such table, changes nothing.
+func TestMigratePersonasAiRunID_AddsTheColumnToAnOldTable(t *testing.T) {
+	d, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "old.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	d.SetMaxOpenConns(1)
+
+	if err := migratePersonasAiRunID(d); err != nil {
+		t.Fatalf("no table: %v", err)
+	}
+	if _, err := d.Exec(`CREATE TABLE personas (id TEXT PRIMARY KEY, name TEXT)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Exec(`INSERT INTO personas (id, name) VALUES ('p1', 'Old')`); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		if err := migratePersonasAiRunID(d); err != nil {
+			t.Fatalf("run %d: %v", i, err)
+		}
+	}
+	var runID sql.NullString
+	if err := d.QueryRow(`SELECT ai_run_id FROM personas WHERE id = 'p1'`).Scan(&runID); err != nil || runID.Valid {
+		t.Fatalf("ai_run_id = %v err=%v, want NULL", runID, err)
+	}
+}
+
+// An installed career.db from before step 112 (a personas table without ai_run_id, one persona in
+// it) is upgraded by the normal start: the column and the runs table appear, the persona is kept
+// with NULL, and a second start changes nothing.
+func TestInitDatabases_UpgradesAnInstallFromBeforeThePersonaAiRuns(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("TOOL_DB_DIR", dir)
+	old, err := sql.Open("sqlite", filepath.Join(dir, "career.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		`CREATE TABLE profiles (id TEXT PRIMARY KEY, first_name TEXT NOT NULL DEFAULT '', last_name TEXT NOT NULL DEFAULT '', image_media_file_id TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT)`,
+		`CREATE TABLE personas (id TEXT PRIMARY KEY, profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE, name TEXT NOT NULL, description TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT)`,
+		`INSERT INTO profiles (id, first_name) VALUES ('pr1', 'Ada')`,
+		`INSERT INTO personas (id, profile_id, name) VALUES ('pe1', 'pr1', 'Old persona')`,
+	} {
+		if _, err := old.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	old.Close()
+
+	for i := 0; i < 2; i++ {
+		if err := InitDatabases(); err != nil {
+			t.Fatalf("start %d: %v", i, err)
+		}
+		var name string
+		var runID sql.NullString
+		if err := CareerDB.QueryRow(`SELECT name, ai_run_id FROM personas WHERE id = 'pe1'`).Scan(&name, &runID); err != nil || name != "Old persona" || runID.Valid {
+			t.Fatalf("start %d: name=%q ai_run_id=%v err=%v", i, name, runID, err)
+		}
+		if _, err := CareerDB.Exec(`INSERT INTO persona_ai_runs (id, profile_id, conversation_id) VALUES ('r', 'pr1', 'c')`); err != nil {
+			t.Fatalf("start %d: the runs table is missing: %v", i, err)
+		}
+		if _, err := CareerDB.Exec(`UPDATE personas SET ai_run_id = 'r' WHERE id = 'pe1'`); err != nil {
+			t.Fatalf("start %d: cannot link a persona to a run: %v", i, err)
+		}
+		// Deleting the run keeps the persona (the foreign key is live).
+		if _, err := CareerDB.Exec(`DELETE FROM persona_ai_runs WHERE id = 'r'`); err != nil {
+			t.Fatal(err)
+		}
+		if err := CareerDB.QueryRow(`SELECT ai_run_id FROM personas WHERE id = 'pe1'`).Scan(&runID); err != nil || runID.Valid {
+			t.Fatalf("start %d: ai_run_id after the run was deleted = %v err=%v", i, runID, err)
+		}
+		JobsDB.Close()
+		CareerDB.Close()
+	}
+}

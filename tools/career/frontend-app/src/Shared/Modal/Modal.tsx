@@ -6,6 +6,9 @@ interface ModalProps {
   title: string
   onClose: () => void
   children: React.ReactNode
+  // 'wide' is for a long form: a wider panel whose body scrolls inside the window. The default
+  // is unchanged.
+  size?: 'default' | 'wide'
 }
 
 // Shared modal — controlled (open/onClose only), no fetch calls, no
@@ -13,7 +16,7 @@ interface ModalProps {
 // hiding via CSS, since nothing in this tool needs it to stay mounted
 // (no animated-out close, matching the ask: an entrance animation
 // only). See plan/ai/tools/career/step-58-portals-page-modal-accordion-redesign.md.
-export function Modal({ open, title, onClose, children }: ModalProps) {
+export function Modal({ open, title, onClose, children, size = 'default' }: ModalProps) {
   useEffect(() => {
     if (!open) {
       return
@@ -46,12 +49,14 @@ export function Modal({ open, title, onClose, children }: ModalProps) {
           from treating a click inside the panel as "outside". */}
       {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
       <div
-        className="w-full max-w-md rounded-xl border border-gray-200 bg-white shadow-xl [animation:modal-in_180ms_ease-out]"
+        className={`flex w-full flex-col rounded-xl border border-gray-200 bg-white shadow-xl [animation:modal-in_180ms_ease-out] ${
+          size === 'wide' ? 'max-h-[90vh] max-w-3xl' : 'max-w-md'
+        }`}
         onClick={(e) => {
           e.stopPropagation()
         }}
       >
-        <div className="flex items-center justify-between border-b border-gray-100 px-5 py-3.5">
+        <div className="flex shrink-0 items-center justify-between border-b border-gray-100 px-5 py-3.5">
           <h2 className="text-sm font-semibold text-gray-900">{title}</h2>
           <button
             type="button"
@@ -62,7 +67,7 @@ export function Modal({ open, title, onClose, children }: ModalProps) {
             <XIcon />
           </button>
         </div>
-        <div className="p-5">{children}</div>
+        <div className={`p-5 ${size === 'wide' ? 'overflow-y-auto' : ''}`}>{children}</div>
       </div>
     </div>
   )

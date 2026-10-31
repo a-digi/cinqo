@@ -54,6 +54,116 @@ export interface Persona {
   description?: string
   createdAt: string
   updatedAt?: string
+  // The "create personas with AI" run this persona came from; missing otherwise (step 112).
+  aiRunId?: string
+}
+
+// --- create personas with AI (step 112) ---
+// A run is one AI attempt of a profile: the hidden conversation, what the user asked for, how it
+// ended and the AI's proposal. See plan/ai/tools/career/step-112-create-personas-with-ai.md.
+
+export interface ProposedRole {
+  company: string
+  title: string
+  startDate: string
+  endDate: string
+  description: string
+}
+
+export interface ProposedPersona {
+  name: string
+  description: string
+  // The id of an existing persona this one looks like, or null.
+  possibleDuplicateOf: string | null
+  details: {
+    headline: string
+    summary: string
+    location: string
+    desiredTitles: string
+    desiredLocations: string
+    minSalary: number
+  }
+  skills: string[]
+  experience: ProposedRole[]
+}
+
+export interface PersonaProposal {
+  personas: ProposedPersona[]
+  note: string
+}
+
+export type PersonaAiRunStatus = 'generating' | 'ready' | 'failed'
+
+export interface PersonaAiRun {
+  id: string
+  profileId: string
+  conversationId: string
+  focus: string
+  status: PersonaAiRunStatus
+  // Only once ready.
+  proposal?: PersonaProposal
+  error?: string
+  createdAt: string
+  finishedAt?: string
+  // The personas created from this run; empty until a proposal is applied.
+  personas: { id: string; name: string }[]
+}
+
+export async function fetchPersonaAiRuns(profileId: string): Promise<PersonaAiRun[]> {
+  const res = await fetch(`${PROXY_BASE}/persona-ai-runs?profileId=${encodeURIComponent(profileId)}`, { credentials: 'include' })
+  const data = await jsonOrThrow<{ runs: PersonaAiRun[] }>(res, 'load persona AI runs')
+  return data.runs
+}
+
+// Records the start of a run, before the first message is sent, so a reload can resume it.
+export async function createPersonaAiRun(profileId: string, conversationId: string, focus: string): Promise<string> {
+  const res = await fetch(`${PROXY_BASE}/persona-ai-runs`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ profileId, conversationId, focus }),
+  })
+  const data = await jsonOrThrow<{ id: string }>(res, 'record persona AI run')
+  return data.id
+}
+
+// Creates the personas the user accepted (possibly edited) from a ready run, in one go: all or none.
+export async function applyPersonaAiRun(runId: string, personas: ProposedPersona[]): Promise<{ id: string; name: string }[]> {
+  const res = await fetch(`${PROXY_BASE}/persona-ai-runs/apply`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ runId, personas }),
+  })
+  if (!res.ok) {
+    throw new Error((await res.text()).trim() || `failed to create the personas (${res.status})`)
+  }
+  const data = (await res.json()) as { personas: { id: string; name: string }[] }
+  return data.personas
+}
+
+// Removes a run from the history. The personas created from it stay.
+export async function deletePersonaAiRun(id: string): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/persona-ai-runs?id=${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'include' })
+  if (!res.ok) {
+    throw new Error(`failed to remove the run (${res.status})`)
+  }
+}
+
+// Ends a generating run: ready with the AI's proposal, or failed with a reason.
+export async function finishPersonaAiRun(
+  id: string,
+  outcome: { status: 'ready'; proposal: PersonaProposal } | { status: 'failed'; error: string },
+): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/persona-ai-runs`, {
+    method: 'PUT',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, ...outcome }),
+  })
+  if (!res.ok) {
+    throw new Error((await res.text()).trim() || `failed to finish persona AI run (${res.status})`)
+  }
 }
 
 export interface PersonaDetails {

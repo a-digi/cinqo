@@ -54,6 +54,8 @@ type persona struct {
 	Description string `json:"description,omitempty"`
 	CreatedAt   string `json:"createdAt"`
 	UpdatedAt   string `json:"updatedAt,omitempty"`
+	// The "create personas with AI" run this persona came from (step 112); missing otherwise.
+	AiRunID string `json:"aiRunId,omitempty"`
 }
 
 func CreatePersona(profileId, name, description string) (string, error) {
@@ -76,7 +78,7 @@ func CreatePersona(profileId, name, description string) (string, error) {
 // tool's own "omitting an optional filter means unfiltered" convention
 // (search_jobs's own query/location params).
 func ListPersonas(profileId string) ([]persona, error) {
-	query := `SELECT id, profile_id, name, description, created_at, updated_at FROM personas`
+	query := `SELECT id, profile_id, name, description, created_at, updated_at, ai_run_id FROM personas`
 	args := []any{}
 	if profileId != "" {
 		query += ` WHERE profile_id = ?`
@@ -93,12 +95,13 @@ func ListPersonas(profileId string) ([]persona, error) {
 	personas := []persona{}
 	for rows.Next() {
 		var p persona
-		var description, updatedAt sql.NullString
-		if err := rows.Scan(&p.ID, &p.ProfileID, &p.Name, &description, &p.CreatedAt, &updatedAt); err != nil {
+		var description, updatedAt, aiRunID sql.NullString
+		if err := rows.Scan(&p.ID, &p.ProfileID, &p.Name, &description, &p.CreatedAt, &updatedAt, &aiRunID); err != nil {
 			return nil, err
 		}
 		p.Description = description.String
 		p.UpdatedAt = updatedAt.String
+		p.AiRunID = aiRunID.String
 		personas = append(personas, p)
 	}
 	return personas, rows.Err()

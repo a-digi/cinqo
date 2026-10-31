@@ -81,6 +81,14 @@ func runHTTPServer() {
 	if err := jobs.ReconcileOrphanedCvGenerations(); err != nil {
 		log.Fatalf("failed to reconcile orphaned CV generations: %v", err)
 	}
+	// step 112 — a persona AI run's own turn lives in the core app too, so a restart here does
+	// not orphan it; only a run stuck 'generating' past the stale threshold is ended. Never
+	// fatal, like the instruction attempts below.
+	if n, err := persona.ReconcileStaleAiRuns(); err != nil {
+		log.Printf("failed to reconcile stale persona AI runs: %v", err)
+	} else if n > 0 {
+		log.Printf("ended %d stale persona AI run(s)", n)
+	}
 	// step 86 — an instruction attempt's own run lives in the core app,
 	// so a restart here does not orphan it; only ones stuck 'running'
 	// past the stale threshold (tab closed, app crashed) are ended.
@@ -107,6 +115,8 @@ func runHTTPServer() {
 	http.HandleFunc("/profile-image", profileimage.Handler)
 	http.HandleFunc("/photos", profileimage.PhotosHandler)
 	http.HandleFunc("/profile-photos", profileimage.ProfilePhotosHandler)
+	http.HandleFunc("/persona-ai-runs", persona.AiRunsHandler)
+	http.HandleFunc("/persona-ai-runs/apply", persona.AiRunApplyHandler)
 	http.HandleFunc("/personas", personasHandler)
 	http.HandleFunc("/persona-details", personaDetailsHandler)
 	http.HandleFunc("/skills", skillsHandler)

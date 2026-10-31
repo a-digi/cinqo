@@ -1,6 +1,14 @@
 import { useEffect, useState } from 'react'
-import { fetchPersonas, updatePersona, deletePersona, type Persona } from '../../../api'
-import { LayersIcon, PlusIcon } from '../../../Shared/Icons/icons'
+import {
+  fetchPersonas,
+  fetchProfiles,
+  updatePersona,
+  deletePersona,
+  deletePersonaAiRun,
+  type Persona,
+  type PersonaAiRun,
+} from '../../../api'
+import { LayersIcon, PlusIcon, SparkleIcon } from '../../../Shared/Icons/icons'
 import { inputClass } from '../../../Shared/inputClass'
 import { PageHeaderCard } from '../../../Shared/PageHeader/PageHeaderCard'
 import { NEW_PERSONA_PATH } from '../../../paths'
@@ -10,6 +18,13 @@ import { ProfileSwitcher } from '../../ProfileSwitcher/ProfileSwitcher'
 import { NeedsAttention } from './NeedsAttention'
 import { summarizePersonas, undescribedPersonas } from './personaStats'
 import { PageTips } from '../../../Shared/PageTips/PageTips'
+import { useAiChoice } from '../../../Cinqo/Platform/useAiChoice'
+import { profileLabel } from '../../ProfileSwitcher/profileLabel'
+import { CreateWithAi } from '../../../PersonaAi/CreateWithAi'
+import { PersonaAiHistory } from '../../../PersonaAi/PersonaAiHistory'
+import { ReviewPersonasDialog } from '../../../PersonaAi/ReviewPersonasDialog'
+import { usePersonaAiRuns } from '../../../PersonaAi/usePersonaAiRuns'
+import { chatOfRun, hasRunningRun } from '../../../PersonaAi/runDisplay'
 
 // Full persona CRUD — since step 10, every persona belongs to a
 // profile (job seeker), so this page now scopes its own list and its
@@ -28,6 +43,24 @@ export function PersonasPage() {
   const [editName, setEditName] = useState('')
   const [editDescription, setEditDescription] = useState('')
   const [error, setError] = useState('')
+  // Create personas with AI (step 112): the AI in use, this profile's name (for the chat's
+  // title), and its runs.
+  const ai = useAiChoice()
+  const [profileName, setProfileName] = useState('')
+  const aiRuns = usePersonaAiRuns(profileId)
+  const [reviewing, setReviewing] = useState<PersonaAiRun | null>(null)
+
+  useEffect(() => {
+    if (!profileId) return
+    fetchProfiles()
+      .then((list) => {
+        const found = list.find((p) => p.id === profileId)
+        setProfileName(found ? profileLabel(found) : '')
+      })
+      .catch(() => {
+        setProfileName('')
+      })
+  }, [profileId])
 
   function load(forProfileId: string) {
     setError('')
@@ -121,6 +154,19 @@ export function PersonasPage() {
                 <PlusIcon />
                 New persona
               </button>
+              <CreateWithAi
+                ai={ai}
+                disabledReason={
+                  !ai.platform
+                    ? 'No AI platform is available. Choose one in Settings.'
+                    : personas.length === 0
+                      ? 'Add a persona first: the AI builds on what you have filled in.'
+                      : hasRunningRun(aiRuns.runs)
+                        ? 'An AI run is already working on this profile.'
+                        : ''
+                }
+                onStart={(focus) => aiRuns.start({ id: profileId, name: profileName }, focus, ai)}
+              />
               <p className="min-w-0 flex-1 text-xs text-gray-500">
                 Deleting a persona permanently deletes its details, every skill and every experience entry, with no further confirmation.
               </p>
@@ -198,7 +244,10 @@ export function PersonasPage() {
                         {initialOf(p.name)}
                       </span>
                       <div className="min-w-0 flex-1">
-                        <div className="text-sm font-semibold">{p.name}</div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-semibold">{p.name}</span>
+                          {p.aiRunId !== undefined && <CreatedWithAiChip chatId={chatOfRun(aiRuns.runs, p.aiRunId)} />}
+                        </div>
                         {p.description && <div className="mt-0.5 text-xs text-gray-500">{p.description}</div>}
                         <div className="mt-1 text-xs text-gray-400">Created {formatDate(p.createdAt)}</div>
                       </div>
@@ -233,6 +282,17 @@ export function PersonasPage() {
         <aside className="w-full shrink-0 lg:sticky lg:top-6 lg:w-72">
           {profileId && (
             <>
+              <PersonaAiHistory
+                runs={aiRuns.runs}
+                onReview={setReviewing}
+                onRemove={(run) =>
+                  deletePersonaAiRun(run.id).then(() => {
+                    // The personas it created stay, without the link to the run.
+                    load(profileId)
+                    return aiRuns.reload()
+                  })
+                }
+              />
               <NeedsAttention total={summary.personas} undescribed={undescribed} onEdit={editFromPanel} />
             </>
           )}
@@ -241,6 +301,21 @@ export function PersonasPage() {
           </div>
         </aside>
       </div>
+
+      {reviewing && profileId && (
+        <ReviewPersonasDialog
+          run={reviewing}
+          existing={personas.map((p) => ({ id: p.id, name: p.name }))}
+          onClose={() => {
+            setReviewing(null)
+          }}
+          onCreated={() => {
+            setReviewing(null)
+            load(profileId)
+            void aiRuns.reload()
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -249,4 +324,31 @@ export function PersonasPage() {
 function formatDate(value: string): string {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString()
+}
+
+// "Created with AI" on a persona that came from a run; with its chat still in the history it opens
+// that chat. Personas are the only place this shows (step 112).
+function CreatedWithAiChip({ chatId }: { chatId: string | null }) {
+  const look = 'inline-flex items-center gap-1 rounded-full bg-purple-50 px-2 py-0.5 text-[11px] font-medium text-purple-700'
+  if (chatId === null) {
+    return (
+      <span className={look}>
+        <SparkleIcon />
+        Created with AI
+      </span>
+    )
+  }
+  return (
+    <button
+      type="button"
+      title="Open the chat that proposed this persona"
+      onClick={() => {
+        window.__cinqoToolBridge.openConversation(chatId)
+      }}
+      className={`${look} hover:bg-purple-100`}
+    >
+      <SparkleIcon />
+      Created with AI
+    </button>
+  )
 }

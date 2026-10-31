@@ -422,6 +422,14 @@ export const PAGE_TIPS: Record<PageTipsId, PageTipSet> = {
         icon: 'layers',
         text: 'After creating a persona, add its Summary & Goals, Skills and Experience from the My Profile menu.',
       },
+      {
+        id: 'with-ai',
+        label: 'With AI',
+        title: 'Create personas with AI',
+        tone: 'teal',
+        icon: 'spark',
+        text: 'Create with AI proposes up to three personas from what you have filled in. You review and edit them first. The chats stay under AI history.',
+      },
     ],
   },
   summary: {
