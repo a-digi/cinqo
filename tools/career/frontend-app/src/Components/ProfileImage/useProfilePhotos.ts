@@ -10,20 +10,19 @@ export function useProfilePhotos(profileId: string | null, onChanged?: () => voi
   const [photos, setPhotos] = useState<ProfilePhoto[]>([])
   const [error, setError] = useState('')
 
+  // Reads the list again (a best effort: a list that cannot be read keeps what is shown).
+  const reload = useCallback(() => {
+    if (!profileId) return
+    fetchProfilePhotos(profileId)
+      .then(setPhotos)
+      .catch(() => undefined)
+  }, [profileId])
+
   useEffect(() => {
     setPhotos([])
     setError('')
-    if (!profileId) return
-    let cancelled = false
-    fetchProfilePhotos(profileId)
-      .then((list) => {
-        if (!cancelled) setPhotos(list)
-      })
-      .catch(() => undefined)
-    return () => {
-      cancelled = true
-    }
-  }, [profileId])
+    reload()
+  }, [reload])
 
   const remove = useCallback(
     (photo: ProfilePhoto) => {
@@ -42,5 +41,5 @@ export function useProfilePhotos(profileId: string | null, onChanged?: () => voi
     [profileId, onChanged],
   )
 
-  return { photos, error, remove }
+  return { photos, error, remove, reload }
 }

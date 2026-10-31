@@ -18,6 +18,8 @@ import { NEW_PERSONA_PATH, VIEW_PERSONA_PATH } from '../../../paths'
 import { plural } from '../../CompaniesPage/companyStats'
 import { PAGE_ACCENT, accentFor, initialOf } from '../../JobsPage/jobsTheme'
 import { ProfileSwitcher } from '../../ProfileSwitcher/ProfileSwitcher'
+import { PhotoAvatar } from '../../ProfileImage/PhotoAvatar'
+import { useProfilePhotos } from '../../ProfileImage/useProfilePhotos'
 import { PersonaCvs } from './PersonaCvs'
 import { NeedsAttention } from './NeedsAttention'
 import { summarizePersonas, undescribedPersonas } from './personaStats'
@@ -61,6 +63,9 @@ export function PersonasPage() {
   const ai = useAiChoice()
   const [profileName, setProfileName] = useState('')
   const aiRuns = usePersonaAiRuns(profileId)
+  // The selected profile's default photo, shown on each persona item (a persona has no photo of its own).
+  const profilePhotos = useProfilePhotos(profileId)
+  const defaultPhotoId = profilePhotos.photos.find((ph) => ph.isDefault)?.mediaFileId
   // The personas the AI just created (step 112): shown highlighted and bigger until dismissed or
   // until another profile is picked, and scrolled to once they are in the list.
   const [newIds, setNewIds] = useState<string[]>([])
@@ -360,13 +365,23 @@ export function PersonasPage() {
                       </div>
                     ) : (
                       <div className="flex items-start gap-3">
-                        <span
-                          className={`inline-flex shrink-0 items-center justify-center rounded-full font-bold text-white shadow-sm ${isNew ? 'h-12 w-12 text-lg' : 'h-10 w-10 text-base'}`}
-                          style={{ background: accentFor(p.name).to }}
-                          aria-hidden="true"
-                        >
-                          {initialOf(p.name)}
-                        </span>
+                        {profileId && defaultPhotoId ? (
+                          <PhotoAvatar
+                            profileId={profileId}
+                            mediaFileId={defaultPhotoId}
+                            sizeClass={isNew ? 'h-14 w-14' : 'h-12 w-12'}
+                            onChanged={profilePhotos.reload}
+                            onError={setError}
+                          />
+                        ) : (
+                          <span
+                            className={`inline-flex shrink-0 items-center justify-center rounded-full font-bold text-white shadow-sm ${isNew ? 'h-12 w-12 text-lg' : 'h-10 w-10 text-base'}`}
+                            style={{ background: accentFor(p.name).to }}
+                            aria-hidden="true"
+                          >
+                            {initialOf(p.name)}
+                          </span>
+                        )}
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className={isNew ? 'text-base font-semibold' : 'text-sm font-semibold'}>{p.name}</span>
