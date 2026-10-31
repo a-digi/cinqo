@@ -3,7 +3,23 @@
 // prices. Editorial text, not configuration: it changes with what the app does, so it lives here
 // and not in the component. See plan/ai/tools/career/step-105-shared-carousel-and-portal-tips.md.
 
+import { ACCENTS, type Accent } from '../JobsPage/jobsTheme'
+
 export type PortalTipTone = 'amber' | 'rose' | 'green' | 'violet'
+
+// A tip's colour: the dashboards' amber, rose, green and violet.
+export function toneAccent(tone: PortalTipTone): Accent {
+  switch (tone) {
+    case 'amber':
+      return ACCENTS[2]
+    case 'rose':
+      return ACCENTS[3]
+    case 'green':
+      return ACCENTS[1]
+    case 'violet':
+      return ACCENTS[4]
+  }
+}
 
 export interface PortalTipData {
   id: string

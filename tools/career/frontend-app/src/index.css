@@ -623,14 +623,3 @@
     animation: none !important;
   }
 }
-
-/* The Portals page's left column is about 780px tall (the controls, the Overview and the tips; measured live),
-   and with the app's header and the 24px offset it needs about 860px of window to be shown whole. So it sticks to
-   the top only on a window at least 900px tall; on a shorter one it scrolls with the page instead of having its
-   bottom cut off. See plan/ai/tools/career/step-105-shared-carousel-and-portal-tips.md. */
-@media (min-width: 1024px) and (min-height: 900px) {
-  .career-rail-sticky {
-    position: sticky;
-    top: 1.5rem;
-  }
-}

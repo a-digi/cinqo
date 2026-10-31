@@ -20,6 +20,9 @@ import {
   type Direction,
   type Orientation,
 } from './carouselRules'
+import { PAGE_ACCENT, type Accent } from '../../Components/JobsPage/jobsTheme'
+import { Decor } from '../Decor/Decor'
+import { shapeAt, type DecorShape } from '../Decor/decorShapes'
 
 export interface CarouselSlide {
   // Stable key for the slide.
@@ -27,6 +30,10 @@ export interface CarouselSlide {
   // A short name: the dot's tooltip and what a screen reader hears ("2 of 4: Paywalls").
   label: string
   content: ReactNode
+  // The slide's colour: its card tint, its shapes, and the arrows and dots while it is shown. The page's blue when omitted.
+  accent?: Accent
+  // The shape behind the slide; when omitted the slides take turns (circles, diamond, ring).
+  shape?: DecorShape
 }
 
 export interface CarouselProps {
@@ -90,7 +97,9 @@ const ARROW_LABEL: Record<Orientation, Record<Direction, string>> = {
 }
 
 // A shared carousel: one slide at a time, arrows, dots, the arrow keys, and (horizontal only) swipe. Purely
-// presentational: it takes slides and shows them, no data, no fetching.
+// presentational: it takes slides and shows them, no data, no fetching. Every slide sits in a card like the
+// dashboard cards (a pale tint of its accent, a soft border, shapes behind it), and the arrows and dots take the
+// colour of the slide that is shown.
 //
 // The slides are stacked in one grid cell and each is moved by its distance from the shown one, so the frame is
 // as tall as the tallest slide with no height to set, and nothing jumps when the slide changes. The ones not shown
@@ -99,8 +108,8 @@ const ARROW_LABEL: Record<Orientation, Record<Direction, string>> = {
 //
 //   <Carousel orientation="vertical" ariaLabel="Tips" slides={[{ id: 'a', label: 'First', content: <p>…</p> }]} />
 //
-// The horizontal design puts its arrows over the left and right edges of the frame, so its slides should keep
-// about 2.5rem of side padding; the vertical one keeps its controls in their own column and needs none.
+// The horizontal design puts its arrows over the left and right edges of the card, so the card keeps 3rem of side
+// padding for them; the vertical one keeps its controls in their own column and needs none.
 //
 // Use index + onIndexChange to control it from the page. See
 // plan/ai/tools/career/step-105-shared-carousel-and-portal-tips.md.
@@ -175,9 +184,12 @@ export function Carousel({
   if (count === 0) return null
   const atStart = !loop && index === 0
   const atEnd = !loop && index === count - 1
+  const activeAccent = slides[index]?.accent ?? PAGE_ACCENT
+  // The arrows and the active dot wear the colour of the slide that is shown.
+  const arrowStyle = { color: activeAccent.text, '--tw-ring-color': activeAccent.from } as CSSProperties
 
   const arrowBase =
-    'flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/90 text-gray-700 shadow-sm ring-1 ring-gray-200 transition hover:bg-white hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:pointer-events-none disabled:opacity-30'
+    'flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/95 shadow-sm ring-1 transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:pointer-events-none disabled:opacity-30'
   const edgeArrow = (direction: Direction, disabled: boolean) => (
     <button
       type="button"
@@ -187,7 +199,8 @@ export function Carousel({
       onClick={() => {
         step(direction)
       }}
-      className={`${arrowBase} absolute top-1/2 z-10 -translate-y-1/2 ${direction === 'prev' ? 'left-1' : 'right-1'} disabled:opacity-0`}
+      style={arrowStyle}
+      className={`${arrowBase} absolute top-1/2 z-10 -translate-y-1/2 ${direction === 'prev' ? 'left-2' : 'right-2'} disabled:opacity-0`}
     >
       <Chevron direction={direction} orientation="horizontal" />
     </button>
@@ -201,6 +214,7 @@ export function Carousel({
       onClick={() => {
         step(direction)
       }}
+      style={arrowStyle}
       className={`${arrowBase} h-7 w-7`}
     >
       <Chevron direction={direction} orientation="vertical" />
@@ -220,14 +234,9 @@ export function Carousel({
           onClick={() => {
             goTo(i, true)
           }}
+          style={{ background: i === index ? activeAccent.to : activeAccent.from, opacity: i === index ? 1 : 0.35 }}
           className={`rounded-full transition-all duration-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
-            vertical
-              ? i === index
-                ? 'h-6 w-1.5 bg-gray-700'
-                : 'h-3 w-1.5 bg-gray-300 hover:bg-gray-400'
-              : i === index
-                ? 'h-1.5 w-6 bg-gray-700'
-                : 'h-1.5 w-3 bg-gray-300 hover:bg-gray-400'
+            vertical ? (i === index ? 'h-6 w-1.5' : 'h-3 w-1.5') : i === index ? 'h-1.5 w-6' : 'h-1.5 w-3'
           }`}
         />
       ))}
@@ -257,7 +266,16 @@ export function Carousel({
           className="min-w-0"
           style={slideStyle(i)}
         >
-          {slide.content}
+          <div
+            className={`relative h-full overflow-hidden rounded-3xl border shadow-sm ${vertical ? 'p-4' : 'px-12 py-5'}`}
+            style={{
+              borderColor: (slide.accent ?? PAGE_ACCENT).soft,
+              background: `linear-gradient(160deg, #ffffff 40%, ${(slide.accent ?? PAGE_ACCENT).soft} 100%)`,
+            }}
+          >
+            <Decor shape={slide.shape ?? shapeAt(i)} accent={slide.accent ?? PAGE_ACCENT} />
+            <div className="relative">{slide.content}</div>
+          </div>
         </div>
       ))}
     </div>
