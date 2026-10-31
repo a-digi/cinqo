@@ -4,6 +4,7 @@ import "testing"
 
 func delegatingManifest(allowed []string) Manifest {
 	return Manifest{
+		Info: testInfo(),
 		Slug: "demo", Name: "Demo", Version: "1.0.0", MCP: true,
 		Scopes:   []ScopeDecl{{Scope: "tool:demo:run"}},
 		MCPTools: []MCPToolDecl{{Name: "plan", RequiredScope: "tool:demo:run", Delegates: &DelegatesDecl{AllowedTools: allowed}}},

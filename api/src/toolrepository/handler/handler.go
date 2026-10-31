@@ -188,7 +188,7 @@ func InstallHandler(reqCtx request.RequestContext) {
 		fail(w, err)
 		return
 	}
-	result, installErr := tool_handler.InstallPackage(reqCtx, data, &tool_handler.PackageExpectation{Slug: plan.ToolID, Version: plan.Version})
+	result, installErr := tool_handler.InstallPackage(reqCtx, data, &tool_handler.PackageExpectation{Slug: plan.ToolID, Version: plan.Version, Info: plan.Info})
 	if installErr != nil {
 		response.ErrorResponse(w, installErr.Status, installErr.Message)
 		return

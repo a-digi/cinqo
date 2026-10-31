@@ -2,6 +2,10 @@
   "slug": "example_frontend_only",
   "name": "Example Frontend-Only Tool",
   "version": "0.0.1",
+  "authors": [
+    { "name": "Your Name", "email": "you@example.com" }
+  ],
+  "license": "MIT",
   "scopes": [
     {"scope": "tool:example_frontend_only:read", "description": "View the example tool's page."}
   ]

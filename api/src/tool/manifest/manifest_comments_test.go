@@ -7,6 +7,7 @@ import (
 
 func commentsManifest(c ...CommentTypeDecl) Manifest {
 	return Manifest{
+		Info: testInfo(),
 		Slug: "demo", Name: "Demo", Version: "1.0.0",
 		Scopes:   []ScopeDecl{{Scope: "tool:demo:read"}, {Scope: "tool:demo:write"}},
 		Comments: c,

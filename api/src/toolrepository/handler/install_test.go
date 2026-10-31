@@ -114,7 +114,7 @@ func toolZip(t *testing.T, slug, version string) []byte {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	w, _ := zw.Create("manifest.json")
-	fmt.Fprintf(w, `{"slug":%q,"name":"Demo","version":%q}`, slug, version)
+	fmt.Fprintf(w, `{"slug":%q,"name":"Demo","version":%q,"authors":[{"name":"Test Author"}],"license":"MIT"}`, slug, version)
 	w, _ = zw.Create("frontend/bundle.js")
 	w.Write([]byte("// bundle " + version))
 	if err := zw.Close(); err != nil {

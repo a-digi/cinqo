@@ -1,7 +1,11 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.0.375",
+  "version": "0.0.376",
+  "authors": [
+    { "name": "Anes Detit", "email": "tafa.andet@googlemail.com" }
+  ],
+  "license": "Proprietary",
   "mcp": true,
   "requires_tools": [
     {

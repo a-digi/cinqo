@@ -5,6 +5,7 @@ import { LoadingSpinner } from '../../../Shared/Components/Loading/LoadingSpinne
 import { useConfirm } from '../../../Shared/Components/Modal/useConfirm'
 import { Pill } from '../../../Shared/Components/Pill/Pill'
 import { RepositoryLink } from './RepositoryLink'
+import { MaintainerLine } from './ToolAttribution'
 import { errorText } from './repositoryErrors'
 import {
   addLinkProblem,
@@ -208,6 +209,7 @@ export function RepositoriesPage() {
                   <div>
                     <RepositoryLink url={repository.url} />
                   </div>
+                  <MaintainerLine publisher={repository.publisher} />
                 </td>
                 <td className="px-4 py-3 text-gray-700">{countsCell(repository.counts)}</td>
                 <td className="px-4 py-3">

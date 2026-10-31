@@ -35,4 +35,8 @@ type Tool struct {
 	// (never silently regenerated) across a version update. See
 	// plan/ai/domain-events/step-05-tool-publish-endpoint.md.
 	ServiceToken string `db:"service_token" dbtype:"TEXT" nullable:"false" json:"-"`
+	// Metadata is who made the tool, as the package's own manifest declared it (authors, company, license, links,
+	// copyright, category, keywords): one JSON document written by toolmeta.Encode at install and update. Empty
+	// for a tool installed before this column existed. See plan/ai/tools/repository/tool-metadata.md.
+	Metadata string `db:"metadata" dbtype:"TEXT" nullable:"true" json:"-"`
 }

@@ -31,10 +31,10 @@ func (r *ToolPersistentRepo) InsertFresh(
 
 	if _, err := tx.Exec(
 		`INSERT INTO tools (id, slug, name, version, kind, enabled, status, install_path,
-			backend_executable_relpath, frontend_bundle_relpath, min_app_version, max_app_version, service_token, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+			backend_executable_relpath, frontend_bundle_relpath, min_app_version, max_app_version, service_token, metadata, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
 		t.ID, t.Slug, t.Name, t.Version, t.Kind, t.Enabled, t.Status, t.InstallPath,
-		t.BackendExecutableRelpath, t.FrontendBundleRelpath, t.MinAppVersion, t.MaxAppVersion, t.ServiceToken,
+		t.BackendExecutableRelpath, t.FrontendBundleRelpath, t.MinAppVersion, t.MaxAppVersion, t.ServiceToken, nullable(t.Metadata),
 	); err != nil {
 		return err
 	}
@@ -67,11 +67,11 @@ func (r *ToolPersistentRepo) UpdateVersion(
 	if _, err := tx.Exec(
 		`UPDATE tools SET name = ?, version = ?, kind = ?, enabled = ?, status = ?, install_path = ?,
 			backend_executable_relpath = ?, frontend_bundle_relpath = ?, min_app_version = ?, max_app_version = ?,
-			service_token = ?, updated_at = CURRENT_TIMESTAMP
+			service_token = ?, metadata = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?`,
 		t.Name, t.Version, t.Kind, t.Enabled, t.Status, t.InstallPath,
 		t.BackendExecutableRelpath, t.FrontendBundleRelpath, t.MinAppVersion, t.MaxAppVersion,
-		t.ServiceToken, t.ID,
+		t.ServiceToken, nullable(t.Metadata), t.ID,
 	); err != nil {
 		return err
 	}
@@ -176,4 +176,12 @@ func insertChildRows(
 		}
 	}
 	return nil
+}
+
+// nullable stores an empty string as NULL, so a tool with no metadata is distinguishable from one that has any.
+func nullable(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
 }

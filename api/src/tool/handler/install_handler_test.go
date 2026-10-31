@@ -102,7 +102,7 @@ func upload(t *testing.T, di *uploadDI, pkg []byte) (int, map[string]any) {
 
 func demoPackage(t *testing.T, version string) []byte {
 	return zipOf(t, map[string]string{
-		"manifest.json":      fmt.Sprintf(`{"slug":"demo","name":"Demo","version":%q}`, version),
+		"manifest.json":      fmt.Sprintf(`{"slug":"demo","name":"Demo","version":%q,"authors":[{"name":"Test Author"}],"license":"MIT"}`, version),
 		"frontend/bundle.js": "// " + version,
 	})
 }

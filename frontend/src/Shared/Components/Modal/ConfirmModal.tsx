@@ -8,6 +8,8 @@ export interface ConfirmModalProps {
   open: boolean
   title: string
   message: string
+  // Anything more to show under the message (a few facts to read before saying yes).
+  details?: React.ReactNode
   confirmLabel?: string
   cancelLabel?: string
   // Every current caller is a destructive delete, so this defaults to
@@ -22,6 +24,7 @@ export function ConfirmModal({
   open,
   title,
   message,
+  details,
   confirmLabel = 'Confirm',
   cancelLabel = 'Cancel',
   danger = true,
@@ -58,7 +61,7 @@ export function ConfirmModal({
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="confirm-modal-title"
-        className="w-full max-w-sm rounded-lg bg-white p-5 shadow-lg"
+        className={`w-full rounded-lg bg-white p-5 shadow-lg ${details ? 'max-w-md' : 'max-w-sm'}`}
         onClick={(e) => {
           e.stopPropagation()
         }}
@@ -67,6 +70,7 @@ export function ConfirmModal({
           {title}
         </h2>
         <p className="mt-2 text-sm text-gray-600">{message}</p>
+        {details && <div className="mt-3">{details}</div>}
         <div className="mt-5 flex justify-end gap-2">
           <button
             ref={cancelRef}

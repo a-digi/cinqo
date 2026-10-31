@@ -1,4 +1,5 @@
 import { apiDelete, apiGet, apiPost, apiUpload } from './client'
+import type { ToolMetadata } from './toolMeta'
 
 // Same snake_case-to-camelCase *Raw mapping convention as api/auth.ts,
 // api/security.ts. install_path/pid are never sent by the backend
@@ -20,6 +21,8 @@ export interface Tool {
   // Names only, not description/inputSchema/requiredScope — the Tools
   // page's own pills just need a label. See ToolsListPage.tsx.
   mcpTools: string[]
+  // Who made it, as its own package declared; null for a tool installed before that was recorded.
+  metadata: ToolMetadata | null
 }
 
 interface ToolRaw {
@@ -36,6 +39,7 @@ interface ToolRaw {
   created_at: string
   updated_at: string
   mcp_tools: string[]
+  metadata?: ToolMetadata | null
 }
 
 function fromRaw(raw: ToolRaw): Tool {
@@ -53,6 +57,7 @@ function fromRaw(raw: ToolRaw): Tool {
     createdAt: raw.created_at,
     updatedAt: raw.updated_at,
     mcpTools: raw.mcp_tools,
+    metadata: raw.metadata ?? null,
   }
 }
 

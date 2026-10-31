@@ -14,6 +14,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/a-digi/cinqo/src/toolrepository/publish"
 )
@@ -27,15 +28,24 @@ func main() {
 	flag.StringVar(&opts.Description, "description", "", "repository description")
 	flag.StringVar(&opts.BaseURL, "base-url", "", "address the output folder will be served from; leave empty for links relative to the repository file")
 	flag.StringVar(&opts.AssetsURL, "assets-url", "", "serve every package flat from this address, e.g. https://github.com/<owner>/<repo>/releases/download/<tag>; links become <assets-url>/<zip>")
+	flag.StringVar(&opts.MetaFile, "meta", "", "the repository's own facts (name, description, authors, company, links); default <tools-dir>/repository.meta.json when it exists")
+	flag.BoolVar(&opts.RequireAuthors, "require-authors", false, "fail, instead of writing the older format 1, when the repository or a tool version has no authors or licence")
 	flag.BoolVar(&opts.InPlace, "in-place", false, "write the repository file into -tools-dir and link packages where they are, copying nothing")
 	flag.Parse()
+	opts.Now = time.Now
 
 	res, err := publish.Generate(opts)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "repotool:", err)
 		os.Exit(1)
 	}
-	fmt.Printf("wrote %s: %d tools, %d packages\n", res.File, len(res.Catalog.Tools), res.Packages)
+	fmt.Printf("wrote %s: format %d, %d tools, %d packages\n", res.File, res.Catalog.FormatVersion, len(res.Catalog.Tools), res.Packages)
+	if len(res.Warnings) > 0 {
+		fmt.Printf("written in the older format 1 because who made it is missing (use -require-authors to make this an error):\n")
+		for _, w := range res.Warnings {
+			fmt.Printf("  ! %s\n", w)
+		}
+	}
 	for _, t := range res.Catalog.Tools {
 		fmt.Printf("  %-14s current %s (%d versions)\n", t.ID, t.CurrentVersionID, len(t.Versions))
 	}

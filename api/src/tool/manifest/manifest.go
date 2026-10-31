@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"github.com/a-digi/cinqo/src/comments"
 	"github.com/a-digi/cinqo/src/dashboard"
+	"github.com/a-digi/cinqo/src/toolmeta"
 	"regexp"
 	"slices"
 	"strconv"
@@ -19,6 +20,11 @@ import (
 )
 
 type Manifest struct {
+	// Who made the tool and under what licence (authors, company, license, links, copyright, category,
+	// keywords). Authors and a licence are required at every install and update (ValidateMetadata); the fields
+	// sit at the top level of manifest.json. repotool copies them into the repository file, and core keeps what
+	// the package declared for the installed tool. See plan/ai/tools/repository/tool-metadata.md.
+	toolmeta.Info
 	Slug           string      `json:"slug"`
 	Name           string      `json:"name"`
 	Version        string      `json:"version"`
@@ -342,6 +348,9 @@ func Validate(m Manifest, in ValidationInput) (kind string, err error) {
 	if err := ValidateFileSources(m); err != nil {
 		return "", err
 	}
+	if err := ValidateMetadata(m); err != nil {
+		return "", err
+	}
 
 	switch {
 	case in.HasFrontendBundle && in.HasBackendExecutable:
@@ -447,6 +456,21 @@ func ValidateComments(m Manifest) error {
 		}
 	}
 	return nil
+}
+
+// ValidateMetadata checks who made the tool: authors and a licence are required (at install and update), and
+// everything optional (company, links, copyright, category, keywords) is checked when present, by the same rules
+// the repository file uses (package toolmeta). Every problem is reported at once, each naming its field.
+func ValidateMetadata(m Manifest) error {
+	probs := m.Info.Validate("", true)
+	if len(probs) == 0 {
+		return nil
+	}
+	parts := make([]string, len(probs))
+	for i, p := range probs {
+		parts[i] = p.String()
+	}
+	return fmt.Errorf("who made the tool: %s", strings.Join(parts, "; "))
 }
 
 // FileSourceDirs are the tool data folders a file source may point at. The database folder is left out on

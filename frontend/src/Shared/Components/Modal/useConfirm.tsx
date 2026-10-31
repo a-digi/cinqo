@@ -4,6 +4,7 @@ import { ConfirmModal } from './ConfirmModal'
 export interface ConfirmOptions {
   title: string
   message: string
+  details?: React.ReactNode
   confirmLabel?: string
   cancelLabel?: string
   danger?: boolean
@@ -39,6 +40,7 @@ export function useConfirm(): {
       open={options !== null}
       title={options?.title ?? ''}
       message={options?.message ?? ''}
+      details={options?.details}
       confirmLabel={options?.confirmLabel}
       cancelLabel={options?.cancelLabel}
       danger={options?.danger}

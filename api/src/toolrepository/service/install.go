@@ -8,6 +8,7 @@ import (
 	"runtime"
 
 	"github.com/a-digi/cinqo/src/tool/manifest"
+	"github.com/a-digi/cinqo/src/toolmeta"
 	"github.com/a-digi/cinqo/src/toolrepository/catalog"
 	"github.com/a-digi/cinqo/src/toolrepository/fetch"
 	"github.com/a-digi/cinqo/src/toolrepository/status"
@@ -42,6 +43,8 @@ type InstallPlan struct {
 	VersionID string
 	// Local says whether the repository was on a local address.
 	Local bool
+	// Info is what the repository says about who made this version; the package's own manifest must agree.
+	Info toolmeta.Info
 }
 
 // PlanInstall checks that versionID (default: the current version) of toolID
@@ -88,7 +91,7 @@ func (s *Service) PlanInstall(id, toolID, versionID string, env status.Env) (*In
 	p, _ := v.PickPackage(env.OS, env.Arch)
 	return &InstallPlan{
 		URL: p.URL, SHA256: p.SHA256, SizeBytes: p.SizeBytes,
-		ToolID: toolID, Version: v.Version, VersionID: v.VersionID, Local: repo.IsLocal,
+		ToolID: toolID, Version: v.Version, VersionID: v.VersionID, Local: repo.IsLocal, Info: v.Info,
 	}, nil
 }
 

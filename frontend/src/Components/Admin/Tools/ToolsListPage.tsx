@@ -29,6 +29,8 @@ import {
 } from './updateCheckDisplay'
 import { useUpdateCheck } from './useUpdateCheck'
 import { headGradient, themeForTool } from './toolCardTheme'
+import { Byline, LicensePill, LinkRow } from './ToolAttribution'
+import { matchesQuery, searchText } from './toolMetaDisplay'
 
 // Bounds the functions-pill area's own height — every function pill is
 // shown now (no cap), so a tool declaring many (Career: ~35) needs a
@@ -112,7 +114,7 @@ export function ToolsListPage() {
   }
 
   const q = query.trim().toLowerCase()
-  const filtered = q ? tools.filter((t) => t.name.toLowerCase().includes(q) || t.slug.toLowerCase().includes(q)) : tools
+  const filtered = q ? tools.filter((t) => matchesQuery(searchText(t.name, t.slug, t.metadata), q)) : tools
 
   return (
     <div className="max-w-6xl space-y-6 p-6">
@@ -168,7 +170,7 @@ export function ToolsListPage() {
           onChange={(e) => {
             setQuery(e.target.value)
           }}
-          placeholder="Search tools…"
+          placeholder="Search tools, authors, companies…"
           className="w-full max-w-xs rounded border border-gray-300 px-3 py-1.5 text-sm focus:border-gray-500 focus:outline-none"
         />
       )}
@@ -245,8 +247,10 @@ export function ToolsListPage() {
                     <p className="truncate font-mono text-xs text-gray-500">{tool.slug}</p>
                     <span className="shrink-0 text-sm font-semibold text-gray-900">v{tool.version}</span>
                   </div>
+                  <Byline metadata={tool.metadata} className="mt-1" />
 
                   <div className="mt-3 flex flex-wrap gap-2">
+                    <LicensePill license={tool.metadata?.license} />
                     <Pill outline>{tool.kind}</Pill>
                     <Pill outline>{tool.enabled ? 'Enabled' : 'Disabled'}</Pill>
                     <Pill outline>
@@ -254,6 +258,8 @@ export function ToolsListPage() {
                     </Pill>
                     {update && <Pill variant="amber">{updateLabel(update)}</Pill>}
                   </div>
+
+                  <LinkRow links={tool.metadata?.links} className="mt-3" />
 
                   {update && (
                     <p className="mt-3 text-xs text-gray-500">

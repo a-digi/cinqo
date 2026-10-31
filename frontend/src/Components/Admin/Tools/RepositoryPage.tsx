@@ -16,6 +16,7 @@ import { Pill } from '../../../Shared/Components/Pill/Pill'
 import { reloadAfterToolChange } from '../../../config/tools/loadTools'
 import { RepositoryLink } from './RepositoryLink'
 import { headGradient, themeForTool } from './toolCardTheme'
+import { Byline, LicensePill, PublisherBlock, ToolFacts } from './ToolAttribution'
 import { errorText } from './repositoryErrors'
 import {
   actionFor,
@@ -113,6 +114,7 @@ export function RepositoryPage() {
     const ok = await confirm({
       title: updating ? 'Update tool' : 'Install tool',
       message: installConfirmMessage(tool, detail),
+      details: <ToolFacts metadata={tool.metadata} />,
       confirmLabel: updating ? 'Update' : 'Install',
     })
     if (!ok) return
@@ -168,6 +170,7 @@ export function RepositoryPage() {
             <RepositoryLink url={detail.url} />
           </p>
           {detail.description && <p className="mt-1 text-sm text-gray-600">{detail.description}</p>}
+          <PublisherBlock publisher={detail.publisher} />
           <p className="mt-1 text-xs text-gray-400">Last checked: {formatFetched(detail.lastFetchedAt)}</p>
         </div>
         <div className="flex shrink-0 gap-2">
@@ -245,7 +248,9 @@ export function RepositoryPage() {
                     <p className="truncate font-mono text-xs text-gray-500">{tool.id}</p>
                     <span className="shrink-0 text-sm font-semibold text-gray-900">v{tool.currentVersion}</span>
                   </div>
+                  <Byline metadata={tool.metadata} className="mt-1" />
                   <div className="mt-3 flex flex-wrap gap-2">
+                    <LicensePill license={tool.metadata?.license} />
                     {tool.installedVersion !== '' && <Pill outline>{`Installed v${tool.installedVersion}`}</Pill>}
                     {showStatusPill(tool) && (
                       <Pill variant={statusVariant[tool.status]} title={tool.reason || undefined}>

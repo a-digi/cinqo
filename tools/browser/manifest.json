@@ -1,7 +1,11 @@
 {
   "slug": "browser",
   "name": "Browser",
-  "version": "0.0.205",
+  "version": "0.0.206",
+  "authors": [
+    { "name": "Anes Detit", "email": "tafa.andet@googlemail.com" }
+  ],
+  "license": "Proprietary",
   "mcp": true,
   "scopes": [
     {

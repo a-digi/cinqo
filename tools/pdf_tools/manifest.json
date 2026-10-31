@@ -1,7 +1,11 @@
 {
   "slug": "pdf_tools",
   "name": "PDF Tools",
-  "version": "0.0.119",
+  "version": "0.0.120",
+  "authors": [
+    { "name": "Anes Detit", "email": "tafa.andet@googlemail.com" }
+  ],
+  "license": "Proprietary",
   "mcp": true,
   "scopes": [
     {

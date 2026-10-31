@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/a-digi/cinqo/src/tool/manifest"
+	"github.com/a-digi/cinqo/src/toolmeta"
 	"github.com/a-digi/cinqo/src/toolrepository/catalog"
 )
 
@@ -33,29 +34,35 @@ type Env struct {
 // VersionInfo is one entry of a tool's version list, with whether it can be
 // installed on this machine.
 type VersionInfo struct {
-	VersionID     string `json:"versionId"`
-	Name          string `json:"name"`
-	Description   string `json:"description"`
-	Version       string `json:"version"`
-	ReleasedAt    string `json:"releasedAt"`
-	Changelog     string `json:"changelog"`
-	MinAppVersion string `json:"minAppVersion"`
-	Available     bool   `json:"available"`
+	VersionID   string `json:"versionId"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Version     string `json:"version"`
+	ReleasedAt  string `json:"releasedAt"`
+	Changelog   string `json:"changelog"`
+	// Authors and License of this version (empty when the repository states none).
+	Authors       []toolmeta.Author `json:"authors"`
+	License       string            `json:"license"`
+	MinAppVersion string            `json:"minAppVersion"`
+	Available     bool              `json:"available"`
 	// Reason says why it is not available.
 	Reason string `json:"reason"`
 }
 
 // Tool is one row of the repository page.
 type Tool struct {
-	ID               string        `json:"id"`
-	Name             string        `json:"name"`
-	Description      string        `json:"description"`
-	Status           string        `json:"status"`
-	Reason           string        `json:"reason"`
-	InstalledVersion string        `json:"installedVersion"`
-	CurrentVersion   string        `json:"currentVersion"`
-	CurrentVersionID string        `json:"currentVersionId"`
-	Versions         []VersionInfo `json:"versions"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Status      string `json:"status"`
+	Reason      string `json:"reason"`
+	// Metadata is who made the current version, as the repository states it; null for a repository that states
+	// nothing (the older format), which the page shows as "developer not stated".
+	Metadata         *toolmeta.Info `json:"metadata"`
+	InstalledVersion string         `json:"installedVersion"`
+	CurrentVersion   string         `json:"currentVersion"`
+	CurrentVersionID string         `json:"currentVersionId"`
+	Versions         []VersionInfo  `json:"versions"`
 }
 
 // Counts summarises a repository for the list.
@@ -93,7 +100,7 @@ func ForTool(t *catalog.Tool, env Env) Tool {
 		out.Versions = append(out.Versions, VersionInfo{
 			VersionID: v.VersionID, Name: v.Name, Description: v.Description, Version: v.Version,
 			ReleasedAt: v.ReleasedAt, Changelog: v.Changelog, MinAppVersion: v.MinAppVersion,
-			Available: ok, Reason: reason,
+			Available: ok, Reason: reason, Authors: authorsOrEmpty(v.Authors), License: v.License,
 		})
 	}
 
@@ -103,6 +110,10 @@ func ForTool(t *catalog.Tool, env Env) Tool {
 		return out
 	}
 	out.Name, out.Description, out.CurrentVersion = cur.Name, cur.Description, cur.Version
+	if !cur.Info.IsZero() {
+		info := cur.Info
+		out.Metadata = &info
+	}
 
 	installed, isInstalled := env.Installed[t.ID]
 	out.InstalledVersion = installed
@@ -160,4 +171,12 @@ func Count(rows []Tool) Counts {
 		}
 	}
 	return c
+}
+
+// authorsOrEmpty is the list as the page expects it: never null.
+func authorsOrEmpty(a []toolmeta.Author) []toolmeta.Author {
+	if a == nil {
+		return []toolmeta.Author{}
+	}
+	return a
 }

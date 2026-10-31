@@ -7,6 +7,7 @@ import (
 
 func withSources(sources ...FileSourceDecl) Manifest {
 	return Manifest{
+		Info:        testInfo(),
 		Slug:        "demo",
 		Scopes:      []ScopeDecl{{Scope: "tool:demo:read", Description: "read"}},
 		FileSources: sources,

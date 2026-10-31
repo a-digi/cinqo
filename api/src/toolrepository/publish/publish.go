@@ -16,11 +16,14 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/a-digi/cinqo/src/tool/manifest"
+	"github.com/a-digi/cinqo/src/toolmeta"
 	"github.com/a-digi/cinqo/src/toolrepository/catalog"
 )
 
@@ -56,6 +59,53 @@ type Options struct {
 	// It takes precedence over BaseURL. Package file names are unique per tool,
 	// version-independent and platform-specific, so they work as release assets.
 	AssetsURL string
+	// MetaFile is the repository's own facts (name, description, authors, company, links): by default
+	// <ToolsDir>/repository.meta.json, which may be absent. Name and Description above override the file's.
+	MetaFile string
+	// RequireAuthors turns "who made it is missing" from a warning (the file is then written in the older format
+	// 1, without authors) into an error. With every author and licence in place the file is written in the
+	// current format, whatever this is set to.
+	RequireAuthors bool
+	// Now, when set, stamps the file's generatedAt. Left nil the file carries no timestamp, so generating twice
+	// gives the same bytes; repotool sets it.
+	Now func() time.Time
+}
+
+// MetaFileName is the default name of the repository's own facts, next to the packaged tools.
+const MetaFileName = "repository.meta.json"
+
+// Meta is the repository's own facts, written by hand in MetaFile (an unknown field is an error, so a typo
+// does not silently drop an author).
+type Meta struct {
+	Name        string            `json:"name"`
+	Description string            `json:"description"`
+	Authors     []toolmeta.Author `json:"authors"`
+	Company     *toolmeta.Company `json:"company"`
+	Links       *toolmeta.Links   `json:"links"`
+}
+
+const maxMetaBytes = 64 << 10
+
+// LoadMeta reads a repository meta file. A missing file at the default place is not an error (an empty Meta);
+// a file that was asked for by name and is missing is.
+func LoadMeta(file string, explicit bool) (Meta, error) {
+	raw, err := os.ReadFile(file)
+	if err != nil {
+		if os.IsNotExist(err) && !explicit {
+			return Meta{}, nil
+		}
+		return Meta{}, fmt.Errorf("repository meta file: %w", err)
+	}
+	if len(raw) > maxMetaBytes {
+		return Meta{}, fmt.Errorf("%s: larger than %d bytes", filepath.Base(file), maxMetaBytes)
+	}
+	var m Meta
+	dec := json.NewDecoder(strings.NewReader(string(raw)))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&m); err != nil {
+		return Meta{}, fmt.Errorf("%s: %w", filepath.Base(file), err)
+	}
+	return m, nil
 }
 
 // Result describes what was written.
@@ -63,6 +113,9 @@ type Result struct {
 	File     string
 	Catalog  *catalog.Catalog
 	Packages int
+	// Warnings lists what is missing for the current format (authors, licences); when there are any the file
+	// was written in format 1.
+	Warnings []string
 }
 
 type found struct {
@@ -102,7 +155,25 @@ func Generate(opts Options) (*Result, error) {
 		pkgs[i].rel = filepath.ToSlash(rel)
 	}
 
-	c := build(pkgs, opts)
+	metaFile, explicit := opts.MetaFile, opts.MetaFile != ""
+	if !explicit {
+		metaFile = filepath.Join(opts.ToolsDir, MetaFileName)
+	}
+	meta, err := LoadMeta(metaFile, explicit)
+	if err != nil {
+		return nil, err
+	}
+	c, err := build(pkgs, opts, meta)
+	if err != nil {
+		return nil, err
+	}
+	warnings := missingAttribution(c)
+	if len(warnings) > 0 {
+		if opts.RequireAuthors {
+			return nil, fmt.Errorf("who made it is missing:\n  - %s", strings.Join(warnings, "\n  - "))
+		}
+		c.FormatVersion = catalog.LegacyFormatVersion
+	}
 	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return nil, err
@@ -129,7 +200,7 @@ func Generate(opts Options) (*Result, error) {
 	if err := os.WriteFile(out, data, 0o644); err != nil {
 		return nil, err
 	}
-	return &Result{File: out, Catalog: c, Packages: len(pkgs)}, nil
+	return &Result{File: out, Catalog: c, Packages: len(pkgs), Warnings: warnings}, nil
 }
 
 func scan(toolsDir string) ([]found, error) {
@@ -214,7 +285,26 @@ func readManifest(raw []byte) (manifest.Manifest, error) {
 	return manifest.Manifest{}, fmt.Errorf("the package has no manifest.json")
 }
 
-func build(pkgs []found, opts Options) *catalog.Catalog {
+// missingAttribution lists every place the current format would require authors or a licence and has none.
+func missingAttribution(c *catalog.Catalog) []string {
+	var out []string
+	if len(c.Authors) == 0 {
+		out = append(out, "the repository has no authors (add them to "+MetaFileName+")")
+	}
+	for _, t := range c.Tools {
+		for _, v := range t.Versions {
+			if len(v.Authors) == 0 {
+				out = append(out, fmt.Sprintf("%s %s: its manifest.json has no authors", t.ID, v.Version))
+			}
+			if v.License == "" {
+				out = append(out, fmt.Sprintf("%s %s: its manifest.json has no license", t.ID, v.Version))
+			}
+		}
+	}
+	return out
+}
+
+func build(pkgs []found, opts Options, meta Meta) (*catalog.Catalog, error) {
 	byTool := map[string]map[string][]found{} // slug -> version -> packages
 	for _, p := range pkgs {
 		if byTool[p.m.Slug] == nil {
@@ -229,7 +319,20 @@ func build(pkgs []found, opts Options) *catalog.Catalog {
 	}
 	sort.Strings(slugs)
 
-	c := &catalog.Catalog{FormatVersion: catalog.FormatVersion, Name: opts.Name, Description: opts.Description}
+	name, description := meta.Name, meta.Description
+	if opts.Name != "" {
+		name = opts.Name
+	}
+	if opts.Description != "" {
+		description = opts.Description
+	}
+	c := &catalog.Catalog{
+		FormatVersion: catalog.FormatVersion, Name: name, Description: description,
+		Authors: meta.Authors, Company: meta.Company, Links: meta.Links,
+	}
+	if opts.Now != nil {
+		c.GeneratedAt = opts.Now().UTC().Format(time.RFC3339)
+	}
 	for _, slug := range slugs {
 		versions := make([]string, 0, len(byTool[slug]))
 		for v := range byTool[slug] {
@@ -242,7 +345,15 @@ func build(pkgs []found, opts Options) *catalog.Catalog {
 			group := byTool[slug][v]
 			sort.Slice(group, func(i, j int) bool { return group[i].file < group[j].file })
 			first := group[0]
+			// every platform's package of one version is built from one manifest: they must say the same about who
+			// made it, or something was packaged from two different sources
+			for _, other := range group[1:] {
+				if !reflect.DeepEqual(first.m.Info, other.m.Info) {
+					return nil, fmt.Errorf("%s %s: %s and %s carry different authors, licence or links in their manifests", slug, v, first.file, other.file)
+				}
+			}
 			ver := catalog.Version{
+				Info:      first.m.Info,
 				VersionID: v, Name: first.m.Name, Version: v,
 				ReleasedAt: latestDate(group), MinAppVersion: first.m.MinAppVersion,
 			}
@@ -255,7 +366,7 @@ func build(pkgs []found, opts Options) *catalog.Catalog {
 		}
 		c.Tools = append(c.Tools, tool)
 	}
-	return c
+	return c, nil
 }
 
 func packageURL(opts Options, p found) string {

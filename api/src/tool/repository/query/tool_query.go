@@ -16,15 +16,15 @@ func NewToolQueryRepo(db *sql.DB) *ToolQueryRepo {
 
 const toolColumns = `id, slug, name, version, kind, enabled, status, install_path, ` +
 	`backend_executable_relpath, frontend_bundle_relpath, min_app_version, max_app_version, ` +
-	`pid, created_at, updated_at, service_token`
+	`pid, created_at, updated_at, service_token, metadata`
 
 func scanTool(scan func(dest ...any) error) (*tool_entity.Tool, error) {
 	var t tool_entity.Tool
-	var backendRel, frontendRel, minV, maxV, updatedAt sql.NullString
+	var backendRel, frontendRel, minV, maxV, updatedAt, metadata sql.NullString
 	var pid sql.NullInt64
 
 	if err := scan(&t.ID, &t.Slug, &t.Name, &t.Version, &t.Kind, &t.Enabled, &t.Status,
-		&t.InstallPath, &backendRel, &frontendRel, &minV, &maxV, &pid, &t.CreatedAt, &updatedAt, &t.ServiceToken); err != nil {
+		&t.InstallPath, &backendRel, &frontendRel, &minV, &maxV, &pid, &t.CreatedAt, &updatedAt, &t.ServiceToken, &metadata); err != nil {
 		return nil, err
 	}
 
@@ -34,6 +34,7 @@ func scanTool(scan func(dest ...any) error) (*tool_entity.Tool, error) {
 	t.MaxAppVersion = maxV.String
 	t.PID = int(pid.Int64)
 	t.UpdatedAt = updatedAt.String
+	t.Metadata = metadata.String
 
 	return &t, nil
 }

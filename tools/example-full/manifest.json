@@ -2,6 +2,10 @@
   "slug": "example_full",
   "name": "Example Full Tool",
   "version": "0.0.3",
+  "authors": [
+    { "name": "Your Name", "email": "you@example.com" }
+  ],
+  "license": "MIT",
   "scopes": [
     {
       "scope": "tool:example_full:read",

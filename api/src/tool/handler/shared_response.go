@@ -8,6 +8,7 @@ import (
 	tool_entity "github.com/a-digi/cinqo/src/tool/entity"
 	tool_query "github.com/a-digi/cinqo/src/tool/repository/query"
 	"github.com/a-digi/cinqo/src/tool/systemtools"
+	"github.com/a-digi/cinqo/src/toolmeta"
 )
 
 // toolResponse is the shared JSON shape every tool list/mutation
@@ -34,6 +35,9 @@ type toolResponse struct {
 	UpdatedAt             string   `json:"updated_at"`
 	IsSystemTool          bool     `json:"is_system_tool"`
 	MCPTools              []string `json:"mcp_tools"`
+	// Metadata is who made the tool as its package declared it; null for a tool installed before this was
+	// recorded (the pages show "developer not stated").
+	Metadata *toolmeta.Info `json:"metadata"`
 }
 
 func toToolResponse(t *tool_entity.Tool, cfg systemtools.Config, mcpTools []string) toolResponse {
@@ -56,6 +60,7 @@ func toToolResponse(t *tool_entity.Tool, cfg systemtools.Config, mcpTools []stri
 		UpdatedAt:             t.UpdatedAt,
 		IsSystemTool:          protected,
 		MCPTools:              mcpTools,
+		Metadata:              toolmeta.Decode(t.Metadata),
 	}
 }
 

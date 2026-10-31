@@ -14,10 +14,15 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+
+	"github.com/a-digi/cinqo/src/toolmeta"
 )
 
 const (
-	FormatVersion = 1
+	// FormatVersion is the current format, in which authors (and a licence) are obligatory. LegacyFormatVersion
+	// (1) files, which predate them, are still read: their authors are simply not stated. See FORMAT.md.
+	FormatVersion       = 2
+	LegacyFormatVersion = 1
 
 	MaxFileBytes        = 2 << 20
 	MaxTools            = 200
@@ -48,7 +53,14 @@ type Catalog struct {
 	FormatVersion int    `json:"formatVersion"`
 	Name          string `json:"name,omitempty"`
 	Description   string `json:"description,omitempty"`
-	Tools         []Tool `json:"tools"`
+	// Who runs the repository (not necessarily who made the tools in it). Authors are required from format
+	// version 2.
+	Authors []toolmeta.Author `json:"authors,omitempty"`
+	Company *toolmeta.Company `json:"company,omitempty"`
+	Links   *toolmeta.Links   `json:"links,omitempty"`
+	// GeneratedAt is when the file was written (a date or an RFC 3339 timestamp), set by repotool.
+	GeneratedAt string `json:"generatedAt,omitempty"`
+	Tools       []Tool `json:"tools"`
 }
 
 type Tool struct {
@@ -58,6 +70,9 @@ type Tool struct {
 }
 
 type Version struct {
+	// Who made this version, under what licence, and where to find them: authors and licence are required from
+	// format version 2. Copied from the package's own manifest.json by repotool, so the two cannot disagree.
+	toolmeta.Info
 	VersionID     string    `json:"versionId"`
 	Name          string    `json:"name"`
 	Description   string    `json:"description,omitempty"`
@@ -77,18 +92,9 @@ type Package struct {
 }
 
 // Problem is one thing wrong with a repository file. Path locates it, for
-// example `tools[2].versions[0].packages[1].sha256`.
-type Problem struct {
-	Path    string `json:"path"`
-	Message string `json:"message"`
-}
-
-func (p Problem) String() string {
-	if p.Path == "" {
-		return p.Message
-	}
-	return p.Path + ": " + p.Message
-}
+// example `tools[2].versions[0].packages[1].sha256` or `authors[0].name`. It is
+// the same type the metadata rules use (package toolmeta), so both report alike.
+type Problem = toolmeta.Problem
 
 // ValidationError carries every problem found, so a publisher can fix them
 // all in one go; a file with any problem is rejected whole.
@@ -123,6 +129,10 @@ func (t *Tool) Version(versionID string) (*Version, bool) {
 	}
 	return nil, false
 }
+
+// Legacy reports whether the file predates authors (format version 1): its authors, and its tools' authors, are
+// simply not stated, and the pages say so instead of treating the file as broken.
+func (c *Catalog) Legacy() bool { return c.FormatVersion == LegacyFormatVersion }
 
 // Current returns the version named by currentVersionId.
 func (t *Tool) Current() (*Version, bool) { return t.Version(t.CurrentVersionID) }
@@ -196,23 +206,31 @@ func (c *collector) text(path, value string, max int, required bool) {
 
 func validate(c *Catalog, baseURL string) []Problem {
 	col := &collector{}
-	if c.FormatVersion != FormatVersion {
-		col.add("formatVersion", "must be %d", FormatVersion)
+	if c.FormatVersion != FormatVersion && c.FormatVersion != LegacyFormatVersion {
+		col.add("formatVersion", "must be %d (or %d, the older format without authors)", FormatVersion, LegacyFormatVersion)
 	}
+	// from format version 2 on, who made it is obligatory; a version 1 file is only checked for what it carries
+	strict := c.FormatVersion >= FormatVersion
 	col.text("name", c.Name, MaxNameLen, false)
 	col.text("description", c.Description, MaxDescriptionLen, false)
+	col.probs = append(col.probs, toolmeta.ValidateAuthors("", c.Authors, strict)...)
+	col.probs = append(col.probs, toolmeta.ValidateCompany("", c.Company)...)
+	col.probs = append(col.probs, toolmeta.ValidateLinks("", c.Links)...)
+	if c.GeneratedAt != "" && !datePattern.MatchString(c.GeneratedAt) {
+		col.add("generatedAt", "must be a date (2026-10-30) or an RFC 3339 timestamp")
+	}
 	if len(c.Tools) > MaxTools {
 		col.add("tools", "has %d entries, at most %d are allowed", len(c.Tools), MaxTools)
 		return col.probs
 	}
 	seen := map[string]bool{}
 	for i := range c.Tools {
-		validateTool(col, &c.Tools[i], fmt.Sprintf("tools[%d]", i), baseURL, seen)
+		validateTool(col, &c.Tools[i], fmt.Sprintf("tools[%d]", i), baseURL, seen, strict)
 	}
 	return col.probs
 }
 
-func validateTool(col *collector, t *Tool, path, baseURL string, seen map[string]bool) {
+func validateTool(col *collector, t *Tool, path, baseURL string, seen map[string]bool, strict bool) {
 	switch {
 	case !toolIDPattern.MatchString(t.ID):
 		col.add(path+".id", "must match ^[a-z][a-z0-9_]*$")
@@ -240,7 +258,7 @@ func validateTool(col *collector, t *Tool, path, baseURL string, seen map[string
 		default:
 			ids[v.VersionID] = true
 		}
-		validateVersion(col, v, vp, baseURL, vers)
+		validateVersion(col, v, vp, baseURL, vers, strict)
 	}
 	if t.CurrentVersionID == "" {
 		col.add(path+".currentVersionId", "is required")
@@ -249,7 +267,8 @@ func validateTool(col *collector, t *Tool, path, baseURL string, seen map[string
 	}
 }
 
-func validateVersion(col *collector, v *Version, path, baseURL string, vers map[string]bool) {
+func validateVersion(col *collector, v *Version, path, baseURL string, vers map[string]bool, strict bool) {
+	col.probs = append(col.probs, v.Info.Validate(path, strict)...)
 	col.text(path+".name", v.Name, MaxNameLen, true)
 	col.text(path+".description", v.Description, MaxDescriptionLen, false)
 	col.text(path+".changelog", v.Changelog, MaxChangelogLen, false)

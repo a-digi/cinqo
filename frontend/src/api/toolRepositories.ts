@@ -1,4 +1,5 @@
 import { apiDelete, apiGet, apiPost } from './client'
+import type { Publisher, ToolAuthor, ToolMetadata } from './toolMeta'
 
 // The backend already answers in camelCase for these routes, so there is no
 // *Raw mapping layer — see api/src/toolrepository.
@@ -28,6 +29,8 @@ export interface ToolRepository {
   createdAt: string
   updatedAt: string
   counts: RepositoryCounts
+  // Who maintains it, as its file states; null when the file states nothing (the older format).
+  publisher: Publisher | null
 }
 
 export interface RepositoryToolVersion {
@@ -40,6 +43,8 @@ export interface RepositoryToolVersion {
   minAppVersion: string
   available: boolean
   reason: string
+  authors: ToolAuthor[]
+  license: string
 }
 
 export interface RepositoryTool {
@@ -48,6 +53,8 @@ export interface RepositoryTool {
   description: string
   status: ToolStatus
   reason: string
+  // Who made the current version, as the repository states it; null when it states nothing.
+  metadata: ToolMetadata | null
   installedVersion: string
   currentVersion: string
   currentVersionId: string

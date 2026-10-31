@@ -55,6 +55,75 @@ can additionally have its own `Makefile` — see
 Both are reference examples, not real features — copy one as your
 starting point.
 
+## Who made it (required in every manifest)
+
+Every tool says who made it, in its `manifest.json`. Cinqo **refuses to install or update a package
+without `authors` and `license`**, and names the missing field in the message. Everything else is
+optional.
+
+```json
+{
+  "slug": "my_tool",
+  "name": "My tool",
+  "version": "1.0.0",
+
+  "authors": [
+    { "name": "Ada Lovelace", "email": "ada@example.com", "url": "https://ada.example" }
+  ],
+  "company": { "name": "Acme GmbH", "url": "https://acme.example" },
+  "license": "MIT",
+  "links": {
+    "homepage": "https://acme.example/my-tool",
+    "documentation": "https://acme.example/my-tool/docs",
+    "source": "https://github.com/acme/my-tool",
+    "issues": "https://github.com/acme/my-tool/issues",
+    "support": "https://acme.example/support",
+    "security": "mailto:security@acme.example"
+  },
+  "copyright": "© 2026 Acme GmbH",
+  "category": "productivity",
+  "keywords": ["crawl", "chrome"]
+}
+```
+
+| Field | Rule |
+|---|---|
+| `authors` | **required**; 1 to 20 people; each `{ "name", "email"?, "url"? }`. `name` is required (at most 100 characters, no control or text-direction characters), `email` must look like `name@example.com`, `url` must be `https`. |
+| `license` | **required**; an [SPDX](https://spdx.org/licenses/) identifier or expression (`MIT`, `Apache-2.0`, `MIT OR Apache-2.0`) or `Proprietary`. |
+| `company` | optional `{ "name", "url"? }`. |
+| `links` | optional; `homepage`, `documentation`, `source`, `issues`, `support` and `security`, each an `https` address (`security` may also be `mailto:name@example.com`). Put a vendor contact here instead of publishing a person's email. |
+| `copyright` | optional, at most 200 characters. |
+| `category` | optional; one of `productivity`, `data`, `ai`, `browser`, `documents`, `developer`, `other`. |
+| `keywords` | optional; at most 10, each 1 to 30 letters, digits, spaces or dashes. |
+
+Addresses are only ever shown as links; Cinqo never fetches them. What you write here is a **claim**
+people can read before they install, not proof of who you are.
+
+`example-full/` and `example-frontend-only/` carry placeholder authors (`Your Name`) to replace.
+
+### In a repository file
+
+`go run ./cmd/repotool` (the `make repository-*` targets) copies each package's `authors`, `company`,
+`license`, `links`, `copyright`, `category` and `keywords` out of **its own `manifest.json`** into the
+repository file, so the two cannot disagree. The repository's own facts (who maintains it) go in
+`tools/repository.meta.json`:
+
+```json
+{
+  "name": "My tools",
+  "description": "Tools published by me",
+  "authors": [{ "name": "Ada Lovelace" }],
+  "company": { "name": "Acme GmbH" },
+  "links": { "homepage": "https://acme.example", "security": "mailto:security@acme.example" }
+}
+```
+
+(an unknown field in that file is an error, so a typo does not silently drop an author; `-name` and
+`-description` still override it, and `-meta` points at another file). With authors and a licence
+everywhere, the file is written in **format version 2**; if any are missing, `repotool` writes the older
+format 1 and lists what is missing, or stops with an error when run with `-require-authors`. See
+`api/src/toolrepository/catalog/FORMAT.md`.
+
 ## Adding a widget to the Home dashboard
 
 Cinqo's Home page is a grid of widgets, and a tool can add its own. You do not

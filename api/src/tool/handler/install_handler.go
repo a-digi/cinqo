@@ -28,6 +28,7 @@ import (
 	tool_persistent "github.com/a-digi/cinqo/src/tool/repository/persistent"
 	tool_query "github.com/a-digi/cinqo/src/tool/repository/query"
 	"github.com/a-digi/cinqo/src/tool/sandbox"
+	"github.com/a-digi/cinqo/src/toolmeta"
 )
 
 // discoverMCPToolsIfDeclared is a best-effort, non-fatal hook run after
@@ -284,6 +285,11 @@ type InstallResult struct {
 type PackageExpectation struct {
 	Slug    string
 	Version string
+	// Info is what the repository says about who made this version. When it states authors or a licence, the
+	// package's own manifest must say the same (a repository file of the older format states nothing, so it
+	// never disagrees). It catches a hand-edited repository file: it is not a security check, since the file
+	// and the package come from one publisher.
+	Info toolmeta.Info
 }
 
 // installMu serialises installs: an upload and a repository install of the
@@ -332,6 +338,12 @@ func InstallPackage(reqCtx request.RequestContext, data []byte, expect *PackageE
 			Message: fmt.Sprintf("the package is %s %s but the repository lists %s %s", m.Slug, m.Version, expect.Slug, expect.Version)}
 	}
 
+	if expect != nil {
+		if msg := toolmeta.Mismatch(expect.Info, m.Info); msg != "" {
+			return nil, &InstallError{Status: http.StatusBadRequest, Message: "the package's manifest disagrees with the repository: " + msg}
+		}
+	}
+
 	db := reqCtx.GetDI().GetDatabaseManager().Connector.DB
 	queryRepo := tool_query.NewToolQueryRepo(db)
 	persistentRepo := tool_persistent.NewToolPersistentRepo(db)
@@ -375,18 +387,26 @@ func InstallPackage(reqCtx request.RequestContext, data []byte, expect *PackageE
 		return nil, &InstallError{Status: http.StatusBadRequest, Message: err.Error()}
 	}
 
+	// who made it, as this package declares it (already validated): kept with the tool, whatever a repository
+	// claimed about it
+	metadata, err := toolmeta.Encode(m.Info)
+	if err != nil {
+		return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to record who made the tool"}
+	}
+
 	scopes, routes, required, requiredTools := childRowsFromManifest(m)
 	finalDir := filepath.Join(toolsRoot(reqCtx), m.Slug)
 
 	if !found {
 		tool := &tool_entity.Tool{
-			ID:      uuid.NewString(),
-			Slug:    m.Slug,
-			Name:    m.Name,
-			Version: m.Version,
-			Kind:    kind,
-			Enabled: true, // auto-activates, matching the reference
-			Status:  "installed",
+			ID:       uuid.NewString(),
+			Slug:     m.Slug,
+			Name:     m.Name,
+			Version:  m.Version,
+			Kind:     kind,
+			Enabled:  true, // auto-activates, matching the reference
+			Status:   "installed",
+			Metadata: metadata,
 		}
 		if backendErr == nil {
 			tool.BackendExecutableRelpath = backendExecutableFilename
@@ -489,6 +509,7 @@ func InstallPackage(reqCtx request.RequestContext, data []byte, expect *PackageE
 		Enabled:     existing.Enabled, // preserved — an update doesn't silently turn a disabled tool on
 		Status:      "installed",
 		InstallPath: finalDir,
+		Metadata:    metadata,
 	}
 	if backendErr == nil {
 		updated.BackendExecutableRelpath = backendExecutableFilename

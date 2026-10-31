@@ -95,7 +95,8 @@ func oneVersion(id, ver, pkgs string) string {
 func TestRules(t *testing.T) {
 	base := "https://e.com/r.json"
 	cases := []struct{ name, data, path, msg string }{
-		{"format version", `{"formatVersion":2,"tools":[]}`, "formatVersion", "must be 1"},
+		{"format version", `{"formatVersion":3,"tools":[]}`, "formatVersion", "must be 2"},
+		{"format version zero", `{"tools":[]}`, "formatVersion", "must be 2"},
 		{"bad tool id", file(`{"id":"Bad-Id","currentVersionId":"a","versions":[` + oneVersion("a", "1.0.0", pkg("")) + `]}`), "tools[0].id", "must match"},
 		{"duplicate tool id", file(`{"id":"a","currentVersionId":"v","versions":[` + oneVersion("v", "1.0.0", pkg("")) + `]},{"id":"a","currentVersionId":"v","versions":[` + oneVersion("v", "1.0.0", pkg("")) + `]}`), "tools[1].id", "duplicate"},
 		{"no versions", file(`{"id":"a","currentVersionId":"v","versions":[]}`), "tools[0].versions", "at least one"},
