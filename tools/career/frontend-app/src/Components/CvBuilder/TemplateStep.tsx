@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react'
-import { PersonaSwitcher } from '../Persona/PersonaSwitcher/PersonaSwitcher'
 import { Dropdown } from '../Dropdown/Dropdown'
 import { EyeIcon } from '../../Shared/Icons/icons'
 import { previewImages } from './previewImages'
@@ -7,9 +6,7 @@ import type { CvTemplate } from '../../api'
 import { CvPhotoPicker } from './CvPhotoPicker'
 import { showsPicker, type CvPhoto } from './cvPhotoRules'
 
-export interface PersonaAndTemplateStepProps {
-  personaId: string | null
-  onPersonaChange: (id: string) => void
+export interface TemplateStepProps {
   templates: CvTemplate[]
   templateId: string
   onTemplateChange: (id: string) => void
@@ -27,12 +24,10 @@ export interface PersonaAndTemplateStepProps {
 
 const ALL_CATEGORIES = 'All'
 
-// Wizard step 1 — pick who this CV is for and which design to render
-// it with. Changing the persona always re-fetches that persona's own
-// fresh defaults (CvBuilderPage's own onPersonaChange), discarding
-// whatever was in the later steps — deliberately simple, matching the
-// single-page builder's own prior behavior exactly. See
-// plan/ai/career/cv-builder/step-04-frontend-cv-builder.md.
+// Wizard step 2 — pick which design to render the CV with (and, when the profile
+// has photos, whether and which photo goes on it). Who the CV is for is the step
+// before (PersonaStep). See plan/ai/career/cv-builder/step-04-frontend-cv-builder.md
+// and plan/ai/tools/career/step-123-cv-builder-persona-list.md.
 //
 // With 26 templates, a flat grid stopped being browsable — this now
 // mirrors a template-gallery layout (style pills + a profession
@@ -42,9 +37,7 @@ const ALL_CATEGORIES = 'All'
 // contains (never hardcoded here), so a new template just shows up in
 // the right filter automatically. See
 // plan/ai/career/cv-builder/step-06-template-gallery-and-filters.md.
-export function PersonaAndTemplateStep({
-  personaId,
-  onPersonaChange,
+export function TemplateStep({
   templates,
   templateId,
   onTemplateChange,
@@ -57,7 +50,7 @@ export function PersonaAndTemplateStep({
   canPreview,
   previewing,
   onPreviewTemplate,
-}: PersonaAndTemplateStepProps) {
+}: TemplateStepProps) {
   const [category, setCategory] = useState<string>(ALL_CATEGORIES)
   const [professions, setProfessions] = useState<string[]>([])
 
@@ -103,8 +96,6 @@ export function PersonaAndTemplateStep({
 
   return (
     <div className="space-y-4">
-      <PersonaSwitcher personaId={personaId} onChange={onPersonaChange} />
-
       {hasProfilePhoto && (
         <label className="flex items-center gap-2 text-sm text-gray-700">
           <input

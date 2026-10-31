@@ -67,6 +67,7 @@ import {
   CV_DOCUMENTS_PATH,
   CV_DOCUMENTS_PERSONA_PATH,
   CV_BUILDER_PATH,
+  CV_BUILDER_PERSONA_PATH,
   JOBS_PATH,
   JOB_DETAILS_PATH,
   COMPANIES_PATH,
@@ -199,6 +200,14 @@ window.__cinqoToolBridge.registerRoute({
 // No menu entry — reached only via CvDocumentsPage's own "+ New CV"
 // (?personaId=) and "Edit" (?id=) actions, same "reachable, but
 // menu-less" convention JOB_DETAILS_PATH already established.
+window.__cinqoToolBridge.registerRoute({
+  path: CV_BUILDER_PERSONA_PATH,
+  mount: (container, params) => {
+    mountReact(container, <CvBuilderPage personaIdFromPath={params.personaId} />)
+  },
+  unmount: unmountReact,
+})
+
 window.__cinqoToolBridge.registerRoute({
   path: CV_BUILDER_PATH,
   mount: (container) => {

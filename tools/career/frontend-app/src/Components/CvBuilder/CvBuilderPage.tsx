@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   fetchCvTemplates,
   fetchCvPersonaDefaults,
@@ -12,7 +12,8 @@ import {
   type CvTemplate,
   type Job,
 } from '../../api'
-import { PersonaAndTemplateStep } from './PersonaAndTemplateStep'
+import { PersonaStep } from './PersonaStep'
+import { TemplateStep } from './TemplateStep'
 import { PersonalDetailsStep } from './PersonalDetailsStep'
 import { SkillsStep } from './SkillsStep'
 import { ExperienceStep } from './ExperienceStep'
@@ -21,12 +22,13 @@ import { StepIndicator } from './StepIndicator'
 import { effectiveChoice, photoToSend, type CvPhoto } from './cvPhotoRules'
 import { JOBS_PATH, attachFailedMessage, backLabel, bannerText, defaultCvTitle, jobIdFromSearch } from './cvForJob'
 
-import { cvDocumentsPathFor } from '../../paths'
+import { cvBuilderPathFor, cvDocumentsPathFor } from '../../paths'
 
 const CV_DOCUMENTS_PATH = '/tools/career/cv-documents'
 
 const STEPS = [
-  { label: 'Persona & Template' },
+  { label: 'Persona' },
+  { label: 'Template' },
   { label: 'Personal Details' },
   { label: 'Skills' },
   { label: 'Experience' },
@@ -35,7 +37,7 @@ const STEPS = [
 
 // CvBuilderPage — its own dedicated route (per your own instruction),
 // separate from the CV Documents list page, gathering CvData across a
-// fixed 5-step wizard rather than one single screen with a persistent
+// fixed 6-step wizard rather than one single screen with a persistent
 // sidebar. No menu entry of its own — reached only via CvDocumentsPage's
 // own "+ New CV" (?personaId=) and "Edit" (?id=) actions, same
 // "reachable, but menu-less" convention JobDetailsPage.tsx already
@@ -50,10 +52,12 @@ const STEPS = [
 // nothing here calls the backend except the initial load (persona
 // defaults or an existing document) and the final submit. See
 // plan/ai/career/cv-builder/step-04-frontend-cv-builder.md.
-export function CvBuilderPage() {
+export function CvBuilderPage({ personaIdFromPath }: { personaIdFromPath?: string } = {}) {
   const params = new URLSearchParams(window.location.search)
   const editingId = params.get('id')
-  const initialPersonaId = params.get('personaId')
+  // The persona a new CV is for: from the address (/tools/career/cv-builder/:personaId) or, for older links,
+  // from ?personaId=. Editing a CV takes the persona from the CV itself.
+  const initialPersonaId = personaIdFromPath ?? params.get('personaId')
   // "Generate manually" from the Jobs page (step 98): the job this CV is for. Not
   // used when editing an existing document.
   const forJobId = editingId ? null : jobIdFromSearch(window.location.search)
@@ -81,7 +85,7 @@ export function CvBuilderPage() {
   // only retries the attach instead of creating a second CV.
   const [createdDocumentId, setCreatedDocumentId] = useState<string | null>(null)
   // hasProfilePhoto gates whether the "attach photo?" checkbox even
-  // shows (PersonaAndTemplateStep.tsx) — per your own instruction, no
+  // shows (TemplateStep.tsx) — per your own instruction, no
   // photo uploaded means no checkbox at all, not a disabled/unchecked
   // one. attachPhoto defaults true (checked) and resets to true
   // whenever the persona changes or an existing document is loaded —
@@ -96,22 +100,6 @@ export function CvBuilderPage() {
   // editing it later shows the same photo (step 111). The attach flag itself is still not stored.
   const [photos, setPhotos] = useState<CvPhoto[]>([])
   const [photoChoice, setPhotoChoice] = useState('')
-
-  // PersonaSwitcher's own mount effect ALWAYS auto-selects a persona
-  // from localStorage/first-in-list and fires onChange exactly once,
-  // completely ignoring whatever `personaId` prop it was given — that
-  // prop only drives the dropdown's own displayed value (confirmed by
-  // reading PersonaSwitcher.tsx directly). In edit mode that first,
-  // automatic call is pure noise: this page has ALREADY loaded the
-  // document's own true personaId/cvData by the time it fires (a real,
-  // live-observed bug — editing silently reverted every field back to
-  // the persona's current live defaults). Suppressing exactly that one
-  // call is safe and sufficient: PersonaSwitcher's mount effect has an
-  // empty dependency array, so it only ever calls onChange
-  // automatically once per mount — every call after this is a genuine
-  // user click on the dropdown, which should behave exactly as
-  // documented (refetch fresh defaults, discarding later-step edits).
-  const suppressNextPersonaSync = useRef(Boolean(editingId))
 
   useEffect(() => {
     fetchCvTemplates()
@@ -162,11 +150,8 @@ export function CvBuilderPage() {
       })
   }, [editingId])
 
-  function handlePersonaChange(id: string) {
-    if (suppressNextPersonaSync.current) {
-      suppressNextPersonaSync.current = false
-      return
-    }
+  // Makes a persona the one this CV is for: its fresh defaults and photos replace whatever the later steps held.
+  function selectPersona(id: string) {
     setPersonaId(id)
     setError('')
     setAttachPhoto(true)
@@ -188,14 +173,37 @@ export function CvBuilderPage() {
       })
   }
 
+  // A persona picked in the list. A new CV lives on its persona's own address, so that is opened (the page loads
+  // again with that persona); when the CV is for a job, or an existing one is being edited, the address stays
+  // and the persona changes in place.
+  function handlePersonaPick(id: string) {
+    if (id === personaId) return
+    if (!editingId && !forJobId) {
+      window.__cinqoToolBridge.navigate(cvBuilderPathFor(id))
+      return
+    }
+    selectPersona(id)
+  }
+
+  // A new CV opened for a persona (from its address): load that persona's defaults and photos straight away.
+  useEffect(() => {
+    if (!editingId && initialPersonaId) selectPersona(initialPersonaId)
+    // Once, when the page opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   function goBack() {
     setError('')
     setStep((s) => Math.max(0, s - 1))
   }
 
   function goNext() {
-    if (step === 0 && (!personaId || !templateId || !cvData)) {
-      setError('Pick a persona and a template')
+    if (step === 0 && (!personaId || !cvData)) {
+      setError('Pick a persona')
+      return
+    }
+    if (step === 1 && !templateId) {
+      setError('Pick a template')
       return
     }
     setError('')
@@ -320,9 +328,15 @@ export function CvBuilderPage() {
       {error && <p className="mb-4 text-sm text-red-700">{error}</p>}
 
       {step === 0 && (
-        <PersonaAndTemplateStep
+        <PersonaStep
           personaId={personaId}
-          onPersonaChange={handlePersonaChange}
+          onPick={(persona) => {
+            handlePersonaPick(persona.id)
+          }}
+        />
+      )}
+      {step === 1 && (
+        <TemplateStep
           templates={templates}
           templateId={templateId}
           onTemplateChange={setTemplateId}
@@ -337,10 +351,10 @@ export function CvBuilderPage() {
           onPreviewTemplate={handlePreviewTemplate}
         />
       )}
-      {step === 1 && cvData && <PersonalDetailsStep data={cvData} onChange={setCvData} />}
-      {step === 2 && cvData && <SkillsStep data={cvData} onChange={setCvData} />}
-      {step === 3 && cvData && <ExperienceStep data={cvData} onChange={setCvData} />}
-      {step === 4 && cvData && <TitleAndReviewStep title={title} onTitleChange={setTitle} data={cvData} templateName={templateName} />}
+      {step === 2 && cvData && <PersonalDetailsStep data={cvData} onChange={setCvData} />}
+      {step === 3 && cvData && <SkillsStep data={cvData} onChange={setCvData} />}
+      {step === 4 && cvData && <ExperienceStep data={cvData} onChange={setCvData} />}
+      {step === 5 && cvData && <TitleAndReviewStep title={title} onTitleChange={setTitle} data={cvData} templateName={templateName} />}
 
       <div className="mt-6 flex items-center justify-between">
         <button

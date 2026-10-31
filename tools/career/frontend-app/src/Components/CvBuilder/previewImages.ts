@@ -1,6 +1,6 @@
 // Every template folder under Template/<id>/ may have its own
 // preview.png — a real screenshot of that design rendered with sample
-// data, so the template picker (PersonaAndTemplateStep.tsx) can show
+// data, so the template picker (TemplateStep.tsx) can show
 // the user what each one actually looks like instead of just a name
 // and a one-line description.
 //

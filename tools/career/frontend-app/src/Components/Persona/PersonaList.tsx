@@ -9,14 +9,22 @@ export function PersonaList({
   personas,
   profiles,
   hrefFor,
+  onSelect,
+  selectedId,
   renderExtra,
 }: {
   personas: Persona[]
   profiles: Profile[]
-  hrefFor: (persona: Persona) => string
+  // Where an item leads: each is then a link. Leave it out and pass onSelect for a list that picks a persona.
+  hrefFor?: (persona: Persona) => string
+  // Picking mode: each item is a button that calls this, the one with selectedId marked.
+  onSelect?: (persona: Persona) => void
+  selectedId?: string | null
   renderExtra?: (persona: Persona) => React.ReactNode
 }) {
   const groups = groupPersonasByProfile(personas, profiles)
+  const itemClass = 'flex items-start gap-3 rounded-3xl border p-4 shadow-sm transition-shadow hover:shadow-md'
+  const itemStyle = { borderColor: PAGE_ACCENT.soft, background: `linear-gradient(160deg, #ffffff 45%, ${PAGE_ACCENT.soft} 100%)` }
   return (
     <div className="space-y-6">
       {groups.map((group) => (
@@ -25,35 +33,59 @@ export function PersonaList({
           <ul className="career-stagger space-y-2.5">
             {group.personas.map((p) => (
               <li key={p.id}>
-                <a
-                  href={hrefFor(p)}
-                  onClick={(e) => {
-                    // A plain click navigates inside the app; a modified click (new tab, window) keeps the link's own behaviour.
-                    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
-                    e.preventDefault()
-                    window.__cinqoToolBridge.navigate(hrefFor(p))
-                  }}
-                  className="flex items-start gap-3 rounded-3xl border p-4 shadow-sm transition-shadow hover:shadow-md"
-                  style={{ borderColor: PAGE_ACCENT.soft, background: `linear-gradient(160deg, #ffffff 45%, ${PAGE_ACCENT.soft} 100%)` }}
-                >
-                  <span
-                    className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-base font-bold text-white shadow-sm"
-                    style={{ background: accentFor(p.name).to }}
-                    aria-hidden="true"
+                {onSelect ? (
+                  <button
+                    type="button"
+                    aria-pressed={selectedId === p.id}
+                    onClick={() => {
+                      onSelect(p)
+                    }}
+                    className={`${itemClass} w-full text-left ${selectedId === p.id ? 'ring-2 ring-purple-400' : ''}`}
+                    style={itemStyle}
                   >
-                    {initialOf(p.name)}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-semibold text-gray-900">{p.name}</span>
-                    {p.description && <span className="mt-0.5 block text-xs text-gray-500">{p.description}</span>}
-                    {renderExtra?.(p)}
-                  </span>
-                </a>
+                    <ItemBody persona={p} extra={renderExtra?.(p)} />
+                  </button>
+                ) : (
+                  <a
+                    href={hrefFor?.(p)}
+                    onClick={(e) => {
+                      // A plain click navigates inside the app; a modified click (new tab, window) keeps the link's own behaviour.
+                      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+                      e.preventDefault()
+                      const href = hrefFor?.(p)
+                      if (href) window.__cinqoToolBridge.navigate(href)
+                    }}
+                    className={itemClass}
+                    style={itemStyle}
+                  >
+                    <ItemBody persona={p} extra={renderExtra?.(p)} />
+                  </a>
+                )}
               </li>
             ))}
           </ul>
         </section>
       ))}
     </div>
+  )
+}
+
+// The inside of an item: the round initial, the name, the description and what the page adds under them.
+function ItemBody({ persona, extra }: { persona: Persona; extra: React.ReactNode }) {
+  return (
+    <>
+      <span
+        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-base font-bold text-white shadow-sm"
+        style={{ background: accentFor(persona.name).to }}
+        aria-hidden="true"
+      >
+        {initialOf(persona.name)}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-semibold text-gray-900">{persona.name}</span>
+        {persona.description && <span className="mt-0.5 block text-xs text-gray-500">{persona.description}</span>}
+        {extra}
+      </span>
+    </>
   )
 }
