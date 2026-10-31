@@ -49,6 +49,24 @@ export function PersonasPage() {
   const [profileName, setProfileName] = useState('')
   const aiRuns = usePersonaAiRuns(profileId)
   const [reviewing, setReviewing] = useState<PersonaAiRun | null>(null)
+  // The personas the AI just created (step 112): shown highlighted and bigger until dismissed or
+  // until another profile is picked, and scrolled to once they are in the list.
+  const [newIds, setNewIds] = useState<string[]>([])
+  const [scrollToNew, setScrollToNew] = useState(false)
+
+  useEffect(() => {
+    setNewIds([])
+    setScrollToNew(false)
+  }, [profileId])
+
+  useEffect(() => {
+    if (!scrollToNew) return
+    const first = personas.find((p) => newIds.includes(p.id))
+    const el = first ? document.getElementById(`persona-${first.id}`) : null
+    if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    setScrollToNew(false)
+  }, [scrollToNew, personas, newIds])
 
   useEffect(() => {
     if (!profileId) return
@@ -175,6 +193,27 @@ export function PersonasPage() {
 
           <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
 
+          {newIds.length > 0 && (
+            <div
+              role="status"
+              className="mb-3 flex items-center justify-between gap-3 rounded-2xl border border-purple-200 bg-purple-50 px-4 py-2.5 text-sm text-purple-900"
+            >
+              <span>
+                {newIds.length === 1 ? '1 persona was' : `${newIds.length} personas were`} created with AI.{' '}
+                {newIds.length === 1 ? 'It is' : 'They are'} highlighted below.
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setNewIds([])
+                }}
+                className="shrink-0 rounded-full border border-purple-200 bg-white px-3 py-1 text-xs font-medium text-purple-800 hover:bg-purple-100"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+
           {profileId && personas.length === 0 && !error && (
             <div
               className="career-wiggle rounded-3xl border p-8 text-center text-sm text-gray-500"
@@ -186,95 +225,112 @@ export function PersonasPage() {
 
           {profileId && (
             <div className="career-stagger space-y-3">
-              {personas.map((p) => (
-                <div
-                  key={p.id}
-                  id={`persona-${p.id}`}
-                  className="rounded-3xl border p-4 shadow-sm transition-shadow hover:shadow-md"
-                  style={{ borderColor: PAGE_ACCENT.soft, background: `linear-gradient(160deg, #ffffff 45%, ${PAGE_ACCENT.soft} 100%)` }}
-                >
-                  {editingId === p.id ? (
-                    <div>
-                      <input
-                        // Deliberate: entering edit mode should focus the input
-                        // immediately, the same convention most inline-rename UIs use.
-                        // eslint-disable-next-line jsx-a11y/no-autofocus
-                        autoFocus
-                        value={editName}
-                        onChange={(e) => {
-                          setEditName(e.target.value)
-                        }}
-                        placeholder="Name"
-                        className={`mb-2 ${inputClass}`}
-                      />
-                      <input
-                        value={editDescription}
-                        onChange={(e) => {
-                          setEditDescription(e.target.value)
-                        }}
-                        placeholder="Description"
-                        className={`mb-2 ${inputClass}`}
-                      />
-                      <div className="flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            saveEdit(p.id)
+              {personas.map((p) => {
+                const isNew = newIds.includes(p.id)
+                return (
+                  <div
+                    key={p.id}
+                    id={`persona-${p.id}`}
+                    data-new={isNew ? 'true' : undefined}
+                    className={`rounded-3xl border shadow-sm transition-all hover:shadow-md ${isNew ? 'p-6 ring-2 ring-purple-300' : 'p-4'}`}
+                    style={
+                      isNew
+                        ? {
+                            borderColor: '#d8b4fe',
+                            background: 'linear-gradient(160deg, #ffffff 25%, #f3e8ff 100%)',
+                            // No entrance animation: the list's stagger delays a card by its position
+                            // (over a second for the ninth), and a new persona must be there at once.
+                            animation: 'none',
+                          }
+                        : { borderColor: PAGE_ACCENT.soft, background: `linear-gradient(160deg, #ffffff 45%, ${PAGE_ACCENT.soft} 100%)` }
+                    }
+                  >
+                    {editingId === p.id ? (
+                      <div>
+                        <input
+                          // Deliberate: entering edit mode should focus the input
+                          // immediately, the same convention most inline-rename UIs use.
+                          // eslint-disable-next-line jsx-a11y/no-autofocus
+                          autoFocus
+                          value={editName}
+                          onChange={(e) => {
+                            setEditName(e.target.value)
                           }}
-                          className="rounded-md bg-gray-900 px-3 py-1 text-xs font-medium text-white hover:bg-gray-800"
-                        >
-                          Save
-                        </button>
-                        <button
-                          type="button"
-                          onClick={cancelEdit}
-                          className="rounded-md border border-gray-200 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex items-start gap-3">
-                      <span
-                        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-base font-bold text-white shadow-sm"
-                        style={{ background: accentFor(p.name).to }}
-                        aria-hidden="true"
-                      >
-                        {initialOf(p.name)}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-sm font-semibold">{p.name}</span>
-                          {p.aiRunId !== undefined && <CreatedWithAiChip chatId={chatOfRun(aiRuns.runs, p.aiRunId)} />}
+                          placeholder="Name"
+                          className={`mb-2 ${inputClass}`}
+                        />
+                        <input
+                          value={editDescription}
+                          onChange={(e) => {
+                            setEditDescription(e.target.value)
+                          }}
+                          placeholder="Description"
+                          className={`mb-2 ${inputClass}`}
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              saveEdit(p.id)
+                            }}
+                            className="rounded-md bg-gray-900 px-3 py-1 text-xs font-medium text-white hover:bg-gray-800"
+                          >
+                            Save
+                          </button>
+                          <button
+                            type="button"
+                            onClick={cancelEdit}
+                            className="rounded-md border border-gray-200 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                          >
+                            Cancel
+                          </button>
                         </div>
-                        {p.description && <div className="mt-0.5 text-xs text-gray-500">{p.description}</div>}
-                        <div className="mt-1 text-xs text-gray-400">Created {formatDate(p.createdAt)}</div>
                       </div>
-                      <div className="flex shrink-0 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            startEdit(p)
-                          }}
-                          className="rounded-full border border-blue-200 px-3 py-1 text-xs text-blue-700 hover:bg-blue-50"
+                    ) : (
+                      <div className="flex items-start gap-3">
+                        <span
+                          className={`inline-flex shrink-0 items-center justify-center rounded-full font-bold text-white shadow-sm ${isNew ? 'h-12 w-12 text-lg' : 'h-10 w-10 text-base'}`}
+                          style={{ background: accentFor(p.name).to }}
+                          aria-hidden="true"
                         >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            handleDelete(p.id)
-                          }}
-                          className="rounded-full border border-red-200 px-3 py-1 text-xs text-red-700 hover:bg-red-50"
-                        >
-                          Delete
-                        </button>
+                          {initialOf(p.name)}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className={isNew ? 'text-base font-semibold' : 'text-sm font-semibold'}>{p.name}</span>
+                            {isNew && (
+                              <span className="rounded-full bg-purple-600 px-2 py-0.5 text-[11px] font-semibold text-white">New</span>
+                            )}
+                            {p.aiRunId !== undefined && <CreatedWithAiChip chatId={chatOfRun(aiRuns.runs, p.aiRunId)} />}
+                          </div>
+                          {p.description && <div className="mt-0.5 text-xs text-gray-500">{p.description}</div>}
+                          <div className="mt-1 text-xs text-gray-400">Created {formatDate(p.createdAt)}</div>
+                        </div>
+                        <div className="flex shrink-0 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              startEdit(p)
+                            }}
+                            className="rounded-full border border-blue-200 px-3 py-1 text-xs text-blue-700 hover:bg-blue-50"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleDelete(p.id)
+                            }}
+                            className="rounded-full border border-red-200 px-3 py-1 text-xs text-red-700 hover:bg-red-50"
+                          >
+                            Delete
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  )}
-                </div>
-              ))}
+                    )}
+                  </div>
+                )
+              })}
             </div>
           )}
         </div>
@@ -309,8 +365,10 @@ export function PersonasPage() {
           onClose={() => {
             setReviewing(null)
           }}
-          onCreated={() => {
+          onCreated={(created) => {
             setReviewing(null)
+            setNewIds(created.map((c) => c.id))
+            setScrollToNew(true)
             load(profileId)
             void aiRuns.reload()
           }}
