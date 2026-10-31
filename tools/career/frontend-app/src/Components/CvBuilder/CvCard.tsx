@@ -99,7 +99,7 @@ export function CvCard({
         {onShowAiChat !== undefined && (
           <button
             type="button"
-            title="Show the chat that created this CV"
+            title="Open the chat that created this CV"
             onClick={onShowAiChat}
             className="inline-flex items-center gap-1 rounded-full bg-purple-50 px-2 py-0.5 text-[11px] font-medium text-purple-700 hover:bg-purple-100"
           >

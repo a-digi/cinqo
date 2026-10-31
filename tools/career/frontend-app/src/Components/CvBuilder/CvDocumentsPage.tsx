@@ -27,9 +27,8 @@ import { CARD_MIN_REM, templateLabel } from './cvCardRules'
 import { PageTips } from '../../Shared/PageTips/PageTips'
 import { useAiChoice } from '../../Cinqo/Platform/useAiChoice'
 import { CreateCvWithAi } from '../../CvAi/CreateCvWithAi'
-import { failedRunToShow, hasRunningCvRun, newlyCreatedCv, runOfDocument } from '../../CvAi/cvAiRules'
-import { CvAiChatModal } from '../../CvAi/CvAiChatModal'
-import { CvAiHistory } from '../../CvAi/CvAiHistory'
+import { failedRunToShow, hasRunningCvRun, newlyCreatedCv, openRunChat, runOfDocument } from '../../CvAi/cvAiRules'
+import { CvAiChatsModal } from '../../CvAi/CvAiChatsModal'
 import { useDismissedCvRuns } from '../../CvAi/useDismissedCvRuns'
 import { useCvAiRuns } from '../../CvAi/useCvAiRuns'
 
@@ -66,8 +65,7 @@ export function CvDocumentsPage() {
   const [scrollToNew, setScrollToNew] = useState(false)
   const aiRuns = useCvAiRuns(personaId)
   const [dismissedRuns, dismissRun] = useDismissedCvRuns()
-  const [chatRunId, setChatRunId] = useState<string | null>(null)
-  const chatRun = aiRuns.runs.find((r) => r.id === chatRunId) ?? null
+  const [chatsOpen, setChatsOpen] = useState(false)
   const workingRun = aiRuns.runs.find((r) => r.status === 'generating') ?? null
   // Every persona, to offer the ones a CV can be attached to (step 114).
   const [allPersonas, setAllPersonas] = useState<Persona[]>([])
@@ -274,11 +272,11 @@ export function CvDocumentsPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    setChatRunId(workingRun.id)
+                    openRunChat(workingRun)
                   }}
                   className="ml-1 text-blue-700 underline"
                 >
-                  Show the chat
+                  Open the chat
                 </button>
               )}
             </p>
@@ -294,11 +292,11 @@ export function CvDocumentsPage() {
                     <button
                       type="button"
                       onClick={() => {
-                        setChatRunId(failed.id)
+                        openRunChat(failed)
                       }}
                       className="rounded-full border border-red-200 bg-white px-3 py-1 text-xs font-medium text-red-800 hover:bg-red-100"
                     >
-                      Show chat
+                      Open chat
                     </button>
                     <button
                       type="button"
@@ -314,16 +312,18 @@ export function CvDocumentsPage() {
               ) : null
             })()}
           {personaId && aiRuns.error !== '' && <p className="mb-4 text-sm text-red-700">{aiRuns.error}</p>}
-          {personaId && (
-            <div className="mb-4">
-              <CvAiHistory
-                runs={aiRuns.runs}
-                docs={documents}
-                onShowChat={(run) => {
-                  setChatRunId(run.id)
+          {personaId && aiRuns.runs.length > 0 && (
+            <p className="mb-4 text-xs">
+              <button
+                type="button"
+                onClick={() => {
+                  setChatsOpen(true)
                 }}
-              />
-            </div>
+                className="text-blue-700 hover:underline"
+              >
+                AI chats ({aiRuns.runs.length})
+              </button>
+            </p>
           )}
 
           {personaId && (
@@ -381,7 +381,7 @@ export function CvDocumentsPage() {
                         const run = runOfDocument(aiRuns.runs, doc.id)
                         return run
                           ? () => {
-                              setChatRunId(run.id)
+                              openRunChat(run)
                             }
                           : undefined
                       })()}
@@ -404,10 +404,12 @@ export function CvDocumentsPage() {
         </aside>
       </div>
 
-      <CvAiChatModal
-        run={chatRun}
+      <CvAiChatsModal
+        open={chatsOpen}
+        runs={aiRuns.runs}
+        docs={documents}
         onClose={() => {
-          setChatRunId(null)
+          setChatsOpen(false)
         }}
       />
 

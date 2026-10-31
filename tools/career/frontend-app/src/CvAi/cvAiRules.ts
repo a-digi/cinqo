@@ -48,3 +48,8 @@ export function visibleCvRuns<T>(runs: T[], showAll: boolean): { shown: T[]; hid
   if (showAll || runs.length <= CV_HISTORY_LIMIT) return { shown: runs, hidden: 0 }
   return { shown: runs.slice(0, CV_HISTORY_LIMIT), hidden: runs.length - CV_HISTORY_LIMIT }
 }
+
+// Opens a run's chat in the chat window at the bottom of the app, where every conversation is shown.
+export function openRunChat(run: Pick<CvAiRun, 'conversationId'>): void {
+  window.__cinqoToolBridge.openConversation(run.conversationId)
+}

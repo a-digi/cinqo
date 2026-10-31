@@ -2,9 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import type { CvDocument, CvTemplate } from '../../../api'
 import type { AiChoice } from '../../../Cinqo/Platform/aiChoice'
 import { CreateCvWithAi } from '../../../CvAi/CreateCvWithAi'
-import { failedRunToShow, hasRunningCvRun } from '../../../CvAi/cvAiRules'
-import { CvAiChatModal } from '../../../CvAi/CvAiChatModal'
-import { CvAiHistory } from '../../../CvAi/CvAiHistory'
+import { failedRunToShow, hasRunningCvRun, openRunChat } from '../../../CvAi/cvAiRules'
+import { CvAiChatsModal } from '../../../CvAi/CvAiChatsModal'
 import { useDismissedCvRuns } from '../../../CvAi/useDismissedCvRuns'
 import { useCvAiRuns } from '../../../CvAi/useCvAiRuns'
 import { mediaDownloadUrl } from '../../../api'
@@ -37,8 +36,7 @@ export function PersonaCvs({
   const [dismissedRuns, dismissRun] = useDismissedCvRuns()
   const failed = failedRunToShow(aiRuns.runs, dismissedRuns)
   const workingRun = aiRuns.runs.find((r) => r.status === 'generating') ?? null
-  const [chatRunId, setChatRunId] = useState<string | null>(null)
-  const chatRun = aiRuns.runs.find((r) => r.id === chatRunId) ?? null
+  const [chatsOpen, setChatsOpen] = useState(false)
   // A run this section saw working that has ended: the CV list is read again.
   const sawWorking = useRef(false)
   useEffect(() => {
@@ -109,11 +107,11 @@ export function PersonaCvs({
             <button
               type="button"
               onClick={() => {
-                setChatRunId(workingRun.id)
+                openRunChat(workingRun)
               }}
               className="ml-1 text-blue-700 underline"
             >
-              Show the chat
+              Open the chat
             </button>
           )}
         </p>
@@ -124,11 +122,11 @@ export function PersonaCvs({
           <button
             type="button"
             onClick={() => {
-              setChatRunId(failed.id)
+              openRunChat(failed)
             }}
             className="underline"
           >
-            Show chat
+            Open chat
           </button>{' '}
           <button
             type="button"
@@ -164,18 +162,24 @@ export function PersonaCvs({
         >
           {rows.length > 0 ? 'Manage CVs' : 'Create a CV by hand'}
         </button>
+        {aiRuns.runs.length > 0 && (
+          <button
+            type="button"
+            onClick={() => {
+              setChatsOpen(true)
+            }}
+            className="text-xs text-blue-700 hover:underline"
+          >
+            AI chats ({aiRuns.runs.length})
+          </button>
+        )}
       </div>
-      <CvAiHistory
+      <CvAiChatsModal
+        open={chatsOpen}
         runs={aiRuns.runs}
         docs={docs}
-        onShowChat={(run) => {
-          setChatRunId(run.id)
-        }}
-      />
-      <CvAiChatModal
-        run={chatRun}
         onClose={() => {
-          setChatRunId(null)
+          setChatsOpen(false)
         }}
       />
     </section>

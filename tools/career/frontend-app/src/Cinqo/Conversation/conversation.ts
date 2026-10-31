@@ -83,7 +83,7 @@ interface StartedTurnRun {
   startedAt: string
 }
 
-export interface ConversationMessage {
+interface ConversationMessage {
   role: 'user' | 'assistant'
   content: string
   createdAt: string
@@ -108,11 +108,6 @@ async function fetchActiveTurn(conversationId: string): Promise<ActiveTurn> {
 async function fetchConversationDetail(conversationId: string): Promise<ConversationDetail> {
   const res = await httpClient.get(`/api/v1/conversations/${encodeURIComponent(conversationId)}`)
   return httpClient.responseBody<ConversationDetail>(res, 'load conversation')
-}
-
-// The messages of a conversation so far, oldest first (a chat shown inside a tool, e.g. the AI CV runs).
-export async function fetchConversationMessages(conversationId: string): Promise<ConversationMessage[]> {
-  return (await fetchConversationDetail(conversationId)).messages
 }
 
 // awaitTurnCompletion polls .../turns/active until the conversation's
