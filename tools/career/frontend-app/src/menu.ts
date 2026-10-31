@@ -58,7 +58,12 @@ export const careerMenuEntry: MenuEntry = {
         { label: 'Import from CV', path: IMPORT_CV_PATH, scopes: ['tool:career:cv_import'] },
       ],
     },
-    // The AI platform and model every Career feature uses (crawling, Job Match, CVs).
-    { label: 'Settings', path: SETTINGS_PATH, scopes: ['tool:career:jobs'] },
+    {
+      label: 'Settings',
+      children: [
+        // The AI platform and model every Career feature uses (crawling, Job Match, CVs).
+        { label: 'AI', path: SETTINGS_PATH, scopes: ['tool:career:jobs'] },
+      ],
+    },
   ],
 }
