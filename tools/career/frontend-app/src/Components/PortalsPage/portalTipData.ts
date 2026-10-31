@@ -40,7 +40,23 @@ export function wordCount(text: string): number {
   return words.length === 1 && words[0] === '' ? 0 : words.length
 }
 
+// The order is the order they are shown in: the choice of AI first, then cheaper models, then what cannot be crawled.
 export const PORTAL_TIP_DATA: PortalTipData[] = [
+  {
+    id: 'your-ai',
+    label: 'Your AI',
+    title: 'Your choice of AI',
+    text: 'A portal or a link can use its own AI platform and model (the AI chip). With none set, the portal’s is used, then the general one in Settings.',
+    tone: 'violet',
+    settingsLink: true,
+  },
+  {
+    id: 'cheaper-models',
+    label: 'Cheaper models',
+    title: 'Cheaper models can do it',
+    text: 'Low-cost models from OpenRouter can often write crawl instructions too. Pick a specific cheap model: the random free router often fails at tool use.',
+    tone: 'green',
+  },
   {
     id: 'not-every-page',
     label: 'Not every page',
@@ -54,20 +70,5 @@ export const PORTAL_TIP_DATA: PortalTipData[] = [
     title: 'Paywalls and logins',
     text: 'Pages behind a paywall or a login cannot be crawled. Use the site’s public job list instead.',
     tone: 'rose',
-  },
-  {
-    id: 'cheaper-models',
-    label: 'Cheaper models',
-    title: 'Cheaper models can do it',
-    text: 'Low-cost models from OpenRouter can often write crawl instructions too. Pick a specific cheap model: the random free router often fails at tool use.',
-    tone: 'green',
-  },
-  {
-    id: 'your-ai',
-    label: 'Your AI',
-    title: 'Your choice of AI',
-    text: 'A portal or a link can use its own AI platform and model (the AI chip). With none set, the portal’s is used, then the general one in Settings.',
-    tone: 'violet',
-    settingsLink: true,
   },
 ]
