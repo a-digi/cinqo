@@ -17,10 +17,10 @@ import {
 } from '../../api'
 import { Comments } from '../../Shared/Comments/Comments'
 import { COMMENT_TYPE_PROFILE } from '../../Shared/Comments/commentTypes'
-import { SparkleIcon, UserIcon } from '../../Shared/Icons/icons'
+import { UserIcon } from '../../Shared/Icons/icons'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
-import { CV_BUILDER_PATH, PERSONA_DETAILS_PATH, PROFILES_PATH } from '../../paths'
-import { createdLabel, templateLabel } from '../CvBuilder/cvCardRules'
+import { PERSONA_DETAILS_PATH, PROFILES_PATH, VIEW_PERSONA_PATH } from '../../paths'
+import { CvList } from '../CvBuilder/CvList'
 import { PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
 import { setPersonaIdInLocalStorage } from '../Persona/PersonaSwitcher/repositoryLocalStorage'
 import { profileLabel } from '../ProfileSwitcher/profileLabel'
@@ -236,7 +236,15 @@ export function ProfileViewPage() {
                   return (
                     <li key={p.id} className="rounded-2xl border border-gray-100 bg-white/70 p-3">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-semibold">{p.name}</span>
+                        <a
+                          href={`${VIEW_PERSONA_PATH}?id=${encodeURIComponent(p.id)}`}
+                          onClick={(e) => {
+                            go(e, `${VIEW_PERSONA_PATH}?id=${encodeURIComponent(p.id)}`)
+                          }}
+                          className="text-sm font-semibold text-blue-700 hover:underline"
+                        >
+                          {p.name}
+                        </a>
                         {d && <span className="text-xs text-gray-500">{countsText(d.skills.length, d.experience.length)}</span>}
                         <button
                           type="button"
@@ -265,59 +273,7 @@ export function ProfileViewPage() {
             ) : cvs.length === 0 ? (
               <p className="text-sm text-gray-400">No CVs yet for this profile&apos;s personas.</p>
             ) : (
-              <ul className="space-y-2">
-                {cvs.map((doc) => (
-                  <li
-                    key={doc.id}
-                    className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-2xl border border-gray-100 bg-white/70 p-3 text-xs text-gray-600"
-                  >
-                    <span className="min-w-0 max-w-full truncate text-sm font-medium text-gray-900" title={doc.title}>
-                      {doc.title}
-                    </span>
-                    {aiCvIds.has(doc.id) && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-purple-50 px-2 py-0.5 text-[11px] font-medium text-purple-700">
-                        <SparkleIcon />
-                        Created with AI
-                      </span>
-                    )}
-                    <span className="text-gray-400">
-                      {[templateLabel(templates, doc.templateId), createdLabel(doc.createdAt)].filter((x) => x).join(' · ')}
-                    </span>
-                    <span className="flex flex-wrap gap-1">
-                      {doc.personas.map((cp) => (
-                        <span
-                          key={cp.id}
-                          title={cp.builtFrom ? 'Built from this persona' : 'Attached persona'}
-                          className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${cp.builtFrom ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-700'}`}
-                        >
-                          {cp.name}
-                        </span>
-                      ))}
-                    </span>
-                    <span className="ml-auto flex gap-3">
-                      {doc.mediaFileId !== '' && (
-                        <a
-                          href={mediaDownloadUrl(doc.mediaFileId)}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-gray-600 underline hover:text-gray-900"
-                        >
-                          PDF
-                        </a>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          window.__cinqoToolBridge.navigate(`${CV_BUILDER_PATH}?id=${encodeURIComponent(doc.id)}`)
-                        }}
-                        className="text-blue-700 hover:underline"
-                      >
-                        Edit
-                      </button>
-                    </span>
-                  </li>
-                ))}
-              </ul>
+              <CvList docs={cvs} templates={templates} aiCvIds={aiCvIds} />
             )}
             {cvs !== null && cvListMayBeCut(totalCvs) && (
               <p className="mt-2 text-xs text-amber-800">
