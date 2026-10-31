@@ -1,9 +1,6 @@
-// repositoryLocalStorage.ts — ProfileSwitcher's own current-profile-id
-// localStorage repository (moved out of the tool-wide profileStore.ts,
-// step 51, once ProfileSwitcher turned out to be its only caller —
-// same move as step 50's own personaStore.ts ->
-// Persona/PersonaSwitcher/repositoryLocalStorage.ts): a per-viewer
-// convenience, not required for correctness. See
+// repositoryLocalStorage.ts — the profile last chosen, remembered in this browser (a per-viewer convenience, not
+// required for correctness). The pages that browse a profile's data take it from their address; this is only the
+// profile the "new persona" form starts on when its link names none. See
 // plan/ai/tools/career/step-11-job-seeker-profile-frontend.md.
 const STORAGE_KEY = 'career.currentProfileId'
 

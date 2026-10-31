@@ -1,13 +1,7 @@
-// repositoryLocalStorage.ts — PersonaSwitcher's own current-persona-id
-// localStorage repository (moved out of the tool-wide personaStore.ts,
-// step 50, once PersonaSwitcher turned out to be its only caller): a
-// per-viewer convenience (not required for correctness: every page
-// re-resolves an "effective" persona id on its own mount via
-// PersonaSwitcher, falling back to the first available persona if the
-// stored one is stale or missing). Each route mounts its own
-// independent React root (no shared parent layout across routes), so
-// this is how pages stay in sync with each other — same key, not
-// shared live state. See
+// repositoryLocalStorage.ts — the persona last chosen, remembered in this browser (a per-viewer convenience, not
+// required for correctness). The pages that browse a persona's data take it from their address; this is only the
+// fallback for the experience add/edit page when its link names no persona. Each route mounts its own React
+// root, so pages share it through the same key, not through shared live state. See
 // plan/ai/tools/career/step-09-persona-frontend.md.
 const STORAGE_KEY = 'career.currentPersonaId'
 

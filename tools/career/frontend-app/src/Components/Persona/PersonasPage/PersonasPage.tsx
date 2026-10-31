@@ -33,9 +33,9 @@ import { chatOfRun, hasRunningRun } from '../../../PersonaAi/runDisplay'
 
 // Full persona CRUD — since step 10, every persona belongs to a
 // profile (job seeker), so this page now scopes its own list and its
-// own create form to whichever profile is currently selected via
-// ProfileSwitcher, the same "forced to be mapped" enforcement one
-// level up from step 8's own personaId requirement. See
+// own create form to the profile in the page's address
+// (/tools/career/personas/:profileId), the same "forced to be mapped" enforcement
+// one level up from step 8's own personaId requirement. See
 // plan/ai/tools/career/step-09-persona-frontend.md and
 // plan/ai/tools/career/step-11-job-seeker-profile-frontend.md. Same layout as
 // Companies, but mirrored: header card, the personas on the left and the "needs
