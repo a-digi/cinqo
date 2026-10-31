@@ -14,6 +14,7 @@ import { useAiChoice } from '../../../Cinqo/Platform/useAiChoice'
 import { profileLabel } from '../../ProfileSwitcher/profileLabel'
 import { CreateWithAi } from '../../../PersonaAi/CreateWithAi'
 import { PersonaAiHistory } from '../../../PersonaAi/PersonaAiHistory'
+import { setProfileIdInLocalStorage } from '../../ProfileSwitcher/repositoryLocalStorage'
 import { PersonaSuggestions } from '../../../PersonaAi/PersonaSuggestions'
 import { usePersonaAiRuns } from '../../../PersonaAi/usePersonaAiRuns'
 import { chatOfRun, hasRunningRun } from '../../../PersonaAi/runDisplay'
@@ -29,6 +30,14 @@ import { chatOfRun, hasRunningRun } from '../../../PersonaAi/runDisplay'
 // attention" panel on the right;
 // "New persona" opens its own page.
 export function PersonasPage() {
+  // A chat link to one suggestion (?profileId=…&suggestion=…): the profile it belongs to is chosen
+  // before the switcher reads its stored one, and the suggestion is scrolled to once it is shown.
+  const [linkedId] = useState(() => {
+    const params = new URLSearchParams(window.location.search)
+    const profile = params.get('profileId')
+    if (profile) setProfileIdInLocalStorage(profile)
+    return params.get('suggestion')
+  })
   const [profileId, setProfileId] = useState<string | null>(null)
   const [personas, setPersonas] = useState<Persona[]>([])
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -60,6 +69,15 @@ export function PersonasPage() {
   }, [scrollToNew, personas, newIds])
 
   // When the AI finishes while the user is here, the suggestions are brought into view.
+  const scrolledToLink = useRef(false)
+  useEffect(() => {
+    if (linkedId === null || scrolledToLink.current) return
+    const el = document.getElementById(`suggestion-${linkedId}`)
+    if (!el) return
+    scrolledToLink.current = true
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [linkedId, aiRuns.runs])
+
   const wasWorking = useRef(false)
   useEffect(() => {
     if (hasRunningRun(aiRuns.runs)) {
@@ -221,6 +239,7 @@ export function PersonasPage() {
           {profileId && (
             <PersonaSuggestions
               runs={aiRuns.runs}
+              linkedId={linkedId}
               existing={personas.map((p) => ({ id: p.id, name: p.name }))}
               onAccepted={(created) => {
                 setNewIds((ids) => [...ids, ...created.map((c) => c.id)])

@@ -35,6 +35,9 @@ func TestAddSuggestion_StoresAndTheRunIsFinishedFromThem(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := prop.Personas
+	if len(runs[0].SuggestionIDs) != 2 || runs[0].SuggestionIDs[0] != a || runs[0].SuggestionIDs[1] != b {
+		t.Fatalf("suggestion ids %v, want [%s %s]", runs[0].SuggestionIDs, a, b)
+	}
 	if len(got) != 2 || got[0].Name != "Backend Engineer" || got[1].Name != "Tech Lead" {
 		t.Fatalf("proposal personas: %+v", got)
 	}

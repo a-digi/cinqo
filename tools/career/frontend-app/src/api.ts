@@ -113,6 +113,8 @@ export interface PersonaAiRun {
   decidedAt?: string
   // The indexes of the proposed personas already decided (accepted or declined), one at a time.
   decided: number[]
+  // The id of each suggestion the AI stored, in proposal order (what its chat links point at).
+  suggestionIds: string[]
   declined: { name: string }[]
 }
 

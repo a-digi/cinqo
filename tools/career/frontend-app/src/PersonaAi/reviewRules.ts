@@ -10,6 +10,8 @@ export interface Suggestion {
   run: PersonaAiRun
   index: number
   persona: ProposedPersona
+  // The id the AI's suggest_persona call returned, when there is one.
+  id: string | undefined
 }
 
 // The suggestions still waiting for a decision: from every ready, open run, the proposed personas
@@ -19,7 +21,7 @@ export function waitingSuggestions(runs: PersonaAiRun[]): Suggestion[] {
   for (const run of runs) {
     if (run.status !== 'ready' || run.decidedAt !== undefined) continue
     run.proposal?.personas.forEach((persona, index) => {
-      if (!run.decided.includes(index)) out.push({ run, index, persona })
+      if (!run.decided.includes(index)) out.push({ run, index, persona, id: run.suggestionIds[index] })
     })
   }
   return out

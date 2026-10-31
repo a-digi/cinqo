@@ -17,10 +17,13 @@ import { hasRunningRun } from './runDisplay'
 export function PersonaSuggestions({
   runs,
   existing,
+  linkedId,
   onAccepted,
   onChanged,
 }: {
   runs: PersonaAiRun[]
+  // The suggestion a chat link pointed at: scrolled to and highlighted.
+  linkedId: string | null
   existing: { id: string; name: string }[]
   onAccepted: (created: { id: string; name: string }[]) => void
   onChanged: () => void
@@ -106,6 +109,7 @@ export function PersonaSuggestions({
             suggestion={s}
             existing={existing}
             known={known}
+            linked={linkedId !== null && s.id === linkedId}
             onAccepted={onAccepted}
             onChanged={onChanged}
           />
@@ -134,10 +138,12 @@ function SuggestionCard({
   suggestion,
   existing,
   known,
+  linked,
   onAccepted,
   onChanged,
 }: {
   suggestion: Suggestion
+  linked: boolean
   existing: { id: string; name: string }[]
   known: KnownData | null
   onAccepted: (created: { id: string; name: string }[]) => void
@@ -168,7 +174,12 @@ function SuggestionCard({
   }
 
   return (
-    <article aria-label={`Suggestion: ${final.name || 'no name'}`} className="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-purple-200">
+    <article
+      id={suggestion.id ? `suggestion-${suggestion.id}` : undefined}
+      data-linked={linked ? 'true' : undefined}
+      aria-label={`Suggestion: ${final.name || 'no name'}`}
+      className={`rounded-2xl bg-white p-3 shadow-sm ${linked ? 'ring-4 ring-purple-500' : 'ring-1 ring-purple-200'}`}
+    >
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <span className="text-xs font-semibold uppercase tracking-wide text-purple-700">Suggested persona</span>
         <span className="ml-auto flex gap-2">

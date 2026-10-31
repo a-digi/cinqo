@@ -71,6 +71,8 @@ type aiRun struct {
 	// The positions in the proposal that already have a decision (the user decides one persona at a
 	// time); the others are still waiting for the user.
 	Decided []int `json:"decided"`
+	// The id of each suggestion the AI stored, in proposal order (empty for a run without any).
+	SuggestionIDs []string `json:"suggestionIds"`
 }
 
 // CreateAiRun records the start of a run (status 'generating').
@@ -195,6 +197,7 @@ func ListAiRuns(profileID string) ([]aiRun, error) {
 			_ = json.Unmarshal([]byte(indexesJSON.String), &r.Decided)
 		}
 		r.Personas = []aiRunPersona{}
+		r.SuggestionIDs = []string{}
 		index[r.ID] = len(runs)
 		runs = append(runs, r)
 	}
@@ -222,7 +225,30 @@ func ListAiRuns(profileID string) ([]aiRun, error) {
 			runs[i].Personas = append(runs[i].Personas, p)
 		}
 	}
-	return runs, pRows.Err()
+	if err := pRows.Err(); err != nil {
+		return nil, err
+	}
+
+	// The ids the AI's suggest_persona calls returned, in proposal order, so a link in its chat
+	// message can point at one suggestion.
+	sRows, err := db.CareerDB.Query(
+		`SELECT run_id, id FROM persona_ai_suggestions
+		 WHERE run_id IN (SELECT id FROM persona_ai_runs WHERE profile_id = ?)
+		 ORDER BY position`, profileID)
+	if err != nil {
+		return nil, err
+	}
+	defer sRows.Close()
+	for sRows.Next() {
+		var runID, id string
+		if err := sRows.Scan(&runID, &id); err != nil {
+			return nil, err
+		}
+		if i, ok := index[runID]; ok {
+			runs[i].SuggestionIDs = append(runs[i].SuggestionIDs, id)
+		}
+	}
+	return runs, sRows.Err()
 }
 
 // DeleteAiRun removes a run from the history. The personas created from it stay (their

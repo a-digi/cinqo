@@ -31,6 +31,10 @@ function proxyDownloadFilename(href: string): string | null {
 // same reasoning already established for the sibling failed-message
 // error <pre> in MessageThread.tsx's own Bubble. See
 // plan/ai/frontend/frontend/step-XX-chat-widget-long-message-wrapping.md.
+function isToolPageHref(href: string): boolean {
+  return /^\/tools\/[a-z0-9_-]+(\/[A-Za-z0-9_-]+)*(\?[A-Za-z0-9_=&%.-]*)?$/.test(href)
+}
+
 const components: Components = {
   p: ({ children }) => <p className="mb-2 break-words last:mb-0">{children}</p>,
   ul: ({ children }) => <ul className="mb-2 list-disc space-y-1 break-words pl-5 last:mb-0">{children}</ul>,
@@ -84,7 +88,12 @@ const components: Components = {
     // (which also starts with "/") can't slip through. See
     // plan/ai/tools/pdf-generator/step-07-download-link-fix.md.
     const isProxyDownload = typeof href === 'string' && /^\/api\/v1\/tools\/[^/]+\/proxy\//.test(href)
-    const safe = typeof href === 'string' && (/^(https?:|mailto:)/i.test(href) || isProxyDownload)
+    // A link to a page of an installed tool (e.g. a persona suggestion the Career tool's AI names):
+    // only /tools/<slug>/<path> with a plain query string, opened in this tab. Anchored at the
+    // start and limited to a safe character set, so neither a protocol-relative `//host`, a
+    // `..` path nor markup can pass.
+    const isToolPage = typeof href === 'string' && isToolPageHref(href)
+    const safe = typeof href === 'string' && (/^(https?:|mailto:)/i.test(href) || isProxyDownload || isToolPage)
     if (!safe) {
       return <span>{children}</span>
     }
@@ -105,7 +114,7 @@ const components: Components = {
       <a
         href={href}
         download={filename ?? undefined}
-        target={isProxyDownload ? undefined : '_blank'}
+        target={isProxyDownload || isToolPage ? undefined : '_blank'}
         rel="noopener noreferrer"
         className="underline"
       >
