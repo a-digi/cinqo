@@ -83,6 +83,8 @@ import {
   VIEW_COMPANY_PATH,
   VIEW_PROFILE_PATH,
   VIEW_PERSONA_PATH,
+  VIEW_PERSONA_ID_PATH,
+  viewPersonaPathFor,
   NEW_RECRUITER_PATH,
   SETTINGS_PATH,
   PORTALS_PATH,
@@ -283,11 +285,21 @@ window.__cinqoToolBridge.registerRoute({
 })
 
 window.__cinqoToolBridge.registerRoute({
-  path: VIEW_PERSONA_PATH,
-  mount: (container) => {
-    mountReact(container, <PersonaViewPage />)
+  path: VIEW_PERSONA_ID_PATH,
+  mount: (container, params) => {
+    mountReact(container, <PersonaViewPage personaId={params.personaId} />)
   },
   unmount: unmountReact,
+})
+
+// The earlier address of the same page (?id=): sent on to the new one.
+window.__cinqoToolBridge.registerRoute({
+  path: VIEW_PERSONA_PATH,
+  mount: (container) => {
+    const id = new URLSearchParams(window.location.search).get('id')
+    if (id) window.__cinqoToolBridge.navigate(viewPersonaPathFor(id))
+    else container.textContent = 'Persona not found'
+  },
 })
 
 window.__cinqoToolBridge.registerRoute({

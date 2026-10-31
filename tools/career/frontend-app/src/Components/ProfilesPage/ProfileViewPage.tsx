@@ -17,7 +17,7 @@ import { Comments } from '../../Shared/Comments/Comments'
 import { COMMENT_TYPE_PROFILE } from '../../Shared/Comments/commentTypes'
 import { UserIcon } from '../../Shared/Icons/icons'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
-import { PROFILES_PATH, VIEW_PERSONA_PATH } from '../../paths'
+import { PROFILES_PATH, viewPersonaPathFor } from '../../paths'
 import { ProfilePhotosPanel } from '../ProfileImage/ProfilePhotosPanel'
 import { useProfilePhotos } from '../ProfileImage/useProfilePhotos'
 import { CvCardGrid } from '../CvBuilder/CvCardGrid'
@@ -222,9 +222,9 @@ export function ProfileViewPage() {
                     <li key={p.id} className="rounded-2xl border border-gray-100 bg-white/70 p-3">
                       <div className="flex flex-wrap items-center gap-2">
                         <a
-                          href={`${VIEW_PERSONA_PATH}?id=${encodeURIComponent(p.id)}`}
+                          href={viewPersonaPathFor(p.id)}
                           onClick={(e) => {
-                            go(e, `${VIEW_PERSONA_PATH}?id=${encodeURIComponent(p.id)}`)
+                            go(e, viewPersonaPathFor(p.id))
                           }}
                           className="text-sm font-semibold text-blue-700 hover:underline"
                         >

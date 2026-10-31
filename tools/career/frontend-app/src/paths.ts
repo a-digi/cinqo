@@ -18,6 +18,14 @@ export const PERSONA_DETAILS_ONE_PATH = '/tools/career/persona-details/:personaI
 export function personaDetailsPathFor(personaId: string): string {
   return `${PERSONA_DETAILS_PATH}/${encodeURIComponent(personaId)}`
 }
+// The page of one persona: a pattern route, the id arrives as the page's route parameter.
+export const VIEW_PERSONA_ID_PATH = '/tools/career/personas/view/:personaId'
+// The address of the page of one persona.
+export function viewPersonaPathFor(personaId: string): string {
+  return `/tools/career/personas/view/${encodeURIComponent(personaId)}`
+}
+// The earlier address, /personas/view?id=<id>: kept as an exact route that sends on to the address above, so
+// links and bookmarks made before keep working.
 export const VIEW_PERSONA_PATH = '/tools/career/personas/view'
 export const SKILLS_PATH = '/tools/career/skills'
 // One persona's skills on their own page: a pattern route, the id arrives as the page's route parameter.

@@ -39,8 +39,7 @@ function formatDate(value: string): string {
 // summary and goals, skills and experience, and the CVs built from it or attached to it. Built from the
 // existing routes, so it needs no backend of its own. Editing stays on the Personas page and the Persona
 // Details page.
-export function PersonaViewPage() {
-  const personaId = new URLSearchParams(window.location.search).get('id') ?? ''
+export function PersonaViewPage({ personaId }: { personaId: string }) {
   const [persona, setPersona] = useState<Persona | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [error, setError] = useState('')

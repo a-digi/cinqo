@@ -14,7 +14,7 @@ import {
 import { LayersIcon, PlusIcon, SparkleIcon } from '../../../Shared/Icons/icons'
 import { inputClass } from '../../../Shared/inputClass'
 import { PageHeaderCard } from '../../../Shared/PageHeader/PageHeaderCard'
-import { NEW_PERSONA_PATH, PERSONAS_PATH, VIEW_PERSONA_PATH } from '../../../paths'
+import { NEW_PERSONA_PATH, PERSONAS_PATH, viewPersonaPathFor } from '../../../paths'
 import { plural } from '../../CompaniesPage/companyStats'
 import { PAGE_ACCENT, accentFor, initialOf } from '../../JobsPage/jobsTheme'
 import { PhotoAvatar } from '../../ProfileImage/PhotoAvatar'
@@ -428,7 +428,7 @@ export function PersonasPage({ profileId }: { profileId: string }) {
                           <button
                             type="button"
                             onClick={() => {
-                              window.__cinqoToolBridge.navigate(`${VIEW_PERSONA_PATH}?id=${encodeURIComponent(p.id)}`)
+                              window.__cinqoToolBridge.navigate(viewPersonaPathFor(p.id))
                             }}
                             className="rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
                           >
