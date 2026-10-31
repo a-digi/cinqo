@@ -3,7 +3,7 @@ import { addExperience, fetchExperience, fetchPersonas, updateExperience } from 
 import { PlusIcon, TimelineIcon } from '../../Shared/Icons/icons'
 import { inputClass } from '../../Shared/inputClass'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
-import { EXPERIENCE_PATH } from '../../paths'
+import { EXPERIENCE_PATH, experiencePathFor } from '../../paths'
 import { Field } from '../Field/Field'
 import { PAGE_ACCENT } from '../JobsPage/jobsTheme'
 import { getPersonaIdFromLocalStorage, setPersonaIdInLocalStorage } from '../Persona/PersonaSwitcher/repositoryLocalStorage'
@@ -60,8 +60,10 @@ export function ExperienceEntryPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Back to the persona's own experience page (the list when the persona is not known).
+  const backPath = personaId ? experiencePathFor(personaId) : EXPERIENCE_PATH
   function backToList() {
-    window.__cinqoToolBridge.navigate(EXPERIENCE_PATH)
+    window.__cinqoToolBridge.navigate(backPath)
   }
 
   function handleSave() {
@@ -100,7 +102,7 @@ export function ExperienceEntryPage() {
         >
           {message}{' '}
           <a
-            href={EXPERIENCE_PATH}
+            href={backPath}
             onClick={(e) => {
               e.preventDefault()
               backToList()

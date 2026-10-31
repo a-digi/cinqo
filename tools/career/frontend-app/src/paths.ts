@@ -14,6 +14,13 @@ export function skillsPathFor(personaId: string): string {
   return `${SKILLS_PATH}/${encodeURIComponent(personaId)}`
 }
 export const EXPERIENCE_PATH = '/tools/career/experience'
+// One persona's experience on its own page: a pattern route, the id arrives as the page's route parameter. The
+// add/edit page (EXPERIENCE_ENTRY_PATH, an exact path) wins over it; a persona id is never "entry".
+export const EXPERIENCE_PERSONA_PATH = '/tools/career/experience/:personaId'
+// The address of one persona's experience page.
+export function experiencePathFor(personaId: string): string {
+  return `${EXPERIENCE_PATH}/${encodeURIComponent(personaId)}`
+}
 export const PROFILE_IMAGE_PATH = '/tools/career/profile-image'
 export const CV_DOCUMENTS_PATH = '/tools/career/cv-documents'
 export const CV_BUILDER_PATH = '/tools/career/cv-builder'

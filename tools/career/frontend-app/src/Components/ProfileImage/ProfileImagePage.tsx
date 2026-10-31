@@ -19,7 +19,7 @@ import { profileLabel } from '../ProfileSwitcher/profileLabel'
 import { ConfirmationModal } from '../../Shared/ConfirmationModal/ConfirmationModal'
 import { CameraIcon, UploadIcon } from '../../Shared/Icons/icons'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
-import { EXPERIENCE_PATH, NEW_PERSONA_PATH, PERSONA_DETAILS_PATH, SKILLS_PATH, skillsPathFor } from '../../paths'
+import { EXPERIENCE_PATH, NEW_PERSONA_PATH, PERSONA_DETAILS_PATH, SKILLS_PATH, experiencePathFor, skillsPathFor } from '../../paths'
 import { PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
 import { setPersonaIdInLocalStorage } from '../Persona/PersonaSwitcher/repositoryLocalStorage'
 import { CvReadiness } from './CvReadiness'
@@ -106,7 +106,9 @@ export function ProfileImagePage() {
           ? persona
             ? skillsPathFor(persona.id)
             : SKILLS_PATH
-          : EXPERIENCE_PATH
+          : persona
+            ? experiencePathFor(persona.id)
+            : EXPERIENCE_PATH
     window.__cinqoToolBridge.navigate(path)
   }
 

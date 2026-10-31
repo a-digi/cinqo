@@ -1,167 +1,103 @@
 import { useEffect, useState } from 'react'
-import { fetchExperience, removeExperience, type CareerExperience } from '../../api'
-import { PlusIcon, TimelineIcon } from '../../Shared/Icons/icons'
+import { fetchExperience, fetchPersonas, fetchProfiles, type CareerExperience, type Persona, type Profile } from '../../api'
+import { TimelineIcon } from '../../Shared/Icons/icons'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
-import { EXPERIENCE_ENTRY_PATH } from '../../paths'
-import { plural } from '../CompaniesPage/companyStats'
-import { PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
-import { PersonaSwitcher } from '../Persona/PersonaSwitcher/PersonaSwitcher'
-import { CareerTimeline } from './CareerTimeline'
-import { summarizeExperience } from './experienceStats'
 import { PageTips } from '../../Shared/PageTips/PageTips'
+import { PERSONAS_PATH, experiencePathFor } from '../../paths'
+import { plural } from '../CompaniesPage/companyStats'
+import { PersonaList } from '../Persona/PersonaList'
+import { previewItems } from '../Persona/personaListRules'
 
-// Its own page as of step 7 (moved out of ProfilePage). Step 9 added the persona
-// switcher — experience entries are per-persona as of step 8. Header card, a career
-// timeline as the overview, then the entries;
-// adding and editing an entry open ExperienceEntryPage. See
-// plan/ai/tools/career/step-07-dedicated-skills-and-experience-pages.md
-// and plan/ai/tools/career/step-09-persona-frontend.md.
+// How many of a persona's roles the list shows before "+N more".
+const PREVIEW_ROLES = 3
+
+// The Experience page: the personas as a list (grouped by profile), each with how many entries it has and its
+// first few roles; a click opens that persona's own experience page (/tools/career/experience/:personaId), where
+// they are edited. Nothing is edited here, and there is no dropdown. See
+// plan/ai/tools/career/step-120-experience-per-persona-pages.md.
 export function ExperiencePage() {
-  const [personaId, setPersonaId] = useState<string | null>(null)
-  const [experience, setExperience] = useState<CareerExperience[]>([])
+  const [personas, setPersonas] = useState<Persona[]>([])
+  const [profiles, setProfiles] = useState<Profile[]>([])
+  // Each persona's entries by persona id; a persona whose entries could not be read is missing.
+  const [experience, setExperience] = useState<Record<string, CareerExperience[] | undefined>>({})
   const [error, setError] = useState('')
-
-  function load(forPersonaId: string) {
-    setError('')
-    fetchExperience(forPersonaId)
-      .then(setExperience)
-      .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : String(err))
-      })
-  }
+  const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
-    if (personaId) load(personaId)
-  }, [personaId])
-
-  function openEntry(forPersonaId: string, id?: string) {
-    const idPart = id ? `&id=${encodeURIComponent(id)}` : ''
-    window.__cinqoToolBridge.navigate(`${EXPERIENCE_ENTRY_PATH}?personaId=${encodeURIComponent(forPersonaId)}${idPart}`)
-  }
-
-  function handleRemove(id: string) {
-    if (!personaId) return
-    setError('')
-    removeExperience(personaId, id)
-      .then(() => {
-        setExperience((prev) => prev.filter((e) => e.id !== id))
+    Promise.all([fetchPersonas(), fetchProfiles()])
+      .then(([personaList, profileList]) => {
+        setPersonas(personaList)
+        setProfiles(profileList)
+        void Promise.all(personaList.map((p) => fetchExperience(p.id).catch(() => null))).then((all) => {
+          const next: Record<string, CareerExperience[] | undefined> = {}
+          personaList.forEach((p, i) => {
+            const entries = all[i]
+            if (entries) next[p.id] = entries
+          })
+          setExperience(next)
+        })
       })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : String(err))
       })
-  }
+      .finally(() => {
+        setLoaded(true)
+      })
+  }, [])
 
-  const summary = summarizeExperience(experience)
+  const total = Object.values(experience).reduce((sum, list) => sum + (list?.length ?? 0), 0)
 
   return (
     <div className="career-v-fade career-a-sheen career-t-type max-w-7xl p-6 font-sans text-gray-900">
       <PageHeaderCard
         icon={<TimelineIcon />}
         title="Experience"
-        description="The work history on this persona. The AI reads it when matching you against job postings."
-        pill={personaId ? { text: plural(summary.entries, 'entry', 'entries') } : undefined}
+        description="Pick a persona to see and edit its work history. The AI reads it when matching you against job postings."
+        pill={loaded && error === '' ? { text: plural(personas.length, 'persona', 'personas') } : undefined}
       />
-      {/* Steps 105 to 108: the tips sit in a column of their own beside the page (under it on a narrow window). */}
+      {/* The tips sit in a column of their own beside the list (under it on a narrow window). */}
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
         <div className="order-1 min-w-0 flex-1 lg:order-2">
-          <div>
-            <div className="min-w-0">
-              <PersonaSwitcher personaId={personaId} onChange={setPersonaId} />
-
-              {personaId && <CareerTimeline entries={experience} today={new Date()} />}
-
-              {personaId && (
-                <div className="mb-3 flex items-center justify-start gap-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      openEntry(personaId)
-                    }}
-                    className="flex shrink-0 items-center gap-1.5 rounded-md bg-gray-800 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-900"
-                  >
-                    <PlusIcon />
-                    Add experience
-                  </button>
-                  <p className="min-w-0 flex-1 text-xs text-gray-500">An entry without an end date counts as your current role.</p>
-                </div>
-              )}
-
-              <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
-
-              {personaId && experience.length === 0 && !error && (
-                <div
-                  className="career-wiggle rounded-3xl border p-8 text-center text-sm text-gray-500"
-                  style={{ borderColor: PAGE_ACCENT.soft, background: PAGE_ACCENT.soft }}
-                >
-                  No experience yet. Add the first entry with “Add experience”.
-                </div>
-              )}
-
-              {personaId && (
-                <div className="career-stagger space-y-3">
-                  {experience.map((exp) => {
-                    const isCurrent = exp.endDate.trim() === ''
-                    return (
-                      <div
-                        key={exp.id}
-                        className="rounded-3xl border p-4 shadow-sm transition-shadow hover:shadow-md"
-                        style={{
-                          borderColor: PAGE_ACCENT.soft,
-                          background: `linear-gradient(160deg, #ffffff 45%, ${PAGE_ACCENT.soft} 100%)`,
-                        }}
-                      >
-                        <div className="flex items-start gap-3">
-                          <span
-                            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-base font-bold text-white shadow-sm"
-                            style={{ background: accentFor(exp.company).to }}
-                            aria-hidden="true"
-                          >
-                            {initialOf(exp.company)}
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <div className="text-sm font-semibold">{exp.title}</div>
-                            <div className="text-xs text-gray-500">{exp.company}</div>
-                            <div className="mt-2 flex flex-wrap items-center gap-2">
-                              <span
-                                className="rounded-full px-2.5 py-0.5 text-xs font-medium"
-                                style={{ background: PAGE_ACCENT.soft, color: PAGE_ACCENT.text }}
-                              >
-                                {exp.startDate || '—'} – {exp.endDate || 'present'}
-                              </span>
-                              {isCurrent && (
-                                <span className="rounded-full bg-green-50 px-2.5 py-0.5 text-xs font-medium text-green-700">Current</span>
-                              )}
-                            </div>
-                            {exp.description && <div className="mt-2 whitespace-pre-wrap text-xs text-gray-600">{exp.description}</div>}
-                          </div>
-                          <div className="flex shrink-0 gap-2">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                openEntry(personaId, exp.id)
-                              }}
-                              className="rounded-full border border-blue-200 px-3 py-1 text-xs text-blue-700 hover:bg-blue-50"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                handleRemove(exp.id)
-                              }}
-                              className="rounded-full border border-red-200 px-3 py-1 text-xs text-red-700 hover:bg-red-50"
-                            >
-                              Remove
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
+          {error !== '' && <p className="mb-3 text-sm text-red-700">{error}</p>}
+          {loaded && error === '' && personas.length === 0 && (
+            <p className="rounded-3xl border border-gray-100 bg-gray-50 p-8 text-center text-sm text-gray-500">
+              There are no personas yet.{' '}
+              <a
+                href={PERSONAS_PATH}
+                onClick={(e) => {
+                  e.preventDefault()
+                  window.__cinqoToolBridge.navigate(PERSONAS_PATH)
+                }}
+                className="font-medium text-blue-700 hover:underline"
+              >
+                Create one on the Personas page
+              </a>
+              , then add its experience here.
+            </p>
+          )}
+          {personas.length > 0 && (
+            <>
+              <p className="mb-4 text-xs text-gray-500">{plural(total, 'entry', 'entries')} across these personas.</p>
+              <PersonaList
+                personas={personas}
+                profiles={profiles}
+                hrefFor={(p) => experiencePathFor(p.id)}
+                renderExtra={(p) => {
+                  const list = experience[p.id]
+                  if (!list) return null
+                  const roles = list.map((e) => `${e.title} at ${e.company}`)
+                  const { shown, more } = previewItems(roles, PREVIEW_ROLES)
+                  return (
+                    <span className="mt-1.5 block text-xs text-gray-500">
+                      <span className="font-medium text-gray-700">{plural(list.length, 'entry', 'entries')}</span>
+                      {shown.length > 0 && <span> · {shown.join(' · ')}</span>}
+                      {more > 0 && <span> · +{more} more</span>}
+                    </span>
+                  )
+                }}
+              />
+            </>
+          )}
         </div>
         <aside className="order-2 w-full shrink-0 lg:order-1 lg:sticky lg:top-6 lg:w-72">
           <PageTips page="experience" orientation="vertical" />
