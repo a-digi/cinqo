@@ -27,12 +27,16 @@ import (
 // (not done in this step — out of scope, mentioned only so a future
 // reader knows this type isn't test-only).
 type CrawlExtractionReport struct {
-	ItemsFound       int              `json:"itemsFound"`
-	ItemsExtractable int              `json:"itemsExtractable"`
-	ItemsSkipped     int              `json:"itemsSkipped"`
-	OK               bool             `json:"ok"`
-	SkippedSamples   []map[string]any `json:"skippedSamples,omitempty"`
-	Message          string           `json:"message"`
+	ItemsFound       int `json:"itemsFound"`
+	ItemsExtractable int `json:"itemsExtractable"`
+	ItemsSkipped     int `json:"itemsSkipped"`
+	// BlankItems (step 160) counts the skipped items whose six fields are ALL empty: not a job with a bad
+	// selector but a row the container also matches (an ad, a placeholder). A real crawl skips them too and
+	// saves the rest, so a few of them do not stop ok (see blankItemsToleratedPercent).
+	BlankItems     int              `json:"blankItems,omitempty"`
+	OK             bool             `json:"ok"`
+	SkippedSamples []map[string]any `json:"skippedSamples,omitempty"`
+	Message        string           `json:"message"`
 	// Warning (step 92) is set when only a handful of items came back in
 	// total. ok stays true (a page can really list one job), but a listing
 	// page usually shows many, so one or two items most often means the
@@ -46,6 +50,11 @@ type CrawlExtractionReport struct {
 // has its own message.
 const lowItemCountThreshold = 2
 
+// blankItemsToleratedPercent is the largest share of all items (in percent) that may be completely empty for
+// ok to stay true: 4 of 20 (20%) and 5 of 20 (25%) pass, 6 of 20 does not, because then the container is
+// probably matching the wrong elements. Items with some data but no title or no url are never tolerated.
+const blankItemsToleratedPercent = 25
+
 // classifyCrawlResultPages applies IngestCrawlResults' own title/url-
 // required rule (via step 80's extractCrawlResultItemFields/
 // extractCrawlResultIndexedFields) WITHOUT persisting anything — the
@@ -56,43 +65,54 @@ const lowItemCountThreshold = 2
 // plan/ai/tools/career/step-81-check-crawl-extraction-result-tool.md.
 func classifyCrawlResultPages(pages []CrawlResultPage) CrawlExtractionReport {
 	var report CrawlExtractionReport
-	sample := func(fields map[string]any) {
+	// count handles one item: pageNo and index are 1-based, so a skipped sample says where on the page it sits
+	// (a blank row can then be matched with the page, "the 5th <li>").
+	count := func(pageNo, index int, title, sourceURL, company, location, description, postedAt string) {
+		report.ItemsFound++
+		if title != "" && sourceURL != "" {
+			report.ItemsExtractable++
+			return
+		}
+		report.ItemsSkipped++
+		if title == "" && sourceURL == "" && company == "" && location == "" && description == "" && postedAt == "" {
+			report.BlankItems++
+		}
 		if len(report.SkippedSamples) < 3 {
-			report.SkippedSamples = append(report.SkippedSamples, fields)
+			report.SkippedSamples = append(report.SkippedSamples, map[string]any{
+				"page": pageNo, "index": index,
+				"title": title, "url": sourceURL, "company": company, "location": location, "description": description, "postedAt": postedAt,
+			})
 		}
 	}
-	for _, page := range pages {
+	for pi, page := range pages {
 		if len(page.Items) > 0 {
-			for _, item := range page.Items {
+			for i, item := range page.Items {
 				title, sourceURL, company, location, description, postedAt := extractCrawlResultItemFields(item)
-				report.ItemsFound++
-				if title == "" || sourceURL == "" {
-					report.ItemsSkipped++
-					sample(map[string]any{"title": title, "url": sourceURL, "company": company, "location": location, "description": description, "postedAt": postedAt})
-					continue
-				}
-				report.ItemsExtractable++
+				count(pi+1, i+1, title, sourceURL, company, location, description, postedAt)
 			}
 			continue
 		}
 		titles := ExtractResultStrings(page.Results["title"])
 		for i := range titles {
 			title, sourceURL, company, location, description, postedAt := extractCrawlResultIndexedFields(page, i)
-			report.ItemsFound++
-			if title == "" || sourceURL == "" {
-				report.ItemsSkipped++
-				sample(map[string]any{"title": title, "url": sourceURL, "company": company, "location": location, "description": description, "postedAt": postedAt})
-				continue
-			}
-			report.ItemsExtractable++
+			count(pi+1, i+1, title, sourceURL, company, location, description, postedAt)
 		}
 	}
-	report.OK = report.ItemsFound > 0 && report.ItemsSkipped == 0
+	broken := report.ItemsSkipped - report.BlankItems
+	blankTolerated := report.BlankItems*100 <= report.ItemsFound*blankItemsToleratedPercent
+	report.OK = report.ItemsFound > 0 && broken == 0 && blankTolerated
 	switch {
 	case report.ItemsFound == 0:
 		report.Message = "No items were extracted at all — check the container selector (it matched nothing), or the field selectors if this is a single detail page. The page's real content may also not be present in a plain fetch_page_html (client-side-rendered content) — re-inspect the actual HTML you fetched. This is a failure to resolve, never a result to save: make ONE fix attempt, and if a second test still finds 0 items, call ask_user_if_page_has_jobs (once) instead of retrying further."
-	case report.ItemsSkipped > 0:
+	case broken > 0:
 		report.Message = fmt.Sprintf("%d of %d extracted item(s) are missing a title and/or a url — see skippedSamples for the raw fields that came back empty. Every item must produce both before these instructions can be saved.", report.ItemsSkipped, report.ItemsFound)
+		if report.BlankItems > 0 {
+			report.Message += fmt.Sprintf(" (%d of them are completely empty rows, probably ads or placeholders: those alone would not stop saving, the others point to a wrong field selector.)", report.BlankItems)
+		}
+	case !blankTolerated:
+		report.Message = fmt.Sprintf("%d of %d extracted item(s) are completely empty, more than %d%%: the container probably matches the wrong elements (ads, wrappers, placeholders), not just a few stray rows. Narrow the container so it matches only the job entries, for example with :has(<your title selector>), and test again.", report.BlankItems, report.ItemsFound, blankItemsToleratedPercent)
+	case report.BlankItems > 0:
+		report.Message = fmt.Sprintf("%d of %d extracted item(s) are completely empty (probably ads or placeholders the container also matches). A real crawl skips them and saves the other %d, so these instructions can be saved. To avoid them anyway, narrow the container, for example with :has(<your title selector>).", report.BlankItems, report.ItemsFound, report.ItemsExtractable)
 	default:
 		report.Message = fmt.Sprintf("All %d extracted item(s) produced both a title and a url — ready to save.", report.ItemsFound)
 	}
