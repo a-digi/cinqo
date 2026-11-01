@@ -1,16 +1,23 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"os"
+	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"career-tool-backend/db"
 	"career-tool-backend/jobboard"
 	"career-tool-backend/profile"
+	"career-tool-backend/profilejobmatchconsumer"
 	"career-tool-backend/profilerules"
 )
 
@@ -61,8 +68,8 @@ func TestProfileMatchRulesRoutesEndToEnd(t *testing.T) {
 		t.Errorf("created = %+v", low)
 	}
 	rules := listRules(t, p1)
-	if len(rules) != 2 || rules[0].ID != high.ID || rules[1].ID != low.ID || rules[0].StatusName != "Not Reviewed" {
-		t.Errorf("list (highest first) = %+v", rules)
+	if len(rules) != 2 || rules[0].ID != low.ID || rules[1].ID != high.ID || rules[1].StatusName != "Not Reviewed" || rules[0].Position != 0 || rules[1].Position != 1 {
+		t.Errorf("list (in the order they were made in) = %+v", rules)
 	}
 
 	rec = boardCall(t, profileMatchRulesHandler, "PUT", "/profile-match-rules", fmt.Sprintf(`{"id":%q,"minPercent":70,"statusId":%q}`, low.ID, jobboard.AppliedID))
@@ -168,7 +175,7 @@ func TestProfileMatchRulesPutRefusals(t *testing.T) {
 		}
 	}
 	rules := listRules(t, p1)
-	if len(rules) != 2 || rules[0].MinPercent != 80 || rules[1].MinPercent != 60 || rules[1].StatusID != jobboard.AppliedID {
+	if len(rules) != 2 || rules[0].MinPercent != 60 || rules[1].MinPercent != 80 || rules[0].StatusID != jobboard.AppliedID {
 		t.Errorf("rules = %+v (only the last, valid, change may have applied)", rules)
 	}
 }
@@ -245,5 +252,499 @@ func TestProfileMatchRulesRoutesAreDeclaredAndRouted(t *testing.T) {
 	}
 	if !strings.Contains(string(mainSrc), `"/profile-match-rules", profileMatchRulesHandler`) {
 		t.Error("main.go does not route /profile-match-rules")
+	}
+}
+
+// ---- the order (step 143) ----
+
+func putOrder(t *testing.T, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	return boardCall(t, profileMatchRulesOrderHandler, "PUT", "/profile-match-rules/order", body)
+}
+
+func orderBody(profileID string, ids ...string) string {
+	raw, _ := json.Marshal(map[string]any{"profileId": profileID, "ruleIds": ids})
+	return string(raw)
+}
+
+func TestTheOrderRouteSetsTheOrderAndAnswersWithIt(t *testing.T) {
+	p1, p2 := boardFixture(t)
+	a := createRule(t, p1, 60, jobboard.NotReviewedID)
+	b := createRule(t, p1, 85, jobboard.NotReviewedID)
+	c := createRule(t, p1, 70, jobboard.NotReviewedID)
+	other := createRule(t, p2, 50, jobboard.NotReviewedID)
+	if got := listRules(t, p1); got[0].ID != a.ID || got[1].ID != b.ID || got[2].ID != c.ID || got[2].Position != 2 {
+		t.Fatalf("created order = %+v", got)
+	}
+
+	rec := putOrder(t, orderBody(p1, c.ID, a.ID, b.ID))
+	wantStatus(t, rec, 200)
+	var answer rulesAnswer
+	if err := json.Unmarshal(rec.Body.Bytes(), &answer); err != nil {
+		t.Fatal(err)
+	}
+	gotIDs := []string{}
+	for i, r := range answer.Rules {
+		gotIDs = append(gotIDs, r.ID)
+		if r.Position != i {
+			t.Errorf("position of %d%% = %d, want %d", r.MinPercent, r.Position, i)
+		}
+	}
+	if !reflect.DeepEqual(gotIDs, []string{c.ID, a.ID, b.ID}) {
+		t.Errorf("answer order = %v", gotIDs)
+	}
+	// the list route shows the same order, and another profile's rules are untouched
+	again := listRules(t, p1)
+	if again[0].ID != c.ID || again[1].ID != a.ID || again[2].ID != b.ID {
+		t.Errorf("list after the reorder = %+v", again)
+	}
+	if o := listRules(t, p2); len(o) != 1 || o[0].ID != other.ID || o[0].Position != 0 {
+		t.Errorf("another profile's rules changed: %+v", o)
+	}
+	// a rule made afterwards goes last
+	last := createRule(t, p1, 40, jobboard.NotReviewedID)
+	if l := listRules(t, p1); l[len(l)-1].ID != last.ID {
+		t.Error("a new rule must go to the end")
+	}
+}
+
+func TestTheOrderRouteRefusals(t *testing.T) {
+	p1, p2 := boardFixture(t)
+	a := createRule(t, p1, 60, jobboard.NotReviewedID)
+	b := createRule(t, p1, 85, jobboard.NotReviewedID)
+	foreign := createRule(t, p2, 50, jobboard.NotReviewedID)
+
+	for name, tc := range map[string]struct {
+		body string
+		want int
+	}{
+		"not json":            {`nope`, 400},
+		"empty body":          {``, 400},
+		"no profile id":       {`{"ruleIds":["x"]}`, 400},
+		"empty profile id":    {`{"profileId":"","ruleIds":[]}`, 400},
+		"ruleIds as text":     {fmt.Sprintf(`{"profileId":%q,"ruleIds":"abc"}`, p1), 400},
+		"a rule missing":      {orderBody(p1, a.ID), 400},
+		"no rules listed":     {orderBody(p1), 400},
+		"ruleIds missing":     {fmt.Sprintf(`{"profileId":%q}`, p1), 400},
+		"ruleIds null":        {fmt.Sprintf(`{"profileId":%q,"ruleIds":null}`, p1), 400},
+		"an unknown rule":     {orderBody(p1, a.ID, "nope"), 400},
+		"another profile's":   {orderBody(p1, a.ID, foreign.ID), 400},
+		"a rule twice":        {orderBody(p1, a.ID, a.ID), 400},
+		"too many":            {orderBody(p1, a.ID, b.ID, foreign.ID), 400},
+		"an unknown profile":  {orderBody("nope", a.ID), 404},
+		"a valid order works": {orderBody(p1, b.ID, a.ID), 200},
+	} {
+		if rec := putOrder(t, tc.body); rec.Code != tc.want {
+			t.Errorf("%s: status %d, want %d (%s)", name, rec.Code, tc.want, rec.Body.String())
+		}
+	}
+	// only the last, valid call changed anything
+	if l := listRules(t, p1); len(l) != 2 || l[0].ID != b.ID || l[1].ID != a.ID {
+		t.Errorf("order = %+v, want b then a", l)
+	}
+	for _, m := range []string{"GET", "POST", "DELETE", "PATCH"} {
+		wantStatus(t, boardCall(t, profileMatchRulesOrderHandler, m, "/profile-match-rules/order", orderBody(p1, a.ID, b.ID)), 405)
+	}
+}
+
+func TestTheOrderRouteOfAProfileWithoutRulesAnswersAnEmptyList(t *testing.T) {
+	p1, _ := boardFixture(t)
+	rec := putOrder(t, orderBody(p1))
+	wantStatus(t, rec, 200)
+	if !strings.Contains(rec.Body.String(), `"rules":[]`) {
+		t.Errorf("body = %s, want an empty array", rec.Body.String())
+	}
+}
+
+// The order route is declared with the jobs scope next to the others and routed in main.go.
+func TestTheOrderRouteIsDeclaredAndRouted(t *testing.T) {
+	raw, err := os.ReadFile("../manifest.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m struct {
+		Routes []struct {
+			Method        string `json:"method"`
+			PathSuffix    string `json:"path_suffix"`
+			RequiredScope string `json:"required_scope"`
+		} `json:"routes"`
+	}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]string{}
+	for _, r := range m.Routes {
+		if r.PathSuffix == "profile-match-rules/order" {
+			seen[r.Method] = r.RequiredScope
+		}
+	}
+	if !reflect.DeepEqual(seen, map[string]string{"PUT": "tool:career:jobs"}) {
+		t.Errorf("declared = %v, want exactly PUT with the jobs scope", seen)
+	}
+	mainSrc, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(mainSrc), `"/profile-match-rules/order", profileMatchRulesOrderHandler`) {
+		t.Error("main.go does not route /profile-match-rules/order")
+	}
+}
+
+// ---- apply to existing jobs (step 143) ----
+
+func postApply(t *testing.T, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	return boardCall(t, profileMatchRulesApplyHandler, "POST", "/profile-match-rules/apply", body)
+}
+
+func applyBody(profileID string, dryRun bool) string {
+	raw, _ := json.Marshal(map[string]any{"profileId": profileID, "dryRun": dryRun})
+	return string(raw)
+}
+
+// withApply replaces the pass the route runs for one test.
+func withApply(t *testing.T, fn func(ctx context.Context, profileID string, dryRun bool) (profilejobmatchconsumer.ApplySummary, error)) {
+	t.Helper()
+	old := applyRules
+	applyRules = fn
+	t.Cleanup(func() { applyRules = old })
+}
+
+type applyAnswer struct {
+	Jobs      int `json:"jobs"`
+	NotJudged int `json:"notJudged"`
+	Below     int `json:"below"`
+	OnBoard   int `json:"onBoard"`
+	Total     int `json:"total"`
+	Statuses  []struct {
+		StatusID   string `json:"statusId"`
+		StatusName string `json:"statusName"`
+		Count      int    `json:"count"`
+	} `json:"statuses"`
+}
+
+// The whole route with the real scorer: a preview, then the real thing, then a repeat that adds nothing.
+func TestTheApplyRouteEndToEnd(t *testing.T) {
+	p1, p2 := boardFixture(t)
+	fit := seedScoringPersona(t, p1, "Fit", []string{"Go", "Docker", "Kubernetes", "PostgreSQL"})
+	_ = fit
+	seedScoringPersona(t, p2, "Other", []string{"Cobol", "Fortran"})
+	for _, id := range []string{"j1", "j2"} {
+		if _, err := db.JobsDB.Exec(`UPDATE jobs SET title = 'Backend Engineer (m/w/d)', location = 'Hamburg', description = ? WHERE id = ?`, recalcDesc, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	st, err := jobboard.CreateStatus(p1, "To check")
+	if err != nil {
+		t.Fatal(err)
+	}
+	createRule(t, p1, 60, st.ID)
+	mustSet(t, p1, "j2", jobboard.AppliedID) // a card the person put there: never moved
+
+	rec := postApply(t, applyBody(p1, true))
+	wantStatus(t, rec, 200)
+	var preview applyAnswer
+	if err := json.Unmarshal(rec.Body.Bytes(), &preview); err != nil {
+		t.Fatalf("%v: %s", err, rec.Body.String())
+	}
+	if preview.Jobs != 2 || preview.Total != 1 || preview.OnBoard != 1 || len(preview.Statuses) != 1 || preview.Statuses[0].StatusName != "To check" || preview.Statuses[0].Count != 1 {
+		t.Fatalf("preview = %+v", preview)
+	}
+	if n := countBoard(t, p1); n != 1 {
+		t.Fatalf("a preview must write nothing: %d entries", n)
+	}
+	rec = postApply(t, applyBody(p1, false))
+	wantStatus(t, rec, 200)
+	var done applyAnswer
+	_ = json.Unmarshal(rec.Body.Bytes(), &done)
+	if !reflect.DeepEqual(preview, done) {
+		t.Errorf("the real run must report what the preview said:\n preview %+v\n real    %+v", preview, done)
+	}
+	if n := countBoard(t, p1); n != 2 {
+		t.Errorf("entries = %d, want 2", n)
+	}
+	var j2 string
+	_ = db.JobsDB.QueryRow(`SELECT status_id FROM job_board_entries WHERE profile_id = ? AND job_id = 'j2'`, p1).Scan(&j2)
+	if j2 != jobboard.AppliedID {
+		t.Errorf("a card already on the board moved to %q", j2)
+	}
+	rec = postApply(t, applyBody(p1, false))
+	var again applyAnswer
+	_ = json.Unmarshal(rec.Body.Bytes(), &again)
+	if again.Total != 0 || again.OnBoard != 2 {
+		t.Errorf("a repeat must add nothing: %+v", again)
+	}
+	if n := countBoard(t, p2); n != 0 {
+		t.Errorf("another profile's board changed: %d", n)
+	}
+}
+
+func countBoard(t *testing.T, profileID string) int {
+	t.Helper()
+	var n int
+	if err := db.JobsDB.QueryRow(`SELECT COUNT(*) FROM job_board_entries WHERE profile_id = ?`, profileID).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+func TestTheApplyRouteRefusals(t *testing.T) {
+	p1, _ := boardFixture(t)
+	for name, tc := range map[string]struct {
+		body string
+		want int
+	}{
+		"not json":                          {`nope`, 400},
+		"empty body":                        {``, 400},
+		"no profile id":                     {`{"dryRun":true}`, 400},
+		"empty profile id":                  {`{"profileId":""}`, 400},
+		"dryRun as text":                    {fmt.Sprintf(`{"profileId":%q,"dryRun":"yes"}`, p1), 400},
+		"profile id as number":              {`{"profileId":5}`, 400},
+		"an unknown profile":                {applyBody("nope", true), 404},
+		"a profile with no rules (preview)": {applyBody(p1, true), 400},
+		"a profile with no rules (apply)":   {applyBody(p1, false), 400},
+	} {
+		if rec := postApply(t, tc.body); rec.Code != tc.want {
+			t.Errorf("%s: status %d, want %d (%s)", name, rec.Code, tc.want, rec.Body.String())
+		}
+	}
+	rec := postApply(t, applyBody(p1, false))
+	if !strings.Contains(rec.Body.String(), "add a rule first") {
+		t.Errorf("the no-rules answer must say what to do: %s", rec.Body.String())
+	}
+	for _, m := range []string{"GET", "PUT", "DELETE", "PATCH"} {
+		wantStatus(t, boardCall(t, profileMatchRulesApplyHandler, m, "/profile-match-rules/apply", applyBody(p1, true)), 405)
+	}
+	if countBoard(t, p1) != 0 {
+		t.Error("a refused request must write nothing")
+	}
+}
+
+func TestTheApplyRoutePassesTheProfileAndTheDryRunFlagOn(t *testing.T) {
+	p1, _ := boardFixture(t)
+	var gotProfile string
+	var gotDry []bool
+	withApply(t, func(ctx context.Context, profileID string, dryRun bool) (profilejobmatchconsumer.ApplySummary, error) {
+		gotProfile = profileID
+		gotDry = append(gotDry, dryRun)
+		return profilejobmatchconsumer.ApplySummary{Jobs: 3, Total: 2, Statuses: []profilejobmatchconsumer.StatusCount{{StatusID: "s", StatusName: "S", Count: 2}}}, nil
+	})
+	wantStatus(t, postApply(t, applyBody(p1, true)), 200)
+	wantStatus(t, postApply(t, applyBody(p1, false)), 200)
+	wantStatus(t, postApply(t, fmt.Sprintf(`{"profileId":%q}`, p1)), 200) // dryRun left out means a real run
+	if gotProfile != p1 || !reflect.DeepEqual(gotDry, []bool{true, false, false}) {
+		t.Errorf("profile %q, dry flags %v", gotProfile, gotDry)
+	}
+	rec := postApply(t, applyBody(p1, true))
+	var a applyAnswer
+	_ = json.Unmarshal(rec.Body.Bytes(), &a)
+	if a.Jobs != 3 || a.Total != 2 || len(a.Statuses) != 1 || a.Statuses[0].Count != 2 {
+		t.Errorf("the summary is answered as it is: %s", rec.Body.String())
+	}
+}
+
+// The request's own context reaches the pass, so a caller that goes away stops it between chunks.
+func TestTheApplyRoutePassesTheRequestContext(t *testing.T) {
+	p1, _ := boardFixture(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	var sawCancel bool
+	withApply(t, func(c context.Context, profileID string, dryRun bool) (profilejobmatchconsumer.ApplySummary, error) {
+		cancel()
+		sawCancel = c.Err() != nil
+		return profilejobmatchconsumer.ApplySummary{}, c.Err()
+	})
+	req := httptest.NewRequest("POST", "/profile-match-rules/apply", strings.NewReader(applyBody(p1, false))).WithContext(ctx)
+	profileMatchRulesApplyHandler(httptest.NewRecorder(), req)
+	if !sawCancel {
+		t.Error("the pass did not get the request's context")
+	}
+}
+
+// One pass per profile at a time: a second request for the same profile is a 409 while the first runs; another profile is
+// free; the profile is free again afterwards, also after a failure.
+func TestOnlyOnePassPerProfileRunsAtATime(t *testing.T) {
+	p1, p2 := boardFixture(t)
+	release := make(chan struct{})
+	started := make(chan string, 4)
+	withApply(t, func(ctx context.Context, profileID string, dryRun bool) (profilejobmatchconsumer.ApplySummary, error) {
+		started <- profileID
+		<-release
+		return profilejobmatchconsumer.ApplySummary{Jobs: 1}, nil
+	})
+	first := make(chan int, 1)
+	go func() { first <- postApply(t, applyBody(p1, false)).Code }()
+	if got := <-started; got != p1 {
+		t.Fatalf("started %q", got)
+	}
+	if rec := postApply(t, applyBody(p1, false)); rec.Code != http.StatusConflict {
+		t.Errorf("a second pass for the same profile while one runs: status %d, want 409", rec.Code)
+	}
+	if rec := postApply(t, applyBody(p1, true)); rec.Code != http.StatusConflict {
+		t.Errorf("a preview for the same profile while a pass runs: status %d, want 409", rec.Code)
+	}
+	other := make(chan int, 1)
+	go func() { other <- postApply(t, applyBody(p2, false)).Code }()
+	if got := <-started; got != p2 {
+		t.Fatalf("the other profile must be free to start, started %q", got)
+	}
+	close(release)
+	if code := <-first; code != 200 {
+		t.Errorf("the first pass answered %d", code)
+	}
+	if code := <-other; code != 200 {
+		t.Errorf("the other profile's pass answered %d", code)
+	}
+	if rec := postApply(t, applyBody(p1, false)); rec.Code != 200 {
+		t.Errorf("the profile must be free again afterwards, got %d", rec.Code)
+	}
+}
+
+func TestTheProfileIsFreeAgainAfterAFailureAndAfterNoRules(t *testing.T) {
+	p1, _ := boardFixture(t)
+	calls := 0
+	withApply(t, func(ctx context.Context, profileID string, dryRun bool) (profilejobmatchconsumer.ApplySummary, error) {
+		calls++
+		switch calls {
+		case 1:
+			return profilejobmatchconsumer.ApplySummary{}, errors.New("boom")
+		case 2:
+			return profilejobmatchconsumer.ApplySummary{}, profilejobmatchconsumer.ErrNoRules
+		}
+		return profilejobmatchconsumer.ApplySummary{}, nil
+	})
+	for i, want := range []int{500, 400, 200} {
+		if rec := postApply(t, applyBody(p1, false)); rec.Code != want {
+			t.Errorf("call %d: status %d, want %d", i+1, rec.Code, want)
+		}
+	}
+}
+
+// A failure answers 500 with the reason and what was done before it (what was added stays).
+func TestAFailedPassAnswers500WithThePartialSummary(t *testing.T) {
+	p1, _ := boardFixture(t)
+	withApply(t, func(ctx context.Context, profileID string, dryRun bool) (profilejobmatchconsumer.ApplySummary, error) {
+		return profilejobmatchconsumer.ApplySummary{Jobs: 4, Total: 3, Statuses: []profilejobmatchconsumer.StatusCount{{StatusID: "s", StatusName: "S", Count: 3}}}, errors.New("could not score job x")
+	})
+	rec := postApply(t, applyBody(p1, false))
+	wantStatus(t, rec, 500)
+	var body struct {
+		Error   string      `json:"error"`
+		Summary applyAnswer `json:"summary"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("%v: %s", err, rec.Body.String())
+	}
+	if !strings.Contains(body.Error, "could not score job x") || body.Summary.Total != 3 || body.Summary.Jobs != 4 {
+		t.Errorf("body = %+v", body)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "json") {
+		t.Errorf("content type %q", ct)
+	}
+}
+
+func TestAnUnknownProfileFromThePassIsA404(t *testing.T) {
+	p1, _ := boardFixture(t)
+	withApply(t, func(ctx context.Context, profileID string, dryRun bool) (profilejobmatchconsumer.ApplySummary, error) {
+		return profilejobmatchconsumer.ApplySummary{}, profile.ErrUnknownProfile // the profile vanished between the two checks
+	})
+	wantStatus(t, postApply(t, applyBody(p1, false)), 404)
+}
+
+// The route is declared with the jobs scope and routed in main.go.
+func TestTheApplyRouteIsDeclaredAndRouted(t *testing.T) {
+	raw, err := os.ReadFile("../manifest.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m struct {
+		Routes []struct {
+			Method        string `json:"method"`
+			PathSuffix    string `json:"path_suffix"`
+			RequiredScope string `json:"required_scope"`
+		} `json:"routes"`
+	}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]string{}
+	for _, r := range m.Routes {
+		if r.PathSuffix == "profile-match-rules/apply" {
+			seen[r.Method] = r.RequiredScope
+		}
+	}
+	if !reflect.DeepEqual(seen, map[string]string{"POST": "tool:career:jobs"}) {
+		t.Errorf("declared = %v, want exactly POST with the jobs scope", seen)
+	}
+	mainSrc, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(mainSrc), `"/profile-match-rules/apply", profileMatchRulesApplyHandler`) {
+		t.Error("main.go does not route /profile-match-rules/apply")
+	}
+}
+
+// The route checks the profile itself, before it takes the guard or runs the pass (a fake pass would accept anything).
+func TestTheApplyRouteChecksTheProfileBeforeRunningThePass(t *testing.T) {
+	boardFixture(t)
+	ran := false
+	withApply(t, func(ctx context.Context, profileID string, dryRun bool) (profilejobmatchconsumer.ApplySummary, error) {
+		ran = true
+		return profilejobmatchconsumer.ApplySummary{}, nil
+	})
+	wantStatus(t, postApply(t, applyBody("no-such-profile", false)), 404)
+	if ran {
+		t.Error("the pass must not run for an unknown profile")
+	}
+	applying.Lock()
+	n := len(applying.profiles)
+	applying.Unlock()
+	if n != 0 {
+		t.Errorf("the guard holds %d profile(s) after a refused request", n)
+	}
+}
+
+// Freeing one profile must not free another that is still running.
+func TestFinishingOneProfilesPassKeepsTheOthersGuard(t *testing.T) {
+	p1, p2 := boardFixture(t)
+	releaseP1, releaseP2 := make(chan struct{}), make(chan struct{})
+	started := make(chan string, 4)
+	var secondForP2 atomic.Bool
+	withApply(t, func(ctx context.Context, profileID string, dryRun bool) (profilejobmatchconsumer.ApplySummary, error) {
+		started <- profileID
+		switch profileID {
+		case p1:
+			<-releaseP1
+		case p2:
+			if secondForP2.Swap(true) { // a second pass for p2 can only happen with a broken guard: do not block the test on it
+				return profilejobmatchconsumer.ApplySummary{}, nil
+			}
+			<-releaseP2
+		}
+		return profilejobmatchconsumer.ApplySummary{}, nil
+	})
+	done1, done2 := make(chan int, 1), make(chan int, 1)
+	go func() { done1 <- postApply(t, applyBody(p1, false)).Code }()
+	<-started
+	go func() { done2 <- postApply(t, applyBody(p2, false)).Code }()
+	<-started
+	close(releaseP1)
+	if code := <-done1; code != 200 {
+		t.Fatalf("the first pass answered %d", code)
+	}
+	// asked with a time limit: with a broken guard the request would run instead of being refused
+	probe := make(chan int, 1)
+	go func() { probe <- postApply(t, applyBody(p2, false)).Code }()
+	select {
+	case code := <-probe:
+		if code != http.StatusConflict {
+			t.Errorf("the second profile is still running, a request for it must be 409, got %d", code)
+		}
+	case <-time.After(2 * time.Second):
+		t.Error("the request for a profile that is still running was neither refused nor finished")
+	}
+	close(releaseP2)
+	if code := <-done2; code != 200 {
+		t.Errorf("the second pass answered %d", code)
 	}
 }

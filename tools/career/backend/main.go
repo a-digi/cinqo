@@ -170,6 +170,8 @@ func runHTTPServer() {
 	http.HandleFunc("/job-persona-matches", jobPersonaMatchesHandler)
 	http.HandleFunc("/job-persona-matches/recalculate", jobPersonaMatchesRecalculateHandler)
 	http.HandleFunc("/profile-match-rules", profileMatchRulesHandler)
+	http.HandleFunc("/profile-match-rules/order", profileMatchRulesOrderHandler)
+	http.HandleFunc("/profile-match-rules/apply", profileMatchRulesApplyHandler)
 	http.HandleFunc("/companies", companiesHandler)
 	http.HandleFunc("/recruiters", recruitersHandler)
 	http.HandleFunc("/portals", portalsHandler)

@@ -338,6 +338,16 @@ func AddEntryIfAbsent(profileID, jobID, statusID string) (bool, error) {
 	return n > 0, tx.Commit()
 }
 
+// IsOnBoard reports whether a job is on a profile's board, in any status. Read only.
+func IsOnBoard(profileID, jobID string) (bool, error) {
+	var one int
+	err := db.JobsDB.QueryRow(`SELECT 1 FROM job_board_entries WHERE profile_id = ? AND job_id = ?`, profileID, jobID).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
 // RemoveEntry takes a job off a profile's board; a no-op when it is not on it.
 func RemoveEntry(profileID, jobID string) error {
 	_, err := db.JobsDB.Exec(`DELETE FROM job_board_entries WHERE profile_id = ? AND job_id = ?`, profileID, jobID)

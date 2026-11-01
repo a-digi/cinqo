@@ -1,8 +1,10 @@
 // Package profilerules holds a profile's auto-add rules (step 140): "a new job that matches this profile at least
-// MinPercent percent is added to the profile's job board with this status". A profile can have several rules; for a
-// score the rule with the highest threshold the score reaches applies (RuleFor). The rules live in jobs.db next to the
-// statuses they point to; the profile lives in career.db, so the callers' checks (RequireProfileExists) are made here.
-// See plan/ai/tools/career/step-140-profile-job-match-consumer.md.
+// MinPercent percent is added to the profile's job board with this status". A profile can have several rules, in an order
+// the person sets (step 143): a rule fits a score when the score reaches its percentage, and the rule that applies is the
+// FIRST fitting rule of the list (RuleFor); the percentage alone no longer decides between two rules that both fit. The
+// rules live in jobs.db next to the statuses they point to; the profile lives in career.db, so the callers' checks
+// (RequireProfileExists) are made here. See plan/ai/tools/career/step-140-profile-job-match-consumer.md and
+// step-143-apply-rules-to-existing-jobs.md.
 package profilerules
 
 import (
@@ -29,6 +31,7 @@ var (
 	ErrDuplicatePercent = errors.New("this profile already has a rule for this percentage")
 	ErrTooManyRules     = errors.New("a profile can have at most 10 rules")
 	ErrUnknownRule      = errors.New("unknown rule")
+	ErrBadOrder         = errors.New("the order must list exactly this profile's rules, each once")
 )
 
 // Rule is one auto-add rule with the name of its status (for display).
@@ -38,17 +41,22 @@ type Rule struct {
 	MinPercent int    `json:"minPercent"`
 	StatusID   string `json:"statusId"`
 	StatusName string `json:"statusName"`
+	// Position is the rule's place in the profile's list, 0 first (the lists are returned in this order).
+	Position int `json:"position"`
 }
 
-const selectRules = `SELECT r.id, r.profile_id, r.min_percent, r.status_id, s.name
+const selectRules = `SELECT r.id, r.profile_id, r.min_percent, r.status_id, s.name, r.position
 	FROM profile_match_rules r JOIN job_statuses s ON s.id = r.status_id`
+
+// ruleOrder is the order every list is read in: the person's order, with the creation time and the id fixing ties.
+const ruleOrder = `r.position, r.created_at, r.id`
 
 func scanRules(rows *sql.Rows) ([]Rule, error) {
 	defer rows.Close()
 	rules := []Rule{}
 	for rows.Next() {
 		var r Rule
-		if err := rows.Scan(&r.ID, &r.ProfileID, &r.MinPercent, &r.StatusID, &r.StatusName); err != nil {
+		if err := rows.Scan(&r.ID, &r.ProfileID, &r.MinPercent, &r.StatusID, &r.StatusName, &r.Position); err != nil {
 			return nil, err
 		}
 		rules = append(rules, r)
@@ -56,24 +64,24 @@ func scanRules(rows *sql.Rows) ([]Rule, error) {
 	return rules, rows.Err()
 }
 
-// List returns a profile's rules, highest percentage first (never nil). profile.ErrUnknownProfile for a profile that
+// List returns a profile's rules in their order, the one that is tried first first (never nil). profile.ErrUnknownProfile for a profile that
 // does not exist.
 func List(profileID string) ([]Rule, error) {
 	if err := profile.RequireProfileExists(profileID); err != nil {
 		return nil, err
 	}
-	rows, err := db.JobsDB.Query(selectRules+` WHERE r.profile_id = ? ORDER BY r.min_percent DESC`, profileID)
+	rows, err := db.JobsDB.Query(selectRules+` WHERE r.profile_id = ? ORDER BY `+ruleOrder, profileID)
 	if err != nil {
 		return nil, err
 	}
 	return scanRules(rows)
 }
 
-// All returns every profile's rules, by profile id, each list highest percentage first. Profiles without rules are
+// All returns every profile's rules, by profile id, each list in the rules' order. Profiles without rules are
 // absent. This is what the consumer reads once per batch; it does not check that the profiles still exist (a rule of a
 // deleted profile is only ever purged, never applied: the consumer scores existing profiles only).
 func All() (map[string][]Rule, error) {
-	rows, err := db.JobsDB.Query(selectRules + ` ORDER BY r.profile_id, r.min_percent DESC`)
+	rows, err := db.JobsDB.Query(selectRules + ` ORDER BY r.profile_id, ` + ruleOrder)
 	if err != nil {
 		return nil, err
 	}
@@ -88,18 +96,16 @@ func All() (map[string][]Rule, error) {
 	return out, nil
 }
 
-// RuleFor is the rule that applies to a score: the one with the highest percentage that the score reaches (score at
-// least that percentage). ok is false when the score is below every rule (or there are none). The order of rules does
-// not matter.
+// RuleFor is the rule that applies to a score: the FIRST rule of the list that fits it (the score is at least the rule's
+// percentage). The list must be in the rules' order, which List and All return. ok is false when no rule fits (or there
+// are none). A later rule with a higher percentage does not beat an earlier one that fits.
 func RuleFor(rules []Rule, score int) (Rule, bool) {
-	var best Rule
-	found := false
 	for _, r := range rules {
-		if score >= r.MinPercent && (!found || r.MinPercent > best.MinPercent) {
-			best, found = r, true
+		if score >= r.MinPercent {
+			return r, true
 		}
 	}
-	return best, found
+	return Rule{}, false
 }
 
 // checkStatus makes sure a status exists and may be used by the profile: a fixed one, or one of its own custom ones.
@@ -122,14 +128,14 @@ func validPercent(p int) bool { return p >= MinPercent && p <= MaxPercent }
 
 func get(tx *sql.Tx, id string) (Rule, error) {
 	var r Rule
-	err := tx.QueryRow(selectRules+` WHERE r.id = ?`, id).Scan(&r.ID, &r.ProfileID, &r.MinPercent, &r.StatusID, &r.StatusName)
+	err := tx.QueryRow(selectRules+` WHERE r.id = ?`, id).Scan(&r.ID, &r.ProfileID, &r.MinPercent, &r.StatusID, &r.StatusName, &r.Position)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Rule{}, ErrUnknownRule
 	}
 	return r, err
 }
 
-// Create adds a rule to a profile. Errors: profile.ErrUnknownProfile, ErrInvalidPercent, jobboard.ErrUnknownStatus,
+// Create adds a rule to the end of a profile's list. Errors: profile.ErrUnknownProfile, ErrInvalidPercent, jobboard.ErrUnknownStatus,
 // jobboard.ErrStatusNotOnBoard (a custom status of another profile), ErrTooManyRules, ErrDuplicatePercent.
 func Create(profileID string, minPercent int, statusID string) (Rule, error) {
 	if err := profile.RequireProfileExists(profileID); err != nil {
@@ -157,7 +163,12 @@ func Create(profileID string, minPercent int, statusID string) (Rule, error) {
 		return Rule{}, ErrTooManyRules
 	}
 	id := uuid.NewString()
-	if _, err := tx.Exec(`INSERT INTO profile_match_rules (id, profile_id, min_percent, status_id) VALUES (?, ?, ?, ?)`, id, profileID, minPercent, statusID); err != nil {
+	// a new rule goes to the end of the list
+	if _, err := tx.Exec(
+		`INSERT INTO profile_match_rules (id, profile_id, min_percent, status_id, position)
+		 VALUES (?, ?, ?, ?, (SELECT COALESCE(MAX(position) + 1, 0) FROM profile_match_rules WHERE profile_id = ?))`,
+		id, profileID, minPercent, statusID, profileID,
+	); err != nil {
 		return Rule{}, err
 	}
 	rule, err := get(tx, id)
@@ -206,4 +217,56 @@ func Update(id string, minPercent int, statusID string) (Rule, error) {
 func Delete(id string) error {
 	_, err := db.JobsDB.Exec(`DELETE FROM profile_match_rules WHERE id = ?`, id)
 	return err
+}
+
+// Reorder sets the order of a profile's rules to the one given (the first id is tried first) and returns the rules in
+// that order. The ids must be exactly the profile's rules, each once; anything else (a rule missing, one that is not
+// this profile's, one listed twice) is ErrBadOrder and changes nothing, so two people reordering at once, or a rule added
+// in another tab, cannot corrupt the order. profile.ErrUnknownProfile for a profile that does not exist.
+func Reorder(profileID string, ruleIDs []string) ([]Rule, error) {
+	if err := profile.RequireProfileExists(profileID); err != nil {
+		return nil, err
+	}
+	tx, err := db.JobsDB.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	rows, err := tx.Query(`SELECT id FROM profile_match_rules WHERE profile_id = ?`, profileID)
+	if err != nil {
+		return nil, err
+	}
+	have := map[string]bool{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		have[id] = true
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+	if len(ruleIDs) != len(have) {
+		return nil, ErrBadOrder
+	}
+	seen := map[string]bool{}
+	for _, id := range ruleIDs {
+		if !have[id] || seen[id] {
+			return nil, ErrBadOrder
+		}
+		seen[id] = true
+	}
+	for position, id := range ruleIDs {
+		if _, err := tx.Exec(`UPDATE profile_match_rules SET position = ? WHERE id = ? AND profile_id = ?`, position, id, profileID); err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return List(profileID)
 }

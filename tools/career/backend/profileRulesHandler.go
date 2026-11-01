@@ -3,11 +3,14 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
+	"sync"
 
 	"career-tool-backend/db"
 	"career-tool-backend/jobboard"
 	"career-tool-backend/profile"
+	"career-tool-backend/profilejobmatchconsumer"
 	"career-tool-backend/profilerules"
 )
 
@@ -16,7 +19,8 @@ import (
 // reason the board routes do: they answer for profiles.
 
 // writeProfileRulesError maps a profilerules, jobboard or profile error to its HTTP answer: what the caller got wrong
-// is a 400 (the percentage, an unknown or foreign status, an unknown profile on a write, too many rules), a second rule for
+// is a 400 (the percentage, an unknown or foreign status, an unknown profile on a write, too many rules, an order that
+// is not exactly the profile's rules), a second rule for
 // one percentage is a 409, a rule or a profile that is not there on a read or a change of a rule is a 404.
 func writeProfileRulesError(w http.ResponseWriter, action string, err error, unknownProfileIs404 bool) {
 	switch {
@@ -26,7 +30,7 @@ func writeProfileRulesError(w http.ResponseWriter, action string, err error, unk
 			code = http.StatusNotFound
 		}
 		http.Error(w, err.Error(), code)
-	case errors.Is(err, profilerules.ErrInvalidPercent), errors.Is(err, profilerules.ErrTooManyRules),
+	case errors.Is(err, profilerules.ErrInvalidPercent), errors.Is(err, profilerules.ErrTooManyRules), errors.Is(err, profilerules.ErrBadOrder),
 		errors.Is(err, jobboard.ErrUnknownStatus), errors.Is(err, jobboard.ErrStatusNotOnBoard):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, profilerules.ErrDuplicatePercent):
@@ -111,5 +115,107 @@ func profileMatchRulesHandler(w http.ResponseWriter, r *http.Request) {
 
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// profileMatchRulesOrderHandler handles PUT /profile-match-rules/order { profileId, ruleIds } (step 143): it sets the order
+// of a profile's rules, the first id being tried first, and answers { rules } in that order. 400 for a bad body, no
+// profileId, or ids that are not exactly the profile's rules (each once; nothing then changes), 404 for an unknown
+// profile, 405 for another method.
+func profileMatchRulesOrderHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		ProfileID string   `json:"profileId"`
+		RuleIDs   []string `json:"ruleIds"`
+	}
+	if !decodeJobBoardBody(w, r, &body) {
+		return
+	}
+	if body.ProfileID == "" {
+		http.Error(w, "profileId is required", http.StatusBadRequest)
+		return
+	}
+	rules, err := profilerules.Reorder(body.ProfileID, body.RuleIDs)
+	if err != nil {
+		writeProfileRulesError(w, "reorder the rules", err, true)
+		return
+	}
+	db.WriteJSON(w, map[string]any{"rules": rules})
+}
+
+// applyRules is what the apply route runs; a var so a test can watch it, hold it and make it fail.
+var applyRules = profilejobmatchconsumer.ApplyToExisting
+
+// applying is the set of profiles whose rules are being applied right now: one pass per profile at a time, so a double
+// click (or two tabs) cannot run the same pass twice at once.
+var applying = struct {
+	sync.Mutex
+	profiles map[string]bool
+}{profiles: map[string]bool{}}
+
+// startApplying marks a profile as being applied and reports whether it was free; done frees it again.
+func startApplying(profileID string) (done func(), ok bool) {
+	applying.Lock()
+	defer applying.Unlock()
+	if applying.profiles[profileID] {
+		return nil, false
+	}
+	applying.profiles[profileID] = true
+	return func() {
+		applying.Lock()
+		delete(applying.profiles, profileID)
+		applying.Unlock()
+	}, true
+}
+
+// profileMatchRulesApplyHandler handles POST /profile-match-rules/apply { profileId, dryRun } (step 143): it applies the
+// profile's rules to the jobs that already exist, or with dryRun only counts what it would do, and answers the summary
+// ({ jobs, notJudged, below, onBoard, total, statuses }). A card already on the board is never moved; the first rule of the
+// profile's list that fits a job decides. 400 for a bad body, no profileId, or a profile without rules; 404 for an unknown
+// profile; 405 for another method; 409 while another pass for that profile is running; 500 when the pass fails, with
+// { error, summary } where summary is what was done before the failure (what was added stays). The request's context
+// stops the pass between chunks if the caller goes away.
+func profileMatchRulesApplyHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		ProfileID string `json:"profileId"`
+		DryRun    bool   `json:"dryRun"`
+	}
+	if !decodeJobBoardBody(w, r, &body) {
+		return
+	}
+	if body.ProfileID == "" {
+		http.Error(w, "profileId is required", http.StatusBadRequest)
+		return
+	}
+	if err := profile.RequireProfileExists(body.ProfileID); err != nil {
+		writeProfileRulesError(w, "apply the rules", err, true)
+		return
+	}
+	done, free := startApplying(body.ProfileID)
+	if !free {
+		http.Error(w, "the rules of this profile are being applied already", http.StatusConflict)
+		return
+	}
+	defer done()
+	summary, err := applyRules(r.Context(), body.ProfileID, body.DryRun)
+	switch {
+	case errors.Is(err, profilejobmatchconsumer.ErrNoRules):
+		http.Error(w, "this profile has no rules: add a rule first", http.StatusBadRequest)
+	case errors.Is(err, profile.ErrUnknownProfile):
+		http.Error(w, err.Error(), http.StatusNotFound)
+	case err != nil:
+		log.Printf("profile rules: applying the rules of profile %s failed: %v", body.ProfileID, err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "failed to apply the rules: " + err.Error(), "summary": summary})
+	default:
+		db.WriteJSON(w, summary)
 	}
 }

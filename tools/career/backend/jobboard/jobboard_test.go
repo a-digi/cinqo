@@ -548,3 +548,34 @@ func TestAddEntryIfAbsentChecksLikeSetEntry(t *testing.T) {
 		t.Errorf("entries = %d, want none after refusals", n)
 	}
 }
+
+func TestIsOnBoardIsPerProfileAndAnyStatus(t *testing.T) {
+	setup(t)
+	addJob(t, "j1", "Job one")
+	addJob(t, "j2", "Job two")
+	custom := mustStatus(t, "p1", "Mine")
+	mustSet(t, "p1", "j1", custom.ID)
+	mustSet(t, "p2", "j2", AppliedID)
+	for _, c := range []struct {
+		profile, job string
+		want         bool
+	}{
+		{"p1", "j1", true},  // a custom status
+		{"p2", "j2", true},  // a fixed one
+		{"p2", "j1", false}, // the job is on another profile's board only
+		{"p1", "j2", false},
+		{"p3", "j1", false}, // a profile without a board
+		{"p1", "nope", false},
+	} {
+		got, err := IsOnBoard(c.profile, c.job)
+		if err != nil || got != c.want {
+			t.Errorf("IsOnBoard(%s, %s) = %v (%v), want %v", c.profile, c.job, got, err, c.want)
+		}
+	}
+	if err := RemoveEntry("p1", "j1"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := IsOnBoard("p1", "j1"); got {
+		t.Error("a card taken off the board is not on it")
+	}
+}

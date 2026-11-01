@@ -136,12 +136,13 @@ func outcomeFor(outs []Outcome, jobID, profileID string) (Outcome, bool) {
 
 // ---- the rules decide ----
 
-func TestTheHighestReachedThresholdDecidesTheStatus(t *testing.T) {
+// With the highest percentage first, a job gets the status of the highest percentage it reaches.
+func TestWithTheHighestPercentageFirstTheHighestReachedDecides(t *testing.T) {
 	setup(t)
 	p := newProfile(t, "Ana")
 	check, top := customStatus(t, p, "To check"), customStatus(t, p, "Top pick")
+	rule(t, p, 85, top) // the order they are made in is the order they are tried in
 	rule(t, p, 60, check)
-	rule(t, p, 85, top)
 	for _, id := range []string{"j50", "j59", "j60", "j70", "j84", "j85", "j90"} {
 		addJob(t, id)
 	}
@@ -165,6 +166,80 @@ func TestTheHighestReachedThresholdDecidesTheStatus(t *testing.T) {
 	}
 	if o, _ := outcomeFor(outs, "j90", p); o.Status != Added || o.StatusID != top || o.Score != 90 {
 		t.Errorf("j90 outcome = %+v", o)
+	}
+}
+
+// The position decides, not the percentage: with 60% first, a job that fits both goes to the 60% rule.
+func TestTheFirstFittingRuleWinsEvenWhenALaterOneHasAHigherPercentage(t *testing.T) {
+	setup(t)
+	p := newProfile(t, "Ana")
+	check, top := customStatus(t, p, "To check"), customStatus(t, p, "Top pick")
+	rule(t, p, 60, check) // first
+	rule(t, p, 85, top)   // second: never wins, every job that reaches 85% reaches 60% too
+	for _, id := range []string{"j50", "j70", "j90"} {
+		addJob(t, id)
+	}
+	useFake(t, &fake{by: map[string]map[string]int{"j50": {p: 50}, "j70": {p: 70}, "j90": {p: 90}}})
+	if _, err := ProcessBatch([]string{"j50", "j70", "j90"}); err != nil {
+		t.Fatal(err)
+	}
+	for job, want := range map[string]string{"j50": "", "j70": check, "j90": check} {
+		if got := onBoard(t, p, job); got != want {
+			t.Errorf("%s: on board with %q, want %q (the first fitting rule decides)", job, got, want)
+		}
+	}
+}
+
+// A rule that does not fit is skipped and the next one that fits decides: 90% first, 50% second, a 70% job goes to 50%.
+func TestARuleThatDoesNotFitIsSkipped(t *testing.T) {
+	setup(t)
+	p := newProfile(t, "Ana")
+	top, low := customStatus(t, p, "Top"), customStatus(t, p, "Low")
+	rule(t, p, 90, top)
+	rule(t, p, 50, low)
+	for _, id := range []string{"j40", "j70", "j95"} {
+		addJob(t, id)
+	}
+	useFake(t, &fake{by: map[string]map[string]int{"j40": {p: 40}, "j70": {p: 70}, "j95": {p: 95}}})
+	if _, err := ProcessBatch([]string{"j40", "j70", "j95"}); err != nil {
+		t.Fatal(err)
+	}
+	for job, want := range map[string]string{"j40": "", "j70": low, "j95": top} {
+		if got := onBoard(t, p, job); got != want {
+			t.Errorf("%s: on board with %q, want %q", job, got, want)
+		}
+	}
+}
+
+// Reordering the rules changes what the next job gets, with the same rules and the same score.
+func TestReorderingTheRulesChangesTheStatusTheNextJobGets(t *testing.T) {
+	setup(t)
+	p := newProfile(t, "Ana")
+	check, top := customStatus(t, p, "To check"), customStatus(t, p, "Top pick")
+	rule(t, p, 60, check)
+	rule(t, p, 85, top)
+	addJob(t, "j1")
+	addJob(t, "j2")
+	useFake(t, &fake{by: map[string]map[string]int{"j1": {p: 90}, "j2": {p: 90}}})
+
+	if _, err := ProcessBatch([]string{"j1"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := onBoard(t, p, "j1"); got != check {
+		t.Fatalf("before the reorder: %q, want %q", got, check)
+	}
+	rules, _ := profilerules.List(p)
+	if _, err := profilerules.Reorder(p, []string{rules[1].ID, rules[0].ID}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ProcessBatch([]string{"j2"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := onBoard(t, p, "j2"); got != top {
+		t.Errorf("after the reorder: %q, want %q", got, top)
+	}
+	if got := onBoard(t, p, "j1"); got != check {
+		t.Errorf("a card that was added before the reorder must not move: %q", got)
 	}
 }
 

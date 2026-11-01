@@ -1,6 +1,6 @@
 // Package profilejobmatchconsumer is the ProfileJobMatchConsumer (step 140): it listens to "career.job.found", the event
 // every genuinely new job sends, and for each profile that has auto-add rules it scores the job with the manual engine
-// (no AI) and puts the job on that profile's board with the status of the rule the score reaches. It scores by itself
+// (no AI) and puts the job on that profile's board with the status of the first rule of its list that the score fits (step 143). It scores by itself
 // instead of reading job_matches, which holds only one profile's result. A job already on a board is never moved. The
 // route only validates the event and queues the job id; one worker handles the queued ids in batches, like the
 // JobMatchConsumer. See plan/ai/tools/career/step-140-profile-job-match-consumer.md.
@@ -55,8 +55,8 @@ type Outcome struct {
 	Err              error
 }
 
-// ProcessBatch handles a batch of new jobs: for every profile with rules that can judge a job, the rule with the
-// highest percentage the job's score reaches decides the status, and the job is added to that board unless it is
+// ProcessBatch handles a batch of new jobs: for every profile with rules that can judge a job, the first rule of the
+// profile's list that fits the job's score decides the status, and the job is added to that board unless it is
 // already there. An id is handled once however often it appears; a job that no longer exists is skipped; a failure
 // for one job is logged and the rest go on. An error is returned only when the batch cannot start (the rules or the
 // profiles cannot be read). With no rule anywhere nothing else is read at all.

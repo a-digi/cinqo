@@ -5,6 +5,7 @@ import {
   fetchJobStatuses,
   fetchProfileMatchRules,
   fetchProfiles,
+  reorderProfileMatchRules,
   updateProfileMatchRule,
   type JobStatusInfo,
   type Profile,
@@ -17,14 +18,20 @@ import { PROFILES_PATH, VIEW_PROFILE_PATH, jobBoardPathFor } from '../../paths'
 import { plural } from '../CompaniesPage/companyStats'
 import { Dropdown } from '../Dropdown/Dropdown'
 import { profileLabel } from '../ProfileSwitcher/profileLabel'
+import { ApplyPanel } from './ApplyPanel'
+import { idsInOrder, moveRule, neverApplies } from './ruleOrder'
 import { MAX_PERCENT, MAX_RULES, MIN_PERCENT, percentFromText, ruleProblem, statusChoices, statusLabel } from './rulesView'
+
+// The drag payload's type: a rule id, only ever read back by this page.
+const DRAG_TYPE = 'application/x-career-rule'
 
 const PERCENT_ERROR = `Enter a whole number from ${String(MIN_PERCENT)} to ${String(MAX_PERCENT)}.`
 
 // One profile's auto-add settings (/tools/career/profile-settings/:profileId, step 140): rules of the form "a new job that
-// matches at least N% is added to this profile's job board with this status". A profile can have several rules; for a
-// job the rule with the highest percentage its match reaches decides the status. The rules only act on jobs found from now
-// on, and a job already on the board is never moved. See plan/ai/tools/career/step-140-profile-job-match-consumer.md.
+// matches at least N% is added to this profile's job board with this status". A profile can have several rules, in an
+// order the person sets (drag and drop, or the arrows): the first rule of the list that fits a job decides its status
+// (step 143). The rules only act on jobs found from now on, and a job already on the board is never moved. See
+// plan/ai/tools/career/step-140-profile-job-match-consumer.md and step-143-apply-rules-to-existing-jobs.md.
 export function ProfileSettingsPage({ profileId }: { profileId: string }) {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [rules, setRules] = useState<ProfileMatchRule[]>([])
@@ -39,6 +46,9 @@ export function ProfileSettingsPage({ profileId }: { profileId: string }) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editPercent, setEditPercent] = useState('')
   const [editStatusId, setEditStatusId] = useState<string | null>(null)
+  // The rule being dragged and the place it is over (to show where it would land).
+  const [dragId, setDragId] = useState<string | null>(null)
+  const [overIndex, setOverIndex] = useState<number | null>(null)
 
   useEffect(() => {
     setLoaded(false)
@@ -51,7 +61,9 @@ export function ProfileSettingsPage({ profileId }: { profileId: string }) {
       })
       .catch((err: unknown) => {
         setProfile(null)
-        setError(err instanceof Error && err.message.includes('(404)') ? 'Profile not found' : err instanceof Error ? err.message : String(err))
+        setError(
+          err instanceof Error && err.message.includes('(404)') ? 'Profile not found' : err instanceof Error ? err.message : String(err),
+        )
       })
       .finally(() => {
         setLoaded(true)
@@ -75,6 +87,27 @@ export function ProfileSettingsPage({ profileId }: { profileId: string }) {
       })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : String(err))
+      })
+      .finally(() => {
+        setBusy(false)
+      })
+  }
+
+  // Moves a rule to another place: the list changes at once and is saved; when the save fails the list is read again, so the
+  // page shows what is really stored.
+  function reorder(from: number, to: number) {
+    const next = moveRule(rules, from, to)
+    if (next === rules) return
+    setError('')
+    setRules(next)
+    setBusy(true)
+    reorderProfileMatchRules(profileId, idsInOrder(next))
+      .then(setRules)
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+        fetchProfileMatchRules(profileId)
+          .then(setRules)
+          .catch(() => undefined)
       })
       .finally(() => {
         setBusy(false)
@@ -152,6 +185,7 @@ export function ProfileSettingsPage({ profileId }: { profileId: string }) {
   }
 
   const atLimit = rules.length >= MAX_RULES
+  const dead = neverApplies(rules)
   return (
     <div className="career-v-tilt career-a-float career-t-wave max-w-3xl p-6 font-sans text-gray-900">
       {backLink}
@@ -169,7 +203,8 @@ export function ProfileSettingsPage({ profileId }: { profileId: string }) {
           <AppLink href={jobBoardPathFor(profileId)} className="font-medium text-blue-700 hover:underline">
             job board
           </AppLink>{' '}
-          with that rule’s status. When a job reaches several rules, the one with the highest percentage decides.
+          with that rule’s status. The rules are tried from the top: <strong>the first rule that fits a job decides</strong>. Drag a rule,
+          or use its arrows, to change the order.
         </p>
 
         {error !== '' && (
@@ -184,8 +219,9 @@ export function ProfileSettingsPage({ profileId }: { profileId: string }) {
           </p>
         ) : (
           <ul className="mb-4 space-y-2" aria-label="Rules">
-            {rules.map((rule) =>
-              editingId === rule.id ? (
+            {rules.map((rule, index) => {
+              const blocker = dead.get(rule.id)
+              return editingId === rule.id ? (
                 <li key={rule.id} className="flex flex-wrap items-center gap-2 rounded-2xl border border-blue-200 bg-white p-3">
                   <PercentBox
                     value={editPercent}
@@ -221,11 +257,74 @@ export function ProfileSettingsPage({ profileId }: { profileId: string }) {
                   </div>
                 </li>
               ) : (
-                <li key={rule.id} className="flex flex-wrap items-center gap-3 rounded-2xl border border-gray-100 bg-white/70 p-3">
-                  <span className="text-sm text-gray-800">
-                    At least <strong>{rule.minPercent}%</strong> match → <strong>{statusLabel(statuses, rule.statusId, rule.statusName)}</strong>
+                <li
+                  key={rule.id}
+                  draggable={!busy}
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData(DRAG_TYPE, rule.id)
+                    e.dataTransfer.effectAllowed = 'move'
+                    setDragId(rule.id)
+                  }}
+                  onDragOver={(e) => {
+                    if (dragId === null) return
+                    e.preventDefault()
+                    setOverIndex(index)
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault()
+                    const from = rules.findIndex((r) => r.id === dragId)
+                    setDragId(null)
+                    setOverIndex(null)
+                    if (from >= 0) reorder(from, index)
+                  }}
+                  onDragEnd={() => {
+                    setDragId(null)
+                    setOverIndex(null)
+                  }}
+                  className={`flex flex-wrap items-center gap-3 rounded-2xl border bg-white/70 p-3 ${
+                    dragId === rule.id ? 'opacity-40' : ''
+                  } ${dragId !== null && overIndex === index && dragId !== rule.id ? 'border-blue-400' : 'border-gray-100'}`}
+                >
+                  <span className="cursor-grab select-none text-gray-400" aria-hidden="true" title="Drag to change the order">
+                    ⋮⋮
                   </span>
-                  <div className="ml-auto flex gap-2">
+                  <span className="w-5 text-right text-xs font-semibold text-gray-400">{index + 1}.</span>
+                  <div className="min-w-0 flex-1">
+                    <span className="text-sm text-gray-800">
+                      At least <strong>{rule.minPercent}%</strong> match →{' '}
+                      <strong>{statusLabel(statuses, rule.statusId, rule.statusName)}</strong>
+                    </span>
+                    {blocker !== undefined && (
+                      <p className="mt-0.5 text-xs text-amber-700">
+                        Never applies: rule {blocker.place} ({blocker.minPercent}%) fits every job this one would, and it comes first.
+                      </p>
+                    )}
+                  </div>
+                  <div className="ml-auto flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={busy || index === 0}
+                      aria-label={`Move the rule for ${String(rule.minPercent)}% up`}
+                      title="Move up"
+                      onClick={() => {
+                        reorder(index, index - 1)
+                      }}
+                      className="rounded-full border border-gray-200 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-30"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy || index === rules.length - 1}
+                      aria-label={`Move the rule for ${String(rule.minPercent)}% down`}
+                      title="Move down"
+                      onClick={() => {
+                        reorder(index, index + 1)
+                      }}
+                      className="rounded-full border border-gray-200 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-30"
+                    >
+                      ↓
+                    </button>
                     <button
                       type="button"
                       onClick={() => {
@@ -249,8 +348,8 @@ export function ProfileSettingsPage({ profileId }: { profileId: string }) {
                     </button>
                   </div>
                 </li>
-              ),
-            )}
+              )
+            })}
           </ul>
         )}
 
@@ -269,6 +368,7 @@ export function ProfileSettingsPage({ profileId }: { profileId: string }) {
             Add rule
           </button>
         </div>
+        <p className="mt-2 text-xs text-gray-500">A new rule is added at the bottom of the list.</p>
         {atLimit && <p className="mt-2 text-xs text-gray-500">A profile can have at most {MAX_RULES} rules.</p>}
         {!hasOwnStatus && (
           <p className="mt-2 text-xs text-gray-500">
@@ -279,6 +379,13 @@ export function ProfileSettingsPage({ profileId }: { profileId: string }) {
             ; they can be chosen here.
           </p>
         )}
+
+        <ApplyPanel
+          profileId={profileId}
+          rulesKey={rules.map((r) => `${r.id}:${String(r.minPercent)}:${r.statusId}:${String(r.position)}`).join('|')}
+          hasRules={rules.length > 0}
+          disabled={busy}
+        />
 
         <ul className="mt-5 list-disc space-y-1 pl-5 text-xs text-gray-500">
           <li>Rules only act on jobs found from now on; jobs that are already there are not touched.</li>

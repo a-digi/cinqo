@@ -1929,6 +1929,8 @@ export interface ProfileMatchRule {
   minPercent: number
   statusId: string
   statusName: string
+  // The rule's place in the profile's list, 0 first; the lists come in this order (step 143).
+  position: number
 }
 
 // The rules calls answer a refused value with the reason as plain text ("this profile already has a rule for this
@@ -1963,6 +1965,57 @@ export async function updateProfileMatchRule(id: string, minPercent: number, sta
   })
   if (!res.ok) throw await ruleFailure(res, 'change the rule')
   return res.json() as Promise<ProfileMatchRule>
+}
+
+// Sets the order of a profile's rules (the first id is tried first) and returns them in that order. The ids must be exactly the
+// profile's rules; the server refuses anything else and changes nothing.
+export async function reorderProfileMatchRules(profileId: string, ruleIds: string[]): Promise<ProfileMatchRule[]> {
+  const res = await fetch(`${PROXY_BASE}/profile-match-rules/order`, {
+    method: 'PUT',
+    credentials: 'include',
+    body: JSON.stringify({ profileId, ruleIds }),
+  })
+  if (!res.ok) throw await ruleFailure(res, 'reorder the rules')
+  const data = (await res.json()) as { rules: ProfileMatchRule[] }
+  return data.rules
+}
+
+// What applying a profile's rules to the jobs that already exist did, or in a preview would do (step 143). Every job looked
+// at is in exactly one of notJudged, below, onBoard and total (added, or to be added); statuses says where the added ones go.
+export interface ApplyRulesSummary {
+  jobs: number
+  notJudged: number
+  below: number
+  onBoard: number
+  total: number
+  statuses: { statusId: string; statusName: string; count: number }[]
+}
+
+// A failed apply: the reason, and what was done before the failure when the server says (what was added stays).
+export class ApplyRulesError extends Error {
+  readonly summary: ApplyRulesSummary | null
+  constructor(message: string, summary: ApplyRulesSummary | null) {
+    super(message)
+    this.name = 'ApplyRulesError'
+    this.summary = summary
+  }
+}
+
+// Applies the profile's rules to the existing jobs (dryRun: only counts what it would do). A card already on the board is never
+// moved. The refusals (no rules, a pass already running) come back as an error with the server's own words.
+export async function applyProfileMatchRules(profileId: string, dryRun: boolean): Promise<ApplyRulesSummary> {
+  const res = await fetch(`${PROXY_BASE}/profile-match-rules/apply`, {
+    method: 'POST',
+    credentials: 'include',
+    body: JSON.stringify({ profileId, dryRun }),
+  })
+  if (res.ok) return (await res.json()) as ApplyRulesSummary
+  if (res.status === 500) {
+    const body = (await res.json().catch(() => null)) as { error?: string; summary?: ApplyRulesSummary } | null
+    throw new ApplyRulesError(body?.error ?? 'failed to apply the rules (500)', body?.summary ?? null)
+  }
+  const text = (await res.text()).trim()
+  throw new ApplyRulesError(res.status === 400 || res.status === 409 ? text || `failed to apply the rules (${String(res.status)})` : `failed to apply the rules (${String(res.status)})`, null)
 }
 
 export async function deleteProfileMatchRule(id: string): Promise<void> {

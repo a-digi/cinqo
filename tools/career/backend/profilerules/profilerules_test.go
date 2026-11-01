@@ -3,6 +3,7 @@ package profilerules
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"testing"
 
 	"career-tool-backend/db"
@@ -66,7 +67,7 @@ func percents(rules []Rule) []int {
 	return out
 }
 
-func TestCreateAndListHighestFirstWithTheStatusName(t *testing.T) {
+func TestCreateAndListInTheirOrderWithTheStatusNameAndPosition(t *testing.T) {
 	setup(t)
 	p := newProfile(t, "Ana")
 	check := status(t, p, "To check")
@@ -79,10 +80,15 @@ func TestCreateAndListHighestFirstWithTheStatusName(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := percents(rules); fmt.Sprint(got) != "[85 70 60]" {
-		t.Fatalf("order = %v, want highest first", got)
+	if got := percents(rules); fmt.Sprint(got) != "[60 85 70]" {
+		t.Fatalf("order = %v, want the order they were made in (a new rule goes to the end), not by percentage", got)
 	}
-	if rules[0].StatusName != "Top pick" || rules[0].StatusID != top || rules[0].ProfileID != p || rules[0].ID == "" || rules[1].StatusName != "Not Reviewed" {
+	for i, r := range rules {
+		if r.Position != i {
+			t.Errorf("rule %d has position %d", i, r.Position)
+		}
+	}
+	if rules[1].StatusName != "Top pick" || rules[1].StatusID != top || rules[1].ProfileID != p || rules[1].ID == "" || rules[2].StatusName != "Not Reviewed" {
 		t.Errorf("rules = %+v", rules)
 	}
 }
@@ -171,7 +177,7 @@ func TestAtMostTenRulesPerProfile(t *testing.T) {
 	mustCreate(t, b, 99, jobboard.NotReviewedID) // the limit is per profile
 	// a rule at the limit can still be changed
 	rules, _ := List(a)
-	if _, err := Update(rules[0].ID, 99, jobboard.AppliedID); err != nil {
+	if _, err := Update(rules[len(rules)-1].ID, 99, jobboard.AppliedID); err != nil { // the 50% rule
 		t.Errorf("Update at the limit: %v", err)
 	}
 	// a duplicate is reported as a duplicate even at the limit
@@ -231,7 +237,7 @@ func TestUpdateRefusals(t *testing.T) {
 		t.Errorf("unknown status = %v", err)
 	}
 	rules, _ := List(a)
-	if fmt.Sprint(percents(rules)) != "[80 60]" {
+	if fmt.Sprint(percents(rules)) != "[60 80]" {
 		t.Errorf("a refused update changed something: %v", percents(rules))
 	}
 }
@@ -253,13 +259,13 @@ func TestDeleteRemovesOnlyThatRuleAndAnUnknownIdIsANoOp(t *testing.T) {
 	}
 }
 
-func TestRuleForPicksTheHighestThresholdTheScoreReaches(t *testing.T) {
-	rules := []Rule{{ID: "a", MinPercent: 60}, {ID: "c", MinPercent: 85}, {ID: "b", MinPercent: 70}} // any order
+func TestRuleForPicksTheFirstRuleOfTheListThatFits(t *testing.T) {
+	rules := []Rule{{ID: "a", MinPercent: 60}, {ID: "c", MinPercent: 85}, {ID: "b", MinPercent: 70}} // this order
 	cases := []struct {
 		score int
 		want  string // "" = none
 	}{
-		{0, ""}, {59, ""}, {60, "a"}, {61, "a"}, {69, "a"}, {70, "b"}, {84, "b"}, {85, "c"}, {100, "c"},
+		{0, ""}, {59, ""}, {60, "a"}, {61, "a"}, {69, "a"}, {70, "a"}, {84, "a"}, {85, "a"}, {100, "a"}, // 60% comes first and fits all
 	}
 	for _, c := range cases {
 		got, ok := RuleFor(rules, c.score)
@@ -273,12 +279,25 @@ func TestRuleForPicksTheHighestThresholdTheScoreReaches(t *testing.T) {
 			t.Errorf("score %d: got %v %v, want %s", c.score, got.ID, ok, c.want)
 		}
 	}
+	// the same rules with the highest percentage first: now the percentage order decides
+	rules = []Rule{{ID: "c", MinPercent: 85}, {ID: "b", MinPercent: 70}, {ID: "a", MinPercent: 60}}
+	for score, want := range map[int]string{59: "", 60: "a", 69: "a", 70: "b", 84: "b", 85: "c", 100: "c"} {
+		got, ok := RuleFor(rules, score)
+		if (want == "") == ok || (ok && got.ID != want) {
+			t.Errorf("highest first, score %d: got %v %v, want %q", score, got.ID, ok, want)
+		}
+	}
+	// a rule that does not fit is skipped, the next one that fits wins
+	mixed := []Rule{{ID: "high", MinPercent: 90}, {ID: "low", MinPercent: 50}}
+	if got, ok := RuleFor(mixed, 70); !ok || got.ID != "low" {
+		t.Errorf("a rule that does not fit must be skipped: %v %v", got.ID, ok)
+	}
 	if _, ok := RuleFor(nil, 100); ok {
 		t.Error("no rules must never apply")
 	}
 }
 
-func TestAllGroupsByProfileHighestFirst(t *testing.T) {
+func TestAllGroupsByProfileInTheirOrder(t *testing.T) {
 	setup(t)
 	a, b := newProfile(t, "Ana"), newProfile(t, "Ben")
 	newProfile(t, "Cy") // no rules: absent
@@ -289,7 +308,7 @@ func TestAllGroupsByProfileHighestFirst(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(all) != 2 || fmt.Sprint(percents(all[a])) != "[90 60]" || fmt.Sprint(percents(all[b])) != "[50]" {
+	if len(all) != 2 || fmt.Sprint(percents(all[a])) != "[60 90]" || fmt.Sprint(percents(all[b])) != "[50]" {
 		t.Errorf("all = %+v", all)
 	}
 }
@@ -310,8 +329,8 @@ func TestDeletingACustomStatusDeletesItsRules(t *testing.T) {
 		t.Fatal(err)
 	}
 	rules, _ := List(a)
-	if fmt.Sprint(percents(rules)) != "[80 70]" {
-		t.Errorf("Ana's rules = %v, want 80 and 70", percents(rules))
+	if fmt.Sprint(percents(rules)) != "[70 80]" {
+		t.Errorf("Ana's rules = %v, want 70 and 80 in their order", percents(rules))
 	}
 	if n := count(t, `SELECT COUNT(*) FROM profile_match_rules WHERE profile_id = ?`, b); n != 1 {
 		t.Errorf("Ben's rules = %d, want 1", n)
@@ -399,5 +418,154 @@ func TestTheLimitIsExactlyTenRules(t *testing.T) {
 	}
 	if n := count(t, `SELECT COUNT(*) FROM profile_match_rules WHERE profile_id = ?`, a); n != 10 {
 		t.Errorf("rules = %d, want 10", n)
+	}
+}
+
+func ids(rules []Rule) []string {
+	out := []string{}
+	for _, r := range rules {
+		out = append(out, r.ID)
+	}
+	return out
+}
+
+func TestANewRuleGoesToTheEndAndAChangeOrADeleteKeepTheOrder(t *testing.T) {
+	setup(t)
+	p := newProfile(t, "Ana")
+	r1 := mustCreate(t, p, 60, jobboard.NotReviewedID)
+	r2 := mustCreate(t, p, 85, jobboard.NotReviewedID)
+	r3 := mustCreate(t, p, 70, jobboard.NotReviewedID)
+	if _, err := Update(r2.ID, 90, jobboard.AppliedID); err != nil { // a change keeps the place
+		t.Fatal(err)
+	}
+	if rules, _ := List(p); !reflect.DeepEqual(ids(rules), []string{r1.ID, r2.ID, r3.ID}) {
+		t.Errorf("after a change: %v", percents(rules))
+	}
+	if err := Delete(r1.ID); err != nil {
+		t.Fatal(err)
+	}
+	r4 := mustCreate(t, p, 40, jobboard.NotReviewedID) // after the delete a new rule is still last
+	rules, _ := List(p)
+	if !reflect.DeepEqual(ids(rules), []string{r2.ID, r3.ID, r4.ID}) {
+		t.Errorf("after a delete and a new rule: %v", percents(rules))
+	}
+	if rules[2].Position <= rules[1].Position || rules[1].Position <= rules[0].Position {
+		t.Errorf("positions must keep rising: %d %d %d", rules[0].Position, rules[1].Position, rules[2].Position)
+	}
+}
+
+func TestPositionsOfOneProfileDoNotDependOnAnother(t *testing.T) {
+	setup(t)
+	a, b := newProfile(t, "Ana"), newProfile(t, "Ben")
+	mustCreate(t, a, 60, jobboard.NotReviewedID)
+	mustCreate(t, a, 70, jobboard.NotReviewedID)
+	rb := mustCreate(t, b, 60, jobboard.NotReviewedID)
+	if rb.Position != 0 {
+		t.Errorf("the first rule of another profile starts at 0, got %d", rb.Position)
+	}
+}
+
+func TestReorderSetsTheOrderAndReturnsIt(t *testing.T) {
+	setup(t)
+	a, b := newProfile(t, "Ana"), newProfile(t, "Ben")
+	r1 := mustCreate(t, a, 60, jobboard.NotReviewedID)
+	r2 := mustCreate(t, a, 85, jobboard.NotReviewedID)
+	r3 := mustCreate(t, a, 70, jobboard.NotReviewedID)
+	other := mustCreate(t, b, 50, jobboard.NotReviewedID)
+
+	got, err := Reorder(a, []string{r3.ID, r1.ID, r2.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(ids(got), []string{r3.ID, r1.ID, r2.ID}) {
+		t.Errorf("returned order = %v", percents(got))
+	}
+	for i, r := range got {
+		if r.Position != i {
+			t.Errorf("position of %d%% = %d, want %d", r.MinPercent, r.Position, i)
+		}
+	}
+	if again, _ := List(a); !reflect.DeepEqual(ids(again), ids(got)) {
+		t.Errorf("List = %v, Reorder returned %v", percents(again), percents(got))
+	}
+	if otherRules, _ := List(b); len(otherRules) != 1 || otherRules[0].ID != other.ID || otherRules[0].Position != 0 {
+		t.Errorf("another profile's rules changed: %+v", otherRules)
+	}
+	// the same order again, and back, both fine
+	if _, err := Reorder(a, ids(got)); err != nil {
+		t.Errorf("the same order again: %v", err)
+	}
+	back, err := Reorder(a, []string{r1.ID, r2.ID, r3.ID})
+	if err != nil || !reflect.DeepEqual(ids(back), []string{r1.ID, r2.ID, r3.ID}) {
+		t.Errorf("back: %v %v", ids(back), err)
+	}
+	// a rule created after a reorder is last
+	r4 := mustCreate(t, a, 40, jobboard.NotReviewedID)
+	if rules, _ := List(a); rules[len(rules)-1].ID != r4.ID {
+		t.Error("a rule created after a reorder must be last")
+	}
+}
+
+func TestReorderRefusesAnythingButExactlyTheProfilesRules(t *testing.T) {
+	setup(t)
+	a, b := newProfile(t, "Ana"), newProfile(t, "Ben")
+	r1 := mustCreate(t, a, 60, jobboard.NotReviewedID)
+	r2 := mustCreate(t, a, 85, jobboard.NotReviewedID)
+	r3 := mustCreate(t, a, 70, jobboard.NotReviewedID)
+	foreign := mustCreate(t, b, 50, jobboard.NotReviewedID)
+	want := []string{r1.ID, r2.ID, r3.ID}
+
+	for name, order := range map[string][]string{
+		"a rule missing":      {r3.ID, r1.ID},
+		"nothing":             {},
+		"nil":                 nil,
+		"an extra unknown id": {r1.ID, r2.ID, r3.ID, "nope"},
+		"another profile's":   {r1.ID, r2.ID, foreign.ID},
+		"a rule twice":        {r1.ID, r1.ID, r2.ID},
+		"a rule twice, all":   {r1.ID, r2.ID, r3.ID, r1.ID},
+		"unknown ids":         {"x", "y", "z"},
+		"too many":            {r1.ID, r2.ID, r3.ID, foreign.ID},
+	} {
+		if _, err := Reorder(a, order); !errors.Is(err, ErrBadOrder) {
+			t.Errorf("%s: err = %v, want ErrBadOrder", name, err)
+		}
+		if rules, _ := List(a); !reflect.DeepEqual(ids(rules), want) {
+			t.Errorf("%s: a refused reorder changed the order to %v", name, percents(rules))
+		}
+	}
+	if rules, _ := List(b); len(rules) != 1 || rules[0].Position != 0 {
+		t.Errorf("another profile's rule changed: %+v", rules)
+	}
+	if _, err := Reorder("nope", []string{r1.ID}); !errors.Is(err, profile.ErrUnknownProfile) {
+		t.Errorf("unknown profile: %v", err)
+	}
+}
+
+func TestReorderOfAProfileWithoutRulesIsAnEmptyList(t *testing.T) {
+	setup(t)
+	a := newProfile(t, "Ana")
+	got, err := Reorder(a, nil)
+	if err != nil || got == nil || len(got) != 0 {
+		t.Errorf("%v %v", got, err)
+	}
+}
+
+// With equal positions (a database that has not been reordered since the column was added) ties keep the creation order.
+func TestEqualPositionsFallBackToTheCreationOrder(t *testing.T) {
+	setup(t)
+	a := newProfile(t, "Ana")
+	r1 := mustCreate(t, a, 60, jobboard.NotReviewedID)
+	r2 := mustCreate(t, a, 85, jobboard.NotReviewedID)
+	r3 := mustCreate(t, a, 70, jobboard.NotReviewedID)
+	for i, r := range []Rule{r1, r2, r3} {
+		if _, err := db.JobsDB.Exec(`UPDATE profile_match_rules SET position = 0, created_at = ? WHERE id = ?`, fmt.Sprintf("2026-01-0%d 10:00:00", i+1), r.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if rules, _ := List(a); !reflect.DeepEqual(ids(rules), []string{r1.ID, r2.ID, r3.ID}) {
+		t.Errorf("order = %v", percents(rules))
+	}
+	if all, _ := All(); !reflect.DeepEqual(ids(all[a]), []string{r1.ID, r2.ID, r3.ID}) {
+		t.Errorf("All order = %v", percents(all[a]))
 	}
 }

@@ -881,6 +881,9 @@ CREATE TABLE IF NOT EXISTS profile_match_rules (
     profile_id  TEXT NOT NULL,
     min_percent INTEGER NOT NULL CHECK (min_percent BETWEEN 1 AND 100),
     status_id   TEXT NOT NULL REFERENCES job_statuses(id) ON DELETE CASCADE,
+    -- position (step 143) is the rule's place in its profile's list, 0 first: the first rule that fits a job decides
+    -- which status it gets. Also added to existing installs by migrateProfileMatchRulesPosition.
+    position    INTEGER NOT NULL DEFAULT 0,
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at  TEXT,
     UNIQUE (profile_id, min_percent)
@@ -1532,7 +1535,66 @@ func migrateJobsDB(db *sql.DB) error {
 	if err := migrateJobCvPdfsSchema(db); err != nil {
 		return err
 	}
+	if err := migrateProfileMatchRulesPosition(db); err != nil {
+		return err
+	}
 	return migrateJobCvPdfsLink(db)
+}
+
+// migrateProfileMatchRulesPosition adds profile_match_rules.position (step 143) to a jobs.db that already has the table.
+// The rules that exist keep acting exactly as they did (the highest percentage a job reaches won): each profile's rules
+// are numbered 0, 1, 2... by descending percentage. That happens only when the column is added, so a restart never
+// renumbers what a person has put in order. A no-op on a brand-new database (the column is in the schema) and when the
+// table does not exist.
+func migrateProfileMatchRulesPosition(db *sql.DB) error {
+	exists, hasColumn, err := tableHasColumn(db, "profile_match_rules", "position")
+	if err != nil {
+		return err
+	}
+	if !exists || hasColumn {
+		return nil
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.Exec(`ALTER TABLE profile_match_rules ADD COLUMN position INTEGER NOT NULL DEFAULT 0`); err != nil {
+		return err
+	}
+	rows, err := tx.Query(`SELECT id, profile_id FROM profile_match_rules ORDER BY profile_id, min_percent DESC, id`)
+	if err != nil {
+		return err
+	}
+	type numbered struct {
+		id       string
+		position int
+	}
+	var all []numbered
+	last, n := "", 0
+	for rows.Next() {
+		var id, profileID string
+		if err := rows.Scan(&id, &profileID); err != nil {
+			rows.Close()
+			return err
+		}
+		if profileID != last {
+			last, n = profileID, 0
+		}
+		all = append(all, numbered{id, n})
+		n++
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+	for _, r := range all {
+		if _, err := tx.Exec(`UPDATE profile_match_rules SET position = ? WHERE id = ?`, r.position, r.id); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // migrateJobCvPdfsLink adds job_cv_pdfs.cv_document_id and .source (step 98)
