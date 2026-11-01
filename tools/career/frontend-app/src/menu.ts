@@ -41,7 +41,7 @@ export const careerMenuEntry: MenuEntry = {
           // The job portals the jobs are crawled from (formerly "Job Sources").
           label: 'Platforms',
           children: [
-            { label: 'Portals', path: PORTALS_PATH, scopes: ['tool:career:portals'] },
+            { label: 'Platforms', path: PORTALS_PATH, scopes: ['tool:career:portals'] },
             { label: 'Crawl Monitor', path: CRAWL_MONITOR_PATH, scopes: ['tool:career:portals'] },
           ],
         },

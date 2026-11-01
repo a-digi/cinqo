@@ -26,9 +26,12 @@ export function recrawlCheck(job: RecrawlJob): RecrawlCheck {
   if (job.canRecrawl === true) return { ok: true, reason: '' }
   if (job.sourceUrl === '') return { ok: false, reason: 'It has no posting address to crawl.' }
   if (job.portalLinkId === undefined || job.portalLinkId === '') {
-    return { ok: false, reason: isManual(job) ? 'Added by hand: it has no portal to crawl it from.' : 'It has no portal to crawl it from.' }
+    return {
+      ok: false,
+      reason: isManual(job) ? 'Added by hand: it has no platform to crawl it from.' : 'It has no platform to crawl it from.',
+    }
   }
-  return { ok: false, reason: 'Its portal has no job detail crawl instructions yet.' }
+  return { ok: false, reason: 'Its platform has no job detail crawl instructions yet.' }
 }
 
 // The tooltip of the Recrawl action: what it does, or why it is not available; a job added by hand says its own text is kept.

@@ -77,7 +77,7 @@ export function CrawlAiModal({
     <Modal open={open} title={title} onClose={onClose}>
       <p className="mb-3 text-xs text-gray-500">
         {subject === 'portal'
-          ? 'The links of this portal that have no choice of their own use this one.'
+          ? 'The links of this platform that have no choice of their own use this one.'
           : 'Crawling this link, and preparing its crawl instructions, uses this choice.'}
       </p>
 

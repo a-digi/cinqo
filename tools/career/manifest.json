@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.0.569",
+  "version": "0.0.572",
   "authors": [
     { "name": "Anes Detit", "email": "tafa.andet@googlemail.com" }
   ],
@@ -31,7 +31,7 @@
     },
     {
       "scope": "tool:career:portals",
-      "description": "Create, read, update, and delete job portals and their crawl target links."
+      "description": "Create, read, update, and delete job platforms and their crawl target links."
     },
     {
       "scope": "tool:career:cv_import",

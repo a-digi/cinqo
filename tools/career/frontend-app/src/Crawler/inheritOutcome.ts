@@ -68,7 +68,7 @@ export function inheritView(res: InheritResponse): InheritView {
   const failedToRun = tried.find((t) => t.listing === 'error')
   if (failedToRun) {
     return {
-      message: `Could not try the portal's other instructions${failedToRun.reason ? `: ${failedToRun.reason}` : ''}.`,
+      message: `Could not try the platform's other instructions${failedToRun.reason ? `: ${failedToRun.reason}` : ''}.`,
       kind: 'error',
       skipAi: false,
     }
@@ -76,7 +76,7 @@ export function inheritView(res: InheritResponse): InheritView {
   const parts = tried.slice(0, MAX_LISTED).map((t) => `${nameOf(t.title)}: ${(t.reason ?? '').trim() || 'did not work'}`)
   const more = tried.length > MAX_LISTED ? ` and ${tried.length - MAX_LISTED} more` : ''
   return {
-    message: `The instructions of this portal's other links did not work on this page (${parts.join('; ')}${more}).`,
+    message: `The instructions of this platform's other links did not work on this page (${parts.join('; ')}${more}).`,
     kind: 'none',
     skipAi: false,
   }
@@ -86,7 +86,7 @@ export function inheritView(res: InheritResponse): InheritView {
 export function inheritErrorView(err: unknown): InheritView {
   const text = err instanceof Error ? err.message.trim() : String(err).trim()
   return {
-    message: `Could not try the portal's other instructions${text ? `: ${text}` : ''}.`,
+    message: `Could not try the platform's other instructions${text ? `: ${text}` : ''}.`,
     kind: 'error',
     skipAi: false,
   }

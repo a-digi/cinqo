@@ -12,7 +12,7 @@ const ACCENT = ACCENTS[4] // violet, like the AI cards on Home
 
 // What the choice is used for, so nobody has to wonder what changing it affects.
 const USED_FOR = [
-  'Crawling job portals with AI, and preparing their crawl instructions',
+  'Crawling job platforms with AI, and preparing their crawl instructions',
   'Job Match: comparing a job with your profile',
   'Generate CV for a job',
   'Import from CV: reading a CV into your profile',

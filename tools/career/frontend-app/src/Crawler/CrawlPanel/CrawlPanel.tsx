@@ -1227,7 +1227,7 @@ export function CrawlPanel({
                     : jobsQuestion
                       ? 'Answer the question below first'
                       : inheriting
-                        ? "Trying the instructions of this portal's other links first…"
+                        ? "Trying the instructions of this platform's other links first…"
                         : aiPending
                           ? "Open the chat window to watch the AI work on this link's crawl instructions"
                           : 'Let the AI inspect this page and write (or update) its listing crawl instructions for you — once saved, this link is crawled and its job-detail instructions are generated automatically.'
@@ -1253,7 +1253,7 @@ export function CrawlPanel({
       {/* Step 103: the trial of the portal's other instructions, while it runs and what it said. */}
       {inheriting && (
         <p role="status" className="mt-2 text-xs text-gray-600">
-          Trying the instructions of this portal's other links on this page…
+          Trying the instructions of this platform's other links on this page…
         </p>
       )}
       {!inheriting && inheritNote && (

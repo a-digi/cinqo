@@ -1301,7 +1301,7 @@ export async function removeRecruiter(id: string): Promise<void> {
 
 export async function fetchPortals(): Promise<Portal[]> {
   const res = await fetch(`${PROXY_BASE}/portals`, { credentials: 'include' })
-  const data = await jsonOrThrow<{ portals: Portal[] }>(res, 'load portals')
+  const data = await jsonOrThrow<{ portals: Portal[] }>(res, 'load platforms')
   return data.portals
 }
 
@@ -1311,7 +1311,7 @@ export async function createPortal(name: string): Promise<{ id: string }> {
     credentials: 'include',
     body: JSON.stringify({ name }),
   })
-  return jsonOrThrow<{ id: string }>(res, 'create portal')
+  return jsonOrThrow<{ id: string }>(res, 'create platform')
 }
 
 export async function updatePortal(id: string, name: string): Promise<void> {
@@ -1320,7 +1320,7 @@ export async function updatePortal(id: string, name: string): Promise<void> {
     credentials: 'include',
     body: JSON.stringify({ id, name }),
   })
-  if (!res.ok && res.status !== 204) throw new Error(`failed to update portal (${res.status})`)
+  if (!res.ok && res.status !== 204) throw new Error(`failed to update platform (${res.status})`)
 }
 
 export async function removePortal(id: string): Promise<void> {
@@ -1328,7 +1328,7 @@ export async function removePortal(id: string): Promise<void> {
     method: 'DELETE',
     credentials: 'include',
   })
-  if (!res.ok && res.status !== 204) throw new Error(`failed to delete portal (${res.status})`)
+  if (!res.ok && res.status !== 204) throw new Error(`failed to delete platform (${res.status})`)
 }
 
 export async function addPortalLink(portalId: string, url: string, title: string): Promise<{ id: string }> {
@@ -1337,7 +1337,7 @@ export async function addPortalLink(portalId: string, url: string, title: string
     credentials: 'include',
     body: JSON.stringify({ portalId, url, title }),
   })
-  return jsonOrThrow<{ id: string }>(res, 'add portal link')
+  return jsonOrThrow<{ id: string }>(res, 'add platform link')
 }
 
 // What POST /portal-links/inherit-instructions answers (step 103). The refreshed portal list is
@@ -1361,7 +1361,7 @@ export async function inheritPortalInstructions(id: string): Promise<InheritInst
   })
   if (!res.ok) {
     const text = (await res.text().catch(() => '')).trim()
-    throw new Error(text || `failed to try the portal's instructions (${res.status})`)
+    throw new Error(text || `failed to try the platform's instructions (${res.status})`)
   }
   return (await res.json()) as InheritInstructionsResult
 }
@@ -1373,7 +1373,7 @@ export async function setPortalAi(id: string, platformId: string, model: string)
     credentials: 'include',
     body: JSON.stringify({ id, platformId, model }),
   })
-  const data = await jsonOrThrow<{ portals: Portal[] }>(res, "save the portal's AI choice")
+  const data = await jsonOrThrow<{ portals: Portal[] }>(res, "save the platform's AI choice")
   return data.portals
 }
 
@@ -1428,7 +1428,7 @@ export async function updatePortalLink(
   })
   if (!res.ok) {
     const text = await res.text()
-    throw new Error(text || `failed to update portal link (${res.status})`)
+    throw new Error(text || `failed to update platform link (${res.status})`)
   }
 }
 
@@ -1478,7 +1478,7 @@ export async function removePortalLink(id: string): Promise<void> {
     method: 'DELETE',
     credentials: 'include',
   })
-  if (!res.ok && res.status !== 204) throw new Error(`failed to remove portal link (${res.status})`)
+  if (!res.ok && res.status !== 204) throw new Error(`failed to remove platform link (${res.status})`)
 }
 
 // --- CV import ---

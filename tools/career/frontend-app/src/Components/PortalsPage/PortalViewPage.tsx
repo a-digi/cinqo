@@ -33,7 +33,7 @@ export function PortalViewPage() {
 
   useEffect(() => {
     if (!portalId) {
-      setError('No portal selected')
+      setError('No platform selected')
       setIsLoaded(true)
       return
     }
@@ -41,7 +41,7 @@ export function PortalViewPage() {
       .then(([portals, result]) => {
         const found = portals.find((p) => p.id === portalId)
         if (!found) {
-          setError('Portal not found')
+          setError('Platform not found')
           return
         }
         setPortal(found)
@@ -69,7 +69,7 @@ export function PortalViewPage() {
       }}
       className="mb-3 inline-block text-sm font-medium text-blue-700 hover:underline"
     >
-      ← All portals
+      ← All platforms
     </a>
   )
 
@@ -105,7 +105,7 @@ export function PortalViewPage() {
               className="mb-6 rounded-3xl border p-6 text-center text-sm text-gray-500"
               style={{ borderColor: PAGE_ACCENT.soft, background: PAGE_ACCENT.soft }}
             >
-              This portal has no links yet. Add one on the Portals page.
+              This platform has no links yet. Add one on the Platforms page.
             </div>
           )}
           <div className="mb-6 space-y-2">
@@ -142,7 +142,7 @@ export function PortalViewPage() {
               className="career-wiggle rounded-3xl border p-8 text-center text-sm text-gray-500"
               style={{ borderColor: PAGE_ACCENT.soft, background: PAGE_ACCENT.soft }}
             >
-              No jobs were found through this portal yet.
+              No jobs were found through this platform yet.
             </div>
           )}
           <div className="career-stagger space-y-3">
@@ -203,7 +203,7 @@ export function PortalViewPage() {
 
         <aside className="order-2 w-full shrink-0 lg:order-1 lg:sticky lg:top-6 lg:w-56">
           <SummaryRail
-            title="Portal"
+            title="Platform"
             segments={[
               { value: matched, color: '#16a34a' },
               { value: jobs.length - matched, color: '#cbd5e1' },

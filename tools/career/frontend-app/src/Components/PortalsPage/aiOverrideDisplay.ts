@@ -34,7 +34,7 @@ export function overrideOf(record: { aiPlatformId?: string | null; aiModel?: str
 
 const SOURCE_TEXT = {
   link: 'this link',
-  portal: "this portal's choice",
+  portal: "this platform's choice",
   global: 'the tool-wide choice from Settings',
 } as const
 
@@ -48,6 +48,6 @@ export function describeChoice(choice: Pick<CrawlAiChoice, 'platform' | 'model' 
 export function linkChip(choice: CrawlAiChoice): AiChip {
   if (choice.stale.some((s) => s.level === 'link')) return { text: 'AI: platform not available', kind: 'stale' }
   if (choice.source === 'link') return { text: `AI: ${choiceText(choice.platform, choice.model)} (this link)`, kind: 'set' }
-  if (choice.source === 'portal') return { text: `AI: ${choiceText(choice.platform, choice.model)} (portal)`, kind: 'inherited' }
+  if (choice.source === 'portal') return { text: `AI: ${choiceText(choice.platform, choice.model)} (platform)`, kind: 'inherited' }
   return { text: 'AI: Default', kind: 'default' }
 }

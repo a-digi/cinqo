@@ -325,7 +325,7 @@ export function PortalsPage() {
   return (
     <div className="career-v-left career-a-glow career-t-wave max-w-7xl p-6 font-sans text-gray-900">
       {/* The page has no header card; the heading is kept for screen readers only. */}
-      <h1 className="sr-only">Portals</h1>
+      <h1 className="sr-only">Platforms</h1>
       <PageTips page="portals" />
 
       {/* Two columns: the portals on the right; on the left the "New portal" button, the auto-discovery switch
@@ -333,14 +333,14 @@ export function PortalsPage() {
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
         <div className="order-1 min-w-0 flex-1 lg:order-2">
           <div className="mb-3 flex items-center justify-between gap-3">
-            <p className="text-xs text-gray-500">Deleting a portal permanently deletes every link it owns.</p>
+            <p className="text-xs text-gray-500">Deleting a platform permanently deletes every link it owns.</p>
             {/* Links on to the Jobs page, whose jobs come from these portals. */}
             <AppLink
               href={JOBS_PATH}
               className="shrink-0 rounded-full px-3 py-1 text-sm font-semibold hover:underline"
               style={{ background: PAGE_ACCENT.soft, color: PAGE_ACCENT.text }}
             >
-              {plural(summary.portals, 'portal', 'portals')}
+              {plural(summary.portals, 'platform', 'platforms')}
             </AppLink>
           </div>
 
@@ -431,7 +431,7 @@ export function PortalsPage() {
                         return (
                           <button
                             type="button"
-                            title="Set the AI platform and model for this portal's links"
+                            title="Set the AI platform and model for this platform's links"
                             onClick={(e) => {
                               e.stopPropagation()
                               setAiPortalId(p.id)
@@ -630,7 +630,7 @@ export function PortalsPage() {
             className="mb-4 flex w-full items-center justify-center gap-1.5 rounded-md bg-gray-800 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-900"
           >
             <PlusIcon />
-            New portal
+            New platform
           </button>
           {/* Step 88 — only while some link has crawl instructions: with none, there is nothing
               the global auto-discovery could crawl. */}
@@ -644,7 +644,7 @@ export function PortalsPage() {
             centerValue={summary.links === 0 ? '–' : `${Math.round((summary.withInstructions / summary.links) * 100)}%`}
             centerLabel="ready to crawl"
             rows={[
-              { label: 'Portals', value: String(summary.portals), color: ACCENTS[0].to },
+              { label: 'Platforms', value: String(summary.portals), color: ACCENTS[0].to },
               { label: 'Links', value: String(summary.links), color: ACCENTS[6].to },
               { label: 'With instructions', value: String(summary.withInstructions), color: '#16a34a' },
               { label: 'Never crawled', value: String(summary.neverCrawled), color: ACCENTS[2].to, emphasis: summary.neverCrawled > 0 },
@@ -655,7 +655,7 @@ export function PortalsPage() {
 
       <Modal
         open={isNewPortalModalOpen}
-        title="New portal"
+        title="New platform"
         onClose={() => {
           setIsNewPortalModalOpen(false)
           setNewPortalName('')
@@ -682,7 +682,7 @@ export function PortalsPage() {
           className="flex items-center gap-1 rounded-md bg-gray-900 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800"
         >
           <PlusIcon />
-          Create portal
+          Create platform
         </button>
       </Modal>
 

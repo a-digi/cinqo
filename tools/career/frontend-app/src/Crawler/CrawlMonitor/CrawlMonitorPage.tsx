@@ -91,7 +91,7 @@ export function CrawlMonitorPage() {
       <PageHeaderCard
         icon={<PulseIcon />}
         title="Crawl Monitor"
-        description="Every portal currently being crawled, across every link. Refreshes automatically."
+        description="Every platform currently being crawled, across every link. Refreshes automatically."
         // The pill links on to the Portals page, where crawls are started and managed.
         pill={{
           text: runs.length === 0 ? 'Idle' : `${runs.length} running`,
@@ -116,7 +116,7 @@ export function CrawlMonitorPage() {
               </span>
               <p className="mt-4 text-base font-semibold text-gray-900">No crawls are running</p>
               <p className="mt-1 text-sm text-gray-500">
-                Start one from a portal link, or let auto-discovery do it. It shows up here as soon as it begins.
+                Start one from a platform link, or let auto-discovery do it. It shows up here as soon as it begins.
               </p>
             </div>
           )}
@@ -130,7 +130,7 @@ export function CrawlMonitorPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr>
-                      <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Portal</th>
+                      <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Platform</th>
                       <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Kind</th>
                       <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Status</th>
                       <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Started</th>

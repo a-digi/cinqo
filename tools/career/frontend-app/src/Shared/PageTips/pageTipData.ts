@@ -128,7 +128,7 @@ export const PAGE_TIPS: Record<PageTipsId, PageTipSet> = {
         title: 'Find jobs as you type',
         tone: 'blue',
         icon: 'search',
-        text: 'Type in the search box and the list filters as you type. Narrow it further by location, company or platform; the Platform pill opens that portal’s page.',
+        text: 'Type in the search box and the list filters as you type. Narrow it further by location, company or platform; the Platform pill opens that platform’s page.',
       },
       {
         id: 'match',
@@ -210,7 +210,7 @@ export const PAGE_TIPS: Record<PageTipsId, PageTipSet> = {
         title: 'Everything running right now',
         tone: 'teal',
         icon: 'monitor',
-        text: 'Every portal link being crawled shows here and refreshes by itself. Listing crawls find the jobs; job detail crawls fetch each job’s full text.',
+        text: 'Every platform link being crawled shows here and refreshes by itself. Listing crawls find the jobs; job detail crawls fetch each job’s full text.',
       },
       {
         id: 'auto',
@@ -218,7 +218,7 @@ export const PAGE_TIPS: Record<PageTipsId, PageTipSet> = {
         title: 'Started by itself',
         tone: 'violet',
         icon: 'bolt',
-        text: 'A crawl marked as started automatically came from auto-discovery, not from a click. Switch auto-discovery on or off on the Portals page.',
+        text: 'A crawl marked as started automatically came from auto-discovery, not from a click. Switch auto-discovery on or off on the Platforms page.',
       },
       {
         id: 'needs-you',
@@ -239,7 +239,7 @@ export const PAGE_TIPS: Record<PageTipsId, PageTipSet> = {
     ],
   },
   portals: {
-    name: 'Portals',
+    name: 'Platforms',
     tips: [
       {
         id: 'your-ai',
@@ -248,7 +248,7 @@ export const PAGE_TIPS: Record<PageTipsId, PageTipSet> = {
         tone: 'violet',
         icon: 'robot',
         settingsLink: true,
-        text: 'A portal or a link can use its own AI platform and model (the AI chip). With none set, the portal’s is used, then the general one in Settings.',
+        text: 'A platform or a link can use its own AI platform and model (the AI chip). With none set, the platform’s is used, then the general one in Settings.',
       },
       {
         id: 'cheaper-models',
@@ -272,7 +272,7 @@ export const PAGE_TIPS: Record<PageTipsId, PageTipSet> = {
         title: 'New links try what already works',
         tone: 'teal',
         icon: 'link',
-        text: 'Adding a link to a portal that has instructions tries them first, with no AI. If they work on the new page, the link simply reuses them.',
+        text: 'Adding a link to a platform that has instructions tries them first, with no AI. If they work on the new page, the link simply reuses them.',
       },
       {
         id: 'not-every-page',
@@ -608,10 +608,10 @@ export const PAGE_TIPS: Record<PageTipsId, PageTipSet> = {
       {
         id: 'overrides',
         label: 'Overrides',
-        title: 'A portal or link can differ',
+        title: 'A platform or link can differ',
         tone: 'blue',
         icon: 'globe',
-        text: 'A portal, or a single link, can use its own platform and model. This choice applies wherever none is set.',
+        text: 'A platform, or a single link, can use its own AI platform and model. This choice applies wherever none is set.',
       },
       {
         id: 'automatic',

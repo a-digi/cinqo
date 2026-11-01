@@ -1398,7 +1398,7 @@ export function JobsPage() {
                                   e.preventDefault()
                                   window.__cinqoToolBridge.navigate(`${VIEW_PORTAL_PATH}?id=${encodeURIComponent(job.portalId ?? '')}`)
                                 }}
-                                title="Open this portal's page"
+                                title="Open this platform's page"
                                 className="inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium hover:underline"
                                 style={{ background: accentFor(platformLabel(job)).soft, color: accentFor(platformLabel(job)).text }}
                               >
