@@ -11,7 +11,6 @@ import {
   fetchProfiles,
   updateJobMatch,
   runManualMatch,
-  type JobsSort,
   ManualMatchError,
   updateJobCv,
   unlinkJobCv,
@@ -48,7 +47,7 @@ import {
 } from '../../Shared/Icons/icons'
 import { AddJobModal } from './AddJobModal'
 import { companyCell } from './companyCell'
-import { VIEW_COMPANY_PATH, VIEW_PORTAL_PATH } from '../../paths'
+import { JOBS_PATH, VIEW_COMPANY_PATH, VIEW_PORTAL_PATH } from '../../paths'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { PAGE_ACCENT, accentFor, initialOf } from './jobsTheme'
 import { JobStatsStrip } from './JobStatsStrip'
@@ -58,6 +57,18 @@ import { plural } from '../CompaniesPage/companyStats'
 import { ConfirmationModal } from '../../Shared/ConfirmationModal/ConfirmationModal'
 import { deleteQuestion } from '../SettingsPage/deletedJobsRules'
 import { matchUnmatchedMessage } from './matchUnmatchedRules'
+import { useJobsUrl } from './useJobsUrl'
+import {
+  DEFAULT_JOBS_STATE,
+  buildJobsSearch,
+  clampPage,
+  hasJobsFilters,
+  isCanonicalJobsSearch,
+  normalizeJobsState,
+  parseJobsUrl,
+  type JobsListState,
+} from './jobsUrlState'
+import { writeJobsAddress, type AddressMode } from './jobsAddress'
 import {
   REMOVE_CONFIRMATION,
   builderPathForJob,
@@ -95,32 +106,25 @@ const JOB_DETAILS_PATH = '/tools/career/job-details'
 // reloading page 1. See plan/ai/tools/career/step-55-jobs-page-
 // location-dropdown-active-filters-live-search.md.
 export function JobsPage() {
-  const [query, setQuery] = useState('')
-  const [location, setLocation] = useState('')
-  // companyIds (multi-select, step 83) — seeded from every ?companyId=
-  // occurrence in the URL via getAll, so both a single legacy link
-  // (CompaniesPage's own "N linked jobs") and a future multi-value link
-  // arrive pre-filtered identically.
-  const [companyIds, setCompanyIds] = useState<string[]>(() => new URLSearchParams(window.location.search).getAll('companyId'))
-  const [portalId, setPortalId] = useState(() => new URLSearchParams(window.location.search).get('portalId') ?? '')
-  // The order of the list: newest first, or best match first (step 129); seeded from ?sort=match like the filters.
-  const [sort, setSort] = useState<JobsSort>(() =>
-    new URLSearchParams(window.location.search).get('sort') === 'match' ? 'match' : 'newest',
-  )
+  // What the list shows (step 135): the page, the search, the filters and the order, exactly as the ADDRESS says them. A
+  // control does not change state of its own: it writes the address (`go` below), the address announces itself, and this
+  // value follows. So Back, Forward, a link, the sidebar entry and a reload all show the same list.
+  const url = useJobsUrl(JOBS_PATH)
+  const view = url.state
+  const { page, location, companyIds, portalId, sort } = view
+  // The text in the search box while it is being typed; it reaches the address after SEARCH_DEBOUNCE_MS.
+  const [queryInput, setQueryInput] = useState(url.state.query)
+  // Bumped to load the list again with the same view (after a delete, a match, an added job).
+  const [reloadTick, setReloadTick] = useState(0)
   const [companies, setCompanies] = useState<Company[]>([])
   const [portals, setPortals] = useState<Portal[]>([])
   const [locations, setLocations] = useState<string[]>([])
   const [jobs, setJobs] = useState<Job[]>([])
   const [total, setTotal] = useState(0)
-  const [page, setPage] = useState(1)
   const [error, setError] = useState('')
-  // Pre-expanded whenever a filter arrives pre-set via the URL (e.g.
-  // CompaniesPage's own "N linked jobs" link) — a filter silently
-  // applied behind a collapsed panel would be confusing.
-  const [showFilters, setShowFilters] = useState(() => {
-    const params = new URLSearchParams(window.location.search)
-    return params.has('companyId') || params.has('portalId')
-  })
+  // Pre-expanded whenever a filter arrives pre-set (from the address, or a link such as CompaniesPage's "N linked jobs"): a
+  // filter silently applied behind a collapsed panel would be confusing.
+  const [showFilters, setShowFilters] = useState(() => hasJobsFilters(url.state))
 
   // "Job Match" (step XX) own state — profiles to choose from, the
   // shared AI-platform/model choice (the saved Settings choice, via useAiChoice
@@ -184,35 +188,34 @@ export function JobsPage() {
       })
   }
 
-  function load(
-    companyIdsOverride?: string[],
-    portalIdOverride?: string,
-    pageOverride?: number,
-    locationOverride?: string,
-    sortOverride?: JobsSort,
-  ) {
+  // Loads the list for the current view; the latest request wins, so a slow answer never replaces a newer one.
+  const latestRequest = useRef(0)
+  const viewKey = buildJobsSearch(view)
+  useEffect(() => {
     setError('')
-    const effectivePage = pageOverride ?? page
-    fetchJobs(
-      query,
-      locationOverride ?? location,
-      companyIdsOverride ?? companyIds,
-      portalIdOverride ?? portalId,
-      PAGE_SIZE,
-      (effectivePage - 1) * PAGE_SIZE,
-      sortOverride ?? sort,
-    )
+    const request = ++latestRequest.current
+    fetchJobs(view.query, view.location, view.companyIds, view.portalId, PAGE_SIZE, (view.page - 1) * PAGE_SIZE, view.sort)
       .then((result) => {
+        if (request !== latestRequest.current) return
         setJobs(result.jobs)
         setTotal(result.total)
+        // A page past the last one (an address typed by hand, jobs deleted since) becomes the last page.
+        const last = clampPage(view.page, result.total, PAGE_SIZE)
+        if (last !== view.page) go({ page: last }, 'replace')
       })
       .catch((err: unknown) => {
+        if (request !== latestRequest.current) return
         setError(err instanceof Error ? err.message : String(err))
       })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewKey, reloadTick])
+
+  function reload() {
+    setReloadTick((t) => t + 1)
   }
 
+  // The lists the controls offer load once.
   useEffect(() => {
-    load(companyIds, portalId, 1)
     fetchCompanies()
       .then(setCompanies)
       .catch((err: unknown) => {
@@ -233,56 +236,56 @@ export function JobsPage() {
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : String(err))
       })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Live autocomplete: skip the very first render (the mount effect
-  // above already loads page 1 once) so typing is the only thing that
-  // triggers this debounce, not the initial empty-string query.
-  const isFirstQueryRender = useRef(true)
+  // Changes the address: the change of one thing keeps everything else the address says. A page, filter or order change
+  // pushes a history entry (Back returns to the earlier list); the search replaces the entry (typing must not leave an
+  // entry per pause). The address then announces itself and `view` follows.
+  function go(patch: Partial<JobsListState>, mode: AddressMode = 'push') {
+    writeJobsAddress(window, { ...parseJobsUrl(window.location.search), ...patch }, mode, JOBS_PATH)
+  }
+
+  // The address changed (a link, Back or Forward, the sidebar entry, or this page): the search box shows its search unless
+  // the box already means the same (so a space typed at the end is not taken away), an address that carries filters opens
+  // the filter panel, and an address that is not exactly the canonical one (a `?p=1`, a `+` for a space, a foreign
+  // parameter) is rewritten as the canonical one, replacing the entry.
   useEffect(() => {
-    if (isFirstQueryRender.current) {
-      isFirstQueryRender.current = false
-      return
-    }
+    setQueryInput((current) => (current.trim() === url.state.query ? current : url.state.query))
+    if (hasJobsFilters(url.state)) setShowFilters(true)
+    if (!isCanonicalJobsSearch(window.location.search)) go({}, 'replace')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [url.tick])
+
+  // Live autocomplete: after SEARCH_DEBOUNCE_MS without typing, the text becomes the address's search and the list goes
+  // back to page 1 (replacing the entry).
+  useEffect(() => {
     const timeoutId = window.setTimeout(() => {
-      setPage(1)
-      load(undefined, undefined, 1)
+      const wanted = normalizeJobsState({ ...DEFAULT_JOBS_STATE, query: queryInput }).query
+      if (parseJobsUrl(window.location.search).query !== wanted) go({ query: wanted, page: 1 }, 'replace')
     }, SEARCH_DEBOUNCE_MS)
     return () => {
       window.clearTimeout(timeoutId)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query])
+  }, [queryInput])
 
   function handleCompanyFilterChange(ids: string[]) {
-    setCompanyIds(ids)
-    setPage(1)
-    load(ids, undefined, 1)
+    go({ companyIds: ids, page: 1 })
   }
 
   function handlePortalFilterChange(id: string) {
-    setPortalId(id)
-    setPage(1)
-    load(undefined, id, 1)
+    go({ portalId: id, page: 1 })
   }
 
   function handleLocationFilterChange(loc: string) {
-    setLocation(loc)
-    setPage(1)
-    load(undefined, undefined, 1, loc)
+    go({ location: loc, page: 1 })
   }
 
   function handleSortChange(value: string) {
-    const next: JobsSort = value === 'match' ? 'match' : 'newest'
-    setSort(next)
-    setPage(1)
-    load(undefined, undefined, 1, undefined, next)
+    go({ sort: value === 'match' ? 'match' : 'newest', page: 1 })
   }
 
   function handlePageChange(nextPage: number) {
-    setPage(nextPage)
-    load(undefined, undefined, nextPage)
+    go({ page: nextPage })
   }
 
   // Deleting a crawled job is remembered (the crawler will not add it again), so it is confirmed first; a job added by
@@ -303,7 +306,7 @@ export function JobsPage() {
     matchUnmatchedJobs()
       .then((result) => {
         setUnmatchedNotice(matchUnmatchedMessage(result))
-        load()
+        reload()
       })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : String(err))
@@ -317,7 +320,7 @@ export function JobsPage() {
     setError('')
     removeJob(id)
       .then(() => {
-        load()
+        reload()
       })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : String(err))
@@ -332,7 +335,7 @@ export function JobsPage() {
     setError('')
     linkJobToCompany(id, '')
       .then(() => {
-        load()
+        reload()
       })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : String(err))
@@ -374,7 +377,7 @@ export function JobsPage() {
           console.error('failed to record job match failure', jobId, recordErr)
         })
         .then(() => {
-          load()
+          reload()
         })
       return
     }
@@ -391,7 +394,7 @@ export function JobsPage() {
         console.error('failed to verify job match outcome', jobId, recordErr)
       })
       .then(() => {
-        load()
+        reload()
       })
   }
 
@@ -455,7 +458,7 @@ export function JobsPage() {
           console.error('failed to record cv generation failure', jobId, recordErr)
         })
         .then(() => {
-          load()
+          reload()
         })
       return
     }
@@ -472,7 +475,7 @@ export function JobsPage() {
         console.error('failed to verify cv generation outcome', jobId, recordErr)
       })
       .then(() => {
-        load()
+        reload()
       })
   }
 
@@ -578,7 +581,7 @@ export function JobsPage() {
         },
       )
     // Reflect "matching" immediately rather than waiting for the round
-    // trip above to land — load() after the round trip already
+    // trip above to land — reload() after the round trip already
     // reconciles with the server's own real state regardless.
     setJobs((prev) =>
       prev.map((j) => (j.id === job.id ? { ...j, matchStatus: 'matching', matchScore: undefined, matchError: undefined } : j)),
@@ -619,7 +622,7 @@ export function JobsPage() {
           ),
         )
         // The new score may belong elsewhere in a best-match-first list.
-        if (sort === 'match') load()
+        if (sort === 'match') reload()
       })
       .catch((err: unknown) => {
         setError(err instanceof ManualMatchError ? refusalText(err.message, err.reasons) : err instanceof Error ? err.message : String(err))
@@ -712,7 +715,7 @@ export function JobsPage() {
     setError('')
     unlinkJobCv(job.id)
       .then(() => {
-        load()
+        reload()
       })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : String(err))
@@ -1083,9 +1086,9 @@ export function JobsPage() {
                 {matchingUnmatched ? 'Matching…' : 'Match unmatched'}
               </button>
               <input
-                value={query}
+                value={queryInput}
                 onChange={(e) => {
-                  setQuery(e.target.value)
+                  setQueryInput(e.target.value)
                 }}
                 placeholder="Search title, company, description…"
                 className="flex-1 min-w-[180px] rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
@@ -1305,8 +1308,8 @@ export function JobsPage() {
         }}
         onAdded={() => {
           setAddOpen(false)
-          setPage(1)
-          load(undefined, undefined, 1)
+          go({ page: 1 })
+          reload()
         }}
         onOpenExisting={handleViewDetails}
       />
@@ -1381,7 +1384,7 @@ export function JobsPage() {
         onClose={() => {
           setSelectCvJob(null)
         }}
-        onLinked={load}
+        onLinked={reload}
       />
 
       <ConfirmationModal
