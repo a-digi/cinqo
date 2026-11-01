@@ -1,6 +1,6 @@
 import { createRoot, type Root } from 'react-dom/client'
 import { CommentsPanel } from './CommentsPanel'
-import { mountOptionsProblem, type MountOptions } from './commentRules'
+import { metadataKey, mountOptionsProblem, type MountOptions } from './commentRules'
 
 // The panel in each container, with a token that says which mount is current. Mounting
 // into a container that already holds a panel re-renders the same root (a second
@@ -21,10 +21,11 @@ export function mountComments(container: HTMLElement, options: MountOptions): ()
   const root = mounted.get(container)?.root ?? createRoot(container)
   const token = Symbol('comments-mount')
   mounted.set(container, { root, token })
-  // The key restarts the panel's state when it is pointed at a different entity.
+  // The key restarts the panel's state when it is pointed at a different entity, or at a different scope (metadata).
   root.render(
     <CommentsPanel
-      key={`${options.owner}/${options.entityType}/${options.entityId}`}
+      key={`${options.owner}/${options.entityType}/${options.entityId}/${metadataKey(options.metadata)}`}
+      metadata={options.metadata}
       owner={options.owner}
       entityType={options.entityType}
       entityId={options.entityId}

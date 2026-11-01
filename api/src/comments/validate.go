@@ -1,6 +1,7 @@
 package comments
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -24,6 +25,11 @@ const (
 	// depth 0); MaxThreadSize caps a top-level comment plus everything under it.
 	MaxDepth      = 5
 	MaxThreadSize = 200
+	// A comment's metadata (step 153) is a flat map of short strings: at most MaxMetadataKeys keys, each value 1 to
+	// MaxMetadataValueRunes characters, and the whole object at most MaxMetadataBytes as JSON.
+	MaxMetadataKeys       = 8
+	MaxMetadataValueRunes = 200
+	MaxMetadataBytes      = 1024
 )
 
 // SystemOwner is the owner name of Cinqo itself. A tool with this slug would be
@@ -37,6 +43,8 @@ var (
 	ErrInvalidOwner = errors.New("invalid comment owner")
 
 	namePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+	// metadataKeyPattern is what a metadata key looks like ("profileId"); it also keeps a key safe to put in a JSON path.
+	metadataKeyPattern = regexp.MustCompile(`^[a-z][A-Za-z0-9]{0,39}$`)
 )
 
 // ValidationError is a caller mistake: which field and why.
@@ -131,4 +139,33 @@ func checkOwner(owner string) error {
 		return ErrInvalidOwner
 	}
 	return nil
+}
+
+// cleanMetadata checks a metadata map a caller supplied and returns it with its values trimmed; nil and empty are the empty map.
+// field names the parameter in the error ("metadata", or "metadata.profileId" for one entry of a filter).
+func cleanMetadata(field string, in map[string]string) (map[string]string, error) {
+	out := make(map[string]string, len(in))
+	if len(in) > MaxMetadataKeys {
+		return nil, invalid(field, fmt.Sprintf("can have at most %d keys", MaxMetadataKeys))
+	}
+	for k, v := range in {
+		if !metadataKeyPattern.MatchString(k) {
+			return nil, invalid(field, "keys must start with a lower-case letter and contain only letters and digits (at most 40)")
+		}
+		v = strings.TrimSpace(v)
+		if v == "" {
+			return nil, invalid(field+"."+k, "is required")
+		}
+		if strings.ContainsRune(v, 0) {
+			return nil, invalid(field+"."+k, "contains an invalid character")
+		}
+		if utf8.RuneCountInString(v) > MaxMetadataValueRunes {
+			return nil, invalid(field+"."+k, fmt.Sprintf("must be at most %d characters", MaxMetadataValueRunes))
+		}
+		out[k] = v
+	}
+	if raw, _ := json.Marshal(out); len(raw) > MaxMetadataBytes {
+		return nil, invalid(field, fmt.Sprintf("must be at most %d bytes", MaxMetadataBytes))
+	}
+	return out, nil
 }

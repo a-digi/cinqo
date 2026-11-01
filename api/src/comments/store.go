@@ -8,6 +8,7 @@ package comments
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -47,6 +48,10 @@ var migrations = []string{
 	UPDATE comments SET root_id = id;
 	CREATE INDEX IF NOT EXISTS idx_comments_root ON comments (entity_type, entity_id, root_id);
 	CREATE INDEX IF NOT EXISTS idx_comments_parent ON comments (parent_id);`,
+	// Metadata (step 153): a flat JSON object of short strings the writer attaches to a comment (a Career job comment
+	// written from a profile's job board carries {"profileId": "…"}). Existing comments have none ({}). A reply always
+	// carries its parent's. See plan/ai/tools/career/step-153-job-comments-per-profile.md.
+	`ALTER TABLE comments ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(metadata));`,
 }
 
 // timeFormat is fixed-width UTC with milliseconds, so text order is time order.
@@ -67,6 +72,8 @@ type Comment struct {
 	ParentID   string `json:"parentId"`
 	Depth      int    `json:"depth"`
 	RootID     string `json:"-"`
+	// Metadata is what the writer attached (see migration 3); never nil, so it is {} in JSON when there is none.
+	Metadata map[string]string `json:"metadata"`
 	// Context is true only for a comment shown because a reply below it matched the
 	// list's filters, not because it matched itself.
 	Context bool `json:"context"`
@@ -83,6 +90,9 @@ type NewComment struct {
 	// ParentID is the comment replied to ("" for a top-level comment). It must be a
 	// comment of the same entity.
 	ParentID string
+	// Metadata is attached to a top-level comment as given (checked by cleanMetadata). A reply ignores it and
+	// carries its parent's, so a thread never mixes metadata.
+	Metadata map[string]string
 }
 
 // Page is one page of an entity's comments: whole threads, newest thread first, each
@@ -169,12 +179,21 @@ func migrate(db *sql.DB) error {
 	return nil
 }
 
-const columns = `id, entity_type, entity_id, body, author_id, author_name, created_at, COALESCE(updated_at, ''), COALESCE(parent_id, ''), depth, root_id`
+const columns = `id, entity_type, entity_id, body, author_id, author_name, created_at, COALESCE(updated_at, ''), COALESCE(parent_id, ''), depth, root_id, metadata`
 
 func scan(row interface{ Scan(...any) error }) (Comment, error) {
 	var c Comment
-	err := row.Scan(&c.ID, &c.EntityType, &c.EntityID, &c.Body, &c.AuthorID, &c.AuthorName, &c.CreatedAt, &c.UpdatedAt, &c.ParentID, &c.Depth, &c.RootID)
-	return c, err
+	var metadata string
+	err := row.Scan(&c.ID, &c.EntityType, &c.EntityID, &c.Body, &c.AuthorID, &c.AuthorName, &c.CreatedAt, &c.UpdatedAt, &c.ParentID, &c.Depth, &c.RootID, &metadata)
+	if err != nil {
+		return c, err
+	}
+	c.Metadata = map[string]string{}
+	if err := json.Unmarshal([]byte(metadata), &c.Metadata); err != nil || c.Metadata == nil {
+		// The CHECK keeps the column valid JSON, but only a flat string map is ever written; anything else reads as none.
+		c.Metadata = map[string]string{}
+	}
+	return c, nil
 }
 
 // Create validates and stores a comment and returns it.
@@ -195,6 +214,10 @@ func (s *Store) Create(in NewComment) (Comment, error) {
 	if err != nil {
 		return Comment{}, err
 	}
+	metadata, err := cleanMetadata("metadata", in.Metadata)
+	if err != nil {
+		return Comment{}, err
+	}
 
 	var parentID string
 	if strings.TrimSpace(in.ParentID) != "" {
@@ -206,7 +229,7 @@ func (s *Store) Create(in NewComment) (Comment, error) {
 	c := Comment{
 		ID: s.newID(), EntityType: entityType, EntityID: entityID, Body: body,
 		AuthorID: authorID, AuthorName: authorName, CreatedAt: s.nextCreatedAt(),
-		ParentID: parentID,
+		ParentID: parentID, Metadata: metadata,
 	}
 	c.RootID = c.ID
 
@@ -239,14 +262,19 @@ func (s *Store) Create(in NewComment) (Comment, error) {
 			return Comment{}, invalid("parentId", fmt.Sprintf("this thread is full (%d comments)", MaxThreadSize))
 		}
 		c.RootID, c.Depth = parent.RootID, parent.Depth+1
+		c.Metadata = parent.Metadata // a reply carries its thread's metadata, whatever was supplied
+	}
+	rawMetadata, err := json.Marshal(c.Metadata)
+	if err != nil {
+		return Comment{}, fmt.Errorf("store comment: %w", err)
 	}
 	var parent any // NULL for a top-level comment
 	if parentID != "" {
 		parent = parentID
 	}
 	if _, err := tx.Exec(
-		`INSERT INTO comments (id, entity_type, entity_id, body, author_id, author_name, created_at, parent_id, root_id, depth) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		c.ID, c.EntityType, c.EntityID, c.Body, c.AuthorID, c.AuthorName, c.CreatedAt, parent, c.RootID, c.Depth,
+		`INSERT INTO comments (id, entity_type, entity_id, body, author_id, author_name, created_at, parent_id, root_id, depth, metadata) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		c.ID, c.EntityType, c.EntityID, c.Body, c.AuthorID, c.AuthorName, c.CreatedAt, parent, c.RootID, c.Depth, string(rawMetadata),
 	); err != nil {
 		return Comment{}, fmt.Errorf("store comment: %w", err)
 	}
@@ -288,6 +316,9 @@ type ListOptions struct {
 	// (YYYY-MM-DD, meaning 00:00 UTC). Empty means no bound.
 	CreatedFrom string
 	CreatedTo   string
+	// Metadata is a scope (step 153), not a filter: only comments whose metadata has every one of these keys with exactly
+	// that value are listed, counted and paged; the others are hidden entirely (not kept as context). Empty means all.
+	Metadata map[string]string
 }
 
 // parseBound turns a filter bound into the stored timestamp format, or "" for none.
@@ -328,6 +359,37 @@ func (f filter) sql(alias string) (string, []any) {
 	if f.to != "" {
 		out += ` AND ` + alias + `created_at < ?`
 		args = append(args, f.to)
+	}
+	return out, args
+}
+
+// scope is the validated metadata scope of a List call.
+type scope struct {
+	keys   []string // sorted, so the query is the same every time
+	values map[string]string
+}
+
+func newScope(opts ListOptions) (scope, error) {
+	clean, err := cleanMetadata("metadata", opts.Metadata)
+	if err != nil {
+		return scope{}, err
+	}
+	sc := scope{values: clean}
+	for k := range clean {
+		sc.keys = append(sc.keys, k)
+	}
+	sort.Strings(sc.keys)
+	return sc, nil
+}
+
+// sql returns the conditions (each starting with " AND ") for the metadata column of the table alias ("" or "m."), and their
+// arguments. The key was checked against metadataKeyPattern, so the JSON path is safe; the value is a parameter.
+func (sc scope) sql(alias string) (string, []any) {
+	var out string
+	var args []any
+	for _, k := range sc.keys {
+		out += ` AND json_extract(` + alias + `metadata, ?) = ?`
+		args = append(args, `$."`+k+`"`, sc.values[k])
 	}
 	return out, args
 }
@@ -378,12 +440,17 @@ func (s *Store) List(entityType, entityID string, opts ListOptions) (Page, error
 	if err != nil {
 		return Page{}, err
 	}
+	sc, err := newScope(opts)
+	if err != nil {
+		return Page{}, err
+	}
 
 	page := Page{Comments: []Comment{}}
 	plain, plainArgs := f.sql("")
+	scopeSQL, scopeArgs := sc.sql("")
 	if err := s.db.QueryRow(
-		`SELECT COUNT(*) FROM comments WHERE entity_type = ? AND entity_id = ?`+plain,
-		append([]any{entityType, entityID}, plainArgs...)...,
+		`SELECT COUNT(*) FROM comments WHERE entity_type = ? AND entity_id = ?`+plain+scopeSQL,
+		append(append([]any{entityType, entityID}, plainArgs...), scopeArgs...)...,
 	).Scan(&page.Total); err != nil {
 		return Page{}, err
 	}
@@ -391,9 +458,13 @@ func (s *Store) List(entityType, entityID string, opts ListOptions) (Page, error
 	// Which threads: top-level comments, newest first, that have a matching comment
 	// somewhere in their thread, after the cursor's thread.
 	inThread, threadArgs := f.sql("m.")
-	query := `SELECT r.id FROM comments r WHERE r.entity_type = ? AND r.entity_id = ? AND r.parent_id IS NULL` +
-		` AND EXISTS (SELECT 1 FROM comments m WHERE m.entity_type = r.entity_type AND m.entity_id = r.entity_id AND m.root_id = r.id` + inThread + `)`
-	args := append([]any{entityType, entityID}, threadArgs...)
+	scopeThread, scopeThreadArgs := sc.sql("m.")
+	scopeRoot, scopeRootArgs := sc.sql("r.")
+	query := `SELECT r.id FROM comments r WHERE r.entity_type = ? AND r.entity_id = ? AND r.parent_id IS NULL` + scopeRoot +
+		` AND EXISTS (SELECT 1 FROM comments m WHERE m.entity_type = r.entity_type AND m.entity_id = r.entity_id AND m.root_id = r.id` + inThread + scopeThread + `)`
+	args := append([]any{entityType, entityID}, scopeRootArgs...)
+	args = append(args, threadArgs...)
+	args = append(args, scopeThreadArgs...)
 	if opts.Before != "" {
 		anchor, err := s.Get(entityType, entityID, opts.Before)
 		if err == nil && anchor.ParentID != "" {
@@ -429,7 +500,7 @@ func (s *Store) List(entityType, entityID string, opts ListOptions) (Page, error
 	for _, id := range roots {
 		rowArgs = append(rowArgs, id)
 	}
-	rows, err := s.db.Query(`SELECT `+columns+` FROM comments WHERE entity_type = ? AND entity_id = ? AND root_id IN (`+marks+`)`, rowArgs...)
+	rows, err := s.db.Query(`SELECT `+columns+` FROM comments WHERE entity_type = ? AND entity_id = ? AND root_id IN (`+marks+`)`+scopeSQL, append(rowArgs, scopeArgs...)...)
 	if err != nil {
 		return Page{}, err
 	}

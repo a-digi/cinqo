@@ -211,6 +211,55 @@ export interface MountOptions {
   entityType: string
   entityId: string
   title?: string
+  // Scopes the panel to the comments that carry this metadata (step 153): new comments are written with it and the list
+  // shows only comments that have every one of these entries; the others are hidden. Missing means no scope.
+  metadata?: CommentMetadata
+}
+
+// --- metadata (step 153) -----------------------------------------------------
+
+// A comment's metadata: a flat map of short strings (a Career job comment written from a profile's job board carries
+// { profileId }). The same limits as the server's (api/src/comments/validate.go), checked here so a tool author hears about a
+// mistake at once; the server checks them again.
+export type CommentMetadata = Record<string, string>
+
+export const MAX_METADATA_KEYS = 8
+export const MAX_METADATA_VALUE = 200
+export const MAX_METADATA_BYTES = 1024
+const METADATA_KEY = /^[a-z][A-Za-z0-9]{0,39}$/
+
+// Why a metadata value is unusable, or null. Values count as the server counts them: trimmed, in characters.
+export function metadataProblem(m: unknown): string | null {
+  if (m === null || typeof m !== 'object' || Array.isArray(m)) return 'must be an object of strings'
+  const entries = Object.entries(m as Record<string, unknown>)
+  if (entries.length > MAX_METADATA_KEYS) return `can have at most ${MAX_METADATA_KEYS} keys`
+  const clean: Record<string, string> = {}
+  for (const [key, value] of entries) {
+    if (!METADATA_KEY.test(key)) return `key "${key}" must start with a lower-case letter and contain only letters and digits (at most 40)`
+    if (typeof value !== 'string') return `"${key}" must be a string`
+    const trimmed = value.trim()
+    if (trimmed === '') return `"${key}" must not be empty`
+    if (trimmed.includes('\u0000')) return `"${key}" contains an invalid character`
+    if (Array.from(trimmed).length > MAX_METADATA_VALUE) return `"${key}" must be at most ${MAX_METADATA_VALUE} characters`
+    clean[key] = trimmed
+  }
+  if (new TextEncoder().encode(JSON.stringify(clean)).length > MAX_METADATA_BYTES) return `must be at most ${MAX_METADATA_BYTES} bytes`
+  return null
+}
+
+// The metadata as it is sent: values trimmed. A missing or empty one is the empty map (no scope).
+export function normalizeMetadata(m: CommentMetadata | undefined): CommentMetadata {
+  const out: CommentMetadata = {}
+  if (!m) return out
+  for (const key of Object.keys(m).sort()) out[key] = m[key].trim()
+  return out
+}
+
+// A string that is the same for the same metadata, whatever the order of its keys: it says when a panel has to start over (a
+// different scope is a different list) and is the key of the panel's load.
+export function metadataKey(m: CommentMetadata | undefined): string {
+  const clean = normalizeMetadata(m)
+  return Object.keys(clean).length === 0 ? '' : JSON.stringify(clean)
 }
 
 const NAME = /^[a-z][a-z0-9_]*$/
@@ -226,5 +275,9 @@ export function mountOptionsProblem(o: Partial<MountOptions> | null | undefined)
     return 'entityType must be a lower-case name such as "job"'
   if (typeof o.entityId !== 'string' || !UUID.test(o.entityId)) return 'entityId must be a UUID'
   if (o.title !== undefined && typeof o.title !== 'string') return 'title must be a string'
+  if (o.metadata !== undefined) {
+    const problem = metadataProblem(o.metadata)
+    if (problem) return `metadata ${problem}`
+  }
   return null
 }

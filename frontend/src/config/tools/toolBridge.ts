@@ -102,6 +102,11 @@ export interface ToolCommentsOptions {
   entityId: string
   // Heading of the panel (default "Comments").
   title?: string
+  // Scopes the panel to comments that carry this metadata: a flat map of short strings (at most 8 keys, key like "profileId",
+  // values 1 to 200 characters, 1 KB in all). New comments are written with it and the list shows only comments that have every
+  // one of these entries; the others are hidden (this is a view, not access control: the same page without it shows them all).
+  // A reply always carries its thread's metadata. Leave it out for no scope. A host older than this option ignores it.
+  metadata?: Record<string, string>
 }
 
 // Where to draw the file reader and which file it shows.

@@ -26,6 +26,9 @@ interface CinqoCommentsOptions {
   entityType: string
   entityId: string
   title?: string
+  // Scopes the panel to comments that carry this metadata (a flat map of short strings, e.g. { profileId }): new comments are
+  // written with it and only comments that have all of it are listed. Optional; a host older than this option ignores it.
+  metadata?: Record<string, string>
 }
 
 interface CinqoFileReaderOptions {

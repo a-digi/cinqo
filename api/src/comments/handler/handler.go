@@ -8,7 +8,9 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/a-digi/coco-server/server/request"
@@ -66,10 +68,19 @@ type listResponse struct {
 
 // bodyRequest is what create and edit read. ParentID only means something to create
 // (a reply's parent, empty or null for a top-level comment); an edit ignores it, since
-// a comment can never move to another parent.
+// a comment can never move to another parent. Metadata (step 153) is read by create only
+// (an object of short strings, null or missing for none): a reply takes its parent's whatever
+// it says, and an edit never reads it, so a comment's metadata is fixed when it is written.
 type bodyRequest struct {
-	Body     string `json:"body"`
-	ParentID string `json:"parentId"`
+	Body     string            `json:"body"`
+	ParentID string            `json:"parentId"`
+	Metadata map[string]string `json:"metadata"`
+}
+
+// editRequest is what an edit reads: the text, and nothing else (parentId and metadata in an edit's body are ignored,
+// and not even checked).
+type editRequest struct {
+	Body string `json:"body"`
 }
 
 func (d *deps) present(t access.EntityType, who identity, c comments.Comment) commentResponse {
@@ -106,6 +117,12 @@ func (d *deps) list(w http.ResponseWriter, r *http.Request, who identity, owner,
 		Before: q.Get("before"), AuthorID: q.Get("authorId"),
 		CreatedFrom: q.Get("createdFrom"), CreatedTo: q.Get("createdTo"),
 	}
+	meta, err := metadataScope(q)
+	if err != nil {
+		d.fail(w, err)
+		return
+	}
+	opts.Metadata = meta
 	if raw := q.Get("limit"); raw != "" {
 		n, err := strconv.Atoi(raw)
 		if err != nil || n < 1 {
@@ -148,7 +165,7 @@ func (d *deps) create(w http.ResponseWriter, r *http.Request, who identity, owne
 		return
 	}
 	c, err := store.Create(comments.NewComment{
-		EntityType: entityType, EntityID: entityID, Body: in.Body, ParentID: in.ParentID,
+		EntityType: entityType, EntityID: entityID, Body: in.Body, ParentID: in.ParentID, Metadata: in.Metadata,
 		// The author is always the token's, never anything in the request.
 		AuthorID: who.UserID, AuthorName: who.Name,
 	})
@@ -165,7 +182,7 @@ func (d *deps) edit(w http.ResponseWriter, r *http.Request, who identity, owner,
 		d.fail(w, err)
 		return
 	}
-	in, ok := readBody(w, r)
+	in, ok := readEditBody(w, r)
 	if !ok {
 		return
 	}
@@ -224,10 +241,51 @@ func readBody(w http.ResponseWriter, r *http.Request) (bodyRequest, bool) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	var in bodyRequest
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		var typeErr *json.UnmarshalTypeError
+		if errors.As(err, &typeErr) && strings.HasPrefix(typeErr.Field, "metadata") {
+			response.ErrorResponse(w, http.StatusBadRequest, `metadata must be an object of strings, such as {"profileId": "…"}`)
+			return bodyRequest{}, false
+		}
 		response.ErrorResponse(w, http.StatusBadRequest, `body must be {"body": "…"}`)
 		return bodyRequest{}, false
 	}
 	return in, true
+}
+
+// readEditBody decodes the body of an edit: only {"body": "…"} counts. Anything else in it (a parentId, a metadata object,
+// whatever it holds) is ignored, because an edit changes the text and nothing more.
+func readEditBody(w http.ResponseWriter, r *http.Request) (bodyRequest, bool) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+	var in editRequest
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		response.ErrorResponse(w, http.StatusBadRequest, `body must be {"body": "…"}`)
+		return bodyRequest{}, false
+	}
+	return bodyRequest{Body: in.Body}, true
+}
+
+// metadataScope reads the metadata scope of a list from its query: one parameter metadata.<key>=<value> per key. A key given twice,
+// or a bare "metadata" parameter, is a mistake and is refused rather than guessed at; a bad key or value is refused by the store's
+// own validation (the same rules as for the metadata of a comment).
+func metadataScope(q url.Values) (map[string]string, error) {
+	var out map[string]string
+	for name, values := range q {
+		if name == "metadata" {
+			return nil, &comments.ValidationError{Field: "metadata", Message: "must be given as metadata.<key>=<value>"}
+		}
+		key, ok := strings.CutPrefix(name, "metadata.")
+		if !ok {
+			continue
+		}
+		if len(values) != 1 {
+			return nil, &comments.ValidationError{Field: name, Message: "must be given once"}
+		}
+		if out == nil {
+			out = map[string]string{}
+		}
+		out[key] = values[0]
+	}
+	return out, nil
 }
 
 // ---- the routes ----

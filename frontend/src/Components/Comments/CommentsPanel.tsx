@@ -5,6 +5,8 @@ import { createComment, deleteComment, editComment, fetchComments, type Comment,
 import { useConfirm } from '../../Shared/Components/Modal/useConfirm'
 import { IconBadge } from '../../Shared/Components/CardArt/icons'
 import {
+  normalizeMetadata,
+  type CommentMetadata,
   MAX_BODY,
   NO_FILTERS,
   PAGE_SIZE,
@@ -252,6 +254,9 @@ function CommentRow({ comment, now, busy, guide, canReply, onEdit, onReply, onDe
 
 export interface CommentsPanelProps extends CommentsTarget {
   title?: string
+  // The scope of this panel (step 153): only comments that carry all of this metadata are listed, and a new comment is written with
+  // it. Missing means every comment. A different scope is a different list (mountComments restarts the panel for it).
+  metadata?: CommentMetadata
 }
 
 // The comments for one entity: add, reply, edit and delete your own, filter by author and
@@ -260,7 +265,7 @@ export interface CommentsPanelProps extends CommentsTarget {
 // user may do and says so with canEdit / canDelete. A reply is drawn directly below its
 // parent, stepped in by its depth. See plan/ai/comments/comments-engine.md and
 // comment-replies.md.
-export function CommentsPanel({ owner, entityType, entityId, title = 'Comments' }: CommentsPanelProps) {
+export function CommentsPanel({ owner, entityType, entityId, title = 'Comments', metadata }: CommentsPanelProps) {
   const target: CommentsTarget = { owner, entityType, entityId }
   const [items, setItems] = useState<Comment[]>([])
   const [total, setTotal] = useState(0)
@@ -303,7 +308,8 @@ export function CommentsPanel({ owner, entityType, entityId, title = 'Comments' 
   }, [])
 
   const rangeError = rangeProblem(filters)
-  const params = filterParams(filters, userId)
+  const scope = normalizeMetadata(metadata)
+  const params = { ...filterParams(filters, userId), ...(Object.keys(scope).length > 0 ? { metadata: scope } : {}) }
   const paramsKey = JSON.stringify(params)
 
   const load = useCallback(async () => {
@@ -353,7 +359,7 @@ export function CommentsPanel({ owner, entityType, entityId, title = 'Comments' 
     setBusy(true)
     setError('')
     try {
-      const created = await createComment(target, draft)
+      const created = await createComment(target, draft, undefined, scope)
       setDraft('')
       // A new comment belongs at the top, unless a filter would hide it.
       if (!hasFilters(filters)) {

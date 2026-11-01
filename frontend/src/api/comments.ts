@@ -22,6 +22,8 @@ export interface Comment {
   depth: number
   // True only for a comment shown just because a reply below it matched the filters.
   context: boolean
+  // What the writer attached when the comment was written (a flat map of short strings), {} when nothing.
+  metadata: Record<string, string>
 }
 
 export interface CommentPage {
@@ -46,6 +48,8 @@ export interface CommentFilters {
   authorId?: string
   createdFrom?: string
   createdTo?: string
+  // Lists only the comments that have every one of these entries in their metadata (sent as metadata.<key>=<value>).
+  metadata?: Record<string, string>
 }
 
 function base(t: CommentsTarget): string {
@@ -59,14 +63,24 @@ export async function fetchComments(t: CommentsTarget, filters: CommentFilters =
   if (filters.authorId) q.set('authorId', filters.authorId)
   if (filters.createdFrom) q.set('createdFrom', filters.createdFrom)
   if (filters.createdTo) q.set('createdTo', filters.createdTo)
+  for (const [key, value] of Object.entries(filters.metadata ?? {})) q.set(`metadata.${key}`, value)
   const query = q.toString()
   const raw = await apiGet<{ message: CommentPage }>(`${base(t)}${query ? `?${query}` : ''}`)
   return raw.message
 }
 
-// parentId makes the new comment a reply to that comment; leave it out for a top-level one.
-export async function createComment(t: CommentsTarget, body: string, parentId?: string): Promise<Comment> {
-  const raw = await apiPost<{ message: Comment }>(base(t), parentId ? { body, parentId } : { body })
+// parentId makes the new comment a reply to that comment; leave it out for a top-level one. metadata is attached to a top-level
+// comment (a reply always carries its parent's, so none is sent for one); an empty map is not sent.
+export async function createComment(
+  t: CommentsTarget,
+  body: string,
+  parentId?: string,
+  metadata?: Record<string, string>,
+): Promise<Comment> {
+  const payload: { body: string; parentId?: string; metadata?: Record<string, string> } = { body }
+  if (parentId) payload.parentId = parentId
+  else if (metadata && Object.keys(metadata).length > 0) payload.metadata = metadata
+  const raw = await apiPost<{ message: Comment }>(base(t), payload)
   return raw.message
 }
 
