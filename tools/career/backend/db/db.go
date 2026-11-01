@@ -913,6 +913,23 @@ CREATE TABLE IF NOT EXISTS persona_score_state (
     scored_at   TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- profile_match_state (step 151): for each profile, the fingerprint of its set of personas as they were when its jobs were last
+-- re-matched (jobs.RematchProfile), and when. The sweeper of the re-match worker compares it with the profile's fingerprint now and
+-- re-matches the profiles whose differ (a profile or persona created while the tool was down, a lost event, a restart that emptied the
+-- waiting set). profile_id is an opaque id into career.db, no FK; the rows of deleted profiles are removed by the sweeper.
+CREATE TABLE IF NOT EXISTS profile_match_state (
+    profile_id  TEXT PRIMARY KEY,
+    fingerprint TEXT NOT NULL,
+    matched_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- profile_match_seed (step 151): one row once the profiles that existed when the re-match feature was first installed got their
+-- current fingerprints (seeded, not re-matched), so installing it changes none of the existing matches.
+CREATE TABLE IF NOT EXISTS profile_match_seed (
+    id        INTEGER PRIMARY KEY CHECK (id = 1),
+    seeded_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- profile_match_rules (step 140): a profile's rules for new jobs, "a job that matches at least min_percent percent is
 -- added to this profile's board with this status". profile_id is the opaque id into career.db (no FK across the two
 -- files, like job_statuses.profile_id); a rule goes with the status it points to (a deleted custom status takes its rules

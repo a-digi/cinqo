@@ -74,6 +74,7 @@ func CreatePersona(profileId, name, description string) (string, error) {
 		return "", err
 	}
 	publishPersonaChanged(id, ChangeCreated)
+	publishPersonaCreated(id, profileId)
 	return id, nil
 }
 

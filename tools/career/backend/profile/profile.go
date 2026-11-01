@@ -71,6 +71,7 @@ func CreateProfile(firstName, lastName string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	publishProfileCreated(id)
 	return id, nil
 }
 

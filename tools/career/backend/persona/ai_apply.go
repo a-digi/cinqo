@@ -114,6 +114,7 @@ func ApplyDecisions(runID string, decisions []Decision) ([]aiRunPersona, error) 
 	// The personas exist only once the transaction has committed, so they are announced now (step 142).
 	for _, p := range created {
 		publishPersonaChanged(p.ID, ChangeCreated)
+		publishPersonaCreated(p.ID, run.profileID) // step 151
 	}
 	return created, nil
 }
