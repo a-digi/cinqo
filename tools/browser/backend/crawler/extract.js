@@ -34,9 +34,79 @@
     return value;
   }
 
+  // The elements that carry no text of their own: code, styling, fallbacks, media. el.textContent counts the content of
+  // <style> and <script>, and of <noscript> (a browser keeps a noscript's children as plain text when scripts run, so a
+  // "<style>…</style><img …>" fallback comes back as literal markup), so a field read through it fills up with CSS and tags
+  // (step 147).
+  var NO_TEXT = "script, style, noscript, template, svg, iframe, object, embed, canvas, img, picture, video, audio, source, track, link, meta";
+
+  // The elements that start a new line, and the ones that are separated by a space (table cells). The same lists as the Career
+  // tool's own text cleaner (backend/textclean), which tidies what is stored.
+  var BLOCK = {
+    p: 1, div: 1, li: 1, ul: 1, ol: 1, dl: 1, dt: 1, dd: 1, tr: 1, table: 1, section: 1, article: 1, header: 1,
+    footer: 1, nav: 1, aside: 1, main: 1, blockquote: 1, pre: 1, hr: 1, form: 1, fieldset: 1, figure: 1,
+    figcaption: 1, address: 1, details: 1, summary: 1, h1: 1, h2: 1, h3: 1, h4: 1, h5: 1, h6: 1
+  };
+  var CELL = { td: 1, th: 1 };
+
+  function collect(node, out, pre) {
+    if (node.nodeType === 3) {
+      out.push(pre ? node.nodeValue : node.nodeValue.replace(/\s+/g, " "));
+      return;
+    }
+    if (node.nodeType !== 1) {
+      return;
+    }
+    var tag = node.tagName.toLowerCase();
+    if (tag === "br") {
+      out.push("\n");
+      return;
+    }
+    var isBlock = BLOCK[tag] === 1;
+    var isCell = CELL[tag] === 1;
+    if (isBlock) out.push("\n");
+    if (isCell) out.push(" ");
+    var inPre = pre || tag === "pre";
+    for (var c = node.firstChild; c; c = c.nextSibling) {
+      collect(c, out, inPre);
+    }
+    if (isBlock) out.push("\n");
+    if (isCell) out.push(" ");
+  }
+
+  // The readable text of el: what is left after the no-text elements are taken out of a copy (the page itself is not touched),
+  // with a line break around blocks and at <br>, spaces collapsed, blank-line runs squeezed to one, invisible characters
+  // (soft hyphen, zero-width space) dropped.
+  function readableText(el) {
+    if (el.matches(NO_TEXT)) {
+      return "";
+    }
+    var clone = el.cloneNode(true);
+    var drop = clone.querySelectorAll(NO_TEXT);
+    for (var i = 0; i < drop.length; i++) {
+      drop[i].remove();
+    }
+    var out = [];
+    collect(clone, out, false);
+    var lines = out.join("").replace(/[\u00ad\u200b\ufeff]/g, "").split("\n");
+    var kept = [];
+    var blank = 0;
+    for (var j = 0; j < lines.length; j++) {
+      var line = lines[j].replace(/[ \t\f\v\u00a0\r]+/g, " ").trim();
+      if (line === "") {
+        blank++;
+        if (blank > 1) continue;
+      } else {
+        blank = 0;
+      }
+      kept.push(line);
+    }
+    return kept.join("\n").trim();
+  }
+
   function readValue(el, attribute) {
     if (!attribute || attribute === "text") {
-      return truncate((el.textContent || "").trim());
+      return truncate(readableText(el));
     }
     return truncate(el.getAttribute(attribute));
   }

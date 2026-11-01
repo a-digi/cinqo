@@ -72,6 +72,13 @@ func runHTTPServer() {
 	if _, err := deletedjobs.Rehash(); err != nil && !errors.Is(err, deletedjobs.ErrNoMemory) {
 		log.Printf("deleted jobs: could not recompute the keys: %v", err)
 	}
+	// Step 147: crawls used to store markup and stylesheets in the descriptions; they are rewritten to plain text once, after a
+	// copy of jobs.db. Never fatal: the next start tries again when it did not finish.
+	if r, err := jobs.CleanStoredDescriptions(); err != nil {
+		log.Printf("jobs: could not clean the stored descriptions: %v", err)
+	} else if !r.AlreadyDone {
+		log.Printf("jobs: cleaned %d of %d crawled descriptions (backup: %q)", r.Changed, r.Scanned, r.Backup)
+	}
 	// Deleting a CV document must know which jobs use it (step 98); cvbuilder
 	// cannot import jobs, so the implementation is registered here.
 	cvbuilder.UseJobLinks(jobs.DocumentLinks{})

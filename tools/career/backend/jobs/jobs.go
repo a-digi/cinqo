@@ -51,6 +51,7 @@ import (
 	"career-tool-backend/deletedjobs"
 	"career-tool-backend/domainevent"
 	"career-tool-backend/media"
+	"career-tool-backend/textclean"
 )
 
 // defaultJobsLimit/maxJobsLimit bound list_jobs/search_jobs the same
@@ -189,6 +190,7 @@ const upsertKeepingManualText = `
 // updates it (refreshing crawled_at) rather than duplicating it.
 // Returns the row's own id and whether this was a fresh insert.
 func saveJob(sourceURL, title, company, location, description, postedAt string) (id string, created bool, err error) {
+	description = textclean.Description(description) // only text is kept (step 147)
 	var existingID string
 	err = db.JobsDB.QueryRow(`SELECT id FROM jobs WHERE source_url = ?`, sourceURL).Scan(&existingID)
 	switch {
@@ -731,6 +733,7 @@ var errUnknownPortalLinkRef = errors.New("unknown portal link id")
 // hasn't seen before, which is exactly the cross-portal,
 // different-URL case this step exists for.
 func SavePortalJob(portalLinkId, sourceURL, title, company, location, description, postedAt string) (id string, created, duplicate bool, err error) {
+	description = textclean.Description(description) // only text is kept (step 147)
 	portalLinkURL, err := findPortalLinkURL(portalLinkId)
 	if err != nil {
 		return "", false, false, err
@@ -1155,7 +1158,8 @@ func SaveJobDetailExtraction(jobId string, values map[string]string) (updated bo
 	if err := RequireJobExists(jobId); err != nil {
 		return false, err
 	}
-	description := strings.TrimSpace(values["description"])
+	// Only text is kept (step 147): a description that was nothing but markup or styles comes out empty and counts as a failed crawl.
+	description := textclean.Description(values["description"])
 	if description == "" {
 		return false, MarkJobDetailCrawlFailed(jobId)
 	}

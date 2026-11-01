@@ -48,6 +48,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -59,6 +60,9 @@ var (
 	// optional: if it cannot be opened this stays nil, the tool starts anyway, and nothing is remembered (the deletedjobs
 	// package treats a nil handle as "no memory").
 	DeletedJobsDB *sql.DB
+
+	// jobsDir is the folder of jobs.db, kept for BackupJobsDB.
+	jobsDir string
 )
 
 // InitDatabases opens (creating if needed) both database files and
@@ -117,6 +121,7 @@ func InitDatabases() error {
 	}
 	CareerDB = careerDB
 
+	jobsDir = dbDir
 	jobsDB, err := sql.Open("sqlite", filepath.Join(dbDir, "jobs.db"))
 	if err != nil {
 		return fmt.Errorf("failed to open jobs.db: %w", err)
@@ -869,6 +874,14 @@ CREATE TABLE IF NOT EXISTS job_board_removals (
     job_id     TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
     removed_at TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (profile_id, job_id)
+);
+
+-- data_fixes (step 147): one row for each one-time repair of stored data that has been done, so it is never done twice (the
+-- first one rewrites the descriptions of crawled jobs to plain text, see jobs.CleanStoredDescriptions).
+CREATE TABLE IF NOT EXISTS data_fixes (
+    name    TEXT PRIMARY KEY,
+    done_at TEXT NOT NULL,
+    detail  TEXT
 );
 
 -- persona_score_state (step 142): for each persona, the fingerprint of the persona data its scores for ALL jobs were last
@@ -2255,4 +2268,24 @@ func migratePortalsAiOverride(db *sql.DB) error {
 		}
 	}
 	return nil
+}
+
+// BackupJobsDB writes a consistent copy of jobs.db next to it (jobs-before-<label>-<time>.db, made with VACUUM INTO) and returns
+// its path. Used before a one-time repair rewrites stored data (step 147).
+func BackupJobsDB(label string) (string, error) {
+	if JobsDB == nil || jobsDir == "" {
+		return "", fmt.Errorf("jobs.db is not open")
+	}
+	stamp := time.Now().UTC().Format("20060102-150405")
+	path := filepath.Join(jobsDir, fmt.Sprintf("jobs-before-%s-%s.db", label, stamp))
+	for n := 2; ; n++ { // a copy made in the same second keeps its own name: VACUUM INTO never overwrites
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			break
+		}
+		path = filepath.Join(jobsDir, fmt.Sprintf("jobs-before-%s-%s-%d.db", label, stamp, n))
+	}
+	if _, err := JobsDB.Exec(`VACUUM INTO ?`, path); err != nil {
+		return "", fmt.Errorf("failed to back up jobs.db: %w", err)
+	}
+	return path, nil
 }
