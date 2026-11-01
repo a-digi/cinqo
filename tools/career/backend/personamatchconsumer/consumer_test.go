@@ -612,3 +612,71 @@ func TestTheRealScorerWithoutPersonasDoesNothing(t *testing.T) {
 		t.Errorf("outs=%v err=%v", outs, err)
 	}
 }
+
+// The route also serves "career.job.description_changed" (step 148): the payload is the same {"job_id": "…"}, and the topic is not
+// looked at, so the job is queued and its scores are made again from the new text.
+func TestADescriptionChangedEventQueuesTheJob(t *testing.T) {
+	c := New(10)
+	body := `{"topic":"career.job.description_changed","payload":{"job_id":"job-7"}}`
+	rec := httptest.NewRecorder()
+	c.Handler(rec, httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body)))
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	select {
+	case id := <-c.queue:
+		if id != "job-7" {
+			t.Errorf("queued %q", id)
+		}
+	default:
+		t.Error("nothing queued")
+	}
+}
+
+// The whole path of step 148's last step with the real scorer: a job scored from a text that does not fit, its description changes
+// (what a recrawl does), the "career.job.description_changed" event reaches the running worker through the route, and the job's
+// rows are replaced by scores made from the new text.
+func TestAChangedDescriptionIsScoredAgainThroughTheEvent(t *testing.T) {
+	setup(t)
+	_, fitPersona := seedProfile(t, "Fit", []string{"Go", "Docker", "Kubernetes", "PostgreSQL"})
+	exec(t, `INSERT INTO jobs (id, source_url, title, company, location, description) VALUES ('j1', 'https://x.example/j1', 'Backend Engineer (m/w/d)', 'Acme', 'Hamburg', 'Wir suchen Verstärkung für das Büro.')`)
+	if _, err := ProcessBatch([]string{"j1"}); err != nil {
+		t.Fatal(err)
+	}
+	score := func() int {
+		rows, err := personamatch.ForJob("j1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, r := range rows {
+			if r.PersonaID == fitPersona {
+				return r.Score
+			}
+		}
+		return -1
+	}
+	old := score()
+	if old < 0 || old >= 60 {
+		t.Fatalf("the old text should not fit well: %d", old)
+	}
+
+	exec(t, `UPDATE jobs SET description = ? WHERE id = 'j1'`, jobDesc)
+	c := New(10)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := c.Start(ctx)
+	body := `{"topic":"career.job.description_changed","payload":{"job_id":"j1"}}`
+	rec := httptest.NewRecorder()
+	c.Handler(rec, httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body)))
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("%d", rec.Code)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for score() == old && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	cancel()
+	<-done
+	if now := score(); now < 60 || now <= old {
+		t.Errorf("the score did not follow the new text: %d -> %d", old, now)
+	}
+}

@@ -45,6 +45,7 @@ import {
   RobotIcon,
   PDFIcon,
   PlusIcon,
+  RefreshIcon,
 } from '../../Shared/Icons/icons'
 import { AddJobModal } from './AddJobModal'
 import { companyCell } from './companyCell'
@@ -58,6 +59,10 @@ import { plural } from '../CompaniesPage/companyStats'
 import { ConfirmationModal } from '../../Shared/ConfirmationModal/ConfirmationModal'
 import { deleteQuestion } from '../SettingsPage/deletedJobsRules'
 import { matchUnmatchedMessage } from './matchUnmatchedRules'
+import { RecrawlPanel } from './RecrawlPanel'
+import { RecrawlSelectionBar } from './RecrawlSelectionBar'
+import { pageState, recrawlCheck, recrawlTitle, togglePage, toggleId, type SelectedJob } from './recrawlRules'
+import { useRecrawl } from './useRecrawl'
 import { useJobsUrl } from './useJobsUrl'
 import {
   DEFAULT_JOBS_STATE,
@@ -164,6 +169,13 @@ export function JobsPage() {
   const [pendingRemoveCvJob, setPendingRemoveCvJob] = useState<Job | null>(null)
   // The job being added to a profile's job board (step 126).
   const [addToBoardJob, setAddToBoardJob] = useState<Job | null>(null)
+  // The jobs ticked in the list (step 148), by id, with what the selection bar needs to know of each; kept across pages and searches,
+  // in memory only. A finished recrawl clears it. The recrawl itself runs on the server, one job after the other.
+  const [selected, setSelected] = useState<ReadonlyMap<string, SelectedJob>>(new Map())
+  const recrawl = useRecrawl(reload, () => {
+    setSelected(new Map())
+  })
+  const headerCheckbox = useRef<HTMLInputElement>(null)
 
   // CV generation audit trail (step 5) — historyJob is the job whose
   // history modal is currently open (mirrors matchPickerJob/cvPickerJob's
@@ -216,6 +228,32 @@ export function JobsPage() {
   function reload() {
     setReloadTick((t) => t + 1)
   }
+
+  // The selection (step 148): the rules work on sets of ids; the map keeps what the bar needs of each selected job.
+  function selectedInfo(job: Job): SelectedJob {
+    return { source: job.source, canRecrawl: job.canRecrawl === true }
+  }
+  function withIds(previous: ReadonlyMap<string, SelectedJob>, ids: ReadonlySet<string>): ReadonlyMap<string, SelectedJob> {
+    const next = new Map<string, SelectedJob>()
+    for (const id of ids) {
+      const known = previous.get(id)
+      const onPage = jobs.find((j) => j.id === id)
+      const info = known ?? (onPage ? selectedInfo(onPage) : undefined)
+      if (info) next.set(id, info)
+    }
+    return next
+  }
+  function toggleRow(job: Job) {
+    setSelected((prev) => withIds(prev, toggleId(new Set(prev.keys()), job.id)))
+  }
+  const pageIds = jobs.map((j) => j.id)
+  function togglePageRows() {
+    setSelected((prev) => withIds(prev, togglePage(new Set(prev.keys()), pageIds)))
+  }
+  const pageSelection = pageState(new Set(selected.keys()), pageIds)
+  useEffect(() => {
+    if (headerCheckbox.current) headerCheckbox.current.indeterminate = pageSelection === 'some'
+  }, [pageSelection])
 
   // The lists the controls offer load once.
   useEffect(() => {
@@ -967,6 +1005,18 @@ export function JobsPage() {
       title: failed ? 'Failed to crawl' : neverCrawled ? 'Not crawled yet' : 'View job details',
     })
 
+    const recrawlOk = recrawlCheck(job).ok
+    items.push({
+      key: 'recrawl',
+      label: 'Recrawl',
+      icon: <RefreshIcon />,
+      onClick: () => {
+        void recrawl.start([job.id])
+      },
+      disabled: !recrawlOk || recrawl.running,
+      title: recrawl.running && recrawlOk ? 'A recrawl is already running.' : recrawlTitle(job),
+    })
+
     items.push({
       key: 'delete',
       label: 'Delete',
@@ -1162,6 +1212,18 @@ export function JobsPage() {
               </p>
             )}
 
+            <RecrawlPanel recrawl={recrawl} />
+            <RecrawlSelectionBar
+              selected={[...selected.values()]}
+              busy={recrawl.running}
+              onRecrawl={() => {
+                void recrawl.start([...selected.keys()])
+              }}
+              onClear={() => {
+                setSelected(new Map())
+              }}
+            />
+
             <div
               className="relative overflow-hidden rounded-3xl border shadow-sm"
               style={{ borderColor: PAGE_ACCENT.soft, background: `linear-gradient(170deg, #ffffff 55%, ${PAGE_ACCENT.soft} 100%)` }}
@@ -1174,6 +1236,16 @@ export function JobsPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr>
+                      <th className="w-8 bg-blue-50/70 p-3 pr-0">
+                        <input
+                          ref={headerCheckbox}
+                          type="checkbox"
+                          aria-label="Select the jobs on this page"
+                          checked={pageSelection === 'all'}
+                          disabled={jobs.length === 0}
+                          onChange={togglePageRows}
+                        />
+                      </th>
                       <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Title</th>
                       <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Company</th>
                       <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Platform</th>
@@ -1187,6 +1259,16 @@ export function JobsPage() {
                       const cell = companyCell(job, companyNames, VIEW_COMPANY_PATH)
                       return (
                         <tr key={job.id} className="transition-colors last:[&>td]:border-b-0 hover:bg-blue-50/50">
+                          <td className="w-8 border-b border-blue-50 p-3 pr-0">
+                            <input
+                              type="checkbox"
+                              aria-label={`Select ${job.title}`}
+                              checked={selected.has(job.id)}
+                              onChange={() => {
+                                toggleRow(job)
+                              }}
+                            />
+                          </td>
                           <td className="border-b border-blue-50 p-3 text-gray-900">
                             <div className="flex items-center gap-3">
                               <span

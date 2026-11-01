@@ -41,6 +41,8 @@ import (
 	"career-tool-backend/jobcleanup"
 	"career-tool-backend/jobdeletedconsumers"
 	"career-tool-backend/jobmatchconsumer"
+	"career-tool-backend/jobrecrawl"
+	"career-tool-backend/jobrecrawlconsumer"
 	"career-tool-backend/jobs"
 	"career-tool-backend/persona"
 	"career-tool-backend/personamatchconsumer"
@@ -139,6 +141,8 @@ func runHTTPServer() {
 	personamatchconsumer.StartSweeper(context.Background())
 	personarecomputeconsumer.Start(context.Background())
 	personarecomputeconsumer.StartSweeper(context.Background())
+	jobrecrawlconsumer.Start(context.Background())
+	jobrecrawlconsumer.StartSweeper(context.Background())
 	// The catch-up for events that were missed (step 134): jobs without any match are queued for the same worker,
 	// once shortly after start and then every 10 minutes.
 	jobmatchconsumer.StartSweeper(context.Background())
@@ -163,6 +167,9 @@ func runHTTPServer() {
 	http.HandleFunc("/dashboard/new-jobs", jobs.NewJobsWidgetHandler)
 	http.HandleFunc("/dashboard/recent-jobs", jobs.RecentJobsWidgetHandler)
 	http.HandleFunc("/jobs/stats", jobs.StatsHandler)
+	http.HandleFunc("/jobs/recrawl", jobrecrawl.RequestHandler)
+	http.HandleFunc("/jobs/recrawl/status", jobrecrawl.StatusHandler)
+	http.HandleFunc("/jobs/recrawl/cancel", jobrecrawl.CancelHandler)
 	http.HandleFunc("/jobs/match", jobMatchHandler)
 	http.HandleFunc("/jobs/match/run", jobMatchRunHandler)
 	http.HandleFunc("/job-requirements", jobRequirementsHandler)
@@ -208,6 +215,8 @@ func runHTTPServer() {
 	http.HandleFunc("/events/job-found-profile-rules", profilejobmatchconsumer.EventHandler)
 	http.HandleFunc("/events/job-found-persona-matches", personamatchconsumer.EventHandler)
 	http.HandleFunc("/events/persona-changed-recompute", personarecomputeconsumer.EventHandler)
+	http.HandleFunc("/events/job-recrawl", jobrecrawlconsumer.EventHandler)
+	http.HandleFunc("/events/job-description-changed-persona-matches", personamatchconsumer.EventHandler)
 	http.HandleFunc("/events/job-deleted-comments", jobdeletedconsumers.JobCommentsDeleteHandler)
 	http.HandleFunc("/events/job-deleted-company", jobdeletedconsumers.CompanyDeleteHandler)
 	http.HandleFunc("/events/job-deleted-persona-matches", jobdeletedconsumers.PersonaMatchJobDeletedHandler)

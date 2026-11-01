@@ -13,6 +13,8 @@ import { JobBoardUsage } from '../JobBoard/JobBoardUsage'
 import { PersonaMatchesCard } from './PersonaMatchesCard'
 import { InfoCard } from './InfoCard'
 import { JobRequirements } from './JobRequirements'
+import { JobRecrawlButton, JobRecrawlNotice } from './JobRecrawl'
+import { useRecrawl } from '../JobsPage/useRecrawl'
 
 const JOBS_PATH = '/tools/career/jobs'
 
@@ -45,6 +47,26 @@ function FactChip({ icon, children }: { icon: React.ReactNode; children: React.R
 export function JobDetailsPage() {
   const [job, setJob] = useState<Job | null>(null)
   const [error, setError] = useState('')
+  // A recrawl of this job (step 148): when a job's crawl finishes the job is read again so the new description shows. The batch is
+  // remembered under this job's own key, so a reload while it runs picks it up again.
+  const jobId = new URLSearchParams(window.location.search).get('id') ?? ''
+  // Bumped after a refresh: the persona scores are made again from the new text (a "career.job.description_changed" event), so the card asks again.
+  const [scoresKey, setScoresKey] = useState(0)
+  const recrawl = useRecrawl(
+    () => {
+      if (jobId === '') return
+      fetchJob(jobId)
+        .then((fresh) => {
+          setJob(fresh)
+          setScoresKey((k) => k + 1)
+        })
+        .catch(() => {
+          // The page keeps what it has; the notice already says how the recrawl ended.
+        })
+    },
+    () => undefined,
+    jobId,
+  )
 
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get('id')
@@ -92,18 +114,21 @@ export function JobDetailsPage() {
                   <Decor shape="diamond" accent={PAGE_ACCENT} />
                   <div className="relative flex items-start justify-between gap-4">
                     <h1 className="text-2xl font-semibold">{job.title}</h1>
-                    {job.sourceUrl !== '' && (
-                      <a
-                        href={job.sourceUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        title="Open the original posting"
-                        className="flex shrink-0 items-center gap-1.5 rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-700 transition-colors hover:bg-gray-50"
-                      >
-                        <ExternalLinkIcon />
-                        Open original
-                      </a>
-                    )}
+                    <div className="flex shrink-0 items-center gap-2">
+                      <JobRecrawlButton job={job} recrawl={recrawl} />
+                      {job.sourceUrl !== '' && (
+                        <a
+                          href={job.sourceUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          title="Open the original posting"
+                          className="flex shrink-0 items-center gap-1.5 rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-700 transition-colors hover:bg-gray-50"
+                        >
+                          <ExternalLinkIcon />
+                          Open original
+                        </a>
+                      )}
+                    </div>
                   </div>
 
                   <ul className="relative mt-4 flex flex-wrap gap-2 text-sm">
@@ -134,6 +159,7 @@ export function JobDetailsPage() {
                     {job.location && <FactChip icon={<TargetIcon className="h-4 w-4" />}>{job.location}</FactChip>}
                     {job.postedAt && <FactChip icon={<ClockIcon className="h-4 w-4" />}>{`Posted ${job.postedAt}`}</FactChip>}
                   </ul>
+                  <JobRecrawlNotice recrawl={recrawl} />
                 </div>
 
                 <p className="whitespace-pre-wrap text-[15px] leading-relaxed text-gray-800">
@@ -177,7 +203,7 @@ export function JobDetailsPage() {
                 </InfoCard>
               )}
 
-              <PersonaMatchesCard jobId={job.id} />
+              <PersonaMatchesCard jobId={job.id} reloadKey={scoresKey} />
 
               <JobBoardUsage jobId={job.id} />
 

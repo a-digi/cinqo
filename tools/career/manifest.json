@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.0.547",
+  "version": "0.0.553",
   "authors": [
     { "name": "Anes Detit", "email": "tafa.andet@googlemail.com" }
   ],
@@ -441,6 +441,21 @@
     {
       "method": "POST",
       "path_suffix": "portal-links/crawl-job-details-now",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "jobs/recrawl",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "jobs/recrawl/status",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "jobs/recrawl/cancel",
       "required_scope": "tool:career:portals"
     },
     {
@@ -903,6 +918,14 @@
     {
       "topic": "career.job.found",
       "path_suffix": "events/job-found-persona-matches"
+    },
+    {
+      "topic": "career.job.recrawl_requested",
+      "path_suffix": "events/job-recrawl"
+    },
+    {
+      "topic": "career.job.description_changed",
+      "path_suffix": "events/job-description-changed-persona-matches"
     },
     {
       "topic": "career.job.deleted",

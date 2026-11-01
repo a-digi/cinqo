@@ -103,7 +103,7 @@ func TestTheSweeperRunsOnATimerAndStops(t *testing.T) {
 	if n := atomic.LoadInt32(&calls); n != 0 {
 		t.Errorf("a sweep ran %d time(s) before the start delay", n)
 	}
-	waitFor(t, "four sweeps", func() bool { return atomic.LoadInt32(&calls) >= 4 })
+	waitFor(t, "four sweeps, two of them queued", func() bool { return atomic.LoadInt32(&calls) >= 4 && len(c.queue) >= 2 })
 	if len(c.queue) < 2 {
 		t.Errorf("sweeps after the panic and the error did not queue: %d waiting", len(c.queue))
 	}

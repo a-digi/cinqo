@@ -10,20 +10,22 @@ import { InfoCard } from './InfoCard'
 // personas of every profile score, best first. The scores are made by themselves when a job is found; "Recalculate" scores
 // the job again now (after a persona was changed, say). A persona with nothing to compare (no skills and no title) has no
 // score, which is not the same as 0%. See plan/ai/tools/career/step-141-persona-job-match.md.
-export function PersonaMatchesCard({ jobId }: { jobId: string }) {
+// reloadKey is bumped by the page when the job's description was refreshed (step 148): the scores are made again from the new text, so
+// the card asks for them again, keeping what it shows until the new ones arrive.
+export function PersonaMatchesCard({ jobId, reloadKey = 0 }: { jobId: string; reloadKey?: number }) {
   const [data, setData] = useState<JobPersonaMatches | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
-    setData(null)
+    setData((previous) => (reloadKey === 0 ? null : previous))
     setError('')
     fetchJobPersonaMatches(jobId)
       .then(setData)
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : String(err))
       })
-  }, [jobId])
+  }, [jobId, reloadKey])
 
   function recalculate() {
     setError('')

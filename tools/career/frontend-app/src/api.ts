@@ -1,4 +1,5 @@
 // api.ts — thin fetch helpers over this tool's own proxy routes
+import type { BatchStatus, SkippedJob } from './Components/JobsPage/recrawlRules'
 // (http.go, step 5), the human-facing mirror of steps 3/4/8/10's own
 // MCP tools. Same PROXY_BASE convention browser's own api.ts already
 // established: /api/v1/tools/{slug}/proxy/{path_suffix}.
@@ -215,6 +216,10 @@ export interface Job {
   title: string
   company: string
   companyId?: string
+  portalLinkId?: string
+  // canRecrawl (step 148): the job has a posting URL and a portal link with job detail crawl instructions, so it can be recrawled
+  // for a fresh description. Absent from a backend that predates it.
+  canRecrawl?: boolean
   portalId?: string
   portalName?: string
   location?: string
@@ -2027,6 +2032,65 @@ export async function applyProfileMatchRules(profileId: string, dryRun: boolean,
       : `failed to apply the rules (${String(res.status)})`,
     null,
   )
+}
+
+// --- recrawl jobs for a fresh description (step 148) ---
+
+// What a request to recrawl jobs answered: the batch to follow, how many jobs were queued, and the ones refused at once.
+export interface RecrawlStarted {
+  batchId: string
+  accepted: number
+  skipped: SkippedJob[]
+}
+
+// A request that queued nothing (400): the server's words and the jobs it skipped with their reasons.
+export class RecrawlRefused extends Error {
+  readonly skipped: SkippedJob[]
+  constructor(message: string, skipped: SkippedJob[]) {
+    super(message)
+    this.name = 'RecrawlRefused'
+    this.skipped = skipped
+  }
+}
+
+// Queues a recrawl of the jobs, one event each, however many there are. The crawling happens on the server, one job after the other.
+export async function requestRecrawl(jobIds: string[]): Promise<RecrawlStarted> {
+  const res = await fetch(`${PROXY_BASE}/jobs/recrawl`, { method: 'POST', credentials: 'include', body: JSON.stringify({ jobIds }) })
+  if (res.status === 202) return (await res.json()) as RecrawlStarted
+  const text = await res.text()
+  if (res.status === 400) {
+    try {
+      const body = JSON.parse(text) as { error?: string; skipped?: SkippedJob[] }
+      throw new RecrawlRefused(body.error ?? 'none of these jobs can be recrawled', body.skipped ?? [])
+    } catch (err) {
+      if (err instanceof RecrawlRefused) throw err
+      throw new Error(text.trim() || 'failed to start the recrawl (400)')
+    }
+  }
+  throw new Error(`failed to start the recrawl (${String(res.status)})`)
+}
+
+// The progress of a batch: the numbers for all of it and the first `limit` jobs (1 is enough for the numbers). null when the server no
+// longer knows the batch (404).
+export async function fetchRecrawlStatus(batchId: string, limit: number): Promise<BatchStatus | null> {
+  const res = await fetch(`${PROXY_BASE}/jobs/recrawl/status?batchId=${encodeURIComponent(batchId)}&limit=${String(limit)}`, {
+    credentials: 'include',
+  })
+  if (res.status === 404) return null
+  if (!res.ok) throw new Error(`failed to read the recrawl (${String(res.status)})`)
+  return (await res.json()) as BatchStatus
+}
+
+// Stops the batch's jobs that have not started; a job being crawled finishes its page. Returns how many were cancelled.
+export async function cancelRecrawl(batchId: string): Promise<number> {
+  const res = await fetch(`${PROXY_BASE}/jobs/recrawl/cancel`, {
+    method: 'POST',
+    credentials: 'include',
+    body: JSON.stringify({ batchId }),
+  })
+  if (res.status === 404) return 0
+  if (!res.ok) throw new Error(`failed to stop the recrawl (${String(res.status)})`)
+  return ((await res.json()) as { cancelled: number }).cancelled
 }
 
 export async function deleteProfileMatchRule(id: string): Promise<void> {

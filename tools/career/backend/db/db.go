@@ -884,6 +884,23 @@ CREATE TABLE IF NOT EXISTS data_fixes (
     detail  TEXT
 );
 
+-- job_recrawl_requests (step 148): the request to recrawl a job for a fresh description, one row per job. It is the memory behind
+-- the "career.job.recrawl_requested" events (an event is best effort; a queued row that no event reached is picked up by the
+-- sweeper) and the progress the Jobs page reads. state: queued | running | done | cancelled. outcome (when done): refreshed |
+-- unchanged | filled | kept | failed | skipped, with a reason for the last two. A request belongs to a batch (one click of the
+-- button); deleting the job deletes its request.
+CREATE TABLE IF NOT EXISTS job_recrawl_requests (
+    job_id       TEXT PRIMARY KEY REFERENCES jobs(id) ON DELETE CASCADE,
+    batch_id     TEXT NOT NULL,
+    requested_at TEXT NOT NULL,
+    state        TEXT NOT NULL,
+    outcome      TEXT,
+    reason       TEXT,
+    finished_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS job_recrawl_requests_batch_idx ON job_recrawl_requests (batch_id);
+CREATE INDEX IF NOT EXISTS job_recrawl_requests_state_idx ON job_recrawl_requests (state, requested_at);
+
 -- persona_score_state (step 142): for each persona, the fingerprint of the persona data its scores for ALL jobs were last
 -- made from (what the matcher reads of it, plus the engine version) and when. The persona recompute consumer skips a persona
 -- whose current fingerprint equals the stored one, and the sweeper finds the personas whose do not (a missed event, a new

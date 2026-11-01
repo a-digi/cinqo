@@ -98,6 +98,9 @@ type job struct {
 	// MarkJobDetailCrawlFailed. See
 	// plan/ai/tools/career/step-XX-job-detail-crawl-status-eye-icon.md.
 	DetailCrawlStatus string `json:"detailCrawlStatus,omitempty"`
+	// CanRecrawl (step 148) says whether the job can be recrawled for a fresh description: it has a posting URL and a portal link
+	// whose job detail crawl instructions are set. Derived on every read, never stored.
+	CanRecrawl bool `json:"canRecrawl"`
 	// MatchScore/MatchStatus/MatchConversationID/MatchError (step XX)
 	// mirror DetailCrawlStatus's own "read-only, written only via a
 	// dedicated function" posture — resolved via a LEFT JOIN to
@@ -339,6 +342,9 @@ func SearchJobsSorted(query, location string, companyIds []string, portalLinkId,
 // so the two can never drift apart — a LEFT JOIN (not JOIN) on both
 // hops so a job is never hidden by a portal link, or that link's own
 // portal, having since been deleted out from under it.
+// canRecrawlSQL is the CanRecrawl column of the two job reads (it uses the portal_links alias of jobsFromClause).
+const canRecrawlSQL = `(COALESCE(j.source_url, '') <> '' AND TRIM(COALESCE(pl.job_detail_crawl_instructions, ''), ' ' || char(9) || char(10) || char(13)) <> '')`
+
 const jobsFromClause = `FROM jobs j
 	LEFT JOIN portal_links pl ON pl.id = j.portal_link_id
 	LEFT JOIN portals p ON p.id = pl.portal_id
@@ -389,7 +395,8 @@ func queryJobs(where string, whereArgs []any, limit, offset int, order string) (
 		`SELECT j.id, j.source_url, j.title, j.company, j.company_id, j.portal_link_id, p.id, p.name, j.location, j.description, j.posted_at, j.crawled_at, j.detail_crawl_status, j.source,
 			jm.score, jm.status, jm.conversation_id, jm.error, jm.kind, jm.breakdown_json,
 			cv.status, cv.conversation_id, cv.media_file_id, cv.error, cv.source, cv.cv_document_id,
-			(SELECT COUNT(*) FROM job_board_entries be WHERE be.job_id = j.id)
+			(SELECT COUNT(*) FROM job_board_entries be WHERE be.job_id = j.id),
+			`+canRecrawlSQL+`
 		 `+jobsFromClause+` `+where+` ORDER BY `+order+` LIMIT ? OFFSET ?`,
 		pageArgs...,
 	)
@@ -407,7 +414,7 @@ func queryJobs(where string, whereArgs []any, limit, offset int, order string) (
 		var cvStatus, cvConversationID, cvMediaFileID, cvError, cvSource, cvDocumentID sql.NullString
 		if err := rows.Scan(&j.ID, &j.SourceURL, &j.Title, &company, &companyID, &portalLinkID, &portalID, &portalName, &location, &description, &postedAt, &j.CrawledAt, &detailCrawlStatus, &j.Source,
 			&matchScore, &matchStatus, &matchConversationID, &matchError, &matchKind, &matchBreakdown,
-			&cvStatus, &cvConversationID, &cvMediaFileID, &cvError, &cvSource, &cvDocumentID, &j.BoardProfileCount); err != nil {
+			&cvStatus, &cvConversationID, &cvMediaFileID, &cvError, &cvSource, &cvDocumentID, &j.BoardProfileCount, &j.CanRecrawl); err != nil {
 			return jobsListResult{}, err
 		}
 		j.SourceURL = publicSourceURL(j.SourceURL)
@@ -498,7 +505,8 @@ func GetJobByID(id string) (job, error) {
 		`SELECT j.id, j.source_url, j.title, j.company, j.company_id, j.portal_link_id, p.id, p.name, j.location, j.description, j.posted_at, j.crawled_at, j.detail_crawl_status, j.source,
 			jm.score, jm.status, jm.conversation_id, jm.error, jm.kind, jm.breakdown_json,
 			cv.status, cv.conversation_id, cv.media_file_id, cv.error, cv.source, cv.cv_document_id,
-			(SELECT COUNT(*) FROM job_board_entries be WHERE be.job_id = j.id)
+			(SELECT COUNT(*) FROM job_board_entries be WHERE be.job_id = j.id),
+			`+canRecrawlSQL+`
 		 `+jobsFromClause+` WHERE j.id = ?`,
 		id,
 	)
@@ -509,7 +517,7 @@ func GetJobByID(id string) (job, error) {
 	var cvStatus, cvConversationID, cvMediaFileID, cvError, cvSource, cvDocumentID sql.NullString
 	err := row.Scan(&j.ID, &j.SourceURL, &j.Title, &company, &companyID, &portalLinkID, &portalID, &portalName, &location, &description, &postedAt, &j.CrawledAt, &detailCrawlStatus, &j.Source,
 		&matchScore, &matchStatus, &matchConversationID, &matchError, &matchKind, &matchBreakdown,
-		&cvStatus, &cvConversationID, &cvMediaFileID, &cvError, &cvSource, &cvDocumentID, &j.BoardProfileCount)
+		&cvStatus, &cvConversationID, &cvMediaFileID, &cvError, &cvSource, &cvDocumentID, &j.BoardProfileCount, &j.CanRecrawl)
 	switch {
 	case err == sql.ErrNoRows:
 		return job{}, ErrUnknownJob
@@ -656,6 +664,34 @@ func ListJobsForDetailCrawl(portalLinkID string) ([]JobDetailCrawlTarget, error)
 		targets = append(targets, t)
 	}
 	return targets, rows.Err()
+}
+
+// RecrawlTarget is what a recrawl of one job needs to know about it (step 148): where its page is, which portal link's
+// instructions read it, whether it was added by hand, and the description it has now.
+type RecrawlTarget struct {
+	ID           string
+	Title        string
+	Source       string // SourceCrawled or SourceManual
+	SourceURL    string // as stored, not the display form
+	PortalLinkID string // empty when the job has no portal link
+	Description  string
+}
+
+// GetRecrawlTarget reads one job's RecrawlTarget; ErrUnknownJob when there is none.
+func GetRecrawlTarget(id string) (RecrawlTarget, error) {
+	var t RecrawlTarget
+	var link, desc sql.NullString
+	err := db.JobsDB.QueryRow(
+		`SELECT id, title, source, COALESCE(source_url, ''), portal_link_id, description FROM jobs WHERE id = ?`, id,
+	).Scan(&t.ID, &t.Title, &t.Source, &t.SourceURL, &link, &desc)
+	if err == sql.ErrNoRows {
+		return RecrawlTarget{}, ErrUnknownJob
+	}
+	if err != nil {
+		return RecrawlTarget{}, err
+	}
+	t.PortalLinkID, t.Description = link.String, desc.String
+	return t, nil
 }
 
 // ListDistinctJobLocations returns every distinct non-empty location

@@ -1,5 +1,6 @@
 // Package personamatchconsumer is the PersonaJobMatchConsumer (step 141): it listens to "career.job.found", the event
-// every genuinely new job sends, and scores the job against every persona of every profile with the manual engine (no AI),
+// every genuinely new job sends (and, since step 148, to "career.job.description_changed", sent when a recrawl changed a job's text,
+// so the job is scored again), and scores the job against every persona of every profile with the manual engine (no AI),
 // storing one row per persona that could judge it (personamatch). The route only validates the event and queues the job
 // id; one worker handles the queued ids in batches, like the other consumers of this event, and a sweeper hands it the
 // jobs that have no rows (existing jobs, missed events). See plan/ai/tools/career/step-141-persona-job-match.md.

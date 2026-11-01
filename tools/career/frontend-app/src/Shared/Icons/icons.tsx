@@ -212,6 +212,16 @@ export function MatchIcon() {
   )
 }
 
+// RefreshIcon (step 148) — marks "Recrawl": two arrows chasing each other round a circle.
+export function RefreshIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">
+      <path d="M16.5 10a6.5 6.5 0 0 1-11.2 4.5M3.5 10a6.5 6.5 0 0 1 11.2-4.5" />
+      <path d="M14.8 2.8v3h-3M5.2 17.2v-3h3" />
+    </svg>
+  )
+}
+
 // RobotIcon (step 60) — marks "Check Progress - AI" (a
 // generate-crawl-instructions conversation currently in flight),
 // distinct from SparkleIcon's own "start this with AI" meaning.
