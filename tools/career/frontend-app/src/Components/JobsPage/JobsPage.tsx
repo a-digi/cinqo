@@ -69,6 +69,7 @@ import {
   type JobsListState,
 } from './jobsUrlState'
 import { writeAddress, type AddressMode } from '../../Shared/AddressState/writeAddress'
+import { limitFromText, MAX_PAGE_LIMIT, MIN_PAGE_LIMIT } from '../../Shared/AddressState/paging'
 import {
   REMOVE_CONFIRMATION,
   builderPathForJob,
@@ -83,7 +84,6 @@ import { Typewriter } from '../../Shared/Typewriter/Typewriter'
 import { truncate } from '../../Shared/Text/transform'
 import { PageTips } from '../../Shared/PageTips/PageTips'
 
-const PAGE_SIZE = 50
 const SEARCH_DEBOUNCE_MS = 300
 const MAX_LOCATION_DISPLAY_LENGTH = 50
 const JOB_DETAILS_PATH = '/tools/career/job-details'
@@ -111,9 +111,12 @@ export function JobsPage() {
   // value follows. So Back, Forward, a link, the sidebar entry and a reload all show the same list.
   const url = useJobsUrl(JOBS_PATH)
   const view = url.state
-  const { page, location, companyIds, portalId, sort } = view
+  const { page, location, companyIds, portalId, sort, limit } = view
   // The text in the search box while it is being typed; it reaches the address after SEARCH_DEBOUNCE_MS.
   const [queryInput, setQueryInput] = useState(url.state.query)
+  // The per-page box: applied on Enter or when it loses focus, only when it is a number from 1 to 200 (step 138).
+  const [limitInput, setLimitInput] = useState(String(url.state.limit))
+  const limitFocused = useRef(false)
   // Bumped to load the list again with the same view (after a delete, a match, an added job).
   const [reloadTick, setReloadTick] = useState(0)
   const [companies, setCompanies] = useState<Company[]>([])
@@ -194,13 +197,13 @@ export function JobsPage() {
   useEffect(() => {
     setError('')
     const request = ++latestRequest.current
-    fetchJobs(view.query, view.location, view.companyIds, view.portalId, PAGE_SIZE, (view.page - 1) * PAGE_SIZE, view.sort)
+    fetchJobs(view.query, view.location, view.companyIds, view.portalId, view.limit, (view.page - 1) * view.limit, view.sort)
       .then((result) => {
         if (request !== latestRequest.current) return
         setJobs(result.jobs)
         setTotal(result.total)
         // A page past the last one (an address typed by hand, jobs deleted since) becomes the last page.
-        const last = clampPage(view.page, result.total, PAGE_SIZE)
+        const last = clampPage(view.page, result.total, view.limit)
         if (last !== view.page) go({ page: last }, 'replace')
       })
       .catch((err: unknown) => {
@@ -251,6 +254,7 @@ export function JobsPage() {
   // parameter) is rewritten as the canonical one, replacing the entry.
   useEffect(() => {
     setQueryInput((current) => (current.trim() === url.state.query ? current : url.state.query))
+    if (!limitFocused.current) setLimitInput(String(url.state.limit))
     if (hasJobsFilters(url.state)) setShowFilters(true)
     if (!isCanonicalJobsSearch(window.location.search)) go({}, 'replace')
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -282,6 +286,17 @@ export function JobsPage() {
 
   function handleSortChange(value: string) {
     go({ sort: value === 'match' ? 'match' : 'newest', page: 1 })
+  }
+
+  // A number from 1 to 200 is applied (back to page 1); anything else puts the last good value back.
+  function commitLimit() {
+    const n = limitFromText(limitInput)
+    if (n === null) {
+      setLimitInput(String(limit))
+      return
+    }
+    setLimitInput(String(n))
+    if (n !== limit) go({ limit: n, page: 1 })
   }
 
   function handlePageChange(nextPage: number) {
@@ -1102,6 +1117,31 @@ export function JobsPage() {
                 value={sort}
                 onChange={handleSortChange}
               />
+              <label className="flex items-center gap-2 text-sm text-gray-600">
+                Show
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={limitInput}
+                  onChange={(e) => {
+                    setLimitInput(e.target.value)
+                  }}
+                  onFocus={() => {
+                    limitFocused.current = true
+                  }}
+                  onBlur={() => {
+                    limitFocused.current = false
+                    commitLimit()
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') commitLimit()
+                  }}
+                  aria-label={`Jobs per page, ${String(MIN_PAGE_LIMIT)} to ${String(MAX_PAGE_LIMIT)}`}
+                  title={`How many jobs to show per page (${String(MIN_PAGE_LIMIT)} to ${String(MAX_PAGE_LIMIT)})`}
+                  className="w-16 rounded-md border border-gray-300 px-2 py-1.5 text-center text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
+                />
+                per page
+              </label>
               <button
                 type="button"
                 aria-expanded={showFilters}
@@ -1285,7 +1325,7 @@ export function JobsPage() {
               </div>
             </div>
 
-            <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={handlePageChange} />
+            <Pagination page={page} pageSize={limit} total={total} onPageChange={handlePageChange} />
           </div>
 
           {/* Refetched when a job is added, deleted or finishes matching / its CV: the page's

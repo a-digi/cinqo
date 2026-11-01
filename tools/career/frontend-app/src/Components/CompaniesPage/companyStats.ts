@@ -1,30 +1,4 @@
-// Pure numbers for the Companies page's overview, worked out from the companies already
-// loaded. No React, so they can be script-checked.
-export interface CompanyLike {
-  jobCount: number
-  recruiterCount: number
-}
-
-export interface CompanySummary {
-  companies: number
-  // Companies that have at least one linked job / at least one recruiter.
-  withJobs: number
-  withRecruiters: number
-  // Sums over all companies.
-  jobs: number
-  recruiters: number
-}
-
-export function summarizeCompanies(companies: CompanyLike[]): CompanySummary {
-  const s: CompanySummary = { companies: companies.length, withJobs: 0, withRecruiters: 0, jobs: 0, recruiters: 0 }
-  for (const c of companies) {
-    if (c.jobCount > 0) s.withJobs++
-    if (c.recruiterCount > 0) s.withRecruiters++
-    s.jobs += c.jobCount
-    s.recruiters += c.recruiterCount
-  }
-  return s
-}
+// Small pure helpers shared by the list pages (the overview of the Companies list itself comes from the server, step 137).
 
 // "3 companies", "1 company".
 export function plural(n: number, one: string, many: string): string {

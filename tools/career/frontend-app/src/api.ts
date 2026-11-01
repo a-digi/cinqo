@@ -1153,6 +1153,30 @@ export async function fetchCompanies(): Promise<Company[]> {
   return data.companies
 }
 
+// The overview of ALL companies, whatever the search or the page (step 137).
+export interface CompanyOverview {
+  companies: number
+  withJobs: number
+  withRecruiters: number
+  jobs: number
+  recruiters: number
+}
+
+// One searched page of the Companies list: the companies on it, how many companies match the search (the pager's total) and
+// the overview of all of them.
+export interface CompaniesPage {
+  companies: Company[]
+  total: number
+  summary: CompanyOverview
+}
+
+export async function fetchCompaniesPage(query: string, limit: number, offset: number): Promise<CompaniesPage> {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  if (query !== '') params.set('query', query)
+  const res = await fetch(`${PROXY_BASE}/companies?${params.toString()}`, { credentials: 'include' })
+  return jsonOrThrow<CompaniesPage>(res, 'load companies')
+}
+
 export async function createCompany(name: string, description: string): Promise<Company[]> {
   const res = await fetch(`${PROXY_BASE}/companies`, {
     method: 'POST',

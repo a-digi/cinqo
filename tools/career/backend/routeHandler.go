@@ -28,6 +28,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 
 	"career-tool-backend/companies"
 	"career-tool-backend/cvbuilder"
@@ -880,12 +881,32 @@ type companyUpdateRequest struct {
 func companiesHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		list, err := companies.ListCompanies()
+		// No parameters: every company, as always. query, limit and offset (step 137) give the Companies page one searched
+		// page of them; total and summary are in every answer.
+		q := r.URL.Query()
+		limit, offset := 0, 0
+		if raw := q.Get("limit"); raw != "" {
+			n, err := strconv.Atoi(raw)
+			if err != nil {
+				http.Error(w, "limit must be a whole number", http.StatusBadRequest)
+				return
+			}
+			limit = companies.ClampCompaniesLimit(n)
+		}
+		if raw := q.Get("offset"); raw != "" {
+			n, err := strconv.Atoi(raw)
+			if err != nil {
+				http.Error(w, "offset must be a whole number", http.StatusBadRequest)
+				return
+			}
+			offset = n
+		}
+		page, err := companies.ListCompaniesPage(q.Get("query"), limit, offset)
 		if err != nil {
 			http.Error(w, "failed to list companies: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		db.WriteJSON(w, map[string]any{"companies": list})
+		db.WriteJSON(w, page)
 
 	case http.MethodPost:
 		var body companyRequest

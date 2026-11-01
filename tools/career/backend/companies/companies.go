@@ -91,37 +91,116 @@ func CreateCompany(name, description string) (string, error) {
 	return id, nil
 }
 
-// ListCompanies returns every company with its own linked job count
-// and recruiter count — both plain COUNT(*) subqueries, recomputed
-// every call (no caching/denormalization needed at this tool's
-// realistic scale). Same "list is enough, no standalone getter"
-// reasoning listProfiles/listPersonas already use.
+// ListCompanies returns every company with its own linked job count and recruiter count — both plain COUNT(*) subqueries,
+// recomputed every call (no caching/denormalization needed at this tool's realistic scale). Same "list is enough, no
+// standalone getter" reasoning listProfiles/listPersonas already use. The POST and PUT answers and the MCP tool use it.
 func ListCompanies() ([]company, error) {
-	rows, err := db.JobsDB.Query(
-		`SELECT c.id, c.name, c.description, c.created_at, c.updated_at,
-		        (SELECT COUNT(*) FROM jobs WHERE jobs.company_id = c.id),
-		        (SELECT COUNT(*) FROM recruiters WHERE recruiters.company_id = c.id)
-		 FROM companies c ORDER BY c.created_at ASC`,
-	)
+	r, err := ListCompaniesPage("", 0, 0)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	return r.Companies, nil
+}
 
-	companies := []company{}
+// The limits of a page of companies (step 137): a limit that is given is clamped to 1 through MaxCompaniesLimit.
+const (
+	MinCompaniesLimit = 1
+	MaxCompaniesLimit = 200
+)
+
+// CompanySummary is the overview of ALL companies, whatever the search or the page: how many there are, how many have a
+// linked job and how many a recruiter, and the sums of the two counts.
+type CompanySummary struct {
+	Companies      int `json:"companies"`
+	WithJobs       int `json:"withJobs"`
+	WithRecruiters int `json:"withRecruiters"`
+	Jobs           int `json:"jobs"`
+	Recruiters     int `json:"recruiters"`
+}
+
+// CompaniesPage is one page of the list: the companies on it, how many companies match the search (the pager's total),
+// and the overview of all of them.
+type CompaniesPage struct {
+	Companies []company      `json:"companies"`
+	Total     int            `json:"total"`
+	Summary   CompanySummary `json:"summary"`
+}
+
+// likePattern turns typed text into a LIKE pattern that matches it literally anywhere: the text is trimmed and lower-cased
+// (SQLite folds ASCII letters only, like the Jobs search) and its `\`, `%` and `_` are escaped, so a `%` or `_` the person
+// typed is a character, not a wildcard. "" means no search.
+func likePattern(query string) string {
+	q := strings.ToLower(strings.TrimSpace(query))
+	if q == "" {
+		return ""
+	}
+	q = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(q)
+	return "%" + q + "%"
+}
+
+// ClampCompaniesLimit applies the range to a limit that was given.
+func ClampCompaniesLimit(limit int) int {
+	return min(max(limit, MinCompaniesLimit), MaxCompaniesLimit)
+}
+
+// ListCompaniesPage lists the companies whose name or description contains query (all of them for an empty query),
+// oldest first with the id as a tie-break (so a page never repeats or skips a company created in the same second). limit
+// <= 0 means no limit, which is what the other pages' dropdowns and the MCP tool use; a positive limit is clamped to the
+// range and offset (negative counts as 0) says how many matching companies to skip. Total counts every match, and the
+// summary counts every company, neither depends on limit or offset.
+func ListCompaniesPage(query string, limit, offset int) (CompaniesPage, error) {
+	pattern := likePattern(query)
+	where := ` WHERE (? = '' OR LOWER(c.name) LIKE ? ESCAPE '\' OR LOWER(c.description) LIKE ? ESCAPE '\')`
+	args := []any{pattern, pattern, pattern}
+
+	var page CompaniesPage
+	if err := db.JobsDB.QueryRow(`SELECT COUNT(*) FROM companies c`+where, args...).Scan(&page.Total); err != nil {
+		return CompaniesPage{}, err
+	}
+
+	q := `SELECT c.id, c.name, c.description, c.created_at, c.updated_at,
+		        (SELECT COUNT(*) FROM jobs WHERE jobs.company_id = c.id),
+		        (SELECT COUNT(*) FROM recruiters WHERE recruiters.company_id = c.id)
+		 FROM companies c` + where + ` ORDER BY c.created_at ASC, c.id ASC`
+	if limit > 0 {
+		q += ` LIMIT ? OFFSET ?`
+		args = append(args, ClampCompaniesLimit(limit), max(offset, 0))
+	}
+	rows, err := db.JobsDB.Query(q, args...)
+	if err != nil {
+		return CompaniesPage{}, err
+	}
+	page.Companies = []company{}
 	for rows.Next() {
 		var c company
 		var updatedAt sql.NullString
 		if err := rows.Scan(&c.ID, &c.Name, &c.Description, &c.CreatedAt, &updatedAt, &c.JobCount, &c.RecruiterCount); err != nil {
-			return nil, err
+			rows.Close()
+			return CompaniesPage{}, err
 		}
 		c.UpdatedAt = updatedAt.String
-		companies = append(companies, c)
+		page.Companies = append(page.Companies, c)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		rows.Close()
+		return CompaniesPage{}, err
 	}
-	return companies, nil
+	rows.Close() // jobs.db has a single connection: close before the next query
+
+	err = db.JobsDB.QueryRow(
+		`SELECT COUNT(*),
+		        COALESCE(SUM(CASE WHEN x.jc > 0 THEN 1 ELSE 0 END), 0),
+		        COALESCE(SUM(CASE WHEN x.rc > 0 THEN 1 ELSE 0 END), 0),
+		        COALESCE(SUM(x.jc), 0),
+		        COALESCE(SUM(x.rc), 0)
+		 FROM (SELECT (SELECT COUNT(*) FROM jobs WHERE jobs.company_id = c.id) AS jc,
+		              (SELECT COUNT(*) FROM recruiters WHERE recruiters.company_id = c.id) AS rc
+		       FROM companies c) x`,
+	).Scan(&page.Summary.Companies, &page.Summary.WithJobs, &page.Summary.WithRecruiters, &page.Summary.Jobs, &page.Summary.Recruiters)
+	if err != nil {
+		return CompaniesPage{}, err
+	}
+	return page, nil
 }
 
 func UpdateCompany(id string, name, description *string) error {
