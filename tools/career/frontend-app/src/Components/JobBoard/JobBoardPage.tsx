@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   createJobStatus,
   deleteJobStatus,
@@ -34,6 +34,9 @@ import {
   totalJobs,
 } from './jobBoardRules'
 import { StatusNameForm } from './StatusNameForm'
+import { useAddressSearch } from '../../Shared/AddressState/useAddressSearch'
+import { writeAddress } from '../../Shared/AddressState/writeAddress'
+import { buildBoardSearch, isCanonicalBoardSearch, parseBoardUrl } from './boardUrlState'
 
 // The drag payload's type: a job id, only ever read back by this page.
 const DRAG_TYPE = 'application/x-career-job'
@@ -54,14 +57,18 @@ export function JobBoardPage({ profileId }: { profileId: string }) {
   const [overColumnId, setOverColumnId] = useState<string | null>(null)
   const [pendingRemove, setPendingRemove] = useState<JobBoardCard | null>(null)
   const [pendingDelete, setPendingDelete] = useState<JobBoardColumn | null>(null)
-  // The order of the cards inside each column: most recently moved first, or best match first (step 129).
-  const [sort, setSort] = useState<BoardSort>('moved')
+  // The order of the cards inside each column: most recently moved first, or best match first (step 129). It is whatever the
+  // ADDRESS says (step 136): the buttons write the address, the address announces itself and the board follows, so Back,
+  // Forward, a reload and a copied link keep the order. The profile is in the path, which is this page's own path.
+  const ownPath = useRef(window.location.pathname).current
+  const address = useAddressSearch(ownPath)
+  const sort: BoardSort = useMemo(() => parseBoardUrl(address.search).sort, [address.search])
   const [adding, setAdding] = useState(false)
 
   useEffect(() => {
     setLoaded(false)
     setError('')
-    Promise.all([fetchProfiles(), fetchJobBoard(profileId)])
+    Promise.all([fetchProfiles(), fetchJobBoard(profileId, sort)])
       .then(([profiles, loadedBoard]) => {
         setProfile(profiles.find((p) => p.id === profileId) ?? null)
         setBoard(loadedBoard)
@@ -75,7 +82,37 @@ export function JobBoardPage({ profileId }: { profileId: string }) {
       .finally(() => {
         setLoaded(true)
       })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profileId])
+
+  // The order changed (a button, Back or Forward): the board is read again in that order; the latest answer wins.
+  const firstOrder = useRef(true)
+  const latestOrderRequest = useRef(0)
+  useEffect(() => {
+    if (firstOrder.current) {
+      firstOrder.current = false
+      return
+    }
+    setError('')
+    const request = ++latestOrderRequest.current
+    fetchJobBoard(profileId, sort)
+      .then((loadedBoard) => {
+        if (request === latestOrderRequest.current) setBoard(loadedBoard)
+      })
+      .catch((err: unknown) => {
+        if (request === latestOrderRequest.current) setError(err instanceof Error ? err.message : String(err))
+      })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sort])
+
+  // An address that is not exactly the canonical one (`?sort=moved`, a foreign parameter) is rewritten as the canonical one,
+  // replacing the entry. Runs on every change of the address.
+  useEffect(() => {
+    if (!isCanonicalBoardSearch(window.location.search)) {
+      writeAddress(window, ownPath, buildBoardSearch(parseBoardUrl(window.location.search)), 'replace')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [address.tick])
 
   // After a failed save the board is read again, so it shows what is really stored.
   function reloadAfterFailure(err: unknown) {
@@ -120,15 +157,11 @@ export function JobBoardPage({ profileId }: { profileId: string }) {
       .catch(reloadAfterFailure)
   }
 
+  // A button changes the order: it writes the address (pushing an entry, so Back returns to the earlier order) and the board
+  // follows.
   function changeSort(next: BoardSort) {
     if (next === sort) return
-    setSort(next)
-    setError('')
-    fetchJobBoard(profileId, next)
-      .then(setBoard)
-      .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : String(err))
-      })
+    writeAddress(window, ownPath, buildBoardSearch({ sort: next }), 'push')
   }
 
   const profileHref = `${VIEW_PROFILE_PATH}?id=${encodeURIComponent(profileId)}`

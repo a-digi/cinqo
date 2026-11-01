@@ -68,7 +68,7 @@ import {
   parseJobsUrl,
   type JobsListState,
 } from './jobsUrlState'
-import { writeJobsAddress, type AddressMode } from './jobsAddress'
+import { writeAddress, type AddressMode } from '../../Shared/AddressState/writeAddress'
 import {
   REMOVE_CONFIRMATION,
   builderPathForJob,
@@ -242,7 +242,7 @@ export function JobsPage() {
   // pushes a history entry (Back returns to the earlier list); the search replaces the entry (typing must not leave an
   // entry per pause). The address then announces itself and `view` follows.
   function go(patch: Partial<JobsListState>, mode: AddressMode = 'push') {
-    writeJobsAddress(window, { ...parseJobsUrl(window.location.search), ...patch }, mode, JOBS_PATH)
+    writeAddress(window, JOBS_PATH, buildJobsSearch({ ...parseJobsUrl(window.location.search), ...patch }), mode)
   }
 
   // The address changed (a link, Back or Forward, the sidebar entry, or this page): the search box shows its search unless

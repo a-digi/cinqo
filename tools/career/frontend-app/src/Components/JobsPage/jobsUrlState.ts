@@ -7,6 +7,9 @@
 // (fixed order, defaults left out, the same state always gives the same address). So write(read(x)) is the canonical
 // form of x, and read(write(s)) is s.
 import type { JobsSort } from '../../api'
+import { cleanText, MAX_TEXT_LENGTH } from '../../Shared/AddressState/addressText'
+
+export { MAX_TEXT_LENGTH }
 
 export interface JobsListState {
   page: number
@@ -19,19 +22,10 @@ export interface JobsListState {
 
 export const DEFAULT_JOBS_STATE: JobsListState = { page: 1, query: '', location: '', companyIds: [], portalId: '', sort: 'newest' }
 
-// The longest search text and location kept (in characters), and the most companies in one address.
-export const MAX_TEXT_LENGTH = 200
+// The most companies in one address. (The longest text is MAX_TEXT_LENGTH, shared with the other pages' address rules.)
 export const MAX_COMPANIES = 50
 // Digits accepted for a page number; more than this is not a page, it is the default.
 const MAX_PAGE_DIGITS = 7
-
-// Control characters become a space, the ends are trimmed, and the text is cut at MAX_TEXT_LENGTH characters.
-function cleanText(raw: string | null): string {
-  if (raw === null) return ''
-  // eslint-disable-next-line no-control-regex
-  const spaced = raw.replace(/[\u0000-\u001F\u007F]+/g, ' ').trim()
-  return Array.from(spaced).slice(0, MAX_TEXT_LENGTH).join('').trim()
-}
 
 function cleanPage(raw: string | null | number): number {
   const text = typeof raw === 'number' ? (Number.isInteger(raw) ? String(raw) : '') : (raw ?? '').trim()

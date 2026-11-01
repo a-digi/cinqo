@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { fetchRecruiters, updateRecruiter, removeRecruiter, fetchCompanies, type Recruiter, type Company } from '../../api'
 import { Dropdown } from '../Dropdown/Dropdown'
 import { PlusIcon, UsersIcon } from '../../Shared/Icons/icons'
@@ -7,9 +7,12 @@ import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { SummaryRail } from '../../Shared/SummaryRail/SummaryRail'
 import { ACCENTS, PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
 import { percentOrNull, plural } from '../CompaniesPage/companyStats'
-import { COMPANIES_PATH, NEW_RECRUITER_PATH, VIEW_COMPANY_PATH } from '../../paths'
+import { COMPANIES_PATH, NEW_RECRUITER_PATH, RECRUITERS_PATH, VIEW_COMPANY_PATH } from '../../paths'
 import { recruiterName, summarizeRecruiters } from './recruiterStats'
 import { PageTips } from '../../Shared/PageTips/PageTips'
+import { useAddressSearch } from '../../Shared/AddressState/useAddressSearch'
+import { writeAddress } from '../../Shared/AddressState/writeAddress'
+import { buildRecruitersSearch, isCanonicalRecruitersSearch, parseRecruitersUrl } from './recruitersUrlState'
 
 // Recruiters are forced to be mapped to an existing Company, never
 // implicit — the same pattern step 8/10 already established for
@@ -21,35 +24,49 @@ import { PageTips } from '../../Shared/PageTips/PageTips'
 export function RecruitersPage() {
   const [companies, setCompanies] = useState<Company[]>([])
   const [recruiters, setRecruiters] = useState<Recruiter[]>([])
-  const [filterCompanyId, setFilterCompanyId] = useState(() => new URLSearchParams(window.location.search).get('companyId') ?? '')
+  // The company filter is whatever the ADDRESS says (step 136): choosing a company writes the address, the address announces
+  // itself, and the list follows, so Back, Forward, a reload and a copied link all show the same list.
+  const address = useAddressSearch(RECRUITERS_PATH)
+  const filterCompanyId = useMemo(() => parseRecruitersUrl(address.search).companyId, [address.search])
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editFirstName, setEditFirstName] = useState('')
   const [editLastName, setEditLastName] = useState('')
   const [editEmail, setEditEmail] = useState('')
   const [error, setError] = useState('')
 
-  function load(companyIdOverride?: string) {
+  // Loads the recruiters of the company the address names (all of them when it names none); the latest request wins.
+  const latestRequest = useRef(0)
+  useEffect(() => {
     setError('')
-    fetchRecruiters(companyIdOverride ?? filterCompanyId)
-      .then(setRecruiters)
-      .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : String(err))
+    const request = ++latestRequest.current
+    fetchRecruiters(filterCompanyId)
+      .then((list) => {
+        if (request === latestRequest.current) setRecruiters(list)
       })
-  }
+      .catch((err: unknown) => {
+        if (request === latestRequest.current) setError(err instanceof Error ? err.message : String(err))
+      })
+  }, [filterCompanyId])
 
   useEffect(() => {
-    load()
     fetchCompanies()
       .then(setCompanies)
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : String(err))
       })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // An address that is not exactly the canonical one (an empty `companyId=`, a foreign parameter) is rewritten as the
+  // canonical one, replacing the entry. Runs on every change of the address.
+  useEffect(() => {
+    if (!isCanonicalRecruitersSearch(window.location.search)) {
+      writeAddress(window, RECRUITERS_PATH, buildRecruitersSearch(parseRecruitersUrl(window.location.search)), 'replace')
+    }
+  }, [address.tick])
+
+  // Choosing a company pushes an entry (Back returns to the earlier filter).
   function handleFilterChange(id: string) {
-    setFilterCompanyId(id)
-    load(id)
+    writeAddress(window, RECRUITERS_PATH, buildRecruitersSearch({ companyId: id }), 'push')
   }
 
   function startEdit(r: Recruiter) {
