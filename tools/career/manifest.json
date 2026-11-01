@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.0.553",
+  "version": "0.0.555",
   "authors": [
     { "name": "Anes Detit", "email": "tafa.andet@googlemail.com" }
   ],
@@ -256,6 +256,11 @@
     {
       "method": "DELETE",
       "path_suffix": "jobs",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "jobs/delete",
       "required_scope": "tool:career:jobs"
     },
     {

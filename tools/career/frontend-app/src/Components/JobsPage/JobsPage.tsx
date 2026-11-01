@@ -3,6 +3,8 @@ import {
   fetchJobs,
   fetchJob,
   removeJob,
+  deleteJobs,
+  DeleteJobsError,
   matchUnmatchedJobs,
   fetchCompanies,
   fetchPortals,
@@ -62,6 +64,7 @@ import { matchUnmatchedMessage } from './matchUnmatchedRules'
 import { RecrawlPanel } from './RecrawlPanel'
 import { RecrawlSelectionBar } from './RecrawlSelectionBar'
 import { pageState, recrawlCheck, recrawlTitle, togglePage, toggleId, type SelectedJob } from './recrawlRules'
+import { deleteFailureText, deleteNotice, deleteQuestion as deleteManyQuestion, selectionAfterDelete } from './deleteRules'
 import { useRecrawl } from './useRecrawl'
 import { useJobsUrl } from './useJobsUrl'
 import {
@@ -176,6 +179,10 @@ export function JobsPage() {
     setSelected(new Map())
   })
   const headerCheckbox = useRef<HTMLInputElement>(null)
+  // Deleting the selected jobs in one go (step 149): asked first, then one request; the notice says what came of it.
+  const [confirmBatchDelete, setConfirmBatchDelete] = useState(false)
+  const [batchDeleting, setBatchDeleting] = useState(false)
+  const [batchDeleteNotice, setBatchDeleteNotice] = useState<{ ok: boolean; text: string } | null>(null)
 
   // CV generation audit trail (step 5) — historyJob is the job whose
   // history modal is currently open (mirrors matchPickerJob/cvPickerJob's
@@ -231,7 +238,7 @@ export function JobsPage() {
 
   // The selection (step 148): the rules work on sets of ids; the map keeps what the bar needs of each selected job.
   function selectedInfo(job: Job): SelectedJob {
-    return { source: job.source, canRecrawl: job.canRecrawl === true }
+    return { source: job.source, canRecrawl: job.canRecrawl === true, boardCount: job.boardProfileCount }
   }
   function withIds(previous: ReadonlyMap<string, SelectedJob>, ids: ReadonlySet<string>): ReadonlyMap<string, SelectedJob> {
     const next = new Map<string, SelectedJob>()
@@ -242,6 +249,25 @@ export function JobsPage() {
       if (info) next.set(id, info)
     }
     return next
+  }
+  function deleteSelected() {
+    const ids = [...selected.keys()]
+    setConfirmBatchDelete(false)
+    setBatchDeleteNotice(null)
+    setBatchDeleting(true)
+    deleteJobs(ids)
+      .then((answer) => {
+        setSelected((prev) => withIds(prev, selectionAfterDelete(new Set(prev.keys()), ids, true)))
+        setBatchDeleteNotice({ ok: true, text: deleteNotice(answer) })
+      })
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err)
+        setBatchDeleteNotice({ ok: false, text: deleteFailureText(message, err instanceof DeleteJobsError ? err.deleted : 0) })
+      })
+      .finally(() => {
+        setBatchDeleting(false)
+        reload() // what went is gone from the list, also after a failure part way
+      })
   }
   function toggleRow(job: Job) {
     setSelected((prev) => withIds(prev, toggleId(new Set(prev.keys()), job.id)))
@@ -1213,11 +1239,31 @@ export function JobsPage() {
             )}
 
             <RecrawlPanel recrawl={recrawl} />
+            {batchDeleteNotice && (
+              <div className="mb-3 flex items-start justify-between gap-3 text-sm">
+                <p role={batchDeleteNotice.ok ? 'status' : 'alert'} className={batchDeleteNotice.ok ? 'text-green-700' : 'text-red-700'}>
+                  {batchDeleteNotice.text}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBatchDeleteNotice(null)
+                  }}
+                  className="shrink-0 text-xs text-gray-500 underline hover:text-gray-700"
+                >
+                  Close
+                </button>
+              </div>
+            )}
             <RecrawlSelectionBar
               selected={[...selected.values()]}
               busy={recrawl.running}
+              deleting={batchDeleting}
               onRecrawl={() => {
                 void recrawl.start([...selected.keys()])
+              }}
+              onDelete={() => {
+                setConfirmBatchDelete(true)
               }}
               onClear={() => {
                 setSelected(new Map())
@@ -1531,6 +1577,18 @@ export function JobsPage() {
         }}
         onCancel={() => {
           setPendingRemoveJob(null)
+        }}
+      />
+
+      <ConfirmationModal
+        open={confirmBatchDelete}
+        title={deleteManyQuestion([...selected.values()])?.title ?? ''}
+        message={deleteManyQuestion([...selected.values()])?.message ?? ''}
+        confirmLabel={deleteManyQuestion([...selected.values()])?.confirmLabel}
+        variant="danger"
+        onConfirm={deleteSelected}
+        onCancel={() => {
+          setConfirmBatchDelete(false)
         }}
       />
 

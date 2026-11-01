@@ -76,6 +76,8 @@ export function togglePage(selection: Selection, pageIds: readonly string[]): Se
 export interface SelectedJob {
   source?: 'crawled' | 'manual'
   canRecrawl: boolean
+  // How many profiles' job boards the job is on (step 149: the delete question warns that those cards go too).
+  boardCount?: number
 }
 
 // How a selection is described: "5 selected · 4 can be recrawled · 2 added by hand (their own text is kept)". The "can be recrawled"

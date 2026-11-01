@@ -167,6 +167,7 @@ func runHTTPServer() {
 	http.HandleFunc("/dashboard/new-jobs", jobs.NewJobsWidgetHandler)
 	http.HandleFunc("/dashboard/recent-jobs", jobs.RecentJobsWidgetHandler)
 	http.HandleFunc("/jobs/stats", jobs.StatsHandler)
+	http.HandleFunc("/jobs/delete", jobs.DeleteManyHandler)
 	http.HandleFunc("/jobs/recrawl", jobrecrawl.RequestHandler)
 	http.HandleFunc("/jobs/recrawl/status", jobrecrawl.StatusHandler)
 	http.HandleFunc("/jobs/recrawl/cancel", jobrecrawl.CancelHandler)

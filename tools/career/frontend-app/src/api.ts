@@ -1,4 +1,5 @@
 // api.ts — thin fetch helpers over this tool's own proxy routes
+import type { DeleteAnswer } from './Components/JobsPage/deleteRules'
 import type { BatchStatus, SkippedJob } from './Components/JobsPage/recrawlRules'
 // (http.go, step 5), the human-facing mirror of steps 3/4/8/10's own
 // MCP tools. Same PROXY_BASE convention browser's own api.ts already
@@ -887,6 +888,31 @@ export async function addJob(input: NewJobInput): Promise<Job> {
   }
   const data = await jsonOrThrow<{ job: Job }>(res, 'add job')
   return data.job
+}
+
+// A batch delete that failed; deleted is how many jobs went before it stopped (0 when it failed before deleting any).
+export class DeleteJobsError extends Error {
+  readonly deleted: number
+  constructor(message: string, deleted: number) {
+    super(message)
+    this.name = 'DeleteJobsError'
+    this.deleted = deleted
+  }
+}
+
+// Deletes the jobs in one request (step 149), however many there are; a crawled job is remembered so the crawler does not add it
+// again. The server answers how many it deleted and how many ids it did not find.
+export async function deleteJobs(jobIds: string[]): Promise<DeleteAnswer> {
+  const res = await fetch(`${PROXY_BASE}/jobs/delete`, { method: 'POST', credentials: 'include', body: JSON.stringify({ jobIds }) })
+  if (res.ok) return (await res.json()) as DeleteAnswer
+  const text = await res.text()
+  try {
+    const body = JSON.parse(text) as { error?: string; deleted?: number }
+    throw new DeleteJobsError(body.error ?? `failed to delete the jobs (${String(res.status)})`, body.deleted ?? 0)
+  } catch (err) {
+    if (err instanceof DeleteJobsError) throw err
+    throw new DeleteJobsError(text.trim() || `failed to delete the jobs (${String(res.status)})`, 0)
+  }
 }
 
 export async function removeJob(id: string): Promise<void> {
