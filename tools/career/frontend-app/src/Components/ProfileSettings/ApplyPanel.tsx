@@ -28,15 +28,21 @@ export function ApplyPanel({
   disabled: boolean
 }) {
   const [view, setView] = useState<View>({ kind: 'idle' })
+  const [includeRemoved, setIncludeRemoved] = useState(false)
+  // How many jobs the last preview left out because they were taken off the board; keeps the tick box on screen while it is ticked.
+  const [removedSeen, setRemovedSeen] = useState(0)
 
   useEffect(() => {
     setView({ kind: 'idle' })
+    setIncludeRemoved(false)
+    setRemovedSeen(0)
   }, [rulesKey, profileId])
 
   function run(dryRun: boolean) {
     setView({ kind: 'working', dryRun })
-    applyProfileMatchRules(profileId, dryRun)
+    applyProfileMatchRules(profileId, dryRun, includeRemoved)
       .then((summary) => {
+        if (dryRun && !includeRemoved) setRemovedSeen(summary.removed)
         setView(dryRun ? { kind: 'preview', summary } : { kind: 'done', summary })
       })
       .catch((err: unknown) => {
@@ -53,7 +59,7 @@ export function ApplyPanel({
       <p className="mb-3 text-sm text-gray-600">
         The rules above act on jobs found from now on. Here you can apply them to the jobs that are already there too: the first rule that
         fits a job decides its status. A job that is already on this board is never moved.{' '}
-        <strong>Jobs you took off the board earlier come back</strong> if they fit a rule, so look at the preview first.
+        <strong>A job you took off this board on purpose stays off</strong> unless you tick the box that appears in the preview.
       </p>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -81,6 +87,20 @@ export function ApplyPanel({
         )}
         {view.kind === 'working' && !view.dryRun && <span className="text-sm text-gray-500">Adding…</span>}
       </div>
+      {removedSeen > 0 && (view.kind === 'idle' || view.kind === 'preview' || view.kind === 'working') && (
+        <label className="mt-3 flex items-center gap-2 text-sm text-gray-700">
+          <input
+            type="checkbox"
+            checked={includeRemoved}
+            disabled={disabled || working}
+            onChange={(e) => {
+              setIncludeRemoved(e.target.checked)
+              setView({ kind: 'idle' })
+            }}
+          />
+          {`Also add the ${plural(removedSeen, 'job', 'jobs')} I took off the board earlier`}
+        </label>
+      )}
       {!hasRules && <p className="mt-2 text-xs text-gray-500">Add a rule first.</p>}
 
       <div aria-live="polite">

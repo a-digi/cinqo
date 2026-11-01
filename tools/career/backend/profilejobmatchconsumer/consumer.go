@@ -43,6 +43,7 @@ const (
 	Added    = "added"    // put on the board with the rule's status
 	Below    = "below"    // the score reaches none of the profile's rules
 	OnBoard  = "on_board" // already on the profile's board, left alone
+	Removed  = "removed"  // the person took it off this board earlier (step 144), left off
 	Unjudged = "unjudged" // the job's own lookup failed for this pair (see Err)
 )
 
@@ -57,7 +58,7 @@ type Outcome struct {
 
 // ProcessBatch handles a batch of new jobs: for every profile with rules that can judge a job, the first rule of the
 // profile's list that fits the job's score decides the status, and the job is added to that board unless it is
-// already there. An id is handled once however often it appears; a job that no longer exists is skipped; a failure
+// already there or was taken off it by the person (step 144). An id is handled once however often it appears; a job that no longer exists is skipped; a failure
 // for one job is logged and the rest go on. An error is returned only when the batch cannot start (the rules or the
 // profiles cannot be read). With no rule anywhere nothing else is read at all.
 func ProcessBatch(ids []string) ([]Outcome, error) {
@@ -117,14 +118,16 @@ func apply(jobID, profileID string, score int, rules []profilerules.Rule) Outcom
 		return o
 	}
 	o.StatusID = rule.StatusID
-	added, err := jobboard.AddEntryIfAbsent(profileID, jobID, rule.StatusID)
+	outcome, err := jobboard.AddEntryUnlessRemoved(profileID, jobID, rule.StatusID)
 	switch {
 	case err != nil:
 		// including a job deleted between the scoring and the insert (jobboard.ErrUnknownJob)
 		o.Status = Unjudged
 		o.Err = err
-	case added:
+	case outcome == jobboard.Added:
 		o.Status = Added
+	case outcome == jobboard.RemovedByPerson:
+		o.Status = Removed
 	default:
 		o.Status = OnBoard
 	}

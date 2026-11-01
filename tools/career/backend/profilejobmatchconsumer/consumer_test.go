@@ -762,3 +762,67 @@ func TestOutcomesOfAJobComeInProfileIdOrder(t *testing.T) {
 		}
 	}
 }
+
+// ---- removals (step 144) ----
+
+// A job the person took off this board is not put back by the consumer (also when its event is delivered again).
+func TestAJobThePersonRemovedIsNotAddedAgain(t *testing.T) {
+	setup(t)
+	p := newProfile(t, "Ana")
+	s := customStatus(t, p, "Auto")
+	rule(t, p, 50, s)
+	addJob(t, "j1")
+	useFake(t, &fake{by: map[string]map[string]int{"j1": {p: 80}}})
+	if outs, _ := ProcessBatch([]string{"j1"}); len(outs) != 1 || outs[0].Status != Added {
+		t.Fatalf("first delivery: %+v", outs)
+	}
+	if err := jobboard.RemoveEntry(p, "j1"); err != nil { // the person takes the card off
+		t.Fatal(err)
+	}
+	outs, err := ProcessBatch([]string{"j1"}) // the same event again
+	if err != nil || len(outs) != 1 {
+		t.Fatalf("%+v %v", outs, err)
+	}
+	if outs[0].Status != Removed || outs[0].StatusID != s || onBoard(t, p, "j1") != "" {
+		t.Errorf("outcome %+v, on board %q: a removed job must stay off", outs[0], onBoard(t, p, "j1"))
+	}
+}
+
+func TestARemovalOnOneProfileDoesNotStopAnotherProfilesAdd(t *testing.T) {
+	setup(t)
+	a, b := newProfile(t, "Ana"), newProfile(t, "Ben")
+	sa, sb := customStatus(t, a, "A"), customStatus(t, b, "B")
+	rule(t, a, 50, sa)
+	rule(t, b, 50, sb)
+	addJob(t, "j1")
+	if _, err := jobboard.SetEntry(a, "j1", sa); err != nil {
+		t.Fatal(err)
+	}
+	_ = jobboard.RemoveEntry(a, "j1") // Ana removed it
+	useFake(t, &fake{by: map[string]map[string]int{"j1": {a: 80, b: 80}}})
+	outs, _ := ProcessBatch([]string{"j1"})
+	if o, _ := outcomeFor(outs, "j1", a); o.Status != Removed {
+		t.Errorf("Ana: %+v", o)
+	}
+	if o, _ := outcomeFor(outs, "j1", b); o.Status != Added || onBoard(t, b, "j1") != sb {
+		t.Errorf("Ben: %+v, on board %q", o, onBoard(t, b, "j1"))
+	}
+}
+
+// A job the person removed and then put back by hand is just a card on the board: the consumer leaves it alone.
+func TestAJobPutBackByHandIsOnTheBoardForTheConsumer(t *testing.T) {
+	setup(t)
+	p := newProfile(t, "Ana")
+	s := customStatus(t, p, "Auto")
+	mine := customStatus(t, p, "Mine")
+	rule(t, p, 50, s)
+	addJob(t, "j1")
+	_, _ = jobboard.SetEntry(p, "j1", s)
+	_ = jobboard.RemoveEntry(p, "j1")
+	_, _ = jobboard.SetEntry(p, "j1", mine) // the person puts it back, in their own status
+	useFake(t, &fake{by: map[string]map[string]int{"j1": {p: 90}}})
+	outs, _ := ProcessBatch([]string{"j1"})
+	if len(outs) != 1 || outs[0].Status != OnBoard || onBoard(t, p, "j1") != mine {
+		t.Errorf("%+v, on board %q", outs, onBoard(t, p, "j1"))
+	}
+}

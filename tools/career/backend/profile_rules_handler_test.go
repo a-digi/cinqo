@@ -403,7 +403,7 @@ func applyBody(profileID string, dryRun bool) string {
 }
 
 // withApply replaces the pass the route runs for one test.
-func withApply(t *testing.T, fn func(ctx context.Context, profileID string, dryRun bool) (profilejobmatchconsumer.ApplySummary, error)) {
+func withApply(t *testing.T, fn func(ctx context.Context, profileID string, dryRun, includeRemoved bool) (profilejobmatchconsumer.ApplySummary, error)) {
 	t.Helper()
 	old := applyRules
 	applyRules = fn
@@ -415,6 +415,7 @@ type applyAnswer struct {
 	NotJudged int `json:"notJudged"`
 	Below     int `json:"below"`
 	OnBoard   int `json:"onBoard"`
+	Removed   int `json:"removed"`
 	Total     int `json:"total"`
 	Statuses  []struct {
 		StatusID   string `json:"statusId"`
@@ -524,7 +525,7 @@ func TestTheApplyRoutePassesTheProfileAndTheDryRunFlagOn(t *testing.T) {
 	p1, _ := boardFixture(t)
 	var gotProfile string
 	var gotDry []bool
-	withApply(t, func(ctx context.Context, profileID string, dryRun bool) (profilejobmatchconsumer.ApplySummary, error) {
+	withApply(t, func(ctx context.Context, profileID string, dryRun, includeRemoved bool) (profilejobmatchconsumer.ApplySummary, error) {
 		gotProfile = profileID
 		gotDry = append(gotDry, dryRun)
 		return profilejobmatchconsumer.ApplySummary{Jobs: 3, Total: 2, Statuses: []profilejobmatchconsumer.StatusCount{{StatusID: "s", StatusName: "S", Count: 2}}}, nil
@@ -548,7 +549,7 @@ func TestTheApplyRoutePassesTheRequestContext(t *testing.T) {
 	p1, _ := boardFixture(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	var sawCancel bool
-	withApply(t, func(c context.Context, profileID string, dryRun bool) (profilejobmatchconsumer.ApplySummary, error) {
+	withApply(t, func(c context.Context, profileID string, dryRun, includeRemoved bool) (profilejobmatchconsumer.ApplySummary, error) {
 		cancel()
 		sawCancel = c.Err() != nil
 		return profilejobmatchconsumer.ApplySummary{}, c.Err()
@@ -566,7 +567,7 @@ func TestOnlyOnePassPerProfileRunsAtATime(t *testing.T) {
 	p1, p2 := boardFixture(t)
 	release := make(chan struct{})
 	started := make(chan string, 4)
-	withApply(t, func(ctx context.Context, profileID string, dryRun bool) (profilejobmatchconsumer.ApplySummary, error) {
+	withApply(t, func(ctx context.Context, profileID string, dryRun, includeRemoved bool) (profilejobmatchconsumer.ApplySummary, error) {
 		started <- profileID
 		<-release
 		return profilejobmatchconsumer.ApplySummary{Jobs: 1}, nil
@@ -602,7 +603,7 @@ func TestOnlyOnePassPerProfileRunsAtATime(t *testing.T) {
 func TestTheProfileIsFreeAgainAfterAFailureAndAfterNoRules(t *testing.T) {
 	p1, _ := boardFixture(t)
 	calls := 0
-	withApply(t, func(ctx context.Context, profileID string, dryRun bool) (profilejobmatchconsumer.ApplySummary, error) {
+	withApply(t, func(ctx context.Context, profileID string, dryRun, includeRemoved bool) (profilejobmatchconsumer.ApplySummary, error) {
 		calls++
 		switch calls {
 		case 1:
@@ -622,7 +623,7 @@ func TestTheProfileIsFreeAgainAfterAFailureAndAfterNoRules(t *testing.T) {
 // A failure answers 500 with the reason and what was done before it (what was added stays).
 func TestAFailedPassAnswers500WithThePartialSummary(t *testing.T) {
 	p1, _ := boardFixture(t)
-	withApply(t, func(ctx context.Context, profileID string, dryRun bool) (profilejobmatchconsumer.ApplySummary, error) {
+	withApply(t, func(ctx context.Context, profileID string, dryRun, includeRemoved bool) (profilejobmatchconsumer.ApplySummary, error) {
 		return profilejobmatchconsumer.ApplySummary{Jobs: 4, Total: 3, Statuses: []profilejobmatchconsumer.StatusCount{{StatusID: "s", StatusName: "S", Count: 3}}}, errors.New("could not score job x")
 	})
 	rec := postApply(t, applyBody(p1, false))
@@ -644,7 +645,7 @@ func TestAFailedPassAnswers500WithThePartialSummary(t *testing.T) {
 
 func TestAnUnknownProfileFromThePassIsA404(t *testing.T) {
 	p1, _ := boardFixture(t)
-	withApply(t, func(ctx context.Context, profileID string, dryRun bool) (profilejobmatchconsumer.ApplySummary, error) {
+	withApply(t, func(ctx context.Context, profileID string, dryRun, includeRemoved bool) (profilejobmatchconsumer.ApplySummary, error) {
 		return profilejobmatchconsumer.ApplySummary{}, profile.ErrUnknownProfile // the profile vanished between the two checks
 	})
 	wantStatus(t, postApply(t, applyBody(p1, false)), 404)
@@ -688,7 +689,7 @@ func TestTheApplyRouteIsDeclaredAndRouted(t *testing.T) {
 func TestTheApplyRouteChecksTheProfileBeforeRunningThePass(t *testing.T) {
 	boardFixture(t)
 	ran := false
-	withApply(t, func(ctx context.Context, profileID string, dryRun bool) (profilejobmatchconsumer.ApplySummary, error) {
+	withApply(t, func(ctx context.Context, profileID string, dryRun, includeRemoved bool) (profilejobmatchconsumer.ApplySummary, error) {
 		ran = true
 		return profilejobmatchconsumer.ApplySummary{}, nil
 	})
@@ -710,7 +711,7 @@ func TestFinishingOneProfilesPassKeepsTheOthersGuard(t *testing.T) {
 	releaseP1, releaseP2 := make(chan struct{}), make(chan struct{})
 	started := make(chan string, 4)
 	var secondForP2 atomic.Bool
-	withApply(t, func(ctx context.Context, profileID string, dryRun bool) (profilejobmatchconsumer.ApplySummary, error) {
+	withApply(t, func(ctx context.Context, profileID string, dryRun, includeRemoved bool) (profilejobmatchconsumer.ApplySummary, error) {
 		started <- profileID
 		switch profileID {
 		case p1:
@@ -746,5 +747,109 @@ func TestFinishingOneProfilesPassKeepsTheOthersGuard(t *testing.T) {
 	close(releaseP2)
 	if code := <-done2; code != 200 {
 		t.Errorf("the second pass answered %d", code)
+	}
+}
+
+// ---- includeRemoved (step 144) ----
+
+func applyBodyWith(profileID string, dryRun bool, include any) string {
+	raw, _ := json.Marshal(map[string]any{"profileId": profileID, "dryRun": dryRun, "includeRemoved": include})
+	return string(raw)
+}
+
+func TestTheApplyRoutePassesIncludeRemovedOnAndItDefaultsToOff(t *testing.T) {
+	p1, _ := boardFixture(t)
+	var got [][2]bool
+	withApply(t, func(ctx context.Context, profileID string, dryRun, includeRemoved bool) (profilejobmatchconsumer.ApplySummary, error) {
+		got = append(got, [2]bool{dryRun, includeRemoved})
+		return profilejobmatchconsumer.ApplySummary{Jobs: 5, Removed: 2, Total: 1}, nil
+	})
+	wantStatus(t, postApply(t, applyBodyWith(p1, true, true)), 200)
+	wantStatus(t, postApply(t, applyBodyWith(p1, false, true)), 200)
+	wantStatus(t, postApply(t, applyBodyWith(p1, true, false)), 200)
+	wantStatus(t, postApply(t, applyBody(p1, true)), 200) // includeRemoved left out
+	wantStatus(t, postApply(t, fmt.Sprintf(`{"profileId":%q}`, p1)), 200)
+	want := [][2]bool{{true, true}, {false, true}, {true, false}, {true, false}, {false, false}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("(dryRun, includeRemoved) = %v, want %v", got, want)
+	}
+	rec := postApply(t, applyBody(p1, true))
+	var a applyAnswer
+	_ = json.Unmarshal(rec.Body.Bytes(), &a)
+	if a.Removed != 2 || a.Total != 1 || a.Jobs != 5 || !strings.Contains(rec.Body.String(), `"removed":2`) {
+		t.Errorf("the removed number is answered as it is: %s", rec.Body.String())
+	}
+}
+
+func TestIncludeRemovedMustBeABoolean(t *testing.T) {
+	p1, _ := boardFixture(t)
+	ran := false
+	withApply(t, func(ctx context.Context, profileID string, dryRun, includeRemoved bool) (profilejobmatchconsumer.ApplySummary, error) {
+		ran = true
+		return profilejobmatchconsumer.ApplySummary{}, nil
+	})
+	for _, v := range []any{"yes", 1, []int{1}, map[string]int{"a": 1}} {
+		if rec := postApply(t, applyBodyWith(p1, true, v)); rec.Code != 400 {
+			t.Errorf("includeRemoved %v: status %d, want 400", v, rec.Code)
+		}
+	}
+	if ran {
+		t.Error("the pass must not run for a bad body")
+	}
+}
+
+// The whole thing through the real routes and the real scorer: a card taken off through the board's own route is left out,
+// the box adds it back, and a hand put-back is an ordinary card.
+func TestTheApplyRouteLeavesOutWhatThePersonRemovedUnlessAskedTo(t *testing.T) {
+	p1, _ := boardFixture(t)
+	seedScoringPersona(t, p1, "Fit", []string{"Go", "Docker", "Kubernetes", "PostgreSQL"})
+	for _, id := range []string{"j1", "j2"} {
+		if _, err := db.JobsDB.Exec(`UPDATE jobs SET title = 'Backend Engineer (m/w/d)', location = 'Hamburg', description = ? WHERE id = ?`, recalcDesc, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	st, err := jobboard.CreateStatus(p1, "To check")
+	if err != nil {
+		t.Fatal(err)
+	}
+	createRule(t, p1, 60, st.ID)
+	// j1 was on the board and the person took it off through the board's own route
+	wantStatus(t, boardCall(t, jobBoardEntriesHandler, "PUT", "/job-board-entries", `{"profileId":"`+p1+`","jobId":"j1","statusId":"`+st.ID+`"}`), 200)
+	wantStatus(t, boardCall(t, jobBoardEntriesHandler, "DELETE", "/job-board-entries?profileId="+p1+"&jobId=j1", ""), 204)
+
+	decode := func(rec *httptest.ResponseRecorder) applyAnswer {
+		t.Helper()
+		wantStatus(t, rec, 200)
+		var a applyAnswer
+		if err := json.Unmarshal(rec.Body.Bytes(), &a); err != nil {
+			t.Fatal(err)
+		}
+		return a
+	}
+	preview := decode(postApply(t, applyBody(p1, true)))
+	if preview.Jobs != 2 || preview.Removed != 1 || preview.Total != 1 || countBoard(t, p1) != 0 {
+		t.Fatalf("preview = %+v, entries %d", preview, countBoard(t, p1))
+	}
+	ticked := decode(postApply(t, applyBodyWith(p1, true, true)))
+	if ticked.Removed != 0 || ticked.Total != 2 || countBoard(t, p1) != 0 {
+		t.Fatalf("preview with the box = %+v, entries %d", ticked, countBoard(t, p1))
+	}
+	real := decode(postApply(t, applyBody(p1, false)))
+	if !reflect.DeepEqual(preview, real) || countBoard(t, p1) != 1 {
+		t.Errorf("real %+v vs preview %+v, entries %d", real, preview, countBoard(t, p1))
+	}
+	if got, _ := jobboard.WasRemoved(p1, "j1"); !got {
+		t.Error("leaving j1 out must not forget the removal")
+	}
+	both := decode(postApply(t, applyBodyWith(p1, false, true)))
+	if both.Total != 1 || both.Removed != 0 || both.OnBoard != 1 || countBoard(t, p1) != 2 {
+		t.Errorf("with the box = %+v, entries %d", both, countBoard(t, p1))
+	}
+	if got, _ := jobboard.WasRemoved(p1, "j1"); got {
+		t.Error("adding j1 on request must forget the removal")
+	}
+	after := decode(postApply(t, applyBody(p1, true)))
+	if after.Total != 0 || after.Removed != 0 || after.OnBoard != 2 {
+		t.Errorf("after: %+v", after)
 	}
 }

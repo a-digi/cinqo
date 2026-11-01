@@ -20,6 +20,7 @@ export function details(s: ApplyRulesSummary): string {
   if (s.jobs === 0) return 'There are no jobs yet.'
   const parts = [`${plural(s.jobs, 'job', 'jobs')} checked`]
   if (s.onBoard > 0) parts.push(`${String(s.onBoard)} already on the board (left as they are)`)
+  if (s.removed > 0) parts.push(`${String(s.removed)} left out because you took ${s.removed === 1 ? 'it' : 'them'} off this board earlier`)
   if (s.below > 0) parts.push(`${String(s.below)} below your rules`)
   if (s.notJudged > 0) parts.push(`${String(s.notJudged)} could not be judged (this profile has nothing to compare for them)`)
   return `${parts.join('; ')}.`

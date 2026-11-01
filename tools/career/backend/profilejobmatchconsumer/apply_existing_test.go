@@ -59,7 +59,7 @@ func TestApplyDoesWhatTheTableSays(t *testing.T) {
 		"onBoard":   {p: 95},
 	}})
 
-	sum, err := ApplyToExisting(context.Background(), p, false)
+	sum, err := ApplyToExisting(context.Background(), p, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,14 +99,14 @@ func TestApplyUsesTheFirstFittingRuleOfTheList(t *testing.T) {
 	}
 	useFake(t, &fake{by: map[string]map[string]int{"j50": {p: 50}, "j70": {p: 70}, "j90": {p: 90}}})
 
-	preview, err := ApplyToExisting(context.Background(), p, true)
+	preview, err := ApplyToExisting(context.Background(), p, true, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if statusLine(preview) != "To check=2 " || preview.Total != 2 || preview.Below != 1 {
 		t.Fatalf("preview = %+v (%s)", preview, statusLine(preview))
 	}
-	if _, err := ApplyToExisting(context.Background(), p, false); err != nil {
+	if _, err := ApplyToExisting(context.Background(), p, false, false); err != nil {
 		t.Fatal(err)
 	}
 	for job, want := range map[string]string{"j50": "", "j70": check, "j90": check} {
@@ -129,7 +129,7 @@ func TestReorderingTheRulesChangesWhatApplyAdds(t *testing.T) {
 	if _, err := profilerules.Reorder(p, []string{ids[1], ids[0]}); err != nil { // 85% first
 		t.Fatal(err)
 	}
-	sum, err := ApplyToExisting(context.Background(), p, false)
+	sum, err := ApplyToExisting(context.Background(), p, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +151,7 @@ func TestARuleThatDoesNotFitIsSkippedAndTheNextOneDecides(t *testing.T) {
 		addJob(t, id)
 	}
 	useFake(t, &fake{by: map[string]map[string]int{"j40": {p: 40}, "j70": {p: 70}, "j95": {p: 95}}})
-	if _, err := ApplyToExisting(context.Background(), p, false); err != nil {
+	if _, err := ApplyToExisting(context.Background(), p, false, false); err != nil {
 		t.Fatal(err)
 	}
 	for job, want := range map[string]string{"j40": "", "j70": low, "j95": top} {
@@ -183,7 +183,7 @@ func TestADryRunWritesNothingAndSaysWhatARealRunDoes(t *testing.T) {
 	useFake(t, &fake{by: scores})
 	entriesBefore := boardEntries(t)
 
-	preview, err := ApplyToExisting(context.Background(), p, true)
+	preview, err := ApplyToExisting(context.Background(), p, true, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,7 +193,7 @@ func TestADryRunWritesNothingAndSaysWhatARealRunDoes(t *testing.T) {
 	if preview.Jobs != 8 || preview.NotJudged != 1 || preview.Below != 2 || preview.OnBoard != 1 || preview.Total != 4 || statusLine(preview) != "A=1 B=3 " {
 		t.Fatalf("preview = %+v (%s)", preview, statusLine(preview))
 	}
-	real, err := ApplyToExisting(context.Background(), p, false)
+	real, err := ApplyToExisting(context.Background(), p, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,8 +218,8 @@ func TestASecondRunAddsNothingMore(t *testing.T) {
 	addJob(t, "d")
 	scores["d"] = map[string]int{p: 10}
 	useFake(t, &fake{by: scores})
-	first, _ := ApplyToExisting(context.Background(), p, false)
-	second, err := ApplyToExisting(context.Background(), p, false)
+	first, _ := ApplyToExisting(context.Background(), p, false, false)
+	second, err := ApplyToExisting(context.Background(), p, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,7 +244,7 @@ func TestApplyNeverTouchesAnotherProfilesBoard(t *testing.T) {
 		t.Fatal(err)
 	}
 	useFake(t, &fake{by: map[string]map[string]int{"j1": {a: 80, b: 80}}})
-	sum, err := ApplyToExisting(context.Background(), a, false)
+	sum, err := ApplyToExisting(context.Background(), a, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -261,10 +261,10 @@ func TestApplyOfAProfileWithoutRulesIsRefusedBeforeAnythingIsRead(t *testing.T) 
 	p := newProfile(t, "Ana")
 	addJob(t, "j1")
 	built := useFake(t, &fake{by: map[string]map[string]int{"j1": {p: 90}}})
-	if _, err := ApplyToExisting(context.Background(), p, false); !errors.Is(err, ErrNoRules) {
+	if _, err := ApplyToExisting(context.Background(), p, false, false); !errors.Is(err, ErrNoRules) {
 		t.Errorf("err = %v, want ErrNoRules", err)
 	}
-	if _, err := ApplyToExisting(context.Background(), p, true); !errors.Is(err, ErrNoRules) {
+	if _, err := ApplyToExisting(context.Background(), p, true, false); !errors.Is(err, ErrNoRules) {
 		t.Errorf("dry run err = %v", err)
 	}
 	if len(*built) != 0 || entries(t) != 0 {
@@ -275,7 +275,7 @@ func TestApplyOfAProfileWithoutRulesIsRefusedBeforeAnythingIsRead(t *testing.T) 
 func TestApplyOfAnUnknownProfile(t *testing.T) {
 	setup(t)
 	built := useFake(t, &fake{})
-	if _, err := ApplyToExisting(context.Background(), "nope", false); !errors.Is(err, profile.ErrUnknownProfile) {
+	if _, err := ApplyToExisting(context.Background(), "nope", false, false); !errors.Is(err, profile.ErrUnknownProfile) {
 		t.Errorf("err = %v", err)
 	}
 	if len(*built) != 0 {
@@ -288,7 +288,7 @@ func TestApplyWithNoJobsIsAnEmptySummary(t *testing.T) {
 	p := newProfile(t, "Ana")
 	rule(t, p, 50, customStatus(t, p, "S"))
 	useFake(t, &fake{})
-	sum, err := ApplyToExisting(context.Background(), p, false)
+	sum, err := ApplyToExisting(context.Background(), p, false, false)
 	if err != nil || sum.Jobs != 0 || sum.Total != 0 || sum.Statuses == nil || len(sum.Statuses) != 0 {
 		t.Errorf("%+v %v", sum, err)
 	}
@@ -302,7 +302,7 @@ func TestAScorerThatCannotBeBuiltFailsTheApplyAndAddsNothing(t *testing.T) {
 	old := newScorer
 	newScorer = func(map[string]bool) (scorer, error) { return nil, errors.New("no profile") }
 	t.Cleanup(func() { newScorer = old })
-	if _, err := ApplyToExisting(context.Background(), p, false); err == nil || entries(t) != 0 {
+	if _, err := ApplyToExisting(context.Background(), p, false, false); err == nil || entries(t) != 0 {
 		t.Errorf("err = %v, entries %d", err, entries(t))
 	}
 }
@@ -316,7 +316,7 @@ func TestTheScorerIsBuiltOnceAndOnlyForThisProfile(t *testing.T) {
 		addJob(t, id)
 	}
 	built := useFake(t, &fake{by: map[string]map[string]int{"a": {p: 60}, "b": {p: 60}, "c": {p: 60}}})
-	if _, err := ApplyToExisting(context.Background(), p, false); err != nil {
+	if _, err := ApplyToExisting(context.Background(), p, false, false); err != nil {
 		t.Fatal(err)
 	}
 	if len(*built) != 1 || len((*built)[0]) != 1 || !(*built)[0][p] {
@@ -340,7 +340,7 @@ func TestAStatusUsedByTwoRulesIsOneEntryInTheOrderOfTheRules(t *testing.T) {
 		scores[id] = map[string]int{p: s}
 	}
 	useFake(t, &fake{by: scores})
-	sum, err := ApplyToExisting(context.Background(), p, true)
+	sum, err := ApplyToExisting(context.Background(), p, true, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -358,7 +358,7 @@ func TestOnlyStatusesWithAJobAreListed(t *testing.T) {
 	rule(t, p, 50, used)
 	addJob(t, "j1")
 	useFake(t, &fake{by: map[string]map[string]int{"j1": {p: 60}}})
-	sum, _ := ApplyToExisting(context.Background(), p, true)
+	sum, _ := ApplyToExisting(context.Background(), p, true, false)
 	if len(sum.Statuses) != 1 || sum.Statuses[0].StatusID != used {
 		t.Errorf("statuses = %+v", sum.Statuses)
 	}
@@ -385,7 +385,7 @@ func TestApplyVisitsEveryJobInChunks(t *testing.T) {
 	afterApplyChunk = func() { chunks++ }
 	t.Cleanup(func() { applyChunk, afterApplyChunk = old, oldHook })
 
-	sum, err := ApplyToExisting(context.Background(), p, false)
+	sum, err := ApplyToExisting(context.Background(), p, false, false)
 	if err != nil || sum.Jobs != 5 || sum.Total != 5 || chunks != 3 {
 		t.Fatalf("%+v chunks %d err %v", sum, chunks, err)
 	}
@@ -412,7 +412,7 @@ func TestACancelledApplyKeepsWhatWasAddedAndARepeatFinishes(t *testing.T) {
 	afterApplyChunk = func() { cancel() }
 	t.Cleanup(func() { applyChunk, afterApplyChunk = old, oldHook })
 
-	sum, err := ApplyToExisting(ctx, p, false)
+	sum, err := ApplyToExisting(ctx, p, false, false)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v", err)
 	}
@@ -420,7 +420,7 @@ func TestACancelledApplyKeepsWhatWasAddedAndARepeatFinishes(t *testing.T) {
 		t.Errorf("after the first chunk: %+v, entries %d", sum, entries(t))
 	}
 	afterApplyChunk = func() {}
-	again, err := ApplyToExisting(context.Background(), p, false)
+	again, err := ApplyToExisting(context.Background(), p, false, false)
 	if err != nil || again.Total != 2 || again.OnBoard != 2 || entries(t) != 4 {
 		t.Errorf("the repeat: %+v %v entries %d", again, err, entries(t))
 	}
@@ -442,7 +442,7 @@ func TestAJobDeletedBeforeItIsScoredOrBeforeItIsAddedIsSkippedAndNotCounted(t *t
 		},
 	}
 	useFake(t, f)
-	sum, err := ApplyToExisting(context.Background(), p, false)
+	sum, err := ApplyToExisting(context.Background(), p, false, false)
 	if err != nil {
 		t.Fatalf("a deleted job must not fail the run: %v", err)
 	}
@@ -462,7 +462,7 @@ func TestAFailureMidRunReturnsWhatWasDoneAndKeepsIt(t *testing.T) {
 		scores[id] = map[string]int{p: 70}
 	}
 	useFake(t, &fake{by: scores, errs: map[string]error{"c": errors.New("boom")}})
-	sum, err := ApplyToExisting(context.Background(), p, false)
+	sum, err := ApplyToExisting(context.Background(), p, false, false)
 	if err == nil {
 		t.Fatal("a scoring failure must be reported")
 	}
@@ -492,7 +492,7 @@ func TestAStoreFailureMidRunIsReported(t *testing.T) {
 		},
 	}
 	useFake(t, f)
-	sum, err := ApplyToExisting(context.Background(), p, false)
+	sum, err := ApplyToExisting(context.Background(), p, false, false)
 	if !errors.Is(err, jobboard.ErrUnknownStatus) {
 		t.Fatalf("err = %v, want ErrUnknownStatus", err)
 	}
@@ -509,7 +509,7 @@ func TestAProfileWithoutPersonasJudgesNothingAndAddsNothing(t *testing.T) {
 	rule(t, p, 1, customStatus(t, p, "S"))
 	exec(t, `INSERT INTO jobs (id, source_url, title, company, location, description) VALUES ('j1', 'https://x.example/j1', 'Backend Engineer (m/w/d)', 'Acme', 'Hamburg', ?)`, jobDesc)
 	exec(t, `INSERT INTO jobs (id, source_url, title, company, location, description) VALUES ('j2', 'https://x.example/j2', 'Backend Engineer (m/w/d)', 'Acme', 'Hamburg', ?)`, jobDesc)
-	sum, err := ApplyToExisting(context.Background(), p, false)
+	sum, err := ApplyToExisting(context.Background(), p, false, false)
 	if err != nil || sum.Jobs != 2 || sum.NotJudged != 2 || sum.Total != 0 || entries(t) != 0 {
 		t.Errorf("%+v %v entries %d", sum, err, entries(t))
 	}
@@ -527,7 +527,7 @@ func TestTheRealScorerAppliesTheRulesToTheExistingJobsOfTheFittingProfileOnly(t 
 		exec(t, `INSERT INTO jobs (id, source_url, title, company, location, description) VALUES (?, ?, 'Backend Engineer (m/w/d)', 'Acme', 'Hamburg', ?)`, id, "https://x.example/"+id, jobDesc)
 	}
 	// the profile is told about the three jobs it has in common with its rule
-	preview, err := ApplyToExisting(context.Background(), fit, true)
+	preview, err := ApplyToExisting(context.Background(), fit, true, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -537,7 +537,7 @@ func TestTheRealScorerAppliesTheRulesToTheExistingJobsOfTheFittingProfileOnly(t 
 	if entries(t) != 0 {
 		t.Fatal("the preview wrote")
 	}
-	sum, err := ApplyToExisting(context.Background(), fit, false)
+	sum, err := ApplyToExisting(context.Background(), fit, false, false)
 	if err != nil || sum.Total != 3 {
 		t.Fatalf("%+v %v", sum, err)
 	}
@@ -547,7 +547,7 @@ func TestTheRealScorerAppliesTheRulesToTheExistingJobsOfTheFittingProfileOnly(t 
 		}
 	}
 	// the other profile's own apply finds its jobs below its rule
-	otherSum, err := ApplyToExisting(context.Background(), other, false)
+	otherSum, err := ApplyToExisting(context.Background(), other, false, false)
 	if err != nil || otherSum.Below != 3 || otherSum.Total != 0 {
 		t.Errorf("%+v %v", otherSum, err)
 	}
@@ -562,7 +562,7 @@ func TestAJobListingThatFailsFailsTheApply(t *testing.T) {
 	old := listJobIDs
 	listJobIDs = func(string, int) ([]string, error) { return nil, errors.New("jobs.db gone") }
 	t.Cleanup(func() { listJobIDs = old })
-	if _, err := ApplyToExisting(context.Background(), p, false); err == nil || entries(t) != 0 {
+	if _, err := ApplyToExisting(context.Background(), p, false, false); err == nil || entries(t) != 0 {
 		t.Errorf("err = %v, entries %d", err, entries(t))
 	}
 }
@@ -576,7 +576,7 @@ func TestADryRunThatCannotReadTheBoardFails(t *testing.T) {
 	old := isOnBoard
 	isOnBoard = func(string, string) (bool, error) { return false, errors.New("jobs.db gone") }
 	t.Cleanup(func() { isOnBoard = old })
-	if _, err := ApplyToExisting(context.Background(), p, true); err == nil {
+	if _, err := ApplyToExisting(context.Background(), p, true, false); err == nil {
 		t.Error("a dry run that cannot tell whether a job is on the board must fail")
 	}
 }
@@ -592,8 +592,197 @@ func TestADryRunIgnoresAnotherProfilesCard(t *testing.T) {
 		t.Fatal(err)
 	}
 	useFake(t, &fake{by: map[string]map[string]int{"j1": {a: 80}}})
-	sum, err := ApplyToExisting(context.Background(), a, true)
+	sum, err := ApplyToExisting(context.Background(), a, true, false)
 	if err != nil || sum.OnBoard != 0 || sum.Total != 1 {
 		t.Errorf("%+v %v: Ben's card must not count as Ana's", sum, err)
+	}
+}
+
+// ---- removals (step 144) ----
+
+// seedRemoval puts a job on the profile's board and takes it off again, so it is remembered as removed by the person.
+func seedRemoval(t *testing.T, profileID, jobID, statusID string) {
+	t.Helper()
+	if _, err := jobboard.SetEntry(profileID, jobID, statusID); err != nil {
+		t.Fatal(err)
+	}
+	if err := jobboard.RemoveEntry(profileID, jobID); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAJobThePersonRemovedIsLeftOutAndCountedAsRemoved(t *testing.T) {
+	setup(t)
+	p := newProfile(t, "Ana")
+	s := customStatus(t, p, "S")
+	rule(t, p, 50, s)
+	scores := map[string]map[string]int{}
+	for _, id := range []string{"new1", "new2", "taken", "there", "low"} {
+		addJob(t, id)
+		scores[id] = map[string]int{p: 70}
+	}
+	scores["low"] = map[string]int{p: 10}
+	seedRemoval(t, p, "taken", s)
+	if _, err := jobboard.SetEntry(p, "there", s); err != nil {
+		t.Fatal(err)
+	}
+	useFake(t, &fake{by: scores})
+	entriesBefore := entries(t)
+
+	preview, err := ApplyToExisting(context.Background(), p, true, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.Jobs != 5 || preview.Removed != 1 || preview.OnBoard != 1 || preview.Below != 1 || preview.Total != 2 || preview.NotJudged != 0 {
+		t.Fatalf("preview = %+v", preview)
+	}
+	if entries(t) != entriesBefore {
+		t.Fatal("a dry run wrote")
+	}
+	real, err := ApplyToExisting(context.Background(), p, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(preview, real) {
+		t.Errorf("a dry run and a real run must agree:\n dry  %+v\n real %+v", preview, real)
+	}
+	if onBoard(t, p, "taken") != "" {
+		t.Error("a job the person took off must stay off")
+	}
+	if onBoard(t, p, "new1") != s || onBoard(t, p, "new2") != s {
+		t.Error("the other fitting jobs must be added")
+	}
+	if got, _ := jobboard.WasRemoved(p, "taken"); !got {
+		t.Error("leaving a removed job out must not forget the removal")
+	}
+	if real.Jobs != real.NotJudged+real.Below+real.OnBoard+real.Removed+real.Total {
+		t.Errorf("every job is in exactly one bucket: %+v", real)
+	}
+	// a second run: the same job is left out again, nothing else is added
+	again, _ := ApplyToExisting(context.Background(), p, false, false)
+	if again.Total != 0 || again.Removed != 1 || again.OnBoard != 3 {
+		t.Errorf("second run = %+v", again)
+	}
+}
+
+func TestIncludeRemovedAddsThemAndForgetsTheRemoval(t *testing.T) {
+	setup(t)
+	p := newProfile(t, "Ana")
+	x, y := customStatus(t, p, "X"), customStatus(t, p, "Y")
+	rule(t, p, 80, x)
+	rule(t, p, 50, y)
+	scores := map[string]map[string]int{"fresh": {p: 90}, "taken": {p: 60}, "taken2": {p: 95}}
+	for id := range scores {
+		addJob(t, id)
+	}
+	seedRemoval(t, p, "taken", y)
+	seedRemoval(t, p, "taken2", x)
+	useFake(t, &fake{by: scores})
+
+	preview, err := ApplyToExisting(context.Background(), p, true, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.Removed != 0 || preview.Total != 3 || statusLine(preview) != "X=2 Y=1 " {
+		t.Fatalf("preview with the box ticked = %+v (%s)", preview, statusLine(preview))
+	}
+	if got, _ := jobboard.WasRemoved(p, "taken"); !got {
+		t.Fatal("a dry run must not forget anything")
+	}
+	real, err := ApplyToExisting(context.Background(), p, false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(preview, real) {
+		t.Errorf("dry and real must agree:\n dry  %+v\n real %+v", preview, real)
+	}
+	for job, want := range map[string]string{"fresh": x, "taken": y, "taken2": x} {
+		if onBoard(t, p, job) != want {
+			t.Errorf("%s: %q, want %q", job, onBoard(t, p, job), want)
+		}
+	}
+	for _, id := range []string{"taken", "taken2"} {
+		if got, _ := jobboard.WasRemoved(p, id); got {
+			t.Errorf("%s: adding on request must forget the removal", id)
+		}
+	}
+	// the jobs are ordinary cards now: a run without the box leaves them alone
+	after, _ := ApplyToExisting(context.Background(), p, false, false)
+	if after.Total != 0 || after.OnBoard != 3 || after.Removed != 0 {
+		t.Errorf("after: %+v", after)
+	}
+}
+
+func TestIncludeRemovedWithNothingRemovedChangesNothing(t *testing.T) {
+	setup(t)
+	p := newProfile(t, "Ana")
+	s := customStatus(t, p, "S")
+	rule(t, p, 50, s)
+	scores := map[string]map[string]int{}
+	for _, id := range []string{"a", "b"} {
+		addJob(t, id)
+		scores[id] = map[string]int{p: 70}
+	}
+	useFake(t, &fake{by: scores})
+	off, _ := ApplyToExisting(context.Background(), p, true, false)
+	on, _ := ApplyToExisting(context.Background(), p, true, true)
+	if !reflect.DeepEqual(off, on) || off.Total != 2 {
+		t.Errorf("off %+v, on %+v", off, on)
+	}
+}
+
+// Only jobs that FIT a rule count as removed; a removed job that is below every rule or cannot be judged is that instead.
+func TestARemovedJobIsRemovedOnlyIfItFitsARule(t *testing.T) {
+	setup(t)
+	p := newProfile(t, "Ana")
+	s := customStatus(t, p, "S")
+	rule(t, p, 50, s)
+	for _, id := range []string{"fits", "low", "unjudged"} {
+		addJob(t, id)
+		seedRemoval(t, p, id, s)
+	}
+	useFake(t, &fake{by: map[string]map[string]int{"fits": {p: 70}, "low": {p: 10}, "unjudged": {}}})
+	for _, dry := range []bool{true, false} {
+		sum, err := ApplyToExisting(context.Background(), p, dry, false)
+		if err != nil || sum.Removed != 1 || sum.Below != 1 || sum.NotJudged != 1 || sum.Total != 0 {
+			t.Errorf("dry=%v: %+v %v", dry, sum, err)
+		}
+	}
+}
+
+func TestAnotherProfilesRemovalDoesNotMatterToApply(t *testing.T) {
+	setup(t)
+	a, b := newProfile(t, "Ana"), newProfile(t, "Ben")
+	sa, sb := customStatus(t, a, "A"), customStatus(t, b, "B")
+	rule(t, a, 50, sa)
+	addJob(t, "j1")
+	seedRemoval(t, b, "j1", sb) // Ben removed it, Ana never had it
+	useFake(t, &fake{by: map[string]map[string]int{"j1": {a: 80}}})
+	for _, dry := range []bool{true, false} {
+		sum, err := ApplyToExisting(context.Background(), a, dry, false)
+		if err != nil || sum.Removed != 0 || sum.Total != 1 {
+			t.Errorf("dry=%v: %+v %v", dry, sum, err)
+		}
+	}
+	if got, _ := jobboard.WasRemoved(b, "j1"); !got {
+		t.Error("Ben's removal must stay")
+	}
+}
+
+func TestADryRunThatCannotReadTheRemovalsFails(t *testing.T) {
+	setup(t)
+	p := newProfile(t, "Ana")
+	rule(t, p, 50, customStatus(t, p, "S"))
+	addJob(t, "j1")
+	useFake(t, &fake{by: map[string]map[string]int{"j1": {p: 80}}})
+	old := wasRemoved
+	wasRemoved = func(string, string) (bool, error) { return false, errors.New("jobs.db gone") }
+	t.Cleanup(func() { wasRemoved = old })
+	if _, err := ApplyToExisting(context.Background(), p, true, false); err == nil {
+		t.Error("a dry run that cannot tell whether a job was removed must fail")
+	}
+	// with the box ticked the removals are not asked about at all
+	if sum, err := ApplyToExisting(context.Background(), p, true, true); err != nil || sum.Total != 1 {
+		t.Errorf("ticked: %+v %v", sum, err)
 	}
 }

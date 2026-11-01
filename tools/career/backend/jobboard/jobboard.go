@@ -262,7 +262,8 @@ func DeleteStatus(id string) error {
 }
 
 // SetEntry puts a job on a profile's board in a status: it adds the job when it is not
-// on the board yet and moves it otherwise. A custom status must be the profile's own.
+// on the board yet and moves it otherwise. A custom status must be the profile's own. It also forgets that the person
+// took the job off this board earlier (step 144).
 func SetEntry(profileID, jobID, statusID string) (Entry, error) {
 	tx, err := db.JobsDB.Begin()
 	if err != nil {
@@ -295,36 +296,75 @@ func SetEntry(profileID, jobID, statusID string) (Entry, error) {
 	); err != nil {
 		return Entry{}, err
 	}
+	// a person putting the job on the board (or moving it) is the opposite of removing it: forget the removal (step 144)
+	if _, err := tx.Exec(`DELETE FROM job_board_removals WHERE profile_id = ? AND job_id = ?`, profileID, jobID); err != nil {
+		return Entry{}, err
+	}
 	return e, tx.Commit()
 }
 
-// AddEntryIfAbsent puts a job on a profile's board in a status only when the job is not on that board yet, and reports
-// whether it did. A job already there keeps its status and its moved-at time: a person's choice (or an earlier run)
-// wins, so the automatic rules (step 140) never move a card. The same checks as SetEntry: ErrUnknownJob,
-// ErrUnknownStatus, ErrStatusNotOnBoard.
-func AddEntryIfAbsent(profileID, jobID, statusID string) (bool, error) {
+// AddOutcome is what an automatic add did.
+type AddOutcome string
+
+const (
+	// Added: the job was not on the board and is now (with the status asked for).
+	Added AddOutcome = "added"
+	// OnBoard: the job was on the board already (any status) and is left exactly as it was.
+	OnBoard AddOutcome = "on_board"
+	// RemovedByPerson: the job is not on the board because the person took it off on purpose (step 144); nothing was written.
+	RemovedByPerson AddOutcome = "removed"
+)
+
+// AddEntryUnlessRemoved is what the automatic rules use (step 140, 143, 144): it puts a job on a profile's board in a
+// status only when the job is neither on that board nor remembered as taken off it by the person. A job already there keeps
+// its status and its moved-at time (a person's choice or an earlier run wins, so a card is never moved), and a job the person
+// removed stays off. The same checks as SetEntry: ErrUnknownJob, ErrUnknownStatus, ErrStatusNotOnBoard.
+func AddEntryUnlessRemoved(profileID, jobID, statusID string) (AddOutcome, error) {
+	return AddEntry(profileID, jobID, statusID, false)
+}
+
+// AddEntry is AddEntryUnlessRemoved with a choice about the person's removals. With includeRemoved a job the person took off
+// this board is added anyway (the person asked for it, for example by ticking the box of "Apply to existing jobs") and the
+// removal is forgotten in the same transaction, as when the person puts the job back by hand; a job that is on the board is
+// still left exactly as it is. Without it, a removed job stays off (outcome RemovedByPerson).
+func AddEntry(profileID, jobID, statusID string, includeRemoved bool) (AddOutcome, error) {
 	tx, err := db.JobsDB.Begin()
 	if err != nil {
-		return false, err
+		return "", err
 	}
 	defer func() { _ = tx.Rollback() }()
 
 	var one int
 	if err := tx.QueryRow(`SELECT 1 FROM jobs WHERE id = ?`, jobID).Scan(&one); errors.Is(err, sql.ErrNoRows) {
-		return false, ErrUnknownJob
+		return "", ErrUnknownJob
 	} else if err != nil {
-		return false, err
+		return "", err
 	}
 	var owner sql.NullString
 	err = tx.QueryRow(`SELECT profile_id FROM job_statuses WHERE id = ?`, statusID).Scan(&owner)
 	if errors.Is(err, sql.ErrNoRows) {
-		return false, ErrUnknownStatus
+		return "", ErrUnknownStatus
 	}
 	if err != nil {
-		return false, err
+		return "", err
 	}
 	if owner.Valid && owner.String != profileID {
-		return false, ErrStatusNotOnBoard
+		return "", ErrStatusNotOnBoard
+	}
+	if err := tx.QueryRow(`SELECT 1 FROM job_board_entries WHERE profile_id = ? AND job_id = ?`, profileID, jobID).Scan(&one); err == nil {
+		return OnBoard, nil
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return "", err
+	}
+	if err := tx.QueryRow(`SELECT 1 FROM job_board_removals WHERE profile_id = ? AND job_id = ?`, profileID, jobID).Scan(&one); err == nil {
+		if !includeRemoved {
+			return RemovedByPerson, nil
+		}
+		if _, err := tx.Exec(`DELETE FROM job_board_removals WHERE profile_id = ? AND job_id = ?`, profileID, jobID); err != nil {
+			return "", err
+		}
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return "", err
 	}
 	res, err := tx.Exec(
 		`INSERT INTO job_board_entries (profile_id, job_id, status_id, updated_at) VALUES (?, ?, ?, ?)
@@ -332,10 +372,29 @@ func AddEntryIfAbsent(profileID, jobID, statusID string) (bool, error) {
 		profileID, jobID, statusID, now(),
 	)
 	if err != nil {
-		return false, err
+		return "", err
 	}
-	n, _ := res.RowsAffected()
-	return n > 0, tx.Commit()
+	if n, _ := res.RowsAffected(); n == 0 { // another writer was first
+		return OnBoard, tx.Commit()
+	}
+	return Added, tx.Commit()
+}
+
+// AddEntryIfAbsent is AddEntryUnlessRemoved reduced to "was the job added": false both when it is on the board and when the
+// person removed it. Callers that must tell the two apart use AddEntryUnlessRemoved.
+func AddEntryIfAbsent(profileID, jobID, statusID string) (bool, error) {
+	outcome, err := AddEntryUnlessRemoved(profileID, jobID, statusID)
+	return outcome == Added, err
+}
+
+// WasRemoved reports whether the person took a job off a profile's board on purpose and has not put it back since. Read only.
+func WasRemoved(profileID, jobID string) (bool, error) {
+	var one int
+	err := db.JobsDB.QueryRow(`SELECT 1 FROM job_board_removals WHERE profile_id = ? AND job_id = ?`, profileID, jobID).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 // IsOnBoard reports whether a job is on a profile's board, in any status. Read only.
@@ -348,10 +407,28 @@ func IsOnBoard(profileID, jobID string) (bool, error) {
 	return err == nil, err
 }
 
-// RemoveEntry takes a job off a profile's board; a no-op when it is not on it.
+// RemoveEntry takes a job off a profile's board; a no-op when it is not on it. A card that was really removed is
+// remembered as taken off on purpose (step 144), in the same transaction, so the automatic rules do not put it back.
 func RemoveEntry(profileID, jobID string) error {
-	_, err := db.JobsDB.Exec(`DELETE FROM job_board_entries WHERE profile_id = ? AND job_id = ?`, profileID, jobID)
-	return err
+	tx, err := db.JobsDB.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	res, err := tx.Exec(`DELETE FROM job_board_entries WHERE profile_id = ? AND job_id = ?`, profileID, jobID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		if _, err := tx.Exec(
+			`INSERT INTO job_board_removals (profile_id, job_id) VALUES (?, ?)
+			 ON CONFLICT(profile_id, job_id) DO UPDATE SET removed_at = datetime('now')`,
+			profileID, jobID,
+		); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // kindRank orders the columns: Not Reviewed, the profile's own, then Applied, Declined,
@@ -484,7 +561,8 @@ func GetUsage(jobID string) ([]Usage, error) {
 	return usage, rows.Err()
 }
 
-// PurgeProfile removes a deleted profile's board: its entries, its auto-add rules (step 140) and its custom statuses.
+// PurgeProfile removes a deleted profile's board: its entries, the removals it remembered (step 144), its auto-add rules
+// (step 140) and its custom statuses.
 // jobs.db cannot cascade from career.db, so profile.DeleteProfile calls this.
 func PurgeProfile(profileID string) error {
 	tx, err := db.JobsDB.Begin()
@@ -493,6 +571,9 @@ func PurgeProfile(profileID string) error {
 	}
 	defer func() { _ = tx.Rollback() }()
 	if _, err := tx.Exec(`DELETE FROM job_board_entries WHERE profile_id = ?`, profileID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM job_board_removals WHERE profile_id = ?`, profileID); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM profile_match_rules WHERE profile_id = ?`, profileID); err != nil {

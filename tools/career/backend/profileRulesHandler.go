@@ -171,9 +171,10 @@ func startApplying(profileID string) (done func(), ok bool) {
 	}, true
 }
 
-// profileMatchRulesApplyHandler handles POST /profile-match-rules/apply { profileId, dryRun } (step 143): it applies the
+// profileMatchRulesApplyHandler handles POST /profile-match-rules/apply { profileId, dryRun, includeRemoved } (steps 143, 144): it applies the
 // profile's rules to the jobs that already exist, or with dryRun only counts what it would do, and answers the summary
-// ({ jobs, notJudged, below, onBoard, total, statuses }). A card already on the board is never moved; the first rule of the
+// ({ jobs, notJudged, below, onBoard, removed, total, statuses }). A card already on the board is never moved, and a job the
+// person took off the board is left out (removed) unless includeRemoved is set (default false); the first rule of the
 // profile's list that fits a job decides. 400 for a bad body, no profileId, or a profile without rules; 404 for an unknown
 // profile; 405 for another method; 409 while another pass for that profile is running; 500 when the pass fails, with
 // { error, summary } where summary is what was done before the failure (what was added stays). The request's context
@@ -184,8 +185,9 @@ func profileMatchRulesApplyHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		ProfileID string `json:"profileId"`
-		DryRun    bool   `json:"dryRun"`
+		ProfileID      string `json:"profileId"`
+		DryRun         bool   `json:"dryRun"`
+		IncludeRemoved bool   `json:"includeRemoved"`
 	}
 	if !decodeJobBoardBody(w, r, &body) {
 		return
@@ -204,7 +206,7 @@ func profileMatchRulesApplyHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer done()
-	summary, err := applyRules(r.Context(), body.ProfileID, body.DryRun)
+	summary, err := applyRules(r.Context(), body.ProfileID, body.DryRun, body.IncludeRemoved)
 	switch {
 	case errors.Is(err, profilejobmatchconsumer.ErrNoRules):
 		http.Error(w, "this profile has no rules: add a rule first", http.StatusBadRequest)

@@ -22,11 +22,12 @@ var ErrNoRules = errors.New("this profile has no rules")
 // applyChunk is how many jobs one step of the pass reads; a var so a test can make it small.
 var applyChunk = 200
 
-// listJobIDs, isOnBoard and afterApplyChunk are seams for tests: the job lister, the dry run's board check, and a hook run
-// after each chunk is done.
+// listJobIDs, isOnBoard, wasRemoved and afterApplyChunk are seams for tests: the job lister, the dry run's board checks, and a
+// hook run after each chunk is done.
 var (
 	listJobIDs      = jobs.JobIDsAfter
 	isOnBoard       = jobboard.IsOnBoard
+	wasRemoved      = jobboard.WasRemoved
 	afterApplyChunk = func() {}
 )
 
@@ -38,26 +39,28 @@ type StatusCount struct {
 }
 
 // ApplySummary says what a pass did, or in a dry run what it would do. Jobs is how many jobs were looked at; each is in
-// exactly one of NotJudged, Below, OnBoard or Total (added or to be added).
+// exactly one of NotJudged, Below, OnBoard, Removed or Total (added or to be added).
 type ApplySummary struct {
 	Jobs      int           `json:"jobs"`
 	NotJudged int           `json:"notJudged"` // the profile cannot judge the job (no personas, nothing to compare)
 	Below     int           `json:"below"`     // no rule fits the job's score
 	OnBoard   int           `json:"onBoard"`   // already on this profile's board (any status), left alone
+	Removed   int           `json:"removed"`   // fits a rule but the person took it off this board earlier: left off (step 144)
 	Total     int           `json:"total"`     // added (or to be added), the sum of Statuses
 	Statuses  []StatusCount `json:"statuses"`  // per status, in the order of the rules that use them, only those with a count
 }
 
 // ApplyToExisting runs the profile's rules over every existing job, in chunks of applyChunk by id: a job already on the
 // board is left alone, one the profile cannot judge or that no rule fits is skipped, and the others are added with the
-// status of the first rule of the list that fits. With dryRun nothing is written and the summary says what a real run
-// would add. Never moves, removes or changes a card, never touches another profile's board.
+// status of the first rule of the list that fits. A job the person took off this board earlier is left off and counted
+// as Removed, unless includeRemoved is set: then it is added like any other (and the removal is forgotten). With dryRun
+// nothing is written and the summary says what a real run would do. Never moves, removes or changes a card, never touches another profile's board.
 //
 // persona-less profiles judge nothing (every job NotJudged). ErrNoRules for a profile without rules and
 // profile.ErrUnknownProfile for an unknown one, both before anything is read. A job deleted meanwhile is skipped and not
 // counted. The context is checked between chunks; on a cancellation or a failure the summary of what was done so far
 // comes back with the error, and what was added stays (a repeat finds it on the board).
-func ApplyToExisting(ctx context.Context, profileID string, dryRun bool) (ApplySummary, error) {
+func ApplyToExisting(ctx context.Context, profileID string, dryRun, includeRemoved bool) (ApplySummary, error) {
 	if err := profile.RequireProfileExists(profileID); err != nil {
 		return ApplySummary{}, err
 	}
@@ -100,7 +103,7 @@ func ApplyToExisting(ctx context.Context, profileID string, dryRun bool) (ApplyS
 			break
 		}
 		for _, jobID := range ids {
-			if err := applyOne(sc, rules, profileID, jobID, dryRun, &sum, counts); err != nil {
+			if err := applyOne(sc, rules, profileID, jobID, dryRun, includeRemoved, &sum, counts); err != nil {
 				return finish(), err
 			}
 		}
@@ -111,7 +114,7 @@ func ApplyToExisting(ctx context.Context, profileID string, dryRun bool) (ApplyS
 }
 
 // applyOne handles one job and updates the counts. A job that no longer exists is not counted at all.
-func applyOne(sc scorer, rules []profilerules.Rule, profileID, jobID string, dryRun bool, sum *ApplySummary, counts map[string]int) error {
+func applyOne(sc scorer, rules []profilerules.Rule, profileID, jobID string, dryRun, includeRemoved bool, sum *ApplySummary, counts map[string]int) error {
 	scores, err := sc.ScoreByProfile(jobID)
 	if errors.Is(err, jobs.ErrUnknownJob) {
 		return nil
@@ -136,15 +139,24 @@ func applyOne(sc scorer, rules []profilerules.Rule, profileID, jobID string, dry
 		if err != nil {
 			return err
 		}
+		removed := false
+		if !onBoard && !includeRemoved {
+			if removed, err = wasRemoved(profileID, jobID); err != nil {
+				return err
+			}
+		}
 		sum.Jobs++
-		if onBoard {
+		switch {
+		case onBoard:
 			sum.OnBoard++
-		} else {
+		case removed:
+			sum.Removed++
+		default:
 			counts[rule.StatusID]++
 		}
 		return nil
 	}
-	added, err := jobboard.AddEntryIfAbsent(profileID, jobID, rule.StatusID)
+	outcome, err := jobboard.AddEntry(profileID, jobID, rule.StatusID, includeRemoved)
 	switch {
 	case errors.Is(err, jobboard.ErrUnknownJob): // deleted since it was listed
 		return nil
@@ -152,9 +164,12 @@ func applyOne(sc scorer, rules []profilerules.Rule, profileID, jobID string, dry
 		return fmt.Errorf("could not add job %s: %w", jobID, err)
 	}
 	sum.Jobs++
-	if added {
+	switch outcome {
+	case jobboard.Added:
 		counts[rule.StatusID]++
-	} else {
+	case jobboard.RemovedByPerson:
+		sum.Removed++
+	default:
 		sum.OnBoard++
 	}
 	return nil

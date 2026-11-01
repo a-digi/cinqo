@@ -579,3 +579,427 @@ func TestIsOnBoardIsPerProfileAndAnyStatus(t *testing.T) {
 		t.Error("a card taken off the board is not on it")
 	}
 }
+
+// ---- the memory of removals (step 144) ----
+
+func removals(t *testing.T) int {
+	t.Helper()
+	var n int
+	if err := db.JobsDB.QueryRow(`SELECT COUNT(*) FROM job_board_removals`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+func wasRemoved(t *testing.T, profileID, jobID string) bool {
+	t.Helper()
+	got, err := WasRemoved(profileID, jobID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return got
+}
+
+func TestARealRemovalIsRemembered(t *testing.T) {
+	setup(t)
+	addJob(t, "j1", "Job one")
+	addJob(t, "j2", "Job two")
+	mustSet(t, "p1", "j1", NotReviewedID)
+	mustSet(t, "p1", "j2", AppliedID)
+	if wasRemoved(t, "p1", "j1") {
+		t.Fatal("nothing is remembered before a removal")
+	}
+	if err := RemoveEntry("p1", "j1"); err != nil {
+		t.Fatal(err)
+	}
+	if !wasRemoved(t, "p1", "j1") {
+		t.Error("a removed card must be remembered")
+	}
+	if wasRemoved(t, "p1", "j2") {
+		t.Error("a card that stays must not be remembered")
+	}
+	if on, _ := IsOnBoard("p1", "j1"); on {
+		t.Error("the card must be off the board")
+	}
+	if removals(t) != 1 {
+		t.Errorf("removals = %d, want 1", removals(t))
+	}
+}
+
+// Removing something that is not on the board remembers nothing: it was not a decision about a card.
+func TestRemovingACardThatIsNotThereRemembersNothing(t *testing.T) {
+	setup(t)
+	addJob(t, "j1", "Job one")
+	mustSet(t, "p2", "j1", NotReviewedID) // on another profile's board only
+	for _, c := range [][2]string{{"p1", "j1"}, {"p1", "nope"}, {"ghost", "j1"}} {
+		if err := RemoveEntry(c[0], c[1]); err != nil {
+			t.Errorf("RemoveEntry(%s, %s): %v", c[0], c[1], err)
+		}
+	}
+	if removals(t) != 0 {
+		t.Errorf("removals = %d, want none", removals(t))
+	}
+	if on, _ := IsOnBoard("p2", "j1"); !on {
+		t.Error("the other profile's card must stay")
+	}
+}
+
+func TestOneProfilesRemovalSaysNothingAboutAnother(t *testing.T) {
+	setup(t)
+	addJob(t, "j1", "Job one")
+	mustSet(t, "p1", "j1", NotReviewedID)
+	mustSet(t, "p2", "j1", NotReviewedID)
+	if err := RemoveEntry("p1", "j1"); err != nil {
+		t.Fatal(err)
+	}
+	if !wasRemoved(t, "p1", "j1") || wasRemoved(t, "p2", "j1") {
+		t.Error("only p1 removed the card")
+	}
+	if on, _ := IsOnBoard("p2", "j1"); !on {
+		t.Error("p2's card must stay")
+	}
+}
+
+// Removing again (the card was put back some other way) refreshes the one row instead of adding a second.
+func TestARepeatedRemovalKeepsOneRowAndRefreshesTheTime(t *testing.T) {
+	setup(t)
+	addJob(t, "j1", "Job one")
+	if _, err := db.JobsDB.Exec(`INSERT INTO job_board_removals (profile_id, job_id, removed_at) VALUES ('p1', 'j1', '2020-01-01 00:00:00')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.JobsDB.Exec(`INSERT INTO job_board_entries (profile_id, job_id, status_id) VALUES ('p1', 'j1', 'fixed-not-reviewed')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveEntry("p1", "j1"); err != nil {
+		t.Fatal(err)
+	}
+	var at string
+	if err := db.JobsDB.QueryRow(`SELECT removed_at FROM job_board_removals WHERE profile_id = 'p1' AND job_id = 'j1'`).Scan(&at); err != nil {
+		t.Fatal(err)
+	}
+	if removals(t) != 1 || at == "2020-01-01 00:00:00" {
+		t.Errorf("rows = %d, removed_at = %s", removals(t), at)
+	}
+}
+
+// Writing the memory and removing the card are one transaction: when the memory cannot be written the card stays.
+func TestAFailedMemoryWriteKeepsTheCardOnTheBoard(t *testing.T) {
+	setup(t)
+	addJob(t, "j1", "Job one")
+	mustSet(t, "p1", "j1", NotReviewedID)
+	if _, err := db.JobsDB.Exec(`DROP TABLE job_board_removals`); err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveEntry("p1", "j1"); err == nil {
+		t.Fatal("a removal whose memory cannot be written must fail")
+	}
+	if on, _ := IsOnBoard("p1", "j1"); !on {
+		t.Error("the card must still be on the board: the removal was rolled back")
+	}
+}
+
+// A person putting the job on the board again, or moving it, forgets the removal.
+func TestAPersonPuttingTheJobBackForgetsTheRemoval(t *testing.T) {
+	setup(t)
+	addJob(t, "j1", "Job one")
+	mustSet(t, "p1", "j1", NotReviewedID)
+	if err := RemoveEntry("p1", "j1"); err != nil {
+		t.Fatal(err)
+	}
+	mustSet(t, "p1", "j1", AppliedID)
+	if wasRemoved(t, "p1", "j1") {
+		t.Error("putting the job back must forget the removal")
+	}
+	if on, _ := IsOnBoard("p1", "j1"); !on {
+		t.Error("the job must be on the board")
+	}
+	// moving a card that was never removed changes nothing in the memory
+	mustSet(t, "p1", "j1", DeclinedID)
+	if removals(t) != 0 {
+		t.Errorf("removals = %d", removals(t))
+	}
+}
+
+func TestOnlyThatProfilesRemovalIsForgottenWhenItPutsTheJobBack(t *testing.T) {
+	setup(t)
+	addJob(t, "j1", "Job one")
+	mustSet(t, "p1", "j1", NotReviewedID)
+	mustSet(t, "p2", "j1", NotReviewedID)
+	_ = RemoveEntry("p1", "j1")
+	_ = RemoveEntry("p2", "j1")
+	mustSet(t, "p1", "j1", NotReviewedID)
+	if wasRemoved(t, "p1", "j1") || !wasRemoved(t, "p2", "j1") {
+		t.Error("p1 put the job back, p2 did not")
+	}
+}
+
+// A put-back that fails (unknown status, a foreign status, an unknown job) must not forget anything.
+func TestAFailedPutBackKeepsTheRemoval(t *testing.T) {
+	setup(t)
+	addJob(t, "j1", "Job one")
+	others := mustStatus(t, "p2", "Theirs")
+	mustSet(t, "p1", "j1", NotReviewedID)
+	_ = RemoveEntry("p1", "j1")
+	if _, err := SetEntry("p1", "j1", "no-such-status"); err == nil {
+		t.Fatal("expected an error")
+	}
+	if _, err := SetEntry("p1", "j1", others.ID); err == nil {
+		t.Fatal("expected an error")
+	}
+	if !wasRemoved(t, "p1", "j1") {
+		t.Error("a failed put-back must not forget the removal")
+	}
+	if on, _ := IsOnBoard("p1", "j1"); on {
+		t.Error("the job must still be off the board")
+	}
+}
+
+// Deleting the job (the cascade) and deleting the profile both clear the memory.
+func TestADeletedJobAndADeletedProfileClearTheMemory(t *testing.T) {
+	setup(t)
+	addJob(t, "j1", "Job one")
+	addJob(t, "j2", "Job two")
+	for _, p := range []string{"p1", "p2"} {
+		for _, j := range []string{"j1", "j2"} {
+			mustSet(t, p, j, NotReviewedID)
+			_ = RemoveEntry(p, j)
+		}
+	}
+	if removals(t) != 4 {
+		t.Fatalf("removals = %d, want 4", removals(t))
+	}
+	if _, err := db.JobsDB.Exec(`DELETE FROM jobs WHERE id = 'j1'`); err != nil {
+		t.Fatal(err)
+	}
+	if removals(t) != 2 || wasRemoved(t, "p1", "j1") || wasRemoved(t, "p2", "j1") {
+		t.Errorf("after the job was deleted: %d removals", removals(t))
+	}
+	if err := PurgeProfile("p1"); err != nil {
+		t.Fatal(err)
+	}
+	if wasRemoved(t, "p1", "j2") || !wasRemoved(t, "p2", "j2") || removals(t) != 1 {
+		t.Errorf("after p1 was purged: %d removals (p2's must stay)", removals(t))
+	}
+}
+
+// A card that leaves a board because its status was deleted does not leave: it moves, and nothing is remembered.
+func TestDeletingAStatusRemembersNothing(t *testing.T) {
+	setup(t)
+	addJob(t, "j1", "Job one")
+	custom := mustStatus(t, "p1", "Mine")
+	mustSet(t, "p1", "j1", custom.ID)
+	if err := DeleteStatus(custom.ID); err != nil {
+		t.Fatal(err)
+	}
+	if removals(t) != 0 {
+		t.Errorf("removals = %d, want none", removals(t))
+	}
+	if on, _ := IsOnBoard("p1", "j1"); !on {
+		t.Error("the card must have moved to Not Reviewed, not left")
+	}
+}
+
+// ---- the three outcomes of an automatic add ----
+
+func TestAnAutomaticAddHasThreeOutcomes(t *testing.T) {
+	setup(t)
+	addJob(t, "fresh", "Never on the board")
+	addJob(t, "there", "On the board")
+	addJob(t, "gone", "Taken off")
+	mustSet(t, "p1", "there", AppliedID)
+	mustSet(t, "p1", "gone", AppliedID)
+	_ = RemoveEntry("p1", "gone")
+
+	for job, want := range map[string]AddOutcome{"fresh": Added, "there": OnBoard, "gone": RemovedByPerson} {
+		got, err := AddEntryUnlessRemoved("p1", job, NotReviewedID)
+		if err != nil || got != want {
+			t.Errorf("%s: %q (%v), want %q", job, got, err, want)
+		}
+	}
+	if on, _ := IsOnBoard("p1", "fresh"); !on {
+		t.Error("the fresh job must be on the board")
+	}
+	if on, _ := IsOnBoard("p1", "gone"); on {
+		t.Error("a removed job must stay off the board")
+	}
+	// a card that is on the board keeps its status and its moved-at time
+	var status string
+	_ = db.JobsDB.QueryRow(`SELECT status_id FROM job_board_entries WHERE profile_id = 'p1' AND job_id = 'there'`).Scan(&status)
+	if status != AppliedID {
+		t.Errorf("a card already on the board moved to %q", status)
+	}
+	// the memory is not touched by an automatic add
+	if !wasRemoved(t, "p1", "gone") {
+		t.Error("an automatic add must not forget a removal")
+	}
+}
+
+func TestARemovalOfOneProfileDoesNotStopAnotherProfilesAdd(t *testing.T) {
+	setup(t)
+	addJob(t, "j1", "Job one")
+	mustSet(t, "p1", "j1", NotReviewedID)
+	_ = RemoveEntry("p1", "j1")
+	got, err := AddEntryUnlessRemoved("p2", "j1", NotReviewedID)
+	if err != nil || got != Added {
+		t.Errorf("p2: %q (%v), want added", got, err)
+	}
+}
+
+func TestAnAutomaticAddKeepsItsChecks(t *testing.T) {
+	setup(t)
+	addJob(t, "j1", "Job one")
+	others := mustStatus(t, "p2", "Theirs")
+	if _, err := AddEntryUnlessRemoved("p1", "nope", NotReviewedID); !errors.Is(err, ErrUnknownJob) {
+		t.Errorf("unknown job: %v", err)
+	}
+	if _, err := AddEntryUnlessRemoved("p1", "j1", "no-such"); !errors.Is(err, ErrUnknownStatus) {
+		t.Errorf("unknown status: %v", err)
+	}
+	if _, err := AddEntryUnlessRemoved("p1", "j1", others.ID); !errors.Is(err, ErrStatusNotOnBoard) {
+		t.Errorf("another profile's status: %v", err)
+	}
+	if on, _ := IsOnBoard("p1", "j1"); on {
+		t.Error("a refused add wrote something")
+	}
+}
+
+// The boolean form (used until its callers distinguish the outcomes) is true only for a real add.
+func TestAddEntryIfAbsentIsTrueOnlyForARealAdd(t *testing.T) {
+	setup(t)
+	addJob(t, "fresh", "F")
+	addJob(t, "there", "T")
+	addJob(t, "gone", "G")
+	mustSet(t, "p1", "there", AppliedID)
+	mustSet(t, "p1", "gone", AppliedID)
+	_ = RemoveEntry("p1", "gone")
+	for job, want := range map[string]bool{"fresh": true, "there": false, "gone": false} {
+		got, err := AddEntryIfAbsent("p1", job, NotReviewedID)
+		if err != nil || got != want {
+			t.Errorf("%s: %v (%v), want %v", job, got, err, want)
+		}
+	}
+}
+
+func TestWasRemovedOfAnUnknownJobOrProfileIsFalse(t *testing.T) {
+	setup(t)
+	if wasRemoved(t, "nobody", "nothing") {
+		t.Error("nothing is remembered about unknown ids")
+	}
+}
+
+func TestTheRemovalTableRefusesAnUnknownJobByItself(t *testing.T) {
+	setup(t)
+	if _, err := db.JobsDB.Exec(`INSERT INTO job_board_removals (profile_id, job_id) VALUES ('p1', 'no-such-job')`); err == nil {
+		t.Error("the foreign key must refuse an unknown job")
+	}
+	addJob(t, "j1", "Job one")
+	for i := 0; i < 2; i++ {
+		_, err := db.JobsDB.Exec(`INSERT INTO job_board_removals (profile_id, job_id) VALUES ('p1', 'j1')`)
+		if (i == 0) != (err == nil) {
+			t.Errorf("insert %d: err=%v (the primary key must refuse the second)", i, err)
+		}
+	}
+}
+
+// A card on the board wins over a stale memory row (it should not happen, but a card that is there is on the board).
+func TestACardOnTheBoardIsOnTheBoardEvenWithAStaleMemoryRow(t *testing.T) {
+	setup(t)
+	addJob(t, "j1", "Job one")
+	mustSet(t, "p1", "j1", AppliedID)
+	if _, err := db.JobsDB.Exec(`INSERT INTO job_board_removals (profile_id, job_id) VALUES ('p1', 'j1')`); err != nil {
+		t.Fatal(err)
+	}
+	got, err := AddEntryUnlessRemoved("p1", "j1", NotReviewedID)
+	if err != nil || got != OnBoard {
+		t.Errorf("%q (%v), want on_board", got, err)
+	}
+}
+
+// A memory that cannot be read is an error, never "nothing remembered": the job is not added blindly.
+func TestAMemoryThatCannotBeReadStopsTheAdd(t *testing.T) {
+	setup(t)
+	addJob(t, "j1", "Job one")
+	if _, err := db.JobsDB.Exec(`DROP TABLE job_board_removals`); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := AddEntryUnlessRemoved("p1", "j1", NotReviewedID); err == nil {
+		t.Errorf("outcome %q, want an error", got)
+	}
+	if on, _ := IsOnBoard("p1", "j1"); on {
+		t.Error("the job must not have been added")
+	}
+	if _, err := WasRemoved("p1", "j1"); err == nil {
+		t.Error("WasRemoved must report a memory it cannot read")
+	}
+}
+
+// ---- AddEntry with a choice about removals ----
+
+func TestAddEntryWithIncludeRemovedAddsARemovedJobAndForgetsTheRemoval(t *testing.T) {
+	setup(t)
+	addJob(t, "gone", "Taken off")
+	addJob(t, "there", "On the board")
+	addJob(t, "fresh", "Never on the board")
+	mustSet(t, "p1", "gone", AppliedID)
+	mustSet(t, "p1", "there", AppliedID)
+	_ = RemoveEntry("p1", "gone")
+
+	for job, want := range map[string]AddOutcome{"gone": Added, "there": OnBoard, "fresh": Added} {
+		got, err := AddEntry("p1", job, NotReviewedID, true)
+		if err != nil || got != want {
+			t.Errorf("%s: %q (%v), want %q", job, got, err, want)
+		}
+	}
+	if on, _ := IsOnBoard("p1", "gone"); !on {
+		t.Error("the removed job must be on the board when the person asked for it")
+	}
+	if wasRemoved(t, "p1", "gone") {
+		t.Error("adding a removed job on request must forget the removal")
+	}
+	var status string
+	_ = db.JobsDB.QueryRow(`SELECT status_id FROM job_board_entries WHERE profile_id = 'p1' AND job_id = 'there'`).Scan(&status)
+	if status != AppliedID {
+		t.Errorf("a card that was on the board moved to %q", status)
+	}
+}
+
+func TestAddEntryWithoutIncludeRemovedIsAddEntryUnlessRemoved(t *testing.T) {
+	setup(t)
+	addJob(t, "gone", "Taken off")
+	mustSet(t, "p1", "gone", AppliedID)
+	_ = RemoveEntry("p1", "gone")
+	got, err := AddEntry("p1", "gone", NotReviewedID, false)
+	if err != nil || got != RemovedByPerson || !wasRemoved(t, "p1", "gone") {
+		t.Errorf("%q (%v), memory kept: %v", got, err, wasRemoved(t, "p1", "gone"))
+	}
+}
+
+// Including a removed job only forgets THIS profile's removal.
+func TestIncludingARemovedJobForgetsOnlyThatProfilesRemoval(t *testing.T) {
+	setup(t)
+	addJob(t, "j1", "Job")
+	for _, p := range []string{"p1", "p2"} {
+		mustSet(t, p, "j1", AppliedID)
+		_ = RemoveEntry(p, "j1")
+	}
+	if got, err := AddEntry("p1", "j1", NotReviewedID, true); err != nil || got != Added {
+		t.Fatalf("%q %v", got, err)
+	}
+	if wasRemoved(t, "p1", "j1") || !wasRemoved(t, "p2", "j1") {
+		t.Error("p1's removal is forgotten, p2's stays")
+	}
+}
+
+// A refused include (unknown status) must leave the removal alone.
+func TestARefusedIncludeKeepsTheRemoval(t *testing.T) {
+	setup(t)
+	addJob(t, "j1", "Job")
+	mustSet(t, "p1", "j1", AppliedID)
+	_ = RemoveEntry("p1", "j1")
+	if _, err := AddEntry("p1", "j1", "no-such-status", true); !errors.Is(err, ErrUnknownStatus) {
+		t.Fatalf("err = %v", err)
+	}
+	if !wasRemoved(t, "p1", "j1") {
+		t.Error("a refused include must not forget the removal")
+	}
+}

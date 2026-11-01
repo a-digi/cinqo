@@ -263,3 +263,29 @@ func TestListStatusesAnswersFixedThenEveryProfilesOwn(t *testing.T) {
 	_ = b
 	_ = c
 }
+
+// Through the real routes: taking a card off remembers it, putting it back forgets it (step 144).
+func TestTheBoardRoutesRememberARemovalAndForgetItWhenTheCardIsPutBack(t *testing.T) {
+	p1, p2 := boardFixture(t)
+	wantStatus(t, boardCall(t, jobBoardEntriesHandler, "PUT", "/job-board-entries", `{"profileId":"`+p1+`","jobId":"j1","statusId":"fixed-not-reviewed"}`), 200)
+	wantStatus(t, boardCall(t, jobBoardEntriesHandler, "PUT", "/job-board-entries", `{"profileId":"`+p2+`","jobId":"j1","statusId":"fixed-not-reviewed"}`), 200)
+
+	wantStatus(t, boardCall(t, jobBoardEntriesHandler, "DELETE", "/job-board-entries?profileId="+p1+"&jobId=j1", ""), 204)
+	if got, _ := jobboard.WasRemoved(p1, "j1"); !got {
+		t.Error("the removal through the route must be remembered")
+	}
+	if got, _ := jobboard.WasRemoved(p2, "j1"); got {
+		t.Error("the other profile did not remove it")
+	}
+	// removing again, or a card that is not there, is still a 204 and changes nothing
+	wantStatus(t, boardCall(t, jobBoardEntriesHandler, "DELETE", "/job-board-entries?profileId="+p1+"&jobId=j1", ""), 204)
+	wantStatus(t, boardCall(t, jobBoardEntriesHandler, "DELETE", "/job-board-entries?profileId="+p1+"&jobId=j2", ""), 204)
+	if got, _ := jobboard.WasRemoved(p1, "j2"); got {
+		t.Error("a card that was never there must not be remembered")
+	}
+	// the person puts the job back (the board's "Add to board" and "Move to…" both use this PUT)
+	wantStatus(t, boardCall(t, jobBoardEntriesHandler, "PUT", "/job-board-entries", `{"profileId":"`+p1+`","jobId":"j1","statusId":"fixed-applied"}`), 200)
+	if got, _ := jobboard.WasRemoved(p1, "j1"); got {
+		t.Error("putting the job back through the route must forget the removal")
+	}
+}

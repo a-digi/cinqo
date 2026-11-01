@@ -859,6 +859,18 @@ CREATE TABLE IF NOT EXISTS job_persona_matches (
 CREATE INDEX IF NOT EXISTS job_persona_matches_persona_idx ON job_persona_matches(persona_id);
 CREATE INDEX IF NOT EXISTS job_persona_matches_profile_idx ON job_persona_matches(profile_id, job_id);
 
+-- job_board_removals (step 144): the cards a person took off a profile's board on purpose, so the automatic rules (the
+-- consumer for new jobs, "Apply to existing jobs") do not put them back. Written by jobboard.RemoveEntry in the same
+-- transaction as the delete and only for a card that was really removed; forgotten when the person puts the job back, when
+-- the job is deleted (the cascade) and when the profile is deleted (jobboard.PurgeProfile). profile_id is the opaque id into
+-- career.db, no FK across the two files. See plan/ai/tools/career/step-144-remember-removals.md.
+CREATE TABLE IF NOT EXISTS job_board_removals (
+    profile_id TEXT NOT NULL,
+    job_id     TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    removed_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (profile_id, job_id)
+);
+
 -- persona_score_state (step 142): for each persona, the fingerprint of the persona data its scores for ALL jobs were last
 -- made from (what the matcher reads of it, plus the engine version) and when. The persona recompute consumer skips a persona
 -- whose current fingerprint equals the stored one, and the sweeper finds the personas whose do not (a missed event, a new

@@ -806,7 +806,9 @@ export async function fetchCleanupSettings(): Promise<CleanupSettings> {
   return jsonOrThrow<CleanupSettings>(res, 'load the cleanup settings')
 }
 
-export async function saveCleanupSettings(settings: Omit<CleanupSettings, 'lastRunAt' | 'lastRunDeleted' | 'lastRunSummary'>): Promise<CleanupSettings> {
+export async function saveCleanupSettings(
+  settings: Omit<CleanupSettings, 'lastRunAt' | 'lastRunDeleted' | 'lastRunSummary'>,
+): Promise<CleanupSettings> {
   const res = await fetch(`${PROXY_BASE}/settings/cleanup`, {
     method: 'PUT',
     credentials: 'include',
@@ -1937,7 +1939,9 @@ export interface ProfileMatchRule {
 // percentage"); that text is what the settings page shows.
 async function ruleFailure(res: Response, action: string): Promise<Error> {
   const text = (await res.text()).trim()
-  return new Error(res.status === 400 || res.status === 409 ? text || `failed to ${action} (${res.status})` : `failed to ${action} (${res.status})`)
+  return new Error(
+    res.status === 400 || res.status === 409 ? text || `failed to ${action} (${res.status})` : `failed to ${action} (${res.status})`,
+  )
 }
 
 // One profile's rules, highest percentage first.
@@ -1987,6 +1991,7 @@ export interface ApplyRulesSummary {
   notJudged: number
   below: number
   onBoard: number
+  removed: number
   total: number
   statuses: { statusId: string; statusName: string; count: number }[]
 }
@@ -2002,12 +2007,13 @@ export class ApplyRulesError extends Error {
 }
 
 // Applies the profile's rules to the existing jobs (dryRun: only counts what it would do). A card already on the board is never
-// moved. The refusals (no rules, a pass already running) come back as an error with the server's own words.
-export async function applyProfileMatchRules(profileId: string, dryRun: boolean): Promise<ApplyRulesSummary> {
+// moved, and a job the person took off the board on purpose is left out unless includeRemoved is true (step 144). The refusals
+// (no rules, a pass already running) come back as an error with the server's own words.
+export async function applyProfileMatchRules(profileId: string, dryRun: boolean, includeRemoved = false): Promise<ApplyRulesSummary> {
   const res = await fetch(`${PROXY_BASE}/profile-match-rules/apply`, {
     method: 'POST',
     credentials: 'include',
-    body: JSON.stringify({ profileId, dryRun }),
+    body: JSON.stringify({ profileId, dryRun, includeRemoved }),
   })
   if (res.ok) return (await res.json()) as ApplyRulesSummary
   if (res.status === 500) {
@@ -2015,7 +2021,12 @@ export async function applyProfileMatchRules(profileId: string, dryRun: boolean)
     throw new ApplyRulesError(body?.error ?? 'failed to apply the rules (500)', body?.summary ?? null)
   }
   const text = (await res.text()).trim()
-  throw new ApplyRulesError(res.status === 400 || res.status === 409 ? text || `failed to apply the rules (${String(res.status)})` : `failed to apply the rules (${String(res.status)})`, null)
+  throw new ApplyRulesError(
+    res.status === 400 || res.status === 409
+      ? text || `failed to apply the rules (${String(res.status)})`
+      : `failed to apply the rules (${String(res.status)})`,
+    null,
+  )
 }
 
 export async function deleteProfileMatchRule(id: string): Promise<void> {
