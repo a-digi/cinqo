@@ -474,6 +474,23 @@ function Column({
                         {job.matchScore}%
                       </span>
                     )}
+                    {job.personas !== undefined && job.personas.length > 0 && (
+                      <ul aria-label="Persona scores" className="mt-2 space-y-1 border-t border-gray-100 pt-2">
+                        {job.personas.map((p) => (
+                          <li
+                            key={p.personaId}
+                            title={p.best === true ? `${p.personaName} fits this job best` : `${p.personaName}'s score for this job`}
+                            className="flex items-center justify-between gap-2 text-[11px]"
+                          >
+                            <span className={`min-w-0 truncate ${p.best === true ? 'font-semibold text-gray-800' : 'text-gray-500'}`}>
+                              {p.best === true && <span aria-label="Best fit">★ </span>}
+                              {p.personaName}
+                            </span>
+                            <span className={`shrink-0 rounded-full px-1.5 py-0.5 font-semibold ${scoreChipClasses(p.score)}`}>{p.score}%</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
                   <ActionMenu items={menuItems} triggerLabel={`Actions for ${job.title}`} />
                 </div>

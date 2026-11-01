@@ -43,6 +43,7 @@ import (
 	"career-tool-backend/jobmatchconsumer"
 	"career-tool-backend/jobs"
 	"career-tool-backend/persona"
+	"career-tool-backend/personamatchconsumer"
 	"career-tool-backend/portal"
 	"career-tool-backend/profile"
 	"career-tool-backend/profileimage"
@@ -126,6 +127,8 @@ func runHTTPServer() {
 	jobcleanup.StartManager(context.Background())
 	jobmatchconsumer.Start(context.Background())
 	profilejobmatchconsumer.Start(context.Background())
+	personamatchconsumer.Start(context.Background())
+	personamatchconsumer.StartSweeper(context.Background())
 	// The catch-up for events that were missed (step 134): jobs without any match are queued for the same worker,
 	// once shortly after start and then every 10 minutes.
 	jobmatchconsumer.StartSweeper(context.Background())
@@ -161,6 +164,8 @@ func runHTTPServer() {
 	http.HandleFunc("/job-statuses", jobStatusesHandler)
 	http.HandleFunc("/job-board-entries", jobBoardEntriesHandler)
 	http.HandleFunc("/job-board-usage", jobBoardUsageHandler)
+	http.HandleFunc("/job-persona-matches", jobPersonaMatchesHandler)
+	http.HandleFunc("/job-persona-matches/recalculate", jobPersonaMatchesRecalculateHandler)
 	http.HandleFunc("/profile-match-rules", profileMatchRulesHandler)
 	http.HandleFunc("/companies", companiesHandler)
 	http.HandleFunc("/recruiters", recruitersHandler)
@@ -189,8 +194,10 @@ func runHTTPServer() {
 	http.HandleFunc("/events/job-created", jobs.JobCreatedEventHandler)
 	http.HandleFunc("/events/job-found", jobmatchconsumer.EventHandler)
 	http.HandleFunc("/events/job-found-profile-rules", profilejobmatchconsumer.EventHandler)
+	http.HandleFunc("/events/job-found-persona-matches", personamatchconsumer.EventHandler)
 	http.HandleFunc("/events/job-deleted-comments", jobdeletedconsumers.JobCommentsDeleteHandler)
 	http.HandleFunc("/events/job-deleted-company", jobdeletedconsumers.CompanyDeleteHandler)
+	http.HandleFunc("/events/job-deleted-persona-matches", jobdeletedconsumers.PersonaMatchJobDeletedHandler)
 	http.HandleFunc("/events/company-deleted-comments", companydeletedconsumers.CompanyCommentsDeleteHandler)
 	http.HandleFunc("/jobs/match/unmatched", jobmatchconsumer.MatchNowHandler)
 	http.HandleFunc("/cv-import/upload", cv.UploadCVHandler)

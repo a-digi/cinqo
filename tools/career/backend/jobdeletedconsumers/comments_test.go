@@ -152,7 +152,7 @@ func TestTheConsumerIsDeclaredAndRouted(t *testing.T) {
 	if err := json.Unmarshal(raw, &m); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"events/job-deleted-comments", "events/job-deleted-company"} {
+	for _, want := range []string{"events/job-deleted-comments", "events/job-deleted-company", "events/job-deleted-persona-matches"} {
 		found := false
 		for _, l := range m.EventListeners {
 			if l.Topic == "career.job.deleted" && l.PathSuffix == want {
@@ -172,5 +172,8 @@ func TestTheConsumerIsDeclaredAndRouted(t *testing.T) {
 	}
 	if !strings.Contains(string(mainSrc), `"/events/job-deleted-company", jobdeletedconsumers.CompanyDeleteHandler`) {
 		t.Error("main.go does not route /events/job-deleted-company to CompanyDeleteHandler")
+	}
+	if !strings.Contains(string(mainSrc), `"/events/job-deleted-persona-matches", jobdeletedconsumers.PersonaMatchJobDeletedHandler`) {
+		t.Error("main.go does not route /events/job-deleted-persona-matches to PersonaMatchJobDeletedHandler")
 	}
 }

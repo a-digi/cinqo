@@ -841,6 +841,24 @@ CREATE TABLE IF NOT EXISTS job_board_entries (
 CREATE INDEX IF NOT EXISTS job_board_entries_job_idx ON job_board_entries(job_id);
 CREATE INDEX IF NOT EXISTS job_board_entries_status_idx ON job_board_entries(status_id);
 
+-- job_persona_matches (step 141): how well each persona fits each job, one row per (job, persona), written by the
+-- PersonaJobMatchConsumer and shown on the job board and the job page. Only a persona that could judge the job has a row
+-- (a missing row means "not enough data", never 0). persona_id and profile_id are opaque ids into career.db, no FK
+-- across the two files (a deleted persona or profile is purged by code, like the job board); a deleted job takes its
+-- rows with it. See plan/ai/tools/career/step-141-persona-job-match.md.
+CREATE TABLE IF NOT EXISTS job_persona_matches (
+    job_id         TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    persona_id     TEXT NOT NULL,
+    profile_id     TEXT NOT NULL,
+    score          INTEGER NOT NULL CHECK (score BETWEEN 0 AND 100),
+    engine_version TEXT NOT NULL DEFAULT '',
+    updated_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (job_id, persona_id)
+);
+
+CREATE INDEX IF NOT EXISTS job_persona_matches_persona_idx ON job_persona_matches(persona_id);
+CREATE INDEX IF NOT EXISTS job_persona_matches_profile_idx ON job_persona_matches(profile_id, job_id);
+
 -- profile_match_rules (step 140): a profile's rules for new jobs, "a job that matches at least min_percent percent is
 -- added to this profile's board with this status". profile_id is the opaque id into career.db (no FK across the two
 -- files, like job_statuses.profile_id); a rule goes with the status it points to (a deleted custom status takes its rules

@@ -59,6 +59,7 @@ func jobBoardHandler(w http.ResponseWriter, r *http.Request) {
 		writeJobBoardError(w, "read the job board", err)
 		return
 	}
+	attachPersonaScores(&board, profileID)
 	db.WriteJSON(w, board)
 }
 

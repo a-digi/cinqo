@@ -8,6 +8,7 @@ import { COMMENT_TYPE_JOB } from '../../Shared/Comments/commentTypes'
 import { AppLink } from '../../Shared/AppLink/AppLink'
 import { VIEW_COMPANY_PATH, VIEW_PORTAL_PATH } from '../../paths'
 import { JobBoardUsage } from '../JobBoard/JobBoardUsage'
+import { PersonaMatchesCard } from './PersonaMatchesCard'
 import { JobRequirements } from './JobRequirements'
 
 const JOBS_PATH = '/tools/career/jobs'
@@ -140,6 +141,8 @@ export function JobDetailsPage() {
             </div>
 
             <JobBoardUsage jobId={job.id} />
+
+            <PersonaMatchesCard jobId={job.id} />
 
             {job.matchStatus === 'completed' && job.matchScore !== undefined && (
               <div className="career-enter career-delay-2 w-full shrink-0 rounded-md border border-gray-200 bg-white p-5 shadow-sm md:w-64">

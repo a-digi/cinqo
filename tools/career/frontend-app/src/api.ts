@@ -1801,6 +1801,16 @@ export interface JobBoardCard {
   // The job's match score when that match was made for this board's profile (a job has one match result);
   // absent otherwise (step 129).
   matchScore?: number
+  // How well each of this board's profile's personas fits the job, best first (step 141); absent when the job has no scores.
+  personas?: JobBoardPersonaScore[]
+}
+
+// One persona's score for a job on a board; best marks the persona that fits the job best.
+export interface JobBoardPersonaScore {
+  personaId: string
+  personaName: string
+  score: number
+  best?: boolean
 }
 
 // How the cards inside a column are ordered: most recently moved first (the default) or best match first.
@@ -1958,6 +1968,38 @@ export async function updateProfileMatchRule(id: string, minPercent: number, sta
 export async function deleteProfileMatchRule(id: string): Promise<void> {
   const res = await fetch(`${PROXY_BASE}/profile-match-rules?id=${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'include' })
   if (!res.ok) throw await ruleFailure(res, 'delete the rule')
+}
+
+// --- the personas' scores for a job (step 141) ---
+
+// How well one persona fits a job, with who it is.
+export interface JobPersonaMatch {
+  personaId: string
+  personaName: string
+  profileId: string
+  profileName: string
+  score: number
+}
+
+// Every persona of every profile with its score for the job, best first; best is the best persona's id ('' when none).
+export interface JobPersonaMatches {
+  matches: JobPersonaMatch[]
+  best: string
+}
+
+export async function fetchJobPersonaMatches(jobId: string): Promise<JobPersonaMatches> {
+  const res = await fetch(`${PROXY_BASE}/job-persona-matches?jobId=${encodeURIComponent(jobId)}`, { credentials: 'include' })
+  return jsonOrThrow<JobPersonaMatches>(res, 'load the persona matches')
+}
+
+// Scores the job for every persona now and answers like the read.
+export async function recalculateJobPersonaMatches(jobId: string): Promise<JobPersonaMatches> {
+  const res = await fetch(`${PROXY_BASE}/job-persona-matches/recalculate`, {
+    method: 'POST',
+    credentials: 'include',
+    body: JSON.stringify({ jobId }),
+  })
+  return jsonOrThrow<JobPersonaMatches>(res, 'score the job for the personas')
 }
 
 // --- manual (no AI) job match (step 129) ---

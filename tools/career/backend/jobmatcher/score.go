@@ -153,15 +153,10 @@ func nonNil(s []string) []string {
 	return s
 }
 
-// Score rates a job against every persona (oldest first) and returns the best result: the highest score, ties to
-// the persona with more matched skills, then to the earlier one. It fails with ErrNoPersonas for none, and with an
-// InsufficientDataError when no persona has skills or a title to judge.
-func Score(job Job, personas []Persona, corpus Corpus, now time.Time) (Result, error) {
-	if len(personas) == 0 {
-		return Result{}, ErrNoPersonas
-	}
-	pj := prepareJob(job)
-	var best *Result
+// scoreEach scores a prepared job against every persona, in the order given: the results of the personas that could be
+// judged, and the reasons of those that could not.
+func scoreEach(pj preparedJob, personas []Persona, corpus Corpus, now time.Time) ([]Result, []string) {
+	var results []Result
 	var reasons []string
 	for _, p := range personas {
 		r, why := scorePersona(pj, capPersona(p), corpus, now)
@@ -169,15 +164,44 @@ func Score(job Job, personas []Persona, corpus Corpus, now time.Time) (Result, e
 			reasons = append(reasons, why...)
 			continue
 		}
-		if best == nil || r.Score > best.Score || (r.Score == best.Score && len(r.MatchedSkills) > len(best.MatchedSkills)) {
-			rr := r
-			best = &rr
-		}
+		results = append(results, r)
 	}
-	if best == nil {
+	return results, reasons
+}
+
+// betterThan is the best-persona rule: the higher score, ties to the persona with more matched skills; a full tie keeps
+// the earlier one (the caller keeps the current best unless the challenger is strictly better).
+func betterThan(challenger, best Result) bool {
+	return challenger.Score > best.Score || (challenger.Score == best.Score && len(challenger.MatchedSkills) > len(best.MatchedSkills))
+}
+
+// Score rates a job against every persona (oldest first) and returns the best result: the highest score, ties to
+// the persona with more matched skills, then to the earlier one. It fails with ErrNoPersonas for none, and with an
+// InsufficientDataError when no persona has skills or a title to judge.
+func Score(job Job, personas []Persona, corpus Corpus, now time.Time) (Result, error) {
+	if len(personas) == 0 {
+		return Result{}, ErrNoPersonas
+	}
+	results, reasons := scoreEach(prepareJob(job), personas, corpus, now)
+	if len(results) == 0 {
 		return Result{}, &InsufficientDataError{Reasons: dedupe(reasons)}
 	}
-	return *best, nil
+	best := results[0]
+	for _, r := range results[1:] {
+		if betterThan(r, best) {
+			best = r
+		}
+	}
+	return best, nil
+}
+
+// ScoreEach rates a job against every persona on its own and returns each result, in the order the personas were given
+// (step 141). A persona that cannot be judged (neither skills nor a title to compare) has no entry, so its absence means
+// "not enough data", never a score of 0. No persona, or none that can be judged, gives an empty list and no error. The
+// best persona of these results is the one Score returns.
+func ScoreEach(job Job, personas []Persona, corpus Corpus, now time.Time) []Result {
+	results, _ := scoreEach(prepareJob(job), personas, corpus, now)
+	return results
 }
 
 func dedupe(in []string) []string {

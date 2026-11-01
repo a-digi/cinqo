@@ -18,6 +18,7 @@ import (
 	"career-tool-backend/comments"
 	"career-tool-backend/db"
 	"career-tool-backend/jobboard"
+	"career-tool-backend/personamatch"
 )
 
 // ErrUnknownProfile is returned by RequireProfileExists — the literal
@@ -260,6 +261,10 @@ func DeleteProfile(id string) error {
 		// profile that is gone, and a job's usage skips profiles that no longer exist).
 		if err := jobboard.PurgeProfile(id); err != nil {
 			log.Printf("career: failed to remove the job board of deleted profile %s: %v", id, err)
+		}
+		// Likewise the job scores of its personas (step 141).
+		if err := personamatch.PurgeProfile(id); err != nil {
+			log.Printf("career: failed to remove the job scores of deleted profile %s: %v", id, err)
 		}
 	}
 	return nil

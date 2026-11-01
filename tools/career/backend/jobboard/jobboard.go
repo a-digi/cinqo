@@ -74,6 +74,17 @@ type Card struct {
 	Location   string `json:"location"`
 	UpdatedAt  string `json:"updatedAt"`
 	MatchScore *int   `json:"matchScore,omitempty"`
+	// Personas (step 141) is how well each of this board's profile's personas fits the job, best first; absent when the job
+	// has no scores. The board handler fills it from the persona scores; the jobboard package does not read them.
+	Personas []PersonaScore `json:"personas,omitempty"`
+}
+
+// PersonaScore is one persona's score for a job, shown on its card. Best marks the persona that fits the job best.
+type PersonaScore struct {
+	PersonaID   string `json:"personaId"`
+	PersonaName string `json:"personaName"`
+	Score       int    `json:"score"`
+	Best        bool   `json:"best,omitempty"`
 }
 
 // The orders of the cards inside a column (step 129): most recently moved first (the default) or best match first.

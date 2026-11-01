@@ -16,12 +16,14 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
 
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"career-tool-backend/comments"
 	"career-tool-backend/db"
+	"career-tool-backend/personamatch"
 	"career-tool-backend/profile"
 )
 
@@ -156,6 +158,11 @@ func DeletePersona(id string) error {
 			items = append(items, comments.Entity{Type: comments.CvType, ID: cv})
 		}
 		comments.PurgeMany(items)
+		// The persona's job scores live in jobs.db, which career.db cannot cascade to (step 141). Best effort like the
+		// comments: a leftover is harmless, readers only show personas that still exist.
+		if err := personamatch.PurgePersona(id); err != nil {
+			log.Printf("career: failed to remove the job scores of deleted persona %s: %v", id, err)
+		}
 	}
 	return nil
 }
