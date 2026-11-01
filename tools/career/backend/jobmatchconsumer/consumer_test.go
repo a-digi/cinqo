@@ -289,3 +289,50 @@ func TestAnEventEndsInAMatchWithTheRealMatcher(t *testing.T) {
 		t.Errorf("%d match rows, want 1", n)
 	}
 }
+
+// Enqueue (step 152) queues what fits in order, skips blank ids, never blocks on a full queue and says how many it queued.
+func TestEnqueueQueuesInOrderSkipsBlanksAndNeverBlocks(t *testing.T) {
+	c := New(3)
+	if n := c.Enqueue([]string{"a", "", "b"}); n != 2 {
+		t.Fatalf("queued %d, want 2 (the blank is skipped)", n)
+	}
+	done := make(chan int, 1)
+	go func() { done <- c.Enqueue([]string{"c", "d", "e"}) }() // one fits, the rest would block
+	select {
+	case n := <-done:
+		if n != 1 {
+			t.Errorf("queued %d into the one free place", n)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Enqueue blocked on a full queue")
+	}
+	if len(c.queue) != 3 || <-c.queue != "a" || <-c.queue != "b" || <-c.queue != "c" {
+		t.Error("the queue lost or reordered ids")
+	}
+	if n := c.Enqueue(nil); n != 0 {
+		t.Errorf("nothing to queue: %d", n)
+	}
+}
+
+// What Enqueue queued is matched by the worker like an event's job.
+func TestWhatIsEnqueuedIsMatchedByTheWorker(t *testing.T) {
+	b := watch(t, nil)
+	c := New(10)
+	c.Enqueue([]string{"j1", "j2", "j3"})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := c.Start(ctx)
+	waitFor(t, "the batch", func() bool { return len(b.sizes()) == 1 })
+	cancel()
+	<-done
+	if got := b.list[0]; len(got) != 3 || got[0] != "j1" || got[2] != "j3" {
+		t.Errorf("batch %v", got)
+	}
+}
+
+func TestThePackageEnqueueUsesTheDefaultConsumer(t *testing.T) {
+	before := len(Default.queue)
+	if n := Enqueue([]string{"default-queue-test"}); n != 1 || len(Default.queue) != before+1 {
+		t.Errorf("queued %d, queue %d -> %d", n, before, len(Default.queue))
+	}
+	<-Default.queue // no other test uses the default queue, so what is in it is ours: take it out again
+}

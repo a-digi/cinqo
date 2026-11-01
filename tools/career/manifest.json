@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.0.561",
+  "version": "0.0.564",
   "authors": [
     { "name": "Anes Detit", "email": "tafa.andet@googlemail.com" }
   ],
@@ -974,6 +974,14 @@
     {
       "topic": "career.persona.created",
       "path_suffix": "events/persona-created-rematch"
+    },
+    {
+      "topic": "career.profile.deleted",
+      "path_suffix": "events/profile-deleted-matches"
+    },
+    {
+      "topic": "career.persona.deleted",
+      "path_suffix": "events/persona-deleted-matches"
     },
     {
       "topic": "career.company.deleted",

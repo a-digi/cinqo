@@ -45,13 +45,16 @@ import (
 	"career-tool-backend/jobrecrawl"
 	"career-tool-backend/jobrecrawlconsumer"
 	"career-tool-backend/jobs"
+	"career-tool-backend/matchorphans"
 	"career-tool-backend/persona"
 	"career-tool-backend/personacreatedconsumer"
+	"career-tool-backend/personadeletedconsumer"
 	"career-tool-backend/personamatchconsumer"
 	"career-tool-backend/personarecomputeconsumer"
 	"career-tool-backend/portal"
 	"career-tool-backend/profile"
 	"career-tool-backend/profilecreatedconsumer"
+	"career-tool-backend/profiledeletedconsumer"
 	"career-tool-backend/profileimage"
 	"career-tool-backend/profilejobmatchconsumer"
 	"career-tool-backend/recruiters"
@@ -156,6 +159,8 @@ func runHTTPServer() {
 	// Step 151: the re-match of the jobs for a new profile or persona, one worker for both consumers.
 	rematchworker.Start(context.Background())
 	rematchworker.StartSweeper(context.Background())
+	// Step 152: the catch-up that removes the matches of deleted profiles and personas (lost events, late AI matches, old leftovers).
+	matchorphans.StartSweeper(context.Background())
 	jobrecrawlconsumer.Start(context.Background())
 	jobrecrawlconsumer.StartSweeper(context.Background())
 	// The catch-up for events that were missed (step 134): jobs without any match are queued for the same worker,
@@ -236,6 +241,8 @@ func runHTTPServer() {
 	http.HandleFunc("/events/profile-created-rematch", profilecreatedconsumer.EventHandler)
 	http.HandleFunc("/events/persona-created-rematch", personacreatedconsumer.EventHandler)
 	http.HandleFunc("/events/persona-changed-rematch-rearm", personacreatedconsumer.ChangedHandler)
+	http.HandleFunc("/events/profile-deleted-matches", profiledeletedconsumer.EventHandler)
+	http.HandleFunc("/events/persona-deleted-matches", personadeletedconsumer.EventHandler)
 	http.HandleFunc("/events/job-recrawl", jobrecrawlconsumer.EventHandler)
 	http.HandleFunc("/events/job-description-changed-persona-matches", personamatchconsumer.EventHandler)
 	http.HandleFunc("/events/job-deleted-comments", jobdeletedconsumers.JobCommentsDeleteHandler)

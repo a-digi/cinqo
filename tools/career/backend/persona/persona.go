@@ -146,6 +146,7 @@ func UpdatePersona(id string, name, description *string) error {
 // The comments about the persona go too, and about every CV built from it (the cascade deletes
 // those CVs); their ids are read before the delete. Best effort, see comments.PurgeMany.
 func DeletePersona(id string) error {
+	profileID, existed := profileOfPersona(id) // before the delete: the event names the profile (step 152)
 	cvIDs, err := idsOf(`SELECT id FROM cv_documents WHERE persona_id = ?`, id)
 	if err != nil {
 		return err
@@ -164,6 +165,9 @@ func DeletePersona(id string) error {
 		// comments: a leftover is harmless, readers only show personas that still exist.
 		if err := personamatch.PurgePersona(id); err != nil {
 			log.Printf("career: failed to remove the job scores of deleted persona %s: %v", id, err)
+		}
+		if existed {
+			publishPersonaDeleted(id, profileID) // step 152
 		}
 	}
 	return nil

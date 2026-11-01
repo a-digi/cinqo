@@ -74,6 +74,29 @@ func (c *Consumer) Handler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// Enqueue queues job ids for the worker without waiting (step 152: the jobs that lost their match when a profile or persona was
+// deleted, so the profiles that remain match them at once). A blank id is skipped; when the queue is full it stops and does not
+// block: the ids that did not fit are left to the catch-up sweeper, which finds every job without a match. It returns how many ids it
+// queued.
+func (c *Consumer) Enqueue(ids []string) int {
+	queued := 0
+	for _, id := range ids {
+		if id == "" {
+			continue
+		}
+		select {
+		case c.queue <- id:
+			queued++
+		default:
+			return queued
+		}
+	}
+	return queued
+}
+
+// Enqueue queues job ids for the worker of the default consumer (see Consumer.Enqueue).
+func Enqueue(ids []string) int { return Default.Enqueue(ids) }
+
 // Start launches the single worker: it waits for an id, takes up to BatchSize-1 more that are already waiting, and
 // matches them together. It runs until ctx is cancelled (after the batch in hand) and returns a channel that closes
 // when it has stopped. A failing or panicking batch is logged and the worker goes on.

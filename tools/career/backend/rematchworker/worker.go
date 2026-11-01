@@ -81,6 +81,19 @@ func (w *Worker) Rearm(profileID string) bool {
 	return true
 }
 
+// Forget removes a profile from the waiting set (it was deleted, step 152) and reports whether it was waiting. A re-match that is
+// already running is not stopped; the purge of the profile's matches waits for it.
+func (w *Worker) Forget(profileID string) bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	_, ok := w.waiting[profileID]
+	delete(w.waiting, profileID)
+	return ok
+}
+
+// Forget removes a profile from the waiting set of the default worker (see Worker.Forget).
+func Forget(profileID string) bool { return Default.Forget(profileID) }
+
 // Waiting is how many profiles are waiting.
 func (w *Worker) Waiting() int {
 	w.mu.Lock()

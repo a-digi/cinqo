@@ -451,3 +451,39 @@ func TestTheShippedTiming(t *testing.T) {
 		t.Errorf("quiet %v, max %v, tick %v, id length %d", quietPeriod, maxWait, tick, maxIDLength)
 	}
 }
+
+// Forget (step 152) takes a deleted profile out of the waiting set and nothing else; a forgotten profile is never re-matched.
+func TestForgetTakesAProfileOutOfTheWaitingSet(t *testing.T) {
+	clk := newClock()
+	w := New(clk.Now)
+	timing(t, time.Second, time.Minute)
+	r := watch(t, nil)
+	w.Note("gone")
+	w.Note("kept")
+	if !w.Forget("gone") {
+		t.Fatal("a waiting profile was not reported as forgotten")
+	}
+	if w.Forget("gone") || w.Forget("never-there") {
+		t.Error("a profile that was not waiting was reported as forgotten")
+	}
+	if w.Waiting() != 1 {
+		t.Fatalf("waiting %d", w.Waiting())
+	}
+	clk.advance(2 * time.Second)
+	w.processDue(context.Background())
+	if !slices.Equal(r.list(), []string{"kept"}) {
+		t.Errorf("re-matched %v", r.list())
+	}
+	// a profile can be noted again after it was forgotten (a new profile with the same id is not a thing, but the set must not remember)
+	w.Note("gone")
+	if w.Waiting() != 1 {
+		t.Error("noting after forgetting did not work")
+	}
+}
+
+func TestThePackageForgetUsesTheDefaultWorker(t *testing.T) {
+	Default.Note("forget-default-test")
+	if !Forget("forget-default-test") {
+		t.Error("the default worker did not forget it")
+	}
+}

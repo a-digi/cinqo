@@ -267,6 +267,7 @@ func DeleteProfile(id string) error {
 		if err := personamatch.PurgeProfile(id); err != nil {
 			log.Printf("career: failed to remove the job scores of deleted profile %s: %v", id, err)
 		}
+		publishProfileDeleted(id) // step 152: after the delete and the direct cleanups, only for a profile that really existed
 	}
 	return nil
 }

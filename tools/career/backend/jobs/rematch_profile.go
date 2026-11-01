@@ -40,6 +40,14 @@ type RematchReport struct {
 
 var rematchLocks sync.Map // profile id -> *sync.Mutex
 
+// lockProfile takes the profile's lock (a re-match and a purge of the profile's matches never overlap) and returns the unlock.
+func lockProfile(profileID string) (unlock func()) {
+	lock, _ := rematchLocks.LoadOrStore(profileID, &sync.Mutex{})
+	mu := lock.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
+}
+
 // RematchProfile re-matches every job for one profile. It is idempotent (a second run changes nothing) and two runs for the same
 // profile never overlap (the second waits). A profile that does not exist, or that cannot judge (no persona, too little data), changes
 // nothing. An error is returned only when the run cannot start (the profile or the job list cannot be read); a problem with one job
@@ -49,10 +57,7 @@ func RematchProfile(profileID string) (RematchReport, error) {
 	if profileID == "" {
 		return report, nil
 	}
-	lock, _ := rematchLocks.LoadOrStore(profileID, &sync.Mutex{})
-	mu := lock.(*sync.Mutex)
-	mu.Lock()
-	defer mu.Unlock()
+	defer lockProfile(profileID)()
 
 	// The fingerprint is read before anything is scored, so a persona created while the run goes on leaves the profile stale for the sweeper.
 	fingerprint, exists, err := ProfileFingerprint(profileID)
