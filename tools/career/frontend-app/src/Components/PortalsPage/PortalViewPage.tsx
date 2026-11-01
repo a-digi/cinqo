@@ -4,7 +4,7 @@ import { GlobeIcon } from '../../Shared/Icons/icons'
 import { MatchScoreBar } from '../../Shared/MatchScoreBar/MatchScoreBar'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { SummaryRail } from '../../Shared/SummaryRail/SummaryRail'
-import { JOBS_PATH, JOB_DETAILS_PATH, PORTALS_PATH } from '../../paths'
+import { JOBS_PATH, JOB_DETAILS_PATH, PLATFORMS_PATH } from '../../paths'
 import { ACCENTS, PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
 import { portalViewNumbers } from './portalView'
 import { plural } from './portalStats'
@@ -63,9 +63,9 @@ export function PortalViewPage() {
 
   const backLink = (
     <a
-      href={PORTALS_PATH}
+      href={PLATFORMS_PATH}
       onClick={(e) => {
-        go(e, PORTALS_PATH)
+        go(e, PLATFORMS_PATH)
       }}
       className="mb-3 inline-block text-sm font-medium text-blue-700 hover:underline"
     >

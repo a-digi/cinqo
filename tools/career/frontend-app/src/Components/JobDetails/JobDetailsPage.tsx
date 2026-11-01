@@ -8,7 +8,7 @@ import { MatchBreakdown } from '../../Shared/MatchScoreBar/MatchBreakdown'
 import { Comments } from '../../Shared/Comments/Comments'
 import { COMMENT_TYPE_JOB } from '../../Shared/Comments/commentTypes'
 import { AppLink } from '../../Shared/AppLink/AppLink'
-import { VIEW_COMPANY_PATH, VIEW_PORTAL_PATH } from '../../paths'
+import { VIEW_COMPANY_PATH, VIEW_PLATFORM_PATH } from '../../paths'
 import { JobBoardUsage } from '../JobBoard/JobBoardUsage'
 import { PersonaMatchesCard } from './PersonaMatchesCard'
 import { InfoCard } from './InfoCard'
@@ -174,7 +174,7 @@ export function JobDetailsPage() {
                       <FactChip icon={<GlobeIcon className="h-4 w-4" />}>
                         {/* The platform's page, when it still exists. */}
                         {job.portalId ? (
-                          <AppLink href={`${VIEW_PORTAL_PATH}?id=${encodeURIComponent(job.portalId)}`} className="hover:underline">
+                          <AppLink href={`${VIEW_PLATFORM_PATH}?id=${encodeURIComponent(job.portalId)}`} className="hover:underline">
                             {job.portalName}
                           </AppLink>
                         ) : (

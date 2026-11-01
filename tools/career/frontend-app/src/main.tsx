@@ -95,8 +95,10 @@ import {
   CLEANUP_SETTINGS_PATH,
   CRAWLER_SETTINGS_PATH,
   SETTINGS_PATH,
-  PORTALS_PATH,
-  VIEW_PORTAL_PATH,
+  LEGACY_PORTALS_PATH,
+  LEGACY_VIEW_PORTAL_PATH,
+  PLATFORMS_PATH,
+  VIEW_PLATFORM_PATH,
   CRAWL_MONITOR_PATH,
 } from './paths'
 
@@ -375,7 +377,7 @@ window.__cinqoToolBridge.registerRoute({
 })
 
 window.__cinqoToolBridge.registerRoute({
-  path: PORTALS_PATH,
+  path: PLATFORMS_PATH,
   mount: (container) => {
     mountReact(container, <PortalsPage />)
   },
@@ -383,11 +385,34 @@ window.__cinqoToolBridge.registerRoute({
 })
 
 window.__cinqoToolBridge.registerRoute({
-  path: VIEW_PORTAL_PATH,
+  path: VIEW_PLATFORM_PATH,
   mount: (container) => {
     mountReact(container, <PortalViewPage />)
   },
   unmount: unmountReact,
+})
+
+// The earlier addresses (they said portals): sent on to the new ones, the id kept. The old address is first replaced
+// in the browser's history (the bridge can only push), so the Back button does not land on it and forward again.
+function forwardTo(path: string): void {
+  window.history.replaceState(window.history.state, '', path)
+  window.__cinqoToolBridge.navigate(path)
+}
+
+window.__cinqoToolBridge.registerRoute({
+  path: LEGACY_PORTALS_PATH,
+  mount: () => {
+    forwardTo(PLATFORMS_PATH)
+  },
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: LEGACY_VIEW_PORTAL_PATH,
+  mount: (container) => {
+    const id = new URLSearchParams(window.location.search).get('id')
+    if (id) forwardTo(`${VIEW_PLATFORM_PATH}?id=${encodeURIComponent(id)}`)
+    else container.textContent = 'Platform not found'
+  },
 })
 
 window.__cinqoToolBridge.registerRoute({

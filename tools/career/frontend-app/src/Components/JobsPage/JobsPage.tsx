@@ -51,7 +51,7 @@ import {
 } from '../../Shared/Icons/icons'
 import { AddJobModal } from './AddJobModal'
 import { companyCell } from './companyCell'
-import { JOB_DETAILS_PATH, JOBS_PATH, VIEW_COMPANY_PATH, VIEW_PORTAL_PATH } from '../../paths'
+import { JOB_DETAILS_PATH, JOBS_PATH, VIEW_COMPANY_PATH, VIEW_PLATFORM_PATH } from '../../paths'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { PAGE_ACCENT, accentFor, initialOf } from './jobsTheme'
 import { JobStatsStrip } from './JobStatsStrip'
@@ -1393,10 +1393,10 @@ export function JobsPage() {
                               <span className="text-gray-300">—</span>
                             ) : job.portalId ? (
                               <a
-                                href={`${VIEW_PORTAL_PATH}?id=${encodeURIComponent(job.portalId)}`}
+                                href={`${VIEW_PLATFORM_PATH}?id=${encodeURIComponent(job.portalId)}`}
                                 onClick={(e) => {
                                   e.preventDefault()
-                                  window.__cinqoToolBridge.navigate(`${VIEW_PORTAL_PATH}?id=${encodeURIComponent(job.portalId ?? '')}`)
+                                  window.__cinqoToolBridge.navigate(`${VIEW_PLATFORM_PATH}?id=${encodeURIComponent(job.portalId ?? '')}`)
                                 }}
                                 title="Open this platform's page"
                                 className="inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium hover:underline"

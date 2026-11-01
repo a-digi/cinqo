@@ -29,7 +29,7 @@ import { PageTips } from '../../Shared/PageTips/PageTips'
 import { CrawlAiModal } from './CrawlAiModal'
 import { aiChip, describeChoice, linkChip, overrideOf } from './aiOverrideDisplay'
 import { PortalLinkHeader } from './PortalLinkHeader'
-import { JOBS_PATH, VIEW_PORTAL_PATH } from '../../paths'
+import { JOBS_PATH, VIEW_PLATFORM_PATH } from '../../paths'
 import { AppLink } from '../../Shared/AppLink/AppLink'
 
 // Portals are tool-wide, not persona/profile-scoped — same reasoning
@@ -453,7 +453,7 @@ export function PortalsPage() {
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation()
-                            window.__cinqoToolBridge.navigate(`${VIEW_PORTAL_PATH}?id=${encodeURIComponent(p.id)}`)
+                            window.__cinqoToolBridge.navigate(`${VIEW_PLATFORM_PATH}?id=${encodeURIComponent(p.id)}`)
                           }}
                           className="rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
                         >

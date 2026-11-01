@@ -7,7 +7,7 @@ import {
   JOBS_PATH,
   PERSONAS_PATH,
   PERSONA_DETAILS_PATH,
-  PORTALS_PATH,
+  PLATFORMS_PATH,
   PROFILES_PATH,
   RECRUITERS_PATH,
   CLEANUP_SETTINGS_PATH,
@@ -41,7 +41,7 @@ export const careerMenuEntry: MenuEntry = {
           // The job portals the jobs are crawled from (formerly "Job Sources").
           label: 'Platforms',
           children: [
-            { label: 'Platforms', path: PORTALS_PATH, scopes: ['tool:career:portals'] },
+            { label: 'Platforms', path: PLATFORMS_PATH, scopes: ['tool:career:portals'] },
             { label: 'Crawl Monitor', path: CRAWL_MONITOR_PATH, scopes: ['tool:career:portals'] },
           ],
         },
