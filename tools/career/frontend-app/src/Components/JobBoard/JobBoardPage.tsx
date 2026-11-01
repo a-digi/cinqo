@@ -18,7 +18,8 @@ import { AppLink } from '../../Shared/AppLink/AppLink'
 import { ConfirmationModal } from '../../Shared/ConfirmationModal/ConfirmationModal'
 import { BriefcaseIcon, PlusIcon, TrashIcon } from '../../Shared/Icons/icons'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
-import { JOB_DETAILS_PATH, PROFILES_PATH, VIEW_PROFILE_PATH, profileSettingsPathFor } from '../../paths'
+import { PROFILES_PATH, VIEW_PROFILE_PATH, profileSettingsPathFor } from '../../paths'
+import { jobDetailsPathFor } from '../JobDetails/jobProfileScope'
 import { plural } from '../CompaniesPage/companyStats'
 import { PAGE_ACCENT } from '../JobsPage/jobsTheme'
 import { scoreChipClasses } from '../../Shared/MatchScoreBar/matchRules'
@@ -230,6 +231,7 @@ export function JobBoardPage({ profileId }: { profileId: string }) {
         {board.columns.map((column) => (
           <Column
             key={column.id}
+            profileId={profileId}
             column={column}
             columns={board.columns}
             draggingId={draggingId}
@@ -304,6 +306,7 @@ export function JobBoardPage({ profileId }: { profileId: string }) {
 }
 
 function Column({
+  profileId,
   column,
   columns,
   draggingId,
@@ -318,6 +321,8 @@ function Column({
   onRename,
   onDelete,
 }: {
+  // The board's profile: the jobs open for it, so their page shows only this profile's comments.
+  profileId: string
   column: JobBoardColumn
   columns: JobBoardColumn[]
   draggingId: string | null
@@ -457,8 +462,9 @@ function Column({
               >
                 <div className="flex items-start gap-1">
                   <div className="min-w-0 flex-1">
+                    {/* The job opens for this board's profile (step 153): its page then shows only this profile's comments. */}
                     <AppLink
-                      href={`${JOB_DETAILS_PATH}?id=${encodeURIComponent(job.jobId)}`}
+                      href={jobDetailsPathFor(job.jobId, profileId)}
                       className="block text-sm font-semibold leading-snug hover:underline"
                       style={{ color: PAGE_ACCENT.text }}
                     >

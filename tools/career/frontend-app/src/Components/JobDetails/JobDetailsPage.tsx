@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { fetchJob, mediaDownloadUrl, type Job } from '../../api'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { fetchJob, fetchProfiles, mediaDownloadUrl, type Job } from '../../api'
 import { BuildingIcon, ClockIcon, ExternalLinkIcon, GlobeIcon, PDFIcon, TargetIcon } from '../../Shared/Icons/icons'
 import { Decor } from '../../Shared/Decor/Decor'
 import { PAGE_ACCENT } from '../JobsPage/jobsTheme'
@@ -15,6 +15,10 @@ import { InfoCard } from './InfoCard'
 import { JobRequirements } from './JobRequirements'
 import { JobRecrawlButton, JobRecrawlNotice } from './JobRecrawl'
 import { useRecrawl } from '../JobsPage/useRecrawl'
+import { useAddressSearch } from '../../Shared/AddressState/useAddressSearch'
+import { writeAddress } from '../../Shared/AddressState/writeAddress'
+import { profileLabel } from '../ProfileSwitcher/profileLabel'
+import { commentScopeFor, jobDetailsSearch, profileIdFromSearch } from './jobProfileScope'
 
 const JOBS_PATH = '/tools/career/jobs'
 
@@ -50,6 +54,28 @@ export function JobDetailsPage() {
   // A recrawl of this job (step 148): when a job's crawl finishes the job is read again so the new description shows. The batch is
   // remembered under this job's own key, so a reload while it runs picks it up again.
   const jobId = new URLSearchParams(window.location.search).get('id') ?? ''
+  // The profile this page is opened for (step 153): the job board puts it in the address, and then only that profile's comments
+  // are shown and written. It follows the live address (Back, Forward, "Show all comments"); a missing or malformed one is no profile.
+  const ownPath = useRef(window.location.pathname).current
+  const address = useAddressSearch(ownPath)
+  const profileId = profileIdFromSearch(address.search)
+  const commentScope = useMemo(() => commentScopeFor(profileId), [profileId])
+  const [scopeProfile, setScopeProfile] = useState<{ profileId: string; label: string } | null>(null)
+  useEffect(() => {
+    if (profileId === '') return
+    let cancelled = false
+    fetchProfiles()
+      .then((profiles) => {
+        const found = profiles.find((p) => p.id === profileId)
+        if (!cancelled) setScopeProfile({ profileId, label: found ? profileLabel(found) : '' })
+      })
+      .catch(() => {
+        if (!cancelled) setScopeProfile({ profileId, label: '' }) // the name is a nicety; the scope works without it
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [profileId])
   // Bumped after a refresh: the persona scores are made again from the new text (a "career.job.description_changed" event), so the card asks again.
   const [scoresKey, setScoresKey] = useState(0)
   const recrawl = useRecrawl(
@@ -169,8 +195,27 @@ export function JobDetailsPage() {
 
               <JobRequirements jobId={job.id} />
 
+              {profileId !== '' && (
+                <p className="mt-6 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-600">
+                  <span>
+                    Comments of profile{' '}
+                    <span className="font-semibold text-gray-800">
+                      {scopeProfile?.profileId === profileId && scopeProfile.label !== '' ? scopeProfile.label : profileId.slice(0, 8)}
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      writeAddress(window, ownPath, jobDetailsSearch(job.id), 'push')
+                    }}
+                    className="font-medium text-blue-700 hover:underline"
+                  >
+                    Show all comments
+                  </button>
+                </p>
+              )}
               {/* The host draws this panel as a coloured card of its own, so it gets no frame from here. */}
-              <Comments entityType={COMMENT_TYPE_JOB} entityId={job.id} />
+              <Comments entityType={COMMENT_TYPE_JOB} entityId={job.id} metadata={commentScope} />
             </div>
 
             <div className="flex min-w-0 flex-col gap-4 lg:sticky lg:top-4">
