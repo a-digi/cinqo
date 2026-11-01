@@ -354,3 +354,146 @@ func TestForJobsTakesMoreIdsThanOneQueryCan(t *testing.T) {
 		t.Errorf("rows = %v", got)
 	}
 }
+
+func TestReplaceForPersonaWritesUpdatesAndRemovesOnlyThatPersonasRows(t *testing.T) {
+	setup(t)
+	for _, id := range []string{"j1", "j2", "j3", "j4"} {
+		addJob(t, id, "2026-06-01 10:00:00")
+	}
+	_ = Replace("j1", []Row{{"pa", "A", 10, "v1"}, {"px", "B", 77, "v1"}})
+	_ = Replace("j2", []Row{{"pa", "A", 20, "v1"}, {"px", "B", 88, "v1"}})
+	_ = Replace("j3", []Row{{"px", "B", 66, "v1"}})
+	// pa: j1 updated, j2 can no longer be judged (row removed), j3 newly judged (row added), j4 never judged (nothing)
+	err := ReplaceForPersona("pa", "A", []PersonaJobScore{
+		{JobID: "j1", Judged: true, Score: 55, EngineVersion: "v2"},
+		{JobID: "j2", Judged: false},
+		{JobID: "j3", Judged: true, Score: 33, EngineVersion: "v2"},
+		{JobID: "j4", Judged: false},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for job, want := range map[string][]string{
+		"j1": {"px:77", "pa:55"},
+		"j2": {"px:88"},
+		"j3": {"px:66", "pa:33"},
+		"j4": {},
+	} {
+		got, _ := ForJob(job)
+		if !reflect.DeepEqual(scores(got), want) {
+			t.Errorf("%s = %v, want %v", job, scores(got), want)
+		}
+	}
+	got, _ := ForJob("j1")
+	if got[1].EngineVersion != "v2" || got[1].ProfileID != "A" {
+		t.Errorf("the updated row = %+v", got[1])
+	}
+}
+
+func TestReplaceForPersonaSkipsAJobThatIsGone(t *testing.T) {
+	setup(t)
+	addJob(t, "j1", "2026-06-01 10:00:00")
+	err := ReplaceForPersona("pa", "A", []PersonaJobScore{{JobID: "gone", Judged: true, Score: 50}, {JobID: "j1", Judged: true, Score: 60}})
+	if err != nil {
+		t.Fatalf("a deleted job must not be an error: %v", err)
+	}
+	if n := count(t, `SELECT COUNT(*) FROM job_persona_matches`); n != 1 {
+		t.Errorf("rows = %d, want only the existing job's", n)
+	}
+	if err := ReplaceForPersona("pa", "A", nil); err != nil {
+		t.Errorf("an empty call: %v", err)
+	}
+}
+
+// A refused score rolls the whole chunk back: what was there before is still there.
+func TestReplaceForPersonaRollsBackAChunkWithABadScore(t *testing.T) {
+	setup(t)
+	addJob(t, "j1", "2026-06-01 10:00:00")
+	addJob(t, "j2", "2026-06-01 10:00:00")
+	_ = Replace("j1", []Row{{"pa", "A", 40, ""}})
+	err := ReplaceForPersona("pa", "A", []PersonaJobScore{
+		{JobID: "j1", Judged: true, Score: 90}, // would update j1 ...
+		{JobID: "j2", Judged: true, Score: 101},
+	})
+	if err == nil {
+		t.Fatal("a score of 101 must be refused")
+	}
+	got, _ := ForJob("j1")
+	if !reflect.DeepEqual(scores(got), []string{"pa:40"}) {
+		t.Errorf("j1 after the rolled back call = %v, want the old pa:40", scores(got))
+	}
+	if n := count(t, `SELECT COUNT(*) FROM job_persona_matches WHERE job_id = 'j2'`); n != 0 {
+		t.Error("j2 must have no row")
+	}
+}
+
+func TestTheScoreStateIsReadWrittenAndUpdated(t *testing.T) {
+	setup(t)
+	if _, ok, err := GetState("pa"); err != nil || ok {
+		t.Fatalf("no state yet: ok=%v err=%v", ok, err)
+	}
+	if err := SetState("pa", "A", "fp-1"); err != nil {
+		t.Fatal(err)
+	}
+	s, ok, err := GetState("pa")
+	if err != nil || !ok || s.Fingerprint != "fp-1" || s.ScoredAt == "" {
+		t.Fatalf("state = %+v ok=%v err=%v", s, ok, err)
+	}
+	if err := SetState("pa", "A", "fp-2"); err != nil {
+		t.Fatal(err)
+	}
+	if s, _, _ := GetState("pa"); s.Fingerprint != "fp-2" {
+		t.Errorf("after an update: %+v", s)
+	}
+	if n := count(t, `SELECT COUNT(*) FROM persona_score_state`); n != 1 {
+		t.Errorf("states = %d, want one row per persona", n)
+	}
+	if _, ok, _ := GetState("pb"); ok {
+		t.Error("another persona must not have a state")
+	}
+}
+
+func TestThePurgesAlsoRemoveTheScoreState(t *testing.T) {
+	setup(t)
+	addJob(t, "j1", "2026-06-01 10:00:00")
+	_ = Replace("j1", []Row{{"pa", "A", 40, ""}, {"pa2", "A", 41, ""}, {"px", "B", 60, ""}})
+	for _, st := range [][2]string{{"pa", "A"}, {"pa2", "A"}, {"px", "B"}} {
+		_ = SetState(st[0], st[1], "fp")
+	}
+	if err := PurgePersona("pa"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, _ := GetState("pa"); ok {
+		t.Error("pa's state must be gone")
+	}
+	if _, ok, _ := GetState("pa2"); !ok {
+		t.Error("pa2's state must stay")
+	}
+	if err := PurgeProfile("A"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, _ := GetState("pa2"); ok {
+		t.Error("the profile's states must be gone")
+	}
+	if _, ok, _ := GetState("px"); !ok {
+		t.Error("another profile's state must stay")
+	}
+	if got, _ := ForJob("j1"); !reflect.DeepEqual(scores(got), []string{"px:60"}) {
+		t.Errorf("rows = %v", scores(got))
+	}
+}
+
+func TestAllStatesReadsEveryPersonasState(t *testing.T) {
+	setup(t)
+	got, err := AllStates()
+	if err != nil || got == nil || len(got) != 0 {
+		t.Fatalf("empty: %v %v", got, err)
+	}
+	_ = SetState("pa", "A", "fp-a")
+	_ = SetState("pb", "B", "fp-b")
+	_ = SetState("pa", "A", "fp-a2")
+	got, err = AllStates()
+	if err != nil || len(got) != 2 || got["pa"].Fingerprint != "fp-a2" || got["pb"].Fingerprint != "fp-b" || got["pa"].ScoredAt == "" {
+		t.Errorf("states = %+v (%v)", got, err)
+	}
+}

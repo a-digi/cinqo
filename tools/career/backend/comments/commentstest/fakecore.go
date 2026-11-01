@@ -19,6 +19,10 @@ func Start(t *testing.T) func() []string {
 	var mu sync.Mutex
 	var got []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/comments/purge" {
+			w.WriteHeader(http.StatusAccepted) // a domain event (job or persona changes), not a purge
+			return
+		}
 		raw, _ := io.ReadAll(r.Body)
 		var body map[string]string
 		_ = json.Unmarshal(raw, &body)

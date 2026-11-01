@@ -44,6 +44,7 @@ import (
 	"career-tool-backend/jobs"
 	"career-tool-backend/persona"
 	"career-tool-backend/personamatchconsumer"
+	"career-tool-backend/personarecomputeconsumer"
 	"career-tool-backend/portal"
 	"career-tool-backend/profile"
 	"career-tool-backend/profileimage"
@@ -129,6 +130,8 @@ func runHTTPServer() {
 	profilejobmatchconsumer.Start(context.Background())
 	personamatchconsumer.Start(context.Background())
 	personamatchconsumer.StartSweeper(context.Background())
+	personarecomputeconsumer.Start(context.Background())
+	personarecomputeconsumer.StartSweeper(context.Background())
 	// The catch-up for events that were missed (step 134): jobs without any match are queued for the same worker,
 	// once shortly after start and then every 10 minutes.
 	jobmatchconsumer.StartSweeper(context.Background())
@@ -195,6 +198,7 @@ func runHTTPServer() {
 	http.HandleFunc("/events/job-found", jobmatchconsumer.EventHandler)
 	http.HandleFunc("/events/job-found-profile-rules", profilejobmatchconsumer.EventHandler)
 	http.HandleFunc("/events/job-found-persona-matches", personamatchconsumer.EventHandler)
+	http.HandleFunc("/events/persona-changed-recompute", personarecomputeconsumer.EventHandler)
 	http.HandleFunc("/events/job-deleted-comments", jobdeletedconsumers.JobCommentsDeleteHandler)
 	http.HandleFunc("/events/job-deleted-company", jobdeletedconsumers.CompanyDeleteHandler)
 	http.HandleFunc("/events/job-deleted-persona-matches", jobdeletedconsumers.PersonaMatchJobDeletedHandler)

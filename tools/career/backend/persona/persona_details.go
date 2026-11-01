@@ -207,6 +207,10 @@ func UpdatePersonaDetails(args UpdatePersonaDetailsArgs) error {
 		d.RemotePreference = *args.RemotePreference
 	}
 
+	before := personaDetails{}
+	if existing.PersonaDetails != nil {
+		before = *existing.PersonaDetails
+	}
 	_, err = db.CareerDB.Exec(
 		`INSERT INTO persona_details (persona_id, headline, summary, location, desired_titles, desired_locations, min_salary, remote_preference, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
@@ -221,17 +225,32 @@ func UpdatePersonaDetails(args UpdatePersonaDetailsArgs) error {
 			updated_at = excluded.updated_at`,
 		args.PersonaID, d.Headline, d.Summary, d.Location, d.DesiredTitles, d.DesiredLocations, d.MinSalary, d.RemotePreference,
 	)
+	if err == nil && scoredDetailsDiffer(before, d) {
+		publishPersonaChanged(args.PersonaID, ChangeDetails)
+	}
 	return err
+}
+
+// scoredDetailsDiffer reports whether two versions of a persona's details differ in something the job matcher reads
+// (not the minimum salary, which it does not use): only such a change can move a score.
+func scoredDetailsDiffer(a, b personaDetails) bool {
+	return a.Headline != b.Headline || a.Summary != b.Summary || a.Location != b.Location ||
+		a.DesiredTitles != b.DesiredTitles || a.DesiredLocations != b.DesiredLocations || a.RemotePreference != b.RemotePreference
 }
 
 func AddCareerSkill(personaId, skill string) error {
 	if err := requirePersonaExists(personaId); err != nil {
 		return err
 	}
-	_, err := db.CareerDB.Exec(
+	res, err := db.CareerDB.Exec(
 		`INSERT INTO career_skills (id, persona_id, skill) VALUES (?, ?, ?) ON CONFLICT(persona_id, skill) DO NOTHING`,
 		uuid.NewString(), personaId, skill,
 	)
+	if err == nil {
+		if n, _ := res.RowsAffected(); n > 0 { // a skill that was there already changes nothing
+			publishPersonaChanged(personaId, ChangeSkillAdded)
+		}
+	}
 	return err
 }
 
@@ -239,7 +258,12 @@ func RemoveCareerSkill(personaId, skill string) error {
 	if err := requirePersonaExists(personaId); err != nil {
 		return err
 	}
-	_, err := db.CareerDB.Exec(`DELETE FROM career_skills WHERE persona_id = ? AND skill = ?`, personaId, skill)
+	res, err := db.CareerDB.Exec(`DELETE FROM career_skills WHERE persona_id = ? AND skill = ?`, personaId, skill)
+	if err == nil {
+		if n, _ := res.RowsAffected(); n > 0 {
+			publishPersonaChanged(personaId, ChangeSkillRemoved)
+		}
+	}
 	return err
 }
 
@@ -255,6 +279,7 @@ func AddCareerExperience(personaId, company, title, startDate, endDate, descript
 	if err != nil {
 		return "", err
 	}
+	publishPersonaChanged(personaId, ChangeExperienceAdded)
 	return id, nil
 }
 
@@ -262,7 +287,12 @@ func RemoveCareerExperience(personaId, id string) error {
 	if err := requirePersonaExists(personaId); err != nil {
 		return err
 	}
-	_, err := db.CareerDB.Exec(`DELETE FROM career_experience WHERE id = ? AND persona_id = ?`, id, personaId)
+	res, err := db.CareerDB.Exec(`DELETE FROM career_experience WHERE id = ? AND persona_id = ?`, id, personaId)
+	if err == nil {
+		if n, _ := res.RowsAffected(); n > 0 {
+			publishPersonaChanged(personaId, ChangeExperienceRemoved)
+		}
+	}
 	return err
 }
 
@@ -301,6 +331,7 @@ func UpdateCareerExperience(args UpdateCareerExperienceArgs) error {
 	e.StartDate = startDate.String
 	e.EndDate = endDate.String
 	e.Description = description.String
+	before := e
 
 	if args.Company != nil {
 		e.Company = *args.Company
@@ -322,6 +353,10 @@ func UpdateCareerExperience(args UpdateCareerExperienceArgs) error {
 		`UPDATE career_experience SET company = ?, title = ?, start_date = ?, end_date = ?, description = ? WHERE id = ? AND persona_id = ?`,
 		e.Company, e.Title, e.StartDate, e.EndDate, e.Description, args.ID, args.PersonaID,
 	)
+	// the matcher reads the title, the dates and the description, not the company
+	if err == nil && (before.Title != e.Title || before.StartDate != e.StartDate || before.EndDate != e.EndDate || before.Description != e.Description) {
+		publishPersonaChanged(args.PersonaID, ChangeExperienceUpdated)
+	}
 	return err
 }
 

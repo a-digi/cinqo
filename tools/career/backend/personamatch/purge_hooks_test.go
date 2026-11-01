@@ -94,3 +94,36 @@ func TestDeletingAProfileRemovesTheJobScoresOfItsPersonas(t *testing.T) {
 		t.Errorf("the other profile's rows = %d, want 1", rowsOf(t, "profile_id", b))
 	}
 }
+
+// Deleting a persona or a profile through the real functions also removes the score state.
+func TestDeletingAPersonaOrProfileRemovesTheScoreState(t *testing.T) {
+	setup(t)
+	a, _ := profile.CreateProfile("Ana", "Test")
+	b, _ := profile.CreateProfile("Ben", "Test")
+	pa1, _ := persona.CreatePersona(a, "A1", "")
+	pa2, _ := persona.CreatePersona(a, "A2", "")
+	pb, _ := persona.CreatePersona(b, "B1", "")
+	for id, prof := range map[string]string{pa1: a, pa2: a, pb: b} {
+		if err := personamatch.SetState(id, prof, "fp"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := persona.DeletePersona(pa1); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, _ := personamatch.GetState(pa1); ok {
+		t.Error("the deleted persona's state is still there")
+	}
+	if _, ok, _ := personamatch.GetState(pa2); !ok {
+		t.Error("another persona's state was removed")
+	}
+	if err := profile.DeleteProfile(a); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, _ := personamatch.GetState(pa2); ok {
+		t.Error("the deleted profile's persona state is still there")
+	}
+	if _, ok, _ := personamatch.GetState(pb); !ok {
+		t.Error("the other profile's state was removed")
+	}
+}

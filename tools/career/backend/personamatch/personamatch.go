@@ -121,16 +121,36 @@ func ForJobs(profileID string, jobIDs []string) (map[string][]Row, error) {
 	return out, nil
 }
 
-// PurgePersona removes every row of a deleted persona; a no-op for one that has none.
+// PurgePersona removes every row of a deleted persona and its score state; a no-op for one that has none.
 func PurgePersona(personaID string) error {
-	_, err := db.JobsDB.Exec(`DELETE FROM job_persona_matches WHERE persona_id = ?`, personaID)
-	return err
+	tx, err := db.JobsDB.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.Exec(`DELETE FROM job_persona_matches WHERE persona_id = ?`, personaID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM persona_score_state WHERE persona_id = ?`, personaID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
-// PurgeProfile removes every row of a deleted profile's personas.
+// PurgeProfile removes every row and score state of a deleted profile's personas.
 func PurgeProfile(profileID string) error {
-	_, err := db.JobsDB.Exec(`DELETE FROM job_persona_matches WHERE profile_id = ?`, profileID)
-	return err
+	tx, err := db.JobsDB.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.Exec(`DELETE FROM job_persona_matches WHERE profile_id = ?`, profileID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM persona_score_state WHERE profile_id = ?`, profileID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // DeleteForJob removes every row of a job (what the job-deleted consumer does; the cascade has normally done it
@@ -160,4 +180,92 @@ func JobsWithoutRows(limit int) ([]string, error) {
 		ids = append(ids, id)
 	}
 	return ids, rows.Err()
+}
+
+// PersonaJobScore is one job's result for one persona: Judged false means the persona could not judge the job, so its row
+// (if it has one) goes.
+type PersonaJobScore struct {
+	JobID         string
+	Judged        bool
+	Score         int
+	EngineVersion string
+}
+
+// ReplaceForPersona brings one persona's rows up to date for the listed jobs, in one transaction: a judged job gets its
+// row written (or updated), a job the persona could not judge loses its row, and every other row (of other jobs, of
+// other personas) is left alone. A job that no longer exists is skipped without an error (a delete during a long run).
+// A score outside 0 to 100 is refused by the table and rolls the whole call back.
+func ReplaceForPersona(personaID, profileID string, scores []PersonaJobScore) error {
+	if len(scores) == 0 {
+		return nil
+	}
+	tx, err := db.JobsDB.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	for _, sc := range scores {
+		if _, err := tx.Exec(`DELETE FROM job_persona_matches WHERE job_id = ? AND persona_id = ?`, sc.JobID, personaID); err != nil {
+			return err
+		}
+		if !sc.Judged {
+			continue
+		}
+		if _, err := tx.Exec(
+			`INSERT INTO job_persona_matches (job_id, persona_id, profile_id, score, engine_version)
+			 SELECT ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM jobs WHERE id = ?)`,
+			sc.JobID, personaID, profileID, sc.Score, sc.EngineVersion, sc.JobID,
+		); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// State is when and from what a persona's scores for all jobs were last made.
+type State struct {
+	Fingerprint string
+	ScoredAt    string
+}
+
+// GetState reads a persona's score state; ok is false for a persona that has none.
+func GetState(personaID string) (State, bool, error) {
+	var s State
+	err := db.JobsDB.QueryRow(`SELECT fingerprint, scored_at FROM persona_score_state WHERE persona_id = ?`, personaID).Scan(&s.Fingerprint, &s.ScoredAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return State{}, false, nil
+	}
+	if err != nil {
+		return State{}, false, err
+	}
+	return s, true, nil
+}
+
+// SetState records that a persona's scores for all jobs were made from data with this fingerprint, now.
+func SetState(personaID, profileID, fingerprint string) error {
+	_, err := db.JobsDB.Exec(
+		`INSERT INTO persona_score_state (persona_id, profile_id, fingerprint, scored_at) VALUES (?, ?, ?, datetime('now'))
+		 ON CONFLICT(persona_id) DO UPDATE SET profile_id = excluded.profile_id, fingerprint = excluded.fingerprint, scored_at = excluded.scored_at`,
+		personaID, profileID, fingerprint)
+	return err
+}
+
+// AllStates reads every persona's score state, by persona id (the sweeper compares them with the personas' current
+// fingerprints). Never nil.
+func AllStates() (map[string]State, error) {
+	rows, err := db.JobsDB.Query(`SELECT persona_id, fingerprint, scored_at FROM persona_score_state`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]State{}
+	for rows.Next() {
+		var id string
+		var s State
+		if err := rows.Scan(&id, &s.Fingerprint, &s.ScoredAt); err != nil {
+			return nil, err
+		}
+		out[id] = s
+	}
+	return out, rows.Err()
 }

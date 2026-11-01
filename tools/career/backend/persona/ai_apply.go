@@ -107,7 +107,15 @@ func ApplyDecisions(runID string, decisions []Decision) ([]aiRunPersona, error) 
 	if err != nil {
 		return nil, err
 	}
-	return commitDecision(tx, run, runID, accepted, declined, indexes)
+	created, err := commitDecision(tx, run, runID, accepted, declined, indexes)
+	if err != nil {
+		return nil, err
+	}
+	// The personas exist only once the transaction has committed, so they are announced now (step 142).
+	for _, p := range created {
+		publishPersonaChanged(p.ID, ChangeCreated)
+	}
+	return created, nil
 }
 
 // resolveDecisions checks the decisions against the proposal and what is already decided, and splits

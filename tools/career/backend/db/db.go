@@ -859,6 +859,18 @@ CREATE TABLE IF NOT EXISTS job_persona_matches (
 CREATE INDEX IF NOT EXISTS job_persona_matches_persona_idx ON job_persona_matches(persona_id);
 CREATE INDEX IF NOT EXISTS job_persona_matches_profile_idx ON job_persona_matches(profile_id, job_id);
 
+-- persona_score_state (step 142): for each persona, the fingerprint of the persona data its scores for ALL jobs were last
+-- made from (what the matcher reads of it, plus the engine version) and when. The persona recompute consumer skips a persona
+-- whose current fingerprint equals the stored one, and the sweeper finds the personas whose do not (a missed event, a new
+-- engine version). persona_id and profile_id are opaque ids into career.db, no FK; purged with the persona or the profile.
+-- See plan/ai/tools/career/step-142-persona-changed-rescore.md.
+CREATE TABLE IF NOT EXISTS persona_score_state (
+    persona_id  TEXT PRIMARY KEY,
+    profile_id  TEXT NOT NULL,
+    fingerprint TEXT NOT NULL,
+    scored_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- profile_match_rules (step 140): a profile's rules for new jobs, "a job that matches at least min_percent percent is
 -- added to this profile's board with this status". profile_id is the opaque id into career.db (no FK across the two
 -- files, like job_statuses.profile_id); a rule goes with the status it points to (a deleted custom status takes its rules
