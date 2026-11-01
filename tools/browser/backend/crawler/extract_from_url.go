@@ -31,7 +31,7 @@ import (
 
 type extractFromURLArgs struct {
 	URL     string            `json:"url" jsonschema:"the absolute http(s) URL of the single page to navigate to and extract from"`
-	Fields  []extractField    `json:"fields" jsonschema:"one entry per piece of data to extract off this page — label + selector, optionally attribute/multiple. Same shape as extract_page_data's own fields."`
+	Fields  FieldList         `json:"fields" jsonschema:"one entry per piece of data to extract off this page — label + selector, optionally attribute/multiple. Same shape as extract_page_data's own fields."`
 	Mapping map[string]string `json:"mapping,omitempty" jsonschema:"optional {sourceLabel: targetKey} — renames extracted fields to specific output key names before they're returned, same as extract_page_data's own mapping."`
 }
 
@@ -42,7 +42,8 @@ type extractFromURLArgs struct {
 // sibling route crawl_paginated itself uses.
 func RegisterExtractFromURL(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "extract_from_url",
+		Name:        "extract_from_url",
+		InputSchema: mustSchema(withStringFields[extractFromURLArgs]("extract_from_url")),
 		Description: "Navigate to a URL and extract specific fields from it, as ONE atomic operation. " +
 			"Always prefer this over calling fetch_page_html and then extract_page_data as two separate calls " +
 			"whenever you might be running at the same time as another, independent caller sharing this same " +

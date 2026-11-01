@@ -282,7 +282,7 @@ func validateMapping(fields []extractField, mapping map[string]string) error {
 
 type extractPageDataArgs struct {
 	Container string            `json:"container,omitempty" jsonschema:"CSS selector for each repeating item's own wrapping element (e.g. one job listing's own <div> or <li>). Set this whenever the page LISTS MULTIPLE similar items at once (a search-results/job-listing/product-catalog page) and more than one field describes each one — this is the correct default for a listing page, not an optional extra. Leave unset only for a page describing a single item. With it, fields are evaluated relative to each item and grouped correctly; without it on a listing page, fields describing multiple items are returned as separate arrays that may NOT actually correspond position-for-position to the same real item."`
-	Fields    []extractField    `json:"fields" jsonschema:"one entry per piece of data to extract — relative to each container match when container is set, relative to the whole page otherwise"`
+	Fields    FieldList         `json:"fields" jsonschema:"one entry per piece of data to extract — relative to each container match when container is set, relative to the whole page otherwise"`
 	Mapping   map[string]string `json:"mapping,omitempty" jsonschema:"optional {sourceLabel: targetKey} — renames extracted fields to specific output key names before they're returned, e.g. when a consumer expects a fixed schema (title/url/company/...) but this page's own natural fields are better labeled job_title/link/employer. Fields not listed pass through under their own label."`
 }
 
@@ -291,7 +291,8 @@ type extractPageDataArgs struct {
 // the result.
 func RegisterExtractPageData(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "extract_page_data",
+		Name:        "extract_page_data",
+		InputSchema: mustSchema(withStringFields[extractPageDataArgs]("extract_page_data")),
 		Description: "Read specific fields (by CSS selector) off the currently loaded page (see fetch_page_html) and return them structured, instead of the whole page's HTML. Read-only; submits nothing. " +
 			"Before calling this, check whether the page LISTS MULTIPLE similar items at once (e.g. a job board's own search-results page) or describes just ONE item. For a listing page, always pass container — a selector for one item's own repeating wrapping element — so the result is one correctly-grouped object per item (in `items`); this is the default correct approach for a listing page, not a fallback for when something looks wrong. Omitting container on a listing page returns separate same-length arrays (in `results`) that may NOT actually correspond position-for-position to the same real item. " +
 			"Optionally set mapping to rename extracted fields to specific output keys — e.g. a consuming tool expects title/url but this page's own natural fields are better labeled job_title/link. " +
