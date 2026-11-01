@@ -1520,6 +1520,10 @@ export interface CVImportRun {
   saveSummary: unknown
   createdAt: string
   updatedAt: string
+  // generating while the AI analyses the CV, ready once its proposal is stored, failed when it produced none (step 155). A
+  // generating run holds no proposal yet (aiProposal is null); every run from before step 155 is ready.
+  status: 'generating' | 'ready' | 'failed'
+  error?: string
 }
 
 export async function fetchCVImportRuns(): Promise<CVImportRun[]> {
@@ -1531,11 +1535,13 @@ export async function fetchCVImportRuns(): Promise<CVImportRun[]> {
   return body.runs
 }
 
+// Without aiProposal the run starts "generating" (the AI hands its proposal over with suggest_cv_import and finishCVImportRun ends
+// the run); with one it is recorded as a completed analysis, as before.
 export async function createCVImportRun(params: {
   fileId: string
   originalFilename: string
   conversationId: string
-  aiProposal: unknown
+  aiProposal?: unknown
 }): Promise<string> {
   const res = await fetch(`${PROXY_BASE}/cv-import/runs`, {
     method: 'POST',
@@ -1545,6 +1551,26 @@ export async function createCVImportRun(params: {
   })
   const body = await jsonOrThrow<{ id: string }>(res, 'create cv import run')
   return body.id
+}
+
+// Ends a generating run once the AI's turn is over: "ready" (the server answers with the run, proposal included, and refuses when the
+// AI never handed one over) or "failed" with the reason. A refusal throws an Error with the server's own message.
+export async function finishCVImportRun(
+  id: string,
+  outcome: { status: 'ready' } | { status: 'failed'; error: string },
+): Promise<CVImportRun> {
+  const res = await fetch(`${PROXY_BASE}/cv-import/runs`, {
+    method: 'PUT',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, ...outcome }),
+  })
+  if (!res.ok) {
+    const text = (await res.text()).trim()
+    throw new Error(text !== '' ? text : `failed to finish cv import run (${res.status})`)
+  }
+  const body = (await res.json()) as { run: CVImportRun }
+  return body.run
 }
 
 export async function updateCVImportRunSaveSummary(id: string, saveSummary: unknown): Promise<void> {

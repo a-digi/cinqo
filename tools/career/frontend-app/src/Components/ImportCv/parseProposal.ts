@@ -1,12 +1,8 @@
-// parseProposal.ts — turns the AI's raw final text (step 5's own
-// strict JSON contract) into typed state. Defensive by design: a model
-// occasionally wraps its JSON in a code fence or adds a stray sentence
-// despite being told not to, so this extracts the first {...} block
-// rather than assuming the whole string is bare JSON, and validates
-// every required field before returning — a malformed/missing field
-// throws, letting the caller show the `error` page state instead of
-// rendering a checklist built on undefined data. See
-// plan/ai/tools/career/import-cv/step-06-proposal-parsing-and-review-ui.md.
+// parseProposal.ts — turns the proposal the AI handed over (stored on the import run by the suggest_cv_import tool, step 155) into
+// typed state. The server already validated it; this is the page's own second check, so every required field is verified
+// again and a malformed or missing one throws, letting the caller show the `error` page state instead of rendering a
+// checklist built on undefined data. See plan/ai/tools/career/import-cv/step-06-proposal-parsing-and-review-ui.md and
+// plan/ai/tools/career/step-155-cv-import-result-by-tool-not-chat.md.
 export interface ProposalItem {
   action: 'insert' | 'skip'
   possibleDuplicateOf: string | null
@@ -74,15 +70,6 @@ export function isInitiallyChecked(item: ProposalItem): boolean {
   return item.possibleDuplicateOf === null && item.action === 'insert'
 }
 
-function extractJSONObject(text: string): string {
-  const start = text.indexOf('{')
-  const end = text.lastIndexOf('}')
-  if (start === -1 || end === -1 || end < start) {
-    throw new Error("the AI's reply did not contain a JSON object")
-  }
-  return text.slice(start, end + 1)
-}
-
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v)
 }
@@ -118,15 +105,11 @@ function parseProposalItem(raw: unknown, path: string): ProposalItem {
   return { action: raw.action, possibleDuplicateOf: asNullableString(raw.possibleDuplicateOf, `${path}.possibleDuplicateOf`) }
 }
 
-export function parseProposal(rawText: string): CVImportProposal {
-  let root: unknown
-  try {
-    root = JSON.parse(extractJSONObject(rawText)) as unknown
-  } catch (err) {
-    if (err instanceof Error && err.message.includes('did not contain a JSON object')) throw err
-    throw new Error("the AI's reply was not valid JSON")
-  }
-  if (!isRecord(root)) throw new Error("the AI's reply JSON was not an object")
+// The proposal the AI handed over with suggest_cv_import, as the server stored it (step 155): a value, not text to dig JSON out
+// of. The server validates it before storing it; this is the page's own second check, so a stored proposal of an unexpected
+// shape is an error here and never a checklist built on undefined data.
+export function parseProposal(root: unknown): CVImportProposal {
+  if (!isRecord(root)) throw new Error('the stored proposal was not an object')
 
   const profileRaw = root.profile
   if (!isRecord(profileRaw)) throw new Error('expected "profile" to be an object')

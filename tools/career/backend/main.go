@@ -127,6 +127,12 @@ func runHTTPServer() {
 	} else if n > 0 {
 		log.Printf("ended %d stale persona AI run(s)", n)
 	}
+	// step 155 — same for a CV import run (the AI's proposal arrives through suggest_cv_import; the page ends the run).
+	if n, err := cv.ReconcileStaleCVImportRuns(); err != nil {
+		log.Printf("failed to reconcile stale CV import runs: %v", err)
+	} else if n > 0 {
+		log.Printf("ended %d stale CV import run(s)", n)
+	}
 	// step 115 — same for a CV AI run.
 	if n, err := cvbuilder.ReconcileStaleCvAiRuns(); err != nil {
 		log.Printf("failed to reconcile stale CV AI runs: %v", err)
@@ -299,6 +305,7 @@ func runMCPServer() {
 	persona.RegisterDeletePersona(server)
 	persona.RegisterGetPersonaDetails(server)
 	persona.RegisterSuggestPersona(server)
+	cv.RegisterSuggestCVImport(server)
 	persona.RegisterUpdatePersonaDetails(server)
 	persona.RegisterAddCareerSkill(server)
 	persona.RegisterRemoveCareerSkill(server)

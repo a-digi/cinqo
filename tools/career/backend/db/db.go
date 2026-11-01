@@ -115,6 +115,10 @@ func InitDatabases() error {
 		careerDB.Close()
 		return fmt.Errorf("failed to add the persona AI run decisions: %w", err)
 	}
+	if err := migrateCVImportRunsStatus(careerDB); err != nil {
+		careerDB.Close()
+		return fmt.Errorf("failed to add the CV import run status: %w", err)
+	}
 	if err := migrateCvDocumentPersonas(careerDB); err != nil {
 		careerDB.Close()
 		return fmt.Errorf("failed to link the CVs to their personas: %w", err)
@@ -437,7 +441,12 @@ CREATE TABLE IF NOT EXISTS cv_import_runs (
     ai_proposal_json  TEXT NOT NULL,
     save_summary_json TEXT,
     created_at        TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at        TEXT
+    updated_at        TEXT,
+    -- status/error (step 155): the AI hands its proposal over through the suggest_cv_import tool while the run is
+    -- 'generating' (ai_proposal_json holds the JSON null until then), the page then ends it 'ready' or 'failed'. Rows
+    -- written before the columns existed are completed analyses: 'ready'.
+    status            TEXT NOT NULL DEFAULT 'ready' CHECK (status IN ('generating','ready','failed')),
+    error             TEXT
 );
 `
 
@@ -1394,6 +1403,34 @@ func migrateCvDocumentPersonas(db *sql.DB) error {
 	_, err := db.Exec(`INSERT OR IGNORE INTO cv_document_personas (cv_document_id, persona_id)
 		SELECT id, persona_id FROM cv_documents`)
 	return err
+}
+
+// migrateCVImportRunsStatus adds status and error to an installed cv_import_runs table (step 155). Every row written
+// before is a completed analysis, so it becomes 'ready'. Idempotent; a no-op on a brand-new install (the base schema already
+// has the columns).
+func migrateCVImportRunsStatus(db *sql.DB) error {
+	exists, hasStatus, err := tableHasColumn(db, "cv_import_runs", "status")
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return nil
+	}
+	if !hasStatus {
+		if _, err := db.Exec(`ALTER TABLE cv_import_runs ADD COLUMN status TEXT NOT NULL DEFAULT 'ready' CHECK (status IN ('generating','ready','failed'))`); err != nil {
+			return err
+		}
+	}
+	_, hasError, err := tableHasColumn(db, "cv_import_runs", "error")
+	if err != nil {
+		return err
+	}
+	if !hasError {
+		if _, err := db.Exec(`ALTER TABLE cv_import_runs ADD COLUMN error TEXT`); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // migratePersonasAiRunID adds the nullable ai_run_id column (step 112, the AI run a persona came

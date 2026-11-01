@@ -182,6 +182,16 @@ type createCVImportRunRequest struct {
 type updateCVImportRunRequest struct {
 	ID          string          `json:"id"`
 	SaveSummary json.RawMessage `json:"saveSummary"`
+	// Status and Error finish a generating run (step 155): "ready" once the AI handed a proposal over, "failed" with the reason.
+	// Without Status the request records the review's outcome (SaveSummary), as before.
+	Status string `json:"status"`
+	Error  string `json:"error"`
+}
+
+// noRawJSON is true for no value and for a JSON null.
+func noRawJSON(raw json.RawMessage) bool {
+	t := bytes.TrimSpace(raw)
+	return len(t) == 0 || string(t) == "null"
 }
 
 // CVImportRunsHandler handles GET/POST/PUT/DELETE cv-import/runs.
@@ -197,11 +207,19 @@ func CVImportRunsHandler(w http.ResponseWriter, r *http.Request) {
 
 	case http.MethodPost:
 		var body createCVImportRunRequest
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.FileID == "" || body.ConversationID == "" || len(body.AIProposal) == 0 {
-			http.Error(w, "fileId, conversationId, and aiProposal are all required", http.StatusBadRequest)
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.FileID == "" || body.ConversationID == "" {
+			http.Error(w, "fileId and conversationId are required (aiProposal is optional)", http.StatusBadRequest)
 			return
 		}
-		id, err := createCVImportRun(body.FileID, body.OriginalFilename, body.ConversationID, body.AIProposal)
+		// Without a proposal the run starts generating and the AI hands its proposal over with suggest_cv_import (step 155);
+		// with one it is recorded as a completed analysis, as before.
+		var id string
+		var err error
+		if noRawJSON(body.AIProposal) {
+			id, err = createGeneratingCVImportRun(body.FileID, body.OriginalFilename, body.ConversationID)
+		} else {
+			id, err = createCVImportRun(body.FileID, body.OriginalFilename, body.ConversationID, body.AIProposal)
+		}
 		if err != nil {
 			http.Error(w, "failed to record cv import run: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -210,7 +228,31 @@ func CVImportRunsHandler(w http.ResponseWriter, r *http.Request) {
 
 	case http.MethodPut:
 		var body updateCVImportRunRequest
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.ID == "" || len(body.SaveSummary) == 0 {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.ID == "" {
+			http.Error(w, "id is required", http.StatusBadRequest)
+			return
+		}
+		if body.Status != "" {
+			if len(body.SaveSummary) != 0 {
+				http.Error(w, "status and saveSummary cannot be sent together", http.StatusBadRequest)
+				return
+			}
+			run, err := finishCVImportRun(body.ID, body.Status, body.Error)
+			switch {
+			case errors.Is(err, errUnknownCVImportRun):
+				http.Error(w, "unknown cv import run id", http.StatusNotFound)
+			case errors.Is(err, errRunNotGenerating):
+				http.Error(w, err.Error(), http.StatusConflict)
+			case errors.Is(err, errNoProposalStored), errors.Is(err, errInvalidFinish):
+				http.Error(w, err.Error(), http.StatusBadRequest)
+			case err != nil:
+				http.Error(w, "failed to finish cv import run: "+err.Error(), http.StatusInternalServerError)
+			default:
+				db.WriteJSON(w, map[string]any{"run": run})
+			}
+			return
+		}
+		if len(body.SaveSummary) == 0 {
 			http.Error(w, "id and saveSummary are both required", http.StatusBadRequest)
 			return
 		}

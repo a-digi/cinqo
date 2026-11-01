@@ -3,6 +3,7 @@ import {
   uploadCV,
   fetchCVImportRuns,
   createCVImportRun,
+  finishCVImportRun,
   updateCVImportRunSaveSummary,
   deleteCVImportRun,
   type CVUploadResult,
@@ -16,6 +17,8 @@ import { cardClassName, cardStyle } from '../../Shared/cardStyle'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { plural } from '../CompaniesPage/companyStats'
 import { buildImportPrompt } from './buildImportPrompt'
+import { analyseCv } from './analysisFlow'
+import { canViewRun, runBadge } from './runStatusRules'
 import { parseProposal, isInitiallyChecked, type CVImportProposal, type ProposalItem } from './parseProposal'
 import { resolveDuplicateLabels, type DuplicateLabels } from './resolveDuplicateLabels'
 import { insertSelected, type InsertResult, type ItemResult } from './insertProposal'
@@ -102,9 +105,8 @@ export function ImportCvPage() {
   const [error, setError] = useState('')
   const [uploadResult, setUploadResult] = useState<CVUploadResult | null>(null)
   const [conversationId, setConversationId] = useState<string | null>(null)
-  // The cv_import_runs row for the CURRENTLY in-progress analysis (set
-  // once the AI's reply is successfully parsed) — handleInsert persists
-  // its own save summary onto this id after every attempt.
+  // The cv_import_runs row for the CURRENTLY in-progress analysis (recorded as "generating" before the AI is asked, step 155) —
+  // handleInsert persists its own save summary onto this id after every attempt.
   const [currentRunId, setCurrentRunId] = useState<string | null>(null)
   // Import history — every past analysis (AI proposal + eventual save
   // outcome), newest first. Deletable, viewable read-only, and
@@ -117,10 +119,8 @@ export function ImportCvPage() {
   // this tool declares).
   const [viewingRun, setViewingRun] = useState<CVImportRun | null>(null)
   const [runActionError, setRunActionError] = useState('')
-  // The AI's own raw final reply — kept even after a successful parse
-  // so the 'error' state can still show it if something later fails
-  // (e.g. duplicate-label resolution), and shown collapsed either way
-  // as a "how did the AI arrive at this" reference.
+  // The AI's last message (one plain sentence since step 155: the proposal itself arrives through the suggest_cv_import tool) —
+  // kept so the 'error' state can still show it if the analysis fails.
   const [rawReply, setRawReply] = useState('')
   const [proposal, setProposal] = useState<CVImportProposal | null>(null)
   const [duplicateLabels, setDuplicateLabels] = useState<DuplicateLabels | null>(null)
@@ -189,12 +189,17 @@ export function ImportCvPage() {
   // runAnalysis is the shared tail of both a fresh upload
   // (handleUpload) and reprocessing an existing one
   // (handleProcessAgain) — everything from "we have a fileId" onward:
-  // create the AI conversation, send the prompt, parse the reply,
-  // record a new cv_import_runs row, and enter the review state. A
-  // reprocess of an upload whose underlying Media file has since
-  // expired surfaces as a normal 'error' state here (pdf_to_markdown's
-  // own tool-unavailable text) — no separate "is this still live"
-  // check is made beforehand.
+  // create the AI conversation, record the run, send the prompt, and
+  // when the AI's turn ends read the proposal it handed over and enter
+  // the review state. A reprocess of an upload whose underlying Media
+  // file has since expired surfaces as a normal 'error' state here
+  // (pdf_to_markdown's own tool-unavailable text) — no separate "is this
+  // still live" check is made beforehand.
+  //
+  // Step 155: the AI does not print the proposal (the chat would show a JSON object). The run is recorded first ("generating");
+  // the AI hands the proposal over by calling suggest_cv_import with the run id, which stores it; its last message is one plain
+  // sentence. Only this page can end the run (the AI's turn lives in the core app), so it does, as ready or failed. See
+  // plan/ai/tools/career/step-155-cv-import-result-by-tool-not-chat.md.
   async function runAnalysis(fileId: string, originalFilename: string) {
     setFileName(originalFilename)
     setState('analyzing')
@@ -203,17 +208,19 @@ export function ImportCvPage() {
         throw new Error('No AI platform is configured — ask an admin to add one under Platforms.')
       }
       const model = ai.model ?? undefined
-      const conversation = await createConversation({
-        title: `Import CV: ${originalFilename}`,
-        platformId: platform.id,
-        model,
+      const stored = await analyseCv({
+        startConversation: async () =>
+          (await createConversation({ title: `Import CV: ${originalFilename}`, platformId: platform.id, model })).id,
+        recordRun: (conversationId) => createCVImportRun({ fileId, originalFilename, conversationId }),
+        askAi: async (conversationId, runId) => (await sendMessage(conversationId, buildImportPrompt(fileId, runId))).content,
+        endRun: finishCVImportRun,
+        onConversation: setConversationId,
+        onRun: setCurrentRunId,
+        onReply: setRawReply,
+        onRunsChanged: loadRuns,
       })
-      setConversationId(conversation.id)
 
-      const result = await sendMessage(conversation.id, buildImportPrompt(fileId))
-      setRawReply(result.content)
-
-      const parsed = parseProposal(result.content)
+      const parsed = parseProposal(stored)
       const labels = await resolveDuplicateLabels()
       const initialChecked = buildInitialChecked(parsed)
 
@@ -228,15 +235,6 @@ export function ImportCvPage() {
         const guess = parsed.persona.possibleDuplicateOf
         if (labels.personaList.some((p) => p.id === guess)) setExistingPersonaId(guess)
       }
-
-      const runId = await createCVImportRun({
-        fileId,
-        originalFilename,
-        conversationId: conversation.id,
-        aiProposal: parsed,
-      }).catch(() => null) // non-fatal — the review flow itself doesn't depend on history being recorded
-      setCurrentRunId(runId)
-      loadRuns()
 
       setState('review')
     } catch (err) {
@@ -480,43 +478,56 @@ export function ImportCvPage() {
               <h2 className="mb-2 text-sm font-semibold text-gray-900">Import history</h2>
               <div className="mb-2 min-h-[1.2em] text-sm text-red-700">{runActionError}</div>
               <ul className="divide-y divide-gray-100">
-                {runs.map((run) => (
-                  <li key={run.id} className="flex items-center justify-between gap-3 py-2 text-sm">
-                    <div className="min-w-0">
-                      <p className="truncate text-gray-700">{run.originalFilename}</p>
-                      <p className="text-xs text-gray-400">{new Date(run.createdAt).toLocaleString()}</p>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setViewingRun(run)
-                        }}
-                        className="rounded-full border border-blue-200 px-3 py-1 text-xs text-blue-700 hover:bg-blue-50"
-                      >
-                        View
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void handleProcessAgain(run)
-                        }}
-                        className="rounded-full border border-blue-200 px-3 py-1 text-xs text-blue-700 hover:bg-blue-50"
-                      >
-                        Process again
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void handleDeleteRun(run)
-                        }}
-                        className="rounded-full border border-red-200 px-3 py-1 text-xs text-red-700 hover:bg-red-50"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </li>
-                ))}
+                {runs.map((run) => {
+                  const badge = runBadge(run)
+                  return (
+                    <li key={run.id} className="flex items-center justify-between gap-3 py-2 text-sm">
+                      <div className="min-w-0">
+                        <p className="truncate text-gray-700">{run.originalFilename}</p>
+                        <p className="text-xs text-gray-400">{new Date(run.createdAt).toLocaleString()}</p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-3">
+                        {badge && (
+                          <span
+                            title={badge.title}
+                            className={`rounded-full px-2 py-0.5 text-xs font-medium ${badge.tone === 'red' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}
+                          >
+                            {badge.label}
+                          </span>
+                        )}
+                        {canViewRun(run) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setViewingRun(run)
+                            }}
+                            className="rounded-full border border-blue-200 px-3 py-1 text-xs text-blue-700 hover:bg-blue-50"
+                          >
+                            View
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void handleProcessAgain(run)
+                          }}
+                          className="rounded-full border border-blue-200 px-3 py-1 text-xs text-blue-700 hover:bg-blue-50"
+                        >
+                          Process again
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void handleDeleteRun(run)
+                          }}
+                          className="rounded-full border border-red-200 px-3 py-1 text-xs text-red-700 hover:bg-red-50"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </li>
+                  )
+                })}
               </ul>
             </section>
           )}
@@ -686,7 +697,7 @@ export function ImportCvPage() {
               <p className="mb-3 text-sm text-red-700">{error}</p>
               {rawReply && (
                 <details className="mb-3">
-                  <summary className="cursor-pointer text-xs text-gray-500">Show the AI's raw reply</summary>
+                  <summary className="cursor-pointer text-xs text-gray-500">Show the AI's last message</summary>
                   <pre className="mt-2 whitespace-pre-wrap break-words text-xs text-gray-600">{rawReply}</pre>
                 </details>
               )}

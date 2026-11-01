@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.0.565",
+  "version": "0.0.567",
   "authors": [
     { "name": "Anes Detit", "email": "tafa.andet@googlemail.com" }
   ],
@@ -742,6 +742,10 @@
     {
       "name": "suggest_persona",
       "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "suggest_cv_import",
+      "required_scope": "tool:career:cv_import"
     },
     {
       "name": "update_persona_details",
