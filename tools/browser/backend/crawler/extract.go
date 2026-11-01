@@ -160,6 +160,9 @@ func performExtraction(container string, fields []extractField, mapping map[stri
 	ctx, cancel := context.WithTimeout(shared.Ctx, extractTimeout)
 	defer cancel()
 
+	if err := ensurePageLoaded(ctx); err != nil {
+		return extractResponse{}, err
+	}
 	return runExtractionOnCurrentPage(ctx, container, fields, mapping)
 }
 

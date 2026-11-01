@@ -107,6 +107,10 @@ type paginationSpec struct {
 // own doc comment (extract.go) for what it does; unset, every page's
 // own extraction stays in today's flat mode.
 type paginatedCrawlInstructions struct {
+	// URL is optional: the page to open first, so the AI's test crawl does not depend on what the shared tab
+	// happens to hold (it is blank after find_repeating_items, which uses its own tab). Only crawl_paginated
+	// reads it; a real "Crawl now" always crawls the link's own address, whatever is stored here.
+	URL       string         `yaml:"url,omitempty"`
 	Container string         `yaml:"container,omitempty"`
 	Fields    []extractField `yaml:"fields"`
 	// Mapping (step 20) — optional {sourceLabel: targetKey}, renames
@@ -636,6 +640,9 @@ func performPaginatedCrawl(parent context.Context, url, container string, fields
 			onNavigate: func() { shared.LastHeadlessFetchURL = "" },
 			autoWait:   primaryAutoWait,
 		}
+		if err := ensurePageLoaded(ctx); err != nil {
+			return paginatedCrawlResponse{}, nil, "", err
+		}
 		result, pageHTML, err := runPaginatedCrawlLoop(ctx, tab, args)
 
 		// Only an unresolved challenge goes to the fallback — a block
@@ -887,7 +894,7 @@ func jsStringLiteral(s string) string {
 }
 
 type crawlPaginatedArgs struct {
-	Instructions string `json:"instructions" jsonschema:"a YAML document describing fields to extract (same shape as extract_page_data) plus a pagination block, and — for a LISTING page — a top-level container. BEFORE writing this, check whether the page lists multiple similar items at once (a search-results/job-listing page, the common case) or describes a single item. Single-item example:\nfields:\n  - label: title\n    selector: h1\npagination:\n  nextSelector: a.next-page\n  maxPages: 5\nmaxPages counts the currently loaded page as page 1. Never navigates to a starting URL itself — call fetch_page_html first. LISTING-page example (use this whenever more than one field describes the same repeating item, e.g. a job listing's own title, company, and link — this is the default correct approach for a listing page, not only a fix for when something looks wrong):\ncontainer: \".job-result\"\nfields:\n  - label: title\n    selector: h2\n  - label: url\n    selector: a\n    attribute: href\npagination:\n  nextSelector: a.next-page\n  maxPages: 5\nWithout container on a listing page, fields describing multiple items are returned as separate arrays (in results) that may NOT actually correspond position-for-position to the same real item — with it, the result is one correctly-grouped object per item (in items). Optionally add a top-level mapping ({sourceLabel: targetKey}) to rename fields to specific output keys before they're returned — e.g. a consuming tool expects title/url/company but this page's own natural fields are better labeled job_title/link/employer:\ncontainer: \".job-result\"\nfields:\n  - label: job_title\n    selector: h2\n  - label: employer\n    selector: .company\nmapping:\n  job_title: title\n  employer: company\npagination:\n  nextSelector: a.next-page\n  maxPages: 5"`
+	Instructions string `json:"instructions" jsonschema:"a YAML document describing fields to extract (same shape as extract_page_data) plus a pagination block, and — for a LISTING page — a top-level container. BEFORE writing this, check whether the page lists multiple similar items at once (a search-results/job-listing page, the common case) or describes a single item. Single-item example:\nfields:\n  - label: title\n    selector: h1\npagination:\n  nextSelector: a.next-page\n  maxPages: 5\nmaxPages counts the currently loaded page as page 1. Without a top-level url it never navigates to a starting URL itself — call fetch_page_html first, or add url: <the page address> at the top and it opens the page itself (do that after find_repeating_items, which does not leave its page loaded here). LISTING-page example (use this whenever more than one field describes the same repeating item, e.g. a job listing's own title, company, and link — this is the default correct approach for a listing page, not only a fix for when something looks wrong):\ncontainer: \".job-result\"\nfields:\n  - label: title\n    selector: h2\n  - label: url\n    selector: a\n    attribute: href\npagination:\n  nextSelector: a.next-page\n  maxPages: 5\nWithout container on a listing page, fields describing multiple items are returned as separate arrays (in results) that may NOT actually correspond position-for-position to the same real item — with it, the result is one correctly-grouped object per item (in items). Optionally add a top-level mapping ({sourceLabel: targetKey}) to rename fields to specific output keys before they're returned — e.g. a consuming tool expects title/url/company but this page's own natural fields are better labeled job_title/link/employer:\ncontainer: \".job-result\"\nfields:\n  - label: job_title\n    selector: h2\n  - label: employer\n    selector: .company\nmapping:\n  job_title: title\n  employer: company\npagination:\n  nextSelector: a.next-page\n  maxPages: 5"`
 }
 
 // RegisterCrawlPaginated adds the crawl_paginated MCP tool — thin,
@@ -898,6 +905,7 @@ func RegisterCrawlPaginated(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "crawl_paginated",
 		Description: "Extract fields from the currently loaded page, then follow a pagination control and repeat, up to a maximum number of pages — instructed via a YAML document (fields + pagination). Read-only; submits nothing. " +
+			"The page must be loaded first: either add a top-level url: <the page address> to the YAML (this tool then opens it itself, in the same step), or call fetch_page_html for it before this. find_repeating_items does NOT leave its page loaded here, so right after it the browser is blank and this tool answers with an error until you do one of those. " +
 			"Before writing the instructions, check whether the page LISTS MULTIPLE similar items at once or describes just one. For a listing page, always add a top-level container selector for one item's own repeating wrapping element — the default correct approach for a listing page, not a fallback — so the result is one correctly-grouped object per item (in `items`) instead of separate same-length arrays (in `results`) that may NOT actually line up. " +
 			"Optionally add a top-level mapping to rename extracted fields to specific output keys — e.g. a consuming tool expects title/url/company but this page's own natural fields are better labeled job_title/link/employer. " +
 			"If a Cloudflare challenge or block is hit on the very first page, this automatically retries in a normal (non-headless) browser window and can wait up to about 30 minutes for a person to notice and solve the challenge there before giving up — meaning this call can take up to roughly 30 minutes in that case, almost certainly longer than this AI tool-calling session's own timeout, so a Cloudflare block on page 1 is effectively only recoverable through this path by a human watching for the window, not by an AI call waiting on the result — and only then fails with a cloudflare_challenge_unresolved error if it's still blocked. If it's hit on a later page (no such retry there), pagination stops and the response's stoppedReason is \"cloudflare_blocked\" (with blockedReason explaining why) — pages already collected before the block are still returned.",
@@ -949,6 +957,7 @@ func RegisterCrawlPaginated(server *mcp.Server) {
 		}
 
 		reqBody, err := json.Marshal(paginatedCrawlRequest{
+			URL:               strings.TrimSpace(parsed.URL),
 			Container:         parsed.Container,
 			Fields:            parsed.Fields,
 			Mapping:           parsed.Mapping,
