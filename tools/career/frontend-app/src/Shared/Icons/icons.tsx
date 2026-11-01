@@ -432,3 +432,14 @@ export function PencilIcon() {
     </svg>
   )
 }
+
+// AlertCircleIcon — an exclamation mark in a circle, marks a warning inside a small pill (decorative, the text says it).
+export function AlertCircleIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" aria-hidden="true" className="h-3 w-3 shrink-0">
+      <circle cx="10" cy="10" r="7.5" strokeWidth="1.5" />
+      <path d="M10 6v4.5" strokeWidth="1.6" strokeLinecap="round" />
+      <circle cx="10" cy="13.4" r="0.6" fill="currentColor" strokeWidth="0.8" />
+    </svg>
+  )
+}

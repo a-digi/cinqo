@@ -1,6 +1,14 @@
 import type { PortalLink } from '../api'
 import { diagnoseEmptyCrawl, emptyCrawlFor } from './emptyCrawl'
-import { attemptsLabel, instructionAlertAttempts, isLikelyUncrawlable, uncrawlableTooltip } from './instructionStats'
+import { AlertCircleIcon } from '../Shared/Icons/icons'
+import {
+  attemptsLabel,
+  instructionAlertAttempts,
+  isLikelyUncrawlable,
+  isNotCrawlable,
+  NOT_CRAWLABLE_TOOLTIP,
+  uncrawlableTooltip,
+} from './instructionStats'
 
 interface LinkStatusPillsProps {
   link: PortalLink
@@ -21,7 +29,7 @@ interface LinkStatusPillsProps {
 const RED_PILL = 'rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800'
 
 // LinkStatusPills (step 89) — one portal link's at-a-glance state: the
-// listing instructions ("Instructed" / "Not instructed"), the step 86/87
+// listing instructions ("Instructed" / "Not instructed", and for the latter a "Not crawlable" pill, step 159), the step 86/87
 // alert (the stronger "probably can't be crawled" pill replaces the
 // generic "no instructions after N attempts" one for the listing), and
 // optionally an active crawl. The one copy of these pills; previously
@@ -36,6 +44,7 @@ export function LinkStatusPills({
 }: LinkStatusPillsProps) {
   const hasListing = Boolean(link.crawlInstructions)
   const listingUncrawlable = isLikelyUncrawlable(link.instructionStats.listing, hasListing, listingGenerating)
+  const notCrawlable = isNotCrawlable(link.instructionStats.listing, hasListing, listingGenerating)
   const listingAlertAttempts = instructionAlertAttempts(link.instructionStats.listing, hasListing, listingGenerating)
   // Step 90: the latest listing crawl completed but found no jobs.
   const emptyCrawl = emptyCrawlFor(link)
@@ -52,6 +61,12 @@ export function LinkStatusPills({
       >
         {hasListing ? 'Instructed' : 'Not instructed'}
       </span>
+      {notCrawlable && (
+        <span role="status" title={NOT_CRAWLABLE_TOOLTIP} className={`inline-flex items-center gap-1 ${RED_PILL}`}>
+          <AlertCircleIcon />
+          Not crawlable
+        </span>
+      )}
       {listingUncrawlable && (
         <span role="status" title={uncrawlableTooltip(link.instructionStats.listing)} className={RED_PILL}>
           Probably can&apos;t be crawled

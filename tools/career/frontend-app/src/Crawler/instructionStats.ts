@@ -43,6 +43,18 @@ export function isLikelyUncrawlable(stats: InstructionKindStats | undefined, has
   return stats.consecutiveFailures >= LIKELY_UNCRAWLABLE_THRESHOLD
 }
 
+// isNotCrawlable (step 159): the "Not crawlable" pill next to "Not instructed" — the link has no listing
+// instructions, so nothing can be crawled from it yet. Hidden while a run may still produce instructions
+// (generating / stats.running) and when the stronger "Probably can't be crawled" pill already says it.
+export function isNotCrawlable(stats: InstructionKindStats | undefined, hasInstructions: boolean, generating: boolean): boolean {
+  if (hasInstructions || generating || stats?.running) return false
+  return !isLikelyUncrawlable(stats, hasInstructions, generating)
+}
+
+// notCrawlableTooltip says what to do about the pill.
+export const NOT_CRAWLABLE_TOOLTIP =
+  'This link has no crawl instructions yet, so it cannot be crawled. Generate them with the AI (the Instructions section of this link) or add the jobs manually.'
+
 // uncrawlableTooltip explains the pill, with the latest failure if known.
 export function uncrawlableTooltip(stats: InstructionKindStats | undefined): string {
   const latest = instructionStatsTooltip(stats)

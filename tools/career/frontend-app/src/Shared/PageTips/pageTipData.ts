@@ -280,7 +280,7 @@ export const PAGE_TIPS: Record<PageTipsId, PageTipSet> = {
         title: 'Not every page can be crawled',
         tone: 'amber',
         icon: 'alert',
-        text: 'Some sites block automated visits or load their jobs only after a click or scroll. After 3 failed tries a link shows “Probably can’t be crawled”.',
+        text: 'Some sites block automated visits or load their jobs only after a click or scroll. A link with no instructions yet shows “Not crawlable”; after 3 failed tries it shows “Probably can’t be crawled”.',
       },
       {
         id: 'paywalls',
