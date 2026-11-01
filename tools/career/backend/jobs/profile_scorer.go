@@ -85,6 +85,12 @@ func (s *ProfileScorer) scoreAll(jobID string) ([]profileResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	return s.scoreJob(job)
+}
+
+// scoreJob is scoreAll for a job already in memory: the engine's call, shared by the saved-job and the candidate paths so both give
+// the same number for the same text.
+func (s *ProfileScorer) scoreJob(job jobmatcher.Job) ([]profileResult, error) {
 	var out []profileResult
 	for _, p := range s.profiles {
 		r, err := jobmatcher.Score(job, p.personas, s.corpus, s.now)
@@ -96,6 +102,22 @@ func (s *ProfileScorer) scoreAll(jobID string) ([]profileResult, error) {
 			return nil, err
 		}
 		out = append(out, profileResult{profileID: p.id, result: r})
+	}
+	return out, nil
+}
+
+// ScoreCandidate returns the best score (0 to 100) of each profile that could judge a job the crawler found and has not inserted
+// yet (step 150), in profile order, from what the crawl knows of it (title, company, location, description; a job that is not saved
+// has no requirements). For the same text it is the number Scores gives once the job is saved. An empty result means no profile
+// could judge it.
+func (s *ProfileScorer) ScoreCandidate(c Candidate) ([]int, error) {
+	all, err := s.scoreJob(jobmatcher.Job{Title: c.Title, Company: c.Company, Location: c.Location, Description: c.Description})
+	if err != nil {
+		return nil, err
+	}
+	var out []int
+	for _, r := range all {
+		out = append(out, r.result.Score)
 	}
 	return out, nil
 }

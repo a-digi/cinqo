@@ -1014,6 +1014,37 @@ INSERT OR IGNORE INTO job_cleanup_settings (id) VALUES (1);
 -- would flag nearly every job). A row that was never saved from the Settings page (updated_at is still NULL) and still
 -- carries the old default takes the new one; a saved choice, even a saved 60, is never touched.
 UPDATE job_cleanup_settings SET min_match_percent = 30 WHERE min_match_percent = 60 AND updated_at IS NULL;
+
+-- crawler_settings (step 150): the Job Crawler's "Ignore jobs" rules, a singleton like job_cleanup_settings. The crawler asks the
+-- enabled rules about every NEW job before inserting it (jobs.CriteriaMatcher). Everything defaults to off, so an install changes
+-- nothing: ignore_enabled is the master switch, min_match_enabled the rule "insert a job only if at least one profile matches it
+-- with min_match_percent or more". The CHECKs repeat the validation of the crawlcriteria package.
+CREATE TABLE IF NOT EXISTS crawler_settings (
+    id                INTEGER PRIMARY KEY CHECK (id = 1),
+    ignore_enabled    INTEGER NOT NULL DEFAULT 0 CHECK (ignore_enabled IN (0, 1)),
+    min_match_enabled INTEGER NOT NULL DEFAULT 1 CHECK (min_match_enabled IN (0, 1)),
+    min_match_percent INTEGER NOT NULL DEFAULT 30 CHECK (min_match_percent BETWEEN 1 AND 100),
+    updated_at        TEXT
+);
+
+INSERT OR IGNORE INTO crawler_settings (id) VALUES (1);
+
+-- crawler_ignored_jobs (step 150): the latest jobs the crawler did not insert because a rule refused them, so nothing disappears
+-- silently. One row per posting URL (a job refused again by the next crawl updates its row); only the newest 200 are kept. A job
+-- listed here is NOT remembered as deleted: the next crawl judges it again.
+CREATE TABLE IF NOT EXISTS crawler_ignored_jobs (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_url     TEXT NOT NULL UNIQUE,
+    title          TEXT NOT NULL,
+    company        TEXT NOT NULL DEFAULT '',
+    location       TEXT NOT NULL DEFAULT '',
+    portal_link_id TEXT NOT NULL DEFAULT '',
+    matcher        TEXT NOT NULL,
+    reason         TEXT NOT NULL,
+    ignored_at     TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS crawler_ignored_jobs_at_idx ON crawler_ignored_jobs (ignored_at, id);
 `
 
 // migrateCareerDB runs, in order, every past schema migration this

@@ -1362,6 +1362,9 @@ type IngestCrawlResultsResult struct {
 	// counts there too), and the zero-jobs flag reads saved + updated, so a link whose jobs the user all deleted is
 	// not mistaken for a broken crawl.
 	JobsIgnored int `json:"jobsIgnored"`
+	// JobsFilteredOut (step 150) counts new jobs the crawler's criteria refused (Settings → Job crawler). Like JobsIgnored they are
+	// ALSO counted in JobsUpdated: found, nothing saved, and not a sign of a broken crawl.
+	JobsFilteredOut int `json:"jobsFilteredOut"`
 }
 
 // IngestCrawlResults maps a completed deterministic crawl's own raw
@@ -1399,6 +1402,7 @@ func IngestCrawlResults(portalLinkID string, pages []CrawlResultPage) (IngestCra
 	}
 
 	var result IngestCrawlResultsResult
+	criteria := jobs.NewCriteria() // asked once for the whole crawl (step 150)
 	for _, page := range pages {
 		if len(page.Items) > 0 {
 			for _, item := range page.Items {
@@ -1407,9 +1411,14 @@ func IngestCrawlResults(portalLinkID string, pages []CrawlResultPage) (IngestCra
 					result.JobsSkipped++
 					continue
 				}
-				_, created, _, err := jobs.SavePortalJob(portalLinkID, sourceURL, title, company, location, description, postedAt)
+				_, created, _, err := jobs.SavePortalJobWith(criteria, portalLinkID, sourceURL, title, company, location, description, postedAt)
 				if errors.Is(err, jobs.ErrDeletedBefore) {
 					result.JobsIgnored++
+					result.JobsUpdated++
+					continue
+				}
+				if errors.Is(err, jobs.ErrFilteredOut) {
+					result.JobsFilteredOut++
 					result.JobsUpdated++
 					continue
 				}
@@ -1432,9 +1441,14 @@ func IngestCrawlResults(portalLinkID string, pages []CrawlResultPage) (IngestCra
 				result.JobsSkipped++
 				continue
 			}
-			_, created, _, err := jobs.SavePortalJob(portalLinkID, sourceURL, title, company, location, description, postedAt)
+			_, created, _, err := jobs.SavePortalJobWith(criteria, portalLinkID, sourceURL, title, company, location, description, postedAt)
 			if errors.Is(err, jobs.ErrDeletedBefore) {
 				result.JobsIgnored++
+				result.JobsUpdated++
+				continue
+			}
+			if errors.Is(err, jobs.ErrFilteredOut) {
+				result.JobsFilteredOut++
 				result.JobsUpdated++
 				continue
 			}

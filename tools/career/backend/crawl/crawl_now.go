@@ -734,9 +734,18 @@ func postWithBearer(ctx context.Context, url string, body []byte, accessToken st
 // crawl found jobs the user deleted before (step 133, counted in "updated" as well) does it say how many of the updated
 // ones those are.
 func crawlSummary(ingested portal.IngestCrawlResultsResult, pages int, stopped string) string {
+	// The jobs that were found but not added are part of "updated" and said apart: the ones you deleted before, and (step 150) the
+	// ones your crawler criteria kept out.
+	var notAdded []string
 	if ingested.JobsIgnored > 0 {
-		return fmt.Sprintf("Saved %d new, updated %d (%d of them deleted by you before, not added again), skipped %d — visited %d page(s) (%s).",
-			ingested.JobsSaved, ingested.JobsUpdated, ingested.JobsIgnored, ingested.JobsSkipped, pages, stopped)
+		notAdded = append(notAdded, fmt.Sprintf("%d of them deleted by you before, not added again", ingested.JobsIgnored))
+	}
+	if ingested.JobsFilteredOut > 0 {
+		notAdded = append(notAdded, fmt.Sprintf("%d of them kept out by your crawler criteria", ingested.JobsFilteredOut))
+	}
+	if len(notAdded) > 0 {
+		return fmt.Sprintf("Saved %d new, updated %d (%s), skipped %d — visited %d page(s) (%s).",
+			ingested.JobsSaved, ingested.JobsUpdated, strings.Join(notAdded, "; "), ingested.JobsSkipped, pages, stopped)
 	}
 	return fmt.Sprintf("Saved %d new, updated %d, skipped %d — visited %d page(s) (%s).",
 		ingested.JobsSaved, ingested.JobsUpdated, ingested.JobsSkipped, pages, stopped)

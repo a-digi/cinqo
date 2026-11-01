@@ -85,6 +85,8 @@ export const PORTALS_PATH = '/tools/career/portals'
 export const CRAWL_MONITOR_PATH = '/tools/career/crawl-monitor'
 export const SETTINGS_PATH = '/tools/career/settings'
 export const CLEANUP_SETTINGS_PATH = '/tools/career/settings/cleanup'
+// The Job crawler's "Ignore jobs" rules (step 150).
+export const CRAWLER_SETTINGS_PATH = '/tools/career/settings/crawler'
 export const NEW_COMPANY_PATH = '/tools/career/companies/new'
 export const NEW_RECRUITER_PATH = '/tools/career/recruiters/new'
 export const VIEW_COMPANY_PATH = '/tools/career/companies/view'

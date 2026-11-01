@@ -1,14 +1,8 @@
 import { useEffect, useState } from 'react'
-import {
-  fetchCleanupSettings,
-  previewCleanup,
-  runCleanup,
-  saveCleanupSettings,
-  type CleanupPreview,
-  type CleanupSettings,
-} from '../../api'
+import { fetchCleanupSettings, previewCleanup, runCleanup, saveCleanupSettings, type CleanupPreview, type CleanupSettings } from '../../api'
 import { InfoBox } from '../../Shared/InfoBox/InfoBox'
 import { DeletedJobsSection } from './DeletedJobsSection'
+import { Check, NumberField } from './SettingsFields'
 import { ACCENTS } from '../JobsPage/jobsTheme'
 import {
   automaticText,
@@ -36,47 +30,6 @@ const KEPT_ALWAYS = [
 
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
-}
-
-function NumberField(props: { label: string; value: string; error?: string; unit: string; onChange: (v: string) => void }) {
-  return (
-    <label className="block text-sm">
-      <span className="text-gray-700">{props.label}</span>
-      <span className="mt-1 flex items-center gap-2">
-        <input
-          type="text"
-          inputMode="numeric"
-          value={props.value}
-          onChange={(e) => {
-            props.onChange(e.target.value)
-          }}
-          aria-invalid={props.error !== undefined}
-          className={`w-24 rounded-lg border px-3 py-1.5 text-sm ${props.error ? 'border-red-400' : 'border-gray-300'}`}
-        />
-        <span className="text-gray-500">{props.unit}</span>
-      </span>
-      {props.error && <span className="mt-1 block text-xs text-red-700">{props.error}</span>}
-    </label>
-  )
-}
-
-function Check(props: { label: string; hint?: string; checked: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <label className="flex items-start gap-2 text-sm">
-      <input
-        type="checkbox"
-        checked={props.checked}
-        onChange={(e) => {
-          props.onChange(e.target.checked)
-        }}
-        className="mt-1"
-      />
-      <span>
-        <span className="font-medium text-gray-900">{props.label}</span>
-        {props.hint && <span className="block text-xs text-gray-500">{props.hint}</span>}
-      </span>
-    </label>
-  )
 }
 
 // Settings → Job cleanup (step 131): delete jobs added more than N days ago, and jobs that no profile matches well,
@@ -191,14 +144,18 @@ export function CleanupSettingsPage() {
   return (
     <div className="career-v-spin career-a-sheen career-t-type max-w-3xl p-6 font-sans text-gray-900">
       <h1 className="text-xl font-semibold">Job cleanup</h1>
-      <p className="mt-1 mb-5 text-sm text-gray-500">Delete old jobs and jobs that match none of your profiles, by hand or on a schedule.</p>
+      <p className="mt-1 mb-5 text-sm text-gray-500">
+        Delete old jobs and jobs that match none of your profiles, by hand or on a schedule.
+      </p>
 
       <section
         className="career-enter career-delay-1 rounded-3xl border p-6 shadow-sm"
         style={{ borderColor: ACCENT.soft, background: `linear-gradient(160deg, #ffffff 40%, ${ACCENT.soft} 100%)` }}
       >
         <h2 className="text-base font-semibold">Rules</h2>
-        <p className="text-sm text-gray-500">A job is deleted when either switched-on rule picks it. The preview below shows exactly which.</p>
+        <p className="text-sm text-gray-500">
+          A job is deleted when either switched-on rule picks it. The preview below shows exactly which.
+        </p>
 
         <div className="mt-4 space-y-5">
           <div className="space-y-2">
@@ -318,7 +275,9 @@ export function CleanupSettingsPage() {
 
       <section className="career-enter career-delay-2 mt-5 rounded-3xl border border-gray-200 p-6 shadow-sm">
         <h2 className="text-base font-semibold">Clean up now</h2>
-        <p className="text-sm text-gray-500">Preview what the rules above would delete, with the numbers as they are in the form (saved or not).</p>
+        <p className="text-sm text-gray-500">
+          Preview what the rules above would delete, with the numbers as they are in the form (saved or not).
+        </p>
 
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <button
@@ -390,7 +349,8 @@ export function CleanupSettingsPage() {
             {confirming && (
               <div role="alertdialog" aria-label="Confirm deleting" className="rounded-xl border border-red-200 bg-red-50 p-3">
                 <p className="text-sm text-red-800">
-                  Delete {String(freshPreview.wouldDelete)} {freshPreview.wouldDelete === 1 ? 'job' : 'jobs'} for good? This cannot be undone.
+                  Delete {String(freshPreview.wouldDelete)} {freshPreview.wouldDelete === 1 ? 'job' : 'jobs'} for good? This cannot be
+                  undone.
                 </p>
                 <div className="mt-2 flex gap-3">
                   <button

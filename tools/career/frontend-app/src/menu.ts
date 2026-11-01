@@ -11,6 +11,7 @@ import {
   PROFILES_PATH,
   RECRUITERS_PATH,
   CLEANUP_SETTINGS_PATH,
+  CRAWLER_SETTINGS_PATH,
   SETTINGS_PATH,
   SKILLS_PATH,
 } from './paths'
@@ -66,6 +67,8 @@ export const careerMenuEntry: MenuEntry = {
         { label: 'AI', path: SETTINGS_PATH, scopes: ['tool:career:jobs'] },
         // Delete old jobs and jobs that match no profile, by hand or on a schedule.
         { label: 'Job cleanup', path: CLEANUP_SETTINGS_PATH, scopes: ['tool:career:jobs'] },
+        // Which jobs the crawler must not insert (Ignore jobs).
+        { label: 'Job crawler', path: CRAWLER_SETTINGS_PATH, scopes: ['tool:career:jobs'] },
       ],
     },
   ],

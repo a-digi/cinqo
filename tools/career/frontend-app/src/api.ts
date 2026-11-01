@@ -1,5 +1,6 @@
 // api.ts — thin fetch helpers over this tool's own proxy routes
 import type { DeleteAnswer } from './Components/JobsPage/deleteRules'
+import type { CrawlerSettings, EditableCrawlerSettings, IgnoredList } from './Components/SettingsPage/crawlerRules'
 import type { BatchStatus, SkippedJob } from './Components/JobsPage/recrawlRules'
 // (http.go, step 5), the human-facing mirror of steps 3/4/8/10's own
 // MCP tools. Same PROXY_BASE convention browser's own api.ts already
@@ -822,6 +823,28 @@ export async function saveCleanupSettings(
     body: JSON.stringify(settings),
   })
   return jsonOrThrow<CleanupSettings>(res, 'save the cleanup settings')
+}
+
+// The Job crawler's "Ignore jobs" settings (step 150): the switch, the rule and its limit.
+export async function fetchCrawlerSettings(): Promise<CrawlerSettings> {
+  const res = await fetch(`${PROXY_BASE}/settings/crawler`, { credentials: 'include' })
+  return jsonOrThrow<CrawlerSettings>(res, 'load the crawler settings')
+}
+
+export async function saveCrawlerSettings(settings: EditableCrawlerSettings): Promise<CrawlerSettings> {
+  const res = await fetch(`${PROXY_BASE}/settings/crawler`, {
+    method: 'PUT',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(settings),
+  })
+  return jsonOrThrow<CrawlerSettings>(res, 'save the crawler settings')
+}
+
+// The latest jobs the rules kept out (newest first, at most `limit`; the log keeps 200).
+export async function fetchIgnoredJobs(limit = 50): Promise<IgnoredList> {
+  const res = await fetch(`${PROXY_BASE}/settings/crawler/ignored?limit=${String(limit)}`, { credentials: 'include' })
+  return jsonOrThrow<IgnoredList>(res, 'load the jobs the crawler kept out')
 }
 
 export async function previewCleanup(request: CleanupRequest): Promise<CleanupPreview> {

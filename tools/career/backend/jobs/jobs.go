@@ -193,6 +193,13 @@ const upsertKeepingManualText = `
 // updates it (refreshing crawled_at) rather than duplicating it.
 // Returns the row's own id and whether this was a fresh insert.
 func saveJob(sourceURL, title, company, location, description, postedAt string) (id string, created bool, err error) {
+	return saveJobWith(NewCriteria(), sourceURL, title, company, location, description, postedAt)
+}
+
+// saveJobWith is saveJob with the chain of criteria of this crawl (step 150): a NEW job is inserted only if every matcher keeps it,
+// otherwise ErrFilteredOut (a *FilteredOutError) comes back and nothing is written. A job that already exists is refreshed whatever
+// the matchers would say.
+func saveJobWith(criteria *Criteria, sourceURL, title, company, location, description, postedAt string) (id string, created bool, err error) {
 	description = textclean.Description(description) // only text is kept (step 147)
 	var existingID string
 	err = db.JobsDB.QueryRow(`SELECT id FROM jobs WHERE source_url = ?`, sourceURL).Scan(&existingID)
@@ -200,6 +207,9 @@ func saveJob(sourceURL, title, company, location, description, postedAt string) 
 	case err == sql.ErrNoRows:
 		if rememberedDeleted(sourceURL) { // deleted before (step 133): never inserted again
 			return "", false, ErrDeletedBefore
+		}
+		if refused := criteria.Check(Candidate{SourceURL: sourceURL, Title: title, Company: company, Location: location, Description: description, PostedAt: postedAt}); refused != nil {
+			return "", false, refused
 		}
 		id = uuid.NewString()
 		created = true
@@ -769,6 +779,14 @@ var errUnknownPortalLinkRef = errors.New("unknown portal link id")
 // hasn't seen before, which is exactly the cross-portal,
 // different-URL case this step exists for.
 func SavePortalJob(portalLinkId, sourceURL, title, company, location, description, postedAt string) (id string, created, duplicate bool, err error) {
+	return SavePortalJobWith(NewCriteria(), portalLinkId, sourceURL, title, company, location, description, postedAt)
+}
+
+// SavePortalJobWith is SavePortalJob with the chain of criteria of this crawl (step 150), built once by the caller (NewCriteria) so a
+// crawl of many jobs asks the source once. A job that would be inserted as new is first checked by every matcher; one that is refused
+// comes back as ErrFilteredOut (a *FilteredOutError) with nothing written and no event sent. A job that already exists (same URL) is
+// refreshed, and a cross-portal duplicate is reported, whatever the matchers would say: they are only asked about a real insert.
+func SavePortalJobWith(criteria *Criteria, portalLinkId, sourceURL, title, company, location, description, postedAt string) (id string, created, duplicate bool, err error) {
 	description = textclean.Description(description) // only text is kept (step 147)
 	portalLinkURL, err := findPortalLinkURL(portalLinkId)
 	if err != nil {
@@ -810,6 +828,10 @@ func SavePortalJob(portalLinkId, sourceURL, title, company, location, descriptio
 		).Scan(&existingByTitleCompany)
 		switch {
 		case err == sql.ErrNoRows:
+			// a real insert: the criteria of this crawl (step 150) are asked now, not for a refresh or a duplicate
+			if refused := criteria.Check(Candidate{SourceURL: sourceURL, Title: title, Company: company, Location: location, Description: description, PostedAt: postedAt, PortalLinkID: portalLinkId}); refused != nil {
+				return "", false, false, refused
+			}
 			id = uuid.NewString()
 			created = true
 		case err != nil:
@@ -936,6 +958,10 @@ func RegisterSaveJob(server *mcp.Server) {
 		if errors.Is(err, ErrDeletedBefore) {
 			return db.JSONResult(map[string]any{"id": "", "created": false, "ignored": true})
 		}
+		var refused *FilteredOutError
+		if errors.As(err, &refused) {
+			return db.JSONResult(map[string]any{"id": "", "created": false, "filteredOut": true, "matcher": refused.Matcher, "reason": refused.Reason})
+		}
 		if err != nil {
 			return db.ErrResult(fmt.Sprintf("failed to save job: %v", err)), nil, nil
 		}
@@ -1048,6 +1074,10 @@ func RegisterSavePortalJob(server *mcp.Server) {
 		if errors.Is(err, ErrDeletedBefore) {
 			return db.JSONResult(map[string]any{"id": "", "created": false, "duplicate": false, "ignored": true})
 		}
+		var refused *FilteredOutError
+		if errors.As(err, &refused) {
+			return db.JSONResult(map[string]any{"id": "", "created": false, "duplicate": false, "filteredOut": true, "matcher": refused.Matcher, "reason": refused.Reason})
+		}
 		if err != nil {
 			if errors.Is(err, errUnknownPortalLinkRef) {
 				return db.ErrResult(fmt.Sprintf("unknown portal link id %q", args.PortalLinkID)), nil, nil
@@ -1085,7 +1115,8 @@ func RegisterSavePortalJobs(server *mcp.Server) {
 			"never call save_portal_job (singular) once per job. Same cross-portal duplicate detection as " +
 			"save_portal_job, applied per entry: a job matching an existing one (case-insensitive, trimmed " +
 			"title+company) is left untouched and counted as a duplicate rather than inserted again; a job the " +
-			"user deleted earlier (same URL) is counted as ignored and not saved, which is final. Use this " +
+			"user deleted earlier (same URL) is counted as ignored and not saved, which is final; a new job that does not " +
+			"meet the user's crawler criteria (Settings → Job crawler) is counted as filteredOut and not saved. Use this " +
 			"as the last step of a manual crawl, after crawl_paginated — this is what keeps a page listing many " +
 			"jobs from needing many separate tool calls.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args savePortalJobsArgs) (*mcp.CallToolResult, any, error) {
@@ -1096,15 +1127,20 @@ func RegisterSavePortalJobs(server *mcp.Server) {
 			return db.ErrResult("jobs must have at least one entry"), nil, nil
 		}
 
-		var saved, updated, duplicates, skipped, ignored int
+		var saved, updated, duplicates, skipped, ignored, filteredOut int
+		criteria := NewCriteria() // asked once for the whole batch (step 150)
 		for _, j := range args.Jobs {
 			if j.SourceURL == "" || j.Title == "" || j.Company == "" {
 				skipped++
 				continue
 			}
-			_, created, duplicate, err := SavePortalJob(args.PortalLinkID, j.SourceURL, j.Title, j.Company, j.Location, j.Description, j.PostedAt)
+			_, created, duplicate, err := SavePortalJobWith(criteria, args.PortalLinkID, j.SourceURL, j.Title, j.Company, j.Location, j.Description, j.PostedAt)
 			if errors.Is(err, ErrDeletedBefore) {
 				ignored++
+				continue
+			}
+			if errors.Is(err, ErrFilteredOut) {
+				filteredOut++
 				continue
 			}
 			if err != nil {
@@ -1129,6 +1165,7 @@ func RegisterSavePortalJobs(server *mcp.Server) {
 			"duplicates":    duplicates,
 			"skipped":       skipped,
 			"ignored":       ignored,
+			"filteredOut":   filteredOut,
 		})
 	})
 }

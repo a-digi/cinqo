@@ -34,6 +34,7 @@ import (
 	"career-tool-backend/companies"
 	"career-tool-backend/companydeletedconsumers"
 	"career-tool-backend/crawl"
+	"career-tool-backend/crawlcriteria"
 	"career-tool-backend/cv"
 	"career-tool-backend/cvbuilder"
 	"career-tool-backend/db"
@@ -63,6 +64,13 @@ func main() {
 	runHTTPServer()
 }
 
+// useCrawlerCriteria injects the crawler's "Ignore jobs" rules (step 150): the source that builds the enabled matchers from the settings
+// for each crawl, and the log of the jobs they keep out. Called by both processes that insert crawled jobs (the HTTP server and the AI's MCP).
+func useCrawlerCriteria() {
+	jobs.UseCriteria(crawlcriteria.Source{})
+	jobs.UseFilteredOutLog(crawlcriteria.RecordIgnored)
+}
+
 func runHTTPServer() {
 	port := os.Getenv("PORT")
 
@@ -84,6 +92,7 @@ func runHTTPServer() {
 	// Deleting a CV document must know which jobs use it (step 98); cvbuilder
 	// cannot import jobs, so the implementation is registered here.
 	cvbuilder.UseJobLinks(jobs.DocumentLinks{})
+	useCrawlerCriteria()
 	// A goroutine, unlike an OS process, has no PID to find or
 	// reattach after a restart — any crawl_runs row still 'running'
 	// from before this process started is definitely orphaned. See
@@ -206,6 +215,8 @@ func runHTTPServer() {
 	http.HandleFunc("/portal-links/auto-discovery", autodiscovery.SettingsHandler)
 	http.HandleFunc("/settings/ai", settings.AIHandler)
 	http.HandleFunc("/settings/cleanup", jobcleanup.SettingsHandler)
+	http.HandleFunc("/settings/crawler", crawlcriteria.SettingsHandler)
+	http.HandleFunc("/settings/crawler/ignored", crawlcriteria.IgnoredHandler)
 	http.HandleFunc("/jobs/cleanup/preview", jobcleanup.PreviewHandler)
 	http.HandleFunc("/jobs/cleanup/run", jobcleanup.RunHandler)
 	http.HandleFunc("/jobs/deleted", deletedjobs.Handler)
@@ -256,6 +267,7 @@ func runMCPServer() {
 	if err := db.InitDatabases(); err != nil {
 		log.Fatalf("failed to open career/jobs databases: %v", err)
 	}
+	useCrawlerCriteria() // the AI's save tools run in this process: they follow the same rules as the crawl
 
 	server := mcp.NewServer(&mcp.Implementation{Name: "career", Version: "0.1.0"}, nil)
 
