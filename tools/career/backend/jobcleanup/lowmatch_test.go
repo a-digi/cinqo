@@ -293,6 +293,7 @@ func TestMinMatchPercentOverrideInTheBody(t *testing.T) {
 	fixedNow(t)
 	addJob(t, "a", young, "crawled")
 	useScorer(t, &fakeScorer{scores: map[string][]int{"a": {50}}})
+	exec(t, `UPDATE job_cleanup_settings SET min_match_percent = 60, updated_at = '2026-06-01 00:00:00'`)
 	// saved limit 60 would pick it; the body says 40
 	if _, body := post(PreviewHandler, `{"rule":"low_match"}`); !strings.Contains(body, `"wouldDelete":1`) || !strings.Contains(body, `"bestPercent":50`) {
 		t.Errorf("saved 60: %s", body)
@@ -353,5 +354,79 @@ func TestLowMatchWithTheRealEngineAndTwoProfiles(t *testing.T) {
 	_ = db.JobsDB.QueryRow(`SELECT COUNT(*) FROM job_matches`).Scan(&n)
 	if n != 0 {
 		t.Error("the cleanup stored a match")
+	}
+}
+
+func memoryRows(t *testing.T) map[string]string {
+	t.Helper()
+	r, err := db.DeletedJobsDB.Query(`SELECT source_url, reason FROM deleted_jobs`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	out := map[string]string{}
+	for r.Next() {
+		var u, reason string
+		_ = r.Scan(&u, &reason)
+		out[u] = reason
+	}
+	return out
+}
+
+// The cleanup remembers what the low-match rule deletes (not what the age rule deletes, not what is kept), so the next
+// crawl does not bring a deleted job back.
+func TestTheLowMatchRuleRemembersWhatItDeletesAndTheAgeRuleDoesNot(t *testing.T) {
+	setup(t)
+	fixedNow(t)
+	addJob(t, "lowYoung", young, "crawled")
+	addJob(t, "goodYoung", young, "crawled")
+	addJob(t, "oldGood", old30, "crawled")
+	addJob(t, "lowOnBoard", young, "crawled")
+	exec(t, `INSERT INTO job_board_entries (profile_id, job_id, status_id) VALUES ('p', 'lowOnBoard', 'fixed-applied')`)
+	addJob(t, "lowManual", young, "manual")
+	useScorer(t, &fakeScorer{scores: map[string][]int{"lowYoung": {5}, "goodYoung": {95}, "oldGood": {95}, "lowOnBoard": {5}, "lowManual": {5}}})
+
+	res, err := RunCleanup(Options{Rule: RuleBoth, OlderThanDays: 30, MinMatchPercent: 60})
+	if err != nil || res.Deleted != 2 || res.ByRule != (ByRule{Older: 1, LowMatch: 1}) {
+		t.Fatalf("%+v, %v", res, err)
+	}
+	got := memoryRows(t)
+	if len(got) != 1 || got["https://x.example/lowYoung"] != "low_match" {
+		t.Errorf("remembered %v: only the low-match deletion belongs there", got)
+	}
+}
+
+// A job the guarded delete holds back (it gained a board entry after the list was made) is not deleted and its entry is
+// taken back; a job that is deleted keeps its entry. Both in one batch.
+func TestAnEntryIsTakenBackForAJobTheGuardHeldBack(t *testing.T) {
+	setup(t)
+	fixedNow(t)
+	addJob(t, "held", young, "crawled")
+	addJob(t, "goes", young, "crawled")
+	exec(t, `INSERT INTO job_board_entries (profile_id, job_id, status_id) VALUES ('p', 'held', 'fixed-applied')`)
+	done, err := deleteBatch([]Sample{{ID: "held", reason: RuleLowMatch}, {ID: "goes", reason: RuleLowMatch}}, low(60).cutoff(), false)
+	if err != nil || len(done) != 1 || done[0].ID != "goes" {
+		t.Fatalf("%v, %v", done, err)
+	}
+	got := memoryRows(t)
+	if len(got) != 1 || got["https://x.example/goes"] != "low_match" {
+		t.Errorf("remembered %v", got)
+	}
+	if !exists(t, "held") || exists(t, "goes") {
+		t.Error("the wrong job was deleted")
+	}
+}
+
+// With the memory unavailable the cleanup still deletes.
+func TestTheCleanupStillDeletesWithoutTheMemory(t *testing.T) {
+	setup(t)
+	fixedNow(t)
+	addJob(t, "low", young, "crawled")
+	useScorer(t, &fakeScorer{scores: map[string][]int{"low": {5}}})
+	saved := db.DeletedJobsDB
+	db.DeletedJobsDB = nil
+	defer func() { db.DeletedJobsDB = saved }()
+	if res, err := RunCleanup(low(60)); err != nil || res.Deleted != 1 || exists(t, "low") {
+		t.Errorf("%+v, %v", res, err)
 	}
 }

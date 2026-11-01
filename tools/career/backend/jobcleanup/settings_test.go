@@ -35,7 +35,7 @@ const validBody = `{"enabled":true,"olderEnabled":true,"olderThanDays":30,"lowMa
 // A fresh install changes nothing: every rule and the automatic run are off, with the planned default numbers.
 func TestFreshInstallHasEverythingOff(t *testing.T) {
 	setup(t)
-	want := Settings{OlderThanDays: 90, MinMatchPercent: 60, IntervalHours: 24}
+	want := Settings{OlderThanDays: 90, MinMatchPercent: 30, IntervalHours: 24}
 	got, err := GetSettings()
 	if err != nil || got != want {
 		t.Fatalf("defaults: %+v, %v; want %+v", got, err, want)
@@ -179,5 +179,53 @@ func TestTheJSONNamesAreTheOnesThePageUses(t *testing.T) {
 		if !strings.Contains(string(raw), `"`+k+`"`) {
 			t.Errorf("missing %s in %s", k, raw)
 		}
+	}
+}
+
+// The default limit is 30 for a fresh install, and for a row that was never saved but still has the old default of 60;
+// a limit someone saved is never changed, not even a saved 60.
+func TestTheDefaultLimitIs30AndSavedChoicesStay(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("TOOL_DB_DIR", dir)
+	open := func() {
+		if err := db.InitDatabases(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	closeAll := func() { db.JobsDB.Close(); db.CareerDB.Close() }
+	defer func() { closeAll() }()
+
+	open()
+	if s, _ := GetSettings(); s.MinMatchPercent != 30 {
+		t.Fatalf("fresh install: %d, want 30", s.MinMatchPercent)
+	}
+	// the column's own default is 30 too (the migration below would hide a wrong one on a fresh install)
+	var dflt string
+	if err := db.JobsDB.QueryRow(`SELECT dflt_value FROM pragma_table_info('job_cleanup_settings') WHERE name = 'min_match_percent'`).Scan(&dflt); err != nil || dflt != "30" {
+		t.Fatalf("column default %q, %v; want 30", dflt, err)
+	}
+	exec := func(q string) {
+		if _, err := db.JobsDB.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	limitAfterReopen := func(setup string) int {
+		exec(setup)
+		closeAll()
+		open()
+		s, _ := GetSettings()
+		return s.MinMatchPercent
+	}
+	if got := limitAfterReopen(`UPDATE job_cleanup_settings SET min_match_percent = 60, updated_at = NULL`); got != 30 {
+		t.Errorf("never saved, still the old 60: %d, want 30", got)
+	}
+	if got := limitAfterReopen(`UPDATE job_cleanup_settings SET min_match_percent = 60, updated_at = '2026-06-30 12:00:00'`); got != 60 {
+		t.Errorf("a saved 60 must stay: %d", got)
+	}
+	if got := limitAfterReopen(`UPDATE job_cleanup_settings SET min_match_percent = 45, updated_at = NULL`); got != 45 {
+		t.Errorf("a never-saved 45 must stay: %d", got)
+	}
+	if got := limitAfterReopen(`UPDATE job_cleanup_settings SET min_match_percent = 10, updated_at = '2026-06-30 12:00:00'`); got != 10 {
+		t.Errorf("a saved 10 must stay: %d", got)
 	}
 }

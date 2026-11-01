@@ -8,6 +8,7 @@ import {
   type CleanupSettings,
 } from '../../api'
 import { InfoBox } from '../../Shared/InfoBox/InfoBox'
+import { DeletedJobsSection } from './DeletedJobsSection'
 import { ACCENTS } from '../JobsPage/jobsTheme'
 import {
   automaticText,
@@ -422,6 +423,8 @@ export function CleanupSettingsPage() {
           </p>
         )}
       </section>
+
+      <DeletedJobsSection />
     </div>
   )
 }

@@ -23,6 +23,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net/http"
 	"os"
@@ -35,6 +36,7 @@ import (
 	"career-tool-backend/cv"
 	"career-tool-backend/cvbuilder"
 	"career-tool-backend/db"
+	"career-tool-backend/deletedjobs"
 	"career-tool-backend/jobcleanup"
 	"career-tool-backend/jobmatchconsumer"
 	"career-tool-backend/jobs"
@@ -59,6 +61,11 @@ func runHTTPServer() {
 
 	if err := db.InitDatabases(); err != nil {
 		log.Fatalf("failed to open career/jobs databases: %v", err)
+	}
+	// The memory of deleted jobs (step 133) is optional: rows made with older URL normalization rules are recomputed
+	// here, and a missing database is only a log line (see db.openDeletedJobsDB).
+	if _, err := deletedjobs.Rehash(); err != nil && !errors.Is(err, deletedjobs.ErrNoMemory) {
+		log.Printf("deleted jobs: could not recompute the keys: %v", err)
 	}
 	// Deleting a CV document must know which jobs use it (step 98); cvbuilder
 	// cannot import jobs, so the implementation is registered here.
@@ -115,6 +122,9 @@ func runHTTPServer() {
 	autodiscovery.StartAutoDiscoveryManager()
 	jobcleanup.StartManager(context.Background())
 	jobmatchconsumer.Start(context.Background())
+	// The catch-up for events that were missed (step 134): jobs without any match are queued for the same worker,
+	// once shortly after start and then every 10 minutes.
+	jobmatchconsumer.StartSweeper(context.Background())
 
 	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -168,10 +178,12 @@ func runHTTPServer() {
 	http.HandleFunc("/settings/cleanup", jobcleanup.SettingsHandler)
 	http.HandleFunc("/jobs/cleanup/preview", jobcleanup.PreviewHandler)
 	http.HandleFunc("/jobs/cleanup/run", jobcleanup.RunHandler)
+	http.HandleFunc("/jobs/deleted", deletedjobs.Handler)
 	http.HandleFunc("/events/listing-instructions-ready", portal.ListingInstructionsReadyEventHandler)
 	http.HandleFunc("/events/jobs-crawled", portal.JobsCrawledEventHandler)
 	http.HandleFunc("/events/job-created", jobs.JobCreatedEventHandler)
 	http.HandleFunc("/events/job-found", jobmatchconsumer.EventHandler)
+	http.HandleFunc("/jobs/match/unmatched", jobmatchconsumer.MatchNowHandler)
 	http.HandleFunc("/cv-import/upload", cv.UploadCVHandler)
 	http.HandleFunc("/cv-import/runs", cv.CVImportRunsHandler)
 	http.HandleFunc("/cv-documents/templates", cvbuilder.TemplatesHandler)

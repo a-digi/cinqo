@@ -3,6 +3,7 @@ import {
   fetchJobs,
   fetchJob,
   removeJob,
+  matchUnmatchedJobs,
   fetchCompanies,
   fetchPortals,
   fetchJobLocations,
@@ -55,6 +56,8 @@ import { SelectCvModal } from './SelectCvModal'
 import { AddToBoardModal } from '../JobBoard/AddToBoardModal'
 import { plural } from '../CompaniesPage/companyStats'
 import { ConfirmationModal } from '../../Shared/ConfirmationModal/ConfirmationModal'
+import { deleteQuestion } from '../SettingsPage/deletedJobsRules'
+import { matchUnmatchedMessage } from './matchUnmatchedRules'
 import {
   REMOVE_CONFIRMATION,
   builderPathForJob,
@@ -131,6 +134,9 @@ export function JobsPage() {
   const ai = useAiChoice()
   const selectedPlatformId = ai.platform?.id ?? null
   const [matchPicker, setMatchPicker] = useState<{ job: Job; engine: 'ai' | 'manual' } | null>(null)
+  const [pendingRemoveJob, setPendingRemoveJob] = useState<Job | null>(null)
+  const [matchingUnmatched, setMatchingUnmatched] = useState(false)
+  const [unmatchedNotice, setUnmatchedNotice] = useState('')
   // The jobs a manual (no AI) match is running for; it answers within a moment, so this only guards a double click.
   const [manualRunning, setManualRunning] = useState<ReadonlySet<string>>(new Set())
 
@@ -277,6 +283,34 @@ export function JobsPage() {
   function handlePageChange(nextPage: number) {
     setPage(nextPage)
     load(undefined, undefined, nextPage)
+  }
+
+  // Deleting a crawled job is remembered (the crawler will not add it again), so it is confirmed first; a job added by
+  // hand is deleted at once (step 133).
+  function askRemove(job: Job) {
+    if (deleteQuestion(job.source, job.title) === null) {
+      handleRemove(job.id)
+      return
+    }
+    setPendingRemoveJob(job)
+  }
+
+  // Gives every job that has no match its manual match now (step 134); the same catch-up also runs by itself.
+  function handleMatchUnmatched() {
+    setError('')
+    setUnmatchedNotice('')
+    setMatchingUnmatched(true)
+    matchUnmatchedJobs()
+      .then((result) => {
+        setUnmatchedNotice(matchUnmatchedMessage(result))
+        load()
+      })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+      })
+      .finally(() => {
+        setMatchingUnmatched(false)
+      })
   }
 
   function handleRemove(id: string) {
@@ -920,7 +954,7 @@ export function JobsPage() {
       label: 'Delete',
       icon: <TrashIcon />,
       onClick: () => {
-        handleRemove(job.id)
+        askRemove(job)
       },
       title: 'Delete this job',
       variant: 'danger',
@@ -1039,6 +1073,15 @@ export function JobsPage() {
                 <PlusIcon />
                 Add job
               </button>
+              <button
+                type="button"
+                disabled={matchingUnmatched}
+                onClick={handleMatchUnmatched}
+                title="Give every job that has no match its best match now (manual engine, no AI). This also happens by itself every few minutes."
+                className="rounded-md border border-gray-300 px-3.5 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
+              >
+                {matchingUnmatched ? 'Matching…' : 'Match unmatched'}
+              </button>
               <input
                 value={query}
                 onChange={(e) => {
@@ -1070,6 +1113,11 @@ export function JobsPage() {
             </div>
 
             <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
+            {unmatchedNotice && (
+              <p role="status" className="mb-2 text-sm text-green-700">
+                {unmatchedNotice}
+              </p>
+            )}
 
             <div
               className="relative overflow-hidden rounded-3xl border shadow-sm"
@@ -1334,6 +1382,22 @@ export function JobsPage() {
           setSelectCvJob(null)
         }}
         onLinked={load}
+      />
+
+      <ConfirmationModal
+        open={pendingRemoveJob !== null}
+        title={pendingRemoveJob ? (deleteQuestion(pendingRemoveJob.source, pendingRemoveJob.title)?.title ?? '') : ''}
+        message={pendingRemoveJob ? (deleteQuestion(pendingRemoveJob.source, pendingRemoveJob.title)?.message ?? '') : ''}
+        confirmLabel={pendingRemoveJob ? deleteQuestion(pendingRemoveJob.source, pendingRemoveJob.title)?.confirmLabel : undefined}
+        variant="danger"
+        onConfirm={() => {
+          const job = pendingRemoveJob
+          setPendingRemoveJob(null)
+          if (job) handleRemove(job.id)
+        }}
+        onCancel={() => {
+          setPendingRemoveJob(null)
+        }}
       />
 
       <ConfirmationModal

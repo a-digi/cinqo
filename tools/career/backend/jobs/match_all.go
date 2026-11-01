@@ -32,6 +32,31 @@ type AutoMatchOutcome struct {
 	Err       error  // for AutoFailed
 }
 
+// UnmatchedJobIDs returns the ids of jobs that have no job_matches row at all, newest first, at most limit of them (the
+// catch-up for events that were missed, step 134). A job with a row of any kind, an AI match, a manual one, a failed or
+// a running one, is not unmatched: it is never offered, so it is never touched.
+func UnmatchedJobIDs(limit int) ([]string, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+	rows, err := db.JobsDB.Query(
+		`SELECT j.id FROM jobs j LEFT JOIN job_matches m ON m.job_id = j.id
+		 WHERE m.job_id IS NULL ORDER BY j.crawled_at DESC, j.id DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 // AutoMatchJobs gives each job that has no match yet the best manual match over all profiles. The profiles, their
 // personas and the corpus are read once for the whole batch. A job that already has a match is left alone, so a
 // redelivered event or a match a person started meanwhile is never overwritten; a repeated id in the batch is handled
@@ -69,6 +94,11 @@ func autoMatchOne(scorer *ProfileScorer, jobID string) AutoMatchOutcome {
 		return AutoMatchOutcome{JobID: jobID, Status: AutoSkippedExisting}
 	case !errors.Is(err, sql.ErrNoRows):
 		return fail(err)
+	}
+	if len(scorer.profiles) == 0 {
+		// no profile has a persona, so nothing can judge the job: do not even read it (a catch-up that cannot match
+		// anything must cost almost nothing)
+		return AutoMatchOutcome{JobID: jobID, Status: AutoUnjudged}
 	}
 	profileID, result, ok, err := scorer.Best(jobID)
 	if errors.Is(err, ErrUnknownJob) {

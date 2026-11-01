@@ -49,6 +49,7 @@ import (
 	"career-tool-backend/comments"
 	"career-tool-backend/companies"
 	"career-tool-backend/db"
+	"career-tool-backend/deletedjobs"
 	"career-tool-backend/domainevent"
 	"career-tool-backend/media"
 )
@@ -193,6 +194,9 @@ func saveJob(sourceURL, title, company, location, description, postedAt string) 
 	err = db.JobsDB.QueryRow(`SELECT id FROM jobs WHERE source_url = ?`, sourceURL).Scan(&existingID)
 	switch {
 	case err == sql.ErrNoRows:
+		if rememberedDeleted(sourceURL) { // deleted before (step 133): never inserted again
+			return "", false, ErrDeletedBefore
+		}
 		id = uuid.NewString()
 		created = true
 	case err != nil:
@@ -464,14 +468,19 @@ func queryJobs(where string, whereArgs []any, limit, offset int, order string) (
 
 // DeleteJob removes a job. When a job was really removed, the comments about it are
 // removed too (best effort, see comments.PurgeEntity). Both the Jobs page and the
-// AI's delete_job tool come through here.
+// AI's delete_job tool come through here. A crawled job is first remembered in the
+// deleted-jobs database (step 133, see RememberBeforeDelete) so a crawl does not add it again.
 func DeleteJob(id string) error {
+	forget := RememberBeforeDelete(id, deletedjobs.ReasonDeleted)
 	res, err := db.JobsDB.Exec(`DELETE FROM jobs WHERE id = ?`, id)
 	if err != nil {
+		forget()
 		return err
 	}
 	if n, _ := res.RowsAffected(); n > 0 {
 		comments.PurgeEntity(comments.JobType, id)
+	} else {
+		forget()
 	}
 	return nil
 }
@@ -746,6 +755,12 @@ func SavePortalJob(portalLinkId, sourceURL, title, company, location, descriptio
 		id = existingBySourceURL
 	}
 
+	if id == "" && rememberedDeleted(sourceURL) {
+		// a URL no live job has, but one that was deleted before (step 133): never inserted again. Asked before the
+		// title and company check, so the crawl reports "ignored" rather than "duplicate" for it.
+		return "", false, false, ErrDeletedBefore
+	}
+
 	if id == "" {
 		var existingByTitleCompany string
 		err = db.JobsDB.QueryRow(
@@ -869,13 +884,17 @@ type saveJobArgs struct {
 
 func RegisterSaveJob(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "save_job",
-		Description: "Save a crawled job posting. Saving the same sourceUrl again updates the existing entry instead of duplicating it.",
+		Name: "save_job",
+		Description: "Save a crawled job posting. Saving the same sourceUrl again updates the existing entry instead of duplicating it. " +
+			"A posting the user deleted earlier is not added again: the result is ignored:true and nothing is saved, which is final (do not retry).",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args saveJobArgs) (*mcp.CallToolResult, any, error) {
 		if args.SourceURL == "" || args.Title == "" {
 			return db.ErrResult("sourceUrl and title are both required"), nil, nil
 		}
 		id, created, err := saveJob(args.SourceURL, args.Title, args.Company, args.Location, args.Description, args.PostedAt)
+		if errors.Is(err, ErrDeletedBefore) {
+			return db.JSONResult(map[string]any{"id": "", "created": false, "ignored": true})
+		}
 		if err != nil {
 			return db.ErrResult(fmt.Sprintf("failed to save job: %v", err)), nil, nil
 		}
@@ -974,8 +993,9 @@ func RegisterSavePortalJob(server *mcp.Server) {
 			"inserting, checks for an existing job with a case-insensitive, trimmed match on both title and " +
 			"company (not sourceUrl, and not postedAt — free-text dates vary too much across portals to check " +
 			"reliably) — if found, the existing job is left untouched and duplicate:true is returned instead of " +
-			"inserting a second copy of the same real posting found via a different URL. Use this instead of " +
-			"save_job for anything found through a portal link.",
+			"inserting a second copy of the same real posting found via a different URL. A posting the user " +
+			"deleted earlier (same URL) is not added again: the result is ignored:true and nothing is saved, " +
+			"which is final (do not retry). Use this instead of save_job for anything found through a portal link.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args savePortalJobArgs) (*mcp.CallToolResult, any, error) {
 		if args.PortalLinkID == "" {
 			return db.ErrResult("portalLinkId is required"), nil, nil
@@ -984,6 +1004,9 @@ func RegisterSavePortalJob(server *mcp.Server) {
 			return db.ErrResult("sourceUrl, title, and company are all required"), nil, nil
 		}
 		id, created, duplicate, err := SavePortalJob(args.PortalLinkID, args.SourceURL, args.Title, args.Company, args.Location, args.Description, args.PostedAt)
+		if errors.Is(err, ErrDeletedBefore) {
+			return db.JSONResult(map[string]any{"id": "", "created": false, "duplicate": false, "ignored": true})
+		}
 		if err != nil {
 			if errors.Is(err, errUnknownPortalLinkRef) {
 				return db.ErrResult(fmt.Sprintf("unknown portal link id %q", args.PortalLinkID)), nil, nil
@@ -1020,7 +1043,8 @@ func RegisterSavePortalJobs(server *mcp.Server) {
 		Description: "Save every job posting found on a crawl in ONE call — pass the whole batch in `jobs`, " +
 			"never call save_portal_job (singular) once per job. Same cross-portal duplicate detection as " +
 			"save_portal_job, applied per entry: a job matching an existing one (case-insensitive, trimmed " +
-			"title+company) is left untouched and counted as a duplicate rather than inserted again. Use this " +
+			"title+company) is left untouched and counted as a duplicate rather than inserted again; a job the " +
+			"user deleted earlier (same URL) is counted as ignored and not saved, which is final. Use this " +
 			"as the last step of a manual crawl, after crawl_paginated — this is what keeps a page listing many " +
 			"jobs from needing many separate tool calls.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args savePortalJobsArgs) (*mcp.CallToolResult, any, error) {
@@ -1031,13 +1055,17 @@ func RegisterSavePortalJobs(server *mcp.Server) {
 			return db.ErrResult("jobs must have at least one entry"), nil, nil
 		}
 
-		var saved, updated, duplicates, skipped int
+		var saved, updated, duplicates, skipped, ignored int
 		for _, j := range args.Jobs {
 			if j.SourceURL == "" || j.Title == "" || j.Company == "" {
 				skipped++
 				continue
 			}
 			_, created, duplicate, err := SavePortalJob(args.PortalLinkID, j.SourceURL, j.Title, j.Company, j.Location, j.Description, j.PostedAt)
+			if errors.Is(err, ErrDeletedBefore) {
+				ignored++
+				continue
+			}
 			if err != nil {
 				if errors.Is(err, errUnknownPortalLinkRef) {
 					return db.ErrResult(fmt.Sprintf("unknown portal link id %q", args.PortalLinkID)), nil, nil
@@ -1059,6 +1087,7 @@ func RegisterSavePortalJobs(server *mcp.Server) {
 			"updated":       updated,
 			"duplicates":    duplicates,
 			"skipped":       skipped,
+			"ignored":       ignored,
 		})
 	})
 }

@@ -176,6 +176,9 @@ func AddManualJob(in ManualJobInput) (job, error) {
 		}
 		return job{}, err
 	}
+	if in.SourceURL != "" {
+		forgetDeleted(in.SourceURL) // a person who types in a URL they once deleted wants it back (step 133)
+	}
 	publishJobCreatedEvent(id, in.Company)
 	publishJobFoundEvent(id, in.Title, in.Company, SourceManual)
 	return GetJobByID(id)

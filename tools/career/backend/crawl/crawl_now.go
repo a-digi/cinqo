@@ -626,8 +626,7 @@ func runCrawlNow(ctx context.Context, runID, portalLinkID, accessToken string) {
 	// Exact same summary text handleCrawlNow's own frontend version
 	// already built (step 27/35) — preserved verbatim so this change is
 	// invisible to a user on the success path.
-	summary := fmt.Sprintf("Saved %d new, updated %d, skipped %d — visited %d page(s) (%s).",
-		ingested.JobsSaved, ingested.JobsUpdated, ingested.JobsSkipped, result.PagesVisited, result.StoppedReason)
+	summary := crawlSummary(ingested, result.PagesVisited, result.StoppedReason)
 
 	if result.StoppedReason == "cloudflare_blocked" {
 		reasonSuffix := ""
@@ -729,4 +728,16 @@ func postWithBearer(ctx context.Context, url string, body []byte, accessToken st
 		return nil, resp.StatusCode, err
 	}
 	return respBody, resp.StatusCode, nil
+}
+
+// crawlSummary is the one-line result of a crawl that saved its jobs. It is the same text it always was; only when the
+// crawl found jobs the user deleted before (step 133, counted in "updated" as well) does it say how many of the updated
+// ones those are.
+func crawlSummary(ingested portal.IngestCrawlResultsResult, pages int, stopped string) string {
+	if ingested.JobsIgnored > 0 {
+		return fmt.Sprintf("Saved %d new, updated %d (%d of them deleted by you before, not added again), skipped %d — visited %d page(s) (%s).",
+			ingested.JobsSaved, ingested.JobsUpdated, ingested.JobsIgnored, ingested.JobsSkipped, pages, stopped)
+	}
+	return fmt.Sprintf("Saved %d new, updated %d, skipped %d — visited %d page(s) (%s).",
+		ingested.JobsSaved, ingested.JobsUpdated, ingested.JobsSkipped, pages, stopped)
 }

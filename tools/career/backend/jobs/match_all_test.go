@@ -310,3 +310,136 @@ func TestAnExistingMatchIsFoundBeforeAnyScoring(t *testing.T) {
 		t.Errorf("%+v", o)
 	}
 }
+
+func addJobAt(t *testing.T, id, crawledAt string) {
+	t.Helper()
+	exec(t, `INSERT INTO jobs (id, source_url, title, crawled_at) VALUES (?, ?, ?, ?)`, id, "https://x.example/"+id, "Job "+id, crawledAt)
+}
+
+// Only jobs with no match row at all, newest first; a row of any kind (AI, manual, failed, running) takes a job out.
+func TestUnmatchedJobIDs(t *testing.T) {
+	setupJobsDB(t)
+	addJobAt(t, "oldest", "2026-01-01 00:00:00")
+	addJobAt(t, "middle", "2026-02-01 00:00:00")
+	addJobAt(t, "newest", "2026-03-01 00:00:00")
+	addJobAt(t, "ai", "2026-03-02 00:00:00")
+	addJobAt(t, "manual", "2026-03-03 00:00:00")
+	addJobAt(t, "failed", "2026-03-04 00:00:00")
+	addJobAt(t, "running", "2026-03-05 00:00:00")
+	exec(t, `INSERT INTO job_matches (job_id, profile_id, score, status, kind) VALUES ('ai', 'p', 5, 'completed', 'ai')`)
+	exec(t, `INSERT INTO job_matches (job_id, profile_id, score, status, kind) VALUES ('manual', 'p', 6, 'completed', 'manual')`)
+	exec(t, `INSERT INTO job_matches (job_id, profile_id, status, kind, error) VALUES ('failed', 'p', 'failed', 'ai', 'boom')`)
+	exec(t, `INSERT INTO job_matches (job_id, profile_id, status, kind) VALUES ('running', 'p', 'matching', 'ai')`)
+
+	got, err := UnmatchedJobIDs(10)
+	if err != nil || !slices.Equal(got, []string{"newest", "middle", "oldest"}) {
+		t.Fatalf("%v, %v", got, err)
+	}
+	if got, _ := UnmatchedJobIDs(2); !slices.Equal(got, []string{"newest", "middle"}) {
+		t.Errorf("limit 2: %v", got)
+	}
+	if got, _ := UnmatchedJobIDs(1); !slices.Equal(got, []string{"newest"}) {
+		t.Errorf("limit 1: %v", got)
+	}
+	for _, limit := range []int{0, -1} {
+		if got, err := UnmatchedJobIDs(limit); err != nil || got != nil {
+			t.Errorf("limit %d: %v, %v", limit, got, err)
+		}
+	}
+}
+
+func TestUnmatchedJobIDsIsEmptyWhenEverythingHasARow(t *testing.T) {
+	setupJobsDB(t)
+	if got, err := UnmatchedJobIDs(10); err != nil || len(got) != 0 {
+		t.Errorf("no jobs: %v, %v", got, err)
+	}
+	addJobAt(t, "a", "2026-01-01 00:00:00")
+	exec(t, `INSERT INTO job_matches (job_id, profile_id, score, status) VALUES ('a', 'p', 1, 'completed')`)
+	if got, _ := UnmatchedJobIDs(10); len(got) != 0 {
+		t.Errorf("%v", got)
+	}
+}
+
+// A job that is matched stops being offered: the catch-up converges.
+func TestAMatchedJobIsNoLongerOffered(t *testing.T) {
+	setupJobsDB(t)
+	addMatchJob(t, "j1")
+	addMatchJob(t, "j2")
+	seedProfile(t, "Fit", fitSkills)
+	before, _ := UnmatchedJobIDs(10)
+	if len(before) != 2 {
+		t.Fatalf("%v", before)
+	}
+	if _, err := AutoMatchJobs(before); err != nil {
+		t.Fatal(err)
+	}
+	if after, _ := UnmatchedJobIDs(10); len(after) != 0 {
+		t.Errorf("still offered after matching: %v", after)
+	}
+}
+
+// With no profile that can judge anything, the matcher does not even read the jobs (here a table it would need is gone:
+// a read would fail the job, the fast path reports it unjudged), and it still reports an existing match as existing.
+func TestWithNoProfileTheJobsAreNotEvenRead(t *testing.T) {
+	setupJobsDB(t)
+	addMatchJob(t, "j1")
+	addMatchJob(t, "j2")
+	exec(t, `INSERT INTO job_matches (job_id, profile_id, score, status, kind) VALUES ('j2', 'p', 5, 'completed', 'ai')`)
+	exec(t, `DROP TABLE job_requirements`)
+	out, err := AutoMatchJobs([]string{"j1", "j2"})
+	if err != nil || len(out) != 2 || out[0].Status != AutoUnjudged || out[1].Status != AutoSkippedExisting {
+		t.Fatalf("%+v, %v", out, err)
+	}
+	// with a profile the same missing table is a failure of that job (the read happens)
+	seedProfile(t, "Fit", fitSkills)
+	exec(t, `DELETE FROM job_matches WHERE job_id = 'j2'`)
+	out, _ = AutoMatchJobs([]string{"j1"})
+	if len(out) != 1 || out[0].Status != AutoFailed {
+		t.Errorf("with a profile the job is read: %+v", out)
+	}
+}
+
+// A profile whose personas are all missing counts as no profile; the corpus is only read when a profile can judge.
+func TestTheScorerReadsTheCorpusOnlyWhenAProfileCanJudge(t *testing.T) {
+	setupJobsDB(t)
+	addMatchJob(t, "j1")
+	if _, err := profile.CreateProfile("No", "Personas"); err != nil {
+		t.Fatal(err)
+	}
+	exec(t, `DROP TABLE job_requirements`) // anything that reads a job breaks
+	s, err := NewProfileScorer()
+	if err != nil || len(s.profiles) != 0 {
+		t.Fatalf("%v, profiles %d", err, len(s.profiles))
+	}
+	seedProfile(t, "Fit", fitSkills)
+	s, err = NewProfileScorer()
+	if err != nil || len(s.profiles) != 1 {
+		t.Fatalf("%v, profiles %d", err, len(s.profiles))
+	}
+}
+
+// Jobs crawled in the same second come out the later id first, so the order is stable.
+func TestUnmatchedJobsOfTheSameSecondComeInAStableOrder(t *testing.T) {
+	setupJobsDB(t)
+	for _, id := range []string{"a", "c", "b"} {
+		addJobAt(t, id, "2026-06-30 12:00:00")
+	}
+	got, err := UnmatchedJobIDs(10)
+	if err != nil || !slices.Equal(got, []string{"c", "b", "a"}) {
+		t.Errorf("%v, %v", got, err)
+	}
+}
+
+// The corpus (every job's text) is read when a profile can judge, and not read when none can: here the jobs table is
+// gone, so any read of it fails.
+func TestTheCorpusIsReadOnlyWhenAProfileCanJudge(t *testing.T) {
+	setupJobsDB(t)
+	exec(t, `DROP TABLE jobs`)
+	if s, err := NewProfileScorer(); err != nil || len(s.profiles) != 0 {
+		t.Fatalf("with no profile the corpus must not be read: %v, profiles %v", err, s)
+	}
+	seedProfile(t, "Fit", fitSkills)
+	if _, err := NewProfileScorer(); err == nil {
+		t.Error("with a profile that can judge the corpus must be read (and here it cannot be)")
+	}
+}

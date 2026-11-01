@@ -890,6 +890,62 @@ export async function removeJob(id: string): Promise<void> {
   if (!res.ok && res.status !== 204) throw new Error(`failed to remove job (${res.status})`)
 }
 
+// The jobs the crawler will not add again (Settings → Job cleanup, step 133): the ones you deleted and the ones the
+// low-match cleanup deleted. available is false when the tool could not open its deleted-jobs database.
+export interface DeletedJob {
+  id: number
+  sourceUrl: string
+  title: string
+  company: string
+  location: string
+  portalName: string
+  postedAt: string
+  matchScore: number | null
+  reason: 'deleted' | 'low_match'
+  deletedAt: string
+}
+
+export interface DeletedJobsList {
+  available: boolean
+  total: number
+  items: DeletedJob[]
+}
+
+export async function fetchDeletedJobs(limit = 50): Promise<DeletedJobsList> {
+  const res = await fetch(`${PROXY_BASE}/jobs/deleted?limit=${String(limit)}`, { credentials: 'include' })
+  return jsonOrThrow<DeletedJobsList>(res, 'load the deleted jobs')
+}
+
+// Allow one job again: the next crawl may add it as a new job. Nothing is brought back by this call.
+export async function allowDeletedJob(id: number): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/jobs/deleted?id=${String(id)}`, { method: 'DELETE', credentials: 'include' })
+  if (!res.ok && res.status !== 204) throw new Error(`failed to allow the job again (${String(res.status)})`)
+}
+
+export async function allowAllDeletedJobs(): Promise<number> {
+  const res = await fetch(`${PROXY_BASE}/jobs/deleted?all=true`, { method: 'DELETE', credentials: 'include' })
+  const data = await jsonOrThrow<{ released: number }>(res, 'allow the deleted jobs again')
+  return data.released
+}
+
+// "Match unmatched jobs" (Jobs page, step 134): the manual match, no AI, for every job that has no match yet, run now.
+// Every job it looked at is counted in exactly one of the other numbers; more is true when there were more unmatched
+// jobs than one press handles.
+export interface MatchUnmatchedResult {
+  unmatched: number
+  matched: number
+  unjudged: number
+  failed: number
+  skippedExisting: number
+  more: boolean
+}
+
+export async function matchUnmatchedJobs(): Promise<MatchUnmatchedResult> {
+  const res = await fetch(`${PROXY_BASE}/jobs/match/unmatched`, { method: 'POST', credentials: 'include' })
+  if (res.status === 409) throw new Error('Matching is already running. Try again in a moment.')
+  return jsonOrThrow<MatchUnmatchedResult>(res, 'match the unmatched jobs')
+}
+
 export async function linkJobToCompany(jobId: string, companyId: string): Promise<void> {
   const res = await fetch(`${PROXY_BASE}/jobs`, {
     method: 'PUT',

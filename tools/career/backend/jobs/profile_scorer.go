@@ -27,10 +27,6 @@ type scorerProfile struct {
 // NewProfileScorer loads the corpus and the personas of every profile. A profile without personas is left out
 // (it cannot score anything).
 func NewProfileScorer() (*ProfileScorer, error) {
-	corpus, err := loadCorpus()
-	if err != nil {
-		return nil, err
-	}
 	rows, err := db.CareerDB.Query(`SELECT id FROM profiles ORDER BY created_at, id`)
 	if err != nil {
 		return nil, err
@@ -49,7 +45,7 @@ func NewProfileScorer() (*ProfileScorer, error) {
 		return nil, err
 	}
 	rows.Close()
-	s := &ProfileScorer{corpus: corpus, now: time.Now()}
+	s := &ProfileScorer{now: time.Now()}
 	for _, id := range ids {
 		personas, err := loadMatchPersonas(id)
 		if err != nil {
@@ -58,6 +54,13 @@ func NewProfileScorer() (*ProfileScorer, error) {
 		if len(personas) > 0 {
 			s.profiles = append(s.profiles, scorerProfile{id: id, personas: personas})
 		}
+	}
+	if len(s.profiles) > 0 { // with no profile that can judge anything the corpus is never used, so it is not read
+		corpus, err := loadCorpus()
+		if err != nil {
+			return nil, err
+		}
+		s.corpus = corpus
 	}
 	return s, nil
 }

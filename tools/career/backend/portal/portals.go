@@ -1357,6 +1357,11 @@ type IngestCrawlResultsResult struct {
 	JobsSaved   int `json:"jobsSaved"`
 	JobsUpdated int `json:"jobsUpdated"`
 	JobsSkipped int `json:"jobsSkipped"`
+	// JobsIgnored (step 133) counts jobs the crawl found that were deleted before and are not added again. They are
+	// ALSO counted in JobsUpdated: "updated" has always meant "found, nothing new saved" (a cross-portal duplicate
+	// counts there too), and the zero-jobs flag reads saved + updated, so a link whose jobs the user all deleted is
+	// not mistaken for a broken crawl.
+	JobsIgnored int `json:"jobsIgnored"`
 }
 
 // IngestCrawlResults maps a completed deterministic crawl's own raw
@@ -1403,6 +1408,11 @@ func IngestCrawlResults(portalLinkID string, pages []CrawlResultPage) (IngestCra
 					continue
 				}
 				_, created, _, err := jobs.SavePortalJob(portalLinkID, sourceURL, title, company, location, description, postedAt)
+				if errors.Is(err, jobs.ErrDeletedBefore) {
+					result.JobsIgnored++
+					result.JobsUpdated++
+					continue
+				}
 				if err != nil {
 					return result, err
 				}
@@ -1423,6 +1433,11 @@ func IngestCrawlResults(portalLinkID string, pages []CrawlResultPage) (IngestCra
 				continue
 			}
 			_, created, _, err := jobs.SavePortalJob(portalLinkID, sourceURL, title, company, location, description, postedAt)
+			if errors.Is(err, jobs.ErrDeletedBefore) {
+				result.JobsIgnored++
+				result.JobsUpdated++
+				continue
+			}
 			if err != nil {
 				return result, err
 			}

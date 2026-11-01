@@ -11,6 +11,7 @@ import (
 
 	"career-tool-backend/comments"
 	"career-tool-backend/db"
+	"career-tool-backend/deletedjobs"
 	"career-tool-backend/jobs"
 )
 
@@ -320,8 +321,32 @@ func (o Options) describe() string {
 }
 
 func deleteBatch(batch []Sample, cutoff string, includeManual bool) ([]Sample, error) {
+	// A job picked for matching no profile well is remembered in the deleted-jobs database before it is deleted (step
+	// 133), so the next crawl does not bring it back to be matched and deleted again. A job picked by age is not: if it
+	// returns it is a genuine repost. This happens before the transaction (the memory reads JobsDB, which has one
+	// connection) and is taken back for every job the guarded delete then leaves alone.
+	forgets := make(map[string]func())
+	for _, s := range batch {
+		if s.reason == RuleLowMatch {
+			forgets[s.ID] = jobs.RememberBeforeDelete(s.ID, deletedjobs.ReasonLowMatch)
+		}
+	}
+	// takeBack undoes the entries of every remembered job that was not deleted.
+	takeBack := func(deleted []Sample) {
+		gone := make(map[string]bool, len(deleted))
+		for _, s := range deleted {
+			gone[s.ID] = true
+		}
+		for id, forget := range forgets {
+			if !gone[id] {
+				forget()
+			}
+		}
+	}
+
 	tx, err := db.JobsDB.Begin()
 	if err != nil {
+		takeBack(nil)
 		return nil, err
 	}
 	var done []Sample
@@ -329,6 +354,7 @@ func deleteBatch(batch []Sample, cutoff string, includeManual bool) ([]Sample, e
 		res, err := tx.Exec(guardedDelete, s.ID, s.reason != RuleOlder, cutoff, includeManual)
 		if err != nil {
 			_ = tx.Rollback()
+			takeBack(nil)
 			return nil, err
 		}
 		if n, _ := res.RowsAffected(); n > 0 {
@@ -336,8 +362,10 @@ func deleteBatch(batch []Sample, cutoff string, includeManual bool) ([]Sample, e
 		}
 	}
 	if err := tx.Commit(); err != nil {
+		takeBack(nil) // nothing was deleted
 		return nil, err
 	}
+	takeBack(done) // what the guard held back is not deleted, so it is not remembered either
 	return done, nil
 }
 

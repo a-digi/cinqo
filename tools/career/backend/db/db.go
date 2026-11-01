@@ -44,6 +44,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -54,6 +55,10 @@ import (
 var (
 	CareerDB *sql.DB
 	JobsDB   *sql.DB
+	// DeletedJobsDB is the memory of deleted jobs (step 133), its own file next to the other two. Unlike them it is
+	// optional: if it cannot be opened this stays nil, the tool starts anyway, and nothing is remembered (the deletedjobs
+	// package treats a nil handle as "no memory").
+	DeletedJobsDB *sql.DB
 )
 
 // InitDatabases opens (creating if needed) both database files and
@@ -143,8 +148,53 @@ func InitDatabases() error {
 	}
 	JobsDB = jobsDB
 
+	openDeletedJobsDB(dbDir)
 	return nil
 }
+
+// openDeletedJobsDB opens deleted_jobs.db and creates its table. The memory of deleted jobs is a safety net, never a
+// requirement: when the file cannot be opened or prepared the problem is logged and DeletedJobsDB stays nil, so the
+// crawl, saving and deleting go on without it. A handle from an earlier call is closed first (tests open the databases
+// again and again).
+func openDeletedJobsDB(dbDir string) {
+	if DeletedJobsDB != nil {
+		_ = DeletedJobsDB.Close()
+		DeletedJobsDB = nil
+	}
+	handle, err := sql.Open("sqlite", filepath.Join(dbDir, "deleted_jobs.db"))
+	if err != nil {
+		log.Printf("deleted jobs: could not open deleted_jobs.db, deleted jobs will not be remembered: %v", err)
+		return
+	}
+	handle.SetMaxOpenConns(1)
+	if _, err := handle.Exec(deletedJobsSchema); err != nil {
+		_ = handle.Close()
+		log.Printf("deleted jobs: could not prepare deleted_jobs.db, deleted jobs will not be remembered: %v", err)
+		return
+	}
+	DeletedJobsDB = handle
+}
+
+// deletedJobsSchema is the whole of deleted_jobs.db (step 133): one row per deleted job, found again by the SHA-256 of
+// its normalized external URL (url_hash). The rest is a readable snapshot, kept so the hash can be recomputed when the
+// normalization rules change (key_version) and so a list of deleted jobs can be shown. See
+// plan/ai/tools/career/step-133-deleted-jobs-filter.md.
+const deletedJobsSchema = `
+CREATE TABLE IF NOT EXISTS deleted_jobs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    url_hash    TEXT NOT NULL UNIQUE,
+    key_version INTEGER NOT NULL,
+    source_url  TEXT NOT NULL,
+    title       TEXT NOT NULL,
+    company     TEXT NOT NULL DEFAULT '',
+    location    TEXT NOT NULL DEFAULT '',
+    portal_name TEXT NOT NULL DEFAULT '',
+    posted_at   TEXT NOT NULL DEFAULT '',
+    match_score INTEGER,
+    reason      TEXT NOT NULL CHECK (reason IN ('deleted','low_match')),
+    deleted_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+`
 
 const careerSchema = `
 -- image_media_file_id (step XX) is a plain string reference to the
@@ -857,7 +907,7 @@ CREATE TABLE IF NOT EXISTS job_cleanup_settings (
     older_enabled     INTEGER NOT NULL DEFAULT 0 CHECK (older_enabled IN (0, 1)),
     older_than_days   INTEGER NOT NULL DEFAULT 90 CHECK (older_than_days BETWEEN 1 AND 3650),
     low_match_enabled INTEGER NOT NULL DEFAULT 0 CHECK (low_match_enabled IN (0, 1)),
-    min_match_percent INTEGER NOT NULL DEFAULT 60 CHECK (min_match_percent BETWEEN 1 AND 100),
+    min_match_percent INTEGER NOT NULL DEFAULT 30 CHECK (min_match_percent BETWEEN 1 AND 100),
     include_manual    INTEGER NOT NULL DEFAULT 0 CHECK (include_manual IN (0, 1)),
     interval_hours    INTEGER NOT NULL DEFAULT 24 CHECK (interval_hours BETWEEN 1 AND 168),
     last_run_at       TEXT,
@@ -867,6 +917,11 @@ CREATE TABLE IF NOT EXISTS job_cleanup_settings (
 );
 
 INSERT OR IGNORE INTO job_cleanup_settings (id) VALUES (1);
+
+-- The default limit of the low-match rule was 60 at first and is 30 now (the manual engine scores real jobs low, so 60
+-- would flag nearly every job). A row that was never saved from the Settings page (updated_at is still NULL) and still
+-- carries the old default takes the new one; a saved choice, even a saved 60, is never touched.
+UPDATE job_cleanup_settings SET min_match_percent = 30 WHERE min_match_percent = 60 AND updated_at IS NULL;
 `
 
 // migrateCareerDB runs, in order, every past schema migration this
