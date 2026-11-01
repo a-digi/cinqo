@@ -3,6 +3,8 @@ import { fetchJobPersonaMatches, recalculateJobPersonaMatches, type JobPersonaMa
 import { AppLink } from '../../Shared/AppLink/AppLink'
 import { scoreChipClasses } from '../../Shared/MatchScoreBar/matchRules'
 import { viewPersonaPathFor } from '../../paths'
+import { UserIcon } from '../../Shared/Icons/icons'
+import { InfoCard } from './InfoCard'
 
 // The "Best persona" card on a job's page (step 141): which persona fits the job best, with its score, and how the other
 // personas of every profile score, best first. The scores are made by themselves when a job is found; "Recalculate" scores
@@ -39,8 +41,7 @@ export function PersonaMatchesCard({ jobId }: { jobId: string }) {
   const best = data?.matches.find((m) => m.personaId === data.best)
   const others = data?.matches.filter((m) => m.personaId !== data.best) ?? []
   return (
-    <div className="career-enter career-delay-2 w-full shrink-0 rounded-md border border-gray-200 bg-white p-5 shadow-sm md:w-64">
-      <h2 className="mb-3 text-sm font-semibold text-gray-900">Best persona</h2>
+    <InfoCard look="persona" icon={<UserIcon className="h-4 w-4" />} title="Best persona">
       {error !== '' && (
         <p role="alert" className="mb-3 text-xs text-red-700">
           {error}
@@ -49,16 +50,19 @@ export function PersonaMatchesCard({ jobId }: { jobId: string }) {
       {data === null && error === '' && <p className="text-xs text-gray-400">Loading…</p>}
       {data !== null && best === undefined && (
         <p className="text-xs text-gray-500">
-          No persona has a score for this job yet. Scores are made when a job is found; “Recalculate” makes them now. A persona
-          with no skills and no title to compare has none.
+          No persona has a score for this job yet. Scores are made when a job is found; “Recalculate” makes them now. A persona with no
+          skills and no title to compare has none.
         </p>
       )}
       {best !== undefined && (
-        <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
+        <div className="rounded-xl border border-white bg-white/70 p-3">
           <p className="text-[11px] font-medium uppercase tracking-wide text-gray-400">Fits this job best</p>
           <div className="mt-1 flex items-center justify-between gap-2">
             <div className="min-w-0">
-              <AppLink href={viewPersonaPathFor(best.personaId)} className="block break-words text-sm font-semibold text-blue-700 hover:underline">
+              <AppLink
+                href={viewPersonaPathFor(best.personaId)}
+                className="block break-words text-sm font-semibold text-blue-700 hover:underline"
+              >
                 {best.personaName}
               </AppLink>
               <p className="break-words text-xs text-gray-500">{best.profileName}</p>
@@ -86,10 +90,10 @@ export function PersonaMatchesCard({ jobId }: { jobId: string }) {
         type="button"
         disabled={busy}
         onClick={recalculate}
-        className="mt-4 rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
+        className="mt-4 rounded-md border border-gray-300 bg-white/70 px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-white disabled:opacity-50"
       >
         {busy ? 'Scoring…' : 'Recalculate'}
       </button>
-    </div>
+    </InfoCard>
   )
 }

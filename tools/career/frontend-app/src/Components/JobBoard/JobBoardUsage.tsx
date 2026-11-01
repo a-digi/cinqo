@@ -14,6 +14,8 @@ import { inputClass } from '../../Shared/inputClass'
 import { jobBoardPathFor } from '../../paths'
 import { profileLabel } from '../ProfileSwitcher/profileLabel'
 import { columnAccent, statusOptionsFor } from './jobBoardRules'
+import { LayersIcon } from '../../Shared/Icons/icons'
+import { InfoCard } from '../JobDetails/InfoCard'
 
 // The job's status on each profile's job board (step 126), on the job's page: every profile with a status picker.
 // Picking a status puts the job on that profile's board in that status (it is added when it is not on the board
@@ -61,9 +63,12 @@ export function JobBoardUsage({ jobId }: { jobId: string }) {
   const onBoards = current.size
 
   return (
-    <div className="career-enter career-delay-2 w-full shrink-0 rounded-md border border-gray-200 bg-white p-5 shadow-sm md:w-64">
-      <h2 className="mb-1 text-sm font-semibold text-gray-900">Job board{onBoards > 0 ? ` (${String(onBoards)})` : ''}</h2>
-      <p className="mb-3 text-xs text-gray-500">Pick a status for a profile to put this job on its board, or to change its status there.</p>
+    <InfoCard
+      look="board"
+      icon={<LayersIcon className="h-4 w-4" />}
+      title={`Job board${onBoards > 0 ? ` (${String(onBoards)})` : ''}`}
+      hint="Pick a status for a profile to put this job on its board, or to change its status there."
+    >
       {error !== '' && (
         <p role="alert" className="mb-2 text-xs text-red-700">
           {error}
@@ -112,7 +117,7 @@ export function JobBoardUsage({ jobId }: { jobId: string }) {
           })}
         </ul>
       )}
-    </div>
+    </InfoCard>
   )
 }
 

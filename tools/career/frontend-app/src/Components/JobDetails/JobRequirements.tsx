@@ -6,7 +6,9 @@ import {
   type JobRequirement,
   type JobRequirementInput,
 } from '../../api'
-import { PlusIcon, SparkleIcon, TrashIcon } from '../../Shared/Icons/icons'
+import { CheckCircleIcon, PlusIcon, SparkleIcon, TrashIcon } from '../../Shared/Icons/icons'
+import { CARD_LOOKS } from './cardLooks'
+import { Frame, IconBadge } from './InfoCard'
 import { inputClass } from '../../Shared/inputClass'
 import {
   MAX_REQUIREMENTS,
@@ -84,12 +86,16 @@ export function JobRequirements({ jobId }: { jobId: string }) {
   const fresh = list && suggestions ? freshSuggestions(suggestions, list) : []
 
   return (
-    <section
-      aria-label="Requirements"
-      className="career-enter career-delay-2 mt-6 rounded-md border border-gray-200 bg-white p-5 shadow-sm"
-    >
+    <Frame look="requirements" label="Requirements" className="mt-6">
       <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold text-gray-900">Requirements{list && list.length > 0 ? ` (${String(list.length)})` : ''}</h2>
+        <div className="flex items-center gap-2.5">
+          <IconBadge look="requirements">
+            <CheckCircleIcon className="h-4 w-4" />
+          </IconBadge>
+          <h2 className="text-sm font-semibold" style={{ color: CARD_LOOKS.requirements.accent.text }}>
+            Requirements{list && list.length > 0 ? ` (${String(list.length)})` : ''}
+          </h2>
+        </div>
         <button
           type="button"
           onClick={suggest}
@@ -106,7 +112,7 @@ export function JobRequirements({ jobId }: { jobId: string }) {
       </p>
 
       {suggestions !== null && (
-        <div className="mb-4 rounded-md border border-gray-100 bg-gray-50 p-3">
+        <div className="mb-4 rounded-xl border border-white bg-white/70 p-3">
           <div className="mb-2 flex items-center justify-between gap-2">
             <p className="text-xs font-medium text-gray-700">
               Words this job stresses. Click one to add it as {TIERS.find((t) => t.value === tier)?.label.toLowerCase()}.
@@ -243,6 +249,6 @@ export function JobRequirements({ jobId }: { jobId: string }) {
           {list ? list.length : 0} of {MAX_REQUIREMENTS}
         </p>
       </div>
-    </section>
+    </Frame>
   )
 }
