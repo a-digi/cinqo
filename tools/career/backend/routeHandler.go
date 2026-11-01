@@ -1581,6 +1581,36 @@ func instructionAttemptFinishHandler(w http.ResponseWriter, r *http.Request) {
 	db.WriteJSON(w, map[string]any{"status": status})
 }
 
+type startFreshRequest struct {
+	PortalLinkID      string `json:"portalLinkId"`
+	ClearInstructions bool   `json:"clearInstructions"`
+}
+
+// startFreshHandler handles POST /portal-links/start-fresh (step 161): wipes one link's earlier AI attempts
+// and leftovers (and, only when asked, its stored crawl instructions) and returns the ids of the conversations
+// those attempts ran in, for the frontend to delete through the core. 409 while a generation is running.
+func startFreshHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body startFreshRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxInstructionAttemptBodyBytes)).Decode(&body); err != nil || body.PortalLinkID == "" {
+		http.Error(w, "portalLinkId is required", http.StatusBadRequest)
+		return
+	}
+	result, err := portal.StartFresh(body.PortalLinkID, body.ClearInstructions)
+	if errors.Is(err, portal.ErrGenerationRunning) {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	if err != nil {
+		portal.WritePortalLinkAwareError(w, "start fresh", err)
+		return
+	}
+	db.WriteJSON(w, result)
+}
+
 func atoiOrZero(s string) int {
 	n := 0
 	for _, c := range s {
