@@ -19,12 +19,13 @@ import {
 // The bridge's own menu-entry type (its interface is local to the d.ts file).
 type MenuEntry = Parameters<Window['__cinqoToolBridge']['registerMenuEntry']>[0]
 
-// The Career tool's sidebar menu, ordered by how it is used: the daily pages first
-// (Jobs, CVs), what feeds and surrounds them next (Job Sources, Contacts), and the
-// one-time setup last (My Profile). A parent is a pure grouping label, never a
-// page of its own, and a group is only shown when at least one of its pages is
-// visible to the user (filterVisible), so the per-page scopes below are all that
-// decide who sees what. Every path is unchanged from before the regrouping.
+// The Career tool's sidebar menu, ordered by how it is used: the daily page first
+// (Jobs), what feeds and surrounds it next (Job Sources, Contacts), and the
+// one-time setup last (My Profile, which also holds the CV pages). A parent is a
+// pure grouping label, never a page of its own, and a group is only shown when at
+// least one of its pages is visible to the user (filterVisible, which works at any
+// depth), so the per-page scopes below are all that decide who sees what. Every
+// path is unchanged from before the regrouping.
 export const careerMenuEntry: MenuEntry = {
   label: 'Career',
   // A briefcase glyph — built only from the sidebar's own sanitizer
@@ -33,7 +34,6 @@ export const careerMenuEntry: MenuEntry = {
   icon: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor"><rect x="3" y="7" width="14" height="9" rx="1.5" stroke-width="1.3"/><path d="M7 7V5.5a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 13 5.5V7" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><line x1="3" y1="11" x2="17" y2="11" stroke-width="1.3"/></svg>',
   children: [
     { label: 'Jobs', path: JOBS_PATH, scopes: ['tool:career:jobs'] },
-    { label: 'CVs', path: CV_DOCUMENTS_PATH, scopes: ['tool:career:cv_documents'] },
     {
       label: 'Job Sources',
       children: [
@@ -56,8 +56,15 @@ export const careerMenuEntry: MenuEntry = {
         { label: 'Summary & Goals', path: PERSONA_DETAILS_PATH, scopes: ['tool:career:profile'] },
         { label: 'Skills', path: SKILLS_PATH, scopes: ['tool:career:profile'] },
         { label: 'Experience', path: EXPERIENCE_PATH, scopes: ['tool:career:profile'] },
-        // Moved here from CV: it fills the profile, persona, skills and experience.
-        { label: 'Import from CV', path: IMPORT_CV_PATH, scopes: ['tool:career:cv_import'] },
+        {
+          label: 'CV',
+          children: [
+            // Your CVs, built from a persona.
+            { label: 'CVs', path: CV_DOCUMENTS_PATH, scopes: ['tool:career:cv_documents'] },
+            // Reads a CV into the profile, persona, skills and experience (the page is still headed "Import from CV").
+            { label: 'Import', path: IMPORT_CV_PATH, scopes: ['tool:career:cv_import'] },
+          ],
+        },
       ],
     },
     {
