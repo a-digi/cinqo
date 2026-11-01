@@ -29,6 +29,7 @@ import { buildJobMatchMessage, jobMatchConversationTitle } from '../../JobMatch/
 import { buildGenerateCvMessage, generateCvConversationTitle } from '../../CvPdf/buildGenerateCvMessage'
 import { Dropdown } from '../Dropdown/Dropdown'
 import { Pagination } from '../Pagination/Pagination'
+import { AppLink } from '../../Shared/AppLink/AppLink'
 import { Modal } from '../../Shared/Modal/Modal'
 import { MatchScoreBar } from '../../Shared/MatchScoreBar/MatchScoreBar'
 import { refusalText } from '../../Shared/MatchScoreBar/matchRules'
@@ -47,7 +48,7 @@ import {
 } from '../../Shared/Icons/icons'
 import { AddJobModal } from './AddJobModal'
 import { companyCell } from './companyCell'
-import { JOBS_PATH, VIEW_COMPANY_PATH, VIEW_PORTAL_PATH } from '../../paths'
+import { JOB_DETAILS_PATH, JOBS_PATH, VIEW_COMPANY_PATH, VIEW_PORTAL_PATH } from '../../paths'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { PAGE_ACCENT, accentFor, initialOf } from './jobsTheme'
 import { JobStatsStrip } from './JobStatsStrip'
@@ -86,7 +87,6 @@ import { PageTips } from '../../Shared/PageTips/PageTips'
 
 const SEARCH_DEBOUNCE_MS = 300
 const MAX_LOCATION_DISPLAY_LENGTH = 50
-const JOB_DETAILS_PATH = '/tools/career/job-details'
 
 // Jobs are populated by the AI's own crawling workflow (step 4); step 97
 // added "Add job" for one a person found themselves (see AddJobModal).
@@ -1196,7 +1196,16 @@ export function JobsPage() {
                               >
                                 {initialOf(job.company || job.title)}
                               </span>
-                              <span className="font-medium">{job.title}</span>
+                              {detailsState(job) === 'available' ? (
+                                <AppLink
+                                  href={`${JOB_DETAILS_PATH}?id=${encodeURIComponent(job.id)}`}
+                                  className="rounded font-medium hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+                                >
+                                  {job.title}
+                                </AppLink>
+                              ) : (
+                                <span className="font-medium">{job.title}</span>
+                              )}
                               {job.boardProfileCount > 0 && (
                                 <a
                                   href={`${JOB_DETAILS_PATH}?id=${encodeURIComponent(job.id)}`}
