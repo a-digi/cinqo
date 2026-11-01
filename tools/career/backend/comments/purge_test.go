@@ -2,6 +2,7 @@ package comments
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -155,6 +156,46 @@ func TestPurgeManyStopsAtTheFirstUnreachableCall(t *testing.T) {
 	}
 }
 
+func TestPurgeEntityStrictReportsEveryFailure(t *testing.T) {
+	ok, seenOK := fakeCore(t, http.StatusOK)
+	t.Setenv("CORE_API_URL", ok.URL)
+	t.Setenv("TOOL_SERVICE_TOKEN", "tok")
+	if err := PurgeEntityStrict(JobType, "j1"); err != nil {
+		t.Fatalf("a 200 is success: %v", err)
+	}
+	got := seenOK()
+	if len(got) != 1 || got[0].path != "/api/v1/comments/purge" || got[0].auth != "ToolService tok" ||
+		got[0].body["entityType"] != "job" || got[0].body["entityId"] != "j1" {
+		t.Errorf("request = %+v", got)
+	}
+
+	refusing, _ := fakeCore(t, http.StatusForbidden)
+	t.Setenv("CORE_API_URL", refusing.URL)
+	var refused *RefusedError
+	if err := PurgeEntityStrict(JobType, "j1"); !errors.As(err, &refused) || refused.Status != 403 || !refused.Final() {
+		t.Errorf("a 403 must be a final RefusedError: %v", err)
+	}
+	broken, _ := fakeCore(t, http.StatusInternalServerError)
+	t.Setenv("CORE_API_URL", broken.URL)
+	if err := PurgeEntityStrict(JobType, "j1"); !errors.As(err, &refused) || refused.Status != 500 || refused.Final() {
+		t.Errorf("a 500 must be a RefusedError that is not final: %v", err)
+	}
+
+	t.Setenv("CORE_API_URL", "http://127.0.0.1:1")
+	if err := PurgeEntityStrict(JobType, "j1"); err == nil {
+		t.Error("an unreachable core must be an error")
+	}
+	t.Setenv("CORE_API_URL", "")
+	if err := PurgeEntityStrict(JobType, "j1"); err == nil {
+		t.Error("no configuration must be an error")
+	}
+	t.Setenv("CORE_API_URL", ok.URL)
+	t.Setenv("TOOL_SERVICE_TOKEN", "")
+	if err := PurgeEntityStrict(JobType, "j1"); err == nil {
+		t.Error("no token must be an error")
+	}
+}
+
 func TestTypesMatchTheManifest(t *testing.T) {
 	raw, err := os.ReadFile("../../manifest.json")
 	if err != nil {
@@ -172,7 +213,7 @@ func TestTypesMatchTheManifest(t *testing.T) {
 	for _, c := range m.Comments {
 		declared[c.EntityType] = true
 	}
-	for _, typ := range []string{JobType, ProfileType, PersonaType, CvType} {
+	for _, typ := range []string{JobType, ProfileType, PersonaType, CvType, CompanyType} {
 		if !declared[typ] {
 			t.Errorf("entity type %q is purged by the backend but not declared in manifest.json", typ)
 		}

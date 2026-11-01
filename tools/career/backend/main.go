@@ -32,12 +32,14 @@ import (
 
 	"career-tool-backend/autodiscovery"
 	"career-tool-backend/companies"
+	"career-tool-backend/companydeletedconsumers"
 	"career-tool-backend/crawl"
 	"career-tool-backend/cv"
 	"career-tool-backend/cvbuilder"
 	"career-tool-backend/db"
 	"career-tool-backend/deletedjobs"
 	"career-tool-backend/jobcleanup"
+	"career-tool-backend/jobdeletedconsumers"
 	"career-tool-backend/jobmatchconsumer"
 	"career-tool-backend/jobs"
 	"career-tool-backend/persona"
@@ -183,6 +185,9 @@ func runHTTPServer() {
 	http.HandleFunc("/events/jobs-crawled", portal.JobsCrawledEventHandler)
 	http.HandleFunc("/events/job-created", jobs.JobCreatedEventHandler)
 	http.HandleFunc("/events/job-found", jobmatchconsumer.EventHandler)
+	http.HandleFunc("/events/job-deleted-comments", jobdeletedconsumers.JobCommentsDeleteHandler)
+	http.HandleFunc("/events/job-deleted-company", jobdeletedconsumers.CompanyDeleteHandler)
+	http.HandleFunc("/events/company-deleted-comments", companydeletedconsumers.CompanyCommentsDeleteHandler)
 	http.HandleFunc("/jobs/match/unmatched", jobmatchconsumer.MatchNowHandler)
 	http.HandleFunc("/cv-import/upload", cv.UploadCVHandler)
 	http.HandleFunc("/cv-import/runs", cv.CVImportRunsHandler)

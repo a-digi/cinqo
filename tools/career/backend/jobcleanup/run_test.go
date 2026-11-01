@@ -389,33 +389,31 @@ func TestTheCutoffIsUTC(t *testing.T) {
 	}
 }
 
-// The comments of each deleted job (and only of those) are purged in core.
-func TestDeletedJobsHaveTheirCommentsPurged(t *testing.T) {
+// The cleanup announces its deletes (step 139) and leaves removing the comments to the JobCommentsDelete consumer: it
+// must not call core's purge itself.
+func TestCleanupDoesNotPurgeCommentsItself(t *testing.T) {
 	setup(t)
 	fixedNow(t)
 	var mu sync.Mutex
-	var purged []string
+	purges := 0
 	core := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		raw, _ := io.ReadAll(r.Body)
-		var b struct{ EntityType, EntityID string }
-		_ = json.Unmarshal(raw, &b)
-		mu.Lock()
-		purged = append(purged, b.EntityType+":"+b.EntityID)
-		mu.Unlock()
+		if r.URL.Path == "/api/v1/comments/purge" {
+			mu.Lock()
+			purges++
+			mu.Unlock()
+		}
 	}))
 	defer core.Close()
 	t.Setenv("CORE_API_URL", core.URL)
 	t.Setenv("TOOL_SERVICE_TOKEN", "tok")
 	addJob(t, "gone", old30, "crawled")
-	addJob(t, "kept", young, "crawled")
-	exec(t, `INSERT INTO job_board_entries (profile_id, job_id, status_id) VALUES ('p', 'kept', 'fixed-applied')`)
-	addJob(t, "kept-board", old30, "crawled")
-	exec(t, `INSERT INTO job_board_entries (profile_id, job_id, status_id) VALUES ('p', 'kept-board', 'fixed-applied')`)
 	if _, err := RunCleanup(opts(30, false)); err != nil {
 		t.Fatal(err)
 	}
-	if len(purged) != 1 || purged[0] != "job:gone" {
-		t.Errorf("purged %v", purged)
+	mu.Lock()
+	defer mu.Unlock()
+	if purges != 0 || exists(t, "gone") {
+		t.Errorf("purges=%d, job still there=%v", purges, exists(t, "gone"))
 	}
 }
 
@@ -435,5 +433,97 @@ func TestIncludeManualCanBeOverriddenInTheBody(t *testing.T) {
 	}
 	if _, body := post(PreviewHandler, `{"rule":"older","olderThanDays":30,"includeManual":false}`); !strings.Contains(body, `"wouldDelete":0`) {
 		t.Errorf("override off: %s", body)
+	}
+}
+
+// One career.job.deleted event per job the cleanup really deleted, carrying what the job was; none for a job it kept.
+func TestCleanupPublishesJobDeletedForEachDeletedJobOnly(t *testing.T) {
+	setup(t)
+	fixedNow(t)
+	var mu sync.Mutex
+	var events []map[string]any
+	core := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		var ev map[string]any
+		_ = json.Unmarshal(raw, &ev)
+		mu.Lock()
+		events = append(events, ev)
+		mu.Unlock()
+	}))
+	defer core.Close()
+	t.Setenv("CORE_API_URL", core.URL)
+	t.Setenv("TOOL_SERVICE_TOKEN", "tok")
+	exec(t, `INSERT INTO companies (id, name) VALUES ('c1', 'Acme')`)
+	addJob(t, "gone1", old30, "crawled")
+	exec(t, `UPDATE jobs SET company_id = 'c1' WHERE id = 'gone1'`)
+	addJob(t, "gone2", old30, "crawled")
+	addJob(t, "young", young, "crawled")
+	addJob(t, "board", old30, "crawled")
+	exec(t, `INSERT INTO job_board_entries (profile_id, job_id, status_id) VALUES ('p', 'board', 'fixed-applied')`)
+
+	if _, err := RunCleanup(opts(30, false)); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	byID := map[string]map[string]any{}
+	for _, ev := range events {
+		if ev["topic"] != "career.job.deleted" {
+			continue
+		}
+		p, _ := ev["payload"].(map[string]any)
+		id, _ := p["job_id"].(string)
+		if _, dup := byID[id]; dup {
+			t.Errorf("job %s announced twice", id)
+		}
+		byID[id] = p
+	}
+	if len(byID) != 2 || byID["gone1"] == nil || byID["gone2"] == nil {
+		t.Fatalf("announced %v, want gone1 and gone2 only", byID)
+	}
+	if byID["gone1"]["company_id"] != "c1" || byID["gone1"]["title"] != "Job gone1" || byID["gone1"]["source"] != "crawled" {
+		t.Errorf("gone1 = %v", byID["gone1"])
+	}
+	if byID["gone2"]["company_id"] != "" {
+		t.Errorf("gone2 = %v", byID["gone2"])
+	}
+}
+
+// A job the guarded delete holds back (it got a board entry after the preview) is not announced as deleted.
+func TestAJobTheGuardHoldsBackIsNotAnnounced(t *testing.T) {
+	setup(t)
+	fixedNow(t)
+	var mu sync.Mutex
+	var announced []string
+	core := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		var ev struct {
+			Topic   string
+			Payload struct {
+				JobID string `json:"job_id"`
+			}
+		}
+		_ = json.Unmarshal(raw, &ev)
+		if ev.Topic == "career.job.deleted" {
+			mu.Lock()
+			announced = append(announced, ev.Payload.JobID)
+			mu.Unlock()
+		}
+	}))
+	defer core.Close()
+	t.Setenv("CORE_API_URL", core.URL)
+	t.Setenv("TOOL_SERVICE_TOKEN", "tok")
+	addJob(t, "free", old30, "crawled")
+	addJob(t, "held", old30, "crawled")
+	exec(t, `INSERT INTO job_board_entries (profile_id, job_id, status_id) VALUES ('p', 'held', 'fixed-applied')`)
+
+	done, err := deleteBatch([]Sample{{ID: "free", reason: RuleOlder}, {ID: "held", reason: RuleOlder}}, opts(30, false).cutoff(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(done) != 1 || len(announced) != 1 || announced[0] != "free" {
+		t.Errorf("done=%v announced=%v", done, announced)
 	}
 }

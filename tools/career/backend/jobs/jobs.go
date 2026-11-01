@@ -46,7 +46,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"career-tool-backend/comments"
 	"career-tool-backend/companies"
 	"career-tool-backend/db"
 	"career-tool-backend/deletedjobs"
@@ -466,19 +465,22 @@ func queryJobs(where string, whereArgs []any, limit, offset int, order string) (
 	return jobsListResult{Jobs: jobs, Total: total}, nil
 }
 
-// DeleteJob removes a job. When a job was really removed, the comments about it are
-// removed too (best effort, see comments.PurgeEntity). Both the Jobs page and the
+// DeleteJob removes a job. When a job was really removed, "career.job.deleted" is announced (step 139); the comments
+// about the job are removed by the JobCommentsDelete consumer of that event. Both the Jobs page and the
 // AI's delete_job tool come through here. A crawled job is first remembered in the
 // deleted-jobs database (step 133, see RememberBeforeDelete) so a crawl does not add it again.
 func DeleteJob(id string) error {
 	forget := RememberBeforeDelete(id, deletedjobs.ReasonDeleted)
+	gone, existed := SnapshotForDeletedEvent(id)
 	res, err := db.JobsDB.Exec(`DELETE FROM jobs WHERE id = ?`, id)
 	if err != nil {
 		forget()
 		return err
 	}
 	if n, _ := res.RowsAffected(); n > 0 {
-		comments.PurgeEntity(comments.JobType, id)
+		if existed {
+			PublishJobDeleted(gone)
+		}
 	} else {
 		forget()
 	}

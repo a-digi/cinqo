@@ -231,9 +231,44 @@ func UpdateCompany(id string, name, description *string) error {
 // DeleteCompany un-links (never deletes) any jobs that pointed at it
 // — ON DELETE SET NULL, db's own schema. A benign no-op if id is
 // unknown, matching every other delete-by-id operation in this tool.
+//
+// When a company was really removed, "career.company.deleted" is announced with its id and name (step 139); the
+// name is read first, because the row is gone afterwards. A delete that removes nothing announces nothing.
 func DeleteCompany(id string) error {
-	_, err := db.JobsDB.Exec(`DELETE FROM companies WHERE id = ?`, id)
-	return err
+	var name string
+	// Best effort: an unknown id or a failed read leaves the name empty and never stops the delete.
+	_ = db.JobsDB.QueryRow(`SELECT name FROM companies WHERE id = ?`, id).Scan(&name)
+	res, err := db.JobsDB.Exec(`DELETE FROM companies WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		PublishCompanyDeleted(id, name)
+	}
+	return nil
+}
+
+// DeleteCompanyIfUnused deletes a company only if no job is linked to it and no recruiter belongs to it, and says whether
+// it did (step 139, the CompanyDelete consumer). Both conditions are checked by the one DELETE statement itself, so a job
+// linked or a recruiter added a moment before wins and the company stays (a check followed by a delete could not promise
+// that). An unknown id, or a company that is still in use, is no error: deleted is false. When a row was removed,
+// "career.company.deleted" is announced, as for any other delete of a company.
+func DeleteCompanyIfUnused(id string) (deleted bool, err error) {
+	var name string
+	// Best effort, as in DeleteCompany: only the announcement's name depends on it.
+	_ = db.JobsDB.QueryRow(`SELECT name FROM companies WHERE id = ?`, id).Scan(&name)
+	res, err := db.JobsDB.Exec(
+		`DELETE FROM companies WHERE id = ?
+		   AND NOT EXISTS (SELECT 1 FROM jobs WHERE company_id = companies.id)
+		   AND NOT EXISTS (SELECT 1 FROM recruiters WHERE company_id = companies.id)`, id)
+	if err != nil {
+		return false, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return false, nil
+	}
+	PublishCompanyDeleted(id, name)
+	return true, nil
 }
 
 // WriteCompanyAwareError maps ErrUnknownCompany to a 400 (a caller

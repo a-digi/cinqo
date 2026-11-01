@@ -8,6 +8,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -21,6 +23,7 @@ const (
 	ProfileType = "profile"
 	PersonaType = "persona"
 	CvType      = "cv"
+	CompanyType = "company"
 )
 
 // Entity is one thing whose comments are to be purged.
@@ -51,37 +54,67 @@ func PurgeMany(items []Entity) {
 	}
 }
 
+// RefusedError is core answering a purge with something other than 200: the comments were not purged. A 4xx (an id core
+// does not accept, a type the tool did not declare, a bad token) is final, asking again gets the same answer; a 5xx may pass.
+type RefusedError struct {
+	EntityType, EntityID string
+	Status               int
+}
+
+func (e *RefusedError) Error() string {
+	return fmt.Sprintf("core refused to purge comments for %s %q: status %d", e.EntityType, e.EntityID, e.Status)
+}
+
+// Final reports whether asking again cannot help (a 4xx answer).
+func (e *RefusedError) Final() bool { return e.Status >= 400 && e.Status < 500 }
+
+// PurgeEntityStrict is PurgeEntity that reports failure: an error when core is not configured, cannot be reached or does
+// not answer 200 (the comments are then still there). For a caller that can be asked again, such as the job-deleted
+// consumer, whose 5xx makes core deliver the event once more.
+func PurgeEntityStrict(entityType, entityID string) error {
+	_, err := send(entityType, entityID)
+	return err
+}
+
 // purge sends one purge request and reports whether core could be reached (any answer counts,
-// a refusal included): false for no configuration or a network error.
+// a refusal included): false for no configuration or a network error. Failures are logged.
 func purge(entityType, entityID string) bool {
+	reached, err := send(entityType, entityID)
+	if err != nil {
+		log.Printf("comments: %v", err)
+	}
+	return reached
+}
+
+// send is one purge request: whether core could be reached (any answer counts) and, when the comments were not purged,
+// why.
+func send(entityType, entityID string) (reached bool, err error) {
 	coreURL := os.Getenv("CORE_API_URL")
 	token := os.Getenv("TOOL_SERVICE_TOKEN")
 	if coreURL == "" || token == "" {
-		return false
+		return false, errors.New("CORE_API_URL or TOOL_SERVICE_TOKEN is not set")
 	}
 
 	body, err := json.Marshal(map[string]string{"entityType": entityType, "entityId": entityID})
 	if err != nil {
-		return false
+		return false, err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), purgeTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, coreURL+"/api/v1/comments/purge", bytes.NewReader(body))
 	if err != nil {
-		log.Printf("comments: failed to build purge request for %s %q: %v", entityType, entityID, err)
-		return false
+		return false, fmt.Errorf("failed to build purge request for %s %q: %w", entityType, entityID, err)
 	}
 	req.Header.Set("Authorization", "ToolService "+token)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		log.Printf("comments: purge request failed for %s %q: %v", entityType, entityID, err)
-		return false
+		return false, fmt.Errorf("purge request failed for %s %q: %w", entityType, entityID, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("comments: core refused to purge comments for %s %q: status %d", entityType, entityID, resp.StatusCode)
+		return true, &RefusedError{EntityType: entityType, EntityID: entityID, Status: resp.StatusCode}
 	}
-	return true
+	return true, nil
 }

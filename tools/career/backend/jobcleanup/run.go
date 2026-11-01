@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"career-tool-backend/comments"
 	"career-tool-backend/db"
 	"career-tool-backend/deletedjobs"
 	"career-tool-backend/jobs"
@@ -254,7 +253,7 @@ const guardedDelete = `DELETE FROM jobs AS j WHERE j.id = ? AND (? OR j.crawled_
 
 // RunCleanup deletes what PreviewCleanup lists, BatchSize jobs per transaction, re-checking every safety rule in
 // the same statement that deletes. Each batch is atomic, the run is not: a failure stops the run and keeps the
-// earlier batches. The comments of the deleted jobs are purged after their batch commits.
+// earlier batches. A "career.job.deleted" event is announced for each deleted job after its batch commits (its comments go with the JobCommentsDelete consumer).
 func RunCleanup(o Options) (RunResult, error) {
 	return RunCleanupContext(context.Background(), o)
 }
@@ -293,7 +292,6 @@ func RunCleanupContext(ctx context.Context, o Options) (RunResult, error) {
 			} else {
 				byRule.LowMatch++
 			}
-			comments.PurgeEntity(comments.JobType, s.ID)
 		}
 		if err != nil {
 			recordResult(deleted, fmt.Sprintf("%s: %d deleted, stopped by an error: %v", o.describe(), deleted, err))
@@ -331,6 +329,13 @@ func deleteBatch(batch []Sample, cutoff string, includeManual bool) ([]Sample, e
 			forgets[s.ID] = jobs.RememberBeforeDelete(s.ID, deletedjobs.ReasonLowMatch)
 		}
 	}
+	// What each job's deleted event will say is read now for the same reason (the row is gone after the delete).
+	snapshots := make(map[string]jobs.DeletedJob, len(batch))
+	for _, s := range batch {
+		if snap, ok := jobs.SnapshotForDeletedEvent(s.ID); ok {
+			snapshots[s.ID] = snap
+		}
+	}
 	// takeBack undoes the entries of every remembered job that was not deleted.
 	takeBack := func(deleted []Sample) {
 		gone := make(map[string]bool, len(deleted))
@@ -366,6 +371,11 @@ func deleteBatch(batch []Sample, cutoff string, includeManual bool) ([]Sample, e
 		return nil, err
 	}
 	takeBack(done) // what the guard held back is not deleted, so it is not remembered either
+	for _, s := range done {
+		if snap, ok := snapshots[s.ID]; ok {
+			jobs.PublishJobDeleted(snap)
+		}
+	}
 	return done, nil
 }
 
