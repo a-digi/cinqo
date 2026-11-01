@@ -32,6 +32,7 @@ import { shouldTryInherit, type InheritView } from '../inheritOutcome'
 import { FREE_ROUTER_HINT, isFreeRouter } from '../modelHint'
 import { findJobsQuestion, pendingJobsQuestion, JOBS_QUESTION_NO_HINT, JOBS_QUESTION_TITLE, JOBS_QUESTION_YES_HINT } from '../jobsQuestion'
 import { InstructionAttemptStats } from './InstructionAttemptStats'
+import { StartFreshButton } from './StartFreshButton'
 import { AccordionItem } from '../../Shared/Accordion/AccordionItem'
 import {
   PlayIcon,
@@ -1247,6 +1248,15 @@ export function CrawlPanel({
                 )}
               </button>
             </div>
+            <StartFreshButton
+              link={link}
+              tabBusy={{ listingGenerating: aiPending, jobDetailGenerating: jobDetailAiPending, inheriting }}
+              canGenerate={hasPlatforms && selectedPlatform !== null}
+              onGenerate={() => {
+                handleGenerateInstructionsWithAI()
+              }}
+              onReload={onReload}
+            />
           </div>
         </AccordionItem>
       </div>

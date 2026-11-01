@@ -1323,6 +1323,29 @@ export async function updatePortal(id: string, name: string): Promise<void> {
   if (!res.ok && res.status !== 204) throw new Error(`failed to update platform (${res.status})`)
 }
 
+// What POST /portal-links/start-fresh answers (step 161): the conversations of the link's earlier AI runs,
+// for the caller to delete through the core, and how many attempt records were removed.
+export interface StartFreshResult {
+  conversationIds: string[]
+  attemptsRemoved: number
+}
+
+// startFreshPortalLink wipes one link's earlier AI attempts and leftovers (and, only when asked, its stored crawl
+// instructions). The server answers 409 while a generation is still running for the link; its text is the error.
+export async function startFreshPortalLink(portalLinkId: string, clearInstructions: boolean): Promise<StartFreshResult> {
+  const res = await fetch(`${PROXY_BASE}/portal-links/start-fresh`, {
+    method: 'POST',
+    credentials: 'include',
+    body: JSON.stringify({ portalLinkId, clearInstructions }),
+  })
+  if (!res.ok) {
+    const text = (await res.text().catch(() => '')).trim()
+    throw new Error(res.status === 409 && text !== '' ? text : `failed to start fresh (${res.status})`)
+  }
+  const data = (await res.json()) as Partial<StartFreshResult>
+  return { conversationIds: data.conversationIds ?? [], attemptsRemoved: data.attemptsRemoved ?? 0 }
+}
+
 export async function removePortal(id: string): Promise<void> {
   const res = await fetch(`${PROXY_BASE}/portals?id=${encodeURIComponent(id)}`, {
     method: 'DELETE',

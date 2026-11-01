@@ -160,3 +160,19 @@ export async function fetchTurnStatus(conversationId: string): Promise<TurnRunSt
     throw err
   }
 }
+
+// deleteConversation removes one conversation with its prompt/answer file and AI logs (the core's own
+// DELETE /api/v1/conversations/{id}, owner only). 'gone' means it did not exist (404): already deleted, which
+// is what the caller wanted. Used by "Start fresh" (step 161) for the conversations of a link's earlier AI runs.
+export async function deleteConversation(conversationId: string): Promise<'deleted' | 'gone'> {
+  const res = await httpClient.delete(`/api/v1/conversations/${encodeURIComponent(conversationId)}`)
+  if (res.status === 404) return 'gone'
+  if (!httpClient.isSuccess(res)) {
+    const body = (await res.json().catch(() => undefined)) as { message?: unknown } | undefined
+    throw new CoreApiError(
+      res.status,
+      body && typeof body.message === 'string' ? body.message : `failed to delete conversation (${res.status})`,
+    )
+  }
+  return 'deleted'
+}
