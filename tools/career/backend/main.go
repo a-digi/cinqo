@@ -36,6 +36,7 @@ import (
 	"career-tool-backend/cvbuilder"
 	"career-tool-backend/db"
 	"career-tool-backend/jobcleanup"
+	"career-tool-backend/jobmatchconsumer"
 	"career-tool-backend/jobs"
 	"career-tool-backend/persona"
 	"career-tool-backend/portal"
@@ -113,6 +114,7 @@ func runHTTPServer() {
 	crawl.StartStaleCrawlRunReaper()
 	autodiscovery.StartAutoDiscoveryManager()
 	jobcleanup.StartManager(context.Background())
+	jobmatchconsumer.Start(context.Background())
 
 	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -169,6 +171,7 @@ func runHTTPServer() {
 	http.HandleFunc("/events/listing-instructions-ready", portal.ListingInstructionsReadyEventHandler)
 	http.HandleFunc("/events/jobs-crawled", portal.JobsCrawledEventHandler)
 	http.HandleFunc("/events/job-created", jobs.JobCreatedEventHandler)
+	http.HandleFunc("/events/job-found", jobmatchconsumer.EventHandler)
 	http.HandleFunc("/cv-import/upload", cv.UploadCVHandler)
 	http.HandleFunc("/cv-import/runs", cv.CVImportRunsHandler)
 	http.HandleFunc("/cv-documents/templates", cvbuilder.TemplatesHandler)

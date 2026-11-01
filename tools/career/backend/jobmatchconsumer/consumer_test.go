@@ -1,0 +1,291 @@
+package jobmatchconsumer
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"career-tool-backend/db"
+	"career-tool-backend/jobs"
+	"career-tool-backend/persona"
+	"career-tool-backend/profile"
+)
+
+func setup(t *testing.T) {
+	t.Helper()
+	t.Setenv("TOOL_DB_DIR", t.TempDir())
+	if err := db.InitDatabases(); err != nil {
+		t.Fatalf("InitDatabases: %v", err)
+	}
+	t.Cleanup(func() {
+		db.JobsDB.Close()
+		db.CareerDB.Close()
+	})
+}
+
+func send(h func(http.ResponseWriter, *http.Request), method, body string) int {
+	rec := httptest.NewRecorder()
+	h(rec, httptest.NewRequest(method, "/events/job-found", strings.NewReader(body)))
+	return rec.Code
+}
+
+func event(jobID string) string {
+	return fmt.Sprintf(`{"id":"e1","topic":"career.job.found","source_kind":"tool","source_id":"career","occurred_at":"2026-06-30T12:00:00Z","payload":{"job_id":%q,"title":"Backend Engineer","company":"","source":"manual"}}`, jobID)
+}
+
+// watchBatches replaces the matcher with one that records every batch it is given.
+type batches struct {
+	mu   sync.Mutex
+	list [][]string
+}
+
+func (b *batches) sizes() []int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	var out []int
+	for _, l := range b.list {
+		out = append(out, len(l))
+	}
+	return out
+}
+
+func watch(t *testing.T, fn func(ids []string) ([]jobs.AutoMatchOutcome, error)) *batches {
+	t.Helper()
+	b := &batches{}
+	old := autoMatch
+	autoMatch = func(ids []string) ([]jobs.AutoMatchOutcome, error) {
+		b.mu.Lock()
+		b.list = append(b.list, append([]string(nil), ids...))
+		b.mu.Unlock()
+		if fn != nil {
+			return fn(ids)
+		}
+		return nil, nil
+	}
+	t.Cleanup(func() { autoMatch = old })
+	return b
+}
+
+func waitFor(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func TestTheRouteQueuesAValidEventAndAnswersAtOnce(t *testing.T) {
+	c := New(10)
+	if code := send(c.Handler, http.MethodPost, event("job-1")); code != http.StatusAccepted {
+		t.Fatalf("status %d", code)
+	}
+	if len(c.queue) != 1 || <-c.queue != "job-1" {
+		t.Error("the job id was not queued")
+	}
+	// without a worker nothing is scored: the answer came before any work (the queue is only a channel)
+}
+
+func TestTheRouteRefusesWhatItCannotUse(t *testing.T) {
+	c := New(10)
+	for name, tc := range map[string]struct {
+		method, body string
+		want         int
+	}{
+		"GET":             {http.MethodGet, "", http.StatusMethodNotAllowed},
+		"PUT":             {http.MethodPut, event("a"), http.StatusMethodNotAllowed},
+		"not json":        {http.MethodPost, "nope", http.StatusBadRequest},
+		"empty body":      {http.MethodPost, "", http.StatusBadRequest},
+		"no payload":      {http.MethodPost, `{"topic":"career.job.found"}`, http.StatusBadRequest},
+		"payload not obj": {http.MethodPost, `{"payload":"x"}`, http.StatusBadRequest},
+		"empty job id":    {http.MethodPost, `{"payload":{"job_id":""}}`, http.StatusBadRequest},
+		"missing job id":  {http.MethodPost, `{"payload":{"title":"t"}}`, http.StatusBadRequest},
+		"job id number":   {http.MethodPost, `{"payload":{"job_id":5}}`, http.StatusBadRequest},
+	} {
+		if code := send(c.Handler, tc.method, tc.body); code != tc.want {
+			t.Errorf("%s: status %d, want %d", name, code, tc.want)
+		}
+	}
+	if len(c.queue) != 0 {
+		t.Errorf("%d ids were queued by refused events", len(c.queue))
+	}
+}
+
+// Only job_id of the payload is used: extra fields, a company, another source are all fine.
+func TestOnlyTheJobIDIsUsed(t *testing.T) {
+	c := New(10)
+	for _, body := range []string{
+		`{"payload":{"job_id":"a"}}`,
+		`{"payload":{"job_id":"b","title":"T","company":"Acme","source":"crawled","extra":[1,2]}}`,
+	} {
+		if code := send(c.Handler, http.MethodPost, body); code != http.StatusAccepted {
+			t.Errorf("%s: %d", body, code)
+		}
+	}
+	if len(c.queue) != 2 {
+		t.Errorf("queued %d", len(c.queue))
+	}
+}
+
+func TestAFullQueueAnswers503AndKeepsWhatItHas(t *testing.T) {
+	c := New(2)
+	for _, id := range []string{"a", "b"} {
+		if code := send(c.Handler, http.MethodPost, event(id)); code != http.StatusAccepted {
+			t.Fatalf("%s: %d", id, code)
+		}
+	}
+	if code := send(c.Handler, http.MethodPost, event("c")); code != http.StatusServiceUnavailable {
+		t.Errorf("full queue: %d", code)
+	}
+	if len(c.queue) != 2 || <-c.queue != "a" || <-c.queue != "b" {
+		t.Error("the queue lost or reordered ids")
+	}
+}
+
+// Waiting ids are taken in batches of 50: 120 ids make batches of 50, 50 and 20, in the order they arrived.
+func TestTheWorkerMatchesWaitingIDsInBatches(t *testing.T) {
+	b := watch(t, nil)
+	c := New(200)
+	for i := 0; i < 120; i++ {
+		c.queue <- fmt.Sprintf("j%03d", i)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := c.Start(ctx)
+	waitFor(t, "all batches", func() bool { return len(b.sizes()) == 3 })
+	cancel()
+	<-done
+	if got := b.sizes(); got[0] != 50 || got[1] != 50 || got[2] != 20 {
+		t.Errorf("batch sizes %v, want [50 50 20]", got)
+	}
+	if b.list[0][0] != "j000" || b.list[0][49] != "j049" || b.list[2][19] != "j119" {
+		t.Errorf("order: %v ... %v", b.list[0][:2], b.list[2][18:])
+	}
+}
+
+// A lone id is matched on its own, without waiting for a batch to fill.
+func TestALoneIDIsMatchedAtOnce(t *testing.T) {
+	b := watch(t, nil)
+	c := New(10)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := c.Start(ctx)
+	c.queue <- "only"
+	waitFor(t, "the lone id", func() bool { return len(b.sizes()) == 1 })
+	cancel()
+	<-done
+	if got := b.sizes(); got[0] != 1 {
+		t.Errorf("%v", got)
+	}
+}
+
+// A batch that panics or fails is logged and the worker goes on with the next one.
+func TestTheWorkerSurvivesAPanicAndAnError(t *testing.T) {
+	calls := 0
+	b := watch(t, func(ids []string) ([]jobs.AutoMatchOutcome, error) {
+		calls++
+		switch calls {
+		case 1:
+			panic("boom")
+		case 2:
+			return nil, errors.New("profiles unreadable")
+		case 3:
+			return []jobs.AutoMatchOutcome{{JobID: ids[0], Status: jobs.AutoFailed, Err: errors.New("one job failed")}}, nil
+		}
+		return nil, nil
+	})
+	c := New(10)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := c.Start(ctx)
+	for _, id := range []string{"a", "b", "c", "d"} {
+		c.queue <- id
+		want := len(b.sizes()) + 1
+		waitFor(t, "batch "+id, func() bool { return len(b.sizes()) >= want })
+	}
+	cancel()
+	<-done
+	if len(b.sizes()) != 4 {
+		t.Errorf("batches %v: the worker stopped after a failure", b.sizes())
+	}
+}
+
+func TestTheWorkerStopsWhenTheContextIsCancelled(t *testing.T) {
+	b := watch(t, nil)
+	c := New(10)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := c.Start(ctx)
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the worker did not stop")
+	}
+	c.queue <- "late"
+	time.Sleep(50 * time.Millisecond)
+	if len(b.sizes()) != 0 {
+		t.Error("a stopped worker matched an id")
+	}
+}
+
+// The whole way with the real matcher and real tables: the event is posted, the worker matches, the job gets its
+// best manual match; the same event twice does not change it; an unknown job id and a job nobody can judge leave nothing.
+func TestAnEventEndsInAMatchWithTheRealMatcher(t *testing.T) {
+	setup(t)
+	mk := func(name string, skills ...string) (string, string) {
+		pid, err := profile.CreateProfile(name, "Test")
+		if err != nil {
+			t.Fatal(err)
+		}
+		per, err := persona.CreatePersona(pid, name+" persona", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		h, titles, loc := "Backend Engineer", "Software Engineer, Backend Developer", "Hamburg"
+		if err := persona.UpdatePersonaDetails(persona.UpdatePersonaDetailsArgs{PersonaID: per, Headline: &h, DesiredTitles: &titles, Location: &loc, DesiredLocations: &loc}); err != nil {
+			t.Fatal(err)
+		}
+		for _, s := range skills {
+			if err := persona.AddCareerSkill(per, s); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return pid, per
+	}
+	mk("Other", "Cobol", "Fortran")
+	fit, fitPersona := mk("Fit", "Go", "Docker", "Kubernetes", "PostgreSQL")
+	if _, err := db.JobsDB.Exec(`INSERT INTO jobs (id, source_url, title, company, location, description) VALUES
+		('j1', 'u1', 'Backend Engineer (m/w/d)', 'Acme', 'Hamburg', 'Du entwickelst Backend-Services in Go, betreibst sie mit Docker und Kubernetes und arbeitest mit PostgreSQL. Mindestens 3 Jahre Berufserfahrung.')`); err != nil {
+		t.Fatal(err)
+	}
+	c := New(10)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := c.Start(ctx)
+	defer func() { cancel(); <-done }()
+
+	for _, id := range []string{"j1", "j1", "ghost"} {
+		if code := send(c.Handler, http.MethodPost, event(id)); code != http.StatusAccepted {
+			t.Fatalf("%s: %d", id, code)
+		}
+	}
+	var profileID, personaID, kind, status string
+	var score int
+	waitFor(t, "the match", func() bool {
+		return db.JobsDB.QueryRow(`SELECT profile_id, persona_id, kind, status, score FROM job_matches WHERE job_id = 'j1'`).
+			Scan(&profileID, &personaID, &kind, &status, &score) == nil
+	})
+	if profileID != fit || personaID != fitPersona || kind != "manual" || status != "completed" || score < 60 {
+		t.Errorf("stored: profile %s persona %s kind %s status %s score %d", profileID, personaID, kind, status, score)
+	}
+	time.Sleep(100 * time.Millisecond) // the duplicate and the ghost have been handled by now
+	var n int
+	_ = db.JobsDB.QueryRow(`SELECT COUNT(*) FROM job_matches`).Scan(&n)
+	if n != 1 {
+		t.Errorf("%d match rows, want 1", n)
+	}
+}
