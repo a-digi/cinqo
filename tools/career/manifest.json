@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.0.524",
+  "version": "0.0.527",
   "authors": [
     { "name": "Anes Detit", "email": "tafa.andet@googlemail.com" }
   ],
@@ -594,6 +594,26 @@
       "required_scope": "tool:career:jobs"
     },
     {
+      "method": "GET",
+      "path_suffix": "profile-match-rules",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "profile-match-rules",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "profile-match-rules",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "profile-match-rules",
+      "required_scope": "tool:career:jobs"
+    },
+    {
       "method": "POST",
       "path_suffix": "jobs/match/run",
       "required_scope": "tool:career:jobs"
@@ -855,6 +875,10 @@
     {
       "topic": "career.job.found",
       "path_suffix": "events/job-found"
+    },
+    {
+      "topic": "career.job.found",
+      "path_suffix": "events/job-found-profile-rules"
     },
     {
       "topic": "career.job.deleted",

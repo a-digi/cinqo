@@ -46,6 +46,7 @@ import (
 	"career-tool-backend/portal"
 	"career-tool-backend/profile"
 	"career-tool-backend/profileimage"
+	"career-tool-backend/profilejobmatchconsumer"
 	"career-tool-backend/recruiters"
 	"career-tool-backend/settings"
 )
@@ -124,6 +125,7 @@ func runHTTPServer() {
 	autodiscovery.StartAutoDiscoveryManager()
 	jobcleanup.StartManager(context.Background())
 	jobmatchconsumer.Start(context.Background())
+	profilejobmatchconsumer.Start(context.Background())
 	// The catch-up for events that were missed (step 134): jobs without any match are queued for the same worker,
 	// once shortly after start and then every 10 minutes.
 	jobmatchconsumer.StartSweeper(context.Background())
@@ -159,6 +161,7 @@ func runHTTPServer() {
 	http.HandleFunc("/job-statuses", jobStatusesHandler)
 	http.HandleFunc("/job-board-entries", jobBoardEntriesHandler)
 	http.HandleFunc("/job-board-usage", jobBoardUsageHandler)
+	http.HandleFunc("/profile-match-rules", profileMatchRulesHandler)
 	http.HandleFunc("/companies", companiesHandler)
 	http.HandleFunc("/recruiters", recruitersHandler)
 	http.HandleFunc("/portals", portalsHandler)
@@ -185,6 +188,7 @@ func runHTTPServer() {
 	http.HandleFunc("/events/jobs-crawled", portal.JobsCrawledEventHandler)
 	http.HandleFunc("/events/job-created", jobs.JobCreatedEventHandler)
 	http.HandleFunc("/events/job-found", jobmatchconsumer.EventHandler)
+	http.HandleFunc("/events/job-found-profile-rules", profilejobmatchconsumer.EventHandler)
 	http.HandleFunc("/events/job-deleted-comments", jobdeletedconsumers.JobCommentsDeleteHandler)
 	http.HandleFunc("/events/job-deleted-company", jobdeletedconsumers.CompanyDeleteHandler)
 	http.HandleFunc("/events/company-deleted-comments", companydeletedconsumers.CompanyCommentsDeleteHandler)

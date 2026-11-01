@@ -841,6 +841,23 @@ CREATE TABLE IF NOT EXISTS job_board_entries (
 CREATE INDEX IF NOT EXISTS job_board_entries_job_idx ON job_board_entries(job_id);
 CREATE INDEX IF NOT EXISTS job_board_entries_status_idx ON job_board_entries(status_id);
 
+-- profile_match_rules (step 140): a profile's rules for new jobs, "a job that matches at least min_percent percent is
+-- added to this profile's board with this status". profile_id is the opaque id into career.db (no FK across the two
+-- files, like job_statuses.profile_id); a rule goes with the status it points to (a deleted custom status takes its rules
+-- with it), and a deleted profile's rules are removed by jobboard.PurgeProfile. One rule per threshold and profile.
+-- See plan/ai/tools/career/step-140-profile-job-match-consumer.md.
+CREATE TABLE IF NOT EXISTS profile_match_rules (
+    id          TEXT PRIMARY KEY,
+    profile_id  TEXT NOT NULL,
+    min_percent INTEGER NOT NULL CHECK (min_percent BETWEEN 1 AND 100),
+    status_id   TEXT NOT NULL REFERENCES job_statuses(id) ON DELETE CASCADE,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT,
+    UNIQUE (profile_id, min_percent)
+);
+
+CREATE INDEX IF NOT EXISTS profile_match_rules_profile_idx ON profile_match_rules(profile_id);
+
 -- job_requirements (step 129): what a job asks for, written by hand on the job page (never by an AI): a term or
 -- a short sentence with a tier (3 must-have, 2 important, 1 nice-to-have). The manual job-match engine
 -- (jobmatcher package) scores a persona against them when a job has any. A deleted job takes its

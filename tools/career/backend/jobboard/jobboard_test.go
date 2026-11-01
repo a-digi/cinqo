@@ -488,3 +488,63 @@ func TestAnUnknownBoardSortIsRefused(t *testing.T) {
 		}
 	}
 }
+
+func TestAddEntryIfAbsentAddsOnlyWhenTheJobIsNotOnTheBoard(t *testing.T) {
+	setup(t)
+	addJob(t, "j1", "Job one")
+	added, err := AddEntryIfAbsent("p1", "j1", AppliedID)
+	if err != nil || !added {
+		t.Fatalf("added=%v err=%v", added, err)
+	}
+	var status string
+	if err := db.JobsDB.QueryRow(`SELECT status_id FROM job_board_entries WHERE profile_id = 'p1' AND job_id = 'j1'`).Scan(&status); err != nil || status != AppliedID {
+		t.Errorf("status=%q err=%v", status, err)
+	}
+	// the same job on another profile's board is a separate entry
+	if added, err := AddEntryIfAbsent("p2", "j1", NotReviewedID); err != nil || !added {
+		t.Errorf("other profile: added=%v err=%v", added, err)
+	}
+}
+
+// A card already on the board keeps its status and its moved-at time: nothing a person did is undone.
+func TestAddEntryIfAbsentNeverMovesAnExistingCard(t *testing.T) {
+	setup(t)
+	addJob(t, "j1", "Job one")
+	custom := mustStatus(t, "p1", "Mine")
+	mustSet(t, "p1", "j1", custom.ID)
+	var before string
+	if err := db.JobsDB.QueryRow(`SELECT updated_at FROM job_board_entries WHERE profile_id = 'p1' AND job_id = 'j1'`).Scan(&before); err != nil {
+		t.Fatal(err)
+	}
+	added, err := AddEntryIfAbsent("p1", "j1", DeclinedID)
+	if err != nil || added {
+		t.Fatalf("added=%v err=%v, want false and no error", added, err)
+	}
+	var status, after string
+	if err := db.JobsDB.QueryRow(`SELECT status_id, updated_at FROM job_board_entries WHERE profile_id = 'p1' AND job_id = 'j1'`).Scan(&status, &after); err != nil {
+		t.Fatal(err)
+	}
+	if status != custom.ID || after != before {
+		t.Errorf("the card moved: status=%q updated_at %q -> %q", status, before, after)
+	}
+}
+
+func TestAddEntryIfAbsentChecksLikeSetEntry(t *testing.T) {
+	setup(t)
+	addJob(t, "j1", "Job one")
+	others := mustStatus(t, "p2", "Theirs")
+	if _, err := AddEntryIfAbsent("p1", "nope", AppliedID); !errors.Is(err, ErrUnknownJob) {
+		t.Errorf("unknown job = %v", err)
+	}
+	if _, err := AddEntryIfAbsent("p1", "j1", "no-such"); !errors.Is(err, ErrUnknownStatus) {
+		t.Errorf("unknown status = %v", err)
+	}
+	if _, err := AddEntryIfAbsent("p1", "j1", others.ID); !errors.Is(err, ErrStatusNotOnBoard) {
+		t.Errorf("another profile's status = %v", err)
+	}
+	var n int
+	_ = db.JobsDB.QueryRow(`SELECT COUNT(*) FROM job_board_entries`).Scan(&n)
+	if n != 0 {
+		t.Errorf("entries = %d, want none after refusals", n)
+	}
+}

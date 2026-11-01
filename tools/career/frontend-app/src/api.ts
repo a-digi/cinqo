@@ -1910,6 +1910,56 @@ export async function fetchJobStatuses(): Promise<JobStatusInfo[]> {
   return data.statuses
 }
 
+// --- auto-add rules of a profile (step 140) ---
+
+// "A new job that matches this profile at least minPercent percent is added to its board with this status."
+export interface ProfileMatchRule {
+  id: string
+  profileId: string
+  minPercent: number
+  statusId: string
+  statusName: string
+}
+
+// The rules calls answer a refused value with the reason as plain text ("this profile already has a rule for this
+// percentage"); that text is what the settings page shows.
+async function ruleFailure(res: Response, action: string): Promise<Error> {
+  const text = (await res.text()).trim()
+  return new Error(res.status === 400 || res.status === 409 ? text || `failed to ${action} (${res.status})` : `failed to ${action} (${res.status})`)
+}
+
+// One profile's rules, highest percentage first.
+export async function fetchProfileMatchRules(profileId: string): Promise<ProfileMatchRule[]> {
+  const res = await fetch(`${PROXY_BASE}/profile-match-rules?profileId=${encodeURIComponent(profileId)}`, { credentials: 'include' })
+  const data = await jsonOrThrow<{ rules: ProfileMatchRule[] }>(res, 'load the rules')
+  return data.rules
+}
+
+export async function createProfileMatchRule(profileId: string, minPercent: number, statusId: string): Promise<ProfileMatchRule> {
+  const res = await fetch(`${PROXY_BASE}/profile-match-rules`, {
+    method: 'POST',
+    credentials: 'include',
+    body: JSON.stringify({ profileId, minPercent, statusId }),
+  })
+  if (!res.ok) throw await ruleFailure(res, 'add the rule')
+  return res.json() as Promise<ProfileMatchRule>
+}
+
+export async function updateProfileMatchRule(id: string, minPercent: number, statusId: string): Promise<ProfileMatchRule> {
+  const res = await fetch(`${PROXY_BASE}/profile-match-rules`, {
+    method: 'PUT',
+    credentials: 'include',
+    body: JSON.stringify({ id, minPercent, statusId }),
+  })
+  if (!res.ok) throw await ruleFailure(res, 'change the rule')
+  return res.json() as Promise<ProfileMatchRule>
+}
+
+export async function deleteProfileMatchRule(id: string): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/profile-match-rules?id=${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'include' })
+  if (!res.ok) throw await ruleFailure(res, 'delete the rule')
+}
+
 // --- manual (no AI) job match (step 129) ---
 
 // One part of a manual score: its weight, the points it gave, or why it could not be judged.

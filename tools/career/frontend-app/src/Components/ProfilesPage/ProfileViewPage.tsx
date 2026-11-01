@@ -19,7 +19,7 @@ import { Comments } from '../../Shared/Comments/Comments'
 import { COMMENT_TYPE_PROFILE } from '../../Shared/Comments/commentTypes'
 import { UserIcon } from '../../Shared/Icons/icons'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
-import { PROFILES_PATH, jobBoardPathFor, personasPathFor, viewPersonaPathFor } from '../../paths'
+import { PROFILES_PATH, jobBoardPathFor, personasPathFor, profileSettingsPathFor, viewPersonaPathFor } from '../../paths'
 import { plural } from '../CompaniesPage/companyStats'
 import { ProfilePhotosPanel } from '../ProfileImage/ProfilePhotosPanel'
 import { useProfilePhotos } from '../ProfileImage/useProfilePhotos'
@@ -239,6 +239,12 @@ export function ProfileViewPage() {
                 className="shrink-0 rounded-md bg-gray-800 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-900"
               >
                 Open job board
+              </AppLink>
+              <AppLink
+                href={profileSettingsPathFor(profile.id)}
+                className="shrink-0 rounded-md border border-gray-300 px-3.5 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+              >
+                Auto-add settings
               </AppLink>
             </div>
           </section>

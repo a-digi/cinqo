@@ -3,7 +3,7 @@ import { fetchProfiles, updateProfile, deleteProfile, addProfileExternalLink, re
 import { CameraIcon, PlusIcon, UserIcon, XIcon } from '../../Shared/Icons/icons'
 import { inputClass } from '../../Shared/inputClass'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
-import { NEW_PROFILE_PATH, VIEW_PROFILE_PATH, photosPathFor } from '../../paths'
+import { NEW_PROFILE_PATH, VIEW_PROFILE_PATH, photosPathFor, profileSettingsPathFor } from '../../paths'
 import { plural } from '../CompaniesPage/companyStats'
 import { PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
 import { profileLabel } from '../ProfileSwitcher/profileLabel'
@@ -273,6 +273,16 @@ export function ProfilesPage() {
                             >
                               <CameraIcon className="h-3 w-3" />
                               Photo
+                            </button>
+                            {/* The auto-add rules belong to the profile: its settings page is its own address. */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                window.__cinqoToolBridge.navigate(profileSettingsPathFor(p.id))
+                              }}
+                              className="rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                            >
+                              Settings
                             </button>
                             <button
                               type="button"

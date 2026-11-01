@@ -49,6 +49,13 @@ export const JOB_BOARD_PROFILE_PATH = '/tools/career/job-board/:profileId'
 export function jobBoardPathFor(profileId: string): string {
   return `${JOB_BOARD_PATH}/${encodeURIComponent(profileId)}`
 }
+export const PROFILE_SETTINGS_PATH = '/tools/career/profile-settings'
+// One profile's auto-add settings on their own page: a pattern route, the id arrives as the page's route parameter.
+export const PROFILE_SETTINGS_PROFILE_PATH = '/tools/career/profile-settings/:profileId'
+// The address of one profile's auto-add settings (step 140).
+export function profileSettingsPathFor(profileId: string): string {
+  return `${PROFILE_SETTINGS_PATH}/${encodeURIComponent(profileId)}`
+}
 export const PROFILE_IMAGE_PATH = '/tools/career/profile-image'
 // One profile's photos on their own page: a pattern route, the id arrives as the page's route parameter.
 export const PROFILE_IMAGE_PROFILE_PATH = '/tools/career/profile-image/:profileId'

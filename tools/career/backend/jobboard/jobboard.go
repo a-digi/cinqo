@@ -287,6 +287,46 @@ func SetEntry(profileID, jobID, statusID string) (Entry, error) {
 	return e, tx.Commit()
 }
 
+// AddEntryIfAbsent puts a job on a profile's board in a status only when the job is not on that board yet, and reports
+// whether it did. A job already there keeps its status and its moved-at time: a person's choice (or an earlier run)
+// wins, so the automatic rules (step 140) never move a card. The same checks as SetEntry: ErrUnknownJob,
+// ErrUnknownStatus, ErrStatusNotOnBoard.
+func AddEntryIfAbsent(profileID, jobID, statusID string) (bool, error) {
+	tx, err := db.JobsDB.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var one int
+	if err := tx.QueryRow(`SELECT 1 FROM jobs WHERE id = ?`, jobID).Scan(&one); errors.Is(err, sql.ErrNoRows) {
+		return false, ErrUnknownJob
+	} else if err != nil {
+		return false, err
+	}
+	var owner sql.NullString
+	err = tx.QueryRow(`SELECT profile_id FROM job_statuses WHERE id = ?`, statusID).Scan(&owner)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, ErrUnknownStatus
+	}
+	if err != nil {
+		return false, err
+	}
+	if owner.Valid && owner.String != profileID {
+		return false, ErrStatusNotOnBoard
+	}
+	res, err := tx.Exec(
+		`INSERT INTO job_board_entries (profile_id, job_id, status_id, updated_at) VALUES (?, ?, ?, ?)
+		 ON CONFLICT(profile_id, job_id) DO NOTHING`,
+		profileID, jobID, statusID, now(),
+	)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, tx.Commit()
+}
+
 // RemoveEntry takes a job off a profile's board; a no-op when it is not on it.
 func RemoveEntry(profileID, jobID string) error {
 	_, err := db.JobsDB.Exec(`DELETE FROM job_board_entries WHERE profile_id = ? AND job_id = ?`, profileID, jobID)
@@ -423,7 +463,7 @@ func GetUsage(jobID string) ([]Usage, error) {
 	return usage, rows.Err()
 }
 
-// PurgeProfile removes a deleted profile's board: its entries and its custom statuses.
+// PurgeProfile removes a deleted profile's board: its entries, its auto-add rules (step 140) and its custom statuses.
 // jobs.db cannot cascade from career.db, so profile.DeleteProfile calls this.
 func PurgeProfile(profileID string) error {
 	tx, err := db.JobsDB.Begin()
@@ -432,6 +472,9 @@ func PurgeProfile(profileID string) error {
 	}
 	defer func() { _ = tx.Rollback() }()
 	if _, err := tx.Exec(`DELETE FROM job_board_entries WHERE profile_id = ?`, profileID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM profile_match_rules WHERE profile_id = ?`, profileID); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM job_statuses WHERE profile_id = ?`, profileID); err != nil {

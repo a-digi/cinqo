@@ -18,7 +18,7 @@ import { AppLink } from '../../Shared/AppLink/AppLink'
 import { ConfirmationModal } from '../../Shared/ConfirmationModal/ConfirmationModal'
 import { BriefcaseIcon, PlusIcon, TrashIcon } from '../../Shared/Icons/icons'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
-import { JOB_DETAILS_PATH, PROFILES_PATH, VIEW_PROFILE_PATH } from '../../paths'
+import { JOB_DETAILS_PATH, PROFILES_PATH, VIEW_PROFILE_PATH, profileSettingsPathFor } from '../../paths'
 import { plural } from '../CompaniesPage/companyStats'
 import { PAGE_ACCENT } from '../JobsPage/jobsTheme'
 import { scoreChipClasses } from '../../Shared/MatchScoreBar/matchRules'
@@ -200,7 +200,10 @@ export function JobBoardPage({ profileId }: { profileId: string }) {
           No jobs on this board yet. A job shows here once it has been added to it.
         </p>
       )}
-      <div className="mb-3 flex items-center gap-2 text-xs text-gray-500">
+      <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-gray-500">
+        <AppLink href={profileSettingsPathFor(profileId)} className="mr-3 font-medium text-blue-700 hover:underline">
+          Auto-add settings
+        </AppLink>
         <span>Order cards by</span>
         <div role="group" aria-label="Order of the cards" className="inline-flex overflow-hidden rounded-md border border-gray-200">
           {(

@@ -102,3 +102,62 @@ func TestProfileScorerUnknownJob(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 }
+
+// ScoreByProfile gives each profile's own score by id, the same numbers Scores gives.
+func TestScoreByProfileKeysEachScoreByItsProfile(t *testing.T) {
+	setupJobsDB(t)
+	addMatchJob(t, "j1")
+	fit, _ := seedProfile(t, "Fit", []string{"Go", "Docker", "Kubernetes", "PostgreSQL"})
+	other, _ := seedProfile(t, "Other", []string{"Cobol", "Fortran"})
+	s, err := NewProfileScorer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	by, err := s.ScoreByProfile("j1")
+	if err != nil || len(by) != 2 {
+		t.Fatalf("%v, %v", by, err)
+	}
+	if by[fit] < 60 || by[other] >= 60 || by[fit] <= by[other] {
+		t.Errorf("fit=%d other=%d: the fitting profile must score clearly higher", by[fit], by[other])
+	}
+	for _, id := range []string{fit, other} {
+		res, err := RunManualMatch("j1", id)
+		if err != nil || res.Score != by[id] {
+			t.Errorf("profile %s: manual run %d (%v), ScoreByProfile %d", id, res.Score, err, by[id])
+		}
+	}
+	if _, err := s.ScoreByProfile("nope"); !errors.Is(err, ErrUnknownJob) {
+		t.Errorf("unknown job = %v", err)
+	}
+}
+
+// NewProfileScorerFor reads only the listed profiles.
+func TestNewProfileScorerForScoresOnlyTheListedProfiles(t *testing.T) {
+	setupJobsDB(t)
+	addMatchJob(t, "j1")
+	fit, _ := seedProfile(t, "Fit", []string{"Go", "Docker", "Kubernetes", "PostgreSQL"})
+	other, _ := seedProfile(t, "Other", []string{"Cobol", "Fortran"})
+
+	s, err := NewProfileScorerFor(map[string]bool{fit: true, "ghost": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	by, err := s.ScoreByProfile("j1")
+	if err != nil || len(by) != 1 {
+		t.Fatalf("%v, %v", by, err)
+	}
+	if _, ok := by[fit]; !ok {
+		t.Error("the listed profile must be scored")
+	}
+	if _, ok := by[other]; ok {
+		t.Error("an unlisted profile must not be scored")
+	}
+	all, _ := NewProfileScorerFor(nil)
+	if byAll, _ := all.ScoreByProfile("j1"); len(byAll) != 2 {
+		t.Errorf("nil means every profile, got %d", len(byAll))
+	}
+	empty, _ := NewProfileScorerFor(map[string]bool{})
+	if byNone, _ := empty.ScoreByProfile("j1"); len(byNone) != 0 {
+		t.Errorf("an empty set scores nobody, got %d", len(byNone))
+	}
+}

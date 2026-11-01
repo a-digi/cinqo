@@ -26,7 +26,12 @@ type scorerProfile struct {
 
 // NewProfileScorer loads the corpus and the personas of every profile. A profile without personas is left out
 // (it cannot score anything).
-func NewProfileScorer() (*ProfileScorer, error) {
+func NewProfileScorer() (*ProfileScorer, error) { return NewProfileScorerFor(nil) }
+
+// NewProfileScorerFor is NewProfileScorer for the listed profiles only (step 140: the profiles that have auto-add rules),
+// so scoring a job does not cost the personas of every other profile. A nil set means every profile; a profile that is
+// listed but does not exist is simply absent.
+func NewProfileScorerFor(only map[string]bool) (*ProfileScorer, error) {
 	rows, err := db.CareerDB.Query(`SELECT id FROM profiles ORDER BY created_at, id`)
 	if err != nil {
 		return nil, err
@@ -38,7 +43,9 @@ func NewProfileScorer() (*ProfileScorer, error) {
 			rows.Close()
 			return nil, err
 		}
-		ids = append(ids, id)
+		if only == nil || only[id] {
+			ids = append(ids, id)
+		}
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
@@ -103,6 +110,20 @@ func (s *ProfileScorer) Scores(jobID string) ([]int, error) {
 	var out []int
 	for _, r := range all {
 		out = append(out, r.result.Score)
+	}
+	return out, nil
+}
+
+// ScoreByProfile returns each profile's best score (0 to 100) for the job, by profile id; a profile that could not judge
+// the job (no personas, too little data) is absent. ErrUnknownJob is returned for a job that no longer exists.
+func (s *ProfileScorer) ScoreByProfile(jobID string) (map[string]int, error) {
+	all, err := s.scoreAll(jobID)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]int, len(all))
+	for _, r := range all {
+		out[r.profileID] = r.result.Score
 	}
 	return out, nil
 }
