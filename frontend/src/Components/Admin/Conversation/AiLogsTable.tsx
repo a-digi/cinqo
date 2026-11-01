@@ -1,5 +1,4 @@
 import { Fragment, type ReactNode } from 'react'
-import { Link } from 'react-router-dom'
 import type { AllAiTraceLogsEntry } from '../../../api/conversations'
 import { Pill } from '../../../Shared/Components/Pill/Pill'
 import { useSnackBar } from '../../../Shared/Components/SnackBar/SnackBarContext'
@@ -209,13 +208,7 @@ export function AiLogsTable({ entries, loading, query, onClearQuery, sortKey, on
             </button>
           </Message>
         ) : (
-          <Message>
-            No conversation has produced an AI trace log yet.{' '}
-            <Link to="/admin/conversation-debug" className="font-medium text-blue-600 hover:underline">
-              Turn trace logging on in Settings
-            </Link>
-            .
-          </Message>
+          <Message>No conversation has produced an AI trace log yet.</Message>
         )
       ) : (
         <>

@@ -1,11 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
-import { fetchAllAiTraceLogs, type AllAiTraceLogsEntry } from '../../../api/conversations'
+import { useEffect, useState } from 'react'
+import { fetchConversationSettings, updateConversationSettings, type ConversationSettings } from '../../../api/conversations'
 import { ApiError } from '../../../api/client'
-import { AiLogsStats } from './AiLogsStats'
-import { AiLogsTable } from './AiLogsTable'
-import { AiLogsToolbar } from './AiLogsToolbar'
-import { AiLogViewerModal } from './AiLogViewerModal'
-import { filterEntries, sortEntries, type SortKey } from './aiLogsRules'
+import { AiLoggingCard } from './AiLoggingCard'
+import { AiLogsContent } from './AiLogsContent'
+import { logsView } from './aiLogsRules'
 
 // Admin-wide overview: every conversation that has ever produced an AI
 // trace log, where its own folder lives, and how many files exist —
@@ -19,112 +17,70 @@ import { filterEntries, sortEntries, type SortKey } from './aiLogsRules'
 // this admin doesn't own would 404 — this overview already shows the
 // same folder/count inline, so no link adds anything. See
 // plan/ai/conversation/step-38-ai-logs-overview-page.md.
-const PAGE_SIZE = 25
+//
+// Step 44: this page also holds the AI logging switch (it used to be its own Settings page) and shows nothing but
+// that card while logging is off — or while the setting is unknown (loading, or it could not be read). The list
+// below is mounted, and so requested, only while logging is on.
+function messageOf(err: unknown): string {
+  return err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err)
+}
 
 export function AiLogsOverviewPage() {
-  const [entries, setEntries] = useState<AllAiTraceLogsEntry[]>([])
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [sortKey, setSortKey] = useState<SortKey>('newest')
-  const [now] = useState(() => new Date())
-  const [query, setQuery] = useState('')
-  const [shown, setShown] = useState(PAGE_SIZE)
-  const [opened, setOpened] = useState<AllAiTraceLogsEntry | null>(null)
-  const sorted = useMemo(() => sortEntries(filterEntries(entries, query), sortKey), [entries, query, sortKey])
-  const visible = sorted.slice(0, shown)
-
-  // A new search or sort starts again from the first page.
-  const changeQuery = (value: string) => {
-    setQuery(value)
-    setShown(PAGE_SIZE)
-  }
-  const changeSort = (key: SortKey) => {
-    setSortKey(key)
-    setShown(PAGE_SIZE)
-  }
+  const [settings, setSettings] = useState<ConversationSettings | null>(null)
+  const [loadError, setLoadError] = useState('')
+  const [saveError, setSaveError] = useState('')
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    fetchAllAiTraceLogs()
-      .then(setEntries)
+    fetchConversationSettings()
+      .then(setSettings)
       .catch((err: unknown) => {
-        setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err))
-      })
-      .finally(() => {
-        setLoading(false)
+        setLoadError(messageOf(err))
       })
   }, [])
 
-  return (
-    <div className="cinqo-stagger cinqo-v-swing cinqo-t-type space-y-5 p-6 font-sans text-gray-900">
-      <div>
-        <h1 className="text-xl font-semibold">AI Logs</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          Every conversation that has produced an AI trace log. Open one to read its files here. Only filled while AI trace logging is on
-          (Settings).
-        </p>
-        <details className="mt-2 text-sm text-gray-500">
-          <summary className="cursor-pointer select-none text-blue-600 hover:underline">How this works</summary>
-          <p className="mt-2 max-w-3xl">
-            One row per conversation, with the folder holding its log files and how many exist. Open shows the newest file in a
-            terminal-style reader and lists the others; big files are read a window of up to 500 lines at a time, never loaded whole.
-            Opening a file is written to the server log (who and which file, never the content).
-          </p>
-        </details>
-      </div>
+  // The switch only shows the new value once the server has it: a failed save leaves it where it was.
+  function change(enabled: boolean) {
+    setSaveError('')
+    setSaving(true)
+    updateConversationSettings({ aiTraceLogsEnabled: enabled })
+      .then(setSettings)
+      .catch((err: unknown) => {
+        setSaveError(messageOf(err))
+      })
+      .finally(() => {
+        setSaving(false)
+      })
+  }
 
-      {error ? (
+  const view = logsView(settings, loadError !== '')
+
+  return (
+    <div className="cinqo-stagger cinqo-v-swing cinqo-t-type max-w-5xl space-y-5 p-6 font-sans text-gray-900">
+      {view === 'on' && (
+        <div>
+          <h1 className="text-xl font-semibold">AI Logs</h1>
+          <p className="mt-1 text-sm text-gray-500">
+            Every conversation that has produced an AI trace log. Open one to read its files here.
+          </p>
+          <details className="mt-2 text-sm text-gray-500">
+            <summary className="cursor-pointer select-none text-blue-600 hover:underline">How this works</summary>
+            <p className="mt-2 max-w-3xl">
+              One row per conversation, with the folder holding its log files and how many exist. Open shows the newest file in a
+              terminal-style reader and lists the others; big files are read a window of up to 500 lines at a time, never loaded whole.
+              Opening a file is written to the server log (who and which file, never the content).
+            </p>
+          </details>
+        </div>
+      )}
+      {view === 'error' ? (
         <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-          {error}
+          {loadError}
         </p>
       ) : (
-        <>
-          <AiLogsStats entries={entries} loading={loading} now={now} />
-          <AiLogsToolbar
-            query={query}
-            onQueryChange={changeQuery}
-            sortKey={sortKey}
-            onSortChange={changeSort}
-            matching={sorted.length}
-            total={entries.length}
-          />
-          <AiLogsTable
-            entries={visible}
-            loading={loading}
-            query={query}
-            onClearQuery={() => {
-              changeQuery('')
-            }}
-            sortKey={sortKey}
-            onSortChange={changeSort}
-            now={now}
-            onOpen={setOpened}
-          />
-          {sorted.length > shown && (
-            <div className="flex items-center justify-center gap-3 text-sm text-gray-500">
-              <span>
-                Showing {shown} of {sorted.length}
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  setShown((n) => n + PAGE_SIZE)
-                }}
-                className="rounded-lg border border-gray-300 bg-white px-4 py-2 font-medium text-gray-800 hover:bg-gray-50"
-              >
-                Show {Math.min(PAGE_SIZE, sorted.length - shown)} more
-              </button>
-            </div>
-          )}
-        </>
+        <AiLoggingCard settings={settings} saving={saving} error={saveError} onChange={change} />
       )}
-      {opened && (
-        <AiLogViewerModal
-          entry={opened}
-          onClose={() => {
-            setOpened(null)
-          }}
-        />
-      )}
+      {view === 'on' && <AiLogsContent />}
     </div>
   )
 }

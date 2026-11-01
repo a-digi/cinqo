@@ -1,4 +1,4 @@
-import type { AllAiTraceLogsEntry } from '../../../api/conversations'
+import type { AllAiTraceLogsEntry, ConversationSettings } from '../../../api/conversations'
 
 // The pure rules behind the AI Logs overview table (plan/ai/conversation/step-43-ai-logs-table-redesign.md):
 // searching, sorting, grouping by day and the short forms of ids, folders and dates. No React, and every
@@ -159,4 +159,13 @@ export function latestModified(entries: AllAiTraceLogsEntry[]): string | undefin
     if (!best || time(e) > time(best)) best = e
   }
   return best?.modifiedAt
+}
+
+// What the Logs page shows (plan/ai/conversation/step-44-ai-logging-settings-into-logs-page.md): the logs only while AI
+// trace logging is on. While the setting is unknown (still loading, or it could not be read) no log is shown.
+export type LogsView = 'loading' | 'error' | 'off' | 'on'
+
+export function logsView(settings: ConversationSettings | null, loadFailed: boolean): LogsView {
+  if (settings) return settings.aiTraceLogsEnabled ? 'on' : 'off'
+  return loadFailed ? 'error' : 'loading'
 }

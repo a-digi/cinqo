@@ -1,4 +1,4 @@
-import { createBrowserRouter } from 'react-router-dom'
+import { createBrowserRouter, Navigate } from 'react-router-dom'
 import { AuthCallbackPage } from '../../Components/Auth/AuthCallbackPage'
 import { AuthGuard } from '../../Components/Auth/AuthGuard'
 import { AuthenticatedProviders } from '../../Components/Auth/AuthenticatedProviders'
@@ -12,7 +12,6 @@ import { PlatformKeysPage } from '../../Components/Admin/Platforms/PlatformKeysP
 import { PlatformsPage } from '../../Components/Admin/Platforms/PlatformsPage'
 import { ConversationPage } from '../../Components/Conversation/ConversationPage'
 import { AiLogsPage } from '../../Components/Conversation/AiLogsPage'
-import { AiDebugSettingsPage } from '../../Components/Admin/Conversation/AiDebugSettingsPage'
 import { AiLogsOverviewPage } from '../../Components/Admin/Conversation/AiLogsOverviewPage'
 import { HomePage } from '../../Components/Home/HomePage'
 import { MediaListPage } from '../../Components/Admin/Media/MediaListPage'
@@ -99,12 +98,9 @@ export const router = createBrowserRouter([
             ),
           },
           {
+            // The AI logging switch moved into the Logs page (plan/ai/conversation/step-44); the old address still works.
             path: '/admin/conversation-debug',
-            element: (
-              <AuthGuard scopes={[AppScopes.SuperAdmin]}>
-                <AiDebugSettingsPage />
-              </AuthGuard>
-            ),
+            element: <Navigate to="/admin/conversation-logs" replace />,
           },
           {
             path: '/admin/conversation-logs',
