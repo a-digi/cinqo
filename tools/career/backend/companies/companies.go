@@ -160,7 +160,7 @@ func ListCompaniesPage(query string, limit, offset int) (CompaniesPage, error) {
 
 	q := `SELECT c.id, c.name, c.description, c.created_at, c.updated_at,
 		        (SELECT COUNT(*) FROM jobs WHERE jobs.company_id = c.id),
-		        (SELECT COUNT(*) FROM recruiters WHERE recruiters.company_id = c.id)
+		        (SELECT COUNT(*) FROM recruiter_companies WHERE recruiter_companies.company_id = c.id)
 		 FROM companies c` + where + ` ORDER BY c.created_at ASC, c.id ASC`
 	if limit > 0 {
 		q += ` LIMIT ? OFFSET ?`
@@ -194,7 +194,7 @@ func ListCompaniesPage(query string, limit, offset int) (CompaniesPage, error) {
 		        COALESCE(SUM(x.jc), 0),
 		        COALESCE(SUM(x.rc), 0)
 		 FROM (SELECT (SELECT COUNT(*) FROM jobs WHERE jobs.company_id = c.id) AS jc,
-		              (SELECT COUNT(*) FROM recruiters WHERE recruiters.company_id = c.id) AS rc
+		              (SELECT COUNT(*) FROM recruiter_companies WHERE recruiter_companies.company_id = c.id) AS rc
 		       FROM companies c) x`,
 	).Scan(&page.Summary.Companies, &page.Summary.WithJobs, &page.Summary.WithRecruiters, &page.Summary.Jobs, &page.Summary.Recruiters)
 	if err != nil {
@@ -260,7 +260,7 @@ func DeleteCompanyIfUnused(id string) (deleted bool, err error) {
 	res, err := db.JobsDB.Exec(
 		`DELETE FROM companies WHERE id = ?
 		   AND NOT EXISTS (SELECT 1 FROM jobs WHERE company_id = companies.id)
-		   AND NOT EXISTS (SELECT 1 FROM recruiters WHERE company_id = companies.id)`, id)
+		   AND NOT EXISTS (SELECT 1 FROM recruiter_companies WHERE company_id = companies.id)`, id)
 	if err != nil {
 		return false, err
 	}

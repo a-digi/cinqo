@@ -314,7 +314,10 @@ export interface Company {
 
 export interface Recruiter {
   id: string
+  // The company linked first, or "" (kept for older callers); companyIds/companies are all of them, none is possible (step 169).
   companyId: string
+  companyIds: string[]
+  companies: { id: string; name: string }[]
   firstName: string
   lastName: string
   email: string
@@ -1270,16 +1273,86 @@ export async function fetchRecruiters(companyId?: string): Promise<Recruiter[]> 
   return data.recruiters
 }
 
-export async function createRecruiter(companyId: string, firstName: string, lastName: string, email: string): Promise<{ id: string }> {
+// --- recruiters mapped to jobs (plan/ai/tools/career/step-168-recruiters-on-jobs.md) ---
+
+// A recruiter mapped to one job, with their company's name and when the mapping was made.
+export interface JobRecruiter {
+  id: string
+  firstName: string
+  lastName: string
+  email: string
+  // The company linked first (or ""), kept for older callers; companies is all of them, none is possible (step 169).
+  companyId: string
+  companyName: string
+  companies: { id: string; name: string }[]
+  mappedAt: string
+}
+
+// A job a recruiter is mapped to.
+export interface RecruiterJob {
+  id: string
+  title: string
+  company?: string
+  companyId?: string
+  location?: string
+  mappedAt: string
+}
+
+const UNKNOWN_MAPPING_MESSAGE = 'This job or recruiter does not exist (any more).'
+
+// The recruiters mapped to a job; null when there is no such job (it was deleted, or the address is wrong).
+export async function fetchJobRecruiters(jobId: string): Promise<JobRecruiter[] | null> {
+  const res = await fetch(`${PROXY_BASE}/job-recruiters?jobId=${encodeURIComponent(jobId)}`, { credentials: 'include' })
+  if (res.status === 404) return null
+  const data = await jsonOrThrow<{ recruiters: JobRecruiter[] }>(res, 'load the recruiters of the job')
+  return data.recruiters
+}
+
+// The jobs a recruiter is mapped to; null when there is no such recruiter.
+export async function fetchRecruiterJobs(recruiterId: string): Promise<RecruiterJob[] | null> {
+  const res = await fetch(`${PROXY_BASE}/job-recruiters?recruiterId=${encodeURIComponent(recruiterId)}`, { credentials: 'include' })
+  if (res.status === 404) return null
+  const data = await jsonOrThrow<{ jobs: RecruiterJob[] }>(res, 'load the jobs of the recruiter')
+  return data.jobs
+}
+
+// Maps a recruiter to a job (a repeat is not an error: mapped is then false). Answers with the job's recruiters.
+export async function mapJobRecruiter(jobId: string, recruiterId: string): Promise<{ mapped: boolean; recruiters: JobRecruiter[] }> {
+  const res = await fetch(`${PROXY_BASE}/job-recruiters`, {
+    method: 'POST',
+    credentials: 'include',
+    body: JSON.stringify({ jobId, recruiterId }),
+  })
+  if (res.status === 404) throw new Error(UNKNOWN_MAPPING_MESSAGE)
+  return jsonOrThrow<{ mapped: boolean; recruiters: JobRecruiter[] }>(res, 'map the recruiter to the job')
+}
+
+// Takes a recruiter off a job; fine when they were not mapped.
+export async function unmapJobRecruiter(jobId: string, recruiterId: string): Promise<void> {
+  const res = await fetch(
+    `${PROXY_BASE}/job-recruiters?jobId=${encodeURIComponent(jobId)}&recruiterId=${encodeURIComponent(recruiterId)}`,
+    {
+      method: 'DELETE',
+      credentials: 'include',
+    },
+  )
+  if (!res.ok && res.status !== 204) throw new Error(`failed to remove the recruiter from the job (${String(res.status)})`)
+}
+
+export async function createRecruiter(companyIds: string[], firstName: string, lastName: string, email: string): Promise<{ id: string }> {
   const res = await fetch(`${PROXY_BASE}/recruiters`, {
     method: 'POST',
     credentials: 'include',
-    body: JSON.stringify({ companyId, firstName, lastName, email }),
+    body: JSON.stringify({ companyIds, firstName, lastName, email }),
   })
   return jsonOrThrow<{ id: string }>(res, 'create recruiter')
 }
 
-export async function updateRecruiter(id: string, args: { firstName?: string; lastName?: string; email?: string }): Promise<Recruiter[]> {
+// companyIds replaces the whole set of companies (an empty list removes them all); left out, the companies stay as they are.
+export async function updateRecruiter(
+  id: string,
+  args: { firstName?: string; lastName?: string; email?: string; companyIds?: string[] },
+): Promise<Recruiter[]> {
   const res = await fetch(`${PROXY_BASE}/recruiters`, {
     method: 'PUT',
     credentials: 'include',

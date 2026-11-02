@@ -127,7 +127,7 @@ func TestACompanyWithARecruiterIsKept(t *testing.T) {
 	setupDB(t)
 	events := fakeCoreEvents(t)
 	exec(t, `INSERT INTO companies (id, name) VALUES ('c1', 'Acme')`)
-	exec(t, `INSERT INTO recruiters (id, company_id, first_name) VALUES ('r1', 'c1', 'Rita')`)
+	exec(t, `INSERT INTO recruiters (id, first_name) VALUES ('r1', 'Rita'); INSERT INTO recruiter_companies (recruiter_id, company_id) VALUES ('r1', 'c1')`)
 
 	if rec := deliverCompany(http.MethodPost, eventFor("gone-job", "c1")); rec.Code != http.StatusOK {
 		t.Fatalf("status %d", rec.Code)

@@ -10,6 +10,7 @@ import { COMMENT_TYPE_JOB } from '../../Shared/Comments/commentTypes'
 import { AppLink } from '../../Shared/AppLink/AppLink'
 import { VIEW_COMPANY_PATH, VIEW_PLATFORM_PATH } from '../../paths'
 import { JobBoardUsage } from '../JobBoard/JobBoardUsage'
+import { JobRecruitersCard } from './JobRecruitersCard'
 import { PersonaMatchesCard } from './PersonaMatchesCard'
 import { InfoCard } from './InfoCard'
 import { JobRequirements } from './JobRequirements'
@@ -251,6 +252,8 @@ export function JobDetailsPage() {
               <PersonaMatchesCard jobId={job.id} reloadKey={scoresKey} />
 
               <JobBoardUsage jobId={job.id} />
+
+              <JobRecruitersCard job={{ id: job.id, title: job.title, company: job.company, companyId: job.companyId }} />
 
               {job.cvStatus && (
                 <InfoCard look="cv" icon={<PDFIcon className="h-4 w-4" />} title="Generated CV">

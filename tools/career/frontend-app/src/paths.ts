@@ -97,6 +97,12 @@ export const CLEANUP_SETTINGS_PATH = '/tools/career/settings/cleanup'
 export const CRAWLER_SETTINGS_PATH = '/tools/career/settings/crawler'
 export const NEW_COMPANY_PATH = '/tools/career/companies/new'
 export const NEW_RECRUITER_PATH = '/tools/career/recruiters/new'
+// One recruiter on their own page (plan/ai/tools/career/step-168): the id arrives as the ?id= query, like the profile and company pages.
+export const VIEW_RECRUITER_PATH = '/tools/career/recruiters/view'
+// The address of one recruiter's page.
+export function viewRecruiterPathFor(recruiterId: string): string {
+  return `${VIEW_RECRUITER_PATH}?id=${encodeURIComponent(recruiterId)}`
+}
 export const VIEW_COMPANY_PATH = '/tools/career/companies/view'
 export const VIEW_PLATFORM_PATH = '/tools/career/platforms/view'
 // The earlier address of one platform's page (?id=): kept as a route that sends on to VIEW_PLATFORM_PATH.

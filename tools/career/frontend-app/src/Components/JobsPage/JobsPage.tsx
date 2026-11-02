@@ -18,7 +18,9 @@ import {
   unlinkJobCv,
   mediaDownloadUrl,
   fetchCvGenerations,
+  fetchJobRecruiters,
   type Job,
+  type JobRecruiter,
   type Company,
   type Portal,
   type Profile,
@@ -38,6 +40,7 @@ import { refusalText } from '../../Shared/MatchScoreBar/matchRules'
 import { ActionMenu, type ActionMenuItem } from '../../Shared/ActionMenu/ActionMenu'
 import {
   BriefcaseIcon,
+  UsersIcon,
   FilterIcon,
   XIcon,
   EyeIcon,
@@ -56,6 +59,8 @@ import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { PAGE_ACCENT, accentFor, initialOf } from './jobsTheme'
 import { JobStatsStrip } from './JobStatsStrip'
 import { SelectCvModal } from './SelectCvModal'
+import { SelectRecruiterModal } from '../Recruiters/SelectRecruiterModal'
+import { recruiterLabel } from '../Recruiters/recruiterMapRules'
 import { AddToBoardModal } from '../JobBoard/AddToBoardModal'
 import { plural } from '../CompaniesPage/companyStats'
 import { ConfirmationModal } from '../../Shared/ConfirmationModal/ConfirmationModal'
@@ -172,6 +177,11 @@ export function JobsPage() {
   const [pendingRemoveCvJob, setPendingRemoveCvJob] = useState<Job | null>(null)
   // The job being added to a profile's job board (step 126).
   const [addToBoardJob, setAddToBoardJob] = useState<Job | null>(null)
+  // "Recruiter…" (plan/ai/tools/career/step-168-recruiters-on-jobs.md, step 4): the job a recruiter is being mapped to, the recruiters
+  // it already has (the modal shows them as already mapped) and the line that says what was mapped.
+  const [recruiterJob, setRecruiterJob] = useState<Job | null>(null)
+  const [recruiterMapped, setRecruiterMapped] = useState<JobRecruiter[]>([])
+  const [recruiterNotice, setRecruiterNotice] = useState('')
   // The jobs ticked in the list (step 148), by id, with what the selection bar needs to know of each; kept across pages and searches,
   // in memory only. A finished recrawl clears it. The recrawl itself runs on the server, one job after the other.
   const [selected, setSelected] = useState<ReadonlyMap<string, SelectedJob>>(new Map())
@@ -807,6 +817,24 @@ export function JobsPage() {
     }
   }
 
+  // Opens the recruiter modal for a job once its mapped recruiters are known (so those rows show as already mapped).
+  function handleRecruiterClick(job: Job) {
+    setError('')
+    setRecruiterNotice('')
+    fetchJobRecruiters(job.id)
+      .then((list) => {
+        if (list === null) {
+          setError('This job no longer exists.')
+          return
+        }
+        setRecruiterMapped(list)
+        setRecruiterJob(job)
+      })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+      })
+  }
+
   // buildJobActionItems assembles one row's own ActionMenu entries —
   // the exact same five actions (Job Match, Generate/Download CV, Open
   // original posting, View details, Delete) and the exact same
@@ -871,6 +899,16 @@ export function JobsPage() {
       },
       disabled: profiles.length === 0,
       title: profiles.length === 0 ? 'Create a profile first' : 'Put this job on a profile’s job board',
+    })
+
+    items.push({
+      key: 'recruiter',
+      label: 'Recruiter…',
+      icon: <UsersIcon className="h-3.5 w-3.5" />,
+      onClick: () => {
+        handleRecruiterClick(job)
+      },
+      title: 'Map a recruiter to this job',
     })
 
     // A single "CV" parent entry with no onClick/href of its own — the
@@ -1232,6 +1270,11 @@ export function JobsPage() {
             </div>
 
             <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
+            {recruiterNotice && (
+              <p role="status" className="mb-2 text-sm text-green-700">
+                {recruiterNotice}
+              </p>
+            )}
             {unmatchedNotice && (
               <p role="status" className="mb-2 text-sm text-green-700">
                 {unmatchedNotice}
@@ -1562,6 +1605,23 @@ export function JobsPage() {
           setSelectCvJob(null)
         }}
         onLinked={reload}
+      />
+
+      <SelectRecruiterModal
+        job={
+          recruiterJob
+            ? { id: recruiterJob.id, title: recruiterJob.title, company: recruiterJob.company, companyId: recruiterJob.companyId }
+            : null
+        }
+        mapped={recruiterMapped}
+        onClose={() => {
+          setRecruiterJob(null)
+        }}
+        onMapped={(list) => {
+          // The newest mapping comes first: that is the recruiter that was just mapped.
+          const added = list.at(0)
+          if (recruiterJob && added) setRecruiterNotice(`Mapped ${recruiterLabel(added)} to “${recruiterJob.title}”.`)
+        }}
       />
 
       <ConfirmationModal

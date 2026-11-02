@@ -227,7 +227,7 @@ func TestTheSummaryIsIndependentOfSearchAndPage(t *testing.T) {
 	add(t, "b", "Beta", "", "2026-06-02 10:00:00")
 	add(t, "c", "Gamma", "", "2026-06-03 10:00:00")
 	exec(t, `INSERT INTO jobs (id, source_url, title, company_id) VALUES ('j1', 'u1', 't', 'a'), ('j2', 'u2', 't', 'a'), ('j3', 'u3', 't', 'b')`)
-	exec(t, `INSERT INTO recruiters (id, company_id, first_name) VALUES ('r1', 'a', 'x')`)
+	exec(t, `INSERT INTO recruiters (id, first_name) VALUES ('r1', 'x'); INSERT INTO recruiter_companies (recruiter_id, company_id) VALUES ('r1', 'a')`)
 	want := CompanySummary{Companies: 3, WithJobs: 2, WithRecruiters: 1, Jobs: 3, Recruiters: 1}
 	for _, c := range []struct {
 		q          string

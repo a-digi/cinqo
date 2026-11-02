@@ -48,6 +48,7 @@ import { JobDetailsPage } from './Components/JobDetails/JobDetailsPage'
 import { CompaniesPage } from './Components/CompaniesPage/CompaniesPage'
 import { RecruitersPage } from './Components/RecruitersPage/RecruitersPage'
 import { CompanyViewPage } from './Components/CompaniesPage/CompanyViewPage'
+import { RecruiterViewPage } from './Components/RecruitersPage/RecruiterViewPage'
 import { NewCompanyPage } from './Components/CompaniesPage/NewCompanyPage'
 import { NewRecruiterPage } from './Components/RecruitersPage/NewRecruiterPage'
 import { PortalsPage } from './Components/PortalsPage/PortalsPage'
@@ -89,6 +90,7 @@ import {
   NEW_PERSONA_PATH,
   EXPERIENCE_ENTRY_PATH,
   VIEW_COMPANY_PATH,
+  VIEW_RECRUITER_PATH,
   VIEW_PROFILE_PATH,
   VIEW_PERSONA_PATH,
   VIEW_PERSONA_ID_PATH,
@@ -350,6 +352,14 @@ window.__cinqoToolBridge.registerRoute({
   path: VIEW_COMPANY_PATH,
   mount: (container) => {
     mountReact(container, <CompanyViewPage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: VIEW_RECRUITER_PATH,
+  mount: (container) => {
+    mountReact(container, <RecruiterViewPage />)
   },
   unmount: unmountReact,
 })

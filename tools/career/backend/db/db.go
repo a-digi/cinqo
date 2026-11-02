@@ -584,13 +584,34 @@ CREATE TABLE IF NOT EXISTS jobs (
 
 CREATE TABLE IF NOT EXISTS recruiters (
     id          TEXT PRIMARY KEY,
-    company_id  TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
     first_name  TEXT NOT NULL DEFAULT '',
     last_name   TEXT NOT NULL DEFAULT '',
     email       TEXT NOT NULL DEFAULT '',
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at  TEXT
 );
+
+-- recruiter_companies (plan/ai/tools/career/step-169): the companies a recruiter works for. Many to many, and the cascade is on
+-- these link rows only: deleting a company removes its links and never a recruiter; deleting a recruiter removes its links. A
+-- recruiter may have no company. An older jobs.db (recruiters.company_id) is converted by migrateRecruiterCompanies.
+CREATE TABLE IF NOT EXISTS recruiter_companies (
+    recruiter_id TEXT NOT NULL REFERENCES recruiters(id) ON DELETE CASCADE,
+    company_id   TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (recruiter_id, company_id)
+);
+CREATE INDEX IF NOT EXISTS recruiter_companies_company_idx ON recruiter_companies(company_id);
+
+-- job_recruiters (plan/ai/tools/career/step-168): which recruiters are mapped to which job. Many to many (a job can have several
+-- recruiters, a recruiter several jobs). A job or a recruiter being deleted removes its rows (foreign
+-- keys are on for this database). Created by the schema string like every table here, so an older jobs.db gets it at start-up.
+CREATE TABLE IF NOT EXISTS job_recruiters (
+    job_id       TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    recruiter_id TEXT NOT NULL REFERENCES recruiters(id) ON DELETE CASCADE,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (job_id, recruiter_id)
+);
+CREATE INDEX IF NOT EXISTS job_recruiters_recruiter_idx ON job_recruiters(recruiter_id);
 
 -- crawl_runs (step 36) tracks one "Crawl now" attempt, run detached
 -- from any HTTP request (step 37) so it survives the initiating tab
@@ -1608,6 +1629,9 @@ func migrateCvDocumentsPhoto(db *sql.DB) error {
 // jobsSchema creates it correctly shaped from the start) and on an
 // already-migrated one. See plan/ai/tools/career/step-14-companies.md.
 func migrateJobsDB(db *sql.DB) error {
+	if err := migrateRecruiterCompanies(db); err != nil {
+		return err
+	}
 	if err := migrateJobsCompanyID(db); err != nil {
 		return err
 	}
@@ -2452,4 +2476,76 @@ func BackupJobsDB(label string) (string, error) {
 		return "", fmt.Errorf("failed to back up jobs.db: %w", err)
 	}
 	return path, nil
+}
+
+// recruiterCompaniesDDL is the link table of plan/ai/tools/career/step-169; the schema string holds the same statements.
+const recruiterCompaniesDDL = `
+CREATE TABLE IF NOT EXISTS recruiter_companies (
+    recruiter_id TEXT NOT NULL REFERENCES recruiters(id) ON DELETE CASCADE,
+    company_id   TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (recruiter_id, company_id)
+);
+CREATE INDEX IF NOT EXISTS recruiter_companies_company_idx ON recruiter_companies(company_id);
+`
+
+// migrateRecruiterCompanies converts a jobs.db whose recruiters carry one required company_id (with ON DELETE CASCADE: deleting a
+// company deleted its recruiters) to the many-to-many link table recruiter_companies and rebuilds recruiters without the column
+// (SQLite cannot drop a column that carries a foreign key). Every recruiter, its job mappings and its company are kept: the old
+// column is copied into the link table first, all in one transaction with foreign keys off (job_recruiters references
+// recruiters) and a foreign key check before the commit, so a failure leaves the old table untouched. A fresh install, an
+// already converted database and a second start are no-ops.
+func migrateRecruiterCompanies(db *sql.DB) error {
+	exists, hasColumn, err := tableHasColumn(db, "recruiters", "company_id")
+	if err != nil {
+		return err
+	}
+	if !exists || !hasColumn {
+		return nil
+	}
+	if _, err := db.Exec(`PRAGMA foreign_keys = OFF`); err != nil {
+		return err
+	}
+	defer db.Exec(`PRAGMA foreign_keys = ON`)
+
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	steps := []string{
+		recruiterCompaniesDDL,
+		`INSERT OR IGNORE INTO recruiter_companies (recruiter_id, company_id, created_at)
+		   SELECT id, company_id, created_at FROM recruiters WHERE company_id IN (SELECT id FROM companies)`,
+		`CREATE TABLE recruiters_new (
+		    id          TEXT PRIMARY KEY,
+		    first_name  TEXT NOT NULL DEFAULT '',
+		    last_name   TEXT NOT NULL DEFAULT '',
+		    email       TEXT NOT NULL DEFAULT '',
+		    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+		    updated_at  TEXT
+		)`,
+		`INSERT INTO recruiters_new (id, first_name, last_name, email, created_at, updated_at)
+		   SELECT id, first_name, last_name, email, created_at, updated_at FROM recruiters`,
+		`DROP TABLE recruiters`,
+		`ALTER TABLE recruiters_new RENAME TO recruiters`,
+	}
+	for _, q := range steps {
+		if _, err := tx.Exec(q); err != nil {
+			return fmt.Errorf("recruiters to recruiter_companies: %w", err)
+		}
+	}
+	// Only the tables this migration touched or that point at recruiters: an unrelated old orphan must not stop the start.
+	for _, table := range []string{"recruiter_companies", "job_recruiters"} {
+		rows, err := tx.Query(`PRAGMA foreign_key_check(` + table + `)`)
+		if err != nil {
+			return err
+		}
+		bad := rows.Next()
+		rows.Close()
+		if bad {
+			return fmt.Errorf("recruiters to recruiter_companies: foreign key check failed on %s, nothing changed", table)
+		}
+	}
+	return tx.Commit()
 }

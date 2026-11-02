@@ -108,12 +108,12 @@ func TestDeletingTheSameCompanyTwiceAnnouncesItOnce(t *testing.T) {
 	}
 }
 
-// The cascade of a company's recruiters and the un-linking of its jobs are not separate announcements, and the jobs stay.
-func TestCascadedRecruitersAndUnlinkedJobsSendNoEventsOfTheirOwn(t *testing.T) {
+// Deleting a company keeps its recruiters (only their link rows go, step 169) and un-links its jobs, which stay; neither is a separate announcement.
+func TestARecruiterSurvivesItsCompanyAndUnlinkedJobsSendNoEventsOfTheirOwn(t *testing.T) {
 	setup(t)
 	ev := captureEvents(t)
 	add(t, "c1", "Acme", "", "2026-06-01 10:00:00")
-	exec(t, `INSERT INTO recruiters (id, company_id, first_name) VALUES ('r1', 'c1', 'Rita')`)
+	exec(t, `INSERT INTO recruiters (id, first_name) VALUES ('r1', 'Rita'); INSERT INTO recruiter_companies (recruiter_id, company_id) VALUES ('r1', 'c1')`)
 	exec(t, `INSERT INTO jobs (id, source_url, title, company_id) VALUES ('j1', 'https://x.example/1', 'Job', 'c1')`)
 
 	if err := DeleteCompany("c1"); err != nil {
@@ -122,12 +122,13 @@ func TestCascadedRecruitersAndUnlinkedJobsSendNoEventsOfTheirOwn(t *testing.T) {
 	if n := ev.total(); n != 1 {
 		t.Errorf("events = %d, want exactly the company's own", n)
 	}
-	var recruiters, linked, jobs int
+	var recruiters, links, linked, jobs int
+	_ = db.JobsDB.QueryRow(`SELECT COUNT(*) FROM recruiter_companies`).Scan(&links)
 	_ = db.JobsDB.QueryRow(`SELECT COUNT(*) FROM recruiters`).Scan(&recruiters)
 	_ = db.JobsDB.QueryRow(`SELECT COUNT(*) FROM jobs WHERE company_id IS NOT NULL`).Scan(&linked)
 	_ = db.JobsDB.QueryRow(`SELECT COUNT(*) FROM jobs`).Scan(&jobs)
-	if recruiters != 0 || linked != 0 || jobs != 1 {
-		t.Errorf("recruiters=%d linkedJobs=%d jobs=%d, want 0 0 1", recruiters, linked, jobs)
+	if recruiters != 1 || links != 0 || linked != 0 || jobs != 1 {
+		t.Errorf("recruiters=%d links=%d linkedJobs=%d jobs=%d, want 1 0 0 1", recruiters, links, linked, jobs)
 	}
 }
 
@@ -201,7 +202,7 @@ func TestACompanyWithARecruiterIsKept(t *testing.T) {
 	setup(t)
 	ev := captureEvents(t)
 	add(t, "c1", "Acme", "", "2026-06-01 10:00:00")
-	exec(t, `INSERT INTO recruiters (id, company_id, first_name) VALUES ('r1', 'c1', 'Rita')`)
+	exec(t, `INSERT INTO recruiters (id, first_name) VALUES ('r1', 'Rita'); INSERT INTO recruiter_companies (recruiter_id, company_id) VALUES ('r1', 'c1')`)
 
 	deleted, err := DeleteCompanyIfUnused("c1")
 	if err != nil || deleted {
@@ -219,7 +220,7 @@ func TestACompanyWithBothAJobAndARecruiterIsKept(t *testing.T) {
 	setup(t)
 	add(t, "c1", "Acme", "", "2026-06-01 10:00:00")
 	addJobTo(t, "j1", "c1")
-	exec(t, `INSERT INTO recruiters (id, company_id, first_name) VALUES ('r1', 'c1', 'Rita')`)
+	exec(t, `INSERT INTO recruiters (id, first_name) VALUES ('r1', 'Rita'); INSERT INTO recruiter_companies (recruiter_id, company_id) VALUES ('r1', 'c1')`)
 	if deleted, err := DeleteCompanyIfUnused("c1"); err != nil || deleted {
 		t.Fatalf("deleted=%v err=%v", deleted, err)
 	}
@@ -232,7 +233,7 @@ func TestOtherCompaniesJobsAndUnlinkedJobsDoNotKeepItAlive(t *testing.T) {
 	add(t, "c2", "Other", "", "2026-06-02 10:00:00")
 	addJobTo(t, "j2", "c2")
 	exec(t, `INSERT INTO jobs (id, source_url, title, company) VALUES ('j3', 'https://x.example/3', 'Free text', 'Acme')`)
-	exec(t, `INSERT INTO recruiters (id, company_id, first_name) VALUES ('r2', 'c2', 'Rita')`)
+	exec(t, `INSERT INTO recruiters (id, first_name) VALUES ('r2', 'Rita'); INSERT INTO recruiter_companies (recruiter_id, company_id) VALUES ('r2', 'c2')`)
 
 	deleted, err := DeleteCompanyIfUnused("c1")
 	if err != nil || !deleted {

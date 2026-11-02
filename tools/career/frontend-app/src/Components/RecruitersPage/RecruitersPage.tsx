@@ -7,17 +7,18 @@ import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { SummaryRail } from '../../Shared/SummaryRail/SummaryRail'
 import { ACCENTS, PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
 import { percentOrNull, plural } from '../CompaniesPage/companyStats'
-import { COMPANIES_PATH, NEW_RECRUITER_PATH, RECRUITERS_PATH, VIEW_COMPANY_PATH } from '../../paths'
+import { COMPANIES_PATH, NEW_RECRUITER_PATH, RECRUITERS_PATH, VIEW_COMPANY_PATH, viewRecruiterPathFor } from '../../paths'
 import { recruiterName, summarizeRecruiters } from './recruiterStats'
+import { NO_COMPANY_LABEL, companiesToSend, companyChips } from './recruiterCompaniesRules'
 import { PageTips } from '../../Shared/PageTips/PageTips'
+import { AppLink } from '../../Shared/AppLink/AppLink'
 import { useAddressSearch } from '../../Shared/AddressState/useAddressSearch'
 import { writeAddress } from '../../Shared/AddressState/writeAddress'
 import { buildRecruitersSearch, isCanonicalRecruitersSearch, parseRecruitersUrl } from './recruitersUrlState'
 
-// Recruiters are forced to be mapped to an existing Company, never
-// implicit — the same pattern step 8/10 already established for
-// Persona->Profile. No company reassignment on edit, matching the
-// backend's own update_recruiter. The page has the same layout as Portals and
+// A recruiter works for zero or more existing companies, never implicit (step 169:
+// a company being deleted only drops it from the recruiter, it never deletes them).
+// The companies are edited together with the name and the email. The page has the same layout as Portals and
 // Companies: header card, an overview on the left, the recruiters on the right,
 // "New recruiter" opens its own page. See
 // plan/ai/tools/career/step-17-recruiters-frontend.md.
@@ -32,6 +33,7 @@ export function RecruitersPage() {
   const [editFirstName, setEditFirstName] = useState('')
   const [editLastName, setEditLastName] = useState('')
   const [editEmail, setEditEmail] = useState('')
+  const [editCompanyIds, setEditCompanyIds] = useState<string[]>([])
   const [error, setError] = useState('')
 
   // Loads the recruiters of the company the address names (all of them when it names none); the latest request wins.
@@ -74,6 +76,7 @@ export function RecruitersPage() {
     setEditFirstName(r.firstName)
     setEditLastName(r.lastName)
     setEditEmail(r.email)
+    setEditCompanyIds(r.companyIds)
   }
 
   function cancelEdit() {
@@ -81,13 +84,22 @@ export function RecruitersPage() {
     setEditFirstName('')
     setEditLastName('')
     setEditEmail('')
+    setEditCompanyIds([])
   }
 
-  function saveEdit(id: string) {
+  function saveEdit(r: Recruiter) {
     setError('')
-    updateRecruiter(id, { firstName: editFirstName.trim(), lastName: editLastName.trim(), email: editEmail.trim() })
-      .then((result) => {
-        setRecruiters(result)
+    updateRecruiter(r.id, {
+      firstName: editFirstName.trim(),
+      lastName: editLastName.trim(),
+      email: editEmail.trim(),
+      companyIds: companiesToSend(r.companyIds, editCompanyIds),
+    })
+      // The answer is the whole list; reload the one the address names, so a recruiter whose companies no longer include the
+      // filtered one leaves a filtered list.
+      .then(() => fetchRecruiters(filterCompanyId))
+      .then((list) => {
+        setRecruiters(list)
         cancelEdit()
       })
       .catch((err: unknown) => {
@@ -111,7 +123,6 @@ export function RecruitersPage() {
     window.__cinqoToolBridge.navigate(COMPANIES_PATH)
   }
 
-  const companyNames: Record<string, string> = Object.fromEntries(companies.map((c) => [c.id, c.name]))
   const summary = summarizeRecruiters(recruiters)
   const withEmailPercent = percentOrNull(summary.withEmail, summary.recruiters)
   const filtered = filterCompanyId !== ''
@@ -122,7 +133,7 @@ export function RecruitersPage() {
       <PageHeaderCard
         icon={<UsersIcon />}
         title="Recruiters"
-        description="Recruiter contacts, each tied to an existing company. A recruiter's company cannot be changed after creation: delete and recreate instead."
+        description="Recruiter contacts and the companies they work for. A recruiter can work for several companies; deleting a company never deletes the recruiter."
         // Filtered to one company, the pill names it and links on to that company's page; otherwise it links to the
         // Companies page, the other list the recruiters belong to.
         pill={
@@ -177,8 +188,7 @@ export function RecruitersPage() {
           <div className="career-stagger space-y-3">
             {recruiters.map((r) => {
               const name = recruiterName(r)
-              const companyName = companyNames[r.companyId] ?? '…'
-              const companyAccent = accentFor(companyName)
+              const chips = companyChips(r.companies)
               return (
                 <div
                   key={r.id}
@@ -215,11 +225,22 @@ export function RecruitersPage() {
                         placeholder="Email"
                         className={`mb-2 ${inputClass}`}
                       />
+                      <div className="mb-2">
+                        <Dropdown
+                          multiple
+                          searchable
+                          label="Companies"
+                          placeholder="No company"
+                          options={companies.map((c) => ({ value: c.id, label: c.name }))}
+                          value={editCompanyIds}
+                          onChange={setEditCompanyIds}
+                        />
+                      </div>
                       <div className="flex gap-2">
                         <button
                           type="button"
                           onClick={() => {
-                            saveEdit(r.id)
+                            saveEdit(r)
                           }}
                           className="rounded-md bg-gray-900 px-3 py-1 text-xs font-medium text-white hover:bg-gray-800"
                         >
@@ -246,14 +267,34 @@ export function RecruitersPage() {
                       <div className="min-w-0 flex-1">
                         <div className="text-sm font-semibold">{name}</div>
                         {r.email && <div className="mt-0.5 truncate text-xs text-gray-500">{r.email}</div>}
-                        <span
-                          className="mt-2 inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium"
-                          style={{ background: companyAccent.soft, color: companyAccent.text }}
-                        >
-                          {companyName}
-                        </span>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {chips.length === 0 ? (
+                            <span className="inline-flex rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-500">
+                              {NO_COMPANY_LABEL}
+                            </span>
+                          ) : (
+                            chips.map((chip) => {
+                              const accent = accentFor(chip.label)
+                              return (
+                                <span
+                                  key={chip.id}
+                                  className="inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium"
+                                  style={{ background: accent.soft, color: accent.text }}
+                                >
+                                  {chip.label}
+                                </span>
+                              )
+                            })
+                          )}
+                        </div>
                       </div>
                       <div className="flex shrink-0 gap-2">
+                        <AppLink
+                          href={viewRecruiterPathFor(r.id)}
+                          className="rounded-full border border-blue-200 px-3 py-1 text-xs text-blue-700 hover:bg-blue-50"
+                        >
+                          View
+                        </AppLink>
                         <button
                           type="button"
                           onClick={() => {
@@ -308,6 +349,9 @@ export function RecruitersPage() {
               { label: 'With email', value: String(summary.withEmail), color: '#16a34a' },
               { label: 'Without email', value: String(summary.withoutEmail), color: ACCENTS[2].to, emphasis: summary.withoutEmail > 0 },
               { label: 'Companies', value: String(summary.companies), color: ACCENTS[4].to },
+              ...(summary.withoutCompany > 0
+                ? [{ label: 'Without a company', value: String(summary.withoutCompany), color: ACCENTS[2].to, emphasis: true }]
+                : []),
             ]}
           />
           <div className="mt-8">

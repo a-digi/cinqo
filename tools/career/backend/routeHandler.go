@@ -962,18 +962,31 @@ func companiesHandler(w http.ResponseWriter, r *http.Request) {
 
 // --- /recruiters ---
 
+// A recruiter works for zero or more companies (plan step-169): POST takes the old single companyId, a list companyIds, both
+// (merged) or neither; PUT with companyIds replaces the set (an empty list clears it, an absent or null field leaves it).
 type recruiterRequest struct {
-	CompanyID string `json:"companyId"`
-	FirstName string `json:"firstName"`
-	LastName  string `json:"lastName"`
-	Email     string `json:"email"`
+	CompanyID  string   `json:"companyId"`
+	CompanyIDs []string `json:"companyIds"`
+	FirstName  string   `json:"firstName"`
+	LastName   string   `json:"lastName"`
+	Email      string   `json:"email"`
 }
 
 type recruiterUpdateRequest struct {
-	ID        string  `json:"id"`
-	FirstName *string `json:"firstName,omitempty"`
-	LastName  *string `json:"lastName,omitempty"`
-	Email     *string `json:"email,omitempty"`
+	ID         string    `json:"id"`
+	FirstName  *string   `json:"firstName,omitempty"`
+	LastName   *string   `json:"lastName,omitempty"`
+	Email      *string   `json:"email,omitempty"`
+	CompanyIDs *[]string `json:"companyIds,omitempty"`
+}
+
+// writeRecruiterWriteError: an unknown recruiter or company is a caller mistake (400), anything else a 500.
+func writeRecruiterWriteError(w http.ResponseWriter, action string, err error) {
+	if errors.Is(err, companies.ErrUnknownCompany) {
+		http.Error(w, "unknown company id", http.StatusBadRequest)
+		return
+	}
+	writeRecruiterAwareError(w, action, err)
 }
 
 func recruitersHandler(w http.ResponseWriter, r *http.Request) {
@@ -988,11 +1001,11 @@ func recruitersHandler(w http.ResponseWriter, r *http.Request) {
 
 	case http.MethodPost:
 		var body recruiterRequest
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.CompanyID == "" {
-			http.Error(w, "companyId is required", http.StatusBadRequest)
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid request body", http.StatusBadRequest)
 			return
 		}
-		id, err := recruiters.CreateRecruiter(body.CompanyID, body.FirstName, body.LastName, body.Email)
+		id, err := recruiters.CreateRecruiter(append([]string{body.CompanyID}, body.CompanyIDs...), body.FirstName, body.LastName, body.Email)
 		if err != nil {
 			companies.WriteCompanyAwareError(w, "create recruiter", err)
 			return
@@ -1010,8 +1023,15 @@ func recruitersHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "id is required", http.StatusBadRequest)
 			return
 		}
+		// The companies first: they check everything before writing, so a bad id changes nothing, not even the name.
+		if body.CompanyIDs != nil {
+			if err := recruiters.SetCompanies(body.ID, *body.CompanyIDs); err != nil {
+				writeRecruiterWriteError(w, "update recruiter", err)
+				return
+			}
+		}
 		if err := recruiters.UpdateRecruiter(body.ID, body.FirstName, body.LastName, body.Email); err != nil {
-			writeRecruiterAwareError(w, "update recruiter", err)
+			writeRecruiterWriteError(w, "update recruiter", err)
 			return
 		}
 		recruiterList, err := recruiters.ListRecruiters("")

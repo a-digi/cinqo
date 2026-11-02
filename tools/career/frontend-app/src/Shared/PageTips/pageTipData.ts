@@ -322,10 +322,10 @@ export const PAGE_TIPS: Record<PageTipsId, PageTipSet> = {
       {
         id: 'recruiters',
         label: 'Recruiters',
-        title: 'Recruiters belong to companies',
+        title: 'Recruiters work for companies',
         tone: 'violet',
         icon: 'people',
-        text: 'Each recruiter is tied to a company. Add them on the Recruiters page; the Overview counts them.',
+        text: 'A recruiter can work for several companies, and deleting a company never deletes its recruiters. Add them on the Recruiters page; the Overview counts them.',
       },
     ],
   },
@@ -334,19 +334,19 @@ export const PAGE_TIPS: Record<PageTipsId, PageTipSet> = {
     tips: [
       {
         id: 'tied',
-        label: 'Tied to a company',
-        title: 'Every recruiter has a company',
+        label: 'Companies',
+        title: 'A recruiter can work for several companies',
         tone: 'blue',
         icon: 'company',
-        text: 'A recruiter is tied to an existing company, so add the company first. Companies are listed on the Companies page.',
+        text: 'Pick one or more existing companies when you add a recruiter, so add the companies first. Companies are listed on the Companies page.',
       },
       {
         id: 'fixed',
-        label: 'Cannot change',
-        title: 'The company cannot be changed',
+        label: 'Change anytime',
+        title: 'Deleting a company keeps the recruiter',
         tone: 'amber',
         icon: 'alert',
-        text: 'Once a recruiter is created, its company cannot be changed. To move one, delete it and create it again.',
+        text: 'Use Edit to change a recruiter’s companies at any time. If a company is deleted, the recruiter stays and the company just disappears from them.',
       },
       {
         id: 'filter',

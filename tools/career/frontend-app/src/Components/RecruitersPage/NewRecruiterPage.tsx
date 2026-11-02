@@ -3,16 +3,19 @@ import { createRecruiter, fetchCompanies, type Company } from '../../api'
 import { PlusIcon, UsersIcon } from '../../Shared/Icons/icons'
 import { inputClass } from '../../Shared/inputClass'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
+import { companiesError, initialCompanyIds, listFilterAfterCreate } from './recruiterCompaniesRules'
 import { COMPANIES_PATH, RECRUITERS_PATH } from '../../paths'
 import { Dropdown } from '../Dropdown/Dropdown'
 import { PAGE_ACCENT } from '../JobsPage/jobsTheme'
 
-// The page behind the Recruiters list's "New recruiter" button. A recruiter must
-// belong to an existing company; ?companyId= pre-selects one (set when the list
-// is filtered by a company). Menu-less, like the other create/detail pages.
+// The page behind the Recruiters list's "New recruiter" button. A recruiter works for
+// one or more existing companies (at least one is asked for here); ?companyId=
+// pre-selects one (set when the list is filtered by a company). Menu-less, like
+// the other create/detail pages.
 export function NewRecruiterPage() {
   const [companies, setCompanies] = useState<Company[]>([])
-  const [companyId, setCompanyId] = useState(() => new URLSearchParams(window.location.search).get('companyId') ?? '')
+  const [companyIds, setCompanyIds] = useState<string[]>(() => initialCompanyIds(window.location.search))
+  const [cameFrom] = useState(() => new URLSearchParams(window.location.search).get('companyId') ?? '')
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [email, setEmail] = useState('')
@@ -31,16 +34,18 @@ export function NewRecruiterPage() {
       })
   }, [])
 
-  function backToList() {
-    const suffix = companyId ? `?companyId=${encodeURIComponent(companyId)}` : ''
+  // Cancel goes back to the list it came from; after creating, to the one company's list when only one was chosen.
+  function goToList(filter: string) {
+    const suffix = filter ? `?companyId=${encodeURIComponent(filter)}` : ''
     window.__cinqoToolBridge.navigate(`${RECRUITERS_PATH}${suffix}`)
   }
 
   function handleCreate() {
     const first = firstName.trim()
     const last = lastName.trim()
-    if (!companyId) {
-      setError('Company is required')
+    const missing = companiesError(companyIds)
+    if (missing) {
+      setError(missing)
       return
     }
     if (!first && !last) {
@@ -49,8 +54,10 @@ export function NewRecruiterPage() {
     }
     setError('')
     setIsSaving(true)
-    createRecruiter(companyId, first, last, email.trim())
-      .then(backToList)
+    createRecruiter(companyIds, first, last, email.trim())
+      .then(() => {
+        goToList(listFilterAfterCreate(companyIds))
+      })
       .catch((err: unknown) => {
         setIsSaving(false)
         setError(err instanceof Error ? err.message : String(err))
@@ -62,7 +69,7 @@ export function NewRecruiterPage() {
       <PageHeaderCard
         icon={<UsersIcon />}
         title="New recruiter"
-        description="Add a recruiter contact. It is tied to a company, and that cannot be changed later."
+        description="Add a recruiter contact and the companies they work for. A recruiter can work for several, and the companies can be changed later."
       />
       {isLoaded && companies.length === 0 ? (
         <div
@@ -93,11 +100,13 @@ export function NewRecruiterPage() {
         >
           <div className="mb-4">
             <Dropdown
-              label="Company"
-              placeholder="Select a company"
+              multiple
+              searchable
+              label="Companies"
+              placeholder="Select one or more companies"
               options={companies.map((c) => ({ value: c.id, label: c.name }))}
-              value={companyId}
-              onChange={setCompanyId}
+              value={companyIds}
+              onChange={setCompanyIds}
             />
           </div>
           <div className="mb-4 grid gap-4 sm:grid-cols-2">
@@ -154,7 +163,9 @@ export function NewRecruiterPage() {
             </button>
             <button
               type="button"
-              onClick={backToList}
+              onClick={() => {
+                goToList(cameFrom)
+              }}
               className="rounded-md border border-gray-200 px-3.5 py-2 text-sm text-gray-700 hover:bg-gray-50"
             >
               Cancel
