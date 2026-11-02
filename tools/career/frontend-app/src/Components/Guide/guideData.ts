@@ -78,14 +78,20 @@ export const PROFILE_AND_CV: Guide = {
   design: 'cards',
   title: 'Profile & CV',
   description:
-    'How to set up who you are and turn it into a CV, in seven steps. The AI reads all of it when it matches jobs and writes CVs.',
+    'How to set up who you are and turn it into a CV, in eight steps. The AI reads all of it when it matches jobs and writes CVs.',
   steps: [
     {
       id: 'profile',
       title: 'Create the profile',
       text: 'A profile is one job seeker. Personas, skills and experience hang off it, so create it first with New profile; you can add links afterwards.',
-      tip: 'Short on time? Import from CV reads a CV and proposes a profile, persona, summary, skills and experience, and you review everything before it is saved.',
       link: { label: 'Open Profiles', path: PROFILES_PATH },
+    },
+    {
+      id: 'import',
+      title: 'Or import it from your CV',
+      text: 'Short on time? Upload a CV with Import from CV. The AI proposes a profile, a persona, a summary, skills and experience from it, and you review everything before it is saved.',
+      tip: 'Some models are sometimes not good enough and miss things, but they can still do the job. That is why you check what is proposed before you save it.',
+      link: { label: 'Open Import from CV', path: IMPORT_CV_PATH },
     },
     {
       id: 'persona',
