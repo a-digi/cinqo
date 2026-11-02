@@ -77,7 +77,8 @@ func (r *ToolMCPToolQueryRepo) FindAllEnabled() ([]tool_entity.ToolMCPTool, erro
 		`SELECT m.tool_id, m.name, m.description, m.input_schema, m.required_scope, m.media_param, m.promote_media_param, m.can_delegate, m.delegate_allowed_tools
 		FROM tool_mcp_tools m
 		JOIN tools t ON t.id = m.tool_id
-		WHERE t.enabled = 1`,
+		WHERE t.enabled = 1
+		ORDER BY t.slug ASC, m.name ASC`, // a fixed order: the tool list is part of every request, and a provider cache needs it identical (plan 45, step 5)
 	)
 	if err != nil {
 		return nil, err

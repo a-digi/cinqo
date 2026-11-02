@@ -10,7 +10,7 @@ export const FREE_ROUTER_PLATFORM_ID = 'openrouter'
 export const FREE_ROUTER_MODEL = 'openrouter/free'
 
 export const FREE_ROUTER_HINT =
-  'This model picks a different free model for every call, which often fails at tool use. For crawl instructions, pick a specific model above.'
+  'This model picks a different free model for every call, which often fails at tool use and can never use a provider cache. For crawl instructions, pick a specific model above: it works better, and the provider can reuse the start of each request, which makes the rounds cheaper.'
 
 // effectiveModel is the model a Generate click will actually use: the picked
 // one, else the platform's first (the same rule the click handlers apply).
