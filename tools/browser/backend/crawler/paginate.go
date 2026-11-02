@@ -987,6 +987,8 @@ func RegisterCrawlPaginated(server *mcp.Server) {
 				IsError: true,
 			}, nil, nil
 		}
+		// What the AI reads (and copies into check_crawl_extraction_result) is shortened; see ai_result_cap.go.
+		capListingItemValues(result.Pages)
 
 		text, err := json.MarshalIndent(result, "", "  ")
 		if err != nil {

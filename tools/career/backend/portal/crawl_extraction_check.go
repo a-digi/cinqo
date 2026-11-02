@@ -13,6 +13,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -138,6 +139,13 @@ func (p *CrawlPagesArg) UnmarshalJSON(data []byte) error {
 		}
 		var pages []CrawlResultPage
 		if err := json.Unmarshal([]byte(text), &pages); err != nil {
+			// A model that retypes a long crawl result as a string damages it in two ways only: line breaks
+			// inside text and backslashes before characters JSON does not allow after one. Repair just those
+			// and read it again (step 162); anything else stays the error it always was.
+			if repaired := repairRetypedJSON(text); repaired != text && json.Unmarshal([]byte(repaired), &pages) == nil {
+				*p = pages
+				return nil
+			}
 			return fmt.Errorf("pages was a string but not a JSON array of pages — pass the 'pages' array from crawl_paginated unchanged: %w", err)
 		}
 		*p = pages
@@ -209,4 +217,69 @@ func RegisterCheckCrawlExtractionResult(server *mcp.Server) {
 		report := classifyCrawlResultPages([]CrawlResultPage(args.Pages))
 		return db.JSONResult(report)
 	})
+}
+
+// repairRetypedJSON fixes the two damages a model's retyping does to a JSON text, and nothing else: inside a
+// string, a raw control character (a line break, a tab) becomes its escape, and a backslash that does not start a
+// valid escape (a backslash before a space, or before a letter JSON has no escape for) is dropped. Text outside
+// strings and every valid escape are left exactly as they are.
+func repairRetypedJSON(text string) string {
+	var out strings.Builder
+	out.Grow(len(text))
+	inString := false
+	runes := []rune(text)
+	for i := 0; i < len(runes); i++ {
+		r := runes[i]
+		if !inString {
+			if r == '"' {
+				inString = true
+			}
+			out.WriteRune(r)
+			continue
+		}
+		switch {
+		case r == '"':
+			inString = false
+			out.WriteRune(r)
+		case r == '\\':
+			if i+1 >= len(runes) {
+				continue // a lone trailing backslash cannot escape anything
+			}
+			next := runes[i+1]
+			switch {
+			case strings.ContainsRune(`"\\/bfnrt`, next):
+				out.WriteRune(r)
+				out.WriteRune(next)
+				i++
+			case next == 'u' && i+5 < len(runes) && isHex4(runes[i+2:i+6]):
+				out.WriteString(string(runes[i : i+6]))
+				i += 5
+			default:
+				// invalid escape: drop the backslash, keep the character after it (handled by the next turn)
+			}
+		case r == '\n':
+			out.WriteString(`\n`)
+		case r == '\r':
+			out.WriteString(`\r`)
+		case r == '\t':
+			out.WriteString(`\t`)
+		case r < 0x20:
+			fmt.Fprintf(&out, `\u%04x`, r)
+		default:
+			out.WriteRune(r)
+		}
+	}
+	return out.String()
+}
+
+func isHex4(rs []rune) bool {
+	if len(rs) != 4 {
+		return false
+	}
+	for _, r := range rs {
+		if !(r >= '0' && r <= '9' || r >= 'a' && r <= 'f' || r >= 'A' && r <= 'F') {
+			return false
+		}
+	}
+	return true
 }
