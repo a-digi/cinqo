@@ -21,6 +21,7 @@
 // plan/ai/tools/career/step-10-job-seeker-profile.md,
 // plan/ai/tools/career/step-11-job-seeker-profile-frontend.md, and
 // plan/ai/tools/career/step-12-nested-profiles-menu.md.
+import { runFollower } from './Crawler/runFollowerStart'
 import { createRoot, type Root } from 'react-dom/client'
 import { ProfilesPage } from './Components/ProfilesPage/ProfilesPage'
 import { NewProfilePage } from './Components/ProfilesPage/NewProfilePage'
@@ -115,6 +116,9 @@ import {
 } from './paths'
 
 window.__cinqoToolBridge.registerMenuEntry(careerMenuEntry)
+
+// Plan 163, step 4: the follow-up of instruction runs and the crawl flags no longer wait for a page (see Crawler/runFollower.ts).
+runFollower.start()
 
 const roots = new WeakMap<HTMLElement, Root>()
 

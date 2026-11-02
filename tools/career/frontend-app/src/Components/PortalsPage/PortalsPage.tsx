@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { runFollower } from '../../Crawler/runFollowerStart'
 import {
   fetchPortals,
   createPortal,
@@ -100,6 +101,9 @@ export function PortalsPage() {
   useEffect(() => {
     load()
   }, [])
+
+  // The run follower (plan 163, step 4) finishes runs and starts crawls with no page needed; when it did, this page shows the result.
+  useEffect(() => runFollower.subscribe(load), [])
 
   // Escape closes the "Add link" overlay — mirrors Modal's own
   // convention (step 58). Only armed while the overlay is actually

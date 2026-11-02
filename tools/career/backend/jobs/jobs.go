@@ -1126,6 +1126,12 @@ type savePortalJobsArgs struct {
 	Jobs         []savePortalJobInput `json:"jobs" jsonschema:"every job found on this crawl — pass them all in one call, never call save_portal_job job-by-job"`
 }
 
+// publishJobsCrawled raises "career.portal_link.jobs_crawled" for a link, the event the Platforms chain waits for after jobs arrived (plan 163,
+// step 6): the same event the deterministic "Crawl now" publishes. A var so a test can watch it.
+var publishJobsCrawled = func(portalLinkID string) {
+	domainevent.Publish("career.portal_link.jobs_crawled", map[string]string{"portal_link_id": portalLinkID})
+}
+
 func RegisterSavePortalJobs(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "save_portal_jobs",
@@ -1175,6 +1181,10 @@ func RegisterSavePortalJobs(server *mcp.Server) {
 			default:
 				updated++
 			}
+		}
+		// Jobs really arrived for this link (the AI's own "Crawl with AI" path): the chain goes on as after "Crawl now".
+		if saved+updated > 0 {
+			publishJobsCrawled(args.PortalLinkID)
 		}
 		return db.JSONResult(map[string]any{
 			"jobsProcessed": len(args.Jobs),

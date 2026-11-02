@@ -167,6 +167,8 @@ func runHTTPServer() {
 	rematchworker.StartSweeper(context.Background())
 	// Step 152: the catch-up that removes the matches of deleted profiles and personas (lost events, late AI matches, old leftovers).
 	matchorphans.StartSweeper(context.Background())
+	// Plan 163, step 5: raises the request flags of the listing/job-detail chain that a lost event should have raised.
+	portal.StartFlagSweeper(context.Background())
 	jobrecrawlconsumer.Start(context.Background())
 	jobrecrawlconsumer.StartSweeper(context.Background())
 	// The catch-up for events that were missed (step 134): jobs without any match are queued for the same worker,

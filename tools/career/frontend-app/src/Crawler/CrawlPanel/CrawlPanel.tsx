@@ -13,7 +13,7 @@ import { Switch } from '../../Shared/Switch/Switch'
 import { AUTO_DISCOVERY_INTERVAL_OPTIONS } from '../autoDiscovery'
 import type { Platform } from '../../Cinqo/Platform/platformRepository'
 import { CoreApiError } from '../../Cinqo/Http/client'
-import { createConversation, sendMessage, awaitTurnCompletion, fetchTurnStatus } from '../../Cinqo/Conversation/conversation'
+import { createConversation, sendMessage } from '../../Cinqo/Conversation/conversation'
 import { restrictionHolds } from '../../PersonaAi/personaTools'
 import { buildCrawlMessage, crawlConversationTitle } from '../crawl'
 import {
@@ -32,11 +32,12 @@ import {
   hasJobDetailInstructions,
   shouldContinueWithJobDetail,
 } from '../generateInstructions'
-import { startCrawlNow, startCrawlJobDetailsNow, stopCrawlNow, fetchActiveCrawlRun, type CrawlRun } from '../crawlNow'
+import { startCrawlNow, stopCrawlNow, fetchActiveCrawlRun, type CrawlRun } from '../crawlNow'
 import { phaseLabel, latestCrawlLogMessage } from '../crawlPhase'
 import { instructionAlertAttempts, isLikelyUncrawlable, savedDespiteError } from '../instructionStats'
 import { hasListingInstructions } from '../autoDiscoveryVisibility'
 import { PipelineLine } from '../PipelineLine'
+import { runFollower } from '../runFollowerStart'
 import { diagnoseEmptyCrawl, emptyCrawlFacts, emptyCrawlFor } from '../emptyCrawl'
 import { shouldTryInherit, type InheritView } from '../inheritOutcome'
 import { FREE_ROUTER_HINT, isFreeRouter } from '../modelHint'
@@ -198,7 +199,13 @@ export function CrawlPanel({
   // copy is only a same-session guarantee that a failure is never
   // silently invisible. See
   // plan/ai/tools/career/step-33-ai-generated-crawl-instructions.md.
-  const [aiPending, setAiPending] = useState(false)
+  const [aiPending, setAiPendingState] = useState(false)
+  // Registered with the run follower: a run this page carries itself is finished by this page's own code, even after the page is left, so
+  // the follower stays out of it (plan 163, step 4).
+  function setAiPending(busy: boolean) {
+    setAiPendingState(busy)
+    runFollower.setPageBusy(link.id, 'listing', busy)
+  }
   const [aiLocalError, setAiLocalError] = useState<string | undefined>(undefined)
   // The conversation "Check Progress - AI" reopens (step 60) — set the
   // moment one is created (fresh run) or discovered still running on
@@ -242,7 +249,11 @@ export function CrawlPanel({
   // reasoning as jobDetailInstructionsExpanded/jobDetailInstructionsDraft:
   // generating one document with AI must never disable or clobber the
   // other's own independent in-flight state.
-  const [jobDetailAiPending, setJobDetailAiPending] = useState(false)
+  const [jobDetailAiPending, setJobDetailAiPendingState] = useState(false)
+  function setJobDetailAiPending(busy: boolean) {
+    setJobDetailAiPendingState(busy)
+    runFollower.setPageBusy(link.id, 'job_detail', busy)
+  }
   const [jobDetailAiLocalError, setJobDetailAiLocalError] = useState<string | undefined>(undefined)
   const [jobDetailAiConversationId, setJobDetailAiConversationId] = useState<string | null>(null)
 
@@ -270,61 +281,20 @@ export function CrawlPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [link.hasActiveCrawlRun])
 
-  // Same reload-resilience as the "Crawl now" resume effect above, for
-  // "Generate with AI" (step 60): link.instructionsAiConversationId is
-  // the durable trace of a still-in-flight run surviving a page
-  // reload/reopen — resumedAiRef guards it the same way resumedRef
-  // does, for the same reason (an unrelated reload elsewhere on the
-  // page must never reopen a check this instance's own finish handling
-  // already cleared). See
-  // plan/ai/tools/career/step-60-generate-with-ai-live-chat-window.md.
-  const resumedAiRef = useRef(false)
+  // Plan 163, step 4: a run of the instructions whose page is gone (closed or reloaded) is finished by the run follower (Crawler/runFollower.ts),
+  // and so are the listing-crawl and job-detail-crawl flags: this panel only shows what the link says. What a page of this tab carries
+  // itself is registered with the follower (setAiBusy / setJobDetailAiBusy below), so each run has one owner. The follower is asked to look
+  // now whenever one of those facts changes.
   useEffect(() => {
-    if (link.instructionsAiConversationId && !resumedAiRef.current) {
-      resumedAiRef.current = true
-      void resumeGenerateInstructions(link.instructionsAiConversationId)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [link.instructionsAiConversationId])
-
-  // Same reload-resilience as the listing "Generate with AI" resume
-  // effect above, for the SEPARATE job-detail instructions' own
-  // "Generate with AI" — link.jobDetailInstructionsAiConversationId is
-  // that run's own independent durable trace.
-  const resumedJobDetailAiRef = useRef(false)
-  useEffect(() => {
-    if (link.jobDetailInstructionsAiConversationId && !resumedJobDetailAiRef.current) {
-      resumedJobDetailAiRef.current = true
-      void resumeGenerateJobDetailInstructions(link.jobDetailInstructionsAiConversationId)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [link.jobDetailInstructionsAiConversationId])
-
-  // listingCrawlRequestedRef consumes link.listingCrawlRequested (step
-  // 67) — a Domain Events listener (Career's own backend) sets this
-  // flag once the AI has written fresh listing crawl instructions,
-  // since the listener itself has no live user session to start a
-  // crawl with. This effect performs that crawl under THIS tab's own
-  // live session instead, the next time this link is rendered with the
-  // flag set. See
-  // plan/ai/tools/career/step-67-frontend-flag-consumption.md.
-  //
-  // Plan 163, step 3: it waits while an AI run of this link is still going (aiPending: the listing run itself; jobDetailAiPending: its
-  // follow-up with the job-detail instructions), because the AI and the crawl share the one browser; the flag stays set, so the crawl starts
-  // the moment the run is over.
-  const listingCrawlRequestedRef = useRef(false)
-  useEffect(() => {
-    if (link.listingCrawlRequested && !listingCrawlRequestedRef.current && !aiPending && !jobDetailAiPending) {
-      listingCrawlRequestedRef.current = true
-      void updatePortalLink(link.id, { listingCrawlRequested: false }).catch(() => {
-        // Best-effort — if this clear itself fails, the flag simply
-        // fires again next reload, which is harmless: handleCrawlNow's
-        // own isBusy() guard already no-ops a duplicate trigger.
-      })
-      handleCrawlNow()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [link.listingCrawlRequested, aiPending, jobDetailAiPending])
+    runFollower.poke()
+  }, [
+    link.listingCrawlRequested,
+    link.jobDetailCrawlRequested,
+    link.jobDetailCrawlInstructions,
+    link.instructionsAiConversationId,
+    link.jobDetailInstructionsAiConversationId,
+    link.hasActiveCrawlRun,
+  ])
 
   // jobDetailAiRequestedRef consumes link.jobDetailInstructionsAiRequested
   // (step 67) the same way — set by a SEPARATE listener once a
@@ -345,33 +315,6 @@ export function CrawlPanel({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [link.jobDetailInstructionsAiRequested, link.jobDetailCrawlInstructions])
-
-  // jobDetailCrawlRequestedRef consumes link.jobDetailCrawlRequested
-  // (step 76/77) — set unconditionally by the events.go listener the
-  // instant "Crawl now" finishes. This effect is what actually decides
-  // WHEN it's safe to act on that: only once job-detail crawl
-  // instructions actually exist (they might not yet — that's the SAME
-  // event's own other flag's whole job to fill in). If they don't exist
-  // yet, this effect does nothing and does NOT clear the flag — it
-  // simply fires again on a future render once
-  // link.jobDetailCrawlInstructions becomes truthy (e.g. once the
-  // auto-generated instructions land), the same self-healing shape
-  // jobDetailAiRequestedRef already uses. See
-  // plan/ai/tools/career/step-77-auto-crawl-job-details-frontend.md.
-  const jobDetailCrawlRequestedRef = useRef(false)
-  useEffect(() => {
-    if (link.jobDetailCrawlRequested && link.jobDetailCrawlInstructions && !jobDetailCrawlRequestedRef.current) {
-      jobDetailCrawlRequestedRef.current = true
-      void updatePortalLink(link.id, { jobDetailCrawlRequested: false }).catch(() => {
-        // Best-effort — see listingCrawlRequestedRef's own identical
-        // reasoning: if THIS clear fails, the flag simply fires again
-        // next reload, harmless since handleCrawlJobDetailsNow's own
-        // isBusy() guard already no-ops a duplicate trigger.
-      })
-      handleCrawlJobDetailsNow()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [link.jobDetailCrawlRequested, link.jobDetailCrawlInstructions])
 
   // watchCrawlRun polls GET .../crawl-now/active until the run reaches
   // a terminal status, writing every observed row into `run` as it
@@ -427,37 +370,6 @@ export function CrawlPanel({
       })
       .catch((err: unknown) => {
         setCrawlResult({ ok: false, text: err instanceof Error ? err.message : 'Failed to start crawl.' })
-      })
-  }
-
-  // "Crawl job details now" mirrors handleCrawlNow above exactly — the
-  // SEPARATE deterministic mechanism (kind 'job_detail') that visits
-  // every already-saved job's own detail page for this link instead of
-  // the listing page. Shares `run`/`isBusy()`/watchCrawlRun with the
-  // listing mechanism (crawl_runs_one_running_idx already guarantees
-  // only one of either kind can be active for this link at a time), so
-  // no separate run-tracking state is needed here.
-  function handleCrawlJobDetailsNow() {
-    if (isBusy()) return
-    setCrawlResult(null)
-    startCrawlJobDetailsNow(link.id)
-      .then((started) => {
-        setRun({
-          crawlRunId: started.crawlRunId,
-          kind: 'job_detail',
-          triggeredBy: 'manual',
-          status: 'running',
-          startedAt: started.startedAt,
-          finishedAt: null,
-          log: [],
-          resultSummary: null,
-          errorMessage: null,
-          phase: null,
-        })
-        return watchCrawlRun()
-      })
-      .catch((err: unknown) => {
-        setCrawlResult({ ok: false, text: err instanceof Error ? err.message : 'Failed to start job detail crawl.' })
       })
   }
 
@@ -692,48 +604,6 @@ export function CrawlPanel({
     })
   }
 
-  // resumeGenerateInstructions picks a still-in-flight run back up
-  // after a reload/reopen — link.instructionsAiConversationId is the
-  // durable trace a fresh run's own handleGenerateInstructionsWithAI
-  // wrote below. Checks whether it's actually still running before
-  // committing to "Check Progress - AI": a run that finished while
-  // this tab was away is reconciled immediately via the same finish
-  // path a run finishing live already uses, instead of leaving the
-  // button stuck on "Check Progress - AI" forever. A status-check
-  // failure (network error, not "no turn found") is treated as "still
-  // running" — optimistic, since silently reverting to "Generate with
-  // AI" here would lose the durable conversation id for no reason; see
-  // this step's own design doc "Open questions".
-  async function resumeGenerateInstructions(conversationId: string) {
-    setAiConversationId(conversationId)
-    let status
-    try {
-      status = await fetchTurnStatus(conversationId)
-    } catch {
-      status = 'running' as const
-    }
-    if (status !== 'running') {
-      awaitTurnCompletion(conversationId).then(
-        () => {
-          finishGenerateInstructions()
-        },
-        (err: unknown) => {
-          finishGenerateInstructions(err)
-        },
-      )
-      return
-    }
-    setAiPending(true)
-    awaitTurnCompletion(conversationId).then(
-      () => {
-        finishGenerateInstructions()
-      },
-      (err: unknown) => {
-        finishGenerateInstructions(err)
-      },
-    )
-  }
-
   // "Generate with AI" (step 33) — creates a conversation the same way
   // handleCrawlWithAI does, but hidden (never shown in the normal
   // conversation list) and instructed to write/update this link's own
@@ -815,8 +685,9 @@ export function CrawlPanel({
   // either handleGenerateInstructionsWithAI or
   // resumeGenerateInstructions above).
   function handleCheckProgress() {
-    if (aiConversationId) {
-      window.__cinqoToolBridge.openConversation(aiConversationId)
+    const conversationId = aiConversationId ?? link.instructionsAiConversationId
+    if (conversationId) {
+      window.__cinqoToolBridge.openConversation(conversationId)
     }
   }
 
@@ -878,38 +749,6 @@ export function CrawlPanel({
         })
         .then(onReload)
     })
-  }
-
-  // resumeGenerateJobDetailInstructions mirrors resumeGenerateInstructions
-  // above exactly, for the SEPARATE job-detail instructions document.
-  async function resumeGenerateJobDetailInstructions(conversationId: string) {
-    setJobDetailAiConversationId(conversationId)
-    let status
-    try {
-      status = await fetchTurnStatus(conversationId)
-    } catch {
-      status = 'running' as const
-    }
-    if (status !== 'running') {
-      awaitTurnCompletion(conversationId).then(
-        () => {
-          finishGenerateJobDetailInstructions()
-        },
-        (err: unknown) => {
-          finishGenerateJobDetailInstructions(err)
-        },
-      )
-      return
-    }
-    setJobDetailAiPending(true)
-    awaitTurnCompletion(conversationId).then(
-      () => {
-        finishGenerateJobDetailInstructions()
-      },
-      (err: unknown) => {
-        finishGenerateJobDetailInstructions(err)
-      },
-    )
   }
 
   // handleGenerateJobDetailInstructionsWithAI mirrors
@@ -989,29 +828,36 @@ export function CrawlPanel({
   // reopens the widget onto jobDetailAiConversationId, never
   // aiConversationId.
   function handleCheckJobDetailProgress() {
-    if (jobDetailAiConversationId) {
-      window.__cinqoToolBridge.openConversation(jobDetailAiConversationId)
+    const conversationId = jobDetailAiConversationId ?? link.jobDetailInstructionsAiConversationId
+    if (conversationId) {
+      window.__cinqoToolBridge.openConversation(conversationId)
     }
   }
-
-  // Alert pills (step 86): attempts were made but this document still
-  // doesn't exist. Computed from the server-side counters plus this
-  // tab's own in-flight state.
-  const listingAlertAttempts = instructionAlertAttempts(link.instructionStats.listing, Boolean(link.crawlInstructions), aiPending)
-  // Step 87 — once the AI has given up on the listing three times in a
-  // row, the stronger "probably can't be crawled" pill replaces the
-  // generic alert for the listing.
-  const listingUncrawlable = isLikelyUncrawlable(link.instructionStats.listing, Boolean(link.crawlInstructions), aiPending)
-  const jobDetailAlertAttempts = instructionAlertAttempts(
-    link.instructionStats.jobDetail,
-    Boolean(link.jobDetailCrawlInstructions),
-    jobDetailAiPending,
-  )
 
   // Step 91 — the generation agent asked whether this page has jobs and is
   // waiting for the answer. Shown instead of the step 90 box (same
   // situation, one question).
   const jobsQuestion = pendingJobsQuestion(link)
+
+  // Plan 163, step 4: a run counts as going on when this page carries it (aiPending) OR the link says so (its conversation id): a run the
+  // run follower finishes, after a reload or from another page, shows here the same as one started on this page. A listing run that waits
+  // for the user's answer is not running.
+  const aiBusy = aiPending || (Boolean(link.instructionsAiConversationId) && !jobsQuestion)
+  const jobDetailAiBusy = jobDetailAiPending || Boolean(link.jobDetailInstructionsAiConversationId)
+
+  // Alert pills (step 86): attempts were made but this document still
+  // doesn't exist. Computed from the server-side counters plus this
+  // tab's own in-flight state.
+  const listingAlertAttempts = instructionAlertAttempts(link.instructionStats.listing, Boolean(link.crawlInstructions), aiBusy)
+  // Step 87 — once the AI has given up on the listing three times in a
+  // row, the stronger "probably can't be crawled" pill replaces the
+  // generic alert for the listing.
+  const listingUncrawlable = isLikelyUncrawlable(link.instructionStats.listing, Boolean(link.crawlInstructions), aiBusy)
+  const jobDetailAlertAttempts = instructionAlertAttempts(
+    link.instructionStats.jobDetail,
+    Boolean(link.jobDetailCrawlInstructions),
+    jobDetailAiBusy,
+  )
 
   // "Yes" tells the agent in the same conversation that its approach was
   // wrong and lets it retry (the attempt stays open and ends with that
@@ -1282,7 +1128,7 @@ export function CrawlPanel({
                   {/* Passive status only — no manual trigger anymore. This
                   only ever becomes true via jobDetailAiRequestedRef's own
                   automatic effect (step 67), never a direct click. */}
-                  {jobDetailAiPending && (
+                  {jobDetailAiBusy && (
                     <button
                       type="button"
                       onClick={handleCheckJobDetailProgress}
@@ -1298,13 +1144,18 @@ export function CrawlPanel({
               <button
                 type="button"
                 onClick={
-                  aiPending
+                  aiBusy
                     ? handleCheckProgress
                     : () => {
                         handleGenerateInstructionsWithAI()
                       }
                 }
-                disabled={!hasPlatforms || inheriting || (aiPending && !aiConversationId) || Boolean(jobsQuestion)}
+                disabled={
+                  !hasPlatforms ||
+                  inheriting ||
+                  (aiBusy && !(aiConversationId ?? link.instructionsAiConversationId)) ||
+                  Boolean(jobsQuestion)
+                }
                 title={
                   !hasPlatforms
                     ? 'No AI platform configured — add one on the Platforms page first'
@@ -1312,13 +1163,13 @@ export function CrawlPanel({
                       ? 'Answer the question below first'
                       : inheriting
                         ? "Trying the instructions of this platform's other links first…"
-                        : aiPending
+                        : aiBusy
                           ? "Open the chat window to watch the AI work on this link's crawl instructions"
                           : 'Let the AI inspect this page and write (or update) its listing crawl instructions for you — once saved, this link is crawled and its job-detail instructions are generated automatically.'
                 }
                 className="flex shrink-0 flex-col items-center justify-center gap-1 self-stretch rounded-lg border border-gray-200 bg-gray-50 px-3 text-xs font-medium text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {aiPending ? (
+                {aiBusy ? (
                   <>
                     <RobotIcon className="h-5 w-5" />
                     Generating...
@@ -1333,7 +1184,7 @@ export function CrawlPanel({
             </div>
             <StartFreshButton
               link={link}
-              tabBusy={{ listingGenerating: aiPending, jobDetailGenerating: jobDetailAiPending, inheriting }}
+              tabBusy={{ listingGenerating: aiBusy, jobDetailGenerating: jobDetailAiBusy, inheriting }}
               canGenerate={hasPlatforms && selectedPlatform !== null}
               onGenerate={() => {
                 handleGenerateInstructionsWithAI()
@@ -1445,7 +1296,7 @@ export function CrawlPanel({
                     onClick={() => {
                       handleGenerateInstructionsWithAI()
                     }}
-                    disabled={!hasPlatforms || aiPending}
+                    disabled={!hasPlatforms || aiBusy}
                     title={!hasPlatforms ? 'No AI platform configured — add one on the Platforms page first' : undefined}
                     className="rounded-md border border-orange-200 bg-white px-2.5 py-1 text-xs text-orange-800 hover:bg-orange-100 disabled:cursor-not-allowed disabled:opacity-50"
                   >
@@ -1461,7 +1312,7 @@ export function CrawlPanel({
                       onClick={() => {
                         handleGenerateInstructionsWithAI({ jobsConfirmed: true })
                       }}
-                      disabled={!hasPlatforms || aiPending}
+                      disabled={!hasPlatforms || aiBusy}
                       title={
                         hasPlatforms
                           ? 'The instructions are wrong: the AI is told the page has jobs and writes new ones.'
