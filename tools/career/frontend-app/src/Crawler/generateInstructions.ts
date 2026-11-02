@@ -120,7 +120,7 @@ export function buildJobsConfirmedMessage(link: { id: string; title?: string | n
 // of a later message in the same conversation holds the earlier messages as text only, not the tool calls and their results, so the AI's own
 // test crawl is not visible to it any more; its final reply is, and so is it to the page. The reply therefore carries the sample URL.
 export const SAMPLE_JOB_MARKER = 'Sample job:'
-export const SAMPLE_JOB_REQUEST = `When you saved instructions, end that line with "${SAMPLE_JOB_MARKER} <the full URL of the first item of your last crawl_paginated test>".`
+export const SAMPLE_JOB_REQUEST = `When you saved instructions, end that line with "${SAMPLE_JOB_MARKER} <URL>": the url field of the first item of your last crawl_paginated test, copied exactly as the crawl returned it (a link you did not see in its output, or one with tracking parameters, may not open).`
 
 const MAX_SAMPLE_URL_LENGTH = 2000
 const bareHost = (host: string) => host.toLowerCase().replace(/^www\./, '')
