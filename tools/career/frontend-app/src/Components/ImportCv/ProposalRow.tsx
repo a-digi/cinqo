@@ -21,6 +21,7 @@ export function ProposalRow({
   onToggle,
   done = false,
   errorMessage,
+  doneNote,
 }: {
   item: ProposalItem
   label: string
@@ -42,6 +43,8 @@ export function ProposalRow({
   // since they mean different things (one is an AI judgment made
   // before insert; this is a real error from the insert call itself).
   errorMessage?: string
+  // Said instead of "Inserted" when nothing had to be written (an education entry the profile already had).
+  doneNote?: string
 }) {
   const tone = proposalRowTone(item)
   return (
@@ -54,7 +57,7 @@ export function ProposalRow({
         {item.possibleDuplicateOf !== null && !done && (
           <span className="block text-xs text-red-700">Possible duplicate of: {resolvedDuplicateLabel ?? item.possibleDuplicateOf}</span>
         )}
-        {done && <span className="block text-xs text-green-700">Inserted</span>}
+        {done && <span className="block text-xs text-green-700">{doneNote ? `Not added: ${doneNote}` : 'Inserted'}</span>}
         {errorMessage && !done && <span className="block text-xs text-red-700">Failed: {errorMessage}</span>}
       </span>
     </label>

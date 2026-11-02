@@ -42,6 +42,7 @@ type importDraft struct {
 	PersonalDetails *DetailsProposal     `json:"personalDetails,omitempty"`
 	Skills          []SkillProposal      `json:"skills,omitempty"`
 	Experience      []ExperienceProposal `json:"experience,omitempty"`
+	Education       []EducationProposal  `json:"education,omitempty"`
 }
 
 // allSkipped says all three single sections were sent and every one is skipped.
@@ -75,7 +76,7 @@ func (d importDraft) summary() map[string]any {
 		"stored": true,
 		"draft": map[string]any{
 			sectionProfile: d.Profile != nil, sectionPersona: d.Persona != nil, sectionPersonalDetails: d.PersonalDetails != nil,
-			"skills": len(d.Skills), "experience": len(d.Experience),
+			"skills": len(d.Skills), "experience": len(d.Experience), "education": len(d.Education),
 		},
 		"stillMissing": d.missing(),
 	}
@@ -305,6 +306,63 @@ func AddDraftExperience(runID string, item any) (importDraft, error) {
 	})
 }
 
+// MaxEducationPerCall bounds one cv_import_add_education call, for the same reason as MaxJobsPerCall.
+const MaxEducationPerCall = 10
+
+// AddDraftEducation validates one education entry, or a list of up to MaxEducationPerCall, and adds them to the run's draft (plan 175);
+// an entry with the same institution, degree, field of study and start date replaces the earlier one. A wrong entry is refused alone and
+// nothing of the call is kept.
+func AddDraftEducation(runID string, item any) (importDraft, error) {
+	return updateDraft(runID, func(d *importDraft) error {
+		const shape = `one entry {"action","possibleDuplicateOf","institution","degree","fieldOfStudy","startDate","endDate","description"}, or a list of up to 10 of them`
+		data, err := rawJSON(item, "item", shape)
+		if err != nil {
+			return err
+		}
+		var entries []EducationProposal
+		if data[0] == '[' {
+			err = json.Unmarshal(data, &entries)
+		} else {
+			var one EducationProposal
+			if err = json.Unmarshal(data, &one); err == nil {
+				entries = []EducationProposal{one}
+			}
+		}
+		if err != nil {
+			return problem("item is not in the right shape (%v): %s", err, shape)
+		}
+		if len(entries) == 0 {
+			return problem("item has no entry: %s", shape)
+		}
+		if len(entries) > MaxEducationPerCall {
+			return problem("send at most %d education entries per call, not %d", MaxEducationPerCall, len(entries))
+		}
+		p := skipPlaceholder()
+		p.Education = entries
+		clean, err := validateProposal(p)
+		if err != nil {
+			return problem("%v (counting from 0 in this call)", err)
+		}
+		key := func(x EducationProposal) string {
+			return strings.ToLower(strings.TrimSpace(x.Institution) + "|" + strings.TrimSpace(x.Degree) + "|" + strings.TrimSpace(x.FieldOfStudy) + "|" + strings.TrimSpace(x.StartDate))
+		}
+	next:
+		for _, e := range clean.Education {
+			for i, old := range d.Education {
+				if key(old) == key(e) {
+					d.Education[i] = e
+					continue next
+				}
+			}
+			d.Education = append(d.Education, e)
+		}
+		if len(d.Education) > MaxProposalEducation {
+			return problem("education can have at most %d entries", MaxProposalEducation)
+		}
+		return nil
+	})
+}
+
 // FinishDraft validates the whole draft and stores it as the run's proposal, then drops the draft. A draft that is not complete is a
 // *proposalProblem naming what is missing; the run errors are those of StoreProposal.
 func FinishDraft(runID string) error {
@@ -315,7 +373,7 @@ func FinishDraft(runID string) error {
 	if m := d.missing(); len(m) > 0 {
 		return problem("the draft is not complete, still missing: %s. Send them with cv_import_set, cv_import_add_skills or cv_import_add_experience, then call cv_import_finish again", strings.Join(m, ", "))
 	}
-	if err := StoreProposal(runID, Proposal{Profile: *d.Profile, Persona: *d.Persona, PersonalDetails: *d.PersonalDetails, Skills: d.Skills, Experience: d.Experience}); err != nil {
+	if err := StoreProposal(runID, Proposal{Profile: *d.Profile, Persona: *d.Persona, PersonalDetails: *d.PersonalDetails, Skills: d.Skills, Experience: d.Experience, Education: d.Education}); err != nil {
 		return err
 	}
 	_, err = db.CareerDB.Exec(`UPDATE cv_import_runs SET draft_json = NULL WHERE id = ? AND status = 'generating'`, runID)
@@ -372,11 +430,17 @@ type cvImportAddExperienceArgs struct {
 	Items any    `json:"items,omitempty" jsonschema:"the same under another name (a list of up to 5 jobs); send either item or items"`
 }
 
+type cvImportAddEducationArgs struct {
+	RunID string `json:"runId,omitempty" jsonschema:"the run id given in the request"`
+	Item  any    `json:"item,omitempty" jsonschema:"one education entry {action, possibleDuplicateOf, institution, degree, fieldOfStudy, startDate, endDate, description}, or a list of up to 10 entries"`
+	Items any    `json:"items,omitempty" jsonschema:"the same under another name (a list of up to 10 entries); send either item or items"`
+}
+
 type cvImportFinishArgs struct {
 	RunID string `json:"runId,omitempty" jsonschema:"the run id given in the request"`
 }
 
-// RegisterCVImportDraftTools registers the four piece-by-piece tools.
+// RegisterCVImportDraftTools registers the piece-by-piece tools (profile/persona/details, skills, experience, education, finish).
 func RegisterCVImportDraftTools(server *mcp.Server) {
 	const common = " It creates no profile, persona, skill or experience; the user reviews the proposal afterwards. Fails with a message when the run has ended or the piece is not valid; correct that piece and send it again."
 	mcp.AddTool(server, &mcp.Tool{
@@ -414,9 +478,22 @@ func RegisterCVImportDraftTools(server *mcp.Server) {
 		return draftResult(runID, d, err)
 	})
 	mcp.AddTool(server, &mcp.Tool{
+		Name: "cv_import_add_education",
+		Description: "Add education found in the CV (schools, degrees, courses) to the analysis: one entry, or a list of up to 10 per call (the same institution, degree, field of study and start date replaces the earlier one). " +
+			"Dates are YYYY, YYYY-MM or YYYY-MM-DD, the end date is empty while still studying and not before the start; an entry to insert needs an institution. " +
+			"Set possibleDuplicateOf to the id of the matching entry from list_education. Send nothing when the CV has no education; it is optional." + common,
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args cvImportAddEducationArgs) (*mcp.CallToolResult, any, error) {
+		runID, err := resolveRunID(args.RunID)
+		if err != nil {
+			return draftResult(args.RunID, importDraft{}, err)
+		}
+		d, err := AddDraftEducation(runID, firstOf(args.Item, args.Items))
+		return draftResult(runID, d, err)
+	})
+	mcp.AddTool(server, &mcp.Tool{
 		Name: "cv_import_finish",
 		Description: "Finish the analysis: checks that the profile, the persona, the personal details and at least one skill or job were sent and hands the whole " +
-			"proposal to the user. Call it once, after the last piece." + common,
+			"proposal to the user (education is optional). Call it once, after the last piece." + common,
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args cvImportFinishArgs) (*mcp.CallToolResult, any, error) {
 		runID, err := resolveRunID(args.RunID)
 		if err != nil {

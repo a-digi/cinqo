@@ -43,7 +43,7 @@ export const GETTING_STARTED: Guide = {
     {
       id: 'fill-in',
       title: 'Tell the tool who you are',
-      text: 'Let the AI read your CV with Import from CV (you review everything before it is saved), or add your personas, skills and experience by hand.',
+      text: 'Let the AI read your CV with Import from CV (you review everything before it is saved), or add your personas, skills, experience and education by hand.',
       tip: 'A persona is a role you are looking for. Add one for each role.',
       link: { label: 'Open Import from CV', path: IMPORT_CV_PATH },
     },
@@ -90,7 +90,7 @@ export const PROFILE_AND_CV: Guide = {
     {
       id: 'import',
       title: 'Or import it from your CV',
-      text: 'Short on time? Upload a CV with Import from CV. The AI proposes a profile, a persona, a summary, skills and experience from it, and you review everything before it is saved.',
+      text: 'Short on time? Upload a CV with Import from CV. The AI proposes a profile, a persona, a summary, skills, experience and education from it, and you review everything before it is saved.',
       tip: 'Some models are sometimes not good enough and miss things, but they can still do the job. That is why you check what is proposed before you save it.',
       link: { label: 'Open Import from CV', path: IMPORT_CV_PATH },
     },

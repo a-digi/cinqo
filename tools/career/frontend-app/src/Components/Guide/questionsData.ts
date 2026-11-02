@@ -103,7 +103,7 @@ export const QUESTIONS: Question[] = [
     id: 'import-review',
     question: 'Is everything saved straight away when I import a CV?',
     answer:
-      'No. Import from CV lets the AI propose a profile, persona, summary, skills and experience (they go into the profile’s library), and you review everything before it is saved.',
+      'No. Import from CV lets the AI propose a profile, persona, summary, skills, experience and education (skills and experience go into the profile’s library, education into the profile; an education entry the profile already has is not added again), and you review everything before it is saved.',
     link: { label: 'Open Import from CV', path: IMPORT_CV_PATH },
   },
   {

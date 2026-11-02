@@ -186,3 +186,27 @@ func TestByIDOfAnUnknownEntry(t *testing.T) {
 		t.Errorf("%v", err)
 	}
 }
+
+func TestCheckInputIsTheCheckEveryEntryPassesAndWritesNothing(t *testing.T) {
+	p1, _ := setup(t)
+	ok := Input{Institution: " MIT ", StartDate: "2010-09", EndDate: "2014"}
+	if err := CheckInput(ok); err != nil {
+		t.Errorf("a valid entry: %v", err)
+	}
+	for name, c := range map[string]struct {
+		in   Input
+		want error
+	}{
+		"no institution": {Input{Institution: "  "}, ErrInstitutionRequired},
+		"bad start":      {Input{Institution: "X", StartDate: "Sep 2010"}, ErrInvalidDate},
+		"bad end":        {Input{Institution: "X", EndDate: "2014-13"}, ErrInvalidDate},
+		"end first":      {Input{Institution: "X", StartDate: "2020", EndDate: "2019"}, ErrEndBeforeStart},
+	} {
+		if err := CheckInput(c.in); !errors.Is(err, c.want) {
+			t.Errorf("%s: %v, want %v", name, err, c.want)
+		}
+	}
+	if list, _ := List(p1); len(list) != 0 {
+		t.Errorf("CheckInput wrote %d entries", len(list))
+	}
+}

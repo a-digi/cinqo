@@ -53,7 +53,7 @@ export const careerMenuEntry: MenuEntry = {
           children: [
             // Your CVs, built from a persona.
             { label: 'CVs', path: CV_DOCUMENTS_PATH, scopes: ['tool:career:cv_documents'] },
-            // Reads a CV into the profile, persona, skills and experience (the page is still headed "Import from CV").
+            // Reads a CV into the profile, persona, skills, experience and education (the page is still headed "Import from CV").
             { label: 'Import', path: IMPORT_CV_PATH, scopes: ['tool:career:cv_import'] },
           ],
         },

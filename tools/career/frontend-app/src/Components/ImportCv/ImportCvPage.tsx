@@ -212,7 +212,7 @@ export function ImportCvPage() {
       <PageHeaderCard
         icon={<UploadIcon className="h-6 w-6" />}
         title="Import from CV"
-        description="Upload a CV and let the AI propose a profile, persona, summary, skills and experience from it. You review everything before it is saved."
+        description="Upload a CV and let the AI propose a profile, persona, summary, skills, experience and education from it. You review everything before it is saved."
         pill={headerPill}
       />
       {/* Steps 105 to 108: the tips sit in a column of their own beside the page (under it on a narrow window). */}

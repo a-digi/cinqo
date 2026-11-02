@@ -15,6 +15,7 @@ import { ProposalRow } from './ProposalRow'
 import { resolveDuplicateLabels, type DuplicateLabels } from './resolveDuplicateLabels'
 import { buildFullSaveSummary, buildInitialChecked, insertState } from './reviewRules'
 import { experienceLabel } from './experienceLabel'
+import { educationLabel } from './educationInsertRules'
 
 function readProposal(run: CVImportRun): { proposal: CVImportProposal | null; error: string } {
   try {
@@ -38,6 +39,8 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
   // Which rows were inserted (a retry only re-attempts rows that are checked and not yet in this set) and the last error per row.
   const [insertedKeys, setInsertedKeys] = useState<Record<string, boolean>>({})
   const [insertErrors, setInsertErrors] = useState<Record<string, string>>({})
+  // What a row says besides "Inserted" (an education entry the profile already had), by key.
+  const [insertNotes, setInsertNotes] = useState<Record<string, string>>({})
   const [inserting, setInserting] = useState(false)
   const [insertValidationError, setInsertValidationError] = useState('')
 
@@ -72,11 +75,13 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
     setChecked((prev) => ({ ...prev, [key]: !prev[key] }))
   }
 
-  function resolvedLabelFor(item: ProposalItem, kind: 'persona' | 'experience' | 'skill'): string | undefined {
+  function resolvedLabelFor(item: ProposalItem, kind: 'persona' | 'experience' | 'skill' | 'education'): string | undefined {
     if (item.possibleDuplicateOf === null) return undefined
     if (kind === 'skill') return item.possibleDuplicateOf
     if (!duplicateLabels) return undefined
-    return kind === 'persona' ? duplicateLabels.personas[item.possibleDuplicateOf] : duplicateLabels.experience[item.possibleDuplicateOf]
+    if (kind === 'persona') return duplicateLabels.personas[item.possibleDuplicateOf]
+    if (kind === 'education') return duplicateLabels.education[item.possibleDuplicateOf]
+    return duplicateLabels.experience[item.possibleDuplicateOf]
   }
 
   async function handleInsert() {
@@ -115,7 +120,15 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
       result.experience.forEach((e) => {
         if (e.ok) nextInsertedKeys[`experience-${e.index}`] = true
       })
+      result.education.forEach((e) => {
+        if (e.ok) nextInsertedKeys[`education-${e.index}`] = true
+      })
       setInsertedKeys(nextInsertedKeys)
+      const nextNotes = { ...insertNotes }
+      result.education.forEach((e) => {
+        if (e.ok) nextNotes[`education-${e.index}`] = e.note ?? ''
+      })
+      setInsertNotes(nextNotes)
 
       const nextInsertErrors = { ...insertErrors }
       const apply = (key: string, r?: { ok: boolean; error?: string }) => {
@@ -132,9 +145,12 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
       result.experience.forEach((e) => {
         apply(`experience-${e.index}`, e)
       })
+      result.education.forEach((e) => {
+        apply(`education-${e.index}`, e)
+      })
       setInsertErrors(nextInsertErrors)
 
-      const summary = buildFullSaveSummary(proposal, nextInsertedKeys, nextInsertErrors)
+      const summary = buildFullSaveSummary(proposal, nextInsertedKeys, nextInsertErrors, nextNotes)
       updateCVImportRunSaveSummary(run.id, summary).catch(() => {
         // Non-fatal: the insert already succeeded; losing the history record of it must not error the user's own review.
       })
@@ -254,6 +270,28 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
                 }}
                 done={insertedKeys[`experience-${i}`]}
                 errorMessage={insertErrors[`experience-${i}`]}
+              />
+            ))}
+          </div>
+        </section>
+
+        <section className={cardClassName} style={cardStyle}>
+          <h2 className="mb-2 text-base font-semibold text-gray-900">Education</h2>
+          {proposal.education.length === 0 && <p className="text-sm text-gray-400">No education proposed.</p>}
+          <div className="space-y-1">
+            {proposal.education.map((edu, i) => (
+              <ProposalRow
+                key={i}
+                item={edu}
+                label={educationLabel(edu)}
+                resolvedDuplicateLabel={resolvedLabelFor(edu, 'education')}
+                checked={checked[`education-${i}`]}
+                onToggle={() => {
+                  toggle(`education-${i}`)
+                }}
+                done={insertedKeys[`education-${i}`]}
+                doneNote={insertNotes[`education-${i}`]}
+                errorMessage={insertErrors[`education-${i}`]}
               />
             ))}
           </div>

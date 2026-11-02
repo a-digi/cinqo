@@ -2,6 +2,7 @@ import type { CVImportRun } from '../../api'
 import type { CVImportProposal } from './parseProposal'
 import type { InsertResult, ItemResult } from './insertProposal'
 import { experienceLabel } from './experienceLabel'
+import { educationLabel } from './educationInsertRules'
 import { cardClassName, cardStyle } from '../../Shared/cardStyle'
 
 // 'skipped' covers both "the AI proposed it but the user unchecked it"
@@ -28,6 +29,7 @@ function StatusBadge({ result }: { result: ItemResult | undefined }) {
     <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_CLASSES[status]}`}>
       {STATUS_LABEL[status]}
       {status === 'failed' && result?.error ? `: ${result.error}` : ''}
+      {status === 'inserted' && result?.note ? ` (${result.note})` : ''}
     </span>
   )
 }
@@ -54,6 +56,10 @@ export function ImportRunDetail({ run, onClose }: { run: CVImportRun; onClose: (
 
   const skillResult = (index: number) => summary?.skills.find((s) => s.index === index)
   const experienceResult = (index: number) => summary?.experience.find((e) => e.index === index)
+  // A run stored before education existed has neither a list in its proposal nor in its summary.
+  const education = Array.isArray(proposal.education) ? proposal.education : []
+  const educationResults = Array.isArray(summary?.education) ? summary.education : []
+  const educationResult = (index: number) => educationResults.find((e) => e.index === index)
 
   return (
     <div className="space-y-4">
@@ -113,6 +119,16 @@ export function ImportRunDetail({ run, onClose }: { run: CVImportRun; onClose: (
         <ul className="divide-y divide-gray-100">
           {proposal.experience.map((exp, i) => (
             <Row key={i} label={experienceLabel(exp)} result={experienceResult(i)} />
+          ))}
+        </ul>
+      </section>
+
+      <section className={cardClassName} style={cardStyle}>
+        <h2 className="mb-2 text-base font-semibold text-gray-900">Education</h2>
+        {education.length === 0 && <p className="text-sm text-gray-400">No education proposed.</p>}
+        <ul className="divide-y divide-gray-100">
+          {education.map((edu, i) => (
+            <Row key={i} label={educationLabel(edu)} result={educationResult(i)} />
           ))}
         </ul>
       </section>

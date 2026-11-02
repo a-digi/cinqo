@@ -38,12 +38,24 @@ export interface ExperienceProposal extends ProposalItem {
   description: string
 }
 
+// One school, degree or course found in the CV (plan 175).
+export interface EducationProposal extends ProposalItem {
+  institution: string
+  degree: string
+  fieldOfStudy: string
+  startDate: string
+  endDate: string
+  description: string
+}
+
 export interface CVImportProposal {
   profile: ProfileProposal
   persona: PersonaProposal
   personalDetails: PersonalDetailsProposal
   skills: SkillProposal[]
   experience: ExperienceProposal[]
+  // Empty for a proposal stored before education existed or for a CV without any.
+  education: EducationProposal[]
 }
 
 export type ProposalRowTone = 'gray' | 'amber' | 'red'
@@ -155,5 +167,24 @@ export function parseProposal(root: unknown): CVImportProposal {
     }
   })
 
-  return { profile, persona, personalDetails, skills, experience }
+  // Optional on purpose (plan 175): a missing or null list is none; anything else that is not a list is an error.
+  let education: EducationProposal[] = []
+  if (root.education !== undefined && root.education !== null) {
+    if (!Array.isArray(root.education)) throw new Error('expected "education" to be an array')
+    education = root.education.map((raw: unknown, i) => {
+      const path = `education[${i}]`
+      const obj = isRecord(raw) ? raw : {}
+      return {
+        ...parseProposalItem(raw, path),
+        institution: asString(obj.institution, `${path}.institution`),
+        degree: asString(obj.degree, `${path}.degree`),
+        fieldOfStudy: asString(obj.fieldOfStudy, `${path}.fieldOfStudy`),
+        startDate: asString(obj.startDate, `${path}.startDate`),
+        endDate: asString(obj.endDate, `${path}.endDate`),
+        description: asString(obj.description, `${path}.description`),
+      }
+    })
+  }
+
+  return { profile, persona, personalDetails, skills, experience, education }
 }

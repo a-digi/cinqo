@@ -103,6 +103,10 @@ func validate(in Input) error {
 	return nil
 }
 
+// CheckInput is the check every entry passes before it is written (an institution, valid dates, the end not before the start), on its
+// own: the CV import uses it to refuse a wrong proposed entry when the AI hands it over, so the AI can correct it (plan 175).
+func CheckInput(in Input) error { return validate(clean(in)) }
+
 func clean(in Input) Input {
 	return Input{
 		Institution:  strings.TrimSpace(in.Institution),

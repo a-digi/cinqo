@@ -3,12 +3,14 @@
 // every call here already existed before Import CV. See
 // plan/ai/tools/career/import-cv/step-07-insert-selected-items.md.
 import {
+  addEducation,
   addProfileExperience,
   addProfileSkill,
   createPersona,
   createProfile,
   fetchPersonaExperienceView,
   fetchPersonaSkillsView,
+  fetchEducation,
   fetchPersonas,
   fetchProfileDetails,
   fetchProfileExperience,
@@ -20,12 +22,15 @@ import {
   updateProfileDetails,
 } from '../../api'
 import { hasChanges, importDetailsPlan } from '../GoalsPage/goalsRules'
+import { educationInputOf, educationLabel, findEducation, ALREADY_THERE } from './educationInsertRules'
 import { addedEntryId, findEntry, findSkill, mergeIds, mergeUses } from './libraryInsertRules'
 import type { CVImportProposal } from './parseProposal'
 
 export interface ItemResult {
   ok: boolean
   error?: string
+  // Something to say besides "inserted" (an education entry the profile already had).
+  note?: string
 }
 
 export interface InsertResult {
@@ -34,6 +39,8 @@ export interface InsertResult {
   personalDetails?: ItemResult
   skills: (ItemResult & { index: number; value: string })[]
   experience: (ItemResult & { index: number; label: string })[]
+  // Missing in a summary stored before education existed.
+  education: (ItemResult & { index: number; label: string })[]
 }
 
 export interface InsertOptions {
@@ -76,7 +83,7 @@ export async function insertSelected(
   checked: Record<string, boolean>,
   options: InsertOptions,
 ): Promise<InsertResult & { profileId: string | null; personaId: string | null }> {
-  const result: InsertResult = { skills: [], experience: [] }
+  const result: InsertResult = { skills: [], experience: [], education: [] }
 
   let profileId: string | null = options.resolvedProfileId
   if (profileId === null) {
@@ -235,6 +242,27 @@ export async function insertSelected(
         ? { index: row.index, label: row.label, ok: true }
         : { index: row.index, label: row.label, ok: false, error: failure },
     )
+  }
+
+  // Plan 175: education belongs to the PROFILE (the persona's own, as for the library items); an entry the profile already has is not added
+  // again (the row says so), a refused entry (the server checks it again) is a row error and does not stop the others.
+  for (const [i, e] of proposal.education.entries()) {
+    if (!checked[`education-${String(i)}`]) continue
+    const label = educationLabel(e)
+    if (libraryProfileId === null) {
+      result.education.push({ index: i, label, ok: false, error: 'no profile to attach to' })
+      continue
+    }
+    try {
+      if (findEducation(await fetchEducation(libraryProfileId), e)) {
+        result.education.push({ index: i, label, ok: true, note: ALREADY_THERE })
+        continue
+      }
+      await addEducation(libraryProfileId, educationInputOf(e))
+      result.education.push({ index: i, label, ok: true })
+    } catch (err) {
+      result.education.push({ index: i, label, ok: false, error: message(err) })
+    }
   }
 
   return { ...result, profileId, personaId }

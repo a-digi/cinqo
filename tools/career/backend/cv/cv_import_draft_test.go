@@ -290,7 +290,7 @@ func TestTheManifestDeclaresEveryImportTool(t *testing.T) {
 	for _, tool := range m.MCPTools {
 		scopes[tool.Name] = tool.RequiredScope
 	}
-	for _, name := range []string{"suggest_cv_import", "cv_import_set", "cv_import_add_skills", "cv_import_add_experience", "cv_import_finish"} {
+	for _, name := range []string{"suggest_cv_import", "cv_import_set", "cv_import_add_skills", "cv_import_add_experience", "cv_import_add_education", "cv_import_finish"} {
 		if scopes[name] != "tool:career:cv_import" {
 			t.Errorf("manifest tool %s has scope %q, want tool:career:cv_import", name, scopes[name])
 		}

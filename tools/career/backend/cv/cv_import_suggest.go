@@ -17,6 +17,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"career-tool-backend/db"
+	"career-tool-backend/education"
 )
 
 // Limits on what the AI may hand over; a CV has no more than this, and a run that is out of range is a clear tool error the AI can
@@ -24,6 +25,7 @@ import (
 const (
 	MaxProposalSkills     = 200
 	MaxProposalExperience = 50
+	MaxProposalEducation  = 30
 	MaxProposalTextRunes  = 4000
 )
 
@@ -39,6 +41,8 @@ type Proposal struct {
 	PersonalDetails DetailsProposal      `json:"personalDetails" jsonschema:"the persona's summary and goals"`
 	Skills          []SkillProposal      `json:"skills" jsonschema:"the skills found in the CV"`
 	Experience      []ExperienceProposal `json:"experience" jsonschema:"the jobs found in the CV"`
+	// Education (plan 175) is optional: a CV without any sends none, and a proposal stored before it existed has none.
+	Education []EducationProposal `json:"education,omitempty" jsonschema:"the education found in the CV (schools, degrees, courses); leave it out when the CV has none"`
 }
 
 type ProfileProposal struct {
@@ -78,6 +82,19 @@ type ExperienceProposal struct {
 	Title               string  `json:"title"`
 	StartDate           string  `json:"startDate"`
 	EndDate             string  `json:"endDate"`
+	Description         string  `json:"description"`
+}
+
+// EducationProposal is one school, degree or course found in the CV (plan 175). Dates are YYYY, YYYY-MM or YYYY-MM-DD; an empty end date
+// means still studying there.
+type EducationProposal struct {
+	Action              string  `json:"action" jsonschema:"insert, or skip when not relevant or not confident"`
+	PossibleDuplicateOf *string `json:"possibleDuplicateOf" jsonschema:"the id of an existing education entry this matches (from list_education), otherwise null"`
+	Institution         string  `json:"institution"`
+	Degree              string  `json:"degree"`
+	FieldOfStudy        string  `json:"fieldOfStudy"`
+	StartDate           string  `json:"startDate" jsonschema:"YYYY, YYYY-MM or YYYY-MM-DD, or empty"`
+	EndDate             string  `json:"endDate" jsonschema:"YYYY, YYYY-MM or YYYY-MM-DD, or empty while still studying"`
 	Description         string  `json:"description"`
 }
 
@@ -173,11 +190,37 @@ func validateProposal(p Proposal) (Proposal, error) {
 			}
 		}
 	}
+	if len(p.Education) > MaxProposalEducation {
+		return Proposal{}, problem("education can have at most %d entries", MaxProposalEducation)
+	}
+	for i, e := range p.Education {
+		path := fmt.Sprintf("education[%d]", i)
+		if err := checkAction(path, e.Action); err != nil {
+			return Proposal{}, err
+		}
+		if err := checkDuplicate(path, e.PossibleDuplicateOf); err != nil {
+			return Proposal{}, err
+		}
+		for field, v := range map[string]string{"institution": e.Institution, "degree": e.Degree, "fieldOfStudy": e.FieldOfStudy, "startDate": e.StartDate, "endDate": e.EndDate, "description": e.Description} {
+			if err := checkText(path+"."+field, v); err != nil {
+				return Proposal{}, err
+			}
+		}
+		// An entry to insert must be one the profile accepts (the same check as adding it by hand); a skipped one is not inserted, so it may be incomplete.
+		if e.Action == actionInsert {
+			if err := education.CheckInput(education.Input{Institution: e.Institution, Degree: e.Degree, FieldOfStudy: e.FieldOfStudy, StartDate: e.StartDate, EndDate: e.EndDate, Description: e.Description}); err != nil {
+				return Proposal{}, problem("%s: %v (dates are YYYY, YYYY-MM or YYYY-MM-DD; leave the end date empty while still studying)", path, err)
+			}
+		}
+	}
 	if p.Skills == nil {
 		p.Skills = []SkillProposal{}
 	}
 	if p.Experience == nil {
 		p.Experience = []ExperienceProposal{}
+	}
+	if p.Education == nil {
+		p.Education = []EducationProposal{}
 	}
 	return p, nil
 }
@@ -253,7 +296,7 @@ func RegisterSuggestCVImport(server *mcp.Server) {
 		Name:        "suggest_cv_import",
 		Description: "Hand over the result of a CV analysis to the user, who then reviews it on the Import page. " +
 			"It creates no profile, persona, skill or experience. Call it ONCE, with the runId from the request and the whole proposal " +
-			"(profile, persona, personalDetails, skills, experience; each item with action insert or skip and possibleDuplicateOf). " +
+			"(profile, persona, personalDetails, skills, experience, and education when the CV has any; each item with action insert or skip and possibleDuplicateOf). " +
 			"Fails with a message when the run is unknown or no longer running, or when the proposal is not valid; correct it and call again.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args suggestCVImportArgs) (*mcp.CallToolResult, any, error) {
 		return suggestCVImport(args)

@@ -3,6 +3,7 @@
 import { isInitiallyChecked, type CVImportProposal } from './parseProposal'
 import type { InsertResult, ItemResult } from './insertProposal'
 import { experienceLabel } from './experienceLabel'
+import { educationLabel } from './educationInsertRules'
 
 // buildFullSaveSummary reconstructs the InsertResult shape
 // cv_import_runs.go's own save_summary_json stores, from this
@@ -17,6 +18,8 @@ export function buildFullSaveSummary(
   p: CVImportProposal,
   insertedKeys: Record<string, boolean>,
   insertErrors: Record<string, string>,
+  // What a row says besides "inserted" (an entry the profile already had), by key.
+  insertedNotes: Record<string, string> = {},
 ): InsertResult {
   function itemResult(key: string): ItemResult | undefined {
     if (insertedKeys[key]) return { ok: true }
@@ -33,12 +36,19 @@ export function buildFullSaveSummary(
     const r = itemResult(`experience-${i}`)
     if (r) experience.push({ ...r, index: i, label: experienceLabel(e) })
   })
+  const education: (ItemResult & { index: number; label: string })[] = []
+  p.education.forEach((e, i) => {
+    const key = `education-${i}`
+    const r = itemResult(key)
+    if (r) education.push({ ...r, ...(insertedNotes[key] ? { note: insertedNotes[key] } : {}), index: i, label: educationLabel(e) })
+  })
   return {
     profile: itemResult('profile'),
     persona: itemResult('persona'),
     personalDetails: itemResult('personalDetails'),
     skills,
     experience,
+    education,
   }
 }
 
@@ -53,6 +63,9 @@ export function buildInitialChecked(p: CVImportProposal): Record<string, boolean
   })
   p.experience.forEach((e, i) => {
     checked[`experience-${i}`] = isInitiallyChecked(e)
+  })
+  p.education.forEach((e, i) => {
+    checked[`education-${i}`] = isInitiallyChecked(e)
   })
   return checked
 }

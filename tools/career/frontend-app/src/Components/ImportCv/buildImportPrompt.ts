@@ -1,7 +1,7 @@
 // buildImportPrompt.ts — the instruction the AI gets to analyse an uploaded CV (step 155). The CV is an opaque "media:<fileId>"
 // reference (never a fetchable URL: conversation/chat.go's invokeToolCall resolves it server-side before pdf_to_markdown runs).
 // The AI does NOT print its result: it hands the proposal over in small pieces (step 165) by calling cv_import_set,
-// cv_import_add_skills, cv_import_add_experience and cv_import_finish with the run id, which keep it on the run the page recorded
+// cv_import_add_skills, cv_import_add_experience, cv_import_add_education (plan 175) and cv_import_finish with the run id, which keep it on the run the page recorded
 // first, and its last message is one plain sentence. So the chat shows an instruction and a
 // "done", never a JSON object (the proposal's shape lives in the tool's own argument schema, not in this text). See
 // plan/ai/tools/career/step-155-cv-import-result-by-tool-not-chat.md and plan/ai/tools/career/import-cv/step-05-ai-analysis-kickoff-and-polling.md.
@@ -13,9 +13,11 @@ export const IMPORT_RUN_TOOLS = [
   'list_profiles',
   'list_personas',
   'get_persona_details',
+  'list_education',
   'cv_import_set',
   'cv_import_add_skills',
   'cv_import_add_experience',
+  'cv_import_add_education',
   'cv_import_finish',
 ] as const
 
@@ -23,21 +25,23 @@ export function buildImportPrompt(cvFileId: string, runId: string): string {
   return `You are helping import a CV into this user's career profile.
 
 1. Call pdf_to_markdown with url="media:${cvFileId}" to read the CV's text content. If it fails (for example "tool unavailable") or returns no text, call no other tool, propose nothing and reply only "Could not read the CV: " followed by what the tool said.
-2. Call list_profiles, list_personas, and get_persona_details (for each existing persona) to see what's already stored, so you can flag possible duplicates.
-3. Based on the CV text and the existing data, decide what to propose for Profile, Persona, Personal Details, Skills, and Experience.
-4. Hand the result over in SMALL pieces with runId ${runId}, never as one big call, and do not print it anywhere else: cv_import_set once each for section "profile", "persona" and "personalDetails" (value is an object); cv_import_add_skills with at most 30 skills per call; cv_import_add_experience with at most 5 jobs per call; then cv_import_finish once. If a tool answers with an error, correct only the piece it names and send that piece again.
+2. Call list_profiles, list_personas, get_persona_details (for each existing persona) and list_education (for each existing profile) to see what's already stored, so you can flag possible duplicates.
+3. Based on the CV text and the existing data, decide what to propose for Profile, Persona, Personal Details, Skills, Experience, and Education.
+4. Hand the result over in SMALL pieces with runId ${runId}, never as one big call, and do not print it anywhere else: cv_import_set once each for section "profile", "persona" and "personalDetails" (value is an object); cv_import_add_skills with at most 30 skills per call; cv_import_add_experience with at most 5 jobs per call; cv_import_add_education with at most 10 education entries per call, only when the CV has education (a CV without any: send none); then cv_import_finish once. If a tool answers with an error, correct only the piece it names and send that piece again.
 5. Then reply with ONE short plain sentence saying the analysis is done, for example "Done: the CV is analysed and the proposal is ready for review." Do not repeat, summarise or list the proposal, and use no JSON and no markdown.
 
-If you did read text and the document is not a CV (a form, a letter, an invoice, a certificate…), do not invent a person or a career: send profile, persona and personalDetails with action "skip" and empty texts, send no skills and no jobs, call cv_import_finish, and make your last sentence say that the document does not look like a CV.
+If you did read text and the document is not a CV (a form, a letter, an invoice, a certificate…), do not invent a person or a career: send profile, persona and personalDetails with action "skip" and empty texts, send no skills, no jobs and no education, call cv_import_finish, and make your last sentence say that the document does not look like a CV.
 
-Propose at most one persona for this run — do not propose several. Mark an item's action "skip" if it isn't relevant to this CV or you're not confident in it. Set possibleDuplicateOf when an item looks like it matches something already stored: for persona/experience use the existing item's own id; for a skill use the existing skill's own text; leave it null for profile/personalDetails and for anything with nothing to compare against.`
+Propose at most one persona for this run — do not propose several. Mark an item's action "skip" if it isn't relevant to this CV or you're not confident in it. Set possibleDuplicateOf when an item looks like it matches something already stored: for persona/experience use the existing item's own id; for a skill use the existing skill's own text; for education use the id of the matching entry from list_education; leave it null for profile/personalDetails and for anything with nothing to compare against.
+
+Education means schools, universities, degrees, certificates and courses (not jobs). For each entry send institution (required), degree, fieldOfStudy, startDate, endDate and a short description if the CV gives one. Dates must be exactly YYYY, YYYY-MM or YYYY-MM-DD (write "Sep 2010" as 2010-09); leave a date empty when the CV does not give it, and leave endDate empty for something still going on; the end is never before the start. Never invent education the CV does not state.`
 }
 
 // The follow-up message when an AI turn ended and the run still has no proposal (plan 165): a weak model stops after a refused piece,
 // or writes a tool call as plain text ("<tool_call>cv_import_set…"), which does nothing. The draft lives on the run, so the same
 // conversation simply continues; reason is the server's own answer (what is missing).
 export function buildContinuePrompt(runId: string, reason: string): string {
-  return `The import run ${runId} is still open and no proposal has been handed over yet (${reason.trim()}). Your last message did not hand over what is missing: either you wrote a tool call as text, which does nothing, or you stopped early. Continue now by calling the tools themselves, never by writing a tool call as text: send what is still missing with cv_import_set, cv_import_add_skills or cv_import_add_experience (what was already accepted is kept), then call cv_import_finish. After that reply with ONE short plain sentence and no JSON.`
+  return `The import run ${runId} is still open and no proposal has been handed over yet (${reason.trim()}). Your last message did not hand over what is missing: either you wrote a tool call as text, which does nothing, or you stopped early. Continue now by calling the tools themselves, never by writing a tool call as text: send what is still missing with cv_import_set, cv_import_add_skills, cv_import_add_experience or cv_import_add_education (what was already accepted is kept), then call cv_import_finish. After that reply with ONE short plain sentence and no JSON.`
 }
 
 // The tool names a prompt mentions (snake_case words, in the order they first appear): the check script compares them with

@@ -625,7 +625,7 @@ export const PAGE_TIPS: Record<PageTipsId, PageTipSet> = {
         title: 'Let the AI read your CV',
         tone: 'blue',
         icon: 'upload',
-        text: 'Upload a CV and the AI proposes a profile, a persona, a summary, skills and experience from it.',
+        text: 'Upload a CV and the AI proposes a profile, a persona, a summary, skills, experience and education from it.',
       },
       {
         id: 'review',
@@ -634,6 +634,14 @@ export const PAGE_TIPS: Record<PageTipsId, PageTipSet> = {
         tone: 'green',
         icon: 'check',
         text: 'Nothing is saved until you have reviewed it. The AI’s proposal is only a draft.',
+      },
+      {
+        id: 'education',
+        label: 'Education',
+        title: 'Schools and degrees too',
+        tone: 'teal',
+        icon: 'details',
+        text: 'The review has an Education card. Entries go to the profile, and one the profile already has is not added again.',
       },
       {
         id: 'existing',
