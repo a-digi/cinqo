@@ -60,6 +60,7 @@ import (
 	"career-tool-backend/profileimage"
 	"career-tool-backend/profileitems"
 	"career-tool-backend/profilejobmatchconsumer"
+	"career-tool-backend/recruiterdeletedconsumers"
 	"career-tool-backend/recruiters"
 	"career-tool-backend/rematchworker"
 	"career-tool-backend/settings"
@@ -275,6 +276,8 @@ func runHTTPServer() {
 	http.HandleFunc("/events/job-deleted-company", jobdeletedconsumers.CompanyDeleteHandler)
 	http.HandleFunc("/events/job-deleted-persona-matches", jobdeletedconsumers.PersonaMatchJobDeletedHandler)
 	http.HandleFunc("/events/company-deleted-comments", companydeletedconsumers.CompanyCommentsDeleteHandler)
+	// Plan 168, step 7: the comments of a deleted recruiter.
+	http.HandleFunc("/events/recruiter-deleted-comments", recruiterdeletedconsumers.RecruiterCommentsDeleteHandler)
 	http.HandleFunc("/jobs/match/unmatched", jobmatchconsumer.MatchNowHandler)
 	http.HandleFunc("/cv-import/upload", cv.UploadCVHandler)
 	http.HandleFunc("/cv-import/runs", cv.CVImportRunsHandler)

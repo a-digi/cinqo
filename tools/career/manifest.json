@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.0.663",
+  "version": "0.0.664",
   "authors": [
     { "name": "Anes Detit", "email": "tafa.andet@googlemail.com" }
   ],
@@ -1177,6 +1177,10 @@
     {
       "topic": "career.company.deleted",
       "path_suffix": "events/company-deleted-comments"
+    },
+    {
+      "topic": "career.recruiter.deleted",
+      "path_suffix": "events/recruiter-deleted-comments"
     }
   ],
   "widgets": [
@@ -1224,6 +1228,11 @@
     },
     {
       "entity_type": "company",
+      "read_scope": "tool:career:companies",
+      "write_scope": "tool:career:companies"
+    },
+    {
+      "entity_type": "recruiter",
       "read_scope": "tool:career:companies",
       "write_scope": "tool:career:companies"
     }

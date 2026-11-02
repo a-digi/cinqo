@@ -17,13 +17,15 @@ import (
 )
 
 // The entity types this tool declares in manifest.json's "comments" (the frontend spells them in
-// Shared/Comments/commentTypes.ts): keep the four in step.
+// Shared/Comments/commentTypes.ts): keep them in step.
 const (
 	JobType     = "job"
 	ProfileType = "profile"
 	PersonaType = "persona"
 	CvType      = "cv"
 	CompanyType = "company"
+	// RecruiterType (plan 168, step 7): the comments about a recruiter, read and written with the companies scopes.
+	RecruiterType = "recruiter"
 )
 
 // Entity is one thing whose comments are to be purged.

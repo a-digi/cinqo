@@ -324,9 +324,18 @@ func UpdateRecruiter(id string, firstName, lastName, email *string) error {
 	return err
 }
 
+// DeleteRecruiter removes a recruiter (its company links and job mappings go with it). When a row was really removed,
+// "career.recruiter.deleted" is announced (plan 168, step 7) so the comments about the recruiter go too; an unknown id removes
+// nothing and announces nothing.
 func DeleteRecruiter(id string) error {
-	_, err := db.JobsDB.Exec(`DELETE FROM recruiters WHERE id = ?`, id)
-	return err
+	res, err := db.JobsDB.Exec(`DELETE FROM recruiters WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		PublishRecruiterDeleted(id)
+	}
+	return nil
 }
 
 // --- MCP registration ---

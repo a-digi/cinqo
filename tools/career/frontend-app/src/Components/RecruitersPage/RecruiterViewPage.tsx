@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { fetchRecruiterJobs, fetchRecruiters, unmapJobRecruiter, type Recruiter, type RecruiterJob } from '../../api'
+import { Comments } from '../../Shared/Comments/Comments'
+import { COMMENT_TYPE_RECRUITER } from '../../Shared/Comments/commentTypes'
 import { UsersIcon } from '../../Shared/Icons/icons'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { AppLink } from '../../Shared/AppLink/AppLink'
@@ -186,6 +188,8 @@ export function RecruiterViewPage() {
           </div>
         </section>
       </div>
+
+      <Comments entityType={COMMENT_TYPE_RECRUITER} entityId={recruiter.id} />
     </div>
   )
 }
