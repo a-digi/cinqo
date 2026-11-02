@@ -216,3 +216,57 @@ func TestOtherMethodsAreRefused(t *testing.T) {
 		t.Errorf("%d", rec.Code)
 	}
 }
+
+// ---- GET one run (plan 166) ----
+
+func TestGetByIdReturnsThatRunAndTheListIsUnchanged(t *testing.T) {
+	setup(t)
+	first := createViaAPI(t, `{"fileId":"m1","originalFilename":"a.pdf","conversationId":"c1","aiProposal":{"profile":{"action":"insert"}}}`)
+	second := createViaAPI(t, `{"fileId":"m2","originalFilename":"b.pdf","conversationId":"c2"}`)
+
+	rec := call(http.MethodGet, "/cv-import/runs?id="+first, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	run := decode(t, rec)["run"].(map[string]any)
+	if run["id"] != first || run["originalFilename"] != "a.pdf" || run["status"] != "ready" || run["aiProposal"] == nil {
+		t.Errorf("run %v", run)
+	}
+	if _, has := decode(t, call(http.MethodGet, "/cv-import/runs?id="+first, ""))["runs"]; has {
+		t.Error("a read by id answered with the list")
+	}
+	other := decode(t, call(http.MethodGet, "/cv-import/runs?id="+second, ""))["run"].(map[string]any)
+	if other["id"] != second || other["status"] != "generating" {
+		t.Errorf("second run %v", other)
+	}
+
+	list := decode(t, call(http.MethodGet, "/cv-import/runs", ""))["runs"].([]any)
+	if len(list) != 2 {
+		t.Errorf("the list has %d runs, want 2", len(list))
+	}
+}
+
+func TestGetByIdRefusesAnUnknownOrMalformedId(t *testing.T) {
+	setup(t)
+	createViaAPI(t, `{"fileId":"m1","originalFilename":"a.pdf","conversationId":"c1"}`)
+	for target, want := range map[string]int{
+		"/cv-import/runs?id=" + "5d1c9a0e-3f43-4b64-9a63-0d3f3b1c9a11": http.StatusNotFound,
+		"/cv-import/runs?id=not-a-uuid":                                http.StatusBadRequest,
+		"/cv-import/runs?id=%27%20OR%201%3D1%20--":                     http.StatusBadRequest,
+	} {
+		if rec := call(http.MethodGet, target, ""); rec.Code != want {
+			t.Errorf("%s: %d %q, want %d", target, rec.Code, rec.Body.String(), want)
+		}
+	}
+}
+
+func TestGetByIdSeesADeletedRunAsUnknown(t *testing.T) {
+	setup(t)
+	id := createViaAPI(t, `{"fileId":"m1","originalFilename":"a.pdf","conversationId":"c1"}`)
+	if _, err := deleteCVImportRun(id); err != nil {
+		t.Fatal(err)
+	}
+	if rec := call(http.MethodGet, "/cv-import/runs?id="+id, ""); rec.Code != http.StatusNotFound {
+		t.Errorf("%d", rec.Code)
+	}
+}

@@ -56,11 +56,13 @@ import { CrawlMonitorPage } from './Crawler/CrawlMonitor/CrawlMonitorPage'
 import { CleanupSettingsPage } from './Components/SettingsPage/CleanupSettingsPage'
 import { CrawlerSettingsPage } from './Components/SettingsPage/CrawlerSettingsPage'
 import { SettingsPage } from './Components/SettingsPage/SettingsPage'
+import { ImportRunPage } from './Components/ImportCv/ImportRunPage'
 import { ImportCvPage } from './Components/ImportCv/ImportCvPage'
 import './index.css'
 import { careerMenuEntry } from './menu'
 import {
   IMPORT_CV_PATH,
+  IMPORT_CV_RUN_PATH,
   PROFILES_PATH,
   PERSONAS_PATH,
   PERSONAS_PROFILE_PATH,
@@ -121,6 +123,14 @@ window.__cinqoToolBridge.registerRoute({
   path: IMPORT_CV_PATH,
   mount: (container) => {
     mountReact(container, <ImportCvPage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: IMPORT_CV_RUN_PATH,
+  mount: (container, params) => {
+    mountReact(container, <ImportRunPage runId={params.runId} />)
   },
   unmount: unmountReact,
 })

@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/google/uuid"
 	"io"
 	"log"
 	"mime/multipart"
@@ -194,10 +195,27 @@ func noRawJSON(raw json.RawMessage) bool {
 	return len(t) == 0 || string(t) == "null"
 }
 
-// CVImportRunsHandler handles GET/POST/PUT/DELETE cv-import/runs.
+// CVImportRunsHandler handles GET/POST/PUT/DELETE cv-import/runs; GET takes an optional ?id= for one run.
 func CVImportRunsHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
+		// One run by id (plan 166): the page of a single import opens on its own URL.
+		if id := r.URL.Query().Get("id"); id != "" {
+			if _, err := uuid.Parse(id); err != nil {
+				http.Error(w, "id must be a uuid", http.StatusBadRequest)
+				return
+			}
+			run, err := getCVImportRun(id)
+			switch {
+			case errors.Is(err, errUnknownCVImportRun):
+				http.Error(w, "unknown cv import run id", http.StatusNotFound)
+			case err != nil:
+				http.Error(w, "failed to read cv import run: "+err.Error(), http.StatusInternalServerError)
+			default:
+				db.WriteJSON(w, map[string]any{"run": run})
+			}
+			return
+		}
 		runs, err := listCVImportRuns()
 		if err != nil {
 			http.Error(w, "failed to list cv import runs: "+err.Error(), http.StatusInternalServerError)

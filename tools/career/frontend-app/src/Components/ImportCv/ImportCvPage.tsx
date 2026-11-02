@@ -4,14 +4,12 @@ import {
   fetchCVImportRuns,
   createCVImportRun,
   finishCVImportRun,
-  updateCVImportRunSaveSummary,
   deleteCVImportRun,
   type CVUploadResult,
   type CVImportRun,
 } from '../../api'
 import { createConversation, sendMessage } from '../../Cinqo/Conversation/conversation'
 import { useAiChoice } from '../../Cinqo/Platform/useAiChoice'
-import { Dropdown } from '../Dropdown/Dropdown'
 import { PDFIcon, UploadIcon } from '../../Shared/Icons/icons'
 import { cardClassName, cardStyle } from '../../Shared/cardStyle'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
@@ -19,16 +17,11 @@ import { plural } from '../CompaniesPage/companyStats'
 import { IMPORT_RUN_TOOLS, buildImportPrompt } from './buildImportPrompt'
 import { RESTRICTION_NOT_APPLIED_MESSAGE, restrictionHolds } from '../../PersonaAi/personaTools'
 import { analyseCv } from './analysisFlow'
-import { canViewRun, runBadge } from './runStatusRules'
-import { parseProposal, isInitiallyChecked, type CVImportProposal, type ProposalItem } from './parseProposal'
-import { resolveDuplicateLabels, type DuplicateLabels } from './resolveDuplicateLabels'
-import { insertSelected, type InsertResult, type ItemResult } from './insertProposal'
-import { ProposalRow } from './ProposalRow'
-import { ImportRunDetail } from './ImportRunDetail'
+import { runBadge } from './runStatusRules'
+import { importCvRunPathFor } from '../../paths'
 import { FailureNotice } from './FailureNotice'
 import { ImportPipeline } from './ImportPipeline'
 import { pipelineStages } from './pipelineRules'
-import { experienceLabel } from './experienceLabel'
 import { PageTips } from '../../Shared/PageTips/PageTips'
 
 // The 5 areas a CV import populates — Profile/Personas/Personal
@@ -37,68 +30,12 @@ import { PageTips } from '../../Shared/PageTips/PageTips'
 // plan/ai/tools/career/import-cv/step-04-import-cv-page-and-menu-entry.md.
 const AREAS = ['Profile', 'Personas', 'Personal Details', 'Skills', 'Experience'] as const
 
-type PageState = 'upload' | 'analyzing' | 'review' | 'error'
+type PageState = 'upload' | 'analyzing' | 'error'
 
-// buildFullSaveSummary reconstructs the InsertResult shape
-// cv_import_runs.go's own save_summary_json stores, from this
-// component's own accumulated insertedKeys/insertErrors state — not
-// from insertSelected's own per-call return value, which only ever
-// covers items attempted in THAT call. Takes the two maps as explicit
-// params (not read from component state) so a caller can pass the
-// just-computed next state before it's actually committed via
-// setState — React state updates aren't synchronously readable
-// immediately after being requested.
-function buildFullSaveSummary(
-  p: CVImportProposal,
-  insertedKeys: Record<string, boolean>,
-  insertErrors: Record<string, string>,
-): InsertResult {
-  function itemResult(key: string): ItemResult | undefined {
-    if (insertedKeys[key]) return { ok: true }
-    if (insertErrors[key]) return { ok: false, error: insertErrors[key] }
-    return undefined
-  }
-  const skills: (ItemResult & { index: number; value: string })[] = []
-  p.skills.forEach((s, i) => {
-    const r = itemResult(`skill-${i}`)
-    if (r) skills.push({ ...r, index: i, value: s.value })
-  })
-  const experience: (ItemResult & { index: number; label: string })[] = []
-  p.experience.forEach((e, i) => {
-    const r = itemResult(`experience-${i}`)
-    if (r) experience.push({ ...r, index: i, label: experienceLabel(e) })
-  })
-  return {
-    profile: itemResult('profile'),
-    persona: itemResult('persona'),
-    personalDetails: itemResult('personalDetails'),
-    skills,
-    experience,
-  }
-}
-
-function buildInitialChecked(p: CVImportProposal): Record<string, boolean> {
-  const checked: Record<string, boolean> = {
-    profile: isInitiallyChecked(p.profile),
-    persona: isInitiallyChecked(p.persona),
-    personalDetails: isInitiallyChecked(p.personalDetails),
-  }
-  p.skills.forEach((s, i) => {
-    checked[`skill-${i}`] = isInitiallyChecked(s)
-  })
-  p.experience.forEach((e, i) => {
-    checked[`experience-${i}`] = isInitiallyChecked(e)
-  })
-  return checked
-}
-
-// Import CV's own page — upload a CV PDF, then an AI conversation
-// reads it via pdf_tools and proposes entries for the 5 areas above
-// (step 5), reviewed here as a checklist (step 6) before inserting
-// (step 7, not yet wired — "Insert" comes next). The conversation
-// created here is a normal, visible one (not hidden) — the user gets a
-// full, inspectable transcript of why the AI proposed what it
-// proposed, per the plan's own decision.
+// Import CV's own page — upload a CV PDF (or process an earlier one again) and the import history. The analysis itself starts here:
+// an AI conversation reads the file and hands a proposal over (step 5). As soon as the run is recorded the page moves to the run's
+// own URL (ImportRunPage, plan 166), where the analysis is waited for and the proposal is reviewed (ImportReview) and inserted.
+// The conversation is a normal, visible one (not hidden): the user gets a full, inspectable transcript.
 export function ImportCvPage() {
   const [state, setState] = useState<PageState>('upload')
   const [file, setFile] = useState<File | null>(null)
@@ -107,9 +44,6 @@ export function ImportCvPage() {
   const [error, setError] = useState('')
   const [uploadResult, setUploadResult] = useState<CVUploadResult | null>(null)
   const [conversationId, setConversationId] = useState<string | null>(null)
-  // The cv_import_runs row for the CURRENTLY in-progress analysis (recorded as "generating" before the AI is asked, step 155) —
-  // handleInsert persists its own save summary onto this id after every attempt.
-  const [currentRunId, setCurrentRunId] = useState<string | null>(null)
   // Import history — every past analysis (AI proposal + eventual save
   // outcome), newest first. Deletable, viewable read-only, and
   // reprocessable (re-runs the AI against the same underlying upload,
@@ -119,40 +53,10 @@ export function ImportCvPage() {
   // it. A plain state field, not a route — this page has no router of
   // its own (main.tsx's own top-level menu paths are the only routes
   // this tool declares).
-  const [viewingRun, setViewingRun] = useState<CVImportRun | null>(null)
   const [runActionError, setRunActionError] = useState('')
   // The AI's last message (one plain sentence since step 155: the proposal itself arrives through the suggest_cv_import tool) —
   // kept so the 'error' state can still show it if the analysis fails.
   const [rawReply, setRawReply] = useState('')
-  const [proposal, setProposal] = useState<CVImportProposal | null>(null)
-  const [duplicateLabels, setDuplicateLabels] = useState<DuplicateLabels | null>(null)
-  const [checked, setChecked] = useState<Record<string, boolean>>({})
-
-  // Required only when the persona row is unchecked — the gap
-  // resolution step 7's own design calls for: Personal Details/Skills/
-  // Experience all need a real personaId, so unchecking the proposed
-  // persona (skip, or a possible duplicate the user doesn't want to
-  // re-create) means picking which existing one to attach to instead.
-  // Pre-filled from the AI's own possibleDuplicateOf guess when it
-  // named one, otherwise left for the user to pick.
-  const [existingPersonaId, setExistingPersonaId] = useState<string | null>(null)
-  // Set once resolved (by creation or by falling back to an existing
-  // one) so a retry of "Insert" never creates a second profile/persona
-  // for the same review session — insertSelected itself skips
-  // re-resolving once these are non-null.
-  const [resolvedProfileId, setResolvedProfileId] = useState<string | null>(null)
-  const [resolvedPersonaId, setResolvedPersonaId] = useState<string | null>(null)
-  // Which exact checklist rows have already been successfully
-  // inserted — persists across multiple "Insert" clicks (a retry only
-  // re-attempts rows that are checked AND not yet in this set), and
-  // locks each such row's own checkbox (ProposalRow's own `done` prop).
-  const [insertedKeys, setInsertedKeys] = useState<Record<string, boolean>>({})
-  // Per-key error from the most recent insert attempt — cleared for
-  // any key that succeeds, replaced for one that fails again.
-  const [insertErrors, setInsertErrors] = useState<Record<string, string>>({})
-  const [inserting, setInserting] = useState(false)
-  const [insertValidationError, setInsertValidationError] = useState('')
-
   // The AI platform and model are the one saved setting for the whole tool
   // (Career ▸ Settings). Import CV is a one-shot, fully automatic flow, so it never
   // shows a picker; handleUpload surfaces "no platform" as a real error if there is none.
@@ -210,7 +114,7 @@ export function ImportCvPage() {
         throw new Error('No AI platform is configured — ask an admin to add one under Platforms.')
       }
       const model = ai.model ?? undefined
-      const stored = await analyseCv({
+      await analyseCv({
         startConversation: async () => {
           // The AI may only use the tools an import needs: the server enforces it, not just the prompt. Unrestricted, a weak model
           // called create_profile with an invented name and wrote it into the user's data (plan 165).
@@ -228,28 +132,13 @@ export function ImportCvPage() {
           (await sendMessage(conversationId, followUp ?? buildImportPrompt(fileId, runId))).content,
         endRun: finishCVImportRun,
         onConversation: setConversationId,
-        onRun: setCurrentRunId,
+        // The run exists: its own page takes over from here (the analysis goes on and ends the run; the page polls it).
+        onRun: (runId) => {
+          window.__cinqoToolBridge.navigate(importCvRunPathFor(runId))
+        },
         onReply: setRawReply,
         onRunsChanged: loadRuns,
       })
-
-      const parsed = parseProposal(stored)
-      const labels = await resolveDuplicateLabels()
-      const initialChecked = buildInitialChecked(parsed)
-
-      setProposal(parsed)
-      setDuplicateLabels(labels)
-      setChecked(initialChecked)
-      // Pre-fill the "existing persona" picker when the persona row
-      // starts unchecked and the AI named a real, still-existing
-      // possible duplicate — saves the user re-picking what the AI
-      // already identified. Left empty otherwise (the user must pick).
-      if (!initialChecked.persona && parsed.persona.possibleDuplicateOf) {
-        const guess = parsed.persona.possibleDuplicateOf
-        if (labels.personaList.some((p) => p.id === guess)) setExistingPersonaId(guess)
-      }
-
-      setState('review')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
       setState('error')
@@ -288,86 +177,8 @@ export function ImportCvPage() {
     try {
       await deleteCVImportRun(run.id)
       setRuns((prev) => (prev ? prev.filter((r) => r.id !== run.id) : prev))
-      if (viewingRun?.id === run.id) setViewingRun(null)
     } catch (err) {
       setRunActionError(err instanceof Error ? err.message : String(err))
-    }
-  }
-
-  function toggle(key: string) {
-    setChecked((prev) => ({ ...prev, [key]: !prev[key] }))
-  }
-
-  async function handleInsert() {
-    if (!proposal) return
-    setInsertValidationError('')
-
-    const effectiveChecked: Record<string, boolean> = {}
-    for (const key of Object.keys(checked)) {
-      effectiveChecked[key] = checked[key] && !insertedKeys[key]
-    }
-
-    const needsExistingPersona = !effectiveChecked.persona && resolvedPersonaId === null && !insertedKeys.persona
-    if (needsExistingPersona && !existingPersonaId) {
-      setInsertValidationError('Select an existing persona, or check the proposed one above, before inserting.')
-      return
-    }
-
-    setInserting(true)
-    try {
-      const { profileId, personaId, ...result } = await insertSelected(proposal, effectiveChecked, {
-        existingPersonaId,
-        resolvedProfileId,
-        resolvedPersonaId,
-      })
-      setResolvedProfileId(profileId)
-      setResolvedPersonaId(personaId)
-
-      // Computed as plain local values (not via setState's own
-      // functional-updater form) because buildFullSaveSummary below
-      // needs the just-computed NEXT state immediately — a React state
-      // update isn't synchronously readable right after being
-      // requested.
-      const nextInsertedKeys = { ...insertedKeys }
-      if (result.profile?.ok) nextInsertedKeys.profile = true
-      if (result.persona?.ok) nextInsertedKeys.persona = true
-      if (result.personalDetails?.ok) nextInsertedKeys.personalDetails = true
-      result.skills.forEach((s) => {
-        if (s.ok) nextInsertedKeys[`skill-${s.index}`] = true
-      })
-      result.experience.forEach((e) => {
-        if (e.ok) nextInsertedKeys[`experience-${e.index}`] = true
-      })
-      setInsertedKeys(nextInsertedKeys)
-
-      const nextInsertErrors = { ...insertErrors }
-      const apply = (key: string, r?: { ok: boolean; error?: string }) => {
-        if (!r) return
-        // '' clears a stale error from a previous failed attempt —
-        // ProposalRow only renders errorMessage when truthy, so this
-        // reads identically to "no error" without a dynamic delete.
-        nextInsertErrors[key] = r.ok ? '' : (r.error ?? '')
-      }
-      apply('profile', result.profile)
-      apply('persona', result.persona)
-      apply('personalDetails', result.personalDetails)
-      result.skills.forEach((s) => {
-        apply(`skill-${s.index}`, s)
-      })
-      result.experience.forEach((e) => {
-        apply(`experience-${e.index}`, e)
-      })
-      setInsertErrors(nextInsertErrors)
-
-      if (currentRunId) {
-        const summary = buildFullSaveSummary(proposal, nextInsertedKeys, nextInsertErrors)
-        updateCVImportRunSaveSummary(currentRunId, summary).catch(() => {
-          // Non-fatal — the actual insert already succeeded; losing the
-          // history record of it shouldn't error the user's own review.
-        })
-      }
-    } finally {
-      setInserting(false)
     }
   }
 
@@ -377,29 +188,12 @@ export function ImportCvPage() {
     setFileName('')
     setUploadResult(null)
     setConversationId(null)
-    setCurrentRunId(null)
     setRawReply('')
-    setProposal(null)
-    setDuplicateLabels(null)
-    setChecked({})
-    setExistingPersonaId(null)
-    setResolvedProfileId(null)
-    setResolvedPersonaId(null)
-    setInsertedKeys({})
-    setInsertErrors({})
-    setInsertValidationError('')
     setError('')
   }
 
   function viewTranscript() {
     if (conversationId) window.__cinqoToolBridge.openConversation(conversationId)
-  }
-
-  function resolvedLabelFor(item: ProposalItem, kind: 'persona' | 'experience' | 'skill'): string | undefined {
-    if (item.possibleDuplicateOf === null) return undefined
-    if (kind === 'skill') return item.possibleDuplicateOf
-    if (!duplicateLabels) return undefined
-    return kind === 'persona' ? duplicateLabels.personas[item.possibleDuplicateOf] : duplicateLabels.experience[item.possibleDuplicateOf]
   }
 
   // The header's pill is the history count; where the import is lives in the pipeline.
@@ -408,9 +202,9 @@ export function ImportCvPage() {
     state,
     uploadError: state === 'upload' && error !== '',
     uploading,
-    inserting,
-    insertedCount: Object.values(insertedKeys).filter(Boolean).length,
-    insertErrorCount: Object.values(insertErrors).filter(Boolean).length,
+    inserting: false,
+    insertedCount: 0,
+    insertErrorCount: 0,
   })
 
   return (
@@ -424,9 +218,9 @@ export function ImportCvPage() {
       {/* Steps 105 to 108: the tips sit in a column of their own beside the page (under it on a narrow window). */}
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
         <div className="order-1 min-w-0 flex-1 lg:order-2">
-          {!viewingRun && <ImportPipeline stages={stages} onStartOver={startOver} />}
+          <ImportPipeline stages={stages} onStartOver={startOver} />
 
-          {state === 'upload' && !viewingRun && (
+          {state === 'upload' && (
             <section className={`career-enter career-delay-1 ${cardClassName}`} style={cardStyle}>
               <div
                 role="button"
@@ -486,7 +280,7 @@ export function ImportCvPage() {
             </section>
           )}
 
-          {state === 'upload' && !viewingRun && runs !== null && runs.length > 0 && (
+          {state === 'upload' && runs !== null && runs.length > 0 && (
             <section className={`career-enter career-delay-2 mt-4 ${cardClassName}`} style={cardStyle}>
               <h2 className="mb-2 text-sm font-semibold text-gray-900">Import history</h2>
               <div className="mb-2 min-h-[1.2em] text-sm text-red-700">{runActionError}</div>
@@ -496,7 +290,16 @@ export function ImportCvPage() {
                   return (
                     <li key={run.id} className="flex flex-wrap items-center justify-between gap-3 py-2 text-sm">
                       <div className="min-w-0">
-                        <p className="truncate text-gray-700">{run.originalFilename}</p>
+                        <a
+                          href={importCvRunPathFor(run.id)}
+                          onClick={(e) => {
+                            e.preventDefault()
+                            window.__cinqoToolBridge.navigate(importCvRunPathFor(run.id))
+                          }}
+                          className="block truncate text-gray-700 hover:text-blue-700 hover:underline"
+                        >
+                          {run.originalFilename}
+                        </a>
                         <p className="text-xs text-gray-400">{new Date(run.createdAt).toLocaleString()}</p>
                       </div>
                       <div className="flex shrink-0 items-center gap-3">
@@ -508,17 +311,16 @@ export function ImportCvPage() {
                             {badge.label}
                           </span>
                         )}
-                        {canViewRun(run) && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setViewingRun(run)
-                            }}
-                            className="rounded-full border border-blue-200 px-3 py-1 text-xs text-blue-700 hover:bg-blue-50"
-                          >
-                            View
-                          </button>
-                        )}
+                        <a
+                          href={importCvRunPathFor(run.id)}
+                          onClick={(e) => {
+                            e.preventDefault()
+                            window.__cinqoToolBridge.navigate(importCvRunPathFor(run.id))
+                          }}
+                          className="rounded-full border border-blue-200 px-3 py-1 text-xs text-blue-700 hover:bg-blue-50"
+                        >
+                          Open
+                        </a>
                         <button
                           type="button"
                           onClick={() => {
@@ -550,15 +352,6 @@ export function ImportCvPage() {
             </section>
           )}
 
-          {state === 'upload' && viewingRun && (
-            <ImportRunDetail
-              run={viewingRun}
-              onClose={() => {
-                setViewingRun(null)
-              }}
-            />
-          )}
-
           {state === 'analyzing' && (
             <div className="career-stagger space-y-4">
               <p className="text-sm text-gray-500">
@@ -578,135 +371,6 @@ export function ImportCvPage() {
                   <h2 className="text-base font-semibold text-gray-900">{area}</h2>
                 </section>
               ))}
-            </div>
-          )}
-
-          {state === 'review' && proposal && (
-            <div className="career-stagger space-y-4">
-              <p className="text-sm text-gray-500">Reviewed “{fileName}”</p>
-              {conversationId && (
-                <p className="text-xs text-gray-400">
-                  AI conversation:{' '}
-                  <button type="button" onClick={viewTranscript} className="underline hover:text-gray-600">
-                    view transcript
-                  </button>
-                </p>
-              )}
-
-              <section className={cardClassName} style={cardStyle}>
-                <h2 className="mb-2 text-base font-semibold text-gray-900">Profile</h2>
-                <ProposalRow
-                  item={proposal.profile}
-                  label={proposal.profile.name || '(no name proposed)'}
-                  checked={checked.profile}
-                  onToggle={() => {
-                    toggle('profile')
-                  }}
-                  done={insertedKeys.profile}
-                  errorMessage={insertErrors.profile}
-                />
-                {!checked.profile && !insertedKeys.profile && (
-                  <p className="mt-2 text-xs text-gray-400">Will attach to your existing profile instead of creating a new one.</p>
-                )}
-              </section>
-
-              <section className={cardClassName} style={cardStyle}>
-                <h2 className="mb-2 text-base font-semibold text-gray-900">Personas</h2>
-                <ProposalRow
-                  item={proposal.persona}
-                  label={[proposal.persona.name, proposal.persona.title].filter(Boolean).join(' — ') || '(no persona proposed)'}
-                  resolvedDuplicateLabel={resolvedLabelFor(proposal.persona, 'persona')}
-                  checked={checked.persona}
-                  onToggle={() => {
-                    toggle('persona')
-                  }}
-                  done={insertedKeys.persona}
-                  errorMessage={insertErrors.persona}
-                />
-                {!checked.persona && !insertedKeys.persona && (
-                  <div className="mt-2">
-                    <Dropdown
-                      options={duplicateLabels?.personaList.map((p) => ({ value: p.id, label: p.name })) ?? []}
-                      value={existingPersonaId}
-                      onChange={setExistingPersonaId}
-                      placeholder="Select an existing persona…"
-                    />
-                    <p className="mt-1 text-xs text-gray-400">
-                      Personal Details, Skills, and Experience below will attach to this persona instead of a new one.
-                    </p>
-                  </div>
-                )}
-              </section>
-
-              <section className={cardClassName} style={cardStyle}>
-                <h2 className="mb-2 text-base font-semibold text-gray-900">Personal Details</h2>
-                <ProposalRow
-                  item={proposal.personalDetails}
-                  label={proposal.personalDetails.headline || '(no headline proposed)'}
-                  checked={checked.personalDetails}
-                  onToggle={() => {
-                    toggle('personalDetails')
-                  }}
-                  done={insertedKeys.personalDetails}
-                  errorMessage={insertErrors.personalDetails}
-                />
-              </section>
-
-              <section className={cardClassName} style={cardStyle}>
-                <h2 className="mb-2 text-base font-semibold text-gray-900">Skills</h2>
-                {proposal.skills.length === 0 && <p className="text-sm text-gray-400">No skills proposed.</p>}
-                <div className="space-y-1">
-                  {proposal.skills.map((skill, i) => (
-                    <ProposalRow
-                      key={i}
-                      item={skill}
-                      label={skill.value}
-                      resolvedDuplicateLabel={resolvedLabelFor(skill, 'skill')}
-                      checked={checked[`skill-${i}`]}
-                      onToggle={() => {
-                        toggle(`skill-${i}`)
-                      }}
-                      done={insertedKeys[`skill-${i}`]}
-                      errorMessage={insertErrors[`skill-${i}`]}
-                    />
-                  ))}
-                </div>
-              </section>
-
-              <section className={cardClassName} style={cardStyle}>
-                <h2 className="mb-2 text-base font-semibold text-gray-900">Experience</h2>
-                {proposal.experience.length === 0 && <p className="text-sm text-gray-400">No experience proposed.</p>}
-                <div className="space-y-1">
-                  {proposal.experience.map((exp, i) => (
-                    <ProposalRow
-                      key={i}
-                      item={exp}
-                      label={experienceLabel(exp)}
-                      resolvedDuplicateLabel={resolvedLabelFor(exp, 'experience')}
-                      checked={checked[`experience-${i}`]}
-                      onToggle={() => {
-                        toggle(`experience-${i}`)
-                      }}
-                      done={insertedKeys[`experience-${i}`]}
-                      errorMessage={insertErrors[`experience-${i}`]}
-                    />
-                  ))}
-                </div>
-              </section>
-
-              <section className={cardClassName} style={cardStyle}>
-                {insertValidationError && <p className="mb-2 text-sm text-red-700">{insertValidationError}</p>}
-                <button
-                  type="button"
-                  onClick={() => {
-                    void handleInsert()
-                  }}
-                  disabled={inserting}
-                  className="rounded-md bg-gray-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  {inserting ? 'Inserting…' : 'Insert'}
-                </button>
-              </section>
             </div>
           )}
 

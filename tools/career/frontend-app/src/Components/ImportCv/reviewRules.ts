@@ -1,0 +1,58 @@
+// Pure rules of the import review (moved out of ImportCvPage in plan 166, step 3): the checklist's first state and the save
+// summary that is stored on the run after every insert. No React, so they can be script-checked.
+import { isInitiallyChecked, type CVImportProposal } from './parseProposal'
+import type { InsertResult, ItemResult } from './insertProposal'
+import { experienceLabel } from './experienceLabel'
+
+// buildFullSaveSummary reconstructs the InsertResult shape
+// cv_import_runs.go's own save_summary_json stores, from this
+// component's own accumulated insertedKeys/insertErrors state — not
+// from insertSelected's own per-call return value, which only ever
+// covers items attempted in THAT call. Takes the two maps as explicit
+// params (not read from component state) so a caller can pass the
+// just-computed next state before it's actually committed via
+// setState — React state updates aren't synchronously readable
+// immediately after being requested.
+export function buildFullSaveSummary(
+  p: CVImportProposal,
+  insertedKeys: Record<string, boolean>,
+  insertErrors: Record<string, string>,
+): InsertResult {
+  function itemResult(key: string): ItemResult | undefined {
+    if (insertedKeys[key]) return { ok: true }
+    if (insertErrors[key]) return { ok: false, error: insertErrors[key] }
+    return undefined
+  }
+  const skills: (ItemResult & { index: number; value: string })[] = []
+  p.skills.forEach((s, i) => {
+    const r = itemResult(`skill-${i}`)
+    if (r) skills.push({ ...r, index: i, value: s.value })
+  })
+  const experience: (ItemResult & { index: number; label: string })[] = []
+  p.experience.forEach((e, i) => {
+    const r = itemResult(`experience-${i}`)
+    if (r) experience.push({ ...r, index: i, label: experienceLabel(e) })
+  })
+  return {
+    profile: itemResult('profile'),
+    persona: itemResult('persona'),
+    personalDetails: itemResult('personalDetails'),
+    skills,
+    experience,
+  }
+}
+
+export function buildInitialChecked(p: CVImportProposal): Record<string, boolean> {
+  const checked: Record<string, boolean> = {
+    profile: isInitiallyChecked(p.profile),
+    persona: isInitiallyChecked(p.persona),
+    personalDetails: isInitiallyChecked(p.personalDetails),
+  }
+  p.skills.forEach((s, i) => {
+    checked[`skill-${i}`] = isInitiallyChecked(s)
+  })
+  p.experience.forEach((e, i) => {
+    checked[`experience-${i}`] = isInitiallyChecked(e)
+  })
+  return checked
+}

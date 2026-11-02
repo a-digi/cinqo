@@ -1558,6 +1558,17 @@ export async function fetchCVImportRuns(): Promise<CVImportRun[]> {
   return body.runs
 }
 
+// One import run by id (plan 166); null when there is no such run (it was deleted, or the address is wrong).
+export async function fetchCVImportRun(id: string): Promise<CVImportRun | null> {
+  const res = await fetch(`${PROXY_BASE}/cv-import/runs?id=${encodeURIComponent(id)}`, {
+    method: 'GET',
+    credentials: 'include',
+  })
+  if (res.status === 404 || res.status === 400) return null
+  const body = await jsonOrThrow<{ run: CVImportRun }>(res, 'read cv import run')
+  return body.run
+}
+
 // Without aiProposal the run starts "generating" (the AI hands its proposal over with suggest_cv_import and finishCVImportRun ends
 // the run); with one it is recorded as a completed analysis, as before.
 export async function createCVImportRun(params: {

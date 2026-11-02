@@ -1,6 +1,12 @@
 // Every page path of the Career tool, shared by the route registration (main.tsx)
 // and the menu (menu.ts) so the two cannot drift apart.
 export const IMPORT_CV_PATH = '/tools/career/import-cv'
+// One import run on its own page: a pattern route, the run's id arrives as the route parameter (plan 166).
+export const IMPORT_CV_RUN_PATH = '/tools/career/import-cv/:runId'
+// The address of one import run.
+export function importCvRunPathFor(runId: string): string {
+  return `${IMPORT_CV_PATH}/${encodeURIComponent(runId)}`
+}
 export const PROFILES_PATH = '/tools/career/profiles'
 export const VIEW_PROFILE_PATH = '/tools/career/profiles/view'
 export const PERSONAS_PATH = '/tools/career/personas'
