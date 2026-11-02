@@ -47,6 +47,9 @@ const MODEL_NOT_CAPABLE_PATTERNS: RegExp[] = [
   /without handing over a proposal/i,
   /did not hand over a proposal/i,
   /no longer generating/i,
+  /cut off by the token limit/i,
+  /response had no choices/i,
+  /finish reason: length/i,
 ]
 
 export const MODEL_NOT_CAPABLE_MESSAGE =

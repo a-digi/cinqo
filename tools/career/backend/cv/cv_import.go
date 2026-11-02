@@ -304,8 +304,14 @@ func CVImportRunsHandler(w http.ResponseWriter, r *http.Request) {
 		// Forwards the ORIGINAL caller's own Authorization/Cookie so
 		// Media's own ownership check (DeleteHandler, api/src/media) sees
 		// the same real, currently-authenticated user.
-		if err := forwardDeleteToMedia(r, mediaFileID); err != nil {
-			log.Printf("cv_import_runs: failed to delete media file %q for run %q: %v", mediaFileID, id, err)
+		// "Process again" makes a new run for the same upload, so several runs can share one file: it is only dropped with the
+		// last run that uses it (before, deleting one run took the file away from the others).
+		if inUse, err := cvImportMediaInUse(mediaFileID); err != nil {
+			log.Printf("cv_import_runs: could not tell whether media file %q is still used, keeping it: %v", mediaFileID, err)
+		} else if !inUse {
+			if err := forwardDeleteToMedia(r, mediaFileID); err != nil {
+				log.Printf("cv_import_runs: failed to delete media file %q for run %q: %v", mediaFileID, id, err)
+			}
 		}
 		w.WriteHeader(http.StatusNoContent)
 

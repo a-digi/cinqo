@@ -282,3 +282,12 @@ func deleteCVImportRun(id string) (mediaFileID string, err error) {
 	}
 	return mediaFileID, nil
 }
+
+// cvImportMediaInUse says whether any run still references the media file.
+func cvImportMediaInUse(mediaFileID string) (bool, error) {
+	var n int
+	if err := db.CareerDB.QueryRow(`SELECT COUNT(*) FROM cv_import_runs WHERE media_file_id = ?`, mediaFileID).Scan(&n); err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}

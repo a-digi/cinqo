@@ -41,8 +41,9 @@ export function isAnalysisActive(runId: string): boolean {
 // fails the run. Shared by a fresh analysis and by a resumed one.
 type SettleSteps = Pick<AnalysisSteps, 'askAi' | 'endRun' | 'onReply' | 'onRunsChanged'>
 
-async function settleRun(steps: SettleSteps, conversationId: string, runId: string, firstReply: string): Promise<unknown> {
-  let reply = firstReply
+async function settleRun(steps: SettleSteps, conversationId: string, runId: string, first: TurnResult): Promise<unknown> {
+  let reply = first.reply
+  let lastTurnError = first.turnError
   for (let continuation = 0; ; continuation++) {
     // The AI could not read the file: whatever it handed over is not a result of this CV.
     if (isCvUnreadableReply(reply)) {
@@ -57,11 +58,15 @@ async function settleRun(steps: SettleSteps, conversationId: string, runId: stri
       // The server refuses "ready" when the AI never handed a proposal over (it finishes a complete draft itself). A weak model
       // often stops too early: the same conversation is asked to continue, a limited number of times, before the run fails.
       if (isNoProposalRefusal(endErr) && continuation < MAX_CONTINUATIONS) {
-        reply = await ask(steps, conversationId, runId, buildContinuePrompt(runId, failureReason(endErr)))
+        const next = await ask(steps, conversationId, runId, buildContinuePrompt(runId, failureReason(endErr)))
+        reply = next.reply
+        lastTurnError = next.turnError ?? lastTurnError
         continue
       }
-      await failRun(steps, runId, NO_PROPOSAL_MESSAGE)
-      throw new Error(`${NO_PROPOSAL_MESSAGE} (${failureReason(endErr)})`)
+      // The AI's own failure (a provider error that was retried) is kept in the log text.
+      const cause = lastTurnError ? `${failureReason(endErr)}; last AI error: ${lastTurnError}` : failureReason(endErr)
+      await failRun(steps, runId, `${NO_PROPOSAL_MESSAGE} (${cause})`)
+      throw new Error(`${NO_PROPOSAL_MESSAGE} (${cause})`)
     }
   }
 }
@@ -78,8 +83,8 @@ export async function analyseCv(steps: AnalysisSteps): Promise<unknown> {
   try {
     steps.onRun(runId)
     steps.onRunsChanged()
-    const reply = await ask(steps, conversationId, runId, undefined)
-    return await settleRun(steps, conversationId, runId, reply)
+    const first = await ask(steps, conversationId, runId, undefined)
+    return await settleRun(steps, conversationId, runId, first)
   } finally {
     activeRuns.delete(runId)
   }
@@ -117,15 +122,19 @@ export async function resumeAnalysis(
       await failRun(steps, runId, RESUME_CANCELLED_MESSAGE)
       throw new Error(RESUME_CANCELLED_MESSAGE)
     }
-    let reply: string
+    let first: TurnResult
     try {
-      reply = await steps.awaitTurn(conversationId)
-      steps.onReply(reply)
+      first = { reply: await steps.awaitTurn(conversationId) }
+      steps.onReply(first.reply)
     } catch (err) {
-      await failRun(steps, runId, failureReason(err))
-      throw err
+      // A provider error is treated like an early stop (the draft is on the run): the AI is asked to continue.
+      if (!isRetryableTurnError(err)) {
+        await failRun(steps, runId, failureReason(err))
+        throw err
+      }
+      first = { reply: '', turnError: failureReason(err) }
     }
-    return { aiProposal: await settleRun(steps, conversationId, runId, reply) }
+    return { aiProposal: await settleRun(steps, conversationId, runId, first) }
   } finally {
     activeRuns.delete(runId)
   }
@@ -138,13 +147,30 @@ function isNoProposalRefusal(err: unknown): boolean {
   return failureReason(err).includes('did not hand over a proposal')
 }
 
-// One AI turn; a failure of the turn itself ends the run as failed with the real text.
-async function ask(steps: SettleSteps, conversationId: string, runId: string, followUp: string | undefined): Promise<string> {
+// What one AI turn gave: its last message, or (for a provider error that is worth another try) the error text and no message.
+interface TurnResult {
+  reply: string
+  turnError?: string
+}
+
+// A failure of the AI's turn that the same conversation can recover from, because the draft is kept on the run: the provider cut
+// the answer off at its token limit, or returned no choice at all. Other failures (invalid arguments, no tool calls...) end the run.
+const RETRYABLE_TURN_ERRORS: RegExp[] = [/cut off by the token limit/i, /finish reason: length/i, /response had no choices/i]
+
+export function isRetryableTurnError(err: unknown): boolean {
+  const text = failureReason(err)
+  return RETRYABLE_TURN_ERRORS.some((p) => p.test(text))
+}
+
+// One AI turn; a failure of the turn itself ends the run as failed with the real text, except a retryable provider error, which
+// comes back as an empty reply so the run is asked to continue (limited by MAX_CONTINUATIONS).
+async function ask(steps: SettleSteps, conversationId: string, runId: string, followUp: string | undefined): Promise<TurnResult> {
   try {
     const reply = await steps.askAi(conversationId, runId, followUp)
     steps.onReply(reply)
-    return reply
+    return { reply }
   } catch (err) {
+    if (isRetryableTurnError(err)) return { reply: '', turnError: failureReason(err) }
     await failRun(steps, runId, failureReason(err))
     throw err
   }

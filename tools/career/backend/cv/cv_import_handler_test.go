@@ -270,3 +270,42 @@ func TestGetByIdSeesADeletedRunAsUnknown(t *testing.T) {
 		t.Errorf("%d", rec.Code)
 	}
 }
+
+// Runs made with "Process again" share one upload: deleting one of them must leave the file to the others, and only the last run
+// takes it away.
+func TestDeleteKeepsAMediaFileThatAnotherRunStillUses(t *testing.T) {
+	setup(t)
+	var mu sync.Mutex
+	var deleted []string
+	core := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		deleted = append(deleted, r.Method+" "+r.URL.Path)
+		mu.Unlock()
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer core.Close()
+	t.Setenv("CORE_API_URL", core.URL)
+	first := createViaAPI(t, `{"fileId":"shared","originalFilename":"a.pdf","conversationId":"c1"}`)
+	second := createViaAPI(t, `{"fileId":"shared","originalFilename":"a.pdf","conversationId":"c2"}`)
+	other := createViaAPI(t, `{"fileId":"own","originalFilename":"b.pdf","conversationId":"c3"}`)
+
+	for _, id := range []string{first, other} {
+		if rec := call(http.MethodDelete, "/cv-import/runs?id="+id, ""); rec.Code != http.StatusNoContent {
+			t.Fatalf("%d", rec.Code)
+		}
+	}
+	mu.Lock()
+	got := append([]string(nil), deleted...)
+	mu.Unlock()
+	if len(got) != 1 || got[0] != "DELETE /api/v1/media/own" {
+		t.Fatalf("after deleting one of two runs on the same file: %v", got)
+	}
+	if rec := call(http.MethodDelete, "/cv-import/runs?id="+second, ""); rec.Code != http.StatusNoContent {
+		t.Fatalf("%d", rec.Code)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(deleted) != 2 || deleted[1] != "DELETE /api/v1/media/shared" {
+		t.Errorf("the last run on the file did not take it away: %v", deleted)
+	}
+}
