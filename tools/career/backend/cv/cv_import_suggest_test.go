@@ -269,3 +269,26 @@ func textOf(res *mcp.CallToolResult) string {
 	}
 	return b.String()
 }
+
+// A resend from the chat window re-sends the prompt for a run the page already ended as failed (plan 165 step 1b): the AI is
+// told to stop and not to claim success, and nothing is stored.
+func TestAFailedRunTellsTheAIToStopAndNotToClaimSuccess(t *testing.T) {
+	setup(t)
+	id := newRun(t)
+	if _, err := finishCVImportRun(id, "failed", "boom"); err != nil {
+		t.Fatal(err)
+	}
+	res, _, err := suggestCVImport(suggestCVImportArgs{RunID: id, Proposal: okProposal()})
+	msg := textOf(res)
+	if err != nil || res == nil || !res.IsError {
+		t.Fatalf("not refused: %q %v", msg, err)
+	}
+	for _, want := range []string{"no longer generating", "nothing was stored", "do not say the analysis is done", "start a new import"} {
+		if !strings.Contains(strings.ToLower(msg), want) {
+			t.Errorf("message %q lacks %q", msg, want)
+		}
+	}
+	if string(runOf(t, id).AIProposal) != "null" {
+		t.Error("a proposal was stored on a failed run")
+	}
+}

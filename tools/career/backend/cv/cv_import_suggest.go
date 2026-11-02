@@ -210,7 +210,7 @@ func suggestCVImport(args suggestCVImportArgs) (*mcp.CallToolResult, any, error)
 	case errors.Is(err, errUnknownCVImportRun):
 		return db.ErrResult(fmt.Sprintf("unknown run id %q", args.RunID)), nil, nil
 	case errors.Is(err, errRunNotGenerating):
-		return db.ErrResult("this run is no longer generating, so it takes no proposal"), nil, nil
+		return db.ErrResult("this run is no longer generating, so it takes no proposal and nothing was stored. Do not call this tool again and do not say the analysis is done: reply with one plain sentence that the import run has ended and the user must start a new import"), nil, nil
 	case errors.As(err, &bad):
 		return db.ErrResult("the proposal is not valid: " + bad.msg), nil, nil
 	case err != nil:
