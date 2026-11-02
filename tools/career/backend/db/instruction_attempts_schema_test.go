@@ -437,3 +437,52 @@ func TestStartingTheToolAddsTheDescriptionChangedAtColumnToAnOlderInstall(t *tes
 		t.Errorf("the column must exist and the row survive: %q %v %v", title, at, err)
 	}
 }
+
+// Step 164: jobs.rules_checked_at is in the base schema, is added to an older jobs table once, and starting the tool adds it.
+func TestJobsRulesCheckedAtColumn(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("TOOL_DB_DIR", dir)
+	if err := InitDatabases(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := JobsDB.Exec(`INSERT INTO jobs (id, source_url, title) VALUES ('keep', 'https://x/keep', 'Kept job')`); err != nil {
+		t.Fatal(err)
+	}
+	var at sql.NullString
+	if err := JobsDB.QueryRow(`SELECT rules_checked_at FROM jobs WHERE id = 'keep'`).Scan(&at); err != nil || at.Valid {
+		t.Errorf("a new job has no check stamp: %v %v", at, err)
+	}
+	if _, err := JobsDB.Exec(`ALTER TABLE jobs DROP COLUMN rules_checked_at`); err != nil { // what an older install looks like
+		t.Fatal(err)
+	}
+	JobsDB.Close()
+	CareerDB.Close()
+
+	if err := InitDatabases(); err != nil {
+		t.Fatalf("starting on an older install: %v", err)
+	}
+	defer func() { JobsDB.Close(); CareerDB.Close() }()
+	var title string
+	if err := JobsDB.QueryRow(`SELECT title, rules_checked_at FROM jobs WHERE id = 'keep'`).Scan(&title, &at); err != nil || title != "Kept job" || at.Valid {
+		t.Errorf("the column must exist and the row survive: %q %v %v", title, at, err)
+	}
+
+	legacy, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "jobs.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer legacy.Close()
+	if _, err := legacy.Exec(`CREATE TABLE jobs (id TEXT PRIMARY KEY, source_url TEXT NOT NULL UNIQUE, title TEXT NOT NULL)`); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ { // idempotent
+		if err := migrateJobsRulesCheckedAt(legacy); err != nil {
+			t.Fatalf("migrate (run %d): %v", i+1, err)
+		}
+	}
+	empty, _ := sql.Open("sqlite", filepath.Join(t.TempDir(), "empty.db"))
+	defer empty.Close()
+	if err := migrateJobsRulesCheckedAt(empty); err != nil {
+		t.Errorf("no table: %v", err)
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"testing"
 
 	"career-tool-backend/db"
@@ -495,5 +496,70 @@ func TestAllStatesReadsEveryPersonasState(t *testing.T) {
 	got, err = AllStates()
 	if err != nil || len(got) != 2 || got["pa"].Fingerprint != "fp-a2" || got["pb"].Fingerprint != "fp-b" || got["pa"].ScoredAt == "" {
 		t.Errorf("states = %+v (%v)", got, err)
+	}
+}
+
+// Step 164: the jobs whose persona rows were made at or before the text change.
+func TestJobsWithStaleRows(t *testing.T) {
+	setup(t)
+	const changed = "2026-11-02 10:00:00"
+	for _, c := range []struct{ id, stamp, rowAt string }{
+		{"older", changed, "2026-11-02 09:59:59"},
+		{"same", changed, changed},
+		{"newer", changed, "2026-11-02 10:00:01"},
+		{"never", "", "2000-01-01 00:00:00"},
+	} {
+		addJob(t, c.id, "2026-06-01 10:00:00")
+		if c.stamp != "" {
+			if _, err := db.JobsDB.Exec(`UPDATE jobs SET description_changed_at = ? WHERE id = ?`, c.stamp, c.id); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if _, err := db.JobsDB.Exec(`INSERT INTO job_persona_matches (job_id, persona_id, profile_id, score, updated_at) VALUES (?, 'pa', 'A', 40, ?)`, c.id, c.rowAt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	addJob(t, "norows", "2026-06-01 10:00:00")
+	if _, err := db.JobsDB.Exec(`UPDATE jobs SET description_changed_at = ? WHERE id = 'norows'`, changed); err != nil {
+		t.Fatal(err)
+	}
+	// a second persona with a fresh row does not hide the stale one of the first
+	if _, err := db.JobsDB.Exec(`INSERT INTO job_persona_matches (job_id, persona_id, profile_id, score, updated_at) VALUES ('older', 'pb', 'B', 40, '2026-11-02 11:00:00')`); err != nil {
+		t.Fatal(err)
+	}
+	got, err := JobsWithStaleRows(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"older", "same"}
+	slices.Sort(got)
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("stale: %v, want %v (a job without rows is the other catch-up's, a never-changed or fresh one is never offered; each job once)", got, want)
+	}
+	if one, _ := JobsWithStaleRows(1); len(one) != 1 {
+		t.Errorf("limit 1: %v", one)
+	}
+	if none, err := JobsWithStaleRows(0); err != nil || none == nil || len(none) != 0 {
+		t.Errorf("limit 0: %v %v", none, err)
+	}
+}
+
+func TestJobsWithStaleRowsComeMostRecentlyChangedFirst(t *testing.T) {
+	setup(t)
+	for _, c := range [][2]string{{"a", "2026-11-02 10:00:00"}, {"b", "2026-11-02 12:00:00"}, {"c", "2026-11-02 11:00:00"}, {"d", "2026-11-02 12:00:00"}} {
+		addJob(t, c[0], "2026-06-01 10:00:00")
+		if _, err := db.JobsDB.Exec(`UPDATE jobs SET description_changed_at = ? WHERE id = ?`, c[1], c[0]); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.JobsDB.Exec(`INSERT INTO job_persona_matches (job_id, persona_id, profile_id, score, updated_at) VALUES (?, 'pa', 'A', 40, '2000-01-01 00:00:00')`, c[0]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, _ := JobsWithStaleRows(10)
+	if want := []string{"b", "d", "c", "a"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("order %v, want %v", got, want)
+	}
+	if two, _ := JobsWithStaleRows(2); !reflect.DeepEqual(two, []string{"b", "d"}) {
+		t.Errorf("limit 2: %v", two)
 	}
 }

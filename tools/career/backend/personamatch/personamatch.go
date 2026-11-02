@@ -182,6 +182,33 @@ func JobsWithoutRows(limit int) ([]string, error) {
 	return ids, rows.Err()
 }
 
+// JobsWithStaleRows returns up to limit job ids that have a persona row made at or before the job's last text change (step
+// 164), the most recently changed first: the jobs whose description_changed event was lost. A job whose text never changed
+// after it was found is never offered, and "at or before" is deliberate (see jobs.StaleManualMatchJobIDs).
+func JobsWithStaleRows(limit int) ([]string, error) {
+	if limit <= 0 {
+		return []string{}, nil
+	}
+	rows, err := db.JobsDB.Query(
+		`SELECT j.id FROM jobs j
+		 WHERE j.description_changed_at IS NOT NULL
+		   AND EXISTS (SELECT 1 FROM job_persona_matches m WHERE m.job_id = j.id AND m.updated_at <= j.description_changed_at)
+		 ORDER BY j.description_changed_at DESC, j.id LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	ids := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 // PersonaJobScore is one job's result for one persona: Judged false means the persona could not judge the job, so its row
 // (if it has one) goes.
 type PersonaJobScore struct {

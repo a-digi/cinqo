@@ -172,6 +172,7 @@ func runHTTPServer() {
 	// The catch-up for events that were missed (step 134): jobs without any match are queued for the same worker,
 	// once shortly after start and then every 10 minutes.
 	jobmatchconsumer.StartSweeper(context.Background())
+	profilejobmatchconsumer.StartSweeper(context.Background())
 
 	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

@@ -603,6 +603,7 @@ func (b *batches) sizes() []int {
 
 func watch(t *testing.T, fn func(ids []string) ([]Outcome, error)) *batches {
 	t.Helper()
+	useMarks(t)
 	b := &batches{}
 	old := run
 	run = func(ids []string) ([]Outcome, error) {

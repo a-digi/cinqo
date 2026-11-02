@@ -16,9 +16,10 @@ import (
 
 func useUnmatched(t *testing.T, fn func(limit int) ([]string, error)) {
 	t.Helper()
-	old := unmatchedJobIDs
+	old, oldStale := unmatchedJobIDs, staleMatchJobIDs
 	unmatchedJobIDs = fn
-	t.Cleanup(func() { unmatchedJobIDs = old })
+	staleMatchJobIDs = func(int) ([]string, error) { return nil, nil }
+	t.Cleanup(func() { unmatchedJobIDs, staleMatchJobIDs = old, oldStale })
 }
 
 func drainQueue(c *Consumer) []string {
@@ -210,4 +211,126 @@ func TestTheSweepMatchesWhatWasMissedAndLeavesTheRest(t *testing.T) {
 	if n, err := c.Sweep(); err != nil || n != 0 {
 		t.Errorf("third sweep queued %d, %v", n, err)
 	}
+}
+
+// ---- the catch-up for matches older than their job's text (step 164) ----
+
+func useStale(t *testing.T, unmatched, stale func(limit int) ([]string, error)) {
+	t.Helper()
+	old, oldStale := unmatchedJobIDs, staleMatchJobIDs
+	unmatchedJobIDs, staleMatchJobIDs = unmatched, stale
+	t.Cleanup(func() { unmatchedJobIDs, staleMatchJobIDs = old, oldStale })
+}
+
+func drainChanged(c *Consumer) []string {
+	var out []string
+	for {
+		select {
+		case id := <-c.changed:
+			out = append(out, id)
+		default:
+			return out
+		}
+	}
+}
+
+func TestASweepQueuesUnmatchedJobsAsNewAndStaleOnesAsChanged(t *testing.T) {
+	var askedStale int
+	useStale(t,
+		func(int) ([]string, error) { return []string{"u1", "u2"}, nil },
+		func(limit int) ([]string, error) { askedStale = limit; return []string{"s1", "s2", "s3"}, nil })
+	c := New(10)
+	n, err := c.Sweep()
+	if err != nil || n != 5 {
+		t.Fatalf("queued %d, %v", n, err)
+	}
+	if got := drainQueue(c); !slices.Equal(got, []string{"u1", "u2"}) {
+		t.Errorf("new queue %v", got)
+	}
+	if got := drainChanged(c); !slices.Equal(got, []string{"s1", "s2", "s3"}) {
+		t.Errorf("changed queue %v", got)
+	}
+	if askedStale != SweepLimit {
+		t.Errorf("asked %d, want %d", askedStale, SweepLimit)
+	}
+}
+
+func TestAFailingStaleLookupKeepsTheUnmatchedOnes(t *testing.T) {
+	useStale(t,
+		func(int) ([]string, error) { return []string{"u1"}, nil },
+		func(int) ([]string, error) { return nil, errors.New("db gone") })
+	c := New(10)
+	if n, err := c.Sweep(); err != nil || n != 1 || len(c.queue) != 1 || len(c.changed) != 0 {
+		t.Fatalf("%d, %v", n, err)
+	}
+}
+
+func TestAFullChangedQueueStopsTheSweep(t *testing.T) {
+	useStale(t,
+		func(int) ([]string, error) { return nil, nil },
+		func(int) ([]string, error) { return []string{"s1", "s2", "s3"}, nil })
+	c := New(2)
+	n, err := c.Sweep()
+	if err != nil || n != 2 || !slices.Equal(drainChanged(c), []string{"s1", "s2"}) {
+		t.Fatalf("queued %d, %v", n, err)
+	}
+}
+
+// With the real lookups and the real re-matcher: a lost event is repaired by one sweep and the job is not offered again.
+func TestALostEventIsRepairedBySweepingOnce(t *testing.T) {
+	setup(t)
+	profile, _ := seedProfileForSweep(t)
+	execSQL(t, `INSERT INTO jobs (id, source_url, title, company, location, description, description_changed_at) VALUES ('j1', 'https://x/1', 'Backend Engineer (m/w/d)', 'Acme', 'Hamburg', ?, '2026-01-02 10:00:00')`, sweepJobDesc)
+	execSQL(t, `INSERT INTO job_matches (job_id, profile_id, score, status, kind, updated_at) VALUES ('j1', ?, 1, 'completed', 'manual', '2026-01-02 09:00:00')`, profile)
+
+	c := New(10)
+	n, err := c.Sweep()
+	if err != nil || n != 1 || len(c.changed) != 1 {
+		t.Fatalf("the stale match must be offered once: %d %v", n, err)
+	}
+	c.process(batch{changed: drainChanged(c)}) // what the worker does with it, with the real re-matcher
+	var score int
+	var at string
+	if err := db.JobsDB.QueryRow(`SELECT score, updated_at FROM job_matches WHERE job_id = 'j1'`).Scan(&score, &at); err != nil {
+		t.Fatal(err)
+	}
+	if score == 1 || at <= "2026-01-02 10:00:00" {
+		t.Errorf("the match must be made again from the text: score %d at %s", score, at)
+	}
+	if n, err := c.Sweep(); err != nil || n != 0 {
+		t.Errorf("once repaired it is not offered again: %d %v", n, err)
+	}
+}
+
+func execSQL(t *testing.T, q string, args ...any) {
+	t.Helper()
+	if _, err := db.JobsDB.Exec(q, args...); err != nil {
+		t.Fatalf("%s: %v", q, err)
+	}
+}
+
+const sweepJobDesc = "Wir suchen Verstärkung in Hamburg. Du entwickelst Backend-Services in Go, betreibst sie mit Docker und Kubernetes " +
+	"und arbeitest mit PostgreSQL. Mindestens 3 Jahre Berufserfahrung."
+
+// seedProfileForSweep makes a profile with one persona that fits sweepJobDesc.
+func seedProfileForSweep(t *testing.T) (profileID, personaID string) {
+	t.Helper()
+	profileID, err := profile.CreateProfile("Fit", "Test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	personaID, err = persona.CreatePersona(profileID, "Fit persona", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, titles, loc := "Backend Engineer", "Software Engineer, Backend Developer", "Hamburg"
+	if err := persona.UpdatePersonaDetails(persona.UpdatePersonaDetailsArgs{PersonaID: personaID, Headline: &h, DesiredTitles: &titles, Location: &loc, DesiredLocations: &loc}); err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []string{"Go", "Docker", "Kubernetes", "PostgreSQL"} {
+		if err := persona.AddCareerSkill(personaID, s); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return profileID, personaID
 }

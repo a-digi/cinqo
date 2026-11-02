@@ -136,8 +136,13 @@ func apply(jobID, profileID string, score int, rules []profilerules.Rule) Outcom
 	return o
 }
 
-// run is what the worker calls on a batch; a var so a test can watch the batches and make them fail.
-var run = ProcessBatch
+// run is what the worker calls on a batch, markChecked what it calls afterwards to record that the jobs were looked at (step
+// 164: so the sweeper can tell a job whose text changed after that look from one it has seen); vars so a test can watch the
+// batches and make them fail.
+var (
+	run         = ProcessBatch
+	markChecked = jobs.MarkRulesChecked
+)
 
 // Consumer is a queue of job ids and the worker that handles them.
 type Consumer struct {
@@ -234,9 +239,22 @@ func (c *Consumer) process(ids []string) {
 		log.Printf("profile job match consumer: a batch of %d job(s) could not be handled: %v", len(ids), err)
 		return
 	}
+	failed := map[string]bool{}
 	for _, o := range outcomes {
 		if o.Err != nil {
 			log.Printf("profile job match consumer: job %s, profile %q: %v", o.JobID, o.ProfileID, o.Err)
+			failed[o.JobID] = true
 		}
+	}
+	// A job that could be looked at (whatever the outcome: added, below every rule, on the board, taken off by the person, or
+	// no rule anywhere) is recorded as checked; one that failed stays offered to the sweeper.
+	var checked []string
+	for _, id := range ids {
+		if !failed[id] {
+			checked = append(checked, id)
+		}
+	}
+	if err := markChecked(checked); err != nil {
+		log.Printf("profile job match consumer: could not record %d checked job(s): %v", len(checked), err)
 	}
 }

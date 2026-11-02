@@ -26,12 +26,18 @@ var (
 	sweepInterval   = 10 * time.Minute
 )
 
-// unmatchedJobIDs is where the sweeper finds work; a var so a test can substitute it.
-var unmatchedJobIDs = jobs.UnmatchedJobIDs
+// unmatchedJobIDs and staleMatchJobIDs are where the sweeper finds work; vars so a test can substitute them. The second is the
+// catch-up for a lost "career.job.description_changed" event (step 164): jobs whose manual match is older than their text.
+var (
+	unmatchedJobIDs  = jobs.UnmatchedJobIDs
+	staleMatchJobIDs = jobs.StaleManualMatchJobIDs
+)
 
-// Sweep puts the ids of jobs without a match on the queue, at most SweepLimit, newest first, and returns how many it
-// queued. It stops at the first id the queue has no room for (the next sweep tries again). An id that is already
-// waiting from an event is queued a second time, which is harmless: the matcher skips a job that has a row.
+// Sweep puts the ids of jobs without a match on the queue for new jobs, at most SweepLimit, newest first, and the ids of jobs
+// whose manual match is older than their text on the queue for changed jobs (step 164), at most SweepLimit, and returns how many
+// it queued in all. It stops at the first id a queue has no room for (the next sweep tries again). An id that is already
+// waiting from an event is queued a second time, which is harmless: the matcher skips a job that has a row, and the re-matcher
+// makes the same result again. A failure to read the stale ones is logged and does not stop the rest.
 func (c *Consumer) Sweep() (queued int, err error) {
 	ids, err := unmatchedJobIDs(SweepLimit)
 	if err != nil {
@@ -40,6 +46,19 @@ func (c *Consumer) Sweep() (queued int, err error) {
 	for _, id := range ids {
 		select {
 		case c.queue <- id:
+			queued++
+		default:
+			return queued, nil
+		}
+	}
+	stale, staleErr := staleMatchJobIDs(SweepLimit)
+	if staleErr != nil {
+		log.Printf("job match consumer: a sweep could not look for matches older than their job's text: %v", staleErr)
+		return queued, nil
+	}
+	for _, id := range stale {
+		select {
+		case c.changed <- id:
 			queued++
 		default:
 			return queued, nil

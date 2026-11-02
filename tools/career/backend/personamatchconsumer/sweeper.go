@@ -26,17 +26,33 @@ var (
 	sweepInterval   = 10 * time.Minute
 )
 
-// jobsWithoutRows is where the sweeper finds work; a var so a test can substitute it.
-var jobsWithoutRows = personamatch.JobsWithoutRows
+// jobsWithoutRows and jobsWithStaleRows are where the sweeper finds work; vars so a test can substitute them. The second
+// is the catch-up for a lost "career.job.description_changed" event (step 164): jobs that have a row made at or before the
+// job's last text change.
+var (
+	jobsWithoutRows   = personamatch.JobsWithoutRows
+	jobsWithStaleRows = personamatch.JobsWithStaleRows
+)
 
-// Sweep puts the ids of jobs without rows on the queue, at most SweepLimit, newest first, and returns how many it queued.
-// It stops at the first id the queue has no room for (the next sweep tries again).
+// Sweep puts the ids of jobs without rows, then of jobs whose rows are older than their text, on the queue, at most SweepLimit
+// of each, newest first, and returns how many it queued (a job in both lists once). It stops at the first id the queue has no
+// room for (the next sweep tries again). A failure to read the stale ones is logged and does not stop the rest.
 func (c *Consumer) Sweep() (queued int, err error) {
 	ids, err := jobsWithoutRows(SweepLimit)
 	if err != nil {
 		return 0, err
 	}
-	for _, id := range ids {
+	stale, staleErr := jobsWithStaleRows(SweepLimit)
+	if staleErr != nil {
+		log.Printf("persona match consumer: a sweep could not look for jobs whose scores are older than their text: %v", staleErr)
+		stale = nil
+	}
+	seen := map[string]bool{}
+	for _, id := range append(ids, stale...) {
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
 		select {
 		case c.queue <- id:
 			queued++

@@ -14,9 +14,10 @@ import (
 
 func useWithout(t *testing.T, fn func(limit int) ([]string, error)) {
 	t.Helper()
-	old := jobsWithoutRows
+	old, oldStale := jobsWithoutRows, jobsWithStaleRows
 	jobsWithoutRows = fn
-	t.Cleanup(func() { jobsWithoutRows = old })
+	jobsWithStaleRows = func(int) ([]string, error) { return nil, nil }
+	t.Cleanup(func() { jobsWithoutRows, jobsWithStaleRows = old, oldStale })
 }
 
 func drainQueue(c *Consumer) []string {
@@ -132,5 +133,69 @@ func TestTheSweeperRunsOnATimerAndStops(t *testing.T) {
 func TestTheStartDelayAndIntervalAreThirtySecondsAndTenMinutes(t *testing.T) {
 	if sweepStartDelay != 30*time.Second || sweepInterval != 10*time.Minute {
 		t.Errorf("delay %v, interval %v", sweepStartDelay, sweepInterval)
+	}
+}
+
+// ---- the catch-up for jobs whose scores are older than their text (step 164) ----
+
+func useBoth(t *testing.T, without, stale func(limit int) ([]string, error)) {
+	t.Helper()
+	old, oldStale := jobsWithoutRows, jobsWithStaleRows
+	jobsWithoutRows, jobsWithStaleRows = without, stale
+	t.Cleanup(func() { jobsWithoutRows, jobsWithStaleRows = old, oldStale })
+}
+
+func TestASweepQueuesJobsWithoutRowsThenJobsWithStaleRowsEachOnce(t *testing.T) {
+	var askedStale int
+	useBoth(t,
+		func(int) ([]string, error) { return []string{"new", "both"}, nil },
+		func(limit int) ([]string, error) {
+			askedStale = limit
+			return []string{"both", "stale-1", "stale-2"}, nil
+		})
+	c := New(10)
+	n, err := c.Sweep()
+	if err != nil || n != 4 || !slices.Equal(drainQueue(c), []string{"new", "both", "stale-1", "stale-2"}) {
+		t.Fatalf("queued %d, %v", n, err)
+	}
+	if askedStale != SweepLimit {
+		t.Errorf("the stale lookup was asked for %d, want %d", askedStale, SweepLimit)
+	}
+}
+
+func TestAFailingStaleLookupDoesNotStopTheRest(t *testing.T) {
+	useBoth(t,
+		func(int) ([]string, error) { return []string{"a", "b"}, nil },
+		func(int) ([]string, error) { return []string{"x"}, errors.New("column missing") })
+	c := New(10)
+	n, err := c.Sweep()
+	if err != nil || n != 2 || !slices.Equal(drainQueue(c), []string{"a", "b"}) {
+		t.Fatalf("queued %d, %v", n, err)
+	}
+}
+
+func TestAFullQueueStopsTheStaleOnesToo(t *testing.T) {
+	useBoth(t,
+		func(int) ([]string, error) { return []string{"a"}, nil },
+		func(int) ([]string, error) { return []string{"s1", "s2", "s3"}, nil })
+	c := New(2)
+	n, err := c.Sweep()
+	if err != nil || n != 2 || !slices.Equal(drainQueue(c), []string{"a", "s1"}) {
+		t.Fatalf("queued %d, %v", n, err)
+	}
+}
+
+// With the real lookups: a job whose scores are older than its text is queued once, a fresh one is not.
+func TestTheRealSweepOffersAJobWhoseScoresAreOlderThanItsText(t *testing.T) {
+	setup(t)
+	exec(t, `INSERT INTO jobs (id, source_url, title, crawled_at, description_changed_at) VALUES ('stale', 'https://x/1', 'T', '2026-01-01 10:00:00', '2026-11-02 10:00:00')`)
+	exec(t, `INSERT INTO jobs (id, source_url, title, crawled_at, description_changed_at) VALUES ('fresh', 'https://x/2', 'T', '2026-01-01 10:00:00', '2026-11-02 10:00:00')`)
+	for id, at := range map[string]string{"stale": "2026-11-02 09:00:00", "fresh": "2026-11-02 11:00:00"} {
+		exec(t, `INSERT INTO job_persona_matches (job_id, persona_id, profile_id, score, updated_at) VALUES (?, 'pa', 'A', 40, ?)`, id, at)
+	}
+	c := New(10)
+	n, err := c.Sweep()
+	if err != nil || n != 1 || !slices.Equal(drainQueue(c), []string{"stale"}) {
+		t.Fatalf("queued %d, %v", n, err)
 	}
 }

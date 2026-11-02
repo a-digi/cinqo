@@ -563,6 +563,10 @@ CREATE TABLE IF NOT EXISTS jobs (
     -- boards) are made from the text, so a match older than this is stale. Also added to existing installs by
     -- migrateJobsDescriptionChangedAt.
     description_changed_at TEXT,
+    -- rules_checked_at (step 164): when the profile rules consumer last looked at this job (any outcome), so the
+    -- sweeper can find a job whose text changed after that look (a lost description_changed event). Also added to
+    -- existing installs by migrateJobsRulesCheckedAt.
+    rules_checked_at TEXT,
     -- source (step 97): 'crawled' for every job a crawl or the AI saved (the
     -- default, so existing rows keep their meaning), 'manual' for a job a
     -- person added by hand. A manual job with no posting URL stores
@@ -1652,6 +1656,9 @@ func migrateJobsDB(db *sql.DB) error {
 	if err := migrateJobsDescriptionChangedAt(db); err != nil {
 		return err
 	}
+	if err := migrateJobsRulesCheckedAt(db); err != nil {
+		return err
+	}
 	if err := migrateJobsSource(db); err != nil {
 		return err
 	}
@@ -1887,6 +1894,20 @@ func migrateJobsDescriptionChangedAt(db *sql.DB) error {
 		return nil
 	}
 	_, err = db.Exec(`ALTER TABLE jobs ADD COLUMN description_changed_at TEXT`)
+	return err
+}
+
+// migrateJobsRulesCheckedAt (step 164) adds the nullable jobs.rules_checked_at to an install that already has jobs (a fresh one
+// gets it from the base schema). A no-op when the column is present.
+func migrateJobsRulesCheckedAt(db *sql.DB) error {
+	exists, hasColumn, err := tableHasColumn(db, "jobs", "rules_checked_at")
+	if err != nil {
+		return err
+	}
+	if !exists || hasColumn {
+		return nil
+	}
+	_, err = db.Exec(`ALTER TABLE jobs ADD COLUMN rules_checked_at TEXT`)
 	return err
 }
 
