@@ -48,7 +48,7 @@ func writePersonaAwareError(w http.ResponseWriter, action string, err error) {
 		http.Error(w, "unknown persona id", http.StatusBadRequest)
 		return
 	}
-	if errors.Is(err, persona.ErrInvalidRemotePreference) {
+	if errors.Is(err, persona.ErrInvalidRemotePreference) || errors.Is(err, persona.ErrProfileItem) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -366,7 +366,7 @@ func skillsHandler(w http.ResponseWriter, r *http.Request) {
 			writePersonaAwareError(w, "read skills", err)
 			return
 		}
-		db.WriteJSON(w, map[string]any{"skills": result.Skills})
+		db.WriteJSON(w, map[string]any{"skills": result.Skills, "skillItems": result.SkillItems})
 
 	case http.MethodPost:
 		var body skillRequest

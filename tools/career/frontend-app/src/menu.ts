@@ -2,6 +2,7 @@ import {
   COMPANIES_PATH,
   CRAWL_MONITOR_PATH,
   CV_DOCUMENTS_PATH,
+  EDUCATION_PATH,
   EXPERIENCE_PATH,
   FAQ_PATH,
   GUIDE_PATH,
@@ -44,6 +45,7 @@ export const careerMenuEntry: MenuEntry = {
         { label: 'Summary & Goals', path: PERSONA_DETAILS_PATH, scopes: ['tool:career:profile'] },
         { label: 'Skills', path: SKILLS_PATH, scopes: ['tool:career:profile'] },
         { label: 'Experience', path: EXPERIENCE_PATH, scopes: ['tool:career:profile'] },
+        { label: 'Education', path: EDUCATION_PATH, scopes: ['tool:career:profile'] },
         {
           label: 'CV',
           children: [

@@ -2,7 +2,22 @@
 // Career's existing create/update routes. No new backend endpoints;
 // every call here already existed before Import CV. See
 // plan/ai/tools/career/import-cv/step-07-insert-selected-items.md.
-import { createProfile, createPersona, updatePersonaDetails, addSkill, addExperience, fetchProfiles } from '../../api'
+import {
+  addProfileExperience,
+  addProfileSkill,
+  createPersona,
+  createProfile,
+  fetchPersonaExperienceView,
+  fetchPersonaSkillsView,
+  fetchPersonas,
+  fetchProfileExperience,
+  fetchProfileSkills,
+  fetchProfiles,
+  setPersonaExperienceUse,
+  setPersonaSkillIds,
+  updatePersonaDetails,
+} from '../../api'
+import { addedEntryId, findEntry, findSkill, mergeIds, mergeUses } from './libraryInsertRules'
 import type { CVImportProposal } from './parseProposal'
 
 export interface ItemResult {
@@ -37,6 +52,10 @@ function message(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
+// Plan 173, step 5: what a CV states about skills and experience belongs to the PROFILE, so each checked skill and experience goes into
+// the persona's profile library (an item the library already has is reused, never added twice) and the persona then uses it; what the
+// persona already used stays chosen, and what it has of its own is not touched.
+//
 // insertSelected resolves Profile -> Persona -> (Personal Details,
 // Skills, Experience) in that order, since the latter three all need
 // a real personaId to attach to. A failure on one item never aborts
@@ -119,39 +138,102 @@ export async function insertSelected(
     }
   }
 
-  for (const [i, skill] of proposal.skills.entries()) {
-    if (!checked[`skill-${i}`]) continue
-    if (personaId === null) {
-      result.skills.push({ index: i, value: skill.value, ok: false, error: 'no persona to attach to' })
-      continue
-    }
+  // The library the items go into is the one of the persona's own profile (an existing persona may belong to another profile than the
+  // first one).
+  let libraryProfileId: string | null = profileId
+  if (personaId !== null) {
     try {
-      await addSkill(personaId, skill.value)
-      result.skills.push({ index: i, value: skill.value, ok: true })
-    } catch (err) {
-      result.skills.push({ index: i, value: skill.value, ok: false, error: message(err) })
+      libraryProfileId = (await fetchPersonas()).find((p) => p.id === personaId)?.profileId ?? profileId
+    } catch {
+      libraryProfileId = profileId
     }
   }
 
-  for (const [i, exp] of proposal.experience.entries()) {
-    if (!checked[`experience-${i}`]) continue
-    const label = `${exp.title} at ${exp.company}`
-    if (personaId === null) {
-      result.experience.push({ index: i, label, ok: false, error: 'no persona to attach to' })
+  const skillEntries = [...proposal.skills.entries()].filter(([i]) => checked[`skill-${String(i)}`])
+  const addedSkillIds: string[] = []
+  const skillRows: { index: number; value: string; id?: string; error?: string }[] = []
+  for (const [i, skill] of skillEntries) {
+    if (personaId === null || libraryProfileId === null) {
+      skillRows.push({ index: i, value: skill.value, error: 'no persona to attach to' })
       continue
     }
     try {
-      await addExperience(personaId, {
-        company: exp.company,
-        title: exp.title,
-        startDate: exp.startDate,
-        endDate: exp.endDate,
-        description: exp.description,
-      })
-      result.experience.push({ index: i, label, ok: true })
+      let library = await fetchProfileSkills(libraryProfileId)
+      let existing = findSkill(library, skill.value)
+      if (!existing) {
+        library = await addProfileSkill(libraryProfileId, skill.value)
+        existing = findSkill(library, skill.value)
+      }
+      if (!existing) throw new Error('the skill was not found in the library after adding it')
+      addedSkillIds.push(existing.id)
+      skillRows.push({ index: i, value: skill.value, id: existing.id })
     } catch (err) {
-      result.experience.push({ index: i, label, ok: false, error: message(err) })
+      skillRows.push({ index: i, value: skill.value, error: message(err) })
     }
+  }
+  let skillChoiceError: string | undefined
+  if (personaId !== null && addedSkillIds.length > 0) {
+    try {
+      const view = await fetchPersonaSkillsView(personaId)
+      await setPersonaSkillIds(personaId, mergeIds(view.used, addedSkillIds))
+    } catch (err) {
+      skillChoiceError = `added to the library, but not chosen for the persona: ${message(err)}`
+    }
+  }
+  for (const row of skillRows) {
+    const failure = row.error ?? (row.id !== undefined ? skillChoiceError : undefined)
+    result.skills.push(
+      failure === undefined
+        ? { index: row.index, value: row.value, ok: true }
+        : { index: row.index, value: row.value, ok: false, error: failure },
+    )
+  }
+
+  const experienceEntries = [...proposal.experience.entries()].filter(([i]) => checked[`experience-${String(i)}`])
+  const addedEntryIds: string[] = []
+  const experienceRows: { index: number; label: string; id?: string; error?: string }[] = []
+  for (const [i, exp] of experienceEntries) {
+    const label = `${exp.title} at ${exp.company}`
+    if (personaId === null || libraryProfileId === null) {
+      experienceRows.push({ index: i, label, error: 'no persona to attach to' })
+      continue
+    }
+    try {
+      const before = await fetchProfileExperience(libraryProfileId)
+      let id = findEntry(before, exp)?.id
+      if (id === undefined) {
+        const after = await addProfileExperience(libraryProfileId, {
+          company: exp.company,
+          title: exp.title,
+          startDate: exp.startDate,
+          endDate: exp.endDate,
+          description: exp.description,
+        })
+        id = addedEntryId(before, after, exp)
+      }
+      if (id === undefined) throw new Error('the experience was not found in the library after adding it')
+      addedEntryIds.push(id)
+      experienceRows.push({ index: i, label, id })
+    } catch (err) {
+      experienceRows.push({ index: i, label, error: message(err) })
+    }
+  }
+  let experienceChoiceError: string | undefined
+  if (personaId !== null && addedEntryIds.length > 0) {
+    try {
+      const view = await fetchPersonaExperienceView(personaId)
+      await setPersonaExperienceUse(personaId, mergeUses(view.used, addedEntryIds))
+    } catch (err) {
+      experienceChoiceError = `added to the library, but not chosen for the persona: ${message(err)}`
+    }
+  }
+  for (const row of experienceRows) {
+    const failure = row.error ?? (row.id !== undefined ? experienceChoiceError : undefined)
+    result.experience.push(
+      failure === undefined
+        ? { index: row.index, label: row.label, ok: true }
+        : { index: row.index, label: row.label, ok: false, error: failure },
+    )
   }
 
   return { ...result, profileId, personaId }

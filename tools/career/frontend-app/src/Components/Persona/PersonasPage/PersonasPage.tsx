@@ -299,6 +299,7 @@ export function PersonasPage({ profileId }: { profileId: string }) {
             <PersonaSuggestions
               runs={aiRuns.runs}
               linkedId={linkedId}
+              profileId={profileId}
               existing={personas.map((p) => ({ id: p.id, name: p.name }))}
               onAccepted={(created) => {
                 setNewIds((ids) => [...ids, ...created.map((c) => c.id)])

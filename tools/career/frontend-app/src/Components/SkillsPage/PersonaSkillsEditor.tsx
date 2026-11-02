@@ -1,202 +1,264 @@
 import { useEffect, useState } from 'react'
-import { fetchSkills, addSkill, removeSkill } from '../../api'
+import { addSkill, fetchPersonaSkillsView, removeSkill, setPersonaSkillIds, type PersonaSkillsView } from '../../api'
 import { PlusIcon, XIcon } from '../../Shared/Icons/icons'
 import { inputClass } from '../../Shared/inputClass'
+import { SKILLS_PATH } from '../../paths'
 import { PAGE_ACCENT, accentFor } from '../JobsPage/jobsTheme'
-import { LetterIndex } from './LetterIndex'
-import { filterByLetter, letterIndex } from './skillRules'
+import { buildProfileSearch, skillTextOk } from '../ProfileLibrary/libraryRules'
+import { toggleId, usesText } from '../ProfileLibrary/personaUseRules'
 
-// One persona's skills, editable: the A-Z index, the coloured chips (click a chip to rename it, the x removes
-// it) and the field to add one. "Edit" for a skill is a rename, done as remove-old-then-add-new: a skill is a
-// bare deduplicated string with no separate id an in-place update could target. Used by the persona's own skills
-// page; onCount tells the page around it how many skills there are (for its header). See
-// plan/ai/tools/career/step-07-dedicated-skills-and-experience-pages.md and step-119-skills-per-persona-pages.md.
-export function PersonaSkillsEditor({ personaId, onCount }: { personaId: string; onCount?: (count: number) => void }) {
-  const [skills, setSkills] = useState<string[]>([])
-  // The letter the index is filtering by, or null for all skills.
-  const [activeLetter, setActiveLetter] = useState<string | null>(null)
+// One persona's skills (plan 173): the skills of the profile's library it USES (a checklist: each is chosen or not), and the skills that
+// belong only to this persona (its own: add, rename, remove). The two are marked apart. onCount tells the page around it how many
+// skills the persona shows (for its header). The library itself is edited on the Skills page.
+export function PersonaSkillsEditor({
+  personaId,
+  profileId,
+  onCount,
+}: {
+  personaId: string
+  profileId: string
+  onCount?: (count: number) => void
+}) {
+  const [view, setView] = useState<PersonaSkillsView | null>(null)
   const [newSkill, setNewSkill] = useState('')
   const [editing, setEditing] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
   const [error, setError] = useState('')
 
-  function load(forPersonaId: string) {
+  function load() {
     setError('')
-    fetchSkills(forPersonaId)
-      .then(setSkills)
+    fetchPersonaSkillsView(personaId)
+      .then(setView)
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : String(err))
       })
   }
 
   useEffect(() => {
-    load(personaId)
+    load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [personaId])
 
-  function handleAdd() {
-    const skill = newSkill.trim()
-    if (!skill) return
+  function fail(err: unknown) {
+    setError(err instanceof Error ? err.message : String(err))
+  }
+
+  function toggle(skillId: string, on: boolean) {
+    if (!view) return
     setError('')
-    addSkill(personaId, skill)
-      .then((result) => {
-        setSkills(result)
+    setPersonaSkillIds(personaId, toggleId(view.used, skillId, on))
+      .then(setView)
+      .catch(fail)
+  }
+
+  function handleAdd() {
+    if (!skillTextOk(newSkill)) return
+    setError('')
+    addSkill(personaId, newSkill.trim())
+      .then(() => {
         setNewSkill('')
+        load()
       })
-      .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : String(err))
-      })
+      .catch(fail)
   }
 
   function handleRemove(skill: string) {
     setError('')
-    removeSkill(personaId, skill)
-      .then(() => {
-        setSkills((prev) => prev.filter((s) => s !== skill))
-      })
-      .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : String(err))
-      })
-  }
-
-  function startEdit(skill: string) {
-    setEditing(skill)
-    setEditValue(skill)
-  }
-
-  function cancelEdit() {
-    setEditing(null)
-    setEditValue('')
+    removeSkill(personaId, skill).then(load).catch(fail)
   }
 
   function saveEdit(oldSkill: string) {
-    const newValue = editValue.trim()
-    if (!newValue || newValue === oldSkill) {
-      cancelEdit()
+    const text = editValue.trim()
+    if (!skillTextOk(text) || text === oldSkill) {
+      setEditing(null)
       return
     }
     setError('')
-    addSkill(personaId, newValue)
+    addSkill(personaId, text)
       .then(() => removeSkill(personaId, oldSkill))
       .then(() => {
-        setSkills((prev) => prev.map((s) => (s === oldSkill ? newValue : s)))
-        cancelEdit()
+        setEditing(null)
+        load()
       })
-      .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : String(err))
-      })
+      .catch(fail)
   }
 
-  const index = letterIndex(skills)
-  // A letter whose skills are all gone (removed or renamed) stops filtering.
-  const letter = activeLetter !== null && index.some((l) => l.letter === activeLetter && l.count > 0) ? activeLetter : null
-  const visibleSkills = letter === null ? skills : filterByLetter(skills, letter)
-
   useEffect(() => {
-    onCount?.(skills.length)
-  }, [skills.length, onCount])
+    if (view) onCount?.(view.used.length + view.own.length)
+  }, [view, onCount])
+
+  const cardStyle = { borderColor: PAGE_ACCENT.soft, background: `linear-gradient(160deg, #ffffff 45%, ${PAGE_ACCENT.soft} 100%)` }
 
   return (
     <>
       <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
 
-      {
-        <section
-          className="career-enter career-delay-1 rounded-3xl border p-5 shadow-sm"
-          style={{ borderColor: PAGE_ACCENT.soft, background: `linear-gradient(160deg, #ffffff 45%, ${PAGE_ACCENT.soft} 100%)` }}
-        >
-          {skills.length > 0 && <LetterIndex index={index} active={letter} total={skills.length} onPick={setActiveLetter} />}
-          {skills.length === 0 && <p className="mb-3 text-sm text-gray-500">No skills yet. Add the first one below.</p>}
-          <div className="mb-4 flex flex-wrap gap-2">
-            {visibleSkills.map((skill, idx) => {
-              const accent = accentFor(skill)
-              return editing === skill ? (
-                <span
-                  key={skill}
-                  className="flex items-center gap-1.5 rounded-full border bg-white px-2 py-1"
-                  style={{ borderColor: accent.to }}
-                >
-                  <input
-                    // Deliberate: entering edit mode should focus the input
-                    // immediately, the same convention most inline-rename UIs use.
-                    // eslint-disable-next-line jsx-a11y/no-autofocus
-                    autoFocus
-                    value={editValue}
-                    onChange={(e) => {
-                      setEditValue(e.target.value)
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') saveEdit(skill)
-                      if (e.key === 'Escape') cancelEdit()
-                    }}
-                    className="w-28 rounded border border-gray-300 px-1.5 py-0.5 text-xs text-gray-900 focus:border-gray-500 focus:outline-none"
-                  />
-                  <button
-                    type="button"
-                    aria-label="Save"
-                    onClick={() => {
-                      saveEdit(skill)
-                    }}
-                    className="text-xs font-medium text-gray-700 hover:text-gray-900"
-                  >
-                    Save
-                  </button>
-                  <button type="button" aria-label="Cancel" onClick={cancelEdit} className="text-gray-400 hover:text-red-700">
-                    <XIcon />
-                  </button>
-                </span>
-              ) : (
-                <span
-                  key={skill}
-                  className="career-chip flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium"
-                  style={{ background: accent.soft, color: accent.text, '--i': idx } as React.CSSProperties}
-                >
-                  <span aria-hidden="true" className="h-2 w-2 rounded-full" style={{ background: accent.to }} />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      startEdit(skill)
-                    }}
-                    className="hover:underline"
-                  >
-                    {skill}
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={`Remove ${skill}`}
-                    onClick={() => {
-                      handleRemove(skill)
-                    }}
-                    className="opacity-60 hover:text-red-700 hover:opacity-100"
-                  >
-                    <XIcon />
-                  </button>
-                </span>
-              )
-            })}
-          </div>
-          <div className="flex gap-2">
-            <input
-              value={newSkill}
-              onChange={(e) => {
-                setNewSkill(e.target.value)
+      <section className="career-enter career-delay-1 mb-5 rounded-3xl border p-5 shadow-sm" style={cardStyle}>
+        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-sm font-semibold text-gray-800">From the profile’s library</h2>
+          {view && <span className="text-xs text-gray-500">{usesText(view.used.length, view.library.length, 'skill', 'skills')}</span>}
+        </div>
+        {view?.library.length === 0 && (
+          <p className="text-sm text-gray-500">
+            The profile has no skills yet.{' '}
+            <a
+              href={`${SKILLS_PATH}${buildProfileSearch(profileId)}`}
+              onClick={(e) => {
+                e.preventDefault()
+                window.__cinqoToolBridge.navigate(`${SKILLS_PATH}${buildProfileSearch(profileId)}`)
               }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleAdd()
-              }}
-              placeholder="Add a skill"
-              className={`flex-1 ${inputClass}`}
-            />
-            <button
-              type="button"
-              onClick={handleAdd}
-              className="flex items-center gap-1 rounded-md bg-gray-800 px-3.5 py-1.5 text-sm font-medium text-white transition-colors hover:bg-gray-900"
+              className="font-medium text-blue-700 hover:underline"
             >
-              <PlusIcon />
-              Add
-            </button>
-          </div>
-        </section>
-      }
+              Add them to the library
+            </a>{' '}
+            and choose here which ones this persona uses.
+          </p>
+        )}
+        <div className="flex flex-wrap gap-2">
+          {view?.library.map((skill) => {
+            const accent = accentFor(skill.skill)
+            const on = view.used.includes(skill.id)
+            return (
+              <button
+                key={skill.id}
+                type="button"
+                role="checkbox"
+                aria-checked={on}
+                title={on ? 'Used by this persona: click to stop using it' : 'Not used by this persona: click to use it'}
+                onClick={() => {
+                  toggle(skill.id, !on)
+                }}
+                className="flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors"
+                style={
+                  on
+                    ? { background: accent.soft, color: accent.text, borderColor: accent.to }
+                    : { background: '#fff', color: '#6b7280', borderColor: '#e5e7eb' }
+                }
+              >
+                <span
+                  aria-hidden="true"
+                  className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-sm border text-[10px]"
+                  style={{ borderColor: on ? accent.to : '#d1d5db', background: on ? accent.to : '#fff', color: '#fff' }}
+                >
+                  {on ? '✓' : ''}
+                </span>
+                {skill.skill}
+              </button>
+            )
+          })}
+        </div>
+      </section>
+
+      <section className="career-enter career-delay-2 rounded-3xl border p-5 shadow-sm" style={cardStyle}>
+        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-sm font-semibold text-gray-800">Only on this persona</h2>
+          {view && (
+            <span className="text-xs text-gray-500">
+              {view.own.length === 1 ? '1 skill of its own' : `${String(view.own.length)} skills of its own`}
+            </span>
+          )}
+        </div>
+        {view?.own.length === 0 && (
+          <p className="mb-3 text-sm text-gray-500">
+            No skills of its own yet. Add one below if this role needs a skill the profile does not list.
+          </p>
+        )}
+        <div className="mb-4 flex flex-wrap gap-2">
+          {view?.own.map((item, idx) => {
+            const accent = accentFor(item.skill)
+            return editing === item.skill ? (
+              <span
+                key={item.id}
+                className="flex items-center gap-1.5 rounded-full border bg-white px-2 py-1"
+                style={{ borderColor: accent.to }}
+              >
+                <input
+                  // Deliberate: entering edit mode should focus the input immediately, like the other inline renames.
+                  // eslint-disable-next-line jsx-a11y/no-autofocus
+                  autoFocus
+                  value={editValue}
+                  onChange={(e) => {
+                    setEditValue(e.target.value)
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') saveEdit(item.skill)
+                    if (e.key === 'Escape') setEditing(null)
+                  }}
+                  className="w-28 rounded border border-gray-300 px-1.5 py-0.5 text-xs text-gray-900 focus:border-gray-500 focus:outline-none"
+                />
+                <button
+                  type="button"
+                  aria-label="Save"
+                  onClick={() => {
+                    saveEdit(item.skill)
+                  }}
+                  className="text-xs font-medium text-gray-700 hover:text-gray-900"
+                >
+                  Save
+                </button>
+                <button
+                  type="button"
+                  aria-label="Cancel"
+                  onClick={() => {
+                    setEditing(null)
+                  }}
+                  className="text-gray-400 hover:text-red-700"
+                >
+                  <XIcon />
+                </button>
+              </span>
+            ) : (
+              <span
+                key={item.id}
+                className="career-chip flex items-center gap-1.5 rounded-full border border-dashed px-3 py-1 text-xs font-medium"
+                style={{ background: accent.soft, color: accent.text, borderColor: accent.to, '--i': idx } as React.CSSProperties}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditing(item.skill)
+                    setEditValue(item.skill)
+                  }}
+                  className="hover:underline"
+                >
+                  {item.skill}
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Remove ${item.skill}`}
+                  onClick={() => {
+                    handleRemove(item.skill)
+                  }}
+                  className="opacity-60 hover:text-red-700 hover:opacity-100"
+                >
+                  <XIcon />
+                </button>
+              </span>
+            )
+          })}
+        </div>
+        <div className="flex gap-2">
+          <input
+            value={newSkill}
+            onChange={(e) => {
+              setNewSkill(e.target.value)
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleAdd()
+            }}
+            placeholder="Add a skill to this persona only"
+            className={`flex-1 ${inputClass}`}
+          />
+          <button
+            type="button"
+            onClick={handleAdd}
+            className="flex items-center gap-1 rounded-md bg-gray-800 px-3.5 py-1.5 text-sm font-medium text-white transition-colors hover:bg-gray-900"
+          >
+            <PlusIcon />
+            Add
+          </button>
+        </div>
+      </section>
     </>
   )
 }

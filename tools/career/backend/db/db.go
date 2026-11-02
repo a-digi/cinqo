@@ -127,6 +127,11 @@ func InitDatabases() error {
 		careerDB.Close()
 		return fmt.Errorf("failed to link the CVs to their personas: %w", err)
 	}
+	// After the base schema, which creates the profile library tables (plan 173, step 1).
+	if err := migrateLiftPersonaItems(careerDB); err != nil {
+		careerDB.Close()
+		return fmt.Errorf("failed to lift the personas' skills and experience to their profiles: %w", err)
+	}
 	CareerDB = careerDB
 
 	jobsDir = dbDir
@@ -335,6 +340,74 @@ CREATE TABLE IF NOT EXISTS career_experience (
     end_date    TEXT,
     description TEXT,
     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- The profile's own library of skills and experience (plan/ai/tools/career/step-173-persona-skills-experience-and-education.md): global
+-- to the profile. A persona USES some of them (persona_skills, persona_experience, with the nullable per-persona override of an
+-- experience's title and description: NULL follows the profile's text, '' is an override to empty); career_skills and
+-- career_experience above stay the persona's OWN custom items. That a persona only uses items of its own profile is kept by the
+-- profileitems package, in one transaction, not by a trigger. Existing persona rows are lifted here once by migrateLiftPersonaItems.
+CREATE TABLE IF NOT EXISTS profile_skills (
+    id         TEXT PRIMARY KEY,
+    profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    skill      TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(profile_id, skill)
+);
+
+CREATE TABLE IF NOT EXISTS profile_experience (
+    id          TEXT PRIMARY KEY,
+    profile_id  TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    company     TEXT NOT NULL,
+    title       TEXT NOT NULL,
+    start_date  TEXT,
+    end_date    TEXT,
+    description TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS profile_skills_profile_idx ON profile_skills(profile_id);
+CREATE INDEX IF NOT EXISTS profile_experience_profile_idx ON profile_experience(profile_id);
+
+CREATE TABLE IF NOT EXISTS persona_skills (
+    persona_id       TEXT NOT NULL REFERENCES personas(id) ON DELETE CASCADE,
+    profile_skill_id TEXT NOT NULL REFERENCES profile_skills(id) ON DELETE CASCADE,
+    PRIMARY KEY (persona_id, profile_skill_id)
+);
+
+CREATE TABLE IF NOT EXISTS persona_experience (
+    persona_id            TEXT NOT NULL REFERENCES personas(id) ON DELETE CASCADE,
+    profile_experience_id TEXT NOT NULL REFERENCES profile_experience(id) ON DELETE CASCADE,
+    title_override        TEXT,
+    description_override  TEXT,
+    PRIMARY KEY (persona_id, profile_experience_id)
+);
+
+CREATE INDEX IF NOT EXISTS persona_skills_skill_idx ON persona_skills(profile_skill_id);
+CREATE INDEX IF NOT EXISTS persona_experience_experience_idx ON persona_experience(profile_experience_id);
+
+-- The profile's education (plan/ai/tools/career/step-173-persona-skills-experience-and-education.md, step 6): global to the profile, many
+-- per profile, never chosen or changed by a persona. Dates are free text of the shapes YYYY, YYYY-MM or YYYY-MM-DD (checked by the
+-- education package); an empty end date means the person is still studying there.
+CREATE TABLE IF NOT EXISTS profile_education (
+    id             TEXT PRIMARY KEY,
+    profile_id     TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    institution    TEXT NOT NULL,
+    degree         TEXT NOT NULL DEFAULT '',
+    field_of_study TEXT NOT NULL DEFAULT '',
+    start_date     TEXT,
+    end_date       TEXT,
+    description    TEXT,
+    created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS profile_education_profile_idx ON profile_education(profile_id);
+
+-- The one-time data migrations that must not run twice (a second run would lift the custom items a person added after the first),
+-- by name, with the time they ran.
+CREATE TABLE IF NOT EXISTS career_migrations (
+    name       TEXT PRIMARY KEY,
+    applied_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 -- cv_documents (CV Builder) is a deterministic, manual "generate a CV

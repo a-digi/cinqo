@@ -18,6 +18,7 @@ export function PersonaSuggestions({
   runs,
   existing,
   linkedId,
+  profileId,
   onAccepted,
   onChanged,
 }: {
@@ -25,6 +26,8 @@ export function PersonaSuggestions({
   // The suggestion a chat link pointed at: scrolled to and highlighted.
   linkedId: string | null
   existing: { id: string; name: string }[]
+  // The profile the personas belong to: what its library holds counts as known data too.
+  profileId?: string
   onAccepted: (created: { id: string; name: string }[]) => void
   onChanged: () => void
 }) {
@@ -32,7 +35,10 @@ export function PersonaSuggestions({
   const working = hasRunningRun(runs)
   const [decliningAll, setDecliningAll] = useState(false)
   const [error, setError] = useState('')
-  const knownState = useKnownData(existing.map((e) => e.id))
+  const knownState = useKnownData(
+    existing.map((e) => e.id),
+    profileId,
+  )
   const known = knownState.status === 'ready' && knownState.comparable ? knownState.known : null
   const notes = [...new Set(waiting.map((s) => s.run.proposal?.note.trim() ?? '').filter((n) => n !== ''))]
 

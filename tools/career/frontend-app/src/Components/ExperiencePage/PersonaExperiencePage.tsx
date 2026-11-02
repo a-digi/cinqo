@@ -5,6 +5,7 @@ import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { PageTips } from '../../Shared/PageTips/PageTips'
 import { EXPERIENCE_PATH } from '../../paths'
 import { plural } from '../CompaniesPage/companyStats'
+import { buildProfileSearch } from '../ProfileLibrary/libraryRules'
 import { profileLabel } from '../ProfileSwitcher/profileLabel'
 import { PersonaExperienceEditor } from './PersonaExperienceEditor'
 
@@ -48,16 +49,17 @@ export function PersonaExperiencePage({ personaId }: { personaId: string }) {
       })
   }, [personaId])
 
+  const backPath = `${EXPERIENCE_PATH}${buildProfileSearch(persona?.profileId ?? '')}`
   const backLink = (
     <a
-      href={EXPERIENCE_PATH}
+      href={backPath}
       onClick={(e) => {
         e.preventDefault()
-        window.__cinqoToolBridge.navigate(EXPERIENCE_PATH)
+        window.__cinqoToolBridge.navigate(backPath)
       }}
       className="mb-3 inline-block text-sm font-medium text-blue-700 hover:underline"
     >
-      ← All experience
+      ← Experience of the profile
     </a>
   )
 
@@ -76,13 +78,13 @@ export function PersonaExperiencePage({ personaId }: { personaId: string }) {
       <PageHeaderCard
         icon={<TimelineIcon />}
         title={`Experience: ${persona.name}`}
-        description={`${profile ? `${profileLabel(profile)} · ` : ''}The work history on this persona. The AI reads it when matching you against job postings.`}
+        description={`${profile ? `${profileLabel(profile)} · ` : ''}The work history this persona uses from the profile’s library, worded for its role, and the entries only it has. The AI reads it when matching you against job postings.`}
         pill={count !== null ? { text: plural(count, 'entry', 'entries') } : undefined}
       />
       {/* The tips sit in a column of their own beside the page (under it on a narrow window). */}
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
         <div className="order-1 min-w-0 flex-1 lg:order-2">
-          <PersonaExperienceEditor personaId={persona.id} onCount={setCount} />
+          <PersonaExperienceEditor personaId={persona.id} profileId={persona.profileId} onCount={setCount} />
         </div>
         <aside className="order-2 w-full shrink-0 lg:order-1 lg:sticky lg:top-6 lg:w-72">
           <PageTips page="experience" orientation="vertical" />

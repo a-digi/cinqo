@@ -19,6 +19,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/google/uuid"
@@ -59,6 +60,12 @@ type personaDetails struct {
 	RemotePreference string `json:"remotePreference"`
 }
 
+// Where a skill or an experience of a persona comes from (plan 173): the profile's library (the persona uses it) or the persona's own.
+const (
+	SourceProfile = "profile"
+	SourcePersona = "persona"
+)
+
 type careerExperience struct {
 	ID          string `json:"id"`
 	Company     string `json:"company"`
@@ -66,11 +73,27 @@ type careerExperience struct {
 	StartDate   string `json:"startDate,omitempty"`
 	EndDate     string `json:"endDate,omitempty"`
 	Description string `json:"description,omitempty"`
+	// Source is "profile" (a library experience the persona uses; ID is the library item's id) or "persona" (its own; ID is its own).
+	Source string `json:"source"`
+	// TitleOverridden/DescriptionOverridden: the persona shows its own title/description instead of the profile's (profile items only).
+	TitleOverridden       bool `json:"titleOverridden,omitempty"`
+	DescriptionOverridden bool `json:"descriptionOverridden,omitempty"`
 }
 
+// skillItem is one skill of a persona with where it comes from: ID is the library skill's id for source "profile", the persona's own
+// row id for "persona".
+type skillItem struct {
+	ID     string `json:"id"`
+	Skill  string `json:"skill"`
+	Source string `json:"source"`
+}
+
+// getPersonaDetailsResult: Skills and Experience are what the persona shows (the profile items it uses with its overrides, plus its
+// own), in the shapes the job match, the CV builder and the pages always read; SkillItems says where each skill comes from.
 type getPersonaDetailsResult struct {
 	PersonaDetails *personaDetails    `json:"personaDetails"`
 	Skills         []string           `json:"skills"`
+	SkillItems     []skillItem        `json:"skillItems"`
 	Experience     []careerExperience `json:"experience"`
 }
 
@@ -105,43 +128,149 @@ func FetchPersonaDetails(personaId string) (getPersonaDetailsResult, error) {
 		result.PersonaDetails = &d
 	}
 
-	skillRows, err := db.CareerDB.Query(`SELECT skill FROM career_skills WHERE persona_id = ? ORDER BY skill ASC`, personaId)
+	items, err := personaSkillItems(personaId)
 	if err != nil {
 		return result, err
 	}
-	defer skillRows.Close()
-	result.Skills = []string{}
-	for skillRows.Next() {
-		var s string
-		if err := skillRows.Scan(&s); err != nil {
-			return result, err
-		}
-		result.Skills = append(result.Skills, s)
-	}
-	if err := skillRows.Err(); err != nil {
-		return result, err
+	result.SkillItems = items
+	result.Skills = make([]string, 0, len(items))
+	for _, it := range items {
+		result.Skills = append(result.Skills, it.Skill)
 	}
 
-	expRows, err := db.CareerDB.Query(
-		`SELECT id, company, title, start_date, end_date, description
-		 FROM career_experience WHERE persona_id = ? ORDER BY created_at DESC`, personaId)
+	experience, err := personaExperience(personaId)
 	if err != nil {
 		return result, err
 	}
-	defer expRows.Close()
-	result.Experience = []careerExperience{}
-	for expRows.Next() {
-		var e careerExperience
-		var startDate, endDate, description sql.NullString
-		if err := expRows.Scan(&e.ID, &e.Company, &e.Title, &startDate, &endDate, &description); err != nil {
-			return result, err
+	result.Experience = experience
+	return result, nil
+}
+
+// OwnSkillItems are the persona's own custom skills (not the library skills it uses) of a details result.
+func (r getPersonaDetailsResult) OwnSkillItems() []skillItem {
+	out := []skillItem{}
+	for _, it := range r.SkillItems {
+		if it.Source == SourcePersona {
+			out = append(out, it)
 		}
-		e.StartDate = startDate.String
-		e.EndDate = endDate.String
-		e.Description = description.String
-		result.Experience = append(result.Experience, e)
 	}
-	return result, expRows.Err()
+	return out
+}
+
+// OwnExperience are the persona's own custom experiences of a details result.
+func (r getPersonaDetailsResult) OwnExperience() []careerExperience {
+	out := []careerExperience{}
+	for _, e := range r.Experience {
+		if e.Source == SourcePersona {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// personaSkillItems is what a persona shows as skills: the library skills it uses first, then its own, without a skill twice (same
+// text, any case: the library one wins), sorted by text like the list always was.
+func personaSkillItems(personaId string) ([]skillItem, error) {
+	items := []skillItem{}
+	seen := map[string]bool{}
+	read := func(query, source string) error {
+		rows, err := db.CareerDB.Query(query, personaId)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var it skillItem
+			if err := rows.Scan(&it.ID, &it.Skill); err != nil {
+				return err
+			}
+			it.Source = source
+			key := strings.ToLower(strings.TrimSpace(it.Skill))
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			items = append(items, it)
+		}
+		return rows.Err()
+	}
+	if err := read(`SELECT k.id, k.skill FROM persona_skills ps JOIN profile_skills k ON k.id = ps.profile_skill_id WHERE ps.persona_id = ? ORDER BY k.skill ASC`, SourceProfile); err != nil {
+		return nil, err
+	}
+	if err := read(`SELECT id, skill FROM career_skills WHERE persona_id = ? ORDER BY skill ASC`, SourcePersona); err != nil {
+		return nil, err
+	}
+	sort.SliceStable(items, func(i, j int) bool { return items[i].Skill < items[j].Skill })
+	return items, nil
+}
+
+// personaExperience is what a persona shows as experience: the library experiences it uses (its title and description overrides
+// applied) and its own, newest first.
+func personaExperience(personaId string) ([]careerExperience, error) {
+	type row struct {
+		careerExperience
+		createdAt string
+	}
+	rows := []row{}
+	profileRows, err := db.CareerDB.Query(
+		`SELECT x.id, x.company, x.title, x.start_date, x.end_date, x.description, x.created_at, pe.title_override, pe.description_override
+		 FROM persona_experience pe JOIN profile_experience x ON x.id = pe.profile_experience_id WHERE pe.persona_id = ?`, personaId)
+	if err != nil {
+		return nil, err
+	}
+	for profileRows.Next() {
+		var r row
+		var start, end, description, titleOverride, descriptionOverride sql.NullString
+		if err := profileRows.Scan(&r.ID, &r.Company, &r.Title, &start, &end, &description, &r.createdAt, &titleOverride, &descriptionOverride); err != nil {
+			profileRows.Close()
+			return nil, err
+		}
+		r.StartDate, r.EndDate, r.Description = start.String, end.String, description.String
+		r.Source = SourceProfile
+		if titleOverride.Valid {
+			r.Title, r.TitleOverridden = titleOverride.String, true
+		}
+		if descriptionOverride.Valid {
+			r.Description, r.DescriptionOverridden = descriptionOverride.String, true
+		}
+		rows = append(rows, r)
+	}
+	if err := profileRows.Err(); err != nil {
+		profileRows.Close()
+		return nil, err
+	}
+	profileRows.Close()
+
+	own, err := db.CareerDB.Query(
+		`SELECT id, company, title, start_date, end_date, description, created_at FROM career_experience WHERE persona_id = ?`, personaId)
+	if err != nil {
+		return nil, err
+	}
+	defer own.Close()
+	for own.Next() {
+		var r row
+		var start, end, description sql.NullString
+		if err := own.Scan(&r.ID, &r.Company, &r.Title, &start, &end, &description, &r.createdAt); err != nil {
+			return nil, err
+		}
+		r.StartDate, r.EndDate, r.Description = start.String, end.String, description.String
+		r.Source = SourcePersona
+		rows = append(rows, r)
+	}
+	if err := own.Err(); err != nil {
+		return nil, err
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		if rows[i].createdAt != rows[j].createdAt {
+			return rows[i].createdAt > rows[j].createdAt
+		}
+		return rows[i].ID < rows[j].ID
+	})
+	out := make([]careerExperience, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, r.careerExperience)
+	}
+	return out, nil
 }
 
 // UpdatePersonaDetailsArgs is a partial update — only fields present
@@ -238,6 +367,22 @@ func scoredDetailsDiffer(a, b personaDetails) bool {
 		a.DesiredTitles != b.DesiredTitles || a.DesiredLocations != b.DesiredLocations || a.RemotePreference != b.RemotePreference
 }
 
+// ErrProfileItem is returned when a persona's own route is asked to change an experience that comes from the profile's library
+// (plan 173): the persona only uses it. It is changed in the library, or overridden for the persona by profileitems.
+var ErrProfileItem = errors.New("this experience comes from the profile: change it in the profile's library, or override its title and description for this persona")
+
+// usesProfileExperience reports whether the persona uses the library experience with this id.
+func usesProfileExperience(personaId, id string) (bool, error) {
+	var one int
+	switch err := db.CareerDB.QueryRow(`SELECT 1 FROM persona_experience WHERE persona_id = ? AND profile_experience_id = ?`, personaId, id).Scan(&one); {
+	case err == sql.ErrNoRows:
+		return false, nil
+	case err != nil:
+		return false, err
+	}
+	return true, nil
+}
+
 func AddCareerSkill(personaId, skill string) error {
 	if err := requirePersonaExists(personaId); err != nil {
 		return err
@@ -287,6 +432,11 @@ func RemoveCareerExperience(personaId, id string) error {
 	if err := requirePersonaExists(personaId); err != nil {
 		return err
 	}
+	if uses, err := usesProfileExperience(personaId, id); err != nil {
+		return err
+	} else if uses {
+		return ErrProfileItem
+	}
 	res, err := db.CareerDB.Exec(`DELETE FROM career_experience WHERE id = ? AND persona_id = ?`, id, personaId)
 	if err == nil {
 		if n, _ := res.RowsAffected(); n > 0 {
@@ -314,6 +464,11 @@ type UpdateCareerExperienceArgs struct {
 func UpdateCareerExperience(args UpdateCareerExperienceArgs) error {
 	if err := requirePersonaExists(args.PersonaID); err != nil {
 		return err
+	}
+	if uses, err := usesProfileExperience(args.PersonaID, args.ID); err != nil {
+		return err
+	} else if uses {
+		return ErrProfileItem
 	}
 
 	var e careerExperience
@@ -430,7 +585,7 @@ type addCareerSkillArgs struct {
 func RegisterAddCareerSkill(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "add_career_skill",
-		Description: "Add a skill to a persona's own career details. A no-op if it's already there.",
+		Description: "Add a skill that belongs only to this persona (a custom skill of its own, not a skill of the profile's library; add those with add_profile_skill and choose them with set_persona_skills). A no-op if it's already there.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args addCareerSkillArgs) (*mcp.CallToolResult, any, error) {
 		if args.PersonaID == "" {
 			return db.ErrResult("personaId is required"), nil, nil
@@ -453,7 +608,7 @@ type removeCareerSkillArgs struct {
 func RegisterRemoveCareerSkill(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "remove_career_skill",
-		Description: "Remove a skill from a persona's own career details.",
+		Description: "Remove one of this persona's own custom skills. A skill the persona uses from the profile's library is not removed here: change the persona's choice with set_persona_skills.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args removeCareerSkillArgs) (*mcp.CallToolResult, any, error) {
 		if args.PersonaID == "" {
 			return db.ErrResult("personaId is required"), nil, nil
@@ -480,7 +635,7 @@ type addCareerExperienceArgs struct {
 func RegisterAddCareerExperience(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "add_career_experience",
-		Description: "Add a work experience entry to a persona's own career details. Returns the new entry's own id.",
+		Description: "Add a work experience entry that belongs only to this persona (a custom entry of its own, not an experience of the profile's library; add those with add_profile_experience and choose them with set_persona_experience). Returns the new entry's own id.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args addCareerExperienceArgs) (*mcp.CallToolResult, any, error) {
 		if args.PersonaID == "" {
 			return db.ErrResult("personaId is required"), nil, nil
@@ -504,7 +659,7 @@ type removeCareerExperienceArgs struct {
 func RegisterRemoveCareerExperience(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "remove_career_experience",
-		Description: "Remove a work experience entry from a persona's own career details.",
+		Description: "Remove one of this persona's own custom work experience entries. An entry that comes from the profile's library is refused: change the persona's choice with set_persona_experience, or delete it from the library.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args removeCareerExperienceArgs) (*mcp.CallToolResult, any, error) {
 		if args.PersonaID == "" {
 			return db.ErrResult("personaId is required"), nil, nil
@@ -532,7 +687,7 @@ type updateCareerExperienceToolArgs struct {
 func RegisterUpdateCareerExperience(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "update_career_experience",
-		Description: "Update a work experience entry on a persona's own career details. Only the fields provided are changed — omitted fields keep their current value. A no-op if id is unknown or belongs to a different persona.",
+		Description: "Update a work experience entry on a persona's own career details. Only the fields provided are changed — omitted fields keep their current value. A no-op if id is unknown or belongs to a different persona; an entry that comes from the profile's library is refused (change it in the library, or override its title and description for this persona with set_persona_experience).",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args updateCareerExperienceToolArgs) (*mcp.CallToolResult, any, error) {
 		if args.PersonaID == "" {
 			return db.ErrResult("personaId is required"), nil, nil

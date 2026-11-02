@@ -21,6 +21,8 @@
 // plan/ai/tools/career/step-10-job-seeker-profile.md,
 // plan/ai/tools/career/step-11-job-seeker-profile-frontend.md, and
 // plan/ai/tools/career/step-12-nested-profiles-menu.md.
+import { EducationEntryPage } from './Components/EducationPage/EducationEntryPage'
+import { EducationPage } from './Components/EducationPage/EducationPage'
 import { runFollower } from './Crawler/runFollowerStart'
 import { createRoot, type Root } from 'react-dom/client'
 import { ProfilesPage } from './Components/ProfilesPage/ProfilesPage'
@@ -93,6 +95,8 @@ import {
   NEW_PROFILE_PATH,
   NEW_PERSONA_PATH,
   EXPERIENCE_ENTRY_PATH,
+  EDUCATION_PATH,
+  EDUCATION_ENTRY_PATH,
   VIEW_COMPANY_PATH,
   VIEW_RECRUITER_PATH,
   VIEW_PROFILE_PATH,
@@ -310,6 +314,22 @@ window.__cinqoToolBridge.registerRoute({
 
 // No menu entry — reached only via the lists' own "New company" / "New recruiter"
 // buttons, same "reachable, but menu-less" convention JOB_DETAILS_PATH has.
+window.__cinqoToolBridge.registerRoute({
+  path: EDUCATION_PATH,
+  mount: (container) => {
+    mountReact(container, <EducationPage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: EDUCATION_ENTRY_PATH,
+  mount: (container) => {
+    mountReact(container, <EducationEntryPage />)
+  },
+  unmount: unmountReact,
+})
+
 window.__cinqoToolBridge.registerRoute({
   path: EXPERIENCE_ENTRY_PATH,
   mount: (container) => {

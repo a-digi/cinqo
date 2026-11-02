@@ -5,6 +5,7 @@ import {
   COMPANIES_PATH,
   CRAWLER_SETTINGS_PATH,
   CRAWL_MONITOR_PATH,
+  EDUCATION_PATH,
   IMPORT_CV_PATH,
   JOBS_PATH,
   PERSONAS_PATH,
@@ -80,14 +81,21 @@ export const QUESTIONS: Question[] = [
     id: 'persona',
     question: 'What is a persona?',
     answer:
-      'One role a profile is pursuing, for example “Backend Engineer”. Each persona has its own summary, skills and experience, and the AI matches jobs and writes CVs from it.',
+      'One role a profile is pursuing, for example “Backend Engineer”. Each persona has its own summary, chooses which of the profile’s skills and experience it uses (and can reword the experience for its role), and can have skills and experience of its own. The AI matches jobs and writes CVs from it.',
     link: { label: 'Open Personas', path: PERSONAS_PATH },
+  },
+  {
+    id: 'education',
+    question: 'Where do I put my education, and do personas use it?',
+    answer:
+      'On the Education page. Schools, degrees and courses belong to the profile itself and are shared by all its personas; a persona does not choose among them. An entry without an end date counts as ongoing.',
+    link: { label: 'Open Education', path: EDUCATION_PATH },
   },
   {
     id: 'import-review',
     question: 'Is everything saved straight away when I import a CV?',
     answer:
-      'No. Import from CV lets the AI propose a profile, persona, summary, skills and experience, and you review everything before it is saved.',
+      'No. Import from CV lets the AI propose a profile, persona, summary, skills and experience (they go into the profile’s library), and you review everything before it is saved.',
     link: { label: 'Open Import from CV', path: IMPORT_CV_PATH },
   },
   {

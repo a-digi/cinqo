@@ -39,6 +39,7 @@ import (
 	"career-tool-backend/cvbuilder"
 	"career-tool-backend/db"
 	"career-tool-backend/deletedjobs"
+	"career-tool-backend/education"
 	"career-tool-backend/jobcleanup"
 	"career-tool-backend/jobdeletedconsumers"
 	"career-tool-backend/jobmatchconsumer"
@@ -56,6 +57,7 @@ import (
 	"career-tool-backend/profilecreatedconsumer"
 	"career-tool-backend/profiledeletedconsumer"
 	"career-tool-backend/profileimage"
+	"career-tool-backend/profileitems"
 	"career-tool-backend/profilejobmatchconsumer"
 	"career-tool-backend/recruiters"
 	"career-tool-backend/rematchworker"
@@ -191,6 +193,13 @@ func runHTTPServer() {
 	http.HandleFunc("/persona-details", personaDetailsHandler)
 	http.HandleFunc("/skills", skillsHandler)
 	http.HandleFunc("/experience", experienceHandler)
+	// Plan 173: the profile library and what a persona uses of it.
+	http.HandleFunc("/profile-skills", profileSkillsHandler)
+	http.HandleFunc("/profile-experience", profileExperienceHandler)
+	http.HandleFunc("/persona-skills", personaSkillsHandler)
+	http.HandleFunc("/persona-experience", personaExperienceHandler)
+	// Plan 173, step 6: the profile's education.
+	http.HandleFunc("/education", educationHandler)
 	http.HandleFunc("/jobs", jobsHandler)
 	http.HandleFunc("/job-locations", jobLocationsHandler)
 	http.HandleFunc("/dashboard/new-jobs", jobs.NewJobsWidgetHandler)
@@ -321,6 +330,17 @@ func runMCPServer() {
 	persona.RegisterAddCareerExperience(server)
 	persona.RegisterRemoveCareerExperience(server)
 	persona.RegisterUpdateCareerExperience(server)
+	// Plan 173: the profile library and what a persona uses of it.
+	profileitems.RegisterListProfileSkills(server)
+	profileitems.RegisterAddProfileSkill(server)
+	profileitems.RegisterListProfileExperience(server)
+	profileitems.RegisterAddProfileExperience(server)
+	profileitems.RegisterSetPersonaSkills(server)
+	profileitems.RegisterSetPersonaExperience(server)
+	education.RegisterListEducation(server)
+	education.RegisterAddEducation(server)
+	education.RegisterUpdateEducation(server)
+	education.RegisterRemoveEducation(server)
 	jobs.RegisterSaveJob(server)
 	jobs.RegisterListJobs(server)
 	jobs.RegisterSearchJobs(server)

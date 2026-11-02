@@ -1,22 +1,34 @@
 import { useEffect, useState } from 'react'
-import { addExperience, fetchExperience, fetchPersonas, updateExperience } from '../../api'
+import {
+  addExperience,
+  addProfileExperience,
+  fetchExperience,
+  fetchPersonas,
+  fetchProfileExperience,
+  fetchProfiles,
+  updateExperience,
+  updateProfileExperience,
+} from '../../api'
 import { PlusIcon, TimelineIcon } from '../../Shared/Icons/icons'
 import { inputClass } from '../../Shared/inputClass'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { EXPERIENCE_PATH, experiencePathFor } from '../../paths'
+import { buildProfileSearch } from '../ProfileLibrary/libraryRules'
+import { profileLabel } from '../ProfileSwitcher/profileLabel'
 import { Field } from '../Field/Field'
 import { PAGE_ACCENT } from '../JobsPage/jobsTheme'
 import { getPersonaIdFromLocalStorage, setPersonaIdInLocalStorage } from '../Persona/PersonaSwitcher/repositoryLocalStorage'
 
 const emptyEntry = { company: '', title: '', startDate: '', endDate: '', description: '' }
 
-// The page behind the Experience list's "Add experience" and each entry's "Edit":
-// ?personaId= says whose experience (else the remembered persona) and ?id= which entry
-// to edit (none = add). The persona cannot be changed here; the list's own persona bar
-// does that. Menu-less, like the other create pages.
+// The page behind "Add experience" and each entry's "Edit": ?profileId= says an entry of the profile's library (plan 173), else
+// ?personaId= says an entry of that persona's own (else the remembered persona); ?id= says which entry to edit (none = add). The
+// profile or persona cannot be changed here. Menu-less, like the other create pages.
 export function ExperienceEntryPage() {
   const params = new URLSearchParams(window.location.search)
   const entryId = params.get('id') ?? ''
+  // Library mode: the entry belongs to the profile, not to a persona.
+  const libraryProfileId = params.get('profileId') ?? ''
   const [personaId, setPersonaId] = useState('')
   const [personaName, setPersonaName] = useState('')
   const [form, setForm] = useState(emptyEntry)
@@ -26,6 +38,38 @@ export function ExperienceEntryPage() {
   const [isSaving, setIsSaving] = useState(false)
 
   useEffect(() => {
+    if (libraryProfileId !== '') {
+      fetchProfiles()
+        .then(async (profiles) => {
+          const profile = profiles.find((p) => p.id === libraryProfileId)
+          if (!profile) {
+            setMessage('That profile was not found.')
+            return
+          }
+          setPersonaName(profileLabel(profile))
+          if (entryId) {
+            const entry = (await fetchProfileExperience(profile.id)).find((e) => e.id === entryId)
+            if (!entry) {
+              setMessage('That experience entry was not found.')
+              return
+            }
+            setForm({
+              company: entry.company,
+              title: entry.title,
+              startDate: entry.startDate ?? '',
+              endDate: entry.endDate ?? '',
+              description: entry.description ?? '',
+            })
+          }
+        })
+        .catch((err: unknown) => {
+          setError(err instanceof Error ? err.message : String(err))
+        })
+        .finally(() => {
+          setIsLoaded(true)
+        })
+      return
+    }
     const wanted = params.get('personaId') ?? getPersonaIdFromLocalStorage() ?? ''
     fetchPersonas()
       .then(async (personas) => {
@@ -60,8 +104,13 @@ export function ExperienceEntryPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Back to the persona's own experience page (the list when the persona is not known).
-  const backPath = personaId ? experiencePathFor(personaId) : EXPERIENCE_PATH
+  // Back to the library page of the profile, or to the persona's own experience page (the list when the persona is not known).
+  const backPath =
+    libraryProfileId !== ''
+      ? `${EXPERIENCE_PATH}${buildProfileSearch(libraryProfileId)}`
+      : personaId
+        ? experiencePathFor(personaId)
+        : EXPERIENCE_PATH
   function backToList() {
     window.__cinqoToolBridge.navigate(backPath)
   }
@@ -73,11 +122,18 @@ export function ExperienceEntryPage() {
     }
     setError('')
     setIsSaving(true)
-    const saved = entryId ? updateExperience(personaId, { id: entryId, ...form }) : addExperience(personaId, form)
+    const saved =
+      libraryProfileId !== ''
+        ? entryId
+          ? updateProfileExperience(entryId, form)
+          : addProfileExperience(libraryProfileId, form)
+        : entryId
+          ? updateExperience(personaId, { id: entryId, ...form })
+          : addExperience(personaId, form)
     saved
       .then(() => {
         // The list shows the remembered persona, so it opens on the one just changed.
-        setPersonaIdInLocalStorage(personaId)
+        if (libraryProfileId === '') setPersonaIdInLocalStorage(personaId)
         backToList()
       })
       .catch((err: unknown) => {
@@ -91,7 +147,15 @@ export function ExperienceEntryPage() {
       <PageHeaderCard
         icon={<TimelineIcon />}
         title={entryId ? 'Edit experience' : 'Add experience'}
-        description={personaName ? `A job or role on the persona “${personaName}”.` : 'A job or role on a persona.'}
+        description={
+          libraryProfileId !== ''
+            ? personaName
+              ? `A job or role in the library of ${personaName}, which its personas can use.`
+              : 'A job or role in the library of a profile.'
+            : personaName
+              ? `A job or role on the persona “${personaName}”.`
+              : 'A job or role on a persona.'
+        }
       />
       {!isLoaded ? (
         <p className="text-sm text-gray-500">Loading…</p>
@@ -166,7 +230,7 @@ export function ExperienceEntryPage() {
           <div className="mt-3 flex gap-2">
             <button
               type="submit"
-              disabled={isSaving || !isLoaded || !personaId}
+              disabled={isSaving || !isLoaded || (libraryProfileId === '' && !personaId)}
               className="flex items-center gap-1 rounded-md bg-gray-900 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:opacity-50"
             >
               {!entryId && <PlusIcon />}

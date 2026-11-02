@@ -108,6 +108,7 @@ export type PageTipsId =
   | 'summary'
   | 'skills'
   | 'experience'
+  | 'education'
   | 'photo'
   | 'importCv'
   | 'settings'
@@ -367,7 +368,7 @@ export const PAGE_TIPS: Record<PageTipsId, PageTipSet> = {
         title: 'One profile per job seeker',
         tone: 'blue',
         icon: 'person',
-        text: 'Personas, skills and experience all hang off a profile. Create the profile first, then add a persona for each role.',
+        text: 'Personas, skills, experience and education all hang off a profile. Create the profile first, then add a persona for each role.',
       },
       {
         id: 'completeness',
@@ -404,7 +405,7 @@ export const PAGE_TIPS: Record<PageTipsId, PageTipSet> = {
         title: 'One persona per role',
         tone: 'blue',
         icon: 'target',
-        text: 'A persona is one role you are pursuing, such as “Backend Engineer”. Each has its own summary, skills and experience.',
+        text: 'A persona is one role you are pursuing, such as “Backend Engineer”. Each has its own summary and chooses the profile’s skills and experience it uses.',
       },
       {
         id: 'why',
@@ -474,11 +475,11 @@ export const PAGE_TIPS: Record<PageTipsId, PageTipSet> = {
     tips: [
       {
         id: 'per-persona',
-        label: 'Per persona',
-        title: 'Skills belong to a persona',
+        label: 'Library',
+        title: 'Skills belong to the profile',
         tone: 'blue',
         icon: 'layers',
-        text: 'Skills are kept per persona. The AI reads them when matching you against job postings.',
+        text: 'Skills are kept once per profile. Each persona chooses the ones it uses and can add skills of its own. The AI reads them when matching you against job postings.',
       },
       {
         id: 'add',
@@ -494,7 +495,7 @@ export const PAGE_TIPS: Record<PageTipsId, PageTipSet> = {
         title: 'Three skills count',
         tone: 'amber',
         icon: 'check',
-        text: 'Three skills on one persona make the Skills part of the profile’s completeness count.',
+        text: 'Three skills, in the profile’s library or on one persona, make the Skills part of the profile’s completeness count.',
       },
     ],
   },
@@ -507,7 +508,7 @@ export const PAGE_TIPS: Record<PageTipsId, PageTipSet> = {
         title: 'Your work history',
         tone: 'blue',
         icon: 'timeline',
-        text: 'Experience entries are kept per persona. The AI reads them when matching you against job postings.',
+        text: 'Experience entries are kept once per profile. Each persona chooses the ones it uses, can reword the title and description for its role, and can add entries of its own. The AI reads them when matching you against job postings.',
       },
       {
         id: 'current',
@@ -523,7 +524,36 @@ export const PAGE_TIPS: Record<PageTipsId, PageTipSet> = {
         title: 'One entry counts',
         tone: 'amber',
         icon: 'check',
-        text: 'One experience entry on a persona makes the Experience part of the profile’s completeness count.',
+        text: 'One experience entry, in the profile’s library or on a persona, makes the Experience part of the profile’s completeness count.',
+      },
+    ],
+  },
+  education: {
+    name: 'Education',
+    tips: [
+      {
+        id: 'profile',
+        label: 'Per profile',
+        title: 'Education belongs to the profile',
+        tone: 'blue',
+        icon: 'layers',
+        text: 'Schools, degrees and courses are kept once per profile. Personas do not choose among them.',
+      },
+      {
+        id: 'add',
+        label: 'Add and edit',
+        title: 'Add an entry',
+        tone: 'green',
+        icon: 'plus',
+        text: 'Add education needs an institution; the degree, field of study, dates and description are optional. Dates are YYYY, YYYY-MM or YYYY-MM-DD.',
+      },
+      {
+        id: 'current',
+        label: 'Ongoing',
+        title: 'No end date means ongoing',
+        tone: 'amber',
+        icon: 'clock',
+        text: 'An entry without an end date is shown as still going on, and listed first.',
       },
     ],
   },

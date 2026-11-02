@@ -200,11 +200,25 @@ export interface CareerExperience {
   startDate: string
   endDate: string
   description: string
+  // Where the entry of a persona comes from (plan 173): the profile's library (the persona uses it) or the persona itself; missing on an
+  // answer that does not say.
+  source?: 'profile' | 'persona'
+  // The persona shows its own title or description instead of the library's.
+  titleOverridden?: boolean
+  descriptionOverridden?: boolean
+}
+
+// A skill of a persona with where it comes from.
+export interface PersonaSkillItem {
+  id: string
+  skill: string
+  source: 'profile' | 'persona'
 }
 
 export interface PersonaDetailsResult {
   personaDetails: PersonaDetails | null
   skills: string[]
+  skillItems?: PersonaSkillItem[]
   experience: CareerExperience[]
 }
 
@@ -654,6 +668,9 @@ function normalizeExperience(entries: Partial<CareerExperience>[]): CareerExperi
     startDate: e.startDate ?? '',
     endDate: e.endDate ?? '',
     description: e.description ?? '',
+    source: e.source,
+    titleOverridden: e.titleOverridden,
+    descriptionOverridden: e.descriptionOverridden,
   }))
 }
 
@@ -2467,4 +2484,200 @@ export async function fetchRequirementSuggestions(jobId: string): Promise<string
   const res = await fetch(`${PROXY_BASE}/job-requirements/suggest?jobId=${encodeURIComponent(jobId)}`, { credentials: 'include' })
   const data = await jsonOrThrow<{ suggestions: string[] }>(res, 'load the suggestions')
   return data.suggestions
+}
+
+// --- the profile's library of skills and experience (plan/ai/tools/career/step-173-persona-skills-experience-and-education.md) ---
+
+// A skill of the profile's library: global to the profile, and used by some of its personas.
+export interface ProfileSkill {
+  id: string
+  profileId: string
+  skill: string
+  createdAt: string
+  // How many personas use it.
+  usedBy: number
+}
+
+// An experience of the profile's library, with how many personas use it.
+export interface ProfileExperience {
+  id: string
+  profileId: string
+  company: string
+  title: string
+  startDate?: string
+  endDate?: string
+  description?: string
+  createdAt: string
+  usedBy: number
+}
+
+export interface ProfileExperienceInput {
+  company: string
+  title: string
+  startDate: string
+  endDate: string
+  description: string
+}
+
+// Unlike jsonOrThrow the answer's own text is the message when there is one: a refusal of the library ("the profile already has
+// this skill", "a skill needs a name") says what is wrong.
+async function libraryJson<T>(res: Response, action: string): Promise<T> {
+  if (!res.ok) {
+    const text = (await res.text().catch(() => '')).trim()
+    throw new Error(text !== '' ? text : `failed to ${action} (${String(res.status)})`)
+  }
+  return res.json() as Promise<T>
+}
+
+export async function fetchProfileSkills(profileId: string): Promise<ProfileSkill[]> {
+  const res = await fetch(`${PROXY_BASE}/profile-skills?profileId=${encodeURIComponent(profileId)}`, { credentials: 'include' })
+  return (await libraryJson<{ skills: ProfileSkill[] }>(res, 'load the skills')).skills
+}
+
+export async function addProfileSkill(profileId: string, skill: string): Promise<ProfileSkill[]> {
+  const res = await fetch(`${PROXY_BASE}/profile-skills`, {
+    method: 'POST',
+    credentials: 'include',
+    body: JSON.stringify({ profileId, skill }),
+  })
+  return (await libraryJson<{ skills: ProfileSkill[] }>(res, 'add the skill')).skills
+}
+
+export async function renameProfileSkill(id: string, skill: string): Promise<ProfileSkill[]> {
+  const res = await fetch(`${PROXY_BASE}/profile-skills`, { method: 'PUT', credentials: 'include', body: JSON.stringify({ id, skill }) })
+  return (await libraryJson<{ skills: ProfileSkill[] }>(res, 'rename the skill')).skills
+}
+
+export async function removeProfileSkill(id: string): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/profile-skills?id=${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'include' })
+  if (!res.ok && res.status !== 204) await libraryJson<unknown>(res, 'remove the skill')
+}
+
+export async function fetchProfileExperience(profileId: string): Promise<ProfileExperience[]> {
+  const res = await fetch(`${PROXY_BASE}/profile-experience?profileId=${encodeURIComponent(profileId)}`, { credentials: 'include' })
+  return (await libraryJson<{ experience: ProfileExperience[] }>(res, 'load the experience')).experience
+}
+
+export async function addProfileExperience(profileId: string, entry: ProfileExperienceInput): Promise<ProfileExperience[]> {
+  const res = await fetch(`${PROXY_BASE}/profile-experience`, {
+    method: 'POST',
+    credentials: 'include',
+    body: JSON.stringify({ profileId, ...entry }),
+  })
+  return (await libraryJson<{ experience: ProfileExperience[] }>(res, 'add the experience')).experience
+}
+
+export async function updateProfileExperience(id: string, entry: Partial<ProfileExperienceInput>): Promise<ProfileExperience[]> {
+  const res = await fetch(`${PROXY_BASE}/profile-experience`, {
+    method: 'PUT',
+    credentials: 'include',
+    body: JSON.stringify({ id, ...entry }),
+  })
+  return (await libraryJson<{ experience: ProfileExperience[] }>(res, 'update the experience')).experience
+}
+
+export async function removeProfileExperience(id: string): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/profile-experience?id=${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'include' })
+  if (!res.ok && res.status !== 204) await libraryJson<unknown>(res, 'remove the experience')
+}
+
+// --- what a persona uses of its profile's library (plan 173, step 4) ---
+
+// The persona's skills page: which library skills it uses (ids), the library to choose from, and its own custom skills.
+export interface PersonaSkillsView {
+  used: string[]
+  library: ProfileSkill[]
+  own: { id: string; skill: string }[]
+}
+
+// One used library experience and the persona's own wording of it; a missing field follows the profile's text.
+export interface ExperienceUse {
+  id: string
+  titleOverride?: string
+  descriptionOverride?: string
+}
+
+export interface PersonaExperienceView {
+  used: ExperienceUse[]
+  library: ProfileExperience[]
+  own: CareerExperience[]
+}
+
+export async function fetchPersonaSkillsView(personaId: string): Promise<PersonaSkillsView> {
+  const res = await fetch(`${PROXY_BASE}/persona-skills?personaId=${encodeURIComponent(personaId)}`, { credentials: 'include' })
+  return libraryJson<PersonaSkillsView>(res, 'load the persona’s skills')
+}
+
+// Replaces the persona's whole choice of library skills with exactly these ids.
+export async function setPersonaSkillIds(personaId: string, skillIds: string[]): Promise<PersonaSkillsView> {
+  const res = await fetch(`${PROXY_BASE}/persona-skills`, {
+    method: 'PUT',
+    credentials: 'include',
+    body: JSON.stringify({ personaId, skillIds }),
+  })
+  return libraryJson<PersonaSkillsView>(res, 'save the persona’s skills')
+}
+
+export async function fetchPersonaExperienceView(personaId: string): Promise<PersonaExperienceView> {
+  const res = await fetch(`${PROXY_BASE}/persona-experience?personaId=${encodeURIComponent(personaId)}`, { credentials: 'include' })
+  const view = await libraryJson<PersonaExperienceView>(res, 'load the persona’s experience')
+  return { ...view, own: normalizeExperience(view.own) }
+}
+
+// Replaces the persona's whole choice of library experiences, with their wording, by exactly this list.
+export async function setPersonaExperienceUse(personaId: string, experience: ExperienceUse[]): Promise<PersonaExperienceView> {
+  const res = await fetch(`${PROXY_BASE}/persona-experience`, {
+    method: 'PUT',
+    credentials: 'include',
+    body: JSON.stringify({ personaId, experience }),
+  })
+  const view = await libraryJson<PersonaExperienceView>(res, 'save the persona’s experience')
+  return { ...view, own: normalizeExperience(view.own) }
+}
+
+// --- the profile's education (plan 173, step 6 and 7) ---
+
+export interface Education {
+  id: string
+  profileId: string
+  institution: string
+  degree: string
+  fieldOfStudy: string
+  startDate: string
+  endDate: string
+  description: string
+  createdAt: string
+}
+
+export interface EducationInput {
+  institution: string
+  degree: string
+  fieldOfStudy: string
+  startDate: string
+  endDate: string
+  description: string
+}
+
+export async function fetchEducation(profileId: string): Promise<Education[]> {
+  const res = await fetch(`${PROXY_BASE}/education?profileId=${encodeURIComponent(profileId)}`, { credentials: 'include' })
+  return (await libraryJson<{ education: Education[] }>(res, 'load the education')).education
+}
+
+export async function addEducation(profileId: string, entry: EducationInput): Promise<Education[]> {
+  const res = await fetch(`${PROXY_BASE}/education`, {
+    method: 'POST',
+    credentials: 'include',
+    body: JSON.stringify({ profileId, ...entry }),
+  })
+  return (await libraryJson<{ education: Education[] }>(res, 'add the education')).education
+}
+
+export async function updateEducation(id: string, entry: Partial<EducationInput>): Promise<Education[]> {
+  const res = await fetch(`${PROXY_BASE}/education`, { method: 'PUT', credentials: 'include', body: JSON.stringify({ id, ...entry }) })
+  return (await libraryJson<{ education: Education[] }>(res, 'update the education')).education
+}
+
+export async function removeEducation(id: string): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/education?id=${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'include' })
+  if (!res.ok && res.status !== 204) await libraryJson<unknown>(res, 'remove the education')
 }

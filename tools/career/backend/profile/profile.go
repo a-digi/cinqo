@@ -137,9 +137,26 @@ func ListProfiles() ([]profile, error) {
 	return profiles, nil
 }
 
+// mostByProfile runs two grouped count queries and keeps, per profile, the larger count.
+func mostByProfile(a, b string) (map[string]int, error) {
+	first, err := countByProfile(a)
+	if err != nil {
+		return nil, err
+	}
+	second, err := countByProfile(b)
+	if err != nil {
+		return nil, err
+	}
+	for id, n := range second {
+		if n > first[id] {
+			first[id] = n
+		}
+	}
+	return first, nil
+}
+
 // fillCompleteness works out every profile's completeness from four grouped queries
-// (one per fact, not one per profile). Skills and experience are counted on the
-// profile's best single persona.
+// (one per fact, not one per profile). Skills and experience count the profile's library or its best single persona, whichever has more (plan 173).
 func fillCompleteness(profiles []profile, hasImage map[string]bool) error {
 	personas, err := countByProfile(`SELECT profile_id, COUNT(*) FROM personas GROUP BY profile_id`)
 	if err != nil {
@@ -151,16 +168,24 @@ func fillCompleteness(profiles []profile, hasImage map[string]bool) error {
 	if err != nil {
 		return err
 	}
-	skills, err := countByProfile(
+	// Skills and experience: the profile's library, or the best single persona (the skills and experiences it uses plus its own),
+	// whichever has more, so an item that only a persona has (the AI adds those) still counts.
+	skills, err := mostByProfile(
+		`SELECT profile_id, COUNT(*) FROM profile_skills GROUP BY profile_id`,
 		`SELECT profile_id, MAX(n) FROM (
-		   SELECT p.profile_id AS profile_id, COUNT(s.id) AS n FROM personas p JOIN career_skills s ON s.persona_id = p.id GROUP BY p.id
+		   SELECT p.profile_id AS profile_id,
+		          (SELECT COUNT(*) FROM persona_skills ps WHERE ps.persona_id = p.id) + (SELECT COUNT(*) FROM career_skills s WHERE s.persona_id = p.id) AS n
+		   FROM personas p
 		 ) GROUP BY profile_id`)
 	if err != nil {
 		return err
 	}
-	experience, err := countByProfile(
+	experience, err := mostByProfile(
+		`SELECT profile_id, COUNT(*) FROM profile_experience GROUP BY profile_id`,
 		`SELECT profile_id, MAX(n) FROM (
-		   SELECT p.profile_id AS profile_id, COUNT(e.id) AS n FROM personas p JOIN career_experience e ON e.persona_id = p.id GROUP BY p.id
+		   SELECT p.profile_id AS profile_id,
+		          (SELECT COUNT(*) FROM persona_experience pe WHERE pe.persona_id = p.id) + (SELECT COUNT(*) FROM career_experience e WHERE e.persona_id = p.id) AS n
+		   FROM personas p
 		 ) GROUP BY profile_id`)
 	if err != nil {
 		return err

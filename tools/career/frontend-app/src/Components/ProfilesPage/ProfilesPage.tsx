@@ -137,7 +137,7 @@ export function ProfilesPage() {
       <PageHeaderCard
         icon={<UserIcon />}
         title="Profiles"
-        description="One profile per job seeker, with links to their platforms. Personas, skills and experience belong to a profile."
+        description="One profile per job seeker, with links to their platforms. Personas, skills, experience and education belong to a profile."
         pill={{ text: plural(summary.profiles, 'profile', 'profiles') }}
       />
       {/* Steps 105 to 108: the tips sit in a column of their own beside the page (under it on a narrow window). */}

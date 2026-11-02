@@ -6,6 +6,7 @@ import {
   CRAWLER_SETTINGS_PATH,
   CRAWL_MONITOR_PATH,
   CV_DOCUMENTS_PATH,
+  EDUCATION_PATH,
   EXPERIENCE_PATH,
   IMPORT_CV_PATH,
   JOBS_PATH,
@@ -78,12 +79,12 @@ export const PROFILE_AND_CV: Guide = {
   design: 'cards',
   title: 'Profile & CV',
   description:
-    'How to set up who you are and turn it into a CV, in eight steps. The AI reads all of it when it matches jobs and writes CVs.',
+    'How to set up who you are and turn it into a CV, in nine steps. The AI reads all of it when it matches jobs and writes CVs.',
   steps: [
     {
       id: 'profile',
       title: 'Create the profile',
-      text: 'A profile is one job seeker. Personas, skills and experience hang off it, so create it first with New profile; you can add links afterwards.',
+      text: 'A profile is one job seeker. Personas, skills, experience and education hang off it, so create it first with New profile; you can add links afterwards.',
       link: { label: 'Open Profiles', path: PROFILES_PATH },
     },
     {
@@ -96,7 +97,7 @@ export const PROFILE_AND_CV: Guide = {
     {
       id: 'persona',
       title: 'Add a persona for each role',
-      text: 'A persona is one role the profile is pursuing, for example “Backend Engineer”. Each has its own summary, skills and experience. Pick the profile, then use New persona.',
+      text: 'A persona is one role the profile is pursuing, for example “Backend Engineer”. Each has its own summary and chooses which skills and experience it uses. Pick the profile, then use New persona.',
       link: { label: 'Open Personas', path: PERSONAS_PATH },
     },
     {
@@ -108,14 +109,20 @@ export const PROFILE_AND_CV: Guide = {
     {
       id: 'skills',
       title: 'Add the skills',
-      text: 'Pick a persona to edit its skills. The AI reads them when matching you against job postings.',
+      text: 'The profile keeps one library of skills. Add them there, then pick a persona to choose which ones it uses, or to give it skills of its own. The AI reads them when matching you against job postings.',
       link: { label: 'Open Skills', path: SKILLS_PATH },
     },
     {
       id: 'experience',
       title: 'Add the work experience',
-      text: 'Pick a persona to edit its work history. The AI reads it when matching you against job postings.',
+      text: 'The profile keeps one library of work history. Add entries there, then pick a persona to choose which ones it uses, reword their title or description for that role, or add entries of its own. The AI reads it when matching you against job postings.',
       link: { label: 'Open Experience', path: EXPERIENCE_PATH },
+    },
+    {
+      id: 'education',
+      title: 'Add the education',
+      text: 'Schools, degrees and courses belong to the profile itself and are shared by all its personas. Add one with Add education; an entry without an end date counts as ongoing.',
+      link: { label: 'Open Education', path: EDUCATION_PATH },
     },
     {
       id: 'photo',

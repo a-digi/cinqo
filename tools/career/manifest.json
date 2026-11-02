@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.0.649",
+  "version": "0.0.658",
   "authors": [
     { "name": "Anes Detit", "email": "tafa.andet@googlemail.com" }
   ],
@@ -186,6 +186,86 @@
     {
       "method": "DELETE",
       "path_suffix": "skills",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "profile-skills",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "profile-skills",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "profile-skills",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "profile-skills",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "profile-experience",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "profile-experience",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "profile-experience",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "profile-experience",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "persona-skills",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "persona-skills",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "persona-experience",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "persona-experience",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "education",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "education",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "education",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "education",
       "required_scope": "tool:career:profile"
     },
     {
@@ -810,6 +890,46 @@
     },
     {
       "name": "update_career_experience",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "list_profile_skills",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "add_profile_skill",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "list_profile_experience",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "add_profile_experience",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "set_persona_skills",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "set_persona_experience",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "list_education",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "add_education",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "update_education",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "remove_education",
       "required_scope": "tool:career:profile"
     },
     {

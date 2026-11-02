@@ -240,16 +240,57 @@ func insertAppliedPersona(tx *sql.Tx, profileID, runID string, p ProposedPersona
 	); err != nil {
 		return "", err
 	}
+	// Plan 173: a skill the profile's library already has (same text, any case) is linked, the rest is the persona's own; the same for
+	// an experience (same company, title and dates), whose description the persona keeps as its own wording when it differs.
 	for _, skill := range p.Skills {
-		if _, err := tx.Exec(`INSERT INTO career_skills (id, persona_id, skill) VALUES (?, ?, ?)`, uuid.NewString(), id, skill); err != nil {
+		var libraryID string
+		err := tx.QueryRow(`SELECT id FROM profile_skills WHERE profile_id = ? AND LOWER(TRIM(skill)) = LOWER(TRIM(?))`, profileID, skill).Scan(&libraryID)
+		switch {
+		case err == nil:
+			if _, err := tx.Exec(`INSERT INTO persona_skills (persona_id, profile_skill_id) VALUES (?, ?) ON CONFLICT DO NOTHING`, id, libraryID); err != nil {
+				return "", err
+			}
+		case err == sql.ErrNoRows:
+			if _, err := tx.Exec(`INSERT INTO career_skills (id, persona_id, skill) VALUES (?, ?, ?)`, uuid.NewString(), id, skill); err != nil {
+				return "", err
+			}
+		default:
 			return "", err
 		}
 	}
 	for _, r := range p.Experience {
-		if _, err := tx.Exec(
-			`INSERT INTO career_experience (id, persona_id, company, title, start_date, end_date, description) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			uuid.NewString(), id, r.Company, r.Title, r.StartDate, r.EndDate, r.Description,
-		); err != nil {
+		var libraryID, libraryTitle string
+		var libraryDescription sql.NullString
+		err := tx.QueryRow(
+			`SELECT id, title, description FROM profile_experience
+			 WHERE profile_id = ? AND LOWER(TRIM(company)) = LOWER(TRIM(?)) AND LOWER(TRIM(title)) = LOWER(TRIM(?))
+			   AND TRIM(COALESCE(start_date, '')) = TRIM(?) AND TRIM(COALESCE(end_date, '')) = TRIM(?)
+			 ORDER BY created_at ASC, id ASC LIMIT 1`,
+			profileID, r.Company, r.Title, r.StartDate, r.EndDate,
+		).Scan(&libraryID, &libraryTitle, &libraryDescription)
+		switch {
+		case err == nil:
+			var titleOverride, descriptionOverride sql.NullString
+			if r.Title != libraryTitle {
+				titleOverride = sql.NullString{String: r.Title, Valid: true}
+			}
+			if strings.TrimSpace(r.Description) != strings.TrimSpace(libraryDescription.String) {
+				descriptionOverride = sql.NullString{String: r.Description, Valid: true}
+			}
+			if _, err := tx.Exec(
+				`INSERT INTO persona_experience (persona_id, profile_experience_id, title_override, description_override) VALUES (?, ?, ?, ?)
+				 ON CONFLICT DO NOTHING`, id, libraryID, titleOverride, descriptionOverride,
+			); err != nil {
+				return "", err
+			}
+		case err == sql.ErrNoRows:
+			if _, err := tx.Exec(
+				`INSERT INTO career_experience (id, persona_id, company, title, start_date, end_date, description) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+				uuid.NewString(), id, r.Company, r.Title, r.StartDate, r.EndDate, r.Description,
+			); err != nil {
+				return "", err
+			}
+		default:
 			return "", err
 		}
 	}

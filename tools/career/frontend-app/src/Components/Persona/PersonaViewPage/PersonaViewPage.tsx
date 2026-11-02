@@ -18,6 +18,7 @@ import { COMMENT_TYPE_PERSONA } from '../../../Shared/Comments/commentTypes'
 import { LayersIcon, SparkleIcon } from '../../../Shared/Icons/icons'
 import { PageHeaderCard } from '../../../Shared/PageHeader/PageHeaderCard'
 import { PERSONAS_PATH, VIEW_PROFILE_PATH, personaDetailsPathFor, personasPathFor } from '../../../paths'
+import { OWN_NOTE, experienceNotes, skillNote } from '../../ProfileLibrary/personaUseRules'
 import { chatOfRun } from '../../../PersonaAi/runDisplay'
 import { ProfilePhotosPanel } from '../../ProfileImage/ProfilePhotosPanel'
 import { useProfilePhotos } from '../../ProfileImage/useProfilePhotos'
@@ -148,6 +149,8 @@ export function PersonaViewPage({ personaId }: { personaId: string }) {
   const rows = detailRows(details?.personaDetails ?? null)
   const summary = details?.personaDetails?.summary.trim() ?? ''
   const skills = details?.skills ?? []
+  // Where each skill comes from (the profile's library or the persona itself); an answer without it shows them all alike.
+  const skillSource = new Map((details?.skillItems ?? []).map((it) => [it.skill, it.source]))
   const experience = details?.experience ?? []
   const profilePath = `${VIEW_PROFILE_PATH}?id=${encodeURIComponent(persona.profileId)}`
 
@@ -238,15 +241,19 @@ export function PersonaViewPage({ personaId }: { personaId: string }) {
               <p className="text-sm text-gray-400">No skills yet.</p>
             ) : (
               <ul className="flex flex-wrap gap-1.5">
-                {skills.map((s) => (
-                  <li
-                    key={s}
-                    className="rounded-full px-2.5 py-1 text-xs"
-                    style={{ background: PAGE_ACCENT.soft, color: PAGE_ACCENT.text }}
-                  >
-                    {s}
-                  </li>
-                ))}
+                {skills.map((s) => {
+                  const own = skillNote(skillSource.get(s)) !== ''
+                  return (
+                    <li
+                      key={s}
+                      title={own ? OWN_NOTE : undefined}
+                      className={`rounded-full px-2.5 py-1 text-xs ${own ? 'border border-dashed' : ''}`}
+                      style={{ background: PAGE_ACCENT.soft, color: PAGE_ACCENT.text, ...(own ? { borderColor: PAGE_ACCENT.text } : {}) }}
+                    >
+                      {s}
+                    </li>
+                  )
+                })}
               </ul>
             )}
           </section>
@@ -257,10 +264,15 @@ export function PersonaViewPage({ personaId }: { personaId: string }) {
               <p className="text-sm text-gray-400">No experience entries yet.</p>
             ) : (
               <ul className="space-y-2.5">
-                {experience.map(roleView).map((r) => (
+                {experience.map(roleView).map((r, i) => (
                   <li key={r.id} className="rounded-2xl border border-gray-100 bg-white/70 p-3">
                     <p className="text-sm font-medium text-gray-900">
                       {r.title} <span className="font-normal text-gray-500">at {r.company}</span>
+                      {experienceNotes(experience[i]).map((note) => (
+                        <span key={note} className="ml-2 rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-violet-700">
+                          {note}
+                        </span>
+                      ))}
                     </p>
                     {r.period !== '' && <p className="text-xs text-gray-400">{r.period}</p>}
                     {r.description !== '' && <p className="mt-1 whitespace-pre-wrap break-words text-xs text-gray-600">{r.description}</p>}

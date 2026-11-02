@@ -111,6 +111,76 @@ func TestProfilesList_CarriesCompleteness(t *testing.T) {
 	}
 }
 
+// Plan 173: skills and experience count the profile's library, or its best single persona (used plus own), whichever has more.
+func TestProfilesList_CompletenessCountsTheLibraryOrTheBestPersona(t *testing.T) {
+	setupHandlerDB(t)
+	mk := func(name string) (profileID, personaID string) {
+		id, err := profile.CreateProfile(name, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		pid, err := persona.CreatePersona(id, "P", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id, pid
+	}
+	skillsDone := func(name string) bool {
+		for _, it := range listProfilesJSON(t)[name].Items {
+			if it.Key == "skills" {
+				return it.Done
+			}
+		}
+		t.Fatalf("%s has no skills item", name)
+		return false
+	}
+	expDone := func(name string) bool {
+		for _, it := range listProfilesJSON(t)[name].Items {
+			if it.Key == "experience" {
+				return it.Done
+			}
+		}
+		t.Fatalf("%s has no experience item", name)
+		return false
+	}
+
+	// Library only: three skills and an experience in the library, no persona uses any: the profile has them.
+	lib, _ := mk("Library")
+	for i, s := range []string{"go", "sql", "docker"} {
+		mustExec(t, `INSERT INTO profile_skills (id, profile_id, skill) VALUES (?, ?, ?)`, "ls"+string(rune('a'+i)), lib, s)
+	}
+	mustExec(t, `INSERT INTO profile_experience (id, profile_id, company, title) VALUES ('le', ?, 'Acme', 'Dev')`, lib)
+	if !skillsDone("Library") || !expDone("Library") {
+		t.Error("the library's skills and experience must count")
+	}
+
+	// Used plus own on one persona: two used and one own skill is three.
+	mix, mixPersona := mk("Mixed")
+	mustExec(t, `INSERT INTO profile_skills (id, profile_id, skill) VALUES ('m1', ?, 'go'), ('m2', ?, 'sql'), ('m3', ?, 'rust')`, mix, mix, mix)
+	mustExec(t, `INSERT INTO persona_skills (persona_id, profile_skill_id) VALUES (?, 'm1'), (?, 'm2')`, mixPersona, mixPersona)
+	if skillsDone("Mixed") != true {
+		t.Error("the library has three skills")
+	}
+
+	// Only a persona-own item (what the AI tools add) still counts for the experience item.
+	own, ownPersona := mk("Own")
+	_ = own
+	mustExec(t, `INSERT INTO career_experience (id, persona_id, company, title) VALUES ('oe', ?, 'Own', 'Role')`, ownPersona)
+	if !expDone("Own") {
+		t.Error("an experience only a persona has must still count")
+	}
+	if skillsDone("Own") {
+		t.Error("no skills anywhere: not done")
+	}
+
+	// Two skills only: below the threshold.
+	few, _ := mk("Few")
+	mustExec(t, `INSERT INTO profile_skills (id, profile_id, skill) VALUES ('f1', ?, 'go'), ('f2', ?, 'sql')`, few, few)
+	if skillsDone("Few") {
+		t.Error("two skills are below the threshold")
+	}
+}
+
 // Deleting a profile never deletes its photo: another profile may link the same one
 // (step 110), and the photo stays in the library.
 func TestProfileDelete_KeepsTheSharedPhoto(t *testing.T) {

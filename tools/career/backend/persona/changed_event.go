@@ -28,3 +28,8 @@ func publishPersonaChanged(personaID, change string) {
 	}
 	domainevent.Publish("career.persona.changed", map[string]string{"persona_id": personaID, "profile_id": profileID, "change": change})
 }
+
+// PublishChanged is publishPersonaChanged for the profileitems package (plan 173): a change of the profile library or of what a persona
+// uses changes what the persona shows, so the matcher must hear of it too. Same rules: after the write succeeded, only for a
+// change that really changed something.
+func PublishChanged(personaID, change string) { publishPersonaChanged(personaID, change) }
