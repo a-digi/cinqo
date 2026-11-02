@@ -24,13 +24,11 @@ import {
 // The bridge's own menu-entry type (its interface is local to the d.ts file).
 type MenuEntry = Parameters<Window['__cinqoToolBridge']['registerMenuEntry']>[0]
 
-// The Career tool's sidebar menu, ordered by how it is used: the daily pages first
-// (Jobs, with the platforms that feed it), what surrounds them next (Contacts), and
-// the one-time setup last (My Profile, which also holds the CV pages). A parent is a
-// pure grouping label, never a page of its own, and a group is only shown when at
-// least one of its pages is visible to the user (filterVisible, which works at any
-// depth), so the per-page scopes below are all that decide who sees what. Every
-// path is unchanged from before the regrouping.
+// The Career tool's sidebar menu: My Profile first (it holds the one-time setup and the CV pages, and everything else works from it),
+// then Jobs (with the platforms that feed it and the contacts around it: Companies and Recruiters), then Settings and Q&A. A parent is
+// a pure grouping label, never a page of its own, and a group is only shown when at least one of its pages is visible to the user
+// (filterVisible, which works at any depth), so the per-page scopes below are all that decide who sees what. Every path is unchanged
+// from before the regrouping (plan/ai/tools/career/step-172-menu-contacts-under-jobs.md).
 export const careerMenuEntry: MenuEntry = {
   label: 'Career',
   // A briefcase glyph — built only from the sidebar's own sanitizer
@@ -38,27 +36,6 @@ export const careerMenuEntry: MenuEntry = {
   // plan/ai/tools/step-15-menu-icons-for-browser-and-career.md.
   icon: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor"><rect x="3" y="7" width="14" height="9" rx="1.5" stroke-width="1.3"/><path d="M7 7V5.5a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 13 5.5V7" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><line x1="3" y1="11" x2="17" y2="11" stroke-width="1.3"/></svg>',
   children: [
-    {
-      label: 'Jobs',
-      children: [
-        { label: 'Jobs', path: JOBS_PATH, scopes: ['tool:career:jobs'] },
-        {
-          // The job portals the jobs are crawled from (formerly "Job Sources").
-          label: 'Platforms',
-          children: [
-            { label: 'Platforms', path: PLATFORMS_PATH, scopes: ['tool:career:portals'] },
-            { label: 'Crawl Monitor', path: CRAWL_MONITOR_PATH, scopes: ['tool:career:portals'] },
-          ],
-        },
-      ],
-    },
-    {
-      label: 'Contacts',
-      children: [
-        { label: 'Companies', path: COMPANIES_PATH, scopes: ['tool:career:companies'] },
-        { label: 'Recruiters', path: RECRUITERS_PATH, scopes: ['tool:career:companies'] },
-      ],
-    },
     {
       label: 'My Profile',
       children: [
@@ -74,6 +51,27 @@ export const careerMenuEntry: MenuEntry = {
             { label: 'CVs', path: CV_DOCUMENTS_PATH, scopes: ['tool:career:cv_documents'] },
             // Reads a CV into the profile, persona, skills and experience (the page is still headed "Import from CV").
             { label: 'Import', path: IMPORT_CV_PATH, scopes: ['tool:career:cv_import'] },
+          ],
+        },
+      ],
+    },
+    {
+      label: 'Jobs',
+      children: [
+        { label: 'Jobs', path: JOBS_PATH, scopes: ['tool:career:jobs'] },
+        {
+          // The job portals the jobs are crawled from (formerly "Job Sources").
+          label: 'Platforms',
+          children: [
+            { label: 'Platforms', path: PLATFORMS_PATH, scopes: ['tool:career:portals'] },
+            { label: 'Crawl Monitor', path: CRAWL_MONITOR_PATH, scopes: ['tool:career:portals'] },
+          ],
+        },
+        {
+          label: 'Contacts',
+          children: [
+            { label: 'Companies', path: COMPANIES_PATH, scopes: ['tool:career:companies'] },
+            { label: 'Recruiters', path: RECRUITERS_PATH, scopes: ['tool:career:companies'] },
           ],
         },
       ],
