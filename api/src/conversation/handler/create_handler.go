@@ -45,6 +45,9 @@ type createConversationRequest struct {
 	// call, and nothing else. Omitted means no restriction; an empty list, an unknown tool name
 	// or composer mode is a 400. It can only narrow what the caller may already use.
 	AllowedTools []string `json:"allowedTools"`
+	// CompactToolResults (plan/ai/conversation/step-45, step 3) — optional, default false: the tool loop folds old bulky tool results,
+	// answers a repeated read-only call in one line and warns two rounds before the budget ends. Direct mode only.
+	CompactToolResults bool `json:"compactToolResults"`
 }
 
 // CreateHandler handles POST /api/v1/conversations. title defaults to
@@ -119,6 +122,10 @@ func CreateHandler(reqCtx request.RequestContext) {
 			}
 		}
 	}
+	if body.CompactToolResults && orchestrationMode != conversation_entity.OrchestrationModeDirect {
+		response.ErrorResponse(w, http.StatusBadRequest, "compactToolResults is only supported in direct mode")
+		return
+	}
 	encodedTools, err := conversation_entity.EncodeAllowedTools(allowedTools)
 	if err != nil {
 		response.ErrorResponse(w, http.StatusInternalServerError, "failed to store allowedTools")
@@ -157,6 +164,7 @@ func CreateHandler(reqCtx request.RequestContext) {
 		OrchestrationMode:  orchestrationMode,
 		ToolIterationLimit: body.ToolIterationLimit,
 		AllowedTools:       encodedTools,
+		CompactToolResults: body.CompactToolResults,
 	}
 
 	if err := conversation_persistent.NewConversationPersistentRepo(db).Insert(c); err != nil {

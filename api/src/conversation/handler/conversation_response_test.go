@@ -26,3 +26,15 @@ func TestConversationResponseEchoesTheAllowlist(t *testing.T) {
 		t.Fatalf("an unrestricted conversation must not carry the field: %s", open)
 	}
 }
+
+// The opt-in is echoed so a caller can see it was applied; a conversation without it carries no field.
+func TestConversationResponseEchoesTheCompactToolResultsOptIn(t *testing.T) {
+	on, _ := json.Marshal(toConversationResponse(&conversation_entity.Conversation{ID: "c1", CompactToolResults: true}))
+	if !strings.Contains(string(on), `"compactToolResults":true`) {
+		t.Fatalf("json = %s", on)
+	}
+	off, _ := json.Marshal(toConversationResponse(&conversation_entity.Conversation{ID: "c2"}))
+	if strings.Contains(string(off), "compactToolResults") {
+		t.Fatalf("a conversation without the opt-in must not carry the field: %s", off)
+	}
+}

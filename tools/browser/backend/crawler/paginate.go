@@ -907,6 +907,7 @@ func RegisterCrawlPaginated(server *mcp.Server) {
 		Description: "Extract fields from the currently loaded page, then follow a pagination control and repeat, up to a maximum number of pages — instructed via a YAML document (fields + pagination). Read-only; submits nothing. " +
 			"The page must be loaded first: either add a top-level url: <the page address> to the YAML (this tool then opens it itself, in the same step), or call fetch_page_html for it before this. find_repeating_items does NOT leave its page loaded here, so right after it the browser is blank and this tool answers with an error until you do one of those. " +
 			"Before writing the instructions, check whether the page LISTS MULTIPLE similar items at once or describes just one. For a listing page, always add a top-level container selector for one item's own repeating wrapping element — the default correct approach for a listing page, not a fallback — so the result is one correctly-grouped object per item (in `items`) instead of separate same-length arrays (in `results`) that may NOT actually line up. " +
+			"The result also carries `extractionCheck`, the verdict on the pages it returned (ok, itemsFound, itemsExtractable, itemsSkipped, blankItems, skippedSamples, message, and a warning when only 1 or 2 items came back): the same rule a real crawl applies (every item needs a title and a url; a few completely empty rows are tolerated). Read it instead of counting items or copying the pages into another tool. " +
 			"Optionally add a top-level mapping to rename extracted fields to specific output keys — e.g. a consuming tool expects title/url/company but this page's own natural fields are better labeled job_title/link/employer. " +
 			"If a Cloudflare challenge or block is hit on the very first page, this automatically retries in a normal (non-headless) browser window and can wait up to about 30 minutes for a person to notice and solve the challenge there before giving up — meaning this call can take up to roughly 30 minutes in that case, almost certainly longer than this AI tool-calling session's own timeout, so a Cloudflare block on page 1 is effectively only recoverable through this path by a human watching for the window, not by an AI call waiting on the result — and only then fails with a cloudflare_challenge_unresolved error if it's still blocked. If it's hit on a later page (no such retry there), pagination stops and the response's stoppedReason is \"cloudflare_blocked\" (with blockedReason explaining why) — pages already collected before the block are still returned.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args crawlPaginatedArgs) (*mcp.CallToolResult, any, error) {
@@ -980,24 +981,42 @@ func RegisterCrawlPaginated(server *mcp.Server) {
 			}, nil, nil
 		}
 
-		var result paginatedCrawlResponse
-		if err := json.Unmarshal(respBody, &result); err != nil {
-			return &mcp.CallToolResult{
-				Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("failed to parse crawl_paginated response: %v", err)}},
-				IsError: true,
-			}, nil, nil
-		}
-		// What the AI reads (and copies into check_crawl_extraction_result) is shortened; see ai_result_cap.go.
-		capListingItemValues(result.Pages)
-
-		text, err := json.MarshalIndent(result, "", "  ")
-		if err != nil {
-			return &mcp.CallToolResult{
-				Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("failed to format result: %v", err)}},
-				IsError: true,
-			}, nil, nil
-		}
-
-		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(text)}}}, nil, nil
+		return aiCrawlResult(respBody), nil, nil
 	})
+}
+
+// aiCrawlResponse is what crawl_paginated shows an AI: the crawl response and, when pages came back, the verdict on them.
+type aiCrawlResponse struct {
+	paginatedCrawlResponse
+	// ExtractionCheck (plan/ai/conversation/step-45, step 2) is the verdict check_crawl_extraction_result would give for these
+	// pages, so the model does not have to retype the crawl to learn it. Absent when no page came back (a block, an error).
+	ExtractionCheck *extractionCheck `json:"extractionCheck,omitempty"`
+}
+
+// aiCrawlResult turns the sibling's /crawl-paginated answer into the tool result an AI reads: the verdict is computed on the full
+// values, then the long text values are shortened (see ai_result_cap.go).
+func aiCrawlResult(respBody []byte) *mcp.CallToolResult {
+	var result paginatedCrawlResponse
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("failed to parse crawl_paginated response: %v", err)}},
+			IsError: true,
+		}
+	}
+	shown := aiCrawlResponse{paginatedCrawlResponse: result}
+	if len(result.Pages) > 0 {
+		check := extractionCheckForPages(result.Pages)
+		shown.ExtractionCheck = &check
+	}
+	// What the AI reads is shortened; see ai_result_cap.go.
+	capListingItemValues(shown.Pages)
+
+	text, err := json.MarshalIndent(shown, "", "  ")
+	if err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("failed to format result: %v", err)}},
+			IsError: true,
+		}
+	}
+	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(text)}}}
 }

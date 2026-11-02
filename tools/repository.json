@@ -8,11 +8,11 @@
       "email": "tafa.andet@googlemail.com"
     }
   ],
-  "generatedAt": "2026-11-02T13:04:08Z",
+  "generatedAt": "2026-11-02T13:30:32Z",
   "tools": [
     {
       "id": "browser",
-      "currentVersionId": "0.0.210",
+      "currentVersionId": "0.0.211",
       "versions": [
         {
           "authors": [
@@ -22,38 +22,38 @@
             }
           ],
           "license": "Proprietary",
-          "versionId": "0.0.210",
+          "versionId": "0.0.211",
           "name": "Browser",
-          "version": "0.0.210",
+          "version": "0.0.211",
           "releasedAt": "2026-11-02",
           "packages": [
             {
               "os": "darwin",
               "arch": "arm64",
               "url": "browser/versions/tool-browser-darwin-arm64.zip",
-              "sha256": "27f1219daff79b5b43d9c44c6ac757faf1e6f189e4aa77c66f4b6081d5ef0841",
-              "sizeBytes": 15357450
+              "sha256": "cc9ec785de3b2659c29347dcbe08fa1b7aa498bcbd5fcf630d07fdf5207d0ab1",
+              "sizeBytes": 15369451
             },
             {
               "os": "linux",
               "arch": "amd64",
               "url": "browser/versions/tool-browser-linux-amd64.zip",
-              "sha256": "1918dc8f1ab0dfc2951aec2e12fce8a377fb7df1b1ccb999fd98ba16e6189f37",
-              "sizeBytes": 15433566
+              "sha256": "d93994708a6896ea90c12ffeb2f1e04b3fe61719a9c211311ce141bf444e7b8a",
+              "sizeBytes": 15448513
             },
             {
               "os": "linux",
               "arch": "arm64",
               "url": "browser/versions/tool-browser-linux-arm64.zip",
-              "sha256": "f83652e562e877e5ebfc41dcf88e7504e7cff3d8e722bb1d9bef49b533a19e5e",
-              "sizeBytes": 14514779
+              "sha256": "464d08259e33d5e0338aa454611a8f592a0b81ab666a135b6bb3a64d1a9140b1",
+              "sizeBytes": 14531479
             },
             {
               "os": "windows",
               "arch": "amd64",
               "url": "browser/versions/tool-browser-windows-amd64.zip",
-              "sha256": "feb0e81ad4fcae21c2c75c7fc0686d8e1bda280600fe510942345e08b3209d0c",
-              "sizeBytes": 14828743
+              "sha256": "6ef57c27e9600718de2f51efffeb37dcfb20c630c34b77097bbaf30b512b3cff",
+              "sizeBytes": 14844409
             }
           ]
         }
@@ -61,7 +61,7 @@
     },
     {
       "id": "career",
-      "currentVersionId": "0.0.599",
+      "currentVersionId": "0.0.602",
       "versions": [
         {
           "authors": [
@@ -71,38 +71,38 @@
             }
           ],
           "license": "Proprietary",
-          "versionId": "0.0.599",
+          "versionId": "0.0.602",
           "name": "Career",
-          "version": "0.0.599",
+          "version": "0.0.602",
           "releasedAt": "2026-11-02",
           "packages": [
             {
               "os": "darwin",
               "arch": "arm64",
               "url": "career/versions/tool-career-darwin-arm64.zip",
-              "sha256": "763e7b7b8af022b4ddd357d304eef365cd0d0a3b730cf08ac693c63742cc65e7",
-              "sizeBytes": 17241864
+              "sha256": "dc5cc7d0e348004e1b88030e1beaee675ea7e1c82a84396b80db891edc61888f",
+              "sizeBytes": 17242057
             },
             {
               "os": "linux",
               "arch": "amd64",
               "url": "career/versions/tool-career-linux-amd64.zip",
-              "sha256": "ca57a2d1b6eb9eda4f86ca1f8504b9b3001fcd1853a394739176684d74cf013f",
-              "sizeBytes": 17410026
+              "sha256": "bea17fa760624779bc07b72588e515718b4d2926be9d3ce0b13fd2b8f2ad9b68",
+              "sizeBytes": 17410212
             },
             {
               "os": "linux",
               "arch": "arm64",
               "url": "career/versions/tool-career-linux-arm64.zip",
-              "sha256": "c9e9565e5b0c84f40d04194780bb54833df0aa051db91e125717cf3ef5d31ddf",
-              "sizeBytes": 16468345
+              "sha256": "261ff33de7a1b12815288d48ccfa53bf474182edf0927255223c2ed8136d8dd6",
+              "sizeBytes": 16468539
             },
             {
               "os": "windows",
               "arch": "amd64",
               "url": "career/versions/tool-career-windows-amd64.zip",
-              "sha256": "20477218760996e1e38bf7dfa34c46d75c3adf9c11dca1a4d05b9553d8b9a92e",
-              "sizeBytes": 17738544
+              "sha256": "73fdc372ebe20a1889babbbe1ff69c9f651144ee809f2e8bdd27e6f4f5868087",
+              "sizeBytes": 17738710
             }
           ]
         }

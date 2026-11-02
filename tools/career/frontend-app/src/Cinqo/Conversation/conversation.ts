@@ -39,6 +39,10 @@ export async function createConversation(input: {
   // allowedTools (step 113) restricts the conversation to these MCP tools: only they are offered
   // to the model and any other call is refused. Omitted means no restriction.
   allowedTools?: string[]
+  // compactToolResults (plan/ai/conversation/step-45, step 3) opts the conversation into three rules of the tool loop that only change
+  // what the model is shown: old bulky tool results are folded into one-line stubs, an identical repeated read-only call is answered in
+  // one line, and a note warns two rounds before the budget ends. A core that does not know the field ignores it.
+  compactToolResults?: boolean
 }): Promise<Conversation> {
   // toolSlug is always "career" here, never caller-supplied — every
   // conversation this function creates (Job Match, Generate CV PDF,

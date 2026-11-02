@@ -244,6 +244,7 @@ func SendMessage(
 	}
 	ctx, tools = applyToolAllowlist(ctx, tools, conv)
 
+	ctx = withToolLoopEconomy(ctx, conv)
 	assistantContent, err := runToolLoop(ctx, httpClient, entry, plainKey, model, messages, tools, mainDB, callerScopes, conv.UserID, dataDir, corePort, conversationID, conversationDB, "", 0, conversation_entity.OrchestrationModeDirect, nil, nil, nil, toolLimitOf(conv))
 	if err != nil {
 		// Record the user's own message AND the real failure reason —
@@ -410,6 +411,8 @@ func runToolLoop(
 	toolIterationLimit int,
 ) (string, error) {
 	limit := effectiveToolLimit(toolIterationLimit)
+	economy := economyOn(ctx) // plan/ai/conversation/step-45, step 3: only for a conversation created with compactToolResults
+	var memory callMemory
 	var rejections argumentRejections // step 93: rejected tool calls this turn
 	var lastRejectedTool, lastRejection string
 	var allLinks []tool_mcp.ResourceLink
@@ -453,7 +456,14 @@ func runToolLoop(
 		for lastPromptTokens > maxToolLoopContextTokens && len(groups) > 1 {
 			groups = groups[1:]
 		}
-		current := buildToolLoopMessages(prefix, groups)
+		sent := groups
+		if economy {
+			sent = foldOldToolResults(groups)
+		}
+		current := buildToolLoopMessages(prefix, sent)
+		if economy {
+			current = withBudgetNudge(current, i, limit)
+		}
 
 		if logStep != nil {
 			logStep(fmt.Sprintf("iteration %d: calling model", i+1))
@@ -514,6 +524,10 @@ func runToolLoop(
 			}
 			var text string
 			var links []tool_mcp.ResourceLink
+			repeatText, repeated := "", false
+			if economy {
+				repeatText, repeated = memory.answer(call, i)
+			}
 			switch {
 			case refusesDisallowedTool(ctx, call.Name):
 				// The conversation was created with an allowlist (step 113) and this tool is not on
@@ -538,12 +552,17 @@ func runToolLoop(
 				text = cancelSubAgentCall(conversationDB, call)
 			case call.Name == crawlURLsWithSubagentsToolName && turnRunID != "":
 				text = invokeCrawlURLsWithSubAgentsCall(httpClient, entry, apiKey, model, mainDB, conversationDB, callerScopes, userID, dataDir, corePort, conversationID, turnRunID, call, depth)
+			case repeated:
+				text = repeatText
 			default:
 				var pending *pendingDelegation
 				text, links, pending = invokeToolFn(ctx, mainDB, callerScopes, userID, call, dataDir, corePort, conversationID)
 				if isArgumentRejection(text) {
 					lastRejectedTool, lastRejection = call.Name, text
 					text = rejections.record(tools, call.Name, text)
+				}
+				if economy {
+					memory.after(call, i, text)
 				}
 				if pending != nil && turnRunID != "" {
 					text += executeDelegation(httpClient, entry, apiKey, model, mainDB, conversationDB, callerScopes, userID, dataDir, corePort, conversationID, turnRunID, pending, depth)
@@ -559,7 +578,7 @@ func runToolLoop(
 			return "", &ArgumentRejectionError{Tool: lastRejectedTool, Count: rejections.total, Detail: rejectionDetail(lastRejection)}
 		}
 	}
-	return "", &ToolLimitError{Limit: limit, Explanation: toolLimitExplanation(ctx, httpClient, entry, apiKey, model, buildToolLoopMessages(prefix, groups), limit, logStep, logExchange)}
+	return "", &ToolLimitError{Limit: limit, Explanation: toolLimitExplanation(ctx, httpClient, entry, apiKey, model, buildToolLoopMessages(prefix, wrapUpGroups(economy, groups)), limit, logStep, logExchange)}
 }
 
 // toolLimitExplanation makes the one tools-free wrap-up call (step 93) so a

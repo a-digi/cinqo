@@ -186,3 +186,40 @@ func TestAllowedToolsRoundTripAndDefault(t *testing.T) {
 		}
 	}
 }
+
+// plan/ai/conversation/step-45, step 3: the opt-in is stored once and read back by every query; a row without it (every older
+// conversation) is off.
+func TestCompactToolResultsRoundTripAndDefault(t *testing.T) {
+	db := openConversationDB(t)
+	repo := conversation_persistent.NewConversationPersistentRepo(db)
+	q := conversation_query.NewConversationQueryRepo(db)
+
+	on := newConversation("c-on", conversation_entity.OrchestrationModeDirect)
+	on.CompactToolResults = true
+	for _, c := range []*conversation_entity.Conversation{on, newConversation("c-off", conversation_entity.OrchestrationModeDirect)} {
+		if err := repo.Insert(c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.Exec(`INSERT INTO conversations (id, user_id, title, file_path, platform_id, model, hidden) VALUES ('old', 'u1', 't', '/tmp/old', 'p', 'm', 0)`); err != nil {
+		t.Fatal(err)
+	}
+	for _, read := range map[string]func(id string) (*conversation_entity.Conversation, error){
+		"FindByID":      func(id string) (*conversation_entity.Conversation, error) { return q.FindByID(id) },
+		"FindOwnedByID": func(id string) (*conversation_entity.Conversation, error) { return q.FindOwnedByID(id, "u1") },
+	} {
+		for id, want := range map[string]bool{"c-on": true, "c-off": false, "old": false} {
+			got, err := read(id)
+			if err != nil || got.CompactToolResults != want {
+				t.Errorf("%s: compact=%v err=%v, want %v", id, got != nil && got.CompactToolResults, err, want)
+			}
+		}
+	}
+	var stored sql.NullInt64
+	if err := db.QueryRow(`SELECT compact_tool_results FROM conversations WHERE id = 'c-off'`).Scan(&stored); err != nil || stored.Valid {
+		t.Errorf("an off conversation must store NULL, got %v (%v)", stored, err)
+	}
+	if _, err := db.Exec(`UPDATE conversations SET compact_tool_results = 2 WHERE id = 'c-off'`); err == nil {
+		t.Error("the CHECK must refuse a value other than 0 or 1")
+	}
+}

@@ -14,10 +14,14 @@ import { AUTO_DISCOVERY_INTERVAL_OPTIONS } from '../autoDiscovery'
 import type { Platform } from '../../Cinqo/Platform/platformRepository'
 import { CoreApiError } from '../../Cinqo/Http/client'
 import { createConversation, sendMessage, awaitTurnCompletion, fetchTurnStatus } from '../../Cinqo/Conversation/conversation'
+import { restrictionHolds } from '../../PersonaAi/personaTools'
 import { buildCrawlMessage, crawlConversationTitle } from '../crawl'
 import {
   buildGenerateInstructionsMessage,
   buildJobsConfirmedMessage,
+  GENERATE_JOB_DETAIL_TOOLS,
+  GENERATE_LISTING_TOOLS,
+  GENERATE_RESTRICTION_NOT_APPLIED_MESSAGE,
   GENERATE_TOOL_ITERATION_LIMIT,
   generateInstructionsConversationTitle,
   buildGenerateJobDetailInstructionsMessage,
@@ -735,9 +739,12 @@ export function CrawlPanel({
           model,
           hidden: true,
           toolIterationLimit: GENERATE_TOOL_ITERATION_LIMIT,
+          allowedTools: [...GENERATE_LISTING_TOOLS],
+          compactToolResults: true,
         }),
       )
       .then((conversation) => {
+        if (!restrictionHolds(conversation.allowedTools, GENERATE_LISTING_TOOLS)) throw new Error(GENERATE_RESTRICTION_NOT_APPLIED_MESSAGE)
         setAiConversationId(conversation.id)
         window.__cinqoToolBridge.openConversation(conversation.id)
         return updatePortalLink(link.id, { instructionsAiConversationId: conversation.id })
@@ -881,9 +888,13 @@ export function CrawlPanel({
           model,
           hidden: true,
           toolIterationLimit: GENERATE_TOOL_ITERATION_LIMIT,
+          allowedTools: [...GENERATE_JOB_DETAIL_TOOLS],
+          compactToolResults: true,
         }),
       )
       .then((conversation) => {
+        if (!restrictionHolds(conversation.allowedTools, GENERATE_JOB_DETAIL_TOOLS))
+          throw new Error(GENERATE_RESTRICTION_NOT_APPLIED_MESSAGE)
         setJobDetailAiConversationId(conversation.id)
         window.__cinqoToolBridge.openConversation(conversation.id)
         return updatePortalLink(link.id, { jobDetailInstructionsAiConversationId: conversation.id })

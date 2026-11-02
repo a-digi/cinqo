@@ -24,18 +24,20 @@ func NewConversationQueryRepo(db *sql.DB) *ConversationQueryRepo {
 	return &ConversationQueryRepo{db: db}
 }
 
-const conversationColumns = `id, user_id, title, started_at, file_path, platform_id, model, hidden, tool_slug, orchestration_mode, tool_iteration_limit, allowed_tools`
+const conversationColumns = `id, user_id, title, started_at, file_path, platform_id, model, hidden, tool_slug, orchestration_mode, tool_iteration_limit, allowed_tools, compact_tool_results`
 
 func scanConversation(scan func(dest ...any) error) (*conversation_entity.Conversation, error) {
 	var c conversation_entity.Conversation
 	var toolSlug sql.NullString
 	var toolLimit sql.NullInt64
 	var allowedTools sql.NullString
-	if err := scan(&c.ID, &c.UserID, &c.Title, &c.StartedAt, &c.FilePath, &c.PlatformID, &c.Model, &c.Hidden, &toolSlug, &c.OrchestrationMode, &toolLimit, &allowedTools); err != nil {
+	var compact sql.NullInt64
+	if err := scan(&c.ID, &c.UserID, &c.Title, &c.StartedAt, &c.FilePath, &c.PlatformID, &c.Model, &c.Hidden, &toolSlug, &c.OrchestrationMode, &toolLimit, &allowedTools, &compact); err != nil {
 		return nil, err
 	}
 	c.ToolSlug = toolSlug.String
 	c.AllowedTools = allowedTools.String
+	c.CompactToolResults = compact.Valid && compact.Int64 == 1
 	if toolLimit.Valid {
 		v := int(toolLimit.Int64)
 		c.ToolIterationLimit = &v

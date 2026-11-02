@@ -104,3 +104,6 @@ plan/
 
 # make repository output (a tool repository file and its package copies).
 /dist/repository/
+
+# Shared test fixtures of the tools (tools/testdata): kept out of git on purpose.
+/tools/testdata/

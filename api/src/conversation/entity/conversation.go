@@ -77,6 +77,11 @@ type Conversation struct {
 	// that created it knows what it asked for. See
 	// plan/ai/tools/career/step-113-human-in-the-loop-for-ai-personas.md.
 	AllowedTools string `db:"allowed_tools" dbtype:"TEXT" nullable:"true" json:"-"`
+	// CompactToolResults (plan/ai/conversation/step-45, step 3) opts a conversation into three rules of the tool loop that only change
+	// what the model is shown: old bulky tool results are folded into one-line stubs, a repeated identical read-only call is answered
+	// in one line, and a short note warns two rounds before the tool-call budget ends. Set once at creation, like ToolIterationLimit;
+	// false (NULL) for every other conversation, which behaves exactly as before.
+	CompactToolResults bool `db:"compact_tool_results" dbtype:"INTEGER" nullable:"true" json:"compactToolResults,omitempty"`
 }
 
 // MaxAllowedTools and maxAllowedToolNameLength bound a client-supplied allowlist.

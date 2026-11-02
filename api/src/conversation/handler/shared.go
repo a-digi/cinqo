@@ -238,6 +238,8 @@ type conversationResponse struct {
 	// unrestricted one. Echoed so a caller that asked for a restriction can check it really took
 	// effect (a server that does not know the field would silently ignore it).
 	AllowedTools []string `json:"allowedTools,omitempty"`
+	// CompactToolResults is echoed so a caller can see the opt-in was applied.
+	CompactToolResults bool `json:"compactToolResults,omitempty"`
 }
 
 func toConversationResponse(c *conversation_entity.Conversation) conversationResponse {
@@ -249,7 +251,8 @@ func toConversationResponse(c *conversation_entity.Conversation) conversationRes
 		Model:      c.Model,
 		ToolSlug:   c.ToolSlug,
 
-		OrchestrationMode: c.OrchestrationMode,
-		AllowedTools:      c.AllowedToolNames(),
+		OrchestrationMode:  c.OrchestrationMode,
+		AllowedTools:       c.AllowedToolNames(),
+		CompactToolResults: c.CompactToolResults,
 	}
 }

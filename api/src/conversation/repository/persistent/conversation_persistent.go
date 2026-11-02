@@ -32,9 +32,13 @@ func (r *ConversationPersistentRepo) Insert(c *conversation_entity.Conversation)
 	if c.AllowedTools != "" {
 		allowed = c.AllowedTools
 	}
+	var compact any // NULL unless the creator opted into the compact tool loop (plan 45, step 3)
+	if c.CompactToolResults {
+		compact = 1
+	}
 	_, err := r.db.Exec(
-		`INSERT INTO conversations (id, user_id, title, file_path, platform_id, model, hidden, tool_slug, orchestration_mode, tool_iteration_limit, allowed_tools) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		c.ID, c.UserID, c.Title, c.FilePath, c.PlatformID, c.Model, c.Hidden, c.ToolSlug, mode, limit, allowed,
+		`INSERT INTO conversations (id, user_id, title, file_path, platform_id, model, hidden, tool_slug, orchestration_mode, tool_iteration_limit, allowed_tools, compact_tool_results) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		c.ID, c.UserID, c.Title, c.FilePath, c.PlatformID, c.Model, c.Hidden, c.ToolSlug, mode, limit, allowed, compact,
 	)
 	return err
 }
