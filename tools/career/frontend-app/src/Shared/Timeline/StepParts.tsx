@@ -34,11 +34,14 @@ export function StepWords({
   index,
   accent,
   hideTitle = false,
+  compact = false,
 }: {
   step: TimelineStep
   index: number
   accent: Accent
   hideTitle?: boolean
+  // Smaller type, for the narrow text blocks of the pins design.
+  compact?: boolean
 }) {
   return (
     <>
@@ -48,7 +51,9 @@ export function StepWords({
           {step.title}
         </h2>
       )}
-      <p className={`${hideTitle ? '' : 'mt-1 '}text-sm leading-relaxed text-gray-600`}>{step.text}</p>
+      <p className={`${hideTitle ? '' : 'mt-1 '}${compact ? 'text-[13px] leading-snug' : 'text-sm leading-relaxed'} text-gray-600`}>
+        {step.text}
+      </p>
       {step.tip !== undefined && (
         <p
           className="mt-2 rounded-xl px-3 py-2 text-xs leading-relaxed md:text-left"
@@ -59,7 +64,11 @@ export function StepWords({
         </p>
       )}
       {step.link !== undefined && (
-        <AppLink href={step.link.path} className="mt-2 inline-block text-sm font-medium hover:underline" style={{ color: accent.text }}>
+        <AppLink
+          href={step.link.path}
+          className={`mt-2 inline-block font-medium hover:underline ${compact ? 'text-xs' : 'text-sm'}`}
+          style={{ color: accent.text }}
+        >
           {step.link.label} →
         </AppLink>
       )}

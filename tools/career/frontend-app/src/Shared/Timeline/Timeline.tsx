@@ -2,6 +2,7 @@ import { ACCENTS, gradient, type Accent } from '../../Components/JobsPage/jobsTh
 import { Decor } from '../Decor/Decor'
 import { shapeAt } from '../Decor/decorShapes'
 import { StepBadge, StepWords } from './StepParts'
+import { PinsTimeline } from './PinsTimeline'
 import { ZigzagTimeline } from './ZigzagTimeline'
 import { nodeLook, numberLabel, onLeft, paletteIndex, type TimelineDesign, type TimelineStep } from './timelineRules'
 
@@ -15,7 +16,7 @@ import { nodeLook, numberLabel, onLeft, paletteIndex, type TimelineDesign, type 
 export function Timeline({
   steps,
   ariaLabel,
-  design = 'ribbon',
+  design = 'cards',
   palette = ACCENTS,
 }: {
   steps: readonly TimelineStep[]
@@ -25,6 +26,7 @@ export function Timeline({
 }) {
   const accentOf = (index: number): Accent => palette[paletteIndex(index, palette.length)]
   if (design === 'zigzag') return <ZigzagTimeline steps={steps} ariaLabel={ariaLabel} accentOf={accentOf} />
+  if (design === 'pins') return <PinsTimeline steps={steps} ariaLabel={ariaLabel} accentOf={accentOf} />
   return (
     <div className="relative">
       {/* The dashed line between the two columns, behind the dots of the cards. */}
@@ -38,7 +40,6 @@ export function Timeline({
           const look = nodeLook(step)
           const left = onLeft(index)
           const number = look === 'done' ? '✓' : numberLabel(index)
-          const words = <StepWords step={step} index={index} accent={accent} hideTitle={design === 'ribbon'} />
           const shapes = <Decor shape={shapeAt(index)} accent={accent} />
           const title = (extra: string) => (
             <h2 className={`font-semibold ${extra}`}>
@@ -72,7 +73,7 @@ export function Timeline({
                 </div>
               </div>
             )
-          } else if (design === 'tiles') {
+          } else {
             card = (
               <div
                 className="relative overflow-hidden rounded-3xl border-2 border-dashed p-5 transition-shadow hover:shadow-md"
@@ -91,31 +92,6 @@ export function Timeline({
                     {title('text-base')}
                   </div>
                   <StepWords step={step} index={index} accent={accent} hideTitle />
-                </div>
-              </div>
-            )
-          } else {
-            // ribbon
-            card = (
-              <div
-                className="overflow-hidden rounded-3xl border bg-white shadow-sm transition-shadow hover:shadow-md"
-                style={{ borderColor: accent.soft }}
-              >
-                <div className="flex items-center gap-3 px-5 py-3 text-white" style={{ background: gradient(accent) }}>
-                  <span
-                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/25 text-sm font-bold"
-                    aria-hidden="true"
-                  >
-                    {number}
-                  </span>
-                  {title('text-sm')}
-                </div>
-                <div
-                  className="relative overflow-hidden px-5 py-4"
-                  style={{ background: `linear-gradient(160deg, #ffffff 45%, ${accent.soft} 100%)` }}
-                >
-                  {shapes}
-                  <div className="relative">{words}</div>
                 </div>
               </div>
             )

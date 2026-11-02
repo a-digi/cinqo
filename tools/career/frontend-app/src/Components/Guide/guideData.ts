@@ -128,31 +128,36 @@ export const PROFILE_AND_CV: Guide = {
 
 export const FINDING_JOBS: Guide = {
   id: 'finding-jobs',
-  design: 'ribbon',
+  design: 'pins',
   title: 'Finding jobs',
   description:
     'How jobs get into the tool and how to keep the list useful, in seven steps: platforms, crawling, filtering, cleaning up and matching.',
   steps: [
     {
       id: 'ai',
+      icon: 'robot',
       title: 'Choose the AI',
       text: 'Crawling job platforms, Job Match and CVs all use the one AI platform and model chosen in Settings. Pick it before anything else.',
       link: { label: 'Open Settings → AI', path: SETTINGS_PATH },
     },
     {
       id: 'platform',
+      icon: 'globe',
       title: 'Add a platform and a link',
       text: 'A platform is a job site. Create one with New platform, then add a link to one of its search pages with Add link.',
       link: { label: 'Open Platforms', path: PLATFORMS_PATH },
     },
     {
       id: 'instructions',
+      icon: 'instructions',
       title: 'Let the AI write the crawl instructions',
       text: 'A link can only be crawled once it has crawl instructions. Generate with AI writes them: the AI studies the page and works out how to read its job list. Job details have their own instructions, so a posting can be read in full.',
+      tip: 'Not every model is good enough for this: some fail or write poor instructions. Premium models do a better job. If a link keeps failing, pick a premium model in Settings → AI and try again.',
       link: { label: 'Open Platforms', path: PLATFORMS_PATH },
     },
     {
       id: 'crawl',
+      icon: 'pulse',
       title: 'Crawl and watch it work',
       text: 'Crawl now fetches the jobs and saves them. The Crawl Monitor lists every crawl that is running right now and refreshes by itself.',
       tip: 'Auto-discovery at the top of the Platforms page crawls every link that has instructions on a schedule (Crawl every …).',
@@ -160,18 +165,21 @@ export const FINDING_JOBS: Guide = {
     },
     {
       id: 'ignore',
+      icon: 'filter',
       title: 'Keep unwanted jobs out',
       text: 'Ignore jobs lets the crawler check each new job against your rules before it saves it. It is off until you switch it on, and jobs that are already saved are never removed by it.',
       link: { label: 'Open Settings → Job crawler', path: CRAWLER_SETTINGS_PATH },
     },
     {
       id: 'cleanup',
+      icon: 'trash',
       title: 'Clean up old jobs',
       text: 'Job cleanup deletes old jobs and jobs that match none of your profiles, by hand with Clean up now or on a schedule with Automatic cleanup.',
       link: { label: 'Open Settings → Job cleanup', path: CLEANUP_SETTINGS_PATH },
     },
     {
       id: 'match',
+      icon: 'match',
       title: 'Find the best matches',
       text: 'Every job gets a match score against your profiles. Sort by Best match first, run Job Match from a job’s actions to have the AI judge it, and open View details for the whole posting.',
       link: { label: 'Open Jobs', path: JOBS_PATH },
