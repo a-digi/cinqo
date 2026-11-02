@@ -3,6 +3,7 @@ package jobs
 import (
 	"slices"
 	"testing"
+	"time"
 
 	"career-tool-backend/db"
 )
@@ -244,5 +245,70 @@ func TestABatchHandlesEachJobOnceAndInOrder(t *testing.T) {
 	}
 	if out, err := RematchChangedJobs(nil); err != nil || out != nil {
 		t.Errorf("an empty batch: %v %v", out, err)
+	}
+}
+
+// The write is guarded in the SQL too: any row that is not a finished manual result of the same profile is refused, whatever the
+// caller checked before.
+func TestTheWriteRefusesEveryRowThatIsNotAFinishedManualResultOfTheProfile(t *testing.T) {
+	setupJobsDB(t)
+	profile, _ := seedProfile(t, "Fit", fitSkills)
+	addMatchJob(t, "j1")
+	sc, err := NewProfileScorer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, ok, err := sc.ScoreProfile("j1", profile)
+	if err != nil || !ok {
+		t.Fatalf("setup: %v %v", ok, err)
+	}
+	for name, kindStatus := range map[string][2]string{
+		"a finished AI result": {"ai", "completed"},
+		"a failed manual row":  {"manual", "failed"},
+		"a manual run":         {"manual", "matching"},
+	} {
+		exec(t, `DELETE FROM job_matches`)
+		exec(t, `INSERT INTO job_matches (job_id, profile_id, score, status, kind) VALUES ('j1', ?, 5, ?, ?)`, profile, kindStatus[1], kindStatus[0])
+		if wrote, err := replaceManualMatchIfStillManual("j1", profile, result); err != nil || wrote {
+			t.Errorf("%s: wrote=%v err=%v", name, wrote, err)
+		}
+		if m, _ := readStoredMatch(t, "j1"); m.score != 5 {
+			t.Errorf("%s: the row changed: %+v", name, m)
+		}
+	}
+}
+
+// With no profile that has a persona, the job is not even read: a catch-up that cannot match anything costs almost nothing.
+func TestWithNoProfileTheJobIsNotEvenRead(t *testing.T) {
+	setupJobsDB(t)
+	if o := rematchOneJob(t, "does-not-exist"); o.Status != ChangedJobUnjudged {
+		t.Errorf("%+v", o)
+	}
+}
+
+// A write for a profile waits while another holder has the profile's lock (a re-match of the profile, or the purge of a deleted
+// profile's matches), and only then goes on.
+func TestAWriteWaitsForTheProfilesLock(t *testing.T) {
+	setupJobsDB(t)
+	profile, _ := seedProfile(t, "Fit", fitSkills)
+	unlock := lockProfile(profile)
+	finished := make(chan bool, 1)
+	go func() {
+		wrote, _ := writeUnderProfileLock(profile, func() (bool, error) { return true, nil })
+		finished <- wrote
+	}()
+	select {
+	case <-finished:
+		t.Fatal("the write must wait while the profile's lock is held")
+	case <-time.After(150 * time.Millisecond):
+	}
+	unlock()
+	select {
+	case wrote := <-finished:
+		if !wrote {
+			t.Error("the write must go through once the lock is free")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("the write never went on")
 	}
 }

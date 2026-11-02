@@ -562,3 +562,22 @@ func TestTheChangedListenerIsDeclaredAndRouted(t *testing.T) {
 		t.Error("main.go does not route /events/job-description-changed-job-match")
 	}
 }
+
+// One pass takes fifty ids in all, counted across both queues: the first one and 49 more, whichever queue they wait on.
+func TestADrainTakesFiftyInAllAcrossBothQueues(t *testing.T) {
+	c := New(200)
+	for i := 0; i < 60; i++ {
+		c.queue <- fmt.Sprintf("n%03d", i)
+		c.changed <- fmt.Sprintf("c%03d", i)
+	}
+	b := c.drain(batch{found: []string{"first"}})
+	if b.size() != 50 {
+		t.Errorf("a pass must hold exactly 50 ids, it held %d (%d new, %d changed)", b.size(), len(b.found), len(b.changed))
+	}
+	if left := len(c.queue) + len(c.changed); left != 121-50 {
+		t.Errorf("%d ids are left waiting, want %d", left, 121-50)
+	}
+	if b.found[0] != "first" {
+		t.Errorf("the first id leads: %v", b.found[:1])
+	}
+}

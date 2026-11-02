@@ -41,7 +41,7 @@ type Consumer struct {
 
 // New makes a consumer whose queues hold size ids each.
 func New(size int) *Consumer {
-	return &Consumer{queue: make(chan string, size), changed: make(chan string, 1)}
+	return &Consumer{queue: make(chan string, size), changed: make(chan string, size)}
 }
 
 // Default is the consumer the tool runs; EventHandler and Start are its route and worker.
