@@ -263,6 +263,7 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
                 key={i}
                 item={exp}
                 label={experienceLabel(exp)}
+                detail={exp.description}
                 resolvedDuplicateLabel={resolvedLabelFor(exp, 'experience')}
                 checked={checked[`experience-${i}`]}
                 onToggle={() => {

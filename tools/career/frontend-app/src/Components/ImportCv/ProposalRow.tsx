@@ -1,3 +1,4 @@
+import { DescriptionDetails } from './DescriptionDetails'
 import { proposalRowTone, type ProposalItem, type ProposalRowTone } from './parseProposal'
 
 // One shared row renderer, reused across all 5 areas — every area's
@@ -22,6 +23,7 @@ export function ProposalRow({
   done = false,
   errorMessage,
   doneNote,
+  detail,
 }: {
   item: ProposalItem
   label: string
@@ -45,21 +47,26 @@ export function ProposalRow({
   errorMessage?: string
   // Said instead of "Inserted" when nothing had to be written (an education entry the profile already had).
   doneNote?: string
+  // The text of the item (a job's description) shown as a collapsed preview under the row (plan 177); leave it out for items without one.
+  detail?: string
 }) {
   const tone = proposalRowTone(item)
   return (
-    <label
-      className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-sm ${done ? 'cursor-default border-green-200 bg-green-50' : `cursor-pointer ${toneClasses[tone]}`}`}
-    >
-      <input type="checkbox" checked={done || checked} disabled={done} onChange={onToggle} className="mt-0.5" />
-      <span>
-        <span className="block text-gray-900">{label}</span>
-        {item.possibleDuplicateOf !== null && !done && (
-          <span className="block text-xs text-red-700">Possible duplicate of: {resolvedDuplicateLabel ?? item.possibleDuplicateOf}</span>
-        )}
-        {done && <span className="block text-xs text-green-700">{doneNote ? `Not added: ${doneNote}` : 'Inserted'}</span>}
-        {errorMessage && !done && <span className="block text-xs text-red-700">Failed: {errorMessage}</span>}
-      </span>
-    </label>
+    <div>
+      <label
+        className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-sm ${done ? 'cursor-default border-green-200 bg-green-50' : `cursor-pointer ${toneClasses[tone]}`}`}
+      >
+        <input type="checkbox" checked={done || checked} disabled={done} onChange={onToggle} className="mt-0.5" />
+        <span>
+          <span className="block text-gray-900">{label}</span>
+          {item.possibleDuplicateOf !== null && !done && (
+            <span className="block text-xs text-red-700">Possible duplicate of: {resolvedDuplicateLabel ?? item.possibleDuplicateOf}</span>
+          )}
+          {done && <span className="block text-xs text-green-700">{doneNote ? `Not added: ${doneNote}` : 'Inserted'}</span>}
+          {errorMessage && !done && <span className="block text-xs text-red-700">Failed: {errorMessage}</span>}
+        </span>
+      </label>
+      {detail !== undefined && <DescriptionDetails description={detail} />}
+    </div>
   )
 }

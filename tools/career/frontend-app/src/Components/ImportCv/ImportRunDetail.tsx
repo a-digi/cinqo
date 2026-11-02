@@ -3,6 +3,7 @@ import type { CVImportProposal } from './parseProposal'
 import type { InsertResult, ItemResult } from './insertProposal'
 import { experienceLabel } from './experienceLabel'
 import { educationLabel } from './educationInsertRules'
+import { DescriptionDetails } from './DescriptionDetails'
 import { cardClassName, cardStyle } from '../../Shared/cardStyle'
 
 // 'skipped' covers both "the AI proposed it but the user unchecked it"
@@ -34,11 +35,14 @@ function StatusBadge({ result }: { result: ItemResult | undefined }) {
   )
 }
 
-function Row({ label, result }: { label: string; result: ItemResult | undefined }) {
+function Row({ label, result, detail }: { label: string; result: ItemResult | undefined; detail?: string }) {
   return (
-    <li className="flex items-center justify-between gap-3 py-1.5 text-sm">
-      <span className="truncate text-gray-700">{label}</span>
-      <StatusBadge result={result} />
+    <li className="py-1.5 text-sm">
+      <div className="flex items-center justify-between gap-3">
+        <span className="truncate text-gray-700">{label}</span>
+        <StatusBadge result={result} />
+      </div>
+      {detail !== undefined && <DescriptionDetails description={detail} />}
     </li>
   )
 }
@@ -118,7 +122,7 @@ export function ImportRunDetail({ run, onClose }: { run: CVImportRun; onClose: (
         {proposal.experience.length === 0 && <p className="text-sm text-gray-400">No experience proposed.</p>}
         <ul className="divide-y divide-gray-100">
           {proposal.experience.map((exp, i) => (
-            <Row key={i} label={experienceLabel(exp)} result={experienceResult(i)} />
+            <Row key={i} label={experienceLabel(exp)} result={experienceResult(i)} detail={exp.description} />
           ))}
         </ul>
       </section>
