@@ -44,6 +44,12 @@ type importDraft struct {
 	Experience      []ExperienceProposal `json:"experience,omitempty"`
 }
 
+// allSkipped says all three single sections were sent and every one is skipped.
+func (d importDraft) allSkipped() bool {
+	return d.Profile != nil && d.Persona != nil && d.PersonalDetails != nil &&
+		d.Profile.Action == actionSkip && d.Persona.Action == actionSkip && d.PersonalDetails.Action == actionSkip
+}
+
 // missing lists what cv_import_finish still needs.
 func (d importDraft) missing() []string {
 	var out []string
@@ -56,7 +62,8 @@ func (d importDraft) missing() []string {
 	if d.PersonalDetails == nil {
 		out = append(out, sectionPersonalDetails)
 	}
-	if len(d.Skills) == 0 && len(d.Experience) == 0 {
+	// Skills or jobs are needed unless everything was skipped: a document that is not a CV is answered with three skipped sections.
+	if len(d.Skills) == 0 && len(d.Experience) == 0 && !d.allSkipped() {
 		out = append(out, "skills or experience (at least one)")
 	}
 	return out

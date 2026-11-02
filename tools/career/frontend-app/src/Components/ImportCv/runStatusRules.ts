@@ -68,3 +68,14 @@ export function describeFailure(error: string | undefined | null): FailureDescri
   if (MODEL_NOT_CAPABLE_PATTERNS.some((p) => p.test(log))) return { message: MODEL_NOT_CAPABLE_MESSAGE, modelNotCapable: true, log }
   return { message: log, modelNotCapable: false, log }
 }
+
+// The AI's reply when it could not read the file at all (the upload expired, the PDF has no text): the prompt tells it to answer
+// "Could not read the CV: …" and to propose nothing. Without that a model that never saw the text called the document "not a CV"
+// and skipped everything (plan 165, the real run of 2026-11-02).
+const CV_UNREADABLE_REPLY = /^\s*could not read the cv/i
+
+export const CV_UNREADABLE_MESSAGE = 'The CV file could not be read; it may have expired or has no text. Upload it again.'
+
+export function isCvUnreadableReply(reply: string): boolean {
+  return CV_UNREADABLE_REPLY.test(reply)
+}

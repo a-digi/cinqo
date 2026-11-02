@@ -5,7 +5,7 @@
 // over by calling suggest_cv_import with the run id, and its last message is one plain sentence. Only the page can end the run
 // (the AI's turn lives in the core app), so this ends it: "ready" when the turn is over, or "failed" with the reason. See
 // plan/ai/tools/career/step-155-cv-import-result-by-tool-not-chat.md.
-import { NO_PROPOSAL_MESSAGE, failureReason } from './runStatusRules'
+import { CV_UNREADABLE_MESSAGE, NO_PROPOSAL_MESSAGE, failureReason, isCvUnreadableReply } from './runStatusRules'
 
 export type RunOutcome = { status: 'ready' } | { status: 'failed'; error: string }
 
@@ -37,11 +37,18 @@ export async function analyseCv(steps: AnalysisSteps): Promise<unknown> {
   steps.onRun(runId)
   steps.onRunsChanged()
 
+  let reply: string
   try {
-    steps.onReply(await steps.askAi(conversationId, runId))
+    reply = await steps.askAi(conversationId, runId)
+    steps.onReply(reply)
   } catch (err) {
     await failRun(steps, runId, failureReason(err))
     throw err
+  }
+  // The AI could not read the file: whatever it handed over is not a result of this CV.
+  if (isCvUnreadableReply(reply)) {
+    await failRun(steps, runId, `${CV_UNREADABLE_MESSAGE} (${reply.trim()})`)
+    throw new Error(CV_UNREADABLE_MESSAGE)
   }
 
   try {

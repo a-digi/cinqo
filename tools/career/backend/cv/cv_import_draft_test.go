@@ -401,3 +401,64 @@ func TestThePieceToolsAcceptTheOtherNameOfTheirListArgument(t *testing.T) {
 		t.Errorf("no list at all: %v", textOf(res))
 	}
 }
+
+// A document that is not a CV is answered with three skipped sections and no skills or jobs; that finishes, while one inserted
+// section without any skill or job still does not.
+func TestADocumentThatIsNotACVCanBeFinishedAsSkipped(t *testing.T) {
+	setup(t)
+	id := newRun(t)
+	for section, v := range map[string]any{
+		sectionProfile:         ProfileProposal{Action: "skip"},
+		sectionPersona:         PersonaProposal{Action: "skip"},
+		sectionPersonalDetails: DetailsProposal{Action: "skip"},
+	} {
+		if _, err := SetDraftSection(id, section, v); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := FinishDraft(id); err != nil {
+		t.Fatalf("an all-skipped draft was refused: %v", err)
+	}
+	var stored Proposal
+	if err := json.Unmarshal(runOf(t, id).AIProposal, &stored); err != nil || stored.Profile.Action != "skip" || len(stored.Skills) != 0 {
+		t.Errorf("stored %+v %v", stored, err)
+	}
+
+	mixed := newRun(t)
+	for section, v := range map[string]any{
+		sectionProfile:         ProfileProposal{Action: "insert", Name: "X"},
+		sectionPersona:         PersonaProposal{Action: "skip"},
+		sectionPersonalDetails: DetailsProposal{Action: "skip"},
+	} {
+		if _, err := SetDraftSection(mixed, section, v); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := FinishDraft(mixed); err == nil || !strings.Contains(err.Error(), "skills or experience") {
+		t.Errorf("an inserted profile without skills or jobs was finished: %v", err)
+	}
+
+	for _, only := range []string{sectionPersona, sectionPersonalDetails} { // each of the other two inserted alone
+		run := newRun(t)
+		for section, v := range map[string]any{
+			sectionProfile:         ProfileProposal{Action: "skip"},
+			sectionPersona:         PersonaProposal{Action: "skip"},
+			sectionPersonalDetails: DetailsProposal{Action: "skip"},
+		} {
+			if section == only {
+				switch section {
+				case sectionPersona:
+					v = PersonaProposal{Action: "insert", Name: "P"}
+				default:
+					v = DetailsProposal{Action: "insert", Headline: "H"}
+				}
+			}
+			if _, err := SetDraftSection(run, section, v); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := FinishDraft(run); err == nil {
+			t.Errorf("an inserted %s without skills or jobs was finished", only)
+		}
+	}
+}

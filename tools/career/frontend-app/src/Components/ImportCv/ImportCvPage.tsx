@@ -16,7 +16,8 @@ import { PDFIcon, UploadIcon } from '../../Shared/Icons/icons'
 import { cardClassName, cardStyle } from '../../Shared/cardStyle'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { plural } from '../CompaniesPage/companyStats'
-import { buildImportPrompt } from './buildImportPrompt'
+import { IMPORT_RUN_TOOLS, buildImportPrompt } from './buildImportPrompt'
+import { RESTRICTION_NOT_APPLIED_MESSAGE, restrictionHolds } from '../../PersonaAi/personaTools'
 import { analyseCv } from './analysisFlow'
 import { canViewRun, runBadge } from './runStatusRules'
 import { parseProposal, isInitiallyChecked, type CVImportProposal, type ProposalItem } from './parseProposal'
@@ -210,8 +211,18 @@ export function ImportCvPage() {
       }
       const model = ai.model ?? undefined
       const stored = await analyseCv({
-        startConversation: async () =>
-          (await createConversation({ title: `Import CV: ${originalFilename}`, platformId: platform.id, model })).id,
+        startConversation: async () => {
+          // The AI may only use the tools an import needs: the server enforces it, not just the prompt. Unrestricted, a weak model
+          // called create_profile with an invented name and wrote it into the user's data (plan 165).
+          const conversation = await createConversation({
+            title: `Import CV: ${originalFilename}`,
+            platformId: platform.id,
+            model,
+            allowedTools: [...IMPORT_RUN_TOOLS],
+          })
+          if (!restrictionHolds(conversation.allowedTools, IMPORT_RUN_TOOLS)) throw new Error(RESTRICTION_NOT_APPLIED_MESSAGE)
+          return conversation.id
+        },
         recordRun: (conversationId) => createCVImportRun({ fileId, originalFilename, conversationId }),
         askAi: async (conversationId, runId) => (await sendMessage(conversationId, buildImportPrompt(fileId, runId))).content,
         endRun: finishCVImportRun,
