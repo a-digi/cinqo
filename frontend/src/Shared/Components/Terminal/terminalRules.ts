@@ -231,12 +231,13 @@ export type HighlightKind = 'section' | 'error' | 'role' | 'tool' | 'meta'
 export type Highlighter = (text: string) => HighlightKind | null
 
 // Colours the structure of an AI trace log (step 36): the "=== Iteration N — request / response / error ==="
-// banners, the "[n] role=…" message heads, tool calls and the "finish_reason" / "tools offered" footers.
+// banners, the "[n] role=…" message heads, tool calls, the "finish_reason" / "tools offered" footers and the turn summary at the end.
 export const traceLogHighlight: Highlighter = (text) => {
   if (text.startsWith('=== ')) return /\berror\b/i.test(text) ? 'error' : 'section'
   if (/^\[\d+\] role=/.test(text)) return 'role'
   if (text.startsWith('tool_call:')) return 'tool'
-  if (text.startsWith('finish_reason=') || text.startsWith('--- tools offered')) return 'meta'
+  // The turn summary (plan/ai/conversation/step-45, step 4) ends the file: "=== Turn summary ===" is a section, its totals line meta.
+  if (text.startsWith('finish_reason=') || text.startsWith('--- tools offered') || text.startsWith('requests=')) return 'meta'
   return null
 }
 

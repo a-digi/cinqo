@@ -243,9 +243,13 @@ func runDetachedTurn(
 	// hidden. A settings-load failure is treated the same as "off,"
 	// never as a reason to fail the turn.
 	var logExchange func(iteration int, msgs []chatcompleter.Message, toolDefs []chatcompleter.ToolDef, result *chatcompleter.ChatCompletionResult, callErr error)
+	// totals (plan/ai/conversation/step-45, step 4) sums this turn's requests for the summary that ends the trace file.
+	var totals turnTotals
+	tracePath := ""
 	if settings, settingsErr := conversation_query.NewSettingsQueryRepo(conversationDB).Load(); settingsErr == nil && settings.AITraceLogsEnabled {
-		tracePath := TraceLogPath(filepath.Dir(conv.FilePath), conversationID, turnRunID)
+		tracePath = TraceLogPath(filepath.Dir(conv.FilePath), conversationID, turnRunID)
 		logExchange = func(iteration int, msgs []chatcompleter.Message, toolDefs []chatcompleter.ToolDef, result *chatcompleter.ChatCompletionResult, callErr error) {
+			totals.add(iteration, result, callErr)
 			_ = appendTraceEntry(tracePath, iteration, msgs, toolDefs, result, callErr)
 		}
 	}
@@ -262,6 +266,9 @@ func runDetachedTurn(
 	// failing an otherwise-successful turn over.
 	ctx = withToolLoopEconomy(ctx, conv)
 	assistantContent, err := runToolLoop(ctx, httpClient, entry, plainKey, model, messages, tools, mainDB, callerScopes, conv.UserID, dataDir, corePort, conversationID, conversationDB, turnRunID, 0, conv.OrchestrationMode, logStep, reportUsage, logExchange, toolLimitOf(conv))
+	if tracePath != "" {
+		_ = appendTraceSummary(tracePath, totals) // best-effort, like every trace write
+	}
 	subAgentCount := 0
 	if spawned, countErr := conversation_query.NewSubAgentRunQueryRepo(conversationDB).FindByParentTurnRunID(turnRunID); countErr == nil {
 		subAgentCount = len(spawned)

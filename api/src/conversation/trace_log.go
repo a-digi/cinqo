@@ -110,3 +110,58 @@ func formatTraceEntry(iteration int, messages []chatcompleter.Message, tools []c
 
 	return sb.String()
 }
+
+// turnTotals sums one turn's model requests (plan/ai/conversation/step-45, step 4): how many were made, the prompt and completion
+// tokens the provider reported, the provider cache's share, and the largest single request, so the effect of fewer tools, folded
+// results or a pinned (cacheable) model is read from the log of any turn instead of guessed.
+type turnTotals struct {
+	requests, failed       int
+	prompt, completion     int
+	cacheRead, cacheWrite  int
+	largestPrompt          int
+	largestPromptIteration int
+}
+
+// add records one exchange as logExchange sees it: callErr non-nil is a failed request (no usage), otherwise the result's usage.
+func (t *turnTotals) add(iteration int, result *chatcompleter.ChatCompletionResult, callErr error) {
+	if callErr != nil || result == nil {
+		t.failed++
+		return
+	}
+	t.requests++
+	u := result.Usage
+	t.prompt += u.PromptTokens
+	t.completion += u.CompletionTokens
+	t.cacheRead += u.CacheReadTokens
+	t.cacheWrite += u.CacheCreationTokens
+	if u.PromptTokens > t.largestPrompt {
+		t.largestPrompt, t.largestPromptIteration = u.PromptTokens, iteration
+	}
+}
+
+// summary is the block that ends a turn's trace file.
+func (t turnTotals) summary() string {
+	failed := ""
+	if t.failed > 0 {
+		failed = fmt.Sprintf(" (%d failed)", t.failed)
+	}
+	return fmt.Sprintf("=== Turn summary ===\n\nrequests=%d%s  prompt=%s  completion=%s  largest_request=%s (iteration %d)  cached_prompt=%s (cache read %s, cache write %s)\n",
+		t.requests, failed, groupThousands(t.prompt), groupThousands(t.completion), groupThousands(t.largestPrompt), t.largestPromptIteration,
+		groupThousands(t.cacheRead), groupThousands(t.cacheRead), groupThousands(t.cacheWrite))
+}
+
+// appendTraceSummary appends the summary to the turn's trace file; nothing is written for a turn that made no request at all.
+func appendTraceSummary(path string, t turnTotals) error {
+	if t.requests == 0 && t.failed == 0 {
+		return nil
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return fmt.Errorf("conversation: open trace log file: %w", err)
+	}
+	defer f.Close()
+	if _, err := f.WriteString("\n" + t.summary()); err != nil {
+		return fmt.Errorf("conversation: append trace log summary: %w", err)
+	}
+	return nil
+}
