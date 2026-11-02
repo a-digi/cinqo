@@ -17,7 +17,7 @@ export interface TimelineStep {
   id: string
   title: string
   text: string
-  // A picture for the step; only the pins design shows it (a step without one shows its number in the pin).
+  // A picture for the step; the pins and radial designs show it (a step without one shows its number in the pin).
   icon?: TimelineIcon
   link?: TimelineLink
   tip?: string
@@ -27,8 +27,22 @@ export interface TimelineStep {
 export type NodeLook = 'neutral' | StepState
 
 // The pictures a step may carry (drawn by StepIcon.tsx).
-export type TimelineIcon = 'robot' | 'globe' | 'instructions' | 'pulse' | 'filter' | 'trash' | 'match'
-export const TIMELINE_ICONS: readonly TimelineIcon[] = ['robot', 'globe', 'instructions', 'pulse', 'filter', 'trash', 'match']
+export type TimelineIcon =
+  'robot' | 'globe' | 'instructions' | 'pulse' | 'filter' | 'trash' | 'match' | 'building' | 'users' | 'link' | 'eye' | 'briefcase'
+export const TIMELINE_ICONS: readonly TimelineIcon[] = [
+  'robot',
+  'globe',
+  'instructions',
+  'pulse',
+  'filter',
+  'trash',
+  'match',
+  'building',
+  'users',
+  'link',
+  'eye',
+  'briefcase',
+]
 
 // "1" for the first step: the number in a node is the position, counted from one.
 export function numberLabel(index: number): string {
@@ -77,12 +91,12 @@ export function stepProblems(steps: readonly TimelineStep[]): string[] {
 // The designs of the timeline (plan/ai/tools/career/step-170-onboarding-guide.md, step 8 and its follow-ups). Every guide picks one, so the
 // pages do not look alike. zigzag: one narrow framed card, the steps alternating left and right of a centre line with a numbered badge on
 // it (one column on a phone). pins: a horizontal bar made of one coloured segment per step with a ring on it for each step, a big arrow at
-// the end and a teardrop pin with its text beside it above or below each ring in turn (one column on a screen too narrow for it). cards and
-// tiles are two equal columns from a tablet up: the steps take turns left and right, the right ones tucked up into the gaps of the left
-// ones, around a dashed centre line, with the dashboard's soft shapes behind each card (one column on a phone). cards: a colourful left
-// edge, the number beside the title. tiles: a tinted tile with a dashed border and a rounded-square number beside the title.
-export type TimelineDesign = 'zigzag' | 'pins' | 'cards' | 'tiles'
-export const TIMELINE_DESIGNS: readonly TimelineDesign[] = ['zigzag', 'pins', 'cards', 'tiles']
+// the end and a teardrop pin with its text beside it above or below each ring in turn; it scrolls sideways. radial: a ring split into one
+// coloured sector per step, a numbered arc band on the outside of each, a white wedge panel with the step's picture and words inside it, and
+// a hub with the title in the middle (one column on a screen too narrow for it). cards: two equal columns from a tablet up, the steps take
+// turns left and right around a dashed centre line, with the dashboard's soft shapes behind each card (one column on a phone).
+export type TimelineDesign = 'zigzag' | 'pins' | 'radial' | 'cards'
+export const TIMELINE_DESIGNS: readonly TimelineDesign[] = ['zigzag', 'pins', 'radial', 'cards']
 
 // Which colour of a palette of `size` colours a step gets: they follow each other and start again after the last, so neighbours always
 // differ (when there are at least two colours).

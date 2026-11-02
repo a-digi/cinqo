@@ -1,6 +1,7 @@
 // Pure checks of the guides (plan/ai/tools/career/step-170-onboarding-guide.md, step 1): a guide is fit to show when its steps are and
 // every page it links to really is a page of the tool (an address of paths.ts), so a guide can never point at a page that is not there.
 import * as paths from '../../paths'
+import { RADIAL_MAX_STEPS, RADIAL_MIN_STEPS, radialFits } from '../../Shared/Timeline/radialRules'
 import { CAREER_PATH_PREFIX, TIMELINE_DESIGNS, pathOnly, stepProblems } from '../../Shared/Timeline/timelineRules'
 import type { Guide } from './guideTypes'
 
@@ -19,6 +20,11 @@ export function guideProblems(guide: Guide, knownPaths: readonly string[] = KNOW
   if (blank(guide.title)) problems.push(`guide ${name} has no title`)
   if (blank(guide.description)) problems.push(`guide ${name} has no description`)
   if (!TIMELINE_DESIGNS.includes(guide.design)) problems.push(`guide ${name} has an unknown design "${guide.design}"`)
+  if (guide.design === 'radial' && !radialFits(guide.steps.length)) {
+    problems.push(
+      `guide ${name}: the radial design needs ${String(RADIAL_MIN_STEPS)} to ${String(RADIAL_MAX_STEPS)} steps, not ${String(guide.steps.length)}`,
+    )
+  }
   for (const problem of stepProblems(guide.steps)) problems.push(`guide ${name}: ${problem}`)
   guide.steps.forEach((step) => {
     if (step.link !== undefined && step.link.path.startsWith(CAREER_PATH_PREFIX) && !knownPaths.includes(pathOnly(step.link.path))) {

@@ -195,18 +195,20 @@ export const FINDING_JOBS: Guide = {
 
 export const CONTACTS: Guide = {
   id: 'contacts',
-  design: 'tiles',
+  design: 'radial',
   title: 'Companies & recruiters',
   description: 'Keep track of the companies and the recruiters behind your jobs, in five steps, and link them to the jobs they belong to.',
   steps: [
     {
       id: 'companies',
+      icon: 'building',
       title: 'Add the companies',
       text: 'Companies is a directory, separate from the free-text name on each crawled job. Add one with New company; you can link jobs and recruiters to it afterwards. Use View on a company to see its page.',
       link: { label: 'Open Companies', path: COMPANIES_PATH },
     },
     {
       id: 'recruiters',
+      icon: 'users',
       title: 'Add the recruiters',
       text: 'A recruiter works for one or more existing companies, so add the companies first. Create one with New recruiter and pick the companies; Edit changes them later.',
       tip: 'Deleting a company never deletes a recruiter: the company just disappears from them.',
@@ -214,18 +216,21 @@ export const CONTACTS: Guide = {
     },
     {
       id: 'map',
+      icon: 'link',
       title: 'Map a recruiter to a job',
       text: 'In the Jobs list, open a job’s actions and choose Recruiter…, then pick one in the window: recruiters who work for the job’s company come first, marked Same company. A job’s own page has a Recruiters card with Map to recruiter and a Remove for each recruiter already mapped.',
       link: { label: 'Open Jobs', path: JOBS_PATH },
     },
     {
       id: 'recruiter-page',
+      icon: 'eye',
       title: 'See what a recruiter is mapped to',
       text: 'View on a recruiter opens their page: the e-mail, the companies they work for and every job they are mapped to, each with Remove from this job.',
       link: { label: 'Open Recruiters', path: RECRUITERS_PATH },
     },
     {
       id: 'company-recruiters',
+      icon: 'briefcase',
       title: 'See who works at a company',
       text: 'A company’s page shows how many recruiters it has; the number opens the Recruiters list filtered to that company.',
       link: { label: 'Open Companies', path: COMPANIES_PATH },

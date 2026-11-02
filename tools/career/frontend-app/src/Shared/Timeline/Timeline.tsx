@@ -3,8 +3,9 @@ import { Decor } from '../Decor/Decor'
 import { shapeAt } from '../Decor/decorShapes'
 import { StepBadge, StepWords } from './StepParts'
 import { PinsTimeline } from './PinsTimeline'
+import { RadialTimeline } from './RadialTimeline'
 import { ZigzagTimeline } from './ZigzagTimeline'
-import { nodeLook, numberLabel, onLeft, paletteIndex, type TimelineDesign, type TimelineStep } from './timelineRules'
+import { nodeLook, onLeft, paletteIndex, type TimelineDesign, type TimelineStep } from './timelineRules'
 
 // The shared timeline (plan/ai/tools/career/step-170-onboarding-guide.md): the steps of a guide drawn as a sequence that happens in
 // order. Every step has its own colour (the palette follows the steps and starts again after the last) and the guide picks one of four
@@ -27,6 +28,7 @@ export function Timeline({
   const accentOf = (index: number): Accent => palette[paletteIndex(index, palette.length)]
   if (design === 'zigzag') return <ZigzagTimeline steps={steps} ariaLabel={ariaLabel} accentOf={accentOf} />
   if (design === 'pins') return <PinsTimeline steps={steps} ariaLabel={ariaLabel} accentOf={accentOf} />
+  if (design === 'radial') return <RadialTimeline steps={steps} ariaLabel={ariaLabel} accentOf={accentOf} />
   return (
     <div className="relative">
       {/* The dashed line between the two columns, behind the dots of the cards. */}
@@ -39,14 +41,7 @@ export function Timeline({
           const accent = accentOf(index)
           const look = nodeLook(step)
           const left = onLeft(index)
-          const number = look === 'done' ? '✓' : numberLabel(index)
           const shapes = <Decor shape={shapeAt(index)} accent={accent} />
-          const title = (extra: string) => (
-            <h2 className={`font-semibold ${extra}`}>
-              <span className="sr-only">{`Step ${numberLabel(index)}: `}</span>
-              {step.title}
-            </h2>
-          )
           // The small dot where the card meets the dashed line.
           const dot = (
             <span
@@ -56,46 +51,21 @@ export function Timeline({
             />
           )
 
-          let card: React.ReactNode
-          if (design === 'cards') {
-            card = (
-              <div
-                className="relative overflow-hidden rounded-3xl border p-5 pl-6 shadow-sm transition-shadow hover:shadow-md"
-                style={{ borderColor: accent.soft, background: `linear-gradient(160deg, #ffffff 45%, ${accent.soft} 100%)` }}
-              >
-                <span aria-hidden="true" className="absolute inset-y-0 left-0 w-2" style={{ background: gradient(accent) }} />
-                {shapes}
-                <div className="relative flex items-start gap-3">
-                  <StepBadge step={step} index={index} accent={accent} />
-                  <div className="min-w-0 flex-1 pt-1">
-                    <StepWords step={step} index={index} accent={accent} />
-                  </div>
+          const card = (
+            <div
+              className="relative overflow-hidden rounded-3xl border p-5 pl-6 shadow-sm transition-shadow hover:shadow-md"
+              style={{ borderColor: accent.soft, background: `linear-gradient(160deg, #ffffff 45%, ${accent.soft} 100%)` }}
+            >
+              <span aria-hidden="true" className="absolute inset-y-0 left-0 w-2" style={{ background: gradient(accent) }} />
+              {shapes}
+              <div className="relative flex items-start gap-3">
+                <StepBadge step={step} index={index} accent={accent} />
+                <div className="min-w-0 flex-1 pt-1">
+                  <StepWords step={step} index={index} accent={accent} />
                 </div>
               </div>
-            )
-          } else {
-            card = (
-              <div
-                className="relative overflow-hidden rounded-3xl border-2 border-dashed p-5 transition-shadow hover:shadow-md"
-                style={{ borderColor: accent.from, background: accent.soft }}
-              >
-                {shapes}
-                <div className="relative">
-                  <div className="mb-2 flex items-center gap-3">
-                    <span
-                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-sm font-bold text-white"
-                      style={{ background: gradient(accent) }}
-                      aria-hidden="true"
-                    >
-                      {number}
-                    </span>
-                    {title('text-base')}
-                  </div>
-                  <StepWords step={step} index={index} accent={accent} hideTitle />
-                </div>
-              </div>
-            )
-          }
+            </div>
+          )
 
           return (
             <li
