@@ -967,6 +967,7 @@ func companiesHandler(w http.ResponseWriter, r *http.Request) {
 type recruiterRequest struct {
 	CompanyID  string   `json:"companyId"`
 	CompanyIDs []string `json:"companyIds"`
+	Freelancer bool     `json:"freelancer"`
 	FirstName  string   `json:"firstName"`
 	LastName   string   `json:"lastName"`
 	Email      string   `json:"email"`
@@ -978,10 +979,15 @@ type recruiterUpdateRequest struct {
 	LastName   *string   `json:"lastName,omitempty"`
 	Email      *string   `json:"email,omitempty"`
 	CompanyIDs *[]string `json:"companyIds,omitempty"`
+	Freelancer *bool     `json:"freelancer,omitempty"`
 }
 
 // writeRecruiterWriteError: an unknown recruiter or company is a caller mistake (400), anything else a 500.
 func writeRecruiterWriteError(w http.ResponseWriter, action string, err error) {
+	if errors.Is(err, recruiters.ErrFreelancerWithCompanies) {
+		http.Error(w, "a freelancer has no companies", http.StatusBadRequest)
+		return
+	}
 	if errors.Is(err, companies.ErrUnknownCompany) {
 		http.Error(w, "unknown company id", http.StatusBadRequest)
 		return
@@ -992,7 +998,7 @@ func writeRecruiterWriteError(w http.ResponseWriter, action string, err error) {
 func recruitersHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		recruiterList, err := recruiters.ListRecruiters(r.URL.Query().Get("companyId"))
+		recruiterList, err := recruiters.ListRecruitersOfKind(r.URL.Query().Get("companyId"), r.URL.Query().Get("freelancer") == "true")
 		if err != nil {
 			http.Error(w, "failed to list recruiters: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -1005,8 +1011,12 @@ func recruitersHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid request body", http.StatusBadRequest)
 			return
 		}
-		id, err := recruiters.CreateRecruiter(append([]string{body.CompanyID}, body.CompanyIDs...), body.FirstName, body.LastName, body.Email)
+		id, err := recruiters.CreateRecruiterOfKind(append([]string{body.CompanyID}, body.CompanyIDs...), body.Freelancer, body.FirstName, body.LastName, body.Email)
 		if err != nil {
+			if errors.Is(err, recruiters.ErrFreelancerWithCompanies) {
+				writeRecruiterWriteError(w, "create recruiter", err)
+				return
+			}
 			companies.WriteCompanyAwareError(w, "create recruiter", err)
 			return
 		}
@@ -1023,9 +1033,10 @@ func recruitersHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "id is required", http.StatusBadRequest)
 			return
 		}
-		// The companies first: they check everything before writing, so a bad id changes nothing, not even the name.
-		if body.CompanyIDs != nil {
-			if err := recruiters.SetCompanies(body.ID, *body.CompanyIDs); err != nil {
+		// The kind and the companies first: they check everything before writing, so a bad id (or a freelancer with companies) changes
+		// nothing, not even the name.
+		if body.CompanyIDs != nil || body.Freelancer != nil {
+			if err := recruiters.ApplyKind(body.ID, body.Freelancer, body.CompanyIDs); err != nil {
 				writeRecruiterWriteError(w, "update recruiter", err)
 				return
 			}

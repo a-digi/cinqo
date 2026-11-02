@@ -73,7 +73,7 @@ export const QUESTIONS: Question[] = [
     id: 'several-companies',
     question: 'Can a recruiter work for several companies?',
     answer:
-      'Yes. Pick as many companies as you like in New recruiter, and change them any time with Edit. A recruiter with no company is allowed too; the list then shows No company.',
+      'Yes. Pick as many companies as you like in New recruiter, and change them any time with Edit. A recruiter who works for no company can be marked Freelancer (switch it on in New recruiter or Edit); a freelancer has no companies, and the list shows a Freelancer chip. A recruiter whose last company was deleted shows No company instead.',
     link: { label: 'Open Recruiters', path: RECRUITERS_PATH },
   },
   {

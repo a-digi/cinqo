@@ -22,7 +22,9 @@ type MappedRecruiter struct {
 	CompanyID   string               `json:"companyId"`
 	CompanyName string               `json:"companyName"`
 	Companies   []recruiters.Company `json:"companies"`
-	MappedAt    string               `json:"mappedAt"`
+	// Freelancer: independent on purpose, no company (plan step-171).
+	Freelancer bool   `json:"freelancer"`
+	MappedAt   string `json:"mappedAt"`
 }
 
 // MappedJob is a job mapped to one recruiter.
@@ -83,7 +85,7 @@ func Unmap(jobID, recruiterID string) error {
 // job has none.
 func ForJob(jobID string) ([]MappedRecruiter, error) {
 	rows, err := db.JobsDB.Query(
-		`SELECT r.id, r.first_name, r.last_name, r.email, jr.created_at
+		`SELECT r.id, r.first_name, r.last_name, r.email, r.is_freelancer, jr.created_at
 		 FROM job_recruiters jr
 		 JOIN recruiters r ON r.id = jr.recruiter_id
 		 WHERE jr.job_id = ?
@@ -94,7 +96,7 @@ func ForJob(jobID string) ([]MappedRecruiter, error) {
 	out := []MappedRecruiter{}
 	for rows.Next() {
 		m := MappedRecruiter{Companies: []recruiters.Company{}}
-		if err := rows.Scan(&m.ID, &m.FirstName, &m.LastName, &m.Email, &m.MappedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.FirstName, &m.LastName, &m.Email, &m.Freelancer, &m.MappedAt); err != nil {
 			rows.Close()
 			return nil, err
 		}

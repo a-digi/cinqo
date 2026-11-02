@@ -1,6 +1,7 @@
-// Pure rules for the companies of a recruiter (plan/ai/tools/career/step-169-recruiters-many-companies.md, step 3): a recruiter works
-// for zero or more companies. The new-recruiter form needs at least one; the list shows the chips (or "No company") and sends a
-// changed set only. No React, so they can be script-checked.
+// Pure rules for the companies of a recruiter (plan/ai/tools/career/step-169-recruiters-many-companies.md, step 3) and for the
+// freelancer choice (plan/ai/tools/career/step-171-freelancer-recruiters.md, step 3): a recruiter works for zero or more companies,
+// or is a freelancer (attached to none, on purpose). The new-recruiter form needs a company or Freelancer; the list shows the chips
+// (or "Freelancer", or "No company") and sends only what changed. No React, so they can be script-checked.
 
 export interface CompanyRef {
   id: string
@@ -8,6 +9,7 @@ export interface CompanyRef {
 }
 
 export const NO_COMPANY_LABEL = 'No company'
+export const FREELANCER_LABEL = 'Freelancer'
 
 // The companies in the order they are given, without blanks and repeats.
 export function cleanIds(ids: string[]): string[] {
@@ -27,9 +29,15 @@ export function initialCompanyIds(search: string): string[] {
   return cleanIds([new URLSearchParams(search).get('companyId') ?? ''])
 }
 
-// The form's own rule: a new recruiter is tied to at least one company (the data model allows none, the form does not).
-export function companiesError(ids: string[]): string {
-  return cleanIds(ids).length === 0 ? 'Pick at least one company' : ''
+// ...and whether it starts as a freelancer: when the list was filtered by the freelancers (?freelancer=true).
+export function initialFreelancer(search: string): boolean {
+  return new URLSearchParams(search).get('freelancer') === 'true'
+}
+
+// The form's own rule: a new recruiter is a freelancer or is tied to at least one company (the data model allows neither, the form
+// does not).
+export function kindError(freelancer: boolean, ids: string[]): string {
+  return freelancer || cleanIds(ids).length > 0 ? '' : 'Pick at least one company, or choose Freelancer'
 }
 
 // Two selections are the same set when they hold the same companies, in any order.
@@ -44,13 +52,35 @@ export function companiesToSend(saved: string[], edited: string[]): string[] | u
   return sameCompanySet(saved, edited) ? undefined : cleanIds(edited)
 }
 
-// Where the form returns to after creating: the filtered list when exactly one company was chosen, else the whole list.
-export function listFilterAfterCreate(ids: string[]): string {
+// Where the form returns to after creating: the freelancers' list for a freelancer, the filtered list when exactly one company was
+// chosen, else the whole list. The result is a list state for buildRecruitersSearch.
+export function listStateAfterCreate(freelancer: boolean, ids: string[]): { companyId: string; freelancer: boolean } {
+  if (freelancer) return { companyId: '', freelancer: true }
   const clean = cleanIds(ids)
-  return clean.length === 1 ? clean[0] : ''
+  return { companyId: clean.length === 1 ? clean[0] : '', freelancer: false }
 }
 
-// What a recruiter's row shows: the chips, or one grey "No company" marker.
+// What an edit sends (plan step-171): only what changed. Becoming a freelancer sends the flag alone (the server removes the companies);
+// a freelancer who stays one sends nothing; a freelancer who becomes a company recruiter sends false together with the companies in
+// the same request; a company recruiter sends the new set when it differs.
+export interface KindState {
+  freelancer: boolean
+  companyIds: string[]
+}
+
+export function kindToSend(saved: KindState, edited: KindState): { freelancer?: boolean; companyIds?: string[] } {
+  if (edited.freelancer) return saved.freelancer ? {} : { freelancer: true }
+  if (saved.freelancer) return { freelancer: false, companyIds: cleanIds(edited.companyIds) }
+  const companyIds = companiesToSend(saved.companyIds, edited.companyIds)
+  return companyIds === undefined ? {} : { companyIds }
+}
+
+// What a recruiter's row shows: the chips, a "Freelancer" marker, or one grey "No company" marker.
+export function rowKind(r: { freelancer: boolean; companies: CompanyRef[] }): 'freelancer' | 'companies' | 'none' {
+  if (r.freelancer) return 'freelancer'
+  return r.companies.length > 0 ? 'companies' : 'none'
+}
+
 export function companyChips(companies: CompanyRef[]): { id: string; label: string }[] {
   return companies.map((c) => ({ id: c.id, label: c.name }))
 }

@@ -7,8 +7,9 @@ import { cardClassName, cardStyle } from '../../Shared/cardStyle'
 import { JOB_DETAILS_PATH, RECRUITERS_PATH, VIEW_COMPANY_PATH } from '../../paths'
 import { mailtoHref } from '../JobDetails/jobRecruitersRules'
 import { accentFor, initialOf } from '../JobsPage/jobsTheme'
-import { companyNamesText, recruiterLabel } from '../Recruiters/recruiterMapRules'
-import { formatDay, jobMeta, mappedJobsPill, withoutJob } from './recruiterViewRules'
+import { recruiterLabel } from '../Recruiters/recruiterMapRules'
+import { companiesRowLabel, formatDay, jobMeta, mappedJobsPill, recruiterDescription, withoutJob } from './recruiterViewRules'
+import { FREELANCER_LABEL } from './recruiterCompaniesRules'
 
 // The page behind a recruiter's "View" link (plan/ai/tools/career/step-168-recruiters-on-jobs.md, step 6), in the manner of the profile and
 // company view pages: a header card, the recruiter's details and the jobs they are mapped to, each with "Remove from this job". The
@@ -78,7 +79,6 @@ export function RecruiterViewPage() {
 
   const name = recruiterLabel(recruiter)
   const mailto = mailtoHref(recruiter.email)
-  const companyNames = companyNamesText(recruiter.companies)
 
   return (
     <div className="career-v-tilt career-a-float career-t-wave max-w-7xl p-6 font-sans text-gray-900">
@@ -86,7 +86,7 @@ export function RecruiterViewPage() {
       <PageHeaderCard
         icon={<UsersIcon />}
         title={name}
-        description={companyNames !== '' ? `Recruiter at ${companyNames}.` : 'Recruiter.'}
+        description={recruiterDescription(recruiter)}
         pill={{ text: mappedJobsPill(jobs.length) }}
       />
 
@@ -107,9 +107,11 @@ export function RecruiterViewPage() {
               </dd>
             </div>
             <div>
-              <dt className="text-xs text-gray-500">{recruiter.companies.length === 1 ? 'Company' : 'Companies'}</dt>
+              <dt className="text-xs text-gray-500">{companiesRowLabel(recruiter)}</dt>
               <dd>
-                {recruiter.companies.length > 0 ? (
+                {recruiter.freelancer ? (
+                  <span>{FREELANCER_LABEL}, not attached to a company</span>
+                ) : recruiter.companies.length > 0 ? (
                   <ul className="space-y-0.5">
                     {recruiter.companies.map((c) => (
                       <li key={c.id}>

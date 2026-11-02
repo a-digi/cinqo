@@ -587,6 +587,9 @@ CREATE TABLE IF NOT EXISTS recruiters (
     first_name  TEXT NOT NULL DEFAULT '',
     last_name   TEXT NOT NULL DEFAULT '',
     email       TEXT NOT NULL DEFAULT '',
+    -- is_freelancer (plan/ai/tools/career/step-171): an independent recruiter, on purpose, not attached to any company. Exclusive with
+    -- recruiter_companies (a freelancer has no link rows); the rule is kept by the recruiters package, in one transaction.
+    is_freelancer INTEGER NOT NULL DEFAULT 0 CHECK (is_freelancer IN (0, 1)),
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at  TEXT
 );
@@ -1632,6 +1635,9 @@ func migrateJobsDB(db *sql.DB) error {
 	if err := migrateRecruiterCompanies(db); err != nil {
 		return err
 	}
+	if err := migrateRecruitersFreelancer(db); err != nil {
+		return err
+	}
 	if err := migrateJobsCompanyID(db); err != nil {
 		return err
 	}
@@ -2488,6 +2494,22 @@ CREATE TABLE IF NOT EXISTS recruiter_companies (
 );
 CREATE INDEX IF NOT EXISTS recruiter_companies_company_idx ON recruiter_companies(company_id);
 `
+
+// migrateRecruitersFreelancer adds recruiters.is_freelancer (plan/ai/tools/career/step-171) to an already-installed table: a plain
+// ALTER TABLE ADD COLUMN, 0 for every existing recruiter (nobody is guessed to be a freelancer), a no-op on a new install (the
+// CREATE TABLE above has the column) and on a second start. It runs after migrateRecruiterCompanies, whose rebuild creates the
+// table without the column.
+func migrateRecruitersFreelancer(db *sql.DB) error {
+	exists, hasColumn, err := tableHasColumn(db, "recruiters", "is_freelancer")
+	if err != nil {
+		return err
+	}
+	if !exists || hasColumn {
+		return nil
+	}
+	_, err = db.Exec(`ALTER TABLE recruiters ADD COLUMN is_freelancer INTEGER NOT NULL DEFAULT 0 CHECK (is_freelancer IN (0, 1))`)
+	return err
+}
 
 // migrateRecruiterCompanies converts a jobs.db whose recruiters carry one required company_id (with ON DELETE CASCADE: deleting a
 // company deleted its recruiters) to the many-to-many link table recruiter_companies and rebuilds recruiters without the column

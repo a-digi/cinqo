@@ -318,3 +318,33 @@ func TestForJobListsEveryCompanyOfARecruiter(t *testing.T) {
 		t.Errorf("deleting a company must not unmap a recruiter: %d", len(got))
 	}
 }
+
+// Plan step-171: a mapped freelancer is marked as one, with no company; the others are not.
+func TestForJobMarksAFreelancer(t *testing.T) {
+	setup(t)
+	company(t, "c1", "Acme")
+	recruiter(t, "r1", "c1", "Ada", "L", "")
+	recruiter(t, "r2", "", "Free", "Lancer", "")
+	exec(t, `UPDATE recruiters SET is_freelancer = 1 WHERE id = 'r2'`)
+	recruiter(t, "r3", "", "No", "Company", "")
+	job(t, "j1", "Job")
+	for _, r := range []string{"r1", "r2", "r3"} {
+		if _, err := Map("j1", r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := ForJob("j1")
+	if err != nil || len(got) != 3 {
+		t.Fatalf("%v %v", got, err)
+	}
+	by := map[string]MappedRecruiter{}
+	for _, m := range got {
+		by[m.ID] = m
+	}
+	if by["r1"].Freelancer || by["r3"].Freelancer {
+		t.Errorf("only r2 is a freelancer: %+v", got)
+	}
+	if !by["r2"].Freelancer || len(by["r2"].Companies) != 0 || by["r2"].CompanyID != "" {
+		t.Errorf("r2: %+v", by["r2"])
+	}
+}

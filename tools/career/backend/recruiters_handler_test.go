@@ -35,6 +35,7 @@ type rcRecruiter struct {
 	CompanyIDs []string `json:"companyIds"`
 	Companies  []struct{ ID, Name string }
 	FirstName  string `json:"firstName"`
+	Freelancer bool   `json:"freelancer"`
 }
 
 func rcList(t *testing.T, target string) []rcRecruiter {

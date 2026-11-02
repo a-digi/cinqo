@@ -318,6 +318,8 @@ export interface Recruiter {
   companyId: string
   companyIds: string[]
   companies: { id: string; name: string }[]
+  // A freelancer is independent on purpose and attached to no company (plan step-171); never together with companies.
+  freelancer: boolean
   firstName: string
   lastName: string
   email: string
@@ -1266,8 +1268,8 @@ export async function removeCompany(id: string): Promise<void> {
 
 // --- recruiters ---
 
-export async function fetchRecruiters(companyId?: string): Promise<Recruiter[]> {
-  const qs = companyId ? `?companyId=${encodeURIComponent(companyId)}` : ''
+export async function fetchRecruiters(companyId?: string, freelancersOnly = false): Promise<Recruiter[]> {
+  const qs = freelancersOnly ? '?freelancer=true' : companyId ? `?companyId=${encodeURIComponent(companyId)}` : ''
   const res = await fetch(`${PROXY_BASE}/recruiters${qs}`, { credentials: 'include' })
   const data = await jsonOrThrow<{ recruiters: Recruiter[] }>(res, 'load recruiters')
   return data.recruiters
@@ -1285,6 +1287,8 @@ export interface JobRecruiter {
   companyId: string
   companyName: string
   companies: { id: string; name: string }[]
+  // A freelancer is independent on purpose and has no company (plan step-171).
+  freelancer: boolean
   mappedAt: string
 }
 
@@ -1339,19 +1343,26 @@ export async function unmapJobRecruiter(jobId: string, recruiterId: string): Pro
   if (!res.ok && res.status !== 204) throw new Error(`failed to remove the recruiter from the job (${String(res.status)})`)
 }
 
-export async function createRecruiter(companyIds: string[], firstName: string, lastName: string, email: string): Promise<{ id: string }> {
+export async function createRecruiter(
+  companyIds: string[],
+  firstName: string,
+  lastName: string,
+  email: string,
+  freelancer = false,
+): Promise<{ id: string }> {
   const res = await fetch(`${PROXY_BASE}/recruiters`, {
     method: 'POST',
     credentials: 'include',
-    body: JSON.stringify({ companyIds, firstName, lastName, email }),
+    body: JSON.stringify(freelancer ? { freelancer: true, firstName, lastName, email } : { companyIds, firstName, lastName, email }),
   })
   return jsonOrThrow<{ id: string }>(res, 'create recruiter')
 }
 
 // companyIds replaces the whole set of companies (an empty list removes them all); left out, the companies stay as they are.
+// freelancer: true makes the recruiter a freelancer (the server removes every company); false with companyIds makes a company recruiter.
 export async function updateRecruiter(
   id: string,
-  args: { firstName?: string; lastName?: string; email?: string; companyIds?: string[] },
+  args: { firstName?: string; lastName?: string; email?: string; companyIds?: string[]; freelancer?: boolean },
 ): Promise<Recruiter[]> {
   const res = await fetch(`${PROXY_BASE}/recruiters`, {
     method: 'PUT',

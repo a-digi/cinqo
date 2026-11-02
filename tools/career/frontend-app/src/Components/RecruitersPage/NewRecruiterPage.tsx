@@ -3,19 +3,22 @@ import { createRecruiter, fetchCompanies, type Company } from '../../api'
 import { PlusIcon, UsersIcon } from '../../Shared/Icons/icons'
 import { inputClass } from '../../Shared/inputClass'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
-import { companiesError, initialCompanyIds, listFilterAfterCreate } from './recruiterCompaniesRules'
+import { initialCompanyIds, initialFreelancer, kindError, listStateAfterCreate } from './recruiterCompaniesRules'
+import { buildRecruitersSearch, parseRecruitersUrl, type RecruitersListState } from './recruitersUrlState'
+import { Switch } from '../../Shared/Switch/Switch'
 import { COMPANIES_PATH, RECRUITERS_PATH } from '../../paths'
 import { Dropdown } from '../Dropdown/Dropdown'
 import { PAGE_ACCENT } from '../JobsPage/jobsTheme'
 
 // The page behind the Recruiters list's "New recruiter" button. A recruiter works for
-// one or more existing companies (at least one is asked for here); ?companyId=
-// pre-selects one (set when the list is filtered by a company). Menu-less, like
+// one or more existing companies, or is a freelancer, attached to none (the form asks for one of the two); ?companyId=
+// pre-selects a company and ?freelancer=true the Freelancer choice (set when the list is filtered). Menu-less, like
 // the other create/detail pages.
 export function NewRecruiterPage() {
   const [companies, setCompanies] = useState<Company[]>([])
   const [companyIds, setCompanyIds] = useState<string[]>(() => initialCompanyIds(window.location.search))
-  const [cameFrom] = useState(() => new URLSearchParams(window.location.search).get('companyId') ?? '')
+  const [freelancer, setFreelancer] = useState(() => initialFreelancer(window.location.search))
+  const [cameFrom] = useState(() => parseRecruitersUrl(window.location.search))
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [email, setEmail] = useState('')
@@ -35,15 +38,14 @@ export function NewRecruiterPage() {
   }, [])
 
   // Cancel goes back to the list it came from; after creating, to the one company's list when only one was chosen.
-  function goToList(filter: string) {
-    const suffix = filter ? `?companyId=${encodeURIComponent(filter)}` : ''
-    window.__cinqoToolBridge.navigate(`${RECRUITERS_PATH}${suffix}`)
+  function goToList(state: RecruitersListState) {
+    window.__cinqoToolBridge.navigate(`${RECRUITERS_PATH}${buildRecruitersSearch(state)}`)
   }
 
   function handleCreate() {
     const first = firstName.trim()
     const last = lastName.trim()
-    const missing = companiesError(companyIds)
+    const missing = kindError(freelancer, companyIds)
     if (missing) {
       setError(missing)
       return
@@ -54,9 +56,9 @@ export function NewRecruiterPage() {
     }
     setError('')
     setIsSaving(true)
-    createRecruiter(companyIds, first, last, email.trim())
+    createRecruiter(companyIds, first, last, email.trim(), freelancer)
       .then(() => {
-        goToList(listFilterAfterCreate(companyIds))
+        goToList(listStateAfterCreate(freelancer, companyIds))
       })
       .catch((err: unknown) => {
         setIsSaving(false)
@@ -69,9 +71,9 @@ export function NewRecruiterPage() {
       <PageHeaderCard
         icon={<UsersIcon />}
         title="New recruiter"
-        description="Add a recruiter contact and the companies they work for. A recruiter can work for several, and the companies can be changed later."
+        description="Add a recruiter contact and the companies they work for, or mark them as a freelancer who is not attached to a company. A recruiter can work for several companies, and all of this can be changed later."
       />
-      {isLoaded && companies.length === 0 ? (
+      {isLoaded && companies.length === 0 && !freelancer ? (
         <div
           className="rounded-3xl border p-6 text-sm text-gray-700"
           style={{ borderColor: PAGE_ACCENT.soft, background: PAGE_ACCENT.soft }}
@@ -87,7 +89,17 @@ export function NewRecruiterPage() {
           >
             Create one first
           </a>
-          .
+          , or{' '}
+          <button
+            type="button"
+            onClick={() => {
+              setFreelancer(true)
+            }}
+            className="font-medium underline"
+          >
+            add a freelancer
+          </button>
+          , who needs no company.
         </div>
       ) : (
         <form
@@ -99,16 +111,30 @@ export function NewRecruiterPage() {
           style={{ borderColor: PAGE_ACCENT.soft, background: `linear-gradient(160deg, #ffffff 45%, ${PAGE_ACCENT.soft} 100%)` }}
         >
           <div className="mb-4">
-            <Dropdown
-              multiple
-              searchable
-              label="Companies"
-              placeholder="Select one or more companies"
-              options={companies.map((c) => ({ value: c.id, label: c.name }))}
-              value={companyIds}
-              onChange={setCompanyIds}
+            <Switch
+              checked={freelancer}
+              onChange={(checked) => {
+                setFreelancer(checked)
+                if (checked) setCompanyIds([])
+              }}
+              label="Freelancer, not attached to a company"
             />
           </div>
+          {freelancer ? (
+            <p className="mb-4 text-xs text-gray-500">A freelancer works for no company. Switch it off to pick the companies.</p>
+          ) : (
+            <div className="mb-4">
+              <Dropdown
+                multiple
+                searchable
+                label="Companies"
+                placeholder="Select one or more companies"
+                options={companies.map((c) => ({ value: c.id, label: c.name }))}
+                value={companyIds}
+                onChange={setCompanyIds}
+              />
+            </div>
+          )}
           <div className="mb-4 grid gap-4 sm:grid-cols-2">
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-600" htmlFor="recruiter-first">

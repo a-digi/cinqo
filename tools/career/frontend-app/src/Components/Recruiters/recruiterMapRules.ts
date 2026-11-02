@@ -2,12 +2,13 @@
 // recruiter, the list the modal shows (the job's own company first, then by company and name), the search over it, which rows can be
 // picked and what to say when there is nothing to show. No React, so they can be script-checked.
 import type { Recruiter } from '../../api'
+import { FREELANCER_LABEL } from '../RecruitersPage/recruiterCompaniesRules'
 
 export interface RecruiterChoice {
   id: string
   label: string
   email: string
-  // The names of every company the recruiter works for, "Acme, Beta" (empty when they have none).
+  // The names of every company the recruiter works for, "Acme, Beta" (empty when they have none); "Freelancer" for a freelancer.
   companyName: string
   // The recruiter works for the company of the job being mapped (any one of their companies counts).
   sameCompany: boolean
@@ -31,6 +32,11 @@ export function companyNamesText(companies: readonly { name: string }[]): string
     .join(', ')
 }
 
+// What stands where a recruiter's companies would be: "Acme, Beta", "Freelancer" for a freelancer (plan step-171), '' for none.
+export function companyText(r: { freelancer: boolean; companies: readonly { name: string }[] }): string {
+  return r.freelancer ? FREELANCER_LABEL : companyNamesText(r.companies)
+}
+
 const byText = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: 'base' })
 
 // Every recruiter as a choice: the ones who work for the job's company (any of their companies) first, then the others by company
@@ -49,8 +55,8 @@ export function buildChoices(
         id: r.id,
         label: recruiterLabel(r),
         email: r.email,
-        companyName: companyNamesText(r.companies),
-        sameCompany: jobCompanyId !== undefined && jobCompanyId !== '' && r.companyIds.includes(jobCompanyId),
+        companyName: companyText(r),
+        sameCompany: !r.freelancer && jobCompanyId !== undefined && jobCompanyId !== '' && r.companyIds.includes(jobCompanyId),
         mapped: mapped.has(r.id),
       } satisfies RecruiterChoice,
     }))

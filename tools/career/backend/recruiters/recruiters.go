@@ -32,11 +32,13 @@ type recruiter struct {
 	CompanyID  string    `json:"companyId"`
 	CompanyIDs []string  `json:"companyIds"`
 	Companies  []Company `json:"companies"`
-	FirstName  string    `json:"firstName"`
-	LastName   string    `json:"lastName"`
-	Email      string    `json:"email"`
-	CreatedAt  string    `json:"createdAt"`
-	UpdatedAt  string    `json:"updatedAt,omitempty"`
+	// Freelancer: independent on purpose, attached to no company (plan step-171). Exclusive with Companies.
+	Freelancer bool   `json:"freelancer"`
+	FirstName  string `json:"firstName"`
+	LastName   string `json:"lastName"`
+	Email      string `json:"email"`
+	CreatedAt  string `json:"createdAt"`
+	UpdatedAt  string `json:"updatedAt,omitempty"`
 }
 
 // cleanCompanyIDs trims, drops blanks and repeats, and keeps the order.
@@ -67,7 +69,19 @@ func requireCompaniesExist(ids []string) error {
 // CreateRecruiter creates a recruiter linked to zero or more existing companies (plan step-169): every company is checked first
 // and the recruiter and its links are written in one transaction, so nothing is left half done.
 func CreateRecruiter(companyIDs []string, firstName, lastName, email string) (string, error) {
+	return CreateRecruiterOfKind(companyIDs, false, firstName, lastName, email)
+}
+
+// ErrFreelancerWithCompanies is returned when a freelancer would also have companies (plan step-171): a freelancer is attached to none.
+var ErrFreelancerWithCompanies = errors.New("a freelancer has no companies")
+
+// CreateRecruiterOfKind is CreateRecruiter that can create a freelancer (plan step-171): a freelancer with companies is
+// ErrFreelancerWithCompanies and nothing is written.
+func CreateRecruiterOfKind(companyIDs []string, freelancer bool, firstName, lastName, email string) (string, error) {
 	companyIDs = cleanCompanyIDs(companyIDs)
+	if freelancer && len(companyIDs) > 0 {
+		return "", ErrFreelancerWithCompanies
+	}
 	if err := requireCompaniesExist(companyIDs); err != nil {
 		return "", err
 	}
@@ -78,8 +92,8 @@ func CreateRecruiter(companyIDs []string, firstName, lastName, email string) (st
 	}
 	defer tx.Rollback()
 	if _, err := tx.Exec(
-		`INSERT INTO recruiters (id, first_name, last_name, email, created_at) VALUES (?, ?, ?, ?, datetime('now'))`,
-		id, firstName, lastName, email,
+		`INSERT INTO recruiters (id, first_name, last_name, email, is_freelancer, created_at) VALUES (?, ?, ?, ?, ?, datetime('now'))`,
+		id, firstName, lastName, email, freelancer,
 	); err != nil {
 		return "", err
 	}
@@ -96,9 +110,28 @@ func CreateRecruiter(companyIDs []string, firstName, lastName, email string) (st
 
 // SetCompanies replaces the companies of a recruiter with exactly these (none is allowed). Companies that stay keep their
 // link (and its time); the others are removed and the new ones added, in one transaction. An unknown recruiter is
-// ErrUnknownRecruiter, an unknown company companies.ErrUnknownCompany, and nothing changes then.
+// ErrUnknownRecruiter, an unknown company companies.ErrUnknownCompany, and nothing changes then. A freelancer cannot get companies
+// this way (ErrFreelancerWithCompanies): use SetKind to make it a company recruiter in the same call.
 func SetCompanies(id string, companyIDs []string) error {
 	companyIDs = cleanCompanyIDs(companyIDs)
+	if err := requireRecruiterExists(id); err != nil {
+		return err
+	}
+	var freelancer bool
+	if err := db.JobsDB.QueryRow(`SELECT is_freelancer FROM recruiters WHERE id = ?`, id).Scan(&freelancer); err != nil {
+		return err
+	}
+	return SetKind(id, freelancer, companyIDs)
+}
+
+// SetKind sets whether a recruiter is a freelancer and which companies it works for, in one transaction (plan step-171). A freelancer
+// with companies is ErrFreelancerWithCompanies; making someone a freelancer removes every company link; making a freelancer a company
+// recruiter takes the companies given. Checks come first, so a refusal changes nothing.
+func SetKind(id string, freelancer bool, companyIDs []string) error {
+	companyIDs = cleanCompanyIDs(companyIDs)
+	if freelancer && len(companyIDs) > 0 {
+		return ErrFreelancerWithCompanies
+	}
 	if err := requireRecruiterExists(id); err != nil {
 		return err
 	}
@@ -118,10 +151,45 @@ func SetCompanies(id string, companyIDs []string) error {
 			return err
 		}
 	}
-	if _, err := tx.Exec(`UPDATE recruiters SET updated_at = datetime('now') WHERE id = ?`, id); err != nil {
+	if _, err := tx.Exec(`UPDATE recruiters SET is_freelancer = ?, updated_at = datetime('now') WHERE id = ?`, freelancer, id); err != nil {
 		return err
 	}
 	return tx.Commit()
+}
+
+// ApplyKind is the one entry the HTTP route and the AI tool use to change the kind and the companies of a recruiter (plan step-171):
+//
+//	freelancer true  (companies none or empty) → a freelancer, every link removed; with companies: ErrFreelancerWithCompanies
+//	freelancer false + companies               → a company recruiter with exactly these companies
+//	freelancer false, no companies given       → the flag off, links as they are
+//	freelancer not given + companies           → the companies replaced (refused for a freelancer, unless the list is empty)
+//	neither given                              → nothing
+//
+// Everything is checked before anything is written.
+func ApplyKind(id string, freelancer *bool, companyIDs *[]string) error {
+	switch {
+	case freelancer == nil && companyIDs == nil:
+		return nil
+	case freelancer == nil:
+		return SetCompanies(id, *companyIDs)
+	case companyIDs == nil:
+		return SetFreelancer(id, *freelancer)
+	default:
+		return SetKind(id, *freelancer, *companyIDs)
+	}
+}
+
+// SetFreelancer sets only the flag: true removes every company link, false keeps the (no) links as they are. An unknown recruiter is
+// ErrUnknownRecruiter.
+func SetFreelancer(id string, freelancer bool) error {
+	if freelancer {
+		return SetKind(id, true, nil)
+	}
+	if err := requireRecruiterExists(id); err != nil {
+		return err
+	}
+	_, err := db.JobsDB.Exec(`UPDATE recruiters SET is_freelancer = 0, updated_at = datetime('now') WHERE id = ?`, id)
+	return err
 }
 
 func notIn(ids []string) string {
@@ -142,15 +210,23 @@ func withArgs(id string, ids []string) []any {
 // ListRecruiters returns every recruiter, oldest first, each with the companies it works for (in the order they were linked);
 // companyId, if non-empty, restricts to recruiters linked to that company (through recruiter_companies).
 func ListRecruiters(companyId string) ([]recruiter, error) {
+	return ListRecruitersOfKind(companyId, false)
+}
+
+// ListRecruitersOfKind is ListRecruiters that can also restrict to the freelancers (plan step-171).
+func ListRecruitersOfKind(companyId string, freelancersOnly bool) ([]recruiter, error) {
 	where := `WHERE 1=1`
 	args := []any{}
+	if freelancersOnly {
+		where += ` AND is_freelancer = 1`
+	}
 	if companyId != "" {
 		where += ` AND EXISTS (SELECT 1 FROM recruiter_companies rc WHERE rc.recruiter_id = recruiters.id AND rc.company_id = ?)`
 		args = append(args, companyId)
 	}
 
 	rows, err := db.JobsDB.Query(
-		`SELECT id, first_name, last_name, email, created_at, updated_at
+		`SELECT id, first_name, last_name, email, is_freelancer, created_at, updated_at
 		 FROM recruiters `+where+` ORDER BY created_at ASC`,
 		args...,
 	)
@@ -162,7 +238,7 @@ func ListRecruiters(companyId string) ([]recruiter, error) {
 	for rows.Next() {
 		var r recruiter
 		var updatedAt sql.NullString
-		if err := rows.Scan(&r.ID, &r.FirstName, &r.LastName, &r.Email, &r.CreatedAt, &updatedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.FirstName, &r.LastName, &r.Email, &r.Freelancer, &r.CreatedAt, &updatedAt); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -261,15 +337,19 @@ type createRecruiterArgs struct {
 	FirstName  string   `json:"firstName" jsonschema:"the recruiter's own first name"`
 	LastName   string   `json:"lastName" jsonschema:"the recruiter's own last name"`
 	Email      string   `json:"email" jsonschema:"the recruiter's own email address"`
+	Freelancer bool     `json:"freelancer,omitempty" jsonschema:"true for a freelancer recruiter: independent, not attached to any company (then companyId and companyIds must be omitted)"`
 }
 
 func RegisterCreateRecruiter(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "create_recruiter",
-		Description: "Create a recruiter contact linked to zero or more existing companies (companyId and/or companyIds). Deleting a company never deletes the recruiter.",
+		Description: "Create a recruiter contact linked to zero or more existing companies (companyId and/or companyIds), or a freelancer (freelancer: true) who is attached to no company. A freelancer cannot have companies. Deleting a company never deletes the recruiter.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args createRecruiterArgs) (*mcp.CallToolResult, any, error) {
-		id, err := CreateRecruiter(append([]string{args.CompanyID}, args.CompanyIDs...), args.FirstName, args.LastName, args.Email)
+		id, err := CreateRecruiterOfKind(append([]string{args.CompanyID}, args.CompanyIDs...), args.Freelancer, args.FirstName, args.LastName, args.Email)
 		if err != nil {
+			if errors.Is(err, ErrFreelancerWithCompanies) {
+				return db.ErrResult("a freelancer has no companies: omit companyId and companyIds, or set freelancer to false"), nil, nil
+			}
 			if errors.Is(err, companies.ErrUnknownCompany) {
 				return db.ErrResult("unknown company id: every companyId must be an existing company"), nil, nil
 			}
@@ -280,15 +360,16 @@ func RegisterCreateRecruiter(server *mcp.Server) {
 }
 
 type listRecruitersArgs struct {
-	CompanyID string `json:"companyId,omitempty" jsonschema:"restrict to recruiters linked to this company; omit to list every recruiter"`
+	CompanyID  string `json:"companyId,omitempty" jsonschema:"restrict to recruiters linked to this company; omit to list every recruiter"`
+	Freelancer bool   `json:"freelancer,omitempty" jsonschema:"true to list only the freelancers (recruiters attached to no company on purpose)"`
 }
 
 func RegisterListRecruiters(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_recruiters",
-		Description: "List recruiter contacts with the companies each works at (companyIds, companies), optionally restricted to one company.",
+		Description: "List recruiter contacts with the companies each works at (companyIds, companies) and whether each is a freelancer (freelancer), optionally restricted to one company or to the freelancers.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args listRecruitersArgs) (*mcp.CallToolResult, any, error) {
-		recruiters, err := ListRecruiters(args.CompanyID)
+		recruiters, err := ListRecruitersOfKind(args.CompanyID, args.Freelancer)
 		if err != nil {
 			return db.ErrResult(fmt.Sprintf("failed to list recruiters: %v", err)), nil, nil
 		}
@@ -303,18 +384,23 @@ type updateRecruiterArgs struct {
 	Email     *string `json:"email,omitempty" jsonschema:"the recruiter's own email address"`
 	// CompanyIDs replaces the whole set of companies; an empty list removes them all; omitted leaves them as they are.
 	CompanyIDs *[]string `json:"companyIds,omitempty" jsonschema:"replace the companies this recruiter works at with exactly these (existing company ids); an empty list removes them all; omit to leave them unchanged"`
+	// Freelancer makes the recruiter a freelancer (all companies removed) or a company recruiter again.
+	Freelancer *bool `json:"freelancer,omitempty" jsonschema:"true makes the recruiter a freelancer (attached to no company, every company removed; companyIds must then be omitted or empty); false makes them a company recruiter again (give companyIds in the same call to attach companies); omit to leave it unchanged"`
 }
 
 func RegisterUpdateRecruiter(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "update_recruiter",
-		Description: "Update a recruiter's first/last name or email, and/or replace the companies they work at (companyIds). Only the fields provided are changed.",
+		Description: "Update a recruiter's first/last name or email, and/or replace the companies they work at (companyIds), and/or make them a freelancer or a company recruiter (freelancer). A freelancer cannot have companies. Only the fields provided are changed.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args updateRecruiterArgs) (*mcp.CallToolResult, any, error) {
 		if args.ID == "" {
 			return db.ErrResult("id is required"), nil, nil
 		}
-		if args.CompanyIDs != nil {
-			if err := SetCompanies(args.ID, *args.CompanyIDs); err != nil {
+		if args.CompanyIDs != nil || args.Freelancer != nil {
+			if err := ApplyKind(args.ID, args.Freelancer, args.CompanyIDs); err != nil {
+				if errors.Is(err, ErrFreelancerWithCompanies) {
+					return db.ErrResult("a freelancer has no companies: give an empty companyIds, or set freelancer to false in the same call"), nil, nil
+				}
 				if errors.Is(err, companies.ErrUnknownCompany) {
 					return db.ErrResult("unknown company id: every companyId must be an existing company"), nil, nil
 				}

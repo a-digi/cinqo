@@ -207,3 +207,183 @@ func TestACompanyWithALinkedRecruiterIsNotCleanedUpAndIsCounted(t *testing.T) {
 		t.Errorf("recruiterCount = %v", got)
 	}
 }
+
+// --- plan step-171: freelancers ---
+
+func TestAFreelancerIsCreatedWithNoCompanyAndListedAsOne(t *testing.T) {
+	setup(t)
+	id, err := CreateRecruiterOfKind(nil, true, "Free", "Lancer", "f@x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := find(t, id)
+	if !r.Freelancer || len(r.CompanyIDs) != 0 || r.CompanyID != "" {
+		t.Errorf("freelancer: %+v", r)
+	}
+	plain, err := CreateRecruiter([]string{"c1"}, "Ada", "L", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if find(t, plain).Freelancer {
+		t.Error("CreateRecruiter must not create a freelancer")
+	}
+	none, err := CreateRecruiter(nil, "Bob", "M", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if find(t, none).Freelancer {
+		t.Error("a recruiter with no company is not a freelancer unless asked")
+	}
+}
+
+func TestAFreelancerWithCompaniesIsRefusedAndNothingIsWritten(t *testing.T) {
+	setup(t)
+	if _, err := CreateRecruiterOfKind([]string{"c1"}, true, "Free", "L", ""); !errors.Is(err, ErrFreelancerWithCompanies) {
+		t.Fatalf("create: %v", err)
+	}
+	if n := count(t, `SELECT COUNT(*) FROM recruiters`); n != 0 {
+		t.Errorf("a refused create wrote %d recruiter(s)", n)
+	}
+	// the refusal comes before the company check: a freelancer with an unknown company is still the freelancer error
+	if _, err := CreateRecruiterOfKind([]string{"nope"}, true, "Free", "L", ""); !errors.Is(err, ErrFreelancerWithCompanies) {
+		t.Fatalf("unknown company: %v", err)
+	}
+	id, _ := CreateRecruiterOfKind(nil, true, "Free", "L", "")
+	if err := SetCompanies(id, []string{"c1"}); !errors.Is(err, ErrFreelancerWithCompanies) {
+		t.Fatalf("SetCompanies on a freelancer: %v", err)
+	}
+	if err := SetKind(id, true, []string{"c1"}); !errors.Is(err, ErrFreelancerWithCompanies) {
+		t.Fatalf("SetKind: %v", err)
+	}
+	if n := count(t, `SELECT COUNT(*) FROM recruiter_companies`); n != 0 {
+		t.Errorf("a refusal linked %d companies", n)
+	}
+	if !find(t, id).Freelancer {
+		t.Error("a refusal must not change the flag")
+	}
+}
+
+func TestMakingSomeoneAFreelancerClearsTheirCompaniesAndBackAgain(t *testing.T) {
+	setup(t)
+	id, _ := CreateRecruiter([]string{"c1", "c2"}, "Ada", "L", "")
+	if err := SetFreelancer(id, true); err != nil {
+		t.Fatal(err)
+	}
+	r := find(t, id)
+	if !r.Freelancer || len(r.CompanyIDs) != 0 {
+		t.Fatalf("after SetFreelancer(true): %+v", r)
+	}
+	if n := count(t, `SELECT COUNT(*) FROM companies`); n != 3 {
+		t.Errorf("companies must stay: %d", n)
+	}
+	// back to a company recruiter in one call
+	if err := SetKind(id, false, []string{"c3"}); err != nil {
+		t.Fatal(err)
+	}
+	r = find(t, id)
+	if r.Freelancer || !reflect.DeepEqual(r.CompanyIDs, []string{"c3"}) {
+		t.Fatalf("after SetKind(false, c3): %+v", r)
+	}
+	// SetFreelancer(false) on a freelancer keeps it company-less
+	if err := SetFreelancer(id, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetFreelancer(id, false); err != nil {
+		t.Fatal(err)
+	}
+	r = find(t, id)
+	if r.Freelancer || len(r.CompanyIDs) != 0 {
+		t.Errorf("after SetFreelancer(false): %+v", r)
+	}
+	// an ordinary SetCompanies works again once the flag is off
+	if err := SetCompanies(id, []string{"c1"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSetKindFailsWholeOnAnUnknownRecruiterOrCompany(t *testing.T) {
+	setup(t)
+	id, _ := CreateRecruiter([]string{"c1"}, "Ada", "L", "")
+	if err := SetKind("nope", false, []string{"c1"}); !errors.Is(err, ErrUnknownRecruiter) {
+		t.Errorf("unknown recruiter: %v", err)
+	}
+	if err := SetFreelancer("nope", true); !errors.Is(err, ErrUnknownRecruiter) {
+		t.Errorf("unknown recruiter (SetFreelancer true): %v", err)
+	}
+	if err := SetFreelancer("nope", false); !errors.Is(err, ErrUnknownRecruiter) {
+		t.Errorf("unknown recruiter (SetFreelancer false): %v", err)
+	}
+	if err := SetKind(id, false, []string{"c2", "nope"}); !errors.Is(err, companies.ErrUnknownCompany) {
+		t.Errorf("unknown company: %v", err)
+	}
+	r := find(t, id)
+	if r.Freelancer || !reflect.DeepEqual(r.CompanyIDs, []string{"c1"}) {
+		t.Errorf("a refusal must change nothing: %+v", r)
+	}
+}
+
+func TestListFiltersByFreelancerAndCombinesWithTheCompanyFilter(t *testing.T) {
+	setup(t)
+	f1, _ := CreateRecruiterOfKind(nil, true, "F", "One", "")
+	f2, _ := CreateRecruiterOfKind(nil, true, "F", "Two", "")
+	a, _ := CreateRecruiter([]string{"c1"}, "Ada", "L", "")
+	none, _ := CreateRecruiter(nil, "No", "Company", "")
+	list, err := ListRecruitersOfKind("", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 2 || list[0].ID != f1 || list[1].ID != f2 {
+		t.Errorf("freelancers only: %+v", list)
+	}
+	all, _ := ListRecruitersOfKind("", false)
+	if len(all) != 4 {
+		t.Errorf("no filter: %d", len(all))
+	}
+	// a freelancer has no company, so freelancers of a company are none
+	both, _ := ListRecruitersOfKind("c1", true)
+	if len(both) != 0 {
+		t.Errorf("freelancer of c1: %+v", both)
+	}
+	byCompany, _ := ListRecruitersOfKind("c1", false)
+	if len(byCompany) != 1 || byCompany[0].ID != a {
+		t.Errorf("by company: %+v", byCompany)
+	}
+	if find(t, none).Freelancer {
+		t.Error("the recruiter with no company is not a freelancer")
+	}
+}
+
+func TestDeletingACompanyNeverTouchesAFreelancer(t *testing.T) {
+	setup(t)
+	f, _ := CreateRecruiterOfKind(nil, true, "F", "One", "")
+	a, _ := CreateRecruiter([]string{"c1"}, "Ada", "L", "")
+	if _, err := db.JobsDB.Exec(`DELETE FROM companies WHERE id = 'c1'`); err != nil {
+		t.Fatal(err)
+	}
+	if !find(t, f).Freelancer {
+		t.Error("the freelancer changed")
+	}
+	r := find(t, a)
+	if r.Freelancer || len(r.CompanyIDs) != 0 {
+		t.Errorf("the company recruiter stays, no company, still not a freelancer: %+v", r)
+	}
+	if err := DeleteRecruiter(f); err != nil {
+		t.Fatal(err)
+	}
+	if n := count(t, `SELECT COUNT(*) FROM recruiters`); n != 1 {
+		t.Errorf("recruiters = %d", n)
+	}
+}
+
+func TestUpdatingTheNameKeepsTheFlag(t *testing.T) {
+	setup(t)
+	id, _ := CreateRecruiterOfKind(nil, true, "F", "One", "")
+	n := "Renamed"
+	if err := UpdateRecruiter(id, &n, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	r := find(t, id)
+	if !r.Freelancer || r.FirstName != "Renamed" {
+		t.Errorf("%+v", r)
+	}
+}
