@@ -354,13 +354,15 @@ type cvImportSetArgs struct {
 }
 
 type cvImportAddSkillsArgs struct {
-	RunID string `json:"runId,omitempty" jsonschema:"the run id given in the request"`
-	Items any    `json:"items" jsonschema:"a list of skills, each {action, possibleDuplicateOf, value}; send about 30 at most per call"`
+	RunID  string `json:"runId,omitempty" jsonschema:"the run id given in the request"`
+	Items  any    `json:"items,omitempty" jsonschema:"a list of skills, each {action, possibleDuplicateOf, value}; send about 30 at most per call"`
+	Skills any    `json:"skills,omitempty" jsonschema:"the same list under another name; send either items or skills"`
 }
 
 type cvImportAddExperienceArgs struct {
 	RunID string `json:"runId,omitempty" jsonschema:"the run id given in the request"`
-	Item  any    `json:"item" jsonschema:"one job {action, possibleDuplicateOf, company, title, startDate, endDate, description}, or a list of up to 5 jobs"`
+	Item  any    `json:"item,omitempty" jsonschema:"one job {action, possibleDuplicateOf, company, title, startDate, endDate, description}, or a list of up to 5 jobs"`
+	Items any    `json:"items,omitempty" jsonschema:"the same under another name (a list of up to 5 jobs); send either item or items"`
 }
 
 type cvImportFinishArgs struct {
@@ -390,7 +392,7 @@ func RegisterCVImportDraftTools(server *mcp.Server) {
 		if err != nil {
 			return draftResult(args.RunID, importDraft{}, err)
 		}
-		d, err := AddDraftSkills(runID, args.Items)
+		d, err := AddDraftSkills(runID, firstOf(args.Items, args.Skills))
 		return draftResult(runID, d, err)
 	})
 	mcp.AddTool(server, &mcp.Tool{
@@ -401,7 +403,7 @@ func RegisterCVImportDraftTools(server *mcp.Server) {
 		if err != nil {
 			return draftResult(args.RunID, importDraft{}, err)
 		}
-		d, err := AddDraftExperience(runID, args.Item)
+		d, err := AddDraftExperience(runID, firstOf(args.Item, args.Items))
 		return draftResult(runID, d, err)
 	})
 	mcp.AddTool(server, &mcp.Tool{
@@ -418,4 +420,15 @@ func RegisterCVImportDraftTools(server *mcp.Server) {
 		}
 		return db.JSONResult(map[string]any{"stored": true, "finished": true})
 	})
+}
+
+// firstOf is the first value a weak model actually sent: it names the same argument differently from call to call ("item" and
+// "items"), and the schema refuses an unknown name before the tool runs.
+func firstOf(values ...any) any {
+	for _, v := range values {
+		if v != nil {
+			return v
+		}
+	}
+	return nil
 }

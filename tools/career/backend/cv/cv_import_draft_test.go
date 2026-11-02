@@ -3,6 +3,7 @@ package cv
 import (
 	"career-tool-backend/db"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -329,5 +330,74 @@ func TestTheDraftHoldsNoMoreJobsThanAProposalMay(t *testing.T) {
 	d, err := AddDraftExperience(id, batch(0)[:1]) // a replace of an existing job still works
 	if err != nil || len(d.Experience) != MaxProposalExperience {
 		t.Errorf("%d jobs, %v", len(d.Experience), err)
+	}
+}
+
+// A weak model sends every piece and stops without cv_import_finish (the real run of plan 165, step 5): when the page ends the run as
+// ready, a complete draft becomes the proposal; an incomplete one is refused naming what is missing; nothing is invented.
+func TestEndingARunReadyFinishesACompleteDraftAndRefusesAnIncompleteOne(t *testing.T) {
+	setup(t)
+	complete := newRun(t)
+	sendAll(t, complete, asObject)
+	run, err := finishCVImportRun(complete, "ready", "")
+	if err != nil || run.Status != "ready" || !strings.Contains(string(run.AIProposal), "Backend Engineer") {
+		t.Fatalf("complete draft: %+v %v", run, err)
+	}
+	var draft *string
+	if err := dbDraft(complete, &draft); err != nil || draft != nil {
+		t.Errorf("the draft was kept: %v %v", draft, err)
+	}
+
+	partial := newRun(t)
+	if _, err := SetDraftSection(partial, sectionProfile, ProfileProposal{Action: "insert", Name: "A"}); err != nil {
+		t.Fatal(err)
+	}
+	_, err = finishCVImportRun(partial, "ready", "")
+	if !errors.Is(err, errNoProposalStored) || !strings.Contains(err.Error(), "persona") {
+		t.Fatalf("incomplete draft: %v", err)
+	}
+	if got := runOf(t, partial); got.Status != "generating" || string(got.AIProposal) != noProposalJSON {
+		t.Errorf("an incomplete draft ended the run: %+v", got)
+	}
+
+	none := newRun(t)
+	if _, err := finishCVImportRun(none, "ready", ""); !errors.Is(err, errNoProposalStored) {
+		t.Errorf("no pieces at all: %v", err)
+	}
+}
+
+// The model names the same argument differently from call to call; both names reach the tool.
+func TestThePieceToolsAcceptTheOtherNameOfTheirListArgument(t *testing.T) {
+	setup(t)
+	id := newRun(t)
+	server := mcp.NewServer(&mcp.Implementation{Name: "t", Version: "0"}, nil)
+	RegisterCVImportDraftTools(server)
+	ct, st := mcp.NewInMemoryTransports()
+	ctx := t.Context()
+	if _, err := server.Connect(ctx, st, nil); err != nil {
+		t.Fatal(err)
+	}
+	session, err := mcp.NewClient(&mcp.Implementation{Name: "c", Version: "0"}, nil).Connect(ctx, ct, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	p := okProposal()
+	for name, args := range map[string]map[string]any{
+		"cv_import_add_experience": {"items": asText(t, p.Experience)},
+		"cv_import_add_skills":     {"skills": asText(t, p.Skills)},
+	} {
+		res, err := session.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args})
+		if err != nil || res.IsError {
+			t.Fatalf("%s: %v %v", name, err, res != nil && res.IsError)
+		}
+	}
+	d, err := updateDraft(id, func(*importDraft) error { return nil })
+	if err != nil || len(d.Skills) != 2 || len(d.Experience) != 1 {
+		t.Errorf("draft %+v %v", d, err)
+	}
+	res, _ := session.CallTool(ctx, &mcp.CallToolParams{Name: "cv_import_add_skills", Arguments: map[string]any{}})
+	if res == nil || !res.IsError || !strings.Contains(textOf(res), "items is required") {
+		t.Errorf("no list at all: %v", textOf(res))
 	}
 }

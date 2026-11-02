@@ -147,7 +147,15 @@ func finishCVImportRun(id, status, errText string) (cvImportRun, error) {
 		return cvImportRun{}, err
 	}
 	if status == runReady && strings.TrimSpace(stored) == noProposalJSON {
-		return cvImportRun{}, errNoProposalStored
+		// The AI sent every piece but never called cv_import_finish (a weak model stops after the last piece, plan 165): a complete
+		// draft is finished here, so the run does not fail for a missing last call. An incomplete one says what is missing.
+		if err := FinishDraft(id); err != nil {
+			var bad *proposalProblem
+			if errors.As(err, &bad) {
+				return cvImportRun{}, fmt.Errorf("%w (%s)", errNoProposalStored, bad.msg)
+			}
+			return cvImportRun{}, err
+		}
 	}
 	var errArg any
 	if errText != "" {
