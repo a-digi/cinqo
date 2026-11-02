@@ -119,6 +119,10 @@ func InitDatabases() error {
 		careerDB.Close()
 		return fmt.Errorf("failed to add the CV import run status: %w", err)
 	}
+	if err := migrateCVImportRunsDraft(careerDB); err != nil {
+		careerDB.Close()
+		return fmt.Errorf("failed to add the CV import run draft: %w", err)
+	}
 	if err := migrateCvDocumentPersonas(careerDB); err != nil {
 		careerDB.Close()
 		return fmt.Errorf("failed to link the CVs to their personas: %w", err)
@@ -446,7 +450,10 @@ CREATE TABLE IF NOT EXISTS cv_import_runs (
     -- 'generating' (ai_proposal_json holds the JSON null until then), the page then ends it 'ready' or 'failed'. Rows
     -- written before the columns existed are completed analyses: 'ready'.
     status            TEXT NOT NULL DEFAULT 'ready' CHECK (status IN ('generating','ready','failed')),
-    error             TEXT
+    error             TEXT,
+    -- draft_json (step 165): the pieces of a proposal the AI has handed over one by one (cv_import_set, cv_import_add_*) until
+    -- cv_import_finish validates them as a whole and stores the proposal; NULL when no piece was sent.
+    draft_json        TEXT
 );
 `
 
@@ -1440,6 +1447,17 @@ func migrateCVImportRunsStatus(db *sql.DB) error {
 		}
 	}
 	return nil
+}
+
+// migrateCVImportRunsDraft adds the nullable draft_json column (step 165) to an already-installed cv_import_runs table; a no-op on
+// a brand-new install (the base schema has it) and on a database without the table. NULL is right for every existing run.
+func migrateCVImportRunsDraft(db *sql.DB) error {
+	exists, has, err := tableHasColumn(db, "cv_import_runs", "draft_json")
+	if err != nil || !exists || has {
+		return err
+	}
+	_, err = db.Exec(`ALTER TABLE cv_import_runs ADD COLUMN draft_json TEXT`)
+	return err
 }
 
 // migratePersonasAiRunID adds the nullable ai_run_id column (step 112, the AI run a persona came

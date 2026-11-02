@@ -6,12 +6,14 @@
 package cv
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"unicode/utf8"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"career-tool-backend/db"
@@ -195,34 +197,60 @@ func StoreProposal(runID string, p Proposal) error {
 }
 
 type suggestCVImportArgs struct {
-	RunID    string   `json:"runId" jsonschema:"the run id given in the request"`
-	Proposal Proposal `json:"proposal" jsonschema:"what to take from the CV, built only from the CV text and the data already stored"`
+	RunID    string   `json:"runId,omitempty" jsonschema:"the run id given in the request"`
+	Proposal Proposal `json:"proposal" jsonschema:"what to take from the CV, built only from the CV text and the data already stored; an object (the JSON text of one is accepted too)"`
+}
+
+// UnmarshalJSON reads a proposal sent as an object or as the JSON text of one: weak models alternate between the two, and the
+// string form used to be rejected before the tool ran (the "keeps sending invalid tool arguments" failure, plan 165).
+func (p *Proposal) UnmarshalJSON(data []byte) error {
+	type plain Proposal
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) > 0 && trimmed[0] == '"' {
+		var text string
+		if err := json.Unmarshal(trimmed, &text); err != nil {
+			return err
+		}
+		trimmed = bytes.TrimSpace([]byte(text))
+		if len(trimmed) == 0 || trimmed[0] != '{' {
+			return errors.New("proposal was a string that is not a JSON object; send it as an object")
+		}
+	}
+	return json.Unmarshal(trimmed, (*plain)(p))
 }
 
 // suggestCVImport is the tool's work, apart from the MCP plumbing so it can be tested on its own.
 func suggestCVImport(args suggestCVImportArgs) (*mcp.CallToolResult, any, error) {
-	if args.RunID == "" {
-		return db.ErrResult("runId is required"), nil, nil
+	runID, err := resolveRunID(args.RunID)
+	if err == nil {
+		err = StoreProposal(runID, args.Proposal)
 	}
-	err := StoreProposal(args.RunID, args.Proposal)
-	var bad *proposalProblem
-	switch {
-	case errors.Is(err, errUnknownCVImportRun):
-		return db.ErrResult(fmt.Sprintf("unknown run id %q", args.RunID)), nil, nil
-	case errors.Is(err, errRunNotGenerating):
-		return db.ErrResult("this run is no longer generating, so it takes no proposal and nothing was stored. Do not call this tool again and do not say the analysis is done: reply with one plain sentence that the import run has ended and the user must start a new import"), nil, nil
-	case errors.As(err, &bad):
-		return db.ErrResult("the proposal is not valid: " + bad.msg), nil, nil
-	case err != nil:
-		return db.ErrResult("could not store the proposal: " + err.Error()), nil, nil
+	if err == nil {
+		return db.JSONResult(map[string]any{"stored": true})
 	}
-	return db.JSONResult(map[string]any{"stored": true})
+	if res, ok := refusal(runID, err); ok {
+		return res, nil, nil
+	}
+	return db.ErrResult("could not store the proposal: " + err.Error()), nil, nil
+}
+
+// suggestSchema is the tool's input schema with the proposal allowed as an object or as text (see Proposal.UnmarshalJSON).
+func suggestSchema() *jsonschema.Schema {
+	schema, err := jsonschema.For[suggestCVImportArgs](nil)
+	if err != nil {
+		panic(err) // a programming error caught by the first test run
+	}
+	if prop := schema.Properties["proposal"]; prop != nil {
+		prop.Type, prop.Types = "", []string{"object", "string"}
+	}
+	return schema
 }
 
 // RegisterSuggestCVImport registers suggest_cv_import.
 func RegisterSuggestCVImport(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "suggest_cv_import",
+		InputSchema: suggestSchema(),
+		Name:        "suggest_cv_import",
 		Description: "Hand over the result of a CV analysis to the user, who then reviews it on the Import page. " +
 			"It creates no profile, persona, skill or experience. Call it ONCE, with the runId from the request and the whole proposal " +
 			"(profile, persona, personalDetails, skills, experience; each item with action insert or skip and possibleDuplicateOf). " +

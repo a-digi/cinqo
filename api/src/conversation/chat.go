@@ -506,7 +506,7 @@ func runToolLoop(
 		group := []chatcompleter.Message{{
 			Role:      "assistant",
 			Content:   result.Message.Content,
-			ToolCalls: result.ToolCalls,
+			ToolCalls: replayableToolCalls(result.ToolCalls),
 		}}
 		for _, call := range result.ToolCalls {
 			if logStep != nil {

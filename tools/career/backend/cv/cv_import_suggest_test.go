@@ -225,10 +225,9 @@ func TestTheToolRefusesWhatItCannotStoreWithAMessage(t *testing.T) {
 		args suggestCVImportArgs
 		want string
 	}{
-		"no run id":    {suggestCVImportArgs{Proposal: okProposal()}, "runId is required"},
 		"unknown run":  {suggestCVImportArgs{RunID: "nope", Proposal: okProposal()}, `unknown run id "nope"`},
 		"finished run": {suggestCVImportArgs{RunID: done, Proposal: okProposal()}, "no longer generating"},
-		"invalid":      {suggestCVImportArgs{RunID: id, Proposal: bad}, "the proposal is not valid: skills[0].action"},
+		"invalid":      {suggestCVImportArgs{RunID: id, Proposal: bad}, "not valid: skills[0].action"},
 	} {
 		res, _, err := suggestCVImport(tc.args)
 		if err != nil || res == nil || !res.IsError || !strings.Contains(textOf(res), tc.want) {
