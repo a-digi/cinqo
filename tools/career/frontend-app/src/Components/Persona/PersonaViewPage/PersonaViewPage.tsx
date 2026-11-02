@@ -17,7 +17,16 @@ import { Comments } from '../../../Shared/Comments/Comments'
 import { COMMENT_TYPE_PERSONA } from '../../../Shared/Comments/commentTypes'
 import { LayersIcon, SparkleIcon } from '../../../Shared/Icons/icons'
 import { PageHeaderCard } from '../../../Shared/PageHeader/PageHeaderCard'
-import { PERSONAS_PATH, VIEW_PROFILE_PATH, personaDetailsPathFor, personasPathFor } from '../../../paths'
+import {
+  GOALS_PATH,
+  PERSONAS_PATH,
+  VIEW_PROFILE_PATH,
+  experiencePathFor,
+  personaDetailsPathFor,
+  personasPathFor,
+  skillsPathFor,
+} from '../../../paths'
+import { buildProfileSearch } from '../../ProfileLibrary/libraryRules'
 import { OWN_NOTE, experienceNotes, skillNote } from '../../ProfileLibrary/personaUseRules'
 import { chatOfRun } from '../../../PersonaAi/runDisplay'
 import { ProfilePhotosPanel } from '../../ProfileImage/ProfilePhotosPanel'
@@ -201,20 +210,21 @@ export function PersonaViewPage({ personaId }: { personaId: string }) {
         <section aria-label="Summary and goals" className="rounded-3xl border p-5 shadow-sm" style={cardStyle}>
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <h2 className="text-sm font-semibold text-gray-700">Summary &amp; goals</h2>
-            <button
-              type="button"
-              onClick={() => {
-                window.__cinqoToolBridge.navigate(personaDetailsPathFor(persona.id))
-              }}
-              className="ml-auto text-xs text-blue-700 hover:underline"
-            >
-              Edit details
-            </button>
+            <span className="ml-auto flex gap-3 text-xs">
+              <EditLink path={personaDetailsPathFor(persona.id)} go={go}>
+                Edit summary
+              </EditLink>
+              <EditLink path={`${GOALS_PATH}${buildProfileSearch(persona.profileId)}`} go={go}>
+                Edit goals
+              </EditLink>
+            </span>
           </div>
           {detailsFailed ? (
             <p className="text-sm text-gray-400">The details could not be read.</p>
           ) : nothingFilledIn(details?.personaDetails ?? null) ? (
-            <p className="text-sm text-gray-400">Nothing is filled in yet. Add the headline, summary and goals with “Edit details”.</p>
+            <p className="text-sm text-gray-400">
+              Nothing is filled in yet. Add the headline and summary with “Edit summary”, and the goals with “Edit goals”.
+            </p>
           ) : (
             <>
               <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -236,7 +246,14 @@ export function PersonaViewPage({ personaId }: { personaId: string }) {
 
         <div className="grid gap-5 lg:grid-cols-2">
           <section aria-label="Skills" className="rounded-3xl border p-5 shadow-sm" style={cardStyle}>
-            <h2 className="mb-3 text-sm font-semibold text-gray-700">Skills ({skills.length})</h2>
+            <div className="mb-3 flex items-center gap-2">
+              <h2 className="text-sm font-semibold text-gray-700">Skills ({skills.length})</h2>
+              <span className="ml-auto text-xs">
+                <EditLink path={skillsPathFor(persona.id)} go={go}>
+                  Edit skills
+                </EditLink>
+              </span>
+            </div>
             {skills.length === 0 ? (
               <p className="text-sm text-gray-400">No skills yet.</p>
             ) : (
@@ -259,7 +276,14 @@ export function PersonaViewPage({ personaId }: { personaId: string }) {
           </section>
 
           <section aria-label="Experience" className="rounded-3xl border p-5 shadow-sm" style={cardStyle}>
-            <h2 className="mb-3 text-sm font-semibold text-gray-700">Experience ({experience.length})</h2>
+            <div className="mb-3 flex items-center gap-2">
+              <h2 className="text-sm font-semibold text-gray-700">Experience ({experience.length})</h2>
+              <span className="ml-auto text-xs">
+                <EditLink path={experiencePathFor(persona.id)} go={go}>
+                  Edit experience
+                </EditLink>
+              </span>
+            </div>
             {experience.length === 0 ? (
               <p className="text-sm text-gray-400">No experience entries yet.</p>
             ) : (
@@ -302,5 +326,20 @@ export function PersonaViewPage({ personaId }: { personaId: string }) {
 
       <Comments entityType={COMMENT_TYPE_PERSONA} entityId={persona.id} />
     </div>
+  )
+}
+
+// A link to a page where something of this persona is edited: a real link (it can be opened in a new tab), routed in the app.
+function EditLink({ path, go, children }: { path: string; go: (e: React.MouseEvent, path: string) => void; children: React.ReactNode }) {
+  return (
+    <a
+      href={path}
+      onClick={(e) => {
+        go(e, path)
+      }}
+      className="text-blue-700 hover:underline"
+    >
+      {children}
+    </a>
   )
 }
