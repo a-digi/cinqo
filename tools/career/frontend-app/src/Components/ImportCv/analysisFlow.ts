@@ -5,6 +5,7 @@
 // over by calling suggest_cv_import with the run id, and its last message is one plain sentence. Only the page can end the run
 // (the AI's turn lives in the core app), so this ends it: "ready" when the turn is over, or "failed" with the reason. See
 // plan/ai/tools/career/step-155-cv-import-result-by-tool-not-chat.md.
+import { buildContinuePrompt } from './buildImportPrompt'
 import { CV_UNREADABLE_MESSAGE, NO_PROPOSAL_MESSAGE, failureReason, isCvUnreadableReply } from './runStatusRules'
 
 export type RunOutcome = { status: 'ready' } | { status: 'failed'; error: string }
@@ -14,8 +15,9 @@ export interface AnalysisSteps {
   startConversation(): Promise<string>
   // Records the run ("generating") for that conversation and gives back its id.
   recordRun(conversationId: string): Promise<string>
-  // Sends the instruction (which names the run id) and waits for the AI's turn to end; resolves with its last message.
-  askAi(conversationId: string, runId: string): Promise<string>
+  // Sends the instruction (which names the run id), or the given follow-up message when the AI has to continue, and waits for the AI's
+  // turn to end; resolves with its last message.
+  askAi(conversationId: string, runId: string, followUp?: string): Promise<string>
   // Ends the run; resolves with the run, whose aiProposal holds what the AI handed over. Rejects when the server refuses.
   endRun(runId: string, outcome: RunOutcome): Promise<{ aiProposal: unknown }>
   // What the page shows along the way.
@@ -37,28 +39,46 @@ export async function analyseCv(steps: AnalysisSteps): Promise<unknown> {
   steps.onRun(runId)
   steps.onRunsChanged()
 
-  let reply: string
+  let reply = await ask(steps, conversationId, runId, undefined)
+  for (let continuation = 0; ; continuation++) {
+    // The AI could not read the file: whatever it handed over is not a result of this CV.
+    if (isCvUnreadableReply(reply)) {
+      await failRun(steps, runId, `${CV_UNREADABLE_MESSAGE} (${reply.trim()})`)
+      throw new Error(CV_UNREADABLE_MESSAGE)
+    }
+    try {
+      const run = await steps.endRun(runId, { status: 'ready' })
+      steps.onRunsChanged()
+      return run.aiProposal
+    } catch (endErr) {
+      // The server refuses "ready" when the AI never handed a proposal over (it finishes a complete draft itself). A weak model
+      // often stops too early: the same conversation is asked to continue, a limited number of times, before the run fails.
+      if (isNoProposalRefusal(endErr) && continuation < MAX_CONTINUATIONS) {
+        reply = await ask(steps, conversationId, runId, buildContinuePrompt(runId, failureReason(endErr)))
+        continue
+      }
+      await failRun(steps, runId, NO_PROPOSAL_MESSAGE)
+      throw new Error(`${NO_PROPOSAL_MESSAGE} (${failureReason(endErr)})`)
+    }
+  }
+}
+
+// How many times the AI is asked to continue when its turn ended without a proposal.
+export const MAX_CONTINUATIONS = 2
+
+function isNoProposalRefusal(err: unknown): boolean {
+  return failureReason(err).includes('did not hand over a proposal')
+}
+
+// One AI turn; a failure of the turn itself ends the run as failed with the real text.
+async function ask(steps: AnalysisSteps, conversationId: string, runId: string, followUp: string | undefined): Promise<string> {
   try {
-    reply = await steps.askAi(conversationId, runId)
+    const reply = await steps.askAi(conversationId, runId, followUp)
     steps.onReply(reply)
+    return reply
   } catch (err) {
     await failRun(steps, runId, failureReason(err))
     throw err
-  }
-  // The AI could not read the file: whatever it handed over is not a result of this CV.
-  if (isCvUnreadableReply(reply)) {
-    await failRun(steps, runId, `${CV_UNREADABLE_MESSAGE} (${reply.trim()})`)
-    throw new Error(CV_UNREADABLE_MESSAGE)
-  }
-
-  try {
-    const run = await steps.endRun(runId, { status: 'ready' })
-    steps.onRunsChanged()
-    return run.aiProposal
-  } catch (endErr) {
-    // The server refuses "ready" when the AI never handed a proposal over.
-    await failRun(steps, runId, NO_PROPOSAL_MESSAGE)
-    throw new Error(`${NO_PROPOSAL_MESSAGE} (${failureReason(endErr)})`)
   }
 }
 

@@ -33,6 +33,13 @@ If you did read text and the document is not a CV (a form, a letter, an invoice,
 Propose at most one persona for this run — do not propose several. Mark an item's action "skip" if it isn't relevant to this CV or you're not confident in it. Set possibleDuplicateOf when an item looks like it matches something already stored: for persona/experience use the existing item's own id; for a skill use the existing skill's own text; leave it null for profile/personalDetails and for anything with nothing to compare against.`
 }
 
+// The follow-up message when an AI turn ended and the run still has no proposal (plan 165): a weak model stops after a refused piece,
+// or writes a tool call as plain text ("<tool_call>cv_import_set…"), which does nothing. The draft lives on the run, so the same
+// conversation simply continues; reason is the server's own answer (what is missing).
+export function buildContinuePrompt(runId: string, reason: string): string {
+  return `The import run ${runId} is still open and no proposal has been handed over yet (${reason.trim()}). Your last message did not hand over what is missing: either you wrote a tool call as text, which does nothing, or you stopped early. Continue now by calling the tools themselves, never by writing a tool call as text: send what is still missing with cv_import_set, cv_import_add_skills or cv_import_add_experience (what was already accepted is kept), then call cv_import_finish. After that reply with ONE short plain sentence and no JSON.`
+}
+
 // The tool names a prompt mentions (snake_case words, in the order they first appear): the check script compares them with
 // IMPORT_RUN_TOOLS both ways.
 export function toolsNamedIn(prompt: string): string[] {

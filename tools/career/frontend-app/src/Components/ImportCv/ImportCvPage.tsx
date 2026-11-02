@@ -224,7 +224,8 @@ export function ImportCvPage() {
           return conversation.id
         },
         recordRun: (conversationId) => createCVImportRun({ fileId, originalFilename, conversationId }),
-        askAi: async (conversationId, runId) => (await sendMessage(conversationId, buildImportPrompt(fileId, runId))).content,
+        askAi: async (conversationId, runId, followUp) =>
+          (await sendMessage(conversationId, followUp ?? buildImportPrompt(fileId, runId))).content,
         endRun: finishCVImportRun,
         onConversation: setConversationId,
         onRun: setCurrentRunId,
