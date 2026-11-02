@@ -5,6 +5,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { updateCVImportRunSaveSummary, type CVImportRun } from '../../api'
 import { Dropdown } from '../Dropdown/Dropdown'
+import { IMPORT_CV_PATH } from '../../paths'
 import { cardClassName, cardStyle } from '../../Shared/cardStyle'
 import { insertSelected } from './insertProposal'
 import { ImportPipeline } from './ImportPipeline'
@@ -12,7 +13,7 @@ import { parseProposal, type CVImportProposal, type ProposalItem } from './parse
 import { pipelineStages } from './pipelineRules'
 import { ProposalRow } from './ProposalRow'
 import { resolveDuplicateLabels, type DuplicateLabels } from './resolveDuplicateLabels'
-import { buildFullSaveSummary, buildInitialChecked } from './reviewRules'
+import { buildFullSaveSummary, buildInitialChecked, insertState } from './reviewRules'
 import { experienceLabel } from './experienceLabel'
 
 function readProposal(run: CVImportRun): { proposal: CVImportProposal | null; error: string } {
@@ -142,6 +143,8 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
     }
   }
 
+  // plan/ai/tools/career/step-167: the Insert button is there while something ticked is still to insert, gone once it is all saved.
+  const insert = insertState(checked, insertedKeys, insertErrors, inserting)
   const stages = pipelineStages({
     state: 'review',
     uploadError: false,
@@ -258,16 +261,35 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
 
         <section className={cardClassName} style={cardStyle}>
           {insertValidationError && <p className="mb-2 text-sm text-red-700">{insertValidationError}</p>}
-          <button
-            type="button"
-            onClick={() => {
-              void handleInsert()
-            }}
-            disabled={inserting}
-            className="rounded-md bg-gray-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {inserting ? 'Inserting…' : 'Insert'}
-          </button>
+          {insert.view === 'saved' ? (
+            <p className="text-sm text-green-700">
+              Saved: {insert.insertedCount} {insert.insertedCount === 1 ? 'item was' : 'items were'} added to your profile.{' '}
+              <a
+                href={IMPORT_CV_PATH}
+                onClick={(e) => {
+                  e.preventDefault()
+                  window.__cinqoToolBridge.navigate(IMPORT_CV_PATH)
+                }}
+                className="text-blue-700 underline hover:text-blue-800"
+              >
+                Back to the import history
+              </a>
+            </p>
+          ) : (
+            <>
+              {insert.view === 'disabled' && <p className="mb-2 text-xs text-gray-500">Tick at least one row to insert it.</p>}
+              <button
+                type="button"
+                onClick={() => {
+                  void handleInsert()
+                }}
+                disabled={inserting || insert.view === 'disabled'}
+                className="rounded-md bg-gray-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {inserting ? 'Inserting…' : insert.failedCount > 0 ? 'Insert again' : 'Insert'}
+              </button>
+            </>
+          )}
         </section>
       </div>
     </div>

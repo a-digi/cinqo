@@ -56,3 +56,34 @@ export function buildInitialChecked(p: CVImportProposal): Record<string, boolean
   })
   return checked
 }
+
+// What the review's Insert button should do (plan/ai/tools/career/step-167-hide-insert-when-saved.md, step 1). A row is "left to insert"
+// when it is ticked and not yet inserted. The button is there while something is left (or an insert is running), gone once everything
+// ticked is saved ('saved', a line takes its place), and disabled when nothing was ticked and nothing saved yet.
+export type InsertView = 'insert' | 'disabled' | 'saved'
+
+export interface InsertState {
+  // The keys of the rows that are ticked and not inserted yet (a failed row stays here: it is what "Insert again" retries).
+  remaining: string[]
+  // How many rows are inserted.
+  insertedCount: number
+  // How many of the remaining rows failed their last attempt, so the button says "Insert again".
+  failedCount: number
+  view: InsertView
+}
+
+export function insertState(
+  checked: Record<string, boolean>,
+  insertedKeys: Record<string, boolean>,
+  insertErrors: Record<string, string>,
+  inserting: boolean,
+): InsertState {
+  const remaining = Object.keys(checked).filter((key) => checked[key] && !insertedKeys[key])
+  const insertedCount = Object.values(insertedKeys).filter(Boolean).length
+  const failedCount = remaining.filter((key) => (insertErrors[key] ?? '') !== '').length
+  let view: InsertView
+  if (inserting || remaining.length > 0) view = 'insert'
+  else if (insertedCount > 0) view = 'saved'
+  else view = 'disabled'
+  return { remaining, insertedCount, failedCount, view }
+}
