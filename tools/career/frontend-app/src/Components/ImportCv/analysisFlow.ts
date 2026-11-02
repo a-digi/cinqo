@@ -28,18 +28,21 @@ export interface AnalysisSteps {
   onRunsChanged(): void
 }
 
-// Runs the analysis and returns the proposal the AI handed over (as stored, still to be read with parseProposal). Throws an Error
-// with the message to show; the run is ended as failed (best effort) whenever it was recorded and the analysis did not produce a
-// proposal, so the history never keeps a run "analysing" that nobody is working on.
-export async function analyseCv(steps: AnalysisSteps): Promise<unknown> {
-  const conversationId = await steps.startConversation()
-  steps.onConversation(conversationId)
+// The runs this page's own code is finishing right now (a module-level set: it lives as long as the page's script, and a reload
+// empties it). The upload page starts an analysis and then navigates to the run's page, whose resume must not finish the same run a
+// second time.
+const activeRuns = new Set<string>()
 
-  const runId = await steps.recordRun(conversationId)
-  steps.onRun(runId)
-  steps.onRunsChanged()
+export function isAnalysisActive(runId: string): boolean {
+  return activeRuns.has(runId)
+}
 
-  let reply = await ask(steps, conversationId, runId, undefined)
+// The part of an analysis that follows an AI turn: ends the run as ready, or asks the AI to continue a limited number of times, or
+// fails the run. Shared by a fresh analysis and by a resumed one.
+type SettleSteps = Pick<AnalysisSteps, 'askAi' | 'endRun' | 'onReply' | 'onRunsChanged'>
+
+async function settleRun(steps: SettleSteps, conversationId: string, runId: string, firstReply: string): Promise<unknown> {
+  let reply = firstReply
   for (let continuation = 0; ; continuation++) {
     // The AI could not read the file: whatever it handed over is not a result of this CV.
     if (isCvUnreadableReply(reply)) {
@@ -63,6 +66,71 @@ export async function analyseCv(steps: AnalysisSteps): Promise<unknown> {
   }
 }
 
+// Runs the analysis and returns the proposal the AI handed over (as stored, still to be read with parseProposal). Throws an Error
+// with the message to show; the run is ended as failed (best effort) whenever it was recorded and the analysis did not produce a
+// proposal, so the history never keeps a run "analysing" that nobody is working on.
+export async function analyseCv(steps: AnalysisSteps): Promise<unknown> {
+  const conversationId = await steps.startConversation()
+  steps.onConversation(conversationId)
+
+  const runId = await steps.recordRun(conversationId)
+  activeRuns.add(runId)
+  try {
+    steps.onRun(runId)
+    steps.onRunsChanged()
+    const reply = await ask(steps, conversationId, runId, undefined)
+    return await settleRun(steps, conversationId, runId, reply)
+  } finally {
+    activeRuns.delete(runId)
+  }
+}
+
+// What the resume needs besides the shared steps: the state of the run's AI turn and a wait for it to end (both are reads of the
+// conversation, they start no AI call).
+export type TurnState = 'running' | 'completed' | 'failed' | 'cancelled'
+
+export interface ResumeSteps extends Pick<AnalysisSteps, 'askAi' | 'endRun' | 'onReply' | 'onRunsChanged'> {
+  turnState(conversationId: string): Promise<TurnState | null>
+  // Waits for the turn to end and resolves with its last message; rejects with the turn's own error when it failed.
+  awaitTurn(conversationId: string): Promise<string>
+}
+
+export const RESUME_NO_TURN_MESSAGE = 'The analysis never started (the page was closed before the AI was asked). Process the CV again.'
+export const RESUME_CANCELLED_MESSAGE = 'The analysis was stopped before it finished. Process the CV again.'
+
+// Picks up a run that is still "generating" when its page is opened (a reload, a new tab): waits for the AI's turn to end and then
+// finishes the run exactly as a fresh analysis does. Returns 'skipped' when this page's own code is already finishing the run.
+export async function resumeAnalysis(
+  steps: ResumeSteps,
+  conversationId: string,
+  runId: string,
+): Promise<'skipped' | { aiProposal: unknown }> {
+  if (activeRuns.has(runId)) return 'skipped'
+  activeRuns.add(runId)
+  try {
+    const state = await steps.turnState(conversationId)
+    if (state === null) {
+      await failRun(steps, runId, RESUME_NO_TURN_MESSAGE)
+      throw new Error(RESUME_NO_TURN_MESSAGE)
+    }
+    if (state === 'cancelled') {
+      await failRun(steps, runId, RESUME_CANCELLED_MESSAGE)
+      throw new Error(RESUME_CANCELLED_MESSAGE)
+    }
+    let reply: string
+    try {
+      reply = await steps.awaitTurn(conversationId)
+      steps.onReply(reply)
+    } catch (err) {
+      await failRun(steps, runId, failureReason(err))
+      throw err
+    }
+    return { aiProposal: await settleRun(steps, conversationId, runId, reply) }
+  } finally {
+    activeRuns.delete(runId)
+  }
+}
+
 // How many times the AI is asked to continue when its turn ended without a proposal.
 export const MAX_CONTINUATIONS = 2
 
@@ -71,7 +139,7 @@ function isNoProposalRefusal(err: unknown): boolean {
 }
 
 // One AI turn; a failure of the turn itself ends the run as failed with the real text.
-async function ask(steps: AnalysisSteps, conversationId: string, runId: string, followUp: string | undefined): Promise<string> {
+async function ask(steps: SettleSteps, conversationId: string, runId: string, followUp: string | undefined): Promise<string> {
   try {
     const reply = await steps.askAi(conversationId, runId, followUp)
     steps.onReply(reply)
@@ -83,7 +151,7 @@ async function ask(steps: AnalysisSteps, conversationId: string, runId: string, 
 }
 
 // Ends a run as failed; whether that works or not never replaces the error that is being reported.
-async function failRun(steps: AnalysisSteps, runId: string, reason: string): Promise<void> {
+async function failRun(steps: Pick<AnalysisSteps, 'endRun' | 'onRunsChanged'>, runId: string, reason: string): Promise<void> {
   await steps.endRun(runId, { status: 'failed', error: reason }).catch(() => undefined)
   steps.onRunsChanged()
 }

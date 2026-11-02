@@ -2,7 +2,9 @@
 // status: a failed one with the failure notice, one that is still analysing (looked at again every few seconds), a finished one as
 // the read-only result of what was proposed and saved, and a plain message for an address that matches no run (deleted or wrong).
 import { useEffect, useState } from 'react'
-import { deleteCVImportRun, fetchCVImportRun, type CVImportRun } from '../../api'
+import { deleteCVImportRun, fetchCVImportRun, finishCVImportRun, type CVImportRun } from '../../api'
+import { awaitTurnCompletion, fetchTurnStatus, sendMessage } from '../../Cinqo/Conversation/conversation'
+import { resumeAnalysis } from './analysisFlow'
 import { IMPORT_CV_PATH } from '../../paths'
 import { cardClassName, cardStyle } from '../../Shared/cardStyle'
 import { UploadIcon } from '../../Shared/Icons/icons'
@@ -72,6 +74,37 @@ export function ImportRunPage({ runId }: { runId: string }) {
       clearInterval(timer)
     }
   }, [view, runId])
+
+  // A run that is still "generating" when this page opens and that this page's own code is not finishing (a reload, a new tab) is
+  // picked up: the AI's turn is waited for and the run ended as ready or failed, as a fresh analysis would (plan 166, step 4).
+  const resumeRunId = run && view === 'generating' ? run.id : null
+  const resumeConversationId = run && view === 'generating' ? run.conversationId : null
+  useEffect(() => {
+    if (resumeRunId === null || resumeConversationId === null) return
+    let cancelled = false
+    resumeAnalysis(
+      {
+        turnState: fetchTurnStatus,
+        awaitTurn: async (conversationId) => (await awaitTurnCompletion(conversationId)).content,
+        askAi: async (conversationId, _runId, followUp) => (await sendMessage(conversationId, followUp ?? '')).content,
+        endRun: finishCVImportRun,
+        onReply: () => undefined,
+        onRunsChanged: () => undefined,
+      },
+      resumeConversationId,
+      resumeRunId,
+    )
+      .catch(() => undefined)
+      .finally(() => {
+        if (cancelled) return
+        fetchCVImportRun(resumeRunId)
+          .then(setRun)
+          .catch(() => undefined)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [resumeRunId, resumeConversationId])
 
   async function handleDelete() {
     setActionError('')
