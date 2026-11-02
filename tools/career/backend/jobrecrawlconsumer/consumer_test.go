@@ -94,16 +94,14 @@ func setup(t *testing.T) *fakeBrowser {
 	sentMu.Lock()
 	sentEvents = nil
 	sentMu.Unlock()
-	oldPublish := publish
-	publish = func(topic string, payload any) {
-		m, _ := payload.(map[string]string)
+	restore := jobs.SetDescriptionChangedPublisher(func(jobID, source string) {
 		var state string
-		_ = db.JobsDB.QueryRow(`SELECT state FROM job_recrawl_requests WHERE job_id = ?`, m["job_id"]).Scan(&state)
+		_ = db.JobsDB.QueryRow(`SELECT state FROM job_recrawl_requests WHERE job_id = ?`, jobID).Scan(&state)
 		sentMu.Lock()
-		sentEvents = append(sentEvents, sentEvent{topic, m["job_id"], state})
+		sentEvents = append(sentEvents, sentEvent{jobs.DescriptionChangedTopic, jobID, state})
 		sentMu.Unlock()
-	}
-	t.Cleanup(func() { publish = oldPublish })
+	})
+	t.Cleanup(restore)
 	t.Setenv("TOOL_DB_DIR", t.TempDir())
 	if err := db.InitDatabases(); err != nil {
 		t.Fatal(err)
@@ -757,5 +755,13 @@ func TestAFailedCrawlSendsNoEvent(t *testing.T) {
 	Process(context.Background(), "a")
 	if sent := eventsSent(); len(sent) != 0 {
 		t.Errorf("events %+v", sent)
+	}
+}
+
+// The recrawl worker no longer publishes the event itself; the save does, under the same topic the persona consumer
+// listens to (step 164). This pins the two names together.
+func TestTheDescriptionChangedTopicIsOneName(t *testing.T) {
+	if jobs.DescriptionChangedTopic != jobrecrawl.DescriptionChangedTopic {
+		t.Errorf("%q != %q", jobs.DescriptionChangedTopic, jobrecrawl.DescriptionChangedTopic)
 	}
 }

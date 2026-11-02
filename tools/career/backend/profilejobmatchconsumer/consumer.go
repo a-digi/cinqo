@@ -1,5 +1,7 @@
 // Package profilejobmatchconsumer is the ProfileJobMatchConsumer (step 140): it listens to "career.job.found", the event
-// every genuinely new job sends, and for each profile that has auto-add rules it scores the job with the manual engine
+// every genuinely new job sends (and, since step 164, to "career.job.description_changed", sent when a write changed a
+// job's text, so a job whose new text now fits a rule gets onto the board; nothing already on a board is moved or
+// taken off), and for each profile that has auto-add rules it scores the job with the manual engine
 // (no AI) and puts the job on that profile's board with the status of the first rule of its list that the score fits (step 143). It scores by itself
 // instead of reading job_matches, which holds only one profile's result. A job already on a board is never moved. The
 // route only validates the event and queues the job id; one worker handles the queued ids in batches, like the
@@ -150,13 +152,15 @@ func New(size int) *Consumer {
 // Default is the consumer the tool runs; EventHandler and Start are its route and worker.
 var Default = New(QueueSize)
 
-// EventHandler is POST /events/job-found-profile-rules, reached only by core's loopback dispatcher.
+// EventHandler is POST /events/job-found-profile-rules and POST /events/job-description-changed-profile-rules (step 164),
+// reached only by core's loopback dispatcher. Both events carry the job id and nothing else is used, so one handler
+// serves both: the job is scored from its text as it is now.
 func EventHandler(w http.ResponseWriter, r *http.Request) { Default.Handler(w, r) }
 
 // Start launches the worker of the default consumer (see Consumer.Start).
 func Start(ctx context.Context) <-chan struct{} { return Default.Start(ctx) }
 
-// Handler validates a "career.job.found" event and queues its job id. It answers 202 at once, before any scoring, so
+// Handler validates a "career.job.found" or "career.job.description_changed" event and queues its job id. It answers 202 at once, before any scoring, so
 // core never times out and retries a slow delivery; 400 for an unreadable event or an empty job id (only job_id of the
 // payload is used); 503 when the queue is full.
 func (c *Consumer) Handler(w http.ResponseWriter, r *http.Request) {

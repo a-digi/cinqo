@@ -2,10 +2,13 @@ package jobmatchconsumer
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -335,4 +338,227 @@ func TestThePackageEnqueueUsesTheDefaultConsumer(t *testing.T) {
 		t.Errorf("queued %d, queue %d -> %d", n, before, len(Default.queue))
 	}
 	<-Default.queue // no other test uses the default queue, so what is in it is ours: take it out again
+}
+
+// ---- a job whose text changed (step 164) ----
+
+func changedEvent(jobID, source string) string {
+	return fmt.Sprintf(`{"id":"e2","topic":"career.job.description_changed","payload":{"job_id":%q,"source":%q}}`, jobID, source)
+}
+
+// watchChanged replaces the re-matcher with one that records every batch of changed ids it is given.
+func watchChanged(t *testing.T, fn func(ids []string) ([]jobs.ChangedJobOutcome, error)) *batches {
+	t.Helper()
+	b := &batches{}
+	old := rematch
+	rematch = func(ids []string) ([]jobs.ChangedJobOutcome, error) {
+		b.mu.Lock()
+		b.list = append(b.list, append([]string(nil), ids...))
+		b.mu.Unlock()
+		if fn != nil {
+			return fn(ids)
+		}
+		return nil, nil
+	}
+	t.Cleanup(func() { rematch = old })
+	return b
+}
+
+func TestTheChangedRouteQueuesOnTheSecondQueueOnly(t *testing.T) {
+	c := New(10)
+	for _, source := range []string{"detail_crawl", "listing_crawl", ""} {
+		if code := send(c.ChangedHandler, http.MethodPost, changedEvent("job-"+source, source)); code != http.StatusAccepted {
+			t.Fatalf("source %q: %d", source, code)
+		}
+	}
+	if len(c.changed) != 3 || len(c.queue) != 0 {
+		t.Errorf("changed %d, new %d", len(c.changed), len(c.queue))
+	}
+	if code := send(c.Handler, http.MethodPost, event("job-new")); code != http.StatusAccepted || len(c.queue) != 1 || len(c.changed) != 3 {
+		t.Errorf("a found event goes on the first queue: %d %d %d", code, len(c.queue), len(c.changed))
+	}
+}
+
+func TestTheChangedRouteRefusesWhatItCannotUse(t *testing.T) {
+	c := New(2)
+	for name, tc := range map[string]struct {
+		method, body string
+		want         int
+	}{
+		"GET":          {http.MethodGet, "", http.StatusMethodNotAllowed},
+		"not JSON":     {http.MethodPost, "nope", http.StatusBadRequest},
+		"no job id":    {http.MethodPost, `{"id":"e","topic":"career.job.description_changed","payload":{"source":"detail_crawl"}}`, http.StatusBadRequest},
+		"empty job id": {http.MethodPost, changedEvent("", "detail_crawl"), http.StatusBadRequest},
+	} {
+		if code := send(c.ChangedHandler, tc.method, tc.body); code != tc.want {
+			t.Errorf("%s: %d, want %d", name, code, tc.want)
+		}
+	}
+	if len(c.changed) != 0 {
+		t.Errorf("%d ids queued by refused events", len(c.changed))
+	}
+	// a full second queue answers 503 and keeps what it has, whatever the first queue holds
+	send(c.ChangedHandler, http.MethodPost, changedEvent("a", "x"))
+	send(c.ChangedHandler, http.MethodPost, changedEvent("b", "x"))
+	if code := send(c.ChangedHandler, http.MethodPost, changedEvent("c", "x")); code != http.StatusServiceUnavailable {
+		t.Errorf("full queue: %d", code)
+	}
+	if len(c.changed) != 2 || len(c.queue) != 0 {
+		t.Errorf("%d %d", len(c.changed), len(c.queue))
+	}
+}
+
+// New jobs go to the matcher, changed jobs to the re-matcher, in one pass when both are waiting; a job that is both is only
+// re-matched.
+func TestTheWorkerSplitsABatchBetweenNewAndChangedJobs(t *testing.T) {
+	found := watch(t, nil)
+	changed := watchChanged(t, nil)
+	c := New(20)
+	c.queue <- "new-1"
+	c.queue <- "both"
+	c.queue <- "new-2"
+	c.changed <- "both"
+	c.changed <- "changed-1"
+	ctx, cancel := context.WithCancel(context.Background())
+	done := c.Start(ctx)
+	waitFor(t, "both handlers", func() bool { return len(found.sizes()) >= 1 && len(changed.sizes()) >= 1 })
+	cancel()
+	<-done
+	got := func(b *batches) []string {
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		var all []string
+		for _, l := range b.list {
+			all = append(all, l...)
+		}
+		slices.Sort(all)
+		return all
+	}
+	if f := got(found); !slices.Equal(f, []string{"new-1", "new-2"}) {
+		t.Errorf("new jobs matched: %v", f)
+	}
+	if c := got(changed); !slices.Equal(c, []string{"both", "changed-1"}) {
+		t.Errorf("changed jobs re-matched: %v", c)
+	}
+}
+
+func TestAChangedIDAloneIsRematchedAtOnceAndNeverMatchedAsNew(t *testing.T) {
+	found := watch(t, nil)
+	changed := watchChanged(t, nil)
+	c := New(10)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := c.Start(ctx)
+	c.changed <- "only"
+	waitFor(t, "the re-match", func() bool { return len(changed.sizes()) == 1 })
+	cancel()
+	<-done
+	if len(found.sizes()) != 0 {
+		t.Errorf("the matcher for new jobs must not be called: %v", found.sizes())
+	}
+	if got := changed.sizes(); got[0] != 1 {
+		t.Errorf("%v", got)
+	}
+}
+
+// A batch is fifty ids in all, across both queues.
+func TestABatchIsFiftyAcrossBothQueues(t *testing.T) {
+	found := watch(t, nil)
+	changed := watchChanged(t, nil)
+	c := New(200)
+	for i := 0; i < 40; i++ {
+		c.queue <- fmt.Sprintf("n%03d", i)
+	}
+	for i := 0; i < 40; i++ {
+		c.changed <- fmt.Sprintf("c%03d", i)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := c.Start(ctx)
+	waitFor(t, "all 80", func() bool {
+		n := 0
+		for _, s := range append(found.sizes(), changed.sizes()...) {
+			n += s
+		}
+		return n == 80
+	})
+	cancel()
+	<-done
+	// no single call may hold more than 50 ids, and the two kinds are never mixed in one call
+	for _, s := range append(found.sizes(), changed.sizes()...) {
+		if s > 50 {
+			t.Errorf("a call held %d ids", s)
+		}
+	}
+}
+
+func TestAFailingOrPanickingRematchDoesNotStopTheWorker(t *testing.T) {
+	calls := 0
+	changed := watchChanged(t, func(ids []string) ([]jobs.ChangedJobOutcome, error) {
+		calls++
+		switch calls {
+		case 1:
+			panic("boom")
+		case 2:
+			return nil, errors.New("profiles unreadable")
+		case 3:
+			return []jobs.ChangedJobOutcome{{JobID: ids[0], Status: jobs.ChangedJobFailed, Err: errors.New("one job failed")}}, nil
+		}
+		return nil, nil
+	})
+	c := New(10)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := c.Start(ctx)
+	for i := 1; i <= 4; i++ {
+		c.changed <- fmt.Sprintf("j%d", i)
+		waitFor(t, fmt.Sprintf("call %d", i), func() bool { return len(changed.sizes()) == i })
+	}
+	cancel()
+	<-done
+	if len(changed.sizes()) != 4 {
+		t.Errorf("%v", changed.sizes())
+	}
+}
+
+// The consumer is declared for the second topic, routed, and its first listener is untouched.
+func TestTheChangedListenerIsDeclaredAndRouted(t *testing.T) {
+	raw, err := os.ReadFile("../../manifest.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m struct {
+		Listeners []struct {
+			Topic      string `json:"topic"`
+			PathSuffix string `json:"path_suffix"`
+		} `json:"event_listeners"`
+	}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	count := func(topic, path string) int {
+		n := 0
+		for _, l := range m.Listeners {
+			if l.Topic == topic && l.PathSuffix == path {
+				n++
+			}
+		}
+		return n
+	}
+	if count("career.job.description_changed", "events/job-description-changed-job-match") != 1 {
+		t.Error("manifest.json must declare career.job.description_changed -> events/job-description-changed-job-match exactly once")
+	}
+	for _, keep := range [][2]string{
+		{"career.job.found", "events/job-found"},
+		{"career.job.description_changed", "events/job-description-changed-persona-matches"},
+		{"career.job.description_changed", "events/job-description-changed-profile-rules"},
+	} {
+		if count(keep[0], keep[1]) != 1 {
+			t.Errorf("the listener %v must stay", keep)
+		}
+	}
+	mainSrc, err := os.ReadFile("../main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(mainSrc), `"/events/job-description-changed-job-match", jobmatchconsumer.ChangedEventHandler`) {
+		t.Error("main.go does not route /events/job-description-changed-job-match")
+	}
 }

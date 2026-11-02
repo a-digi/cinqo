@@ -1,7 +1,10 @@
 // Package jobmatchconsumer is the JobMatchConsumer (step 132): it listens to "career.job.found", the event every
 // genuinely new job sends, and gives the job a manual (no AI) match over all profiles, so a new job has a match without
 // anyone asking. The route only validates the event and queues the job id; one worker matches the queued ids in
-// batches. See plan/ai/tools/career/step-132-job-match-consumer.md.
+// batches. Since step 164 it also listens to "career.job.description_changed": such a job goes on a second queue and is
+// matched again from its new text (a manual result is replaced, a missing one is created, an AI result and a run in
+// progress are never touched). See plan/ai/tools/career/step-132-job-match-consumer.md and
+// plan/ai/tools/career/step-164-job-description-changed-rematch.md.
 package jobmatchconsumer
 
 import (
@@ -23,17 +26,22 @@ const (
 	BatchSize = 50
 )
 
-// autoMatch is what the worker runs on a batch; a var so a test can watch the batches and make them fail.
-var autoMatch = jobs.AutoMatchJobs
+// autoMatch is what the worker runs on the new jobs of a batch, rematch on the jobs whose text changed (step 164); vars so a
+// test can watch the batches and make them fail.
+var (
+	autoMatch = jobs.AutoMatchJobs
+	rematch   = jobs.RematchChangedJobs
+)
 
-// Consumer is a queue of job ids and the worker that matches them.
+// Consumer is a queue of job ids of new jobs, a queue of job ids whose text changed, and the worker that matches them.
 type Consumer struct {
-	queue chan string
+	queue   chan string
+	changed chan string
 }
 
-// New makes a consumer whose queue holds size ids.
+// New makes a consumer whose queues hold size ids each.
 func New(size int) *Consumer {
-	return &Consumer{queue: make(chan string, size)}
+	return &Consumer{queue: make(chan string, size), changed: make(chan string, 1)}
 }
 
 // Default is the consumer the tool runs; EventHandler and Start are its route and worker.
@@ -42,13 +50,23 @@ var Default = New(QueueSize)
 // EventHandler is POST /events/job-found, reached only by core's loopback dispatcher.
 func EventHandler(w http.ResponseWriter, r *http.Request) { Default.Handler(w, r) }
 
+// ChangedEventHandler is POST /events/job-description-changed-job-match (step 164), reached only by core's loopback dispatcher.
+func ChangedEventHandler(w http.ResponseWriter, r *http.Request) { Default.ChangedHandler(w, r) }
+
 // Start launches the worker of the default consumer (see Consumer.Start).
 func Start(ctx context.Context) <-chan struct{} { return Default.Start(ctx) }
 
 // Handler validates a "career.job.found" event and queues its job id. It answers 202 at once, before any scoring, so
 // core never times out and retries a slow delivery; 400 for an unreadable event or an empty job id (only job_id of
 // the payload is used); 503 when the queue is full.
-func (c *Consumer) Handler(w http.ResponseWriter, r *http.Request) {
+func (c *Consumer) Handler(w http.ResponseWriter, r *http.Request) { c.accept(w, r, c.queue) }
+
+// ChangedHandler validates a "career.job.description_changed" event and queues its job id on the second queue, with the same
+// answers as Handler: 202 at once, 400 for an unreadable event or an empty job id (only job_id of the payload is used, the
+// source is ignored), 503 when the queue is full.
+func (c *Consumer) ChangedHandler(w http.ResponseWriter, r *http.Request) { c.accept(w, r, c.changed) }
+
+func (c *Consumer) accept(w http.ResponseWriter, r *http.Request, queue chan string) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -67,7 +85,7 @@ func (c *Consumer) Handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	select {
-	case c.queue <- payload.JobID:
+	case queue <- payload.JobID:
 		w.WriteHeader(http.StatusAccepted)
 	default:
 		http.Error(w, "the job match queue is full", http.StatusServiceUnavailable)
@@ -109,42 +127,75 @@ func (c *Consumer) Start(ctx context.Context) <-chan struct{} {
 			case <-ctx.Done():
 				return
 			case id := <-c.queue:
-				c.process(c.drain(id))
+				c.process(c.drain(batch{found: []string{id}}))
+			case id := <-c.changed:
+				c.process(c.drain(batch{changed: []string{id}}))
 			}
 		}
 	}()
 	return done
 }
 
-// drain collects the ids already waiting, up to a batch, after the first one.
-func (c *Consumer) drain(first string) []string {
-	batch := []string{first}
-	for len(batch) < BatchSize {
-		select {
-		case id := <-c.queue:
-			batch = append(batch, id)
-		default:
-			return batch
-		}
-	}
-	return batch
+// batch is what one pass of the worker handles: ids of new jobs and ids of jobs whose text changed.
+type batch struct {
+	found, changed []string
 }
 
-// process matches one batch. Nothing here may stop the worker.
-func (c *Consumer) process(ids []string) {
+func (b batch) size() int { return len(b.found) + len(b.changed) }
+
+// drain collects the ids already waiting on either queue, up to a batch in all, after the first one.
+func (c *Consumer) drain(b batch) batch {
+	for b.size() < BatchSize {
+		select {
+		case id := <-c.queue:
+			b.found = append(b.found, id)
+		case id := <-c.changed:
+			b.changed = append(b.changed, id)
+		default:
+			return b
+		}
+	}
+	return b
+}
+
+// process matches one batch. Nothing here may stop the worker. A job that is both new and changed in one batch is only
+// re-matched: that creates the match when there is none, so the job is not handled twice.
+func (c *Consumer) process(b batch) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("job match consumer: a batch of %d job(s) panicked: %v", len(ids), r)
+			log.Printf("job match consumer: a batch of %d job(s) panicked: %v", b.size(), r)
 		}
 	}()
-	outcomes, err := autoMatch(ids)
-	if err != nil {
-		log.Printf("job match consumer: a batch of %d job(s) could not be matched: %v", len(ids), err)
-		return
+	changed := map[string]bool{}
+	for _, id := range b.changed {
+		changed[id] = true
 	}
-	for _, o := range outcomes {
-		if o.Status == jobs.AutoFailed {
-			log.Printf("job match consumer: job %s could not be matched: %v", o.JobID, o.Err)
+	var found []string
+	for _, id := range b.found {
+		if !changed[id] {
+			found = append(found, id)
+		}
+	}
+	if len(found) > 0 {
+		outcomes, err := autoMatch(found)
+		if err != nil {
+			log.Printf("job match consumer: a batch of %d job(s) could not be matched: %v", len(found), err)
+		}
+		for _, o := range outcomes {
+			if o.Status == jobs.AutoFailed {
+				log.Printf("job match consumer: job %s could not be matched: %v", o.JobID, o.Err)
+			}
+		}
+	}
+	if len(b.changed) > 0 {
+		outcomes, err := rematch(b.changed)
+		if err != nil {
+			log.Printf("job match consumer: a batch of %d changed job(s) could not be matched again: %v", len(b.changed), err)
+		}
+		for _, o := range outcomes {
+			if o.Status == jobs.ChangedJobFailed {
+				log.Printf("job match consumer: job %s could not be matched again: %v", o.JobID, o.Err)
+			}
 		}
 	}
 }

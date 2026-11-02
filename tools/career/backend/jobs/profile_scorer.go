@@ -165,3 +165,32 @@ func (s *ProfileScorer) Best(jobID string) (profileID string, result jobmatcher.
 	}
 	return profileID, result, ok, nil
 }
+
+// ScoreProfile scores the job for ONE profile and returns that profile's whole result (its best persona, the matched skills,
+// the breakdown). ok is false when the profile is not among the scorer's profiles (it does not exist, or has no persona) or
+// has too little data to judge this job. ErrUnknownJob is returned for a job that no longer exists.
+func (s *ProfileScorer) ScoreProfile(jobID, profileID string) (result jobmatcher.Result, ok bool, err error) {
+	var target *scorerProfile
+	for i := range s.profiles {
+		if s.profiles[i].id == profileID {
+			target = &s.profiles[i]
+			break
+		}
+	}
+	job, err := loadMatchJob(jobID)
+	if err != nil {
+		return jobmatcher.Result{}, false, err
+	}
+	if target == nil {
+		return jobmatcher.Result{}, false, nil
+	}
+	r, err := jobmatcher.Score(job, target.personas, s.corpus, s.now)
+	var insufficient *jobmatcher.InsufficientDataError
+	if errors.As(err, &insufficient) {
+		return jobmatcher.Result{}, false, nil
+	}
+	if err != nil {
+		return jobmatcher.Result{}, false, err
+	}
+	return r, true, nil
+}

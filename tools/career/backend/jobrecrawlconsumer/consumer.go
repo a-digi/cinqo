@@ -18,7 +18,6 @@ import (
 	"career-tool-backend/autodiscovery"
 	"career-tool-backend/crawl"
 	"career-tool-backend/db"
-	"career-tool-backend/domainevent"
 	"career-tool-backend/jobrecrawl"
 	"career-tool-backend/jobs"
 )
@@ -40,7 +39,6 @@ var (
 	cachedToken = autodiscovery.CachedToken
 	loadTarget  = jobs.GetRecrawlTarget
 	recrawl     = crawl.RecrawlOneJob
-	publish     = domainevent.Publish
 )
 
 // Consumer is a queue of job ids and the worker that crawls them. pending holds the ids that are waiting in the queue so an id
@@ -167,7 +165,7 @@ func (c *Consumer) process(ctx context.Context, id string) {
 //   - otherwise its page is crawled: "failed" when the crawl or save failed or the page gave no description (the old text is kept),
 //     "filled" when a manual job had none and now has one, "refreshed" when the text changed, "unchanged" when it did not. A
 //
-// "filled" or "refreshed" job also sends "career.job.description_changed", so its persona scores are made again.
+// "filled" or "refreshed" job also sends "career.job.description_changed" (sent by the save, see below), so its persona scores are made again.
 func Process(ctx context.Context, id string) {
 	claimed, err := jobrecrawl.Claim(id)
 	if err != nil {
@@ -221,12 +219,10 @@ func Process(ctx context.Context, id string) {
 			finish(id, jobrecrawl.OutcomeFailed, "could not read the job after the crawl: "+err.Error())
 			return
 		}
+		// A refreshed or filled-in text is announced by the save itself (jobs.SaveJobDetailExtraction publishes
+		// "career.job.description_changed" when the text really changed, step 164), before this request is marked done, so a
+		// page that sees "done" and asks for the scores again finds them asked for.
 		outcome := outcomeFor(t, after.Description)
-		// The old persona scores were made from the old text: say so before the request is marked done, so a page that sees "done" and
-		// asks for the scores again finds them brought up to date. Best effort like every event.
-		if outcome == jobrecrawl.OutcomeRefreshed || outcome == jobrecrawl.OutcomeFilled {
-			publish(jobrecrawl.DescriptionChangedTopic, map[string]string{"job_id": id})
-		}
 		finish(id, outcome, "")
 	}
 }

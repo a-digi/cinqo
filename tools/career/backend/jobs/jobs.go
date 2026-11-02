@@ -202,6 +202,7 @@ func saveJob(sourceURL, title, company, location, description, postedAt string) 
 func saveJobWith(criteria *Criteria, sourceURL, title, company, location, description, postedAt string) (id string, created bool, err error) {
 	description = textclean.Description(description) // only text is kept (step 147)
 	var existingID string
+	changed := false // an existing job whose description this write changes (step 164)
 	err = db.JobsDB.QueryRow(`SELECT id FROM jobs WHERE source_url = ?`, sourceURL).Scan(&existingID)
 	switch {
 	case err == sql.ErrNoRows:
@@ -218,6 +219,11 @@ func saveJobWith(criteria *Criteria, sourceURL, title, company, location, descri
 	default:
 		id = existingID
 		created = false
+		old, err := readOldDescription(db.JobsDB, "id", existingID)
+		if err != nil {
+			return "", false, err
+		}
+		changed = listingRefreshChangesDescription(old.source, old.description, old.detailStatus, description)
 	}
 
 	_, err = db.JobsDB.Exec(
@@ -225,8 +231,9 @@ func saveJobWith(criteria *Criteria, sourceURL, title, company, location, descri
 		 VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
 		 ON CONFLICT(source_url) DO UPDATE SET
 			`+upsertKeepingManualText+`
-			crawled_at = CASE WHEN jobs.source = 'manual' THEN jobs.crawled_at ELSE excluded.crawled_at END`,
-		id, sourceURL, title, company, location, description, postedAt,
+			crawled_at = CASE WHEN jobs.source = 'manual' THEN jobs.crawled_at ELSE excluded.crawled_at END,
+			description_changed_at = CASE WHEN ? = 1 THEN datetime('now') ELSE jobs.description_changed_at END`,
+		id, sourceURL, title, company, location, description, postedAt, flag(changed),
 	)
 	if err != nil {
 		return "", false, err
@@ -234,6 +241,8 @@ func saveJobWith(criteria *Criteria, sourceURL, title, company, location, descri
 	if created {
 		publishJobCreatedEvent(id, company)
 		publishJobFoundEvent(id, title, company, SourceCrawled)
+	} else if changed {
+		publishDescriptionChanged(id, DescriptionSourceListingCrawl)
 	}
 	return id, created, nil
 }
@@ -803,6 +812,7 @@ func SavePortalJobWith(criteria *Criteria, portalLinkId, sourceURL, title, compa
 	sourceURL = normalizeJobURL(sourceURL, portalLinkURL)
 
 	var existingBySourceURL string
+	changed := false // an existing job whose description this write changes (step 164)
 	err = db.JobsDB.QueryRow(`SELECT id FROM jobs WHERE source_url = ?`, sourceURL).Scan(&existingBySourceURL)
 	switch {
 	case err == sql.ErrNoRows:
@@ -812,6 +822,11 @@ func SavePortalJobWith(criteria *Criteria, portalLinkId, sourceURL, title, compa
 		return "", false, false, err
 	default:
 		id = existingBySourceURL
+		old, err := readOldDescription(db.JobsDB, "id", existingBySourceURL)
+		if err != nil {
+			return "", false, false, err
+		}
+		changed = listingRefreshChangesDescription(old.source, old.description, old.detailStatus, description)
 	}
 
 	if id == "" && rememberedDeleted(sourceURL) {
@@ -847,8 +862,9 @@ func SavePortalJobWith(criteria *Criteria, portalLinkId, sourceURL, title, compa
 		 ON CONFLICT(source_url) DO UPDATE SET
 			`+upsertKeepingManualText+`
 			portal_link_id = CASE WHEN jobs.source = 'manual' AND COALESCE(jobs.portal_link_id, '') <> '' THEN jobs.portal_link_id ELSE excluded.portal_link_id END,
-			crawled_at = CASE WHEN jobs.source = 'manual' THEN jobs.crawled_at ELSE excluded.crawled_at END`,
-		id, sourceURL, title, company, portalLinkId, location, description, postedAt,
+			crawled_at = CASE WHEN jobs.source = 'manual' THEN jobs.crawled_at ELSE excluded.crawled_at END,
+			description_changed_at = CASE WHEN ? = 1 THEN datetime('now') ELSE jobs.description_changed_at END`,
+		id, sourceURL, title, company, portalLinkId, location, description, postedAt, flag(changed),
 	)
 	if err != nil {
 		return "", false, false, err
@@ -856,6 +872,8 @@ func SavePortalJobWith(criteria *Criteria, portalLinkId, sourceURL, title, compa
 	if created {
 		publishJobCreatedEvent(id, company)
 		publishJobFoundEvent(id, title, company, SourceCrawled)
+	} else if changed {
+		publishDescriptionChanged(id, DescriptionSourceListingCrawl)
 	}
 	return id, created, false, nil
 }
@@ -1236,16 +1254,27 @@ func SaveJobDetailExtraction(jobId string, values map[string]string) (updated bo
 	if description == "" {
 		return false, MarkJobDetailCrawlFailed(jobId)
 	}
+	before, err := readOldDescription(db.JobsDB, "id", jobId)
+	if err != nil {
+		return false, err
+	}
+	changed := descriptionWouldChange(before.source, before.description, description)
 	_, err = db.JobsDB.Exec(
 		`UPDATE jobs SET
 			description = CASE WHEN source = 'manual' AND COALESCE(description, '') <> '' THEN description ELSE ? END,
 			crawled_at = CASE WHEN source = 'manual' THEN crawled_at ELSE datetime('now') END,
-			detail_crawl_status = 'success'
+			detail_crawl_status = 'success',
+			description_changed_at = CASE WHEN ? = 1 THEN datetime('now') ELSE description_changed_at END
 		 WHERE id = ?`,
-		description, jobId,
+		description, flag(changed), jobId,
 	)
 	if err != nil {
 		return false, err
+	}
+	if changed {
+		// Announced after the write, so a consumer reads the new text. A page that sees the recrawl "done" finds the
+		// scores already asked for: this runs before the recrawl worker records its outcome.
+		publishDescriptionChanged(jobId, DescriptionSourceDetailCrawl)
 	}
 	return true, nil
 }

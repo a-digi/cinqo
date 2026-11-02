@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.0.581",
+  "version": "0.0.583",
   "authors": [
     { "name": "Anes Detit", "email": "tafa.andet@googlemail.com" }
   ],
@@ -955,6 +955,14 @@
     {
       "topic": "career.job.description_changed",
       "path_suffix": "events/job-description-changed-persona-matches"
+    },
+    {
+      "topic": "career.job.description_changed",
+      "path_suffix": "events/job-description-changed-job-match"
+    },
+    {
+      "topic": "career.job.description_changed",
+      "path_suffix": "events/job-description-changed-profile-rules"
     },
     {
       "topic": "career.job.deleted",

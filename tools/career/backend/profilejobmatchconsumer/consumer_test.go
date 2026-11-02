@@ -2,6 +2,7 @@ package profilejobmatchconsumer
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -824,5 +825,162 @@ func TestAJobPutBackByHandIsOnTheBoardForTheConsumer(t *testing.T) {
 	outs, _ := ProcessBatch([]string{"j1"})
 	if len(outs) != 1 || outs[0].Status != OnBoard || onBoard(t, p, "j1") != mine {
 		t.Errorf("%+v, on board %q", outs, onBoard(t, p, "j1"))
+	}
+}
+
+// ---- a job whose text changed (step 164) ----
+
+func changedEvent(jobID, source string) string {
+	return fmt.Sprintf(`{"id":"e2","topic":"career.job.description_changed","payload":{"job_id":%q,"source":%q}}`, jobID, source)
+}
+
+// The route takes the description-changed event as it is really sent ({job_id, source}); a payload without a job id is refused.
+func TestTheRouteQueuesADescriptionChangedEventToo(t *testing.T) {
+	c := New(10)
+	for _, source := range []string{"detail_crawl", "listing_crawl", ""} {
+		if code := send(c.Handler, http.MethodPost, changedEvent("job-"+source, source)); code != http.StatusAccepted {
+			t.Fatalf("source %q: status %d", source, code)
+		}
+	}
+	if len(c.queue) != 3 {
+		t.Errorf("queued %d, want 3", len(c.queue))
+	}
+	if code := send(c.Handler, http.MethodPost, `{"id":"e3","topic":"career.job.description_changed","payload":{"source":"detail_crawl"}}`); code != http.StatusBadRequest {
+		t.Errorf("no job id: %d", code)
+	}
+}
+
+// The case this step exists for: a job found with a short snippet fits nothing; the detail crawl fills in the full text; the
+// event brings it to the board of the profile it now fits.
+func TestAJobWhoseFullTextNowFitsARuleGetsOntoTheBoard(t *testing.T) {
+	setup(t)
+	fit := seedProfile(t, "Fit", []string{"Go", "Docker", "Kubernetes", "PostgreSQL"})
+	sFit := customStatus(t, fit, "To check")
+	rule(t, fit, 60, sFit)
+	exec(t, `INSERT INTO jobs (id, source_url, title, company, location, description) VALUES ('j1', 'https://x.example/j1', 'Backend Engineer (m/w/d)', 'Acme', 'Hamburg', 'short snippet')`)
+
+	if _, err := ProcessBatch([]string{"j1"}); err != nil { // the job.found run, with the snippet
+		t.Fatal(err)
+	}
+	if got := onBoard(t, fit, "j1"); got != "" {
+		t.Fatalf("with the snippet the job must fit nothing, it is on the board as %q", got)
+	}
+
+	exec(t, `UPDATE jobs SET description = ?, description_changed_at = datetime('now') WHERE id = 'j1'`, jobDesc) // the detail crawl
+	outs, err := ProcessBatch([]string{"j1"})                                                                     // what the description-changed event queues
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := onBoard(t, fit, "j1"); got != sFit {
+		t.Errorf("with the full text the job must reach the board as %q, got %q (%+v)", sFit, got, outs)
+	}
+}
+
+// A text change never moves a job that is already on a board, even where a different rule would now apply, and never puts
+// back a job the person took off.
+func TestATextChangeNeverMovesOrRestoresAnything(t *testing.T) {
+	setup(t)
+	p := seedProfile(t, "P", []string{"Go", "Docker", "Kubernetes", "PostgreSQL"})
+	high := customStatus(t, p, "Great fit")
+	low := customStatus(t, p, "Maybe")
+	rule(t, p, 90, high)
+	rule(t, p, 20, low)
+	exec(t, `INSERT INTO jobs (id, source_url, title, company, location, description) VALUES ('kept', 'https://x.example/kept', 'Backend Engineer (m/w/d)', 'Acme', 'Hamburg', ?)`, jobDesc)
+	exec(t, `INSERT INTO jobs (id, source_url, title, company, location, description) VALUES ('gone', 'https://x.example/gone', 'Backend Engineer (m/w/d)', 'Acme', 'Hamburg', ?)`, jobDesc)
+	exec(t, `INSERT INTO job_board_entries (profile_id, job_id, status_id) VALUES (?, 'kept', ?)`, p, low) // the person (or an earlier run) put it in "Maybe"
+	exec(t, `INSERT INTO job_board_removals (profile_id, job_id) VALUES (?, 'gone')`, p)
+
+	exec(t, `UPDATE jobs SET description = description || ' Zusätzlich: Go, Docker, Kubernetes.' WHERE id IN ('kept', 'gone')`)
+	if _, err := ProcessBatch([]string{"kept", "gone"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := onBoard(t, p, "kept"); got != low {
+		t.Errorf("a job on a board stays where it is: %q, want %q", got, low)
+	}
+	if got := onBoard(t, p, "gone"); got != "" {
+		t.Errorf("a job the person took off stays off: %q", got)
+	}
+}
+
+// Two deliveries of the same change, and the found event and the change event for one job in a row, add the job once.
+func TestRepeatedAndMixedEventsAddTheJobOnce(t *testing.T) {
+	setup(t)
+	fit := seedProfile(t, "Fit", []string{"Go", "Docker", "Kubernetes", "PostgreSQL"})
+	sFit := customStatus(t, fit, "To check")
+	rule(t, fit, 60, sFit)
+	exec(t, `INSERT INTO jobs (id, source_url, title, company, location, description) VALUES ('j1', 'https://x.example/j1', 'Backend Engineer (m/w/d)', 'Acme', 'Hamburg', ?)`, jobDesc)
+	if _, err := ProcessBatch([]string{"j1", "j1", "j1"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ProcessBatch([]string{"j1"}); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	_ = db.JobsDB.QueryRow(`SELECT COUNT(*) FROM job_board_entries WHERE job_id = 'j1'`).Scan(&n)
+	if n != 1 || onBoard(t, fit, "j1") != sFit {
+		t.Errorf("entries: %d", n)
+	}
+}
+
+// Through the route and the worker: a queued description-changed event reaches the batch the worker handles.
+func TestADescriptionChangedEventReachesTheWorker(t *testing.T) {
+	b := watch(t, nil)
+	c := New(10)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := c.Start(ctx)
+	defer func() { cancel(); <-done }()
+	if code := send(c.Handler, http.MethodPost, changedEvent("job-9", "detail_crawl")); code != http.StatusAccepted {
+		t.Fatalf("status %d", code)
+	}
+	waitFor(t, "the batch", func() bool { return len(b.sizes()) == 1 })
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if len(b.list[0]) != 1 || b.list[0][0] != "job-9" {
+		t.Errorf("batch %v", b.list)
+	}
+}
+
+// The consumer is declared for the second topic, routed, and its first listener is untouched.
+func TestTheDescriptionChangedListenerIsDeclaredAndRouted(t *testing.T) {
+	raw, err := os.ReadFile("../../manifest.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m struct {
+		Listeners []struct {
+			Topic      string `json:"topic"`
+			PathSuffix string `json:"path_suffix"`
+		} `json:"event_listeners"`
+	}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	count := func(topic, path string) int {
+		n := 0
+		for _, l := range m.Listeners {
+			if l.Topic == topic && l.PathSuffix == path {
+				n++
+			}
+		}
+		return n
+	}
+	if count("career.job.description_changed", "events/job-description-changed-profile-rules") != 1 {
+		t.Error("manifest.json must declare career.job.description_changed -> events/job-description-changed-profile-rules exactly once")
+	}
+	for _, keep := range [][2]string{
+		{"career.job.found", "events/job-found-profile-rules"},
+		{"career.job.description_changed", "events/job-description-changed-persona-matches"},
+		{"career.job.found", "events/job-found-persona-matches"},
+	} {
+		if count(keep[0], keep[1]) != 1 {
+			t.Errorf("the listener %v must stay", keep)
+		}
+	}
+	mainSrc, err := os.ReadFile("../main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(mainSrc), `"/events/job-description-changed-profile-rules", profilejobmatchconsumer.EventHandler`) {
+		t.Error("main.go does not route /events/job-description-changed-profile-rules")
 	}
 }

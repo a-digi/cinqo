@@ -558,6 +558,11 @@ CREATE TABLE IF NOT EXISTS jobs (
     -- 'failed' | 'success'. See
     -- plan/ai/tools/career/step-XX-job-detail-crawl-status-eye-icon.md.
     detail_crawl_status TEXT,
+    -- description_changed_at (step 164): when a write last CHANGED this job's description (a detail crawl, a recrawl or a
+    -- listing refresh); NULL for a job whose text never changed after it was found. The matches (personas, profiles,
+    -- boards) are made from the text, so a match older than this is stale. Also added to existing installs by
+    -- migrateJobsDescriptionChangedAt.
+    description_changed_at TEXT,
     -- source (step 97): 'crawled' for every job a crawl or the AI saved (the
     -- default, so existing rows keep their meaning), 'manual' for a job a
     -- person added by hand. A manual job with no posting URL stores
@@ -1644,6 +1649,9 @@ func migrateJobsDB(db *sql.DB) error {
 	if err := migrateJobsDetailCrawlStatus(db); err != nil {
 		return err
 	}
+	if err := migrateJobsDescriptionChangedAt(db); err != nil {
+		return err
+	}
 	if err := migrateJobsSource(db); err != nil {
 		return err
 	}
@@ -1864,6 +1872,21 @@ func migrateJobsDetailCrawlStatus(db *sql.DB) error {
 		return nil
 	}
 	_, err = db.Exec(`ALTER TABLE jobs ADD COLUMN detail_crawl_status TEXT`)
+	return err
+}
+
+// migrateJobsDescriptionChangedAt (step 164) adds the nullable jobs.description_changed_at to an install that already
+// has jobs (a fresh one gets it from the base schema). Existing rows stay NULL: their text was never seen to change. A
+// no-op when the column is present.
+func migrateJobsDescriptionChangedAt(db *sql.DB) error {
+	exists, hasColumn, err := tableHasColumn(db, "jobs", "description_changed_at")
+	if err != nil {
+		return err
+	}
+	if !exists || hasColumn {
+		return nil
+	}
+	_, err = db.Exec(`ALTER TABLE jobs ADD COLUMN description_changed_at TEXT`)
 	return err
 }
 

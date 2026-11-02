@@ -370,3 +370,70 @@ func TestJobsSourceColumnOnFreshAndUpgradedInstalls(t *testing.T) {
 		t.Errorf("no table: %v", err)
 	}
 }
+
+// Step 164: jobs.description_changed_at is in the base schema and is added to an older jobs table, once.
+func TestJobsDescriptionChangedAtColumn(t *testing.T) {
+	t.Setenv("TOOL_DB_DIR", t.TempDir())
+	if err := InitDatabases(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := JobsDB.Exec(`INSERT INTO jobs (id, source_url, title) VALUES ('j1', 'https://x/1', 'T')`); err != nil {
+		t.Fatal(err)
+	}
+	var at sql.NullString
+	if err := JobsDB.QueryRow(`SELECT description_changed_at FROM jobs WHERE id = 'j1'`).Scan(&at); err != nil || at.Valid {
+		t.Errorf("a new job has no change stamp: %v %v", at, err)
+	}
+	JobsDB.Close()
+	CareerDB.Close()
+
+	legacy, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "jobs.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer legacy.Close()
+	if _, err := legacy.Exec(`CREATE TABLE jobs (id TEXT PRIMARY KEY, source_url TEXT NOT NULL UNIQUE, title TEXT NOT NULL);
+		INSERT INTO jobs VALUES ('old', 'https://x/old', 'Old job')`); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ { // idempotent
+		if err := migrateJobsDescriptionChangedAt(legacy); err != nil {
+			t.Fatalf("migrate (run %d): %v", i+1, err)
+		}
+	}
+	if err := legacy.QueryRow(`SELECT description_changed_at FROM jobs WHERE id = 'old'`).Scan(&at); err != nil || at.Valid {
+		t.Errorf("an existing job reads as never changed: %v %v", at, err)
+	}
+	empty, _ := sql.Open("sqlite", filepath.Join(t.TempDir(), "empty.db"))
+	defer empty.Close()
+	if err := migrateJobsDescriptionChangedAt(empty); err != nil {
+		t.Errorf("no table: %v", err)
+	}
+}
+
+// An install from before step 164 gets the column when the tool starts, not only through the migration function.
+func TestStartingTheToolAddsTheDescriptionChangedAtColumnToAnOlderInstall(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("TOOL_DB_DIR", dir)
+	if err := InitDatabases(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := JobsDB.Exec(`INSERT INTO jobs (id, source_url, title) VALUES ('keep', 'https://x/keep', 'Kept job')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := JobsDB.Exec(`ALTER TABLE jobs DROP COLUMN description_changed_at`); err != nil { // what an older install looks like
+		t.Fatal(err)
+	}
+	JobsDB.Close()
+	CareerDB.Close()
+
+	if err := InitDatabases(); err != nil {
+		t.Fatalf("starting on an older install: %v", err)
+	}
+	defer func() { JobsDB.Close(); CareerDB.Close() }()
+	var title string
+	var at sql.NullString
+	if err := JobsDB.QueryRow(`SELECT title, description_changed_at FROM jobs WHERE id = 'keep'`).Scan(&title, &at); err != nil || title != "Kept job" || at.Valid {
+		t.Errorf("the column must exist and the row survive: %q %v %v", title, at, err)
+	}
+}
