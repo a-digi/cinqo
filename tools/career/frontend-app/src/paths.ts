@@ -17,6 +17,8 @@ export const PERSONAS_PROFILE_PATH = '/tools/career/personas/:profileId'
 export function personasPathFor(profileId: string): string {
   return `${PERSONAS_PATH}/${encodeURIComponent(profileId)}`
 }
+// The goals (desired titles and locations, minimum salary, remote work): the profile's, and each persona's own where it has them (plan 174).
+export const GOALS_PATH = '/tools/career/goals'
 export const PERSONA_DETAILS_PATH = '/tools/career/persona-details'
 // One persona's summary and goals on its own page: a pattern route, the id arrives as the page's route parameter.
 export const PERSONA_DETAILS_ONE_PATH = '/tools/career/persona-details/:personaId'

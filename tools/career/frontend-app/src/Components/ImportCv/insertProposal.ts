@@ -10,13 +10,16 @@ import {
   fetchPersonaExperienceView,
   fetchPersonaSkillsView,
   fetchPersonas,
+  fetchProfileDetails,
   fetchProfileExperience,
   fetchProfileSkills,
   fetchProfiles,
   setPersonaExperienceUse,
   setPersonaSkillIds,
   updatePersonaDetails,
+  updateProfileDetails,
 } from '../../api'
+import { hasChanges, importDetailsPlan } from '../GoalsPage/goalsRules'
 import { addedEntryId, findEntry, findSkill, mergeIds, mergeUses } from './libraryInsertRules'
 import type { CVImportProposal } from './parseProposal'
 
@@ -123,14 +126,12 @@ export async function insertSelected(
       result.personalDetails = { ok: false, error: 'no persona to attach to' }
     } else {
       try {
-        await updatePersonaDetails(personaId, {
-          headline: proposal.personalDetails.headline,
-          summary: proposal.personalDetails.summary,
-          location: proposal.personalDetails.location,
-          desiredTitles: proposal.personalDetails.desiredTitles,
-          desiredLocations: proposal.personalDetails.desiredLocations,
-          minSalary: proposal.personalDetails.minSalary,
-        })
+        // Plan 174: a summary or goal the CV states fills the PROFILE's value where it has none; the persona keeps only what differs.
+        const ownProfileId = (await fetchPersonas()).find((p) => p.id === personaId)?.profileId ?? profileId
+        if (ownProfileId === null) throw new Error('no profile found for this persona')
+        const plan = importDetailsPlan(proposal.personalDetails, await fetchProfileDetails(ownProfileId))
+        if (hasChanges(plan.profilePatch)) await updateProfileDetails(ownProfileId, plan.profilePatch)
+        await updatePersonaDetails(personaId, plan.personaArgs)
         result.personalDetails = { ok: true }
       } catch (err) {
         result.personalDetails = { ok: false, error: message(err) }

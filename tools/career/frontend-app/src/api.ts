@@ -191,6 +191,9 @@ export interface PersonaDetails {
   minSalary: number
   // Whether the persona wants remote work (step 130): '' (not set), 'onsite', 'open' or 'remote_only'.
   remotePreference?: '' | 'onsite' | 'open' | 'remote_only'
+  // The values among summary, desiredTitles, desiredLocations, minSalary and remotePreference that are the persona's OWN (plan 174); the
+  // others are the profile's, which the persona follows. Missing on an answer that does not say.
+  overridden?: string[]
 }
 
 export interface CareerExperience {
@@ -623,6 +626,8 @@ export interface UpdatePersonaDetailsArgs {
   desiredLocations?: string
   minSalary?: number
   remotePreference?: '' | 'onsite' | 'open' | 'remote_only'
+  // Values to send back to following the profile's (plan 174): any of summary, desiredTitles, desiredLocations, minSalary, remotePreference.
+  followProfile?: string[]
 }
 
 export async function updatePersonaDetails(personaId: string, args: UpdatePersonaDetailsArgs): Promise<PersonaDetailsResult> {
@@ -2680,4 +2685,28 @@ export async function updateEducation(id: string, entry: Partial<EducationInput>
 export async function removeEducation(id: string): Promise<void> {
   const res = await fetch(`${PROXY_BASE}/education?id=${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'include' })
   if (!res.ok && res.status !== 204) await libraryJson<unknown>(res, 'remove the education')
+}
+
+// --- the summary and the goals of a profile (plan 174, step 3 and 4) ---
+
+// What every persona of the profile follows unless it has its own. minSalary 0 is "no minimum".
+export interface ProfileDetails {
+  profileId: string
+  summary: string
+  desiredTitles: string
+  desiredLocations: string
+  minSalary: number
+  remotePreference: '' | 'onsite' | 'open' | 'remote_only'
+}
+
+export type ProfileDetailsPatch = Partial<Omit<ProfileDetails, 'profileId'>>
+
+export async function fetchProfileDetails(profileId: string): Promise<ProfileDetails> {
+  const res = await fetch(`${PROXY_BASE}/profile-details?profileId=${encodeURIComponent(profileId)}`, { credentials: 'include' })
+  return libraryJson<ProfileDetails>(res, 'load the profile’s summary and goals')
+}
+
+export async function updateProfileDetails(profileId: string, patch: ProfileDetailsPatch): Promise<ProfileDetails> {
+  const res = await fetch(`${PROXY_BASE}/profile-details`, { method: 'PUT', credentials: 'include', body: JSON.stringify({ profileId, ...patch }) })
+  return libraryJson<ProfileDetails>(res, 'save the profile’s summary and goals')
 }

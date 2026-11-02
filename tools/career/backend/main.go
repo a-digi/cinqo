@@ -56,6 +56,7 @@ import (
 	"career-tool-backend/profile"
 	"career-tool-backend/profilecreatedconsumer"
 	"career-tool-backend/profiledeletedconsumer"
+	"career-tool-backend/profiledetails"
 	"career-tool-backend/profileimage"
 	"career-tool-backend/profileitems"
 	"career-tool-backend/profilejobmatchconsumer"
@@ -200,6 +201,8 @@ func runHTTPServer() {
 	http.HandleFunc("/persona-experience", personaExperienceHandler)
 	// Plan 173, step 6: the profile's education.
 	http.HandleFunc("/education", educationHandler)
+	// Plan 174, step 3: the summary and goals of a profile.
+	http.HandleFunc("/profile-details", profileDetailsHandler)
 	http.HandleFunc("/jobs", jobsHandler)
 	http.HandleFunc("/job-locations", jobLocationsHandler)
 	http.HandleFunc("/dashboard/new-jobs", jobs.NewJobsWidgetHandler)
@@ -341,6 +344,8 @@ func runMCPServer() {
 	education.RegisterAddEducation(server)
 	education.RegisterUpdateEducation(server)
 	education.RegisterRemoveEducation(server)
+	profiledetails.RegisterGetProfileDetails(server)
+	profiledetails.RegisterUpdateProfileDetails(server)
 	jobs.RegisterSaveJob(server)
 	jobs.RegisterListJobs(server)
 	jobs.RegisterSearchJobs(server)

@@ -3,32 +3,16 @@ import { fetchPersonaDetails, fetchPersonas, fetchProfiles, updatePersonaDetails
 import { TargetIcon } from '../../../Shared/Icons/icons'
 import { inputClass } from '../../../Shared/inputClass'
 import { PageHeaderCard } from '../../../Shared/PageHeader/PageHeaderCard'
-import { PERSONA_DETAILS_PATH, experiencePathFor, skillsPathFor } from '../../../paths'
+import { GOALS_PATH, PERSONA_DETAILS_PATH, experiencePathFor, skillsPathFor } from '../../../paths'
 import { Field } from '../../Field/Field'
 import { PAGE_ACCENT } from '../../JobsPage/jobsTheme'
 import { profileLabel } from '../../ProfileSwitcher/profileLabel'
 import { FieldStepper } from './FieldStepper'
-import { REMOTE_OPTIONS, asRemotePreference, type RemotePreference } from './remoteRules'
-import { detailsCompleteness, detailsSteps, type DetailsKey } from './detailsStats'
+import { positioningCompleteness, positioningSteps, type DetailsKey } from './detailsStats'
+import { FOLLOWING_TEXT, OWN_TEXT, followRequest, isOwn, summaryPatch } from '../../GoalsPage/goalsRules'
 import { PageTips } from '../../../Shared/PageTips/PageTips'
 
-const emptyForm: {
-  headline: string
-  summary: string
-  location: string
-  desiredTitles: string
-  desiredLocations: string
-  minSalary: string
-  remotePreference: RemotePreference
-} = {
-  headline: '',
-  summary: '',
-  location: '',
-  desiredTitles: '',
-  desiredLocations: '',
-  minSalary: '',
-  remotePreference: '',
-}
+const emptyForm: { headline: string; summary: string; location: string } = { headline: '', summary: '', location: '' }
 
 const cardStyle = { borderColor: PAGE_ACCENT.soft, background: `linear-gradient(160deg, #ffffff 45%, ${PAGE_ACCENT.soft} 100%)` }
 
@@ -50,6 +34,8 @@ export function PersonaDetailsPage({ personaId }: { personaId: string }) {
   const [form, setForm] = useState(emptyForm)
   // What is saved, so the overview does not move while a field is being typed.
   const [saved, setSaved] = useState(emptyForm)
+  // Whether the persona words its summary itself (else it shows the profile's).
+  const [summaryOwn, setSummaryOwn] = useState(false)
   const [skillCount, setSkillCount] = useState(0)
   const [experienceCount, setExperienceCount] = useState(0)
   const [error, setError] = useState('')
@@ -65,13 +51,10 @@ export function PersonaDetailsPage({ personaId }: { personaId: string }) {
           headline: result.personaDetails?.headline ?? '',
           summary: result.personaDetails?.summary ?? '',
           location: result.personaDetails?.location ?? '',
-          desiredTitles: result.personaDetails?.desiredTitles ?? '',
-          desiredLocations: result.personaDetails?.desiredLocations ?? '',
-          minSalary: result.personaDetails?.minSalary ? String(result.personaDetails.minSalary) : '',
-          remotePreference: asRemotePreference(result.personaDetails?.remotePreference),
         }
         setForm(loaded)
         setSaved(loaded)
+        setSummaryOwn(isOwn(result.personaDetails?.overridden, 'summary'))
         setSkillCount(result.skills.length)
         setExperienceCount(result.experience.length)
       })
@@ -114,17 +97,11 @@ export function PersonaDetailsPage({ personaId }: { personaId: string }) {
     setError('')
     setJustSaved(false)
     setSaving(true)
-    updatePersonaDetails(personaId, {
-      headline: form.headline,
-      summary: form.summary,
-      location: form.location,
-      desiredTitles: form.desiredTitles,
-      desiredLocations: form.desiredLocations,
-      minSalary: form.minSalary ? Number(form.minSalary) : undefined,
-      remotePreference: form.remotePreference,
-    })
-      .then(() => {
+    // The summary is sent only when it was changed: an untouched one keeps following the profile.
+    updatePersonaDetails(personaId, { headline: form.headline, location: form.location, ...summaryPatch(form.summary, saved.summary) })
+      .then((result) => {
         setSaved(form)
+        setSummaryOwn(isOwn(result.personaDetails?.overridden, 'summary'))
         setJustSaved(true)
       })
       .catch((err: unknown) => {
@@ -140,7 +117,18 @@ export function PersonaDetailsPage({ personaId }: { personaId: string }) {
     setForm({ ...form, ...patch })
   }
 
-  const completeness = detailsCompleteness(saved)
+  const completeness = positioningCompleteness(saved)
+
+  function handleFollowSummary() {
+    setError('')
+    updatePersonaDetails(personaId, followRequest(summaryOwn, 'summary'))
+      .then(() => {
+        load(personaId)
+      })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+      })
+  }
 
   // The stepper's click: bring that field into view and put the cursor in it.
   function focusField(key: DetailsKey) {
@@ -176,8 +164,8 @@ export function PersonaDetailsPage({ personaId }: { personaId: string }) {
       {backLink}
       <PageHeaderCard
         icon={<TargetIcon />}
-        title={`Summary & Goals: ${persona.name}`}
-        description={`${profile ? `${profileLabel(profile)} · ` : ''}This persona's positioning and what it is looking for. The AI reads it when matching jobs and writing CVs; nothing here is a secret.`}
+        title={`Summary: ${persona.name}`}
+        description={`${profile ? `${profileLabel(profile)} · ` : ''}How this persona presents itself. The summary starts from the profile's and can be worded for this persona. The AI reads it when matching jobs and writing CVs; nothing here is a secret.`}
         pill={{ text: `${completeness.percent}% complete` }}
       />
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
@@ -218,67 +206,47 @@ export function PersonaDetailsPage({ personaId }: { personaId: string }) {
                 />
               </label>
 
-              <h2 className="mb-3 mt-6 text-sm font-semibold text-gray-700">What you want</h2>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <Field
-                  label="Desired titles"
-                  id="details-desiredTitles"
-                  value={form.desiredTitles}
-                  onChange={(v) => {
-                    edit({ desiredTitles: v })
-                  }}
-                />
-                <Field
-                  label="Desired locations"
-                  id="details-desiredLocations"
-                  value={form.desiredLocations}
-                  onChange={(v) => {
-                    edit({ desiredLocations: v })
-                  }}
-                />
-                <Field
-                  label="Minimum salary"
-                  id="details-minSalary"
-                  type="number"
-                  value={form.minSalary}
-                  onChange={(v) => {
-                    edit({ minSalary: v })
-                  }}
-                />
+              <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px]">
+                <span
+                  className={
+                    summaryOwn
+                      ? 'rounded-full bg-amber-50 px-2 py-0.5 font-medium text-amber-700'
+                      : 'rounded-full bg-gray-100 px-2 py-0.5 text-gray-500'
+                  }
+                >
+                  {summaryOwn ? OWN_TEXT : FOLLOWING_TEXT}
+                </span>
+                {summaryOwn && (
+                  <button type="button" onClick={handleFollowSummary} className="text-blue-700 hover:underline">
+                    Use the profile’s summary
+                  </button>
+                )}
+                <span className="text-gray-400">
+                  The profile’s summary is edited on the{' '}
+                  <a
+                    href={PERSONA_DETAILS_PATH}
+                    onClick={(e) => {
+                      e.preventDefault()
+                      window.__cinqoToolBridge.navigate(PERSONA_DETAILS_PATH)
+                    }}
+                    className="text-blue-700 hover:underline"
+                  >
+                    Summary page
+                  </a>
+                  ; the goals on the{' '}
+                  <a
+                    href={GOALS_PATH}
+                    onClick={(e) => {
+                      e.preventDefault()
+                      window.__cinqoToolBridge.navigate(GOALS_PATH)
+                    }}
+                    className="text-blue-700 hover:underline"
+                  >
+                    Goals page
+                  </a>
+                  .
+                </span>
               </div>
-
-              <fieldset className="mt-4">
-                <legend className="text-xs font-medium text-gray-500">Remote work</legend>
-                <p className="mb-1.5 mt-0.5 text-xs text-gray-400">
-                  Whether you want remote work. The job match uses it to judge a job’s place.
-                </p>
-                <div className="space-y-1.5">
-                  {REMOTE_OPTIONS.map((o) => (
-                    <div key={o.value} className="flex items-start gap-2">
-                      <input
-                        id={`details-remote-${o.value === '' ? 'unset' : o.value}`}
-                        type="radio"
-                        name="remote-preference"
-                        value={o.value}
-                        checked={form.remotePreference === o.value}
-                        onChange={() => {
-                          edit({ remotePreference: o.value })
-                        }}
-                        className="mt-1"
-                      />
-                      <div>
-                        <label
-                          htmlFor={`details-remote-${o.value === '' ? 'unset' : o.value}`}
-                          className="cursor-pointer text-sm font-medium text-gray-800"
-                        >
-                          {o.label}
-                        </label>
-                        <p className="text-xs text-gray-500">{o.hint}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </fieldset>
 
               <div className="mt-5 flex items-center gap-3">
                 <button
@@ -287,7 +255,7 @@ export function PersonaDetailsPage({ personaId }: { personaId: string }) {
                   disabled={saving}
                   className="rounded-md bg-gray-900 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:opacity-50"
                 >
-                  {saving ? 'Saving…' : 'Save details'}
+                  {saving ? 'Saving…' : 'Save'}
                 </button>
                 {justSaved && <span className="text-sm text-green-700">Saved</span>}
               </div>
@@ -299,7 +267,7 @@ export function PersonaDetailsPage({ personaId }: { personaId: string }) {
           {
             <>
               <FieldStepper
-                steps={detailsSteps(saved)}
+                steps={positioningSteps(saved)}
                 skillCount={skillCount}
                 experienceCount={experienceCount}
                 onPick={focusField}

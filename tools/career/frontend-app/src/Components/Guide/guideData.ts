@@ -8,6 +8,7 @@ import {
   CV_DOCUMENTS_PATH,
   EDUCATION_PATH,
   EXPERIENCE_PATH,
+  GOALS_PATH,
   IMPORT_CV_PATH,
   JOBS_PATH,
   PERSONAS_PATH,
@@ -78,8 +79,7 @@ export const PROFILE_AND_CV: Guide = {
   id: 'profile-and-cv',
   design: 'cards',
   title: 'Profile & CV',
-  description:
-    'How to set up who you are and turn it into a CV, in nine steps. The AI reads all of it when it matches jobs and writes CVs.',
+  description: 'How to set up who you are and turn it into a CV, in ten steps. The AI reads all of it when it matches jobs and writes CVs.',
   steps: [
     {
       id: 'profile',
@@ -97,14 +97,20 @@ export const PROFILE_AND_CV: Guide = {
     {
       id: 'persona',
       title: 'Add a persona for each role',
-      text: 'A persona is one role the profile is pursuing, for example “Backend Engineer”. Each has its own summary and chooses which skills and experience it uses. Pick the profile, then use New persona.',
+      text: 'A persona is one role the profile is pursuing, for example “Backend Engineer”. Each uses the profile’s summary and goals unless it has its own, and chooses which skills and experience it uses. Pick the profile, then use New persona.',
       link: { label: 'Open Personas', path: PERSONAS_PATH },
     },
     {
       id: 'summary',
-      title: 'Write its summary and goals',
-      text: 'Pick a persona to edit its positioning and what it is looking for. The AI reads it when matching jobs and writing CVs.',
-      link: { label: 'Open Summary & Goals', path: PERSONA_DETAILS_PATH },
+      title: 'Write the summary',
+      text: 'The profile has one summary; write it at the top of the Summary page. A persona shows it until you open the persona and word its own, and its headline and location are always its own. The AI reads it when matching jobs and writing CVs.',
+      link: { label: 'Open Summary', path: PERSONA_DETAILS_PATH },
+    },
+    {
+      id: 'goals',
+      title: 'Set the goals',
+      text: 'Desired titles, desired locations, a minimum salary and remote work are set once for the profile on the Goals page. A persona follows them unless you give it a goal of its own; each persona’s card says which is which.',
+      link: { label: 'Open Goals', path: GOALS_PATH },
     },
     {
       id: 'skills',

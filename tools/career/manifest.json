@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.0.660",
+  "version": "0.0.663",
   "authors": [
     { "name": "Anes Detit", "email": "tafa.andet@googlemail.com" }
   ],
@@ -246,6 +246,16 @@
     {
       "method": "PUT",
       "path_suffix": "persona-experience",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "profile-details",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "profile-details",
       "required_scope": "tool:career:profile"
     },
     {
@@ -914,6 +924,14 @@
     },
     {
       "name": "set_persona_experience",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "get_profile_details",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "update_profile_details",
       "required_scope": "tool:career:profile"
     },
     {

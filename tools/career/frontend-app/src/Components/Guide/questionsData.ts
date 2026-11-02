@@ -6,6 +6,7 @@ import {
   CRAWLER_SETTINGS_PATH,
   CRAWL_MONITOR_PATH,
   EDUCATION_PATH,
+  GOALS_PATH,
   IMPORT_CV_PATH,
   JOBS_PATH,
   PERSONAS_PATH,
@@ -81,8 +82,15 @@ export const QUESTIONS: Question[] = [
     id: 'persona',
     question: 'What is a persona?',
     answer:
-      'One role a profile is pursuing, for example “Backend Engineer”. Each persona has its own summary, chooses which of the profile’s skills and experience it uses (and can reword the experience for its role), and can have skills and experience of its own. The AI matches jobs and writes CVs from it.',
+      'One role a profile is pursuing, for example “Backend Engineer”. A persona uses the profile’s summary and goals unless it has its own, chooses which of the profile’s skills and experience it uses (and can reword the experience for its role), and can have skills and experience of its own. The AI matches jobs and writes CVs from it.',
     link: { label: 'Open Personas', path: PERSONAS_PATH },
+  },
+  {
+    id: 'goals',
+    question: 'Are the summary and the goals per persona?',
+    answer:
+      'Both are set once for the profile: the summary on the Summary page, the goals (desired titles and locations, minimum salary, remote work) on the Goals page. A persona shows the profile’s value until you give that persona one of its own; the pages mark each as Following the profile or Own wording, and Use the profile’s value brings the shared one back. Headline and location are always the persona’s.',
+    link: { label: 'Open Goals', path: GOALS_PATH },
   },
   {
     id: 'education',

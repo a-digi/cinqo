@@ -12,6 +12,7 @@ import {
   IMPORT_CV_PATH,
   JOBS_PATH,
   PERSONAS_PATH,
+  GOALS_PATH,
   PERSONA_DETAILS_PATH,
   PLATFORMS_PATH,
   PROFILES_PATH,
@@ -42,7 +43,8 @@ export const careerMenuEntry: MenuEntry = {
       children: [
         { label: 'Profiles', path: PROFILES_PATH, scopes: ['tool:career:profile'] },
         { label: 'Personas', path: PERSONAS_PATH, scopes: ['tool:career:profile'] },
-        { label: 'Summary & Goals', path: PERSONA_DETAILS_PATH, scopes: ['tool:career:profile'] },
+        { label: 'Summary', path: PERSONA_DETAILS_PATH, scopes: ['tool:career:profile'] },
+        { label: 'Goals', path: GOALS_PATH, scopes: ['tool:career:profile'] },
         { label: 'Skills', path: SKILLS_PATH, scopes: ['tool:career:profile'] },
         { label: 'Experience', path: EXPERIENCE_PATH, scopes: ['tool:career:profile'] },
         { label: 'Education', path: EDUCATION_PATH, scopes: ['tool:career:profile'] },

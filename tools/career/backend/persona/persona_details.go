@@ -39,6 +39,9 @@ const (
 // ErrInvalidRemotePreference is returned for a remote preference that is not one of the values above.
 var ErrInvalidRemotePreference = errors.New(remotePreferenceHelp)
 
+// ValidRemotePreference is validRemotePreference for the profile's own goals (plan 174).
+func ValidRemotePreference(v string) bool { return validRemotePreference(v) }
+
 // validRemotePreference reports whether v is a remote preference (case-sensitive; empty is "not set").
 func validRemotePreference(v string) bool {
 	switch v {

@@ -21,6 +21,7 @@
 // plan/ai/tools/career/step-10-job-seeker-profile.md,
 // plan/ai/tools/career/step-11-job-seeker-profile-frontend.md, and
 // plan/ai/tools/career/step-12-nested-profiles-menu.md.
+import { GoalsPage } from './Components/GoalsPage/GoalsPage'
 import { EducationEntryPage } from './Components/EducationPage/EducationEntryPage'
 import { EducationPage } from './Components/EducationPage/EducationPage'
 import { runFollower } from './Crawler/runFollowerStart'
@@ -73,6 +74,7 @@ import {
   PROFILES_PATH,
   PERSONAS_PATH,
   PERSONAS_PROFILE_PATH,
+  GOALS_PATH,
   PERSONA_DETAILS_PATH,
   PERSONA_DETAILS_ONE_PATH,
   SKILLS_PATH,
@@ -197,6 +199,14 @@ window.__cinqoToolBridge.registerRoute({
   path: PERSONA_DETAILS_ONE_PATH,
   mount: (container, params) => {
     mountReact(container, <PersonaDetailsPage personaId={params.personaId} />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: GOALS_PATH,
+  mount: (container) => {
+    mountReact(container, <GoalsPage />)
   },
   unmount: unmountReact,
 })

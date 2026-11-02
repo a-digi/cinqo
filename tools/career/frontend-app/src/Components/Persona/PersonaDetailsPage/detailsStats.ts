@@ -50,3 +50,23 @@ export function detailsCompleteness(details: DetailsLike | null): Completeness {
   const filled = total - missing.length
   return { filled, total, missing, percent: Math.round((filled / total) * 100) }
 }
+
+// The Summary page holds only the positioning (the goals have their own page, plan 174): these three fields.
+export const POSITIONING_KEYS: readonly DetailsKey[] = ['headline', 'location', 'summary']
+
+export type PositioningLike = Pick<DetailsLike, 'headline' | 'location' | 'summary'>
+
+// The goals are not part of this page: they count as empty here and are filtered out.
+const withoutGoals = (d: PositioningLike | null): DetailsLike | null =>
+  d === null ? null : { ...d, desiredTitles: '', desiredLocations: '', minSalary: 0 }
+
+export function positioningSteps(details: PositioningLike | null): DetailsStep[] {
+  return detailsSteps(withoutGoals(details)).filter((s) => POSITIONING_KEYS.includes(s.key))
+}
+
+export function positioningCompleteness(details: PositioningLike | null): Completeness {
+  const steps = positioningSteps(details)
+  const missing = steps.filter((s) => !s.filled).map((s) => s.label)
+  const filled = steps.length - missing.length
+  return { filled, total: steps.length, missing, percent: Math.round((filled / steps.length) * 100) }
+}

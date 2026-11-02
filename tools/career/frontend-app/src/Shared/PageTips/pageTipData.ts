@@ -106,6 +106,7 @@ export type PageTipsId =
   | 'profiles'
   | 'personas'
   | 'summary'
+  | 'goals'
   | 'skills'
   | 'experience'
   | 'education'
@@ -405,7 +406,7 @@ export const PAGE_TIPS: Record<PageTipsId, PageTipSet> = {
         title: 'One persona per role',
         tone: 'blue',
         icon: 'target',
-        text: 'A persona is one role you are pursuing, such as “Backend Engineer”. Each has its own summary and chooses the profile’s skills and experience it uses.',
+        text: 'A persona is one role you are pursuing, such as “Backend Engineer”. Each uses the profile’s summary and goals unless it has its own, and chooses the profile’s skills and experience it uses.',
       },
       {
         id: 'why',
@@ -421,7 +422,7 @@ export const PAGE_TIPS: Record<PageTipsId, PageTipSet> = {
         title: 'Then fill it in',
         tone: 'green',
         icon: 'layers',
-        text: 'After creating a persona, add its Summary & Goals, Skills and Experience from the My Profile menu.',
+        text: 'After creating a persona, check its Summary, and the Goals, Skills and Experience it uses, from the My Profile menu.',
       },
       {
         id: 'with-ai',
@@ -434,23 +435,23 @@ export const PAGE_TIPS: Record<PageTipsId, PageTipSet> = {
     ],
   },
   summary: {
-    name: 'Summary & Goals',
+    name: 'Summary',
     tips: [
       {
-        id: 'positioning',
-        label: 'Positioning',
-        title: 'How the persona presents itself',
+        id: 'profile',
+        label: 'Per profile',
+        title: 'One summary for the profile',
         tone: 'blue',
-        icon: 'pencil',
-        text: 'Headline, summary and location describe the persona. The AI reads them when matching jobs and writing CVs.',
+        icon: 'layers',
+        text: 'The profile has one summary, edited at the top of the Summary page. Every persona shows it until it has its own wording.',
       },
       {
-        id: 'goals',
-        label: 'Goals',
-        title: 'What you are looking for',
+        id: 'own',
+        label: 'Own wording',
+        title: 'Word it for the role',
         tone: 'green',
-        icon: 'target',
-        text: 'Desired titles, desired locations and a minimum salary say what you want from a job.',
+        icon: 'pencil',
+        text: 'Open a persona to change its summary: from then on it is marked Own wording. “Use the profile’s summary” brings the shared text back. Headline and location are always the persona’s.',
       },
       {
         id: 'completeness',
@@ -458,7 +459,7 @@ export const PAGE_TIPS: Record<PageTipsId, PageTipSet> = {
         title: 'Headline and summary count',
         tone: 'amber',
         icon: 'check',
-        text: 'A persona with both a headline and a summary adds to the profile’s completeness on the Profiles page.',
+        text: 'A persona with a headline and a summary (its own or the profile’s) adds to the profile’s completeness on the Profiles page.',
       },
       {
         id: 'not-secret',
@@ -467,6 +468,35 @@ export const PAGE_TIPS: Record<PageTipsId, PageTipSet> = {
         tone: 'rose',
         icon: 'lock',
         text: 'The AI reads this text when it writes CVs, so write it the way you would on a CV.',
+      },
+    ],
+  },
+  goals: {
+    name: 'Goals',
+    tips: [
+      {
+        id: 'profile',
+        label: 'Per profile',
+        title: 'Goals belong to the profile',
+        tone: 'blue',
+        icon: 'target',
+        text: 'Desired titles, desired locations, a minimum salary and remote work are set once for the profile, at the top of the Goals page.',
+      },
+      {
+        id: 'own',
+        label: 'Own wording',
+        title: 'A persona can differ',
+        tone: 'green',
+        icon: 'pencil',
+        text: 'A persona follows the profile’s goals. Change one on its card and it becomes that persona’s own; “Use the profile’s value” brings the shared one back.',
+      },
+      {
+        id: 'match',
+        label: 'Job match',
+        title: 'The AI reads what a persona shows',
+        tone: 'violet',
+        icon: 'spark',
+        text: 'The job match and the CV builder use each persona’s own value where it has one, otherwise the profile’s.',
       },
     ],
   },
