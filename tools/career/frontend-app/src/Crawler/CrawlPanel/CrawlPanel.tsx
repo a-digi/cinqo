@@ -26,11 +26,17 @@ import {
   generateInstructionsConversationTitle,
   buildGenerateJobDetailInstructionsMessage,
   generateJobDetailInstructionsConversationTitle,
+  GENERATE_LISTING_WITH_DETAIL_TOOLS,
+  extractSampleJobUrl,
+  buildJobDetailFollowUpMessage,
+  hasJobDetailInstructions,
+  shouldContinueWithJobDetail,
 } from '../generateInstructions'
 import { startCrawlNow, startCrawlJobDetailsNow, stopCrawlNow, fetchActiveCrawlRun, type CrawlRun } from '../crawlNow'
 import { phaseLabel, latestCrawlLogMessage } from '../crawlPhase'
 import { instructionAlertAttempts, isLikelyUncrawlable, savedDespiteError } from '../instructionStats'
 import { hasListingInstructions } from '../autoDiscoveryVisibility'
+import { PipelineLine } from '../PipelineLine'
 import { diagnoseEmptyCrawl, emptyCrawlFacts, emptyCrawlFor } from '../emptyCrawl'
 import { shouldTryInherit, type InheritView } from '../inheritOutcome'
 import { FREE_ROUTER_HINT, isFreeRouter } from '../modelHint'
@@ -302,9 +308,13 @@ export function CrawlPanel({
   // live session instead, the next time this link is rendered with the
   // flag set. See
   // plan/ai/tools/career/step-67-frontend-flag-consumption.md.
+  //
+  // Plan 163, step 3: it waits while an AI run of this link is still going (aiPending: the listing run itself; jobDetailAiPending: its
+  // follow-up with the job-detail instructions), because the AI and the crawl share the one browser; the flag stays set, so the crawl starts
+  // the moment the run is over.
   const listingCrawlRequestedRef = useRef(false)
   useEffect(() => {
-    if (link.listingCrawlRequested && !listingCrawlRequestedRef.current) {
+    if (link.listingCrawlRequested && !listingCrawlRequestedRef.current && !aiPending && !jobDetailAiPending) {
       listingCrawlRequestedRef.current = true
       void updatePortalLink(link.id, { listingCrawlRequested: false }).catch(() => {
         // Best-effort — if this clear itself fails, the flag simply
@@ -314,7 +324,7 @@ export function CrawlPanel({
       handleCrawlNow()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [link.listingCrawlRequested])
+  }, [link.listingCrawlRequested, aiPending, jobDetailAiPending])
 
   // jobDetailAiRequestedRef consumes link.jobDetailInstructionsAiRequested
   // (step 67) the same way — set by a SEPARATE listener once a
@@ -587,8 +597,14 @@ export function CrawlPanel({
   // tab was away is handled identically to one that finishes while
   // it's open. err is the failure from awaitTurnCompletion, if any;
   // undefined means success.
-  function finishGenerateInstructions(err?: unknown) {
-    setAiPending(false)
+  //
+  // followUp (plan 163, step 3) is the conversation and the final reply of a run that started for a link without job-detail instructions: when its
+  // listing instructions were really saved and the reply named a sample job, the run goes on in that same conversation with the job-detail
+  // instructions (continueWithJobDetail).
+  function finishGenerateInstructions(err?: unknown, followUp?: { conversationId: string; reply: string }) {
+    // A run that may still go on stays "pending" until that is decided, so the listing crawl that waits for it (listingCrawlRequestedRef)
+    // cannot slip in between the two.
+    if (err || followUp === undefined) setAiPending(false)
     setAiConversationId(null)
 
     if (!err) {
@@ -598,20 +614,44 @@ export function CrawlPanel({
       // answer is sent into that same conversation. Any failure to read
       // the portals falls through to the ordinary success handling.
       void fetchPortals()
-        .then((portals) => findJobsQuestion(portals, link.id))
-        .catch(() => undefined)
-        .then((question) => {
+        .then((portals) => ({
+          question: findJobsQuestion(portals, link.id),
+          // The link as it is now, to see whether it already has job-detail instructions.
+          fresh: portals.flatMap((portal) => portal.links).find((l) => l.id === link.id),
+        }))
+        .catch(() => ({ question: undefined, fresh: undefined }))
+        .then(({ question, fresh }) => {
           if (question) {
+            setAiPending(false)
             onReload()
             return
           }
-          const attemptRecorded = recordAttemptFinish('listing')
+          const attemptRecorded = recordAttemptOutcome('listing')
           void updatePortalLink(link.id, { instructionsAiError: '', instructionsAiConversationId: '' })
             .catch((recordErr: unknown) => {
               console.error('failed to clear instructions-AI conversation on portal link', link.id, recordErr)
             })
             .then(() => attemptRecorded)
-            .then(onReload)
+            .then((outcome) => {
+              const sampleUrl = followUp ? extractSampleJobUrl(followUp.reply, link.url) : null
+              if (
+                followUp !== undefined &&
+                sampleUrl !== null &&
+                shouldContinueWithJobDetail({
+                  withDetail: true,
+                  outcome,
+                  questionPending: false,
+                  hasDetailInstructions: fresh ? hasJobDetailInstructions(fresh) : false,
+                  sampleUrl,
+                })
+              ) {
+                continueWithJobDetail(followUp.conversationId, sampleUrl)
+                setAiPending(false)
+                return
+              }
+              setAiPending(false)
+              onReload()
+            })
         })
       return
     }
@@ -725,6 +765,11 @@ export function CrawlPanel({
     if (aiPending || !selectedPlatform) return
     const platformId = selectedPlatform.id
     const model = selectedPlatform.models.length > 0 ? (selectedModel ?? selectedPlatform.models[0]) : undefined
+    // Plan 163, step 3: a link with no job-detail instructions yet gets them in the same conversation, right after its listing
+    // instructions are saved (see continueWithJobDetail); the AI is then also allowed the tool that saves them.
+    const withDetail = !hasJobDetailInstructions(link)
+    const tools = withDetail ? GENERATE_LISTING_WITH_DETAIL_TOOLS : GENERATE_LISTING_TOOLS
+    let conversationId = ''
     setAiPending(true)
     setAiLocalError(undefined)
 
@@ -739,12 +784,13 @@ export function CrawlPanel({
           model,
           hidden: true,
           toolIterationLimit: GENERATE_TOOL_ITERATION_LIMIT,
-          allowedTools: [...GENERATE_LISTING_TOOLS],
+          allowedTools: [...tools],
           compactToolResults: true,
         }),
       )
       .then((conversation) => {
-        if (!restrictionHolds(conversation.allowedTools, GENERATE_LISTING_TOOLS)) throw new Error(GENERATE_RESTRICTION_NOT_APPLIED_MESSAGE)
+        if (!restrictionHolds(conversation.allowedTools, tools)) throw new Error(GENERATE_RESTRICTION_NOT_APPLIED_MESSAGE)
+        conversationId = conversation.id
         setAiConversationId(conversation.id)
         window.__cinqoToolBridge.openConversation(conversation.id)
         return updatePortalLink(link.id, { instructionsAiConversationId: conversation.id })
@@ -752,11 +798,11 @@ export function CrawlPanel({
             // Best-effort — a failure here only costs reload-resilience
             // for this one run, not the run itself.
           })
-          .then(() => sendMessage(conversation.id, buildGenerateInstructionsMessage(link, options)))
+          .then(() => sendMessage(conversation.id, buildGenerateInstructionsMessage(link, { ...options, withJobDetail: withDetail })))
       })
       .then(
-        () => {
-          finishGenerateInstructions()
+        (reply) => {
+          finishGenerateInstructions(undefined, withDetail ? { conversationId, reply: reply.content } : undefined)
         },
         (err: unknown) => {
           finishGenerateInstructions(err)
@@ -914,6 +960,31 @@ export function CrawlPanel({
       )
   }
 
+  // continueWithJobDetail (plan 163, step 3) goes on in the conversation of a listing run whose instructions were just saved: its own
+  // 'job_detail' attempt is counted (so the pills and the statistics stay truthful: a failure here is a failed job-detail attempt, never a
+  // failed listing one, which already ended), the conversation is also tracked as this link's job-detail run (so "Check progress" and a
+  // reload find it), and the follow-up message asks for the job-detail instructions from the first item of the AI's own last test crawl.
+  function continueWithJobDetail(conversationId: string, sampleUrl: string) {
+    setJobDetailAiPending(true)
+    setJobDetailAiLocalError(undefined)
+    setJobDetailAiConversationId(conversationId)
+    recordAttemptStart('job_detail', 'manual')
+      .then(() =>
+        updatePortalLink(link.id, { jobDetailInstructionsAiConversationId: conversationId }).catch(() => {
+          // Best-effort — a failure here only costs reload-resilience for this one run, not the run itself.
+        }),
+      )
+      .then(() => sendMessage(conversationId, buildJobDetailFollowUpMessage(link, sampleUrl)))
+      .then(
+        () => {
+          finishGenerateJobDetailInstructions()
+        },
+        (err: unknown) => {
+          finishGenerateJobDetailInstructions(err)
+        },
+      )
+  }
+
   // handleCheckJobDetailProgress mirrors handleCheckProgress above —
   // reopens the widget onto jobDetailAiConversationId, never
   // aiConversationId.
@@ -1053,6 +1124,7 @@ export function CrawlPanel({
           on/off+interval (Crawler/AutoDiscoveryPanel) controls whether
           the mechanism runs at all; this is this ONE link's own
           override on top of that. */}
+      <PipelineLine link={link} />
       {/* Step 88 — only for a link that has listing crawl instructions:
           auto-discovery crawls the listing with them, and the backend
           never auto-crawls a link without. Hiding this never changes the

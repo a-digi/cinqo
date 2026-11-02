@@ -646,7 +646,7 @@ export function PortalsPage() {
             rows={[
               { label: 'Platforms', value: String(summary.portals), color: ACCENTS[0].to },
               { label: 'Links', value: String(summary.links), color: ACCENTS[6].to },
-              { label: 'With instructions', value: String(summary.withInstructions), color: '#16a34a' },
+              { label: 'Ready to crawl', value: String(summary.withInstructions), color: '#16a34a' },
               { label: 'Never crawled', value: String(summary.neverCrawled), color: ACCENTS[2].to, emphasis: summary.neverCrawled > 0 },
             ]}
           />

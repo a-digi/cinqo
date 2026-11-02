@@ -221,6 +221,7 @@ func runHTTPServer() {
 	http.HandleFunc("/portals/ai", portalAIHandler)
 	http.HandleFunc("/portal-links", portalLinksHandler)
 	http.HandleFunc("/portal-links/ai", portalLinkAIHandler)
+	http.HandleFunc("/portal-links/pipeline", portalPipelineHandler)
 	http.HandleFunc("/portal-links/crawl-request", crawlRequestHandler)
 	http.HandleFunc("/portal-links/ingest-crawl-results", ingestCrawlResultsHandler)
 	http.HandleFunc("/portal-links/instruction-attempts/start", instructionAttemptStartHandler)

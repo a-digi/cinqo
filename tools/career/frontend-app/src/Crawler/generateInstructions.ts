@@ -37,6 +37,11 @@ export const GENERATE_LISTING_TOOLS = [
   'ask_user_if_page_has_jobs',
 ] as const
 
+// The listing run of a link that has no job-detail instructions yet (plan/ai/tools/career/step-163-job-detail-instructions-pipeline.md, step 3):
+// the same tools plus the one that saves the job-detail instructions, which the follow-up message in the same conversation asks for once the
+// listing instructions are saved. fetch_page_html (already in the list) reads the sample job page.
+export const GENERATE_LISTING_WITH_DETAIL_TOOLS = [...GENERATE_LISTING_TOOLS, 'set_portal_link_job_detail_crawl_instructions'] as const
+
 export const GENERATE_JOB_DETAIL_TOOLS = [
   'get_portal_link_job_detail_crawl_instructions',
   'list_jobs',
@@ -55,7 +60,7 @@ export function buildGenerateInstructionsMessage(
   // jobsConfirmed (step 91): the stored instructions were already used for a
   // real crawl that found 0 jobs and the user confirmed the page DOES list
   // jobs — so they are wrong, and the agent must not ask the question again.
-  options: { jobsConfirmed?: boolean } = {},
+  options: { jobsConfirmed?: boolean; withJobDetail?: boolean } = {},
 ): string {
   return [
     ...(options.jobsConfirmed
@@ -87,7 +92,8 @@ export function buildGenerateInstructionsMessage(
     "7. Only once extractionCheck.ok is true (and any step 6b warning is resolved), call set_portal_link_crawl_instructions ONCE with the finished YAML (your real maxPages, not the test's maxPages: 1, and no url line) for this exact portal link id. Once ok: true appears, make this call next; do not test again.",
     '8. If you still cannot reach ok: true after 4 attempts (with itemsFound above 0), or you reach the tool-call budget, do NOT call set_portal_link_crawl_instructions. Reply at once saying specifically what blocks it (quote the skippedSamples you saw) instead of saving something broken or probing on.',
     '',
-    'When done, reply with a short one-line confirmation (or, per step 6a, one line saying you asked the user; or, per step 8, a short explanation of why it could not be finished) — keep it brief.',
+    'When done, reply with a short one-line confirmation (or, per step 6a, one line saying you asked the user; or, per step 8, a short explanation of why it could not be finished) — keep it brief.' +
+      (options.withJobDetail ? ` ${SAMPLE_JOB_REQUEST}` : ''),
   ].join('\n')
 }
 
@@ -108,6 +114,77 @@ export function buildJobsConfirmedMessage(link: { id: string; title?: string | n
     `You have a fresh budget of at most ${GENERATE_TOOL_ITERATION_LIMIT} tool calls. You may look at the page once more: call find_repeating_items again (a different candidate than before is likely the right one) and, only if you need to read the page itself, fetch_page_html with maxAttributeLength: 200 (read further with offset, not by removing elements). You must look for a different approach than before: a different container, different field selectors, or content that a plain fetch does not contain because it is rendered by JavaScript (say so if that is what you find). Then continue from step 5: test with crawl_paginated (read extractionCheck), and call set_portal_link_crawl_instructions once, only when ok is true.`,
     'Do NOT call ask_user_if_page_has_jobs again. If you still extract 0 items, do not save anything: reply with a short explanation of what you tried and what the page looks like (this is shown to the user as the reason it failed).',
   ].join('\n')
+}
+
+// What the first prompt of a listing run that goes on with the job-detail instructions adds to its last line (plan 163, step 3). The context
+// of a later message in the same conversation holds the earlier messages as text only, not the tool calls and their results, so the AI's own
+// test crawl is not visible to it any more; its final reply is, and so is it to the page. The reply therefore carries the sample URL.
+export const SAMPLE_JOB_MARKER = 'Sample job:'
+export const SAMPLE_JOB_REQUEST = `When you saved instructions, end that line with "${SAMPLE_JOB_MARKER} <the full URL of the first item of your last crawl_paginated test>".`
+
+const MAX_SAMPLE_URL_LENGTH = 2000
+const bareHost = (host: string) => host.toLowerCase().replace(/^www\./, '')
+
+// The sample job URL out of the AI's final reply of a listing run: the word after the last "Sample job:", cleaned of the quotes, brackets and
+// punctuation a reply wraps around a link, made absolute against the listing URL (a crawl returns relative links as often as absolute ones),
+// and only if it is a plain web address on the SAME site as the listing page (the page the AI studied: nothing a reply or a page's own
+// text suggests elsewhere is ever fetched). null when there is none; the run then ends as before and the usual pipeline carries on.
+export function extractSampleJobUrl(reply: string, listingUrl: string): string | null {
+  const at = reply.toLowerCase().lastIndexOf(SAMPLE_JOB_MARKER.toLowerCase())
+  if (at === -1) return null
+  const word = reply
+    .slice(at + SAMPLE_JOB_MARKER.length)
+    .trim()
+    .split(/\s+/)[0]
+  const cleaned = word.replace(/^[<([`'"*]+/, '').replace(/[>)\]`'".,;:*]+$/, '')
+  if (cleaned === '' || cleaned.length > MAX_SAMPLE_URL_LENGTH) return null
+  try {
+    const url = new URL(cleaned, listingUrl)
+    const listing = new URL(listingUrl)
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return null
+    if (url.username !== '' || url.password !== '') return null
+    if (bareHost(url.hostname) !== bareHost(listing.hostname)) return null
+    return url.href
+  } catch {
+    return null
+  }
+}
+
+// The follow-up of a listing run (plan 163, step 3): sent into the SAME conversation once the listing instructions are saved, so the AI writes
+// the job-detail instructions while it still has the page it just studied in mind, from the sample job URL its own last reply named: no second
+// conversation, no second cold start, no waiting for a first crawl. It is a message of its own because the first prompt is already near the
+// core's 8000-byte limit (see above). It never touches the listing instructions again; if the sample page cannot be read it stops at once.
+export function buildJobDetailFollowUpMessage(link: { id: string }, sampleUrl: string): string {
+  return [
+    `The listing instructions are saved. Now do the same for this link's JOB DETAIL instructions, here in this conversation, for portal link ID ${link.id} only.`,
+    '',
+    `1. Call fetch_page_html with this URL and maxAttributeLength: 200: ${sampleUrl}`,
+    "2. It is ONE job's own page, not a list: find the element(s) that hold the posting text (title, description, requirements), not the navigation, ads, unrelated sections or the footer. If the page cannot be read (an error, a login or a blocking page), stop at once with one line saying why; do not try other pages.",
+    '3. Work out the fields that extract ONLY that posting text as plain text: no container, no pagination. The output must include a field labeled description with the full posting body.',
+    '4. Call set_portal_link_job_detail_crawl_instructions ONCE with the finished YAML for this portal link id.',
+    '',
+    'Rules: at most 6 tool calls in total for this task. Never call set_portal_link_crawl_instructions again and never change the listing instructions. When done, reply with one short line.',
+  ].join('\n')
+}
+
+export function hasJobDetailInstructions(link: { jobDetailCrawlInstructions?: string | null }): boolean {
+  return (link.jobDetailCrawlInstructions ?? '').trim() !== ''
+}
+
+// Whether the listing run goes on with the job-detail instructions: only a run that started for a link without them (withDetail), whose listing
+// attempt the backend ended as succeeded (the AI really saved), that is not waiting for the person's answer, that still has no job-detail
+// instructions now, and whose reply named a sample job on the listing's own site. Anything else ends the run as before, and the usual pipeline (the first crawl, the request flag) carries on.
+export function shouldContinueWithJobDetail(input: {
+  withDetail: boolean
+  outcome: 'succeeded' | 'failed' | 'none' | undefined
+  questionPending: boolean
+  hasDetailInstructions: boolean
+  // The sample job URL the AI's reply named (extractSampleJobUrl); without one there is nothing to read.
+  sampleUrl: string | null
+}): boolean {
+  return (
+    input.withDetail && input.outcome === 'succeeded' && !input.questionPending && !input.hasDetailInstructions && input.sampleUrl !== null
+  )
 }
 
 export function generateInstructionsConversationTitle(link: { title?: string | null; url: string }): string {

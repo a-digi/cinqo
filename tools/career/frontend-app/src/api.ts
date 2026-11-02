@@ -1372,6 +1372,42 @@ export async function removeRecruiter(id: string): Promise<void> {
 
 // --- portals ---
 
+// Where a link is in the chain from its listing instructions to a complete set of jobs (plan/ai/tools/career/step-163-job-detail-instructions-pipeline.md,
+// step 1). Read-only, derived from data that exists; the words for a stage are in Crawler/pipelineStage.ts.
+export type PipelineStageId =
+  | 'listing_question'
+  | 'listing_instructions_generating'
+  | 'no_listing_instructions'
+  | 'listing_crawling'
+  | 'detail_instructions_generating'
+  | 'detail_crawling'
+  | 'listing_crawl_waiting'
+  | 'listing_ready'
+  | 'detail_instructions_requested'
+  | 'detail_instructions_failed'
+  | 'detail_instructions_missing'
+  | 'detail_crawl_waiting'
+  | 'detail_crawl_pending'
+  | 'complete'
+
+// What a link waits for: a person, an open Platforms page that acts on a request flag, an AI run, a crawl, or nothing (done).
+export type PipelineWaitingFor = 'user' | 'page' | 'ai' | 'crawl' | 'nothing'
+
+export interface PipelineLink {
+  portalLinkId: string
+  stage: PipelineStageId
+  waitingFor: PipelineWaitingFor
+  // When the running work of the stage started ("2026-11-02 10:00:00", UTC); absent for a stage that is not running.
+  since?: string
+  detail: { jobs: number; jobsWithDescription: number; detailFailedRuns: number }
+}
+
+export async function fetchPipeline(): Promise<PipelineLink[]> {
+  const res = await fetch(`${PROXY_BASE}/portal-links/pipeline`, { credentials: 'include' })
+  const data = await jsonOrThrow<{ links: PipelineLink[] }>(res, 'load the pipeline of the platform links')
+  return data.links
+}
+
 export async function fetchPortals(): Promise<Portal[]> {
   const res = await fetch(`${PROXY_BASE}/portals`, { credentials: 'include' })
   const data = await jsonOrThrow<{ portals: Portal[] }>(res, 'load platforms')

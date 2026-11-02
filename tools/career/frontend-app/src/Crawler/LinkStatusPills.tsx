@@ -4,6 +4,8 @@ import { AlertCircleIcon } from '../Shared/Icons/icons'
 import {
   attemptsLabel,
   instructionAlertAttempts,
+  instructionPill,
+  instructionState,
   isLikelyUncrawlable,
   isNotCrawlable,
   NOT_CRAWLABLE_TOOLTIP,
@@ -29,7 +31,7 @@ interface LinkStatusPillsProps {
 const RED_PILL = 'rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800'
 
 // LinkStatusPills (step 89) — one portal link's at-a-glance state: the
-// listing instructions ("Instructed" / "Not instructed", and for the latter a "Not crawlable" pill, step 159), the step 86/87
+// instructions ("Instructed" only with both sets, "Job details missing", "Not instructed" and, for the latter, a "Not crawlable" pill, step 159; "Instructing…" while the AI writes), the step 86/87
 // alert (the stronger "probably can't be crawled" pill replaces the
 // generic "no instructions after N attempts" one for the listing), and
 // optionally an active crawl. The one copy of these pills; previously
@@ -43,6 +45,8 @@ export function LinkStatusPills({
   className,
 }: LinkStatusPillsProps) {
   const hasListing = Boolean(link.crawlInstructions)
+  // "Instructed" needs both instruction sets (plan 163, step 2).
+  const pill = instructionPill(instructionState(link, listingGenerating, jobDetailGenerating))
   const listingUncrawlable = isLikelyUncrawlable(link.instructionStats.listing, hasListing, listingGenerating)
   const notCrawlable = isNotCrawlable(link.instructionStats.listing, hasListing, listingGenerating)
   const listingAlertAttempts = instructionAlertAttempts(link.instructionStats.listing, hasListing, listingGenerating)
@@ -56,10 +60,8 @@ export function LinkStatusPills({
 
   return (
     <span className={`flex flex-wrap items-center gap-2 ${className ?? ''}`}>
-      <span
-        className={`rounded-full px-2 py-0.5 text-xs font-medium ${hasListing ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}
-      >
-        {hasListing ? 'Instructed' : 'Not instructed'}
+      <span title={pill.tooltip} className={`rounded-full px-2 py-0.5 text-xs font-medium ${pill.className}`}>
+        {pill.label}
       </span>
       {notCrawlable && (
         <span role="status" title={NOT_CRAWLABLE_TOOLTIP} className={`inline-flex items-center gap-1 ${RED_PILL}`}>

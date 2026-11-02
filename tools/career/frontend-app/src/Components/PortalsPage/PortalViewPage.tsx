@@ -212,7 +212,7 @@ export function PortalViewPage() {
             centerLabel={total === 1 ? 'job' : 'jobs'}
             rows={[
               { label: 'Links', value: String(numbers.links), color: ACCENTS[0].to },
-              { label: 'With instructions', value: String(numbers.withInstructions), color: '#16a34a' },
+              { label: 'Ready to crawl', value: String(numbers.withInstructions), color: '#16a34a' },
               { label: 'Never crawled', value: String(numbers.neverCrawled), color: ACCENTS[4].to },
               { label: 'Last crawl', value: formatDate(numbers.lastCrawledAt) || '–', color: ACCENTS[6].to },
               { label: 'Added', value: formatDate(portal.createdAt) || '–', color: ACCENTS[2].to },

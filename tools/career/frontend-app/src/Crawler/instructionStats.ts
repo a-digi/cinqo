@@ -51,6 +51,72 @@ export function isNotCrawlable(stats: InstructionKindStats | undefined, hasInstr
   return !isLikelyUncrawlable(stats, hasInstructions, generating)
 }
 
+// The state of a link's instructions as the pill shows it (plan/ai/tools/career/step-163-job-detail-instructions-pipeline.md, step 2): a link is
+// "instructed" only when BOTH instruction sets are stored, the listing ones (how to read the job list) and the job-detail ones (how to read a
+// job's own page). With only the listing ones it can be crawled but its jobs cannot be read in full ("job details missing"); with none it is "not
+// instructed"; while either set is being written by the AI it is "instructing" (it has not reached a state yet). While the AI waits for the
+// person's answer to its question ("does this page list jobs?") nothing is being written, so the stored instructions decide, and the
+// "Question for you" pill says the rest.
+export type InstructionState = 'instructed' | 'job_details_missing' | 'not_instructed' | 'instructing'
+
+export interface InstructionStateInput {
+  crawlInstructions?: string | null
+  jobDetailCrawlInstructions?: string | null
+  // Set while the generation agent's question is waiting for an answer.
+  jobsQuestion?: unknown
+  instructionStats?: { listing?: Pick<InstructionKindStats, 'running'>; jobDetail?: Pick<InstructionKindStats, 'running'> }
+}
+
+const stored = (text: string | null | undefined) => (text ?? '').trim() !== ''
+
+// listingGenerating / jobDetailGenerating: a run started in this tab that the server does not know about yet (the stats cover the rest).
+export function instructionState(link: InstructionStateInput, listingGenerating = false, jobDetailGenerating = false): InstructionState {
+  const working =
+    listingGenerating ||
+    jobDetailGenerating ||
+    Boolean(link.instructionStats?.listing?.running) ||
+    Boolean(link.instructionStats?.jobDetail?.running)
+  if (working && !link.jobsQuestion) return 'instructing'
+  if (!stored(link.crawlInstructions)) return 'not_instructed'
+  if (!stored(link.jobDetailCrawlInstructions)) return 'job_details_missing'
+  return 'instructed'
+}
+
+export interface InstructionPill {
+  label: string
+  className: string
+  tooltip: string
+}
+
+export function instructionPill(state: InstructionState): InstructionPill {
+  switch (state) {
+    case 'instructed':
+      return {
+        label: 'Instructed',
+        className: 'bg-green-100 text-green-800',
+        tooltip: 'Both sets of instructions are written: how to read the job list and how to read each job.',
+      }
+    case 'job_details_missing':
+      return {
+        label: 'Job details missing',
+        className: 'bg-amber-100 text-amber-800',
+        tooltip: 'The job list can be crawled, but there are no instructions for the job details yet, so the jobs cannot be read in full.',
+      }
+    case 'not_instructed':
+      return {
+        label: 'Not instructed',
+        className: 'bg-red-100 text-red-800',
+        tooltip: 'There are no crawl instructions for this link yet.',
+      }
+    case 'instructing':
+      return {
+        label: 'Instructing…',
+        className: 'animate-pulse bg-blue-100 text-blue-800',
+        tooltip: 'The AI is writing instructions for this link.',
+      }
+  }
+}
+
 // notCrawlableTooltip says what to do about the pill.
 export const NOT_CRAWLABLE_TOOLTIP =
   'This link has no crawl instructions yet, so it cannot be crawled. Generate them with the AI (the Instructions section of this link) or add the jobs manually.'
