@@ -59,6 +59,9 @@ import { CrawlerSettingsPage } from './Components/SettingsPage/CrawlerSettingsPa
 import { SettingsPage } from './Components/SettingsPage/SettingsPage'
 import { ImportRunPage } from './Components/ImportCv/ImportRunPage'
 import { ImportCvPage } from './Components/ImportCv/ImportCvPage'
+import { GuidePage } from './Components/Guide/GuidePage'
+import { QuestionsPage } from './Components/Guide/QuestionsPage'
+import { CONTACTS, FINDING_JOBS, GETTING_STARTED, PROFILE_AND_CV } from './Components/Guide/guideData'
 import './index.css'
 import { careerMenuEntry } from './menu'
 import {
@@ -104,6 +107,11 @@ import {
   PLATFORMS_PATH,
   VIEW_PLATFORM_PATH,
   CRAWL_MONITOR_PATH,
+  GUIDE_PATH,
+  GUIDE_PROFILE_PATH,
+  GUIDE_JOBS_PATH,
+  GUIDE_CONTACTS_PATH,
+  FAQ_PATH,
 } from './paths'
 
 window.__cinqoToolBridge.registerMenuEntry(careerMenuEntry)
@@ -463,6 +471,46 @@ window.__cinqoToolBridge.registerRoute({
   path: CRAWLER_SETTINGS_PATH,
   mount: (container) => {
     mountReact(container, <CrawlerSettingsPage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: GUIDE_PATH,
+  mount: (container) => {
+    mountReact(container, <GuidePage guide={GETTING_STARTED} />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: GUIDE_PROFILE_PATH,
+  mount: (container) => {
+    mountReact(container, <GuidePage guide={PROFILE_AND_CV} />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: GUIDE_JOBS_PATH,
+  mount: (container) => {
+    mountReact(container, <GuidePage guide={FINDING_JOBS} />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: GUIDE_CONTACTS_PATH,
+  mount: (container) => {
+    mountReact(container, <GuidePage guide={CONTACTS} />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: FAQ_PATH,
+  mount: (container) => {
+    mountReact(container, <QuestionsPage />)
   },
   unmount: unmountReact,
 })

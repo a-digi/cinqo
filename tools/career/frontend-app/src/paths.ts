@@ -95,6 +95,12 @@ export const SETTINGS_PATH = '/tools/career/settings'
 export const CLEANUP_SETTINGS_PATH = '/tools/career/settings/cleanup'
 // The Job crawler's "Ignore jobs" rules (step 150).
 export const CRAWLER_SETTINGS_PATH = '/tools/career/settings/crawler'
+// The Q&A group (plan 170): the step-by-step guide to the whole tool.
+export const GUIDE_PATH = '/tools/career/guide'
+export const GUIDE_PROFILE_PATH = '/tools/career/guide/profile'
+export const GUIDE_JOBS_PATH = '/tools/career/guide/jobs'
+export const GUIDE_CONTACTS_PATH = '/tools/career/guide/contacts'
+export const FAQ_PATH = '/tools/career/faq'
 export const NEW_COMPANY_PATH = '/tools/career/companies/new'
 export const NEW_RECRUITER_PATH = '/tools/career/recruiters/new'
 // One recruiter on their own page (plan/ai/tools/career/step-168): the id arrives as the ?id= query, like the profile and company pages.

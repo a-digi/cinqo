@@ -66,3 +66,29 @@ export function stepProblems(steps: readonly TimelineStep[]): string[] {
   })
   return problems
 }
+
+// The designs of the timeline (plan/ai/tools/career/step-170-onboarding-guide.md, step 8 and its follow-ups). Every guide picks one, so the
+// pages do not look alike. zigzag: one narrow framed card, the steps alternating left and right of a centre line with a numbered badge on
+// it (one column on a phone). The other three are two equal columns from a tablet up: the steps take turns left and right, the right ones
+// tucked up into the gaps of the left ones, around a dashed centre line, with the dashboard's soft shapes behind each card (one column on a
+// phone). ribbon: a coloured banner with the number and title over the text. cards: a colourful left edge, the number beside the title.
+// tiles: a tinted tile with a dashed border and a rounded-square number beside the title.
+export type TimelineDesign = 'zigzag' | 'ribbon' | 'cards' | 'tiles'
+export const TIMELINE_DESIGNS: readonly TimelineDesign[] = ['zigzag', 'ribbon', 'cards', 'tiles']
+
+// Which colour of a palette of `size` colours a step gets: they follow each other and start again after the last, so neighbours always
+// differ (when there are at least two colours).
+export function paletteIndex(index: number, size: number): number {
+  return size <= 0 ? 0 : ((index % size) + size) % size
+}
+
+// The first step is on the left, the next on the right, and so on.
+export function onLeft(index: number): boolean {
+  return index % 2 === 0
+}
+
+// How a page lays a design out: the zigzag sits in one framed card on the narrow page; the two-sided designs need the wide page and put
+// their cards straight on it.
+export function designLayout(design: TimelineDesign): { wide: boolean; framed: boolean } {
+  return design === 'zigzag' ? { wide: false, framed: true } : { wide: true, framed: false }
+}

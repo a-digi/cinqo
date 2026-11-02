@@ -3,6 +3,11 @@ import {
   CRAWL_MONITOR_PATH,
   CV_DOCUMENTS_PATH,
   EXPERIENCE_PATH,
+  FAQ_PATH,
+  GUIDE_PATH,
+  GUIDE_CONTACTS_PATH,
+  GUIDE_JOBS_PATH,
+  GUIDE_PROFILE_PATH,
   IMPORT_CV_PATH,
   JOBS_PATH,
   PERSONAS_PATH,
@@ -82,6 +87,18 @@ export const careerMenuEntry: MenuEntry = {
         { label: 'Job cleanup', path: CLEANUP_SETTINGS_PATH, scopes: ['tool:career:jobs'] },
         // Which jobs the crawler must not insert (Ignore jobs).
         { label: 'Job crawler', path: CRAWLER_SETTINGS_PATH, scopes: ['tool:career:jobs'] },
+      ],
+    },
+    {
+      // Onboarding (plan 170): text pages that explain how to use the tool. No scopes: they call nothing, so everyone who sees the
+      // Career menu sees them.
+      label: 'Q&A',
+      children: [
+        { label: 'Getting started', path: GUIDE_PATH },
+        { label: 'Profile & CV', path: GUIDE_PROFILE_PATH },
+        { label: 'Finding jobs', path: GUIDE_JOBS_PATH },
+        { label: 'Companies & recruiters', path: GUIDE_CONTACTS_PATH },
+        { label: 'Questions', path: FAQ_PATH },
       ],
     },
   ],
