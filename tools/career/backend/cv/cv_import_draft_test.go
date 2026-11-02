@@ -257,7 +257,7 @@ func TestThroughTheProtocolTheTextFormsAndAMissingRunIdPassTheSchema(t *testing.
 	call("cv_import_set", map[string]any{"section": "personalDetails", "value": asObject(t, p.PersonalDetails)})
 	call("cv_import_add_skills", map[string]any{"items": asText(t, p.Skills)})
 	call("cv_import_add_experience", map[string]any{"item": asText(t, p.Experience[0])})
-	call("cv_import_finish", map[string]any{})
+	call("cv_import_finish", map[string]any{"jobsInCv": 1})
 	if string(runOf(t, id).AIProposal) == noProposalJSON {
 		t.Fatal("nothing stored")
 	}

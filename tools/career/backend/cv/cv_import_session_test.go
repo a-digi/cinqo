@@ -83,7 +83,10 @@ func TestAScriptedWeakModelFinishesALongCVPieceByPiece(t *testing.T) {
 	mustOK("cv_import_add_experience", map[string]any{"item": asText(t, jobs[5:10])})
 	mustOK("cv_import_add_experience", map[string]any{"item": asObject(t, jobs[10])}) // one job, as an object
 	mustOK("cv_import_add_experience", map[string]any{"item": asText(t, jobs[10:])})  // overlaps by one: still 15 jobs
-	mustOK("cv_import_finish", map[string]any{})
+	// the AI must say how many jobs the CV lists: fewer sent than stated is refused, the right number (also as text) is accepted
+	mustRefuse("cv_import_finish", map[string]any{}, "needs jobsInCv")
+	mustRefuse("cv_import_finish", map[string]any{"jobsInCv": 16}, "you said the CV lists 16 jobs but only 15 were sent")
+	mustOK("cv_import_finish", map[string]any{"jobsInCv": "15"})
 
 	var stored Proposal
 	if err := json.Unmarshal(runOf(t, id).AIProposal, &stored); err != nil {

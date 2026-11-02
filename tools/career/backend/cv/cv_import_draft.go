@@ -14,7 +14,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -43,6 +45,8 @@ type importDraft struct {
 	Skills          []SkillProposal      `json:"skills,omitempty"`
 	Experience      []ExperienceProposal `json:"experience,omitempty"`
 	Education       []EducationProposal  `json:"education,omitempty"`
+	// warnings are said once in the answer to the call that made them; they are never stored.
+	warnings []string
 }
 
 // allSkipped says all three single sections were sent and every one is skipped.
@@ -72,14 +76,27 @@ func (d importDraft) missing() []string {
 
 // summary is what a tool answers so the AI sees what is left to send.
 func (d importDraft) summary() map[string]any {
-	return map[string]any{
+	out := map[string]any{
 		"stored": true,
 		"draft": map[string]any{
 			sectionProfile: d.Profile != nil, sectionPersona: d.Persona != nil, sectionPersonalDetails: d.PersonalDetails != nil,
-			"skills": len(d.Skills), "experience": len(d.Experience), "education": len(d.Education),
+			"skills": len(d.Skills), "experience": len(d.Experience), "experienceChars": d.experienceChars(), "education": len(d.Education),
 		},
 		"stillMissing": d.missing(),
 	}
+	if len(d.warnings) > 0 {
+		out["warnings"] = d.warnings
+	}
+	return out
+}
+
+// experienceChars is the total length of the jobs' descriptions, so the AI sees the size of what it sent.
+func (d importDraft) experienceChars() int {
+	n := 0
+	for _, e := range d.Experience {
+		n += utf8.RuneCountInString(e.Description)
+	}
+	return n
 }
 
 // resolveRunID is the run a call belongs to: the one it names, or else the only run that is generating.
@@ -257,7 +274,7 @@ const MaxJobsPerCall = 10
 // company, title and start date replaces the earlier one.
 func AddDraftExperience(runID string, item any) (importDraft, error) {
 	return updateDraft(runID, func(d *importDraft) error {
-		const shape = `one job {"action","possibleDuplicateOf","company","title","startDate","endDate","description"}, or a list of up to 10 of them`
+		const shape = `one job {"action","possibleDuplicateOf","company","title","startDate","endDate","description","bulletsInCv"}, or a list of up to 10 of them`
 		data, err := rawJSON(item, "item", shape)
 		if err != nil {
 			return err
@@ -299,6 +316,7 @@ func AddDraftExperience(runID string, item any) (importDraft, error) {
 			}
 			d.Experience = append(d.Experience, e)
 		}
+		d.warnings = shortDescriptionWarnings(clean.Experience)
 		if len(d.Experience) > MaxProposalExperience {
 			return problem("experience can have at most %d entries", MaxProposalExperience)
 		}
@@ -365,13 +383,68 @@ func AddDraftEducation(runID string, item any) (importDraft, error) {
 
 // FinishDraft validates the whole draft and stores it as the run's proposal, then drops the draft. A draft that is not complete is a
 // *proposalProblem naming what is missing; the run errors are those of StoreProposal.
-func FinishDraft(runID string) error {
+func FinishDraft(runID string) error { return finishDraft(runID, nil) }
+
+// FinishDraftChecked is FinishDraft for the AI's own cv_import_finish call (plan 177): it also takes jobsInCv, the number of jobs the AI
+// counted in the CV's work-experience section (a number or a text of digits). It is required when the draft has jobs, and a draft with
+// fewer jobs than stated is refused with the shortfall so the AI sends the missing ones; more jobs than stated are accepted. The page
+// that ends a run uses FinishDraft instead (it has no count to give).
+func FinishDraftChecked(runID string, jobsInCv any) error {
+	n, set, err := asCount(jobsInCv, "jobsInCv")
+	if err != nil {
+		return err
+	}
+	return finishDraft(runID, func(d importDraft) error {
+		have := int64(len(d.Experience))
+		switch {
+		case !set && have > 0:
+			return problem("cv_import_finish needs jobsInCv: the number of jobs the CV lists in its work-experience section (count them in the CV text and send that number); the draft has %d jobs", have)
+		case set && have < n:
+			return problem("you said the CV lists %d jobs but only %d were sent; send the missing ones with cv_import_add_experience (each with its whole text), then call cv_import_finish again", n, have)
+		}
+		return nil
+	})
+}
+
+// asCount reads a whole number the AI sent as a number or a text of digits; set is false when nothing was sent.
+func asCount(v any, name string) (n int64, set bool, err error) {
+	switch x := v.(type) {
+	case nil:
+		return 0, false, nil
+	case float64:
+		if x != float64(int64(x)) || x < 0 {
+			return 0, false, problem("%s must be a whole number of 0 or more", name)
+		}
+		return int64(x), true, nil
+	case int:
+		return asCount(int64(x), name)
+	case int64:
+		if x < 0 {
+			return 0, false, problem("%s must be a whole number of 0 or more", name)
+		}
+		return x, true, nil
+	case string:
+		n, perr := strconv.ParseInt(strings.TrimSpace(x), 10, 64)
+		if perr != nil || n < 0 {
+			return 0, false, problem("%s must be a whole number of 0 or more", name)
+		}
+		return n, true, nil
+	}
+	return 0, false, problem("%s must be a whole number of 0 or more", name)
+}
+
+func finishDraft(runID string, check func(importDraft) error) error {
 	d, err := updateDraft(runID, func(*importDraft) error { return nil })
 	if err != nil {
 		return err
 	}
 	if m := d.missing(); len(m) > 0 {
 		return problem("the draft is not complete, still missing: %s. Send them with cv_import_set, cv_import_add_skills or cv_import_add_experience, then call cv_import_finish again", strings.Join(m, ", "))
+	}
+	if check != nil {
+		if err := check(d); err != nil {
+			return err
+		}
 	}
 	if err := StoreProposal(runID, Proposal{Profile: *d.Profile, Persona: *d.Persona, PersonalDetails: *d.PersonalDetails, Skills: d.Skills, Experience: d.Experience, Education: d.Education}); err != nil {
 		return err
@@ -426,7 +499,7 @@ type cvImportAddSkillsArgs struct {
 
 type cvImportAddExperienceArgs struct {
 	RunID string `json:"runId,omitempty" jsonschema:"the run id given in the request"`
-	Item  any    `json:"item,omitempty" jsonschema:"one job {action, possibleDuplicateOf, company, title, startDate, endDate, description}, or a list of up to 5 jobs"`
+	Item  any    `json:"item,omitempty" jsonschema:"one job {action, possibleDuplicateOf, company, title, startDate, endDate, description, bulletsInCv}, or a list of up to 5 jobs; description has the whole text of the job, one line per bullet point; bulletsInCv is how many bullet points the CV lists under it"`
 	Items any    `json:"items,omitempty" jsonschema:"the same under another name (a list of up to 5 jobs); send either item or items"`
 }
 
@@ -437,7 +510,8 @@ type cvImportAddEducationArgs struct {
 }
 
 type cvImportFinishArgs struct {
-	RunID string `json:"runId,omitempty" jsonschema:"the run id given in the request"`
+	RunID    string `json:"runId,omitempty" jsonschema:"the run id given in the request"`
+	JobsInCv any    `json:"jobsInCv,omitempty" jsonschema:"how many jobs the CV lists in its work-experience section, counted by you in the CV text; required when you sent any job"`
 }
 
 // RegisterCVImportDraftTools registers the piece-by-piece tools (profile/persona/details, skills, experience, education, finish).
@@ -467,8 +541,11 @@ func RegisterCVImportDraftTools(server *mcp.Server) {
 		return draftResult(runID, d, err)
 	})
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "cv_import_add_experience",
-		Description: "Add jobs from the CV to the analysis: one job, or a list of up to 5 jobs per call (the same company, title and start date replaces the earlier one)." + common,
+		Name: "cv_import_add_experience",
+		Description: "Add jobs from the CV to the analysis: one job, or a list of up to 5 jobs per call (the same company, title and start date replaces the earlier one, so a job can be sent again with more text). " +
+			"Give each job's whole text in description: the introduction, every bullet point as its own line, and the technologies; you may improve the wording but never cut it. " +
+			"Give bulletsInCv, the number of bullet points the CV lists under the job: a description with fewer lines than 70 % of it is refused with the numbers. " +
+			"The answer lists warnings (for example a very short description) and counts the jobs sent so far; compare it with the number of jobs in the CV." + common,
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args cvImportAddExperienceArgs) (*mcp.CallToolResult, any, error) {
 		runID, err := resolveRunID(args.RunID)
 		if err != nil {
@@ -493,13 +570,13 @@ func RegisterCVImportDraftTools(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "cv_import_finish",
 		Description: "Finish the analysis: checks that the profile, the persona, the personal details and at least one skill or job were sent and hands the whole " +
-			"proposal to the user (education is optional). Call it once, after the last piece." + common,
+			"proposal to the user (education is optional). Send jobsInCv, the number of jobs the CV lists in its work-experience section that you counted in the CV text: it is refused when fewer jobs were sent, so none is left out. Call it once, after the last piece." + common,
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args cvImportFinishArgs) (*mcp.CallToolResult, any, error) {
 		runID, err := resolveRunID(args.RunID)
 		if err != nil {
 			return draftResult(args.RunID, importDraft{}, err)
 		}
-		if err := FinishDraft(runID); err != nil {
+		if err := FinishDraftChecked(runID, args.JobsInCv); err != nil {
 			return draftResult(runID, importDraft{}, err)
 		}
 		return db.JSONResult(map[string]any{"stored": true, "finished": true})

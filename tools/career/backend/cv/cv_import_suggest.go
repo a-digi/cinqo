@@ -11,6 +11,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -75,6 +77,73 @@ type SkillProposal struct {
 	Value               string  `json:"value"`
 }
 
+// FlexCount is a whole number the AI may send as a number or as a text of digits (weak models send either).
+type FlexCount int64
+
+func (c *FlexCount) UnmarshalJSON(data []byte) error {
+	text := strings.TrimSpace(string(data))
+	if len(text) > 1 && text[0] == '"' {
+		var s string
+		if err := json.Unmarshal(data, &s); err != nil {
+			return err
+		}
+		text = strings.TrimSpace(s)
+	}
+	if text == "" || text == "null" {
+		return errors.New("a count must be a whole number")
+	}
+	n, err := strconv.ParseInt(text, 10, 64)
+	if err != nil {
+		f, ferr := strconv.ParseFloat(text, 64)
+		if ferr != nil || f != float64(int64(f)) {
+			return errors.New("a count must be a whole number")
+		}
+		n = int64(f)
+	}
+	*c = FlexCount(n)
+	return nil
+}
+
+// Bullet points of a job: the AI counts them in the CV and the description must have a line for at least this share of them
+// (plan 177). Numerator and denominator of 70 %.
+const (
+	bulletShareNum = 7
+	bulletShareDen = 10
+	// shortDescriptionRunes is the length under which a one-line description is warned about when no bullet count was given.
+	shortDescriptionRunes = 200
+)
+
+// descriptionLines counts the non-empty lines of a description.
+func descriptionLines(description string) int {
+	n := 0
+	for _, line := range strings.Split(description, "\n") {
+		if strings.TrimSpace(line) != "" {
+			n++
+		}
+	}
+	return n
+}
+
+// requiredLines is how many lines a description needs for a job the CV lists this many bullet points for: 70 %, rounded up.
+func requiredLines(bullets int64) int {
+	return int((bullets*bulletShareNum + bulletShareDen - 1) / bulletShareDen)
+}
+
+// shortDescriptionWarnings names the jobs to insert whose description is short and has no line break while the AI gave no bullet count:
+// a hint to send the job again with all of its text, never a refusal.
+func shortDescriptionWarnings(jobs []ExperienceProposal) []string {
+	var out []string
+	for _, e := range jobs {
+		if e.Action != actionInsert || e.BulletsInCv != nil || strings.Contains(strings.TrimSpace(e.Description), "\n") {
+			continue
+		}
+		if n := utf8.RuneCountInString(strings.TrimSpace(e.Description)); n < shortDescriptionRunes {
+			out = append(out, fmt.Sprintf("the description of %q is only %d characters: include every bullet point and the technologies of this job (you may improve the wording, never cut it), and give bulletsInCv, then send the job again (the same company, title and start date replaces it)", e.Company, n))
+		}
+	}
+	return out
+}
+
 type ExperienceProposal struct {
 	Action              string  `json:"action" jsonschema:"insert, or skip when not relevant or not confident"`
 	PossibleDuplicateOf *string `json:"possibleDuplicateOf" jsonschema:"the id of an existing experience entry this matches, otherwise null"`
@@ -83,6 +152,9 @@ type ExperienceProposal struct {
 	StartDate           string  `json:"startDate"`
 	EndDate             string  `json:"endDate"`
 	Description         string  `json:"description"`
+	// BulletsInCv is how many bullet points the CV lists under this job (plan 177): when given, the description must keep a line for at
+	// least 70 % of them. 0 for a job the CV describes in a sentence.
+	BulletsInCv *FlexCount `json:"bulletsInCv,omitempty" jsonschema:"how many bullet points the CV lists under this job; the description must keep a line for most of them"`
 }
 
 // EducationProposal is one school, degree or course found in the CV (plan 175). Dates are YYYY, YYYY-MM or YYYY-MM-DD; an empty end date
@@ -187,6 +259,16 @@ func validateProposal(p Proposal) (Proposal, error) {
 		for field, v := range map[string]string{"company": e.Company, "title": e.Title, "startDate": e.StartDate, "endDate": e.EndDate, "description": e.Description} {
 			if err := checkText(path+"."+field, v); err != nil {
 				return Proposal{}, err
+			}
+		}
+		if e.BulletsInCv != nil {
+			if *e.BulletsInCv < 0 {
+				return Proposal{}, problem("%s.bulletsInCv must be 0 or more", path)
+			}
+			if e.Action == actionInsert {
+				if need, have := requiredLines(int64(*e.BulletsInCv)), descriptionLines(e.Description); have < need {
+					return Proposal{}, problem("%s (%s): you said the CV lists %d bullet points but the description has %d lines (at least %d are needed); include every bullet point as its own line, you may improve the wording but not cut it, and send the job again (the same company, title and start date replaces it)", path, e.Company, int64(*e.BulletsInCv), have, need)
+				}
 			}
 		}
 	}
