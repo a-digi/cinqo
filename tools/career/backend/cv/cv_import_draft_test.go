@@ -3,6 +3,7 @@ package cv
 import (
 	"career-tool-backend/db"
 	"encoding/json"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -303,5 +304,30 @@ func TestMainRegistersThePieceTools(t *testing.T) {
 	}
 	if !strings.Contains(string(raw), "cv.RegisterCVImportDraftTools(server)") {
 		t.Error("main.go does not register the CV import piece tools")
+	}
+}
+
+// A CV has no more than MaxProposalExperience jobs, however they are split over calls; the refused call changes nothing.
+func TestTheDraftHoldsNoMoreJobsThanAProposalMay(t *testing.T) {
+	setup(t)
+	id := newRun(t)
+	batch := func(from int) []ExperienceProposal {
+		var out []ExperienceProposal
+		for i := from; i < from+MaxJobsPerCall; i++ {
+			out = append(out, ExperienceProposal{Action: "insert", Company: fmt.Sprintf("C%d", i), Title: "T", StartDate: "2000"})
+		}
+		return out
+	}
+	for from := 0; from < MaxProposalExperience; from += MaxJobsPerCall {
+		if _, err := AddDraftExperience(id, batch(from)); err != nil {
+			t.Fatalf("batch from %d: %v", from, err)
+		}
+	}
+	if _, err := AddDraftExperience(id, batch(MaxProposalExperience)); err == nil || !strings.Contains(err.Error(), "at most") {
+		t.Fatalf("a job over the limit was accepted: %v", err)
+	}
+	d, err := AddDraftExperience(id, batch(0)[:1]) // a replace of an existing job still works
+	if err != nil || len(d.Experience) != MaxProposalExperience {
+		t.Errorf("%d jobs, %v", len(d.Experience), err)
 	}
 }

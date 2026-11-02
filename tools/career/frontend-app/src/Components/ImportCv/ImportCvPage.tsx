@@ -24,6 +24,7 @@ import { resolveDuplicateLabels, type DuplicateLabels } from './resolveDuplicate
 import { insertSelected, type InsertResult, type ItemResult } from './insertProposal'
 import { ProposalRow } from './ProposalRow'
 import { ImportRunDetail } from './ImportRunDetail'
+import { FailureNotice } from './FailureNotice'
 import { ImportPipeline } from './ImportPipeline'
 import { pipelineStages } from './pipelineRules'
 import { experienceLabel } from './experienceLabel'
@@ -481,7 +482,7 @@ export function ImportCvPage() {
                 {runs.map((run) => {
                   const badge = runBadge(run)
                   return (
-                    <li key={run.id} className="flex items-center justify-between gap-3 py-2 text-sm">
+                    <li key={run.id} className="flex flex-wrap items-center justify-between gap-3 py-2 text-sm">
                       <div className="min-w-0">
                         <p className="truncate text-gray-700">{run.originalFilename}</p>
                         <p className="text-xs text-gray-400">{new Date(run.createdAt).toLocaleString()}</p>
@@ -525,6 +526,11 @@ export function ImportCvPage() {
                           Delete
                         </button>
                       </div>
+                      {run.status === 'failed' && (
+                        <div className="w-full">
+                          <FailureNotice error={run.error} />
+                        </div>
+                      )}
                     </li>
                   )
                 })}
@@ -694,7 +700,9 @@ export function ImportCvPage() {
 
           {state === 'error' && (
             <section className={cardClassName} style={cardStyle}>
-              <p className="mb-3 text-sm text-red-700">{error}</p>
+              <div className="mb-3">
+                <FailureNotice error={error} onViewTranscript={conversationId ? viewTranscript : undefined} />
+              </div>
               {rawReply && (
                 <details className="mb-3">
                   <summary className="cursor-pointer text-xs text-gray-500">Show the AI's last message</summary>

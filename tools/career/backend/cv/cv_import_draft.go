@@ -104,22 +104,30 @@ func resolveRunID(id string) (string, error) {
 	return ids[0], nil
 }
 
+// rawJSON is the JSON bytes of a tool value that should be an object or a list but may arrive as the JSON text of it.
+func rawJSON(raw any, what, shape string) ([]byte, error) {
+	if raw == nil {
+		return nil, problem("%s is required: %s", what, shape)
+	}
+	if text, ok := raw.(string); ok {
+		data := bytes.TrimSpace([]byte(text))
+		if len(data) == 0 || (data[0] != '{' && data[0] != '[') {
+			return nil, problem("%s was a string that is not JSON: %s", what, shape)
+		}
+		return data, nil
+	}
+	data, err := json.Marshal(raw)
+	if err != nil {
+		return nil, problem("%s could not be read: %s", what, shape)
+	}
+	return data, nil
+}
+
 // lenientDecode reads a tool value that should be a JSON object (or list) but may arrive as the JSON text of it.
 func lenientDecode(raw any, into any, what, shape string) error {
-	if raw == nil {
-		return problem("%s is required: %s", what, shape)
-	}
-	var data []byte
-	if text, ok := raw.(string); ok {
-		data = bytes.TrimSpace([]byte(text))
-		if len(data) == 0 || (data[0] != '{' && data[0] != '[') {
-			return problem("%s was a string that is not JSON: %s", what, shape)
-		}
-	} else {
-		var err error
-		if data, err = json.Marshal(raw); err != nil {
-			return problem("%s could not be read: %s", what, shape)
-		}
+	data, err := rawJSON(raw, what, shape)
+	if err != nil {
+		return err
 	}
 	if err := json.Unmarshal(data, into); err != nil {
 		return problem("%s is not in the right shape (%v): %s", what, err, shape)
@@ -233,34 +241,59 @@ func AddDraftSkills(runID string, items any) (importDraft, error) {
 	})
 }
 
-// AddDraftExperience validates one job and adds it to the run's draft; a job with the same company, title and start date replaces
-// the earlier one.
+// MaxJobsPerCall bounds one cv_import_add_experience call: the AI has a limited number of rounds, so it may send several jobs at once,
+// but not so many that one call is the long call this design avoids.
+const MaxJobsPerCall = 10
+
+// AddDraftExperience validates one job, or a list of up to MaxJobsPerCall jobs, and adds them to the run's draft; a job with the same
+// company, title and start date replaces the earlier one.
 func AddDraftExperience(runID string, item any) (importDraft, error) {
 	return updateDraft(runID, func(d *importDraft) error {
-		var e ExperienceProposal
-		if err := lenientDecode(item, &e, "item", `an object {"action","possibleDuplicateOf","company","title","startDate","endDate","description"}`); err != nil {
-			return err
-		}
-		p := skipPlaceholder()
-		p.Experience = []ExperienceProposal{e}
-		clean, err := validateProposal(p)
+		const shape = `one job {"action","possibleDuplicateOf","company","title","startDate","endDate","description"}, or a list of up to 10 of them`
+		data, err := rawJSON(item, "item", shape)
 		if err != nil {
 			return err
 		}
-		e = clean.Experience[0]
+		var jobs []ExperienceProposal
+		if data[0] == '[' {
+			err = json.Unmarshal(data, &jobs)
+		} else {
+			var one ExperienceProposal
+			if err = json.Unmarshal(data, &one); err == nil {
+				jobs = []ExperienceProposal{one}
+			}
+		}
+		if err != nil {
+			return problem("item is not in the right shape (%v): %s", err, shape)
+		}
+		if len(jobs) == 0 {
+			return problem("item has no job: %s", shape)
+		}
+		if len(jobs) > MaxJobsPerCall {
+			return problem("send at most %d jobs per call, not %d", MaxJobsPerCall, len(jobs))
+		}
+		p := skipPlaceholder()
+		p.Experience = jobs
+		clean, err := validateProposal(p)
+		if err != nil {
+			return problem("%v (counting from 0 in this call)", err)
+		}
 		key := func(x ExperienceProposal) string {
 			return strings.ToLower(strings.TrimSpace(x.Company) + "|" + strings.TrimSpace(x.Title) + "|" + strings.TrimSpace(x.StartDate))
 		}
-		for i, old := range d.Experience {
-			if key(old) == key(e) {
-				d.Experience[i] = e
-				return nil
+	next:
+		for _, e := range clean.Experience {
+			for i, old := range d.Experience {
+				if key(old) == key(e) {
+					d.Experience[i] = e
+					continue next
+				}
 			}
+			d.Experience = append(d.Experience, e)
 		}
-		if len(d.Experience) >= MaxProposalExperience {
+		if len(d.Experience) > MaxProposalExperience {
 			return problem("experience can have at most %d entries", MaxProposalExperience)
 		}
-		d.Experience = append(d.Experience, e)
 		return nil
 	})
 }
@@ -327,7 +360,7 @@ type cvImportAddSkillsArgs struct {
 
 type cvImportAddExperienceArgs struct {
 	RunID string `json:"runId,omitempty" jsonschema:"the run id given in the request"`
-	Item  any    `json:"item" jsonschema:"ONE job {action, possibleDuplicateOf, company, title, startDate, endDate, description}"`
+	Item  any    `json:"item" jsonschema:"one job {action, possibleDuplicateOf, company, title, startDate, endDate, description}, or a list of up to 5 jobs"`
 }
 
 type cvImportFinishArgs struct {
@@ -362,7 +395,7 @@ func RegisterCVImportDraftTools(server *mcp.Server) {
 	})
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "cv_import_add_experience",
-		Description: "Add ONE job from the CV to the analysis; call it once per job (the same company, title and start date replaces the earlier one)." + common,
+		Description: "Add jobs from the CV to the analysis: one job, or a list of up to 5 jobs per call (the same company, title and start date replaces the earlier one)." + common,
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args cvImportAddExperienceArgs) (*mcp.CallToolResult, any, error) {
 		runID, err := resolveRunID(args.RunID)
 		if err != nil {

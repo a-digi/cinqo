@@ -16,7 +16,7 @@ export function runBadge(run: RunLike): { label: string; tone: BadgeTone; title:
     case 'generating':
       return { label: 'Analysing…', tone: 'amber', title: 'The AI is still analysing this CV, or the page was closed before it finished.' }
     case 'failed':
-      return { label: 'Failed', tone: 'red', title: run.error && run.error.trim() !== '' ? run.error : 'The analysis did not finish.' }
+      return { label: 'Failed', tone: 'red', title: describeFailure(run.error).message }
     default:
       return null
   }
@@ -35,3 +35,36 @@ export function failureReason(err: unknown): string {
 
 // The text the page shows when the AI's turn ended without a proposal (the server refused to end the run as ready).
 export const NO_PROPOSAL_MESSAGE = 'The AI finished without handing over a proposal. Start over, or process the CV again.'
+
+// What the AI's own failures look like in the error text (the core's loop and the providers write them): a model that sends tool
+// arguments that cannot be used, a provider that refuses a cut-off tool call, a turn that never ends, a run that ends without a
+// proposal. All of them mean the chosen model is not up to this task, whatever the exact words; the page then says that instead of
+// showing the raw text, which stays available behind "Show log" (plan 165, step 4).
+const MODEL_NOT_CAPABLE_PATTERNS: RegExp[] = [
+  /keeps sending invalid tool arguments/i,
+  /must be a valid JSON object/i,
+  /without a final reply/i,
+  /without handing over a proposal/i,
+  /did not hand over a proposal/i,
+  /no longer generating/i,
+]
+
+export const MODEL_NOT_CAPABLE_MESSAGE =
+  'The model is not up to the task. Please choose a better model in Settings and process the CV again.'
+
+export interface FailureDescription {
+  // What a person reads first.
+  message: string
+  // True when the choice of model is the cause, so the page offers the Settings link.
+  modelNotCapable: boolean
+  // The real error text, shown behind "Show log"; empty when there is none.
+  log: string
+}
+
+// The message for a failed run or analysis: the friendly one for a model that is not up to the task, the error's own text otherwise.
+export function describeFailure(error: string | undefined | null): FailureDescription {
+  const log = (error ?? '').trim()
+  if (log === '') return { message: 'The analysis did not finish.', modelNotCapable: false, log: '' }
+  if (MODEL_NOT_CAPABLE_PATTERNS.some((p) => p.test(log))) return { message: MODEL_NOT_CAPABLE_MESSAGE, modelNotCapable: true, log }
+  return { message: log, modelNotCapable: false, log }
+}
