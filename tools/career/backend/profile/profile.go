@@ -164,7 +164,8 @@ func fillCompleteness(profiles []profile, hasImage map[string]bool) error {
 	}
 	summaries, err := countByProfile(
 		`SELECT p.profile_id, COUNT(*) FROM personas p JOIN persona_details d ON d.persona_id = p.id
-		 WHERE TRIM(d.headline) <> '' AND TRIM(d.summary) <> '' GROUP BY p.profile_id`)
+		 LEFT JOIN profile_details pd ON pd.profile_id = p.profile_id
+		 WHERE TRIM(d.headline) <> '' AND TRIM(COALESCE(d.summary_override, pd.summary, '')) <> '' GROUP BY p.profile_id`)
 	if err != nil {
 		return err
 	}

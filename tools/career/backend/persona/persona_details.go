@@ -58,6 +58,9 @@ type personaDetails struct {
 	MinSalary        int64  `json:"minSalary,omitempty"`
 	// RemotePreference (step 130): "", "onsite", "open" or "remote_only"; "" means not set.
 	RemotePreference string `json:"remotePreference"`
+	// Overridden (plan 174) names the values among summary, desiredTitles, desiredLocations, minSalary and remotePreference that are
+	// the persona's own; the others are the profile's, which the persona follows. Headline and location are always the persona's.
+	Overridden []string `json:"overridden"`
 }
 
 // Where a skill or an experience of a persona comes from (plan 173): the profile's library (the persona uses it) or the persona's own.
@@ -111,20 +114,18 @@ func FetchPersonaDetails(personaId string) (getPersonaDetailsResult, error) {
 		return result, err
 	}
 
-	var d personaDetails
-	var minSalary sql.NullInt64
-	err := db.CareerDB.QueryRow(
-		`SELECT headline, summary, location, desired_titles, desired_locations, min_salary, remote_preference
-		 FROM persona_details WHERE persona_id = ?`, personaId,
-	).Scan(&d.Headline, &d.Summary, &d.Location, &d.DesiredTitles, &d.DesiredLocations, &minSalary, &d.RemotePreference)
-	switch {
-	case err == sql.ErrNoRows:
-		result.PersonaDetails = nil
-	case err != nil:
+	// Plan 174: the persona's own row (headline, location and the values it words itself) and the profile's summary and goals it follows.
+	row, err := readDetailsRow(db.CareerDB, personaId)
+	if err != nil {
 		return result, err
-	default:
-		d.PersonaID = personaId
-		d.MinSalary = minSalary.Int64
+	}
+	pv, err := profileValuesOfPersona(db.CareerDB, personaId)
+	if err != nil {
+		return result, err
+	}
+	// "Not configured yet" (nil) only when the persona has no row and the profile has nothing to follow either.
+	if row.exists || !pv.empty() {
+		d := effectiveDetails(personaId, row, pv)
 		result.PersonaDetails = &d
 	}
 
@@ -277,16 +278,20 @@ func personaExperience(personaId string) ([]careerExperience, error) {
 // (via the *string/*int64 pointers) are touched. Upserts the row
 // keyed by PersonaID, which must already exist.
 type UpdatePersonaDetailsArgs struct {
-	PersonaID        string  `json:"personaId"`
-	Headline         *string `json:"headline,omitempty"`
+	PersonaID string  `json:"personaId"`
+	Headline  *string `json:"headline,omitempty"`
+	Location  *string `json:"location,omitempty"`
+	// Summary and the four goals below are the PERSONA's own values (plan 174): they replace the profile's for this persona only.
 	Summary          *string `json:"summary,omitempty"`
-	Location         *string `json:"location,omitempty"`
 	DesiredTitles    *string `json:"desiredTitles,omitempty"`
 	DesiredLocations *string `json:"desiredLocations,omitempty"`
 	MinSalary        *int64  `json:"minSalary,omitempty"`
 	// RemotePreference (step 130) is "", "onsite", "open" or "remote_only"; any other value is refused before anything
 	// is written.
 	RemotePreference *string `json:"remotePreference,omitempty"`
+	// FollowProfile sends the named values (summary, desiredTitles, desiredLocations, minSalary, remotePreference) back to following the
+	// profile's: the persona's own value is dropped. A name that is also set in the same request is refused.
+	FollowProfile []string `json:"followProfile,omitempty"`
 }
 
 func UpdatePersonaDetails(args UpdatePersonaDetailsArgs) error {
@@ -300,61 +305,77 @@ func UpdatePersonaDetails(args UpdatePersonaDetailsArgs) error {
 		}
 		args.RemotePreference = &trimmed
 	}
+	set := map[string]bool{
+		FieldSummary: args.Summary != nil, FieldDesiredTitles: args.DesiredTitles != nil, FieldDesiredLocations: args.DesiredLocations != nil,
+		FieldMinSalary: args.MinSalary != nil, FieldRemotePreference: args.RemotePreference != nil,
+	}
+	for _, f := range args.FollowProfile {
+		known := false
+		for _, k := range detailFields {
+			known = known || k == f
+		}
+		if !known {
+			return ErrUnknownFollowField
+		}
+		if set[f] {
+			return ErrSetAndFollow
+		}
+	}
 
-	// A plain upsert seeded from whatever's already there, then
-	// overwritten field-by-field only where args supplied a value —
-	// simplest correct way to express "partial update" against
-	// SQLite's own INSERT ... ON CONFLICT without hand-building a
-	// dynamic SET clause.
-	existing, err := FetchPersonaDetails(args.PersonaID)
+	// Plan 174: the persona's own row is read, changed field by field where args supplied a value, and written back whole (a plain
+	// upsert); the old summary/goal columns are no longer read or written.
+	row, err := readDetailsRow(db.CareerDB, args.PersonaID)
 	if err != nil {
 		return err
 	}
-	d := personaDetails{}
-	if existing.PersonaDetails != nil {
-		d = *existing.PersonaDetails
+	pv, err := profileValuesOfPersona(db.CareerDB, args.PersonaID)
+	if err != nil {
+		return err
 	}
+	before := effectiveDetails(args.PersonaID, row, pv)
+
 	if args.Headline != nil {
-		d.Headline = *args.Headline
-	}
-	if args.Summary != nil {
-		d.Summary = *args.Summary
+		row.headline = *args.Headline
 	}
 	if args.Location != nil {
-		d.Location = *args.Location
+		row.location = *args.Location
+	}
+	if args.Summary != nil {
+		row.summary = sql.NullString{String: *args.Summary, Valid: true}
 	}
 	if args.DesiredTitles != nil {
-		d.DesiredTitles = *args.DesiredTitles
+		row.titles = sql.NullString{String: *args.DesiredTitles, Valid: true}
 	}
 	if args.DesiredLocations != nil {
-		d.DesiredLocations = *args.DesiredLocations
+		row.locations = sql.NullString{String: *args.DesiredLocations, Valid: true}
 	}
 	if args.MinSalary != nil {
-		d.MinSalary = *args.MinSalary
+		row.salary = sql.NullInt64{Int64: *args.MinSalary, Valid: true}
 	}
 	if args.RemotePreference != nil {
-		d.RemotePreference = *args.RemotePreference
+		row.remote = sql.NullString{String: *args.RemotePreference, Valid: true}
 	}
+	if err := row.follow(args.FollowProfile); err != nil {
+		return err
+	}
+	after := effectiveDetails(args.PersonaID, row, pv)
 
-	before := personaDetails{}
-	if existing.PersonaDetails != nil {
-		before = *existing.PersonaDetails
-	}
 	_, err = db.CareerDB.Exec(
-		`INSERT INTO persona_details (persona_id, headline, summary, location, desired_titles, desired_locations, min_salary, remote_preference, updated_at)
+		`INSERT INTO persona_details (persona_id, headline, location, summary_override, desired_titles_override, desired_locations_override,
+		   min_salary_override, remote_preference_override, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
 		 ON CONFLICT(persona_id) DO UPDATE SET
 			headline = excluded.headline,
-			summary = excluded.summary,
 			location = excluded.location,
-			desired_titles = excluded.desired_titles,
-			desired_locations = excluded.desired_locations,
-			min_salary = excluded.min_salary,
-			remote_preference = excluded.remote_preference,
+			summary_override = excluded.summary_override,
+			desired_titles_override = excluded.desired_titles_override,
+			desired_locations_override = excluded.desired_locations_override,
+			min_salary_override = excluded.min_salary_override,
+			remote_preference_override = excluded.remote_preference_override,
 			updated_at = excluded.updated_at`,
-		args.PersonaID, d.Headline, d.Summary, d.Location, d.DesiredTitles, d.DesiredLocations, d.MinSalary, d.RemotePreference,
+		args.PersonaID, row.headline, row.location, row.summary, row.titles, row.locations, row.salary, row.remote,
 	)
-	if err == nil && scoredDetailsDiffer(before, d) {
+	if err == nil && scoredDetailsDiffer(before, after) {
 		publishPersonaChanged(args.PersonaID, ChangeDetails)
 	}
 	return err
@@ -524,7 +545,7 @@ type getPersonaDetailsArgs struct {
 func RegisterGetPersonaDetails(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "get_persona_details",
-		Description: "Read a persona's own career details (headline/summary/location/desired titles/desired locations/min salary/remote preference), skills, and experience. personaDetails is null if none has been set yet. remotePreference is empty (not set), \"onsite\" (on-site only), \"open\" (open to remote or hybrid) or \"remote_only\".",
+		Description: "Read what a persona shows: its career details (headline/summary/location/desired titles/desired locations/min salary/remote preference), skills, and experience. The summary and the goals are the profile's unless the persona has its own; overridden lists the ones that are its own. personaDetails is null if neither the persona nor its profile has any yet. remotePreference is empty (not set), \"onsite\" (on-site only), \"open\" (open to remote or hybrid) or \"remote_only\".",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args getPersonaDetailsArgs) (*mcp.CallToolResult, any, error) {
 		if args.PersonaID == "" {
 			return db.ErrResult("personaId is required"), nil, nil
@@ -538,20 +559,21 @@ func RegisterGetPersonaDetails(server *mcp.Server) {
 }
 
 type updatePersonaDetailsToolArgs struct {
-	PersonaID        string  `json:"personaId" jsonschema:"the persona whose details to update, from create_persona or list_personas"`
-	Headline         *string `json:"headline,omitempty" jsonschema:"a short headline, e.g. \"Senior Backend Engineer\""`
-	Summary          *string `json:"summary,omitempty" jsonschema:"a free-text bio/summary"`
-	Location         *string `json:"location,omitempty" jsonschema:"where the user is currently based"`
-	DesiredTitles    *string `json:"desiredTitles,omitempty" jsonschema:"job titles the user is looking for, comma-separated"`
-	DesiredLocations *string `json:"desiredLocations,omitempty" jsonschema:"locations the user is willing to work in, comma-separated"`
-	MinSalary        *int64  `json:"minSalary,omitempty" jsonschema:"the user's own minimum acceptable salary"`
-	RemotePreference *string `json:"remotePreference,omitempty" jsonschema:"whether the user wants remote work: \"onsite\" (on-site only), \"open\" (open to remote or hybrid as well) or \"remote_only\"; an empty string clears it (not set)"`
+	PersonaID        string   `json:"personaId" jsonschema:"the persona whose details to update, from create_persona or list_personas"`
+	Headline         *string  `json:"headline,omitempty" jsonschema:"a short headline, e.g. \"Senior Backend Engineer\""`
+	Summary          *string  `json:"summary,omitempty" jsonschema:"a free-text bio/summary"`
+	Location         *string  `json:"location,omitempty" jsonschema:"where the user is currently based"`
+	DesiredTitles    *string  `json:"desiredTitles,omitempty" jsonschema:"job titles the user is looking for, comma-separated"`
+	DesiredLocations *string  `json:"desiredLocations,omitempty" jsonschema:"locations the user is willing to work in, comma-separated"`
+	MinSalary        *int64   `json:"minSalary,omitempty" jsonschema:"the user's own minimum acceptable salary"`
+	RemotePreference *string  `json:"remotePreference,omitempty" jsonschema:"whether the user wants remote work: \"onsite\" (on-site only), \"open\" (open to remote or hybrid as well) or \"remote_only\"; an empty string clears it (not set)"`
+	FollowProfile    []string `json:"followProfile,omitempty" jsonschema:"values to send back to following the profile's own: any of summary, desiredTitles, desiredLocations, minSalary, remotePreference"`
 }
 
 func RegisterUpdatePersonaDetails(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "update_persona_details",
-		Description: "Update a persona's own career details. Only the fields provided are changed — omitted fields keep their current value.",
+		Description: "Update a persona's own career details. Only the fields provided are changed — omitted fields keep their current value. The summary and the goals (desiredTitles, desiredLocations, minSalary, remotePreference) normally come from the profile, which every persona follows; setting one here gives THIS persona its own value and changes nothing for the other personas. followProfile sends such a value back to the profile's.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args updatePersonaDetailsToolArgs) (*mcp.CallToolResult, any, error) {
 		if args.PersonaID == "" {
 			return db.ErrResult("personaId is required"), nil, nil
@@ -565,6 +587,7 @@ func RegisterUpdatePersonaDetails(server *mcp.Server) {
 			DesiredLocations: args.DesiredLocations,
 			MinSalary:        args.MinSalary,
 			RemotePreference: args.RemotePreference,
+			FollowProfile:    args.FollowProfile,
 		})
 		if err != nil {
 			return personaAwareErrResult("update persona details", args.PersonaID, err), nil, nil

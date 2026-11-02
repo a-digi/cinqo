@@ -51,19 +51,21 @@ func TestApplyDecisions_CreatesEverythingUnderTheRunsProfile(t *testing.T) {
 	if n := count(t, `SELECT COUNT(*) FROM personas WHERE profile_id = ?`, other); n != 0 {
 		t.Fatalf("%d personas under another profile", n)
 	}
-	// Details, with the trimmed text and the salary.
-	var headline, summary, location, titles, locs string
-	var salary int
-	if err := db.CareerDB.QueryRow(`SELECT headline, summary, location, desired_titles, desired_locations, min_salary FROM persona_details WHERE persona_id = ?`, created[0].ID).
-		Scan(&headline, &summary, &location, &titles, &locs, &salary); err != nil {
-		t.Fatal(err)
+	// Details, with the trimmed text and the salary: they were the profile's first values, so the persona follows them (plan 174).
+	fetched, err := FetchPersonaDetails(created[0].ID)
+	if err != nil || fetched.PersonaDetails == nil {
+		t.Fatalf("details: %v %+v", err, fetched.PersonaDetails)
 	}
+	d := fetched.PersonaDetails
 	// Only the ends are trimmed: the inner spaces of what was typed stay.
-	if headline != "h   Backend" {
-		t.Fatalf("headline = %q", headline)
+	if d.Headline != "h   Backend" {
+		t.Fatalf("headline = %q", d.Headline)
 	}
-	if location != "Hamburg" || titles != "Dev" || locs != "Remote" || salary != 70000 || summary != "s" {
-		t.Fatalf("details = %q %q %q %q %d", location, titles, locs, summary, salary)
+	if d.Location != "Hamburg" || d.DesiredTitles != "Dev" || d.DesiredLocations != "Remote" || d.MinSalary != 70000 || d.Summary != "s" {
+		t.Fatalf("details = %+v", d)
+	}
+	if len(d.Overridden) != 0 {
+		t.Fatalf("the first persona of a profile follows the values it filled in: overridden = %v", d.Overridden)
 	}
 	// Skills: trimmed and de-duplicated, case-insensitively.
 	rows, err := db.CareerDB.Query(`SELECT skill FROM career_skills WHERE persona_id = ? ORDER BY skill`, created[0].ID)

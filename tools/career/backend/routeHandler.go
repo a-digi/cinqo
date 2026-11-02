@@ -48,7 +48,8 @@ func writePersonaAwareError(w http.ResponseWriter, action string, err error) {
 		http.Error(w, "unknown persona id", http.StatusBadRequest)
 		return
 	}
-	if errors.Is(err, persona.ErrInvalidRemotePreference) || errors.Is(err, persona.ErrProfileItem) {
+	if errors.Is(err, persona.ErrInvalidRemotePreference) || errors.Is(err, persona.ErrProfileItem) ||
+		errors.Is(err, persona.ErrUnknownFollowField) || errors.Is(err, persona.ErrSetAndFollow) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}

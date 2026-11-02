@@ -78,7 +78,7 @@ func TestProfilesList_CarriesCompleteness(t *testing.T) {
 	if _, err := persona.CreatePersona(fullID, "Bare", ""); err != nil {
 		t.Fatal(err)
 	}
-	mustExec(t, `INSERT INTO persona_details (persona_id, headline, summary) VALUES (?, 'Go dev', 'Builds APIs')`, pid)
+	mustExec(t, `INSERT INTO persona_details (persona_id, headline, summary_override) VALUES (?, 'Go dev', 'Builds APIs')`, pid)
 	for i, skill := range []string{"go", "sql", "docker"} {
 		mustExec(t, `INSERT INTO career_skills (id, persona_id, skill) VALUES (?, ?, ?)`, "s"+string(rune('a'+i)), pid, skill)
 	}
@@ -273,5 +273,51 @@ func TestProfileDelete_RemovesItsPhotoLinksOnly(t *testing.T) {
 	}
 	if n := count(`SELECT COUNT(*) FROM photos WHERE media_file_id = 'm1'`); n != 1 {
 		t.Fatalf("the photo left the library (%d)", n)
+	}
+}
+
+// Plan 174: "Headline and summary" counts the summary a persona SHOWS: its own, else the profile's.
+func TestProfilesList_CompletenessCountsTheEffectiveSummary(t *testing.T) {
+	setupHandlerDB(t)
+	summaryDone := func(name string) bool {
+		for _, it := range listProfilesJSON(t)[name].Items {
+			if it.Key == "summary" {
+				return it.Done
+			}
+		}
+		t.Fatalf("no summary item for %s", name)
+		return false
+	}
+	mk := func(name string) (profileID, personaID string) {
+		id, err := profile.CreateProfile(name, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		p, err := persona.CreatePersona(id, "P", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id, p
+	}
+	// a headline on the persona and a summary only on the profile (followed): done
+	followID, followP := mk("Follows")
+	mustExec(t, `INSERT INTO persona_details (persona_id, headline) VALUES (?, 'Dev')`, followP)
+	mustExec(t, `INSERT INTO profile_details (profile_id, summary) VALUES (?, 'About me')`, followID)
+	// the persona words its summary itself as empty, the profile has one: not done
+	emptyID, emptyP := mk("OwnEmpty")
+	mustExec(t, `INSERT INTO persona_details (persona_id, headline, summary_override) VALUES (?, 'Dev', '')`, emptyP)
+	mustExec(t, `INSERT INTO profile_details (profile_id, summary) VALUES (?, 'About me')`, emptyID)
+	// a summary but no headline: not done
+	noHeadID, noHeadP := mk("NoHeadline")
+	mustExec(t, `INSERT INTO persona_details (persona_id, headline) VALUES (?, '  ')`, noHeadP)
+	mustExec(t, `INSERT INTO profile_details (profile_id, summary) VALUES (?, 'About me')`, noHeadID)
+	// a headline and nothing to follow: not done
+	_, bareP := mk("Bare")
+	mustExec(t, `INSERT INTO persona_details (persona_id, headline) VALUES (?, 'Dev')`, bareP)
+
+	for name, want := range map[string]bool{"Follows": true, "OwnEmpty": false, "NoHeadline": false, "Bare": false} {
+		if got := summaryDone(name); got != want {
+			t.Errorf("%s: summary done = %v, want %v", name, got, want)
+		}
 	}
 }

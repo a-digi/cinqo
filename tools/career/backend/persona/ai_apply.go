@@ -233,11 +233,8 @@ func insertAppliedPersona(tx *sql.Tx, profileID, runID string, p ProposedPersona
 	); err != nil {
 		return "", err
 	}
-	if _, err := tx.Exec(
-		`INSERT INTO persona_details (persona_id, headline, summary, location, desired_titles, desired_locations, min_salary, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
-		id, p.Details.Headline, p.Details.Summary, p.Details.Location, p.Details.DesiredTitles, p.Details.DesiredLocations, p.Details.MinSalary,
-	); err != nil {
+	// Plan 174: the proposed summary and goals fill the profile's where it has none; the persona follows, or keeps what differs.
+	if err := insertAppliedDetails(tx, profileID, id, p.Details); err != nil {
 		return "", err
 	}
 	// Plan 173: a skill the profile's library already has (same text, any case) is linked, the rest is the persona's own; the same for

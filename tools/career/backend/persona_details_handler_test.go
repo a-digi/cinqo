@@ -85,3 +85,48 @@ func TestPersonaDetailsRouteRefusesAnInvalidRemotePreference(t *testing.T) {
 		t.Errorf("unknown persona: %d", rec.Code)
 	}
 }
+
+// Plan 174: a value sent through the route is the persona's own, "overridden" says so, followProfile sends it back, and a wrong
+// followProfile is a 400 with the reason and writes nothing.
+func TestPersonaDetailsRouteReportsOwnValuesAndFollowProfile(t *testing.T) {
+	id := personaForHandler(t)
+	mustExec(t, `INSERT INTO profile_details (profile_id, summary) SELECT profile_id, 'Profile text' FROM personas WHERE id = ?`, id)
+	var res struct {
+		PersonaDetails struct {
+			Summary    string   `json:"summary"`
+			Overridden []string `json:"overridden"`
+		} `json:"personaDetails"`
+	}
+	read := func(rec *httptest.ResponseRecorder) {
+		t.Helper()
+		wantStatus(t, rec, 200)
+		res.PersonaDetails.Overridden = nil
+		if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
+			t.Fatal(err)
+		}
+	}
+	read(detailsCall(t, "GET", "/persona-details?personaId="+id, ""))
+	if res.PersonaDetails.Summary != "Profile text" || len(res.PersonaDetails.Overridden) != 0 || !strings.Contains(detailsCall(t, "GET", "/persona-details?personaId="+id, "").Body.String(), `"overridden":[]`) {
+		t.Errorf("a persona without a row follows the profile: %+v", res.PersonaDetails)
+	}
+	read(detailsCall(t, "POST", "/persona-details", `{"personaId":"`+id+`","summary":"Own"}`))
+	if res.PersonaDetails.Summary != "Own" || len(res.PersonaDetails.Overridden) != 1 || res.PersonaDetails.Overridden[0] != "summary" {
+		t.Errorf("own value: %+v", res.PersonaDetails)
+	}
+	for _, body := range []string{
+		`{"personaId":"` + id + `","headline":"Lost","followProfile":["headline"]}`,
+		`{"personaId":"` + id + `","headline":"Lost","summary":"x","followProfile":["summary"]}`,
+	} {
+		rec := detailsCall(t, "POST", "/persona-details", body)
+		if rec.Code != 400 || !strings.Contains(rec.Body.String(), "followProfile") && !strings.Contains(rec.Body.String(), "cannot be set") {
+			t.Errorf("%s: status %d, body %q", body, rec.Code, rec.Body.String())
+		}
+	}
+	read(detailsCall(t, "POST", "/persona-details", `{"personaId":"`+id+`","followProfile":["summary"]}`))
+	if res.PersonaDetails.Summary != "Profile text" || len(res.PersonaDetails.Overridden) != 0 {
+		t.Errorf("after following again: %+v", res.PersonaDetails)
+	}
+	if strings.Contains(detailsCall(t, "GET", "/persona-details?personaId="+id, "").Body.String(), "Lost") {
+		t.Error("a refused request wrote its headline")
+	}
+}

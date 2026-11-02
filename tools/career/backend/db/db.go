@@ -132,6 +132,15 @@ func InitDatabases() error {
 		careerDB.Close()
 		return fmt.Errorf("failed to lift the personas' skills and experience to their profiles: %w", err)
 	}
+	// Plan 174, step 1: the override columns on an installed persona_details, then the one-time lift of the summary and goals.
+	if err := migratePersonaDetailsOverrides(careerDB); err != nil {
+		careerDB.Close()
+		return fmt.Errorf("failed to add the persona_details override columns: %w", err)
+	}
+	if err := migrateLiftSummaryAndGoals(careerDB); err != nil {
+		careerDB.Close()
+		return fmt.Errorf("failed to lift the summary and goals of the personas to their profiles: %w", err)
+	}
 	CareerDB = careerDB
 
 	jobsDir = dbDir
@@ -320,6 +329,24 @@ CREATE TABLE IF NOT EXISTS persona_details (
     -- reads the free text as it always did), 'onsite' (on-site only), 'open' (open to remote or hybrid as well) or
     -- 'remote_only'. Also added to existing installs by migratePersonaDetailsRemotePreference. See
     -- plan/ai/tools/career/step-130-remote-preference-and-location-score.md.
+    remote_preference TEXT NOT NULL DEFAULT '' CHECK (remote_preference IN ('', 'onsite', 'open', 'remote_only')),
+    -- plan 174: the persona's OWN summary and goals; NULL follows profile_details, any value (also '' or 0) is its own. The columns
+    -- above are the values from before plan 174: after migrateLiftSummaryAndGoals nothing reads them any more.
+    summary_override           TEXT,
+    desired_titles_override    TEXT,
+    desired_locations_override TEXT,
+    min_salary_override        INTEGER,
+    remote_preference_override TEXT CHECK (remote_preference_override IN ('', 'onsite', 'open', 'remote_only')),
+    updated_at        TEXT
+);
+
+-- Plan 174: the summary and the goals of a profile, global to it; a persona follows them unless it has its own (persona_details).
+CREATE TABLE IF NOT EXISTS profile_details (
+    profile_id        TEXT PRIMARY KEY REFERENCES profiles(id) ON DELETE CASCADE,
+    summary           TEXT NOT NULL DEFAULT '',
+    desired_titles    TEXT NOT NULL DEFAULT '',
+    desired_locations TEXT NOT NULL DEFAULT '',
+    min_salary        INTEGER,
     remote_preference TEXT NOT NULL DEFAULT '' CHECK (remote_preference IN ('', 'onsite', 'open', 'remote_only')),
     updated_at        TEXT
 );
