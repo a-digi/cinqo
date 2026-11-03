@@ -49,6 +49,9 @@ func TestTheLocalPlatformIsOffUntilTheSettingsAreComplete(t *testing.T) {
 	if e.RequiresKey() || e.OffersAllTools() || e.ToolsFor == nil || e.NoTools {
 		t.Errorf("requiresKey %v offersAllTools %v: want no key, never every tool, decided per model", e.RequiresKey(), e.OffersAllTools())
 	}
+	if !e.AnswerRepeatedCalls {
+		t.Error("a small local model repeats calls it already has the answer to")
+	}
 	if !e.ShortSteps {
 		t.Error("a small local model needs the work in short steps")
 	}

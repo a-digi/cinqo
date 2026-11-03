@@ -60,6 +60,8 @@ export interface SendMessageResult {
   content: string
   createdAt: string
   durationMs?: number
+  // How many tool calls of the turn that produced this message the core refused or rejected; absent from an older core.
+  toolErrors?: number
 }
 
 // TurnRunStatus/ActiveTurn/StartedTurnRun mirror the primary admin
@@ -79,6 +81,9 @@ interface ActiveTurn {
   startedAt: string
   userContent: string
   log: string[]
+  // How many tool calls of the turn the core refused or rejected (a tool that was not available, arguments that failed the schema).
+  // Absent from an older core.
+  toolErrors?: number
 }
 
 interface StartedTurnRun {
@@ -122,10 +127,10 @@ async function fetchConversationDetail(conversationId: string): Promise<Conversa
 // reload) need. See
 // plan/ai/tools/career/step-60-generate-with-ai-live-chat-window.md.
 export async function awaitTurnCompletion(conversationId: string): Promise<SendMessageResult> {
-  for (;;) {
-    const turn = await fetchActiveTurn(conversationId)
-    if (turn.status !== 'running') break
+  let turn = await fetchActiveTurn(conversationId)
+  while (turn.status === 'running') {
     await new Promise((resolve) => setTimeout(resolve, TURN_POLL_INTERVAL_MS))
+    turn = await fetchActiveTurn(conversationId)
   }
 
   const detail = await fetchConversationDetail(conversationId)
@@ -140,7 +145,7 @@ export async function awaitTurnCompletion(conversationId: string): Promise<SendM
     throw new CoreApiError(502, last.error ?? 'the AI turn failed')
   }
 
-  return { role: last.role, content: last.content, createdAt: last.createdAt, durationMs: last.durationMs }
+  return { role: last.role, content: last.content, createdAt: last.createdAt, durationMs: last.durationMs, toolErrors: turn.toolErrors }
 }
 
 export async function sendMessage(conversationId: string, content: string): Promise<SendMessageResult> {

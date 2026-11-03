@@ -57,6 +57,8 @@ func Entry(db *sql.DB) platform.Entry {
 		},
 		// A small local model needs the work in short steps (measured on the CV import).
 		ShortSteps: true,
+		// A small model repeats a call it already has the answer to (the same document read again and again).
+		AnswerRepeatedCalls: true,
 		// What a conversation can hold at once is the context size of the settings (0 while the local AI is not configured).
 		ContextTokens: func() int {
 			if s, ok := load(); ok && s.Configured() {

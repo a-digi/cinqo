@@ -60,6 +60,9 @@ type activeTurnResponse struct {
 	PromptTokens     int `json:"promptTokens"`
 	CompletionTokens int `json:"completionTokens"`
 	TotalTokens      int `json:"totalTokens"`
+	// ToolErrors is how many tool calls of this turn were refused or rejected so far (a tool that was not available, arguments that
+	// failed the schema): a caller working in steps reads it to see that a step could not do what it was asked.
+	ToolErrors int `json:"toolErrors"`
 	// What the provider has reported so far besides the counts above (plan/ai/conversation/step-178, step 3), live like they are.
 	usageExtrasResponse
 	// SubAgents (step 41 — Sub Agents) — every sub-agent this turn has
@@ -143,6 +146,7 @@ func toActiveTurnResponse(t *conversation_entity.TurnRun, subAgents []*conversat
 		PromptTokens:              t.PromptTokens,
 		CompletionTokens:          t.CompletionTokens,
 		TotalTokens:               t.TotalTokens,
+		ToolErrors:                t.ToolErrors,
 		usageExtrasResponse:       usageExtrasOf(t.CacheReadTokens, t.CacheWriteTokens, t.ReasoningTokens, t.CostMicroUSD),
 		SubAgents:                 subAgentResponses,
 		Plan:                      plan,

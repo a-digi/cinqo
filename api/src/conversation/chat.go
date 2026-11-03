@@ -68,6 +68,16 @@ const maxToolIterations = 15
 // tool answers (e.g. a rejected call) without installing a real tool.
 var invokeToolFn = invokeToolCall
 
+// answeredRepeat is the reply for a call identical to one already answered in this turn: it is not run again. The reply is short on
+// purpose: the repeated answer itself (a whole document, for example) is what fills a small model's context.
+func answeredRepeat(answered map[string]int, call chatcompleter.ToolCall) (string, bool) {
+	round, ok := answered[callKey(call)]
+	if !ok {
+		return "", false
+	}
+	return fmt.Sprintf("You already made this exact %s call in round %d of this turn and got its result; it is still above. Use that result and go on with the task instead of calling again.", call.Name, round), true
+}
+
 // MaxToolIterations is the ceiling a conversation's own tool-iteration limit
 // (step 93) may not exceed: a conversation can lower its budget, never raise
 // it above this.
@@ -405,6 +415,8 @@ func runToolLoop(
 	limit := effectiveToolLimit(toolIterationLimit)
 	economy := economyOn(ctx) // plan/ai/conversation/step-45, step 3: only for a conversation created with compactToolResults
 	var memory callMemory
+	mediaIDs := mediaIDsIn(messages)  // the ids this conversation was given: a model's slip of the pen is put right against them
+	answered := map[string]int{}      // entry.AnswerRepeatedCalls: the round (1-based) in which a call of this turn was answered
 	var rejections argumentRejections // step 93: rejected tool calls this turn
 	var lastRejectedTool, lastRejection string
 	var allLinks []tool_mcp.ResourceLink
@@ -518,27 +530,31 @@ func runToolLoop(
 			ToolCalls: replayableToolCalls(result.ToolCalls),
 		}}
 		for _, call := range result.ToolCalls {
+			call = correctMediaReferences(call, mediaIDs)
 			if logStep != nil {
 				logStep(fmt.Sprintf("iteration %d: invoking tool %s", i+1, call.Name))
 			}
-			var text string
+			var text, rawText string
 			var links []tool_mcp.ResourceLink
 			repeatText, repeated := "", false
 			if economy {
 				repeatText, repeated = memory.answer(call, i)
+			}
+			if !repeated && entry.AnswerRepeatedCalls {
+				repeatText, repeated = answeredRepeat(answered, call)
 			}
 			switch {
 			case refusesDisallowedTool(ctx, call.Name):
 				// The conversation was created with an allowlist (step 113) and this tool is not on
 				// it: refused before anything else can handle the name, the orchestration and
 				// sub-agent tools included.
-				text = "tool unavailable"
+				text, rawText = refusedCall, refusedCall
 			case refusesUnofferedCall(orchestrationMode, depth, call.Name, tools):
 				// Defense in depth: a composer orchestrator and every
 				// sub-agent may only call what they were actually
 				// offered, so a hallucinated or remembered tool name
 				// can never reach a real tool.
-				text = "tool unavailable"
+				text, rawText = refusedCall, refusedCall
 			case call.Name == runPlanToolName && turnRunID != "" && depth == 0:
 				text = invokeRunPlanCall(ctx, httpClient, entry, apiKey, model, mainDB, conversationDB, callerScopes, userID, dataDir, corePort, conversationID, turnRunID, call)
 			case call.Name == subAgentToolName && turnRunID != "":
@@ -556,6 +572,7 @@ func runToolLoop(
 			default:
 				var pending *pendingDelegation
 				text, links, pending = invokeToolFn(ctx, mainDB, callerScopes, userID, call, dataDir, corePort, conversationID)
+				rawText = text
 				if isArgumentRejection(text) {
 					lastRejectedTool, lastRejection = call.Name, text
 					text = rejections.record(tools, call.Name, text)
@@ -563,9 +580,15 @@ func runToolLoop(
 				if economy {
 					memory.after(call, i, text)
 				}
+				if entry.AnswerRepeatedCalls && !isArgumentRejection(text) {
+					answered[callKey(call)] = i + 1
+				}
 				if pending != nil && turnRunID != "" {
 					text += executeDelegation(httpClient, entry, apiKey, model, mainDB, conversationDB, callerScopes, userID, dataDir, corePort, conversationID, turnRunID, pending, depth)
 				}
+			}
+			if isToolFailure(rawText) {
+				reportToolError(ctx)
 			}
 			group = append(group, chatcompleter.Message{Role: "tool", ToolCallID: call.ID, Content: truncateToolResult(text)})
 			allLinks = append(allLinks, links...)

@@ -130,8 +130,10 @@ export function ImportCvPage() {
           return conversation.id
         },
         recordRun: (conversationId) => createCVImportRun({ fileId, originalFilename, conversationId }),
-        askAi: async (conversationId, runId, followUp) =>
-          (await sendMessage(conversationId, followUp ?? buildImportPrompt(fileId, runId))).content,
+        askAi: async (conversationId, runId, followUp) => {
+          const message = await sendMessage(conversationId, followUp ?? buildImportPrompt(fileId, runId))
+          return { reply: message.content, toolErrors: message.toolErrors }
+        },
         // A platform whose models need short steps gets the import as a sequence of small messages, not the long prompt.
         stepMessages: platform.needsShortSteps ? (runId) => buildImportSteps(fileId, runId) : undefined,
         endRun: finishCVImportRun,

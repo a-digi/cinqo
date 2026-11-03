@@ -179,3 +179,12 @@ func TestTheMessagesOfAConversationGetTheirTurnsNumbersAndAFailedLookupLeavesThe
 		t.Errorf("a failed lookup changed a message: %+v", again[0].usageExtrasResponse)
 	}
 }
+
+func TestTheActiveTurnAlwaysSaysHowManyToolCallsWereRefused(t *testing.T) {
+	for n, want := range map[int]string{0: `"toolErrors":0`, 1: `"toolErrors":1`, 7: `"toolErrors":7`} {
+		got := jsonOf(t, toActiveTurnResponse(&conversation_entity.TurnRun{ID: "t", Status: "completed", ToolErrors: n}, nil, nil))
+		if !strings.Contains(got, want) {
+			t.Errorf("%d: %s missing in %s", n, want, got)
+		}
+	}
+}

@@ -214,6 +214,8 @@ func runDetachedTurn(
 	// plan/ai/conversation/step-35-persist-per-turn-token-usage.md.
 	var totalPromptTokens, totalCompletionTokens int
 	addUsage := usageReporter(runs, turnRunID)
+	// The refused and rejected tool calls of this turn are counted on its row, live (a caller working in steps reads them).
+	ctx = withToolErrorReporter(ctx, func() { _ = runs.AddToolError(turnRunID) })
 	reportUsage := func(usage chatcompleter.Usage) {
 		totalPromptTokens += usage.PromptTokens
 		totalCompletionTokens += usage.CompletionTokens

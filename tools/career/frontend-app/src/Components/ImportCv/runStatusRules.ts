@@ -79,6 +79,10 @@ const CV_UNREADABLE_REPLY = /^\s*could not read the cv/i
 
 export const CV_UNREADABLE_MESSAGE = 'The CV file could not be read; it may have expired or has no text. Upload it again.'
 
+// The first step asked the AI to read the CV and one of its tool calls was refused or rejected: the file did not reach it (a small model once
+// wrote the file reference wrongly, got "tool unavailable" and carried on with nothing). Said as it is, not as "may have expired".
+export const CV_READ_FAILED_MESSAGE = 'The AI could not read the CV: its request for the file was refused. Process the CV again.'
+
 export function isCvUnreadableReply(reply: string): boolean {
   return CV_UNREADABLE_REPLY.test(reply)
 }

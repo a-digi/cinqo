@@ -65,6 +65,11 @@ type Entry struct {
 	// answers), read at call time; 0 or nil means the platform states none (the cloud platforms). A caller whose work needs a
 	// minimum can then say so before it starts, instead of failing half way. It is listed as contextTokens.
 	ContextTokens func() int
+	// AnswerRepeatedCalls says a model of this platform may repeat a tool call it already made in the same turn (a real run of a small
+	// local model called the same PDF reader five times in a row, each answer the whole document, until the context was full). An
+	// identical call (same tool, same arguments) that was already answered in the turn is then not run again: the model is told its
+	// result is above and to go on.
+	AnswerRepeatedCalls bool
 	// ToolHint, when set, is a system message added to a turn that is offered tools (a small model needs telling).
 	ToolHint string
 }

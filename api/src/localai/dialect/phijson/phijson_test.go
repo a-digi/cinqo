@@ -110,14 +110,15 @@ func TestPhiReplyIsReadBackIntoToolCalls(t *testing.T) {
 
 func TestPhiTextThatIsNotACallIsLeftAlone(t *testing.T) {
 	for name, text := range map[string]string{
-		"plain answer":            "The capital of France is Paris.",
-		"a tool nobody offered":   `[{"name": "delete_everything", "arguments": {}}]`,
-		"one good and one bad":    `[{"name": "list_profiles"},{"name": "delete_everything"}]`,
-		"invalid json":            `[{"name": "list_profiles", "arguments": {}`,
-		"an empty list":           `[]`,
-		"arguments that are text": `[{"name": "list_profiles", "arguments": "yes please"}]`,
-		"arguments as a list":     `[{"name": "list_profiles", "arguments": [1]}]`,
-		"json that is no call":    `{"answer": 42}`,
+		"plain answer":             "The capital of France is Paris.",
+		"a tool nobody offered":    `[{"name": "delete_everything", "arguments": {}}]`,
+		"one good and one bad":     `[{"name": "list_profiles"},{"name": "delete_everything"}]`,
+		"a string that never ends": `[{"name": "list_profiles", "arguments": {"a": "never closed}`,
+		"no bracket at all":        `"name": "list_profiles"`,
+		"an empty list":            `[]`,
+		"arguments that are text":  `[{"name": "list_profiles", "arguments": "yes please"}]`,
+		"arguments as a list":      `[{"name": "list_profiles", "arguments": [1]}]`,
+		"json that is no call":     `{"answer": 42}`,
 	} {
 		r := decoded(text)
 		if len(r.ToolCalls) != 0 || len(r.Message.ToolCalls) != 0 || r.Message.Content != text || r.FinishReason != "stop" {

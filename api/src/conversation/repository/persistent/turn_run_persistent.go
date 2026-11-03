@@ -69,6 +69,12 @@ func (r *TurnRunPersistentRepo) AddUsage(id string, u conversation_entity.UsageA
 	return err
 }
 
+// AddToolError counts one refused or rejected tool call of this run (a single atomic increment, readable live like the usage).
+func (r *TurnRunPersistentRepo) AddToolError(id string) error {
+	_, err := r.db.Exec(`UPDATE turn_runs SET tool_errors = tool_errors + 1 WHERE id = ?`, id)
+	return err
+}
+
 // SetCancelRequested records that a stop was requested for this run —
 // mainly for observability/audit (see the entity field's own doc
 // comment); the actual cancellation happens via runner.go's in-memory

@@ -129,15 +129,14 @@ func (Dialect) Decode(result *chatcompleter.ChatCompletionResult, tools []chatco
 		if text[i] != '[' && text[i] != '{' {
 			continue
 		}
-		dec := json.NewDecoder(strings.NewReader(text[i:]))
-		var raw json.RawMessage
-		if err := dec.Decode(&raw); err != nil {
+		raw, consumed, ok := valueAt(text[i:])
+		if !ok {
 			continue
 		}
 		calls, ok := phiCallsOf(raw, offered)
 		if !ok {
 			// A value that is not a call is skipped whole: the calls inside a list with one bad entry are not calls either.
-			i += int(dec.InputOffset()) - 1
+			i += consumed - 1
 			continue
 		}
 		result.ToolCalls = calls
@@ -208,4 +207,18 @@ func stripFence(s string) string {
 		s = strings.TrimSpace(strings.TrimSuffix(s, f))
 	}
 	return s
+}
+
+// valueAt is the JSON value that starts at s[0] and how many bytes of s it took. A value a small model wrote with a bracket missing
+// or out of order is read after repairBrackets put the brackets right.
+func valueAt(s string) (raw json.RawMessage, consumed int, ok bool) {
+	dec := json.NewDecoder(strings.NewReader(s))
+	if err := dec.Decode(&raw); err == nil {
+		return raw, int(dec.InputOffset()), true
+	}
+	fixed, consumed, repaired := repairBrackets(s)
+	if !repaired || json.Unmarshal([]byte(fixed), &raw) != nil {
+		return nil, 0, false
+	}
+	return raw, consumed, true
 }

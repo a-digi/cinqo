@@ -38,6 +38,9 @@ type TurnRun struct {
 	// once it finishes. Zero for every turn run before this column
 	// existed. See plan/ai/conversation/step-34-realtime-token-usage-
 	// budget-and-display.md.
+	// ToolErrors is how many of this turn's tool calls the framework refused or rejected (a tool that was not available, or arguments
+	// that did not pass the schema), counted live like the token counts.
+	ToolErrors       int `db:"tool_errors" dbtype:"INTEGER" nullable:"false" json:"toolErrors"`
 	PromptTokens     int `db:"prompt_tokens" dbtype:"INTEGER" nullable:"false" json:"promptTokens"`
 	CompletionTokens int `db:"completion_tokens" dbtype:"INTEGER" nullable:"false" json:"completionTokens"`
 	TotalTokens      int `db:"total_tokens" dbtype:"INTEGER" nullable:"false" json:"totalTokens"`

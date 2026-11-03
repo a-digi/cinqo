@@ -142,10 +142,16 @@ func TestTheMigrationAddsTheColumnsToAnOlderDatabaseAndKeepsItsRows(t *testing.T
 		t.Fatalf("no migrations (err %v)", err)
 	}
 	sort.Strings(files)
-	last := files[len(files)-1]
-	if filepath.Base(last) != "31_10_2026_13_00_00.sql" {
-		t.Fatalf("the usage migration must be the last file by name (it needs the turn_runs table), the last is %s", filepath.Base(last))
+	usage := -1
+	for i, f := range files {
+		if filepath.Base(f) == "31_10_2026_13_00_00.sql" {
+			usage = i
+		}
 	}
+	if usage < 0 {
+		t.Fatal("the usage migration 31_10_2026_13_00_00.sql is missing")
+	}
+	last := files[usage] // later migrations (the tool-error count) come after it by name and are applied below
 	db, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
 		t.Fatal(err)
@@ -167,7 +173,7 @@ func TestTheMigrationAddsTheColumnsToAnOlderDatabaseAndKeepsItsRows(t *testing.T
 			}
 		}
 	}
-	for _, f := range files[:len(files)-1] {
+	for _, f := range files[:usage] {
 		apply(f)
 	}
 	if err := conversation_persistent.NewConversationPersistentRepo(db).Insert(newConversation("c1", "direct")); err != nil {
@@ -177,6 +183,14 @@ func TestTheMigrationAddsTheColumnsToAnOlderDatabaseAndKeepsItsRows(t *testing.T
 		t.Fatal(err)
 	}
 	apply(last)
+	// The migrations that come after it apply cleanly to that older database and keep the row, with their new counts at 0.
+	for _, f := range files[usage+1:] {
+		apply(f)
+	}
+	r, err := conversation_query.NewTurnRunQueryRepo(db).FindByID("old")
+	if err != nil || r.ToolErrors != 0 || r.PromptTokens != 500 {
+		t.Errorf("the old row after the later migrations: %+v %v", r, err)
+	}
 	got := turnTotals(t, db, "old")
 	if !sameTotals(got, totals{prompt: 500, completion: 50, total: 550}) {
 		t.Errorf("the old row after the migration: %+v cost %v", got, derefOrNil(got.cost))
@@ -184,5 +198,41 @@ func TestTheMigrationAddsTheColumnsToAnOlderDatabaseAndKeepsItsRows(t *testing.T
 	// applying the file a second time is an error (the columns exist): the runner records applied files, so it never does
 	if _, err := db.Exec(`ALTER TABLE turn_runs ADD COLUMN cost_microusd INTEGER`); err == nil {
 		t.Error("the column must exist after the migration")
+	}
+}
+
+func TestToolErrorsAreCountedLiveOnTheTurnRunAndOnNothingElse(t *testing.T) {
+	db := seedRuns(t)
+	runs := conversation_persistent.NewTurnRunPersistentRepo(db)
+	if err := conversation_persistent.NewConversationPersistentRepo(db).Insert(newConversation("c2", "direct")); err != nil {
+		t.Fatal(err)
+	}
+	if err := runs.Insert(&conversation_entity.TurnRun{ID: "t2", ConversationID: "c2", UserContent: "other", StartedAt: "2026-01-01T00:00:01Z"}); err != nil {
+		t.Fatal(err)
+	}
+	errorsOf := func(id string) int {
+		r, err := conversation_query.NewTurnRunQueryRepo(db).FindByID(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r.ToolErrors
+	}
+	if errorsOf("t1") != 0 {
+		t.Fatalf("a new turn starts with 0 (the column default): %d", errorsOf("t1"))
+	}
+	for i := 0; i < 3; i++ {
+		if err := runs.AddToolError("t1"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if errorsOf("t1") != 3 || errorsOf("t2") != 0 {
+		t.Errorf("t1 %d (want 3), t2 %d (want 0)", errorsOf("t1"), errorsOf("t2"))
+	}
+	if err := runs.AddToolError("no-such-run"); err != nil {
+		t.Errorf("counting for an unknown run is a harmless no-op: %v", err)
+	}
+	// The token counts are not touched by it.
+	if got := turnTotals(t, db, "t1"); got.prompt != 0 || got.total != 0 {
+		t.Errorf("usage changed: %+v", got)
 	}
 }
