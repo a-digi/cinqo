@@ -61,6 +61,10 @@ type Entry struct {
 	// given the same work as small steps). A caller that can split its work offers it that way; it is listed as
 	// needsShortSteps.
 	ShortSteps bool
+	// ContextTokens, when set, is how much a conversation on this platform can hold at once (the context of the model that
+	// answers), read at call time; 0 or nil means the platform states none (the cloud platforms). A caller whose work needs a
+	// minimum can then say so before it starts, instead of failing half way. It is listed as contextTokens.
+	ContextTokens func() int
 	// ToolHint, when set, is a system message added to a turn that is offered tools (a small model needs telling).
 	ToolHint string
 }

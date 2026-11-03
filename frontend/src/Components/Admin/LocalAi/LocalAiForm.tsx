@@ -14,10 +14,50 @@ import type {
   LocalAiStatus,
   LocalAiTestResult,
 } from './localAiApi'
-import { engineLine, fitKind, fitLabel, hardwareSummary, idleHelp, modelFacts, supportText, testSummary, toolsLine } from './localAiFormat'
-import { contextOptions, hasProblems, switchState, type Draft, type DraftProblems } from './localAiRules'
+import {
+  contextAdvice,
+  contextFits,
+  contextLabel,
+  engineLine,
+  fitKind,
+  fitLabel,
+  hardwareSummary,
+  idleHelp,
+  modelFacts,
+  supportText,
+  testSummary,
+  toolsLine,
+  type ContextAdvice,
+} from './localAiFormat'
+import { contextOptions, draftAfterPicking, hasProblems, switchState, type Draft, type DraftProblems } from './localAiRules'
 
 const accent = accents.teal
+
+// What to say about the chosen context size for a model that can use tools, with a one-click way to take the recommended size.
+function ContextAdviceLine({ advice, disabled, onTake }: { advice: ContextAdvice; disabled: boolean; onTake: (size: number) => void }) {
+  if (advice.kind === 'none') return null
+  const tone = advice.kind === 'ok' ? 'text-teal-800' : 'text-amber-800'
+  return (
+    <p className={`mt-2 text-xs ${tone}`}>
+      {advice.text}
+      {advice.kind === 'low' && advice.size !== null && (
+        <>
+          {' '}
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => {
+              onTake(advice.size ?? 0)
+            }}
+            className="font-semibold underline underline-offset-2 hover:no-underline focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 disabled:opacity-50"
+          >
+            Use {advice.size.toLocaleString('en-US')} tokens
+          </button>
+        </>
+      )}
+    </p>
+  )
+}
 
 function Card({ label, title, badge, children }: { label: string; title: string; badge?: React.ReactNode; children: React.ReactNode }) {
   return (
@@ -216,7 +256,7 @@ export function LocalAiForm({
                     checked={selected}
                     disabled={locked}
                     onChange={() => {
-                      onChange({ ...draft, modelId: m.id })
+                      onChange(draftAfterPicking(draft, m, saved.modelId))
                     }}
                     className="mt-1"
                   />
@@ -332,16 +372,29 @@ export function LocalAiForm({
               }}
               className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/30 disabled:bg-gray-50 disabled:text-gray-500 aria-[invalid=true]:border-red-400"
             >
-              {contextOptions(draft, catalog).map((n) => (
-                <option key={n} value={n}>
-                  {n.toLocaleString('en-US')} tokens
-                </option>
-              ))}
+              {contextOptions(draft, catalog).map((n) => {
+                const model = catalog.find((m) => m.id === draft.modelId)
+                return (
+                  <option key={n} value={n} disabled={!contextFits(model, n) && n !== draft.contextTokens}>
+                    {contextLabel(n, model)}
+                  </option>
+                )
+              })}
             </select>
             <p id={`${ctxId}-note`} className={`mt-1 text-xs ${problems.contextTokens ? 'text-red-700' : 'text-gray-500'}`}>
               {problems.contextTokens ??
                 'How much of a conversation the model reads at once. A larger context lets it remember more and uses more memory. A conversation that grows past it must be started again.'}
             </p>
+            <ContextAdviceLine
+              advice={contextAdvice(
+                draft.contextTokens,
+                catalog.find((m) => m.id === draft.modelId),
+              )}
+              disabled={locked}
+              onTake={(size) => {
+                onChange({ ...draft, contextTokens: size })
+              }}
+            />
           </div>
           <div>
             <label htmlFor={idleId} className="block text-sm font-medium text-gray-900">

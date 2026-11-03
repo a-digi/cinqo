@@ -58,6 +58,66 @@ export function toolsLine(m: Pick<LocalAiModel, 'tools'>): string {
     : 'Cannot use tools: it only answers.'
 }
 
+// The context the memory rule already allows for (the same constant as the server's): a larger context adds its own cache.
+export const CONTEXT_BASELINE = 4096
+
+// The memory a context size adds for this model, in bytes: its cache beyond the baseline (0 when the cache size is not stated).
+export function contextCostBytes(model: Pick<LocalAiModel, 'kvBytesPerToken'> | undefined, tokens: number): number {
+  if (!model || model.kvBytesPerToken <= 0 || !Number.isInteger(tokens) || tokens <= CONTEXT_BASELINE) return 0
+  return model.kvBytesPerToken * (tokens - CONTEXT_BASELINE)
+}
+
+// Whether this computer has the memory for a context size with this model; true when that is not known (never held against it).
+export function contextFits(model: Pick<LocalAiModel, 'largestContext'> | undefined, tokens: number): boolean {
+  const largest = model?.largestContext
+  if (largest === undefined || largest === null || largest === 0) return true
+  return tokens <= largest
+}
+
+export type ContextAdviceKind = 'none' | 'ok' | 'low' | 'cannot'
+
+export interface ContextAdvice {
+  kind: ContextAdviceKind
+  text: string
+  // The size to offer with one click (only for 'low').
+  size: number | null
+}
+
+// What to tell about the chosen context size for a model that can use tools: nothing for a model that cannot, a confirmation when
+// the size is enough, a recommendation (with the size to take) when it is too small, and a warning when this computer cannot hold
+// the recommended size at all.
+export function contextAdvice(
+  tokens: number,
+  model: Pick<LocalAiModel, 'recommendedContext' | 'largestContext'> | undefined,
+): ContextAdvice {
+  const recommended = model?.recommendedContext
+  if (recommended === undefined || recommended === null) return { kind: 'none', text: '', size: null }
+  const shown = recommended.toLocaleString('en-US')
+  if (tokens >= recommended)
+    return { kind: 'ok', text: `Enough for tool tasks such as importing a CV (they need at least ${shown} tokens).`, size: null }
+  if (!contextFits(model, recommended)) {
+    const largest = (model?.largestContext ?? 0).toLocaleString('en-US')
+    return {
+      kind: 'cannot',
+      text: `Tool tasks such as importing a CV need at least ${shown} tokens, but this computer has the memory for ${largest} at most with this model.`,
+      size: null,
+    }
+  }
+  return {
+    kind: 'low',
+    text: `${tokens.toLocaleString('en-US')} tokens is too small for tool tasks such as importing a CV: they need at least ${shown}.`,
+    size: recommended,
+  }
+}
+
+// One option of the context size list: the size and what it costs.
+export function contextLabel(tokens: number, model: Pick<LocalAiModel, 'kvBytesPerToken' | 'largestContext'> | undefined): string {
+  const base = `${tokens.toLocaleString('en-US')} tokens`
+  const cost = contextCostBytes(model, tokens)
+  const extra = cost > 0 ? ` (+${formatBytes(cost)} memory)` : ''
+  return contextFits(model, tokens) ? base + extra : `${base}${extra}: needs more memory than this computer has`
+}
+
 // What the page and the slide say about running models on this machine.
 export function supportText(h: LocalAiHardware): string {
   return h.supported

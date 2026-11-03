@@ -29,7 +29,9 @@ const (
 	maxNameLength    = 100
 	maxNoteLength    = 300
 	maxDialectLength = 32
-	maxSourceLength  = 200
+	// MaxKVBytesPerToken is far beyond the cache of any model this catalog could hold (4 MiB per token).
+	MaxKVBytesPerToken = 4 << 20
+	maxSourceLength    = 200
 )
 
 // toolDialectName is the shape of a toolDialect: lower-case words joined by hyphens (the same shape the dialect registry accepts).
@@ -61,6 +63,9 @@ type Model struct {
 	ContextTokens int    `json:"contextTokens"`
 	// Tools says the model was measured to call tools reliably (step 8): only then a conversation may be given an allowlist.
 	Tools bool `json:"tools"`
+	// KVBytesPerToken is what the model's cache holds per token of context (layers x KV heads x head size x 2 x 2 bytes, f16),
+	// read from the model's own configuration. 0 means not stated: the memory check then does not count the cache.
+	KVBytesPerToken int64 `json:"kvBytesPerToken"`
 	// ToolDialect names how a model whose chat template cannot take tools is taught them; empty for a model that takes them
 	// natively. The catalog only checks the shape of the name: which names exist is decided where the module is put together,
 	// and a model whose dialect is missing there has no tools.
@@ -216,6 +221,8 @@ func validateModel(m Model) error {
 		return errors.New("checkedOn must be a date like 2026-11-03")
 	case m.ToolDialect != "" && (len(m.ToolDialect) > maxDialectLength || !toolDialectName.MatchString(m.ToolDialect)):
 		return fmt.Errorf("toolDialect %q is not a name like phi-json", m.ToolDialect)
+	case m.KVBytesPerToken < 0 || m.KVBytesPerToken > MaxKVBytesPerToken:
+		return fmt.Errorf("kvBytesPerToken must be between 0 and %d", MaxKVBytesPerToken)
 	case m.ToolDialect != "" && !m.Tools:
 		return errors.New("a toolDialect only makes sense for a model that can use tools")
 	}

@@ -285,3 +285,121 @@ func TestTheToolsFieldFollowsTheRuntimeNotTheCatalogFlag(t *testing.T) {
 		t.Errorf("both values must reach the JSON: %s", raw)
 	}
 }
+
+func TestTheResponseSaysWhatTheCacheCostsAndTheLargestSizeThatFits(t *testing.T) {
+	big := hardware.Info{OS: "darwin", Arch: "arm64", RAMBytes: 16 << 30, CPUs: 8}
+	small := hardware.Info{OS: "darwin", Arch: "arm64", RAMBytes: 8 << 30, CPUs: 8}
+	unknown := hardware.Info{OS: "linux", Arch: "amd64", RAMBytes: 0, CPUs: 2}
+	type want struct {
+		kv      int64
+		largest any // an int, or nil for "not known"
+	}
+	for _, c := range []struct {
+		name string
+		info hardware.Info
+		want map[string]want
+	}{
+		{"16 GiB", big, map[string]want{
+			"phi-4-mini-instruct-q4_k_m":   {131072, 65536},
+			"qwen2.5-1.5b-instruct-q4_k_m": {28672, 32768}, // its own maximum, not a larger offered size
+			"qwen2.5-7b-instruct-q4_k_m":   {57344, 32768},
+		}},
+		{"8 GiB", small, map[string]want{
+			"phi-4-mini-instruct-q4_k_m":   {131072, 16384},
+			"qwen2.5-1.5b-instruct-q4_k_m": {28672, 32768},
+			"qwen2.5-7b-instruct-q4_k_m":   {57344, 0}, // 8.45 GiB at the baseline: nothing fits, and that is known (not null)
+		}},
+		{"unknown memory", unknown, map[string]want{
+			"phi-4-mini-instruct-q4_k_m":   {131072, nil},
+			"qwen2.5-1.5b-instruct-q4_k_m": {28672, nil},
+			"qwen2.5-7b-instruct-q4_k_m":   {57344, nil},
+		}},
+	} {
+		withMachine(t, c.info)
+		r := respond(entity.Settings{}, shipped(t), fakeRT{}, noInstalls{})
+		raw, err := json.Marshal(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var decoded struct {
+			Catalog []struct {
+				ID              string `json:"id"`
+				KVBytesPerToken int64  `json:"kvBytesPerToken"`
+				LargestContext  *int   `json:"largestContext"`
+			} `json:"catalog"`
+		}
+		if err := json.Unmarshal(raw, &decoded); err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range decoded.Catalog {
+			w := c.want[m.ID]
+			if m.KVBytesPerToken != w.kv {
+				t.Errorf("%s %s: kvBytesPerToken %d, want %d", c.name, m.ID, m.KVBytesPerToken, w.kv)
+			}
+			switch exp := w.largest.(type) {
+			case nil:
+				if m.LargestContext != nil {
+					t.Errorf("%s %s: largestContext %d, want null", c.name, m.ID, *m.LargestContext)
+				}
+			case int:
+				if m.LargestContext == nil {
+					t.Errorf("%s %s: largestContext null, want %d", c.name, m.ID, exp)
+				} else if *m.LargestContext != exp {
+					t.Errorf("%s %s: largestContext %d, want %d", c.name, m.ID, *m.LargestContext, exp)
+				}
+			}
+		}
+		if !strings.Contains(string(raw), `"largestContext":null`) && c.name == "unknown memory" {
+			t.Errorf("an unknown amount of memory must be null in the JSON: %s", raw)
+		}
+	}
+}
+
+func TestTheResponseRecommendsAContextSizeOnlyForModelsThatCanUseTools(t *testing.T) {
+	withMachine(t, hardware.Info{OS: "darwin", Arch: "arm64", RAMBytes: 16 << 30, CPUs: 8})
+	cat := shipped(t)
+	// A model that reads little: the recommendation never exceeds what it can read.
+	cat.Models = append(cat.Models, catalog.Model{ID: "small", Name: "Small", SizeBytes: 1 << 30, ContextTokens: 8192, KVBytesPerToken: 1000, Tools: true})
+	r := respond(entity.Settings{}, cat, fakeRT{tools: map[string]bool{"phi-4-mini-instruct-q4_k_m": true, "qwen2.5-1.5b-instruct-q4_k_m": true, "small": true}}, noInstalls{})
+	raw, err := json.Marshal(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded struct {
+		Catalog []struct {
+			ID                 string `json:"id"`
+			RecommendedContext *int   `json:"recommendedContext"`
+		} `json:"catalog"`
+	}
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{"phi-4-mini-instruct-q4_k_m": 16384, "qwen2.5-1.5b-instruct-q4_k_m": 16384, "qwen2.5-7b-instruct-q4_k_m": nil, "small": 8192}
+	for _, m := range decoded.Catalog {
+		switch exp := want[m.ID].(type) {
+		case nil:
+			if m.RecommendedContext != nil {
+				t.Errorf("%s: recommended %d, want none (no tools)", m.ID, *m.RecommendedContext)
+			}
+		case int:
+			if m.RecommendedContext == nil || *m.RecommendedContext != exp {
+				t.Errorf("%s: recommended %v, want %d", m.ID, m.RecommendedContext, exp)
+			}
+		}
+	}
+	if entity.RecommendedToolContext != 16384 {
+		t.Errorf("the recommendation is the measured minimum of a CV import: %d", entity.RecommendedToolContext)
+	}
+}
+
+func TestAModelWithAnUnknownMaximumStillGetsTheUsualRecommendation(t *testing.T) {
+	if got := recommendedContext(catalog.Model{ID: "x", ContextTokens: 0}, true); got == nil || *got != 16384 {
+		t.Errorf("recommended %v, want 16384 (never 0)", got)
+	}
+	if got := recommendedContext(catalog.Model{ID: "x", ContextTokens: 16384}, true); got == nil || *got != 16384 {
+		t.Errorf("exactly the usual size: %v", got)
+	}
+	if got := recommendedContext(catalog.Model{ID: "x", ContextTokens: 32768}, false); got != nil {
+		t.Errorf("no tools, no recommendation: %d", *got)
+	}
+}

@@ -9,6 +9,7 @@ import {
   type CVImportRun,
 } from '../../api'
 import { createConversation, sendMessage } from '../../Cinqo/Conversation/conversation'
+import { fetchPlatforms } from '../../Cinqo/Platform/platformRepository'
 import { useAiChoice } from '../../Cinqo/Platform/useAiChoice'
 import { PDFIcon, UploadIcon } from '../../Shared/Icons/icons'
 import { cardClassName, cardStyle } from '../../Shared/cardStyle'
@@ -17,6 +18,7 @@ import { plural } from '../CompaniesPage/companyStats'
 import { IMPORT_RUN_TOOLS, buildImportPrompt, buildImportSteps } from './buildImportPrompt'
 import { RESTRICTION_NOT_APPLIED_MESSAGE, restrictionHolds } from '../../PersonaAi/personaTools'
 import { analyseCv } from './analysisFlow'
+import { importContextProblem } from './importContext'
 import { runBadge } from './runStatusRules'
 import { importCvRunPathFor } from '../../paths'
 import { FailureNotice } from './FailureNotice'
@@ -147,10 +149,30 @@ export function ImportCvPage() {
     }
   }
 
+  // Whether the chosen platform can hold an import, read fresh (an admin may have just raised the context): the message to show, or
+  // null. A failed read never blocks the import; the server's own refusal stays the safety net.
+  async function contextProblem(): Promise<string | null> {
+    if (!platform) return null
+    try {
+      const live = (await fetchPlatforms()).find((p) => p.id === platform.id)
+      return importContextProblem(live?.contextTokens)
+    } catch {
+      return null
+    }
+  }
+
   async function handleUpload() {
     if (!file) return
     setUploading(true)
     setError('')
+
+    // Before the upload: a refusal here keeps the chosen file, nothing is consumed.
+    const tooSmall = await contextProblem()
+    if (tooSmall) {
+      setError(tooSmall)
+      setUploading(false)
+      return
+    }
 
     let upload: CVUploadResult
     try {
@@ -171,6 +193,11 @@ export function ImportCvPage() {
 
   async function handleProcessAgain(run: CVImportRun) {
     setRunActionError('')
+    const tooSmall = await contextProblem()
+    if (tooSmall) {
+      setRunActionError(tooSmall)
+      return
+    }
     await runAnalysis(run.mediaFileId, run.originalFilename)
   }
 

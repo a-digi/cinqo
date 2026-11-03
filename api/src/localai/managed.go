@@ -2,6 +2,7 @@ package localai
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -44,7 +45,7 @@ func newManagedEngine(in *installer, sup *supervisor, settings *query.SettingsQu
 	}
 }
 
-func gib(bytes uint64) string { return fmt.Sprintf("%.1f GiB", float64(bytes)/(1<<30)) }
+func gib(bytes uint64) string { return hardware.GiB(bytes) }
 
 // prerequisites checks that a model can be run now: the system is supported, the runtime and the model are downloaded, and the
 // computer has the memory for it (unknown memory is not held against it). The messages are fit to show on the page.
@@ -124,7 +125,7 @@ func (e *managedEngine) Chat(ctx context.Context, client *http.Client, model str
 	defer release()
 	res, err := e.call(ctx, client, base, token, model, messages, tools)
 	if err != nil {
-		return nil, explainFailure(err, s.ContextTokens)
+		return nil, explainFailure(err, s.ContextTokens, m.ContextTokens)
 	}
 	return res, nil
 }
@@ -133,20 +134,72 @@ func (e *managedEngine) launchFor(m catalog.Model, rt catalog.Runtime, s entity.
 	return launch{Binary: e.in.RuntimeBinary(rt), ModelPath: e.in.ModelPath(m), ModelID: m.ID, ContextTokens: s.ContextTokens, Dir: e.in.root()}
 }
 
-// explainFailure turns the model program's "this request does not fit in the context" answer into plain words with the way out.
-func explainFailure(err error, contextTokens int) error {
-	var ce *chatcompleter.CompletionError
-	if errors.As(err, &ce) && ce.Status == http.StatusBadRequest {
-		low := strings.ToLower(ce.Error())
-		if strings.Contains(low, "exceed") && strings.Contains(low, "context") {
-			return &chatcompleter.CompletionError{
-				Provider: ce.Provider,
-				Status:   ce.Status,
-				Message:  fmt.Sprintf("the conversation is longer than the model can read at once (a context of %d tokens): start a new conversation, or raise the context size in AI, Local AI", contextTokens),
-			}
+// contextSizes are the context sizes the Local AI page offers (the same list as the page's own), in tokens.
+var contextSizes = entity.ContextSizes
+
+// answerRoom is what a conversation needs besides what was sent: the model's own answer lives in the same context.
+const answerRoom = 1024
+
+// overflowNumbers reads, from the model program's "does not fit" answer, how many tokens the request had and how many the
+// context holds. The answer is JSON inside the failure message: {"error":{"n_prompt_tokens":4210,"n_ctx":4096,...}}.
+func overflowNumbers(message string) (needed, window int, ok bool) {
+	for i := 0; i < len(message); i++ {
+		if message[i] != '{' {
+			continue
+		}
+		var body struct {
+			Error struct {
+				Needed int `json:"n_prompt_tokens"`
+				Window int `json:"n_ctx"`
+			} `json:"error"`
+		}
+		if json.NewDecoder(strings.NewReader(message[i:])).Decode(&body) == nil && body.Error.Window > 0 && body.Error.Needed > body.Error.Window {
+			return body.Error.Needed, body.Error.Window, true
 		}
 	}
-	return err
+	return 0, 0, false
+}
+
+// sizeToSet is the context size to suggest for a conversation of needed tokens: the smallest size the page offers that holds it
+// with room for the answer and that the model can read, else the model's own maximum when that still holds the request. 0 means
+// nothing helps: the conversation is longer than the model can read.
+func sizeToSet(needed, modelMax int) int {
+	for _, size := range contextSizes {
+		if size >= needed+answerRoom && (modelMax == 0 || size <= modelMax) {
+			return size
+		}
+	}
+	if modelMax > needed {
+		return modelMax
+	}
+	return 0
+}
+
+// explainFailure turns the model program's "this request does not fit in the context" answer into plain words with the way out:
+// when the answer carries the numbers, how many tokens were needed and the size to set; otherwise the general sentence.
+// modelMax is the most the model can read (0 when unknown).
+func explainFailure(err error, contextTokens, modelMax int) error {
+	var ce *chatcompleter.CompletionError
+	if !errors.As(err, &ce) || ce.Status != http.StatusBadRequest {
+		return err
+	}
+	low := strings.ToLower(ce.Error())
+	if !strings.Contains(low, "exceed") || !strings.Contains(low, "context") {
+		return err
+	}
+	message := fmt.Sprintf("the conversation is longer than the model can read at once (a context of %d tokens): start a new conversation, or raise the context size in AI, Local AI", contextTokens)
+	if needed, window, ok := overflowNumbers(ce.Message); ok {
+		if size := sizeToSet(needed, modelMax); size > 0 {
+			message = fmt.Sprintf("the conversation needs %s tokens but the model reads %s at once (the context size): set the context size in AI, Local AI to at least %s", hardware.Thousands(needed), hardware.Thousands(window), hardware.Thousands(size))
+		} else {
+			limit := modelMax
+			if limit == 0 {
+				limit = contextSizes[len(contextSizes)-1]
+			}
+			message = fmt.Sprintf("the conversation needs %s tokens, more than this model can read (at most %s): start a new conversation", hardware.Thousands(needed), hardware.Thousands(limit))
+		}
+	}
+	return &chatcompleter.CompletionError{Provider: ce.Provider, Status: ce.Status, Message: message}
 }
 
 // Status is the state of the model program.
@@ -188,7 +241,7 @@ func (e *managedEngine) Test(ctx context.Context, modelID string) (entity.TestRe
 	res, err := e.call(ctx, &http.Client{Timeout: 3 * time.Minute}, base, token, m.ID, []chatcompleter.Message{{Role: "user", Content: testPrompt}}, nil)
 	seconds := time.Since(t1).Seconds()
 	if err != nil {
-		return entity.TestResult{Error: explainFailure(err, s.ContextTokens).Error(), StartSeconds: startSeconds, Seconds: seconds}, nil
+		return entity.TestResult{Error: explainFailure(err, s.ContextTokens, m.ContextTokens).Error(), StartSeconds: startSeconds, Seconds: seconds}, nil
 	}
 	out := entity.TestResult{
 		OK:               true,

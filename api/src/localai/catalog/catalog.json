@@ -11,6 +11,7 @@
       "license": "MIT",
       "contextTokens": 131072,
       "tools": true,
+      "kvBytesPerToken": 131072,
       "toolDialect": "phi-json",
       "source": "unsloth/Phi-4-mini-instruct-GGUF at commit 78eb92a (a GGUF conversion of microsoft/Phi-4-mini-instruct)",
       "note": "The better answers of the two. Needs the most memory.",
@@ -26,6 +27,7 @@
       "license": "Apache-2.0",
       "contextTokens": 32768,
       "tools": true,
+      "kvBytesPerToken": 28672,
       "source": "Qwen/Qwen2.5-1.5B-Instruct-GGUF at commit 91cad51 (the model's own authors)",
       "note": "A lighter, faster choice for a machine with little memory. Simpler answers.",
       "checkedOn": "2026-11-03"
@@ -40,6 +42,7 @@
       "license": "Apache-2.0",
       "contextTokens": 32768,
       "tools": false,
+      "kvBytesPerToken": 57344,
       "source": "bartowski/Qwen2.5-7B-Instruct-GGUF at commit 8911e8a (a single-file GGUF conversion of Qwen/Qwen2.5-7B-Instruct)",
       "note": "A larger model for tasks with many steps. Slower, and needs a computer with plenty of memory.",
       "checkedOn": "2026-11-03"

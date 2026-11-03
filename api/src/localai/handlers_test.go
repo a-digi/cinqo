@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -515,5 +516,48 @@ func TestTheTestRunsUnderTheRequestAndAFourMinuteLimit(t *testing.T) {
 	}
 	if !stoppedWithTheRequest {
 		t.Errorf("leaving the page (the request ends) must stop the test")
+	}
+}
+
+func TestASizeTheComputerHasNoMemoryForIsRefusedAndNothingIsStored(t *testing.T) {
+	restore := handler.SetMachine(func() hardware.Info { return hardware.Info{OS: "darwin", Arch: "arm64", RAMBytes: 16 << 30, CPUs: 8} })
+	defer restore()
+	db := openMainDB(t)
+	put := func(tokens int) *httptest.ResponseRecorder {
+		return call("LocalAiUpdateSettings", canRun, db, fmt.Sprintf(`{"enabled":false,"modelId":"phi-4-mini-instruct-q4_k_m","contextTokens":%d,"idleMinutes":10}`, tokens))
+	}
+	for _, tokens := range []int{4096, 16384, 65536} {
+		if rec := put(tokens); rec.Code != http.StatusOK {
+			t.Errorf("%d tokens fit 16 GiB: status %d %s", tokens, rec.Code, rec.Body.String())
+		}
+	}
+	rec := put(131072)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "a context of 131,072 tokens needs about 21.4 GiB") || !strings.Contains(rec.Body.String(), "this computer has 16.0 GiB") || !strings.Contains(rec.Body.String(), "Choose at most 65,536 tokens") {
+		t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
+	}
+	stored := decode(t, call("LocalAiGet", canRun, db, ""))
+	if stored.Data.Settings["contextTokens"] != float64(65536) {
+		t.Errorf("a refused change must store nothing: %v", stored.Data.Settings)
+	}
+}
+
+func TestAnUnknownAmountOfMemoryNeverRefusesASize(t *testing.T) {
+	restore := handler.SetMachine(func() hardware.Info { return hardware.Info{OS: "linux", Arch: "amd64", RAMBytes: 0, CPUs: 4} })
+	defer restore()
+	db := openMainDB(t)
+	rec := call("LocalAiUpdateSettings", canRun, db, `{"enabled":false,"modelId":"phi-4-mini-instruct-q4_k_m","contextTokens":131072,"idleMinutes":10}`)
+	if rec.Code != http.StatusOK {
+		t.Errorf("status %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAMachineThatCannotHoldTheModelStillLetsItBeChosenWhileOff(t *testing.T) {
+	restore := handler.SetMachine(func() hardware.Info { return hardware.Info{OS: "linux", Arch: "amd64", RAMBytes: 4 << 30, CPUs: 4} })
+	defer restore()
+	db := openMainDB(t)
+	// Phi needs 5.9 GiB; this computer has 4. The "needs more memory" rule speaks about that when switching on; choosing it stays possible.
+	rec := call("LocalAiUpdateSettings", canRun, db, `{"enabled":false,"modelId":"phi-4-mini-instruct-q4_k_m","contextTokens":4096,"idleMinutes":10}`)
+	if rec.Code != http.StatusOK {
+		t.Errorf("status %d %s", rec.Code, rec.Body.String())
 	}
 }

@@ -27,6 +27,9 @@ type platformResponse struct {
 	// NeedsShortSteps says the platform's models do better with work split into short, one-action messages than with one long
 	// prompt (a caller that can split its work should).
 	NeedsShortSteps bool `json:"needsShortSteps"`
+	// ContextTokens is how much a conversation on the platform can hold at once; absent when the platform states none (the cloud
+	// platforms), which no caller treats as a limit.
+	ContextTokens *int `json:"contextTokens,omitempty"`
 }
 
 // ListPlatformsHandler handles GET /api/v1/platforms. See
@@ -46,7 +49,18 @@ func platformResponses() []platformResponse {
 		if !entry.IsAvailable() {
 			continue
 		}
-		out = append(out, platformResponse{ID: info.ID, Name: info.Name, Models: entry.SelectableModelList(), RequiresKey: entry.RequiresKey(), OffersTools: entry.OffersAllTools(), NeedsShortSteps: entry.ShortSteps})
+		out = append(out, platformResponse{ID: info.ID, Name: info.Name, Models: entry.SelectableModelList(), RequiresKey: entry.RequiresKey(), OffersTools: entry.OffersAllTools(), NeedsShortSteps: entry.ShortSteps, ContextTokens: contextOf(entry)})
 	}
 	return out
+}
+
+// contextOf is the context the platform states, nil when it states none (or a value that is no limit).
+func contextOf(entry platform.Entry) *int {
+	if entry.ContextTokens == nil {
+		return nil
+	}
+	if n := entry.ContextTokens(); n > 0 {
+		return &n
+	}
+	return nil
 }

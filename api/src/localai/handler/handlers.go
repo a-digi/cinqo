@@ -90,12 +90,21 @@ type catalogModelResponse struct {
 	MinRAMBytes   uint64 `json:"minRamBytes"`
 	ContextTokens int    `json:"contextTokens"`
 	// Tools says the model was measured to call tools reliably (so a conversation may be given a list of tools).
-	Tools     bool   `json:"tools"`
-	License   string `json:"license"`
-	Source    string `json:"source"`
-	Note      string `json:"note"`
-	CheckedOn string `json:"checkedOn"`
-	Fits      *bool  `json:"fits"`
+	Tools bool `json:"tools"`
+	// KVBytesPerToken is what the model's cache holds per token of context (0: not stated), so the page can show what a
+	// context size costs in memory.
+	KVBytesPerToken int64 `json:"kvBytesPerToken"`
+	// LargestContext is the largest context size the page offers that this computer has the memory for with this model; null
+	// when the memory or the cache size is not known (nothing is then refused).
+	LargestContext *int `json:"largestContext"`
+	// RecommendedContext is the context size recommended for tool tasks (a CV import, for example) with this model: only for a
+	// model that can use tools, never more than the model reads; null otherwise. The page recommends it next to the size list.
+	RecommendedContext *int   `json:"recommendedContext"`
+	License            string `json:"license"`
+	Source             string `json:"source"`
+	Note               string `json:"note"`
+	CheckedOn          string `json:"checkedOn"`
+	Fits               *bool  `json:"fits"`
 	// Install says whether the model file is downloaded, being downloaded (with the id of the download) or interrupted.
 	Install entity.FileInstall `json:"install"`
 	// Enable says whether the local AI can be switched on with this model right now, and if not, why not.
@@ -133,8 +142,37 @@ type localAiResponse struct {
 	Engine entity.EngineStatus `json:"engine"`
 }
 
+// recommendedContext is the size recommended for tool tasks with model m, nil for a model that cannot use tools.
+func recommendedContext(m catalog.Model, canUseTools bool) *int {
+	if !canUseTools {
+		return nil
+	}
+	size := entity.RecommendedToolContext
+	if m.ContextTokens > 0 && m.ContextTokens < size {
+		size = m.ContextTokens
+	}
+	return &size
+}
+
+// largestContext is the largest offered context size the machine has the memory for with model m, nil when that is not known.
+func largestContext(m catalog.Model, info hardware.Info) *int {
+	largest, known := hardware.LargestContext(m.SizeBytes, m.KVBytesPerToken, info.RAMBytes, entity.SizesUpTo(m.ContextTokens))
+	if !known {
+		return nil
+	}
+	return &largest
+}
+
 // detect reads the machine; a variable so tests can give a fixed one.
 var detect = hardware.Detect
+
+// SetMachine replaces how the handlers read the computer and returns the way back. The program never calls it: it exists so a
+// test outside this package can give the handlers a computer with a fixed amount of memory.
+func SetMachine(read func() hardware.Info) (restore func()) {
+	old := detect
+	detect = read
+	return func() { detect = old }
+}
 
 func respond(s entity.Settings, c catalog.Catalog, rt Runtime, installs Installs) localAiResponse {
 	cannotEnable := rt.CanEnable(s.ModelID)
@@ -153,9 +191,12 @@ func respond(s entity.Settings, c catalog.Catalog, rt Runtime, installs Installs
 			ID: m.ID, Name: m.Name, Quantization: m.Quantization, SizeBytes: m.SizeBytes,
 			MinRAMBytes: hardware.MinRAMBytes(m.SizeBytes), ContextTokens: m.ContextTokens, Tools: rt.CanUseTools(m.ID),
 			License: m.License, Source: m.Source, Note: m.Note, CheckedOn: m.CheckedOn,
-			Fits:    info.Fits(m.SizeBytes),
-			Install: installs.ModelState(m),
-			Enable:  enableOf(rt.CanEnable(m.ID)),
+			Fits:               info.Fits(m.SizeBytes),
+			KVBytesPerToken:    m.KVBytesPerToken,
+			LargestContext:     largestContext(m, info),
+			RecommendedContext: recommendedContext(m, rt.CanUseTools(m.ID)),
+			Install:            installs.ModelState(m),
+			Enable:             enableOf(rt.CanEnable(m.ID)),
 		})
 	}
 	runtime := runtimeResponse{Install: entity.FileInstall{State: entity.InstallNotDownloaded}}
@@ -237,6 +278,11 @@ func (a api) updateSettings(reqCtx request.RequestContext) {
 		IdleMinutes:   body.IdleMinutes,
 	}, c, cannotEnable)
 	if err != nil {
+		response.ErrorResponse(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	// A context size the machine has no memory for is refused (a size would otherwise be accepted up to the model's maximum).
+	if err := entity.CheckMemory(checked, c, detect().RAMBytes); err != nil {
 		response.ErrorResponse(w, http.StatusBadRequest, err.Error())
 		return
 	}

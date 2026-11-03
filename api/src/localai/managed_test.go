@@ -4,9 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -266,7 +268,7 @@ func TestAProgramThatCannotStartFailsTheTurnWithItsReason(t *testing.T) {
 
 func TestExplainFailureOnlyRewritesTheContextOverflowAnswer(t *testing.T) {
 	overflow := &chatcompleter.CompletionError{Provider: "local AI", Status: 400, Message: `unexpected status 400: {"error":{"message":"the request exceeds the available context size, try increasing it","type":"exceed_context_size_error"}}`}
-	got := explainFailure(overflow, 4096)
+	got := explainFailure(overflow, 4096, 32768)
 	var ce *chatcompleter.CompletionError
 	if !errors.As(got, &ce) || ce.Status != 400 || ce.Retryable || !strings.Contains(ce.Message, "a context of 4096 tokens") || !strings.Contains(ce.Message, "raise the context size in AI, Local AI") {
 		t.Errorf("rewritten = %v", got)
@@ -281,7 +283,7 @@ func TestExplainFailureOnlyRewritesTheContextOverflowAnswer(t *testing.T) {
 		"a 400 about exceeding something else":  &chatcompleter.CompletionError{Status: 400, Message: "unexpected status 400: the value exceeds the maximum"},
 		"a 400 about context but not exceeding": &chatcompleter.CompletionError{Status: 400, Message: "unexpected status 400: invalid context field"},
 	} {
-		if got := explainFailure(err, 4096); got != err {
+		if got := explainFailure(err, 4096, 32768); got != err {
 			t.Errorf("%s: must pass through unchanged, got %v", name, got)
 		}
 	}
@@ -512,4 +514,96 @@ func TestAContextOverflowIsLabelledAsTheLocalAIOnTheWayOut(t *testing.T) {
 
 func chat2(c completer, model string) (*chatcompleter.ChatCompletionResult, error) {
 	return c.ChatCompletion(context.Background(), http.DefaultClient, "ignored", "ignored", model, []chatcompleter.Message{{Role: "user", Content: "hi"}}, nil)
+}
+
+// The model program's real answer to a request that does not fit (verified on a temporary server, 2026-11-03).
+func overflowBody(needed, window int) string {
+	return fmt.Sprintf(`unexpected status 400: {"error":{"code":400,"message":"request (%d tokens) exceeds the available context size (%d tokens), try increasing it","type":"exceed_context_size_error","n_prompt_tokens":%d,"n_ctx":%d}}`, needed, window, needed, window)
+}
+
+func TestTheOverflowAnswerGivesTheNumbersAndTheSizeToSet(t *testing.T) {
+	for _, c := range []struct {
+		name                string
+		needed, window, max int
+		want                string
+	}{
+		{"the user's import: 6,232 tokens in 4,096", 6232, 4096, 131072, "the conversation needs 6,232 tokens but the model reads 4,096 at once (the context size): set the context size in AI, Local AI to at least 8,192"},
+		{"room for the answer moves it up", 7500, 4096, 131072, "to at least 16,384"},
+		{"exactly the room boundary stays", 7168, 4096, 131072, "to at least 8,192"},
+		{"one token over the room boundary moves up", 7169, 4096, 131072, "to at least 16,384"},
+		{"limited by the model's maximum", 20000, 4096, 32768, "to at least 32,768"},
+		{"the maximum when only that still holds it", 32000, 4096, 32768, "to at least 32,768"},
+		{"longer than the model can read", 40000, 4096, 32768, "needs 40,000 tokens, more than this model can read (at most 32,768): start a new conversation"},
+		{"the maximum is not enough for the request", 32768, 4096, 32768, "more than this model can read (at most 32,768)"},
+		{"unknown maximum uses the largest size", 140000, 4096, 0, "more than this model can read (at most 131,072)"},
+		{"unknown maximum, a size that fits", 6232, 4096, 0, "to at least 8,192"},
+	} {
+		err := &chatcompleter.CompletionError{Provider: "local AI", Status: 400, Message: overflowBody(c.needed, c.window)}
+		got := explainFailure(err, c.window, c.max)
+		var ce *chatcompleter.CompletionError
+		if !errors.As(got, &ce) || ce.Retryable || ce.Status != 400 || !strings.Contains(ce.Message, c.want) {
+			t.Errorf("%s: %v, want it to contain %q", c.name, got, c.want)
+		}
+		if strings.Contains(got.Error(), "exceed_context_size_error") || strings.Contains(got.Error(), "n_prompt_tokens") {
+			t.Errorf("%s: the raw answer must not be shown: %v", c.name, got)
+		}
+	}
+}
+
+func TestWithoutUsableNumbersTheGeneralSentenceStays(t *testing.T) {
+	for name, msg := range map[string]string{
+		"no body":                 "unexpected status 400: the request exceeds the available context size",
+		"numbers missing":         `unexpected status 400: {"error":{"message":"exceeds the available context size","type":"exceed_context_size_error"}}`,
+		"zero needed":             `unexpected status 400: {"error":{"message":"exceeds context","n_prompt_tokens":0,"n_ctx":4096}}`,
+		"zero window":             `unexpected status 400: {"error":{"message":"exceeds context","n_prompt_tokens":5000,"n_ctx":0}}`,
+		"needed not above window": `unexpected status 400: {"error":{"message":"exceeds context","n_prompt_tokens":4096,"n_ctx":4096}}`,
+		"needed below window":     `unexpected status 400: {"error":{"message":"exceeds context","n_prompt_tokens":100,"n_ctx":4096}}`,
+		"text instead of numbers": `unexpected status 400: {"error":{"message":"exceeds context","n_prompt_tokens":"many","n_ctx":"few"}}`,
+		"negative":                `unexpected status 400: {"error":{"message":"exceeds context","n_prompt_tokens":-5,"n_ctx":-9}}`,
+		"broken json":             `unexpected status 400: {"error":{"message":"exceeds context","n_prompt_tokens":5000,`,
+	} {
+		got := explainFailure(&chatcompleter.CompletionError{Provider: "local AI", Status: 400, Message: msg}, 4096, 32768)
+		if !strings.Contains(got.Error(), "a context of 4096 tokens") || !strings.Contains(got.Error(), "raise the context size in AI, Local AI") {
+			t.Errorf("%s: %v", name, got)
+		}
+	}
+}
+
+func TestTheSizesToSetAreExactlyTheOnesThePageOffers(t *testing.T) {
+	// The Local AI page's own list (frontend localAiRules.ts contextOptions); a change of one must change the other.
+	want := []int{2048, 4096, 8192, 16384, 32768, 65536, 131072}
+	if !reflect.DeepEqual(contextSizes, want) {
+		t.Errorf("contextSizes = %v", contextSizes)
+	}
+}
+
+func TestAnOverflowThroughTheEngineSaysWhatToSet(t *testing.T) {
+	r := newEngineRig(t)
+	r.e.call = func(context.Context, *http.Client, string, string, string, []chatcompleter.Message, []chatcompleter.ToolDef) (*chatcompleter.ChatCompletionResult, error) {
+		return nil, &chatcompleter.CompletionError{Provider: "openai", Status: 400, Message: overflowBody(6232, 4096)}
+	}
+	_, err := r.chat("tiny")
+	if err == nil || !strings.Contains(err.Error(), "needs 6,232 tokens") || !strings.Contains(err.Error(), "at least 8,192") {
+		t.Errorf("err = %v", err)
+	}
+	res, terr := r.e.Test(context.Background(), "tiny")
+	if terr != nil || res.OK || !strings.Contains(res.Error, "needs 6,232 tokens") {
+		t.Errorf("the test must say it too: %+v %v", res, terr)
+	}
+}
+
+func TestTheModelsOwnMaximumLimitsWhatIsSuggested(t *testing.T) {
+	r := newEngineRig(t)
+	r.in.catalog.Models[0].ContextTokens = 8000 // this model cannot read 8,192: the suggestion must be its own maximum
+	r.e.call = func(context.Context, *http.Client, string, string, string, []chatcompleter.Message, []chatcompleter.ToolDef) (*chatcompleter.ChatCompletionResult, error) {
+		return nil, &chatcompleter.CompletionError{Provider: "openai", Status: 400, Message: overflowBody(6232, 4096)}
+	}
+	_, err := r.chat("tiny")
+	if err == nil || !strings.Contains(err.Error(), "at least 8,000") {
+		t.Errorf("the maximum of the model in the catalog must reach the message: %v", err)
+	}
+	res, terr := r.e.Test(context.Background(), "tiny")
+	if terr != nil || !strings.Contains(res.Error, "at least 8,000") {
+		t.Errorf("and the test's message: %+v %v", res, terr)
+	}
 }

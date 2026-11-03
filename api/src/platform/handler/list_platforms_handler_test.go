@@ -2,8 +2,10 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/a-digi/cinqo/src/platform"
@@ -94,5 +96,47 @@ func TestThePlatformListSaysWhichPlatformsNeedShortSteps(t *testing.T) {
 		if p, ok := find(list, id); !ok || p.NeedsShortSteps {
 			t.Errorf("%s: %+v, the cloud platforms take the long prompt", id, p)
 		}
+	}
+}
+
+func TestThePlatformListStatesTheContextOnlyOfAPlatformThatHasOne(t *testing.T) {
+	limit := 16384
+	if err := platform.Register(platform.Entry{
+		Info:          entity.Platform{ID: "list-context", Name: "Context"},
+		Completer:     noopCompleter{},
+		Credentials:   func(context.Context) (string, string, error) { return "http://127.0.0.1:1", "", nil },
+		Models:        func() []string { return []string{"a"} },
+		ContextTokens: func() int { return limit },
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := platform.Register(platform.Entry{
+		Info:          entity.Platform{ID: "list-nocontext", Name: "None"},
+		Completer:     noopCompleter{},
+		Credentials:   func(context.Context) (string, string, error) { return "http://127.0.0.1:1", "", nil },
+		Models:        func() []string { return []string{"a"} },
+		ContextTokens: func() int { return 0 }, // set but states nothing (for example not configured yet)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	list := platformResponses()
+	if p, ok := find(list, "list-context"); !ok || p.ContextTokens == nil || *p.ContextTokens != 16384 {
+		t.Errorf("%+v (listed %v): the context must be stated", p, ok)
+	}
+	limit = 8192 // read at call time, not cached
+	if p, _ := find(platformResponses(), "list-context"); p.ContextTokens == nil || *p.ContextTokens != 8192 {
+		t.Errorf("the context is read at call time: %+v", p)
+	}
+	if p, ok := find(list, "list-nocontext"); !ok || p.ContextTokens != nil {
+		t.Errorf("%+v: a platform that states 0 states none", p)
+	}
+	for _, id := range []string{"openai", "anthropic", "openrouter"} {
+		if p, ok := find(list, id); !ok || p.ContextTokens != nil {
+			t.Errorf("%s: %+v, the cloud platforms state no context", id, p)
+		}
+	}
+	raw, _ := json.Marshal(platformResponse{ID: "x"})
+	if strings.Contains(string(raw), "contextTokens") {
+		t.Errorf("an absent context must not be in the JSON: %s", raw)
 	}
 }

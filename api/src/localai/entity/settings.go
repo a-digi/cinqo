@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/a-digi/cinqo/src/localai/catalog"
+	"github.com/a-digi/cinqo/src/localai/hardware"
 )
 
 // Bounds of the numeric settings.
@@ -73,4 +74,42 @@ func Validate(in Settings, cat catalog.Catalog, cannotEnable error) (Settings, e
 		}
 	}
 	return out, nil
+}
+
+// RecommendedToolContext is the context size recommended for a model that can use tools: a tool task reads documents and hands
+// results over in pieces, all in one context. Measured on a real CV import with Phi-4-mini (2026-11-03): the first two requests
+// alone were 6,232 tokens, so 16,384 is the least that works for an ordinary CV. (The Career tool's own minimum is the same number.)
+const RecommendedToolContext = 16384
+
+// ContextSizes are the context sizes the Local AI page offers (and the ones the program suggests), in tokens, ascending.
+var ContextSizes = []int{2048, 4096, 8192, 16384, 32768, 65536, 131072}
+
+// CheckMemory refuses a context size the machine does not have the memory for: the model, its cache for that many tokens and the
+// reserve for the system. It says what the size needs and the largest size that fits. It judges only what the context adds: a
+// machine that cannot hold the model at all is the business of the "needs more memory" rule (so choosing such a model while the
+// local AI is off keeps working), and nothing is refused when the machine's memory, the model's cache size or the model is not
+// known (an unknown is never held against the admin).
+func CheckMemory(s Settings, cat catalog.Catalog, ramBytes uint64) error {
+	m, ok := cat.Find(s.ModelID)
+	if !ok {
+		return nil
+	}
+	largest, known := hardware.LargestContext(m.SizeBytes, m.KVBytesPerToken, ramBytes, SizesUpTo(m.ContextTokens))
+	required := hardware.RequiredBytes(m.SizeBytes, m.KVBytesPerToken, s.ContextTokens)
+	if !known || required <= ramBytes || largest == 0 {
+		return nil
+	}
+	return invalid("a context of %s tokens needs about %s of memory (the model, its cache and a reserve for the system); this computer has %s. Choose at most %s tokens",
+		hardware.Thousands(s.ContextTokens), hardware.GiB(required), hardware.GiB(ramBytes), hardware.Thousands(largest))
+}
+
+// SizesUpTo is the offered sizes the model can read (all of them when its maximum is not known).
+func SizesUpTo(modelMax int) []int {
+	out := make([]int, 0, len(ContextSizes))
+	for _, size := range ContextSizes {
+		if modelMax <= 0 || size <= modelMax {
+			out = append(out, size)
+		}
+	}
+	return out
 }

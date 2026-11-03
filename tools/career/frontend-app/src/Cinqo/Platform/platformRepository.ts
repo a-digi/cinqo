@@ -25,6 +25,9 @@ export interface Platform {
   // True for a platform whose models do better with work split into short, one-action messages than with one long prompt
   // (the local AI): the import is then sent as a sequence of small steps. Absent from an older core: false.
   needsShortSteps?: boolean
+  // How much a conversation on the platform holds at once, in tokens (the local AI: its context size). Absent for a platform that
+  // states none (the cloud platforms), which is never treated as a limit.
+  contextTokens?: number
 }
 
 export async function fetchPlatforms(): Promise<Platform[]> {

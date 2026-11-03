@@ -1,3 +1,4 @@
+import { CONTEXT_BASELINE, contextFits } from './localAiFormat'
 import type { LocalAiModel, LocalAiSettings } from './localAiApi'
 
 // What the settings page lets an admin edit, and the rules for it. Pure (no React), so the rules can be script-checked.
@@ -66,6 +67,8 @@ export function problemsOf(draft: Draft, catalog: LocalAiModel[]): DraftProblems
     problems.contextTokens = `Choose a context size between ${String(MIN_CONTEXT)} and ${MAX_CONTEXT.toLocaleString('en-US')} tokens.`
   } else if (draft.contextTokens > max) {
     problems.contextTokens = `This model reads at most ${max.toLocaleString('en-US')} tokens: choose a smaller context size.`
+  } else if (!contextFits(model, draft.contextTokens)) {
+    problems.contextTokens = `This computer does not have the memory for ${draft.contextTokens.toLocaleString('en-US')} tokens with this model: choose at most ${String(model?.largestContext)} tokens.`
   }
 
   if (!Number.isInteger(draft.idleMinutes) || draft.idleMinutes < 0 || draft.idleMinutes > MAX_IDLE_MINUTES) {
@@ -102,4 +105,16 @@ function upperFirst(s: string): string {
 // The settings to send.
 export function toUpdate(draft: Draft): LocalAiSettings {
   return { enabled: draft.enabled, modelId: draft.modelId, contextTokens: draft.contextTokens, idleMinutes: draft.idleMinutes }
+}
+
+// The draft after the admin picks a model. On a fresh install (no model was ever saved) that still has the default context size, a
+// model that can use tools preselects its recommended size, when this computer has the memory for it: the admin sees it and
+// saves it (nothing is stored by picking). Every other case only changes the model, so a size the admin chose is never replaced.
+export function draftAfterPicking(draft: Draft, picked: LocalAiModel, savedModelId: string): Draft {
+  const next = { ...draft, modelId: picked.id }
+  const recommended = picked.recommendedContext
+  if (savedModelId === '' && draft.contextTokens === CONTEXT_BASELINE && recommended !== null && contextFits(picked, recommended)) {
+    next.contextTokens = recommended
+  }
+  return next
 }

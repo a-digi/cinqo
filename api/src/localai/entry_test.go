@@ -142,3 +142,30 @@ func TestOnlyAModelMeasuredToUseToolsGetsTheExplicitPolicy(t *testing.T) {
 		t.Errorf("the model must be told to look before it answers about the user's data: %q", e.ToolHint)
 	}
 }
+
+func TestTheLocalPlatformStatesTheContextOfItsSettingsOnceConfigured(t *testing.T) {
+	withEngine(t, &fakeEngine{})
+	db := openMainDB(t)
+	e := Entry(db)
+	if e.ContextTokens == nil {
+		t.Fatal("the local platform must state its context")
+	}
+	if got := e.ContextTokens(); got != 0 {
+		t.Errorf("not configured: it states none (0), got %d", got)
+	}
+	saveSettings(t, db, true, phiID)
+	if got := e.ContextTokens(); got != 4096 {
+		t.Errorf("configured with the default: %d", got)
+	}
+	// Read at call time: the page's change is seen at once, nothing is cached.
+	if _, err := db.Exec(`UPDATE local_ai_settings SET context_tokens = 16384`); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.ContextTokens(); got != 16384 {
+		t.Errorf("after raising it: %d", got)
+	}
+	saveSettings(t, db, false, phiID) // switched off again: no platform, no limit to state
+	if got := e.ContextTokens(); got != 0 {
+		t.Errorf("switched off: %d", got)
+	}
+}

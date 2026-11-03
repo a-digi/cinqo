@@ -57,7 +57,14 @@ func Entry(db *sql.DB) platform.Entry {
 		},
 		// A small local model needs the work in short steps (measured on the CV import).
 		ShortSteps: true,
-		ToolHint:   toolHint,
+		// What a conversation can hold at once is the context size of the settings (0 while the local AI is not configured).
+		ContextTokens: func() int {
+			if s, ok := load(); ok && s.Configured() {
+				return s.ContextTokens
+			}
+			return 0
+		},
+		ToolHint: toolHint,
 	}
 }
 

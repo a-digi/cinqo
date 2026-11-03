@@ -266,3 +266,33 @@ func TestAToolDialectIsAWellFormedNameAndBelongsToAModelWithTools(t *testing.T) 
 		}
 	}
 }
+
+func TestTheCacheSizePerTokenIsStatedForEveryShippedModelAndBounded(t *testing.T) {
+	c, err := Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// layers x KV heads x head size x 2 x 2 bytes, from each model's own config.json (read 2026-11-03)
+	want := map[string]int64{"phi-4-mini-instruct-q4_k_m": 32 * 8 * 128 * 4, "qwen2.5-1.5b-instruct-q4_k_m": 28 * 2 * 128 * 4, "qwen2.5-7b-instruct-q4_k_m": 28 * 4 * 128 * 4}
+	for _, m := range c.Models {
+		if m.KVBytesPerToken != want[m.ID] {
+			t.Errorf("%s: kvBytesPerToken %d, want %d", m.ID, m.KVBytesPerToken, want[m.ID])
+		}
+	}
+	with := func(v string) string {
+		return file(mutate(`"contextTokens": 4096`, `"contextTokens": 4096, "kvBytesPerToken": `+v))
+	}
+	for _, v := range []string{"0", "1", "131072", "4194304"} {
+		if _, err := Load([]byte(with(v))); err != nil {
+			t.Errorf("kvBytesPerToken %s must load: %v", v, err)
+		}
+	}
+	for _, v := range []string{"-1", "4194305"} {
+		if _, err := Load([]byte(with(v))); err == nil {
+			t.Errorf("kvBytesPerToken %s must be refused", v)
+		}
+	}
+	if m, err := Load([]byte(file(validEntry))); err != nil || m.Models[0].KVBytesPerToken != 0 {
+		t.Errorf("an entry without the field means not stated (0): %v", err)
+	}
+}

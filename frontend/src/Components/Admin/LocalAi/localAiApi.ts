@@ -74,6 +74,12 @@ export interface LocalAiModel {
   contextTokens: number
   // The model was measured to call tools reliably (a conversation may then be given a list of tools).
   tools: boolean
+  // What the model's cache holds per token of context (0: not stated), so a context size can show what it costs in memory.
+  kvBytesPerToken: number
+  // The largest context size offered that this computer has the memory for with this model; null when that is not known.
+  largestContext: number | null
+  // The context size recommended for tool tasks (a CV import, for example) with this model; null for a model that cannot use tools.
+  recommendedContext: number | null
   license: string
   source: string
   note: string
