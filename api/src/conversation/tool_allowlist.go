@@ -3,6 +3,7 @@ package conversation
 import (
 	"context"
 
+	"github.com/a-digi/cinqo/src/platform"
 	"github.com/a-digi/cinqo/src/platform/chatcompleter"
 
 	conversation_entity "github.com/a-digi/cinqo/src/conversation/entity"
@@ -46,4 +47,26 @@ func refusesDisallowedTool(ctx context.Context, name string) bool {
 	}
 	_, on := allowed[name]
 	return !on
+}
+
+// offeredTools is applyToolAllowlist under the platform's tool policy for the model of the conversation: a platform with no
+// tools offers none, one with explicit tools offers only the allowlist (none without one).
+func offeredTools(ctx context.Context, entry platform.Entry, model string, tools []chatcompleter.ToolDef, conv *conversation_entity.Conversation) (context.Context, []chatcompleter.ToolDef) {
+	switch entry.ToolPolicyFor(model) {
+	case platform.ToolsNone:
+		return ctx, nil
+	case platform.ToolsExplicit:
+		if conv.AllowedToolNames() == nil {
+			return ctx, nil
+		}
+	}
+	return applyToolAllowlist(ctx, tools, conv)
+}
+
+// withToolHint puts the platform's tool hint (when it has one) in front of a turn that is offered tools.
+func withToolHint(entry platform.Entry, tools []chatcompleter.ToolDef, messages []chatcompleter.Message) []chatcompleter.Message {
+	if entry.ToolHint == "" || len(tools) == 0 {
+		return messages
+	}
+	return append([]chatcompleter.Message{{Role: "system", Content: entry.ToolHint}}, messages...)
 }

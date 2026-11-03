@@ -59,3 +59,19 @@ func TestThePlatformListSaysWhichPlatformsNeedAKeyAndHidesUnavailableOnes(t *tes
 		t.Errorf("got %+v, want requiresKey false, offersTools false and the dynamic model list", p)
 	}
 }
+
+func TestAPlatformWithPerModelToolsIsNotOfferedTheToolModes(t *testing.T) {
+	if err := platform.Register(platform.Entry{
+		Info:        entity.Platform{ID: "list-permodel", Name: "PerModel"},
+		Completer:   noopCompleter{},
+		Credentials: func(context.Context) (string, string, error) { return "http://127.0.0.1:1", "", nil },
+		Models:      func() []string { return []string{"a"} },
+		ToolsFor:    func(string) platform.ToolPolicy { return platform.ToolsExplicit },
+	}); err != nil {
+		t.Fatal(err)
+	}
+	p, ok := find(platformResponses(), "list-permodel")
+	if !ok || p.OffersTools {
+		t.Errorf("%+v (listed %v): a form that cannot name an allowlist must not offer tool modes", p, ok)
+	}
+}

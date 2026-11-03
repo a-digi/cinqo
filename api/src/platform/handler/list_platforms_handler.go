@@ -43,7 +43,7 @@ func platformResponses() []platformResponse {
 		if !entry.IsAvailable() {
 			continue
 		}
-		out = append(out, platformResponse{ID: info.ID, Name: info.Name, Models: entry.SelectableModelList(), RequiresKey: entry.RequiresKey(), OffersTools: !entry.NoTools})
+		out = append(out, platformResponse{ID: info.ID, Name: info.Name, Models: entry.SelectableModelList(), RequiresKey: entry.RequiresKey(), OffersTools: entry.OffersAllTools()})
 	}
 	return out
 }

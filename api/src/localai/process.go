@@ -265,6 +265,7 @@ func (s *supervisor) launchRun(ctx context.Context, r *run) {
 		"-np", "1",
 		"--no-webui",
 		"--no-slots",
+		"--jinja", // the model's own chat template, which tool calls need
 	}
 	cmd := s.o.Command(spec.Binary, args)
 	cmd.Dir = filepath.Dir(spec.Binary)

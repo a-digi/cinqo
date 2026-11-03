@@ -233,10 +233,8 @@ func SendMessage(
 	if err != nil {
 		return nil, fmt.Errorf("conversation: look up offerable tools: %w", err)
 	}
-	if entry.NoTools {
-		tools = nil
-	}
-	ctx, tools = applyToolAllowlist(ctx, tools, conv)
+	ctx, tools = offeredTools(ctx, entry, model, tools, conv)
+	messages = withToolHint(entry, tools, messages)
 
 	ctx = withToolLoopEconomy(ctx, conv)
 	assistantContent, err := runToolLoop(ctx, httpClient, entry, plainKey, model, messages, tools, mainDB, callerScopes, conv.UserID, dataDir, corePort, conversationID, conversationDB, "", 0, conversation_entity.OrchestrationModeDirect, nil, nil, nil, toolLimitOf(conv))

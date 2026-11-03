@@ -72,6 +72,8 @@ export interface LocalAiModel {
   sizeBytes: number
   minRamBytes: number
   contextTokens: number
+  // The model was measured to call tools reliably (a conversation may then be given a list of tools).
+  tools: boolean
   license: string
   source: string
   note: string

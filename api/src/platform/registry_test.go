@@ -106,3 +106,29 @@ func TestAnEmptyOrNilModelListIsNeverNil(t *testing.T) {
 		t.Error("a nil result of Models must become an empty slice (the JSON must say [], not null)")
 	}
 }
+
+func TestTheToolPolicyFollowsNoToolsThenToolsForThenAllTools(t *testing.T) {
+	per := func(model string) ToolPolicy {
+		if model == "tools" {
+			return ToolsExplicit
+		}
+		return ToolsNone
+	}
+	for _, c := range []struct {
+		name  string
+		e     Entry
+		model string
+		want  ToolPolicy
+		all   bool
+	}{
+		{"a built-in platform", Entry{}, "m", ToolsAll, true},
+		{"no tools", Entry{NoTools: true}, "m", ToolsNone, false},
+		{"no tools beats a per-model rule", Entry{NoTools: true, ToolsFor: per}, "tools", ToolsNone, false},
+		{"per model: explicit", Entry{ToolsFor: per}, "tools", ToolsExplicit, false},
+		{"per model: none", Entry{ToolsFor: per}, "other", ToolsNone, false},
+	} {
+		if got := c.e.ToolPolicyFor(c.model); got != c.want || c.e.OffersAllTools() != c.all {
+			t.Errorf("%s: policy %v offersAll %v, want %v %v", c.name, got, c.e.OffersAllTools(), c.want, c.all)
+		}
+	}
+}

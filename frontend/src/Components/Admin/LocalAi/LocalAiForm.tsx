@@ -14,7 +14,7 @@ import type {
   LocalAiStatus,
   LocalAiTestResult,
 } from './localAiApi'
-import { engineLine, fitKind, fitLabel, hardwareSummary, idleHelp, modelFacts, supportText, testSummary } from './localAiFormat'
+import { engineLine, fitKind, fitLabel, hardwareSummary, idleHelp, modelFacts, supportText, testSummary, toolsLine } from './localAiFormat'
 import { contextOptions, hasProblems, switchState, type Draft, type DraftProblems } from './localAiRules'
 
 const accent = accents.teal
@@ -233,6 +233,7 @@ export function LocalAiForm({
                     </div>
                     <p className="mt-1 text-xs text-gray-600">{modelFacts(m)}</p>
                     <p className="mt-1 text-xs text-gray-500">{m.note}</p>
+                    <p className="mt-1 text-xs text-gray-500">{toolsLine(m)}</p>
                     <p className="mt-1 text-[11px] text-gray-400">
                       License {m.license} · {m.source}
                     </p>
@@ -407,7 +408,10 @@ export function LocalAiForm({
       <Card label="What to expect" title="What to expect">
         <ul className="list-disc space-y-1 pl-5 text-xs text-gray-600">
           <li>Small local models are slower and less capable than the cloud models.</li>
-          <li>Conversations on the local AI have no tools and no sub-agents: the model only answers.</li>
+          <li>
+            There are no sub-agents. A model that can use tools gets only the few a task names (the CV import, for example); the others only
+            answer.
+          </li>
           <li>It uses the memory and processor of this computer, and the model is a download of a few gigabytes.</li>
           <li>Using it costs nothing per request, and the conversation shows it as free.</li>
         </ul>

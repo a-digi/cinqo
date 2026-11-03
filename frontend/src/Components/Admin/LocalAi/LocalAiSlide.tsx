@@ -62,8 +62,9 @@ export function LocalAiSlide() {
           <In i={3}>
             <p className="mt-3 max-w-xl text-sm leading-relaxed text-white/60">
               <span className="font-semibold text-white/80">Good for: </span>
-              Private, simple questions and drafts. Expect slower and simpler answers than the cloud models, and no tools or sub-agents: the
-              model only answers. It uses the memory and processor of the machine it runs on.
+              Private, simple questions and drafts. Expect slower and simpler answers than the cloud models, and no sub-agents. Only a model
+              marked as able to use tools gets the few tools a task names; the others only answer. It uses the memory and processor of the
+              machine it runs on.
             </p>
           </In>
           <In i={4} className="mt-6 flex flex-wrap items-center gap-3">

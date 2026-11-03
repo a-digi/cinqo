@@ -100,6 +100,12 @@ func TestTheResponseTellsWhichModelsFitThisMachine(t *testing.T) {
 	if phi.MinRAMBytes != hardware.MinRAMBytes(phi.SizeBytes) || phi.License != "MIT" || phi.ContextTokens != 131072 || phi.CheckedOn == "" || phi.Source == "" {
 		t.Errorf("phi = %+v", phi)
 	}
+	if !qwen.Tools || phi.Tools {
+		t.Errorf("the response must say which model can use tools: qwen %v phi %v", qwen.Tools, phi.Tools)
+	}
+	if raw, _ := json.Marshal(qwen); !strings.Contains(string(raw), `"tools":true`) {
+		t.Errorf("the field is named tools in the JSON: %s", raw)
+	}
 	if r.CatalogCheckedOn != shipped(t).CheckedOn {
 		t.Errorf("catalogCheckedOn = %q", r.CatalogCheckedOn)
 	}

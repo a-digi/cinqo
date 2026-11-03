@@ -346,6 +346,20 @@ func TestTheTestReportsFailuresInsideTheResultNotAsErrors(t *testing.T) {
 		t.Errorf("a long reply must be cut to 200 characters (counted as characters, not bytes): %d runes", len([]rune(res.Reply)))
 	}
 
+	for _, c := range []struct {
+		n    int
+		want int
+	}{{200, 200}, {201, 201}} {
+		reply := strings.Repeat("x", c.n)
+		r.e.call = func(context.Context, *http.Client, string, string, string, []chatcompleter.Message, []chatcompleter.ToolDef) (*chatcompleter.ChatCompletionResult, error) {
+			return &chatcompleter.ChatCompletionResult{Message: chatcompleter.Message{Content: reply}}, nil
+		}
+		got, _ := r.e.Test(context.Background(), "tiny")
+		if len([]rune(got.Reply)) != c.want || strings.HasSuffix(got.Reply, "…") != (c.n > 200) {
+			t.Errorf("a reply of %d characters: kept %d, cut=%v", c.n, len([]rune(got.Reply)), strings.HasSuffix(got.Reply, "…"))
+		}
+	}
+
 	bad := newEngineRig(t, "FAKE_LLAMA_MODE=exit")
 	res, err := bad.e.Test(context.Background(), "tiny")
 	if err != nil || res.OK || !strings.Contains(res.Error, "model is corrupted or incomplete") || res.StartSeconds <= 0 {

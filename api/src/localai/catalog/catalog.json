@@ -10,6 +10,7 @@
       "url": "https://huggingface.co/unsloth/Phi-4-mini-instruct-GGUF/resolve/78eb92a46fc37e6b524df991ed9aca9bc6aa7b80/Phi-4-mini-instruct-Q4_K_M.gguf",
       "license": "MIT",
       "contextTokens": 131072,
+   "tools": false,
       "source": "unsloth/Phi-4-mini-instruct-GGUF at commit 78eb92a (a GGUF conversion of microsoft/Phi-4-mini-instruct)",
       "note": "The better answers of the two. Needs the most memory.",
       "checkedOn": "2026-11-03"
@@ -23,6 +24,7 @@
       "url": "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/91cad51170dc346986eccefdc2dd33a9da36ead9/qwen2.5-1.5b-instruct-q4_k_m.gguf",
       "license": "Apache-2.0",
       "contextTokens": 32768,
+   "tools": true,
       "source": "Qwen/Qwen2.5-1.5B-Instruct-GGUF at commit 91cad51 (the model's own authors)",
       "note": "A lighter, faster choice for a machine with little memory. Simpler answers.",
       "checkedOn": "2026-11-03"

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/a-digi/cinqo/src/localai/catalog"
 	"github.com/a-digi/cinqo/src/localai/entity"
 	"github.com/a-digi/cinqo/src/localai/repository/query"
 	"github.com/a-digi/cinqo/src/platform"
@@ -47,6 +48,20 @@ func Entry(db *sql.DB) platform.Entry {
 			s, ok := load()
 			return ok && s.Configured()
 		},
-		NoTools: true,
+		// Tools only for a catalog model that was measured to call them (step 8), and only the ones a conversation names:
+		// never every tool, and never in composer mode.
+		ToolsFor: func(model string) platform.ToolPolicy {
+			if cat, err := catalog.Default(); err == nil {
+				if m, ok := cat.Find(model); ok && m.Tools {
+					return platform.ToolsExplicit
+				}
+			}
+			return platform.ToolsNone
+		},
+		ToolHint: toolHint,
 	}
 }
+
+// toolHint is told to a small model that has tools: it answers about the user's data from nothing unless it is told to look
+// (measured in step 8: with a question it never called a tool).
+const toolHint = "You have tools. For any question about the user's own data, always call the matching tool first and answer only from its result; never guess or invent data. Use a tool only when it is needed."

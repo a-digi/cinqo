@@ -87,11 +87,13 @@ type catalogModelResponse struct {
 	SizeBytes     int64  `json:"sizeBytes"`
 	MinRAMBytes   uint64 `json:"minRamBytes"`
 	ContextTokens int    `json:"contextTokens"`
-	License       string `json:"license"`
-	Source        string `json:"source"`
-	Note          string `json:"note"`
-	CheckedOn     string `json:"checkedOn"`
-	Fits          *bool  `json:"fits"`
+	// Tools says the model was measured to call tools reliably (so a conversation may be given a list of tools).
+	Tools     bool   `json:"tools"`
+	License   string `json:"license"`
+	Source    string `json:"source"`
+	Note      string `json:"note"`
+	CheckedOn string `json:"checkedOn"`
+	Fits      *bool  `json:"fits"`
 	// Install says whether the model file is downloaded, being downloaded (with the id of the download) or interrupted.
 	Install entity.FileInstall `json:"install"`
 	// Enable says whether the local AI can be switched on with this model right now, and if not, why not.
@@ -147,7 +149,7 @@ func respond(s entity.Settings, c catalog.Catalog, rt Runtime, installs Installs
 	for _, m := range c.Models {
 		models = append(models, catalogModelResponse{
 			ID: m.ID, Name: m.Name, Quantization: m.Quantization, SizeBytes: m.SizeBytes,
-			MinRAMBytes: hardware.MinRAMBytes(m.SizeBytes), ContextTokens: m.ContextTokens,
+			MinRAMBytes: hardware.MinRAMBytes(m.SizeBytes), ContextTokens: m.ContextTokens, Tools: m.Tools,
 			License: m.License, Source: m.Source, Note: m.Note, CheckedOn: m.CheckedOn,
 			Fits:    info.Fits(m.SizeBytes),
 			Install: installs.ModelState(m),

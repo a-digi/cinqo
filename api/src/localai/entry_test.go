@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/a-digi/cinqo/src/platform"
 	"github.com/a-digi/cinqo/src/platform/chatcompleter"
 )
 
@@ -45,8 +46,8 @@ func TestTheLocalPlatformIsOffUntilTheSettingsAreComplete(t *testing.T) {
 	if e.Info.ID != PlatformID || e.Info.Name != "Local AI" {
 		t.Errorf("info = %+v", e.Info)
 	}
-	if e.RequiresKey() || !e.NoTools {
-		t.Errorf("requiresKey %v noTools %v, want false and true", e.RequiresKey(), e.NoTools)
+	if e.RequiresKey() || e.OffersAllTools() || e.ToolsFor == nil || e.NoTools {
+		t.Errorf("requiresKey %v offersAllTools %v: want no key, never every tool, decided per model", e.RequiresKey(), e.OffersAllTools())
 	}
 	if e.IsAvailable() || len(e.SelectableModelList()) != 0 {
 		t.Error("the default row must not be offered")
@@ -116,5 +117,23 @@ func TestAnUnreadableSettingsTableMeansUnavailable(t *testing.T) {
 	_, _, err := e.Credentials(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "settings") {
 		t.Errorf("err = %v, want a settings read error", err)
+	}
+}
+
+func TestOnlyAModelMeasuredToUseToolsGetsTheExplicitPolicy(t *testing.T) {
+	withEngine(t, &fakeEngine{})
+	e := Entry(openMainDB(t))
+	for model, want := range map[string]platform.ToolPolicy{
+		"qwen2.5-1.5b-instruct-q4_k_m": platform.ToolsExplicit,
+		"phi-4-mini-instruct-q4_k_m":   platform.ToolsNone, // measured: 0 of 40 tool calls
+		"gpt-4":                        platform.ToolsNone,
+		"":                             platform.ToolsNone,
+	} {
+		if got := e.ToolPolicyFor(model); got != want {
+			t.Errorf("%q: policy %v, want %v", model, got, want)
+		}
+	}
+	if !strings.Contains(e.ToolHint, "always call the matching tool first") {
+		t.Errorf("the model must be told to look before it answers about the user's data: %q", e.ToolHint)
 	}
 }

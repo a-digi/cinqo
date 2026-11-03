@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/a-digi/coco-logger/logger"
 	"github.com/a-digi/coco-orm/orm"
@@ -35,11 +36,17 @@ type fakeRequest struct {
 	w    *httptest.ResponseRecorder
 	di   serverdi.Context
 	body string
+	req  *http.Request // the request the handler sees (a plain one when nil)
 }
 
 func (f fakeRequest) GetWriter() http.ResponseWriter { return f.w }
 func (f fakeRequest) GetDI() serverdi.Context        { return f.di }
-func (f fakeRequest) GetRequest() *http.Request      { return httptest.NewRequest("POST", "/", nil) }
+func (f fakeRequest) GetRequest() *http.Request {
+	if f.req != nil {
+		return f.req
+	}
+	return httptest.NewRequest("POST", "/", nil)
+}
 func (f fakeRequest) BindJSON(dest interface{}) error {
 	return json.Unmarshal([]byte(f.body), dest)
 }
@@ -52,6 +59,8 @@ type fakeRuntime struct {
 	testErr error
 	asked   *[]string // the model ids CanEnable was asked about
 	tested  *[]string // the model ids Test was asked about
+	ctxs    *[]context.Context
+	during  func(context.Context) // runs inside Test, with the context the handler gave it
 }
 
 func (f fakeRuntime) CanEnable(modelID string) error {
@@ -68,7 +77,13 @@ func (f fakeRuntime) Status() entity.EngineStatus {
 	return f.status
 }
 
-func (f fakeRuntime) Test(_ context.Context, modelID string) (entity.TestResult, error) {
+func (f fakeRuntime) Test(ctx context.Context, modelID string) (entity.TestResult, error) {
+	if f.ctxs != nil {
+		*f.ctxs = append(*f.ctxs, ctx)
+	}
+	if f.during != nil {
+		f.during(ctx)
+	}
 	if f.tested != nil {
 		*f.tested = append(*f.tested, modelID)
 	}
@@ -474,5 +489,29 @@ func TestGetReportsTheStateOfTheModelProgramAndTheReasonPerModel(t *testing.T) {
 		if m.Enable.OK || m.Enable.Reason != "choose a model first" {
 			t.Errorf("enable = %+v", m.Enable)
 		}
+	}
+}
+
+func TestTheTestRunsUnderTheRequestAndAFourMinuteLimit(t *testing.T) {
+	db := openMainDB(t)
+	var ctxs []context.Context
+	reqCtx, cancel := context.WithCancel(context.Background())
+	stoppedWithTheRequest := false
+	rt := fakeRuntime{ctxs: &ctxs, result: entity.TestResult{OK: true}, during: func(ctx context.Context) {
+		cancel() // the page is left while the model is working
+		stoppedWithTheRequest = ctx.Err() != nil
+	}}
+	req := httptest.NewRequest("POST", "/", nil).WithContext(reqCtx)
+	rec := httptest.NewRecorder()
+	handler.Handlers(rt, &fakeInstalls{})["LocalAiTest"].ServeHTTP(fakeRequest{w: rec, di: fakeDI{db: db}, body: `{"modelId":"phi-4-mini-instruct-q4_k_m"}`, req: req})
+	if len(ctxs) != 1 {
+		t.Fatalf("the test was not run: %d %s", len(ctxs), rec.Body.String())
+	}
+	deadline, ok := ctxs[0].Deadline()
+	if left := time.Until(deadline); !ok || left < 3*time.Minute+30*time.Second || left > 4*time.Minute {
+		t.Errorf("the test must be limited to 4 minutes: %v (%v left)", ok, left)
+	}
+	if !stoppedWithTheRequest {
+		t.Errorf("leaving the page (the request ends) must stop the test")
 	}
 }

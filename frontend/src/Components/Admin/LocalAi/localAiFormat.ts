@@ -51,6 +51,13 @@ export function modelFacts(m: LocalAiModel): string {
   return `${formatBytes(m.sizeBytes)} download · needs about ${formatBytes(m.minRamBytes)} memory · reads up to ${m.contextTokens.toLocaleString('en-US')} tokens`
 }
 
+// What a model can do with tools, in a line for its card.
+export function toolsLine(m: Pick<LocalAiModel, 'tools'>): string {
+  return m.tools
+    ? 'Can use a few tools when a task names them (for example the CV import). Ask it to do something rather than asking a question: it may answer a question about your data without looking.'
+    : 'Cannot use tools: it only answers.'
+}
+
 // What the page and the slide say about running models on this machine.
 export function supportText(h: LocalAiHardware): string {
   return h.supported

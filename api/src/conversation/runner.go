@@ -192,10 +192,8 @@ func runDetachedTurn(
 		return
 	}
 	// A conversation created with an allowlist (step 113) is offered, and may call, only those.
-	if entry.NoTools {
-		tools = nil
-	}
-	ctx, tools = applyToolAllowlist(ctx, tools, conv)
+	ctx, tools = offeredTools(ctx, entry, model, tools, conv)
+	messages = withToolHint(entry, tools, messages)
 	// A composer orchestrator gets the system prompt that makes it
 	// plan and delegate, including the catalog of tools its workers
 	// can use; a direct conversation gets none, exactly as before

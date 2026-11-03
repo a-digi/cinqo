@@ -110,9 +110,17 @@ func CreateHandler(reqCtx request.RequestContext) {
 		response.ErrorResponse(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if entry.NoTools && (orchestrationMode != conversation_entity.OrchestrationModeDirect || allowedTools != nil) {
-		response.ErrorResponse(w, http.StatusBadRequest, "this platform offers no tools: use direct mode without allowedTools")
-		return
+	switch entry.ToolPolicyFor(model) {
+	case platform.ToolsNone:
+		if orchestrationMode != conversation_entity.OrchestrationModeDirect || allowedTools != nil {
+			response.ErrorResponse(w, http.StatusBadRequest, "this platform or model offers no tools: use direct mode without allowedTools")
+			return
+		}
+	case platform.ToolsExplicit:
+		if orchestrationMode != conversation_entity.OrchestrationModeDirect {
+			response.ErrorResponse(w, http.StatusBadRequest, "this platform offers only the tools you list: use direct mode (with allowedTools to give it tools)")
+			return
+		}
 	}
 	if allowedTools != nil && orchestrationMode != conversation_entity.OrchestrationModeDirect {
 		response.ErrorResponse(w, http.StatusBadRequest, "allowedTools is only supported in direct mode")

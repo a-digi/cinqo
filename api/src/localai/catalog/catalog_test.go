@@ -22,6 +22,10 @@ func TestTheShippedCatalogIsValid(t *testing.T) {
 	if !ok || q.License != "Apache-2.0" || q.ContextTokens != 32768 || q.SizeBytes != 1117320736 {
 		t.Errorf("qwen entry = %+v (found %v)", q, ok)
 	}
+	// Measured in step 8: Qwen called tools reliably, Phi-4-mini made 0 of 40 calls. A change here needs a new measurement.
+	if q.Tools != true || m.Tools != false {
+		t.Errorf("tools: qwen %v phi %v, want true and false", q.Tools, m.Tools)
+	}
 	if _, ok := c.Find("nope"); ok {
 		t.Error("an unknown id must not be found")
 	}
@@ -206,5 +210,16 @@ func TestTheNumericBoundsAreInclusive(t *testing.T) {
 		if _, err := Load([]byte(file(mutate(`4096`, ctx)))); err != nil {
 			t.Errorf("context %s must be accepted: %v", ctx, err)
 		}
+	}
+}
+
+func TestTheToolsFlagIsReadAndDefaultsToOff(t *testing.T) {
+	on, err := Load([]byte(file(mutate(`"contextTokens": 4096`, `"contextTokens": 4096, "tools": true`))))
+	if err != nil || !on.Models[0].Tools {
+		t.Fatalf("tools true: %v %+v", err, on.Models)
+	}
+	off, err := Load([]byte(file(validEntry)))
+	if err != nil || off.Models[0].Tools {
+		t.Fatalf("no flag must mean no tools: %v %+v", err, off.Models)
 	}
 }

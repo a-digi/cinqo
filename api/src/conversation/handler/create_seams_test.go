@@ -74,3 +74,30 @@ func TestCreateRefusesWhatAPlatformsSeamsForbid(t *testing.T) {
 		}
 	}
 }
+
+func TestCreateOnAPerModelToolsPlatformFollowsThePolicyOfTheModel(t *testing.T) {
+	if err := platform.Register(platform.Entry{
+		Info:        entity.Platform{ID: "create-permodel", Name: "PerModel"},
+		Completer:   refusingCompleter{},
+		Credentials: func(context.Context) (string, string, error) { return "http://127.0.0.1:1", "", nil },
+		Models:      func() []string { return []string{"with-tools", "without"} },
+		ToolsFor: func(model string) platform.ToolPolicy {
+			if model == "with-tools" {
+				return platform.ToolsExplicit
+			}
+			return platform.ToolsNone
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct{ name, body, want string }{
+		{"composer on a model with tools", `{"platformId":"create-permodel","model":"with-tools","orchestrationMode":"composer"}`, "only the tools you list"},
+		{"an allowlist on a model without tools", `{"platformId":"create-permodel","model":"without","allowedTools":["list_jobs"]}`, "offers no tools"},
+		{"composer on a model without tools", `{"platformId":"create-permodel","model":"without","orchestrationMode":"composer"}`, "offers no tools"},
+	} {
+		rec := createWith(c.body)
+		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), c.want) {
+			t.Errorf("%s: status %d body %s, want 400 containing %q", c.name, rec.Code, rec.Body.String(), c.want)
+		}
+	}
+}

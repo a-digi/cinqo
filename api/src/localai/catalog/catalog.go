@@ -55,9 +55,11 @@ type Model struct {
 	URL           string `json:"url"`
 	License       string `json:"license"`
 	ContextTokens int    `json:"contextTokens"`
-	Source        string `json:"source"`
-	Note          string `json:"note"`
-	CheckedOn     string `json:"checkedOn"`
+	// Tools says the model was measured to call tools reliably (step 8): only then a conversation may be given an allowlist.
+	Tools     bool   `json:"tools"`
+	Source    string `json:"source"`
+	Note      string `json:"note"`
+	CheckedOn string `json:"checkedOn"`
 }
 
 // Runtime is one build of the program that runs the models (llama.cpp's llama-server) for one system: an archive that is

@@ -118,7 +118,7 @@ func TestTheKeyIsInTheEnvironmentNeverOnTheCommandLineAndNothingElseLeaks(t *tes
 		t.Error("the program must not inherit the application's environment")
 	}
 	joined := " " + strings.Join(rec.Args, " ") + " "
-	for _, want := range []string{" --host 127.0.0.1 ", " -np 1 ", " --no-webui ", " --no-slots ", " -c 4096 ", " -m " + spec.ModelPath + " "} {
+	for _, want := range []string{" --host 127.0.0.1 ", " -np 1 ", " --no-webui ", " --no-slots ", " --jinja ", " -c 4096 ", " -m " + spec.ModelPath + " "} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("the command line %q must contain %q", joined, want)
 		}

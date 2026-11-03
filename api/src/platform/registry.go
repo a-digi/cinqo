@@ -52,7 +52,40 @@ type Entry struct {
 	// NoTools means conversations on this platform are offered no tools
 	// and run in direct mode only.
 	NoTools bool
+	// ToolsFor, when set, decides per model how tools are offered (instead of NoTools): ToolsNone, or ToolsExplicit
+	// (only the tools a conversation names in its allowlist, in direct mode). A platform that sets it never offers
+	// every tool.
+	ToolsFor func(model string) ToolPolicy
+	// ToolHint, when set, is a system message added to a turn that is offered tools (a small model needs telling).
+	ToolHint string
 }
+
+// ToolPolicy says which tools a conversation on a platform may be offered.
+type ToolPolicy int
+
+const (
+	// ToolsAll: every tool the caller may use (the built-in platforms).
+	ToolsAll ToolPolicy = iota
+	// ToolsNone: no tools; direct mode only.
+	ToolsNone
+	// ToolsExplicit: only the tools the conversation's allowlist names (none without one); direct mode only.
+	ToolsExplicit
+)
+
+// ToolPolicyFor is how tools are offered to a conversation of this platform that uses model.
+func (e Entry) ToolPolicyFor(model string) ToolPolicy {
+	if e.NoTools {
+		return ToolsNone
+	}
+	if e.ToolsFor != nil {
+		return e.ToolsFor(model)
+	}
+	return ToolsAll
+}
+
+// OffersAllTools is false for a platform whose conversations are never offered every tool (so a form that cannot name an
+// allowlist must not offer tool modes for it).
+func (e Entry) OffersAllTools() bool { return !e.NoTools && e.ToolsFor == nil }
 
 // RequiresKey reports whether the platform is reached with a stored API
 // key (true for every platform without its own Credentials).

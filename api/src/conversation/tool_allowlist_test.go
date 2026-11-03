@@ -134,7 +134,7 @@ func TestRunToolLoop_NoAllowlistRunsEveryTool(t *testing.T) {
 
 // The turn runners cannot be run here (they need a database, a key and a model), so this pins the
 // wiring itself: between building the offered tools and running the loop, both entry points must
-// apply the conversation's allowlist. Dropping that line would silently let a restricted
+// apply the conversation's allowlist (through offeredTools, which also applies the platform's tool policy). Dropping that line would silently let a restricted
 // conversation call anything.
 func TestTurnEntryPointsApplyTheAllowlist(t *testing.T) {
 	for file, from := range map[string]string{
@@ -155,8 +155,58 @@ func TestTurnEntryPointsApplyTheAllowlist(t *testing.T) {
 		if loop < 0 {
 			t.Fatalf("%s: cannot find the runToolLoop call after the tools are built", file)
 		}
-		if !strings.Contains(rest[:loop], "applyToolAllowlist(ctx, tools, conv)") {
+		if !strings.Contains(rest[:loop], "offeredTools(ctx, entry, model, tools, conv)") {
 			t.Errorf("%s: the allowlist is not applied between building the tools and running the loop", file)
 		}
+		if !strings.Contains(rest[:loop], "withToolHint(entry, tools, messages)") {
+			t.Errorf("%s: the platform's tool hint is not added between building the tools and running the loop", file)
+		}
+	}
+}
+
+func TestOfferedToolsFollowThePlatformsToolPolicy(t *testing.T) {
+	perModel := func(model string) platform.ToolPolicy {
+		if model == "tools" {
+			return platform.ToolsExplicit
+		}
+		return platform.ToolsNone
+	}
+	allowlist := `["list_personas","get_persona_details"]`
+	for _, c := range []struct {
+		name  string
+		entry platform.Entry
+		model string
+		conv  *conversation_entity.Conversation
+		want  []string
+	}{
+		{"a built-in platform without a list: every tool", platform.Entry{}, "m", convWith(""), []string{"list_personas", "get_persona_details", "create_persona", "update_persona_details", "add_career_skill"}},
+		{"a built-in platform with a list: the list", platform.Entry{}, "m", convWith(allowlist), []string{"list_personas", "get_persona_details"}},
+		{"no tools, even with a list", platform.Entry{NoTools: true}, "m", convWith(allowlist), []string{}},
+		{"explicit tools, with a list: the list", platform.Entry{ToolsFor: perModel}, "tools", convWith(allowlist), []string{"list_personas", "get_persona_details"}},
+		{"explicit tools, no list: none (never every tool)", platform.Entry{ToolsFor: perModel}, "tools", convWith(""), []string{}},
+		{"a model without tools, even with a list", platform.Entry{ToolsFor: perModel}, "other", convWith(allowlist), []string{}},
+	} {
+		_, got := offeredTools(context.Background(), c.entry, c.model, offered(), c.conv)
+		if !reflect.DeepEqual(names(got), c.want) {
+			t.Errorf("%s: %v, want %v", c.name, names(got), c.want)
+		}
+	}
+}
+
+func TestTheToolHintIsAddedOnlyToATurnThatHasTools(t *testing.T) {
+	msgs := []chatcompleter.Message{{Role: "user", Content: "hi"}}
+	entry := platform.Entry{ToolHint: "look first"}
+	got := withToolHint(entry, offered(), msgs)
+	if len(got) != 2 || got[0].Role != "system" || got[0].Content != "look first" || got[1].Content != "hi" {
+		t.Errorf("with tools: %+v", got)
+	}
+	if len(msgs) != 1 {
+		t.Error("the caller's messages must not be changed")
+	}
+	if got := withToolHint(entry, nil, msgs); len(got) != 1 {
+		t.Errorf("no tools offered: no hint, got %+v", got)
+	}
+	if got := withToolHint(platform.Entry{}, offered(), msgs); len(got) != 1 {
+		t.Errorf("a platform without a hint adds none: %+v", got)
 	}
 }
