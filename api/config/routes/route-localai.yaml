@@ -34,3 +34,12 @@ routes:
     scopes:
       - cinqo:platform:manage
       - cinqo:super:admin
+
+  # A tiny real request to the chosen model (starting the program when needed), timed: tokens per second included.
+  - path: /api/v1/local-ai/test
+    method: POST
+    executor: LocalAiTest
+    security: authenticated
+    scopes:
+      - cinqo:platform:manage
+      - cinqo:super:admin

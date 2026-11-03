@@ -49,6 +49,21 @@ export interface LocalAiRuntime {
   install: FileInstall
 }
 
+// The model program (llama-server, started by Cinqo): stopped (it starts when a conversation needs it), starting, ready or failed.
+export type EngineState = 'stopped' | 'starting' | 'ready' | 'failed'
+
+export interface LocalAiEngine {
+  state: EngineState
+  error: string
+  modelId: string
+}
+
+// Whether the local AI can be switched on with a model right now, and if not, why not.
+export interface EnableState {
+  ok: boolean
+  reason: string
+}
+
 // One model Cinqo knows how to download. fits is null when the memory of this machine is unknown.
 export interface LocalAiModel {
   id: string
@@ -63,6 +78,7 @@ export interface LocalAiModel {
   checkedOn: string
   fits: boolean | null
   install: FileInstall
+  enable: EnableState
 }
 
 export interface LocalAiResponse {
@@ -72,6 +88,7 @@ export interface LocalAiResponse {
   catalog: LocalAiModel[]
   catalogCheckedOn: string
   runtime: LocalAiRuntime
+  engine: LocalAiEngine
 }
 
 export async function fetchLocalAi(): Promise<LocalAiResponse> {
@@ -94,4 +111,24 @@ export async function startInstall(modelId?: string): Promise<LocalAiResponse> {
 // Deletes everything that was downloaded (refused while the local AI is on or a download is running).
 export async function removeDownloads(): Promise<void> {
   await apiDelete('/api/v1/local-ai/install')
+}
+
+// The outcome of the test: one tiny real conversation with the model, timed. A failure of the model is part of the result
+// (ok false with the reason), not an error.
+export interface LocalAiTestResult {
+  ok: boolean
+  error: string
+  startSeconds: number
+  seconds: number
+  promptTokens: number
+  completionTokens: number
+  tokensPerSecond: number
+  reply: string
+}
+
+// Runs the test on the model (the model of the settings when no id is given). It can take a while: the model program is
+// started first when it is not running.
+export async function testModel(modelId?: string): Promise<LocalAiTestResult> {
+  const raw = await apiPost<{ message: LocalAiTestResult }>('/api/v1/local-ai/test', modelId === undefined ? {} : { modelId })
+  return raw.message
 }

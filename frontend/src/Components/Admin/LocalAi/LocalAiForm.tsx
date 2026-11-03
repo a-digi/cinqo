@@ -5,9 +5,17 @@ import { Decor } from '../../../Shared/Components/CardArt/shapes'
 import { formatBytes } from '../../../Shared/Components/Download/format'
 import type { Download } from '../../../api/downloads'
 import { InstallRow } from './InstallRow'
-import type { LocalAiHardware, LocalAiModel, LocalAiRuntime, LocalAiSettings, LocalAiStatus } from './localAiApi'
-import { fitKind, fitLabel, hardwareSummary, modelFacts, supportText } from './localAiFormat'
-import { hasProblems, switchLocked, type Draft, type DraftProblems } from './localAiRules'
+import type {
+  LocalAiEngine,
+  LocalAiHardware,
+  LocalAiModel,
+  LocalAiRuntime,
+  LocalAiSettings,
+  LocalAiStatus,
+  LocalAiTestResult,
+} from './localAiApi'
+import { engineLine, fitKind, fitLabel, hardwareSummary, idleHelp, modelFacts, supportText, testSummary } from './localAiFormat'
+import { contextOptions, hasProblems, switchState, type Draft, type DraftProblems } from './localAiRules'
 
 const accent = accents.teal
 
@@ -65,6 +73,11 @@ export function LocalAiForm({
   catalog,
   catalogCheckedOn,
   runtime,
+  engine,
+  testing,
+  testResult,
+  testError,
+  onTest,
   downloadedFiles,
   downloading,
   failures,
@@ -91,6 +104,12 @@ export function LocalAiForm({
   catalog: LocalAiModel[]
   catalogCheckedOn: string
   runtime: LocalAiRuntime
+  engine: LocalAiEngine
+  // The test: running, its last result, or why it could not be run at all.
+  testing: boolean
+  testResult: LocalAiTestResult | null
+  testError: string
+  onTest: () => void
   downloadedFiles: boolean
   downloading: boolean
   // The last download of each thing (a model id, or "runtime") that failed: the server forgets finished jobs, the page keeps these.
@@ -113,10 +132,15 @@ export function LocalAiForm({
   onDiscard: () => void
 }) {
   const switchLabelId = useId()
+  const ctxId = useId()
+  const idleId = useId()
   const switchNoteId = useId()
   const groupId = useId()
   const locked = !canManage || saving
-  const switchOff = locked || switchLocked(draft, status.canEnable)
+  const sw = switchState(draft, catalog)
+  const switchOff = locked || sw.locked
+  const chosen = catalog.find((m) => m.id === draft.modelId)
+  const canTest = canManage && chosen?.enable.ok === true && !testing
   const on = saved.enabled && status.state === 'configured'
 
   return (
@@ -156,11 +180,15 @@ export function LocalAiForm({
               Off by default. While off, &quot;Local AI&quot; is not offered anywhere. When it is on, it shows up as a platform when a new
               conversation is created. Nothing you write is sent to a cloud provider by it.
             </p>
-            {!status.canEnable && (
+            {sw.locked && (
               <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                It cannot be switched on yet: {status.reason}. You can already choose the model below.
+                It cannot be switched on yet. {sw.reason} You can choose and download a model below.
               </p>
             )}
+            <p className={`mt-2 text-xs ${engine.state === 'failed' ? 'text-red-700' : 'text-gray-500'}`}>
+              <span className="font-medium">The model program: </span>
+              {engineLine(engine)}
+            </p>
           </div>
         </div>
       </Card>
@@ -284,6 +312,91 @@ export function LocalAiForm({
             Sizes, licenses and addresses were checked against the real pages on {catalogCheckedOn}.
           </p>
         </fieldset>
+      </Card>
+
+      <Card label="Resources" title="Memory and time">
+        <div className="space-y-4">
+          <div>
+            <label htmlFor={ctxId} className="block text-sm font-medium text-gray-900">
+              Context size
+            </label>
+            <select
+              id={ctxId}
+              value={draft.contextTokens}
+              disabled={locked}
+              aria-invalid={problems.contextTokens !== undefined}
+              aria-describedby={`${ctxId}-note`}
+              onChange={(e) => {
+                onChange({ ...draft, contextTokens: Number(e.target.value) })
+              }}
+              className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/30 disabled:bg-gray-50 disabled:text-gray-500 aria-[invalid=true]:border-red-400"
+            >
+              {contextOptions(draft, catalog).map((n) => (
+                <option key={n} value={n}>
+                  {n.toLocaleString('en-US')} tokens
+                </option>
+              ))}
+            </select>
+            <p id={`${ctxId}-note`} className={`mt-1 text-xs ${problems.contextTokens ? 'text-red-700' : 'text-gray-500'}`}>
+              {problems.contextTokens ??
+                'How much of a conversation the model reads at once. A larger context lets it remember more and uses more memory. A conversation that grows past it must be started again.'}
+            </p>
+          </div>
+          <div>
+            <label htmlFor={idleId} className="block text-sm font-medium text-gray-900">
+              Unload after (minutes)
+            </label>
+            <input
+              id={idleId}
+              type="number"
+              min={0}
+              max={1440}
+              step={1}
+              inputMode="numeric"
+              value={Number.isNaN(draft.idleMinutes) ? '' : draft.idleMinutes}
+              disabled={locked}
+              aria-invalid={problems.idleMinutes !== undefined}
+              aria-describedby={`${idleId}-note`}
+              onChange={(e) => {
+                onChange({ ...draft, idleMinutes: e.target.valueAsNumber })
+              }}
+              className="mt-1 w-40 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-500/30 disabled:bg-gray-50 disabled:text-gray-500 aria-[invalid=true]:border-red-400"
+            />
+            <p id={`${idleId}-note`} className={`mt-1 text-xs ${problems.idleMinutes ? 'text-red-700' : 'text-gray-500'}`}>
+              {problems.idleMinutes ?? idleHelp(draft.idleMinutes)}
+            </p>
+          </div>
+        </div>
+      </Card>
+
+      <Card label="Test" title="Test the model">
+        <p className="text-xs text-gray-500">
+          Sends one tiny question to the chosen model and times the answer. If the model is not loaded yet, it is loaded first, which can
+          take a moment.
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            disabled={!canTest}
+            onClick={onTest}
+            className="rounded-full border border-teal-600 px-4 py-1.5 text-xs font-semibold text-teal-700 transition hover:bg-teal-50 disabled:opacity-50"
+          >
+            {testing ? 'Testing…' : 'Test the model'}
+          </button>
+          {!chosen && <span className="text-xs text-gray-500">Choose a model first.</span>}
+          {chosen && !chosen.enable.ok && (
+            <span className="text-xs text-gray-500">
+              {chosen.enable.reason === '' ? 'This model cannot be run yet.' : `${chosen.enable.reason}.`}
+            </span>
+          )}
+        </div>
+        <div role="status" aria-live="polite" className="mt-3 text-sm">
+          {testing && <p className="text-gray-600">Waiting for the model… {engine.state === 'starting' ? 'It is loading.' : ''}</p>}
+          {!testing && testError && <p className="text-red-700">{testError}</p>}
+          {!testing && !testError && testResult && (
+            <p className={testResult.ok ? 'text-teal-800' : 'text-red-700'}>{testSummary(testResult)}</p>
+          )}
+        </div>
       </Card>
 
       <Card label="This computer" title="This computer">

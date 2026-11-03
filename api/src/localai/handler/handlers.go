@@ -2,10 +2,12 @@
 package handler
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/a-digi/coco-server/server/request"
 	"github.com/a-digi/coco-server/server/response"
@@ -24,9 +26,12 @@ type handlerFunc func(request.RequestContext)
 
 func (f handlerFunc) ServeHTTP(reqCtx request.RequestContext) { f(reqCtx) }
 
-// Runtime tells the API whether the managed local AI can be switched on right now: nil when it can, otherwise the reason.
+// Runtime is what the API needs from the engine: whether the local AI can be switched on with a model (nil when it can,
+// otherwise the reason), the state of the model program, and a timed test request.
 type Runtime interface {
-	CanEnable() error
+	CanEnable(modelID string) error
+	Status() entity.EngineStatus
+	Test(ctx context.Context, modelID string) (entity.TestResult, error)
 }
 
 // Installs knows what is downloaded and starts and removes downloads.
@@ -53,6 +58,7 @@ func Handlers(runtime Runtime, installs Installs) map[string]routing.HandlerInte
 		"LocalAiUpdateSettings":  handlerFunc(a.updateSettings),
 		"LocalAiInstall":         handlerFunc(a.install),
 		"LocalAiRemoveDownloads": handlerFunc(a.removeDownloads),
+		"LocalAiTest":            handlerFunc(a.test),
 	}
 }
 
@@ -88,6 +94,20 @@ type catalogModelResponse struct {
 	Fits          *bool  `json:"fits"`
 	// Install says whether the model file is downloaded, being downloaded (with the id of the download) or interrupted.
 	Install entity.FileInstall `json:"install"`
+	// Enable says whether the local AI can be switched on with this model right now, and if not, why not.
+	Enable enableResponse `json:"enable"`
+}
+
+type enableResponse struct {
+	OK     bool   `json:"ok"`
+	Reason string `json:"reason"`
+}
+
+func enableOf(err error) enableResponse {
+	if err != nil {
+		return enableResponse{Reason: err.Error()}
+	}
+	return enableResponse{OK: true}
 }
 
 // runtimeResponse is the program that runs the models, for this system: Supported is false on a system that has none yet.
@@ -105,12 +125,15 @@ type localAiResponse struct {
 	Catalog          []catalogModelResponse `json:"catalog"`
 	CatalogCheckedOn string                 `json:"catalogCheckedOn"`
 	Runtime          runtimeResponse        `json:"runtime"`
+	// Engine is the state of the model program: stopped (it starts when a conversation needs it), starting, ready or failed.
+	Engine entity.EngineStatus `json:"engine"`
 }
 
 // detect reads the machine; a variable so tests can give a fixed one.
 var detect = hardware.Detect
 
-func respond(s entity.Settings, c catalog.Catalog, cannotEnable error, installs Installs) localAiResponse {
+func respond(s entity.Settings, c catalog.Catalog, rt Runtime, installs Installs) localAiResponse {
+	cannotEnable := rt.CanEnable(s.ModelID)
 	state := "off"
 	if s.Configured() {
 		state = "configured"
@@ -128,11 +151,12 @@ func respond(s entity.Settings, c catalog.Catalog, cannotEnable error, installs 
 			License: m.License, Source: m.Source, Note: m.Note, CheckedOn: m.CheckedOn,
 			Fits:    info.Fits(m.SizeBytes),
 			Install: installs.ModelState(m),
+			Enable:  enableOf(rt.CanEnable(m.ID)),
 		})
 	}
 	runtime := runtimeResponse{Install: entity.FileInstall{State: entity.InstallNotDownloaded}}
-	if rt, ok := c.RuntimeFor(info.OS, info.Arch); ok {
-		runtime = runtimeResponse{Supported: true, Name: rt.Name, SizeBytes: rt.SizeBytes, Install: installs.RuntimeState(rt)}
+	if prog, ok := c.RuntimeFor(info.OS, info.Arch); ok {
+		runtime = runtimeResponse{Supported: true, Name: prog.Name, SizeBytes: prog.SizeBytes, Install: installs.RuntimeState(prog)}
 	}
 	return localAiResponse{
 		Settings:         s,
@@ -141,6 +165,7 @@ func respond(s entity.Settings, c catalog.Catalog, cannotEnable error, installs 
 		Catalog:          models,
 		CatalogCheckedOn: c.CheckedOn,
 		Runtime:          runtime,
+		Engine:           rt.Status(),
 	}
 }
 
@@ -170,7 +195,7 @@ func (a api) get(reqCtx request.RequestContext) {
 		response.ErrorResponse(w, http.StatusInternalServerError, "the local AI model catalog is invalid")
 		return
 	}
-	response.SuccessResponse(w, http.StatusOK, respond(s, c, a.runtime.CanEnable(), a.installs))
+	response.SuccessResponse(w, http.StatusOK, respond(s, c, a.runtime, a.installs))
 }
 
 type updateSettingsRequest struct {
@@ -200,7 +225,7 @@ func (a api) updateSettings(reqCtx request.RequestContext) {
 		response.ErrorResponse(w, http.StatusInternalServerError, "the local AI model catalog is invalid")
 		return
 	}
-	cannotEnable := a.runtime.CanEnable()
+	cannotEnable := a.runtime.CanEnable(strings.TrimSpace(body.ModelID))
 	checked, err := entity.Validate(entity.Settings{
 		Enabled:       body.Enabled,
 		ModelID:       body.ModelID,
@@ -220,7 +245,7 @@ func (a api) updateSettings(reqCtx request.RequestContext) {
 		response.ErrorResponse(w, http.StatusInternalServerError, "failed to reload the local AI settings")
 		return
 	}
-	response.SuccessResponse(w, http.StatusOK, respond(saved, c, cannotEnable, a.installs))
+	response.SuccessResponse(w, http.StatusOK, respond(saved, c, a.runtime, a.installs))
 }
 
 type installRequest struct {
@@ -268,7 +293,7 @@ func (a api) install(reqCtx request.RequestContext) {
 		}
 		return
 	}
-	response.SuccessResponse(w, http.StatusAccepted, respond(s, c, a.runtime.CanEnable(), a.installs))
+	response.SuccessResponse(w, http.StatusAccepted, respond(s, c, a.runtime, a.installs))
 }
 
 // removeDownloads handles DELETE /api/v1/local-ai/install: delete everything that was downloaded. It is refused while the
@@ -298,4 +323,48 @@ func (a api) removeDownloads(reqCtx request.RequestContext) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// testTimeout is how long the test may take: starting the program and loading a model from a cold disk can take minutes.
+const testTimeout = 4 * time.Minute
+
+// test handles POST /api/v1/local-ai/test: one tiny real conversation with the model (the model of the settings unless a modelId
+// is given), timed. A failure of the model is part of the answer (ok false with the reason), not an error status.
+func (a api) test(reqCtx request.RequestContext) {
+	w := reqCtx.GetWriter()
+	var body installRequest
+	if err := reqCtx.BindJSON(&body); err != nil {
+		response.ErrorResponse(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	modelID := strings.TrimSpace(body.ModelID)
+	if modelID == "" {
+		db, err := mainDB(reqCtx)
+		if err != nil {
+			response.ErrorResponse(w, http.StatusInternalServerError, "database not configured")
+			return
+		}
+		s, err := query.NewSettingsQueryRepo(db).Load()
+		if err != nil {
+			response.ErrorResponse(w, http.StatusInternalServerError, "failed to load the local AI settings")
+			return
+		}
+		modelID = s.ModelID
+	}
+	if modelID == "" {
+		response.ErrorResponse(w, http.StatusBadRequest, "choose a model first")
+		return
+	}
+	ctx, cancel := context.WithTimeout(reqCtx.GetRequest().Context(), testTimeout)
+	defer cancel()
+	result, err := a.runtime.Test(ctx, modelID)
+	if err != nil {
+		if errors.Is(err, entity.ErrUnknownModel) {
+			response.ErrorResponse(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		response.ErrorResponse(w, http.StatusInternalServerError, "the test could not be run")
+		return
+	}
+	response.SuccessResponse(w, http.StatusOK, result)
 }

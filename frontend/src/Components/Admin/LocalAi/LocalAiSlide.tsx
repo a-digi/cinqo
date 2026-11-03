@@ -6,7 +6,7 @@ import { useDownload } from '../../../Shared/Components/Download/useDownload'
 import { Eyebrow, Frame, In, Subtitle, Title } from '../Platforms/PlatformSlides'
 import { fetchLocalAi, type LocalAiResponse } from './localAiApi'
 import { formatBytes } from '../../../Shared/Components/Download/format'
-import { fitKind, fitLabel, runningDownloadIds } from './localAiFormat'
+import { fitKind, fitLabel, needsSetup, runningDownloadIds } from './localAiFormat'
 
 // The live progress of one running download, on the dark slide.
 function SlideDownload({ id }: { id: string }) {
@@ -46,7 +46,7 @@ export function LocalAiSlide() {
               <span
                 className={`rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ${on ? 'bg-white/20 text-white ring-white/50' : 'bg-white/5 text-white/70 ring-white/20'}`}
               >
-                {on ? 'On' : data.status.canEnable ? 'Off' : 'Coming soon'}
+                {on ? 'On' : needsSetup(data) ? 'Needs a download' : 'Off'}
               </span>
             )}
           </In>

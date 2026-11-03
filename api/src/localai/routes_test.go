@@ -39,8 +39,8 @@ func TestEveryRouteIsAuthenticatedAndScoped(t *testing.T) {
 		t.Fatal(err)
 	}
 	blocks := strings.Split(string(raw), "  - path:")[1:]
-	if len(blocks) != 4 {
-		t.Fatalf("%d routes, want 4", len(blocks))
+	if len(blocks) != 5 {
+		t.Fatalf("%d routes, want 5", len(blocks))
 	}
 	for _, b := range blocks {
 		if !strings.Contains(b, "security: authenticated") {

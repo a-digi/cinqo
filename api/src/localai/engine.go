@@ -11,11 +11,12 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/a-digi/cinqo/src/localai/entity"
 	"github.com/a-digi/cinqo/src/platform/chatcompleter"
 )
 
-// Engine is whatever answers a chat request locally. The real managed engine (a runtime and a model Cinqo downloads and
-// runs itself) is built in steps 4 to 6 of the plan; until then the unavailable engine stands in and says why.
+// Engine is whatever answers a chat request locally: the managed engine (a runtime and a model Cinqo downloads and runs
+// itself, see managed.go). Until Register has made it, the unavailable engine stands in and says why.
 type Engine interface {
 	// Ready says whether the engine can take a request right now; the error is a reason fit to show an admin.
 	Ready(ctx context.Context) error
@@ -41,7 +42,35 @@ func (e unavailableEngine) Chat(context.Context, *http.Client, string, []chatcom
 	return nil, e.err
 }
 
-// managedRuntime tells the settings API whether the local AI can be switched on right now.
+// managed is the real engine, set by Register (nil until then, and in most tests).
+var managed *managedEngine
+
+func setManaged(m *managedEngine) {
+	managed = m
+	engine = m
+}
+
+// managedRuntime gives the settings API what it needs from the engine: whether a model can be switched on, the state of the
+// model program, and the test. Before Register has made the engine, it says the managed runtime is not there.
 type managedRuntime struct{}
 
-func (managedRuntime) CanEnable() error { return engine.Ready(context.Background()) }
+func (managedRuntime) CanEnable(modelID string) error {
+	if managed == nil {
+		return errManagedNotBuilt
+	}
+	return managed.CanEnable(modelID)
+}
+
+func (managedRuntime) Status() entity.EngineStatus {
+	if managed == nil {
+		return entity.EngineStatus{State: entity.EngineStopped}
+	}
+	return managed.Status()
+}
+
+func (managedRuntime) Test(ctx context.Context, modelID string) (entity.TestResult, error) {
+	if managed == nil {
+		return entity.TestResult{Error: errManagedNotBuilt.Error()}, nil
+	}
+	return managed.Test(ctx, modelID)
+}

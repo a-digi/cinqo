@@ -1,5 +1,5 @@
 import { formatBytes } from '../../../Shared/Components/Download/format'
-import type { FileInstall, LocalAiHardware, LocalAiModel, LocalAiResponse } from './localAiApi'
+import type { FileInstall, LocalAiEngine, LocalAiHardware, LocalAiModel, LocalAiResponse, LocalAiTestResult } from './localAiApi'
 
 // How the page and the slide put sizes, the machine and the fit into words. Pure (no React), so the rules can be
 // script-checked.
@@ -83,4 +83,54 @@ export function runningDownloadIds(data: LocalAiResponse): string[] {
   if (data.runtime.install.state === 'downloading' && data.runtime.install.downloadId !== '') ids.push(data.runtime.install.downloadId)
   for (const m of data.catalog) if (m.install.state === 'downloading' && m.install.downloadId !== '') ids.push(m.install.downloadId)
   return ids
+}
+
+// What the model program is doing, in a line.
+export function engineLine(e: LocalAiEngine): string {
+  switch (e.state) {
+    case 'stopped':
+      return 'Not running. It starts when a conversation needs it.'
+    case 'starting':
+      return 'Starting: the model is loading…'
+    case 'ready':
+      return 'Running and ready.'
+    case 'failed':
+      return e.error === '' ? 'It stopped unexpectedly.' : `It failed: ${e.error}`
+  }
+}
+
+// A duration for a person: "0.4 s", "2.5 s", "75 s", "3 min 5 s".
+export function formatSeconds(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return ''
+  if (seconds < 10) return `${seconds.toFixed(1)} s`
+  const whole = Math.round(seconds)
+  if (whole < 120) return `${String(whole)} s`
+  const minutes = Math.floor(whole / 60)
+  const rest = whole - minutes * 60
+  return rest === 0 ? `${String(minutes)} min` : `${String(minutes)} min ${String(rest)} s`
+}
+
+// The result of the test in one or two sentences: how long the answer took and how fast it was, and, when the model had to
+// be loaded first, how long that took.
+export function testSummary(r: LocalAiTestResult): string {
+  if (!r.ok) return `The test failed: ${r.error === '' ? 'the model did not answer.' : r.error}`
+  const parts = [`It answered "${r.reply}" in ${formatSeconds(r.seconds)}`]
+  if (r.tokensPerSecond > 0)
+    parts[0] += ` (${r.tokensPerSecond >= 10 ? String(Math.round(r.tokensPerSecond)) : r.tokensPerSecond.toFixed(1)} tokens per second)`
+  parts[0] += '.'
+  if (r.startSeconds >= 0.5) parts.push(`Loading the model took ${formatSeconds(r.startSeconds)}.`)
+  else parts.push('The model was already running.')
+  return parts.join(' ')
+}
+
+// What the idle setting means.
+export function idleHelp(minutes: number): string {
+  if (!Number.isInteger(minutes) || minutes < 0) return ''
+  if (minutes === 0) return 'The model stays loaded until Cinqo stops.'
+  return `The model is unloaded after ${String(minutes)} ${minutes === 1 ? 'minute' : 'minutes'} without a conversation, and loaded again when one needs it.`
+}
+
+// True when nothing can be switched on yet and it is not on: the local AI still needs a download (or more memory).
+export function needsSetup(data: LocalAiResponse): boolean {
+  return !data.settings.enabled && !data.catalog.some((m) => m.enable.ok)
 }

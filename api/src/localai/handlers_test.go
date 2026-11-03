@@ -1,6 +1,7 @@
 package localai
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -38,14 +39,41 @@ type fakeRequest struct {
 
 func (f fakeRequest) GetWriter() http.ResponseWriter { return f.w }
 func (f fakeRequest) GetDI() serverdi.Context        { return f.di }
+func (f fakeRequest) GetRequest() *http.Request      { return httptest.NewRequest("POST", "/", nil) }
 func (f fakeRequest) BindJSON(dest interface{}) error {
 	return json.Unmarshal([]byte(f.body), dest)
 }
 
-// fakeRuntime says whether the local AI can be switched on.
-type fakeRuntime struct{ err error }
+// fakeRuntime is a runtime whose answers the tests choose.
+type fakeRuntime struct {
+	err     error
+	status  entity.EngineStatus
+	result  entity.TestResult
+	testErr error
+	asked   *[]string // the model ids CanEnable was asked about
+	tested  *[]string // the model ids Test was asked about
+}
 
-func (f fakeRuntime) CanEnable() error { return f.err }
+func (f fakeRuntime) CanEnable(modelID string) error {
+	if f.asked != nil {
+		*f.asked = append(*f.asked, modelID)
+	}
+	return f.err
+}
+
+func (f fakeRuntime) Status() entity.EngineStatus {
+	if f.status.State == "" {
+		return entity.EngineStatus{State: entity.EngineStopped}
+	}
+	return f.status
+}
+
+func (f fakeRuntime) Test(_ context.Context, modelID string) (entity.TestResult, error) {
+	if f.tested != nil {
+		*f.tested = append(*f.tested, modelID)
+	}
+	return f.result, f.testErr
+}
 
 // fakeInstalls records what the handlers ask of it.
 type fakeInstalls struct {
@@ -209,13 +237,13 @@ func TestUpdateRefusesBadInputAndStoresNothing(t *testing.T) {
 
 func TestHandlersAreRegisteredUnderTheNamesOfTheRouteFile(t *testing.T) {
 	h := Handlers()
-	for _, name := range []string{"LocalAiGet", "LocalAiUpdateSettings", "LocalAiInstall", "LocalAiRemoveDownloads"} {
+	for _, name := range []string{"LocalAiGet", "LocalAiUpdateSettings", "LocalAiInstall", "LocalAiRemoveDownloads", "LocalAiTest"} {
 		if h[name] == nil {
 			t.Errorf("no handler named %s", name)
 		}
 	}
-	if len(h) != 4 {
-		t.Errorf("%d handlers, want 4: a handler without a route is dead code, a route without a handler fails at start", len(h))
+	if len(h) != 5 {
+		t.Errorf("%d handlers, want 5: a handler without a route is dead code, a route without a handler fails at start", len(h))
 	}
 }
 
@@ -328,5 +356,123 @@ func TestRemovingTheDownloadsIsRefusedWhileOnOrDownloading(t *testing.T) {
 	rec = callWith("LocalAiRemoveDownloads", canRun, inst, db, "")
 	if rec.Code != http.StatusNoContent || rec.Body.Len() != 0 || !inst.removed {
 		t.Errorf("status %d body %q removed %v, want 204, nothing, removed", rec.Code, rec.Body.String(), inst.removed)
+	}
+}
+
+func TestTheTestEndpointRunsTheChosenModelAndReturnsTheTimedResult(t *testing.T) {
+	db := openMainDB(t)
+	var tested []string
+	rt := fakeRuntime{tested: &tested, result: entity.TestResult{OK: true, StartSeconds: 2.5, Seconds: 0.4, PromptTokens: 12, CompletionTokens: 4, TokensPerSecond: 10, Reply: "OK"}}
+	rec := callWith("LocalAiTest", rt, &fakeInstalls{}, db, `{"modelId":" phi-4-mini-instruct-q4_k_m "}`)
+	if rec.Code != http.StatusOK || len(tested) != 1 || tested[0] != "phi-4-mini-instruct-q4_k_m" {
+		t.Fatalf("status %d tested %v body %s", rec.Code, tested, rec.Body.String())
+	}
+	var out struct {
+		Message entity.TestResult `json:"message"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil || out.Message != rt.result {
+		t.Errorf("body = %s (%v)", rec.Body.String(), err)
+	}
+	for _, key := range []string{`"ok":true`, `"startSeconds":2.5`, `"tokensPerSecond":10`, `"reply":"OK"`} {
+		if !strings.Contains(rec.Body.String(), key) {
+			t.Errorf("the JSON must contain %s: %s", key, rec.Body.String())
+		}
+	}
+
+	// Without a modelId the model of the settings is tested.
+	saveSettings(t, db, false, "qwen2.5-1.5b-instruct-q4_k_m")
+	tested = nil
+	if rec := callWith("LocalAiTest", rt, &fakeInstalls{}, db, `{}`); rec.Code != http.StatusOK || len(tested) != 1 || tested[0] != "qwen2.5-1.5b-instruct-q4_k_m" {
+		t.Errorf("status %d tested %v", rec.Code, tested)
+	}
+}
+
+func TestTheTestEndpointAnswersAFailureOfTheModelAsAResultNotAnError(t *testing.T) {
+	db := openMainDB(t)
+	rt := fakeRuntime{result: entity.TestResult{OK: false, Error: "the model is not downloaded yet"}}
+	rec := callWith("LocalAiTest", rt, &fakeInstalls{}, db, `{"modelId":"x"}`)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"ok":false`) || !strings.Contains(rec.Body.String(), "not downloaded yet") {
+		t.Errorf("status %d body %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestTheTestEndpointRefusesWhatCannotBeTested(t *testing.T) {
+	cases := map[string]struct {
+		body    string
+		rt      fakeRuntime
+		want    int
+		message string
+	}{
+		"not json":          {`{"modelId":`, fakeRuntime{}, 400, "invalid request body"},
+		"no model anywhere": {`{}`, fakeRuntime{}, 400, "choose a model first"},
+		"an unknown model":  {`{"modelId":"gpt-4"}`, fakeRuntime{testErr: entity.ErrUnknownModel}, 400, "not one of the models"},
+		"an internal error": {`{"modelId":"x"}`, fakeRuntime{testErr: errors.New("open /secret/path: denied")}, 500, "could not be run"},
+	}
+	for name, c := range cases {
+		db := openMainDB(t)
+		rec := callWith("LocalAiTest", c.rt, &fakeInstalls{}, db, c.body)
+		if rec.Code != c.want || !strings.Contains(rec.Body.String(), c.message) || strings.Contains(rec.Body.String(), "/secret/path") {
+			t.Errorf("%s: status %d body %s, want %d containing %q", name, rec.Code, rec.Body.String(), c.want, c.message)
+		}
+	}
+}
+
+func TestTheModelOfTheRequestIsWhatTheRuntimeIsAskedAbout(t *testing.T) {
+	db := openMainDB(t)
+	var asked []string
+	rt := fakeRuntime{asked: &asked}
+	call("LocalAiUpdateSettings", rt, db, `{"enabled":true,"modelId":" qwen2.5-1.5b-instruct-q4_k_m ","contextTokens":4096,"idleMinutes":10}`)
+	found := false
+	for _, id := range asked {
+		if id == "qwen2.5-1.5b-instruct-q4_k_m" {
+			found = true
+		}
+		if id == " qwen2.5-1.5b-instruct-q4_k_m " {
+			t.Error("the id must be trimmed before the runtime is asked")
+		}
+	}
+	if !found {
+		t.Errorf("the runtime must be asked about the model of the request, was asked about %v", asked)
+	}
+}
+
+func TestSwitchingOnIsRefusedWithTheReasonOfThatModel(t *testing.T) {
+	db := openMainDB(t)
+	rt := fakeRuntime{err: errors.New("the model is not downloaded yet")}
+	rec := call("LocalAiUpdateSettings", rt, db, `{"enabled":true,"modelId":"phi-4-mini-instruct-q4_k_m","contextTokens":4096,"idleMinutes":10}`)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "the model is not downloaded yet") {
+		t.Errorf("status %d body %s", rec.Code, rec.Body.String())
+	}
+	var enabled bool
+	if err := db.QueryRow(`SELECT enabled FROM local_ai_settings WHERE id = 1`).Scan(&enabled); err != nil || enabled {
+		t.Error("nothing may be stored")
+	}
+}
+
+func TestGetReportsTheStateOfTheModelProgramAndTheReasonPerModel(t *testing.T) {
+	db := openMainDB(t)
+	rt := fakeRuntime{status: entity.EngineStatus{State: entity.EngineFailed, ModelID: "m", Error: "the model program stopped unexpectedly"}, err: errors.New("choose a model first")}
+	rec := call("LocalAiGet", rt, db, "")
+	var out struct {
+		Message struct {
+			Engine  entity.EngineStatus `json:"engine"`
+			Catalog []struct {
+				Enable struct {
+					OK     bool   `json:"ok"`
+					Reason string `json:"reason"`
+				} `json:"enable"`
+			} `json:"catalog"`
+		} `json:"message"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Message.Engine.State != entity.EngineFailed || out.Message.Engine.Error != "the model program stopped unexpectedly" {
+		t.Errorf("engine = %+v", out.Message.Engine)
+	}
+	for _, m := range out.Message.Catalog {
+		if m.Enable.OK || m.Enable.Reason != "choose a model first" {
+			t.Errorf("enable = %+v", m.Enable)
+		}
 	}
 }

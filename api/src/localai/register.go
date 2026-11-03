@@ -4,13 +4,16 @@ import (
 	"database/sql"
 	"errors"
 	"sync"
+	"time"
 
 	"github.com/a-digi/coco-server/server/routing"
 
+	"github.com/a-digi/cinqo/src/lifecycle"
 	"github.com/a-digi/cinqo/src/localai/catalog"
 	"github.com/a-digi/cinqo/src/localai/entity"
 	"github.com/a-digi/cinqo/src/localai/handler"
 	"github.com/a-digi/cinqo/src/localai/hardware"
+	"github.com/a-digi/cinqo/src/localai/repository/query"
 	"github.com/a-digi/cinqo/src/platform"
 )
 
@@ -25,7 +28,14 @@ func Register(mainDB *sql.DB, deps Deps) error {
 	if deps.Downloads == nil || deps.DataDir == "" {
 		return errors.New("the local AI needs the download manager and the data directory")
 	}
-	setInstaller(&installer{downloads: deps.Downloads, dataDir: deps.DataDir, catalog: cat})
+	in := &installer{downloads: deps.Downloads, dataDir: deps.DataDir, catalog: cat}
+	setInstaller(in)
+
+	// A model program left over from an earlier run that did not shut down cleanly is stopped before anything else.
+	killStale(in.root(), processAlive, commandOf, 3*time.Second)
+	engineForApp := newManagedEngine(in, newSupervisor(supervisorOptions{}), query.NewSettingsQueryRepo(mainDB))
+	lifecycle.OnShutdown(engineForApp.Stop) // and the one this run starts is stopped with the application
+	setManaged(engineForApp)
 	return platform.Register(Entry(mainDB))
 }
 

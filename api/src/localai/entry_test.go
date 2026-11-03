@@ -98,7 +98,7 @@ func TestUntilTheManagedRuntimeExistsNothingCanAnswer(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "not available yet") {
 		t.Errorf("err = %v, want the unavailable engine's reason", err)
 	}
-	if err := (managedRuntime{}).CanEnable(); err == nil {
+	if err := (managedRuntime{}).CanEnable("tiny"); err == nil {
 		t.Error("the local AI cannot be switched on while the managed runtime does not exist")
 	}
 }

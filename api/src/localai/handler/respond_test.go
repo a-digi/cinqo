@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -22,6 +23,35 @@ func (noInstalls) RuntimeState(catalog.Runtime) entity.FileInstall {
 }
 func (noInstalls) Start(string, hardware.Info) error { return nil }
 func (noInstalls) Remove() error                     { return nil }
+
+// fakeRT is a runtime whose answers the tests choose.
+type fakeRT struct {
+	err      error            // why nothing can be switched on (nil: everything can)
+	perModel map[string]error // the answer for particular models
+	status   entity.EngineStatus
+	result   entity.TestResult
+	testErr  error
+	asked    *[]string // the model ids CanEnable was asked about
+}
+
+func (f fakeRT) CanEnable(modelID string) error {
+	if f.asked != nil {
+		*f.asked = append(*f.asked, modelID)
+	}
+	if e, ok := f.perModel[modelID]; ok {
+		return e
+	}
+	return f.err
+}
+
+func (f fakeRT) Status() entity.EngineStatus {
+	if f.status.State == "" {
+		return entity.EngineStatus{State: entity.EngineStopped}
+	}
+	return f.status
+}
+
+func (f fakeRT) Test(context.Context, string) (entity.TestResult, error) { return f.result, f.testErr }
 
 func withMachine(t *testing.T, info hardware.Info) {
 	t.Helper()
@@ -51,7 +81,7 @@ func find(r localAiResponse, id string) (catalogModelResponse, bool) {
 func TestTheResponseTellsWhichModelsFitThisMachine(t *testing.T) {
 	// 5 GiB (5.37 GB) of memory: the lighter model needs about 4.6 GB by the rule and fits, the better one needs about 6.3 GB and does not.
 	withMachine(t, hardware.Info{OS: "darwin", Arch: "arm64", RAMBytes: 5 << 30, CPUs: 8})
-	r := respond(entity.Settings{}, shipped(t), nil, noInstalls{})
+	r := respond(entity.Settings{}, shipped(t), fakeRT{}, noInstalls{})
 
 	if !r.Hardware.Supported || r.Hardware.OS != "darwin" || r.Hardware.RAMBytes != 5<<30 || r.Hardware.CPUs != 8 {
 		t.Errorf("hardware = %+v", r.Hardware)
@@ -77,7 +107,7 @@ func TestTheResponseTellsWhichModelsFitThisMachine(t *testing.T) {
 
 func TestUnknownMemoryIsNullNotAGuess(t *testing.T) {
 	withMachine(t, hardware.Info{OS: "linux", Arch: "amd64", RAMBytes: 0, CPUs: 2})
-	raw, err := json.Marshal(respond(entity.Settings{}, shipped(t), nil, noInstalls{}))
+	raw, err := json.Marshal(respond(entity.Settings{}, shipped(t), fakeRT{}, noInstalls{}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,14 +118,14 @@ func TestUnknownMemoryIsNullNotAGuess(t *testing.T) {
 
 func TestAnUnsupportedSystemIsSaidSo(t *testing.T) {
 	withMachine(t, hardware.Info{OS: "windows", Arch: "amd64", RAMBytes: 64 << 30, CPUs: 16})
-	if respond(entity.Settings{}, shipped(t), nil, noInstalls{}).Hardware.Supported {
+	if respond(entity.Settings{}, shipped(t), fakeRT{}, noInstalls{}).Hardware.Supported {
 		t.Error("windows is not supported yet")
 	}
 }
 
 func TestTheResponseNeverCarriesADownloadAddressOrAHash(t *testing.T) {
 	withMachine(t, hardware.Info{OS: "darwin", Arch: "arm64", RAMBytes: 15 << 30, CPUs: 8})
-	raw, _ := json.Marshal(respond(entity.Settings{}, shipped(t), nil, noInstalls{}))
+	raw, _ := json.Marshal(respond(entity.Settings{}, shipped(t), fakeRT{}, noInstalls{}))
 	for _, secret := range []string{"huggingface.co", "sha256", "88c00229914083cd", ".gguf"} {
 		if strings.Contains(string(raw), secret) {
 			t.Errorf("the response must not contain %q: %s", secret, raw)
@@ -105,7 +135,7 @@ func TestTheResponseNeverCarriesADownloadAddressOrAHash(t *testing.T) {
 
 func TestAnEmptyCatalogIsAnEmptyListNotNull(t *testing.T) {
 	withMachine(t, hardware.Info{})
-	raw, _ := json.Marshal(respond(entity.Settings{}, catalog.Catalog{}, nil, noInstalls{}))
+	raw, _ := json.Marshal(respond(entity.Settings{}, catalog.Catalog{}, fakeRT{}, noInstalls{}))
 	if !strings.Contains(string(raw), `"catalog":[]`) {
 		t.Errorf("want an empty list, got %s", raw)
 	}
@@ -115,19 +145,19 @@ func TestTheStatusSaysWhetherItCanBeSwitchedOnAndWhyNot(t *testing.T) {
 	withMachine(t, hardware.Info{OS: "darwin", Arch: "arm64", RAMBytes: 16 << 30, CPUs: 8})
 	c := shipped(t)
 
-	ready := respond(entity.Settings{}, c, nil, noInstalls{}).Status
+	ready := respond(entity.Settings{}, c, fakeRT{}, noInstalls{}).Status
 	if !ready.CanEnable || ready.Reason != "" || ready.State != "off" {
 		t.Errorf("status = %+v, want can enable, no reason, off", ready)
 	}
-	notYet := respond(entity.Settings{}, c, errors.New("the managed runtime is not available yet"), noInstalls{}).Status
+	notYet := respond(entity.Settings{}, c, fakeRT{err: errors.New("the managed runtime is not available yet")}, noInstalls{}).Status
 	if notYet.CanEnable || notYet.Reason != "the managed runtime is not available yet" {
 		t.Errorf("status = %+v, want cannot enable with the reason", notYet)
 	}
-	on := respond(entity.Settings{Enabled: true, ModelID: "phi-4-mini-instruct-q4_k_m"}, c, nil, noInstalls{}).Status
+	on := respond(entity.Settings{Enabled: true, ModelID: "phi-4-mini-instruct-q4_k_m"}, c, fakeRT{}, noInstalls{}).Status
 	if on.State != "configured" {
 		t.Errorf("state = %q, want configured", on.State)
 	}
-	if got := respond(entity.Settings{Enabled: true}, c, nil, noInstalls{}).Status.State; got != "off" {
+	if got := respond(entity.Settings{Enabled: true}, c, fakeRT{}, noInstalls{}).Status.State; got != "off" {
 		t.Errorf("on without a model: state = %q, want off", got)
 	}
 }
@@ -152,7 +182,7 @@ func (st states) Remove() error                     { return nil }
 
 func TestTheResponseCarriesTheInstallStateOfEveryModelAndTheRuntime(t *testing.T) {
 	withMachine(t, hardware.Info{OS: "darwin", Arch: "arm64", RAMBytes: 16 << 30, CPUs: 8})
-	r := respond(entity.Settings{}, shipped(t), nil, states{
+	r := respond(entity.Settings{}, shipped(t), fakeRT{}, states{
 		"phi-4-mini-instruct-q4_k_m":   {State: entity.InstallDownloading, DownloadID: "job-1", PartialBytes: 1234},
 		"qwen2.5-1.5b-instruct-q4_k_m": {State: entity.InstallReady},
 		"llama-cpp-b12064-macos-arm64": {State: entity.InstallPartial, PartialBytes: 99},
@@ -173,7 +203,7 @@ func TestTheResponseCarriesTheInstallStateOfEveryModelAndTheRuntime(t *testing.T
 
 func TestASystemWithoutARuntimeSaysSoAndReportsNothingDownloaded(t *testing.T) {
 	withMachine(t, hardware.Info{OS: "windows", Arch: "amd64", RAMBytes: 16 << 30, CPUs: 8})
-	r := respond(entity.Settings{}, shipped(t), nil, states{"llama-cpp-b12064-macos-arm64": {State: entity.InstallReady}})
+	r := respond(entity.Settings{}, shipped(t), fakeRT{}, states{"llama-cpp-b12064-macos-arm64": {State: entity.InstallReady}})
 	if r.Runtime.Supported || r.Runtime.Install.State != entity.InstallNotDownloaded || r.Runtime.Name != "" || r.Runtime.SizeBytes != 0 {
 		t.Errorf("runtime = %+v, want unsupported and empty", r.Runtime)
 	}
@@ -182,5 +212,53 @@ func TestASystemWithoutARuntimeSaysSoAndReportsNothingDownloaded(t *testing.T) {
 		if !strings.Contains(string(raw), key) {
 			t.Errorf("the JSON must contain %s: %s", key, raw)
 		}
+	}
+}
+
+func TestEveryModelSaysWhetherItCanBeSwitchedOnAndTheStatusIsAboutTheSavedModel(t *testing.T) {
+	withMachine(t, hardware.Info{OS: "darwin", Arch: "arm64", RAMBytes: 16 << 30, CPUs: 8})
+	var asked []string
+	rt := fakeRT{
+		perModel: map[string]error{"phi-4-mini-instruct-q4_k_m": nil, "qwen2.5-1.5b-instruct-q4_k_m": errors.New("the model is not downloaded yet")},
+		asked:    &asked,
+	}
+	r := respond(entity.Settings{ModelID: "qwen2.5-1.5b-instruct-q4_k_m"}, shipped(t), rt, noInstalls{})
+	phi, _ := find(r, "phi-4-mini-instruct-q4_k_m")
+	qwen, _ := find(r, "qwen2.5-1.5b-instruct-q4_k_m")
+	if !phi.Enable.OK || phi.Enable.Reason != "" {
+		t.Errorf("phi enable = %+v, want ok", phi.Enable)
+	}
+	if qwen.Enable.OK || qwen.Enable.Reason != "the model is not downloaded yet" {
+		t.Errorf("qwen enable = %+v, want the reason", qwen.Enable)
+	}
+	// The top-level status is about the model that is saved in the settings (qwen), not about the others.
+	if r.Status.CanEnable || r.Status.Reason != "the model is not downloaded yet" {
+		t.Errorf("status = %+v, want qwen's reason", r.Status)
+	}
+	want := map[string]bool{"qwen2.5-1.5b-instruct-q4_k_m": true, "phi-4-mini-instruct-q4_k_m": true}
+	for _, id := range asked {
+		delete(want, id)
+	}
+	if len(want) != 0 {
+		t.Errorf("CanEnable was asked about %v, want every model and the saved one", asked)
+	}
+}
+
+func TestTheResponseCarriesTheStateOfTheModelProgram(t *testing.T) {
+	withMachine(t, hardware.Info{OS: "darwin", Arch: "arm64", RAMBytes: 16 << 30, CPUs: 8})
+	for _, st := range []entity.EngineStatus{
+		{State: entity.EngineStopped},
+		{State: entity.EngineStarting, ModelID: "phi-4-mini-instruct-q4_k_m"},
+		{State: entity.EngineReady, ModelID: "phi-4-mini-instruct-q4_k_m"},
+		{State: entity.EngineFailed, ModelID: "phi-4-mini-instruct-q4_k_m", Error: "the model program stopped unexpectedly"},
+	} {
+		r := respond(entity.Settings{}, shipped(t), fakeRT{status: st}, noInstalls{})
+		if r.Engine != st {
+			t.Errorf("engine = %+v, want %+v", r.Engine, st)
+		}
+	}
+	raw, _ := json.Marshal(respond(entity.Settings{}, shipped(t), fakeRT{}, noInstalls{}))
+	if !strings.Contains(string(raw), `"engine":{"state":"stopped","error":"","modelId":""}`) {
+		t.Errorf("the JSON must carry the engine: %s", raw)
 	}
 }

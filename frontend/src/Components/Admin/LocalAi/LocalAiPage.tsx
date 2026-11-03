@@ -5,7 +5,15 @@ import { useAuth } from '../../Auth/AuthContext'
 import { LoadingSpinner } from '../../../Shared/Components/Loading/LoadingSpinner'
 import { useConfirm } from '../../../Shared/Components/Modal/useConfirm'
 import { cancelDownload, type Download } from '../../../api/downloads'
-import { fetchLocalAi, removeDownloads, startInstall, updateLocalAiSettings, type LocalAiResponse } from './localAiApi'
+import {
+  fetchLocalAi,
+  removeDownloads,
+  startInstall,
+  testModel,
+  updateLocalAiSettings,
+  type LocalAiResponse,
+  type LocalAiTestResult,
+} from './localAiApi'
 import { hasDownloadedFiles, isDownloading } from './localAiFormat'
 import { LocalAiForm } from './LocalAiForm'
 import { draftOf, hasProblems, isDirty, problemsOf, toUpdate, type Draft } from './localAiRules'
@@ -29,6 +37,9 @@ export function LocalAiPage() {
   const [failures, setFailures] = useState<Partial<Record<string, Download>>>({})
   const [installBusy, setInstallBusy] = useState(false)
   const [installError, setInstallError] = useState('')
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<LocalAiTestResult | null>(null)
+  const [testError, setTestError] = useState('')
   const { confirm, dialog } = useConfirm()
 
   useEffect(() => {
@@ -52,6 +63,31 @@ export function LocalAiPage() {
         setInstallError(messageOf(err))
       })
   }, [])
+
+  // While a test runs, the state of the model program is read now and then, so "starting" can be seen.
+  useEffect(() => {
+    if (!testing) return
+    const timer = window.setInterval(refresh, 1500)
+    return () => {
+      window.clearInterval(timer)
+    }
+  }, [testing, refresh])
+
+  function runTest() {
+    if (!draft) return
+    setTestError('')
+    setTestResult(null)
+    setTesting(true)
+    testModel(draft.modelId === '' ? undefined : draft.modelId)
+      .then(setTestResult)
+      .catch((err: unknown) => {
+        setTestError(messageOf(err))
+      })
+      .finally(() => {
+        setTesting(false)
+        refresh()
+      })
+  }
 
   function start(key: string, modelId?: string) {
     setInstallError('')
@@ -118,7 +154,7 @@ export function LocalAiPage() {
     setJustSaved(false)
     setSaving(true)
     // The page only shows the new values once the server has stored them: a refused change leaves everything as it was.
-    updateLocalAiSettings(toUpdate(data.settings, draft))
+    updateLocalAiSettings(toUpdate(draft))
       .then((response) => {
         setData(response)
         setDraft(draftOf(response.settings))
@@ -156,6 +192,11 @@ export function LocalAiPage() {
           catalog={data.catalog}
           catalogCheckedOn={data.catalogCheckedOn}
           runtime={data.runtime}
+          engine={data.engine}
+          testing={testing}
+          testResult={testResult}
+          testError={testError}
+          onTest={runTest}
           downloadedFiles={hasDownloadedFiles(data)}
           downloading={isDownloading(data)}
           failures={failures}

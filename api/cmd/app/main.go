@@ -38,6 +38,7 @@ import (
 	"github.com/a-digi/cinqo/config/di"
 	auth_config "github.com/a-digi/cinqo/src/auth/config"
 	"github.com/a-digi/cinqo/src/cinqo"
+	"github.com/a-digi/cinqo/src/lifecycle"
 	tool_manager "github.com/a-digi/cinqo/src/tool/manager"
 	"github.com/a-digi/cinqo/src/toolrepository/updatecheck"
 )
@@ -780,6 +781,10 @@ func waitForShutdown(ch <-chan os.Signal, srv *http.Server, pidFile string, log 
 	if stopBackground != nil {
 		stopBackground()
 	}
+
+	// Whatever a feature registered to stop with the application (the local AI's model program, for one) is stopped here,
+	// before the backend itself goes away.
+	lifecycle.RunShutdownHooks()
 
 	if err := caddycore.Stop(); err != nil {
 		log.Warning("caddy stop: %v", err)
