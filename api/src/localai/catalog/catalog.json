@@ -10,7 +10,8 @@
       "url": "https://huggingface.co/unsloth/Phi-4-mini-instruct-GGUF/resolve/78eb92a46fc37e6b524df991ed9aca9bc6aa7b80/Phi-4-mini-instruct-Q4_K_M.gguf",
       "license": "MIT",
       "contextTokens": 131072,
-   "tools": false,
+      "tools": true,
+      "toolDialect": "phi-json",
       "source": "unsloth/Phi-4-mini-instruct-GGUF at commit 78eb92a (a GGUF conversion of microsoft/Phi-4-mini-instruct)",
       "note": "The better answers of the two. Needs the most memory.",
       "checkedOn": "2026-11-03"
@@ -24,9 +25,23 @@
       "url": "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/91cad51170dc346986eccefdc2dd33a9da36ead9/qwen2.5-1.5b-instruct-q4_k_m.gguf",
       "license": "Apache-2.0",
       "contextTokens": 32768,
-   "tools": true,
+      "tools": true,
       "source": "Qwen/Qwen2.5-1.5B-Instruct-GGUF at commit 91cad51 (the model's own authors)",
       "note": "A lighter, faster choice for a machine with little memory. Simpler answers.",
+      "checkedOn": "2026-11-03"
+    },
+    {
+      "id": "qwen2.5-7b-instruct-q4_k_m",
+      "name": "Qwen2.5-7B-Instruct",
+      "quantization": "Q4_K_M",
+      "sizeBytes": 4683074240,
+      "sha256": "65b8fcd92af6b4fefa935c625d1ac27ea29dcb6ee14589c55a8f115ceaaa1423",
+      "url": "https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/8911e8a47f92bac19d6f5c64a2e2095bd2f7d031/Qwen2.5-7B-Instruct-Q4_K_M.gguf",
+      "license": "Apache-2.0",
+      "contextTokens": 32768,
+      "tools": false,
+      "source": "bartowski/Qwen2.5-7B-Instruct-GGUF at commit 8911e8a (a single-file GGUF conversion of Qwen/Qwen2.5-7B-Instruct)",
+      "note": "A larger model for tasks with many steps. Slower, and needs a computer with plenty of memory.",
       "checkedOn": "2026-11-03"
     }
   ],

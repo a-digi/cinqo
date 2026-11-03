@@ -24,6 +24,9 @@ type platformResponse struct {
 	// OffersTools is false for a platform whose conversations are offered no tools and run in direct mode only: the
 	// frontend then does not offer composer mode for it.
 	OffersTools bool `json:"offersTools"`
+	// NeedsShortSteps says the platform's models do better with work split into short, one-action messages than with one long
+	// prompt (a caller that can split its work should).
+	NeedsShortSteps bool `json:"needsShortSteps"`
 }
 
 // ListPlatformsHandler handles GET /api/v1/platforms. See
@@ -43,7 +46,7 @@ func platformResponses() []platformResponse {
 		if !entry.IsAvailable() {
 			continue
 		}
-		out = append(out, platformResponse{ID: info.ID, Name: info.Name, Models: entry.SelectableModelList(), RequiresKey: entry.RequiresKey(), OffersTools: entry.OffersAllTools()})
+		out = append(out, platformResponse{ID: info.ID, Name: info.Name, Models: entry.SelectableModelList(), RequiresKey: entry.RequiresKey(), OffersTools: entry.OffersAllTools(), NeedsShortSteps: entry.ShortSteps})
 	}
 	return out
 }

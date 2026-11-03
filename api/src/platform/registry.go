@@ -56,6 +56,11 @@ type Entry struct {
 	// (only the tools a conversation names in its allowlist, in direct mode). A platform that sets it never offers
 	// every tool.
 	ToolsFor func(model string) ToolPolicy
+	// ShortSteps says the models of this platform follow short, one-action-at-a-time instructions better than a long
+	// multi-step prompt (a small local model never called a tool when given the long import prompt, and always did when
+	// given the same work as small steps). A caller that can split its work offers it that way; it is listed as
+	// needsShortSteps.
+	ShortSteps bool
 	// ToolHint, when set, is a system message added to a turn that is offered tools (a small model needs telling).
 	ToolHint string
 }

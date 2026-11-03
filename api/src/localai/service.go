@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/a-digi/cinqo/src/localai/catalog"
 	"github.com/a-digi/cinqo/src/localai/entity"
 	"github.com/a-digi/cinqo/src/localai/repository/query"
 	"github.com/a-digi/cinqo/src/platform"
@@ -51,14 +50,14 @@ func Entry(db *sql.DB) platform.Entry {
 		// Tools only for a catalog model that was measured to call them (step 8), and only the ones a conversation names:
 		// never every tool, and never in composer mode.
 		ToolsFor: func(model string) platform.ToolPolicy {
-			if cat, err := catalog.Default(); err == nil {
-				if m, ok := cat.Find(model); ok && m.Tools {
-					return platform.ToolsExplicit
-				}
+			if toolsUsable(model) {
+				return platform.ToolsExplicit
 			}
 			return platform.ToolsNone
 		},
-		ToolHint: toolHint,
+		// A small local model needs the work in short steps (measured on the CV import).
+		ShortSteps: true,
+		ToolHint:   toolHint,
 	}
 }
 

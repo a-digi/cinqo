@@ -61,6 +61,8 @@ func (managedRuntime) CanEnable(modelID string) error {
 	return managed.CanEnable(modelID)
 }
 
+func (managedRuntime) CanUseTools(modelID string) bool { return toolsUsable(modelID) }
+
 func (managedRuntime) Status() entity.EngineStatus {
 	if managed == nil {
 		return entity.EngineStatus{State: entity.EngineStopped}

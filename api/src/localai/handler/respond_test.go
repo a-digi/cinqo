@@ -31,8 +31,11 @@ type fakeRT struct {
 	status   entity.EngineStatus
 	result   entity.TestResult
 	testErr  error
-	asked    *[]string // the model ids CanEnable was asked about
+	asked    *[]string       // the model ids CanEnable was asked about
+	tools    map[string]bool // the models the runtime says can use tools
 }
+
+func (f fakeRT) CanUseTools(modelID string) bool { return f.tools[modelID] }
 
 func (f fakeRT) CanEnable(modelID string) error {
 	if f.asked != nil {
@@ -100,10 +103,7 @@ func TestTheResponseTellsWhichModelsFitThisMachine(t *testing.T) {
 	if phi.MinRAMBytes != hardware.MinRAMBytes(phi.SizeBytes) || phi.License != "MIT" || phi.ContextTokens != 131072 || phi.CheckedOn == "" || phi.Source == "" {
 		t.Errorf("phi = %+v", phi)
 	}
-	if !qwen.Tools || phi.Tools {
-		t.Errorf("the response must say which model can use tools: qwen %v phi %v", qwen.Tools, phi.Tools)
-	}
-	if raw, _ := json.Marshal(qwen); !strings.Contains(string(raw), `"tools":true`) {
+	if raw, _ := json.Marshal(qwen); !strings.Contains(string(raw), `"tools":`) {
 		t.Errorf("the field is named tools in the JSON: %s", raw)
 	}
 	if r.CatalogCheckedOn != shipped(t).CheckedOn {
@@ -266,5 +266,22 @@ func TestTheResponseCarriesTheStateOfTheModelProgram(t *testing.T) {
 	raw, _ := json.Marshal(respond(entity.Settings{}, shipped(t), fakeRT{}, noInstalls{}))
 	if !strings.Contains(string(raw), `"engine":{"state":"stopped","error":"","modelId":""}`) {
 		t.Errorf("the JSON must carry the engine: %s", raw)
+	}
+}
+
+func TestTheToolsFieldFollowsTheRuntimeNotTheCatalogFlag(t *testing.T) {
+	withMachine(t, hardware.Info{OS: "darwin", Arch: "arm64", RAMBytes: 16 << 30, CPUs: 8})
+	// The catalog marks both Phi and Qwen as able to use tools; the runtime says only Qwen can right now (the dialect Phi
+	// needs is not registered). The page must follow the runtime.
+	r := respond(entity.Settings{}, shipped(t), fakeRT{tools: map[string]bool{"qwen2.5-1.5b-instruct-q4_k_m": true}}, noInstalls{})
+	for id, want := range map[string]bool{"qwen2.5-1.5b-instruct-q4_k_m": true, "phi-4-mini-instruct-q4_k_m": false, "qwen2.5-7b-instruct-q4_k_m": false} {
+		m, ok := find(r, id)
+		if !ok || m.Tools != want {
+			t.Errorf("%s: tools %v (found %v), want %v", id, m.Tools, ok, want)
+		}
+	}
+	raw, _ := json.Marshal(r)
+	if !strings.Contains(string(raw), `"tools":true`) || !strings.Contains(string(raw), `"tools":false`) {
+		t.Errorf("both values must reach the JSON: %s", raw)
 	}
 }

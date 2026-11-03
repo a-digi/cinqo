@@ -417,7 +417,9 @@ func TestRegisterBuildsTheEngineStopsLeftoversAndStopsTheProgramWithTheApplicati
 		managed = nil
 		engine = unavailableEngine{err: errManagedNotBuilt}
 		setInstaller(nil)
+		setDialects(nil)
 	})
+	setDialects(nil)
 	db := openMainDB(t)
 	data := t.TempDir()
 	root := filepath.Join(data, "local-ai")
@@ -442,6 +444,11 @@ func TestRegisterBuildsTheEngineStopsLeftoversAndStopsTheProgramWithTheApplicati
 	waitUntil(t, "the leftover to be stopped at start", func() bool { return gone(cmd.Process.Pid) })
 	if managed == nil || engine != Engine(managed) {
 		t.Fatal("Register must make the managed engine and use it")
+	}
+	// Register also puts the tool dialects in place (without them a model that needs one would have no tools), and the
+	// runtime the handlers use reports it.
+	if currentDialects() == nil || !(managedRuntime{}).CanUseTools(phiID) || !(managedRuntime{}).CanUseTools(qwenID) || (managedRuntime{}).CanUseTools("gpt-4") {
+		t.Error("Register must register the dialects, and the runtime must report which models can use tools")
 	}
 	if err := (managedRuntime{}).CanEnable("tiny"); errors.Is(err, errManagedNotBuilt) {
 		t.Error("the runtime delegate must now ask the real engine")

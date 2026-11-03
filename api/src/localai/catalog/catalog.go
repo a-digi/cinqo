@@ -21,15 +21,19 @@ var embedded []byte
 
 // Limits of what an entry may claim.
 const (
-	MinModelBytes   = 1 << 20  // 1 MiB: anything smaller is not a model
-	MaxModelBytes   = 20 << 30 // 20 GiB: a size cap for the download manager and the disk check
-	MinContext      = 512
-	MaxContext      = 4 << 20
-	modelHost       = "huggingface.co"
-	maxNameLength   = 100
-	maxNoteLength   = 300
-	maxSourceLength = 200
+	MinModelBytes    = 1 << 20  // 1 MiB: anything smaller is not a model
+	MaxModelBytes    = 20 << 30 // 20 GiB: a size cap for the download manager and the disk check
+	MinContext       = 512
+	MaxContext       = 4 << 20
+	modelHost        = "huggingface.co"
+	maxNameLength    = 100
+	maxNoteLength    = 300
+	maxDialectLength = 32
+	maxSourceLength  = 200
 )
+
+// toolDialectName is the shape of a toolDialect: lower-case words joined by hyphens (the same shape the dialect registry accepts).
+var toolDialectName = regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)*$`)
 
 var (
 	idPattern     = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
@@ -56,10 +60,14 @@ type Model struct {
 	License       string `json:"license"`
 	ContextTokens int    `json:"contextTokens"`
 	// Tools says the model was measured to call tools reliably (step 8): only then a conversation may be given an allowlist.
-	Tools     bool   `json:"tools"`
-	Source    string `json:"source"`
-	Note      string `json:"note"`
-	CheckedOn string `json:"checkedOn"`
+	Tools bool `json:"tools"`
+	// ToolDialect names how a model whose chat template cannot take tools is taught them; empty for a model that takes them
+	// natively. The catalog only checks the shape of the name: which names exist is decided where the module is put together,
+	// and a model whose dialect is missing there has no tools.
+	ToolDialect string `json:"toolDialect"`
+	Source      string `json:"source"`
+	Note        string `json:"note"`
+	CheckedOn   string `json:"checkedOn"`
 }
 
 // Runtime is one build of the program that runs the models (llama.cpp's llama-server) for one system: an archive that is
@@ -206,6 +214,10 @@ func validateModel(m Model) error {
 		return errors.New("note is too long (at most 300 characters)")
 	case !validDate(m.CheckedOn):
 		return errors.New("checkedOn must be a date like 2026-11-03")
+	case m.ToolDialect != "" && (len(m.ToolDialect) > maxDialectLength || !toolDialectName.MatchString(m.ToolDialect)):
+		return fmt.Errorf("toolDialect %q is not a name like phi-json", m.ToolDialect)
+	case m.ToolDialect != "" && !m.Tools:
+		return errors.New("a toolDialect only makes sense for a model that can use tools")
 	}
 	return validateURL(m.URL)
 }

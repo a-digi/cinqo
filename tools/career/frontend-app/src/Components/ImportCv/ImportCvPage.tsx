@@ -14,7 +14,7 @@ import { PDFIcon, UploadIcon } from '../../Shared/Icons/icons'
 import { cardClassName, cardStyle } from '../../Shared/cardStyle'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { plural } from '../CompaniesPage/companyStats'
-import { IMPORT_RUN_TOOLS, buildImportPrompt } from './buildImportPrompt'
+import { IMPORT_RUN_TOOLS, buildImportPrompt, buildImportSteps } from './buildImportPrompt'
 import { RESTRICTION_NOT_APPLIED_MESSAGE, restrictionHolds } from '../../PersonaAi/personaTools'
 import { analyseCv } from './analysisFlow'
 import { runBadge } from './runStatusRules'
@@ -130,6 +130,8 @@ export function ImportCvPage() {
         recordRun: (conversationId) => createCVImportRun({ fileId, originalFilename, conversationId }),
         askAi: async (conversationId, runId, followUp) =>
           (await sendMessage(conversationId, followUp ?? buildImportPrompt(fileId, runId))).content,
+        // A platform whose models need short steps gets the import as a sequence of small messages, not the long prompt.
+        stepMessages: platform.needsShortSteps ? (runId) => buildImportSteps(fileId, runId) : undefined,
         endRun: finishCVImportRun,
         onConversation: setConversationId,
         // The run exists: its own page takes over from here (the analysis goes on and ends the run; the page polls it).

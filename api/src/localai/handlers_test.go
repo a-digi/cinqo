@@ -63,6 +63,8 @@ type fakeRuntime struct {
 	during  func(context.Context) // runs inside Test, with the context the handler gave it
 }
 
+func (f fakeRuntime) CanUseTools(string) bool { return false }
+
 func (f fakeRuntime) CanEnable(modelID string) error {
 	if f.asked != nil {
 		*f.asked = append(*f.asked, modelID)

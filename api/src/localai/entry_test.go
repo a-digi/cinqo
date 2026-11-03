@@ -49,6 +49,9 @@ func TestTheLocalPlatformIsOffUntilTheSettingsAreComplete(t *testing.T) {
 	if e.RequiresKey() || e.OffersAllTools() || e.ToolsFor == nil || e.NoTools {
 		t.Errorf("requiresKey %v offersAllTools %v: want no key, never every tool, decided per model", e.RequiresKey(), e.OffersAllTools())
 	}
+	if !e.ShortSteps {
+		t.Error("a small local model needs the work in short steps")
+	}
 	if e.IsAvailable() || len(e.SelectableModelList()) != 0 {
 		t.Error("the default row must not be offered")
 	}
@@ -122,10 +125,12 @@ func TestAnUnreadableSettingsTableMeansUnavailable(t *testing.T) {
 
 func TestOnlyAModelMeasuredToUseToolsGetsTheExplicitPolicy(t *testing.T) {
 	withEngine(t, &fakeEngine{})
+	withDialects(t, registryWith(t, "phi-json", stampDialect{}))
 	e := Entry(openMainDB(t))
 	for model, want := range map[string]platform.ToolPolicy{
 		"qwen2.5-1.5b-instruct-q4_k_m": platform.ToolsExplicit,
-		"phi-4-mini-instruct-q4_k_m":   platform.ToolsNone, // measured: 0 of 40 tool calls
+		"phi-4-mini-instruct-q4_k_m":   platform.ToolsExplicit, // through its own dialect (0 of 40 natively, 50 of 50 with the dialect)
+		"qwen2.5-7b-instruct-q4_k_m":   platform.ToolsNone,     // not measured yet
 		"gpt-4":                        platform.ToolsNone,
 		"":                             platform.ToolsNone,
 	} {

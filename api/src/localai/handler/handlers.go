@@ -30,6 +30,8 @@ func (f handlerFunc) ServeHTTP(reqCtx request.RequestContext) { f(reqCtx) }
 // otherwise the reason), the state of the model program, and a timed test request.
 type Runtime interface {
 	CanEnable(modelID string) error
+	// CanUseTools says whether conversations on the model may be given tools (measured, and any dialect it needs is there).
+	CanUseTools(modelID string) bool
 	Status() entity.EngineStatus
 	Test(ctx context.Context, modelID string) (entity.TestResult, error)
 }
@@ -149,7 +151,7 @@ func respond(s entity.Settings, c catalog.Catalog, rt Runtime, installs Installs
 	for _, m := range c.Models {
 		models = append(models, catalogModelResponse{
 			ID: m.ID, Name: m.Name, Quantization: m.Quantization, SizeBytes: m.SizeBytes,
-			MinRAMBytes: hardware.MinRAMBytes(m.SizeBytes), ContextTokens: m.ContextTokens, Tools: m.Tools,
+			MinRAMBytes: hardware.MinRAMBytes(m.SizeBytes), ContextTokens: m.ContextTokens, Tools: rt.CanUseTools(m.ID),
 			License: m.License, Source: m.Source, Note: m.Note, CheckedOn: m.CheckedOn,
 			Fits:    info.Fits(m.SizeBytes),
 			Install: installs.ModelState(m),

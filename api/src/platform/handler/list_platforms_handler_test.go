@@ -75,3 +75,24 @@ func TestAPlatformWithPerModelToolsIsNotOfferedTheToolModes(t *testing.T) {
 		t.Errorf("%+v (listed %v): a form that cannot name an allowlist must not offer tool modes", p, ok)
 	}
 }
+
+func TestThePlatformListSaysWhichPlatformsNeedShortSteps(t *testing.T) {
+	if err := platform.Register(platform.Entry{
+		Info:        entity.Platform{ID: "list-shortsteps", Name: "Short"},
+		Completer:   noopCompleter{},
+		Credentials: func(context.Context) (string, string, error) { return "http://127.0.0.1:1", "", nil },
+		Models:      func() []string { return []string{"a"} },
+		ShortSteps:  true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	list := platformResponses()
+	if p, ok := find(list, "list-shortsteps"); !ok || !p.NeedsShortSteps {
+		t.Errorf("%+v (listed %v): a platform that asked for short steps must say so", p, ok)
+	}
+	for _, id := range []string{"openai", "anthropic", "openrouter"} {
+		if p, ok := find(list, id); !ok || p.NeedsShortSteps {
+			t.Errorf("%s: %+v, the cloud platforms take the long prompt", id, p)
+		}
+	}
+}

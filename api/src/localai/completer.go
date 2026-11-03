@@ -26,9 +26,19 @@ func (c completer) ChatCompletion(ctx context.Context, client *http.Client, _ /*
 	if !s.Configured() {
 		return nil, ErrNotAvailable
 	}
-	result, err := engine.Chat(ctx, client, model, messages, tools)
+	// A model whose chat template cannot take tools is taught them in its own dialect and its text answer is read back.
+	d := dialectOf(model)
+	sent := tools
+	if d != nil {
+		messages = d.Encode(messages, tools)
+		sent = nil
+	}
+	result, err := engine.Chat(ctx, client, model, messages, sent)
 	if err != nil {
 		return nil, relabel(err)
+	}
+	if d != nil {
+		d.Decode(result, tools)
 	}
 	free := 0.0
 	result.Usage.Cost = &free

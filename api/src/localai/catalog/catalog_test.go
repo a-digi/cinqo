@@ -22,9 +22,10 @@ func TestTheShippedCatalogIsValid(t *testing.T) {
 	if !ok || q.License != "Apache-2.0" || q.ContextTokens != 32768 || q.SizeBytes != 1117320736 {
 		t.Errorf("qwen entry = %+v (found %v)", q, ok)
 	}
-	// Measured in step 8: Qwen called tools reliably, Phi-4-mini made 0 of 40 calls. A change here needs a new measurement.
-	if q.Tools != true || m.Tools != false {
-		t.Errorf("tools: qwen %v phi %v, want true and false", q.Tools, m.Tools)
+	// Measured in step 8: Qwen called tools natively; Phi-4-mini made 0 of 40 calls natively and 50 of 50 through its own
+	// dialect. A change here needs a new measurement.
+	if !q.Tools || q.ToolDialect != "" || !m.Tools || m.ToolDialect != "phi-json" {
+		t.Errorf("tools: qwen %v/%q phi %v/%q", q.Tools, q.ToolDialect, m.Tools, m.ToolDialect)
 	}
 	if _, ok := c.Find("nope"); ok {
 		t.Error("an unknown id must not be found")
@@ -221,5 +222,47 @@ func TestTheToolsFlagIsReadAndDefaultsToOff(t *testing.T) {
 	off, err := Load([]byte(file(validEntry)))
 	if err != nil || off.Models[0].Tools {
 		t.Fatalf("no flag must mean no tools: %v %+v", err, off.Models)
+	}
+}
+
+func TestTheLargerQwenIsPinnedAndNotYetMarkedForTools(t *testing.T) {
+	c, err := Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, ok := c.Find("qwen2.5-7b-instruct-q4_k_m")
+	if !ok || m.License != "Apache-2.0" || m.SizeBytes != 4683074240 || m.ContextTokens != 32768 ||
+		m.SHA256 != "65b8fcd92af6b4fefa935c625d1ac27ea29dcb6ee14589c55a8f115ceaaa1423" ||
+		!strings.Contains(m.URL, "/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/8911e8a47f92bac19d6f5c64a2e2095bd2f7d031/") {
+		t.Errorf("entry = %+v (found %v)", m, ok)
+	}
+	if m.Tools {
+		t.Error("tools must stay false until the model is measured on the CV import prompt")
+	}
+}
+
+func TestAToolDialectIsAWellFormedNameAndBelongsToAModelWithTools(t *testing.T) {
+	good := file(mutate(`"contextTokens": 4096`, `"contextTokens": 4096, "tools": true, "toolDialect": "phi-json"`))
+	if c, err := Load([]byte(good)); err != nil || c.Models[0].ToolDialect != "phi-json" {
+		t.Fatalf("a known dialect: %v", err)
+	}
+	withTools := func(dialect string) string {
+		return file(mutate(`"contextTokens": 4096`, `"contextTokens": 4096, "tools": true, "toolDialect": "`+dialect+`"`))
+	}
+	// Which dialects exist is the module's business (a missing one means no tools), the catalog only checks the shape.
+	if _, err := Load([]byte(withTools("made-up"))); err != nil {
+		t.Errorf("a well-formed name the catalog does not know is not its business: %v", err)
+	}
+	for name, raw := range map[string]string{
+		"a dialect without tools": file(mutate(`"contextTokens": 4096`, `"contextTokens": 4096, "toolDialect": "phi-json"`)),
+		"upper case":              withTools("Phi-JSON"),
+		"a space":                 withTools("phi json"),
+		"a leading hyphen":        withTools("-phi"),
+		"a double hyphen":         withTools("phi--json"),
+		"too long":                withTools("a" + strings.Repeat("b", 32)),
+	} {
+		if _, err := Load([]byte(raw)); err == nil {
+			t.Errorf("%s must be refused", name)
+		}
 	}
 }

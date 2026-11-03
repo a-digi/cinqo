@@ -18,6 +18,9 @@ export interface AnalysisSteps {
   // Sends the instruction (which names the run id), or the given follow-up message when the AI has to continue, and waits for the AI's
   // turn to end; resolves with its last message.
   askAi(conversationId: string, runId: string, followUp?: string): Promise<string>
+  // The instruction as a sequence of short messages (for a model that cannot follow the long one), or absent to send the long one.
+  // Each message is sent when the previous turn has ended. Given the run id the messages name.
+  stepMessages?(runId: string): string[]
   // Ends the run; resolves with the run, whose aiProposal holds what the AI handed over. Rejects when the server refuses.
   endRun(runId: string, outcome: RunOutcome): Promise<{ aiProposal: unknown }>
   // What the page shows along the way.
@@ -83,7 +86,8 @@ export async function analyseCv(steps: AnalysisSteps): Promise<unknown> {
   try {
     steps.onRun(runId)
     steps.onRunsChanged()
-    const first = await ask(steps, conversationId, runId, undefined)
+    const messages = steps.stepMessages?.(runId)
+    const first = messages ? await askInSteps(steps, conversationId, runId, messages) : await ask(steps, conversationId, runId, undefined)
     return await settleRun(steps, conversationId, runId, first)
   } finally {
     activeRuns.delete(runId)
@@ -174,6 +178,19 @@ async function ask(steps: SettleSteps, conversationId: string, runId: string, fo
     await failRun(steps, runId, failureReason(err))
     throw err
   }
+}
+
+// The instruction as short messages, one turn each, in the same conversation. It stops early where the rest cannot go on: a file that
+// could not be read (the first reply says so) or a turn that failed in a way the run can recover from (the same conversation is
+// then asked to continue by settleRun, which knows what is still missing). Resolves with the result of the last turn it ran.
+async function askInSteps(steps: SettleSteps, conversationId: string, runId: string, messages: string[]): Promise<TurnResult> {
+  let last: TurnResult = { reply: '' }
+  for (let i = 0; i < messages.length; i++) {
+    last = await ask(steps, conversationId, runId, messages[i])
+    if (last.turnError !== undefined) return last
+    if (i === 0 && isCvUnreadableReply(last.reply)) return last
+  }
+  return last
 }
 
 // Ends a run as failed; whether that works or not never replaces the error that is being reported.
