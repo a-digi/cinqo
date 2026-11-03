@@ -180,17 +180,55 @@ async function ask(steps: SettleSteps, conversationId: string, runId: string, fo
   }
 }
 
-// The instruction as short messages, one turn each, in the same conversation. It stops early where the rest cannot go on: a file that
-// could not be read (the first reply says so) or a turn that failed in a way the run can recover from (the same conversation is
-// then asked to continue by settleRun, which knows what is still missing). Resolves with the result of the last turn it ran.
+// How many steps in a row may fail before the sequence stops: one bad step (a small model sending a wrong argument) is not the end
+// of the import, but a provider that is down fails every step and there is no point in sending the rest.
+export const MAX_FAILED_STEPS_IN_A_ROW = 2
+
+// One step after the first: a failure of the turn, of any kind, does not end the run here (the draft lives on the run, and whatever
+// the step did not hand over is found by the end-of-run settling, which asks the same conversation to continue).
+async function askStep(
+  steps: SettleSteps,
+  conversationId: string,
+  runId: string,
+  message: string,
+): Promise<{ reply: string; error?: string }> {
+  try {
+    const reply = await steps.askAi(conversationId, runId, message)
+    steps.onReply(reply)
+    return { reply }
+  } catch (err) {
+    return { reply: '', error: failureReason(err) }
+  }
+}
+
+// The instruction as short messages, one turn each, in the same conversation. The first step reads the file: it stops the sequence
+// when the file could not be read (the reply says so) or when its turn failed (without the text there is nothing to go on). A later
+// step that fails is skipped and the next one is sent (found by a real run: a small model sent a wrong argument in one step and the
+// whole import failed with half of it stored); after MAX_FAILED_STEPS_IN_A_ROW failures the sequence stops. What was not handed
+// over is found by settleRun, and the problems are kept in the result so a failed run says what went wrong. Resolves with the result
+// of the last turn that worked.
 async function askInSteps(steps: SettleSteps, conversationId: string, runId: string, messages: string[]): Promise<TurnResult> {
   let last: TurnResult = { reply: '' }
+  let problem: string | undefined
+  let failedInARow = 0
   for (let i = 0; i < messages.length; i++) {
-    last = await ask(steps, conversationId, runId, messages[i])
-    if (last.turnError !== undefined) return last
-    if (i === 0 && isCvUnreadableReply(last.reply)) return last
+    if (i === 0) {
+      last = await ask(steps, conversationId, runId, messages[i])
+      if (last.turnError !== undefined) return last
+      if (isCvUnreadableReply(last.reply)) return last
+      continue
+    }
+    const step = await askStep(steps, conversationId, runId, messages[i])
+    if (step.error !== undefined) {
+      problem = step.error
+      failedInARow++
+      if (failedInARow >= MAX_FAILED_STEPS_IN_A_ROW) break
+      continue
+    }
+    failedInARow = 0
+    last = { reply: step.reply }
   }
-  return last
+  return problem === undefined ? last : { ...last, turnError: problem }
 }
 
 // Ends a run as failed; whether that works or not never replaces the error that is being reported.

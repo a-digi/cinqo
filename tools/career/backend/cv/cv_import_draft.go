@@ -160,6 +160,22 @@ func lenientDecode(raw any, into any, what, shape string) error {
 	return nil
 }
 
+// lenientDecodeList is lenientDecode for a list that may arrive as one object: a weak model sends a single entry where the tool
+// says "a list", and one entry is a list of one.
+func lenientDecodeList(raw any, into any, what, shape string) error {
+	data, err := rawJSON(raw, what, shape)
+	if err != nil {
+		return err
+	}
+	if trimmed := bytes.TrimSpace(data); len(trimmed) > 0 && trimmed[0] == '{' {
+		data = append(append([]byte{'['}, trimmed...), ']')
+	}
+	if err := json.Unmarshal(data, into); err != nil {
+		return problem("%s is not in the right shape (%v): %s", what, err, shape)
+	}
+	return nil
+}
+
 // skipPlaceholder is a proposal whose three single sections are valid and skipped, so one piece can be validated by the rules of
 // the whole proposal.
 func skipPlaceholder() Proposal {
@@ -240,7 +256,7 @@ func SetDraftSection(runID, section string, value any) (importDraft, error) {
 func AddDraftSkills(runID string, items any) (importDraft, error) {
 	return updateDraft(runID, func(d *importDraft) error {
 		var skills []SkillProposal
-		if err := lenientDecode(items, &skills, "items", `a list of {"action","possibleDuplicateOf","value"} objects`); err != nil {
+		if err := lenientDecodeList(items, &skills, "items", `a list of {"action","possibleDuplicateOf","value"} objects`); err != nil {
 			return err
 		}
 		p := skipPlaceholder()
@@ -495,18 +511,21 @@ type cvImportAddSkillsArgs struct {
 	RunID  string `json:"runId,omitempty" jsonschema:"the run id given in the request"`
 	Items  any    `json:"items,omitempty" jsonschema:"a list of skills, each {action, possibleDuplicateOf, value}; send about 30 at most per call"`
 	Skills any    `json:"skills,omitempty" jsonschema:"the same list under another name; send either items or skills"`
+	Value  any    `json:"value,omitempty" jsonschema:"one skill {action, possibleDuplicateOf, value}, or the list: the same wrapper cv_import_set uses"`
 }
 
 type cvImportAddExperienceArgs struct {
 	RunID string `json:"runId,omitempty" jsonschema:"the run id given in the request"`
 	Item  any    `json:"item,omitempty" jsonschema:"one job {action, possibleDuplicateOf, company, title, startDate, endDate, description, bulletsInCv}, or a list of up to 5 jobs; description has the whole text of the job, one line per bullet point; bulletsInCv is how many bullet points the CV lists under it"`
 	Items any    `json:"items,omitempty" jsonschema:"the same under another name (a list of up to 5 jobs); send either item or items"`
+	Value any    `json:"value,omitempty" jsonschema:"one job, or the list: the same wrapper cv_import_set uses"`
 }
 
 type cvImportAddEducationArgs struct {
 	RunID string `json:"runId,omitempty" jsonschema:"the run id given in the request"`
 	Item  any    `json:"item,omitempty" jsonschema:"one education entry {action, possibleDuplicateOf, institution, degree, fieldOfStudy, startDate, endDate, description}, or a list of up to 10 entries"`
 	Items any    `json:"items,omitempty" jsonschema:"the same under another name (a list of up to 10 entries); send either item or items"`
+	Value any    `json:"value,omitempty" jsonschema:"one education entry, or the list: the same wrapper cv_import_set uses"`
 }
 
 type cvImportFinishArgs struct {
@@ -537,7 +556,7 @@ func RegisterCVImportDraftTools(server *mcp.Server) {
 		if err != nil {
 			return draftResult(args.RunID, importDraft{}, err)
 		}
-		d, err := AddDraftSkills(runID, firstOf(args.Items, args.Skills))
+		d, err := AddDraftSkills(runID, firstOf(args.Items, args.Skills, args.Value))
 		return draftResult(runID, d, err)
 	})
 	mcp.AddTool(server, &mcp.Tool{
@@ -551,7 +570,7 @@ func RegisterCVImportDraftTools(server *mcp.Server) {
 		if err != nil {
 			return draftResult(args.RunID, importDraft{}, err)
 		}
-		d, err := AddDraftExperience(runID, firstOf(args.Item, args.Items))
+		d, err := AddDraftExperience(runID, firstOf(args.Item, args.Items, args.Value))
 		return draftResult(runID, d, err)
 	})
 	mcp.AddTool(server, &mcp.Tool{
@@ -564,7 +583,7 @@ func RegisterCVImportDraftTools(server *mcp.Server) {
 		if err != nil {
 			return draftResult(args.RunID, importDraft{}, err)
 		}
-		d, err := AddDraftEducation(runID, firstOf(args.Item, args.Items))
+		d, err := AddDraftEducation(runID, firstOf(args.Item, args.Items, args.Value))
 		return draftResult(runID, d, err)
 	})
 	mcp.AddTool(server, &mcp.Tool{
@@ -583,8 +602,8 @@ func RegisterCVImportDraftTools(server *mcp.Server) {
 	})
 }
 
-// firstOf is the first value a weak model actually sent: it names the same argument differently from call to call ("item" and
-// "items"), and the schema refuses an unknown name before the tool runs.
+// firstOf is the first value a weak model actually sent: it names the same argument differently from call to call ("item", "items"
+// and "value", the wrapper cv_import_set uses), and the schema refuses an unknown name before the tool runs.
 func firstOf(values ...any) any {
 	for _, v := range values {
 		if v != nil {
