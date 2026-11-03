@@ -125,7 +125,7 @@ func (e *managedEngine) Chat(ctx context.Context, client *http.Client, model str
 	defer release()
 	res, err := e.call(ctx, client, base, token, model, messages, tools)
 	if err != nil {
-		return nil, explainFailure(err, s.ContextTokens, m.ContextTokens)
+		return nil, explainFailure(err, s.ContextTokens, m.ContextTokens, m.Tools)
 	}
 	return res, nil
 }
@@ -175,10 +175,18 @@ func sizeToSet(needed, modelMax int) int {
 	return 0
 }
 
+// toolTaskSize is the context size recommended for tool tasks with a model that reads at most modelMax (0 when unknown).
+func toolTaskSize(modelMax int) int {
+	if modelMax > 0 && modelMax < entity.RecommendedToolContext {
+		return modelMax
+	}
+	return entity.RecommendedToolContext
+}
+
 // explainFailure turns the model program's "this request does not fit in the context" answer into plain words with the way out:
 // when the answer carries the numbers, how many tokens were needed and the size to set; otherwise the general sentence.
 // modelMax is the most the model can read (0 when unknown).
-func explainFailure(err error, contextTokens, modelMax int) error {
+func explainFailure(err error, contextTokens, modelMax int, canUseTools bool) error {
 	var ce *chatcompleter.CompletionError
 	if !errors.As(err, &ce) || ce.Status != http.StatusBadRequest {
 		return err
@@ -191,6 +199,11 @@ func explainFailure(err error, contextTokens, modelMax int) error {
 	if needed, window, ok := overflowNumbers(ce.Message); ok {
 		if size := sizeToSet(needed, modelMax); size > 0 {
 			message = fmt.Sprintf("the conversation needs %s tokens but the model reads %s at once (the context size): set the context size in AI, Local AI to at least %s", hardware.Thousands(needed), hardware.Thousands(window), hardware.Thousands(size))
+			// A conversation keeps growing: the size that holds this request is not enough for a tool task such as a CV import, which
+			// reads a document and hands results over in pieces. Say so, so the admin does not raise it twice.
+			if tools := toolTaskSize(modelMax); canUseTools && size < tools {
+				message += fmt.Sprintf("; tool tasks such as importing a CV need at least %s", hardware.Thousands(tools))
+			}
 		} else {
 			limit := modelMax
 			if limit == 0 {
@@ -241,7 +254,7 @@ func (e *managedEngine) Test(ctx context.Context, modelID string) (entity.TestRe
 	res, err := e.call(ctx, &http.Client{Timeout: 3 * time.Minute}, base, token, m.ID, []chatcompleter.Message{{Role: "user", Content: testPrompt}}, nil)
 	seconds := time.Since(t1).Seconds()
 	if err != nil {
-		return entity.TestResult{Error: explainFailure(err, s.ContextTokens, m.ContextTokens).Error(), StartSeconds: startSeconds, Seconds: seconds}, nil
+		return entity.TestResult{Error: explainFailure(err, s.ContextTokens, m.ContextTokens, m.Tools).Error(), StartSeconds: startSeconds, Seconds: seconds}, nil
 	}
 	out := entity.TestResult{
 		OK:               true,
