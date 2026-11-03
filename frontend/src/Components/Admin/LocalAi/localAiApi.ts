@@ -1,0 +1,97 @@
+import { apiDelete, apiGet, apiPost, apiPut } from '../../../api/client'
+
+// The local AI module's own API client (api/src/localai). Nothing outside Components/Admin/LocalAi imports it.
+// plan/ai/small-llm-local/step-181-local-ai-small-models.md
+
+// The local AI is managed by Cinqo only: modelId is the id of a model of the catalog, never free text.
+export interface LocalAiSettings {
+  enabled: boolean
+  modelId: string
+  contextTokens: number
+  idleMinutes: number
+}
+
+// 'off': switched off or no model chosen. 'configured': switched on with a model.
+export type LocalAiState = 'off' | 'configured'
+
+// canEnable says whether the local AI can be switched on at all right now; reason says why not when it cannot.
+export interface LocalAiStatus {
+  state: LocalAiState
+  canEnable: boolean
+  reason: string
+}
+
+// What this machine can run. ramBytes is 0 when it could not be read; supported says whether the managed local AI is meant
+// to run on this system at all.
+export interface LocalAiHardware {
+  os: string
+  arch: string
+  ramBytes: number
+  cpus: number
+  supported: boolean
+}
+
+// Where the files of a model, or of the runtime, are: nothing yet, an interrupted download that can continue, a download
+// that is running (downloadId is the one to follow with the download API), or ready.
+export type InstallState = 'not_downloaded' | 'partial' | 'downloading' | 'ready'
+
+export interface FileInstall {
+  state: InstallState
+  partialBytes: number
+  downloadId: string
+}
+
+// The program that runs the models, for this system. supported is false on a system that has none yet.
+export interface LocalAiRuntime {
+  supported: boolean
+  name: string
+  sizeBytes: number
+  install: FileInstall
+}
+
+// One model Cinqo knows how to download. fits is null when the memory of this machine is unknown.
+export interface LocalAiModel {
+  id: string
+  name: string
+  quantization: string
+  sizeBytes: number
+  minRamBytes: number
+  contextTokens: number
+  license: string
+  source: string
+  note: string
+  checkedOn: string
+  fits: boolean | null
+  install: FileInstall
+}
+
+export interface LocalAiResponse {
+  settings: LocalAiSettings
+  status: LocalAiStatus
+  hardware: LocalAiHardware
+  catalog: LocalAiModel[]
+  catalogCheckedOn: string
+  runtime: LocalAiRuntime
+}
+
+export async function fetchLocalAi(): Promise<LocalAiResponse> {
+  const raw = await apiGet<{ message: LocalAiResponse }>('/api/v1/local-ai')
+  return raw.message
+}
+
+export async function updateLocalAiSettings(settings: LocalAiSettings): Promise<LocalAiResponse> {
+  const raw = await apiPut<{ message: LocalAiResponse }>('/api/v1/local-ai/settings', settings)
+  return raw.message
+}
+
+// Starts downloading the runtime and the model (the model of the settings when no id is given). The answer is the status,
+// which now carries the ids of the running downloads.
+export async function startInstall(modelId?: string): Promise<LocalAiResponse> {
+  const raw = await apiPost<{ message: LocalAiResponse }>('/api/v1/local-ai/install', modelId === undefined ? {} : { modelId })
+  return raw.message
+}
+
+// Deletes everything that was downloaded (refused while the local AI is on or a download is running).
+export async function removeDownloads(): Promise<void> {
+  await apiDelete('/api/v1/local-ai/install')
+}

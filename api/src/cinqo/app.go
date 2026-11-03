@@ -30,9 +30,11 @@ import (
 	dashboard_system "github.com/a-digi/cinqo/src/dashboard/system"
 	dashboard_toolwidgets "github.com/a-digi/cinqo/src/dashboard/toolwidgets"
 	"github.com/a-digi/cinqo/src/domainevent"
+	"github.com/a-digi/cinqo/src/download"
 	"github.com/a-digi/cinqo/src/filereader"
 	filereader_handler "github.com/a-digi/cinqo/src/filereader/handler"
 	filereader_source "github.com/a-digi/cinqo/src/filereader/source"
+	"github.com/a-digi/cinqo/src/localai"
 	platform_crypto "github.com/a-digi/cinqo/src/platform/crypto"
 	tool_filesource "github.com/a-digi/cinqo/src/tool/filesource"
 	tool_manager "github.com/a-digi/cinqo/src/tool/manager"
@@ -227,6 +229,17 @@ func Start(opts Options) (srv *http.Server, cfg *server.Config, ctx *di.ContextB
 	// to" reasoning, one level down: a sub-agent run orphaned by this
 	// same restart needs its own reconciliation pass.
 	conversation.ReconcileOrphanedSubAgentRuns(conversationManager.Connector.DB, func(format string, args ...any) { log.Warning(format, args...) })
+
+	// The generic download manager (plan 181, step 5): one for the whole app. Any feature that downloads a file starts its
+	// jobs here, and GET /api/v1/downloads shows them with their progress.
+	downloads := download.New(download.Options{})
+	ctx.Set("download_manager", downloads)
+
+	// The optional local AI platform (plan 181): the module's one start-up hook, a single line to delete when the module
+	// is removed.
+	if err := localai.Register(manager.Connector.DB, localai.Deps{Downloads: downloads, DataDir: dataDir}); err != nil {
+		log.Warning("local AI platform not registered: %v", err)
+	}
 
 	// Platform API-key encryption key — loaded/generated once at
 	// bootstrap, deliberately never sourced from config.json (step 2),

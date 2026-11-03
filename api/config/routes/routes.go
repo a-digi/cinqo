@@ -18,8 +18,10 @@ import (
 	conversation_handler "github.com/a-digi/cinqo/src/conversation/handler"
 	dashboard_handler "github.com/a-digi/cinqo/src/dashboard/handler"
 	domainevent_handler "github.com/a-digi/cinqo/src/domainevent/handler"
+	download_handler "github.com/a-digi/cinqo/src/download/handler"
 	filereader_handler "github.com/a-digi/cinqo/src/filereader/handler"
 	"github.com/a-digi/cinqo/src/health"
+	"github.com/a-digi/cinqo/src/localai"
 	media_handler "github.com/a-digi/cinqo/src/media/handler"
 	"github.com/a-digi/cinqo/src/ping"
 	"github.com/a-digi/cinqo/src/platform"
@@ -148,6 +150,15 @@ func Init(ctx serverdi.Context) {
 		"DashboardLayout":     local_routing.HandlerFunc(dashboard_handler.LayoutHandler),
 
 		"DomainEventPublish": local_routing.HandlerFunc(domainevent_handler.PublishHandler),
+
+		"DownloadList":   local_routing.HandlerFunc(download_handler.ListHandler),
+		"DownloadGet":    local_routing.HandlerFunc(download_handler.GetHandler),
+		"DownloadCancel": local_routing.HandlerFunc(download_handler.CancelHandler),
+	}
+
+	// The optional local AI module's handlers (plan 181): one line to delete when the module is removed.
+	for name, h := range localai.Handlers() {
+		handlerMap[name] = h
 	}
 
 	var inner *lift_security.ScopeSecurityLayer

@@ -209,7 +209,7 @@ function AddKeyForm({
         />
         <div className="w-40">
           <Dropdown
-            options={platforms.map((p) => ({ value: p.id, label: p.name }))}
+            options={platforms.filter((p) => p.requiresKey).map((p) => ({ value: p.id, label: p.name }))}
             value={platform}
             onChange={onPlatformChange}
             placeholder="Select platform…"

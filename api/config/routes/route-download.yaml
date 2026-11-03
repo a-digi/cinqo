@@ -1,0 +1,18 @@
+# The generic download manager's API (api/src/download): watch the jobs and cancel one. No static scopes on purpose: every
+# job carries the scope needed to see it (set by the feature that started it), checked inside the handlers, like the tool
+# proxy does. Starting a download is not here: each feature starts its own behind its own scope.
+routes:
+  - path: /api/v1/downloads
+    method: GET
+    executor: DownloadList
+    security: authenticated
+
+  - path: /api/v1/downloads/{id}
+    method: GET
+    executor: DownloadGet
+    security: authenticated
+
+  - path: /api/v1/downloads/{id}
+    method: DELETE
+    executor: DownloadCancel
+    security: authenticated

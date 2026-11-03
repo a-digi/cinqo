@@ -10,6 +10,7 @@ import { RepositoriesPage } from '../../Components/Admin/Tools/RepositoriesPage'
 import { RepositoryPage } from '../../Components/Admin/Tools/RepositoryPage'
 import { PlatformKeysPage } from '../../Components/Admin/Platforms/PlatformKeysPage'
 import { PlatformsPage } from '../../Components/Admin/Platforms/PlatformsPage'
+import { localAiRoute } from '../../Components/Admin/LocalAi/route'
 import { ConversationPage } from '../../Components/Conversation/ConversationPage'
 import { AiLogsPage } from '../../Components/Conversation/AiLogsPage'
 import { AiLogsOverviewPage } from '../../Components/Admin/Conversation/AiLogsOverviewPage'
@@ -81,6 +82,7 @@ export const router = createBrowserRouter([
               </AuthGuard>
             ),
           },
+          localAiRoute,
           {
             path: '/conversations',
             element: (

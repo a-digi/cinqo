@@ -37,8 +37,13 @@ func CreateKeyHandler(reqCtx request.RequestContext) {
 		response.ErrorResponse(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if !platform.IsValid(body.Platform) {
+	entry, registered := platform.Lookup(body.Platform)
+	if !registered {
 		response.ErrorResponse(w, http.StatusBadRequest, "platform is not a registered platform")
+		return
+	}
+	if !entry.RequiresKey() {
+		response.ErrorResponse(w, http.StatusBadRequest, "this platform needs no API key")
 		return
 	}
 	if body.Key == "" {

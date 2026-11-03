@@ -18,6 +18,12 @@ type platformResponse struct {
 	ID     string   `json:"id"`
 	Name   string   `json:"name"`
 	Models []string `json:"models"`
+	// RequiresKey is true for a platform reached with a stored API key
+	// (the cloud platforms): the frontend shows "add a key" only then.
+	RequiresKey bool `json:"requiresKey"`
+	// OffersTools is false for a platform whose conversations are offered no tools and run in direct mode only: the
+	// frontend then does not offer composer mode for it.
+	OffersTools bool `json:"offersTools"`
 }
 
 // ListPlatformsHandler handles GET /api/v1/platforms. See
@@ -25,16 +31,19 @@ type platformResponse struct {
 func ListPlatformsHandler(reqCtx request.RequestContext) {
 	w := reqCtx.GetWriter()
 
+	response.SuccessResponse(w, http.StatusOK, platformResponses())
+}
+
+// platformResponses is the list the endpoint returns: every registered platform that is available right now.
+func platformResponses() []platformResponse {
 	entries := platform.List()
 	out := make([]platformResponse, 0, len(entries))
 	for _, info := range entries {
 		entry, _ := platform.Lookup(info.ID)
-		models := entry.SelectableModels
-		if models == nil {
-			models = []string{}
+		if !entry.IsAvailable() {
+			continue
 		}
-		out = append(out, platformResponse{ID: info.ID, Name: info.Name, Models: models})
+		out = append(out, platformResponse{ID: info.ID, Name: info.Name, Models: entry.SelectableModelList(), RequiresKey: entry.RequiresKey(), OffersTools: !entry.NoTools})
 	}
-
-	response.SuccessResponse(w, http.StatusOK, out)
+	return out
 }

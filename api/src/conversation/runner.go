@@ -24,8 +24,6 @@ import (
 
 	"github.com/a-digi/cinqo/src/platform"
 	"github.com/a-digi/cinqo/src/platform/chatcompleter"
-	platform_crypto "github.com/a-digi/cinqo/src/platform/crypto"
-	platform_query "github.com/a-digi/cinqo/src/platform/repository/query"
 
 	conversation_entity "github.com/a-digi/cinqo/src/conversation/entity"
 	conversation_persistent "github.com/a-digi/cinqo/src/conversation/repository/persistent"
@@ -154,7 +152,7 @@ func runDetachedTurn(
 
 	entry, ok := platform.Lookup(conv.PlatformID)
 	if !ok {
-		finishTurnRun(runs, turnRunID, "failed")
+		failBeforeModel(runs, conv, turnRunID, content, "This conversation's platform is no longer available.")
 		return
 	}
 	if entry.Completer == nil {
@@ -163,14 +161,9 @@ func runDetachedTurn(
 	}
 	model := conv.Model
 
-	key, err := platform_query.NewKeyQueryRepo(mainDB).FindMostRecentForPlatform(conv.PlatformID)
+	entry, plainKey, err := resolveEntry(ctx, mainDB, encryptionKey, entry, conv.PlatformID)
 	if err != nil {
-		finishTurnRun(runs, turnRunID, "failed")
-		return
-	}
-	plainKey, err := platform_crypto.Decrypt(key.EncryptedKey, encryptionKey)
-	if err != nil {
-		finishTurnRun(runs, turnRunID, "failed")
+		failBeforeModel(runs, conv, turnRunID, content, platformFailureMessage(err))
 		return
 	}
 
@@ -199,6 +192,9 @@ func runDetachedTurn(
 		return
 	}
 	// A conversation created with an allowlist (step 113) is offered, and may call, only those.
+	if entry.NoTools {
+		tools = nil
+	}
 	ctx, tools = applyToolAllowlist(ctx, tools, conv)
 	// A composer orchestrator gets the system prompt that makes it
 	// plan and delegate, including the catalog of tools its workers
@@ -382,6 +378,22 @@ func errorMessageFor(ctx context.Context, err error) string {
 // detail, when there is one, already went into the conversation's own
 // Markdown log via AppendTurn's "## error —" block before this is
 // called; this only ever records the coarse run status.
+// failBeforeModel ends a turn that could not even reach the model, and says why in the conversation itself (a failed
+// turn with the reason, like every other failure) and in the turn's log, so the user is not left looking at nothing.
+func failBeforeModel(runs *conversation_persistent.TurnRunPersistentRepo, conv *conversation_entity.Conversation, turnRunID, content, reason string) {
+	now := time.Now().UTC().Format(time.RFC3339)
+	_ = runs.AppendLog(turnRunID, fmt.Sprintf("%s\tfailed before calling the model: %s\n", now, reason))
+	_ = AppendTurn(conv.FilePath, Turn{
+		UserTimestamp:  now,
+		UserContent:    content,
+		Failed:         true,
+		ErrorTimestamp: now,
+		ErrorMessage:   truncateError(reason),
+		TurnRunID:      turnRunID,
+	})
+	finishTurnRun(runs, turnRunID, "failed")
+}
+
 func finishTurnRun(runs *conversation_persistent.TurnRunPersistentRepo, turnRunID, status string) {
 	_ = runs.SetTerminalStatus(turnRunID, status, time.Now().UTC().Format(time.RFC3339))
 }

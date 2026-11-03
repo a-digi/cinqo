@@ -75,8 +75,13 @@ func CreateHandler(reqCtx request.RequestContext) {
 		return
 	}
 
+	if !entry.IsAvailable() {
+		response.ErrorResponse(w, http.StatusBadRequest, "this platform is not available")
+		return
+	}
+
 	model := body.Model
-	if len(entry.SelectableModels) > 0 {
+	if len(entry.SelectableModelList()) > 0 {
 		if model == "" || !platform.IsSelectableModel(body.PlatformID, model) {
 			response.ErrorResponse(w, http.StatusBadRequest, "model is required for this platform and must be one of its selectable models")
 			return
@@ -103,6 +108,10 @@ func CreateHandler(reqCtx request.RequestContext) {
 	allowedTools, err := conversation_entity.ParseAllowedTools(body.AllowedTools)
 	if err != nil {
 		response.ErrorResponse(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if entry.NoTools && (orchestrationMode != conversation_entity.OrchestrationModeDirect || allowedTools != nil) {
+		response.ErrorResponse(w, http.StatusBadRequest, "this platform offers no tools: use direct mode without allowedTools")
 		return
 	}
 	if allowedTools != nil && orchestrationMode != conversation_entity.OrchestrationModeDirect {

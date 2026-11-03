@@ -6,6 +6,10 @@
 package platform
 
 import (
+	"context"
+	"errors"
+	"sync"
+
 	"github.com/a-digi/cinqo/src/platform/anthropic"
 	"github.com/a-digi/cinqo/src/platform/chatcompleter"
 	"github.com/a-digi/cinqo/src/platform/entity"
@@ -26,7 +30,57 @@ type Entry struct {
 	DefaultModel     string
 	SelectableModels []string
 	Completer        chatcompleter.ChatCompleter
+
+	// The fields below are optional seams. They are all nil/false for the
+	// three built-in cloud platforms, which then behave exactly as before.
+	// A platform added with Register may set them; nothing in this
+	// package or in the conversation code knows any platform by name.
+
+	// Credentials, when set, says where this platform is reached and with
+	// which token, instead of DefaultBaseURL plus a stored API key. A
+	// platform with Credentials needs no API key (RequiresKey is false).
+	// An error means the platform cannot answer right now.
+	Credentials func(ctx context.Context) (baseURL, token string, err error)
+	// Models, when set, is the list of selectable models read at call
+	// time (instead of the fixed SelectableModels).
+	Models func() []string
+	// Available, when set, says whether the platform is offered at all
+	// right now; an unavailable platform is not listed and cannot be
+	// chosen for a new conversation (existing conversations still find it
+	// and fail with a clear reason).
+	Available func() bool
+	// NoTools means conversations on this platform are offered no tools
+	// and run in direct mode only.
+	NoTools bool
 }
+
+// RequiresKey reports whether the platform is reached with a stored API
+// key (true for every platform without its own Credentials).
+func (e Entry) RequiresKey() bool { return e.Credentials == nil }
+
+// IsAvailable reports whether the platform is offered right now.
+func (e Entry) IsAvailable() bool { return e.Available == nil || e.Available() }
+
+// SelectableModelList is the platform's selectable models: Models() when
+// set, otherwise the fixed list. Never nil.
+func (e Entry) SelectableModelList() []string {
+	var models []string
+	if e.Models != nil {
+		models = e.Models()
+	} else {
+		models = e.SelectableModels
+	}
+	if models == nil {
+		return []string{}
+	}
+	return models
+}
+
+// ErrInvalidEntry is returned by Register for an entry that cannot work.
+var ErrInvalidEntry = errors.New("platform: invalid entry")
+
+// mu guards registry: Register may add entries while requests read them.
+var mu sync.RWMutex
 
 var registry = []Entry{
 	{
@@ -120,9 +174,28 @@ var registry = []Entry{
 	},
 }
 
+// Register adds a platform to the registry at start-up. The ID must be
+// non-empty and not yet registered, and the entry needs a Completer.
+func Register(e Entry) error {
+	if e.Info.ID == "" || e.Completer == nil {
+		return ErrInvalidEntry
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	for _, existing := range registry {
+		if existing.Info.ID == e.Info.ID {
+			return ErrInvalidEntry
+		}
+	}
+	registry = append(registry, e)
+	return nil
+}
+
 // List returns every registered platform's {id, name} — nothing more,
 // matching the reference's own minimal GET /ai/platforms shape.
 func List() []entity.Platform {
+	mu.RLock()
+	defer mu.RUnlock()
 	out := make([]entity.Platform, 0, len(registry))
 	for _, e := range registry {
 		out = append(out, e.Info)
@@ -132,6 +205,8 @@ func List() []entity.Platform {
 
 // Lookup returns the full registry entry for id, if registered.
 func Lookup(id string) (Entry, bool) {
+	mu.RLock()
+	defer mu.RUnlock()
 	for _, e := range registry {
 		if e.Info.ID == id {
 			return e, true
@@ -155,7 +230,7 @@ func IsSelectableModel(platformID, model string) bool {
 	if !ok {
 		return false
 	}
-	for _, m := range entry.SelectableModels {
+	for _, m := range entry.SelectableModelList() {
 		if m == model {
 			return true
 		}

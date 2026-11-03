@@ -12,6 +12,11 @@ export interface Platform {
   id: string
   name: string
   models: string[]
+  // true for a platform reached with a stored API key (the cloud platforms): only those get "add a key" buttons and
+  // a place in the key form. A platform that needs none brings its own settings page.
+  requiresKey: boolean
+  // false for a platform whose conversations get no tools and run in direct mode only (no composer mode).
+  offersTools: boolean
 }
 
 export interface PlatformKey {

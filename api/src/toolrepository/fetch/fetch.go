@@ -147,31 +147,8 @@ func (f *Fetcher) Get(ctx context.Context, rawURL string, maxBytes int64, policy
 	if u.User != nil {
 		return nil, errors.New("the link must not contain credentials")
 	}
-	g := &guard{classify: f.classify, policy: policy, scheme: u.Scheme}
-	if g.classify == nil {
-		g.classify = classifyAddr
-	}
-	dialer := &net.Dialer{Timeout: 10 * time.Second, Control: g.control}
-	client := &http.Client{
-		Timeout: f.timeout(),
-		Transport: &http.Transport{
-			Proxy:               nil,
-			DialContext:         dialer.DialContext,
-			DisableKeepAlives:   true,
-			TLSClientConfig:     f.tlsConfig,
-			TLSHandshakeTimeout: 10 * time.Second,
-		},
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) > MaxRedirects {
-				return fmt.Errorf("too many redirects (more than %d)", MaxRedirects)
-			}
-			if req.URL.User != nil {
-				return errors.New("a redirect to a link with credentials is not followed")
-			}
-			g.setScheme(req.URL.Scheme)
-			return nil
-		},
-	}
+	g := f.newGuard(policy, u.Scheme)
+	client := f.newClient(g, f.timeout(), nil)
 	defer client.CloseIdleConnections()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
@@ -203,6 +180,48 @@ func (f *Fetcher) Get(ctx context.Context, rawURL string, maxBytes int64, policy
 	return &Result{Body: body, Local: local}, nil
 }
 
+// newGuard is the per-download state that decides which addresses may be reached.
+func (f *Fetcher) newGuard(policy LocalPolicy, scheme string) *guard {
+	g := &guard{classify: f.classify, policy: policy, scheme: scheme}
+	if g.classify == nil {
+		g.classify = classifyAddr
+	}
+	return g
+}
+
+// newClient builds the guarded HTTP client of one download: every connection is checked on its resolved address by g,
+// redirects are limited and never lead to credentials, and extra (when set) may refuse a redirect target.
+// totalTimeout 0 means no limit on the whole request, which a streaming download of gigabytes needs.
+func (f *Fetcher) newClient(g *guard, totalTimeout time.Duration, extra func(*url.URL) error) *http.Client {
+	dialer := &net.Dialer{Timeout: 10 * time.Second, Control: g.control}
+	return &http.Client{
+		Timeout: totalTimeout,
+		Transport: &http.Transport{
+			Proxy:                 nil,
+			DialContext:           dialer.DialContext,
+			DisableKeepAlives:     true,
+			TLSClientConfig:       f.tlsConfig,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ResponseHeaderTimeout: 30 * time.Second,
+		},
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) > MaxRedirects {
+				return fmt.Errorf("too many redirects (more than %d)", MaxRedirects)
+			}
+			if req.URL.User != nil {
+				return errors.New("a redirect to a link with credentials is not followed")
+			}
+			if extra != nil {
+				if err := extra(req.URL); err != nil {
+					return err
+				}
+			}
+			g.setScheme(req.URL.Scheme)
+			return nil
+		},
+	}
+}
+
 func (f *Fetcher) timeout() time.Duration {
 	if f.Timeout > 0 {
 		return f.Timeout
@@ -213,6 +232,10 @@ func (f *Fetcher) timeout() time.Duration {
 // describe turns a transport error into a short message without echoing
 // anything the server sent.
 func describe(err error) error {
+	var refused *RefusedError
+	if errors.As(err, &refused) {
+		return refused
+	}
 	switch {
 	case errors.Is(err, context.DeadlineExceeded):
 		return errors.New("the server took too long to answer")

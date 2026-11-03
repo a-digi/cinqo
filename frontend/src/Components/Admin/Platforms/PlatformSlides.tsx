@@ -5,7 +5,7 @@ import { AppScopes } from '../../../config/security/scopes'
 import type { Platform } from '../../../api/platforms'
 import { groupModels, infoFor, orderPlatforms, isSafeLink, modelDisplay, type Tier } from './platformInfo'
 
-type Motif = 'sparkle' | 'rings' | 'burst' | 'network'
+export type Motif = 'sparkle' | 'rings' | 'burst' | 'network'
 
 const stroke = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round', strokeLinejoin: 'round' } as const
 
@@ -87,7 +87,7 @@ function Backdrop({ from, to, motif }: { from: string; to: string; motif: Motif 
   )
 }
 
-function Frame({ from, to, motif, children }: { from: string; to: string; motif: Motif; children: ReactNode }) {
+export function Frame({ from, to, motif, children }: { from: string; to: string; motif: Motif; children: ReactNode }) {
   return (
     <div className="relative h-full min-h-[460px] text-white">
       <Backdrop from={from} to={to} motif={motif} />
@@ -97,7 +97,7 @@ function Frame({ from, to, motif, children }: { from: string; to: string; motif:
 }
 
 // Entrance order for the text of a slide (see .cinqo-slide-in in index.css).
-function In({ i, className = '', children }: { i: number; className?: string; children: ReactNode }) {
+export function In({ i, className = '', children }: { i: number; className?: string; children: ReactNode }) {
   return (
     <div className={`cinqo-slide-in ${className}`} style={{ '--i': i } as CSSProperties}>
       {children}
@@ -110,15 +110,15 @@ const TIER_BADGE: Record<Tier, { label: string; className: string }> = {
   premium: { label: 'Premium models', className: 'bg-violet-400/20 text-violet-100 ring-violet-300/40' },
 }
 
-function Eyebrow({ children }: { children: ReactNode }) {
+export function Eyebrow({ children }: { children: ReactNode }) {
   return <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/60">{children}</p>
 }
 
-function Title({ children }: { children: ReactNode }) {
+export function Title({ children }: { children: ReactNode }) {
   return <h2 className="mt-3 text-4xl font-semibold leading-[1.05] tracking-tight md:text-5xl">{children}</h2>
 }
 
-function Subtitle({ children }: { children: ReactNode }) {
+export function Subtitle({ children }: { children: ReactNode }) {
   return <p className="mt-4 max-w-xl text-lg leading-relaxed text-white/75">{children}</p>
 }
 
@@ -304,20 +304,27 @@ function PlatformSlide({
   )
 }
 
-// The slider above the keys table on the Platforms page: an overview slide, then one slide per
+// The slider above the keys table on the Platforms page: the extra slides (the local AI), an overview slide, then one slide per
 // registered platform (a platform the content file does not know still gets a generic one).
 export function PlatformSlides({
   platforms,
   keyCounts,
   onAddKey,
+  extraSlides = [],
 }: {
   platforms: Platform[]
   keyCounts: Record<string, number>
   onAddKey: (platformId: string) => void
+  // Slides of platforms that bring their own (a platform that needs no key, the local AI): shown first, before the overview.
+  extraSlides?: SliderSlide[]
 }) {
+  // These slides are about bringing your own API key, so a platform that needs none (it has its own settings page) has no
+  // slide here.
+  const keyed = platforms.filter((p) => p.requiresKey)
   const slides: SliderSlide[] = [
-    { id: 'overview', label: 'Overview', content: <IntroSlide count={platforms.length} /> },
-    ...orderPlatforms(platforms).map((p, i) => ({
+    ...extraSlides,
+    { id: 'overview', label: 'Overview', content: <IntroSlide count={keyed.length} /> },
+    ...orderPlatforms(keyed).map((p, i) => ({
       id: p.id,
       label: p.name,
       content: <PlatformSlide platform={p} position={i + 1} keyCount={keyCounts[p.id] ?? 0} onAddKey={onAddKey} />,

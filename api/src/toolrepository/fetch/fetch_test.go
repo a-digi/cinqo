@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -221,4 +222,144 @@ func TestUnreachableHost(t *testing.T) {
 	s.Close()
 	_, err := get(New(), url, LocalByFirstHop)
 	wantErr(t, err, "could not be reached")
+}
+
+func stream(f *Fetcher, url string, opts StreamOptions) (*Stream, error) {
+	return f.Stream(context.Background(), url, opts)
+}
+
+func readAll(t *testing.T, s *Stream) string {
+	t.Helper()
+	defer s.Close()
+	b := make([]byte, 0, 64)
+	buf := make([]byte, 16)
+	for {
+		n, err := s.Body.Read(buf)
+		b = append(b, buf[:n]...)
+		if err != nil {
+			break
+		}
+	}
+	return string(b)
+}
+
+func TestStreamReturnsTheBodyWithoutBufferingAndReportsTheStatus(t *testing.T) {
+	s := httptest.NewServer(ok("hello stream"))
+	defer s.Close()
+	f := testFetcher(map[string]addrClass{port(s): classLocal})
+	st, err := stream(f, s.URL, StreamOptions{Policy: LocalAllowed})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Status != 200 || st.ContentLength != int64(len("hello stream")) || !st.Local {
+		t.Errorf("status %d length %d local %v", st.Status, st.ContentLength, st.Local)
+	}
+	if got := readAll(t, st); got != "hello stream" {
+		t.Errorf("body = %q", got)
+	}
+}
+
+func TestStreamSendsTheCallersHeadersAndReturnsEveryStatus(t *testing.T) {
+	var gotRange string
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotRange = r.Header.Get("Range")
+		w.Header().Set("Content-Range", "bytes 5-9/10")
+		w.WriteHeader(http.StatusPartialContent)
+		w.Write([]byte("fghij"))
+	}))
+	defer s.Close()
+	f := testFetcher(map[string]addrClass{port(s): classLocal})
+	st, err := stream(f, s.URL, StreamOptions{Policy: LocalAllowed, Header: http.Header{"Range": {"bytes=5-"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotRange != "bytes=5-" || st.Status != http.StatusPartialContent || st.Header.Get("Content-Range") != "bytes 5-9/10" {
+		t.Errorf("range %q status %d content-range %q", gotRange, st.Status, st.Header.Get("Content-Range"))
+	}
+	st.Close()
+
+	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Error(w, "nope", http.StatusTeapot) }))
+	defer bad.Close()
+	f = testFetcher(map[string]addrClass{port(bad): classLocal})
+	st, err = stream(f, bad.URL, StreamOptions{Policy: LocalAllowed})
+	if err != nil || st.Status != http.StatusTeapot {
+		t.Fatalf("an HTTP error status is the caller's to judge: %v %+v", err, st)
+	}
+	st.Close()
+}
+
+func TestStreamHasNoLimitOnTheWholeRequestUnlikeGet(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fl := w.(http.Flusher)
+		for i := 0; i < 4; i++ {
+			w.Write([]byte("abcd"))
+			fl.Flush()
+			time.Sleep(150 * time.Millisecond)
+		}
+	}))
+	defer s.Close()
+	f := testFetcher(map[string]addrClass{port(s): classLocal})
+	f.Timeout = 200 * time.Millisecond // the whole transfer takes about 600 ms
+	if _, err := get(f, s.URL, LocalAllowed); err == nil {
+		t.Error("Get must still be limited by the timeout")
+	}
+	st, err := stream(f, s.URL, StreamOptions{Policy: LocalAllowed})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := readAll(t, st); got != "abcdabcdabcdabcd" {
+		t.Errorf("a slow stream must complete: %q", got)
+	}
+}
+
+func TestStreamKeepsTheSameAddressRulesAsGet(t *testing.T) {
+	local := httptest.NewServer(ok("secret"))
+	defer local.Close()
+	pub := httptest.NewTLSServer(redirectTo(local.URL))
+	defer pub.Close()
+	f := testFetcher(map[string]addrClass{port(local): classLocal, port(pub): classPublic}, pub.Certificate())
+	_, err := stream(f, pub.URL, StreamOptions{Policy: LocalByFirstHop})
+	wantErr(t, err, "a public address must not lead to a local address")
+
+	plain := httptest.NewServer(ok("x"))
+	defer plain.Close()
+	f = testFetcher(map[string]addrClass{port(plain): classPublic})
+	_, err = stream(f, plain.URL, StreamOptions{Policy: LocalForbidden})
+	wantErr(t, err, "plain http is only allowed for local addresses")
+
+	blocked := httptest.NewServer(ok("x"))
+	defer blocked.Close()
+	f = testFetcher(map[string]addrClass{port(blocked): classBlocked})
+	_, err = stream(f, blocked.URL, StreamOptions{Policy: LocalAllowed})
+	wantErr(t, err, "this address is not allowed")
+
+	_, err = stream(f, "ftp://example.com/x", StreamOptions{})
+	wantErr(t, err, "not a valid http(s) address")
+	_, err = stream(f, "https://user:pw@example.com/x", StreamOptions{})
+	wantErr(t, err, "credentials")
+}
+
+func TestStreamAsksTheCallerAboutTheFirstAddressAndEveryRedirect(t *testing.T) {
+	target := httptest.NewServer(ok("payload"))
+	defer target.Close()
+	first := httptest.NewServer(redirectTo(target.URL))
+	defer first.Close()
+	f := testFetcher(map[string]addrClass{port(first): classLocal, port(target): classLocal})
+
+	var asked []string
+	allow := func(u *url.URL) error {
+		asked = append(asked, u.Host)
+		if u.Host == target.Listener.Addr().String() {
+			return &RefusedError{Reason: "this host is not on the list"}
+		}
+		return nil
+	}
+	_, err := stream(f, first.URL, StreamOptions{Policy: LocalAllowed, AllowURL: allow})
+	wantErr(t, err, "this host is not on the list")
+	if len(asked) != 2 {
+		t.Errorf("asked about %v, want the first address and the redirect target", asked)
+	}
+
+	_, err = stream(f, target.URL, StreamOptions{Policy: LocalAllowed, AllowURL: func(*url.URL) error { return &RefusedError{Reason: "no"} }})
+	wantErr(t, err, "no")
 }

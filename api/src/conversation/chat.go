@@ -17,8 +17,6 @@ import (
 	media_query "github.com/a-digi/cinqo/src/media/repository/query"
 	"github.com/a-digi/cinqo/src/platform"
 	"github.com/a-digi/cinqo/src/platform/chatcompleter"
-	platform_crypto "github.com/a-digi/cinqo/src/platform/crypto"
-	platform_query "github.com/a-digi/cinqo/src/platform/repository/query"
 	tool_manager "github.com/a-digi/cinqo/src/tool/manager"
 	tool_mcp "github.com/a-digi/cinqo/src/tool/mcp"
 	tool_query "github.com/a-digi/cinqo/src/tool/repository/query"
@@ -204,16 +202,9 @@ func SendMessage(
 	}
 	model := conv.Model
 
-	key, err := platform_query.NewKeyQueryRepo(mainDB).FindMostRecentForPlatform(conv.PlatformID)
+	entry, plainKey, err := resolveEntry(ctx, mainDB, encryptionKey, entry, conv.PlatformID)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrNoKeyForPlatform
-		}
-		return nil, fmt.Errorf("conversation: look up platform key: %w", err)
-	}
-	plainKey, err := platform_crypto.Decrypt(key.EncryptedKey, encryptionKey)
-	if err != nil {
-		return nil, fmt.Errorf("conversation: decrypt platform key: %w", err)
+		return nil, err
 	}
 
 	recent, err := ReadRecentTurns(conv.FilePath, ContextTurns)
@@ -241,6 +232,9 @@ func SendMessage(
 	tools, err := offerableTools(mainDB, callerScopes, false)
 	if err != nil {
 		return nil, fmt.Errorf("conversation: look up offerable tools: %w", err)
+	}
+	if entry.NoTools {
+		tools = nil
 	}
 	ctx, tools = applyToolAllowlist(ctx, tools, conv)
 

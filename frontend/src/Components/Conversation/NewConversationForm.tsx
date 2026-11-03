@@ -28,6 +28,9 @@ export function NewConversationForm({
 
   const selectedPlatform = platforms.find((p) => p.id === platformId)
   const needsModel = (selectedPlatform?.models.length ?? 0) > 0
+  // A platform that offers no tools (the local AI) can only answer directly: composer mode is off and cannot be chosen.
+  const offersTools = selectedPlatform?.offersTools ?? true
+  const composerOn = composer && offersTools
 
   const handlePlatformChange = (id: string) => {
     setPlatformId(id)
@@ -37,7 +40,7 @@ export function NewConversationForm({
 
   const handleSubmit = (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault()
-    onCreate({ platformId, model: needsModel ? model : undefined, orchestrationMode: composer ? 'composer' : 'direct' })
+    onCreate({ platformId, model: needsModel ? model : undefined, orchestrationMode: composerOn ? 'composer' : 'direct' })
   }
 
   return (
@@ -60,7 +63,8 @@ export function NewConversationForm({
           <input
             id={composerId}
             type="checkbox"
-            checked={composer}
+            checked={composerOn}
+            disabled={!offersTools}
             onChange={(e) => {
               setComposer(e.target.checked)
             }}
@@ -69,7 +73,9 @@ export function NewConversationForm({
           <label htmlFor={composerId}>
             <span className="font-medium text-gray-700">Delegate work to sub-agents</span>
             <span className="block text-gray-400">
-              The AI plans and sub-agents do the work with the installed tools. Turn off to let the AI use the tools itself.
+              {offersTools
+                ? 'The AI plans and sub-agents do the work with the installed tools. Turn off to let the AI use the tools itself.'
+                : 'This platform offers no tools, so the AI only answers.'}
             </span>
           </label>
         </div>

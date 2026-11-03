@@ -1,0 +1,61 @@
+package handler
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"testing"
+
+	"github.com/a-digi/cinqo/src/platform"
+	"github.com/a-digi/cinqo/src/platform/chatcompleter"
+	"github.com/a-digi/cinqo/src/platform/entity"
+)
+
+type noopCompleter struct{}
+
+func (noopCompleter) ChatCompletion(context.Context, *http.Client, string, string, string, []chatcompleter.Message, []chatcompleter.ToolDef) (*chatcompleter.ChatCompletionResult, error) {
+	return nil, errors.New("noop")
+}
+
+func find(list []platformResponse, id string) (platformResponse, bool) {
+	for _, p := range list {
+		if p.ID == id {
+			return p, true
+		}
+	}
+	return platformResponse{}, false
+}
+
+func TestThePlatformListSaysWhichPlatformsNeedAKeyAndHidesUnavailableOnes(t *testing.T) {
+	available := false
+	if err := platform.Register(platform.Entry{
+		Info:        entity.Platform{ID: "list-keyless", Name: "Keyless"},
+		Completer:   noopCompleter{},
+		Credentials: func(context.Context) (string, string, error) { return "http://127.0.0.1:1", "", nil },
+		Models:      func() []string { return []string{"only"} },
+		Available:   func() bool { return available },
+		NoTools:     true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	list := platformResponses()
+	if _, ok := find(list, "list-keyless"); ok {
+		t.Error("an unavailable platform must not be listed")
+	}
+	for _, id := range []string{"openai", "anthropic", "openrouter"} {
+		p, ok := find(list, id)
+		if !ok || !p.RequiresKey || !p.OffersTools || len(p.Models) == 0 {
+			t.Errorf("%s: %+v (listed %v), want listed, requiresKey, offersTools, with models", id, p, ok)
+		}
+	}
+
+	available = true
+	p, ok := find(platformResponses(), "list-keyless")
+	if !ok {
+		t.Fatal("an available platform must be listed")
+	}
+	if p.RequiresKey || p.OffersTools || len(p.Models) != 1 || p.Models[0] != "only" {
+		t.Errorf("got %+v, want requiresKey false, offersTools false and the dynamic model list", p)
+	}
+}

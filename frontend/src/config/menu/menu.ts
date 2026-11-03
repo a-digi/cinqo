@@ -1,4 +1,5 @@
 import { AppScopes } from '../security/scopes'
+import { localAiMenuEntry } from '../../Components/Admin/LocalAi/menuEntry'
 
 export interface MenuEntry {
   label: string
@@ -66,6 +67,7 @@ export const menuEntries: MenuEntry[] = [
     children: [
       { label: 'Platform', path: '/admin/platforms', scopes: [AppScopes.PlatformRead], icon: platformsIcon },
       { label: 'API Keys', path: '/admin/api-keys', scopes: [AppScopes.PlatformRead], icon: keysIcon },
+      localAiMenuEntry,
       { label: 'Logs', path: '/admin/conversation-logs', scopes: [AppScopes.SuperAdmin] },
     ],
   },

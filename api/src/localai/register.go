@@ -1,0 +1,86 @@
+package localai
+
+import (
+	"database/sql"
+	"errors"
+	"sync"
+
+	"github.com/a-digi/coco-server/server/routing"
+
+	"github.com/a-digi/cinqo/src/localai/catalog"
+	"github.com/a-digi/cinqo/src/localai/entity"
+	"github.com/a-digi/cinqo/src/localai/handler"
+	"github.com/a-digi/cinqo/src/localai/hardware"
+	"github.com/a-digi/cinqo/src/platform"
+)
+
+// Register adds the local platform to the platform registry. It is the module's only start-up hook: call it once at
+// boot, after the main database is open. Removing the module means deleting this package and this one call.
+func Register(mainDB *sql.DB, deps Deps) error {
+	// A broken shipped catalog refuses the whole module at start, with the reason, instead of failing later on a request.
+	cat, err := catalog.Default()
+	if err != nil {
+		return err
+	}
+	if deps.Downloads == nil || deps.DataDir == "" {
+		return errors.New("the local AI needs the download manager and the data directory")
+	}
+	setInstaller(&installer{downloads: deps.Downloads, dataDir: deps.DataDir, catalog: cat})
+	return platform.Register(Entry(mainDB))
+}
+
+var (
+	installerMu sync.RWMutex
+	current     *installer
+)
+
+func setInstaller(in *installer) {
+	installerMu.Lock()
+	current = in
+	installerMu.Unlock()
+}
+
+// lazyInstalls hands the handlers the installer created by Register, which runs before the routes are built.
+type lazyInstalls struct{}
+
+func (lazyInstalls) get() (*installer, bool) {
+	installerMu.RLock()
+	defer installerMu.RUnlock()
+	return current, current != nil
+}
+
+func (l lazyInstalls) ModelState(m catalog.Model) entity.FileInstall {
+	if in, ok := l.get(); ok {
+		return in.ModelState(m)
+	}
+	return entity.FileInstall{State: entity.InstallNotDownloaded}
+}
+
+func (l lazyInstalls) RuntimeState(r catalog.Runtime) entity.FileInstall {
+	if in, ok := l.get(); ok {
+		return in.RuntimeState(r)
+	}
+	return entity.FileInstall{State: entity.InstallNotDownloaded}
+}
+
+func (l lazyInstalls) Start(modelID string, system hardware.Info) error {
+	in, ok := l.get()
+	if !ok {
+		return errors.New("downloads are not available")
+	}
+	return in.Start(modelID, system)
+}
+
+func (l lazyInstalls) Remove() error {
+	in, ok := l.get()
+	if !ok {
+		return errors.New("downloads are not available")
+	}
+	return in.Remove()
+}
+
+// Handlers returns the module's HTTP handlers under the executor names its route file (config/routes/route-localai.yaml)
+// uses. routes.Init merges them into its handler map.
+func Handlers() map[string]routing.HandlerInterface {
+	return handler.Handlers(managedRuntime{}, lazyInstalls{})
+}

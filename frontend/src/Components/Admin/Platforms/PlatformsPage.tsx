@@ -4,6 +4,7 @@ import { fetchPlatforms, fetchPlatformKeys, type Platform, type PlatformKey } fr
 import { ApiError } from '../../../api/client'
 import { LoadingSpinner } from '../../../Shared/Components/Loading/LoadingSpinner'
 import { PlatformSlides } from './PlatformSlides'
+import { localAiSlide } from '../LocalAi/slide'
 
 function countByPlatform(keys: PlatformKey[]): Record<string, number> {
   const counts: Record<string, number> = {}
@@ -49,6 +50,7 @@ export function PlatformsPage() {
       <PlatformSlides
         platforms={platforms}
         keyCounts={countByPlatform(keys)}
+        extraSlides={[localAiSlide]}
         onAddKey={(id) => {
           void navigate(`/admin/api-keys?platform=${encodeURIComponent(id)}`)
         }}
