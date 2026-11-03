@@ -17,17 +17,38 @@ func NewTurnRunQueryRepo(db *sql.DB) *TurnRunQueryRepo {
 	return &TurnRunQueryRepo{db: db}
 }
 
-const turnRunColumns = `id, conversation_id, user_content, status, started_at, finished_at, log, cancel_requested, prompt_tokens, completion_tokens, total_tokens`
+const turnRunColumns = `id, conversation_id, user_content, status, started_at, finished_at, log, cancel_requested, prompt_tokens, completion_tokens, total_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens, cost_microusd`
 
 func scanTurnRun(scan func(dest ...any) error) (*conversation_entity.TurnRun, error) {
 	var t conversation_entity.TurnRun
 	if err := scan(
 		&t.ID, &t.ConversationID, &t.UserContent, &t.Status, &t.StartedAt, &t.FinishedAt, &t.Log, &t.CancelRequested,
-		&t.PromptTokens, &t.CompletionTokens, &t.TotalTokens,
+		&t.PromptTokens, &t.CompletionTokens, &t.TotalTokens, &t.CacheReadTokens, &t.CacheWriteTokens, &t.ReasoningTokens, &t.CostMicroUSD,
 	); err != nil {
 		return nil, err
 	}
 	return &t, nil
+}
+
+// FindUsageByConversationID returns, for every turn of the conversation, what the provider reported besides the prompt and completion
+// counts (plan/ai/conversation/step-178, step 3), keyed by the turn run's id. Only the numbers are read (never the log or the text of
+// the turns), so it is cheap for a long conversation; a turn whose provider reported nothing has all-zero numbers and a nil cost.
+func (r *TurnRunQueryRepo) FindUsageByConversationID(conversationID string) (map[string]conversation_entity.TurnUsage, error) {
+	rows, err := r.db.Query(`SELECT id, cache_read_tokens, cache_write_tokens, reasoning_tokens, cost_microusd FROM turn_runs WHERE conversation_id = ?`, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]conversation_entity.TurnUsage{}
+	for rows.Next() {
+		var id string
+		var u conversation_entity.TurnUsage
+		if err := rows.Scan(&id, &u.CacheReadTokens, &u.CacheWriteTokens, &u.ReasoningTokens, &u.CostMicroUSD); err != nil {
+			return nil, err
+		}
+		out[id] = u
+	}
+	return out, rows.Err()
 }
 
 // FindActiveByConversationID returns the one running turn_runs row for

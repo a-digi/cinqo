@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { THINKING_WORDS } from './thinkingWords'
 import { formatDuration } from './formatDuration'
 import { formatTokenCount } from './formatTokenCount'
+import { usageExtrasText } from './usageText'
+import type { UsageExtras } from '../../api/conversations'
 import { useAnimatedNumber } from './useAnimatedNumber'
 import { effectiveStartMs } from './turnTiming'
 
@@ -62,12 +64,15 @@ export function ThinkingIndicator({
   promptTokens,
   completionTokens,
   totalTokens,
+  usageExtras,
 }: {
   startedAt: string
   clockOffsetMs: number
   promptTokens: number
   completionTokens: number
   totalTokens: number
+  // What the provider reported besides the counts (cache, reasoning, cost), shown after them when present (plan 178, step 3).
+  usageExtras?: UsageExtras
 }) {
   const startRef = useRef(effectiveStartMs(startedAt, clockOffsetMs))
   const wordSlotRef = useRef(0)
@@ -166,6 +171,7 @@ export function ThinkingIndicator({
         {totalTokens > 0 && (
           <span className="ml-1.5 tabular-nums text-gray-400">
             ↑{formatTokenCount(animatedPromptTokens)} ↓{formatTokenCount(animatedCompletionTokens)}
+            {usageExtrasText(usageExtras)}
           </span>
         )}
       </div>
@@ -184,4 +190,3 @@ export function ThinkingIndicator({
     </div>
   )
 }
-

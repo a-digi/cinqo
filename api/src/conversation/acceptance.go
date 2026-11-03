@@ -99,9 +99,7 @@ func judgeResult(
 			}
 			continue
 		}
-		total.PromptTokens += res.Usage.PromptTokens
-		total.CompletionTokens += res.Usage.CompletionTokens
-		total.TotalTokens += res.Usage.TotalTokens
+		total.Add(res.Usage)
 		v, err := parseVerdict(res.Message.Content)
 		if err != nil {
 			lastErr = err

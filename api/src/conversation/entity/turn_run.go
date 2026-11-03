@@ -33,7 +33,7 @@ type TurnRun struct {
 	// PromptTokens/CompletionTokens/TotalTokens (step 34) are the real,
 	// provider-reported token counts accumulated across this turn's own
 	// tool-calling loop — incremented atomically once per iteration
-	// (TurnRunPersistentRepo.AddTokenUsage), so they're already correct
+	// (TurnRunPersistentRepo.AddUsage), so they're already correct
 	// and readable live while the run is still "running", not only
 	// once it finishes. Zero for every turn run before this column
 	// existed. See plan/ai/conversation/step-34-realtime-token-usage-
@@ -41,6 +41,35 @@ type TurnRun struct {
 	PromptTokens     int `db:"prompt_tokens" dbtype:"INTEGER" nullable:"false" json:"promptTokens"`
 	CompletionTokens int `db:"completion_tokens" dbtype:"INTEGER" nullable:"false" json:"completionTokens"`
 	TotalTokens      int `db:"total_tokens" dbtype:"INTEGER" nullable:"false" json:"totalTokens"`
+	// CacheReadTokens/CacheWriteTokens/ReasoningTokens/CostMicroUSD (plan/ai/conversation/step-178, step 2) are what the provider reported
+	// besides the two counts above, accumulated the same way: the prompt cache, the hidden reasoning (already inside CompletionTokens)
+	// and the cost in whole micro-dollars. CostMicroUSD is nil when no response of the turn carried a cost (unknown), 0 for free calls.
+	// Not in the JSON yet (step 3 decides what the handlers show).
+	CacheReadTokens  int    `db:"cache_read_tokens" dbtype:"INTEGER" nullable:"false" json:"-"`
+	CacheWriteTokens int    `db:"cache_write_tokens" dbtype:"INTEGER" nullable:"false" json:"-"`
+	ReasoningTokens  int    `db:"reasoning_tokens" dbtype:"INTEGER" nullable:"false" json:"-"`
+	CostMicroUSD     *int64 `db:"cost_microusd" dbtype:"INTEGER" nullable:"true" json:"-"`
+}
+
+// TurnUsage is what the provider reported for one finished turn besides the prompt and completion counts (the lean projection the
+// conversation read uses to show it next to the turn's message, plan/ai/conversation/step-178, step 3): no log, no text, only numbers.
+type TurnUsage struct {
+	CacheReadTokens  int
+	CacheWriteTokens int
+	ReasoningTokens  int
+	CostMicroUSD     *int64
+}
+
+// UsageAmounts is one model response's usage as the repositories add it to a run (plan/ai/conversation/step-178, step 2): the counts the
+// provider reported and the cost in whole micro-dollars, nil when the response carried none. Plain numbers, so the repositories do not
+// depend on the provider packages.
+type UsageAmounts struct {
+	PromptTokens     int
+	CompletionTokens int
+	CacheReadTokens  int
+	CacheWriteTokens int
+	ReasoningTokens  int
+	CostMicroUSD     *int64
 }
 
 // TurnRunSummary is a lean projection of TurnRun for read paths that

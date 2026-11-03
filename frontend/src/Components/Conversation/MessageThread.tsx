@@ -6,6 +6,7 @@ import {
   type OrchestrationMode,
   type PlanStep,
   type SubAgentRun,
+  type UsageExtras,
 } from '../../api/conversations'
 import { ApiError } from '../../api/client'
 import { Markdown } from '../../Shared/Components/Markdown/Markdown'
@@ -14,6 +15,7 @@ import { PlanPanel } from './PlanPanel'
 import { SubAgentRow } from './SubAgentRow'
 import { formatDuration } from './formatDuration'
 import { formatTokenCount } from './formatTokenCount'
+import { usageExtrasText } from './usageText'
 
 // Renders the active conversation's messages in order, user/assistant
 // styled distinctly. No streaming — a sent message shows a
@@ -33,6 +35,7 @@ export function MessageThread({
   turnPromptTokens,
   turnCompletionTokens,
   turnTotalTokens,
+  turnUsageExtras,
   turnSubAgents,
   turnPlan,
   orchestrationMode,
@@ -57,6 +60,8 @@ export function MessageThread({
   turnPromptTokens: number
   turnCompletionTokens: number
   turnTotalTokens: number
+  // What the provider has reported so far this turn besides the counts (plan 178, step 3).
+  turnUsageExtras?: UsageExtras
   // Every sub-agent the current turn has spawned so far (step 41 —
   // Sub Agents) — [] when none have been, same live-reconciled-on-
   // every-poll data source as the token fields above.
@@ -110,6 +115,7 @@ export function MessageThread({
             promptTokens={turnPromptTokens}
             completionTokens={turnCompletionTokens}
             totalTokens={turnTotalTokens}
+            usageExtras={turnUsageExtras}
           />
         </div>
       )}
@@ -250,7 +256,7 @@ function Bubble({
           {formatTimestamp(message.createdAt)}
           {message.durationMs != null && ` · ${formatDuration(message.durationMs)}`}
           {message.promptTokens != null &&
-            ` · ↑${formatTokenCount(message.promptTokens)} ↓${formatTokenCount(message.completionTokens ?? 0)}`}
+            ` · ↑${formatTokenCount(message.promptTokens)} ↓${formatTokenCount(message.completionTokens ?? 0)}${usageExtrasText(message)}`}
           {message.subAgentCount != null && message.turnRunId && (
             <>
               {' · '}

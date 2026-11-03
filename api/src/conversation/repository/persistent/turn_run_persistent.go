@@ -44,7 +44,7 @@ func (r *TurnRunPersistentRepo) AppendLog(id, line string) error {
 // SetTerminalStatus marks a run finished — status must be one of
 // "completed"/"failed"/"cancelled" (never "running", which only
 // Insert ever sets). Does not touch prompt_tokens/completion_tokens/
-// total_tokens — AddTokenUsage (below) already accumulated the
+// total_tokens — AddUsage (below) already accumulated the
 // correct final totals live, once per iteration, by the time a run
 // reaches a terminal status.
 func (r *TurnRunPersistentRepo) SetTerminalStatus(id, status, finishedAt string) error {
@@ -52,17 +52,19 @@ func (r *TurnRunPersistentRepo) SetTerminalStatus(id, status, finishedAt string)
 	return err
 }
 
-// AddTokenUsage atomically increments this run's own running token
-// totals — one call per tool-calling loop iteration, live during a
-// run, same "never a read-modify-write" idiom as AppendLog above (`col
-// = col + ?`, not a read-then-write). promptTokens/completionTokens
-// are that ONE iteration's own real, provider-reported usage, not a
-// cumulative total — the accumulation happens here, in SQL. See
-// plan/ai/conversation/step-34-realtime-token-usage-budget-and-display.md.
-func (r *TurnRunPersistentRepo) AddTokenUsage(id string, promptTokens, completionTokens int) error {
+// AddUsage atomically increments this run's running usage by one model response's (step 34, widened by plan/ai/conversation/
+// step-178, step 2): the prompt and completion counts and what the provider reported for its prompt cache and its hidden reasoning,
+// and the cost. Each is a `col = col + ?` in one UPDATE, never a read-modify-write, so the totals are right and readable live while
+// the run is still running, and concurrent additions never lose one. The cost is added only when the response carried one: a NULL
+// total stays NULL until the first reported cost, then sums.
+func (r *TurnRunPersistentRepo) AddUsage(id string, u conversation_entity.UsageAmounts) error {
 	_, err := r.db.Exec(
-		`UPDATE turn_runs SET prompt_tokens = prompt_tokens + ?, completion_tokens = completion_tokens + ?, total_tokens = total_tokens + ? WHERE id = ?`,
-		promptTokens, completionTokens, promptTokens+completionTokens, id,
+		`UPDATE turn_runs SET prompt_tokens = prompt_tokens + ?1, completion_tokens = completion_tokens + ?2, total_tokens = total_tokens + ?3,
+		   cache_read_tokens = cache_read_tokens + ?4, cache_write_tokens = cache_write_tokens + ?5, reasoning_tokens = reasoning_tokens + ?6,
+		   cost_microusd = CASE WHEN ?7 IS NULL THEN cost_microusd ELSE COALESCE(cost_microusd, 0) + ?7 END
+		 WHERE id = ?8`,
+		u.PromptTokens, u.CompletionTokens, u.PromptTokens+u.CompletionTokens,
+		u.CacheReadTokens, u.CacheWriteTokens, u.ReasoningTokens, u.CostMicroUSD, id,
 	)
 	return err
 }

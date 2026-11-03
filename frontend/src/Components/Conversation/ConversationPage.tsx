@@ -206,6 +206,7 @@ export function ConversationPage() {
               turnPromptTokens={turnPromptTokens}
               turnCompletionTokens={turnCompletionTokens}
               turnTotalTokens={turnTotalTokens}
+              turnUsageExtras={watch?.usageExtras}
               turnSubAgents={turnSubAgents}
               turnPlan={turnPlan}
               orchestrationMode={detail.orchestrationMode}

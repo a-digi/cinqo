@@ -219,10 +219,13 @@ func runDetachedTurn(
 	// live in turn_runs by the time either AppendTurn call happens. See
 	// plan/ai/conversation/step-35-persist-per-turn-token-usage.md.
 	var totalPromptTokens, totalCompletionTokens int
-	reportUsage := func(promptTokens, completionTokens int) {
-		totalPromptTokens += promptTokens
-		totalCompletionTokens += completionTokens
-		_ = runs.AddTokenUsage(turnRunID, promptTokens, completionTokens)
+	addUsage := usageReporter(runs, turnRunID)
+	reportUsage := func(usage chatcompleter.Usage) {
+		totalPromptTokens += usage.PromptTokens
+		totalCompletionTokens += usage.CompletionTokens
+		// plan/ai/conversation/step-178, step 2: the whole usage the provider reported (prompt cache, hidden reasoning, cost), not
+		// only the two counts the turn header carries.
+		addUsage(usage)
 	}
 	// logExchange (step 36) writes this turn's own full raw request/
 	// response trace, one .txt file per turn, one appended block per

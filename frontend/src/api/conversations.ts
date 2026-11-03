@@ -49,7 +49,18 @@ export interface Conversation {
 // successful "user" entry (which has no "how long did it take" of its
 // own). Raw milliseconds from the backend; formatting is this
 // frontend's own job (step-15).
-export interface ConversationMessage {
+// What the provider reported for a turn (or a sub-agent) besides the prompt and completion counts (plan/ai/conversation/step-178, step 3).
+// Each field is absent when the provider reported nothing for it: cacheReadTokens are prompt tokens it served from its cache,
+// cacheWriteTokens the ones written to it, reasoningTokens the hidden reasoning (already inside completionTokens), costUsd the cost in
+// US dollars exactly as the provider reported it (0 = free; absent = unknown, never a guess).
+export interface UsageExtras {
+  cacheReadTokens?: number
+  cacheWriteTokens?: number
+  reasoningTokens?: number
+  costUsd?: number
+}
+
+export interface ConversationMessage extends UsageExtras {
   role: 'user' | 'assistant'
   content: string
   createdAt: string
@@ -115,7 +126,7 @@ export interface ActiveTurnSummary {
 // 'failed'/'cancelled' run (see api/src/conversation/subagent.go's own
 // reasoning: the error text goes into `log`, matching how a normal
 // turn's own failure never becomes its "result" either).
-export interface SubAgentRun {
+export interface SubAgentRun extends UsageExtras {
   id: string
   task: string
   status: TurnRunStatus
@@ -142,7 +153,7 @@ export interface PlanStep {
   subAgentId?: string
 }
 
-export interface ActiveTurn extends ActiveTurnSummary {
+export interface ActiveTurn extends ActiveTurnSummary, UsageExtras {
   userContent: string
   log: string[]
   // promptTokens/completionTokens/totalTokens (step 34) are the real,

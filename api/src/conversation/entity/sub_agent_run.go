@@ -35,6 +35,11 @@ type SubAgentRun struct {
 	PromptTokens     int  `db:"prompt_tokens" dbtype:"INTEGER" nullable:"false" json:"promptTokens"`
 	CompletionTokens int  `db:"completion_tokens" dbtype:"INTEGER" nullable:"false" json:"completionTokens"`
 	TotalTokens      int  `db:"total_tokens" dbtype:"INTEGER" nullable:"false" json:"totalTokens"`
+	// The same provider-reported extras as TurnRun's fields of these names (plan/ai/conversation/step-178, step 2).
+	CacheReadTokens  int    `db:"cache_read_tokens" dbtype:"INTEGER" nullable:"false" json:"-"`
+	CacheWriteTokens int    `db:"cache_write_tokens" dbtype:"INTEGER" nullable:"false" json:"-"`
+	ReasoningTokens  int    `db:"reasoning_tokens" dbtype:"INTEGER" nullable:"false" json:"-"`
+	CostMicroUSD     *int64 `db:"cost_microusd" dbtype:"INTEGER" nullable:"true" json:"-"`
 	// Acceptance loop (conversation/acceptance.go) — all unset/default
 	// for a spawn without acceptanceCriteria. Accepted is nil when no
 	// criteria were given, otherwise the final verdict; a run that

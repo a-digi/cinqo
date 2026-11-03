@@ -34,11 +34,15 @@ func (r *SubAgentRunPersistentRepo) AppendLog(id, line string) error {
 	return err
 }
 
-// AddTokenUsage mirrors TurnRunPersistentRepo.AddTokenUsage exactly.
-func (r *SubAgentRunPersistentRepo) AddTokenUsage(id string, promptTokens, completionTokens int) error {
+// AddUsage mirrors TurnRunPersistentRepo.AddUsage exactly (plan/ai/conversation/step-178, step 2).
+func (r *SubAgentRunPersistentRepo) AddUsage(id string, u conversation_entity.UsageAmounts) error {
 	_, err := r.db.Exec(
-		`UPDATE sub_agent_runs SET prompt_tokens = prompt_tokens + ?, completion_tokens = completion_tokens + ?, total_tokens = total_tokens + ? WHERE id = ?`,
-		promptTokens, completionTokens, promptTokens+completionTokens, id,
+		`UPDATE sub_agent_runs SET prompt_tokens = prompt_tokens + ?1, completion_tokens = completion_tokens + ?2, total_tokens = total_tokens + ?3,
+		   cache_read_tokens = cache_read_tokens + ?4, cache_write_tokens = cache_write_tokens + ?5, reasoning_tokens = reasoning_tokens + ?6,
+		   cost_microusd = CASE WHEN ?7 IS NULL THEN cost_microusd ELSE COALESCE(cost_microusd, 0) + ?7 END
+		 WHERE id = ?8`,
+		u.PromptTokens, u.CompletionTokens, u.PromptTokens+u.CompletionTokens,
+		u.CacheReadTokens, u.CacheWriteTokens, u.ReasoningTokens, u.CostMicroUSD, id,
 	)
 	return err
 }

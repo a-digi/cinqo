@@ -480,9 +480,7 @@ func runSubAgentLoop(
 		line := fmt.Sprintf("%s\t%s\n", time.Now().UTC().Format(time.RFC3339), step)
 		_ = runs.AppendLog(runID, line)
 	}
-	reportUsage := func(promptTokens, completionTokens int) {
-		_ = runs.AddTokenUsage(runID, promptTokens, completionTokens)
-	}
+	reportUsage := usageReporter(runs, runID)
 
 	// The same scope-filtered tool set the orchestrator itself was
 	// offered — includeSubAgent is now depth-gated, not always false:
@@ -530,7 +528,7 @@ func runSubAgentLoop(
 		}
 
 		v, usage, jerr := judgeResult(ctx, httpClient, entry, apiKey, model, task, acceptance.Criteria, result)
-		reportUsage(usage.PromptTokens, usage.CompletionTokens)
+		reportUsage(usage)
 		if ctx.Err() != nil {
 			status := "failed"
 			if errors.Is(ctx.Err(), context.Canceled) {

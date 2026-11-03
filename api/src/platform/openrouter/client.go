@@ -225,11 +225,7 @@ func (Client) ChatCompletion(ctx context.Context, client *http.Client, baseURL, 
 		},
 		ToolCalls:    toolCalls,
 		FinishReason: choice.FinishReason,
-		Usage: chatcompleter.Usage{
-			PromptTokens:     parsed.Usage.PromptTokens,
-			CompletionTokens: parsed.Usage.CompletionTokens,
-			TotalTokens:      parsed.Usage.TotalTokens,
-		},
+		Usage:        usageFrom(respBody, parsed.Usage.PromptTokens, parsed.Usage.CompletionTokens, parsed.Usage.TotalTokens),
 	}
 	// An empty answer that ended with a failing finish reason (step 92)
 	// is a failed call, not the model's final reply.
@@ -275,4 +271,22 @@ func toWireTools(tools []chatcompleter.ToolDef) []wireTool {
 		})
 	}
 	return out
+}
+
+// usageFrom builds the call's usage (plan/ai/conversation/step-178-provider-usage-openrouter.md): the three main counts as they were
+// always read, plus everything else OpenRouter reports in every response with no request flag: the real cost in US dollars
+// (usage.cost), the prompt cache (usage.prompt_tokens_details.cached_tokens and cache_write_tokens, the latter only for models with
+// explicit caching) and the hidden reasoning of a reasoning model (usage.completion_tokens_details.reasoning_tokens, already inside
+// completion_tokens). The extras are read leniently: a missing, null or odd value is simply "not reported" and never fails the call.
+func usageFrom(body []byte, prompt, completion, total int) chatcompleter.Usage {
+	extra := chatcompleter.UsageObject(body)
+	return chatcompleter.Usage{
+		PromptTokens:        prompt,
+		CompletionTokens:    completion,
+		TotalTokens:         total,
+		CacheReadTokens:     chatcompleter.IntAt(extra, "prompt_tokens_details", "cached_tokens"),
+		CacheCreationTokens: chatcompleter.IntAt(extra, "prompt_tokens_details", "cache_write_tokens"),
+		ReasoningTokens:     chatcompleter.IntAt(extra, "completion_tokens_details", "reasoning_tokens"),
+		Cost:                chatcompleter.CostAt(extra, "cost"),
+	}
 }

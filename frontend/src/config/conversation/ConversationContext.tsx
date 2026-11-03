@@ -14,8 +14,10 @@ import {
   type OrchestrationMode,
   type PlanStep,
   type SubAgentRun,
+  type UsageExtras,
 } from '../../api/conversations'
 import { ApiError } from '../../api/client'
+import { pickUsageExtras } from '../../Components/Conversation/usageText'
 
 // How often to re-poll GET .../turns/active while a turn is running —
 // plan/ai/conversation/step-23-detach-turn-execution-from-request.md.
@@ -60,6 +62,8 @@ export interface TurnWatch {
   promptTokens: number
   completionTokens: number
   totalTokens: number
+  // What the provider reported besides the counts above (plan/ai/conversation/step-178, step 3), reconciled on every poll like them.
+  usageExtras: UsageExtras
   // subAgents (step 41 — Sub Agents) — reconciled on every poll, same
   // as promptTokens/completionTokens/totalTokens above, straight from
   // the same fetchActiveTurn response.
@@ -202,6 +206,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         promptTokens: 0,
         completionTokens: 0,
         totalTokens: 0,
+        usageExtras: {},
         subAgents: [],
         plan: [],
         mainReplyReady: false,
@@ -271,6 +276,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
                 promptTokens: turn.promptTokens,
                 completionTokens: turn.completionTokens,
                 totalTokens: turn.totalTokens,
+                usageExtras: pickUsageExtras(turn),
                 subAgents: turn.subAgents ?? [],
                 plan: turn.plan ?? [],
               },
@@ -485,6 +491,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
             promptTokens: 0,
             completionTokens: 0,
             totalTokens: 0,
+            usageExtras: {},
             subAgents: [],
             plan: [],
             mainReplyReady: false,

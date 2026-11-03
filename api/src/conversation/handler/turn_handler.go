@@ -55,11 +55,13 @@ type activeTurnResponse struct {
 	Log         []string `json:"log"`
 	// PromptTokens/CompletionTokens/TotalTokens (step 34) are read
 	// straight off the TurnRun row — already correct and up-to-date
-	// while a turn is still "running" (AddTokenUsage increments them
+	// while a turn is still "running" (AddUsage increments them
 	// live, once per tool-loop iteration), not only once it finishes.
 	PromptTokens     int `json:"promptTokens"`
 	CompletionTokens int `json:"completionTokens"`
 	TotalTokens      int `json:"totalTokens"`
+	// What the provider has reported so far besides the counts above (plan/ai/conversation/step-178, step 3), live like they are.
+	usageExtrasResponse
 	// SubAgents (step 41 — Sub Agents) — every sub-agent this turn has
 	// spawned so far, oldest first, live-updating on every poll exactly
 	// like the parent turn's own Log/token fields already do. Omitted
@@ -87,6 +89,7 @@ type subAgentRunResponse struct {
 	PromptTokens     int      `json:"promptTokens"`
 	CompletionTokens int      `json:"completionTokens"`
 	TotalTokens      int      `json:"totalTokens"`
+	usageExtrasResponse
 }
 
 func toSubAgentRunResponse(s *conversation_entity.SubAgentRun) subAgentRunResponse {
@@ -99,15 +102,16 @@ func toSubAgentRunResponse(s *conversation_entity.SubAgentRun) subAgentRunRespon
 		result = *s.Result
 	}
 	return subAgentRunResponse{
-		ID:               s.ID,
-		Task:             s.Task,
-		Status:           s.Status,
-		Result:           result,
-		Log:              lines,
-		StartedAt:        s.StartedAt,
-		PromptTokens:     s.PromptTokens,
-		CompletionTokens: s.CompletionTokens,
-		TotalTokens:      s.TotalTokens,
+		ID:                  s.ID,
+		Task:                s.Task,
+		Status:              s.Status,
+		Result:              result,
+		Log:                 lines,
+		StartedAt:           s.StartedAt,
+		PromptTokens:        s.PromptTokens,
+		CompletionTokens:    s.CompletionTokens,
+		TotalTokens:         s.TotalTokens,
+		usageExtrasResponse: usageExtrasOf(s.CacheReadTokens, s.CacheWriteTokens, s.ReasoningTokens, s.CostMicroUSD),
 	}
 }
 
@@ -139,6 +143,7 @@ func toActiveTurnResponse(t *conversation_entity.TurnRun, subAgents []*conversat
 		PromptTokens:              t.PromptTokens,
 		CompletionTokens:          t.CompletionTokens,
 		TotalTokens:               t.TotalTokens,
+		usageExtrasResponse:       usageExtrasOf(t.CacheReadTokens, t.CacheWriteTokens, t.ReasoningTokens, t.CostMicroUSD),
 		SubAgents:                 subAgentResponses,
 		Plan:                      plan,
 	}

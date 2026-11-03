@@ -529,7 +529,7 @@ func composerTurnFixture(t *testing.T) (mainDB, convDB *sql.DB, scopes []string)
 	return mainDB, convDB, []string{"tool:demo:read"}
 }
 
-func runComposer(t *testing.T, completer *plannerCompleter, mainDB, convDB *sql.DB, scopes []string, reportUsage func(int, int)) string {
+func runComposer(t *testing.T, completer *plannerCompleter, mainDB, convDB *sql.DB, scopes []string, reportUsage func(chatcompleter.Usage)) string {
 	t.Helper()
 	tools, _ := offerableToolsForMode(mainDB, scopes, conversation_entity.OrchestrationModeComposer)
 	got, err := runToolLoop(context.Background(), http.DefaultClient, platform.Entry{Completer: completer}, "k", "m",
@@ -639,7 +639,7 @@ func TestWorkerTokensStayOnTheWorkerNotTheTurnTotal(t *testing.T) {
 		plan:        `{"steps":[{"id":"a","task":"describe","allowedTools":["list_jobs"],"acceptanceCriteria":"detailed","maxAttempts":2}]}`,
 	}
 	var turnPrompt, turnCompletion int
-	runComposer(t, completer, mainDB, convDB, scopes, func(p, c int) { turnPrompt += p; turnCompletion += c })
+	runComposer(t, completer, mainDB, convDB, scopes, func(u chatcompleter.Usage) { turnPrompt += u.PromptTokens; turnCompletion += u.CompletionTokens })
 
 	// Two orchestrator model calls (the plan, then the answer).
 	if turnPrompt != 2*orchestratorPromptTokens || turnCompletion != 2*orchestratorCompletionTokens {

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { PlanStep, SubAgentRun } from '../../api/conversations'
 import { formatTokenCount } from './formatTokenCount'
+import { usageExtrasText } from './usageText'
 
 // Shared by ThinkingIndicator (the live, currently-running turn's own
 // panel) and MessageThread's own historical click-through
@@ -51,6 +52,7 @@ export function SubAgentRow({ agent, step }: { agent: SubAgentRun; step?: PlanSt
         {agent.status === 'running' && agent.totalTokens > 0 && (
           <span className="tabular-nums">
             ↑{formatTokenCount(agent.promptTokens)} ↓{formatTokenCount(agent.completionTokens)}
+            {usageExtrasText(agent)}
           </span>
         )}
         {agent.status === 'failed' && lastLogStep(agent.log) && <span className="block text-red-400">{lastLogStep(agent.log)}</span>}

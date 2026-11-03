@@ -72,14 +72,40 @@ type Usage struct {
 	PromptTokens     int
 	CompletionTokens int
 	TotalTokens      int
-	// CacheCreationTokens/CacheReadTokens (step 40) — Anthropic-only,
-	// always 0 for every other provider (and 0 for Anthropic calls
+	// CacheCreationTokens/CacheReadTokens (step 40) — what the provider
+	// reports for its prompt cache (Anthropic, OpenAI and OpenRouter),
+	// 0 when it reports none (and 0 for Anthropic calls
 	// that set no CacheBreakpoint). Surfaced so prompt caching's real
 	// effect is directly observable from the provider's own reported
 	// numbers, not inferred or assumed. See
 	// plan/ai/conversation/step-40-anthropic-prompt-caching.md.
 	CacheCreationTokens int
 	CacheReadTokens     int
+	// ReasoningTokens (plan/ai/conversation/step-178-provider-usage-openrouter.md) is the hidden reasoning of a reasoning model, as the
+	// provider reports it. It is INCLUDED in CompletionTokens (a breakdown, never added on top) and is 0 when the provider reports none,
+	// which also means "not reported": Anthropic does not report thinking tokens apart.
+	ReasoningTokens int
+	// Cost is what the provider says the call cost, in US dollars, exactly as reported: nil when it said nothing (unknown), 0 when it
+	// said the call was free. Only OpenRouter reports a cost today; nothing is ever computed here.
+	Cost *float64
+}
+
+// Add sums another call's usage into u (the counts add up; the cost adds up only over the calls that reported one, and stays unknown
+// when none did), so a caller that makes several requests can account for all of them.
+func (u *Usage) Add(o Usage) {
+	u.PromptTokens += o.PromptTokens
+	u.CompletionTokens += o.CompletionTokens
+	u.TotalTokens += o.TotalTokens
+	u.CacheCreationTokens += o.CacheCreationTokens
+	u.CacheReadTokens += o.CacheReadTokens
+	u.ReasoningTokens += o.ReasoningTokens
+	if o.Cost != nil {
+		sum := *o.Cost
+		if u.Cost != nil {
+			sum += *u.Cost
+		}
+		u.Cost = &sum
+	}
 }
 
 // ChatCompletionResult is what a ChatCompleter returns for one turn.

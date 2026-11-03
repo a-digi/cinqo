@@ -349,11 +349,11 @@ func offerableTools(mainDB *sql.DB, callerScopes []string, includeSubAgent bool)
 // per turn) and plan/ai/conversation/step-36-ai-trace-logs.md.
 //
 // reportUsage, when non-nil, is called once per loop iteration with
-// that iteration's own real, provider-reported
-// PromptTokens/CompletionTokens — a per-iteration increment, not a
-// cumulative total (the caller, runner.go's runDetachedTurn, persists
-// it via TurnRunPersistentRepo.AddTokenUsage's own atomic `col = col +
-// ?`). See plan/ai/conversation/step-34-realtime-token-usage-budget-
+// that iteration's own real, provider-reported usage (the counts and,
+// since plan 178, the prompt cache, the hidden reasoning and the
+// cost) — a per-iteration increment, not a cumulative total (the
+// caller, runner.go's runDetachedTurn, persists it via
+// TurnRunPersistentRepo.AddUsage's own atomic `col = col + ?`). See plan/ai/conversation/step-34-realtime-token-usage-budget-
 // and-display.md.
 func runToolLoop(
 	ctx context.Context,
@@ -404,7 +404,7 @@ func runToolLoop(
 	// plan/ai/conversation/step-42-orchestrator-composer-mode.md.
 	orchestrationMode string,
 	logStep func(step string),
-	reportUsage func(promptTokens, completionTokens int),
+	reportUsage func(usage chatcompleter.Usage),
 	logExchange func(iteration int, messages []chatcompleter.Message, tools []chatcompleter.ToolDef, result *chatcompleter.ChatCompletionResult, err error),
 	// toolIterationLimit (step 93) is the conversation's own lowered budget,
 	// 0 for none. Sub-agent loops pass 0.
@@ -492,7 +492,7 @@ func runToolLoop(
 		}
 		lastPromptTokens = result.Usage.PromptTokens
 		if reportUsage != nil {
-			reportUsage(result.Usage.PromptTokens, result.Usage.CompletionTokens)
+			reportUsage(result.Usage)
 		}
 		if logStep != nil {
 			usageLine := fmt.Sprintf("iteration %d: %d prompt + %d completion tokens", i+1, result.Usage.PromptTokens, result.Usage.CompletionTokens)
@@ -503,6 +503,13 @@ func runToolLoop(
 			// isn't actually happening.
 			if result.Usage.CacheCreationTokens > 0 || result.Usage.CacheReadTokens > 0 {
 				usageLine += fmt.Sprintf(" (%d cache write, %d cache read)", result.Usage.CacheCreationTokens, result.Usage.CacheReadTokens)
+			}
+			// plan/ai/conversation/step-178: the hidden reasoning and the cost, when the provider reported them.
+			if result.Usage.ReasoningTokens > 0 {
+				usageLine += fmt.Sprintf(" (%d reasoning)", result.Usage.ReasoningTokens)
+			}
+			if result.Usage.Cost != nil {
+				usageLine += " cost " + formatCost(*result.Usage.Cost)
 			}
 			logStep(usageLine)
 		}

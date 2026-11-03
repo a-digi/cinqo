@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/a-digi/cinqo/src/platform/chatcompleter"
@@ -97,8 +98,8 @@ func formatTraceEntry(iteration int, messages []chatcompleter.Message, tools []c
 	}
 
 	fmt.Fprintf(&sb, "=== Iteration %d — response ===\n\n", iteration)
-	fmt.Fprintf(&sb, "finish_reason=%s  usage: prompt=%d completion=%d total=%d\n",
-		result.FinishReason, result.Usage.PromptTokens, result.Usage.CompletionTokens, result.Usage.TotalTokens)
+	fmt.Fprintf(&sb, "finish_reason=%s  usage: prompt=%d completion=%d total=%d%s\n",
+		result.FinishReason, result.Usage.PromptTokens, result.Usage.CompletionTokens, result.Usage.TotalTokens, usageDetails(result.Usage))
 	if result.Message.Content != "" {
 		sb.WriteString(result.Message.Content)
 		sb.WriteString("\n")
@@ -120,6 +121,11 @@ type turnTotals struct {
 	cacheRead, cacheWrite  int
 	largestPrompt          int
 	largestPromptIteration int
+	// reasoning is the hidden reasoning tokens the provider reported (inside completion); cost is the sum of the costs the provider
+	// reported in US dollars over the costRequests responses that carried one (plan/ai/conversation/step-178).
+	reasoning    int
+	cost         float64
+	costRequests int
 }
 
 // add records one exchange as logExchange sees it: callErr non-nil is a failed request (no usage), otherwise the result's usage.
@@ -134,6 +140,11 @@ func (t *turnTotals) add(iteration int, result *chatcompleter.ChatCompletionResu
 	t.completion += u.CompletionTokens
 	t.cacheRead += u.CacheReadTokens
 	t.cacheWrite += u.CacheCreationTokens
+	t.reasoning += u.ReasoningTokens
+	if u.Cost != nil {
+		t.cost += *u.Cost
+		t.costRequests++
+	}
 	if u.PromptTokens > t.largestPrompt {
 		t.largestPrompt, t.largestPromptIteration = u.PromptTokens, iteration
 	}
@@ -145,9 +156,47 @@ func (t turnTotals) summary() string {
 	if t.failed > 0 {
 		failed = fmt.Sprintf(" (%d failed)", t.failed)
 	}
-	return fmt.Sprintf("=== Turn summary ===\n\nrequests=%d%s  prompt=%s  completion=%s  largest_request=%s (iteration %d)  cached_prompt=%s (cache read %s, cache write %s)\n",
+	return fmt.Sprintf("=== Turn summary ===\n\nrequests=%d%s  prompt=%s  completion=%s  largest_request=%s (iteration %d)  cached_prompt=%s (cache read %s, cache write %s)%s\n",
 		t.requests, failed, groupThousands(t.prompt), groupThousands(t.completion), groupThousands(t.largestPrompt), t.largestPromptIteration,
-		groupThousands(t.cacheRead), groupThousands(t.cacheRead), groupThousands(t.cacheWrite))
+		groupThousands(t.cacheRead), groupThousands(t.cacheRead), groupThousands(t.cacheWrite), t.providerExtras())
+}
+
+// providerExtras is what the provider reported besides the token counts, for the summary line: the reasoning tokens and the cost, each
+// only when something was reported, so a turn from a provider that reports neither reads exactly as it always did. The cost says how many
+// of the requests carried one when not all did, because a partial sum must not look like the whole bill.
+func (t turnTotals) providerExtras() string {
+	out := ""
+	if t.reasoning > 0 {
+		out += fmt.Sprintf("  reasoning=%s", groupThousands(t.reasoning))
+	}
+	if t.costRequests > 0 {
+		out += "  cost=" + formatCost(t.cost)
+		if t.costRequests < t.requests {
+			out += fmt.Sprintf(" (reported for %d of %d requests)", t.costRequests, t.requests)
+		}
+	}
+	return out
+}
+
+// usageDetails is the part of one response's usage line that goes beyond the three main counts: the cache numbers, the reasoning
+// tokens and the cost, each only when the provider reported something, so an unchanged provider's line is unchanged.
+func usageDetails(u chatcompleter.Usage) string {
+	out := ""
+	if u.CacheReadTokens > 0 || u.CacheCreationTokens > 0 {
+		out += fmt.Sprintf(" cache_read=%d cache_write=%d", u.CacheReadTokens, u.CacheCreationTokens)
+	}
+	if u.ReasoningTokens > 0 {
+		out += fmt.Sprintf(" reasoning=%d", u.ReasoningTokens)
+	}
+	if u.Cost != nil {
+		out += " cost=" + formatCost(*u.Cost)
+	}
+	return out
+}
+
+// formatCost writes US dollars with every digit the provider sent (no rounding: a call can cost a fraction of a cent).
+func formatCost(dollars float64) string {
+	return "$" + strconv.FormatFloat(dollars, 'f', -1, 64)
 }
 
 // appendTraceSummary appends the summary to the turn's trace file; nothing is written for a turn that made no request at all.

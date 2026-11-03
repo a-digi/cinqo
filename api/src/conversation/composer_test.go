@@ -47,7 +47,8 @@ func openMigratedDB(t *testing.T, migrationsDir string) *sql.DB {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, stmt := range strings.Split(string(raw), "/***Statement***/") {
+		// The app (coco-orm) cuts a migration file at every semicolon, comments included, so the tests do exactly that.
+		for _, stmt := range strings.Split(string(raw), ";") {
 			if strings.TrimSpace(stmt) == "" {
 				continue
 			}
