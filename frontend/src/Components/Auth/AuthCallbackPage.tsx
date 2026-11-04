@@ -4,6 +4,7 @@ import { completeAuthCallback } from '../../api/auth'
 import { LoadingSpinner } from '../../Shared/Components/Loading/LoadingSpinner'
 import { useSnackBar } from '../../Shared/Components/SnackBar/SnackBarContext'
 import { PKCE_VERIFIER_STORAGE_KEY, useAuth } from './AuthContext'
+import { takeReturnTo } from './returnTo'
 
 export function AuthCallbackPage() {
   const [status, setStatus] = useState<'pending' | 'error'>('pending')
@@ -48,7 +49,7 @@ export function AuthCallbackPage() {
         await completeAuthCallback({ code, codeVerifier: verifier, state })
         sessionStorage.removeItem(PKCE_VERIFIER_STORAGE_KEY)
         await refreshAuthState()
-        void navigate('/', { replace: true })
+        void navigate(takeReturnTo(), { replace: true })
       } catch {
         setStatus('error')
         errorMessage('Sign-in failed. Please try again.')

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import { useAuth } from './AuthContext'
+import { rememberReturnTo } from './returnTo'
 import { LoadingSpinner } from '../../Shared/Components/Loading/LoadingSpinner'
 
 // No form fields, no button — cinqo has no password to collect.
@@ -8,6 +10,7 @@ import { LoadingSpinner } from '../../Shared/Components/Loading/LoadingSpinner'
 // a click. See plan/ai/frontend/auth/step-05-auto-redirect-to-sign-in.md.
 export function LoginPage() {
   const { login } = useAuth()
+  const location = useLocation()
   const [error, setError] = useState<string | null>(null)
   // Guards against firing login() twice from React 18 StrictMode's
   // dev-only double-invoke of effects — a ref, not state, so it
@@ -18,6 +21,8 @@ export function LoginPage() {
   const attemptLogin = () => {
     attempted.current = true
     setError(null)
+    // Set by AuthGuard when it sent the user here; absent on a direct visit to /login (the stored target is then cleared).
+    rememberReturnTo((location.state as { from?: unknown } | null)?.from)
     void login().catch(() => {
       setError('Could not start sign-in.')
     })

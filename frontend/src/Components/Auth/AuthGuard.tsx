@@ -1,4 +1,4 @@
-import { Navigate } from 'react-router-dom'
+import { Navigate, useLocation } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import { useAuth } from './AuthContext'
 import { LoadingSpinner } from '../../Shared/Components/Loading/LoadingSpinner'
@@ -16,6 +16,7 @@ export interface AuthGuardProps {
 
 export function AuthGuard({ children, scopes, fallback }: AuthGuardProps) {
   const { isAuthenticated, isLoading, scopes: userScopes } = useAuth()
+  const location = useLocation()
 
   if (isLoading) {
     return (
@@ -26,7 +27,8 @@ export function AuthGuard({ children, scopes, fallback }: AuthGuardProps) {
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace />
+    // The requested address travels along, so signing in brings the user back to it (a pasted /conversations/<uuid> link, an expired session).
+    return <Navigate to="/login" replace state={{ from: location.pathname + location.search + location.hash }} />
   }
 
   if (scopes && scopes.length > 0) {
