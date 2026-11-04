@@ -45,6 +45,10 @@ type messageResponse struct {
 	// via GET .../turns/{turnRunId}/subagents on demand instead of it
 	// being inlined into every message response.
 	TurnRunID string `json:"turnRunId,omitempty"`
+	// Retryable and RetryCount (plan/ai/conversation/retry-last-step.md, step 4) are set on the failed message of the conversation's
+	// last turn when its last step can be retried (see attachRetryInfo): how many retries of it have failed so far is RetryCount, nil for 0.
+	Retryable  bool `json:"retryable,omitempty"`
+	RetryCount *int `json:"retryCount,omitempty"`
 	// The prompt cache, hidden reasoning and cost the provider reported for the turn (plan/ai/conversation/step-178, step 3), on the
 	// same messages as the counts above; absent when the provider reported nothing.
 	usageExtrasResponse
@@ -130,6 +134,7 @@ func GetHandler(reqCtx request.RequestContext) {
 	// What the provider reported besides the counts (plan/ai/conversation/step-178, step 3), read from the turn runs. Best effort: the
 	// conversation is shown without these numbers when the lookup fails, never refused for it.
 	addTurnUsage(db, id, messages)
+	addRetryInfo(db, id, messages)
 
 	var activeTurn *activeTurnResponse
 	if run, err := conversation_query.NewTurnRunQueryRepo(db).FindActiveByConversationID(id); err == nil {

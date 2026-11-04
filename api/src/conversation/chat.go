@@ -420,6 +420,16 @@ func runToolLoop(
 	var rejections argumentRejections // step 93: rejected tool calls this turn
 	var lastRejectedTool, lastRejection string
 	var allLinks []tool_mcp.ResourceLink
+	// A turn that can be retried (retry-last-step.md, step 4) is given a sink: when its loop fails the messages of the call that failed
+	// are saved, so that call can be made again later. Only the turn's own loop (depth 0) has one. A resumed loop starts with the links
+	// the earlier attempt had collected.
+	sink := checkpointSinkOf(ctx)
+	if depth != 0 {
+		sink = nil
+	}
+	if sink != nil {
+		allLinks = append(allLinks, sink.links...)
+	}
 
 	// prefix (the ContextTurns history + the new user message) never
 	// contains a tool call. groups holds one entry per iteration —
@@ -481,17 +491,28 @@ func runToolLoop(
 			if logExchange != nil {
 				logExchange(i+1, current, tools, result, err)
 			}
-			if err == nil || attempt >= len(chatcompleter.RetryWaits) || !chatcompleter.IsRetryable(err) {
+			// An empty reply (no text, no tool call, nothing to link) is retried like a transient provider error:
+			// the same request again, up to the same number of times (plan/ai/conversation/retry-last-step.md, step 2).
+			emptyReply := err == nil && isEmptyReply(result, len(allLinks))
+			if attempt >= len(chatcompleter.RetryWaits) || !(emptyReply || (err != nil && chatcompleter.IsRetryable(err))) {
 				break
 			}
+			if emptyReply && reportUsage != nil {
+				reportUsage(result.Usage) // the discarded attempt was paid for: it stays in the turn's totals
+			}
 			if logStep != nil {
-				logStep(fmt.Sprintf("iteration %d: provider error (%s), retry %d/%d", i+1, err.Error(), attempt+1, len(chatcompleter.RetryWaits)))
+				reason := "the model returned an empty response"
+				if err != nil {
+					reason = "provider error (" + err.Error() + ")"
+				}
+				logStep(fmt.Sprintf("iteration %d: %s, retry %d/%d", i+1, reason, attempt+1, len(chatcompleter.RetryWaits)))
 			}
 			if sleepErr := chatcompleter.Sleep(ctx, chatcompleter.RetryWaits[attempt]); sleepErr != nil {
 				return "", sleepErr
 			}
 		}
 		if err != nil {
+			sink.save(len(groups), current, allLinks)
 			return "", err
 		}
 		lastPromptTokens = result.Usage.PromptTokens
@@ -518,7 +539,8 @@ func runToolLoop(
 			logStep(usageLine)
 		}
 		if len(result.ToolCalls) == 0 {
-			if strings.TrimSpace(result.Message.Content) == "" && len(allLinks) == 0 {
+			if isEmptyReply(result, len(allLinks)) {
+				sink.save(len(groups), current, allLinks)
 				return "", ErrEmptyModelReply
 			}
 			return appendResourceLinks(result.Message.Content, allLinks), nil
@@ -951,4 +973,9 @@ func truncateError(s string) string {
 		return s
 	}
 	return s[:maxStoredErrorLength] + "… (truncated)"
+}
+
+// isEmptyReply reports a model answer that carries nothing: no tool call, no text, and no resource link already collected to show instead.
+func isEmptyReply(result *chatcompleter.ChatCompletionResult, linkCount int) bool {
+	return len(result.ToolCalls) == 0 && strings.TrimSpace(result.Message.Content) == "" && linkCount == 0
 }

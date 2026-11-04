@@ -98,15 +98,34 @@ func StartTurnRun(
 		}
 		return nil, fmt.Errorf("conversation: start turn run: %w", err)
 	}
+	// A new turn of the conversation ends the chance to retry an earlier failed one (retry-last-step.md): best effort, a leftover
+	// checkpoint is only ever offered for the conversation's last run, which this one now is.
+	_ = conversation_persistent.NewTurnRunPersistentRepo(conversationDB).ClearConversationCheckpoints(conversationID)
 
-	ctx, cancel := context.WithTimeout(context.Background(), maxTurnRunDuration)
-	runnerMu.Lock()
-	active[run.ID] = cancel
-	runnerMu.Unlock()
-
-	go runDetachedTurn(ctx, run.ID, httpClient, mainDB, conversationDB, encryptionKey, conversationID, content, callerScopes, dataDir, corePort)
+	launchTurnRun(run.ID, httpClient, mainDB, conversationDB, encryptionKey, conversationID, content, callerScopes, dataDir, corePort, nil)
 
 	return run, nil
+}
+
+// launchTurnRun registers the run's cancel func and starts its detached goroutine. resume is nil for a fresh turn.
+func launchTurnRun(
+	turnRunID string,
+	httpClient *http.Client,
+	mainDB *sql.DB,
+	conversationDB *sql.DB,
+	encryptionKey []byte,
+	conversationID, content string,
+	callerScopes []string,
+	dataDir string,
+	corePort int,
+	resume *retryResume,
+) {
+	ctx, cancel := context.WithTimeout(context.Background(), maxTurnRunDuration)
+	runnerMu.Lock()
+	active[turnRunID] = cancel
+	runnerMu.Unlock()
+
+	go runDetachedTurn(ctx, turnRunID, httpClient, mainDB, conversationDB, encryptionKey, conversationID, content, callerScopes, dataDir, corePort, resume)
 }
 
 // runDetachedTurn is today's SendMessage body, adapted to run off a
@@ -128,6 +147,9 @@ func runDetachedTurn(
 	callerScopes []string,
 	dataDir string,
 	corePort int,
+	// resume is nil for a fresh turn. For a retry it holds the saved state of the failed turn: the loop then starts from those messages
+	// (the history, hints and tool rounds they already contain) instead of building them again.
+	resume *retryResume,
 ) {
 	defer func() {
 		runnerMu.Lock()
@@ -167,24 +189,28 @@ func runDetachedTurn(
 		return
 	}
 
-	recent, err := ReadRecentTurns(conv.FilePath, ContextTurns)
-	if err != nil {
-		finishTurnRun(runs, turnRunID, "failed")
-		return
-	}
-
-	messages := make([]chatcompleter.Message, 0, len(recent)*2+1)
-	for _, t := range recent {
-		if t.Failed {
-			continue
+	var messages []chatcompleter.Message
+	if resume != nil {
+		messages = resume.checkpoint.Messages
+	} else {
+		recent, err := ReadRecentTurns(conv.FilePath, ContextTurns)
+		if err != nil {
+			finishTurnRun(runs, turnRunID, "failed")
+			return
 		}
-		messages = append(messages,
-			chatcompleter.Message{Role: "user", Content: t.UserContent},
-			chatcompleter.Message{Role: "assistant", Content: t.AssistantContent},
-		)
+		messages = make([]chatcompleter.Message, 0, len(recent)*2+1)
+		for _, t := range recent {
+			if t.Failed {
+				continue
+			}
+			messages = append(messages,
+				chatcompleter.Message{Role: "user", Content: t.UserContent},
+				chatcompleter.Message{Role: "assistant", Content: t.AssistantContent},
+			)
+		}
+		messages = append(messages, chatcompleter.Message{Role: "user", Content: content})
 	}
 	userTimestamp := time.Now().UTC().Format(time.RFC3339)
-	messages = append(messages, chatcompleter.Message{Role: "user", Content: content})
 
 	tools, err := offerableToolsForMode(mainDB, callerScopes, conv.OrchestrationMode)
 	if err != nil {
@@ -193,16 +219,33 @@ func runDetachedTurn(
 	}
 	// A conversation created with an allowlist (step 113) is offered, and may call, only those.
 	ctx, tools = offeredTools(ctx, entry, model, tools, conv)
-	messages = withToolHint(entry, tools, messages)
+	if resume == nil {
+		messages = withToolHint(entry, tools, messages)
+	}
 	// A composer orchestrator gets the system prompt that makes it
 	// plan and delegate, including the catalog of tools its workers
 	// can use; a direct conversation gets none, exactly as before
 	// (composer step 4).
-	messages, err = withComposerPrompt(mainDB, callerScopes, conv.OrchestrationMode, messages)
-	if err != nil {
-		finishTurnRun(runs, turnRunID, "failed")
-		return
+	if resume == nil {
+		// A resumed run's messages already carry the hint and the composer prompt the failed call was sent with.
+		messages, err = withComposerPrompt(mainDB, callerScopes, conv.OrchestrationMode, messages)
+		if err != nil {
+			finishTurnRun(runs, turnRunID, "failed")
+			return
+		}
 	}
+	// What a failed loop leaves behind for a retry (retry-last-step.md): the encoded state, kept on this run, and no other run's.
+	sink := &checkpointSink{write: func(c Checkpoint) {
+		text, encErr := EncodeCheckpoint(c)
+		if encErr != nil {
+			return // too large to keep: the turn simply cannot be retried, only started again
+		}
+		_ = runs.SaveCheckpoint(turnRunID, text)
+	}}
+	if resume != nil {
+		sink.links = resume.checkpoint.Links
+	}
+	ctx = withCheckpointSink(ctx, sink)
 
 	// totalPromptTokens/totalCompletionTokens (step 35) accumulate this
 	// turn's own real usage across its whole tool-calling loop, in
@@ -309,6 +352,9 @@ func runDetachedTurn(
 	if err := AppendTurn(conv.FilePath, turn); err != nil {
 		finishTurnRun(runs, turnRunID, "failed")
 		return
+	}
+	if resume != nil {
+		_ = runs.ClearCheckpoint(turnRunID) // the retry worked: the state it resumed from (carried onto this run) is not needed any more
 	}
 
 	finishTurnRun(runs, turnRunID, "completed")

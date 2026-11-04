@@ -2,6 +2,7 @@ package persistent_test
 
 import (
 	"database/sql"
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
@@ -188,7 +189,7 @@ func TestTheMigrationAddsTheColumnsToAnOlderDatabaseAndKeepsItsRows(t *testing.T
 		apply(f)
 	}
 	r, err := conversation_query.NewTurnRunQueryRepo(db).FindByID("old")
-	if err != nil || r.ToolErrors != 0 || r.PromptTokens != 500 {
+	if err != nil || r.ToolErrors != 0 || r.PromptTokens != 500 || r.RetryOf != nil || r.RetryCount != 0 || checkpointOf(t, db, "old") != "" {
 		t.Errorf("the old row after the later migrations: %+v %v", r, err)
 	}
 	got := turnTotals(t, db, "old")
@@ -234,5 +235,140 @@ func TestToolErrorsAreCountedLiveOnTheTurnRunAndOnNothingElse(t *testing.T) {
 	// The token counts are not touched by it.
 	if got := turnTotals(t, db, "t1"); got.prompt != 0 || got.total != 0 {
 		t.Errorf("usage changed: %+v", got)
+	}
+}
+
+func checkpointOf(t *testing.T, db *sql.DB, id string) string {
+	t.Helper()
+	text, err := conversation_query.NewTurnRunQueryRepo(db).FindCheckpoint(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return text
+}
+
+func TestACheckpointIsSavedReadAndClearedOnItsOwnRun(t *testing.T) {
+	db := seedRuns(t)
+	runs := conversation_persistent.NewTurnRunPersistentRepo(db)
+	if checkpointOf(t, db, "t1") != "" {
+		t.Fatal("a new run has no checkpoint")
+	}
+	if err := runs.SaveCheckpoint("t1", `{"a":1}`); err != nil {
+		t.Fatal(err)
+	}
+	if got := checkpointOf(t, db, "t1"); got != `{"a":1}` {
+		t.Fatalf("got %q", got)
+	}
+	if err := runs.ClearCheckpoint("t1"); err != nil || checkpointOf(t, db, "t1") != "" {
+		t.Fatalf("clear: %v", err)
+	}
+	if _, err := conversation_query.NewTurnRunQueryRepo(db).FindCheckpoint("nope"); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("unknown run: %v", err)
+	}
+	if err := runs.SaveCheckpoint("nope", "x"); err != nil {
+		t.Errorf("saving for an unknown run is a harmless no-op: %v", err)
+	}
+}
+
+func TestOnlyTheLastSavedCheckpointOfAConversationSurvivesAndOthersAreUntouched(t *testing.T) {
+	db := seedRuns(t)
+	runs := conversation_persistent.NewTurnRunPersistentRepo(db)
+	if err := conversation_persistent.NewConversationPersistentRepo(db).Insert(newConversation("c2", "direct")); err != nil {
+		t.Fatal(err)
+	}
+	if err := runs.SetTerminalStatus("t1", "failed", "2026-01-01T00:00:00Z"); err != nil { // one running run per conversation: the first has failed
+		t.Fatal(err)
+	}
+	for id, conv := range map[string]string{"t1b": "c1", "t2": "c2"} {
+		if err := runs.Insert(&conversation_entity.TurnRun{ID: id, ConversationID: conv, UserContent: "x", StartedAt: "2026-01-01T00:00:01Z"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, s := range [][2]string{{"t1", "first"}, {"t2", "other conversation"}, {"t1b", "second"}} {
+		if err := runs.SaveCheckpoint(s[0], s[1]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := checkpointOf(t, db, "t1"); got != "" {
+		t.Errorf("the older run of the same conversation must lose its checkpoint: %q", got)
+	}
+	if got := checkpointOf(t, db, "t1b"); got != "second" {
+		t.Errorf("the last saved: %q", got)
+	}
+	if got := checkpointOf(t, db, "t2"); got != "other conversation" {
+		t.Errorf("another conversation's checkpoint was touched: %q", got)
+	}
+	if err := runs.ClearConversationCheckpoints("c1"); err != nil {
+		t.Fatal(err)
+	}
+	if checkpointOf(t, db, "t1b") != "" || checkpointOf(t, db, "t2") != "other conversation" {
+		t.Errorf("clearing one conversation: t1b %q, t2 %q", checkpointOf(t, db, "t1b"), checkpointOf(t, db, "t2"))
+	}
+}
+
+func TestDeletingAConversationClearsItsCheckpointsAndOnlyItsOwn(t *testing.T) {
+	db := seedRuns(t)
+	runs := conversation_persistent.NewTurnRunPersistentRepo(db)
+	convs := conversation_persistent.NewConversationPersistentRepo(db)
+	if err := convs.Insert(newConversation("c2", "direct")); err != nil {
+		t.Fatal(err)
+	}
+	if err := runs.Insert(&conversation_entity.TurnRun{ID: "t2", ConversationID: "c2", UserContent: "x", StartedAt: "2026-01-01T00:00:01Z"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := runs.SaveCheckpoint("t1", "secret tool results"); err != nil {
+		t.Fatal(err)
+	}
+	if err := runs.SaveCheckpoint("t2", "keep"); err != nil {
+		t.Fatal(err)
+	}
+	if err := convs.Delete("c1"); err != nil {
+		t.Fatal(err)
+	}
+	if got := checkpointOf(t, db, "t1"); got != "" {
+		t.Errorf("the deleted conversation's checkpoint must be gone (foreign keys do not cascade here): %q", got)
+	}
+	if got := checkpointOf(t, db, "t2"); got != "keep" {
+		t.Errorf("another conversation's: %q", got)
+	}
+	if err := convs.Delete("c1"); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("deleting twice: %v", err)
+	}
+}
+
+func TestARunRecordsWhichRunItRetriesAndItsPlaceInTheChain(t *testing.T) {
+	db := seedRuns(t)
+	runs := conversation_persistent.NewTurnRunPersistentRepo(db)
+	r, err := conversation_query.NewTurnRunQueryRepo(db).FindByID("t1")
+	if err != nil || r.RetryOf != nil || r.RetryCount != 0 {
+		t.Fatalf("a fresh run: %+v %v", r, err)
+	}
+	if err := runs.SetTerminalStatus("t1", "failed", "2026-01-01T00:00:01Z"); err != nil {
+		t.Fatal(err)
+	}
+	if err := runs.Insert(&conversation_entity.TurnRun{ID: "t1r", ConversationID: "c1", UserContent: "hi", StartedAt: "2026-01-01T00:00:02Z"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := runs.SetRetry("t1r", "t1", 2); err != nil {
+		t.Fatal(err)
+	}
+	r, err = conversation_query.NewTurnRunQueryRepo(db).FindByID("t1r")
+	if err != nil || r.RetryOf == nil || *r.RetryOf != "t1" || r.RetryCount != 2 {
+		t.Fatalf("a retry: %+v %v", r, err)
+	}
+}
+
+func TestTheMostRecentRunIsTheLastInsertedWhenTwoStartInTheSameSecond(t *testing.T) {
+	db := seedRuns(t) // t1 started 2026-01-01T00:00:00Z
+	runs := conversation_persistent.NewTurnRunPersistentRepo(db)
+	if err := runs.SetTerminalStatus("t1", "failed", "2026-01-01T00:00:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	if err := runs.Insert(&conversation_entity.TurnRun{ID: "a-retry-with-a-smaller-id", ConversationID: "c1", UserContent: "x", StartedAt: "2026-01-01T00:00:00Z"}); err != nil {
+		t.Fatal(err)
+	}
+	last, err := conversation_query.NewTurnRunQueryRepo(db).FindMostRecentByConversationID("c1")
+	if err != nil || last.ID != "a-retry-with-a-smaller-id" {
+		t.Fatalf("got %+v, %v: the later insert must win a tie on started_at", last, err)
 	}
 }

@@ -56,6 +56,15 @@ routes:
       - cinqo:conversation:use
       - cinqo:super:admin
 
+  # retry-last-step.md, step 4 — redo the last step of the conversation's last failed turn (same scope as sending a message).
+  - path: /api/v1/conversations/{id}/turns/{turnRunId}/retry
+    method: POST
+    executor: ConversationRetryTurn
+    security: authenticated
+    scopes:
+      - cinqo:conversation:use
+      - cinqo:super:admin
+
   # step-23-detach-turn-execution-from-request.md — the polling
   # endpoint a client uses to observe a detached turn run's progress
   # and terminal status, since ConversationSendMessage above no longer

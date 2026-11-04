@@ -114,6 +114,7 @@ func Init(ctx serverdi.Context) {
 		"ConversationUpdateTitle":      local_routing.HandlerFunc(conversation_handler.UpdateTitleHandler),
 		"ConversationDelete":           local_routing.HandlerFunc(conversation_handler.DeleteHandler),
 		"ConversationSendMessage":      local_routing.HandlerFunc(conversation_handler.SendMessageHandler),
+		"ConversationRetryTurn":        local_routing.HandlerFunc(conversation_handler.RetryTurnHandler),
 		"ConversationGetActiveTurn":    local_routing.HandlerFunc(conversation_handler.GetActiveTurnHandler),
 		"ConversationStopActiveTurn":   local_routing.HandlerFunc(conversation_handler.StopActiveTurnHandler),
 		"ConversationGetTurnSubAgents": local_routing.HandlerFunc(conversation_handler.GetTurnSubAgentsHandler),

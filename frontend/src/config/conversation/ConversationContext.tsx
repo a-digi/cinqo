@@ -7,6 +7,7 @@ import {
   stopActiveTurn,
   createConversation as createConversationApi,
   sendMessage as sendMessageApi,
+  retryTurn as retryTurnApi,
   renameConversation as renameConversationApi,
   deleteConversation as deleteConversationApi,
   type Conversation,
@@ -119,6 +120,8 @@ export interface ConversationContextValue {
   // `selectedId` today; this is a widening of the surface, not a
   // behavior change for them.
   sendMessage: (conversationId: string, content: string) => Promise<void>
+  // Redoes the last step of conversationId's last failed turn (turnRunId is that turn's run; content its message, shown while it runs).
+  retryTurn: (conversationId: string, turnRunId: string, content: string, confirmed: boolean) => Promise<void>
   // Requests cancellation of conversationId's own currently-running
   // turn — a no-op if nothing is running. Does not itself remove the
   // conversation from turnWatches: the already-running watch loop
@@ -478,8 +481,10 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   // component's lifetime and of whichever conversation is currently
   // selected, the same way the backend's own run is independent of
   // this HTTP request's lifetime.
-  const sendMessage = useCallback(
-    async (conversationId: string, content: string) => {
+  // startTurn is the shared body of sendMessage and retryTurn: the same optimistic "turn in progress" entry, the same error handling and the
+  // same watching, only the request that starts the run differs.
+  const startTurn = useCallback(
+    async (conversationId: string, content: string, start: () => Promise<unknown>) => {
       setError(null)
       // If a watch already exists for this conversation (a turn is
       // already running there — this call is about to fail with a 409
@@ -507,7 +512,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
         }))
       }
       try {
-        await sendMessageApi(conversationId, { content })
+        await start()
       } catch (err) {
         setError(err instanceof ApiError ? err.message : 'Failed to send message.')
         if (!alreadyWatching) {
@@ -523,6 +528,17 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
       await watchTurn(conversationId)
     },
     [watchTurn, turnWatchExists],
+  )
+
+  const sendMessage = useCallback(
+    (conversationId: string, content: string) => startTurn(conversationId, content, () => sendMessageApi(conversationId, { content })),
+    [startTurn],
+  )
+
+  const retryTurn = useCallback(
+    (conversationId: string, turnRunId: string, content: string, confirmed: boolean) =>
+      startTurn(conversationId, content, () => retryTurnApi(conversationId, turnRunId, confirmed)),
+    [startTurn],
   )
 
   // Fire-and-forget from the caller's own point of view: the stop
@@ -582,6 +598,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     clearSelection,
     createConversation,
     sendMessage,
+    retryTurn,
     stopTurn,
     refreshConversations,
     renameConversation,

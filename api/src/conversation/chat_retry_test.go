@@ -131,8 +131,10 @@ func TestCancellingDuringTheWaitStopsAtOnce(t *testing.T) {
 }
 
 func TestAnEmptyFinalReplyIsAnError(t *testing.T) {
+	fastRetries(t)
 	for name, text := range map[string]string{"empty": "", "whitespace": "  \n\t "} {
-		c := &stepCompleter{steps: []func() (*chatcompleter.ChatCompletionResult, error){okAnswer(text)}}
+		// Every attempt is empty: the first call plus the two retries all return nothing, so the error stands.
+		c := &stepCompleter{steps: []func() (*chatcompleter.ChatCompletionResult, error){okAnswer(text), okAnswer(text), okAnswer(text)}}
 		var steps []string
 		var exchanges int
 		got, err := runRetryLoop(context.Background(), c, &steps, &exchanges)
@@ -152,6 +154,7 @@ func TestANonEmptyFinalReplyIsStillASuccess(t *testing.T) {
 }
 
 func TestAnEmptyReplyIsAnErrorAfterToolUseToo(t *testing.T) {
+	fastRetries(t)
 	db := openMainDB(t)
 	seedDomainTool(t, db, "list_jobs", "tool:demo:read")
 	scopes := []string{"tool:demo:read"}
@@ -166,11 +169,85 @@ func TestAnEmptyReplyIsAnErrorAfterToolUseToo(t *testing.T) {
 				ToolCalls: []chatcompleter.ToolCall{{ID: "c1", Name: "list_jobs", Arguments: []byte(`{}`)}},
 			}, nil
 		},
-		okAnswer(""),
+		okAnswer(""), okAnswer(""), okAnswer(""),
 	}}
 	_, err = runToolLoop(context.Background(), http.DefaultClient, platform.Entry{Completer: c}, "k", "m",
 		[]chatcompleter.Message{{Role: "user", Content: "hi"}}, tools, db, scopes, "u1", t.TempDir(), 0, "conv", nil, "", 0, "direct", nil, nil, nil, 0)
 	if !errors.Is(err, ErrEmptyModelReply) {
 		t.Fatalf("got %v, want ErrEmptyModelReply", err)
+	}
+}
+
+func emptyAnswer() (*chatcompleter.ChatCompletionResult, error) {
+	return &chatcompleter.ChatCompletionResult{
+		Message: chatcompleter.Message{Role: "assistant", Content: "  \n"}, FinishReason: "stop",
+		Usage: chatcompleter.Usage{PromptTokens: 10, CompletionTokens: 1},
+	}, nil
+}
+
+func runRetryLoopUsage(c chatcompleter.ChatCompleter, steps *[]string, prompt *int) (string, error) {
+	return runToolLoop(context.Background(), http.DefaultClient, platform.Entry{Completer: c}, "k", "m",
+		[]chatcompleter.Message{{Role: "user", Content: "hi"}}, nil, nil, nil, "u1", "", 0, "conv", nil, "", 0, "direct",
+		func(s string) { *steps = append(*steps, s) },
+		func(u chatcompleter.Usage) { *prompt += u.PromptTokens }, nil, 0)
+}
+
+func TestAnEmptyReplyIsRetriedAndTheGoodAnswerIsUsed(t *testing.T) {
+	fastRetries(t)
+	c := &stepCompleter{steps: []func() (*chatcompleter.ChatCompletionResult, error){emptyAnswer, okAnswer("recovered")}}
+	var steps []string
+	var exchanges int
+	got, err := runRetryLoop(context.Background(), c, &steps, &exchanges)
+	if err != nil || got != "recovered" {
+		t.Fatalf("got %q, %v", got, err)
+	}
+	if c.calls != 2 || exchanges != 2 {
+		t.Errorf("calls = %d, traced exchanges = %d, want 2 and 2", c.calls, exchanges)
+	}
+	if joined := strings.Join(steps, "\n"); !strings.Contains(joined, "empty response, retry 1/2") {
+		t.Errorf("the retry must be logged: %v", steps)
+	}
+}
+
+func TestThreeEmptyRepliesInARowEndWithTheEmptyReplyError(t *testing.T) {
+	fastRetries(t)
+	c := &stepCompleter{steps: []func() (*chatcompleter.ChatCompletionResult, error){emptyAnswer, emptyAnswer, emptyAnswer, okAnswer("never reached")}}
+	var steps []string
+	var exchanges int
+	got, err := runRetryLoop(context.Background(), c, &steps, &exchanges)
+	if !errors.Is(err, ErrEmptyModelReply) || got != "" {
+		t.Fatalf("got %q, %v", got, err)
+	}
+	if c.calls != 3 {
+		t.Errorf("calls = %d, want 3 (the first plus two retries)", c.calls)
+	}
+}
+
+func TestDiscardedEmptyAttemptsStayInTheTurnUsage(t *testing.T) {
+	fastRetries(t)
+	c := &stepCompleter{steps: []func() (*chatcompleter.ChatCompletionResult, error){emptyAnswer, emptyAnswer, emptyAnswer}}
+	var steps []string
+	var prompt int
+	if _, err := runRetryLoopUsage(c, &steps, &prompt); !errors.Is(err, ErrEmptyModelReply) {
+		t.Fatal(err)
+	}
+	if prompt != 30 {
+		t.Errorf("prompt tokens counted = %d, want 30 (all three paid attempts)", prompt)
+	}
+}
+
+func TestAnAnswerWithOnlyAToolCallIsNotAnEmptyReply(t *testing.T) {
+	r := &chatcompleter.ChatCompletionResult{ToolCalls: []chatcompleter.ToolCall{{Name: "x"}}}
+	if isEmptyReply(r, 0) {
+		t.Error("a tool call is not empty")
+	}
+	if isEmptyReply(&chatcompleter.ChatCompletionResult{Message: chatcompleter.Message{Content: "hi"}}, 0) {
+		t.Error("text is not empty")
+	}
+	if isEmptyReply(&chatcompleter.ChatCompletionResult{}, 1) {
+		t.Error("a collected link is not empty")
+	}
+	if !isEmptyReply(&chatcompleter.ChatCompletionResult{Message: chatcompleter.Message{Content: " \t\n"}}, 0) {
+		t.Error("white space only is empty")
 	}
 }

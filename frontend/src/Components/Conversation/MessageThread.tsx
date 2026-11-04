@@ -16,12 +16,14 @@ import { SubAgentRow } from './SubAgentRow'
 import { formatDuration } from './formatDuration'
 import { formatTokenCount } from './formatTokenCount'
 import { usageExtrasText } from './usageText'
+import { ConfirmModal } from '../../Shared/Components/Modal/ConfirmModal'
+import { retriedText, retryNeedsConfirmation } from './retryRules'
 
 // Renders the active conversation's messages in order, user/assistant
 // styled distinctly. No streaming — a sent message shows a
 // "thinking…" placeholder (pendingUserContent/sending) until the
 // single response resolves. A failed send (plan/ai/conversation/step-08)
-// renders as its own distinct bubble with a resend action and an
+// renders as its own distinct bubble with a "Start again" action and an
 // inline error-detail toggle — durable across a reload, not just this
 // live session's own transient state. See
 // plan/ai/conversation/step-05-frontend-chat-ui.md.
@@ -39,7 +41,8 @@ export function MessageThread({
   turnSubAgents,
   turnPlan,
   orchestrationMode,
-  onResend,
+  onStartAgain,
+  onRetry,
 }: {
   // Needed only to fetch a past message's own historical sub-agent
   // detail on demand (step 41 — Sub Agents, Bubble's own click-through)
@@ -72,7 +75,10 @@ export function MessageThread({
   // Only used to decide whether a past message's click-through also
   // needs to fetch its plan — a direct conversation never has one.
   orchestrationMode: OrchestrationMode
-  onResend: (content: string) => void
+  onStartAgain: (content: string) => void
+  // Redo the last step of the failed turn (only offered on its message when the server says it can be): its run id, its text, and whether
+  // the caller confirmed after the third failed retry.
+  onRetry: (turnRunId: string, content: string, confirmed: boolean) => void
 }) {
   if (messages.length === 0 && !pendingUserContent) {
     return <div className="flex flex-1 items-center justify-center text-sm text-gray-400">Send a message to start the conversation.</div>
@@ -86,8 +92,9 @@ export function MessageThread({
           conversationId={conversationId}
           orchestrationMode={orchestrationMode}
           message={m}
-          onResend={onResend}
-          resendDisabled={sending}
+          onStartAgain={onStartAgain}
+          onRetry={onRetry}
+          startAgainDisabled={sending}
         />
       ))}
       {/* Gated on `sending`, not just pendingUserContent's own
@@ -103,8 +110,9 @@ export function MessageThread({
           conversationId={conversationId}
           orchestrationMode={orchestrationMode}
           message={{ role: 'user', content: pendingUserContent, createdAt: '' }}
-          onResend={onResend}
-          resendDisabled={sending}
+          onStartAgain={onStartAgain}
+          onRetry={onRetry}
+          startAgainDisabled={sending}
         />
       )}
       {sending && turnStartedAt && (
@@ -153,16 +161,19 @@ function Bubble({
   conversationId,
   orchestrationMode,
   message,
-  onResend,
-  resendDisabled,
+  onStartAgain,
+  onRetry,
+  startAgainDisabled,
 }: {
   conversationId: string
   orchestrationMode: OrchestrationMode
   message: ConversationMessage
-  onResend: (content: string) => void
-  resendDisabled: boolean
+  onStartAgain: (content: string) => void
+  onRetry: (turnRunId: string, content: string, confirmed: boolean) => void
+  startAgainDisabled: boolean
 }) {
   const [showError, setShowError] = useState(false)
+  const [confirmRetry, setConfirmRetry] = useState(false)
   // Historical sub-agent detail (step 41) — fetched lazily, only on
   // the first click of "N sub-agents" below, never eagerly for every
   // message in the thread. undefined = not yet fetched, null = fetch
@@ -225,16 +236,36 @@ function Bubble({
         {message.failed && (
           <div className="mt-2 flex items-center gap-2 border-t border-red-200 pt-2 text-xs">
             <span className="text-red-700">Failed to send</span>
+            {message.retryable && message.turnRunId && (
+              <button
+                type="button"
+                onClick={() => {
+                  const turnRunId = message.turnRunId
+                  if (!turnRunId) return
+                  // After the third failed retry the user is asked first; the server asks again if this check is bypassed.
+                  if (retryNeedsConfirmation(message.retryCount)) setConfirmRetry(true)
+                  else onRetry(turnRunId, message.content, false)
+                }}
+                disabled={startAgainDisabled}
+                title="Redo only the last step that failed"
+                className="font-medium underline disabled:opacity-50"
+              >
+                Retry
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {
-                onResend(message.content)
+                onStartAgain(message.content)
               }}
-              disabled={resendDisabled}
+              disabled={startAgainDisabled}
               className="font-medium underline disabled:opacity-50"
             >
-              Resend
+              Start again
             </button>
+            {message.retryable && retriedText(message.retryCount) && (
+              <span className="text-red-700">· {retriedText(message.retryCount)}</span>
+            )}
             <button
               type="button"
               onClick={() => {
@@ -250,6 +281,21 @@ function Bubble({
         {message.failed && showError && (
           <pre className="mt-2 whitespace-pre-wrap break-words rounded bg-red-100 p-2 text-xs text-red-800">{message.error}</pre>
         )}
+        <ConfirmModal
+          open={confirmRetry}
+          title="Retry again?"
+          message={`This has failed ${String(message.retryCount ?? 0)} times in a row, so it seems to be failing all the time. Are you sure you want to try again?`}
+          details={<p>"Start again" begins a fresh turn from your message instead.</p>}
+          confirmLabel="Try again anyway"
+          danger={false}
+          onConfirm={() => {
+            setConfirmRetry(false)
+            if (message.turnRunId) onRetry(message.turnRunId, message.content, true)
+          }}
+          onCancel={() => {
+            setConfirmRetry(false)
+          }}
+        />
       </div>
       {message.createdAt && (
         <div className="mt-1 px-1 text-xs text-gray-400">

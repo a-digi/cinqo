@@ -66,6 +66,10 @@ export interface ConversationMessage extends UsageExtras {
   createdAt: string
   failed?: boolean
   error?: string
+  // retryable (retry-last-step.md, step 5) is set only on the failed message of the conversation's last turn when its last step can be
+  // redone (the server kept the state of the failed call); retryCount is how many retries of it have failed so far (absent for 0).
+  retryable?: boolean
+  retryCount?: number
   durationMs?: number
   // promptTokens/completionTokens (step 35) — the real, provider-
   // reported token usage this turn accumulated, same placement as
@@ -230,6 +234,17 @@ export async function deleteConversation(id: string): Promise<void> {
 // "running", then calling fetchConversation for the real message.
 export async function sendMessage(conversationId: string, input: { content: string }): Promise<StartedTurnRun> {
   const raw = await apiPost<{ message: StartedTurnRun }>(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`, input)
+  return raw.message
+}
+
+// POST .../turns/{turnRunId}/retry — redoes the last step of the conversation's last failed turn (a new run that resumes from what the
+// failed one had done). Like sendMessage it returns at once and the caller watches the run. Once the turn has failed 3 retries the server
+// answers 409 (code retry_confirmation_required) unless confirmed is true.
+export async function retryTurn(conversationId: string, turnRunId: string, confirmed: boolean): Promise<StartedTurnRun> {
+  const raw = await apiPost<{ message: StartedTurnRun }>(
+    `/api/v1/conversations/${encodeURIComponent(conversationId)}/turns/${encodeURIComponent(turnRunId)}/retry`,
+    confirmed ? { confirmed: true } : {},
+  )
   return raw.message
 }
 

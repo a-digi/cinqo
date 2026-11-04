@@ -36,6 +36,7 @@ export function GlobalChatWidget() {
     selectConversation,
     createConversation,
     sendMessage,
+    retryTurn,
     stopTurn,
     deleteConversation,
   } = useConversationContext()
@@ -271,7 +272,8 @@ export function GlobalChatWidget() {
                 turnSubAgents={turnSubAgents}
                 turnPlan={turnPlan}
                 orchestrationMode={detail.orchestrationMode}
-                onResend={(content) => void sendMessage(detail.id, content)}
+                onStartAgain={(content) => void sendMessage(detail.id, content)}
+                onRetry={(turnRunId, content, confirmed) => void retryTurn(detail.id, turnRunId, content, confirmed)}
               />
               <MessageComposer
                 platformLabel={`${detail.platformId} · ${detail.model}${detail.orchestrationMode === 'composer' ? ' · composer' : ''}`}

@@ -40,6 +40,7 @@ export function ConversationPage() {
     clearSelection,
     createConversation,
     sendMessage,
+    retryTurn,
     stopTurn,
     renameConversation,
     deleteConversation,
@@ -264,7 +265,8 @@ export function ConversationPage() {
               turnSubAgents={turnSubAgents}
               turnPlan={turnPlan}
               orchestrationMode={detail.orchestrationMode}
-              onResend={(content) => void sendMessage(selectedId, content)}
+              onStartAgain={(content) => void sendMessage(selectedId, content)}
+              onRetry={(turnRunId, content, confirmed) => void retryTurn(selectedId, turnRunId, content, confirmed)}
             />
             <MessageComposer
               platformLabel={platformLabel(platforms, detail)}

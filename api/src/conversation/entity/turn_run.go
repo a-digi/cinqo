@@ -52,6 +52,11 @@ type TurnRun struct {
 	CacheWriteTokens int    `db:"cache_write_tokens" dbtype:"INTEGER" nullable:"false" json:"-"`
 	ReasoningTokens  int    `db:"reasoning_tokens" dbtype:"INTEGER" nullable:"false" json:"-"`
 	CostMicroUSD     *int64 `db:"cost_microusd" dbtype:"INTEGER" nullable:"true" json:"-"`
+	// RetryOf and RetryCount (plan/ai/conversation/retry-last-step.md, step 3): the failed turn run this run retries (nil for a fresh turn)
+	// and its place in that chain (0 for a fresh turn). The saved checkpoint is a column too (checkpoint) but not a field here: it is
+	// read and written only through the repositories' own checkpoint methods, so no query can return it by accident.
+	RetryOf    *string `db:"retry_of" dbtype:"TEXT" nullable:"true" json:"-"`
+	RetryCount int     `db:"retry_count" dbtype:"INTEGER" nullable:"false" json:"-"`
 }
 
 // TurnUsage is what the provider reported for one finished turn besides the prompt and completion counts (the lean projection the

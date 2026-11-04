@@ -54,8 +54,19 @@ func (r *ConversationPersistentRepo) UpdateTitle(id, title string) error {
 // Delete removes the conversations row — row only, no message table
 // to cascade (step 1 moved content out of SQL entirely). Returns
 // sql.ErrNoRows if no row matched.
+//
+// The saved checkpoints of its turn runs (user data: tool results) are cleared in the same transaction. Foreign keys are not enforced
+// here, so the turn runs themselves are not removed by the delete: only what must not outlive the conversation is.
 func (r *ConversationPersistentRepo) Delete(id string) error {
-	res, err := r.db.Exec(`DELETE FROM conversations WHERE id = ?`, id)
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.Exec(`UPDATE turn_runs SET checkpoint = NULL WHERE conversation_id = ? AND checkpoint IS NOT NULL`, id); err != nil {
+		return err
+	}
+	res, err := tx.Exec(`DELETE FROM conversations WHERE id = ?`, id)
 	if err != nil {
 		return err
 	}
@@ -66,5 +77,5 @@ func (r *ConversationPersistentRepo) Delete(id string) error {
 	if affected == 0 {
 		return sql.ErrNoRows
 	}
-	return nil
+	return tx.Commit()
 }

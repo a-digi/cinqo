@@ -17,13 +17,13 @@ func NewTurnRunQueryRepo(db *sql.DB) *TurnRunQueryRepo {
 	return &TurnRunQueryRepo{db: db}
 }
 
-const turnRunColumns = `id, conversation_id, user_content, status, started_at, finished_at, log, cancel_requested, prompt_tokens, completion_tokens, total_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens, cost_microusd, tool_errors`
+const turnRunColumns = `id, conversation_id, user_content, status, started_at, finished_at, log, cancel_requested, prompt_tokens, completion_tokens, total_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens, cost_microusd, tool_errors, retry_of, retry_count`
 
 func scanTurnRun(scan func(dest ...any) error) (*conversation_entity.TurnRun, error) {
 	var t conversation_entity.TurnRun
 	if err := scan(
 		&t.ID, &t.ConversationID, &t.UserContent, &t.Status, &t.StartedAt, &t.FinishedAt, &t.Log, &t.CancelRequested,
-		&t.PromptTokens, &t.CompletionTokens, &t.TotalTokens, &t.CacheReadTokens, &t.CacheWriteTokens, &t.ReasoningTokens, &t.CostMicroUSD, &t.ToolErrors,
+		&t.PromptTokens, &t.CompletionTokens, &t.TotalTokens, &t.CacheReadTokens, &t.CacheWriteTokens, &t.ReasoningTokens, &t.CostMicroUSD, &t.ToolErrors, &t.RetryOf, &t.RetryCount,
 	); err != nil {
 		return nil, err
 	}
@@ -60,6 +60,9 @@ func (r *TurnRunQueryRepo) FindActiveByConversationID(conversationID string) (*c
 	return scanTurnRun(row.Scan)
 }
 
+// started_at has a resolution of one second, so runs started in the same second (a retry right after its failed run) are told apart by
+// the order they were inserted in (rowid).
+//
 // FindMostRecentByConversationID returns conversationID's own most
 // recently started turn_runs row, regardless of status — used by the
 // polling endpoint (GetActiveTurnHandler), deliberately NOT restricted
@@ -69,7 +72,7 @@ func (r *TurnRunQueryRepo) FindActiveByConversationID(conversationID string) (*c
 // leave it unable to tell "finished" apart from "never existed" or
 // "server restarted and lost it."
 func (r *TurnRunQueryRepo) FindMostRecentByConversationID(conversationID string) (*conversation_entity.TurnRun, error) {
-	row := r.db.QueryRow(`SELECT `+turnRunColumns+` FROM turn_runs WHERE conversation_id = ? ORDER BY started_at DESC LIMIT 1`, conversationID)
+	row := r.db.QueryRow(`SELECT `+turnRunColumns+` FROM turn_runs WHERE conversation_id = ? ORDER BY started_at DESC, rowid DESC LIMIT 1`, conversationID)
 	return scanTurnRun(row.Scan)
 }
 
@@ -82,6 +85,16 @@ func (r *TurnRunQueryRepo) FindMostRecentByConversationID(conversationID string)
 func (r *TurnRunQueryRepo) FindByID(id string) (*conversation_entity.TurnRun, error) {
 	row := r.db.QueryRow(`SELECT `+turnRunColumns+` FROM turn_runs WHERE id = ? LIMIT 1`, id)
 	return scanTurnRun(row.Scan)
+}
+
+// FindCheckpoint returns the saved checkpoint text of a turn run, "" when it has none (never saved, or cleared). Read on its own, never as
+// part of the turn run row (see TurnRun.RetryOf). sql.ErrNoRows (unwrapped) when no run has this id.
+func (r *TurnRunQueryRepo) FindCheckpoint(id string) (string, error) {
+	var text sql.NullString
+	if err := r.db.QueryRow(`SELECT checkpoint FROM turn_runs WHERE id = ?`, id).Scan(&text); err != nil {
+		return "", err
+	}
+	return text.String, nil
 }
 
 // FindActiveSummariesByConversationIDs returns a lean

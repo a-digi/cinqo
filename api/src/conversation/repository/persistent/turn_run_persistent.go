@@ -69,6 +69,36 @@ func (r *TurnRunPersistentRepo) AddUsage(id string, u conversation_entity.UsageA
 	return err
 }
 
+// SaveCheckpoint stores the checkpoint text of a failed turn run (plan/ai/conversation/retry-last-step.md, step 3). At most one run of a
+// conversation keeps one: saving clears every other run's of the same conversation in the same statement, so a retry only ever finds the
+// state of the last failed turn. A no-op for an unknown run.
+func (r *TurnRunPersistentRepo) SaveCheckpoint(id, text string) error {
+	_, err := r.db.Exec(
+		`UPDATE turn_runs SET checkpoint = CASE WHEN id = ?1 THEN ?2 ELSE NULL END
+		 WHERE conversation_id = (SELECT conversation_id FROM turn_runs WHERE id = ?1) AND (id = ?1 OR checkpoint IS NOT NULL)`,
+		id, text,
+	)
+	return err
+}
+
+// ClearCheckpoint forgets one run's checkpoint (after a successful retry).
+func (r *TurnRunPersistentRepo) ClearCheckpoint(id string) error {
+	_, err := r.db.Exec(`UPDATE turn_runs SET checkpoint = NULL WHERE id = ?`, id)
+	return err
+}
+
+// ClearConversationCheckpoints forgets every checkpoint of one conversation (a new turn of it starts, or it is deleted).
+func (r *TurnRunPersistentRepo) ClearConversationCheckpoints(conversationID string) error {
+	_, err := r.db.Exec(`UPDATE turn_runs SET checkpoint = NULL WHERE conversation_id = ? AND checkpoint IS NOT NULL`, conversationID)
+	return err
+}
+
+// SetRetry marks a run as the retry of another (the place in the chain: 1 for the first retry).
+func (r *TurnRunPersistentRepo) SetRetry(id, retryOf string, retryCount int) error {
+	_, err := r.db.Exec(`UPDATE turn_runs SET retry_of = ?, retry_count = ? WHERE id = ?`, retryOf, retryCount, id)
+	return err
+}
+
 // AddToolError counts one refused or rejected tool call of this run (a single atomic increment, readable live like the usage).
 func (r *TurnRunPersistentRepo) AddToolError(id string) error {
 	_, err := r.db.Exec(`UPDATE turn_runs SET tool_errors = tool_errors + 1 WHERE id = ?`, id)
