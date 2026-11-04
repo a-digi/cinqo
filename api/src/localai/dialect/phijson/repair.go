@@ -11,6 +11,48 @@ import "strings"
 // which is not JSON, so the call was read as plain text and nothing was stored. Only brackets are added or skipped: no value,
 // key or string is changed, and what comes out is still checked by the caller against the offered tools. ok is false when the text
 // stops inside a string (what was meant there is not known) or does not start with a bracket.
+//
+// The opposite slip is read too: a call object closed too early, so that its own "name" came after it (a real run of 2026-11-04):
+//
+//	[{"arguments":{...,"title":"x"},"items":"1"},"name":"cv_import_add_experience"}]      (the call closed after "items")
+//
+// A "}" that closes an object standing directly in a list and is followed by , "key": cannot be right, because a list holds values and
+// never keys: the object goes on, so that "}" is left out and the object closes at its real end. The same words after an object that
+// sits inside another object are an ordinary next key and are not touched. (A call at the top level, not in a list, that is closed too
+// early is a complete valid object followed by text, so it never gets here and is not read: it was not seen in a real run.)
+// keyFollows says whether s, after white space, goes on with a comma and then a string and a colon: the start of another member of
+// an object, `, "key":`.
+func keyFollows(s string) bool {
+	skip := func(i int) int {
+		for i < len(s) && (s[i] == ' ' || s[i] == '\t' || s[i] == '\r' || s[i] == '\n') {
+			i++
+		}
+		return i
+	}
+	i := skip(0)
+	if i >= len(s) || s[i] != ',' {
+		return false
+	}
+	i = skip(i + 1)
+	if i >= len(s) || s[i] != '"' {
+		return false
+	}
+	for i++; i < len(s); i++ { // to the end of the string, over its escapes
+		if s[i] == '\\' {
+			i++
+			continue
+		}
+		if s[i] == '"' {
+			break
+		}
+	}
+	if i >= len(s) {
+		return false
+	}
+	i = skip(i + 1)
+	return i < len(s) && s[i] == ':'
+}
+
 func repairBrackets(s string) (fixed string, consumed int, ok bool) {
 	if s == "" || (s[0] != '[' && s[0] != '{') {
 		return "", 0, false
@@ -65,6 +107,9 @@ func repairBrackets(s string) (fixed string, consumed int, ok bool) {
 			}
 			if depth < 0 {
 				continue
+			}
+			if c == '}' && depth == len(stack)-1 && len(stack) >= 2 && stack[len(stack)-2] == ']' && keyFollows(s[i+1:]) {
+				continue // closed too early: the object goes on with the key that follows
 			}
 			for len(stack)-1 > depth { // the brackets left open inside it are closed first
 				trimComma()

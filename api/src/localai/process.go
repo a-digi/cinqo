@@ -36,6 +36,23 @@ const (
 
 // launch describes one run of the program: which program, which model, how much context, and the folder it lives in. Two runs
 // with the same launch are the same run.
+// What every answer of the model program is started with (see launchRun). None of Cinqo's requests sets any of these, so these
+// are what applies. Strings because they are command line arguments. Measured on the real CV import with Phi-4-mini
+// (plan/ai/small-llm-local/sampling-temperature.md): the program's own default temperature (0.80) made the same prompt skip its first
+// tool call on one run, and a temperature of 0 made a turn repeat itself for more than 10,000 tokens without end. So:
+//   - a low but not zero temperature, so a small model follows its instructions the same way almost every time and cannot be stuck on
+//     one path for ever;
+//   - a mild penalty for repeating the last tokens (the program's default is none), the usual second guard against a loop. It is
+//     kept small because a tool call is JSON, which repeats its own keys and brackets by nature;
+//   - a ceiling on the length of one answer (the program's default is none, "infinity"): whatever else goes wrong, one answer ends. The
+//     size is the one the Anthropic client already uses as its default; an answer that is cut at the ceiling is handled like any
+//     answer cut by the token limit (the text that came is kept, and a bracket left open in a call is put right by the dialect).
+const (
+	samplingTemperature = "0.2"
+	repeatPenalty       = "1.05"
+	maxAnswerTokens     = "4096"
+)
+
 type launch struct {
 	Binary        string
 	ModelPath     string
@@ -266,6 +283,10 @@ func (s *supervisor) launchRun(ctx context.Context, r *run) {
 		"--no-webui",
 		"--no-slots",
 		"--jinja", // the model's own chat template, which tool calls need
+		// The sampling of every answer and its ceiling: see the constants.
+		"--temp", samplingTemperature,
+		"--repeat-penalty", repeatPenalty,
+		"-n", maxAnswerTokens,
 	}
 	cmd := s.o.Command(spec.Binary, args)
 	cmd.Dir = filepath.Dir(spec.Binary)

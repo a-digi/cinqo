@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -179,7 +180,7 @@ func TestRecentList(t *testing.T) {
 	now := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
 	var cs []*conversation_entity.Conversation
 	for i := 0; i < 8; i++ {
-		cs = append(cs, &conversation_entity.Conversation{Title: "Chat", Model: "m", StartedAt: "2026-10-30 11:00:00"})
+		cs = append(cs, &conversation_entity.Conversation{ID: fmt.Sprintf("8df9b592-9146-4ac1-ad4c-64f35116044%d", i), Title: "Chat", Model: "m", StartedAt: "2026-10-30 11:00:00"})
 	}
 	cs[0].Title = ""
 	cs[1].Title = strings.Repeat("t", 300)
@@ -187,8 +188,13 @@ func TestRecentList(t *testing.T) {
 	if len(got.Items) != recentConversationLimit {
 		t.Fatalf("items = %d, want %d", len(got.Items), recentConversationLimit)
 	}
-	if got.Items[0].Title != "Untitled conversation" || got.Items[0].Meta != "1h ago" || got.Items[0].Link != "/conversations" || got.Items[0].Subtitle != "m" {
+	if got.Items[0].Title != "Untitled conversation" || got.Items[0].Meta != "1h ago" || got.Items[0].Link != "/conversations/8df9b592-9146-4ac1-ad4c-64f351160440" || got.Items[0].Subtitle != "m" {
 		t.Errorf("first = %+v", got.Items[0])
+	}
+	for i, it := range got.Items {
+		if want := fmt.Sprintf("/conversations/8df9b592-9146-4ac1-ad4c-64f35116044%d", i); it.Link != want {
+			t.Errorf("item %d link = %q, want %q (each tile opens its own conversation)", i, it.Link, want)
+		}
 	}
 	if len([]rune(got.Items[1].Title)) != 120 {
 		t.Errorf("long title not truncated: %d", len([]rune(got.Items[1].Title)))
@@ -238,5 +244,21 @@ func TestRecentConversationsOnlyReadsTheCallersOwn(t *testing.T) {
 
 	if d := runThroughEngine(t, NewRecentConversations(db), dashboard.Caller{UserID: "carol", Scopes: []string{"cinqo:conversation:use"}}); d.State != dashboard.StateEmpty {
 		t.Errorf("a user with no conversations: state = %q, want empty", d.State)
+	}
+}
+
+func TestAConversationLinkCanNeverLeaveItsPath(t *testing.T) {
+	for id, want := range map[string]string{
+		"":                 "/conversations",
+		"abc":              "/conversations/abc",
+		"../admin":         "/conversations/..%2Fadmin",
+		"a/b":              "/conversations/a%2Fb",
+		"x?y=1#z":          "/conversations/x%3Fy=1%23z",
+		"//evil.example/x": "/conversations/%2F%2Fevil.example%2Fx",
+		"with space":       "/conversations/with%20space",
+	} {
+		if got := conversationLink(id); got != want {
+			t.Errorf("conversationLink(%q) = %q, want %q", id, got, want)
+		}
 	}
 }

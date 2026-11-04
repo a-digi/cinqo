@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"time"
 
 	conversation_entity "github.com/a-digi/cinqo/src/conversation/entity"
@@ -61,10 +62,19 @@ func recentList(conversations []*conversation_entity.Conversation, now time.Time
 			Title:    truncate(title, 120),
 			Subtitle: truncate(c.Model, 200),
 			Meta:     relativeTime(now, c.StartedAt),
-			Link:     "/conversations",
+			Link:     conversationLink(c.ID),
 		})
 	}
 	return dashboard.ListData{Items: items}
+}
+
+// conversationLink is the address of one conversation (the deep link /conversations/<id>), so a tile opens that conversation and not just the
+// list. The id is escaped so it can never change where the path leads, and an empty id falls back to the list.
+func conversationLink(id string) string {
+	if id == "" {
+		return "/conversations"
+	}
+	return "/conversations/" + url.PathEscape(id)
 }
 
 var timeLayouts = []string{time.RFC3339Nano, time.RFC3339, "2006-01-02 15:04:05", "2006-01-02T15:04:05"}

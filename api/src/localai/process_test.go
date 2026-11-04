@@ -128,6 +128,41 @@ func TestTheKeyIsInTheEnvironmentNeverOnTheCommandLineAndNothingElseLeaks(t *tes
 	}
 }
 
+func TestTheProgramIsStartedWithItsSamplingAndAnAnswerCeiling(t *testing.T) {
+	var starts atomic.Int32
+	record := filepath.Join(t.TempDir(), "record.json")
+	s := newSup(t, &starts, "FAKE_LLAMA_RECORD="+record)
+	_, _, release, err := s.ensure(context.Background(), testSpec(t), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	waitUntil(t, "the record", func() bool { _, err := os.Stat(record); return err == nil })
+	raw, _ := os.ReadFile(record)
+	var rec struct {
+		Args []string `json:"args"`
+	}
+	if err := json.Unmarshal(raw, &rec); err != nil {
+		t.Fatal(err)
+	}
+	// Each flag is passed exactly once with exactly this value (the numbers are written out here, not read from the constants, so a
+	// changed constant is noticed): the program's own defaults are a random temperature, no repeat penalty and no ceiling.
+	for flag, want := range map[string]string{"--temp": "0.2", "--repeat-penalty": "1.05", "-n": "4096"} {
+		at := -1
+		for i, a := range rec.Args {
+			if a == flag {
+				if at != -1 {
+					t.Fatalf("%s is passed twice: %v", flag, rec.Args)
+				}
+				at = i
+			}
+		}
+		if at == -1 || at+1 >= len(rec.Args) || rec.Args[at+1] != want {
+			t.Errorf("the program must be started with %s %s, got %v", flag, want, rec.Args)
+		}
+	}
+}
+
 func TestManyRequestsStartTheProgramOnlyOnce(t *testing.T) {
 	var starts atomic.Int32
 	s := newSup(t, &starts, "FAKE_LLAMA_DELAY_MS=150")
