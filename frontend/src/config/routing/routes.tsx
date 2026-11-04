@@ -84,7 +84,9 @@ export const router = createBrowserRouter([
           },
           localAiRoute,
           {
-            path: '/conversations',
+            // One route for the list and for one conversation (`/conversations/<uuid>`), so the page keeps its own state between the two
+            // (a second route with the same element would remount it). `/conversations/:id/logs` below has more segments and is separate.
+            path: '/conversations/:id?',
             element: (
               <AuthGuard scopes={[AppScopes.ConversationUse]}>
                 <ConversationPage />

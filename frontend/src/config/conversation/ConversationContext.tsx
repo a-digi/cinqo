@@ -104,6 +104,8 @@ export interface ConversationContextValue {
   // plan/ai/conversation/step-29-frontend-per-conversation-turn-watch-registry.md.
   turnWatches: Record<string, TurnWatch>
   selectConversation: (id: string) => void
+  // Selects nothing (and forgets the detail and any error): the page uses it when the conversation named by its address cannot be opened.
+  clearSelection: () => void
   createConversation: (input: {
     title?: string
     platformId: string
@@ -438,6 +440,12 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     [watchTurn, turnWatchExists],
   )
 
+  const clearSelection = useCallback(() => {
+    setSelectedId(null)
+    setDetail(null)
+    setError(null)
+  }, [])
+
   const createConversation = useCallback(
     async (input: { title?: string; platformId: string; model?: string; orchestrationMode?: OrchestrationMode }) => {
       const created = await createConversationApi(input)
@@ -571,6 +579,7 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
     error,
     turnWatches,
     selectConversation,
+    clearSelection,
     createConversation,
     sendMessage,
     stopTurn,

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Navigate, useNavigate, useParams } from 'react-router-dom'
 import type { ConversationDetail, OrchestrationMode } from '../../api/conversations'
 import { fetchPlatforms, type Platform } from '../../api/platforms'
 import { fetchTools, type Tool } from '../../api/tools'
@@ -9,6 +10,7 @@ import { ConversationSidebar } from './ConversationSidebar'
 import { MessageThread } from './MessageThread'
 import { MessageComposer } from './MessageComposer'
 import { NewConversationForm } from './NewConversationForm'
+import { CONVERSATIONS_PATH, conversationPath, isConversationId } from './conversationPaths'
 
 // The whole screen: sidebar + thread + composer — a real top-level
 // destination, not a floating per-page widget (a deliberate divergence
@@ -35,6 +37,7 @@ export function ConversationPage() {
     error,
     turnWatches,
     selectConversation,
+    clearSelection,
     createConversation,
     sendMessage,
     stopTurn,
@@ -73,6 +76,29 @@ export function ConversationPage() {
   // conversation at all, tools are only used for an optional filter).
   const [tools, setTools] = useState<Tool[]>([])
 
+  // The address names the conversation shown (`/conversations/<uuid>`): it is the source of truth, so back, forward, reload and a pasted link
+  // all work. `routeId` is what the address holds, `urlId` only when it is a real id; text that is not an id never reaches the server.
+  const { id: routeId } = useParams()
+  const navigate = useNavigate()
+  const urlId = isConversationId(routeId) ? routeId : null
+
+  // The address names a conversation other than the selected one (a link opened, the back button, a click in the list): select it.
+  useEffect(() => {
+    if (urlId && urlId !== selectedId) {
+      setCreatingNew(false)
+      selectConversation(urlId)
+    }
+  }, [urlId, selectedId, selectConversation])
+
+  // A bare /conversations with a conversation already selected (opened from the floating chat, or one just created, or the picker closed
+  // again) shows that conversation, so the address always names what is shown. Not while the picker is open, while a delete is under way
+  // (the delete goes to the list itself; if it fails this puts the address back), or when the selected conversation could not be opened.
+  useEffect(() => {
+    if (!routeId && selectedId && !creatingNew && busyId === null && !(error && !detail)) {
+      void navigate(conversationPath(selectedId), { replace: true })
+    }
+  }, [routeId, selectedId, creatingNew, busyId, error, detail, navigate])
+
   useEffect(() => {
     fetchPlatforms()
       .then(setPlatforms)
@@ -88,17 +114,19 @@ export function ConversationPage() {
 
   const handleSelect = (id: string) => {
     setCreatingNew(false)
-    selectConversation(id)
+    void navigate(conversationPath(id))
   }
 
   const handleStartCreate = () => {
     setCreatingNew(true)
+    if (routeId) void navigate(CONVERSATIONS_PATH)
   }
 
   const handleCreate = async (input: { platformId: string; model?: string; orchestrationMode: OrchestrationMode }) => {
     try {
-      await createConversation(input)
+      const created = await createConversation(input)
       setCreatingNew(false)
+      void navigate(conversationPath(created.id))
     } catch {
       // createConversation already surfaces its own failure via the
       // shared context's own `error` state — nothing extra to do here.
@@ -116,11 +144,23 @@ export function ConversationPage() {
 
   const handleDelete = async (id: string) => {
     setBusyId(id)
+    // Deleting the open conversation goes to the list first, so the address never names a conversation that is gone.
+    if (id === selectedId) void navigate(CONVERSATIONS_PATH, { replace: true })
     try {
       await deleteConversation(id)
     } finally {
       setBusyId(null)
     }
+  }
+
+  const backToList = () => {
+    clearSelection()
+    void navigate(CONVERSATIONS_PATH)
+  }
+
+  // An address that is not a conversation id (text after /conversations/ that is not a UUID) is the list.
+  if (routeId !== undefined && urlId === null) {
+    return <Navigate to={CONVERSATIONS_PATH} replace />
   }
 
   const combinedError = error ?? platformsError
@@ -188,7 +228,21 @@ export function ConversationPage() {
           <div className="flex flex-1 items-center justify-center text-sm text-gray-400">Select or create a conversation.</div>
         )}
 
-        {!creatingNew && selectedId && !detail && (
+        {!creatingNew && selectedId && !detail && error && (
+          <div role="alert" className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-sm text-gray-600">
+            <p className="font-medium text-gray-900">This conversation could not be opened.</p>
+            <p>It may have been deleted, or it may belong to someone else.</p>
+            <button
+              type="button"
+              onClick={backToList}
+              className="rounded-md border border-gray-300 bg-white px-3 py-1.5 font-medium text-gray-700 hover:bg-gray-50"
+            >
+              Back to the conversations
+            </button>
+          </div>
+        )}
+
+        {!creatingNew && selectedId && !detail && !error && (
           <div className="flex flex-1 items-center justify-center">
             <LoadingSpinner label="Loading conversation…" />
           </div>

@@ -4,6 +4,7 @@ import { useConversationContext } from '../config/conversation/ConversationConte
 import { fetchPlatforms, type Platform } from '../api/platforms'
 import { ApiError } from '../api/client'
 import type { Conversation, OrchestrationMode } from '../api/conversations'
+import { conversationPath } from '../Components/Conversation/conversationPaths'
 import { setToolConversationOpener } from '../config/tools/toolConversationOpener'
 import { useConfirm } from '../Shared/Components/Modal/useConfirm'
 import { IconButton } from '../Shared/Components/IconButton/IconButton'
@@ -199,7 +200,7 @@ export function GlobalChatWidget() {
             </button>
             <div className="min-w-0 flex-1 truncate px-1 text-sm font-medium text-gray-900">{headerTitle}</div>
             <Link
-              to="/conversations"
+              to={conversationPath(selectedId)}
               aria-label="Open full conversation view"
               title="Open full conversation view"
               className="shrink-0 rounded p-1.5 text-gray-500 hover:bg-gray-100"

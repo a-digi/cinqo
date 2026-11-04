@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { fetchAiTraceLogs, type AiTraceLogSummary } from '../../api/conversations'
+import { conversationPath } from './conversationPaths'
 import { CountUp } from '../../Shared/Components/Motion/CountUp'
 
 // Read-only summary — deliberately shows only WHERE this conversation's
@@ -32,7 +33,7 @@ export function AiLogsPage() {
   return (
     <div className="cinqo-stagger cinqo-v-tilt cinqo-t-underline max-w-3xl p-6 font-sans text-gray-900">
       <div className="mb-1.5 flex items-center gap-3">
-        <Link to="/conversations" className="text-sm text-gray-500 underline">
+        <Link to={conversationPath(id)} className="text-sm text-gray-500 underline">
           ← Back to conversations
         </Link>
       </div>
