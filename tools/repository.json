@@ -8,7 +8,7 @@
       "email": "tafa.andet@googlemail.com"
     }
   ],
-  "generatedAt": "2026-11-04T08:18:03Z",
+  "generatedAt": "2026-11-04T10:30:30Z",
   "tools": [
     {
       "id": "browser",
@@ -110,7 +110,7 @@
     },
     {
       "id": "pdf_tools",
-      "currentVersionId": "0.0.120",
+      "currentVersionId": "0.0.121",
       "versions": [
         {
           "authors": [
@@ -120,38 +120,38 @@
             }
           ],
           "license": "Proprietary",
-          "versionId": "0.0.120",
+          "versionId": "0.0.121",
           "name": "PDF Tools",
-          "version": "0.0.120",
-          "releasedAt": "2026-11-03",
+          "version": "0.0.121",
+          "releasedAt": "2026-11-04",
           "packages": [
             {
               "os": "darwin",
               "arch": "arm64",
               "url": "pdf_tools/versions/tool-pdf_tools-darwin-arm64.zip",
-              "sha256": "cbaeeddc8da08a816a47f69e4da1190c18fcd2273381712fcb0adc297675c21f",
-              "sizeBytes": 7904062
+              "sha256": "a88d0e652032a0484265fed9c528c1afe36ecbb53ad3934eeab93fb18c93d411",
+              "sizeBytes": 7912738
             },
             {
               "os": "linux",
               "arch": "amd64",
               "url": "pdf_tools/versions/tool-pdf_tools-linux-amd64.zip",
-              "sha256": "a1191cb793ef2007815d5d9d9ebbdda92b6cc5542d34d483aea2d555e319af2a",
-              "sizeBytes": 8157622
+              "sha256": "ccbda57b6650f7632d149ca8bf36c1f68db6928724789116d80cca6fbdacfb02",
+              "sizeBytes": 8164986
             },
             {
               "os": "linux",
               "arch": "arm64",
               "url": "pdf_tools/versions/tool-pdf_tools-linux-arm64.zip",
-              "sha256": "5a9c53a8d9abd0345e1972165d58eefacf30b648ce99d653f188262420b91246",
-              "sizeBytes": 7459656
+              "sha256": "fe89ea0f3615f2e06ffd40e24af5b352aa9f2b2a9bf1a2a96c0f164877ec91d8",
+              "sizeBytes": 7468201
             },
             {
               "os": "windows",
               "arch": "amd64",
               "url": "pdf_tools/versions/tool-pdf_tools-windows-amd64.zip",
-              "sha256": "65b531ba62218e2cc77aa06907548d052a9186743bf615a6e44a23875933ce17",
-              "sizeBytes": 8226080
+              "sha256": "0dd5bf7611d1a6dfc92f51f9b6a814d457e2e55b191fee1b88df1c1099f96a8c",
+              "sizeBytes": 8232176
             }
           ]
         }

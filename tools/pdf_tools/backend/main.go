@@ -100,19 +100,15 @@ func (a generatePDFArgs) margins() generate.Margins {
 	return generate.Margins{Top: a.MarginTopIn, Bottom: a.MarginBottomIn, Left: a.MarginLeftIn, Right: a.MarginRightIn}
 }
 
-// runMCPServer declares this tool's two MCP tools and speaks MCP over
-// stdin/stdout until the client closes the session, at which point
-// this process exits — exact same shape as pdf_generator's own
-// runMCPServer, now with a second mcp.AddTool call for the ported
-// generate_pdf capability. InputSchema for each is inferred from its
-// own args struct by AddTool's own reflection, not hand-written.
-func runMCPServer(tmpDir, uploadsDir string) {
-	server := mcp.NewServer(&mcp.Implementation{Name: "pdf_tools", Version: "0.2.0"}, nil)
+// markdownConverter is what the pdf_to_markdown tool converts with: convert.ToMarkdown in the running tool, a stand-in in a test.
+type markdownConverter func(ctx context.Context, rawURL string) (markdown string, cached bool, md5Hex string, err error)
 
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "pdf_to_markdown",
-		Description: "Fetch a PDF document by URL and convert it to Markdown text.",
-	}, func(ctx context.Context, req *mcp.CallToolRequest, args convertArgs) (*mcp.CallToolResult, any, error) {
+// pdfToMarkdown is the pdf_to_markdown tool's handler. The text it hands the model is cleaned (convert.CleanText): the extractor writes a
+// two-column page one word to a line with blank lines between the words, which costs a model about 40% of its tokens for nothing (a real CV:
+// 3,317 tokens, 1,944 cleaned; plan/ai/tools/pdf_tools/whitespace-cleaning.md). The cache keeps the extractor's own text, so better rules
+// never need a cache flush. The HTTP surface (convertHandler) is left as it was: no model reads it.
+func pdfToMarkdown(conv markdownConverter) func(context.Context, *mcp.CallToolRequest, convertArgs) (*mcp.CallToolResult, any, error) {
+	return func(ctx context.Context, req *mcp.CallToolRequest, args convertArgs) (*mcp.CallToolResult, any, error) {
 		if args.URL == "" {
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{Text: "url is required"}},
@@ -120,13 +116,14 @@ func runMCPServer(tmpDir, uploadsDir string) {
 			}, nil, nil
 		}
 
-		markdown, cached, md5Hex, err := convert.ToMarkdown(ctx, args.URL)
+		markdown, cached, md5Hex, err := conv(ctx, args.URL)
 		if err != nil {
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("convert failed: %v", err)}},
 				IsError: true,
 			}, nil, nil
 		}
+		markdown = convert.CleanText(markdown)
 
 		// The model gets the Markdown text itself as the tool's return
 		// content (not a ResourceLink) — you were explicit the agent
@@ -136,7 +133,28 @@ func runMCPServer(tmpDir, uploadsDir string) {
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{&mcp.TextContent{Text: markdown}},
 		}, convertResponse{Markdown: markdown, Cached: cached, MD5: md5Hex}, nil
-	})
+	}
+}
+
+// runMCPServer speaks MCP over stdin/stdout until the client closes the
+// session, at which point this process exits — exact same shape as
+// pdf_generator's own runMCPServer, now with a second tool for the
+// ported generate_pdf capability.
+func runMCPServer(tmpDir, uploadsDir string) {
+	if err := newMCPServer(tmpDir, uploadsDir, convert.ToMarkdown).Run(context.Background(), &mcp.StdioTransport{}); err != nil {
+		log.Fatal(err)
+	}
+}
+
+// newMCPServer declares this tool's two MCP tools. InputSchema for each is inferred from its own args struct by AddTool's own reflection, not
+// hand-written. It is apart from runMCPServer so a test can talk to it through a real MCP client.
+func newMCPServer(tmpDir, uploadsDir string, conv markdownConverter) *mcp.Server {
+	server := mcp.NewServer(&mcp.Implementation{Name: "pdf_tools", Version: "0.2.0"}, nil)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "pdf_to_markdown",
+		Description: "Fetch a PDF document by URL and convert it to Markdown text.",
+	}, pdfToMarkdown(conv))
 
 	// The old MANDATORY "verify via pdf_to_markdown, retry up to 2
 	// times" instruction that used to live here was written for a world
@@ -187,9 +205,7 @@ func runMCPServer(tmpDir, uploadsDir string) {
 		}, nil, nil
 	})
 
-	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
-		log.Fatal(err)
-	}
+	return server
 }
 
 type convertRequest struct {
