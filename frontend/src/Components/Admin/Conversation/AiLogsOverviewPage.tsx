@@ -67,8 +67,10 @@ export function AiLogsOverviewPage() {
             <summary className="cursor-pointer select-none text-blue-600 hover:underline">How this works</summary>
             <p className="mt-2 max-w-3xl">
               One row per conversation, with the folder holding its log files and how many exist. Open shows the newest file in a
-              terminal-style reader and lists the others; big files are read a window of up to 500 lines at a time, never loaded whole.
-              Opening a file is written to the server log (who and which file, never the content).
+              terminal-style reader and lists the others; big files are read a window of up to 500 lines at a time, never loaded whole. A
+              file that is still being written can be followed live with the Live button (it opens by itself for a file just written); the
+              file reader's view is put aside while it is open. Opening a file is written to the server log (who and which file, never the
+              content).
             </p>
           </details>
         </div>

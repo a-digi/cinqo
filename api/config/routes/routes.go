@@ -21,6 +21,7 @@ import (
 	download_handler "github.com/a-digi/cinqo/src/download/handler"
 	filereader_handler "github.com/a-digi/cinqo/src/filereader/handler"
 	"github.com/a-digi/cinqo/src/health"
+	livelog_handler "github.com/a-digi/cinqo/src/livelog/handler"
 	"github.com/a-digi/cinqo/src/localai"
 	media_handler "github.com/a-digi/cinqo/src/media/handler"
 	"github.com/a-digi/cinqo/src/ping"
@@ -124,6 +125,8 @@ func Init(ctx serverdi.Context) {
 		"FileReaderLines":              local_routing.HandlerFunc(filereader_handler.LinesHandler),
 		"FileReaderSearch":             local_routing.HandlerFunc(filereader_handler.SearchHandler),
 		"FileReaderSegment":            local_routing.HandlerFunc(filereader_handler.SegmentHandler),
+		"LiveLogsProviders":            local_routing.HandlerFunc(livelog_handler.ProvidersHandler),
+		"LiveLogsPoll":                 local_routing.HandlerFunc(livelog_handler.PollHandler),
 		"ConversationGetSettings":      local_routing.HandlerFunc(conversation_handler.GetSettingsHandler),
 		"ConversationUpdateSettings":   local_routing.HandlerFunc(conversation_handler.UpdateSettingsHandler),
 

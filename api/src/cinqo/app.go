@@ -345,6 +345,10 @@ func Start(opts Options) (srv *http.Server, cfg *server.Config, ctx *di.ContextB
 	// An installed tool's declared file sources ("tool:<slug>:<id>"), found on demand and only while it is enabled.
 	fileSources.AddResolver(filereader_source.ToolPrefix, tool_filesource.NewResolver(tool_query.NewToolQueryRepo(manager.Connector.DB), dataDir))
 	filereader_handler.Configure(filereader.New(filereader.DefaultLimits()), fileSources, func(format string, args ...any) { log.Info(format, args...) })
+	// Live logs (plan/ai/file-reader/live-follow.md): a module apart from the file reader, composed in livelog.go.
+	if err := configureLiveLogs(dataDir, func(format string, args ...any) { log.Info(format, args...) }); err != nil {
+		return nil, nil, nil, log, err
+	}
 	toolWidgets := dashboard_toolwidgets.NewSource(manager.Connector.DB, tool_manager.Port).WithLogger(dashboardLog)
 	dashboard.SetDefault(dashboard.NewEngine(widgetRegistry, toolWidgets).WithLogger(dashboardLog))
 

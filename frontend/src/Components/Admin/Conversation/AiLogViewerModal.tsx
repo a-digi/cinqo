@@ -5,7 +5,8 @@ import { FullPageModal } from '../../../Shared/Components/FullPageModal/FullPage
 import { LoadingSpinner } from '../../../Shared/Components/Loading/LoadingSpinner'
 import { TerminalViewer } from '../../../Shared/Components/Terminal/TerminalViewer'
 import { formatBytes, traceLogHighlight } from '../../../Shared/Components/Terminal/terminalRules'
-import { hasTitle, relativeTime, shortId } from './aiLogsRules'
+import { LiveLogButton } from '../../LiveLogs/LiveLogButton'
+import { hasTitle, isBeingWritten, relativeTime, shortId } from './aiLogsRules'
 
 // A conversation's AI trace files in the file reader (plan/ai/file-reader/file-reader-engine.md, step 5): the
 // newest file opens straight away, the others are one click away on the left. Admin-only, like the page.
@@ -13,6 +14,8 @@ export function AiLogViewerModal({ entry, onClose }: { entry: AllAiTraceLogsEntr
   const [files, setFiles] = useState<TraceFileEntry[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
+  // Whether the live view of the selected file is open: the file reader's own view of it is put aside while it is.
+  const [liveOpen, setLiveOpen] = useState(false)
   const [now] = useState(() => new Date())
 
   useEffect(() => {
@@ -103,14 +106,28 @@ export function AiLogViewerModal({ entry, onClose }: { entry: AllAiTraceLogsEntr
             </ul>
 
             {selected && (
-              <TerminalViewer
-                key={selected}
-                source="ai-trace"
-                fileRef={`${entry.conversationId}/${selected}`}
-                title={`${selected}.txt`}
-                highlight={traceLogHighlight}
-                paneHeight="h-[calc(100vh-22rem)] min-h-[16rem]"
-              />
+              <div key={selected} className="flex min-w-0 flex-col gap-3">
+                {/* Follows the file while it is written (plan/ai/file-reader/live-follow.md): shown only where the server offers it, and a file
+                    that was just written opens live at once. */}
+                <LiveLogButton
+                  provider="ai-trace"
+                  fileRef={`${entry.conversationId}/${selected}`}
+                  title={`${selected}.txt`}
+                  startOpen={isBeingWritten(files.find((f) => f.turnRunId === selected)?.modifiedAt, now)}
+                  highlight={traceLogHighlight}
+                  paneHeight="h-[calc(100vh-26rem)] min-h-[16rem]"
+                  onOpenChange={setLiveOpen}
+                />
+                {!liveOpen && (
+                  <TerminalViewer
+                    source="ai-trace"
+                    fileRef={`${entry.conversationId}/${selected}`}
+                    title={`${selected}.txt`}
+                    highlight={traceLogHighlight}
+                    paneHeight="h-[calc(100vh-22rem)] min-h-[16rem]"
+                  />
+                )}
+              </div>
             )}
           </div>
         )}

@@ -118,6 +118,16 @@ export function relativeTime(iso: string | undefined, now: Date): string {
   return `${dateLabel(d, now)}, ${clock}`
 }
 
+// Whether a trace file looks as if a turn is still writing it: changed within the last `seconds` (default 30). A turn appends to its file after each
+// model call, so one waiting on a slow model can be quiet for longer: this only decides whether the live view opens by itself, never whether it
+// can be opened. A missing or unreadable date, or one in the future beyond clock drift of a minute, is not "being written".
+export function isBeingWritten(iso: string | undefined, now: Date, seconds = 30): boolean {
+  const t = Date.parse(iso ?? '')
+  if (Number.isNaN(t)) return false
+  const age = (now.getTime() - t) / 1000
+  return age >= -60 && age <= seconds
+}
+
 export function shortId(id: string): string {
   return id.length > 8 ? `${id.slice(0, 8)}…` : id
 }
