@@ -450,14 +450,16 @@ func DocumentsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "id query parameter is required", http.StatusBadRequest)
 			return
 		}
+		// The CV must exist (an unknown id is a 404 before anything else happens).
+		doc, err := GetCvDocument(id)
+		if err != nil {
+			writeCvDocumentAwareError(w, "delete cv document", err)
+			return
+		}
 		// Jobs that use this CV: refuse with the full list unless the caller
 		// confirmed with unlinkJobs=true, then unlink them before deleting.
+		jobsUnlinked := false
 		if jobLinks != nil {
-			doc, err := GetCvDocument(id)
-			if err != nil {
-				writeCvDocumentAwareError(w, "delete cv document", err)
-				return
-			}
 			using, err := jobLinks.JobsUsing(doc.ID, doc.MediaFileID)
 			if err != nil {
 				http.Error(w, "failed to check which jobs use this CV: "+err.Error(), http.StatusInternalServerError)
@@ -474,15 +476,28 @@ func DocumentsHandler(w http.ResponseWriter, r *http.Request) {
 					http.Error(w, "failed to unlink jobs from this CV: "+err.Error(), http.StatusInternalServerError)
 					return
 				}
+				jobsUnlinked = true
 			}
 		}
-		mediaFileID, err := DeleteCvDocument(id)
-		if err != nil {
+		// The CV's PDF goes first, then the row (plan/ai/tools/career/cv-delete-from-list.md): a Media outage then
+		// leaves the CV in place and tells the caller, instead of reporting success with the file left behind and nothing pointing at it.
+		// An already-missing file (404) counts as deleted, so a retry after a half-finished attempt works. A CV made without a PDF has
+		// no file to delete.
+		if doc.MediaFileID != "" {
+			if err := forwardDeleteToMedia(r, doc.MediaFileID); err != nil {
+				log.Printf("cvbuilder: failed to delete media file %q for cv document %q, the CV was kept: %v", doc.MediaFileID, id, err)
+				message := "The CV file could not be deleted, so nothing was removed. Try again in a moment."
+				if jobsUnlinked {
+					// Said as it is: the confirmation also unlinked the jobs, and that part is done.
+					message = "The CV file could not be deleted, so the CV was kept. Its jobs were already unlinked from it. Try again in a moment."
+				}
+				http.Error(w, message, http.StatusBadGateway)
+				return
+			}
+		}
+		if _, err := DeleteCvDocument(id); err != nil {
 			writeCvDocumentAwareError(w, "delete cv document", err)
 			return
-		}
-		if err := forwardDeleteToMedia(r, mediaFileID); err != nil {
-			log.Printf("cvbuilder: failed to delete media file %q for cv document %q: %v", mediaFileID, id, err)
 		}
 		w.WriteHeader(http.StatusNoContent)
 

@@ -9,13 +9,16 @@ import { PersonaList } from '../Persona/PersonaList'
 import { previewItems } from '../Persona/personaListRules'
 import { cvListMayBeCut } from '../ProfilesPage/profileViewRules'
 import { cvsOfPersona } from './cvPersonaRules'
+import { AllCvsList } from './AllCvsList'
+import { useCvDeletion } from './useCvDeletion'
 
 // How many of a persona's CV titles the list shows before "+N more".
 const PREVIEW_CVS = 3
 
 // The CVs page: the personas as a list (grouped by profile), each with how many CVs it has (built from it or
 // attached to it) and the first few titles; a click opens that persona's own CV page
-// (/tools/career/cv-documents/:personaId), where the CVs are shown as cards and created. Nothing is edited here,
+// (/tools/career/cv-documents/:personaId), where the CVs are shown as cards and created. Under the personas, "All CVs"
+// lists every CV with a Delete (step 3 of plan/ai/tools/career/cv-delete-from-list.md); nothing else is edited here,
 // and there is no dropdown. See plan/ai/tools/career/step-122-cv-documents-per-persona-pages.md.
 export function CvDocumentsListPage() {
   const [personas, setPersonas] = useState<Persona[]>([])
@@ -23,7 +26,17 @@ export function CvDocumentsListPage() {
   // Every CV (with its personas); null when they could not be read, so no count is shown.
   const [docs, setDocs] = useState<CvDocument[] | null>(null)
   const [error, setError] = useState('')
+  // What went wrong with a delete (a failed file delete says the CV was kept); '' when nothing did.
+  const [deleteError, setDeleteError] = useState('')
   const [loaded, setLoaded] = useState(false)
+  // The delete flow is shared with the persona's own CV page: its confirmations, then the CV and its PDF are gone and the list (and
+  // every persona's count) follows.
+  const deletion = useCvDeletion({
+    onDeleted: (doc) => {
+      setDocs((prev) => (prev === null ? prev : prev.filter((d) => d.id !== doc.id)))
+    },
+    onError: setDeleteError,
+  })
 
   useEffect(() => {
     Promise.all([fetchPersonas(), fetchProfiles()])
@@ -80,6 +93,11 @@ export function CvDocumentsListPage() {
                   {cvListMayBeCut(docs.length) && ' The list shows at most 200 CVs, so some may be missing.'}
                 </p>
               )}
+              {deleteError !== '' && (
+                <p role="alert" className="mb-3 text-sm text-red-700">
+                  {deleteError}
+                </p>
+              )}
               <PersonaList
                 personas={personas}
                 profiles={profiles}
@@ -100,6 +118,14 @@ export function CvDocumentsListPage() {
                   )
                 }}
               />
+              {docs !== null && (
+                <section className="mt-8" aria-labelledby="all-cvs-heading">
+                  <h2 id="all-cvs-heading" className="mb-3 text-sm font-semibold text-gray-900">
+                    All CVs
+                  </h2>
+                  <AllCvsList docs={docs} onDelete={deletion.requestDelete} />
+                </section>
+              )}
             </>
           )}
         </div>
@@ -107,6 +133,7 @@ export function CvDocumentsListPage() {
           <PageTips page="cvs" orientation="vertical" />
         </aside>
       </div>
+      {deletion.dialogs}
     </div>
   )
 }

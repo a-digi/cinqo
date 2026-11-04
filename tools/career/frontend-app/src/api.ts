@@ -1981,7 +1981,15 @@ export async function deleteCvDocument(id: string, opts: { unlinkJobs?: boolean 
     const body = (await res.json().catch(() => null)) as { error?: string; jobs?: CvDocumentJob[] } | null
     if (body?.error === 'in_use' && Array.isArray(body.jobs)) throw new CvDocumentInUseError(body.jobs)
   }
-  if (!res.ok && res.status !== 204) throw new Error(`failed to delete cv document (${res.status})`)
+  if (!res.ok && res.status !== 204) {
+    // 502 is the server saying, in plain words, that the CV's PDF could not be deleted and the CV was kept: that text is the message
+    // (an empty body is the proxy's own 502, which keeps the generic text). Every other failure keeps its generic text.
+    if (res.status === 502) {
+      const text = (await res.text().catch(() => '')).trim()
+      if (text !== '') throw new Error(text)
+    }
+    throw new Error(`failed to delete cv document (${res.status})`)
+  }
 }
 
 // Every persona's CV documents, newest first (at most 200), each with its
@@ -2707,6 +2715,10 @@ export async function fetchProfileDetails(profileId: string): Promise<ProfileDet
 }
 
 export async function updateProfileDetails(profileId: string, patch: ProfileDetailsPatch): Promise<ProfileDetails> {
-  const res = await fetch(`${PROXY_BASE}/profile-details`, { method: 'PUT', credentials: 'include', body: JSON.stringify({ profileId, ...patch }) })
+  const res = await fetch(`${PROXY_BASE}/profile-details`, {
+    method: 'PUT',
+    credentials: 'include',
+    body: JSON.stringify({ profileId, ...patch }),
+  })
   return libraryJson<ProfileDetails>(res, 'save the profile’s summary and goals')
 }
