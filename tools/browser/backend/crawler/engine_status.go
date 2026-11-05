@@ -45,6 +45,7 @@ type EngineStatus struct {
 type EngineStatusResponse struct {
 	Rod        EngineStatus `json:"rod"`
 	Playwright EngineStatus `json:"playwright"`
+	Katana     EngineStatus `json:"katana"`
 }
 
 // RodStatus: rod is available when a Chrome binary is found — the same
@@ -59,6 +60,17 @@ func RodStatus() EngineStatus {
 	default:
 		return EngineStatus{Detail: fmt.Sprintf("%s is set but not usable (%s)", shared.ChromePathEnv, strings.TrimSpace(os.Getenv(shared.ChromePathEnv)))}
 	}
+}
+
+// KatanaStatus (plan 184): Katana runs in the same Chrome binary the Rod
+// engine uses (the one resolver, shared.ChromePath), so it is available
+// exactly when Chrome is found. Nothing is started here.
+func KatanaStatus() EngineStatus {
+	st := RodStatus()
+	if st.Available {
+		st.Detail = "Katana will use the Chrome found at " + strings.TrimPrefix(st.Detail, "Chrome found at ")
+	}
+	return st
 }
 
 // playwrightDriverDir is where playwright-go keeps its driver for version:
@@ -151,5 +163,5 @@ func EngineStatusHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(EngineStatusResponse{Rod: RodStatus(), Playwright: PlaywrightStatus()})
+	_ = json.NewEncoder(w).Encode(EngineStatusResponse{Rod: RodStatus(), Playwright: PlaywrightStatus(), Katana: KatanaStatus()})
 }

@@ -200,7 +200,10 @@ func TestEngineStatusHandler(t *testing.T) {
 	if body["rod"]["available"] != false || body["playwright"]["available"] != true {
 		t.Errorf("unexpected availability: %s", rec.Body.String())
 	}
-	for _, engine := range []string{"rod", "playwright"} {
+	if body["katana"]["available"] != false { // Katana needs the same Chrome as rod
+		t.Errorf("katana must be unavailable without Chrome: %s", rec.Body.String())
+	}
+	for _, engine := range []string{"rod", "playwright", "katana"} {
 		if d, _ := body[engine]["detail"].(string); d == "" {
 			t.Errorf("%s must carry a detail sentence: %s", engine, rec.Body.String())
 		}

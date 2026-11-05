@@ -1,5 +1,5 @@
 // Pure rules for the engine checkboxes on Browser & Engine. The setting holds exactly one
-// engine, so the two boxes work as a pair: one is always checked, and the way to change it is
+// engine, so the boxes work as a group: one is always checked, and the way to change it is
 // to check the other. No React, so they can be script-checked.
 import type { FetchEngine } from './api'
 
@@ -18,8 +18,15 @@ export function engineChoice(current: FetchEngine, clicked: FetchEngine, checked
   return { engine: current, refused: clicked === current }
 }
 
-// Whether an engine's box can be checked: Playwright needs its driver, so while it is missing
-// and not already selected it stays locked. Rod, and anything already selected, is never locked.
-export function engineLocked(engine: FetchEngine, current: FetchEngine, playwrightAvailable: boolean | null): boolean {
-  return engine === 'playwright' && current !== 'playwright' && playwrightAvailable === false
+// Whether an engine's box can be checked: Playwright needs its driver and Katana needs Chrome, so
+// while one is missing and not already selected its box stays locked. Rod, and anything already
+// selected, is never locked (switching back must always be possible).
+export function engineLocked(engine: FetchEngine, current: FetchEngine, available: boolean | null): boolean {
+  return engine !== 'rod' && current !== engine && available === false
+}
+
+// The engine a stored setting means: anything that is not exactly 'playwright' or 'katana'
+// (including a backend that predates the setting and sends none) is Rod, the default.
+export function engineOf(stored: string | undefined): FetchEngine {
+  return stored === 'playwright' || stored === 'katana' ? stored : 'rod'
 }

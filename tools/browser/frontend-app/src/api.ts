@@ -116,7 +116,7 @@ const SETTINGS_BASE = '/api/v1/tools/browser/proxy/browser-settings'
 // fetch: 'rod' (the default; pure Go over the Chrome DevTools Protocol) or
 // 'playwright' (needs its Node-based driver). See
 // plan/ai/tools/browser/step-50-fetch-engine-setting-page.md.
-export type FetchEngine = 'rod' | 'playwright'
+export type FetchEngine = 'rod' | 'playwright' | 'katana'
 
 export interface BrowserSettings {
   // fetchEngine — always sent back unchanged by every page that saves this
@@ -172,6 +172,8 @@ export interface EngineStatus {
 export interface EngineStatusResponse {
   rod: EngineStatus
   playwright: EngineStatus
+  // Plan 184. Absent from a backend that predates the Katana engine.
+  katana?: EngineStatus
 }
 
 export async function fetchEngineStatus(): Promise<EngineStatusResponse> {
@@ -215,14 +217,20 @@ export interface EngineTestResult {
   durationMs: number
 }
 
-export async function testPlaywrightEngine(): Promise<EngineTestResult> {
+// The engines that have a test: Playwright (launches its own Chromium) and Katana (starts
+// Chrome, attaches Katana and reads one local page). Rod needs no test: it is just Chrome.
+export type TestableEngine = 'playwright' | 'katana'
+
+const ENGINE_LABEL: Record<TestableEngine, string> = { playwright: 'Playwright', katana: 'Katana' }
+
+export async function testEngine(engine: TestableEngine): Promise<EngineTestResult> {
   const res = await fetch('/api/v1/tools/browser/proxy/engine-test', {
     method: 'POST',
     credentials: 'include',
-    body: JSON.stringify({ engine: 'playwright' }),
+    body: JSON.stringify({ engine }),
   })
-  if (res.status === 409) throw new Error('A Playwright test is already running — try again in a moment.')
-  if (!res.ok) throw new Error(`failed to run the Playwright test (${res.status})`)
+  if (res.status === 409) throw new Error(`A ${ENGINE_LABEL[engine]} test is already running — try again in a moment.`)
+  if (!res.ok) throw new Error(`failed to run the ${ENGINE_LABEL[engine]} test (${res.status})`)
   return readJson<EngineTestResult>(res)
 }
 

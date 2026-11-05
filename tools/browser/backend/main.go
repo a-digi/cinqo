@@ -64,6 +64,7 @@ func runHTTPServer() {
 		shared.StopSharedSession()
 		crawler.StopPlaywrightEngine()
 		crawler.StopRodEngine()
+		crawler.StopKatanaEngine()
 		os.Exit(0)
 	}()
 
@@ -100,6 +101,7 @@ func runHTTPServer() {
 		shared.StopSharedSession()
 		crawler.StopPlaywrightEngine()
 		crawler.StopRodEngine()
+		crawler.StopKatanaEngine()
 		log.Fatal(err)
 	}
 }

@@ -179,3 +179,75 @@ func TestSettingsHandlerRejectsABadEngineAndChangesNothing(t *testing.T) {
 		t.Errorf("DELETE: %d", rec.Code)
 	}
 }
+
+// Plan 184: an install whose browser_settings still carries the old
+// CHECK (rod/playwright only) is rebuilt so 'katana' can be stored; the
+// stored row (engine and every toggle) survives, and a second start changes nothing.
+func TestAnOldInstallCanStoreKatanaAfterTheTableRebuild(t *testing.T) {
+	root := t.TempDir()
+	dbDir := filepath.Join(root, "db")
+	t.Setenv("TOOL_DB_DIR", dbDir)
+	t.Setenv("TOOL_LOGS_DIR", filepath.Join(root, "logs"))
+	t.Setenv("TOOL_CACHE_DIR", filepath.Join(root, "cache"))
+	if err := InitDB(); err != nil {
+		t.Fatal(err)
+	}
+	DB.Close()
+
+	legacy, err := sql.Open("sqlite", filepath.Join(dbDir, "browser.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := legacy.Exec(`DROP TABLE browser_settings;
+		CREATE TABLE browser_settings (id INTEGER PRIMARY KEY CHECK (id = 1), debug_enabled INTEGER NOT NULL DEFAULT 0,
+			debug_log_html INTEGER NOT NULL DEFAULT 0, debug_log_challenge INTEGER NOT NULL DEFAULT 0,
+			fetch_engine TEXT NOT NULL DEFAULT 'rod' CHECK (fetch_engine IN ('rod','playwright')),
+			human_assist INTEGER NOT NULL DEFAULT 1, updated_at TEXT);
+		INSERT INTO browser_settings (id, debug_enabled, debug_log_html, debug_log_challenge, fetch_engine, human_assist) VALUES (1, 1, 0, 1, 'playwright', 0)`); err != nil {
+		t.Fatal(err)
+	}
+	// the old table refuses katana
+	if _, err := legacy.Exec(`UPDATE browser_settings SET fetch_engine = 'katana'`); err == nil {
+		t.Fatal("the legacy table should refuse 'katana'")
+	}
+	legacy.Close()
+
+	if err := InitDB(); err != nil {
+		t.Fatalf("upgrade: %v", err)
+	}
+	t.Cleanup(func() { DB.Close() })
+	s, err := LoadBrowserSettings()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := BrowserSettings{DebugEnabled: true, DebugLogChallenge: true, FetchEngine: FetchEnginePlaywright, HumanAssist: false}
+	if s != want {
+		t.Fatalf("the row changed in the rebuild: %+v, want %+v", s, want)
+	}
+	want.FetchEngine = FetchEngineKatana
+	if err := SaveBrowserSettings(want); err != nil {
+		t.Fatalf("save katana: %v", err)
+	}
+	DB.Close()
+	if err := InitDB(); err != nil { // second start: no rebuild, nothing lost
+		t.Fatalf("second start: %v", err)
+	}
+	if got, _ := LoadBrowserSettings(); got != want {
+		t.Fatalf("after a second start: %+v, want %+v", got, want)
+	}
+	var n int
+	if err := DB.QueryRow(`SELECT COUNT(*) FROM browser_settings`).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("rows: %d %v", n, err)
+	}
+}
+
+func TestKatanaIsAValidEngineAndNothingElseNewIs(t *testing.T) {
+	if !ValidFetchEngine("katana") {
+		t.Error("katana must be valid")
+	}
+	for _, bad := range []string{"Katana", "katana ", "colly", "http"} {
+		if ValidFetchEngine(bad) {
+			t.Errorf("%q must be invalid", bad)
+		}
+	}
+}

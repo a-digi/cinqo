@@ -24,20 +24,21 @@ import (
 	"net/http"
 )
 
-// The two engines that can serve the primary single-page fetch (step 50;
-// see crawler/fetch_engine.go). Rod is the default.
+// The engines that can serve the primary single-page fetch (step 50, and
+// plan 184 for Katana; see crawler/fetch_engine.go). Rod is the default.
 const (
 	FetchEngineRod        = "rod"
 	FetchEnginePlaywright = "playwright"
+	FetchEngineKatana     = "katana"
 	DefaultFetchEngine    = FetchEngineRod
 )
 
 // ErrInvalidFetchEngine is a caller mistake (a 400), never a server failure.
-var ErrInvalidFetchEngine = errors.New(`fetchEngine must be "rod" or "playwright"`)
+var ErrInvalidFetchEngine = errors.New(`fetchEngine must be "rod", "playwright" or "katana"`)
 
-// ValidFetchEngine reports whether v is exactly one of the two engines.
+// ValidFetchEngine reports whether v is exactly one of the engines.
 func ValidFetchEngine(v string) bool {
-	return v == FetchEngineRod || v == FetchEnginePlaywright
+	return v == FetchEngineRod || v == FetchEnginePlaywright || v == FetchEngineKatana
 }
 
 // fetchEngineOrDefault reads a stored value through the allow-list: a
@@ -55,7 +56,7 @@ type BrowserSettings struct {
 	DebugEnabled      bool `json:"debugEnabled"`
 	DebugLogHTML      bool `json:"debugLogHtml"`
 	DebugLogChallenge bool `json:"debugLogChallenge"`
-	// FetchEngine (step 50) is "rod" or "playwright". On a PUT, an empty
+	// FetchEngine (step 50) is "rod", "playwright" or "katana". On a PUT, an empty
 	// or missing value means "leave the stored engine as it is" — so a
 	// client that predates this field (or the Debug page saving the rest of
 	// the object) can never reset it — and any other value is rejected.

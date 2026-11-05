@@ -95,16 +95,11 @@ func rodMajorVersion(s string) string {
 	return v
 }
 
-// launchRodBrowser starts a fresh headless Chrome and connects rod to it.
-// The flags mirror shared.allocatorOptions (the chromedp headless
-// session) so every engine presents the same browser: new headless,
-// AutomationControlled blink feature off, enable-automation off (rod's
-// launcher turns it on by default), infobars and notifications off, an
-// explicit language, and — when userAgent is set — the UA as a flag.
-// The CDP port is rod's default (a random one chosen by Chrome, bound to
-// localhost). The Chrome binary is always given explicitly, so rod never
-// downloads one.
-func launchRodBrowser(chromePath, userAgent string) (*rod.Browser, *launcher.Launcher, error) {
+// newRodLauncher builds the launcher with the flags every engine's Chrome
+// shares (see launchRodBrowser for what they are and why). Katana's own
+// Chrome (katana_engine.go) is started with exactly these, so the two
+// engines present the same browser.
+func newRodLauncher(chromePath, userAgent string) *launcher.Launcher {
 	l := launcher.New().
 		Bin(chromePath).
 		Set(flags.Headless, "new").
@@ -122,6 +117,20 @@ func launchRodBrowser(chromePath, userAgent string) (*rod.Browser, *launcher.Lau
 	if userAgent != "" {
 		l.Set("user-agent", userAgent)
 	}
+	return l
+}
+
+// launchRodBrowser starts a fresh headless Chrome and connects rod to it.
+// The flags mirror shared.allocatorOptions (the chromedp headless
+// session) so every engine presents the same browser: new headless,
+// AutomationControlled blink feature off, enable-automation off (rod's
+// launcher turns it on by default), infobars and notifications off, an
+// explicit language, and — when userAgent is set — the UA as a flag.
+// The CDP port is rod's default (a random one chosen by Chrome, bound to
+// localhost). The Chrome binary is always given explicitly, so rod never
+// downloads one.
+func launchRodBrowser(chromePath, userAgent string) (*rod.Browser, *launcher.Launcher, error) {
+	l := newRodLauncher(chromePath, userAgent)
 
 	wsURL, err := l.Launch()
 	if err != nil {

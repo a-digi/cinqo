@@ -1,6 +1,7 @@
 // Pure rules for the Browser & Engine page's health strip: what light each part shows.
 // No React, so they can be script-checked.
 import type { BrowserSettings, ChromeStatus, EngineStatusResponse } from './api'
+import { engineOf } from './engineRules'
 import { ACCENTS, type Accent } from './Shared/theme'
 
 export type Tone = 'ok' | 'bad' | 'unknown'
@@ -19,14 +20,14 @@ export function chromeLight(status: ChromeStatus | null, error: string, checking
 }
 
 export interface EngineLight extends Light {
-  name: 'Rod' | 'Playwright'
+  name: 'Rod' | 'Playwright' | 'Katana'
   // The engine the settings select (a backend that sends none means Rod, the default).
   selected: boolean
   detail: string
 }
 
 export function engineLights(status: EngineStatusResponse | null, settings: BrowserSettings | null): EngineLight[] {
-  const playwrightSelected = settings?.fetchEngine === 'playwright'
+  const selected = engineOf(settings?.fetchEngine)
   const light = (available: boolean | undefined): Light =>
     available === undefined
       ? { tone: 'unknown', label: 'Unknown' }
@@ -34,8 +35,14 @@ export function engineLights(status: EngineStatusResponse | null, settings: Brow
         ? { tone: 'ok', label: 'Available' }
         : { tone: 'bad', label: 'Not available' }
   return [
-    { name: 'Rod', selected: !playwrightSelected, detail: status?.rod.detail ?? '', ...light(status?.rod.available) },
-    { name: 'Playwright', selected: playwrightSelected, detail: status?.playwright.detail ?? '', ...light(status?.playwright.available) },
+    { name: 'Rod', selected: selected === 'rod', detail: status?.rod.detail ?? '', ...light(status?.rod.available) },
+    {
+      name: 'Playwright',
+      selected: selected === 'playwright',
+      detail: status?.playwright.detail ?? '',
+      ...light(status?.playwright.available),
+    },
+    { name: 'Katana', selected: selected === 'katana', detail: status?.katana?.detail ?? '', ...light(status?.katana?.available) },
   ]
 }
 

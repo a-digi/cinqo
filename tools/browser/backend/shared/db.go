@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
@@ -149,7 +150,7 @@ func InitDB() error {
 		-- crawler. A fresh install gets it here; an existing table gets it
 		-- from migrateBrowserSettingsFetchEngineColumn. See
 		-- plan/ai/tools/browser/step-50-fetch-engine-setting-page.md.
-		fetch_engine        TEXT NOT NULL DEFAULT 'rod' CHECK (fetch_engine IN ('rod','playwright')),
+		fetch_engine        TEXT NOT NULL DEFAULT 'rod' CHECK (fetch_engine IN ('rod','playwright','katana')),
 		-- human_assist (step 96): when an AI call meets a challenge only a
 		-- person can clear, open a browser window for them (instead of just
 		-- failing). On by default; an existing table gets it from
@@ -171,6 +172,10 @@ func InitDB() error {
 	if err := migrateBrowserSettingsHumanAssistColumn(db); err != nil {
 		db.Close()
 		return fmt.Errorf("failed to migrate browser_settings human_assist column: %w", err)
+	}
+	if err := migrateBrowserSettingsAllowKatana(db); err != nil {
+		db.Close()
+		return fmt.Errorf("failed to migrate browser_settings for the katana engine: %w", err)
 	}
 	if _, err := db.Exec(`INSERT OR IGNORE INTO browser_settings (id, debug_enabled, debug_log_html, debug_log_challenge) VALUES (1, 0, 0, 0)`); err != nil {
 		db.Close()
@@ -338,6 +343,48 @@ func migrateBrowserSettingsFetchEngineColumn(db *sql.DB) error {
 
 	_, err = db.Exec(`ALTER TABLE browser_settings ADD COLUMN fetch_engine TEXT NOT NULL DEFAULT 'rod' CHECK (fetch_engine IN ('rod','playwright'))`)
 	return err
+}
+
+// migrateBrowserSettingsAllowKatana (plan 184) lets an existing
+// browser_settings table store the value 'katana'. The fetch_engine
+// column carries a CHECK that SQLite cannot alter, so a table whose
+// stored definition does not mention 'katana' is rebuilt: a new table
+// with the current definition, the one row copied, the old one dropped,
+// the new one renamed — all in one transaction, so a failure leaves the
+// old table untouched. A no-op once the definition allows 'katana'.
+func migrateBrowserSettingsAllowKatana(db *sql.DB) error {
+	var def string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'browser_settings'`).Scan(&def); err != nil {
+		return err
+	}
+	if strings.Contains(def, "'katana'") {
+		return nil
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, q := range []string{
+		`CREATE TABLE browser_settings_new (
+			id                  INTEGER PRIMARY KEY CHECK (id = 1),
+			debug_enabled       INTEGER NOT NULL DEFAULT 0,
+			debug_log_html      INTEGER NOT NULL DEFAULT 0,
+			debug_log_challenge INTEGER NOT NULL DEFAULT 0,
+			fetch_engine        TEXT NOT NULL DEFAULT 'rod' CHECK (fetch_engine IN ('rod','playwright','katana')),
+			human_assist        INTEGER NOT NULL DEFAULT 1,
+			updated_at          TEXT
+		)`,
+		`INSERT INTO browser_settings_new (id, debug_enabled, debug_log_html, debug_log_challenge, fetch_engine, human_assist, updated_at)
+			SELECT id, debug_enabled, debug_log_html, debug_log_challenge, fetch_engine, human_assist, updated_at FROM browser_settings`,
+		`DROP TABLE browser_settings`,
+		`ALTER TABLE browser_settings_new RENAME TO browser_settings`,
+	} {
+		if _, err := tx.Exec(q); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // migrateBrowserSettingsChallengeColumn adds debug_log_challenge to an

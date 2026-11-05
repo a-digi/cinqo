@@ -4,12 +4,13 @@ import {
   fetchChromeStatus,
   fetchEngineStatus,
   saveBrowserSettings,
-  testPlaywrightEngine,
+  testEngine,
   type BrowserSettings,
   type ChromeStatus,
   type EngineStatusResponse,
   type EngineTestResult,
   type FetchEngine,
+  type TestableEngine,
 } from './api'
 
 function message(err: unknown): string {
@@ -62,8 +63,9 @@ export function useEngine() {
   const [saving, setSaving] = useState(false)
   // "Test Playwright" really launches its Chromium, so a driver installed without its
   // browser is caught. The result stays on screen until the next test.
-  const [testing, setTesting] = useState(false)
-  const [testResult, setTestResult] = useState<EngineTestResult | null>(null)
+  // Which engine's test is running (null: none), and the last result with the engine it was for.
+  const [testing, setTesting] = useState<TestableEngine | null>(null)
+  const [testResult, setTestResult] = useState<(EngineTestResult & { engine: TestableEngine }) | null>(null)
   const [testError, setTestError] = useState('')
 
   useEffect(() => {
@@ -81,17 +83,19 @@ export function useEngine() {
       })
   }, [])
 
-  function runTest() {
-    setTesting(true)
+  function runTest(engineToTest: TestableEngine) {
+    setTesting(engineToTest)
     setTestResult(null)
     setTestError('')
-    testPlaywrightEngine()
-      .then(setTestResult)
+    testEngine(engineToTest)
+      .then((r) => {
+        setTestResult({ ...r, engine: engineToTest })
+      })
       .catch((err: unknown) => {
         setTestError(message(err))
       })
       .finally(() => {
-        setTesting(false)
+        setTesting(null)
       })
   }
 

@@ -103,6 +103,15 @@ export function CodeIcon({ className }: { className?: string }) {
   )
 }
 
+// Katana engine: a blade.
+export function BladeIcon({ className }: { className?: string }) {
+  return (
+    <Glyph className={className}>
+      <path d="M19.5 4.5 9 15M19.5 4.5c-4 .5-8.2 3-10.5 6.5l4.5 4.5c3.5-2.3 6-6.5 6-11zM7.5 16.5l-3 3M6 13.5l4.5 4.5" />
+    </Glyph>
+  )
+}
+
 export function ChallengeIcon({ className }: { className?: string }) {
   return (
     <Glyph className={className}>

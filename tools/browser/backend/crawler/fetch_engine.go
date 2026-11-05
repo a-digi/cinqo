@@ -1,6 +1,6 @@
 // fetch_engine.go (step 49, step 50) — chooses which engine serves the
 // PRIMARY single-page fetch (crawl.go's call just before the chromedp
-// primary tab). Two engines share one contract (a *crawlError Cloudflare
+// primary tab). Three engines share one contract (a *crawlError Cloudflare
 // verdict, or a plain error meaning "this engine failed, fall through to
 // chromedp"): go-rod/rod (rod_fetch.go, pure Go over CDP — the default)
 // and Playwright (playwright_engine.go, needs a Node-based driver, whose
@@ -24,6 +24,7 @@ import (
 const (
 	fetchEngineRod        = shared.FetchEngineRod
 	fetchEnginePlaywright = shared.FetchEnginePlaywright
+	fetchEngineKatana     = shared.FetchEngineKatana
 	defaultFetchEngine    = shared.DefaultFetchEngine
 )
 
@@ -34,6 +35,7 @@ type fetchFunc func(ctx context.Context, rawURL, requestID string, expectedSelec
 var (
 	playwrightFetch fetchFunc = fetchWithPlaywright
 	rodFetch        fetchFunc = fetchWithRod
+	katanaFetch     fetchFunc = fetchWithKatana
 )
 
 // engineStoppers shut an engine's browser down (both are idempotent). A
@@ -41,6 +43,7 @@ var (
 var engineStoppers = map[string]func(){
 	fetchEngineRod:        StopRodEngine,
 	fetchEnginePlaywright: StopPlaywrightEngine,
+	fetchEngineKatana:     StopKatanaEngine,
 }
 
 var warnSettingUnreadableOnce sync.Once
@@ -111,8 +114,11 @@ func stopEngineLocked(engine string) {
 func fetchWithEngine(ctx context.Context, rawURL, requestID string, expectedSelectors, removeSelectors, removeAttributes []string, maxAttributeLength int, ignoreAttributesForMaxLength []string) (crawlResponse, error) {
 	engine := selectedFetchEngine()
 	defer beginEngineFetch(engine)()
-	if engine == fetchEnginePlaywright {
+	switch engine {
+	case fetchEnginePlaywright:
 		return playwrightFetch(ctx, rawURL, requestID, expectedSelectors, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
+	case fetchEngineKatana:
+		return katanaFetch(ctx, rawURL, requestID, expectedSelectors, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
 	}
 	return rodFetch(ctx, rawURL, requestID, expectedSelectors, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
 }
