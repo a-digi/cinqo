@@ -15,10 +15,10 @@ import (
 	"time"
 
 	"career-tool-backend/db"
-	"career-tool-backend/jobboard"
+	"career-tool-backend/jobs/jobboard"
 	"career-tool-backend/profile"
-	"career-tool-backend/profilejobmatchconsumer"
-	"career-tool-backend/profilerules"
+	"career-tool-backend/profile/profilejobmatchconsumer"
+	"career-tool-backend/profile/profilerules"
 )
 
 type rulesAnswer struct {

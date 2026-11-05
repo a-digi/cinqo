@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"career-tool-backend/db"
-	"career-tool-backend/jobmatcher"
+	"career-tool-backend/jobs/jobmatcher"
 )
 
 // MaxRequirementTermLength is the longest requirement, in characters.

@@ -10,7 +10,7 @@ import (
 
 	"career-tool-backend/persona"
 	"career-tool-backend/profile"
-	"career-tool-backend/profiledetails"
+	"career-tool-backend/profile/profiledetails"
 )
 
 func pdCall(method, target, body string) (int, map[string]any, string) {

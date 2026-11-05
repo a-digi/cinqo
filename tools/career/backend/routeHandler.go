@@ -31,7 +31,7 @@ import (
 	"strconv"
 
 	"career-tool-backend/companies"
-	"career-tool-backend/cvbuilder"
+	"career-tool-backend/cv/cvbuilder"
 	"career-tool-backend/db"
 	"career-tool-backend/jobs"
 	"career-tool-backend/persona"

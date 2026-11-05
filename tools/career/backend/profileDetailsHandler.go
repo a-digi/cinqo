@@ -6,7 +6,7 @@ import (
 	"net/http"
 
 	"career-tool-backend/db"
-	"career-tool-backend/profiledetails"
+	"career-tool-backend/profile/profiledetails"
 )
 
 // The summary and the goals of a profile (plan 174, step 3). Route profile-details, scope tool:career:profile:

@@ -8,7 +8,7 @@ import (
 
 	"career-tool-backend/applicationlog"
 	"career-tool-backend/db"
-	"career-tool-backend/jobboard"
+	"career-tool-backend/jobs/jobboard"
 )
 
 type appRow struct {

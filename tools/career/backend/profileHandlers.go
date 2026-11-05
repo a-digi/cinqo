@@ -7,7 +7,7 @@ import (
 
 	"career-tool-backend/db"
 	"career-tool-backend/persona"
-	"career-tool-backend/profileitems"
+	"career-tool-backend/profile/profileitems"
 )
 
 // The profile's library of skills and experience, and what a persona uses of it (plan 173, step 2). Routes: profile-skills,

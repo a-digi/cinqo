@@ -4,7 +4,7 @@ import (
 	"log"
 	"sort"
 
-	"career-tool-backend/jobboard"
+	"career-tool-backend/jobs/jobboard"
 	"career-tool-backend/persona"
 	"career-tool-backend/persona/personamatch"
 )

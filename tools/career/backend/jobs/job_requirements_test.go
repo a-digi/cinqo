@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"career-tool-backend/db"
-	"career-tool-backend/jobmatcher"
+	"career-tool-backend/jobs/jobmatcher"
 )
 
 func addTestJob(t *testing.T, id, title, desc string) {

@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	"career-tool-backend/db"
-	"career-tool-backend/jobmatcher"
+	"career-tool-backend/jobs/jobmatcher"
 )
 
 // Automatic matching of new jobs (step 132). Every profile is scored for a job with the manual engine (no AI) and

@@ -6,8 +6,8 @@ import (
 	"net/http"
 
 	"career-tool-backend/db"
-	"career-tool-backend/jobrecruiters"
 	"career-tool-backend/jobs"
+	"career-tool-backend/jobs/jobrecruiters"
 	"career-tool-backend/recruiters"
 )
 

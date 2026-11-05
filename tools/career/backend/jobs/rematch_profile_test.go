@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"career-tool-backend/jobmatcher"
+	"career-tool-backend/jobs/jobmatcher"
 	"career-tool-backend/profile"
 )
 

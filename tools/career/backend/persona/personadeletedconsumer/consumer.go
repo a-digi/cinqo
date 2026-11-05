@@ -10,8 +10,8 @@ import (
 	"net/http"
 
 	"career-tool-backend/db"
-	"career-tool-backend/jobmatchconsumer"
 	"career-tool-backend/jobs"
+	"career-tool-backend/jobs/jobmatchconsumer"
 )
 
 // maxIDLength bounds the ids of an event (real ids are UUIDs).

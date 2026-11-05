@@ -13,7 +13,7 @@ import (
 
 	"career-tool-backend/persona"
 	"career-tool-backend/profile"
-	"career-tool-backend/profileitems"
+	"career-tool-backend/profile/profileitems"
 )
 
 // Plan 173, step 2: the routes of the profile library and of what a persona uses.

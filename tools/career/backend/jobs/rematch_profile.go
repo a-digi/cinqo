@@ -7,7 +7,7 @@ import (
 	"sync"
 
 	"career-tool-backend/db"
-	"career-tool-backend/jobmatcher"
+	"career-tool-backend/jobs/jobmatcher"
 )
 
 // Re-matching the jobs for one profile (step 151). A profile or persona that is new can fit a job better than the profile whose

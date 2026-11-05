@@ -15,7 +15,7 @@ import (
 	"database/sql"
 	"errors"
 
-	"career-tool-backend/cvbuilder"
+	"career-tool-backend/cv/cvbuilder"
 	"career-tool-backend/db"
 )
 

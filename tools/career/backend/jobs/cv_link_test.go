@@ -7,8 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"career-tool-backend/cvbuilder"
-	"career-tool-backend/cvbuilder/templates"
+	"career-tool-backend/cv/cvbuilder"
+	"career-tool-backend/cv/cvbuilder/templates"
 	"career-tool-backend/db"
 	"career-tool-backend/persona"
 	"career-tool-backend/profile"

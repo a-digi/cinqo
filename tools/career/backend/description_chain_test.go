@@ -12,14 +12,14 @@ import (
 	"time"
 
 	"career-tool-backend/db"
-	"career-tool-backend/jobboard"
-	"career-tool-backend/jobmatchconsumer"
 	"career-tool-backend/jobs"
+	"career-tool-backend/jobs/jobboard"
+	"career-tool-backend/jobs/jobmatchconsumer"
 	"career-tool-backend/persona"
 	"career-tool-backend/persona/personamatchconsumer"
 	"career-tool-backend/profile"
-	"career-tool-backend/profilejobmatchconsumer"
-	"career-tool-backend/profilerules"
+	"career-tool-backend/profile/profilejobmatchconsumer"
+	"career-tool-backend/profile/profilerules"
 )
 
 // Step 164, step 5: the whole chain, with the real consumers, workers, scorers and database, and a stand-in for core that

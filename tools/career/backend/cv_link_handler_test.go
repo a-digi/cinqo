@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"career-tool-backend/cvbuilder"
-	"career-tool-backend/cvbuilder/templates"
+	"career-tool-backend/cv/cvbuilder"
+	"career-tool-backend/cv/cvbuilder/templates"
 	"career-tool-backend/jobs"
 	"career-tool-backend/persona"
 	"career-tool-backend/profile"

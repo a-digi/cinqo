@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"career-tool-backend/db"
-	"career-tool-backend/jobmatcher"
+	"career-tool-backend/jobs/jobmatcher"
 	"career-tool-backend/persona/personamatch"
 )
 

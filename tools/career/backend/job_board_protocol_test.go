@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"career-tool-backend/applicationlog"
-	"career-tool-backend/jobboard"
+	"career-tool-backend/jobs/jobboard"
 )
 
 func TestTheBoardCardsShowTheProtocolSummaryOfThisProfileOnly(t *testing.T) {

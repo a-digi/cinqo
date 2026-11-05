@@ -6,7 +6,7 @@ import (
 	"net/http"
 
 	"career-tool-backend/db"
-	"career-tool-backend/jobboard"
+	"career-tool-backend/jobs/jobboard"
 	"career-tool-backend/profile"
 )
 

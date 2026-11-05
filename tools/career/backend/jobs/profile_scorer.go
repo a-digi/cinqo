@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"career-tool-backend/db"
-	"career-tool-backend/jobmatcher"
+	"career-tool-backend/jobs/jobmatcher"
 )
 
 // ProfileScorer scores jobs against every profile with the manual engine, in memory, and stores nothing (step
