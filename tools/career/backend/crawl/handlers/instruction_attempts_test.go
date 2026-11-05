@@ -324,3 +324,30 @@ func TestManifestDeclaresSaveCvForPersonaLikeTheRunsSave(t *testing.T) {
 		t.Errorf("save_cv_for_persona = %+v, save_persona_cv = %+v: the core only turns the PDF link into a Media file id for a tool that declares promote_media_param", got, want)
 	}
 }
+
+// The AI cannot write instructions for a link that needs a login: the route answers 400 with the reason and records nothing.
+func TestInstructionAttemptStartIsRefusedForALinkThatNeedsALogin(t *testing.T) {
+	handlertest.SetupHandlerDB(t)
+	if _, err := db.JobsDB.Exec(`UPDATE portal_links SET requires_login = 1 WHERE id = 'l1'`); err != nil {
+		t.Fatal(err)
+	}
+	for _, body := range []string{
+		`{"portalLinkId":"l1","kind":"listing"}`,
+		`{"portalLinkId":"l1","kind":"job_detail","triggeredBy":"auto"}`,
+	} {
+		rec := handlertest.PostJSON(InstructionAttemptStartHandler, body)
+		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "needs a login") || !strings.Contains(rec.Body.String(), "by hand") {
+			t.Errorf("%s: %d %s", body, rec.Code, rec.Body.String())
+		}
+	}
+	var n int
+	if err := db.JobsDB.QueryRow(`SELECT COUNT(*) FROM instruction_attempts`).Scan(&n); err != nil || n != 0 {
+		t.Errorf("attempt rows = %d (%v)", n, err)
+	}
+	if _, err := db.JobsDB.Exec(`UPDATE portal_links SET requires_login = 0 WHERE id = 'l1'`); err != nil {
+		t.Fatal(err)
+	}
+	if rec := handlertest.PostJSON(InstructionAttemptStartHandler, `{"portalLinkId":"l1","kind":"listing"}`); rec.Code != http.StatusOK {
+		t.Errorf("a plain link must still start: %d %s", rec.Code, rec.Body.String())
+	}
+}

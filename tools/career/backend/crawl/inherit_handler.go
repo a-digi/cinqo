@@ -87,6 +87,21 @@ func InheritInstructionsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A link that needs a login is not tried: the trial reads pages on the headless tab, where the page is the logged-out one. Silent (nothing
+	// to offer, no error), so adding a link that needs a login shows no failure.
+	if needs, _, lerr := portal.GetPortalLinkLogin(body.ID); lerr != nil {
+		portal.WritePortalLinkAwareError(w, "read the link", lerr)
+		return
+	} else if needs {
+		portals, perr := portal.ListPortals()
+		if perr != nil {
+			http.Error(w, "nothing to try, but the list could not be reloaded: "+perr.Error(), http.StatusInternalServerError)
+			return
+		}
+		db.WriteJSON(w, inheritResponse{Tried: []CandidateOutcome{}, Portals: portals})
+		return
+	}
+
 	if !startInherit(body.ID) {
 		http.Error(w, "a trial is already running for this link", http.StatusConflict)
 		return

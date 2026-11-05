@@ -41,6 +41,20 @@ export function loginCheckboxState(link: { autoDiscoveryEnabled?: boolean }, che
   return { disabled: blocked, note: blocked ? LOGIN_BLOCKED_BY_AUTO_NOTE : null }
 }
 
+export const NO_AI_FOR_LOGIN_NOTE =
+  'The AI cannot read pages behind your login yet, so Generate is off for this link. Write its crawl instructions by hand: open Job list (and Job details) under Crawl instructions.'
+
+// mayGenerateWithAI: false for a link that needs a login. The AI's browser tools read the logged-out page, so a run would only fail, cost
+// tokens and count as a failed attempt. The server refuses it as well (it does not rely on this page).
+export function mayGenerateWithAI(link: { requiresLogin?: boolean }): boolean {
+  return link.requiresLogin !== true
+}
+
+// generateBlockedNote: the reason to show where Generate is off for a link that needs a login, or null for any other link.
+export function generateBlockedNote(link: { requiresLogin?: boolean }): string | null {
+  return mayGenerateWithAI(link) ? null : NO_AI_FOR_LOGIN_NOTE
+}
+
 // mayStartCrawlByItself: false for a link that needs a login. The run follower never starts a crawl from a request flag for it.
 export function mayStartCrawlByItself(link: { requiresLogin?: boolean }): boolean {
   return link.requiresLogin !== true

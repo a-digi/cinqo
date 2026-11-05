@@ -34,7 +34,7 @@ import {
 } from '../generateInstructions'
 import { startCrawlNow, stopCrawlNow, fetchActiveCrawlRun, type CrawlRun } from '../crawlNow'
 import { phaseLabel, latestCrawlLogMessage } from '../crawlPhase'
-import { confirmLogin, isWaitingForLogin, manualOnlyNote } from '../loginWindow'
+import { confirmLogin, generateBlockedNote, isWaitingForLogin, manualOnlyNote, mayGenerateWithAI } from '../loginWindow'
 import { instructionAlertAttempts, isLikelyUncrawlable, savedDespiteError } from '../instructionStats'
 import { hasListingInstructions } from '../autoDiscoveryVisibility'
 import { PipelineLine } from '../PipelineLine'
@@ -639,7 +639,7 @@ export function CrawlPanel({
   // trial cannot run, the AI run below starts as before. A run that follows the user's
   // "yes, this page has jobs" answer never tries them: those instructions were proven wrong.
   function handleGenerateInstructionsWithAI(options: { jobsConfirmed?: boolean } = {}) {
-    if (aiPending || inheriting || !selectedPlatform) return
+    if (aiPending || inheriting || !selectedPlatform || !mayGenerateWithAI(link)) return
     if (shouldTryInherit(link) && !options.jobsConfirmed) {
       void onTryInherit().then((inherited) => {
         if (!inherited) startGenerateInstructionsWithAI(options)
@@ -650,7 +650,7 @@ export function CrawlPanel({
   }
 
   function startGenerateInstructionsWithAI(options: { jobsConfirmed?: boolean } = {}) {
-    if (aiPending || !selectedPlatform) return
+    if (aiPending || !selectedPlatform || !mayGenerateWithAI(link)) return
     const platformId = selectedPlatform.id
     const model = selectedPlatform.models.length > 0 ? (selectedModel ?? selectedPlatform.models[0]) : undefined
     // Plan 163, step 3: a link with no job-detail instructions yet gets them in the same conversation, right after its listing
@@ -774,7 +774,7 @@ export function CrawlPanel({
   // buildGenerateJobDetailInstructionsMessage instead — writes/updates
   // job_detail_crawl_instructions, never crawl_instructions.
   function handleGenerateJobDetailInstructionsWithAI() {
-    if (jobDetailAiPending || !selectedPlatform) return
+    if (jobDetailAiPending || !selectedPlatform || !mayGenerateWithAI(link)) return
     const platformId = selectedPlatform.id
     const model = selectedPlatform.models.length > 0 ? (selectedModel ?? selectedPlatform.models[0]) : undefined
     setJobDetailAiPending(true)
@@ -1171,20 +1171,23 @@ export function CrawlPanel({
                 }
                 disabled={
                   !hasPlatforms ||
+                  !mayGenerateWithAI(link) ||
                   inheriting ||
                   (aiBusy && !(aiConversationId ?? link.instructionsAiConversationId)) ||
                   Boolean(jobsQuestion)
                 }
                 title={
-                  !hasPlatforms
-                    ? 'No AI platform configured — add one on the Platforms page first'
-                    : jobsQuestion
-                      ? 'Answer the question below first'
-                      : inheriting
-                        ? "Trying the instructions of this platform's other links first…"
-                        : aiBusy
-                          ? "Open the chat window to watch the AI work on this link's crawl instructions"
-                          : 'Let the AI inspect this page and write (or update) its listing crawl instructions for you — once saved, this link is crawled and its job-detail instructions are generated automatically.'
+                  !mayGenerateWithAI(link)
+                    ? (generateBlockedNote(link) ?? undefined)
+                    : !hasPlatforms
+                      ? 'No AI platform configured — add one on the Platforms page first'
+                      : jobsQuestion
+                        ? 'Answer the question below first'
+                        : inheriting
+                          ? "Trying the instructions of this platform's other links first…"
+                          : aiBusy
+                            ? "Open the chat window to watch the AI work on this link's crawl instructions"
+                            : 'Let the AI inspect this page and write (or update) its listing crawl instructions for you — once saved, this link is crawled and its job-detail instructions are generated automatically.'
                 }
                 className="flex shrink-0 flex-col items-center justify-center gap-1 self-stretch rounded-lg border border-gray-200 bg-gray-50 px-3 text-xs font-medium text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
               >
@@ -1201,10 +1204,16 @@ export function CrawlPanel({
                 )}
               </button>
             </div>
+            {generateBlockedNote(link) !== null && (
+              <p role="status" className="mt-2 text-xs text-gray-600">
+                {generateBlockedNote(link)}
+              </p>
+            )}
             <StartFreshButton
               link={link}
               tabBusy={{ listingGenerating: aiBusy, jobDetailGenerating: jobDetailAiBusy, inheriting }}
-              canGenerate={hasPlatforms && selectedPlatform !== null}
+              canGenerate={hasPlatforms && selectedPlatform !== null && mayGenerateWithAI(link)}
+              cannotGenerateReason={generateBlockedNote(link) ?? undefined}
               onGenerate={() => {
                 handleGenerateInstructionsWithAI()
               }}

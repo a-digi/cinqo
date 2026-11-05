@@ -1647,7 +1647,7 @@ func WritePortalLinkAwareError(w http.ResponseWriter, action string, err error) 
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrInvalidAutoDiscoveryInterval):
 		http.Error(w, err.Error(), http.StatusBadRequest)
-	case errors.Is(err, ErrInvalidLoginURL), errors.Is(err, ErrManualOnly), errors.Is(err, ErrLoginWithAutoCrawl):
+	case errors.Is(err, ErrInvalidLoginURL), errors.Is(err, ErrManualOnly), errors.Is(err, ErrLoginWithAutoCrawl), errors.Is(err, ErrNoAIForLoginLink):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrInvalidInstructionKind), errors.Is(err, ErrInvalidInstructionTrigger):
 		http.Error(w, err.Error(), http.StatusBadRequest)

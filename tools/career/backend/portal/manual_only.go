@@ -14,6 +14,11 @@ import (
 // ErrManualOnly is a caller mistake (400): the requested automatic behaviour is not allowed for a link that needs a login.
 var ErrManualOnly = errors.New("this link needs a login, so it is only crawled by hand with Crawl now: nothing can start it automatically")
 
+// ErrNoAIForLoginLink is a caller mistake (400): the AI cannot write crawl instructions for a link that needs a login, because every page
+// it can read is the logged-out one (the AI's browser tools run on the headless tab, not in the window a person logged in to). Starting such
+// a run would only fail, cost tokens and count as a failed attempt ("Probably can't be crawled"), so it is refused before anything is recorded.
+var ErrNoAIForLoginLink = errors.New("this link needs a login, and the AI cannot read pages behind your login yet: write its crawl instructions by hand (Job list and Job details under Crawl instructions)")
+
 // requireNotLoginLink returns ErrManualOnly when the link needs a login (an unknown link is ErrUnknownPortalLink).
 func requireNotLoginLink(id string) error {
 	needs, _, err := GetPortalLinkLogin(id)

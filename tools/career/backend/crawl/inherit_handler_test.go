@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"career-tool-backend/db"
 	"career-tool-backend/portal"
 )
 
@@ -320,5 +321,49 @@ func TestInheritHandler_CallerGoneSavesNothing(t *testing.T) {
 	postInherit(ctx, `{"id":"`+newLink+`"}`, true)
 	if l, d := stored(t, newLink); l != "" || d != "" {
 		t.Fatalf("stored %q / %q", l, d)
+	}
+}
+
+// A link that needs a login is not tried: the trial reads the headless (logged-out) page. The answer is a plain "nothing to offer", not an error.
+func TestInheritHandler_SkipsALinkThatNeedsALogin(t *testing.T) {
+	setupTrialDB(t)
+	t.Setenv("TOOL_SERVICE_TOKEN", "svc")
+	_, newLink, _ := trialPortal(t, [2]string{trialListingA, trialDetail})
+	if _, err := db.JobsDB.Exec(`UPDATE portal_links SET requires_login = 1, auto_discovery_enabled = 0 WHERE id = ?`, newLink); err != nil {
+		t.Fatal(err)
+	}
+	fb := startBrowser(t, func(c browserCall, _ int, w http.ResponseWriter, _ *http.Request) { writeJSON(w, listPage(5)) })
+
+	got := decodeInherit(t, postInherit(context.Background(), `{"id":"`+newLink+`"}`, true))
+	if got.Inherited || got.Listing || got.JobDetail || len(got.Tried) != 0 || len(got.Portals) == 0 {
+		t.Fatalf("response = %+v", got)
+	}
+	if calls := fb.seen(); len(calls) != 0 {
+		t.Errorf("the browser was called %d time(s)", len(calls))
+	}
+	if ev := fb.published(); len(ev) != 0 {
+		t.Errorf("events = %v", ev)
+	}
+	if l, d := stored(t, newLink); l != "" || d != "" {
+		t.Errorf("instructions were saved: %q / %q", l, d)
+	}
+}
+
+func TestInheritHandler_StillTriesAPlainLink(t *testing.T) {
+	setupTrialDB(t)
+	t.Setenv("TOOL_SERVICE_TOKEN", "svc")
+	_, newLink, _ := trialPortal(t, [2]string{trialListingA, trialDetail})
+	fb := startBrowser(t, func(c browserCall, _ int, w http.ResponseWriter, _ *http.Request) {
+		if c.Container == ".job" {
+			writeJSON(w, listPage(5))
+			return
+		}
+		writeJSON(w, detailPage(strings.Repeat("d", 150)))
+	})
+	if got := decodeInherit(t, postInherit(context.Background(), `{"id":"`+newLink+`"}`, true)); !got.Inherited {
+		t.Fatalf("%+v", got)
+	}
+	if len(fb.seen()) == 0 {
+		t.Error("the browser must have been called")
 	}
 }

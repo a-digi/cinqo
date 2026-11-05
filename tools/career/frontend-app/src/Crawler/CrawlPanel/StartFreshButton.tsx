@@ -19,6 +19,7 @@ export function StartFreshButton({
   link,
   tabBusy,
   canGenerate,
+  cannotGenerateReason,
   onGenerate,
   onReload,
 }: {
@@ -26,6 +27,8 @@ export function StartFreshButton({
   tabBusy: { listingGenerating: boolean; jobDetailGenerating: boolean; inheriting: boolean }
   // False while no AI platform is configured: the "generate again" choice is then off and disabled.
   canGenerate: boolean
+  // Why "generate again" is off when it is not for lack of an AI platform (a link that needs a login: the AI cannot read it).
+  cannotGenerateReason?: string
   onGenerate: () => void
   onReload: () => void
 }) {
@@ -116,7 +119,9 @@ export function StartFreshButton({
             />
             <label htmlFor={`${idBase}-generate`} className="text-sm text-gray-800">
               {START_FRESH_GENERATE_LABEL}
-              {!canGenerate && <span className="block text-xs text-gray-500">No AI platform is configured.</span>}
+              {!canGenerate && (
+                <span className="block text-xs text-gray-500">{cannotGenerateReason ?? 'No AI platform is configured.'}</span>
+              )}
             </label>
           </div>
         </div>
