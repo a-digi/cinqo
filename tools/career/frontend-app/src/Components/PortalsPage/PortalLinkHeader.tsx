@@ -9,6 +9,11 @@ interface PortalLinkHeaderProps {
   editUrl: string
   onEditTitleChange: (value: string) => void
   onEditUrlChange: (value: string) => void
+  // plan 182: the link's login setting while editing (a setting only: nothing about an account is kept).
+  editRequiresLogin: boolean
+  editLoginUrl: string
+  onEditRequiresLoginChange: (value: boolean) => void
+  onEditLoginUrlChange: (value: string) => void
   onStartEdit: () => void
   onSaveEdit: () => void
   onCancelEdit: () => void
@@ -34,6 +39,10 @@ export function PortalLinkHeader({
   editUrl,
   onEditTitleChange,
   onEditUrlChange,
+  editRequiresLogin,
+  editLoginUrl,
+  onEditRequiresLoginChange,
+  onEditLoginUrlChange,
   onStartEdit,
   onSaveEdit,
   onCancelEdit,
@@ -75,6 +84,26 @@ export function PortalLinkHeader({
           placeholder="URL"
           className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-900 focus:border-gray-500 focus:outline-none"
         />
+        <label className="flex items-center gap-2 text-xs text-gray-700">
+          <input
+            type="checkbox"
+            checked={editRequiresLogin}
+            onChange={(e) => {
+              onEditRequiresLoginChange(e.target.checked)
+            }}
+          />
+          Requires login
+        </label>
+        {editRequiresLogin && (
+          <input
+            value={editLoginUrl}
+            onChange={(e) => {
+              onEditLoginUrlChange(e.target.value)
+            }}
+            placeholder="Login page (optional, the URL above is used when empty)"
+            className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-900 focus:border-gray-500 focus:outline-none"
+          />
+        )}
         <div className="flex gap-2">
           <button
             type="button"

@@ -62,6 +62,10 @@ type extractField struct {
 }
 
 type extractRequest struct {
+	// RequestID and UseLoginWindow (plan 182) — read the fields from the page of the login window the person logged in to for this run
+	// (login_window_crawl.go) instead of the headless session. UseLoginWindow requires RequestID. Absent for every other call: unchanged.
+	RequestID      string `json:"requestId,omitempty"`
+	UseLoginWindow bool   `json:"useLoginWindow,omitempty"`
 	// Container (step 18) is an optional CSS selector for each
 	// repeating item's own wrapping element — when set, every field's
 	// own selector is evaluated relative to each matched container
@@ -120,6 +124,21 @@ func ExtractHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := validateMapping(body.Fields, body.Mapping); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if body.UseLoginWindow {
+		if body.RequestID == "" {
+			http.Error(w, "requestId is required with useLoginWindow", http.StatusBadRequest)
+			return
+		}
+		result, err := extractInLoginWindow(r.Context(), body.RequestID, body.Container, body.Fields, body.Mapping)
+		if err != nil {
+			writeLoginWindowFailure(w, body.RequestID, "extract", err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(result)
 		return
 	}
 

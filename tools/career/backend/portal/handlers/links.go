@@ -13,6 +13,10 @@ type portalLinkRequest struct {
 	PortalID string `json:"portalId"`
 	URL      string `json:"url"`
 	Title    string `json:"title"`
+	// RequiresLogin and LoginURL (plan 182, step 3) — optional: this link's page needs a login, and the site's own login page when it is
+	// not the link's address. Settings of the link only; nothing about a login is stored.
+	RequiresLogin bool   `json:"requiresLogin,omitempty"`
+	LoginURL      string `json:"loginUrl,omitempty"`
 }
 
 type portalLinkUpdateRequest struct {
@@ -95,6 +99,10 @@ type portalLinkUpdateRequest struct {
 	// zero-job streak. Any other value is a 400; answering with nothing
 	// pending is a 400.
 	JobsQuestionAnswer *string `json:"jobsQuestionAnswer,omitempty"`
+	// RequiresLogin and LoginURL (plan 182, step 3) — nil: don't touch. Present: set to that value ("" clears the login page address).
+	// The address must be an http or https address (400 otherwise, and nothing is written).
+	RequiresLogin *bool   `json:"requiresLogin,omitempty"`
+	LoginURL      *string `json:"loginUrl,omitempty"`
 }
 
 func PortalLinksHandler(w http.ResponseWriter, r *http.Request) {
@@ -113,7 +121,7 @@ func PortalLinksHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "title is required", http.StatusBadRequest)
 			return
 		}
-		id, err := portal.AddPortalLink(body.PortalID, body.URL, body.Title)
+		id, err := portal.AddPortalLinkWithLogin(body.PortalID, body.URL, body.Title, body.RequiresLogin, body.LoginURL)
 		if err != nil {
 			portal.WritePortalLinkAwareError(w, "add portal link", err)
 			return
@@ -137,8 +145,9 @@ func PortalLinksHandler(w http.ResponseWriter, r *http.Request) {
 			body.ListingCrawlRequested == nil && body.JobDetailInstructionsAIRequested == nil &&
 			body.InstructionsAIErrorDismissedAt == nil && body.JobDetailInstructionsAIErrorDismissedAt == nil &&
 			body.JobDetailCrawlRequested == nil && body.AutoDiscoveryEnabled == nil &&
-			body.AutoDiscoveryIntervalMinutes == nil && !body.ClearAutoDiscoveryInterval && body.EmptyCrawlAcknowledged == nil && body.JobsQuestionAnswer == nil {
-			http.Error(w, "url, title, crawlInstructions, jobDetailCrawlInstructions, instructionsAiError, instructionsAiConversationId, jobDetailInstructionsAiError, jobDetailInstructionsAiConversationId, listingCrawlRequested, jobDetailInstructionsAiRequested, instructionsAiErrorDismissedAt, jobDetailInstructionsAiErrorDismissedAt, jobDetailCrawlRequested, autoDiscoveryEnabled, autoDiscoveryIntervalMinutes, clearAutoDiscoveryInterval, emptyCrawlAcknowledged, or jobsQuestionAnswer is required", http.StatusBadRequest)
+			body.AutoDiscoveryIntervalMinutes == nil && !body.ClearAutoDiscoveryInterval && body.EmptyCrawlAcknowledged == nil && body.JobsQuestionAnswer == nil &&
+			body.RequiresLogin == nil && body.LoginURL == nil {
+			http.Error(w, "url, title, crawlInstructions, jobDetailCrawlInstructions, instructionsAiError, instructionsAiConversationId, jobDetailInstructionsAiError, jobDetailInstructionsAiConversationId, listingCrawlRequested, jobDetailInstructionsAiRequested, instructionsAiErrorDismissedAt, jobDetailInstructionsAiErrorDismissedAt, jobDetailCrawlRequested, autoDiscoveryEnabled, autoDiscoveryIntervalMinutes, clearAutoDiscoveryInterval, emptyCrawlAcknowledged, jobsQuestionAnswer, requiresLogin, or loginUrl is required", http.StatusBadRequest)
 			return
 		}
 		if body.URL != nil && *body.URL == "" {
@@ -148,6 +157,13 @@ func PortalLinksHandler(w http.ResponseWriter, r *http.Request) {
 		if body.Title != nil && *body.Title == "" {
 			http.Error(w, "title cannot be empty", http.StatusBadRequest)
 			return
+		}
+		// Plan 182: a bad login page address is refused before anything at all is written.
+		if body.LoginURL != nil {
+			if _, err := portal.ValidateLoginURL(*body.LoginURL); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
 		}
 		if body.URL != nil || body.Title != nil {
 			if err := portal.UpdatePortalLink(body.ID, body.URL, body.Title); err != nil {
@@ -240,6 +256,12 @@ func PortalLinksHandler(w http.ResponseWriter, r *http.Request) {
 		} else if body.ClearAutoDiscoveryInterval {
 			if err := portal.UpdatePortalLinkAutoDiscoveryInterval(body.ID, nil); err != nil {
 				portal.WritePortalLinkAwareError(w, "update portal link auto-discovery interval", err)
+				return
+			}
+		}
+		if body.RequiresLogin != nil || body.LoginURL != nil {
+			if err := portal.UpdatePortalLinkLogin(body.ID, body.RequiresLogin, body.LoginURL); err != nil {
+				portal.WritePortalLinkAwareError(w, "update portal link login settings", err)
 				return
 			}
 		}

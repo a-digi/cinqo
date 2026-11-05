@@ -640,6 +640,11 @@ CREATE TABLE IF NOT EXISTS portal_links (
     -- applies). Also added to existing installs by migratePortalsAiOverride.
     ai_platform_id                                 TEXT NOT NULL DEFAULT '',
     ai_model                                       TEXT NOT NULL DEFAULT '',
+    -- requires_login / login_url (plan 182, step 3): the page of this link is only shown to a logged-in visitor. login_url is the
+    -- site's own login page ('' = open the link's own address). These are settings of the link, never a login: nothing about a login
+    -- (password, cookie, session) is stored anywhere. Also added to existing installs by migratePortalLinksLogin.
+    requires_login                                 INTEGER NOT NULL DEFAULT 0,
+    login_url                                      TEXT NOT NULL DEFAULT '',
     created_at                        TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at                        TEXT,
     UNIQUE(portal_id, url)
@@ -1824,6 +1829,9 @@ func migrateJobsDB(db *sql.DB) error {
 	if err := migratePortalsAiOverride(db); err != nil {
 		return err
 	}
+	if err := migratePortalLinksLogin(db); err != nil {
+		return err
+	}
 	if err := migrateInstructionAttemptsFailureReason(db); err != nil {
 		return err
 	}
@@ -2505,6 +2513,28 @@ func migratePortalLinksAutoDiscoveryEnabled(db *sql.DB) error {
 	}
 	_, err = db.Exec(`ALTER TABLE portal_links ADD COLUMN auto_discovery_enabled INTEGER NOT NULL DEFAULT 1`)
 	return err
+}
+
+// migratePortalLinksLogin (plan 182, step 3) adds the two settings that say a link's page needs a login to an install that already has
+// portal_links (a fresh install gets them from the base schema). Every existing link gets "no login needed" and no login page: nothing
+// changes for it. The same guarded ALTER TABLE ADD COLUMN every other portal_links column uses.
+func migratePortalLinksLogin(db *sql.DB) error {
+	for _, col := range []struct{ name, def string }{
+		{"requires_login", "INTEGER NOT NULL DEFAULT 0"},
+		{"login_url", "TEXT NOT NULL DEFAULT ''"},
+	} {
+		exists, hasColumn, err := tableHasColumn(db, "portal_links", col.name)
+		if err != nil {
+			return err
+		}
+		if !exists || hasColumn {
+			continue
+		}
+		if _, err := db.Exec(`ALTER TABLE portal_links ADD COLUMN ` + col.name + ` ` + col.def); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // migrateInstructionAttemptsFailureReason (step 87) adds

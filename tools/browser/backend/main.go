@@ -55,12 +55,17 @@ func runHTTPServer() {
 	if err := auth.InitCryptoKey(); err != nil {
 		log.Fatalf("failed to load credential encryption key: %v", err)
 	}
+	// Plan 182: delete the throw-away profile folders of any login window an earlier run of this tool left behind (a crash, a kill).
+	if n := shared.SweepLoginWindowFolders(); n > 0 {
+		log.Printf("removed %d login window folder(s) left by an earlier run", n)
+	}
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
 	go func() {
 		<-sigCh
 		log.Print("shutting down, closing browser session")
+		auth.StopLoginWindows()
 		shared.StopSharedSession()
 		crawler.StopPlaywrightEngine()
 		crawler.StopRodEngine()
@@ -88,6 +93,12 @@ func runHTTPServer() {
 	http.HandleFunc("/crawl-status", crawler.CrawlStatusHandler)
 	http.HandleFunc("/crawl-cancel", crawler.CrawlCancelHandler)
 	http.HandleFunc("/login", auth.LoginHandler)
+	// Plan 182: the human-only login window (the person logs in on the site's own page; nothing is stored). Deliberately not MCP tools,
+	// like /login-credentials: the AI cannot open, confirm or end a login. See auth/login_window.go.
+	http.HandleFunc("/login-window/open", auth.LoginWindowOpenHandler)
+	http.HandleFunc("/login-window/status", auth.LoginWindowStatusHandler)
+	http.HandleFunc("/login-window/confirm", auth.LoginWindowConfirmHandler)
+	http.HandleFunc("/login-window/cancel", auth.LoginWindowCancelHandler)
 	// Deliberately not exposed as an MCP tool — see
 	// login_credentials.go's own top comment. Reachable only via the
 	// ordinary tool proxy a signed-in human's own request hits, never
@@ -104,6 +115,7 @@ func runHTTPServer() {
 
 	log.Printf("browser tool listening on 127.0.0.1:%s", port)
 	if err := http.ListenAndServe("127.0.0.1:"+port, nil); err != nil {
+		auth.StopLoginWindows()
 		shared.StopSharedSession()
 		crawler.StopPlaywrightEngine()
 		crawler.StopRodEngine()

@@ -428,6 +428,10 @@ export interface PortalLink {
   // true (on). See
   // plan/ai/tools/career/step-84-auto-discovery-scheduled-crawling.md.
   autoDiscoveryEnabled: boolean
+  // requiresLogin/loginUrl (plan 182) are a link SETTING, never a login: this page needs the person to log in (in a window the Browser tool
+  // opens for each crawl), and the page to start at ('' = the link's own address). Always sent by the backend.
+  requiresLogin: boolean
+  loginUrl: string
   // autoDiscoveryIntervalMinutes (step 85) is this link's own override
   // on the schedule, checked against its own autoDiscoveryLastRunAt
   // instead of the global setting — absent (the backend's own
@@ -1496,11 +1500,16 @@ export async function removePortal(id: string): Promise<void> {
   if (!res.ok && res.status !== 204) throw new Error(`failed to delete platform (${res.status})`)
 }
 
-export async function addPortalLink(portalId: string, url: string, title: string): Promise<{ id: string }> {
+export async function addPortalLink(
+  portalId: string,
+  url: string,
+  title: string,
+  login?: { requiresLogin: boolean; loginUrl: string },
+): Promise<{ id: string }> {
   const res = await fetch(`${PROXY_BASE}/portal-links`, {
     method: 'POST',
     credentials: 'include',
-    body: JSON.stringify({ portalId, url, title }),
+    body: JSON.stringify({ portalId, url, title, ...(login ?? {}) }),
   })
   return jsonOrThrow<{ id: string }>(res, 'add platform link')
 }
@@ -1569,6 +1578,9 @@ export async function updatePortalLink(
     instructionsAiErrorDismissedAt?: string
     jobDetailInstructionsAiErrorDismissedAt?: string
     jobDetailCrawlRequested?: boolean
+    // plan 182: the link's login setting (never a login itself).
+    requiresLogin?: boolean
+    loginUrl?: string
     autoDiscoveryEnabled?: boolean
     // autoDiscoveryIntervalMinutes/clearAutoDiscoveryInterval (step 85)
     // — set the former to a real value, or send the latter as true to

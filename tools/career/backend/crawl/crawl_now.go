@@ -243,6 +243,14 @@ func RunListingCrawlNow(portalLinkID, accessToken, triggeredBy string) (runID st
 	if _, err := portal.BuildCrawlRequest(portalLinkID); err != nil {
 		return "", err
 	}
+	// plan 182: a link that needs a login is never crawled unattended: no window opens without a person to log in.
+	if triggeredBy != "manual" {
+		if needs, _, lerr := portal.GetPortalLinkLogin(portalLinkID); lerr != nil {
+			return "", lerr
+		} else if needs {
+			return "", ErrLoginNeeded
+		}
+	}
 	run, err := startCrawlRun(portalLinkID, "listing", triggeredBy)
 	if err != nil {
 		return "", err
@@ -545,12 +553,33 @@ func runCrawlNow(ctx context.Context, runID, portalLinkID, accessToken string) {
 	// crawl_runs row directly to browser's own in-memory phase, no new
 	// id generation needed. expectedSelectors (step 36) — already
 	// exactly what req's own Container/Fields carry.
+	// plan 182 (step 4): a link that needs a login crawls in the run's login window, after the person has logged in and confirmed.
+	requiresLogin, loginURL, err := portal.GetPortalLinkLogin(portalLinkID)
+	if err != nil {
+		fail(err)
+		return
+	}
+	var login *loginRun
+	if requiresLogin {
+		login = &loginRun{coreURL: coreURL, runID: runID, token: accessToken, siteURL: linkURL, loginURL: loginURL}
+		// Closed however the run ends: finished, failed, stopped, panicked.
+		defer login.close()
+		if err := login.begin(ctx); err != nil {
+			if ctx.Err() != nil {
+				_ = appendCrawlRunLog(runID, "cancelled while waiting for the login")
+				return
+			}
+			fail(err)
+			return
+		}
+	}
 	pagRequest := struct {
 		portal.CrawlRequest
-		URL          string `json:"url"`
-		RequestID    string `json:"requestId"`
-		RateLimitKey string `json:"rateLimitKey"`
-	}{CrawlRequest: req, URL: linkURL, RequestID: runID, RateLimitKey: portalID}
+		URL            string `json:"url"`
+		RequestID      string `json:"requestId"`
+		RateLimitKey   string `json:"rateLimitKey"`
+		UseLoginWindow bool   `json:"useLoginWindow,omitempty"`
+	}{CrawlRequest: req, URL: linkURL, RequestID: runID, RateLimitKey: portalID, UseLoginWindow: login != nil}
 	pagBody, err := json.Marshal(pagRequest)
 	if err != nil {
 		fail(err)
@@ -583,6 +612,19 @@ func runCrawlNow(ctx context.Context, runID, portalLinkID, accessToken string) {
 		if errors.Is(err, errCrawlCancelledByUser) {
 			_ = appendCrawlRunLog(runID, err.Error())
 			return
+		}
+		// plan 182: the site asked for the login again (or the window is not confirmed): back to waiting, then the same call again.
+		if login != nil && isLoginRequiredErr(err) {
+			if werr := login.waitAgain(ctx, err); werr != nil {
+				if ctx.Err() != nil {
+					_ = appendCrawlRunLog(runID, "cancelled while waiting for the login")
+					return
+				}
+				fail(werr)
+				return
+			}
+			attempt--
+			continue
 		}
 		transient := errors.Is(err, errBrowserSessionInterrupted) || errors.Is(err, errBrowserSessionWedged)
 		if !transient || attempt >= maxCrawlNowSessionRetries {
@@ -678,6 +720,17 @@ func callBrowserProxy(ctx context.Context, coreURL, path string, body []byte, ac
 
 	if status == http.StatusUnauthorized {
 		return nil, errors.New("session expired mid-crawl — please retry")
+	}
+
+	// plan 182: the Browser answers 409 login_required when the run's login window is not confirmed or the site asked for the login again.
+	if status == http.StatusConflict {
+		var lr struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		}
+		if jsonErr := json.Unmarshal(respBody, &lr); jsonErr == nil && lr.Code == codeLoginRequired {
+			return nil, &loginRequiredError{Message: lr.Message}
+		}
 	}
 
 	if status == http.StatusBadGateway {

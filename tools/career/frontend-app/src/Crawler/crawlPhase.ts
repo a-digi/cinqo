@@ -14,6 +14,7 @@ const PHASE_LABELS: Record<string, string> = {
   navigating: 'Opening the page',
   checking_cloudflare: 'Checking for a Cloudflare challenge',
   awaiting_human_challenge: 'Waiting for you to solve a Cloudflare challenge',
+  waiting_for_login: 'Waiting for you to log in and confirm',
   extracting: 'Extracting job listings',
   ingesting_jobs: 'Saving jobs',
 }

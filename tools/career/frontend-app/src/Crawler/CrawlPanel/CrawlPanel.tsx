@@ -34,6 +34,7 @@ import {
 } from '../generateInstructions'
 import { startCrawlNow, stopCrawlNow, fetchActiveCrawlRun, type CrawlRun } from '../crawlNow'
 import { phaseLabel, latestCrawlLogMessage } from '../crawlPhase'
+import { confirmLogin, isWaitingForLogin } from '../loginWindow'
 import { instructionAlertAttempts, isLikelyUncrawlable, savedDespiteError } from '../instructionStats'
 import { hasListingInstructions } from '../autoDiscoveryVisibility'
 import { PipelineLine } from '../PipelineLine'
@@ -396,6 +397,23 @@ export function CrawlPanel({
   // no confirmation — matches "Stop watching"'s own immediate
   // behavior, and the action is safe (stops work, destroys no data).
   // See plan/ai/tools/career/step-63-stop-crawling-now.md.
+  // plan 182: "I am logged in" — the Browser tool checks the page in the run's window and, when it is no longer a login page, lets the run
+  // crawl. A refusal (still a login form, a bot check) is shown under the button; nothing typed in the window is ever seen here.
+  const [isConfirmingLogin, setIsConfirmingLogin] = useState(false)
+  const [loginConfirmError, setLoginConfirmError] = useState('')
+  function handleConfirmLogin() {
+    if (!run) return
+    setIsConfirmingLogin(true)
+    setLoginConfirmError('')
+    confirmLogin(run.crawlRunId)
+      .catch((err: unknown) => {
+        setLoginConfirmError(err instanceof Error ? err.message : 'Could not confirm the login.')
+      })
+      .finally(() => {
+        setIsConfirmingLogin(false)
+      })
+  }
+
   function handleStopCrawlNow() {
     setIsStoppingCrawl(true)
     stopCrawlNow(link.id)
@@ -1447,7 +1465,35 @@ export function CrawlPanel({
         <div className="mt-1.5">
           <p className="text-xs font-medium text-gray-700">{run.kind === 'job_detail' ? 'Job detail crawl' : 'Listing crawl'}:</p>
           {run.status === 'running' &&
-            (run.phase === 'awaiting_human_challenge' ? (
+            (isWaitingForLogin(run) ? (
+              <div className="rounded-md border border-sky-300 bg-sky-50 px-2 py-1.5 text-xs text-sky-900">
+                <p className="font-medium">A window is open at the login page. Log in there, then press &quot;I am logged in&quot;.</p>
+                <p className="mt-0.5 text-sky-800">You type your login on the site itself; nothing of it is kept here.</p>
+                <div className="mt-1.5 flex gap-2">
+                  <button
+                    type="button"
+                    disabled={isConfirmingLogin}
+                    onClick={handleConfirmLogin}
+                    className="rounded-md bg-sky-700 px-2.5 py-1 text-xs font-medium text-white hover:bg-sky-800 disabled:opacity-50"
+                  >
+                    I am logged in
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isStoppingCrawl}
+                    onClick={handleStopCrawlNow}
+                    className="rounded-md border border-sky-300 bg-white px-2.5 py-1 text-xs text-sky-900 hover:bg-sky-100 disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                </div>
+                {loginConfirmError && (
+                  <p role="alert" className="mt-1 text-red-700">
+                    {loginConfirmError}
+                  </p>
+                )}
+              </div>
+            ) : run.phase === 'awaiting_human_challenge' ? (
               <p className="flex items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800">
                 <AlertIcon />
                 Waiting for you to solve a Cloudflare challenge in the browser window

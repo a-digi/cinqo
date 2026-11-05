@@ -39,6 +39,13 @@ func RecrawlOneJob(ctx context.Context, t jobs.RecrawlTarget, token string) (sav
 	case err != nil:
 		return false, err
 	}
+	// plan 182: a single recrawl runs unattended (no person to log in), so a link that needs a login is refused, never crawled
+	// on the headless tab where it would read the login page.
+	if needs, _, lerr := portal.GetPortalLinkLogin(t.PortalLinkID); lerr != nil {
+		return false, lerr
+	} else if needs {
+		return false, &NotPossibleError{"this portal needs a login: use \"Crawl job details now\" on its link, which opens a login window"}
+	}
 	portalID, err := portal.GetPortalIDForLink(t.PortalLinkID)
 	if err != nil {
 		return false, err
@@ -50,5 +57,5 @@ func RecrawlOneJob(ctx context.Context, t jobs.RecrawlTarget, token string) (sav
 	// A request id of its own: the Browser tool tracks and can cancel a call by it. There is no crawl_runs row under it, so the
 	// phase updates the poller writes find nothing to update.
 	requestID := "recrawl-" + uuid.NewString()
-	return crawlOneJobDetail(ctx, coreURL, portalID, requestID, token, req, jobs.JobDetailCrawlTarget{ID: t.ID, SourceURL: t.SourceURL, Title: t.Title})
+	return crawlOneJobDetail(ctx, coreURL, portalID, requestID, token, req, jobs.JobDetailCrawlTarget{ID: t.ID, SourceURL: t.SourceURL, Title: t.Title}, false)
 }

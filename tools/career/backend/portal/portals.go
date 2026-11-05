@@ -31,7 +31,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -138,6 +140,10 @@ type portalLink struct {
 	// present in the JSON (no omitempty).
 	AIPlatformID string `json:"aiPlatformId"`
 	AIModel      string `json:"aiModel"`
+	// RequiresLogin and LoginURL (plan 182, step 3) say this link's page is only shown to a logged-in visitor, and which page the person
+	// logs in on ("" = the link's own address). Settings of the link only: nothing about a login is stored. Always present in the JSON.
+	RequiresLogin bool   `json:"requiresLogin"`
+	LoginURL      string `json:"loginUrl"`
 	// JobDetailCrawlRequested (step 76) is the same kind of request flag
 	// as the two above, set unconditionally by the existing
 	// events/jobs-crawled listener the instant a listing crawl finishes
@@ -340,7 +346,7 @@ func ListPortals() ([]portal, error) {
 	}
 
 	linkRows, err := db.JobsDB.Query(
-		`SELECT id, portal_id, url, title, crawl_instructions, job_detail_crawl_instructions, instructions_ai_error, instructions_ai_error_at, instructions_ai_conversation_id, job_detail_instructions_ai_error, job_detail_instructions_ai_error_at, job_detail_instructions_ai_conversation_id, listing_crawl_requested, job_detail_instructions_ai_requested, instructions_ai_error_dismissed_at, job_detail_instructions_ai_error_dismissed_at, job_detail_crawl_requested, auto_discovery_enabled, auto_discovery_interval_minutes, auto_discovery_last_run_at, jobs_question_asked_at, jobs_question_note, ai_platform_id, ai_model, created_at, updated_at
+		`SELECT id, portal_id, url, title, crawl_instructions, job_detail_crawl_instructions, instructions_ai_error, instructions_ai_error_at, instructions_ai_conversation_id, job_detail_instructions_ai_error, job_detail_instructions_ai_error_at, job_detail_instructions_ai_conversation_id, listing_crawl_requested, job_detail_instructions_ai_requested, instructions_ai_error_dismissed_at, job_detail_instructions_ai_error_dismissed_at, job_detail_crawl_requested, auto_discovery_enabled, auto_discovery_interval_minutes, auto_discovery_last_run_at, jobs_question_asked_at, jobs_question_note, ai_platform_id, ai_model, requires_login, login_url, created_at, updated_at
 		 FROM portal_links ORDER BY created_at ASC`,
 	)
 	if err != nil {
@@ -353,7 +359,7 @@ func ListPortals() ([]portal, error) {
 		var title, crawlInstructions, jobDetailCrawlInstructions, instructionsAIError, instructionsAIErrorAt, instructionsAIConversationID, jobDetailInstructionsAIError, jobDetailInstructionsAIErrorAt, jobDetailInstructionsAIConversationID, instructionsAIErrorDismissedAt, jobDetailInstructionsAIErrorDismissedAt, updatedAt sql.NullString
 		var autoDiscoveryIntervalMinutes, autoDiscoveryLastRunAt sql.NullInt64
 		var jobsQuestionAskedAt, jobsQuestionNote sql.NullString
-		if err := linkRows.Scan(&l.ID, &l.PortalID, &l.URL, &title, &crawlInstructions, &jobDetailCrawlInstructions, &instructionsAIError, &instructionsAIErrorAt, &instructionsAIConversationID, &jobDetailInstructionsAIError, &jobDetailInstructionsAIErrorAt, &jobDetailInstructionsAIConversationID, &l.ListingCrawlRequested, &l.JobDetailInstructionsAIRequested, &instructionsAIErrorDismissedAt, &jobDetailInstructionsAIErrorDismissedAt, &l.JobDetailCrawlRequested, &l.AutoDiscoveryEnabled, &autoDiscoveryIntervalMinutes, &autoDiscoveryLastRunAt, &jobsQuestionAskedAt, &jobsQuestionNote, &l.AIPlatformID, &l.AIModel, &l.CreatedAt, &updatedAt); err != nil {
+		if err := linkRows.Scan(&l.ID, &l.PortalID, &l.URL, &title, &crawlInstructions, &jobDetailCrawlInstructions, &instructionsAIError, &instructionsAIErrorAt, &instructionsAIConversationID, &jobDetailInstructionsAIError, &jobDetailInstructionsAIErrorAt, &jobDetailInstructionsAIConversationID, &l.ListingCrawlRequested, &l.JobDetailInstructionsAIRequested, &instructionsAIErrorDismissedAt, &jobDetailInstructionsAIErrorDismissedAt, &l.JobDetailCrawlRequested, &l.AutoDiscoveryEnabled, &autoDiscoveryIntervalMinutes, &autoDiscoveryLastRunAt, &jobsQuestionAskedAt, &jobsQuestionNote, &l.AIPlatformID, &l.AIModel, &l.RequiresLogin, &l.LoginURL, &l.CreatedAt, &updatedAt); err != nil {
 			return nil, err
 		}
 		if autoDiscoveryIntervalMinutes.Valid {
@@ -469,6 +475,83 @@ func UpdatePortalLink(id string, url, title *string) error {
 		return ErrDuplicatePortalLink
 	}
 	return err
+}
+
+// MaxLoginURLLength bounds a link's login page address, in characters.
+const MaxLoginURLLength = 2000
+
+// ErrInvalidLoginURL is a caller mistake (400), never a server failure.
+var ErrInvalidLoginURL = errors.New("loginUrl must be an http or https address with a host, without a user name or password, of at most 2000 characters (or empty: the link's own address is used)")
+
+// ValidateLoginURL (plan 182, step 3) trims and checks the address of a link's login page: empty is fine (the link's own address is
+// then opened), anything else must be an http or https address with a host and no embedded user name or password. Returns the trimmed value.
+func ValidateLoginURL(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", nil
+	}
+	if utf8.RuneCountInString(raw) > MaxLoginURLLength {
+		return "", ErrInvalidLoginURL
+	}
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" || u.User != nil {
+		return "", ErrInvalidLoginURL
+	}
+	return raw, nil
+}
+
+// UpdatePortalLinkLogin sets whether a link's page needs a login (requiresLogin) and/or the address of the login page (loginURL; "" clears
+// it); nil leaves a value alone. The address is checked BEFORE anything is written, so a refused request changes nothing. These are settings
+// of the link: nothing about a login itself is stored. ErrUnknownPortalLink for an unknown id.
+func UpdatePortalLinkLogin(id string, requiresLogin *bool, loginURL *string) error {
+	if err := RequirePortalLinkExists(id); err != nil {
+		return err
+	}
+	var checked string
+	if loginURL != nil {
+		v, err := ValidateLoginURL(*loginURL)
+		if err != nil {
+			return err
+		}
+		checked = v
+	}
+	if requiresLogin == nil && loginURL == nil {
+		return nil
+	}
+	setClauses := ""
+	args := []any{}
+	if requiresLogin != nil {
+		setClauses += "requires_login = ?, "
+		args = append(args, *requiresLogin)
+	}
+	if loginURL != nil {
+		setClauses += "login_url = ?, "
+		args = append(args, checked)
+	}
+	setClauses += "updated_at = datetime('now')"
+	args = append(args, id)
+	_, err := db.JobsDB.Exec(`UPDATE portal_links SET `+setClauses+` WHERE id = ?`, args...)
+	return err
+}
+
+// AddPortalLinkWithLogin adds a link like AddPortalLink and sets its login settings in the same call. The login address is checked first, so
+// a bad one adds nothing.
+func AddPortalLinkWithLogin(portalID, url, title string, requiresLogin bool, loginURL string) (string, error) {
+	checked, err := ValidateLoginURL(loginURL)
+	if err != nil {
+		return "", err
+	}
+	id, err := AddPortalLink(portalID, url, title)
+	if err != nil {
+		return "", err
+	}
+	if requiresLogin || checked != "" {
+		if err := UpdatePortalLinkLogin(id, &requiresLogin, &checked); err != nil {
+			_ = RemovePortalLink(id)
+			return "", err
+		}
+	}
+	return id, nil
 }
 
 func RemovePortalLink(id string) error {
@@ -802,6 +885,19 @@ func GetPortalLinkURL(id string) (string, error) {
 	return url, nil
 }
 
+// GetPortalLinkLogin (plan 182, step 4) reads a link's login setting: whether its pages need a login and the page to start the login
+// at ("" = the link's own address). It is a setting, never a login: nothing about an account is kept anywhere.
+func GetPortalLinkLogin(id string) (requiresLogin bool, loginURL string, err error) {
+	if err := RequirePortalLinkExists(id); err != nil {
+		return false, "", err
+	}
+	var flag int
+	if err := db.JobsDB.QueryRow(`SELECT requires_login, login_url FROM portal_links WHERE id = ?`, id).Scan(&flag, &loginURL); err != nil {
+		return false, "", err
+	}
+	return flag != 0, loginURL, nil
+}
+
 // GetPortalIDForLink reads just a link's own owning portal_id — the
 // deterministic crawl goroutines (crawl package) need it to set
 // browser's own rateLimitKey (portal_pacing.go, tools/browser/backend/
@@ -857,6 +953,7 @@ func ListPortalLinksEligibleForAutoDiscovery() ([]string, error) {
 		`SELECT id FROM portal_links
 		 WHERE crawl_instructions IS NOT NULL AND crawl_instructions != ''
 		   AND auto_discovery_enabled = 1
+		   AND requires_login = 0
 		   AND auto_discovery_interval_minutes IS NULL`,
 	)
 	if err != nil {
@@ -894,6 +991,7 @@ func ListDuePortalLinksWithCustomInterval() ([]string, error) {
 		`SELECT id FROM portal_links
 		 WHERE crawl_instructions IS NOT NULL AND crawl_instructions != ''
 		   AND auto_discovery_enabled = 1
+		   AND requires_login = 0
 		   AND auto_discovery_interval_minutes IS NOT NULL
 		   AND (
 		     auto_discovery_last_run_at IS NULL
@@ -1501,6 +1599,8 @@ func WritePortalLinkAwareError(w http.ResponseWriter, action string, err error) 
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrInvalidAutoDiscoveryInterval):
 		http.Error(w, err.Error(), http.StatusBadRequest)
+	case errors.Is(err, ErrInvalidLoginURL):
+		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrInvalidInstructionKind), errors.Is(err, ErrInvalidInstructionTrigger):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	default:
@@ -1598,9 +1698,11 @@ func RegisterDeletePortal(server *mcp.Server) {
 }
 
 type addPortalLinkArgs struct {
-	PortalID string `json:"portalId" jsonschema:"the portal to add this crawl target to — must already exist"`
-	URL      string `json:"url" jsonschema:"the URL to crawl for job postings"`
-	Title    string `json:"title" jsonschema:"a short, descriptive title for this link (e.g. 'Software Engineer jobs, Hamburg') so it stays recognizable later"`
+	PortalID      string  `json:"portalId" jsonschema:"the portal to add this crawl target to — must already exist"`
+	URL           string  `json:"url" jsonschema:"the URL to crawl for job postings"`
+	Title         string  `json:"title" jsonschema:"a short, descriptive title for this link (e.g. 'Software Engineer jobs, Hamburg') so it stays recognizable later"`
+	RequiresLogin *bool   `json:"requiresLogin,omitempty" jsonschema:"true only when the user says this page shows its jobs only to a logged-in visitor; the user then logs in themselves in a window they open when they crawl it (you never log in for them); omit otherwise"`
+	LoginURL      *string `json:"loginUrl,omitempty" jsonschema:"only with requiresLogin: the site's own login page (http or https), when it is not the link's own address; omit otherwise"`
 }
 
 func RegisterAddPortalLink(server *mcp.Server) {
@@ -1623,13 +1725,22 @@ func RegisterAddPortalLink(server *mcp.Server) {
 		if args.Title == "" {
 			return db.ErrResult("title is required"), nil, nil
 		}
-		id, err := AddPortalLink(args.PortalID, args.URL, args.Title)
+		requires, login := false, ""
+		if args.RequiresLogin != nil {
+			requires = *args.RequiresLogin
+		}
+		if args.LoginURL != nil {
+			login = *args.LoginURL
+		}
+		id, err := AddPortalLinkWithLogin(args.PortalID, args.URL, args.Title, requires, login)
 		if err != nil {
 			switch {
 			case errors.Is(err, ErrUnknownPortal):
 				return db.ErrResult(fmt.Sprintf("unknown portal id %q", args.PortalID)), nil, nil
 			case errors.Is(err, ErrDuplicatePortalLink):
 				return db.ErrResult("this url is already a link on this portal"), nil, nil
+			case errors.Is(err, ErrInvalidLoginURL):
+				return db.ErrResult(err.Error()), nil, nil
 			}
 			return db.ErrResult(fmt.Sprintf("failed to add portal link: %v", err)), nil, nil
 		}
@@ -1638,9 +1749,11 @@ func RegisterAddPortalLink(server *mcp.Server) {
 }
 
 type updatePortalLinkArgs struct {
-	ID    string  `json:"id" jsonschema:"the portal link's own id, from add_portal_link or list_portals"`
-	URL   *string `json:"url,omitempty" jsonschema:"the link's own new URL"`
-	Title *string `json:"title,omitempty" jsonschema:"the link's own new title"`
+	ID            string  `json:"id" jsonschema:"the portal link's own id, from add_portal_link or list_portals"`
+	URL           *string `json:"url,omitempty" jsonschema:"the link's own new URL"`
+	Title         *string `json:"title,omitempty" jsonschema:"the link's own new title"`
+	RequiresLogin *bool   `json:"requiresLogin,omitempty" jsonschema:"set only when the user says this page shows its jobs only to a logged-in visitor (true) or no longer does (false); the user logs in themselves in a window they open when they crawl it, you never log in for them"`
+	LoginURL      *string `json:"loginUrl,omitempty" jsonschema:"the site's own login page (http or https) when it is not the link's own address; an empty text clears it"`
 }
 
 func RegisterUpdatePortalLink(server *mcp.Server) {
@@ -1653,8 +1766,8 @@ func RegisterUpdatePortalLink(server *mcp.Server) {
 		if args.ID == "" {
 			return db.ErrResult("id is required"), nil, nil
 		}
-		if args.URL == nil && args.Title == nil {
-			return db.ErrResult("url or title is required"), nil, nil
+		if args.URL == nil && args.Title == nil && args.RequiresLogin == nil && args.LoginURL == nil {
+			return db.ErrResult("url, title, requiresLogin or loginUrl is required"), nil, nil
 		}
 		if args.URL != nil && *args.URL == "" {
 			return db.ErrResult("url cannot be empty"), nil, nil
@@ -1662,12 +1775,27 @@ func RegisterUpdatePortalLink(server *mcp.Server) {
 		if args.Title != nil && *args.Title == "" {
 			return db.ErrResult("title cannot be empty"), nil, nil
 		}
+		// The login address is checked before anything is written, so a refused request changes nothing.
+		if args.LoginURL != nil {
+			if _, err := ValidateLoginURL(*args.LoginURL); err != nil {
+				return db.ErrResult(err.Error()), nil, nil
+			}
+		}
 		if err := UpdatePortalLink(args.ID, args.URL, args.Title); err != nil {
 			switch {
 			case errors.Is(err, ErrUnknownPortalLink):
 				return db.ErrResult(fmt.Sprintf("unknown portal link id %q", args.ID)), nil, nil
 			case errors.Is(err, ErrDuplicatePortalLink):
 				return db.ErrResult("this url is already a link on this portal"), nil, nil
+			}
+			return db.ErrResult(fmt.Sprintf("failed to update portal link: %v", err)), nil, nil
+		}
+		if err := UpdatePortalLinkLogin(args.ID, args.RequiresLogin, args.LoginURL); err != nil {
+			switch {
+			case errors.Is(err, ErrUnknownPortalLink):
+				return db.ErrResult(fmt.Sprintf("unknown portal link id %q", args.ID)), nil, nil
+			case errors.Is(err, ErrInvalidLoginURL):
+				return db.ErrResult(err.Error()), nil, nil
 			}
 			return db.ErrResult(fmt.Sprintf("failed to update portal link: %v", err)), nil, nil
 		}

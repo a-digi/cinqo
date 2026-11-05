@@ -30,6 +30,7 @@ import { PageTips } from '../../Shared/PageTips/PageTips'
 import { CrawlAiModal } from './CrawlAiModal'
 import { aiChip, describeChoice, linkChip, overrideOf } from './aiOverrideDisplay'
 import { PortalLinkHeader } from './PortalLinkHeader'
+import { loginAddressForSave } from '../../Crawler/loginWindow'
 import { JOBS_PATH, VIEW_PLATFORM_PATH } from '../../paths'
 import { AppLink } from '../../Shared/AppLink/AppLink'
 
@@ -59,9 +60,14 @@ export function PortalsPage() {
   const [addingLinkPortalId, setAddingLinkPortalId] = useState<string | null>(null)
   const [linkUrlDrafts, setLinkUrlDrafts] = useState<Record<string, string>>({})
   const [linkTitleDrafts, setLinkTitleDrafts] = useState<Record<string, string>>({})
+  // plan 182: the new link's login setting (a setting only, never a login), per portal like the other drafts.
+  const [linkRequiresLoginDrafts, setLinkRequiresLoginDrafts] = useState<Partial<Record<string, boolean>>>({})
+  const [linkLoginUrlDrafts, setLinkLoginUrlDrafts] = useState<Record<string, string>>({})
   const [editingLinkId, setEditingLinkId] = useState<string | null>(null)
   const [editLinkUrl, setEditLinkUrl] = useState('')
   const [editLinkTitle, setEditLinkTitle] = useState('')
+  const [editLinkRequiresLogin, setEditLinkRequiresLogin] = useState(false)
+  const [editLinkLoginUrl, setEditLinkLoginUrl] = useState('')
   const [error, setError] = useState('')
   // The portal whose AI choice the modal is editing (step 102), or null when it is closed.
   const [aiPortalId, setAiPortalId] = useState<string | null>(null)
@@ -256,10 +262,13 @@ export function PortalsPage() {
       return
     }
     setError('')
-    addPortalLink(portalId, url, title)
+    const requiresLogin = linkRequiresLoginDrafts[portalId] === true
+    addPortalLink(portalId, url, title, { requiresLogin, loginUrl: loginAddressForSave(requiresLogin, linkLoginUrlDrafts[portalId] ?? '') })
       .then(({ id }) => {
         setLinkUrlDrafts((prev) => ({ ...prev, [portalId]: '' }))
         setLinkTitleDrafts((prev) => ({ ...prev, [portalId]: '' }))
+        setLinkRequiresLoginDrafts((prev) => ({ ...prev, [portalId]: false }))
+        setLinkLoginUrlDrafts((prev) => ({ ...prev, [portalId]: '' }))
         setAddingLinkPortalId(null)
         load()
         // Step 103: the first thing for a new link is to try what the portal's other links already
@@ -276,18 +285,24 @@ export function PortalsPage() {
     setError('')
     setLinkUrlDrafts((prev) => ({ ...prev, [portalId]: '' }))
     setLinkTitleDrafts((prev) => ({ ...prev, [portalId]: '' }))
+    setLinkRequiresLoginDrafts((prev) => ({ ...prev, [portalId]: false }))
+    setLinkLoginUrlDrafts((prev) => ({ ...prev, [portalId]: '' }))
   }
 
   function startEditLink(link: PortalLink) {
     setEditingLinkId(link.id)
     setEditLinkUrl(link.url)
     setEditLinkTitle(link.title ?? '')
+    setEditLinkRequiresLogin(link.requiresLogin)
+    setEditLinkLoginUrl(link.loginUrl)
   }
 
   function cancelEditLink() {
     setEditingLinkId(null)
     setEditLinkUrl('')
     setEditLinkTitle('')
+    setEditLinkRequiresLogin(false)
+    setEditLinkLoginUrl('')
   }
 
   function saveEditLink(id: string) {
@@ -302,7 +317,12 @@ export function PortalsPage() {
       return
     }
     setError('')
-    updatePortalLink(id, { url, title })
+    updatePortalLink(id, {
+      url,
+      title,
+      requiresLogin: editLinkRequiresLogin,
+      loginUrl: loginAddressForSave(editLinkRequiresLogin, editLinkLoginUrl),
+    })
       .then(() => {
         cancelEditLink()
         load()
@@ -525,6 +545,26 @@ export function PortalsPage() {
                           placeholder="URL to crawl"
                           className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
                         />
+                        <label className="flex items-center gap-2 text-sm text-gray-700">
+                          <input
+                            type="checkbox"
+                            checked={linkRequiresLoginDrafts[p.id] === true}
+                            onChange={(e) => {
+                              setLinkRequiresLoginDrafts((prev) => ({ ...prev, [p.id]: e.target.checked }))
+                            }}
+                          />
+                          Requires login
+                        </label>
+                        {linkRequiresLoginDrafts[p.id] === true && (
+                          <input
+                            value={linkLoginUrlDrafts[p.id] ?? ''}
+                            onChange={(e) => {
+                              setLinkLoginUrlDrafts((prev) => ({ ...prev, [p.id]: e.target.value }))
+                            }}
+                            placeholder="Login page (optional, the URL above is used when empty)"
+                            className="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
+                          />
+                        )}
                       </div>
                       <div className="mt-3 flex gap-2">
                         <button
@@ -575,6 +615,10 @@ export function PortalsPage() {
                             editUrl={editLinkUrl}
                             onEditTitleChange={setEditLinkTitle}
                             onEditUrlChange={setEditLinkUrl}
+                            editRequiresLogin={editLinkRequiresLogin}
+                            editLoginUrl={editLinkLoginUrl}
+                            onEditRequiresLoginChange={setEditLinkRequiresLogin}
+                            onEditLoginUrlChange={setEditLinkLoginUrl}
                             onStartEdit={() => {
                               startEditLink(link)
                             }}

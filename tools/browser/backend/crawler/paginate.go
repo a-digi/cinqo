@@ -196,6 +196,9 @@ type paginatedCrawlRequest struct {
 	// this, so that path is completely unaffected. See
 	// plan/ai/tools/career/step-XX-portal-crawl-pacing.md.
 	RateLimitKey string `json:"rateLimitKey,omitempty"`
+	// UseLoginWindow (plan 182) — crawl in the login window the person logged in to for this requestId (login_window_crawl.go) instead
+	// of the headless session; requires RequestID. Absent for every other call: unchanged.
+	UseLoginWindow bool `json:"useLoginWindow,omitempty"`
 }
 
 // PaginatedCrawlHandler handles POST /crawl-paginated — the --mcp
@@ -245,7 +248,26 @@ func PaginatedCrawlHandler(w http.ResponseWriter, r *http.Request) {
 	captureHTML := settings.DebugEnabled && settings.DebugLogHTML
 
 	// r.Context() — see CrawlHandler's identical comment (crawl.go).
-	result, pageHTML, err := performPaginatedCrawl(r.Context(), body.URL, body.Container, body.Fields, body.Mapping, body.NextSelector, body.RequestedMaxPages, body.EffectiveMaxPages, captureHTML, body.RequestID, body.RateLimitKey)
+	var (
+		result   paginatedCrawlResponse
+		pageHTML []string
+		err      error
+	)
+	if body.UseLoginWindow {
+		// Plan 182: in the login window the person logged in to for this run, never on the headless session.
+		if body.RequestID == "" {
+			http.Error(w, "requestId is required with useLoginWindow", http.StatusBadRequest)
+			return
+		}
+		args := paginatedArgs{body.Container, body.Fields, body.Mapping, body.NextSelector, body.RequestedMaxPages, body.EffectiveMaxPages, captureHTML, body.RequestID, body.RateLimitKey, aiDeadline(body.RequestID, time.Now())}
+		result, pageHTML, err = performPaginatedCrawlInLoginWindow(r.Context(), body.URL, args)
+		if err != nil {
+			writeLoginWindowFailure(w, body.RequestID, "paginated crawl", err)
+			return
+		}
+	} else {
+		result, pageHTML, err = performPaginatedCrawl(r.Context(), body.URL, body.Container, body.Fields, body.Mapping, body.NextSelector, body.RequestedMaxPages, body.EffectiveMaxPages, captureHTML, body.RequestID, body.RateLimitKey)
+	}
 	if err != nil {
 		setCrawlPhase(body.RequestID, phaseFailed, err.Error())
 		var cfErr *crawlError
@@ -303,6 +325,9 @@ type loopTab struct {
 	signals    *challengeSignals
 	onNavigate func()
 	autoWait   time.Duration
+	// checkPage (plan 182) is optional: when set it runs on every page right before that page is extracted, and an error stops the crawl
+	// with it. The login window uses it to stop at a page that shows the login form again. nil for every other tab: no change.
+	checkPage func(ctx context.Context) error
 }
 
 func runPaginatedCrawlLoop(ctx context.Context, tab loopTab, args paginatedArgs) (paginatedCrawlResponse, []string, error) {
@@ -330,6 +355,11 @@ func runPaginatedCrawlLoop(ctx context.Context, tab loopTab, args paginatedArgs)
 
 	for page := 1; ; page++ {
 		setCrawlPhase(requestID, phaseExtracting, fmt.Sprintf("extracting page %d", page))
+		if tab.checkPage != nil {
+			if err := tab.checkPage(ctx); err != nil {
+				return paginatedCrawlResponse{}, nil, err
+			}
+		}
 		result, err := runExtractionOnCurrentPage(ctx, container, fields, mapping)
 		if err != nil {
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {

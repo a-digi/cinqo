@@ -153,6 +153,31 @@ func runJobDetailCrawlNow(ctx context.Context, runID, portalLinkID string, targe
 		return
 	}
 
+	// plan 182 (step 4): a link that needs a login crawls its job pages in this run's own login window.
+	requiresLogin, loginURL, err := portal.GetPortalLinkLogin(portalLinkID)
+	if err != nil {
+		fail(err)
+		return
+	}
+	var login *loginRun
+	if requiresLogin {
+		linkURL, uerr := portal.GetPortalLinkURL(portalLinkID)
+		if uerr != nil {
+			fail(uerr)
+			return
+		}
+		login = &loginRun{coreURL: coreURL, runID: runID, token: accessToken, siteURL: linkURL, loginURL: loginURL}
+		defer login.close()
+		if err := login.begin(ctx); err != nil {
+			if ctx.Err() != nil {
+				_ = appendCrawlRunLog(runID, "cancelled while waiting for the login")
+				return
+			}
+			fail(err)
+			return
+		}
+	}
+
 	updated, skipped := 0, 0
 	for i, target := range targets {
 		if ctx.Err() != nil {
@@ -166,7 +191,19 @@ func runJobDetailCrawlNow(ctx context.Context, runID, portalLinkID string, targe
 		}
 		_ = setCrawlRunPhase(runID, "extracting", fmt.Sprintf("job %d of %d: %s", i+1, len(targets), label))
 
-		didUpdate, err := crawlOneJobDetail(ctx, coreURL, portalID, runID, accessToken, req, target)
+		didUpdate, err := crawlOneJobDetail(ctx, coreURL, portalID, runID, accessToken, req, target, login != nil)
+		// The site asked for the login again: wait for the person, then the same job once more (bounded per run).
+		for err != nil && login != nil && isLoginRequiredErr(err) {
+			if werr := login.waitAgain(ctx, err); werr != nil {
+				if ctx.Err() != nil {
+					_ = appendCrawlRunLog(runID, "cancelled while waiting for the login")
+					return
+				}
+				fail(werr)
+				return
+			}
+			didUpdate, err = crawlOneJobDetail(ctx, coreURL, portalID, runID, accessToken, req, target, true)
+		}
 		if err != nil {
 			if errors.Is(err, errCrawlCancelledByUser) {
 				_ = appendCrawlRunLog(runID, err.Error())
@@ -209,13 +246,14 @@ var errNoPageExtracted = errors.New("no page extracted")
 // caller only needs to decide whether ITS OWN broader operation should
 // keep going (any ordinary error) or stop entirely
 // (errCrawlCancelledByUser, or ctx already cancelled).
-func crawlOneJobDetail(ctx context.Context, coreURL, portalID, runID, accessToken string, req portal.CrawlRequest, target jobs.JobDetailCrawlTarget) (updated bool, err error) {
+func crawlOneJobDetail(ctx context.Context, coreURL, portalID, runID, accessToken string, req portal.CrawlRequest, target jobs.JobDetailCrawlTarget, useLoginWindow bool) (updated bool, err error) {
 	pagRequest := struct {
 		portal.CrawlRequest
-		URL          string `json:"url"`
-		RequestID    string `json:"requestId"`
-		RateLimitKey string `json:"rateLimitKey"`
-	}{CrawlRequest: req, URL: target.SourceURL, RequestID: runID, RateLimitKey: portalID}
+		URL            string `json:"url"`
+		RequestID      string `json:"requestId"`
+		RateLimitKey   string `json:"rateLimitKey"`
+		UseLoginWindow bool   `json:"useLoginWindow,omitempty"`
+	}{CrawlRequest: req, URL: target.SourceURL, RequestID: runID, RateLimitKey: portalID, UseLoginWindow: useLoginWindow}
 	pagBody, err := json.Marshal(pagRequest)
 	if err != nil {
 		_ = jobs.MarkJobDetailCrawlFailed(target.ID)
@@ -225,6 +263,10 @@ func crawlOneJobDetail(ctx context.Context, coreURL, portalID, runID, accessToke
 	respBody, err := callBrowserProxyWithJobDetailRetry(ctx, coreURL, pagBody, accessToken, runID)
 	if err != nil {
 		if errors.Is(err, errCrawlCancelledByUser) || ctx.Err() != nil {
+			return false, err
+		}
+		// plan 182: a login wanted again is not a failure of this job: the run waits for the person and tries it once more.
+		if isLoginRequiredErr(err) {
 			return false, err
 		}
 		// A harder failure than "extraction ran but came back empty"

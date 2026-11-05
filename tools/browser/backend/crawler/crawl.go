@@ -81,6 +81,9 @@ type crawlRequest struct {
 	// it) — a no-op in that case, see crawl_status.go's own doc
 	// comment. See plan/ai/tools/browser/step-31-crawl-phase-status-endpoint.md.
 	RequestID string `json:"requestId,omitempty"`
+	// UseLoginWindow (plan 182) — read the page in the login window the person logged in to for this requestId (login_window_crawl.go)
+	// instead of the headless session; requires RequestID. Absent for every other call: unchanged.
+	UseLoginWindow bool `json:"useLoginWindow,omitempty"`
 	// ExpectedSelectors (step 36) is optional — CSS selectors the
 	// caller already knows it wants to find on this page (Career's own
 	// deterministic "Crawl now" derives these from the link's own
@@ -163,6 +166,26 @@ func CrawlHandler(w http.ResponseWriter, r *http.Request) {
 
 	if body.Offset != nil && *body.Offset < 0 {
 		http.Error(w, "offset must not be negative", http.StatusBadRequest)
+		return
+	}
+
+	if body.UseLoginWindow {
+		if body.RequestID == "" {
+			http.Error(w, "requestId is required with useLoginWindow", http.StatusBadRequest)
+			return
+		}
+		if body.Offset != nil {
+			http.Error(w, "offset is not supported with useLoginWindow", http.StatusBadRequest)
+			return
+		}
+		result, err := crawlInLoginWindow(r.Context(), body)
+		if err != nil {
+			writeLoginWindowFailure(w, body.RequestID, "crawl", err)
+			return
+		}
+		setCrawlPhase(body.RequestID, phaseCompleted, "HTML crawled in the login window")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(result)
 		return
 	}
 
