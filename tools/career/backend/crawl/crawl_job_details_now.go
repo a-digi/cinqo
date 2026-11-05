@@ -293,7 +293,17 @@ func crawlOneJobDetail(ctx context.Context, coreURL, portalID, runID, accessToke
 		_ = jobs.MarkJobDetailCrawlFailed(target.ID)
 		return false, err
 	}
-	return didUpdate, nil
+	// Plan 185 (step 7b): a job the link crawler found has only a title and an address; the company, location and date its detail page
+	// shows complete it, only where empty (jobs.FillMissingJobFields does nothing for any other job).
+	filled, ferr := jobs.FillMissingJobFields(target.ID, jobs.MissingFields{
+		Company:  values["company"],
+		Location: values["location"],
+		PostedAt: portal.SanitizePostedAt(values["postedAt"]),
+	})
+	if ferr != nil {
+		return didUpdate, ferr
+	}
+	return didUpdate || len(filled) > 0, nil
 }
 
 // extractResultValues flattens one page's own Results (label ->

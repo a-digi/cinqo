@@ -42,6 +42,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -1303,6 +1304,72 @@ func SaveJobDetailExtraction(jobId string, values map[string]string) (updated bo
 		publishDescriptionChanged(jobId, DescriptionSourceDetailCrawl)
 	}
 	return true, nil
+}
+
+// MissingFields are what a job's detail page says about it beyond its description (plan 185, step 7b): the values of the fields the
+// detail instructions labeled company, location and postedAt. An empty value means "the page did not say".
+type MissingFields struct {
+	Company  string
+	Location string
+	PostedAt string
+}
+
+// Bounds of a value taken from a detail page: a company name or a place is short; a long value means the selector caught a block of
+// text, which must never become a company.
+const (
+	maxFilledCompanyRunes  = 200
+	maxFilledLocationRunes = 300
+	maxFilledPostedAtRunes = 40
+)
+
+// cleanFilledValue collapses whitespace and returns "" for a value that is empty or longer than max runes.
+func cleanFilledValue(v string, max int) string {
+	v = strings.Join(strings.Fields(v), " ")
+	if v == "" || utf8.RuneCountInString(v) > max {
+		return ""
+	}
+	return v
+}
+
+// FillMissingJobFields completes a job FOUND BY THE LINK CRAWLER (its portal link's method is "links") with what its detail page says:
+// company, location and posted date, each ONLY into a field that is empty. Nothing that is already there is replaced, a job a person
+// added by hand is never touched (source 'manual'), and a job of any other link is not changed at all. It returns the names of the
+// fields it filled. A filled company announces the job to the company linking (career.job.created) exactly as a crawl does for a
+// job that came with its company. The title is never changed.
+func FillMissingJobFields(jobID string, f MissingFields) (filled []string, err error) {
+	if err := RequireJobExists(jobID); err != nil {
+		return nil, err
+	}
+	const linkMethodOnly = ` AND source <> 'manual' AND EXISTS (SELECT 1 FROM portal_links pl WHERE pl.id = jobs.portal_link_id AND pl.crawl_method = 'links')`
+	set := func(column, value string) (bool, error) {
+		if value == "" {
+			return false, nil
+		}
+		res, err := db.JobsDB.Exec(`UPDATE jobs SET `+column+` = ? WHERE id = ? AND TRIM(COALESCE(`+column+`, '')) = ''`+linkMethodOnly, value, jobID)
+		if err != nil {
+			return false, err
+		}
+		n, err := res.RowsAffected()
+		return n > 0, err
+	}
+	company := cleanFilledValue(f.Company, maxFilledCompanyRunes)
+	if ok, err := set("company", company); err != nil {
+		return filled, err
+	} else if ok {
+		filled = append(filled, "company")
+		publishJobCreatedEvent(jobID, company)
+	}
+	if ok, err := set("location", cleanFilledValue(f.Location, maxFilledLocationRunes)); err != nil {
+		return filled, err
+	} else if ok {
+		filled = append(filled, "location")
+	}
+	if ok, err := set("posted_at", cleanFilledValue(f.PostedAt, maxFilledPostedAtRunes)); err != nil {
+		return filled, err
+	} else if ok {
+		filled = append(filled, "postedAt")
+	}
+	return filled, nil
 }
 
 // MarkJobDetailCrawlFailed records that a job-detail-page crawl

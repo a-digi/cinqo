@@ -201,7 +201,16 @@ export function generateInstructionsConversationTitle(link: { title?: string | n
 // saved against this link (a prior listing crawl), so step 1 finds
 // one via list_jobs rather than being handed link.url directly — see
 // plan/ai/tools/career/step-XX-job-detail-crawl-instructions.md.
-export function buildGenerateJobDetailInstructionsMessage(link: { id: string; title?: string | null; url: string }): string {
+export function buildGenerateJobDetailInstructionsMessage(link: {
+  id: string
+  title?: string | null
+  url: string
+  crawlMethod?: 'instructions' | 'links'
+}): string {
+  // Plan 185 (step 7b): the jobs of a link crawled with the link crawler were found by the address of their links alone, so they have
+  // a title and an address and nothing else. Their detail page is the one place that says the company, the place and the date: the
+  // instructions are asked for those too (description stays the required one). The wording for every other link is unchanged.
+  const linkCrawled = link.crawlMethod === 'links'
   return [
     'Please create or update the stored JOB DETAIL crawl instructions for this existing portal link only — do not create a new portal or link, and do not ask which link is meant (it is already specified below). Do not run a crawl or save/modify any jobs — this is only about the stored instructions themselves.',
     '',
@@ -214,11 +223,17 @@ export function buildGenerateJobDetailInstructionsMessage(link: { id: string; ti
     `2. Call list_jobs with portalLinkId: ${link.id} and limit: 1 to find one real, already-saved job for this link — this gives you a sample job detail page URL to inspect. If it returns no jobs, reply explaining that this link has no saved jobs yet (a listing crawl needs to run first) and stop here without calling set_portal_link_job_detail_crawl_instructions.`,
     "3. Navigate to that job's own sourceUrl (fetch_page_html — always pass maxAttributeLength: 200) and inspect it: this is a single JOB DETAIL page, not the listing page — find the element(s) that hold the actual job posting text (title, description, requirements, etc.), ignoring navigation, ads, unrelated sections, and footers.",
     '4. Work out the fields needed to extract ONLY that job-position-relevant text as plain text — no container, no pagination (a detail page is neither a repeating list nor paginated). The effective output must include a field labeled description covering the full job posting body text.',
+    ...(linkCrawled ? [LINK_CRAWLED_DETAIL_FIELDS_STEP] : []),
     '5. Call set_portal_link_job_detail_crawl_instructions ONCE with the finished YAML for this exact portal link id.',
     '',
     'When done, reply with a short one-line confirmation — this reply is never shown to any user, so keep it brief.',
   ].join('\n')
 }
+
+// The extra step of the job-detail prompt for a link crawled with the link crawler (plan 185, step 7b). The labels are exactly the ones
+// the backend reads (company, location, postedAt); a page that does not show one simply leaves the field out.
+export const LINK_CRAWLED_DETAIL_FIELDS_STEP =
+  '4b. The jobs of this link were found by the address of their links alone, so each one has only a title and an address: this detail page is where the rest of its data comes from. Besides description, add a field labeled company (the name of the hiring company only), a field labeled location (where the job is, as the page shows it) and a field labeled postedAt (the date the job was posted, copied as the page shows it, for example 23-11-2026) — each ONLY if the page really shows it; leave a field out when the page does not, never invent a selector for it. Use exactly these labels: company, location, postedAt. Each must select one short piece of text, never a block of the page.'
 
 export function generateJobDetailInstructionsConversationTitle(link: { title?: string | null; url: string }): string {
   return `Generate job detail crawl instructions: ${link.title ?? link.url}`

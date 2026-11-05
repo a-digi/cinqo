@@ -28,6 +28,8 @@ type fakeCore struct {
 	fetchBodyFor map[string]string
 	failFor      string
 	paths        []string // every request path, in order (the core's view of what was asked)
+	// paginated answers a selector crawl (crawl-paginated) by the address it was asked for: the job-detail step.
+	paginated func(pageURL string) (status int, body string)
 }
 
 func newFakeCore(t *testing.T, engine string) *fakeCore {
@@ -43,6 +45,18 @@ func newFakeCore(t *testing.T, engine string) *fakeCore {
 			f.settingsCalls++
 			w.WriteHeader(f.settingsStatus)
 			_, _ = w.Write([]byte(`{"fetchEngine":"` + f.engine + `"}`))
+		case "/api/v1/tools/browser/proxy/crawl-paginated":
+			raw, _ := io.ReadAll(r.Body)
+			var b map[string]any
+			_ = json.Unmarshal(raw, &b)
+			if f.paginated == nil {
+				http.NotFound(w, r)
+				return
+			}
+			pageURL, _ := b["url"].(string)
+			status, body := f.paginated(pageURL)
+			w.WriteHeader(status)
+			_, _ = w.Write([]byte(body))
 		case "/api/v1/tools/browser/proxy/fetch-links":
 			raw, _ := io.ReadAll(r.Body)
 			var b map[string]string

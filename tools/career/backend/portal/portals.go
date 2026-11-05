@@ -1450,6 +1450,10 @@ func At(s []string, i int) string {
 // plan/ai/tools/career/step-79-ai-crawl-instructions-acceptance-loop.md
 // already addresses at the source, not something a character-level
 // filter can safely disambiguate after the fact).
+// SanitizePostedAt is sanitizePostedAt for callers outside this package (the job-detail step of the link crawler, plan 185, reads a posted
+// date from a detail page and must clean it exactly as a listing crawl does).
+func SanitizePostedAt(raw string) string { return sanitizePostedAt(raw) }
+
 func sanitizePostedAt(raw string) string {
 	var b strings.Builder
 	hasDigit, hasDelimiter := false, false
