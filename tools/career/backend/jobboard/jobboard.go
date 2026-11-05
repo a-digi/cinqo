@@ -15,6 +15,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"career-tool-backend/applicationlog"
 	"career-tool-backend/db"
 
 	"github.com/google/uuid"
@@ -77,6 +78,9 @@ type Card struct {
 	// Personas (step 141) is how well each of this board's profile's personas fits the job, best first; absent when the job
 	// has no scores. The board handler fills it from the persona scores; the jobboard package does not read them.
 	Personas []PersonaScore `json:"personas,omitempty"`
+	// Protocol (step 176) says how many entries the application's protocol has and when the last one was; absent when the job
+	// has none. The board handler fills it; the jobboard package does not read it.
+	Protocol *applicationlog.Summary `json:"protocol,omitempty"`
 }
 
 // PersonaScore is one persona's score for a job, shown on its card. Best marks the persona that fits the job best.

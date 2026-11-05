@@ -11,6 +11,7 @@ import {
   type JobBoard,
   type JobBoardCard,
   type JobBoardColumn,
+  type JobBoardProtocol,
   type Profile,
 } from '../../api'
 import { ActionMenu, type ActionMenuItem } from '../../Shared/ActionMenu/ActionMenu'
@@ -34,6 +35,7 @@ import {
   statusNameProblem,
   totalJobs,
 } from './jobBoardRules'
+import { protocolChip } from './protocolChipRules'
 import { StatusNameForm } from './StatusNameForm'
 import { useAddressSearch } from '../../Shared/AddressState/useAddressSearch'
 import { writeAddress } from '../../Shared/AddressState/writeAddress'
@@ -480,6 +482,9 @@ function Column({
                         {job.matchScore}%
                       </span>
                     )}
+                    {job.protocol !== undefined && (
+                      <ProtocolChipLine protocol={job.protocol} href={jobDetailsPathFor(job.jobId, profileId)} />
+                    )}
                     {job.personas !== undefined && job.personas.length > 0 && (
                       <ul aria-label="Persona scores" className="mt-2 space-y-1 border-t border-gray-100 pt-2">
                         {job.personas.map((p) => (
@@ -492,7 +497,9 @@ function Column({
                               {p.best === true && <span aria-label="Best fit">★ </span>}
                               {p.personaName}
                             </span>
-                            <span className={`shrink-0 rounded-full px-1.5 py-0.5 font-semibold ${scoreChipClasses(p.score)}`}>{p.score}%</span>
+                            <span className={`shrink-0 rounded-full px-1.5 py-0.5 font-semibold ${scoreChipClasses(p.score)}`}>
+                              {p.score}%
+                            </span>
                           </li>
                         ))}
                       </ul>
@@ -506,6 +513,19 @@ function Column({
         </ul>
       )}
     </section>
+  )
+}
+
+// What the protocol of the application says (step 176): how many entries, who wrote last and when, what is planned. It links to the
+// job's page, where the protocol is.
+function ProtocolChipLine({ protocol, href }: { protocol: JobBoardProtocol; href: string }) {
+  const chip = protocolChip(protocol, new Date())
+  return (
+    <AppLink href={href} className="mt-2 block rounded-lg bg-gray-50 px-2 py-1 text-[11px] leading-snug text-gray-600 hover:bg-gray-100">
+      <span className="font-semibold text-gray-700">{chip.count}</span>
+      {chip.last !== '' && <span> · {chip.last}</span>}
+      {chip.planned !== '' && <span className="text-amber-700"> · {chip.planned}</span>}
+    </AppLink>
   )
 }
 

@@ -60,6 +60,7 @@ func jobBoardHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	attachPersonaScores(&board, profileID)
+	attachProtocolSummaries(&board, profileID)
 	db.WriteJSON(w, board)
 }
 

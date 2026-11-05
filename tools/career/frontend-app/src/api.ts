@@ -2069,6 +2069,18 @@ export interface JobBoardCard {
   matchScore?: number
   // How well each of this board's profile's personas fits the job, best first (step 141); absent when the job has no scores.
   personas?: JobBoardPersonaScore[]
+  // What the protocol of this job's application says (step 176); absent when it has no entries.
+  protocol?: JobBoardProtocol
+}
+
+// The protocol of one application in short: how many entries, how many of them are still to come (planned), and the newest one that
+// has happened (a plain date for a day without a time, else an ISO UTC date and time) with its direction; both absent when nothing has
+// happened yet.
+export interface JobBoardProtocol {
+  count: number
+  planned: number
+  lastAt?: string
+  lastDirection?: 'sent' | 'received' | 'note'
 }
 
 // One persona's score for a job on a board; best marks the persona that fits the job best.
