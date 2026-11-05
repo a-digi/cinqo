@@ -20,8 +20,14 @@ export const PIPELINE_STEPS = 4
 
 const plural = (n: number, one: string, other: string) => `${String(n)} ${n === 1 ? one : other}`
 
-export function pipelineText(link: Pick<PipelineLink, 'stage' | 'detail'>): PipelineText {
+// A link that needs a login (plan 182) cannot be written by the AI (it reads the logged-out page), so where a hint would say "Generate them with
+// the AI" it says to write them by hand.
+export const LOGIN_NO_LISTING_HINT = 'Write them by hand (Job list under Crawl instructions), or add the jobs by hand.'
+export const LOGIN_NO_DETAIL_HINT = 'Write them by hand (Job details under Crawl instructions) so the jobs can be read in full.'
+
+export function pipelineText(link: Pick<PipelineLink, 'stage' | 'detail'>, options: { requiresLogin?: boolean } = {}): PipelineText {
   const { jobs, jobsWithDescription, detailFailedRuns } = link.detail
+  const byHand = options.requiresLogin === true
   switch (link.stage) {
     case 'listing_question':
       return {
@@ -40,7 +46,7 @@ export function pipelineText(link: Pick<PipelineLink, 'stage' | 'detail'>): Pipe
     case 'no_listing_instructions':
       return {
         label: 'No listing instructions yet',
-        hint: 'Generate them with the AI, or add the jobs by hand.',
+        hint: byHand ? LOGIN_NO_LISTING_HINT : 'Generate them with the AI, or add the jobs by hand.',
         tone: 'attention',
         position: 0,
       }
@@ -79,7 +85,7 @@ export function pipelineText(link: Pick<PipelineLink, 'stage' | 'detail'>): Pipe
     case 'detail_instructions_missing':
       return {
         label: `${plural(jobs, 'job', 'jobs')} saved, no job-detail instructions`,
-        hint: 'Generate them with the AI so the jobs can be read in full.',
+        hint: byHand ? LOGIN_NO_DETAIL_HINT : 'Generate them with the AI so the jobs can be read in full.',
         tone: 'attention',
         position: 2,
       }

@@ -49,7 +49,7 @@ export function LinkStatusPills({
   // "Instructed" needs both instruction sets (plan 163, step 2).
   const pill = instructionPill(instructionState(link, listingGenerating, jobDetailGenerating))
   const listingUncrawlable = isLikelyUncrawlable(link.instructionStats.listing, hasListing, listingGenerating)
-  const notCrawlable = isNotCrawlable(link.instructionStats.listing, hasListing, listingGenerating)
+  const notCrawlable = isNotCrawlable(link.instructionStats.listing, hasListing, listingGenerating, link.requiresLogin)
   const listingAlertAttempts = instructionAlertAttempts(link.instructionStats.listing, hasListing, listingGenerating)
   // Step 90: the latest listing crawl completed but found no jobs.
   const emptyCrawl = emptyCrawlFor(link)

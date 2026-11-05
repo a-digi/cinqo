@@ -72,7 +72,7 @@ export function PipelineLine({ link }: { link: PortalLink }) {
 
   if (failed && state === null) return null
   if (state === null || !isKnownStage(state.stage)) return null
-  const text = pipelineText(state)
+  const text = pipelineText(state, { requiresLogin: link.requiresLogin })
   const tone = TONE_CLASSES[text.tone]
   const since = state.waitingFor === 'ai' || state.waitingFor === 'crawl' ? runningFor(state.since, now) : ''
   return (
