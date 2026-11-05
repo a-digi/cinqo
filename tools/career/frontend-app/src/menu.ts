@@ -11,6 +11,7 @@ import {
   GUIDE_PROFILE_PATH,
   IMPORT_CV_PATH,
   JOBS_PATH,
+  APPLICATIONS_PATH,
   PERSONAS_PATH,
   GOALS_PATH,
   PERSONA_DETAILS_PATH,
@@ -63,6 +64,7 @@ export const careerMenuEntry: MenuEntry = {
       label: 'Jobs',
       children: [
         { label: 'Jobs', path: JOBS_PATH, scopes: ['tool:career:jobs'] },
+        { label: 'Applications', path: APPLICATIONS_PATH, scopes: ['tool:career:jobs'] },
         {
           // The job portals the jobs are crawled from (formerly "Job Sources").
           label: 'Platforms',

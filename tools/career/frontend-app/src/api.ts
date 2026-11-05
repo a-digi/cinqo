@@ -2116,6 +2116,25 @@ export async function fetchJobBoard(profileId: string, sort: BoardSort = 'moved'
   return jsonOrThrow<JobBoard>(res, 'load the job board')
 }
 
+// One application of a profile in the overview (step 176): a job in its Applied status and/or with entries in its protocol.
+// status is absent when the job is not on the board; protocol when there are no entries; activityAt (an ISO UTC time) when nothing
+// has happened yet; waitingForReply is true when the last thing that happened was a message the profile sent.
+export interface JobApplication {
+  jobId: string
+  title: string
+  company: string
+  status?: { id: string; name: string; kind: JobStatusKind }
+  protocol?: JobBoardProtocol
+  activityAt?: string
+  waitingForReply: boolean
+}
+
+// A profile's applications, the one with the most recent activity first.
+export async function fetchJobApplications(profileId: string): Promise<JobApplication[]> {
+  const res = await fetch(`${PROXY_BASE}/job-applications?profileId=${encodeURIComponent(profileId)}`, { credentials: 'include' })
+  return (await jsonOrThrow<{ applications: JobApplication[] }>(res, 'load the applications')).applications
+}
+
 // Puts a job on a profile's board in a status: adds it when it is not on the board yet, moves it otherwise.
 export async function setJobBoardEntry(profileId: string, jobId: string, statusId: string): Promise<void> {
   const res = await fetch(`${PROXY_BASE}/job-board-entries`, {

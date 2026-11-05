@@ -46,6 +46,7 @@ import { CvDocumentsPage } from './Components/CvBuilder/CvDocumentsPage'
 import { CvDocumentsListPage } from './Components/CvBuilder/CvDocumentsListPage'
 import { CvBuilderPage } from './Components/CvBuilder/CvBuilderPage'
 import { JobsPage } from './Components/JobsPage/JobsPage'
+import { ApplicationsPage } from './Components/Applications/ApplicationsPage'
 import { JobBoardPage } from './Components/JobBoard/JobBoardPage'
 import { ProfileSettingsPage } from './Components/ProfileSettings/ProfileSettingsPage'
 import { JobDetailsPage } from './Components/JobDetails/JobDetailsPage'
@@ -88,6 +89,7 @@ import {
   CV_BUILDER_PATH,
   CV_BUILDER_PERSONA_PATH,
   JOBS_PATH,
+  APPLICATIONS_PATH,
   JOB_BOARD_PROFILE_PATH,
   PROFILE_SETTINGS_PROFILE_PATH,
   JOB_DETAILS_PATH,
@@ -167,6 +169,14 @@ window.__cinqoToolBridge.registerRoute({
   path: PERSONAS_PROFILE_PATH,
   mount: (container, params) => {
     mountReact(container, <PersonasPage profileId={params.profileId} />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: APPLICATIONS_PATH,
+  mount: (container) => {
+    mountReact(container, <ApplicationsPage />)
   },
   unmount: unmountReact,
 })

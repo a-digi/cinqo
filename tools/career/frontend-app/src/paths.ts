@@ -53,6 +53,8 @@ export const EXPERIENCE_PERSONA_PATH = '/tools/career/experience/:personaId'
 export function experiencePathFor(personaId: string): string {
   return `${EXPERIENCE_PATH}/${encodeURIComponent(personaId)}`
 }
+// The overview of every profile's applications: the jobs it applied to or has a protocol for (plan 176, step 5).
+export const APPLICATIONS_PATH = '/tools/career/applications'
 export const JOB_BOARD_PATH = '/tools/career/job-board'
 // One profile's job board on its own page: a pattern route, the id arrives as the page's route parameter.
 export const JOB_BOARD_PROFILE_PATH = '/tools/career/job-board/:profileId'

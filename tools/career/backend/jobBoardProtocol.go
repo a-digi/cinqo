@@ -2,9 +2,12 @@ package main
 
 import (
 	"log"
+	"net/http"
 
 	"career-tool-backend/applicationlog"
+	"career-tool-backend/db"
 	"career-tool-backend/jobboard"
+	"career-tool-backend/profile"
 )
 
 // attachProtocolSummaries fills the Protocol of every card that has entries in the profile's protocol (step 176). It is a side view,
@@ -24,4 +27,28 @@ func attachProtocolSummaries(board *jobboard.Board, profileID string) {
 			}
 		}
 	}
+}
+
+// jobApplicationsHandler handles GET /job-applications?profileId= — the overview of one profile's applications (step 176, step 5):
+// the jobs in its Applied status and the jobs with entries in its protocol, the most recent activity first.
+func jobApplicationsHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	profileID := r.URL.Query().Get("profileId")
+	if profileID == "" {
+		http.Error(w, "profileId query parameter is required", http.StatusBadRequest)
+		return
+	}
+	if err := profile.RequireProfileExists(profileID); err != nil {
+		writeJobBoardError(w, "read the applications", err)
+		return
+	}
+	apps, err := jobboard.Applications(profileID)
+	if err != nil {
+		writeJobBoardError(w, "read the applications", err)
+		return
+	}
+	db.WriteJSON(w, map[string]any{"profileId": profileID, "applications": apps})
 }

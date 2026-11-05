@@ -729,6 +729,11 @@
       "required_scope": "tool:career:jobs"
     },
     {
+      "method": "GET",
+      "path_suffix": "job-applications",
+      "required_scope": "tool:career:jobs"
+    },
+    {
       "method": "POST",
       "path_suffix": "job-statuses",
       "required_scope": "tool:career:jobs"
