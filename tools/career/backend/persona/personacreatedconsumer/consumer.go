@@ -8,7 +8,7 @@ package personacreatedconsumer
 import (
 	"net/http"
 
-	"career-tool-backend/rematchworker"
+	"career-tool-backend/match/rematchworker"
 )
 
 // EventHandler is POST /events/persona-created-rematch: it validates the event ({"persona_id", "profile_id"}), notes the persona's

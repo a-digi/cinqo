@@ -11,9 +11,9 @@ import (
 
 	"career-tool-backend/db"
 	"career-tool-backend/jobs"
+	"career-tool-backend/match/rematchworker"
 	"career-tool-backend/persona"
 	"career-tool-backend/profile"
-	"career-tool-backend/rematchworker"
 )
 
 func send(method, body string) *httptest.ResponseRecorder {

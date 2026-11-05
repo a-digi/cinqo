@@ -57,7 +57,8 @@ import (
 	"career-tool-backend/jobs/jobmatchconsumer"
 	"career-tool-backend/jobs/jobrecrawl"
 	"career-tool-backend/jobs/jobrecrawlconsumer"
-	"career-tool-backend/matchorphans"
+	"career-tool-backend/match/matchorphans"
+	"career-tool-backend/match/rematchworker"
 	"career-tool-backend/persona"
 	"career-tool-backend/persona/personacreatedconsumer"
 	"career-tool-backend/persona/personadeletedconsumer"
@@ -73,7 +74,6 @@ import (
 	"career-tool-backend/profile/profilejobmatchconsumer"
 	"career-tool-backend/recruiters"
 	"career-tool-backend/recruiters/recruiterdeletedconsumers"
-	"career-tool-backend/rematchworker"
 	"career-tool-backend/settings"
 )
 

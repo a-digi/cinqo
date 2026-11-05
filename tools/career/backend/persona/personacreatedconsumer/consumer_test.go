@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"career-tool-backend/rematchworker"
+	"career-tool-backend/match/rematchworker"
 )
 
 func post(h http.HandlerFunc, method, body string) int {

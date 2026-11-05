@@ -12,7 +12,7 @@ import (
 	"career-tool-backend/db"
 	"career-tool-backend/jobs"
 	"career-tool-backend/jobs/jobmatchconsumer"
-	"career-tool-backend/rematchworker"
+	"career-tool-backend/match/rematchworker"
 )
 
 // maxIDLength bounds the profile id of an event (real ids are UUIDs).

@@ -6,7 +6,7 @@ package profilecreatedconsumer
 import (
 	"net/http"
 
-	"career-tool-backend/rematchworker"
+	"career-tool-backend/match/rematchworker"
 )
 
 // EventHandler is POST /events/profile-created-rematch, reached only by core's loopback dispatcher: it validates the event
