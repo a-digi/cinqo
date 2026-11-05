@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -63,8 +64,37 @@ func main() {
 	runHTTPServer(tmpDir, uploadsDir)
 }
 
+// expirySweepInterval is how often the long-running server looks for generated files past generate.GeneratedFileMaxAge.
+const expirySweepInterval = time.Hour
+
+// sweepExpiredFiles removes expired generated files now and then every interval, until stop is closed. Failures are logged, never fatal.
+func sweepExpiredFiles(uploadsDir string, maxAge, interval time.Duration, stop <-chan struct{}) {
+	sweep := func() {
+		removed, err := generate.ExpireFiles(uploadsDir, maxAge, time.Now())
+		if err != nil {
+			log.Printf("expiring generated files: %v", err)
+		}
+		if removed > 0 {
+			log.Printf("expired %d generated file(s)", removed)
+		}
+	}
+	sweep()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			sweep()
+		case <-stop:
+			return
+		}
+	}
+}
+
 func runHTTPServer(tmpDir, uploadsDir string) {
 	port := os.Getenv("PORT")
+
+	go sweepExpiredFiles(uploadsDir, generate.GeneratedFileMaxAge, expirySweepInterval, nil)
 
 	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

@@ -125,6 +125,47 @@ func DeleteFile(uploadsDir, id string) error {
 	return nil
 }
 
+// GeneratedFileMaxAge is how long a generated PDF is kept. A file nobody saved (a wizard preview, a PDF made in a chat) would otherwise stay
+// for ever; a CV that was saved holds its own copy in Media, so the original is not needed after this. A download link in an old chat stops
+// working after this time (plan/ai/tools/pdf_tools/generated-file-leftovers.md, expiry step).
+const GeneratedFileMaxAge = 30 * 24 * time.Hour
+
+// ExpireFiles removes the generated PDFs in uploadsDir that were last written more than maxAge before now, and returns how many it removed.
+// It touches only what this tool itself creates: a regular file named exactly "<canonical lower-case uuid>.pdf". Any other file or folder
+// in the directory, a link, and a younger file are left alone. A file that cannot be removed does not stop the sweep; the first such error
+// is returned after the rest were handled.
+func ExpireFiles(uploadsDir string, maxAge time.Duration, now time.Time) (int, error) {
+	entries, err := os.ReadDir(uploadsDir)
+	if err != nil {
+		return 0, err
+	}
+	removed := 0
+	var firstErr error
+	for _, entry := range entries {
+		name := entry.Name()
+		id, isPDF := strings.CutSuffix(name, ".pdf")
+		if !isPDF {
+			continue
+		}
+		if parsed, perr := uuid.Parse(id); perr != nil || parsed.String() != id {
+			continue
+		}
+		path := filepath.Join(uploadsDir, name)
+		info, err := os.Lstat(path)
+		if err != nil || !info.Mode().IsRegular() || now.Sub(info.ModTime()) <= maxAge {
+			continue
+		}
+		if err := os.Remove(path); err != nil {
+			if !errors.Is(err, os.ErrNotExist) && firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		removed++
+	}
+	return removed, firstErr
+}
+
 // checkWellFormed rejects malformed XHTML BEFORE ever staging a file or
 // spawning Chrome — a plain in-process XML parse, not a render/re-parse
 // round trip (that's the pdf_to_markdown verification loop that was
