@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"career-tool-backend/handlertest"
+	"career-tool-backend/handler/handlertest"
 	"career-tool-backend/persona"
 	"career-tool-backend/profile"
 )

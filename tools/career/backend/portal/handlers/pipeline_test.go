@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"career-tool-backend/db"
-	"career-tool-backend/handlertest"
+	"career-tool-backend/handler/handlertest"
 )
 
 func TestPortalPipelineRouteReadsTheStageOfEveryLink(t *testing.T) {

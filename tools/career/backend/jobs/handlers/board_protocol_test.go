@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"career-tool-backend/applicationlog"
-	"career-tool-backend/handlertest"
+	"career-tool-backend/handler/handlertest"
 	"career-tool-backend/jobs/jobboard"
 )
 

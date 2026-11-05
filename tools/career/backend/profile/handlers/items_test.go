@@ -11,7 +11,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"career-tool-backend/handlertest"
+	"career-tool-backend/handler/handlertest"
 	"career-tool-backend/persona"
 	"career-tool-backend/profile"
 	"career-tool-backend/profile/profileitems"

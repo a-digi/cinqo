@@ -10,7 +10,7 @@ import (
 
 	"career-tool-backend/cv/cvbuilder"
 	"career-tool-backend/cv/cvbuilder/templates"
-	"career-tool-backend/handlertest"
+	"career-tool-backend/handler/handlertest"
 	"career-tool-backend/jobs"
 	"career-tool-backend/persona"
 	"career-tool-backend/profile"

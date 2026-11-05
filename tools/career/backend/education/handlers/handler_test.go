@@ -9,7 +9,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"career-tool-backend/education"
-	"career-tool-backend/handlertest"
+	"career-tool-backend/handler/handlertest"
 	"career-tool-backend/profile"
 )
 

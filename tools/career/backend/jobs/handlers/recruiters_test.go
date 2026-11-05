@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"career-tool-backend/db"
-	"career-tool-backend/handlertest"
+	"career-tool-backend/handler/handlertest"
 )
 
 func jrCall(method, target, body string) *httptest.ResponseRecorder {

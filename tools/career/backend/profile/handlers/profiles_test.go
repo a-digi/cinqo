@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"career-tool-backend/db"
-	"career-tool-backend/handlertest"
+	"career-tool-backend/handler/handlertest"
 	"career-tool-backend/persona"
 	"career-tool-backend/profile"
 )

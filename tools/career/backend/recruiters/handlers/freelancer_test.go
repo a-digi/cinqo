@@ -1,7 +1,7 @@
 package recruitershandlers
 
 import (
-	"career-tool-backend/handlertest"
+	"career-tool-backend/handler/handlertest"
 	jobshandlers "career-tool-backend/jobs/handlers"
 	"context"
 	"encoding/json"

@@ -1,7 +1,7 @@
 package jobshandlers
 
 import (
-	"career-tool-backend/handlertest"
+	"career-tool-backend/handler/handlertest"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
