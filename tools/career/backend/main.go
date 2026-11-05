@@ -30,6 +30,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"career-tool-backend/applicationlog"
 	"career-tool-backend/autodiscovery"
 	"career-tool-backend/companies"
 	"career-tool-backend/companydeletedconsumers"
@@ -202,6 +203,8 @@ func runHTTPServer() {
 	http.HandleFunc("/persona-experience", personaExperienceHandler)
 	// Plan 173, step 6: the profile's education.
 	http.HandleFunc("/education", educationHandler)
+	// Plan 176, step 2: the application protocol.
+	http.HandleFunc("/application-messages", applicationLogHandler)
 	// Plan 174, step 3: the summary and goals of a profile.
 	http.HandleFunc("/profile-details", profileDetailsHandler)
 	http.HandleFunc("/jobs", jobsHandler)
@@ -349,6 +352,10 @@ func runMCPServer() {
 	education.RegisterAddEducation(server)
 	education.RegisterUpdateEducation(server)
 	education.RegisterRemoveEducation(server)
+	applicationlog.RegisterListApplicationMessages(server)
+	applicationlog.RegisterAddApplicationMessage(server)
+	applicationlog.RegisterUpdateApplicationMessage(server)
+	applicationlog.RegisterRemoveApplicationMessage(server)
 	profiledetails.RegisterGetProfileDetails(server)
 	profiledetails.RegisterUpdateProfileDetails(server)
 	jobs.RegisterSaveJob(server)

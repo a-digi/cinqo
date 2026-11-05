@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.0.685",
+  "version": "0.0.686",
   "authors": [
     { "name": "Anes Detit", "email": "tafa.andet@googlemail.com" }
   ],
@@ -277,6 +277,26 @@
       "method": "DELETE",
       "path_suffix": "education",
       "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "application-messages",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "application-messages",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "application-messages",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "application-messages",
+      "required_scope": "tool:career:jobs"
     },
     {
       "method": "GET",
@@ -961,6 +981,22 @@
     {
       "name": "remove_education",
       "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "list_application_messages",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "name": "add_application_message",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "name": "update_application_message",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "name": "remove_application_message",
+      "required_scope": "tool:career:jobs"
     },
     {
       "name": "save_job",

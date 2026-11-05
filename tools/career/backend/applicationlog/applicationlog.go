@@ -49,6 +49,8 @@ var (
 	ErrInvalidDate      = errors.New("occurredAt must be a date (2026-11-05) or a date and time (2026-11-05T14:30 or 2026-11-05T14:30:00Z), between 1970 and 2100")
 	ErrTimeWithoutTime  = errors.New("hasTime cannot be true when occurredAt is a date without a time")
 	ErrInvalidURL       = errors.New("externalUrl must be an http or https link")
+	// ErrTooLong is wrapped by the refusal of a text over its limit; the message names the field and the limit.
+	ErrTooLong = errors.New("too long")
 )
 
 // now is the clock for created_at and updated_at (UTC text). Tests replace it.
@@ -185,18 +187,18 @@ func (r row) check() error {
 	}
 	for name, v := range map[string]string{"channelLabel": r.channelLabel, "subject": r.subject, "counterpartName": r.counterpartName, "counterpartContact": r.counterpartContact} {
 		if tooLong(v, MaxShortText) {
-			return fmt.Errorf("%s is too long (at most %d characters)", name, MaxShortText)
+			return fmt.Errorf("%s: %w (at most %d characters)", name, ErrTooLong, MaxShortText)
 		}
 	}
 	if tooLong(r.body, MaxBody) {
-		return fmt.Errorf("body is too long (at most %d characters)", MaxBody)
+		return fmt.Errorf("body: %w (at most %d characters)", ErrTooLong, MaxBody)
 	}
 	if tooLong(r.cvDocumentID, maxCVDocument) {
-		return fmt.Errorf("cvDocumentId is too long (at most %d characters)", maxCVDocument)
+		return fmt.Errorf("cvDocumentId: %w (at most %d characters)", ErrTooLong, maxCVDocument)
 	}
 	if r.externalURL != "" {
 		if tooLong(r.externalURL, MaxURL) {
-			return fmt.Errorf("externalUrl is too long (at most %d characters)", MaxURL)
+			return fmt.Errorf("externalUrl: %w (at most %d characters)", ErrTooLong, MaxURL)
 		}
 		if u, err := url.Parse(r.externalURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 			return ErrInvalidURL
