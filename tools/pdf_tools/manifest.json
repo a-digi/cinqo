@@ -36,6 +36,11 @@
       "method": "GET",
       "path_suffix": "files",
       "required_scope": "tool:pdf_tools:read"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "files",
+      "required_scope": "tool:pdf_tools:generate"
     }
   ],
   "mcp_tools": [

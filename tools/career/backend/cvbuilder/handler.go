@@ -9,11 +9,14 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"mime"
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
+	"net/url"
 	"os"
 	"regexp"
+	"time"
 
 	"career-tool-backend/cvbuilder/templates"
 	"career-tool-backend/db"
@@ -403,6 +406,10 @@ func DocumentsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "failed to generate pdf: "+err.Error(), http.StatusBadGateway)
 			return
 		}
+		// The generated file in pdf_tools is only the way to Media: once its bytes are fetched nothing refers to it (this answer does not
+		// carry its link), and it holds the person's data, so it goes however the rest of this request ends (plan/ai/tools/pdf_tools/
+		// generated-file-leftovers.md, step 2). Best effort: it never changes the answer.
+		defer deleteGeneratedPdf(r, resourceID)
 		pdfBytes, err := forwardFetchPdfBytes(r, resourceID)
 		if err != nil {
 			http.Error(w, "failed to fetch generated pdf: "+err.Error(), http.StatusBadGateway)
@@ -483,7 +490,13 @@ func DocumentsHandler(w http.ResponseWriter, r *http.Request) {
 		// leaves the CV in place and tells the caller, instead of reporting success with the file left behind and nothing pointing at it.
 		// An already-missing file (404) counts as deleted, so a retry after a half-finished attempt works. A CV made without a PDF has
 		// no file to delete.
+		//
+		// A CV the AI saved was copied into Media from the file pdf_tools generated, and the copy kept that file's name ("<uuid>.pdf"):
+		// the name is read BEFORE the Media file is deleted, and once the Media file is gone the generated file it came from goes too, so
+		// that deleting a CV leaves no copy of it behind (plan/ai/tools/pdf_tools/generated-file-leftovers.md, step 3). Nothing of this
+		// can fail the delete or change its answer; and if the Media delete fails nothing is touched, so the retry can read the name again.
 		if doc.MediaFileID != "" {
+			sourceID := generatedPdfSourceID(r, doc.MediaFileID)
 			if err := forwardDeleteToMedia(r, doc.MediaFileID); err != nil {
 				log.Printf("cvbuilder: failed to delete media file %q for cv document %q, the CV was kept: %v", doc.MediaFileID, id, err)
 				message := "The CV file could not be deleted, so nothing was removed. Try again in a moment."
@@ -494,6 +507,7 @@ func DocumentsHandler(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, message, http.StatusBadGateway)
 				return
 			}
+			deleteGeneratedPdf(r, sourceID)
 		}
 		if _, err := DeleteCvDocument(id); err != nil {
 			writeCvDocumentAwareError(w, "delete cv document", err)
@@ -619,6 +633,80 @@ func forwardGeneratePdf(originalReq *http.Request, templateID, xhtml string) (st
 		return "", err
 	}
 	return parsed.ID, nil
+}
+
+// pdfSourceDeleteTimeout bounds the clean-up call: a slow or stuck pdf_tools must not hold the request that already has its answer.
+var pdfSourceDeleteTimeout = 5 * time.Second // a variable only so that a test can shorten it
+
+// forwardDeletePdfSource asks pdf_tools, through the core's proxy and with the caller's own credentials, to delete a generated PDF. 204
+// is the only success: pdf_tools also answers 204 for a file that is already gone, so any other status (a 404 from the proxy means the
+// installed pdf_tools does not know the delete route yet) is a real failure.
+func forwardDeletePdfSource(originalReq *http.Request, resourceID string) error {
+	deleteURL := os.Getenv("CORE_API_URL") + "/api/v1/tools/pdf_tools/proxy/files?id=" + url.QueryEscape(resourceID)
+	req, err := http.NewRequest(http.MethodDelete, deleteURL, nil)
+	if err != nil {
+		return err
+	}
+	forwardAuthHeaders(originalReq, req)
+
+	resp, err := (&http.Client{Timeout: pdfSourceDeleteTimeout}).Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("pdf_tools answered %s (is the installed pdf_tools new enough to delete generated files?)", resp.Status)
+	}
+	return nil
+}
+
+// generatedPdfName is exactly the file name of a generated PDF as pdf_tools hands it out and as promotion into Media keeps it: a UUID in its
+// canonical lower-case form and ".pdf". Nothing else is taken for one.
+var generatedPdfName = regexp.MustCompile(`^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.pdf$`)
+
+// generatedIDFromName is the id of the generated PDF a Media file's original name points at, or "" when the name is not exactly the name
+// of a generated file (a CV the wizard uploaded is "cv.pdf": it has no generated file left to delete).
+func generatedIDFromName(name string) string {
+	if m := generatedPdfName.FindStringSubmatch(name); m != nil {
+		return m[1]
+	}
+	return ""
+}
+
+// generatedPdfSourceID reads the Media file's original name (the core's download answer carries it in Content-Disposition, and the core
+// checks that the caller owns the file) and returns the id of the generated PDF it came from, or "" if there is none or it cannot be told:
+// best effort, with the same timeout as the clean-up call, and any failure only means the clean-up is skipped.
+func generatedPdfSourceID(originalReq *http.Request, mediaFileID string) string {
+	req, err := http.NewRequest(http.MethodGet, os.Getenv("CORE_API_URL")+"/api/v1/media/"+url.PathEscape(mediaFileID)+"/download", nil)
+	if err != nil {
+		return ""
+	}
+	forwardAuthHeaders(originalReq, req)
+	resp, err := (&http.Client{Timeout: pdfSourceDeleteTimeout}).Do(req)
+	if err != nil {
+		log.Printf("cvbuilder: could not read the name of media file %q, its generated pdf is not cleaned up: %v", mediaFileID, err)
+		return ""
+	}
+	defer resp.Body.Close() // only the headers are needed: the file itself is not read
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
+	_, params, err := mime.ParseMediaType(resp.Header.Get("Content-Disposition"))
+	if err != nil {
+		return ""
+	}
+	return generatedIDFromName(params["filename"])
+}
+
+// deleteGeneratedPdf removes a generated PDF that is no longer needed, best effort: a failure is logged (with no personal data in it) and
+// the file stays, which is what happened before this clean-up existed.
+func deleteGeneratedPdf(originalReq *http.Request, resourceID string) {
+	if resourceID == "" {
+		return
+	}
+	if err := forwardDeletePdfSource(originalReq, resourceID); err != nil {
+		log.Printf("cvbuilder: could not delete the generated pdf %q: %v", resourceID, err)
+	}
 }
 
 func forwardFetchPdfBytes(originalReq *http.Request, resourceID string) ([]byte, error) {

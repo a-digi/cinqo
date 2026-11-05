@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -284,8 +285,24 @@ func generateHandler(tmpDir, uploadsDir string) http.HandlerFunc {
 // filesHandler serves back a previously generated PDF by id — ported
 // from pdf_generator's own filesHandler; generate.ReadFile does the
 // UUID validation, this stays responsible only for HTTP status codes.
+// DELETE removes a generated PDF (generated-file-leftovers.md, step 1):
+// 204 when it is gone (also when it already was), 400 for an id that is
+// not exactly the shape of a generated file's id or a name that is not a
+// regular file, 500 when the file exists and cannot be removed.
 func filesHandler(uploadsDir string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			switch err := generate.DeleteFile(uploadsDir, r.URL.Query().Get("id")); {
+			case err == nil:
+				w.WriteHeader(http.StatusNoContent)
+			case errors.Is(err, generate.ErrBadFileID), errors.Is(err, generate.ErrNotAGeneratedFile):
+				http.Error(w, "invalid file id", http.StatusBadRequest)
+			default:
+				log.Printf("pdf_tools: failed to delete a generated file: %v", err)
+				http.Error(w, "failed to delete the file", http.StatusInternalServerError)
+			}
+			return
+		}
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return

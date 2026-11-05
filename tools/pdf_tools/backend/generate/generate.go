@@ -8,6 +8,7 @@ package generate
 import (
 	"context"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -88,6 +89,40 @@ func ReadFile(uploadsDir, id string) ([]byte, error) {
 		return nil, fmt.Errorf("not found")
 	}
 	return os.ReadFile(filepath.Join(uploadsDir, id+".pdf"))
+}
+
+// ErrBadFileID is returned by DeleteFile for an id that is not exactly the shape of a generated file's id.
+var ErrBadFileID = errors.New("invalid file id")
+
+// ErrNotAGeneratedFile is returned by DeleteFile when something with the name of a generated file exists but is not a regular file.
+var ErrNotAGeneratedFile = errors.New("not a generated file")
+
+// DeleteFile removes a generated PDF by its id (plan/ai/tools/pdf_tools/generated-file-leftovers.md, step 1): the file of a CV the user
+// deleted must not stay behind. It is as narrow as a delete can be made:
+//   - the id must be exactly what this tool gives out: a UUID in its canonical lower-case form (36 characters). uuid.Parse alone also
+//     accepts braces, a "urn:uuid:" prefix, capitals and the form without hyphens; none of those was ever handed out, and for a delete
+//     none is accepted. The path is built here from the id and a fixed ".pdf", so no caller text can reach another place;
+//   - only a regular file is removed (an empty directory or a link with that name is left alone and refused);
+//   - a file that is already gone is not an error (deleting twice is fine).
+func DeleteFile(uploadsDir, id string) error {
+	parsed, err := uuid.Parse(id)
+	if err != nil || parsed.String() != id {
+		return ErrBadFileID
+	}
+	path := filepath.Join(uploadsDir, id+".pdf")
+	info, err := os.Lstat(path)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return nil
+	case err != nil:
+		return err
+	case !info.Mode().IsRegular():
+		return ErrNotAGeneratedFile
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
 }
 
 // checkWellFormed rejects malformed XHTML BEFORE ever staging a file or
