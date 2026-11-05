@@ -751,6 +751,10 @@ func invokeToolCall(ctx context.Context, mainDB *sql.DB, callerScopes []string, 
 	if mcpTool.PromoteMediaParam != "" {
 		resolvedArgs, err := resolvePromoteMediaArgument(mainDB, dataDir, tool.Slug, userID, conversationID, args, mcpTool.PromoteMediaParam)
 		if err != nil {
+			var promoteErr *promotionError
+			if errors.As(err, &promoteErr) {
+				return promoteErr.Error(), nil, nil
+			}
 			return "tool unavailable", nil, nil
 		}
 		args = resolvedArgs
@@ -850,17 +854,10 @@ func resolvePromoteMediaArgument(mainDB *sql.DB, dataDir, callingToolSlug, uploa
 	}
 	producingSlug, resourceID := match[1], match[2]
 
-	// Glob rather than a fixed extension — this mechanism isn't
-	// specific to any one producing tool/file type; whatever single
-	// file that tool wrote under this id is promoted as-is.
-	candidates, err := filepath.Glob(filepath.Join(dataDir, "uploads", "tools", producingSlug, resourceID+".*"))
+	localPath, err := locatePromotedFile(dataDir, producingSlug, resourceID)
 	if err != nil {
 		return nil, err
 	}
-	if len(candidates) == 0 {
-		return nil, fmt.Errorf("promoted resource %q not found on disk", value)
-	}
-	localPath := candidates[0]
 
 	fileID, err := media.PersistLocalFile(mainDB, dataDir, callingToolSlug, uploadedByUserID, conversationID, localPath, filepath.Base(localPath), mime.TypeByExtension(filepath.Ext(localPath)))
 	if err != nil {
@@ -869,6 +866,48 @@ func resolvePromoteMediaArgument(mainDB *sql.DB, dataDir, callingToolSlug, uploa
 
 	argMap[paramName] = fileID
 	return json.Marshal(argMap)
+}
+
+// promotionFailedPrefix starts the answer the model gets when a resource link it passed could not be promoted into a Media file. The text
+// names the reason and how to fix the call, never a local path. isToolFailure counts it like a refused call.
+const promotionFailedPrefix = "file link not usable:"
+
+// promotionError is a failed promotion; its text is safe to show the model.
+type promotionError struct{ reason string }
+
+func (e *promotionError) Error() string { return promotionFailedPrefix + " " + e.reason }
+
+var (
+	promoteSlugPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+	// An id is a plain token, optionally followed by one short extension the model appended by mistake (a real run passed "<id>.pdf").
+	promoteIDPattern = regexp.MustCompile(`^([A-Za-z0-9_-]+)(\.[A-Za-z0-9]{1,8})?$`)
+)
+
+// locatePromotedFile finds the single file a producing tool stored under its own uploads directory for a resource id. Slug and id come from
+// text the model wrote, so both are validated as plain tokens before they touch a path: no separators, no "..".
+func locatePromotedFile(dataDir, producingSlug, resourceID string) (string, error) {
+	notUsable := &promotionError{reason: "the file in this argument was not found. Pass the link exactly as the tool returned it, with no extension added to the id."}
+	idMatch := promoteIDPattern.FindStringSubmatch(resourceID)
+	if !promoteSlugPattern.MatchString(producingSlug) || idMatch == nil {
+		return "", notUsable
+	}
+	dir := filepath.Join(dataDir, "uploads", "tools", producingSlug)
+	// The id exactly as given first, then without the extension that was appended.
+	tries := []string{resourceID}
+	if idMatch[2] != "" {
+		tries = append(tries, idMatch[1])
+	}
+	for _, id := range tries {
+		// Glob rather than a fixed extension: whatever single file the producing tool wrote under this id is promoted as-is.
+		candidates, err := filepath.Glob(filepath.Join(dir, id+".*"))
+		if err != nil {
+			return "", err
+		}
+		if len(candidates) > 0 {
+			return candidates[0], nil
+		}
+	}
+	return "", notUsable
 }
 
 // mediaArgumentScheme is the opaque, non-fetchable reference the AI is

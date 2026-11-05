@@ -1,6 +1,9 @@
 package conversation
 
-import "context"
+import (
+	"context"
+	"strings"
+)
 
 // A tool call the framework itself refused (a tool that is not available) or rejected (arguments that failed the schema) is counted on the
 // turn, so a caller that works in steps can tell that a step could not do what it was asked: a small model told to read a file that wrote
@@ -26,5 +29,5 @@ const refusedCall = "tool unavailable"
 // isToolFailure reports whether a tool answer means the call did not do its work for a reason of the framework: the tool was refused, or its
 // arguments failed the schema. A tool that ran and reported a problem of its own is not counted.
 func isToolFailure(toolResult string) bool {
-	return toolResult == refusedCall || isArgumentRejection(toolResult)
+	return toolResult == refusedCall || isArgumentRejection(toolResult) || strings.HasPrefix(toolResult, promotionFailedPrefix)
 }
