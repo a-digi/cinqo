@@ -34,8 +34,12 @@ const (
 // loginRequiredMessage is what a caller (and the person behind it) is told.
 const loginRequiredMessage = "A login is needed: log in in the login window, press \"I am logged in\", then crawl again"
 
+// loginRequiredAdvice is what a caller that is an AI is told to do (the text reaches the model through shared.CallSibling): it cannot log in
+// and cannot open or confirm the window, so it must not retry in a loop but hand over to the person.
+const loginRequiredAdvice = "Do not call a browser tool for this site again until the person has logged in: tell them the login window needs them (log in there, then press \"I am logged in\") and wait for their answer"
+
 func newLoginRequiredError(reason string) *crawlError {
-	return &crawlError{Code: codeLoginRequired, Message: loginRequiredMessage, Reason: reason}
+	return &crawlError{Code: codeLoginRequired, Message: loginRequiredMessage, Reason: reason, Advice: loginRequiredAdvice}
 }
 
 // isLoginRequired reports whether err is the login-required answer.
@@ -192,6 +196,33 @@ func performPaginatedCrawlInLoginWindow(parent context.Context, url string, args
 	})
 	return result, pageHTML, err
 }
+
+// performFindRepeatingInLoginWindow is /find-repeating-items in the window a person opened for an AI conversation (plan 183, step 2): navigate
+// there, check the page is not the login form (a login seen again answers login_required and puts the window back to waiting), then analyse the
+// page exactly as the headless path does.
+func performFindRepeatingInLoginWindow(parent context.Context, requestID string, req findRepeatingRequest) (findRepeatingResponse, error) {
+	var resp findRepeatingResponse
+	err := loginWindowCall(parent, requestID, loginWindowCrawlTimeout, func(ctx context.Context) error {
+		if err := openPageInLoginWindowFn(ctx, requestID, req.URL); err != nil {
+			return err
+		}
+		if err := checkLoginWindowPageFn(ctx, requestID); err != nil {
+			return err
+		}
+		setCrawlPhase(requestID, phaseExtracting, "looking for the job list")
+		var aerr error
+		resp, aerr = analyzeCurrentPageFn(ctx, req.MinItems, req.MaxCandidates)
+		return aerr
+	})
+	return resp, err
+}
+
+// The three browser steps of the function above, behind variables so a test can script them without a browser.
+var (
+	analyzeCurrentPageFn    = analyzeCurrentPage
+	openPageInLoginWindowFn = openPageInLoginWindow
+	checkLoginWindowPageFn  = checkLoginWindowPage
+)
 
 // extractInLoginWindow is /extract in the run's window: the fields are read from the page the window already shows.
 func extractInLoginWindow(parent context.Context, requestID, container string, fields []extractField, mapping map[string]string) (extractResponse, error) {

@@ -66,6 +66,8 @@ type extractRequest struct {
 	// (login_window_crawl.go) instead of the headless session. UseLoginWindow requires RequestID. Absent for every other call: unchanged.
 	RequestID      string `json:"requestId,omitempty"`
 	UseLoginWindow bool   `json:"useLoginWindow,omitempty"`
+	// AIContextID (plan 183): see crawlRequest.AIContextID.
+	AIContextID string `json:"aiContextId,omitempty"`
 	// Container (step 18) is an optional CSS selector for each
 	// repeating item's own wrapping element — when set, every field's
 	// own selector is evaluated relative to each matched container
@@ -124,6 +126,12 @@ func ExtractHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := validateMapping(body.Fields, body.Mapping); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Plan 183: an AI call whose conversation has a login window opened for it works on the page of that window.
+	if _, refusal := applyAIContext(body.AIContextID, "", &body.RequestID, &body.UseLoginWindow); refusal != nil {
+		writeAIContextRefusal(w, refusal)
 		return
 	}
 

@@ -130,11 +130,14 @@ func StartInstructionAttempt(portalLinkID, kind, triggeredBy, conversationID str
 	if err := RequirePortalLinkExists(portalLinkID); err != nil {
 		return "", false, err
 	}
-	// A link that needs a login cannot be written by the AI (manual_only.go): refused before any attempt row exists.
-	if needs, _, err := GetPortalLinkLogin(portalLinkID); err != nil {
-		return "", false, err
-	} else if needs {
-		return "", false, ErrNoAIForLoginLink
+	// A link that needs a login needs a person to log in first (manual_only.go): only a manual start is allowed; an automatic one is refused
+	// before any attempt row exists.
+	if triggeredBy == InstructionTriggerAuto {
+		if needs, _, err := GetPortalLinkLogin(portalLinkID); err != nil {
+			return "", false, err
+		} else if needs {
+			return "", false, ErrNoAIForLoginLink
+		}
 	}
 	// A stale 'running' row must not swallow this start.
 	if _, err := ReconcileStaleInstructionAttempts(); err != nil {

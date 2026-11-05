@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -19,9 +20,18 @@ type fakeLoginWindows struct {
 	err      error
 	acquires atomic.Int32
 	lost     []string
+	// ai: the windows a person opened for an AI conversation, by id (plan 183); asked: the ids AcquireTab was asked for.
+	ai    map[string]shared.AIWindowInfo
+	mu    sync.Mutex
+	asked []string
 }
 
+func (f *fakeLoginWindows) AIWindow(id string) shared.AIWindowInfo { return f.ai[id] }
+
 func (f *fakeLoginWindows) AcquireTab(ctx context.Context, id string) (context.Context, func(), error) {
+	f.mu.Lock()
+	f.asked = append(f.asked, id)
+	f.mu.Unlock()
 	f.acquires.Add(1)
 	if f.err != nil {
 		return nil, nil, f.err
@@ -201,7 +211,9 @@ func TestNoMCPToolCanAskForTheLoginWindow(t *testing.T) {
 		for i := 0; i < typ.NumField(); i++ {
 			f := typ.Field(i)
 			tag := strings.ToLower(f.Tag.Get("json"))
-			if strings.Contains(strings.ToLower(f.Name), "loginwindow") || strings.Contains(tag, "loginwindow") || strings.Contains(tag, "requestid") {
+			lower := strings.ToLower(f.Name)
+			if strings.Contains(lower, "loginwindow") || strings.Contains(tag, "loginwindow") || strings.Contains(tag, "requestid") ||
+				strings.Contains(lower, "aicontext") || strings.Contains(tag, "aicontext") || strings.Contains(tag, "conversation") {
 				t.Errorf("%s has an argument (%s) that could name a login window", name, f.Name)
 			}
 		}

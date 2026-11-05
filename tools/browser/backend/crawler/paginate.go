@@ -199,6 +199,8 @@ type paginatedCrawlRequest struct {
 	// UseLoginWindow (plan 182) — crawl in the login window the person logged in to for this requestId (login_window_crawl.go) instead
 	// of the headless session; requires RequestID. Absent for every other call: unchanged.
 	UseLoginWindow bool `json:"useLoginWindow,omitempty"`
+	// AIContextID (plan 183): see crawlRequest.AIContextID.
+	AIContextID string `json:"aiContextId,omitempty"`
 }
 
 // PaginatedCrawlHandler handles POST /crawl-paginated — the --mcp
@@ -234,6 +236,12 @@ func PaginatedCrawlHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+	}
+
+	// Plan 183: an AI call whose conversation has a login window opened for it runs in that window (same site only).
+	if _, refusal := applyAIContext(body.AIContextID, body.URL, &body.RequestID, &body.UseLoginWindow); refusal != nil {
+		writeAIContextRefusal(w, refusal)
+		return
 	}
 
 	// Step 22 — read once, up front: both whether to log at all

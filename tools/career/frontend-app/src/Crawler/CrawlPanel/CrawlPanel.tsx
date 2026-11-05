@@ -13,7 +13,7 @@ import { Switch } from '../../Shared/Switch/Switch'
 import { AUTO_DISCOVERY_INTERVAL_OPTIONS } from '../autoDiscovery'
 import type { Platform } from '../../Cinqo/Platform/platformRepository'
 import { CoreApiError } from '../../Cinqo/Http/client'
-import { createConversation, sendMessage } from '../../Cinqo/Conversation/conversation'
+import { createConversation, deleteConversation, sendMessage } from '../../Cinqo/Conversation/conversation'
 import { restrictionHolds } from '../../PersonaAi/personaTools'
 import { buildCrawlMessage, crawlConversationTitle } from '../crawl'
 import {
@@ -34,11 +34,21 @@ import {
 } from '../generateInstructions'
 import { startCrawlNow, stopCrawlNow, fetchActiveCrawlRun, type CrawlRun } from '../crawlNow'
 import { phaseLabel, latestCrawlLogMessage } from '../crawlPhase'
-import { confirmLogin, generateBlockedNote, isWaitingForLogin, manualOnlyNote, mayGenerateWithAI } from '../loginWindow'
+import {
+  AI_LOGIN_WAIT_TEXT,
+  LoginWaitCancelled,
+  closeLoginWindow,
+  confirmLogin,
+  generateLoginNote,
+  isWaitingForLogin,
+  manualOnlyNote,
+  openAiLoginWindow,
+} from '../loginWindow'
 import { instructionAlertAttempts, isLikelyUncrawlable, savedDespiteError } from '../instructionStats'
 import { hasListingInstructions } from '../autoDiscoveryVisibility'
 import { PipelineLine } from '../PipelineLine'
 import { runFollower } from '../runFollowerStart'
+import { LoginGenerateAbandoned, startAfterLogin } from '../loginGenerate'
 import { diagnoseEmptyCrawl, emptyCrawlFacts, emptyCrawlFor } from '../emptyCrawl'
 import { shouldTryInherit, type InheritView } from '../inheritOutcome'
 import { FREE_ROUTER_HINT, isFreeRouter } from '../modelHint'
@@ -208,6 +218,35 @@ export function CrawlPanel({
     runFollower.setPageBusy(link.id, 'listing', busy)
   }
   const [aiLocalError, setAiLocalError] = useState<string | undefined>(undefined)
+  // plan 183: Generate for a link that needs a login. aiLoginWait is the id of the conversation whose login window waits for the person
+  // (null otherwise); the ref holds the promise's resolvers the card's buttons settle; aiLoginWindowRef is the window to close when the run
+  // ends. The conversation id is stored on the link only AFTER the confirmation, so the run follower never sees a run that has not started.
+  const [aiLoginWait, setAiLoginWait] = useState<string | null>(null)
+  const aiLoginWaitRef = useRef<{ resolve: () => void; reject: (err: Error) => void } | null>(null)
+  const aiLoginWindowRef = useRef<string | null>(null)
+  function closeAiLoginWindow() {
+    const id = aiLoginWindowRef.current
+    aiLoginWindowRef.current = null
+    if (id !== null) void closeLoginWindow(id)
+  }
+  function waitForPersonToLogin(conversationId: string): Promise<void> {
+    setLoginConfirmError('')
+    setAiLoginWait(conversationId)
+    return new Promise<void>((resolve, reject) => {
+      aiLoginWaitRef.current = {
+        resolve: () => {
+          aiLoginWaitRef.current = null
+          setAiLoginWait(null)
+          resolve()
+        },
+        reject: (err: Error) => {
+          aiLoginWaitRef.current = null
+          setAiLoginWait(null)
+          reject(err)
+        },
+      }
+    })
+  }
   // The conversation "Check Progress - AI" reopens (step 60) — set the
   // moment one is created (fresh run) or discovered still running on
   // mount (resumed run), cleared once it finishes either way.
@@ -414,6 +453,26 @@ export function CrawlPanel({
       })
   }
 
+  function handleConfirmAiLogin() {
+    if (aiLoginWait === null) return
+    setIsConfirmingLogin(true)
+    setLoginConfirmError('')
+    confirmLogin(aiLoginWait)
+      .then(() => {
+        aiLoginWaitRef.current?.resolve()
+      })
+      .catch((err: unknown) => {
+        setLoginConfirmError(err instanceof Error ? err.message : 'Could not confirm the login.')
+      })
+      .finally(() => {
+        setIsConfirmingLogin(false)
+      })
+  }
+
+  function handleCancelAiLogin() {
+    aiLoginWaitRef.current?.reject(new LoginWaitCancelled())
+  }
+
   function handleStopCrawlNow() {
     setIsStoppingCrawl(true)
     stopCrawlNow(link.id)
@@ -536,6 +595,9 @@ export function CrawlPanel({
     // cannot slip in between the two.
     if (err || followUp === undefined) setAiPending(false)
     setAiConversationId(null)
+    // The login window of a link that needs a login closes when the run ends: now on a failure; below on a success unless the run goes on (the
+    // AI asked a question and waits for the answer, or the job-detail instructions follow in the same conversation).
+    if (err) closeAiLoginWindow()
 
     if (!err) {
       // Step 91: a turn that ended on the agent's question is neither a
@@ -579,6 +641,7 @@ export function CrawlPanel({
                 setAiPending(false)
                 return
               }
+              closeAiLoginWindow()
               setAiPending(false)
               onReload()
             })
@@ -639,7 +702,7 @@ export function CrawlPanel({
   // trial cannot run, the AI run below starts as before. A run that follows the user's
   // "yes, this page has jobs" answer never tries them: those instructions were proven wrong.
   function handleGenerateInstructionsWithAI(options: { jobsConfirmed?: boolean } = {}) {
-    if (aiPending || inheriting || !selectedPlatform || !mayGenerateWithAI(link)) return
+    if (aiPending || inheriting || !selectedPlatform) return
     if (shouldTryInherit(link) && !options.jobsConfirmed) {
       void onTryInherit().then((inherited) => {
         if (!inherited) startGenerateInstructionsWithAI(options)
@@ -650,7 +713,7 @@ export function CrawlPanel({
   }
 
   function startGenerateInstructionsWithAI(options: { jobsConfirmed?: boolean } = {}) {
-    if (aiPending || !selectedPlatform || !mayGenerateWithAI(link)) return
+    if (aiPending || !selectedPlatform) return
     const platformId = selectedPlatform.id
     const model = selectedPlatform.models.length > 0 ? (selectedModel ?? selectedPlatform.models[0]) : undefined
     // Plan 163, step 3: a link with no job-detail instructions yet gets them in the same conversation, right after its listing
@@ -661,21 +724,36 @@ export function CrawlPanel({
     setAiPending(true)
     setAiLocalError(undefined)
 
-    // Counted before the conversation exists, so a failure to even
-    // create it still shows up as a failed attempt (step 86). Only the
-    // user's own click starts a listing run.
-    recordAttemptStart('listing', 'manual')
-      .then(() =>
-        createConversation({
-          title: generateInstructionsConversationTitle(link),
-          platformId,
-          model,
-          hidden: true,
-          toolIterationLimit: GENERATE_TOOL_ITERATION_LIMIT,
-          allowedTools: [...tools],
-          compactToolResults: true,
-        }),
-      )
+    const create = () =>
+      createConversation({
+        title: generateInstructionsConversationTitle(link),
+        platformId,
+        model,
+        hidden: true,
+        toolIterationLimit: GENERATE_TOOL_ITERATION_LIMIT,
+        allowedTools: [...tools],
+        compactToolResults: true,
+      })
+    // Plan 183: a link that needs a login. The conversation exists first (its id is the login window's id), the window opens for the person,
+    // and only after "I am logged in" is the attempt counted and the AI started; before that nothing is counted, so cancelling is no failure.
+    const head: Promise<Awaited<ReturnType<typeof createConversation>>> = link.requiresLogin
+      ? startAfterLogin({
+          create,
+          open: (id) => openAiLoginWindow(id, link),
+          windowOpened: (id) => {
+            aiLoginWindowRef.current = id
+          },
+          waitForPerson: waitForPersonToLogin,
+          recordStart: () => recordAttemptStart('listing', 'manual'),
+          closeWindow: closeAiLoginWindow,
+          removeConversation: deleteConversation,
+          isCancel: (err) => err instanceof LoginWaitCancelled,
+        })
+      : // Counted before the conversation exists, so a failure to even
+        // create it still shows up as a failed attempt (step 86). Only the
+        // user's own click starts a listing run.
+        recordAttemptStart('listing', 'manual').then(create)
+    head
       .then((conversation) => {
         if (!restrictionHolds(conversation.allowedTools, tools)) throw new Error(GENERATE_RESTRICTION_NOT_APPLIED_MESSAGE)
         conversationId = conversation.id
@@ -693,9 +771,23 @@ export function CrawlPanel({
           finishGenerateInstructions(undefined, withDetail ? { conversationId, reply: reply.content } : undefined)
         },
         (err: unknown) => {
+          if (err instanceof LoginGenerateAbandoned) {
+            // The run never started (the person cancelled, the window could not be opened, ...): nothing was counted, so this is no failed
+            // attempt; the window was closed and the empty conversation removed by startAfterLogin.
+            abandonLoginGenerate(err)
+            return
+          }
           finishGenerateInstructions(err)
         },
       )
+  }
+
+  // plan 183: a run for a link that needs a login that ended before it started. Not a failure: no attempt was recorded.
+  function abandonLoginGenerate(abandoned: LoginGenerateAbandoned) {
+    setAiLoginWait(null)
+    setAiPending(false)
+    if (abandoned.reason === undefined) return // the person cancelled
+    setAiLocalError(abandoned.reason instanceof Error ? abandoned.reason.message : 'Could not start the AI run.')
   }
 
   // handleCheckProgress never starts a new run — it only reopens the
@@ -716,6 +808,7 @@ export function CrawlPanel({
   function finishGenerateJobDetailInstructions(err?: unknown) {
     setJobDetailAiPending(false)
     setJobDetailAiConversationId(null)
+    closeAiLoginWindow() // the run for a link that needs a login is over (plan 183)
 
     if (!err) {
       // jobDetailInstructionsAiRequested: false (step 67) — cleared
@@ -774,7 +867,8 @@ export function CrawlPanel({
   // buildGenerateJobDetailInstructionsMessage instead — writes/updates
   // job_detail_crawl_instructions, never crawl_instructions.
   function handleGenerateJobDetailInstructionsWithAI() {
-    if (jobDetailAiPending || !selectedPlatform || !mayGenerateWithAI(link)) return
+    // an automatic start (no person to log in) is never allowed for a link that needs a login: the server refuses it too
+    if (jobDetailAiPending || !selectedPlatform || link.requiresLogin) return
     const platformId = selectedPlatform.id
     const model = selectedPlatform.models.length > 0 ? (selectedModel ?? selectedPlatform.models[0]) : undefined
     setJobDetailAiPending(true)
@@ -1171,23 +1265,20 @@ export function CrawlPanel({
                 }
                 disabled={
                   !hasPlatforms ||
-                  !mayGenerateWithAI(link) ||
                   inheriting ||
                   (aiBusy && !(aiConversationId ?? link.instructionsAiConversationId)) ||
                   Boolean(jobsQuestion)
                 }
                 title={
-                  !mayGenerateWithAI(link)
-                    ? (generateBlockedNote(link) ?? undefined)
-                    : !hasPlatforms
-                      ? 'No AI platform configured — add one on the Platforms page first'
-                      : jobsQuestion
-                        ? 'Answer the question below first'
-                        : inheriting
-                          ? "Trying the instructions of this platform's other links first…"
-                          : aiBusy
-                            ? "Open the chat window to watch the AI work on this link's crawl instructions"
-                            : 'Let the AI inspect this page and write (or update) its listing crawl instructions for you — once saved, this link is crawled and its job-detail instructions are generated automatically.'
+                  !hasPlatforms
+                    ? 'No AI platform configured — add one on the Platforms page first'
+                    : jobsQuestion
+                      ? 'Answer the question below first'
+                      : inheriting
+                        ? "Trying the instructions of this platform's other links first…"
+                        : aiBusy
+                          ? "Open the chat window to watch the AI work on this link's crawl instructions"
+                          : 'Let the AI inspect this page and write (or update) its listing crawl instructions for you — once saved, this link is crawled and its job-detail instructions are generated automatically.'
                 }
                 className="flex shrink-0 flex-col items-center justify-center gap-1 self-stretch rounded-lg border border-gray-200 bg-gray-50 px-3 text-xs font-medium text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
               >
@@ -1204,16 +1295,44 @@ export function CrawlPanel({
                 )}
               </button>
             </div>
-            {generateBlockedNote(link) !== null && (
-              <p role="status" className="mt-2 text-xs text-gray-600">
-                {generateBlockedNote(link)}
-              </p>
+            {aiLoginWait !== null ? (
+              <div role="status" className="mt-2 rounded-md border border-sky-300 bg-sky-50 px-2 py-1.5 text-xs text-sky-900">
+                <p className="font-medium">{AI_LOGIN_WAIT_TEXT}</p>
+                <p className="mt-0.5 text-sky-800">You type your login on the site itself; nothing of it is kept here.</p>
+                <div className="mt-1.5 flex gap-2">
+                  <button
+                    type="button"
+                    disabled={isConfirmingLogin}
+                    onClick={handleConfirmAiLogin}
+                    className="rounded-md bg-sky-700 px-2.5 py-1 text-xs font-medium text-white hover:bg-sky-800 disabled:opacity-50"
+                  >
+                    I am logged in
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCancelAiLogin}
+                    className="rounded-md border border-sky-300 bg-white px-2.5 py-1 text-xs text-sky-900 hover:bg-sky-100"
+                  >
+                    Cancel
+                  </button>
+                </div>
+                {loginConfirmError && (
+                  <p role="alert" className="mt-1 text-red-700">
+                    {loginConfirmError}
+                  </p>
+                )}
+              </div>
+            ) : (
+              generateLoginNote(link) !== null && (
+                <p role="status" className="mt-2 text-xs text-gray-600">
+                  {generateLoginNote(link)}
+                </p>
+              )
             )}
             <StartFreshButton
               link={link}
               tabBusy={{ listingGenerating: aiBusy, jobDetailGenerating: jobDetailAiBusy, inheriting }}
-              canGenerate={hasPlatforms && selectedPlatform !== null && mayGenerateWithAI(link)}
-              cannotGenerateReason={generateBlockedNote(link) ?? undefined}
+              canGenerate={hasPlatforms && selectedPlatform !== null}
               onGenerate={() => {
                 handleGenerateInstructionsWithAI()
               }}

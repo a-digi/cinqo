@@ -41,18 +41,69 @@ export function loginCheckboxState(link: { autoDiscoveryEnabled?: boolean }, che
   return { disabled: blocked, note: blocked ? LOGIN_BLOCKED_BY_AUTO_NOTE : null }
 }
 
-export const NO_AI_FOR_LOGIN_NOTE =
-  'The AI cannot read pages behind your login yet, so Generate is off for this link. Write its crawl instructions by hand: open Job list (and Job details) under Crawl instructions.'
+// plan 183: Generate with AI on a link that needs a login. It opens a window for the person to log in in (the window belongs to the AI conversation
+// the Generate creates), waits for "I am logged in", and only then starts the AI, whose browser tools read the pages in that window. Nothing the
+// person types is seen or kept by this page; the window is closed when the run ends or the person cancels.
+export const GENERATE_LOGIN_NOTE =
+  'This link needs a login. Generate opens a window for you to log in on the site itself; the AI then reads the pages in that window. Nothing of your login is kept.'
 
-// mayGenerateWithAI: false for a link that needs a login. The AI's browser tools read the logged-out page, so a run would only fail, cost
-// tokens and count as a failed attempt. The server refuses it as well (it does not rely on this page).
-export function mayGenerateWithAI(link: { requiresLogin?: boolean }): boolean {
-  return link.requiresLogin !== true
+// generateLoginNote: the note to show with Generate for a link that needs a login, or null for any other link.
+export function generateLoginNote(link: { requiresLogin?: boolean }): string | null {
+  return link.requiresLogin === true ? GENERATE_LOGIN_NOTE : null
 }
 
-// generateBlockedNote: the reason to show where Generate is off for a link that needs a login, or null for any other link.
-export function generateBlockedNote(link: { requiresLogin?: boolean }): string | null {
-  return mayGenerateWithAI(link) ? null : NO_AI_FOR_LOGIN_NOTE
+export const AI_LOGIN_WAIT_TEXT = 'A window is open at the login page. Log in there, then press "I am logged in". The AI starts after that.'
+
+// The person pressed Cancel while the run waited for the login: not a failure, nothing is counted.
+export class LoginWaitCancelled extends Error {
+  constructor() {
+    super('The login was cancelled.')
+    this.name = 'LoginWaitCancelled'
+  }
+}
+
+const OPEN_URL = '/api/v1/tools/browser/proxy/login-window/open'
+const CANCEL_URL = '/api/v1/tools/browser/proxy/login-window/cancel'
+
+// aiLoginOpenBody: what opens the window for one AI conversation. The window's id IS the conversation's id, and aiMayUse says the AI may read
+// pages of this site in it once the person has confirmed (the Browser tool checks the site and the confirmation).
+export function aiLoginOpenBody(
+  conversationId: string,
+  link: { url: string; loginUrl?: string },
+): { requestId: string; url: string; loginUrl: string; aiMayUse: true } {
+  return { requestId: conversationId, url: link.url, loginUrl: (link.loginUrl ?? '').trim(), aiMayUse: true }
+}
+
+// openErrorText turns the Browser's refusal to open the window into one sentence for the person.
+export function openErrorText(status: number, body: string): string {
+  const text = body.trim()
+  if (status === 409 && text.includes('already open')) {
+    return 'A login window for this site is still open from earlier. Finish or close it, then press Generate again.'
+  }
+  if (status === 502) return 'The login window could not be opened (is Chrome installed? see Browser & Engine).'
+  if (text) return text
+  return `Could not open the login window (${status.toString()}).`
+}
+
+// openAiLoginWindow opens the window for a new AI conversation. Throws an Error with the reason when the Browser refuses.
+export async function openAiLoginWindow(conversationId: string, link: { url: string; loginUrl?: string }): Promise<void> {
+  const res = await fetch(OPEN_URL, {
+    method: 'POST',
+    credentials: 'include',
+    body: JSON.stringify(aiLoginOpenBody(conversationId, link)),
+  })
+  if (res.ok) return
+  const text = await res.text().catch(() => '')
+  throw new Error(openErrorText(res.status, text))
+}
+
+// closeLoginWindow closes a window (and so throws away everything in it). Best effort: it never throws; a window that is gone is fine.
+export async function closeLoginWindow(requestId: string): Promise<void> {
+  try {
+    await fetch(CANCEL_URL, { method: 'POST', credentials: 'include', body: JSON.stringify({ requestId }) })
+  } catch {
+    // nothing to do: the Browser tool closes the window by its own time limits
+  }
 }
 
 // mayStartCrawlByItself: false for a link that needs a login. The run follower never starts a crawl from a request flag for it.

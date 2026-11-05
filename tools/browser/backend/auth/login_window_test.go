@@ -26,6 +26,8 @@ type fakeWindow struct {
 	closes   atomic.Int32
 	done     chan struct{}
 	doneOnce sync.Once
+	// holdDone: Close does not signal Done (a window whose teardown is slow), so the person-closes signal can be sent later by the test.
+	holdDone atomic.Bool
 }
 
 func (f *fakeWindow) Inspect(ctx context.Context, checkURL string) (pageInspection, error) {
@@ -46,7 +48,9 @@ func (f *fakeWindow) Done() <-chan struct{}       { return f.done }
 func (f *fakeWindow) TabContext() context.Context { return context.Background() }
 func (f *fakeWindow) Close() {
 	f.closes.Add(1)
-	f.doneOnce.Do(func() { close(f.done) })
+	if !f.holdDone.Load() {
+		f.doneOnce.Do(func() { close(f.done) })
+	}
 }
 func (f *fakeWindow) personCloses() { f.doneOnce.Do(func() { close(f.done) }) }
 func (f *fakeWindow) setPage(p pageInspection) {
@@ -705,4 +709,136 @@ func TestLosingTheLoginOfAWindowThatIsAlreadyWaitingGivesItNoExtraTime(t *testin
 	loginWindowAccess{}.LoginLost("w") // not confirmed: nothing to lose, no new waiting time
 	time.Sleep(150 * time.Millisecond) // past the original limit
 	wantState(t, "w", "ended", "timed_out")
+}
+
+// ---- plan 183, step 1: a window a person opened for the AI conversation whose id is the run's id ----
+
+func openRunForAI(id, rawURL string) *httptest.ResponseRecorder {
+	b, _ := json.Marshal(map[string]any{"requestId": id, "url": rawURL, "aiMayUse": true})
+	return call(LoginWindowOpenHandler, http.MethodPost, "/login-window/open", string(b))
+}
+
+func TestAWindowOpenedForTheAIIsReportedAsSuchWithItsSite(t *testing.T) {
+	useFakes(t)
+	if rec := openRunForAI("conv-1", "https://WWW.Example.com/jobs"); rec.Code != 200 {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	got := loginWindowAccess{}.AIWindow("conv-1")
+	if !got.Exists || !got.AIMayUse || got.Domain != "www.example.com" {
+		t.Errorf("%+v", got)
+	}
+}
+
+func TestAWindowOpenedWithoutAIMayUseIsNotAnAIWindow(t *testing.T) {
+	useFakes(t)
+	if rec := openRun("run-1", "https://a.example/jobs", ""); rec.Code != 200 {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	got := loginWindowAccess{}.AIWindow("run-1")
+	if !got.Exists || got.AIMayUse {
+		t.Errorf("%+v", got)
+	}
+}
+
+func TestAnUnknownOrEndedWindowIsNoAIWindow(t *testing.T) {
+	useFakes(t)
+	if got := (loginWindowAccess{}).AIWindow("never-opened"); got != (shared.AIWindowInfo{}) {
+		t.Errorf("unknown: %+v", got)
+	}
+	openRunForAI("conv-2", "https://b.example/")
+	cancelRun("conv-2")
+	if got := (loginWindowAccess{}).AIWindow("conv-2"); got != (shared.AIWindowInfo{}) {
+		t.Errorf("ended: %+v", got)
+	}
+}
+
+// aiMayUse changes nothing else about the window: it still waits for the person, the confirmation is the person's, and only a confirmed window
+// hands out its tab.
+func TestAnAIWindowStillNeedsThePersonsConfirmationBeforeAnyToolGetsItsTab(t *testing.T) {
+	useFakes(t)
+	openRunForAI("conv-3", "https://c.example/jobs")
+	if _, _, err := (loginWindowAccess{}).AcquireTab(context.Background(), "conv-3"); err == nil {
+		t.Fatal("an unconfirmed AI window handed out its tab")
+	} else {
+		wantLoginRequired(t, err, "waiting")
+	}
+	if rec := confirmRun("conv-3", ""); rec.Code != 200 {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	_, release, err := (loginWindowAccess{}).AcquireTab(context.Background(), "conv-3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	release()
+}
+
+func TestTheStatusAnswerNeverShowsWhetherAWindowIsForTheAI(t *testing.T) {
+	useFakes(t)
+	openRunForAI("conv-4", "https://d.example/")
+	rec := call(LoginWindowStatusHandler, http.MethodGet, "/login-window/status?requestId=conv-4", "")
+	if strings.Contains(strings.ToLower(rec.Body.String()), "ai") && strings.Contains(strings.ToLower(rec.Body.String()), "mayuse") {
+		t.Errorf("%s", rec.Body.String())
+	}
+}
+
+// The watcher of a window ends only ITS window: a late "the window closed" of an earlier window must not end a newer one opened under the same id.
+func TestAnEarlierWindowsLateWatcherDoesNotEndANewerWindowWithTheSameId(t *testing.T) {
+	useFakes(t)
+	if rec := openRun("same", "https://a.example/", ""); rec.Code != 200 {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	windows.mu.Lock()
+	newer := windows.active["same"].handle
+	windows.mu.Unlock()
+	earlier := &fakeWindow{done: make(chan struct{})} // a window of an earlier run under this id, long gone
+	if endLoginWindowOf("same", earlier, endedClosed) {
+		t.Fatal("the earlier window's watcher ended the newer window")
+	}
+	wantState(t, "same", "waiting", "")
+	windows.mu.Lock()
+	still := windows.active["same"] != nil && windows.active["same"].handle == newer
+	windows.mu.Unlock()
+	if !still || newer.(*fakeWindow).closes.Load() != 0 {
+		t.Error("the newer window was touched")
+	}
+	// its own watcher does end it, with the reason it gives
+	if !endLoginWindowOf("same", newer, endedClosed) {
+		t.Fatal("the window's own watcher could not end it")
+	}
+	wantState(t, "same", "ended", "window_closed")
+	// and a call for an id that is not open does nothing
+	if endLoginWindowOf("never", &fakeWindow{done: make(chan struct{})}, endedClosed) {
+		t.Error("ended a window that was not open")
+	}
+}
+
+// Through the REAL watcher: window A of a run ends but is slow to report that it closed; a new window B is opened under the same id; A's late
+// "closed" signal then arrives. B must live on.
+func TestTheLateClosedSignalOfAnEarlierWindowLeavesANewerWindowOfTheSameIdAlone(t *testing.T) {
+	f := useFakes(t)
+	if rec := openRun("same", "https://a.example/", ""); rec.Code != 200 {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	a := f.all()[0]
+	a.holdDone.Store(true)
+	cancelRun("same")
+	if rec := openRun("same", "https://a.example/", ""); rec.Code != 200 {
+		t.Fatalf("reopen: %d %s", rec.Code, rec.Body.String())
+	}
+	b := f.all()[1]
+	a.personCloses() // A's watcher fires now, late
+	deadline := time.Now().Add(300 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		if code, got := statusOf(t, "same"); code != 200 || got.State != "waiting" {
+			t.Fatalf("the newer window was ended by the earlier one's signal: %d %+v", code, got)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if b.closes.Load() != 0 {
+		t.Error("the newer window was closed")
+	}
+	// the newer window's own closing is still noticed
+	b.personCloses()
+	waitFor(t, "the newer window's own close to be noticed", func() bool { _, s := statusOf(t, "same"); return s.State == "ended" })
+	wantState(t, "same", "ended", "window_closed")
 }

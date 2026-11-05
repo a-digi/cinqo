@@ -104,6 +104,9 @@ type run struct {
 	timer     *time.Timer
 	// busy is the window's lock: one operation (a crawl, an extraction) works in the tab at a time.
 	busy chan struct{}
+	// aiMayUse (plan 183): the person opened this window for the AI conversation whose id is the run's id to read pages in. Set only by the
+	// human open route; no AI tool can set or read it.
+	aiMayUse bool
 }
 
 type endedRun struct {
@@ -149,8 +152,19 @@ func forgetOldEnds(now time.Time) {
 // endLoginWindow ends a run's window for a reason: removes it from the live set, stops its timer, remembers the end, and closes the
 // window (outside the lock; closing waits for Chrome and the folder). Safe to call twice: the second call does nothing.
 func endLoginWindow(requestID, reason string) bool {
+	return endLoginWindowOf(requestID, nil, reason)
+}
+
+// endLoginWindowOf is endLoginWindow that, when handle is not nil, ends the run's window only if it IS that window. The watcher of a window
+// (it waits for the window to close) must not end a NEWER window that was opened under the same id after the first one ended: its late "the
+// window closed" would otherwise be taken for the new window closing.
+func endLoginWindowOf(requestID string, handle loginWindowHandle, reason string) bool {
 	windows.mu.Lock()
 	r, ok := windows.active[requestID]
+	if ok && handle != nil && r.handle != handle {
+		windows.mu.Unlock()
+		return false
+	}
 	if ok {
 		delete(windows.active, requestID)
 		if r.timer != nil {
@@ -183,6 +197,8 @@ type loginWindowOpenRequest struct {
 	RequestID string `json:"requestId"`
 	URL       string `json:"url"`
 	LoginURL  string `json:"loginUrl"`
+	// AIMayUse (plan 183): the id is an AI conversation's, and the AI may read pages of this site in the window once the person has confirmed.
+	AIMayUse bool `json:"aiMayUse,omitempty"`
 }
 
 type loginWindowStateResponse struct {
@@ -250,7 +266,7 @@ func LoginWindowOpenHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	reserved := &run{requestID: body.RequestID, domain: domain, state: loginWindowWaiting, busy: make(chan struct{}, 1)}
+	reserved := &run{requestID: body.RequestID, domain: domain, state: loginWindowWaiting, busy: make(chan struct{}, 1), aiMayUse: body.AIMayUse}
 	windows.active[body.RequestID] = reserved
 	delete(windows.ended, body.RequestID)
 	windows.mu.Unlock()
@@ -279,7 +295,7 @@ func LoginWindowOpenHandler(w http.ResponseWriter, r *http.Request) {
 	windows.mu.Unlock()
 	go func() {
 		<-handle.Done()
-		endLoginWindow(body.RequestID, endedClosed)
+		endLoginWindowOf(body.RequestID, handle, endedClosed)
 	}()
 	writeStateJSON(w, http.StatusOK, loginWindowStateResponse{State: loginWindowWaiting, Domain: domain})
 }
@@ -468,6 +484,17 @@ func (loginWindowAccess) AcquireTab(ctx context.Context, requestID string) (cont
 	}
 	var once sync.Once
 	return handle.TabContext(), func() { once.Do(func() { <-busy }) }, nil
+}
+
+// AIWindow reports the window under id that was opened for the AI (plan 183), if any.
+func (loginWindowAccess) AIWindow(id string) shared.AIWindowInfo {
+	windows.mu.Lock()
+	defer windows.mu.Unlock()
+	r, ok := windows.active[id]
+	if !ok {
+		return shared.AIWindowInfo{}
+	}
+	return shared.AIWindowInfo{Exists: true, AIMayUse: r.aiMayUse, Domain: r.domain}
 }
 
 // LoginLost sets a confirmed window back to waiting (and gives the person the waiting time again to log in once more).

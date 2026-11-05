@@ -325,18 +325,19 @@ func TestManifestDeclaresSaveCvForPersonaLikeTheRunsSave(t *testing.T) {
 	}
 }
 
-// The AI cannot write instructions for a link that needs a login: the route answers 400 with the reason and records nothing.
-func TestInstructionAttemptStartIsRefusedForALinkThatNeedsALogin(t *testing.T) {
+// A link that needs a login needs a person to log in first: an automatic start is refused with 400 and the reason and records nothing; the
+// person's own (manual) start works.
+func TestInstructionAttemptStartIsRefusedAutomaticallyForALinkThatNeedsALogin(t *testing.T) {
 	handlertest.SetupHandlerDB(t)
 	if _, err := db.JobsDB.Exec(`UPDATE portal_links SET requires_login = 1 WHERE id = 'l1'`); err != nil {
 		t.Fatal(err)
 	}
 	for _, body := range []string{
-		`{"portalLinkId":"l1","kind":"listing"}`,
+		`{"portalLinkId":"l1","kind":"listing","triggeredBy":"auto"}`,
 		`{"portalLinkId":"l1","kind":"job_detail","triggeredBy":"auto"}`,
 	} {
 		rec := handlertest.PostJSON(InstructionAttemptStartHandler, body)
-		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "needs a login") || !strings.Contains(rec.Body.String(), "by hand") {
+		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "needs a login") || !strings.Contains(rec.Body.String(), "automatically") || !strings.Contains(rec.Body.String(), "use Generate") {
 			t.Errorf("%s: %d %s", body, rec.Code, rec.Body.String())
 		}
 	}
@@ -344,10 +345,8 @@ func TestInstructionAttemptStartIsRefusedForALinkThatNeedsALogin(t *testing.T) {
 	if err := db.JobsDB.QueryRow(`SELECT COUNT(*) FROM instruction_attempts`).Scan(&n); err != nil || n != 0 {
 		t.Errorf("attempt rows = %d (%v)", n, err)
 	}
-	if _, err := db.JobsDB.Exec(`UPDATE portal_links SET requires_login = 0 WHERE id = 'l1'`); err != nil {
-		t.Fatal(err)
-	}
+	// the person's own Generate (manual, the default) starts
 	if rec := handlertest.PostJSON(InstructionAttemptStartHandler, `{"portalLinkId":"l1","kind":"listing"}`); rec.Code != http.StatusOK {
-		t.Errorf("a plain link must still start: %d %s", rec.Code, rec.Body.String())
+		t.Errorf("a manual start must work: %d %s", rec.Code, rec.Body.String())
 	}
 }

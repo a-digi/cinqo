@@ -6,7 +6,7 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
-// loginwindow_access.go (plan 182, step 2) is how the crawler reaches a run's login window without importing the package that owns it
+// loginwindow_access.go (plan 182, step 2; plan 183, step 1: AIWindow) is how the crawler reaches a run's login window without importing the package that owns it
 // (auth imports crawler, so the crawler cannot import auth): auth registers the real access here at start-up, the crawler only asks.
 
 // LoginRequiredError says a run has no usable login window: the person has not logged in and confirmed yet, or the window ended, or the
@@ -23,6 +23,16 @@ type LoginWindowAccess interface {
 	// LoginLost puts the run's confirmed window back to "waiting": the site showed its login page again, so the person has to log in
 	// again in the same window and confirm again.
 	LoginLost(requestID string)
+	// AIWindow says whether a window exists under id that a person opened for the AI to use (aiMayUse), and for which site. Used only to decide
+	// where an AI tool call runs; whether the window is confirmed is decided by AcquireTab as for any run.
+	AIWindow(id string) AIWindowInfo
+}
+
+// AIWindowInfo describes a window an AI conversation may work in (plan 183). Domain is the lower-case host the window was opened for.
+type AIWindowInfo struct {
+	Exists   bool
+	AIMayUse bool
+	Domain   string
 }
 
 // LoginWindows is set by package auth when it is loaded. Nil in a process that never loads it (the --mcp adapter): then no run has a window.

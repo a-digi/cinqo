@@ -84,6 +84,9 @@ type crawlRequest struct {
 	// UseLoginWindow (plan 182) — read the page in the login window the person logged in to for this requestId (login_window_crawl.go)
 	// instead of the headless session; requires RequestID. Absent for every other call: unchanged.
 	UseLoginWindow bool `json:"useLoginWindow,omitempty"`
+	// AIContextID (plan 183) — set by shared.CallSibling from the conversation id core gave this tool call (never by the model): when a person
+	// opened a login window for that conversation, the call runs in it (ai_context.go). Absent for every other call: unchanged.
+	AIContextID string `json:"aiContextId,omitempty"`
 	// ExpectedSelectors (step 36) is optional — CSS selectors the
 	// caller already knows it wants to find on this page (Career's own
 	// deterministic "Crawl now" derives these from the link's own
@@ -169,19 +172,32 @@ func CrawlHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Plan 183: an AI call whose conversation has a login window opened for it reads the page in that window (same site only). The AI walks a
+	// long page with offset, so for such a call the window of the page is cut here, like on the headless path.
+	viaAI, refusal := applyAIContext(body.AIContextID, body.URL, &body.RequestID, &body.UseLoginWindow)
+	if refusal != nil {
+		writeAIContextRefusal(w, refusal)
+		return
+	}
+
 	if body.UseLoginWindow {
 		if body.RequestID == "" {
 			http.Error(w, "requestId is required with useLoginWindow", http.StatusBadRequest)
 			return
 		}
-		if body.Offset != nil {
+		if body.Offset != nil && !viaAI {
 			http.Error(w, "offset is not supported with useLoginWindow", http.StatusBadRequest)
 			return
 		}
-		result, err := crawlInLoginWindow(r.Context(), body)
+		result, err := crawlInLoginWindowFn(r.Context(), body)
 		if err != nil {
 			writeLoginWindowFailure(w, body.RequestID, "crawl", err)
 			return
+		}
+		if body.Offset != nil {
+			var win htmlWindow
+			result.HTML, win = windowHTML(result.HTML, *body.Offset)
+			result.Window = &win
 		}
 		setCrawlPhase(body.RequestID, phaseCompleted, "HTML crawled in the login window")
 		w.Header().Set("Content-Type", "application/json")
@@ -238,6 +254,9 @@ func CrawlHandler(w http.ResponseWriter, r *http.Request) {
 // crawlPageFn is crawlPage behind a variable so tests can script a fetch
 // without a browser.
 var crawlPageFn = crawlPage
+
+// crawlInLoginWindowFn is crawlInLoginWindow behind a variable, for the same reason.
+var crawlInLoginWindowFn = crawlInLoginWindow
 
 // readCrawlResponse reads back the currently loaded page's rendered
 // HTML/title/final URL — assumes the caller has already confirmed (or

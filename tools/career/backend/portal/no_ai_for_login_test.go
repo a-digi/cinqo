@@ -16,34 +16,33 @@ func attemptRows(t *testing.T) int {
 	return n
 }
 
-// The AI cannot write instructions for a link that needs a login (its tools read the logged-out page): the start is refused before any
-// attempt row exists, so nothing is counted as a failed attempt ("Probably can't be crawled").
-func TestAnAIRunCannotStartForALinkThatNeedsALogin(t *testing.T) {
+// A link that needs a login needs a person to log in first (plan 183): only a manual start (the person's own Generate) is allowed; an automatic
+// start is refused before any attempt row exists, so nothing is counted as a failed attempt.
+func TestAnAutomaticAIRunCannotStartForALinkThatNeedsALogin(t *testing.T) {
 	setupAttemptsDB(t, "plain", "gated")
 	if _, err := db.JobsDB.Exec(`UPDATE portal_links SET requires_login = 1 WHERE id = 'gated'`); err != nil {
 		t.Fatal(err)
 	}
 	for _, kind := range []string{InstructionKindListing, InstructionKindJobDetail} {
-		for _, trigger := range []string{InstructionTriggerManual, InstructionTriggerAuto} {
-			id, started, err := StartInstructionAttempt("gated", kind, trigger, "conv")
-			if !errors.Is(err, ErrNoAIForLoginLink) || started || id != "" {
-				t.Errorf("%s/%s: id=%q started=%v err=%v", kind, trigger, id, started, err)
-			}
+		id, started, err := StartInstructionAttempt("gated", kind, InstructionTriggerAuto, "conv")
+		if !errors.Is(err, ErrNoAIForLoginLink) || started || id != "" {
+			t.Errorf("%s/auto: id=%q started=%v err=%v", kind, id, started, err)
 		}
 	}
 	if n := attemptRows(t); n != 0 {
 		t.Fatalf("a refused start left %d attempt row(s)", n)
 	}
-	// a plain link still starts
-	if _, started, err := StartInstructionAttempt("plain", InstructionKindListing, InstructionTriggerManual, "conv"); err != nil || !started {
-		t.Fatalf("plain: started=%v err=%v", started, err)
+	// the person's own start works, for both kinds (the job-detail instructions follow in the same conversation)
+	for _, kind := range []string{InstructionKindListing, InstructionKindJobDetail} {
+		if _, started, err := StartInstructionAttempt("gated", kind, InstructionTriggerManual, "conv"); err != nil || !started {
+			t.Errorf("%s/manual: started=%v err=%v", kind, started, err)
+		}
 	}
-	// after the login is taken away it starts too
-	if _, err := db.JobsDB.Exec(`UPDATE portal_links SET requires_login = 0 WHERE id = 'gated'`); err != nil {
-		t.Fatal(err)
-	}
-	if _, started, err := StartInstructionAttempt("gated", InstructionKindListing, InstructionTriggerManual, "conv"); err != nil || !started {
-		t.Fatalf("after the login was removed: started=%v err=%v", started, err)
+	// a plain link starts either way
+	for _, trig := range []string{InstructionTriggerManual, InstructionTriggerAuto} {
+		if _, started, err := StartInstructionAttempt("plain", InstructionKindListing, trig, "conv"); err != nil && !started {
+			t.Errorf("plain/%s: started=%v err=%v", trig, started, err)
+		}
 	}
 }
 

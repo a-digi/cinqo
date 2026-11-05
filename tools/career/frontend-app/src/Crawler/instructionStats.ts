@@ -46,15 +46,8 @@ export function isLikelyUncrawlable(stats: InstructionKindStats | undefined, has
 // isNotCrawlable (step 159): the "Not crawlable" pill next to "Not instructed" — the link has no listing
 // instructions, so nothing can be crawled from it yet. Hidden while a run may still produce instructions
 // (generating / stats.running) and when the stronger "Probably can't be crawled" pill already says it.
-// Never for a link that needs a login (requiresLogin): the AI cannot write its instructions, but it CAN be crawled once they are written by hand, so
-// "Not crawlable" would be wrong; "Not instructed" and "Login needed" already say what is missing.
-export function isNotCrawlable(
-  stats: InstructionKindStats | undefined,
-  hasInstructions: boolean,
-  generating: boolean,
-  requiresLogin = false,
-): boolean {
-  if (requiresLogin || hasInstructions || generating || stats?.running) return false
+export function isNotCrawlable(stats: InstructionKindStats | undefined, hasInstructions: boolean, generating: boolean): boolean {
+  if (hasInstructions || generating || stats?.running) return false
   return !isLikelyUncrawlable(stats, hasInstructions, generating)
 }
 

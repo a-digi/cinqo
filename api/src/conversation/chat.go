@@ -735,6 +735,9 @@ func invokeToolCall(ctx context.Context, mainDB *sql.DB, callerScopes []string, 
 	if port, ok := tool_manager.Port(tool.ID); ok {
 		envVars = append(envVars, fmt.Sprintf("TOOL_OWN_PORT=%d", port))
 	}
+	// Plan 183: tell the tool which conversation this call belongs to, so a tool can attach a call to something a person prepared for that
+	// conversation (the Browser tool's login window). Set here, by core, never from the model's arguments.
+	envVars = append(envVars, toolConversationEnv(conversationID)...)
 	execPath, err := filepath.Abs(filepath.Join(tool.InstallPath, tool.BackendExecutableRelpath))
 	if err != nil {
 		return fmt.Sprintf("tool invocation failed: %v", err), nil, nil
@@ -772,6 +775,18 @@ func invokeToolCall(ctx context.Context, mainDB *sql.DB, callerScopes []string, 
 		}
 	}
 	return text, links, nil
+}
+
+// toolConversationIDPattern is what a conversation id may look like to go into a tool's environment (cinqo's ids are UUIDs).
+var toolConversationIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,100}$`)
+
+// toolConversationEnv is the environment entry that names the conversation an AI tool call belongs to (plan 183): TOOL_CONVERSATION_ID. It is
+// empty for an id that is not a plain id (never put anything else into a process environment), and for no conversation.
+func toolConversationEnv(conversationID string) []string {
+	if !toolConversationIDPattern.MatchString(conversationID) {
+		return nil
+	}
+	return []string{"TOOL_CONVERSATION_ID=" + conversationID}
 }
 
 // toolProxyResourcePattern matches the resource-link shape a tool's

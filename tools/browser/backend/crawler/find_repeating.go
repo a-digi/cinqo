@@ -83,6 +83,8 @@ type findRepeatingRequest struct {
 	URL           string `json:"url"`
 	MinItems      int    `json:"minItems,omitempty"`
 	MaxCandidates int    `json:"maxCandidates,omitempty"`
+	// AIContextID (plan 183): see crawlRequest.AIContextID.
+	AIContextID string `json:"aiContextId,omitempty"`
 }
 
 type findRepeatingResponse struct {
@@ -254,6 +256,24 @@ func FindRepeatingItemsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	normalizeFindRepeating(&req)
+
+	// Plan 183: an AI call whose conversation has a login window opened for it analyses the page in that window (same site only).
+	requestID, useWindow := "", false
+	if _, refusal := applyAIContext(req.AIContextID, req.URL, &requestID, &useWindow); refusal != nil {
+		writeAIContextRefusal(w, refusal)
+		return
+	}
+	if useWindow {
+		resp, err := performFindRepeatingInLoginWindow(r.Context(), requestID, req)
+		if err != nil {
+			writeLoginWindowFailure(w, requestID, "find repeating items", err)
+			return
+		}
+		setCrawlPhase(requestID, phaseCompleted, "job list looked for in the login window")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+		return
+	}
 
 	resp, err := performFindRepeating(r.Context(), req)
 	if err != nil {

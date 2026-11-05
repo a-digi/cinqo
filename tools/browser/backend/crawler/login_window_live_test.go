@@ -146,4 +146,5 @@ type fakeLoginWindowsTab struct {
 func (f *fakeLoginWindowsTab) AcquireTab(ctx context.Context, id string) (context.Context, func(), error) {
 	return f.tab, func() {}, nil
 }
-func (f *fakeLoginWindowsTab) LoginLost(id string) { f.lost = append(f.lost, id) }
+func (f *fakeLoginWindowsTab) LoginLost(id string)                    { f.lost = append(f.lost, id) }
+func (f *fakeLoginWindowsTab) AIWindow(id string) shared.AIWindowInfo { return shared.AIWindowInfo{} }
