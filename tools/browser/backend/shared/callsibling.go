@@ -12,8 +12,8 @@ import (
 
 // CallSibling is how this process's own --mcp adapter reaches its
 // long-running HTTP-mode sibling — every MCP tool registration
-// (fetch_page_html, login, extract_page_data, crawl_paginated,
-// find_login_elements, has_login_credential) is a thin wrapper that
+// (fetch_page_html, extract_page_data, crawl_paginated,
+// find_login_elements) is a thin wrapper that
 // builds a request body and calls this.
 func CallSibling(route string, body []byte) ([]byte, error) {
 	portStr := os.Getenv("TOOL_OWN_PORT")

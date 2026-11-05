@@ -1,18 +1,16 @@
 // Command browser-tool-backend is cinqo's browser tool — a headless-
 // Chrome-backed tool giving the AI a persistent browser session across
 // several separate tool calls (fetch page HTML, inspect for login
-// elements, log in). See
+// elements, crawl). See
 // plan/ai/tools/browser/step-01-manifest-and-package-skeleton.md.
 //
 // This file holds this process's own --mcp adapter and the HTTP-mode
 // route wiring for each feature. The shared headless session itself
 // (originally step 2's own architecture) and this tool's own SQLite
 // handle/sibling-HTTP-call helper live in the shared package. The
-// login/find-login-elements/login-credentials feature (originally
-// steps 4/5/7/8, retiring step 5's own allowlist.go entirely — see
-// plan/ai/tools/browser/step-07-login-profiles-and-credential-isolation.md
-// and plan/ai/tools/browser/step-08-ai-instructed-login.md) lives in
-// the auth package. The crawl-adjacent feature set (crawl.go for step
+// find-login-elements feature and the human-only login window (plan 182:
+// the person logs in on the site itself; NO login or credential is stored
+// anywhere) live in the auth package. The crawl-adjacent feature set (crawl.go for step
 // 3, extract.go for step 9, paginate.go for step 16, and the rest)
 // lives in the crawler package. Both were carved out of this package
 // so each can be its own package without importing this one. See
@@ -52,9 +50,6 @@ func runHTTPServer() {
 	if err := shared.InitDB(); err != nil {
 		log.Fatalf("failed to open browser database: %v", err)
 	}
-	if err := auth.InitCryptoKey(); err != nil {
-		log.Fatalf("failed to load credential encryption key: %v", err)
-	}
 	// Plan 182: delete the throw-away profile folders of any login window an earlier run of this tool left behind (a crash, a kill).
 	if n := shared.SweepLoginWindowFolders(); n > 0 {
 		log.Printf("removed %d login window folder(s) left by an earlier run", n)
@@ -92,26 +87,12 @@ func runHTTPServer() {
 	http.HandleFunc("/cloudflare-domains", crawler.CloudflareDomainsHandler)
 	http.HandleFunc("/crawl-status", crawler.CrawlStatusHandler)
 	http.HandleFunc("/crawl-cancel", crawler.CrawlCancelHandler)
-	http.HandleFunc("/login", auth.LoginHandler)
 	// Plan 182: the human-only login window (the person logs in on the site's own page; nothing is stored). Deliberately not MCP tools,
-	// like /login-credentials: the AI cannot open, confirm or end a login. See auth/login_window.go.
+	// the AI cannot open, confirm or end a login. See auth/login_window.go.
 	http.HandleFunc("/login-window/open", auth.LoginWindowOpenHandler)
 	http.HandleFunc("/login-window/status", auth.LoginWindowStatusHandler)
 	http.HandleFunc("/login-window/confirm", auth.LoginWindowConfirmHandler)
 	http.HandleFunc("/login-window/cancel", auth.LoginWindowCancelHandler)
-	// Deliberately not exposed as an MCP tool — see
-	// login_credentials.go's own top comment. Reachable only via the
-	// ordinary tool proxy a signed-in human's own request hits, never
-	// by the AI's own tool-calling loop (which only ever calls
-	// registered MCP tools).
-	http.HandleFunc("/login-credentials", auth.LoginCredentialsHandler)
-	// Unlike /login-credentials above, THIS one is deliberately also
-	// an MCP tool (has_login_credential, registered below) — the one
-	// deliberate, narrow crack in "the AI never touches login data":
-	// it can only ever report a yes/no existence check, never a
-	// credential. See
-	// plan/ai/tools/browser/step-11-ai-facing-credential-existence-check.md.
-	http.HandleFunc("/has-login-credential", auth.HasCredentialHandler)
 
 	log.Printf("browser tool listening on 127.0.0.1:%s", port)
 	if err := http.ListenAndServe("127.0.0.1:"+port, nil); err != nil {
@@ -132,8 +113,6 @@ func runMCPServer() {
 	crawler.RegisterCrawlPaginated(server)
 	crawler.RegisterExtractFromURL(server)
 	crawler.RegisterFindRepeatingItems(server)
-	auth.RegisterHasLoginCredential(server)
-	auth.RegisterLogin(server)
 
 	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
 		log.Fatal(err)

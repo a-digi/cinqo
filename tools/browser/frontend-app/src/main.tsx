@@ -1,14 +1,11 @@
-// main.tsx is the Browser tool's own frontend entry point — a
-// human-facing page for managing stored login credentials. As of
-// step 15, authored in React + Tailwind and built to a single
+// main.tsx is the Browser tool's own frontend entry point — its human-facing pages (browser & engine, challenge domains, debug,
+// crawl logs). It stores no login. As of step 15, authored in React + Tailwind and built to a single
 // self-contained file, tools/browser/frontend/bundle.js — "React
 // only for the build": the runtime contract with the host app
 // (window.__cinqoToolBridge, ToolRoute.mount/unmount, one static JS
 // file) is unchanged from the vanilla-JS version steps 10/12-14 built.
 // See plan/ai/tools/browser/step-15-react-tailwind-frontend-rewrite.md.
 import { createRoot, type Root } from 'react-dom/client'
-import { ListPage } from './ListPage'
-import { AddPage } from './AddPage'
 import { ChromeGate } from './ChromeRequired'
 import { BrowserEnginePage } from './BrowserEnginePage'
 import { CrawlLogsPage } from './CrawlLogsPage'
@@ -17,8 +14,6 @@ import { DomainsPage } from './DomainsPage'
 import { fetchChromeStatus } from './api'
 import './index.css'
 
-const LIST_PATH = '/tools/browser/credentials'
-const ADD_PATH = '/tools/browser/credentials/new'
 const CRAWL_LOGS_PATH = '/tools/browser/crawl-logs'
 const DEBUG_PATH = '/tools/browser/debug'
 // "Browser & Engine" replaced the separate Chromium and Engine pages. The two old
@@ -49,22 +44,6 @@ const browserEngineEntry = {
 
 // Pages shown only when Chrome is installed.
 const chromeDependentEntries = [
-  {
-    // Login sits in an Authentication group.
-    label: 'Authentication',
-    children: [
-      {
-        label: 'Login',
-        path: LIST_PATH,
-        // Reuses the existing tool:browser:login scope — the same
-        // permission that already gates writing a credential via the
-        // underlying route, deliberately not a separate scope: a user
-        // who can't submit a credential shouldn't see a page whose
-        // only purpose is submitting one.
-        scopes: ['tool:browser:login'],
-      },
-    ],
-  },
   {
     // Challenges: the sites that asked for a check only a person can pass.
     label: 'Challenges',
@@ -131,35 +110,6 @@ function unmountReact(container: HTMLElement) {
   roots.get(container)?.unmount()
   roots.delete(container)
 }
-
-window.__cinqoToolBridge.registerRoute({
-  path: LIST_PATH,
-  mount: (container) => {
-    mountReact(
-      container,
-      <ChromeGate ready={chromeReady}>
-        <ListPage />
-      </ChromeGate>,
-    )
-  },
-  unmount: unmountReact,
-})
-
-// No registerMenuEntry for this one — deliberately reachable only by
-// clicking the list page's own "+" button (step 14's own design,
-// unchanged by this rewrite).
-window.__cinqoToolBridge.registerRoute({
-  path: ADD_PATH,
-  mount: (container) => {
-    mountReact(
-      container,
-      <ChromeGate ready={chromeReady}>
-        <AddPage />
-      </ChromeGate>,
-    )
-  },
-  unmount: unmountReact,
-})
 
 window.__cinqoToolBridge.registerRoute({
   path: CRAWL_LOGS_PATH,

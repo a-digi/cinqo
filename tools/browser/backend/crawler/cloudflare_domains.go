@@ -50,7 +50,7 @@ func isDomainKnownCloudflare(domain string) (bool, error) {
 
 // recordCloudflareDomain records domain the first time it's seen —
 // idempotent (INSERT OR IGNORE, matching this same package's own
-// browser_settings seeding convention in login_credentials.go): a
+// browser_settings seeding convention in shared/db.go): a
 // later re-detection with a different reason does not overwrite the
 // first one.
 func recordCloudflareDomain(domain, reason string) error {

@@ -22,7 +22,7 @@ import (
 // no table, no file, no log line. What exists while a run lives is a small in-memory record (which window belongs to which run and what
 // state it is in), like the crawl phase (crawler/crawl_status.go); the window and its temporary folder are deleted when the run ends.
 //
-// Deliberately never an MCP tool (the same structural guarantee as login_credentials.go): the AI cannot start, confirm or end a login;
+// Deliberately never an MCP tool (no MCP tool can name a login window): the AI cannot start, confirm or end a login;
 // only a signed-in human's own request can, through the ordinary tool proxy. Reached under scope tool:browser:login.
 // See plan/ai/tools/browser/step-182-crawl-with-login.md.
 

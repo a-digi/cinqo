@@ -1,46 +1,10 @@
-// api.ts — the same GET/POST/DELETE /login-credentials calls steps
-// 7/10 already built, reused verbatim. The backend never inspects
-// Content-Type on POST and JSON is valid YAML (verified directly
-// while designing step 10), so a plain JSON.stringify body is safe —
-// no hand-templated YAML, no injection risk from a domain/username/
-// password containing YAML-special characters.
+// api.ts — the Browser tool page's own calls to the tool's routes (crawl logs, engine and Chrome status, challenge domains, debug settings).
+// This tool stores no login (plan 182): the person logs in on the site's own page in a window the crawl run opens.
 // res.json() is typed Promise<any> — this is the one place that's cast to
 // a concrete type, so every call site below gets a real type without its
 // own scattered unsafe assignment.
 async function readJson<T>(res: Response): Promise<T> {
   return (await res.json()) as T
-}
-
-const PROXY_BASE = '/api/v1/tools/browser/proxy/login-credentials'
-
-export interface CredentialSummary {
-  domain: string
-  username: string
-}
-
-interface CredentialsListResponse {
-  // Optional, not required — matches the `data.credentials ?? []` at
-  // every call site: a Go `omitempty` slice field is genuinely absent
-  // from the JSON when there are zero credentials, not sent as `[]`.
-  credentials?: CredentialSummary[]
-}
-
-export async function fetchCredentials(): Promise<CredentialSummary[]> {
-  const res = await fetch(PROXY_BASE, { credentials: 'include' })
-  if (!res.ok) throw new Error(`failed to load credentials (${res.status})`)
-  const data = await readJson<CredentialsListResponse>(res)
-  return data.credentials ?? []
-}
-
-export async function saveCredential(domain: string, username: string, password: string): Promise<CredentialSummary[]> {
-  const res = await fetch(PROXY_BASE, {
-    method: 'POST',
-    credentials: 'include',
-    body: JSON.stringify({ login_credentials: [{ domain, username, password }] }),
-  })
-  if (!res.ok) throw new Error(`failed to save credential (${res.status})`)
-  const data = await readJson<CredentialsListResponse>(res)
-  return data.credentials ?? []
 }
 
 // --- crawl logs (step 17) ---
@@ -348,27 +312,4 @@ export async function cancelDomainRequest(requestId: string): Promise<void> {
   const res = await fetch(CRAWL_CANCEL_BASE, { method: 'POST', credentials: 'include', body: JSON.stringify({ requestId }) })
   // 404 means it already ended: nothing left to cancel.
   if (!res.ok && res.status !== 404) throw new Error(`failed to cancel (${res.status})`)
-}
-
-export async function removeCredential(domain: string): Promise<void> {
-  const res = await fetch(`${PROXY_BASE}?domain=${encodeURIComponent(domain)}`, {
-    method: 'DELETE',
-    credentials: 'include',
-  })
-  if (!res.ok && res.status !== 204) throw new Error(`failed to remove credential (${res.status})`)
-}
-
-// normalizeDomain lets a user paste a full login URL (e.g.
-// "https://example.com/login") into the domain field instead of
-// requiring a bare hostname — a frontend-only convenience, doesn't
-// touch the backend/schema at all. Falls back to the raw input
-// whenever it isn't a parseable absolute URL.
-export function normalizeDomain(raw: string): string {
-  try {
-    const u = new URL(raw)
-    if (u.hostname) return u.hostname
-  } catch {
-    // Not a parseable absolute URL — treat raw as a bare domain.
-  }
-  return raw
 }

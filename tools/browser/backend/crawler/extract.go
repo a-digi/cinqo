@@ -4,7 +4,7 @@
 // attribute, one-or-many) and gets back exactly those values,
 // structured, instead of the whole page's HTML. Read-only, never
 // navigates anywhere itself — same shape as find_login_elements. Kept
-// entirely separate from login/login_credentials.go by design — see
+// entirely separate from the login code by design — see
 // plan/ai/tools/browser/step-09-yaml-instructed-extraction.md.
 package crawler
 

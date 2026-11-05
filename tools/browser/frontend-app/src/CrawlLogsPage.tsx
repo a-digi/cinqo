@@ -85,7 +85,7 @@ export function CrawlLogsPage() {
 
   function handleClearAll() {
     // Unlike a single entry's own delete button (matching this app's
-    // existing no-confirm precedent for e.g. removing a credential),
+    // existing no-confirm precedent for e.g. forgetting a domain),
     // this is bulk and irreversible — a deliberate divergence from that
     // precedent, not an oversight.
     if (!window.confirm('Delete all crawl logs? This cannot be undone.')) return

@@ -71,7 +71,7 @@ type fetchCacheIndexEntry struct {
 // fetch_page_html call reads/writes — a single mutex, not per-key
 // locking: this cache's own write volume (one entry per distinct URL
 // fetched, at most once every fetchCacheTTL) is tiny, same reasoning
-// login_credentials.go's own single sqlite connection already
+// the tool's single sqlite connection (shared/db.go) already
 // documents for browser.db.
 var fetchCacheMu sync.Mutex
 

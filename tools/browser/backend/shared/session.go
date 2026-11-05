@@ -2,7 +2,7 @@
 // the login/extract-adjacent main package and the crawler package
 // depend on — the one shared headless browser session, the tool's own
 // SQLite handle, and the sibling-HTTP-call helper the --mcp adapter
-// uses. Carved out of main.go/login_credentials.go specifically so the
+// uses. Carved out of main.go specifically so the
 // crawler package (crawl.go, paginate.go, extract.go, and friends) can
 // be its own package without importing main (which Go forbids, since
 // main already imports crawler for HTTP/MCP route registration).
@@ -147,8 +147,8 @@ const sessionLivenessProbeTimeout = 5 * time.Second
 // unrelated caller after it burns its own full — often much longer —
 // timeout on real work that was never going to complete either way.
 //
-// Deliberately does NOT navigate: findLoginElements, performExtraction,
-// and performLogin all operate on whatever page the shared session
+// Deliberately does NOT navigate: findLoginElements and performExtraction
+// both operate on whatever page the shared session
 // already has loaded and must never have that page changed out from
 // under them, so a Navigate-based reset (which would otherwise double
 // as a liveness check) is not an option for a probe shared across

@@ -3,6 +3,7 @@ package shared
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 
@@ -46,10 +47,6 @@ var (
 // under TOOL_CACHE_DIR — none pre-created by the host — same
 // convention pdf_generator's own main() already established for
 // TOOL_TMP_DIR/TOOL_UPLOADS_DIR — so this tool creates them itself.
-// Does NOT load/generate this tool's own credential-encryption key —
-// that stays login_credentials.go's own concern (main package), loaded
-// separately via its own initCryptoKey, since it has nothing to do
-// with the DB/schema this function owns.
 func InitDB() error {
 	dbDir := os.Getenv("TOOL_DB_DIR")
 	if dbDir == "" {
@@ -95,21 +92,14 @@ func InitDB() error {
 		return fmt.Errorf("failed to open browser database: %w", err)
 	}
 	// This tool's own write volume is tiny (a human occasionally
-	// registering/revoking a credential) — a single connection avoids
+	// changing a setting) — a single connection avoids
 	// any "database is locked" surprise from modernc.org/sqlite's own
 	// concurrent-writer behavior, which isn't worth tuning around here.
 	db.SetMaxOpenConns(1)
 
-	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS login_credentials (
-		domain             TEXT PRIMARY KEY,
-		username           TEXT NOT NULL,
-		encrypted_password TEXT NOT NULL,
-		created_at         TEXT NOT NULL DEFAULT (datetime('now')),
-		updated_at         TEXT
-	)`); err != nil {
-		db.Close()
-		return fmt.Errorf("failed to prepare login_credentials schema: %w", err)
-	}
+	// This tool stores NO login: the person logs in on the site's own page in a throw-away window (plan 182). An older version kept
+	// encrypted credentials; they are removed here, with their key file.
+	removeStoredCredentials(db, dbDir)
 
 	// crawl_logs (step 17, restructured step 39) — diagnostic record of
 	// every /crawl-paginated call, AI-driven or deterministic. Holds
@@ -386,4 +376,27 @@ func migrateBrowserSettingsChallengeColumn(db *sql.DB) error {
 
 	_, err = db.Exec(`ALTER TABLE browser_settings ADD COLUMN debug_log_challenge INTEGER NOT NULL DEFAULT 0`)
 	return err
+}
+
+// credentialsKeyFile is the name of the key file an older version of this tool kept next to its database to encrypt stored credentials.
+const credentialsKeyFile = "credentials.key"
+
+// removeStoredCredentials deletes what an older version of this tool stored for logins: the table login_credentials (its rows are
+// counted in the log, never read) and the key file that encrypted them. This tool keeps no login of any kind any more (plan 182: the
+// person logs in on the site itself, in a window that is thrown away). Best effort and idempotent: a failure is logged, never fatal, and
+// a database or folder without them is left alone.
+func removeStoredCredentials(db *sql.DB, dbDir string) {
+	var rows int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM login_credentials`).Scan(&rows); err == nil {
+		if _, err := db.Exec(`DROP TABLE IF EXISTS login_credentials`); err != nil {
+			log.Printf("browser tool: could not remove the old stored-credentials table: %v", err)
+		} else {
+			log.Printf("browser tool: removed the old stored-credentials table (%d stored credential(s) deleted)", rows)
+		}
+	}
+	if err := os.Remove(filepath.Join(dbDir, credentialsKeyFile)); err == nil {
+		log.Print("browser tool: removed the old credential encryption key")
+	} else if !os.IsNotExist(err) {
+		log.Printf("browser tool: could not remove the old credential encryption key: %v", err)
+	}
 }
