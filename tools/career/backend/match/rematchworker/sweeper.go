@@ -1,11 +1,10 @@
 package rematchworker
 
 import (
+	"career-tool-backend/match"
 	"context"
 	"log"
 	"time"
-
-	"career-tool-backend/jobs"
 )
 
 // The catch-up for profiles and personas whose events were missed (step 151). Events are best effort: core drops one after three tries,
@@ -25,8 +24,8 @@ var (
 
 // The sweeper's sources; vars so a test can substitute them.
 var (
-	seedState     = jobs.SeedProfileMatchState
-	staleProfiles = jobs.StaleProfiles
+	seedState     = match.SeedProfileMatchState
+	staleProfiles = match.StaleProfiles
 )
 
 // noteIfAbsent notes a profile that is not waiting yet and says whether it did; one that is waiting keeps its times.

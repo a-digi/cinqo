@@ -7,7 +7,8 @@ import (
 
 	"career-tool-backend/db"
 	"career-tool-backend/jobs"
-	"career-tool-backend/jobs/jobmatcher"
+	"career-tool-backend/match"
+	"career-tool-backend/match/jobmatcher"
 	"career-tool-backend/profile"
 )
 
@@ -61,7 +62,7 @@ func JobMatchRunHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "jobId and profileId are required", http.StatusBadRequest)
 		return
 	}
-	result, err := jobs.RunManualMatch(body.JobID, body.ProfileID)
+	result, err := match.RunManualMatch(body.JobID, body.ProfileID)
 	if err != nil {
 		writeJobMatchError(w, "match the job", err)
 		return

@@ -5,8 +5,8 @@ import (
 	"sort"
 
 	"career-tool-backend/jobs/jobboard"
+	"career-tool-backend/match/personamatch"
 	"career-tool-backend/persona"
-	"career-tool-backend/persona/personamatch"
 )
 
 // The persona scores on a profile's job board (step 141). Each card gets how well each of the profile's own personas fits

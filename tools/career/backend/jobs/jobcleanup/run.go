@@ -12,6 +12,7 @@ import (
 	"career-tool-backend/db"
 	"career-tool-backend/jobs"
 	"career-tool-backend/jobs/deletedjobs"
+	"career-tool-backend/match"
 )
 
 // The rules (step 131): jobs added to the database more than N days ago, jobs that score under X percent for every
@@ -130,7 +131,7 @@ type Scorer interface {
 }
 
 // newScorer builds the scorer for one evaluation; a var so a test can substitute a fake.
-var newScorer = func() (Scorer, error) { return jobs.NewProfileScorer() }
+var newScorer = func() (Scorer, error) { return match.NewProfileScorer() }
 
 // candidates reads every job with its safety flags and decides, rule by rule, which ones the options pick and which
 // of those the safety rules keep. Nothing is written. The low-match rule scores only the jobs the older rule did not

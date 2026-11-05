@@ -4,7 +4,7 @@ import (
 	"log"
 	"net/http"
 
-	"career-tool-backend/persona/personamatch"
+	"career-tool-backend/match/personamatch"
 )
 
 // PersonaMatchJobDeletedHandler is POST /events/job-deleted-persona-matches: PersonaMatchJobDeleted deletes the mapping

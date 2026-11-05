@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"career-tool-backend/db"
-	"career-tool-backend/jobs"
+	"career-tool-backend/match"
 )
 
 // The timing of the worker; vars so a test can shrink them. A profile is re-matched once no event for it arrived for quietPeriod, or
@@ -29,7 +29,7 @@ var (
 )
 
 // rematch is what the worker runs for one profile; a var so a test can watch the runs and make them fail.
-var rematch = jobs.RematchProfile
+var rematch = match.RematchProfile
 
 // pending is one profile waiting to be re-matched: when its first and its latest event arrived.
 type pending struct {

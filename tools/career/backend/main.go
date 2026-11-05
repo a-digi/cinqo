@@ -28,6 +28,7 @@ import (
 	cvhandlers "career-tool-backend/cv/handlers"
 	educationhandlers "career-tool-backend/education/handlers"
 	jobshandlers "career-tool-backend/jobs/handlers"
+	"career-tool-backend/match"
 	personahandlers "career-tool-backend/persona/handlers"
 	portalhandlers "career-tool-backend/portal/handlers"
 	profilehandlers "career-tool-backend/profile/handlers"
@@ -54,24 +55,24 @@ import (
 	"career-tool-backend/jobs/deletedjobs"
 	"career-tool-backend/jobs/jobcleanup"
 	"career-tool-backend/jobs/jobdeletedconsumers"
-	"career-tool-backend/jobs/jobmatchconsumer"
 	"career-tool-backend/jobs/jobrecrawl"
 	"career-tool-backend/jobs/jobrecrawlconsumer"
+	"career-tool-backend/match/jobmatchconsumer"
 	"career-tool-backend/match/matchorphans"
+	"career-tool-backend/match/personacreatedconsumer"
+	"career-tool-backend/match/personadeletedconsumer"
+	"career-tool-backend/match/personamatchconsumer"
+	"career-tool-backend/match/personarecomputeconsumer"
+	"career-tool-backend/match/profilecreatedconsumer"
+	"career-tool-backend/match/profiledeletedconsumer"
+	"career-tool-backend/match/profilejobmatchconsumer"
 	"career-tool-backend/match/rematchworker"
 	"career-tool-backend/persona"
-	"career-tool-backend/persona/personacreatedconsumer"
-	"career-tool-backend/persona/personadeletedconsumer"
-	"career-tool-backend/persona/personamatchconsumer"
-	"career-tool-backend/persona/personarecomputeconsumer"
 	"career-tool-backend/portal"
 	"career-tool-backend/profile"
-	"career-tool-backend/profile/profilecreatedconsumer"
-	"career-tool-backend/profile/profiledeletedconsumer"
 	"career-tool-backend/profile/profiledetails"
 	"career-tool-backend/profile/profileimage"
 	"career-tool-backend/profile/profileitems"
-	"career-tool-backend/profile/profilejobmatchconsumer"
 	"career-tool-backend/recruiters"
 	"career-tool-backend/recruiters/recruiterdeletedconsumers"
 	"career-tool-backend/settings"
@@ -124,7 +125,7 @@ func runHTTPServer() {
 	// Same reasoning as reconcileOrphanedCrawlRuns above, one level up
 	// — a hidden Job Match conversation's own turn is not a subprocess
 	// this Go process could ever reattach to after a restart.
-	if err := jobs.ReconcileOrphanedJobMatches(); err != nil {
+	if err := match.ReconcileOrphanedJobMatches(); err != nil {
 		log.Fatalf("failed to reconcile orphaned job matches: %v", err)
 	}
 	// Same reasoning as reconcileOrphanedJobMatches above, one level up
@@ -374,8 +375,8 @@ func runMCPServer() {
 	jobs.RegisterSearchJobs(server)
 	jobs.RegisterDeleteJob(server)
 	jobs.RegisterSaveJobDetailExtraction(server)
-	jobs.RegisterGetJob(server)
-	jobs.RegisterSaveJobMatch(server)
+	match.RegisterGetJob(server)
+	match.RegisterSaveJobMatch(server)
 	jobs.RegisterSaveCvDocument(server)
 	cvbuilder.RegisterListCvTemplates(server)
 	cvbuilder.RegisterGetPersonaCvDefaults(server)

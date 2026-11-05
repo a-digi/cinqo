@@ -15,11 +15,11 @@ import (
 	"career-tool-backend/handler/handlertest"
 	"career-tool-backend/jobs"
 	"career-tool-backend/jobs/jobboard"
-	"career-tool-backend/jobs/jobmatchconsumer"
+	"career-tool-backend/match/jobmatchconsumer"
+	"career-tool-backend/match/personamatchconsumer"
+	"career-tool-backend/match/profilejobmatchconsumer"
 	"career-tool-backend/persona"
-	"career-tool-backend/persona/personamatchconsumer"
 	"career-tool-backend/profile"
-	"career-tool-backend/profile/profilejobmatchconsumer"
 	"career-tool-backend/profile/profilerules"
 )
 

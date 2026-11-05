@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"career-tool-backend/jobs"
-	"career-tool-backend/jobs/jobmatchconsumer"
+	"career-tool-backend/match/jobmatchconsumer"
 )
 
 // sweepStartDelay is how long after the tool starts the first sweep runs (so the databases and core are up) and sweepInterval how often

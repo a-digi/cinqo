@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"career-tool-backend/db"
-	"career-tool-backend/jobs/jobmatcher"
+	"career-tool-backend/match/jobmatcher"
 )
 
 // MaxRequirementTermLength is the longest requirement, in characters.
@@ -127,11 +127,11 @@ func SetJobRequirements(jobID string, in []RequirementInput) ([]JobRequirement, 
 // SuggestJobRequirements offers the job's most distinctive words as candidate requirements (a word count
 // against the saved jobs, never an AI call), leaving out words an existing requirement already uses.
 func SuggestJobRequirements(jobID string) ([]string, error) {
-	job, err := loadMatchJob(jobID)
+	job, err := LoadMatchJob(jobID)
 	if err != nil {
 		return nil, err
 	}
-	corpus, err := loadCorpus()
+	corpus, err := LoadCorpus()
 	if err != nil {
 		return nil, err
 	}

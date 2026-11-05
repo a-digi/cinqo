@@ -121,14 +121,14 @@ func UpdateCvGenerationStatus(jobId, status string, errText *string) error {
 	}
 	_, err := db.JobsDB.Exec(
 		`UPDATE job_cv_pdfs SET status = ?, error = ?, conversation_id = NULL, updated_at = datetime('now') WHERE job_id = ?`,
-		status, orNull(errText), jobId,
+		status, OrNull(errText), jobId,
 	)
 	if err != nil {
 		return err
 	}
 	_, err = db.JobsDB.Exec(
 		`UPDATE job_cv_generations SET status = ?, error = ?, finished_at = datetime('now') WHERE job_id = ? AND status = 'generating'`,
-		status, orNull(errText), jobId,
+		status, OrNull(errText), jobId,
 	)
 	return err
 }

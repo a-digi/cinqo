@@ -217,7 +217,7 @@ func TestTheOrphanPurgeWaitsForTheLockOfAnOrphanProfile(t *testing.T) {
 	w := newWorld(t)
 	zombieJob(t, "j-gone", "gone", "", "ai", "completed")
 	zombieJob(t, "j-live", w.liveProfile, w.livePersona, "manual", "completed")
-	unlock := lockProfile("gone")
+	unlock := LockProfile("gone")
 	done := make(chan struct{})
 	go func() { _, _, _ = PurgeOrphans(); close(done) }()
 	select {
@@ -236,7 +236,7 @@ func TestTheOrphanPurgeWaitsForTheLockOfAnOrphanProfile(t *testing.T) {
 	}
 	// the lock of a profile that exists does not hold a purge that has nothing to do with it
 	zombieJob(t, "j-gone2", "gone2", "", "ai", "completed")
-	hold := lockProfile(w.liveProfile)
+	hold := LockProfile(w.liveProfile)
 	defer hold()
 	ok := make(chan struct{})
 	go func() { _, _, _ = PurgeOrphans(); close(ok) }()

@@ -221,7 +221,7 @@ func PurgeOrphans() (OrphanReport, []string, error) {
 	}
 	sort.Strings(lockIDs) // a fixed order, so two sweeps can never wait for each other
 	for _, id := range lockIDs {
-		defer lockProfile(id)()
+		defer LockProfile(id)()
 	}
 
 	tx, err := db.JobsDB.Begin()

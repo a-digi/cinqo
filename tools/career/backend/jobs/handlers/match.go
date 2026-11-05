@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"career-tool-backend/jobs"
+	"career-tool-backend/match"
 )
 
 // jobMatchUpdateRequest is the human/frontend-facing shape PUT
@@ -46,7 +47,7 @@ func JobMatchHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "profileId is required when starting a match", http.StatusBadRequest)
 			return
 		}
-		if err := jobs.StartJobMatch(body.JobID, body.ProfileID, body.ConversationID); err != nil {
+		if err := match.StartJobMatch(body.JobID, body.ProfileID, body.ConversationID); err != nil {
 			if errors.Is(err, jobs.ErrUnknownJob) {
 				http.Error(w, "unknown job id", http.StatusNotFound)
 				return
@@ -55,7 +56,7 @@ func JobMatchHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case "failed":
-		if err := jobs.UpdateJobMatchStatus(body.JobID, body.Status, body.ErrorText); err != nil {
+		if err := match.UpdateJobMatchStatus(body.JobID, body.Status, body.ErrorText); err != nil {
 			if errors.Is(err, jobs.ErrUnknownJob) {
 				http.Error(w, "unknown job id", http.StatusNotFound)
 				return
