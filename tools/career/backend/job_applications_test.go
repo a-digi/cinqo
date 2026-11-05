@@ -77,7 +77,8 @@ func TestTheApplicationsOverviewListsAppliedJobsAndJobsWithAProtocolMostRecentFi
 	mustSet(t, p1, "j5", jobboard.DeclinedID)
 	// j6: Applied on the OTHER profile's board only: not p1's application.
 	mustSet(t, p2, "j6", jobboard.AppliedID)
-	// j7: nothing at all.
+	// j7: nothing for p1, but the OTHER profile has an entry on it: still not p1's application.
+	addEntry(t, p2, "j7", "sent", "2026-11-04")
 
 	got, raw := applicationsOf(t, p1)
 	order := []string{}
@@ -108,6 +109,9 @@ func TestTheApplicationsOverviewListsAppliedJobsAndJobsWithAProtocolMostRecentFi
 	check("j2", "2026-11-04T00:00:00Z", false, "not_reviewed", 2, 1)
 	check("j3", "2026-11-02T08:00:00Z", false, "applied", 0, 0)
 	check("j4", "", false, "", 1, 1)
+	if n := strings.Count(raw, `"status"`); n != 3 {
+		t.Errorf("only the jobs on the board carry a status (3), got %d: %s", n, raw)
+	}
 	if byID["j3"].Protocol != nil || strings.Count(raw, `"protocol"`) != 3 {
 		t.Errorf("a job without entries must carry no protocol: %s", raw)
 	}
@@ -159,4 +163,23 @@ func TestManifestDeclaresTheApplicationsOverviewRoute(t *testing.T) {
 		}
 	}
 	t.Error("manifest.json does not declare GET job-applications with the jobs scope")
+}
+
+func TestApplicationsWithTheSameActivityComeByTitleThenById(t *testing.T) {
+	p1, _ := boardFixture(t)
+	for _, j := range []struct{ id, title string }{{"k1", "Zeta"}, {"k2", "Alpha"}, {"k3", "Same"}, {"k4", "Same"}} {
+		if _, err := db.JobsDB.Exec(`INSERT INTO jobs (id, source_url, title) VALUES (?, ?, ?)`, j.id, "https://x/"+j.id, j.title); err != nil {
+			t.Fatal(err)
+		}
+		mustSet(t, p1, j.id, jobboard.AppliedID)
+		moveAt(t, p1, j.id, "2026-11-02T08:00:00.000Z")
+	}
+	got, _ := applicationsOf(t, p1)
+	order := []string{}
+	for _, a := range got {
+		order = append(order, a.JobID)
+	}
+	if want := "k2,k3,k4,k1"; strings.Join(order, ",") != want {
+		t.Errorf("order %v, want %s", order, want)
+	}
 }

@@ -63,7 +63,7 @@ export const GETTING_STARTED: Guide = {
     {
       id: 'follow-up',
       title: 'Keep track of the jobs you care about',
-      text: 'Use Add to job board in a job’s actions to follow it with a status; a profile’s page shows its Job board. Companies and Recruiters hold the people behind the jobs, and Recruiter… in a job’s actions maps a recruiter to it.',
+      text: 'Use Add to job board in a job’s actions to follow it with a status; a profile’s page shows its Job board. A job’s page has a Protocol card for your emails, calls and meetings, and Applications lists them. Companies and Recruiters hold the people behind the jobs, and Recruiter… in a job’s actions maps a recruiter to it.',
       link: { label: 'Open Profiles', path: PROFILES_PATH },
     },
     {

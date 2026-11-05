@@ -1,6 +1,7 @@
 // The questions of the Questions page (plan/ai/tools/career/step-170-onboarding-guide.md): plain text, each answer taken from what the
 // real pages say and do, checked by questionsRules.ts (every link is a page of paths.ts). Keep the wording in step with the pages.
 import {
+  APPLICATIONS_PATH,
   CLEANUP_SETTINGS_PATH,
   COMPANIES_PATH,
   CRAWLER_SETTINGS_PATH,
@@ -64,6 +65,20 @@ export const QUESTIONS: Question[] = [
     answer:
       'Job cleanup deletes old jobs and jobs that match none of your profiles. Run it by hand with Clean up now, or on a schedule with Automatic cleanup.',
     link: { label: 'Open Settings → Job cleanup', path: CLEANUP_SETTINGS_PATH },
+  },
+  {
+    id: 'log-emails',
+    question: 'Where do I write down my emails to a recruiter?',
+    answer:
+      'Open the job and use its Protocol card: Add entry logs a message you sent or received, or a note, with its channel (e-mail, platform, SMS, WhatsApp, phone, video, in person or letter), the date, an optional time, the recruiter and the CV you sent. You enter it yourself, or ask the AI assistant to add it; nothing is read from your mailbox. The Applications page lists every job with a protocol and marks the ones waiting for a reply.',
+    link: { label: 'Open Applications', path: APPLICATIONS_PATH },
+  },
+  {
+    id: 'comments-or-protocol',
+    question: 'Comments or protocol: which one do I use?',
+    answer:
+      'The protocol is a dated log of what was sent, received or planned in one application, with a channel and optionally the recruiter and the CV. Comments are free notes about a job, a profile, a company or a recruiter, with no date of your choosing. Use the protocol for the conversation and comments for everything else.',
+    link: { label: 'Open Jobs', path: JOBS_PATH },
   },
   {
     id: 'delete-company',

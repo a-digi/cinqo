@@ -3,6 +3,7 @@ import { fetchJobApplications, fetchProfiles, type JobApplication, type Profile 
 import { AppLink } from '../../Shared/AppLink/AppLink'
 import { BriefcaseIcon } from '../../Shared/Icons/icons'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
+import { PageTips } from '../../Shared/PageTips/PageTips'
 import { jobBoardPathFor } from '../../paths'
 import { plural } from '../CompaniesPage/companyStats'
 import { columnAccent } from '../JobBoard/jobBoardRules'
@@ -50,6 +51,7 @@ export function ApplicationsPage() {
               : plural(total, 'application', 'applications'),
         }}
       />
+      <PageTips page="applications" />
       {error !== '' && (
         <p role="alert" className="mb-3 text-sm text-red-700">
           {error}

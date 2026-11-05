@@ -98,6 +98,7 @@ export function wordCount(text: string): number {
 
 export type PageTipsId =
   | 'jobs'
+  | 'applications'
   | 'cvs'
   | 'crawlMonitor'
   | 'portals'
@@ -163,6 +164,51 @@ export const PAGE_TIPS: Record<PageTipsId, PageTipSet> = {
         tone: 'sky',
         icon: 'details',
         text: 'View details shows the full text once a job has been crawled. Link a job to a company, and it also appears on that company’s page.',
+      },
+      {
+        id: 'protocol',
+        label: 'Protocol',
+        title: 'Keep a protocol of an application',
+        tone: 'rose',
+        icon: 'log',
+        text: 'Open a job’s details and use the Protocol card to log emails, calls and meetings with their dates. The Applications page lists these jobs.',
+      },
+    ],
+  },
+  applications: {
+    name: 'Applications',
+    tips: [
+      {
+        id: 'which',
+        label: 'Which jobs',
+        title: 'Which jobs show here',
+        tone: 'blue',
+        icon: 'job',
+        text: 'A job shows here when it is in the Applied status on a profile’s job board, or has an entry in that profile’s protocol.',
+      },
+      {
+        id: 'waiting',
+        label: 'Waiting',
+        title: 'Waiting for a reply',
+        tone: 'amber',
+        icon: 'clock',
+        text: 'The badge shows when the newest entry that has already happened is a message you sent. Planned entries in the future do not count.',
+      },
+      {
+        id: 'order',
+        label: 'Order',
+        title: 'Change the order',
+        tone: 'violet',
+        icon: 'timeline',
+        text: 'Order by latest or oldest activity, by the longest wait for a reply, or by job title. Activity is the newest entry or the last move on the board.',
+      },
+      {
+        id: 'open',
+        label: 'Open a job',
+        title: 'Write on the job’s page',
+        tone: 'green',
+        icon: 'pencil',
+        text: 'Click a job to open it for that profile. The Protocol card there is where you add, change or delete entries; this page only shows them.',
       },
     ],
   },
