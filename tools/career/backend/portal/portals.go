@@ -42,6 +42,7 @@ import (
 	"career-tool-backend/db"
 	"career-tool-backend/domainevent"
 	"career-tool-backend/jobs"
+	"career-tool-backend/portal/linkrule"
 )
 
 var ErrUnknownPortal = errors.New("unknown portal id")
@@ -144,6 +145,10 @@ type portalLink struct {
 	// logs in on ("" = the link's own address). Settings of the link only: nothing about a login is stored. Always present in the JSON.
 	RequiresLogin bool   `json:"requiresLogin"`
 	LoginURL      string `json:"loginUrl"`
+	// CrawlMethod and LinkRules (plan 185, step 4): how this link's listing is crawled ("instructions" = the AI-written selectors, the
+	// default; "links" = the link crawler) and the link crawler's rule (null = none). See link_rules.go. Always present in the JSON.
+	CrawlMethod string         `json:"crawlMethod"`
+	LinkRules   *linkrule.Rule `json:"linkRules"`
 	// JobDetailCrawlRequested (step 76) is the same kind of request flag
 	// as the two above, set unconditionally by the existing
 	// events/jobs-crawled listener the instant a listing crawl finishes
@@ -340,6 +345,10 @@ func ListPortals() ([]portal, error) {
 	if err != nil {
 		return nil, err
 	}
+	linkCrawl, err := linkCrawlByLink()
+	if err != nil {
+		return nil, err
+	}
 	lastListingCrawls, err := LastListingCrawlByLink()
 	if err != nil {
 		return nil, err
@@ -383,6 +392,10 @@ func ListPortals() ([]portal, error) {
 		l.UpdatedAt = updatedAt.String
 		if jobsQuestionAskedAt.Valid {
 			l.JobsQuestion = &JobsQuestion{AskedAt: jobsQuestionAskedAt.String, Note: jobsQuestionNote.String}
+		}
+		l.CrawlMethod, l.LinkRules = CrawlMethodInstructions, nil
+		if lc, ok := linkCrawl[l.ID]; ok {
+			l.CrawlMethod, l.LinkRules = lc.CrawlMethod, lc.Rules
 		}
 		l.LastCrawledAt = lastCrawled[l.ID]
 		l.HasActiveCrawlRun = activeCrawlRuns[l.ID]
@@ -474,7 +487,14 @@ func UpdatePortalLink(id string, url, title *string) error {
 	if err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed") {
 		return ErrDuplicatePortalLink
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	// A rule of the link crawler belongs to one site: an address on another host takes the rule away (plan 185).
+	if url != nil {
+		return dropLinkRulesOfOtherHost(id)
+	}
+	return nil
 }
 
 // MaxLoginURLLength bounds a link's login page address, in characters.
@@ -543,9 +563,13 @@ func UpdatePortalLinkLogin(id string, requiresLogin *bool, loginURL *string) err
 	if _, err := db.JobsDB.Exec(`UPDATE portal_links SET `+setClauses+` WHERE id = ?`, args...); err != nil {
 		return err
 	}
-	// Auto-crawl is already off here, so only the pending request flags and an interval are left to clear (manual_only.go).
+	// Auto-crawl is already off here, so only the pending request flags and an interval are left to clear (manual_only.go). A login link
+	// is also never crawled with the link crawler (plan 185).
 	if requiresLogin != nil && *requiresLogin {
-		return switchOffAutomatic(id)
+		if err := switchOffAutomatic(id); err != nil {
+			return err
+		}
+		return resetLinkCrawlForLogin(id)
 	}
 	return nil
 }
@@ -1648,6 +1672,8 @@ func WritePortalLinkAwareError(w http.ResponseWriter, action string, err error) 
 	case errors.Is(err, ErrInvalidAutoDiscoveryInterval):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrInvalidLoginURL), errors.Is(err, ErrManualOnly), errors.Is(err, ErrLoginWithAutoCrawl), errors.Is(err, ErrNoAIForLoginLink):
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	case errors.Is(err, ErrInvalidCrawlMethod), errors.Is(err, ErrLinkRulesNeeded), errors.Is(err, ErrLinkRulesLogin), errors.Is(err, ErrLinkRulesHost), errors.Is(err, ErrLinkRulesInvalid), errors.Is(err, ErrLinkRulesTooLarge):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrInvalidInstructionKind), errors.Is(err, ErrInvalidInstructionTrigger):
 		http.Error(w, err.Error(), http.StatusBadRequest)

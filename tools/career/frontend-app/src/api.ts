@@ -349,6 +349,27 @@ export interface JobsQuestion {
   note: string
 }
 
+// LinkRule (plan 185) is what a person's picked job links became: the host, the patterns that say "this link is a job" and the
+// ones that say "this one is not" (exclusions win).
+export interface LinkRule {
+  host: string
+  include: string[]
+  exclude?: string[]
+  // Where the pages after the first are (absent = the first page only).
+  pagination?: LinkPagination
+}
+
+// kind 'template': page k >= 2 is `template` with {n} = second + (k-2)*step; kind 'link': the next page is the link of the current page
+// that matches `pattern`. maxPages: the most pages one crawl loads (absent = 5, at most 50).
+export interface LinkPagination {
+  kind: 'none' | 'template' | 'link'
+  template?: string
+  second?: number
+  step?: number
+  pattern?: string
+  maxPages?: number
+}
+
 export interface PortalLink {
   id: string
   // This link's own AI platform and model; "" means none set (the portal's, then the
@@ -432,6 +453,10 @@ export interface PortalLink {
   // opens for each crawl), and the page to start at ('' = the link's own address). Always sent by the backend.
   requiresLogin: boolean
   loginUrl: string
+  // crawlMethod/linkRules (plan 185): how this link's listing is crawled ('instructions' = the AI-written selectors, the default;
+  // 'links' = the link crawler, available only while Katana is the selected engine) and the link crawler's rule (null = none).
+  crawlMethod: 'instructions' | 'links'
+  linkRules: LinkRule | null
   // autoDiscoveryIntervalMinutes (step 85) is this link's own override
   // on the schedule, checked against its own autoDiscoveryLastRunAt
   // instead of the global setting — absent (the backend's own

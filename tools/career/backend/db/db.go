@@ -645,6 +645,13 @@ CREATE TABLE IF NOT EXISTS portal_links (
     -- (password, cookie, session) is stored anywhere. Also added to existing installs by migratePortalLinksLogin.
     requires_login                                 INTEGER NOT NULL DEFAULT 0,
     login_url                                      TEXT NOT NULL DEFAULT '',
+    -- crawl_method / link_rules (plan 185, step 4): how this link's listing is crawled. 'instructions' (the default, what every link
+    -- did before) = the AI-written selectors in crawl_instructions; 'links' = the link crawler: jobs found by the URL pattern of their
+    -- links, no AI, available only while the Browser tool's engine is Katana. link_rules holds the person's rule as JSON (host, include
+    -- and exclude patterns), NULL = none. One method is active per link; the other's data stays stored. A link that needs a login is
+    -- always 'instructions'. Also added to existing installs by migratePortalLinksLinkCrawl.
+    crawl_method                                   TEXT NOT NULL DEFAULT 'instructions' CHECK (crawl_method IN ('instructions','links')),
+    link_rules                                     TEXT,
     created_at                        TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at                        TEXT,
     UNIQUE(portal_id, url)
@@ -1832,6 +1839,9 @@ func migrateJobsDB(db *sql.DB) error {
 	if err := migratePortalLinksLogin(db); err != nil {
 		return err
 	}
+	if err := migratePortalLinksLinkCrawl(db); err != nil {
+		return err
+	}
 	if err := migrateInstructionAttemptsFailureReason(db); err != nil {
 		return err
 	}
@@ -2556,6 +2566,39 @@ func migratePortalLinksLogin(db *sql.DB) error {
 		}
 	}
 	return nil
+}
+
+// migratePortalLinksLinkCrawl (plan 185, step 4) adds the link crawler's two columns to an install that already has portal_links (a
+// fresh install gets them from the base schema). Every existing link keeps the method it always had, 'instructions', and no rule. The
+// same guarded ALTER TABLE ADD COLUMN every other portal_links column uses. At every start a link that needs a login is also put back to
+// 'instructions' (a login link is never crawled with the link crawler). Idempotent; a database without the table is left alone.
+func migratePortalLinksLinkCrawl(db *sql.DB) error {
+	for _, col := range []struct{ name, def string }{
+		{"crawl_method", "TEXT NOT NULL DEFAULT 'instructions' CHECK (crawl_method IN ('instructions','links'))"},
+		{"link_rules", "TEXT"},
+	} {
+		exists, hasColumn, err := tableHasColumn(db, "portal_links", col.name)
+		if err != nil {
+			return err
+		}
+		if !exists || hasColumn {
+			continue
+		}
+		if _, err := db.Exec(`ALTER TABLE portal_links ADD COLUMN ` + col.name + ` ` + col.def); err != nil {
+			return err
+		}
+	}
+	for _, col := range []string{"crawl_method", "requires_login"} {
+		exists, hasColumn, err := tableHasColumn(db, "portal_links", col)
+		if err != nil {
+			return err
+		}
+		if !exists || !hasColumn {
+			return nil
+		}
+	}
+	_, err := db.Exec(`UPDATE portal_links SET crawl_method = 'instructions' WHERE requires_login = 1 AND crawl_method != 'instructions'`)
+	return err
 }
 
 // migrateInstructionAttemptsFailureReason (step 87) adds

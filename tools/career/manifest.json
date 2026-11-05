@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.0.703",
+  "version": "0.0.707",
   "authors": [
     { "name": "Anes Detit", "email": "tafa.andet@googlemail.com" }
   ],
@@ -566,6 +566,46 @@
     {
       "method": "POST",
       "path_suffix": "portal-links/crawl-now/cancel",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "portal-links/link-crawl/availability",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "portal-links/link-crawl/rules",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "portal-links/link-crawl/rules",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "portal-links/link-crawl/candidates",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "portal-links/link-crawl/learn",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "portal-links/link-crawl/learn-pagination",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "portal-links/link-crawl/preview",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "portal-links/link-crawl/test",
       "required_scope": "tool:career:portals"
     },
     {

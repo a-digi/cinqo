@@ -33,6 +33,7 @@ import {
   shouldContinueWithJobDetail,
 } from '../generateInstructions'
 import { startCrawlNow, stopCrawlNow, fetchActiveCrawlRun, type CrawlRun } from '../crawlNow'
+import { LinkCrawlGate } from '../LinkCrawlGate'
 import { phaseLabel, latestCrawlLogMessage } from '../crawlPhase'
 import {
   AI_LOGIN_WAIT_TEXT,
@@ -1083,6 +1084,7 @@ export function CrawlPanel({
           the mechanism runs at all; this is this ONE link's own
           override on top of that. */}
       <PipelineLine link={link} />
+      <LinkCrawlGate link={link} onReload={onReload} />
       {/* Step 88 — only for a link that has listing crawl instructions:
           auto-discovery crawls the listing with them, and the backend
           never auto-crawls a link without. Hiding this never changes the

@@ -129,40 +129,61 @@ func katanaOptions(ctx context.Context, wsURL, rawURL string, onResult func(outp
 	}
 }
 
-// katanaCapture carries what the hooks learned about the one page.
-type katanaCapture struct {
-	mu   sync.Mutex
-	resp *crawlResponse
-	err  error
+// katanaCapture carries what the AfterLoad hook learned about the one page:
+// a value, or a verdict/error — the first one set wins.
+type katanaCapture[T any] struct {
+	mu  sync.Mutex
+	val T
+	set bool
+	err error
 }
 
-func (c *katanaCapture) set(resp *crawlResponse, err error) {
+func (c *katanaCapture[T]) put(val T, err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.resp == nil && c.err == nil {
-		c.resp, c.err = resp, err
+	if !c.set {
+		c.val, c.err, c.set = val, err, true
 	}
 }
 
-func (c *katanaCapture) get() (*crawlResponse, error) {
+func (c *katanaCapture[T]) get() (T, bool, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.resp, c.err
+	return c.val, c.set, c.err
 }
+
+// katanaPageReader reads the one loaded page on its live tab (it runs in
+// Katana's AfterLoad hook). It returns the value, or a verdict/error.
+type katanaPageReader[T any] func(fctx context.Context, page *rod.Page, main *mainDocumentResponse) (T, error)
 
 // fetchWithKatana — see the file comment.
 func fetchWithKatana(ctx context.Context, rawURL, requestID string, expectedSelectors, removeSelectors, removeAttributes []string, maxAttributeLength int, ignoreAttributesForMaxLength []string) (crawlResponse, error) {
+	resp, err := runKatanaPage(ctx, rawURL, requestID, func(fctx context.Context, page *rod.Page, main *mainDocumentResponse) (crawlResponse, error) {
+		return katanaReadPage(fctx, page, rawURL, requestID, main, expectedSelectors, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
+	})
+	if err != nil {
+		return crawlResponse{}, err
+	}
+	return resp, nil
+}
+
+// runKatanaPage loads rawURL with Katana (locked-down options, our own
+// Chrome) and hands the live tab to read once. It is the one place that
+// builds, runs and closes the Katana crawler, so every Katana feature
+// (the page fetch, the link list) has the same limits.
+func runKatanaPage[T any](ctx context.Context, rawURL, requestID string, read katanaPageReader[T]) (T, error) {
+	var zero T
 	slots := rodPageSlots() // the same bound on simultaneously open pages
 	select {
 	case slots <- struct{}{}:
 		defer func() { <-slots }()
 	case <-ctx.Done():
-		return crawlResponse{}, ctx.Err()
+		return zero, ctx.Err()
 	}
 
 	wsURL, err := ensureKatanaEngine()
 	if err != nil {
-		return crawlResponse{}, fmt.Errorf("katana engine unavailable: %w", err)
+		return zero, fmt.Errorf("katana engine unavailable: %w", err)
 	}
 
 	// One context for the whole fetch: the caller's cancellation, the
@@ -170,7 +191,7 @@ func fetchWithKatana(ctx context.Context, rawURL, requestID string, expectedSele
 	fctx, cancel := context.WithTimeout(ctx, crawlTimeout)
 	defer cancel()
 
-	capture := &katanaCapture{}
+	capture := &katanaCapture[T]{}
 	main := &mainDocumentResponse{}
 	results := make(chan output.Result, 1)
 	var once sync.Once
@@ -180,13 +201,13 @@ func fetchWithKatana(ctx context.Context, rawURL, requestID string, expectedSele
 
 	crawlerOptions, err := types.NewCrawlerOptions(opts)
 	if err != nil {
-		return crawlResponse{}, fmt.Errorf("katana: options refused: %w", err)
+		return zero, fmt.Errorf("katana: options refused: %w", err)
 	}
 	_ = crawlerOptions.OutputWriter.Close()
 	crawlerOptions.OutputWriter = katanaNoOutput{}
 	kat, err := hybrid.New(crawlerOptions)
 	if err != nil {
-		return crawlResponse{}, fmt.Errorf("katana: could not attach to Chrome: %w", err)
+		return zero, fmt.Errorf("katana: could not attach to Chrome: %w", err)
 	}
 	defer func() {
 		cancel()
@@ -199,8 +220,7 @@ func fetchWithKatana(ctx context.Context, rawURL, requestID string, expectedSele
 			return katanaBeforeNavigate(fctx, page, rawURL, requestID, main)
 		},
 		AfterLoad: func(hctx context.Context, page *rod.Page, req *navigation.Request, resp *navigation.Response) error {
-			r, err := katanaReadPage(fctx, page, rawURL, requestID, main, expectedSelectors, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
-			capture.set(r, err)
+			capture.put(read(fctx, page, main))
 			return nil
 		},
 	})
@@ -215,17 +235,17 @@ func fetchWithKatana(ctx context.Context, rawURL, requestID string, expectedSele
 	case err := <-crawlDone:
 		// The crawl ended without a result: it failed, or the context ended.
 		if ctx.Err() != nil {
-			return crawlResponse{}, ctx.Err()
+			return zero, ctx.Err()
 		}
 		if err != nil {
-			return crawlResponse{}, fmt.Errorf("katana: crawl failed: %w", err)
+			return zero, fmt.Errorf("katana: crawl failed: %w", err)
 		}
-		return crawlResponse{}, fmt.Errorf("katana: no page was returned")
+		return zero, fmt.Errorf("katana: no page was returned")
 	case <-fctx.Done():
 		if ctx.Err() != nil {
-			return crawlResponse{}, ctx.Err()
+			return zero, ctx.Err()
 		}
-		return crawlResponse{}, fmt.Errorf("katana: timed out after %s", crawlTimeout)
+		return zero, fmt.Errorf("katana: timed out after %s", crawlTimeout)
 	}
 
 	// The first result is the page. Stop Katana now rather than let it wait
@@ -236,15 +256,15 @@ func fetchWithKatana(ctx context.Context, rawURL, requestID string, expectedSele
 	case <-time.After(katanaCloseWait):
 	}
 
-	if resp, verdict := capture.get(); verdict != nil {
-		return crawlResponse{}, rodCtxOr(ctx, verdict)
-	} else if resp != nil {
-		return *resp, nil
+	if val, set, verdict := capture.get(); verdict != nil {
+		return zero, rodCtxOr(ctx, verdict)
+	} else if set {
+		return val, nil
 	}
 	if result.Error != "" {
-		return crawlResponse{}, fmt.Errorf("katana: %s", result.Error)
+		return zero, fmt.Errorf("katana: %s", result.Error)
 	}
-	return crawlResponse{}, fmt.Errorf("katana: the page could not be read")
+	return zero, fmt.Errorf("katana: the page could not be read")
 }
 
 // katanaBeforeNavigate prepares Katana's tab so it presents the same browser
@@ -283,63 +303,71 @@ func katanaBeforeNavigate(fctx context.Context, page *rod.Page, rawURL, requestI
 	return nil
 }
 
-// katanaReadPage runs on the live tab after Katana loaded it: every verdict
-// first (exactly the rod engine's order), then the DOM-settle wait, then the
-// cleaned HTML. It returns either a page or a verdict/error, never both.
-func katanaReadPage(fctx context.Context, page *rod.Page, rawURL, requestID string, main *mainDocumentResponse, expectedSelectors, removeSelectors, removeAttributes []string, maxAttributeLength int, ignoreAttributesForMaxLength []string) (*crawlResponse, error) {
-	p := page.Context(fctx)
-
+// katanaVerdict is the first half of every Katana page read, in the rod
+// engine's exact order: the Cloudflare wire verdict, the challenge/block
+// markers, the access outcome (a deny page, a rate limit, another vendor's
+// wall), then a redirect to a private address. nil: the page is real.
+func katanaVerdict(fctx context.Context, p *rod.Page, rawURL, requestID string, main *mainDocumentResponse, expectedSelectors []string) error {
 	setCrawlPhase(requestID, phaseCheckingCloudflare, "checking for a Cloudflare challenge (katana)")
 	if value, status := main.header("cf-mitigated"); value != "" {
 		switch strings.ToLower(value) {
 		case "block":
-			return nil, newCloudflareBlockedError(fmt.Sprintf("cf-mitigated: block (HTTP %d)", status))
+			return newCloudflareBlockedError(fmt.Sprintf("cf-mitigated: block (HTTP %d)", status))
 		case "challenge":
-			return nil, newCloudflareUnresolvedError(fmt.Sprintf("cf-mitigated: challenge (HTTP %d)", status), nil)
+			return newCloudflareUnresolvedError(fmt.Sprintf("cf-mitigated: challenge (HTTP %d)", status), nil)
 		}
 	}
 	probeJS, err := buildChallengeProbeJS(expectedSelectors)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	raw, err := rodEvalExpression(p, probeJS)
 	if err != nil {
-		return nil, fmt.Errorf("katana: challenge probe failed: %w", err)
+		return fmt.Errorf("katana: challenge probe failed: %w", err)
 	}
 	var probe challengeProbe
 	if err := json.Unmarshal(raw, &probe); err != nil {
-		return nil, fmt.Errorf("katana: challenge probe decode failed: %w", err)
+		return fmt.Errorf("katana: challenge probe decode failed: %w", err)
 	}
 	if probe.BlockPage {
-		return nil, newCloudflareBlockedError("cloudflare block page")
+		return newCloudflareBlockedError("cloudflare block page")
 	}
 	if probe.ChallengePage && !probe.Expected {
-		return nil, newCloudflareUnresolvedError("cloudflare challenge page", nil)
+		return newCloudflareUnresolvedError("cloudflare challenge page", nil)
 	}
 	status, headers := main.statusAndHeaders()
 	if cfErr := accessErrorFromSingleShot(status, headers, probe); cfErr != nil {
-		return nil, cfErr
+		return cfErr
 	}
-
 	// A redirect to a private/internal address is never returned.
 	if finalURL, err := rodEvalString(p, `document.location.toString()`); err == nil {
-		if err := refuseRedirectToPrivate(rawURL, finalURL); err != nil {
-			return nil, err
+		if rerr := refuseRedirectToPrivate(rawURL, finalURL); rerr != nil {
+			return rerr
 		}
 	}
+	return nil
+}
 
+// katanaReadPage runs on the live tab after Katana loaded it: every verdict
+// first, then the DOM-settle wait, then the cleaned HTML. It returns either
+// a page or a verdict/error, never both.
+func katanaReadPage(fctx context.Context, page *rod.Page, rawURL, requestID string, main *mainDocumentResponse, expectedSelectors, removeSelectors, removeAttributes []string, maxAttributeLength int, ignoreAttributesForMaxLength []string) (crawlResponse, error) {
+	p := page.Context(fctx)
+	if err := katanaVerdict(fctx, p, rawURL, requestID, main, expectedSelectors); err != nil {
+		return crawlResponse{}, err
+	}
 	if err := waitForDOMToSettle(fctx, p); err != nil {
-		return nil, err
+		return crawlResponse{}, err
 	}
 	resp, err := readCrawlResponseWithRod(p, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
 	if err != nil {
-		return nil, err
+		return crawlResponse{}, err
 	}
 	// The address may have changed while the page settled (a script redirect).
-	if err := refuseRedirectToPrivate(rawURL, resp.FinalURL); err != nil {
-		return nil, err
+	if rerr := refuseRedirectToPrivate(rawURL, resp.FinalURL); rerr != nil {
+		return crawlResponse{}, rerr
 	}
-	return &resp, nil
+	return resp, nil
 }
 
 // refuseRedirectToPrivate applies the crawl's own address rule to where the
