@@ -49,6 +49,9 @@ func TestSkillsAreReadFromAListOrFromATextHoldingIt(t *testing.T) {
 		"an empty text":                         {`""`, []string{}},
 		"a text of only separators":             {`" , ; "`, []string{}},
 		"a list wrapped twice":                  {jsonOf(t, jsonOf(t, `["Go","SQL"]`)), []string{"Go", "SQL"}},
+		"a list wrapped three times":            {jsonOf(t, jsonOf(t, jsonOf(t, `["Go","SQL"]`))), []string{"Go", "SQL"}},
+		"a comma text wrapped three times":      {jsonOf(t, jsonOf(t, jsonOf(t, "Go, SQL"))), []string{"Go", "SQL"}},
+		"a lone carriage return separates":      {`"Go\rSQL\rRust"`, []string{"Go", "SQL", "Rust"}},
 		"a JSON list in a text with spaces":     {jsonOf(t, `  ["Go", "SQL"]  `), []string{"Go", "SQL"}},
 	} {
 		var got LooseStrings
@@ -98,6 +101,7 @@ func TestExperiencesAreReadFromAListOrFromATextHoldingIt(t *testing.T) {
 		"a JSON list in a text":          {jsonOf(t, asList), one},
 		"a JSON list in extra quotes":    {jsonOf(t, `"`+strings.ReplaceAll(asList, `"`, `\"`)+`"`), one},
 		"a list wrapped twice":           {jsonOf(t, jsonOf(t, asList)), one},
+		"a list wrapped three times":     {jsonOf(t, jsonOf(t, jsonOf(t, asList))), one},
 		"white space around the text":    {jsonOf(t, "  \n"+asList+"\n "), one},
 		"the text the model sent (live)": {jsonOf(t, modelExperiencesAsText), nil}, // checked below
 	} {
@@ -140,6 +144,12 @@ func TestExperiencesThatAreNotAListOfObjectsAreRefusedWithAMessageSayingWhatWasE
 		}
 		if !strings.Contains(err.Error(), "expected a list of experience objects") {
 			t.Errorf("%s: the message must say what was expected: %v", name, err)
+		}
+		if name == "free text" || name == "a text that is not a list" {
+			// text that is not a JSON list is refused with the expectation alone, without a JSON parser's own words
+			if strings.Contains(err.Error(), "invalid character") || strings.Contains(err.Error(), "cannot unmarshal") {
+				t.Errorf("%s: the message must not carry the parser's text: %v", name, err)
+			}
 		}
 	}
 }
