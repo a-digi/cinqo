@@ -995,6 +995,35 @@ CREATE TABLE IF NOT EXISTS job_board_entries (
 CREATE INDEX IF NOT EXISTS job_board_entries_job_idx ON job_board_entries(job_id);
 CREATE INDEX IF NOT EXISTS job_board_entries_status_idx ON job_board_entries(status_id);
 
+-- application_messages (plan/ai/tools/career/step-176-application-protocol.md): the dated log of the communication of a job
+-- application, one row per message or note, for one (profile, job) pair. profile_id and cv_document_id are opaque ids into
+-- career.db (no FK across the two files; a deleted profile is purged by code, like the job board); a deleted job takes its rows
+-- with it; a deleted recruiter keeps the rows (recruiter_id becomes empty, the free counterpart name stays). occurred_at is UTC
+-- text, 'YYYY-MM-DD HH:MM:SS'; has_time = 0 when only the day is known (the time part is then 00:00:00).
+CREATE TABLE IF NOT EXISTS application_messages (
+    id                  TEXT PRIMARY KEY,
+    profile_id          TEXT NOT NULL,
+    job_id              TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    direction           TEXT NOT NULL CHECK (direction IN ('sent','received','note')),
+    channel             TEXT NOT NULL CHECK (channel IN ('email','platform','sms','whatsapp','phone','video','in_person','letter','other')),
+    channel_label       TEXT NOT NULL DEFAULT '',
+    occurred_at         TEXT NOT NULL,
+    has_time            INTEGER NOT NULL DEFAULT 1 CHECK (has_time IN (0, 1)),
+    subject             TEXT NOT NULL DEFAULT '',
+    body                TEXT NOT NULL DEFAULT '',
+    recruiter_id        TEXT REFERENCES recruiters(id) ON DELETE SET NULL,
+    counterpart_name    TEXT NOT NULL DEFAULT '',
+    counterpart_contact TEXT NOT NULL DEFAULT '',
+    cv_document_id      TEXT,
+    external_url        TEXT NOT NULL DEFAULT '',
+    created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at          TEXT
+);
+
+CREATE INDEX IF NOT EXISTS application_messages_pair_idx ON application_messages(profile_id, job_id, occurred_at);
+CREATE INDEX IF NOT EXISTS application_messages_job_idx ON application_messages(job_id);
+CREATE INDEX IF NOT EXISTS application_messages_recruiter_idx ON application_messages(recruiter_id);
+
 -- job_persona_matches (step 141): how well each persona fits each job, one row per (job, persona), written by the
 -- PersonaJobMatchConsumer and shown on the job board and the job page. Only a persona that could judge the job has a row
 -- (a missing row means "not enough data", never 0). persona_id and profile_id are opaque ids into career.db, no FK
