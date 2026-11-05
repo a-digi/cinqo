@@ -1,7 +1,7 @@
 package profilehandlers
 
 import (
-	"career-tool-backend/handlerutil"
+	"career-tool-backend/handler"
 	"encoding/json"
 	"net/http"
 
@@ -24,7 +24,7 @@ func SkillsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		result, err := persona.FetchPersonaDetails(personaID)
 		if err != nil {
-			handlerutil.WritePersonaAwareError(w, "read skills", err)
+			handler.WritePersonaAwareError(w, "read skills", err)
 			return
 		}
 		db.WriteJSON(w, map[string]any{"skills": result.Skills, "skillItems": result.SkillItems})
@@ -40,7 +40,7 @@ func SkillsHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := persona.AddCareerSkill(body.PersonaID, body.Skill); err != nil {
-			handlerutil.WritePersonaAwareError(w, "add skill", err)
+			handler.WritePersonaAwareError(w, "add skill", err)
 			return
 		}
 		result, err := persona.FetchPersonaDetails(body.PersonaID)
@@ -62,7 +62,7 @@ func SkillsHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := persona.RemoveCareerSkill(personaID, skill); err != nil {
-			handlerutil.WritePersonaAwareError(w, "remove skill", err)
+			handler.WritePersonaAwareError(w, "remove skill", err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)

@@ -1,7 +1,7 @@
 package personahandlers
 
 import (
-	"career-tool-backend/handlerutil"
+	"career-tool-backend/handler"
 	"encoding/json"
 	"net/http"
 
@@ -19,7 +19,7 @@ func PersonaDetailsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		result, err := persona.FetchPersonaDetails(personaID)
 		if err != nil {
-			handlerutil.WritePersonaAwareError(w, "read persona details", err)
+			handler.WritePersonaAwareError(w, "read persona details", err)
 			return
 		}
 		db.WriteJSON(w, result)
@@ -35,7 +35,7 @@ func PersonaDetailsHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := persona.UpdatePersonaDetails(body); err != nil {
-			handlerutil.WritePersonaAwareError(w, "update persona details", err)
+			handler.WritePersonaAwareError(w, "update persona details", err)
 			return
 		}
 		result, err := persona.FetchPersonaDetails(body.PersonaID)

@@ -1,7 +1,7 @@
 package profilehandlers
 
 import (
-	"career-tool-backend/handlerutil"
+	"career-tool-backend/handler"
 	"encoding/json"
 	"net/http"
 
@@ -38,7 +38,7 @@ func ExperienceHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		result, err := persona.FetchPersonaDetails(personaID)
 		if err != nil {
-			handlerutil.WritePersonaAwareError(w, "read experience", err)
+			handler.WritePersonaAwareError(w, "read experience", err)
 			return
 		}
 		db.WriteJSON(w, map[string]any{"experience": result.Experience})
@@ -54,7 +54,7 @@ func ExperienceHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if _, err := persona.AddCareerExperience(body.PersonaID, body.Company, body.Title, body.StartDate, body.EndDate, body.Description); err != nil {
-			handlerutil.WritePersonaAwareError(w, "add experience", err)
+			handler.WritePersonaAwareError(w, "add experience", err)
 			return
 		}
 		result, err := persona.FetchPersonaDetails(body.PersonaID)
@@ -83,7 +83,7 @@ func ExperienceHandler(w http.ResponseWriter, r *http.Request) {
 			EndDate:     body.EndDate,
 			Description: body.Description,
 		}); err != nil {
-			handlerutil.WritePersonaAwareError(w, "update experience", err)
+			handler.WritePersonaAwareError(w, "update experience", err)
 			return
 		}
 		result, err := persona.FetchPersonaDetails(body.PersonaID)
@@ -105,7 +105,7 @@ func ExperienceHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := persona.RemoveCareerExperience(personaID, id); err != nil {
-			handlerutil.WritePersonaAwareError(w, "remove experience", err)
+			handler.WritePersonaAwareError(w, "remove experience", err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)

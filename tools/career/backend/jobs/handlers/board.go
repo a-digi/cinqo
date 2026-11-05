@@ -1,7 +1,7 @@
 package jobshandlers
 
 import (
-	"career-tool-backend/handlerutil"
+	"career-tool-backend/handler"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -72,7 +72,7 @@ func JobStatusesHandler(w http.ResponseWriter, r *http.Request) {
 			ProfileID string `json:"profileId"`
 			Name      string `json:"name"`
 		}
-		if !handlerutil.DecodeJobBoardBody(w, r, &body) {
+		if !handler.DecodeJobBoardBody(w, r, &body) {
 			return
 		}
 		if body.ProfileID == "" {
@@ -97,7 +97,7 @@ func JobStatusesHandler(w http.ResponseWriter, r *http.Request) {
 			ID   string `json:"id"`
 			Name string `json:"name"`
 		}
-		if !handlerutil.DecodeJobBoardBody(w, r, &body) {
+		if !handler.DecodeJobBoardBody(w, r, &body) {
 			return
 		}
 		if body.ID == "" {
@@ -138,7 +138,7 @@ func JobBoardEntriesHandler(w http.ResponseWriter, r *http.Request) {
 			JobID     string `json:"jobId"`
 			StatusID  string `json:"statusId"`
 		}
-		if !handlerutil.DecodeJobBoardBody(w, r, &body) {
+		if !handler.DecodeJobBoardBody(w, r, &body) {
 			return
 		}
 		if body.ProfileID == "" || body.JobID == "" || body.StatusID == "" {

@@ -1,7 +1,7 @@
 package personahandlers
 
 import (
-	"career-tool-backend/handlerutil"
+	"career-tool-backend/handler"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -66,7 +66,7 @@ func PersonasHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := persona.UpdatePersona(body.ID, body.Name, body.Description); err != nil {
-			handlerutil.WritePersonaAwareError(w, "update persona", err)
+			handler.WritePersonaAwareError(w, "update persona", err)
 			return
 		}
 		personas, err := persona.ListPersonas("")

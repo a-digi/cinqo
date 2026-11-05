@@ -1,7 +1,7 @@
 package profilehandlers
 
 import (
-	"career-tool-backend/handlerutil"
+	"career-tool-backend/handler"
 	"encoding/json"
 	"errors"
 	"log"
@@ -66,7 +66,7 @@ func ProfileMatchRulesHandler(w http.ResponseWriter, r *http.Request) {
 			MinPercent int    `json:"minPercent"`
 			StatusID   string `json:"statusId"`
 		}
-		if !handlerutil.DecodeJobBoardBody(w, r, &body) {
+		if !handler.DecodeJobBoardBody(w, r, &body) {
 			return
 		}
 		if body.ProfileID == "" {
@@ -88,7 +88,7 @@ func ProfileMatchRulesHandler(w http.ResponseWriter, r *http.Request) {
 			MinPercent int    `json:"minPercent"`
 			StatusID   string `json:"statusId"`
 		}
-		if !handlerutil.DecodeJobBoardBody(w, r, &body) {
+		if !handler.DecodeJobBoardBody(w, r, &body) {
 			return
 		}
 		if body.ID == "" {
@@ -132,7 +132,7 @@ func ProfileMatchRulesOrderHandler(w http.ResponseWriter, r *http.Request) {
 		ProfileID string   `json:"profileId"`
 		RuleIDs   []string `json:"ruleIds"`
 	}
-	if !handlerutil.DecodeJobBoardBody(w, r, &body) {
+	if !handler.DecodeJobBoardBody(w, r, &body) {
 		return
 	}
 	if body.ProfileID == "" {
@@ -190,7 +190,7 @@ func ProfileMatchRulesApplyHandler(w http.ResponseWriter, r *http.Request) {
 		DryRun         bool   `json:"dryRun"`
 		IncludeRemoved bool   `json:"includeRemoved"`
 	}
-	if !handlerutil.DecodeJobBoardBody(w, r, &body) {
+	if !handler.DecodeJobBoardBody(w, r, &body) {
 		return
 	}
 	if body.ProfileID == "" {
