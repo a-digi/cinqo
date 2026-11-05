@@ -11,8 +11,8 @@ import (
 
 	"career-tool-backend/db"
 	"career-tool-backend/handler/handlertest"
+	"career-tool-backend/match/consumer/personamatchconsumer"
 	"career-tool-backend/match/personamatch"
-	"career-tool-backend/match/personamatchconsumer"
 	"career-tool-backend/persona"
 	"career-tool-backend/profile"
 )

@@ -35,3 +35,12 @@ func exists(t *testing.T, id string) bool {
 	}
 	return n == 1
 }
+
+func countRows(t *testing.T, table string) int {
+	t.Helper()
+	var n int
+	if err := db.JobsDB.QueryRow(`SELECT COUNT(*) FROM ` + table).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}

@@ -17,8 +17,8 @@ import (
 // already in the two databases, and writes the same job_matches / job_match_skills rows with kind = 'manual'.
 // Nothing here calls an AI, the network or any other service. See plan/ai/tools/career/step-129-manual-job-match.md.
 
-// loadMatchPersonas reads every persona of a profile with its details, skills and experience, oldest first.
-func loadMatchPersonas(profileID string) ([]jobmatcher.Persona, error) {
+// LoadMatchPersonas reads every persona of a profile with its details, skills and experience, oldest first.
+func LoadMatchPersonas(profileID string) ([]jobmatcher.Persona, error) {
 	list, err := persona.ListPersonas(profileID)
 	if err != nil {
 		return nil, err
@@ -64,7 +64,7 @@ func RunManualMatch(jobID, profileID string) (jobmatcher.Result, error) {
 	if err := profile.RequireProfileExists(profileID); err != nil {
 		return jobmatcher.Result{}, err
 	}
-	personas, err := loadMatchPersonas(profileID)
+	personas, err := LoadMatchPersonas(profileID)
 	if err != nil {
 		return jobmatcher.Result{}, err
 	}

@@ -1,6 +1,7 @@
 package rematchworker
 
 import (
+	profilematch "career-tool-backend/match/profile"
 	"context"
 	"errors"
 	"fmt"
@@ -13,7 +14,6 @@ import (
 	"time"
 
 	"career-tool-backend/db"
-	"career-tool-backend/match"
 	"career-tool-backend/persona"
 	"career-tool-backend/profile"
 )
@@ -48,7 +48,7 @@ func timing(t *testing.T, quiet, max time.Duration) {
 type runs struct {
 	mu   sync.Mutex
 	ids  []string
-	then func(id string) (match.RematchReport, error)
+	then func(id string) (profilematch.RematchReport, error)
 }
 
 func (r *runs) list() []string {
@@ -57,18 +57,18 @@ func (r *runs) list() []string {
 	return append([]string(nil), r.ids...)
 }
 
-func watch(t *testing.T, then func(id string) (match.RematchReport, error)) *runs {
+func watch(t *testing.T, then func(id string) (profilematch.RematchReport, error)) *runs {
 	t.Helper()
 	r := &runs{then: then}
 	old := rematch
-	rematch = func(id string) (match.RematchReport, error) {
+	rematch = func(id string) (profilematch.RematchReport, error) {
 		r.mu.Lock()
 		r.ids = append(r.ids, id)
 		r.mu.Unlock()
 		if r.then != nil {
 			return r.then(id)
 		}
-		return match.RematchReport{Jobs: 1, Stored: 1}, nil
+		return profilematch.RematchReport{Jobs: 1, Stored: 1}, nil
 	}
 	t.Cleanup(func() { rematch = old })
 	return r
@@ -291,14 +291,14 @@ func TestAFailureOrPanicDoesNotStopTheWorker(t *testing.T) {
 	clk := newClock()
 	w := New(clk.Now)
 	timing(t, time.Second, time.Minute)
-	r := watch(t, func(id string) (match.RematchReport, error) {
+	r := watch(t, func(id string) (profilematch.RematchReport, error) {
 		switch id {
 		case "boom":
 			panic("boom")
 		case "err":
-			return match.RematchReport{}, errors.New("db gone")
+			return profilematch.RematchReport{}, errors.New("db gone")
 		}
-		return match.RematchReport{Jobs: 3, Stored: 1}, nil
+		return profilematch.RematchReport{Jobs: 3, Stored: 1}, nil
 	})
 	for _, id := range []string{"boom", "err", "fine"} {
 		w.Note(id)
@@ -317,9 +317,9 @@ func TestAProfileNotedWhileItRunsIsANewEntry(t *testing.T) {
 	clk := newClock()
 	w := New(clk.Now)
 	timing(t, time.Second, time.Minute)
-	r := watch(t, func(id string) (match.RematchReport, error) {
+	r := watch(t, func(id string) (profilematch.RematchReport, error) {
 		w.Note(id)
-		return match.RematchReport{}, nil
+		return profilematch.RematchReport{}, nil
 	})
 	w.Note("p")
 	clk.advance(2 * time.Second)

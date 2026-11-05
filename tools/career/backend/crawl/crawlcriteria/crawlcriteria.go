@@ -5,12 +5,12 @@
 package crawlcriteria
 
 import (
+	profilematch "career-tool-backend/match/profile"
 	"errors"
 	"fmt"
 	"slices"
 
 	"career-tool-backend/jobs"
-	jobmatch "career-tool-backend/match"
 )
 
 // MinProfileMatchName is the name of the minimum-profile-match matcher, as the log and the settings page show it.
@@ -52,7 +52,7 @@ func NewMinProfileMatch(percent int, scorer CandidateScorer) (*MinProfileMatch, 
 // NewMinProfileMatchFromData is NewMinProfileMatch with a scorer built from the saved profiles and jobs (read once, so one crawl
 // pays for it once).
 func NewMinProfileMatchFromData(percent int) (*MinProfileMatch, error) {
-	scorer, err := jobmatch.NewProfileScorer()
+	scorer, err := profilematch.NewProfileScorer()
 	if err != nil {
 		return nil, fmt.Errorf("could not read the profiles to score the jobs: %w", err)
 	}

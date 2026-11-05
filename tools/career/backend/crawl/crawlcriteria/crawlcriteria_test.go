@@ -1,7 +1,7 @@
 package crawlcriteria
 
 import (
-	jobmatch "career-tool-backend/match"
+	profilematch "career-tool-backend/match/profile"
 	"errors"
 	"strings"
 	"testing"
@@ -210,7 +210,7 @@ func TestOneFittingProfileAmongSeveralIsEnough(t *testing.T) {
 func TestTheLimitEdgeWithTheRealScore(t *testing.T) {
 	setup(t)
 	seedProfile(t, "Fit", []string{"Go", "Docker", "Kubernetes", "PostgreSQL"})
-	scorer, err := jobmatch.NewProfileScorer()
+	scorer, err := profilematch.NewProfileScorer()
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"career-tool-backend/db"
+	"career-tool-backend/match/consumer/personamatchconsumer"
 	"career-tool-backend/match/personamatch"
-	"career-tool-backend/match/personamatchconsumer"
 )
 
 // The persona scores of one job (step 141), for the job's page: every persona of every profile with how well it fits the

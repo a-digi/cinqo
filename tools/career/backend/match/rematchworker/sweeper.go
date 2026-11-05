@@ -1,7 +1,7 @@
 package rematchworker
 
 import (
-	"career-tool-backend/match"
+	profilematch "career-tool-backend/match/profile"
 	"context"
 	"log"
 	"time"
@@ -24,8 +24,8 @@ var (
 
 // The sweeper's sources; vars so a test can substitute them.
 var (
-	seedState     = match.SeedProfileMatchState
-	staleProfiles = match.StaleProfiles
+	seedState     = profilematch.SeedProfileMatchState
+	staleProfiles = profilematch.StaleProfiles
 )
 
 // noteIfAbsent notes a profile that is not waiting yet and says whether it did; one that is waiting keeps its times.

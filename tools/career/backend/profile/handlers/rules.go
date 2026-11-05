@@ -10,7 +10,7 @@ import (
 
 	"career-tool-backend/db"
 	"career-tool-backend/jobs/jobboard"
-	"career-tool-backend/match/profilejobmatchconsumer"
+	"career-tool-backend/match/consumer/profilejobmatchconsumer"
 	"career-tool-backend/profile"
 	"career-tool-backend/profile/profilerules"
 )
