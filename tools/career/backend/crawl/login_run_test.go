@@ -147,6 +147,10 @@ func loginLinkSetup(t *testing.T, needsLogin bool, loginURL string) (linkID, run
 		t.Fatal(err)
 	}
 	if needsLogin {
+		// A new link has auto-crawl on, and a link cannot need a login while it is on: switch it off first, as a person has to.
+		if err := portal.UpdatePortalLinkAutoDiscoveryEnabled(linkID, false); err != nil {
+			t.Fatal(err)
+		}
 		yes := true
 		if err := portal.UpdatePortalLinkLogin(linkID, &yes, &loginURL); err != nil {
 			t.Fatal(err)

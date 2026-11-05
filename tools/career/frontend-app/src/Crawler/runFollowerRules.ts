@@ -1,4 +1,5 @@
 import type { PortalLink } from '../api'
+import { mayStartCrawlByItself } from './loginWindow'
 
 // The rules of the run follower (plan/ai/tools/career/step-163-job-detail-instructions-pipeline.md, step 4): given one link, what must happen
 // next that no page needs to be open for. Pure: no React, no network. Starting a NEW AI run is not here (it needs the page's AI choice).
@@ -21,6 +22,7 @@ type FollowLink = Pick<
   | 'jobDetailCrawlInstructions'
   | 'listingCrawlRequested'
   | 'jobDetailCrawlRequested'
+  | 'requiresLogin'
   | 'hasActiveCrawlRun'
   | 'instructionsAiConversationId'
   | 'jobDetailInstructionsAiConversationId'
@@ -56,6 +58,8 @@ export function followActions(link: FollowLink, ctx: FollowContext): FollowActio
     link.instructionStats.jobDetail.running ||
     (link.instructionStats.listing.running && !waitingForAnswer)
   if (aiRunning || link.hasActiveCrawlRun) return actions
+  // A link that needs a login is crawled by hand only: a request flag never starts a crawl for it (plan 182).
+  if (!mayStartCrawlByItself(link)) return actions
 
   // One crawl at a time (the server refuses a second): the listing first.
   if (link.listingCrawlRequested && has(link.crawlInstructions)) {

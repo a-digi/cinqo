@@ -23,6 +23,29 @@ export function loginBadgeFor(link: { requiresLogin?: boolean }): string | null 
   return link.requiresLogin === true ? LOGIN_BADGE : null
 }
 
+// A link that needs a login is crawled BY HAND only: the person has to log in in the window a crawl opens, so nothing may start such a crawl
+// on its own (the server enforces it too: auto discovery, the request flags and their repair all skip these links).
+export const MANUAL_ONLY_NOTE = 'Crawled by hand only: this link needs a login, so it is never crawled automatically.'
+
+// manualOnlyNote: the note to show in place of the Auto-discovery switch of a link that needs a login, or null for any other link.
+export function manualOnlyNote(link: { requiresLogin?: boolean }): string | null {
+  return link.requiresLogin === true ? MANUAL_ONLY_NOTE : null
+}
+
+export const LOGIN_BLOCKED_BY_AUTO_NOTE = 'Turn Auto-discovery off for this link first: a link that needs a login is crawled by hand only.'
+
+// loginCheckboxState: the "Requires login" box of a link that has auto-crawl (Auto-discovery) on is disabled, with the reason, until
+// Auto-discovery is turned off. A box that is already ticked can always be unticked. The server refuses both on at once as well.
+export function loginCheckboxState(link: { autoDiscoveryEnabled?: boolean }, checked: boolean): { disabled: boolean; note: string | null } {
+  const blocked = link.autoDiscoveryEnabled === true && !checked
+  return { disabled: blocked, note: blocked ? LOGIN_BLOCKED_BY_AUTO_NOTE : null }
+}
+
+// mayStartCrawlByItself: false for a link that needs a login. The run follower never starts a crawl from a request flag for it.
+export function mayStartCrawlByItself(link: { requiresLogin?: boolean }): boolean {
+  return link.requiresLogin !== true
+}
+
 // loginAddressForSave: the login page to send, trimmed; '' (the link's own address is opened) when the link does not need a login.
 export function loginAddressForSave(requiresLogin: boolean, raw: string): string {
   return requiresLogin ? raw.trim() : ''

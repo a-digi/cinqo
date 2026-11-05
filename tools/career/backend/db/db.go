@@ -2534,6 +2534,27 @@ func migratePortalLinksLogin(db *sql.DB) error {
 			return err
 		}
 	}
+	// A link that needs a login is crawled by hand only (plan 182): at every start, whatever automatic behaviour such a link still has is
+	// switched off (auto discovery and its interval, the three request flags). Idempotent; a database without the table is left alone.
+	repairable := true
+	for _, col := range []string{"requires_login", "auto_discovery_enabled", "auto_discovery_interval_minutes", "listing_crawl_requested", "job_detail_crawl_requested", "job_detail_instructions_ai_requested"} {
+		exists, hasColumn, err := tableHasColumn(db, "portal_links", col)
+		if err != nil {
+			return err
+		}
+		if !exists || !hasColumn {
+			repairable = false
+			break
+		}
+	}
+	if repairable {
+		if _, err := db.Exec(`UPDATE portal_links SET auto_discovery_enabled = 0, auto_discovery_interval_minutes = NULL,
+			listing_crawl_requested = 0, job_detail_crawl_requested = 0, job_detail_instructions_ai_requested = 0
+			WHERE requires_login = 1 AND (auto_discovery_enabled != 0 OR auto_discovery_interval_minutes IS NOT NULL
+			  OR listing_crawl_requested != 0 OR job_detail_crawl_requested != 0 OR job_detail_instructions_ai_requested != 0)`); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

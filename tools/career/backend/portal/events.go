@@ -40,6 +40,9 @@ func decodePortalLinkEvent(r *http.Request) (portalLinkID string, ok bool) {
 	return payload.PortalLinkID, true
 }
 
+// A link that needs a login is crawled by hand only (manual_only.go): the three handlers in this file raise no request flag for it (the
+// UPDATEs name requires_login = 0), so nothing starts a crawl, or the AI work that follows one, on its own.
+
 // ListingInstructionsReadyEventHandler handles
 // "career.portal_link.listing_instructions_ready" — always sets
 // listing_crawl_requested, unconditionally (a regenerated instructions
@@ -57,7 +60,7 @@ func ListingInstructionsReadyEventHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if _, err := db.JobsDB.Exec(
-		`UPDATE portal_links SET listing_crawl_requested = 1, updated_at = datetime('now') WHERE id = ?`,
+		`UPDATE portal_links SET listing_crawl_requested = 1, updated_at = datetime('now') WHERE id = ? AND requires_login = 0`,
 		portalLinkID,
 	); err != nil {
 		http.Error(w, "failed to record request", http.StatusInternalServerError)
@@ -105,7 +108,7 @@ func JobsCrawledEventHandler(w http.ResponseWriter, r *http.Request) {
 
 	if !jobDetailInstructions.Valid || jobDetailInstructions.String == "" {
 		if _, err := db.JobsDB.Exec(
-			`UPDATE portal_links SET job_detail_instructions_ai_requested = 1, updated_at = datetime('now') WHERE id = ?`,
+			`UPDATE portal_links SET job_detail_instructions_ai_requested = 1, updated_at = datetime('now') WHERE id = ? AND requires_login = 0`,
 			portalLinkID,
 		); err != nil {
 			http.Error(w, "failed to record request", http.StatusInternalServerError)
@@ -114,7 +117,7 @@ func JobsCrawledEventHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if _, err := db.JobsDB.Exec(
-		`UPDATE portal_links SET job_detail_crawl_requested = 1, updated_at = datetime('now') WHERE id = ?`,
+		`UPDATE portal_links SET job_detail_crawl_requested = 1, updated_at = datetime('now') WHERE id = ? AND requires_login = 0`,
 		portalLinkID,
 	); err != nil {
 		http.Error(w, "failed to record job detail crawl request", http.StatusInternalServerError)

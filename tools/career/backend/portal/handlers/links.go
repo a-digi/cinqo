@@ -165,6 +165,34 @@ func PortalLinksHandler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+		// Plan 182: a link that needs a login is crawled by hand only, and a link cannot need a login while any automatic behaviour is on.
+		// The state the link would have after this request is checked BEFORE anything is written, so the backend does not rely on the page.
+		otherAutomatic := body.AutoDiscoveryIntervalMinutes != nil ||
+			(body.ListingCrawlRequested != nil && *body.ListingCrawlRequested) ||
+			(body.JobDetailCrawlRequested != nil && *body.JobDetailCrawlRequested) ||
+			(body.JobDetailInstructionsAIRequested != nil && *body.JobDetailInstructionsAIRequested)
+		if err := portal.CheckManualOnlyRequest(body.ID, body.RequiresLogin, body.AutoDiscoveryEnabled, otherAutomatic); err != nil {
+			portal.WritePortalLinkAwareError(w, "update portal link", err)
+			return
+		}
+		// The order of the writes follows the rule: a link that stops needing a login is updated FIRST (so automatic behaviour can be switched
+		// on in the same request), one that starts needing it LAST (so automatic behaviour has been switched off before).
+		applyLogin := func() bool {
+			if body.RequiresLogin == nil && body.LoginURL == nil {
+				return true
+			}
+			if err := portal.UpdatePortalLinkLogin(body.ID, body.RequiresLogin, body.LoginURL); err != nil {
+				portal.WritePortalLinkAwareError(w, "update portal link login settings", err)
+				return false
+			}
+			return true
+		}
+		loginFirst := body.RequiresLogin != nil && !*body.RequiresLogin
+		if loginFirst {
+			if !applyLogin() {
+				return
+			}
+		}
 		if body.URL != nil || body.Title != nil {
 			if err := portal.UpdatePortalLink(body.ID, body.URL, body.Title); err != nil {
 				portal.WritePortalLinkAwareError(w, "update portal link", err)
@@ -259,9 +287,8 @@ func PortalLinksHandler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		if body.RequiresLogin != nil || body.LoginURL != nil {
-			if err := portal.UpdatePortalLinkLogin(body.ID, body.RequiresLogin, body.LoginURL); err != nil {
-				portal.WritePortalLinkAwareError(w, "update portal link login settings", err)
+		if !loginFirst {
+			if !applyLogin() {
 				return
 			}
 		}

@@ -34,7 +34,7 @@ import {
 } from '../generateInstructions'
 import { startCrawlNow, stopCrawlNow, fetchActiveCrawlRun, type CrawlRun } from '../crawlNow'
 import { phaseLabel, latestCrawlLogMessage } from '../crawlPhase'
-import { confirmLogin, isWaitingForLogin } from '../loginWindow'
+import { confirmLogin, isWaitingForLogin, manualOnlyNote } from '../loginWindow'
 import { instructionAlertAttempts, isLikelyUncrawlable, savedDespiteError } from '../instructionStats'
 import { hasListingInstructions } from '../autoDiscoveryVisibility'
 import { PipelineLine } from '../PipelineLine'
@@ -993,7 +993,8 @@ export function CrawlPanel({
           auto-discovery crawls the listing with them, and the backend
           never auto-crawls a link without. Hiding this never changes the
           stored setting. */}
-      {hasListingInstructions(link) && (
+      {manualOnlyNote(link) !== null && <p className="mb-2 text-xs text-gray-600">{manualOnlyNote(link)}</p>}
+      {hasListingInstructions(link) && !link.requiresLogin && (
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <Switch
             checked={link.autoDiscoveryEnabled}

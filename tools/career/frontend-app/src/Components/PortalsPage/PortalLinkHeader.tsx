@@ -1,5 +1,6 @@
 import type { PortalLink } from '../../api'
 import { LinkStatusPills } from '../../Crawler/LinkStatusPills'
+import { loginCheckboxState } from '../../Crawler/loginWindow'
 import type { AiChip } from './aiOverrideDisplay'
 
 interface PortalLinkHeaderProps {
@@ -84,16 +85,23 @@ export function PortalLinkHeader({
           placeholder="URL"
           className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-900 focus:border-gray-500 focus:outline-none"
         />
-        <label className="flex items-center gap-2 text-xs text-gray-700">
+        <label
+          className={`flex items-center gap-2 text-xs ${loginCheckboxState(link, editRequiresLogin).disabled ? 'text-gray-400' : 'text-gray-700'}`}
+          title={loginCheckboxState(link, editRequiresLogin).note ?? undefined}
+        >
           <input
             type="checkbox"
             checked={editRequiresLogin}
+            disabled={loginCheckboxState(link, editRequiresLogin).disabled}
             onChange={(e) => {
               onEditRequiresLoginChange(e.target.checked)
             }}
           />
           Requires login
         </label>
+        {loginCheckboxState(link, editRequiresLogin).note !== null && (
+          <p className="text-xs text-gray-500">{loginCheckboxState(link, editRequiresLogin).note}</p>
+        )}
         {editRequiresLogin && (
           <input
             value={editLoginUrl}

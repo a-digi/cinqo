@@ -11,6 +11,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"career-tool-backend/db"
 	"career-tool-backend/handler/handlertest"
 	"career-tool-backend/portal"
 )
@@ -128,6 +129,10 @@ func TestACreateWithABadLoginAddressIsRefusedAndAddsNoLink(t *testing.T) {
 
 func TestUpdatingTheLoginSettingsOfALinkThroughTheRoute(t *testing.T) {
 	pid, id := loginSeed(t)
+	// A new link has auto-crawl on, and a link cannot need a login while it is on (manual_only.go): switch it off first.
+	if rec := linkCall(http.MethodPut, `{"id":"`+id+`","autoDiscoveryEnabled":false}`); rec.Code != 200 {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
 	rec := linkCall(http.MethodPut, `{"id":"`+id+`","requiresLogin":true}`)
 	if rec.Code != 200 {
 		t.Fatalf("only the flag must be a valid update: %d %s", rec.Code, rec.Body.String())
@@ -257,6 +262,16 @@ func TestTheAILinkToolsAcceptTheLoginSettingsAndRefuseABadAddress(t *testing.T) 
 		t.Errorf("added through the tool: %+v", l)
 	}
 
+	// auto-crawl is on for a new link: the tool refuses the login until it is off, and writes nothing
+	if text, isErr := call("update_portal_link", map[string]any{"id": id, "title": "Renamed by tool", "requiresLogin": true}); !isErr || !strings.Contains(text, "Auto-discovery") {
+		t.Fatalf("update with auto-crawl on must be refused with the reason: %v %s", isErr, text)
+	}
+	if l := linkByID(t, pid, id); l.RequiresLogin || l.Title == "Renamed by tool" {
+		t.Errorf("a refused tool update changed the link: %+v", l)
+	}
+	if err := portal.UpdatePortalLinkAutoDiscoveryEnabled(id, false); err != nil {
+		t.Fatal(err)
+	}
 	if text, isErr := call("update_portal_link", map[string]any{"id": id, "requiresLogin": true}); isErr {
 		t.Fatalf("update: %s", text)
 	}
@@ -282,5 +297,150 @@ func TestTheAILinkToolsAcceptTheLoginSettingsAndRefuseABadAddress(t *testing.T) 
 	}
 	if text, isErr := call("update_portal_link", map[string]any{"id": "nobody", "requiresLogin": true}); !isErr || !strings.Contains(text, "unknown portal link id") {
 		t.Errorf("an unknown id: %v %s", isErr, text)
+	}
+}
+
+// ---- a link cannot need a login while any automatic behaviour is on (manual_only.go): the backend refuses, whatever the page does ----
+
+func autoDiscoveryOf(t *testing.T, id string) (enabled bool, interval *int) {
+	t.Helper()
+	portals, err := portal.ListPortals()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range portals {
+		for _, l := range p.Links {
+			if l.ID == id {
+				return l.AutoDiscoveryEnabled, l.AutoDiscoveryIntervalMinutes
+			}
+		}
+	}
+	t.Fatalf("link %s not listed", id)
+	return false, nil
+}
+
+func TestOneRequestCannotTurnOnTheLoginAndAutoCrawlTogether(t *testing.T) {
+	pid, id := loginSeed(t)
+	// the link starts with auto-crawl on; the request asks for the login AND auto-crawl, and also renames the link
+	rec := linkCall(http.MethodPut, `{"id":"`+id+`","title":"Renamed","requiresLogin":true,"autoDiscoveryEnabled":true}`)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "Auto-discovery") {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	if l := linkByID(t, pid, id); l.Title != "Jobs" || l.RequiresLogin {
+		t.Errorf("a refused request wrote something: %+v", l)
+	}
+	if on, _ := autoDiscoveryOf(t, id); !on {
+		t.Error("auto-crawl must be unchanged")
+	}
+}
+
+func TestTheLoginCannotBeTurnedOnWhileAutoCrawlIsOnButCanTogetherWithTurningItOff(t *testing.T) {
+	pid, id := loginSeed(t)
+	// auto-crawl is on (the default) and the request only asks for the login
+	rec := linkCall(http.MethodPut, `{"id":"`+id+`","requiresLogin":true}`)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "Auto-discovery") {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	if l := linkByID(t, pid, id); l.RequiresLogin {
+		t.Errorf("%+v", l)
+	}
+	// turning auto-crawl off in the same request is fine
+	rec = linkCall(http.MethodPut, `{"id":"`+id+`","requiresLogin":true,"autoDiscoveryEnabled":false}`)
+	if rec.Code != 200 {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	if l := linkByID(t, pid, id); !l.RequiresLogin {
+		t.Errorf("%+v", l)
+	}
+	if on, iv := autoDiscoveryOf(t, id); on || iv != nil {
+		t.Errorf("auto-crawl must be off: %v %v", on, iv)
+	}
+}
+
+func TestAutoCrawlCannotBeTurnedOnForALinkThatNeedsALogin(t *testing.T) {
+	_, id := loginSeed(t)
+	if rec := linkCall(http.MethodPut, `{"id":"`+id+`","requiresLogin":true,"autoDiscoveryEnabled":false}`); rec.Code != 200 {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	for name, body := range map[string]string{
+		"auto-crawl on":          `{"id":"` + id + `","autoDiscoveryEnabled":true}`,
+		"an interval":            `{"id":"` + id + `","autoDiscoveryIntervalMinutes":60}`,
+		"listing crawl flag":     `{"id":"` + id + `","listingCrawlRequested":true}`,
+		"detail crawl flag":      `{"id":"` + id + `","jobDetailCrawlRequested":true}`,
+		"detail instructions AI": `{"id":"` + id + `","jobDetailInstructionsAiRequested":true}`,
+	} {
+		rec := linkCall(http.MethodPut, body)
+		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "login") {
+			t.Errorf("%s: %d %s", name, rec.Code, rec.Body.String())
+		}
+	}
+	if on, iv := autoDiscoveryOf(t, id); on || iv != nil {
+		t.Errorf("a refused request changed something: %v %v", on, iv)
+	}
+	// taking the login away and turning auto-crawl on in ONE request is allowed (the link no longer needs a login)
+	if rec := linkCall(http.MethodPut, `{"id":"`+id+`","requiresLogin":false,"autoDiscoveryEnabled":true}`); rec.Code != 200 {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	if on, _ := autoDiscoveryOf(t, id); !on {
+		t.Error("auto-crawl must be on now")
+	}
+	// switching off, and clearing flags, is always allowed
+	if rec := linkCall(http.MethodPut, `{"id":"`+id+`","autoDiscoveryEnabled":false,"listingCrawlRequested":false}`); rec.Code != 200 {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestACreateWithTheLoginStartsWithAutoCrawlOffAndAPlainCreateWithItOn(t *testing.T) {
+	pid, _ := loginSeed(t)
+	rec := linkCall(http.MethodPost, `{"portalId":"`+pid+`","url":"https://board.example/members","title":"Members","requiresLogin":true}`)
+	if rec.Code != 200 {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	var gated struct{ ID string }
+	_ = json.Unmarshal(rec.Body.Bytes(), &gated)
+	if on, iv := autoDiscoveryOf(t, gated.ID); on || iv != nil {
+		t.Errorf("a new link that needs a login starts with auto-crawl off: %v %v", on, iv)
+	}
+	rec = linkCall(http.MethodPost, `{"portalId":"`+pid+`","url":"https://board.example/open","title":"Open"}`)
+	var plain struct{ ID string }
+	_ = json.Unmarshal(rec.Body.Bytes(), &plain)
+	if on, _ := autoDiscoveryOf(t, plain.ID); !on {
+		t.Error("a plain new link keeps auto-crawl on")
+	}
+}
+
+// A refused request changes NOTHING, also the other fields in it: the check is made before any write.
+func TestARefusedAutomaticSwitchOnALoginLinkWritesNoOtherFieldOfTheSameRequest(t *testing.T) {
+	pid, id := loginSeed(t)
+	if rec := linkCall(http.MethodPut, `{"id":"`+id+`","requiresLogin":true,"autoDiscoveryEnabled":false}`); rec.Code != 200 {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	for name, extra := range map[string]string{
+		"interval":               `"autoDiscoveryIntervalMinutes":60`,
+		"listing crawl flag":     `"listingCrawlRequested":true`,
+		"detail crawl flag":      `"jobDetailCrawlRequested":true`,
+		"detail instructions AI": `"jobDetailInstructionsAiRequested":true`,
+	} {
+		rec := linkCall(http.MethodPut, `{"id":"`+id+`","title":"Renamed",`+extra+`}`)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: %d %s", name, rec.Code, rec.Body.String())
+		}
+		if l := linkByID(t, pid, id); l.Title != "Jobs" {
+			t.Errorf("%s: the refused request renamed the link to %q", name, l.Title)
+		}
+	}
+}
+
+// An old row that has both (an older build could leave it; the start-up repair removes it) can still be edited for anything else.
+func TestAnUnrelatedEditOfALinkThatSomehowHasBothIsNotBlocked(t *testing.T) {
+	pid, id := loginSeed(t)
+	if _, err := db.JobsDB.Exec(`UPDATE portal_links SET requires_login = 1, auto_discovery_enabled = 1 WHERE id = ?`, id); err != nil {
+		t.Fatal(err)
+	}
+	if rec := linkCall(http.MethodPut, `{"id":"`+id+`","title":"Renamed"}`); rec.Code != 200 {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	if l := linkByID(t, pid, id); l.Title != "Renamed" {
+		t.Errorf("%+v", l)
 	}
 }

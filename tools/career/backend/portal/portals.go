@@ -518,6 +518,16 @@ func UpdatePortalLinkLogin(id string, requiresLogin *bool, loginURL *string) err
 	if requiresLogin == nil && loginURL == nil {
 		return nil
 	}
+	// A link cannot need a login while auto-crawl is on (manual_only.go): refused before anything is written.
+	if requiresLogin != nil && *requiresLogin {
+		on, err := autoDiscoveryEnabledNow(id)
+		if err != nil {
+			return err
+		}
+		if on {
+			return ErrLoginWithAutoCrawl
+		}
+	}
 	setClauses := ""
 	args := []any{}
 	if requiresLogin != nil {
@@ -530,8 +540,14 @@ func UpdatePortalLinkLogin(id string, requiresLogin *bool, loginURL *string) err
 	}
 	setClauses += "updated_at = datetime('now')"
 	args = append(args, id)
-	_, err := db.JobsDB.Exec(`UPDATE portal_links SET `+setClauses+` WHERE id = ?`, args...)
-	return err
+	if _, err := db.JobsDB.Exec(`UPDATE portal_links SET `+setClauses+` WHERE id = ?`, args...); err != nil {
+		return err
+	}
+	// Auto-crawl is already off here, so only the pending request flags and an interval are left to clear (manual_only.go).
+	if requiresLogin != nil && *requiresLogin {
+		return switchOffAutomatic(id)
+	}
+	return nil
 }
 
 // AddPortalLinkWithLogin adds a link like AddPortalLink and sets its login settings in the same call. The login address is checked first, so
@@ -544,6 +560,13 @@ func AddPortalLinkWithLogin(portalID, url, title string, requiresLogin bool, log
 	id, err := AddPortalLink(portalID, url, title)
 	if err != nil {
 		return "", err
+	}
+	// A new link starts with auto-crawl on; one that needs a login starts with it off (it is crawled by hand only, manual_only.go).
+	if requiresLogin {
+		if err := switchOffAutomatic(id); err != nil {
+			_ = RemovePortalLink(id)
+			return "", err
+		}
 	}
 	if requiresLogin || checked != "" {
 		if err := UpdatePortalLinkLogin(id, &requiresLogin, &checked); err != nil {
@@ -643,6 +666,11 @@ func UpdatePortalLinkListingCrawlRequested(id string, requested bool) error {
 	if err := RequirePortalLinkExists(id); err != nil {
 		return err
 	}
+	if requested {
+		if err := requireNotLoginLink(id); err != nil {
+			return err
+		}
+	}
 	_, err := db.JobsDB.Exec(`UPDATE portal_links SET listing_crawl_requested = ? WHERE id = ?`, requested, id)
 	return err
 }
@@ -650,6 +678,11 @@ func UpdatePortalLinkListingCrawlRequested(id string, requested bool) error {
 func UpdatePortalLinkJobDetailInstructionsAIRequested(id string, requested bool) error {
 	if err := RequirePortalLinkExists(id); err != nil {
 		return err
+	}
+	if requested {
+		if err := requireNotLoginLink(id); err != nil {
+			return err
+		}
 	}
 	_, err := db.JobsDB.Exec(`UPDATE portal_links SET job_detail_instructions_ai_requested = ? WHERE id = ?`, requested, id)
 	return err
@@ -663,6 +696,11 @@ func UpdatePortalLinkJobDetailCrawlRequested(id string, requested bool) error {
 	if err := RequirePortalLinkExists(id); err != nil {
 		return err
 	}
+	if requested {
+		if err := requireNotLoginLink(id); err != nil {
+			return err
+		}
+	}
 	_, err := db.JobsDB.Exec(`UPDATE portal_links SET job_detail_crawl_requested = ? WHERE id = ?`, requested, id)
 	return err
 }
@@ -673,6 +711,11 @@ func UpdatePortalLinkJobDetailCrawlRequested(id string, requested bool) error {
 func UpdatePortalLinkAutoDiscoveryEnabled(id string, enabled bool) error {
 	if err := RequirePortalLinkExists(id); err != nil {
 		return err
+	}
+	if enabled {
+		if err := requireNotLoginLink(id); err != nil {
+			return err
+		}
 	}
 	_, err := db.JobsDB.Exec(`UPDATE portal_links SET auto_discovery_enabled = ? WHERE id = ?`, enabled, id)
 	return err
@@ -696,6 +739,11 @@ func UpdatePortalLinkAutoDiscoveryInterval(id string, minutes *int) error {
 	}
 	if minutes != nil && !db.AllowedAutoDiscoveryIntervalMinutes[*minutes] {
 		return ErrInvalidAutoDiscoveryInterval
+	}
+	if minutes != nil {
+		if err := requireNotLoginLink(id); err != nil {
+			return err
+		}
 	}
 	var arg any
 	if minutes != nil {
@@ -1599,7 +1647,7 @@ func WritePortalLinkAwareError(w http.ResponseWriter, action string, err error) 
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrInvalidAutoDiscoveryInterval):
 		http.Error(w, err.Error(), http.StatusBadRequest)
-	case errors.Is(err, ErrInvalidLoginURL):
+	case errors.Is(err, ErrInvalidLoginURL), errors.Is(err, ErrManualOnly), errors.Is(err, ErrLoginWithAutoCrawl):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrInvalidInstructionKind), errors.Is(err, ErrInvalidInstructionTrigger):
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -1780,6 +1828,16 @@ func RegisterUpdatePortalLink(server *mcp.Server) {
 			if _, err := ValidateLoginURL(*args.LoginURL); err != nil {
 				return db.ErrResult(err.Error()), nil, nil
 			}
+		}
+		// A link cannot need a login while auto-crawl is on (manual_only.go): refused before anything is written.
+		if err := CheckManualOnlyRequest(args.ID, args.RequiresLogin, nil, false); err != nil {
+			if errors.Is(err, ErrUnknownPortalLink) {
+				return db.ErrResult(fmt.Sprintf("unknown portal link id %q", args.ID)), nil, nil
+			}
+			if errors.Is(err, ErrLoginWithAutoCrawl) || errors.Is(err, ErrManualOnly) {
+				return db.ErrResult(err.Error()), nil, nil
+			}
+			return db.ErrResult(fmt.Sprintf("failed to update portal link: %v", err)), nil, nil
 		}
 		if err := UpdatePortalLink(args.ID, args.URL, args.Title); err != nil {
 			switch {

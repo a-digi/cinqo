@@ -88,6 +88,12 @@ func TestUpdatingTheLoginSettingsOfALink(t *testing.T) {
 	pid, _ := CreatePortal("Board")
 	a, _ := AddPortalLink(pid, "https://board.example/a", "A")
 	b, _ := AddPortalLink(pid, "https://board.example/b", "B")
+	// A link needs auto-crawl off before it can need a login (manual_only.go); a new link has it on.
+	for _, id := range []string{a, b} {
+		if err := UpdatePortalLinkAutoDiscoveryEnabled(id, false); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	if err := UpdatePortalLinkLogin(a, ptr(true), nil); err != nil {
 		t.Fatal(err)

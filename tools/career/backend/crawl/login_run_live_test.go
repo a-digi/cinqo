@@ -63,6 +63,9 @@ func TestALoginRunAgainstTheRealBrowserTool(t *testing.T) {
 	if err := portal.UpdatePortalLinkCrawlInstructions(linkID, instr); err != nil {
 		t.Fatal(err)
 	}
+	if err := portal.UpdatePortalLinkAutoDiscoveryEnabled(linkID, false); err != nil { // a link cannot need a login while auto-crawl is on
+		t.Fatal(err)
+	}
 	yes := true
 	if err := portal.UpdatePortalLinkLogin(linkID, &yes, nil); err != nil {
 		t.Fatal(err)

@@ -142,7 +142,8 @@ func SweepFlags() (FlagSweepReport, error) {
 	}
 	afterFlagSweepRead()
 	raise := func(id, column string) (bool, error) {
-		res, err := db.JobsDB.Exec(`UPDATE portal_links SET `+column+` = 1, updated_at = datetime('now') WHERE id = ? AND `+column+` = 0`, id)
+		// requires_login = 0: a link that needs a login is crawled by hand only, so no flag is ever raised for it (manual_only.go).
+		res, err := db.JobsDB.Exec(`UPDATE portal_links SET `+column+` = 1, updated_at = datetime('now') WHERE id = ? AND `+column+` = 0 AND requires_login = 0`, id)
 		if err != nil {
 			return false, err
 		}
