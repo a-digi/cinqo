@@ -19,7 +19,7 @@ import (
 	"career-tool-backend/comments"
 	"career-tool-backend/db"
 	"career-tool-backend/jobboard"
-	"career-tool-backend/personamatch"
+	"career-tool-backend/persona/personamatch"
 )
 
 // ErrUnknownProfile is returned by RequireProfileExists — the literal

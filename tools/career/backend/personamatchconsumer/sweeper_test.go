@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"career-tool-backend/personamatch"
+	"career-tool-backend/persona/personamatch"
 )
 
 func useWithout(t *testing.T, fn func(limit int) ([]string, error)) {

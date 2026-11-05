@@ -16,7 +16,7 @@ import (
 	"career-tool-backend/db"
 	"career-tool-backend/jobs"
 	"career-tool-backend/persona"
-	"career-tool-backend/personamatch"
+	"career-tool-backend/persona/personamatch"
 	"career-tool-backend/profile"
 )
 
@@ -466,7 +466,7 @@ func TestEndToEndAPersonaChangeUpdatesItsScores(t *testing.T) {
 
 // The consumer is declared next to the other listeners and routed in main.go; the worker starts.
 func TestTheConsumerIsDeclaredAndRouted(t *testing.T) {
-	raw, err := os.ReadFile("../../manifest.json")
+	raw, err := os.ReadFile("../../../manifest.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -474,7 +474,7 @@ func TestTheConsumerIsDeclaredAndRouted(t *testing.T) {
       "path_suffix": "events/persona-changed-recompute"`) {
 		t.Error("manifest.json has no career.persona.changed -> events/persona-changed-recompute listener")
 	}
-	mainSrc, err := os.ReadFile("../main.go")
+	mainSrc, err := os.ReadFile("../../main.go")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -10,7 +10,7 @@ import (
 	"career-tool-backend/db"
 	"career-tool-backend/jobboard"
 	"career-tool-backend/persona"
-	"career-tool-backend/personamatch"
+	"career-tool-backend/persona/personamatch"
 )
 
 func boardOf(t *testing.T, profileID, query string) jobboard.Board {

@@ -5,7 +5,7 @@ import (
 	"log"
 	"time"
 
-	"career-tool-backend/personamatch"
+	"career-tool-backend/persona/personamatch"
 )
 
 // The catch-up for jobs that have no persona scores (step 141): the jobs that existed before this feature, and those whose

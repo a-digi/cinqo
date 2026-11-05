@@ -8,7 +8,7 @@ import (
 
 	"career-tool-backend/db"
 	"career-tool-backend/jobs"
-	"career-tool-backend/personamatch"
+	"career-tool-backend/persona/personamatch"
 )
 
 func deliverPersona(method, body string) *httptest.ResponseRecorder {

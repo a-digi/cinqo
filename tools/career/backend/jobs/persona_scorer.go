@@ -5,7 +5,7 @@ import (
 
 	"career-tool-backend/db"
 	"career-tool-backend/jobmatcher"
-	"career-tool-backend/personamatch"
+	"career-tool-backend/persona/personamatch"
 )
 
 // PersonaScorer scores a job against every persona of every profile, each persona on its own, with the manual engine (no

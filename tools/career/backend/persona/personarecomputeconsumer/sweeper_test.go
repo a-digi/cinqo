@@ -188,7 +188,7 @@ func TestEndToEndTheSweepFindsPersonasWhoseEventWasMissed(t *testing.T) {
 }
 
 func TestTheSweeperIsStartedInMainGo(t *testing.T) {
-	mainSrc, err := os.ReadFile("../main.go")
+	mainSrc, err := os.ReadFile("../../main.go")
 	if err != nil {
 		t.Fatal(err)
 	}

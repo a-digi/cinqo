@@ -13,7 +13,7 @@ import (
 	"career-tool-backend/db"
 	"career-tool-backend/jobmatcher"
 	"career-tool-backend/persona"
-	"career-tool-backend/personamatch"
+	"career-tool-backend/persona/personamatch"
 )
 
 // The recompute of one persona's scores over all jobs (step 142), for when the persona changed. See
