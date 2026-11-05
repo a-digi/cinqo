@@ -8,7 +8,7 @@
       "email": "tafa.andet@googlemail.com"
     }
   ],
-  "generatedAt": "2026-11-05T08:33:33Z",
+  "generatedAt": "2026-11-05T08:59:56Z",
   "tools": [
     {
       "id": "browser",
@@ -61,7 +61,7 @@
     },
     {
       "id": "career",
-      "currentVersionId": "0.0.683",
+      "currentVersionId": "0.0.684",
       "versions": [
         {
           "authors": [
@@ -71,38 +71,38 @@
             }
           ],
           "license": "Proprietary",
-          "versionId": "0.0.683",
+          "versionId": "0.0.684",
           "name": "Career",
-          "version": "0.0.683",
+          "version": "0.0.684",
           "releasedAt": "2026-11-05",
           "packages": [
             {
               "os": "darwin",
               "arch": "arm64",
               "url": "career/versions/tool-career-darwin-arm64.zip",
-              "sha256": "e714f64e1dabdb728ace5529b99261775e927e4b92e8cf746aaedd8113a1d8d9",
-              "sizeBytes": 17539247
+              "sha256": "340fd7fb5f48b4ab96648b07a5c8bffd4ff4e6d94d056a1308e00201395843ca",
+              "sizeBytes": 17545713
             },
             {
               "os": "linux",
               "arch": "amd64",
               "url": "career/versions/tool-career-linux-amd64.zip",
-              "sha256": "468242691299b71e4b0e890008a8749876e4bd9c12f177eee89e88e938646037",
-              "sizeBytes": 17709101
+              "sha256": "a670785f96d59bd01c28b5ac65a0bd9170a9ec4ae00ad29ed74d0093162a720f",
+              "sizeBytes": 17714646
             },
             {
               "os": "linux",
               "arch": "arm64",
               "url": "career/versions/tool-career-linux-arm64.zip",
-              "sha256": "76b8fc24c88784013884d9881c58f85c4fd1ac2f17231ad338e250b1b7ddc475",
-              "sizeBytes": 16750575
+              "sha256": "ab33c4141a680da22b6207e16635f5dbef7ce7bbf41a1ae4d01df681180d3114",
+              "sizeBytes": 16757044
             },
             {
               "os": "windows",
               "arch": "amd64",
               "url": "career/versions/tool-career-windows-amd64.zip",
-              "sha256": "6a00b158d37e835b8c1ccec836e60c30b8554ab0dfea7a84a560827bf0e73fa4",
-              "sizeBytes": 18037851
+              "sha256": "a6692ba94b57bc114cb3695ffa9a6166efb0cedb0311cd0952036f5027e88f76",
+              "sizeBytes": 18042049
             }
           ]
         }
@@ -110,7 +110,7 @@
     },
     {
       "id": "pdf_tools",
-      "currentVersionId": "0.0.121",
+      "currentVersionId": "0.0.122",
       "versions": [
         {
           "authors": [
@@ -120,38 +120,38 @@
             }
           ],
           "license": "Proprietary",
-          "versionId": "0.0.121",
+          "versionId": "0.0.122",
           "name": "PDF Tools",
-          "version": "0.0.121",
-          "releasedAt": "2026-11-04",
+          "version": "0.0.122",
+          "releasedAt": "2026-11-05",
           "packages": [
             {
               "os": "darwin",
               "arch": "arm64",
               "url": "pdf_tools/versions/tool-pdf_tools-darwin-arm64.zip",
-              "sha256": "a88d0e652032a0484265fed9c528c1afe36ecbb53ad3934eeab93fb18c93d411",
-              "sizeBytes": 7912738
+              "sha256": "b18566a402b72ba6f2e1cc516c98dd5ab5ee1d322235caee0271039c0548729f",
+              "sizeBytes": 7914290
             },
             {
               "os": "linux",
               "arch": "amd64",
               "url": "pdf_tools/versions/tool-pdf_tools-linux-amd64.zip",
-              "sha256": "ccbda57b6650f7632d149ca8bf36c1f68db6928724789116d80cca6fbdacfb02",
-              "sizeBytes": 8164986
+              "sha256": "3b37ec81d2e497443d96689f7d49af346fd6fcbbfaa8b1cf8c782e61b6c0415a",
+              "sizeBytes": 8166387
             },
             {
               "os": "linux",
               "arch": "arm64",
               "url": "pdf_tools/versions/tool-pdf_tools-linux-arm64.zip",
-              "sha256": "fe89ea0f3615f2e06ffd40e24af5b352aa9f2b2a9bf1a2a96c0f164877ec91d8",
-              "sizeBytes": 7468201
+              "sha256": "e84929bf06314b552499807755da9f7287feadbd07e265d9eaa86a50dafc0a65",
+              "sizeBytes": 7467407
             },
             {
               "os": "windows",
               "arch": "amd64",
               "url": "pdf_tools/versions/tool-pdf_tools-windows-amd64.zip",
-              "sha256": "0dd5bf7611d1a6dfc92f51f9b6a814d457e2e55b191fee1b88df1c1099f96a8c",
-              "sizeBytes": 8232176
+              "sha256": "1eb4734a4f103479f5472cacdbaca3662cecb85e9f8ac8922965e3842e49ba06",
+              "sizeBytes": 8233228
             }
           ]
         }
