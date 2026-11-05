@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"career-tool-backend/db"
-	"career-tool-backend/deletedjobs"
 	"career-tool-backend/jobs"
+	"career-tool-backend/jobs/deletedjobs"
 )
 
 // The rules (step 131): jobs added to the database more than N days ago, jobs that score under X percent for every

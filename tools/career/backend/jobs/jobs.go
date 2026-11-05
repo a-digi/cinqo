@@ -48,8 +48,8 @@ import (
 
 	"career-tool-backend/companies"
 	"career-tool-backend/db"
-	"career-tool-backend/deletedjobs"
 	"career-tool-backend/domainevent"
+	"career-tool-backend/jobs/deletedjobs"
 	"career-tool-backend/media"
 	"career-tool-backend/textclean"
 )

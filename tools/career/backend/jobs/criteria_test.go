@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"career-tool-backend/db"
-	"career-tool-backend/deletedjobs"
+	"career-tool-backend/jobs/deletedjobs"
 )
 
 // fakeMatcher is a CriteriaMatcher that answers as told and records what it was asked, in a log shared by all the matchers of a test.

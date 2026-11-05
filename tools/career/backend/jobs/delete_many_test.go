@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"career-tool-backend/db"
-	"career-tool-backend/deletedjobs"
+	"career-tool-backend/jobs/deletedjobs"
 )
 
 // rawJob inserts a job straight into the table: crawled (with a posting URL) or manual.

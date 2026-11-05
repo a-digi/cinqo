@@ -7,7 +7,7 @@ import (
 	"sync"
 
 	"career-tool-backend/db"
-	"career-tool-backend/deletedjobs"
+	"career-tool-backend/jobs/deletedjobs"
 )
 
 // Deleting many jobs at once (step 149): the Jobs list's batch delete. It is the single delete (DeleteJob) done for a list, in the

@@ -9,7 +9,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"career-tool-backend/db"
-	"career-tool-backend/deletedjobs"
+	"career-tool-backend/jobs/deletedjobs"
 )
 
 func remember(t *testing.T, url string) {

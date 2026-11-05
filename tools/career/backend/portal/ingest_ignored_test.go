@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"career-tool-backend/db"
-	"career-tool-backend/deletedjobs"
+	"career-tool-backend/jobs/deletedjobs"
 )
 
 func rememberURL(t *testing.T, url string) {

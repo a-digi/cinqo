@@ -6,7 +6,7 @@ import (
 	"log"
 
 	"career-tool-backend/db"
-	"career-tool-backend/deletedjobs"
+	"career-tool-backend/jobs/deletedjobs"
 )
 
 // Remembering deleted jobs (step 133). Before a crawled job is deleted, a snapshot of it is written to the deleted-jobs
