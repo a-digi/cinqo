@@ -332,8 +332,10 @@ func runMCPServer() {
 	cv.RegisterCVImportDraftTools(server)
 	persona.RegisterUpdatePersonaDetails(server)
 	persona.RegisterAddCareerSkill(server)
+	persona.RegisterAddCareerSkills(server)
 	persona.RegisterRemoveCareerSkill(server)
 	persona.RegisterAddCareerExperience(server)
+	persona.RegisterAddCareerExperiences(server)
 	persona.RegisterRemoveCareerExperience(server)
 	persona.RegisterUpdateCareerExperience(server)
 	// Plan 173: the profile library and what a persona uses of it.
@@ -361,6 +363,7 @@ func runMCPServer() {
 	cvbuilder.RegisterGetPersonaCvDefaults(server)
 	cvbuilder.RegisterRenderCvDocument(server)
 	cvbuilder.RegisterSavePersonaCv(server)
+	cvbuilder.RegisterSaveCvForPersona(server)
 	jobs.RegisterSavePortalJob(server)
 	jobs.RegisterSavePortalJobs(server)
 	companies.RegisterCreateCompany(server)

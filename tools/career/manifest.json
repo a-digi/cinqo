@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.0.681",
+  "version": "0.0.682",
   "authors": [
     { "name": "Anes Detit", "email": "tafa.andet@googlemail.com" }
   ],
@@ -891,11 +891,19 @@
       "required_scope": "tool:career:profile"
     },
     {
+      "name": "add_career_skills",
+      "required_scope": "tool:career:profile"
+    },
+    {
       "name": "remove_career_skill",
       "required_scope": "tool:career:profile"
     },
     {
       "name": "add_career_experience",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "add_career_experiences",
       "required_scope": "tool:career:profile"
     },
     {
@@ -984,6 +992,11 @@
     },
     {
       "name": "save_persona_cv",
+      "required_scope": "tool:career:cv_documents",
+      "promote_media_param": "pdfResource"
+    },
+    {
+      "name": "save_cv_for_persona",
       "required_scope": "tool:career:cv_documents",
       "promote_media_param": "pdfResource"
     },

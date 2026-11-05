@@ -277,3 +277,82 @@ func TestManifestDeclaresTheAskUserTool(t *testing.T) {
 	}
 	t.Error("manifest.json does not declare ask_user_if_page_has_jobs")
 }
+
+func TestManifestDeclaresTheBulkSkillsTool(t *testing.T) {
+	raw, err := os.ReadFile("../manifest.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m struct {
+		MCPTools []struct {
+			Name          string `json:"name"`
+			RequiredScope string `json:"required_scope"`
+		} `json:"mcp_tools"`
+	}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range m.MCPTools {
+		if tool.Name == "add_career_skills" {
+			if tool.RequiredScope != "tool:career:profile" {
+				t.Errorf("scope = %q, the same as add_career_skill", tool.RequiredScope)
+			}
+			return
+		}
+	}
+	t.Error("manifest.json does not declare add_career_skills")
+}
+
+func TestManifestDeclaresTheBulkExperiencesTool(t *testing.T) {
+	raw, err := os.ReadFile("../manifest.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m struct {
+		MCPTools []struct {
+			Name          string `json:"name"`
+			RequiredScope string `json:"required_scope"`
+		} `json:"mcp_tools"`
+	}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range m.MCPTools {
+		if tool.Name == "add_career_experiences" {
+			if tool.RequiredScope != "tool:career:profile" {
+				t.Errorf("scope = %q, the same as add_career_experience", tool.RequiredScope)
+			}
+			return
+		}
+	}
+	t.Error("manifest.json does not declare add_career_experiences")
+}
+
+func TestManifestDeclaresSaveCvForPersonaLikeTheRunsSave(t *testing.T) {
+	raw, err := os.ReadFile("../manifest.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m struct {
+		MCPTools []struct {
+			Name              string `json:"name"`
+			RequiredScope     string `json:"required_scope"`
+			PromoteMediaParam string `json:"promote_media_param"`
+		} `json:"mcp_tools"`
+	}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	found := map[string]struct{ scope, promote string }{}
+	for _, tool := range m.MCPTools {
+		found[tool.Name] = struct{ scope, promote string }{tool.RequiredScope, tool.PromoteMediaParam}
+	}
+	want, ok := found["save_persona_cv"]
+	got, ok2 := found["save_cv_for_persona"]
+	if !ok || !ok2 {
+		t.Fatalf("manifest.json must declare both save_persona_cv and save_cv_for_persona: %v", found)
+	}
+	if got != want || got.scope != "tool:career:cv_documents" || got.promote != "pdfResource" {
+		t.Errorf("save_cv_for_persona = %+v, save_persona_cv = %+v: the core only turns the PDF link into a Media file id for a tool that declares promote_media_param", got, want)
+	}
+}
