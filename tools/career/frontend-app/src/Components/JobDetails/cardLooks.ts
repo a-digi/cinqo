@@ -3,7 +3,7 @@
 import { ACCENTS, PAGE_ACCENT, type Accent } from '../JobsPage/jobsTheme'
 import { shapeAt, type DecorShape } from '../../Shared/Decor/decorShapes'
 
-export type CardKey = 'match' | 'persona' | 'board' | 'cv' | 'requirements' | 'recruiters'
+export type CardKey = 'match' | 'persona' | 'board' | 'cv' | 'requirements' | 'recruiters' | 'protocol'
 
 export interface CardLook {
   accent: Accent
@@ -20,4 +20,6 @@ export const CARD_LOOKS: Record<CardKey, CardLook> = {
   requirements: { accent: ACCENTS[7], shape: shapeAt(4) },
   // The Recruiters card (plan/ai/tools/career/step-168): sky blue, the next shape in turn.
   recruiters: { accent: ACCENTS[6], shape: shapeAt(5) },
+  // The Protocol card (plan/ai/tools/career/step-176): rose, the next shape in turn.
+  protocol: { accent: ACCENTS[3], shape: shapeAt(6) },
 }

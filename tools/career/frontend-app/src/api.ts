@@ -2722,3 +2722,80 @@ export async function updateProfileDetails(profileId: string, patch: ProfileDeta
   })
   return libraryJson<ProfileDetails>(res, 'save the profile’s summary and goals')
 }
+
+// --- the application protocol (plan/ai/tools/career/step-176-application-protocol.md, step 3) ---
+
+export type ApplicationDirection = 'sent' | 'received' | 'note'
+export type ApplicationChannel = 'email' | 'platform' | 'sms' | 'whatsapp' | 'phone' | 'video' | 'in_person' | 'letter' | 'other'
+
+// One entry of the log. occurredAt is a plain date ("2026-11-05") when hasTime is false, else an ISO UTC date and time.
+export interface ApplicationMessage {
+  id: string
+  profileId: string
+  jobId: string
+  direction: ApplicationDirection
+  channel: ApplicationChannel
+  channelLabel: string
+  occurredAt: string
+  hasTime: boolean
+  subject: string
+  body: string
+  recruiterId: string
+  counterpartName: string
+  counterpartContact: string
+  cvDocumentId: string
+  externalUrl: string
+  createdAt: string
+  updatedAt?: string
+}
+
+// What is sent to write an entry; the server checks all of it again. An empty text clears a field on an update.
+export interface ApplicationMessageInput {
+  direction: ApplicationDirection
+  channel: ApplicationChannel
+  channelLabel: string
+  occurredAt: string
+  subject: string
+  body: string
+  recruiterId: string
+  counterpartName: string
+  counterpartContact: string
+  cvDocumentId: string
+  externalUrl: string
+}
+
+export async function fetchApplicationMessages(profileId: string, jobId: string): Promise<ApplicationMessage[]> {
+  const res = await fetch(
+    `${PROXY_BASE}/application-messages?profileId=${encodeURIComponent(profileId)}&jobId=${encodeURIComponent(jobId)}`,
+    { credentials: 'include' },
+  )
+  return (await libraryJson<{ messages: ApplicationMessage[] }>(res, 'load the protocol')).messages
+}
+
+// Every write answers with the pair's list, oldest first.
+export async function addApplicationMessage(
+  profileId: string,
+  jobId: string,
+  entry: ApplicationMessageInput,
+): Promise<ApplicationMessage[]> {
+  const res = await fetch(`${PROXY_BASE}/application-messages`, {
+    method: 'POST',
+    credentials: 'include',
+    body: JSON.stringify({ profileId, jobId, ...entry }),
+  })
+  return (await libraryJson<{ messages: ApplicationMessage[] }>(res, 'add the message')).messages
+}
+
+export async function updateApplicationMessage(id: string, entry: ApplicationMessageInput): Promise<ApplicationMessage[]> {
+  const res = await fetch(`${PROXY_BASE}/application-messages`, {
+    method: 'PUT',
+    credentials: 'include',
+    body: JSON.stringify({ id, ...entry }),
+  })
+  return (await libraryJson<{ messages: ApplicationMessage[] }>(res, 'save the message')).messages
+}
+
+export async function deleteApplicationMessage(id: string): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/application-messages?id=${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'include' })
+  if (!res.ok) throw new Error((await res.text().catch(() => '')).trim() || `failed to delete the message (${String(res.status)})`)
+}

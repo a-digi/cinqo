@@ -11,6 +11,7 @@ import { AppLink } from '../../Shared/AppLink/AppLink'
 import { VIEW_COMPANY_PATH, VIEW_PLATFORM_PATH } from '../../paths'
 import { JobBoardUsage } from '../JobBoard/JobBoardUsage'
 import { JobRecruitersCard } from './JobRecruitersCard'
+import { ProtocolCard } from './ProtocolCard'
 import { PersonaMatchesCard } from './PersonaMatchesCard'
 import { InfoCard } from './InfoCard'
 import { JobRequirements } from './JobRequirements'
@@ -195,6 +196,15 @@ export function JobDetailsPage() {
               </div>
 
               <JobRequirements jobId={job.id} />
+
+              {/* The dated log of the communication of this application (plan 176): for the page's profile, or the one chosen in the card. */}
+              <div className="mt-6">
+                <ProtocolCard
+                  jobId={job.id}
+                  profileId={profileId}
+                  profileName={scopeProfile?.profileId === profileId ? scopeProfile.label : ''}
+                />
+              </div>
 
               {profileId !== '' && (
                 <p className="mt-6 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-600">
