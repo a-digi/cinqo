@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"career-tool-backend/db"
+	"career-tool-backend/handlertest"
 	"career-tool-backend/jobs"
 	"career-tool-backend/jobs/jobboard"
 	"career-tool-backend/jobs/jobmatchconsumer"
@@ -46,7 +47,7 @@ type chain struct {
 
 func newChain(t *testing.T) *chain {
 	t.Helper()
-	setupHandlerDB(t)
+	handlertest.SetupHandlerDB(t)
 	c := &chain{t: t, lost: map[string]bool{}, received: map[string]int{}}
 	var err error
 	if c.profile, err = profile.CreateProfile("Fit", "Test"); err != nil {

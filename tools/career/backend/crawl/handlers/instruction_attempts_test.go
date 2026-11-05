@@ -1,0 +1,326 @@
+package crawlhandlers
+
+import (
+	portalhandlers "career-tool-backend/portal/handlers"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"strings"
+	"testing"
+
+	"career-tool-backend/db"
+	"career-tool-backend/handlertest"
+	"career-tool-backend/portal"
+)
+
+func TestInstructionAttemptStartAndFinishFlow(t *testing.T) {
+	handlertest.SetupHandlerDB(t)
+
+	rec := handlertest.PostJSON(InstructionAttemptStartHandler, `{"portalLinkId":"l1","kind":"listing","conversationId":"c1"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("start: %d %s", rec.Code, rec.Body.String())
+	}
+	first := handlertest.Decode(t, rec)
+	if first["started"] != true || first["attemptId"] == "" {
+		t.Fatalf("start response: %v", first)
+	}
+	var trig string
+	if err := db.JobsDB.QueryRow(`SELECT triggered_by FROM instruction_attempts`).Scan(&trig); err != nil || trig != "manual" {
+		t.Fatalf("triggeredBy must default to manual, got %q (%v)", trig, err)
+	}
+
+	again := handlertest.Decode(t, handlertest.PostJSON(InstructionAttemptStartHandler, `{"portalLinkId":"l1","kind":"listing","triggeredBy":"auto"}`))
+	if again["started"] != false || again["attemptId"] != first["attemptId"] {
+		t.Fatalf("second start must be idempotent: %v", again)
+	}
+
+	rec = handlertest.PostJSON(InstructionAttemptFinishHandler, `{"portalLinkId":"l1","kind":"listing","error":"it broke"}`)
+	if rec.Code != http.StatusOK || handlertest.Decode(t, rec)["status"] != "failed" {
+		t.Fatalf("finish without save: %d %s", rec.Code, rec.Body.String())
+	}
+	if got := handlertest.Decode(t, handlertest.PostJSON(InstructionAttemptFinishHandler, `{"portalLinkId":"l1","kind":"listing"}`))["status"]; got != "none" {
+		t.Fatalf("second finish must be none, got %v", got)
+	}
+}
+
+func TestInstructionAttemptFinishSucceedsOnlyAfterServerSideSave(t *testing.T) {
+	handlertest.SetupHandlerDB(t)
+	handlertest.PostJSON(InstructionAttemptStartHandler, `{"portalLinkId":"l1","kind":"job_detail","triggeredBy":"auto"}`)
+
+	if err := portal.MarkInstructionSaved("l1", portal.InstructionKindJobDetail); err != nil {
+		t.Fatal(err)
+	}
+	// A client cannot claim success or failure itself: it only sends an error text.
+	got := handlertest.Decode(t, handlertest.PostJSON(InstructionAttemptFinishHandler, `{"portalLinkId":"l1","kind":"job_detail","error":"ignored"}`))["status"]
+	if got != "succeeded" {
+		t.Fatalf("want succeeded, got %v", got)
+	}
+}
+
+func TestInstructionAttemptHandlersRejectBadInput(t *testing.T) {
+	handlertest.SetupHandlerDB(t)
+
+	cases := []struct {
+		name    string
+		handler http.HandlerFunc
+		body    string
+		want    int
+	}{
+		{"start: no link id", InstructionAttemptStartHandler, `{"kind":"listing"}`, http.StatusBadRequest},
+		{"start: not JSON", InstructionAttemptStartHandler, `nope`, http.StatusBadRequest},
+		{"start: bad kind", InstructionAttemptStartHandler, `{"portalLinkId":"l1","kind":"x"}`, http.StatusBadRequest},
+		{"start: missing kind", InstructionAttemptStartHandler, `{"portalLinkId":"l1"}`, http.StatusBadRequest},
+		{"start: bad trigger", InstructionAttemptStartHandler, `{"portalLinkId":"l1","kind":"listing","triggeredBy":"robot"}`, http.StatusBadRequest},
+		{"start: unknown link", InstructionAttemptStartHandler, `{"portalLinkId":"zzz","kind":"listing"}`, http.StatusBadRequest},
+		{"finish: no link id", InstructionAttemptFinishHandler, `{"kind":"listing"}`, http.StatusBadRequest},
+		{"finish: bad kind", InstructionAttemptFinishHandler, `{"portalLinkId":"l1","kind":"x"}`, http.StatusBadRequest},
+		{"finish: unknown link", InstructionAttemptFinishHandler, `{"portalLinkId":"zzz","kind":"listing"}`, http.StatusBadRequest},
+		{"start: oversized body", InstructionAttemptStartHandler, `{"portalLinkId":"l1","kind":"listing","conversationId":"` + strings.Repeat("a", 70<<10) + `"}`, http.StatusBadRequest},
+	}
+	for _, c := range cases {
+		if rec := handlertest.PostJSON(c.handler, c.body); rec.Code != c.want {
+			t.Errorf("%s: got %d (%s), want %d", c.name, rec.Code, strings.TrimSpace(rec.Body.String()), c.want)
+		}
+	}
+
+	for name, h := range map[string]http.HandlerFunc{"start": InstructionAttemptStartHandler, "finish": InstructionAttemptFinishHandler} {
+		rec := httptest.NewRecorder()
+		h(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+		if rec.Code != http.StatusMethodNotAllowed {
+			t.Errorf("%s GET: got %d, want 405", name, rec.Code)
+		}
+	}
+
+	var n int
+	if err := db.JobsDB.QueryRow(`SELECT COUNT(*) FROM instruction_attempts`).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("rejected requests must not create attempts, found %d (%v)", n, err)
+	}
+}
+
+// TestManifestDeclaresInstructionAttemptRoutes guards the scope gate:
+// every non-public route must be declared with a required scope.
+func TestManifestDeclaresInstructionAttemptRoutes(t *testing.T) {
+	raw, err := os.ReadFile("../../../manifest.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var parsed struct {
+		Routes []map[string]string `json:"routes"`
+	}
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		t.Fatal(err)
+	}
+	for _, suffix := range []string{"portal-links/instruction-attempts/start", "portal-links/instruction-attempts/finish"} {
+		found := false
+		for _, r := range parsed.Routes {
+			if r["path_suffix"] == suffix {
+				found = true
+				if r["method"] != "POST" || r["required_scope"] != "tool:career:portals" {
+					t.Errorf("%s: method=%q scope=%q", suffix, r["method"], r["required_scope"])
+				}
+			}
+		}
+		if !found {
+			t.Errorf("manifest.json does not declare %s", suffix)
+		}
+	}
+}
+
+func putPortalLink(body string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPut, "/", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	portalhandlers.PortalLinksHandler(rec, req)
+	return rec
+}
+
+func TestPutPortalLinkEmptyCrawlAcknowledgement(t *testing.T) {
+	handlertest.SetupHandlerDB(t)
+	if _, err := db.JobsDB.Exec(`INSERT INTO crawl_runs (id, portal_link_id, kind, status, finished_at, triggered_by, jobs_saved, jobs_updated, jobs_skipped, pages_visited, stopped_reason, not_found_fields)
+		VALUES ('r1', 'l1', 'listing', 'completed', '2026-01-01T00:00:00Z', 'manual', 0, 0, 0, 1, 'no_next_link', '[]')`); err != nil {
+		t.Fatal(err)
+	}
+
+	ack := func() string {
+		portals, err := portal.ListPortals()
+		if err != nil || len(portals) == 0 || len(portals[0].Links) == 0 || portals[0].Links[0].LastListingCrawl == nil {
+			t.Fatalf("no summary: %v", err)
+		}
+		return portals[0].Links[0].LastListingCrawl.AcknowledgedAt
+	}
+
+	if rec := putPortalLink(`{"id":"l1","emptyCrawlAcknowledged":true}`); rec.Code != http.StatusOK {
+		t.Fatalf("acknowledge: %d %s", rec.Code, rec.Body.String())
+	}
+	if ack() == "" {
+		t.Fatal("acknowledging must set the timestamp")
+	}
+	// The response is the refreshed list, carrying the summary.
+	var resp struct {
+		Portals []struct {
+			Links []struct {
+				LastListingCrawl *struct {
+					AcknowledgedAt string `json:"acknowledgedAt"`
+				} `json:"lastListingCrawl"`
+			} `json:"links"`
+		} `json:"portals"`
+	}
+	rec := putPortalLink(`{"id":"l1","emptyCrawlAcknowledged":true}`)
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil || resp.Portals[0].Links[0].LastListingCrawl == nil || resp.Portals[0].Links[0].LastListingCrawl.AcknowledgedAt == "" {
+		t.Fatalf("response must carry the summary: %s (%v)", rec.Body.String(), err)
+	}
+
+	if rec := putPortalLink(`{"id":"l1","emptyCrawlAcknowledged":false}`); rec.Code != http.StatusOK {
+		t.Fatalf("clear: %d %s", rec.Code, rec.Body.String())
+	}
+	if ack() != "" {
+		t.Fatal("false must clear the acknowledgement")
+	}
+
+	if rec := putPortalLink(`{"id":"zzz","emptyCrawlAcknowledged":true}`); rec.Code != http.StatusBadRequest {
+		t.Errorf("unknown link: %d", rec.Code)
+	}
+	if rec := putPortalLink(`{"id":"l1"}`); rec.Code != http.StatusBadRequest {
+		t.Errorf("a PUT with nothing to update must still be rejected: %d", rec.Code)
+	}
+}
+
+func TestPutPortalLinkJobsQuestionAnswer(t *testing.T) {
+	handlertest.SetupHandlerDB(t)
+
+	// Nothing pending yet.
+	if rec := putPortalLink(`{"id":"l1","jobsQuestionAnswer":"yes"}`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("answer with nothing pending: %d %s", rec.Code, rec.Body.String())
+	}
+	if err := portal.AskJobsQuestion("l1", "2 attempts"); err != nil {
+		t.Fatal(err)
+	}
+	if rec := putPortalLink(`{"id":"l1","jobsQuestionAnswer":"maybe"}`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("invalid answer: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := putPortalLink(`{"id":"zzz","jobsQuestionAnswer":"yes"}`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("unknown link: %d %s", rec.Code, rec.Body.String())
+	}
+
+	rec := putPortalLink(`{"id":"l1","jobsQuestionAnswer":"yes"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("answer yes: %d %s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		Portals []struct {
+			Links []struct {
+				JobsQuestion *struct{} `json:"jobsQuestion"`
+			} `json:"links"`
+		} `json:"portals"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Portals[0].Links[0].JobsQuestion != nil {
+		t.Error("the refreshed list must no longer carry the question")
+	}
+}
+
+func TestManifestDeclaresTheAskUserTool(t *testing.T) {
+	raw, err := os.ReadFile("../../../manifest.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m struct {
+		MCPTools []struct {
+			Name          string `json:"name"`
+			RequiredScope string `json:"required_scope"`
+		} `json:"mcp_tools"`
+	}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range m.MCPTools {
+		if tool.Name == "ask_user_if_page_has_jobs" {
+			if tool.RequiredScope != "tool:career:portals" {
+				t.Errorf("scope = %q", tool.RequiredScope)
+			}
+			return
+		}
+	}
+	t.Error("manifest.json does not declare ask_user_if_page_has_jobs")
+}
+
+func TestManifestDeclaresTheBulkSkillsTool(t *testing.T) {
+	raw, err := os.ReadFile("../../../manifest.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m struct {
+		MCPTools []struct {
+			Name          string `json:"name"`
+			RequiredScope string `json:"required_scope"`
+		} `json:"mcp_tools"`
+	}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range m.MCPTools {
+		if tool.Name == "add_career_skills" {
+			if tool.RequiredScope != "tool:career:profile" {
+				t.Errorf("scope = %q, the same as add_career_skill", tool.RequiredScope)
+			}
+			return
+		}
+	}
+	t.Error("manifest.json does not declare add_career_skills")
+}
+
+func TestManifestDeclaresTheBulkExperiencesTool(t *testing.T) {
+	raw, err := os.ReadFile("../../../manifest.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m struct {
+		MCPTools []struct {
+			Name          string `json:"name"`
+			RequiredScope string `json:"required_scope"`
+		} `json:"mcp_tools"`
+	}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range m.MCPTools {
+		if tool.Name == "add_career_experiences" {
+			if tool.RequiredScope != "tool:career:profile" {
+				t.Errorf("scope = %q, the same as add_career_experience", tool.RequiredScope)
+			}
+			return
+		}
+	}
+	t.Error("manifest.json does not declare add_career_experiences")
+}
+
+func TestManifestDeclaresSaveCvForPersonaLikeTheRunsSave(t *testing.T) {
+	raw, err := os.ReadFile("../../../manifest.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m struct {
+		MCPTools []struct {
+			Name              string `json:"name"`
+			RequiredScope     string `json:"required_scope"`
+			PromoteMediaParam string `json:"promote_media_param"`
+		} `json:"mcp_tools"`
+	}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	found := map[string]struct{ scope, promote string }{}
+	for _, tool := range m.MCPTools {
+		found[tool.Name] = struct{ scope, promote string }{tool.RequiredScope, tool.PromoteMediaParam}
+	}
+	want, ok := found["save_persona_cv"]
+	got, ok2 := found["save_cv_for_persona"]
+	if !ok || !ok2 {
+		t.Fatalf("manifest.json must declare both save_persona_cv and save_cv_for_persona: %v", found)
+	}
+	if got != want || got.scope != "tool:career:cv_documents" || got.promote != "pdfResource" {
+		t.Errorf("save_cv_for_persona = %+v, save_persona_cv = %+v: the core only turns the PDF link into a Media file id for a tool that declares promote_media_param", got, want)
+	}
+}
