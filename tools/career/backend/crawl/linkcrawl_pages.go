@@ -58,8 +58,12 @@ func (e *linkFetchError) Error() string { return e.Message }
 // fetchPageLinks loads a page's links through core's proxy to the Browser. A var so tests can script the Browser.
 var fetchPageLinks = fetchPageLinksViaCore
 
-func fetchPageLinksViaCore(ctx context.Context, coreURL, accessToken, pageURL, portalID string) (pageLinks, error) {
-	body, err := json.Marshal(map[string]string{"url": pageURL, "rateLimitKey": portalID})
+func fetchPageLinksViaCore(ctx context.Context, coreURL, accessToken, pageURL, portalID, requestID string) (pageLinks, error) {
+	fields := map[string]string{"url": pageURL, "rateLimitKey": portalID}
+	if requestID != "" {
+		fields["requestId"] = requestID // a crawl run: its phases are readable and crawl-cancel reaches the page load
+	}
+	body, err := json.Marshal(fields)
 	if err != nil {
 		return pageLinks{}, err
 	}
@@ -245,7 +249,7 @@ func LinkCrawlCandidatesHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	res, err := fetchPageLinks(r.Context(), lc.coreURL, lc.token, page, lc.portalID)
+	res, err := fetchPageLinks(r.Context(), lc.coreURL, lc.token, page, lc.portalID, "")
 	if err != nil {
 		writeFetchFailure(w, err)
 		return
@@ -420,7 +424,7 @@ func LinkCrawlTestHandler(w http.ResponseWriter, r *http.Request) {
 		if _, err := ownSitePage(lc.linkURL, pageURL); err != nil {
 			return linkrule.Page{}, err
 		}
-		res, err := fetchPageLinks(ctx, lc.coreURL, lc.token, pageURL, lc.portalID)
+		res, err := fetchPageLinks(ctx, lc.coreURL, lc.token, pageURL, lc.portalID, "")
 		if err != nil {
 			return linkrule.Page{}, err
 		}

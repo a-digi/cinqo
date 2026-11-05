@@ -17,8 +17,14 @@ export function hasListingInstructions(link: Pick<PortalLink, 'crawlInstructions
   return (link.crawlInstructions ?? '').trim() !== ''
 }
 
+// canCrawlListing (plan 185): the link has what its crawl method needs to crawl its listing — the instructions for the method
+// "instructions" (as always), a link-crawler rule for the method "links". The same condition the backend's auto-discovery uses.
+export function canCrawlListing(link: Pick<PortalLink, 'crawlInstructions' | 'crawlMethod' | 'linkRules'>): boolean {
+  return link.crawlMethod === 'links' ? link.linkRules !== null : hasListingInstructions(link)
+}
+
 // anyLinkAutoDiscoverable: at least one link, across every portal, that
 // the global auto-discovery could crawl.
 export function anyLinkAutoDiscoverable(portals: Pick<Portal, 'links'>[]): boolean {
-  return portals.some((portal) => portal.links.some(hasListingInstructions))
+  return portals.some((portal) => portal.links.some(canCrawlListing))
 }

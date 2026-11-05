@@ -46,7 +46,7 @@ import {
   openAiLoginWindow,
 } from '../loginWindow'
 import { instructionAlertAttempts, isLikelyUncrawlable, savedDespiteError } from '../instructionStats'
-import { hasListingInstructions } from '../autoDiscoveryVisibility'
+import { canCrawlListing } from '../autoDiscoveryVisibility'
 import { PipelineLine } from '../PipelineLine'
 import { runFollower } from '../runFollowerStart'
 import { LoginGenerateAbandoned, startAfterLogin } from '../loginGenerate'
@@ -1090,7 +1090,7 @@ export function CrawlPanel({
           never auto-crawls a link without. Hiding this never changes the
           stored setting. */}
       {manualOnlyNote(link) !== null && <p className="mb-2 text-xs text-gray-600">{manualOnlyNote(link)}</p>}
-      {hasListingInstructions(link) && !link.requiresLogin && (
+      {canCrawlListing(link) && !link.requiresLogin && (
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <Switch
             checked={link.autoDiscoveryEnabled}
@@ -1486,7 +1486,7 @@ export function CrawlPanel({
           />
         </div>
       )}
-      {link.crawlInstructions && (
+      {canCrawlListing(link) && (
         <div className="mt-1.5">
           <div className="flex flex-wrap gap-2">
             {run?.status === 'running' && run.kind === 'listing' ? (

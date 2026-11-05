@@ -796,6 +796,18 @@ func SavePortalJob(portalLinkId, sourceURL, title, company, location, descriptio
 // comes back as ErrFilteredOut (a *FilteredOutError) with nothing written and no event sent. A job that already exists (same URL) is
 // refreshed, and a cross-portal duplicate is reported, whatever the matchers would say: they are only asked about a real insert.
 func SavePortalJobWith(criteria *Criteria, portalLinkId, sourceURL, title, company, location, description, postedAt string) (id string, created, duplicate bool, err error) {
+	return savePortalJob(criteria, portalLinkId, sourceURL, title, company, location, description, postedAt, true)
+}
+
+// SavePortalJobByURL is SavePortalJobWith for a job found by the address of its link alone (the link crawler, plan 185): the address
+// is its identity. The cross-portal "same title and same company" check is NOT made, because such a job has no company yet, and two
+// different postings with the same title (the same role in two cities) must not be merged into one. Everything else is the same: a
+// known address is refreshed, a deleted one is never inserted again, the crawler criteria are asked for a new job.
+func SavePortalJobByURL(criteria *Criteria, portalLinkId, sourceURL, title, company, location, description, postedAt string) (id string, created, duplicate bool, err error) {
+	return savePortalJob(criteria, portalLinkId, sourceURL, title, company, location, description, postedAt, false)
+}
+
+func savePortalJob(criteria *Criteria, portalLinkId, sourceURL, title, company, location, description, postedAt string, titleCompanyCheck bool) (id string, created, duplicate bool, err error) {
 	description = textclean.Description(description) // only text is kept (step 147)
 	portalLinkURL, err := findPortalLinkURL(portalLinkId)
 	if err != nil {
@@ -837,10 +849,14 @@ func SavePortalJobWith(criteria *Criteria, portalLinkId, sourceURL, title, compa
 
 	if id == "" {
 		var existingByTitleCompany string
-		err = db.JobsDB.QueryRow(
-			`SELECT id FROM jobs WHERE LOWER(TRIM(title)) = ? AND LOWER(TRIM(company)) = ?`,
-			toLower(strings.TrimSpace(title)), toLower(strings.TrimSpace(company)),
-		).Scan(&existingByTitleCompany)
+		if titleCompanyCheck {
+			err = db.JobsDB.QueryRow(
+				`SELECT id FROM jobs WHERE LOWER(TRIM(title)) = ? AND LOWER(TRIM(company)) = ?`,
+				toLower(strings.TrimSpace(title)), toLower(strings.TrimSpace(company)),
+			).Scan(&existingByTitleCompany)
+		} else {
+			err = sql.ErrNoRows // by address only: see SavePortalJobByURL
+		}
 		switch {
 		case err == sql.ErrNoRows:
 			// a real insert: the criteria of this crawl (step 150) are asked now, not for a refresh or a duplicate

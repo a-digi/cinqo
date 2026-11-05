@@ -173,12 +173,40 @@ func CrawlNowHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fail fast on missing/invalid crawl instructions before creating a
-	// crawl_runs row at all — mirrors crawlRequestHandler's own
-	// buildCrawlRequest error mapping exactly.
-	if _, err := portal.BuildCrawlRequest(body.PortalLinkID); err != nil {
-		portal.WritePortalLinkAwareError(w, "build crawl request", err)
+	// Plan 185: a link whose method is "links" is crawled with its link-crawler rule. It must pass its own start check (Katana selected,
+	// no login link) here, before a crawl_runs row exists, and never falls back to the AI instructions.
+	// A refusal here is 412 (precondition failed), not 409: the Crawl now client reads 409 as "a crawl is already running".
+	useLinks, err := linkCrawlSelected(body.PortalLinkID)
+	if err != nil {
+		if useLinks {
+			http.Error(w, err.Error(), http.StatusPreconditionFailed)
+			return
+		}
+		portal.WritePortalLinkAwareError(w, "read the link", err)
 		return
+	}
+	if useLinks {
+		coreURL, err := coreAPIURL()
+		if err != nil {
+			http.Error(w, "core API address is not configured", http.StatusInternalServerError)
+			return
+		}
+		if err := checkLinkCrawlStart(r.Context(), coreURL, accessCookie.Value, body.PortalLinkID); err != nil {
+			status := http.StatusPreconditionFailed
+			if errors.Is(err, portal.ErrLinkRulesLogin) {
+				status = http.StatusBadRequest
+			}
+			http.Error(w, err.Error(), status)
+			return
+		}
+	} else {
+		// Fail fast on missing/invalid crawl instructions before creating a
+		// crawl_runs row at all — mirrors crawlRequestHandler's own
+		// buildCrawlRequest error mapping exactly.
+		if _, err := portal.BuildCrawlRequest(body.PortalLinkID); err != nil {
+			portal.WritePortalLinkAwareError(w, "build crawl request", err)
+			return
+		}
 	}
 
 	run, err := startCrawlRun(body.PortalLinkID, "listing", "manual")
@@ -240,8 +268,24 @@ func CrawlNowHandler(w http.ResponseWriter, r *http.Request) {
 // machinery, exactly as it is for a manual "Crawl now" run — this
 // function doesn't duplicate any of that.
 func RunListingCrawlNow(portalLinkID, accessToken, triggeredBy string) (runID string, err error) {
-	if _, err := portal.BuildCrawlRequest(portalLinkID); err != nil {
-		return "", err
+	// Plan 185: a link on the method "links" crawls with its rule (checked for Katana and login here, never falling back to the AI
+	// instructions); every other link keeps the instruction check it always had.
+	useLinks, lerr := linkCrawlSelected(portalLinkID)
+	switch {
+	case lerr != nil:
+		return "", lerr
+	case useLinks:
+		coreURL, cerr := coreAPIURL()
+		if cerr != nil {
+			return "", cerr
+		}
+		if err := checkLinkCrawlStart(context.Background(), coreURL, accessToken, portalLinkID); err != nil {
+			return "", err
+		}
+	default:
+		if _, err := portal.BuildCrawlRequest(portalLinkID); err != nil {
+			return "", err
+		}
 	}
 	// plan 182: a link that needs a login is never crawled unattended: no window opens without a person to log in.
 	if triggeredBy != "manual" {
@@ -512,6 +556,16 @@ func runCrawlNow(ctx context.Context, runID, portalLinkID, accessToken string) {
 	coreURL, err := coreAPIURL()
 	if err != nil {
 		fail(err)
+		return
+	}
+
+	// Plan 185: the method "links" crawls with the link crawler rule (linkcrawl_run.go), not with selectors.
+	if useLinks, lerr := linkCrawlSelected(portalLinkID); useLinks || lerr != nil {
+		if lerr != nil {
+			fail(lerr)
+			return
+		}
+		runLinkCrawl(ctx, runID, portalLinkID, accessToken, coreURL)
 		return
 	}
 

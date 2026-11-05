@@ -240,6 +240,24 @@ export function LinkCrawlPanel({ link, onReload }: { link: PortalLink; onReload:
       })
   }
 
+  function switchMethod(method: 'instructions' | 'links') {
+    if (method === link.crawlMethod) return
+    setBusy(true)
+    setError('')
+    setNote('')
+    saveLinkRules(link.id, method)
+      .then(() => {
+        setNote(method === 'links' ? 'This link is now crawled with the rule.' : 'This link is crawled with its AI instructions again.')
+        onReload()
+      })
+      .catch((err: unknown) => {
+        setError(errorText(err))
+      })
+      .finally(() => {
+        setBusy(false)
+      })
+  }
+
   function removeRule() {
     setBusy(true)
     setError('')
@@ -299,8 +317,35 @@ export function LinkCrawlPanel({ link, onReload }: { link: PortalLink; onReload:
             ))}
           </ul>
           <p className="mt-1">{describePagination(link.linkRules.pagination)}</p>
+          <fieldset className="mt-2" disabled={busy}>
+            <legend className="font-medium">Crawl this link with</legend>
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                name={`crawl-method-${link.id}`}
+                checked={link.crawlMethod === 'instructions'}
+                onChange={() => {
+                  switchMethod('instructions')
+                }}
+              />
+              The AI-written instructions
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                name={`crawl-method-${link.id}`}
+                checked={link.crawlMethod === 'links'}
+                onChange={() => {
+                  switchMethod('links')
+                }}
+              />
+              This rule (the link crawler, no AI)
+            </label>
+          </fieldset>
           <p className="mt-1 text-gray-600">
-            This link is still crawled with its AI instructions: crawling with the rule comes in a later step.
+            {link.crawlMethod === 'links'
+              ? 'Crawl now and auto-discovery use this rule while Katana is the selected engine; otherwise the crawl stops with a message and never falls back to the AI instructions.'
+              : 'This link is crawled with its AI instructions. Choose the rule above to crawl with it instead.'}
           </p>
           <button type="button" className={`${buttonClass} mt-1`} disabled={busy} onClick={removeRule}>
             Remove the rule

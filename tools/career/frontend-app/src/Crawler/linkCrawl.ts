@@ -194,11 +194,11 @@ export interface LinkCrawlSettings {
   rules: LinkRule | null
 }
 
-// Store the rule (the method stays what it is) or, with rules === null, remove it.
+// Store the rule and the method; with rules omitted the stored rule stays (a method switch), with rules === null it is removed.
 export function saveLinkRules(
   portalLinkId: string,
   crawlMethod: 'instructions' | 'links',
-  rules: LinkRule | null,
+  rules?: LinkRule | null,
 ): Promise<LinkCrawlSettings> {
   return call<LinkCrawlSettings>('rules', 'PUT', { portalLinkId, crawlMethod, rules }, 'save the rule')
 }

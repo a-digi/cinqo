@@ -27,6 +27,7 @@ type fakeCore struct {
 	// fetchBodyFor answers a given page address with its own body (else fetchBody); failFor makes that address answer 502.
 	fetchBodyFor map[string]string
 	failFor      string
+	paths        []string // every request path, in order (the core's view of what was asked)
 }
 
 func newFakeCore(t *testing.T, engine string) *fakeCore {
@@ -36,6 +37,7 @@ func newFakeCore(t *testing.T, engine string) *fakeCore {
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		f.auths = append(f.auths, r.Header.Get("Authorization"))
+		f.paths = append(f.paths, r.URL.Path)
 		switch r.URL.Path {
 		case "/api/v1/tools/browser/proxy/browser-settings":
 			f.settingsCalls++

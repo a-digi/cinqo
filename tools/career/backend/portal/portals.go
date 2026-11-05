@@ -999,6 +999,11 @@ func GetPortalLinkCrawlInstructions(id string) (string, error) {
 	return crawlInstructions.String, nil
 }
 
+// crawlableListingSQL is true for a link whose listing can be crawled with what it has: the instructions when its method is
+// "instructions" (as always), a rule when its method is "links" (plan 185).
+const crawlableListingSQL = `((crawl_method = 'instructions' AND crawl_instructions IS NOT NULL AND crawl_instructions != '')
+		    OR (crawl_method = 'links' AND link_rules IS NOT NULL AND link_rules != ''))`
+
 // ListPortalLinksEligibleForAutoDiscovery returns every portal link's
 // own id, across ALL portals, eligible for the auto-discovery
 // manager's own GLOBAL sweep (step 84) — has crawl_instructions set
@@ -1023,7 +1028,7 @@ func GetPortalLinkCrawlInstructions(id string) (string, error) {
 func ListPortalLinksEligibleForAutoDiscovery() ([]string, error) {
 	rows, err := db.JobsDB.Query(
 		`SELECT id FROM portal_links
-		 WHERE crawl_instructions IS NOT NULL AND crawl_instructions != ''
+		 WHERE ` + crawlableListingSQL + `
 		   AND auto_discovery_enabled = 1
 		   AND requires_login = 0
 		   AND auto_discovery_interval_minutes IS NULL`,
@@ -1061,7 +1066,7 @@ func ListPortalLinksEligibleForAutoDiscovery() ([]string, error) {
 func ListDuePortalLinksWithCustomInterval() ([]string, error) {
 	rows, err := db.JobsDB.Query(
 		`SELECT id FROM portal_links
-		 WHERE crawl_instructions IS NOT NULL AND crawl_instructions != ''
+		 WHERE ` + crawlableListingSQL + `
 		   AND auto_discovery_enabled = 1
 		   AND requires_login = 0
 		   AND auto_discovery_interval_minutes IS NOT NULL
@@ -1567,6 +1572,20 @@ type IngestCrawlResultsResult struct {
 // behavior exactly — a duplicate is counted as JobsUpdated, same as a
 // genuine update).
 func IngestCrawlResults(portalLinkID string, pages []CrawlResultPage) (IngestCrawlResultsResult, error) {
+	return ingestCrawlResults(portalLinkID, pages, false)
+}
+
+// IngestLinkCrawlResults is IngestCrawlResults for jobs the link crawler found (plan 185): each job is identified by its address alone
+// (jobs.SavePortalJobByURL), because it has no company yet and two postings with the same title must stay two jobs.
+func IngestLinkCrawlResults(portalLinkID string, pages []CrawlResultPage) (IngestCrawlResultsResult, error) {
+	return ingestCrawlResults(portalLinkID, pages, true)
+}
+
+func ingestCrawlResults(portalLinkID string, pages []CrawlResultPage, byURLOnly bool) (IngestCrawlResultsResult, error) {
+	save := jobs.SavePortalJobWith
+	if byURLOnly {
+		save = jobs.SavePortalJobByURL
+	}
 	if err := RequirePortalLinkExists(portalLinkID); err != nil {
 		return IngestCrawlResultsResult{}, err
 	}
@@ -1581,7 +1600,7 @@ func IngestCrawlResults(portalLinkID string, pages []CrawlResultPage) (IngestCra
 					result.JobsSkipped++
 					continue
 				}
-				_, created, _, err := jobs.SavePortalJobWith(criteria, portalLinkID, sourceURL, title, company, location, description, postedAt)
+				_, created, _, err := save(criteria, portalLinkID, sourceURL, title, company, location, description, postedAt)
 				if errors.Is(err, jobs.ErrDeletedBefore) {
 					result.JobsIgnored++
 					result.JobsUpdated++
@@ -1611,7 +1630,7 @@ func IngestCrawlResults(portalLinkID string, pages []CrawlResultPage) (IngestCra
 				result.JobsSkipped++
 				continue
 			}
-			_, created, _, err := jobs.SavePortalJobWith(criteria, portalLinkID, sourceURL, title, company, location, description, postedAt)
+			_, created, _, err := save(criteria, portalLinkID, sourceURL, title, company, location, description, postedAt)
 			if errors.Is(err, jobs.ErrDeletedBefore) {
 				result.JobsIgnored++
 				result.JobsUpdated++
