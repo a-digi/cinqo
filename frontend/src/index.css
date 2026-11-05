@@ -605,3 +605,25 @@ button:not(:disabled),
     animation: none;
   }
 }
+
+/* The angular shape behind the bottom of the sidebar (Layout/SidebarDecor.tsx) moves all the time, slowly and softly: it drifts up and
+   to the right while it turns back, then returns. transform only, so it costs the page almost nothing, and the origin is its own centre.
+   Off for people who ask for less motion. */
+@keyframes cinqo-sidebar-drift {
+  0%,
+  100% {
+    transform: translate(0, 0) rotate(0deg);
+  }
+  50% {
+    transform: translate(14px, -18px) rotate(-30deg);
+  }
+}
+.cinqo-sidebar-hexagon {
+  transform-origin: center;
+  animation: cinqo-sidebar-drift 22s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cinqo-sidebar-hexagon {
+    animation: none;
+  }
+}

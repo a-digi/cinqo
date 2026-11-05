@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useMenuGroups } from '../config/menu/useMenuGroups'
 import { filterByQuery } from '../config/menu/filterByQuery'
+import { SidebarDecor } from './SidebarDecor'
 import { SidebarMenuItem } from './SidebarMenuItem'
 
 // Data-driven, recursively nestable — see config/menu/menu.ts and
@@ -20,8 +21,9 @@ export function Sidebar() {
   const filteredGroups = useMemo(() => (query.trim() ? filterByQuery(groups, query.trim()) : groups), [groups, query])
 
   return (
-    <nav className="flex h-full w-56 shrink-0 flex-col border-r border-gray-200 bg-white">
-      <div className="shrink-0 border-b border-gray-200 p-3">
+    <nav className="relative flex h-full w-56 shrink-0 flex-col overflow-hidden border-r border-gray-200 bg-white">
+      <SidebarDecor />
+      <div className="relative shrink-0 border-b border-gray-200 p-3">
         <input
           type="text"
           value={query}
@@ -29,10 +31,10 @@ export function Sidebar() {
             setQuery(e.target.value)
           }}
           placeholder="Search menu…"
-          className="w-full rounded-md border border-gray-200 px-2 py-1.5 text-sm focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900"
+          className="w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm focus:border-gray-900 focus:bg-white focus:outline-none focus:ring-1 focus:ring-gray-900"
         />
       </div>
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="relative flex-1 overflow-y-auto p-4">
         <ul className="space-y-1">
           {filteredGroups.map((entry) => (
             <SidebarMenuItem key={entry.label} entry={entry} depth={1} forceExpanded={query.trim().length > 0} />

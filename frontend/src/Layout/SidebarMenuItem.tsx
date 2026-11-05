@@ -48,8 +48,10 @@ export function SidebarMenuItem({ entry, depth, forceExpanded }: { entry: MenuEn
             end={entry.path === '/'}
             style={{ paddingLeft }}
             className={({ isActive }) =>
-              `flex flex-1 items-center gap-2 rounded-md py-2 pr-3 text-sm ${
-                isActive ? 'bg-gray-100 font-medium text-gray-900' : 'text-gray-600 hover:bg-gray-50'
+              `flex flex-1 items-center gap-2 rounded-lg py-2 pr-3 text-sm ${
+                isActive
+                  ? 'bg-white font-medium text-gray-900 shadow-[inset_3px_0_0_0_#2563eb,0_1px_2px_0_rgb(0_0_0/0.06)] ring-1 ring-gray-200'
+                  : 'text-gray-700 hover:bg-gray-100'
               }`
             }
           >
@@ -64,7 +66,7 @@ export function SidebarMenuItem({ entry, depth, forceExpanded }: { entry: MenuEn
             }}
             aria-expanded={expanded}
             style={{ paddingLeft }}
-            className="flex flex-1 items-center gap-2 rounded-md py-2 pr-3 text-left text-sm font-medium text-gray-500"
+            className="flex flex-1 items-center gap-2 rounded-lg py-2 pr-3 text-left text-sm font-semibold text-gray-600 hover:bg-gray-100"
           >
             {iconSlot}
             {entry.label}
@@ -78,7 +80,7 @@ export function SidebarMenuItem({ entry, depth, forceExpanded }: { entry: MenuEn
             }}
             aria-expanded={expanded}
             aria-label={expanded ? `Collapse ${entry.label}` : `Expand ${entry.label}`}
-            className="px-2 py-2 text-gray-400 hover:text-gray-600"
+            className="px-2 py-2 text-gray-500 hover:text-gray-700"
           >
             <CaretIcon open={expanded} />
           </button>
