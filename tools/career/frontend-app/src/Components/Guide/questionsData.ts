@@ -53,6 +53,20 @@ export const QUESTIONS: Question[] = [
     link: { label: 'Open Crawl Monitor', path: CRAWL_MONITOR_PATH },
   },
   {
+    id: 'why-login',
+    question: 'Why does my platform ask me to log in?',
+    answer:
+      'Some sites show their jobs only to signed-in visitors. Tick Requires login on the link: Crawl now then opens a window at the site, you log in there yourself and press “I am logged in”, and the crawl reads the pages in that window. You can stop it at any time with Cancel.',
+    link: { label: 'Open Platforms', path: PLATFORMS_PATH },
+  },
+  {
+    id: 'login-stored',
+    question: 'Is my login stored?',
+    answer:
+      'No. You type your login on the site itself, in a window that belongs to that one crawl. Nothing you type is seen or saved by Cinqo, and the window and everything in it are thrown away when the crawl ends, so the next crawl asks you again. For the same reason a link that needs a login is never crawled automatically.',
+    link: { label: 'Open Platforms', path: PLATFORMS_PATH },
+  },
+  {
     id: 'ignore-saved',
     question: 'Does Ignore jobs remove jobs I already have?',
     answer:

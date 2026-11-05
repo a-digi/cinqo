@@ -164,6 +164,7 @@ export const FINDING_JOBS: Guide = {
       icon: 'globe',
       title: 'Add a platform and a link',
       text: 'A platform is a job site. Create one with New platform, then add a link to one of its search pages with Add link.',
+      tip: 'If the site only shows its jobs to signed-in visitors, tick Requires login on the link. Crawl now then opens a window: you log in on the site itself and press “I am logged in”. Nothing of your login is stored, so every crawl asks again, and such links are never crawled automatically.',
       link: { label: 'Open Platforms', path: PLATFORMS_PATH },
     },
     {

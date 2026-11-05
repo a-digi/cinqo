@@ -336,7 +336,7 @@ export const PAGE_TIPS: Record<PageTipsId, PageTipSet> = {
         title: 'Paywalls and logins',
         tone: 'rose',
         icon: 'lock',
-        text: 'Pages behind a paywall or a login cannot be crawled. Use the site’s public job list instead.',
+        text: 'Pages behind a paywall cannot be crawled. For a login, tick Requires login on the link, press Crawl now, log in in the window, then press “I am logged in”.',
       },
     ],
   },
