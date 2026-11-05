@@ -123,14 +123,26 @@ func AddCareerSkills(personaID string, skills []string) (BulkSkillsResult, error
 	return res, nil
 }
 
-type addCareerSkillsArgs struct {
+// addCareerSkillsPlain is the shape of the call as the schema describes it; addCareerSkillsArgs is what the handler reads, which also
+// accepts the list as a text (see bulk_loose.go).
+type addCareerSkillsPlain struct {
 	PersonaID string   `json:"personaId" jsonschema:"the persona to add these skills to, from create_persona or list_personas"`
 	Skills    []string `json:"skills" jsonschema:"the skills to add, e.g. [\"Go\", \"Kubernetes\"]: plain text, at most 50 per call"`
 }
 
+type addCareerSkillsArgs struct {
+	PersonaID string       `json:"personaId"`
+	Skills    LooseStrings `json:"skills"`
+}
+
 func RegisterAddCareerSkills(server *mcp.Server) {
+	schema, err := looseSchema[addCareerSkillsPlain]("skills", "Send a JSON list; a text holding the list or the skills separated by commas is read as well.")
+	if err != nil {
+		panic(err) // the argument type is fixed in the code: this cannot depend on any input
+	}
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "add_career_skills",
+		InputSchema: schema,
+		Name:        "add_career_skills",
 		Description: "Add several skills at once that belong only to this persona (custom skills of its own, not skills of the profile's library; add those with add_profile_skill and choose them with set_persona_skills). " +
 			"Use this instead of calling add_career_skill many times. At most 50 per call; a skill the persona already has (any case) or one repeated in the call is skipped. " +
 			"All or nothing: if any entry is refused, nothing is added and the answer says which. Returns {added, skipped}.",
@@ -138,7 +150,7 @@ func RegisterAddCareerSkills(server *mcp.Server) {
 		if args.PersonaID == "" {
 			return db.ErrResult("personaId is required"), nil, nil
 		}
-		result, err := AddCareerSkills(args.PersonaID, args.Skills)
+		result, err := AddCareerSkills(args.PersonaID, []string(args.Skills))
 		if err != nil {
 			return personaAwareErrResult("add skills", args.PersonaID, err), nil, nil
 		}
@@ -176,9 +188,30 @@ type BulkExperienceSkipped struct {
 	StartDate string `json:"startDate"`
 }
 
+// BulkExperienceUpdated is an entry that matched an existing entry of the persona (same company and title) which had no start date: the
+// existing entry got its blanks filled instead of a second entry being added. Filled names the fields that were filled.
+type BulkExperienceUpdated struct {
+	Index   int      `json:"index"`
+	ID      string   `json:"id"`
+	Company string   `json:"company"`
+	Title   string   `json:"title"`
+	Filled  []string `json:"filled"`
+}
+
 type BulkExperiencesResult struct {
 	Added   []BulkExperienceAdded   `json:"added"`
+	Updated []BulkExperienceUpdated `json:"updated"`
 	Skipped []BulkExperienceSkipped `json:"skipped"`
+}
+
+// jobKey is what makes two entries the same job: company and title, without case and surrounding spaces.
+func jobKey(company, title string) string {
+	return strings.ToLower(strings.TrimSpace(company)) + "\x00" + strings.ToLower(strings.TrimSpace(title))
+}
+
+// ownRole is one of the persona's own entries while a bulk call works.
+type ownRole struct {
+	ID, Company, Title, Start, End, Description string
 }
 
 func experienceKey(company, title, start string) string {
@@ -187,9 +220,16 @@ func experienceKey(company, title, start string) string {
 
 // AddCareerExperiences adds work experience entries to the persona's own entries in one transaction: all or nothing. Every entry is
 // trimmed, needs a company and a title, and is plain text of a sane length (the persona proposal's limits: 300 characters, 4,000 for a
-// description). An entry equal to one the persona already has, or to an earlier one in the call (same company, title and start date,
-// without case), is skipped and reported, so that sending a call again after an error does not add the jobs twice. Like
-// add_career_experience it adds to the persona's own entries only, never to the profile's library.
+// description). Entries the persona already has are not added a second time, so that sending a call again after an error (or a model
+// sending a stripped version of the jobs first and the complete version after) does not double them:
+//   - an entry equal to an existing one or to an earlier one in the call (same company, title and start date, without case, after
+//     trimming; a stored NULL start date counts as empty) is skipped and reported;
+//   - an entry with a start date that matches an existing entry on company and title, where that entry has NO start date, fills the
+//     existing entry's blanks (the start date; the end date and the description only if they are empty, nothing that is there is
+//     overwritten) and is reported in updated;
+//   - an entry with NO start date whose company and title the persona already has is skipped: it carries nothing the entry lacks.
+//
+// Like add_career_experience it adds to the persona's own entries only, never to the profile's library.
 func AddCareerExperiences(personaID string, entries []BulkExperience) (BulkExperiencesResult, error) {
 	var res BulkExperiencesResult
 	if err := requirePersonaExists(personaID); err != nil {
@@ -242,33 +282,69 @@ func AddCareerExperiences(personaID string, entries []BulkExperience) (BulkExper
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	have := map[string]bool{}
-	rows, err := tx.Query(`SELECT company, title, COALESCE(start_date, '') FROM career_experience WHERE persona_id = ?`, personaID)
+	var roles []*ownRole
+	rows, err := tx.Query(`SELECT id, company, title, COALESCE(start_date, ''), COALESCE(end_date, ''), COALESCE(description, '') FROM career_experience WHERE persona_id = ? ORDER BY rowid`, personaID)
 	if err != nil {
 		return res, err
 	}
 	for rows.Next() {
-		var company, title, start string
-		if err := rows.Scan(&company, &title, &start); err != nil {
+		var r ownRole
+		if err := rows.Scan(&r.ID, &r.Company, &r.Title, &r.Start, &r.End, &r.Description); err != nil {
 			_ = rows.Close()
 			return res, err
 		}
-		have[experienceKey(company, title, start)] = true
+		roles = append(roles, &r)
 	}
 	if err := rows.Err(); err != nil {
 		_ = rows.Close()
 		return res, err
 	}
 	_ = rows.Close()
+	same := map[string]int{} // entries by company, title and start date
+	jobs := map[string]int{} // entries by company and title
+	for _, r := range roles {
+		same[experienceKey(r.Company, r.Title, r.Start)]++
+		jobs[jobKey(r.Company, r.Title)]++
+	}
 
-	res.Added, res.Skipped = []BulkExperienceAdded{}, []BulkExperienceSkipped{}
+	res.Added, res.Updated, res.Skipped = []BulkExperienceAdded{}, []BulkExperienceUpdated{}, []BulkExperienceSkipped{}
 	for i, c := range clean {
 		key := experienceKey(c.Company, c.Title, c.StartDate)
-		if have[key] {
+		job := jobKey(c.Company, c.Title)
+		if same[key] > 0 || (c.StartDate == "" && jobs[job] > 0) {
 			res.Skipped = append(res.Skipped, BulkExperienceSkipped{Index: i, Company: c.Company, Title: c.Title, StartDate: c.StartDate})
 			continue
 		}
-		have[key] = true
+		if c.StartDate != "" {
+			var blank *ownRole
+			for _, r := range roles {
+				if r.Start == "" && jobKey(r.Company, r.Title) == job {
+					blank = r
+					break
+				}
+			}
+			if blank != nil {
+				oldKey := experienceKey(blank.Company, blank.Title, blank.Start)
+				filled := []string{"startDate"}
+				blank.Start = c.StartDate
+				if blank.End == "" && c.EndDate != "" {
+					blank.End = c.EndDate
+					filled = append(filled, "endDate")
+				}
+				if blank.Description == "" && c.Description != "" {
+					blank.Description = c.Description
+					filled = append(filled, "description")
+				}
+				if _, err := tx.Exec(`UPDATE career_experience SET start_date = ?, end_date = ?, description = ? WHERE id = ? AND persona_id = ?`,
+					blank.Start, blank.End, blank.Description, blank.ID, personaID); err != nil {
+					return BulkExperiencesResult{}, err
+				}
+				same[oldKey]--
+				same[key]++
+				res.Updated = append(res.Updated, BulkExperienceUpdated{Index: i, ID: blank.ID, Company: blank.Company, Title: blank.Title, Filled: filled})
+				continue
+			}
+		}
 		id := uuid.NewString()
 		if _, err := tx.Exec(
 			`INSERT INTO career_experience (id, persona_id, company, title, start_date, end_date, description) VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -276,33 +352,53 @@ func AddCareerExperiences(personaID string, entries []BulkExperience) (BulkExper
 		); err != nil {
 			return BulkExperiencesResult{}, err
 		}
+		roles = append(roles, &ownRole{ID: id, Company: c.Company, Title: c.Title, Start: c.StartDate, End: c.EndDate, Description: c.Description})
+		same[key]++
+		jobs[job]++
 		res.Added = append(res.Added, BulkExperienceAdded{Index: i, ID: id, Company: c.Company, Title: c.Title})
 	}
 	if err := tx.Commit(); err != nil {
 		return BulkExperiencesResult{}, err
 	}
-	if len(res.Added) > 0 { // one event for the call, and only when something changed
+	// One event per kind of change, and only for a kind that happened.
+	if len(res.Added) > 0 {
 		publishPersonaChanged(personaID, ChangeExperienceAdded)
+	}
+	if len(res.Updated) > 0 {
+		publishPersonaChanged(personaID, ChangeExperienceUpdated)
 	}
 	return res, nil
 }
 
-type addCareerExperiencesArgs struct {
+// addCareerExperiencesPlain is the shape of the call as the schema describes it; addCareerExperiencesArgs is what the handler reads,
+// which also accepts the list as a text (see bulk_loose.go).
+type addCareerExperiencesPlain struct {
 	PersonaID   string           `json:"personaId" jsonschema:"the persona to add these experience entries to, from create_persona or list_personas"`
 	Experiences []BulkExperience `json:"experiences" jsonschema:"the work experience entries to add, newest first as the CV lists them: at most 10 per call"`
 }
 
+type addCareerExperiencesArgs struct {
+	PersonaID   string           `json:"personaId"`
+	Experiences LooseExperiences `json:"experiences"`
+}
+
 func RegisterAddCareerExperiences(server *mcp.Server) {
+	schema, err := looseSchema[addCareerExperiencesPlain]("experiences", "Send a JSON list of objects; a text holding that JSON list is read as well.")
+	if err != nil {
+		panic(err) // the argument type is fixed in the code: this cannot depend on any input
+	}
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "add_career_experiences",
+		InputSchema: schema,
+		Name:        "add_career_experiences",
 		Description: "Add several work experience entries at once that belong only to this persona (custom entries of its own, not experiences of the profile's library; add those with add_profile_experience and choose them with set_persona_experience). " +
-			"Use this instead of calling add_career_experience many times. At most 10 per call; every entry needs a company and a title. An entry the persona already has (same company, title and start date) or one repeated in the call is skipped. " +
-			"All or nothing: if any entry is refused, nothing is added and the answer says which. Returns {added: [{index, id, company, title}], skipped: [...]}.",
+			"Use this instead of calling add_career_experience many times. At most 10 per call; every entry needs a company and a title. An entry the persona already has (same company, title and start date) or one repeated in the call is skipped; " +
+			"an entry without a start date whose company and title the persona already has is skipped too. An entry WITH a start date whose company and title match an existing entry that has no start date fills that entry's blank fields instead of adding a second one (reported in updated). " +
+			"All or nothing: if any entry is refused, nothing changes and the answer says which. Returns {added: [{index, id, company, title}], updated: [{index, id, company, title, filled}], skipped: [...]}.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args addCareerExperiencesArgs) (*mcp.CallToolResult, any, error) {
 		if args.PersonaID == "" {
 			return db.ErrResult("personaId is required"), nil, nil
 		}
-		result, err := AddCareerExperiences(args.PersonaID, args.Experiences)
+		result, err := AddCareerExperiences(args.PersonaID, []BulkExperience(args.Experiences))
 		if err != nil {
 			return personaAwareErrResult("add experiences", args.PersonaID, err), nil, nil
 		}
