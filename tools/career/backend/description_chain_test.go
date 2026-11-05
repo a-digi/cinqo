@@ -16,7 +16,7 @@ import (
 	"career-tool-backend/jobmatchconsumer"
 	"career-tool-backend/jobs"
 	"career-tool-backend/persona"
-	"career-tool-backend/personamatchconsumer"
+	"career-tool-backend/persona/personamatchconsumer"
 	"career-tool-backend/profile"
 	"career-tool-backend/profilejobmatchconsumer"
 	"career-tool-backend/profilerules"

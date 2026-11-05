@@ -12,7 +12,7 @@ import (
 	"career-tool-backend/db"
 	"career-tool-backend/persona"
 	"career-tool-backend/persona/personamatch"
-	"career-tool-backend/personamatchconsumer"
+	"career-tool-backend/persona/personamatchconsumer"
 	"career-tool-backend/profile"
 )
 

@@ -570,7 +570,7 @@ func TestTheWorkerStopsWhenItsContextIsCancelled(t *testing.T) {
 
 // The consumer is declared next to the other job.found listeners and routed in main.go; the worker and sweeper start.
 func TestTheConsumerIsDeclaredAndRouted(t *testing.T) {
-	raw, err := os.ReadFile("../../manifest.json")
+	raw, err := os.ReadFile("../../../manifest.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -584,7 +584,7 @@ func TestTheConsumerIsDeclaredAndRouted(t *testing.T) {
 			t.Errorf("the other listener %s must stay", other)
 		}
 	}
-	mainSrc, err := os.ReadFile("../main.go")
+	mainSrc, err := os.ReadFile("../../main.go")
 	if err != nil {
 		t.Fatal(err)
 	}
