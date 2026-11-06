@@ -1176,64 +1176,7 @@ export function JobsPage() {
             on the right. Below the large breakpoint the cards drop under the list. */}
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
           <div className="career-enter career-delay-1 min-w-0 flex-1">
-            {activeFilters.length > 0 && (
-              <div className="mb-2 flex flex-wrap gap-1.5">
-                {activeFilters.map((filter) => (
-                  <span
-                    key={filter.key}
-                    className="flex items-center gap-1 rounded-full border border-gray-200 bg-gray-100 py-1 pl-2.5 pr-1.5 text-xs text-gray-700"
-                  >
-                    {filter.label}
-                    <button
-                      type="button"
-                      onClick={filter.onClear}
-                      aria-label={`Clear ${filter.label}`}
-                      className="text-gray-400 hover:text-gray-700"
-                    >
-                      <XIcon />
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
-
-            {showFilters && (
-              <div className="mb-2 flex flex-wrap items-center gap-2">
-                {locations.length > 0 && (
-                  <Dropdown
-                    placeholder="Any location"
-                    options={[
-                      { value: '', label: 'Any location' },
-                      ...locations.map((loc) => ({ value: loc, label: truncate(loc, MAX_LOCATION_DISPLAY_LENGTH) })),
-                    ]}
-                    value={location}
-                    onChange={handleLocationFilterChange}
-                    searchable
-                  />
-                )}
-                {companies.length > 0 && (
-                  <Dropdown
-                    multiple
-                    placeholder="Any company"
-                    options={companies.map((c) => ({ value: c.id, label: c.name }))}
-                    value={companyIds}
-                    onChange={handleCompanyFilterChange}
-                    searchable
-                  />
-                )}
-                {portals.length > 0 && (
-                  <Dropdown
-                    placeholder="Any platform"
-                    options={[{ value: '', label: 'Any platform' }, ...portals.map((p) => ({ value: p.id, label: p.name }))]}
-                    value={portalId}
-                    onChange={handlePortalFilterChange}
-                    searchable
-                  />
-                )}
-              </div>
-            )}
-
-            <div className="mb-4 flex flex-wrap items-center gap-2">
+            <div className="mb-3 flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={() => {
@@ -1262,59 +1205,122 @@ export function JobsPage() {
               >
                 {missingLabel(missing, startingMissing || recrawl.running)}
               </button>
-              <input
-                value={queryInput}
-                onChange={(e) => {
-                  setQueryInput(e.target.value)
-                }}
-                placeholder="Search title, company, description…"
-                className="flex-1 min-w-[180px] rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
-              />
-              <Dropdown
-                placeholder="Newest first"
-                options={[
-                  { value: 'newest', label: 'Newest first' },
-                  { value: 'match', label: 'Best match first' },
-                ]}
-                value={sort}
-                onChange={handleSortChange}
-              />
-              <label className="flex items-center gap-2 text-sm text-gray-600">
-                Show
+            </div>
+
+            {/* Search, sort, page size and the filters toggle: their own row below the buttons, on its own background. */}
+            <div className="mb-4 rounded-xl border border-gray-200 bg-gray-100/80 px-3 py-2.5">
+              <div className="flex flex-wrap items-center gap-2">
                 <input
-                  type="text"
-                  inputMode="numeric"
-                  value={limitInput}
+                  value={queryInput}
                   onChange={(e) => {
-                    setLimitInput(e.target.value)
+                    setQueryInput(e.target.value)
                   }}
-                  onFocus={() => {
-                    limitFocused.current = true
-                  }}
-                  onBlur={() => {
-                    limitFocused.current = false
-                    commitLimit()
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') commitLimit()
-                  }}
-                  aria-label={`Jobs per page, ${String(MIN_PAGE_LIMIT)} to ${String(MAX_PAGE_LIMIT)}`}
-                  title={`How many jobs to show per page (${String(MIN_PAGE_LIMIT)} to ${String(MAX_PAGE_LIMIT)})`}
-                  className="w-16 rounded-md border border-gray-300 px-2 py-1.5 text-center text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
+                  placeholder="Search title, company, description…"
+                  className="flex-1 min-w-[180px] rounded-md border border-gray-300 px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
                 />
-                per page
-              </label>
-              <button
-                type="button"
-                aria-expanded={showFilters}
-                onClick={() => {
-                  setShowFilters((prev) => !prev)
-                }}
-                className="flex items-center gap-1.5 rounded-md border border-gray-300 px-3.5 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
-              >
-                <FilterIcon />
-                Filters
-              </button>
+                <Dropdown
+                  placeholder="Newest first"
+                  options={[
+                    { value: 'newest', label: 'Newest first' },
+                    { value: 'match', label: 'Best match first' },
+                  ]}
+                  value={sort}
+                  onChange={handleSortChange}
+                />
+                <label className="flex items-center gap-2 text-sm text-gray-600">
+                  Show
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={limitInput}
+                    onChange={(e) => {
+                      setLimitInput(e.target.value)
+                    }}
+                    onFocus={() => {
+                      limitFocused.current = true
+                    }}
+                    onBlur={() => {
+                      limitFocused.current = false
+                      commitLimit()
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') commitLimit()
+                    }}
+                    aria-label={`Jobs per page, ${String(MIN_PAGE_LIMIT)} to ${String(MAX_PAGE_LIMIT)}`}
+                    title={`How many jobs to show per page (${String(MIN_PAGE_LIMIT)} to ${String(MAX_PAGE_LIMIT)})`}
+                    className="w-16 rounded-md border border-gray-300 px-2 py-1.5 text-center text-sm text-gray-900 focus:border-gray-500 focus:outline-none"
+                  />
+                  per page
+                </label>
+                <button
+                  type="button"
+                  aria-expanded={showFilters}
+                  onClick={() => {
+                    setShowFilters((prev) => !prev)
+                  }}
+                  className="flex items-center gap-1.5 rounded-md border border-gray-300 px-3.5 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+                >
+                  <FilterIcon />
+                  Filters
+                </button>
+              </div>
+
+              {activeFilters.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {activeFilters.map((filter) => (
+                    <span
+                      key={filter.key}
+                      className="flex items-center gap-1 rounded-full border border-gray-200 bg-gray-100 py-1 pl-2.5 pr-1.5 text-xs text-gray-700"
+                    >
+                      {filter.label}
+                      <button
+                        type="button"
+                        onClick={filter.onClear}
+                        aria-label={`Clear ${filter.label}`}
+                        className="text-gray-400 hover:text-gray-700"
+                      >
+                        <XIcon />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {showFilters && (
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  {locations.length > 0 && (
+                    <Dropdown
+                      placeholder="Any location"
+                      options={[
+                        { value: '', label: 'Any location' },
+                        ...locations.map((loc) => ({ value: loc, label: truncate(loc, MAX_LOCATION_DISPLAY_LENGTH) })),
+                      ]}
+                      value={location}
+                      onChange={handleLocationFilterChange}
+                      searchable
+                    />
+                  )}
+                  {companies.length > 0 && (
+                    <Dropdown
+                      multiple
+                      placeholder="Any company"
+                      options={companies.map((c) => ({ value: c.id, label: c.name }))}
+                      value={companyIds}
+                      onChange={handleCompanyFilterChange}
+                      searchable
+                    />
+                  )}
+                  {portals.length > 0 && (
+                    <Dropdown
+                      placeholder="Any platform"
+                      options={[{ value: '', label: 'Any platform' }, ...portals.map((p) => ({ value: p.id, label: p.name }))]}
+                      value={portalId}
+                      onChange={handlePortalFilterChange}
+                      searchable
+                    />
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
