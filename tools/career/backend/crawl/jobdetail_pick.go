@@ -247,10 +247,12 @@ type pickCurrent struct {
 }
 
 type pickCandidatesResponse struct {
-	URL      string                         `json:"url"`
-	FinalURL string                         `json:"finalUrl"`
-	Title    string                         `json:"title"`
-	Samples  []pickSample                   `json:"samples"`
+	URL      string       `json:"url"`
+	FinalURL string       `json:"finalUrl"`
+	Title    string       `json:"title"`
+	Samples  []pickSample `json:"samples"`
+	// JobCount is how many saved jobs the link has (the screen says how many a recrawl could re-score).
+	JobCount int                            `json:"jobCount"`
 	Ranked   map[string][]detailpick.Ranked `json:"ranked"`
 	// DescriptionHelp is keyed by the selector of a description candidate.
 	DescriptionHelp map[string]pickDescriptionHelp    `json:"descriptionHelp"`
@@ -326,8 +328,13 @@ func JobDetailCandidatesHandler(w http.ResponseWriter, r *http.Request) {
 		writeFetchFailure(w, err)
 		return
 	}
+	jobCount, err := jobs.CountJobsOfLink(pc.linkID)
+	if err != nil {
+		http.Error(w, "failed to count the jobs of the link: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 	resp := pickCandidatesResponse{
-		URL: pageURL, FinalURL: page.FinalURL, Title: page.Title, Samples: samples,
+		URL: pageURL, FinalURL: page.FinalURL, Title: page.Title, Samples: samples, JobCount: jobCount,
 		Ranked:          map[string][]detailpick.Ranked{},
 		DescriptionHelp: map[string]pickDescriptionHelp{},
 		Structured:      page.Structured, StructuredHints: detailpick.StructuredSuggestions(page),

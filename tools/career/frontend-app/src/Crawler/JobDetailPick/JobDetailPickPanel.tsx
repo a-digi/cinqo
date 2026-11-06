@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { PortalLink } from '../../api'
 import { DescriptionRuleEditor } from './DescriptionRuleEditor'
+import { VerifyPanel } from './VerifyPanel'
 import {
   loadPickCandidates,
   PickError,
@@ -198,7 +199,7 @@ function FieldRow({
 // "Pick the data of a job page" (plan 186, step 6): choose a sample job page, see where the page says the title, the company, the
 // location, the posted date and the description, choose each, and see the instructions those choices make. No AI is involved. This
 // part only previews: saving and verifying on sample jobs come in the next parts, so nothing is stored here.
-export function JobDetailPickPanel({ link }: { link: PortalLink }) {
+export function JobDetailPickPanel({ link, onSaved }: { link: PortalLink; onSaved: (yaml: string) => void }) {
   const [open, setOpen] = useState(false)
   const [page, setPage] = useState<PickCandidates | null>(null)
   const [loading, setLoading] = useState(false)
@@ -454,10 +455,17 @@ export function JobDetailPickPanel({ link }: { link: PortalLink }) {
                     {preview.yaml}
                   </pre>
                 )}
-                <p className="mt-1 text-gray-600">
-                  Nothing is saved yet: saving and trying the picks on sample jobs come in the next parts of this screen.
-                </p>
               </div>
+
+              {canPreview(picks, rule) && (
+                <VerifyPanel
+                  linkId={link.id}
+                  page={page}
+                  choices={toChoices(picks, rule)}
+                  previewValid={preview?.valid === true}
+                  onSaved={onSaved}
+                />
+              )}
             </>
           )}
         </div>

@@ -8,6 +8,9 @@ import type {
   PageElement,
   PickCandidates,
   PickField,
+  PickFlag,
+  PickTest,
+  PickTestJob,
   Ranked,
   RulePart,
 } from './jobDetailPick'
@@ -297,4 +300,121 @@ export function chars(n: number): string {
 // "constructor" must not find something on the object's prototype.
 export function descriptionHelpFor(page: PickCandidates, selector: string): DescriptionHelp | undefined {
   return Object.prototype.hasOwnProperty.call(page.descriptionHelp, selector) ? page.descriptionHelp[selector] : undefined
+}
+
+// --- checking the picks on sample jobs, and saving ---
+
+// A stable text for choices: two checks of the same choices have the same key, any change makes another.
+export function choicesKey(choices: Choices): string {
+  return JSON.stringify(choices)
+}
+
+// What was checked and for which choices.
+export interface Verification {
+  key: string
+  test: PickTest
+}
+
+export type VerificationState = 'none' | 'stale' | 'fresh'
+
+// Whether the check on sample jobs is still about the choices on the screen.
+export function verificationState(v: Verification | null, currentKey: string): VerificationState {
+  if (v === null) return 'none'
+  return v.key === currentKey ? 'fresh' : 'stale'
+}
+
+export interface FlagGroups {
+  blocking: PickFlag[]
+  warnings: PickFlag[]
+  info: PickFlag[]
+}
+
+export function splitFlags(flags: PickFlag[]): FlagGroups {
+  return {
+    blocking: flags.filter((f) => f.severity === 'blocking'),
+    warnings: flags.filter((f) => f.severity === 'warning'),
+    info: flags.filter((f) => f.severity === 'info'),
+  }
+}
+
+// The jobs of a check whose page could be read.
+export function checkedJobs(test: PickTest): PickTestJob[] {
+  return test.jobs.filter((j) => !j.error)
+}
+
+// How many of the checked jobs would get a different description than the one they have.
+export function changedCount(test: PickTest): number {
+  return checkedJobs(test).filter((j) => j.diff && !j.diff.unchanged).length
+}
+
+export interface SaveInput {
+  previewValid: boolean
+  verification: VerificationState
+  test: PickTest | null
+  // Whether the link has saved jobs to check the picks on.
+  hasSamples: boolean
+  // The person's tick: "I looked at the warnings" (after a check), or "save without checking" (a link without saved jobs).
+  confirmed: boolean
+  saving: boolean
+}
+
+export interface SaveGate {
+  ok: boolean
+  // Why saving is not possible yet ("" when it is).
+  reason: string
+}
+
+// Saving needs valid instructions and, when the link has jobs to check on, a fresh check without a blocking flag; warnings (and a link
+// without jobs) need the person's tick.
+export function saveGate(i: SaveInput): SaveGate {
+  if (i.saving) return { ok: false, reason: 'Saving…' }
+  if (!i.previewValid) return { ok: false, reason: 'Choose where the description is: the instructions are not valid yet.' }
+  if (!i.hasSamples) {
+    return i.confirmed
+      ? { ok: true, reason: '' }
+      : { ok: false, reason: 'This link has no saved jobs to check the picks on: tick the box to save without checking.' }
+  }
+  if (i.verification === 'none' || i.test === null) return { ok: false, reason: 'Check the picks on the sample jobs first.' }
+  if (i.verification === 'stale') return { ok: false, reason: 'The picks changed since the check: check them again.' }
+  if (checkedJobs(i.test).length === 0) return { ok: false, reason: 'None of the sample pages could be read: check again.' }
+  const groups = splitFlags(i.test.flags)
+  if (groups.blocking.length > 0) return { ok: false, reason: groups.blocking[0].message }
+  if (groups.warnings.length > 0 && !i.confirmed) return { ok: false, reason: 'Look at the warnings, then tick the box to save.' }
+  return { ok: true, reason: '' }
+}
+
+// What a recrawl could do, said plainly: how many of the checked jobs would change, how many jobs the link has, and that nothing is
+// recrawled by itself.
+export function recrawlNote(checked: number, changed: number, jobCount: number): string {
+  const jobs = (n: number) => `${n} saved job${n === 1 ? '' : 's'}`
+  const first =
+    checked === 0 ? '' : `Of the ${checked} job${checked === 1 ? '' : 's'} checked, ${changed} would get a different description. `
+  return `${first}This link has ${jobs(jobCount)}. A recrawl (“Crawl job details now”) re-scores the jobs whose description changes; nothing is recrawled automatically.`
+}
+
+export interface ValueRow {
+  field: PickField
+  value: string
+  // A second line: what the date becomes after cleaning, how long the description is.
+  note: string
+}
+
+// What one checked job gave, field by field, for the fields that were chosen (and the description).
+export function valueRows(job: PickTestJob, chosen: PickField[]): ValueRow[] {
+  const rows: ValueRow[] = []
+  // a field the page did not give is absent from the values
+  const val = (k: string): string => (job.values as Partial<Record<string, string>>)[k] ?? ''
+  for (const f of DATA_FIELDS) {
+    if (!chosen.includes(f)) continue
+    const v = val(f).trim()
+    rows.push({
+      field: f,
+      value: v === '' ? '' : shortValue(v, 160),
+      note:
+        f === 'postedAt' && v !== '' ? (job.postedAtClean ? `saved as ${job.postedAtClean}` : 'not a date: it would be left empty') : '',
+    })
+  }
+  const d = val('description').trim()
+  rows.push({ field: 'description', value: d === '' ? '' : shortValue(d, 160), note: d === '' ? '' : chars(job.descriptionChars) })
+  return rows
 }

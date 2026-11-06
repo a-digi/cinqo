@@ -1695,7 +1695,15 @@ export function CrawlPanel({
         )}
         {activeInstructionsModal === 'jobDetail' && (
           <>
-            {!link.requiresLogin && <JobDetailPickPanel link={link} />}
+            {!link.requiresLogin && (
+              <JobDetailPickPanel
+                link={link}
+                onSaved={(yaml) => {
+                  setJobDetailInstructionsDraft(yaml)
+                  onReload()
+                }}
+              />
+            )}
             <textarea
               value={jobDetailInstructionsDraft}
               onChange={(e) => {

@@ -107,6 +107,8 @@ export interface PickCandidates {
   finalUrl: string
   title: string
   samples: PickSample[]
+  // How many saved jobs the link has (a recrawl could re-score those whose description changes).
+  jobCount: number
   ranked: Record<PickField, Ranked[]>
   // Keyed by the selector of a description candidate.
   descriptionHelp: Record<string, DescriptionHelp>
@@ -251,4 +253,9 @@ export interface PickTest {
 // Run the real extraction with the choices on up to three saved jobs of the link. Nothing is saved.
 export function testPickChoices(portalLinkId: string, choices: Choices, jobIds: string[], signal?: AbortSignal): Promise<PickTest> {
   return post<PickTest>('test', { portalLinkId, choices, jobIds }, 'try the choices', signal)
+}
+
+// Store the choices as the link's job-detail instructions (the same validated function the AI's tool uses). Returns the stored text.
+export function savePickChoices(portalLinkId: string, choices: Choices, signal?: AbortSignal): Promise<PickPreview> {
+  return post<PickPreview>('save', { portalLinkId, choices }, 'save the instructions', signal)
 }

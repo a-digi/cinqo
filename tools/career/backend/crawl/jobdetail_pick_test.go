@@ -127,6 +127,9 @@ func TestPickCandidatesReturnsRankedSuggestionsForTheOldestJob(t *testing.T) {
 	if len(h.Excludes) != 1 || h.Excludes[0].Selector != ".share" || len(h.CutAfter) != 1 || h.CutAfter[0] != "Similar jobs" {
 		t.Errorf("description help: %+v", h)
 	}
+	if resp.JobCount != 4 {
+		t.Errorf("job count: %d, want the 4 saved jobs of the link", resp.JobCount)
+	}
 	if len(resp.StructuredHints) == 0 || len(resp.Structured.JSONLD) != 1 || len(resp.Elements) != 1 {
 		t.Errorf("structured: %+v", resp)
 	}

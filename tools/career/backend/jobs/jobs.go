@@ -686,6 +686,15 @@ func ListJobsForDetailCrawl(portalLinkID string) ([]JobDetailCrawlTarget, error)
 	return targets, rows.Err()
 }
 
+// CountJobsOfLink is how many saved jobs belong to a portal link (all of them, however many a single detail crawl would visit).
+func CountJobsOfLink(portalLinkID string) (int, error) {
+	var n int
+	if err := db.JobsDB.QueryRow(`SELECT COUNT(*) FROM jobs WHERE portal_link_id = ?`, portalLinkID).Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 // RecrawlTarget is what a recrawl of one job needs to know about it (step 148): where its page is, which portal link's
 // instructions read it, whether it was added by hand, and the description it has now.
 type RecrawlTarget struct {
