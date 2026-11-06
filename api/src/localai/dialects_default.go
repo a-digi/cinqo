@@ -3,6 +3,7 @@ package localai
 import (
 	"github.com/a-digi/cinqo/src/localai/dialect"
 	"github.com/a-digi/cinqo/src/localai/dialect/phijson"
+	"github.com/a-digi/cinqo/src/localai/dialect/qwenjson"
 )
 
 // defaultDialects is the one place that names concrete tool dialects. Adding one is a package and a line here; replacing one
@@ -13,5 +14,6 @@ func defaultDialects() *dialect.Registry {
 	// The names are constants of valid shape and the registry is new, so these cannot fail; a test checks every name the
 	// catalog uses is registered.
 	_ = r.Register(phijson.Name, phijson.New())
+	_ = r.Register(qwenjson.Name, qwenjson.New())
 	return r
 }

@@ -28,7 +28,7 @@ func TestEveryDialectTheCatalogNamesIsRegisteredByDefault(t *testing.T) {
 			t.Errorf("%s names the dialect %q, which defaultDialects does not register", m.ID, m.ToolDialect)
 		}
 	}
-	if got := strings.Join(reg.Names(), ","); got != phijson.Name {
+	if got := strings.Join(reg.Names(), ","); got != phijson.Name+",qwen-json" {
 		t.Errorf("registered = %q", got)
 	}
 }

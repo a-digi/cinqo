@@ -2,6 +2,7 @@ package localai
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
@@ -89,5 +90,38 @@ func TestTheRuntimeReportsWhichModelsCanUseToolsFromTheRegisteredDialects(t *tes
 	withDialects(t, registryWith(t, "phi-json", stampDialect{}))
 	if !rt.CanUseTools(phiID) {
 		t.Error("with the dialect phi can use tools")
+	}
+}
+
+// A dialect that only reads the answer keeps the tools in the request (the model's template renders them) and still decodes the text call.
+type nativeReadDialect struct{ stampDialect }
+
+func (nativeReadDialect) NativeTools() bool { return true }
+
+func (nativeReadDialect) Encode(m []chatcompleter.Message, _ []chatcompleter.ToolDef) []chatcompleter.Message {
+	return m
+}
+
+func (nativeReadDialect) Decode(r *chatcompleter.ChatCompletionResult, tools []chatcompleter.ToolDef) {
+	r.ToolCalls = []chatcompleter.ToolCall{{ID: "call_1", Name: tools[0].Name, Arguments: json.RawMessage(`{}`)}}
+	r.Message.ToolCalls = r.ToolCalls
+}
+
+func TestADialectThatOnlyReadsTheAnswerKeepsTheToolsInTheRequest(t *testing.T) {
+	db := openMainDB(t)
+	saveSettings(t, db, true, phiID)
+	c := completer{settings: query.NewSettingsQueryRepo(db)}
+	e := &recordingEngine{reply: "```json\n{\"name\": \"list_profiles\", \"arguments\": {}}\n```"}
+	withEngine(t, e)
+	withDialects(t, registryWith(t, "phi-json", nativeReadDialect{}))
+	res, err := c.ChatCompletion(context.Background(), http.DefaultClient, "", "", phiID, []chatcompleter.Message{{Role: "user", Content: "list"}}, toolDefs())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(e.gotTools) != 1 || len(e.gotMessages) != 1 {
+		t.Errorf("the tools must stay in the request: tools %d messages %d", len(e.gotTools), len(e.gotMessages))
+	}
+	if len(res.ToolCalls) != 1 || res.ToolCalls[0].Name != "list_profiles" {
+		t.Errorf("the text call must be read back: %+v", res.ToolCalls)
 	}
 }

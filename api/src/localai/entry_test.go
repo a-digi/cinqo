@@ -128,13 +128,17 @@ func TestAnUnreadableSettingsTableMeansUnavailable(t *testing.T) {
 
 func TestOnlyAModelMeasuredToUseToolsGetsTheExplicitPolicy(t *testing.T) {
 	withEngine(t, &fakeEngine{})
-	withDialects(t, registryWith(t, "phi-json", stampDialect{}))
+	reg := registryWith(t, "phi-json", stampDialect{})
+	if err := reg.Register("qwen-json", stampDialect{}); err != nil {
+		t.Fatal(err)
+	}
+	withDialects(t, reg)
 	e := Entry(openMainDB(t))
 	for model, want := range map[string]platform.ToolPolicy{
 		"qwen2.5-1.5b-instruct-q4_k_m":     platform.ToolsExplicit,
 		"phi-4-mini-instruct-q4_k_m":       platform.ToolsExplicit, // through its own dialect (0 of 40 natively, 50 of 50 with the dialect)
 		"qwen2.5-7b-instruct-q4_k_m":       platform.ToolsNone,     // not measured yet
-		"qwen2.5-coder-3b-instruct-q4_k_m": platform.ToolsNone,     // not measured yet (plan 196)
+		"qwen2.5-coder-3b-instruct-q4_k_m": platform.ToolsExplicit, // through its text-reading dialect (plan 196: job-detail recipe 10 of 10)
 		"gpt-4":                            platform.ToolsNone,
 		"":                                 platform.ToolsNone,
 	} {

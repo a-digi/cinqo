@@ -241,7 +241,7 @@ func TestTheLargerQwenIsPinnedAndNotYetMarkedForTools(t *testing.T) {
 	}
 }
 
-func TestTheQwenCoder3BIsPinnedAndNotYetMarkedForTools(t *testing.T) {
+func TestTheQwenCoder3BIsPinnedAndMeasuredForToolsThroughItsOwnDialect(t *testing.T) {
 	c, err := Default()
 	if err != nil {
 		t.Fatal(err)
@@ -252,8 +252,9 @@ func TestTheQwenCoder3BIsPinnedAndNotYetMarkedForTools(t *testing.T) {
 		!strings.Contains(m.URL, "/Qwen/Qwen2.5-Coder-3B-Instruct-GGUF/resolve/f74adce6aa16316c625447af059dbebe4983757c/") {
 		t.Errorf("entry = %+v (found %v)", m, ok)
 	}
-	if m.Tools || m.ToolDialect != "" {
-		t.Error("tools stay false, and no dialect is named, until the model is measured on the crawler recipes (plan 196)")
+	// Measured 2026-11-06 on the real Katana recipes (plan 196): it writes calls as text, so it needs a dialect that reads them.
+	if !m.Tools || m.ToolDialect != "qwen-json" {
+		t.Errorf("tools %v dialect %q: the model was measured to call tools only through its text-reading dialect", m.Tools, m.ToolDialect)
 	}
 }
 

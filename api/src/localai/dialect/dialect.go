@@ -25,6 +25,13 @@ type Dialect interface {
 	Decode(result *chatcompleter.ChatCompletionResult, tools []chatcompleter.ToolDef)
 }
 
+// NativeToolsDialect is implemented by a dialect whose model's chat template renders the tools itself (the tools stay in the request) and
+// that only has to read the model's answer back: Encode is then not used to teach the tools, and Decode still runs. A dialect without it
+// teaches the tools in the messages and the request carries none.
+type NativeToolsDialect interface {
+	NativeTools() bool
+}
+
 // Lookup is what the rest of the module needs from a registry: the dialect for a name.
 type Lookup interface {
 	Lookup(name string) (Dialect, bool)

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/a-digi/cinqo/src/localai/dialect"
 	"github.com/a-digi/cinqo/src/localai/repository/query"
 	"github.com/a-digi/cinqo/src/platform/chatcompleter"
 )
@@ -31,7 +32,10 @@ func (c completer) ChatCompletion(ctx context.Context, client *http.Client, _ /*
 	sent := tools
 	if d != nil {
 		messages = d.Encode(messages, tools)
-		sent = nil
+		// A dialect that only reads the answer (the template renders the tools itself) keeps them in the request.
+		if n, native := d.(dialect.NativeToolsDialect); !native || !n.NativeTools() {
+			sent = nil
+		}
 	}
 	result, err := engine.Chat(ctx, client, model, messages, sent)
 	if err != nil {
