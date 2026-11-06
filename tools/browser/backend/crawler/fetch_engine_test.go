@@ -50,10 +50,17 @@ func resetEngineTracking(t *testing.T) {
 	engineMu.Lock()
 	savedCurrent, savedInFlight := engineCurrent, engineInFlight
 	engineCurrent, engineInFlight = "", map[string]int{}
+	savedIdleStop := engineIdleStop
+	engineIdleStop = time.Hour // only the idle tests shorten it
 	engineMu.Unlock()
 	t.Cleanup(func() {
 		engineMu.Lock()
+		for _, tm := range engineIdle {
+			tm.Stop()
+		}
+		engineIdle = map[string]*time.Timer{}
 		engineCurrent, engineInFlight = savedCurrent, savedInFlight
+		engineIdleStop = savedIdleStop
 		engineMu.Unlock()
 	})
 }
@@ -334,5 +341,80 @@ func TestFetchWithEngineRodEndToEnd(t *testing.T) {
 	}
 	if pwInst != nil || pwBrowser != nil {
 		t.Errorf("the Playwright engine must not have been started while rod served the fetches")
+	}
+}
+
+func shortenIdleStop(t *testing.T, d time.Duration) {
+	t.Helper()
+	engineMu.Lock()
+	engineIdleStop = d
+	engineMu.Unlock()
+}
+
+func waitForStops(stops *[]string, want int, within time.Duration) bool {
+	deadline := time.Now().Add(within)
+	for time.Now().Before(deadline) {
+		engineMu.Lock()
+		n := len(*stops)
+		engineMu.Unlock()
+		if n >= want {
+			return true
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	return false
+}
+
+// The selected engine's browser is closed once its last fetch has ended and
+// nothing new began: a headless Chrome must not outlive the crawl.
+func TestEngineBrowserStopsWhenIdleAfterTheLastFetch(t *testing.T) {
+	resetEngineTracking(t)
+	stops := recordStops(t)
+	shortenIdleStop(t, 30*time.Millisecond)
+
+	end := beginEngineFetch(fetchEngineRod)
+	end()
+
+	if !waitForStops(stops, 1, 2*time.Second) {
+		t.Fatal("the selected engine's browser was never stopped after it went idle")
+	}
+}
+
+// A fetch that begins before the timer fires keeps the browser: a crawl's
+// pages follow each other with short gaps.
+func TestEngineBrowserStaysWhileFetchesFollowEachOther(t *testing.T) {
+	resetEngineTracking(t)
+	stops := recordStops(t)
+	shortenIdleStop(t, 200*time.Millisecond)
+
+	for i := 0; i < 5; i++ {
+		end := beginEngineFetch(fetchEngineRod)
+		end()
+		time.Sleep(40 * time.Millisecond)
+	}
+	if got := len(*stops); got != 0 {
+		t.Fatalf("browser stopped in the middle of a crawl (%d stops)", got)
+	}
+	if !waitForStops(stops, 1, 2*time.Second) {
+		t.Fatal("browser not stopped after the crawl ended")
+	}
+}
+
+// A fetch still running is never cut off by an earlier fetch's timer.
+func TestEngineBrowserIsNotStoppedWhileAFetchIsRunning(t *testing.T) {
+	resetEngineTracking(t)
+	stops := recordStops(t)
+	shortenIdleStop(t, 30*time.Millisecond)
+
+	first := beginEngineFetch(fetchEngineRod)
+	second := beginEngineFetch(fetchEngineRod)
+	first() // one still in flight
+	time.Sleep(150 * time.Millisecond)
+	if got := len(*stops); got != 0 {
+		t.Fatalf("browser stopped under a running fetch (%d stops)", got)
+	}
+	second()
+	if !waitForStops(stops, 1, 2*time.Second) {
+		t.Fatal("browser not stopped after the last fetch ended")
 	}
 }

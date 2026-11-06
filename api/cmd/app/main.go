@@ -715,25 +715,54 @@ func findFreePort() (int, error) {
 // plan/ai/build/app/step-14-fully-quit-chrome-on-window-close.md.
 func watchForWindowClose(cmd *exec.Cmd, debugPort int) {
 	client := &http.Client{Timeout: 500 * time.Millisecond}
-	consecutiveZero := 0
+	var w windowWatch
 	for {
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(windowPollInterval)
 
 		if process, err := os.FindProcess(cmd.Process.Pid); err != nil || process.Signal(syscall.Signal(0)) != nil {
 			return // process already gone (e.g. via cmd.Wait()'s own path) — nothing left to watch
 		}
 
-		if hasVisiblePage(client, debugPort) {
-			consecutiveZero = 0
-			continue
-		}
-
-		consecutiveZero++
-		if consecutiveZero >= 2 {
+		if w.observe(hasVisiblePage(client, debugPort)) {
 			_ = cmd.Process.Signal(syscall.SIGTERM)
 			return
 		}
 	}
+}
+
+const (
+	windowPollInterval = 500 * time.Millisecond
+	// windowStartupPolls bounds how long a Chrome that has not shown its
+	// first page yet is given (60 s). A slow or busy machine can need
+	// well over a second before the debug port even answers.
+	windowStartupPolls = 120
+)
+
+// windowWatch decides when the private Chrome counts as closed. A window
+// that was never seen is not a closed window: until the first page shows
+// up, "no page" only means Chrome is still starting (the debug port
+// refuses connections for a while), so the watcher waits, up to
+// windowStartupPolls polls. Once a page has been seen, two consecutive
+// polls without one (the debounce) mean the window is gone.
+type windowWatch struct {
+	seen  bool
+	polls int
+	zeros int
+}
+
+// observe records one poll and reports whether Chrome should be terminated.
+func (w *windowWatch) observe(hasPage bool) bool {
+	w.polls++
+	if hasPage {
+		w.seen = true
+		w.zeros = 0
+		return false
+	}
+	if !w.seen {
+		return w.polls >= windowStartupPolls
+	}
+	w.zeros++
+	return w.zeros >= 2
 }
 
 // cdpTarget mirrors just the fields needed from a Chrome DevTools

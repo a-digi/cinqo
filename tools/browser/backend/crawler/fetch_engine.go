@@ -17,6 +17,7 @@ import (
 	"context"
 	"log"
 	"sync"
+	"time"
 
 	"browser-tool-backend/shared"
 )
@@ -66,10 +67,20 @@ func selectedFetchEngine() string {
 	return settings.FetchEngine
 }
 
+// engineIdleStop is how long an engine's browser may sit unused after its last
+// fetch before it is shut down. A crawl fetches page after page with only
+// short gaps, so the browser stays up for the whole crawl and is closed a
+// moment after it ends: a headless Chrome must never outlive the work that
+// needed it. The next fetch simply starts a fresh one. A var so tests can
+// shorten it.
+var engineIdleStop = 10 * time.Second
+
 var (
 	engineMu       sync.Mutex
-	engineCurrent  string             // the engine the most recent fetch selected
-	engineInFlight = map[string]int{} // fetches currently running per engine
+	engineCurrent  string                     // the engine the most recent fetch selected
+	engineInFlight = map[string]int{}         // fetches currently running per engine
+	engineIdle     = map[string]*time.Timer{} // pending idle shutdown per engine
+	engineIdleGen  = map[string]int{}         // bumped on every begin, so a stale timer does nothing
 )
 
 // beginEngineFetch records that a fetch is starting on engine and returns
@@ -81,11 +92,20 @@ var (
 // settings handler lives in package shared and cannot import this one.
 // Stopping happens under engineMu so a quick switch back can't have its
 // freshly selected engine stopped by a late cleanup.
+//
+// Whenever the last fetch on an engine ends, an idle shutdown is armed
+// (engineIdleStop): if no new fetch begins before it fires, that engine's
+// browser is stopped, selected or not.
 func beginEngineFetch(engine string) (end func()) {
 	engineMu.Lock()
 	previous := engineCurrent
 	engineCurrent = engine
 	engineInFlight[engine]++
+	engineIdleGen[engine]++
+	if t := engineIdle[engine]; t != nil {
+		t.Stop()
+		delete(engineIdle, engine)
+	}
 	if previous != "" && previous != engine && engineInFlight[previous] == 0 {
 		stopEngineLocked(previous)
 	}
@@ -97,8 +117,26 @@ func beginEngineFetch(engine string) (end func()) {
 		engineInFlight[engine]--
 		if engine != engineCurrent && engineInFlight[engine] == 0 {
 			stopEngineLocked(engine)
+			return
+		}
+		if engineInFlight[engine] == 0 {
+			armEngineIdleStopLocked(engine)
 		}
 	}
+}
+
+// armEngineIdleStopLocked schedules the idle shutdown. Assumes engineMu is held.
+func armEngineIdleStopLocked(engine string) {
+	gen := engineIdleGen[engine]
+	engineIdle[engine] = time.AfterFunc(engineIdleStop, func() {
+		engineMu.Lock()
+		defer engineMu.Unlock()
+		if engineIdleGen[engine] != gen || engineInFlight[engine] != 0 {
+			return // a fetch began since: this timer is stale
+		}
+		delete(engineIdle, engine)
+		stopEngineLocked(engine)
+	})
 }
 
 func stopEngineLocked(engine string) {

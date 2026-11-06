@@ -8,11 +8,11 @@
       "email": "tafa.andet@googlemail.com"
     }
   ],
-  "generatedAt": "2026-11-06T00:27:33Z",
+  "generatedAt": "2026-11-06T07:20:32Z",
   "tools": [
     {
       "id": "browser",
-      "currentVersionId": "0.0.217",
+      "currentVersionId": "0.0.218",
       "versions": [
         {
           "authors": [
@@ -22,38 +22,38 @@
             }
           ],
           "license": "Proprietary",
-          "versionId": "0.0.217",
+          "versionId": "0.0.218",
           "name": "Browser",
-          "version": "0.0.217",
-          "releasedAt": "2026-11-05",
+          "version": "0.0.218",
+          "releasedAt": "2026-11-06",
           "packages": [
             {
               "os": "darwin",
               "arch": "arm64",
               "url": "browser/versions/tool-browser-darwin-arm64.zip",
-              "sha256": "3c9b0e78eb058e0fbd60cae0e2cee45d6457187e3f3c70e0732a85c3cdd13739",
-              "sizeBytes": 46707699
+              "sha256": "0aae8774e7dced3f8267bbe20834b480df2ccd1a7ee5b31f5916c28ca08236cd",
+              "sizeBytes": 46708861
             },
             {
               "os": "linux",
               "arch": "amd64",
               "url": "browser/versions/tool-browser-linux-amd64.zip",
-              "sha256": "b91ebf85bb385a3d21474a0d58f5555358f276caeea4c3dba2b7f91e50998e80",
-              "sizeBytes": 46671446
+              "sha256": "83b5764b5bc393588ebf91fd739865be3bb84e5d408a2675c5ecfd62ab5d497d",
+              "sizeBytes": 46674256
             },
             {
               "os": "linux",
               "arch": "arm64",
               "url": "browser/versions/tool-browser-linux-arm64.zip",
-              "sha256": "62dd3debcfb0996d4cdf911d56c8346e0ba8fefbaf2c36c95bd2408e8f0e6693",
-              "sizeBytes": 44447866
+              "sha256": "d4701ab7c04c0dc9348858e896ab63df5a6d86a100be7a7478b92c44523e9273",
+              "sizeBytes": 44449687
             },
             {
               "os": "windows",
               "arch": "amd64",
               "url": "browser/versions/tool-browser-windows-amd64.zip",
-              "sha256": "851052110b77000f780cdb5640a03c5eeb751eb97a70c99d1f9d87783b1dd2ea",
-              "sizeBytes": 31307281
+              "sha256": "bab8176e86e9cd19d0f7f0baaaa0e97d61e913b54bb860dd097f802aebe69c1d",
+              "sizeBytes": 31308113
             }
           ]
         }
