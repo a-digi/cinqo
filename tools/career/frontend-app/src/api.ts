@@ -773,7 +773,23 @@ export async function fetchJobs(
   if (sort === 'match') params.set('sort', sort)
   const qs = params.toString()
   const res = await fetch(`${PROXY_BASE}/jobs${qs ? `?${qs}` : ''}`, { credentials: 'include' })
-  return jsonOrThrow<JobsResult>(res, 'load jobs')
+  const result = await jsonOrThrow<JobsResult>(res, 'load jobs')
+  // The backend leaves out what a job does not have (a job found by the link crawler has only a title and an address): the page reads these
+  // as text, so what is absent is an empty text here, once, instead of a crash in every place that trims or compares it.
+  return { ...result, jobs: result.jobs.map(withTexts) }
+}
+
+export function withTexts(job: Job): Job {
+  // What the backend left out is read as it really is (the wire type says what a job usually has, not what every job has).
+  const raw: Partial<Job> = job
+  return {
+    ...job,
+    title: raw.title ?? '',
+    company: raw.company ?? '',
+    sourceUrl: raw.sourceUrl ?? '',
+    postedAt: raw.postedAt ?? '',
+    crawledAt: raw.crawledAt ?? '',
+  }
 }
 
 // fetchJob reads a single job by id — GET /jobs?id=... short-circuits

@@ -4,7 +4,8 @@
 // it would not contain this one. See plan/ai/tools/career/step-99-company-links-on-the-jobs-list.md.
 
 export interface CompanyCellJob {
-  company: string
+  // May be absent: the backend leaves out the company of a job that has none.
+  company?: string
   companyId?: string
 }
 
@@ -22,9 +23,12 @@ const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLow
 
 // viewPath is the company page's path (VIEW_COMPANY_PATH); the id goes into its query string, encoded.
 export function companyCell(job: CompanyCellJob, companyNames: Partial<Record<string, string>>, viewPath: string): CompanyCell {
-  if (!job.companyId) return { text: job.company, linkTo: null, linkedName: null }
+  // The backend leaves the company out of a job that has none (a job found by the link crawler has only a title and an address), so it may be
+  // absent although the type says a string; a job linked to a company record then shows the record's name.
+  const company = job.company ?? ''
+  if (!job.companyId) return { text: company, linkTo: null, linkedName: null }
   const record = companyNames[job.companyId]
-  const text = job.company.trim() !== '' ? job.company : (record ?? '')
+  const text = company.trim() !== '' ? company : (record ?? '')
   return {
     text,
     linkTo: `${viewPath}?id=${encodeURIComponent(job.companyId)}`,

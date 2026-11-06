@@ -5,6 +5,7 @@ import type { InstructionEngine, LinkFacts } from '../types'
 import { katanaJobDetailGenerate } from './jobDetailPrompts'
 import { AUTO_JOB_DETAILS } from './policy'
 import { katanaListingGenerate } from './prompts'
+import { KatanaProgressView } from './KatanaProgressView'
 import { StartOver } from './StartOver'
 
 const byAi = (login: boolean) => login
@@ -12,6 +13,7 @@ const byAi = (login: boolean) => login
 export const katanaEngine: InstructionEngine = {
   id: 'katana',
   startOverControl: StartOver,
+  progressView: KatanaProgressView,
   listingGenerate: katanaListingGenerate,
   jobDetailGenerate: katanaJobDetailGenerate,
   aiTriesListing: () => true,

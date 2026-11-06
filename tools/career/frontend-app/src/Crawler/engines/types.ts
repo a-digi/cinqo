@@ -32,6 +32,12 @@ export interface ListingGenerate {
   buildMessage: (link: Pick<PortalLink, 'id' | 'title' | 'url'>) => string
 }
 
+// What the engine's own progress view is given by the link card.
+export interface ProgressProps {
+  link: PortalLink
+  onReload: () => void
+}
+
 export interface InstructionEngine {
   // The Browser engine name this engine serves ('rod', 'katana'); 'unknown' is the engine that judges nothing.
   readonly id: string
@@ -53,6 +59,8 @@ export interface InstructionEngine {
   readonly listingGenerate?: ListingGenerate
   // The engine's own recipe for the Generate button on the job details, for a link that needs no login (Katana only).
   readonly jobDetailGenerate?: ListingGenerate
+  // The engine's own view of how far the instructing of a link has come (Katana: job list, jobs, job details), for a link that needs no login.
+  readonly progressView?: ComponentType<ProgressProps>
   // The engine's own control to delete what it made for a link and begin again (Katana only; Rod has "Start fresh" in the card as before).
   readonly startOverControl?: ComponentType<StartOverProps>
 }

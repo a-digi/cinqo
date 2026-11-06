@@ -1156,6 +1156,9 @@ export function CrawlPanel({
           the mechanism runs at all; this is this ONE link's own
           override on top of that. */}
       <PipelineLine link={link} />
+      {!link.requiresLogin && instructionEngine.progressView !== undefined && (
+        <instructionEngine.progressView link={link} onReload={onReload} />
+      )}
       {/* Step 88 — only for a link that has listing crawl instructions:
           auto-discovery crawls the listing with them, and the backend
           never auto-crawls a link without. Hiding this never changes the
