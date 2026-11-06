@@ -72,27 +72,27 @@ func recordStops(t *testing.T) *[]string {
 	stops := &[]string{}
 	orig := engineStoppers
 	engineStoppers = map[string]func(){
-		fetchEngineRod:        func() { mu.Lock(); *stops = append(*stops, "rod"); mu.Unlock() },
-		fetchEnginePlaywright: func() { mu.Lock(); *stops = append(*stops, "playwright"); mu.Unlock() },
+		fetchEngineRod:    func() { mu.Lock(); *stops = append(*stops, "rod"); mu.Unlock() },
+		fetchEngineKatana: func() { mu.Lock(); *stops = append(*stops, "katana"); mu.Unlock() },
 	}
 	t.Cleanup(func() { engineStoppers = orig })
 	return stops
 }
 
-func swapFetchEngines(t *testing.T) (playwrightCalls, rodCalls *[]string) {
+func swapFetchEngines(t *testing.T) (katanaCalls, rodCalls *[]string) {
 	t.Helper()
-	pw, rd := &[]string{}, &[]string{}
-	origPW, origRod := playwrightFetch, rodFetch
-	playwrightFetch = func(_ context.Context, rawURL, requestID string, _, _, _ []string, _ int, _ []string) (crawlResponse, error) {
-		*pw = append(*pw, rawURL+"|"+requestID)
-		return crawlResponse{Title: "from-playwright"}, nil
+	kt, rd := &[]string{}, &[]string{}
+	origKatana, origRod := katanaFetch, rodFetch
+	katanaFetch = func(_ context.Context, rawURL, requestID string, _, _, _ []string, _ int, _ []string) (crawlResponse, error) {
+		*kt = append(*kt, rawURL+"|"+requestID)
+		return crawlResponse{Title: "from-katana"}, nil
 	}
 	rodFetch = func(_ context.Context, rawURL, requestID string, _, _, _ []string, _ int, _ []string) (crawlResponse, error) {
 		*rd = append(*rd, rawURL+"|"+requestID)
 		return crawlResponse{Title: "from-rod"}, nil
 	}
-	t.Cleanup(func() { playwrightFetch, rodFetch = origPW, origRod })
-	return pw, rd
+	t.Cleanup(func() { katanaFetch, rodFetch = origKatana, origRod })
+	return kt, rd
 }
 
 func fetchOnce(t *testing.T) crawlResponse {
@@ -110,9 +110,9 @@ func TestSelectedEngineFollowsTheStoredSettingLive(t *testing.T) {
 		t.Fatalf("stored rod: got %q", got)
 	}
 	// Flip it the way the Engine page does — no restart, no rebuild.
-	setEngine(t, shared.FetchEnginePlaywright)
-	if got := selectedFetchEngine(); got != fetchEnginePlaywright {
-		t.Fatalf("after switching to playwright: got %q", got)
+	setEngine(t, shared.FetchEngineKatana)
+	if got := selectedFetchEngine(); got != fetchEngineKatana {
+		t.Fatalf("after switching to katana: got %q", got)
 	}
 	setEngine(t, shared.FetchEngineRod)
 	if got := selectedFetchEngine(); got != fetchEngineRod {
@@ -131,7 +131,7 @@ func TestEnvironmentVariableNoLongerSelectsTheEngine(t *testing.T) {
 	}
 }
 
-func TestUnreadableSettingsFallBackToRodNeverPlaywright(t *testing.T) {
+func TestUnreadableSettingsFallBackToRodNeverKatana(t *testing.T) {
 	// No database at all (a process that has not opened one).
 	saved := shared.DB
 	shared.DB = nil
@@ -141,15 +141,15 @@ func TestUnreadableSettingsFallBackToRodNeverPlaywright(t *testing.T) {
 	shared.DB = saved
 
 	// A database that fails on read (closed underneath).
-	useBrowserSettings(t, shared.FetchEnginePlaywright)
+	useBrowserSettings(t, shared.FetchEngineKatana)
 	shared.DB.Close()
 	if got := selectedFetchEngine(); got != fetchEngineRod {
-		t.Errorf("a read error must fall back to rod, not to the stored/previous choice or Playwright: got %q", got)
+		t.Errorf("a read error must fall back to rod, not to the stored/previous choice or Katana: got %q", got)
 	}
 }
 
 func TestFetchWithEngineDispatchesOnTheStoredSetting(t *testing.T) {
-	pw, rd := swapFetchEngines(t)
+	kt, rd := swapFetchEngines(t)
 	resetEngineTracking(t)
 	recordStops(t)
 	useBrowserSettings(t, shared.FetchEngineRod)
@@ -157,12 +157,12 @@ func TestFetchWithEngineDispatchesOnTheStoredSetting(t *testing.T) {
 	if resp := fetchOnce(t); resp.Title != "from-rod" {
 		t.Fatalf("default: %+v", resp)
 	}
-	setEngine(t, shared.FetchEnginePlaywright)
-	if resp := fetchOnce(t); resp.Title != "from-playwright" {
-		t.Fatalf("playwright: %+v", resp)
+	setEngine(t, shared.FetchEngineKatana)
+	if resp := fetchOnce(t); resp.Title != "from-katana" {
+		t.Fatalf("katana: %+v", resp)
 	}
-	if len(*rd) != 1 || len(*pw) != 1 {
-		t.Errorf("rod calls %d, playwright calls %d, want 1 and 1", len(*rd), len(*pw))
+	if len(*rd) != 1 || len(*kt) != 1 {
+		t.Errorf("rod calls %d, katana calls %d, want 1 and 1", len(*rd), len(*kt))
 	}
 	if (*rd)[0] != "https://x.test/|req" {
 		t.Errorf("arguments must be passed through untouched, got %q", (*rd)[0])
@@ -201,10 +201,10 @@ func TestSwitchingStopsTheUnselectedEngineOnlyOnAChange(t *testing.T) {
 		t.Fatalf("with an unchanged selection nothing may be stopped (and the other engine never started): %v", *stops)
 	}
 
-	setEngine(t, shared.FetchEnginePlaywright)
+	setEngine(t, shared.FetchEngineKatana)
 	fetchOnce(t)
 	if !reflect.DeepEqual(*stops, []string{"rod"}) {
-		t.Fatalf("switching to playwright must stop rod once: %v", *stops)
+		t.Fatalf("switching to katana must stop rod once: %v", *stops)
 	}
 	fetchOnce(t)
 	if len(*stops) != 1 {
@@ -213,8 +213,8 @@ func TestSwitchingStopsTheUnselectedEngineOnlyOnAChange(t *testing.T) {
 
 	setEngine(t, shared.FetchEngineRod)
 	fetchOnce(t)
-	if !reflect.DeepEqual(*stops, []string{"rod", "playwright"}) {
-		t.Fatalf("switching back must stop playwright: %v", *stops)
+	if !reflect.DeepEqual(*stops, []string{"rod", "katana"}) {
+		t.Fatalf("switching back must stop katana: %v", *stops)
 	}
 }
 
@@ -240,9 +240,9 @@ func TestSwitchNeverInterruptsAFetchInFlight(t *testing.T) {
 	go func() { done <- fetchOnce(t) }()
 	<-started
 
-	// Switch while that rod fetch is still running, then fetch on Playwright.
-	setEngine(t, shared.FetchEnginePlaywright)
-	if resp := fetchOnce(t); resp.Title != "from-playwright" {
+	// Switch while that rod fetch is still running, then fetch on Katana.
+	setEngine(t, shared.FetchEngineKatana)
+	if resp := fetchOnce(t); resp.Title != "from-katana" {
 		t.Fatalf("the new selection must be used for the new fetch: %+v", resp)
 	}
 	if len(*stops) != 0 {
@@ -269,11 +269,11 @@ func TestSwitchingBackQuicklyNeverStopsTheEngineJustSelected(t *testing.T) {
 	useBrowserSettings(t, shared.FetchEngineRod)
 
 	fetchOnce(t) // rod
-	setEngine(t, shared.FetchEnginePlaywright)
+	setEngine(t, shared.FetchEngineKatana)
 	fetchOnce(t) // stops rod
 	setEngine(t, shared.FetchEngineRod)
-	fetchOnce(t) // stops playwright, rod is current again
-	if !reflect.DeepEqual(*stops, []string{"rod", "playwright"}) {
+	fetchOnce(t) // stops katana, rod is current again
+	if !reflect.DeepEqual(*stops, []string{"rod", "katana"}) {
 		t.Fatalf("each switch stops only the engine left behind: %v", *stops)
 	}
 	engineMu.Lock()

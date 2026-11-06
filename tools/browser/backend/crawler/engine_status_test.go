@@ -181,8 +181,6 @@ func TestRodStatus(t *testing.T) {
 }
 
 func TestEngineStatusHandler(t *testing.T) {
-	version := expectedPlaywrightVersion(t)
-	fakeDriver(t, `echo "Version `+version+`"`)
 	orig := shared.LookChrome
 	shared.LookChrome = func() (string, bool) { return "", false }
 	t.Cleanup(func() { shared.LookChrome = orig })
@@ -197,13 +195,17 @@ func TestEngineStatusHandler(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("%s: %v", rec.Body.String(), err)
 	}
-	if body["rod"]["available"] != false || body["playwright"]["available"] != true {
+	if body["rod"]["available"] != false {
 		t.Errorf("unexpected availability: %s", rec.Body.String())
+	}
+	// Plan 187: Playwright is gone, so the answer names exactly the two engines that exist.
+	if len(body) != 2 || body["playwright"] != nil {
+		t.Errorf("the answer must hold rod and katana only: %s", rec.Body.String())
 	}
 	if body["katana"]["available"] != false { // Katana needs the same Chrome as rod
 		t.Errorf("katana must be unavailable without Chrome: %s", rec.Body.String())
 	}
-	for _, engine := range []string{"rod", "playwright", "katana"} {
+	for _, engine := range []string{"rod", "katana"} {
 		if d, _ := body[engine]["detail"].(string); d == "" {
 			t.Errorf("%s must carry a detail sentence: %s", engine, rec.Body.String())
 		}

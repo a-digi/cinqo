@@ -43,9 +43,8 @@ type EngineStatus struct {
 
 // EngineStatusResponse is the body of GET /engine-status.
 type EngineStatusResponse struct {
-	Rod        EngineStatus `json:"rod"`
-	Playwright EngineStatus `json:"playwright"`
-	Katana     EngineStatus `json:"katana"`
+	Rod    EngineStatus `json:"rod"`
+	Katana EngineStatus `json:"katana"`
 }
 
 // RodStatus: rod is available when a Chrome binary is found — the same
@@ -163,5 +162,5 @@ func EngineStatusHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(EngineStatusResponse{Rod: RodStatus(), Playwright: PlaywrightStatus(), Katana: KatanaStatus()})
+	_ = json.NewEncoder(w).Encode(EngineStatusResponse{Rod: RodStatus(), Katana: KatanaStatus()})
 }

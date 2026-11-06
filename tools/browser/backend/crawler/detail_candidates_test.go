@@ -110,7 +110,7 @@ func TestFetchDetailCandidatesRefusesPrivateAddressesBeforeAnyFetch(t *testing.T
 
 // Decision D1: no Katana gate — the route answers whichever engine is selected.
 func TestFetchDetailCandidatesIsNotGatedOnTheSelectedEngine(t *testing.T) {
-	for _, engine := range []string{shared.FetchEngineRod, shared.FetchEnginePlaywright, shared.FetchEngineKatana} {
+	for _, engine := range []string{shared.FetchEngineRod, shared.FetchEngineKatana} {
 		resetEngineTracking(t)
 		recordStops(t)
 		useBrowserSettings(t, engine)

@@ -66,9 +66,8 @@ func TestKatanaIsStoppedWhenTheEngineIsSwitchedAwayAndOnlyThen(t *testing.T) {
 	var stops []string
 	orig := engineStoppers
 	engineStoppers = map[string]func(){
-		fetchEngineRod:        func() { mu.Lock(); stops = append(stops, "rod"); mu.Unlock() },
-		fetchEnginePlaywright: func() { mu.Lock(); stops = append(stops, "playwright"); mu.Unlock() },
-		fetchEngineKatana:     func() { mu.Lock(); stops = append(stops, "katana"); mu.Unlock() },
+		fetchEngineRod:    func() { mu.Lock(); stops = append(stops, "rod"); mu.Unlock() },
+		fetchEngineKatana: func() { mu.Lock(); stops = append(stops, "katana"); mu.Unlock() },
 	}
 	t.Cleanup(func() { engineStoppers = orig })
 	origK, origR := katanaFetch, rodFetch

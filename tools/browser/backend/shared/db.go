@@ -145,12 +145,13 @@ func InitDB() error {
 		debug_log_html      INTEGER NOT NULL DEFAULT 0,
 		debug_log_challenge INTEGER NOT NULL DEFAULT 0,
 		-- fetch_engine (step 50): which engine serves the primary single-page
-		-- fetch — 'rod' (the default; pure Go over CDP) or 'playwright'
-		-- (needs its Node-based driver). Read on every fetch by the
-		-- crawler. A fresh install gets it here; an existing table gets it
-		-- from migrateBrowserSettingsFetchEngineColumn. See
-		-- plan/ai/tools/browser/step-50-fetch-engine-setting-page.md.
-		fetch_engine        TEXT NOT NULL DEFAULT 'rod' CHECK (fetch_engine IN ('rod','playwright','katana')),
+		-- fetch — 'rod' (the default; pure Go over CDP) or 'katana'. Read on
+		-- every fetch by the crawler. A fresh install gets it here; an
+		-- existing table gets it from migrateBrowserSettingsFetchEngineColumn
+		-- and its CHECK from the migrations after it (the last one,
+		-- migrateBrowserSettingsDropPlaywright, plan 187, removed the value
+		-- 'playwright'). See plan/ai/tools/browser/step-50-fetch-engine-setting-page.md.
+		fetch_engine        TEXT NOT NULL DEFAULT 'rod' CHECK (fetch_engine IN ('rod','katana')),
 		-- human_assist (step 96): when an AI call meets a challenge only a
 		-- person can clear, open a browser window for them (instead of just
 		-- failing). On by default; an existing table gets it from
@@ -176,6 +177,10 @@ func InitDB() error {
 	if err := migrateBrowserSettingsAllowKatana(db); err != nil {
 		db.Close()
 		return fmt.Errorf("failed to migrate browser_settings for the katana engine: %w", err)
+	}
+	if err := migrateBrowserSettingsDropPlaywright(db); err != nil {
+		db.Close()
+		return fmt.Errorf("failed to migrate browser_settings away from the playwright engine: %w", err)
 	}
 	if _, err := db.Exec(`INSERT OR IGNORE INTO browser_settings (id, debug_enabled, debug_log_html, debug_log_challenge) VALUES (1, 0, 0, 0)`); err != nil {
 		db.Close()
@@ -377,6 +382,54 @@ func migrateBrowserSettingsAllowKatana(db *sql.DB) error {
 		)`,
 		`INSERT INTO browser_settings_new (id, debug_enabled, debug_log_html, debug_log_challenge, fetch_engine, human_assist, updated_at)
 			SELECT id, debug_enabled, debug_log_html, debug_log_challenge, fetch_engine, human_assist, updated_at FROM browser_settings`,
+		`DROP TABLE browser_settings`,
+		`ALTER TABLE browser_settings_new RENAME TO browser_settings`,
+	} {
+		if _, err := tx.Exec(q); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// migrateBrowserSettingsDropPlaywright (plan 187) removes the engine value
+// 'playwright' from an existing browser_settings table: the Playwright engine
+// no longer exists. The fetch_engine CHECK cannot be altered in SQLite, so a
+// table whose stored definition still names 'playwright' is rebuilt (the same
+// way as migrateBrowserSettingsAllowKatana): a new table with the current
+// definition, the one row copied with a stored 'playwright' turned into 'rod',
+// the old table dropped, the new one renamed — all in one transaction, so a
+// failure leaves the old table untouched. A no-op once the definition no
+// longer names 'playwright'. The two older migrations above it keep writing
+// the old CHECK on purpose: they only run on very old databases, and this one
+// runs right after them.
+func migrateBrowserSettingsDropPlaywright(db *sql.DB) error {
+	var def string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'browser_settings'`).Scan(&def); err != nil {
+		return err
+	}
+	if !strings.Contains(def, "'playwright'") {
+		return nil
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, q := range []string{
+		`CREATE TABLE browser_settings_new (
+			id                  INTEGER PRIMARY KEY CHECK (id = 1),
+			debug_enabled       INTEGER NOT NULL DEFAULT 0,
+			debug_log_html      INTEGER NOT NULL DEFAULT 0,
+			debug_log_challenge INTEGER NOT NULL DEFAULT 0,
+			fetch_engine        TEXT NOT NULL DEFAULT 'rod' CHECK (fetch_engine IN ('rod','katana')),
+			human_assist        INTEGER NOT NULL DEFAULT 1,
+			updated_at          TEXT
+		)`,
+		`INSERT INTO browser_settings_new (id, debug_enabled, debug_log_html, debug_log_challenge, fetch_engine, human_assist, updated_at)
+			SELECT id, debug_enabled, debug_log_html, debug_log_challenge,
+				CASE WHEN fetch_engine = 'katana' THEN 'katana' ELSE 'rod' END,
+				human_assist, updated_at FROM browser_settings`,
 		`DROP TABLE browser_settings`,
 		`ALTER TABLE browser_settings_new RENAME TO browser_settings`,
 	} {

@@ -211,9 +211,9 @@ const (
 	katanaProbeText  = "katana probe ok"
 )
 
-// EngineTestHandler handles POST /engine-test. {"engine":"playwright"} and
-// {"engine":"katana"} are supported; anything else is a 400. One test per
-// engine at a time (409 otherwise).
+// EngineTestHandler handles POST /engine-test. {"engine":"katana"} is the only
+// engine with a test; anything else (a removed engine's name included) is a 400.
+// One test at a time (409 otherwise).
 func EngineTestHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -224,26 +224,15 @@ func EngineTestHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
-	if body.Engine == "katana" {
-		if !katanaProbeMu.TryLock() {
-			http.Error(w, "a Katana test is already running", http.StatusConflict)
-			return
-		}
-		defer katanaProbeMu.Unlock()
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(ProbeKatana())
+	if body.Engine != "katana" {
+		http.Error(w, `engine must be "katana"`, http.StatusBadRequest)
 		return
 	}
-	if body.Engine != "playwright" {
-		http.Error(w, `engine must be "playwright" or "katana"`, http.StatusBadRequest)
+	if !katanaProbeMu.TryLock() {
+		http.Error(w, "a Katana test is already running", http.StatusConflict)
 		return
 	}
-	if !playwrightProbeMu.TryLock() {
-		http.Error(w, "a Playwright test is already running", http.StatusConflict)
-		return
-	}
-	defer playwrightProbeMu.Unlock()
-
+	defer katanaProbeMu.Unlock()
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(ProbePlaywright())
+	_ = json.NewEncoder(w).Encode(ProbeKatana())
 }

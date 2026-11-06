@@ -92,7 +92,7 @@ func TestExistingInstallIsUpgradedKeepingTheDebugValues(t *testing.T) {
 
 func TestSaveAndLoadRoundTripsTheEngine(t *testing.T) {
 	initSettingsDB(t)
-	want := BrowserSettings{DebugEnabled: true, DebugLogHTML: true, DebugLogChallenge: true, FetchEngine: FetchEnginePlaywright}
+	want := BrowserSettings{DebugEnabled: true, DebugLogHTML: true, DebugLogChallenge: true, FetchEngine: FetchEngineKatana}
 	if err := SaveBrowserSettings(want); err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +104,7 @@ func TestSaveAndLoadRoundTripsTheEngine(t *testing.T) {
 
 func TestSaveRejectsAnInvalidEngineAndWritesNothing(t *testing.T) {
 	initSettingsDB(t)
-	for _, bad := range []string{"", "chromedp", "Rod", " rod", "rod;DROP TABLE browser_settings"} {
+	for _, bad := range []string{"", "chromedp", "Rod", " rod", "playwright", "rod;DROP TABLE browser_settings"} {
 		err := SaveBrowserSettings(BrowserSettings{DebugEnabled: true, FetchEngine: bad})
 		if err != ErrInvalidFetchEngine {
 			t.Errorf("%q: got %v, want ErrInvalidFetchEngine", bad, err)
@@ -117,7 +117,7 @@ func TestSaveRejectsAnInvalidEngineAndWritesNothing(t *testing.T) {
 
 func TestAStoredValueOutsideTheAllowListReadsAsTheDefault(t *testing.T) {
 	for stored, want := range map[string]string{
-		"rod": "rod", "playwright": "playwright", "": "rod", "chromedp": "rod", "ROD": "rod",
+		"rod": "rod", "katana": "katana", "playwright": "rod", "": "rod", "chromedp": "rod", "ROD": "rod",
 	} {
 		if got := fetchEngineOrDefault(stored); got != want {
 			t.Errorf("fetchEngineOrDefault(%q) = %q, want %q", stored, got, want)
@@ -141,18 +141,18 @@ func TestSettingsHandlerGetPutAndTheKeepSemantics(t *testing.T) {
 		t.Fatalf("GET: %d %s", rec.Code, rec.Body.String())
 	}
 
-	// Switch to Playwright.
-	if rec := put(`{"debugEnabled":false,"debugLogHtml":false,"debugLogChallenge":false,"fetchEngine":"playwright"}`); rec.Code != http.StatusOK ||
-		!strings.Contains(rec.Body.String(), `"fetchEngine":"playwright"`) {
+	// Switch to Katana.
+	if rec := put(`{"debugEnabled":false,"debugLogHtml":false,"debugLogChallenge":false,"fetchEngine":"katana"}`); rec.Code != http.StatusOK ||
+		!strings.Contains(rec.Body.String(), `"fetchEngine":"katana"`) {
 		t.Fatalf("switch: %d %s", rec.Code, rec.Body.String())
 	}
 
 	// An older client (or the Debug page) that omits fetchEngine must not reset it.
 	if rec := put(`{"debugEnabled":true,"debugLogHtml":false,"debugLogChallenge":false}`); rec.Code != http.StatusOK ||
-		!strings.Contains(rec.Body.String(), `"fetchEngine":"playwright"`) || !strings.Contains(rec.Body.String(), `"debugEnabled":true`) {
+		!strings.Contains(rec.Body.String(), `"fetchEngine":"katana"`) || !strings.Contains(rec.Body.String(), `"debugEnabled":true`) {
 		t.Fatalf("omitted must keep: %d %s", rec.Code, rec.Body.String())
 	}
-	if rec := put(`{"debugEnabled":true,"fetchEngine":""}`); !strings.Contains(rec.Body.String(), `"fetchEngine":"playwright"`) {
+	if rec := put(`{"debugEnabled":true,"fetchEngine":""}`); !strings.Contains(rec.Body.String(), `"fetchEngine":"katana"`) {
 		t.Fatalf("an empty value must keep the stored one too: %s", rec.Body.String())
 	}
 
@@ -164,8 +164,11 @@ func TestSettingsHandlerGetPutAndTheKeepSemantics(t *testing.T) {
 
 func TestSettingsHandlerRejectsABadEngineAndChangesNothing(t *testing.T) {
 	initSettingsDB(t)
-	if rec := put(`{"debugEnabled":true,"fetchEngine":"selenium"}`); rec.Code != http.StatusBadRequest {
-		t.Fatalf("an unknown engine must be a 400, got %d %s", rec.Code, rec.Body.String())
+	for _, bad := range []string{"selenium", "playwright"} { // plan 187: playwright is an unknown engine now
+		rec := put(`{"debugEnabled":true,"fetchEngine":"` + bad + `"}`)
+		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `"rod" or "katana"`) {
+			t.Fatalf("%s: an unknown engine must be a 400 naming the two engines, got %d %s", bad, rec.Code, rec.Body.String())
+		}
 	}
 	if s, _ := LoadBrowserSettings(); s.DebugEnabled || s.FetchEngine != FetchEngineRod {
 		t.Errorf("a rejected PUT must change nothing: %+v", s)
@@ -220,7 +223,7 @@ func TestAnOldInstallCanStoreKatanaAfterTheTableRebuild(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := BrowserSettings{DebugEnabled: true, DebugLogChallenge: true, FetchEngine: FetchEnginePlaywright, HumanAssist: false}
+	want := BrowserSettings{DebugEnabled: true, DebugLogChallenge: true, FetchEngine: FetchEngineRod, HumanAssist: false} // the stored 'playwright' became 'rod' (plan 187)
 	if s != want {
 		t.Fatalf("the row changed in the rebuild: %+v, want %+v", s, want)
 	}
@@ -245,9 +248,80 @@ func TestKatanaIsAValidEngineAndNothingElseNewIs(t *testing.T) {
 	if !ValidFetchEngine("katana") {
 		t.Error("katana must be valid")
 	}
-	for _, bad := range []string{"Katana", "katana ", "colly", "http"} {
+	for _, bad := range []string{"Katana", "katana ", "colly", "http", "playwright"} {
 		if ValidFetchEngine(bad) {
 			t.Errorf("%q must be invalid", bad)
 		}
+	}
+}
+
+// Plan 187: an install that stored 'playwright' keeps every other value, starts on rod, and its table no
+// longer allows the value; an install on katana keeps katana; a second start changes nothing.
+func TestTheDropPlaywrightMigrationTurnsTheStoredEngineIntoRodAndKeepsTheRest(t *testing.T) {
+	for _, tc := range []struct{ stored, want string }{{"playwright", "rod"}, {"katana", "katana"}, {"rod", "rod"}} {
+		t.Run(tc.stored, func(t *testing.T) {
+			root := t.TempDir()
+			dbDir := filepath.Join(root, "db")
+			t.Setenv("TOOL_DB_DIR", dbDir)
+			t.Setenv("TOOL_LOGS_DIR", filepath.Join(root, "logs"))
+			t.Setenv("TOOL_CACHE_DIR", filepath.Join(root, "cache"))
+			if err := InitDB(); err != nil {
+				t.Fatal(err)
+			}
+			DB.Close()
+			legacy, err := sql.Open("sqlite", filepath.Join(dbDir, "browser.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			// the table as plan 184 left it: it allows all three values
+			if _, err := legacy.Exec(`DROP TABLE browser_settings;
+				CREATE TABLE browser_settings (id INTEGER PRIMARY KEY CHECK (id = 1), debug_enabled INTEGER NOT NULL DEFAULT 0,
+					debug_log_html INTEGER NOT NULL DEFAULT 0, debug_log_challenge INTEGER NOT NULL DEFAULT 0,
+					fetch_engine TEXT NOT NULL DEFAULT 'rod' CHECK (fetch_engine IN ('rod','playwright','katana')),
+					human_assist INTEGER NOT NULL DEFAULT 1, updated_at TEXT);
+				INSERT INTO browser_settings (id, debug_enabled, debug_log_html, debug_log_challenge, fetch_engine, human_assist, updated_at)
+					VALUES (1, 1, 1, 0, '` + tc.stored + `', 0, '2026-11-01 10:00:00')`); err != nil {
+				t.Fatal(err)
+			}
+			legacy.Close()
+
+			for start := 1; start <= 2; start++ { // the second start must be a no-op
+				if err := InitDB(); err != nil {
+					t.Fatalf("start %d: %v", start, err)
+				}
+				s, err := LoadBrowserSettings()
+				if err != nil {
+					t.Fatal(err)
+				}
+				want := BrowserSettings{DebugEnabled: true, DebugLogHTML: true, FetchEngine: tc.want}
+				if s != want {
+					t.Fatalf("start %d: %+v, want %+v", start, s, want)
+				}
+				var updated, def string
+				DB.QueryRow(`SELECT updated_at FROM browser_settings WHERE id = 1`).Scan(&updated)
+				DB.QueryRow(`SELECT sql FROM sqlite_master WHERE name = 'browser_settings'`).Scan(&def)
+				if updated != "2026-11-01 10:00:00" {
+					t.Errorf("start %d: updated_at changed to %q", start, updated)
+				}
+				if strings.Contains(def, "playwright") {
+					t.Errorf("start %d: the table still names playwright: %s", start, def)
+				}
+				if _, err := DB.Exec(`UPDATE browser_settings SET fetch_engine = 'playwright'`); err == nil {
+					t.Errorf("start %d: the table still accepts 'playwright'", start)
+				}
+				DB.Close()
+			}
+		})
+	}
+}
+
+// A fresh install never has the value in its table either.
+func TestAFreshInstallTableDoesNotAllowPlaywright(t *testing.T) {
+	initSettingsDB(t)
+	if _, err := DB.Exec(`UPDATE browser_settings SET fetch_engine = 'playwright'`); err == nil {
+		t.Fatal("a fresh table must refuse 'playwright'")
+	}
+	if _, err := DB.Exec(`UPDATE browser_settings SET fetch_engine = 'katana'`); err != nil {
+		t.Fatalf("a fresh table must allow 'katana': %v", err)
 	}
 }

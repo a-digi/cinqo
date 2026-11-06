@@ -8,11 +8,11 @@
       "email": "tafa.andet@googlemail.com"
     }
   ],
-  "generatedAt": "2026-11-06T11:20:33Z",
+  "generatedAt": "2026-11-06T11:51:38Z",
   "tools": [
     {
       "id": "browser",
-      "currentVersionId": "0.0.223",
+      "currentVersionId": "0.0.224",
       "versions": [
         {
           "authors": [
@@ -22,38 +22,38 @@
             }
           ],
           "license": "Proprietary",
-          "versionId": "0.0.223",
+          "versionId": "0.0.224",
           "name": "Browser",
-          "version": "0.0.223",
+          "version": "0.0.224",
           "releasedAt": "2026-11-06",
           "packages": [
             {
               "os": "darwin",
               "arch": "arm64",
               "url": "browser/versions/tool-browser-darwin-arm64.zip",
-              "sha256": "3db17417e604a861907da2dda3da8a4ffd4e2eb0209ab436a6ff34e63887ff9d",
-              "sizeBytes": 46768548
+              "sha256": "7c18f5c046bec633b975abfa5f13c4beb4756fb2b68c3aab6dae439cab8a9636",
+              "sizeBytes": 45906403
             },
             {
               "os": "linux",
               "arch": "amd64",
               "url": "browser/versions/tool-browser-linux-amd64.zip",
-              "sha256": "c5cae3456628813d21d5b78f6b5c70888c770a48f4a3f753a6bee58132550495",
-              "sizeBytes": 46727690
+              "sha256": "14a54cc6c78d0ba4597bd8342f5b8b33c3b0db6285593858dfabf718be2c88f4",
+              "sizeBytes": 45871477
             },
             {
               "os": "linux",
               "arch": "arm64",
               "url": "browser/versions/tool-browser-linux-arm64.zip",
-              "sha256": "7d609941ba7574ce45a5819ec2016afed461b2772abb220853525fdb07cfbcbe",
-              "sizeBytes": 44498915
+              "sha256": "36c369443da87c7ca1e459fd186d85ac9e45a446e5c2fcb56b3a18ec4ea1f23a",
+              "sizeBytes": 43711676
             },
             {
               "os": "windows",
               "arch": "amd64",
               "url": "browser/versions/tool-browser-windows-amd64.zip",
-              "sha256": "87b02e389cf95cbb7976cd21c0d5fedb2c78a9671dc14e89286eaf171d4ea7a5",
-              "sizeBytes": 31361530
+              "sha256": "e92cf28e9737cde902934d35574ef7f564d31f92408dbf2655e7c50187e8d41e",
+              "sizeBytes": 30503324
             }
           ]
         }

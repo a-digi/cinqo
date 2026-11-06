@@ -241,7 +241,7 @@ func TestFetchLinksIsRefusedUnlessKatanaIsSelected(t *testing.T) {
 	calls := stubFetchLinks(t, func(context.Context, string, string) (fetchLinksResponse, error) {
 		return fetchLinksResponse{}, nil
 	})
-	for _, engine := range []string{shared.FetchEngineRod, shared.FetchEnginePlaywright} {
+	for _, engine := range []string{shared.FetchEngineRod} {
 		setEngine(t, engine)
 		rec := postFetchLinks(`{"url":"` + publicTestURL + `"}`)
 		var body map[string]string

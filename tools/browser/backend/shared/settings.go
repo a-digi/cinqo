@@ -26,26 +26,28 @@ import (
 
 // The engines that can serve the primary single-page fetch (step 50, and
 // plan 184 for Katana; see crawler/fetch_engine.go). Rod is the default.
+// There used to be a third, "playwright"; plan 187 removed it.
 const (
-	FetchEngineRod        = "rod"
-	FetchEnginePlaywright = "playwright"
-	FetchEngineKatana     = "katana"
-	DefaultFetchEngine    = FetchEngineRod
+	FetchEngineRod     = "rod"
+	FetchEngineKatana  = "katana"
+	DefaultFetchEngine = FetchEngineRod
 )
 
 // ErrInvalidFetchEngine is a caller mistake (a 400), never a server failure.
-var ErrInvalidFetchEngine = errors.New(`fetchEngine must be "rod", "playwright" or "katana"`)
+var ErrInvalidFetchEngine = errors.New(`fetchEngine must be "rod" or "katana"`)
 
 // ValidFetchEngine reports whether v is exactly one of the engines.
 func ValidFetchEngine(v string) bool {
-	return v == FetchEngineRod || v == FetchEnginePlaywright || v == FetchEngineKatana
+	return v == FetchEngineRod || v == FetchEngineKatana
 }
 
 // fetchEngineOrDefault reads a stored value through the allow-list: a
-// value that is somehow not one of the two engines (the column has a
+// value that is somehow not one of the engines that exist (the column has a
 // CHECK constraint, so only a hand-edited or foreign database could hold
 // one) is treated as the default, never used as-is.
 func fetchEngineOrDefault(stored string) string {
+	// An install that predates plan 187 and somehow kept a stored 'playwright' reads
+	// as the default, never as an engine that is gone.
 	if ValidFetchEngine(stored) {
 		return stored
 	}
@@ -56,7 +58,7 @@ type BrowserSettings struct {
 	DebugEnabled      bool `json:"debugEnabled"`
 	DebugLogHTML      bool `json:"debugLogHtml"`
 	DebugLogChallenge bool `json:"debugLogChallenge"`
-	// FetchEngine (step 50) is "rod", "playwright" or "katana". On a PUT, an empty
+	// FetchEngine (step 50) is "rod" or "katana". On a PUT, an empty
 	// or missing value means "leave the stored engine as it is" — so a
 	// client that predates this field (or the Debug page saving the rest of
 	// the object) can never reset it — and any other value is rejected.

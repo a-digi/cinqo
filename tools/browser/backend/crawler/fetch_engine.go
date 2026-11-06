@@ -23,10 +23,9 @@ import (
 )
 
 const (
-	fetchEngineRod        = shared.FetchEngineRod
-	fetchEnginePlaywright = shared.FetchEnginePlaywright
-	fetchEngineKatana     = shared.FetchEngineKatana
-	defaultFetchEngine    = shared.DefaultFetchEngine
+	fetchEngineRod     = shared.FetchEngineRod
+	fetchEngineKatana  = shared.FetchEngineKatana
+	defaultFetchEngine = shared.DefaultFetchEngine
 )
 
 // fetchFunc is the shared contract of both engines' fetch functions.
@@ -34,17 +33,15 @@ type fetchFunc func(ctx context.Context, rawURL, requestID string, expectedSelec
 
 // The engine implementations, as vars only so a test can substitute them.
 var (
-	playwrightFetch fetchFunc = fetchWithPlaywright
-	rodFetch        fetchFunc = fetchWithRod
-	katanaFetch     fetchFunc = fetchWithKatana
+	rodFetch    fetchFunc = fetchWithRod
+	katanaFetch fetchFunc = fetchWithKatana
 )
 
 // engineStoppers shut an engine's browser down (both are idempotent). A
 // var so a test can observe which engine gets stopped.
 var engineStoppers = map[string]func(){
-	fetchEngineRod:        StopRodEngine,
-	fetchEnginePlaywright: StopPlaywrightEngine,
-	fetchEngineKatana:     StopKatanaEngine,
+	fetchEngineRod:    StopRodEngine,
+	fetchEngineKatana: StopKatanaEngine,
 }
 
 var warnSettingUnreadableOnce sync.Once
@@ -153,8 +150,6 @@ func fetchWithEngine(ctx context.Context, rawURL, requestID string, expectedSele
 	engine := selectedFetchEngine()
 	defer beginEngineFetch(engine)()
 	switch engine {
-	case fetchEnginePlaywright:
-		return playwrightFetch(ctx, rawURL, requestID, expectedSelectors, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
 	case fetchEngineKatana:
 		return katanaFetch(ctx, rawURL, requestID, expectedSelectors, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
 	}

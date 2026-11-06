@@ -36,7 +36,7 @@ func postEngineTest(body string) *httptest.ResponseRecorder {
 }
 
 func TestEngineTestHandlerValidatesItsRequest(t *testing.T) {
-	for _, body := range []string{`not json`, `{}`, `{"engine":""}`, `{"engine":"rod"}`, `{"engine":"Playwright"}`, `{"engine":"playwright; rm -rf /"}`} {
+	for _, body := range []string{`not json`, `{}`, `{"engine":""}`, `{"engine":"rod"}`, `{"engine":"Katana"}`, `{"engine":"playwright"}`, `{"engine":"Playwright"}`, `{"engine":"playwright; rm -rf /"}`} {
 		if rec := postEngineTest(body); rec.Code != http.StatusBadRequest {
 			t.Errorf("%s: got %d, want 400", body, rec.Code)
 		}
@@ -51,9 +51,9 @@ func TestEngineTestHandlerValidatesItsRequest(t *testing.T) {
 }
 
 func TestEngineTestHandlerAdmitsOneTestAtATime(t *testing.T) {
-	playwrightProbeMu.Lock() // a test is "running"
-	defer playwrightProbeMu.Unlock()
-	if rec := postEngineTest(`{"engine":"playwright"}`); rec.Code != http.StatusConflict {
+	katanaProbeMu.Lock() // a test is "running"
+	defer katanaProbeMu.Unlock()
+	if rec := postEngineTest(`{"engine":"katana"}`); rec.Code != http.StatusConflict {
 		t.Fatalf("a second concurrent test must be a 409, got %d", rec.Code)
 	}
 }
@@ -99,7 +99,7 @@ func TestProbeLaunchesRealChromiumAndLeavesTheSharedEngineAlone(t *testing.T) {
 	}
 
 	// And through the handler: the JSON shape the page reads.
-	rec := postEngineTest(`{"engine":"playwright"}`)
+	rec := postEngineTest(`{"engine":"katana"}`)
 	var body map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || rec.Code != http.StatusOK ||
 		body["ok"] != true || body["detail"] == "" || body["durationMs"] == nil {
