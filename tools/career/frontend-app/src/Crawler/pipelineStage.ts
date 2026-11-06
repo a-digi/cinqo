@@ -93,7 +93,9 @@ export function pipelineText(link: Pick<PipelineLink, 'stage' | 'detail'>, listi
     case 'detail_instructions_missing':
       return {
         label: `${plural(jobs, 'job', 'jobs')} saved, no job-detail instructions`,
-        hint: 'Generate them with the AI so the jobs can be read in full.',
+        hint: listingByRule
+          ? 'Pick the data of a job page in Job details so the jobs can be read in full.'
+          : 'Generate them with the AI so the jobs can be read in full.',
         tone: 'attention',
         position: 2,
       }

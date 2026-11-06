@@ -2,7 +2,7 @@ import type { PortalLink } from '../api'
 import { diagnoseEmptyCrawl, emptyCrawlFor } from './emptyCrawl'
 import { AlertCircleIcon } from '../Shared/Icons/icons'
 import { LOGIN_BADGE_TOOLTIP, loginBadgeFor } from './loginWindow'
-import { hasListingFor, listingNeeds } from './crawlEngine'
+import { hasListingFor, jobDetailIsWrittenByAi, listingNeeds } from './crawlEngine'
 import { useCrawlEngine } from './useCrawlEngine'
 import {
   attemptsLabel,
@@ -61,11 +61,10 @@ export function LinkStatusPills({
   const listingAlertAttempts = aiWritesListing ? instructionAlertAttempts(link.instructionStats.listing, hasListing, listingGenerating) : 0
   // Step 90: the latest listing crawl completed but found no jobs.
   const emptyCrawl = emptyCrawlFor(link)
-  const jobDetailAlertAttempts = instructionAlertAttempts(
-    link.instructionStats.jobDetail,
-    Boolean(link.jobDetailCrawlInstructions),
-    jobDetailGenerating,
-  )
+  // The AI's attempts at the job details only matter where the AI writes them (not under Katana).
+  const jobDetailAlertAttempts = jobDetailIsWrittenByAi(engine, link.requiresLogin)
+    ? instructionAlertAttempts(link.instructionStats.jobDetail, Boolean(link.jobDetailCrawlInstructions), jobDetailGenerating)
+    : 0
 
   return (
     <span className={`flex flex-wrap items-center gap-2 ${className ?? ''}`}>

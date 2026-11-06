@@ -17,6 +17,18 @@ export function listingNeeds(engine: EngineReading, requiresLogin: boolean): Lis
   return 'either'
 }
 
+// Whether the AI writes this link's JOB-DETAIL instructions (plan 190): not under Katana, where the job page is read by picking its data; a
+// link that needs a login has no picker and keeps the AI. While the engine is not known, nothing is judged (true).
+export function jobDetailIsWrittenByAi(engine: EngineReading, requiresLogin: boolean): boolean {
+  return listingNeeds(engine, requiresLogin) !== 'rule'
+}
+
+// Whether the automatic run of the AI for job-detail instructions may start: only once the engine IS known (never on the page's first
+// render, before the answer arrives) and the AI writes this link's job details.
+export function mayAutoWriteJobDetails(engine: EngineReading, requiresLogin: boolean): boolean {
+  return engine !== null && engine !== 'unknown' && jobDetailIsWrittenByAi(engine, requiresLogin)
+}
+
 type ListingFields = Pick<PortalLink, 'crawlInstructions' | 'linkRules'> & { requiresLogin?: boolean }
 
 const hasText = (text: string | null | undefined) => (text ?? '').trim() !== ''

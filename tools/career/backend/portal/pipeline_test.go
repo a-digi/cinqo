@@ -203,6 +203,46 @@ func TestPipelineForNoLinksIsAnEmptyList(t *testing.T) {
 	}
 }
 
+// Plan 190: under Katana a link without job-detail instructions is "missing" them (to be picked), never "requested" from the AI or
+// "failed"; under Rod and for a login link the AI's request and failures still decide.
+func TestPipelineUnderKatanaIgnoresTheAIsJobDetailRequestAndFailures(t *testing.T) {
+	setupAttemptsDB(t)
+	add := func(id string, login int) {
+		t.Helper()
+		if _, err := db.JobsDB.Exec(`INSERT INTO portal_links (id, portal_id, url, link_rules, requires_login, job_detail_instructions_ai_requested, crawl_instructions, created_at)
+		      VALUES (?, 'p1', ?, '{"host":"x","include":["x/j/#"]}', ?, 1, 'fields: x', ?)`,
+			id, "https://x/"+id, login, fmt.Sprintf("2026-01-01 10:00:%02d", int(id[0]-'a'))); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.JobsDB.Exec(`INSERT INTO jobs (id, source_url, title, portal_link_id) VALUES (?, ?, 'T', ?)`, "j"+id, "https://j/"+id, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add("a", 0) // a normal link
+	add("b", 1) // a login link
+	stage := func(method, id string) string {
+		got, err := PipelineForLinks(method)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, l := range got {
+			if l.PortalLinkID == id {
+				return l.Stage
+			}
+		}
+		return ""
+	}
+	if got := stage(CrawlMethodLinks, "a"); got != StageDetailMissing {
+		t.Errorf("Katana: %q, want %q", got, StageDetailMissing)
+	}
+	if got := stage(CrawlMethodInstructions, "a"); got != StageDetailRequested {
+		t.Errorf("Rod: %q, want %q", got, StageDetailRequested)
+	}
+	if got := stage(CrawlMethodLinks, "b"); got != StageDetailRequested {
+		t.Errorf("a login link under Katana still uses the AI: %q, want %q", got, StageDetailRequested)
+	}
+}
+
 // Plan 190: the stage's "has listing instructions" follows the method the Browser's selected engine means: a rule under Katana
 // ("links"), AI instructions under Rod ("instructions"), either when no engine could be read (""), and a login link always its AI instructions.
 func TestPipelineJudgesTheJobListByTheEnginesMethod(t *testing.T) {

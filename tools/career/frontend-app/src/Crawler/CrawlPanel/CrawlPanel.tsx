@@ -48,7 +48,7 @@ import {
 } from '../loginWindow'
 import { instructionAlertAttempts, isLikelyUncrawlable, listingIsWrittenByAi, savedDespiteError } from '../instructionStats'
 import { canCrawlListing } from '../autoDiscoveryVisibility'
-import { hasListingFor, listingNeeds } from '../crawlEngine'
+import { hasListingFor, jobDetailIsWrittenByAi, listingNeeds, mayAutoWriteJobDetails } from '../crawlEngine'
 import { useCrawlEngine } from '../useCrawlEngine'
 import { PipelineLine } from '../PipelineLine'
 import { runFollower } from '../runFollowerStart'
@@ -354,13 +354,25 @@ export function CrawlPanel({
   // stale flag that survived past a document a human already wrote by
   // hand via the view/edit modal.
   const jobDetailAiRequestedRef = useRef(false)
+  const jobDetailAiClearedRef = useRef(false)
   useEffect(() => {
+    // Plan 190: not before the engine is known, and not under Katana, where the job page is read by picking its data. A request left over
+    // from before (or raised by the crawl's event, which knows no engine) is cleared under Katana, so that switching to Rod later does not
+    // start an AI run nobody asked for.
+    if (engine === 'katana' && !link.requiresLogin) {
+      if (link.jobDetailInstructionsAiRequested && !jobDetailAiClearedRef.current) {
+        jobDetailAiClearedRef.current = true
+        void updatePortalLink(link.id, { jobDetailInstructionsAiRequested: false }).then(onReload)
+      }
+      return
+    }
+    if (!mayAutoWriteJobDetails(engine, link.requiresLogin)) return
     if (link.jobDetailInstructionsAiRequested && !link.jobDetailCrawlInstructions && !jobDetailAiRequestedRef.current) {
       jobDetailAiRequestedRef.current = true
       handleGenerateJobDetailInstructionsWithAI()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [link.jobDetailInstructionsAiRequested, link.jobDetailCrawlInstructions])
+  }, [link.jobDetailInstructionsAiRequested, link.jobDetailCrawlInstructions, engine])
 
   // watchCrawlRun polls GET .../crawl-now/active until the run reaches
   // a terminal status, writing every observed row into `run` as it
@@ -979,11 +991,10 @@ export function CrawlPanel({
   // row, the stronger "probably can't be crawled" pill replaces the
   // generic alert for the listing.
   const listingUncrawlable = aiWritesListing && isLikelyUncrawlable(link.instructionStats.listing, hasListing, aiBusy)
-  const jobDetailAlertAttempts = instructionAlertAttempts(
-    link.instructionStats.jobDetail,
-    Boolean(link.jobDetailCrawlInstructions),
-    jobDetailAiBusy,
-  )
+  const aiWritesJobDetail = jobDetailIsWrittenByAi(engine, link.requiresLogin)
+  const jobDetailAlertAttempts = aiWritesJobDetail
+    ? instructionAlertAttempts(link.instructionStats.jobDetail, Boolean(link.jobDetailCrawlInstructions), jobDetailAiBusy)
+    : 0
 
   // "Yes" tells the agent in the same conversation that its approach was
   // wrong and lets it retry (the attempt stays open and ends with that
@@ -1267,7 +1278,9 @@ export function CrawlPanel({
                     <JobDetailInstructionsIcon />
                     Job details
                   </button>
-                  <InstructionAttemptStats stats={link.instructionStats.jobDetail} alertAttempts={jobDetailAlertAttempts} />
+                  {aiWritesJobDetail && (
+                    <InstructionAttemptStats stats={link.instructionStats.jobDetail} alertAttempts={jobDetailAlertAttempts} />
+                  )}
                   {/* Passive status only — no manual trigger anymore. This
                   only ever becomes true via jobDetailAiRequestedRef's own
                   automatic effect (step 67), never a direct click. */}

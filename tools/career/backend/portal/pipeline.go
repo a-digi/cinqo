@@ -135,8 +135,9 @@ func listingPresent(method string, requiresLogin, ai, rule bool) bool {
 
 // pipelineRow is one link with the snapshot its stage is derived from.
 type pipelineRow struct {
-	id   string
-	snap PipelineSnapshot
+	id            string
+	requiresLogin bool
+	snap          PipelineSnapshot
 }
 
 // loadPipelineRows reads the snapshot of every link (oldest link first) and when the running attempts and crawls of each started
@@ -168,6 +169,7 @@ func loadPipelineRows(method string) ([]pipelineRow, map[string]string, map[stri
 			rows.Close()
 			return nil, nil, nil, err
 		}
+		l.requiresLogin = login
 		l.snap = PipelineSnapshot{
 			HasListingInstructions: listingPresent(method, login, ai, rule), HasDetailInstructions: detail,
 			ListingCrawlRequested: listingReq, DetailAIRequested: detailAIReq, DetailCrawlRequested: detailCrawlReq,
@@ -297,6 +299,12 @@ func PipelineForLinks(method string) ([]PipelineLink, error) {
 	since := map[string]string{} // the start of the running work that decides the stage, by link
 	out := make([]PipelineLink, 0, len(links))
 	for _, l := range links {
+		// Plan 190: under Katana the job details are read by picking their data, not written by the AI, so a request for the AI to write
+		// them and the failures of its earlier attempts say nothing about this link (a login link still uses the AI).
+		if method == CrawlMethodLinks && !l.requiresLogin {
+			l.snap.DetailAIRequested = false
+			l.snap.DetailFailedRuns = 0
+		}
 		st := StageOf(l.snap)
 		switch st.Stage {
 		case StageListingGenerating:
