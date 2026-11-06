@@ -39,6 +39,7 @@ const POKE_MS = 400
 export function createRunFollower(deps: FollowerDeps): RunFollower {
   const pageBusy = new Map<string, Set<RunKind>>()
   const followed = new Set<string>()
+  let lastSeen = new Map<string, string>() // the facts of every link at the last look, to tell a page when the backend changed one
   const listeners = new Set<() => void>()
   let timer: ReturnType<typeof setInterval> | undefined
   let first: ReturnType<typeof setTimeout> | undefined
@@ -110,6 +111,27 @@ export function createRunFollower(deps: FollowerDeps): RunFollower {
       } catch {
         return
       }
+      // What the backend changed by itself (a crawl that ended and raised the job-detail request, a run that finished) reaches an open page only
+      // when it reloads; the page's own effects (the automatic start of the AI for the job details) read what the link says. So when the facts
+      // they act on differ from the last look, the page is told to reload (plan 192: the chain after a crawl must not wait for a manual reload).
+      let somethingChanged = false
+      const seenNow = new Map<string, string>()
+      for (const l of links) {
+        const signature = [
+          l.listingCrawlRequested,
+          l.jobDetailInstructionsAiRequested,
+          l.jobDetailCrawlRequested,
+          l.hasActiveCrawlRun,
+          l.lastCrawledAt ?? '',
+          l.jobDetailCrawlInstructions ?? '',
+          l.linkRules ? 'rule' : '',
+        ].join('|')
+        seenNow.set(l.id, signature)
+        if (lastSeen.has(l.id) && lastSeen.get(l.id) !== signature) somethingChanged = true
+      }
+      lastSeen = seenNow
+      if (somethingChanged) changed()
+
       // A conversation that no link names any more is forgotten.
       const named = new Set(links.flatMap((l) => [l.instructionsAiConversationId ?? '', l.jobDetailInstructionsAiConversationId ?? '']))
       for (const id of [...followed]) if (!named.has(id)) followed.delete(id)
