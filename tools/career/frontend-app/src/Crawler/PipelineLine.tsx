@@ -3,6 +3,7 @@ import type { PipelineLink, PortalLink } from '../api'
 import { PIPELINE_STEPS, isKnownStage, pipelineText, refreshDelayMs, runningFor, waitingText, type PipelineTone } from './pipelineStage'
 import { loadPipeline } from './pipelineStore'
 import { useCrawlEngine } from './useCrawlEngine'
+import { listingNeeds } from './crawlEngine'
 
 const TONE_CLASSES: Record<PipelineTone, { dot: string; text: string }> = {
   active: { dot: 'bg-amber-500 animate-pulse', text: 'text-amber-800' },
@@ -37,6 +38,7 @@ export function PipelineLine({ link }: { link: PortalLink }) {
   const [now, setNow] = useState(() => Date.now())
   // The stage depends on the Browser's selected engine (plan 190): switching it asks again.
   const engine = useCrawlEngine()
+  const byRule = listingNeeds(engine, link.requiresLogin) === 'rule'
   const key = `${changeKey(link)}|${engine ?? ''}`
   const loadedBefore = useRef(false)
 
@@ -51,7 +53,7 @@ export function PipelineLine({ link }: { link: PortalLink }) {
           setState(mine)
           setFailed(false)
           setNow(Date.now())
-          const tone = mine && isKnownStage(mine.stage) ? pipelineText(mine).tone : null
+          const tone = mine && isKnownStage(mine.stage) ? pipelineText(mine, byRule).tone : null
           timer = setTimeout(() => {
             load(false)
           }, refreshDelayMs(tone))
@@ -71,11 +73,11 @@ export function PipelineLine({ link }: { link: PortalLink }) {
       cancelled = true
       if (timer !== undefined) clearTimeout(timer)
     }
-  }, [link.id, key])
+  }, [link.id, key, byRule])
 
   if (failed && state === null) return null
   if (state === null || !isKnownStage(state.stage)) return null
-  const text = pipelineText(state)
+  const text = pipelineText(state, byRule)
   const tone = TONE_CLASSES[text.tone]
   const since = state.waitingFor === 'ai' || state.waitingFor === 'crawl' ? runningFor(state.since, now) : ''
   return (

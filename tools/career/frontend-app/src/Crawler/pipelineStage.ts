@@ -20,7 +20,9 @@ export const PIPELINE_STEPS = 4
 
 const plural = (n: number, one: string, other: string) => `${String(n)} ${n === 1 ? one : other}`
 
-export function pipelineText(link: Pick<PipelineLink, 'stage' | 'detail'>): PipelineText {
+// listingByRule (plan 190): the Browser's selected engine is Katana, so the job list is made of a rule picked by hand, not of AI instructions:
+// the words about the listing say "rules" and never send the person to Generate.
+export function pipelineText(link: Pick<PipelineLink, 'stage' | 'detail'>, listingByRule = false): PipelineText {
   const { jobs, jobsWithDescription, detailFailedRuns } = link.detail
   switch (link.stage) {
     case 'listing_question':
@@ -38,14 +40,26 @@ export function pipelineText(link: Pick<PipelineLink, 'stage' | 'detail'>): Pipe
         position: 0,
       }
     case 'no_listing_instructions':
-      return {
-        label: 'No listing instructions yet',
-        hint: 'Generate them with the AI, or add the jobs by hand.',
-        tone: 'attention',
-        position: 0,
-      }
+      return listingByRule
+        ? {
+            label: 'No rules for the job list yet',
+            hint: 'Pick the job links in Job list, or add the jobs by hand.',
+            tone: 'attention',
+            position: 0,
+          }
+        : {
+            label: 'No listing instructions yet',
+            hint: 'Generate them with the AI, or add the jobs by hand.',
+            tone: 'attention',
+            position: 0,
+          }
     case 'listing_ready':
-      return { label: 'Listing instructions ready, no jobs yet', hint: 'Use Crawl now to find the jobs.', tone: 'waiting', position: 1 }
+      return {
+        label: listingByRule ? 'Job list rules ready, no jobs yet' : 'Listing instructions ready, no jobs yet',
+        hint: 'Use Crawl now to find the jobs.',
+        tone: 'waiting',
+        position: 1,
+      }
     case 'listing_crawl_waiting':
       return {
         label: 'Listing crawl waiting for the page',
@@ -102,7 +116,9 @@ export function pipelineText(link: Pick<PipelineLink, 'stage' | 'detail'>): Pipe
     case 'complete':
       return {
         label: `Complete: ${String(jobsWithDescription)} of ${plural(jobs, 'job has', 'jobs have')} a description`,
-        hint: 'Both sets of instructions are written and every job has been read.',
+        hint: listingByRule
+          ? 'The job list rules and the job-detail instructions are written and every job has been read.'
+          : 'Both sets of instructions are written and every job has been read.',
         tone: 'done',
         position: PIPELINE_STEPS,
       }
