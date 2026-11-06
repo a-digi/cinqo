@@ -145,6 +145,8 @@ export function CrawlPanel({
   const instructionEngine = useInstructionEngine()
   // The engine's own Generate recipe for the job list of a link that needs no login (Katana); undefined = the existing Generate (Rod).
   const listingRecipe = link.requiresLogin ? undefined : instructionEngine.listingGenerate
+  // The same for the job details (Katana): its Generate on the Job details tile, and its tools and prompt.
+  const jobDetailRecipe = link.requiresLogin ? undefined : instructionEngine.jobDetailGenerate
   // "Crawl with AI" own busy/result state.
   const [isCrawling, setIsCrawling] = useState(false)
   const [crawlResult, setCrawlResult] = useState<{ ok: boolean; text: string; conversationId?: string } | null>(null)
@@ -908,32 +910,32 @@ export function CrawlPanel({
   // handleGenerateInstructionsWithAI above exactly, but sends
   // buildGenerateJobDetailInstructionsMessage instead — writes/updates
   // job_detail_crawl_instructions, never crawl_instructions.
-  function handleGenerateJobDetailInstructionsWithAI() {
+  function handleGenerateJobDetailInstructionsWithAI(triggeredBy: 'manual' | 'auto' = 'auto') {
     // an automatic start (no person to log in) is never allowed for a link that needs a login: the server refuses it too
     if (jobDetailAiPending || !selectedPlatform || link.requiresLogin) return
     const platformId = selectedPlatform.id
     const model = selectedPlatform.models.length > 0 ? (selectedModel ?? selectedPlatform.models[0]) : undefined
+    const jobDetailTools = jobDetailRecipe ? jobDetailRecipe.tools : GENERATE_JOB_DETAIL_TOOLS
     setJobDetailAiPending(true)
     setJobDetailAiLocalError(undefined)
 
     // Only the automatic trigger (jobDetailAiRequestedRef's effect)
     // starts a job-detail run — there is no manual button — so this is
     // always counted as 'auto' (step 86).
-    recordAttemptStart('job_detail', 'auto')
+    recordAttemptStart('job_detail', triggeredBy)
       .then(() =>
         createConversation({
           title: generateJobDetailInstructionsConversationTitle(link),
           platformId,
           model,
           hidden: true,
-          toolIterationLimit: GENERATE_TOOL_ITERATION_LIMIT,
-          allowedTools: [...GENERATE_JOB_DETAIL_TOOLS],
+          toolIterationLimit: jobDetailRecipe ? jobDetailRecipe.toolIterationLimit : GENERATE_TOOL_ITERATION_LIMIT,
+          allowedTools: [...jobDetailTools],
           compactToolResults: true,
         }),
       )
       .then((conversation) => {
-        if (!restrictionHolds(conversation.allowedTools, GENERATE_JOB_DETAIL_TOOLS))
-          throw new Error(GENERATE_RESTRICTION_NOT_APPLIED_MESSAGE)
+        if (!restrictionHolds(conversation.allowedTools, jobDetailTools)) throw new Error(GENERATE_RESTRICTION_NOT_APPLIED_MESSAGE)
         setJobDetailAiConversationId(conversation.id)
         window.__cinqoToolBridge.openConversation(conversation.id)
         return updatePortalLink(link.id, { jobDetailInstructionsAiConversationId: conversation.id })
@@ -944,7 +946,9 @@ export function CrawlPanel({
           .then(() =>
             sendMessage(
               conversation.id,
-              buildGenerateJobDetailInstructionsMessage(link, { linkCrawled: listingNeeds(engine, link.requiresLogin) === 'rule' }),
+              jobDetailRecipe
+                ? jobDetailRecipe.buildMessage(link)
+                : buildGenerateJobDetailInstructionsMessage(link, { linkCrawled: listingNeeds(engine, link.requiresLogin) === 'rule' }),
             ),
           )
       })
@@ -1331,6 +1335,24 @@ export function CrawlPanel({
                       </span>
                       <p className="mt-1 text-xs text-orange-800">{jobDetailsHint(jobDetailsAccess)}</p>
                     </>
+                  )}
+                  {jobDetailRecipe !== undefined && !jobDetailsBlocked && !jobDetailAiBusy && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleGenerateJobDetailInstructionsWithAI('manual')
+                      }}
+                      disabled={!hasPlatforms || !selectedPlatform}
+                      title={
+                        hasPlatforms
+                          ? 'Let the AI pick where the data of a job page is, test it on real jobs and save it.'
+                          : 'No AI platform configured — add one on the Platforms page first'
+                      }
+                      className="mt-1 inline-flex items-center gap-1 rounded-full border border-gray-200 bg-white px-2.5 py-0.5 text-xs text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <RobotIcon />
+                      Generate
+                    </button>
                   )}
                   {aiWritesJobDetail && (
                     <InstructionAttemptStats stats={link.instructionStats.jobDetail} alertAttempts={jobDetailAlertAttempts} />

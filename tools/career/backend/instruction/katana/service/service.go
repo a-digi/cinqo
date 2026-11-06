@@ -60,8 +60,11 @@ type scratch struct {
 	links    []linkrule.Link
 	trunc    bool
 	proposed *linkrule.Rule
-	passed   map[string]int // canonical rule JSON -> jobs found by its test
-	at       time.Time
+	// the job-detail session: the picks of the last job page (the default of a test and a save) and the instructions whose test passed
+	detailSuggested *picks
+	detailTested    map[string]bool
+	passed          map[string]int // canonical rule JSON -> jobs found by its test
+	at              time.Time
 }
 
 var (
@@ -81,9 +84,9 @@ func getScratch(linkID string) *scratch {
 	s := scratches[linkID]
 	if s == nil {
 		if len(scratches) >= scratchMax {
-			return &scratch{passed: map[string]int{}, at: now} // not remembered: a flood of links cannot grow the memory
+			return &scratch{passed: map[string]int{}, detailTested: map[string]bool{}, at: now} // not remembered: a flood of links cannot grow the memory
 		}
-		s = &scratch{passed: map[string]int{}}
+		s = &scratch{passed: map[string]int{}, detailTested: map[string]bool{}}
 		scratches[linkID] = s
 	}
 	s.at = now
@@ -436,6 +439,9 @@ var ops = map[string]opFunc{
 	"test-rule":    decode(TestRule),
 	"save-rule":    decode(SaveRule),
 	"state":        decode(LinkState),
+	"job-page":     decode(JobPageCandidates),
+	"test-picks":   decode(TestJobDetailPicks),
+	"save-picks":   decode(SaveJobDetailPicks),
 }
 
 // authorized: the request comes from this machine and carries the tool's own service token.

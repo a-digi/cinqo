@@ -28,6 +28,9 @@ var toolNames = []string{
 	"katana_propose_link_rule",
 	"katana_test_link_rule",
 	"katana_save_link_rule",
+	"katana_get_job_page_candidates",
+	"katana_test_job_detail_picks",
+	"katana_save_job_detail_picks",
 }
 
 func toolSpecs() []instruction.ToolSpec {
@@ -108,7 +111,28 @@ type ruleArgs struct {
 	Rule         *linkrule.Rule `json:"rule,omitempty" jsonschema:"optional: the rule to use; omit it to use the one katana_propose_link_rule just returned"`
 }
 
-// RegisterTools registers the four job-list tools.
+type jobPageArgs struct {
+	PortalLinkID string `json:"portalLinkId" jsonschema:"the portal link"`
+	JobID        string `json:"jobId,omitempty" jsonschema:"optional: a saved job of this link to look at; default is its oldest saved job"`
+}
+
+type elementPick struct {
+	Selector  string `json:"selector" jsonschema:"a CSS selector copied from the candidates"`
+	Attribute string `json:"attribute,omitempty" jsonschema:"optional: read this attribute instead of the text (for example datetime)"`
+}
+
+type picksArgs struct {
+	PortalLinkID        string       `json:"portalLinkId" jsonschema:"the portal link"`
+	Title               *elementPick `json:"title,omitempty" jsonschema:"where the job title is; leave out when the page does not state it"`
+	Company             *elementPick `json:"company,omitempty" jsonschema:"where the company is; leave out when the page does not state it"`
+	Location            *elementPick `json:"location,omitempty" jsonschema:"where the place is; leave out when the page does not state it"`
+	PostedAt            *elementPick `json:"postedAt,omitempty" jsonschema:"where the posting date is; leave out when the page does not state it"`
+	DescriptionSelector string       `json:"descriptionSelector,omitempty" jsonschema:"the box that holds the whole description"`
+	DescriptionExclude  []string     `json:"descriptionExclude,omitempty" jsonschema:"selectors inside the description box to leave out (a share bar, an apply button)"`
+	DescriptionCutAfter []string     `json:"descriptionCutAfter,omitempty" jsonschema:"texts after which the description stops (for example Similar jobs)"`
+}
+
+// RegisterTools registers the Katana tools.
 func registerTools(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "katana_get_instruction_state",
@@ -149,5 +173,29 @@ func registerTools(server *mcp.Server) {
 			"session can be saved; otherwise it refuses. Omit rule to save the last proposal. After saving, the job list is done: do not redo it.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, a ruleArgs) (*mcp.CallToolResult, any, error) {
 		return call(ctx, "save-rule", a)
+	})
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "katana_get_job_page_candidates",
+		Description: "Katana engine, job details. Load the page of a CRAWLED job of this link and return, for the title, company, location, date and " +
+			"description, the best 3 places on the page (selector, a short value, the reasons), the page's own notices (a reduced page, not the job), " +
+			"the structured data it states, what inside the description box is probably furniture, and `suggested`: the picks the top candidates make. " +
+			"Needs at least one crawled job; otherwise it says so (then STOP and tell the person to crawl the jobs).",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, a jobPageArgs) (*mcp.CallToolResult, any, error) {
+		return call(ctx, "job-page", a)
+	})
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "katana_test_job_detail_picks",
+		Description: "Katana engine, job details. Run the picks on up to 3 real crawled jobs (the real extraction, nothing is saved) and return per job " +
+			"the values read, the description length and its start, flags (blocking ones must be fixed) and a verdict. Omit all picks to test " +
+			"`suggested` from katana_get_job_page_candidates.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, a picksArgs) (*mcp.CallToolResult, any, error) {
+		return call(ctx, "test-picks", a)
+	})
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "katana_save_job_detail_picks",
+		Description: "Katana engine, job details. Save the picks as this link's job-detail instructions. Only picks whose katana_test_job_detail_picks " +
+			"gave verdict ok in this session can be saved. Omit all picks to save `suggested`. After saving, the job details are done: do not redo them.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, a picksArgs) (*mcp.CallToolResult, any, error) {
+		return call(ctx, "save-picks", a)
 	})
 }

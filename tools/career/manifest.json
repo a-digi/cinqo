@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.0.736",
+  "version": "0.0.737",
   "authors": [
     { "name": "Anes Detit", "email": "tafa.andet@googlemail.com" }
   ],
@@ -1222,6 +1222,18 @@
     },
     {
       "name": "katana_save_link_rule",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "name": "katana_get_job_page_candidates",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "name": "katana_test_job_detail_picks",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "name": "katana_save_job_detail_picks",
       "required_scope": "tool:career:portals"
     },
     {

@@ -37,6 +37,8 @@ type fakeCore struct {
 	fetches []string
 	status  map[string]int // page URL -> forced status
 	events  []string       // published domain events (raw bodies)
+	detail  string         // the fetch-detail-candidates answer
+	extract func(pageURL string) string
 }
 
 func (f *fakeCore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -61,6 +63,14 @@ func (f *fakeCore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		fmt.Fprint(w, body)
+	case strings.HasSuffix(r.URL.Path, "/fetch-detail-candidates"):
+		fmt.Fprint(w, f.detail)
+	case strings.HasSuffix(r.URL.Path, "/crawl-paginated"):
+		var in struct{ URL string }
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		fmt.Fprint(w, f.extract(in.URL))
+	case strings.HasSuffix(r.URL.Path, "/capabilities"):
+		http.NotFound(w, r)
 	case strings.HasSuffix(r.URL.Path, "/events/publish"):
 		var raw json.RawMessage
 		_ = json.NewDecoder(r.Body).Decode(&raw)
@@ -368,4 +378,8 @@ func TestTheServiceWantsTheServiceToken(t *testing.T) {
 	if rec.Code != http.StatusForbidden {
 		t.Errorf("a non-loopback caller: %d", rec.Code)
 	}
+}
+
+func dbQuery(query, arg string, dest *string) error {
+	return db.JobsDB.QueryRow(query, arg).Scan(dest)
 }

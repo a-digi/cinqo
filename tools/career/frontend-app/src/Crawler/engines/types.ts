@@ -51,6 +51,8 @@ export interface InstructionEngine {
   aiTriesListing(requiresLogin: boolean): boolean
   // The engine's own recipe for the Generate button on the job list, for a link that needs no login (Katana only).
   readonly listingGenerate?: ListingGenerate
+  // The engine's own recipe for the Generate button on the job details, for a link that needs no login (Katana only).
+  readonly jobDetailGenerate?: ListingGenerate
   // The engine's own control to delete what it made for a link and begin again (Katana only; Rod has "Start fresh" in the card as before).
   readonly startOverControl?: ComponentType<StartOverProps>
 }

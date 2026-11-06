@@ -2,6 +2,8 @@
 // 191). A link that needs a login has no rule and no picker: it keeps the AI instructions. It imports no other engine.
 import { hasAiInstructions, hasRule, hasText } from '../linkFacts'
 import type { InstructionEngine, LinkFacts } from '../types'
+import { katanaJobDetailGenerate } from './jobDetailPrompts'
+import { AUTO_JOB_DETAILS } from './policy'
 import { katanaListingGenerate } from './prompts'
 import { StartOver } from './StartOver'
 
@@ -11,13 +13,15 @@ export const katanaEngine: InstructionEngine = {
   id: 'katana',
   startOverControl: StartOver,
   listingGenerate: katanaListingGenerate,
+  jobDetailGenerate: katanaJobDetailGenerate,
   aiTriesListing: () => true,
   listingNeeds: (login) => (byAi(login) ? 'ai' : 'rule'),
   hasListing: (link: LinkFacts) => (byAi(Boolean(link.requiresLogin)) ? hasAiInstructions(link) : hasRule(link)),
-  jobDetailsWrittenByAi: byAi,
-  mayAutoWriteJobDetails: byAi,
+  // The AI may pick the job details too (Generate on the Job details tile): its attempts are counted and shown.
+  jobDetailsWrittenByAi: () => true,
+  mayAutoWriteJobDetails: (login) => byAi(login) || AUTO_JOB_DETAILS,
   // A request left over from before (or raised by the crawl's event, which knows no engine) is stale under Katana.
-  clearsStaleJobDetailAiRequest: (login) => !byAi(login),
+  clearsStaleJobDetailAiRequest: (login) => !byAi(login) && !AUTO_JOB_DETAILS,
   jobDetailsAccess(link) {
     if (byAi(Boolean(link.requiresLogin))) return 'open'
     // lastCrawledAt is the newest saved job of the link and is empty when the link has no job.
