@@ -122,8 +122,8 @@ func ExtractHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
-	if len(body.Fields) == 0 {
-		http.Error(w, "fields is required", http.StatusBadRequest)
+	if len(body.Fields) == 0 && body.DescriptionRule == nil {
+		http.Error(w, "fields (or a descriptionRule) is required", http.StatusBadRequest)
 		return
 	}
 	for _, f := range body.Fields {

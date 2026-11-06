@@ -247,3 +247,28 @@ func descriptionNotFound(res *descriptionResult) bool {
 	}
 	return true
 }
+
+// expectedSelectorsFor is expectedSelectorsFromFields plus the boxes of a description rule: a page that shows none of
+// them is not the real page (a challenge, an error), exactly like a page that shows none of the fields.
+func expectedSelectorsFor(container string, fields []extractField, rule *descriptionRule) []string {
+	selectors := expectedSelectorsFromFields(container, fields)
+	if rule == nil || container != "" {
+		return selectors
+	}
+	for _, p := range rule.Parts {
+		if strings.TrimSpace(p.Include) != "" {
+			selectors = append(selectors, p.Include)
+		}
+	}
+	return selectors
+}
+
+// extractionFieldCount is how many things one page is asked for: the fields, plus the description when a rule is set. A
+// result with fewer "not found" entries than this found something real.
+func extractionFieldCount(fields []extractField, rule *descriptionRule) int {
+	n := len(fields)
+	if rule != nil {
+		n++
+	}
+	return n
+}

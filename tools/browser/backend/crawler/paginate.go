@@ -229,8 +229,8 @@ func PaginatedCrawlHandler(w http.ResponseWriter, r *http.Request) {
 	// this file's own RegisterExtractFromURL) has nothing to supply
 	// there. Still required for any real multi-page request. See
 	// plan/ai/tools/browser/step-XX-atomic-single-page-extract.md.
-	if len(body.Fields) == 0 || body.EffectiveMaxPages < 1 || (body.NextSelector == "" && body.EffectiveMaxPages > 1) {
-		http.Error(w, "fields and a positive maxPages are required; nextSelector is required whenever maxPages > 1", http.StatusBadRequest)
+	if (len(body.Fields) == 0 && body.DescriptionRule == nil) || body.EffectiveMaxPages < 1 || (body.NextSelector == "" && body.EffectiveMaxPages > 1) {
+		http.Error(w, "fields (or a descriptionRule) and a positive maxPages are required; nextSelector is required whenever maxPages > 1", http.StatusBadRequest)
 		return
 	}
 	// step 37 — the same SSRF guard CrawlHandler's own url already
@@ -371,7 +371,7 @@ func runPaginatedCrawlLoop(ctx context.Context, tab loopTab, args paginatedArgs)
 	// (challenge_resolution.go); page 1's automatic wait runs at most
 	// once per call (autoWaited) — the same wait crawlPage's own
 	// navigation gets.
-	tracker, err := newChallengeTracker(ctx, signals, expectedSelectorsFromFields(container, fields))
+	tracker, err := newChallengeTracker(ctx, signals, expectedSelectorsFor(container, fields, args.rule))
 	if err != nil {
 		return paginatedCrawlResponse{}, nil, err
 	}
@@ -496,7 +496,7 @@ func runPaginatedCrawlLoop(ctx context.Context, tab loopTab, args paginatedArgs)
 		if cf.challenge || cf.blocked {
 			foundRealContent := len(result.Items) > 0
 			if container == "" {
-				foundRealContent = foundRealContent || len(result.NotFound) < len(fields)
+				foundRealContent = foundRealContent || len(result.NotFound) < extractionFieldCount(fields, args.rule)
 			}
 			if len(pages) == 1 {
 				if !foundRealContent {

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 
@@ -12,6 +13,15 @@ import (
 )
 
 // ---- validation (no browser) ----
+
+// filledStrings is n non-empty strings (empty ones would be refused for being empty, hiding the count check).
+func filledStrings(n int) []string {
+	out := make([]string, n)
+	for i := range out {
+		out[i] = "x"
+	}
+	return out
+}
 
 func validRule() *descriptionRule {
 	return &descriptionRule{Parts: []descriptionPart{{Include: "#box"}}}
@@ -52,9 +62,9 @@ func TestValidateDescriptionRuleRefusals(t *testing.T) {
 		{"unknown heading", func(r *descriptionRule) { r.Parts[0].Heading = "first" }},
 		{"heading selector without selector heading", func(r *descriptionRule) { r.Parts[0].HeadingSelector = "h2" }},
 		{"selector heading without selector", func(r *descriptionRule) { r.Parts[0].Heading = "selector" }},
-		{"too many excludes", func(r *descriptionRule) { r.Parts[0].Exclude = make([]string, maxRuleExcludes+1) }},
+		{"too many excludes", func(r *descriptionRule) { r.Parts[0].Exclude = filledStrings(maxRuleExcludes + 1) }},
 		{"empty exclude", func(r *descriptionRule) { r.Parts[0].Exclude = []string{""} }},
-		{"too many cut-after", func(r *descriptionRule) { r.Parts[0].CutAfter = make([]string, maxRuleCutAfter+1) }},
+		{"too many cut-after", func(r *descriptionRule) { r.Parts[0].CutAfter = filledStrings(maxRuleCutAfter + 1) }},
 		{"empty cut-after", func(r *descriptionRule) { r.Parts[0].CutAfter = []string{" "} }},
 		{"long cut-after", func(r *descriptionRule) { r.Parts[0].CutAfter = []string{strings.Repeat("x", maxRuleCutAfterLen+1)} }},
 		{"label with space", func(r *descriptionRule) { r.Label = "my text" }},
@@ -388,5 +398,79 @@ func TestDescriptionRule(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) { c.run(t, ctx) })
+	}
+}
+
+// ---- a rule can stand without fields (plan 186, step 3) ----
+
+func TestPaginatedHandlerTakesARuleWithoutFields(t *testing.T) {
+	post := func(body string) string {
+		req := httptest.NewRequest(http.MethodPost, "/crawl-paginated", strings.NewReader(body))
+		w := httptest.NewRecorder()
+		PaginatedCrawlHandler(w, req)
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("status %d, want 400 (%s)", w.Code, w.Body.String())
+		}
+		return w.Body.String()
+	}
+	// No fields and no rule: still refused for that reason.
+	if msg := post(`{"url":"http://127.0.0.1/x","requestedMaxPages":1,"effectiveMaxPages":1}`); !strings.Contains(msg, "positive maxPages") {
+		t.Errorf("no fields and no rule must be refused as before: %s", msg)
+	}
+	// A rule alone passes that check and is stopped later, by the private address (no browser is started).
+	if msg := post(`{"url":"http://127.0.0.1/x","requestedMaxPages":1,"effectiveMaxPages":1,"descriptionRule":{"parts":[{"include":"#b"}]}}`); strings.Contains(msg, "positive maxPages") {
+		t.Errorf("a rule without fields was refused for having no fields: %s", msg)
+	}
+}
+
+func TestExtractHandlerTakesARuleWithoutFields(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/extract", strings.NewReader(`{"requestId":"r","useLoginWindow":true,"descriptionRule":{"parts":[{"include":"#b"}]}}`))
+	w := httptest.NewRecorder()
+	ExtractHandler(w, req)
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "cannot be combined") {
+		t.Fatalf("a rule without fields must get past the fields check (and be refused with a login window): %d %s", w.Code, w.Body.String())
+	}
+	req = httptest.NewRequest(http.MethodPost, "/extract", strings.NewReader(`{}`))
+	w = httptest.NewRecorder()
+	ExtractHandler(w, req)
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "fields") {
+		t.Fatalf("no fields and no rule: %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestExpectedSelectorsAndFieldCountCountTheRule(t *testing.T) {
+	rule := &descriptionRule{Parts: []descriptionPart{{Include: "#a"}, {Include: " "}, {Include: ".b"}}}
+	fields := []extractField{{Label: "t", Selector: "h1"}}
+	got := expectedSelectorsFor("", fields, rule)
+	if len(got) != 3 || got[0] != "h1" || got[1] != "#a" || got[2] != ".b" {
+		t.Errorf("expected selectors: %v", got)
+	}
+	if got := expectedSelectorsFor("", fields, nil); len(got) != 1 {
+		t.Errorf("no rule: %v", got)
+	}
+	if got := expectedSelectorsFor("li.job", fields, rule); len(got) != 1 || got[0] != "li.job" {
+		t.Errorf("a container keeps its own meaning: %v", got)
+	}
+	if extractionFieldCount(fields, nil) != 1 || extractionFieldCount(fields, rule) != 2 || extractionFieldCount(nil, rule) != 1 {
+		t.Error("field count wrong")
+	}
+}
+
+// The paginated loop needs a real challenge page to show it, which a unit test must not fake with the shared browser; the two
+// places that make a rule count as real content are pinned by reading the source (the same way the no-page-loaded guard is).
+func TestThePaginatedLoopCountsTheRuleAsContent(t *testing.T) {
+	raw, err := os.ReadFile("paginate.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(raw)
+	for _, want := range []string{
+		"expectedSelectorsFor(container, fields, args.rule)",
+		"len(result.NotFound) < extractionFieldCount(fields, args.rule)",
+		"result, err = applyDescriptionRule(ctx, result, args.rule)",
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("paginate.go no longer contains %q", want)
+		}
 	}
 }

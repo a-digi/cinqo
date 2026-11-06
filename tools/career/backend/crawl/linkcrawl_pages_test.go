@@ -30,6 +30,8 @@ type fakeCore struct {
 	paths        []string // every request path, in order (the core's view of what was asked)
 	// paginated answers a selector crawl (crawl-paginated) by the address it was asked for: the job-detail step.
 	paginated func(pageURL string) (status int, body string)
+	// paginatedBodies are the request bodies of every selector crawl, in order.
+	paginatedBodies []map[string]any
 }
 
 func newFakeCore(t *testing.T, engine string) *fakeCore {
@@ -49,6 +51,7 @@ func newFakeCore(t *testing.T, engine string) *fakeCore {
 			raw, _ := io.ReadAll(r.Body)
 			var b map[string]any
 			_ = json.Unmarshal(raw, &b)
+			f.paginatedBodies = append(f.paginatedBodies, b)
 			if f.paginated == nil {
 				http.NotFound(w, r)
 				return

@@ -1141,6 +1141,9 @@ func UpdatePortalLinkCrawlInstructions(id, yamlText string) error {
 // plan/ai/tools/career/step-XX-job-detail-crawl-instructions.md.
 type jobDetailCrawlInstructionsDoc struct {
 	Fields []crawlInstructionsField `yaml:"fields"`
+	// DescriptionRule (plan 186) is how the job's full description is read, next to Fields and not instead of them; see
+	// description_rule.go. Absent in every document written before: those behave exactly as they always did.
+	DescriptionRule *DescriptionRule `yaml:"descriptionRule,omitempty"`
 }
 
 // requiredJobDetailCrawlOutputKeys is deliberately just "description"
@@ -1160,7 +1163,10 @@ func validateJobDetailCrawlInstructions(yamlText string) error {
 	if err := yaml.Unmarshal([]byte(yamlText), &doc); err != nil {
 		return fmt.Errorf("%w: not valid YAML: %v", ErrInvalidCrawlInstructions, err)
 	}
-	if len(doc.Fields) == 0 {
+	if err := ValidateDescriptionRule(doc.DescriptionRule); err != nil {
+		return err
+	}
+	if len(doc.Fields) == 0 && doc.DescriptionRule == nil {
 		return fmt.Errorf("%w: fields must have at least one entry", ErrInvalidCrawlInstructions)
 	}
 	for i, f := range doc.Fields {
@@ -1171,9 +1177,12 @@ func validateJobDetailCrawlInstructions(yamlText string) error {
 			return fmt.Errorf("%w: fields[%d].selector is required", ErrInvalidCrawlInstructions, i)
 		}
 	}
-	effective := make(map[string]bool, len(doc.Fields))
+	effective := make(map[string]bool, len(doc.Fields)+1)
 	for _, f := range doc.Fields {
 		effective[f.Label] = true
+	}
+	if doc.DescriptionRule != nil {
+		effective[DescriptionLabel] = true // the rule produces the description
 	}
 	for _, required := range requiredJobDetailCrawlOutputKeys {
 		if !effective[required] {
@@ -1255,6 +1264,8 @@ type CrawlRequest struct {
 	NextSelector      string              `json:"nextSelector"`
 	RequestedMaxPages int                 `json:"requestedMaxPages"`
 	EffectiveMaxPages int                 `json:"effectiveMaxPages"`
+	// DescriptionRule (plan 186) is sent only for a job-detail crawl whose instructions carry one.
+	DescriptionRule *DescriptionRule `json:"descriptionRule,omitempty"`
 }
 
 // BuildCrawlRequest turns a portal link's own stored crawl_instructions
@@ -1364,6 +1375,7 @@ func BuildJobDetailCrawlRequestFromYAML(yamlText string) (CrawlRequest, error) {
 		NextSelector:      "",
 		RequestedMaxPages: 1,
 		EffectiveMaxPages: 1,
+		DescriptionRule:   doc.DescriptionRule,
 	}, nil
 }
 
@@ -1393,6 +1405,18 @@ type CrawlResultPage struct {
 	// schema validation with "missing properties: [\"notFound\"]").
 	// See plan/ai/tools/career/step-81-check-crawl-extraction-result-tool.md.
 	NotFound []string `json:"notFound,omitempty"`
+	// Truncated lists the labels whose value the Browser cut at its limit (a plain field at 5,000 characters, a description
+	// at its rule's limit); Description is the report of a description rule. Both are omitted when absent (plan 186).
+	Truncated   []string           `json:"truncated,omitempty"`
+	Description *DescriptionReport `json:"description,omitempty"`
+}
+
+// DescriptionReport is the part of the Browser's description report the run log needs.
+type DescriptionReport struct {
+	Chars      int  `json:"chars"`
+	FullLength int  `json:"fullLength"`
+	Truncated  bool `json:"truncated"`
+	Limit      int  `json:"limit"`
 }
 
 // ExtractResultStrings normalizes one field's extracted value (a

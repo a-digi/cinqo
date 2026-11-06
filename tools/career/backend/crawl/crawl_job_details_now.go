@@ -288,6 +288,14 @@ func crawlOneJobDetail(ctx context.Context, coreURL, portalID, runID, accessToke
 	for k, v := range extractResultValues(result.Pages[0]) {
 		values[k] = v
 	}
+	// A description the Browser had to cut is said in the run log (plan 186): it was cut silently at 5,000 characters before.
+	if note := descriptionCutNote(result.Pages[0]); note != "" {
+		label := target.Title
+		if label == "" {
+			label = target.SourceURL
+		}
+		_ = appendCrawlRunLog(runID, fmt.Sprintf("%q: %s", label, note))
+	}
 	didUpdate, err := jobs.SaveJobDetailExtraction(target.ID, values)
 	if err != nil {
 		_ = jobs.MarkJobDetailCrawlFailed(target.ID)
@@ -304,6 +312,23 @@ func crawlOneJobDetail(ctx context.Context, coreURL, portalID, runID, accessToke
 		return didUpdate, ferr
 	}
 	return didUpdate || len(filled) > 0, nil
+}
+
+// descriptionCutNote says, for the run log, that the description of a page was cut at a limit ("" when it was not).
+func descriptionCutNote(page portal.CrawlResultPage) string {
+	cut := false
+	for _, l := range page.Truncated {
+		if l == portal.DescriptionLabel {
+			cut = true
+		}
+	}
+	if !cut {
+		return ""
+	}
+	if d := page.Description; d != nil && d.Truncated {
+		return fmt.Sprintf("the description was cut at its rule's limit: %d of %d characters kept", d.Chars, d.FullLength)
+	}
+	return "the description was cut at 5,000 characters (a description rule in the instructions lifts this limit)"
 }
 
 // extractResultValues flattens one page's own Results (label ->
