@@ -20,8 +20,8 @@ export function chromeLight(status: ChromeStatus | null, error: string, checking
 }
 
 export interface EngineLight extends Light {
-  name: 'Rod' | 'Katana'
-  // The engine the settings select (a backend that sends none means Rod, the default).
+  name: 'Katana' | 'Rod'
+  // The engine the settings select (a backend that sends none means Katana, the default).
   selected: boolean
   detail: string
 }
@@ -35,8 +35,8 @@ export function engineLights(status: EngineStatusResponse | null, settings: Brow
         ? { tone: 'ok', label: 'Available' }
         : { tone: 'bad', label: 'Not available' }
   return [
-    { name: 'Rod', selected: selected === 'rod', detail: status?.rod.detail ?? '', ...light(status?.rod.available) },
     { name: 'Katana', selected: selected === 'katana', detail: status?.katana?.detail ?? '', ...light(status?.katana?.available) },
+    { name: 'Rod', selected: selected === 'rod', detail: status?.rod.detail ?? '', ...light(status?.rod.available) },
   ]
 }
 

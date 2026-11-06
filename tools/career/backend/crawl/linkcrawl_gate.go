@@ -82,7 +82,7 @@ func readBrowserEngineViaCore(ctx context.Context, coreURL, accessToken string) 
 
 // requireKatanaSelected is the check every link-crawler action makes: nil
 // only when the Browser tool says Katana is the selected engine. An empty or
-// missing engine value is the Browser's default (rod), so it is not Katana.
+// missing engine value is what an OLDER Browser sends (its default was rod), so it is not Katana.
 func requireKatanaSelected(ctx context.Context, coreURL, accessToken string) error {
 	engine, err := readBrowserEngine(ctx, coreURL, accessToken)
 	if err != nil {

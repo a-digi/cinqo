@@ -143,7 +143,7 @@ func TestKatanaOptionsAreLockedToOneReadOnlyPage(t *testing.T) {
 	if o.StoreResponse || o.StoreFields != "" || o.StoreFieldDir != "" || o.OutputFile != "" || o.TechDetect || o.TlsImpersonate || o.HealthCheck || !o.DisableUpdateCheck {
 		t.Errorf("storing/detection/update options: %+v", o)
 	}
-	if o.PageLoadStrategy != "load" || o.Timeout != int(crawlTimeout/time.Second) || o.Context == nil || o.OnResult == nil {
+	if o.PageLoadStrategy != "none" || o.Timeout != int(crawlTimeout/time.Second) || o.Context == nil || o.OnResult == nil {
 		t.Errorf("load/timeout/context: %+v", o)
 	}
 }

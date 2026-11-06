@@ -25,12 +25,17 @@ import (
 )
 
 // The engines that can serve the primary single-page fetch (step 50, and
-// plan 184 for Katana; see crawler/fetch_engine.go). Rod is the default.
-// There used to be a third, "playwright"; plan 187 removed it.
+// plan 184 for Katana; see crawler/fetch_engine.go). Katana is the default
+// since plan 189 (Rod stays the alternative). There used to be a third,
+// "playwright"; plan 187 removed it.
 const (
 	FetchEngineRod     = "rod"
 	FetchEngineKatana  = "katana"
-	DefaultFetchEngine = FetchEngineRod
+	DefaultFetchEngine = FetchEngineKatana
+	// DegradedFetchEngine is the engine used only when the stored setting cannot be read at all (no
+	// database yet, a read error): the older, simpler path, so a broken database never starts the newer
+	// component (plan 189, D2).
+	DegradedFetchEngine = FetchEngineRod
 )
 
 // ErrInvalidFetchEngine is a caller mistake (a 400), never a server failure.

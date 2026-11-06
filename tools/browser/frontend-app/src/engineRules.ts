@@ -25,9 +25,8 @@ export function engineLocked(engine: FetchEngine, current: FetchEngine, availabl
   return engine !== 'rod' && current !== engine && available === false
 }
 
-// The engine a stored setting means: anything that is not exactly 'katana' (including a
-// backend that predates the setting and sends none, or an old one that still says 'playwright',
-// an engine that no longer exists) is Rod, the default.
+// The engine a stored setting means: Rod only when it says exactly 'rod'; anything else (no value, or
+// an old 'playwright', an engine that no longer exists) is Katana, the default since plan 189.
 export function engineOf(stored: string | undefined): FetchEngine {
-  return stored === 'katana' ? stored : 'rod'
+  return stored === 'rod' ? 'rod' : 'katana'
 }

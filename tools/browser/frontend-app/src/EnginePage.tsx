@@ -8,7 +8,7 @@ import { Switch } from './Shared/Switch'
 import { PAGE_ACCENT } from './Shared/theme'
 
 // Engine section of the "Browser & Engine" page (step 50, availability added in step 51, Katana in
-// plan 184, Playwright removed in plan 187) — two checkboxes, Rod (the default) and Katana,
+// plan 184, Playwright removed in plan 187, Katana made the default in plan 189) — two checkboxes, Katana (the default) and Rod,
 // choosing which engine fetches pages. The setting holds one engine, so the boxes work as a group: one is always checked and the way to change it
 // is to check the other (unchecking the selected one is refused, with a note). Stored in the same settings object as the Debug toggles and read by the
 // backend on every fetch, so the choice applies to the next page fetched, with no
@@ -34,7 +34,7 @@ export function EngineSection({ engine }: { engine: ReturnType<typeof useEngine>
     )
   }
 
-  // A backend that predates the setting sends no fetchEngine: that is Rod, the default.
+  // A backend that predates the setting sends no fetchEngine: that is Katana, the default.
   const current = engineOf(settings.fetchEngine)
   const useRod = current === 'rod'
   const katanaUnavailable = status?.katana !== undefined && !status.katana.available
@@ -55,8 +55,8 @@ export function EngineSection({ engine }: { engine: ReturnType<typeof useEngine>
       <section className={cardClassName} style={cardStyle}>
         <h2 className="mb-1 text-base font-semibold text-gray-900">Engine</h2>
         <p className="mb-4 text-sm text-gray-500">
-          Chooses which engine fetches a page the first time. Rod is the default. Rod and Katana need Chrome installed, and if the chosen
-          engine can&apos;t start, the fetch falls back to the built-in browser path automatically.
+          Chooses which engine fetches a page the first time. Katana is the default and the recommended one. Rod and Katana need Chrome
+          installed, and if the chosen engine can&apos;t start, the fetch falls back to the built-in browser path automatically.
         </p>
 
         <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
@@ -75,22 +75,9 @@ export function EngineSection({ engine }: { engine: ReturnType<typeof useEngine>
 
         <div className="grid gap-3 md:grid-cols-2" role="group" aria-label="Engine">
           <EngineOption
-            name="Rod"
-            title="Rod"
-            badge="Recommended"
-            icon={<CodeIcon className="h-5 w-5" />}
-            checked={useRod}
-            disabled={saving}
-            onChange={(checked) => {
-              onToggle('rod', checked)
-            }}
-          >
-            Pure Go over the Chrome DevTools Protocol. Needs nothing but Chrome.
-          </EngineOption>
-          <EngineOption
             name="Katana"
             title="Katana"
-            badge={katanaLocked ? 'Chrome missing' : 'New'}
+            badge={katanaLocked ? 'Chrome missing' : 'Recommended'}
             icon={<BladeIcon className="h-5 w-5" />}
             checked={current === 'katana'}
             disabled={saving || katanaLocked}
@@ -99,7 +86,19 @@ export function EngineSection({ engine }: { engine: ReturnType<typeof useEngine>
             }}
           >
             ProjectDiscovery&apos;s Katana, attached to a Chrome this tool starts itself. Loads one page, read-only: it never follows links,
-            clicks or fills in forms.
+            clicks or fills in forms. Also what the link crawler needs.
+          </EngineOption>
+          <EngineOption
+            name="Rod"
+            title="Rod"
+            icon={<CodeIcon className="h-5 w-5" />}
+            checked={useRod}
+            disabled={saving}
+            onChange={(checked) => {
+              onToggle('rod', checked)
+            }}
+          >
+            Pure Go over the Chrome DevTools Protocol. Needs nothing but Chrome. The simpler alternative.
           </EngineOption>
         </div>
 
@@ -114,7 +113,7 @@ export function EngineSection({ engine }: { engine: ReturnType<typeof useEngine>
           </p>
         )}
         <p className="mt-3 text-xs text-gray-500">
-          Currently using: <span className="font-medium text-gray-700">{{ rod: 'Rod', katana: 'Katana' }[current]}</span>. A change applies
+          Currently using: <span className="font-medium text-gray-700">{{ katana: 'Katana', rod: 'Rod' }[current]}</span>. A change applies
           to the next page fetched — no restart needed, and a fetch already running is not interrupted.
         </p>
       </section>

@@ -145,13 +145,13 @@ func InitDB() error {
 		debug_log_html      INTEGER NOT NULL DEFAULT 0,
 		debug_log_challenge INTEGER NOT NULL DEFAULT 0,
 		-- fetch_engine (step 50): which engine serves the primary single-page
-		-- fetch — 'rod' (the default; pure Go over CDP) or 'katana'. Read on
-		-- every fetch by the crawler. A fresh install gets it here; an
+		-- fetch — 'katana' (the default since plan 189) or 'rod' (pure Go over
+		-- CDP). Read on every fetch by the crawler. A fresh install gets it here; an
 		-- existing table gets it from migrateBrowserSettingsFetchEngineColumn
 		-- and its CHECK from the migrations after it (the last one,
 		-- migrateBrowserSettingsDropPlaywright, plan 187, removed the value
 		-- 'playwright'). See plan/ai/tools/browser/step-50-fetch-engine-setting-page.md.
-		fetch_engine        TEXT NOT NULL DEFAULT 'rod' CHECK (fetch_engine IN ('rod','katana')),
+		fetch_engine        TEXT NOT NULL DEFAULT 'katana' CHECK (fetch_engine IN ('rod','katana')),
 		-- human_assist (step 96): when an AI call meets a challenge only a
 		-- person can clear, open a browser window for them (instead of just
 		-- failing). On by default; an existing table gets it from
@@ -182,7 +182,13 @@ func InitDB() error {
 		db.Close()
 		return fmt.Errorf("failed to migrate browser_settings away from the playwright engine: %w", err)
 	}
-	if _, err := db.Exec(`INSERT OR IGNORE INTO browser_settings (id, debug_enabled, debug_log_html, debug_log_challenge) VALUES (1, 0, 0, 0)`); err != nil {
+	if err := migrateBrowserSettingsDefaultKatana(db); err != nil {
+		db.Close()
+		return fmt.Errorf("failed to migrate browser_settings to the katana default: %w", err)
+	}
+	// The engine is named here on purpose: the seed must not depend on the column default, which an older
+	// table (rebuilt or altered by an earlier migration) still has as 'rod'.
+	if _, err := db.Exec(`INSERT OR IGNORE INTO browser_settings (id, debug_enabled, debug_log_html, debug_log_challenge, fetch_engine) VALUES (1, 0, 0, 0, ?)`, DefaultFetchEngine); err != nil {
 		db.Close()
 		return fmt.Errorf("failed to seed browser_settings: %w", err)
 	}
@@ -443,6 +449,19 @@ func migrateBrowserSettingsDropPlaywright(db *sql.DB) error {
 		}
 	}
 	return tx.Commit()
+}
+
+// migrateBrowserSettingsDefaultKatana (plan 189) makes Katana the engine of an install nobody ever
+// configured. A stored 'rod' is either a person's choice or only the old default, and the table cannot
+// tell the two apart except by one fact: the seed row has updated_at NULL, and ANY save through the
+// Engine or Debug page sets it. So only a never-saved row that still says 'rod' is moved; a row that was
+// saved keeps its engine (a person who saved the Debug toggles but never looked at the engine keeps 'rod'
+// and finds the "Recommended" mark on Katana on the Engine page). Idempotent: once the row says
+// 'katana' it matches nothing, and a person who later picks Rod through the page sets updated_at, so
+// this can never flip that choice back.
+func migrateBrowserSettingsDefaultKatana(db *sql.DB) error {
+	_, err := db.Exec(`UPDATE browser_settings SET fetch_engine = 'katana' WHERE id = 1 AND fetch_engine = 'rod' AND updated_at IS NULL`)
+	return err
 }
 
 // migrateBrowserSettingsChallengeColumn adds debug_log_challenge to an

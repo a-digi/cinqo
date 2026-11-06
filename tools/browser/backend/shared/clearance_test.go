@@ -186,7 +186,7 @@ func TestHumanAssistIsOnByDefaultAndSurvivesAnUpgrade(t *testing.T) {
 	}
 	t.Cleanup(func() { DB.Close() })
 	s, err := LoadBrowserSettings()
-	if err != nil || !s.HumanAssist || s.FetchEngine != FetchEngineRod || !s.DebugEnabled {
+	if err != nil || !s.HumanAssist || s.FetchEngine != FetchEngineKatana || !s.DebugEnabled {
 		t.Fatalf("upgrade must default human assist on and keep the rest: %+v %v", s, err)
 	}
 }

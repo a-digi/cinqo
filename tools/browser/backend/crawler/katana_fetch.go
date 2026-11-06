@@ -116,9 +116,11 @@ func katanaOptions(ctx context.Context, wsURL, rawURL string, onResult func(outp
 		DisableUpdateCheck:        true,
 		HeadlessNoIncognito:       false, // its own incognito context inside our Chrome
 
-		// the page is loaded by Katana's "load" strategy; waiting for the
-		// page to stop changing is done by waitForDOMToSettle in the hook
-		PageLoadStrategy: "load",
+		// Katana still waits for the navigation itself; its own extra stability wait is switched off
+		// ("none"; its "load" strategy sleeps a fixed 500 ms) because waiting for the page to stop
+		// changing is done by waitForDOMToSettle in the hook. Measured on real pages (plan 189): the
+		// same content, about 0.5 s less per page.
+		PageLoadStrategy: "none",
 		Timeout:          int(crawlTimeout / time.Second),
 		BodyReadSize:     MaxHTMLBytes,
 		Context:          ctx,

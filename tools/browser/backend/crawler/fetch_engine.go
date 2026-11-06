@@ -26,6 +26,8 @@ const (
 	fetchEngineRod     = shared.FetchEngineRod
 	fetchEngineKatana  = shared.FetchEngineKatana
 	defaultFetchEngine = shared.DefaultFetchEngine
+	// degradedFetchEngine is the engine when the setting cannot be read at all.
+	degradedFetchEngine = shared.DegradedFetchEngine
 )
 
 // fetchFunc is the shared contract of both engines' fetch functions.
@@ -48,18 +50,19 @@ var warnSettingUnreadableOnce sync.Once
 
 // selectedFetchEngine reports which engine the next fetch will use: the
 // stored setting, read fresh. The setting is the single source of truth.
-// When it cannot be read (no database yet, or a read error) the default,
-// rod, is used — never Katana — and the failure is logged once.
+// When it cannot be read (no database yet, or a read error) the degraded
+// engine, rod, is used — the older, simpler path, never the newer Katana
+// default — and the failure is logged once (plan 189, D2).
 func selectedFetchEngine() string {
 	if shared.DB == nil {
-		return defaultFetchEngine
+		return degradedFetchEngine
 	}
 	settings, err := shared.LoadBrowserSettings()
 	if err != nil {
 		warnSettingUnreadableOnce.Do(func() {
-			log.Printf("fetch engine: browser settings unreadable (%v); using %q", err, defaultFetchEngine)
+			log.Printf("fetch engine: browser settings unreadable (%v); using %q", err, degradedFetchEngine)
 		})
-		return defaultFetchEngine
+		return degradedFetchEngine
 	}
 	return settings.FetchEngine
 }

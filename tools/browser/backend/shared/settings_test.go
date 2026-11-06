@@ -24,22 +24,25 @@ func initSettingsDB(t *testing.T) string {
 	return filepath.Join(root, "db", "browser.db")
 }
 
-func TestFreshInstallDefaultsToRodAndDebugOff(t *testing.T) {
+func TestFreshInstallDefaultsToKatanaAndDebugOff(t *testing.T) {
 	initSettingsDB(t)
 	s, err := LoadBrowserSettings()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s.FetchEngine != FetchEngineRod || s.DebugEnabled || s.DebugLogHTML || s.DebugLogChallenge {
+	if s.FetchEngine != FetchEngineKatana || s.DebugEnabled || s.DebugLogHTML || s.DebugLogChallenge {
 		t.Errorf("fresh defaults: %+v", s)
 	}
-	if DefaultFetchEngine != FetchEngineRod {
-		t.Errorf("the default engine must be rod")
+	if DefaultFetchEngine != FetchEngineKatana {
+		t.Errorf("the default engine must be katana (plan 189)")
+	}
+	if DegradedFetchEngine != FetchEngineRod {
+		t.Errorf("an unreadable setting must fall back to rod, the older and simpler path (plan 189, D2)")
 	}
 }
 
-// A database created before this step has no fetch_engine column; the
-// migration must add it as 'rod' without touching the Debug values.
+// A database created before this step has no fetch_engine column; the migration adds it (as 'rod', then
+// plan 189 moves a never-saved row to the katana default) without touching the Debug values.
 func TestExistingInstallIsUpgradedKeepingTheDebugValues(t *testing.T) {
 	root := t.TempDir()
 	dbDir := filepath.Join(root, "db")
@@ -73,8 +76,8 @@ func TestExistingInstallIsUpgradedKeepingTheDebugValues(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s.FetchEngine != FetchEngineRod {
-		t.Errorf("an existing install must get the default engine, got %q", s.FetchEngine)
+	if s.FetchEngine != FetchEngineKatana {
+		t.Errorf("an existing install nobody ever configured must get the default engine, got %q", s.FetchEngine)
 	}
 	if !s.DebugEnabled || !s.DebugLogHTML || s.DebugLogChallenge {
 		t.Errorf("the Debug values must survive the migration: %+v", s)
@@ -110,14 +113,14 @@ func TestSaveRejectsAnInvalidEngineAndWritesNothing(t *testing.T) {
 			t.Errorf("%q: got %v, want ErrInvalidFetchEngine", bad, err)
 		}
 	}
-	if s, _ := LoadBrowserSettings(); s.DebugEnabled || s.FetchEngine != FetchEngineRod {
+	if s, _ := LoadBrowserSettings(); s.DebugEnabled || s.FetchEngine != DefaultFetchEngine {
 		t.Errorf("a rejected save must change nothing: %+v", s)
 	}
 }
 
 func TestAStoredValueOutsideTheAllowListReadsAsTheDefault(t *testing.T) {
 	for stored, want := range map[string]string{
-		"rod": "rod", "katana": "katana", "playwright": "rod", "": "rod", "chromedp": "rod", "ROD": "rod",
+		"rod": "rod", "katana": "katana", "playwright": "katana", "": "katana", "chromedp": "katana", "ROD": "katana",
 	} {
 		if got := fetchEngineOrDefault(stored); got != want {
 			t.Errorf("fetchEngineOrDefault(%q) = %q, want %q", stored, got, want)
@@ -137,28 +140,28 @@ func TestSettingsHandlerGetPutAndTheKeepSemantics(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	BrowserSettingsHandler(rec, httptest.NewRequest(http.MethodGet, "/browser-settings", nil))
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"fetchEngine":"rod"`) {
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"fetchEngine":"katana"`) {
 		t.Fatalf("GET: %d %s", rec.Code, rec.Body.String())
 	}
 
-	// Switch to Katana.
-	if rec := put(`{"debugEnabled":false,"debugLogHtml":false,"debugLogChallenge":false,"fetchEngine":"katana"}`); rec.Code != http.StatusOK ||
-		!strings.Contains(rec.Body.String(), `"fetchEngine":"katana"`) {
+	// Switch to Rod (Katana is the default now).
+	if rec := put(`{"debugEnabled":false,"debugLogHtml":false,"debugLogChallenge":false,"fetchEngine":"rod"}`); rec.Code != http.StatusOK ||
+		!strings.Contains(rec.Body.String(), `"fetchEngine":"rod"`) {
 		t.Fatalf("switch: %d %s", rec.Code, rec.Body.String())
 	}
 
 	// An older client (or the Debug page) that omits fetchEngine must not reset it.
 	if rec := put(`{"debugEnabled":true,"debugLogHtml":false,"debugLogChallenge":false}`); rec.Code != http.StatusOK ||
-		!strings.Contains(rec.Body.String(), `"fetchEngine":"katana"`) || !strings.Contains(rec.Body.String(), `"debugEnabled":true`) {
+		!strings.Contains(rec.Body.String(), `"fetchEngine":"rod"`) || !strings.Contains(rec.Body.String(), `"debugEnabled":true`) {
 		t.Fatalf("omitted must keep: %d %s", rec.Code, rec.Body.String())
 	}
-	if rec := put(`{"debugEnabled":true,"fetchEngine":""}`); !strings.Contains(rec.Body.String(), `"fetchEngine":"katana"`) {
+	if rec := put(`{"debugEnabled":true,"fetchEngine":""}`); !strings.Contains(rec.Body.String(), `"fetchEngine":"rod"`) {
 		t.Fatalf("an empty value must keep the stored one too: %s", rec.Body.String())
 	}
 
-	// Back to Rod.
-	if rec := put(`{"fetchEngine":"rod"}`); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"fetchEngine":"rod"`) {
-		t.Fatalf("back to rod: %d %s", rec.Code, rec.Body.String())
+	// Back to Katana.
+	if rec := put(`{"fetchEngine":"katana"}`); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"fetchEngine":"katana"`) {
+		t.Fatalf("back to katana: %d %s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -170,7 +173,7 @@ func TestSettingsHandlerRejectsABadEngineAndChangesNothing(t *testing.T) {
 			t.Fatalf("%s: an unknown engine must be a 400 naming the two engines, got %d %s", bad, rec.Code, rec.Body.String())
 		}
 	}
-	if s, _ := LoadBrowserSettings(); s.DebugEnabled || s.FetchEngine != FetchEngineRod {
+	if s, _ := LoadBrowserSettings(); s.DebugEnabled || s.FetchEngine != DefaultFetchEngine {
 		t.Errorf("a rejected PUT must change nothing: %+v", s)
 	}
 	if rec := put(`not json`); rec.Code != http.StatusBadRequest {
@@ -223,7 +226,7 @@ func TestAnOldInstallCanStoreKatanaAfterTheTableRebuild(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := BrowserSettings{DebugEnabled: true, DebugLogChallenge: true, FetchEngine: FetchEngineRod, HumanAssist: false} // the stored 'playwright' became 'rod' (plan 187)
+	want := BrowserSettings{DebugEnabled: true, DebugLogChallenge: true, FetchEngine: FetchEngineKatana, HumanAssist: false} // the stored 'playwright' became 'rod' (plan 187), and a never-saved 'rod' the katana default (plan 189)
 	if s != want {
 		t.Fatalf("the row changed in the rebuild: %+v, want %+v", s, want)
 	}
@@ -323,5 +326,94 @@ func TestAFreshInstallTableDoesNotAllowPlaywright(t *testing.T) {
 	}
 	if _, err := DB.Exec(`UPDATE browser_settings SET fetch_engine = 'katana'`); err != nil {
 		t.Fatalf("a fresh table must allow 'katana': %v", err)
+	}
+}
+
+// openRaw closes the tool's database and opens the file directly, to rewind it to an earlier shape.
+func openRaw(t *testing.T, dbPath string) *sql.DB {
+	t.Helper()
+	DB.Close()
+	raw, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
+
+// Plan 189: only a row nobody ever saved (updated_at NULL) that still says 'rod' is moved to the katana
+// default; a saved row keeps its engine; a second start changes nothing.
+func TestTheDefaultKatanaMigrationMovesOnlyANeverSavedRod(t *testing.T) {
+	for _, tc := range []struct {
+		name, engine, updatedAt, want string
+	}{
+		{"never saved rod moves", "rod", "NULL", "katana"},
+		{"saved rod stays", "rod", "'2026-10-01 10:00:00'", "rod"},
+		{"never saved katana stays", "katana", "NULL", "katana"},
+		{"saved katana stays", "katana", "'2026-10-01 10:00:00'", "katana"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dbPath := initSettingsDB(t)
+			raw := openRaw(t, dbPath)
+			if _, err := raw.Exec(`UPDATE browser_settings SET fetch_engine = '` + tc.engine + `', debug_enabled = 1, human_assist = 0, updated_at = ` + tc.updatedAt); err != nil {
+				t.Fatal(err)
+			}
+			raw.Close()
+			for start := 1; start <= 2; start++ { // the second start must be a no-op
+				if err := InitDB(); err != nil {
+					t.Fatalf("start %d: %v", start, err)
+				}
+				s, err := LoadBrowserSettings()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if s.FetchEngine != tc.want || !s.DebugEnabled || s.HumanAssist {
+					t.Errorf("start %d: %+v, want engine %s with the other values kept", start, s, tc.want)
+				}
+				DB.Close()
+			}
+			if err := InitDB(); err != nil { // leave an open DB for the cleanup of initSettingsDB
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+// A person who later picks Rod on the Engine page sets updated_at, so no later start may move it back.
+func TestAChoiceOfRodMadeLaterSurvivesEveryRestart(t *testing.T) {
+	initSettingsDB(t)
+	s, _ := LoadBrowserSettings()
+	s.FetchEngine = FetchEngineRod
+	if err := SaveBrowserSettings(s); err != nil {
+		t.Fatal(err)
+	}
+	for start := 1; start <= 3; start++ {
+		DB.Close()
+		if err := InitDB(); err != nil {
+			t.Fatal(err)
+		}
+		if got, _ := LoadBrowserSettings(); got.FetchEngine != FetchEngineRod {
+			t.Fatalf("start %d: a chosen Rod must stay Rod, got %q", start, got.FetchEngine)
+		}
+	}
+}
+
+// The seed names the engine itself: an older table (an earlier migration rebuilt it with DEFAULT 'rod') whose row
+// is gone must still be seeded with the katana default, not with its own column default.
+func TestTheSeedDoesNotDependOnTheColumnDefault(t *testing.T) {
+	dbPath := initSettingsDB(t)
+	raw := openRaw(t, dbPath)
+	if _, err := raw.Exec(`DROP TABLE browser_settings;
+		CREATE TABLE browser_settings (id INTEGER PRIMARY KEY CHECK (id = 1), debug_enabled INTEGER NOT NULL DEFAULT 0,
+			debug_log_html INTEGER NOT NULL DEFAULT 0, debug_log_challenge INTEGER NOT NULL DEFAULT 0,
+			fetch_engine TEXT NOT NULL DEFAULT 'rod' CHECK (fetch_engine IN ('rod','katana')),
+			human_assist INTEGER NOT NULL DEFAULT 1, updated_at TEXT)`); err != nil {
+		t.Fatal(err)
+	}
+	raw.Close()
+	if err := InitDB(); err != nil {
+		t.Fatal(err)
+	}
+	if s, err := LoadBrowserSettings(); err != nil || s.FetchEngine != FetchEngineKatana {
+		t.Fatalf("a re-seeded row must be katana: %+v %v", s, err)
 	}
 }

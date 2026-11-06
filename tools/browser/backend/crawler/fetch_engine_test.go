@@ -118,8 +118,11 @@ func TestSelectedEngineFollowsTheStoredSettingLive(t *testing.T) {
 	if got := selectedFetchEngine(); got != fetchEngineRod {
 		t.Fatalf("after switching back: got %q", got)
 	}
-	if defaultFetchEngine != fetchEngineRod {
-		t.Errorf("the default engine must be rod")
+	if defaultFetchEngine != fetchEngineKatana {
+		t.Errorf("the default engine must be katana (plan 189)")
+	}
+	if degradedFetchEngine != fetchEngineRod {
+		t.Errorf("the engine for an unreadable setting must be rod")
 	}
 }
 
