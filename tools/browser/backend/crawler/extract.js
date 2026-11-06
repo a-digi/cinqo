@@ -27,8 +27,11 @@
   // size, so a selector accidentally matching a huge container element
   // (e.g. a whole <body> instead of a small title) could otherwise
   // still return one enormous string.
-  function truncate(value) {
+  // A value that was cut is no longer cut silently: its label is reported in "truncated".
+  var truncatedSeen = {};
+  function truncate(value, label) {
     if (typeof value === "string" && maxValueLength && value.length > maxValueLength) {
+      if (label) truncatedSeen[label] = true;
       return value.slice(0, maxValueLength);
     }
     return value;
@@ -104,11 +107,11 @@
     return kept.join("\n").trim();
   }
 
-  function readValue(el, attribute) {
+  function readValue(el, attribute, label) {
     if (!attribute || attribute === "text") {
-      return truncate(readableText(el));
+      return truncate(readableText(el), label);
     }
-    return truncate(el.getAttribute(attribute));
+    return truncate(el.getAttribute(attribute), label);
   }
 
   // Reads every field relative to `scope` (either `document`, flat
@@ -133,13 +136,13 @@
       if (f.multiple) {
         var values = [];
         for (var j = 0; j < matches.length && j < maxItems; j++) {
-          values.push(readValue(matches[j], f.attribute));
+          values.push(readValue(matches[j], f.attribute, f.label));
         }
         obj[f.label] = values;
       } else if (matches.length === 0) {
         notFoundSeen[f.label] = true;
       } else {
-        obj[f.label] = readValue(matches[0], f.attribute);
+        obj[f.label] = readValue(matches[0], f.attribute, f.label);
       }
     }
     return obj;
@@ -159,9 +162,9 @@
     for (var c = 0; c < containers.length && c < maxItems; c++) {
       items.push(extractFieldsFrom(containers[c], notFoundSeen));
     }
-    return { items: items, notFound: Object.keys(notFoundSeen) };
+    return { items: items, notFound: Object.keys(notFoundSeen), truncated: Object.keys(truncatedSeen) };
   }
 
   var results = extractFieldsFrom(document, notFoundSeen);
-  return { results: results, notFound: Object.keys(notFoundSeen) };
+  return { results: results, notFound: Object.keys(notFoundSeen), truncated: Object.keys(truncatedSeen) };
 })(__EXTRACT_PAYLOAD__)

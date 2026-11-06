@@ -88,6 +88,9 @@ type extractRequest struct {
 	// unchanged. See
 	// plan/ai/tools/browser/step-20-output-field-mapping.md.
 	Mapping map[string]string `json:"mapping,omitempty"`
+	// DescriptionRule (plan 186) reads the job description by a rule the person set (description_rule.go), next to
+	// Fields and not instead of them. Flat mode only: it cannot be combined with Container or UseLoginWindow.
+	DescriptionRule *descriptionRule `json:"descriptionRule,omitempty"`
 }
 
 type extractResponse struct {
@@ -99,6 +102,11 @@ type extractResponse struct {
 	// item alone. Exactly one of Results/Items is ever non-nil.
 	Items    []map[string]any `json:"items,omitempty"`
 	NotFound []string         `json:"notFound"`
+	// Truncated lists the labels of values that were cut at maxExtractedValueLength: such a cut is reported, not silent.
+	Truncated []string `json:"truncated,omitempty"`
+	// Description is the report of a description rule (text, flags, parts, outline, what was taken out); present only
+	// when the request carried one. The rule's text is also in Results under the rule's label.
+	Description *descriptionResult `json:"description,omitempty"`
 }
 
 // ExtractHandler handles POST /extract — the --mcp adapter's own real
@@ -135,6 +143,17 @@ func ExtractHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if body.DescriptionRule != nil {
+		if err := validateDescriptionRule(body.DescriptionRule); err != nil {
+			http.Error(w, "descriptionRule: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if body.Container != "" || body.UseLoginWindow {
+			http.Error(w, "descriptionRule cannot be combined with container or useLoginWindow", http.StatusBadRequest)
+			return
+		}
+	}
+
 	if body.UseLoginWindow {
 		if body.RequestID == "" {
 			http.Error(w, "requestId is required with useLoginWindow", http.StatusBadRequest)
@@ -150,7 +169,7 @@ func ExtractHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := performExtraction(body.Container, body.Fields, body.Mapping)
+	result, err := performExtraction(body.Container, body.Fields, body.Mapping, body.DescriptionRule)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("extract failed: %v", err), http.StatusBadGateway)
 		return
@@ -166,7 +185,7 @@ func ExtractHandler(w http.ResponseWriter, r *http.Request) {
 // same as crawlPage/findLoginElements. A thin lock+timeout wrapper
 // around runExtractionOnCurrentPage — see that function's own doc
 // comment for why the split exists.
-func performExtraction(container string, fields []extractField, mapping map[string]string) (extractResponse, error) {
+func performExtraction(container string, fields []extractField, mapping map[string]string, rule *descriptionRule) (extractResponse, error) {
 	if err := shared.EnsureSharedSession(); err != nil {
 		return extractResponse{}, err
 	}
@@ -190,7 +209,38 @@ func performExtraction(container string, fields []extractField, mapping map[stri
 	if err := ensurePageLoaded(ctx); err != nil {
 		return extractResponse{}, err
 	}
-	return runExtractionOnCurrentPage(ctx, container, fields, mapping)
+	result, err := runExtractionOnCurrentPage(ctx, container, fields, mapping)
+	if err != nil {
+		return extractResponse{}, err
+	}
+	return applyDescriptionRule(ctx, result, rule)
+}
+
+// applyDescriptionRule adds the description read by rule (nil: nothing) to a flat extraction result: the text goes
+// under the rule's label in Results (or the label to NotFound when no part found its box), and the report and the
+// truncated flag are attached. It reads the page, never changes it.
+func applyDescriptionRule(ctx context.Context, result extractResponse, rule *descriptionRule) (extractResponse, error) {
+	if rule == nil {
+		return result, nil
+	}
+	desc, err := runDescriptionRule(ctx, rule)
+	if err != nil {
+		return extractResponse{}, err
+	}
+	result.Description = desc
+	if result.Results == nil {
+		result.Results = map[string]any{}
+	}
+	if descriptionNotFound(desc) {
+		result.NotFound = append(result.NotFound, rule.Label)
+	} else {
+		delete(result.Results, rule.Label)
+		result.Results[rule.Label] = desc.Text
+	}
+	if desc.Truncated {
+		result.Truncated = append(result.Truncated, rule.Label)
+	}
+	return result, nil
 }
 
 // runExtractionOnCurrentPage is performExtraction's own actual logic,

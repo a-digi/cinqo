@@ -68,7 +68,7 @@ func crawlSite(t *testing.T, startURL string, maxPages int) paginatedCrawlRespon
 	fields := []extractField{{Label: "title", Selector: "h2"}}
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
-	resp, _, err := performPaginatedCrawl(ctx, startURL, "article", fields, nil, "a.next", maxPages, maxPages, false, "", "")
+	resp, _, err := performPaginatedCrawl(ctx, startURL, "article", fields, nil, "a.next", maxPages, maxPages, false, "", "", nil)
 	if err != nil {
 		t.Fatalf("crawl: %v", err)
 	}

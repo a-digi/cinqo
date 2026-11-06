@@ -130,6 +130,9 @@ type pageExtractResult struct {
 	// same contract as extractResponse.
 	Items    []map[string]any `json:"items,omitempty"`
 	NotFound []string         `json:"notFound"`
+	// Truncated and Description (plan 186): see extractResponse.
+	Truncated   []string           `json:"truncated,omitempty"`
+	Description *descriptionResult `json:"description,omitempty"`
 	// CloudflareDetected/CloudflareReason (step 21) — a single,
 	// immediate check (challengeTracker.state, challenge_resolution.go) per
 	// page. Only page 1 additionally gets the automatic wait-then-poll
@@ -201,6 +204,9 @@ type paginatedCrawlRequest struct {
 	UseLoginWindow bool `json:"useLoginWindow,omitempty"`
 	// AIContextID (plan 183): see crawlRequest.AIContextID.
 	AIContextID string `json:"aiContextId,omitempty"`
+	// DescriptionRule (plan 186): read the job description by a rule next to Fields (description_rule.go). Flat mode
+	// only: not with Container or UseLoginWindow.
+	DescriptionRule *descriptionRule `json:"descriptionRule,omitempty"`
 }
 
 // PaginatedCrawlHandler handles POST /crawl-paginated — the --mcp
@@ -243,6 +249,16 @@ func PaginatedCrawlHandler(w http.ResponseWriter, r *http.Request) {
 		writeAIContextRefusal(w, refusal)
 		return
 	}
+	if body.DescriptionRule != nil {
+		if err := validateDescriptionRule(body.DescriptionRule); err != nil {
+			http.Error(w, "descriptionRule: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if body.Container != "" || body.UseLoginWindow {
+			http.Error(w, "descriptionRule cannot be combined with container or useLoginWindow", http.StatusBadRequest)
+			return
+		}
+	}
 
 	// Step 22 — read once, up front: both whether to log at all
 	// (DebugEnabled) and whether to also capture each page's own raw
@@ -267,14 +283,14 @@ func PaginatedCrawlHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "requestId is required with useLoginWindow", http.StatusBadRequest)
 			return
 		}
-		args := paginatedArgs{body.Container, body.Fields, body.Mapping, body.NextSelector, body.RequestedMaxPages, body.EffectiveMaxPages, captureHTML, body.RequestID, body.RateLimitKey, aiDeadline(body.RequestID, time.Now())}
+		args := paginatedArgs{body.Container, body.Fields, body.Mapping, body.NextSelector, body.RequestedMaxPages, body.EffectiveMaxPages, captureHTML, body.RequestID, body.RateLimitKey, aiDeadline(body.RequestID, time.Now()), nil}
 		result, pageHTML, err = performPaginatedCrawlInLoginWindow(r.Context(), body.URL, args)
 		if err != nil {
 			writeLoginWindowFailure(w, body.RequestID, "paginated crawl", err)
 			return
 		}
 	} else {
-		result, pageHTML, err = performPaginatedCrawl(r.Context(), body.URL, body.Container, body.Fields, body.Mapping, body.NextSelector, body.RequestedMaxPages, body.EffectiveMaxPages, captureHTML, body.RequestID, body.RateLimitKey)
+		result, pageHTML, err = performPaginatedCrawl(r.Context(), body.URL, body.Container, body.Fields, body.Mapping, body.NextSelector, body.RequestedMaxPages, body.EffectiveMaxPages, captureHTML, body.RequestID, body.RateLimitKey, body.DescriptionRule)
 	}
 	if err != nil {
 		setCrawlPhase(body.RequestID, phaseFailed, err.Error())
@@ -369,6 +385,9 @@ func runPaginatedCrawlLoop(ctx context.Context, tab loopTab, args paginatedArgs)
 			}
 		}
 		result, err := runExtractionOnCurrentPage(ctx, container, fields, mapping)
+		if err == nil {
+			result, err = applyDescriptionRule(ctx, result, args.rule)
+		}
 		if err != nil {
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 				stoppedReason = "time_budget_reached"
@@ -405,6 +424,8 @@ func runPaginatedCrawlLoop(ctx context.Context, tab loopTab, args paginatedArgs)
 			Results:            result.Results,
 			Items:              result.Items,
 			NotFound:           result.NotFound,
+			Truncated:          result.Truncated,
+			Description:        result.Description,
 			CloudflareDetected: cf.challenge || cf.blocked,
 			CloudflareReason:   cf.reason,
 		})
@@ -621,7 +642,7 @@ type paginatedResult struct {
 // bounded by aiCallBudget and never go headed — see
 // challenge_resolver.go's own top comment. parent is the HTTP request's
 // own context: when the caller disconnects, the crawl stops.
-func performPaginatedCrawl(parent context.Context, url, container string, fields []extractField, mapping map[string]string, nextSelector string, requestedMaxPages, effectiveMaxPages int, captureHTML bool, requestID, rateLimitKey string) (paginatedCrawlResponse, []string, error) {
+func performPaginatedCrawl(parent context.Context, url, container string, fields []extractField, mapping map[string]string, nextSelector string, requestedMaxPages, effectiveMaxPages int, captureHTML bool, requestID, rateLimitKey string, rule *descriptionRule) (paginatedCrawlResponse, []string, error) {
 	// step 63.2 — registered before anything else in this call, same
 	// reasoning as crawlPage's own identical registration (crawl.go):
 	// cancellable via cancelCrawl(requestID) from the instant this call
@@ -635,7 +656,7 @@ func performPaginatedCrawl(parent context.Context, url, container string, fields
 		reqCancel()
 	}()
 
-	args := paginatedArgs{container, fields, mapping, nextSelector, requestedMaxPages, effectiveMaxPages, captureHTML, requestID, rateLimitKey, aiDeadline(requestID, time.Now())}
+	args := paginatedArgs{container, fields, mapping, nextSelector, requestedMaxPages, effectiveMaxPages, captureHTML, requestID, rateLimitKey, aiDeadline(requestID, time.Now()), rule}
 	if url != "" {
 		return performPaginatedCrawlForURL(reqCtx, url, args)
 	}
@@ -740,6 +761,8 @@ type paginatedArgs struct {
 	// deadline is the AI call's own budget end (aiDeadline); zero for
 	// Career's own calls.
 	deadline time.Time
+	// rule (plan 186) reads the job description by a rule on every page; nil: unchanged.
+	rule *descriptionRule
 }
 
 // performPaginatedCrawlForURL runs a url-bearing paginated crawl in a
