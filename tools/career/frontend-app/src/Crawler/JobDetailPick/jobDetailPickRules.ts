@@ -508,3 +508,16 @@ export function statedDescription(page: PickCandidates): StructuredHint | undefi
 export function usesStructured(picks: Picks, rule: RuleDraft | null): boolean {
   return DATA_FIELDS.some((f) => isStructuredPick(picks[f])) || (rule?.parts.some((p) => p.source !== '') ?? false)
 }
+
+// What a chosen description box also holds that is probably not description (a sidebar, a share bar: the furniture the Browser found inside
+// it), said for the description row; "" when there is nothing worth saying. Risky suggestions are not counted.
+export function furnitureNote(page: PickCandidates, selector: string): string {
+  const box = page.ranked.description.find((r) => r.selector === selector)
+  const help = descriptionHelpFor(page, selector)
+  if (!box || !help || box.chars <= 0) return ''
+  const items = help.excludes.filter((e) => !e.risky)
+  const total = items.reduce((n, e) => n + e.chars, 0)
+  if (total < 200 || total / box.chars < 0.05) return ''
+  const kinds = [...new Set(items.map((e) => e.kind))].slice(0, 3).join(', ')
+  return `This box also holds ${chars(total)} of page furniture (${kinds}). “Read the description with a rule” lets you leave it out.`
+}

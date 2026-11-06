@@ -20,6 +20,7 @@ import {
   FIELD_NAMES,
   fillNote,
   filterElements,
+  furnitureNote,
   hintsFor,
   isStructuredPick,
   lossyNote,
@@ -467,6 +468,13 @@ export function JobDetailPickPanel({ link, onSaved }: { link: PortalLink; onSave
                         setPick('description', p)
                       }}
                     />
+                    {picks.description !== null &&
+                      !isStructuredPick(picks.description) &&
+                      furnitureNote(page, picks.description.selector) !== '' && (
+                        <p className="pl-1 text-amber-900" data-testid="job-detail-pick-furniture">
+                          {furnitureNote(page, picks.description.selector)}
+                        </p>
+                      )}
                     <div className="flex flex-wrap items-center gap-2 pl-1">
                       <button
                         type="button"

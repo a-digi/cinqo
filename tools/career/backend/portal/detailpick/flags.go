@@ -112,6 +112,11 @@ func Flags(samples []Sample, chosen []Field) []Flag {
 				fs.add("too_long", Warning, FieldPostedAt, s.JobID, "The posted date is longer than a date can be.")
 			}
 		}
+		// A title over several lines is a block of the page (the title with a badge and the company, found on python.org's job pages): it is
+		// not a title, and the title option (replaceTitle) ignores it.
+		if want[FieldTitle] && strings.Contains(get(FieldTitle), "\n") {
+			fs.add("title_several_lines", Warning, FieldTitle, s.JobID, "The title spans several lines: the selector probably holds the title together with a badge or the company.")
+		}
 		if want[FieldTitle] && get(FieldTitle) != "" && strings.TrimSpace(s.SavedTitle) != "" && overlap(get(FieldTitle), s.SavedTitle) < 0.3 {
 			fs.add("title_differs", Info, FieldTitle, s.JobID, "The title on the page is very different from the saved title of the job.")
 		}

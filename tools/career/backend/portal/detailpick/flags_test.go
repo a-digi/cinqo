@@ -94,6 +94,27 @@ func TestTitleDiffersIsOnlyInformation(t *testing.T) {
 	}
 }
 
+func TestATitleOverSeveralLinesIsFlagged(t *testing.T) {
+	s := good("1")
+	s.Values["title"] = "Founding Principal Engineer New\nFerto Health GmbH Berlin"
+	fl := codes(Flags([]Sample{s, good("2")}, Fields))
+	f, ok := fl["title_several_lines|title"]
+	if !ok || f.Severity != Warning || len(f.JobIDs) != 1 || f.JobIDs[0] != "1" {
+		t.Fatalf("flags: %+v", fl)
+	}
+	if _, ok := codes(Flags([]Sample{s}, []Field{FieldCompany}))["title_several_lines|title"]; ok {
+		t.Error("the title was not chosen, so it is not checked")
+	}
+	if _, ok := codes(Flags([]Sample{good("3")}, Fields))["title_several_lines|title"]; ok {
+		t.Error("a one-line title is fine")
+	}
+	t3 := good("4")
+	t3.Values["title"] = "Backend Developer\n"
+	if _, ok := codes(Flags([]Sample{t3}, Fields))["title_several_lines|title"]; ok {
+		t.Error("a trailing line break is only whitespace")
+	}
+}
+
 func TestIdenticalOnEverySample(t *testing.T) {
 	a, b := good("1"), good("2")
 	for _, k := range []string{"title", "description", "company", "location"} {
