@@ -60,5 +60,11 @@ func (engine) AdjustPipeline(link instruction.LinkFacts, facts *instruction.Pipe
 	facts.DetailFailedRuns = 0
 }
 
-// Events: none yet (step 7).
-func (engine) Events() []instruction.EventSpec { return nil }
+// Events: saving a rule publishes the engine's own topic, and the engine's handler turns it into the request to crawl (service/events.go).
+// The topic and the path are spelled here and in the service; a test keeps the two equal.
+func (engine) Events() []instruction.EventSpec {
+	return []instruction.EventSpec{
+		{Topic: "career.portal_link.katana_rule_saved", Role: instruction.Publishes},
+		{Topic: "career.portal_link.katana_rule_saved", Role: instruction.Consumes, PathSuffix: "events/katana-rule-saved"},
+	}
+}

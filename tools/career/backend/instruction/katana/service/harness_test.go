@@ -36,6 +36,7 @@ type fakeCore struct {
 	pages   map[string]string // page URL -> fetch-links answer body
 	fetches []string
 	status  map[string]int // page URL -> forced status
+	events  []string       // published domain events (raw bodies)
 }
 
 func (f *fakeCore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -60,6 +61,11 @@ func (f *fakeCore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		fmt.Fprint(w, body)
+	case strings.HasSuffix(r.URL.Path, "/events/publish"):
+		var raw json.RawMessage
+		_ = json.NewDecoder(r.Body).Decode(&raw)
+		f.events = append(f.events, string(raw))
+		w.WriteHeader(http.StatusAccepted)
 	default:
 		http.NotFound(w, r)
 	}
@@ -224,6 +230,11 @@ func TestTheWholeJobListRecipe(t *testing.T) {
 	if s, _ := portal.GetLinkCrawlSettings(r.linkID); s.Rules != nil {
 		t.Fatal("a refused save wrote a rule")
 	}
+	r.core.mu.Lock()
+	if len(r.core.events) != 0 {
+		t.Errorf("a refused save published %v", r.core.events)
+	}
+	r.core.mu.Unlock()
 
 	// 3. test: two pages at most, nothing saved
 	text, isErr = r.call("katana_test_link_rule", map[string]any{})
@@ -246,6 +257,13 @@ func TestTheWholeJobListRecipe(t *testing.T) {
 	text, isErr = r.call("katana_save_link_rule", map[string]any{})
 	if isErr || !strings.Contains(text, `"saved":true`) {
 		t.Fatalf("save: %v %s", isErr, text)
+	}
+	// the engine's own event announced the saved rule, and nothing else was published
+	r.core.mu.Lock()
+	events := append([]string(nil), r.core.events...)
+	r.core.mu.Unlock()
+	if len(events) != 1 || !strings.Contains(events[0], "career.portal_link.katana_rule_saved") || !strings.Contains(events[0], r.linkID) {
+		t.Errorf("published events: %v", events)
 	}
 	// the attempt the screen opened for this run ends as a success
 	if status, err := portal.FinishInstructionAttempt(r.linkID, portal.InstructionKindListing, ""); err != nil || status != portal.InstructionAttemptSucceeded {

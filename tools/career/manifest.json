@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.0.735",
+  "version": "0.0.736",
   "authors": [
     { "name": "Anes Detit", "email": "tafa.andet@googlemail.com" }
   ],
@@ -1249,6 +1249,10 @@
     {
       "topic": "career.portal_link.jobs_crawled",
       "path_suffix": "events/jobs-crawled"
+    },
+    {
+      "topic": "career.portal_link.katana_rule_saved",
+      "path_suffix": "events/katana-rule-saved"
     },
     {
       "topic": "career.job.created",

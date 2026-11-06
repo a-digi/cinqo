@@ -28,5 +28,6 @@ func registerInstructionEngines() {
 // never forwards them; each one also needs the tool's service token.
 func registerInstructionRoutes(mux *http.ServeMux) {
 	mux.HandleFunc(katanaservice.Prefix, katanaservice.Handler)
-	mux.HandleFunc("/portal-links/katana/start-over", katanaservice.StartOverHandler) // the screen's Start over (listed in manifest.json)
+	mux.HandleFunc("/"+katanaservice.RuleSavedPath, katanaservice.RuleSavedEventHandler) // the engine's own event (listed in manifest.json)
+	mux.HandleFunc("/portal-links/katana/start-over", katanaservice.StartOverHandler)    // the screen's Start over (listed in manifest.json)
 }

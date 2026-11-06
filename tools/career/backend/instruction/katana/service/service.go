@@ -410,6 +410,7 @@ func SaveRule(ctx context.Context, b ruleBody) (any, *problem) {
 	if err := portal.MarkInstructionSaved(s.linkID, portal.InstructionKindListing); err != nil {
 		log.Printf("katana: could not record the saved rule on the attempt of link %s: %v", s.linkID, err)
 	}
+	publishRuleSaved(s.linkID)
 	return map[string]any{"saved": true, "jobsInTest": sc.passed[ruleKey(rule)], "host": rule.Host, "include": rule.Include}, nil
 }
 
