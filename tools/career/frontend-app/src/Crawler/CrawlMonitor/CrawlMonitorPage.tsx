@@ -1,5 +1,8 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { fetchActiveCrawlRuns, stopCrawlNow, type ActiveCrawlRunSummary } from '../crawlNow'
+import { fetchRecrawlActive, type RecrawlActive } from '../../api'
+import { RecrawlWorkersPanel } from './RecrawlWorkersPanel'
+import { isIdle, monitorCounts, pillText } from './recrawlMonitorRules'
 import { phaseLabel, latestCrawlLogMessage } from '../crawlPhase'
 import { StopIcon, LogIcon, AlertIcon, PulseIcon } from '../../Shared/Icons/icons'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
@@ -36,23 +39,33 @@ function shortStarted(iso: string): string {
 
 export function CrawlMonitorPage() {
   const [runs, setRuns] = useState<ActiveCrawlRunSummary[]>([])
+  // The job recrawl (Jobs page): its batches and the jobs being crawled now. It has no crawl run, so it is asked for on its own (plan 194).
+  const [recrawl, setRecrawl] = useState<RecrawlActive>({ batches: [], workers: [] })
+  const [now, setNow] = useState(() => Date.now())
   const [error, setError] = useState('')
   const [loaded, setLoaded] = useState(false)
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null)
   const [stoppingLinkId, setStoppingLinkId] = useState<string | null>(null)
 
   function load() {
-    fetchActiveCrawlRuns()
+    setNow(Date.now())
+    const crawls = fetchActiveCrawlRuns()
       .then((fetched) => {
         setRuns(fetched)
-        setError('')
+        return ''
       })
-      .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : 'Failed to load active crawls.')
+      .catch((err: unknown) => (err instanceof Error ? err.message : 'Failed to load active crawls.'))
+    // A failure of either call keeps what the other one shows and says so.
+    const recrawls = fetchRecrawlActive()
+      .then((fetched) => {
+        setRecrawl(fetched)
+        return ''
       })
-      .finally(() => {
-        setLoaded(true)
-      })
+      .catch((err: unknown) => (err instanceof Error ? err.message : 'Failed to load the job recrawl.'))
+    void Promise.all([crawls, recrawls]).then(([a, b]) => {
+      setError(a || b)
+      setLoaded(true)
+    })
   }
 
   const pollTokenRef = useRef(0)
@@ -81,10 +94,8 @@ export function CrawlMonitorPage() {
       })
   }
 
-  const listing = runs.filter((r) => r.kind === 'listing').length
-  const detail = runs.length - listing
-  const waiting = runs.filter((r) => r.phase === 'awaiting_human_challenge').length
-  const automatic = runs.filter((r) => r.triggeredBy === 'auto_discovery').length
+  const counts = monitorCounts(runs, recrawl)
+  const idle = isIdle(runs, recrawl)
 
   return (
     <div className="career-v-blur career-a-glow career-t-type max-w-7xl p-6 font-sans text-gray-900">
@@ -94,8 +105,8 @@ export function CrawlMonitorPage() {
         description="Every platform currently being crawled, across every link. Refreshes automatically."
         // The pill links on to the Portals page, where crawls are started and managed.
         pill={{
-          text: runs.length === 0 ? 'Idle' : `${runs.length} running`,
-          accent: runs.length === 0 ? ACCENTS[6] : ACCENTS[1],
+          text: pillText(counts, recrawl),
+          accent: idle ? ACCENTS[6] : ACCENTS[1],
           href: PLATFORMS_PATH,
         }}
       />
@@ -103,7 +114,7 @@ export function CrawlMonitorPage() {
         <div className="min-w-0 flex-1">
           <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
 
-          {loaded && runs.length === 0 && !error && (
+          {loaded && idle && !error && (
             <div
               className="career-enter career-delay-1 flex flex-col items-center rounded-3xl border p-10 text-center"
               style={{ borderColor: ACCENTS[0].soft, background: `linear-gradient(160deg, #ffffff 45%, ${ACCENTS[0].soft} 100%)` }}
@@ -253,22 +264,26 @@ export function CrawlMonitorPage() {
               </div>
             </div>
           )}
+
+          <RecrawlWorkersPanel active={recrawl} now={now} onChanged={load} />
         </div>
 
         <aside className="w-full shrink-0 career-rail-sticky lg:w-72">
           <SummaryRail
             title="Right now"
             segments={[
-              { value: listing, color: ACCENTS[4].to },
-              { value: detail, color: ACCENTS[5].to },
+              { value: counts.listing, color: ACCENTS[4].to },
+              { value: counts.detail, color: ACCENTS[5].to },
+              { value: counts.recrawl, color: ACCENTS[3].to },
             ]}
-            centerValue={String(runs.length)}
-            centerLabel={runs.length === 1 ? 'crawl running' : 'crawls running'}
+            centerValue={String(counts.total)}
+            centerLabel={counts.total === 1 ? 'crawl running' : 'crawls running'}
             rows={[
-              { label: 'Listing crawls', value: String(listing), color: ACCENTS[4].to },
-              { label: 'Job detail crawls', value: String(detail), color: ACCENTS[5].to },
-              { label: 'Auto-started', value: String(automatic), color: ACCENTS[6].to },
-              { label: 'Needs you', value: String(waiting), color: ACCENTS[2].to, emphasis: waiting > 0 },
+              { label: 'Listing crawls', value: String(counts.listing), color: ACCENTS[4].to },
+              { label: 'Job detail crawls', value: String(counts.detail), color: ACCENTS[5].to },
+              { label: 'Job recrawl', value: String(counts.recrawl), color: ACCENTS[3].to },
+              { label: 'Auto-started', value: String(counts.automatic), color: ACCENTS[6].to },
+              { label: 'Needs you', value: String(counts.waitingForYou), color: ACCENTS[2].to, emphasis: counts.waitingForYou > 0 },
             ]}
           />
           <div className="mt-8">

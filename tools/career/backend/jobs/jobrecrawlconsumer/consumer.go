@@ -248,7 +248,7 @@ func (c *Consumer) process(ctx context.Context, id string) {
 //
 // "filled" or "refreshed" job also sends "career.job.description_changed" (sent by the save, see below), so its persona scores are made again.
 func Process(ctx context.Context, id string) {
-	claimed, err := jobrecrawl.Claim(id)
+	claimed, err := jobrecrawl.ClaimSlot(id, crawl.PacingSlot(ctx))
 	if err != nil {
 		log.Printf("job recrawl consumer: could not claim job %s: %v", id, err)
 		return
@@ -277,6 +277,11 @@ func Process(ctx context.Context, id string) {
 	}
 
 	crawlCtx, cancel := context.WithTimeout(ctx, crawlTimeout)
+	// The phase of the page load goes into the request's row while it crawls (the Crawl Monitor shows it). It is a hint: a failed write is
+	// ignored, and a job that never gets a phase (the Browser tool answers nothing while it waits for the platform's pacing) shows none.
+	crawlCtx = crawl.WithPhaseObserver(crawlCtx, func(phase, message string) {
+		_ = jobrecrawl.SetPhase(id, phase, message)
+	})
 	saved, err := recrawl(crawlCtx, t, token)
 	timedOut := errors.Is(crawlCtx.Err(), context.DeadlineExceeded)
 	cancel()

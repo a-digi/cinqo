@@ -863,3 +863,106 @@ func TestABatchOfTwentyIsStillCrawledOneAfterTheOther(t *testing.T) {
 		t.Errorf("a batch of %d overlapped: peak %d", ParallelThreshold, fb.peak)
 	}
 }
+
+// Plan 194: every job that is being crawled says which crawler took it and when, for the Crawl Monitor.
+func TestRunningJobsRecordTheCrawlerThatTookThem(t *testing.T) {
+	fb := setup(t)
+	fb.delay = 200 * time.Millisecond
+	var ids []string
+	for i := 0; i < 30; i++ {
+		id := fmt.Sprintf("job%02d", i)
+		ids = append(ids, id)
+		fb.pages[addJob(t, id, "crawled", "old")] = "new " + id
+	}
+	queue(t, ids...)
+	c := New(100)
+	ctx, cancel := context.WithCancel(context.Background())
+	for _, id := range ids {
+		postEvent(c, event(id))
+	}
+	done := c.Start(ctx)
+
+	slots := map[int]bool{}
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		rows, err := db.JobsDB.Query(`SELECT worker_slot, COALESCE(started_at, '') FROM job_recrawl_requests WHERE state = 'running'`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for rows.Next() {
+			var slot *int
+			var started string
+			if err := rows.Scan(&slot, &started); err != nil {
+				t.Fatal(err)
+			}
+			if slot == nil || started == "" {
+				t.Errorf("a running job without its crawler or start time: slot %v started %q", slot, started)
+				continue
+			}
+			slots[*slot] = true
+		}
+		rows.Close()
+		finished := true
+		for _, id := range ids {
+			if requestOf(t, id).state != "done" {
+				finished = false
+			}
+		}
+		if finished {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	cancel()
+	<-done
+	if len(slots) < 2 {
+		t.Errorf("only crawler slots %v were seen running", slots)
+	}
+	for s := range slots {
+		if s < 0 || s >= MaxWorkers {
+			t.Errorf("slot %d out of range", s)
+		}
+	}
+	if !slots[0] {
+		t.Errorf("the main crawler (slot 0) never showed: %v", slots)
+	}
+}
+
+// Plan 194: the phase of a page load goes into the request's row while the job crawls, and goes when it ends.
+func TestThePhaseOfAPageLoadIsKeptWhileTheJobCrawls(t *testing.T) {
+	setup(t)
+	addJob(t, "a", "crawled", "old")
+	queue(t, "a")
+	old := recrawl
+	t.Cleanup(func() { recrawl = old })
+	seenWhileRunning := make(chan [2]string, 1)
+	recrawl = func(ctx context.Context, tg jobs.RecrawlTarget, token string) (bool, error) {
+		crawl.PhaseObserver(ctx)("navigating", "navigating to https://portal.example/jobs/a")
+		var phase, message *string
+		if err := db.JobsDB.QueryRow(`SELECT phase, phase_message FROM job_recrawl_requests WHERE job_id = ?`, tg.ID).Scan(&phase, &message); err != nil {
+			t.Error(err)
+		} else if phase != nil && message != nil {
+			seenWhileRunning <- [2]string{*phase, *message}
+		}
+		return true, nil
+	}
+	c := New(10)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := c.Start(ctx)
+	postEvent(c, event("a"))
+	waitFor(t, "the job done", func() bool { return requestOf(t, "a").state == "done" })
+	cancel()
+	<-done
+	select {
+	case got := <-seenWhileRunning:
+		if got != [2]string{"navigating", "navigating to https://portal.example/jobs/a"} {
+			t.Errorf("phase while running: %v", got)
+		}
+	default:
+		t.Error("no phase was in the row while the job crawled")
+	}
+	var phase *string
+	if err := db.JobsDB.QueryRow(`SELECT phase FROM job_recrawl_requests WHERE job_id = 'a'`).Scan(&phase); err != nil || phase != nil {
+		t.Errorf("the phase must go when the job ends: %v %v", phase, err)
+	}
+}

@@ -2440,6 +2440,48 @@ export async function fetchMissingDetails(): Promise<MissingDetails> {
   }
 }
 
+// What the job recrawl is doing right now, for the Crawl Monitor (plan 194): the batches with work left and the jobs being crawled at this
+// moment. A recrawl has no crawl run, so the monitor's own list never showed it.
+export interface RecrawlActiveBatch {
+  batchId: string
+  total: number
+  done: number
+  queued: number
+  running: number
+  cancelled: number
+  startedAt: string
+  // Stop was clicked: nothing waits any more and some crawls are still being finished.
+  stopping: boolean
+}
+
+export interface RecrawlActiveWorker {
+  jobId: string
+  jobTitle: string
+  portalId?: string
+  portalName?: string
+  portalLinkId?: string
+  portalLinkTitle?: string
+  url: string
+  // The crawler that took the job: 0 is the main crawler, 1 to 4 the helpers; -1 when the row does not say.
+  slot: number
+  startedAt: string
+  // The Browser tool's own words; absent while it has said nothing (it says nothing while it waits for the platform's turn).
+  phase?: string
+  message?: string
+}
+
+export interface RecrawlActive {
+  batches: RecrawlActiveBatch[]
+  workers: RecrawlActiveWorker[]
+}
+
+export async function fetchRecrawlActive(): Promise<RecrawlActive> {
+  const res = await fetch(`${PROXY_BASE}/jobs/recrawl/active`, { credentials: 'include', cache: 'no-store' })
+  if (!res.ok) throw new Error(`failed to load the job recrawl (${String(res.status)})`)
+  const body = (await res.json()) as Partial<RecrawlActive>
+  return { batches: body.batches ?? [], workers: body.workers ?? [] }
+}
+
 // The progress of a batch: the numbers for all of it and the first `limit` jobs (1 is enough for the numbers). null when the server no
 // longer knows the batch (404).
 export async function fetchRecrawlStatus(batchId: string, limit: number): Promise<BatchStatus | null> {

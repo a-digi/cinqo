@@ -498,6 +498,7 @@ func pollBrowserPhase(ctx context.Context, coreURL, runID, accessToken string) (
 				}
 				last = current
 				_ = setCrawlRunPhase(runID, phase, message)
+				PhaseObserver(ctx)(phase, message)
 			}
 		}
 	}()

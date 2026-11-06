@@ -249,8 +249,16 @@ func Cancel(batchID string) (int, error) {
 
 // Claim takes a queued request for the worker: queued becomes running and the old reason is cleared. It reports whether this
 // call took it; false means the request is not queued (cancelled, done, already running, or gone), so the caller drops it.
-func Claim(jobID string) (bool, error) {
-	res, err := db.JobsDB.Exec(`UPDATE job_recrawl_requests SET state = 'running', reason = NULL WHERE job_id = ? AND state = 'queued'`, jobID)
+func Claim(jobID string) (bool, error) { return ClaimSlot(jobID, 0) }
+
+// ClaimSlot is Claim for the crawler number slot (0 is the main crawler, 1 to 4 the helpers): it also records when the job was taken
+// and by which crawler, which is what the Crawl Monitor shows (plan 194).
+func ClaimSlot(jobID string, slot int) (bool, error) {
+	res, err := db.JobsDB.Exec(
+		`UPDATE job_recrawl_requests SET state = 'running', reason = NULL, started_at = ?, worker_slot = ?, phase = NULL, phase_message = NULL
+		 WHERE job_id = ? AND state = 'queued'`,
+		time.Now().UTC().Format(time.RFC3339), slot, jobID,
+	)
 	if err != nil {
 		return false, err
 	}
@@ -258,17 +266,29 @@ func Claim(jobID string) (bool, error) {
 	return n == 1, nil
 }
 
+// SetPhase records the phase of the page load of a job that is being crawled (the Browser tool's phase and message). It changes nothing
+// for a request that is not running, so a late update can never mark a finished or released job.
+func SetPhase(jobID, phase, message string) error {
+	_, err := db.JobsDB.Exec(
+		`UPDATE job_recrawl_requests SET phase = ?, phase_message = ? WHERE job_id = ? AND state = 'running'`,
+		nullIfEmpty(phase), nullIfEmpty(message), jobID,
+	)
+	return err
+}
+
 // Release puts a running request back to queued with a reason that the Jobs page shows ("waiting for a signed-in session"), for
 // the sweeper to hand out again later.
 func Release(jobID, reason string) error {
-	_, err := db.JobsDB.Exec(`UPDATE job_recrawl_requests SET state = 'queued', reason = ? WHERE job_id = ? AND state = 'running'`, nullIfEmpty(reason), jobID)
+	_, err := db.JobsDB.Exec(`UPDATE job_recrawl_requests SET state = 'queued', reason = ?, started_at = NULL, worker_slot = NULL, phase = NULL, phase_message = NULL
+		 WHERE job_id = ? AND state = 'running'`, nullIfEmpty(reason), jobID)
 	return err
 }
 
 // Finish ends a running request with its outcome (and a reason for the outcomes that have one).
 func Finish(jobID, outcome, reason string) error {
 	_, err := db.JobsDB.Exec(
-		`UPDATE job_recrawl_requests SET state = 'done', outcome = ?, reason = ?, finished_at = ? WHERE job_id = ? AND state = 'running'`,
+		`UPDATE job_recrawl_requests SET state = 'done', outcome = ?, reason = ?, finished_at = ?, phase = NULL, phase_message = NULL
+		 WHERE job_id = ? AND state = 'running'`,
 		outcome, nullIfEmpty(reason), time.Now().UTC().Format(time.RFC3339), jobID,
 	)
 	return err
@@ -297,7 +317,7 @@ func DueQueued(olderThan time.Duration, limit int) ([]string, error) {
 // ReviveRunning puts every running request back to queued and returns how many: at start-up no worker is running, so a request
 // still marked running was cut off by a restart.
 func ReviveRunning() (int, error) {
-	res, err := db.JobsDB.Exec(`UPDATE job_recrawl_requests SET state = 'queued' WHERE state = 'running'`)
+	res, err := db.JobsDB.Exec(`UPDATE job_recrawl_requests SET state = 'queued', started_at = NULL, worker_slot = NULL, phase = NULL, phase_message = NULL WHERE state = 'running'`)
 	if err != nil {
 		return 0, err
 	}

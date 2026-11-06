@@ -1090,7 +1090,14 @@ CREATE TABLE IF NOT EXISTS job_recrawl_requests (
     state        TEXT NOT NULL,
     outcome      TEXT,
     reason       TEXT,
-    finished_at  TEXT
+    finished_at  TEXT,
+    -- plan 194: what the Crawl Monitor shows of a job that is being crawled right now. started_at and worker_slot are set when a worker
+    -- claims the job (slot 0 is the main crawler, 1 to 4 the helpers), phase and phase_message while its page loads (the Browser tool's
+    -- own phase); a release or a restart clears all four, a finish keeps started_at.
+    started_at    TEXT,
+    worker_slot   INTEGER,
+    phase         TEXT,
+    phase_message TEXT
 );
 CREATE INDEX IF NOT EXISTS job_recrawl_requests_batch_idx ON job_recrawl_requests (batch_id);
 CREATE INDEX IF NOT EXISTS job_recrawl_requests_state_idx ON job_recrawl_requests (state, requested_at);
@@ -1855,6 +1862,9 @@ func migrateJobsDB(db *sql.DB) error {
 	if err := migrateJobsDetailCrawlStatus(db); err != nil {
 		return err
 	}
+	if err := migrateJobRecrawlWorkerColumns(db); err != nil {
+		return err
+	}
 	if err := migrateJobsDescriptionChangedAt(db); err != nil {
 		return err
 	}
@@ -2082,6 +2092,27 @@ func migrateJobsDetailCrawlStatus(db *sql.DB) error {
 	}
 	_, err = db.Exec(`ALTER TABLE jobs ADD COLUMN detail_crawl_status TEXT`)
 	return err
+}
+
+// migrateJobRecrawlWorkerColumns (plan 194) adds started_at, worker_slot, phase and phase_message to job_recrawl_requests on an install
+// that already has it (a fresh one gets them from the base schema). Existing rows stay NULL: nothing was running when the columns were
+// added, and a finished request needs none of them. A no-op for a column that is present or a table that does not exist yet.
+func migrateJobRecrawlWorkerColumns(db *sql.DB) error {
+	for _, c := range []struct{ name, typ string }{
+		{"started_at", "TEXT"}, {"worker_slot", "INTEGER"}, {"phase", "TEXT"}, {"phase_message", "TEXT"},
+	} {
+		exists, hasColumn, err := tableHasColumn(db, "job_recrawl_requests", c.name)
+		if err != nil {
+			return err
+		}
+		if !exists || hasColumn {
+			continue
+		}
+		if _, err := db.Exec(`ALTER TABLE job_recrawl_requests ADD COLUMN ` + c.name + ` ` + c.typ); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // migrateJobsDescriptionChangedAt (step 164) adds the nullable jobs.description_changed_at to an install that already

@@ -710,3 +710,124 @@ func TestTheManifestListensToTheTopics(t *testing.T) {
 		t.Error("the persona consumer's description-changed listener is missing from the manifest")
 	}
 }
+
+func workerOf(t *testing.T, id string) (started, phase, message string, slot *int) {
+	t.Helper()
+	var s, p, m *string
+	if err := db.JobsDB.QueryRow(`SELECT started_at, worker_slot, phase, phase_message FROM job_recrawl_requests WHERE job_id = ?`, id).Scan(&s, &slot, &p, &m); err != nil {
+		t.Fatal(err)
+	}
+	if s != nil {
+		started = *s
+	}
+	if p != nil {
+		phase = *p
+	}
+	if m != nil {
+		message = *m
+	}
+	return
+}
+
+// Plan 194: what the Crawl Monitor shows of a job that is being crawled.
+func TestClaimSlotRecordsWhenAndByWhomAJobWasTaken(t *testing.T) {
+	setup(t)
+	addJob(t, "a")
+	addJob(t, "b")
+	queueIDs(t, "a", "b")
+	if ok, err := ClaimSlot("a", 3); err != nil || !ok {
+		t.Fatal(ok, err)
+	}
+	started, _, _, slot := workerOf(t, "a")
+	if started == "" || slot == nil || *slot != 3 {
+		t.Errorf("slot %v started %q", slot, started)
+	}
+	if _, err := time.Parse(time.RFC3339, started); err != nil {
+		t.Errorf("started_at is not a time: %q", started)
+	}
+	// the plain Claim is the main crawler
+	if ok, _ := Claim("b"); !ok {
+		t.Fatal("claim")
+	}
+	if _, _, _, slot := workerOf(t, "b"); slot == nil || *slot != 0 {
+		t.Errorf("Claim must be slot 0: %v", slot)
+	}
+	// a job that is not queued is not touched by a second claim
+	if ok, _ := ClaimSlot("a", 1); ok {
+		t.Error("a running job was claimed again")
+	}
+	if _, _, _, slot := workerOf(t, "a"); *slot != 3 {
+		t.Errorf("slot of a running job changed: %d", *slot)
+	}
+}
+
+func TestThePhaseIsKeptOnlyWhileTheJobRuns(t *testing.T) {
+	setup(t)
+	addJob(t, "a")
+	queueIDs(t, "a")
+	if err := SetPhase("a", "navigating", "too early"); err != nil {
+		t.Fatal(err)
+	}
+	if _, phase, _, _ := workerOf(t, "a"); phase != "" {
+		t.Errorf("a queued job got a phase: %q", phase)
+	}
+	if ok, _ := ClaimSlot("a", 2); !ok {
+		t.Fatal("claim")
+	}
+	if err := SetPhase("a", "navigating", "navigating to https://x"); err != nil {
+		t.Fatal(err)
+	}
+	if _, phase, message, _ := workerOf(t, "a"); phase != "navigating" || message != "navigating to https://x" {
+		t.Errorf("phase %q %q", phase, message)
+	}
+	// a finish keeps when it started, clears the phase, and a late update changes nothing
+	startedBefore, _, _, _ := workerOf(t, "a")
+	if err := Finish("a", OutcomeRefreshed, ""); err != nil {
+		t.Fatal(err)
+	}
+	started, phase, _, slot := workerOf(t, "a")
+	if started != startedBefore || started == "" || phase != "" || slot == nil || *slot != 2 {
+		t.Errorf("after the finish: started %q (was %q) phase %q slot %v", started, startedBefore, phase, slot)
+	}
+	_ = SetPhase("a", "extracting", "late")
+	if _, phase, _, _ := workerOf(t, "a"); phase != "" {
+		t.Errorf("a late update marked a finished job: %q", phase)
+	}
+}
+
+func TestAReleaseAndARestartClearWhatAWorkerRecorded(t *testing.T) {
+	setup(t)
+	addJob(t, "a")
+	addJob(t, "b")
+	queueIDs(t, "a", "b")
+	for i, id := range []string{"a", "b"} {
+		if ok, _ := ClaimSlot(id, i+1); !ok {
+			t.Fatal("claim", id)
+		}
+		_ = SetPhase(id, "navigating", "x")
+	}
+	if err := Release("a", "waiting for a signed-in session"); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := ReviveRunning(); err != nil || n != 1 {
+		t.Fatalf("revive: %d %v", n, err)
+	}
+	for _, id := range []string{"a", "b"} {
+		started, phase, message, slot := workerOf(t, id)
+		if started != "" || phase != "" || message != "" || slot != nil {
+			t.Errorf("%s kept %q %q %q %v", id, started, phase, message, slot)
+		}
+		if state, _, _ := rowOf(t, id); state != StateQueued {
+			t.Errorf("%s is %s", id, state)
+		}
+	}
+}
+
+// queueIDs queues the jobs in one batch.
+func queueIDs(t *testing.T, ids ...string) {
+	t.Helper()
+	res, err := Request(ids)
+	if err != nil || len(res.Accepted) != len(ids) {
+		t.Fatalf("queue %v: %+v %v", ids, res, err)
+	}
+}
