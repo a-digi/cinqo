@@ -1411,12 +1411,39 @@ type CrawlResultPage struct {
 	Description *DescriptionReport `json:"description,omitempty"`
 }
 
-// DescriptionReport is the part of the Browser's description report the run log needs.
+// DescriptionReport is the Browser's report of a description rule (plan 186): the text's size and cut flag for the run log, and the
+// parts, outline and removed text the picking screen shows. Every key is omitted by the Browser when empty.
 type DescriptionReport struct {
-	Chars      int  `json:"chars"`
-	FullLength int  `json:"fullLength"`
-	Truncated  bool `json:"truncated"`
-	Limit      int  `json:"limit"`
+	Chars        int                     `json:"chars"`
+	FullLength   int                     `json:"fullLength"`
+	Truncated    bool                    `json:"truncated"`
+	Limit        int                     `json:"limit"`
+	Parts        []DescriptionPartReport `json:"parts,omitempty"`
+	Outline      []string                `json:"outline,omitempty"`
+	Removed      []DescriptionRemoved    `json:"removed,omitempty"`
+	RemovedTotal int                     `json:"removedTotal,omitempty"`
+	Errors       []string                `json:"errors,omitempty"`
+}
+
+// DescriptionPartReport is what the Browser found for one part of a rule.
+type DescriptionPartReport struct {
+	Index    int    `json:"index"`
+	Include  string `json:"include,omitempty"`
+	Matches  int    `json:"matches"`
+	Chars    int    `json:"chars"`
+	Overlap  bool   `json:"overlap"`
+	NotFound bool   `json:"notFound"`
+	Cut      int    `json:"cut"`
+	Removed  int    `json:"removed"`
+}
+
+// DescriptionRemoved is a piece of text a rule took out (an exclude, a consent box, a cut-after), with a 200-character preview.
+type DescriptionRemoved struct {
+	Part     int    `json:"part"`
+	Kind     string `json:"kind"`
+	Selector string `json:"selector,omitempty"`
+	Chars    int    `json:"chars"`
+	Text     string `json:"text"`
 }
 
 // ExtractResultStrings normalizes one field's extracted value (a
