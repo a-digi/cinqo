@@ -15,6 +15,9 @@ interface PortalLinkHeaderProps {
   editLoginUrl: string
   onEditRequiresLoginChange: (value: boolean) => void
   onEditLoginUrlChange: (value: string) => void
+  // plan 197: the link's own engine while editing ('' = follow the Browser tool's selected engine, 'rod' = read this link the Rod way).
+  editEngine: '' | 'rod'
+  onEditEngineChange: (value: '' | 'rod') => void
   onStartEdit: () => void
   onSaveEdit: () => void
   onCancelEdit: () => void
@@ -44,6 +47,8 @@ export function PortalLinkHeader({
   editLoginUrl,
   onEditRequiresLoginChange,
   onEditLoginUrlChange,
+  editEngine,
+  onEditEngineChange,
   onStartEdit,
   onSaveEdit,
   onCancelEdit,
@@ -112,6 +117,19 @@ export function PortalLinkHeader({
             className="w-full rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-900 focus:border-gray-500 focus:outline-none"
           />
         )}
+        <label className="flex flex-wrap items-center gap-2 text-xs text-gray-700">
+          Engine for this link
+          <select
+            value={editEngine}
+            onChange={(e) => {
+              onEditEngineChange(e.target.value === 'rod' ? 'rod' : '')
+            }}
+            className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs text-gray-900 focus:border-gray-500 focus:outline-none"
+          >
+            <option value="">Browser setting</option>
+            <option value="rod">Rod (can ask you to clear a Cloudflare check)</option>
+          </select>
+        </label>
         <div className="flex gap-2">
           <button
             type="button"

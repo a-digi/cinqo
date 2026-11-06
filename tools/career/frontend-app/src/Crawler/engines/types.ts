@@ -15,7 +15,7 @@ export type JobDetailsAccess = 'open' | 'needs_jobs' | 'needs_rule_and_jobs'
 
 // The fields of a link the engines judge by.
 export type LinkFacts = Partial<
-  Pick<PortalLink, 'crawlInstructions' | 'linkRules' | 'lastCrawledAt'> & { requiresLogin: boolean; loginSession: string }
+  Pick<PortalLink, 'crawlInstructions' | 'linkRules' | 'lastCrawledAt'> & { requiresLogin: boolean; loginSession: string; crawlEngine: string }
 >
 
 // What the engine's own "start over" control is given by the link card.

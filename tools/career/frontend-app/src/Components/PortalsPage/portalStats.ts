@@ -9,6 +9,7 @@ export interface LinkLike {
   linkRules?: unknown
   requiresLogin?: boolean
   loginSession?: string
+  crawlEngine?: string
   lastCrawledAt?: string | null
 }
 
@@ -34,7 +35,7 @@ export function summarizePortals(portals: PortalLike[], engine: EngineReading = 
       links++
       if (
         hasListingFor(
-          { crawlInstructions: l.crawlInstructions, linkRules: (l.linkRules ?? null) as never, requiresLogin: l.requiresLogin, loginSession: l.loginSession },
+          { crawlInstructions: l.crawlInstructions, linkRules: (l.linkRules ?? null) as never, requiresLogin: l.requiresLogin, loginSession: l.loginSession, crawlEngine: l.crawlEngine },
           engine,
         )
       )

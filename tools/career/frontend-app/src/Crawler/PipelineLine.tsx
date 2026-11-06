@@ -3,7 +3,7 @@ import type { PipelineLink, PortalLink } from '../api'
 import { PIPELINE_STEPS, isKnownStage, pipelineText, refreshDelayMs, runningFor, waitingText, type PipelineTone } from './pipelineStage'
 import { loadPipeline } from './pipelineStore'
 import { useCrawlEngine } from './useCrawlEngine'
-import { listingNeeds, needsLoginWindow } from './crawlEngine'
+import { engineForLink, listingNeeds, needsLoginWindow } from './crawlEngine'
 
 const TONE_CLASSES: Record<PipelineTone, { dot: string; text: string }> = {
   active: { dot: 'bg-amber-500 animate-pulse', text: 'text-amber-800' },
@@ -37,7 +37,7 @@ export function PipelineLine({ link }: { link: PortalLink }) {
   const [failed, setFailed] = useState(false)
   const [now, setNow] = useState(() => Date.now())
   // The stage depends on the Browser's selected engine (plan 190): switching it asks again.
-  const engine = useCrawlEngine()
+  const engine = engineForLink(link, useCrawlEngine())
   const byRule = listingNeeds(engine, needsLoginWindow(engine, link)) === 'rule'
   const key = `${changeKey(link)}|${engine ?? ''}`
   const loadedBefore = useRef(false)

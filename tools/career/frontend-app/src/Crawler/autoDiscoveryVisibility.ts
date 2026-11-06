@@ -13,7 +13,7 @@ import { hasListingFor, type EngineReading } from './crawlEngine'
 // canCrawlListing (plan 185, plan 190): the link has what the Browser's selected engine needs to crawl its listing — a link-crawler rule
 // under Katana, the AI instructions under Rod (and for a link that needs a login). The same condition the backend's auto-discovery uses.
 export function canCrawlListing(
-  link: Pick<PortalLink, 'crawlInstructions' | 'linkRules'> & { requiresLogin?: boolean; loginSession?: string },
+  link: Pick<PortalLink, 'crawlInstructions' | 'linkRules'> & { requiresLogin?: boolean; loginSession?: string; crawlEngine?: string },
   engine: EngineReading = null,
 ): boolean {
   // Auto-discovery of a link that needs a login stays manual-only (plan 195): its kept login is not looked at here.

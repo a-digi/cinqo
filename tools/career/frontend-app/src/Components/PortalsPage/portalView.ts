@@ -9,6 +9,7 @@ export interface ViewLink {
   linkRules?: unknown
   requiresLogin?: boolean
   loginSession?: string
+  crawlEngine?: string
   lastCrawledAt?: string | null
 }
 
@@ -30,7 +31,7 @@ export function portalViewNumbers(links: ViewLink[], engine: EngineReading = nul
   for (const l of links) {
     if (
       hasListingFor(
-        { crawlInstructions: l.crawlInstructions, linkRules: (l.linkRules ?? null) as never, requiresLogin: l.requiresLogin, loginSession: l.loginSession },
+        { crawlInstructions: l.crawlInstructions, linkRules: (l.linkRules ?? null) as never, requiresLogin: l.requiresLogin, loginSession: l.loginSession, crawlEngine: l.crawlEngine },
         engine,
       )
     )

@@ -8,6 +8,13 @@ import type { CrawlEngine, EngineReading, JobDetailsAccess, LinkFacts, ListingNe
 export type { CrawlEngine, EngineReading, JobDetailsAccess, ListingNeeds }
 
 // Plan 192: what each engine decides lives in engines/<id>; these functions only ask it (nothing here names Rod or Katana).
+// engineForLink (plan 197, step 3): the engine that reads THIS link: the link's own engine when it has one ('rod'), else the Browser's selected
+// engine. Every component that judges a link asks this once and passes the answer to everything below; the Browser's engine alone is only for
+// what is not about one link (the Browser & Engine page). Idempotent: engineForLink(link, engineForLink(link, e)) is the same.
+export function engineForLink(link: { crawlEngine?: string }, engine: EngineReading): EngineReading {
+  return link.crawlEngine === 'rod' ? 'rod' : engine
+}
+
 export function listingNeeds(engine: EngineReading, requiresLogin: boolean): ListingNeeds {
   return engineFor(engine).listingNeeds(requiresLogin)
 }
@@ -36,14 +43,14 @@ export function aiTriesListing(engine: EngineReading, requiresLogin: boolean): b
 // needsLoginWindow (plan 195, step 4): whether a link still needs the login window and the AI instructions path. A link that needs a login
 // does not when the engine reads it with a login kept in the Browser tool (Katana) and the link has one that is still valid. Pass this, not
 // link.requiresLogin, to every function above that takes requiresLogin. Auto-discovery of a login link stays manual-only either way.
-export function needsLoginWindow(engine: EngineReading, link: { requiresLogin?: boolean; loginSession?: string }): boolean {
+export function needsLoginWindow(engine: EngineReading, link: { requiresLogin?: boolean; loginSession?: string; crawlEngine?: string }): boolean {
   if (link.requiresLogin !== true) return false
-  return !(engineFor(engine).usesKeptLogin === true && link.loginSession === 'valid')
+  return !(engineFor(engineForLink(link, engine)).usesKeptLogin === true && link.loginSession === 'valid')
 }
 
 // Whether the link has what its job list needs under the engine in use.
 export function hasListingFor(link: LinkFacts, engine: EngineReading): boolean {
-  return engineFor(engine).hasListing(withEffectiveLogin(link, engine))
+  return engineFor(engineForLink(link, engine)).hasListing(withEffectiveLogin(link, engine))
 }
 
 // The facts the engine judges by: a link with a kept login that the engine reads is no login link for it (plan 195, step 4).
@@ -64,7 +71,7 @@ export async function fetchCrawlEngine(signal?: AbortSignal): Promise<CrawlEngin
 // Plan 191: under Katana the Job details modal is the picker, which works on a real job page of the link, so it opens only for a link that
 // has a crawled job; the engine decides (Rod, a login link and an engine not known yet stay open).
 export function jobDetailsModalAccess(engine: EngineReading, link: LinkFacts): JobDetailsAccess {
-  return engineFor(engine).jobDetailsAccess(withEffectiveLogin(link, engine))
+  return engineFor(engineForLink(link, engine)).jobDetailsAccess(withEffectiveLogin(link, engine))
 }
 
 export const JOB_DETAILS_PILL = 'Crawl jobs first'

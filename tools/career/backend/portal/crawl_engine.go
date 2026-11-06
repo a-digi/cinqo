@@ -68,8 +68,12 @@ func SetLinkCrawlEngine(linkID, engine string) error {
 	if err != nil {
 		return err
 	}
-	if err := RequirePortalLinkExists(linkID); err != nil {
+	current, err := GetLinkCrawlEngine(linkID) // also refuses an unknown link
+	if err != nil {
 		return err
+	}
+	if current == v {
+		return nil // the same choice again (an Edit that saved the form unchanged) forgets nothing
 	}
 	_, err = db.JobsDB.Exec(
 		`UPDATE portal_links SET crawl_engine = ?, engine_block_code = '', engine_block_at = NULL, engine_hint_dismissed_at = NULL, updated_at = datetime('now') WHERE id = ?`,

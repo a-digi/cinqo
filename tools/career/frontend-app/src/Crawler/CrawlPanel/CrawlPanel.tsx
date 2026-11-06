@@ -50,6 +50,7 @@ import { canCrawlListing } from '../autoDiscoveryVisibility'
 import {
   aiTriesListing as aiTriesListingFor,
   clearsStaleJobDetailAiRequest,
+  engineForLink,
   hasListingFor,
   JOB_DETAILS_PILL,
   jobDetailIsWrittenByAi,
@@ -60,7 +61,7 @@ import {
   needsLoginWindow,
 } from '../crawlEngine'
 import { useCrawlEngine } from '../useCrawlEngine'
-import { useInstructionEngine } from '../engines/useInstructionEngine'
+import { engineFor } from '../engines/registry'
 import { PipelineLine } from '../PipelineLine'
 import { runFollower } from '../runFollowerStart'
 import { LoginGenerateAbandoned, startAfterLogin } from '../loginGenerate'
@@ -144,8 +145,9 @@ export function CrawlPanel({
   onError: (message: string) => void
 }) {
   // Plan 190: the Browser's selected engine decides which job-list instructions count (a rule under Katana, AI instructions under Rod).
-  const engine = useCrawlEngine()
-  const instructionEngine = useInstructionEngine()
+  // Plan 197: this link's own engine (a link set to Rod) beats the Browser's selected engine for everything this card judges.
+  const engine = engineForLink(link, useCrawlEngine())
+  const instructionEngine = engineFor(engine)
   // The engine's own Generate recipe for the job list of a link that needs no login (Katana); undefined = the existing Generate (Rod).
   // Plan 195, step 4: a link that needs a login still needs the window (and the AI-instructions path) unless this engine reads it with a kept login.
   const loginWindow = needsLoginWindow(engine, link)
@@ -1455,7 +1457,7 @@ export function CrawlPanel({
               <div role="status" className="mt-2 rounded-md border border-sky-300 bg-sky-50 px-2 py-1.5 text-xs text-sky-900">
                 <p className="font-medium">{AI_LOGIN_WAIT_TEXT}</p>
                 <p className="mt-0.5 text-sky-800">{NOT_KEPT_NOTE}</p>
-                <KeepLoginOption checked={keepLogin} onChange={setKeepLogin} disabled={isConfirmingLogin} />
+                <KeepLoginOption checked={keepLogin} onChange={setKeepLogin} disabled={isConfirmingLogin} engineUsesIt={instructionEngine.usesKeptLogin === true} />
                 <div className="mt-1.5 flex gap-2">
                   <button
                     type="button"
@@ -1774,7 +1776,7 @@ export function CrawlPanel({
               <div className="rounded-md border border-sky-300 bg-sky-50 px-2 py-1.5 text-xs text-sky-900">
                 <p className="font-medium">A window is open at the login page. Log in there, then press &quot;I am logged in&quot;.</p>
                 <p className="mt-0.5 text-sky-800">{NOT_KEPT_NOTE}</p>
-                <KeepLoginOption checked={keepLogin} onChange={setKeepLogin} disabled={isConfirmingLogin} />
+                <KeepLoginOption checked={keepLogin} onChange={setKeepLogin} disabled={isConfirmingLogin} engineUsesIt={instructionEngine.usesKeptLogin === true} />
                 <div className="mt-1.5 flex gap-2">
                   <button
                     type="button"

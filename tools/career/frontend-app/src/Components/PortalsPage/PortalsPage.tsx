@@ -80,6 +80,7 @@ function PortalsPageContent() {
   const [editLinkTitle, setEditLinkTitle] = useState('')
   const [editLinkRequiresLogin, setEditLinkRequiresLogin] = useState(false)
   const [editLinkLoginUrl, setEditLinkLoginUrl] = useState('')
+  const [editLinkEngine, setEditLinkEngine] = useState<'' | 'rod'>('')
   const [error, setError] = useState('')
   // The portal whose AI choice the modal is editing (step 102), or null when it is closed.
   const [aiPortalId, setAiPortalId] = useState<string | null>(null)
@@ -307,6 +308,7 @@ function PortalsPageContent() {
     setEditLinkTitle(link.title ?? '')
     setEditLinkRequiresLogin(link.requiresLogin)
     setEditLinkLoginUrl(link.loginUrl)
+    setEditLinkEngine(link.crawlEngine)
   }
 
   function cancelEditLink() {
@@ -315,6 +317,7 @@ function PortalsPageContent() {
     setEditLinkTitle('')
     setEditLinkRequiresLogin(false)
     setEditLinkLoginUrl('')
+    setEditLinkEngine('')
   }
 
   function saveEditLink(id: string) {
@@ -334,6 +337,7 @@ function PortalsPageContent() {
       title,
       requiresLogin: editLinkRequiresLogin,
       loginUrl: loginAddressForSave(editLinkRequiresLogin, editLinkLoginUrl),
+      crawlEngine: editLinkEngine,
     })
       .then(() => {
         cancelEditLink()
@@ -631,6 +635,8 @@ function PortalsPageContent() {
                             editLoginUrl={editLinkLoginUrl}
                             onEditRequiresLoginChange={setEditLinkRequiresLogin}
                             onEditLoginUrlChange={setEditLinkLoginUrl}
+                            editEngine={editLinkEngine}
+                            onEditEngineChange={setEditLinkEngine}
                             onStartEdit={() => {
                               startEditLink(link)
                             }}

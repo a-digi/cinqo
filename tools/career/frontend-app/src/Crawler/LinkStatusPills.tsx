@@ -2,7 +2,7 @@ import type { PortalLink } from '../api'
 import { diagnoseEmptyCrawl, emptyCrawlFor } from './emptyCrawl'
 import { AlertCircleIcon } from '../Shared/Icons/icons'
 import { LOGIN_BADGE_TOOLTIP, LOGIN_KEPT_BADGE_TOOLTIP, loginBadgeFor } from './loginWindow'
-import { aiTriesListing as aiTriesListingFor, hasListingFor, jobDetailIsWrittenByAi, listingNeeds, needsLoginWindow } from './crawlEngine'
+import { aiTriesListing as aiTriesListingFor, engineForLink, hasListingFor, jobDetailIsWrittenByAi, listingNeeds, needsLoginWindow } from './crawlEngine'
 import { useCrawlEngine } from './useCrawlEngine'
 import {
   attemptsLabel,
@@ -49,7 +49,7 @@ export function LinkStatusPills({
 }: LinkStatusPillsProps) {
   // Plan 190: the job list is judged by the engine in use (its rule under Katana, its AI instructions under Rod), and the AI's attempts to write
   // job-list instructions only matter where the AI writes them.
-  const engine = useCrawlEngine()
+  const engine = engineForLink(link, useCrawlEngine())
   const needs = listingNeeds(engine, needsLoginWindow(engine, link))
   const aiTriesListing = aiTriesListingFor(engine, needsLoginWindow(engine, link))
   const hasListing = hasListingFor(link, engine)

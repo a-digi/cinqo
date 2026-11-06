@@ -67,6 +67,8 @@ export interface InstructionStateInput {
   requiresLogin?: boolean
   // Plan 195, step 4: a kept login the engine reads makes a login link an ordinary one.
   loginSession?: string
+  // Plan 197: a link set to Rod is judged by the Rod engine whatever the Browser selected.
+  crawlEngine?: string
   jobDetailCrawlInstructions?: string | null
   // Set while the generation agent's question is waiting for an answer.
   jobsQuestion?: unknown
@@ -92,7 +94,7 @@ export function instructionState(
   // either one counts. Job details count as before, under every engine.
   if (
     !hasListingFor(
-      { crawlInstructions: link.crawlInstructions, linkRules: (link.linkRules ?? null) as never, requiresLogin: link.requiresLogin, loginSession: link.loginSession },
+      { crawlInstructions: link.crawlInstructions, linkRules: (link.linkRules ?? null) as never, requiresLogin: link.requiresLogin, loginSession: link.loginSession, crawlEngine: link.crawlEngine },
       engine,
     )
   ) {

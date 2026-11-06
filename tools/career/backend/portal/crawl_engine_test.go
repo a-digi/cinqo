@@ -101,3 +101,19 @@ func TestSwitchingTheEngineKeepsTheDataAndForgetsTheBlock(t *testing.T) {
 		t.Errorf("the rule of the other engine must stay: %+v %v", s, err)
 	}
 }
+
+// Saving the same choice again (an Edit form that was saved unchanged) must not forget the block or the "Not now".
+func TestTheSameEngineChoiceAgainForgetsNothing(t *testing.T) {
+	loginSetup(t)
+	id := newLinkOn(t, "https://board.example/jobs")
+	if _, err := db.JobsDB.Exec(`UPDATE portal_links SET engine_block_code = 'rate_limited', engine_block_at = datetime('now') WHERE id = ?`, id); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetLinkCrawlEngine(id, ""); err != nil {
+		t.Fatal(err)
+	}
+	var code string
+	if err := db.JobsDB.QueryRow(`SELECT engine_block_code FROM portal_links WHERE id = ?`, id).Scan(&code); err != nil || code != "rate_limited" {
+		t.Errorf("an unchanged choice forgot the block: %q %v", code, err)
+	}
+}
