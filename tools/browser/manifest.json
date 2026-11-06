@@ -1,7 +1,7 @@
 {
   "slug": "browser",
   "name": "Browser",
-  "version": "0.0.227",
+  "version": "0.0.228",
   "authors": [
     { "name": "Anes Detit", "email": "tafa.andet@googlemail.com" }
   ],
@@ -14,7 +14,7 @@
     },
     {
       "scope": "tool:browser:login",
-      "description": "Open a login window for a crawl run and confirm the login (the person logs in on the site itself; nothing is stored)."
+      "description": "Open a login window for a crawl run and confirm the login (the person logs in on the site itself; no password is ever stored), and see or forget a saved login session (sealed cookies of one site, kept only when the person chose to)."
     }
   ],
   "routes": [
@@ -51,6 +51,16 @@
     {
       "method": "POST",
       "path_suffix": "login-window/cancel",
+      "required_scope": "tool:browser:login"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "login-session/state",
+      "required_scope": "tool:browser:login"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "login-session",
       "required_scope": "tool:browser:login"
     },
     {

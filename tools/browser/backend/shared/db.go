@@ -231,6 +231,13 @@ func InitDB() error {
 		return fmt.Errorf("failed to prepare domain_clearance schema: %w", err)
 	}
 
+	// login_sessions (plan 195, step 1) — the sealed cookies of a site's logged-in session a person chose to keep for Katana. Never a
+	// password; see loginsession.go for the rules. Expired rows are deleted here, at every start.
+	if err := prepareLoginSessions(db, dbDir); err != nil {
+		db.Close()
+		return fmt.Errorf("failed to prepare login_sessions schema: %w", err)
+	}
+
 	DB = db
 	return nil
 }

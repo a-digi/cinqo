@@ -85,3 +85,41 @@ func TestTheLoginWindowRoutesAreDeclaredWithTheLoginScopeAndServed(t *testing.T)
 		t.Error("main.go registers a login window MCP tool")
 	}
 }
+
+// Plan 195, step 1: the saved-session routes are declared under the login scope only, and no MCP tool or route can create or read cookies.
+func TestLoginSessionRoutesAreDeclaredUnderTheLoginScopeOnly(t *testing.T) {
+	raw, err := os.ReadFile("../manifest.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m struct {
+		Routes []struct {
+			M string `json:"method"`
+			P string `json:"path_suffix"`
+			S string `json:"required_scope"`
+		} `json:"routes"`
+		MCPTools []struct {
+			Name string `json:"name"`
+		} `json:"mcp_tools"`
+	}
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"login-session/state": "GET", "login-session": "DELETE"}
+	for _, r := range m.Routes {
+		if strings.HasPrefix(r.P, "login-session") {
+			if want[r.P] != r.M || r.S != "tool:browser:login" {
+				t.Errorf("route %s %s has scope %q", r.M, r.P, r.S)
+			}
+			delete(want, r.P)
+		}
+	}
+	if len(want) != 0 {
+		t.Errorf("routes missing from manifest.json: %v", want)
+	}
+	for _, tool := range m.MCPTools {
+		if strings.Contains(tool.Name, "session") || strings.Contains(tool.Name, "cookie") {
+			t.Errorf("MCP tool %s would let the AI reach a login session", tool.Name)
+		}
+	}
+}

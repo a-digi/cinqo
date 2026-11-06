@@ -98,6 +98,10 @@ func runHTTPServer() {
 	http.HandleFunc("/login-window/status", auth.LoginWindowStatusHandler)
 	http.HandleFunc("/login-window/confirm", auth.LoginWindowConfirmHandler)
 	http.HandleFunc("/login-window/cancel", auth.LoginWindowCancelHandler)
+	// Plan 195: a login SESSION (sealed cookies of one site) the person chose to keep so Katana can read the logged-in area. Never a password,
+	// never an MCP tool; the routes answer state only, never a cookie. See shared/loginsession.go.
+	http.HandleFunc("/login-session/state", auth.LoginSessionStateHandler)
+	http.HandleFunc("/login-session", auth.LoginSessionForgetHandler)
 
 	log.Printf("browser tool listening on 127.0.0.1:%s", port)
 	if err := http.ListenAndServe("127.0.0.1:"+port, nil); err != nil {
