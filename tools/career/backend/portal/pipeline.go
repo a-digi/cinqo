@@ -119,6 +119,20 @@ type PipelineLink struct {
 	Detail       PipelineDetail `json:"detail"`
 }
 
+// listingPresent says whether a link has what its job list needs for the method (see loadPipelineRows).
+func listingPresent(method string, requiresLogin, ai, rule bool) bool {
+	if requiresLogin {
+		return ai
+	}
+	switch method {
+	case CrawlMethodLinks:
+		return rule
+	case CrawlMethodInstructions:
+		return ai
+	}
+	return ai || rule
+}
+
 // pipelineRow is one link with the snapshot its stage is derived from.
 type pipelineRow struct {
 	id   string
@@ -128,12 +142,18 @@ type pipelineRow struct {
 // loadPipelineRows reads the snapshot of every link (oldest link first) and when the running attempts and crawls of each started
 // (keyed "linkID|kind"). It only reads: a running attempt that is older than the stale threshold is left out (the portals list heals
 // those by writing, this does not). Shared by the pipeline route and the flag sweeper.
-func loadPipelineRows() ([]pipelineRow, map[string]string, map[string]string, error) {
+//
+// method (plan 190) is the way the Browser's selected engine crawls a link's job list (ListingMethodFor): "links" counts a link's rule as its
+// listing instructions, "instructions" counts its AI instructions, and "" (no engine reading, and the background flag sweeper) counts either.
+// A link that needs a login always counts its AI instructions.
+func loadPipelineRows(method string) ([]pipelineRow, map[string]string, map[string]string, error) {
 	var links []pipelineRow
 
 	rows, err := db.JobsDB.Query(
 		`SELECT id,
 		        COALESCE(TRIM(crawl_instructions), '') <> '',
+		        COALESCE(TRIM(link_rules), '') <> '',
+		        requires_login,
 		        COALESCE(TRIM(job_detail_crawl_instructions), '') <> '',
 		        listing_crawl_requested, job_detail_instructions_ai_requested, job_detail_crawl_requested,
 		        jobs_question_asked_at IS NOT NULL AND jobs_question_asked_at <> ''
@@ -143,13 +163,13 @@ func loadPipelineRows() ([]pipelineRow, map[string]string, map[string]string, er
 	}
 	for rows.Next() {
 		var l pipelineRow
-		var listing, detail, listingReq, detailAIReq, detailCrawlReq, question bool
-		if err := rows.Scan(&l.id, &listing, &detail, &listingReq, &detailAIReq, &detailCrawlReq, &question); err != nil {
+		var ai, rule, login, detail, listingReq, detailAIReq, detailCrawlReq, question bool
+		if err := rows.Scan(&l.id, &ai, &rule, &login, &detail, &listingReq, &detailAIReq, &detailCrawlReq, &question); err != nil {
 			rows.Close()
 			return nil, nil, nil, err
 		}
 		l.snap = PipelineSnapshot{
-			HasListingInstructions: listing, HasDetailInstructions: detail,
+			HasListingInstructions: listingPresent(method, login, ai, rule), HasDetailInstructions: detail,
 			ListingCrawlRequested: listingReq, DetailAIRequested: detailAIReq, DetailCrawlRequested: detailCrawlReq,
 			QuestionPending: question,
 		}
@@ -267,9 +287,10 @@ func loadPipelineRows() ([]pipelineRow, map[string]string, map[string]string, er
 	return links, startedAttempt, startedCrawl, nil
 }
 
-// PipelineForLinks loads the stage of every link (oldest link first). It only reads; nothing is repaired or requested.
-func PipelineForLinks() ([]PipelineLink, error) {
-	links, startedAttempt, startedCrawl, err := loadPipelineRows()
+// PipelineForLinks loads the stage of every link (oldest link first). It only reads; nothing is repaired or requested. method: see
+// loadPipelineRows.
+func PipelineForLinks(method string) ([]PipelineLink, error) {
+	links, startedAttempt, startedCrawl, err := loadPipelineRows(method)
 	if err != nil {
 		return nil, err
 	}

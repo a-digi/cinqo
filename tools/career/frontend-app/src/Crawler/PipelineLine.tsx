@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { PipelineLink, PortalLink } from '../api'
 import { PIPELINE_STEPS, isKnownStage, pipelineText, refreshDelayMs, runningFor, waitingText, type PipelineTone } from './pipelineStage'
 import { loadPipeline } from './pipelineStore'
+import { useCrawlEngine } from './useCrawlEngine'
 
 const TONE_CLASSES: Record<PipelineTone, { dot: string; text: string }> = {
   active: { dot: 'bg-amber-500 animate-pulse', text: 'text-amber-800' },
@@ -34,7 +35,9 @@ export function PipelineLine({ link }: { link: PortalLink }) {
   const [state, setState] = useState<PipelineLink | null>(null)
   const [failed, setFailed] = useState(false)
   const [now, setNow] = useState(() => Date.now())
-  const key = changeKey(link)
+  // The stage depends on the Browser's selected engine (plan 190): switching it asks again.
+  const engine = useCrawlEngine()
+  const key = `${changeKey(link)}|${engine ?? ''}`
   const loadedBefore = useRef(false)
 
   useEffect(() => {

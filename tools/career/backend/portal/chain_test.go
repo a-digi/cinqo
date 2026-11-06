@@ -27,7 +27,7 @@ func (c *chain) exec(q string, args ...any) {
 
 func (c *chain) stage(want string) {
 	c.t.Helper()
-	got, err := PipelineForLinks()
+	got, err := PipelineForLinks("")
 	if err != nil || len(got) != 1 {
 		c.t.Fatalf("pipeline: %v %v", got, err)
 	}

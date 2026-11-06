@@ -116,7 +116,7 @@ func TestPipelineForLinksReadsEveryStageFromTheDatabase(t *testing.T) {
 	job("jm2", "m", "")
 	job("jm3", "m", "   ")
 
-	got, err := PipelineForLinks()
+	got, err := PipelineForLinks("")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +182,7 @@ func TestPipelineIgnoresAStaleRunningAttemptWithoutWritingAnything(t *testing.T)
 	if _, err := db.JobsDB.Exec(`INSERT INTO jobs (id, source_url, title, portal_link_id) VALUES ('j', 'https://j', 'T', 'l1')`); err != nil {
 		t.Fatal(err)
 	}
-	got, err := PipelineForLinks()
+	got, err := PipelineForLinks("")
 	if err != nil || len(got) != 1 {
 		t.Fatalf("%v %v", got, err)
 	}
@@ -197,8 +197,60 @@ func TestPipelineIgnoresAStaleRunningAttemptWithoutWritingAnything(t *testing.T)
 
 func TestPipelineForNoLinksIsAnEmptyList(t *testing.T) {
 	setupAttemptsDB(t)
-	got, err := PipelineForLinks()
+	got, err := PipelineForLinks("")
 	if err != nil || got == nil || len(got) != 0 {
 		t.Fatalf("%#v %v", got, err)
+	}
+}
+
+// Plan 190: the stage's "has listing instructions" follows the method the Browser's selected engine means: a rule under Katana
+// ("links"), AI instructions under Rod ("instructions"), either when no engine could be read (""), and a login link always its AI instructions.
+func TestPipelineJudgesTheJobListByTheEnginesMethod(t *testing.T) {
+	setupAttemptsDB(t)
+	add := func(id, ai, rule string, login int) {
+		t.Helper()
+		if _, err := db.JobsDB.Exec(`INSERT INTO portal_links (id, portal_id, url, crawl_instructions, link_rules, requires_login, created_at)
+		      VALUES (?, 'p1', ?, NULLIF(?, ''), NULLIF(?, ''), ?, ?)`,
+			id, "https://x/"+id, ai, rule, login, fmt.Sprintf("2026-01-01 10:00:%02d", int(id[0]-'a'))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const rule = `{"host":"x","include":["x/j/#"]}`
+	add("a", "", rule, 0)        // a rule only (the Dua Pune case)
+	add("b", "fields: x", "", 0) // AI instructions only
+	add("c", "fields: x", rule, 0)
+	add("d", "", rule, 1) // a login link with a rule only: its AI instructions are what count
+	add("e", "fields: x", "", 1)
+	for _, c := range []struct {
+		method string
+		noList []string // the links whose stage is "no listing instructions yet"
+	}{
+		{CrawlMethodLinks, []string{"b", "d", "e"}[:2]}, // Katana: b has no rule; d is a login link without AI instructions
+		{CrawlMethodInstructions, []string{"a", "d"}},   // Rod: a has no AI instructions; d the same
+		{"", []string{"d"}},                             // either: only the login link without AI instructions has nothing
+	} {
+		got, err := PipelineForLinks(c.method)
+		if err != nil {
+			t.Fatal(err)
+		}
+		no := map[string]bool{}
+		for _, l := range got {
+			if l.Stage == StageNoListing {
+				no[l.PortalLinkID] = true
+			}
+		}
+		want := map[string]bool{}
+		for _, id := range c.noList {
+			want[id] = true
+		}
+		if len(no) != len(want) {
+			t.Errorf("method %q: no-listing links %v, want %v", c.method, no, want)
+			continue
+		}
+		for id := range want {
+			if !no[id] {
+				t.Errorf("method %q: link %s should have no listing instructions, got %v", c.method, id, no)
+			}
+		}
 	}
 }

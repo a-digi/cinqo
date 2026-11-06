@@ -64,7 +64,8 @@ var (
 
 // loadFlagSweepSnapshots reads every link's snapshot (read only).
 func loadFlagSweepSnapshots() ([]string, []FlagSweepSnapshot, error) {
-	rows, _, _, err := loadPipelineRows()
+	// The sweeper has no screen and no session, so no engine reading: a link counts as having listing instructions with either kind (plan 190).
+	rows, _, _, err := loadPipelineRows("")
 	if err != nil {
 		return nil, nil, err
 	}
