@@ -158,6 +158,13 @@ func TestDescriptionRule(t *testing.T) {
 				t.Fatalf("outline %v", res.Outline)
 			}
 		}},
+		{"OutlineEntriesAreOneLine", func(t *testing.T, ctx context.Context) {
+			html := `<body><div id="d"><h2>Founding <span>New</span><br>Company GmbH</h2><p>text</p></div></body>`
+			res := readRule(t, ctx, html, oneBox("#d"))
+			if len(res.Outline) != 1 || strings.ContainsAny(res.Outline[0], "\n\t") {
+				t.Fatalf("outline %q", res.Outline)
+			}
+		}},
 		{"SeveralBoxesInTheOrderOfTheParts", func(t *testing.T, ctx context.Context) {
 			html := `<body><div class="b">Second box</div><div class="a">First box</div></body>`
 			r := &descriptionRule{Parts: []descriptionPart{{Include: ".a"}, {Include: ".b"}}}

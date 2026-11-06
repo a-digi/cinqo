@@ -188,7 +188,10 @@
       var heads = clone.querySelectorAll("h1,h2,h3,h4");
       for (var hh = 0; hh < heads.length && outline.length < MAX_OUTLINE; hh++) {
         var ht = textOf(heads[hh]);
-        if (ht) outline.push(ht.length > 80 ? ht.slice(0, 80) : ht);
+        if (ht) {
+          ht = ht.replace(/\s+/g, " ");
+          outline.push(ht.length > 80 ? ht.slice(0, 80) : ht);
+        }
       }
       bodies.push(textOf(clone));
     }
