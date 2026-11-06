@@ -300,19 +300,22 @@ func TestTheResponseSaysWhatTheCacheCostsAndTheLargestSizeThatFits(t *testing.T)
 		want map[string]want
 	}{
 		{"16 GiB", big, map[string]want{
-			"phi-4-mini-instruct-q4_k_m":   {131072, 65536},
-			"qwen2.5-1.5b-instruct-q4_k_m": {28672, 32768}, // its own maximum, not a larger offered size
-			"qwen2.5-7b-instruct-q4_k_m":   {57344, 32768},
+			"phi-4-mini-instruct-q4_k_m":       {131072, 65536},
+			"qwen2.5-1.5b-instruct-q4_k_m":     {28672, 32768}, // its own maximum, not a larger offered size
+			"qwen2.5-7b-instruct-q4_k_m":       {57344, 32768},
+			"qwen2.5-coder-3b-instruct-q4_k_m": {36864, 32768}, // 2.1 GB file: its own maximum fits (plan 196)
 		}},
 		{"8 GiB", small, map[string]want{
-			"phi-4-mini-instruct-q4_k_m":   {131072, 16384},
-			"qwen2.5-1.5b-instruct-q4_k_m": {28672, 32768},
-			"qwen2.5-7b-instruct-q4_k_m":   {57344, 0}, // 8.45 GiB at the baseline: nothing fits, and that is known (not null)
+			"phi-4-mini-instruct-q4_k_m":       {131072, 16384},
+			"qwen2.5-1.5b-instruct-q4_k_m":     {28672, 32768},
+			"qwen2.5-7b-instruct-q4_k_m":       {57344, 0}, // 8.45 GiB at the baseline: nothing fits, and that is known (not null)
+			"qwen2.5-coder-3b-instruct-q4_k_m": {36864, 32768},
 		}},
 		{"unknown memory", unknown, map[string]want{
-			"phi-4-mini-instruct-q4_k_m":   {131072, nil},
-			"qwen2.5-1.5b-instruct-q4_k_m": {28672, nil},
-			"qwen2.5-7b-instruct-q4_k_m":   {57344, nil},
+			"phi-4-mini-instruct-q4_k_m":       {131072, nil},
+			"qwen2.5-1.5b-instruct-q4_k_m":     {28672, nil},
+			"qwen2.5-7b-instruct-q4_k_m":       {57344, nil},
+			"qwen2.5-coder-3b-instruct-q4_k_m": {36864, nil},
 		}},
 	} {
 		withMachine(t, c.info)

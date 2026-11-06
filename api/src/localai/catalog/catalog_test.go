@@ -241,6 +241,22 @@ func TestTheLargerQwenIsPinnedAndNotYetMarkedForTools(t *testing.T) {
 	}
 }
 
+func TestTheQwenCoder3BIsPinnedAndNotYetMarkedForTools(t *testing.T) {
+	c, err := Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, ok := c.Find("qwen2.5-coder-3b-instruct-q4_k_m")
+	if !ok || m.License != "Qwen-Research" || m.SizeBytes != 2104932800 || m.ContextTokens != 32768 ||
+		m.SHA256 != "724fb256bec1ff062b2f65e4569e871ad2e95ab2a3989723d1769c54294730b7" ||
+		!strings.Contains(m.URL, "/Qwen/Qwen2.5-Coder-3B-Instruct-GGUF/resolve/f74adce6aa16316c625447af059dbebe4983757c/") {
+		t.Errorf("entry = %+v (found %v)", m, ok)
+	}
+	if m.Tools || m.ToolDialect != "" {
+		t.Error("tools stay false, and no dialect is named, until the model is measured on the crawler recipes (plan 196)")
+	}
+}
+
 func TestAToolDialectIsAWellFormedNameAndBelongsToAModelWithTools(t *testing.T) {
 	good := file(mutate(`"contextTokens": 4096`, `"contextTokens": 4096, "tools": true, "toolDialect": "phi-json"`))
 	if c, err := Load([]byte(good)); err != nil || c.Models[0].ToolDialect != "phi-json" {
@@ -273,7 +289,7 @@ func TestTheCacheSizePerTokenIsStatedForEveryShippedModelAndBounded(t *testing.T
 		t.Fatal(err)
 	}
 	// layers x KV heads x head size x 2 x 2 bytes, from each model's own config.json (read 2026-11-03)
-	want := map[string]int64{"phi-4-mini-instruct-q4_k_m": 32 * 8 * 128 * 4, "qwen2.5-1.5b-instruct-q4_k_m": 28 * 2 * 128 * 4, "qwen2.5-7b-instruct-q4_k_m": 28 * 4 * 128 * 4}
+	want := map[string]int64{"phi-4-mini-instruct-q4_k_m": 32 * 8 * 128 * 4, "qwen2.5-1.5b-instruct-q4_k_m": 28 * 2 * 128 * 4, "qwen2.5-7b-instruct-q4_k_m": 28 * 4 * 128 * 4, "qwen2.5-coder-3b-instruct-q4_k_m": 36 * 2 * 128 * 4}
 	for _, m := range c.Models {
 		if m.KVBytesPerToken != want[m.ID] {
 			t.Errorf("%s: kvBytesPerToken %d, want %d", m.ID, m.KVBytesPerToken, want[m.ID])

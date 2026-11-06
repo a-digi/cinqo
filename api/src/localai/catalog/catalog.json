@@ -46,6 +46,21 @@
       "source": "bartowski/Qwen2.5-7B-Instruct-GGUF at commit 8911e8a (a single-file GGUF conversion of Qwen/Qwen2.5-7B-Instruct)",
       "note": "A larger model for tasks with many steps. Slower, and needs a computer with plenty of memory.",
       "checkedOn": "2026-11-03"
+    },
+    {
+      "id": "qwen2.5-coder-3b-instruct-q4_k_m",
+      "name": "Qwen2.5-Coder-3B-Instruct",
+      "quantization": "Q4_K_M",
+      "sizeBytes": 2104932800,
+      "sha256": "724fb256bec1ff062b2f65e4569e871ad2e95ab2a3989723d1769c54294730b7",
+      "url": "https://huggingface.co/Qwen/Qwen2.5-Coder-3B-Instruct-GGUF/resolve/f74adce6aa16316c625447af059dbebe4983757c/qwen2.5-coder-3b-instruct-q4_k_m.gguf",
+      "license": "Qwen-Research",
+      "contextTokens": 32768,
+      "tools": false,
+      "kvBytesPerToken": 36864,
+      "source": "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF at commit f74adce (the model's own authors)",
+      "note": "A small model tuned for code. Not measured for tools yet. Research and non-commercial licence.",
+      "checkedOn": "2026-11-06"
     }
   ],
   "runtimes": [
