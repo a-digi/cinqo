@@ -13,12 +13,16 @@ export interface FollowContext {
   pageBusy: (linkId: string) => boolean
   // True when the follower already follows this conversation.
   followed: (conversationId: string) => boolean
+  // True when the link has what its job list needs under the Browser's selected engine (plan 192: the AI instructions under Rod, the rule under
+  // Katana). The caller knows the engine; this module stays pure and engine-blind.
+  hasListing: (link: FollowLink) => boolean
 }
 
-type FollowLink = Pick<
+export type FollowLink = Pick<
   PortalLink,
   | 'id'
   | 'crawlInstructions'
+  | 'linkRules'
   | 'jobDetailCrawlInstructions'
   | 'listingCrawlRequested'
   | 'jobDetailCrawlRequested'
@@ -62,7 +66,7 @@ export function followActions(link: FollowLink, ctx: FollowContext): FollowActio
   if (!mayStartCrawlByItself(link)) return actions
 
   // One crawl at a time (the server refuses a second): the listing first.
-  if (link.listingCrawlRequested && has(link.crawlInstructions)) {
+  if (link.listingCrawlRequested && ctx.hasListing(link)) {
     actions.push({ kind: 'listing_crawl' })
   } else if (link.jobDetailCrawlRequested && has(link.jobDetailCrawlInstructions)) {
     actions.push({ kind: 'job_detail_crawl' })

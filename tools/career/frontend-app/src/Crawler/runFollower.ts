@@ -1,4 +1,5 @@
 import type { InstructionAttemptOutcome, PortalLink } from '../api'
+import type { EngineReading } from './engines/types'
 import { followActions, type RunKind } from './runFollowerRules'
 
 // The run follower (plan/ai/tools/career/step-163-job-detail-instructions-pipeline.md, step 4): lives in the tool's bundle, not in a page, so
@@ -10,6 +11,9 @@ import { followActions, type RunKind } from './runFollowerRules'
 // Starting a new AI run is not done here; it needs the page's choice of AI platform and model.
 export interface FollowerDeps {
   fetchLinks: () => Promise<PortalLink[]>
+  // The Browser's selected engine and whether a link has what its job list needs under it (plan 192). A read that fails means "not known".
+  readEngine: () => Promise<EngineReading>
+  hasListing: (link: PortalLink, engine: EngineReading) => boolean
   updateLink: (linkId: string, patch: Record<string, string | boolean>) => Promise<unknown>
   startCrawl: (linkId: string, kind: RunKind) => Promise<unknown>
   awaitTurn: (conversationId: string) => Promise<unknown>
@@ -106,10 +110,12 @@ export function createRunFollower(deps: FollowerDeps): RunFollower {
       const named = new Set(links.flatMap((l) => [l.instructionsAiConversationId ?? '', l.jobDetailInstructionsAiConversationId ?? '']))
       for (const id of [...followed]) if (!named.has(id)) followed.delete(id)
 
+      const engine = await deps.readEngine().catch((): EngineReading => null)
       for (const link of links) {
         const actions = followActions(link, {
           pageBusy: (id) => (pageBusy.get(id)?.size ?? 0) > 0,
           followed: (id) => followed.has(id),
+          hasListing: (l) => deps.hasListing(l as PortalLink, engine),
         })
         for (const action of actions) {
           if (action.kind === 'resume_run') {

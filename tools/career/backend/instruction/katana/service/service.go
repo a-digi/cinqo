@@ -381,6 +381,9 @@ func TestRule(ctx context.Context, b ruleBody) (any, *problem) {
 	if res.SkippedNoTitle > 0 {
 		out.Notes = append(out.Notes, fmt.Sprintf("%d matching link(s) have no usable text, so no job is created for them", res.SkippedNoTitle))
 	}
+	if n, prefix := unmatchedLookalikes(rule, sc.links); n > 0 {
+		out.Notes = append(out.Notes, fmt.Sprintf("%d other links of the first page start like the rule (%s) but are not matched: if they are job postings the rule is too narrow (a fixed value in it?). Propose again with addresses that differ more, from different postings.", n, prefix))
+	}
 	switch {
 	case len(res.Items) == 0:
 		out.Verdict = "no jobs found: the rule does not match the job links; fix the picks and propose again"
@@ -423,7 +426,10 @@ func SaveRule(ctx context.Context, b ruleBody) (any, *problem) {
 		log.Printf("katana: could not record the saved rule on the attempt of link %s: %v", s.linkID, err)
 	}
 	publishRuleSaved(s.linkID)
-	return map[string]any{"saved": true, "jobsInTest": sc.passed[ruleKey(rule)], "host": rule.Host, "include": rule.Include}, nil
+	return map[string]any{
+		"saved": true, "jobsInTest": sc.passed[ruleKey(rule)], "host": rule.Host, "include": rule.Include,
+		"next": "done: the job list is saved. Reply with one short line and make no more tool calls.",
+	}, nil
 }
 
 // ---- HTTP ----
@@ -505,3 +511,41 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 // selfAttempts is how many 'running' attempts belong to the AI run that is asking: its own, which the app opened before the run started.
 // A run of the AI that is calling the state tool is itself one running attempt, so only a second one means "another run".
 func selfAttempts() int { return 1 }
+
+// unmatchedLookalikes counts the links of the page that start like the rule's first pattern (its address up to the query, or up to the first
+// wildcard cut back to a whole path part) but that the rule does not match: a sign of a pattern that holds a fixed value and is too narrow.
+func unmatchedLookalikes(rule linkrule.Rule, links []linkrule.Link) (int, string) {
+	if len(rule.Include) == 0 || len(links) == 0 {
+		return 0, ""
+	}
+	prefix := rule.Include[0]
+	if i := strings.Index(prefix, "?"); i >= 0 {
+		prefix = prefix[:i]
+	} else if i := strings.Index(prefix, "*"); i >= 0 {
+		prefix = prefix[:i]
+		if j := strings.LastIndex(prefix, "/"); j >= 0 {
+			prefix = prefix[:j]
+		}
+	}
+	if prefix == "" || !strings.Contains(prefix, "/") {
+		return 0, ""
+	}
+	res, err := linkrule.Apply(rule, links)
+	if err != nil {
+		return 0, ""
+	}
+	matched := map[string]bool{}
+	for _, it := range res.Items {
+		matched[strings.TrimPrefix(strings.TrimPrefix(it.URL, "https://"), "http://")] = true
+	}
+	seen := map[string]bool{}
+	n := 0
+	for _, l := range links {
+		u := strings.TrimPrefix(strings.TrimPrefix(l.URL, "https://"), "http://")
+		if (u == prefix || strings.HasPrefix(u, prefix+"/") || strings.HasPrefix(u, prefix+"?")) && !matched[u] && !seen[u] {
+			seen[u] = true
+			n++
+		}
+	}
+	return n, prefix
+}

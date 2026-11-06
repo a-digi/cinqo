@@ -1,12 +1,15 @@
 import { fetchPortals, finishInstructionAttempt, updatePortalLink } from '../api'
 import { CoreApiError } from '../Cinqo/Http/client'
 import { awaitTurnCompletion } from '../Cinqo/Conversation/conversation'
+import { fetchCrawlEngine, hasListingFor } from './crawlEngine'
 import { startCrawlJobDetailsNow, startCrawlNow } from './crawlNow'
 import { createRunFollower } from './runFollower'
 
 // The one run follower of this tab, wired to the real API (see runFollower.ts). main.tsx starts it when the bundle loads.
 export const runFollower = createRunFollower({
   fetchLinks: () => fetchPortals().then((portals) => portals.flatMap((portal) => portal.links)),
+  readEngine: () => fetchCrawlEngine(),
+  hasListing: (link, engine) => hasListingFor(link, engine),
   updateLink: (linkId, patch) => updatePortalLink(linkId, patch),
   startCrawl: (linkId, kind) => (kind === 'listing' ? startCrawlNow(linkId) : startCrawlJobDetailsNow(linkId)),
   awaitTurn: awaitTurnCompletion,

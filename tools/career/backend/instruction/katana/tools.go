@@ -8,8 +8,10 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"career-tool-backend/instruction"
@@ -99,11 +101,64 @@ type pageLinksArgs struct {
 	URL          string `json:"url,omitempty" jsonschema:"optional: another page of the SAME site (for example page 2 of the list); default is the link's own page"`
 }
 
+// urlList is a list of addresses that also accepts what a model sometimes sends instead of an array: one address, several separated by
+// spaces, line breaks or ", ", or the JSON text of an array. A real run (plan 192, step 10) lost two rounds to a string where an array was
+// expected; the schema below allows both.
+type urlList []string
+
+func (u *urlList) UnmarshalJSON(b []byte) error {
+	var arr []string
+	if json.Unmarshal(b, &arr) == nil {
+		*u = arr
+		return nil
+	}
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	s = strings.TrimSpace(s)
+	if strings.HasPrefix(s, "[") && json.Unmarshal([]byte(s), &arr) == nil {
+		*u = arr
+		return nil
+	}
+	arr = nil
+	for _, part := range strings.Fields(strings.ReplaceAll(s, ", ", " ")) {
+		if part = strings.Trim(part, `"'`+"`,"); part != "" {
+			arr = append(arr, part)
+		}
+	}
+	*u = arr
+	return nil
+}
+
 type proposeArgs struct {
-	PortalLinkID string   `json:"portalLinkId" jsonschema:"the portal link to instruct"`
-	JobURLs      []string `json:"jobUrls" jsonschema:"2 to 5 addresses of JOB POSTINGS, copied exactly from the sample urls of katana_get_page_links (from the group of job links)"`
-	NotJobURLs   []string `json:"notJobUrls,omitempty" jsonschema:"optional: addresses of links that look similar but are NOT job postings (a category, a filter)"`
-	NextPageURLs []string `json:"nextPageUrls,omitempty" jsonschema:"optional: the address(es) of the link(s) to the NEXT page(s) of the list, from nextPageCandidates or the groups"`
+	PortalLinkID string  `json:"portalLinkId" jsonschema:"the portal link to instruct"`
+	JobURLs      urlList `json:"jobUrls" jsonschema:"2 to 5 addresses of JOB POSTINGS, copied exactly from the sample urls of katana_get_page_links (from the group of job links)"`
+	NotJobURLs   urlList `json:"notJobUrls,omitempty" jsonschema:"optional: addresses of links that look similar but are NOT job postings (a category, a filter)"`
+	NextPageURLs urlList `json:"nextPageUrls,omitempty" jsonschema:"optional: the address(es) of the link(s) to the NEXT page(s) of the list, from nextPageCandidates or the groups"`
+}
+
+// proposeSchema is the schema inferred from proposeArgs with a string allowed in addition to an array for the three address lists.
+func proposeSchema() (*jsonschema.Schema, error) {
+	schema, err := jsonschema.For[proposeArgs](nil)
+	if err != nil {
+		return nil, err
+	}
+	for _, name := range []string{"jobUrls", "notJobUrls", "nextPageUrls"} {
+		prop := schema.Properties[name]
+		if prop == nil {
+			return nil, fmt.Errorf("katana: the inferred schema has no %s property", name)
+		}
+		switch {
+		case len(prop.Types) > 0:
+			prop.Types = append(prop.Types, "string")
+		case prop.Type != "":
+			prop.Types = []string{prop.Type, "string"}
+			prop.Type = ""
+		}
+		prop.Items = nil // a string has no items; the array form is checked when the list is read
+	}
+	return schema, nil
 }
 
 type ruleArgs struct {
@@ -152,8 +207,13 @@ func registerTools(server *mcp.Server) {
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, a pageLinksArgs) (*mcp.CallToolResult, any, error) {
 		return call(ctx, "page-links", a)
 	})
+	proposeIn, err := proposeSchema()
+	if err != nil {
+		panic(err) // a programming error caught by the first test run, not a runtime condition
+	}
 	mcp.AddTool(server, &mcp.Tool{
-		Name: "katana_propose_link_rule",
+		Name:        "katana_propose_link_rule",
+		InputSchema: proposeIn,
 		Description: "Katana engine. From 2 to 5 job-posting addresses you picked from the digest, work out the rule (the partial address that all job " +
 			"links share) and say what it would do on the page: matchesOnPage, sampleTitles, needsConfirm, notes. Add nextPageUrls to also learn " +
 			"the pagination. Nothing is saved. Next: katana_test_link_rule.",

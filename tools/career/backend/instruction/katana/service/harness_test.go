@@ -383,3 +383,39 @@ func TestTheServiceWantsTheServiceToken(t *testing.T) {
 func dbQuery(query, arg string, dest *string) error {
 	return db.JobsDB.QueryRow(query, arg).Scan(dest)
 }
+
+// A real run (plan 192, step 10) sent the addresses as one string: the tool accepts it, in the shapes a model uses.
+func TestAddressListsMayBeSentAsAString(t *testing.T) {
+	for name, jobUrls := range map[string]any{
+		"spaces":    "board.example/j/a1 board.example/j/b2",
+		"commas":    "board.example/j/a1, board.example/j/b2",
+		"json text": `["board.example/j/a1", "board.example/j/b2"]`,
+		"array":     []string{"board.example/j/a1", "board.example/j/b2"},
+	} {
+		r := newRig(t)
+		r.call("katana_get_page_links", map[string]any{})
+		text, isErr := r.call("katana_propose_link_rule", map[string]any{"jobUrls": jobUrls})
+		if isErr || !strings.Contains(text, `"matchesOnPage":3`) {
+			t.Errorf("%s: %v %s", name, isErr, text)
+		}
+	}
+}
+
+func TestATooNarrowRuleIsSaidInTheTest(t *testing.T) {
+	r := newRig(t)
+	r.call("katana_get_page_links", map[string]any{})
+	rule := map[string]any{"host": "board.example", "include": []string{"board.example/j/a*"}}
+	text, isErr := r.call("katana_test_link_rule", map[string]any{"rule": rule})
+	if isErr || !strings.Contains(text, "too narrow") || !strings.Contains(text, "2 other links") {
+		t.Errorf("%v %s", isErr, text)
+	}
+	// the right rule says nothing of the kind
+	good := map[string]any{"host": "board.example", "include": []string{"board.example/j/*"}}
+	if text, _ := r.call("katana_test_link_rule", map[string]any{"rule": good}); strings.Contains(text, "too narrow") {
+		t.Errorf("a complete rule was called narrow: %s", text)
+	}
+	// the save tells the AI it is finished
+	if text, isErr := r.call("katana_save_link_rule", map[string]any{"rule": good}); isErr || !strings.Contains(text, "no more tool calls") {
+		t.Errorf("save: %v %s", isErr, text)
+	}
+}
