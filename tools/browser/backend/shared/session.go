@@ -86,6 +86,7 @@ var (
 // or was killed underneath this process) counts as "not started": it is
 // torn down and relaunched here instead of being handed out dead.
 func EnsureSharedSession() error {
+	touchSessionActivity()
 	Mu.Lock()
 	defer Mu.Unlock()
 	if Ctx != nil && Ctx.Err() == nil {

@@ -68,6 +68,8 @@ func runHTTPServer() {
 		os.Exit(0)
 	}()
 
+	shared.StartIdleReaper()
+
 	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})

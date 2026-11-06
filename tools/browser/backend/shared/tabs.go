@@ -151,6 +151,7 @@ func envInt(name string, def int) int {
 // the whole browser is relaunched underneath it (RecreateSharedSessionLocked's
 // fallback), which callers classify as browser_session_interrupted.
 func AcquireWorkerTab(ctx context.Context) (context.Context, func(), error) {
+	touchSessionActivity()
 	slots := workerSlotPool()
 	select {
 	case slots <- struct{}{}:
@@ -180,6 +181,7 @@ func AcquireWorkerTab(ctx context.Context) (context.Context, func(), error) {
 		once.Do(func() {
 			cancel()
 			freeSlot()
+			touchSessionActivity()
 		})
 	}
 	return tabCtx, release, nil
