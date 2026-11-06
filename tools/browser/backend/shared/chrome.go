@@ -6,9 +6,6 @@
 // this, Rod and chromedp each searched their own, different, lists — Rod also
 // finds Microsoft Edge, chromedp does not.) See
 // plan/ai/tools/browser/step-53-chromium-page-and-gate.md.
-//
-// The Playwright engine is separate: it launches Playwright's own downloaded
-// Chromium and does not use this path.
 package shared
 
 import (

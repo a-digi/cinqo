@@ -69,6 +69,13 @@ func ProbeKatana() EngineTestResult {
 
 	ctx, cancel := context.WithTimeout(context.Background(), katanaProbeTimeout)
 	defer cancel()
+	// With Katana selected its Chrome belongs to the engine, so the test counts as a fetch on it:
+	// when the test ends the idle stop is armed and the Chrome is closed a moment later, like after
+	// any crawl (a headless Chrome must never outlive the work that needed it). With another engine
+	// selected the Chrome is stopped right below instead.
+	if selectedFetchEngine() == fetchEngineKatana {
+		defer beginEngineFetch(fetchEngineKatana)()
+	}
 	resp, err := fetchWithKatana(ctx, "http://"+ln.Addr().String()+"/", "", nil, nil, nil, 0, nil)
 	if selectedFetchEngine() != fetchEngineKatana {
 		StopKatanaEngine()

@@ -626,9 +626,9 @@ func crawlPage(parent context.Context, rawURL, requestID string, expectedSelecto
 	}
 
 	// The primary single-page fetch engine (fetchWithEngine,
-	// fetch_engine.go: go-rod/rod by default, or Playwright when the
+	// fetch_engine.go: go-rod/rod by default, or Katana when the
 	// Engine page's stored setting says so — see rod_fetch.go and
-	// playwright_engine.go, both with the same contract) is tried for a domain
+	// katana_fetch.go, both with the same contract) is tried for a domain
 	// with no known Cloudflare history, before the chromedp primary tab
 	// below. On success, this performs the exact
 	// same bookkeeping the chromedp primary tab's own success path does

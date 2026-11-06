@@ -1,15 +1,14 @@
-// rod_engine.go (step 49) — an OPT-IN, pure-Go alternative to
-// playwright_engine.go for the primary single-page fetch: go-rod/rod
-// drives Chrome over CDP directly, with no Node driver. This file holds
-// the browser LIFECYCLE only (explicit Chrome path, launch flags,
-// user-agent derivation, liveness, shutdown); fetchWithRod itself and the
-// engine switch come in later steps. playwright_engine.go is not touched
-// by any of it. See plan/ai/tools/browser/step-49-rod-fetch-engine.md.
+// rod_engine.go (step 49) — the pure-Go engine for the primary single-page
+// fetch (the default since step 50): go-rod/rod drives Chrome over CDP
+// directly, with no Node driver. This file holds the browser LIFECYCLE only
+// (explicit Chrome path, launch flags, user-agent derivation, liveness,
+// shutdown); fetchWithRod (rod_fetch.go) and the engine switch
+// (fetch_engine.go) are separate. See
+// plan/ai/tools/browser/step-49-rod-fetch-engine.md.
 //
 // One shared headless Chrome per process, started lazily — mirrors
-// shared.EnsureSharedSession and ensurePlaywrightEngine. A page per call
-// (not a shared tab) is what the later fetch step will use, so, like the
-// Playwright engine, this needs no tab-pool machinery of its own.
+// shared.EnsureSharedSession. A page per call (not a shared tab) is what the
+// fetch uses, so this needs no tab-pool machinery of its own.
 package crawler
 
 import (
@@ -30,8 +29,8 @@ import (
 
 // errRodNoChrome: no Chrome binary could be found. A plain error — never
 // a *crawlError — so a caller treats it as "this engine is unavailable"
-// and falls back to the chromedp path, exactly as for a Playwright start
-// failure.
+// and falls back to the chromedp path, exactly as for any other engine
+// start failure.
 var errRodNoChrome = errors.New("rod engine: no Chrome/Chromium binary found (set BROWSER_TOOL_CHROME_PATH)")
 
 // rodLivenessTimeout bounds the cheap CDP round trip that proves the
@@ -264,9 +263,10 @@ func ensureRodEngine() (*rod.Browser, error) {
 	return rodBrowser, nil
 }
 
-// StopRodEngine shuts the shared browser down — to be called once at
-// process exit (wired in a later step), mirroring StopPlaywrightEngine. A
-// no-op if the engine was never started; safe to call repeatedly. A later
+// StopRodEngine shuts the shared browser down — called at process exit and
+// when the engine is switched away or idle (fetch_engine.go), mirroring
+// StopKatanaEngine. A no-op if the engine was never started; safe to call
+// repeatedly. A later
 // ensureRodEngine starts a fresh browser.
 func StopRodEngine() {
 	rodMu.Lock()

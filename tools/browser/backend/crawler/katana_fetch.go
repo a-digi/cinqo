@@ -1,5 +1,5 @@
 // katana_fetch.go (plan 184) — fetchWithKatana, the Katana counterpart of
-// fetchWithRod/fetchWithPlaywright: the PRIMARY single-page fetch behind
+// fetchWithRod: the PRIMARY single-page fetch behind
 // fetch_page_html. Same signature, same result (a crawlResponse), same
 // contract: a *crawlError is a verdict (a Cloudflare/bot wall, or a refused
 // redirect) the caller acts on; any other error means "this engine failed"

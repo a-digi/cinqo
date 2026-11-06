@@ -1,10 +1,10 @@
 // fetch_engine.go (step 49, step 50) — chooses which engine serves the
 // PRIMARY single-page fetch (crawl.go's call just before the chromedp
-// primary tab). Three engines share one contract (a *crawlError Cloudflare
+// primary tab). Two engines share one contract (a *crawlError Cloudflare
 // verdict, or a plain error meaning "this engine failed, fall through to
 // chromedp"): go-rod/rod (rod_fetch.go, pure Go over CDP — the default)
-// and Playwright (playwright_engine.go, needs a Node-based driver, whose
-// code is untouched).
+// and Katana (katana_fetch.go, plan 184). A third, Playwright, was removed
+// in plan 187.
 //
 // The choice is the stored Browser-tool setting (shared.BrowserSettings.
 // FetchEngine, changed on the Engine page), read on every fetch like the
@@ -49,7 +49,7 @@ var warnSettingUnreadableOnce sync.Once
 // selectedFetchEngine reports which engine the next fetch will use: the
 // stored setting, read fresh. The setting is the single source of truth.
 // When it cannot be read (no database yet, or a read error) the default,
-// rod, is used — never Playwright — and the failure is logged once.
+// rod, is used — never Katana — and the failure is logged once.
 func selectedFetchEngine() string {
 	if shared.DB == nil {
 		return defaultFetchEngine
@@ -144,8 +144,8 @@ func stopEngineLocked(engine string) {
 
 // fetchWithEngine is the single entry point crawl.go calls. It calls the
 // selected engine's fetch with the arguments it was given and returns the
-// results unchanged. With rod selected (the default) the Playwright
-// engine is never started, so no Node driver is spawned.
+// results unchanged. With rod selected (the default) the Katana
+// engine is never started, so no second Chrome is spawned.
 func fetchWithEngine(ctx context.Context, rawURL, requestID string, expectedSelectors, removeSelectors, removeAttributes []string, maxAttributeLength int, ignoreAttributesForMaxLength []string) (crawlResponse, error) {
 	engine := selectedFetchEngine()
 	defer beginEngineFetch(engine)()

@@ -346,6 +346,9 @@ func migrateBrowserSettingsFetchEngineColumn(db *sql.DB) error {
 		return nil
 	}
 
+	// Historical on purpose (plan 187): this runs only on a database that predates the column, and
+	// its CHECK still names the engine that was removed. migrateBrowserSettingsDropPlaywright runs
+	// after the migrations and rebuilds the table without it.
 	_, err = db.Exec(`ALTER TABLE browser_settings ADD COLUMN fetch_engine TEXT NOT NULL DEFAULT 'rod' CHECK (fetch_engine IN ('rod','playwright'))`)
 	return err
 }
@@ -370,6 +373,8 @@ func migrateBrowserSettingsAllowKatana(db *sql.DB) error {
 		return err
 	}
 	defer tx.Rollback()
+	// Historical on purpose (plan 187): the CHECK below is the one plan 184 wrote; the migration
+	// after this one (migrateBrowserSettingsDropPlaywright) rebuilds the table without 'playwright'.
 	for _, q := range []string{
 		`CREATE TABLE browser_settings_new (
 			id                  INTEGER PRIMARY KEY CHECK (id = 1),

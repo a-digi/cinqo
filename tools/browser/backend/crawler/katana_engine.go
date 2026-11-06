@@ -2,8 +2,8 @@
 //
 // Katana (projectdiscovery/katana, hybrid mode) is a crawler that drives a
 // headless Chrome over CDP. This tool uses it as ONE more fetch engine for
-// the primary single-page fetch (fetch_page_html), next to rod and
-// Playwright. Katana is never allowed to start a Chrome of its own: its own
+// the primary single-page fetch (fetch_page_html), next to rod.
+// Katana is never allowed to start a Chrome of its own: its own
 // launcher ignores TLS errors, may download a Chromium and keeps a temp
 // profile. Instead THIS file starts our own Chrome — with the very flags
 // rod's engine uses (newRodLauncher), the same Chrome resolver

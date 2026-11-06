@@ -60,8 +60,8 @@ func TestLinkCrawlIsAvailableOnlyWhileKatanaIsSelected(t *testing.T) {
 	}{
 		{"katana", true, linkCrawlAvailable},
 		{"rod", false, linkCrawlReasonNotKatana},
-		{"playwright", false, linkCrawlReasonNotKatana},
-		{"", false, linkCrawlReasonNotKatana}, // an older Browser sends none: that is rod, the default
+		{"selenium", false, linkCrawlReasonNotKatana}, // any other name, e.g. an engine this Browser never had
+		{"", false, linkCrawlReasonNotKatana},         // an older Browser sends none: that is rod, the default
 		{"Katana", false, linkCrawlReasonNotKatana},
 		{"katana ", true, linkCrawlAvailable}, // surrounding space is not a different engine
 		{"colly", false, linkCrawlReasonNotKatana},
@@ -85,7 +85,7 @@ func TestTheAnswerFollowsTheEngineOnTheNextRequest(t *testing.T) {
 	for _, step := range []struct {
 		engine string
 		want   bool
-	}{{"rod", false}, {"katana", true}, {"playwright", false}, {"katana", true}, {"rod", false}} {
+	}{{"rod", false}, {"katana", true}, {"selenium", false}, {"katana", true}, {"rod", false}} {
 		engine = step.engine
 		if _, got := availability(t, linkID); got.Available != step.want {
 			t.Errorf("after switching to %s: available=%v, want %v (the setting must be read on every request, never cached)", step.engine, got.Available, step.want)
@@ -237,7 +237,7 @@ func TestReadBrowserEngineViaCore(t *testing.T) {
 		_, _ = w.Write([]byte(`{"fetchEngine":"` + strings.TrimSpace(gotEngine.Load().(string)) + `"}`))
 	}))
 	defer core2.Close()
-	for engine, want := range map[string]bool{"katana": true, "rod": false, "playwright": false} {
+	for engine, want := range map[string]bool{"katana": true, "rod": false, "selenium": false} {
 		gotEngine.Store(engine)
 		err := requireKatanaSelected(context.Background(), core2.URL, "t")
 		if (err == nil) != want {

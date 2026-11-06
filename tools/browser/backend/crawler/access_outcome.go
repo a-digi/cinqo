@@ -168,7 +168,7 @@ func newAccessError(v accessVerdict) *crawlError {
 }
 
 // accessErrorFromSingleShot is the check the single-page engines (Rod,
-// Playwright) make after their own Cloudflare checks, with the main document's
+// Katana) make after their own Cloudflare checks, with the main document's
 // status and headers and the page probe: a final access error, or nil. A
 // Cloudflare deny page counts as the existing blocked error.
 func accessErrorFromSingleShot(status int, headers map[string]string, p challengeProbe) *crawlError {

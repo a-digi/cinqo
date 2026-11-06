@@ -18,8 +18,8 @@ const compareBudget = 90 * time.Second
 
 // fetchWithChromedpWorker is the existing chromedp path, isolated from the
 // engine switch: a headless worker tab + navigateAndReadWithCloudflareCheck,
-// exactly what crawlOnWorkerTab does after its (Playwright or rod) first
-// attempt. This is the baseline rod is compared against.
+// exactly what crawlOnWorkerTab does after its engine-primary (rod or katana)
+// first attempt. This is the baseline rod is compared against.
 func fetchWithChromedpWorker(ctx context.Context, rawURL string) (crawlResponse, error) {
 	tabCtx, release, err := shared.AcquireWorkerTab(ctx)
 	if err != nil {

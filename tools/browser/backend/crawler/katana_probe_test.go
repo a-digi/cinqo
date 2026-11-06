@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"browser-tool-backend/shared"
 )
@@ -75,5 +76,25 @@ func TestKatanaTestKeepsItsChromeWhenKatanaIsSelected(t *testing.T) {
 	}
 	if !katanaRunning() {
 		t.Error("with Katana selected its Chrome belongs to the engine and must stay up")
+	}
+}
+
+// The standing rule: a headless Chrome must never outlive the work that needed it. A "Test Katana" with
+// Katana selected leaves the Chrome to the engine, so it must follow the same idle rule as a real fetch:
+// closed a moment after the test ends (found live in plan 187's check: it used to stay up until the next fetch).
+func TestKatanaTestChromeIsClosedByTheIdleStopWhenKatanaIsSelected(t *testing.T) {
+	requireKatanaChrome(t)
+	resetEngineTracking(t)
+	useBrowserSettings(t, shared.FetchEngineKatana)
+	shortenIdleStop(t, 300*time.Millisecond)
+	if r := ProbeKatana(); !r.OK {
+		t.Fatalf("the test failed: %+v", r)
+	}
+	deadline := time.Now().Add(15 * time.Second)
+	for katanaRunning() && time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+	}
+	if katanaRunning() {
+		t.Fatal("the Chrome the Katana test started was still up long after the idle stop should have closed it")
 	}
 }

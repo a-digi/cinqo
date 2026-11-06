@@ -1,5 +1,5 @@
-// rod_fetch.go (step 49) — fetchWithRod, the go-rod/rod counterpart of
-// fetchWithPlaywright (playwright_engine.go): the PRIMARY single-page
+// rod_fetch.go (step 49) — fetchWithRod, the go-rod/rod single-page fetch
+// (the default engine; Katana's is katana_fetch.go): the PRIMARY single-page
 // fetch for a domain with no known Cloudflare history. Same signature,
 // same result (a crawlResponse), same escalation contract: a Cloudflare
 // verdict is returned as the *crawlError the caller already knows how to

@@ -58,7 +58,7 @@ func TestRulesAreSavedOnlyWhileKatanaIsSelected(t *testing.T) {
 	id := linkWithHost(t, "https://board.example/jobs")
 	body := `{"portalLinkId":"` + id + `","crawlMethod":"links","rules":` + goodRules + `}`
 
-	for _, engine := range []string{"rod", "playwright", ""} {
+	for _, engine := range []string{"rod", "selenium", ""} {
 		scriptedEngine(t, engine, nil)
 		code, resp := putRules(t, body, true)
 		var e map[string]string
