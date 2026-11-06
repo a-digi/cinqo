@@ -19,7 +19,8 @@ export const KATANA_LISTING_TOOLS = [
 ] as const
 
 // A tidy run needs about ten calls (state, links, propose, test, save, crawl, candidates, test, save); the rest is room for fixes.
-export const KATANA_TOOL_ITERATION_LIMIT = 18
+// Core accepts a tool-call budget from 1 to 15 for a conversation (a larger one is refused when the conversation is created).
+export const KATANA_TOOL_ITERATION_LIMIT = 15
 
 export function buildKatanaListingMessage(link: { id: string; title?: string | null; url: string }): string {
   return [
