@@ -32,6 +32,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -1453,6 +1455,24 @@ func At(s []string, i int) string {
 // SanitizePostedAt is sanitizePostedAt for callers outside this package (the job-detail step of the link crawler, plan 185, reads a posted
 // date from a detail page and must clean it exactly as a listing crawl does).
 func SanitizePostedAt(raw string) string { return sanitizePostedAt(raw) }
+
+var isoDatePrefix = regexp.MustCompile(`^\s*(\d{4})-(\d{2})-(\d{2})(?:[T ]|\s*$)`)
+
+// CleanDetailPostedAt is the date of a JOB DETAIL page (plan 185, step 7b): a machine date such as the datetime attribute of a <time>
+// element ("2026-10-28T08:55:19+00:00") becomes "2026-10-28"; anything else is cleaned exactly like a listing's date
+// (sanitizePostedAt). A date written with month names ("28 October 2026") has no digits-with-delimiters form and stays unusable: the
+// job-detail prompt asks for the datetime attribute for that reason.
+func CleanDetailPostedAt(raw string) string {
+	if m := isoDatePrefix.FindStringSubmatch(raw); m != nil {
+		month, _ := strconv.Atoi(m[2])
+		day, _ := strconv.Atoi(m[3])
+		if month >= 1 && month <= 12 && day >= 1 && day <= 31 {
+			return m[1] + "-" + m[2] + "-" + m[3]
+		}
+		return ""
+	}
+	return sanitizePostedAt(raw)
+}
 
 func sanitizePostedAt(raw string) string {
 	var b strings.Builder

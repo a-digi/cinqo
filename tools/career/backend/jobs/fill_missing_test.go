@@ -230,3 +230,50 @@ func TestFillingAnUnknownJobIsAnError(t *testing.T) {
 		t.Errorf("%v", err)
 	}
 }
+
+// Found in the live pass: a selector that caught the heading together with the company ("Backend Engineer New\nUNICEF") must not become
+// a company (it created junk company records).
+func TestABlockOfThePageIsNeverACompanyOrAPlace(t *testing.T) {
+	fillSetup(t)
+	ev := captureFillEvents(t)
+	id := newLinkJob(t, "l1", "https://board.example/j/20", "Backend Software Engineering")
+	ev.reset()
+	filled, err := FillMissingJobFields(id, MissingFields{
+		Company:  "Backend Software Engineering New\nUNICEF", // the real python.org value
+		Location: "Backend Software Engineering, Remote",
+		PostedAt: "2026-10-28",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(filled, []string{"postedAt"}) {
+		t.Errorf("filled %v, want only the date", filled)
+	}
+	if _, company, location, postedAt := fieldsOf(t, id); company != "" || location != "" || postedAt != "2026-10-28" {
+		t.Errorf("%q %q %q", company, location, postedAt)
+	}
+	if len(ev.topics()) != 0 {
+		t.Errorf("a rejected company must not reach the company linking: %v", ev.topics())
+	}
+	// the title match ignores case; a title that is only a part of a longer company name is still a block
+	id2 := newLinkJob(t, "l1", "https://board.example/j/21", "Data Engineer")
+	if filled, _ := FillMissingJobFields(id2, MissingFields{Company: "DATA ENGINEER at Acme"}); len(filled) != 0 {
+		t.Errorf("case-insensitive title in company: %v", filled)
+	}
+	// a company over several lines is a block even without the title
+	id3 := newLinkJob(t, "l1", "https://board.example/j/22", "Cook")
+	if filled, _ := FillMissingJobFields(id3, MissingFields{Company: "Acme\nBerlin"}); len(filled) != 0 {
+		t.Errorf("two-line company: %v", filled)
+	}
+	// but a place over two lines is fine, and a short title says nothing ("QA" is inside many words)
+	id4 := newLinkJob(t, "l1", "https://board.example/j/23", "QA")
+	filled, _ = FillMissingJobFields(id4, MissingFields{Company: "Aqua QA Labs", Location: "Berlin\nGermany"})
+	if !reflect.DeepEqual(filled, []string{"company", "location"}) {
+		t.Errorf("short titles and multi-line places: %v", filled)
+	}
+	// a normal value for a normal job still fills
+	id5 := newLinkJob(t, "l1", "https://board.example/j/24", "Senior Go Developer")
+	if filled, _ := FillMissingJobFields(id5, MissingFields{Company: "Ferto Health GmbH", Location: "Berlin, Germany"}); len(filled) != 2 {
+		t.Errorf("normal values: %v", filled)
+	}
+}

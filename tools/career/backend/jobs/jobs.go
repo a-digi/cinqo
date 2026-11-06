@@ -1322,6 +1322,19 @@ const (
 	maxFilledPostedAtRunes = 40
 )
 
+// minTitleRunesForCheck: a title shorter than this is too short to say anything about a block of text containing it.
+const minTitleRunesForCheck = 4
+
+// containsTheTitle reports a value that cannot be a company or a place because it plainly is a block of the page: it contains the job's
+// own title (a selector that caught the heading together with the name, for example "Backend Engineer New UNICEF").
+func containsTheTitle(value, title string) bool {
+	title = strings.TrimSpace(title)
+	if utf8.RuneCountInString(title) < minTitleRunesForCheck {
+		return false
+	}
+	return strings.Contains(strings.ToLower(value), strings.ToLower(title))
+}
+
 // cleanFilledValue collapses whitespace and returns "" for a value that is empty or longer than max runes.
 func cleanFilledValue(v string, max int) string {
 	v = strings.Join(strings.Fields(v), " ")
@@ -1352,14 +1365,27 @@ func FillMissingJobFields(jobID string, f MissingFields) (filled []string, err e
 		n, err := res.RowsAffected()
 		return n > 0, err
 	}
+	// What the page gave is checked against the job itself first: a company or a place that holds the job's own title is a block of the
+	// page (the selector caught the heading with the name), a company over several lines is the same: both are ignored, never stored.
+	var jobTitle string
+	if err := db.JobsDB.QueryRow(`SELECT title FROM jobs WHERE id = ?`, jobID).Scan(&jobTitle); err != nil {
+		return nil, err
+	}
 	company := cleanFilledValue(f.Company, maxFilledCompanyRunes)
+	if strings.Contains(strings.TrimSpace(f.Company), "\n") || containsTheTitle(company, jobTitle) {
+		company = ""
+	}
+	location := cleanFilledValue(f.Location, maxFilledLocationRunes)
+	if containsTheTitle(location, jobTitle) {
+		location = ""
+	}
 	if ok, err := set("company", company); err != nil {
 		return filled, err
 	} else if ok {
 		filled = append(filled, "company")
 		publishJobCreatedEvent(jobID, company)
 	}
-	if ok, err := set("location", cleanFilledValue(f.Location, maxFilledLocationRunes)); err != nil {
+	if ok, err := set("location", location); err != nil {
 		return filled, err
 	} else if ok {
 		filled = append(filled, "location")

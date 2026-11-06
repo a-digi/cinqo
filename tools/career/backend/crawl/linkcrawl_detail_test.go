@@ -177,3 +177,21 @@ func TestADetailStepWithoutTheExtraLabelsChangesNothingElse(t *testing.T) {
 		}
 	}
 }
+
+// The date comes from the page's machine date (the datetime attribute of <time>), and a heading-plus-company block is not stored.
+func TestTheDetailStepStoresAMachineDateAndRejectsABlockAsCompany(t *testing.T) {
+	id := linkWithJobs(t, portal.CrawlMethodLinks)
+	f := newFakeCore(t, "katana")
+	f.paginated = func(pageURL string) (int, string) {
+		return 200, `{"pages":[{"url":"` + pageURL + `","results":{"description":"Body of ` + pageURL + `","company":"Backend Developer New\nUNICEF","location":"Remote, Remote","postedAt":"2026-10-28T08:55:19.214015+00:00"}}]}`
+	}
+	crawlDetails(t, id)
+	got := jobFields(t, id)
+	if got["Backend Developer"] != [3]string{"", "Remote, Remote", "2026-10-28"} {
+		t.Errorf("Backend Developer: %v (the block must not become the company; the date is the machine date)", got["Backend Developer"])
+	}
+	// the other job's title is not inside the company text, but the company still has two lines: rejected as well
+	if got["Data Engineer"][0] != "" {
+		t.Errorf("a two-line company was stored: %v", got["Data Engineer"])
+	}
+}

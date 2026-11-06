@@ -298,7 +298,7 @@ func crawlOneJobDetail(ctx context.Context, coreURL, portalID, runID, accessToke
 	filled, ferr := jobs.FillMissingJobFields(target.ID, jobs.MissingFields{
 		Company:  values["company"],
 		Location: values["location"],
-		PostedAt: portal.SanitizePostedAt(values["postedAt"]),
+		PostedAt: portal.CleanDetailPostedAt(values["postedAt"]),
 	})
 	if ferr != nil {
 		return didUpdate, ferr
