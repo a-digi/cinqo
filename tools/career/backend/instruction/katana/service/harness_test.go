@@ -160,6 +160,9 @@ func (r *rig) call(tool string, args map[string]any) (string, bool) {
 func TestTheWholeJobListRecipe(t *testing.T) {
 	r := newRig(t)
 
+	if _, _, err := portal.StartInstructionAttempt(r.linkID, portal.InstructionKindListing, portal.InstructionTriggerManual, "conv"); err != nil {
+		t.Fatal(err)
+	}
 	// 1. the digest: grouped, small, the job group first
 	text, isErr := r.call("katana_get_page_links", map[string]any{})
 	if isErr {
@@ -243,6 +246,10 @@ func TestTheWholeJobListRecipe(t *testing.T) {
 	text, isErr = r.call("katana_save_link_rule", map[string]any{})
 	if isErr || !strings.Contains(text, `"saved":true`) {
 		t.Fatalf("save: %v %s", isErr, text)
+	}
+	// the attempt the screen opened for this run ends as a success
+	if status, err := portal.FinishInstructionAttempt(r.linkID, portal.InstructionKindListing, ""); err != nil || status != portal.InstructionAttemptSucceeded {
+		t.Errorf("the attempt did not record the save: %q %v", status, err)
 	}
 	s, err := portal.GetLinkCrawlSettings(r.linkID)
 	if err != nil || s.Rules == nil || s.Rules.Host != "board.example" || s.Rules.Pagination == nil {

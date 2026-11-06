@@ -2,7 +2,7 @@ import type { PortalLink } from '../api'
 import { diagnoseEmptyCrawl, emptyCrawlFor } from './emptyCrawl'
 import { AlertCircleIcon } from '../Shared/Icons/icons'
 import { LOGIN_BADGE_TOOLTIP, loginBadgeFor } from './loginWindow'
-import { hasListingFor, jobDetailIsWrittenByAi, listingNeeds } from './crawlEngine'
+import { aiTriesListing as aiTriesListingFor, hasListingFor, jobDetailIsWrittenByAi, listingNeeds } from './crawlEngine'
 import { useCrawlEngine } from './useCrawlEngine'
 import {
   attemptsLabel,
@@ -11,7 +11,6 @@ import {
   instructionState,
   isLikelyUncrawlable,
   isNotCrawlable,
-  listingIsWrittenByAi,
   notCrawlableTooltip,
   uncrawlableTooltip,
 } from './instructionStats'
@@ -52,13 +51,13 @@ export function LinkStatusPills({
   // job-list instructions only matter where the AI writes them.
   const engine = useCrawlEngine()
   const needs = listingNeeds(engine, link.requiresLogin)
-  const aiWritesListing = listingIsWrittenByAi(engine, link.requiresLogin)
+  const aiTriesListing = aiTriesListingFor(engine, link.requiresLogin)
   const hasListing = hasListingFor(link, engine)
   // "Instructed" needs both instruction sets (plan 163, step 2).
   const pill = instructionPill(instructionState(link, listingGenerating, jobDetailGenerating, engine))
-  const listingUncrawlable = aiWritesListing && isLikelyUncrawlable(link.instructionStats.listing, hasListing, listingGenerating)
+  const listingUncrawlable = aiTriesListing && isLikelyUncrawlable(link.instructionStats.listing, hasListing, listingGenerating)
   const notCrawlable = isNotCrawlable(link.instructionStats.listing, hasListing, listingGenerating)
-  const listingAlertAttempts = aiWritesListing ? instructionAlertAttempts(link.instructionStats.listing, hasListing, listingGenerating) : 0
+  const listingAlertAttempts = aiTriesListing ? instructionAlertAttempts(link.instructionStats.listing, hasListing, listingGenerating) : 0
   // Step 90: the latest listing crawl completed but found no jobs.
   const emptyCrawl = emptyCrawlFor(link)
   // The AI's attempts at the job details only matter where the AI writes them (not under Katana).

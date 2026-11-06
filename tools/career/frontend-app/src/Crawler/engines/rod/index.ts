@@ -9,6 +9,7 @@ export const rodEngine: InstructionEngine = {
   hasListing: hasAiInstructions,
   jobDetailsWrittenByAi: () => true,
   mayAutoWriteJobDetails: () => true,
+  aiTriesListing: () => true,
   clearsStaleJobDetailAiRequest: () => false,
   // Rod's job-detail modal is a text box a person can type into: it never waits for jobs.
   jobDetailsAccess: () => 'open',

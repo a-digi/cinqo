@@ -15,6 +15,7 @@ export const unreadEngine: InstructionEngine = {
   hasListing: (link) => (link.requiresLogin ? hasAiInstructions(link) : hasRule(link) || hasAiInstructions(link)),
   jobDetailsWrittenByAi: () => true,
   mayAutoWriteJobDetails: () => false,
+  aiTriesListing: () => true,
   clearsStaleJobDetailAiRequest: () => false,
   jobDetailsAccess: () => 'open',
 }

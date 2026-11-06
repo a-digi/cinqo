@@ -49,6 +49,7 @@ import {
 import { instructionAlertAttempts, isLikelyUncrawlable, listingIsWrittenByAi, savedDespiteError } from '../instructionStats'
 import { canCrawlListing } from '../autoDiscoveryVisibility'
 import {
+  aiTriesListing as aiTriesListingFor,
   clearsStaleJobDetailAiRequest,
   hasListingFor,
   JOB_DETAILS_PILL,
@@ -142,6 +143,8 @@ export function CrawlPanel({
   // Plan 190: the Browser's selected engine decides which job-list instructions count (a rule under Katana, AI instructions under Rod).
   const engine = useCrawlEngine()
   const instructionEngine = useInstructionEngine()
+  // The engine's own Generate recipe for the job list of a link that needs no login (Katana); undefined = the existing Generate (Rod).
+  const listingRecipe = link.requiresLogin ? undefined : instructionEngine.listingGenerate
   // "Crawl with AI" own busy/result state.
   const [isCrawling, setIsCrawling] = useState(false)
   const [crawlResult, setCrawlResult] = useState<{ ok: boolean; text: string; conversationId?: string } | null>(null)
@@ -733,7 +736,8 @@ export function CrawlPanel({
   // "yes, this page has jobs" answer never tries them: those instructions were proven wrong.
   function handleGenerateInstructionsWithAI(options: { jobsConfirmed?: boolean } = {}) {
     if (aiPending || inheriting || !selectedPlatform) return
-    if (shouldTryInherit(link) && !options.jobsConfirmed) {
+    // The trial of the platform's other instructions is Rod's (their selectors); an engine with its own recipe (Katana) has none.
+    if (shouldTryInherit(link) && !options.jobsConfirmed && listingRecipe === undefined) {
       void onTryInherit().then((inherited) => {
         if (!inherited) startGenerateInstructionsWithAI(options)
       })
@@ -748,8 +752,9 @@ export function CrawlPanel({
     const model = selectedPlatform.models.length > 0 ? (selectedModel ?? selectedPlatform.models[0]) : undefined
     // Plan 163, step 3: a link with no job-detail instructions yet gets them in the same conversation, right after its listing
     // instructions are saved (see continueWithJobDetail); the AI is then also allowed the tool that saves them.
-    const withDetail = !hasJobDetailInstructions(link)
-    const tools = withDetail ? GENERATE_LISTING_WITH_DETAIL_TOOLS : GENERATE_LISTING_TOOLS
+    // An engine with its own recipe (Katana) writes the job list only: its job details come later, from the crawled jobs (plan 192).
+    const withDetail = listingRecipe === undefined && !hasJobDetailInstructions(link)
+    const tools = listingRecipe ? listingRecipe.tools : withDetail ? GENERATE_LISTING_WITH_DETAIL_TOOLS : GENERATE_LISTING_TOOLS
     let conversationId = ''
     setAiPending(true)
     setAiLocalError(undefined)
@@ -760,7 +765,7 @@ export function CrawlPanel({
         platformId,
         model,
         hidden: true,
-        toolIterationLimit: GENERATE_TOOL_ITERATION_LIMIT,
+        toolIterationLimit: listingRecipe ? listingRecipe.toolIterationLimit : GENERATE_TOOL_ITERATION_LIMIT,
         allowedTools: [...tools],
         compactToolResults: true,
       })
@@ -794,7 +799,14 @@ export function CrawlPanel({
             // Best-effort — a failure here only costs reload-resilience
             // for this one run, not the run itself.
           })
-          .then(() => sendMessage(conversation.id, buildGenerateInstructionsMessage(link, { ...options, withJobDetail: withDetail })))
+          .then(() =>
+            sendMessage(
+              conversation.id,
+              listingRecipe
+                ? listingRecipe.buildMessage(link)
+                : buildGenerateInstructionsMessage(link, { ...options, withJobDetail: withDetail }),
+            ),
+          )
       })
       .then(
         (reply) => {
@@ -998,11 +1010,12 @@ export function CrawlPanel({
   // Plan 190: only where the AI writes the job list (not under Katana, which uses a rule made by hand).
   const aiWritesListing = listingIsWrittenByAi(engine, link.requiresLogin)
   const hasListing = hasListingFor(link, engine)
-  const listingAlertAttempts = aiWritesListing ? instructionAlertAttempts(link.instructionStats.listing, hasListing, aiBusy) : 0
+  const aiTriesListing = aiTriesListingFor(engine, link.requiresLogin)
+  const listingAlertAttempts = aiTriesListing ? instructionAlertAttempts(link.instructionStats.listing, hasListing, aiBusy) : 0
   // Step 87 — once the AI has given up on the listing three times in a
   // row, the stronger "probably can't be crawled" pill replaces the
   // generic alert for the listing.
-  const listingUncrawlable = aiWritesListing && isLikelyUncrawlable(link.instructionStats.listing, hasListing, aiBusy)
+  const listingUncrawlable = aiTriesListing && isLikelyUncrawlable(link.instructionStats.listing, hasListing, aiBusy)
   const aiWritesJobDetail = jobDetailIsWrittenByAi(engine, link.requiresLogin)
   const jobDetailAlertAttempts = aiWritesJobDetail
     ? instructionAlertAttempts(link.instructionStats.jobDetail, Boolean(link.jobDetailCrawlInstructions), jobDetailAiBusy)
@@ -1274,7 +1287,7 @@ export function CrawlPanel({
                     <CrawlInstructionsIcon />
                     Job list
                   </button>
-                  {aiWritesListing && (
+                  {aiTriesListing && (
                     <InstructionAttemptStats
                       stats={link.instructionStats.listing}
                       alertAttempts={listingAlertAttempts}
@@ -1338,7 +1351,7 @@ export function CrawlPanel({
                   )}
                 </div>
               </div>
-              {aiWritesListing && (
+              {(aiWritesListing || listingRecipe !== undefined) && (
                 <button
                   type="button"
                   onClick={
@@ -1363,7 +1376,9 @@ export function CrawlPanel({
                           ? "Trying the instructions of this platform's other links first…"
                           : aiBusy
                             ? "Open the chat window to watch the AI work on this link's crawl instructions"
-                            : 'Let the AI inspect this page and write (or update) its listing crawl instructions for you — once saved, this link is crawled and its job-detail instructions are generated automatically.'
+                            : listingRecipe !== undefined
+                              ? "Let the AI read this page's links and write the job list rule for you. It tests the rule on the real page before it saves it."
+                              : 'Let the AI inspect this page and write (or update) its listing crawl instructions for you — once saved, this link is crawled and its job-detail instructions are generated automatically.'
                   }
                   className="flex shrink-0 flex-col items-center justify-center gap-1 self-stretch rounded-lg border border-gray-200 bg-gray-50 px-3 text-xs font-medium text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
                 >

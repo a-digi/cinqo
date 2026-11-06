@@ -24,6 +24,14 @@ export interface StartOverProps {
   onReload: () => void
 }
 
+// How an engine's AI writes the JOB LIST of a link (the Generate button): the tools its hidden conversation may use, the tool-call budget
+// and the prompt. An engine without one (Rod) is run by the existing Generate code unchanged.
+export interface ListingGenerate {
+  tools: readonly string[]
+  toolIterationLimit: number
+  buildMessage: (link: Pick<PortalLink, 'id' | 'title' | 'url'>) => string
+}
+
 export interface InstructionEngine {
   // The Browser engine name this engine serves ('rod', 'katana'); 'unknown' is the engine that judges nothing.
   readonly id: string
@@ -39,6 +47,10 @@ export interface InstructionEngine {
   clearsStaleJobDetailAiRequest(requiresLogin: boolean): boolean
   // Whether the Job details modal may open (plan 191).
   jobDetailsAccess(link: LinkFacts): JobDetailsAccess
+  // Whether the AI's attempts at the job list are counted and shown (the attempt pills) under this engine.
+  aiTriesListing(requiresLogin: boolean): boolean
+  // The engine's own recipe for the Generate button on the job list, for a link that needs no login (Katana only).
+  readonly listingGenerate?: ListingGenerate
   // The engine's own control to delete what it made for a link and begin again (Katana only; Rod has "Start fresh" in the card as before).
   readonly startOverControl?: ComponentType<StartOverProps>
 }

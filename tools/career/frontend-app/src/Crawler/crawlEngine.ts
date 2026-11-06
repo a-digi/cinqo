@@ -28,6 +28,11 @@ export function clearsStaleJobDetailAiRequest(engine: EngineReading, requiresLog
   return engineFor(engine).clearsStaleJobDetailAiRequest(requiresLogin)
 }
 
+// Whether the AI's attempts at the job list are counted and shown under the engine.
+export function aiTriesListing(engine: EngineReading, requiresLogin: boolean): boolean {
+  return engineFor(engine).aiTriesListing(requiresLogin)
+}
+
 // Whether the link has what its job list needs under the engine in use.
 export function hasListingFor(link: LinkFacts, engine: EngineReading): boolean {
   return engineFor(engine).hasListing(link)

@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -404,6 +405,10 @@ func SaveRule(ctx context.Context, b ruleBody) (any, *problem) {
 	}
 	if err := portal.SaveLinkCrawlSettings(s.linkID, cur.CrawlMethod, &rule, false); err != nil {
 		return nil, refuse(http.StatusBadRequest, "save_failed", "%s", err.Error())
+	}
+	// The attempt of this AI run (opened by the screen when Generate was pressed) ends as a success because the rule was saved by it.
+	if err := portal.MarkInstructionSaved(s.linkID, portal.InstructionKindListing); err != nil {
+		log.Printf("katana: could not record the saved rule on the attempt of link %s: %v", s.linkID, err)
 	}
 	return map[string]any{"saved": true, "jobsInTest": sc.passed[ruleKey(rule)], "host": rule.Host, "include": rule.Include}, nil
 }
