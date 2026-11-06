@@ -222,3 +222,43 @@ func TestDeletingAPlatformForgetsTheLoginsKeptForItsLinks(t *testing.T) {
 		t.Errorf("both kept logins must be forgotten: %v", got)
 	}
 }
+
+// plan 197, step 1: the engine of a link through the route.
+func TestTheEngineOfALinkIsSetThroughTheRouteAndValidatedBeforeAnythingIsWritten(t *testing.T) {
+	pid, _ := loginSeed(t)
+	link := loginLink(t, pid)
+	put := func(body string) int {
+		rec := httptest.NewRecorder()
+		PortalLinksHandler(rec, httptest.NewRequest(http.MethodPut, "/portal-links", strings.NewReader(body)))
+		return rec.Code
+	}
+	engineOf := func() string {
+		for _, l := range linksOf(t, pid) {
+			if l.ID == link {
+				return l.CrawlEngine
+			}
+		}
+		return "?"
+	}
+	if engineOf() != "" {
+		t.Fatalf("a new link follows the Browser: %q", engineOf())
+	}
+	if code := put(`{"id":"` + link + `","crawlEngine":"rod"}`); code != 200 || engineOf() != "rod" {
+		t.Errorf("set rod: %d %q", code, engineOf())
+	}
+	// a bad value changes nothing, not even the other fields of the same request
+	if code := put(`{"id":"` + link + `","title":"Changed","crawlEngine":"katana"}`); code != http.StatusBadRequest || engineOf() != "rod" {
+		t.Errorf("bad engine: %d %q", code, engineOf())
+	}
+	for _, l := range linksOf(t, pid) {
+		if l.ID == link && l.Title == "Changed" {
+			t.Error("a refused request changed the title")
+		}
+	}
+	if code := put(`{"id":"` + link + `","crawlEngine":""}`); code != 200 || engineOf() != "" {
+		t.Errorf("back to the Browser: %d %q", code, engineOf())
+	}
+	if code := put(`{"id":"nope","crawlEngine":"rod"}`); code < 400 {
+		t.Errorf("unknown link: %d", code)
+	}
+}

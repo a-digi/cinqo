@@ -650,6 +650,13 @@ CREATE TABLE IF NOT EXISTS portal_links (
     -- login_session_state (plan 195, step 4): what Career last learned about the kept login: '' (none), 'valid' (kept, or a crawl got through)
     -- or 'expired' (a crawl was told by the Browser tool that the site no longer accepts it). Only a cache of the Browser tool's verdict.
     login_session_state                            TEXT NOT NULL DEFAULT '',
+    -- crawl_engine (plan 197, step 1): the crawl engine of THIS link: '' = follow the Browser tool's selected engine, 'rod' = read this link the
+    -- Rod way whatever the Browser selected. engine_block_code / engine_block_at / engine_hint_dismissed_at (plan 197, step 4) hold the last
+    -- Cloudflare / rate-limit block seen on a Katana-only read of the link and the person's "Not now". Also added by migratePortalLinksCrawlEngine.
+    crawl_engine                                   TEXT NOT NULL DEFAULT '',
+    engine_block_code                              TEXT NOT NULL DEFAULT '',
+    engine_block_at                                TEXT,
+    engine_hint_dismissed_at                       TEXT,
     -- crawl_method / link_rules (plan 185, step 4): how this link's listing is crawled. 'instructions' (the default, what every link
     -- did before) = the AI-written selectors in crawl_instructions; 'links' = the link crawler: jobs found by the URL pattern of their
     -- links, no AI, available only while the Browser tool's engine is Katana. link_rules holds the person's rule as JSON (host, include
@@ -1852,6 +1859,9 @@ func migrateJobsDB(db *sql.DB) error {
 	if err := migratePortalsAiOverride(db); err != nil {
 		return err
 	}
+	if err := migratePortalLinksCrawlEngine(db); err != nil {
+		return err
+	}
 	if err := migratePortalLinksLogin(db); err != nil {
 		return err
 	}
@@ -2852,4 +2862,28 @@ func migratePortalLinksJobDetailOrigin(db *sql.DB) error {
 	}
 	_, err = db.Exec(`ALTER TABLE portal_links ADD COLUMN job_detail_instructions_origin TEXT NOT NULL DEFAULT ''`)
 	return err
+}
+
+// migratePortalLinksCrawlEngine (plan 197, step 1) adds the per-link engine and the block record to an install that already has portal_links
+// (a fresh install gets them from the base schema). Every existing link keeps ” (follow the Browser tool's engine) and no block: nothing
+// changes for it. The same guarded ALTER TABLE ADD COLUMN every other portal_links column uses.
+func migratePortalLinksCrawlEngine(db *sql.DB) error {
+	for _, col := range []struct{ name, def string }{
+		{"crawl_engine", "TEXT NOT NULL DEFAULT ''"},
+		{"engine_block_code", "TEXT NOT NULL DEFAULT ''"},
+		{"engine_block_at", "TEXT"},
+		{"engine_hint_dismissed_at", "TEXT"},
+	} {
+		exists, hasColumn, err := tableHasColumn(db, "portal_links", col.name)
+		if err != nil {
+			return err
+		}
+		if !exists || hasColumn {
+			continue
+		}
+		if _, err := db.Exec(`ALTER TABLE portal_links ADD COLUMN ` + col.name + ` ` + col.def); err != nil {
+			return err
+		}
+	}
+	return nil
 }

@@ -23,6 +23,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"career-tool-backend/portal"
 )
 
 // browserSettingsPath is the Browser tool's settings route behind core's proxy.
@@ -46,6 +48,17 @@ var (
 	// errBrowserEngineUnknown: the selected engine could not be read.
 	errBrowserEngineUnknown = errors.New("the Browser tool's engine could not be read, so the link crawler is not available")
 )
+
+// linkOnRodError is the refusal for a link that is set to use Rod: it IS a "Katana is not the engine here" (errors.Is errKatanaNotSelected, so
+// every caller and code that handles that keeps working), with the words that fit a link-level choice.
+type linkOnRodError struct{}
+
+func (linkOnRodError) Error() string {
+	return "this link is set to use Rod, so Katana does not read it: set its engine back to the Browser setting to use Katana"
+}
+func (linkOnRodError) Is(target error) bool { return target == errKatanaNotSelected }
+
+var errLinkUsesRod error = linkOnRodError{}
 
 // readBrowserEngine reads the Browser tool's selected engine. A var so tests
 // can script the Browser without a core.
@@ -81,6 +94,36 @@ func readBrowserEngineViaCore(ctx context.Context, coreURL, accessToken string) 
 // missing engine value is what an OLDER Browser sends (its default was rod), so it is not Katana.
 func requireKatanaSelected(ctx context.Context, coreURL, accessToken string) error {
 	engine, err := readBrowserEngine(ctx, coreURL, accessToken)
+	if err != nil {
+		return fmt.Errorf("%w: %v", errBrowserEngineUnknown, err)
+	}
+	if strings.TrimSpace(engine) != browserEngineKatana {
+		return errKatanaNotSelected
+	}
+	return nil
+}
+
+// effectiveEngine (plan 197, step 1) is the engine that reads this link: the link's own engine when it has one, else the Browser's selected
+// engine. The Browser's value is read only when the link has none of its own (a link on Rod needs no reading), and a Browser that cannot be
+// read is an error for a link that follows it, never a guess.
+func effectiveEngine(ctx context.Context, coreURL, accessToken, linkID string) (string, error) {
+	if own, err := portal.GetLinkCrawlEngine(linkID); err == nil && own != portal.LinkEngineBrowser {
+		return own, nil
+	}
+	engine, err := readBrowserEngine(ctx, coreURL, accessToken)
+	if err != nil {
+		return "", err
+	}
+	return portal.EngineOf(portal.LinkEngineBrowser, engine), nil
+}
+
+// requireKatanaFor is requireKatanaSelected for one link: nil only when Katana is the engine that reads THIS link (a link on Rod is refused
+// with errKatanaNotSelected whatever the Browser selected). An empty or missing Browser value is what an older Browser sends: not Katana.
+func requireKatanaFor(ctx context.Context, coreURL, accessToken, linkID string) error {
+	if own, err := portal.GetLinkCrawlEngine(linkID); err == nil && own == portal.LinkEngineRod {
+		return errLinkUsesRod
+	}
+	engine, err := effectiveEngine(ctx, coreURL, accessToken, linkID)
 	if err != nil {
 		return fmt.Errorf("%w: %v", errBrowserEngineUnknown, err)
 	}

@@ -35,7 +35,7 @@ func linkCrawlSelected(ctx context.Context, coreURL, accessToken, portalLinkID s
 	if needsLogin && !kept {
 		return false, nil
 	}
-	engine, err := readBrowserEngine(ctx, coreURL, accessToken)
+	engine, err := effectiveEngine(ctx, coreURL, accessToken, portalLinkID) // plan 197: the link's own engine first
 	if err != nil {
 		return false, errBrowserEngineUnknown
 	}
@@ -79,7 +79,7 @@ func checkLinkCrawlStart(ctx context.Context, coreURL, accessToken, portalLinkID
 	if needsLogin && portal.KeptLoginFor(portalLinkID) == "" {
 		return portal.ErrLinkRulesLogin
 	}
-	return requireKatanaSelected(ctx, coreURL, accessToken)
+	return requireKatanaFor(ctx, coreURL, accessToken, portalLinkID)
 }
 
 // linkCrawlStopText says, in a crawl summary's own words, why a link crawl ended.

@@ -22,6 +22,7 @@ type loginLinkJSON struct {
 	Title         string `json:"title"`
 	RequiresLogin bool   `json:"requiresLogin"`
 	LoginURL      string `json:"loginUrl"`
+	CrawlEngine   string `json:"crawlEngine"`
 }
 
 func linkCall(method, body string) *httptest.ResponseRecorder {

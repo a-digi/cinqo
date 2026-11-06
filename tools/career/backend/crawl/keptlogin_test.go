@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -243,5 +244,117 @@ func TestSingleJobRecrawlOfAKeptLoginLinkIsAllowedOnKatanaOnly(t *testing.T) {
 	var np *NotPossibleError
 	if !errors.As(err, &np) || rod.count("crawl") != 0 {
 		t.Errorf("Rod must refuse a login link: %v %v", err, rod.seen())
+	}
+}
+
+// --- plan 197, step 1: a link set to use Rod is never read by Katana, whatever the Browser selected ---
+
+func rodLink(t *testing.T) string {
+	t.Helper()
+	id := duapuneLink(t)
+	if err := portal.SetLinkCrawlEngine(id, portal.LinkEngineRod); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+func TestALinkSetToRodIsRefusedByEveryKatanaOnlyEntryWhileKatanaIsSelected(t *testing.T) {
+	id := rodLink(t)
+	f := newFakeCore(t, "katana")
+	stubEngine(t, "katana")
+	body := `{"portalLinkId":"` + id + `"}`
+	for name, h := range map[string]func(http.ResponseWriter, *http.Request){
+		"candidates": LinkCrawlCandidatesHandler,
+		"test":       LinkCrawlTestHandler,
+	} {
+		b := body
+		if name == "test" {
+			b = `{"portalLinkId":"` + id + `","rules":{"host":"duapune.com","include":["duapune.com/jobs/*"]}}`
+		}
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/x", strings.NewReader(b))
+		req.AddCookie(&http.Cookie{Name: "access_token", Value: "tok-5"})
+		h(rec, req)
+		if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "katana_not_selected") || !strings.Contains(rec.Body.String(), "set to use Rod") {
+			t.Errorf("%s: %d %s", name, rec.Code, rec.Body.String())
+		}
+	}
+	if f.fetchCount() != 0 {
+		t.Errorf("the Browser must not be asked for a link on Rod: %d fetches", f.fetchCount())
+	}
+	// the link is crawled with its instructions, never with the link crawler
+	if on, err := linkCrawlSelected(context.Background(), "http://core", "tok", id); err != nil || on {
+		t.Errorf("a Rod link must not use the link crawler: %v %v", on, err)
+	}
+	if err := checkLinkCrawlStart(context.Background(), "http://core", "tok", id); !errors.Is(err, errKatanaNotSelected) {
+		t.Errorf("checkLinkCrawlStart: %v", err)
+	}
+	if code, msg := KatanaGate(context.Background(), "http://core", "tok", id); code != GateNotKatana || !strings.Contains(msg, "Rod") {
+		t.Errorf("KatanaGate: %q %q", code, msg)
+	}
+	// and a link that follows the Browser is still read by Katana under it
+	other := duapuneOnPortal(t)
+	if err := checkLinkCrawlStart(context.Background(), "http://core", "tok", other); err != nil {
+		t.Errorf("a link without an override under Katana: %v", err)
+	}
+	if code, _ := KatanaGate(context.Background(), "http://core", "tok", other); code != GateOK {
+		t.Errorf("KatanaGate for a link that follows the Browser: %q", code)
+	}
+}
+
+// A link set to Rod follows Rod even when the Browser tool cannot be read (it needs nothing from the Browser to decide).
+func TestALinkSetToRodNeedsNoReadingOfTheBrowsersEngine(t *testing.T) {
+	id := rodLink(t)
+	orig := readBrowserEngine
+	readBrowserEngine = func(context.Context, string, string) (string, error) { return "", errors.New("down") }
+	t.Cleanup(func() { readBrowserEngine = orig })
+	if got, err := effectiveEngine(context.Background(), "http://core", "tok", id); err != nil || got != "rod" {
+		t.Errorf("effective engine: %q %v", got, err)
+	}
+	// a link that follows the Browser, with the Browser unreadable: an error, never a guess
+	other := duapuneOnPortal(t)
+	if _, err := effectiveEngine(context.Background(), "http://core", "tok", other); err == nil {
+		t.Error("an unreadable Browser engine is an error for a link that follows it")
+	}
+}
+
+// A kept login is used only while the engine of THE LINK uses it: a Rod link under Katana opens the login window as before.
+func TestALoginLinkSetToRodNeverUsesAKeptLogin(t *testing.T) {
+	linkID := keptLoginLink(t)
+	stubEngine(t, "katana")
+	if got := keptLoginForRun(context.Background(), "http://core", "tok", linkID); got != keptSession {
+		t.Fatalf("under Katana the kept login is used: %q", got)
+	}
+	if err := portal.SetLinkCrawlEngine(linkID, portal.LinkEngineRod); err != nil {
+		t.Fatal(err)
+	}
+	if got := keptLoginForRun(context.Background(), "http://core", "tok", linkID); got != "" {
+		t.Errorf("a Rod link must not use a kept login: %q", got)
+	}
+}
+
+// duapuneOnPortal adds one more link (following the Browser's engine) to the database of the current test.
+func duapuneOnPortal(t *testing.T) string {
+	t.Helper()
+	pid, err := portal.CreatePortal("Other board")
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := portal.AddPortalLink(pid, "https://duapune.com/other-jobs", "Other")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+func TestThePickerRefusesALinkSetToRod(t *testing.T) {
+	id := rodLink(t)
+	newFakeCore(t, "katana")
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/x", strings.NewReader(`{"portalLinkId":"`+id+`"}`))
+	req.AddCookie(&http.Cookie{Name: "access_token", Value: "tok-5"})
+	JobDetailCandidatesHandler(rec, req)
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "set to use Rod") {
+		t.Errorf("%d %s", rec.Code, rec.Body.String())
 	}
 }

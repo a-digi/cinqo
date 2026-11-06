@@ -50,7 +50,7 @@ func keptLoginForRun(ctx context.Context, coreURL, accessToken, linkID string) s
 	if id == "" {
 		return ""
 	}
-	engine, err := readBrowserEngine(ctx, coreURL, accessToken)
+	engine, err := effectiveEngine(ctx, coreURL, accessToken, linkID) // plan 197: a link on Rod never uses a kept login
 	if err != nil || !instruction.KeptLoginUsedBy(engine) {
 		return ""
 	}

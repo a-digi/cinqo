@@ -150,6 +150,9 @@ type portalLink struct {
 	// LoginSession (plan 195, step 4) says whether a login kept in the Browser tool is available for this link: "none", "valid" or
 	// "expired". Never the session itself or its id. Always present in the JSON.
 	LoginSession string `json:"loginSession"`
+	// CrawlEngine (plan 197, step 1) is this link's own engine: "" follows the Browser tool's selected engine, "rod" reads this link the Rod
+	// way whatever the Browser selected. Always present in the JSON.
+	CrawlEngine string `json:"crawlEngine"`
 	// CrawlMethod and LinkRules (plan 185, step 4): how this link's listing is crawled ("instructions" = the AI-written selectors, the
 	// default; "links" = the link crawler) and the link crawler's rule (null = none). See link_rules.go. Always present in the JSON.
 	CrawlMethod string         `json:"crawlMethod"`
@@ -366,7 +369,7 @@ func ListPortals() ([]portal, error) {
 	}
 
 	linkRows, err := db.JobsDB.Query(
-		`SELECT id, portal_id, url, title, crawl_instructions, job_detail_crawl_instructions, instructions_ai_error, instructions_ai_error_at, instructions_ai_conversation_id, job_detail_instructions_ai_error, job_detail_instructions_ai_error_at, job_detail_instructions_ai_conversation_id, listing_crawl_requested, job_detail_instructions_ai_requested, instructions_ai_error_dismissed_at, job_detail_instructions_ai_error_dismissed_at, job_detail_crawl_requested, auto_discovery_enabled, auto_discovery_interval_minutes, auto_discovery_last_run_at, jobs_question_asked_at, jobs_question_note, ai_platform_id, ai_model, requires_login, login_url, login_session_id, login_session_state, created_at, updated_at
+		`SELECT id, portal_id, url, title, crawl_instructions, job_detail_crawl_instructions, instructions_ai_error, instructions_ai_error_at, instructions_ai_conversation_id, job_detail_instructions_ai_error, job_detail_instructions_ai_error_at, job_detail_instructions_ai_conversation_id, listing_crawl_requested, job_detail_instructions_ai_requested, instructions_ai_error_dismissed_at, job_detail_instructions_ai_error_dismissed_at, job_detail_crawl_requested, auto_discovery_enabled, auto_discovery_interval_minutes, auto_discovery_last_run_at, jobs_question_asked_at, jobs_question_note, ai_platform_id, ai_model, requires_login, login_url, login_session_id, login_session_state, crawl_engine, created_at, updated_at
 		 FROM portal_links ORDER BY created_at ASC`,
 	)
 	if err != nil {
@@ -380,7 +383,7 @@ func ListPortals() ([]portal, error) {
 		var autoDiscoveryIntervalMinutes, autoDiscoveryLastRunAt sql.NullInt64
 		var jobsQuestionAskedAt, jobsQuestionNote sql.NullString
 		var loginSessionID, loginSessionState string
-		if err := linkRows.Scan(&l.ID, &l.PortalID, &l.URL, &title, &crawlInstructions, &jobDetailCrawlInstructions, &instructionsAIError, &instructionsAIErrorAt, &instructionsAIConversationID, &jobDetailInstructionsAIError, &jobDetailInstructionsAIErrorAt, &jobDetailInstructionsAIConversationID, &l.ListingCrawlRequested, &l.JobDetailInstructionsAIRequested, &instructionsAIErrorDismissedAt, &jobDetailInstructionsAIErrorDismissedAt, &l.JobDetailCrawlRequested, &l.AutoDiscoveryEnabled, &autoDiscoveryIntervalMinutes, &autoDiscoveryLastRunAt, &jobsQuestionAskedAt, &jobsQuestionNote, &l.AIPlatformID, &l.AIModel, &l.RequiresLogin, &l.LoginURL, &loginSessionID, &loginSessionState, &l.CreatedAt, &updatedAt); err != nil {
+		if err := linkRows.Scan(&l.ID, &l.PortalID, &l.URL, &title, &crawlInstructions, &jobDetailCrawlInstructions, &instructionsAIError, &instructionsAIErrorAt, &instructionsAIConversationID, &jobDetailInstructionsAIError, &jobDetailInstructionsAIErrorAt, &jobDetailInstructionsAIConversationID, &l.ListingCrawlRequested, &l.JobDetailInstructionsAIRequested, &instructionsAIErrorDismissedAt, &jobDetailInstructionsAIErrorDismissedAt, &l.JobDetailCrawlRequested, &l.AutoDiscoveryEnabled, &autoDiscoveryIntervalMinutes, &autoDiscoveryLastRunAt, &jobsQuestionAskedAt, &jobsQuestionNote, &l.AIPlatformID, &l.AIModel, &l.RequiresLogin, &l.LoginURL, &loginSessionID, &loginSessionState, &l.CrawlEngine, &l.CreatedAt, &updatedAt); err != nil {
 			return nil, err
 		}
 		l.LoginSession = LoginSessionLabel(loginSessionID, loginSessionState)

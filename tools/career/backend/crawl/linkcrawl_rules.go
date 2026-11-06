@@ -121,7 +121,7 @@ func putLinkRules(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "core API address is not configured", http.StatusInternalServerError)
 			return
 		}
-		if err := requireKatanaSelected(r.Context(), coreURL, accessCookie.Value); err != nil {
+		if err := requireKatanaFor(r.Context(), coreURL, accessCookie.Value, body.PortalLinkID); err != nil {
 			code := codeEngineUnknown
 			if errors.Is(err, errKatanaNotSelected) {
 				code = codeKatanaNotSelected

@@ -177,7 +177,7 @@ func checkLoading(w http.ResponseWriter, r *http.Request, portalLinkID string) (
 			return lc, false
 		}
 	}
-	if err := requireKatanaSelected(r.Context(), lc.coreURL, lc.token); err != nil {
+	if err := requireKatanaFor(r.Context(), lc.coreURL, lc.token, portalLinkID); err != nil {
 		code := codeEngineUnknown
 		if errors.Is(err, errKatanaNotSelected) {
 			code = codeKatanaNotSelected

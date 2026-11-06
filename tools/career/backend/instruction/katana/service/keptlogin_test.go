@@ -207,3 +207,31 @@ func TestTheAICrawlsTheJobsOfALoginLinkWithAKeptLogin(t *testing.T) {
 		}
 	}
 }
+
+// plan 197, step 1: a link set to use Rod is not read by the Katana AI tools, whatever the Browser selected.
+func TestTheKatanaToolsRefuseALinkSetToRod(t *testing.T) {
+	r := newRig(t)
+	if err := portal.SetLinkCrawlEngine(r.linkID, portal.LinkEngineRod); err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range []string{"katana_get_page_links", "katana_propose_link_rule", "katana_test_link_rule", "katana_save_link_rule", "katana_crawl_jobs"} {
+		args := map[string]any{}
+		if tool == "katana_propose_link_rule" {
+			args["jobUrls"] = []string{"board.example/j/a1", "board.example/j/b2"}
+		}
+		text, isErr := r.call(tool, args)
+		if !isErr || !strings.Contains(text, "Rod") {
+			t.Errorf("%s on a Rod link: %v %q", tool, isErr, text)
+		}
+	}
+	if len(r.core.fetches) != 0 {
+		t.Errorf("the Browser must not be asked for a link on Rod: %v", r.core.fetches)
+	}
+	// back to the Browser's engine: Katana reads it again
+	if err := portal.SetLinkCrawlEngine(r.linkID, ""); err != nil {
+		t.Fatal(err)
+	}
+	if text, isErr := r.call("katana_get_page_links", map[string]any{}); isErr {
+		t.Errorf("after going back to the Browser: %q", text)
+	}
+}

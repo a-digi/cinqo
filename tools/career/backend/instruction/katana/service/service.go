@@ -146,7 +146,7 @@ func openSession(ctx context.Context, linkID string) (*session, *problem) {
 	if err != nil {
 		return nil, refuse(http.StatusInternalServerError, "no_core", "core API address is not configured")
 	}
-	if code, msg := crawl.KatanaGate(ctx, coreURL, token); code != crawl.GateOK {
+	if code, msg := crawl.KatanaGate(ctx, coreURL, token, linkID); code != crawl.GateOK {
 		return nil, refuse(http.StatusConflict, code, "%s", msg)
 	}
 	portalID, err := portal.GetPortalIDForLink(linkID)

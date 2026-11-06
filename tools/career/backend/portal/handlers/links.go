@@ -103,6 +103,9 @@ type portalLinkUpdateRequest struct {
 	// The address must be an http or https address (400 otherwise, and nothing is written).
 	RequiresLogin *bool   `json:"requiresLogin,omitempty"`
 	LoginURL      *string `json:"loginUrl,omitempty"`
+	// CrawlEngine (plan 197, step 1) — nil: don't touch. "" follows the Browser tool's selected engine, "rod" reads this link the Rod way
+	// whatever the Browser selected; anything else is a 400 and nothing is written.
+	CrawlEngine *string `json:"crawlEngine,omitempty"`
 }
 
 func PortalLinksHandler(w http.ResponseWriter, r *http.Request) {
@@ -146,8 +149,8 @@ func PortalLinksHandler(w http.ResponseWriter, r *http.Request) {
 			body.InstructionsAIErrorDismissedAt == nil && body.JobDetailInstructionsAIErrorDismissedAt == nil &&
 			body.JobDetailCrawlRequested == nil && body.AutoDiscoveryEnabled == nil &&
 			body.AutoDiscoveryIntervalMinutes == nil && !body.ClearAutoDiscoveryInterval && body.EmptyCrawlAcknowledged == nil && body.JobsQuestionAnswer == nil &&
-			body.RequiresLogin == nil && body.LoginURL == nil {
-			http.Error(w, "url, title, crawlInstructions, jobDetailCrawlInstructions, instructionsAiError, instructionsAiConversationId, jobDetailInstructionsAiError, jobDetailInstructionsAiConversationId, listingCrawlRequested, jobDetailInstructionsAiRequested, instructionsAiErrorDismissedAt, jobDetailInstructionsAiErrorDismissedAt, jobDetailCrawlRequested, autoDiscoveryEnabled, autoDiscoveryIntervalMinutes, clearAutoDiscoveryInterval, emptyCrawlAcknowledged, jobsQuestionAnswer, requiresLogin, or loginUrl is required", http.StatusBadRequest)
+			body.RequiresLogin == nil && body.LoginURL == nil && body.CrawlEngine == nil {
+			http.Error(w, "url, title, crawlInstructions, jobDetailCrawlInstructions, instructionsAiError, instructionsAiConversationId, jobDetailInstructionsAiError, jobDetailInstructionsAiConversationId, listingCrawlRequested, jobDetailInstructionsAiRequested, instructionsAiErrorDismissedAt, jobDetailInstructionsAiErrorDismissedAt, jobDetailCrawlRequested, autoDiscoveryEnabled, autoDiscoveryIntervalMinutes, clearAutoDiscoveryInterval, emptyCrawlAcknowledged, jobsQuestionAnswer, requiresLogin, loginUrl, or crawlEngine is required", http.StatusBadRequest)
 			return
 		}
 		if body.URL != nil && *body.URL == "" {
@@ -157,6 +160,13 @@ func PortalLinksHandler(w http.ResponseWriter, r *http.Request) {
 		if body.Title != nil && *body.Title == "" {
 			http.Error(w, "title cannot be empty", http.StatusBadRequest)
 			return
+		}
+		// Plan 197: a bad engine is refused before anything at all is written.
+		if body.CrawlEngine != nil {
+			if _, err := portal.ValidateCrawlEngine(*body.CrawlEngine); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
 		}
 		// Plan 182: a bad login page address is refused before anything at all is written.
 		if body.LoginURL != nil {
@@ -193,6 +203,12 @@ func PortalLinksHandler(w http.ResponseWriter, r *http.Request) {
 		loginFirst := body.RequiresLogin != nil && !*body.RequiresLogin
 		if loginFirst {
 			if !applyLogin() {
+				return
+			}
+		}
+		if body.CrawlEngine != nil {
+			if err := portal.SetLinkCrawlEngine(body.ID, *body.CrawlEngine); err != nil {
+				portal.WritePortalLinkAwareError(w, "update portal link engine", err)
 				return
 			}
 		}

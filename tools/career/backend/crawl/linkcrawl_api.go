@@ -42,9 +42,10 @@ const (
 	GateEngineNotKnown = codeEngineUnknown
 )
 
-// KatanaGate says whether Katana is the Browser's selected engine: GateOK, or the reason code with its message.
-func KatanaGate(ctx context.Context, coreURL, accessToken string) (code, message string) {
-	err := requireKatanaSelected(ctx, coreURL, accessToken)
+// KatanaGate says whether Katana is the engine that reads the link (its own engine, else the Browser's selected one): GateOK, or the reason
+// code with its message (plan 197).
+func KatanaGate(ctx context.Context, coreURL, accessToken, linkID string) (code, message string) {
+	err := requireKatanaFor(ctx, coreURL, accessToken, linkID)
 	switch {
 	case err == nil:
 		return GateOK, ""

@@ -215,6 +215,11 @@ func checkPickLink(w http.ResponseWriter, r *http.Request, portalLinkID string, 
 			return pc, false
 		}
 	}
+	// A link set to use Rod is not picked: the picker is Katana's (plan 197).
+	if own, _ := portal.GetLinkCrawlEngine(pc.linkID); own == portal.LinkEngineRod {
+		writePickJSON(w, http.StatusConflict, map[string]string{"code": codeKatanaNotSelected, "message": errLinkUsesRod.Error()})
+		return pc, false
+	}
 	if needBrowser {
 		cookie, cerr := r.Cookie("access_token")
 		if cerr != nil {
