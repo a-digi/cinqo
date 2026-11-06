@@ -203,8 +203,12 @@ type proposal struct {
 	Next          string        `json:"next"`
 }
 
-// full expands a shortened sample address (the digest drops the scheme) back to a full one, by looking it up among the page's links.
+// expandPicks turns the addresses the AI copied from the digest back into the full addresses of the page. The digest drops the scheme and
+// clips a long address with an ellipsis, so a pick is matched exactly first and, when it ends with the ellipsis, by its beginning (the first
+// link of the page that starts with it and was not already taken by an earlier pick).
 func expandPicks(picks []string, links []linkrule.Link) []string {
+	bare := func(u string) string { return strings.TrimPrefix(strings.TrimPrefix(u, "https://"), "http://") }
+	taken := map[string]bool{}
 	out := make([]string, 0, len(picks))
 	for _, p := range picks {
 		p = strings.TrimSpace(p)
@@ -213,16 +217,21 @@ func expandPicks(picks []string, links []linkrule.Link) []string {
 		}
 		full := p
 		if !strings.HasPrefix(p, "http://") && !strings.HasPrefix(p, "https://") {
+			full = ""
+			clipped := strings.HasSuffix(p, "…")
+			prefix := strings.TrimSuffix(p, "…")
 			for _, l := range links {
-				if strings.TrimPrefix(strings.TrimPrefix(l.URL, "https://"), "http://") == p {
+				u := bare(l.URL)
+				if u == p || (clipped && strings.HasPrefix(u, prefix) && !taken[l.URL]) {
 					full = l.URL
 					break
 				}
 			}
-			if full == p {
-				full = "https://" + p
+			if full == "" {
+				full = "https://" + prefix
 			}
 		}
+		taken[full] = true
 		out = append(out, full)
 	}
 	return out

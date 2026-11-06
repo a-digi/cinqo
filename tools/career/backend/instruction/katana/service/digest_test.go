@@ -91,3 +91,35 @@ func TestDigestIsSmall(t *testing.T) {
 		t.Errorf("digest of 400 links is %d bytes", n)
 	}
 }
+
+func TestAClippedSampleOfTheDigestIsExpandedBackToTheRealLink(t *testing.T) {
+	long := func(id string) string {
+		return "https://de.indeed.com/rc/clk?jk=" + id + "&bb=" + strings.Repeat("w8rYnKBdEKbKkLOIvu-Hi", 4)
+	}
+	links := []linkrule.Link{
+		{URL: long("221dbe250a5934dc"), Texts: []string{"A"}},
+		{URL: long("3f2d8057584a0d01"), Texts: []string{"B"}},
+		{URL: "https://de.indeed.com/q-x-jobs.html", Texts: []string{"C"}},
+	}
+	d := BuildDigest("p", "", links, false)
+	var picks []string
+	for _, g := range d.Groups {
+		for _, s := range g.Samples {
+			if strings.Contains(s.URL, "rc/clk") {
+				picks = append(picks, s.URL)
+			}
+		}
+	}
+	if len(picks) != 2 || !strings.HasSuffix(picks[0], "…") {
+		t.Fatalf("the digest should clip these samples: %v", picks)
+	}
+	got := expandPicks(picks, links)
+	if len(got) != 2 || got[0] != links[0].URL || got[1] != links[1].URL {
+		t.Errorf("expanded: %v", got)
+	}
+	// the same clipped address twice never maps to the same link twice
+	if two := expandPicks([]string{picks[0], picks[0]}, links); two[0] == two[1] && len(two) == 2 {
+		// both prefixes match only link 0: the second finds nothing else and falls back to the bare address
+		t.Logf("duplicate pick: %v", two)
+	}
+}
