@@ -41,6 +41,11 @@ type fakeCore struct {
 	detail       string         // the fetch-detail-candidates answer
 	detailStatus int            // forced status of that answer (0: ok)
 	extract      func(pageURL string) string
+	// plan 195, step 5: the kept login each fetch-links call carried, and whether the site now refuses it.
+	sessions     []string
+	loginExpired bool
+	// the kept login the job-page analysis and the selector crawls carried
+	detailSessions, extractSessions []string
 }
 
 func (f *fakeCore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -50,9 +55,18 @@ func (f *fakeCore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case strings.HasSuffix(r.URL.Path, "/browser-settings"):
 		fmt.Fprintf(w, `{"fetchEngine":%q}`, f.engine)
 	case strings.HasSuffix(r.URL.Path, "/fetch-links"):
-		var in struct{ URL string }
+		var in struct {
+			URL            string
+			LoginSessionID string `json:"loginSessionId"`
+		}
 		_ = json.NewDecoder(r.Body).Decode(&in)
 		f.fetches = append(f.fetches, in.URL)
+		f.sessions = append(f.sessions, in.LoginSessionID)
+		if f.loginExpired {
+			w.WriteHeader(http.StatusBadGateway)
+			fmt.Fprint(w, `{"code":"login_expired","message":"The kept login no longer works","reason":"the page shows a login form"}`)
+			return
+		}
 		if st := f.status[in.URL]; st != 0 {
 			w.WriteHeader(st)
 			fmt.Fprint(w, `{"code":"challenge","message":"a check page stopped the load","advice":"try later"}`)
@@ -66,6 +80,11 @@ func (f *fakeCore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		fmt.Fprint(w, body)
 	case strings.HasSuffix(r.URL.Path, "/fetch-detail-candidates"):
+		var din struct {
+			LoginSessionID string `json:"loginSessionId"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&din)
+		f.detailSessions = append(f.detailSessions, din.LoginSessionID)
 		if f.detailStatus != 0 {
 			w.WriteHeader(f.detailStatus)
 			fmt.Fprint(w, `{"code":"challenge","message":"a check page stopped the load","reason":"cf-mitigated: challenge","advice":"clear it once"}`)
@@ -73,8 +92,12 @@ func (f *fakeCore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		fmt.Fprint(w, f.detail)
 	case strings.HasSuffix(r.URL.Path, "/crawl-paginated"):
-		var in struct{ URL string }
+		var in struct {
+			URL            string
+			LoginSessionID string `json:"loginSessionId"`
+		}
 		_ = json.NewDecoder(r.Body).Decode(&in)
+		f.extractSessions = append(f.extractSessions, in.LoginSessionID)
 		fmt.Fprint(w, f.extract(in.URL))
 	case strings.HasSuffix(r.URL.Path, "/capabilities"):
 		http.NotFound(w, r)

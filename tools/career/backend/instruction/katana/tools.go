@@ -204,7 +204,7 @@ func registerTools(server *mcp.Server) {
 		Description: "Katana engine. Load the link's job-list page and return a COMPACT digest of its links: grouped by the shape of their address " +
 			"(shape, count, 3 sample addresses with their link texts), plus nextPageCandidates. The group whose samples are job postings (its last " +
 			"part varies: # or *) is the job links. Never returns HTML or the raw list. Stops with a message when the site blocks the page or the " +
-			"link needs a login: then STOP and tell the person.",
+			"link needs a login that is not kept or whose kept login expired: then STOP and tell the person.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, a pageLinksArgs) (*mcp.CallToolResult, any, error) {
 		return call(ctx, "page-links", a)
 	})

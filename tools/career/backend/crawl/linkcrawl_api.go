@@ -19,7 +19,16 @@ func CoreURL() (string, error) { return coreAPIURL() }
 
 // LoadPageLinks loads a page's links through core's proxy to the Browser, with the given session token.
 func LoadPageLinks(ctx context.Context, coreURL, accessToken, pageURL, portalID string) (PageLinks, error) {
-	return fetchPageLinks(ctx, coreURL, accessToken, pageURL, portalID, "")
+	res, err := fetchPageLinks(ctx, coreURL, accessToken, pageURL, portalID, "")
+	// plan 195, step 5: a login_expired answer marks the link the context names (see WithKeptLogin).
+	noteLoginVerdict(keptLoginLinkFrom(ctx), err)
+	return res, err
+}
+
+// WithKeptLogin returns a context whose Browser calls (LoadPageLinks) carry the kept login of the link, and that marks the link when the site
+// says the login expired. An empty session id changes nothing. Used by the Katana AI service for a link that needs a login (plan 195, step 5).
+func WithKeptLogin(ctx context.Context, linkID, sessionID string) context.Context {
+	return withKeptLoginFor(ctx, linkID, sessionID)
 }
 
 // OwnSitePage returns the page to load: the link's own address when none is given, else the given address if it is an http(s) address

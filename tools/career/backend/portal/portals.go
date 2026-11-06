@@ -1040,6 +1040,23 @@ func KeptLoginFor(linkID string) string {
 	return id
 }
 
+// LoginSessionOf returns whether a link needs a login and the state of its kept login ("" none, "valid", "expired"), for a caller that has to
+// say why a login link cannot be read (plan 195, step 5).
+func LoginSessionOf(linkID string) (needsLogin bool, state string) {
+	var needs int
+	var id, st string
+	if err := db.JobsDB.QueryRow(`SELECT requires_login, login_session_id, login_session_state FROM portal_links WHERE id = ?`, linkID).Scan(&needs, &id, &st); err != nil {
+		return false, ""
+	}
+	switch LoginSessionLabel(id, st) {
+	case LoginSessionValid:
+		return needs != 0, "valid"
+	case LoginSessionExpired:
+		return needs != 0, LoginSessionExpired
+	}
+	return needs != 0, ""
+}
+
 // MarkLoginSessionExpired records that the Browser tool said the site no longer accepts this link's kept login, so the page offers the login
 // again and no crawl tries the session. The session id stays (the Browser tool keeps its own record, and the person may forget it).
 func MarkLoginSessionExpired(linkID string) error {

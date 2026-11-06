@@ -21,7 +21,7 @@ const (
 	StepJobDetails  = "job_details"   // jobs exist, the job page is not instructed yet
 	StepDone        = "done"          // both parts are saved: nothing to do
 	StepWait        = "wait"          // a crawl or another AI run is working on this link
-	StepStopLogin   = "stop_login"    // a login link: the link crawler cannot do it
+	StepStopLogin   = "stop_login"    // a login link without a usable kept login (none, or expired): the AI can only stop
 )
 
 type stateJobList struct {
@@ -49,23 +49,29 @@ type stateSession struct {
 
 // State is the answer of katana_get_instruction_state.
 type State struct {
-	Login      bool            `json:"login"`
-	JobList    stateJobList    `json:"jobList"`
-	Jobs       stateJobs       `json:"jobs"`
-	JobDetails stateJobDetails `json:"jobDetails"`
-	Crawling   bool            `json:"crawling,omitempty"`
-	AIRunning  bool            `json:"aiRunning,omitempty"`
-	Stage      string          `json:"stage,omitempty"`
-	Session    stateSession    `json:"thisSession"`
-	NextStep   string          `json:"nextStep"`
-	Reason     string          `json:"reason"`
+	// Login: the link needs a login and no usable kept login exists (none, or it expired): the AI must stop. LoginKept: it needs one and
+	// one is kept and valid, so it is read like any link (plan 195, step 5). LoginExpired: the kept login no longer works.
+	Login        bool            `json:"login"`
+	LoginKept    bool            `json:"loginKept,omitempty"`
+	LoginExpired bool            `json:"loginExpired,omitempty"`
+	JobList      stateJobList    `json:"jobList"`
+	Jobs         stateJobs       `json:"jobs"`
+	JobDetails   stateJobDetails `json:"jobDetails"`
+	Crawling     bool            `json:"crawling,omitempty"`
+	AIRunning    bool            `json:"aiRunning,omitempty"`
+	Stage        string          `json:"stage,omitempty"`
+	Session      stateSession    `json:"thisSession"`
+	NextStep     string          `json:"nextStep"`
+	Reason       string          `json:"reason"`
 }
 
 // nextStep is the pure decision (tested on its own).
 func nextStep(s State) (step, reason string) {
 	switch {
+	case s.Login && s.LoginExpired:
+		return StepStopLogin, "the login kept for this link has expired: stop and tell the person to log in again and keep the login (Crawl now or Generate opens the window)"
 	case s.Login:
-		return StepStopLogin, "this link needs a login, which the link crawler cannot do: stop and tell the person"
+		return StepStopLogin, "this link needs a login and none is kept: stop and tell the person to log in once and tick Keep this login"
 	case s.Crawling:
 		return StepWait, "a crawl is running for this link: do not start anything, tell the person to ask again when it has finished"
 	case s.AIRunning:
@@ -100,7 +106,10 @@ func LinkState(ctx context.Context, b linkBody) (any, *problem) {
 	if err != nil {
 		return nil, refuse(http.StatusInternalServerError, "read_failed", "%s", err.Error())
 	}
-	s.Login = login
+	_, loginState := portal.LoginSessionOf(id)
+	s.Login = login && loginState != portal.LoginSessionValid
+	s.LoginKept = login && loginState == portal.LoginSessionValid
+	s.LoginExpired = login && loginState == portal.LoginSessionExpired
 
 	var rules, detail, origin string
 	err = db.JobsDB.QueryRow(

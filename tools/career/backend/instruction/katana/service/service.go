@@ -105,6 +105,13 @@ func Reset() {
 // session is what every call needs, checked in one place.
 type session struct {
 	linkID, linkURL, portalID, coreURL, token string
+	// sessionID is the kept login of a link that needs a login ("" for any other link): every Browser call of this session carries it.
+	sessionID string
+}
+
+// withLogin puts the session's kept login (if any) into the context of a Browser call.
+func (s *session) withLogin(ctx context.Context) context.Context {
+	return crawl.WithKeptLogin(ctx, s.linkID, s.sessionID)
 }
 
 func openSession(ctx context.Context, linkID string) (*session, *problem) {
@@ -120,8 +127,16 @@ func openSession(ctx context.Context, linkID string) (*session, *problem) {
 	if err != nil {
 		return nil, refuse(http.StatusNotFound, "unknown_link", "this portal link does not exist")
 	}
+	// A link that needs a login is read with the login the person kept in the Browser tool (plan 195, step 5). Without a usable one the AI
+	// stops: it can neither log in nor open a login window.
+	keptLogin := ""
 	if login {
-		return nil, refuse(http.StatusConflict, "login_link", "this link needs a login, which the link crawler cannot do: STOP, tell the person; do not write a rule for it")
+		if keptLogin = portal.KeptLoginFor(linkID); keptLogin == "" {
+			if needs, state := portal.LoginSessionOf(linkID); needs && state == portal.LoginSessionExpired {
+				return nil, refuse(http.StatusConflict, "login_expired", "the login kept for this link has expired: STOP, tell the person to log in again and keep the login (Crawl now or Generate opens the window); do not write a rule for it")
+			}
+			return nil, refuse(http.StatusConflict, "login_link", "this link needs a login and none is kept: STOP, tell the person to log in once and tick Keep this login; do not write a rule for it")
+		}
 	}
 	token, fresh := autodiscovery.CachedToken()
 	if !fresh {
@@ -138,7 +153,7 @@ func openSession(ctx context.Context, linkID string) (*session, *problem) {
 	if err != nil {
 		return nil, refuse(http.StatusNotFound, "unknown_link", "this portal link does not exist")
 	}
-	return &session{linkID: linkID, linkURL: linkURL, portalID: portalID, coreURL: coreURL, token: token}, nil
+	return &session{linkID: linkID, linkURL: linkURL, portalID: portalID, coreURL: coreURL, token: token, sessionID: keptLogin}, nil
 }
 
 // loadLinks loads a page's links (the Browser, with the person's token) and keeps them in the scratch.
@@ -147,7 +162,7 @@ func (s *session) loadLinks(ctx context.Context, sc *scratch, requested string) 
 	if err != nil {
 		return refuse(http.StatusBadRequest, "bad_page", "%s", err.Error())
 	}
-	res, err := crawl.LoadPageLinks(ctx, s.coreURL, s.token, page, s.portalID)
+	res, err := crawl.LoadPageLinks(s.withLogin(ctx), s.coreURL, s.token, page, s.portalID)
 	if err != nil {
 		return fetchProblem(err)
 	}
@@ -158,6 +173,9 @@ func (s *session) loadLinks(ctx context.Context, sc *scratch, requested string) 
 func fetchProblem(err error) *problem {
 	var fe *crawl.PageFetchError
 	if errors.As(err, &fe) {
+		if fe.Code == "login_expired" {
+			return refuse(http.StatusConflict, "login_expired", "the login kept for this link no longer works: STOP, tell the person to log in again and keep the login; do not guess a rule")
+		}
 		msg := fe.Message
 		if fe.Advice != "" {
 			msg += " (" + fe.Advice + ")"
@@ -360,7 +378,7 @@ func TestRule(ctx context.Context, b ruleBody) (any, *problem) {
 		if _, err := crawl.OwnSitePage(s.linkURL, pageURL); err != nil {
 			return linkrule.Page{}, err
 		}
-		res, err := crawl.LoadPageLinks(ctx, s.coreURL, s.token, pageURL, s.portalID)
+		res, err := crawl.LoadPageLinks(s.withLogin(ctx), s.coreURL, s.token, pageURL, s.portalID)
 		if err != nil {
 			return linkrule.Page{}, err
 		}

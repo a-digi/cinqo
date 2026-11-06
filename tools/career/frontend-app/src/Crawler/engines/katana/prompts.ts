@@ -52,7 +52,7 @@ export function buildKatanaListingMessage(link: { id: string; title?: string | n
     'C3. katana_test_job_detail_picks (leave the picks out to test `suggested`) runs the real extraction on up to 3 crawled jobs. Verdict ok: go on. "blocking" or a wrong value: make ONE fix and test again.',
     'C4. After a test with verdict ok, katana_save_job_detail_picks ONCE. It refuses picks that have not passed their test. When it answers saved you are finished: reply with one short line and call no more tools.',
     '',
-    'STOP and do not save when: a tool says the site blocked the page, the link needs a login, no signed-in session is known, or Katana is not the selected engine; or a test is still failing after your one fix. Then reply with one short line quoting what the tool said or what you saw.',
+    'STOP and do not save when: a tool says the site blocked the page, the link needs a login that is not kept or its kept login expired (a tool says so), no signed-in session is known, or Katana is not the selected engine; or a test is still failing after your one fix. Then reply with one short line quoting what the tool said or what you saw.',
   ].join('\n')
 }
 
