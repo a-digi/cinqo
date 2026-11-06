@@ -30,6 +30,7 @@ var toolNames = []string{
 	"katana_propose_link_rule",
 	"katana_test_link_rule",
 	"katana_save_link_rule",
+	"katana_crawl_jobs",
 	"katana_get_job_page_candidates",
 	"katana_test_job_detail_picks",
 	"katana_save_job_detail_picks",
@@ -233,6 +234,14 @@ func registerTools(server *mcp.Server) {
 			"session can be saved; otherwise it refuses. Omit rule to save the last proposal. After saving, the job list is done: do not redo it.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, a ruleArgs) (*mcp.CallToolResult, any, error) {
 		return call(ctx, "save-rule", a)
+	})
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "katana_crawl_jobs",
+		Description: "Katana engine. Crawl the jobs of this link with its saved job list rule (the same as the Crawl now button) and WAIT until the crawl " +
+			"has ended: status completed (with the number of jobs), failed, or running (still going: call it again to keep waiting). Needs a saved " +
+			"job list rule. When the link already has jobs it answers already_crawled at once. The job details can only be picked after this.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, a stateArgs) (*mcp.CallToolResult, any, error) {
+		return call(ctx, "crawl-jobs", a)
 	})
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "katana_get_job_page_candidates",

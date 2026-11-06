@@ -79,7 +79,7 @@ func nextStep(s State) (step, reason string) {
 		}
 		return StepJobListRule, "the job list has no rule yet: katana_get_page_links, katana_propose_link_rule, katana_test_link_rule, katana_save_link_rule"
 	case s.Jobs.Count == 0:
-		return StepCrawlJobs, "the job list rule is saved, but no job was crawled yet: the job details can only be picked on a crawled job. Do NOT redo the rule; tell the person to press Crawl now"
+		return StepCrawlJobs, "the job list rule is saved, but no job was crawled yet: the job details can only be picked on a crawled job. Do NOT redo the rule: call katana_crawl_jobs, it crawls the jobs and waits for them"
 	case !s.JobDetails.Saved:
 		return StepJobDetails, "the job list is done (do not redo it); the job page still has no instructions"
 	}

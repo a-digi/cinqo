@@ -62,9 +62,11 @@ type scratch struct {
 	proposed *linkrule.Rule
 	// the job-detail session: the picks of the last job page (the default of a test and a save) and the instructions whose test passed
 	detailSuggested *picks
-	detailTested    map[string]bool
-	passed          map[string]int // canonical rule JSON -> jobs found by its test
-	at              time.Time
+	// a rule was saved in this session and not crawled since: the jobs of an older rule do not count
+	needCrawl    bool
+	detailTested map[string]bool
+	passed       map[string]int // canonical rule JSON -> jobs found by its test
+	at           time.Time
 }
 
 var (
@@ -425,6 +427,7 @@ func SaveRule(ctx context.Context, b ruleBody) (any, *problem) {
 	if err := portal.MarkInstructionSaved(s.linkID, portal.InstructionKindListing); err != nil {
 		log.Printf("katana: could not record the saved rule on the attempt of link %s: %v", s.linkID, err)
 	}
+	sc.needCrawl = true
 	publishRuleSaved(s.linkID)
 	return map[string]any{
 		"saved": true, "jobsInTest": sc.passed[ruleKey(rule)], "host": rule.Host, "include": rule.Include,
@@ -454,6 +457,7 @@ var ops = map[string]opFunc{
 	"test-rule":    decode(TestRule),
 	"save-rule":    decode(SaveRule),
 	"state":        decode(LinkState),
+	"crawl-jobs":   decode(CrawlJobs),
 	"job-page":     decode(JobPageCandidates),
 	"test-picks":   decode(TestJobDetailPicks),
 	"save-picks":   decode(SaveJobDetailPicks),

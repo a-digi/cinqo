@@ -384,12 +384,15 @@ export function CrawlPanel({
       return
     }
     if (!mayAutoWriteJobDetails(engine, link.requiresLogin)) return
+    // While the run of the job list goes on (under Katana it also picks the job details, in its own conversation) no second run starts; when it
+    // ends without having saved them, this effect runs again and starts the separate job-detail run.
+    if (aiPending || Boolean(link.instructionsAiConversationId)) return
     if (link.jobDetailInstructionsAiRequested && !link.jobDetailCrawlInstructions && !jobDetailAiRequestedRef.current) {
       jobDetailAiRequestedRef.current = true
       handleGenerateJobDetailInstructionsWithAI()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [link.jobDetailInstructionsAiRequested, link.jobDetailCrawlInstructions, engine])
+  }, [link.jobDetailInstructionsAiRequested, link.jobDetailCrawlInstructions, engine, aiPending, link.instructionsAiConversationId])
 
   // watchCrawlRun polls GET .../crawl-now/active until the run reaches
   // a terminal status, writing every observed row into `run` as it
@@ -1399,7 +1402,7 @@ export function CrawlPanel({
                           : aiBusy
                             ? "Open the chat window to watch the AI work on this link's crawl instructions"
                             : listingRecipe !== undefined
-                              ? "Let the AI read this page's links and write the job list rule for you. It tests the rule on the real page before it saves it."
+                              ? 'Let the AI instruct this link completely in one conversation: it writes the job list rule, crawls the jobs, then picks where the job data is, testing each on the real page before it saves.'
                               : 'Let the AI inspect this page and write (or update) its listing crawl instructions for you — once saved, this link is crawled and its job-detail instructions are generated automatically.'
                   }
                   className="flex shrink-0 flex-col items-center justify-center gap-1 self-stretch rounded-lg border border-gray-200 bg-gray-50 px-3 text-xs font-medium text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"

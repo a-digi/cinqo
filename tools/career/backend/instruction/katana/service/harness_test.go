@@ -16,6 +16,7 @@ import (
 
 	"career-tool-backend/autodiscovery"
 	"career-tool-backend/db"
+	"career-tool-backend/instruction"
 	"career-tool-backend/instruction/katana"
 	"career-tool-backend/instruction/katana/service"
 	"career-tool-backend/portal"
@@ -419,3 +420,10 @@ func TestATooNarrowRuleIsSaidInTheTest(t *testing.T) {
 		t.Errorf("save: %v %s", isErr, text)
 	}
 }
+
+func dbQueryInt(query, arg string, dest *int) error {
+	return db.JobsDB.QueryRow(query, arg).Scan(dest)
+}
+
+// The crawl the AI starts decides how a link is crawled by asking the registered engines, as the production binary does (engines.go).
+func init() { instruction.Register(katana.New()) }

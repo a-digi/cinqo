@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"career-tool-backend/db"
 	"career-tool-backend/portal"
 )
 
@@ -152,5 +153,90 @@ func TestJobDetailToolsRefuseARodRunAndALoginLink(t *testing.T) {
 		if text, isErr := r.call(tool, map[string]any{}); !isErr || !strings.Contains(text, "katana") {
 			t.Errorf("%s under Rod: %v %q", tool, isErr, text)
 		}
+	}
+}
+
+// The whole instruction in ONE conversation (the user's request): rule, then the AI crawls the jobs itself and waits, then the job details.
+func TestTheAICrawlsTheJobsAndGoesOnToTheJobDetails(t *testing.T) {
+	r := newRig(t)
+	r.core.detail = detailPage
+	long := "<p>" + strings.Repeat("A real sentence of the posting. ", 30) + "</p>"
+	r.core.extract = extractor(map[string]string{"title": "Posting A1", "company": "Acme", "postedAt": "2026-10-28T09:00:00+00:00", "description": long})
+
+	// no rule yet: no crawl
+	if text, isErr := r.call("katana_crawl_jobs", map[string]any{}); !isErr || !strings.Contains(text, "no_rule") {
+		t.Errorf("without a rule: %v %q", isErr, text)
+	}
+	// the state of a new link says the rule is next; after the save it says to crawl, naming the tool
+	r.call("katana_get_page_links", map[string]any{})
+	r.call("katana_propose_link_rule", map[string]any{"jobUrls": []string{"board.example/j/a1", "board.example/j/b2"}})
+	r.call("katana_test_link_rule", map[string]any{})
+	if text, isErr := r.call("katana_save_link_rule", map[string]any{}); isErr {
+		t.Fatal(text)
+	}
+	if step, raw := stateOf(t, r); step != "crawl_jobs" || !strings.Contains(raw, "katana_crawl_jobs") {
+		t.Fatalf("after the save: %s %s", step, raw)
+	}
+	// the job details cannot be picked before the jobs exist
+	if text, isErr := r.call("katana_get_job_page_candidates", map[string]any{}); !isErr || !strings.Contains(text, "no saved jobs") {
+		t.Errorf("candidates before the crawl: %v %q", isErr, text)
+	}
+
+	// the AI crawls and waits
+	text, isErr := r.call("katana_crawl_jobs", map[string]any{})
+	if isErr {
+		t.Fatal(text)
+	}
+	var c struct {
+		Status string `json:"status"`
+		Jobs   int    `json:"jobs"`
+		Next   string `json:"next"`
+	}
+	if err := json.Unmarshal([]byte(text), &c); err != nil || c.Status != "completed" || c.Jobs != 3 || !strings.Contains(c.Next, "katana_get_job_page_candidates") {
+		t.Fatalf("crawl: %v %s", err, text)
+	}
+	// asked again with jobs in place: nothing is crawled twice
+	fetchesBefore := len(r.core.fetches)
+	if text, _ := r.call("katana_crawl_jobs", map[string]any{}); !strings.Contains(text, "already_crawled") || len(r.core.fetches) != fetchesBefore {
+		t.Errorf("second call: %s (fetches %d -> %d)", text, fetchesBefore, len(r.core.fetches))
+	}
+	// the event's own crawl request is answered, so no second crawl follows the run
+	var requested int
+	if err := dbQueryInt(`SELECT listing_crawl_requested FROM portal_links WHERE id = ?`, r.linkID, &requested); err != nil || requested != 0 {
+		t.Errorf("listing_crawl_requested %d %v", requested, err)
+	}
+
+	// the same conversation goes on with the job details; the save answers the event's request for the AI to write them
+	if _, err := db.JobsDB.Exec(`UPDATE portal_links SET job_detail_instructions_ai_requested = 1 WHERE id = ?`, r.linkID); err != nil {
+		t.Fatal(err)
+	}
+	r.call("katana_get_job_page_candidates", map[string]any{})
+	if text, _ := r.call("katana_test_job_detail_picks", map[string]any{}); !strings.Contains(text, `"verdict":"ok`) {
+		t.Fatalf("test: %s", text)
+	}
+	text, isErr = r.call("katana_save_job_detail_picks", map[string]any{})
+	if isErr || !strings.Contains(text, "no more tool calls") {
+		t.Fatalf("save: %v %s", isErr, text)
+	}
+	var aiRequested int
+	if err := dbQueryInt(`SELECT job_detail_instructions_ai_requested FROM portal_links WHERE id = ?`, r.linkID, &aiRequested); err != nil || aiRequested != 0 {
+		t.Errorf("job_detail_instructions_ai_requested %d %v", aiRequested, err)
+	}
+	if step, _ := stateOf(t, r); step != "done" {
+		t.Errorf("at the end: %s", step)
+	}
+}
+
+func TestAnOldRulesJobsDoNotCountAfterANewRuleIsSaved(t *testing.T) {
+	r := newRig(t)
+	r.crawledJobs() // jobs of an earlier rule
+	r.call("katana_get_page_links", map[string]any{})
+	r.call("katana_propose_link_rule", map[string]any{"jobUrls": []string{"board.example/j/a1", "board.example/j/b2"}})
+	r.call("katana_test_link_rule", map[string]any{})
+	r.call("katana_save_link_rule", map[string]any{})
+	before := len(r.core.fetches)
+	text, _ := r.call("katana_crawl_jobs", map[string]any{})
+	if strings.Contains(text, "already_crawled") || len(r.core.fetches) == before {
+		t.Errorf("the new rule was not crawled: %s", text)
 	}
 }

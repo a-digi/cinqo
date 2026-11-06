@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"career-tool-backend/crawl"
+	"career-tool-backend/db"
 	"career-tool-backend/portal"
 	"career-tool-backend/portal/detailpick"
 )
@@ -345,7 +346,9 @@ func SaveJobDetailPicks(ctx context.Context, b picksBody) (any, *problem) {
 	if err := portal.MarkInstructionSaved(s.linkID, portal.InstructionKindJobDetail); err != nil {
 		logf("katana: could not record the saved job details on the attempt of link %s: %v", s.linkID, err)
 	}
-	return map[string]any{"saved": true, "fields": len(choices.Fields) + 1}, nil
+	// the job details are instructed: the event's request for the AI to write them is answered (a second run must not start)
+	_, _ = db.JobsDB.Exec(`UPDATE portal_links SET job_detail_instructions_ai_requested = 0 WHERE id = ?`, s.linkID)
+	return map[string]any{"saved": true, "fields": len(choices.Fields) + 1, "next": "done: the job list and the job details are saved. Reply with one short line and make no more tool calls."}, nil
 }
 
 func logf(format string, args ...any) { log.Printf(format, args...) }

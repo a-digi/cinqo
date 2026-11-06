@@ -47,3 +47,13 @@ func KatanaGate(ctx context.Context, coreURL, accessToken string) (code, message
 
 // TestPagesLimit is the most pages a test run loads (the screen's limit).
 const TestPagesLimit = testPagesLimit
+
+// RunListingCrawl crawls the link's job list now with the given session, as a "Crawl now" press does, and returns when the crawl has ended
+// (the run's result is in its crawl_runs row). It refuses what the press refuses (no rule, a login link, another engine selected, a crawl
+// already running).
+func RunListingCrawl(portalLinkID, accessToken string) (runID string, err error) {
+	return RunListingCrawlNow(portalLinkID, accessToken, "manual")
+}
+
+// IsCrawlAlreadyRunning says whether an error means that a crawl of the link is already running.
+func IsCrawlAlreadyRunning(err error) bool { return errors.Is(err, errCrawlAlreadyRunning) }
