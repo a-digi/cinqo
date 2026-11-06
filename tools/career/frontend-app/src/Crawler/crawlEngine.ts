@@ -56,3 +56,35 @@ export async function fetchCrawlEngine(signal?: AbortSignal): Promise<CrawlEngin
   const body = (await res.json()) as { engine?: string }
   return body.engine === 'katana' || body.engine === 'rod' ? body.engine : 'unknown'
 }
+
+// Plan 191: under Katana the Job details modal is the picker, which works on a real job page of the link, so it opens only for a link that
+// has a crawled job. 'open' = it may open; 'needs_jobs' = the job list is instructed (a rule) but no job was crawled yet; 'needs_rule_and_jobs'
+// = there is no rule either, so no job can exist. Only Katana with a known engine blocks: Rod (a text box a person can type into), a login link
+// (no picker), and an engine that is not known yet or could not be read all stay open.
+export type JobDetailsAccess = 'open' | 'needs_jobs' | 'needs_rule_and_jobs'
+
+type AccessFields = Pick<PortalLink, 'linkRules'> & {
+  requiresLogin?: boolean
+  lastCrawledAt?: string | null
+  crawlInstructions?: string | null
+}
+
+export function jobDetailsModalAccess(engine: EngineReading, link: Partial<AccessFields>): JobDetailsAccess {
+  if (engine !== 'katana' || link.requiresLogin) return 'open'
+  // lastCrawledAt is the newest saved job of the link and is empty when the link has no job (it reads the jobs that exist now).
+  if (hasText(link.lastCrawledAt)) return 'open'
+  return hasListingFor(link, 'katana') ? 'needs_jobs' : 'needs_rule_and_jobs'
+}
+
+export const JOB_DETAILS_PILL = 'Crawl jobs first'
+
+export function jobDetailsHint(access: JobDetailsAccess): string {
+  switch (access) {
+    case 'needs_jobs':
+      return 'Crawl some jobs for this link first (Crawl now). Then you can pick the data of a job page here.'
+    case 'needs_rule_and_jobs':
+      return 'Make the job list rules first, then crawl some jobs for this link.'
+    default:
+      return ''
+  }
+}

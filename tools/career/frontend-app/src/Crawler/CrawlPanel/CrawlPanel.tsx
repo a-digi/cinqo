@@ -48,7 +48,15 @@ import {
 } from '../loginWindow'
 import { instructionAlertAttempts, isLikelyUncrawlable, listingIsWrittenByAi, savedDespiteError } from '../instructionStats'
 import { canCrawlListing } from '../autoDiscoveryVisibility'
-import { hasListingFor, jobDetailIsWrittenByAi, listingNeeds, mayAutoWriteJobDetails } from '../crawlEngine'
+import {
+  hasListingFor,
+  JOB_DETAILS_PILL,
+  jobDetailIsWrittenByAi,
+  jobDetailsHint,
+  jobDetailsModalAccess,
+  listingNeeds,
+  mayAutoWriteJobDetails,
+} from '../crawlEngine'
 import { useCrawlEngine } from '../useCrawlEngine'
 import { PipelineLine } from '../PipelineLine'
 import { runFollower } from '../runFollowerStart'
@@ -1073,7 +1081,13 @@ export function CrawlPanel({
       })
   }
 
+  // Plan 191: under Katana the Job details modal is the picker, which works on a crawled job of this link, so it does not open until the link
+  // has one (see jobDetailsModalAccess); an orange pill on the card says so.
+  const jobDetailsAccess = jobDetailsModalAccess(engine, link)
+  const jobDetailsBlocked = jobDetailsAccess !== 'open'
+
   function openJobDetailInstructionsModal() {
+    if (jobDetailsBlocked) return
     setJobDetailInstructionsDraft(link.jobDetailCrawlInstructions ?? '')
     setActiveInstructionsModal('jobDetail')
   }
@@ -1268,16 +1282,39 @@ export function CrawlPanel({
                   <button
                     type="button"
                     onClick={openJobDetailInstructionsModal}
+                    aria-disabled={jobDetailsBlocked}
                     title={
-                      link.jobDetailCrawlInstructions
-                        ? "Job detail crawl instructions — view/edit — how to extract the job-position-relevant text off a single job's own detail page (the page a listing's own job URL points to), separate from the listing crawl instructions."
-                        : "Job detail crawl instructions — not set yet, generated automatically once this link's own listing has been crawled — how to extract the job-position-relevant text off a single job's own detail page (the page a listing's own job URL points to), separate from the listing crawl instructions."
+                      jobDetailsBlocked
+                        ? `Job details — ${jobDetailsHint(jobDetailsAccess)}`
+                        : jobDetailPickOnly
+                          ? link.jobDetailCrawlInstructions
+                            ? 'Job details — view/edit the data picked from a job page of this link.'
+                            : 'Job details — not set yet: pick the data (title, company, location, posted date, description) from a job page of this link.'
+                          : link.jobDetailCrawlInstructions
+                            ? "Job detail crawl instructions — view/edit — how to extract the job-position-relevant text off a single job's own detail page (the page a listing's own job URL points to), separate from the listing crawl instructions."
+                            : "Job detail crawl instructions — not set yet, generated automatically once this link's own listing has been crawled — how to extract the job-position-relevant text off a single job's own detail page (the page a listing's own job URL points to), separate from the listing crawl instructions."
                     }
-                    className={`flex flex-col items-center justify-center gap-1 text-xs font-medium hover:underline ${link.jobDetailCrawlInstructions ? 'text-gray-700' : 'text-gray-400'}`}
+                    className={`flex flex-col items-center justify-center gap-1 text-xs font-medium ${
+                      jobDetailsBlocked
+                        ? 'cursor-not-allowed text-gray-400'
+                        : `hover:underline ${link.jobDetailCrawlInstructions ? 'text-gray-700' : 'text-gray-400'}`
+                    }`}
                   >
                     <JobDetailInstructionsIcon />
                     Job details
                   </button>
+                  {jobDetailsBlocked && (
+                    <>
+                      <span
+                        role="status"
+                        data-testid="job-details-needs-jobs"
+                        className="mt-1 rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-800"
+                      >
+                        {JOB_DETAILS_PILL}
+                      </span>
+                      <p className="mt-1 text-xs text-orange-800">{jobDetailsHint(jobDetailsAccess)}</p>
+                    </>
+                  )}
                   {aiWritesJobDetail && (
                     <InstructionAttemptStats stats={link.instructionStats.jobDetail} alertAttempts={jobDetailAlertAttempts} />
                   )}
