@@ -35,6 +35,9 @@ type fakeCore struct {
 	// detailPage answers the page analysis of the picking screen (fetch-detail-candidates); detailBodies are its request bodies.
 	detailPage   func(body map[string]any) (status int, body2 string)
 	detailBodies []map[string]any
+	// capabilities answers GET /capabilities of the Browser tool; nil = an older Browser tool (the route does not exist: 404).
+	capabilities func() (status int, body string)
+	capsCalls    int
 }
 
 func newFakeCore(t *testing.T, engine string) *fakeCore {
@@ -63,6 +66,15 @@ func newFakeCore(t *testing.T, engine string) *fakeCore {
 			status, body := f.paginated(pageURL)
 			w.WriteHeader(status)
 			_, _ = w.Write([]byte(body))
+		case "/api/v1/tools/browser/proxy/capabilities":
+			f.capsCalls++
+			if f.capabilities == nil {
+				http.NotFound(w, r)
+				return
+			}
+			status, out := f.capabilities()
+			w.WriteHeader(status)
+			_, _ = w.Write([]byte(out))
 		case "/api/v1/tools/browser/proxy/fetch-detail-candidates":
 			raw, _ := io.ReadAll(r.Body)
 			var b map[string]any

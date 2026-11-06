@@ -33,7 +33,11 @@ const (
 
 // DescriptionPart is one box of a description rule.
 type DescriptionPart struct {
-	Include         string   `yaml:"include" json:"include"`
+	// A part takes either an Include (a box selector) or a Source and Path (the text the page states in its structured data, for example the
+	// JSON-LD description), never both.
+	Include         string   `yaml:"include,omitempty" json:"include,omitempty"`
+	Source          string   `yaml:"source,omitempty" json:"source,omitempty"`
+	Path            string   `yaml:"path,omitempty" json:"path,omitempty"`
 	Heading         string   `yaml:"heading,omitempty" json:"heading,omitempty"`
 	HeadingSelector string   `yaml:"headingSelector,omitempty" json:"headingSelector,omitempty"`
 	Exclude         []string `yaml:"exclude,omitempty" json:"exclude,omitempty"`
@@ -96,7 +100,14 @@ func validateDescriptionRule(r *DescriptionRule) error {
 	}
 	for i, p := range r.Parts {
 		where := fmt.Sprintf("part %d", i+1)
-		if err := checkRuleSelector(where+": the box selector", p.Include); err != nil {
+		if p.Source != "" || p.Path != "" {
+			if p.Include != "" {
+				return fmt.Errorf("%s: a part takes either a box selector or a structured source, not both", where)
+			}
+			if err := ValidateStructuredSource(where, p.Source, p.Path); err != nil {
+				return err
+			}
+		} else if err := checkRuleSelector(where+": the box selector", p.Include); err != nil {
 			return err
 		}
 		switch p.Heading {

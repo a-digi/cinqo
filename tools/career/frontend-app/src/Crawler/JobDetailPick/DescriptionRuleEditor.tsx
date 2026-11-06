@@ -6,6 +6,8 @@ import {
   chars,
   describePickFailure,
   descriptionHelpFor,
+  newStructuredPart,
+  statedDescription,
   duplicateBoxes,
   MAX_CUT_AFTER,
   MAX_LIST,
@@ -172,38 +174,47 @@ function PartCard({
           Remove this part
         </button>
       </div>
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        <label className="flex items-center gap-1">
-          <span className="font-medium">Box</span>
-          <input
-            type="text"
-            value={part.include}
-            onChange={(e) => {
-              onChange({ include: e.target.value })
-            }}
-            placeholder="a CSS selector, for example #job-description"
-            className={`${inputClass} w-72 font-mono`}
-          />
-        </label>
-        <label className="flex items-center gap-1">
-          <span className="text-gray-600">or choose</span>
-          <select
-            value=""
-            aria-label={`Choose the box of part ${index + 1}`}
-            className={inputClass}
-            onChange={(e) => {
-              if (e.target.value !== '') onChange({ include: e.target.value })
-            }}
-          >
-            <option value="">a box of the page…</option>
-            {boxes.map((b) => (
-              <option key={b.selector} value={b.selector}>
-                {shortValue(b.value, 50)} ({chars(b.chars)})
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+      {part.source !== '' ? (
+        <p className="mt-2 text-gray-800" data-testid="rule-part-stated">
+          <span className="font-medium">The description the page states</span>{' '}
+          <span className="text-gray-600">
+            (read from its own data: {part.source} {part.path})
+          </span>
+        </p>
+      ) : (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-1">
+            <span className="font-medium">Box</span>
+            <input
+              type="text"
+              value={part.include}
+              onChange={(e) => {
+                onChange({ include: e.target.value })
+              }}
+              placeholder="a CSS selector, for example #job-description"
+              className={`${inputClass} w-72 font-mono`}
+            />
+          </label>
+          <label className="flex items-center gap-1">
+            <span className="text-gray-600">or choose</span>
+            <select
+              value=""
+              aria-label={`Choose the box of part ${index + 1}`}
+              className={inputClass}
+              onChange={(e) => {
+                if (e.target.value !== '') onChange({ include: e.target.value })
+              }}
+            >
+              <option value="">a box of the page…</option>
+              {boxes.map((b) => (
+                <option key={b.selector} value={b.selector}>
+                  {shortValue(b.value, 50)} ({chars(b.chars)})
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <label className="flex items-center gap-1">
           <span className="font-medium">Heading</span>
@@ -521,6 +532,19 @@ export function DescriptionRuleEditor({
         >
           Add a part
         </button>
+        {statedDescription(page) && !draft.parts.some((p) => p.source !== '') && (
+          <button
+            type="button"
+            className={buttonClass}
+            disabled={draft.parts.length >= MAX_PARTS}
+            data-testid="rule-add-stated-part"
+            onClick={() => {
+              onChange({ ...draft, parts: [...draft.parts, newStructuredPart()] })
+            }}
+          >
+            Add the description the page states
+          </button>
+        )}
         <span className="text-gray-600">Several boxes are read in the order of the parts.</span>
       </div>
       {problems.map((p) => (

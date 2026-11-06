@@ -46,8 +46,11 @@ const (
 const descriptionConsentSelector = `[role="dialog"], [role="alertdialog"], [aria-modal="true"], dialog, [class*="cookie" i], [class*="consent" i], [id*="cookie" i], [id*="consent" i]`
 
 type descriptionPart struct {
-	// Include is the CSS selector of the box; every match is taken, in page order, each once.
-	Include string `json:"include"`
+	// Include is the CSS selector of the box; every match is taken, in page order, each once. A part takes either an Include or a Source and
+	// Path (the text the page states in its structured data, for example the JSON-LD description), never both.
+	Include string `json:"include,omitempty"`
+	Source  string `json:"source,omitempty"`
+	Path    string `json:"path,omitempty"`
 	// Heading: "" or "none" adds nothing; "auto" writes the nearest heading before the box as its own line (unless the
 	// box starts with it); "selector" writes the first match of HeadingSelector.
 	Heading         string `json:"heading,omitempty"`
@@ -161,7 +164,14 @@ func validateDescriptionRule(r *descriptionRule) error {
 	for i := range r.Parts {
 		p := &r.Parts[i]
 		where := fmt.Sprintf("part %d", i+1)
-		if err := checkRuleSelector(where+": the box selector", p.Include); err != nil {
+		if p.Source != "" || p.Path != "" {
+			if p.Include != "" {
+				return fmt.Errorf("%s: a part takes either a box selector or a structured source, not both", where)
+			}
+			if err := validateStructuredSource(where, p.Source, p.Path); err != nil {
+				return err
+			}
+		} else if err := checkRuleSelector(where+": the box selector", p.Include); err != nil {
 			return err
 		}
 		switch p.Heading {
@@ -215,7 +225,7 @@ func runDescriptionRule(ctx context.Context, rule *descriptionRule) (*descriptio
 	if err != nil {
 		return nil, fmt.Errorf("failed to build the description payload: %w", err)
 	}
-	js := strings.Replace(descriptionRuleJSTemplate, descriptionPayloadPlaceholder, string(payloadJSON), 1)
+	js := strings.Replace(withStructuredReader(descriptionRuleJSTemplate), descriptionPayloadPlaceholder, string(payloadJSON), 1)
 	var res descriptionResult
 	if err := chromedp.Run(ctx, chromedp.Evaluate(js, &res)); err != nil {
 		return nil, err

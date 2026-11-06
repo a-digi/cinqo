@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -108,6 +109,71 @@ func runPickExtractionViaCore(ctx context.Context, coreURL, accessToken string, 
 	}
 	page := result.Pages[0]
 	return pickExtraction{Values: extractResultValues(page), Description: page.Description, Truncated: page.Truncated}, nil
+}
+
+// ---- what the installed Browser tool can do ----
+
+const browserCapabilitiesPath = "/api/v1/tools/browser/proxy/capabilities"
+
+// browserCapabilities is what the Browser tool says about itself. A tool that is too old has no such route (404 through the core): it
+// answers "nothing new", never an error, so a caller that needs a newer feature refuses politely.
+type browserCapabilities struct {
+	StructuredFields bool `json:"structuredFields"`
+}
+
+var readBrowserCapabilities = readBrowserCapabilitiesViaCore
+
+func readBrowserCapabilitiesViaCore(ctx context.Context, coreURL, accessToken string) (browserCapabilities, error) {
+	ctx, cancel := context.WithTimeout(ctx, engineReadTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, coreURL+browserCapabilitiesPath, nil)
+	if err != nil {
+		return browserCapabilities{}, err
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	resp, err := crawlNowHTTPClient.Do(req)
+	if err != nil {
+		return browserCapabilities{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusUnauthorized {
+		return browserCapabilities{}, errors.New("session expired — please sign in again")
+	}
+	if resp.StatusCode != http.StatusOK {
+		return browserCapabilities{}, nil // an older Browser tool: no such route
+	}
+	var caps browserCapabilities
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<16)).Decode(&caps); err != nil {
+		return browserCapabilities{}, nil
+	}
+	return caps, nil
+}
+
+// browserReadsStructuredData says whether the installed Browser tool can read the page's structured data (false when it cannot be asked).
+func browserReadsStructuredData(ctx context.Context, coreURL, accessToken string) bool {
+	caps, err := readBrowserCapabilities(ctx, coreURL, accessToken)
+	return err == nil && caps.StructuredFields
+}
+
+const browserTooOldMessage = "this uses the page's own structured data, which the installed Browser tool cannot read yet: update the Browser tool first"
+
+// requireStructuredSupport answers 409 (code browser_too_old) and reports false when the Browser tool cannot read structured data.
+func requireStructuredSupport(w http.ResponseWriter, r *http.Request) bool {
+	cookie, err := r.Cookie("access_token")
+	if err != nil {
+		http.Error(w, "no active session cookie found", http.StatusUnauthorized)
+		return false
+	}
+	coreURL, err := coreAPIURL()
+	if err != nil {
+		http.Error(w, "core API address is not configured", http.StatusInternalServerError)
+		return false
+	}
+	if !browserReadsStructuredData(r.Context(), coreURL, cookie.Value) {
+		writePickJSON(w, http.StatusConflict, map[string]string{"code": "browser_too_old", "message": browserTooOldMessage})
+		return false
+	}
+	return true
 }
 
 // ---- checks shared by the routes ----
@@ -252,8 +318,10 @@ type pickCandidatesResponse struct {
 	Title    string       `json:"title"`
 	Samples  []pickSample `json:"samples"`
 	// JobCount is how many saved jobs the link has (the screen says how many a recrawl could re-score).
-	JobCount int                            `json:"jobCount"`
-	Ranked   map[string][]detailpick.Ranked `json:"ranked"`
+	JobCount int `json:"jobCount"`
+	// StructuredSupported says whether the installed Browser tool can read the page's structured data (JSON-LD, meta tags) as a field source.
+	StructuredSupported bool                           `json:"structuredSupported"`
+	Ranked              map[string][]detailpick.Ranked `json:"ranked"`
 	// DescriptionHelp is keyed by the selector of a description candidate.
 	DescriptionHelp map[string]pickDescriptionHelp    `json:"descriptionHelp"`
 	Structured      detailpick.Structured             `json:"structured"`
@@ -334,7 +402,7 @@ func JobDetailCandidatesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp := pickCandidatesResponse{
-		URL: pageURL, FinalURL: page.FinalURL, Title: page.Title, Samples: samples, JobCount: jobCount,
+		URL: pageURL, FinalURL: page.FinalURL, Title: page.Title, Samples: samples, JobCount: jobCount, StructuredSupported: browserReadsStructuredData(r.Context(), pc.coreURL, pc.token),
 		Ranked:          map[string][]detailpick.Ranked{},
 		DescriptionHelp: map[string]pickDescriptionHelp{},
 		Structured:      page.Structured, StructuredHints: detailpick.StructuredSuggestions(page),
@@ -427,6 +495,9 @@ func JobDetailSaveHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to build the instructions: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	if portal.UsesStructuredSources(text) && !requireStructuredSupport(w, r) {
+		return
+	}
 	if err := portal.UpdatePortalLinkJobDetailCrawlInstructionsFrom(pc.linkID, text, portal.JobDetailOriginPicked); err != nil {
 		if errors.Is(err, portal.ErrInvalidCrawlInstructions) {
 			http.Error(w, pickErrorText(err), http.StatusBadRequest)
@@ -503,6 +574,10 @@ func JobDetailTestHandler(w http.ResponseWriter, r *http.Request) {
 	req, err := portal.BuildJobDetailCrawlRequestFromYAML(text)
 	if err != nil {
 		http.Error(w, pickErrorText(err), http.StatusBadRequest)
+		return
+	}
+	if req.UsesStructured() && !browserReadsStructuredData(r.Context(), pc.coreURL, pc.token) {
+		writePickJSON(w, http.StatusConflict, map[string]string{"code": "browser_too_old", "message": browserTooOldMessage})
 		return
 	}
 	var targets []jobs.RecrawlTarget

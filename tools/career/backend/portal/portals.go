@@ -835,6 +835,10 @@ type crawlInstructionsField struct {
 	Selector  string `yaml:"selector"`
 	Attribute string `yaml:"attribute,omitempty"`
 	Multiple  bool   `yaml:"multiple,omitempty"`
+	// Source and Path (plan 186, Phase B) read the value from the page's structured data instead of an element (job-detail instructions
+	// only): see structured_source.go. A field with a Source has no Selector, Attribute or Multiple.
+	Source string `yaml:"source,omitempty"`
+	Path   string `yaml:"path,omitempty"`
 }
 
 type crawlInstructionsPagination struct {
@@ -1183,6 +1187,18 @@ func validateJobDetailCrawlInstructions(yamlText string) error {
 		if f.Label == "" {
 			return fmt.Errorf("%w: fields[%d].label is required", ErrInvalidCrawlInstructions, i)
 		}
+		if f.Source != "" || f.Path != "" {
+			if f.Source == "" {
+				return fmt.Errorf("%w: fields[%d].path needs a source", ErrInvalidCrawlInstructions, i)
+			}
+			if f.Selector != "" || f.Attribute != "" || f.Multiple {
+				return fmt.Errorf("%w: fields[%d]: a field read from the page's structured data has no selector, attribute or multiple", ErrInvalidCrawlInstructions, i)
+			}
+			if err := ValidateStructuredSource(fmt.Sprintf("fields[%d]", i), f.Source, f.Path); err != nil {
+				return fmt.Errorf("%w: %v", ErrInvalidCrawlInstructions, err)
+			}
+			continue
+		}
 		if f.Selector == "" {
 			return fmt.Errorf("%w: fields[%d].selector is required", ErrInvalidCrawlInstructions, i)
 		}
@@ -1303,6 +1319,8 @@ type CrawlRequestField struct {
 	Selector  string `json:"selector"`
 	Attribute string `json:"attribute,omitempty"`
 	Multiple  bool   `json:"multiple,omitempty"`
+	Source    string `json:"source,omitempty"`
+	Path      string `json:"path,omitempty"`
 }
 
 type CrawlRequest struct {
@@ -1417,7 +1435,7 @@ func BuildJobDetailCrawlRequestFromYAML(yamlText string) (CrawlRequest, error) {
 
 	fields := make([]CrawlRequestField, len(doc.Fields))
 	for i, f := range doc.Fields {
-		fields[i] = CrawlRequestField{Label: f.Label, Selector: f.Selector, Attribute: f.Attribute, Multiple: f.Multiple}
+		fields[i] = CrawlRequestField{Label: f.Label, Selector: f.Selector, Attribute: f.Attribute, Multiple: f.Multiple, Source: f.Source, Path: f.Path}
 	}
 
 	return CrawlRequest{

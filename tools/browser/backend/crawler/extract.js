@@ -18,6 +18,7 @@
 // below — caught live, see step 9's own "Implemented and verified"
 // section.)
 (function (payload) {
+/*STRUCTURED_READER_HERE*/
   var maxValueLength = payload.maxValueLength;
   var maxItems = payload.maxItems;
   var fields = payload.fields || [];
@@ -107,6 +108,13 @@
     return kept.join("\n").trim();
   }
 
+  // Structured text may carry HTML or entities (a JSON-LD description does): it is read like an element's text, from a copy that runs nothing.
+  function structuredToText(raw) {
+    if (!/[<&]/.test(raw)) return raw.trim();
+    var doc = new DOMParser().parseFromString("<body>" + raw + "</body>", "text/html");
+    return readableText(doc.body);
+  }
+
   function readValue(el, attribute, label) {
     if (!attribute || attribute === "text") {
       return truncate(readableText(el), label);
@@ -123,6 +131,17 @@
     var obj = {};
     for (var i = 0; i < fields.length; i++) {
       var f = fields[i];
+      if (f.source) {
+        // A value the page states in its structured data (JSON-LD, meta tags), not an element (Phase B of plan 186; flat mode only).
+        var raw = structuredValue(f.source, f.path);
+        var text = raw === null ? "" : structuredToText(raw);
+        if (text === "") {
+          notFoundSeen[f.label] = true;
+        } else {
+          obj[f.label] = truncate(text, f.label);
+        }
+        continue;
+      }
       var matches;
       try {
         matches = scope.querySelectorAll(f.selector);

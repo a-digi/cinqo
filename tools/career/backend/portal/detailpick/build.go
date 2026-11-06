@@ -25,8 +25,12 @@ var (
 // FieldChoice is the element a person chose for one field. A field the person marked "not on this page" is simply not in the list.
 type FieldChoice struct {
 	Label     Field  `json:"label"`
-	Selector  string `json:"selector"`
+	Selector  string `json:"selector,omitempty"`
 	Attribute string `json:"attribute,omitempty"`
+	// Source and Path read the value from the page's structured data (jsonld or meta) instead of an element: such a choice has no selector
+	// or attribute (plan 186, Phase B).
+	Source string `json:"source,omitempty"`
+	Path   string `json:"path,omitempty"`
 }
 
 // Choices are everything a person decided on the picking screen.
@@ -76,8 +80,10 @@ var labelOrder = []Field{FieldTitle, FieldCompany, FieldLocation, FieldPostedAt}
 
 type outField struct {
 	Label     string `yaml:"label"`
-	Selector  string `yaml:"selector"`
+	Selector  string `yaml:"selector,omitempty"`
 	Attribute string `yaml:"attribute,omitempty"`
+	Source    string `yaml:"source,omitempty"`
+	Path      string `yaml:"path,omitempty"`
 }
 
 type outDoc struct {
@@ -124,6 +130,17 @@ func BuildYAML(c Choices) (string, error) {
 		if _, dup := byLabel[f.Label]; dup {
 			return "", fmt.Errorf("%w: the field %q is chosen twice", portal.ErrInvalidCrawlInstructions, f.Label)
 		}
+		if f.Source != "" || f.Path != "" {
+			if strings.TrimSpace(f.Selector) != "" || strings.TrimSpace(f.Attribute) != "" {
+				return "", fmt.Errorf("%w: %q is read from the page's structured data: it has no selector or attribute", portal.ErrInvalidCrawlInstructions, f.Label)
+			}
+			if err := portal.ValidateStructuredSource(string(f.Label), f.Source, f.Path); err != nil {
+				return "", fmt.Errorf("%w: %v", portal.ErrInvalidCrawlInstructions, err)
+			}
+			f.Selector, f.Attribute = "", ""
+			byLabel[f.Label] = f
+			continue
+		}
 		if err := checkSelector("the selector of "+string(f.Label), f.Selector); err != nil {
 			return "", err
 		}
@@ -136,7 +153,7 @@ func BuildYAML(c Choices) (string, error) {
 	}
 	for _, l := range labelOrder {
 		if f, ok := byLabel[l]; ok {
-			doc.Fields = append(doc.Fields, outField{Label: string(f.Label), Selector: f.Selector, Attribute: f.Attribute})
+			doc.Fields = append(doc.Fields, outField{Label: string(f.Label), Selector: f.Selector, Attribute: f.Attribute, Source: f.Source, Path: f.Path})
 		}
 	}
 	if c.ReplaceTitle {
@@ -161,6 +178,8 @@ type inField struct {
 	Selector  string `yaml:"selector"`
 	Attribute string `yaml:"attribute"`
 	Multiple  bool   `yaml:"multiple"`
+	Source    string `yaml:"source"`
+	Path      string `yaml:"path"`
 }
 
 type inDoc struct {
@@ -210,7 +229,7 @@ func ParseYAML(text string) (c Choices, lossy []string, err error) {
 				lossy = append(lossy, "an attribute on the description")
 			}
 		case FieldTitle, FieldCompany, FieldLocation, FieldPostedAt:
-			c.Fields = append(c.Fields, FieldChoice{Label: Field(f.Label), Selector: f.Selector, Attribute: f.Attribute})
+			c.Fields = append(c.Fields, FieldChoice{Label: Field(f.Label), Selector: f.Selector, Attribute: f.Attribute, Source: f.Source, Path: f.Path})
 		default:
 			lossy = append(lossy, "the field "+f.Label)
 		}

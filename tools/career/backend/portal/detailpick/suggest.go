@@ -82,6 +82,8 @@ type StructuredSuggestion struct {
 	Field  Field  `json:"field"`
 	Value  string `json:"value"`
 	Source string `json:"source"` // jsonld | meta
+	// Path is what a field reads to get this value (the JSON-LD path, or the meta tag's name).
+	Path   string `json:"path"`
 	Reason string `json:"reason"`
 }
 
@@ -90,18 +92,21 @@ func StructuredSuggestions(p Page) []StructuredSuggestion {
 	var out []StructuredSuggestion
 	if len(p.Structured.JSONLD) > 0 {
 		j := p.Structured.JSONLD[0]
-		add := func(f Field, v, reason string) {
+		add := func(f Field, v, path, reason string) {
 			if strings.TrimSpace(v) != "" {
-				out = append(out, StructuredSuggestion{Field: f, Value: v, Source: "jsonld", Reason: reason})
+				out = append(out, StructuredSuggestion{Field: f, Value: v, Source: "jsonld", Path: path, Reason: reason})
 			}
 		}
-		add(FieldTitle, j.Title, "JobPosting title")
-		add(FieldCompany, j.Company, "JobPosting hiringOrganization")
-		add(FieldLocation, j.Location, "JobPosting jobLocation")
-		add(FieldPostedAt, j.DatePosted, "JobPosting datePosted")
+		add(FieldTitle, j.Title, "title", "JobPosting title")
+		add(FieldCompany, j.Company, "hiringOrganization", "JobPosting hiringOrganization")
+		add(FieldLocation, j.Location, "jobLocation", "JobPosting jobLocation")
+		add(FieldPostedAt, j.DatePosted, "datePosted", "JobPosting datePosted")
+		if j.DescriptionChars > 0 {
+			out = append(out, StructuredSuggestion{Field: FieldDescription, Value: j.DescriptionPrev, Source: "jsonld", Path: "description", Reason: "JobPosting description"})
+		}
 	}
 	if m := p.Structured.Meta; strings.TrimSpace(m.OgTitle) != "" {
-		out = append(out, StructuredSuggestion{Field: FieldTitle, Value: m.OgTitle, Source: "meta", Reason: "og:title"})
+		out = append(out, StructuredSuggestion{Field: FieldTitle, Value: m.OgTitle, Source: "meta", Path: "og:title", Reason: "og:title"})
 	}
 	return out
 }

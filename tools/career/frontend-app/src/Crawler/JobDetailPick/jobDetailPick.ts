@@ -47,19 +47,27 @@ export interface PickSample {
 export interface StructuredHint {
   field: PickField
   value: string
+  // 'jsonld' or 'meta'; path is what a field reads to get this value.
   source: string
+  path: string
   reason: string
 }
 
 export interface FieldChoice {
   label: PickField
-  selector: string
+  // A field is read from an element (selector, attribute) or from the page's structured data (source and path), never both.
+  selector?: string
   attribute?: string
+  source?: string
+  path?: string
 }
 
 // A part of a description rule: a box of the page, what to leave out of it, an optional heading and where to stop.
 export interface RulePart {
-  include: string
+  // A part takes either a box (include) or the text the page states in its structured data (source and path).
+  include?: string
+  source?: string
+  path?: string
   heading?: 'none' | 'auto' | 'selector'
   headingSelector?: string
   exclude?: string[]
@@ -111,6 +119,8 @@ export interface PickCandidates {
   samples: PickSample[]
   // How many saved jobs the link has (a recrawl could re-score those whose description changes).
   jobCount: number
+  // Whether the installed Browser tool can read the page's structured data (JSON-LD, meta tags) as a field source.
+  structuredSupported: boolean
   ranked: Record<PickField, Ranked[]>
   // Keyed by the selector of a description candidate.
   descriptionHelp: Record<string, DescriptionHelp>

@@ -13,6 +13,7 @@ import type {
   PickTestJob,
   Ranked,
   RulePart,
+  StructuredHint,
 } from './jobDetailPick'
 
 // The four fields a person picks one by one; the description has its own row.
@@ -32,9 +33,12 @@ export interface Pick {
   attribute: string
   // What the page showed there, for display only.
   value: string
-  // 'suggestion' (one of the ranked candidates), 'element' (picked from the list of text elements) or 'stored' (read back from the
-  // instructions the link already has).
-  from: 'suggestion' | 'element' | 'stored'
+  // 'suggestion' (one of the ranked candidates), 'element' (picked from the list of text elements), 'structured' (the page's own data) or
+  // 'stored' (read back from the instructions the link already has).
+  from: 'suggestion' | 'element' | 'stored' | 'structured'
+  // A pick of the page's structured data (JSON-LD, meta tags) has a source and a path and no selector or attribute.
+  source?: string
+  path?: string
 }
 
 // A pick per field; null is "not on this page" (the field is left out of the instructions).
@@ -54,6 +58,23 @@ export function pickFromRanked(r: Ranked): Pick {
   return { selector: r.selector, attribute: r.attribute, value: r.value, from: 'suggestion' }
 }
 
+// A pick of what the page itself states (its JobPosting JSON-LD or a meta tag): read by source and path, not by a selector.
+export function pickFromHint(h: StructuredHint): Pick {
+  return { selector: '', attribute: '', value: h.value, from: 'structured', source: h.source, path: h.path }
+}
+
+export function isStructuredPick(p: Pick | null): boolean {
+  return (p?.source ?? '') !== ''
+}
+
+// The structured hints a field can be picked from: only while the installed Browser tool can read them, and never a meta tag as a
+// start (a page's og:title carries the site and the company next to the title).
+export function hintsFor(page: PickCandidates, field: PickField): StructuredHint[] {
+  return page.structuredSupported
+    ? page.structuredHints.filter((h) => h.field === field && h.value.trim() !== '' && field !== 'description')
+    : []
+}
+
 export function pickFromElement(e: PageElement): Pick {
   return { selector: e.selector, attribute: '', value: e.text, from: 'element' }
 }
@@ -64,11 +85,21 @@ export function startingPicks(page: PickCandidates): Picks {
   const stored = page.current.choices
   const picks: Picks = { ...NO_PICKS }
   if (stored) {
-    for (const f of stored.fields) picks[f.label] = { selector: f.selector, attribute: f.attribute ?? '', value: '', from: 'stored' }
+    for (const f of stored.fields) {
+      picks[f.label] = f.source
+        ? { selector: '', attribute: '', value: '', from: 'stored', source: f.source, path: f.path ?? '' }
+        : { selector: f.selector ?? '', attribute: f.attribute ?? '', value: '', from: 'stored' }
+    }
     if (stored.descriptionSelector) picks.description = { selector: stored.descriptionSelector, attribute: '', value: '', from: 'stored' }
     return picks
   }
   for (const f of DATA_FIELDS) {
+    // What the page itself states (JSON-LD) is the most robust start: it survives a redesign. Otherwise a strong suggestion.
+    const stated = hintsFor(page, f).find((h) => h.source === 'jsonld')
+    if (stated) {
+      picks[f] = pickFromHint(stated)
+      continue
+    }
     const top = page.ranked[f].at(0)
     if (top && top.score >= AUTO_PICK_SCORE && top.value.trim() !== '') picks[f] = pickFromRanked(top)
   }
@@ -84,6 +115,10 @@ export function toChoices(picks: Picks, rule: RuleDraft | null = null, replaceTi
   for (const f of DATA_FIELDS) {
     const p = picks[f]
     if (!p) continue
+    if (isStructuredPick(p)) {
+      fields.push({ label: f, source: p.source, path: p.path ?? '' })
+      continue
+    }
     fields.push(
       p.attribute && p.attribute !== 'text'
         ? { label: f, selector: p.selector, attribute: p.attribute }
@@ -130,6 +165,7 @@ export function filterElements(elements: PageElement[], query: string, cap = 40)
 // Whether two picks read the same place.
 export function samePick(a: Pick | null, b: Pick | null): boolean {
   if (a === null || b === null) return a === b
+  if (isStructuredPick(a) || isStructuredPick(b)) return a.source === b.source && a.path === b.path
   return a.selector === b.selector && (a.attribute || 'text') === (b.attribute || 'text')
 }
 
@@ -157,7 +193,10 @@ export type HeadingMode = 'none' | 'auto' | 'selector'
 
 // One part as it is edited: every key present (the backend's rule leaves empty ones out).
 export interface PartDraft {
+  // A box (include) or, for the text the page states in its structured data, a source and path (then include is empty).
   include: string
+  source: string
+  path: string
   heading: HeadingMode
   headingSelector: string
   exclude: string[]
@@ -172,7 +211,7 @@ export interface RuleDraft {
 }
 
 export function newPart(include = ''): PartDraft {
-  return { include, heading: 'none', headingSelector: '', exclude: [], cutAfter: [] }
+  return { include, source: '', path: '', heading: 'none', headingSelector: '', exclude: [], cutAfter: [] }
 }
 
 // A rule that reads the box a person already chose, as one part.
@@ -186,7 +225,9 @@ export function draftFromRule(rule: DescriptionRule): RuleDraft {
     format: rule.format === 'structured' ? 'structured' : 'plain',
     limitText: String(rule.limit && rule.limit > 0 ? rule.limit : DEFAULT_LIMIT),
     parts: rule.parts.map((p: RulePart) => ({
-      include: p.include,
+      include: p.include ?? '',
+      source: p.source ?? '',
+      path: p.path ?? '',
       heading: p.heading ?? 'none',
       headingSelector: p.headingSelector ?? '',
       exclude: p.exclude ?? [],
@@ -203,7 +244,7 @@ export function ruleToChoice(d: RuleDraft): DescriptionRule | null {
     format: d.format,
     ...(limit !== DEFAULT_LIMIT ? { limit } : {}),
     parts: d.parts.map((p) => ({
-      include: p.include.trim(),
+      ...(p.source !== '' ? { source: p.source, path: p.path } : { include: p.include.trim() }),
       ...(p.heading !== 'none' ? { heading: p.heading } : {}),
       ...(p.heading === 'selector' ? { headingSelector: p.headingSelector.trim() } : {}),
       ...(p.exclude.length > 0 ? { exclude: p.exclude } : {}),
@@ -227,7 +268,7 @@ export function ruleProblems(d: RuleDraft): string[] {
   if (parseLimit(d.limitText) === null) out.push(`The limit is a whole number from ${MIN_LIMIT} to ${MAX_LIMIT}.`)
   if (d.parts.length === 0) out.push('A rule needs at least one part.')
   d.parts.forEach((p, i) => {
-    if (p.include.trim() === '') out.push(`Part ${i + 1} has no box yet.`)
+    if (p.source === '' && p.include.trim() === '') out.push(`Part ${i + 1} has no box yet.`)
     if (p.heading === 'selector' && p.headingSelector.trim() === '')
       out.push(`Part ${i + 1} takes its heading from an element, but none is given.`)
   })
@@ -284,8 +325,8 @@ export function duplicateBoxes(d: RuleDraft): string[] {
   const seen = new Set<string>()
   const dup = new Set<string>()
   for (const p of d.parts) {
-    const k = p.include.trim()
-    if (k === '') continue
+    const k = p.source !== '' ? `${p.source}:${p.path}` : p.include.trim()
+    if (k === '' || k === ':') continue
     if (seen.has(k)) dup.add(k)
     seen.add(k)
   }
@@ -446,4 +487,24 @@ export function fillNote(origin: string): string {
   return origin === 'picked'
     ? "These instructions fill a job's empty company, location and posted date when its page is crawled; they never replace what a job already has."
     : ''
+}
+
+// A part that takes the text the page states in its structured data (its JSON-LD description) instead of a box.
+export function newStructuredPart(source = 'jsonld', path = 'description'): PartDraft {
+  return { ...newPart(''), source, path }
+}
+
+// A rule that reads the description the page states, as one part (in the structured format: the stated text is HTML).
+export function draftFromStatedDescription(): RuleDraft {
+  return { format: 'structured', limitText: String(DEFAULT_LIMIT), parts: [newStructuredPart()] }
+}
+
+// The description the page states, when the installed Browser tool can read it.
+export function statedDescription(page: PickCandidates): StructuredHint | undefined {
+  return page.structuredSupported ? page.structuredHints.find((h) => h.field === 'description' && h.source === 'jsonld') : undefined
+}
+
+// Whether the picks or the rule read anything from the page's structured data.
+export function usesStructured(picks: Picks, rule: RuleDraft | null): boolean {
+  return DATA_FIELDS.some((f) => isStructuredPick(picks[f])) || (rule?.parts.some((p) => p.source !== '') ?? false)
 }

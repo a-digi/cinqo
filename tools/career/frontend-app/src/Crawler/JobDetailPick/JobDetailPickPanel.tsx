@@ -16,12 +16,16 @@ import {
   DATA_FIELDS,
   draftFromBox,
   describePickFailure,
+  draftFromStatedDescription,
   FIELD_NAMES,
   fillNote,
   filterElements,
+  hintsFor,
+  isStructuredPick,
   lossyNote,
   originLabel,
   pickFromElement,
+  pickFromHint,
   pickFromRanked,
   samePick,
   shortValue,
@@ -29,6 +33,7 @@ import {
   startingPicks,
   startingReplaceTitle,
   startingRule,
+  statedDescription,
   toChoices,
   whyText,
   type Pick,
@@ -65,6 +70,7 @@ function FieldRow({
   const [searching, setSearching] = useState(false)
   const [query, setQuery] = useState('')
   const suggestions: Ranked[] = useMemo(() => shownSuggestions(page, field), [page, field])
+  const hints = useMemo(() => hintsFor(page, field), [page, field])
   const elements = useMemo(() => filterElements(page.elements, query), [page.elements, query])
   const open = expanded || pick === null
   const name = FIELD_NAMES[field]
@@ -84,7 +90,13 @@ function FieldRow({
             ) : (
               <span className="text-gray-500">(kept from the stored instructions)</span>
             )}{' '}
-            <code className="rounded bg-gray-100 px-1 text-[11px]">{pick.selector}</code>
+            {isStructuredPick(pick) ? (
+              <span className="rounded bg-blue-100 px-1 text-[11px] text-blue-900">
+                from the page&apos;s own data ({pick.source}: {pick.path})
+              </span>
+            ) : (
+              <code className="rounded bg-gray-100 px-1 text-[11px]">{pick.selector}</code>
+            )}
             {readsAttribute && (
               <span className="ml-1 rounded bg-blue-100 px-1 text-[11px] text-blue-900">reads the {readsAttribute} attribute</span>
             )}
@@ -116,7 +128,33 @@ function FieldRow({
       </div>
       {open && (
         <div className="mt-2 space-y-1">
-          {suggestions.length === 0 && (
+          {hints.map((h) => {
+            const hint = pickFromHint(h)
+            const chosen = samePick(pick, hint)
+            return (
+              <label
+                key={`${h.source}|${h.path}`}
+                aria-label={`The page states: ${shortValue(h.value, 140)}`}
+                className={`flex cursor-pointer items-start gap-2 rounded-md border px-2 py-1 ${chosen ? 'border-blue-500 bg-blue-50' : 'border-blue-200 bg-blue-50/40 hover:bg-blue-50'}`}
+                data-testid="job-detail-pick-stated"
+              >
+                <input
+                  type="radio"
+                  name={`pick-${field}`}
+                  checked={chosen}
+                  onChange={() => {
+                    onPick(hint)
+                  }}
+                  className="mt-0.5"
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="font-medium">{shortValue(h.value, 140)}</span>
+                  <span className="ml-1 text-blue-900">from the page&apos;s own data · {h.reason}</span>
+                </span>
+              </label>
+            )
+          })}
+          {suggestions.length === 0 && hints.length === 0 && (
             <p className="text-gray-600">The page offers no suggestion for this field. Pick one from the page&apos;s text below.</p>
           )}
           {suggestions.map((s) => {
@@ -442,6 +480,18 @@ export function JobDetailPickPanel({ link, onSaved }: { link: PortalLink; onSave
                       <span className="text-gray-600">
                         Several boxes, things to leave out, headings, a longer limit than 5,000 characters.
                       </span>
+                      {statedDescription(page) && (
+                        <button
+                          type="button"
+                          className={buttonClass}
+                          data-testid="job-detail-pick-use-stated-description"
+                          onClick={() => {
+                            setRule(draftFromStatedDescription())
+                          }}
+                        >
+                          Use the description the page states
+                        </button>
+                      )}
                     </div>
                   </>
                 ) : (
@@ -473,7 +523,11 @@ export function JobDetailPickPanel({ link, onSaved }: { link: PortalLink; onSave
                       </li>
                     ))}
                   </ul>
-                  <p className="mt-1 text-gray-600">Use these to check your picks; reading them directly comes in a later version.</p>
+                  <p className="mt-1 text-gray-600">
+                    {page.structuredSupported
+                      ? 'Pick them in the rows above: they are read from the page’s own data, which survives a redesign of the page.'
+                      : 'Update the Browser tool to read these directly; until then use them to check your picks.'}
+                  </p>
                 </div>
               )}
 

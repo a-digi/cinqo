@@ -11,6 +11,7 @@
 // The payload token on the last line is replaced by extract.go's counterpart (description_rule.go) before the script
 // runs. It is deliberately not written out in this comment (only the first occurrence is replaced).
 (function (payload) {
+/*STRUCTURED_READER_HERE*/
   var rule = payload.rule;
   var limit = rule.limit;
   var structured = rule.format === "structured";
@@ -129,25 +130,32 @@
 
   for (var p = 0; p < rule.parts.length; p++) {
     var part = rule.parts[p];
-    var info = { index: p + 1, include: part.include, matches: 0, chars: 0, overlap: false, notFound: false, cut: 0, removed: 0 };
-    var matches = safeAll(document, part.include, "part " + (p + 1));
+    var structuredPart = !!part.source;
+    var info = { index: p + 1, include: structuredPart ? part.source + ":" + part.path : part.include, matches: 0, chars: 0, overlap: false, notFound: false, cut: 0, removed: 0 };
     var boxes = [];
-    for (var m = 0; m < matches.length && boxes.length < MAX_MATCHES; m++) {
-      var el = matches[m];
-      var inside = false;
-      for (var t = 0; t < taken.length; t++) {
-        if (taken[t] === el || taken[t].contains(el)) {
-          inside = true;
-          break;
+    if (structuredPart) {
+      // The text the page states in its structured data, read as a box of its own (a copy that runs nothing).
+      var raw = structuredValue(part.source, part.path);
+      if (raw !== null) boxes.push(new DOMParser().parseFromString("<body>" + raw + "</body>", "text/html").body);
+    } else {
+      var matches = safeAll(document, part.include, "part " + (p + 1));
+      for (var m = 0; m < matches.length && boxes.length < MAX_MATCHES; m++) {
+        var el = matches[m];
+        var inside = false;
+        for (var t = 0; t < taken.length; t++) {
+          if (taken[t] === el || taken[t].contains(el)) {
+            inside = true;
+            break;
+          }
+          if (el.contains(taken[t])) info.overlap = true;
         }
-        if (el.contains(taken[t])) info.overlap = true;
+        if (inside) {
+          info.overlap = true;
+          continue;
+        }
+        boxes.push(el);
+        taken.push(el);
       }
-      if (inside) {
-        info.overlap = true;
-        continue;
-      }
-      boxes.push(el);
-      taken.push(el);
     }
     info.matches = boxes.length;
     if (boxes.length === 0) {

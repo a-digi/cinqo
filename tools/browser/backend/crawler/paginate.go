@@ -233,6 +233,10 @@ func PaginatedCrawlHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "fields (or a descriptionRule) and a positive maxPages are required; nextSelector is required whenever maxPages > 1", http.StatusBadRequest)
 		return
 	}
+	if err := validateExtractFields(body.Container, body.Fields); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	// step 37 — the same SSRF guard CrawlHandler's own url already
 	// gets; a URL reaching this new field is no less capable of
 	// driving the shared session somewhere it shouldn't than /crawl's

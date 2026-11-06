@@ -59,6 +59,10 @@ type extractField struct {
 	Selector  string `json:"selector" jsonschema:"CSS selector to match"`
 	Attribute string `json:"attribute,omitempty" jsonschema:"DOM attribute to read (e.g. href, src); omit or \"text\" for the element's own text content"`
 	Multiple  bool   `json:"multiple,omitempty" jsonschema:"true to collect every match, false for just the first"`
+	// Source and Path (plan 186, Phase B) read the value from the page's structured data instead of an element: Source "jsonld" or "meta",
+	// Path as described in structured_field.go. A field with a Source has no Selector, Attribute or Multiple.
+	Source string `json:"source,omitempty" jsonschema:"set by Career for values read from the page's own structured data (jsonld or meta); leave empty and use selector"`
+	Path   string `json:"path,omitempty" jsonschema:"with source: the dotted JSON-LD path (for example hiringOrganization) or the meta tag name (for example og:title)"`
 }
 
 type extractRequest struct {
@@ -126,11 +130,9 @@ func ExtractHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "fields (or a descriptionRule) is required", http.StatusBadRequest)
 		return
 	}
-	for _, f := range body.Fields {
-		if f.Label == "" || f.Selector == "" {
-			http.Error(w, "every field requires both a label and a selector", http.StatusBadRequest)
-			return
-		}
+	if err := validateExtractFields(body.Container, body.Fields); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 	if err := validateMapping(body.Fields, body.Mapping); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -264,7 +266,7 @@ func runExtractionOnCurrentPage(ctx context.Context, container string, fields []
 	if err != nil {
 		return extractResponse{}, fmt.Errorf("failed to build extraction payload: %w", err)
 	}
-	js := strings.Replace(extractJSTemplate, extractPayloadPlaceholder, string(payloadJSON), 1)
+	js := strings.Replace(withStructuredReader(extractJSTemplate), extractPayloadPlaceholder, string(payloadJSON), 1)
 
 	var result extractResponse
 	if err := chromedp.Run(ctx, chromedp.Evaluate(js, &result)); err != nil {

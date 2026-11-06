@@ -205,6 +205,9 @@ func TestBuildYAMLRandomChoicesAlwaysRoundTrip(t *testing.T) {
 			c.Description = &portal.DescriptionRule{Format: []string{"", "plain", "structured", "plain", "structured", "x"}[r.Intn(6)], Limit: []int{0, 1000, 60000, 0, 60000, 999, 300000}[r.Intn(7)]}
 			for p := 0; p < 1+r.Intn(3); p++ {
 				part := portal.DescriptionPart{Include: randString(r, 30), Heading: []string{"", "none", "auto", "selector", "zzz"}[r.Intn(5)]}
+				if r.Intn(5) == 0 { // the text the page states
+					part.Include, part.Source, part.Path = "", []string{"jsonld", "meta"}[r.Intn(2)], []string{"description", "og:title", "x y"}[r.Intn(3)]
+				}
 				if part.Heading == "selector" {
 					part.HeadingSelector = randString(r, 10)
 				}
@@ -219,7 +222,11 @@ func TestBuildYAMLRandomChoicesAlwaysRoundTrip(t *testing.T) {
 		}
 		for _, f := range []Field{FieldTitle, FieldCompany, FieldLocation, FieldPostedAt, "bogus"} {
 			if r.Intn(2) == 0 && (f != "bogus" || r.Intn(20) == 0) {
-				c.Fields = append(c.Fields, FieldChoice{Label: f, Selector: randString(r, 40), Attribute: []string{"", "text", "datetime", "href", "href", "datetime", "text", "", "bad attr", "x:y"}[r.Intn(10)]})
+				if r.Intn(4) == 0 { // read from the page's structured data
+					c.Fields = append(c.Fields, FieldChoice{Label: f, Source: []string{"jsonld", "jsonld", "meta", "bogus"}[r.Intn(4)], Path: []string{"title", "hiringOrganization.name", "og:title", "a b", ""}[r.Intn(5)]})
+				} else {
+					c.Fields = append(c.Fields, FieldChoice{Label: f, Selector: randString(r, 40), Attribute: []string{"", "text", "datetime", "href", "href", "datetime", "text", "", "bad attr", "x:y"}[r.Intn(10)]})
+				}
 			}
 		}
 		c.ReplaceTitle = r.Intn(5) == 0 // refused unless a title field was drawn too
@@ -321,6 +328,84 @@ func TestReplaceTitleIsOffByDefaultAndNeedsTheTitleField(t *testing.T) {
 	} {
 		if _, err := BuildYAML(bad); !errors.Is(err, ErrReplaceTitleNeedsTitle) || !IsInvalid(err) {
 			t.Errorf("%s: %v", name, err)
+		}
+	}
+}
+
+// ---- structured sources (plan 186, step 10) ----
+
+func TestBuildYAMLWithStructuredFieldsAndAStructuredDescription(t *testing.T) {
+	c := Choices{
+		Fields: []FieldChoice{
+			{Label: FieldPostedAt, Source: "jsonld", Path: "datePosted"},
+			{Label: FieldCompany, Source: "jsonld", Path: "hiringOrganization"},
+			{Label: FieldTitle, Source: "meta", Path: "og:title"},
+			{Label: FieldLocation, Selector: ".place"},
+		},
+		Description: &portal.DescriptionRule{Format: "structured", Parts: []portal.DescriptionPart{{Source: "jsonld", Path: "description", CutAfter: []string{"Similar jobs"}}}},
+	}
+	text, err := BuildYAML(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"source: jsonld", "path: hiringOrganization", "source: meta", "path: og:title", "selector: .place", "descriptionRule:"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("missing %q in\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "selector: \"\"") || strings.Contains(text, "selector: ''") {
+		t.Errorf("a structured field must not carry an empty selector:\n%s", text)
+	}
+	req, err := portal.BuildJobDetailCrawlRequestFromYAML(text)
+	if err != nil || !req.UsesStructured() {
+		t.Fatalf("the save route's reader: %v", err)
+	}
+	back, lossy, err := ParseYAML(text)
+	if err != nil || len(lossy) != 0 || len(back.Fields) != 4 || back.Fields[0].Source != "meta" || back.Fields[1].Path != "hiringOrganization" {
+		t.Fatalf("read back: %+v %v %v", back, lossy, err)
+	}
+	if again, err := BuildYAML(back); err != nil || again != text {
+		t.Errorf("not stable: %v\n%s", err, again)
+	}
+}
+
+func TestBuildYAMLRefusesBadStructuredChoices(t *testing.T) {
+	for name, f := range map[string]FieldChoice{
+		"selector as well":  {Label: FieldTitle, Source: "jsonld", Path: "title", Selector: "h1"},
+		"attribute as well": {Label: FieldTitle, Source: "jsonld", Path: "title", Attribute: "href"},
+		"path only":         {Label: FieldTitle, Path: "title"},
+		"source only":       {Label: FieldTitle, Source: "jsonld"},
+		"unknown source":    {Label: FieldTitle, Source: "microdata", Path: "title"},
+		"bad path":          {Label: FieldTitle, Source: "jsonld", Path: "a b"},
+		"meta path in json": {Label: FieldTitle, Source: "jsonld", Path: "og:title"},
+	} {
+		_, err := BuildYAML(Choices{DescriptionSelector: "#d", Fields: []FieldChoice{f}})
+		if err == nil || !IsInvalid(err) {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}
+
+func TestStructuredSuggestionsCarryThePathAWholeFieldReads(t *testing.T) {
+	p := Page{Structured: Structured{
+		JSONLD: []JobPosting{{Title: "T", Company: "C", Location: "L", DatePosted: "2026-10-28", DescriptionChars: 900, DescriptionPrev: "Build things"}},
+		Meta:   Meta{OgTitle: "T - C"},
+	}}
+	paths := map[string]string{}
+	for _, s := range StructuredSuggestions(p) {
+		paths[string(s.Field)+"|"+s.Source] = s.Path
+	}
+	want := map[string]string{"title|jsonld": "title", "company|jsonld": "hiringOrganization", "location|jsonld": "jobLocation", "postedAt|jsonld": "datePosted", "description|jsonld": "description", "title|meta": "og:title"}
+	for k, v := range want {
+		if paths[k] != v {
+			t.Errorf("%s: %q, want %q", k, paths[k], v)
+		}
+	}
+	// no description hint when the page states none
+	p.Structured.JSONLD[0].DescriptionChars = 0
+	for _, s := range StructuredSuggestions(p) {
+		if s.Field == FieldDescription {
+			t.Error("a description hint without a stated description")
 		}
 	}
 }

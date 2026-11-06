@@ -1,7 +1,7 @@
 {
   "slug": "browser",
   "name": "Browser",
-  "version": "0.0.222",
+  "version": "0.0.223",
   "authors": [
     { "name": "Anes Detit", "email": "tafa.andet@googlemail.com" }
   ],
@@ -71,6 +71,11 @@
     {
       "method": "POST",
       "path_suffix": "fetch-detail-candidates",
+      "required_scope": "tool:browser:crawl"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "capabilities",
       "required_scope": "tool:browser:crawl"
     },
     {
