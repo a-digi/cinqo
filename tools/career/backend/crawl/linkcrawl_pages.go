@@ -60,6 +60,9 @@ var fetchPageLinks = fetchPageLinksViaCore
 
 func fetchPageLinksViaCore(ctx context.Context, coreURL, accessToken, pageURL, portalID, requestID string) (pageLinks, error) {
 	fields := map[string]string{"url": pageURL, "rateLimitKey": portalID}
+	if id := keptLoginFrom(ctx); id != "" {
+		fields["loginSessionId"] = id // plan 195: the kept login of a link that needs a login
+	}
 	if requestID != "" {
 		fields["requestId"] = requestID // a crawl run: its phases are readable and crawl-cancel reaches the page load
 	}
@@ -133,6 +136,9 @@ func decodeLinkCrawlBody(w http.ResponseWriter, r *http.Request, v any) bool {
 // loadingContext is what a handler that LOADS a page needs, checked in one place.
 type loadingContext struct {
 	coreURL, token, linkURL, portalID string
+	// sessionID is the kept login of a link that needs a login ("" for any other link): its pages are loaded with it (plan 195, step 4).
+	sessionID string
+	linkID    string
 }
 
 // checkLoading enforces, for a request that loads a page: a session, the core address, a known link, no login link, and
@@ -163,9 +169,13 @@ func checkLoading(w http.ResponseWriter, r *http.Request, portalLinkID string) (
 		portal.WritePortalLinkAwareError(w, "read the link", err)
 		return lc, false
 	}
+	lc.linkID = portalLinkID
 	if requiresLogin {
-		http.Error(w, portal.ErrLinkRulesLogin.Error(), http.StatusBadRequest)
-		return lc, false
+		// A login link may use the link crawler only with a login kept in the Browser tool (plan 195, step 4).
+		if lc.sessionID = portal.KeptLoginFor(portalLinkID); lc.sessionID == "" {
+			http.Error(w, portal.ErrLinkRulesLogin.Error(), http.StatusBadRequest)
+			return lc, false
+		}
 	}
 	if err := requireKatanaSelected(r.Context(), lc.coreURL, lc.token); err != nil {
 		code := codeEngineUnknown
@@ -249,8 +259,9 @@ func LinkCrawlCandidatesHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	res, err := fetchPageLinks(r.Context(), lc.coreURL, lc.token, page, lc.portalID, "")
+	res, err := fetchPageLinks(withKeptLogin(r.Context(), lc.sessionID), lc.coreURL, lc.token, page, lc.portalID, "")
 	if err != nil {
+		noteLoginVerdict(lc.linkID, err)
 		writeFetchFailure(w, err)
 		return
 	}
@@ -424,8 +435,9 @@ func LinkCrawlTestHandler(w http.ResponseWriter, r *http.Request) {
 		if _, err := ownSitePage(lc.linkURL, pageURL); err != nil {
 			return linkrule.Page{}, err
 		}
-		res, err := fetchPageLinks(ctx, lc.coreURL, lc.token, pageURL, lc.portalID, "")
+		res, err := fetchPageLinks(withKeptLogin(ctx, lc.sessionID), lc.coreURL, lc.token, pageURL, lc.portalID, "")
 		if err != nil {
+			noteLoginVerdict(lc.linkID, err)
 			return linkrule.Page{}, err
 		}
 		return linkrule.Page{FinalURL: res.FinalURL, Title: res.Title, Links: res.Links}, nil

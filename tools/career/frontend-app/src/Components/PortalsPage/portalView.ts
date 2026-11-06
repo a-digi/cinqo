@@ -8,6 +8,7 @@ export interface ViewLink {
   // Plan 190: what the job list needs depends on the engine in use (a rule under Katana).
   linkRules?: unknown
   requiresLogin?: boolean
+  loginSession?: string
   lastCrawledAt?: string | null
 }
 
@@ -29,7 +30,7 @@ export function portalViewNumbers(links: ViewLink[], engine: EngineReading = nul
   for (const l of links) {
     if (
       hasListingFor(
-        { crawlInstructions: l.crawlInstructions, linkRules: (l.linkRules ?? null) as never, requiresLogin: l.requiresLogin },
+        { crawlInstructions: l.crawlInstructions, linkRules: (l.linkRules ?? null) as never, requiresLogin: l.requiresLogin, loginSession: l.loginSession },
         engine,
       )
     )

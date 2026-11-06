@@ -161,6 +161,13 @@ func runJobDetailCrawlNow(ctx context.Context, runID, portalLinkID string, targe
 		return
 	}
 	var login *loginRun
+	// plan 195 (step 4): with a kept login the engine reads the job pages itself, so no login window opens.
+	if requiresLogin {
+		if kept := keptLoginForRun(ctx, coreURL, accessToken, portalLinkID); kept != "" {
+			ctx = withKeptLoginFor(ctx, portalLinkID, kept)
+			requiresLogin = false
+		}
+	}
 	if requiresLogin {
 		linkURL, uerr := portal.GetPortalLinkURL(portalLinkID)
 		if uerr != nil {
@@ -214,6 +221,12 @@ func runJobDetailCrawlNow(ctx context.Context, runID, portalLinkID string, targe
 				_ = appendCrawlRunLog(runID, "cancelled")
 				return
 			}
+			// plan 195: the site no longer accepts the kept login: every other job would meet the same login page, so the run stops here.
+			var le *loginExpiredError
+			if errors.As(err, &le) {
+				fail(le)
+				return
+			}
 			skipped++
 			_ = appendCrawlRunLog(runID, fmt.Sprintf("skipped %q: %v", label, err))
 			continue
@@ -254,7 +267,8 @@ func crawlOneJobDetail(ctx context.Context, coreURL, portalID, runID, accessToke
 		RequestID      string `json:"requestId"`
 		RateLimitKey   string `json:"rateLimitKey"`
 		UseLoginWindow bool   `json:"useLoginWindow,omitempty"`
-	}{CrawlRequest: req, URL: target.SourceURL, RequestID: runID, RateLimitKey: portalID, UseLoginWindow: useLoginWindow}
+		LoginSessionID string `json:"loginSessionId,omitempty"` // plan 195: the link's kept login ("" for any other link)
+	}{CrawlRequest: req, URL: target.SourceURL, RequestID: runID, RateLimitKey: portalID, UseLoginWindow: useLoginWindow, LoginSessionID: keptLoginFrom(ctx)}
 	pagBody, err := json.Marshal(pagRequest)
 	if err != nil {
 		_ = jobs.MarkJobDetailCrawlFailed(target.ID)
@@ -268,6 +282,12 @@ func crawlOneJobDetail(ctx context.Context, coreURL, portalID, runID, accessToke
 		}
 		// plan 182: a login wanted again is not a failure of this job: the run waits for the person and tries it once more.
 		if isLoginRequiredErr(err) {
+			return false, err
+		}
+		// plan 195: the site no longer accepts the kept login: not a failure of this job either; the link is marked and the caller stops.
+		var le *loginExpiredError
+		if errors.As(err, &le) {
+			noteLoginExpired(ctx, err)
 			return false, err
 		}
 		// A harder failure than "extraction ran but came back empty"

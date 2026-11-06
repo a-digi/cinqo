@@ -207,6 +207,9 @@ type paginatedCrawlRequest struct {
 	// DescriptionRule (plan 186): read the job description by a rule next to Fields (description_rule.go). Flat mode
 	// only: not with Container or UseLoginWindow.
 	DescriptionRule *descriptionRule `json:"descriptionRule,omitempty"`
+	// LoginSessionID (plan 195, step 4): read the page(s) with a kept login in an isolated tab (login_session_fetch.go). Needs url. Set by
+	// the Career tool for a link that needs a login, never by an AI tool.
+	LoginSessionID string `json:"loginSessionId,omitempty"`
 }
 
 // PaginatedCrawlHandler handles POST /crawl-paginated — the --mcp
@@ -281,7 +284,18 @@ func PaginatedCrawlHandler(w http.ResponseWriter, r *http.Request) {
 		pageHTML []string
 		err      error
 	)
-	if body.UseLoginWindow {
+	if body.LoginSessionID != "" {
+		if err := checkLoginSessionID(body.LoginSessionID); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if body.URL == "" || body.UseLoginWindow || body.AIContextID != "" || body.Container != "" {
+			http.Error(w, "loginSessionId needs url and cannot be combined with useLoginWindow, aiContextId or container", http.StatusBadRequest)
+			return
+		}
+		args := paginatedArgs{body.Container, body.Fields, body.Mapping, body.NextSelector, body.RequestedMaxPages, body.EffectiveMaxPages, captureHTML, body.RequestID, body.RateLimitKey, aiDeadline(body.RequestID, time.Now()), body.DescriptionRule}
+		result, pageHTML, err = performPaginatedCrawlWithKeptLoginFn(withLoginSession(r.Context(), body.LoginSessionID), body.URL, args)
+	} else if body.UseLoginWindow {
 		// Plan 182: in the login window the person logged in to for this run, never on the headless session.
 		if body.RequestID == "" {
 			http.Error(w, "requestId is required with useLoginWindow", http.StatusBadRequest)
@@ -324,6 +338,9 @@ func PaginatedCrawlHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(result)
 }
+
+// performPaginatedCrawlWithKeptLoginFn is behind a variable so a test can script the call without a browser.
+var performPaginatedCrawlWithKeptLoginFn = performPaginatedCrawlWithKeptLogin
 
 // runPaginatedCrawlLoop is the actual multi-page loop — extracted
 // (verbatim, no behavior change) so it can run against EITHER the

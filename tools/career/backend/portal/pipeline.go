@@ -155,6 +155,7 @@ func loadPipelineRows(method string) ([]pipelineRow, map[string]string, map[stri
 		        COALESCE(TRIM(crawl_instructions), '') <> '',
 		        COALESCE(TRIM(link_rules), '') <> '',
 		        requires_login,
+		        login_session_id <> '' AND login_session_state <> 'expired',
 		        COALESCE(TRIM(job_detail_crawl_instructions), '') <> '',
 		        listing_crawl_requested, job_detail_instructions_ai_requested, job_detail_crawl_requested,
 		        jobs_question_asked_at IS NOT NULL AND jobs_question_asked_at <> ''
@@ -164,10 +165,15 @@ func loadPipelineRows(method string) ([]pipelineRow, map[string]string, map[stri
 	}
 	for rows.Next() {
 		var l pipelineRow
-		var ai, rule, login, detail, listingReq, detailAIReq, detailCrawlReq, question bool
-		if err := rows.Scan(&l.id, &ai, &rule, &login, &detail, &listingReq, &detailAIReq, &detailCrawlReq, &question); err != nil {
+		var ai, rule, login, kept, detail, listingReq, detailAIReq, detailCrawlReq, question bool
+		if err := rows.Scan(&l.id, &ai, &rule, &login, &kept, &detail, &listingReq, &detailAIReq, &detailCrawlReq, &question); err != nil {
 			rows.Close()
 			return nil, nil, nil, err
+		}
+		// Plan 195, step 4: under Katana (method "links") a link with a kept login is judged like a link that needs no login: it has a rule and
+		// its job details are picked, not written by the AI. Under any other reading it stays a login link (AI instructions, the window).
+		if login && kept && method == CrawlMethodLinks {
+			login = false
 		}
 		l.requiresLogin = login
 		l.snap = PipelineSnapshot{

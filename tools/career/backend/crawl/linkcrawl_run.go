@@ -29,14 +29,17 @@ func linkCrawlSelected(ctx context.Context, coreURL, accessToken, portalLinkID s
 	if err != nil {
 		return false, err
 	}
-	if needsLogin {
+	// A link that needs a login is read with the link crawler only when the engine uses a kept login and the link has one (plan 195, step 4);
+	// otherwise it keeps the AI instructions and the login window.
+	kept := needsLogin && portal.KeptLoginFor(portalLinkID) != ""
+	if needsLogin && !kept {
 		return false, nil
 	}
 	engine, err := readBrowserEngine(ctx, coreURL, accessToken)
 	if err != nil {
 		return false, errBrowserEngineUnknown
 	}
-	if instruction.ListingMethodFor(engine, false) != instruction.MethodLinks {
+	if instruction.ListingMethodForLink(engine, needsLogin, kept) != instruction.MethodLinks {
 		return false, nil
 	}
 	settings, err := portal.GetLinkCrawlSettings(portalLinkID)
@@ -73,7 +76,7 @@ func checkLinkCrawlStart(ctx context.Context, coreURL, accessToken, portalLinkID
 	if err != nil {
 		return err
 	}
-	if needsLogin {
+	if needsLogin && portal.KeptLoginFor(portalLinkID) == "" {
 		return portal.ErrLinkRulesLogin
 	}
 	return requireKatanaSelected(ctx, coreURL, accessToken)
@@ -157,6 +160,7 @@ func runLinkCrawl(ctx context.Context, runID, portalLinkID, accessToken, coreURL
 		fail(err)
 		return
 	}
+	keptLogin := portal.KeptLoginFor(portalLinkID) // plan 195, step 4: "" for a link that needs no login
 
 	pageNo := 0
 	fetch := func(fctx context.Context, pageURL string) (linkrule.Page, error) {
@@ -167,9 +171,10 @@ func runLinkCrawl(ctx context.Context, runID, portalLinkID, accessToken, coreURL
 		}
 		_ = setCrawlRunPhase(runID, "navigating", fmt.Sprintf("page %d: %s", pageNo, pageURL))
 		stopPoll := pollBrowserPhase(fctx, coreURL, runID, accessToken)
-		res, err := fetchPageLinks(fctx, coreURL, accessToken, pageURL, portalID, runID)
+		res, err := fetchPageLinks(withKeptLogin(fctx, keptLogin), coreURL, accessToken, pageURL, portalID, runID)
 		stopPoll()
 		if err != nil {
+			noteLoginVerdict(portalLinkID, err)
 			return linkrule.Page{}, err
 		}
 		_ = appendCrawlRunLog(runID, fmt.Sprintf("page %d loaded: %d link(s) on it", pageNo, len(res.Links)))

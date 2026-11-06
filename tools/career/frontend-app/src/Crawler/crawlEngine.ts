@@ -33,9 +33,22 @@ export function aiTriesListing(engine: EngineReading, requiresLogin: boolean): b
   return engineFor(engine).aiTriesListing(requiresLogin)
 }
 
+// needsLoginWindow (plan 195, step 4): whether a link still needs the login window and the AI instructions path. A link that needs a login
+// does not when the engine reads it with a login kept in the Browser tool (Katana) and the link has one that is still valid. Pass this, not
+// link.requiresLogin, to every function above that takes requiresLogin. Auto-discovery of a login link stays manual-only either way.
+export function needsLoginWindow(engine: EngineReading, link: { requiresLogin?: boolean; loginSession?: string }): boolean {
+  if (link.requiresLogin !== true) return false
+  return !(engineFor(engine).usesKeptLogin === true && link.loginSession === 'valid')
+}
+
 // Whether the link has what its job list needs under the engine in use.
 export function hasListingFor(link: LinkFacts, engine: EngineReading): boolean {
-  return engineFor(engine).hasListing(link)
+  return engineFor(engine).hasListing(withEffectiveLogin(link, engine))
+}
+
+// The facts the engine judges by: a link with a kept login that the engine reads is no login link for it (plan 195, step 4).
+function withEffectiveLogin(link: LinkFacts, engine: EngineReading): LinkFacts {
+  return { ...link, requiresLogin: needsLoginWindow(engine, link) }
 }
 
 const ENGINE_BASE = '/api/v1/tools/career/proxy/portal-links/crawl-engine'
@@ -51,7 +64,7 @@ export async function fetchCrawlEngine(signal?: AbortSignal): Promise<CrawlEngin
 // Plan 191: under Katana the Job details modal is the picker, which works on a real job page of the link, so it opens only for a link that
 // has a crawled job; the engine decides (Rod, a login link and an engine not known yet stay open).
 export function jobDetailsModalAccess(engine: EngineReading, link: LinkFacts): JobDetailsAccess {
-  return engineFor(engine).jobDetailsAccess(link)
+  return engineFor(engine).jobDetailsAccess(withEffectiveLogin(link, engine))
 }
 
 export const JOB_DETAILS_PILL = 'Crawl jobs first'

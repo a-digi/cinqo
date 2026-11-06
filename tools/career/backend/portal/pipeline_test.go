@@ -294,3 +294,48 @@ func TestPipelineJudgesTheJobListByTheEnginesMethod(t *testing.T) {
 		}
 	}
 }
+
+// Plan 195, step 4: under Katana a link with a kept login is judged like any other link (a rule is its listing instructions); under another
+// reading, or after the login expired, it stays a login link.
+func TestPipelineJudgesAKeptLoginLinkByTheEngine(t *testing.T) {
+	loginSetup(t)
+	link := newLinkOn(t, "https://x.example/jobs")
+	yes := true
+	if err := UpdatePortalLinkAutoDiscoveryEnabled(link, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := UpdatePortalLinkLogin(link, &yes, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SetLinkLoginSession(link, "0123456789abcdef0123456789abcdef"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.JobsDB.Exec(`UPDATE portal_links SET link_rules = '{"host":"x.example","include":["x.example/*"]}' WHERE id = ?`, link); err != nil {
+		t.Fatal(err)
+	}
+	has := func(method string) bool {
+		rows, _, _, err := loadPipelineRows(method)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, r := range rows {
+			if r.id == link {
+				return r.snap.HasListingInstructions
+			}
+		}
+		t.Fatal("link not found")
+		return false
+	}
+	if !has(CrawlMethodLinks) {
+		t.Error("Katana + kept login: the rule is the listing instructions")
+	}
+	if has(CrawlMethodInstructions) {
+		t.Error("another reading: a login link counts its AI instructions only")
+	}
+	if err := MarkLoginSessionExpired(link); err != nil {
+		t.Fatal(err)
+	}
+	if has(CrawlMethodLinks) {
+		t.Error("an expired login is a login link again")
+	}
+}

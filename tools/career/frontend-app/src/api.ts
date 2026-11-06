@@ -456,6 +456,9 @@ export interface PortalLink {
   // opens for each crawl), and the page to start at ('' = the link's own address). Always sent by the backend.
   requiresLogin: boolean
   loginUrl: string
+  // loginSession (plan 195, step 4): whether a login kept in the Browser tool is available for this link ('none', 'valid', 'expired'). Never
+  // the session itself. Always sent by the backend.
+  loginSession: 'none' | 'valid' | 'expired'
   // linkRules (plan 185): the link crawler's rule (null = none). Which of the rule and the AI instructions a link is crawled with is decided
   // by the Browser's selected engine (plan 190), not by a stored choice: the backend still stores and sends a crawl method, nothing reads it.
   linkRules: LinkRule | null

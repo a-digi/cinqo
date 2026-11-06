@@ -41,10 +41,9 @@ func RecrawlOneJob(ctx context.Context, t jobs.RecrawlTarget, token string) (sav
 	}
 	// plan 182: a single recrawl runs unattended (no person to log in), so a link that needs a login is refused, never crawled
 	// on the headless tab where it would read the login page.
-	if needs, _, lerr := portal.GetPortalLinkLogin(t.PortalLinkID); lerr != nil {
+	needsLogin, _, lerr := portal.GetPortalLinkLogin(t.PortalLinkID)
+	if lerr != nil {
 		return false, lerr
-	} else if needs {
-		return false, &NotPossibleError{"this portal needs a login: use \"Crawl job details now\" on its link, which opens a login window"}
 	}
 	portalID, err := portal.GetPortalIDForLink(t.PortalLinkID)
 	if err != nil {
@@ -53,6 +52,15 @@ func RecrawlOneJob(ctx context.Context, t jobs.RecrawlTarget, token string) (sav
 	coreURL, err := coreAPIURL()
 	if err != nil {
 		return false, err
+	}
+	// plan 195 (step 4): with a kept login (and an engine that uses it) a login link is recrawled like any other, the Browser tool sending the
+	// session; without one it stays refused.
+	if needsLogin {
+		kept := keptLoginForRun(ctx, coreURL, token, t.PortalLinkID)
+		if kept == "" {
+			return false, &NotPossibleError{"this portal needs a login: keep the login (tick \"Keep this login\" when you log in) with Katana selected, or use \"Crawl job details now\" on its link, which opens a login window"}
+		}
+		ctx = withKeptLoginFor(ctx, t.PortalLinkID, kept)
 	}
 	// A request id of its own: the Browser tool tracks and can cancel a call by it. There is no crawl_runs row under it, so the
 	// phase updates the poller writes find nothing to update.

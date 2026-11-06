@@ -808,6 +808,10 @@ func callBrowserProxy(ctx context.Context, coreURL, path string, body []byte, ac
 			if cfErr.Code == "crawl_cancelled_by_user" {
 				return nil, fmt.Errorf("%w: %s", errCrawlCancelledByUser, cfErr.Message)
 			}
+			// plan 195: the site no longer accepts the link's kept login (never worded as a Cloudflare block).
+			if cfErr.Code == codeLoginExpired {
+				return nil, &loginExpiredError{Message: cfErr.Message}
+			}
 			reasonSuffix := ""
 			if cfErr.Reason != "" {
 				reasonSuffix = fmt.Sprintf(" (%s)", cfErr.Reason)

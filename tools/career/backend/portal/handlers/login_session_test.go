@@ -197,8 +197,9 @@ func TestTheLinkListNeverCarriesTheSessionId(t *testing.T) {
 	sessionCall(http.MethodPut, "/portal-links/login-session", `{"linkId":"`+link+`","sessionId":"`+sessA+`"}`)
 	portals, _ := portal.ListPortals()
 	raw, _ := json.Marshal(portals)
-	if strings.Contains(string(raw), sessA) || strings.Contains(strings.ToLower(string(raw)), "session") {
-		t.Errorf("the portal list mentions the session: %s", raw)
+	// Only the state label ("loginSession": none/valid/expired) is shown, never the id (plan 195, step 4).
+	if strings.Contains(string(raw), sessA) || strings.Contains(string(raw), "sessionId") || !strings.Contains(string(raw), `"loginSession":"valid"`) {
+		t.Errorf("the portal list must show the state of the kept login and never its id: %s", raw)
 	}
 	_ = db.JobsDB
 }

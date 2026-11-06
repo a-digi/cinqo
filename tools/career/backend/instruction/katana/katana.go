@@ -30,6 +30,9 @@ func (engine) RegisterTools(server *mcp.Server) { registerTools(server) }
 // ListingMethod: the link crawler's rule.
 func (engine) ListingMethod() string { return instruction.MethodLinks }
 
+// UsesKeptLogin: Katana reads a link that needs a login with a login kept in the Browser tool (plan 195, step 4).
+func (engine) UsesKeptLogin() bool { return true }
+
 // HasListing: a link that needs no login is instructed when it has a rule; a login link is read with its AI instructions, in the login
 // window, under every engine.
 func (engine) HasListing(link instruction.LinkFacts) bool {

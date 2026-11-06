@@ -9,7 +9,11 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"time"
 
+	"github.com/chromedp/cdproto/cdp"
+	"github.com/chromedp/cdproto/network"
+	"github.com/chromedp/chromedp"
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/proto"
 
@@ -73,9 +77,9 @@ func checkLoginSessionID(id string) error {
 	return nil
 }
 
-// sessionCookiesFor opens the session of ctx (if any) for rawURL's host and returns the cookies to set in the fetch's tab, or a verdict
-// (*crawlError) when the session cannot be used. No session in ctx: nil, nil.
-func sessionCookiesFor(ctx context.Context, rawURL string) ([]*proto.NetworkCookieParam, error) {
+// openSessionFor opens the session of ctx (if any) for rawURL's host and returns its live cookies, or a verdict (*crawlError) when the
+// session cannot be used. No session in ctx: nil, nil.
+func openSessionFor(ctx context.Context, rawURL string) ([]shared.SessionCookie, error) {
 	id := loginSessionFrom(ctx)
 	if id == "" {
 		return nil, nil
@@ -99,6 +103,15 @@ func sessionCookiesFor(ctx context.Context, rawURL string) ([]*proto.NetworkCook
 	}
 	if len(cookies) == 0 {
 		return nil, newLoginExpiredError("the kept login has no live cookie left")
+	}
+	return cookies, nil
+}
+
+// sessionCookiesFor is openSessionFor in the shape Katana's tab (rod) takes.
+func sessionCookiesFor(ctx context.Context, rawURL string) ([]*proto.NetworkCookieParam, error) {
+	cookies, err := openSessionFor(ctx, rawURL)
+	if err != nil || cookies == nil {
+		return nil, err
 	}
 	params := make([]*proto.NetworkCookieParam, 0, len(cookies))
 	for _, c := range cookies {
@@ -200,4 +213,116 @@ func crawlWithKeptLogin(w http.ResponseWriter, r *http.Request, body crawlReques
 	}
 	setCrawlPhase(body.RequestID, phaseCompleted, "HTML crawled with a kept login")
 	writeFetchLinksJSON(w, http.StatusOK, result)
+}
+
+// --- the paginated crawl with a kept login (plan 195, step 4) ---
+
+// performPaginatedCrawlWithKeptLogin is POST /crawl-paginated for a request that names a kept login (a link's job-detail crawl, one page, or a
+// list). The page is read in an ISOLATED worker tab (a browser context of its own, thrown away afterwards), with the session's cookies set
+// before the first navigation; the normal paginated loop then extracts exactly as for any page. No cache, no headed fallback, no login window.
+// A login form on a page means the site refused the session (login_expired). parent carries the session id (withLoginSession).
+func performPaginatedCrawlWithKeptLogin(parent context.Context, rawURL string, args paginatedArgs) (paginatedCrawlResponse, []string, error) {
+	id := loginSessionFrom(parent)
+	cookies, verdict := openSessionFor(parent, rawURL)
+	if verdict != nil {
+		return paginatedCrawlResponse{}, nil, verdict
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return paginatedCrawlResponse{}, nil, err
+	}
+
+	reqCtx, reqCancel := context.WithCancel(parent)
+	registerCrawlCancel(args.requestID, reqCancel)
+	defer func() {
+		unregisterCrawlCancel(args.requestID)
+		reqCancel()
+	}()
+
+	awaitPortalCrawlPacing(reqCtx, args.rateLimitKey)
+	if reqCtx.Err() != nil {
+		return paginatedCrawlResponse{}, nil, newCrawlCancelledError()
+	}
+	setCrawlPhase(args.requestID, phaseQueuedForTab, "waiting for a free browser tab")
+	tabCtx, release, err := shared.AcquireIsolatedWorkerTab(reqCtx)
+	if err != nil {
+		if reqCtx.Err() != nil {
+			return paginatedCrawlResponse{}, nil, newCrawlCancelledError()
+		}
+		return paginatedCrawlResponse{}, nil, err
+	}
+	defer release()
+
+	timeout := paginatedCrawlTimeout
+	if args.rateLimitKey != "" {
+		timeout = paginatedCrawlTimeoutWithPacing
+	}
+	ctx, cancel := context.WithTimeout(tabCtx, timeout)
+	defer cancel()
+	linkRequestCancel(reqCtx, ctx, cancel, tabCtx)
+
+	if err := chromedp.Run(ctx, chromedp.ActionFunc(func(c context.Context) error {
+		for _, k := range cookies {
+			set := network.SetCookie(k.Name, k.Value).WithDomain(k.Domain).WithPath(k.Path).WithSecure(k.Secure).WithHTTPOnly(k.HTTPOnly)
+			if k.Expires > 0 {
+				exp := cdp.TimeSinceEpoch(time.Unix(int64(k.Expires), 0))
+				set = set.WithExpires(&exp)
+			}
+			switch strings.ToLower(k.SameSite) {
+			case "strict":
+				set = set.WithSameSite(network.CookieSameSiteStrict)
+			case "lax":
+				set = set.WithSameSite(network.CookieSameSiteLax)
+			case "none":
+				set = set.WithSameSite(network.CookieSameSiteNone)
+			}
+			if err := set.Do(c); err != nil {
+				return errors.New("could not set the kept login in the page")
+			}
+		}
+		return nil
+	})); err != nil {
+		return paginatedCrawlResponse{}, nil, classifyCancellation(err, reqCtx, tabCtx)
+	}
+
+	signals := watchChallengeSignals(ctx)
+	setCrawlPhase(args.requestID, phaseNavigating, "navigating to "+rawURL+" (kept login)")
+	if err := navigateWithHangGuard(ctx, release, chromedp.Navigate(rawURL), chromedp.Sleep(SettleDelay)); err != nil {
+		return paginatedCrawlResponse{}, nil, classifyCancellation(err, reqCtx, tabCtx)
+	}
+	resp, pageHTML, err := runPaginatedCrawlLoop(ctx, loopTab{
+		signals:  signals,
+		autoWait: cloudflareAutoWait,
+		checkPage: func(c context.Context) error {
+			page, ierr := shared.InspectPage(c)
+			if ierr != nil {
+				return ierr
+			}
+			if page.PasswordField {
+				_ = shared.MarkLoginSessionExpired(id)
+				return newLoginExpiredError("the page shows a login form")
+			}
+			return nil
+		},
+	}, args)
+	if err != nil {
+		return paginatedCrawlResponse{}, nil, classifyCancellation(err, reqCtx, tabCtx)
+	}
+	// A good read: record it and write back the cookies the site changed (best effort).
+	_ = shared.MarkLoginSessionOK(id)
+	var fresh []shared.SessionCookie
+	_ = chromedp.Run(ctx, chromedp.ActionFunc(func(c context.Context) error {
+		got, gerr := network.GetCookies().WithURLs([]string{rawURL}).Do(c)
+		if gerr != nil {
+			return gerr
+		}
+		for _, k := range got {
+			fresh = append(fresh, shared.SessionCookie{Name: k.Name, Value: k.Value, Domain: k.Domain, Path: k.Path, Secure: k.Secure, HTTPOnly: k.HTTPOnly, SameSite: string(k.SameSite), Expires: k.Expires})
+		}
+		return nil
+	}))
+	if len(fresh) > 0 {
+		_, _ = shared.RefreshLoginSessionCookies(id, u.Hostname(), fresh)
+	}
+	return resp, pageHTML, nil
 }

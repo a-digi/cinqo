@@ -147,6 +147,9 @@ type portalLink struct {
 	// logs in on ("" = the link's own address). Settings of the link only: nothing about a login is stored. Always present in the JSON.
 	RequiresLogin bool   `json:"requiresLogin"`
 	LoginURL      string `json:"loginUrl"`
+	// LoginSession (plan 195, step 4) says whether a login kept in the Browser tool is available for this link: "none", "valid" or
+	// "expired". Never the session itself or its id. Always present in the JSON.
+	LoginSession string `json:"loginSession"`
 	// CrawlMethod and LinkRules (plan 185, step 4): how this link's listing is crawled ("instructions" = the AI-written selectors, the
 	// default; "links" = the link crawler) and the link crawler's rule (null = none). See link_rules.go. Always present in the JSON.
 	CrawlMethod string         `json:"crawlMethod"`
@@ -363,7 +366,7 @@ func ListPortals() ([]portal, error) {
 	}
 
 	linkRows, err := db.JobsDB.Query(
-		`SELECT id, portal_id, url, title, crawl_instructions, job_detail_crawl_instructions, instructions_ai_error, instructions_ai_error_at, instructions_ai_conversation_id, job_detail_instructions_ai_error, job_detail_instructions_ai_error_at, job_detail_instructions_ai_conversation_id, listing_crawl_requested, job_detail_instructions_ai_requested, instructions_ai_error_dismissed_at, job_detail_instructions_ai_error_dismissed_at, job_detail_crawl_requested, auto_discovery_enabled, auto_discovery_interval_minutes, auto_discovery_last_run_at, jobs_question_asked_at, jobs_question_note, ai_platform_id, ai_model, requires_login, login_url, created_at, updated_at
+		`SELECT id, portal_id, url, title, crawl_instructions, job_detail_crawl_instructions, instructions_ai_error, instructions_ai_error_at, instructions_ai_conversation_id, job_detail_instructions_ai_error, job_detail_instructions_ai_error_at, job_detail_instructions_ai_conversation_id, listing_crawl_requested, job_detail_instructions_ai_requested, instructions_ai_error_dismissed_at, job_detail_instructions_ai_error_dismissed_at, job_detail_crawl_requested, auto_discovery_enabled, auto_discovery_interval_minutes, auto_discovery_last_run_at, jobs_question_asked_at, jobs_question_note, ai_platform_id, ai_model, requires_login, login_url, login_session_id, login_session_state, created_at, updated_at
 		 FROM portal_links ORDER BY created_at ASC`,
 	)
 	if err != nil {
@@ -376,9 +379,11 @@ func ListPortals() ([]portal, error) {
 		var title, crawlInstructions, jobDetailCrawlInstructions, instructionsAIError, instructionsAIErrorAt, instructionsAIConversationID, jobDetailInstructionsAIError, jobDetailInstructionsAIErrorAt, jobDetailInstructionsAIConversationID, instructionsAIErrorDismissedAt, jobDetailInstructionsAIErrorDismissedAt, updatedAt sql.NullString
 		var autoDiscoveryIntervalMinutes, autoDiscoveryLastRunAt sql.NullInt64
 		var jobsQuestionAskedAt, jobsQuestionNote sql.NullString
-		if err := linkRows.Scan(&l.ID, &l.PortalID, &l.URL, &title, &crawlInstructions, &jobDetailCrawlInstructions, &instructionsAIError, &instructionsAIErrorAt, &instructionsAIConversationID, &jobDetailInstructionsAIError, &jobDetailInstructionsAIErrorAt, &jobDetailInstructionsAIConversationID, &l.ListingCrawlRequested, &l.JobDetailInstructionsAIRequested, &instructionsAIErrorDismissedAt, &jobDetailInstructionsAIErrorDismissedAt, &l.JobDetailCrawlRequested, &l.AutoDiscoveryEnabled, &autoDiscoveryIntervalMinutes, &autoDiscoveryLastRunAt, &jobsQuestionAskedAt, &jobsQuestionNote, &l.AIPlatformID, &l.AIModel, &l.RequiresLogin, &l.LoginURL, &l.CreatedAt, &updatedAt); err != nil {
+		var loginSessionID, loginSessionState string
+		if err := linkRows.Scan(&l.ID, &l.PortalID, &l.URL, &title, &crawlInstructions, &jobDetailCrawlInstructions, &instructionsAIError, &instructionsAIErrorAt, &instructionsAIConversationID, &jobDetailInstructionsAIError, &jobDetailInstructionsAIErrorAt, &jobDetailInstructionsAIConversationID, &l.ListingCrawlRequested, &l.JobDetailInstructionsAIRequested, &instructionsAIErrorDismissedAt, &jobDetailInstructionsAIErrorDismissedAt, &l.JobDetailCrawlRequested, &l.AutoDiscoveryEnabled, &autoDiscoveryIntervalMinutes, &autoDiscoveryLastRunAt, &jobsQuestionAskedAt, &jobsQuestionNote, &l.AIPlatformID, &l.AIModel, &l.RequiresLogin, &l.LoginURL, &loginSessionID, &loginSessionState, &l.CreatedAt, &updatedAt); err != nil {
 			return nil, err
 		}
+		l.LoginSession = LoginSessionLabel(loginSessionID, loginSessionState)
 		if autoDiscoveryIntervalMinutes.Valid {
 			v := int(autoDiscoveryIntervalMinutes.Int64)
 			l.AutoDiscoveryIntervalMinutes = &v
@@ -1002,6 +1007,46 @@ func GetLinkLoginSession(linkID string) (string, error) {
 	return id, nil
 }
 
+// Login session labels, as the page reads them.
+const (
+	LoginSessionNone    = "none"
+	LoginSessionValid   = "valid"
+	LoginSessionExpired = "expired"
+)
+
+// LoginSessionLabel is the label of a link's kept login from its stored id and state: "none" without an id, "expired" after the Browser tool
+// said the site no longer accepts it, else "valid".
+func LoginSessionLabel(sessionID, state string) string {
+	switch {
+	case sessionID == "":
+		return LoginSessionNone
+	case state == LoginSessionExpired:
+		return LoginSessionExpired
+	}
+	return LoginSessionValid
+}
+
+// KeptLoginFor returns the id of the login session a crawl of this link may use: the link needs a login, has a kept login, and it is not
+// known to be expired. "" otherwise (an unknown link too). It is what makes a login link crawlable without a login window (plan 195, step 4).
+func KeptLoginFor(linkID string) string {
+	var needs int
+	var id, state string
+	if err := db.JobsDB.QueryRow(`SELECT requires_login, login_session_id, login_session_state FROM portal_links WHERE id = ?`, linkID).Scan(&needs, &id, &state); err != nil {
+		return ""
+	}
+	if needs == 0 || LoginSessionLabel(id, state) != LoginSessionValid {
+		return ""
+	}
+	return id
+}
+
+// MarkLoginSessionExpired records that the Browser tool said the site no longer accepts this link's kept login, so the page offers the login
+// again and no crawl tries the session. The session id stays (the Browser tool keeps its own record, and the person may forget it).
+func MarkLoginSessionExpired(linkID string) error {
+	_, err := db.JobsDB.Exec(`UPDATE portal_links SET login_session_state = 'expired', updated_at = datetime('now') WHERE id = ? AND login_session_id != ''`, linkID)
+	return err
+}
+
 // SetLinkLoginSession sets (a 32-character hex id) or clears ("") a link's login session id and returns the id it had before, so the caller
 // can have the Browser tool forget the replaced session. Only a link that needs a login may hold one.
 func SetLinkLoginSession(linkID, sessionID string) (previous string, err error) {
@@ -1021,7 +1066,7 @@ func SetLinkLoginSession(linkID, sessionID string) (previous string, err error) 
 			return "", ErrLoginSessionNeedsLoginLink
 		}
 	}
-	if _, err := db.JobsDB.Exec(`UPDATE portal_links SET login_session_id = ?, updated_at = datetime('now') WHERE id = ?`, sessionID, linkID); err != nil {
+	if _, err := db.JobsDB.Exec(`UPDATE portal_links SET login_session_id = ?, login_session_state = CASE WHEN ? = '' THEN '' ELSE 'valid' END, updated_at = datetime('now') WHERE id = ?`, sessionID, sessionID, linkID); err != nil {
 		return "", err
 	}
 	return previous, nil

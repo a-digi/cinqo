@@ -15,7 +15,7 @@ export function isWaitingForLogin(run: Pick<CrawlRun, 'status' | 'phase'> | null
 
 export const LOGIN_BADGE = 'Login needed'
 export const LOGIN_BADGE_TOOLTIP =
-  'This page needs you to log in. Every crawl opens a window for you to log in on the site itself, so it is never crawled automatically.'
+  'This page needs you to log in. A crawl opens a window for you to log in on the site itself (unless a login is kept for Katana), so it is never crawled automatically.'
 
 // loginBadgeFor: the badge text of a link, or null when it needs no login.
 export function loginBadgeFor(link: { requiresLogin?: boolean }): string | null {

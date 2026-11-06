@@ -35,7 +35,7 @@ const MaxLinkRulesJSON = 80 << 10
 var (
 	ErrInvalidCrawlMethod = errors.New(`crawlMethod must be "instructions" or "links"`)
 	ErrLinkRulesNeeded    = errors.New("this link has no rules for the Katana engine yet: pick its job links in the Job list rules and save the proposed pattern, or select Rod on the Browser & Engine page to crawl it with its AI instructions")
-	ErrLinkRulesLogin     = errors.New("a link that needs a login is crawled by hand only: it cannot use the link crawler")
+	ErrLinkRulesLogin     = errors.New("a link that needs a login can use the link crawler only with a kept login: log in and tick Keep this login first")
 	ErrLinkRulesHost      = errors.New("the rule's host must be the host of this link's address")
 	ErrLinkRulesInvalid   = errors.New("the rule is not valid")
 	ErrLinkRulesTooLarge  = fmt.Errorf("the rule is larger than %d bytes", MaxLinkRulesJSON)
@@ -108,7 +108,8 @@ func SaveLinkCrawlSettings(id, method string, rules *linkrule.Rule, clearRules b
 		return err
 	}
 	needsLogin := loginFlag != 0
-	if needsLogin && (rules != nil || method == CrawlMethodLinks) {
+	// A link that needs a login may use the link crawler only with a kept login (plan 195, step 4): Katana then reads it with the session.
+	if needsLogin && (rules != nil || method == CrawlMethodLinks) && KeptLoginFor(id) == "" {
 		return ErrLinkRulesLogin
 	}
 

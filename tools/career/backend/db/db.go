@@ -647,6 +647,9 @@ CREATE TABLE IF NOT EXISTS portal_links (
     requires_login                                 INTEGER NOT NULL DEFAULT 0,
     login_url                                      TEXT NOT NULL DEFAULT '',
     login_session_id                               TEXT NOT NULL DEFAULT '',
+    -- login_session_state (plan 195, step 4): what Career last learned about the kept login: '' (none), 'valid' (kept, or a crawl got through)
+    -- or 'expired' (a crawl was told by the Browser tool that the site no longer accepts it). Only a cache of the Browser tool's verdict.
+    login_session_state                            TEXT NOT NULL DEFAULT '',
     -- crawl_method / link_rules (plan 185, step 4): how this link's listing is crawled. 'instructions' (the default, what every link
     -- did before) = the AI-written selectors in crawl_instructions; 'links' = the link crawler: jobs found by the URL pattern of their
     -- links, no AI, available only while the Browser tool's engine is Katana. link_rules holds the person's rule as JSON (host, include
@@ -2572,7 +2575,8 @@ func migratePortalLinksLogin(db *sql.DB) error {
 	for _, col := range []struct{ name, def string }{
 		{"requires_login", "INTEGER NOT NULL DEFAULT 0"},
 		{"login_url", "TEXT NOT NULL DEFAULT ''"},
-		{"login_session_id", "TEXT NOT NULL DEFAULT ''"}, // plan 195, step 2: the opaque id of a session kept in the Browser tool
+		{"login_session_id", "TEXT NOT NULL DEFAULT ''"},    // plan 195, step 2: the opaque id of a session kept in the Browser tool
+		{"login_session_state", "TEXT NOT NULL DEFAULT ''"}, // plan 195, step 4: the last known state of that session
 	} {
 		exists, hasColumn, err := tableHasColumn(db, "portal_links", col.name)
 		if err != nil {

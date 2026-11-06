@@ -33,6 +33,8 @@ type scriptedBrowser struct {
 	open func(w http.ResponseWriter)
 	// onStatus runs on each status poll (before it answers), with its number.
 	onStatus func(n int)
+	// engine is what browser-settings answers as the selected engine ("" = the route is not served, like an unreachable Browser).
+	engine string
 }
 
 func (s *scriptedBrowser) seen() []string {
@@ -94,6 +96,12 @@ func startScripted(t *testing.T, s *scriptedBrowser) {
 				return
 			}
 			writeJSON(w, map[string]string{"state": state, "reason": reason})
+		case "browser-settings":
+			if s.engine == "" {
+				http.NotFound(w, r)
+				return
+			}
+			writeJSON(w, map[string]string{"fetchEngine": s.engine})
 		case "login-window/cancel":
 			s.mu.Lock()
 			s.events = append(s.events, "cancel")

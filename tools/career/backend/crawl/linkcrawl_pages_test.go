@@ -27,6 +27,7 @@ type fakeCore struct {
 	// fetchBodyFor answers a given page address with its own body (else fetchBody); failFor makes that address answer 502.
 	fetchBodyFor map[string]string
 	failFor      string
+	failBody     string   // the 502 body for failFor (default: a Cloudflare block)
 	paths        []string // every request path, in order (the core's view of what was asked)
 	// paginated answers a selector crawl (crawl-paginated) by the address it was asked for: the job-detail step.
 	paginated func(pageURL string) (status int, body string)
@@ -94,6 +95,10 @@ func newFakeCore(t *testing.T, engine string) *fakeCore {
 			f.fetches = append(f.fetches, b)
 			if f.failFor != "" && b["url"] == f.failFor {
 				w.WriteHeader(http.StatusBadGateway)
+				if f.failBody != "" {
+					_, _ = w.Write([]byte(f.failBody))
+					return
+				}
 				_, _ = w.Write([]byte(`{"code":"cloudflare_blocked","message":"blocked"}`))
 				return
 			}

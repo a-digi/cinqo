@@ -57,6 +57,7 @@ import {
   jobDetailsModalAccess,
   listingNeeds,
   mayAutoWriteJobDetails,
+  needsLoginWindow,
 } from '../crawlEngine'
 import { useCrawlEngine } from '../useCrawlEngine'
 import { useInstructionEngine } from '../engines/useInstructionEngine'
@@ -146,9 +147,11 @@ export function CrawlPanel({
   const engine = useCrawlEngine()
   const instructionEngine = useInstructionEngine()
   // The engine's own Generate recipe for the job list of a link that needs no login (Katana); undefined = the existing Generate (Rod).
-  const listingRecipe = link.requiresLogin ? undefined : instructionEngine.listingGenerate
+  // Plan 195, step 4: a link that needs a login still needs the window (and the AI-instructions path) unless this engine reads it with a kept login.
+  const loginWindow = needsLoginWindow(engine, link)
+  const listingRecipe = loginWindow ? undefined : instructionEngine.listingGenerate
   // The same for the job details (Katana): its Generate on the Job details tile, and its tools and prompt.
-  const jobDetailRecipe = link.requiresLogin ? undefined : instructionEngine.jobDetailGenerate
+  const jobDetailRecipe = loginWindow ? undefined : instructionEngine.jobDetailGenerate
   // "Crawl with AI" own busy/result state.
   const [isCrawling, setIsCrawling] = useState(false)
   const [crawlResult, setCrawlResult] = useState<{ ok: boolean; text: string; conversationId?: string } | null>(null)
@@ -378,14 +381,14 @@ export function CrawlPanel({
     // Plan 190: not before the engine is known, and not under Katana, where the job page is read by picking its data. A request left over
     // from before (or raised by the crawl's event, which knows no engine) is cleared under Katana, so that switching to Rod later does not
     // start an AI run nobody asked for.
-    if (clearsStaleJobDetailAiRequest(engine, link.requiresLogin)) {
+    if (clearsStaleJobDetailAiRequest(engine, needsLoginWindow(engine, link))) {
       if (link.jobDetailInstructionsAiRequested && !jobDetailAiClearedRef.current) {
         jobDetailAiClearedRef.current = true
         void updatePortalLink(link.id, { jobDetailInstructionsAiRequested: false }).then(onReload)
       }
       return
     }
-    if (!mayAutoWriteJobDetails(engine, link.requiresLogin)) return
+    if (!mayAutoWriteJobDetails(engine, needsLoginWindow(engine, link))) return
     // While the run of the job list goes on (under Katana it also picks the job details, in its own conversation) no second run starts; when it
     // ends without having saved them, this effect runs again and starts the separate job-detail run.
     if (aiPending || Boolean(link.instructionsAiConversationId)) return
@@ -800,7 +803,7 @@ export function CrawlPanel({
       })
     // Plan 183: a link that needs a login. The conversation exists first (its id is the login window's id), the window opens for the person,
     // and only after "I am logged in" is the attempt counted and the AI started; before that nothing is counted, so cancelling is no failure.
-    const head: Promise<Awaited<ReturnType<typeof createConversation>>> = link.requiresLogin
+    const head: Promise<Awaited<ReturnType<typeof createConversation>>> = loginWindow
       ? startAfterLogin({
           create,
           open: (id) => openAiLoginWindow(id, link),
@@ -939,7 +942,7 @@ export function CrawlPanel({
   // job_detail_crawl_instructions, never crawl_instructions.
   function handleGenerateJobDetailInstructionsWithAI(triggeredBy: 'manual' | 'auto' = 'auto') {
     // an automatic start (no person to log in) is never allowed for a link that needs a login: the server refuses it too
-    if (jobDetailAiPending || !selectedPlatform || link.requiresLogin) return
+    if (jobDetailAiPending || !selectedPlatform || loginWindow) return
     const platformId = selectedPlatform.id
     const model = selectedPlatform.models.length > 0 ? (selectedModel ?? selectedPlatform.models[0]) : undefined
     const jobDetailTools = jobDetailRecipe ? jobDetailRecipe.tools : GENERATE_JOB_DETAIL_TOOLS
@@ -975,7 +978,7 @@ export function CrawlPanel({
               conversation.id,
               jobDetailRecipe
                 ? jobDetailRecipe.buildMessage(link)
-                : buildGenerateJobDetailInstructionsMessage(link, { linkCrawled: listingNeeds(engine, link.requiresLogin) === 'rule' }),
+                : buildGenerateJobDetailInstructionsMessage(link, { linkCrawled: listingNeeds(engine, needsLoginWindow(engine, link)) === 'rule' }),
             ),
           )
       })
@@ -1039,15 +1042,15 @@ export function CrawlPanel({
   // doesn't exist. Computed from the server-side counters plus this
   // tab's own in-flight state.
   // Plan 190: only where the AI writes the job list (not under Katana, which uses a rule made by hand).
-  const aiWritesListing = listingIsWrittenByAi(engine, link.requiresLogin)
+  const aiWritesListing = listingIsWrittenByAi(engine, needsLoginWindow(engine, link))
   const hasListing = hasListingFor(link, engine)
-  const aiTriesListing = aiTriesListingFor(engine, link.requiresLogin)
+  const aiTriesListing = aiTriesListingFor(engine, needsLoginWindow(engine, link))
   const listingAlertAttempts = aiTriesListing ? instructionAlertAttempts(link.instructionStats.listing, hasListing, aiBusy) : 0
   // Step 87 — once the AI has given up on the listing three times in a
   // row, the stronger "probably can't be crawled" pill replaces the
   // generic alert for the listing.
   const listingUncrawlable = aiTriesListing && isLikelyUncrawlable(link.instructionStats.listing, hasListing, aiBusy)
-  const aiWritesJobDetail = jobDetailIsWrittenByAi(engine, link.requiresLogin)
+  const aiWritesJobDetail = jobDetailIsWrittenByAi(engine, needsLoginWindow(engine, link))
   const jobDetailAlertAttempts = aiWritesJobDetail
     ? instructionAlertAttempts(link.instructionStats.jobDetail, Boolean(link.jobDetailCrawlInstructions), jobDetailAiBusy)
     : 0
@@ -1107,10 +1110,10 @@ export function CrawlPanel({
   // link that needs a login).
   // Plan 190: under Katana the job page is read by PICKING its data (JobDetailPickPanel), not by selectors typed by hand: the text box of
   // selectors belongs to Rod. A link that needs a login cannot use the picker, so it keeps the text box under every engine.
-  const jobDetailPickOnly = listingNeeds(engine, link.requiresLogin) === 'rule'
+  const jobDetailPickOnly = listingNeeds(engine, needsLoginWindow(engine, link)) === 'rule'
 
   function openCrawlInstructionsModal() {
-    if (listingNeeds(engine, link.requiresLogin) === 'rule') {
+    if (listingNeeds(engine, needsLoginWindow(engine, link)) === 'rule') {
       setActiveInstructionsModal('rules')
       return
     }
@@ -1180,7 +1183,7 @@ export function CrawlPanel({
           the mechanism runs at all; this is this ONE link's own
           override on top of that. */}
       <PipelineLine link={link} />
-      {!link.requiresLogin && instructionEngine.progressView !== undefined && (
+      {!loginWindow && instructionEngine.progressView !== undefined && (
         <instructionEngine.progressView link={link} onReload={onReload} />
       )}
       {/* Step 88 — only for a link that has listing crawl instructions:
@@ -1308,7 +1311,7 @@ export function CrawlPanel({
                     type="button"
                     onClick={openCrawlInstructionsModal}
                     title={
-                      listingNeeds(engine, link.requiresLogin) === 'rule'
+                      listingNeeds(engine, needsLoginWindow(engine, link)) === 'rule'
                         ? hasListing
                           ? 'Job list rules (Katana) — view/edit'
                           : 'Job list rules (Katana) — not set yet, click to add'
@@ -1477,9 +1480,9 @@ export function CrawlPanel({
                 )}
               </div>
             ) : (
-              generateLoginNote(link) !== null && (
+              generateLoginNote({ requiresLogin: loginWindow }) !== null && (
                 <p role="status" className="mt-2 text-xs text-gray-600">
-                  {generateLoginNote(link)}
+                  {generateLoginNote({ requiresLogin: loginWindow })}
                 </p>
               )
             )}
@@ -1875,7 +1878,7 @@ export function CrawlPanel({
         )}
         {activeInstructionsModal === 'jobDetail' && (
           <>
-            {!link.requiresLogin && (
+            {!loginWindow && (
               <JobDetailPickPanel
                 link={link}
                 onSaved={(yaml) => {

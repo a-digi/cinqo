@@ -9,7 +9,7 @@ import { ACCENTS, PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsThem
 import { portalViewNumbers } from './portalView'
 import { CrawlEngineProvider } from '../../Crawler/CrawlEngineProvider'
 import { useCrawlEngine } from '../../Crawler/useCrawlEngine'
-import { hasListingFor, listingNeeds } from '../../Crawler/crawlEngine'
+import { hasListingFor, listingNeeds, needsLoginWindow } from '../../Crawler/crawlEngine'
 import { plural } from './portalStats'
 
 // How many of the portal's jobs the page asks for at once; a portal with more
@@ -137,10 +137,10 @@ function PortalViewPageContent() {
                     {[
                       link.lastCrawledAt ? `Last crawled ${formatDate(link.lastCrawledAt)}` : 'Never crawled',
                       hasListingFor(link, engine)
-                        ? listingNeeds(engine, link.requiresLogin) === 'rule'
+                        ? listingNeeds(engine, needsLoginWindow(engine, link)) === 'rule'
                           ? 'Has crawl rules'
                           : 'Has crawl instructions'
-                        : listingNeeds(engine, link.requiresLogin) === 'rule'
+                        : listingNeeds(engine, needsLoginWindow(engine, link)) === 'rule'
                           ? 'No crawl rules'
                           : 'No crawl instructions',
                       link.hasActiveCrawlRun ? 'Crawl running now' : '',

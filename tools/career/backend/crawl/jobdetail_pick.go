@@ -44,7 +44,11 @@ const (
 var fetchDetailPage = fetchDetailPageViaCore
 
 func fetchDetailPageViaCore(ctx context.Context, coreURL, accessToken, pageURL, portalID string) (detailpick.Page, error) {
-	body, err := json.Marshal(map[string]string{"url": pageURL, "rateLimitKey": portalID})
+	fields := map[string]string{"url": pageURL, "rateLimitKey": portalID}
+	if id := keptLoginFrom(ctx); id != "" {
+		fields["loginSessionId"] = id // plan 195: the kept login of a link that needs a login
+	}
+	body, err := json.Marshal(fields)
 	if err != nil {
 		return detailpick.Page{}, err
 	}
@@ -93,8 +97,9 @@ var runPickExtraction = runPickExtractionViaCore
 func runPickExtractionViaCore(ctx context.Context, coreURL, accessToken string, req portal.CrawlRequest, jobURL string) (pickExtraction, error) {
 	pagRequest := struct {
 		portal.CrawlRequest
-		URL string `json:"url"`
-	}{CrawlRequest: req, URL: jobURL}
+		URL            string `json:"url"`
+		LoginSessionID string `json:"loginSessionId,omitempty"` // plan 195: the link's kept login
+	}{CrawlRequest: req, URL: jobURL, LoginSessionID: keptLoginFrom(ctx)}
 	body, err := json.Marshal(pagRequest)
 	if err != nil {
 		return pickExtraction{}, err
@@ -180,6 +185,8 @@ func requireStructuredSupport(w http.ResponseWriter, r *http.Request) bool {
 
 type pickContext struct {
 	coreURL, token, linkURL, portalID, linkID string
+	// sessionID is the kept login of a link that needs a login ("" for any other link): its pages are read with it (plan 195, step 4).
+	sessionID string
 }
 
 // checkPickLink verifies the link exists and is not a login link. needBrowser also needs the session and the core address (the
@@ -201,9 +208,12 @@ func checkPickLink(w http.ResponseWriter, r *http.Request, portalLinkID string, 
 		portal.WritePortalLinkAwareError(w, "read the link", err)
 		return pc, false
 	}
+	// A link that needs a login can be picked only with a login kept in the Browser tool (plan 195, step 4).
 	if requiresLogin {
-		http.Error(w, "this link needs a login: picking the data of its job pages is not available (use the AI instructions)", http.StatusBadRequest)
-		return pc, false
+		if pc.sessionID = portal.KeptLoginFor(pc.linkID); pc.sessionID == "" {
+			http.Error(w, "this link needs a login: picking the data of its job pages needs a kept login (log in and tick Keep this login) or the AI instructions", http.StatusBadRequest)
+			return pc, false
+		}
 	}
 	if needBrowser {
 		cookie, cerr := r.Cookie("access_token")
@@ -214,6 +224,10 @@ func checkPickLink(w http.ResponseWriter, r *http.Request, portalLinkID string, 
 		pc.token = cookie.Value
 		if pc.coreURL, err = coreAPIURL(); err != nil {
 			http.Error(w, "core API address is not configured", http.StatusInternalServerError)
+			return pc, false
+		}
+		if pc.sessionID != "" && keptLoginForRun(r.Context(), pc.coreURL, pc.token, pc.linkID) == "" {
+			http.Error(w, "reading a link that needs a login with its kept login needs the Katana engine: select Katana on the Browser & Engine page", http.StatusConflict)
 			return pc, false
 		}
 	}
@@ -398,8 +412,9 @@ func JobDetailCandidatesHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "that job's page is not on the link's own site", http.StatusBadRequest)
 		return
 	}
-	page, err := fetchDetailPage(r.Context(), pc.coreURL, pc.token, pageURL, pc.portalID)
+	page, err := fetchDetailPage(withKeptLoginFor(r.Context(), pc.linkID, pc.sessionID), pc.coreURL, pc.token, pageURL, pc.portalID)
 	if err != nil {
+		noteLoginVerdict(pc.linkID, err)
 		writeFetchFailure(w, err)
 		return
 	}
@@ -648,11 +663,12 @@ func JobDetailTestHandler(w http.ResponseWriter, r *http.Request) {
 	var samples []detailpick.Sample
 	for _, t := range targets {
 		job := pickTestJob{JobID: t.ID, Title: t.Title, URL: t.SourceURL, Values: map[string]string{}, StoredChars: len([]rune(t.Description))}
-		ex, xerr := runPickExtraction(r.Context(), pc.coreURL, pc.token, req, t.SourceURL)
+		ex, xerr := runPickExtraction(withKeptLoginFor(r.Context(), pc.linkID, pc.sessionID), pc.coreURL, pc.token, req, t.SourceURL)
 		if xerr != nil {
 			if r.Context().Err() != nil {
 				return
 			}
+			noteLoginExpired(withKeptLoginFor(r.Context(), pc.linkID, pc.sessionID), xerr)
 			job.Error = truncateText(xerr.Error(), 300)
 			resp.Jobs = append(resp.Jobs, job)
 			continue

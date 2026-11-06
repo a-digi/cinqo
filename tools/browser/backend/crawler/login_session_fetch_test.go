@@ -329,3 +329,103 @@ func TestNoAIToolArgumentCarriesALoginSession(t *testing.T) {
 		}
 	}
 }
+
+// --- the paginated crawl with a kept login (plan 195, step 4) ---
+
+func TestPaginatedCrawlWithAKeptLoginExtractsALoggedInPageInAnIsolatedTab(t *testing.T) {
+	requireRodChrome(t)
+	t.Cleanup(func() { shared.StopSharedSession() })
+	useBrowserSettings(t, shared.FetchEngineKatana)
+	site := newLoginSite(t, "alice", "bob")
+	alice, bob := site.saveSession(t, "alice"), site.saveSession(t, "bob")
+	fields := []extractField{{Label: "title", Selector: "h1"}}
+
+	run := func(id string) (paginatedCrawlResponse, error) {
+		args := paginatedArgs{fields: fields, requestedMaxPages: 1, effectiveMaxPages: 1, requestID: "", deadline: time.Time{}}
+		resp, _, err := performPaginatedCrawlWithKeptLogin(withLoginSession(context.Background(), id), site.srv.URL+"/private", args)
+		return resp, err
+	}
+	resp, err := run(alice.ID)
+	if err != nil || len(resp.Pages) != 1 || !strings.Contains(fmt.Sprint(resp.Pages[0].Results["title"]), "Job list of alice") {
+		t.Fatalf("alice: %v %+v", err, resp.Pages)
+	}
+	// Two sessions at once: no mixing (each tab has its own browser context), and the shared session holds no cookie of the site afterwards.
+	var wg sync.WaitGroup
+	var bad atomic.Int64
+	for i := 0; i < 6; i++ {
+		who, id := "alice", alice.ID
+		if i%2 == 1 {
+			who, id = "bob", bob.ID
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			r, err := run(id)
+			if err != nil || len(r.Pages) != 1 || !strings.Contains(fmt.Sprint(r.Pages[0].Results["title"]), "Job list of "+who) {
+				bad.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+	if bad.Load() != 0 {
+		t.Errorf("%d of 6 parallel reads got the wrong session or failed", bad.Load())
+	}
+	if shared.HeadlessHasCookie(site.srv.URL+"/private", "sid") {
+		t.Error("the kept login's cookie reached the shared headless session")
+	}
+	if got, _ := shared.OpenLoginSession(alice.ID, "127.0.0.1"); len(got) != 1 || got[0].Value != "session-of-alice"+rotatedMarker {
+		t.Error("the rotated cookie must be written back after a good read")
+	}
+}
+
+func TestPaginatedCrawlWithAKeptLoginSaysLoginExpiredWhenTheSiteRefusesIt(t *testing.T) {
+	requireRodChrome(t)
+	t.Cleanup(func() { shared.StopSharedSession() })
+	useBrowserSettings(t, shared.FetchEngineKatana)
+	site := newLoginSite(t, "alice")
+	bad := site.saveSession(t, "nobody")
+	args := paginatedArgs{fields: []extractField{{Label: "title", Selector: "h1"}}, requestedMaxPages: 1, effectiveMaxPages: 1}
+	_, _, err := performPaginatedCrawlWithKeptLogin(withLoginSession(context.Background(), bad.ID), site.srv.URL+"/private", args)
+	if errCode(err) != codeLoginExpired {
+		t.Fatalf("got %v", err)
+	}
+	if got, _ := shared.GetLoginSession(bad.ID); got.State != shared.LoginSessionExpired {
+		t.Errorf("state: %+v", got)
+	}
+	hits := site.hits.Load()
+	if _, _, err := performPaginatedCrawlWithKeptLogin(withLoginSession(context.Background(), bad.ID), site.srv.URL+"/private", args); errCode(err) != codeLoginExpired || site.hits.Load() != hits {
+		t.Errorf("an expired session must be refused without touching the site: %v", err)
+	}
+}
+
+func TestPaginatedRouteWithAKeptLoginIsGuarded(t *testing.T) {
+	useBrowserSettings(t, shared.FetchEngineKatana)
+	var seen string
+	orig := performPaginatedCrawlWithKeptLoginFn
+	performPaginatedCrawlWithKeptLoginFn = func(ctx context.Context, rawURL string, args paginatedArgs) (paginatedCrawlResponse, []string, error) {
+		seen = loginSessionFrom(ctx)
+		return paginatedCrawlResponse{PagesVisited: 1}, nil, nil
+	}
+	t.Cleanup(func() { performPaginatedCrawlWithKeptLoginFn = orig })
+	post := func(body string) int {
+		rec := httptest.NewRecorder()
+		PaginatedCrawlHandler(rec, httptest.NewRequest(http.MethodPost, "/crawl-paginated", strings.NewReader(body)))
+		return rec.Code
+	}
+	id := strings.Repeat("1e", 16)
+	base := `"url":"` + publicTestURL + `","fields":[{"label":"title","selector":"h1"}],"requestedMaxPages":1,"effectiveMaxPages":1`
+	if code := post(`{` + base + `,"loginSessionId":"` + id + `"}`); code != 200 || seen != id {
+		t.Errorf("good request: %d seen=%q", code, seen)
+	}
+	for _, bad := range []string{
+		`{` + base + `,"loginSessionId":"nope"}`,
+		`{` + base + `,"loginSessionId":"` + id + `","useLoginWindow":true,"requestId":"r"}`,
+		`{` + base + `,"loginSessionId":"` + id + `","aiContextId":"c"}`,
+		`{` + base + `,"loginSessionId":"` + id + `","container":".x"}`,
+		`{"fields":[{"label":"title","selector":"h1"}],"requestedMaxPages":1,"effectiveMaxPages":1,"loginSessionId":"` + id + `"}`,
+	} {
+		if code := post(bad); code != http.StatusBadRequest {
+			t.Errorf("%s: %d", bad, code)
+		}
+	}
+}

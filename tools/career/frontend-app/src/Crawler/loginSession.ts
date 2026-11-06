@@ -6,21 +6,17 @@ const BROWSER_CONFIRM_URL = '/api/v1/tools/browser/proxy/login-window/confirm'
 const BROWSER_SESSION_STATE_URL = '/api/v1/tools/browser/proxy/login-session/state'
 const CAREER_LINK_SESSION_URL = '/api/v1/tools/career/proxy/portal-links/login-session'
 
-// KATANA.usesKeptLogin: false until Katana really reads a link with the kept login (plan 195, steps 3 and 4). The texts below say so, so a
-// person is never told a kept login does something it does not do yet.
-export const KATANA = { usesKeptLogin: false }
-
 export const KEEP_LOGIN_LABEL = 'Keep this login for Katana'
 
 export const KEEP_LOGIN_EXPLANATION =
-  'Saves the site’s login session (not your password) encrypted on this computer, for at most 30 days, so a crawl needs no login window while it lasts. ' +
+  'Saves the site’s login session (not your password) encrypted on this computer, for at most 30 days, so Katana can crawl this link without a login window while it lasts. ' +
   'Many sites forbid automated access to a logged-in account and may restrict it: use this at your own risk. You can forget it at any time.'
 
-export const KEEP_LOGIN_NOT_YET_NOTE = 'Katana does not use a kept login yet; it is only saved for now.'
+export const KEEP_LOGIN_NOT_USED_NOTE = 'The selected engine does not use a kept login: it is only used while Katana is selected (Browser & Engine).'
 
-// keepLoginExplanation: the text under the checkbox.
-export function keepLoginExplanation(): string {
-  return KATANA.usesKeptLogin ? KEEP_LOGIN_EXPLANATION : `${KEEP_LOGIN_EXPLANATION} ${KEEP_LOGIN_NOT_YET_NOTE}`
+// keepLoginExplanation: the text under the checkbox; engineUsesIt says whether the selected engine reads a link with a kept login (Katana).
+export function keepLoginExplanation(engineUsesIt: boolean): string {
+  return engineUsesIt ? KEEP_LOGIN_EXPLANATION : `${KEEP_LOGIN_EXPLANATION} ${KEEP_LOGIN_NOT_USED_NOTE}`
 }
 
 export const NOT_KEPT_NOTE = 'You type your login on the site itself; nothing of it is kept here unless you tick “Keep this login”.'
@@ -102,7 +98,7 @@ function dayText(iso: string): string {
 
 // keptLoginText: the one line that says what is kept for a link.
 export function keptLoginText(info: LoginSessionInfo): string {
-  if (info.state === 'expired') return `The kept login for ${info.host} has expired. Log in again to keep a new one.`
+  if (info.state === 'expired') return `The kept login for ${info.host} has expired. Log in again and keep the login (Crawl now or Generate opens the window).`
   return `Login kept for ${info.host} until ${dayText(info.expiresAt)}.`
 }
 

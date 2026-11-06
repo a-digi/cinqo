@@ -27,6 +27,7 @@ import (
 	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/cdproto/page"
+	"github.com/chromedp/cdproto/target"
 	"github.com/chromedp/chromedp"
 	stealth "github.com/go-rod/stealth"
 )
@@ -151,6 +152,46 @@ func envInt(name string, def int) int {
 // the whole browser is relaunched underneath it (RecreateSharedSessionLocked's
 // fallback), which callers classify as browser_session_interrupted.
 func AcquireWorkerTab(ctx context.Context) (context.Context, func(), error) {
+	return acquireWorkerTab(ctx, "worker tab", false)
+}
+
+// AcquireIsolatedWorkerTab (plan 195) is AcquireWorkerTab with a browser context of its own: the tab shares no cookies, storage or cache with
+// any other tab, and everything in it is thrown away when it is released. A page read with a kept login is read in one, so the login's
+// cookies never reach the shared session or another fetch.
+func AcquireIsolatedWorkerTab(ctx context.Context) (context.Context, func(), error) {
+	return acquireWorkerTab(ctx, "isolated worker tab", true)
+}
+
+// newIsolatedTab opens a tab in a browser context of its own. chromedp's WithNewBrowserContext cannot be used: the shared headless browser
+// answers "no browser is open" to a target in a new context unless it is created in a new window, which chromedp does not ask for. So the
+// context and the window are made here and chromedp attaches to the tab. The returned cancel closes the tab and disposes the context.
+func newIsolatedTab(root context.Context, label string) (context.Context, context.CancelFunc, error) {
+	c := chromedp.FromContext(root)
+	if c == nil || c.Browser == nil {
+		return nil, nil, fmt.Errorf("%s: browser is not running", label)
+	}
+	exec := cdp.WithExecutor(root, c.Browser)
+	bctx, err := target.CreateBrowserContext().Do(exec)
+	if err != nil {
+		return nil, nil, err
+	}
+	tid, err := target.CreateTarget("about:blank").WithBrowserContextID(bctx).WithNewWindow(true).Do(exec)
+	if err != nil {
+		_ = target.DisposeBrowserContext(bctx).Do(exec)
+		return nil, nil, err
+	}
+	tabCtx, cancel, err := newTab(root, label, chromedp.WithTargetID(tid))
+	if err != nil {
+		_ = target.DisposeBrowserContext(bctx).Do(exec)
+		return nil, nil, err
+	}
+	return tabCtx, func() {
+		cancel()
+		_ = target.DisposeBrowserContext(bctx).Do(exec)
+	}, nil
+}
+
+func acquireWorkerTab(ctx context.Context, label string, isolated bool) (context.Context, func(), error) {
 	touchSessionActivity()
 	slots := workerSlotPool()
 	select {
@@ -171,7 +212,14 @@ func AcquireWorkerTab(ctx context.Context) (context.Context, func(), error) {
 		root, _ = currentBrowser()
 	}
 
-	tabCtx, cancel, err := newTab(root, "worker tab")
+	var tabCtx context.Context
+	var cancel context.CancelFunc
+	var err error
+	if isolated {
+		tabCtx, cancel, err = newIsolatedTab(root, label)
+	} else {
+		tabCtx, cancel, err = newTab(root, label)
+	}
 	if err != nil {
 		freeSlot()
 		return nil, nil, fmt.Errorf("failed to open a worker tab: %w", err)

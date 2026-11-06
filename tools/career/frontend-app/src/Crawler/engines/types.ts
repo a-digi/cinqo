@@ -14,7 +14,9 @@ export type ListingNeeds = 'rule' | 'ai' | 'either'
 export type JobDetailsAccess = 'open' | 'needs_jobs' | 'needs_rule_and_jobs'
 
 // The fields of a link the engines judge by.
-export type LinkFacts = Partial<Pick<PortalLink, 'crawlInstructions' | 'linkRules' | 'lastCrawledAt'> & { requiresLogin: boolean }>
+export type LinkFacts = Partial<
+  Pick<PortalLink, 'crawlInstructions' | 'linkRules' | 'lastCrawledAt'> & { requiresLogin: boolean; loginSession: string }
+>
 
 // What the engine's own "start over" control is given by the link card.
 export interface StartOverProps {
@@ -41,7 +43,10 @@ export interface ProgressProps {
 export interface InstructionEngine {
   // The Browser engine name this engine serves ('rod', 'katana'); 'unknown' is the engine that judges nothing.
   readonly id: string
-  // What the job list of a link needs under this engine (a link that needs a login is always read with its AI instructions).
+  // Whether this engine reads a link that needs a login with a login kept in the Browser tool (plan 195, step 4), so no login window is needed.
+  // Absent = no (Rod keeps the login window).
+  readonly usesKeptLogin?: boolean
+  // What the job list of a link needs under this engine (a link that needs a login and has no kept login is always read with its AI instructions).
   listingNeeds(requiresLogin: boolean): ListingNeeds
   // Whether the link has what its job list needs.
   hasListing(link: LinkFacts): boolean

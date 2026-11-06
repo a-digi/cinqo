@@ -29,7 +29,7 @@ type Missing struct {
 func FindMissing() (Missing, error) {
 	res := Missing{JobIDs: []string{}}
 	rows, err := db.JobsDB.Query(
-		`SELECT j.id, COALESCE(j.source_url, ''), pl.id, COALESCE(TRIM(pl.job_detail_crawl_instructions), ''), COALESCE(pl.requires_login, 0),
+		`SELECT j.id, COALESCE(j.source_url, ''), pl.id, COALESCE(TRIM(pl.job_detail_crawl_instructions), ''), COALESCE(pl.requires_login, 0) = 1 AND NOT (COALESCE(pl.login_session_id, '') <> '' AND COALESCE(pl.login_session_state, '') <> 'expired'),
 		        COALESCE(r.state, '')
 		 FROM jobs j
 		 LEFT JOIN portal_links pl ON pl.id = j.portal_link_id

@@ -65,6 +65,8 @@ export interface InstructionStateInput {
   // Plan 190: what the job list needs depends on the engine (a rule under Katana), so the rule and the login setting count too.
   linkRules?: unknown
   requiresLogin?: boolean
+  // Plan 195, step 4: a kept login the engine reads makes a login link an ordinary one.
+  loginSession?: string
   jobDetailCrawlInstructions?: string | null
   // Set while the generation agent's question is waiting for an answer.
   jobsQuestion?: unknown
@@ -90,7 +92,7 @@ export function instructionState(
   // either one counts. Job details count as before, under every engine.
   if (
     !hasListingFor(
-      { crawlInstructions: link.crawlInstructions, linkRules: (link.linkRules ?? null) as never, requiresLogin: link.requiresLogin },
+      { crawlInstructions: link.crawlInstructions, linkRules: (link.linkRules ?? null) as never, requiresLogin: link.requiresLogin, loginSession: link.loginSession },
       engine,
     )
   ) {
