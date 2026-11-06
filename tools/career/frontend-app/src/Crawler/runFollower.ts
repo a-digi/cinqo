@@ -74,6 +74,10 @@ export function createRunFollower(deps: FollowerDeps): RunFollower {
       await deps.updateLink(link.id, clear).catch(ignore)
       return
     }
+    // 'none': no attempt was running any more, so someone else (a page that carried the run) already finished it and recorded the verdict;
+    // writing this turn's error now would overwrite that verdict (plan 192, step 10: a run that saved and then ran out of rounds showed its
+    // turn error although its attempt succeeded).
+    if (outcome === 'none') return
     const failure: Record<string, string> = listing
       ? { instructionsAiError: text, instructionsAiConversationId: '' }
       : { jobDetailInstructionsAiError: text, jobDetailInstructionsAiConversationId: '' }
