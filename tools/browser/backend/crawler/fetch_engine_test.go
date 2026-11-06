@@ -286,7 +286,7 @@ func TestSwitchingBackQuicklyNeverStopsTheEngineJustSelected(t *testing.T) {
 
 // With the default (rod) and no Chrome, the failure must be a plain error:
 // crawl.go treats exactly that as "engine failed, fall through to the
-// chromedp primary tab" — and the Playwright engine must stay unstarted.
+// chromedp primary tab".
 func TestFetchWithEngineDefaultWithoutChromeFallsThroughAsAPlainError(t *testing.T) {
 	resetEngineTracking(t)
 	recordStops(t)
@@ -303,9 +303,6 @@ func TestFetchWithEngineDefaultWithoutChromeFallsThroughAsAPlainError(t *testing
 	var ce *crawlError
 	if errors.As(err, &ce) {
 		t.Errorf("must not be a *crawlError (it would be treated as a Cloudflare verdict): %v", err)
-	}
-	if pwInst != nil || pwBrowser != nil {
-		t.Errorf("the Playwright engine must not have been started")
 	}
 }
 
@@ -338,9 +335,6 @@ func TestFetchWithEngineRodEndToEnd(t *testing.T) {
 	var ce *crawlError
 	if !errors.As(err, &ce) || ce.Code != codeCloudflareUnresolved {
 		t.Fatalf("a challenge must come back as the unresolved verdict crawl.go escalates: %v", err)
-	}
-	if pwInst != nil || pwBrowser != nil {
-		t.Errorf("the Playwright engine must not have been started while rod served the fetches")
 	}
 }
 

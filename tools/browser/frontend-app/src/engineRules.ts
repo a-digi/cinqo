@@ -18,15 +18,16 @@ export function engineChoice(current: FetchEngine, clicked: FetchEngine, checked
   return { engine: current, refused: clicked === current }
 }
 
-// Whether an engine's box can be checked: Playwright needs its driver and Katana needs Chrome, so
-// while one is missing and not already selected its box stays locked. Rod, and anything already
-// selected, is never locked (switching back must always be possible).
+// Whether an engine's box can be checked: Katana needs Chrome, so while it is missing and not
+// already selected its box stays locked. Rod, and anything already selected, is never locked
+// (switching back must always be possible).
 export function engineLocked(engine: FetchEngine, current: FetchEngine, available: boolean | null): boolean {
   return engine !== 'rod' && current !== engine && available === false
 }
 
-// The engine a stored setting means: anything that is not exactly 'playwright' or 'katana'
-// (including a backend that predates the setting and sends none) is Rod, the default.
+// The engine a stored setting means: anything that is not exactly 'katana' (including a
+// backend that predates the setting and sends none, or an old one that still says 'playwright',
+// an engine that no longer exists) is Rod, the default.
 export function engineOf(stored: string | undefined): FetchEngine {
-  return stored === 'playwright' || stored === 'katana' ? stored : 'rod'
+  return stored === 'katana' ? stored : 'rod'
 }

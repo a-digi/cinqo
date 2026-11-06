@@ -53,7 +53,7 @@ export function useChromeStatus() {
 
 // The engine side of the page (step 50, availability step 51, test step 52): the
 // settings (which engine, human assist), each engine's availability, and "Test
-// Playwright". The whole settings object is saved on every change (the backend
+// Katana". The whole settings object is saved on every change (the backend
 // overwrites it on a PUT), with the Debug values exactly as they were loaded.
 export function useEngine() {
   const [settings, setSettings] = useState<BrowserSettings | null>(null)
@@ -61,8 +61,8 @@ export function useEngine() {
   const [statusError, setStatusError] = useState('')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
-  // "Test Playwright" really launches its Chromium, so a driver installed without its
-  // browser is caught. The result stays on screen until the next test.
+  // "Test Katana" really starts Chrome and attaches Katana, so a Chrome that cannot be driven
+  // is caught. The result stays on screen until the next test.
   // Which engine's test is running (null: none), and the last result with the engine it was for.
   const [testing, setTesting] = useState<TestableEngine | null>(null)
   const [testResult, setTestResult] = useState<(EngineTestResult & { engine: TestableEngine }) | null>(null)

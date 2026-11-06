@@ -34,8 +34,8 @@ const buttonClass =
 
 // The Browser & Engine page's overview: two status tiles side by side above the
 // sections: Chrome (a light, its version and where it lives, "Check again") and the
-// fetch engine (a light each for Rod, Playwright and Katana with the selected one marked, and
-// "Test Playwright" / "Test Katana" with the result).
+// fetch engine (a light each for Rod and Katana with the selected one marked, and
+// "Test Katana" with the result).
 export function HealthStrip({
   chrome,
   chromeLight,
@@ -120,16 +120,6 @@ export function HealthStrip({
           <button
             type="button"
             onClick={() => {
-              onTest('playwright')
-            }}
-            disabled={testing !== null}
-            className={buttonClass}
-          >
-            {testing === 'playwright' ? 'Testing Playwright…' : 'Test Playwright'}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
               onTest('katana')
             }}
             disabled={testing !== null}
@@ -137,11 +127,7 @@ export function HealthStrip({
           >
             {testing === 'katana' ? 'Testing Katana…' : 'Test Katana'}
           </button>
-          {testing && (
-            <span className="text-xs text-gray-500">
-              {testing === 'katana' ? 'Starting Chrome and attaching Katana' : 'Launching Chromium'} — this can take a few seconds.
-            </span>
-          )}
+          {testing && <span className="text-xs text-gray-500">Starting Chrome and attaching Katana — this can take a few seconds.</span>}
           {testResult && (
             <span role="status" className={`text-xs ${testResult.ok ? 'text-green-700' : 'text-red-700'}`}>
               {testResult.ok ? '✓' : '✗'} {testResult.detail}
@@ -151,8 +137,7 @@ export function HealthStrip({
           {testError && <span className="text-xs text-red-700">{testError}</span>}
         </div>
         <p className="mt-2 text-[11px] text-gray-400">
-          Availability does not launch a browser, so only a test can tell whether Playwright&apos;s own Chromium is installed or whether
-          Katana can attach to Chrome.
+          Availability does not launch a browser, so only a test can tell whether Katana can attach to Chrome.
         </p>
       </Tile>
     </div>

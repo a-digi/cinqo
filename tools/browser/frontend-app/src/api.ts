@@ -114,9 +114,9 @@ const SETTINGS_BASE = '/api/v1/tools/browser/proxy/browser-settings'
 
 // FetchEngine (step 50) — which engine serves the primary single-page
 // fetch: 'rod' (the default; pure Go over the Chrome DevTools Protocol) or
-// 'playwright' (needs its Node-based driver). See
+// 'katana'. There used to be a third, 'playwright'; plan 187 removed it. See
 // plan/ai/tools/browser/step-50-fetch-engine-setting-page.md.
-export type FetchEngine = 'rod' | 'playwright' | 'katana'
+export type FetchEngine = 'rod' | 'katana'
 
 export interface BrowserSettings {
   // fetchEngine — always sent back unchanged by every page that saves this
@@ -156,10 +156,8 @@ export async function saveBrowserSettings(settings: BrowserSettings): Promise<Br
 // --- Engine availability (step 51) ---
 //
 // Whether each fetch engine can actually run on this machine right now,
-// from GET /engine-status. Rod needs a Chrome binary. Playwright needs its
-// driver (which bundles its own Node) installed beforehand — it does NOT use
-// the Node installed in the OS. `detail` is a short sentence from the
-// backend, safe to show as text. See
+// from GET /engine-status. Rod and Katana both need a Chrome binary. `detail`
+// is a short sentence from the backend, safe to show as text. See
 // plan/ai/tools/browser/step-51-engine-availability.md.
 
 const ENGINE_STATUS_BASE = '/api/v1/tools/browser/proxy/engine-status'
@@ -171,7 +169,6 @@ export interface EngineStatus {
 
 export interface EngineStatusResponse {
   rod: EngineStatus
-  playwright: EngineStatus
   // Plan 184. Absent from a backend that predates the Katana engine.
   katana?: EngineStatus
 }
@@ -185,8 +182,8 @@ export async function fetchEngineStatus(): Promise<EngineStatusResponse> {
 // --- Chrome / Chromium (step 53) ---
 //
 // Whether a Chrome or Chromium is installed on the computer where Cinqo and
-// this tool run, from GET /chrome-status. Rod and the built-in browser path
-// both launch it; Playwright uses its own separate Chromium. `os` is the
+// this tool run, from GET /chrome-status. Rod, Katana and the built-in browser
+// path all launch it. `os` is the
 // SERVER's operating system (so the page shows the right install
 // instructions); `detail` is a short sentence from the backend, safe to show
 // as text. See plan/ai/tools/browser/step-53-chromium-page-and-gate.md.
@@ -205,8 +202,8 @@ export async function fetchChromeStatus(): Promise<ChromeStatus> {
   return readJson<ChromeStatus>(res)
 }
 
-// "Test Playwright" (step 52) — really launches Playwright's Chromium and
-// loads a local page, so a driver installed without its browser is caught
+// "Test Katana" (step 52, plan 184) — really starts Chrome, attaches Katana and
+// reads a local page, so a Chrome that is found but cannot be driven is caught
 // (the availability check above cannot see that). Takes a few seconds; the
 // backend allows one test at a time (409 otherwise). `detail` is one fixed
 // sentence from the backend.
@@ -217,11 +214,11 @@ export interface EngineTestResult {
   durationMs: number
 }
 
-// The engines that have a test: Playwright (launches its own Chromium) and Katana (starts
-// Chrome, attaches Katana and reads one local page). Rod needs no test: it is just Chrome.
-export type TestableEngine = 'playwright' | 'katana'
+// The engines that have a test: Katana (starts Chrome, attaches Katana and reads one local
+// page). Rod needs no test: it is just Chrome.
+export type TestableEngine = 'katana'
 
-const ENGINE_LABEL: Record<TestableEngine, string> = { playwright: 'Playwright', katana: 'Katana' }
+const ENGINE_LABEL: Record<TestableEngine, string> = { katana: 'Katana' }
 
 export async function testEngine(engine: TestableEngine): Promise<EngineTestResult> {
   const res = await fetch('/api/v1/tools/browser/proxy/engine-test', {

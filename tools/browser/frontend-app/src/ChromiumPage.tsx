@@ -12,8 +12,7 @@ import { cardClassName, cardStyle } from './Shared/cardStyle'
 // above; this card keeps the explanation and the install steps. Once Chrome
 // appears after having been missing, the page offers a Reload: a tool's menu is
 // registered once when the app loads, so the other Browser pages only show up
-// after a reload. Playwright is separate — it launches its own downloaded
-// Chromium, not this one. See plan/ai/tools/browser/step-53-chromium-page-and-gate.md.
+// after a reload. See plan/ai/tools/browser/step-53-chromium-page-and-gate.md.
 export function ChromeSection({ chrome }: { chrome: ReturnType<typeof useChromeStatus> }) {
   const { status, error, wasMissing } = chrome
   return (
@@ -25,12 +24,7 @@ export function ChromeSection({ chrome }: { chrome: ReturnType<typeof useChromeS
 
       {error && <div className="mb-3 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
 
-      {status?.installed && (
-        <p className="text-xs text-gray-500">
-          Rod and the built-in browser path both launch this browser. The Playwright engine is separate: it uses its own downloaded
-          Chromium.
-        </p>
-      )}
+      {status?.installed && <p className="text-xs text-gray-500">Rod, Katana and the built-in browser path all launch this browser.</p>}
       {status && !status.installed && <MissingCard status={status} />}
       {!status && !error && <p className="text-sm text-gray-400">Checking…</p>}
 

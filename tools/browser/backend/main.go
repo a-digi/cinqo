@@ -62,7 +62,6 @@ func runHTTPServer() {
 		log.Print("shutting down, closing browser session")
 		auth.StopLoginWindows()
 		shared.StopSharedSession()
-		crawler.StopPlaywrightEngine()
 		crawler.StopRodEngine()
 		crawler.StopKatanaEngine()
 		os.Exit(0)
@@ -104,7 +103,6 @@ func runHTTPServer() {
 	if err := http.ListenAndServe("127.0.0.1:"+port, nil); err != nil {
 		auth.StopLoginWindows()
 		shared.StopSharedSession()
-		crawler.StopPlaywrightEngine()
 		crawler.StopRodEngine()
 		crawler.StopKatanaEngine()
 		log.Fatal(err)

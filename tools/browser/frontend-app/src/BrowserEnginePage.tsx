@@ -8,7 +8,7 @@ import { useChromeStatus, useEngine } from './useBrowserStatus'
 
 // "Browser & Engine" — one page for what runs the Browser tool: the Chrome it
 // drives (is it installed, and how to install it) and the engine that fetches
-// pages with it (Rod or Playwright, availability, and what to do when a site
+// pages with it (Rod or Katana, availability, and what to do when a site
 // asks for a check). It replaces the separate Chromium and Engine pages and is
 // the one Browser page that is always reachable: it is where the tool explains
 // that nothing else works without Chrome. A health strip above the sections is

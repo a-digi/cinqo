@@ -1,27 +1,25 @@
 import type { useEngine } from './useBrowserStatus'
 import { cardClassName, cardStyle } from './Shared/cardStyle'
 import { useState } from 'react'
-import { BladeIcon, CodeIcon, GlobeIcon } from './icons'
+import { BladeIcon, CodeIcon } from './icons'
 import { engineChoice, engineLocked, engineOf } from './engineRules'
 import type { FetchEngine } from './api'
 import { Switch } from './Shared/Switch'
 import { PAGE_ACCENT } from './Shared/theme'
 
 // Engine section of the "Browser & Engine" page (step 50, availability added in step 51, Katana in
-// plan 184) — three checkboxes, Rod (the default), Playwright and Katana, choosing which engine
-// fetches pages. The setting holds one engine, so the boxes work as a group: one is always checked and the way to change it
+// plan 184, Playwright removed in plan 187) — two checkboxes, Rod (the default) and Katana,
+// choosing which engine fetches pages. The setting holds one engine, so the boxes work as a group: one is always checked and the way to change it
 // is to check the other (unchecking the selected one is refused, with a note). Stored in the same settings object as the Debug toggles and read by the
 // backend on every fetch, so the choice applies to the next page fetched, with no
 // restart. The whole object is saved on every change (the backend overwrites it on a
 // PUT), with the Debug values exactly as they were loaded (see useEngine).
 //
 // Each engine's availability comes from GET /engine-status and is shown in the health
-// strip above. Playwright does NOT use the Node installed in the OS: it needs its own
-// driver (which bundles a Node) installed beforehand, so when that is missing its box is
-// locked — selecting it would only make every fetch fall back to the
-// built-in browser path. The server still accepts either value; this gating lives in the
-// page. See plan/ai/tools/browser/step-50-fetch-engine-setting-page.md and
-// step-51-engine-availability.md.
+// strip above. Katana needs Chrome, so when Chrome is missing its box is locked — selecting
+// it would only make every fetch fall back to the built-in browser path. The server still
+// accepts either value; this gating lives in the page. See
+// plan/ai/tools/browser/step-50-fetch-engine-setting-page.md and step-51-engine-availability.md.
 export function EngineSection({ engine }: { engine: ReturnType<typeof useEngine> }) {
   const { settings, status, error, saving, save, chooseEngine } = engine
   // Set when the user tried to uncheck the engine that is selected.
@@ -39,14 +37,11 @@ export function EngineSection({ engine }: { engine: ReturnType<typeof useEngine>
   // A backend that predates the setting sends no fetchEngine: that is Rod, the default.
   const current = engineOf(settings.fetchEngine)
   const useRod = current === 'rod'
-  const playwrightUnavailable = status !== null && !status.playwright.available
   const katanaUnavailable = status?.katana !== undefined && !status.katana.available
   const rodUnavailable = status !== null && !status.rod.available
-  const playwrightAvailable = status === null ? null : status.playwright.available
   const katanaAvailable = status?.katana === undefined ? null : status.katana.available
-  // Playwright and Katana are only offered when they can run; a stored choice of either can
-  // always be switched back (choosing Rod must never be blocked).
-  const lockedOnRod = engineLocked('playwright', current, playwrightAvailable)
+  // Katana is only offered when it can run; a stored choice of it can always be switched back
+  // (choosing Rod must never be blocked).
   const katanaLocked = engineLocked('katana', current, katanaAvailable)
 
   function onToggle(clicked: FetchEngine, checked: boolean) {
@@ -66,12 +61,6 @@ export function EngineSection({ engine }: { engine: ReturnType<typeof useEngine>
 
         <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>
 
-        {current === 'playwright' && playwrightUnavailable && (
-          <div className="mb-3 rounded-2xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-            Playwright is selected but it is not available, so every fetch is currently falling back to the built-in browser path.{' '}
-            {status.playwright.detail}. Switch back to Rod, or install the Playwright driver.
-          </div>
-        )}
         {current === 'katana' && katanaUnavailable && (
           <div className="mb-3 rounded-2xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
             Katana is selected but it cannot start, so every fetch is currently falling back to the built-in browser path.{' '}
@@ -84,7 +73,7 @@ export function EngineSection({ engine }: { engine: ReturnType<typeof useEngine>
           </div>
         )}
 
-        <div className="grid gap-3 md:grid-cols-3" role="group" aria-label="Engine">
+        <div className="grid gap-3 md:grid-cols-2" role="group" aria-label="Engine">
           <EngineOption
             name="Rod"
             title="Rod"
@@ -97,19 +86,6 @@ export function EngineSection({ engine }: { engine: ReturnType<typeof useEngine>
             }}
           >
             Pure Go over the Chrome DevTools Protocol. Needs nothing but Chrome.
-          </EngineOption>
-          <EngineOption
-            name="Playwright"
-            title="Playwright"
-            badge={lockedOnRod ? 'Driver missing' : undefined}
-            icon={<GlobeIcon className="h-5 w-5" />}
-            checked={current === 'playwright'}
-            disabled={saving || lockedOnRod}
-            onChange={(checked) => {
-              onToggle('playwright', checked)
-            }}
-          >
-            Needs its own driver (which brings its own Node), not the Node on your computer. Nothing is downloaded when it is first used.
           </EngineOption>
           <EngineOption
             name="Katana"
@@ -132,20 +108,14 @@ export function EngineSection({ engine }: { engine: ReturnType<typeof useEngine>
             One engine has to be selected. Check the other one to switch.
           </p>
         )}
-        {lockedOnRod && (
-          <p className="mt-3 text-xs text-gray-600">
-            Playwright can&apos;t be chosen here until its driver is installed: {status?.playwright.detail}.
-          </p>
-        )}
         {katanaLocked && (
           <p className="mt-3 text-xs text-gray-600">
             Katana can&apos;t be chosen here until Chrome is installed: {status?.katana?.detail}.
           </p>
         )}
         <p className="mt-3 text-xs text-gray-500">
-          Currently using:{' '}
-          <span className="font-medium text-gray-700">{{ rod: 'Rod', playwright: 'Playwright', katana: 'Katana' }[current]}</span>. A change
-          applies to the next page fetched — no restart needed, and a fetch already running is not interrupted.
+          Currently using: <span className="font-medium text-gray-700">{{ rod: 'Rod', katana: 'Katana' }[current]}</span>. A change applies
+          to the next page fetched — no restart needed, and a fetch already running is not interrupted.
         </p>
       </section>
 

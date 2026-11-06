@@ -10,7 +10,6 @@ require (
 	github.com/google/jsonschema-go v0.4.3
 	github.com/google/uuid v1.6.0
 	github.com/modelcontextprotocol/go-sdk v1.7.0
-	github.com/mxschmitt/playwright-go v0.6201.1
 	github.com/projectdiscovery/katana v1.8.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.58.0
@@ -48,7 +47,6 @@ require (
 	github.com/chromedp/sysutil v1.1.0 // indirect
 	github.com/cloudflare/ahocorasick v0.0.0-20240916140611-054963ec9396 // indirect
 	github.com/cnf/structhash v0.0.0-20250313080605-df4c6cc74a9a // indirect
-	github.com/deckarep/golang-set/v2 v2.8.0 // indirect
 	github.com/dimchansky/utfbom v1.1.1 // indirect
 	github.com/ditashi/jsbeautifier-go v0.0.0-20141206144643-2520a8026a9c // indirect
 	github.com/djherbis/times v1.6.0 // indirect
@@ -61,7 +59,6 @@ require (
 	github.com/gaissmai/bart v0.30.0 // indirect
 	github.com/go-json-experiment/json v0.0.0-20260623181947-01eb4420fa68 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
-	github.com/go-stack/stack v1.8.1 // indirect
 	github.com/gobwas/httphead v0.1.0 // indirect
 	github.com/gobwas/pool v0.2.1 // indirect
 	github.com/gobwas/ws v1.4.0 // indirect
@@ -94,6 +91,7 @@ require (
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/odvcencio/gotreesitter v0.6.1-0.20260306002001-fbe5983c6f41 // indirect
+	github.com/orisano/pixelmatch v0.0.0-20230914042517-fa304d1dc785 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
 	github.com/praetorian-inc/titus v1.2.0 // indirect
