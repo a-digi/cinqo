@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { LinkPagination, LinkRule, PortalLink } from '../../api'
+import { LinkCrawlHelp } from './LinkCrawlHelp'
 import {
   fetchLinkCandidates,
   learnLinkPagination,
@@ -302,6 +303,8 @@ export function LinkCrawlPanel({ link, onReload }: { link: PortalLink; onReload:
           {open ? 'Close' : link.linkRules ? 'Change the rule' : 'Choose the job links'}
         </button>
       </div>
+
+      <LinkCrawlHelp />
 
       {link.linkRules && (
         <div className="mt-2 rounded-md border border-blue-200 bg-white p-2 text-gray-800" data-testid="link-crawl-saved-rule">
