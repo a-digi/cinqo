@@ -175,6 +175,31 @@ async function post<T>(path: string, body: unknown, action: string, signal?: Abo
   return (await res.json()) as T
 }
 
+// The lists the screen reads must be lists. A Go nil slice arrives as null (a page without structured data once crashed the whole page),
+// so the answer is made safe here, once, however the backend sent it.
+type RawCandidates = Omit<PickCandidates, 'samples' | 'elements' | 'structuredHints' | 'current'> & {
+  samples: PickSample[] | null
+  elements: PageElement[] | null
+  structuredHints: StructuredHint[] | null
+  current: Omit<CurrentInstructions, 'lossy' | 'choices'> & {
+    lossy: string[] | null
+    choices?: Omit<Choices, 'fields'> & { fields: Choices['fields'] | null }
+  }
+}
+
+export function normalizeCandidates(p: RawCandidates): PickCandidates {
+  const { choices, lossy, yaml } = p.current
+  const current: CurrentInstructions = { yaml, lossy: lossy ?? [] }
+  if (choices) current.choices = { ...choices, fields: choices.fields ?? [] }
+  return {
+    ...p,
+    samples: p.samples ?? [],
+    elements: p.elements ?? [],
+    structuredHints: p.structuredHints ?? [],
+    current,
+  }
+}
+
 // Load a sample page and the suggestions for it: a saved job of the link (jobId), an address on its site (url), or neither (the oldest
 // saved job).
 export function loadPickCandidates(
@@ -182,7 +207,7 @@ export function loadPickCandidates(
   sample: { jobId?: string; url?: string },
   signal?: AbortSignal,
 ): Promise<PickCandidates> {
-  return post<PickCandidates>('candidates', { portalLinkId, ...sample }, 'load the page', signal)
+  return post<RawCandidates>('candidates', { portalLinkId, ...sample }, 'load the page', signal).then(normalizeCandidates)
 }
 
 // The instruction text the choices make, or why they are not valid yet. Pure on the backend: nothing is loaded or stored.

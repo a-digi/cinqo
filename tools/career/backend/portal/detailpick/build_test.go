@@ -409,3 +409,25 @@ func TestStructuredSuggestionsCarryThePathAWholeFieldReads(t *testing.T) {
 		}
 	}
 }
+
+// The screen reads these lists straight from JSON and calls .find on them, so they must be [] and never null (a page with no structured
+// data, or stored instructions with only a description, crashed the whole page).
+func TestListsTheScreenReadsAreNeverNull(t *testing.T) {
+	hints, err := json.Marshal(StructuredSuggestions(Page{}))
+	if err != nil || string(hints) != "[]" {
+		t.Fatalf("structured suggestions of a page without structured data = %s (err %v), want []", hints, err)
+	}
+	c, _, err := ParseYAML("fields:\n  - label: description\n    selector: \"#x\"\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, _ := json.Marshal(c)
+	if !strings.Contains(string(out), `"fields":[]`) {
+		t.Fatalf("choices of description-only instructions = %s, want fields as []", out)
+	}
+	c, _, _ = ParseYAML("")
+	out, _ = json.Marshal(c)
+	if !strings.Contains(string(out), `"fields":[]`) {
+		t.Fatalf("choices of empty instructions = %s, want fields as []", out)
+	}
+}

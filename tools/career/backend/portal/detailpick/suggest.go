@@ -89,7 +89,8 @@ type StructuredSuggestion struct {
 
 // StructuredSuggestions lists what the page's JobPosting JSON-LD and meta tags say.
 func StructuredSuggestions(p Page) []StructuredSuggestion {
-	var out []StructuredSuggestion
+	// Never nil: the screen reads the JSON list (a page without structured data must give [], not null).
+	out := []StructuredSuggestion{}
 	if len(p.Structured.JSONLD) > 0 {
 		j := p.Structured.JSONLD[0]
 		add := func(f Field, v, path, reason string) {

@@ -214,6 +214,8 @@ func ParseYAML(text string) (c Choices, lossy []string, err error) {
 	}
 	c.Description = doc.DescriptionRule
 	c.ReplaceTitle = doc.ReplaceTitle
+	// Never nil: the screen reads the JSON list (instructions with only a description must give [], not null).
+	c.Fields = []FieldChoice{}
 	for _, f := range doc.Fields {
 		if f.Multiple {
 			lossy = append(lossy, "the field "+f.Label+" collects every match")
