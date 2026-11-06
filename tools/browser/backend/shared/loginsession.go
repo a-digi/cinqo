@@ -341,3 +341,88 @@ func OpenLoginSession(id, host string) ([]SessionCookie, error) {
 	}
 	return out, nil
 }
+
+// MarkLoginSessionExpired records that a site stopped accepting the session (a fetch with it landed on the login form): its state becomes
+// "expired", so no later fetch sends it and the person is asked to log in again (plan 195, step 3).
+func MarkLoginSessionExpired(id string) error {
+	_, err := DB.Exec(`UPDATE login_sessions SET state = 'expired' WHERE id = ?`, id)
+	return err
+}
+
+// MarkLoginSessionOK records that a fetch with the session got a logged-in page.
+func MarkLoginSessionOK(id string) error {
+	_, err := DB.Exec(`UPDATE login_sessions SET last_ok_at = ? WHERE id = ? AND state = 'valid'`, loginSessionNow().UTC().Format(time.RFC3339), id)
+	return err
+}
+
+var loginSessionRefreshMu sync.Mutex
+
+// RefreshLoginSessionCookies writes back the cookies a site changed while a fetch used the session (a rotated session cookie): every cookie
+// of the session's own host in cookies replaces the stored cookie of the same name, domain and path, or is added; nothing is ever removed
+// and nothing of another host is kept. The expiry of the session is not changed. It reseals only when something changed, and returns
+// whether it did. Fetches of one session run in parallel, so the read-merge-write is one step at a time.
+func RefreshLoginSessionCookies(id, host string, cookies []SessionCookie) (bool, error) {
+	loginSessionRefreshMu.Lock()
+	defer loginSessionRefreshMu.Unlock()
+
+	var sessionHost string
+	var sealed []byte
+	var state string
+	err := DB.QueryRow(`SELECT host, sealed_cookies, state FROM login_sessions WHERE id = ?`, id).Scan(&sessionHost, &sealed, &state)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, ErrLoginSessionNotFound
+	}
+	if err != nil {
+		return false, err
+	}
+	if !hostAllowed(sessionHost, host) {
+		return false, ErrLoginSessionWrongHost
+	}
+	if state != LoginSessionValid {
+		return false, ErrLoginSessionExpired
+	}
+	key, err := loginSessionKey(false)
+	if err != nil {
+		return false, ErrLoginSessionUnreadable
+	}
+	stored, err := openSession(key, id, sessionHost, sealed)
+	if err != nil {
+		return false, err
+	}
+	now := loginSessionNow()
+	changed := false
+	for _, c := range cookies {
+		if c.Name == "" || !cookieMatchesHost(c.Domain, host) {
+			continue
+		}
+		if c.Expires > 0 && time.Unix(int64(c.Expires), 0).Before(now) {
+			continue
+		}
+		found := false
+		for i := range stored {
+			if stored[i].Name == c.Name && stored[i].Domain == c.Domain && stored[i].Path == c.Path {
+				found = true
+				if stored[i].Value != c.Value || stored[i].Expires != c.Expires {
+					stored[i].Value, stored[i].Expires = c.Value, c.Expires
+					changed = true
+				}
+				break
+			}
+		}
+		if !found {
+			stored = append(stored, c)
+			changed = true
+		}
+	}
+	if !changed {
+		return false, nil
+	}
+	resealed, err := sealSession(key, id, sessionHost, stored)
+	if err != nil {
+		return false, errors.New("could not seal the login session")
+	}
+	if _, err := DB.Exec(`UPDATE login_sessions SET sealed_cookies = ? WHERE id = ?`, resealed, id); err != nil {
+		return false, errors.New("could not store the login session")
+	}
+	return true, nil
+}

@@ -257,6 +257,8 @@ type fetchLinksRequest struct {
 	RequestID string `json:"requestId,omitempty"`
 	// RateLimitKey (the portal id): the same per-portal pacing paginated crawls use.
 	RateLimitKey string `json:"rateLimitKey,omitempty"`
+	// LoginSessionID (plan 195): the kept login to fetch with; see login_session_fetch.go. Never set by an AI tool.
+	LoginSessionID string `json:"loginSessionId,omitempty"`
 }
 
 func writeFetchLinksJSON(w http.ResponseWriter, status int, v any) {
@@ -275,7 +277,11 @@ func FetchLinksHandler(w http.ResponseWriter, r *http.Request) {
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&body); err != nil || strings.TrimSpace(body.URL) == "" {
-		http.Error(w, "url is required (and only url, requestId and rateLimitKey are accepted)", http.StatusBadRequest)
+		http.Error(w, "url is required (and only url, requestId, rateLimitKey and loginSessionId are accepted)", http.StatusBadRequest)
+		return
+	}
+	if err := checkLoginSessionID(body.LoginSessionID); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	// The gate first: while another engine is selected nothing else is looked at.
@@ -292,7 +298,7 @@ func FetchLinksHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Cancellable by requestId like every crawl (crawl-cancel), and ends when the caller disconnects.
-	ctx, cancel := context.WithCancel(r.Context())
+	ctx, cancel := context.WithCancel(withLoginSession(r.Context(), body.LoginSessionID))
 	registerCrawlCancel(body.RequestID, cancel)
 	defer func() {
 		unregisterCrawlCancel(body.RequestID)

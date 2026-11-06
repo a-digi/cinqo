@@ -133,6 +133,11 @@ type crawlRequest struct {
 	// from a short-lived in-memory copy of the last identical fetch when one
 	// exists (see fetch_window.go). Absent means the whole page, as before.
 	Offset *int `json:"offset,omitempty"`
+	// LoginSessionID (plan 195) — the kept login (shared/loginsession.go) to fetch with, Katana only: the page is fetched by the Katana
+	// engine with the session's cookies, never cached and never through the headed fallback (login_session_fetch.go). Set by the Career
+	// tool for a link that needs a login, never by an AI tool. RateLimitKey is the per-portal pacing key, used on that path only.
+	LoginSessionID string `json:"loginSessionId,omitempty"`
+	RateLimitKey   string `json:"rateLimitKey,omitempty"`
 }
 
 type crawlResponse struct {
@@ -169,6 +174,12 @@ func CrawlHandler(w http.ResponseWriter, r *http.Request) {
 
 	if body.Offset != nil && *body.Offset < 0 {
 		http.Error(w, "offset must not be negative", http.StatusBadRequest)
+		return
+	}
+
+	// Plan 195: a fetch with a kept login takes its own path (Katana only, no cache, no headed fallback).
+	if body.LoginSessionID != "" {
+		crawlWithKeptLogin(w, r, body)
 		return
 	}
 

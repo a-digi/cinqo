@@ -59,6 +59,9 @@ const inspectPageJS = `(function () {
   return { passwordField: pw, challenge: challenge, textLength: text };
 })()`
 
+// InspectPageScript is the script InspectPage runs, for a caller that reads a page through another driver (Katana's own tab, plan 195).
+func InspectPageScript() string { return inspectPageJS }
+
 // InspectPage reads the page currently loaded in ctx's tab; it never navigates and changes nothing.
 func InspectPage(ctx context.Context) (PageInspection, error) {
 	var out PageInspection

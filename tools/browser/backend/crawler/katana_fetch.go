@@ -26,6 +26,7 @@ package crawler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"regexp"
@@ -183,6 +184,13 @@ func runKatanaPage[T any](ctx context.Context, rawURL, requestID string, read ka
 		return zero, ctx.Err()
 	}
 
+	// A kept login (plan 195): opened for this page's own host before any browser work, so a session that is gone, expired or for another
+	// site is answered at once.
+	sessionCookies, verdict := sessionCookiesFor(ctx, rawURL)
+	if verdict != nil {
+		return zero, verdict
+	}
+
 	wsURL, err := ensureKatanaEngine()
 	if err != nil {
 		return zero, fmt.Errorf("katana engine unavailable: %w", err)
@@ -219,7 +227,7 @@ func runKatanaPage[T any](ctx context.Context, rawURL, requestID string, read ka
 
 	kat.SetHooks(&hybrid.Hooks{
 		BeforeNavigate: func(hctx context.Context, page *rod.Page, req *navigation.Request) error {
-			return katanaBeforeNavigate(fctx, page, rawURL, requestID, main)
+			return katanaBeforeNavigate(fctx, page, rawURL, requestID, main, sessionCookies)
 		},
 		AfterLoad: func(hctx context.Context, page *rod.Page, req *navigation.Request, resp *navigation.Response) error {
 			capture.put(read(fctx, page, main))
@@ -275,7 +283,7 @@ func runKatanaPage[T any](ctx context.Context, rawURL, requestID string, read ka
 // fixed viewport, touch settings); those are cleared again here, and the
 // same stealth script every other engine injects is added on every new
 // document.
-func katanaBeforeNavigate(fctx context.Context, page *rod.Page, rawURL, requestID string, main *mainDocumentResponse) error {
+func katanaBeforeNavigate(fctx context.Context, page *rod.Page, rawURL, requestID string, main *mainDocumentResponse, sessionCookies []*proto.NetworkCookieParam) error {
 	if err := (proto.NetworkSetUserAgentOverride{UserAgent: ""}).Call(page); err != nil {
 		return fmt.Errorf("could not clear the user agent override: %w", err)
 	}
@@ -301,6 +309,13 @@ func katanaBeforeNavigate(fctx context.Context, page *rod.Page, rawURL, requestI
 		},
 	)()
 
+	// A kept login's cookies go into THIS tab's own context (Katana makes one incognito context per fetch), so parallel fetches with
+	// different sessions never mix (plan 195).
+	if len(sessionCookies) > 0 {
+		if err := page.SetCookies(sessionCookies); err != nil {
+			return errors.New("could not set the kept login in the page")
+		}
+	}
 	seedStoredClearanceRod(page.Context(fctx), rawURL) // a cf_clearance a person earned; nothing else
 	return nil
 }
@@ -347,7 +362,8 @@ func katanaVerdict(fctx context.Context, p *rod.Page, rawURL, requestID string, 
 			return rerr
 		}
 	}
-	return nil
+	// A kept login (plan 195): a login form here means the site no longer accepts it.
+	return katanaSessionCheck(fctx, p, rawURL)
 }
 
 // katanaReadPage runs on the live tab after Katana loaded it: every verdict
