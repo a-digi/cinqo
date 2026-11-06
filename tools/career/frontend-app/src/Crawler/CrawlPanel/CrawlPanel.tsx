@@ -1038,6 +1038,10 @@ export function CrawlPanel({
 
   // Plan 190: "Job list" opens the rules under Katana (the link crawler, in its own modal) and the AI instructions under Rod (and for a
   // link that needs a login).
+  // Plan 190: under Katana the job page is read by PICKING its data (JobDetailPickPanel), not by selectors typed by hand: the text box of
+  // selectors belongs to Rod. A link that needs a login cannot use the picker, so it keeps the text box under every engine.
+  const jobDetailPickOnly = listingNeeds(engine, link.requiresLogin) === 'rule'
+
   function openCrawlInstructionsModal() {
     if (listingNeeds(engine, link.requiresLogin) === 'rule') {
       setActiveInstructionsModal('rules')
@@ -1684,7 +1688,9 @@ export function CrawlPanel({
         open={activeInstructionsModal !== null}
         title={
           activeInstructionsModal === 'jobDetail'
-            ? 'Job detail crawl instructions'
+            ? jobDetailPickOnly
+              ? 'Job details (Katana)'
+              : 'Job detail crawl instructions'
             : activeInstructionsModal === 'rules'
               ? 'Job list rules (Katana)'
               : 'Job list crawl instructions'
@@ -1738,34 +1744,38 @@ export function CrawlPanel({
                 }}
               />
             )}
-            <textarea
-              value={jobDetailInstructionsDraft}
-              onChange={(e) => {
-                setJobDetailInstructionsDraft(e.target.value)
-              }}
-              placeholder={'fields:\n  - label: description\n    selector: ".job-description, .job-posting-body"'}
-              rows={10}
-              spellCheck={false}
-              className="w-full rounded-md border border-gray-300 px-2 py-1.5 font-mono text-xs text-gray-900 focus:border-gray-500 focus:outline-none"
-            />
-            <div className="mt-3 flex gap-2">
-              <button
-                type="button"
-                onClick={handleSaveJobDetailCrawlInstructions}
-                className="rounded-md bg-gray-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-gray-800"
-              >
-                Save
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveInstructionsModal(null)
-                }}
-                className="rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-white"
-              >
-                Cancel
-              </button>
-            </div>
+            {!jobDetailPickOnly && (
+              <>
+                <textarea
+                  value={jobDetailInstructionsDraft}
+                  onChange={(e) => {
+                    setJobDetailInstructionsDraft(e.target.value)
+                  }}
+                  placeholder={'fields:\n  - label: description\n    selector: ".job-description, .job-posting-body"'}
+                  rows={10}
+                  spellCheck={false}
+                  className="w-full rounded-md border border-gray-300 px-2 py-1.5 font-mono text-xs text-gray-900 focus:border-gray-500 focus:outline-none"
+                />
+                <div className="mt-3 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSaveJobDetailCrawlInstructions}
+                    className="rounded-md bg-gray-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-gray-800"
+                  >
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveInstructionsModal(null)
+                    }}
+                    className="rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-white"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            )}
           </>
         )}
       </Modal>
