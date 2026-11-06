@@ -1,6 +1,6 @@
 // Package jobrecrawlconsumer is the consumer of "career.job.recrawl_requested" (step 148): the event the Jobs page's Recrawl action
 // sends for each job. The route only validates the event and queues the job id; one worker crawls the queued jobs one after the
-// other (the Browser tool has one shared tab), recording each job's outcome in job_recrawl_requests; a sweeper hands the worker
+// other, and up to four helpers join it while more than ParallelThreshold are waiting, recording each job's outcome in job_recrawl_requests; a sweeper hands the worker
 // the requests whose event was missed. The request row, not the event, is the truth: a worker takes a job only by claiming its
 // queued row, so a duplicate id, a cancelled request or a deleted job is dropped. See plan/ai/tools/career/step-148-recrawl-jobs.md.
 package jobrecrawlconsumer
@@ -121,19 +121,39 @@ func (c *Consumer) Handler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusAccepted)
 }
 
-// Start launches the single worker. First it puts back to queued any request a restart left running, and queues what is waiting in
-// the table; then it takes ids one at a time until ctx is cancelled (after the job in hand) and returns a channel that closes when
-// it has stopped. A failing or panicking job is recorded and logged and the worker goes on.
+// The crawlers of a big batch: with more than ParallelThreshold ids waiting, up to MaxWorkers crawl at the same time (one main worker and
+// helpers that only take an id while that many are waiting); a small batch is crawled by the main worker alone, one after the other. Each
+// id is claimed through its row, so no two workers ever crawl the same job. The Browser tool still spaces the page loads of ONE platform
+// (10 to 30 seconds, its anti-detection pacing, keyed by the platform): more crawlers speed up a batch whose jobs belong to several
+// platforms, not one that belongs to a single platform.
+const (
+	ParallelThreshold = 20
+	MaxWorkers        = 5
+)
+
+// helperPoll is how often a helper looks at the queue while it is short.
+var helperPoll = 500 * time.Millisecond
+
+// Start launches the worker and its helpers. First the main worker puts back to queued any request a restart left running, and queues
+// what is waiting in the table; then it takes ids one at a time until ctx is cancelled (after the job in hand), and the helpers take
+// ids only while more than ParallelThreshold are waiting. It returns a channel that closes when all of them have stopped. A failing or
+// panicking job is recorded and logged and the workers go on.
 func (c *Consumer) Start(ctx context.Context) <-chan struct{} {
 	done := make(chan struct{})
+	var workers sync.WaitGroup
+	// The helpers wait until the main worker has put back what a restart cut off and queued what is waiting: a request a helper
+	// is crawling must never be taken for one that a restart cut off.
+	ready := make(chan struct{})
+	workers.Add(1)
 	go func() {
-		defer close(done)
+		defer workers.Done()
 		if n, err := jobrecrawl.ReviveRunning(); err != nil {
 			log.Printf("job recrawl consumer: could not revive the requests a restart cut off: %v", err)
 		} else if n > 0 {
 			log.Printf("job recrawl consumer: %d request(s) cut off by a restart go back to the queue", n)
 		}
 		c.sweepOnce()
+		close(ready)
 		for {
 			select {
 			case <-ctx.Done():
@@ -144,7 +164,46 @@ func (c *Consumer) Start(ctx context.Context) <-chan struct{} {
 			}
 		}
 	}()
+	for i := 1; i < MaxWorkers; i++ {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			select {
+			case <-ctx.Done():
+				return
+			case <-ready:
+			}
+			c.helper(ctx)
+		}()
+	}
+	go func() {
+		workers.Wait()
+		close(done)
+	}()
 	return done
+}
+
+// helper takes ids only while more than ParallelThreshold are waiting.
+func (c *Consumer) helper(ctx context.Context) {
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		if len(c.queue) > ParallelThreshold {
+			select {
+			case id := <-c.queue:
+				c.take(id)
+				c.process(ctx, id)
+				continue
+			default:
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(helperPoll):
+		}
+	}
 }
 
 // process handles one id. Nothing here may stop the worker.

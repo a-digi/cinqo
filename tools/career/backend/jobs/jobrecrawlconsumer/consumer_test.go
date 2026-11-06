@@ -765,3 +765,79 @@ func TestTheDescriptionChangedTopicIsOneName(t *testing.T) {
 		t.Errorf("%q != %q", jobs.DescriptionChangedTopic, jobrecrawl.DescriptionChangedTopic)
 	}
 }
+
+// A big batch is crawled by several crawlers at once (the user's request: more than 20 waiting, up to 5 at the same time); a small one by one.
+func TestABigBatchIsCrawledByUpToFiveCrawlersAtOnce(t *testing.T) {
+	fb := setup(t)
+	fb.delay = 60 * time.Millisecond
+	var ids []string
+	for i := 0; i < 40; i++ {
+		id := fmt.Sprintf("job%02d", i)
+		ids = append(ids, id)
+		fb.pages[addJob(t, id, "crawled", "old")] = "new " + id
+	}
+	queue(t, ids...)
+	c := New(100)
+	ctx, cancel := context.WithCancel(context.Background())
+	for _, id := range ids {
+		postEvent(c, event(id))
+	}
+	done := c.Start(ctx)
+	waitFor(t, "all jobs done", func() bool {
+		for _, id := range ids {
+			if requestOf(t, id).state != "done" {
+				return false
+			}
+		}
+		return true
+	})
+	cancel()
+	<-done
+	if fb.peak < 2 || fb.peak > MaxWorkers {
+		t.Errorf("peak %d crawls at once, want between 2 and %d", fb.peak, MaxWorkers)
+	}
+	for _, id := range ids {
+		if got := requestOf(t, id); got.outcome != jobrecrawl.OutcomeRefreshed {
+			t.Errorf("%s: %+v", id, got)
+		}
+	}
+	// no job was crawled twice
+	seen := map[string]bool{}
+	for _, u := range fb.calls {
+		if seen[u] {
+			t.Errorf("%s was crawled twice", u)
+		}
+		seen[u] = true
+	}
+}
+
+func TestABatchOfTwentyIsStillCrawledOneAfterTheOther(t *testing.T) {
+	fb := setup(t)
+	fb.delay = 10 * time.Millisecond
+	var ids []string
+	for i := 0; i < ParallelThreshold; i++ {
+		id := fmt.Sprintf("job%02d", i)
+		ids = append(ids, id)
+		fb.pages[addJob(t, id, "crawled", "old")] = "new " + id
+	}
+	queue(t, ids...)
+	c := New(100)
+	ctx, cancel := context.WithCancel(context.Background())
+	for _, id := range ids {
+		postEvent(c, event(id))
+	}
+	done := c.Start(ctx)
+	waitFor(t, "all jobs done", func() bool {
+		for _, id := range ids {
+			if requestOf(t, id).state != "done" {
+				return false
+			}
+		}
+		return true
+	})
+	cancel()
+	<-done
+	if fb.peak != 1 {
+		t.Errorf("a batch of %d overlapped: peak %d", ParallelThreshold, fb.peak)
+	}
+}
