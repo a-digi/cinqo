@@ -1,7 +1,7 @@
 import type { PortalLink } from '../api'
 import { diagnoseEmptyCrawl, emptyCrawlFor } from './emptyCrawl'
 import { AlertCircleIcon } from '../Shared/Icons/icons'
-import { LOGIN_BADGE_TOOLTIP, loginBadgeFor } from './loginWindow'
+import { LOGIN_BADGE_TOOLTIP, LOGIN_KEPT_BADGE_TOOLTIP, loginBadgeFor } from './loginWindow'
 import { aiTriesListing as aiTriesListingFor, hasListingFor, jobDetailIsWrittenByAi, listingNeeds, needsLoginWindow } from './crawlEngine'
 import { useCrawlEngine } from './useCrawlEngine'
 import {
@@ -91,13 +91,13 @@ export function LinkStatusPills({
           Job details: no instructions after {attemptsLabel(jobDetailAlertAttempts)}
         </span>
       )}
-      {loginBadgeFor(link) && (
+      {loginBadgeFor(link, needsLoginWindow(engine, link)) && (
         <span
           role="status"
-          title={LOGIN_BADGE_TOOLTIP}
+          title={needsLoginWindow(engine, link) ? LOGIN_BADGE_TOOLTIP : LOGIN_KEPT_BADGE_TOOLTIP}
           className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-800"
         >
-          {loginBadgeFor(link)}
+          {loginBadgeFor(link, needsLoginWindow(engine, link))}
         </span>
       )}
       {link.jobsQuestion && (

@@ -68,9 +68,13 @@ func PortalsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "id query parameter is required", http.StatusBadRequest)
 			return
 		}
+		kept := portal.LoginSessionIDsOfPortal(id) // plan 195: the logins kept for its links go with it
 		if err := portal.DeletePortal(id); err != nil {
 			http.Error(w, "failed to delete portal: "+err.Error(), http.StatusInternalServerError)
 			return
+		}
+		for _, sessionID := range kept {
+			forgetBrowserSession(r, sessionID)
 		}
 		w.WriteHeader(http.StatusNoContent)
 

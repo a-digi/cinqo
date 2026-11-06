@@ -203,3 +203,22 @@ func TestTheLinkListNeverCarriesTheSessionId(t *testing.T) {
 	}
 	_ = db.JobsDB
 }
+
+func TestDeletingAPlatformForgetsTheLoginsKeptForItsLinks(t *testing.T) {
+	pid, _ := loginSeed(t)
+	fb := newFakeBrowser(t)
+	a, b := loginLink(t, pid), loginLink(t, pid)
+	sessionCall(http.MethodPut, "/portal-links/login-session", `{"linkId":"`+a+`","sessionId":"`+sessA+`"}`)
+	sessionCall(http.MethodPut, "/portal-links/login-session", `{"linkId":"`+b+`","sessionId":"`+sessB+`"}`)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodDelete, "/portals?id="+pid, nil)
+	req.AddCookie(&http.Cookie{Name: "access_token", Value: "person-token"})
+	PortalsHandler(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("delete platform: %d %s", rec.Code, rec.Body.String())
+	}
+	got := fb.forgot()
+	if len(got) != 2 || !((got[0] == sessA && got[1] == sessB) || (got[0] == sessB && got[1] == sessA)) {
+		t.Errorf("both kept logins must be forgotten: %v", got)
+	}
+}

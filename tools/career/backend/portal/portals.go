@@ -1047,6 +1047,24 @@ func MarkLoginSessionExpired(linkID string) error {
 	return err
 }
 
+// LoginSessionIDsOfPortal returns the ids of the login sessions kept for the links of a platform, so deleting the platform can have the
+// Browser tool forget them (plan 195).
+func LoginSessionIDsOfPortal(portalID string) []string {
+	rows, err := db.JobsDB.Query(`SELECT login_session_id FROM portal_links WHERE portal_id = ? AND login_session_id <> ''`, portalID)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if rows.Scan(&id) == nil {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
 // SetLinkLoginSession sets (a 32-character hex id) or clears ("") a link's login session id and returns the id it had before, so the caller
 // can have the Browser tool forget the replaced session. Only a link that needs a login may hold one.
 func SetLinkLoginSession(linkID, sessionID string) (previous string, err error) {

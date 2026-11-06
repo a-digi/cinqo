@@ -14,12 +14,16 @@ export function isWaitingForLogin(run: Pick<CrawlRun, 'status' | 'phase'> | null
 }
 
 export const LOGIN_BADGE = 'Login needed'
+export const LOGIN_KEPT_BADGE = 'Login kept'
+export const LOGIN_KEPT_BADGE_TOOLTIP =
+  'A login is kept for this link, so Katana reads it without a login window. Auto-discovery of a link that needs a login stays off.'
 export const LOGIN_BADGE_TOOLTIP =
   'This page needs you to log in. A crawl opens a window for you to log in on the site itself (unless a login is kept for Katana), so it is never crawled automatically.'
 
 // loginBadgeFor: the badge text of a link, or null when it needs no login.
-export function loginBadgeFor(link: { requiresLogin?: boolean }): string | null {
-  return link.requiresLogin === true ? LOGIN_BADGE : null
+export function loginBadgeFor(link: { requiresLogin?: boolean }, windowNeeded = true): string | null {
+  if (link.requiresLogin !== true) return null
+  return windowNeeded ? LOGIN_BADGE : LOGIN_KEPT_BADGE
 }
 
 // A link that needs a login is crawled BY HAND only: the person has to log in in the window a crawl opens, so nothing may start such a crawl
