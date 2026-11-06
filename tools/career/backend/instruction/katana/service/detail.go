@@ -146,6 +146,7 @@ func JobPageCandidates(ctx context.Context, b linkJobBody) (any, *problem) {
 	}
 	status, raw := callScreen(crawl.JobDetailCandidatesHandler, s.token, map[string]string{"portalLinkId": s.linkID, "jobId": strings.TrimSpace(b.JobID)})
 	if status != http.StatusOK {
+		answerRequestIfBlocked(s.linkID, status, raw)
 		return nil, screenProblem(status, raw)
 	}
 	var in screenCandidates
@@ -352,3 +353,20 @@ func SaveJobDetailPicks(ctx context.Context, b picksBody) (any, *problem) {
 }
 
 func logf(format string, args ...any) { log.Printf(format, args...) }
+
+// answerRequestIfBlocked: a site that blocked the job page (a challenge, a rate limit, a refused redirect: the Browser's verdict, a 502 with its own
+// code) is not something a second AI run fixes, so the event's request for the AI to write the job details is answered and the page does not
+// start another run that meets the same block (plan 192, the live Indeed run: Cloudflare answered 403 for the job page). A page that merely
+// could not be read (code fetch_failed) keeps the request. The person can still press Generate on the Job details tile.
+func answerRequestIfBlocked(linkID string, status int, body []byte) {
+	if status != http.StatusBadGateway {
+		return
+	}
+	var verdict struct {
+		Code string `json:"code"`
+	}
+	if json.Unmarshal(body, &verdict) != nil || verdict.Code == "" || verdict.Code == "fetch_failed" {
+		return
+	}
+	_, _ = db.JobsDB.Exec(`UPDATE portal_links SET job_detail_instructions_ai_requested = 0 WHERE id = ?`, linkID)
+}

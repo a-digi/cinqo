@@ -240,3 +240,32 @@ func TestAnOldRulesJobsDoNotCountAfterANewRuleIsSaved(t *testing.T) {
 		t.Errorf("the new rule was not crawled: %s", text)
 	}
 }
+
+// The live Indeed run: Cloudflare answered 403 for the job page. The AI is told to STOP, and the event's request for the AI to write the job details
+// is answered so that no second run meets the same block.
+func TestABlockedJobPageStopsTheAIAndAnswersTheRequest(t *testing.T) {
+	r := newRig(t)
+	r.crawledJobs()
+	r.core.detailStatus = 502
+	if _, err := db.JobsDB.Exec(`UPDATE portal_links SET job_detail_instructions_ai_requested = 1 WHERE id = ?`, r.linkID); err != nil {
+		t.Fatal(err)
+	}
+	text, isErr := r.call("katana_get_job_page_candidates", map[string]any{})
+	if !isErr || !strings.Contains(text, "STOP") || !strings.Contains(text, "challenge") {
+		t.Fatalf("%v %q", isErr, text)
+	}
+	var requested int
+	if err := dbQueryInt(`SELECT job_detail_instructions_ai_requested FROM portal_links WHERE id = ?`, r.linkID, &requested); err != nil || requested != 0 {
+		t.Errorf("the request was not answered: %d %v", requested, err)
+	}
+	// a page that merely cannot be analysed (not a block) keeps the request
+	r.core.detailStatus = 0
+	r.core.detail = "not json"
+	if _, err := db.JobsDB.Exec(`UPDATE portal_links SET job_detail_instructions_ai_requested = 1 WHERE id = ?`, r.linkID); err != nil {
+		t.Fatal(err)
+	}
+	r.call("katana_get_job_page_candidates", map[string]any{})
+	if err := dbQueryInt(`SELECT job_detail_instructions_ai_requested FROM portal_links WHERE id = ?`, r.linkID, &requested); err != nil || requested != 1 {
+		t.Errorf("an unreadable page cleared the request: %d %v", requested, err)
+	}
+}

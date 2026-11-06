@@ -32,14 +32,15 @@ const (
 )
 
 type fakeCore struct {
-	mu      sync.Mutex
-	engine  string
-	pages   map[string]string // page URL -> fetch-links answer body
-	fetches []string
-	status  map[string]int // page URL -> forced status
-	events  []string       // published domain events (raw bodies)
-	detail  string         // the fetch-detail-candidates answer
-	extract func(pageURL string) string
+	mu           sync.Mutex
+	engine       string
+	pages        map[string]string // page URL -> fetch-links answer body
+	fetches      []string
+	status       map[string]int // page URL -> forced status
+	events       []string       // published domain events (raw bodies)
+	detail       string         // the fetch-detail-candidates answer
+	detailStatus int            // forced status of that answer (0: ok)
+	extract      func(pageURL string) string
 }
 
 func (f *fakeCore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -65,6 +66,11 @@ func (f *fakeCore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		fmt.Fprint(w, body)
 	case strings.HasSuffix(r.URL.Path, "/fetch-detail-candidates"):
+		if f.detailStatus != 0 {
+			w.WriteHeader(f.detailStatus)
+			fmt.Fprint(w, `{"code":"challenge","message":"a check page stopped the load","reason":"cf-mitigated: challenge","advice":"clear it once"}`)
+			return
+		}
 		fmt.Fprint(w, f.detail)
 	case strings.HasSuffix(r.URL.Path, "/crawl-paginated"):
 		var in struct{ URL string }
