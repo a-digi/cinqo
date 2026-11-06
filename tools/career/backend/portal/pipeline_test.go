@@ -339,3 +339,74 @@ func TestPipelineJudgesAKeptLoginLinkByTheEngine(t *testing.T) {
 		t.Error("an expired login is a login link again")
 	}
 }
+
+// Plan 197, step 2: a link set to use Rod is judged by its AI instructions whatever the Browser's method is, in the same database as links
+// that follow the Browser.
+func TestPipelineJudgesALinkSetToRodByItsAIInstructionsUnderKatana(t *testing.T) {
+	setupAttemptsDB(t)
+	add := func(id, ai, rule, engine string) {
+		t.Helper()
+		if _, err := db.JobsDB.Exec(`INSERT INTO portal_links (id, portal_id, url, crawl_instructions, link_rules, crawl_engine, created_at)
+		      VALUES (?, 'p1', ?, NULLIF(?, ''), NULLIF(?, ''), ?, ?)`,
+			id, "https://x/"+id, ai, rule, engine, fmt.Sprintf("2026-01-01 10:00:%02d", int(id[0]-'a'))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const rule = `{"host":"x","include":["x/j/#"]}`
+	add("a", "", rule, "")             // follows the Browser: a rule only
+	add("b", "fields: x", rule, "rod") // set to Rod: has AI instructions (and a rule it does not use)
+	add("c", "", rule, "rod")          // set to Rod: a rule only = nothing it can use
+	add("d", "fields: x", "", "")      // follows the Browser: AI instructions only
+	noListing := func(method string) map[string]bool {
+		got, err := PipelineForLinks(method)
+		if err != nil {
+			t.Fatal(err)
+		}
+		no := map[string]bool{}
+		for _, l := range got {
+			if l.Stage == StageNoListing {
+				no[l.PortalLinkID] = true
+			}
+		}
+		return no
+	}
+	// Katana selected: a and (the rule counts) fine; d has no rule; b is Rod with AI instructions: fine; c is Rod with only a rule: nothing
+	if no := noListing(CrawlMethodLinks); len(no) != 2 || !no["c"] || !no["d"] {
+		t.Errorf("Katana: %v, want c and d", no)
+	}
+	// Rod selected: a has no AI instructions; c is Rod with only a rule
+	if no := noListing(CrawlMethodInstructions); len(no) != 2 || !no["a"] || !no["c"] {
+		t.Errorf("Rod: %v, want a and c", no)
+	}
+	// no engine reading: a link set to Rod still needs AI instructions, the others take either
+	if no := noListing(""); len(no) != 1 || !no["c"] {
+		t.Errorf("unknown: %v, want c", no)
+	}
+}
+
+// The method of each row (it decides whether the AI's job-detail request counts: under Katana it says nothing about a Katana link, but it does
+// for a link set to Rod, whose job details are written by the AI).
+func TestEachPipelineRowCarriesTheMethodOfItsOwnEngine(t *testing.T) {
+	setupAttemptsDB(t)
+	for _, c := range []struct{ id, engine string }{{"a", ""}, {"b", "rod"}} {
+		if _, err := db.JobsDB.Exec(`INSERT INTO portal_links (id, portal_id, url, crawl_instructions, link_rules, crawl_engine, created_at)
+		      VALUES (?, 'p1', ?, 'fields: x', ?, ?, '2026-01-01 10:00:00')`, c.id, "https://x/"+c.id, `{"host":"x","include":["x/j/#"]}`, c.engine); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for browser, want := range map[string]map[string]string{
+		CrawlMethodLinks:        {"a": CrawlMethodLinks, "b": CrawlMethodInstructions},
+		CrawlMethodInstructions: {"a": CrawlMethodInstructions, "b": CrawlMethodInstructions},
+		"":                      {"a": "", "b": CrawlMethodInstructions},
+	} {
+		rows, _, _, err := loadPipelineRows(browser)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, r := range rows {
+			if r.method != want[r.id] {
+				t.Errorf("Browser method %q: link %s reads with %q, want %q", browser, r.id, r.method, want[r.id])
+			}
+		}
+	}
+}

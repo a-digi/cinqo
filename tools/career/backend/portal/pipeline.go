@@ -137,7 +137,19 @@ func listingPresent(method string, requiresLogin, ai, rule bool) bool {
 type pipelineRow struct {
 	id            string
 	requiresLogin bool
-	snap          PipelineSnapshot
+	// method is how THIS link's job list is read (plan 197, step 2): the Browser's method for a link that follows the Browser's engine,
+	// "instructions" for a link set to use Rod.
+	method string
+	snap   PipelineSnapshot
+}
+
+// rowMethod is the listing method of one link: a link set to use Rod is always read with its AI instructions, whatever the Browser selected;
+// every other link takes the method of the Browser's selected engine.
+func rowMethod(method, linkEngine string) string {
+	if linkEngine == LinkEngineRod {
+		return CrawlMethodInstructions
+	}
+	return method
 }
 
 // loadPipelineRows reads the snapshot of every link (oldest link first) and when the running attempts and crawls of each started
@@ -156,6 +168,7 @@ func loadPipelineRows(method string) ([]pipelineRow, map[string]string, map[stri
 		        COALESCE(TRIM(link_rules), '') <> '',
 		        requires_login,
 		        login_session_id <> '' AND login_session_state <> 'expired',
+		        crawl_engine,
 		        COALESCE(TRIM(job_detail_crawl_instructions), '') <> '',
 		        listing_crawl_requested, job_detail_instructions_ai_requested, job_detail_crawl_requested,
 		        jobs_question_asked_at IS NOT NULL AND jobs_question_asked_at <> ''
@@ -166,18 +179,21 @@ func loadPipelineRows(method string) ([]pipelineRow, map[string]string, map[stri
 	for rows.Next() {
 		var l pipelineRow
 		var ai, rule, login, kept, detail, listingReq, detailAIReq, detailCrawlReq, question bool
-		if err := rows.Scan(&l.id, &ai, &rule, &login, &kept, &detail, &listingReq, &detailAIReq, &detailCrawlReq, &question); err != nil {
+		var linkEngine string
+		if err := rows.Scan(&l.id, &ai, &rule, &login, &kept, &linkEngine, &detail, &listingReq, &detailAIReq, &detailCrawlReq, &question); err != nil {
 			rows.Close()
 			return nil, nil, nil, err
 		}
 		// Plan 195, step 4: under Katana (method "links") a link with a kept login is judged like a link that needs no login: it has a rule and
 		// its job details are picked, not written by the AI. Under any other reading it stays a login link (AI instructions, the window).
-		if login && kept && method == CrawlMethodLinks {
+		lm := rowMethod(method, linkEngine) // plan 197: a link set to use Rod is judged by its AI instructions whatever the Browser selected
+		if login && kept && lm == CrawlMethodLinks {
 			login = false
 		}
 		l.requiresLogin = login
+		l.method = lm
 		l.snap = PipelineSnapshot{
-			HasListingInstructions: listingPresent(method, login, ai, rule), HasDetailInstructions: detail,
+			HasListingInstructions: listingPresent(lm, login, ai, rule), HasDetailInstructions: detail,
 			ListingCrawlRequested: listingReq, DetailAIRequested: detailAIReq, DetailCrawlRequested: detailCrawlReq,
 			QuestionPending: question,
 		}
@@ -307,7 +323,7 @@ func PipelineForLinks(method string) ([]PipelineLink, error) {
 	for _, l := range links {
 		// Plan 190: under Katana the job details are read by picking their data, not written by the AI, so a request for the AI to write
 		// them and the failures of its earlier attempts say nothing about this link (a login link still uses the AI).
-		if method == CrawlMethodLinks && !l.requiresLogin {
+		if l.method == CrawlMethodLinks && !l.requiresLogin {
 			l.snap.DetailAIRequested = false
 			l.snap.DetailFailedRuns = 0
 		}

@@ -606,3 +606,68 @@ func TestAStopInTheMiddleOfTheRunSavesNothingOfTheEarlierPages(t *testing.T) {
 		t.Errorf("log %q", got.Log)
 	}
 }
+
+// Plan 197, step 2: the auto-discovery sweep lists a link set to Rod by its AI instructions whatever the Browser's method is.
+func TestTheSweepsListALinkSetToRodByItsAIInstructions(t *testing.T) {
+	setupTrialDB(t)
+	pid, _, _ := trialPortal(t)
+	mk := func(url, ai, rule, engine string) string {
+		t.Helper()
+		id, err := portal.AddPortalLink(pid, url, "L")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.JobsDB.Exec(`UPDATE portal_links SET crawl_instructions = NULLIF(?, ''), link_rules = NULLIF(?, ''), crawl_engine = ?, auto_discovery_enabled = 1 WHERE id = ?`, ai, rule, engine, id); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	const rule = `{"host":"x","include":["x/j/#"]}`
+	follows := mk("https://x.example/follows", "", rule, "")        // follows the Browser: a rule only
+	rodAI := mk("https://x.example/rod-ai", "fields: x", "", "rod") // set to Rod with AI instructions
+	rodRule := mk("https://x.example/rod-rule", "", rule, "rod")    // set to Rod with a rule only: nothing it can use
+	for _, c := range []struct {
+		method    string
+		want, not []string
+	}{
+		{portal.CrawlMethodLinks, []string{follows, rodAI}, []string{rodRule}},
+		{portal.CrawlMethodInstructions, []string{rodAI}, []string{follows, rodRule}},
+		{"", []string{follows, rodAI}, []string{rodRule}},
+	} {
+		got, err := portal.ListPortalLinksEligibleForAutoDiscovery(c.method)
+		if err != nil {
+			t.Fatal(err)
+		}
+		set := map[string]bool{}
+		for _, id := range got {
+			set[id] = true
+		}
+		for _, id := range c.want {
+			if !set[id] {
+				t.Errorf("method %q: %s must be listed, got %v", c.method, id, got)
+			}
+		}
+		for _, id := range c.not {
+			if set[id] {
+				t.Errorf("method %q: %s must not be listed, got %v", c.method, id, got)
+			}
+		}
+	}
+	// the custom-interval list follows the same rule
+	for _, id := range []string{follows, rodAI, rodRule} {
+		if _, err := db.JobsDB.Exec(`UPDATE portal_links SET auto_discovery_interval_minutes = 30 WHERE id = ?`, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	due, err := portal.ListDuePortalLinksWithCustomInterval(portal.CrawlMethodLinks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	set := map[string]bool{}
+	for _, id := range due {
+		set[id] = true
+	}
+	if !set[follows] || !set[rodAI] || set[rodRule] {
+		t.Errorf("custom interval list under Katana: %v", due)
+	}
+}

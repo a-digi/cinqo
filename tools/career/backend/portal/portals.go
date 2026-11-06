@@ -1154,6 +1154,13 @@ func crawlableListingSQL(method string) string {
 	return `(` + rule + ` OR ` + instructions + `)`
 }
 
+// crawlableListingForLinksSQL is crawlableListingSQL per link (plan 197, step 2): a link set to use Rod is crawlable with its AI instructions
+// whatever the Browser's method is; every other link follows the Browser's method. One condition, no semicolon.
+func crawlableListingForLinksSQL(method string) string {
+	const instructions = `(crawl_instructions IS NOT NULL AND crawl_instructions != '')`
+	return `((crawl_engine = 'rod' AND ` + instructions + `) OR (crawl_engine != 'rod' AND ` + crawlableListingSQL(method) + `))`
+}
+
 // ListPortalLinksEligibleForAutoDiscovery returns every portal link's
 // own id, across ALL portals, eligible for the auto-discovery
 // manager's own GLOBAL sweep (step 84) — has crawl_instructions set
@@ -1178,7 +1185,7 @@ func crawlableListingSQL(method string) string {
 func ListPortalLinksEligibleForAutoDiscovery(method string) ([]string, error) {
 	rows, err := db.JobsDB.Query(
 		`SELECT id FROM portal_links
-		 WHERE ` + crawlableListingSQL(method) + `
+		 WHERE ` + crawlableListingForLinksSQL(method) + `
 		   AND auto_discovery_enabled = 1
 		   AND requires_login = 0
 		   AND auto_discovery_interval_minutes IS NULL`,
@@ -1216,7 +1223,7 @@ func ListPortalLinksEligibleForAutoDiscovery(method string) ([]string, error) {
 func ListDuePortalLinksWithCustomInterval(method string) ([]string, error) {
 	rows, err := db.JobsDB.Query(
 		`SELECT id FROM portal_links
-		 WHERE ` + crawlableListingSQL(method) + `
+		 WHERE ` + crawlableListingForLinksSQL(method) + `
 		   AND auto_discovery_enabled = 1
 		   AND requires_login = 0
 		   AND auto_discovery_interval_minutes IS NOT NULL
