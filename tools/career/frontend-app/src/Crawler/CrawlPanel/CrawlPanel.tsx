@@ -64,6 +64,7 @@ import { useCrawlEngine } from '../useCrawlEngine'
 import { engineFor } from '../engines/registry'
 import { PipelineLine } from '../PipelineLine'
 import { EngineSuggestionLine } from '../EngineSuggestionLine'
+import { bindConversationEngine } from '../conversationEngine'
 import { runFollower } from '../runFollowerStart'
 import { LoginGenerateAbandoned, startAfterLogin } from '../loginGenerate'
 import { NOT_KEPT_NOTE, attachLoginSession, confirmLoginKeeping, keepResultNote } from '../loginSession'
@@ -590,6 +591,7 @@ export function CrawlPanel({
     setCrawlResult(null)
 
     createConversation({ title: crawlConversationTitle(link), platformId, model })
+      .then((conversation) => bindConversationEngine(link, conversation))
       .then((conversation) => sendMessage(conversation.id, buildCrawlMessage(link)).then((result) => ({ conversation, result })))
       .then(({ conversation, result }) => {
         const suffix = result.durationMs != null ? ` (${(result.durationMs / 1000).toFixed(1)}s)` : ''
@@ -803,7 +805,7 @@ export function CrawlPanel({
         toolIterationLimit: listingRecipe ? listingRecipe.toolIterationLimit : GENERATE_TOOL_ITERATION_LIMIT,
         allowedTools: [...tools],
         compactToolResults: true,
-      })
+      }).then((conversation) => bindConversationEngine(link, conversation)) // plan 197: a Rod link's AI reads its pages with Rod
     // Plan 183: a link that needs a login. The conversation exists first (its id is the login window's id), the window opens for the person,
     // and only after "I am logged in" is the attempt counted and the AI started; before that nothing is counted, so cancelling is no failure.
     const head: Promise<Awaited<ReturnType<typeof createConversation>>> = loginWindow
@@ -967,6 +969,7 @@ export function CrawlPanel({
           compactToolResults: true,
         }),
       )
+      .then((conversation) => bindConversationEngine(link, conversation))
       .then((conversation) => {
         if (!restrictionHolds(conversation.allowedTools, jobDetailTools)) throw new Error(GENERATE_RESTRICTION_NOT_APPLIED_MESSAGE)
         setJobDetailAiConversationId(conversation.id)

@@ -102,6 +102,8 @@ func runHTTPServer() {
 	// never an MCP tool; the routes answer state only, never a cookie. See shared/loginsession.go.
 	http.HandleFunc("/login-session/state", auth.LoginSessionStateHandler)
 	http.HandleFunc("/login-session", auth.LoginSessionForgetHandler)
+	// Plan 197: the engine an AI conversation of a Career link set to Rod reads its pages with. Never an MCP tool.
+	http.HandleFunc("/conversation-engine", crawler.ConversationEngineHandler)
 
 	log.Printf("browser tool listening on 127.0.0.1:%s", port)
 	if err := http.ListenAndServe("127.0.0.1:"+port, nil); err != nil {

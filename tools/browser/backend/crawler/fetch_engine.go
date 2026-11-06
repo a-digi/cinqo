@@ -151,6 +151,10 @@ func stopEngineLocked(engine string) {
 // engine is never started, so no second Chrome is spawned.
 func fetchWithEngine(ctx context.Context, rawURL, requestID string, expectedSelectors, removeSelectors, removeAttributes []string, maxAttributeLength int, ignoreAttributesForMaxLength []string) (crawlResponse, error) {
 	engine := selectedFetchEngine()
+	// Plan 197, step 5: an AI conversation of a link that is set to Rod reads with Rod whatever the Browser selected (conversation_engine.go).
+	if override := fetchEngineFrom(ctx); override != "" {
+		engine = override
+	}
 	defer beginEngineFetch(engine)()
 	switch engine {
 	case fetchEngineKatana:

@@ -233,7 +233,8 @@ func CrawlHandler(w http.ResponseWriter, r *http.Request) {
 		// r.Context() — ends when the caller disconnects (e.g. the agent
 		// host abandoning a timed-out tool call), which stops this crawl and
 		// frees its tab instead of leaving it working for nobody.
-		result, err = crawlPageFn(r.Context(), body.URL, body.RequestID, body.ExpectedSelectors, body.RemoveSelectors, body.RemoveAttributes, body.MaxAttributeLength, body.IgnoreAttributesForMaxLength)
+		// Plan 197, step 5: the engine this AI conversation was told to read with (empty for every other call).
+		result, err = crawlPageFn(withFetchEngine(r.Context(), conversationEngine(body.AIContextID)), body.URL, body.RequestID, body.ExpectedSelectors, body.RemoveSelectors, body.RemoveAttributes, body.MaxAttributeLength, body.IgnoreAttributesForMaxLength)
 	}
 	if err != nil {
 		setCrawlPhase(body.RequestID, phaseFailed, err.Error())
