@@ -28,6 +28,10 @@ type fakeWindow struct {
 	doneOnce sync.Once
 	// holdDone: Close does not signal Done (a window whose teardown is slow), so the person-closes signal can be sent later by the test.
 	holdDone atomic.Bool
+	// cookies the window "has" (plan 195) and the addresses they were asked for.
+	cookies    []shared.SessionCookie
+	cookiesErr error
+	cookieURLs []string
 }
 
 func (f *fakeWindow) Inspect(ctx context.Context, checkURL string) (pageInspection, error) {
@@ -51,6 +55,12 @@ func (f *fakeWindow) Close() {
 	if !f.holdDone.Load() {
 		f.doneOnce.Do(func() { close(f.done) })
 	}
+}
+func (f *fakeWindow) Cookies(ctx context.Context, pageURL string) ([]shared.SessionCookie, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.cookieURLs = append(f.cookieURLs, pageURL)
+	return f.cookies, f.cookiesErr
 }
 func (f *fakeWindow) personCloses() { f.doneOnce.Do(func() { close(f.done) }) }
 func (f *fakeWindow) setPage(p pageInspection) {

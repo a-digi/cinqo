@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -63,6 +64,8 @@ type loginWindowHandle interface {
 	TabContext() context.Context
 	// Done is closed when the window has ended on its own (the person closed it).
 	Done() <-chan struct{}
+	// Cookies returns the cookies the window's browser would send to pageURL, for a session the person chose to keep (plan 195).
+	Cookies(ctx context.Context, pageURL string) ([]shared.SessionCookie, error)
 	// Close ends the window and deletes its temporary profile folder; safe to call more than once.
 	Close()
 }
@@ -81,6 +84,9 @@ type chromeWindow struct{ w *shared.LoginWindow }
 func (c *chromeWindow) Done() <-chan struct{}       { return c.w.Done() }
 func (c *chromeWindow) TabContext() context.Context { return c.w.Ctx }
 func (c *chromeWindow) Close()                      { c.w.Close() }
+func (c *chromeWindow) Cookies(ctx context.Context, pageURL string) ([]shared.SessionCookie, error) {
+	return c.w.Cookies(ctx, pageURL)
+}
 
 func (c *chromeWindow) Inspect(reqCtx context.Context, checkURL string) (pageInspection, error) {
 	ctx, cancel := context.WithTimeout(c.w.Ctx, inspectTimeout)
@@ -107,6 +113,8 @@ type run struct {
 	// aiMayUse (plan 183): the person opened this window for the AI conversation whose id is the run's id to read pages in. Set only by the
 	// human open route; no AI tool can set or read it.
 	aiMayUse bool
+	// sessionID (plan 195): the login session saved from this window at the person's opt-in; "" when none was kept.
+	sessionID string
 }
 
 type endedRun struct {
@@ -205,6 +213,10 @@ type loginWindowStateResponse struct {
 	State  string `json:"state"`
 	Reason string `json:"reason,omitempty"`
 	Domain string `json:"domain,omitempty"`
+	// Session (plan 195): the saved login session's info when the person asked to keep it; never a cookie.
+	Session *shared.LoginSessionInfo `json:"session,omitempty"`
+	// SessionError says in a few words why a requested session could not be kept (the login itself is still confirmed).
+	SessionError string `json:"sessionError,omitempty"`
 }
 
 func writeStateJSON(w http.ResponseWriter, status int, v loginWindowStateResponse) {
@@ -332,6 +344,8 @@ func LoginWindowStatusHandler(w http.ResponseWriter, r *http.Request) {
 type loginWindowConfirmRequest struct {
 	RequestID string `json:"requestId"`
 	CheckURL  string `json:"checkUrl"`
+	// KeepSession (plan 195): the person's opt-in to keep this login as a sealed session for Katana. Off unless the person ticked it.
+	KeepSession bool `json:"keepSession,omitempty"`
 }
 
 // LoginWindowConfirmHandler handles POST /login-window/confirm: the person says they are logged in; the tool checks. It loads checkUrl
@@ -364,7 +378,11 @@ func LoginWindowConfirmHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if state == loginWindowConfirmed {
-		writeStateJSON(w, http.StatusOK, loginWindowStateResponse{State: loginWindowConfirmed, Domain: domain})
+		resp := loginWindowStateResponse{State: loginWindowConfirmed, Domain: domain}
+		if body.KeepSession {
+			keepLoginSession(r.Context(), body.RequestID, handle, domain, &resp)
+		}
+		writeStateJSON(w, http.StatusOK, resp)
 		return
 	}
 	check := strings.TrimSpace(body.CheckURL)
@@ -409,7 +427,49 @@ func LoginWindowConfirmHandler(w http.ResponseWriter, r *http.Request) {
 	id := body.RequestID
 	run.timer = time.AfterFunc(loginWindowMaxLife, func() { endLoginWindow(id, endedTimedOut) })
 	windows.mu.Unlock()
-	writeStateJSON(w, http.StatusOK, loginWindowStateResponse{State: loginWindowConfirmed, Domain: domain})
+	resp := loginWindowStateResponse{State: loginWindowConfirmed, Domain: domain}
+	if body.KeepSession {
+		keepLoginSession(r.Context(), id, handle, domain, &resp)
+	}
+	writeStateJSON(w, http.StatusOK, resp)
+}
+
+// keepLoginSession saves the confirmed window's cookies for the run's own site as a sealed login session (plan 195) and puts its info (never
+// a cookie) in resp. A second request for the same run returns the session already saved. A failure is reported in resp.SessionError and
+// never fails the confirmation: the window and the login are fine, only the keeping did not work.
+func keepLoginSession(ctx context.Context, requestID string, handle loginWindowHandle, domain string, resp *loginWindowStateResponse) {
+	windows.mu.Lock()
+	run, ok := windows.active[requestID]
+	existing := ""
+	if ok {
+		existing = run.sessionID
+	}
+	windows.mu.Unlock()
+	if existing != "" {
+		if info, err := shared.GetLoginSession(existing); err == nil {
+			resp.Session = &info
+			return
+		}
+	}
+	cookies, err := handle.Cookies(ctx, "https://"+domain+"/")
+	if err != nil {
+		resp.SessionError = "could not read the login from the window"
+		return
+	}
+	info, err := shared.SaveLoginSession(domain, cookies)
+	if err != nil {
+		resp.SessionError = "the site left no login to keep"
+		if !errors.Is(err, shared.ErrLoginSessionNoCookies) {
+			resp.SessionError = "could not keep the login"
+		}
+		return
+	}
+	windows.mu.Lock()
+	if run, ok := windows.active[requestID]; ok {
+		run.sessionID = info.ID
+	}
+	windows.mu.Unlock()
+	resp.Session = &info
 }
 
 type loginWindowCancelRequest struct {

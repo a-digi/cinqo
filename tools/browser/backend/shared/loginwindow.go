@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
 )
 
@@ -151,6 +152,26 @@ func OpenLoginWindow(startURL string) (*LoginWindow, error) {
 		close(w.done)
 	}()
 	return w, nil
+}
+
+// Cookies returns the cookies the window's browser would send to pageURL (the site's own and its parent domain's, HttpOnly ones included),
+// for a login session the person chose to keep (plan 195). Only that site's cookies: the call is limited to the one address.
+func (w *LoginWindow) Cookies(ctx context.Context, pageURL string) ([]SessionCookie, error) {
+	cctx, cancel := context.WithTimeout(w.Ctx, 15*time.Second)
+	defer cancel()
+	defer context.AfterFunc(ctx, cancel)() // the caller giving up stops the read too
+	var out []SessionCookie
+	err := chromedp.Run(cctx, chromedp.ActionFunc(func(c context.Context) error {
+		cs, err := network.GetCookies().WithURLs([]string{pageURL}).Do(c)
+		if err != nil {
+			return err
+		}
+		for _, k := range cs {
+			out = append(out, SessionCookie{Name: k.Name, Value: k.Value, Domain: k.Domain, Path: k.Path, Secure: k.Secure, HTTPOnly: k.HTTPOnly, SameSite: string(k.SameSite), Expires: k.Expires})
+		}
+		return nil
+	}))
+	return out, err
 }
 
 // Done is closed when the window has ended: closed by the person, or by Close.

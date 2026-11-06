@@ -255,6 +255,7 @@ func runHTTPServer() {
 	http.HandleFunc("/portals/ai", portalhandlers.PortalAIHandler)
 	http.HandleFunc("/portal-links", portalhandlers.PortalLinksHandler)
 	http.HandleFunc("/portal-links/ai", portalhandlers.PortalLinkAIHandler)
+	http.HandleFunc("/portal-links/login-session", portalhandlers.PortalLinkLoginSessionHandler)
 	// The pipeline line judges the job list by the Browser's selected engine (plan 190), read with the caller's own session.
 	portalhandlers.ListingMethodForRequest = func(r *http.Request) string {
 		c, err := r.Cookie("access_token")

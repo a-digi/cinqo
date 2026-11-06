@@ -983,6 +983,50 @@ func GetPortalLinkLogin(id string) (requiresLogin bool, loginURL string, err err
 	return flag != 0, loginURL, nil
 }
 
+// LoginSessionIDPattern is the shape of a login session id (plan 195): 32 lower-case hex characters, made by the Browser tool.
+var LoginSessionIDPattern = regexp.MustCompile(`^[0-9a-f]{32}$`)
+
+// ErrLoginSessionNeedsLoginLink: a login session can only be attached to a link that is marked as needing a login.
+var ErrLoginSessionNeedsLoginLink = errors.New("a login session can only be kept for a link that needs a login")
+
+// GetLinkLoginSession (plan 195, step 2) returns the id of the login session kept for a link in the Browser tool ("" = none). It is only an
+// id: the cookies live sealed in the Browser tool and never reach this tool. ErrUnknownPortalLink for an unknown link.
+func GetLinkLoginSession(linkID string) (string, error) {
+	if err := RequirePortalLinkExists(linkID); err != nil {
+		return "", err
+	}
+	var id string
+	if err := db.JobsDB.QueryRow(`SELECT login_session_id FROM portal_links WHERE id = ?`, linkID).Scan(&id); err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+// SetLinkLoginSession sets (a 32-character hex id) or clears ("") a link's login session id and returns the id it had before, so the caller
+// can have the Browser tool forget the replaced session. Only a link that needs a login may hold one.
+func SetLinkLoginSession(linkID, sessionID string) (previous string, err error) {
+	previous, err = GetLinkLoginSession(linkID)
+	if err != nil {
+		return "", err
+	}
+	if sessionID != "" {
+		if !LoginSessionIDPattern.MatchString(sessionID) {
+			return "", errors.New("sessionId must be 32 lower-case hex characters")
+		}
+		requires, _, err := GetPortalLinkLogin(linkID)
+		if err != nil {
+			return "", err
+		}
+		if !requires {
+			return "", ErrLoginSessionNeedsLoginLink
+		}
+	}
+	if _, err := db.JobsDB.Exec(`UPDATE portal_links SET login_session_id = ?, updated_at = datetime('now') WHERE id = ?`, sessionID, linkID); err != nil {
+		return "", err
+	}
+	return previous, nil
+}
+
 // GetPortalIDForLink reads just a link's own owning portal_id — the
 // deterministic crawl goroutines (crawl package) need it to set
 // browser's own rateLimitKey (portal_pacing.go, tools/browser/backend/

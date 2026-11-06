@@ -40,7 +40,6 @@ import {
   AI_LOGIN_WAIT_TEXT,
   LoginWaitCancelled,
   closeLoginWindow,
-  confirmLogin,
   generateLoginNote,
   isWaitingForLogin,
   manualOnlyNote,
@@ -64,6 +63,9 @@ import { useInstructionEngine } from '../engines/useInstructionEngine'
 import { PipelineLine } from '../PipelineLine'
 import { runFollower } from '../runFollowerStart'
 import { LoginGenerateAbandoned, startAfterLogin } from '../loginGenerate'
+import { NOT_KEPT_NOTE, attachLoginSession, confirmLoginKeeping, keepResultNote } from '../loginSession'
+import { KeepLoginOption } from './KeepLoginOption'
+import { LoginKeptStatus } from './LoginKeptStatus'
 import { diagnoseEmptyCrawl, emptyCrawlFacts, emptyCrawlFor } from '../emptyCrawl'
 import { shouldTryInherit, type InheritView } from '../inheritOutcome'
 import { FREE_ROUTER_HINT, isFreeRouter } from '../modelHint'
@@ -478,11 +480,33 @@ export function CrawlPanel({
   // crawl. A refusal (still a login form, a bot check) is shown under the button; nothing typed in the window is ever seen here.
   const [isConfirmingLogin, setIsConfirmingLogin] = useState(false)
   const [loginConfirmError, setLoginConfirmError] = useState('')
+  // plan 195: the opt-in to keep the login as a session (off unless ticked), what to tell the person about it, and a counter that makes
+  // the "Login kept" line read the link again after a login was kept.
+  const [keepLogin, setKeepLogin] = useState(false)
+  const [keepNote, setKeepNote] = useState('')
+  const [keptRefresh, setKeptRefresh] = useState(0)
+  // keepAfterConfirm waits for the confirmation; when the person asked to keep the login it saves the session id on this link. A session
+  // that could not be kept never fails the login: the person is told in keepNote.
+  async function keepAfterConfirm(confirmation: ReturnType<typeof confirmLoginKeeping>): Promise<void> {
+    const asked = keepLogin
+    setKeepNote('')
+    const result = await confirmation
+    if (asked && result.session) {
+      try {
+        await attachLoginSession(link.id, result.session.id)
+        setKeptRefresh((n) => n + 1)
+      } catch (err) {
+        setKeepNote(`The login works, but it could not be kept: ${err instanceof Error ? err.message : 'unknown error'}`)
+        return
+      }
+    }
+    setKeepNote(keepResultNote(asked, result) ?? '')
+  }
   function handleConfirmLogin() {
     if (!run) return
     setIsConfirmingLogin(true)
     setLoginConfirmError('')
-    confirmLogin(run.crawlRunId)
+    keepAfterConfirm(confirmLoginKeeping(run.crawlRunId, keepLogin))
       .catch((err: unknown) => {
         setLoginConfirmError(err instanceof Error ? err.message : 'Could not confirm the login.')
       })
@@ -495,7 +519,7 @@ export function CrawlPanel({
     if (aiLoginWait === null) return
     setIsConfirmingLogin(true)
     setLoginConfirmError('')
-    confirmLogin(aiLoginWait)
+    keepAfterConfirm(confirmLoginKeeping(aiLoginWait, keepLogin))
       .then(() => {
         aiLoginWaitRef.current?.resolve()
       })
@@ -1427,7 +1451,8 @@ export function CrawlPanel({
             {aiLoginWait !== null ? (
               <div role="status" className="mt-2 rounded-md border border-sky-300 bg-sky-50 px-2 py-1.5 text-xs text-sky-900">
                 <p className="font-medium">{AI_LOGIN_WAIT_TEXT}</p>
-                <p className="mt-0.5 text-sky-800">You type your login on the site itself; nothing of it is kept here.</p>
+                <p className="mt-0.5 text-sky-800">{NOT_KEPT_NOTE}</p>
+                <KeepLoginOption checked={keepLogin} onChange={setKeepLogin} disabled={isConfirmingLogin} />
                 <div className="mt-1.5 flex gap-2">
                   <button
                     type="button"
@@ -1457,6 +1482,12 @@ export function CrawlPanel({
                   {generateLoginNote(link)}
                 </p>
               )
+            )}
+            {link.requiresLogin && <LoginKeptStatus linkId={link.id} refreshKey={keptRefresh} />}
+            {link.requiresLogin && keepNote !== '' && (
+              <p role="status" className="mt-1 text-xs text-gray-700">
+                {keepNote}
+              </p>
             )}
             {!aiWritesListing && instructionEngine.startOverControl !== undefined && (
               <instructionEngine.startOverControl
@@ -1739,7 +1770,8 @@ export function CrawlPanel({
             (isWaitingForLogin(run) ? (
               <div className="rounded-md border border-sky-300 bg-sky-50 px-2 py-1.5 text-xs text-sky-900">
                 <p className="font-medium">A window is open at the login page. Log in there, then press &quot;I am logged in&quot;.</p>
-                <p className="mt-0.5 text-sky-800">You type your login on the site itself; nothing of it is kept here.</p>
+                <p className="mt-0.5 text-sky-800">{NOT_KEPT_NOTE}</p>
+                <KeepLoginOption checked={keepLogin} onChange={setKeepLogin} disabled={isConfirmingLogin} />
                 <div className="mt-1.5 flex gap-2">
                   <button
                     type="button"

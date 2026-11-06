@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.0.752",
+  "version": "0.0.753",
   "authors": [
     { "name": "Anes Detit", "email": "tafa.andet@googlemail.com" }
   ],
@@ -472,6 +472,21 @@
       "method": "DELETE",
       "path_suffix": "recruiters",
       "required_scope": "tool:career:companies"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "portal-links/login-session",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "portal-links/login-session",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "portal-links/login-session",
+      "required_scope": "tool:career:portals"
     },
     {
       "method": "GET",

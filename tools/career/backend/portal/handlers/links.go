@@ -185,6 +185,9 @@ func PortalLinksHandler(w http.ResponseWriter, r *http.Request) {
 				portal.WritePortalLinkAwareError(w, "update portal link login settings", err)
 				return false
 			}
+			if body.RequiresLogin != nil && !*body.RequiresLogin {
+				forgetLinkLoginSession(r, body.ID) // plan 195: a link that needs no login keeps no login
+			}
 			return true
 		}
 		loginFirst := body.RequiresLogin != nil && !*body.RequiresLogin
@@ -321,6 +324,7 @@ func PortalLinksHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "id query parameter is required", http.StatusBadRequest)
 			return
 		}
+		forgetLinkLoginSession(r, id) // plan 195: a link's saved login goes with it
 		if err := portal.RemovePortalLink(id); err != nil {
 			http.Error(w, "failed to remove portal link: "+err.Error(), http.StatusInternalServerError)
 			return

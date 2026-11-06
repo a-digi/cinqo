@@ -4,10 +4,9 @@
 // stopped with the existing stopCrawlNow (the run closes its window).
 
 import type { CrawlRun } from './crawlNow'
+import { confirmLoginKeeping } from './loginSession'
 
 export const WAITING_FOR_LOGIN = 'waiting_for_login'
-
-const CONFIRM_URL = '/api/v1/tools/browser/proxy/login-window/confirm'
 
 // isWaitingForLogin: a run that is still going and waits for the person to log in and confirm.
 export function isWaitingForLogin(run: Pick<CrawlRun, 'status' | 'phase'> | null): boolean {
@@ -45,7 +44,7 @@ export function loginCheckboxState(link: { autoDiscoveryEnabled?: boolean }, che
 // the Generate creates), waits for "I am logged in", and only then starts the AI, whose browser tools read the pages in that window. Nothing the
 // person types is seen or kept by this page; the window is closed when the run ends or the person cancels.
 export const GENERATE_LOGIN_NOTE =
-  'This link needs a login. Generate opens a window for you to log in on the site itself; the AI then reads the pages in that window. Nothing of your login is kept.'
+  'This link needs a login. Generate opens a window for you to log in on the site itself; the AI then reads the pages in that window. Nothing of your login is kept unless you choose to keep it.'
 
 // generateLoginNote: the note to show with Generate for a link that needs a login, or null for any other link.
 export function generateLoginNote(link: { requiresLogin?: boolean }): string | null {
@@ -116,24 +115,9 @@ export function loginAddressForSave(requiresLogin: boolean, raw: string): string
   return requiresLogin ? raw.trim() : ''
 }
 
-// confirmErrorText turns the Browser's refusal of a confirmation into one sentence for the person. The Browser's own text names the reason
-// (the page still shows a login form, it is a bot check, the page is empty); a 404 means the window is gone.
-export function confirmErrorText(status: number, body: string): string {
-  if (status === 404) return 'The login window is closed. Start the crawl again to get a new one.'
-  const text = body.trim()
-  if (text) return text
-  return `Could not confirm the login (${status.toString()}).`
-}
-
-// confirmLogin asks the Browser tool to check the page in the run's window and mark the login as confirmed. Throws an Error with the reason
-// when the Browser refuses (the person is told to finish logging in).
+// confirmLogin asks the Browser tool to check the page in the run's window and mark the login as confirmed (without keeping anything).
+// Throws an Error with the reason when the Browser refuses (the person is told to finish logging in). Keeping the login is
+// confirmLoginKeeping in loginSession.ts.
 export async function confirmLogin(runId: string): Promise<void> {
-  const res = await fetch(CONFIRM_URL, {
-    method: 'POST',
-    credentials: 'include',
-    body: JSON.stringify({ requestId: runId }),
-  })
-  if (res.ok) return
-  const text = await res.text().catch(() => '')
-  throw new Error(confirmErrorText(res.status, text))
+  await confirmLoginKeeping(runId, false)
 }

@@ -641,10 +641,12 @@ CREATE TABLE IF NOT EXISTS portal_links (
     ai_platform_id                                 TEXT NOT NULL DEFAULT '',
     ai_model                                       TEXT NOT NULL DEFAULT '',
     -- requires_login / login_url (plan 182, step 3): the page of this link is only shown to a logged-in visitor. login_url is the
-    -- site's own login page ('' = open the link's own address). These are settings of the link, never a login: nothing about a login
-    -- (password, cookie, session) is stored anywhere. Also added to existing installs by migratePortalLinksLogin.
+    -- site's own login page ('' = open the link's own address). These are settings of the link, never a login: no password or cookie is
+    -- stored in this tool. login_session_id (plan 195, step 2) is only the opaque id of a login session the person chose to keep in the
+    -- BROWSER tool ('' = none); the cookies live sealed there, never here. Also added to existing installs by migratePortalLinksLogin.
     requires_login                                 INTEGER NOT NULL DEFAULT 0,
     login_url                                      TEXT NOT NULL DEFAULT '',
+    login_session_id                               TEXT NOT NULL DEFAULT '',
     -- crawl_method / link_rules (plan 185, step 4): how this link's listing is crawled. 'instructions' (the default, what every link
     -- did before) = the AI-written selectors in crawl_instructions; 'links' = the link crawler: jobs found by the URL pattern of their
     -- links, no AI, available only while the Browser tool's engine is Katana. link_rules holds the person's rule as JSON (host, include
@@ -2570,6 +2572,7 @@ func migratePortalLinksLogin(db *sql.DB) error {
 	for _, col := range []struct{ name, def string }{
 		{"requires_login", "INTEGER NOT NULL DEFAULT 0"},
 		{"login_url", "TEXT NOT NULL DEFAULT ''"},
+		{"login_session_id", "TEXT NOT NULL DEFAULT ''"}, // plan 195, step 2: the opaque id of a session kept in the Browser tool
 	} {
 		exists, hasColumn, err := tableHasColumn(db, "portal_links", col.name)
 		if err != nil {
