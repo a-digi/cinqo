@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { PortalLink } from '../../api'
 import { DescriptionRuleEditor } from './DescriptionRuleEditor'
+import { JobDetailPickHelp } from './JobDetailPickHelp'
 import { VerifyPanel } from './VerifyPanel'
 import {
   loadPickCandidates,
@@ -339,6 +340,8 @@ export function JobDetailPickPanel({ link, onSaved }: { link: PortalLink; onSave
           {open ? 'Close' : 'Choose the data'}
         </button>
       </div>
+
+      <JobDetailPickHelp />
 
       {link.jobDetailCrawlInstructions && fillNote(link.jobDetailInstructionsOrigin) !== '' && (
         <p className="mt-1 text-gray-700">{fillNote(link.jobDetailInstructionsOrigin)}</p>
