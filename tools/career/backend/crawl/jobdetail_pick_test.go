@@ -365,6 +365,15 @@ func TestPickSaveStoresThroughTheValidatedFunction(t *testing.T) {
 	if got != resp.YAML || got == before || !strings.Contains(got, "descriptionRule") || !strings.Contains(got, "attribute: datetime") {
 		t.Errorf("stored:\n%s", got)
 	}
+	// the screen's save is recorded as "picked" (the origin that may fill the company, location and date)
+	portals, _ := portal.ListPortals()
+	for _, p := range portals {
+		for _, l := range p.Links {
+			if l.ID == id && l.JobDetailInstructionsOrigin != portal.JobDetailOriginPicked {
+				t.Errorf("origin %q, want picked", l.JobDetailInstructionsOrigin)
+			}
+		}
+	}
 	// the stored text is what the detail crawl reads
 	if _, err := portal.BuildJobDetailCrawlRequest(id); err != nil {
 		t.Errorf("the saved instructions cannot be run: %v", err)

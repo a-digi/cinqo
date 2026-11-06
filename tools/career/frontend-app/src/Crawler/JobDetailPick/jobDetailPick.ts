@@ -78,6 +78,8 @@ export interface Choices {
   // Exactly one of these two describes the description (the backend refuses both).
   descriptionSelector?: string
   description?: DescriptionRule
+  // Let the title the page states replace the job's saved title after a detail crawl (off unless chosen; needs the title field).
+  replaceTitle?: boolean
 }
 
 export interface CurrentInstructions {

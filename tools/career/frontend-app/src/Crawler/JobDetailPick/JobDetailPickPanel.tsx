@@ -17,14 +17,17 @@ import {
   draftFromBox,
   describePickFailure,
   FIELD_NAMES,
+  fillNote,
   filterElements,
   lossyNote,
+  originLabel,
   pickFromElement,
   pickFromRanked,
   samePick,
   shortValue,
   shownSuggestions,
   startingPicks,
+  startingReplaceTitle,
   startingRule,
   toChoices,
   whyText,
@@ -209,6 +212,8 @@ export function JobDetailPickPanel({ link, onSaved }: { link: PortalLink; onSave
   const [picks, setPicks] = useState<Picks>(NO_PICKS)
   // The description rule being edited; null while the description is read from one box.
   const [rule, setRule] = useState<RuleDraft | null>(null)
+  // Let the title the page states replace the job's saved title when its page is crawled (off by default).
+  const [replaceTitle, setReplaceTitle] = useState(false)
   const [preview, setPreview] = useState<PickPreview | null>(null)
   const [previewError, setPreviewError] = useState('')
   const loadSeq = useRef(0)
@@ -225,6 +230,7 @@ export function JobDetailPickPanel({ link, onSaved }: { link: PortalLink; onSave
         setPage(p)
         setPicks(startingPicks(p))
         setRule(startingRule(p))
+        setReplaceTitle(startingReplaceTitle(p))
         if (choice === 'default' && p.samples.length > 0) setSample(p.samples[0].jobId)
       })
       .catch((err: unknown) => {
@@ -251,7 +257,7 @@ export function JobDetailPickPanel({ link, onSaved }: { link: PortalLink; onSave
     }
     const seq = ++previewSeq.current
     const timer = setTimeout(() => {
-      previewPickChoices(link.id, toChoices(picks, rule))
+      previewPickChoices(link.id, toChoices(picks, rule, replaceTitle))
         .then((p) => {
           if (seq !== previewSeq.current) return
           setPreview(p)
@@ -266,7 +272,7 @@ export function JobDetailPickPanel({ link, onSaved }: { link: PortalLink; onSave
     return () => {
       clearTimeout(timer)
     }
-  }, [picks, rule, page, link.id])
+  }, [picks, rule, replaceTitle, page, link.id])
 
   function setPick(field: PickField, p: Pick | null) {
     setPicks((prev) => ({ ...prev, [field]: p }))
@@ -279,6 +285,11 @@ export function JobDetailPickPanel({ link, onSaved }: { link: PortalLink; onSave
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-semibold">Pick the data of a job page</span>
         <span>— choose where a job page says its title, company, location, date and description, without AI.</span>
+        {link.jobDetailCrawlInstructions && originLabel(link.jobDetailInstructionsOrigin) !== '' && (
+          <span className="rounded-full border border-blue-300 bg-white px-2 py-0.5 text-[11px]" data-testid="job-detail-origin">
+            Instructions now: {originLabel(link.jobDetailInstructionsOrigin)}
+          </span>
+        )}
         <button
           type="button"
           className={buttonClass}
@@ -289,6 +300,10 @@ export function JobDetailPickPanel({ link, onSaved }: { link: PortalLink; onSave
           {open ? 'Close' : 'Choose the data'}
         </button>
       </div>
+
+      {link.jobDetailCrawlInstructions && fillNote(link.jobDetailInstructionsOrigin) !== '' && (
+        <p className="mt-1 text-gray-700">{fillNote(link.jobDetailInstructionsOrigin)}</p>
+      )}
 
       {open && (
         <div className="mt-3 space-y-3">
@@ -370,16 +385,37 @@ export function JobDetailPickPanel({ link, onSaved }: { link: PortalLink; onSave
               )}
               <div className="space-y-2">
                 {DATA_FIELDS.map((f) => (
-                  <FieldRow
-                    key={`${page.url}|${f}`}
-                    field={f}
-                    page={page}
-                    pick={picks[f]}
-                    required={false}
-                    onPick={(p) => {
-                      setPick(f, p)
-                    }}
-                  />
+                  <div key={`${page.url}|${f}`} className="space-y-1">
+                    <FieldRow
+                      field={f}
+                      page={page}
+                      pick={picks[f]}
+                      required={false}
+                      onPick={(p) => {
+                        setPick(f, p)
+                      }}
+                    />
+                    {f === 'title' && picks.title !== null && (
+                      <label className="ml-1 flex items-start gap-2 text-gray-800" data-testid="job-detail-pick-replace-title">
+                        <input
+                          type="checkbox"
+                          checked={replaceTitle}
+                          onChange={(e) => {
+                            setReplaceTitle(e.target.checked)
+                          }}
+                          className="mt-0.5"
+                        />
+                        <span>
+                          Replace the job&apos;s title with this one when its page is crawled. Off: the title is only checked against the
+                          saved one.
+                          <span className="block text-gray-600">
+                            Use it when the listing&apos;s titles are poor. A later crawl of the listing may add the job again under its old
+                            title. Each change is written in the run log; jobs you added by hand keep their title.
+                          </span>
+                        </span>
+                      </label>
+                    )}
+                  </div>
                 ))}
                 {rule === null ? (
                   <>
@@ -413,7 +449,7 @@ export function JobDetailPickPanel({ link, onSaved }: { link: PortalLink; onSave
                     linkId={link.id}
                     page={page}
                     draft={rule}
-                    choices={toChoices(picks, rule)}
+                    choices={toChoices(picks, rule, replaceTitle)}
                     sampleJobId={sample !== 'default' && sample !== 'url' ? sample : null}
                     onChange={setRule}
                     onUseBox={() => {
@@ -461,7 +497,7 @@ export function JobDetailPickPanel({ link, onSaved }: { link: PortalLink; onSave
                 <VerifyPanel
                   linkId={link.id}
                   page={page}
-                  choices={toChoices(picks, rule)}
+                  choices={toChoices(picks, rule, replaceTitle)}
                   previewValid={preview?.valid === true}
                   onSaved={onSaved}
                 />

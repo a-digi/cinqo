@@ -385,6 +385,9 @@ export interface PortalLink {
   // than crawlInstructions' own listing-page fields+pagination shape.
   // See plan/ai/tools/career/step-XX-job-detail-crawl-instructions.md.
   jobDetailCrawlInstructions?: string | null
+  // Who wrote the job-detail instructions (plan 186, step 9): 'picked' (the picking screen), 'ai', 'manual' (typed in the text box),
+  // 'inherited' (copied from another link) or '' (saved before it was recorded). Always sent by the backend.
+  jobDetailInstructionsOrigin: string
   // Separate, job-detail-specific counterparts to
   // instructionsAiError/instructionsAiErrorAt/instructionsAiConversationId
   // below, which track the LISTING instructions' own AI generation

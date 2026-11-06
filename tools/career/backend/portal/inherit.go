@@ -271,9 +271,9 @@ func SaveInheritedInstructions(linkID, listing, jobDetail string) (listingSaved,
 	}
 	if jobDetail != "" {
 		res, err := tx.Exec(
-			`UPDATE portal_links SET job_detail_crawl_instructions = ?, updated_at = datetime('now')
+			`UPDATE portal_links SET job_detail_crawl_instructions = ?, job_detail_instructions_origin = ?, updated_at = datetime('now')
 			 WHERE id = ? AND TRIM(COALESCE(job_detail_crawl_instructions, ''), ' ' || char(9) || char(10) || char(13)) = ''`,
-			jobDetail, linkID,
+			jobDetail, JobDetailOriginInherited, linkID,
 		)
 		if err != nil {
 			return false, false, err

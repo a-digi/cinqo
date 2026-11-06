@@ -1315,6 +1315,32 @@ func SaveJobDetailExtraction(jobId string, values map[string]string) (updated bo
 	return true, nil
 }
 
+// maxReplacedTitleRunes bounds a title that replaces a job's title.
+const maxReplacedTitleRunes = 300
+
+// ReplaceJobTitle gives a crawled job the title its detail page states (plan 186, D2: only when the person asked for it in the
+// instructions). It returns the old title and whether it changed anything. A job added by hand is never touched; an empty title, a title
+// over several lines, one longer than maxReplacedTitleRunes or the same title change nothing.
+func ReplaceJobTitle(jobID, title string) (old string, changed bool, err error) {
+	if err := RequireJobExists(jobID); err != nil {
+		return "", false, err
+	}
+	var source string
+	if err := db.JobsDB.QueryRow(`SELECT title, source FROM jobs WHERE id = ?`, jobID).Scan(&old, &source); err != nil {
+		return "", false, err
+	}
+	title = strings.TrimSpace(title)
+	if source == SourceManual || title == "" || strings.ContainsAny(title, "\n\r") || utf8.RuneCountInString(title) > maxReplacedTitleRunes || title == old {
+		return old, false, nil
+	}
+	res, err := db.JobsDB.Exec(`UPDATE jobs SET title = ? WHERE id = ? AND source <> 'manual'`, title, jobID)
+	if err != nil {
+		return old, false, err
+	}
+	n, err := res.RowsAffected()
+	return old, n > 0, err
+}
+
 // MissingFields are what a job's detail page says about it beyond its description (plan 185, step 7b): the values of the fields the
 // detail instructions labeled company, location and postedAt. An empty value means "the page did not say".
 type MissingFields struct {
@@ -1353,7 +1379,8 @@ func cleanFilledValue(v string, max int) string {
 	return v
 }
 
-// FillMissingJobFields completes a job FOUND BY THE LINK CRAWLER (its portal link's method is "links") with what its detail page says:
+// FillMissingJobFields completes a job FOUND BY THE LINK CRAWLER (its portal link's method is "links"), or a job of a link whose job-detail
+// instructions were picked on the picking screen (plan 186, D3), with what its detail page says:
 // company, location and posted date, each ONLY into a field that is empty. Nothing that is already there is replaced, a job a person
 // added by hand is never touched (source 'manual'), and a job of any other link is not changed at all. It returns the names of the
 // fields it filled. A filled company announces the job to the company linking (career.job.created) exactly as a crawl does for a
@@ -1362,7 +1389,9 @@ func FillMissingJobFields(jobID string, f MissingFields) (filled []string, err e
 	if err := RequireJobExists(jobID); err != nil {
 		return nil, err
 	}
-	const linkMethodOnly = ` AND source <> 'manual' AND EXISTS (SELECT 1 FROM portal_links pl WHERE pl.id = jobs.portal_link_id AND pl.crawl_method = 'links')`
+	// A job of a link on the link crawler, or of a link whose job-detail instructions a person picked on the picking screen (an explicit
+	// act: instructions the AI wrote or that were typed keep filling nothing).
+	const linkMethodOnly = ` AND source <> 'manual' AND EXISTS (SELECT 1 FROM portal_links pl WHERE pl.id = jobs.portal_link_id AND (pl.crawl_method = 'links' OR pl.job_detail_instructions_origin = 'picked'))`
 	set := func(column, value string) (bool, error) {
 		if value == "" {
 			return false, nil

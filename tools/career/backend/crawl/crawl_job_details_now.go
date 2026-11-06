@@ -29,6 +29,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"career-tool-backend/jobs"
@@ -311,7 +312,23 @@ func crawlOneJobDetail(ctx context.Context, coreURL, portalID, runID, accessToke
 	if ferr != nil {
 		return didUpdate, ferr
 	}
-	return didUpdate || len(filled) > 0, nil
+	// Plan 186 (D2): the page's title replaces the job's only when the instructions say so, and the run log says it (never silent).
+	titleChanged := false
+	if req.ReplaceTitle {
+		// A title over several lines is a block of the page (a heading with a badge and a name), not a title: it is ignored, not flattened.
+		raw := strings.TrimSpace(values["title"])
+		if newTitle := portal.SanitizeTitle(raw); newTitle != "" && !strings.ContainsAny(raw, "\n\r") {
+			old, changed, terr := jobs.ReplaceJobTitle(target.ID, newTitle)
+			if terr != nil {
+				return didUpdate || len(filled) > 0, terr
+			}
+			if changed {
+				titleChanged = true
+				_ = appendCrawlRunLog(runID, fmt.Sprintf("title changed: %q → %q", old, newTitle))
+			}
+		}
+	}
+	return didUpdate || len(filled) > 0 || titleChanged, nil
 }
 
 // descriptionCutNote says, for the run log, that the description of a page was cut at a limit ("" when it was not).

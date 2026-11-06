@@ -97,7 +97,7 @@ func StartFresh(linkID string, clearInstructions bool) (StartFreshResult, error)
 		job_detail_instructions_ai_error = NULL, job_detail_instructions_ai_error_at = NULL, job_detail_instructions_ai_conversation_id = NULL, job_detail_instructions_ai_error_dismissed_at = NULL,
 		jobs_question_asked_at = NULL, jobs_question_note = NULL, `
 	if clearInstructions {
-		query += `crawl_instructions = NULL, job_detail_crawl_instructions = NULL, `
+		query += `crawl_instructions = NULL, job_detail_crawl_instructions = NULL, job_detail_instructions_origin = '', `
 	}
 	query += `updated_at = datetime('now') WHERE id = ?`
 	if _, err := tx.Exec(query, linkID); err != nil {

@@ -79,7 +79,7 @@ export function startingPicks(page: PickCandidates): Picks {
 
 // The choices the backend builds the instructions from: only fields that have a pick, in a fixed order; the attribute only when it is not
 // the element's text.
-export function toChoices(picks: Picks, rule: RuleDraft | null = null): Choices {
+export function toChoices(picks: Picks, rule: RuleDraft | null = null, replaceTitle = false): Choices {
   const fields: FieldChoice[] = []
   for (const f of DATA_FIELDS) {
     const p = picks[f]
@@ -90,12 +90,13 @@ export function toChoices(picks: Picks, rule: RuleDraft | null = null): Choices 
         : { label: f, selector: p.selector },
     )
   }
+  const extra = replaceTitle && picks.title !== null ? { replaceTitle: true } : {}
   if (rule) {
     const r = ruleToChoice(rule)
-    return r ? { fields, description: r } : { fields }
+    return r ? { fields, description: r, ...extra } : { fields, ...extra }
   }
   const d = picks.description
-  return d ? { fields, descriptionSelector: d.selector } : { fields }
+  return d ? { fields, descriptionSelector: d.selector, ...extra } : { fields, ...extra }
 }
 
 // Whether the choices are worth sending for a preview: the description is the one required field.
@@ -417,4 +418,32 @@ export function valueRows(job: PickTestJob, chosen: PickField[]): ValueRow[] {
   const d = val('description').trim()
   rows.push({ field: 'description', value: d === '' ? '' : shortValue(d, 160), note: d === '' ? '' : chars(job.descriptionChars) })
   return rows
+}
+
+// Whether the stored instructions replace the title (read back so the screen starts from them).
+export function startingReplaceTitle(page: PickCandidates): boolean {
+  return page.current.choices?.replaceTitle === true
+}
+
+// Who wrote a link's job-detail instructions, in words ('' when nothing is known or there are none).
+export function originLabel(origin: string): string {
+  switch (origin) {
+    case 'picked':
+      return 'picked on a job page'
+    case 'ai':
+      return 'written by the AI'
+    case 'manual':
+      return 'typed by hand'
+    case 'inherited':
+      return 'copied from another link'
+    default:
+      return ''
+  }
+}
+
+// What the instructions do to a job's own data, said for the origin: only picked instructions fill an empty company, location or date.
+export function fillNote(origin: string): string {
+  return origin === 'picked'
+    ? "These instructions fill a job's empty company, location and posted date when its page is crawled; they never replace what a job already has."
+    : ''
 }

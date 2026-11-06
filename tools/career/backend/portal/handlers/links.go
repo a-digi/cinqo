@@ -206,7 +206,7 @@ func PortalLinksHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if body.JobDetailCrawlInstructions != nil {
-			if err := portal.UpdatePortalLinkJobDetailCrawlInstructions(body.ID, *body.JobDetailCrawlInstructions); err != nil {
+			if err := portal.UpdatePortalLinkJobDetailCrawlInstructionsFrom(body.ID, *body.JobDetailCrawlInstructions, portal.JobDetailOriginManual); err != nil {
 				portal.WritePortalLinkAwareError(w, "update portal link job detail crawl instructions", err)
 				return
 			}

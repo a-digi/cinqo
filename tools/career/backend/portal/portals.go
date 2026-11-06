@@ -168,6 +168,8 @@ type portalLink struct {
 	// plan/ai/tools/career/step-71-dismiss-tracking-data-model.md.
 	InstructionsAIErrorDismissedAt          string `json:"instructionsAiErrorDismissedAt,omitempty"`
 	JobDetailInstructionsAIErrorDismissedAt string `json:"jobDetailInstructionsAiErrorDismissedAt,omitempty"`
+	// JobDetailInstructionsOrigin says who wrote the job-detail instructions: picked, ai, manual, inherited, or "" (saved before it was recorded).
+	JobDetailInstructionsOrigin string `json:"jobDetailInstructionsOrigin"`
 	// HasActiveCrawlRun (step 37) is true while a detached "Crawl now"
 	// run is in progress for this link — read-only, derived from
 	// crawl_runs, never itself written. Lets the frontend resume
@@ -355,6 +357,10 @@ func ListPortals() ([]portal, error) {
 	if err != nil {
 		return nil, err
 	}
+	detailOrigins, err := jobDetailOriginByLink()
+	if err != nil {
+		return nil, err
+	}
 
 	linkRows, err := db.JobsDB.Query(
 		`SELECT id, portal_id, url, title, crawl_instructions, job_detail_crawl_instructions, instructions_ai_error, instructions_ai_error_at, instructions_ai_conversation_id, job_detail_instructions_ai_error, job_detail_instructions_ai_error_at, job_detail_instructions_ai_conversation_id, listing_crawl_requested, job_detail_instructions_ai_requested, instructions_ai_error_dismissed_at, job_detail_instructions_ai_error_dismissed_at, job_detail_crawl_requested, auto_discovery_enabled, auto_discovery_interval_minutes, auto_discovery_last_run_at, jobs_question_asked_at, jobs_question_note, ai_platform_id, ai_model, requires_login, login_url, created_at, updated_at
@@ -399,6 +405,7 @@ func ListPortals() ([]portal, error) {
 		if lc, ok := linkCrawl[l.ID]; ok {
 			l.CrawlMethod, l.LinkRules = lc.CrawlMethod, lc.Rules
 		}
+		l.JobDetailInstructionsOrigin = detailOrigins[l.ID]
 		l.LastCrawledAt = lastCrawled[l.ID]
 		l.HasActiveCrawlRun = activeCrawlRuns[l.ID]
 		l.InstructionStats = instructionStats[l.ID]
@@ -1144,6 +1151,9 @@ type jobDetailCrawlInstructionsDoc struct {
 	// DescriptionRule (plan 186) is how the job's full description is read, next to Fields and not instead of them; see
 	// description_rule.go. Absent in every document written before: those behave exactly as they always did.
 	DescriptionRule *DescriptionRule `yaml:"descriptionRule,omitempty"`
+	// ReplaceTitle (plan 186, D2) lets the page's title replace the job's saved title after a detail crawl. Off unless set; needs a title
+	// field; the replacement is said in the run log and never touches a job added by hand.
+	ReplaceTitle bool `yaml:"replaceTitle,omitempty"`
 }
 
 // requiredJobDetailCrawlOutputKeys is deliberately just "description"
@@ -1181,6 +1191,9 @@ func validateJobDetailCrawlInstructions(yamlText string) error {
 	for _, f := range doc.Fields {
 		effective[f.Label] = true
 	}
+	if doc.ReplaceTitle && !effective["title"] {
+		return fmt.Errorf("%w: replaceTitle needs a field labeled %q", ErrInvalidCrawlInstructions, "title")
+	}
 	if doc.DescriptionRule != nil {
 		effective[DescriptionLabel] = true // the rule produces the description
 	}
@@ -1207,23 +1220,58 @@ func GetPortalLinkJobDetailCrawlInstructions(id string) (string, error) {
 	return instructions.String, nil
 }
 
-// UpdatePortalLinkJobDetailCrawlInstructions is the one shared
-// persistent-layer function the AI-facing
-// set_portal_link_job_detail_crawl_instructions MCP tool call goes
-// through — validation lives here, once, same reasoning as
-// UpdatePortalLinkCrawlInstructions above.
+// Who wrote a link's job-detail instructions (plan 186, step 9). Only JobDetailOriginPicked instructions, which a person made on the
+// picking screen, may fill the company, location and date of a job (the screen says so); the others behave as they always did.
+const (
+	JobDetailOriginPicked    = "picked"
+	JobDetailOriginAI        = "ai"
+	JobDetailOriginManual    = "manual"
+	JobDetailOriginInherited = "inherited"
+)
+
+// UpdatePortalLinkJobDetailCrawlInstructions stores a link's job-detail instructions without recording who wrote them (origin "": see
+// UpdatePortalLinkJobDetailCrawlInstructionsFrom). Validation lives in one place, same reasoning as UpdatePortalLinkCrawlInstructions.
 func UpdatePortalLinkJobDetailCrawlInstructions(id, yamlText string) error {
+	return UpdatePortalLinkJobDetailCrawlInstructionsFrom(id, yamlText, "")
+}
+
+// UpdatePortalLinkJobDetailCrawlInstructionsFrom is the one shared persistent-layer function every save of job-detail instructions goes
+// through (the AI's tool, the text box, the picking screen), with the origin of the text.
+func UpdatePortalLinkJobDetailCrawlInstructionsFrom(id, yamlText, origin string) error {
 	if err := RequirePortalLinkExists(id); err != nil {
 		return err
 	}
 	if err := validateJobDetailCrawlInstructions(yamlText); err != nil {
 		return err
 	}
+	switch origin {
+	case "", JobDetailOriginPicked, JobDetailOriginAI, JobDetailOriginManual, JobDetailOriginInherited:
+	default:
+		return fmt.Errorf("unknown instruction origin %q", origin)
+	}
 	_, err := db.JobsDB.Exec(
-		`UPDATE portal_links SET job_detail_crawl_instructions = ?, updated_at = datetime('now') WHERE id = ?`,
-		yamlText, id,
+		`UPDATE portal_links SET job_detail_crawl_instructions = ?, job_detail_instructions_origin = ?, updated_at = datetime('now') WHERE id = ?`,
+		yamlText, origin, id,
 	)
 	return err
+}
+
+// jobDetailOriginByLink reads the origin of every link's job-detail instructions.
+func jobDetailOriginByLink() (map[string]string, error) {
+	rows, err := db.JobsDB.Query(`SELECT id, job_detail_instructions_origin FROM portal_links`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var id, origin string
+		if err := rows.Scan(&id, &origin); err != nil {
+			return nil, err
+		}
+		out[id] = origin
+	}
+	return out, rows.Err()
 }
 
 // --- deterministic ("Crawl now") crawl support (step 27) ---
@@ -1266,6 +1314,8 @@ type CrawlRequest struct {
 	EffectiveMaxPages int                 `json:"effectiveMaxPages"`
 	// DescriptionRule (plan 186) is sent only for a job-detail crawl whose instructions carry one.
 	DescriptionRule *DescriptionRule `json:"descriptionRule,omitempty"`
+	// ReplaceTitle is the instructions' replaceTitle: it is for Career's own use after the crawl and is never sent to the Browser.
+	ReplaceTitle bool `json:"-"`
 }
 
 // BuildCrawlRequest turns a portal link's own stored crawl_instructions
@@ -1376,6 +1426,7 @@ func BuildJobDetailCrawlRequestFromYAML(yamlText string) (CrawlRequest, error) {
 		RequestedMaxPages: 1,
 		EffectiveMaxPages: 1,
 		DescriptionRule:   doc.DescriptionRule,
+		ReplaceTitle:      doc.ReplaceTitle,
 	}, nil
 }
 
@@ -1562,6 +1613,9 @@ func sanitizePostedAt(raw string) string {
 // scoping as sanitizePostedAt above) — the AI-driven
 // save_job/save_portal_job/save_portal_jobs tools take title directly
 // from the AI's own argument and are left alone.
+// SanitizeTitle is the cleaning every scraped job title gets (digits and colons out, whitespace tidied), for callers outside this package.
+func SanitizeTitle(raw string) string { return sanitizeTitle(raw) }
+
 func sanitizeTitle(raw string) string {
 	var b strings.Builder
 	for _, r := range raw {
@@ -2157,7 +2211,7 @@ func RegisterSetPortalLinkJobDetailCrawlInstructions(server *mcp.Server) {
 		if args.Instructions == "" {
 			return db.ErrResult("instructions is required"), nil, nil
 		}
-		if err := UpdatePortalLinkJobDetailCrawlInstructions(args.PortalLinkID, args.Instructions); err != nil {
+		if err := UpdatePortalLinkJobDetailCrawlInstructionsFrom(args.PortalLinkID, args.Instructions, JobDetailOriginAI); err != nil {
 			if errors.Is(err, ErrUnknownPortalLink) {
 				return db.ErrResult(fmt.Sprintf("unknown portal link id %q", args.PortalLinkID)), nil, nil
 			}

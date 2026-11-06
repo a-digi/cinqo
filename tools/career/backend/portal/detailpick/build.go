@@ -18,6 +18,8 @@ import (
 var (
 	ErrNoDescription    = fmt.Errorf("%w: choose where the description is (a box or a description rule)", portal.ErrInvalidCrawlInstructions)
 	ErrBothDescriptions = fmt.Errorf("%w: choose either a description box or a description rule, not both", portal.ErrInvalidCrawlInstructions)
+	// ErrReplaceTitleNeedsTitle: replacing the title needs a title to replace it with.
+	ErrReplaceTitleNeedsTitle = fmt.Errorf("%w: replacing the title needs the title field to be chosen", portal.ErrInvalidCrawlInstructions)
 )
 
 // FieldChoice is the element a person chose for one field. A field the person marked "not on this page" is simply not in the list.
@@ -35,6 +37,9 @@ type Choices struct {
 	DescriptionSelector string `json:"descriptionSelector,omitempty"`
 	// Description reads it by a rule (parts, exclusions, headings, format, limit). Exactly one of the two must be set.
 	Description *portal.DescriptionRule `json:"description,omitempty"`
+	// ReplaceTitle lets the title the page states replace the job's saved title after a detail crawl (decision D2: off by default; needs
+	// the title field; the replacement is said in the run log).
+	ReplaceTitle bool `json:"replaceTitle,omitempty"`
 }
 
 const maxSelectorRunes = 300
@@ -78,6 +83,7 @@ type outField struct {
 type outDoc struct {
 	Fields          []outField              `yaml:"fields,omitempty"`
 	DescriptionRule *portal.DescriptionRule `yaml:"descriptionRule,omitempty"`
+	ReplaceTitle    bool                    `yaml:"replaceTitle,omitempty"`
 }
 
 // BuildYAML turns the choices into the stored job-detail instructions. The text is marshalled, never assembled from strings, so no
@@ -133,6 +139,12 @@ func BuildYAML(c Choices) (string, error) {
 			doc.Fields = append(doc.Fields, outField{Label: string(f.Label), Selector: f.Selector, Attribute: f.Attribute})
 		}
 	}
+	if c.ReplaceTitle {
+		if _, ok := byLabel[FieldTitle]; !ok {
+			return "", ErrReplaceTitleNeedsTitle
+		}
+		doc.ReplaceTitle = true
+	}
 	raw, err := yaml.Marshal(doc)
 	if err != nil {
 		return "", fmt.Errorf("%w: %v", portal.ErrInvalidCrawlInstructions, err)
@@ -157,6 +169,7 @@ type inDoc struct {
 	Mapping         map[string]string       `yaml:"mapping"`
 	Pagination      map[string]any          `yaml:"pagination"`
 	DescriptionRule *portal.DescriptionRule `yaml:"descriptionRule"`
+	ReplaceTitle    bool                    `yaml:"replaceTitle"`
 }
 
 // ParseYAML reads stored instructions back into choices, so the screen can show and edit them. What the screen cannot represent (a
@@ -181,6 +194,7 @@ func ParseYAML(text string) (c Choices, lossy []string, err error) {
 		_ = k
 	}
 	c.Description = doc.DescriptionRule
+	c.ReplaceTitle = doc.ReplaceTitle
 	for _, f := range doc.Fields {
 		if f.Multiple {
 			lossy = append(lossy, "the field "+f.Label+" collects every match")

@@ -222,6 +222,7 @@ func TestBuildYAMLRandomChoicesAlwaysRoundTrip(t *testing.T) {
 				c.Fields = append(c.Fields, FieldChoice{Label: f, Selector: randString(r, 40), Attribute: []string{"", "text", "datetime", "href", "href", "datetime", "text", "", "bad attr", "x:y"}[r.Intn(10)]})
 			}
 		}
+		c.ReplaceTitle = r.Intn(5) == 0 // refused unless a title field was drawn too
 		text, err := BuildYAML(c)
 		if err != nil {
 			if !IsInvalid(err) {
@@ -291,4 +292,35 @@ func FuzzBuildYAML(f *testing.F) {
 			t.Fatalf("round trip: %v %v\n%s", err, lossy, text)
 		}
 	})
+}
+
+// ---- the title option (decision D2) ----
+
+func TestReplaceTitleIsOffByDefaultAndNeedsTheTitleField(t *testing.T) {
+	c := Choices{DescriptionSelector: "#d", Fields: []FieldChoice{{Label: FieldTitle, Selector: "h1"}}}
+	plain, err := BuildYAML(c)
+	if err != nil || strings.Contains(plain, "replaceTitle") {
+		t.Fatalf("default: %v\n%s", err, plain)
+	}
+	c.ReplaceTitle = true
+	text, err := BuildYAML(c)
+	if err != nil || !strings.Contains(text, "replaceTitle: true") {
+		t.Fatalf("on: %v\n%s", err, text)
+	}
+	req, err := portal.BuildJobDetailCrawlRequestFromYAML(text)
+	if err != nil || !req.ReplaceTitle {
+		t.Fatalf("the save route's reader: %v %+v", err, req)
+	}
+	back, lossy, err := ParseYAML(text)
+	if err != nil || len(lossy) != 0 || !back.ReplaceTitle || len(back.Fields) != 1 {
+		t.Fatalf("read back: %+v %v %v", back, lossy, err)
+	}
+	for name, bad := range map[string]Choices{
+		"no title field": {DescriptionSelector: "#d", ReplaceTitle: true},
+		"other field":    {DescriptionSelector: "#d", ReplaceTitle: true, Fields: []FieldChoice{{Label: FieldCompany, Selector: ".c"}}},
+	} {
+		if _, err := BuildYAML(bad); !errors.Is(err, ErrReplaceTitleNeedsTitle) || !IsInvalid(err) {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
 }

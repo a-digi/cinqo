@@ -238,6 +238,10 @@ export function VerifyPanel({
       )}
 
       <div className="mt-3 border-t border-blue-100 pt-2">
+        <p className="mb-1 text-gray-700">
+          Saved picks fill a job&apos;s empty company, location and posted date when its page is crawled; they never replace what a job
+          already has.
+        </p>
         {hasStored && (
           <p className="mb-1 text-gray-700">
             Saving replaces the job-detail instructions this link has now

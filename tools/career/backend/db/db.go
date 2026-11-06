@@ -652,6 +652,10 @@ CREATE TABLE IF NOT EXISTS portal_links (
     -- always 'instructions'. Also added to existing installs by migratePortalLinksLinkCrawl.
     crawl_method                                   TEXT NOT NULL DEFAULT 'instructions' CHECK (crawl_method IN ('instructions','links')),
     link_rules                                     TEXT,
+    -- job_detail_instructions_origin (plan 186, step 9): who wrote job_detail_crawl_instructions: 'picked' (the picking screen), 'ai', 'manual'
+    -- (typed in the text box), 'inherited' (copied from another link) or '' (saved before this was recorded). Only 'picked' instructions may
+    -- fill the company, location and date of a job. Also added to existing installs by migratePortalLinksJobDetailOrigin.
+    job_detail_instructions_origin                 TEXT NOT NULL DEFAULT '',
     created_at                        TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at                        TEXT,
     UNIQUE(portal_id, url)
@@ -1842,6 +1846,9 @@ func migrateJobsDB(db *sql.DB) error {
 	if err := migratePortalLinksLinkCrawl(db); err != nil {
 		return err
 	}
+	if err := migratePortalLinksJobDetailOrigin(db); err != nil {
+		return err
+	}
 	if err := migrateInstructionAttemptsFailureReason(db); err != nil {
 		return err
 	}
@@ -2793,4 +2800,18 @@ func migrateRecruiterCompanies(db *sql.DB) error {
 		}
 	}
 	return tx.Commit()
+}
+
+// migratePortalLinksJobDetailOrigin (plan 186, step 9) adds job_detail_instructions_origin to an install that already has portal_links:
+// every link starts with an empty origin (the instructions were saved before the origin was recorded).
+func migratePortalLinksJobDetailOrigin(db *sql.DB) error {
+	exists, hasColumn, err := tableHasColumn(db, "portal_links", "job_detail_instructions_origin")
+	if err != nil {
+		return err
+	}
+	if !exists || hasColumn {
+		return nil
+	}
+	_, err = db.Exec(`ALTER TABLE portal_links ADD COLUMN job_detail_instructions_origin TEXT NOT NULL DEFAULT ''`)
+	return err
 }

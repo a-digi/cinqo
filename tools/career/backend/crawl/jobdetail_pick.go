@@ -427,7 +427,7 @@ func JobDetailSaveHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to build the instructions: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := portal.UpdatePortalLinkJobDetailCrawlInstructions(pc.linkID, text); err != nil {
+	if err := portal.UpdatePortalLinkJobDetailCrawlInstructionsFrom(pc.linkID, text, portal.JobDetailOriginPicked); err != nil {
 		if errors.Is(err, portal.ErrInvalidCrawlInstructions) {
 			http.Error(w, pickErrorText(err), http.StatusBadRequest)
 			return

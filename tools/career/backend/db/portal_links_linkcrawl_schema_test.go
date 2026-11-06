@@ -211,3 +211,53 @@ func TestStartUpGivesAnOldInstallTheLinkCrawlColumns(t *testing.T) {
 		t.Errorf("the old link changed: %q %q", title, method)
 	}
 }
+
+// ---- plan 186, step 9: the origin of a link's job-detail instructions ----
+
+func hasOriginColumn(t *testing.T, d *sql.DB) bool {
+	t.Helper()
+	_, has, err := tableHasColumn(d, "portal_links", "job_detail_instructions_origin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return has
+}
+
+func TestMigratePortalLinksJobDetailOrigin_ExistingInstall(t *testing.T) {
+	d := oldLinksTable(t)
+	if hasOriginColumn(t, d) {
+		t.Fatal("the old table already has the column")
+	}
+	for i := 0; i < 2; i++ { // idempotent
+		if err := migratePortalLinksJobDetailOrigin(d); err != nil {
+			t.Fatalf("run %d: %v", i+1, err)
+		}
+	}
+	if !hasOriginColumn(t, d) {
+		t.Fatal("column missing after the migration")
+	}
+	var origin, title string
+	if err := d.QueryRow(`SELECT job_detail_instructions_origin, title FROM portal_links WHERE id = 'l1'`).Scan(&origin, &title); err != nil {
+		t.Fatal(err)
+	}
+	if origin != "" || title != "Old link" {
+		t.Fatalf("the existing link changed: origin %q title %q", origin, title)
+	}
+	if _, err := d.Exec(`UPDATE portal_links SET job_detail_instructions_origin = NULL`); err == nil {
+		t.Error("the column must not accept NULL")
+	}
+}
+
+func TestMigratePortalLinksJobDetailOrigin_WithoutTheTableIsANoOp(t *testing.T) {
+	d, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "jobs.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	if err := migratePortalLinksJobDetailOrigin(d); err != nil {
+		t.Fatal(err)
+	}
+	if exists, _, err := tableHasColumn(d, "portal_links", "job_detail_instructions_origin"); err != nil || exists {
+		t.Fatalf("the migration created the table: exists=%v err=%v", exists, err)
+	}
+}
