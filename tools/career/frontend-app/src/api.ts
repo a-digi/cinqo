@@ -456,9 +456,8 @@ export interface PortalLink {
   // opens for each crawl), and the page to start at ('' = the link's own address). Always sent by the backend.
   requiresLogin: boolean
   loginUrl: string
-  // crawlMethod/linkRules (plan 185): how this link's listing is crawled ('instructions' = the AI-written selectors, the default;
-  // 'links' = the link crawler, available only while Katana is the selected engine) and the link crawler's rule (null = none).
-  crawlMethod: 'instructions' | 'links'
+  // linkRules (plan 185): the link crawler's rule (null = none). Which of the rule and the AI instructions a link is crawled with is decided
+  // by the Browser's selected engine (plan 190), not by a stored choice: the backend still stores and sends a crawl method, nothing reads it.
   linkRules: LinkRule | null
   // autoDiscoveryIntervalMinutes (step 85) is this link's own override
   // on the schedule, checked against its own autoDiscoveryLastRunAt

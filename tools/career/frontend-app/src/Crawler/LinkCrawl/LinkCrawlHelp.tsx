@@ -14,8 +14,9 @@ export function LinkCrawlHelp() {
           <div className="font-medium">What it needs</div>
           <ul className="list-disc pl-5">
             <li>
-              <strong>Katana</strong> must be the selected engine (Browser &amp; Engine page). With another engine the crawl stops with a
-              message; it never falls back to the AI instructions.
+              <strong>Katana</strong> must be the selected engine (the default, on the Browser &amp; Engine page). The rule is what the link
+              is crawled with while Katana is selected; with Rod selected the link is crawled with its AI instructions instead, and a link
+              without a rule is never crawled with them under Katana.
             </li>
             <li>The link must not need a login: links behind a login are crawled by hand only.</li>
           </ul>

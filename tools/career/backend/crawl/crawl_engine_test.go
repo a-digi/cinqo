@@ -64,7 +64,7 @@ func TestCrawlEngineRouteNeedsASessionAndOnlyAnswersGet(t *testing.T) {
 	}
 }
 
-func TestCrawlEngineRouteIsDeclaredInTheManifestWithTheSameScopeAsItsNeighbour(t *testing.T) {
+func TestCrawlEngineRouteIsDeclaredInTheManifestWithThePortalsScope(t *testing.T) {
 	raw, err := os.ReadFile("../../manifest.json")
 	if err != nil {
 		t.Fatal(err)
@@ -83,8 +83,8 @@ func TestCrawlEngineRouteIsDeclaredInTheManifestWithTheSameScopeAsItsNeighbour(t
 		}
 		return ""
 	}
-	if s := scope("portal-links/crawl-engine"); s == "" || s != scope("portal-links/link-crawl/availability") {
-		t.Errorf("crawl-engine scope %q, want the availability route's %q", s, scope("portal-links/link-crawl/availability"))
+	if s := scope("portal-links/crawl-engine"); s != "tool:career:portals" || s != scope("portal-links/link-crawl/rules") {
+		t.Errorf("crawl-engine scope %q, want the portals scope the link-crawl routes use (%q)", s, scope("portal-links/link-crawl/rules"))
 	}
 }
 
@@ -107,5 +107,24 @@ func TestListingMethodNowFollowsTheEngineAndSaysNothingWhenItCannotRead(t *testi
 		if got := ListingMethodNow(c.token); got != c.want {
 			t.Errorf("engine %q err %v token %q: %q, want %q", c.engine, c.err, c.token, got, c.want)
 		}
+	}
+}
+
+// Plan 190: the screen asks for the engine and no longer for a per-link availability: that route is gone from the manifest and from main.go,
+// and the engine route is registered.
+func TestTheEngineRouteIsRegisteredAndTheAvailabilityRouteIsGone(t *testing.T) {
+	mainSrc, err := os.ReadFile("../main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := os.ReadFile("../../manifest.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(mainSrc), `"/portal-links/crawl-engine", crawl.CrawlEngineHandler`) {
+		t.Error("main.go does not register the engine handler")
+	}
+	if strings.Contains(string(mainSrc), "link-crawl/availability") || strings.Contains(string(manifest), "link-crawl/availability") {
+		t.Error("the availability route is still registered or listed")
 	}
 }

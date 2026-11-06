@@ -905,7 +905,12 @@ export function CrawlPanel({
             // Best-effort — a failure here only costs reload-resilience
             // for this one run, not the run itself.
           })
-          .then(() => sendMessage(conversation.id, buildGenerateJobDetailInstructionsMessage(link)))
+          .then(() =>
+            sendMessage(
+              conversation.id,
+              buildGenerateJobDetailInstructionsMessage(link, { linkCrawled: listingNeeds(engine, link.requiresLogin) === 'rule' }),
+            ),
+          )
       })
       .then(
         () => {

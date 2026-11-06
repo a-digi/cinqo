@@ -201,16 +201,20 @@ export function generateInstructionsConversationTitle(link: { title?: string | n
 // saved against this link (a prior listing crawl), so step 1 finds
 // one via list_jobs rather than being handed link.url directly — see
 // plan/ai/tools/career/step-XX-job-detail-crawl-instructions.md.
-export function buildGenerateJobDetailInstructionsMessage(link: {
-  id: string
-  title?: string | null
-  url: string
-  crawlMethod?: 'instructions' | 'links'
-}): string {
+export function buildGenerateJobDetailInstructionsMessage(
+  link: {
+    id: string
+    title?: string | null
+    url: string
+  },
+  // linkCrawled: the Browser's selected engine is Katana, so this link's jobs are found by the link crawler (plan 190; it used to be the link's
+  // stored method).
+  options: { linkCrawled?: boolean } = {},
+): string {
   // Plan 185 (step 7b): the jobs of a link crawled with the link crawler were found by the address of their links alone, so they have
   // a title and an address and nothing else. Their detail page is the one place that says the company, the place and the date: the
   // instructions are asked for those too (description stays the required one). The wording for every other link is unchanged.
-  const linkCrawled = link.crawlMethod === 'links'
+  const linkCrawled = options.linkCrawled === true
   return [
     'Please create or update the stored JOB DETAIL crawl instructions for this existing portal link only — do not create a new portal or link, and do not ask which link is meant (it is already specified below). Do not run a crawl or save/modify any jobs — this is only about the stored instructions themselves.',
     '',

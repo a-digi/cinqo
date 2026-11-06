@@ -23,8 +23,6 @@ import (
 	"net/http"
 	"strings"
 	"time"
-
-	"career-tool-backend/portal"
 )
 
 // browserSettingsPath is the Browser tool's settings route behind core's proxy.
@@ -38,8 +36,6 @@ const engineReadTimeout = 10 * time.Second
 
 // Why the link crawler is not available (the stable codes the frontend reads).
 const (
-	linkCrawlAvailable        = "available"
-	linkCrawlReasonLoginLink  = "login_link"
 	linkCrawlReasonNotKatana  = "katana_not_selected"
 	linkCrawlReasonEngineRead = "engine_unknown"
 )
@@ -94,41 +90,6 @@ func requireKatanaSelected(ctx context.Context, coreURL, accessToken string) err
 	return nil
 }
 
-// linkCrawlAvailability is the answer of GET /portal-links/link-crawl/availability.
-type linkCrawlAvailabilityResult struct {
-	Available bool   `json:"available"`
-	Reason    string `json:"reason"` // "available" or one of the linkCrawlReason* codes
-	Message   string `json:"message"`
-}
-
-// linkCrawlAvailabilityFor decides for one link. A link that needs a login is
-// answered first (it is a local fact and needs no Browser call): login links
-// are crawled by hand only and never with Katana. An unknown link is an error
-// (portal.ErrUnknownPortalLink).
-func linkCrawlAvailabilityFor(ctx context.Context, coreURL, accessToken, portalLinkID string) (linkCrawlAvailabilityResult, error) {
-	requiresLogin, _, err := portal.GetPortalLinkLogin(portalLinkID)
-	if err != nil {
-		return linkCrawlAvailabilityResult{}, err
-	}
-	if requiresLogin {
-		return linkCrawlAvailabilityResult{Reason: linkCrawlReasonLoginLink,
-			Message: "This link needs a login, so it is crawled by hand only: the link crawler is not available for it."}, nil
-	}
-	switch err := requireKatanaSelected(ctx, coreURL, accessToken); {
-	case err == nil:
-		return linkCrawlAvailabilityResult{Available: true, Reason: linkCrawlAvailable,
-			Message: "Katana is the selected engine: this link can be crawled by its job links."}, nil
-	case errors.Is(err, errKatanaNotSelected):
-		return linkCrawlAvailabilityResult{Reason: linkCrawlReasonNotKatana,
-			Message: "The link crawler is available when Katana is the selected engine (Browser & Engine page)."}, nil
-	default:
-		return linkCrawlAvailabilityResult{Reason: linkCrawlReasonEngineRead,
-			Message: "The Browser tool's engine could not be read, so the link crawler is not available right now."}, nil
-	}
-}
-
-// LinkCrawlAvailabilityHandler handles GET /portal-links/link-crawl/availability?portalLinkId=…
-// Read-only: it changes nothing and starts nothing.
 // The answers of GET /portal-links/crawl-engine (plan 190).
 const (
 	crawlEngineKatana  = "katana"
@@ -172,35 +133,4 @@ func CrawlEngineHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	_ = json.NewEncoder(w).Encode(map[string]string{"engine": crawlEngineName(engine, rerr)})
-}
-
-func LinkCrawlAvailabilityHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	portalLinkID := strings.TrimSpace(r.URL.Query().Get("portalLinkId"))
-	if portalLinkID == "" {
-		http.Error(w, "portalLinkId is required", http.StatusBadRequest)
-		return
-	}
-	// The person's own session, read off this request like Crawl now does.
-	accessCookie, err := r.Cookie("access_token")
-	if err != nil {
-		http.Error(w, "no active session cookie found", http.StatusUnauthorized)
-		return
-	}
-	coreURL, err := coreAPIURL()
-	if err != nil {
-		http.Error(w, "core API address is not configured", http.StatusInternalServerError)
-		return
-	}
-	result, err := linkCrawlAvailabilityFor(r.Context(), coreURL, accessCookie.Value, portalLinkID)
-	if err != nil {
-		portal.WritePortalLinkAwareError(w, "read link crawler availability", err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "no-store")
-	_ = json.NewEncoder(w).Encode(result)
 }

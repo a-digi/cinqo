@@ -53,8 +53,8 @@ function siteHostOf(url: string): string {
 }
 
 // The link crawler of one portal link (plan 185, step 5): choose the job links of the link's page, see the partial URL the tool
-// worked out, check what it finds, and save the rule. Shown only while the backend says the feature is available (LinkCrawlGate).
-// Saving keeps the link's crawl method as it is: crawling with the rule comes in a later step.
+// worked out, check what it finds, and save the rule. Shown in the "Job list rules (Katana)" modal that "Job list" opens while Katana is the
+// selected engine (plan 190); the engine, not a stored choice, decides that Crawl now and auto-discovery use the rule.
 export function LinkCrawlPanel({ link, onReload }: { link: PortalLink; onReload: () => void }) {
   const siteHost = useMemo(() => siteHostOf(link.url), [link.url])
   const [open, setOpen] = useState(false)

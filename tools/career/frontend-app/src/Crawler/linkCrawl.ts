@@ -167,7 +167,6 @@ export function testLinkRule(portalLinkId: string, rules: LinkRule, url?: string
 }
 
 export interface LinkCrawlSettings {
-  crawlMethod: 'instructions' | 'links'
   rules: LinkRule | null
 }
 

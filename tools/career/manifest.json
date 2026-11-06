@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.0.726",
+  "version": "0.0.727",
   "authors": [
     { "name": "Anes Detit", "email": "tafa.andet@googlemail.com" }
   ],
@@ -573,11 +573,7 @@
       "path_suffix": "portal-links/crawl-engine",
       "required_scope": "tool:career:portals"
     },
-    {
-      "method": "GET",
-      "path_suffix": "portal-links/link-crawl/availability",
-      "required_scope": "tool:career:portals"
-    },
+
     {
       "method": "GET",
       "path_suffix": "portal-links/link-crawl/rules",
