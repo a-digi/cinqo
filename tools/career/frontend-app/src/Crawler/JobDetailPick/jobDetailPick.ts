@@ -112,6 +112,12 @@ export interface DescriptionHelp {
   cutAfter: string[]
 }
 
+// Advice about the loaded page itself (a site that served a reduced page, a page that is not the job's). Never blocks anything.
+export interface PageNotice {
+  code: string
+  message: string
+}
+
 export interface PickCandidates {
   url: string
   finalUrl: string
@@ -125,6 +131,7 @@ export interface PickCandidates {
   // Keyed by the selector of a description candidate.
   descriptionHelp: Record<string, DescriptionHelp>
   structuredHints: StructuredHint[]
+  notices: PageNotice[]
   elements: PageElement[]
   pageTextChars: number
   truncated: boolean
@@ -177,10 +184,11 @@ async function post<T>(path: string, body: unknown, action: string, signal?: Abo
 
 // The lists the screen reads must be lists. A Go nil slice arrives as null (a page without structured data once crashed the whole page),
 // so the answer is made safe here, once, however the backend sent it.
-type RawCandidates = Omit<PickCandidates, 'samples' | 'elements' | 'structuredHints' | 'current'> & {
+type RawCandidates = Omit<PickCandidates, 'samples' | 'elements' | 'structuredHints' | 'notices' | 'current'> & {
   samples: PickSample[] | null
   elements: PageElement[] | null
   structuredHints: StructuredHint[] | null
+  notices: PageNotice[] | null
   current: Omit<CurrentInstructions, 'lossy' | 'choices'> & {
     lossy: string[] | null
     choices?: Omit<Choices, 'fields'> & { fields: Choices['fields'] | null }
@@ -196,6 +204,7 @@ export function normalizeCandidates(p: RawCandidates): PickCandidates {
     samples: p.samples ?? [],
     elements: p.elements ?? [],
     structuredHints: p.structuredHints ?? [],
+    notices: p.notices ?? [],
     current,
   }
 }

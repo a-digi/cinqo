@@ -112,8 +112,12 @@ func TestPickCandidatesReturnsRankedSuggestionsForTheOldestJob(t *testing.T) {
 	if resp.URL != "https://board.example/j/1" || len(resp.Samples) != 3 || resp.Samples[0].JobID != ids[0] || resp.Samples[2].Title != "Gamma Analyst" {
 		t.Errorf("sample page and samples: %q %+v", resp.URL, resp.Samples)
 	}
-	if got := resp.Ranked["title"]; len(got) != 2 || got[0].Selector != "h1.job" {
-		t.Errorf("the job heading must rank above the board heading: %+v", got)
+	// plan 188: the page's <title> is always offered too; the job's own heading still ranks first, the board heading last
+	if got := resp.Ranked["title"]; len(got) != 3 || got[0].Selector != "h1.job" || got[1].Selector != "title" || got[2].Selector != "h1.board" {
+		t.Errorf("the job heading must rank above the page title and the board heading: %+v", got)
+	}
+	if resp.Notices == nil || len(resp.Notices) != 0 {
+		t.Errorf("a page that shows the job's title needs no notice (and the list is never null): %+v", resp.Notices)
 	}
 	if got := resp.Ranked["postedAt"]; len(got) != 1 || got[0].Attribute != "datetime" {
 		t.Errorf("date: %+v", got)
@@ -628,5 +632,72 @@ func TestPickTestRunsOneAtATimePerLink(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("the first test never finished")
+	}
+}
+
+// A site that serves a reduced page (plan 188's live finding on Stepstone): the job's title only in the <title>, other jobs' headings elsewhere.
+const reducedPickPageJSON = `{"finalUrl":"https://board.example/j/1","title":"Alpha Developer - Job at Acme in Berlin",
+"candidates":{"title":[{"selector":"h2.rec a","value":"Totally Other Role (m/w/d)","tag":"a","chars":26}],"company":[],"location":[],"postedAt":[],"description":[]},
+"structured":{"jsonld":[],"meta":{}},"elements":[{"selector":"p.x","unique":false,"tag":"p","text":"Other jobs people liked","chars":23}],"pageTextChars":900,"truncated":false}`
+
+func candidatesOf(t *testing.T, body string, page string) pickCandidatesResponse {
+	t.Helper()
+	id, ids := pickLink(t)
+	_ = ids
+	f := newFakeCore(t, "rod")
+	f.detailPage = func(map[string]any) (int, string) { return 200, page }
+	code, out := postPick(t, JobDetailCandidatesHandler, "/portal-links/job-detail/candidates", strings.Replace(body, "LINK", id, 1), true)
+	if code != 200 {
+		t.Fatalf("%d %s", code, out)
+	}
+	var resp pickCandidatesResponse
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+		t.Fatal(err)
+	}
+	return resp
+}
+
+func TestPickCandidatesWarnsWhenTheJobsOwnHeadingIsNotOnThePage(t *testing.T) {
+	resp := candidatesOf(t, `{"portalLinkId":"LINK"}`, reducedPickPageJSON)
+	if len(resp.Notices) != 1 || resp.Notices[0].Code != detailpick.NoticeJobHeadingMissing || !strings.Contains(resp.Notices[0].Message, "Alpha Developer") {
+		t.Fatalf("%+v", resp.Notices)
+	}
+	if got := resp.Ranked["title"]; len(got) != 2 || got[0].Selector != "title" || got[0].Value != "Alpha Developer - Job at Acme in Berlin" {
+		t.Errorf("the page's <title> must be the best title suggestion on a reduced page: %+v", got)
+	}
+}
+
+func TestPickCandidatesJudgesThePageByTheJobItWasLoadedFor(t *testing.T) {
+	// a page loaded by the saved job of another title: that job's title is not on this page
+	id, ids := pickLink(t)
+	f := newFakeCore(t, "rod")
+	f.detailPage = func(map[string]any) (int, string) { return 200, pickPageJSON } // shows "Alpha Developer"
+	post := func(body string) pickCandidatesResponse {
+		code, out := postPick(t, JobDetailCandidatesHandler, "/portal-links/job-detail/candidates", body, true)
+		if code != 200 {
+			t.Fatalf("%d %s", code, out)
+		}
+		var r pickCandidatesResponse
+		if err := json.Unmarshal([]byte(out), &r); err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	if r := post(`{"portalLinkId":"` + id + `","jobId":"` + ids[0] + `"}`); len(r.Notices) != 0 { // Alpha Developer: found
+		t.Errorf("job 1: %+v", r.Notices)
+	}
+	r := post(`{"portalLinkId":"` + id + `","jobId":"` + ids[1] + `"}`) // Beta Engineer: not on this page
+	if len(r.Notices) != 1 || r.Notices[0].Code != detailpick.NoticePageNotTheJob || !strings.Contains(r.Notices[0].Message, "Beta Engineer") {
+		t.Errorf("job 2: %+v", r.Notices)
+	}
+	// an address that is not a saved job: nothing to judge the page by, so no notice (and never null)
+	r = post(`{"portalLinkId":"` + id + `","url":"https://board.example/j/not-saved"}`)
+	if r.Notices == nil || len(r.Notices) != 0 {
+		t.Errorf("an address: %+v", r.Notices)
+	}
+	// an address that IS a saved job's page is judged by that job
+	r = post(`{"portalLinkId":"` + id + `","url":"https://board.example/j/2"}`)
+	if len(r.Notices) != 1 || !strings.Contains(r.Notices[0].Message, "Beta Engineer") {
+		t.Errorf("a saved job's address: %+v", r.Notices)
 	}
 }

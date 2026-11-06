@@ -86,6 +86,12 @@ func common(c Candidate, s *scorer) {
 }
 
 func rankTitle(p Page, c Candidate, s *scorer) {
+	if c.Tag == "title" && c.Selector == "title" {
+		// The document title agrees with itself by definition, so it gets one fixed score: below a heading that agrees with it, above
+		// headings and links that do not (the recommended jobs of a reduced page).
+		s.add(4, "the page's own <title> (the browser tab's text)")
+		return
+	}
 	switch strings.ToLower(c.Tag) {
 	case "h1":
 		s.add(3, "a first-level heading")
@@ -265,6 +271,12 @@ func maxInt(a, b int) int {
 // chooses, and the real extraction on sample jobs verifies.
 func Rank(p Page, f Field) []Ranked {
 	in := p.Candidates.For(f)
+	if f == FieldTitle {
+		// The page's <title> is always a place to read the title from (see documentTitleCandidate).
+		if dc, ok := documentTitleCandidate(p, in); ok {
+			in = append(append([]Candidate(nil), in...), dc)
+		}
+	}
 	out := make([]Ranked, 0, len(in))
 	for _, c := range in {
 		var s scorer

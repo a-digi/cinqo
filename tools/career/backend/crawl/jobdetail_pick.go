@@ -326,10 +326,12 @@ type pickCandidatesResponse struct {
 	DescriptionHelp map[string]pickDescriptionHelp    `json:"descriptionHelp"`
 	Structured      detailpick.Structured             `json:"structured"`
 	StructuredHints []detailpick.StructuredSuggestion `json:"structuredHints"`
-	Elements        []detailpick.Element              `json:"elements"`
-	PageTextChars   int                               `json:"pageTextChars"`
-	Truncated       bool                              `json:"truncated"`
-	Current         pickCurrent                       `json:"current"`
+	// Notices say what looks wrong with the page itself (a site that served a reduced page, a page that is not the job): advice only.
+	Notices       []detailpick.Notice  `json:"notices"`
+	Elements      []detailpick.Element `json:"elements"`
+	PageTextChars int                  `json:"pageTextChars"`
+	Truncated     bool                 `json:"truncated"`
+	Current       pickCurrent          `json:"current"`
 }
 
 func currentInstructions(linkID string) pickCurrent {
@@ -363,7 +365,7 @@ func JobDetailCandidatesHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to list the sample jobs: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	var pageURL string
+	var pageURL, jobTitle string // jobTitle: the saved title of the job the page is loaded for ("" for an address: nothing to judge the page by)
 	switch {
 	case strings.TrimSpace(body.JobID) != "" && strings.TrimSpace(body.URL) != "":
 		http.Error(w, "give either jobId or url, not both", http.StatusBadRequest)
@@ -374,14 +376,19 @@ func JobDetailCandidatesHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, jerr.Error(), http.StatusBadRequest)
 			return
 		}
-		pageURL = t.SourceURL
+		pageURL, jobTitle = t.SourceURL, t.Title
 	case strings.TrimSpace(body.URL) != "":
 		if pageURL, err = ownSitePage(pc.linkURL, body.URL); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		for _, s := range samples {
+			if s.URL == pageURL {
+				jobTitle = s.Title
+			}
+		}
 	case len(samples) > 0:
-		pageURL = samples[0].URL
+		pageURL, jobTitle = samples[0].URL, samples[0].Title
 	default:
 		http.Error(w, "this link has no saved jobs yet: give the address of a job page (url)", http.StatusBadRequest)
 		return
@@ -405,7 +412,7 @@ func JobDetailCandidatesHandler(w http.ResponseWriter, r *http.Request) {
 		URL: pageURL, FinalURL: page.FinalURL, Title: page.Title, Samples: samples, JobCount: jobCount, StructuredSupported: browserReadsStructuredData(r.Context(), pc.coreURL, pc.token),
 		Ranked:          map[string][]detailpick.Ranked{},
 		DescriptionHelp: map[string]pickDescriptionHelp{},
-		Structured:      page.Structured, StructuredHints: detailpick.StructuredSuggestions(page),
+		Structured:      page.Structured, StructuredHints: detailpick.StructuredSuggestions(page), Notices: detailpick.PageNotices(page, jobTitle),
 		Elements: page.Elements, PageTextChars: page.PageTextChars, Truncated: page.Truncated,
 		Current: currentInstructions(pc.linkID),
 	}

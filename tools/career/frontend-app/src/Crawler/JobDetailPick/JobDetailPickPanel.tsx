@@ -422,6 +422,16 @@ export function JobDetailPickPanel({ link, onSaved }: { link: PortalLink; onSave
           {page && (
             <>
               {note && <p className="rounded-md border border-amber-300 bg-amber-50 p-2 text-amber-900">{note}</p>}
+              {page.notices.map((n) => (
+                <p
+                  key={n.code}
+                  role="status"
+                  data-testid="page-notice"
+                  className="rounded-md border border-amber-300 bg-amber-50 p-2 text-amber-900"
+                >
+                  {n.message}
+                </p>
+              ))}
               {page.current.yaml !== '' && page.current.choices && (
                 <p className="text-gray-700">This link already has job-detail instructions; the picks below start from them.</p>
               )}
