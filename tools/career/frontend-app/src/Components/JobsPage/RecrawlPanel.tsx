@@ -2,7 +2,18 @@ import { AppLink } from '../../Shared/AppLink/AppLink'
 import { JOB_DETAILS_PATH } from '../../paths'
 import { ACCENTS } from './jobsTheme'
 import type { RecrawlControl } from './useRecrawl'
-import { detailText, isRunning, outcomeLabel, progressText, resultText, skippedText } from './recrawlRules'
+import {
+  detailText,
+  isRunning,
+  outcomeLabel,
+  progressText,
+  resultText,
+  skippedText,
+  STOP_LABEL,
+  STOPPING_LABEL,
+  STOPPING_TITLE,
+  stoppingText,
+} from './recrawlRules'
 
 const ACCENT = ACCENTS[5] // teal
 
@@ -40,18 +51,20 @@ export function RecrawlPanel({ recrawl }: { recrawl: RecrawlControl }) {
         <>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm font-semibold" style={{ color: ACCENT.text }}>
-              {running ? progressText(status) : resultText(status, startSkipped.length)}
+              {running ? (recrawl.stopping ? stoppingText(status) : progressText(status)) : resultText(status, startSkipped.length)}
             </p>
             <div className="flex items-center gap-2">
               {running && (
                 <button
                   type="button"
+                  disabled={recrawl.stopping}
+                  title={recrawl.stopping ? STOPPING_TITLE : undefined}
                   onClick={() => {
                     void recrawl.stop()
                   }}
-                  className="rounded-md border border-gray-300 bg-white/70 px-3 py-1 text-xs font-medium text-gray-700 hover:bg-white"
+                  className="rounded-md border border-gray-300 bg-white/70 px-3 py-1 text-xs font-medium text-gray-700 hover:bg-white disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white/70"
                 >
-                  Stop
+                  {recrawl.stopping ? STOPPING_LABEL : STOP_LABEL}
                 </button>
               )}
               <button type="button" onClick={toggleDetails} className="text-xs text-gray-600 underline hover:text-gray-800">

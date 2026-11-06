@@ -16,6 +16,8 @@ export interface RecrawlControl {
   // A start that was refused, or a batch the server no longer knows; empty when all is well.
   error: string
   starting: boolean
+  // True from the click on Stop until the crawls that were already running have finished (the waiting ones are cancelled at once).
+  stopping: boolean
   // True while the batch has anything waiting or being crawled (or is just being started).
   running: boolean
   start: (jobIds: string[]) => Promise<void>
@@ -52,6 +54,7 @@ export function useRecrawl(onJobFinished: () => void, onFinished: () => void, sc
   const [startSkipped, setStartSkipped] = useState<SkippedJob[]>([])
   const [error, setError] = useState('')
   const [starting, setStarting] = useState(false)
+  const [stopping, setStopping] = useState(false)
   const [detailsOpen, setDetailsOpenState] = useState(false)
 
   const callbacks = useRef({ onJobFinished, onFinished })
@@ -64,6 +67,7 @@ export function useRecrawl(onJobFinished: () => void, onFinished: () => void, sc
     setBatchId(null)
     setStatus(null)
     setStartSkipped([])
+    setStopping(false)
   }, [scope])
 
   useEffect(() => {
@@ -84,6 +88,7 @@ export function useRecrawl(onJobFinished: () => void, onFinished: () => void, sc
         const before = previousDone.current
         previousDone.current = s.done
         setStatus(s)
+        if (!isRunning(s)) setStopping(false)
         if (shouldReload(before, s)) callbacks.current.onJobFinished()
         if (isRunning(s)) {
           wasRunning.current = true
@@ -114,6 +119,7 @@ export function useRecrawl(onJobFinished: () => void, onFinished: () => void, sc
   const start = useCallback(
     async (jobIds: string[]) => {
       setError('')
+      setStopping(false)
       setStarting(true)
       try {
         const started = await requestRecrawl(jobIds)
@@ -144,9 +150,11 @@ export function useRecrawl(onJobFinished: () => void, onFinished: () => void, sc
 
   const stop = useCallback(async () => {
     if (batchId === null) return
+    setStopping(true)
     try {
       await cancelRecrawl(batchId)
     } catch (err) {
+      setStopping(false)
       setError(err instanceof Error ? err.message : String(err))
     }
   }, [batchId])
@@ -163,6 +171,8 @@ export function useRecrawl(onJobFinished: () => void, onFinished: () => void, sc
     startSkipped,
     error,
     starting,
+    // Also true when the batch is winding down without this tab having clicked Stop (another tab, a reload): nothing waits, some are still crawled.
+    stopping: stopping || (status !== null && status.queued === 0 && status.running > 0 && status.cancelled > 0),
     running: starting || (status !== null && isRunning(status)),
     start,
     stop,

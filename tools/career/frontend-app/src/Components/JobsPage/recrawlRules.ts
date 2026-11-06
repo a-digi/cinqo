@@ -135,6 +135,19 @@ export function isRunning(s: BatchStatus): boolean {
   return s.queued + s.running > 0
 }
 
+// The panel's line after Stop was clicked, while the crawls that were already running finish: the waiting jobs are cancelled at once, the
+// ones being crawled right now are not interrupted.
+export function stoppingText(s: BatchStatus): string {
+  const busy = s.running
+  return busy > 0
+    ? `Stopping · ${String(s.done)} done · waiting for ${plural(busy, 'crawl', 'crawls')} to finish`
+    : `Stopping · ${String(s.done)} done`
+}
+
+export const STOP_LABEL = 'Stop'
+export const STOPPING_LABEL = 'Awaiting stop…'
+export const STOPPING_TITLE = 'The waiting jobs are cancelled. The jobs being crawled right now finish first, then the batch ends.'
+
 // The panel's line while it runs: "Recrawling 12 jobs · 7 done · 5 waiting".
 export function progressText(s: BatchStatus): string {
   const waiting = s.queued + s.running

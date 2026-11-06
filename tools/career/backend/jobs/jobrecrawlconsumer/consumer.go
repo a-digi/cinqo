@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"career-tool-backend/autodiscovery"
@@ -44,6 +45,8 @@ var (
 // Consumer is a queue of job ids and the worker that crawls them. pending holds the ids that are waiting in the queue so an id
 // is queued once.
 type Consumer struct {
+	// big is set once more than ParallelThreshold ids have been waiting and cleared when the queue runs dry: the helpers work while it is set.
+	big     atomic.Bool
 	queue   chan string
 	mu      sync.Mutex
 	pending map[string]bool
@@ -81,6 +84,9 @@ func (c *Consumer) enqueue(id string) enqueueResult {
 	select {
 	case c.queue <- id:
 		c.pending[id] = true
+		if len(c.queue) > ParallelThreshold {
+			c.big.Store(true)
+		}
 		return queuedNow
 	default:
 		return queueFull
@@ -160,21 +166,21 @@ func (c *Consumer) Start(ctx context.Context) <-chan struct{} {
 				return
 			case id := <-c.queue:
 				c.take(id)
-				c.process(ctx, id)
+				c.process(crawl.WithPacingSlot(ctx, 0), id)
 			}
 		}
 	}()
 	for i := 1; i < MaxWorkers; i++ {
 		workers.Add(1)
-		go func() {
+		go func(slot int) {
 			defer workers.Done()
 			select {
 			case <-ctx.Done():
 				return
 			case <-ready:
 			}
-			c.helper(ctx)
-		}()
+			c.helper(ctx, slot)
+		}(i)
 	}
 	go func() {
 		workers.Wait()
@@ -183,17 +189,20 @@ func (c *Consumer) Start(ctx context.Context) <-chan struct{} {
 	return done
 }
 
-// helper takes ids only while more than ParallelThreshold are waiting.
-func (c *Consumer) helper(ctx context.Context) {
+// helper takes ids while the batch is big: more than ParallelThreshold were waiting at some moment, and until the queue has run dry (so the
+// last twenty of a big batch are still crawled by all the crawlers, not by the main worker alone). Each helper has a pacing slot of its own
+// (see crawl.PacingKey), or the Browser tool's per-platform pacing would make it wait in the main worker's line.
+func (c *Consumer) helper(ctx context.Context, slot int) {
+	workCtx := crawl.WithPacingSlot(ctx, slot)
 	for {
 		if ctx.Err() != nil {
 			return
 		}
-		if len(c.queue) > ParallelThreshold {
+		if c.helping() {
 			select {
 			case id := <-c.queue:
 				c.take(id)
-				c.process(ctx, id)
+				c.process(workCtx, id)
 				continue
 			default:
 			}
@@ -204,6 +213,19 @@ func (c *Consumer) helper(ctx context.Context) {
 		case <-time.After(helperPoll):
 		}
 	}
+}
+
+// helping says whether the helpers should take ids now: the batch is big, and something is waiting. A drained queue ends the batch.
+func (c *Consumer) helping() bool {
+	n := len(c.queue)
+	if n > ParallelThreshold {
+		c.big.Store(true)
+	}
+	if n == 0 {
+		c.big.Store(false)
+		return false
+	}
+	return c.big.Load()
 }
 
 // process handles one id. Nothing here may stop the worker.

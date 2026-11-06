@@ -801,6 +801,28 @@ func TestABigBatchIsCrawledByUpToFiveCrawlersAtOnce(t *testing.T) {
 			t.Errorf("%s: %+v", id, got)
 		}
 	}
+	// every crawler has a pacing key of its own, or the Browser tool's per-platform pacing would line them up one behind the other; the
+	// last jobs of a big batch are still crawled by several crawlers
+	fb.mu.Lock()
+	keys := map[string]bool{}
+	tail := map[string]bool{}
+	for i, r := range fb.requests {
+		key, _ := r["rateLimitKey"].(string)
+		keys[key] = true
+		if i >= len(fb.requests)-8 {
+			tail[key] = true
+		}
+	}
+	fb.mu.Unlock()
+	if len(keys) < 2 || len(keys) > MaxWorkers {
+		t.Errorf("%d different pacing keys %v, want 2 to %d", len(keys), keys, MaxWorkers)
+	}
+	if !keys["p1"] {
+		t.Errorf("the first crawler must keep the platform's own key: %v", keys)
+	}
+	if len(tail) < 2 {
+		t.Errorf("the last jobs of the batch were crawled by one crawler only: %v", tail)
+	}
 	// no job was crawled twice
 	seen := map[string]bool{}
 	for _, u := range fb.calls {

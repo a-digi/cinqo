@@ -57,5 +57,24 @@ func RecrawlOneJob(ctx context.Context, t jobs.RecrawlTarget, token string) (sav
 	// A request id of its own: the Browser tool tracks and can cancel a call by it. There is no crawl_runs row under it, so the
 	// phase updates the poller writes find nothing to update.
 	requestID := "recrawl-" + uuid.NewString()
-	return crawlOneJobDetail(ctx, coreURL, portalID, requestID, token, req, jobs.JobDetailCrawlTarget{ID: t.ID, SourceURL: t.SourceURL, Title: t.Title}, false)
+	return crawlOneJobDetail(ctx, coreURL, PacingKey(ctx, portalID), requestID, token, req, jobs.JobDetailCrawlTarget{ID: t.ID, SourceURL: t.SourceURL, Title: t.Title}, false)
+}
+
+// The Browser tool spaces the page loads that share a rate-limit key 10 to 30 seconds apart (its anti-detection pacing, keyed by the
+// platform). Crawlers that run at the same time would all wait in that one line and load one page at a time, so each crawler beyond the
+// first has a pacing slot of its own: its key is the platform's with the slot added, and every crawler is spaced the same way as before
+// from ITS OWN previous page. The first crawler (slot 0) keeps the platform's own key, which the platform's other crawls share.
+type pacingSlotKey struct{}
+
+// WithPacingSlot marks the crawls made with the returned context as those of crawler number slot (0 is the first).
+func WithPacingSlot(ctx context.Context, slot int) context.Context {
+	return context.WithValue(ctx, pacingSlotKey{}, slot)
+}
+
+// PacingKey is the rate-limit key for a page of a platform, for the crawler whose slot the context carries.
+func PacingKey(ctx context.Context, portalID string) string {
+	if slot, _ := ctx.Value(pacingSlotKey{}).(int); slot > 0 {
+		return fmt.Sprintf("%s#%d", portalID, slot)
+	}
+	return portalID
 }
