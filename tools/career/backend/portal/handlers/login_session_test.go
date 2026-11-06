@@ -262,3 +262,55 @@ func TestTheEngineOfALinkIsSetThroughTheRouteAndValidatedBeforeAnythingIsWritten
 		t.Errorf("unknown link: %d", code)
 	}
 }
+
+// plan 197, step 4: "Not now" through the route, and the suggestion in the list.
+func TestTheSuggestionIsInTheListAndNotNowHidesIt(t *testing.T) {
+	pid, _ := loginSeed(t)
+	link := loginLink(t, pid)
+	if err := portal.NoteEngineBlock(link, portal.BlockCloudflareChallenge); err != nil {
+		t.Fatal(err)
+	}
+	sug := func() string {
+		portals, _ := portal.ListPortals()
+		raw, _ := json.Marshal(portals)
+		var out []struct {
+			Links []struct {
+				ID         string `json:"id"`
+				Suggestion *struct {
+					Code string `json:"code"`
+				} `json:"engineSuggestion"`
+			} `json:"links"`
+		}
+		_ = json.Unmarshal(raw, &out)
+		for _, p := range out {
+			for _, l := range p.Links {
+				if l.ID == link && l.Suggestion != nil {
+					return l.Suggestion.Code
+				}
+			}
+		}
+		return ""
+	}
+	if got := sug(); got != portal.BlockCloudflareChallenge {
+		t.Fatalf("the list must carry the suggestion: %q", got)
+	}
+	// the JSON key is always there, null when there is none
+	portals, _ := portal.ListPortals()
+	if raw, _ := json.Marshal(portals); !strings.Contains(string(raw), `"engineSuggestion":null`) && !strings.Contains(string(raw), `"engineSuggestion":{`) {
+		t.Errorf("engineSuggestion must always be present: %s", raw)
+	}
+	rec := httptest.NewRecorder()
+	PortalLinksHandler(rec, httptest.NewRequest(http.MethodPut, "/portal-links", strings.NewReader(`{"id":"`+link+`","engineHintDismissed":true}`)))
+	if rec.Code != 200 {
+		t.Fatalf("not now: %d %s", rec.Code, rec.Body.String())
+	}
+	if got := sug(); got != "" {
+		t.Errorf("not now must hide it: %q", got)
+	}
+	// choosing Rod clears everything
+	rec = httptest.NewRecorder()
+	PortalLinksHandler(rec, httptest.NewRequest(http.MethodPut, "/portal-links", strings.NewReader(`{"id":"`+link+`","crawlEngine":"rod"}`)))
+	if rec.Code != 200 || sug() != "" {
+		t.Errorf("use rod: %d %q", rec.Code, sug())
+	}
+}

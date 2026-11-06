@@ -106,6 +106,8 @@ type portalLinkUpdateRequest struct {
 	// CrawlEngine (plan 197, step 1) — nil: don't touch. "" follows the Browser tool's selected engine, "rod" reads this link the Rod way
 	// whatever the Browser selected; anything else is a 400 and nothing is written.
 	CrawlEngine *string `json:"crawlEngine,omitempty"`
+	// EngineHintDismissed (plan 197, step 4) — true: the person's "Not now" for the suggestion to use Rod. A newer block shows it again.
+	EngineHintDismissed bool `json:"engineHintDismissed,omitempty"`
 }
 
 func PortalLinksHandler(w http.ResponseWriter, r *http.Request) {
@@ -149,8 +151,8 @@ func PortalLinksHandler(w http.ResponseWriter, r *http.Request) {
 			body.InstructionsAIErrorDismissedAt == nil && body.JobDetailInstructionsAIErrorDismissedAt == nil &&
 			body.JobDetailCrawlRequested == nil && body.AutoDiscoveryEnabled == nil &&
 			body.AutoDiscoveryIntervalMinutes == nil && !body.ClearAutoDiscoveryInterval && body.EmptyCrawlAcknowledged == nil && body.JobsQuestionAnswer == nil &&
-			body.RequiresLogin == nil && body.LoginURL == nil && body.CrawlEngine == nil {
-			http.Error(w, "url, title, crawlInstructions, jobDetailCrawlInstructions, instructionsAiError, instructionsAiConversationId, jobDetailInstructionsAiError, jobDetailInstructionsAiConversationId, listingCrawlRequested, jobDetailInstructionsAiRequested, instructionsAiErrorDismissedAt, jobDetailInstructionsAiErrorDismissedAt, jobDetailCrawlRequested, autoDiscoveryEnabled, autoDiscoveryIntervalMinutes, clearAutoDiscoveryInterval, emptyCrawlAcknowledged, jobsQuestionAnswer, requiresLogin, loginUrl, or crawlEngine is required", http.StatusBadRequest)
+			body.RequiresLogin == nil && body.LoginURL == nil && body.CrawlEngine == nil && !body.EngineHintDismissed {
+			http.Error(w, "url, title, crawlInstructions, jobDetailCrawlInstructions, instructionsAiError, instructionsAiConversationId, jobDetailInstructionsAiError, jobDetailInstructionsAiConversationId, listingCrawlRequested, jobDetailInstructionsAiRequested, instructionsAiErrorDismissedAt, jobDetailInstructionsAiErrorDismissedAt, jobDetailCrawlRequested, autoDiscoveryEnabled, autoDiscoveryIntervalMinutes, clearAutoDiscoveryInterval, emptyCrawlAcknowledged, jobsQuestionAnswer, requiresLogin, loginUrl, crawlEngine, or engineHintDismissed is required", http.StatusBadRequest)
 			return
 		}
 		if body.URL != nil && *body.URL == "" {
@@ -209,6 +211,12 @@ func PortalLinksHandler(w http.ResponseWriter, r *http.Request) {
 		if body.CrawlEngine != nil {
 			if err := portal.SetLinkCrawlEngine(body.ID, *body.CrawlEngine); err != nil {
 				portal.WritePortalLinkAwareError(w, "update portal link engine", err)
+				return
+			}
+		}
+		if body.EngineHintDismissed {
+			if err := portal.DismissEngineHint(body.ID); err != nil {
+				portal.WritePortalLinkAwareError(w, "dismiss the engine suggestion", err)
 				return
 			}
 		}

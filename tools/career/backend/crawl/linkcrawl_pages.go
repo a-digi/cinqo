@@ -260,8 +260,8 @@ func LinkCrawlCandidatesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := fetchPageLinks(withKeptLogin(r.Context(), lc.sessionID), lc.coreURL, lc.token, page, lc.portalID, "")
+	noteFetchOutcome(lc.linkID, err)
 	if err != nil {
-		noteLoginVerdict(lc.linkID, err)
 		writeFetchFailure(w, err)
 		return
 	}
@@ -436,8 +436,8 @@ func LinkCrawlTestHandler(w http.ResponseWriter, r *http.Request) {
 			return linkrule.Page{}, err
 		}
 		res, err := fetchPageLinks(withKeptLogin(ctx, lc.sessionID), lc.coreURL, lc.token, pageURL, lc.portalID, "")
+		noteFetchOutcome(lc.linkID, err)
 		if err != nil {
-			noteLoginVerdict(lc.linkID, err)
 			return linkrule.Page{}, err
 		}
 		return linkrule.Page{FinalURL: res.FinalURL, Title: res.Title, Links: res.Links}, nil

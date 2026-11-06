@@ -80,6 +80,27 @@ func noteLoginExpired(ctx context.Context, err error) {
 // codeLoginExpired is the Browser tool's answer when the site no longer accepts the kept login.
 const codeLoginExpired = "login_expired"
 
+// noteFetchOutcome (plan 197, step 4) is called after every Katana-only read of a link's page (the link list, the job page analysis): a read
+// that went through forgets a recorded block, a read the site stopped (Cloudflare, a rate limit, another bot wall) records it so the page can
+// suggest Rod, and a login_expired answer is noted as before. linkID may be empty (nothing to mark).
+func noteFetchOutcome(linkID string, err error) {
+	if linkID == "" {
+		return
+	}
+	noteLoginVerdict(linkID, err)
+	if err == nil {
+		_ = portal.ClearEngineBlock(linkID)
+		return
+	}
+	var fe *linkFetchError
+	if errors.As(err, &fe) && portal.IsEngineBlockCode(fe.Code) {
+		_ = portal.NoteEngineBlock(linkID, fe.Code)
+	}
+}
+
+// NoteFetchOutcome is noteFetchOutcome for the Katana AI service (its page reads go through LoadPageLinks and the rule test).
+func NoteFetchOutcome(linkID string, err error) { noteFetchOutcome(linkID, err) }
+
 // noteLoginVerdict records a login_expired answer of the Browser tool on the link, so the page offers the login again. Other errors are
 // ignored. linkID may be empty (no link to mark).
 func noteLoginVerdict(linkID string, err error) {

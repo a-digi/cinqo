@@ -44,6 +44,8 @@ type fakeCore struct {
 	// plan 195, step 5: the kept login each fetch-links call carried, and whether the site now refuses it.
 	sessions     []string
 	loginExpired bool
+	// blockCode is the code a forced-status page answers with (default "challenge")
+	blockCode string
 	// the kept login the job-page analysis and the selector crawls carried
 	detailSessions, extractSessions []string
 }
@@ -69,7 +71,11 @@ func (f *fakeCore) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		if st := f.status[in.URL]; st != 0 {
 			w.WriteHeader(st)
-			fmt.Fprint(w, `{"code":"challenge","message":"a check page stopped the load","advice":"try later"}`)
+			code := f.blockCode
+			if code == "" {
+				code = "challenge"
+			}
+			fmt.Fprintf(w, `{"code":%q,"message":"a check page stopped the load","advice":"try later"}`, code)
 			return
 		}
 		body, ok := f.pages[in.URL]

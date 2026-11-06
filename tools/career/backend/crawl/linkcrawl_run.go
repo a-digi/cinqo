@@ -173,8 +173,8 @@ func runLinkCrawl(ctx context.Context, runID, portalLinkID, accessToken, coreURL
 		stopPoll := pollBrowserPhase(fctx, coreURL, runID, accessToken)
 		res, err := fetchPageLinks(withKeptLogin(fctx, keptLogin), coreURL, accessToken, pageURL, portalID, runID)
 		stopPoll()
+		noteFetchOutcome(portalLinkID, err)
 		if err != nil {
-			noteLoginVerdict(portalLinkID, err)
 			return linkrule.Page{}, err
 		}
 		_ = appendCrawlRunLog(runID, fmt.Sprintf("page %d loaded: %d link(s) on it", pageNo, len(res.Links)))

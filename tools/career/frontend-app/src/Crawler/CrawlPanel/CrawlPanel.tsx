@@ -63,6 +63,7 @@ import {
 import { useCrawlEngine } from '../useCrawlEngine'
 import { engineFor } from '../engines/registry'
 import { PipelineLine } from '../PipelineLine'
+import { EngineSuggestionLine } from '../EngineSuggestionLine'
 import { runFollower } from '../runFollowerStart'
 import { LoginGenerateAbandoned, startAfterLogin } from '../loginGenerate'
 import { NOT_KEPT_NOTE, attachLoginSession, confirmLoginKeeping, keepResultNote } from '../loginSession'
@@ -1184,6 +1185,7 @@ export function CrawlPanel({
           on/off+interval (Crawler/AutoDiscoveryPanel) controls whether
           the mechanism runs at all; this is this ONE link's own
           override on top of that. */}
+      <EngineSuggestionLine link={link} onReload={onReload} />
       <PipelineLine link={link} />
       {!loginWindow && instructionEngine.progressView !== undefined && (
         <instructionEngine.progressView link={link} onReload={onReload} />

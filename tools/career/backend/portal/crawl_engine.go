@@ -3,6 +3,7 @@ package portal
 import (
 	"errors"
 	"strings"
+	"time"
 
 	"career-tool-backend/db"
 )
@@ -79,4 +80,83 @@ func SetLinkCrawlEngine(linkID, engine string) error {
 		`UPDATE portal_links SET crawl_engine = ?, engine_block_code = '', engine_block_at = NULL, engine_hint_dismissed_at = NULL, updated_at = datetime('now') WHERE id = ?`,
 		v, linkID)
 	return err
+}
+
+// --- the block record and the suggestion (plan 197, step 4) ---
+
+// The Browser's codes that mean "this site stopped Katana's read": a Cloudflare check or block, a rate limit (429) and another vendor's bot wall.
+const (
+	BlockCloudflareBlocked   = "cloudflare_blocked"
+	BlockCloudflareChallenge = "cloudflare_challenge_unresolved"
+	BlockRateLimited         = "rate_limited"
+	BlockBotProtectionFound  = "bot_protection_detected"
+)
+
+// IsEngineBlockCode says whether a Browser error code is one of the four that make Rod worth suggesting.
+func IsEngineBlockCode(code string) bool {
+	switch code {
+	case BlockCloudflareBlocked, BlockCloudflareChallenge, BlockRateLimited, BlockBotProtectionFound:
+		return true
+	}
+	return false
+}
+
+// NoteEngineBlock records that a Katana-only read of the link was stopped by the site (code: one of the four). A link set to Rod is never
+// marked (Katana did not read it), an unknown code or link changes nothing. The latest block wins.
+func NoteEngineBlock(linkID, code string) error {
+	if !IsEngineBlockCode(code) {
+		return nil
+	}
+	_, err := db.JobsDB.Exec(
+		`UPDATE portal_links SET engine_block_code = ?, engine_block_at = datetime('now') WHERE id = ? AND crawl_engine != 'rod'`, code, linkID)
+	return err
+}
+
+// ClearEngineBlock forgets a recorded block after a Katana read of the link went through.
+func ClearEngineBlock(linkID string) error {
+	_, err := db.JobsDB.Exec(`UPDATE portal_links SET engine_block_code = '', engine_block_at = NULL WHERE id = ? AND engine_block_code != ''`, linkID)
+	return err
+}
+
+// DismissEngineHint is the person's "Not now": the suggestion for the block that exists now stays hidden; a NEWER block shows it again.
+// Without a recorded block it changes nothing.
+func DismissEngineHint(linkID string) error {
+	if err := RequirePortalLinkExists(linkID); err != nil {
+		return err
+	}
+	_, err := db.JobsDB.Exec(`UPDATE portal_links SET engine_hint_dismissed_at = datetime('now') WHERE id = ? AND engine_block_code != ''`, linkID)
+	return err
+}
+
+// EngineSuggestion is what the page offers for a link: the code that stopped Katana and when. Never anything else.
+type EngineSuggestion struct {
+	Code  string `json:"code"`
+	Since string `json:"since"`
+}
+
+// suggestionOf derives the suggestion from the stored columns: a block, on a link that is not set to Rod, that the person has not dismissed
+// since it happened. nil otherwise.
+func suggestionOf(linkEngine, code string, at, dismissed *string) *EngineSuggestion {
+	if linkEngine == LinkEngineRod || code == "" || at == nil {
+		return nil
+	}
+	if dismissed != nil && *dismissed >= *at {
+		return nil
+	}
+	return &EngineSuggestion{Code: code, Since: *at}
+}
+
+// EngineBlockRecent says whether a block was recorded for the link within the last window (for the Katana AI: stop for now, and no longer
+// once the block is old, so that a later try can clear it).
+func EngineBlockRecent(linkID string, window time.Duration) (code string, recent bool) {
+	var c string
+	var at *string
+	if err := db.JobsDB.QueryRow(`SELECT engine_block_code, engine_block_at FROM portal_links WHERE id = ? AND crawl_engine != 'rod'`, linkID).Scan(&c, &at); err != nil || c == "" || at == nil {
+		return "", false
+	}
+	t, err := time.Parse("2006-01-02 15:04:05", *at)
+	if err != nil {
+		return c, false
+	}
+	return c, time.Since(t) < window
 }

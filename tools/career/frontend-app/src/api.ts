@@ -461,6 +461,8 @@ export interface PortalLink {
   loginSession: 'none' | 'valid' | 'expired'
   // crawlEngine (plan 197): this link's own engine; '' follows the Browser tool's selected engine, 'rod' reads this link the Rod way. Always sent.
   crawlEngine: '' | 'rod'
+  // engineSuggestion (plan 197, step 4): set while a Katana read of this link was stopped by the site and the person has not said "Not now" since.
+  engineSuggestion: { code: string; since: string } | null
   // linkRules (plan 185): the link crawler's rule (null = none). Which of the rule and the AI instructions a link is crawled with is decided
   // by the Browser's selected engine (plan 190), not by a stored choice: the backend still stores and sends a crawl method, nothing reads it.
   linkRules: LinkRule | null
@@ -1631,6 +1633,8 @@ export async function updatePortalLink(
     loginUrl?: string
     // plan 197: '' = follow the Browser tool's engine, 'rod' = this link is read the Rod way.
     crawlEngine?: '' | 'rod'
+    // plan 197: the person's "Not now" for the suggestion to use Rod (a newer block shows it again).
+    engineHintDismissed?: boolean
     autoDiscoveryEnabled?: boolean
     // autoDiscoveryIntervalMinutes/clearAutoDiscoveryInterval (step 85)
     // — set the former to a real value, or send the latter as true to

@@ -418,8 +418,8 @@ func JobDetailCandidatesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	page, err := fetchDetailPage(withKeptLoginFor(r.Context(), pc.linkID, pc.sessionID), pc.coreURL, pc.token, pageURL, pc.portalID)
+	noteFetchOutcome(pc.linkID, err)
 	if err != nil {
-		noteLoginVerdict(pc.linkID, err)
 		writeFetchFailure(w, err)
 		return
 	}

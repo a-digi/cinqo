@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"net/http"
 	"strings"
+	"time"
 
 	"career-tool-backend/db"
 	"career-tool-backend/portal"
@@ -14,6 +15,9 @@ import (
 // The state of a link's crawl instructions under Katana (plan 192, D13): what exists, what is running and the ONE next step, so that an AI
 // run continues where the work stands and never redoes a finished part. Built only from what the app already stores.
 
+// engineBlockWindow is how long a recorded block makes the AI stop; after it the AI may try again (a read that goes through clears the block).
+const engineBlockWindow = time.Hour
+
 // The next steps the state names.
 const (
 	StepJobListRule = "job_list_rule" // no rule yet: write it (page links, propose, test, save)
@@ -22,6 +26,7 @@ const (
 	StepDone        = "done"          // both parts are saved: nothing to do
 	StepWait        = "wait"          // a crawl or another AI run is working on this link
 	StepStopLogin   = "stop_login"    // a login link without a usable kept login (none, or expired): the AI can only stop
+	StepStopBlocked = "stop_blocked"  // the site stopped Katana's read a moment ago (Cloudflare, a rate limit): stop, Rod is the person's choice
 )
 
 type stateJobList struct {
@@ -51,18 +56,21 @@ type stateSession struct {
 type State struct {
 	// Login: the link needs a login and no usable kept login exists (none, or it expired): the AI must stop. LoginKept: it needs one and
 	// one is kept and valid, so it is read like any link (plan 195, step 5). LoginExpired: the kept login no longer works.
-	Login        bool            `json:"login"`
-	LoginKept    bool            `json:"loginKept,omitempty"`
-	LoginExpired bool            `json:"loginExpired,omitempty"`
-	JobList      stateJobList    `json:"jobList"`
-	Jobs         stateJobs       `json:"jobs"`
-	JobDetails   stateJobDetails `json:"jobDetails"`
-	Crawling     bool            `json:"crawling,omitempty"`
-	AIRunning    bool            `json:"aiRunning,omitempty"`
-	Stage        string          `json:"stage,omitempty"`
-	Session      stateSession    `json:"thisSession"`
-	NextStep     string          `json:"nextStep"`
-	Reason       string          `json:"reason"`
+	Login        bool `json:"login"`
+	LoginKept    bool `json:"loginKept,omitempty"`
+	LoginExpired bool `json:"loginExpired,omitempty"`
+	// Blocked (plan 197, step 4): the code of a block recorded within the last hour (a Katana read of this link was stopped by the site).
+	// After the hour the AI may try again, and a read that goes through forgets the block.
+	Blocked    string          `json:"blocked,omitempty"`
+	JobList    stateJobList    `json:"jobList"`
+	Jobs       stateJobs       `json:"jobs"`
+	JobDetails stateJobDetails `json:"jobDetails"`
+	Crawling   bool            `json:"crawling,omitempty"`
+	AIRunning  bool            `json:"aiRunning,omitempty"`
+	Stage      string          `json:"stage,omitempty"`
+	Session    stateSession    `json:"thisSession"`
+	NextStep   string          `json:"nextStep"`
+	Reason     string          `json:"reason"`
 }
 
 // nextStep is the pure decision (tested on its own).
@@ -72,6 +80,8 @@ func nextStep(s State) (step, reason string) {
 		return StepStopLogin, "the login kept for this link has expired: stop and tell the person to log in again and keep the login (Crawl now or Generate opens the window)"
 	case s.Login:
 		return StepStopLogin, "this link needs a login and none is kept: stop and tell the person to log in once and tick Keep this login"
+	case s.Blocked != "":
+		return StepStopBlocked, "the site stopped Katana's read of this link a moment ago (" + s.Blocked + "): stop and tell the person that Rod can read this link (use Rod for this link on the link's card), or that they can try again later"
 	case s.Crawling:
 		return StepWait, "a crawl is running for this link: do not start anything, tell the person to ask again when it has finished"
 	case s.AIRunning:
@@ -105,6 +115,9 @@ func LinkState(ctx context.Context, b linkBody) (any, *problem) {
 	login, _, err := portal.GetPortalLinkLogin(id)
 	if err != nil {
 		return nil, refuse(http.StatusInternalServerError, "read_failed", "%s", err.Error())
+	}
+	if code, recent := portal.EngineBlockRecent(id, engineBlockWindow); recent {
+		s.Blocked = code
 	}
 	_, loginState := portal.LoginSessionOf(id)
 	s.Login = login && loginState != portal.LoginSessionValid

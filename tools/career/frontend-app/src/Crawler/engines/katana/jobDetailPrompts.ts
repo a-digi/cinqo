@@ -30,7 +30,7 @@ export function buildKatanaJobDetailMessage(link: { id: string; title?: string |
     '4. Call katana_test_job_detail_picks (leave the picks out to test `suggested`). It runs the real extraction on up to 3 crawled jobs and returns values, flags and a verdict. A verdict starting with ok: go on. "blocking" or a wrong value: make exactly ONE fix and test again.',
     '5. Only after a test with verdict ok, call katana_save_job_detail_picks ONCE (same picks, or none for `suggested`). It refuses picks that have not passed their test.',
     '',
-    'STOP and do not save when: a tool says the site blocked the page, a tool says the login of the link expired or is not kept, there is no crawled job, no signed-in session is known, or Katana is not the selected engine; or the test is still blocking after your one fix. Then reply with one short line quoting what the tool said or what you saw.',
+    'STOP and do not save when: a tool says the site blocked the page (then say that Rod can be used for this link), a tool says the login of the link expired or is not kept, there is no crawled job, no signed-in session is known, or Katana is not the selected engine; or the test is still blocking after your one fix. Then reply with one short line quoting what the tool said or what you saw.',
     '',
     'When done, reply with one short line.',
   ].join('\n')

@@ -358,3 +358,93 @@ func TestThePickerRefusesALinkSetToRod(t *testing.T) {
 		t.Errorf("%d %s", rec.Code, rec.Body.String())
 	}
 }
+
+// --- plan 197, step 4: a block seen on a Katana-only read is recorded on the link, a read that goes through forgets it ---
+
+func blockSuggestion(t *testing.T, linkID string) *portal.EngineSuggestion {
+	t.Helper()
+	portals, err := portal.ListPortals()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range portals {
+		for _, l := range p.Links {
+			if l.ID == linkID {
+				return l.EngineSuggestion
+			}
+		}
+	}
+	t.Fatal("link not listed")
+	return nil
+}
+
+func TestABlockOnAKatanaReadIsRecordedAndAGoodReadForgetsIt(t *testing.T) {
+	id := duapuneLink(t)
+	f := newFakeCore(t, "katana")
+	f.fetchBody = listingJSON
+	page := "https://duapune.com/search/advanced/filter?keyword=&category=91"
+	f.failFor = page
+	post := func() int {
+		code, _ := post(t, LinkCrawlCandidatesHandler, "/x", `{"portalLinkId":"`+id+`"}`, true)
+		return code
+	}
+	for _, code := range []string{"cloudflare_challenge_unresolved", "cloudflare_blocked", "rate_limited", "bot_protection_detected"} {
+		f.mu.Lock()
+		f.failBody = `{"code":"` + code + `","message":"stopped","reason":"x","outcome":"blocked"}`
+		f.mu.Unlock()
+		if post() == http.StatusOK {
+			t.Fatalf("%s must fail the read", code)
+		}
+		if s := blockSuggestion(t, id); s == nil || s.Code != code {
+			t.Errorf("%s: suggestion %+v", code, s)
+		}
+	}
+	// a failure that is not a block records nothing new and does not clear the old one
+	f.mu.Lock()
+	f.failBody = `{"code":"redirect_refused","message":"left the site"}`
+	f.mu.Unlock()
+	post()
+	if s := blockSuggestion(t, id); s == nil || s.Code != "bot_protection_detected" {
+		t.Errorf("a non-block failure must leave the record alone: %+v", s)
+	}
+	// the page loads again: the block is forgotten
+	f.mu.Lock()
+	f.failFor = ""
+	f.mu.Unlock()
+	if post() != http.StatusOK {
+		t.Fatal("the good read failed")
+	}
+	if s := blockSuggestion(t, id); s != nil {
+		t.Errorf("a read that went through must forget the block: %+v", s)
+	}
+}
+
+func TestTheJobPageAnalysisRecordsABlockToo(t *testing.T) {
+	id := duapuneLink(t)
+	f := newFakeCore(t, "katana")
+	f.detailPage = func(map[string]any) (int, string) {
+		return http.StatusBadGateway, `{"code":"cloudflare_challenge_unresolved","message":"Cloudflare challenge could not be cleared","reason":"cloudflare challenge page","outcome":"interactive_required"}`
+	}
+	if _, err := portal.IngestLinkCrawlResults(id, []portal.CrawlResultPage{{URL: "https://duapune.com/", Items: []map[string]any{{"title": "Posting A", "url": "https://duapune.com/jobs/1"}}}}); err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/x", strings.NewReader(`{"portalLinkId":"`+id+`"}`))
+	req.AddCookie(&http.Cookie{Name: "access_token", Value: "tok-5"})
+	JobDetailCandidatesHandler(rec, req)
+	if rec.Code == http.StatusOK {
+		t.Fatalf("the blocked page must fail: %d", rec.Code)
+	}
+	if s := blockSuggestion(t, id); s == nil || s.Code != "cloudflare_challenge_unresolved" {
+		t.Errorf("suggestion %+v", s)
+	}
+}
+
+// A link that is set to Rod is never marked, because it is never read by Katana.
+func TestALinkSetToRodCarriesNoSuggestion(t *testing.T) {
+	id := rodLink(t)
+	noteFetchOutcome(id, &linkFetchError{Code: "cloudflare_blocked", Message: "x"})
+	if s := blockSuggestion(t, id); s != nil {
+		t.Errorf("%+v", s)
+	}
+}

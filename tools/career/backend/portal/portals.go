@@ -153,6 +153,9 @@ type portalLink struct {
 	// CrawlEngine (plan 197, step 1) is this link's own engine: "" follows the Browser tool's selected engine, "rod" reads this link the Rod
 	// way whatever the Browser selected. Always present in the JSON.
 	CrawlEngine string `json:"crawlEngine"`
+	// EngineSuggestion (plan 197, step 4) is set while a Katana read of this link was stopped by the site (Cloudflare, a rate limit, another bot
+	// wall) and the person has not said "Not now" since: the page then offers Rod. null otherwise. Always present in the JSON.
+	EngineSuggestion *EngineSuggestion `json:"engineSuggestion"`
 	// CrawlMethod and LinkRules (plan 185, step 4): how this link's listing is crawled ("instructions" = the AI-written selectors, the
 	// default; "links" = the link crawler) and the link crawler's rule (null = none). See link_rules.go. Always present in the JSON.
 	CrawlMethod string         `json:"crawlMethod"`
@@ -369,7 +372,7 @@ func ListPortals() ([]portal, error) {
 	}
 
 	linkRows, err := db.JobsDB.Query(
-		`SELECT id, portal_id, url, title, crawl_instructions, job_detail_crawl_instructions, instructions_ai_error, instructions_ai_error_at, instructions_ai_conversation_id, job_detail_instructions_ai_error, job_detail_instructions_ai_error_at, job_detail_instructions_ai_conversation_id, listing_crawl_requested, job_detail_instructions_ai_requested, instructions_ai_error_dismissed_at, job_detail_instructions_ai_error_dismissed_at, job_detail_crawl_requested, auto_discovery_enabled, auto_discovery_interval_minutes, auto_discovery_last_run_at, jobs_question_asked_at, jobs_question_note, ai_platform_id, ai_model, requires_login, login_url, login_session_id, login_session_state, crawl_engine, created_at, updated_at
+		`SELECT id, portal_id, url, title, crawl_instructions, job_detail_crawl_instructions, instructions_ai_error, instructions_ai_error_at, instructions_ai_conversation_id, job_detail_instructions_ai_error, job_detail_instructions_ai_error_at, job_detail_instructions_ai_conversation_id, listing_crawl_requested, job_detail_instructions_ai_requested, instructions_ai_error_dismissed_at, job_detail_instructions_ai_error_dismissed_at, job_detail_crawl_requested, auto_discovery_enabled, auto_discovery_interval_minutes, auto_discovery_last_run_at, jobs_question_asked_at, jobs_question_note, ai_platform_id, ai_model, requires_login, login_url, login_session_id, login_session_state, crawl_engine, engine_block_code, engine_block_at, engine_hint_dismissed_at, created_at, updated_at
 		 FROM portal_links ORDER BY created_at ASC`,
 	)
 	if err != nil {
@@ -382,11 +385,13 @@ func ListPortals() ([]portal, error) {
 		var title, crawlInstructions, jobDetailCrawlInstructions, instructionsAIError, instructionsAIErrorAt, instructionsAIConversationID, jobDetailInstructionsAIError, jobDetailInstructionsAIErrorAt, jobDetailInstructionsAIConversationID, instructionsAIErrorDismissedAt, jobDetailInstructionsAIErrorDismissedAt, updatedAt sql.NullString
 		var autoDiscoveryIntervalMinutes, autoDiscoveryLastRunAt sql.NullInt64
 		var jobsQuestionAskedAt, jobsQuestionNote sql.NullString
-		var loginSessionID, loginSessionState string
-		if err := linkRows.Scan(&l.ID, &l.PortalID, &l.URL, &title, &crawlInstructions, &jobDetailCrawlInstructions, &instructionsAIError, &instructionsAIErrorAt, &instructionsAIConversationID, &jobDetailInstructionsAIError, &jobDetailInstructionsAIErrorAt, &jobDetailInstructionsAIConversationID, &l.ListingCrawlRequested, &l.JobDetailInstructionsAIRequested, &instructionsAIErrorDismissedAt, &jobDetailInstructionsAIErrorDismissedAt, &l.JobDetailCrawlRequested, &l.AutoDiscoveryEnabled, &autoDiscoveryIntervalMinutes, &autoDiscoveryLastRunAt, &jobsQuestionAskedAt, &jobsQuestionNote, &l.AIPlatformID, &l.AIModel, &l.RequiresLogin, &l.LoginURL, &loginSessionID, &loginSessionState, &l.CrawlEngine, &l.CreatedAt, &updatedAt); err != nil {
+		var loginSessionID, loginSessionState, engineBlockCode string
+		var engineBlockAt, engineHintDismissedAt sql.NullString
+		if err := linkRows.Scan(&l.ID, &l.PortalID, &l.URL, &title, &crawlInstructions, &jobDetailCrawlInstructions, &instructionsAIError, &instructionsAIErrorAt, &instructionsAIConversationID, &jobDetailInstructionsAIError, &jobDetailInstructionsAIErrorAt, &jobDetailInstructionsAIConversationID, &l.ListingCrawlRequested, &l.JobDetailInstructionsAIRequested, &instructionsAIErrorDismissedAt, &jobDetailInstructionsAIErrorDismissedAt, &l.JobDetailCrawlRequested, &l.AutoDiscoveryEnabled, &autoDiscoveryIntervalMinutes, &autoDiscoveryLastRunAt, &jobsQuestionAskedAt, &jobsQuestionNote, &l.AIPlatformID, &l.AIModel, &l.RequiresLogin, &l.LoginURL, &loginSessionID, &loginSessionState, &l.CrawlEngine, &engineBlockCode, &engineBlockAt, &engineHintDismissedAt, &l.CreatedAt, &updatedAt); err != nil {
 			return nil, err
 		}
 		l.LoginSession = LoginSessionLabel(loginSessionID, loginSessionState)
+		l.EngineSuggestion = suggestionOf(l.CrawlEngine, engineBlockCode, nullStringPtr(engineBlockAt), nullStringPtr(engineHintDismissedAt))
 		if autoDiscoveryIntervalMinutes.Valid {
 			v := int(autoDiscoveryIntervalMinutes.Int64)
 			l.AutoDiscoveryIntervalMinutes = &v
@@ -2382,4 +2387,11 @@ func RegisterSetPortalLinkJobDetailCrawlInstructions(server *mcp.Server) {
 		markInstructionsSavedByAI(args.PortalLinkID, InstructionKindJobDetail)
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "updated"}}}, nil, nil
 	})
+}
+
+func nullStringPtr(v sql.NullString) *string {
+	if !v.Valid {
+		return nil
+	}
+	return &v.String
 }

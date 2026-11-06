@@ -194,7 +194,7 @@ func registerTools(server *mcp.Server) {
 		Name: "katana_get_instruction_state",
 		Description: "Katana engine. CALL THIS FIRST. Says where this link's crawl instructions stand: whether the job list rule is saved, how many jobs " +
 			"were crawled, whether the job details are saved, whether a crawl or another AI run is working, what this session already did, and the ONE " +
-			"nextStep (job_list_rule, crawl_jobs, job_details, done, wait, stop_login) with the reason. Follow nextStep: never redo a part that is saved " +
+			"nextStep (job_list_rule, crawl_jobs, job_details, done, wait, stop_login, stop_blocked) with the reason. Follow nextStep: never redo a part that is saved " +
 			"and never change a saved rule unless the person asked.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, a stateArgs) (*mcp.CallToolResult, any, error) {
 		return call(ctx, "state", a)

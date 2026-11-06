@@ -36,7 +36,7 @@ export function buildKatanaListingMessage(link: { id: string; title?: string | n
     '- nextStep job_list_rule: do part A.',
     '- nextStep crawl_jobs: do part B.',
     '- nextStep job_details: do part C.',
-    '- nextStep done, wait or stop_login: change nothing, reply with its reason in one line and end.',
+    '- nextStep done, wait, stop_login or stop_blocked: change nothing, reply with its reason in one line and end.',
     '',
     'A. The job list rule.',
     'A1. katana_get_page_links returns the links of the page grouped by address shape: shape, count, 3 sample addresses with link texts, nextPageCandidates. The job links are the group whose samples are job postings (a title with company or place), usually the largest group whose last address part varies (# or *). A menu, a footer, a filter or a category is not a job group.',
@@ -52,7 +52,7 @@ export function buildKatanaListingMessage(link: { id: string; title?: string | n
     'C3. katana_test_job_detail_picks (leave the picks out to test `suggested`) runs the real extraction on up to 3 crawled jobs. Verdict ok: go on. "blocking" or a wrong value: make ONE fix and test again.',
     'C4. After a test with verdict ok, katana_save_job_detail_picks ONCE. It refuses picks that have not passed their test. When it answers saved you are finished: reply with one short line and call no more tools.',
     '',
-    'STOP and do not save when: a tool says the site blocked the page, the link needs a login that is not kept or its kept login expired (a tool says so), no signed-in session is known, or Katana is not the selected engine; or a test is still failing after your one fix. Then reply with one short line quoting what the tool said or what you saw.',
+    'STOP and do not save when: a tool says the site blocked the page (then say that Rod can be used for this link), the link needs a login that is not kept or its kept login expired (a tool says so), no signed-in session is known, or Katana is not the selected engine; or a test is still failing after your one fix. Then reply with one short line quoting what the tool said or what you saw.',
   ].join('\n')
 }
 

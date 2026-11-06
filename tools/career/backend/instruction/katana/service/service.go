@@ -163,6 +163,7 @@ func (s *session) loadLinks(ctx context.Context, sc *scratch, requested string) 
 		return refuse(http.StatusBadRequest, "bad_page", "%s", err.Error())
 	}
 	res, err := crawl.LoadPageLinks(s.withLogin(ctx), s.coreURL, s.token, page, s.portalID)
+	crawl.NoteFetchOutcome(s.linkID, err) // plan 197: a block is recorded on the link, a read that went through forgets it
 	if err != nil {
 		return fetchProblem(err)
 	}
@@ -179,6 +180,10 @@ func fetchProblem(err error) *problem {
 		msg := fe.Message
 		if fe.Advice != "" {
 			msg += " (" + fe.Advice + ")"
+		}
+		if portal.IsEngineBlockCode(fe.Code) {
+			// plan 197: the person can switch this link to Rod; the page offers it too.
+			return refuse(http.StatusBadGateway, "page_"+fe.Code, "the site stopped the page load: %s. STOP and tell the person that Rod can read this link (use Rod for this link on the link's card); do not guess a rule", msg)
 		}
 		return refuse(http.StatusBadGateway, "page_"+fe.Code, "the site stopped the page load: %s. STOP and tell the person; do not guess a rule", msg)
 	}
@@ -379,6 +384,7 @@ func TestRule(ctx context.Context, b ruleBody) (any, *problem) {
 			return linkrule.Page{}, err
 		}
 		res, err := crawl.LoadPageLinks(s.withLogin(ctx), s.coreURL, s.token, pageURL, s.portalID)
+		crawl.NoteFetchOutcome(s.linkID, err)
 		if err != nil {
 			return linkrule.Page{}, err
 		}
