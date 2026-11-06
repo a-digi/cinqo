@@ -67,10 +67,21 @@ func putLinkRules(w http.ResponseWriter, r *http.Request) {
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2*portal.MaxLinkRulesJSON))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&body); err != nil || strings.TrimSpace(body.PortalLinkID) == "" {
-		http.Error(w, "portalLinkId and crawlMethod are required (and only portalLinkId, crawlMethod and rules are accepted)", http.StatusBadRequest)
+		http.Error(w, "portalLinkId is required (and only portalLinkId, crawlMethod and rules are accepted)", http.StatusBadRequest)
 		return
 	}
-	if body.CrawlMethod != portal.CrawlMethodInstructions && body.CrawlMethod != portal.CrawlMethodLinks {
+	// Plan 190: the Browser's engine decides how a link is crawled, so the screen no longer sends a method. A body that does is still
+	// checked; one that does not keeps the stored method (which nothing reads any more).
+	switch body.CrawlMethod {
+	case "":
+		cur, err := portal.GetLinkCrawlSettings(body.PortalLinkID)
+		if err != nil {
+			portal.WritePortalLinkAwareError(w, "read the link crawler settings", err)
+			return
+		}
+		body.CrawlMethod = cur.CrawlMethod
+	case portal.CrawlMethodInstructions, portal.CrawlMethodLinks:
+	default:
 		http.Error(w, portal.ErrInvalidCrawlMethod.Error(), http.StatusBadRequest)
 		return
 	}

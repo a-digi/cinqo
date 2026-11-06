@@ -49,14 +49,14 @@ func TestAutoDiscoverySkipsLinksThatNeedALogin(t *testing.T) {
 	openCustom := autoLink(t, pid, "https://a.example/3", false, &ten)
 	loginCustom := autoLink(t, pid, "https://a.example/4", true, &ten)
 
-	global, err := ListPortalLinksEligibleForAutoDiscovery()
+	global, err := ListPortalLinksEligibleForAutoDiscovery(CrawlMethodInstructions)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !contains(global, openGlobal) || contains(global, loginGlobal) {
 		t.Errorf("global = %v", global)
 	}
-	custom, err := ListDuePortalLinksWithCustomInterval()
+	custom, err := ListDuePortalLinksWithCustomInterval(CrawlMethodInstructions)
 	if err != nil {
 		t.Fatal(err)
 	}

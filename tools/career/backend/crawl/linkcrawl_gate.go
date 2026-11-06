@@ -129,6 +129,51 @@ func linkCrawlAvailabilityFor(ctx context.Context, coreURL, accessToken, portalL
 
 // LinkCrawlAvailabilityHandler handles GET /portal-links/link-crawl/availability?portalLinkId=…
 // Read-only: it changes nothing and starts nothing.
+// The answers of GET /portal-links/crawl-engine (plan 190).
+const (
+	crawlEngineKatana  = "katana"
+	crawlEngineRod     = "rod"
+	crawlEngineUnknown = "unknown"
+)
+
+// crawlEngineName turns what the Browser tool answered into the three names the screen knows. An empty value is what an older Browser
+// tool sends (its default was Rod); anything else, or a read that failed, is "unknown": the screen then judges nothing by the engine.
+func crawlEngineName(engine string, err error) string {
+	if err != nil {
+		return crawlEngineUnknown
+	}
+	switch strings.TrimSpace(engine) {
+	case browserEngineKatana:
+		return crawlEngineKatana
+	case "rod", "":
+		return crawlEngineRod
+	}
+	return crawlEngineUnknown
+}
+
+// CrawlEngineHandler handles GET /portal-links/crawl-engine: which engine the Browser tool has selected, so the Platforms screen can show
+// the instructions of the engine in use (plan 190). It reads the engine with the person's own session, exactly like the availability route.
+func CrawlEngineHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	accessCookie, err := r.Cookie("access_token")
+	if err != nil {
+		http.Error(w, "no active session cookie found", http.StatusUnauthorized)
+		return
+	}
+	coreURL, err := coreAPIURL()
+	if err != nil {
+		http.Error(w, "core API address is not configured", http.StatusInternalServerError)
+		return
+	}
+	engine, rerr := readBrowserEngine(r.Context(), coreURL, accessCookie.Value)
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(map[string]string{"engine": crawlEngineName(engine, rerr)})
+}
+
 func LinkCrawlAvailabilityHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

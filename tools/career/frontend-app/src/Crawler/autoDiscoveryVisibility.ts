@@ -7,6 +7,7 @@
 // logic only; no stored setting is ever changed by hiding a control. See
 // plan/ai/tools/career/step-88-auto-discovery-only-for-instructed-links.md.
 import type { Portal, PortalLink } from '../api'
+import { hasListingFor, type EngineReading } from './crawlEngine'
 
 // hasListingInstructions: the link has listing crawl instructions. Those
 // can only be saved after passing the backend's own validation, so a
@@ -17,14 +18,17 @@ export function hasListingInstructions(link: Pick<PortalLink, 'crawlInstructions
   return (link.crawlInstructions ?? '').trim() !== ''
 }
 
-// canCrawlListing (plan 185): the link has what its crawl method needs to crawl its listing — the instructions for the method
-// "instructions" (as always), a link-crawler rule for the method "links". The same condition the backend's auto-discovery uses.
-export function canCrawlListing(link: Pick<PortalLink, 'crawlInstructions' | 'crawlMethod' | 'linkRules'>): boolean {
-  return link.crawlMethod === 'links' ? link.linkRules !== null : hasListingInstructions(link)
+// canCrawlListing (plan 185, plan 190): the link has what the Browser's selected engine needs to crawl its listing — a link-crawler rule
+// under Katana, the AI instructions under Rod (and for a link that needs a login). The same condition the backend's auto-discovery uses.
+export function canCrawlListing(
+  link: Pick<PortalLink, 'crawlInstructions' | 'linkRules'> & { requiresLogin?: boolean },
+  engine: EngineReading = null,
+): boolean {
+  return hasListingFor(link, engine)
 }
 
 // anyLinkAutoDiscoverable: at least one link, across every portal, that
 // the global auto-discovery could crawl.
-export function anyLinkAutoDiscoverable(portals: Pick<Portal, 'links'>[]): boolean {
-  return portals.some((portal) => portal.links.some(canCrawlListing))
+export function anyLinkAutoDiscoverable(portals: Pick<Portal, 'links'>[], engine: EngineReading = null): boolean {
+  return portals.some((portal) => portal.links.some((link) => canCrawlListing(link, engine)))
 }

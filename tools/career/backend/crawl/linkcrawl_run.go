@@ -18,20 +18,51 @@ import (
 	"career-tool-backend/portal/linkrule"
 )
 
-// linkCrawlSelected reports whether a link is crawled with its link-crawler rule: its method is "links". A link on that method without a
-// rule is an error (ErrLinkRulesNeeded), never a quiet fallback to the instructions.
-func linkCrawlSelected(portalLinkID string) (bool, error) {
-	settings, err := portal.GetLinkCrawlSettings(portalLinkID)
+// linkCrawlSelected reports whether a link is crawled with its link-crawler rule. The Browser's selected engine decides (plan 190,
+// portal.ListingMethodFor): Katana crawls with the rule, every other engine with the AI instructions, and a link that needs a login always
+// with its AI instructions. The link's stored crawl_method is no longer read. A link crawled with the rule but without one is an error
+// (ErrLinkRulesNeeded), never a quiet fallback to the instructions; an engine that cannot be read is an error too (errBrowserEngineUnknown),
+// never a guess.
+func linkCrawlSelected(ctx context.Context, coreURL, accessToken, portalLinkID string) (bool, error) {
+	needsLogin, _, err := portal.GetPortalLinkLogin(portalLinkID)
 	if err != nil {
 		return false, err
 	}
-	if settings.CrawlMethod != portal.CrawlMethodLinks {
+	if needsLogin {
 		return false, nil
+	}
+	engine, err := readBrowserEngine(ctx, coreURL, accessToken)
+	if err != nil {
+		return false, errBrowserEngineUnknown
+	}
+	if portal.ListingMethodFor(engine, false) != portal.CrawlMethodLinks {
+		return false, nil
+	}
+	settings, err := portal.GetLinkCrawlSettings(portalLinkID)
+	if err != nil {
+		return false, err
 	}
 	if settings.Rules == nil {
 		return true, portal.ErrLinkRulesNeeded
 	}
 	return true, nil
+}
+
+// ListingMethodNow is the method a link that needs no login is crawled with right now, by the Browser's selected engine, for the
+// auto-discovery sweep to list only the links that have what that method needs. "" when the engine cannot be read (the sweep then
+// lists every link that has either, and each crawl decides again when it starts).
+func ListingMethodNow(accessToken string) string {
+	coreURL, err := coreAPIURL()
+	if err != nil || accessToken == "" {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), engineReadTimeout)
+	defer cancel()
+	engine, err := readBrowserEngine(ctx, coreURL, accessToken)
+	if err != nil {
+		return ""
+	}
+	return portal.ListingMethodFor(engine, false)
 }
 
 // checkLinkCrawlStart is the check a link-crawler run passes before it may start (and again when it runs): not a login link, and Katana
@@ -103,7 +134,7 @@ func runLinkCrawl(ctx context.Context, runID, portalLinkID, accessToken, coreURL
 		fail(err)
 		return
 	}
-	if settings.CrawlMethod != portal.CrawlMethodLinks || settings.Rules == nil {
+	if settings.Rules == nil {
 		fail(portal.ErrLinkRulesNeeded)
 		return
 	}

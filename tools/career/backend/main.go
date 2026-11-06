@@ -263,6 +263,7 @@ func runHTTPServer() {
 	http.HandleFunc("/portal-links/crawl-runs/active", crawl.CrawlMonitorHandler)
 	http.HandleFunc("/portal-links/crawl-now/active", crawl.CrawlNowActiveHandler)
 	http.HandleFunc("/portal-links/crawl-now/cancel", crawl.CrawlNowCancelHandler)
+	http.HandleFunc("/portal-links/crawl-engine", crawl.CrawlEngineHandler)
 	http.HandleFunc("/portal-links/link-crawl/availability", crawl.LinkCrawlAvailabilityHandler)
 	http.HandleFunc("/portal-links/link-crawl/rules", crawl.LinkCrawlRulesHandler)
 	http.HandleFunc("/portal-links/link-crawl/candidates", crawl.LinkCrawlCandidatesHandler)

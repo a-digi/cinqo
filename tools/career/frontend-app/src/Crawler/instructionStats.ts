@@ -4,6 +4,7 @@
 // read) live in one place. See
 // plan/ai/tools/career/step-86-instruction-attempt-tracking.md.
 import type { InstructionAttemptOutcome, InstructionKindStats } from '../api'
+import { hasListingFor, listingNeeds, type EngineReading, type ListingNeeds } from './crawlEngine'
 
 // savedDespiteError (step 95): a turn can end in an error (the budget ran out on
 // the very round that saved, say) although the agent already saved its
@@ -61,6 +62,9 @@ export type InstructionState = 'instructed' | 'job_details_missing' | 'not_instr
 
 export interface InstructionStateInput {
   crawlInstructions?: string | null
+  // Plan 190: what the job list needs depends on the engine (a rule under Katana), so the rule and the login setting count too.
+  linkRules?: unknown
+  requiresLogin?: boolean
   jobDetailCrawlInstructions?: string | null
   // Set while the generation agent's question is waiting for an answer.
   jobsQuestion?: unknown
@@ -70,14 +74,28 @@ export interface InstructionStateInput {
 const stored = (text: string | null | undefined) => (text ?? '').trim() !== ''
 
 // listingGenerating / jobDetailGenerating: a run started in this tab that the server does not know about yet (the stats cover the rest).
-export function instructionState(link: InstructionStateInput, listingGenerating = false, jobDetailGenerating = false): InstructionState {
+export function instructionState(
+  link: InstructionStateInput,
+  listingGenerating = false,
+  jobDetailGenerating = false,
+  engine: EngineReading = null,
+): InstructionState {
   const working =
     listingGenerating ||
     jobDetailGenerating ||
     Boolean(link.instructionStats?.listing?.running) ||
     Boolean(link.instructionStats?.jobDetail?.running)
   if (working && !link.jobsQuestion) return 'instructing'
-  if (!stored(link.crawlInstructions)) return 'not_instructed'
+  // The job list is judged by the engine in use (plan 190): its rule under Katana, its AI instructions under Rod; without an engine reading
+  // either one counts. Job details count as before, under every engine.
+  if (
+    !hasListingFor(
+      { crawlInstructions: link.crawlInstructions, linkRules: (link.linkRules ?? null) as never, requiresLogin: link.requiresLogin },
+      engine,
+    )
+  ) {
+    return 'not_instructed'
+  }
   if (!stored(link.jobDetailCrawlInstructions)) return 'job_details_missing'
   return 'instructed'
 }
@@ -120,6 +138,20 @@ export function instructionPill(state: InstructionState): InstructionPill {
 // notCrawlableTooltip says what to do about the pill.
 export const NOT_CRAWLABLE_TOOLTIP =
   'This link has no crawl instructions yet, so it cannot be crawled. Generate them with the AI (the Instructions section of this link) or add the jobs manually.'
+
+// Under Katana the job list is crawled with a rule, not with AI instructions (plan 190).
+export const NOT_CRAWLABLE_TOOLTIP_RULE =
+  'This link has no rules for the Katana engine yet, so it cannot be crawled. Pick its job links in the Crawl instructions section, or select Rod on the Browser & Engine page to crawl it with AI instructions, or add the jobs manually.'
+
+export function notCrawlableTooltip(needs: ListingNeeds): string {
+  return needs === 'rule' ? NOT_CRAWLABLE_TOOLTIP_RULE : NOT_CRAWLABLE_TOOLTIP
+}
+
+// Whether the AI's attempts to write the job-list instructions matter for this link: not under Katana (the rule is made by hand there), and
+// never for a link that is crawled with a rule.
+export function listingIsWrittenByAi(engine: EngineReading, requiresLogin: boolean): boolean {
+  return listingNeeds(engine, requiresLogin) !== 'rule'
+}
 
 // uncrawlableTooltip explains the pill, with the latest failure if known.
 export function uncrawlableTooltip(stats: InstructionKindStats | undefined): string {

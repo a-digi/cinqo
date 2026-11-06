@@ -176,9 +176,14 @@ func CrawlNowHandler(w http.ResponseWriter, r *http.Request) {
 	// Plan 185: a link whose method is "links" is crawled with its link-crawler rule. It must pass its own start check (Katana selected,
 	// no login link) here, before a crawl_runs row exists, and never falls back to the AI instructions.
 	// A refusal here is 412 (precondition failed), not 409: the Crawl now client reads 409 as "a crawl is already running".
-	useLinks, err := linkCrawlSelected(body.PortalLinkID)
+	coreURL, err := coreAPIURL()
 	if err != nil {
-		if useLinks {
+		http.Error(w, "core API address is not configured", http.StatusInternalServerError)
+		return
+	}
+	useLinks, err := linkCrawlSelected(r.Context(), coreURL, accessCookie.Value, body.PortalLinkID)
+	if err != nil {
+		if useLinks || errors.Is(err, errBrowserEngineUnknown) {
 			http.Error(w, err.Error(), http.StatusPreconditionFailed)
 			return
 		}
@@ -186,11 +191,6 @@ func CrawlNowHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if useLinks {
-		coreURL, err := coreAPIURL()
-		if err != nil {
-			http.Error(w, "core API address is not configured", http.StatusInternalServerError)
-			return
-		}
 		if err := checkLinkCrawlStart(r.Context(), coreURL, accessCookie.Value, body.PortalLinkID); err != nil {
 			status := http.StatusPreconditionFailed
 			if errors.Is(err, portal.ErrLinkRulesLogin) {
@@ -270,15 +270,15 @@ func CrawlNowHandler(w http.ResponseWriter, r *http.Request) {
 func RunListingCrawlNow(portalLinkID, accessToken, triggeredBy string) (runID string, err error) {
 	// Plan 185: a link on the method "links" crawls with its rule (checked for Katana and login here, never falling back to the AI
 	// instructions); every other link keeps the instruction check it always had.
-	useLinks, lerr := linkCrawlSelected(portalLinkID)
+	coreURL, cerr := coreAPIURL()
+	if cerr != nil {
+		return "", cerr
+	}
+	useLinks, lerr := linkCrawlSelected(context.Background(), coreURL, accessToken, portalLinkID)
 	switch {
 	case lerr != nil:
 		return "", lerr
 	case useLinks:
-		coreURL, cerr := coreAPIURL()
-		if cerr != nil {
-			return "", cerr
-		}
 		if err := checkLinkCrawlStart(context.Background(), coreURL, accessToken, portalLinkID); err != nil {
 			return "", err
 		}
@@ -560,8 +560,12 @@ func runCrawlNow(ctx context.Context, runID, portalLinkID, accessToken string) {
 	}
 
 	// Plan 185: the method "links" crawls with the link crawler rule (linkcrawl_run.go), not with selectors.
-	if useLinks, lerr := linkCrawlSelected(portalLinkID); useLinks || lerr != nil {
+	if useLinks, lerr := linkCrawlSelected(ctx, coreURL, accessToken, portalLinkID); useLinks || lerr != nil {
 		if lerr != nil {
+			if ctx.Err() != nil { // a Stop while the engine was read: the cancel handler already wrote the terminal row
+				_ = appendCrawlRunLog(runID, "cancelled")
+				return
+			}
 			fail(lerr)
 			return
 		}

@@ -33,6 +33,8 @@ import { PortalLinkHeader } from './PortalLinkHeader'
 import { loginAddressForSave } from '../../Crawler/loginWindow'
 import { JOBS_PATH, VIEW_PLATFORM_PATH } from '../../paths'
 import { AppLink } from '../../Shared/AppLink/AppLink'
+import { CrawlEngineProvider } from '../../Crawler/CrawlEngineProvider'
+import { useCrawlEngine } from '../../Crawler/useCrawlEngine'
 
 // Portals are tool-wide, not persona/profile-scoped — same reasoning
 // Jobs/Companies already document. No Dropdown call site here: a
@@ -47,7 +49,17 @@ import { AppLink } from '../../Shared/AppLink/AppLink'
 // plan/ai/tools/career/step-58-portals-page-modal-accordion-redesign.md,
 // and plan/ai/tools/career/step-59-portals-add-link-container-overlay.md
 // ("Add link" as an in-card overlay instead of an always-visible row).
+// Plan 190: the page and everything under it know the Browser's selected engine.
 export function PortalsPage() {
+  return (
+    <CrawlEngineProvider>
+      <PortalsPageContent />
+    </CrawlEngineProvider>
+  )
+}
+
+function PortalsPageContent() {
+  const engine = useCrawlEngine()
   const [portals, setPortals] = useState<Portal[]>([])
   const [isNewPortalModalOpen, setIsNewPortalModalOpen] = useState(false)
   const [newPortalName, setNewPortalName] = useState('')
@@ -344,7 +356,7 @@ export function PortalsPage() {
   const aiPortal = portals.find((p) => p.id === aiPortalId) ?? null
   const aiLinkPortal = portals.find((p) => p.links.some((l) => l.id === aiLinkId)) ?? null
   const aiLink = aiLinkPortal?.links.find((l) => l.id === aiLinkId) ?? null
-  const summary = summarizePortals(portals)
+  const summary = summarizePortals(portals, engine)
 
   return (
     <div className="career-v-left career-a-glow career-t-wave max-w-7xl p-6 font-sans text-gray-900">
@@ -682,7 +694,7 @@ export function PortalsPage() {
           </button>
           {/* Step 88 — only while some link has crawl instructions: with none, there is nothing
               the global auto-discovery could crawl. */}
-          {anyLinkAutoDiscoverable(portals) && <AutoDiscoveryPanel />}
+          {anyLinkAutoDiscoverable(portals, engine) && <AutoDiscoveryPanel />}
           <SummaryRail
             title="Overview"
             segments={[

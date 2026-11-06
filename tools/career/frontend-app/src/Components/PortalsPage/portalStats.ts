@@ -1,8 +1,13 @@
 // Pure numbers for the Portals page's cards, worked out from the portals already loaded
 // (no extra request). No React, so it can be script-checked.
+import { hasListingFor, type EngineReading } from '../../Crawler/crawlEngine'
+
 export interface LinkLike {
   // The backend leaves an empty field out of the JSON, so "none" arrives as undefined as well as null.
   crawlInstructions?: string | null
+  // Plan 190: what the job list needs depends on the engine in use (a rule under Katana).
+  linkRules?: unknown
+  requiresLogin?: boolean
   lastCrawledAt?: string | null
 }
 
@@ -19,14 +24,20 @@ export interface PortalSummary {
   neverCrawled: number
 }
 
-export function summarizePortals(portals: PortalLike[]): PortalSummary {
+export function summarizePortals(portals: PortalLike[], engine: EngineReading = null): PortalSummary {
   let links = 0
   let withInstructions = 0
   let neverCrawled = 0
   for (const p of portals) {
     for (const l of p.links) {
       links++
-      if ((l.crawlInstructions ?? '').trim() !== '') withInstructions++
+      if (
+        hasListingFor(
+          { crawlInstructions: l.crawlInstructions, linkRules: (l.linkRules ?? null) as never, requiresLogin: l.requiresLogin },
+          engine,
+        )
+      )
+        withInstructions++
       if (!l.lastCrawledAt) neverCrawled++
     }
   }

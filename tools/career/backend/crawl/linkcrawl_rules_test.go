@@ -143,7 +143,6 @@ func TestSavingRefusesBadRequests(t *testing.T) {
 		"not json":                `nope`,
 		"no link":                 `{"crawlMethod":"links","rules":` + goodRules + `}`,
 		"blank link":              `{"portalLinkId":"  ","crawlMethod":"links","rules":` + goodRules + `}`,
-		"no method":               `{` + link + `,"rules":` + goodRules + `}`,
 		"unknown method":          `{` + link + `,"crawlMethod":"colly","rules":` + goodRules + `}`,
 		"method in capitals":      `{` + link + `,"crawlMethod":"Links","rules":` + goodRules + `}`,
 		"unknown body field":      `{` + link + `,"crawlMethod":"links","rules":` + goodRules + `,"useLoginWindow":true}`,
@@ -162,6 +161,27 @@ func TestSavingRefusesBadRequests(t *testing.T) {
 	}
 	if _, got := getRules(t, id); got.Rules != nil || got.CrawlMethod != portal.CrawlMethodInstructions {
 		t.Errorf("a refused request changed the link: %+v", got)
+	}
+}
+
+// Plan 190: the Browser's engine decides how a link is crawled, so the screen no longer sends a method; a request without one keeps the
+// stored method (which nothing reads any more) and stores the rule.
+func TestSavingWithoutAMethodKeepsTheStoredMethodAndStoresTheRule(t *testing.T) {
+	id := linkWithHost(t, "https://board.example/jobs")
+	scriptedEngine(t, "katana", nil)
+	if code, resp := putRules(t, `{"portalLinkId":"`+id+`","rules":`+goodRules+`}`, true); code != http.StatusOK {
+		t.Fatalf("%d %s", code, resp)
+	}
+	if _, got := getRules(t, id); got.Rules == nil || got.CrawlMethod != portal.CrawlMethodInstructions {
+		t.Errorf("rule stored, method kept: %+v", got)
+	}
+	// a rule still needs Katana selected, and an unknown link is still refused
+	scriptedEngine(t, "rod", nil)
+	if code, _ := putRules(t, `{"portalLinkId":"`+id+`","rules":`+goodRules+`}`, true); code != http.StatusConflict {
+		t.Errorf("a rule stored with Rod selected: %d", code)
+	}
+	if code, _ := putRules(t, `{"portalLinkId":"nobody","rules":`+goodRules+`}`, true); code != http.StatusBadRequest {
+		t.Errorf("an unknown link: %d", code)
 	}
 }
 

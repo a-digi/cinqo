@@ -203,6 +203,7 @@ func indexOf(events []string, ev string, from int) int {
 }
 
 func TestLoginRun_LinkWithoutLoginNeverTouchesTheLoginWindow(t *testing.T) {
+	scriptedEngine(t, "rod", nil) // plan 190: the engine decides the method, so a link without a login reads it
 	fastLogin(t)
 	linkID, _ := loginLinkSetup(t, false, "")
 	sb := &scriptedBrowser{crawl: func(_ int, w http.ResponseWriter) { okListing(w) }}
@@ -594,6 +595,7 @@ func TestLoginRun_UnattendedCrawlOfALoginLinkIsRefusedBeforeAnyRun(t *testing.T)
 }
 
 func TestLoginRun_UnattendedCrawlOfALinkWithoutLoginStillRuns(t *testing.T) {
+	scriptedEngine(t, "rod", nil) // plan 190: the engine decides the method, so a link without a login reads it
 	fastLogin(t)
 	linkID, _ := loginLinkSetup(t, false, "")
 	sb := &scriptedBrowser{crawl: func(_ int, w http.ResponseWriter) { okListing(w) }}

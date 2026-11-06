@@ -102,7 +102,11 @@ func checkAndRunTick() {
 
 	var work []workItem
 
-	customLinkIDs, err := portal.ListDuePortalLinksWithCustomInterval()
+	// Plan 190: the Browser's selected engine decides what a link needs (a rule under Katana, AI instructions otherwise), so only links
+	// that have it are listed. No live token (or an unreadable engine) lists every link that has either; each crawl decides again.
+	cachedToken, _ := CachedToken()
+	method := crawl.ListingMethodNow(cachedToken)
+	customLinkIDs, err := portal.ListDuePortalLinksWithCustomInterval(method)
 	if err != nil {
 		log.Printf("auto-discovery: failed to list due custom-interval portal links: %v", err)
 	} else {
@@ -125,7 +129,7 @@ func checkAndRunTick() {
 		if err := recordSweepStart(); err != nil {
 			log.Printf("auto-discovery: failed to record global sweep start — skipping this tick's global portion: %v", err)
 		} else {
-			globalLinkIDs, err := portal.ListPortalLinksEligibleForAutoDiscovery()
+			globalLinkIDs, err := portal.ListPortalLinksEligibleForAutoDiscovery(method)
 			if err != nil {
 				log.Printf("auto-discovery: failed to list eligible portal links: %v", err)
 			} else {

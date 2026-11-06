@@ -1012,10 +1012,20 @@ func GetPortalLinkCrawlInstructions(id string) (string, error) {
 	return crawlInstructions.String, nil
 }
 
-// crawlableListingSQL is true for a link whose listing can be crawled with what it has: the instructions when its method is
-// "instructions" (as always), a rule when its method is "links" (plan 185).
-const crawlableListingSQL = `((crawl_method = 'instructions' AND crawl_instructions IS NOT NULL AND crawl_instructions != '')
-		    OR (crawl_method = 'links' AND link_rules IS NOT NULL AND link_rules != ''))`
+// crawlableListingSQL is true for a link whose listing can be crawled with what it has, for the method the Browser's selected engine
+// means (plan 190, ListingMethodFor): a rule for "links", the AI instructions for "instructions"; any other method (the sweep could not
+// read the engine) lists a link that has either, and each crawl decides again when it starts. The link's stored crawl_method is not read.
+func crawlableListingSQL(method string) string {
+	const rule = `(link_rules IS NOT NULL AND link_rules != '')`
+	const instructions = `(crawl_instructions IS NOT NULL AND crawl_instructions != '')`
+	switch method {
+	case CrawlMethodLinks:
+		return rule
+	case CrawlMethodInstructions:
+		return instructions
+	}
+	return `(` + rule + ` OR ` + instructions + `)`
+}
 
 // ListPortalLinksEligibleForAutoDiscovery returns every portal link's
 // own id, across ALL portals, eligible for the auto-discovery
@@ -1038,10 +1048,10 @@ const crawlableListingSQL = `((crawl_method = 'instructions' AND crawl_instructi
 // in this file is scoped to one known link or one known portal). See
 // plan/ai/tools/career/step-84-auto-discovery-scheduled-crawling.md and
 // plan/ai/tools/career/step-85-auto-discovery-per-link-custom-interval.md.
-func ListPortalLinksEligibleForAutoDiscovery() ([]string, error) {
+func ListPortalLinksEligibleForAutoDiscovery(method string) ([]string, error) {
 	rows, err := db.JobsDB.Query(
 		`SELECT id FROM portal_links
-		 WHERE ` + crawlableListingSQL + `
+		 WHERE ` + crawlableListingSQL(method) + `
 		   AND auto_discovery_enabled = 1
 		   AND requires_login = 0
 		   AND auto_discovery_interval_minutes IS NULL`,
@@ -1076,10 +1086,10 @@ func ListPortalLinksEligibleForAutoDiscovery() ([]string, error) {
 // file's own existing precedent of doing set-membership work in the
 // query (ListPortalLinksEligibleForAutoDiscovery above). See
 // plan/ai/tools/career/step-85-auto-discovery-per-link-custom-interval.md.
-func ListDuePortalLinksWithCustomInterval() ([]string, error) {
+func ListDuePortalLinksWithCustomInterval(method string) ([]string, error) {
 	rows, err := db.JobsDB.Query(
 		`SELECT id FROM portal_links
-		 WHERE ` + crawlableListingSQL + `
+		 WHERE ` + crawlableListingSQL(method) + `
 		   AND auto_discovery_enabled = 1
 		   AND requires_login = 0
 		   AND auto_discovery_interval_minutes IS NOT NULL

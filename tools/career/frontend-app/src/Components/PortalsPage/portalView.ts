@@ -1,8 +1,13 @@
 // Pure numbers for the portal show page's side rail, worked out from the portal already
 // loaded (no extra request). No React, so it can be script-checked.
+import { hasListingFor, type EngineReading } from '../../Crawler/crawlEngine'
+
 export interface ViewLink {
   // The backend leaves an empty field out of the JSON, so "none" arrives as undefined as well as null.
   crawlInstructions?: string | null
+  // Plan 190: what the job list needs depends on the engine in use (a rule under Katana).
+  linkRules?: unknown
+  requiresLogin?: boolean
   lastCrawledAt?: string | null
 }
 
@@ -16,13 +21,19 @@ export interface PortalViewNumbers {
   lastCrawledAt: string | null
 }
 
-export function portalViewNumbers(links: ViewLink[]): PortalViewNumbers {
+export function portalViewNumbers(links: ViewLink[], engine: EngineReading = null): PortalViewNumbers {
   let withInstructions = 0
   let neverCrawled = 0
   let latest: string | null = null
   let latestTime = -Infinity
   for (const l of links) {
-    if ((l.crawlInstructions ?? '').trim() !== '') withInstructions++
+    if (
+      hasListingFor(
+        { crawlInstructions: l.crawlInstructions, linkRules: (l.linkRules ?? null) as never, requiresLogin: l.requiresLogin },
+        engine,
+      )
+    )
+      withInstructions++
     if (!l.lastCrawledAt) {
       neverCrawled++
       continue

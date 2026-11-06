@@ -200,9 +200,10 @@ func TestCrawlingAgainUpdatesAndNeverDuplicates(t *testing.T) {
 	}
 }
 
-func TestThereIsNoFallbackToTheAIInstructionsWhenKatanaIsNotSelected(t *testing.T) {
+// Plan 190: the engine decides the method. With Rod a link that has both a rule and AI instructions is crawled with its AI instructions
+// (never with the rule); an engine that cannot be read stops the crawl, never a guess.
+func TestRodCrawlsWithTheAIInstructionsNeverWithTheRule(t *testing.T) {
 	id := linkCrawlLink(t)
-	// the link also HAS selector instructions: they must not be used
 	if err := portal.UpdatePortalLinkCrawlInstructions(id, trialListingA); err != nil {
 		t.Fatal(err)
 	}
@@ -210,21 +211,26 @@ func TestThereIsNoFallbackToTheAIInstructionsWhenKatanaIsNotSelected(t *testing.
 	threePageBoard(f)
 
 	code, resp := crawlNow(t, id)
-	if code != http.StatusPreconditionFailed || !strings.Contains(resp, "Katana") {
+	if code != http.StatusAccepted {
 		t.Fatalf("%d %s", code, resp)
 	}
-	if _, err := findMostRecentCrawlRun(id); err == nil {
-		t.Error("a run was created for a crawl that cannot start")
-	}
+	waitRun(t, id) // the scripted core has no selector crawl: the run fails, which is fine here
+	sawSelectorCrawl := false
 	for _, p := range f.paths {
-		if strings.HasSuffix(p, "/crawl-paginated") || strings.HasSuffix(p, "/fetch-links") {
-			t.Errorf("the Browser was asked %s", p)
+		if strings.HasSuffix(p, "/fetch-links") {
+			t.Error("the link crawler was used although Rod is selected")
+		}
+		if strings.HasSuffix(p, "/crawl-paginated") {
+			sawSelectorCrawl = true
 		}
 	}
-	// an unreadable engine closes it too
+	if !sawSelectorCrawl {
+		t.Errorf("the AI instructions were not crawled: %v", f.paths)
+	}
+	// an unreadable engine closes it
 	f.engine = "katana"
 	f.settingsStatus = 502
-	if code, resp := crawlNow(t, id); code != http.StatusPreconditionFailed {
+	if code, resp := crawlNow(t, id); code != http.StatusPreconditionFailed || !strings.Contains(resp, "could not be read") {
 		t.Errorf("unreadable engine: %d %s", code, resp)
 	}
 	if got := jobsOf(t, id); len(got) != 0 {
@@ -232,31 +238,43 @@ func TestThereIsNoFallbackToTheAIInstructionsWhenKatanaIsNotSelected(t *testing.
 	}
 }
 
-func TestAnInstructionLinkNeverTouchesTheLinkCrawler(t *testing.T) {
+// A link that has AI instructions but no rule: Rod crawls it (the selector crawl is called, never the link list); Katana refuses with
+// a message that says what to do, and never falls back to the AI instructions.
+func TestAnInstructionLinkIsCrawledByRodAndRefusedByKatana(t *testing.T) {
 	setupTrialDB(t)
 	_, id, _ := trialPortal(t)
 	if err := portal.UpdatePortalLinkCrawlInstructions(id, trialListingA); err != nil {
 		t.Fatal(err)
 	}
-	f := newFakeCore(t, "katana")
+	f := newFakeCore(t, "rod")
 	code, resp := crawlNow(t, id)
 	if code != http.StatusAccepted {
 		t.Fatalf("%d %s", code, resp)
 	}
-	waitRun(t, id) // the scripted core has no selector crawl: the run fails, which is fine here
+	waitRun(t, id)
+	sawSelectorCrawl := false
 	for _, p := range f.paths {
 		if strings.HasSuffix(p, "/fetch-links") {
 			t.Error("a link on the instructions method called the link list")
 		}
-	}
-	sawSelectorCrawl := false
-	for _, p := range f.paths {
 		if strings.HasSuffix(p, "/crawl-paginated") {
 			sawSelectorCrawl = true
 		}
 	}
 	if !sawSelectorCrawl {
 		t.Errorf("the selector crawl was not called: %v", f.paths)
+	}
+
+	f.engine = "katana"
+	before := len(f.paths)
+	code, resp = crawlNow(t, id)
+	if code != http.StatusPreconditionFailed || !strings.Contains(resp, "no rules for the Katana engine") {
+		t.Fatalf("Katana without a rule: %d %s", code, resp)
+	}
+	for _, p := range f.paths[before:] {
+		if strings.HasSuffix(p, "/crawl-paginated") || strings.HasSuffix(p, "/fetch-links") {
+			t.Errorf("the Browser was asked %s for a link Katana cannot crawl", p)
+		}
 	}
 }
 
@@ -269,23 +287,26 @@ func TestALinkOnTheLinkMethodWithoutARuleIsRefusedNotCrawledWithInstructions(t *
 		t.Fatal(err)
 	}
 	f := newFakeCore(t, "katana")
-	if code, resp := crawlNow(t, id); code != http.StatusPreconditionFailed || !strings.Contains(resp, "rule") {
+	if code, resp := crawlNow(t, id); code != http.StatusPreconditionFailed || !strings.Contains(resp, "rules") {
 		t.Errorf("%d %s", code, resp)
 	}
 	if _, err := RunListingCrawlNow(id, "tok", "auto_discovery"); err == nil {
 		t.Error("auto-discovery started a crawl for a link on the link method without a usable rule")
 	}
-	if len(f.paths) != 0 {
-		t.Errorf("the Browser was asked: %v", f.paths)
+	for _, p := range f.paths { // only the engine setting may have been read
+		if strings.HasSuffix(p, "/crawl-paginated") || strings.HasSuffix(p, "/fetch-links") {
+			t.Errorf("the Browser was asked %s", p)
+		}
 	}
 }
 
-func TestAutoDiscoveryCrawlsALinkMethodLinkAndRefusesWithoutKatana(t *testing.T) {
+func TestAutoDiscoveryFollowsTheEngineRuleUnderKatanaAndInstructionsUnderRod(t *testing.T) {
 	id := linkCrawlLink(t)
 	f := newFakeCore(t, "rod")
 	threePageBoard(f)
-	if _, err := RunListingCrawlNow(id, "tok-auto", "auto_discovery"); err == nil || !strings.Contains(err.Error(), "Katana") {
-		t.Fatalf("without Katana: %v", err)
+	// Rod: the link has a rule but no AI instructions, so there is nothing to crawl with (the rule is never used under Rod)
+	if _, err := RunListingCrawlNow(id, "tok-auto", "auto_discovery"); err == nil || !strings.Contains(err.Error(), "crawl instructions") {
+		t.Fatalf("under Rod without AI instructions: %v", err)
 	}
 	if _, rerr := findMostRecentCrawlRun(id); rerr == nil {
 		t.Error("a run was created")
@@ -309,9 +330,9 @@ func TestAutoDiscoveryCrawlsALinkMethodLinkAndRefusesWithoutKatana(t *testing.T)
 	}
 }
 
-func TestTheEngineIsCheckedAgainWhenTheRunRuns(t *testing.T) {
+func TestTheEngineIsReadAgainWhenTheRunRuns(t *testing.T) {
 	id := linkCrawlLink(t)
-	f := newFakeCore(t, "rod") // switched away between the start and the run
+	f := newFakeCore(t, "rod") // switched away between the start and the run: the run reads the engine again
 	threePageBoard(f)
 	run, err := startCrawlRun(id, "listing", "manual")
 	if err != nil {
@@ -319,12 +340,12 @@ func TestTheEngineIsCheckedAgainWhenTheRunRuns(t *testing.T) {
 	}
 	runCrawlNow(contextForTest(t), run.ID, id, "tok")
 	status, _, errMsg, _ := waitRun(t, id)
-	if status != "failed" || !strings.Contains(errMsg, "Katana") {
+	if status != "failed" || !strings.Contains(errMsg, "crawl instructions") {
 		t.Errorf("%s %q", status, errMsg)
 	}
 	for _, p := range f.paths {
 		if strings.HasSuffix(p, "/fetch-links") {
-			t.Error("a page was loaded although Katana is not selected")
+			t.Error("a page of the link crawler was loaded although Rod is selected")
 		}
 	}
 }
@@ -427,7 +448,7 @@ func TestAStoppedRunLeavesItsTerminalRowToTheStopHandlerAndSavesNothing(t *testi
 	}
 }
 
-func TestLinkMethodLinksAreEligibleForAutoDiscoveryOnlyWithTheirRule(t *testing.T) {
+func TestAutoDiscoveryListsLinksByWhatTheEnginesMethodNeeds(t *testing.T) {
 	setupTrialDB(t)
 	pid, _ := portal.CreatePortal("Board")
 	mk := func(url string) string {
@@ -460,7 +481,49 @@ func TestLinkMethodLinksAreEligibleForAutoDiscoveryOnlyWithTheirRule(t *testing.
 	if _, err := db.JobsDB.Exec(`UPDATE portal_links SET crawl_method = 'links' WHERE id = ?`, linksButInstr); err != nil {
 		t.Fatal(err)
 	}
-	got, err := portal.ListPortalLinksEligibleForAutoDiscovery()
+	// Plan 190: the engine's method decides what a link needs; the stored crawl_method is not read. Katana ("links"): a rule. Rod
+	// ("instructions"): AI instructions. "" (the engine could not be read): either.
+	for _, id := range []string{withRule, ruleOnly, instrOnly, linksNoRule, linksButInstr} {
+		if _, err := db.JobsDB.Exec(`UPDATE portal_links SET auto_discovery_interval_minutes = 30 WHERE id = ?`, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, c := range []struct {
+		method string
+		want   []string
+		not    []string
+	}{
+		{portal.CrawlMethodLinks, []string{withRule, ruleOnly}, []string{instrOnly, linksNoRule, linksButInstr}},
+		{portal.CrawlMethodInstructions, []string{instrOnly, linksButInstr}, []string{withRule, ruleOnly, linksNoRule}},
+		{"", []string{withRule, ruleOnly, instrOnly, linksButInstr}, []string{linksNoRule}},
+	} {
+		// the custom-interval list follows the same rule (every link above has its own interval now, never run: all are due)
+		due, err := portal.ListDuePortalLinksWithCustomInterval(c.method)
+		if err != nil {
+			t.Fatal(err)
+		}
+		set := map[string]bool{}
+		for _, g := range due {
+			set[g] = true
+		}
+		for _, id := range c.want {
+			if !set[id] {
+				t.Errorf("method %q: %s must be listed, got %v", c.method, id, due)
+			}
+		}
+		for _, id := range c.not {
+			if set[id] {
+				t.Errorf("method %q: %s must not be listed, got %v", c.method, id, due)
+			}
+		}
+	}
+	// the global list (links without an interval of their own)
+	for _, id := range []string{withRule, ruleOnly, instrOnly, linksNoRule, linksButInstr} {
+		if _, err := db.JobsDB.Exec(`UPDATE portal_links SET auto_discovery_interval_minutes = NULL WHERE id = ?`, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := portal.ListPortalLinksEligibleForAutoDiscovery(portal.CrawlMethodLinks)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -468,25 +531,8 @@ func TestLinkMethodLinksAreEligibleForAutoDiscoveryOnlyWithTheirRule(t *testing.
 	for _, g := range got {
 		set[g] = true
 	}
-	if !set[withRule] || !set[instrOnly] || set[ruleOnly] || set[linksNoRule] || set[linksButInstr] {
-		t.Errorf("eligible %v (withRule=%s instrOnly=%s)", got, withRule, instrOnly)
-	}
-	// the custom-interval list follows the same rule
-	for _, id := range []string{withRule, ruleOnly, instrOnly, linksNoRule, linksButInstr} {
-		if _, err := db.JobsDB.Exec(`UPDATE portal_links SET auto_discovery_interval_minutes = 30 WHERE id = ?`, id); err != nil {
-			t.Fatal(err)
-		}
-	}
-	due, err := portal.ListDuePortalLinksWithCustomInterval()
-	if err != nil {
-		t.Fatal(err)
-	}
-	dset := map[string]bool{}
-	for _, g := range due {
-		dset[g] = true
-	}
-	if !dset[withRule] || !dset[instrOnly] || dset[ruleOnly] || dset[linksNoRule] || dset[linksButInstr] {
-		t.Errorf("due %v", due)
+	if !set[withRule] || !set[ruleOnly] || set[instrOnly] || set[linksNoRule] || set[linksButInstr] {
+		t.Errorf("global list for Katana: %v", got)
 	}
 }
 

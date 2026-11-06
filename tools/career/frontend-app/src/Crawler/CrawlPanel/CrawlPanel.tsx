@@ -46,8 +46,10 @@ import {
   manualOnlyNote,
   openAiLoginWindow,
 } from '../loginWindow'
-import { instructionAlertAttempts, isLikelyUncrawlable, savedDespiteError } from '../instructionStats'
+import { instructionAlertAttempts, isLikelyUncrawlable, listingIsWrittenByAi, savedDespiteError } from '../instructionStats'
 import { canCrawlListing } from '../autoDiscoveryVisibility'
+import { hasListingFor } from '../crawlEngine'
+import { useCrawlEngine } from '../useCrawlEngine'
 import { PipelineLine } from '../PipelineLine'
 import { runFollower } from '../runFollowerStart'
 import { LoginGenerateAbandoned, startAfterLogin } from '../loginGenerate'
@@ -126,6 +128,8 @@ export function CrawlPanel({
   onReload: () => void
   onError: (message: string) => void
 }) {
+  // Plan 190: the Browser's selected engine decides which job-list instructions count (a rule under Katana, AI instructions under Rod).
+  const engine = useCrawlEngine()
   // "Crawl with AI" own busy/result state.
   const [isCrawling, setIsCrawling] = useState(false)
   const [crawlResult, setCrawlResult] = useState<{ ok: boolean; text: string; conversationId?: string } | null>(null)
@@ -276,7 +280,7 @@ export function CrawlPanel({
   // AI-driven regeneration finishing later must not yank a section the
   // user deliberately opened back shut, or vice versa. See
   // plan/ai/tools/career/step-XX-crawl-instructions-accordion.md.
-  const [crawlInstructionsOpen, setCrawlInstructionsOpen] = useState(() => !link.crawlInstructions)
+  const [crawlInstructionsOpen, setCrawlInstructionsOpen] = useState(() => !hasListingFor(link, engine))
 
   // jobDetailInstructionsDraft — the SEPARATE, second instruction
   // document's own draft (a single job's own detail page, not the
@@ -962,11 +966,14 @@ export function CrawlPanel({
   // Alert pills (step 86): attempts were made but this document still
   // doesn't exist. Computed from the server-side counters plus this
   // tab's own in-flight state.
-  const listingAlertAttempts = instructionAlertAttempts(link.instructionStats.listing, Boolean(link.crawlInstructions), aiBusy)
+  // Plan 190: only where the AI writes the job list (not under Katana, which uses a rule made by hand).
+  const aiWritesListing = listingIsWrittenByAi(engine, link.requiresLogin)
+  const hasListing = hasListingFor(link, engine)
+  const listingAlertAttempts = aiWritesListing ? instructionAlertAttempts(link.instructionStats.listing, hasListing, aiBusy) : 0
   // Step 87 — once the AI has given up on the listing three times in a
   // row, the stronger "probably can't be crawled" pill replaces the
   // generic alert for the listing.
-  const listingUncrawlable = isLikelyUncrawlable(link.instructionStats.listing, Boolean(link.crawlInstructions), aiBusy)
+  const listingUncrawlable = aiWritesListing && isLikelyUncrawlable(link.instructionStats.listing, hasListing, aiBusy)
   const jobDetailAlertAttempts = instructionAlertAttempts(
     link.instructionStats.jobDetail,
     Boolean(link.jobDetailCrawlInstructions),
@@ -1091,7 +1098,7 @@ export function CrawlPanel({
           never auto-crawls a link without. Hiding this never changes the
           stored setting. */}
       {manualOnlyNote(link) !== null && <p className="mb-2 text-xs text-gray-600">{manualOnlyNote(link)}</p>}
-      {canCrawlListing(link) && !link.requiresLogin && (
+      {canCrawlListing(link, engine) && !link.requiresLogin && (
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <Switch
             checked={link.autoDiscoveryEnabled}
@@ -1215,7 +1222,7 @@ export function CrawlPanel({
                         ? 'Job list crawl instructions — view/edit'
                         : 'Job list crawl instructions — not set yet, click to add'
                     }
-                    className={`flex flex-col items-center justify-center gap-1 text-xs font-medium hover:underline ${link.crawlInstructions ? 'text-gray-700' : 'text-gray-400'}`}
+                    className={`flex flex-col items-center justify-center gap-1 text-xs font-medium hover:underline ${hasListing ? 'text-gray-700' : 'text-gray-400'}`}
                   >
                     <CrawlInstructionsIcon />
                     Job list
@@ -1487,7 +1494,7 @@ export function CrawlPanel({
           />
         </div>
       )}
-      {canCrawlListing(link) && (
+      {canCrawlListing(link, engine) && (
         <div className="mt-1.5">
           <div className="flex flex-wrap gap-2">
             {run?.status === 'running' && run.kind === 'listing' ? (

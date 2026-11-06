@@ -2,6 +2,8 @@ import type { PortalLink } from '../api'
 import { diagnoseEmptyCrawl, emptyCrawlFor } from './emptyCrawl'
 import { AlertCircleIcon } from '../Shared/Icons/icons'
 import { LOGIN_BADGE_TOOLTIP, loginBadgeFor } from './loginWindow'
+import { hasListingFor, listingNeeds } from './crawlEngine'
+import { useCrawlEngine } from './useCrawlEngine'
 import {
   attemptsLabel,
   instructionAlertAttempts,
@@ -9,7 +11,8 @@ import {
   instructionState,
   isLikelyUncrawlable,
   isNotCrawlable,
-  NOT_CRAWLABLE_TOOLTIP,
+  listingIsWrittenByAi,
+  notCrawlableTooltip,
   uncrawlableTooltip,
 } from './instructionStats'
 
@@ -45,12 +48,17 @@ export function LinkStatusPills({
   showCrawling = false,
   className,
 }: LinkStatusPillsProps) {
-  const hasListing = Boolean(link.crawlInstructions)
+  // Plan 190: the job list is judged by the engine in use (its rule under Katana, its AI instructions under Rod), and the AI's attempts to write
+  // job-list instructions only matter where the AI writes them.
+  const engine = useCrawlEngine()
+  const needs = listingNeeds(engine, link.requiresLogin)
+  const aiWritesListing = listingIsWrittenByAi(engine, link.requiresLogin)
+  const hasListing = hasListingFor(link, engine)
   // "Instructed" needs both instruction sets (plan 163, step 2).
-  const pill = instructionPill(instructionState(link, listingGenerating, jobDetailGenerating))
-  const listingUncrawlable = isLikelyUncrawlable(link.instructionStats.listing, hasListing, listingGenerating)
+  const pill = instructionPill(instructionState(link, listingGenerating, jobDetailGenerating, engine))
+  const listingUncrawlable = aiWritesListing && isLikelyUncrawlable(link.instructionStats.listing, hasListing, listingGenerating)
   const notCrawlable = isNotCrawlable(link.instructionStats.listing, hasListing, listingGenerating)
-  const listingAlertAttempts = instructionAlertAttempts(link.instructionStats.listing, hasListing, listingGenerating)
+  const listingAlertAttempts = aiWritesListing ? instructionAlertAttempts(link.instructionStats.listing, hasListing, listingGenerating) : 0
   // Step 90: the latest listing crawl completed but found no jobs.
   const emptyCrawl = emptyCrawlFor(link)
   const jobDetailAlertAttempts = instructionAlertAttempts(
@@ -65,7 +73,7 @@ export function LinkStatusPills({
         {pill.label}
       </span>
       {notCrawlable && (
-        <span role="status" title={NOT_CRAWLABLE_TOOLTIP} className={`inline-flex items-center gap-1 ${RED_PILL}`}>
+        <span role="status" title={notCrawlableTooltip(needs)} className={`inline-flex items-center gap-1 ${RED_PILL}`}>
           <AlertCircleIcon />
           Not crawlable
         </span>

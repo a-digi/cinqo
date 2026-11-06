@@ -7,6 +7,9 @@ import { SummaryRail } from '../../Shared/SummaryRail/SummaryRail'
 import { JOBS_PATH, JOB_DETAILS_PATH, PLATFORMS_PATH } from '../../paths'
 import { ACCENTS, PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
 import { portalViewNumbers } from './portalView'
+import { CrawlEngineProvider } from '../../Crawler/CrawlEngineProvider'
+import { useCrawlEngine } from '../../Crawler/useCrawlEngine'
+import { hasListingFor, listingNeeds } from '../../Crawler/crawlEngine'
 import { plural } from './portalStats'
 
 // How many of the portal's jobs the page asks for at once; a portal with more
@@ -24,6 +27,15 @@ function formatDate(value: string | null | undefined): string {
 // existing list route and the jobs from the Jobs route's own ?portalId= filter, so
 // it needs no backend of its own.
 export function PortalViewPage() {
+  return (
+    <CrawlEngineProvider>
+      <PortalViewPageContent />
+    </CrawlEngineProvider>
+  )
+}
+
+function PortalViewPageContent() {
+  const engine = useCrawlEngine()
   const portalId = new URLSearchParams(window.location.search).get('id') ?? ''
   const [portal, setPortal] = useState<Portal | null>(null)
   const [jobs, setJobs] = useState<Job[]>([])
@@ -82,7 +94,7 @@ export function PortalViewPage() {
     )
   }
 
-  const numbers = portalViewNumbers(portal.links)
+  const numbers = portalViewNumbers(portal.links, engine)
   const matched = jobs.filter((j) => j.matchStatus === 'completed' && j.matchScore !== undefined).length
   const jobsPath = `${JOBS_PATH}?portalId=${encodeURIComponent(portal.id)}`
 
@@ -124,7 +136,13 @@ export function PortalViewPage() {
                   <div className="mt-1 text-xs text-gray-500">
                     {[
                       link.lastCrawledAt ? `Last crawled ${formatDate(link.lastCrawledAt)}` : 'Never crawled',
-                      link.crawlInstructions?.trim() ? 'Has crawl instructions' : 'No crawl instructions',
+                      hasListingFor(link, engine)
+                        ? listingNeeds(engine, link.requiresLogin) === 'rule'
+                          ? 'Has crawl rules'
+                          : 'Has crawl instructions'
+                        : listingNeeds(engine, link.requiresLogin) === 'rule'
+                          ? 'No crawl rules'
+                          : 'No crawl instructions',
                       link.hasActiveCrawlRun ? 'Crawl running now' : '',
                     ]
                       .filter(Boolean)
