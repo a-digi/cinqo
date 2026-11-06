@@ -587,7 +587,9 @@ func JobDetailTestHandler(w http.ResponseWriter, r *http.Request) {
 		}, Description: toPickReport(ex.Description)})
 	}
 	if len(samples) > 0 {
-		resp.Flags = detailpick.Flags(samples, chosen)
+		if flags := detailpick.Flags(samples, chosen); flags != nil {
+			resp.Flags = flags
+		}
 	}
 	writePickJSON(w, http.StatusOK, resp)
 }

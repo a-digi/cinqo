@@ -34,6 +34,7 @@ import {
 } from '../generateInstructions'
 import { startCrawlNow, stopCrawlNow, fetchActiveCrawlRun, type CrawlRun } from '../crawlNow'
 import { LinkCrawlGate } from '../LinkCrawlGate'
+import { JobDetailPickPanel } from '../JobDetailPick/JobDetailPickPanel'
 import { phaseLabel, latestCrawlLogMessage } from '../crawlPhase'
 import {
   AI_LOGIN_WAIT_TEXT,
@@ -1655,6 +1656,7 @@ export function CrawlPanel({
       <Modal
         open={activeInstructionsModal !== null}
         title={activeInstructionsModal === 'jobDetail' ? 'Job detail crawl instructions' : 'Job list crawl instructions'}
+        size={activeInstructionsModal === 'jobDetail' ? 'wide' : 'default'}
         onClose={() => {
           setActiveInstructionsModal(null)
         }}
@@ -1693,6 +1695,7 @@ export function CrawlPanel({
         )}
         {activeInstructionsModal === 'jobDetail' && (
           <>
+            {!link.requiresLogin && <JobDetailPickPanel link={link} />}
             <textarea
               value={jobDetailInstructionsDraft}
               onChange={(e) => {

@@ -452,6 +452,10 @@ func TestPickTestRunsTheRealExtractionOnThreeJobsAndFlagsWhatLooksOff(t *testing
 	if got["identical_on_all|company"] != detailpick.Info || got["title_differs|title"] != detailpick.Info || len(got) != 2 {
 		t.Errorf("flags: %+v", resp.Flags)
 	}
+	// lists are never null in the answer (the screen maps over them)
+	if strings.Contains(out, `"flags":null`) || strings.Contains(out, `"jobs":null`) {
+		t.Errorf("null list in the answer: %s", out)
+	}
 	// nothing was saved
 	if s, _ := portal.GetPortalLinkJobDetailCrawlInstructions(id); s != detailYAMLWithFields {
 		t.Errorf("a test changed the stored instructions: %q", s)
@@ -461,6 +465,24 @@ func TestPickTestRunsTheRealExtractionOnThreeJobsAndFlagsWhatLooksOff(t *testing
 	}
 	if f.settingsCalls != 0 {
 		t.Error("no Katana gate")
+	}
+}
+
+func TestPickTestWithNothingToFlagAnswersAnEmptyListNotNull(t *testing.T) {
+	id, ids := pickLink(t)
+	f := newFakeCore(t, "rod")
+	f.paginated = func(pageURL string) (int, string) {
+		return pickExtractPage(map[string]string{"title": "Alpha Developer", "company": "Acme", "postedAt": "2026-10-28", "description": longDesc("one")}, "")(pageURL)
+	}
+	_, out := postPick(t, JobDetailTestHandler, "/x", `{"portalLinkId":"`+id+`","choices":`+pickChoices+`,"jobIds":["`+ids[0]+`"]}`, true)
+	if !strings.Contains(out, `"flags":[]`) {
+		t.Errorf("no flags must be an empty list: %s", out)
+	}
+	// and when every page failed
+	f.paginated = func(string) (int, string) { return 502, `{"code":"x","message":"m"}` }
+	_, out = postPick(t, JobDetailTestHandler, "/x", `{"portalLinkId":"`+id+`","choices":`+pickChoices+`,"jobIds":["`+ids[0]+`"]}`, true)
+	if !strings.Contains(out, `"flags":[]`) {
+		t.Errorf("all failed: %s", out)
 	}
 }
 
