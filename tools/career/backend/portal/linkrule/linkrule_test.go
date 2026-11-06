@@ -40,7 +40,7 @@ func TestCompileRefusesBadPatterns(t *testing.T) {
 		{strings.Repeat("a", MaxPatternLen+1), ErrPatternTooLong},
 		{"/jobs/*", ErrPatternNoHost}, {"https:///jobs", ErrPatternNoHost}, {"?id=*", ErrPatternNoHost},
 		{"*.example.com/jobs/*", ErrPatternHostWildcard}, {"exam*ple.com/x", ErrPatternHostWildcard}, {"*/jobs", ErrPatternHostWildcard},
-		{"example.com/jobs with space", ErrBadPatternChars}, {"example.com/jobs#frag", ErrBadPatternChars}, {"example.com/a\nb", ErrBadPatternChars}, {"example.com/a\tb", ErrBadPatternChars},
+		{"example.com/jobs with space", ErrBadPatternChars}, {"example.com/a\nb", ErrBadPatternChars}, {"example.com/a\tb", ErrBadPatternChars},
 		{"example.com/x?", ErrBadQueryPattern}, {"example.com/x?=1", ErrBadQueryPattern}, {"example.com/x?*=1", ErrBadQueryPattern}, {"example.com/x?a*=1", ErrBadQueryPattern}, {"example.com/x?&&", ErrBadQueryPattern},
 	} {
 		if _, err := Compile(c.in); !errors.Is(err, c.want) {
@@ -169,22 +169,24 @@ func TestLearnFromPicks(t *testing.T) {
 		pattern      string
 		needsConfirm bool
 	}{
-		{"duapune jobs (the real case)", []string{"https://duapune.com/jobs/121888-backend-developer", "https://duapune.com/jobs/121726-devops-engineer"}, "duapune.com/jobs/*", false},
-		{"three picks, ids differ", []string{"https://example.com/job/1", "https://example.com/job/22", "https://example.com/job/333"}, "example.com/job/*", false},
+		{"duapune jobs (the real case)", []string{"https://duapune.com/jobs/121888-backend-developer", "https://duapune.com/jobs/121726-devops-engineer"}, "duapune.com/jobs/#-*", false},
+		{"three picks, ids differ", []string{"https://example.com/job/1", "https://example.com/job/22", "https://example.com/job/333"}, "example.com/job/#", false},
 		{"shared word prefix kept at a boundary", []string{"https://example.com/jobs/job-12", "https://example.com/jobs/job-98"}, "example.com/jobs/job-*", false},
-		{"accidental shared digits not kept", []string{"https://example.com/jobs/121888-a", "https://example.com/jobs/121726-b"}, "example.com/jobs/*", false},
-		{"shared suffix kept at a boundary", []string{"https://example.com/jobs/12.html", "https://example.com/jobs/98.html"}, "example.com/jobs/*.html", false},
-		{"varying middle segment", []string{"https://example.com/search/city/tirane/jobs/1", "https://example.com/search/city/durres/jobs/2"}, "example.com/search/city/*/jobs/*", false},
-		{"tracking params ignored when the path varies", []string{"https://example.com/job/1?utm=a", "https://example.com/job/2?utm=b&x=1"}, "example.com/job/*", false},
+		{"accidental shared digits are not kept: the number is #", []string{"https://example.com/jobs/121888-a", "https://example.com/jobs/121726-b"}, "example.com/jobs/#-*", false},
+		{"shared suffix kept at a boundary", []string{"https://example.com/jobs/12.html", "https://example.com/jobs/98.html"}, "example.com/jobs/#.html", false},
+		{"varying middle segment", []string{"https://example.com/search/city/tirane/jobs/1", "https://example.com/search/city/durres/jobs/2"}, "example.com/search/city/*/jobs/#", false},
+		{"tracking params ignored when the path varies", []string{"https://example.com/job/1?utm=a", "https://example.com/job/2?utm=b&x=1"}, "example.com/job/#", false},
 		{"same path, id in the query", []string{"https://example.com/view?id=5&lang=de", "https://example.com/view?id=9&lang=de"}, "example.com/view?id=*&lang=de", false},
 		{"same path, varying query key set keeps common keys only", []string{"https://example.com/view?id=5&x=1", "https://example.com/view?id=9"}, "example.com/view?id=*", false},
 		{"different depths: shared start then anything below", []string{"https://example.com/careers/eng/1", "https://example.com/careers/eng/team/2"}, "example.com/careers/eng/**", false},
 		{"different depths with nothing shared: broad, confirm", []string{"https://example.com/a/1", "https://example.com/b/c/2"}, "example.com/**", true},
-		{"one pick: last segment generalised, confirm", []string{"https://duapune.com/jobs/121888-backend-developer"}, "duapune.com/jobs/*", true},
-		{"one pick with digit segment", []string{"https://example.com/jobs/42/details"}, "example.com/jobs/*/*", true},
+		{"one pick: the id and the slug are generalised, confirm", []string{"https://duapune.com/jobs/121888-backend-developer"}, "duapune.com/jobs/#-*", true},
+		{"one pick, a word: the last segment is *", []string{"https://example.com/jobs/backend"}, "example.com/jobs/*", true},
+		{"one pick, a plain id", []string{"https://www.python.org/jobs/8195/"}, "www.python.org/jobs/#", true},
+		{"one pick with digit segment", []string{"https://example.com/jobs/42/details"}, "example.com/jobs/#/*", true},
 		{"one pick with a query keeps the path", []string{"https://example.com/view?id=5&utm=x"}, "example.com/view?id=*&utm=*", true},
 		{"one pick at the root", []string{"https://example.com/"}, "example.com", true},
-		{"picks given twice count once", []string{"https://example.com/job/1", "https://example.com/job/1/", "https://example.com/job/1#x", "https://example.com/job/2"}, "example.com/job/*", false},
+		{"picks given twice count once", []string{"https://example.com/job/1", "https://example.com/job/1/", "https://example.com/job/1#x", "https://example.com/job/2"}, "example.com/job/#", false},
 		{"identical path and query apart from a value", []string{"https://example.com/p?a=1&b=x", "https://example.com/p?a=2&b=x"}, "example.com/p?a=*&b=x", false},
 	} {
 		got, err := LearnJobPattern(c.picks, nil, nil)
@@ -263,11 +265,12 @@ func TestProposalShowsWhatThePatternDoesOnThePage(t *testing.T) {
 }
 
 func TestNotJobLinksAreKeptOutWhenTheyCanBeSeparated(t *testing.T) {
+	// slugs without numbers: a "featured" page looks exactly like a job to any pattern, so it cannot be kept out, and the tool says so
 	page := links(
-		"https://example.com/jobs/1", "https://example.com/jobs/2",
+		"https://example.com/jobs/backend", "https://example.com/jobs/frontend",
 		"https://example.com/jobs/featured", "https://example.com/jobs/latest",
 	)
-	p, err := LearnJobPattern([]string{"https://example.com/jobs/1", "https://example.com/jobs/2"},
+	p, err := LearnJobPattern([]string{"https://example.com/jobs/backend", "https://example.com/jobs/frontend"},
 		[]string{"https://example.com/jobs/featured"}, page)
 	if err != nil {
 		t.Fatal(err)
@@ -288,6 +291,16 @@ func TestNotJobLinksAreKeptOutWhenTheyCanBeSeparated(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("the notes must say a not-a-job link could not be kept out: %v", p.Notes)
+	}
+
+	// with ids the same page needs no help at all: # is a number, "featured" is a word
+	idPage := links("https://example.com/jobs/1", "https://example.com/jobs/2", "https://example.com/jobs/featured", "https://example.com/jobs/latest")
+	pn, err := LearnJobPattern([]string{"https://example.com/jobs/1", "https://example.com/jobs/2"}, []string{"https://example.com/jobs/featured"}, idPage)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pn.Pattern != "example.com/jobs/#" || pn.MatchCount != 2 || len(pn.ExcludedStillMatched) != 0 || len(pn.Exclude) != 0 {
+		t.Errorf("number pattern: %+v", pn)
 	}
 
 	// separable: the not-a-job link has another shape (a deeper path) that no pick has
@@ -681,5 +694,129 @@ func TestPreviewRule(t *testing.T) {
 	pv, _ = PreviewRule(Rule{Host: "a.com", Include: []string{"a.com/j/*"}}, page)
 	if !reflect.DeepEqual(res, pv.Result) {
 		t.Errorf("apply %+v vs preview %+v", res, pv.Result)
+	}
+}
+
+// ---- the number wildcard # ----
+
+func TestNumberWildcardMatching(t *testing.T) {
+	type tc struct {
+		pattern string
+		match   []string
+		not     []string
+	}
+	for _, c := range []tc{
+		{"www.python.org/jobs/#",
+			[]string{"https://www.python.org/jobs/8195/", "https://www.python.org/jobs/8195", "https://www.python.org/jobs/1"},
+			[]string{"https://www.python.org/jobs/types/", "https://www.python.org/jobs/categories/", "https://www.python.org/jobs/create/", "https://www.python.org/jobs/", "https://www.python.org/jobs/8195/apply", "https://www.python.org/jobs/81x95", "https://www.python.org/jobs/location/remote-remote/"}},
+		{"duapune.com/jobs/#-*",
+			[]string{"https://duapune.com/jobs/121888-backend-developer", "https://duapune.com/jobs/3-qa", "https://duapune.com/jobs/7-"},
+			[]string{"https://duapune.com/jobs/backend-developer", "https://duapune.com/jobs/121888", "https://duapune.com/jobs/-x"}},
+		{"example.com/jobs/#.html", []string{"https://example.com/jobs/12.html"}, []string{"https://example.com/jobs/a.html", "https://example.com/jobs/12.htm", "https://example.com/jobs/.html"}},
+		{"example.com/#/jobs/#", []string{"https://example.com/12/jobs/34"}, []string{"https://example.com/de/jobs/34", "https://example.com/12/jobs/x"}},
+		{"example.com/view?id=#", []string{"https://example.com/view?id=5", "https://example.com/view?id=123&x=1"}, []string{"https://example.com/view?id=abc", "https://example.com/view?id=", "https://example.com/view?id=5x", "https://example.com/view"}},
+		{"example.com/p#", []string{"https://example.com/p7"}, []string{"https://example.com/p", "https://example.com/px"}},
+		{"example.com/##", []string{"https://example.com/12"}, nil}, // two number wildcards in a row still match a number
+	} {
+		p, err := Compile(c.pattern)
+		if err != nil {
+			t.Errorf("%q: %v", c.pattern, err)
+			continue
+		}
+		for _, u := range c.match {
+			if !p.Match(u) {
+				t.Errorf("%q should match %s", c.pattern, u)
+			}
+		}
+		for _, u := range c.not {
+			if p.Match(u) {
+				t.Errorf("%q must not match %s", c.pattern, u)
+			}
+		}
+	}
+}
+
+func TestLeadingNumber(t *testing.T) {
+	for in, want := range map[string]struct {
+		digits, rest string
+		ok           bool
+	}{
+		"8195":                     {"8195", "", true},
+		"121888-backend-developer": {"121888", "-backend-developer", true},
+		"12.html":                  {"12", ".html", true},
+		"7_x":                      {"7", "_x", true},
+		"12abc":                    {"", "", false},
+		"types":                    {"", "", false},
+		"":                         {"", "", false},
+		"-12":                      {"", "", false},
+		"1234567890123":            {"", "", false}, // more than 12 digits is not an id
+		"123456789012":             {"123456789012", "", true},
+	} {
+		d, r, ok := leadingNumber(in)
+		if d != want.digits || r != want.rest || ok != want.ok {
+			t.Errorf("%q: %q %q %v, want %+v", in, d, r, ok, want)
+		}
+	}
+}
+
+func TestTightenWithNumbers(t *testing.T) {
+	for _, c := range []struct {
+		values []string
+		want   string
+	}{
+		{[]string{"1", "22", "333"}, "#"},
+		{[]string{"121888-backend-developer", "121726-devops-engineer"}, "#-*"},
+		{[]string{"12.html", "98.html"}, "#.html"},
+		{[]string{"12-a.html", "98-b.html"}, "#-*.html"},
+		{[]string{"12", "13-x"}, "#*"},                    // an id with and without a slug
+		{[]string{"12", "types"}, "*"},                    // a number and a word: no number pattern
+		{[]string{"12abc", "34abc"}, "*"},                 // not number-led (no boundary): the old rules
+		{[]string{"job-12", "job-98"}, "job-*"},           // a word first: the old rules
+		{[]string{"1234567890123", "1234567890124"}, "*"}, // more than 12 digits is not an id
+		{[]string{"8195", "8195"}, "8195"},                // equal values stay literal
+	} {
+		got := tighten(c.values)
+		if got != c.want {
+			t.Errorf("%v: %q, want %q", c.values, got, c.want)
+		}
+	}
+}
+
+// The real case from the live pass on python.org: ids and words under one path.
+func TestPythonOrgJobsAreFoundByNumberNotByWord(t *testing.T) {
+	page := links(
+		"https://www.python.org/jobs/", "https://www.python.org/jobs/types/", "https://www.python.org/jobs/categories/", "https://www.python.org/jobs/locations/",
+		"https://www.python.org/jobs/create/", "https://www.python.org/jobs/type/back-end/", "https://www.python.org/jobs/location/remote-worldwide/",
+		"https://www.python.org/jobs/8195/", "https://www.python.org/jobs/8189/", "https://www.python.org/jobs/8183/", "https://www.python.org/jobs/8180/",
+		"https://www.python.org/community/jobs/howto/",
+	)
+	p, err := LearnJobPattern([]string{"https://www.python.org/jobs/8195/", "https://www.python.org/jobs/8189/", "https://www.python.org/jobs/8183/"}, nil, page)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Pattern != "www.python.org/jobs/#" || p.MatchCount != 4 || p.NeedsConfirm {
+		t.Errorf("%+v", p)
+	}
+	for _, m := range p.Matches {
+		if !strings.Contains(m, "/jobs/81") {
+			t.Errorf("a non-job link matched: %s", m)
+		}
+	}
+}
+
+// Patterns with # compile into a valid rule, are not broad, and a learned one always matches its picks (the randomised test above
+// already runs with numbers in its words).
+func TestNumberPatternsInRulesAndBroad(t *testing.T) {
+	if err := ValidateRule(Rule{Host: "x.com", Include: []string{"x.com/jobs/#", "x.com/v?id=#"}}); err != nil {
+		t.Fatal(err)
+	}
+	for pattern, want := range map[string]bool{"x.com/#": false, "x.com/jobs/#": false, "x.com/*": true, "x.com/#/*": false, "x.com/**": true} {
+		p, err := Compile(pattern)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if p.Broad() != want {
+			t.Errorf("%s: Broad() = %v", pattern, p.Broad())
+		}
 	}
 }

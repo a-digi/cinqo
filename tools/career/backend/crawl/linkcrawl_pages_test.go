@@ -289,7 +289,7 @@ func TestLearnProposesThePartialURLWithoutTheBrowser(t *testing.T) {
 	if err := json.Unmarshal([]byte(resp), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Pattern != "duapune.com/jobs/*" || got.MatchCount != 3 || got.NeedsConfirm || got.Rule.Host != "duapune.com" || len(got.Rule.Include) != 1 || got.Rule.Include[0] != "duapune.com/jobs/*" {
+	if got.Pattern != "duapune.com/jobs/#-*" || got.MatchCount != 3 || got.NeedsConfirm || got.Rule.Host != "duapune.com" || len(got.Rule.Include) != 1 || got.Rule.Include[0] != "duapune.com/jobs/#-*" {
 		t.Errorf("%+v", got)
 	}
 	if f.fetchCount() != 0 || f.settingsCalls != 0 {

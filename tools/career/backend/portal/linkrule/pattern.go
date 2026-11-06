@@ -13,12 +13,15 @@
 //	host/path?query
 //
 //	duapune.com/jobs/*            one path segment after /jobs/
+//	example.com/jobs/#            /jobs/ followed by a number (8195), not by a word (types)
+//	duapune.com/jobs/#-*          a number, a dash and a slug (121888-backend-developer)
 //	example.com/job-*/apply       a segment that starts with "job-"
 //	example.com/careers/**        anything below /careers/
-//	example.com/view?id=*         the path /view with an id parameter
+//	example.com/view?id=#         the path /view with a numeric id parameter
 //
 // `*` matches any characters inside ONE path segment (never `/`) or inside one
-// query value; `**` matches anything, `/` included. The scheme is ignored
+// query value; `**` matches anything, `/` included; `#` matches a number: one
+// or more digits. The scheme is ignored
 // (http and https both match). A trailing `/` is ignored. The host is literal
 // (no wildcard: a rule belongs to one host). A pattern without `?` ignores the
 // URL's query (job links often carry tracking parameters); a pattern with `?`
@@ -48,7 +51,7 @@ var (
 	ErrPatternTooLong      = fmt.Errorf("the pattern is longer than %d characters", MaxPatternLen)
 	ErrPatternNoHost       = errors.New("the pattern must start with the host, for example example.com/jobs/*")
 	ErrPatternHostWildcard = errors.New("the host of a pattern cannot contain *: a rule belongs to one host")
-	ErrBadPatternChars     = errors.New("the pattern contains a space, a control character or #, which no link address can match")
+	ErrBadPatternChars     = errors.New("the pattern contains a space or a control character, which no link address can match")
 	ErrBadQueryPattern     = errors.New("a query part of the pattern must look like key or key=value (the key cannot contain *)")
 )
 
@@ -120,9 +123,10 @@ func (p parsedURL) segments() []string {
 type tokKind byte
 
 const (
-	tokLit  tokKind = 'l' // one literal character
-	tokStar tokKind = 's' // *  : any characters within one segment / value
-	tokDbl  tokKind = 'd' // ** : any characters at all
+	tokLit    tokKind = 'l' // one literal character
+	tokStar   tokKind = 's' // *  : any characters within one segment / value
+	tokDbl    tokKind = 'd' // ** : any characters at all
+	tokDigits tokKind = 'n' // #  : one or more digits
 )
 
 type token struct {
@@ -173,6 +177,11 @@ func tokenize(s string) []token {
 	var out []token
 	rs := []rune(s)
 	for i := 0; i < len(rs); {
+		if rs[i] == '#' {
+			out = append(out, token{kind: tokDigits})
+			i++
+			continue
+		}
 		if rs[i] != '*' {
 			out = append(out, token{kind: tokLit, r: rs[i]})
 			i++
@@ -202,7 +211,7 @@ func Compile(src string) (*Pattern, error) {
 		return nil, ErrPatternTooLong
 	}
 	for _, r := range src {
-		if unicode.IsSpace(r) || unicode.IsControl(r) || r == '#' {
+		if unicode.IsSpace(r) || unicode.IsControl(r) {
 			return nil, ErrBadPatternChars
 		}
 	}
@@ -271,6 +280,12 @@ func glob(tokens []token, s string, starStopsAtSlash bool) bool {
 					cur[i+1] = true
 				}
 			}
+		case tokDigits:
+			for i := 1; i <= n; i++ {
+				if rs[i-1] >= '0' && rs[i-1] <= '9' && (prev[i-1] || cur[i-1]) {
+					cur[i] = true
+				}
+			}
 		default: // tokStar, tokDbl
 			for i := 0; i <= n; i++ {
 				if prev[i] {
@@ -323,14 +338,15 @@ func (p *Pattern) Match(rawURL string) bool {
 }
 
 // Broad reports whether the pattern takes almost every link of its site: no
-// literal character in its path except the slashes, and no query condition.
-// "host/**", "host/*" and "host/*/*" are broad; "host/jobs/*" is not.
+// literal character in its path except the slashes, no number wildcard, and no
+// query condition. "host/**", "host/*" and "host/*/*" are broad; "host/jobs/*"
+// and "host/#" are not.
 func (p *Pattern) Broad() bool {
 	if p == nil || len(p.queryReqs) > 0 {
 		return false
 	}
 	for _, t := range p.pathTokens {
-		if t.kind == tokLit && t.r != '/' {
+		if (t.kind == tokLit && t.r != '/') || t.kind == tokDigits {
 			return false
 		}
 	}

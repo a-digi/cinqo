@@ -78,10 +78,65 @@ func allDigits(s string) bool {
 	return true
 }
 
+// leadingNumber splits a segment value into its leading digits and the rest. ok only when there is at least one digit and the rest is
+// empty or starts at a word boundary (- _ .): "8195" and "121888-backend-developer" are number-led, "12abc" and "types" are not.
+func leadingNumber(v string) (digits, rest string, ok bool) {
+	i := 0
+	for i < len(v) && v[i] >= '0' && v[i] <= '9' {
+		i++
+	}
+	if i == 0 || i > 12 {
+		return "", "", false
+	}
+	rest = v[i:]
+	if rest != "" && !isBoundary([]rune(rest)[0]) {
+		return "", "", false
+	}
+	return v[:i], rest, true
+}
+
+// tightenNumberLed handles values that all start with a number (an id): "#" for the number, then what follows it, tightened like any
+// segment ("#" alone for plain ids, "#-*" for id-slug, "#.html" for id.html). It is what tells /jobs/8195 from /jobs/types.
+func tightenNumberLed(values []string) (string, bool) {
+	rests := make([]string, len(values))
+	for i, v := range values {
+		_, rest, ok := leadingNumber(v)
+		if !ok {
+			return "", false
+		}
+		rests[i] = rest
+	}
+	same := true
+	for _, r := range rests[1:] {
+		if r != rests[0] {
+			same = false
+		}
+	}
+	switch {
+	case same && rests[0] == "":
+		return "#", true
+	case same && safeLiteral(rests[0]):
+		return "#" + rests[0], true
+	}
+	// differing tails: the same tightening as for any segment (it never returns a digit-led pattern for a tail that starts at a boundary)
+	return "#" + tightenTail(rests), true
+}
+
+// tightenTail tightens the tails that follow the number: "" when they are all empty-or-unsafe is "*".
+func tightenTail(rests []string) string {
+	for _, r := range rests {
+		if r == "" || !safeLiteral(r) {
+			return "*"
+		}
+	}
+	return tighten(rests)
+}
+
 // tighten turns the values one segment has in the picked links into a pattern
-// segment: the value itself when all are equal, else "prefix*suffix" where the
-// prefix/suffix are the parts the values share up to a word boundary (- _ .),
-// so an accidental shared "121" is not kept but "job-" is.
+// segment: the value itself when all are equal; "#" for a number (and "#-*" for
+// a number followed by a slug); else "prefix*suffix" where the prefix/suffix
+// are the parts the values share up to a word boundary (- _ .), so an
+// accidental shared "121" is not kept but "job-" is.
 func tighten(values []string) string {
 	same := true
 	for _, v := range values[1:] {
@@ -100,6 +155,9 @@ func tighten(values []string) string {
 		if !safeLiteral(v) {
 			return "*"
 		}
+	}
+	if p, ok := tightenNumberLed(values); ok {
+		return p
 	}
 	rs := make([][]rune, len(values))
 	shortest := len(values[0])
@@ -307,8 +365,16 @@ func learnSingle(p parsedURL) learnedPattern {
 	out := make([]string, len(segs))
 	for i, s := range segs {
 		switch {
-		case i == len(segs)-1, allDigits(s), !safeLiteral(s):
+		case !safeLiteral(s):
 			out[i] = "*"
+		case allDigits(s):
+			out[i] = "#"
+		case i == len(segs)-1:
+			if _, rest, ok := leadingNumber(s); ok && rest != "" {
+				out[i] = "#" + string([]rune(rest)[0]) + "*" // an id and a slug: 121888-backend-developer
+			} else {
+				out[i] = "*"
+			}
 		default:
 			out[i] = s
 		}

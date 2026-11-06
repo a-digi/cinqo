@@ -535,8 +535,8 @@ export function LinkCrawlPanel({ link, onReload }: { link: PortalLink; onReload:
                 />
               </label>
               <p className="text-gray-600">
-                <code>*</code> stands for any text inside one part of the address, <code>**</code> for anything below it. The scheme and a
-                trailing / do not matter.
+                <code>*</code> stands for any text inside one part of the address, <code>#</code> for a number (an id such as 8195, but not
+                a word such as types), <code>**</code> for anything below it. The scheme and a trailing / do not matter.
               </p>
               {excludes.length > 0 && (
                 <div>
