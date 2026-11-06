@@ -49,6 +49,7 @@ import {
 import { instructionAlertAttempts, isLikelyUncrawlable, listingIsWrittenByAi, savedDespiteError } from '../instructionStats'
 import { canCrawlListing } from '../autoDiscoveryVisibility'
 import {
+  clearsStaleJobDetailAiRequest,
   hasListingFor,
   JOB_DETAILS_PILL,
   jobDetailIsWrittenByAi,
@@ -367,7 +368,7 @@ export function CrawlPanel({
     // Plan 190: not before the engine is known, and not under Katana, where the job page is read by picking its data. A request left over
     // from before (or raised by the crawl's event, which knows no engine) is cleared under Katana, so that switching to Rod later does not
     // start an AI run nobody asked for.
-    if (engine === 'katana' && !link.requiresLogin) {
+    if (clearsStaleJobDetailAiRequest(engine, link.requiresLogin)) {
       if (link.jobDetailInstructionsAiRequested && !jobDetailAiClearedRef.current) {
         jobDetailAiClearedRef.current = true
         void updatePortalLink(link.id, { jobDetailInstructionsAiRequested: false }).then(onReload)

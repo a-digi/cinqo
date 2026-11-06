@@ -14,12 +14,13 @@ import (
 	"strings"
 
 	"career-tool-backend/domainevent"
+	"career-tool-backend/instruction"
 	"career-tool-backend/portal"
 	"career-tool-backend/portal/linkrule"
 )
 
 // linkCrawlSelected reports whether a link is crawled with its link-crawler rule. The Browser's selected engine decides (plan 190,
-// portal.ListingMethodFor): Katana crawls with the rule, every other engine with the AI instructions, and a link that needs a login always
+// instruction.ListingMethodFor, through the registered engines): Katana crawls with the rule, every other engine with the AI instructions, and a link that needs a login always
 // with its AI instructions. The link's stored crawl_method is no longer read. A link crawled with the rule but without one is an error
 // (ErrLinkRulesNeeded), never a quiet fallback to the instructions; an engine that cannot be read is an error too (errBrowserEngineUnknown),
 // never a guess.
@@ -35,7 +36,7 @@ func linkCrawlSelected(ctx context.Context, coreURL, accessToken, portalLinkID s
 	if err != nil {
 		return false, errBrowserEngineUnknown
 	}
-	if portal.ListingMethodFor(engine, false) != portal.CrawlMethodLinks {
+	if instruction.ListingMethodFor(engine, false) != instruction.MethodLinks {
 		return false, nil
 	}
 	settings, err := portal.GetLinkCrawlSettings(portalLinkID)
@@ -62,7 +63,7 @@ func ListingMethodNow(accessToken string) string {
 	if err != nil {
 		return ""
 	}
-	return portal.ListingMethodFor(engine, false)
+	return instruction.ListingMethodFor(engine, false)
 }
 
 // checkLinkCrawlStart is the check a link-crawler run passes before it may start (and again when it runs): not a login link, and Katana

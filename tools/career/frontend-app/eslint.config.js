@@ -41,5 +41,42 @@ export default tseslint.config(
       '@typescript-eslint/restrict-template-expressions': ['error', { allowNumber: true }],
     },
   },
+  // Plan 192: the instruction engines are decoupled. An engine folder imports nothing of another engine (only registry.ts names them), and
+  // the shared screen code reaches an engine through the registry, never by its folder.
+  ...['rod', 'katana'].map((id) => ({
+    files: [`src/Crawler/engines/${id}/**/*.{ts,tsx}`],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['../rod', '../rod/*', '../katana', '../katana/*', '**/engines/rod/**', '**/engines/katana/**'].filter(
+                (g) => !g.includes(`/${id}`) && !g.endsWith(`${id}`) && !g.endsWith(`${id}/*`),
+              ),
+              message: 'An instruction engine must not import another engine (plan 192).',
+            },
+          ],
+        },
+      ],
+    },
+  })),
+  {
+    files: ['src/**/*.{ts,tsx}'],
+    ignores: ['src/Crawler/engines/**'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['**/engines/rod', '**/engines/rod/*', '**/engines/katana', '**/engines/katana/*'],
+              message: 'Reach an instruction engine through engines/registry (plan 192).',
+            },
+          ],
+        },
+      ],
+    },
+  },
   eslintConfigPrettier,
 )

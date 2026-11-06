@@ -28,19 +28,6 @@ const (
 	CrawlMethodLinks        = "links"        // the link crawler: URL patterns, no AI
 )
 
-// engineKatana is the Browser tool's stored value of the Katana engine (the one engine that can run the link crawler).
-const engineKatana = "katana"
-
-// ListingMethodFor is how a link's job list is crawled, decided by the Browser's selected engine (plan 190): Katana crawls with the link
-// crawler's rule, every other engine (and an engine that could not be read) with the AI-written instructions. A link that needs a login
-// is always read with its AI instructions, in the login window, under every engine. The engine name is trimmed but otherwise exact.
-func ListingMethodFor(engine string, requiresLogin bool) string {
-	if !requiresLogin && strings.TrimSpace(engine) == engineKatana {
-		return CrawlMethodLinks
-	}
-	return CrawlMethodInstructions
-}
-
 // MaxLinkRulesJSON bounds the stored rule. The biggest valid rule is 20+20 patterns of 300 characters; as JSON a character can take up to
 // 6 bytes (an escape such as \u003c), so the bound holds even that.
 const MaxLinkRulesJSON = 80 << 10

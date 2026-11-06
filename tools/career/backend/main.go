@@ -51,6 +51,7 @@ import (
 	"career-tool-backend/cv/cvbuilder"
 	"career-tool-backend/db"
 	"career-tool-backend/education"
+	"career-tool-backend/instruction"
 	"career-tool-backend/jobs"
 	"career-tool-backend/jobs/deletedjobs"
 	"career-tool-backend/jobs/jobcleanup"
@@ -94,6 +95,7 @@ func useCrawlerCriteria() {
 }
 
 func runHTTPServer() {
+	registerInstructionEngines()
 	port := os.Getenv("PORT")
 
 	if err := db.InitDatabases(); err != nil {
@@ -343,6 +345,7 @@ func runHTTPServer() {
 // reads/writes career.db and jobs.db directly, the same as HTTP mode
 // does.
 func runMCPServer() {
+	registerInstructionEngines()
 	if err := db.InitDatabases(); err != nil {
 		log.Fatalf("failed to open career/jobs databases: %v", err)
 	}
@@ -420,12 +423,7 @@ func runMCPServer() {
 	portal.RegisterAddPortalLink(server)
 	portal.RegisterUpdatePortalLink(server)
 	portal.RegisterRemovePortalLink(server)
-	portal.RegisterGetPortalLinkCrawlInstructions(server)
-	portal.RegisterSetPortalLinkCrawlInstructions(server)
-	portal.RegisterCheckCrawlExtractionResult(server)
-	portal.RegisterAskUserIfPageHasJobs(server)
-	portal.RegisterGetPortalLinkJobDetailCrawlInstructions(server)
-	portal.RegisterSetPortalLinkJobDetailCrawlInstructions(server)
+	instruction.RegisterAllTools(server) // the instruction engines' AI tools (Rod's six: instruction/rod)
 
 	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
 		os.Exit(1)

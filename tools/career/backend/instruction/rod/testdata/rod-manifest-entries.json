@@ -1,0 +1,26 @@
+[
+ {
+  "name": "get_portal_link_crawl_instructions",
+  "required_scope": "tool:career:portals"
+ },
+ {
+  "name": "set_portal_link_crawl_instructions",
+  "required_scope": "tool:career:portals"
+ },
+ {
+  "name": "check_crawl_extraction_result",
+  "required_scope": "tool:career:portals"
+ },
+ {
+  "name": "ask_user_if_page_has_jobs",
+  "required_scope": "tool:career:portals"
+ },
+ {
+  "name": "get_portal_link_job_detail_crawl_instructions",
+  "required_scope": "tool:career:portals"
+ },
+ {
+  "name": "set_portal_link_job_detail_crawl_instructions",
+  "required_scope": "tool:career:portals"
+ }
+]
