@@ -185,6 +185,21 @@ func TestSavingWithoutAMethodKeepsTheStoredMethodAndStoresTheRule(t *testing.T) 
 	}
 }
 
+// Removing the rule through the screen's request (no method) works for a link whose stored method is "links" too.
+func TestRemovingTheRuleWithoutAMethodAlsoResetsTheStoredMethod(t *testing.T) {
+	id := linkWithHost(t, "https://board.example/jobs")
+	scriptedEngine(t, "katana", nil)
+	if code, resp := putRules(t, `{"portalLinkId":"`+id+`","crawlMethod":"links","rules":`+goodRules+`}`, true); code != http.StatusOK {
+		t.Fatalf("%d %s", code, resp)
+	}
+	if code, resp := putRules(t, `{"portalLinkId":"`+id+`","rules":null}`, true); code != http.StatusOK {
+		t.Fatalf("remove: %d %s", code, resp)
+	}
+	if _, got := getRules(t, id); got.Rules != nil || got.CrawlMethod != portal.CrawlMethodInstructions {
+		t.Errorf("rule removed, method reset: %+v", got)
+	}
+}
+
 func TestSavingNeedsTheSessionOnlyWhereKatanaIsAsked(t *testing.T) {
 	id := linkWithHost(t, "https://board.example/jobs")
 	scriptedEngine(t, "katana", nil)

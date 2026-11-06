@@ -1,32 +1,9 @@
-// linkCrawl.ts (plan 185) — the "link crawler" (jobs found by URL pattern, without AI): its availability for a portal link, and the
-// calls the instruct screen makes. The backend decides and enforces everything (the Browser tool's selected engine must be Katana, the
-// link must not need a login, the page must be on the link's own site); this file only asks and applies the answers.
+// linkCrawl.ts (plan 185) — the "link crawler" (jobs found by URL pattern, without AI): the calls the rules screen makes. The backend decides
+// and enforces everything (the Browser tool's selected engine must be Katana, the link must not need a login, the page must be on the link's
+// own site); this file only asks and applies the answers.
 import type { LinkPagination, LinkRule } from '../api'
 
 const LINK_CRAWL_BASE = '/api/v1/tools/career/proxy/portal-links/link-crawl'
-
-export interface LinkCrawlAvailability {
-  available: boolean
-  // 'available', 'login_link', 'katana_not_selected' or 'engine_unknown'
-  reason: string
-  message: string
-}
-
-// The feature is shown ONLY for an explicit "available: true". While the answer is loading, when it could not be read, or for any
-// other value, nothing of the feature is shown.
-export function showLinkCrawl(answer: LinkCrawlAvailability | null | undefined): boolean {
-  return answer?.available === true
-}
-
-export async function fetchLinkCrawlAvailability(portalLinkId: string, signal?: AbortSignal): Promise<LinkCrawlAvailability> {
-  const res = await fetch(`${LINK_CRAWL_BASE}/availability?portalLinkId=${encodeURIComponent(portalLinkId)}`, {
-    credentials: 'include',
-    cache: 'no-store',
-    signal,
-  })
-  if (!res.ok) throw new Error(`failed to read the link crawler availability (${res.status})`)
-  return (await res.json()) as LinkCrawlAvailability
-}
 
 // --- the instruct screen's data ---
 
@@ -194,11 +171,7 @@ export interface LinkCrawlSettings {
   rules: LinkRule | null
 }
 
-// Store the rule and the method; with rules omitted the stored rule stays (a method switch), with rules === null it is removed.
-export function saveLinkRules(
-  portalLinkId: string,
-  crawlMethod: 'instructions' | 'links',
-  rules?: LinkRule | null,
-): Promise<LinkCrawlSettings> {
-  return call<LinkCrawlSettings>('rules', 'PUT', { portalLinkId, crawlMethod, rules }, 'save the rule')
+// Store the rule (rules === null removes it). The Browser's engine decides how a link is crawled (plan 190), so no method is sent.
+export function saveLinkRules(portalLinkId: string, rules: LinkRule | null): Promise<LinkCrawlSettings> {
+  return call<LinkCrawlSettings>('rules', 'PUT', { portalLinkId, rules }, 'save the rule')
 }

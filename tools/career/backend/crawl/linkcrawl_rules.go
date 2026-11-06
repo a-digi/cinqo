@@ -72,6 +72,7 @@ func putLinkRules(w http.ResponseWriter, r *http.Request) {
 	}
 	// Plan 190: the Browser's engine decides how a link is crawled, so the screen no longer sends a method. A body that does is still
 	// checked; one that does not keeps the stored method (which nothing reads any more).
+	methodOmitted := body.CrawlMethod == ""
 	switch body.CrawlMethod {
 	case "":
 		cur, err := portal.GetLinkCrawlSettings(body.PortalLinkID)
@@ -100,6 +101,12 @@ func putLinkRules(w http.ResponseWriter, r *http.Request) {
 			}
 			rules = &rule
 		}
+	}
+
+	// Removing the rule without naming a method also puts the stored method back to "instructions": a link on the method "links" cannot be
+	// stored without a rule.
+	if methodOmitted && clearRules {
+		body.CrawlMethod = portal.CrawlMethodInstructions
 	}
 
 	// The engine gate: only for what needs Katana (storing a rule, choosing the method "links").

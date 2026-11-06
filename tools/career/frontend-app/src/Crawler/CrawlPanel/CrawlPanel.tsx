@@ -33,7 +33,7 @@ import {
   shouldContinueWithJobDetail,
 } from '../generateInstructions'
 import { startCrawlNow, stopCrawlNow, fetchActiveCrawlRun, type CrawlRun } from '../crawlNow'
-import { LinkCrawlGate } from '../LinkCrawlGate'
+import { LinkCrawlPanel } from '../LinkCrawl/LinkCrawlPanel'
 import { JobDetailPickPanel } from '../JobDetailPick/JobDetailPickPanel'
 import { phaseLabel, latestCrawlLogMessage } from '../crawlPhase'
 import {
@@ -48,7 +48,7 @@ import {
 } from '../loginWindow'
 import { instructionAlertAttempts, isLikelyUncrawlable, listingIsWrittenByAi, savedDespiteError } from '../instructionStats'
 import { canCrawlListing } from '../autoDiscoveryVisibility'
-import { hasListingFor } from '../crawlEngine'
+import { hasListingFor, listingNeeds } from '../crawlEngine'
 import { useCrawlEngine } from '../useCrawlEngine'
 import { PipelineLine } from '../PipelineLine'
 import { runFollower } from '../runFollowerStart'
@@ -267,7 +267,7 @@ export function CrawlPanel({
   // represent "both open" (a state the old two-boolean shape could,
   // incorrectly, have allowed). See
   // plan/ai/tools/career/step-XX-job-detail-crawl-instructions.md.
-  const [activeInstructionsModal, setActiveInstructionsModal] = useState<'crawl' | 'jobDetail' | null>(null)
+  const [activeInstructionsModal, setActiveInstructionsModal] = useState<'crawl' | 'rules' | 'jobDetail' | null>(null)
   const [instructionsDraft, setInstructionsDraft] = useState('')
 
   // crawlInstructionsOpen — the "Crawl instructions" section's own
@@ -1031,7 +1031,13 @@ export function CrawlPanel({
     window.__cinqoToolBridge.navigate('/conversations')
   }
 
+  // Plan 190: "Job list" opens the rules under Katana (the link crawler, in its own modal) and the AI instructions under Rod (and for a
+  // link that needs a login).
   function openCrawlInstructionsModal() {
+    if (listingNeeds(engine, link.requiresLogin) === 'rule') {
+      setActiveInstructionsModal('rules')
+      return
+    }
     setInstructionsDraft(link.crawlInstructions ?? '')
     setActiveInstructionsModal('crawl')
   }
@@ -1092,7 +1098,6 @@ export function CrawlPanel({
           the mechanism runs at all; this is this ONE link's own
           override on top of that. */}
       <PipelineLine link={link} />
-      <LinkCrawlGate link={link} onReload={onReload} />
       {/* Step 88 — only for a link that has listing crawl instructions:
           auto-discovery crawls the listing with them, and the backend
           never auto-crawls a link without. Hiding this never changes the
@@ -1218,20 +1223,26 @@ export function CrawlPanel({
                     type="button"
                     onClick={openCrawlInstructionsModal}
                     title={
-                      link.crawlInstructions
-                        ? 'Job list crawl instructions — view/edit'
-                        : 'Job list crawl instructions — not set yet, click to add'
+                      listingNeeds(engine, link.requiresLogin) === 'rule'
+                        ? hasListing
+                          ? 'Job list rules (Katana) — view/edit'
+                          : 'Job list rules (Katana) — not set yet, click to add'
+                        : hasListing
+                          ? 'Job list crawl instructions — view/edit'
+                          : 'Job list crawl instructions — not set yet, click to add'
                     }
                     className={`flex flex-col items-center justify-center gap-1 text-xs font-medium hover:underline ${hasListing ? 'text-gray-700' : 'text-gray-400'}`}
                   >
                     <CrawlInstructionsIcon />
                     Job list
                   </button>
-                  <InstructionAttemptStats
-                    stats={link.instructionStats.listing}
-                    alertAttempts={listingAlertAttempts}
-                    uncrawlable={listingUncrawlable}
-                  />
+                  {aiWritesListing && (
+                    <InstructionAttemptStats
+                      stats={link.instructionStats.listing}
+                      alertAttempts={listingAlertAttempts}
+                      uncrawlable={listingUncrawlable}
+                    />
+                  )}
                 </div>
                 <div className="flex flex-col items-center justify-center rounded-lg border border-gray-200 bg-gray-50 p-2.5 text-center transition-colors hover:border-gray-300 hover:bg-gray-100/60">
                   <button
@@ -1264,46 +1275,48 @@ export function CrawlPanel({
                   )}
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={
-                  aiBusy
-                    ? handleCheckProgress
-                    : () => {
-                        handleGenerateInstructionsWithAI()
-                      }
-                }
-                disabled={
-                  !hasPlatforms ||
-                  inheriting ||
-                  (aiBusy && !(aiConversationId ?? link.instructionsAiConversationId)) ||
-                  Boolean(jobsQuestion)
-                }
-                title={
-                  !hasPlatforms
-                    ? 'No AI platform configured — add one on the Platforms page first'
-                    : jobsQuestion
-                      ? 'Answer the question below first'
-                      : inheriting
-                        ? "Trying the instructions of this platform's other links first…"
-                        : aiBusy
-                          ? "Open the chat window to watch the AI work on this link's crawl instructions"
-                          : 'Let the AI inspect this page and write (or update) its listing crawl instructions for you — once saved, this link is crawled and its job-detail instructions are generated automatically.'
-                }
-                className="flex shrink-0 flex-col items-center justify-center gap-1 self-stretch rounded-lg border border-gray-200 bg-gray-50 px-3 text-xs font-medium text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {aiBusy ? (
-                  <>
-                    <RobotIcon className="h-5 w-5" />
-                    Generating...
-                  </>
-                ) : (
-                  <>
-                    <RobotIcon className="h-5 w-5" />
-                    Generate
-                  </>
-                )}
-              </button>
+              {aiWritesListing && (
+                <button
+                  type="button"
+                  onClick={
+                    aiBusy
+                      ? handleCheckProgress
+                      : () => {
+                          handleGenerateInstructionsWithAI()
+                        }
+                  }
+                  disabled={
+                    !hasPlatforms ||
+                    inheriting ||
+                    (aiBusy && !(aiConversationId ?? link.instructionsAiConversationId)) ||
+                    Boolean(jobsQuestion)
+                  }
+                  title={
+                    !hasPlatforms
+                      ? 'No AI platform configured — add one on the Platforms page first'
+                      : jobsQuestion
+                        ? 'Answer the question below first'
+                        : inheriting
+                          ? "Trying the instructions of this platform's other links first…"
+                          : aiBusy
+                            ? "Open the chat window to watch the AI work on this link's crawl instructions"
+                            : 'Let the AI inspect this page and write (or update) its listing crawl instructions for you — once saved, this link is crawled and its job-detail instructions are generated automatically.'
+                  }
+                  className="flex shrink-0 flex-col items-center justify-center gap-1 self-stretch rounded-lg border border-gray-200 bg-gray-50 px-3 text-xs font-medium text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {aiBusy ? (
+                    <>
+                      <RobotIcon className="h-5 w-5" />
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      <RobotIcon className="h-5 w-5" />
+                      Generate
+                    </>
+                  )}
+                </button>
+              )}
             </div>
             {aiLoginWait !== null ? (
               <div role="status" className="mt-2 rounded-md border border-sky-300 bg-sky-50 px-2 py-1.5 text-xs text-sky-900">
@@ -1339,25 +1352,27 @@ export function CrawlPanel({
                 </p>
               )
             )}
-            <StartFreshButton
-              link={link}
-              tabBusy={{ listingGenerating: aiBusy, jobDetailGenerating: jobDetailAiBusy, inheriting }}
-              canGenerate={hasPlatforms && selectedPlatform !== null}
-              onGenerate={() => {
-                handleGenerateInstructionsWithAI()
-              }}
-              onReload={onReload}
-            />
+            {aiWritesListing && (
+              <StartFreshButton
+                link={link}
+                tabBusy={{ listingGenerating: aiBusy, jobDetailGenerating: jobDetailAiBusy, inheriting }}
+                canGenerate={hasPlatforms && selectedPlatform !== null}
+                onGenerate={() => {
+                  handleGenerateInstructionsWithAI()
+                }}
+                onReload={onReload}
+              />
+            )}
           </div>
         </AccordionItem>
       </div>
       {/* Step 103: the trial of the portal's other instructions, while it runs and what it said. */}
-      {inheriting && (
+      {aiWritesListing && inheriting && (
         <p role="status" className="mt-2 text-xs text-gray-600">
           Trying the instructions of this platform's other links on this page…
         </p>
       )}
-      {!inheriting && inheritNote && (
+      {aiWritesListing && !inheriting && inheritNote && (
         <p
           role="status"
           className={`mt-2 text-xs ${
@@ -1373,12 +1388,12 @@ export function CrawlPanel({
       )}
       {/* Step 93: shown where Generate is the next action (no listing instructions
           yet), only while the random free router is the selected model. */}
-      {!link.crawlInstructions && isFreeRouter(selectedPlatform, selectedModel) && (
+      {aiWritesListing && !link.crawlInstructions && isFreeRouter(selectedPlatform, selectedModel) && (
         <p role="note" className="mt-2 text-xs text-amber-700">
           {FREE_ROUTER_HINT}
         </p>
       )}
-      {jobsQuestion && (
+      {aiWritesListing && jobsQuestion && (
         <div className="mt-2">
           <InfoBox
             variant="warning"
@@ -1425,7 +1440,7 @@ export function CrawlPanel({
           />
         </div>
       )}
-      {emptyCrawl && emptyDiagnosis && !jobsQuestion && (
+      {aiWritesListing && emptyCrawl && emptyDiagnosis && !jobsQuestion && (
         <div className="mt-2">
           <InfoBox
             variant="warning"
@@ -1662,12 +1677,19 @@ export function CrawlPanel({
       )}
       <Modal
         open={activeInstructionsModal !== null}
-        title={activeInstructionsModal === 'jobDetail' ? 'Job detail crawl instructions' : 'Job list crawl instructions'}
-        size={activeInstructionsModal === 'jobDetail' ? 'wide' : 'default'}
+        title={
+          activeInstructionsModal === 'jobDetail'
+            ? 'Job detail crawl instructions'
+            : activeInstructionsModal === 'rules'
+              ? 'Job list rules (Katana)'
+              : 'Job list crawl instructions'
+        }
+        size={activeInstructionsModal === 'jobDetail' || activeInstructionsModal === 'rules' ? 'wide' : 'default'}
         onClose={() => {
           setActiveInstructionsModal(null)
         }}
       >
+        {activeInstructionsModal === 'rules' && <LinkCrawlPanel link={link} onReload={onReload} />}
         {activeInstructionsModal === 'crawl' && (
           <>
             <textarea
