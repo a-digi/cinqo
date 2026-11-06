@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { PortalLink } from '../../api'
+import { DescriptionRuleEditor } from './DescriptionRuleEditor'
 import {
   loadPickCandidates,
   PickError,
@@ -12,6 +13,7 @@ import {
 import {
   canPreview,
   DATA_FIELDS,
+  draftFromBox,
   describePickFailure,
   FIELD_NAMES,
   filterElements,
@@ -22,10 +24,12 @@ import {
   shortValue,
   shownSuggestions,
   startingPicks,
+  startingRule,
   toChoices,
   whyText,
   type Pick,
   type Picks,
+  type RuleDraft,
   NO_PICKS,
 } from './jobDetailPickRules'
 
@@ -202,6 +206,8 @@ export function JobDetailPickPanel({ link }: { link: PortalLink }) {
   const [sample, setSample] = useState<string>('default') // 'default', a saved job's id, or 'url'
   const [customUrl, setCustomUrl] = useState('')
   const [picks, setPicks] = useState<Picks>(NO_PICKS)
+  // The description rule being edited; null while the description is read from one box.
+  const [rule, setRule] = useState<RuleDraft | null>(null)
   const [preview, setPreview] = useState<PickPreview | null>(null)
   const [previewError, setPreviewError] = useState('')
   const loadSeq = useRef(0)
@@ -217,6 +223,7 @@ export function JobDetailPickPanel({ link }: { link: PortalLink }) {
         if (seq !== loadSeq.current) return
         setPage(p)
         setPicks(startingPicks(p))
+        setRule(startingRule(p))
         if (choice === 'default' && p.samples.length > 0) setSample(p.samples[0].jobId)
       })
       .catch((err: unknown) => {
@@ -236,14 +243,14 @@ export function JobDetailPickPanel({ link }: { link: PortalLink }) {
 
   // The picks changed: ask what instructions they make (debounced; a late answer for older picks is dropped).
   useEffect(() => {
-    if (!page || !canPreview(picks)) {
+    if (!page || !canPreview(picks, rule)) {
       setPreview(null)
       setPreviewError('')
       return
     }
     const seq = ++previewSeq.current
     const timer = setTimeout(() => {
-      previewPickChoices(link.id, toChoices(picks))
+      previewPickChoices(link.id, toChoices(picks, rule))
         .then((p) => {
           if (seq !== previewSeq.current) return
           setPreview(p)
@@ -258,7 +265,7 @@ export function JobDetailPickPanel({ link }: { link: PortalLink }) {
     return () => {
       clearTimeout(timer)
     }
-  }, [picks, page, link.id])
+  }, [picks, rule, page, link.id])
 
   function setPick(field: PickField, p: Pick | null) {
     setPicks((prev) => ({ ...prev, [field]: p }))
@@ -373,16 +380,49 @@ export function JobDetailPickPanel({ link }: { link: PortalLink }) {
                     }}
                   />
                 ))}
-                <FieldRow
-                  key={`${page.url}|description`}
-                  field="description"
-                  page={page}
-                  pick={picks.description}
-                  required
-                  onPick={(p) => {
-                    setPick('description', p)
-                  }}
-                />
+                {rule === null ? (
+                  <>
+                    <FieldRow
+                      key={`${page.url}|description`}
+                      field="description"
+                      page={page}
+                      pick={picks.description}
+                      required
+                      onPick={(p) => {
+                        setPick('description', p)
+                      }}
+                    />
+                    <div className="flex flex-wrap items-center gap-2 pl-1">
+                      <button
+                        type="button"
+                        className={buttonClass}
+                        onClick={() => {
+                          setRule(draftFromBox(picks.description?.selector ?? ''))
+                        }}
+                      >
+                        Read the description with a rule
+                      </button>
+                      <span className="text-gray-600">
+                        Several boxes, things to leave out, headings, a longer limit than 5,000 characters.
+                      </span>
+                    </div>
+                  </>
+                ) : (
+                  <DescriptionRuleEditor
+                    linkId={link.id}
+                    page={page}
+                    draft={rule}
+                    choices={toChoices(picks, rule)}
+                    sampleJobId={sample !== 'default' && sample !== 'url' ? sample : null}
+                    onChange={setRule}
+                    onUseBox={() => {
+                      const first = rule.parts[0].include.trim()
+                      if (first !== '' && picks.description === null)
+                        setPick('description', { selector: first, attribute: '', value: '', from: 'stored' })
+                      setRule(null)
+                    }}
+                  />
+                )}
               </div>
 
               {page.structuredHints.length > 0 && (
@@ -402,7 +442,7 @@ export function JobDetailPickPanel({ link }: { link: PortalLink }) {
 
               <div className="rounded-md border border-blue-200 bg-white p-2" data-testid="job-detail-pick-preview">
                 <div className="font-medium">The instructions these picks make</div>
-                {!canPreview(picks) && <p className="mt-1 text-gray-600">Choose where the description is to see the instructions.</p>}
+                {!canPreview(picks, rule) && <p className="mt-1 text-gray-600">Choose where the description is to see the instructions.</p>}
                 {previewError && (
                   <p role="alert" className="mt-1 text-red-700">
                     {previewError}

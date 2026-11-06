@@ -57,9 +57,27 @@ export interface FieldChoice {
   attribute?: string
 }
 
+// A part of a description rule: a box of the page, what to leave out of it, an optional heading and where to stop.
+export interface RulePart {
+  include: string
+  heading?: 'none' | 'auto' | 'selector'
+  headingSelector?: string
+  exclude?: string[]
+  cutAfter?: string[]
+}
+
+// How a job's description is read: one or more boxes, the format and the limit (the backend fills the defaults).
+export interface DescriptionRule {
+  parts: RulePart[]
+  format?: 'plain' | 'structured'
+  limit?: number
+}
+
 export interface Choices {
   fields: FieldChoice[]
+  // Exactly one of these two describes the description (the backend refuses both).
   descriptionSelector?: string
+  description?: DescriptionRule
 }
 
 export interface CurrentInstructions {
@@ -69,12 +87,29 @@ export interface CurrentInstructions {
   lossy: string[]
 }
 
+// Suggestions for a description box: what inside it looks like page furniture (to leave out) and texts it could stop at.
+export interface ExcludeSuggestion {
+  selector: string
+  kind: string
+  chars: number
+  value: string
+  share: number
+  risky: boolean
+}
+
+export interface DescriptionHelp {
+  excludes: ExcludeSuggestion[]
+  cutAfter: string[]
+}
+
 export interface PickCandidates {
   url: string
   finalUrl: string
   title: string
   samples: PickSample[]
   ranked: Record<PickField, Ranked[]>
+  // Keyed by the selector of a description candidate.
+  descriptionHelp: Record<string, DescriptionHelp>
   structuredHints: StructuredHint[]
   elements: PageElement[]
   pageTextChars: number
@@ -139,4 +174,81 @@ export function loadPickCandidates(
 // The instruction text the choices make, or why they are not valid yet. Pure on the backend: nothing is loaded or stored.
 export function previewPickChoices(portalLinkId: string, choices: Choices, signal?: AbortSignal): Promise<PickPreview> {
   return post<PickPreview>('preview', { portalLinkId, choices }, 'preview the instructions', signal)
+}
+
+// --- trying the choices on a sample job (the real extraction, nothing saved) ---
+
+export interface PartReport {
+  index: number
+  include?: string
+  matches: number
+  chars: number
+  overlap: boolean
+  notFound: boolean
+  cut: number
+  removed: number
+}
+
+export interface RemovedText {
+  part: number
+  kind: string
+  selector?: string
+  chars: number
+  text: string
+}
+
+export interface DescriptionReport {
+  chars: number
+  fullLength: number
+  truncated: boolean
+  limit: number
+  parts?: PartReport[]
+  outline?: string[]
+  removed?: RemovedText[]
+  removedTotal?: number
+  errors?: string[]
+}
+
+export interface DiffSummary {
+  unchanged: boolean
+  kept: number
+  added: number
+  removed: number
+  oldChars: number
+  newChars: number
+  firstAdded: string[]
+  firstRemoved: string[]
+}
+
+export interface PickTestJob {
+  jobId: string
+  title: string
+  url: string
+  error?: string
+  values: Record<string, string>
+  postedAtClean?: string
+  descriptionChars: number
+  truncated?: string[]
+  report?: DescriptionReport
+  storedChars: number
+  diff?: DiffSummary
+}
+
+export interface PickFlag {
+  code: string
+  severity: 'blocking' | 'warning' | 'info'
+  field?: PickField
+  message: string
+  jobIds?: string[]
+}
+
+export interface PickTest {
+  yaml: string
+  jobs: PickTestJob[]
+  flags: PickFlag[]
+}
+
+// Run the real extraction with the choices on up to three saved jobs of the link. Nothing is saved.
+export function testPickChoices(portalLinkId: string, choices: Choices, jobIds: string[], signal?: AbortSignal): Promise<PickTest> {
+  return post<PickTest>('test', { portalLinkId, choices, jobIds }, 'try the choices', signal)
 }
