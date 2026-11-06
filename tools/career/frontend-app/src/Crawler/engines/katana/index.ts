@@ -2,11 +2,13 @@
 // 191). A link that needs a login has no rule and no picker: it keeps the AI instructions. It imports no other engine.
 import { hasAiInstructions, hasRule, hasText } from '../linkFacts'
 import type { InstructionEngine, LinkFacts } from '../types'
+import { StartOver } from './StartOver'
 
 const byAi = (login: boolean) => login
 
 export const katanaEngine: InstructionEngine = {
   id: 'katana',
+  startOverControl: StartOver,
   listingNeeds: (login) => (byAi(login) ? 'ai' : 'rule'),
   hasListing: (link: LinkFacts) => (byAi(Boolean(link.requiresLogin)) ? hasAiInstructions(link) : hasRule(link)),
   jobDetailsWrittenByAi: byAi,

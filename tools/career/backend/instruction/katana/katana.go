@@ -22,10 +22,10 @@ func New() instruction.Engine { return engine{} }
 
 func (engine) ID() string { return ID }
 
-// Tools: none yet (step 5 adds the katana_ tools).
-func (engine) Tools() []instruction.ToolSpec { return nil }
+// Tools: the job-list tools (tools.go); step 8 adds the job-detail ones.
+func (engine) Tools() []instruction.ToolSpec { return toolSpecs() }
 
-func (engine) RegisterTools(*mcp.Server) {}
+func (engine) RegisterTools(server *mcp.Server) { registerTools(server) }
 
 // ListingMethod: the link crawler's rule.
 func (engine) ListingMethod() string { return instruction.MethodLinks }

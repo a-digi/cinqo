@@ -284,6 +284,7 @@ func runHTTPServer() {
 	http.HandleFunc("/portal-links/job-detail/preview", crawl.JobDetailPreviewHandler)
 	http.HandleFunc("/portal-links/job-detail/test", crawl.JobDetailTestHandler)
 	http.HandleFunc("/portal-links/job-detail/save", crawl.JobDetailSaveHandler)
+	registerInstructionRoutes(http.DefaultServeMux) // plan 192: the engines' internal routes (loopback only)
 	http.HandleFunc("/portal-links/auto-discovery", autodiscovery.SettingsHandler)
 	http.HandleFunc("/settings/ai", settings.AIHandler)
 	http.HandleFunc("/settings/cleanup", jobcleanup.SettingsHandler)

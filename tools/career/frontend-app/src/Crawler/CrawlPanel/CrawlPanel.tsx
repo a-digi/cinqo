@@ -59,6 +59,7 @@ import {
   mayAutoWriteJobDetails,
 } from '../crawlEngine'
 import { useCrawlEngine } from '../useCrawlEngine'
+import { useInstructionEngine } from '../engines/useInstructionEngine'
 import { PipelineLine } from '../PipelineLine'
 import { runFollower } from '../runFollowerStart'
 import { LoginGenerateAbandoned, startAfterLogin } from '../loginGenerate'
@@ -68,6 +69,7 @@ import { FREE_ROUTER_HINT, isFreeRouter } from '../modelHint'
 import { findJobsQuestion, pendingJobsQuestion, JOBS_QUESTION_NO_HINT, JOBS_QUESTION_TITLE, JOBS_QUESTION_YES_HINT } from '../jobsQuestion'
 import { InstructionAttemptStats } from './InstructionAttemptStats'
 import { StartFreshButton } from './StartFreshButton'
+import { startFreshBlockedReason } from '../startFresh'
 import { AccordionItem } from '../../Shared/Accordion/AccordionItem'
 import {
   PlayIcon,
@@ -139,6 +141,7 @@ export function CrawlPanel({
 }) {
   // Plan 190: the Browser's selected engine decides which job-list instructions count (a rule under Katana, AI instructions under Rod).
   const engine = useCrawlEngine()
+  const instructionEngine = useInstructionEngine()
   // "Crawl with AI" own busy/result state.
   const [isCrawling, setIsCrawling] = useState(false)
   const [crawlResult, setCrawlResult] = useState<{ ok: boolean; text: string; conversationId?: string } | null>(null)
@@ -1411,6 +1414,17 @@ export function CrawlPanel({
                   {generateLoginNote(link)}
                 </p>
               )
+            )}
+            {!aiWritesListing && instructionEngine.startOverControl !== undefined && (
+              <instructionEngine.startOverControl
+                link={link}
+                blockedReason={startFreshBlockedReason(link, {
+                  listingGenerating: aiBusy,
+                  jobDetailGenerating: jobDetailAiBusy,
+                  inheriting,
+                })}
+                onReload={onReload}
+              />
             )}
             {aiWritesListing && (
               <StartFreshButton

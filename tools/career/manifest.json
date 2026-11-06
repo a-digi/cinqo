@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.0.733",
+  "version": "0.0.734",
   "authors": [
     { "name": "Anes Detit", "email": "tafa.andet@googlemail.com" }
   ],
@@ -551,6 +551,11 @@
     {
       "method": "POST",
       "path_suffix": "portal-links/start-fresh",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "portal-links/katana/start-over",
       "required_scope": "tool:career:portals"
     },
     {
@@ -1197,6 +1202,26 @@
     },
     {
       "name": "ask_user_if_page_has_jobs",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "name": "katana_get_instruction_state",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "name": "katana_get_page_links",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "name": "katana_propose_link_rule",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "name": "katana_test_link_rule",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "name": "katana_save_link_rule",
       "required_scope": "tool:career:portals"
     },
     {
