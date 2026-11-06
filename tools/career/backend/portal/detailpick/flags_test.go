@@ -201,3 +201,32 @@ func FuzzFlags(f *testing.F) {
 		}
 	})
 }
+
+// Found on python.org's job pages (plan 188's on-screen flow): the AI-written selector gave "Backend Developer New UNICEF" as the company. The
+// save ignores such a value, so the check must say so before the person saves.
+func TestACompanyOrPlaceThatHoldsTheJobsOwnTitleIsFlagged(t *testing.T) {
+	s := good("1")
+	s.Values["company"] = "backend developer NEW Acme"
+	s.Values["location"] = "Remote — Backend Developer"
+	got := codes(Flags([]Sample{s, good("2")}, Fields))
+	for _, f := range []Field{FieldCompany, FieldLocation} {
+		fl, ok := got["has_the_title|"+string(f)]
+		if !ok || fl.Severity != Warning || len(fl.JobIDs) != 1 || fl.JobIDs[0] != "1" {
+			t.Errorf("%s: %+v", f, got)
+		}
+	}
+	// a short title cannot be judged; a company that merely shares words is fine; the title field itself is never flagged by this
+	short := good("3")
+	short.SavedTitle = "Dev"
+	short.Values["company"] = "Dev Acme"
+	other := good("4")
+	other.Values["company"] = "Backend Acme Developer"
+	for _, s := range []Sample{short, other} {
+		if _, ok := codes(Flags([]Sample{s}, Fields))["has_the_title|company"]; ok {
+			t.Errorf("must not flag %q for the title %q", s.Values["company"], s.SavedTitle)
+		}
+	}
+	if _, ok := codes(Flags([]Sample{good("5")}, Fields))["has_the_title|title"]; ok {
+		t.Error("the title field is never flagged for holding the title")
+	}
+}

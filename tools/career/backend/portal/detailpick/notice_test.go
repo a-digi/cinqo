@@ -97,7 +97,7 @@ func TestACutPageSaysSoAndALongTitleIsShortened(t *testing.T) {
 	long := reducedJob + strings.Repeat(" very long", 30)
 	p.Title = long
 	ns := PageNotices(p, long)
-	if len(ns) != 1 || !strings.Contains(ns[0].Message, "Only the first part of a long page was read.") || strings.Contains(ns[0].Message, "very long very long very long very long very long very long very long very long very long very long") {
+	if len(ns) != 1 || !strings.Contains(ns[0].Message, "only its first elements were listed.") || strings.Contains(ns[0].Message, "very long very long very long very long very long very long very long very long very long very long") {
 		t.Fatalf("%+v", ns)
 	}
 	if !strings.Contains(ns[0].Message, "…") {

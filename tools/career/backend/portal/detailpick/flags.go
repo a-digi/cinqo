@@ -80,6 +80,19 @@ func (fs *flagSet) add(code string, sev Severity, field Field, jobID, msg string
 	fs.flags = append(fs.flags, Flag{Code: code, Severity: sev, Field: field, Message: msg, JobIDs: []string{jobID}})
 }
 
+// minTitleRunesForCheck and containsTheTitle are the rule of jobs.containsTheTitle (the save ignores a company or a place that contains the
+// job's own title): case-insensitive containment, for a title of at least four characters. Kept in step by hand: the pure package may not
+// import the jobs database.
+const minTitleRunesForCheck = 4
+
+func containsTheTitle(value, title string) bool {
+	title = strings.TrimSpace(title)
+	if runeLen(title) < minTitleRunesForCheck {
+		return false
+	}
+	return strings.Contains(strings.ToLower(value), strings.ToLower(title))
+}
+
 var furnitureLine = []string{"similar jobs", "ähnliche jobs", "ähnliche stellen", "apply now", "jetzt bewerben", "share this job", "diesen job teilen"}
 
 // Flags checks what the extraction returned for the sample jobs. chosen are the fields the person picked (a field that was not picked is
@@ -102,6 +115,15 @@ func Flags(samples []Sample, chosen []Field) []Flag {
 		}
 		if n := runeLen(get(FieldLocation)); n > MaxLocationRunes {
 			fs.add("too_long", Warning, FieldLocation, s.JobID, "The location is longer than a place can be: the selector probably holds a block of text.")
+		}
+		// A company or a place that holds the job's own title is a block of the page (the selector caught the heading together with the
+		// name, "Backend Engineer New UNICEF" on python.org's job pages). The save ignores such a value (jobs.FillMissingJobFields uses the same
+		// rule), so say it here, before the person saves: otherwise the field would just stay empty without a word.
+		if containsTheTitle(get(FieldCompany), s.SavedTitle) {
+			fs.add("has_the_title", Warning, FieldCompany, s.JobID, "The company contains the job's own title: the selector caught the heading together with the name. A value like that is not saved as the company.")
+		}
+		if containsTheTitle(get(FieldLocation), s.SavedTitle) {
+			fs.add("has_the_title", Warning, FieldLocation, s.JobID, "The location contains the job's own title: the selector caught the heading together with the place. A value like that is not saved as the location.")
 		}
 		if raw := get(FieldPostedAt); raw != "" {
 			cleaned := portal.CleanDetailPostedAt(raw)

@@ -67,7 +67,7 @@ func PageNotices(p Page, jobTitle string) []Notice {
 	}
 	cut := ""
 	if p.Truncated {
-		cut = " Only the first part of a long page was read."
+		cut = " The page is long: only its first elements were listed."
 	}
 	if sameJobTitle(p.Title, jt) {
 		return append(out, Notice{Code: NoticeJobHeadingMissing, Message: fmt.Sprintf(
