@@ -228,6 +228,7 @@ func runHTTPServer() {
 	http.HandleFunc("/jobs/delete", jobs.DeleteManyHandler)
 	http.HandleFunc("/jobs/recrawl", jobrecrawl.RequestHandler)
 	http.HandleFunc("/jobs/recrawl/status", jobrecrawl.StatusHandler)
+	http.HandleFunc("/jobs/recrawl/missing", jobrecrawl.MissingHandler)
 	http.HandleFunc("/jobs/recrawl/cancel", jobrecrawl.CancelHandler)
 	http.HandleFunc("/jobs/match", jobshandlers.JobMatchHandler)
 	http.HandleFunc("/jobs/match/run", jobshandlers.JobMatchRunHandler)

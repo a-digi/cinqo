@@ -19,6 +19,8 @@ import {
   mediaDownloadUrl,
   fetchCvGenerations,
   fetchJobRecruiters,
+  fetchMissingDetails,
+  type MissingDetails,
   type Job,
   type JobRecruiter,
   type Company,
@@ -71,6 +73,7 @@ import { RecrawlSelectionBar } from './RecrawlSelectionBar'
 import { pageState, recrawlCheck, recrawlTitle, togglePage, toggleId, type SelectedJob } from './recrawlRules'
 import { deleteFailureText, deleteNotice, deleteQuestion as deleteManyQuestion, selectionAfterDelete } from './deleteRules'
 import { useRecrawl } from './useRecrawl'
+import { missingLabel, missingTitle } from './missingDetailsRules'
 import { useJobsUrl } from './useJobsUrl'
 import {
   DEFAULT_JOBS_STATE,
@@ -188,6 +191,10 @@ export function JobsPage() {
   const recrawl = useRecrawl(reload, () => {
     setSelected(new Map())
   })
+  // "Crawl missing details": the jobs whose details were never crawled (asked again whenever the list changes, so the count follows a crawl),
+  // and the button's own start. It never waits for or refuses because of a crawl that is running.
+  const [missing, setMissing] = useState<MissingDetails | null>(null)
+  const [startingMissing, setStartingMissing] = useState(false)
   const headerCheckbox = useRef<HTMLInputElement>(null)
   // Deleting the selected jobs in one go (step 149): asked first, then one request; the notice says what came of it.
   const [confirmBatchDelete, setConfirmBatchDelete] = useState(false)
@@ -219,6 +226,20 @@ export function JobsPage() {
         setHistoryLoading(false)
       })
   }
+
+  // The count of the "Crawl missing details" button follows the list: whenever it is loaded or reloaded (a recrawl reloads it after each job),
+  // the jobs without details are counted again. A failure leaves the button as it was (it asks again when pressed).
+  useEffect(() => {
+    let cancelled = false
+    fetchMissingDetails()
+      .then((m) => {
+        if (!cancelled) setMissing(m)
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [jobs])
 
   // Loads the list for the current view; the latest request wins, so a slow answer never replaces a newer one.
   const latestRequest = useRef(0)
@@ -388,6 +409,24 @@ export function JobsPage() {
   }
 
   // Gives every job that has no match its manual match now (step 134); the same catch-up also runs by itself.
+  function handleCrawlMissing() {
+    setError('')
+    setStartingMissing(true)
+    // Asked again now (not the count on screen): the jobs that are missing at this moment are the ones crawled.
+    fetchMissingDetails()
+      .then((m) => {
+        setMissing(m)
+        if (m.jobIds.length === 0) return undefined
+        return recrawl.start(m.jobIds)
+      })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+      })
+      .finally(() => {
+        setStartingMissing(false)
+      })
+  }
+
   function handleMatchUnmatched() {
     setError('')
     setUnmatchedNotice('')
@@ -1213,6 +1252,15 @@ export function JobsPage() {
                 className="rounded-md border border-gray-300 px-3.5 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
               >
                 {matchingUnmatched ? 'Matching…' : 'Match unmatched'}
+              </button>
+              <button
+                type="button"
+                disabled={startingMissing || recrawl.running || (missing !== null && missing.jobIds.length === 0)}
+                onClick={handleCrawlMissing}
+                title={missingTitle(missing, recrawl.running)}
+                className="rounded-md border border-gray-300 px-3.5 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
+              >
+                {missingLabel(missing, startingMissing || recrawl.running)}
               </button>
               <input
                 value={queryInput}

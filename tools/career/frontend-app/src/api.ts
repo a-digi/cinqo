@@ -2415,6 +2415,31 @@ export async function requestRecrawl(jobIds: string[]): Promise<RecrawlStarted> 
   throw new Error(`failed to start the recrawl (${String(res.status)})`)
 }
 
+// The jobs whose detail page was never crawled successfully (never tried, or the last try failed): jobIds are the ones that can be crawled
+// now; the counts say why the rest cannot. Nothing here depends on a crawl that is running.
+export interface MissingDetails {
+  jobIds: string[]
+  total: number
+  noPortal: number
+  noInstructions: number
+  needsLogin: number
+  alreadyBeingCrawled: number
+}
+
+export async function fetchMissingDetails(): Promise<MissingDetails> {
+  const res = await fetch(`${PROXY_BASE}/jobs/recrawl/missing`, { credentials: 'include', cache: 'no-store' })
+  if (!res.ok) throw new Error(`failed to look for jobs without details (${String(res.status)})`)
+  const body = (await res.json()) as Partial<MissingDetails>
+  return {
+    jobIds: body.jobIds ?? [],
+    total: body.total ?? 0,
+    noPortal: body.noPortal ?? 0,
+    noInstructions: body.noInstructions ?? 0,
+    needsLogin: body.needsLogin ?? 0,
+    alreadyBeingCrawled: body.alreadyBeingCrawled ?? 0,
+  }
+}
+
 // The progress of a batch: the numbers for all of it and the first `limit` jobs (1 is enough for the numbers). null when the server no
 // longer knows the batch (404).
 export async function fetchRecrawlStatus(batchId: string, limit: number): Promise<BatchStatus | null> {
