@@ -115,7 +115,7 @@ function PortalsPageContent() {
   const [aiSuggest, setAiSuggest] = useState<{ platformId: string; model: string } | null>(null)
   function adviceFor(portal: Portal, link: PortalLink | null) {
     const failures = link ? linkInstructionFailures(link) : Math.max(0, ...portal.links.map(linkInstructionFailures))
-    return crawlAiAdvice({ usable: ai.platforms, keysKnown: ai.keysKnown, choice: crawlAiFor(portal, link), failures })
+    return crawlAiAdvice({ usable: ai.platforms, keysKnown: ai.keysKnown, choice: crawlAiFor(portal, link), failures, platformRow: link === null })
   }
 
   function load() {

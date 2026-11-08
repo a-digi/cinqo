@@ -42,8 +42,10 @@ export function crawlAiAdvice(input: {
   choice: CrawlAiChoice
   // linkInstructionFailures of the link (of a platform row: the largest of its links).
   failures: number
+  // A platform row (not a single link): its own AI is only the default of its links, so it follows the failure rule whatever its model is.
+  platformRow?: boolean
 }): CrawlAiAdvice | null {
-  const { usable, keysKnown, choice, failures } = input
+  const { usable, keysKnown, choice, failures, platformRow = false } = input
   if (!choice.platform) return null
   const premium = keysKnown ? usable.find((p) => p.requiresKey !== false && p.models.length > 0) : undefined
   const effectiveIsLocal = choice.platform.id === LOCAL_PLATFORM_ID
@@ -53,28 +55,33 @@ export function crawlAiAdvice(input: {
     if (!effectiveIsLocal) {
       return { kind: 'ok', text: 'Premium model in use', action: 'none', suggest: null }
     }
-    // The best local model is in use: a premium model is advised only once the instructions have failed enough times, and the counter shows
-    // how far it is.
-    if (usingQwen && failures < PREMIUM_AFTER_FAILURES) {
-      const counter = failures > 0 ? ` · failed ${failures} of ${PREMIUM_AFTER_FAILURES}` : ''
-      return { kind: 'ok', text: `Best local model in use${counter}`, action: 'none', suggest: null }
-    }
-    // Only the platform is named, never a model: a platform's first listed model can be a poor one (OpenRouter's is the random free router,
-    // which often fails at tool use), so the person picks the model in the dialog.
-    return {
-      kind: 'premium',
-      text: usingQwen
-        ? `Instructions failed ${failures} times: use a premium model, pick one from ${premium.name}`
-        : `Use a premium model: pick one from ${premium.name}`,
-      action: 'choose',
-      suggest: { platformId: premium.id, model: '' },
+    // A premium model is advised at once for a link on another local model, but once the instructions have failed enough times when the best
+    // local model is in use, or for a platform row (whose links may use any model). Until then the local advice below applies, and the
+    // counter shows how far it is.
+    const failedEnough = failures >= PREMIUM_AFTER_FAILURES
+    if (failedEnough || (!usingQwen && !platformRow)) {
+      // Only the platform is named, never a model: a platform's first listed model can be a poor one (OpenRouter's is the random free
+      // router, which often fails at tool use), so the person picks the model in the dialog.
+      return {
+        kind: 'premium',
+        text: failedEnough
+          ? `Instructions failed ${failures} times: use a premium model, pick one from ${premium.name}`
+          : `Use a premium model: pick one from ${premium.name}`,
+        action: 'choose',
+        suggest: { platformId: premium.id, model: '' },
+      }
     }
   }
 
   // No premium platform to offer: only the Local AI can be advised, and only when it is what this portal or link uses.
   if (!effectiveIsLocal) return null
   if (usingQwen) {
-    const counter = failures > 0 ? ` · failed ${failures} time${failures === 1 ? '' : 's'}` : ''
+    const counter =
+      failures === 0
+        ? ''
+        : premium
+          ? ` · failed ${failures} of ${PREMIUM_AFTER_FAILURES}`
+          : ` · failed ${failures} time${failures === 1 ? '' : 's'}`
     return { kind: 'ok', text: `Best local model in use${counter}`, action: 'none', suggest: null }
   }
   const local = usable.find((p) => p.id === LOCAL_PLATFORM_ID)
