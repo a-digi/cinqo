@@ -70,9 +70,12 @@ type Model struct {
 	// natively. The catalog only checks the shape of the name: which names exist is decided where the module is put together,
 	// and a model whose dialect is missing there has no tools.
 	ToolDialect string `json:"toolDialect"`
-	Source      string `json:"source"`
-	Note        string `json:"note"`
-	CheckedOn   string `json:"checkedOn"`
+	// UnsuitableFor lists the tasks this model was measured NOT to manage (plan 207): a tool that does such a task can warn before it
+	// starts. Only the tasks in Tasks are known; empty (the default) says nothing, which is not the same as "suitable".
+	UnsuitableFor []string `json:"unsuitableFor"`
+	Source        string   `json:"source"`
+	Note          string   `json:"note"`
+	CheckedOn     string   `json:"checkedOn"`
 }
 
 // Runtime is one build of the program that runs the models (llama.cpp's llama-server) for one system: an archive that is
@@ -226,6 +229,9 @@ func validateModel(m Model) error {
 	case m.ToolDialect != "" && !m.Tools:
 		return errors.New("a toolDialect only makes sense for a model that can use tools")
 	}
+	if err := validateUnsuitableFor(m.UnsuitableFor); err != nil {
+		return err
+	}
 	return validateURL(m.URL)
 }
 
@@ -278,4 +284,28 @@ var (
 func Default() (Catalog, error) {
 	defaultOnce.Do(func() { defaultCatalog, defaultErr = Load(embedded) })
 	return defaultCatalog, defaultErr
+}
+
+// TaskCVImport is the task of reading a CV into a profile (Career's Import from CV): about a dozen dependent tool calls with large arguments.
+const TaskCVImport = "cv-import"
+
+// Tasks are the tasks a model can be marked unsuitable for.
+var Tasks = []string{TaskCVImport}
+
+func validateUnsuitableFor(tasks []string) error {
+	seen := map[string]bool{}
+	for _, task := range tasks {
+		known := false
+		for _, t := range Tasks {
+			known = known || t == task
+		}
+		switch {
+		case !known:
+			return fmt.Errorf("unsuitableFor %q is not a known task (%s)", task, strings.Join(Tasks, ", "))
+		case seen[task]:
+			return fmt.Errorf("unsuitableFor lists %q twice", task)
+		}
+		seen[task] = true
+	}
+	return nil
 }

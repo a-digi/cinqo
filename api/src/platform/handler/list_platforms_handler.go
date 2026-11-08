@@ -33,6 +33,9 @@ type platformResponse struct {
 	// ModelNames maps a model id to a readable name, for the models the platform offers right now; absent when the platform gives none
 	// (the cloud platforms), in which case the id is the name.
 	ModelNames map[string]string `json:"modelNames,omitempty"`
+	// UnsuitableFor maps a model id to the tasks it was measured not to manage (a tool can warn before it starts), for the models offered
+	// right now; absent when none is flagged (the cloud platforms).
+	UnsuitableFor map[string][]string `json:"unsuitableFor,omitempty"`
 }
 
 // ListPlatformsHandler handles GET /api/v1/platforms. See
@@ -53,7 +56,7 @@ func platformResponses() []platformResponse {
 			continue
 		}
 		models := entry.SelectableModelList()
-		out = append(out, platformResponse{ID: info.ID, Name: info.Name, Models: models, RequiresKey: entry.RequiresKey(), OffersTools: entry.OffersAllTools(), NeedsShortSteps: entry.ShortSteps, ContextTokens: contextOf(entry), ModelNames: namesOf(entry, models)})
+		out = append(out, platformResponse{ID: info.ID, Name: info.Name, Models: models, RequiresKey: entry.RequiresKey(), OffersTools: entry.OffersAllTools(), NeedsShortSteps: entry.ShortSteps, ContextTokens: contextOf(entry), ModelNames: namesOf(entry, models), UnsuitableFor: unsuitableOf(entry, models)})
 	}
 	return out
 }
@@ -71,6 +74,24 @@ func namesOf(entry platform.Entry, offered []string) map[string]string {
 				out = map[string]string{}
 			}
 			out[id] = name
+		}
+	}
+	return out
+}
+
+// unsuitableOf is the tasks the offered models were measured not to manage, nil when the platform flags none of them.
+func unsuitableOf(entry platform.Entry, offered []string) map[string][]string {
+	if entry.ModelUnsuitable == nil {
+		return nil
+	}
+	all := entry.ModelUnsuitable()
+	var out map[string][]string
+	for _, id := range offered {
+		if tasks := all[id]; len(tasks) > 0 {
+			if out == nil {
+				out = map[string][]string{}
+			}
+			out[id] = append([]string(nil), tasks...)
 		}
 	}
 	return out

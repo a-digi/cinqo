@@ -69,6 +69,8 @@ func Entry(db *sql.DB) platform.Entry {
 		},
 		// A readable name for each model, so a tool's picker can say "Qwen2.5-Coder-3B-Instruct, 2.0 GiB" instead of the file id (plan 206).
 		ModelNames: modelNames,
+		// The tasks a model was measured not to manage (plan 207), so Career can warn before a CV import on the 1.5B model.
+		ModelUnsuitable: modelUnsuitable,
 		// Offered only when it can really answer (plan 205): switched on AND the program and at least one model are on disk and fit.
 		// While they are still being downloaded, or after they were deleted, "Local AI" is not offered anywhere, exactly as when it is
 		// off. The models offered are all the ready ones, the saved default first (plan 206).
@@ -112,6 +114,21 @@ func modelNames() map[string]string {
 	out := make(map[string]string, len(cat.Models))
 	for _, m := range cat.Models {
 		out[m.ID] = fmt.Sprintf("%s, %s", m.Name, hardware.GiB(uint64(m.SizeBytes)))
+	}
+	return out
+}
+
+// modelUnsuitable is, for every catalog model that is marked, the tasks it cannot do.
+func modelUnsuitable() map[string][]string {
+	cat, err := catalog.Default()
+	if err != nil {
+		return nil
+	}
+	out := map[string][]string{}
+	for _, m := range cat.Models {
+		if len(m.UnsuitableFor) > 0 {
+			out[m.ID] = append([]string(nil), m.UnsuitableFor...)
+		}
 	}
 	return out
 }

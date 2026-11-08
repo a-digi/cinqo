@@ -28,6 +28,7 @@
       "contextTokens": 32768,
       "tools": true,
       "kvBytesPerToken": 28672,
+      "unsuitableFor": ["cv-import"],
       "source": "Qwen/Qwen2.5-1.5B-Instruct-GGUF at commit 91cad51 (the model's own authors)",
       "note": "A lighter, faster choice for a machine with little memory. Simpler answers.",
       "checkedOn": "2026-11-03"

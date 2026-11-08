@@ -60,6 +60,10 @@ type Entry struct {
 	// for an id such as qwen2.5-coder-3b-instruct-q4_k_m), read at call time. A model without a name is shown by its id. Optional: the cloud
 	// platforms set none. It is listed as modelNames, only for the models that are selectable right now.
 	ModelNames func() map[string]string
+	// ModelUnsuitable, when set, names for each model the tasks it was measured NOT to manage (the local AI: the 1.5B Qwen cannot do Career's
+	// CV import), read at call time, so a tool can warn before it starts. A model missing from the map, or with no tasks, says nothing.
+	// Optional: the cloud platforms set none. It is listed as unsuitableFor, only for the models that are selectable right now.
+	ModelUnsuitable func() map[string][]string
 	// ShortSteps says the models of this platform follow short, one-action-at-a-time instructions better than a long
 	// multi-step prompt (a small local model never called a tool when given the long import prompt, and always did when
 	// given the same work as small steps). A caller that can split its work offers it that way; it is listed as

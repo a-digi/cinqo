@@ -24,3 +24,13 @@ export const LOCAL_MODEL_NOTE =
 export function showsLocalModelNote(platform: Pick<Platform, 'id'> | null | undefined): boolean {
   return platform?.id === LOCAL_PLATFORM_ID
 }
+
+// The task of reading a CV into a profile (Career's Import from CV); the same name the core's catalog uses.
+export const CV_IMPORT_TASK = 'cv-import'
+
+// Whether the platform says this model was measured not to manage the task. Unknown (a platform that flags nothing, an older core) is
+// never "unsuitable".
+export function isUnsuitableFor(platform: Pick<Platform, 'unsuitableFor'> | null | undefined, model: string | null | undefined, task: string): boolean {
+  if (!platform || !model) return false
+  return platform.unsuitableFor?.[model]?.includes(task) === true
+}

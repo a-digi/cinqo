@@ -260,3 +260,20 @@ func TestTheLocalPlatformNamesItsModelsReadably(t *testing.T) {
 		}
 	}
 }
+
+func TestTheLocalPlatformFlagsTheQwen15BAsUnsuitableForTheCVImport(t *testing.T) {
+	withEngine(t, &fakeEngine{})
+	e := Entry(openMainDB(t))
+	if e.ModelUnsuitable == nil {
+		t.Fatal("the local platform must say which models cannot do which task")
+	}
+	got := e.ModelUnsuitable()
+	if tasks := got["qwen2.5-1.5b-instruct-q4_k_m"]; len(tasks) != 1 || tasks[0] != "cv-import" {
+		t.Errorf("1.5B: %v", tasks)
+	}
+	for _, id := range []string{"qwen2.5-coder-3b-instruct-q4_k_m", phiID} {
+		if len(got[id]) != 0 {
+			t.Errorf("%s must not be flagged: %v", id, got[id])
+		}
+	}
+}

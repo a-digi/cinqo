@@ -313,3 +313,42 @@ func TestTheCacheSizePerTokenIsStatedForEveryShippedModelAndBounded(t *testing.T
 		t.Errorf("an entry without the field means not stated (0): %v", err)
 	}
 }
+
+// --- plan 207: a model can be marked unsuitable for a task ---
+
+func TestAModelCanBeMarkedUnsuitableForAKnownTaskOnly(t *testing.T) {
+	ok, err := Load([]byte(file(mutate(`"contextTokens": 4096`, `"contextTokens": 4096, "unsuitableFor": ["cv-import"]`))))
+	if err != nil || len(ok.Models[0].UnsuitableFor) != 1 || ok.Models[0].UnsuitableFor[0] != TaskCVImport {
+		t.Fatalf("a known task: %v %+v", err, ok.Models)
+	}
+	none, err := Load([]byte(file(validEntry)))
+	if err != nil || len(none.Models[0].UnsuitableFor) != 0 {
+		t.Fatalf("no field means nothing is said: %v %+v", err, none.Models)
+	}
+	for name, in := range map[string]string{
+		"an unknown task": `"unsuitableFor": ["cooking"]`,
+		"a task twice":    `"unsuitableFor": ["cv-import", "cv-import"]`,
+		"an empty task":   `"unsuitableFor": [""]`,
+	} {
+		_, err := Load([]byte(file(mutate(`"contextTokens": 4096`, `"contextTokens": 4096, `+in))))
+		if err == nil || !strings.Contains(err.Error(), "unsuitableFor") {
+			t.Errorf("%s: err = %v, want a refusal that names the field", name, err)
+		}
+	}
+}
+
+func TestTheShippedQwen15BIsMarkedUnsuitableForTheCVImportAndTheOthersAreNot(t *testing.T) {
+	c, err := Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range c.Models {
+		marked := false
+		for _, task := range m.UnsuitableFor {
+			marked = marked || task == TaskCVImport
+		}
+		if want := m.ID == "qwen2.5-1.5b-instruct-q4_k_m"; marked != want {
+			t.Errorf("%s: marked unsuitable for the CV import = %v, want %v (measured: 0 of 10 on the long prompt, and the short steps fail too)", m.ID, marked, want)
+		}
+	}
+}

@@ -185,3 +185,31 @@ func TestThePlatformListGivesReadableModelNamesOnlyForOfferedModelsAndOnlyWhenTh
 		t.Errorf("absent names must not be in the JSON: %s", raw)
 	}
 }
+
+func TestThePlatformListFlagsUnsuitableModelsOnlyForOfferedModelsAndOnlyWhenThePlatformFlagsAny(t *testing.T) {
+	if err := platform.Register(platform.Entry{
+		Info:        entity.Platform{ID: "list-unsuitable", Name: "Unsuitable"},
+		Completer:   noopCompleter{},
+		Credentials: func(context.Context) (string, string, error) { return "http://127.0.0.1:1", "", nil },
+		Models:      func() []string { return []string{"weak", "strong"} },
+		ModelUnsuitable: func() map[string][]string {
+			return map[string][]string{"weak": {"cv-import"}, "strong": {}, "gone": {"cv-import"}}
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	list := platformResponses()
+	p, ok := find(list, "list-unsuitable")
+	if !ok || len(p.UnsuitableFor) != 1 || len(p.UnsuitableFor["weak"]) != 1 || p.UnsuitableFor["weak"][0] != "cv-import" {
+		t.Fatalf("%+v: only the offered model that is flagged, with its tasks", p)
+	}
+	for _, id := range []string{"openai", "anthropic", "openrouter", "list-names-none"} {
+		if c, ok := find(list, id); ok && c.UnsuitableFor != nil {
+			t.Errorf("%s: %+v, a platform that flags none lists none", id, c)
+		}
+	}
+	raw, _ := json.Marshal(platformResponse{ID: "x"})
+	if strings.Contains(string(raw), "unsuitableFor") {
+		t.Errorf("an absent flag must not be in the JSON: %s", raw)
+	}
+}

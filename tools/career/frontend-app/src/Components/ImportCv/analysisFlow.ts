@@ -5,7 +5,7 @@
 // over by calling suggest_cv_import with the run id, and its last message is one plain sentence. Only the page can end the run
 // (the AI's turn lives in the core app), so this ends it: "ready" when the turn is over, or "failed" with the reason. See
 // plan/ai/tools/career/step-155-cv-import-result-by-tool-not-chat.md.
-import { buildContinuePrompt } from './buildImportPrompt'
+import { IMPORT_STEP_EXPECTATIONS, buildContinuePrompt, checkStep, type StepVerdict } from './buildImportPrompt'
 import {
   CV_NOT_READ_MESSAGE,
   CV_READ_FAILED_MESSAGE,
@@ -14,6 +14,8 @@ import {
   failureReason,
   isCvUnreadableReply,
   modelSkippedTheRead,
+  stepNotReadMessage,
+  stepNotStoredMessage,
 } from './runStatusRules'
 
 // What one AI turn gave back: its last message and, when the core says so, how many of its tool calls were refused or rejected. A plain
@@ -44,6 +46,13 @@ export interface AnalysisSteps {
   // The instruction as a sequence of short messages (for a model that cannot follow the long one), or absent to send the long one.
   // Each message is sent when the previous turn has ended. Given the run id the messages name.
   stepMessages?(runId: string): string[]
+  // Step-by-step only (plan 207). A fresh conversation for one step: a small model that sees its own earlier replies repeats them instead of
+  // following the new step (a 1.5B model answered every step with its first reply), so every step after the first runs in a conversation
+  // of its own, and so does a continuation. Absent: every step runs in the one conversation, as before.
+  stepConversation?(runId: string, label: string): Promise<string>
+  // Step-by-step only (plan 207). The message that asks a step to be done again when it did not call the tools it had to (the step's index,
+  // what was wrong, the run id). When it is absent the steps are not checked.
+  stepCorrection?(index: number, verdict: Exclude<StepVerdict, 'ok'>, runId: string): string
   // Ends the run; resolves with the run, whose aiProposal holds what the AI handed over. Rejects when the server refuses.
   endRun(runId: string, outcome: RunOutcome): Promise<{ aiProposal: unknown }>
   // What the page shows along the way.
@@ -65,7 +74,8 @@ export function isAnalysisActive(runId: string): boolean {
 
 // The part of an analysis that follows an AI turn: ends the run as ready, or asks the AI to continue a limited number of times, or
 // fails the run. Shared by a fresh analysis and by a resumed one.
-type SettleSteps = Pick<AnalysisSteps, 'askAi' | 'endRun' | 'onReply' | 'onRunsChanged'>
+type SettleSteps = Pick<AnalysisSteps, 'askAi' | 'endRun' | 'onReply' | 'onRunsChanged'> &
+  Partial<Pick<AnalysisSteps, 'stepMessages' | 'stepConversation' | 'stepCorrection'>>
 
 async function settleRun(steps: SettleSteps, conversationId: string, runId: string, first: TurnResult): Promise<unknown> {
   let reply = first.reply
@@ -90,7 +100,9 @@ async function settleRun(steps: SettleSteps, conversationId: string, runId: stri
       // The server refuses "ready" when the AI never handed a proposal over (it finishes a complete draft itself). A weak model
       // often stops too early: the same conversation is asked to continue, a limited number of times, before the run fails.
       if (isNoProposalRefusal(endErr) && continuation < MAX_CONTINUATIONS) {
-        const next = await ask(steps, conversationId, runId, buildContinuePrompt(runId, failureReason(endErr)))
+        // In step-by-step mode the continuation, too, gets a conversation of its own: the old one is full of the model's own replies.
+        const where = steps.stepMessages && steps.stepConversation ? await steps.stepConversation(runId, 'continue') : conversationId
+        const next = await ask(steps, where, runId, buildContinuePrompt(runId, failureReason(endErr)))
         reply = next.reply
         toolsCalled = next.toolsCalled
         lastTurnError = next.turnError ?? lastTurnError
@@ -232,11 +244,11 @@ async function askStep(
   conversationId: string,
   runId: string,
   message: string,
-): Promise<{ reply: string; error?: string }> {
+): Promise<{ reply: string; error?: string; toolsCalled?: string[] }> {
   try {
-    const { reply } = readReply(await steps.askAi(conversationId, runId, message))
+    const { reply, toolsCalled } = readReply(await steps.askAi(conversationId, runId, message))
     steps.onReply(reply)
-    return { reply }
+    return { reply, toolsCalled }
   } catch (err) {
     return { reply: '', error: failureReason(err) }
   }
@@ -271,7 +283,12 @@ async function askInSteps(steps: SettleSteps, conversationId: string, runId: str
       }
       continue
     }
-    const step = await askStep(steps, conversationId, runId, messages[i])
+    // Every step after the first runs in a conversation of its own (plan 207), so the model has nothing of its earlier replies to copy.
+    const where = steps.stepConversation ? await steps.stepConversation(runId, `step ${String(i + 1)}`) : conversationId
+    let step = await askStep(steps, where, runId, messages[i])
+    if (step.error === undefined) {
+      step = await verifyStep(steps, where, runId, i, step)
+    }
     if (step.error !== undefined) {
       problem = step.error
       failedInARow++
@@ -282,6 +299,44 @@ async function askInSteps(steps: SettleSteps, conversationId: string, runId: str
     last = { reply: step.reply }
   }
   return problem === undefined ? last : { ...last, turnError: problem }
+}
+
+// Checks a step against what it had to do (plan 207). A step that did not read the CV before storing, or a required step that stored nothing,
+// is asked once more in the same conversation; if it still did not, the run stops with a message that names the step: a model that cannot do
+// this step will not do the next ones either, and what it stored (the example text) must not become the person's profile. A part the CV may
+// not have (skills, experience, education) that the model neither read nor stored is let go: nothing wrong was stored.
+async function verifyStep(
+  steps: SettleSteps,
+  conversationId: string,
+  runId: string,
+  index: number,
+  first: { reply: string; toolsCalled?: string[] },
+): Promise<{ reply: string; error?: string; toolsCalled?: string[] }> {
+  const expectation = steps.stepCorrection ? IMPORT_STEP_EXPECTATIONS[index] : undefined
+  if (!expectation || !steps.stepCorrection) return first
+  let verdict = checkStep(expectation, first.toolsCalled)
+  if (verdict === 'ok') return first
+  let result = first
+  const again = await askStep(steps, conversationId, runId, steps.stepCorrection(index, verdict, runId))
+  if (again.error === undefined) {
+    result = again
+    verdict = checkStep(expectation, again.toolsCalled)
+  }
+  if (verdict === 'ok') return result
+  const storedSomething =
+    expectation.store !== null && (first.toolsCalled?.includes(expectation.store) === true || again.toolsCalled?.includes(expectation.store) === true)
+  const number = index + 1
+  if (verdict === 'no_read' && (storedSomething || expectation.required)) {
+    const message = stepNotReadMessage(expectation.label, number)
+    await failRun(steps, runId, `${message} (${result.reply.trim() === '' ? 'it made no reply' : result.reply.trim()})`)
+    throw new Error(message)
+  }
+  if (verdict === 'no_store') {
+    const message = stepNotStoredMessage(expectation.label, number)
+    await failRun(steps, runId, `${message} (${result.reply.trim() === '' ? 'it made no reply' : result.reply.trim()})`)
+    throw new Error(message)
+  }
+  return result // an optional part the model neither read nor stored
 }
 
 // Ends a run as failed; whether that works or not never replaces the error that is being reported.

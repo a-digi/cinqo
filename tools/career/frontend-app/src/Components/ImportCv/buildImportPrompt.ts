@@ -116,3 +116,59 @@ export function toolsNamedIn(prompt: string): string[] {
   }
   return seen
 }
+
+// --- plan 207: what each step must do, and how a step that did not is corrected -------------------------------------------------
+//
+// Only for the step-by-step path (a platform whose models need short steps). The tools a step called are known from the turn's log, so a
+// step can be checked without reading the draft: a step that stores something must have read the CV first (a small model that did not
+// store the example text, "<the person's name>", as the person's name), and a required step must have called its store tool.
+
+export interface StepExpectation {
+  // What the step is called in a message to the person.
+  label: string
+  // The step reads the CV with pdf_to_markdown first.
+  read: boolean
+  // The tool that stores the step's result, or null when the step stores nothing.
+  store: string | null
+  // The step must call its store tool. False for a part the CV may not have (skills, experience, education: "if the CV lists none, send none").
+  required: boolean
+}
+
+// One entry for each message of buildImportSteps, in the same order.
+export const IMPORT_STEP_EXPECTATIONS: StepExpectation[] = [
+  { label: 'reading the CV', read: true, store: null, required: true },
+  { label: 'looking at what is stored', read: false, store: null, required: false },
+  { label: 'profile', read: true, store: 'cv_import_set', required: true },
+  { label: 'persona', read: true, store: 'cv_import_set', required: true },
+  { label: 'personal details', read: true, store: 'cv_import_set', required: true },
+  { label: 'skills', read: true, store: 'cv_import_add_skills', required: false },
+  { label: 'work experience', read: true, store: 'cv_import_add_experience', required: false },
+  { label: 'education', read: true, store: 'cv_import_add_education', required: false },
+  { label: 'result', read: false, store: 'cv_import_finish', required: true },
+]
+
+export type StepVerdict = 'ok' | 'no_read' | 'no_store'
+
+// Whether a step did what it had to, from the tools its turn called in order. Unknown calls (an older core) are never held against a step.
+export function checkStep(expectation: StepExpectation, toolsCalled: string[] | undefined): StepVerdict {
+  if (toolsCalled === undefined) return 'ok'
+  const readAt = toolsCalled.indexOf('pdf_to_markdown')
+  const storeAt = expectation.store === null ? -1 : toolsCalled.indexOf(expectation.store)
+  if (expectation.read) {
+    if (readAt < 0 && (storeAt >= 0 || expectation.required || expectation.store !== null)) return 'no_read'
+    if (storeAt >= 0 && readAt > storeAt) return 'no_read' // it stored first and read afterwards: what it stored was not from the CV
+  }
+  if (expectation.required && expectation.store !== null && storeAt < 0) return 'no_store'
+  return 'ok'
+}
+
+// The message that asks a step to be done again, in the same conversation, when checkStep found a fault. The model that wrote the
+// example text instead of reading the CV is told so, and to do the two calls in order.
+export function buildStepCorrection(expectation: StepExpectation, verdict: Exclude<StepVerdict, 'ok'>, cvFileId: string, runId: string): string {
+  const read = `First call pdf_to_markdown with url="media:${cvFileId}" and read the CV text it returns.`
+  const store = expectation.store === null ? '' : ` Then call ${expectation.store} with runId "${runId}" and the real content from the CV text, exactly as the step above describes it.`
+  if (verdict === 'no_read') {
+    return `You did not read the CV in your last answer, so what you stored, if anything, is only the example text. Do the step again now, in this order. ${read}${store} This replaces what you stored before. Make each call once.`
+  }
+  return `You did not call ${expectation.store ?? 'the tool'} in your last answer, so nothing was stored for the ${expectation.label}. Do it now. ${expectation.read ? read : ''}${store} Make each call once.`
+}

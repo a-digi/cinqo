@@ -31,6 +31,9 @@ export interface Platform {
   // Readable names for the models offered now, by model id (the local AI: "Qwen2.5-Coder-3B-Instruct, 2.0 GiB"). Absent when the platform
   // gives none (the cloud platforms): the id is then the name. Absent from an older core.
   modelNames?: Record<string, string>
+  // The tasks a model was measured NOT to manage, by model id (the local AI: the 1.5B Qwen cannot do the CV import): a tool can warn before
+  // it starts. Absent when the platform flags none (the cloud platforms). Absent from an older core.
+  unsuitableFor?: Record<string, string[]>
 }
 
 export async function fetchPlatforms(): Promise<Platform[]> {

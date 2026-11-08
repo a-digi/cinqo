@@ -10,12 +10,13 @@ import {
 } from '../../api'
 import { createConversation, sendMessage } from '../../Cinqo/Conversation/conversation'
 import { fetchPlatforms } from '../../Cinqo/Platform/platformRepository'
+import { CV_IMPORT_TASK, isUnsuitableFor, modelLabel } from '../../Cinqo/Platform/modelLabels'
 import { useAiChoice } from '../../Cinqo/Platform/useAiChoice'
 import { PDFIcon, UploadIcon } from '../../Shared/Icons/icons'
 import { cardClassName, cardStyle } from '../../Shared/cardStyle'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { plural } from '../CompaniesPage/companyStats'
-import { IMPORT_RUN_TOOLS, buildImportPrompt, buildImportSteps } from './buildImportPrompt'
+import { IMPORT_RUN_TOOLS, IMPORT_STEP_EXPECTATIONS, buildImportPrompt, buildImportSteps, buildStepCorrection } from './buildImportPrompt'
 import { RESTRICTION_NOT_APPLIED_MESSAGE, restrictionHolds } from '../../PersonaAi/personaTools'
 import { analyseCv } from './analysisFlow'
 import { importContextProblem } from './importContext'
@@ -23,6 +24,7 @@ import { runBadge } from './runStatusRules'
 import { importCvRunPathFor } from '../../paths'
 import { FailureNotice } from './FailureNotice'
 import { ImportPipeline } from './ImportPipeline'
+import { UnsuitableModelNotice } from './UnsuitableModelNotice'
 import { pipelineStages } from './pipelineRules'
 import { PageTips } from '../../Shared/PageTips/PageTips'
 
@@ -137,6 +139,25 @@ export function ImportCvPage() {
         // A platform whose models do better with short one-action messages (the local models: needsShortSteps) gets the instruction
         // in short steps instead of the one long prompt, which a small model answers with a made-up failure instead of a tool call.
         stepMessages: platform.needsShortSteps === true ? (runId) => buildImportSteps(fileId, runId) : undefined,
+        // Step-by-step only (plan 207): every step after the first, and a continuation, runs in a conversation of its own (hidden from the
+        // list; the run keeps the first one for its transcript) so the model has none of its earlier replies to copy; and a step that did not
+        // call the tools it had to is asked once more, then stops the run with a message that names the step.
+        stepConversation:
+          platform.needsShortSteps === true
+            ? async (_runId, label) => {
+                const conversation = await createConversation({
+                  title: `Import CV: ${originalFilename} · ${label}`,
+                  platformId: platform.id,
+                  model,
+                  allowedTools: [...IMPORT_RUN_TOOLS],
+                  hidden: true,
+                })
+                if (!restrictionHolds(conversation.allowedTools, IMPORT_RUN_TOOLS)) throw new Error(RESTRICTION_NOT_APPLIED_MESSAGE)
+                return conversation.id
+              }
+            : undefined,
+        stepCorrection:
+          platform.needsShortSteps === true ? (index, verdict, runId) => buildStepCorrection(IMPORT_STEP_EXPECTATIONS[index], verdict, fileId, runId) : undefined,
         endRun: finishCVImportRun,
         onConversation: setConversationId,
         // The run exists: its own page takes over from here (the analysis goes on and ends the run; the page polls it).
@@ -251,6 +272,10 @@ export function ImportCvPage() {
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
         <div className="order-1 min-w-0 flex-1 lg:order-2">
           <ImportPipeline stages={stages} onStartOver={startOver} />
+
+          {state === 'upload' && isUnsuitableFor(ai.platform, ai.model, CV_IMPORT_TASK) && ai.platform && ai.model && (
+            <UnsuitableModelNotice choice={`${ai.platform.name} · ${modelLabel(ai.platform, ai.model)}`} />
+          )}
 
           {state === 'upload' && (
             <section className={`career-enter career-delay-1 ${cardClassName}`} style={cardStyle}>

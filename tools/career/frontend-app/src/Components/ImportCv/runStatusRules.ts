@@ -51,6 +51,7 @@ const MODEL_NOT_CAPABLE_PATTERNS: RegExp[] = [
   /response had no choices/i,
   /finish reason: length/i,
   /did not read the cv/i,
+  /did not store the/i,
 ]
 
 export const MODEL_NOT_CAPABLE_MESSAGE =
@@ -97,4 +98,14 @@ export const CV_NOT_READ_MESSAGE =
 // True when the turn's tool calls are known and none of them read the CV. Unknown calls (an older core) never say so.
 export function modelSkippedTheRead(toolsCalled: string[] | undefined): boolean {
   return toolsCalled !== undefined && !toolsCalled.includes('pdf_to_markdown')
+}
+
+// A step-by-step analysis stopped because one step could not be made to work (plan 207): the first message is for a step that stored the
+// example text without reading the CV (it names the phrase the failure notice recognises), the second for a step that stored nothing.
+export function stepNotReadMessage(label: string, step: number): string {
+  return `The AI did not read the CV in step ${String(step)} (${label}): it filled in the example text instead of the CV's content.`
+}
+
+export function stepNotStoredMessage(label: string, step: number): string {
+  return `The AI did not store the ${label} in step ${String(step)}: it answered without calling the tool that stores it.`
 }
