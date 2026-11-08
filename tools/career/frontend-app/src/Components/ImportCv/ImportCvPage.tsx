@@ -15,7 +15,7 @@ import { PDFIcon, UploadIcon } from '../../Shared/Icons/icons'
 import { cardClassName, cardStyle } from '../../Shared/cardStyle'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { plural } from '../CompaniesPage/companyStats'
-import { IMPORT_RUN_TOOLS, buildImportPrompt } from './buildImportPrompt'
+import { IMPORT_RUN_TOOLS, buildImportPrompt, buildImportSteps } from './buildImportPrompt'
 import { RESTRICTION_NOT_APPLIED_MESSAGE, restrictionHolds } from '../../PersonaAi/personaTools'
 import { analyseCv } from './analysisFlow'
 import { importContextProblem } from './importContext'
@@ -132,8 +132,11 @@ export function ImportCvPage() {
         recordRun: (conversationId) => createCVImportRun({ fileId, originalFilename, conversationId }),
         askAi: async (conversationId, runId, followUp) => {
           const message = await sendMessage(conversationId, followUp ?? buildImportPrompt(fileId, runId))
-          return { reply: message.content, toolErrors: message.toolErrors }
+          return { reply: message.content, toolErrors: message.toolErrors, toolsCalled: message.toolsCalled }
         },
+        // A platform whose models do better with short one-action messages (the local models: needsShortSteps) gets the instruction
+        // in short steps instead of the one long prompt, which a small model answers with a made-up failure instead of a tool call.
+        stepMessages: platform.needsShortSteps === true ? (runId) => buildImportSteps(fileId, runId) : undefined,
         endRun: finishCVImportRun,
         onConversation: setConversationId,
         // The run exists: its own page takes over from here (the analysis goes on and ends the run; the page polls it).

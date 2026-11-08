@@ -62,6 +62,20 @@ export interface SendMessageResult {
   durationMs?: number
   // How many tool calls of the turn that produced this message the core refused or rejected; absent from an older core.
   toolErrors?: number
+  // The names of the tools the turn called, in order (read from the turn's log); undefined when the log says nothing (an older core).
+  toolsCalled?: string[]
+}
+
+// The tools a turn called, from its log: the core writes one line "<time>\titeration <n>: invoking tool <name>" for each call it makes.
+// undefined when the log has no line about the model at all (an older core, or a log that was not kept), so "no call" is never guessed.
+export function toolsCalledOf(log: string[] | undefined): string[] | undefined {
+  if (!log?.some((line) => line.includes('calling model'))) return undefined
+  const names: string[] = []
+  for (const line of log) {
+    const m = /invoking tool (\S+)/.exec(line)
+    if (m?.[1]) names.push(m[1])
+  }
+  return names
 }
 
 // TurnRunStatus/ActiveTurn/StartedTurnRun mirror the primary admin
@@ -145,7 +159,14 @@ export async function awaitTurnCompletion(conversationId: string): Promise<SendM
     throw new CoreApiError(502, last.error ?? 'the AI turn failed')
   }
 
-  return { role: last.role, content: last.content, createdAt: last.createdAt, durationMs: last.durationMs, toolErrors: turn.toolErrors }
+  return {
+    role: last.role,
+    content: last.content,
+    createdAt: last.createdAt,
+    durationMs: last.durationMs,
+    toolErrors: turn.toolErrors,
+    toolsCalled: toolsCalledOf(turn.log),
+  }
 }
 
 export async function sendMessage(conversationId: string, content: string): Promise<SendMessageResult> {

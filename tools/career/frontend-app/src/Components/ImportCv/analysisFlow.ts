@@ -6,17 +6,29 @@
 // (the AI's turn lives in the core app), so this ends it: "ready" when the turn is over, or "failed" with the reason. See
 // plan/ai/tools/career/step-155-cv-import-result-by-tool-not-chat.md.
 import { buildContinuePrompt } from './buildImportPrompt'
-import { CV_READ_FAILED_MESSAGE, CV_UNREADABLE_MESSAGE, NO_PROPOSAL_MESSAGE, failureReason, isCvUnreadableReply } from './runStatusRules'
+import {
+  CV_NOT_READ_MESSAGE,
+  CV_READ_FAILED_MESSAGE,
+  CV_UNREADABLE_MESSAGE,
+  NO_PROPOSAL_MESSAGE,
+  failureReason,
+  isCvUnreadableReply,
+  modelSkippedTheRead,
+} from './runStatusRules'
 
 // What one AI turn gave back: its last message and, when the core says so, how many of its tool calls were refused or rejected. A plain
 // string is a reply that says nothing about tool calls (an older caller, a test).
 export interface AiReply {
   reply: string
   toolErrors?: number
+  // The tools the turn called (undefined when that is not known).
+  toolsCalled?: string[]
 }
 
-function readReply(r: string | AiReply): { reply: string; toolErrors: number } {
-  return typeof r === 'string' ? { reply: r, toolErrors: 0 } : { reply: r.reply, toolErrors: r.toolErrors ?? 0 }
+function readReply(r: string | AiReply): { reply: string; toolErrors: number; toolsCalled: string[] | undefined } {
+  return typeof r === 'string'
+    ? { reply: r, toolErrors: 0, toolsCalled: undefined }
+    : { reply: r.reply, toolErrors: r.toolErrors ?? 0, toolsCalled: r.toolsCalled }
 }
 
 export type RunOutcome = { status: 'ready' } | { status: 'failed'; error: string }
@@ -57,10 +69,16 @@ type SettleSteps = Pick<AnalysisSteps, 'askAi' | 'endRun' | 'onReply' | 'onRunsC
 
 async function settleRun(steps: SettleSteps, conversationId: string, runId: string, first: TurnResult): Promise<unknown> {
   let reply = first.reply
+  let toolsCalled = first.toolsCalled
   let lastTurnError = first.turnError
   for (let continuation = 0; ; continuation++) {
     // The AI could not read the file: whatever it handed over is not a result of this CV.
     if (isCvUnreadableReply(reply)) {
+      // It says so without ever having called the tool that reads it: the model made the reason up, the file is fine.
+      if (modelSkippedTheRead(toolsCalled)) {
+        await failRun(steps, runId, `${CV_NOT_READ_MESSAGE} (${reply.trim()})`)
+        throw new Error(CV_NOT_READ_MESSAGE)
+      }
       await failRun(steps, runId, `${CV_UNREADABLE_MESSAGE} (${reply.trim()})`)
       throw new Error(CV_UNREADABLE_MESSAGE)
     }
@@ -74,6 +92,7 @@ async function settleRun(steps: SettleSteps, conversationId: string, runId: stri
       if (isNoProposalRefusal(endErr) && continuation < MAX_CONTINUATIONS) {
         const next = await ask(steps, conversationId, runId, buildContinuePrompt(runId, failureReason(endErr)))
         reply = next.reply
+        toolsCalled = next.toolsCalled
         lastTurnError = next.turnError ?? lastTurnError
         continue
       }
@@ -168,6 +187,8 @@ interface TurnResult {
   turnError?: string
   // Tool calls of the turn the core refused or rejected (0 when it does not say).
   toolErrors?: number
+  // The tools the turn called, when the core says (undefined when it does not).
+  toolsCalled?: string[]
 }
 
 // A failure of the AI's turn that the same conversation can recover from, because the draft is kept on the run: the provider cut
@@ -183,9 +204,9 @@ export function isRetryableTurnError(err: unknown): boolean {
 // comes back as an empty reply so the run is asked to continue (limited by MAX_CONTINUATIONS).
 async function ask(steps: SettleSteps, conversationId: string, runId: string, followUp: string | undefined): Promise<TurnResult> {
   try {
-    const { reply, toolErrors } = readReply(await steps.askAi(conversationId, runId, followUp))
+    const { reply, toolErrors, toolsCalled } = readReply(await steps.askAi(conversationId, runId, followUp))
     steps.onReply(reply)
-    return { reply, toolErrors }
+    return { reply, toolErrors, toolsCalled }
   } catch (err) {
     if (isRetryableTurnError(err)) return { reply: '', turnError: failureReason(err) }
     await failRun(steps, runId, failureReason(err))
@@ -229,6 +250,12 @@ async function askInSteps(steps: SettleSteps, conversationId: string, runId: str
       last = await ask(steps, conversationId, runId, messages[i])
       if (last.turnError !== undefined) return last
       if (isCvUnreadableReply(last.reply)) return last
+      if (modelSkippedTheRead(last.toolsCalled)) {
+        // The first step is only "read the file": a model that did not call the tool has no CV, and the next steps would all start from
+        // nothing. Said plainly, so the person knows it is the model and not the file.
+        await failRun(steps, runId, `${CV_NOT_READ_MESSAGE} (${last.reply.trim() === '' ? 'it made no reply' : last.reply.trim()})`)
+        throw new Error(CV_NOT_READ_MESSAGE)
+      }
       if ((last.toolErrors ?? 0) > 0) {
         // The read of the file was refused: whatever the next steps do, they would do it without the CV.
         const reason = `${CV_READ_FAILED_MESSAGE} (${String(last.toolErrors)} tool call(s) of the first step were refused)`

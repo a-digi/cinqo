@@ -50,6 +50,7 @@ const MODEL_NOT_CAPABLE_PATTERNS: RegExp[] = [
   /cut off by the token limit/i,
   /response had no choices/i,
   /finish reason: length/i,
+  /did not read the cv/i,
 ]
 
 export const MODEL_NOT_CAPABLE_MESSAGE =
@@ -85,4 +86,15 @@ export const CV_READ_FAILED_MESSAGE = 'The AI could not read the CV: its request
 
 export function isCvUnreadableReply(reply: string): boolean {
   return CV_UNREADABLE_REPLY.test(reply)
+}
+
+// The AI wrote "Could not read the CV: …" without ever calling the tool that reads the PDF: the file is fine, the model copied the failure
+// sentence the prompt prescribes and made up the reason (a 1.5B model did, 10 of 10 on a replay; plan 181). Said as it is, with the advice
+// that helps (a stronger model), never "the file may have expired". The text names the phrase the page's failure notice recognises.
+export const CV_NOT_READ_MESSAGE =
+  'The AI did not read the CV: it answered without calling the tool that reads the PDF and made up the reason. The file is fine.'
+
+// True when the turn's tool calls are known and none of them read the CV. Unknown calls (an older core) never say so.
+export function modelSkippedTheRead(toolsCalled: string[] | undefined): boolean {
+  return toolsCalled !== undefined && !toolsCalled.includes('pdf_to_markdown')
 }

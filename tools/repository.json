@@ -8,7 +8,7 @@
       "email": "tafa.andet@googlemail.com"
     }
   ],
-  "generatedAt": "2026-11-07T22:57:30Z",
+  "generatedAt": "2026-11-08T11:52:43Z",
   "tools": [
     {
       "id": "browser",
@@ -61,7 +61,7 @@
     },
     {
       "id": "career",
-      "currentVersionId": "0.0.774",
+      "currentVersionId": "0.0.775",
       "versions": [
         {
           "authors": [
@@ -71,38 +71,38 @@
             }
           ],
           "license": "Proprietary",
-          "versionId": "0.0.774",
+          "versionId": "0.0.775",
           "name": "Career",
-          "version": "0.0.774",
-          "releasedAt": "2026-11-07",
+          "version": "0.0.775",
+          "releasedAt": "2026-11-08",
           "packages": [
             {
               "os": "darwin",
               "arch": "arm64",
               "url": "career/versions/tool-career-darwin-arm64.zip",
-              "sha256": "ecc9c1ecea1962c74eaaae4b5f63722725e905b66287207412695499fe88ea61",
-              "sizeBytes": 18165803
+              "sha256": "9f97aa81c4dfc8769601e4af9ad58bff350c97427a71b9b504153f213deb953b",
+              "sizeBytes": 18167267
             },
             {
               "os": "linux",
               "arch": "amd64",
               "url": "career/versions/tool-career-linux-amd64.zip",
-              "sha256": "2e9f220dab8523b9f1405683f67cd7d4126573d772be44a60a1782144f95d055",
-              "sizeBytes": 18341816
+              "sha256": "0acecf055e5463200fecfefa67a345ebf95eab3037e2479b68c82105478f7e24",
+              "sizeBytes": 18343282
             },
             {
               "os": "linux",
               "arch": "arm64",
               "url": "career/versions/tool-career-linux-arm64.zip",
-              "sha256": "cdeabef52e3aa821c3cd379bbb9067e9b98cebbf3b009ade3fe296cfa62effe7",
-              "sizeBytes": 17333368
+              "sha256": "0394c741cede86c817f94a1abbed2c14c0df4c9db569490ea8b396d6e4ef286c",
+              "sizeBytes": 17334828
             },
             {
               "os": "windows",
               "arch": "amd64",
               "url": "career/versions/tool-career-windows-amd64.zip",
-              "sha256": "38f8cb34639e6563dc8c91edb49aaed7f922f4065438600273bdae8987d282e2",
-              "sizeBytes": 18674697
+              "sha256": "d029b06caa3ae739ccb3e30253e87d6b4f8a71a5176256fb9cffaa03400bca11",
+              "sizeBytes": 18676160
             }
           ]
         }
@@ -123,7 +123,7 @@
           "versionId": "0.0.123",
           "name": "PDF Tools",
           "version": "0.0.123",
-          "releasedAt": "2026-11-05",
+          "releasedAt": "2026-11-07",
           "packages": [
             {
               "os": "darwin",
