@@ -49,10 +49,12 @@ export function DependenciesBlock({ tool, tools, accent }: { tool: Tool; tools: 
           {views.map((v) => (
             <span
               key={v.slug}
+              title={`${v.name}: needs ${v.needs.toLowerCase()}. ${v.installed}.`}
               className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-white/80 px-2 py-0.5 text-xs font-medium text-gray-800 ring-1 ring-black/5"
             >
               <span className={`h-2 w-2 shrink-0 rounded-full ${stateDot[v.state]}`} aria-hidden="true" />
               <span className="truncate">{v.name}</span>
+              <span className="shrink-0 font-normal text-gray-500">{v.pillVersion}</span>
               <span className="sr-only">: {stateLabel[v.state]}</span>
             </span>
           ))}

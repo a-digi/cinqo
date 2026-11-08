@@ -53,12 +53,19 @@ export function requirementText(minVersion: string): string {
   return minVersion === '' ? 'Any version' : `Version ${minVersion} or newer`
 }
 
+// The short form on a dependency pill: "any version", or "≥ 0.0.1".
+export function pillVersionText(minVersion: string): string {
+  return minVersion === '' ? 'any version' : `≥ ${minVersion}`
+}
+
 export interface DependencyView {
   slug: string
   // The installed tool's name, else the slug.
   name: string
   state: DependencyState
   needs: string
+  // The short form for the pill (pillVersionText).
+  pillVersion: string
   // "Version 0.0.123 · enabled · running", or "Not installed".
   installed: string
   description: string
@@ -92,6 +99,7 @@ export function describeDependency(req: Requirement, tools: readonly Installed[]
     name: installed?.name ?? req.slug,
     state,
     needs: requirementText(req.minVersion),
+    pillVersion: pillVersionText(req.minVersion),
     installed: installedText(installed),
     description: installed?.metadata?.description?.trim() ?? '',
     byline: installed ? byLine(installed.metadata) : null,
