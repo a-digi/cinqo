@@ -15,6 +15,8 @@ import { createConversation, sendMessage } from '../../Cinqo/Conversation/conver
 import { fetchPlatforms } from '../../Cinqo/Platform/platformRepository'
 import { CV_IMPORT_TASK, isUnsuitableFor, modelLabel, needsShortStepsFor, usesCodeDriver } from '../../Cinqo/Platform/modelLabels'
 import { useAiChoice } from '../../Cinqo/Platform/useAiChoice'
+import { ImportAiPicker } from './ImportAiPicker'
+import { resolveImportAi, type ImportAiOverride } from './importAiChoice'
 import { PDFIcon, UploadIcon } from '../../Shared/Icons/icons'
 import { cardClassName, cardStyle } from '../../Shared/cardStyle'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
@@ -65,11 +67,14 @@ export function ImportCvPage() {
   // The AI's last message (one plain sentence since step 155: the proposal itself arrives through the suggest_cv_import tool) —
   // kept so the 'error' state can still show it if the analysis fails.
   const [rawReply, setRawReply] = useState('')
-  // The AI platform and model are the one saved setting for the whole tool
-  // (Career ▸ Settings). Import CV is a one-shot, fully automatic flow, so it never
-  // shows a picker; handleUpload surfaces "no platform" as a real error if there is none.
+  // The AI platform and model start from the one saved setting for the whole tool (Career ▸ Settings, or the automatic pick); the person may pick
+  // another platform and model for this import (plan 212). That pick is for this page only: it is not saved and not remembered, so opening the page
+  // starts from the Career settings again. handleUpload surfaces "no platform" as a real error if there is none.
   const ai = useAiChoice()
-  const platform = ai.platform
+  const [aiOverride, setAiOverride] = useState<ImportAiOverride | null>(null)
+  const settingsAi = { platform: ai.platform, model: ai.model }
+  const chosen = resolveImportAi(settingsAi, ai.platforms, aiOverride)
+  const platform = chosen.platform
   const platformsLoaded = ai.loaded
 
   // Dropzone state — visual only (the click-to-browse path already
@@ -121,7 +126,7 @@ export function ImportCvPage() {
       if (!platform) {
         throw new Error('No AI platform is configured — ask an admin to add one under Platforms.')
       }
-      const model = ai.model ?? undefined
+      const model = chosen.model ?? undefined
       // A model with the code driver (Phi-4-mini, plan 209): the code reads and cuts the CV and asks the model small questions with no tools.
       // A CV the code cannot cut (no heading it knows, no text) goes the step-by-step way below instead.
       if (usesCodeDriver(platform, model)) {
@@ -294,8 +299,22 @@ export function ImportCvPage() {
         <div className="order-1 min-w-0 flex-1 lg:order-2">
           <ImportPipeline stages={stages} onStartOver={startOver} />
 
-          {state === 'upload' && isUnsuitableFor(ai.platform, ai.model, CV_IMPORT_TASK) && ai.platform && ai.model && (
-            <UnsuitableModelNotice choice={`${ai.platform.name} · ${modelLabel(ai.platform, ai.model)}`} />
+          {state === 'upload' && platformsLoaded && ai.platforms.length > 0 && (
+            <ImportAiPicker
+              choice={chosen}
+              settings={settingsAi}
+              platforms={ai.platforms}
+              onChange={(platformId, model) => {
+                setAiOverride({ platformId, model })
+              }}
+              onReset={() => {
+                setAiOverride(null)
+              }}
+            />
+          )}
+
+          {state === 'upload' && isUnsuitableFor(chosen.platform, chosen.model, CV_IMPORT_TASK) && chosen.platform && chosen.model && (
+            <UnsuitableModelNotice choice={`${chosen.platform.name} · ${modelLabel(chosen.platform, chosen.model)}`} />
           )}
 
           {state === 'upload' && (
