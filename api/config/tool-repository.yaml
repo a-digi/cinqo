@@ -8,4 +8,4 @@
 # built-in repository (for a fork that ships none). An invalid value is logged and
 # ignored. Read once at startup. See plan/ai/tools/repository/native-repository.md.
 
-tool_repository_url: "https://raw.githubusercontent.com/a-digi/cinqo/0.0.1/tools/repository.json"
+tool_repository_url: "https://raw.githubusercontent.com/a-digi/cinqo-tools/main/repository.json"

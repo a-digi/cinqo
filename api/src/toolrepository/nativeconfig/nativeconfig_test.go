@@ -18,7 +18,7 @@ func TestKeyAbsentUsesTheDefault(t *testing.T) {
 			t.Errorf("%q: %+v", data, r)
 		}
 	}
-	if DefaultURL != "https://raw.githubusercontent.com/a-digi/cinqo/0.0.1/tools/repository.json" {
+	if DefaultURL != "https://raw.githubusercontent.com/a-digi/cinqo-tools/main/repository.json" {
 		t.Error("the default changed; update native-repository.md and config/tool-repository.yaml")
 	}
 }

@@ -28,7 +28,7 @@ const File = "tool-repository.yaml"
 const Key = "tool_repository_url"
 
 // DefaultURL is used when the file has no Key.
-const DefaultURL = "https://raw.githubusercontent.com/a-digi/cinqo/0.0.1/tools/repository.json"
+const DefaultURL = "https://raw.githubusercontent.com/a-digi/cinqo-tools/main/repository.json"
 
 // Result is what the config says about the native repository.
 type Result struct {
