@@ -222,3 +222,19 @@ export function buildStepCorrection(expectation: StepExpectation, verdict: Exclu
   }
   return `You did not call ${expectation.store ?? 'the tool'} in your last answer, so nothing was stored for the ${expectation.label}. Do it now. ${expectation.read ? read : ''}${store} Make each call once, as a real tool call (never written as text).`
 }
+
+// --- plan 208: the model says when a step is finished --------------------------------------------------------------------------
+//
+// Every step but the last ends with the model replying "STEP n DONE"; the page sends the next step when it has said so. The last step ends
+// with the tool call that finishes the run and one plain sentence, so it has no line to wait for.
+export function saysStepDone(index: number, reply: string): boolean {
+  if (index >= IMPORT_STEP_COUNT - 1) return true
+  return new RegExp(`\\bstep\\s*${String(index + 1)}\\s*(?:is\\s*)?(?:done|complete|completed|finished)\\b`, 'i').test(reply)
+}
+
+// Asked when a step's calls were made but the model did not say it was done. No tool call is wanted: a model that is asked to go on calls
+// the store tool again, and the person gets every entry twice.
+export function buildDoneNudge(index: number): string {
+  const n = String(index + 1)
+  return `Step ${n} is finished only when you say so. Do not call any tool again. If you have made every call of step ${n}, reply with exactly this line and nothing else: STEP ${n} DONE`
+}

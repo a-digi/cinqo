@@ -16,7 +16,7 @@ import { PDFIcon, UploadIcon } from '../../Shared/Icons/icons'
 import { cardClassName, cardStyle } from '../../Shared/cardStyle'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { plural } from '../CompaniesPage/companyStats'
-import { IMPORT_RUN_TOOLS, IMPORT_STEP_EXPECTATIONS, IMPORT_STEP_TOOLS, buildImportPrompt, buildImportSteps, buildStepCorrection } from './buildImportPrompt'
+import { IMPORT_RUN_TOOLS, IMPORT_STEP_EXPECTATIONS, IMPORT_STEP_TOOLS, buildDoneNudge, buildImportPrompt, buildImportSteps, buildStepCorrection, saysStepDone } from './buildImportPrompt'
 import { RESTRICTION_NOT_APPLIED_MESSAGE, restrictionHolds } from '../../PersonaAi/personaTools'
 import { analyseCv } from './analysisFlow'
 import { importContextProblem } from './importContext'
@@ -161,6 +161,8 @@ export function ImportCvPage() {
                 return conversation.id
               }
             : undefined,
+        saidDone: stepByStep ? saysStepDone : undefined,
+        doneNudge: stepByStep ? buildDoneNudge : undefined,
         stepCorrection:
           stepByStep ? (index, verdict, runId) => buildStepCorrection(IMPORT_STEP_EXPECTATIONS[index], verdict, fileId, runId) : undefined,
         endRun: finishCVImportRun,

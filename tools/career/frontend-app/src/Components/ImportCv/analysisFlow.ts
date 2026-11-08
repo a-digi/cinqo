@@ -54,6 +54,10 @@ export interface AnalysisSteps {
   // Step-by-step only (plan 207). The message that asks a step to be done again when it did not call the tools it had to (the step's index,
   // what was wrong, the run id). When it is absent the steps are not checked.
   stepCorrection?(index: number, verdict: Exclude<StepVerdict, 'ok'>, runId: string): string
+  // Step-by-step only (plan 208). Whether the model's reply to a step says it finished it, and the message that asks it to say so when it
+  // did not (no tool call wanted). When absent the page goes on when the turn ends, as before.
+  saidDone?(index: number, reply: string): boolean
+  doneNudge?(index: number): string
   // Ends the run; resolves with the run, whose aiProposal holds what the AI handed over. Rejects when the server refuses.
   endRun(runId: string, outcome: RunOutcome): Promise<{ aiProposal: unknown }>
   // What the page shows along the way.
@@ -76,7 +80,7 @@ export function isAnalysisActive(runId: string): boolean {
 // The part of an analysis that follows an AI turn: ends the run as ready, or asks the AI to continue a limited number of times, or
 // fails the run. Shared by a fresh analysis and by a resumed one.
 type SettleSteps = Pick<AnalysisSteps, 'askAi' | 'endRun' | 'onReply' | 'onRunsChanged'> &
-  Partial<Pick<AnalysisSteps, 'stepMessages' | 'stepConversation' | 'stepCorrection'>>
+  Partial<Pick<AnalysisSteps, 'stepMessages' | 'stepConversation' | 'stepCorrection' | 'saidDone' | 'doneNudge'>>
 
 async function settleRun(steps: SettleSteps, conversationId: string, runId: string, first: TurnResult): Promise<unknown> {
   let reply = first.reply
@@ -282,6 +286,7 @@ async function askInSteps(steps: SettleSteps, conversationId: string, runId: str
         await failRun(steps, runId, reason)
         throw new Error(CV_READ_FAILED_MESSAGE)
       }
+      await confirmDone(steps, conversationId, runId, 0, last)
       continue
     }
     // Every step after the first runs in a conversation of its own (plan 207), so the model has nothing of its earlier replies to copy.
@@ -289,6 +294,9 @@ async function askInSteps(steps: SettleSteps, conversationId: string, runId: str
     let step = await askStep(steps, where, runId, messages[i])
     if (step.error === undefined) {
       step = await verifyStep(steps, where, runId, i, step)
+    }
+    if (step.error === undefined) {
+      step = await confirmDone(steps, where, runId, i, step)
     }
     if (step.error !== undefined) {
       problem = step.error
@@ -300,6 +308,22 @@ async function askInSteps(steps: SettleSteps, conversationId: string, runId: str
     last = { reply: step.reply }
   }
   return problem === undefined ? last : { ...last, turnError: problem }
+}
+
+// The next step is sent when the model says it has finished this one (plan 208). A step whose calls were made but whose reply does not say
+// so gets one message asking it to say so, with no tool call wanted (a model asked to go on calls the store tool again and every entry
+// is stored twice). The calls were already checked, so a model that still does not say it is let go on: nothing is lost by it, and
+// failing a step that did its work for the wording of one line would only cost the person the import.
+async function confirmDone<T extends { reply: string; toolsCalled?: string[]; error?: string }>(
+  steps: SettleSteps,
+  conversationId: string,
+  runId: string,
+  index: number,
+  step: T,
+): Promise<T> {
+  if (!steps.saidDone || !steps.doneNudge || steps.saidDone(index, step.reply)) return step
+  await askStep(steps, conversationId, runId, steps.doneNudge(index))
+  return step
 }
 
 // Checks a step against what it had to do (plan 207). A step that did not read the CV before storing, or a required step that stored nothing,
