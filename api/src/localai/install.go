@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/a-digi/cinqo/src/download"
 	"github.com/a-digi/cinqo/src/localai/catalog"
@@ -39,7 +41,16 @@ type installer struct {
 	downloads *download.Manager
 	dataDir   string
 	catalog   catalog.Catalog
+
+	// failures remembers why a download ended badly, seen while it was still listed by the manager (which forgets a finished job
+	// after its retention time), so a page that is reloaded can still say why. It is cleared when a new attempt starts or succeeds,
+	// is forgotten after failureMemory and is lost with a restart. It is the only state the installer keeps.
+	failMu   sync.Mutex
+	failures map[string]entity.Failure
 }
+
+// failureMemory is how long a seen failure is kept.
+const failureMemory = 24 * time.Hour
 
 func (in *installer) root() string { return filepath.Join(in.dataDir, "local-ai") }
 
@@ -140,6 +151,58 @@ func (in *installer) Start(modelID string, system hardware.Info) error {
 		}
 	}
 	return nil
+}
+
+// failureOf reports why the last download for key (a destination path) failed, or nil: a running or finished-well job clears it.
+func (in *installer) failureOf(key, what string) *entity.Failure {
+	in.failMu.Lock()
+	defer in.failMu.Unlock()
+	if v, ok := in.downloads.Latest(key); ok {
+		switch {
+		case v.State == download.StateFailed:
+			if in.failures == nil {
+				in.failures = map[string]entity.Failure{}
+			}
+			if old, seen := in.failures[key]; !seen || old.At != v.FinishedAt {
+				in.failures[key] = entity.Failure{What: what, Message: v.Error, At: v.FinishedAt}
+			}
+		default: // queued, running, installing, done or cancelled: whatever failed before is history
+			delete(in.failures, key)
+		}
+	}
+	f, ok := in.failures[key]
+	if !ok {
+		return nil
+	}
+	if at, err := time.Parse(time.RFC3339, f.At); err == nil && time.Since(at) > failureMemory {
+		delete(in.failures, key)
+		return nil
+	}
+	return &f
+}
+
+// ModelFailure and RuntimeFailure say why the last download of the model or of the program failed (nil when none did).
+func (in *installer) ModelFailure(m catalog.Model) *entity.Failure {
+	return in.failureOf(in.ModelPath(m), "model")
+}
+
+func (in *installer) RuntimeFailure(r catalog.Runtime) *entity.Failure {
+	return in.failureOf(in.archivePath(r), "program")
+}
+
+// CancelDownloads stops every download of this module that is running (the program and the models) and removes their unfinished
+// files. It is what switching the local AI off does while it is still being set up (plan 205).
+func (in *installer) CancelDownloads() {
+	for _, m := range in.catalog.Models {
+		if id, ok := in.downloads.Active(in.ModelPath(m)); ok {
+			in.downloads.Cancel(id)
+		}
+	}
+	for _, r := range in.catalog.Runtimes {
+		if id, ok := in.downloads.Active(in.archivePath(r)); ok {
+			in.downloads.Cancel(id)
+		}
+	}
 }
 
 // Remove deletes everything the module downloaded (models, runtime, leftovers). It refuses while any download is running.

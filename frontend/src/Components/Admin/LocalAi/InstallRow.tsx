@@ -8,7 +8,7 @@ import { downloadButtonText } from './localAiFormat'
 
 // Follows one running download and tells the page when it is over (or when the server no longer knows it), so the page can
 // read the new state of the files.
-function ActiveDownload({
+export function ActiveDownload({
   id,
   busy,
   onCancel,

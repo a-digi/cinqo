@@ -14,6 +14,10 @@ import (
 // PlatformID is the id of the platform this module registers.
 const PlatformID = "local"
 
+// engineReady says whether the engine can answer a request now (everything it needs is on disk and fits): a few file checks, cheap
+// enough for every question about availability.
+func engineReady() bool { return engine.Ready(context.Background()) == nil }
+
 // Entry builds the platform entry for the registry. Every seam reads the settings at call time, so an admin's change
 // takes effect at once and nothing is cached.
 func Entry(db *sql.DB) platform.Entry {
@@ -38,14 +42,16 @@ func Entry(db *sql.DB) platform.Entry {
 			return "", "", engine.Ready(ctx)
 		},
 		Models: func() []string {
-			if s, ok := load(); ok && s.Configured() {
+			if s, ok := load(); ok && s.Configured() && engineReady() {
 				return []string{s.ModelID}
 			}
 			return nil
 		},
+		// Offered only when it can really answer (plan 205): switched on AND the program and the model are on disk and fit. While
+		// they are still being downloaded, or after one was deleted, "Local AI" is not offered, exactly as when it is off.
 		Available: func() bool {
 			s, ok := load()
-			return ok && s.Configured()
+			return ok && s.Configured() && engineReady()
 		},
 		// Tools only for a catalog model that was measured to call them (step 8), and only the ones a conversation names:
 		// never every tool, and never in composer mode.

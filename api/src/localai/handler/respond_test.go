@@ -21,8 +21,11 @@ func (noInstalls) ModelState(catalog.Model) entity.FileInstall {
 func (noInstalls) RuntimeState(catalog.Runtime) entity.FileInstall {
 	return entity.FileInstall{State: entity.InstallNotDownloaded}
 }
-func (noInstalls) Start(string, hardware.Info) error { return nil }
-func (noInstalls) Remove() error                     { return nil }
+func (noInstalls) Start(string, hardware.Info) error              { return nil }
+func (noInstalls) Remove() error                                  { return nil }
+func (noInstalls) CancelDownloads()                               {}
+func (noInstalls) ModelFailure(catalog.Model) *entity.Failure     { return nil }
+func (noInstalls) RuntimeFailure(catalog.Runtime) *entity.Failure { return nil }
 
 // fakeRT is a runtime whose answers the tests choose.
 type fakeRT struct {
@@ -159,9 +162,11 @@ func TestTheStatusSaysWhetherItCanBeSwitchedOnAndWhyNot(t *testing.T) {
 	if notYet.CanEnable || notYet.Reason != "the managed runtime is not available yet" {
 		t.Errorf("status = %+v, want cannot enable with the reason", notYet)
 	}
-	on := respond(entity.Settings{Enabled: true, ModelID: "phi-4-mini-instruct-q4_k_m"}, c, fakeRT{}, noInstalls{}).Status
+	on := respond(entity.Settings{Enabled: true, ModelID: "phi-4-mini-instruct-q4_k_m"}, c, fakeRT{}, states{
+		"phi-4-mini-instruct-q4_k_m": {State: entity.InstallReady}, "llama-cpp-b12064-macos-arm64": {State: entity.InstallReady},
+	}).Status
 	if on.State != "configured" {
-		t.Errorf("state = %q, want configured", on.State)
+		t.Errorf("state = %q, want configured (switched on and everything is there)", on.State)
 	}
 	if got := respond(entity.Settings{Enabled: true}, c, fakeRT{}, noInstalls{}).Status.State; got != "off" {
 		t.Errorf("on without a model: state = %q, want off", got)
@@ -177,6 +182,9 @@ func (st states) ModelState(m catalog.Model) entity.FileInstall {
 	}
 	return entity.FileInstall{State: entity.InstallNotDownloaded}
 }
+func (st states) CancelDownloads()                               {}
+func (st states) ModelFailure(catalog.Model) *entity.Failure     { return nil }
+func (st states) RuntimeFailure(catalog.Runtime) *entity.Failure { return nil }
 func (st states) RuntimeState(r catalog.Runtime) entity.FileInstall {
 	if v, ok := st[r.ID]; ok {
 		return v
@@ -404,5 +412,120 @@ func TestAModelWithAnUnknownMaximumStillGetsTheUsualRecommendation(t *testing.T)
 	}
 	if got := recommendedContext(catalog.Model{ID: "x", ContextTokens: 32768}, false); got != nil {
 		t.Errorf("no tools, no recommendation: %d", *got)
+	}
+}
+
+// --- plan 205, step 2: the derived state ---
+
+// failing is a table of states plus the failures the installer remembers.
+type failing struct {
+	states
+	model, program *entity.Failure
+}
+
+func (f failing) ModelFailure(catalog.Model) *entity.Failure     { return f.model }
+func (f failing) RuntimeFailure(catalog.Runtime) *entity.Failure { return f.program }
+
+const (
+	tPhi = "phi-4-mini-instruct-q4_k_m"
+	tMac = "llama-cpp-b12064-macos-arm64"
+)
+
+func stateOf(t *testing.T, s entity.Settings, rt fakeRT, in Installs) statusResponse {
+	t.Helper()
+	withMachine(t, hardware.Info{OS: "darwin", Arch: "arm64", RAMBytes: 16 << 30, CPUs: 8})
+	return respond(s, shipped(t), rt, in).Status
+}
+
+var phiOn = entity.Settings{Enabled: true, ModelID: tPhi}
+
+func TestOnlyEverythingThereMeansFullyOn(t *testing.T) {
+	ready := states{tPhi: {State: entity.InstallReady}, tMac: {State: entity.InstallReady}}
+	if got := stateOf(t, phiOn, fakeRT{}, ready); got.State != StateConfigured || got.Preparing != nil || got.LastFailure != nil {
+		t.Errorf("%+v", got)
+	}
+	// a file deleted by hand: the next read says so, nothing is stored
+	gone := states{tPhi: {State: entity.InstallReady}}
+	if got := stateOf(t, phiOn, fakeRT{}, gone); got.State != StateInterrupted {
+		t.Errorf("the program deleted: %+v", got)
+	}
+	gone = states{tMac: {State: entity.InstallReady}}
+	if got := stateOf(t, phiOn, fakeRT{}, gone); got.State != StateInterrupted {
+		t.Errorf("the model deleted: %+v", got)
+	}
+	// switched off, or on without a model, is off whatever is on disk
+	if got := stateOf(t, entity.Settings{ModelID: tPhi}, fakeRT{}, ready); got.State != StateOff {
+		t.Errorf("off: %+v", got)
+	}
+	if got := stateOf(t, entity.Settings{Enabled: true}, fakeRT{}, ready); got.State != StateOff {
+		t.Errorf("on without a model: %+v", got)
+	}
+}
+
+func TestWhileSomethingDownloadsItIsPreparingAndSaysWhat(t *testing.T) {
+	program := stateOf(t, phiOn, fakeRT{}, states{tPhi: {State: entity.InstallReady}, tMac: {State: entity.InstallDownloading, DownloadID: "d-program"}})
+	if program.State != StatePreparing || program.Preparing == nil || program.Preparing.Step != "program" || program.Preparing.DownloadID != "d-program" ||
+		!strings.Contains(program.Preparing.Name, "llama.cpp") || program.Preparing.SizeBytes <= 0 {
+		t.Errorf("program: %+v %+v", program, program.Preparing)
+	}
+	model := stateOf(t, phiOn, fakeRT{}, states{tMac: {State: entity.InstallReady}, tPhi: {State: entity.InstallDownloading, DownloadID: "d-model"}})
+	if model.State != StatePreparing || model.Preparing == nil || model.Preparing.Step != "model" || model.Preparing.DownloadID != "d-model" || model.Preparing.SizeBytes <= 0 {
+		t.Errorf("model: %+v %+v", model, model.Preparing)
+	}
+	both := stateOf(t, phiOn, fakeRT{}, states{tMac: {State: entity.InstallDownloading, DownloadID: "p"}, tPhi: {State: entity.InstallDownloading, DownloadID: "m"}})
+	if both.Preparing == nil || both.Preparing.Step != "program" || both.Preparing.DownloadID != "p" {
+		t.Errorf("the program comes first: %+v", both.Preparing)
+	}
+	// a running download wins over an old failure
+	running := failing{states: states{tMac: {State: entity.InstallDownloading, DownloadID: "p"}}, program: &entity.Failure{What: "program", Message: "old"}}
+	if got := stateOf(t, phiOn, fakeRT{}, running); got.State != StatePreparing || got.LastFailure != nil {
+		t.Errorf("%+v", got)
+	}
+}
+
+func TestAFailedDownloadWithNothingRunningIsFailedWithItsReason(t *testing.T) {
+	pf := &entity.Failure{What: "program", Message: "the server answered with status 503"}
+	mf := &entity.Failure{What: "model", Message: "the connection kept failing"}
+	got := stateOf(t, phiOn, fakeRT{}, failing{states: states{tPhi: {State: entity.InstallReady}}, program: pf})
+	if got.State != StateFailed || got.LastFailure == nil || got.LastFailure.What != "program" || got.LastFailure.Message != pf.Message {
+		t.Errorf("program failure: %+v", got)
+	}
+	got = stateOf(t, phiOn, fakeRT{}, failing{states: states{tMac: {State: entity.InstallReady}}, model: mf})
+	if got.State != StateFailed || got.LastFailure == nil || got.LastFailure.What != "model" {
+		t.Errorf("model failure: %+v", got)
+	}
+	// a failure of something that is on disk now is history
+	got = stateOf(t, phiOn, fakeRT{}, failing{states: states{tPhi: {State: entity.InstallReady}, tMac: {State: entity.InstallReady}}, program: pf})
+	if got.State != StateConfigured || got.LastFailure != nil {
+		t.Errorf("a failure of something that is ready must not show: %+v", got)
+	}
+	// an old failure of a model that is on disk now must not make a missing program look failed: it is only interrupted
+	got = stateOf(t, phiOn, fakeRT{}, failing{states: states{tPhi: {State: entity.InstallReady}}, model: mf})
+	if got.State != StateInterrupted || got.LastFailure != nil {
+		t.Errorf("a failure of a model that is ready must not show: %+v", got)
+	}
+	// the program's failure is shown first when both failed
+	got = stateOf(t, phiOn, fakeRT{}, failing{states: states{}, program: pf, model: mf})
+	if got.LastFailure == nil || got.LastFailure.What != "program" {
+		t.Errorf("both failed: %+v", got.LastFailure)
+	}
+}
+
+func TestNothingRunningAndNoFailureKnownIsInterrupted(t *testing.T) {
+	// after a restart: a partial file is on disk, no download is running, no failure is known
+	got := stateOf(t, phiOn, fakeRT{}, states{tMac: {State: entity.InstallPartial, PartialBytes: 99}})
+	if got.State != StateInterrupted || got.Preparing != nil || got.LastFailure != nil {
+		t.Errorf("%+v", got)
+	}
+}
+
+func TestWhatNoDownloadFixesIsFailedNotInterruptedWhileSwitchedOn(t *testing.T) {
+	// the memory changed (or the settings were edited by hand) after it was switched on
+	got := stateOf(t, phiOn, fakeRT{err: errors.New("this computer has 4.0 GiB of memory and the model needs about 6.0 GiB")}, states{tPhi: {State: entity.InstallReady}, tMac: {State: entity.InstallReady}})
+	if got.State != StateFailed || got.LastFailure == nil || got.LastFailure.What != "system" || !strings.Contains(got.LastFailure.Message, "4.0 GiB") {
+		t.Errorf("%+v", got)
+	}
+	if got.CanEnable {
+		t.Error("canEnable must stay false")
 	}
 }

@@ -100,6 +100,10 @@ type fakeInstalls struct {
 	startErr    error
 	removeErr   error
 	removed     bool
+	starts      int
+	cancels     int
+	modelFail   *entity.Failure
+	runtimeFail *entity.Failure
 	states      map[string]entity.FileInstall
 }
 
@@ -119,8 +123,14 @@ func (f *fakeInstalls) RuntimeState(r catalog.Runtime) entity.FileInstall {
 
 func (f *fakeInstalls) Start(modelID string, system hardware.Info) error {
 	f.startModel, f.startSystem = modelID, system
+	f.starts++
 	return f.startErr
 }
+
+func (f *fakeInstalls) CancelDownloads() { f.cancels++ }
+
+func (f *fakeInstalls) ModelFailure(catalog.Model) *entity.Failure     { return f.modelFail }
+func (f *fakeInstalls) RuntimeFailure(catalog.Runtime) *entity.Failure { return f.runtimeFail }
 
 func (f *fakeInstalls) Remove() error { f.removed = true; return f.removeErr }
 
@@ -184,8 +194,10 @@ func TestGetReturnsTheOffByDefaultSettingsWithoutAnyOwnServerFields(t *testing.T
 
 func TestUpdateStoresAValidChangeAndReportsConfigured(t *testing.T) {
 	db := openMainDB(t)
+	withMac(t)
 	body := `{"enabled":true,"modelId":" qwen2.5-1.5b-instruct-q4_k_m ","contextTokens":8192,"idleMinutes":5}`
-	rec := call("LocalAiUpdateSettings", canRun, db, body)
+	ready := &fakeInstalls{states: map[string]entity.FileInstall{"qwen2.5-1.5b-instruct-q4_k_m": {State: entity.InstallReady}, macRuntime: {State: entity.InstallReady}}}
+	rec := callWith("LocalAiUpdateSettings", canRun, ready, db, body)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
 	}
@@ -559,5 +571,121 @@ func TestAMachineThatCannotHoldTheModelStillLetsItBeChosenWhileOff(t *testing.T)
 	rec := call("LocalAiUpdateSettings", canRun, db, `{"enabled":false,"modelId":"phi-4-mini-instruct-q4_k_m","contextTokens":4096,"idleMinutes":10}`)
 	if rec.Code != http.StatusOK {
 		t.Errorf("status %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// --- plan 205, step 1: switching on starts what is missing ---
+
+const (
+	modelOn    = `{"enabled":true,"modelId":"qwen2.5-1.5b-instruct-q4_k_m","contextTokens":4096,"idleMinutes":10}`
+	modelOff   = `{"enabled":false,"modelId":"qwen2.5-1.5b-instruct-q4_k_m","contextTokens":4096,"idleMinutes":10}`
+	macRuntime = "llama-cpp-b12064-macos-arm64"
+)
+
+func withMac(t *testing.T) {
+	t.Helper()
+	restore := handler.SetMachine(func() hardware.Info { return hardware.Info{OS: "darwin", Arch: "arm64", RAMBytes: 16 << 30, CPUs: 8} })
+	t.Cleanup(restore)
+}
+
+func storedEnabled(t *testing.T, db *sql.DB) bool {
+	t.Helper()
+	var enabled bool
+	if err := db.QueryRow(`SELECT enabled FROM local_ai_settings WHERE id = 1`).Scan(&enabled); err != nil {
+		t.Fatal(err)
+	}
+	return enabled
+}
+
+func TestSwitchingOnWithNothingDownloadedSavesTheWishAndStartsTheDownloads(t *testing.T) {
+	withMac(t)
+	db := openMainDB(t)
+	inst := &fakeInstalls{}
+	rec := callWith("LocalAiUpdateSettings", canRun, inst, db, modelOn)
+	if rec.Code != http.StatusOK || !storedEnabled(t, db) {
+		t.Fatalf("status %d enabled %v body %s", rec.Code, storedEnabled(t, db), rec.Body.String())
+	}
+	if inst.starts != 1 || inst.startModel != "qwen2.5-1.5b-instruct-q4_k_m" || inst.startSystem.OS != "darwin" {
+		t.Errorf("the missing downloads must be started once for the chosen model: %+v", inst)
+	}
+}
+
+func TestSwitchingOnWithOnlyTheProgramMissingStartsTheDownloadsToo(t *testing.T) {
+	withMac(t) // the user's case: the models are on disk, the program is not
+	db := openMainDB(t)
+	inst := &fakeInstalls{states: map[string]entity.FileInstall{"qwen2.5-1.5b-instruct-q4_k_m": {State: entity.InstallReady}}}
+	if rec := callWith("LocalAiUpdateSettings", canRun, inst, db, modelOn); rec.Code != http.StatusOK || inst.starts != 1 {
+		t.Fatalf("status %d starts %d body %s", rec.Code, inst.starts, rec.Body.String())
+	}
+}
+
+func TestSwitchingOnWithEverythingThereStartsNothing(t *testing.T) {
+	withMac(t)
+	db := openMainDB(t)
+	inst := &fakeInstalls{states: map[string]entity.FileInstall{
+		"qwen2.5-1.5b-instruct-q4_k_m": {State: entity.InstallReady}, macRuntime: {State: entity.InstallReady},
+	}}
+	if rec := callWith("LocalAiUpdateSettings", canRun, inst, db, modelOn); rec.Code != http.StatusOK || inst.starts != 0 {
+		t.Fatalf("status %d starts %d", rec.Code, inst.starts)
+	}
+}
+
+func TestADownloadThatIsRunningIsJoinedNotSkipped(t *testing.T) {
+	withMac(t)
+	db := openMainDB(t)
+	inst := &fakeInstalls{states: map[string]entity.FileInstall{
+		"qwen2.5-1.5b-instruct-q4_k_m": {State: entity.InstallReady}, macRuntime: {State: entity.InstallDownloading, DownloadID: "d1"},
+	}}
+	if rec := callWith("LocalAiUpdateSettings", canRun, inst, db, modelOn); rec.Code != http.StatusOK || inst.starts != 1 {
+		t.Fatalf("a running program download is still not ready, so the start (which joins it) is asked: status %d starts %d", rec.Code, inst.starts)
+	}
+}
+
+func TestWhatNoDownloadFixesStillRefusesSwitchingOnAndStartsNothing(t *testing.T) {
+	withMac(t)
+	db := openMainDB(t)
+	inst := &fakeInstalls{}
+	rec := callWith("LocalAiUpdateSettings", fakeRuntime{err: errors.New("this computer has 4.0 GiB of memory and the model needs about 6.0 GiB")}, inst, db, modelOn)
+	if rec.Code != http.StatusBadRequest || inst.starts != 0 || storedEnabled(t, db) {
+		t.Fatalf("status %d starts %d enabled %v", rec.Code, inst.starts, storedEnabled(t, db))
+	}
+}
+
+func TestADownloadThatCannotStartKeepsTheSavedWishAndSaysSo(t *testing.T) {
+	withMac(t)
+	db := openMainDB(t)
+	inst := &fakeInstalls{startErr: errors.New("boom")}
+	rec := callWith("LocalAiUpdateSettings", canRun, inst, db, modelOn)
+	if rec.Code != http.StatusInternalServerError || !strings.Contains(rec.Body.String(), "download could not be started") || !storedEnabled(t, db) {
+		t.Fatalf("status %d enabled %v body %s", rec.Code, storedEnabled(t, db), rec.Body.String())
+	}
+}
+
+func TestSwitchingOffCancelsTheDownloadsButOnlyTheChangeFromOnToOff(t *testing.T) {
+	withMac(t)
+	db := openMainDB(t)
+	inst := &fakeInstalls{}
+	callWith("LocalAiUpdateSettings", canRun, inst, db, modelOff) // off -> off (a download the person started by hand must keep running)
+	if inst.cancels != 0 {
+		t.Errorf("off -> off cancelled %d times", inst.cancels)
+	}
+	callWith("LocalAiUpdateSettings", canRun, inst, db, modelOn)
+	callWith("LocalAiUpdateSettings", canRun, inst, db, modelOff) // on -> off
+	if inst.cancels != 1 || storedEnabled(t, db) {
+		t.Errorf("on -> off must cancel once: cancels %d enabled %v", inst.cancels, storedEnabled(t, db))
+	}
+	callWith("LocalAiUpdateSettings", canRun, inst, db, modelOn)
+	callWith("LocalAiUpdateSettings", canRun, inst, db, `{"enabled":true,"modelId":"qwen2.5-1.5b-instruct-q4_k_m","contextTokens":8192,"idleMinutes":10}`) // on -> on
+	if inst.cancels != 1 {
+		t.Errorf("on -> on must not cancel: %d", inst.cancels)
+	}
+}
+
+func TestSavingWhileSwitchedOffStartsNoDownload(t *testing.T) {
+	withMac(t)
+	db := openMainDB(t)
+	inst := &fakeInstalls{}
+	if rec := callWith("LocalAiUpdateSettings", canRun, inst, db, modelOff); rec.Code != http.StatusOK || inst.starts != 0 {
+		t.Fatalf("choosing a model while off must download nothing: status %d starts %d", rec.Code, inst.starts)
 	}
 }

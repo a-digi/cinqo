@@ -40,9 +40,14 @@ type Runtime interface {
 type Installs interface {
 	ModelState(m catalog.Model) entity.FileInstall
 	RuntimeState(r catalog.Runtime) entity.FileInstall
+	// ModelFailure and RuntimeFailure say why the last download of the model or of the program failed, nil when none did.
+	ModelFailure(m catalog.Model) *entity.Failure
+	RuntimeFailure(r catalog.Runtime) *entity.Failure
 	// Start begins the downloads a model needs on this system; errors are entity.ErrUnknownModel, entity.ErrUnsupportedSystem
 	// or an internal one.
 	Start(modelID string, system hardware.Info) error
+	// CancelDownloads stops the running downloads of the module (switching off while it is being set up).
+	CancelDownloads()
 	// Remove deletes everything downloaded; entity.ErrDownloadRunning while a download is running.
 	Remove() error
 }
@@ -64,13 +69,34 @@ func Handlers(runtime Runtime, installs Installs) map[string]routing.HandlerInte
 	}
 }
 
-// statusResponse is what the settings page shows about the current state. State is "off" (switched off or no model
-// chosen) or "configured" (on, with a model). CanEnable says whether the local AI can be switched on at all right now,
-// and Reason says why not when it cannot. Later steps add the download and process states.
+// The states of the local AI (plan 205). Only "configured" means fully ON: switched on AND everything it needs is on disk and fits.
+const (
+	StateOff         = "off"         // switched off, or no model chosen
+	StatePreparing   = "preparing"   // switched on; the program and/or the model are being downloaded now
+	StateConfigured  = "configured"  // switched on and ready: conversations can use it
+	StateFailed      = "failed"      // switched on, not ready, nothing is downloading, and the last attempt failed (or the computer cannot run it)
+	StateInterrupted = "interrupted" // switched on, not ready, nothing is downloading, no failure known (after a restart, or files removed)
+)
+
+// statusResponse is what the settings page shows about the current state. State is one of the State constants. CanEnable says
+// whether the local AI can be switched on at all right now (nothing a download fixes is missing), and Reason says why not
+// when it cannot. Preparing says what is being downloaded while State is "preparing"; LastFailure says why it stopped while State
+// is "failed".
 type statusResponse struct {
-	State     string `json:"state"`
-	CanEnable bool   `json:"canEnable"`
-	Reason    string `json:"reason"`
+	State       string          `json:"state"`
+	CanEnable   bool            `json:"canEnable"`
+	Reason      string          `json:"reason"`
+	Preparing   *preparingStep  `json:"preparing"`
+	LastFailure *entity.Failure `json:"lastFailure"`
+}
+
+// preparingStep is the download in progress: the program first, then the model. The page follows DownloadID with the generic
+// download API (it also tells downloading from installing).
+type preparingStep struct {
+	Step       string `json:"step"` // "program" or "model"
+	DownloadID string `json:"downloadId"`
+	Name       string `json:"name"`
+	SizeBytes  int64  `json:"sizeBytes"`
 }
 
 // hardwareResponse is what this machine can run. Supported says whether the managed local AI is meant to run on it at
@@ -176,15 +202,14 @@ func SetMachine(read func() hardware.Info) (restore func()) {
 
 func respond(s entity.Settings, c catalog.Catalog, rt Runtime, installs Installs) localAiResponse {
 	cannotEnable := rt.CanEnable(s.ModelID)
-	state := "off"
-	if s.Configured() {
-		state = "configured"
-	}
-	status := statusResponse{State: state, CanEnable: cannotEnable == nil}
+	status := statusResponse{State: StateOff, CanEnable: cannotEnable == nil}
 	if cannotEnable != nil {
 		status.Reason = cannotEnable.Error()
 	}
 	info := detect()
+	if s.Configured() {
+		deriveStatus(&status, s, c, cannotEnable, installs, info)
+	}
 	models := make([]catalogModelResponse, 0, len(c.Models))
 	for _, m := range c.Models {
 		models = append(models, catalogModelResponse{
@@ -286,6 +311,7 @@ func (a api) updateSettings(reqCtx request.RequestContext) {
 		response.ErrorResponse(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	before, _ := query.NewSettingsQueryRepo(db).Load() // a read error counts as "was off": nothing is cancelled below
 	if err := persistent.NewSettingsPersistentRepo(db).Save(checked); err != nil {
 		response.ErrorResponse(w, http.StatusInternalServerError, "failed to save the local AI settings")
 		return
@@ -295,7 +321,72 @@ func (a api) updateSettings(reqCtx request.RequestContext) {
 		response.ErrorResponse(w, http.StatusInternalServerError, "failed to reload the local AI settings")
 		return
 	}
+	// Plan 205: switching on while the program or the model is not downloaded starts the missing downloads now, in the background.
+	// The person's wish (enabled) is saved first, so the choice is never lost; a download that is already running is joined.
+	if saved.Enabled && missingDownloads(c, a.installs, saved.ModelID) {
+		if err := a.installs.Start(saved.ModelID, detect()); err != nil {
+			response.ErrorResponse(w, http.StatusInternalServerError, "the local AI was switched on, but the download could not be started: "+err.Error())
+			return
+		}
+	}
+	// Switching off while it is still being set up stops those downloads. Only the change from on to off does: a download the person
+	// started with a model's own button while the local AI was off is theirs and keeps running.
+	if before.Enabled && !saved.Enabled {
+		a.installs.CancelDownloads()
+	}
 	response.SuccessResponse(w, http.StatusOK, respond(saved, c, a.runtime, a.installs))
+}
+
+// deriveStatus turns a switched-on setting into its real state from what is on disk and what is downloading (plan 205, D5): the
+// wish is stored, the readiness is never stored, so a crash or a file deleted by hand cannot leave the page saying "on".
+func deriveStatus(status *statusResponse, s entity.Settings, c catalog.Catalog, cannotEnable error, installs Installs, info hardware.Info) {
+	m, mok := c.Find(s.ModelID)
+	rt, rok := c.RuntimeFor(info.OS, info.Arch)
+	if cannotEnable != nil || !mok || !rok { // what no download fixes (memory, an unsupported system)
+		status.State = StateFailed
+		msg := "the local AI cannot run here"
+		if cannotEnable != nil {
+			msg = cannotEnable.Error()
+		}
+		status.LastFailure = &entity.Failure{What: "system", Message: msg}
+		return
+	}
+	rtState, mState := installs.RuntimeState(rt), installs.ModelState(m)
+	if rtState.State == entity.InstallReady && mState.State == entity.InstallReady {
+		status.State = StateConfigured
+		return
+	}
+	switch { // the program is downloaded first, then the model
+	case rtState.State == entity.InstallDownloading:
+		status.State = StatePreparing
+		status.Preparing = &preparingStep{Step: "program", DownloadID: rtState.DownloadID, Name: rt.Name, SizeBytes: rt.SizeBytes}
+	case mState.State == entity.InstallDownloading:
+		status.State = StatePreparing
+		status.Preparing = &preparingStep{Step: "model", DownloadID: mState.DownloadID, Name: m.Name, SizeBytes: m.SizeBytes}
+	default:
+		if f := installs.RuntimeFailure(rt); f != nil && rtState.State != entity.InstallReady {
+			status.State, status.LastFailure = StateFailed, f
+		} else if f := installs.ModelFailure(m); f != nil && mState.State != entity.InstallReady {
+			status.State, status.LastFailure = StateFailed, f
+		} else {
+			status.State = StateInterrupted
+		}
+	}
+}
+
+// missingDownloads says whether the program for this system or the model is not on disk yet (a running download counts as not
+// there: starting again joins it).
+func missingDownloads(c catalog.Catalog, installs Installs, modelID string) bool {
+	m, ok := c.Find(modelID)
+	if !ok {
+		return false
+	}
+	info := detect()
+	rt, ok := c.RuntimeFor(info.OS, info.Arch)
+	if !ok {
+		return false
+	}
+	return installs.RuntimeState(rt).State != entity.InstallReady || installs.ModelState(m).State != entity.InstallReady
 }
 
 type installRequest struct {

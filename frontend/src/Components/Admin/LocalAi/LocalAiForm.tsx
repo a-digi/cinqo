@@ -4,7 +4,7 @@ import { IconBadge } from '../../../Shared/Components/CardArt/icons'
 import { Decor } from '../../../Shared/Components/CardArt/shapes'
 import { formatBytes } from '../../../Shared/Components/Download/format'
 import type { Download } from '../../../api/downloads'
-import { InstallRow } from './InstallRow'
+import { ActiveDownload, InstallRow } from './InstallRow'
 import type {
   LocalAiEngine,
   LocalAiHardware,
@@ -24,7 +24,9 @@ import {
   hardwareSummary,
   idleHelp,
   modelFacts,
+  setupView,
   supportText,
+  switchVisual,
   testSummary,
   toolsLine,
   type ContextAdvice,
@@ -127,6 +129,8 @@ export function LocalAiForm({
   onCancelDownload,
   onDownloadFinished,
   onRemoveDownloads,
+  onToggle,
+  onContinueSetup,
   draft,
   problems,
   dirty,
@@ -160,6 +164,10 @@ export function LocalAiForm({
   onCancelDownload: (downloadId: string) => void
   onDownloadFinished: (key: string, d: Download | null) => void
   onRemoveDownloads: () => void
+  // Switching on or off: the page saves it at once, so switching on starts the setup in the background (plan 205).
+  onToggle: (enabled: boolean) => void
+  // Continue or try again: starts the downloads that are missing.
+  onContinueSetup: () => void
   draft: Draft
   problems: DraftProblems
   dirty: boolean
@@ -181,7 +189,9 @@ export function LocalAiForm({
   const switchOff = locked || sw.locked
   const chosen = catalog.find((m) => m.id === draft.modelId)
   const canTest = canManage && chosen?.enable.ok === true && !testing
-  const on = saved.enabled && status.state === 'configured'
+  const visual = switchVisual(saved, status)
+  const on = visual === 'on'
+  const setup = setupView(saved, status)
 
   return (
     <form
@@ -202,10 +212,12 @@ export function LocalAiForm({
             aria-describedby={switchNoteId}
             disabled={switchOff}
             onClick={() => {
-              onChange({ ...draft, enabled: !draft.enabled })
+              onToggle(!draft.enabled)
             }}
             className="relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2 disabled:opacity-50"
-            style={{ background: draft.enabled ? `linear-gradient(135deg, ${accent.from}, ${accent.to})` : '#d1d5db' }}
+            style={{
+              background: !draft.enabled ? '#d1d5db' : visual === 'pending' ? '#f59e0b' : `linear-gradient(135deg, ${accent.from}, ${accent.to})`,
+            }}
           >
             <span
               aria-hidden="true"
@@ -217,13 +229,71 @@ export function LocalAiForm({
               Let conversations use a language model that Cinqo runs on this computer
             </p>
             <p id={switchNoteId} className="mt-1 text-xs text-gray-500">
-              Off by default. While off, &quot;Local AI&quot; is not offered anywhere. When it is on, it shows up as a platform when a new
-              conversation is created. Nothing you write is sent to a cloud provider by it.
+              Off by default. While off, &quot;Local AI&quot; is not offered anywhere. When you switch it on, Cinqo first downloads what it
+              needs in the background (the program that runs the models and the chosen model, if they are not on this computer yet); once
+              that is done it shows up as a platform when a new conversation is created. Nothing you write is sent to a cloud provider by it.
             </p>
             {sw.locked && (
               <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                It cannot be switched on yet. {sw.reason} You can choose and download a model below.
+                It cannot be switched on yet. {sw.reason}
               </p>
+            )}
+            {setup.kind !== 'none' && (
+              <div
+                role="status"
+                data-testid="local-ai-setup"
+                className={`mt-3 rounded-lg border px-3 py-2 text-xs ${
+                  setup.kind === 'failed'
+                    ? 'border-red-200 bg-red-50 text-red-900'
+                    : setup.kind === 'ready'
+                      ? 'border-teal-200 bg-teal-50 text-teal-900'
+                      : 'border-amber-200 bg-amber-50 text-amber-900'
+                }`}
+              >
+                <p className="font-semibold">{setup.title}</p>
+                <p className="mt-0.5">{setup.detail}</p>
+                {status.state === 'preparing' && status.preparing !== null && status.preparing.downloadId !== '' && (
+                  <div className="mt-2">
+                    <ActiveDownload
+                      key={status.preparing.downloadId}
+                      id={status.preparing.downloadId}
+                      busy={installBusy}
+                      onCancel={() => {
+                        onCancelDownload(status.preparing?.downloadId ?? '')
+                      }}
+                      onFinished={(d) => {
+                        onDownloadFinished(status.preparing?.step === 'program' ? 'runtime' : saved.modelId, d)
+                      }}
+                    />
+                  </div>
+                )}
+                {canManage && setup.actions.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {(setup.actions.includes('retry') || setup.actions.includes('continue')) && (
+                      <button
+                        type="button"
+                        disabled={installBusy || saving}
+                        onClick={onContinueSetup}
+                        className="rounded-full border border-current px-3 py-1 text-xs font-semibold hover:bg-white/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 disabled:opacity-50"
+                      >
+                        {setup.actions.includes('retry') ? 'Try again' : 'Continue'}
+                      </button>
+                    )}
+                    {setup.actions.includes('switch_off') && (
+                      <button
+                        type="button"
+                        disabled={installBusy || saving}
+                        onClick={() => {
+                          onToggle(false)
+                        }}
+                        className="rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 disabled:opacity-50"
+                      >
+                        Switch off
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
             )}
             <p className={`mt-2 text-xs ${engine.state === 'failed' ? 'text-red-700' : 'text-gray-500'}`}>
               <span className="font-medium">The model program: </span>
@@ -303,7 +373,7 @@ export function LocalAiForm({
             <p className="text-sm font-semibold text-gray-900">The program that runs the models</p>
             <p className="mt-1 text-xs text-gray-500">
               {runtime.supported
-                ? `${runtime.name}, ${formatBytes(runtime.sizeBytes)}. Cinqo downloads it together with the first model.`
+                ? `${runtime.name}, ${formatBytes(runtime.sizeBytes)}. Cinqo downloads it when you switch the local AI on, or here.`
                 : 'There is no such program for this system yet.'}
             </p>
             <div className="mt-2">
@@ -312,9 +382,11 @@ export function LocalAiForm({
                 sizeBytes={runtime.sizeBytes}
                 failure={failures.runtime ?? null}
                 supported={runtime.supported}
-                canManage={false}
+                canManage={canManage}
                 busy={installBusy}
-                onStart={() => undefined}
+                onStart={() => {
+                  onStartInstall('runtime', draft.modelId === '' ? undefined : draft.modelId)
+                }}
                 onCancel={onCancelDownload}
                 onFinished={(d) => {
                   onDownloadFinished('runtime', d)

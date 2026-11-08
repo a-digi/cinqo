@@ -83,17 +83,24 @@ func TestTheLocalPlatformIsOffUntilTheSettingsAreComplete(t *testing.T) {
 	}
 }
 
-func TestAnEngineThatIsNotReadySaysWhyAndNothingIsHidden(t *testing.T) {
-	withEngine(t, &fakeEngine{readyErr: errors.New("the model is still being downloaded")})
+// Plan 205: "Local AI" is offered only when it can really answer. While the program or the model is still being downloaded (or
+// was deleted), it is not offered anywhere, exactly as when it is off; asking it directly still says why.
+func TestAnEngineThatIsNotReadyIsNotOfferedAndSaysWhy(t *testing.T) {
+	eng := &fakeEngine{readyErr: errors.New("the model is still being downloaded")}
+	withEngine(t, eng)
 	db := openMainDB(t)
 	saveSettings(t, db, true, phiID)
 	e := Entry(db)
-	if !e.IsAvailable() {
-		t.Error("the platform stays listed: an engine that is not ready fails the turn with its reason instead")
+	if e.IsAvailable() || len(e.SelectableModelList()) != 0 {
+		t.Error("an engine that is not ready must not be offered for a new conversation")
 	}
 	_, _, err := e.Credentials(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "still being downloaded") {
 		t.Errorf("err = %v, want the engine's reason", err)
+	}
+	eng.readyErr = nil // the download finished
+	if !e.IsAvailable() || len(e.SelectableModelList()) != 1 {
+		t.Error("as soon as it is ready it must be offered, with no restart")
 	}
 }
 

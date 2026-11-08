@@ -26,3 +26,11 @@ var (
 	ErrUnsupportedSystem = errors.New("this system is not supported yet")
 	ErrDownloadRunning   = errors.New("a download is running")
 )
+
+// Failure says why the last download of a thing (the program that runs the models, or a model) did not finish. What is "program" or
+// "model"; Message is fit to show; At is when it ended (RFC 3339).
+type Failure struct {
+	What    string `json:"what"`
+	Message string `json:"message"`
+	At      string `json:"at"`
+}

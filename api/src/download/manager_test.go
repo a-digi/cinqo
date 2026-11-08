@@ -678,6 +678,9 @@ func TestOnlyAllowedHostsOverHTTPSAreContacted(t *testing.T) {
 	}
 	check("https://models.example.com/x", false)
 	check("https://evil.example.org/x", true)
+	if u, _ := url.Parse("https://evil.example.org/x"); !strings.Contains(captured(u).Error(), "evil.example.org") {
+		t.Errorf("a refused host must be named in the reason: %v", captured(u))
+	}
 	check("https://models.example.com.evil.org/x", true)
 	check("http://models.example.com/x", true) // a redirect to plain http
 	// The transport also never reaches a local address for a download.
@@ -1317,5 +1320,26 @@ func TestParseContentRangeEnd(t *testing.T) {
 		if _, _, ok := parseContentRangeEnd(in); ok {
 			t.Errorf("%q must not parse", in)
 		}
+	}
+}
+
+func TestLatestFindsTheLastJobOfAKeyEvenAfterItFinished(t *testing.T) {
+	data := content(1 << 20)
+	m := newManager(streamFunc(func(ctx context.Context, _ string, opts fetch.StreamOptions) (*fetch.Stream, error) {
+		return nil, errors.New("this address is not allowed")
+	}))
+	spec := specFor(t, data)
+	if _, ok := m.Latest(spec.Dest); ok {
+		t.Fatal("no job yet")
+	}
+	if p := run(t, m, spec); p.State != StateFailed {
+		t.Fatal(p)
+	}
+	v, ok := m.Latest(spec.Dest)
+	if !ok || v.State != StateFailed || !strings.Contains(v.Error, "could not start") {
+		t.Fatalf("a failed job must be found with its reason: %+v %v", v, ok)
+	}
+	if _, active := m.Active(spec.Dest); active {
+		t.Error("Active must still say it is not running")
 	}
 }

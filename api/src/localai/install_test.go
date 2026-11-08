@@ -461,3 +461,158 @@ func TestRemoveIsRefusedWhileEitherOneDownloadIsRunning(t *testing.T) {
 		}
 	}
 }
+
+// --- plan 205, step 1 ---
+
+func TestCancelDownloadsStopsTheRunningOnesAndLeavesNoPartialFile(t *testing.T) {
+	r := newRig(t, nil)
+	r.srv.hold = make(chan struct{})
+	if err := r.in.Start("tiny", mac); err != nil {
+		t.Fatal(err)
+	}
+	r.wait(t, "both requests to arrive", func() bool { return r.srv.blocked.Load() == 2 })
+	r.in.CancelDownloads()
+	r.wait(t, "both downloads to stop", func() bool {
+		return r.in.ModelState(r.model).State != entity.InstallDownloading && r.in.RuntimeState(r.rt).State != entity.InstallDownloading
+	})
+	if r.in.ModelState(r.model).State != entity.InstallNotDownloaded || r.in.RuntimeState(r.rt).State != entity.InstallNotDownloaded {
+		t.Errorf("model %+v runtime %+v, want not downloaded", r.in.ModelState(r.model), r.in.RuntimeState(r.rt))
+	}
+	r.in.CancelDownloads() // nothing running: a no-op, never an error
+	// and a later start works from scratch
+	r.srv.mu.Lock()
+	r.srv.hold = nil
+	r.srv.mu.Unlock()
+	if err := r.in.Start("tiny", mac); err != nil {
+		t.Fatal(err)
+	}
+	r.allDone(t)
+}
+
+// The state the user was in on 2026-11-08: the model is complete and the program's download ended at 0 bytes (an empty .part).
+// A new start must fetch the program from the beginning and must not touch the model.
+func TestAnEmptyPartialProgramFileIsStartedAgainAndTheFinishedModelIsKept(t *testing.T) {
+	r := newRig(t, nil)
+	if err := os.MkdirAll(filepath.Dir(r.in.ModelPath(r.model)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(r.in.ModelPath(r.model), r.data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(r.in.archivePath(r.rt)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(r.in.archivePath(r.rt)+".part", nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if r.in.RuntimeState(r.rt).State != entity.InstallNotDownloaded {
+		t.Fatalf("an empty partial file is not a partial download: %+v", r.in.RuntimeState(r.rt))
+	}
+	if err := r.in.Start("tiny", mac); err != nil {
+		t.Fatal(err)
+	}
+	r.allDone(t)
+	if r.in.RuntimeState(r.rt).State != entity.InstallReady || r.in.ModelState(r.model).State != entity.InstallReady {
+		t.Errorf("runtime %+v model %+v, want both ready", r.in.RuntimeState(r.rt), r.in.ModelState(r.model))
+	}
+	if r.srv.hitsOn(modelURL) != 0 {
+		t.Errorf("the finished model must not be fetched again (%d requests)", r.srv.hitsOn(modelURL))
+	}
+}
+
+// A release download that is redirected to a host the module does not allow fails with a message that names the host.
+type redirectingTo struct{ host string }
+
+func (rd redirectingTo) Stream(ctx context.Context, rawURL string, opts fetch.StreamOptions) (*fetch.Stream, error) {
+	u, _ := url.Parse("https://" + rd.host + "/file")
+	if err := opts.AllowURL(u); err != nil {
+		return nil, err
+	}
+	return nil, errors.New("not reached")
+}
+
+func TestARedirectToAnotherHostFailsTheProgramDownloadAndNamesTheHost(t *testing.T) {
+	r := newRig(t, nil)
+	r.in.downloads = download.New(download.Options{Fetcher: redirectingTo{host: "cdn.somewhere-else.example"}, StallAfter: time.Minute, StallFailAfter: time.Minute})
+	if err := r.in.Start("tiny", mac); err != nil {
+		t.Fatal(err)
+	}
+	var msg string
+	r.wait(t, "the failure", func() bool {
+		for _, v := range r.in.downloads.List() {
+			if v.State == download.StateFailed && strings.Contains(v.Error, "cdn.somewhere-else.example") {
+				msg = v.Error
+				return true
+			}
+		}
+		return false
+	})
+	if !strings.Contains(msg, "not on the list of allowed download hosts") {
+		t.Errorf("the failure: %q", msg)
+	}
+}
+
+// --- plan 205, step 2: the installer remembers why a download failed ---
+
+func TestWhyTheProgramDownloadFailedIsRememberedAfterTheManagerForgetsTheJob(t *testing.T) {
+	r := newRig(t, nil)
+	r.in.downloads = download.New(download.Options{Fetcher: redirectingTo{host: "cdn.somewhere-else.example"}, Retention: 30 * time.Millisecond, StallAfter: time.Minute, StallFailAfter: time.Minute})
+	if f := r.in.RuntimeFailure(r.rt); f != nil {
+		t.Fatalf("nothing happened yet: %+v", f)
+	}
+	if err := r.in.Start("tiny", mac); err != nil {
+		t.Fatal(err)
+	}
+	var seen *entity.Failure
+	r.wait(t, "the failure to be seen", func() bool { seen = r.in.RuntimeFailure(r.rt); return seen != nil })
+	if seen.What != "program" || !strings.Contains(seen.Message, "cdn.somewhere-else.example") || seen.At == "" {
+		t.Fatalf("%+v", seen)
+	}
+	time.Sleep(120 * time.Millisecond) // past the manager's retention: the job is forgotten
+	if _, ok := r.in.downloads.Latest(r.in.archivePath(r.rt)); ok {
+		t.Fatal("setup: the manager must have forgotten the job")
+	}
+	if again := r.in.RuntimeFailure(r.rt); again == nil || again.Message != seen.Message {
+		t.Errorf("the page reloaded after the job was forgotten must still be told why: %+v", again)
+	}
+}
+
+func TestANewAttemptOrASuccessClearsTheRememberedFailure(t *testing.T) {
+	r := newRig(t, nil)
+	archive := r.srv.files[runtimeURL]
+	delete(r.srv.files, runtimeURL) // the address answers 404: the program download fails
+	if err := r.in.Start("tiny", mac); err != nil {
+		t.Fatal(err)
+	}
+	r.wait(t, "the failure", func() bool { return r.in.RuntimeFailure(r.rt) != nil })
+	r.srv.mu.Lock()
+	r.srv.files[runtimeURL] = archive // the address works again
+	r.srv.hold = make(chan struct{})
+	r.srv.mu.Unlock()
+	if err := r.in.Start("tiny", mac); err != nil {
+		t.Fatal(err)
+	}
+	r.wait(t, "the new attempt to run", func() bool { return r.srv.blocked.Load() >= 1 })
+	if f := r.in.RuntimeFailure(r.rt); f != nil {
+		t.Errorf("a new attempt is running: the old failure must not show: %+v", f)
+	}
+	close(r.srv.hold)
+	r.allDone(t)
+	if f := r.in.RuntimeFailure(r.rt); f != nil {
+		t.Errorf("after a success: %+v", f)
+	}
+}
+
+func TestARememberedFailureIsForgottenAfterADay(t *testing.T) {
+	r := newRig(t, nil)
+	old := time.Now().Add(-25 * time.Hour).UTC().Format(time.RFC3339)
+	r.in.failures = map[string]entity.Failure{r.in.ModelPath(r.model): {What: "model", Message: "old", At: old}}
+	if f := r.in.ModelFailure(r.model); f != nil {
+		t.Errorf("a failure older than a day: %+v", f)
+	}
+	fresh := time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)
+	r.in.failures = map[string]entity.Failure{r.in.ModelPath(r.model): {What: "model", Message: "recent", At: fresh}}
+	if f := r.in.ModelFailure(r.model); f == nil || f.Message != "recent" {
+		t.Errorf("a recent failure: %+v", f)
+	}
+}

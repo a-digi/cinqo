@@ -1,5 +1,14 @@
 import { formatBytes } from '../../../Shared/Components/Download/format'
-import type { FileInstall, LocalAiEngine, LocalAiHardware, LocalAiModel, LocalAiResponse, LocalAiTestResult } from './localAiApi'
+import type {
+  FileInstall,
+  LocalAiEngine,
+  LocalAiHardware,
+  LocalAiModel,
+  LocalAiResponse,
+  LocalAiSettings,
+  LocalAiStatus,
+  LocalAiTestResult,
+} from './localAiApi'
 
 // How the page and the slide put sizes, the machine and the fit into words. Pure (no React), so the rules can be
 // script-checked.
@@ -200,4 +209,61 @@ export function idleHelp(minutes: number): string {
 // True when nothing can be switched on yet and it is not on: the local AI still needs a download (or more memory).
 export function needsSetup(data: LocalAiResponse): boolean {
   return !data.settings.enabled && !data.catalog.some((m) => m.enable.ok)
+}
+
+// --- plan 205: switching on sets everything up in the background ---
+
+export type SwitchVisual = 'on' | 'pending' | 'off'
+
+// How the switch looks: ON only when the local AI is really ready; amber while it is switched on but being set up (or stuck); off otherwise.
+export function switchVisual(saved: Pick<LocalAiSettings, 'enabled'>, status: Pick<LocalAiStatus, 'state'>): SwitchVisual {
+  if (!saved.enabled || status.state === 'off') return 'off'
+  return status.state === 'configured' ? 'on' : 'pending'
+}
+
+export type SetupAction = 'continue' | 'retry' | 'switch_off'
+
+export interface SetupView {
+  kind: 'none' | 'working' | 'ready' | 'failed' | 'interrupted'
+  title: string
+  detail: string
+  actions: SetupAction[]
+}
+
+// What the page says under the switch about setting the local AI up: what is being downloaded, that it is ready, why it stopped, or that
+// it was interrupted. Pure: the words and the actions are decided here, the component only shows them.
+export function setupView(saved: Pick<LocalAiSettings, 'enabled'>, status: LocalAiStatus): SetupView {
+  if (!saved.enabled || status.state === 'off') return { kind: 'none', title: '', detail: '', actions: [] }
+  switch (status.state) {
+    case 'preparing': {
+      const p = status.preparing
+      const what =
+        p === null
+          ? 'Downloading what the local AI needs.'
+          : p.step === 'program'
+            ? `Downloading the program that runs the models (${p.name}, ${formatBytes(p.sizeBytes)}). It is installed when the download is done.`
+            : `Downloading the model (${p.name}, ${formatBytes(p.sizeBytes)}).`
+      return { kind: 'working', title: 'Setting up the local AI…', detail: what, actions: [] }
+    }
+    case 'configured':
+      return { kind: 'ready', title: 'Ready', detail: 'Conversations can use the local model.', actions: [] }
+    case 'failed': {
+      const f = status.lastFailure
+      const message = f === null || f.message === '' ? 'Something went wrong.' : f.message
+      const title =
+        f?.what === 'program'
+          ? 'The program that runs the models could not be set up'
+          : f?.what === 'model'
+            ? 'The model could not be downloaded'
+            : 'The local AI cannot run here'
+      return { kind: 'failed', title, detail: message, actions: f?.what === 'system' ? ['switch_off'] : ['retry', 'switch_off'] }
+    }
+    case 'interrupted':
+      return {
+        kind: 'interrupted',
+        title: 'Setting up was interrupted',
+        detail: 'Cinqo has not finished downloading what the local AI needs (the app was restarted, or a file was removed). Continue to download the rest.',
+        actions: ['continue', 'switch_off'],
+      }
+  }
 }

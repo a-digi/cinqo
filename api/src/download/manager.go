@@ -159,6 +159,23 @@ func (m *Manager) Active(key string) (string, bool) {
 	return id, j.state.Active()
 }
 
+// Latest returns the most recent job started for a key, finished or not (a finished job stays listed for the retention time):
+// how a caller finds out why the last attempt ended, which Active cannot say.
+func (m *Manager) Latest(key string) (View, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.purgeLocked()
+	id, ok := m.byKey[key]
+	if !ok {
+		return View{}, false
+	}
+	j := m.jobs[id]
+	if j == nil {
+		return View{}, false
+	}
+	return m.view(j), true
+}
+
 // View is a job's progress together with the scope needed to see it.
 type View struct {
 	Progress
@@ -522,7 +539,7 @@ func (m *Manager) fetchBatch(ctx context.Context, j *job, f *os.File, start int6
 				return &fetch.RefusedError{Reason: "downloads are only made over https"}
 			}
 			if !spec.AllowHost(u.Hostname()) {
-				return &fetch.RefusedError{Reason: "this host is not on the list of allowed download hosts"}
+				return &fetch.RefusedError{Reason: fmt.Sprintf("the host %s is not on the list of allowed download hosts", u.Hostname())}
 			}
 			return nil
 		},

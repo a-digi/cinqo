@@ -47,17 +47,34 @@ func newManagedEngine(in *installer, sup *supervisor, settings *query.SettingsQu
 
 func gib(bytes uint64) string { return hardware.GiB(bytes) }
 
-// prerequisites checks that a model can be run now: the system is supported, the runtime and the model are downloaded, and the
-// computer has the memory for it (unknown memory is not held against it). The messages are fit to show on the page.
-func (e *managedEngine) prerequisites(modelID string) (catalog.Model, catalog.Runtime, error) {
+// resolve finds the catalog model and the program for this system: unknown models and unsupported systems end here.
+func (e *managedEngine) resolve(modelID string) (catalog.Model, catalog.Runtime, hardware.Info, error) {
 	m, ok := e.in.catalog.Find(modelID)
 	if !ok {
-		return catalog.Model{}, catalog.Runtime{}, entity.ErrUnknownModel
+		return catalog.Model{}, catalog.Runtime{}, hardware.Info{}, entity.ErrUnknownModel
 	}
 	info := e.system()
 	rt, ok := e.in.catalog.RuntimeFor(info.OS, info.Arch)
 	if !ok {
-		return m, catalog.Runtime{}, entity.ErrUnsupportedSystem
+		return m, catalog.Runtime{}, info, entity.ErrUnsupportedSystem
+	}
+	return m, rt, info, nil
+}
+
+// fitsError says the computer has not the memory for the model (an unknown memory is not held against it).
+func fitsError(info hardware.Info, m catalog.Model) error {
+	if fits := info.Fits(m.SizeBytes); fits != nil && !*fits {
+		return fmt.Errorf("this computer has %s of memory and the model needs about %s", gib(info.RAMBytes), gib(hardware.MinRAMBytes(m.SizeBytes)))
+	}
+	return nil
+}
+
+// prerequisites checks that a model can be run now: the system is supported, the runtime and the model are downloaded, and the
+// computer has the memory for it (unknown memory is not held against it). The messages are fit to show on the page.
+func (e *managedEngine) prerequisites(modelID string) (catalog.Model, catalog.Runtime, error) {
+	m, rt, info, err := e.resolve(modelID)
+	if err != nil {
+		return m, rt, err
 	}
 	if e.in.RuntimeState(rt).State != entity.InstallReady {
 		return m, rt, errors.New("the program that runs the models is not downloaded yet")
@@ -65,20 +82,22 @@ func (e *managedEngine) prerequisites(modelID string) (catalog.Model, catalog.Ru
 	if e.in.ModelState(m).State != entity.InstallReady {
 		return m, rt, errors.New("the model is not downloaded yet")
 	}
-	if fits := info.Fits(m.SizeBytes); fits != nil && !*fits {
-		return m, rt, fmt.Errorf("this computer has %s of memory and the model needs about %s", gib(info.RAMBytes), gib(hardware.MinRAMBytes(m.SizeBytes)))
-	}
-	return m, rt, nil
+	return m, rt, fitsError(info, m)
 }
 
-// CanEnable says whether the local AI can be switched on with this model, and if not, why.
+// CanEnable says whether the local AI can be switched on with this model, and if not, why. A model or a program that is not
+// downloaded yet does NOT stop it: switching on downloads what is missing (plan 205). What stops it is what no download fixes: no
+// model chosen, a model that is not offered, a system without a program, a computer without the memory.
 func (e *managedEngine) CanEnable(modelID string) error {
 	modelID = strings.TrimSpace(modelID)
 	if modelID == "" {
 		return errors.New("choose a model first")
 	}
-	_, _, err := e.prerequisites(modelID)
-	return err
+	m, _, info, err := e.resolve(modelID)
+	if err != nil {
+		return err
+	}
+	return fitsError(info, m)
 }
 
 // Ready says whether the model of the settings can answer: everything is downloaded and fits. It does not start the program.

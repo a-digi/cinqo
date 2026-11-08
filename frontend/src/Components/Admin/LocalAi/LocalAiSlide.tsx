@@ -46,7 +46,7 @@ export function LocalAiSlide() {
               <span
                 className={`rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ${on ? 'bg-white/20 text-white ring-white/50' : 'bg-white/5 text-white/70 ring-white/20'}`}
               >
-                {on ? 'On' : needsSetup(data) ? 'Needs a download' : 'Off'}
+                {on ? 'On' : data.status.state === 'preparing' ? 'Setting up…' : needsSetup(data) ? 'Needs a download' : 'Off'}
               </span>
             )}
           </In>

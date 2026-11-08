@@ -11,14 +11,35 @@ export interface LocalAiSettings {
   idleMinutes: number
 }
 
-// 'off': switched off or no model chosen. 'configured': switched on with a model.
-export type LocalAiState = 'off' | 'configured'
+// 'off': switched off or no model chosen. 'preparing': switched on, the program and/or the model are being downloaded now.
+// 'configured': switched on and ready (fully on). 'failed': switched on, not ready, the last attempt failed (or this computer cannot
+// run it). 'interrupted': switched on, not ready, nothing is downloading (the app was restarted, or a file was removed).
+export type LocalAiState = 'off' | 'preparing' | 'configured' | 'failed' | 'interrupted'
 
-// canEnable says whether the local AI can be switched on at all right now; reason says why not when it cannot.
+// The download in progress while the state is 'preparing': the program first, then the model. downloadId is followed with the
+// download API (it also says downloading or installing).
+export interface PreparingStep {
+  step: 'program' | 'model'
+  downloadId: string
+  name: string
+  sizeBytes: number
+}
+
+// Why the last download did not finish (state 'failed'): what is 'program', 'model' or 'system' (nothing a download fixes).
+export interface LocalAiFailure {
+  what: 'program' | 'model' | 'system'
+  message: string
+  at: string
+}
+
+// canEnable says whether the local AI can be switched on at all right now (nothing a download fixes is in the way); reason says why not
+// when it cannot.
 export interface LocalAiStatus {
   state: LocalAiState
   canEnable: boolean
   reason: string
+  preparing: PreparingStep | null
+  lastFailure: LocalAiFailure | null
 }
 
 // What this machine can run. ramBytes is 0 when it could not be read; supported says whether the managed local AI is meant

@@ -91,19 +91,29 @@ func TestWhatIsNeededToRunAModelIsCheckedWithMessagesFitForThePage(t *testing.T)
 	if err := r.e.CanEnable("gpt-4"); !errors.Is(err, entity.ErrUnknownModel) {
 		t.Errorf("unknown model: err = %v", err)
 	}
-	if err := r.e.CanEnable("other"); err == nil || err.Error() != "the model is not downloaded yet" {
-		t.Errorf("a model that is not downloaded: err = %v", err)
+	// Plan 205: a model that is not downloaded does not stop switching on (switching on downloads it); it does stop Ready.
+	if err := r.e.CanEnable("other"); err != nil {
+		t.Errorf("a model that is not downloaded may be switched on: err = %v", err)
+	}
+	if _, _, err := r.e.prerequisites("other"); err == nil || err.Error() != "the model is not downloaded yet" {
+		t.Errorf("a model that is not downloaded cannot answer yet: err = %v", err)
 	}
 	// A model file of the wrong size (a download that was cut short) is not downloaded.
 	if err := os.MkdirAll(filepath.Dir(r.in.ModelPath(r.other)), 0o755); err == nil {
 		os.WriteFile(r.in.ModelPath(r.other), make([]byte, 5), 0o644)
 	}
-	if err := r.e.CanEnable("other"); err == nil || err.Error() != "the model is not downloaded yet" {
+	if _, _, err := r.e.prerequisites("other"); err == nil || err.Error() != "the model is not downloaded yet" {
 		t.Errorf("a model file of the wrong size: err = %v", err)
 	}
 	os.Remove(r.in.RuntimeBinary(r.rt))
-	if err := r.e.CanEnable("tiny"); err == nil || err.Error() != "the program that runs the models is not downloaded yet" {
+	if err := r.e.CanEnable("tiny"); err != nil {
+		t.Errorf("a missing program does not stop switching on: err = %v", err)
+	}
+	if _, _, err := r.e.prerequisites("tiny"); err == nil || err.Error() != "the program that runs the models is not downloaded yet" {
 		t.Errorf("no runtime: err = %v", err)
+	}
+	if err := r.e.Ready(context.Background()); err == nil {
+		t.Error("Ready must still say the program is missing")
 	}
 	r.e.system = func() hardware.Info { return hardware.Info{OS: "windows", Arch: "amd64", RAMBytes: 16 << 30} }
 	if err := r.e.CanEnable("tiny"); !errors.Is(err, entity.ErrUnsupportedSystem) {

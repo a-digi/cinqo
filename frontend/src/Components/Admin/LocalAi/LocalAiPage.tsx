@@ -148,13 +148,13 @@ export function LocalAiPage() {
     })
   }
 
-  function save() {
-    if (!data || !draft) return
+  function save(values: Draft | null = draft) {
+    if (!data || !values) return
     setSaveError('')
     setJustSaved(false)
     setSaving(true)
     // The page only shows the new values once the server has stored them: a refused change leaves everything as it was.
-    updateLocalAiSettings(toUpdate(draft))
+    updateLocalAiSettings(toUpdate(values))
       .then((response) => {
         setData(response)
         setDraft(draftOf(response.settings))
@@ -166,6 +166,17 @@ export function LocalAiPage() {
       .finally(() => {
         setSaving(false)
       })
+  }
+
+  // The switch saves at once (plan 205): switching on starts the setup in the background, switching off stops it. A draft with
+  // problems is not sent; the form shows the problems next to the fields.
+  function toggle(enabled: boolean) {
+    if (!data || !draft) return
+    const next = { ...draft, enabled }
+    setJustSaved(false)
+    setDraft(next)
+    if (hasProblems(problemsOf(next, data.catalog))) return
+    save(next)
   }
 
   return (
@@ -206,6 +217,10 @@ export function LocalAiPage() {
           onCancelDownload={cancel}
           onDownloadFinished={finished}
           onRemoveDownloads={removeAll}
+          onToggle={toggle}
+          onContinueSetup={() => {
+            start('runtime')
+          }}
           draft={draft}
           problems={problemsOf(draft, data.catalog)}
           dirty={isDirty(data.settings, draft)}
@@ -218,7 +233,7 @@ export function LocalAiPage() {
             setDraft(next)
           }}
           onSave={() => {
-            if (!hasProblems(problemsOf(draft, data.catalog))) save()
+            if (!hasProblems(problemsOf(draft, data.catalog))) save(draft)
           }}
           onDiscard={() => {
             setSaveError('')

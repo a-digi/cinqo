@@ -74,12 +74,32 @@ func (l lazyInstalls) RuntimeState(r catalog.Runtime) entity.FileInstall {
 	return entity.FileInstall{State: entity.InstallNotDownloaded}
 }
 
+func (l lazyInstalls) ModelFailure(m catalog.Model) *entity.Failure {
+	if in, ok := l.get(); ok {
+		return in.ModelFailure(m)
+	}
+	return nil
+}
+
+func (l lazyInstalls) RuntimeFailure(r catalog.Runtime) *entity.Failure {
+	if in, ok := l.get(); ok {
+		return in.RuntimeFailure(r)
+	}
+	return nil
+}
+
 func (l lazyInstalls) Start(modelID string, system hardware.Info) error {
 	in, ok := l.get()
 	if !ok {
 		return errors.New("downloads are not available")
 	}
 	return in.Start(modelID, system)
+}
+
+func (l lazyInstalls) CancelDownloads() {
+	if in, ok := l.get(); ok {
+		in.CancelDownloads()
+	}
 }
 
 func (l lazyInstalls) Remove() error {
