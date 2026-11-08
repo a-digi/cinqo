@@ -38,6 +38,7 @@ rules live once, in `api/src/toolmeta`.
           "releasedAt": "2026-10-30",
           "changelog": "…",
           "minAppVersion": "0.0.100",
+          "requires": [{ "id": "pdf_tools", "minVersion": "0.0.1" }, { "id": "notes", "minVersion": "1.0.0", "maxVersion": "1.9.9" }],
           "packages": [
             { "os": "darwin", "arch": "arm64", "url": "files/tool-browser-darwin-arm64.zip",
               "sha256": "<64 hex>", "sizeBytes": 1234567 }
@@ -66,6 +67,7 @@ rules live once, in `api/src/toolmeta`.
 | `description`, `changelog` | optional; at most 2,000 / 5,000 characters |
 | `releasedAt` | optional; `2026-10-30` or an RFC 3339 timestamp |
 | `minAppVersion` | optional; `MAJOR.MINOR.PATCH` |
+| `requires` | optional; the other tools this version cannot work without, at most 20, in the order they were declared; each `{id, minVersion?, maxVersion?}`: `id` a tool id (`^[a-z][a-z0-9_]*$`), not the tool itself, not listed twice; `minVersion` and `maxVersion` (the lowest and the highest version of that tool that works, both inclusive) are dotted numbers like `0.0.1`, and `maxVersion` must not be below `minVersion`. `repotool` copies it from the package's own `manifest.json` (`requires_tools`: `slug` becomes `id`, `min_version` and `max_version` become `minVersion` and `maxVersion`), so the file cannot disagree with the package. It is a **hint** for planning: the package's manifest stays the authority and is checked again when the package is installed. An app that predates the field ignores it |
 | `packages` | 1–20 per version; one per `os`/`arch` |
 | `os` / `arch` | `darwin`, `linux`, `windows`, `any` / `arm64`, `amd64`, `any` |
 | `url` | absolute, or relative to the repository file's own address; `https`, or `http` for a local address only; no credentials; at most 2,000 characters |

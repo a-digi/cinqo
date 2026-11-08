@@ -199,6 +199,10 @@ type FileSourceDecl struct {
 type RequiredToolDecl struct {
 	Slug       string `json:"slug"`
 	MinVersion string `json:"min_version,omitempty"`
+	// MaxVersion is optional: the highest version of Slug this tool is known to work with (inclusive). Omitted means any version above
+	// MinVersion is fine, as before. It is what lets a tool say "do not update that tool past here" (plan
+	// plan/ai/tools/repository/dependency-install.md, revision 2).
+	MaxVersion string `json:"max_version,omitempty"`
 }
 
 // InstalledToolInfo is the small, DB-free shape ValidationInput.InstalledTools
@@ -291,6 +295,9 @@ func Validate(m Manifest, in ValidationInput) (kind string, err error) {
 		}
 	}
 
+	if err := ValidateRequires(m); err != nil {
+		return "", err
+	}
 	if err := ValidateRequiredTools(m, in.InstalledTools); err != nil {
 		return "", err
 	}
@@ -541,6 +548,47 @@ func ValidateRequiredTools(m Manifest, installed map[string]InstalledToolInfo) e
 			}
 			if cmp < 0 {
 				return fmt.Errorf("requires tool %q version >= %s, installed %s", dep.Slug, dep.MinVersion, info.Version)
+			}
+		}
+		if dep.MaxVersion != "" {
+			cmp, err := CompareVersions(info.Version, dep.MaxVersion)
+			if err != nil {
+				return err
+			}
+			if cmp > 0 {
+				return fmt.Errorf("requires tool %q version <= %s, installed %s", dep.Slug, dep.MaxVersion, info.Version)
+			}
+		}
+	}
+	return nil
+}
+
+// ValidateRequires checks the declaration itself, before anything is compared with what is installed: every slug is a tool slug, none is the tool's
+// own or declared twice, min_version and max_version are readable dotted numbers, and the maximum is not below the minimum (no version could satisfy it).
+func ValidateRequires(m Manifest) error {
+	seen := map[string]struct{}{}
+	for _, dep := range m.RequiresTools {
+		switch {
+		case !slugPattern.MatchString(dep.Slug):
+			return fmt.Errorf("requires_tools: slug %q must match %s", dep.Slug, slugPattern.String())
+		case dep.Slug == m.Slug:
+			return fmt.Errorf("requires_tools: a tool cannot require itself (%q)", dep.Slug)
+		}
+		if _, dup := seen[dep.Slug]; dup {
+			return fmt.Errorf("requires_tools: %q is declared twice", dep.Slug)
+		}
+		seen[dep.Slug] = struct{}{}
+		for _, v := range []struct{ field, value string }{{"min_version", dep.MinVersion}, {"max_version", dep.MaxVersion}} {
+			if v.value == "" {
+				continue
+			}
+			if _, err := splitVersion(v.value); err != nil {
+				return fmt.Errorf("requires_tools: %s of %q: %w", v.field, dep.Slug, err)
+			}
+		}
+		if dep.MinVersion != "" && dep.MaxVersion != "" {
+			if cmp, _ := CompareVersions(dep.MaxVersion, dep.MinVersion); cmp < 0 {
+				return fmt.Errorf("requires_tools: %q has max_version %s below min_version %s: no version could satisfy it", dep.Slug, dep.MaxVersion, dep.MinVersion)
 			}
 		}
 	}

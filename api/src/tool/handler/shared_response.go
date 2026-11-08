@@ -47,12 +47,14 @@ type requiredToolResponse struct {
 	Slug string `json:"slug"`
 	// MinVersion is empty when any version will do.
 	MinVersion string `json:"min_version"`
+	// MaxVersion is empty when there is no upper bound.
+	MaxVersion string `json:"max_version"`
 }
 
 func toRequiredToolResponses(rows []tool_entity.ToolRequiredTool) []requiredToolResponse {
 	out := make([]requiredToolResponse, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, requiredToolResponse{Slug: r.RequiredSlug, MinVersion: r.MinVersion})
+		out = append(out, requiredToolResponse{Slug: r.RequiredSlug, MinVersion: r.MinVersion, MaxVersion: r.MaxVersion})
 	}
 	return out
 }

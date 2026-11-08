@@ -19,6 +19,7 @@ const stateChip: Record<DependencyState, string> = {
   ready: 'bg-green-100 text-green-700',
   disabled: 'bg-amber-100 text-amber-700',
   too_old: 'bg-amber-100 text-amber-700',
+  too_new: 'bg-amber-100 text-amber-700',
   missing: 'bg-red-100 text-red-700',
 }
 

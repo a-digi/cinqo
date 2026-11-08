@@ -10,4 +10,6 @@ type ToolRequiredTool struct {
 	ToolID       string   `db:"tool_id" dbtype:"TEXT" nullable:"false" json:"tool_id"`
 	RequiredSlug string   `db:"required_slug" dbtype:"TEXT" nullable:"false" json:"required_slug"`
 	MinVersion   string   `db:"min_version" dbtype:"TEXT" nullable:"true" json:"min_version"`
+	// MaxVersion is the highest version of RequiredSlug the tool works with (inclusive); empty means no upper bound.
+	MaxVersion string `db:"max_version" dbtype:"TEXT" nullable:"true" json:"max_version"`
 }

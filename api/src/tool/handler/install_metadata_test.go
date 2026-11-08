@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -137,7 +138,7 @@ func TestEnableAndDisableAnswerWithTheRequiredTools(t *testing.T) {
 	for _, m := range []string{
 		`{"slug":"browser","name":"Browser","version":"1.0.0","authors":[{"name":"A"}],"license":"MIT"}`,
 		`{"slug":"pdf_tools","name":"PDF Tools","version":"0.0.5","authors":[{"name":"A"}],"license":"MIT"}`,
-		`{"slug":"career","name":"Career","version":"2.0.0","authors":[{"name":"A"}],"license":"MIT","requires_tools":[{"slug":"pdf_tools","min_version":"0.0.1"},{"slug":"browser"}]}`,
+		`{"slug":"career","name":"Career","version":"2.0.0","authors":[{"name":"A"}],"license":"MIT","requires_tools":[{"slug":"pdf_tools","min_version":"0.0.1"},{"slug":"browser","max_version":"1.5.0"}]}`,
 	} {
 		if code, out := upload(t, di, pkg(m)); code != http.StatusCreated {
 			t.Fatalf("%d %v", code, out)
@@ -157,7 +158,8 @@ func TestEnableAndDisableAnswerWithTheRequiredTools(t *testing.T) {
 	}
 	for name, h := range map[string]func(request.RequestContext){"disable": DisableHandler, "enable": EnableHandler} {
 		rt := answer(h)
-		if len(rt) != 2 || rt[0].(map[string]any)["slug"] != "pdf_tools" || rt[0].(map[string]any)["min_version"] != "0.0.1" || rt[1].(map[string]any)["slug"] != "browser" {
+		if len(rt) != 2 || rt[0].(map[string]any)["slug"] != "pdf_tools" || rt[0].(map[string]any)["min_version"] != "0.0.1" || rt[0].(map[string]any)["max_version"] != "" ||
+			rt[1].(map[string]any)["slug"] != "browser" || rt[1].(map[string]any)["max_version"] != "1.5.0" {
 			t.Errorf("%s answers with the requirements in the declared order: %v", name, rt)
 		}
 	}
@@ -168,5 +170,111 @@ func TestEnableAndDisableAnswerWithTheRequiredTools(t *testing.T) {
 	}
 	if rt := out["message"].(map[string]any)["required_tools"].([]any); len(rt) != 1 || rt[0].(map[string]any)["slug"] != "browser" {
 		t.Errorf("a fresh install answers with its requirements: %v", rt)
+	}
+}
+
+// Revision 2 of plan dependency-install: the upper bound of a requirement is stored, listed, enforced at install, and replaced by an update.
+func TestTheMaximumVersionOfARequirementIsStoredListedAndEnforced(t *testing.T) {
+	di, _ := newUploadDI(t)
+	pkg := func(manifest string) []byte {
+		return zipOf(t, map[string]string{"manifest.json": manifest, "frontend/bundle.js": "x"})
+	}
+	base := `"authors":[{"name":"A"}],"license":"MIT"`
+	if code, out := upload(t, di, pkg(`{"slug":"browser","name":"Browser","version":"3.0.0",`+base+`}`)); code != http.StatusCreated {
+		t.Fatalf("%d %v", code, out)
+	}
+	// the installed Browser is above what Career works with: the install is refused, nothing is installed
+	code, out := upload(t, di, pkg(`{"slug":"career","name":"Career","version":"1.0.0",`+base+`,"requires_tools":[{"slug":"browser","min_version":"1.0.0","max_version":"2.0.0"}]}`))
+	msg, _ := out["message"].(string)
+	if code != http.StatusBadRequest || !strings.Contains(msg, "version <= 2.0.0") || !strings.Contains(msg, "installed 3.0.0") {
+		t.Fatalf("%d %v", code, out)
+	}
+	var n int
+	di.db.QueryRow(`SELECT COUNT(*) FROM tools WHERE slug = 'career'`).Scan(&n)
+	if n != 0 {
+		t.Fatal("a refused package must not be installed")
+	}
+	// a broken declaration is refused as such
+	code, out = upload(t, di, pkg(`{"slug":"career","name":"Career","version":"1.0.0",`+base+`,"requires_tools":[{"slug":"browser","min_version":"2.0.0","max_version":"1.0.0"}]}`))
+	if msg, _ = out["message"].(string); code != http.StatusBadRequest || !strings.Contains(msg, "no version could satisfy") {
+		t.Fatalf("%d %v", code, out)
+	}
+	// inside the range it installs, and the list carries the bound (and none for a requirement without one)
+	code, out = upload(t, di, pkg(`{"slug":"career","name":"Career","version":"1.0.0",`+base+`,"requires_tools":[{"slug":"browser","min_version":"1.0.0","max_version":"3.0.0"}]}`))
+	if code != http.StatusCreated {
+		t.Fatalf("%d %v", code, out)
+	}
+	rec := httptest.NewRecorder()
+	ListHandler(request.NewContext(rec, httptest.NewRequest("GET", "/api/v1/tools", nil), di))
+	var list struct {
+		Message []struct {
+			Slug          string `json:"slug"`
+			RequiredTools []struct {
+				Slug       string `json:"slug"`
+				MinVersion string `json:"min_version"`
+				MaxVersion string `json:"max_version"`
+			} `json:"required_tools"`
+		} `json:"message"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
+		t.Fatal(err)
+	}
+	for _, tl := range list.Message {
+		if tl.Slug != "career" {
+			continue
+		}
+		if len(tl.RequiredTools) != 1 || tl.RequiredTools[0].MinVersion != "1.0.0" || tl.RequiredTools[0].MaxVersion != "3.0.0" {
+			t.Errorf("the bound is listed: %+v", tl.RequiredTools)
+		}
+	}
+	// an update replaces the bound wholesale
+	code, out = upload(t, di, pkg(`{"slug":"career","name":"Career","version":"1.0.1",`+base+`,"requires_tools":[{"slug":"browser"}]}`))
+	if code != http.StatusOK {
+		t.Fatalf("%d %v", code, out)
+	}
+	rt := out["message"].(map[string]any)["required_tools"].([]any)
+	if len(rt) != 1 || rt[0].(map[string]any)["max_version"] != "" || rt[0].(map[string]any)["min_version"] != "" {
+		t.Errorf("the update's answer carries its own (empty) bounds: %v", rt)
+	}
+}
+
+// The source repository is recorded by a repository install and cleared by an uploaded update; an upload never sets one.
+func TestAnUploadLeavesTheSourceUnknownAndClearsARecordedOne(t *testing.T) {
+	di, _ := newUploadDI(t)
+	manifest := func(version string) []byte {
+		return zipOf(t, map[string]string{
+			"manifest.json":      `{"slug":"demo","name":"Demo","version":"` + version + `","authors":[{"name":"A"}],"license":"MIT"}`,
+			"frontend/bundle.js": "x",
+		})
+	}
+	source := func() (string, bool) {
+		var s sql.NullString
+		if err := di.db.QueryRow(`SELECT source_repository_id FROM tools WHERE slug = 'demo'`).Scan(&s); err != nil {
+			t.Fatal(err)
+		}
+		return s.String, s.Valid
+	}
+	viaRepository := func(version, repo string) {
+		t.Helper()
+		ctx := request.NewContext(httptest.NewRecorder(), httptest.NewRequest("POST", "/x", nil), di)
+		if _, ierr := InstallPackage(ctx, manifest(version), &PackageExpectation{Slug: "demo", Version: version, SourceRepositoryID: repo}); ierr != nil {
+			t.Fatalf("%v", ierr.Message)
+		}
+	}
+	if code, out := upload(t, di, manifest("1.0.0")); code != http.StatusCreated {
+		t.Fatalf("%d %v", code, out)
+	}
+	if s, valid := source(); valid {
+		t.Fatalf("an uploaded tool has no source: %q", s)
+	}
+	viaRepository("1.1.0", "repo-1")
+	if s, _ := source(); s != "repo-1" {
+		t.Fatalf("an update through a repository records it: %q", s)
+	}
+	if code, out := upload(t, di, manifest("1.2.0")); code != http.StatusOK {
+		t.Fatalf("%d %v", code, out)
+	}
+	if s, valid := source(); valid {
+		t.Fatalf("an uploaded update means the bits no longer come from the repository: %q", s)
 	}
 }

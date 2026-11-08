@@ -322,3 +322,68 @@ func TestTheManifestDescriptionReachesTheRepositoryFile(t *testing.T) {
 		t.Error("packages of one version with different descriptions must be refused")
 	}
 }
+
+// Revision 2 of plan dependency-install: the file carries what each version's manifest says it needs, in the order declared, and survives a parse.
+func TestTheManifestRequirementsReachTheRepositoryFile(t *testing.T) {
+	tools := t.TempDir()
+	career := `{"slug":"career","name":"Career","version":"0.0.7","authors":[{"name":"A"}],"license":"MIT","requires_tools":[{"slug":"pdf_tools","min_version":"0.0.1"},{"slug":"browser","min_version":"1.0.0","max_version":"2.0.0"},{"slug":"notes"}]}`
+	put(t, tools, "career", "tool-career-darwin-arm64.zip", makeZip(t, career))
+	put(t, tools, "career", "tool-career-linux-amd64.zip", makeZip(t, career))
+	put(t, tools, "pdf_tools", "tool-pdf_tools-darwin-arm64.zip", makeZip(t, `{"slug":"pdf_tools","name":"PDF Tools","version":"0.0.1","authors":[{"name":"A"}],"license":"MIT"}`))
+	out := t.TempDir()
+	if _, err := Generate(Options{ToolsDir: tools, OutDir: out, Name: "Mine"}); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(filepath.Join(out, "repository.json"))
+	c, err := catalog.Parse(data, "https://example.com/repo/repository.json")
+	if err != nil {
+		t.Fatalf("valid: %v", err)
+	}
+	cur, _ := mustTool(t, c, "career").Current()
+	want := []catalog.Requirement{
+		{ID: "pdf_tools", MinVersion: "0.0.1"},
+		{ID: "browser", MinVersion: "1.0.0", MaxVersion: "2.0.0"},
+		{ID: "notes"},
+	}
+	if len(cur.Requires) != len(want) {
+		t.Fatalf("%+v", cur.Requires)
+	}
+	for i := range want {
+		if cur.Requires[i] != want[i] {
+			t.Errorf("requires[%d] = %+v, want %+v", i, cur.Requires[i], want[i])
+		}
+	}
+	pdf, _ := mustTool(t, c, "pdf_tools").Current()
+	if len(pdf.Requires) != 0 {
+		t.Errorf("a tool that needs nothing has no requires: %+v", pdf.Requires)
+	}
+	if strings.Count(string(data), `"requires"`) != 1 {
+		t.Errorf("the field is left out for a tool that needs nothing: %s", data)
+	}
+}
+
+func TestPackagesOfOneVersionMustAgreeOnWhatItNeeds(t *testing.T) {
+	tools := t.TempDir()
+	base := `{"slug":"career","name":"Career","version":"0.0.7","authors":[{"name":"A"}],"license":"MIT","requires_tools":%s}`
+	put(t, tools, "career", "tool-career-darwin-arm64.zip", makeZip(t, fmt.Sprintf(base, `[{"slug":"browser"}]`)))
+	put(t, tools, "career", "tool-career-linux-amd64.zip", makeZip(t, fmt.Sprintf(base, `[{"slug":"browser","min_version":"1.0.0"}]`)))
+	_, err := Generate(Options{ToolsDir: tools, OutDir: t.TempDir(), Name: "Mine"})
+	if err == nil || !strings.Contains(err.Error(), "required tools") {
+		t.Fatalf("packages that disagree about what the tool needs must be refused: %v", err)
+	}
+	// a manifest the file cannot hold (a tool that requires itself) stops the generation with the catalog's reason
+	self := t.TempDir()
+	put(t, self, "career", "tool-career-darwin-arm64.zip", makeZip(t, fmt.Sprintf(base, `[{"slug":"career"}]`)))
+	if _, err := Generate(Options{ToolsDir: self, OutDir: t.TempDir(), Name: "Mine"}); err == nil || !strings.Contains(err.Error(), "cannot require itself") {
+		t.Fatalf("%v", err)
+	}
+}
+
+func mustTool(t *testing.T, c *catalog.Catalog, id string) *catalog.Tool {
+	t.Helper()
+	tool, ok := c.Tool(id)
+	if !ok {
+		t.Fatalf("tool %s is not in the file", id)
+	}
+	return tool
+}

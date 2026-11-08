@@ -31,10 +31,10 @@ func (r *ToolPersistentRepo) InsertFresh(
 
 	if _, err := tx.Exec(
 		`INSERT INTO tools (id, slug, name, version, kind, enabled, status, install_path,
-			backend_executable_relpath, frontend_bundle_relpath, min_app_version, max_app_version, service_token, metadata, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+			backend_executable_relpath, frontend_bundle_relpath, min_app_version, max_app_version, service_token, metadata, source_repository_id, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
 		t.ID, t.Slug, t.Name, t.Version, t.Kind, t.Enabled, t.Status, t.InstallPath,
-		t.BackendExecutableRelpath, t.FrontendBundleRelpath, t.MinAppVersion, t.MaxAppVersion, t.ServiceToken, nullable(t.Metadata),
+		t.BackendExecutableRelpath, t.FrontendBundleRelpath, t.MinAppVersion, t.MaxAppVersion, t.ServiceToken, nullable(t.Metadata), nullable(t.SourceRepositoryID),
 	); err != nil {
 		return err
 	}
@@ -67,11 +67,11 @@ func (r *ToolPersistentRepo) UpdateVersion(
 	if _, err := tx.Exec(
 		`UPDATE tools SET name = ?, version = ?, kind = ?, enabled = ?, status = ?, install_path = ?,
 			backend_executable_relpath = ?, frontend_bundle_relpath = ?, min_app_version = ?, max_app_version = ?,
-			service_token = ?, metadata = ?, updated_at = CURRENT_TIMESTAMP
+			service_token = ?, metadata = ?, source_repository_id = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?`,
 		t.Name, t.Version, t.Kind, t.Enabled, t.Status, t.InstallPath,
 		t.BackendExecutableRelpath, t.FrontendBundleRelpath, t.MinAppVersion, t.MaxAppVersion,
-		t.ServiceToken, nullable(t.Metadata), t.ID,
+		t.ServiceToken, nullable(t.Metadata), nullable(t.SourceRepositoryID), t.ID,
 	); err != nil {
 		return err
 	}

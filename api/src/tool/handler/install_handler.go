@@ -290,6 +290,9 @@ type PackageExpectation struct {
 	// never disagrees). It catches a hand-edited repository file: it is not a security check, since the file
 	// and the package come from one publisher.
 	Info toolmeta.Info
+	// SourceRepositoryID is the registered repository the package was downloaded from; it is recorded with the tool so an update can stay on its
+	// origin. Empty for an uploaded package, which makes the tool's source unknown.
+	SourceRepositoryID string
 }
 
 // installMu serialises installs: an upload and a repository install of the
@@ -416,6 +419,7 @@ func InstallPackage(reqCtx request.RequestContext, data []byte, expect *PackageE
 		}
 		tool.MinAppVersion = m.MinAppVersion
 		tool.MaxAppVersion = m.MaxAppVersion
+		tool.SourceRepositoryID = sourceRepositoryOf(expect)
 
 		serviceToken, err := generateServiceToken()
 		if err != nil {
@@ -523,6 +527,7 @@ func InstallPackage(reqCtx request.RequestContext, data []byte, expect *PackageE
 	}
 	updated.MinAppVersion = m.MinAppVersion
 	updated.MaxAppVersion = m.MaxAppVersion
+	updated.SourceRepositoryID = sourceRepositoryOf(expect)
 
 	// Preserve the tool's own already-issued service_token across an
 	// update (never silently invalidated) — but backfill it if this
@@ -599,9 +604,17 @@ func childRowsFromManifest(m manifest.Manifest) ([]tool_entity.ToolScope, []tool
 	}
 	requiredTools := make([]tool_entity.ToolRequiredTool, 0, len(m.RequiresTools))
 	for _, rt := range m.RequiresTools {
-		requiredTools = append(requiredTools, tool_entity.ToolRequiredTool{RequiredSlug: rt.Slug, MinVersion: rt.MinVersion})
+		requiredTools = append(requiredTools, tool_entity.ToolRequiredTool{RequiredSlug: rt.Slug, MinVersion: rt.MinVersion, MaxVersion: rt.MaxVersion})
 	}
 	return scopes, routes, required, requiredTools
+}
+
+// sourceRepositoryOf is the repository an install came from: the expectation's, or empty for an uploaded package (no expectation).
+func sourceRepositoryOf(expect *PackageExpectation) string {
+	if expect == nil {
+		return ""
+	}
+	return expect.SourceRepositoryID
 }
 
 // installedToolsMap builds manifest.ValidationInput's own

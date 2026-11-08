@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/a-digi/cinqo/src/tool/manifest"
 	"github.com/a-digi/cinqo/src/toolmeta"
 )
 
@@ -28,6 +29,7 @@ const (
 	MaxTools            = 200
 	MaxVersionsPerTool  = 200
 	MaxPackagesPerVer   = 20
+	MaxRequires         = 20
 	MaxNameLen          = 100
 	MaxDescriptionLen   = 2000
 	MaxChangelogLen     = 5000
@@ -42,8 +44,10 @@ var (
 	toolIDPattern    = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 	versionIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 	semverPattern    = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
-	sha256Pattern    = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
-	datePattern      = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}(T[0-9:.]+(Z|[+-]\d{2}:\d{2}))?$`)
+	// the bounds of a requirement are dotted numbers like the tool manifest's own ("2", "1.2", "0.0.1"): what repotool copies must stay valid
+	dottedVersionPattern = regexp.MustCompile(`^\d+(\.\d+)*$`)
+	sha256Pattern        = regexp.MustCompile(`^[0-9a-fA-F]{64}$`)
+	datePattern          = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}(T[0-9:.]+(Z|[+-]\d{2}:\d{2}))?$`)
 
 	validOS   = map[string]bool{"darwin": true, "linux": true, "windows": true, Any: true}
 	validArch = map[string]bool{"arm64": true, "amd64": true, Any: true}
@@ -73,14 +77,24 @@ type Version struct {
 	// Who made this version, under what licence, and where to find them: authors and licence are required from
 	// format version 2. Copied from the package's own manifest.json by repotool, so the two cannot disagree.
 	toolmeta.Info
-	VersionID     string    `json:"versionId"`
-	Name          string    `json:"name"`
-	Description   string    `json:"description,omitempty"`
-	Version       string    `json:"version"`
-	ReleasedAt    string    `json:"releasedAt,omitempty"`
-	Changelog     string    `json:"changelog,omitempty"`
-	MinAppVersion string    `json:"minAppVersion,omitempty"`
-	Packages      []Package `json:"packages"`
+	VersionID   string `json:"versionId"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	// Requires are the other tools this version cannot work without (plan dependency-install): copied from the package's own manifest.json
+	// (requires_tools) by repotool, so the app can plan the installs before downloading anything. The package's manifest stays the authority.
+	Requires      []Requirement `json:"requires,omitempty"`
+	Version       string        `json:"version"`
+	ReleasedAt    string        `json:"releasedAt,omitempty"`
+	Changelog     string        `json:"changelog,omitempty"`
+	MinAppVersion string        `json:"minAppVersion,omitempty"`
+	Packages      []Package     `json:"packages"`
+}
+
+// Requirement is one tool a version needs: its id, and optionally the lowest and the highest version of it that works (both inclusive).
+type Requirement struct {
+	ID         string `json:"id"`
+	MinVersion string `json:"minVersion,omitempty"`
+	MaxVersion string `json:"maxVersion,omitempty"`
 }
 
 type Package struct {
@@ -258,7 +272,7 @@ func validateTool(col *collector, t *Tool, path, baseURL string, seen map[string
 		default:
 			ids[v.VersionID] = true
 		}
-		validateVersion(col, v, vp, baseURL, vers, strict)
+		validateVersion(col, v, vp, baseURL, vers, strict, t.ID)
 	}
 	if t.CurrentVersionID == "" {
 		col.add(path+".currentVersionId", "is required")
@@ -267,7 +281,7 @@ func validateTool(col *collector, t *Tool, path, baseURL string, seen map[string
 	}
 }
 
-func validateVersion(col *collector, v *Version, path, baseURL string, vers map[string]bool, strict bool) {
+func validateVersion(col *collector, v *Version, path, baseURL string, vers map[string]bool, strict bool, toolID string) {
 	col.probs = append(col.probs, v.Info.Validate(path, strict)...)
 	col.text(path+".name", v.Name, MaxNameLen, true)
 	col.text(path+".description", v.Description, MaxDescriptionLen, false)
@@ -283,6 +297,7 @@ func validateVersion(col *collector, v *Version, path, baseURL string, vers map[
 	if v.MinAppVersion != "" && !semverPattern.MatchString(v.MinAppVersion) {
 		col.add(path+".minAppVersion", "must look like MAJOR.MINOR.PATCH")
 	}
+	validateRequires(col, v.Requires, path+".requires", toolID)
 	if v.ReleasedAt != "" && !datePattern.MatchString(v.ReleasedAt) {
 		col.add(path+".releasedAt", "must be a date (2026-10-30) or an RFC 3339 timestamp")
 	}
@@ -323,6 +338,43 @@ func validateVersion(col *collector, v *Version, path, baseURL string, vers map[
 			col.add(pp+".url", "%s", err.Error())
 		} else {
 			p.URL = resolved
+		}
+	}
+}
+
+// validateRequires checks what a version says it needs: at most MaxRequires entries, each an id like a tool id, none the tool itself, none twice,
+// the bounds dotted numbers, and a maximum that is not below the minimum (no version could satisfy it). A bad value rejects the whole file.
+func validateRequires(col *collector, reqs []Requirement, path, toolID string) {
+	if len(reqs) > MaxRequires {
+		col.add(path, "has %d entries, at most %d are allowed", len(reqs), MaxRequires)
+		return
+	}
+	seen := map[string]bool{}
+	for i, r := range reqs {
+		rp := fmt.Sprintf("%s[%d]", path, i)
+		switch {
+		case !toolIDPattern.MatchString(r.ID):
+			col.add(rp+".id", "must match ^[a-z][a-z0-9_]*$")
+		case r.ID == toolID:
+			col.add(rp+".id", "a tool cannot require itself (%q)", r.ID)
+		case seen[r.ID]:
+			col.add(rp+".id", "duplicate requirement %q", r.ID)
+		default:
+			seen[r.ID] = true
+		}
+		minOK, maxOK := true, true
+		if r.MinVersion != "" && !dottedVersionPattern.MatchString(r.MinVersion) {
+			col.add(rp+".minVersion", "must be dotted numbers like 0.0.1")
+			minOK = false
+		}
+		if r.MaxVersion != "" && !dottedVersionPattern.MatchString(r.MaxVersion) {
+			col.add(rp+".maxVersion", "must be dotted numbers like 0.0.1")
+			maxOK = false
+		}
+		if minOK && maxOK && r.MinVersion != "" && r.MaxVersion != "" {
+			if cmp, err := manifest.CompareVersions(r.MaxVersion, r.MinVersion); err == nil && cmp < 0 {
+				col.add(rp+".maxVersion", "%s is below minVersion %s: no version could satisfy it", r.MaxVersion, r.MinVersion)
+			}
 		}
 	}
 }

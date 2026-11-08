@@ -30,8 +30,8 @@ func (r *ToolRequiredToolPersistentRepo) ReplaceAll(toolID string, required []to
 	}
 	for _, rt := range required {
 		if _, err := tx.Exec(
-			`INSERT INTO tool_required_tools (tool_id, required_slug, min_version) VALUES (?, ?, ?)`,
-			toolID, rt.RequiredSlug, rt.MinVersion,
+			`INSERT INTO tool_required_tools (tool_id, required_slug, min_version, max_version) VALUES (?, ?, ?, ?)`,
+			toolID, rt.RequiredSlug, rt.MinVersion, rt.MaxVersion,
 		); err != nil {
 			return err
 		}

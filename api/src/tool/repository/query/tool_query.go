@@ -16,15 +16,15 @@ func NewToolQueryRepo(db *sql.DB) *ToolQueryRepo {
 
 const toolColumns = `id, slug, name, version, kind, enabled, status, install_path, ` +
 	`backend_executable_relpath, frontend_bundle_relpath, min_app_version, max_app_version, ` +
-	`pid, created_at, updated_at, service_token, metadata`
+	`pid, created_at, updated_at, service_token, metadata, source_repository_id`
 
 func scanTool(scan func(dest ...any) error) (*tool_entity.Tool, error) {
 	var t tool_entity.Tool
-	var backendRel, frontendRel, minV, maxV, updatedAt, metadata sql.NullString
+	var backendRel, frontendRel, minV, maxV, updatedAt, metadata, sourceRepo sql.NullString
 	var pid sql.NullInt64
 
 	if err := scan(&t.ID, &t.Slug, &t.Name, &t.Version, &t.Kind, &t.Enabled, &t.Status,
-		&t.InstallPath, &backendRel, &frontendRel, &minV, &maxV, &pid, &t.CreatedAt, &updatedAt, &t.ServiceToken, &metadata); err != nil {
+		&t.InstallPath, &backendRel, &frontendRel, &minV, &maxV, &pid, &t.CreatedAt, &updatedAt, &t.ServiceToken, &metadata, &sourceRepo); err != nil {
 		return nil, err
 	}
 
@@ -35,6 +35,7 @@ func scanTool(scan func(dest ...any) error) (*tool_entity.Tool, error) {
 	t.PID = int(pid.Int64)
 	t.UpdatedAt = updatedAt.String
 	t.Metadata = metadata.String
+	t.SourceRepositoryID = sourceRepo.String
 
 	return &t, nil
 }

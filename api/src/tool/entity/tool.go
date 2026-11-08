@@ -39,4 +39,8 @@ type Tool struct {
 	// copyright, category, keywords): one JSON document written by toolmeta.Encode at install and update. Empty
 	// for a tool installed before this column existed. See plan/ai/tools/repository/tool-metadata.md.
 	Metadata string `db:"metadata" dbtype:"TEXT" nullable:"true" json:"-"`
+	// SourceRepositoryID is the registered tool repository this version was installed from (written by the repository install route; empty for an
+	// uploaded package and for a tool installed before this column existed, both read as "source unknown"). An update through a repository
+	// overwrites it, an uploaded update clears it. See plan/ai/tools/repository/dependency-install.md.
+	SourceRepositoryID string `db:"source_repository_id" dbtype:"TEXT" nullable:"true" json:"-"`
 }

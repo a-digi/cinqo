@@ -6,11 +6,13 @@ import { byLine } from './toolMetaDisplay'
 // kept apart from React so they can be script-checked. The verdicts mirror the install and enable check in core (manifest.ValidateRequiredTools):
 // a dependency must be installed, enabled, and at least the required version, checked in that order.
 
-export type DependencyState = 'ready' | 'disabled' | 'too_old' | 'missing'
+// too_old: below the minimum; too_new: above the maximum the tool works with (nothing is ever downgraded by itself).
+export type DependencyState = 'ready' | 'disabled' | 'too_old' | 'too_new' | 'missing'
 
 export interface Requirement {
   slug: string
   minVersion: string
+  maxVersion: string
 }
 
 type Installed = Pick<Tool, 'slug' | 'name' | 'version' | 'enabled' | 'status'> & { metadata: ToolMetadata | null }
@@ -46,16 +48,27 @@ export function dependencyState(req: Requirement, installed: Installed | undefin
     // an unreadable version cannot be shown to meet the minimum (core refuses it too)
     if (cmp === null || cmp < 0) return 'too_old'
   }
+  if (req.maxVersion !== '') {
+    const cmp = compareVersions(installed.version, req.maxVersion)
+    if (cmp === null || cmp > 0) return 'too_new'
+  }
   return 'ready'
 }
 
-export function requirementText(minVersion: string): string {
-  return minVersion === '' ? 'Any version' : `Version ${minVersion} or newer`
+export function requirementText(minVersion: string, maxVersion: string): string {
+  if (minVersion !== '' && maxVersion !== '')
+    return minVersion === maxVersion ? `Exactly version ${minVersion}` : `Version ${minVersion} to ${maxVersion}`
+  if (minVersion !== '') return `Version ${minVersion} or newer`
+  if (maxVersion !== '') return `Version ${maxVersion} or older`
+  return 'Any version'
 }
 
-// The short form on a dependency pill: "any version", or "≥ 0.0.1".
-export function pillVersionText(minVersion: string): string {
-  return minVersion === '' ? 'any version' : `≥ ${minVersion}`
+// The short form on a dependency pill: "any version", "≥ 0.0.1", "≤ 2.0.0", "0.0.1 – 2.0.0" or "= 1.0.0".
+export function pillVersionText(minVersion: string, maxVersion: string): string {
+  if (minVersion !== '' && maxVersion !== '') return minVersion === maxVersion ? `= ${minVersion}` : `${minVersion} – ${maxVersion}`
+  if (minVersion !== '') return `≥ ${minVersion}`
+  if (maxVersion !== '') return `≤ ${maxVersion}`
+  return 'any version'
 }
 
 export interface DependencyView {
@@ -86,6 +99,8 @@ function verdictFor(state: DependencyState, req: Requirement, installed: Install
       return 'Installed but disabled: enable it on this page.'
     case 'too_old':
       return `Installed version ${installed?.version ?? ''} is older than the required ${req.minVersion}: update it.`
+    case 'too_new':
+      return `Installed version ${installed?.version ?? ''} is newer than the ${req.maxVersion} this tool works with: it is not used with it until this tool is updated.`
     case 'missing':
       return 'Not installed: install it from a tool repository.'
   }
@@ -98,8 +113,8 @@ export function describeDependency(req: Requirement, tools: readonly Installed[]
     slug: req.slug,
     name: installed?.name ?? req.slug,
     state,
-    needs: requirementText(req.minVersion),
-    pillVersion: pillVersionText(req.minVersion),
+    needs: requirementText(req.minVersion, req.maxVersion),
+    pillVersion: pillVersionText(req.minVersion, req.maxVersion),
     installed: installedText(installed),
     description: installed?.metadata?.description?.trim() ?? '',
     byline: installed ? byLine(installed.metadata) : null,
@@ -111,6 +126,7 @@ export function describeDependency(req: Requirement, tools: readonly Installed[]
 export function worstState(states: readonly DependencyState[]): DependencyState {
   if (states.includes('missing')) return 'missing'
   if (states.includes('too_old')) return 'too_old'
+  if (states.includes('too_new')) return 'too_new'
   if (states.includes('disabled')) return 'disabled'
   return 'ready'
 }
@@ -119,6 +135,7 @@ export const stateLabel: Record<DependencyState, string> = {
   ready: 'Ready',
   disabled: 'Disabled',
   too_old: 'Needs update',
+  too_new: 'Too new',
   missing: 'Not installed',
 }
 
@@ -127,6 +144,7 @@ export const stateDot: Record<DependencyState, string> = {
   ready: 'bg-green-500',
   disabled: 'bg-amber-500',
   too_old: 'bg-amber-500',
+  too_new: 'bg-amber-500',
   missing: 'bg-red-500',
 }
 

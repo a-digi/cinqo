@@ -348,8 +348,8 @@ func build(pkgs []found, opts Options, meta Meta) (*catalog.Catalog, error) {
 			// every platform's package of one version is built from one manifest: they must say the same about who
 			// made it, or something was packaged from two different sources
 			for _, other := range group[1:] {
-				if !reflect.DeepEqual(first.m.Info, other.m.Info) {
-					return nil, fmt.Errorf("%s %s: %s and %s carry different authors, licence, links or description in their manifests", slug, v, first.file, other.file)
+				if !reflect.DeepEqual(first.m.Info, other.m.Info) || !reflect.DeepEqual(first.m.RequiresTools, other.m.RequiresTools) {
+					return nil, fmt.Errorf("%s %s: %s and %s carry different authors, licence, links, description or required tools in their manifests", slug, v, first.file, other.file)
 				}
 			}
 			ver := catalog.Version{
@@ -359,6 +359,8 @@ func build(pkgs []found, opts Options, meta Meta) (*catalog.Catalog, error) {
 				// A version already has its own "description" in the repository file, which hides the one inside Info (same JSON name, one level
 				// up), so the manifest's description (plan 217) is copied here: it is the text the Repositories page shows for the tool.
 				Description: first.m.Description,
+				// what the package's manifest says it needs, so the app can plan the installs before it downloads anything
+				Requires: requirementsOf(first.m),
 			}
 			for _, p := range group {
 				ver.Packages = append(ver.Packages, catalog.Package{
@@ -370,6 +372,18 @@ func build(pkgs []found, opts Options, meta Meta) (*catalog.Catalog, error) {
 		c.Tools = append(c.Tools, tool)
 	}
 	return c, nil
+}
+
+// requirementsOf copies a manifest's requires_tools into the repository file's form (slug becomes id); nil when it needs nothing, so the field is left out.
+func requirementsOf(m manifest.Manifest) []catalog.Requirement {
+	if len(m.RequiresTools) == 0 {
+		return nil
+	}
+	out := make([]catalog.Requirement, 0, len(m.RequiresTools))
+	for _, r := range m.RequiresTools {
+		out = append(out, catalog.Requirement{ID: r.Slug, MinVersion: r.MinVersion, MaxVersion: r.MaxVersion})
+	}
+	return out
 }
 
 func packageURL(opts Options, p found) string {

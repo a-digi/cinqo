@@ -8,7 +8,7 @@
       "email": "tafa.andet@googlemail.com"
     }
   ],
-  "generatedAt": "2026-11-08T21:42:32Z",
+  "generatedAt": "2026-11-08T22:17:06Z",
   "tools": [
     {
       "id": "browser",
@@ -75,6 +75,15 @@
           "versionId": "0.0.806",
           "name": "Career",
           "description": "Your career workspace: profiles, skills and experience; crawls job platforms, matches jobs to your profile, imports a CV and generates CV PDFs.",
+          "requires": [
+            {
+              "id": "browser"
+            },
+            {
+              "id": "pdf_tools",
+              "minVersion": "0.0.1"
+            }
+          ],
           "version": "0.0.806",
           "releasedAt": "2026-11-08",
           "packages": [
