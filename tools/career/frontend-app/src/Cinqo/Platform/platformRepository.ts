@@ -25,6 +25,9 @@ export interface Platform {
   // True for a platform whose models do better with work split into short, one-action messages than with one long prompt
   // (the local AI): the import is then sent as a sequence of small steps. Absent from an older core: false.
   needsShortSteps?: boolean
+  // True for a platform reached with a stored API key (the cloud platforms), false for one that needs none (the local AI, which the core only lists while it is
+  // switched on and has a ready model). Absent from an older core: treated as "needs a key", so an old core never makes a keyless platform look ready.
+  requiresKey?: boolean
   // How a long task is run for a model, by model id (plan 209): "code" = the page does the steps itself and asks the model only small questions
   // with no tools (Phi-4-mini). A model not in the map is left to the platform (short steps, or one prompt). Absent from an older core.
   drivers?: Record<string, string>

@@ -103,7 +103,6 @@ function PortalsPageContent() {
       link: link && !withoutLink ? overrideOf(link) : null,
       portal: overrideOf(portal),
       platforms: ai.platforms,
-      keyedPlatformIds: ai.keyedPlatformIds,
       saved: ai.saved,
     })
   }

@@ -824,7 +824,7 @@ export async function fetchJobStatsRaw(): Promise<unknown> {
 }
 
 // The one AI platform and model the whole tool uses (Settings page). Empty strings
-// mean "not chosen": callers then fall back to the first platform that has a key
+// mean "not chosen": callers then fall back to the best usable platform (the local AI first, then one with a key)
 // (see Cinqo/Platform/aiChoice.ts).
 export interface AiSettings {
   platformId: string

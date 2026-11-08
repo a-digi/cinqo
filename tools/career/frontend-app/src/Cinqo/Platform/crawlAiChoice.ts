@@ -44,9 +44,8 @@ function modelFor(platform: Platform, wanted: string | null | undefined): string
 export function resolveCrawlAi(input: {
   link?: AiOverride | null
   portal?: AiOverride | null
+  // The usable platforms (usablePlatforms): an override on a platform that is not among them is stale.
   platforms: Platform[]
-  // Ids of platforms that have at least one API key (for the tool-wide automatic pick).
-  keyedPlatformIds: string[]
   saved: SavedChoice
 }): CrawlAiChoice {
   const stale: StaleOverride[] = []
@@ -64,6 +63,6 @@ export function resolveCrawlAi(input: {
     }
     return { platform, model: modelFor(platform, override?.model), source: level, stale }
   }
-  const global: AiChoice = resolveAiChoice(input.platforms, input.keyedPlatformIds, input.saved)
+  const global: AiChoice = resolveAiChoice(input.platforms, input.saved)
   return { platform: global.platform, model: global.model, source: 'global', stale }
 }

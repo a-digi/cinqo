@@ -733,7 +733,7 @@ export const PAGE_TIPS: Record<PageTipsId, PageTipSet> = {
         title: 'Nothing saved is fine',
         tone: 'green',
         icon: 'spark',
-        text: 'With nothing saved, the first platform that has an API key is used.',
+        text: 'With nothing saved, the best available platform is used: the Local AI first, then a platform that has an API key.',
       },
       {
         id: 'keys',

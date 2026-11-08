@@ -22,9 +22,10 @@ const USED_FOR = [
 
 // Settings — the one AI platform and model the whole Career tool uses. It used to be
 // picked separately (and forgotten on every page load) on the Jobs, Portals and
-// Import CV pages; now it is chosen once here, saved, and used everywhere. Nothing
-// chosen means "the first platform that has an API key". The keys themselves are
-// managed in Cinqo, not here.
+// Import CV pages; now it is chosen once here, saved, and used everywhere. Only platforms
+// that can be used are offered: the Local AI (while it is on and has a ready model) and the
+// platforms that have an API key. Nothing chosen means the best of them: the Local AI first.
+// The keys and the Local AI are managed in Cinqo, not here.
 export function SettingsPage() {
   const ai = useAiChoice()
   const [platformId, setPlatformId] = useState('')
@@ -106,7 +107,7 @@ export function SettingsPage() {
                 <InfoBox
                   variant="warning"
                   label="No AI platform"
-                  message="No AI platform is configured in Cinqo yet. Ask an administrator to add one (with an API key) under the AI menu."
+                  message="No AI platform can be used yet. Switch on the Local AI, or add an API key for a platform, in the AI menu of Cinqo."
                 />
               </div>
             )}
@@ -117,7 +118,7 @@ export function SettingsPage() {
                   <InfoBox
                     variant="warning"
                     label="Saved platform not found"
-                    message="The platform saved earlier is no longer available, so the first platform with a key is used until you save a new choice."
+                    message="The platform saved earlier can no longer be used (its key is gone, or the Local AI is off), so the best available platform is used until you save a new choice: the Local AI first, then a platform with a key."
                   />
                 )}
                 <div className="flex flex-wrap items-end gap-4 [&>div]:min-w-0">
@@ -162,7 +163,7 @@ export function SettingsPage() {
                       type="button"
                       disabled={saving}
                       onClick={() => {
-                        save({ platformId: '', model: '' }, 'Back to automatic: the first platform with a key is used.')
+                        save({ platformId: '', model: '' }, 'Back to automatic: the best available platform is used (the Local AI first).')
                       }}
                       className="text-sm text-gray-500 underline hover:text-gray-900 disabled:opacity-50"
                     >
@@ -179,7 +180,7 @@ export function SettingsPage() {
                 <p className="text-xs text-gray-500">
                   {ai.source === 'saved'
                     ? 'Currently used: the platform and model you saved.'
-                    : 'Nothing saved yet: the first platform that has an API key is used automatically.'}
+                    : 'Nothing saved yet: the best available platform is used automatically (the Local AI first, then a platform with an API key).'}
                 </p>
               </div>
             )}

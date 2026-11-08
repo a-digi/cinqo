@@ -87,7 +87,7 @@ export function CrawlAiModal({
         <InfoBox
           variant="warning"
           label="No AI platform"
-          message="No AI platform is configured in Cinqo yet. Ask an administrator to add one (with an API key) under the AI menu."
+          message="No AI platform can be used yet. Switch on the Local AI, or add an API key for a platform, in the AI menu of Cinqo."
         />
       ) : (
         <div className="space-y-3">
@@ -95,7 +95,7 @@ export function CrawlAiModal({
             <InfoBox
               variant="warning"
               label="Platform not available"
-              message="The platform saved here is no longer available, so it is skipped. Pick a new one, or remove the choice."
+              message="The platform saved here can no longer be used (its key is gone, or the Local AI is off), so it is skipped. Pick a new one, or remove the choice."
             />
           )}
           <div className="[&>div]:block [&>div>button]:w-full">
