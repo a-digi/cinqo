@@ -282,6 +282,8 @@ export function companyTitlePiece(header: string): Piece<CompanyTitle> {
       if (!company.ok) return company
       const title = text(o.title, 'title', 80)
       if (!title.ok) return title
+      // A job title is a role: a place ("4 Zeiten, Hamburg") or a dash is part of the company's line, not of the title.
+      if (/[,—–]/.test(title.value) || /^\d/.test(title.value)) return bad('"title" is not a job title (it has a place, a dash or starts with a number): the title is only the role, the rest of the line is the company')
       const got = [...tokens(company.value), ...tokens(title.value)].sort().join(' ')
       return got === want ? ok({ company: company.value, title: title.value }) : bad('the company and the title together must be exactly the words of the line: add none and drop none')
     },
