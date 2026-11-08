@@ -20,6 +20,7 @@ export function CrawlAiModal({
   current,
   platforms,
   fallbackText,
+  suggested,
   onClose,
   onSave,
   onRemove,
@@ -31,6 +32,8 @@ export function CrawlAiModal({
   platforms: Platform[]
   // What is used when this level has no choice, e.g. "OpenRouter · model (the portal's choice)".
   fallbackText: string
+  // A choice to start from instead of what is saved (the recommendation pill, plan 213); the person still has to Save it.
+  suggested?: { platformId: string; model: string } | null
   onClose: () => void
   onSave: (platformId: string, model: string) => Promise<void>
   onRemove: () => Promise<void>
@@ -40,6 +43,11 @@ export function CrawlAiModal({
   const stale = savedPlatformId !== '' && !platforms.some((p) => p.id === savedPlatformId)
   const hasOverride = savedPlatformId !== ''
 
+  // The suggested choice, when its platform can be used. Plain strings, so the effect below only restarts when they really change
+  // (the platforms array is a new one on every render).
+  const wantedId = suggested && platforms.some((p) => p.id === suggested.platformId) ? suggested.platformId : ''
+  const wantedModel = wantedId !== '' ? (suggested?.model ?? '') : ''
+
   const [platformId, setPlatformId] = useState('')
   const [model, setModel] = useState('')
   const [busy, setBusy] = useState(false)
@@ -48,11 +56,11 @@ export function CrawlAiModal({
   // Each time the modal opens, start from what is saved (a stale platform starts empty, to be picked again).
   useEffect(() => {
     if (!open) return
-    setPlatformId(stale ? '' : savedPlatformId)
-    setModel(stale ? '' : savedModel)
+    setPlatformId(wantedId !== '' ? wantedId : stale ? '' : savedPlatformId)
+    setModel(wantedId !== '' ? wantedModel : stale ? '' : savedModel)
     setBusy(false)
     setError('')
-  }, [open, stale, savedPlatformId, savedModel])
+  }, [open, stale, savedPlatformId, savedModel, wantedId, wantedModel])
 
   const selected = platforms.find((p) => p.id === platformId) ?? null
   const unchanged = !stale && platformId === savedPlatformId && model === savedModel

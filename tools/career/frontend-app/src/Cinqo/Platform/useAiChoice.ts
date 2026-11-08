@@ -8,6 +8,8 @@ export interface UseAiChoice extends AiChoice {
   platforms: Platform[]
   // What is saved (empty strings when nothing is), for the Settings page.
   saved: AiSettings
+  // Whether the list of stored keys was loaded (false when that request failed: then nothing is known about the cloud platforms).
+  keysKnown: boolean
   // False until the first load has finished (so a page can wait before it acts).
   loaded: boolean
   reload: () => void
@@ -59,5 +61,5 @@ export function useAiChoice(): UseAiChoice {
   }, [])
 
   const usable = usablePlatforms(platforms, keyed, keysKnown)
-  return { ...resolveAiChoice(usable, saved), platforms: usable, saved, loaded, reload }
+  return { ...resolveAiChoice(usable, saved), platforms: usable, saved, keysKnown, loaded, reload }
 }

@@ -5,6 +5,9 @@ import type { Platform } from './platformRepository'
 // The id of the platform Cinqo runs on this computer.
 export const LOCAL_PLATFORM_ID = 'local'
 
+// The local model Cinqo recommends for preparing and running crawl instructions (plan 213, catalog entry of plan 196).
+export const RECOMMENDED_LOCAL_CRAWL_MODEL = 'qwen2.5-coder-3b-instruct-q4_k_m'
+
 // The Cinqo page where models are downloaded, switched on and chosen as the default.
 export const LOCAL_AI_PATH = '/admin/local-ai'
 

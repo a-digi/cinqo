@@ -15,6 +15,7 @@ import {
   type PortalLink,
 } from '../../api'
 import { resolveCrawlAi } from '../../Cinqo/Platform/crawlAiChoice'
+import { LOCAL_AI_PATH } from '../../Cinqo/Platform/modelLabels'
 import { useAiChoice } from '../../Cinqo/Platform/useAiChoice'
 import { SummaryRail } from '../../Shared/SummaryRail/SummaryRail'
 import { ACCENTS, PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
@@ -29,6 +30,8 @@ import { AccordionItem } from '../../Shared/Accordion/AccordionItem'
 import { PageTips } from '../../Shared/PageTips/PageTips'
 import { CrawlAiModal } from './CrawlAiModal'
 import { aiChip, describeChoice, linkChip, overrideOf } from './aiOverrideDisplay'
+import { CrawlAiAdvicePill } from './CrawlAiAdvicePill'
+import { crawlAiAdvice } from './crawlAiAdvice'
 import { PortalLinkHeader } from './PortalLinkHeader'
 import { loginAddressForSave } from '../../Crawler/loginWindow'
 import { JOBS_PATH, VIEW_PLATFORM_PATH } from '../../paths'
@@ -105,6 +108,13 @@ function PortalsPageContent() {
       platforms: ai.platforms,
       saved: ai.saved,
     })
+  }
+
+  // The recommendation pill (plan 213) is advice about the AI in effect; its button opens the AI modal of that portal or link with the
+  // suggestion preselected (the person still saves it), or goes to the Local AI page.
+  const [aiSuggest, setAiSuggest] = useState<{ platformId: string; model: string } | null>(null)
+  function adviceFor(portal: Portal, link: PortalLink | null) {
+    return crawlAiAdvice({ usable: ai.platforms, keysKnown: ai.keysKnown, choice: crawlAiFor(portal, link) })
   }
 
   function load() {
@@ -487,6 +497,22 @@ function PortalsPageContent() {
                           </button>
                         )
                       })()}
+                      {(() => {
+                        const advice = adviceFor(p, null)
+                        if (!advice) return null
+                        return (
+                          <CrawlAiAdvicePill
+                            advice={advice}
+                            onAction={() => {
+                              if (advice.action === 'get-model') window.__cinqoToolBridge.navigate(LOCAL_AI_PATH)
+                              else {
+                                setAiSuggest(advice.suggest)
+                                setAiPortalId(p.id)
+                              }
+                            }}
+                          />
+                        )
+                      })()}
                       <span className="ml-auto flex shrink-0 gap-2">
                         <button
                           type="button"
@@ -650,6 +676,15 @@ function PortalsPageContent() {
                             onEditAi={() => {
                               setAiLinkId(link.id)
                             }}
+                            advice={adviceFor(p, link)}
+                            onAdviceAction={() => {
+                              const advice = adviceFor(p, link)
+                              if (advice?.action === 'get-model') window.__cinqoToolBridge.navigate(LOCAL_AI_PATH)
+                              else {
+                                setAiSuggest(advice?.suggest ?? null)
+                                setAiLinkId(link.id)
+                              }
+                            }}
                           />
                         }
                       >
@@ -759,7 +794,9 @@ function PortalsPageContent() {
           current={overrideOf(aiPortal)}
           platforms={ai.platforms}
           fallbackText={describeChoice(crawlAiFor({ ...aiPortal, aiPlatformId: '', aiModel: '' }, null))}
+          suggested={aiSuggest}
           onClose={() => {
+            setAiSuggest(null)
             setAiPortalId(null)
           }}
           onSave={(platformId, model) =>
@@ -783,7 +820,9 @@ function PortalsPageContent() {
           current={overrideOf(aiLink)}
           platforms={ai.platforms}
           fallbackText={describeChoice(crawlAiFor(aiLinkPortal, aiLink, true))}
+          suggested={aiSuggest}
           onClose={() => {
+            setAiSuggest(null)
             setAiLinkId(null)
           }}
           onSave={(platformId, model) =>

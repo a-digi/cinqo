@@ -1,6 +1,8 @@
 import type { PortalLink } from '../../api'
 import { LinkStatusPills } from '../../Crawler/LinkStatusPills'
 import { loginCheckboxState } from '../../Crawler/loginWindow'
+import { CrawlAiAdvicePill } from './CrawlAiAdvicePill'
+import type { CrawlAiAdvice } from './crawlAiAdvice'
 import type { AiChip } from './aiOverrideDisplay'
 
 interface PortalLinkHeaderProps {
@@ -25,6 +27,9 @@ interface PortalLinkHeaderProps {
   // The link's AI chip (step 102) and what clicking it does (opens the AI modal).
   aiChip: AiChip
   onEditAi: () => void
+  // The recommendation pill (plan 213) and what its button does.
+  advice: CrawlAiAdvice | null
+  onAdviceAction: () => void
 }
 
 // PortalLinkHeader (step 89) — what a portal link's accordion header
@@ -55,6 +60,8 @@ export function PortalLinkHeader({
   onRemove,
   aiChip,
   onEditAi,
+  advice,
+  onAdviceAction,
 }: PortalLinkHeaderProps) {
   if (isEditing) {
     return (
@@ -186,6 +193,11 @@ export function PortalLinkHeader({
         >
           {aiChip.text}
         </button>
+        {advice && (
+          <div className="mt-1.5">
+            <CrawlAiAdvicePill advice={advice} onAction={onAdviceAction} />
+          </div>
+        )}
       </div>
       <div className="flex shrink-0 gap-2">
         <button
