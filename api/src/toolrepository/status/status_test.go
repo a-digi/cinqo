@@ -162,3 +162,29 @@ func TestCounts(t *testing.T) {
 		t.Error("empty")
 	}
 }
+
+// The repository page shows what the current version needs.
+func TestARowListsWhatTheCurrentVersionNeeds(t *testing.T) {
+	data := fmt.Sprintf(`{"formatVersion":1,"tools":[{"id":"career","currentVersionId":"cur","versions":[
+		{"versionId":"old","name":"Career","version":"0.0.1","requires":[{"id":"stale"}],"packages":[{"os":"any","arch":"any","url":"a.zip","sha256":%q}]},
+		{"versionId":"cur","name":"Career","version":"0.0.2","requires":[{"id":"pdf_tools","minVersion":"0.0.1"},{"id":"browser"},{"id":"notes","minVersion":"1.0.0","maxVersion":"2.0.0"}],
+		 "packages":[{"os":"any","arch":"any","url":"a.zip","sha256":%q}]}]},
+		{"id":"browser","currentVersionId":"cur","versions":[{"versionId":"cur","name":"Browser","version":"1.0.0","packages":[{"os":"any","arch":"any","url":"a.zip","sha256":%q}]}]}]}`, sum, sum, sum)
+	c, err := catalog.Parse([]byte(data), "https://e.com/r.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := ForCatalog(c, env(""))
+	want := []Requirement{{ID: "pdf_tools", MinVersion: "0.0.1"}, {ID: "browser"}, {ID: "notes", MinVersion: "1.0.0", MaxVersion: "2.0.0"}}
+	if len(rows[0].Requires) != 3 {
+		t.Fatalf("%+v", rows[0].Requires)
+	}
+	for i := range want {
+		if rows[0].Requires[i] != want[i] {
+			t.Errorf("requires[%d] = %+v, want %+v (the current version's, in the order the file lists them)", i, rows[0].Requires[i], want[i])
+		}
+	}
+	if rows[1].Requires == nil || len(rows[1].Requires) != 0 {
+		t.Fatalf("a tool that needs nothing has an empty list, never null: %#v", rows[1].Requires)
+	}
+}

@@ -15,7 +15,8 @@ export interface Requirement {
   maxVersion: string
 }
 
-type Installed = Pick<Tool, 'slug' | 'name' | 'version' | 'enabled' | 'status'> & { metadata: ToolMetadata | null }
+// An installed tool as the dependency rules need it.
+export type Installed = Pick<Tool, 'slug' | 'name' | 'version' | 'enabled' | 'status'> & { metadata: ToolMetadata | null }
 
 // Dotted all-number versions ("0.0.12"); a missing trailing part counts as 0 ("1.2" equals "1.2.0"). null when either is not readable, as core
 // refuses to compare such versions.
@@ -76,6 +77,8 @@ export interface DependencyView {
   // The installed tool's name, else the slug.
   name: string
   state: DependencyState
+  // The repository whose page this is lists the tool (so a missing one can be installed from here).
+  offeredHere: boolean
   needs: string
   // The short form for the pill (pillVersionText).
   pillVersion: string
@@ -91,7 +94,7 @@ function installedText(i: Installed | undefined): string {
   return `Version ${i.version} · ${i.enabled ? 'enabled' : 'disabled'} · ${i.status}`
 }
 
-function verdictFor(state: DependencyState, req: Requirement, installed: Installed | undefined): string {
+function verdictFor(state: DependencyState, req: Requirement, installed: Installed | undefined, offeredHere: boolean): string {
   switch (state) {
     case 'ready':
       return 'Ready.'
@@ -102,23 +105,32 @@ function verdictFor(state: DependencyState, req: Requirement, installed: Install
     case 'too_new':
       return `Installed version ${installed?.version ?? ''} is newer than the ${req.maxVersion} this tool works with: it is not used with it until this tool is updated.`
     case 'missing':
-      return 'Not installed: install it from a tool repository.'
+      return offeredHere
+        ? 'Not installed: this repository offers it, install it first.'
+        : 'Not installed: install it from a tool repository.'
   }
 }
 
-export function describeDependency(req: Requirement, tools: readonly Installed[]): DependencyView {
+// offered: the ids of the tools the repository on whose page this is lists, when it is one (the Repositories page).
+export function describeDependency(
+  req: Requirement,
+  tools: readonly Installed[],
+  offered: ReadonlySet<string> = new Set(),
+): DependencyView {
   const installed = tools.find((t) => t.slug === req.slug)
   const state = dependencyState(req, installed)
+  const offeredHere = offered.has(req.slug)
   return {
     slug: req.slug,
     name: installed?.name ?? req.slug,
     state,
+    offeredHere,
     needs: requirementText(req.minVersion, req.maxVersion),
     pillVersion: pillVersionText(req.minVersion, req.maxVersion),
     installed: installedText(installed),
     description: installed?.metadata?.description?.trim() ?? '',
     byline: installed ? byLine(installed.metadata) : null,
-    verdict: verdictFor(state, req, installed),
+    verdict: verdictFor(state, req, installed, offeredHere),
   }
 }
 

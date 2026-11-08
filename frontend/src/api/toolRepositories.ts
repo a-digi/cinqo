@@ -47,6 +47,13 @@ export interface RepositoryToolVersion {
   license: string
 }
 
+// One tool a version needs, as the repository file lists it; empty bounds mean none.
+export interface RepositoryRequirement {
+  id: string
+  minVersion: string
+  maxVersion: string
+}
+
 export interface RepositoryTool {
   id: string
   name: string
@@ -58,6 +65,8 @@ export interface RepositoryTool {
   installedVersion: string
   currentVersion: string
   currentVersionId: string
+  // What the current version needs, in the order the file lists it (empty from a core that predates it).
+  requires: RepositoryRequirement[]
   versions: RepositoryToolVersion[]
 }
 

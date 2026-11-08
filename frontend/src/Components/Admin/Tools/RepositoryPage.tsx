@@ -8,6 +8,7 @@ import {
   type RepositoryTool,
   type ToolRepositoryDetail,
 } from '../../../api/toolRepositories'
+import { fetchTools, type Tool } from '../../../api/tools'
 import { LoadingSpinner } from '../../../Shared/Components/Loading/LoadingSpinner'
 import { useConfirm } from '../../../Shared/Components/Modal/useConfirm'
 import { Card } from '../../../Shared/Components/Card/Card'
@@ -15,6 +16,7 @@ import { CardHead } from '../../../Shared/Components/Card/CardHead'
 import { Pill } from '../../../Shared/Components/Pill/Pill'
 import { reloadAfterToolChange } from '../../../config/tools/loadTools'
 import { RepositoryLink } from './RepositoryLink'
+import { DependenciesBlock } from './ToolDependencies'
 import { headGradient, themeForTool } from './toolCardTheme'
 import { Byline, LicensePill, PublisherBlock, ToolFacts } from './ToolAttribution'
 import { errorText } from './repositoryErrors'
@@ -47,6 +49,8 @@ export function RepositoryPage() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  // The installed tools, which the "Needs" blocks of the cards are checked against.
+  const [installedTools, setInstalledTools] = useState<Tool[]>([])
   const { confirm, dialog } = useConfirm()
 
   // A never-fetched repository (the built-in one, opened directly) is loaded once.
@@ -75,6 +79,19 @@ export function RepositoryPage() {
   useEffect(() => {
     void load()
   }, [load])
+
+  // The installed tools are only needed for the "Needs" blocks; if they cannot be read the cards simply show every requirement as not installed.
+  useEffect(() => {
+    let cancelled = false
+    fetchTools()
+      .then((list) => {
+        if (!cancelled) setInstalledTools(list)
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const handleRefresh = async () => {
     setBusy(true)
@@ -151,6 +168,9 @@ export function RepositoryPage() {
       </div>
     )
   }
+
+  // the tools this repository lists: a missing requirement among them is "available here"
+  const offeredHere = new Set(detail.tools.map((t) => t.id))
 
   return (
     <div className="max-w-6xl space-y-6 p-6">
@@ -258,12 +278,14 @@ export function RepositoryPage() {
                     />
                   }
                 >
-                  <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center justify-between gap-2">
                     <p className="truncate font-mono text-xs text-gray-500">{tool.id}</p>
-                    <span className="shrink-0 text-sm font-semibold text-gray-900">v{tool.currentVersion}</span>
+                    <span className="shrink-0 rounded-full bg-gray-900 px-2.5 py-0.5 text-xs font-semibold text-white">
+                      v{tool.currentVersion}
+                    </span>
                   </div>
-                  <Byline metadata={tool.metadata} className="mt-1" />
-                  <div className="mt-3 flex flex-wrap gap-2">
+                  <Byline metadata={tool.metadata} className="mt-1.5" />
+                  <div className="mt-3 flex flex-wrap gap-1.5">
                     <LicensePill license={tool.metadata?.license} />
                     {tool.installedVersion !== '' && <Pill outline>{`Installed v${tool.installedVersion}`}</Pill>}
                     {showStatusPill(tool) && (
@@ -272,7 +294,26 @@ export function RepositoryPage() {
                       </Pill>
                     )}
                   </div>
-                  {tool.description && <p className="mt-3 text-sm text-gray-600">{tool.description}</p>}
+
+                  <div className="mt-4 space-y-2.5">
+                    <DependenciesBlock
+                      name={tool.name}
+                      requirements={tool.requires.map((r) => ({ slug: r.id, minVersion: r.minVersion, maxVersion: r.maxVersion }))}
+                      installed={installedTools}
+                      accent={theme.accent}
+                      offered={offeredHere}
+                    />
+                    <div className="rounded-xl bg-gray-50 px-3 py-2.5">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">About</p>
+                      {tool.description.trim() === '' ? (
+                        <p className="mt-1 text-sm italic text-gray-400">No description.</p>
+                      ) : (
+                        <p className="mt-1 line-clamp-4 text-sm leading-relaxed text-gray-700" title={tool.description}>
+                          {tool.description}
+                        </p>
+                      )}
+                    </div>
+                  </div>
                   {tool.status === 'unavailable' && tool.reason && <p className="mt-3 text-xs text-gray-500">{tool.reason}</p>}
                 </Card>
               )

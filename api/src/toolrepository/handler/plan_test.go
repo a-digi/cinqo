@@ -431,3 +431,26 @@ func TestTheVersionTheUserPickedIsThePlannedOne(t *testing.T) {
 		t.Fatalf("the picked version, with its own requirements: %s", stepIDs(out))
 	}
 }
+
+// The repository detail (what the repository page draws) lists what each tool needs.
+func TestTheRepositoryDetailListsWhatEachToolNeeds(t *testing.T) {
+	e, srv := newEnv(t), newCountingServer(t)
+	srv.files["/main.json"] = careerFile()
+	id := addRepo(t, e, srv.srv.URL+"/main.json")
+	code, out := e.call(GetHandler, "GET", "/x", "", map[string]string{"id": id})
+	if code != 200 {
+		t.Fatalf("%d %v", code, out)
+	}
+	byID := map[string]map[string]any{}
+	for _, tl := range out["message"].(map[string]any)["tools"].([]any) {
+		m := tl.(map[string]any)
+		byID[m["id"].(string)] = m
+	}
+	reqs := byID["career"]["requires"].([]any)
+	if len(reqs) != 2 || reqs[0].(map[string]any)["id"] != "browser" || reqs[1].(map[string]any)["id"] != "pdf_tools" || reqs[1].(map[string]any)["minVersion"] != "0.0.1" || reqs[0].(map[string]any)["maxVersion"] != "" {
+		t.Fatalf("%v", reqs)
+	}
+	if list, ok := byID["browser"]["requires"].([]any); !ok || len(list) != 0 {
+		t.Fatalf("a tool that needs nothing has an empty list: %v", byID["browser"]["requires"])
+	}
+}

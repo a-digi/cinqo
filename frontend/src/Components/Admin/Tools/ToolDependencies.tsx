@@ -1,10 +1,11 @@
 import { useCallback, useState } from 'react'
 import { Link } from 'react-router-dom'
-import type { Tool } from '../../../api/tools'
 import type { Accent } from '../../../Shared/Components/CardArt/accents'
 import { Modal } from '../../../Shared/Components/Modal/Modal'
 import {
   blockTitle,
+  type Installed,
+  type Requirement,
   describeDependency,
   stateDot,
   stateLabel,
@@ -24,21 +25,35 @@ const stateChip: Record<DependencyState, string> = {
 }
 
 // The "Needs" block of a tool card (plan 217): one pill per tool this one cannot work without, each with a status dot, tinted with the card's accent.
-// The whole block is one button that opens the dialog with the details. Nothing is drawn for a tool that needs nothing.
-export function DependenciesBlock({ tool, tools, accent }: { tool: Tool; tools: readonly Tool[]; accent: Accent }) {
+// The whole block is one button that opens the dialog with the details. Nothing is drawn for a tool that needs nothing. `installed` are the installed
+// tools the requirements are checked against; `offered` (the Repositories page) are the ids of the tools the repository lists, so the dialog can say
+// that a missing one is available there.
+export function DependenciesBlock({
+  name,
+  requirements,
+  installed,
+  accent,
+  offered,
+}: {
+  name: string
+  requirements: readonly Requirement[]
+  installed: readonly Installed[]
+  accent: Accent
+  offered?: ReadonlySet<string>
+}) {
   const [open, setOpen] = useState(false)
   const close = useCallback(() => {
     setOpen(false)
   }, [])
-  if (tool.requiredTools.length === 0) return null
-  const views = tool.requiredTools.map((r) => describeDependency(r, tools))
+  if (requirements.length === 0) return null
+  const views = requirements.map((r) => describeDependency(r, installed, offered))
   const worst = worstState(views.map((v) => v.state))
   return (
     <>
       <button
         type="button"
         aria-haspopup="dialog"
-        title={blockTitle(tool.name, views)}
+        title={blockTitle(name, views)}
         onClick={() => {
           setOpen(true)
         }}
@@ -67,7 +82,7 @@ export function DependenciesBlock({ tool, tools, accent }: { tool: Tool; tools: 
           {worst === 'ready' ? 'i' : '!'}
         </span>
       </button>
-      <Modal open={open} title={`What ${tool.name} needs`} onClose={close}>
+      <Modal open={open} title={`What ${name} needs`} onClose={close}>
         <ul className="space-y-3">
           {views.map((v) => (
             <DependencyItem key={v.slug} view={v} />

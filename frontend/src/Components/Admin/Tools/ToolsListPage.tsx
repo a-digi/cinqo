@@ -259,7 +259,7 @@ export function ToolsListPage() {
                   </div>
 
                   <div className="mt-4 space-y-2.5">
-                    <DependenciesBlock tool={tool} tools={tools} accent={theme.accent} />
+                    <DependenciesBlock name={tool.name} requirements={tool.requiredTools} installed={tools} accent={theme.accent} />
                     <div className="rounded-xl bg-gray-50 px-3 py-2.5">
                       <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">About</p>
                       {description === '' ? (

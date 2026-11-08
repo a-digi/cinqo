@@ -49,6 +49,13 @@ type VersionInfo struct {
 	Reason string `json:"reason"`
 }
 
+// Requirement is one tool a version needs, as the repository file lists it (empty bounds mean none).
+type Requirement struct {
+	ID         string `json:"id"`
+	MinVersion string `json:"minVersion"`
+	MaxVersion string `json:"maxVersion"`
+}
+
 // Tool is one row of the repository page.
 type Tool struct {
 	ID          string `json:"id"`
@@ -62,7 +69,9 @@ type Tool struct {
 	InstalledVersion string         `json:"installedVersion"`
 	CurrentVersion   string         `json:"currentVersion"`
 	CurrentVersionID string         `json:"currentVersionId"`
-	Versions         []VersionInfo  `json:"versions"`
+	// Requires is what the current version needs, in the order the file lists it (never null): the card shows it, and the install plan starts from it.
+	Requires []Requirement `json:"requires"`
+	Versions []VersionInfo `json:"versions"`
 }
 
 // Counts summarises a repository for the list.
@@ -93,7 +102,7 @@ func Availability(v *catalog.Version, env Env) (bool, string) {
 
 // ForTool computes one tool's row.
 func ForTool(t *catalog.Tool, env Env) Tool {
-	out := Tool{ID: t.ID, CurrentVersionID: t.CurrentVersionID, Versions: make([]VersionInfo, 0, len(t.Versions))}
+	out := Tool{ID: t.ID, CurrentVersionID: t.CurrentVersionID, Requires: []Requirement{}, Versions: make([]VersionInfo, 0, len(t.Versions))}
 	for i := range t.Versions {
 		v := &t.Versions[i]
 		ok, reason := Availability(v, env)
@@ -110,6 +119,9 @@ func ForTool(t *catalog.Tool, env Env) Tool {
 		return out
 	}
 	out.Name, out.Description, out.CurrentVersion = cur.Name, cur.Description, cur.Version
+	for _, r := range cur.Requires {
+		out.Requires = append(out.Requires, Requirement{ID: r.ID, MinVersion: r.MinVersion, MaxVersion: r.MaxVersion})
+	}
 	if !cur.Info.IsZero() {
 		info := cur.Info
 		out.Metadata = &info
