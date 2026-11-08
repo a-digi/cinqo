@@ -273,31 +273,37 @@ repository-in-place:
 	cd api && go run ./cmd/repotool -in-place -tools-dir ../tools \
 		-name "$(REPO_NAME)" -description "$(REPO_DESCRIPTION)" $(if $(or $(BASE_URL),$(filter-out undefined,$(origin BASE_URL))),,-base-url "$(CINQO_TOOLS_URL)") $(if $(BASE_URL),-base-url "$(BASE_URL)")
 
-# Copies the packaged tools into the cinqo-tools repository (a separate git repository in cinqo-tools/, ignored by this one) and writes that
-# repository's own repository.json there. Every tools/<tool>/versions/tool-*.zip goes to cinqo-tools/<tool>/versions/ (same relative path), then
-# repotool reads the copies and writes cinqo-tools/repository.json, linking each package at
-# $(CINQO_TOOLS_URL)/<tool>/versions/<zip> (the address the file is served from: raw.githubusercontent.com of the cinqo-tools repository, like the
-# app's default repository link). The name, description and authors come from tools/repository.meta.json.
-# tools/repository.json is not touched: it keeps its relative links for serving tools/ here. Nothing is removed from the target and no git command
-# is run: commit and push in cinqo-tools/ yourself.
+# Release step: copies tools/repository.json and every packaged tool (tools/<tool>/versions/tool-*.zip) into the cinqo-tools repository (a separate
+# git repository in cinqo-tools/, ignored by this one), the zips with the same relative path (<tool>/versions/<zip>). It only copies: it generates
+# nothing, runs no git command and removes nothing from the target; commit and push in cinqo-tools/ yourself. Run it only for tools that are to be
+# released, after make repository-in-place (which writes tools/repository.json with the links at $(CINQO_TOOLS_URL)).
+# It stops first, copying nothing, when tools/repository.json would not work there: its links do not point at $(CINQO_TOOLS_URL), or a package
+# is not the one it lists (a zip built after the file was written, so the checksum would be wrong and every install would fail).
 # Usage: make repository-copy            (CINQO_TOOLS_DIR=other-folder, CINQO_TOOLS_URL=other-address to change them)
 CINQO_TOOLS_DIR ?= cinqo-tools
 CINQO_TOOLS_URL ?= https://raw.githubusercontent.com/a-digi/cinqo-tools/main
 .PHONY: repository-copy
 repository-copy:
 	@test -d "$(CINQO_TOOLS_DIR)" || (echo "$(CINQO_TOOLS_DIR) does not exist: clone or create the cinqo-tools repository there first"; exit 1)
+	@test -f tools/repository.json || (echo "tools/repository.json is missing: run make repository-in-place first"; exit 1)
+	@grep -q '"url": "$(CINQO_TOOLS_URL)/' tools/repository.json || (echo "the links in tools/repository.json do not point at $(CINQO_TOOLS_URL): run make repository-in-place first"; exit 1)
 	@set -e; found=0; \
 	for zip in tools/*/versions/tool-*.zip; do \
 		[ -f "$$zip" ] || continue; found=1; \
+		sum=$$(shasum -a 256 "$$zip" | cut -d' ' -f1); \
+		grep -q "$$sum" tools/repository.json || { echo "$$zip is not the package tools/repository.json lists (checksum differs): run make repository-in-place, then make repository-copy again"; exit 1; }; \
+	done; \
+	[ "$$found" = 1 ] || { echo "no packaged tool in tools/*/versions/: run make zip in a tool folder first"; exit 1; }; \
+	for zip in tools/*/versions/tool-*.zip; do \
+		[ -f "$$zip" ] || continue; \
 		dest="$(CINQO_TOOLS_DIR)/$${zip#tools/}"; \
 		mkdir -p "$$(dirname "$$dest")"; \
 		cp -p "$$zip" "$$dest"; \
 		echo "copied $${zip#tools/}"; \
 	done; \
-	[ "$$found" = 1 ] || { echo "no packaged tool in tools/*/versions/: run make zip in a tool folder first"; exit 1; }
-	cd api && go run ./cmd/repotool -in-place -tools-dir "$(abspath $(CINQO_TOOLS_DIR))" -meta "$(abspath tools/repository.meta.json)" \
-		-name "$(REPO_NAME)" -description "$(REPO_DESCRIPTION)" -base-url "$(CINQO_TOOLS_URL)"
-	@echo "Now commit and push in $(CINQO_TOOLS_DIR)/ (not done here)."
+	cp -p tools/repository.json "$(CINQO_TOOLS_DIR)/repository.json"; \
+	echo "copied repository.json"; \
+	echo "Now commit and push in $(CINQO_TOOLS_DIR)/ (not done here)."
 
 # Writes tools/repository.json for a GitHub release: every package link is
 # https://github.com/$(GITHUB_REPO)/releases/download/$(TAG)/<zip>. Prints the
