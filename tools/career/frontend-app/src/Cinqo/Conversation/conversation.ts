@@ -169,8 +169,24 @@ export async function awaitTurnCompletion(conversationId: string): Promise<SendM
   }
 }
 
-export async function sendMessage(conversationId: string, content: string): Promise<SendMessageResult> {
-  const res = await httpClient.post(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`, { content })
+// The settings of one message that differ from the conversation's own (core, plan 210): fresh sends the model this message only (none of the earlier turns,
+// which stay in the conversation for whoever reads it), allowedTools narrows the tools this turn is offered to those of the conversation's own list it names.
+// Omitted, the message is an ordinary one.
+export interface TurnSettings {
+  fresh?: boolean
+  allowedTools?: readonly string[]
+}
+
+// The request body of a message: the text, and only the settings that are set (an ordinary message is just {content}, as it always was).
+export function messageBody(content: string, settings?: TurnSettings): { content: string; fresh?: boolean; allowedTools?: readonly string[] } {
+  const body: { content: string; fresh?: boolean; allowedTools?: readonly string[] } = { content }
+  if (settings?.fresh === true) body.fresh = true
+  if (settings?.allowedTools !== undefined) body.allowedTools = settings.allowedTools
+  return body
+}
+
+export async function sendMessage(conversationId: string, content: string, settings?: TurnSettings): Promise<SendMessageResult> {
+  const res = await httpClient.post(`/api/v1/conversations/${encodeURIComponent(conversationId)}/messages`, messageBody(content, settings))
   await httpClient.responseBody<StartedTurnRun>(res, 'send message')
   return awaitTurnCompletion(conversationId)
 }

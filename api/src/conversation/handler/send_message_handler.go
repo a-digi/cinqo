@@ -3,19 +3,27 @@ package handler
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/http"
+	"slices"
 
 	"github.com/a-digi/coco-server/server/request"
 	"github.com/a-digi/coco-server/server/response"
 
 	"github.com/a-digi/cinqo/src/conversation"
+	conversation_entity "github.com/a-digi/cinqo/src/conversation/entity"
 	conversation_query "github.com/a-digi/cinqo/src/conversation/repository/query"
+	"github.com/a-digi/cinqo/src/platform"
+	tool_query "github.com/a-digi/cinqo/src/tool/repository/query"
 )
 
-// Content only — platformId/model are no longer per-message; they're
-// fixed on the conversation itself at creation (step 7).
+// Content — platformId/model are no longer per-message; they're fixed on the conversation itself at creation (step 7). Fresh and AllowedTools
+// are optional settings of this one message (plan/ai/small-llm-local/step-210-import-progress-in-the-chat.md): fresh sends the model this
+// message only (no earlier turn), allowedTools narrows the tools this turn is offered. Omitted, nothing changes.
 type sendMessageRequest struct {
-	Content string `json:"content"`
+	Content      string   `json:"content"`
+	Fresh        bool     `json:"fresh"`
+	AllowedTools []string `json:"allowedTools"`
 }
 
 // startTurnRunResponse — this route no longer waits for the AI to
@@ -70,12 +78,19 @@ func SendMessageHandler(reqCtx request.RequestContext) {
 		return
 	}
 
-	if _, err := conversation_query.NewConversationQueryRepo(convDB).FindOwnedByID(id, userID); err != nil {
+	conv, err := conversation_query.NewConversationQueryRepo(convDB).FindOwnedByID(id, userID)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			response.ErrorResponse(w, http.StatusNotFound, "conversation not found")
 			return
 		}
 		response.ErrorResponse(w, http.StatusInternalServerError, "failed to look up conversation")
+		return
+	}
+
+	allowedTools, err := conversation_entity.ParseAllowedTools(body.AllowedTools)
+	if err != nil {
+		response.ErrorResponse(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -87,6 +102,11 @@ func SendMessageHandler(reqCtx request.RequestContext) {
 
 	mainDB := reqCtx.GetDI().GetDatabaseManager().Connector.DB
 
+	if status, message := checkTurnAllowedTools(mainDB, conv, allowedTools); status != 0 {
+		response.ErrorResponse(w, status, message)
+		return
+	}
+
 	port, err := corePort(reqCtx)
 	if err != nil {
 		response.ErrorResponse(w, http.StatusInternalServerError, "core port not configured")
@@ -97,7 +117,8 @@ func SendMessageHandler(reqCtx request.RequestContext) {
 	// is no such thing on the server side; this is the same shared
 	// client the run itself will keep using for the entirety of its own
 	// detached lifetime, well past this handler returning.
-	run, err := conversation.StartTurnRun(http.DefaultClient, mainDB, convDB, encKey, id, body.Content, scopes, resolvedDataDir(reqCtx), port)
+	run, err := conversation.StartTurnRunWith(http.DefaultClient, mainDB, convDB, encKey, id, body.Content, scopes, resolvedDataDir(reqCtx), port,
+		conversation.TurnOptions{Fresh: body.Fresh, AllowedTools: allowedTools})
 	if err != nil {
 		writeStartTurnRunError(w, err)
 		return
@@ -108,6 +129,38 @@ func SendMessageHandler(reqCtx request.RequestContext) {
 		Status:    run.Status,
 		StartedAt: run.StartedAt,
 	})
+}
+
+// checkTurnAllowedTools checks the allowedTools of a message the way the create handler checks them for a conversation: only in direct mode, never on a
+// platform or model that offers no tools, and every name must be a tool that exists. It returns the status and the message to answer with, or 0 when the
+// list is fine (or there is none). A platform that has gone is not checked here: the turn itself says so in the conversation.
+func checkTurnAllowedTools(mainDB *sql.DB, conv *conversation_entity.Conversation, allowedTools []string) (int, string) {
+	if allowedTools == nil {
+		return 0, ""
+	}
+	if conv.OrchestrationMode != conversation_entity.OrchestrationModeDirect {
+		return http.StatusBadRequest, "allowedTools is only supported in direct mode"
+	}
+	if entry, ok := platform.Lookup(conv.PlatformID); ok && entry.ToolPolicyFor(conv.Model) == platform.ToolsNone {
+		return http.StatusBadRequest, "this platform or model offers no tools: do not send allowedTools"
+	}
+	if own := conv.AllowedToolNames(); own != nil {
+		for _, name := range allowedTools {
+			if !slices.Contains(own, name) {
+				return http.StatusBadRequest, fmt.Sprintf("allowedTools: %q is not one of this conversation's tools (a message can narrow them, never widen)", name)
+			}
+		}
+	}
+	toolRepo := tool_query.NewToolMCPToolQueryRepo(mainDB)
+	for _, name := range allowedTools {
+		if _, err := toolRepo.FindMCPToolByName(name); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return http.StatusBadRequest, fmt.Sprintf("allowedTools: unknown tool %q", name)
+			}
+			return http.StatusInternalServerError, "failed to check allowedTools"
+		}
+	}
+	return 0, ""
 }
 
 func writeStartTurnRunError(w http.ResponseWriter, err error) {

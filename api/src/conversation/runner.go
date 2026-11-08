@@ -12,6 +12,7 @@ package conversation
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -69,6 +70,62 @@ func StartTurnRun(
 	dataDir string,
 	corePort int,
 ) (*conversation_entity.TurnRun, error) {
+	return StartTurnRunWith(httpClient, mainDB, conversationDB, encryptionKey, conversationID, content, callerScopes, dataDir, corePort, TurnOptions{})
+}
+
+// narrowToolList is the tool list a turn runs with: the turn's own list (JSON) cut down to the conversation's own list when it has one (the conversation's
+// list is a boundary a message may narrow but never widen), the turn's own list when the conversation has none (conversation is nil). A list that cannot be
+// read fails closed, like the conversation's own: nothing is allowed. The result is JSON, an empty list when nothing is left.
+func narrowToolList(conversation []string, turnJSON string) string {
+	var turn []string
+	if err := json.Unmarshal([]byte(turnJSON), &turn); err != nil || turn == nil {
+		return "[]"
+	}
+	if conversation == nil {
+		return turnJSON
+	}
+	allowed := make(map[string]struct{}, len(conversation))
+	for _, n := range conversation {
+		allowed[n] = struct{}{}
+	}
+	kept := []string{}
+	for _, n := range turn {
+		if _, ok := allowed[n]; ok {
+			kept = append(kept, n)
+		}
+	}
+	out, err := json.Marshal(kept)
+	if err != nil {
+		return "[]"
+	}
+	return string(out)
+}
+
+// TurnOptions are the settings of one message that differ from the conversation's own (plan/ai/small-llm-local/step-210-import-progress-in-the-chat.md).
+// The zero value changes nothing: the model is sent the recent turns, and offered the conversation's tools.
+type TurnOptions struct {
+	// Fresh sends the model this message only (no earlier turn of the conversation), so a small model cannot copy its own earlier answers while the
+	// conversation still shows every step. The turn is stored in the conversation like any other.
+	Fresh bool
+	// AllowedTools, when not nil, is the list of the tools this turn is offered and may call. It only narrows: when the conversation has its own list the
+	// turn gets the tools in both, and the scope check applies to each tool as before. The caller has already checked the names.
+	AllowedTools []string
+}
+
+func (o TurnOptions) isZero() bool { return !o.Fresh && o.AllowedTools == nil }
+
+// StartTurnRunWith is StartTurnRun for a message with its own TurnOptions.
+func StartTurnRunWith(
+	httpClient *http.Client,
+	mainDB *sql.DB,
+	conversationDB *sql.DB,
+	encryptionKey []byte,
+	conversationID, content string,
+	callerScopes []string,
+	dataDir string,
+	corePort int,
+	opts TurnOptions,
+) (*conversation_entity.TurnRun, error) {
 	if content == "" {
 		return nil, ErrEmptyContent
 	}
@@ -97,6 +154,16 @@ func StartTurnRun(
 			return nil, ErrTurnAlreadyRunning
 		}
 		return nil, fmt.Errorf("conversation: start turn run: %w", err)
+	}
+	if !opts.isZero() {
+		encoded, encErr := conversation_entity.EncodeAllowedTools(opts.AllowedTools)
+		if encErr == nil {
+			encErr = conversation_persistent.NewTurnRunPersistentRepo(conversationDB).SetOptions(run.ID, opts.Fresh, encoded)
+		}
+		if encErr != nil {
+			finishTurnRun(conversation_persistent.NewTurnRunPersistentRepo(conversationDB), run.ID, "failed") // never leave a running row that nothing runs
+			return nil, fmt.Errorf("conversation: store the turn options: %w", encErr)
+		}
 	}
 	// A new turn of the conversation ends the chance to retry an earlier failed one (retry-last-step.md): best effort, a leftover
 	// checkpoint is only ever offered for the conversation's last run, which this one now is.
@@ -183,6 +250,19 @@ func runDetachedTurn(
 	}
 	model := conv.Model
 
+	// The settings of this one message (TurnOptions): the turn's own tool list replaces the conversation's for this turn (a copy: the conversation
+	// row is never changed), and a fresh turn is sent no history.
+	fresh, turnTools, err := conversation_query.NewTurnRunQueryRepo(conversationDB).FindOptions(turnRunID)
+	if err != nil {
+		finishTurnRun(runs, turnRunID, "failed")
+		return
+	}
+	if turnTools != "" {
+		own := *conv
+		own.AllowedTools = narrowToolList(conv.AllowedToolNames(), turnTools)
+		conv = &own
+	}
+
 	entry, plainKey, err := resolveEntry(ctx, mainDB, encryptionKey, entry, conv.PlatformID)
 	if err != nil {
 		failBeforeModel(runs, conv, turnRunID, content, platformFailureMessage(err))
@@ -192,6 +272,8 @@ func runDetachedTurn(
 	var messages []chatcompleter.Message
 	if resume != nil {
 		messages = resume.checkpoint.Messages
+	} else if fresh {
+		messages = []chatcompleter.Message{{Role: "user", Content: content}}
 	} else {
 		recent, err := ReadRecentTurns(conv.FilePath, ContextTurns)
 		if err != nil {

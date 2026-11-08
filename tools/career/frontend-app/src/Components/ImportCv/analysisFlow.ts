@@ -6,6 +6,7 @@
 // (the AI's turn lives in the core app), so this ends it: "ready" when the turn is over, or "failed" with the reason. See
 // plan/ai/tools/career/step-155-cv-import-result-by-tool-not-chat.md.
 import { IMPORT_STEP_EXPECTATIONS, buildContinuePrompt, checkStep, type StepVerdict } from './buildImportPrompt'
+import type { TurnSettings } from '../../Cinqo/Conversation/conversation'
 import { runCodeImport } from './codeImport/runCodeImport'
 import type { SplitCv } from './splitCv'
 import {
@@ -44,15 +45,16 @@ export interface AnalysisSteps {
   recordRun(conversationId: string): Promise<string>
   // Sends the instruction (which names the run id), or the given follow-up message when the AI has to continue, and waits for the AI's
   // turn to end; resolves with its last message.
-  askAi(conversationId: string, runId: string, followUp?: string): Promise<string | AiReply>
+  // settings: the turn's own settings (step by step: fresh, with the tools of the step); undefined for an ordinary message.
+  askAi(conversationId: string, runId: string, followUp?: string, settings?: TurnSettings): Promise<string | AiReply>
   // The instruction as a sequence of short messages (for a model that cannot follow the long one), or absent to send the long one.
   // Each message is sent when the previous turn has ended. Given the run id the messages name.
   stepMessages?(runId: string): string[]
-  // Step-by-step only (plan 207). A fresh conversation for one step: a small model that sees its own earlier replies repeats them instead of
-  // following the new step (a 1.5B model answered every step with its first reply), so every step after the first runs in a conversation
-  // of its own, and so does a continuation. Absent: every step runs in the one conversation, as before.
-  // stepIndex is the step's index (0-based) for a step, absent for a continuation: the caller offers a step only the tools it needs (plan 208).
-  stepConversation?(runId: string, label: string, stepIndex?: number): Promise<string>
+  // Step-by-step only (plan 210; before it, plan 207 gave every step a conversation of its own). Every step is a turn of the run's own conversation, sent
+  // fresh (the model sees none of its earlier replies, a small model copies them) and with the tools of that step only; the conversation then shows every
+  // step, as they happen. Called with the step's index, or with nothing for a continuation (which offers every tool of the import). Absent: the steps
+  // are ordinary messages of the one conversation.
+  stepTools?(stepIndex?: number): readonly string[]
   // Step-by-step only (plan 207). The message that asks a step to be done again when it did not call the tools it had to (the step's index,
   // what was wrong, the run id). When it is absent the steps are not checked.
   stepCorrection?(index: number, verdict: Exclude<StepVerdict, 'ok'>, runId: string): string
@@ -82,7 +84,7 @@ export function isAnalysisActive(runId: string): boolean {
 // The part of an analysis that follows an AI turn: ends the run as ready, or asks the AI to continue a limited number of times, or
 // fails the run. Shared by a fresh analysis and by a resumed one.
 type SettleSteps = Pick<AnalysisSteps, 'askAi' | 'endRun' | 'onReply' | 'onRunsChanged'> &
-  Partial<Pick<AnalysisSteps, 'stepMessages' | 'stepConversation' | 'stepCorrection' | 'saidDone' | 'doneNudge'>>
+  Partial<Pick<AnalysisSteps, 'stepMessages' | 'stepTools' | 'stepCorrection' | 'saidDone' | 'doneNudge'>>
 
 async function settleRun(steps: SettleSteps, conversationId: string, runId: string, first: TurnResult): Promise<unknown> {
   let reply = first.reply
@@ -107,9 +109,8 @@ async function settleRun(steps: SettleSteps, conversationId: string, runId: stri
       // The server refuses "ready" when the AI never handed a proposal over (it finishes a complete draft itself). A weak model
       // often stops too early: the same conversation is asked to continue, a limited number of times, before the run fails.
       if (isNoProposalRefusal(endErr) && continuation < MAX_CONTINUATIONS) {
-        // In step-by-step mode the continuation, too, gets a conversation of its own: the old one is full of the model's own replies.
-        const where = steps.stepMessages && steps.stepConversation ? await steps.stepConversation(runId, 'continue') : conversationId
-        const next = await ask(steps, where, runId, buildContinuePrompt(runId, failureReason(endErr)))
+        // In step-by-step mode the continuation, too, is a fresh turn: the conversation is full of the model's own replies.
+        const next = await ask(steps, conversationId, runId, buildContinuePrompt(runId, failureReason(endErr)), settingsFor(steps, undefined))
         reply = next.reply
         toolsCalled = next.toolsCalled
         lastTurnError = next.turnError ?? lastTurnError
@@ -265,9 +266,16 @@ export function isRetryableTurnError(err: unknown): boolean {
 
 // One AI turn; a failure of the turn itself ends the run as failed with the real text, except a retryable provider error, which
 // comes back as an empty reply so the run is asked to continue (limited by MAX_CONTINUATIONS).
-async function ask(steps: SettleSteps, conversationId: string, runId: string, followUp: string | undefined): Promise<TurnResult> {
+// The settings of a turn in step-by-step mode (fresh, the tools of the step, or every tool of the import for no step); none in any other mode. A step and
+// its correction are fresh (the correction says everything again); the question "are you done" is not, because it asks about the turn just before it.
+function settingsFor(steps: Pick<SettleSteps, 'stepMessages' | 'stepTools'>, stepIndex: number | undefined, fresh = true): TurnSettings | undefined {
+  if (!steps.stepMessages || !steps.stepTools) return undefined
+  return { fresh, allowedTools: steps.stepTools(stepIndex) }
+}
+
+async function ask(steps: SettleSteps, conversationId: string, runId: string, followUp: string | undefined, settings?: TurnSettings): Promise<TurnResult> {
   try {
-    const { reply, toolErrors, toolsCalled } = readReply(await steps.askAi(conversationId, runId, followUp))
+    const { reply, toolErrors, toolsCalled } = readReply(await steps.askAi(conversationId, runId, followUp, settings))
     steps.onReply(reply)
     return { reply, toolErrors, toolsCalled }
   } catch (err) {
@@ -288,9 +296,10 @@ async function askStep(
   conversationId: string,
   runId: string,
   message: string,
+  settings?: TurnSettings,
 ): Promise<{ reply: string; error?: string; toolsCalled?: string[] }> {
   try {
-    const { reply, toolsCalled } = readReply(await steps.askAi(conversationId, runId, message))
+    const { reply, toolsCalled } = readReply(await steps.askAi(conversationId, runId, message, settings))
     steps.onReply(reply)
     return { reply, toolsCalled }
   } catch (err) {
@@ -310,7 +319,7 @@ async function askInSteps(steps: SettleSteps, conversationId: string, runId: str
   let failedInARow = 0
   for (let i = 0; i < messages.length; i++) {
     if (i === 0) {
-      last = await ask(steps, conversationId, runId, messages[i])
+      last = await ask(steps, conversationId, runId, messages[i], settingsFor(steps, 0))
       if (last.turnError !== undefined) return last
       if (isCvUnreadableReply(last.reply)) return last
       if (modelSkippedTheRead(last.toolsCalled)) {
@@ -328,14 +337,13 @@ async function askInSteps(steps: SettleSteps, conversationId: string, runId: str
       await confirmDone(steps, conversationId, runId, 0, last)
       continue
     }
-    // Every step after the first runs in a conversation of its own (plan 207), so the model has nothing of its earlier replies to copy.
-    const where = steps.stepConversation ? await steps.stepConversation(runId, `step ${String(i + 1)}`, i) : conversationId
-    let step = await askStep(steps, where, runId, messages[i])
+    // Every step is a fresh turn of the run's own conversation (plan 210): the model has nothing of its earlier replies to copy, and the conversation shows the step.
+    let step = await askStep(steps, conversationId, runId, messages[i], settingsFor(steps, i))
     if (step.error === undefined) {
-      step = await verifyStep(steps, where, runId, i, step)
+      step = await verifyStep(steps, conversationId, runId, i, step)
     }
     if (step.error === undefined) {
-      step = await confirmDone(steps, where, runId, i, step)
+      step = await confirmDone(steps, conversationId, runId, i, step)
     }
     if (step.error !== undefined) {
       problem = step.error
@@ -361,7 +369,7 @@ async function confirmDone<T extends { reply: string; toolsCalled?: string[]; er
   step: T,
 ): Promise<T> {
   if (!steps.saidDone || !steps.doneNudge || steps.saidDone(index, step.reply)) return step
-  await askStep(steps, conversationId, runId, steps.doneNudge(index))
+  await askStep(steps, conversationId, runId, steps.doneNudge(index), settingsFor(steps, index, false))
   return step
 }
 
@@ -381,7 +389,7 @@ async function verifyStep(
   let verdict = checkStep(expectation, first.toolsCalled)
   if (verdict === 'ok') return first
   let result = first
-  const again = await askStep(steps, conversationId, runId, steps.stepCorrection(index, verdict, runId))
+  const again = await askStep(steps, conversationId, runId, steps.stepCorrection(index, verdict, runId), settingsFor(steps, index))
   if (again.error === undefined) {
     result = again
     verdict = checkStep(expectation, again.toolsCalled)

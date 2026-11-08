@@ -103,6 +103,10 @@ func StartRetryRun(
 		}
 		return nil, fmt.Errorf("conversation: start retry run: %w", err)
 	}
+	if err := runs.CopyOptions(failed.ID, run.ID); err != nil {
+		finishTurnRun(runs, run.ID, "failed")
+		return nil, fmt.Errorf("conversation: carry the turn options over: %w", err)
+	}
 	if err := runs.SetRetry(run.ID, failed.ID, failed.RetryCount+1); err != nil {
 		finishTurnRun(runs, run.ID, "failed") // never leave a running row that nothing runs
 		return nil, fmt.Errorf("conversation: record the retry: %w", err)

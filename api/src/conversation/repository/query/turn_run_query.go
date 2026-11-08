@@ -30,6 +30,18 @@ func scanTurnRun(scan func(dest ...any) error) (*conversation_entity.TurnRun, er
 	return &t, nil
 }
 
+// FindOptions returns the per-turn settings of a run: fresh (the model is sent the new message only) and the JSON list of the tools the turn is offered
+// ("" when the turn uses the conversation's own list). They are read only through here, like the checkpoint, so no query returns them by accident.
+// sql.ErrNoRows (unwrapped) when no row has this ID.
+func (r *TurnRunQueryRepo) FindOptions(id string) (fresh bool, allowedTools string, err error) {
+	var f int
+	var tools sql.NullString
+	if err = r.db.QueryRow(`SELECT fresh_context, allowed_tools FROM turn_runs WHERE id = ?`, id).Scan(&f, &tools); err != nil {
+		return false, "", err
+	}
+	return f != 0, tools.String, nil
+}
+
 // FindUsageByConversationID returns, for every turn of the conversation, what the provider reported besides the prompt and completion
 // counts (plan/ai/conversation/step-178, step 3), keyed by the turn run's id. Only the numbers are read (never the log or the text of
 // the turns), so it is cheap for a long conversation; a turn whose provider reported nothing has all-zero numbers and a nil cost.

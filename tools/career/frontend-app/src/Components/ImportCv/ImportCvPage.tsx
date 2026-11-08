@@ -127,21 +127,13 @@ export function ImportCvPage() {
       if (usesCodeDriver(platform, model)) {
         const prep = await prepareCodeImport(() => fetchCvText(fileId))
         if (prep.ok) {
-          let firstQuestion = true
           await analyseCvByCode(
             {
               startConversation: async () => (await createConversation({ title: `Import CV: ${originalFilename}`, platformId: platform.id, model })).id,
               recordRun: (conversationId) => createCVImportRun({ fileId, originalFilename, conversationId, driver: 'code' }),
-              // The first question runs in the run's own conversation, so its transcript shows something; every other one in a hidden
-              // conversation of its own (a small model repeats what it sees of its earlier answers). None of them is offered a tool.
-              ask: async (prompt, conversationId) => {
-                let where = conversationId
-                if (!firstQuestion) {
-                  where = (await createConversation({ title: `Import CV: ${originalFilename} · question`, platformId: platform.id, model, hidden: true })).id
-                }
-                firstQuestion = false
-                return (await sendMessage(where, prompt)).content
-              },
+              // Every question is a fresh turn of the run's own conversation (plan 210): the chat shows each question and its answer as they happen,
+              // and the model is sent that question only (a small model repeats what it sees of its earlier answers). None of them is offered a tool.
+              ask: async (prompt, conversationId) => (await sendMessage(conversationId, prompt, { fresh: true })).content,
               store: storeDraftPiece,
               finish: finishDraftPieces,
               endRun: finishCVImportRun,
@@ -157,48 +149,32 @@ export function ImportCvPage() {
         }
       }
       const stepByStep = needsShortStepsFor(platform)
-      // Step by step (plan 208), the first conversation holds the first step only, so it offers that step's tools; every other
-      // conversation offers its own step's tools, and a continuation (no step) all of them.
-      const firstTools: string[] = stepByStep ? [...IMPORT_STEP_TOOLS[0]] : [...IMPORT_RUN_TOOLS]
       await analyseCv({
         startConversation: async () => {
           // The AI may only use the tools an import needs: the server enforces it, not just the prompt. Unrestricted, a weak model
           // called create_profile with an invented name and wrote it into the user's data (plan 165).
+          // Step by step (plan 210) every step then narrows this list to its own tools, per message.
           const conversation = await createConversation({
             title: `Import CV: ${originalFilename}`,
             platformId: platform.id,
             model,
-            allowedTools: firstTools,
+            allowedTools: [...IMPORT_RUN_TOOLS],
           })
-          if (!restrictionHolds(conversation.allowedTools, firstTools)) throw new Error(RESTRICTION_NOT_APPLIED_MESSAGE)
+          if (!restrictionHolds(conversation.allowedTools, IMPORT_RUN_TOOLS)) throw new Error(RESTRICTION_NOT_APPLIED_MESSAGE)
           return conversation.id
         },
         recordRun: (conversationId) => createCVImportRun({ fileId, originalFilename, conversationId }),
-        askAi: async (conversationId, runId, followUp) => {
-          const message = await sendMessage(conversationId, followUp ?? buildImportPrompt(fileId, runId))
+        askAi: async (conversationId, runId, followUp, settings) => {
+          const message = await sendMessage(conversationId, followUp ?? buildImportPrompt(fileId, runId), settings)
           return { reply: message.content, toolErrors: message.toolErrors, toolsCalled: message.toolsCalled }
         },
         // A platform whose models do better with short one-action messages (the local models: needsShortSteps) gets the instruction
         // in short steps instead of the one long prompt, which a small model answers with a made-up failure instead of a tool call.
         stepMessages: stepByStep ? (runId) => buildImportSteps(fileId, runId) : undefined,
-        // Step-by-step only (plan 207): every step after the first, and a continuation, runs in a conversation of its own (hidden from the
-        // list; the run keeps the first one for its transcript) so the model has none of its earlier replies to copy; and a step that did not
-        // call the tools it had to is asked once more, then stops the run with a message that names the step.
-        stepConversation:
-          stepByStep
-            ? async (_runId, label, stepIndex) => {
-                const tools: string[] = stepIndex === undefined ? [...IMPORT_RUN_TOOLS] : [...(IMPORT_STEP_TOOLS[stepIndex] ?? IMPORT_RUN_TOOLS)]
-                const conversation = await createConversation({
-                  title: `Import CV: ${originalFilename} · ${label}`,
-                  platformId: platform.id,
-                  model,
-                  allowedTools: tools,
-                  hidden: true,
-                })
-                if (!restrictionHolds(conversation.allowedTools, tools)) throw new Error(RESTRICTION_NOT_APPLIED_MESSAGE)
-                return conversation.id
-              }
-            : undefined,
+        // Step-by-step only (plan 210): every step, and a continuation, is a fresh turn of the run's own conversation offered only the tools of that step
+        // (every tool of the import for a continuation), so the model has none of its earlier replies to copy and the chat shows each step; and a step that
+        // did not call the tools it had to is asked once more, then stops the run with a message that names the step.
+        stepTools: stepByStep ? (index) => (index === undefined ? [...IMPORT_RUN_TOOLS] : [...(IMPORT_STEP_TOOLS[index] ?? IMPORT_RUN_TOOLS)]) : undefined,
         saidDone: stepByStep ? saysStepDone : undefined,
         doneNudge: stepByStep ? buildDoneNudge : undefined,
         stepCorrection:

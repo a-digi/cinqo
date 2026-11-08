@@ -185,7 +185,7 @@ export function ImportRunPage({ runId }: { runId: string }) {
           <p className="mt-3 text-xs text-gray-400">
             This page updates by itself.
             {run.driver === 'code' &&
-              ' If the page that started the import is closed before it finishes, the import stops. The AI answers each question in a conversation of its own, so the transcript shows only the first.'}{' '}
+              ' If the page that started the import is closed before it finishes, the import stops.'}{' '}
             <button type="button" onClick={viewTranscript} className="underline hover:text-gray-600">
               View transcript
             </button>

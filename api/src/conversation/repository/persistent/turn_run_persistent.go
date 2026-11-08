@@ -93,6 +93,30 @@ func (r *TurnRunPersistentRepo) ClearConversationCheckpoints(conversationID stri
 	return err
 }
 
+// SetOptions stores the per-turn settings of a run (the migration 31_10_2026_16_00_00): fresh says the model is sent the new message only, allowedTools
+// is the JSON list of the tools the turn is offered ("" for the conversation's own list, stored as NULL).
+func (r *TurnRunPersistentRepo) SetOptions(id string, fresh bool, allowedTools string) error {
+	var tools any
+	if allowedTools != "" {
+		tools = allowedTools
+	}
+	f := 0
+	if fresh {
+		f = 1
+	}
+	_, err := r.db.Exec(`UPDATE turn_runs SET fresh_context = ?, allowed_tools = ? WHERE id = ?`, f, tools, id)
+	return err
+}
+
+// CopyOptions gives the run toID the per-turn settings of the run fromID (a retry keeps the settings of the turn it retries).
+func (r *TurnRunPersistentRepo) CopyOptions(fromID, toID string) error {
+	_, err := r.db.Exec(
+		`UPDATE turn_runs SET fresh_context = (SELECT fresh_context FROM turn_runs WHERE id = ?), allowed_tools = (SELECT allowed_tools FROM turn_runs WHERE id = ?) WHERE id = ?`,
+		fromID, fromID, toID,
+	)
+	return err
+}
+
 // SetRetry marks a run as the retry of another (the place in the chain: 1 for the first retry).
 func (r *TurnRunPersistentRepo) SetRetry(id, retryOf string, retryCount int) error {
 	_, err := r.db.Exec(`UPDATE turn_runs SET retry_of = ?, retry_count = ? WHERE id = ?`, retryOf, retryCount, id)
