@@ -33,6 +33,9 @@ export interface ToolUpdate {
   versionId: string
   repositoryId: string
   repositoryName: string
+  // What the update does to other tools first (the same plan the update dialog shows), and why it cannot be applied now, if it cannot.
+  needs: { name: string; action: 'install' | 'update' | 'enable' }[]
+  blocked: string
 }
 
 export interface ToolUpdatesResponse {

@@ -13,6 +13,7 @@ import (
 	"github.com/a-digi/coco-server/server/request"
 	"gopkg.in/yaml.v3"
 
+	tool_entity "github.com/a-digi/cinqo/src/tool/entity"
 	repo_entity "github.com/a-digi/cinqo/src/toolrepository/entity"
 	"github.com/a-digi/cinqo/src/toolrepository/fetch"
 	"github.com/a-digi/cinqo/src/toolrepository/service"
@@ -206,4 +207,29 @@ func (b blockingRepos) Refresh(ctx context.Context, id string) (*repo_entity.Rep
 	case <-ctx.Done():
 	}
 	return &repo_entity.Repository{ID: id, Name: "x", LastStatus: repo_entity.StatusOK}, nil
+}
+
+// Plan dependency-install, step 8: an update lists what it needs done first, from the same plan the update dialog shows.
+func TestAnUpdateListsTheDependenciesItNeedsFirst(t *testing.T) {
+	e, srv := updatesEnv(t), newCountingServer(t)
+	e.installRow(t, "browser", "1.0.0", true, "running", "")
+	e.installRow(t, "career", "1.0.0", true, "running", "", tool_entity.ToolRequiredTool{ToolID: "id-career", RequiredSlug: "browser", MinVersion: "1.0.0"})
+	srv.files["/main.json"] = planFile("Main",
+		planTool("career", "2.0.0", `[{"id":"browser","minVersion":"2.0.0"}]`, 100),
+		planTool("browser", "2.0.0", "", 100),
+	)
+	addRepo(t, e, srv.srv.URL+"/main.json")
+	_, out := e.call(UpdatesHandler, "GET", "/api/v1/tool-updates", "", nil)
+	byslug := map[string]map[string]any{}
+	for _, u := range updatesOf(out) {
+		m := u.(map[string]any)
+		byslug[m["slug"].(string)] = m
+	}
+	needs := func(slug string) []any { return byslug[slug]["needs"].([]any) }
+	if len(byslug) != 2 || len(needs("career")) != 1 || needs("career")[0].(map[string]any)["name"] != "Browser" || needs("career")[0].(map[string]any)["action"] != "update" {
+		t.Fatalf("career's update needs Browser updated first: %v", byslug)
+	}
+	if len(needs("browser")) != 0 || byslug["browser"]["blocked"] != "" || byslug["career"]["blocked"] != "" {
+		t.Fatalf("browser's update needs nothing: %v", byslug["browser"])
+	}
 }

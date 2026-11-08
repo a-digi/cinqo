@@ -25,6 +25,7 @@ import {
   lastCheckedText,
   progressText,
   updateFor,
+  needsText,
   updateLabel,
 } from './updateCheckDisplay'
 import { useUpdateCheck } from './useUpdateCheck'
@@ -283,6 +284,8 @@ export function ToolsListPage() {
                           in {update.repositoryName}
                         </p>
                       )}
+                      {update && needsText(update) !== '' && <p className="text-xs text-gray-500">{needsText(update)}</p>}
+                      {update && update.blocked !== '' && <p className="text-xs text-red-600">Cannot be updated now: {update.blocked}</p>}
                     </div>
                   )}
                 </Card>

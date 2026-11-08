@@ -81,3 +81,14 @@ export function updateFor(updates: ToolUpdate[], slug: string): ToolUpdate | und
 export function updateLabel(update: Pick<ToolUpdate, 'latestVersion'>): string {
   return `Update v${update.latestVersion}`
 }
+
+// What an update brings with it, in plain words: "Needs Browser updated first", "Also installs Browser and PDF Tools". Empty when it needs nothing.
+export function needsText(update: Pick<ToolUpdate, 'needs'>): string {
+  const list = (action: string) => update.needs.filter((n) => n.action === action).map((n) => n.name)
+  const join = (names: string[]) => (names.length <= 1 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`)
+  const parts: string[] = []
+  if (list('update').length > 0) parts.push(`Needs ${join(list('update'))} updated first`)
+  if (list('install').length > 0) parts.push(`Also installs ${join(list('install'))}`)
+  if (list('enable').length > 0) parts.push(`Also enables ${join(list('enable'))}`)
+  return parts.join('. ')
+}

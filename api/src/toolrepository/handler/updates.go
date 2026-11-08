@@ -2,10 +2,13 @@ package handler
 
 import (
 	"net/http"
+	"runtime"
 
 	"github.com/a-digi/coco-server/server/request"
 	"github.com/a-digi/coco-server/server/response"
 
+	"github.com/a-digi/cinqo/src/toolrepository/resolver"
+	"github.com/a-digi/cinqo/src/toolrepository/status"
 	"github.com/a-digi/cinqo/src/toolrepository/updatecheck"
 )
 
@@ -13,9 +16,48 @@ import (
 const DIKeyUpdateChecker = "tool_update_checker"
 
 type updatesResponse struct {
-	Check         updatecheck.Check    `json:"check"`
-	LastCheckedAt string               `json:"lastCheckedAt"`
-	Updates       []updatecheck.Update `json:"updates"`
+	Check         updatecheck.Check `json:"check"`
+	LastCheckedAt string            `json:"lastCheckedAt"`
+	Updates       []updateResponse  `json:"updates"`
+}
+
+// updateNeed is one other step an update brings with it (a dependency installed, updated or enabled first).
+type updateNeed struct {
+	Name   string `json:"name"`
+	Action string `json:"action"`
+}
+
+// updateResponse is an update with what it needs done first (plan dependency-install, step 8): the other steps of the same plan the update dialog shows,
+// or the reason it cannot be applied now.
+type updateResponse struct {
+	updatecheck.Update
+	Needs   []updateNeed `json:"needs"`
+	Blocked string       `json:"blocked"`
+}
+
+// withNeeds makes the plan of each update from the stored catalogs (read only, no network) and keeps what is beyond the update itself.
+func withNeeds(reqCtx request.RequestContext, updates []updatecheck.Update, env status.Env) []updateResponse {
+	out := make([]updateResponse, 0, len(updates))
+	installed, instErr := installedForPlan(reqCtx.GetDI().GetDatabaseManager().Connector.DB)
+	renv := resolver.Env{OS: runtime.GOOS, Arch: runtime.GOARCH, AppVersion: env.AppVersion}
+	for _, u := range updates {
+		r := updateResponse{Update: u, Needs: []updateNeed{}}
+		if instErr == nil {
+			plan, err := svc(reqCtx).PlanDependencies(u.RepositoryID, u.Slug, u.VersionID, installed, renv)
+			if err == nil {
+				for _, st := range plan.Steps {
+					if st.ToolID != u.Slug {
+						r.Needs = append(r.Needs, updateNeed{Name: st.Name, Action: string(st.Action)})
+					}
+				}
+				if !plan.OK && len(plan.Problems) > 0 {
+					r.Blocked = plan.Problems[0].Message
+				}
+			}
+		}
+		out = append(out, r)
+	}
+	return out
 }
 
 func checkerFrom(reqCtx request.RequestContext) (*updatecheck.Checker, bool) {
@@ -48,7 +90,7 @@ func respondWithUpdates(reqCtx request.RequestContext, status int, check updatec
 	response.SuccessResponse(w, status, updatesResponse{
 		Check:         check,
 		LastCheckedAt: updatecheck.LastCheckedAt(repos),
-		Updates:       updatecheck.Updates(repos, env),
+		Updates:       withNeeds(reqCtx, updatecheck.Updates(repos, env), env),
 	})
 }
 
