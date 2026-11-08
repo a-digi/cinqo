@@ -19,6 +19,7 @@ import {
 } from '../../api/conversations'
 import { ApiError } from '../../api/client'
 import { pickUsageExtras } from '../../Components/Conversation/usageText'
+import { FOLLOW_INTERVAL_MS, followAction } from './followTurn'
 
 // How often to re-poll GET .../turns/active while a turn is running —
 // plan/ai/conversation/step-23-detach-turn-execution-from-request.md.
@@ -383,6 +384,48 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   // retry from clobbering whatever's now selected with stale data.
   const selectedIdRef = useRef(selectedId)
   selectedIdRef.current = selectedId
+
+  // Follows the open conversation (plan 210): a turn that another client starts in it (the Career import runs each of its steps as a turn of the
+  // run's own conversation) is picked up within a few seconds, shown live while it runs, and its messages are loaded when it has finished, instead of the
+  // chat staying where it was when it opened. followedTurnRef holds, per conversation, the latest turn this page has taken care of.
+  const followedTurnRef = useRef<Record<string, string>>({})
+  useEffect(() => {
+    if (!isAuthenticated || selectedId === null) return
+    const id = selectedId
+    const stop = { cancelled: false }
+    const stopped = () => stop.cancelled // a function: TypeScript would otherwise keep the first check's result across the await
+    const tick = async () => {
+      if (document.visibilityState === 'hidden') return
+      let latest
+      try {
+        latest = await fetchActiveTurn(id)
+      } catch {
+        return // no turn has run yet, or this tick failed: the next one looks again
+      }
+      if (stopped() || selectedIdRef.current !== id) return
+      const action = followAction(latest, followedTurnRef.current[id], id in turnWatchesRef.current)
+      if (latest.status === 'running') followedTurnRef.current[id] = latest.turnRunId
+      if (action === 'watch') {
+        void watchTurn(id)
+      } else if (action === 'reload') {
+        try {
+          const d = await fetchConversation(id)
+          if (stopped() || selectedIdRef.current !== id) return
+          followedTurnRef.current[id] = latest.turnRunId
+          setDetail((prev) => (prev?.id === id ? d : prev))
+        } catch {
+          // best-effort: the next tick tries again
+        }
+      }
+    }
+    const timer = setInterval(() => {
+      void tick()
+    }, FOLLOW_INTERVAL_MS)
+    return () => {
+      stop.cancelled = true
+      clearInterval(timer)
+    }
+  }, [isAuthenticated, selectedId, watchTurn])
 
   // No longer cancels any other conversation's own watch — switching
   // away from a conversation whose turn is still running leaves that
