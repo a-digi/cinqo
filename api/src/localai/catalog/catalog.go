@@ -73,6 +73,9 @@ type Model struct {
 	// UnsuitableFor lists the tasks this model was measured NOT to manage (plan 207): a tool that does such a task can warn before it
 	// starts. Only the tasks in Tasks are known; empty (the default) says nothing, which is not the same as "suitable".
 	UnsuitableFor []string `json:"unsuitableFor"`
+	// FullPrompt says a caller should give this model its whole task as one full prompt, like a cloud model, even though the platform
+	// otherwise gets short one-action steps (Phi-4-mini follows the full prompt, and answers short steps in text without calling tools).
+	FullPrompt bool `json:"fullPrompt"`
 	Source        string   `json:"source"`
 	Note          string   `json:"note"`
 	CheckedOn     string   `json:"checkedOn"`

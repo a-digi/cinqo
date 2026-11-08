@@ -71,6 +71,8 @@ func Entry(db *sql.DB) platform.Entry {
 		ModelNames: modelNames,
 		// The tasks a model was measured not to manage (plan 207), so Career can warn before a CV import on the 1.5B model.
 		ModelUnsuitable: modelUnsuitable,
+		// The models that get the whole task as one full prompt although local models usually get short steps.
+		ModelFullPrompt: modelFullPrompt,
 		// Offered only when it can really answer (plan 205): switched on AND the program and at least one model are on disk and fit.
 		// While they are still being downloaded, or after they were deleted, "Local AI" is not offered anywhere, exactly as when it is
 		// off. The models offered are all the ready ones, the saved default first (plan 206).
@@ -114,6 +116,21 @@ func modelNames() map[string]string {
 	out := make(map[string]string, len(cat.Models))
 	for _, m := range cat.Models {
 		out[m.ID] = fmt.Sprintf("%s, %s", m.Name, hardware.GiB(uint64(m.SizeBytes)))
+	}
+	return out
+}
+
+// modelFullPrompt is the catalog models marked to get one full prompt.
+func modelFullPrompt() []string {
+	cat, err := catalog.Default()
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, m := range cat.Models {
+		if m.FullPrompt {
+			out = append(out, m.ID)
+		}
 	}
 	return out
 }

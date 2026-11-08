@@ -36,6 +36,8 @@ type platformResponse struct {
 	// UnsuitableFor maps a model id to the tasks it was measured not to manage (a tool can warn before it starts), for the models offered
 	// right now; absent when none is flagged (the cloud platforms).
 	UnsuitableFor map[string][]string `json:"unsuitableFor,omitempty"`
+	// FullPromptModels lists the offered models that get the whole task as one full prompt although the platform needs short steps.
+	FullPromptModels []string `json:"fullPromptModels,omitempty"`
 }
 
 // ListPlatformsHandler handles GET /api/v1/platforms. See
@@ -56,7 +58,7 @@ func platformResponses() []platformResponse {
 			continue
 		}
 		models := entry.SelectableModelList()
-		out = append(out, platformResponse{ID: info.ID, Name: info.Name, Models: models, RequiresKey: entry.RequiresKey(), OffersTools: entry.OffersAllTools(), NeedsShortSteps: entry.ShortSteps, ContextTokens: contextOf(entry), ModelNames: namesOf(entry, models), UnsuitableFor: unsuitableOf(entry, models)})
+		out = append(out, platformResponse{ID: info.ID, Name: info.Name, Models: models, RequiresKey: entry.RequiresKey(), OffersTools: entry.OffersAllTools(), NeedsShortSteps: entry.ShortSteps, ContextTokens: contextOf(entry), ModelNames: namesOf(entry, models), UnsuitableFor: unsuitableOf(entry, models), FullPromptModels: fullPromptOf(entry, models)})
 	}
 	return out
 }
@@ -74,6 +76,24 @@ func namesOf(entry platform.Entry, offered []string) map[string]string {
 				out = map[string]string{}
 			}
 			out[id] = name
+		}
+	}
+	return out
+}
+
+// fullPromptOf is the offered models marked to get one full prompt, nil when none is.
+func fullPromptOf(entry platform.Entry, offered []string) []string {
+	if entry.ModelFullPrompt == nil {
+		return nil
+	}
+	marked := map[string]bool{}
+	for _, id := range entry.ModelFullPrompt() {
+		marked[id] = true
+	}
+	var out []string
+	for _, id := range offered {
+		if marked[id] {
+			out = append(out, id)
 		}
 	}
 	return out

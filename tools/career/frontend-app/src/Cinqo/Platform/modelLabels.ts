@@ -34,3 +34,13 @@ export function isUnsuitableFor(platform: Pick<Platform, 'unsuitableFor'> | null
   if (!platform || !model) return false
   return platform.unsuitableFor?.[model]?.includes(task) === true
 }
+
+// Whether work for this model is split into short one-action steps: the platform needs them and the model is not one that gets the
+// full prompt like a cloud model. Unknown is never "short steps".
+export function needsShortStepsFor(
+  platform: Pick<Platform, 'needsShortSteps' | 'fullPromptModels'> | null | undefined,
+  model: string | null | undefined,
+): boolean {
+  if (platform?.needsShortSteps !== true) return false
+  return !(model && platform.fullPromptModels?.includes(model))
+}

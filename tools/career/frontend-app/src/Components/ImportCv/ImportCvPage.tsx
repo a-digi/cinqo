@@ -10,7 +10,7 @@ import {
 } from '../../api'
 import { createConversation, sendMessage } from '../../Cinqo/Conversation/conversation'
 import { fetchPlatforms } from '../../Cinqo/Platform/platformRepository'
-import { CV_IMPORT_TASK, isUnsuitableFor, modelLabel } from '../../Cinqo/Platform/modelLabels'
+import { CV_IMPORT_TASK, isUnsuitableFor, modelLabel, needsShortStepsFor } from '../../Cinqo/Platform/modelLabels'
 import { useAiChoice } from '../../Cinqo/Platform/useAiChoice'
 import { PDFIcon, UploadIcon } from '../../Shared/Icons/icons'
 import { cardClassName, cardStyle } from '../../Shared/cardStyle'
@@ -136,14 +136,14 @@ export function ImportCvPage() {
           const message = await sendMessage(conversationId, followUp ?? buildImportPrompt(fileId, runId))
           return { reply: message.content, toolErrors: message.toolErrors, toolsCalled: message.toolsCalled }
         },
-        // A platform whose models do better with short one-action messages (the local models: needsShortSteps) gets the instruction
+        // A platform whose models do better with short one-action messages (the local models: needsShortSteps, except a model marked to get the full prompt, Phi-4-mini) gets the instruction
         // in short steps instead of the one long prompt, which a small model answers with a made-up failure instead of a tool call.
-        stepMessages: platform.needsShortSteps === true ? (runId) => buildImportSteps(fileId, runId) : undefined,
+        stepMessages: needsShortStepsFor(platform, model) ? (runId) => buildImportSteps(fileId, runId) : undefined,
         // Step-by-step only (plan 207): every step after the first, and a continuation, runs in a conversation of its own (hidden from the
         // list; the run keeps the first one for its transcript) so the model has none of its earlier replies to copy; and a step that did not
         // call the tools it had to is asked once more, then stops the run with a message that names the step.
         stepConversation:
-          platform.needsShortSteps === true
+          needsShortStepsFor(platform, model)
             ? async (_runId, label) => {
                 const conversation = await createConversation({
                   title: `Import CV: ${originalFilename} · ${label}`,
@@ -157,7 +157,7 @@ export function ImportCvPage() {
               }
             : undefined,
         stepCorrection:
-          platform.needsShortSteps === true ? (index, verdict, runId) => buildStepCorrection(IMPORT_STEP_EXPECTATIONS[index], verdict, fileId, runId) : undefined,
+          needsShortStepsFor(platform, model) ? (index, verdict, runId) => buildStepCorrection(IMPORT_STEP_EXPECTATIONS[index], verdict, fileId, runId) : undefined,
         endRun: finishCVImportRun,
         onConversation: setConversationId,
         // The run exists: its own page takes over from here (the analysis goes on and ends the run; the page polls it).

@@ -277,3 +277,15 @@ func TestTheLocalPlatformFlagsTheQwen15BAsUnsuitableForTheCVImport(t *testing.T)
 		}
 	}
 }
+
+func TestTheLocalPlatformMarksOnlyPhiToGetTheFullPrompt(t *testing.T) {
+	withEngine(t, &fakeEngine{})
+	e := Entry(openMainDB(t))
+	if e.ModelFullPrompt == nil {
+		t.Fatal("the local platform must say which models get the full prompt")
+	}
+	got := e.ModelFullPrompt()
+	if len(got) != 1 || got[0] != phiID {
+		t.Errorf("full prompt models = %v, want only %s", got, phiID)
+	}
+}

@@ -213,3 +213,27 @@ func TestThePlatformListFlagsUnsuitableModelsOnlyForOfferedModelsAndOnlyWhenTheP
 		t.Errorf("an absent flag must not be in the JSON: %s", raw)
 	}
 }
+
+func TestThePlatformListNamesTheFullPromptModelsOnlyAmongTheOfferedOnes(t *testing.T) {
+	if err := platform.Register(platform.Entry{
+		Info:            entity.Platform{ID: "list-fullprompt", Name: "Full prompt"},
+		Completer:       noopCompleter{},
+		Credentials:     func(context.Context) (string, string, error) { return "http://127.0.0.1:1", "", nil },
+		Models:          func() []string { return []string{"a", "b"} },
+		ModelFullPrompt: func() []string { return []string{"b", "gone"} },
+	}); err != nil {
+		t.Fatal(err)
+	}
+	list := platformResponses()
+	p, ok := find(list, "list-fullprompt")
+	if !ok || len(p.FullPromptModels) != 1 || p.FullPromptModels[0] != "b" {
+		t.Fatalf("%+v: only the offered, marked model", p)
+	}
+	if c, ok := find(list, "openai"); ok && c.FullPromptModels != nil {
+		t.Errorf("a platform that marks none lists none: %+v", c)
+	}
+	raw, _ := json.Marshal(platformResponse{ID: "x"})
+	if strings.Contains(string(raw), "fullPromptModels") {
+		t.Errorf("an absent list must not be in the JSON: %s", raw)
+	}
+}
