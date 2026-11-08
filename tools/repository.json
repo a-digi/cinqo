@@ -8,7 +8,7 @@
       "email": "tafa.andet@googlemail.com"
     }
   ],
-  "generatedAt": "2026-11-08T16:31:04Z",
+  "generatedAt": "2026-11-08T16:54:10Z",
   "tools": [
     {
       "id": "browser",
@@ -30,28 +30,28 @@
             {
               "os": "darwin",
               "arch": "arm64",
-              "url": "browser/versions/tool-browser-darwin-arm64.zip",
+              "url": "https://raw.githubusercontent.com/a-digi/cinqo-tools/main/browser/versions/tool-browser-darwin-arm64.zip",
               "sha256": "7d30437cf6e41a2289b8a3166d60514d619d6f1fdba732fd40cf49cec20cee4f",
               "sizeBytes": 45989768
             },
             {
               "os": "linux",
               "arch": "amd64",
-              "url": "browser/versions/tool-browser-linux-amd64.zip",
+              "url": "https://raw.githubusercontent.com/a-digi/cinqo-tools/main/browser/versions/tool-browser-linux-amd64.zip",
               "sha256": "63604869c71244229025908207d7979da77cecfccfc174f537779db692c29ed8",
               "sizeBytes": 45953057
             },
             {
               "os": "linux",
               "arch": "arm64",
-              "url": "browser/versions/tool-browser-linux-arm64.zip",
+              "url": "https://raw.githubusercontent.com/a-digi/cinqo-tools/main/browser/versions/tool-browser-linux-arm64.zip",
               "sha256": "17f266e76b7f66843d8970b704688ebaf89ee8d5d85e3364ea31f36eb6c1cf07",
               "sizeBytes": 43792695
             },
             {
               "os": "windows",
               "arch": "amd64",
-              "url": "browser/versions/tool-browser-windows-amd64.zip",
+              "url": "https://raw.githubusercontent.com/a-digi/cinqo-tools/main/browser/versions/tool-browser-windows-amd64.zip",
               "sha256": "dfa4e4d9a5406f849cef89addef54381bddaa7c254f4ef3c1362256517227547",
               "sizeBytes": 30586485
             }
@@ -79,28 +79,28 @@
             {
               "os": "darwin",
               "arch": "arm64",
-              "url": "career/versions/tool-career-darwin-arm64.zip",
+              "url": "https://raw.githubusercontent.com/a-digi/cinqo-tools/main/career/versions/tool-career-darwin-arm64.zip",
               "sha256": "1ab3701c93f0280a1ee86ddcbc1050c12e17abbdc2d90b05f26620c5b51c7fc5",
               "sizeBytes": 18383416
             },
             {
               "os": "linux",
               "arch": "amd64",
-              "url": "career/versions/tool-career-linux-amd64.zip",
+              "url": "https://raw.githubusercontent.com/a-digi/cinqo-tools/main/career/versions/tool-career-linux-amd64.zip",
               "sha256": "7fb236e5762bcab287c839dda51b23794ef05d211f6592b85d46985425e12f60",
               "sizeBytes": 18567206
             },
             {
               "os": "linux",
               "arch": "arm64",
-              "url": "career/versions/tool-career-linux-arm64.zip",
+              "url": "https://raw.githubusercontent.com/a-digi/cinqo-tools/main/career/versions/tool-career-linux-arm64.zip",
               "sha256": "bacdfd29b19b772c409e98cdbc3da16c397dc06ecf07fdfaee274325be2d0304",
               "sizeBytes": 17537621
             },
             {
               "os": "windows",
               "arch": "amd64",
-              "url": "career/versions/tool-career-windows-amd64.zip",
+              "url": "https://raw.githubusercontent.com/a-digi/cinqo-tools/main/career/versions/tool-career-windows-amd64.zip",
               "sha256": "2a8cdaacdebb447b1ee277e47c6e2b84ab85bf5390b60af3b4ed6cafd95dff7e",
               "sizeBytes": 18899269
             }
@@ -128,28 +128,28 @@
             {
               "os": "darwin",
               "arch": "arm64",
-              "url": "pdf_tools/versions/tool-pdf_tools-darwin-arm64.zip",
+              "url": "https://raw.githubusercontent.com/a-digi/cinqo-tools/main/pdf_tools/versions/tool-pdf_tools-darwin-arm64.zip",
               "sha256": "70c0d0e05f9b1701cafe924600b7cf8c25e37e59893a1c153ba4374411725ca7",
               "sizeBytes": 7925472
             },
             {
               "os": "linux",
               "arch": "amd64",
-              "url": "pdf_tools/versions/tool-pdf_tools-linux-amd64.zip",
+              "url": "https://raw.githubusercontent.com/a-digi/cinqo-tools/main/pdf_tools/versions/tool-pdf_tools-linux-amd64.zip",
               "sha256": "e128d823f2761af240131cf93e8ac4005e58b1631ea183299fd22e270c1ab3ac",
               "sizeBytes": 8169913
             },
             {
               "os": "linux",
               "arch": "arm64",
-              "url": "pdf_tools/versions/tool-pdf_tools-linux-arm64.zip",
+              "url": "https://raw.githubusercontent.com/a-digi/cinqo-tools/main/pdf_tools/versions/tool-pdf_tools-linux-arm64.zip",
               "sha256": "b4b3c747f1ae292af0a5fbbcc03798d39f7d33744c9ffb79c67f0238566a06bf",
               "sizeBytes": 7471408
             },
             {
               "os": "windows",
               "arch": "amd64",
-              "url": "pdf_tools/versions/tool-pdf_tools-windows-amd64.zip",
+              "url": "https://raw.githubusercontent.com/a-digi/cinqo-tools/main/pdf_tools/versions/tool-pdf_tools-windows-amd64.zip",
               "sha256": "4f870cb00e3aa62d595ebf3717e5ff3a0b9bd420e80442369a5a20991e98d608",
               "sizeBytes": 8247628
             }

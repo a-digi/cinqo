@@ -264,13 +264,40 @@ repository:
 	cd api && go run ./cmd/repotool -tools-dir ../tools -out-dir ../dist/repository \
 		-name "$(REPO_NAME)" -description "$(REPO_DESCRIPTION)" $(if $(BASE_URL),-base-url "$(BASE_URL)")
 
-# Writes tools/repository.json, linking each package where it already is under
-# tools/<tool>/versions/ and copying nothing. Serve the tools/ folder statically
-# and add the link to repository.json on the Repositories page.
+# Writes tools/repository.json, linking each package at
+# <address>/<tool>/versions/<zip> and copying nothing. The address is BASE_URL when given, else CINQO_TOOLS_URL (the cinqo-tools repository on
+# GitHub, see repository-copy), so the file points at the packages where they are published. Run make repository-copy afterwards to put the zips
+# and the same links into cinqo-tools/. BASE_URL= (empty) writes links relative to the file instead, to serve the tools/ folder statically.
 .PHONY: repository-in-place
 repository-in-place:
 	cd api && go run ./cmd/repotool -in-place -tools-dir ../tools \
-		-name "$(REPO_NAME)" -description "$(REPO_DESCRIPTION)" $(if $(BASE_URL),-base-url "$(BASE_URL)")
+		-name "$(REPO_NAME)" -description "$(REPO_DESCRIPTION)" $(if $(or $(BASE_URL),$(filter-out undefined,$(origin BASE_URL))),,-base-url "$(CINQO_TOOLS_URL)") $(if $(BASE_URL),-base-url "$(BASE_URL)")
+
+# Copies the packaged tools into the cinqo-tools repository (a separate git repository in cinqo-tools/, ignored by this one) and writes that
+# repository's own repository.json there. Every tools/<tool>/versions/tool-*.zip goes to cinqo-tools/<tool>/versions/ (same relative path), then
+# repotool reads the copies and writes cinqo-tools/repository.json, linking each package at
+# $(CINQO_TOOLS_URL)/<tool>/versions/<zip> (the address the file is served from: raw.githubusercontent.com of the cinqo-tools repository, like the
+# app's default repository link). The name, description and authors come from tools/repository.meta.json.
+# tools/repository.json is not touched: it keeps its relative links for serving tools/ here. Nothing is removed from the target and no git command
+# is run: commit and push in cinqo-tools/ yourself.
+# Usage: make repository-copy            (CINQO_TOOLS_DIR=other-folder, CINQO_TOOLS_URL=other-address to change them)
+CINQO_TOOLS_DIR ?= cinqo-tools
+CINQO_TOOLS_URL ?= https://raw.githubusercontent.com/a-digi/cinqo-tools/main
+.PHONY: repository-copy
+repository-copy:
+	@test -d "$(CINQO_TOOLS_DIR)" || (echo "$(CINQO_TOOLS_DIR) does not exist: clone or create the cinqo-tools repository there first"; exit 1)
+	@set -e; found=0; \
+	for zip in tools/*/versions/tool-*.zip; do \
+		[ -f "$$zip" ] || continue; found=1; \
+		dest="$(CINQO_TOOLS_DIR)/$${zip#tools/}"; \
+		mkdir -p "$$(dirname "$$dest")"; \
+		cp -p "$$zip" "$$dest"; \
+		echo "copied $${zip#tools/}"; \
+	done; \
+	[ "$$found" = 1 ] || { echo "no packaged tool in tools/*/versions/: run make zip in a tool folder first"; exit 1; }
+	cd api && go run ./cmd/repotool -in-place -tools-dir "$(abspath $(CINQO_TOOLS_DIR))" -meta "$(abspath tools/repository.meta.json)" \
+		-name "$(REPO_NAME)" -description "$(REPO_DESCRIPTION)" -base-url "$(CINQO_TOOLS_URL)"
+	@echo "Now commit and push in $(CINQO_TOOLS_DIR)/ (not done here)."
 
 # Writes tools/repository.json for a GitHub release: every package link is
 # https://github.com/$(GITHUB_REPO)/releases/download/$(TAG)/<zip>. Prints the
