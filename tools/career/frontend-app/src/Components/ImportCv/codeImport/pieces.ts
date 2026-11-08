@@ -99,7 +99,7 @@ export function personaPiece(cv: SplitCv): Piece<PersonaValue> {
   const titles = cv.jobs.map((j) => j.title ?? j.header).filter((t) => t !== '')
   const body = clip(profileText(cv), 1200)
   return {
-    prompt: `${block('Profile of a CV', body)}\n${titles.length > 0 ? `${block('Job titles in the CV', titles.slice(0, 6).join('\n'))}\n` : ''}Which job title describes this person best? Use a title that is written in the CV. Answer with this JSON and nothing else: {"name":"<a short name for this career path>","title":"<the job title>"}`,
+    prompt: `${block('Profile of a CV', body)}\n${titles.length > 0 ? `${block('Job titles in the CV, the newest first', titles.slice(0, 6).join('\n'))}\n` : ''}Which job title describes this person now? Prefer the newest title that fits the profile, and use a title that is written in the CV. Answer with this JSON and nothing else: {"name":"<a short name for this career path>","title":"<the job title>"}`,
     validate: (parsed) => {
       const o = asObject(parsed)
       if (!o) return bad('it must be a JSON object {"name": ..., "title": ...}')
@@ -145,7 +145,7 @@ export function detailsPiece(cv: SplitCv): Piece<DetailsValue> {
   const top = clip([...cv.header.slice(0, 8), ...contact.slice(0, 6)].join('\n'), 700)
   const knownLocation = locationFromText(all)
   return {
-    prompt: `${block('Top of a CV, with the contact lines', top)}\n${block('Profile of the CV', profile)}\nWrite the person's headline (one line), a summary (two or three sentences) and their city and country, using only what is written above. Answer with this JSON and nothing else: {"headline":"<one line>","summary":"<two or three sentences>","location":"<city, country>"}`,
+    prompt: `${block('Top of a CV, with the contact lines', top)}\n${block('Profile of the CV', profile)}\nWrite the person's headline (one line), a summary (two or three sentences) and their city and country, using only what is written above and the same language as the CV text. Answer with this JSON and nothing else: {"headline":"<one line>","summary":"<two or three sentences>","location":"<city, country>"}`,
     validate: (parsed) => {
       const o = asObject(parsed)
       if (!o) return bad('it must be a JSON object {"headline": ..., "summary": ..., "location": ...}')
