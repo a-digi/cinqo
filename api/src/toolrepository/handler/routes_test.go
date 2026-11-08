@@ -28,8 +28,8 @@ func TestEveryRouteRequiresToolManage(t *testing.T) {
 	if err := yaml.Unmarshal(raw, &doc); err != nil {
 		t.Fatal(err)
 	}
-	if len(doc.Routes) != 6 {
-		t.Fatalf("expected 6 routes, got %d", len(doc.Routes))
+	if len(doc.Routes) != 7 {
+		t.Fatalf("expected 7 routes, got %d", len(doc.Routes))
 	}
 	routesGo, err := os.ReadFile(filepath.Join("..", "..", "..", "config", "routes", "routes.go"))
 	if err != nil {

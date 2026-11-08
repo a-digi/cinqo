@@ -48,3 +48,13 @@ routes:
     scopes:
       - tool:manage
       - cinqo:super:admin
+
+  # The read-only preview of an install together with what the tool needs, in order (plan/ai/tools/repository/dependency-install.md): it downloads and
+  # installs nothing, and needs the same scopes as the install itself.
+  - path: /api/v1/tool-repositories/{id}/tools/{toolId}/install-plan
+    method: POST
+    executor: ToolRepositoryInstallPlan
+    security: authenticated
+    scopes:
+      - tool:manage
+      - cinqo:super:admin
