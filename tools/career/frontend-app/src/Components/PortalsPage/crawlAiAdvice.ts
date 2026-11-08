@@ -6,9 +6,25 @@
 // choice in effect for that portal or link (its own, else its platform's, else the tool-wide one), so an inherited choice gets the
 // advice for what it really uses.
 import type { CrawlAiChoice } from '../../Cinqo/Platform/crawlAiChoice'
-import { defaultModelFor } from '../../Cinqo/Platform/aiChoice'
-import { LOCAL_PLATFORM_ID, RECOMMENDED_LOCAL_CRAWL_MODEL, modelLabel } from '../../Cinqo/Platform/modelLabels'
+import { LOCAL_PLATFORM_ID, RECOMMENDED_LOCAL_CRAWL_MODEL } from '../../Cinqo/Platform/modelLabels'
 import type { Platform } from '../../Cinqo/Platform/platformRepository'
+import type { InstructionStats } from '../../api'
+
+// How many times the instructions of a link must fail, with the best local model in use, before a premium model is advised.
+export const PREMIUM_AFTER_FAILURES = 3
+
+// The counter: how many times in a row the AI finished writing a link's instructions without saving any (the backend's own per-link
+// count, instruction_attempts, step 87: a provider error or an interruption says nothing about the model and does not count). A kind
+// whose instructions exist counts 0, the larger of the two kinds (job list, job details) is the link's.
+export function linkInstructionFailures(link: {
+  instructionStats: InstructionStats
+  crawlInstructions?: string | null
+  jobDetailCrawlInstructions?: string | null
+}): number {
+  const listing = (link.crawlInstructions ?? '').trim() !== '' ? 0 : link.instructionStats.listing.consecutiveFailures
+  const detail = (link.jobDetailCrawlInstructions ?? '').trim() !== '' ? 0 : link.instructionStats.jobDetail.consecutiveFailures
+  return Math.max(listing, detail)
+}
 
 export interface CrawlAiAdvice {
   // premium: a key exists, a premium model is not in use. qwen: no key, Coder 3B is ready but not in use. qwen-missing: no key, Coder 3B is
@@ -20,29 +36,46 @@ export interface CrawlAiAdvice {
   suggest: { platformId: string; model: string } | null
 }
 
-export function crawlAiAdvice(input: { usable: Platform[]; keysKnown: boolean; choice: CrawlAiChoice }): CrawlAiAdvice | null {
-  const { usable, keysKnown, choice } = input
+export function crawlAiAdvice(input: {
+  usable: Platform[]
+  keysKnown: boolean
+  choice: CrawlAiChoice
+  // linkInstructionFailures of the link (of a platform row: the largest of its links).
+  failures: number
+}): CrawlAiAdvice | null {
+  const { usable, keysKnown, choice, failures } = input
   if (!choice.platform) return null
   const premium = keysKnown ? usable.find((p) => p.requiresKey !== false && p.models.length > 0) : undefined
   const effectiveIsLocal = choice.platform.id === LOCAL_PLATFORM_ID
+  const usingQwen = effectiveIsLocal && choice.model === RECOMMENDED_LOCAL_CRAWL_MODEL
 
   if (premium) {
     if (!effectiveIsLocal) {
       return { kind: 'ok', text: 'Premium model in use', action: 'none', suggest: null }
     }
-    const model = defaultModelFor(premium)
+    // The best local model is in use: a premium model is advised only once the instructions have failed enough times, and the counter shows
+    // how far it is.
+    if (usingQwen && failures < PREMIUM_AFTER_FAILURES) {
+      const counter = failures > 0 ? ` · failed ${failures} of ${PREMIUM_AFTER_FAILURES}` : ''
+      return { kind: 'ok', text: `Best local model in use${counter}`, action: 'none', suggest: null }
+    }
+    // Only the platform is named, never a model: a platform's first listed model can be a poor one (OpenRouter's is the random free router,
+    // which often fails at tool use), so the person picks the model in the dialog.
     return {
       kind: 'premium',
-      text: `Use a premium model: ${premium.name} · ${modelLabel(premium, model)}`,
+      text: usingQwen
+        ? `Instructions failed ${failures} times: use a premium model, pick one from ${premium.name}`
+        : `Use a premium model: pick one from ${premium.name}`,
       action: 'choose',
-      suggest: { platformId: premium.id, model },
+      suggest: { platformId: premium.id, model: '' },
     }
   }
 
   // No premium platform to offer: only the Local AI can be advised, and only when it is what this portal or link uses.
   if (!effectiveIsLocal) return null
-  if (choice.model === RECOMMENDED_LOCAL_CRAWL_MODEL) {
-    return { kind: 'ok', text: 'Best local model in use', action: 'none', suggest: null }
+  if (usingQwen) {
+    const counter = failures > 0 ? ` · failed ${failures} time${failures === 1 ? '' : 's'}` : ''
+    return { kind: 'ok', text: `Best local model in use${counter}`, action: 'none', suggest: null }
   }
   const local = usable.find((p) => p.id === LOCAL_PLATFORM_ID)
   if (local?.models.includes(RECOMMENDED_LOCAL_CRAWL_MODEL) === true) {

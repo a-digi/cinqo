@@ -31,7 +31,7 @@ import { PageTips } from '../../Shared/PageTips/PageTips'
 import { CrawlAiModal } from './CrawlAiModal'
 import { aiChip, describeChoice, linkChip, overrideOf } from './aiOverrideDisplay'
 import { CrawlAiAdvicePill } from './CrawlAiAdvicePill'
-import { crawlAiAdvice } from './crawlAiAdvice'
+import { crawlAiAdvice, linkInstructionFailures } from './crawlAiAdvice'
 import { PortalLinkHeader } from './PortalLinkHeader'
 import { loginAddressForSave } from '../../Crawler/loginWindow'
 import { JOBS_PATH, VIEW_PLATFORM_PATH } from '../../paths'
@@ -114,7 +114,8 @@ function PortalsPageContent() {
   // suggestion preselected (the person still saves it), or goes to the Local AI page.
   const [aiSuggest, setAiSuggest] = useState<{ platformId: string; model: string } | null>(null)
   function adviceFor(portal: Portal, link: PortalLink | null) {
-    return crawlAiAdvice({ usable: ai.platforms, keysKnown: ai.keysKnown, choice: crawlAiFor(portal, link) })
+    const failures = link ? linkInstructionFailures(link) : Math.max(0, ...portal.links.map(linkInstructionFailures))
+    return crawlAiAdvice({ usable: ai.platforms, keysKnown: ai.keysKnown, choice: crawlAiFor(portal, link), failures })
   }
 
   function load() {
@@ -460,91 +461,95 @@ function PortalsPageContent() {
                       </button>
                     </div>
                   ) : (
-                    <div className="flex min-w-0 items-center gap-3">
-                      <span
-                        className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white shadow-sm"
-                        style={{ background: accentFor(p.name).to }}
-                        aria-hidden="true"
-                      >
-                        {initialOf(p.name)}
-                      </span>
-                      <span className="truncate text-sm font-semibold">{p.name}</span>
-                      <span
-                        className="shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium"
-                        style={{ background: PAGE_ACCENT.soft, color: PAGE_ACCENT.text }}
-                      >
-                        {plural(p.links.length, 'link', 'links')}
-                      </span>
-                      {(() => {
-                        const chip = aiChip(overrideOf(p), ai.platforms)
-                        return (
+                    <div className="min-w-0">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <span
+                          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white shadow-sm"
+                          style={{ background: accentFor(p.name).to }}
+                          aria-hidden="true"
+                        >
+                          {initialOf(p.name)}
+                        </span>
+                        <span className="truncate text-sm font-semibold">{p.name}</span>
+                        <span
+                          className="shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium"
+                          style={{ background: PAGE_ACCENT.soft, color: PAGE_ACCENT.text }}
+                        >
+                          {plural(p.links.length, 'link', 'links')}
+                        </span>
+                        {(() => {
+                          const chip = aiChip(overrideOf(p), ai.platforms)
+                          return (
+                            <button
+                              type="button"
+                              title="Set the AI platform and model for this platform's links"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setAiPortalId(p.id)
+                              }}
+                              className={`shrink-0 rounded-full border px-2.5 py-0.5 text-xs font-medium ${
+                                chip.kind === 'default'
+                                  ? 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                                  : chip.kind === 'set'
+                                    ? 'border-violet-200 bg-violet-50 text-violet-800 hover:bg-violet-100'
+                                    : 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100'
+                              }`}
+                            >
+                              {chip.text}
+                            </button>
+                          )
+                        })()}
+                        <span className="ml-auto flex shrink-0 gap-2">
                           <button
                             type="button"
-                            title="Set the AI platform and model for this platform's links"
                             onClick={(e) => {
                               e.stopPropagation()
-                              setAiPortalId(p.id)
+                              window.__cinqoToolBridge.navigate(`${VIEW_PLATFORM_PATH}?id=${encodeURIComponent(p.id)}`)
                             }}
-                            className={`shrink-0 rounded-full border px-2.5 py-0.5 text-xs font-medium ${
-                              chip.kind === 'default'
-                                ? 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
-                                : chip.kind === 'set'
-                                  ? 'border-violet-200 bg-violet-50 text-violet-800 hover:bg-violet-100'
-                                  : 'border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100'
-                            }`}
+                            className="rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
                           >
-                            {chip.text}
+                            View
                           </button>
-                        )
-                      })()}
-                      {(() => {
-                        const advice = adviceFor(p, null)
-                        if (!advice) return null
-                        return (
-                          <CrawlAiAdvicePill
-                            advice={advice}
-                            onAction={() => {
-                              if (advice.action === 'get-model') window.__cinqoToolBridge.navigate(LOCAL_AI_PATH)
-                              else {
-                                setAiSuggest(advice.suggest)
-                                setAiPortalId(p.id)
-                              }
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              startEditPortal(p)
                             }}
-                          />
-                        )
-                      })()}
-                      <span className="ml-auto flex shrink-0 gap-2">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            window.__cinqoToolBridge.navigate(`${VIEW_PLATFORM_PATH}?id=${encodeURIComponent(p.id)}`)
-                          }}
-                          className="rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-700 hover:bg-gray-50"
-                        >
-                          View
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            startEditPortal(p)
-                          }}
-                          className="rounded-full border border-blue-200 px-3 py-1 text-xs text-blue-700 hover:bg-blue-50"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleDeletePortal(p.id)
-                          }}
-                          className="rounded-full border border-red-200 px-3 py-1 text-xs text-red-700 hover:bg-red-50"
-                        >
-                          Delete
-                        </button>
-                      </span>
+                            className="rounded-full border border-blue-200 px-3 py-1 text-xs text-blue-700 hover:bg-blue-50"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleDeletePortal(p.id)
+                            }}
+                            className="rounded-full border border-red-200 px-3 py-1 text-xs text-red-700 hover:bg-red-50"
+                          >
+                            Delete
+                          </button>
+                        </span>
+                      </div>
+                      <div className="mt-2">
+                        {(() => {
+                          const advice = adviceFor(p, null)
+                          if (!advice) return null
+                          return (
+                            <CrawlAiAdvicePill
+                              advice={advice}
+                              onAction={() => {
+                                if (advice.action === 'get-model') window.__cinqoToolBridge.navigate(LOCAL_AI_PATH)
+                                else {
+                                  setAiSuggest(advice.suggest)
+                                  setAiPortalId(p.id)
+                                }
+                              }}
+                            />
+                          )
+                        })()}
+                      </div>
                     </div>
                   )
                 }

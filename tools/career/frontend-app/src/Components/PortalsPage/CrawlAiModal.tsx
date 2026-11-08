@@ -33,7 +33,7 @@ export function CrawlAiModal({
   // What is used when this level has no choice, e.g. "OpenRouter · model (the portal's choice)".
   fallbackText: string
   // A choice to start from instead of what is saved (the recommendation pill, plan 213); the person still has to Save it.
-  suggested?: { platformId: string; model: string } | null
+  suggested?: { platformId: string; model: string } | null // model '' = only the platform is suggested
   onClose: () => void
   onSave: (platformId: string, model: string) => Promise<void>
   onRemove: () => Promise<void>
@@ -64,6 +64,8 @@ export function CrawlAiModal({
 
   const selected = platforms.find((p) => p.id === platformId) ?? null
   const unchanged = !stale && platformId === savedPlatformId && model === savedModel
+  // A platform that lists models needs one picked (a suggestion may name only the platform).
+  const needsModel = selected !== null && selected.models.length > 0 && model === ''
 
   function pickPlatform(id: string) {
     setPlatformId(id)
@@ -147,7 +149,7 @@ export function CrawlAiModal({
       <div className="mt-4 flex items-center gap-3">
         <button
           type="button"
-          disabled={busy || platformId === '' || unchanged}
+          disabled={busy || platformId === '' || unchanged || needsModel}
           onClick={() => {
             run(() => onSave(platformId, model))
           }}
