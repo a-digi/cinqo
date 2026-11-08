@@ -178,6 +178,8 @@ type createCVImportRunRequest struct {
 	OriginalFilename string          `json:"originalFilename"`
 	ConversationID   string          `json:"conversationId"`
 	AIProposal       json.RawMessage `json:"aiProposal"`
+	// Driver is optional: "code" for a run the page does itself (plan 209).
+	Driver string `json:"driver"`
 }
 
 type updateCVImportRunRequest struct {
@@ -229,12 +231,16 @@ func CVImportRunsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "fileId and conversationId are required (aiProposal is optional)", http.StatusBadRequest)
 			return
 		}
+		if body.Driver != "" && body.Driver != "code" {
+			http.Error(w, `driver must be empty or "code"`, http.StatusBadRequest)
+			return
+		}
 		// Without a proposal the run starts generating and the AI hands its proposal over with suggest_cv_import (step 155);
 		// with one it is recorded as a completed analysis, as before.
 		var id string
 		var err error
 		if noRawJSON(body.AIProposal) {
-			id, err = createGeneratingCVImportRun(body.FileID, body.OriginalFilename, body.ConversationID)
+			id, err = createGeneratingCVImportRunBy(body.FileID, body.OriginalFilename, body.ConversationID, body.Driver)
 		} else {
 			id, err = createCVImportRun(body.FileID, body.OriginalFilename, body.ConversationID, body.AIProposal)
 		}

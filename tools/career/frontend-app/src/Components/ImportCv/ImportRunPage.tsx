@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react'
 import { deleteCVImportRun, fetchCVImportRun, finishCVImportRun, type CVImportRun } from '../../api'
 import { awaitTurnCompletion, fetchTurnStatus, sendMessage } from '../../Cinqo/Conversation/conversation'
-import { resumeAnalysis } from './analysisFlow'
+import { isAnalysisActive, resumeAnalysis } from './analysisFlow'
 import { IMPORT_CV_PATH } from '../../paths'
 import { cardClassName, cardStyle } from '../../Shared/cardStyle'
 import { UploadIcon } from '../../Shared/Icons/icons'
@@ -15,6 +15,8 @@ import { ImportReview } from './ImportReview'
 import { ImportRunDetail } from './ImportRunDetail'
 import { pipelineStages } from './pipelineRules'
 import { RUN_POLL_INTERVAL_MS, runPageView, shouldPollRun } from './runPageRules'
+import { RunActivity } from './RunActivity'
+import { ABANDONED_MESSAGE, isAbandonedCodeRun } from './runActivityRules'
 
 function goToHistory() {
   window.__cinqoToolBridge.navigate(IMPORT_CV_PATH)
@@ -77,8 +79,11 @@ export function ImportRunPage({ runId }: { runId: string }) {
 
   // A run that is still "generating" when this page opens and that this page's own code is not finishing (a reload, a new tab) is
   // picked up: the AI's turn is waited for and the run ended as ready or failed, as a fresh analysis would (plan 166, step 4).
-  const resumeRunId = run && view === 'generating' ? run.id : null
-  const resumeConversationId = run && view === 'generating' ? run.conversationId : null
+  // A run the page drives in code (driver "code") is never picked up this way: its state lives in the page that started it, and asking the AI
+  // to "continue" in its conversation would fail it (plan 209).
+  const resumable = run && view === 'generating' && run.driver !== 'code'
+  const resumeRunId = resumable ? run.id : null
+  const resumeConversationId = resumable ? run.conversationId : null
   useEffect(() => {
     if (resumeRunId === null || resumeConversationId === null) return
     let cancelled = false
@@ -105,6 +110,25 @@ export function ImportRunPage({ runId }: { runId: string }) {
       cancelled = true
     }
   }, [resumeRunId, resumeConversationId])
+
+  // A run driven in code whose page is gone (nothing stored for minutes, and this page is not driving it) is ended as failed, so the history does
+  // not keep it "analysing" for ever.
+  useEffect(() => {
+    if (run?.driver !== 'code') return
+    const timer = setInterval(() => {
+      if (!isAbandonedCodeRun(run, new Date(), isAnalysisActive(run.id))) return
+      finishCVImportRun(run.id, { status: 'failed', error: ABANDONED_MESSAGE })
+        .catch(() => undefined)
+        .finally(() => {
+          fetchCVImportRun(run.id)
+            .then(setRun)
+            .catch(() => undefined)
+        })
+    }, 15000)
+    return () => {
+      clearInterval(timer)
+    }
+  }, [run])
 
   async function handleDelete() {
     setActionError('')
@@ -157,10 +181,11 @@ export function ImportRunPage({ runId }: { runId: string }) {
 
       {run && view === 'generating' && (
         <section className={cardClassName} style={cardStyle}>
-          <p className="text-sm text-gray-700">
-            The AI is still analysing this CV, or the page that started it was closed before it finished. This page updates by itself.
-          </p>
-          <p className="mt-2 text-xs text-gray-400">
+          <RunActivity run={run} />
+          <p className="mt-3 text-xs text-gray-400">
+            This page updates by itself.
+            {run.driver === 'code' &&
+              ' If the page that started the import is closed before it finishes, the import stops. The AI answers each question in a conversation of its own, so the transcript shows only the first.'}{' '}
             <button type="button" onClick={viewTranscript} className="underline hover:text-gray-600">
               View transcript
             </button>

@@ -131,7 +131,7 @@ export function ImportCvPage() {
           await analyseCvByCode(
             {
               startConversation: async () => (await createConversation({ title: `Import CV: ${originalFilename}`, platformId: platform.id, model })).id,
-              recordRun: (conversationId) => createCVImportRun({ fileId, originalFilename, conversationId }),
+              recordRun: (conversationId) => createCVImportRun({ fileId, originalFilename, conversationId, driver: 'code' }),
               // The first question runs in the run's own conversation, so its transcript shows something; every other one in a hidden
               // conversation of its own (a small model repeats what it sees of its earlier answers). None of them is offered a tool.
               ask: async (prompt, conversationId) => {

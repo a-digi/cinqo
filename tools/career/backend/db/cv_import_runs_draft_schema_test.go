@@ -86,3 +86,44 @@ func TestStartUpAddsTheDraftColumnToAnOlderInstall(t *testing.T) {
 		t.Errorf("the existing run: %d %v", n, err)
 	}
 }
+
+// A career.db from before plan 209 has no driver column: the migration adds it as NULL, keeps every run, and a second run changes nothing.
+func TestMigrateCVImportRunsDriverKeepsExistingRuns(t *testing.T) {
+	database, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "career.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	for _, q := range []string{
+		oldCVImportRunsTable,
+		`INSERT INTO cv_import_runs (id, media_file_id, original_filename, conversation_id, ai_proposal_json) VALUES ('r1', 'm1', 'cv.pdf', 'c1', '{"a":1}')`,
+	} {
+		if _, err := database.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := 0; i < 2; i++ {
+		if err := migrateCVImportRunsDriver(database); err != nil {
+			t.Fatalf("migrate (run %d): %v", i+1, err)
+		}
+	}
+	var driver sql.NullString
+	var proposal string
+	if err := database.QueryRow(`SELECT driver, ai_proposal_json FROM cv_import_runs WHERE id = 'r1'`).Scan(&driver, &proposal); err != nil {
+		t.Fatal(err)
+	}
+	if driver.Valid || proposal != `{"a":1}` {
+		t.Errorf("driver %v, proposal %q", driver, proposal)
+	}
+}
+
+func TestMigrateCVImportRunsDriverWithoutTheTableIsANoOp(t *testing.T) {
+	database, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "career.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	if err := migrateCVImportRunsDriver(database); err != nil {
+		t.Fatal(err)
+	}
+}

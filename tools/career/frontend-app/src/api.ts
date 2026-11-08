@@ -1792,6 +1792,19 @@ export interface CVImportRun {
   // generating run holds no proposal yet (aiProposal is null); every run from before step 155 is ready.
   status: 'generating' | 'ready' | 'failed'
   error?: string
+  // "code" for a run whose steps the page does itself, asking a model small questions (plan 209); absent for the AI working with tools.
+  driver?: string
+  // What a generating run has stored so far; absent when nothing was.
+  progress?: CVImportProgress
+}
+
+export interface CVImportProgress {
+  profile: boolean
+  persona: boolean
+  personalDetails: boolean
+  skills: number
+  experience: number
+  education: number
 }
 
 export async function fetchCVImportRuns(): Promise<CVImportRun[]> {
@@ -1821,6 +1834,7 @@ export async function createCVImportRun(params: {
   originalFilename: string
   conversationId: string
   aiProposal?: unknown
+  driver?: 'code'
 }): Promise<string> {
   const res = await fetch(`${PROXY_BASE}/cv-import/runs`, {
     method: 'POST',
