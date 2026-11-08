@@ -233,6 +233,20 @@ export function RepositoryPage() {
                   animate
                   className="group"
                   animationDelayMs={Math.min(index, 12) * 200}
+                  footer={
+                    action ? (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => {
+                          void handleInstall(tool)
+                        }}
+                        className="w-full rounded-md bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+                      >
+                        {action === 'update' ? `Update to v${tool.currentVersion}` : 'Install'}
+                      </button>
+                    ) : undefined
+                  }
                   media={
                     <CardHead
                       gradient={headGradient(theme.accent)}
@@ -260,18 +274,6 @@ export function RepositoryPage() {
                   </div>
                   {tool.description && <p className="mt-3 text-sm text-gray-600">{tool.description}</p>}
                   {tool.status === 'unavailable' && tool.reason && <p className="mt-3 text-xs text-gray-500">{tool.reason}</p>}
-                  {action && (
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => {
-                        void handleInstall(tool)
-                      }}
-                      className="mt-4 w-full rounded-md bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
-                    >
-                      {action === 'update' ? `Update to v${tool.currentVersion}` : 'Install'}
-                    </button>
-                  )}
                 </Card>
               )
             })}

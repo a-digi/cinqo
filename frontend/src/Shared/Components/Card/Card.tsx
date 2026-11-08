@@ -17,16 +17,20 @@ export interface CardProps {
   animate?: boolean
   // Start delay for `animate`, in ms — lets a grid of cards stagger.
   animationDelayMs?: number
+  // Pinned to the very bottom of the card (plan 218): the content area takes all the free height, so in a row of cards every footer (an Install button,
+  // say) sits on one line whatever the text above is. Omit it and the card looks as before.
+  footer?: React.ReactNode
 }
 
-export function Card({ children, media, className = '', animate = false, animationDelayMs = 0 }: CardProps) {
+export function Card({ children, media, className = '', animate = false, animationDelayMs = 0, footer }: CardProps) {
   return (
     <div
-      className={`overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm transition-shadow hover:shadow-md ${animate ? 'cinqo-card-enter' : ''} ${className}`}
+      className={`flex flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm transition-shadow hover:shadow-md ${animate ? 'cinqo-card-enter' : ''} ${className}`}
       style={animate && animationDelayMs > 0 ? { animationDelay: `${animationDelayMs}ms` } : undefined}
     >
       {media}
-      <div className="p-4">{children}</div>
+      <div className="flex-1 p-4">{children}</div>
+      {footer && <div className="px-4 pb-4">{footer}</div>}
     </div>
   )
 }
