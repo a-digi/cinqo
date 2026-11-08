@@ -11,38 +11,47 @@ import (
 // same answers as PlanInstall), then gives the resolver every registered repository's last good file and the installed tools, and returns its plan.
 // Nothing is downloaded, installed or changed, and no repository is contacted: only the stored files are read.
 func (s *Service) PlanDependencies(id, toolID, versionID string, installed []resolver.InstalledTool, env resolver.Env) (*resolver.Plan, error) {
-	repo, err := s.find(id)
+	in, err := s.planInput(id, toolID, versionID, installed, env)
 	if err != nil {
 		return nil, err
 	}
+	plan := resolver.Resolve(in)
+	return &plan, nil
+}
+
+// planInput checks that the repository, the tool and the version the user chose exist (the same answers as PlanInstall) and assembles what the
+// resolver looks at: every registered repository's last good file and the installed tools.
+func (s *Service) planInput(id, toolID, versionID string, installed []resolver.InstalledTool, env resolver.Env) (resolver.Input, error) {
+	repo, err := s.find(id)
+	if err != nil {
+		return resolver.Input{}, err
+	}
 	if repo.CatalogJSON == "" {
-		return nil, &Error{ErrToolNotFound, "this repository has not been loaded yet"}
+		return resolver.Input{}, &Error{ErrToolNotFound, "this repository has not been loaded yet"}
 	}
 	cat, err := catalog.Parse([]byte(repo.CatalogJSON), repo.URL)
 	if err != nil {
-		return nil, &Error{ErrInvalidFile, "the stored repository file is no longer valid; refresh the repository"}
+		return resolver.Input{}, &Error{ErrInvalidFile, "the stored repository file is no longer valid; refresh the repository"}
 	}
 	tool, ok := cat.Tool(toolID)
 	if !ok {
-		return nil, &Error{ErrToolNotFound, "tool not found in this repository"}
+		return resolver.Input{}, &Error{ErrToolNotFound, "tool not found in this repository"}
 	}
 	if versionID != "" {
 		if _, ok := tool.Version(versionID); !ok {
-			return nil, &Error{ErrVersionMissing, "version not found"}
+			return resolver.Input{}, &Error{ErrVersionMissing, "version not found"}
 		}
 	}
-
 	all, err := s.query.List()
 	if err != nil {
-		return nil, err
+		return resolver.Input{}, err
 	}
-	plan := resolver.Resolve(resolver.Input{
+	return resolver.Input{
 		Installed: installed,
 		Sources:   sourcesFrom(all),
 		Env:       env,
 		Request:   resolver.Request{RepositoryID: id, ToolID: toolID, VersionID: versionID},
-	})
-	return &plan, nil
+	}, nil
 }
 
 // sourcesFrom turns the stored repositories into resolver sources: a repository whose stored file cannot be read any more is left without a catalog (the

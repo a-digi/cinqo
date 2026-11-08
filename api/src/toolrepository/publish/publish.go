@@ -7,7 +7,6 @@
 package publish
 
 import (
-	"archive/zip"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -248,7 +247,7 @@ func inspect(zipPath string) (found, error) {
 	if err != nil {
 		return found{}, err
 	}
-	m, err := readManifest(raw)
+	m, err := manifest.ReadFromZip(raw)
 	if err != nil {
 		return found{}, err
 	}
@@ -260,29 +259,6 @@ func inspect(zipPath string) (found, error) {
 		zipPath: zipPath, file: name, os: goos, arch: goarch, m: m,
 		sum: hex.EncodeToString(sum[:]), size: int64(len(raw)), date: info.ModTime().UTC().Format("2006-01-02"),
 	}, nil
-}
-
-func readManifest(raw []byte) (manifest.Manifest, error) {
-	zr, err := zip.NewReader(strings.NewReader(string(raw)), int64(len(raw)))
-	if err != nil {
-		return manifest.Manifest{}, fmt.Errorf("not a valid zip file: %w", err)
-	}
-	for _, f := range zr.File {
-		if f.Name != "manifest.json" {
-			continue
-		}
-		rc, err := f.Open()
-		if err != nil {
-			return manifest.Manifest{}, err
-		}
-		defer rc.Close()
-		b, err := io.ReadAll(io.LimitReader(rc, 1<<20))
-		if err != nil {
-			return manifest.Manifest{}, err
-		}
-		return manifest.Parse(b)
-	}
-	return manifest.Manifest{}, fmt.Errorf("the package has no manifest.json")
 }
 
 // missingAttribution lists every place the current format would require authors or a licence and has none.
