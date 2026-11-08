@@ -166,6 +166,13 @@ func runHTTPServer() {
 	} else if n > 0 {
 		log.Printf("ended %d stale instruction attempt(s)", n)
 	}
+	// plan 215 — a link that is fully instructed keeps no failed attempts and no AI error; what was stored before this rule is cleaned once
+	// per start. Never fatal, like the repair above.
+	if n, err := portal.ClearFailuresForInstructedLinks(); err != nil {
+		log.Printf("failed to clear instruction failures of instructed links: %v", err)
+	} else if n > 0 {
+		log.Printf("cleared the instruction failures of %d fully instructed link(s)", n)
+	}
 	// step 47.4 — reconcileOrphanedCrawlRuns above only ever runs once,
 	// at boot, so it can't help a goroutine that's genuinely hung
 	// without this process itself restarting. This periodic sweep is

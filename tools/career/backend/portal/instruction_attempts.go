@@ -225,6 +225,9 @@ func FinishInstructionAttempt(portalLinkID, kind, errText string) (status string
 		`UPDATE instruction_attempts SET status = 'failed', finished_at = datetime('now'), error_message = ?, failure_reason = ? WHERE id = ? AND status = 'running'`,
 		msg, reason, id,
 	)
+	if err == nil {
+		clearAfterChange(portalLinkID) // plan 215: a failure that ends after the link is instructed leaves no trace
+	}
 	return InstructionAttemptFailed, err
 }
 

@@ -134,17 +134,19 @@ func SaveLinkCrawlSettings(id, method string, rules *linkrule.Rule, clearRules b
 		return ErrLinkRulesNeeded
 	}
 
+	var err error
 	switch {
 	case rules != nil:
-		_, err := db.JobsDB.Exec(`UPDATE portal_links SET crawl_method = ?, link_rules = ?, updated_at = datetime('now') WHERE id = ?`, method, newJSON, id)
-		return err
+		_, err = db.JobsDB.Exec(`UPDATE portal_links SET crawl_method = ?, link_rules = ?, updated_at = datetime('now') WHERE id = ?`, method, newJSON, id)
 	case clearRules:
-		_, err := db.JobsDB.Exec(`UPDATE portal_links SET crawl_method = ?, link_rules = NULL, updated_at = datetime('now') WHERE id = ?`, method, id)
-		return err
+		_, err = db.JobsDB.Exec(`UPDATE portal_links SET crawl_method = ?, link_rules = NULL, updated_at = datetime('now') WHERE id = ?`, method, id)
 	default:
-		_, err := db.JobsDB.Exec(`UPDATE portal_links SET crawl_method = ?, updated_at = datetime('now') WHERE id = ?`, method, id)
-		return err
+		_, err = db.JobsDB.Exec(`UPDATE portal_links SET crawl_method = ?, updated_at = datetime('now') WHERE id = ?`, method, id)
 	}
+	if err == nil {
+		clearAfterChange(id) // plan 215: a rule may complete the pair
+	}
+	return err
 }
 
 // checkRuleForHost normalises a rule (lower-case hosts) and checks it belongs to the site of linkURL and is valid. The rule's host is the

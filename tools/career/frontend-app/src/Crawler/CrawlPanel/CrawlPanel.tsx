@@ -45,7 +45,15 @@ import {
   manualOnlyNote,
   openAiLoginWindow,
 } from '../loginWindow'
-import { instructionAlertAttempts, isLikelyUncrawlable, listingIsWrittenByAi, savedDespiteError } from '../instructionStats'
+import { showsInstructionError } from '../instructionErrorRules'
+import { showsManualJobDetails, showsManualListing } from '../manualInstructRules'
+import {
+  instructionAlertAttempts,
+  instructionState,
+  isLikelyUncrawlable,
+  listingIsWrittenByAi,
+  savedDespiteError,
+} from '../instructionStats'
 import { canCrawlListing } from '../autoDiscoveryVisibility'
 import {
   aiTriesListing as aiTriesListingFor,
@@ -150,6 +158,8 @@ export function CrawlPanel({
   // Plan 190: the Browser's selected engine decides which job-list instructions count (a rule under Katana, AI instructions under Rod).
   // Plan 197: this link's own engine (a link set to Rod) beats the Browser's selected engine for everything this card judges.
   const engine = engineForLink(link, useCrawlEngine())
+  // Plan 215: a fully instructed link shows no AI error box (the server clears them too).
+  const linkInstructionState = instructionState(link, false, false, engine)
   const instructionEngine = engineFor(engine)
   // The engine's own Generate recipe for the job list of a link that needs no login (Katana); undefined = the existing Generate (Rod).
   // Plan 195, step 4: a link that needs a login still needs the window (and the AI-instructions path) unless this engine reads it with a kept login.
@@ -988,7 +998,9 @@ export function CrawlPanel({
               conversation.id,
               jobDetailRecipe
                 ? jobDetailRecipe.buildMessage(link)
-                : buildGenerateJobDetailInstructionsMessage(link, { linkCrawled: listingNeeds(engine, needsLoginWindow(engine, link)) === 'rule' }),
+                : buildGenerateJobDetailInstructionsMessage(link, {
+                    linkCrawled: listingNeeds(engine, needsLoginWindow(engine, link)) === 'rule',
+                  }),
             ),
           )
       })
@@ -1194,9 +1206,7 @@ export function CrawlPanel({
           override on top of that. */}
       <EngineSuggestionLine link={link} onReload={onReload} />
       <PipelineLine link={link} />
-      {!loginWindow && instructionEngine.progressView !== undefined && (
-        <instructionEngine.progressView link={link} onReload={onReload} />
-      )}
+      {!loginWindow && instructionEngine.progressView !== undefined && <instructionEngine.progressView link={link} onReload={onReload} />}
       {/* Step 88 — only for a link that has listing crawl instructions:
           auto-discovery crawls the listing with them, and the backend
           never auto-crawls a link without. Hiding this never changes the
@@ -1288,7 +1298,10 @@ export function CrawlPanel({
             durable errorAt lands in a reloaded `link` prop — see
             plan/ai/tools/career/step-72-wire-infobox-into-crawlpanel.md's
             own "Open question". */}
-            {(aiLocalError ?? shouldShowError(link.instructionsAiErrorAt, link.instructionsAiErrorDismissedAt)) && (
+            {showsInstructionError(
+              linkInstructionState,
+              Boolean(aiLocalError ?? shouldShowError(link.instructionsAiErrorAt, link.instructionsAiErrorDismissedAt)),
+            ) && (
               <InfoBox
                 variant="error"
                 label="Job list crawl instructions"
@@ -1300,8 +1313,12 @@ export function CrawlPanel({
                 onDismiss={handleDismissListingError}
               />
             )}
-            {(jobDetailAiLocalError ??
-              shouldShowError(link.jobDetailInstructionsAiErrorAt, link.jobDetailInstructionsAiErrorDismissedAt)) && (
+            {showsInstructionError(
+              linkInstructionState,
+              Boolean(
+                jobDetailAiLocalError ?? shouldShowError(link.jobDetailInstructionsAiErrorAt, link.jobDetailInstructionsAiErrorDismissedAt),
+              ),
+            ) && (
               <InfoBox
                 variant="error"
                 label="Job detail crawl instructions"
@@ -1380,23 +1397,43 @@ export function CrawlPanel({
                       <p className="mt-1 text-xs text-orange-800">{jobDetailsHint(jobDetailsAccess)}</p>
                     </>
                   )}
-                  {jobDetailRecipe !== undefined && !jobDetailsBlocked && !jobDetailAiBusy && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        handleGenerateJobDetailInstructionsWithAI('manual')
-                      }}
-                      disabled={!hasPlatforms || !selectedPlatform}
-                      title={
-                        hasPlatforms
-                          ? 'Let the AI pick where the data of a job page is, test it on real jobs and save it.'
-                          : 'No AI platform configured — add one on the Platforms page first'
-                      }
-                      className="mt-1 inline-flex items-center gap-1 rounded-full border border-gray-200 bg-white px-2.5 py-0.5 text-xs text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <RobotIcon />
-                      Generate
-                    </button>
+                  {((jobDetailRecipe !== undefined && !jobDetailsBlocked && !jobDetailAiBusy) ||
+                    showsManualJobDetails(link.jobDetailCrawlInstructions, jobDetailsBlocked, jobDetailAiBusy)) && (
+                    <div className="mt-1 flex flex-wrap items-center justify-center gap-1.5">
+                      {jobDetailRecipe !== undefined && !jobDetailsBlocked && !jobDetailAiBusy && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleGenerateJobDetailInstructionsWithAI('manual')
+                          }}
+                          disabled={!hasPlatforms || !selectedPlatform}
+                          title={
+                            hasPlatforms
+                              ? 'Let the AI pick where the data of a job page is, test it on real jobs and save it.'
+                              : 'No AI platform configured — add one on the Platforms page first'
+                          }
+                          className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-white px-2.5 py-0.5 text-xs text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <RobotIcon />
+                          Generate
+                        </button>
+                      )}
+                      {showsManualJobDetails(link.jobDetailCrawlInstructions, jobDetailsBlocked, jobDetailAiBusy) && (
+                        <button
+                          type="button"
+                          data-testid="manual-job-details"
+                          onClick={openJobDetailInstructionsModal}
+                          title={
+                            jobDetailPickOnly
+                              ? 'Instruct the job details yourself: pick the data (title, company, location, posted date, description) from a job page of this link.'
+                              : 'Instruct the job details yourself: write the instructions for how to read a job page of this link.'
+                          }
+                          className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-white px-2.5 py-0.5 text-xs text-gray-700 hover:bg-gray-50"
+                        >
+                          Manually
+                        </button>
+                      )}
+                    </div>
                   )}
                   {aiWritesJobDetail && (
                     <InstructionAttemptStats stats={link.instructionStats.jobDetail} alertAttempts={jobDetailAlertAttempts} />
@@ -1417,56 +1454,80 @@ export function CrawlPanel({
                   )}
                 </div>
               </div>
-              {(aiWritesListing || listingRecipe !== undefined) && (
-                <button
-                  type="button"
-                  onClick={
-                    aiBusy
-                      ? handleCheckProgress
-                      : () => {
-                          handleGenerateInstructionsWithAI()
-                        }
-                  }
-                  disabled={
-                    !hasPlatforms ||
-                    inheriting ||
-                    (aiBusy && !(aiConversationId ?? link.instructionsAiConversationId)) ||
-                    Boolean(jobsQuestion)
-                  }
-                  title={
-                    !hasPlatforms
-                      ? 'No AI platform configured — add one on the Platforms page first'
-                      : jobsQuestion
-                        ? 'Answer the question below first'
-                        : inheriting
-                          ? "Trying the instructions of this platform's other links first…"
-                          : aiBusy
-                            ? "Open the chat window to watch the AI work on this link's crawl instructions"
-                            : listingRecipe !== undefined
-                              ? 'Let the AI instruct this link completely in one conversation: it writes the job list rule, crawls the jobs, then picks where the job data is, testing each on the real page before it saves.'
-                              : 'Let the AI inspect this page and write (or update) its listing crawl instructions for you — once saved, this link is crawled and its job-detail instructions are generated automatically.'
-                  }
-                  className="flex shrink-0 flex-col items-center justify-center gap-1 self-stretch rounded-lg border border-gray-200 bg-gray-50 px-3 text-xs font-medium text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {aiBusy ? (
-                    <>
-                      <RobotIcon className="h-5 w-5" />
-                      Generating...
-                    </>
-                  ) : (
-                    <>
-                      <RobotIcon className="h-5 w-5" />
-                      Generate
-                    </>
+              {(aiWritesListing || listingRecipe !== undefined || showsManualListing(hasListing, aiBusy)) && (
+                <div className="flex shrink-0 flex-col gap-2 self-stretch">
+                  {(aiWritesListing || listingRecipe !== undefined) && (
+                    <button
+                      type="button"
+                      onClick={
+                        aiBusy
+                          ? handleCheckProgress
+                          : () => {
+                              handleGenerateInstructionsWithAI()
+                            }
+                      }
+                      disabled={
+                        !hasPlatforms ||
+                        inheriting ||
+                        (aiBusy && !(aiConversationId ?? link.instructionsAiConversationId)) ||
+                        Boolean(jobsQuestion)
+                      }
+                      title={
+                        !hasPlatforms
+                          ? 'No AI platform configured — add one on the Platforms page first'
+                          : jobsQuestion
+                            ? 'Answer the question below first'
+                            : inheriting
+                              ? "Trying the instructions of this platform's other links first…"
+                              : aiBusy
+                                ? "Open the chat window to watch the AI work on this link's crawl instructions"
+                                : listingRecipe !== undefined
+                                  ? 'Let the AI instruct this link completely in one conversation: it writes the job list rule, crawls the jobs, then picks where the job data is, testing each on the real page before it saves.'
+                                  : 'Let the AI inspect this page and write (or update) its listing crawl instructions for you — once saved, this link is crawled and its job-detail instructions are generated automatically.'
+                      }
+                      className="flex flex-1 shrink-0 flex-col items-center justify-center gap-1 rounded-lg border border-gray-200 bg-gray-50 px-3 text-xs font-medium text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {aiBusy ? (
+                        <>
+                          <RobotIcon className="h-5 w-5" />
+                          Generating...
+                        </>
+                      ) : (
+                        <>
+                          <RobotIcon className="h-5 w-5" />
+                          Generate
+                        </>
+                      )}
+                    </button>
                   )}
-                </button>
+                  {showsManualListing(hasListing, aiBusy) && (
+                    <button
+                      type="button"
+                      data-testid="manual-listing"
+                      onClick={openCrawlInstructionsModal}
+                      title={
+                        listingNeeds(engine, needsLoginWindow(engine, link)) === 'rule'
+                          ? 'Instruct the job list yourself: write the job list rules (Katana).'
+                          : 'Instruct the job list yourself: write the crawl instructions for the job list page.'
+                      }
+                      className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-50"
+                    >
+                      Manually
+                    </button>
+                  )}
+                </div>
               )}
             </div>
             {aiLoginWait !== null ? (
               <div role="status" className="mt-2 rounded-md border border-sky-300 bg-sky-50 px-2 py-1.5 text-xs text-sky-900">
                 <p className="font-medium">{AI_LOGIN_WAIT_TEXT}</p>
                 <p className="mt-0.5 text-sky-800">{NOT_KEPT_NOTE}</p>
-                <KeepLoginOption checked={keepLogin} onChange={setKeepLogin} disabled={isConfirmingLogin} engineUsesIt={instructionEngine.usesKeptLogin === true} />
+                <KeepLoginOption
+                  checked={keepLogin}
+                  onChange={setKeepLogin}
+                  disabled={isConfirmingLogin}
+                  engineUsesIt={instructionEngine.usesKeptLogin === true}
+                />
                 <div className="mt-1.5 flex gap-2">
                   <button
                     type="button"
@@ -1785,7 +1846,12 @@ export function CrawlPanel({
               <div className="rounded-md border border-sky-300 bg-sky-50 px-2 py-1.5 text-xs text-sky-900">
                 <p className="font-medium">A window is open at the login page. Log in there, then press &quot;I am logged in&quot;.</p>
                 <p className="mt-0.5 text-sky-800">{NOT_KEPT_NOTE}</p>
-                <KeepLoginOption checked={keepLogin} onChange={setKeepLogin} disabled={isConfirmingLogin} engineUsesIt={instructionEngine.usesKeptLogin === true} />
+                <KeepLoginOption
+                  checked={keepLogin}
+                  onChange={setKeepLogin}
+                  disabled={isConfirmingLogin}
+                  engineUsesIt={instructionEngine.usesKeptLogin === true}
+                />
                 <div className="mt-1.5 flex gap-2">
                   <button
                     type="button"

@@ -284,5 +284,6 @@ func SaveInheritedInstructions(linkID, listing, jobDetail string) (listingSaved,
 	if err := tx.Commit(); err != nil {
 		return false, false, err
 	}
+	clearAfterChange(linkID) // plan 215
 	return true, jobDetailSaved, nil
 }

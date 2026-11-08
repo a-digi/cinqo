@@ -651,6 +651,10 @@ func UpdatePortalLinkInstructionsAIStatus(id string, errText *string) error {
 		_, err := db.JobsDB.Exec(`UPDATE portal_links SET instructions_ai_error = NULL, instructions_ai_error_at = NULL WHERE id = ?`, id)
 		return err
 	}
+	// A fully instructed link keeps no AI error (plan 215): a failure that arrives after the instructions exist says nothing about the link.
+	if done, err := IsFullyInstructed(id); err != nil || done {
+		return err
+	}
 	_, err := db.JobsDB.Exec(
 		`UPDATE portal_links SET instructions_ai_error = ?, instructions_ai_error_at = datetime('now') WHERE id = ?`,
 		*errText, id,
@@ -684,6 +688,10 @@ func UpdatePortalLinkJobDetailInstructionsAIStatus(id string, errText *string) e
 	}
 	if errText == nil || *errText == "" {
 		_, err := db.JobsDB.Exec(`UPDATE portal_links SET job_detail_instructions_ai_error = NULL, job_detail_instructions_ai_error_at = NULL WHERE id = ?`, id)
+		return err
+	}
+	// A fully instructed link keeps no AI error (plan 215), as above.
+	if done, err := IsFullyInstructed(id); err != nil || done {
 		return err
 	}
 	_, err := db.JobsDB.Exec(
@@ -1294,6 +1302,9 @@ func UpdatePortalLinkCrawlInstructions(id, yamlText string) error {
 		`UPDATE portal_links SET crawl_instructions = ?, jobs_question_asked_at = NULL, jobs_question_note = NULL, updated_at = datetime('now') WHERE id = ?`,
 		yamlText, id,
 	)
+	if err == nil {
+		clearAfterChange(id) // plan 215: this save may complete the pair
+	}
 	return err
 }
 
@@ -1426,6 +1437,9 @@ func UpdatePortalLinkJobDetailCrawlInstructionsFrom(id, yamlText, origin string)
 		`UPDATE portal_links SET job_detail_crawl_instructions = ?, job_detail_instructions_origin = ?, updated_at = datetime('now') WHERE id = ?`,
 		yamlText, origin, id,
 	)
+	if err == nil {
+		clearAfterChange(id) // plan 215: this save may complete the pair
+	}
 	return err
 }
 
