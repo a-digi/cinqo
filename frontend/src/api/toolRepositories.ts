@@ -1,4 +1,4 @@
-import { apiDelete, apiGet, apiPost } from './client'
+import { ApiError, apiDelete, apiGet, apiPost } from './client'
 import type { Publisher, ToolAuthor, ToolMetadata } from './toolMeta'
 
 // The backend already answers in camelCase for these routes, so there is no
@@ -104,4 +104,87 @@ export async function refreshRepository(id: string): Promise<void> {
 
 export async function installFromRepository(id: string, toolId: string, versionId?: string): Promise<void> {
   await apiPost(`${base}/${encodeURIComponent(id)}/tools/${encodeURIComponent(toolId)}/install`, versionId ? { versionId } : undefined)
+}
+
+// The ordered plan of an install or update together with the tools it needs (plan dependency-install, steps 4 and 6).
+export type PlanAction = 'install' | 'update' | 'enable'
+export type PlanMark = 'other_repository' | 'local_network' | 'stale_repository' | 'restarts' | 'was_disabled'
+
+export interface InstallPlanStep {
+  toolId: string
+  name: string
+  action: PlanAction
+  versionId: string
+  version: string
+  installedVersion: string
+  repositoryId: string
+  repositoryName: string
+  sizeBytes: number
+  authors: string[]
+  license: string
+  requiredBy: string[]
+  marks: PlanMark[]
+  dependents: string[]
+  enableAfter: boolean
+}
+
+export interface InstallPlanProblem {
+  toolId: string
+  requiredBy: string[]
+  kind: string
+  message: string
+}
+
+export interface InstallPlan {
+  ok: boolean
+  steps: InstallPlanStep[]
+  totalBytes: number
+  problems: InstallPlanProblem[]
+  searched: { id: string; name: string; stale: boolean; refreshedAt: string }[]
+  // The steps as the install must be given them back to prove the person saw them.
+  confirm: string[]
+}
+
+export interface DoneStep {
+  toolId: string
+  action: string
+  version: string
+}
+
+// What the install with dependencies answers: done, or why not (a changed plan comes back with the new plan; a failed step says what was and was not done).
+export interface InstallRun {
+  ok: boolean
+  code: 'done' | 'plan_blocked' | 'plan_changed' | 'step_failed'
+  message: string
+  installed: DoneStep[]
+  notDone: DoneStep[]
+  plan?: InstallPlan
+}
+
+export async function fetchInstallPlan(id: string, toolId: string, versionId?: string): Promise<InstallPlan> {
+  const raw = await apiPost<{ message: InstallPlan }>(
+    `${base}/${encodeURIComponent(id)}/tools/${encodeURIComponent(toolId)}/install-plan`,
+    versionId ? { versionId } : undefined,
+  )
+  return raw.message
+}
+
+// 409 (plan blocked or changed) and 422 (a step failed) carry an InstallRun, not a message: they are answers, not errors. Anything else is thrown.
+export async function installWithDependencies(id: string, toolId: string, confirm: string[], versionId?: string): Promise<InstallRun> {
+  try {
+    const raw = await apiPost<{ message: InstallRun }>(`${base}/${encodeURIComponent(id)}/tools/${encodeURIComponent(toolId)}/install`, {
+      versionId,
+      withDependencies: true,
+      confirm,
+    })
+    return raw.message
+  } catch (err) {
+    if (err instanceof ApiError && (err.status === 409 || err.status === 422)) {
+      const body = err.body as { message?: unknown } | undefined
+      if (body && typeof body.message === 'object' && body.message !== null && 'code' in body.message) {
+        return body.message as InstallRun
+      }
+    }
+    throw err
+  }
 }

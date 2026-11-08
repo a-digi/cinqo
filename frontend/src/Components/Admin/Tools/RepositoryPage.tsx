@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
+  fetchInstallPlan,
   fetchRepository,
   installFromRepository,
+  installWithDependencies,
+  type InstallPlan,
   refreshRepository,
   removeRepository,
   type RepositoryTool,
@@ -15,6 +18,8 @@ import { Card } from '../../../Shared/Components/Card/Card'
 import { CardHead } from '../../../Shared/Components/Card/CardHead'
 import { Pill } from '../../../Shared/Components/Pill/Pill'
 import { reloadAfterToolChange } from '../../../config/tools/loadTools'
+import { InstallPlanDialog } from './InstallPlanDialog'
+import { isSimple, runText } from './installPlanDisplay'
 import { RepositoryLink } from './RepositoryLink'
 import { DependenciesBlock } from './ToolDependencies'
 import { headGradient, themeForTool } from './toolCardTheme'
@@ -52,6 +57,8 @@ export function RepositoryPage() {
   // The installed tools, which the "Needs" blocks of the cards are checked against.
   const [installedTools, setInstalledTools] = useState<Tool[]>([])
   const { confirm, dialog } = useConfirm()
+  // The install with the tools it needs: the plan being confirmed, and why it is shown (again).
+  const [planDialog, setPlanDialog] = useState<{ tool: RepositoryTool; plan: InstallPlan; notice?: string; working: boolean } | null>(null)
 
   // A never-fetched repository (the built-in one, opened directly) is loaded once.
   const autoLoaded = useRef(false)
@@ -128,6 +135,22 @@ export function RepositoryPage() {
   const handleInstall = async (tool: RepositoryTool) => {
     if (!detail) return
     const updating = tool.installedVersion !== ''
+    setBusy(true)
+    setError(null)
+    let plan: InstallPlan
+    try {
+      plan = await fetchInstallPlan(id, tool.id)
+    } catch (err) {
+      setError(errorText(err, 'Failed to check what this needs.'))
+      setBusy(false)
+      return
+    }
+    setBusy(false)
+    // More than one step, a mark or a problem: the list is shown. One plain step keeps the plain question.
+    if (!isSimple(plan)) {
+      setPlanDialog({ tool, plan, working: false })
+      return
+    }
     const ok = await confirm({
       title: updating ? 'Update tool' : 'Install tool',
       message: installConfirmMessage(tool, detail),
@@ -143,6 +166,35 @@ export function RepositoryPage() {
     } catch (err) {
       setError(errorText(err, 'Failed to install.'))
       setBusy(false)
+    }
+  }
+
+  const handlePlanConfirm = async () => {
+    if (!planDialog) return
+    const { tool, plan } = planDialog
+    setPlanDialog({ ...planDialog, working: true })
+    try {
+      const run = await installWithDependencies(id, tool.id, plan.confirm)
+      if (run.ok) {
+        setPlanDialog(null)
+        reloadAfterToolChange()
+        return
+      }
+      if (run.code === 'step_failed') {
+        // what was installed stays: show the answer on the page and refresh what is installed
+        setPlanDialog(null)
+        setError(runText(run))
+        await load()
+        fetchTools()
+          .then(setInstalledTools)
+          .catch(() => undefined)
+        return
+      }
+      // blocked or changed: the new plan is shown, to be looked at again
+      setPlanDialog({ tool, plan: run.plan ?? plan, notice: runText(run), working: false })
+    } catch (err) {
+      setPlanDialog(null)
+      setError(errorText(err, 'Failed to install.'))
     }
   }
 
@@ -322,6 +374,20 @@ export function RepositoryPage() {
         </>
       )}
       {dialog}
+      {planDialog && (
+        <InstallPlanDialog
+          plan={planDialog.plan}
+          rootToolId={planDialog.tool.id}
+          notice={planDialog.notice}
+          working={planDialog.working}
+          onConfirm={() => {
+            void handlePlanConfirm()
+          }}
+          onCancel={() => {
+            setPlanDialog(null)
+          }}
+        />
+      )}
     </div>
   )
 }
