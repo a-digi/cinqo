@@ -480,7 +480,7 @@ function PortalsPageContent() {
                         {plural(p.links.length, 'link', 'links')}
                       </span>
                       {(() => {
-                        const chip = aiChip(overrideOf(p), ai.platforms)
+                        const chip = aiChip(overrideOf(p), ai.platforms, crawlAiFor(p, null))
                         return (
                           <button
                             type="button"
@@ -489,7 +489,7 @@ function PortalsPageContent() {
                               e.stopPropagation()
                               setAiPortalId(p.id)
                             }}
-                            className={`shrink-0 rounded-full border px-2.5 py-0.5 text-xs font-medium ${
+                            className={`max-w-[18rem] shrink-0 truncate rounded-full border px-2.5 py-0.5 text-xs font-medium ${
                               chip.kind === 'default'
                                 ? 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
                                 : chip.kind === 'set'

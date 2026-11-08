@@ -12,9 +12,15 @@ export interface AiChip {
   kind: 'default' | 'inherited' | 'set' | 'stale'
 }
 
-export function aiChip(override: AiOverride | null | undefined, platforms: Platform[]): AiChip {
+// effective: the AI that is used when this level has no choice of its own (its platform's, else the tool-wide one). The chip shows it, so the
+// person sees which platform and model run, instead of the word "Default".
+export function aiChip(
+  override: AiOverride | null | undefined,
+  platforms: Platform[],
+  effective?: Pick<CrawlAiChoice, 'platform' | 'model'> | null,
+): AiChip {
   const platformId = (override?.platformId ?? '').trim()
-  if (platformId === '') return { text: 'AI: Default', kind: 'default' }
+  if (platformId === '') return defaultChip(effective)
   const platform = platforms.find((p) => p.id === platformId)
   if (!platform) return { text: 'AI: platform not available', kind: 'stale' }
   const model = (override?.model ?? '').trim()
@@ -50,5 +56,11 @@ export function linkChip(choice: CrawlAiChoice): AiChip {
   if (choice.stale.some((s) => s.level === 'link')) return { text: 'AI: platform not available', kind: 'stale' }
   if (choice.source === 'link') return { text: `AI: ${choiceText(choice.platform, choice.model)} (this link)`, kind: 'set' }
   if (choice.source === 'portal') return { text: `AI: ${choiceText(choice.platform, choice.model)} (platform)`, kind: 'inherited' }
-  return { text: 'AI: Default', kind: 'default' }
+  return defaultChip(choice)
+}
+
+// The chip of a level with no choice of its own: the platform and model in effect, or the word "Default" when there is no platform at all.
+function defaultChip(effective: Pick<CrawlAiChoice, 'platform' | 'model'> | null | undefined): AiChip {
+  if (!effective?.platform) return { text: 'AI: Default', kind: 'default' }
+  return { text: `AI: ${choiceText(effective.platform, effective.model)}`, kind: 'default' }
 }
