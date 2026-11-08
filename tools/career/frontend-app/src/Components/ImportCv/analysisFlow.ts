@@ -192,8 +192,15 @@ interface TurnResult {
 }
 
 // A failure of the AI's turn that the same conversation can recover from, because the draft is kept on the run: the provider cut
-// the answer off at its token limit, or returned no choice at all. Other failures (invalid arguments, no tool calls...) end the run.
-const RETRYABLE_TURN_ERRORS: RegExp[] = [/cut off by the token limit/i, /finish reason: length/i, /response had no choices/i]
+// the answer off at its token limit, returned no choice at all, or answered with nothing after the core had already retried it (a small
+// local model does that after a long run of tool calls: Qwen Coder 3B got through the profile, the persona, the education and three
+// batches of experience, then returned an empty response, 2026-11-08). Other failures (invalid arguments, no tool calls...) end the run.
+const RETRYABLE_TURN_ERRORS: RegExp[] = [
+  /cut off by the token limit/i,
+  /finish reason: length/i,
+  /response had no choices/i,
+  /returned an empty response/i,
+]
 
 export function isRetryableTurnError(err: unknown): boolean {
   const text = failureReason(err)
