@@ -471,7 +471,11 @@ func InstallPackage(reqCtx request.RequestContext, data []byte, expect *PackageE
 		if err != nil {
 			return nil, &InstallError{Status: http.StatusInternalServerError, Message: "tool installed but failed to load functions"}
 		}
-		return &InstallResult{Created: true, Tool: toToolResponse(created, systemToolsConfigFrom(reqCtx), mcpTools)}, nil
+		createdRequired, err := requiredToolsFor(db, created.ID)
+		if err != nil {
+			return nil, &InstallError{Status: http.StatusInternalServerError, Message: "tool installed but failed to load dependencies"}
+		}
+		return &InstallResult{Created: true, Tool: toToolResponse(created, systemToolsConfigFrom(reqCtx), mcpTools, createdRequired)}, nil
 	}
 
 	// Update path: same slug, must be a strictly newer version.
@@ -573,7 +577,11 @@ func InstallPackage(reqCtx request.RequestContext, data []byte, expect *PackageE
 	if err != nil {
 		return nil, &InstallError{Status: http.StatusInternalServerError, Message: "tool updated but failed to load functions"}
 	}
-	return &InstallResult{Created: false, Tool: toToolResponse(reloaded, systemToolsConfigFrom(reqCtx), mcpTools)}, nil
+	listedRequired, err := requiredToolsFor(db, reloaded.ID)
+	if err != nil {
+		return nil, &InstallError{Status: http.StatusInternalServerError, Message: "tool updated but failed to load dependencies"}
+	}
+	return &InstallResult{Created: false, Tool: toToolResponse(reloaded, systemToolsConfigFrom(reqCtx), mcpTools, listedRequired)}, nil
 }
 
 func childRowsFromManifest(m manifest.Manifest) ([]tool_entity.ToolScope, []tool_entity.ToolRoute, []tool_entity.ToolRequiredScope, []tool_entity.ToolRequiredTool) {

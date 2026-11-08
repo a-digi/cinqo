@@ -1,7 +1,8 @@
 {
   "slug": "pdf_tools",
   "name": "PDF Tools",
-  "version": "0.0.123",
+  "version": "0.0.124",
+  "description": "Reads a PDF as text and generates PDFs.",
   "authors": [
     { "name": "Anes Detit", "email": "tafa.andet@googlemail.com" }
   ],

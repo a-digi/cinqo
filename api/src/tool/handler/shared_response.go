@@ -38,9 +38,26 @@ type toolResponse struct {
 	// Metadata is who made the tool as its package declared it; null for a tool installed before this was
 	// recorded (the pages show "developer not stated").
 	Metadata *toolmeta.Info `json:"metadata"`
+	// RequiredTools are the other tools this one declared it cannot work without (plan 217); never null. The page resolves each against the
+	// installed tools it already has.
+	RequiredTools []requiredToolResponse `json:"required_tools"`
 }
 
-func toToolResponse(t *tool_entity.Tool, cfg systemtools.Config, mcpTools []string) toolResponse {
+type requiredToolResponse struct {
+	Slug string `json:"slug"`
+	// MinVersion is empty when any version will do.
+	MinVersion string `json:"min_version"`
+}
+
+func toRequiredToolResponses(rows []tool_entity.ToolRequiredTool) []requiredToolResponse {
+	out := make([]requiredToolResponse, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, requiredToolResponse{Slug: r.RequiredSlug, MinVersion: r.MinVersion})
+	}
+	return out
+}
+
+func toToolResponse(t *tool_entity.Tool, cfg systemtools.Config, mcpTools []string, required []tool_entity.ToolRequiredTool) toolResponse {
 	protected, _ := cfg.IsSystemTool(t.Slug)
 	if mcpTools == nil {
 		mcpTools = []string{}
@@ -61,6 +78,7 @@ func toToolResponse(t *tool_entity.Tool, cfg systemtools.Config, mcpTools []stri
 		IsSystemTool:          protected,
 		MCPTools:              mcpTools,
 		Metadata:              toolmeta.Decode(t.Metadata),
+		RequiredTools:         toRequiredToolResponses(required),
 	}
 }
 
@@ -81,9 +99,18 @@ func toToolResponses(db *sql.DB, tools []*tool_entity.Tool, cfg systemtools.Conf
 		namesByToolID[mt.ToolID] = append(namesByToolID[mt.ToolID], mt.Name)
 	}
 
+	required, err := tool_query.NewToolRequiredToolQueryRepo(db).FindAll()
+	if err != nil {
+		return nil, err
+	}
+	requiredByToolID := make(map[string][]tool_entity.ToolRequiredTool, len(tools))
+	for _, rt := range required {
+		requiredByToolID[rt.ToolID] = append(requiredByToolID[rt.ToolID], rt)
+	}
+
 	out := make([]toolResponse, 0, len(tools))
 	for _, t := range tools {
-		out = append(out, toToolResponse(t, cfg, namesByToolID[t.ID]))
+		out = append(out, toToolResponse(t, cfg, namesByToolID[t.ID], requiredByToolID[t.ID]))
 	}
 	return out, nil
 }
@@ -103,6 +130,11 @@ func mcpToolNamesFor(db *sql.DB, toolID string) ([]string, error) {
 		names = append(names, mt.Name)
 	}
 	return names, nil
+}
+
+// requiredToolsFor reads one tool's declared dependencies, for the single-tool answers (install, enable, disable).
+func requiredToolsFor(db *sql.DB, toolID string) ([]tool_entity.ToolRequiredTool, error) {
+	return tool_query.NewToolRequiredToolQueryRepo(db).FindByToolID(toolID)
 }
 
 // systemToolsConfigFrom resolves the DI-registered system-tools config,

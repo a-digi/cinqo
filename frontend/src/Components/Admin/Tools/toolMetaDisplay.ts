@@ -87,6 +87,7 @@ export function searchText(name: string, slug: string, meta: ToolMetadata | null
   if (meta?.company) parts.push(meta.company.name)
   if (meta?.license) parts.push(meta.license)
   if (meta?.category) parts.push(meta.category)
+  if (meta?.description) parts.push(meta.description)
   parts.push(...(meta?.keywords ?? []))
   return parts.join('\n').toLowerCase()
 }

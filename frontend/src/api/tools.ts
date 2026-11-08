@@ -5,6 +5,12 @@ import type { ToolMetadata } from './toolMeta'
 // api/security.ts. install_path/pid are never sent by the backend
 // (json:"-" on the Go entity) — nothing server-internal to map here.
 
+// Another tool this one declared it cannot work without (plan 217); minVersion is empty when any version will do.
+export interface RequiredTool {
+  slug: string
+  minVersion: string
+}
+
 export interface Tool {
   id: string
   slug: string
@@ -23,6 +29,8 @@ export interface Tool {
   mcpTools: string[]
   // Who made it, as its own package declared; null for a tool installed before that was recorded.
   metadata: ToolMetadata | null
+  // The tools this one needs, in the order it declared them.
+  requiredTools: RequiredTool[]
 }
 
 interface ToolRaw {
@@ -40,6 +48,8 @@ interface ToolRaw {
   updated_at: string
   mcp_tools: string[]
   metadata?: ToolMetadata | null
+  // Absent from a core that predates it: read as "needs nothing".
+  required_tools?: { slug: string; min_version?: string }[] | null
 }
 
 function fromRaw(raw: ToolRaw): Tool {
@@ -58,6 +68,7 @@ function fromRaw(raw: ToolRaw): Tool {
     updatedAt: raw.updated_at,
     mcpTools: raw.mcp_tools,
     metadata: raw.metadata ?? null,
+    requiredTools: (raw.required_tools ?? []).map((r) => ({ slug: r.slug, minVersion: r.min_version ?? '' })),
   }
 }
 

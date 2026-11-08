@@ -289,3 +289,36 @@ func TestAssetsURLLinksEveryPackageFlatAndStaysValid(t *testing.T) {
 		t.Errorf("assets url must win: %v", err)
 	}
 }
+
+// Plan 217: a manifest's description reaches the repository file (as the version's own description) and survives a parse.
+func TestTheManifestDescriptionReachesTheRepositoryFile(t *testing.T) {
+	tools := t.TempDir()
+	put(t, tools, "career", "tool-career-darwin-arm64.zip", makeZip(t, `{"slug":"career","name":"Career","version":"0.0.7","description":"Your career workspace.","authors":[{"name":"A"}],"license":"MIT"}`))
+	put(t, tools, "career", "tool-career-linux-amd64.zip", makeZip(t, `{"slug":"career","name":"Career","version":"0.0.7","description":"Your career workspace.","authors":[{"name":"A"}],"license":"MIT"}`))
+	put(t, tools, "pdf_tools", "tool-pdf_tools-darwin-arm64.zip", makeZip(t, `{"slug":"pdf_tools","name":"PDF Tools","version":"0.0.1","authors":[{"name":"A"}],"license":"MIT"}`))
+	out := t.TempDir()
+	if _, err := Generate(Options{ToolsDir: tools, OutDir: out, Name: "Mine"}); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(filepath.Join(out, "repository.json"))
+	c, err := catalog.Parse(data, "https://example.com/repo/repository.json")
+	if err != nil {
+		t.Fatalf("valid: %v", err)
+	}
+	career, _ := c.Tool("career")
+	cur, _ := career.Current()
+	if cur.Description != "Your career workspace." {
+		t.Errorf("career: %q", cur.Description)
+	}
+	pdf, _ := c.Tool("pdf_tools")
+	if pc, _ := pdf.Current(); pc.Description != "" {
+		t.Errorf("a tool that declares none has none: %q", pc.Description)
+	}
+	// two platform packages of one version that disagree about the description are refused, like any other attribution
+	tools2 := t.TempDir()
+	put(t, tools2, "career", "tool-career-darwin-arm64.zip", makeZip(t, `{"slug":"career","name":"Career","version":"0.0.7","description":"One.","authors":[{"name":"A"}],"license":"MIT"}`))
+	put(t, tools2, "career", "tool-career-linux-amd64.zip", makeZip(t, `{"slug":"career","name":"Career","version":"0.0.7","description":"Other.","authors":[{"name":"A"}],"license":"MIT"}`))
+	if _, err := Generate(Options{ToolsDir: tools2, OutDir: t.TempDir(), Name: "Mine"}); err == nil {
+		t.Error("packages of one version with different descriptions must be refused")
+	}
+}

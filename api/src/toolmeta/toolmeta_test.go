@@ -303,3 +303,57 @@ func TestPublisherJSON(t *testing.T) {
 		t.Fatalf("authors must always be a list, and an empty company or links left out: %s", out)
 	}
 }
+
+// Plan 217: the one-paragraph description of a tool.
+func TestDescription(t *testing.T) {
+	with := func(d string) Info { i := good(); i.Description = d; return i }
+	for _, ok := range []string{"", "Reads a PDF as text and generates PDFs.", strings.Repeat("é", MaxDescriptionLen), "Müller & Söhne: 日本語 text, with — punctuation."} {
+		if ps := with(ok).Validate("", true); len(ps) != 0 {
+			t.Errorf("%q must be accepted: %v", ok, ps)
+		}
+	}
+	if ps := with(strings.Repeat("a", MaxDescriptionLen+1)).Validate("", true); !has(ps, "description", "longer than 300") {
+		t.Errorf("301 characters: %v", ps)
+	}
+	if ps := with("   ").Validate("", true); !has(ps, "description", "only spaces") {
+		t.Errorf("blank: %v", ps)
+	}
+	if ps := with("two\nlines").Validate("", true); !has(ps, "description", "control") {
+		t.Errorf("line break: %v", ps)
+	}
+	if ps := with("tab\there").Validate("", true); !has(ps, "description", "control") {
+		t.Errorf("tab: %v", ps)
+	}
+	if ps := with("reordered ‮text").Validate("", true); !has(ps, "description", "control") {
+		t.Errorf("text direction: %v", ps)
+	}
+	// optional when authors and licence are not required, rooted like every other path
+	if ps := (Info{Description: strings.Repeat("a", 301)}).Validate("tools[0].versions[1]", false); !has(ps, "tools[0].versions[1].description", "longer than 300") {
+		t.Errorf("path: %v", ps)
+	}
+	if ps := (Info{}).Validate("", false); len(ps) != 0 {
+		t.Errorf("a manifest without a description stays valid: %v", ps)
+	}
+}
+
+func TestDescriptionIsStoredFlattenedAndAloneIsNotZero(t *testing.T) {
+	if (Info{Description: "x"}).IsZero() {
+		t.Fatal("a description alone is something stated")
+	}
+	raw, _ := Encode(Info{Description: "Reads a PDF."})
+	back := Decode(raw)
+	if back == nil || back.Description != "Reads a PDF." {
+		t.Fatalf("round trip: %v", back)
+	}
+	var v struct {
+		Info
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal([]byte(`{"name":"n","description":"Does things.","license":"MIT"}`), &v); err != nil || v.Description != "Does things." {
+		t.Fatalf("flattened: %+v %v", v, err)
+	}
+	out, _ := json.Marshal(Info{License: "MIT"})
+	if strings.Contains(string(out), "description") {
+		t.Fatalf("an empty description must not be written: %s", out)
+	}
+}

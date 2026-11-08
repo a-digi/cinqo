@@ -349,13 +349,16 @@ func build(pkgs []found, opts Options, meta Meta) (*catalog.Catalog, error) {
 			// made it, or something was packaged from two different sources
 			for _, other := range group[1:] {
 				if !reflect.DeepEqual(first.m.Info, other.m.Info) {
-					return nil, fmt.Errorf("%s %s: %s and %s carry different authors, licence or links in their manifests", slug, v, first.file, other.file)
+					return nil, fmt.Errorf("%s %s: %s and %s carry different authors, licence, links or description in their manifests", slug, v, first.file, other.file)
 				}
 			}
 			ver := catalog.Version{
 				Info:      first.m.Info,
 				VersionID: v, Name: first.m.Name, Version: v,
 				ReleasedAt: latestDate(group), MinAppVersion: first.m.MinAppVersion,
+				// A version already has its own "description" in the repository file, which hides the one inside Info (same JSON name, one level
+				// up), so the manifest's description (plan 217) is copied here: it is the text the Repositories page shows for the tool.
+				Description: first.m.Description,
 			}
 			for _, p := range group {
 				ver.Packages = append(ver.Packages, catalog.Package{

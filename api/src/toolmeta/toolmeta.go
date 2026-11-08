@@ -23,8 +23,10 @@ const (
 	MaxURLLen       = 2000
 	MaxLicenseLen   = 100
 	MaxCopyrightLen = 200
-	MaxKeywords     = 10
-	MaxKeywordLen   = 30
+	// MaxDescriptionLen bounds the one-paragraph description of a tool (plan 217): what it is for, as a card shows it.
+	MaxDescriptionLen = 300
+	MaxKeywords       = 10
+	MaxKeywordLen     = 30
 
 	// Proprietary is the licence value for a tool that is not under an open licence.
 	Proprietary = "Proprietary"
@@ -66,13 +68,15 @@ type Links struct {
 // Info is the attribution of one tool version. A struct embeds it (anonymously) so its fields sit at the top level
 // of the JSON object: in a repository file's version entry and in a tool's manifest.json alike.
 type Info struct {
-	Authors   []Author `json:"authors,omitempty"`
-	Company   *Company `json:"company,omitempty"`
-	License   string   `json:"license,omitempty"`
-	Links     *Links   `json:"links,omitempty"`
-	Copyright string   `json:"copyright,omitempty"`
-	Category  string   `json:"category,omitempty"`
-	Keywords  []string `json:"keywords,omitempty"`
+	// Description says in a sentence or two what the tool is for (plan 217): plain text, shown on the tool's card.
+	Description string   `json:"description,omitempty"`
+	Authors     []Author `json:"authors,omitempty"`
+	Company     *Company `json:"company,omitempty"`
+	License     string   `json:"license,omitempty"`
+	Links       *Links   `json:"links,omitempty"`
+	Copyright   string   `json:"copyright,omitempty"`
+	Category    string   `json:"category,omitempty"`
+	Keywords    []string `json:"keywords,omitempty"`
 }
 
 // Problem is one thing wrong with a field. Path locates it, for example `tools[2].versions[0].authors[1].name`.
@@ -106,6 +110,7 @@ func (c *collector) add(field, format string, args ...any) {
 // version 2, and every manifest at install); otherwise they are only checked when they are there.
 func (i Info) Validate(path string, required bool) []Problem {
 	c := &collector{prefix: path}
+	c.description("description", i.Description)
 	c.authors("authors", i.Authors, required)
 	c.company("company", i.Company)
 	c.license("license", i.License, required)
@@ -159,6 +164,20 @@ func (c *collector) name(field, value string) {
 		return
 	}
 	if msg := text(value, MaxNameLen); msg != "" {
+		c.add(field, "%s", msg)
+	}
+}
+
+// description is optional; when stated it is plain text of 1 to MaxDescriptionLen characters (no line breaks: text() refuses control characters).
+func (c *collector) description(field, value string) {
+	if value == "" {
+		return
+	}
+	if strings.TrimSpace(value) == "" {
+		c.add(field, "must not be only spaces")
+		return
+	}
+	if msg := text(value, MaxDescriptionLen); msg != "" {
 		c.add(field, "%s", msg)
 	}
 }
@@ -299,7 +318,7 @@ func validURL(raw string, allowMailto bool) string {
 
 // IsZero reports whether nothing at all is stated.
 func (i Info) IsZero() bool {
-	return len(i.Authors) == 0 && i.Company == nil && i.License == "" && i.Links == nil && i.Copyright == "" && i.Category == "" && len(i.Keywords) == 0
+	return i.Description == "" && len(i.Authors) == 0 && i.Company == nil && i.License == "" && i.Links == nil && i.Copyright == "" && i.Category == "" && len(i.Keywords) == 0
 }
 
 // Encode is how an installed tool's validated attribution is stored (one JSON document in tools.metadata).

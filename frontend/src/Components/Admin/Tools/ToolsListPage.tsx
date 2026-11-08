@@ -30,12 +30,8 @@ import {
 import { useUpdateCheck } from './useUpdateCheck'
 import { headGradient, themeForTool } from './toolCardTheme'
 import { Byline, LicensePill, LinkRow } from './ToolAttribution'
-import { matchesQuery, searchText } from './toolMetaDisplay'
-
-// Bounds the functions-pill area's own height — every function pill is
-// shown now (no cap), so a tool declaring many (Career: ~35) needs a
-// scrollable box instead of letting the card grow unbounded tall.
-const FUNCTIONS_MAX_HEIGHT = 'max-h-28'
+import { DependenciesBlock } from './ToolDependencies'
+import { linkEntries, matchesQuery, searchText } from './toolMetaDisplay'
 
 // Admin-only view of installed tools (api/src/tool) — see
 // plan/ai/tools/step-08-frontend-admin-ui.md. Every mutating action
@@ -45,9 +41,11 @@ const FUNCTIONS_MAX_HEIGHT = 'max-h-28'
 // (Shared/Components/Card), not a table — each card's banner mirrors a
 // real-estate-listing layout: a placeholder "photo" area with floating
 // circular action buttons top-right and a status ribbon top-left, a
-// name/version header row, a slug subtitle, then a row of neutral
-// outline stat chips (kind/enabled/function count) before the
-// function-name pills themselves.
+// name/version header row, a slug subtitle, then a row of chips
+// (licence/kind/enabled/update). Below them two blocks with different
+// backgrounds (plan 217): what the tool needs (tinted with the card's accent,
+// click for the details) above what it is for. The tool's functions are no
+// longer listed on the card.
 export function ToolsListPage() {
   const [tools, setTools] = useState<Tool[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -201,6 +199,8 @@ export function ToolsListPage() {
             {filtered.map((tool, index) => {
               const theme = themeForTool(tool.slug, tool.kind)
               const update = updateCheck.data ? updateFor(updateCheck.data.updates, tool.slug) : undefined
+              const description = tool.metadata?.description?.trim() ?? ''
+              const hasLinks = linkEntries(tool.metadata?.links).length > 0
               return (
                 <Card
                   key={tool.id}
@@ -243,38 +243,46 @@ export function ToolsListPage() {
                     />
                   }
                 >
-                  <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center justify-between gap-2">
                     <p className="truncate font-mono text-xs text-gray-500">{tool.slug}</p>
-                    <span className="shrink-0 text-sm font-semibold text-gray-900">v{tool.version}</span>
+                    <span className="shrink-0 rounded-full bg-gray-900 px-2.5 py-0.5 text-xs font-semibold text-white">
+                      v{tool.version}
+                    </span>
                   </div>
-                  <Byline metadata={tool.metadata} className="mt-1" />
+                  <Byline metadata={tool.metadata} className="mt-1.5" />
 
-                  <div className="mt-3 flex flex-wrap gap-2">
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    <Pill variant={tool.enabled ? 'green' : 'gray'}>{tool.enabled ? 'Enabled' : 'Disabled'}</Pill>
                     <LicensePill license={tool.metadata?.license} />
                     <Pill outline>{tool.kind}</Pill>
-                    <Pill outline>{tool.enabled ? 'Enabled' : 'Disabled'}</Pill>
-                    <Pill outline>
-                      {tool.mcpTools.length} function{tool.mcpTools.length === 1 ? '' : 's'}
-                    </Pill>
                     {update && <Pill variant="amber">{updateLabel(update)}</Pill>}
                   </div>
 
-                  <LinkRow links={tool.metadata?.links} className="mt-3" />
+                  <div className="mt-4 space-y-2.5">
+                    <DependenciesBlock tool={tool} tools={tools} accent={theme.accent} />
+                    <div className="rounded-xl bg-gray-50 px-3 py-2.5">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">About</p>
+                      {description === '' ? (
+                        <p className="mt-1 text-sm italic text-gray-400">No description.</p>
+                      ) : (
+                        <p className="mt-1 line-clamp-4 text-sm leading-relaxed text-gray-700" title={description}>
+                          {description}
+                        </p>
+                      )}
+                    </div>
+                  </div>
 
-                  {update && (
-                    <p className="mt-3 text-xs text-gray-500">
-                      <Link to={repositoryPath(update.repositoryId)} className="font-medium text-gray-900 hover:underline">
-                        Review update
-                      </Link>{' '}
-                      in {update.repositoryName}
-                    </p>
-                  )}
-
-                  {tool.mcpTools.length > 0 && (
-                    <div className={`mt-3 flex flex-wrap gap-1 overflow-y-auto pr-1 ${FUNCTIONS_MAX_HEIGHT}`}>
-                      {tool.mcpTools.map((name) => (
-                        <Pill key={name}>{name}</Pill>
-                      ))}
+                  {(hasLinks || update) && (
+                    <div className="mt-4 space-y-1.5 border-t border-gray-100 pt-3">
+                      <LinkRow links={tool.metadata?.links} />
+                      {update && (
+                        <p className="text-xs text-gray-500">
+                          <Link to={repositoryPath(update.repositoryId)} className="font-medium text-gray-900 hover:underline">
+                            Review update
+                          </Link>{' '}
+                          in {update.repositoryName}
+                        </p>
+                      )}
                     </div>
                   )}
                 </Card>

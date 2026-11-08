@@ -23,6 +23,8 @@ export interface ToolLinks {
 
 // One tool version's attribution: an installed tool's (what its own package declared) or a repository's entry.
 export interface ToolMetadata {
+  // What the tool is for, in a sentence or two, as its package states it (plan 217). Plain text.
+  description?: string
   authors?: ToolAuthor[]
   company?: ToolCompany
   license?: string
