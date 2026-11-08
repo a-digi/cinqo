@@ -1,7 +1,9 @@
 import { useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 
 // A plain content dialog (plan 217): a title, anything as content, one Close button. Escape and a click on the backdrop close it, Close is focused
-// when it opens. Hand-rolled against Tailwind utility classes like ConfirmModal, which stays the one for questions that need an answer.
+// when it opens. It is drawn on document.body, not where it is used: a card (or any ancestor with a transform, an animation or overflow hidden) would
+// otherwise become the frame of its "fixed" backdrop and clip it, so it must sit outside whatever opened it. Hand-rolled against Tailwind utility classes like ConfirmModal, which stays the one for questions that need an answer.
 export interface ModalProps {
   open: boolean
   title: string
@@ -27,7 +29,7 @@ export function Modal({ open, title, children, onClose, closeLabel = 'Close' }: 
 
   if (!open) return null
 
-  return (
+  return createPortal(
     // Click-outside-to-dismiss is a mouse-only convenience; Escape (above) is the keyboard path.
     // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
@@ -57,6 +59,7 @@ export function Modal({ open, title, children, onClose, closeLabel = 'Close' }: 
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
