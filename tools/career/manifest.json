@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.0.783",
+  "version": "0.0.784",
   "authors": [
     { "name": "Anes Detit", "email": "tafa.andet@googlemail.com" }
   ],
@@ -737,6 +737,11 @@
     {
       "method": "POST",
       "path_suffix": "cv-import/draft/finish",
+      "required_scope": "tool:career:cv_import"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "cv-import/text",
       "required_scope": "tool:career:cv_import"
     },
     {
