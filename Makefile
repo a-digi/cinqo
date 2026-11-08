@@ -197,18 +197,42 @@ bump-app-version:
 # one file. A distinct artifact from build/build-linux (which stay
 # backend-only, the right shape for any future server-style remote
 # deploy) — this is the desktop-tool-style "run it, it opens" mode.
-# Output is a fixed filename (app/cinqo-app), overwritten every build —
+# Output is a fixed filename (app/cinqo-pro, the build for this machine, the MacBook Pro; the MacBook Air's is app/cinqo-air, see build-app-air),
+# overwritten every build —
 # app/VERSION is the single source of truth for which version that
 # binary currently is, not the filename itself. See
 # plan/ai/build/app.md.
-.PHONY: build-app
+PRO_APP := app/cinqo-pro
+.PHONY: build-app build-app-pro
+build-app-pro: build-app
 build-app: embed-frontend embed-config
 ifndef NO_BUMP
 	$(MAKE) bump-app-version
 endif
 	@mkdir -p app
-	cd api && go build -o ../app/cinqo-app ./cmd/app
-	@echo "cinqo-app $$(cat $(APP_VERSION_FILE)) built at app/cinqo-app"
+	cd api && go build -o ../$(PRO_APP) ./cmd/app
+	@echo "cinqo-pro $$(cat $(APP_VERSION_FILE)) built at $(PRO_APP)"
+
+# Builds the same single executable for the MacBook Air, cinqo-air (Apple Silicon, macOS arm64), explicitly (GOOS=darwin GOARCH=arm64, so it is that
+# build whichever machine runs make) and under its own name, app/cinqo-air, so the app/cinqo-pro you run on this machine (the MacBook Pro) is never
+# overwritten. The frontend and the config are embedded as in build-app, and app/VERSION is bumped the same way (NO_BUMP=1 skips it). Copy the
+# file to the Air and start it there: it keeps its data folder next to itself (see run-app). Started from this repository's app/ folder it would
+# share app/data and its PID file with cinqo-pro, and stop a running one. A file that was downloaded or AirDropped may need its quarantine mark
+# removed:  xattr -d com.apple.quarantine cinqo-air
+AIR_APP := app/cinqo-air
+# The oldest macOS the file is allowed to start on. Without it the build asks for the macOS of the machine that built it (this one: 26.0), and an
+# Air on an older macOS refuses to start it ("built for a newer version of macOS"). Raise it only when the Air's macOS is newer than this.
+AIR_MIN_MACOS ?= 12.0
+.PHONY: build-app-air
+build-app-air: embed-frontend embed-config
+ifndef NO_BUMP
+	$(MAKE) bump-app-version
+endif
+	@mkdir -p app
+	cd api && CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 MACOSX_DEPLOYMENT_TARGET=$(AIR_MIN_MACOS) \
+		CGO_CFLAGS="-mmacosx-version-min=$(AIR_MIN_MACOS)" CGO_LDFLAGS="-mmacosx-version-min=$(AIR_MIN_MACOS)" \
+		go build -o ../$(AIR_APP) ./cmd/app
+	@echo "cinqo-air $$(cat $(APP_VERSION_FILE)) built (macOS arm64, macOS $(AIR_MIN_MACOS) or newer) at $(AIR_APP)"
 
 # Builds (if needed) and runs the single executable in the foreground —
 # unlike run-dev, deliberately NOT backgrounded with `&`: this is the
@@ -223,14 +247,14 @@ endif
 # claim) that cinqo-app resolves config.json/config/ relative to its
 # own working directory. It doesn't: resolveAppHome (api/cmd/app/main.go,
 # step 18) resolves everything relative to the EXECUTABLE's own
-# location (app/cinqo-app), via os.Executable(), regardless of CWD —
+# location (app/cinqo-pro), via os.Executable(), regardless of CWD —
 # the same executable-relative data/ directory (which also now holds
 # config.json/config/chrome.pid/server.pid) resolves identically no
 # matter where this is launched from.
 .PHONY: run-app
 run-app:
 	$(MAKE) build-app NO_BUMP=1
-	./app/cinqo-app
+	./$(PRO_APP)
 
 # Packages a tools/<name>/ source directory into the .zip the install
 # endpoint (POST /api/v1/tools/install) expects — builds the backend

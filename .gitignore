@@ -67,6 +67,8 @@ plan/
 # "the latest version was X" is a real, checked-in fact, not something
 # that resets to 0.0.000 the moment someone clones fresh.
 /app/cinqo-app
+/app/cinqo-pro
+/app/cinqo-air
 
 # Every tool's own build output (make package-tool's generic build,
 # and any tool-specific Makefile's own per-OS builds) — a build

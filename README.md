@@ -72,9 +72,40 @@ foreground (Ctrl+C stops everything):
 make run-app
 ```
 
-`make build-app` only builds `app/cinqo-app` (bumps `app/VERSION`; use
-`NO_BUMP=1` to skip). Use `--data <dir>` before the action to change the data
-directory: `./app/cinqo-app --data /path start`.
+`make build-app` (or `make build-app-pro`) only builds `app/cinqo-pro`, the
+build for this machine (bumps `app/VERSION`; use `NO_BUMP=1` to skip).
+`make build-app-air` builds `app/cinqo-air` for the MacBook Air (Apple Silicon,
+macOS 12 or newer). Use `--data <dir>` before the action to change the data
+directory: `./app/cinqo-pro --data /path start`.
+
+### The two builds: `cinqo-pro` and `cinqo-air`
+
+| File             | Built by             | For                                          | Needs macOS     |
+| ---------------- | -------------------- | -------------------------------------------- | --------------- |
+| `app/cinqo-pro`  | `make build-app-pro` | the MacBook Pro (the machine that builds it) | 26.0 or newer   |
+| `app/cinqo-air`  | `make build-app-air` | the MacBook Air (Apple Silicon, arm64)       | 12.0 or newer   |
+
+Both are single files with the frontend and the config inside. `cinqo-air` is
+built for an older macOS on purpose (`AIR_MIN_MACOS=<version>` changes the
+minimum): a build without it asks for the macOS of the machine that built it,
+and an Air on an older macOS would refuse to start it.
+
+To run `cinqo-air` on the Air, put the file in any folder there and start it:
+
+```sh
+./cinqo-air start
+```
+
+- It keeps its data next to itself (a `data/` folder in the same folder), or
+  where `--data <dir>` says: `./cinqo-air --data ~/cinqo-data start`. The folder
+  it runs from does not matter, only that it can write there.
+- macOS blocks a file that arrived by **download, AirDrop, Mail or Messages**
+  (it carries a "quarantine" mark, wherever you then put it). Remove the mark
+  once: `xattr -d com.apple.quarantine cinqo-air`. A file that was **built on
+  that machine**, or copied with `cp`, `scp`, `rsync` or `curl`, has no mark and
+  needs nothing.
+- Do not run `cinqo-pro` and `cinqo-air` from the same `app/` folder: they would
+  share `app/data` and its PID file, and starting one stops the other.
 
 ## Common commands
 
