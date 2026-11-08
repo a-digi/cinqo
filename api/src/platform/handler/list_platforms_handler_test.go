@@ -140,3 +140,48 @@ func TestThePlatformListStatesTheContextOnlyOfAPlatformThatHasOne(t *testing.T) 
 		t.Errorf("an absent context must not be in the JSON: %s", raw)
 	}
 }
+
+func TestThePlatformListGivesReadableModelNamesOnlyForOfferedModelsAndOnlyWhenThePlatformHasThem(t *testing.T) {
+	offered := []string{"m-one", "m-two"}
+	if err := platform.Register(platform.Entry{
+		Info:        entity.Platform{ID: "list-names", Name: "Names"},
+		Completer:   noopCompleter{},
+		Credentials: func(context.Context) (string, string, error) { return "http://127.0.0.1:1", "", nil },
+		Models:      func() []string { return offered },
+		ModelNames: func() map[string]string {
+			return map[string]string{"m-one": "Model One, 1.0 GiB", "m-two": "", "m-gone": "Gone, 9.9 GiB"}
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := platform.Register(platform.Entry{
+		Info:        entity.Platform{ID: "list-names-none", Name: "NoNames"},
+		Completer:   noopCompleter{},
+		Credentials: func(context.Context) (string, string, error) { return "http://127.0.0.1:1", "", nil },
+		Models:      func() []string { return []string{"a"} },
+		ModelNames:  func() map[string]string { return map[string]string{"zzz": "Not offered"} },
+	}); err != nil {
+		t.Fatal(err)
+	}
+	list := platformResponses()
+	p, ok := find(list, "list-names")
+	if !ok || len(p.ModelNames) != 1 || p.ModelNames["m-one"] != "Model One, 1.0 GiB" {
+		t.Fatalf("%+v: a name for the offered model that has one, none for an empty name, none for a model that is not offered", p)
+	}
+	offered = []string{"m-two", "m-one"} // read at call time
+	if p, _ := find(platformResponses(), "list-names"); p.ModelNames["m-one"] == "" {
+		t.Errorf("names are read at call time: %+v", p)
+	}
+	if n, ok := find(list, "list-names-none"); !ok || n.ModelNames != nil {
+		t.Errorf("%+v: no offered model has a name, so none are listed", n)
+	}
+	for _, id := range []string{"openai", "anthropic", "openrouter"} {
+		if c, ok := find(list, id); !ok || c.ModelNames != nil {
+			t.Errorf("%s: %+v, the cloud platforms give no names", id, c)
+		}
+	}
+	raw, _ := json.Marshal(platformResponse{ID: "x"})
+	if strings.Contains(string(raw), "modelNames") {
+		t.Errorf("absent names must not be in the JSON: %s", raw)
+	}
+}

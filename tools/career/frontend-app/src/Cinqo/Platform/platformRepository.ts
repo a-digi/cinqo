@@ -28,6 +28,9 @@ export interface Platform {
   // How much a conversation on the platform holds at once, in tokens (the local AI: its context size). Absent for a platform that
   // states none (the cloud platforms), which is never treated as a limit.
   contextTokens?: number
+  // Readable names for the models offered now, by model id (the local AI: "Qwen2.5-Coder-3B-Instruct, 2.0 GiB"). Absent when the platform
+  // gives none (the cloud platforms): the id is then the name. Absent from an older core.
+  modelNames?: Record<string, string>
 }
 
 export async function fetchPlatforms(): Promise<Platform[]> {

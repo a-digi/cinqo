@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { defaultModelFor } from '../../Cinqo/Platform/aiChoice'
 import type { AiOverride } from '../../Cinqo/Platform/crawlAiChoice'
+import { LocalModelNote } from '../../Cinqo/Platform/LocalModelNote'
+import { modelOptions, showsLocalModelNote } from '../../Cinqo/Platform/modelLabels'
 import type { Platform } from '../../Cinqo/Platform/platformRepository'
 import { InfoBox } from '../../Shared/InfoBox/InfoBox'
 import { Modal } from '../../Shared/Modal/Modal'
@@ -108,7 +110,7 @@ export function CrawlAiModal({
             <div className="[&>div]:block [&>div>button]:w-full">
               <Dropdown
                 label="Model"
-                options={selected.models.map((m) => ({ value: m, label: m }))}
+                options={modelOptions(selected)}
                 value={model || null}
                 onChange={(m) => {
                   setModel(m)
@@ -117,6 +119,7 @@ export function CrawlAiModal({
               />
             </div>
           )}
+          {showsLocalModelNote(selected) && <LocalModelNote />}
         </div>
       )}
 

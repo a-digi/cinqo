@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { saveAiSettings } from '../../api'
 import { defaultModelFor } from '../../Cinqo/Platform/aiChoice'
+import { LocalModelNote } from '../../Cinqo/Platform/LocalModelNote'
+import { modelOptions, showsLocalModelNote } from '../../Cinqo/Platform/modelLabels'
 import { useAiChoice } from '../../Cinqo/Platform/useAiChoice'
 import { Dropdown } from '../Dropdown/Dropdown'
 import { InfoBox } from '../../Shared/InfoBox/InfoBox'
@@ -131,7 +133,7 @@ export function SettingsPage() {
                     <div className="w-72 [&>div]:block [&>div>button]:w-full">
                       <Dropdown
                         label="Model"
-                        options={selected.models.map((m) => ({ value: m, label: m }))}
+                        options={modelOptions(selected)}
                         value={model || null}
                         onChange={(m) => {
                           setModel(m)
@@ -141,6 +143,7 @@ export function SettingsPage() {
                     </div>
                   )}
                 </div>
+                {showsLocalModelNote(selected) && <LocalModelNote />}
 
                 <div className="flex flex-wrap items-center gap-3">
                   <button

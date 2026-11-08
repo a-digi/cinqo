@@ -56,6 +56,10 @@ type Entry struct {
 	// (only the tools a conversation names in its allowlist, in direct mode). A platform that sets it never offers
 	// every tool.
 	ToolsFor func(model string) ToolPolicy
+	// ModelNames, when set, gives a readable name for the models this platform offers (the local AI: "Qwen2.5-Coder-3B-Instruct, 2.0 GiB"
+	// for an id such as qwen2.5-coder-3b-instruct-q4_k_m), read at call time. A model without a name is shown by its id. Optional: the cloud
+	// platforms set none. It is listed as modelNames, only for the models that are selectable right now.
+	ModelNames func() map[string]string
 	// ShortSteps says the models of this platform follow short, one-action-at-a-time instructions better than a long
 	// multi-step prompt (a small local model never called a tool when given the long import prompt, and always did when
 	// given the same work as small steps). A caller that can split its work offers it that way; it is listed as

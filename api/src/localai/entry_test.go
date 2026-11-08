@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"os"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -182,5 +184,79 @@ func TestTheLocalPlatformStatesTheContextOfItsSettingsOnceConfigured(t *testing.
 	saveSettings(t, db, false, phiID) // switched off again: no platform, no limit to state
 	if got := e.ContextTokens(); got != 0 {
 		t.Errorf("switched off: %d", got)
+	}
+}
+
+// --- plan 206, step 1: the platform offers every ready model ---
+
+func TestTheLocalPlatformOffersEveryReadyModelWithTheSavedDefaultFirst(t *testing.T) {
+	r := newEngineRig(t)
+	r.install(t, r.other)
+	withEngine(t, r.e)
+	e := Entry(r.db)
+	if got := e.SelectableModelList(); !reflect.DeepEqual(got, []string{"tiny", "other"}) {
+		t.Fatalf("models = %v", got)
+	}
+	saveSettings(t, r.db, true, "other") // the default changes on the Local AI page
+	if got := e.SelectableModelList(); !reflect.DeepEqual(got, []string{"other", "tiny"}) {
+		t.Errorf("the new default must come first, read at call time: %v", got)
+	}
+	for _, m := range []struct {
+		id   string
+		want bool
+	}{{"tiny", true}, {"other", true}, {"gpt-4", false}, {"", false}} {
+		in := false
+		for _, offered := range e.SelectableModelList() {
+			in = in || offered == m.id
+		}
+		if in != m.want {
+			t.Errorf("%q selectable = %v, want %v", m.id, in, m.want)
+		}
+	}
+	saveSettings(t, r.db, false, "other")
+	if e.IsAvailable() || len(e.SelectableModelList()) != 0 {
+		t.Error("switched off: nothing is offered")
+	}
+}
+
+func TestTheLocalPlatformIsAvailableWhileAnyModelIsReadyEvenWhenTheDefaultIsNot(t *testing.T) {
+	r := newEngineRig(t)
+	r.install(t, r.other)
+	withEngine(t, r.e)
+	e := Entry(r.db)
+	os.Remove(r.in.ModelPath(r.model)) // the saved default is gone, the other one is not
+	if !e.IsAvailable() {
+		t.Fatal("a ready model is enough to offer the local AI")
+	}
+	if got := e.SelectableModelList(); !reflect.DeepEqual(got, []string{"other"}) {
+		t.Errorf("models = %v", got)
+	}
+	if _, _, err := e.Credentials(context.Background()); err != nil {
+		t.Errorf("a platform that can answer must not refuse: %v", err)
+	}
+	os.Remove(r.in.ModelPath(r.other)) // nothing is left
+	if e.IsAvailable() || len(e.SelectableModelList()) != 0 {
+		t.Error("with no model ready the local AI is not offered")
+	}
+	if _, _, err := e.Credentials(context.Background()); err == nil || !strings.Contains(err.Error(), "not downloaded") {
+		t.Errorf("err = %v, want the reason", err)
+	}
+}
+
+func TestTheLocalPlatformNamesItsModelsReadably(t *testing.T) {
+	withEngine(t, &fakeEngine{})
+	e := Entry(openMainDB(t))
+	if e.ModelNames == nil {
+		t.Fatal("the local platform must give readable names")
+	}
+	names := e.ModelNames()
+	for id, want := range map[string]string{
+		"qwen2.5-coder-3b-instruct-q4_k_m": "Qwen2.5-Coder-3B-Instruct, 2.0 GiB",
+		"qwen2.5-1.5b-instruct-q4_k_m":     "Qwen2.5-1.5B-Instruct, 1.0 GiB",
+		phiID:                              "Phi-4-mini-instruct, 2.3 GiB",
+	} {
+		if names[id] != want {
+			t.Errorf("%s: %q, want %q", id, names[id], want)
+		}
 	}
 }

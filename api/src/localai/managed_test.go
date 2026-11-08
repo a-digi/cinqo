@@ -652,3 +652,100 @@ func TestAToolCapableModelIsToldWhatATaskLikeAnImportNeeds(t *testing.T) {
 		t.Error("the tool size is the recommendation, never above what the model reads")
 	}
 }
+
+// --- plan 206, step 1: every ready model is offered ---
+
+func TestReadyModelsAreTheOnesThatCanAnswerWithTheDefaultFirst(t *testing.T) {
+	r := newEngineRig(t)
+	if got := r.e.ReadyModels("tiny"); !reflect.DeepEqual(got, []string{"tiny"}) {
+		t.Fatalf("only tiny is downloaded: %v", got)
+	}
+	r.install(t, r.other)
+	if got := r.e.ReadyModels("tiny"); !reflect.DeepEqual(got, []string{"tiny", "other"}) {
+		t.Errorf("default tiny: %v", got)
+	}
+	if got := r.e.ReadyModels("other"); !reflect.DeepEqual(got, []string{"other", "tiny"}) {
+		t.Errorf("the default comes first: %v", got)
+	}
+	if got := r.e.ReadyModels("  other "); !reflect.DeepEqual(got, []string{"other", "tiny"}) {
+		t.Errorf("a padded default id: %v", got)
+	}
+	if got := r.e.ReadyModels(""); !reflect.DeepEqual(got, []string{"tiny", "other"}) {
+		t.Errorf("no default: the catalog's order: %v", got)
+	}
+	if got := r.e.ReadyModels("not-in-the-catalog"); !reflect.DeepEqual(got, []string{"tiny", "other"}) {
+		t.Errorf("an unknown default is ignored: %v", got)
+	}
+}
+
+func TestAModelThatIsNotDownloadedOrCutShortOrDoesNotFitIsNotOffered(t *testing.T) {
+	r := newEngineRig(t)
+	r.install(t, r.other)
+	// a file of the wrong size (a download cut short)
+	if err := os.WriteFile(r.in.ModelPath(r.other), make([]byte, 5), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.e.ReadyModels("tiny"); !reflect.DeepEqual(got, []string{"tiny"}) {
+		t.Errorf("a cut-short file: %v", got)
+	}
+	r.install(t, r.other)
+	// memory for tiny but not for other
+	need := hardware.MinRAMBytes(r.model.SizeBytes)
+	r.e.system = func() hardware.Info { return hardware.Info{OS: "darwin", Arch: "arm64", RAMBytes: need} }
+	if got := r.e.ReadyModels("other"); !reflect.DeepEqual(got, []string{"tiny"}) {
+		t.Errorf("not enough memory for other: %v", got)
+	}
+	r.e.system = func() hardware.Info { return hardware.Info{OS: "darwin", Arch: "arm64", RAMBytes: 0} } // unknown memory is not held against a model
+	if got := r.e.ReadyModels("tiny"); !reflect.DeepEqual(got, []string{"tiny", "other"}) {
+		t.Errorf("unknown memory: %v", got)
+	}
+	r.e.system = func() hardware.Info { return macSystem }
+	// no program: nothing can answer
+	os.Remove(r.in.RuntimeBinary(r.rt))
+	if got := r.e.ReadyModels("tiny"); len(got) != 0 {
+		t.Errorf("no program: %v", got)
+	}
+	// an unsupported system
+	r.e.system = func() hardware.Info { return hardware.Info{OS: "windows", Arch: "amd64", RAMBytes: 16 << 30} }
+	if got := r.e.ReadyModels("tiny"); len(got) != 0 {
+		t.Errorf("unsupported system: %v", got)
+	}
+}
+
+func TestEveryReadyModelCanAnswerWhateverTheSavedDefaultIs(t *testing.T) {
+	r := newEngineRig(t)
+	r.install(t, r.other)
+	saveSettings(t, r.db, true, "tiny")
+	if _, err := r.chat("other"); err != nil {
+		t.Fatalf("a ready model that is not the default: %v", err)
+	}
+	if st := r.e.Status(); st.ModelID != "other" {
+		t.Errorf("the program must run the model of the conversation: %+v", st)
+	}
+	os.Remove(r.in.ModelPath(r.model)) // the default's file goes away
+	if err := r.e.Ready(context.Background()); err == nil {
+		t.Error("Ready still means the saved default")
+	}
+	if _, err := r.chat("other"); err != nil {
+		t.Errorf("the other model must still answer: %v", err)
+	}
+	if _, err := r.chat("tiny"); err == nil || !strings.Contains(err.Error(), "not downloaded") {
+		t.Errorf("a conversation on the model that is gone gets that model's reason: %v", err)
+	}
+}
+
+func TestTheContextOfALaunchIsTheSmallerOfTheSettingAndTheModelsMaximum(t *testing.T) {
+	r := newEngineRig(t)
+	s := func(tokens int) entity.Settings { return entity.Settings{ContextTokens: tokens} }
+	m := func(max int) catalog.Model { return catalog.Model{ID: "m", ContextTokens: max} }
+	for _, c := range []struct{ setting, max, want int }{
+		{131072, 32768, 32768}, // Phi's size saved, a Qwen conversation: the Qwen runs with its own maximum
+		{16384, 32768, 16384},
+		{32768, 32768, 32768},
+		{16384, 0, 16384}, // a model that states no maximum: the setting
+	} {
+		if got := r.e.launchFor(m(c.max), r.rt, s(c.setting)).ContextTokens; got != c.want {
+			t.Errorf("setting %d, model maximum %d: got %d, want %d", c.setting, c.max, got, c.want)
+		}
+	}
+}

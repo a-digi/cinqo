@@ -303,12 +303,14 @@ export function LocalAiForm({
         </div>
       </Card>
 
-      <Card label="Model" title="Which model">
+      <Card label="Model" title="Default model">
         <fieldset aria-describedby={`${groupId}-note`}>
-          <legend className="sr-only">Model</legend>
+          <legend className="sr-only">Default model</legend>
           <p id={`${groupId}-note`} className="mb-3 text-xs text-gray-500">
-            Cinqo downloads the model you choose and runs it for you. The fit is a rule of thumb: the file plus a quarter for the working
-            memory, plus 3 GiB for the system and Cinqo.
+            Cinqo downloads the model you choose and runs it for you. This is the default model: it is the one used when you switch the
+            local AI on and the one a tool such as Career preselects. Tools can choose any other model you have downloaded, so you do not
+            have to come back here to switch. The fit is a rule of thumb: the file plus a quarter for the working memory, plus 3 GiB for the
+            system and Cinqo.
           </p>
           <ul className="space-y-3">
             {catalog.map((m) => {

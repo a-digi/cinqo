@@ -24,6 +24,12 @@ type Engine interface {
 	Chat(ctx context.Context, client *http.Client, model string, messages []chatcompleter.Message, tools []chatcompleter.ToolDef) (*chatcompleter.ChatCompletionResult, error)
 }
 
+// modelLister is what an engine that can run several models adds to Engine: the ids of the models that can answer now, the default
+// first. An engine without it (a test double) offers only the model saved in the settings, when it is ready.
+type modelLister interface {
+	ReadyModels(defaultID string) []string
+}
+
 // ErrNotAvailable means the settings do not describe a local AI that can answer (switched off or no model chosen).
 var ErrNotAvailable = errors.New("the local AI is switched off or no model is chosen (see AI, Local AI)")
 

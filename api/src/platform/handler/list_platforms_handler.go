@@ -30,6 +30,9 @@ type platformResponse struct {
 	// ContextTokens is how much a conversation on the platform can hold at once; absent when the platform states none (the cloud
 	// platforms), which no caller treats as a limit.
 	ContextTokens *int `json:"contextTokens,omitempty"`
+	// ModelNames maps a model id to a readable name, for the models the platform offers right now; absent when the platform gives none
+	// (the cloud platforms), in which case the id is the name.
+	ModelNames map[string]string `json:"modelNames,omitempty"`
 }
 
 // ListPlatformsHandler handles GET /api/v1/platforms. See
@@ -49,7 +52,26 @@ func platformResponses() []platformResponse {
 		if !entry.IsAvailable() {
 			continue
 		}
-		out = append(out, platformResponse{ID: info.ID, Name: info.Name, Models: entry.SelectableModelList(), RequiresKey: entry.RequiresKey(), OffersTools: entry.OffersAllTools(), NeedsShortSteps: entry.ShortSteps, ContextTokens: contextOf(entry)})
+		models := entry.SelectableModelList()
+		out = append(out, platformResponse{ID: info.ID, Name: info.Name, Models: models, RequiresKey: entry.RequiresKey(), OffersTools: entry.OffersAllTools(), NeedsShortSteps: entry.ShortSteps, ContextTokens: contextOf(entry), ModelNames: namesOf(entry, models)})
+	}
+	return out
+}
+
+// namesOf is the readable names of the models offered now, nil when the platform gives none or none of its offered models has one.
+func namesOf(entry platform.Entry, offered []string) map[string]string {
+	if entry.ModelNames == nil {
+		return nil
+	}
+	all := entry.ModelNames()
+	var out map[string]string
+	for _, id := range offered {
+		if name := all[id]; name != "" {
+			if out == nil {
+				out = map[string]string{}
+			}
+			out[id] = name
+		}
 	}
 	return out
 }

@@ -100,6 +100,25 @@ func (e *managedEngine) CanEnable(modelID string) error {
 	return fitsError(info, m)
 }
 
+// ReadyModels are the catalog models that can answer right now: the program for this system and the model file are on disk and the
+// computer has the memory for it (the same check as Ready, for every model). The default model (the one saved on the Local AI page)
+// comes first when it is among them, then the others in the catalog's order. Career and any other caller choose among these; a model that
+// is not downloaded, or does not fit, is not offered (plan 206, D1).
+func (e *managedEngine) ReadyModels(defaultID string) []string {
+	var first, rest []string
+	for _, m := range e.in.catalog.Models {
+		if _, _, err := e.prerequisites(m.ID); err != nil {
+			continue
+		}
+		if m.ID == strings.TrimSpace(defaultID) {
+			first = append(first, m.ID)
+		} else {
+			rest = append(rest, m.ID)
+		}
+	}
+	return append(first, rest...)
+}
+
 // Ready says whether the model of the settings can answer: everything is downloaded and fits. It does not start the program.
 func (e *managedEngine) Ready(context.Context) error {
 	s, err := e.settings.Load()
@@ -150,7 +169,13 @@ func (e *managedEngine) Chat(ctx context.Context, client *http.Client, model str
 }
 
 func (e *managedEngine) launchFor(m catalog.Model, rt catalog.Runtime, s entity.Settings) launch {
-	return launch{Binary: e.in.RuntimeBinary(rt), ModelPath: e.in.ModelPath(m), ModelID: m.ID, ContextTokens: s.ContextTokens, Dir: e.in.root()}
+	// One context size is saved for every model; a model that reads less than that runs with its own maximum instead of failing to start
+	// (plan 206, D3).
+	ctx := s.ContextTokens
+	if m.ContextTokens > 0 && m.ContextTokens < ctx {
+		ctx = m.ContextTokens
+	}
+	return launch{Binary: e.in.RuntimeBinary(rt), ModelPath: e.in.ModelPath(m), ModelID: m.ID, ContextTokens: ctx, Dir: e.in.root()}
 }
 
 // contextSizes are the context sizes the Local AI page offers (the same list as the page's own), in tokens.
