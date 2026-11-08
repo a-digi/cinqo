@@ -167,3 +167,12 @@ export function blockTitle(toolName: string, views: readonly DependencyView[]): 
     return `${toolName} needs ${views.length === 1 ? 'one other tool' : `${String(views.length)} other tools`}, and ${views.length === 1 ? 'it is' : 'all are'} ready. Click for details.`
   return `${bad.map((v) => v.name).join(', ')} ${bad.length === 1 ? 'needs' : 'need'} attention. Click for details.`
 }
+
+// The question asked when enabled tools need the tool being disabled or deleted: who they are, and what happens to them.
+export function dependentsQuestion(action: 'disable' | 'delete', toolName: string, dependents: { name: string }[]): string {
+  const names = dependents.map((d) => d.name)
+  const list = names.length <= 1 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+  const verb = names.length === 1 ? 'needs' : 'need'
+  const effect = action === 'delete' ? 'Deleting it' : 'Disabling it'
+  return `${list} ${verb} ${toolName}. ${effect} stops ${names.length === 1 ? 'it' : 'them'} from working until ${toolName} is back.`
+}

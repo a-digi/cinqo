@@ -40,6 +40,10 @@ func DisableHandler(reqCtx request.RequestContext) {
 		return
 	}
 
+	if tool.Enabled && refuseWhenNeeded(reqCtx, db, slug, "disabling") {
+		return
+	}
+
 	if err := manager.Stop(db, tool.ID); err != nil {
 		response.ErrorResponse(w, http.StatusInternalServerError, "failed to stop tool: "+err.Error())
 		return

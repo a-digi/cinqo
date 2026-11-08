@@ -57,6 +57,10 @@ func DeleteHandler(reqCtx request.RequestContext) {
 		return
 	}
 
+	if refuseWhenNeeded(reqCtx, db, slug, "deleting") {
+		return
+	}
+
 	if err := manager.Stop(db, tool.ID); err != nil {
 		response.ErrorResponse(w, http.StatusInternalServerError, "failed to stop tool before uninstalling: "+err.Error())
 		return

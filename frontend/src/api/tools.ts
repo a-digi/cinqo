@@ -1,4 +1,4 @@
-import { apiDelete, apiGet, apiPost, apiUpload } from './client'
+import { ApiError, apiDelete, apiGet, apiPost, apiUpload } from './client'
 import type { ToolMetadata } from './toolMeta'
 
 // Same snake_case-to-camelCase *Raw mapping convention as api/auth.ts,
@@ -97,11 +97,42 @@ export async function enableTool(slug: string): Promise<Tool> {
   return fromRaw(raw.message)
 }
 
-export async function disableTool(slug: string): Promise<Tool> {
-  const raw = await apiPost<{ message: ToolRaw }>(`/api/v1/tools/${encodeURIComponent(slug)}/disable`)
-  return fromRaw(raw.message)
+export interface ToolDependent {
+  slug: string
+  name: string
 }
 
-export async function deleteTool(slug: string): Promise<void> {
-  await apiDelete(`/api/v1/tools/${encodeURIComponent(slug)}`)
+// Enabled tools need this one: disabling or deleting is refused until the person confirms (then the call is made again with force).
+export class HasDependentsError extends Error {
+  dependents: ToolDependent[]
+  constructor(dependents: ToolDependent[]) {
+    super('Enabled tools need this one.')
+    this.dependents = dependents
+  }
+}
+
+function asDependentsError(err: unknown): unknown {
+  if (err instanceof ApiError && err.status === 409) {
+    const m = (err.body as { message?: { code?: string; dependents?: ToolDependent[] } } | undefined)?.message
+    if (m && typeof m === 'object' && m.code === 'has_dependents' && Array.isArray(m.dependents))
+      return new HasDependentsError(m.dependents)
+  }
+  return err
+}
+
+export async function disableTool(slug: string, force = false): Promise<Tool> {
+  try {
+    const raw = await apiPost<{ message: ToolRaw }>(`/api/v1/tools/${encodeURIComponent(slug)}/disable${force ? '?force=true' : ''}`)
+    return fromRaw(raw.message)
+  } catch (err) {
+    throw asDependentsError(err)
+  }
+}
+
+export async function deleteTool(slug: string, force = false): Promise<void> {
+  try {
+    await apiDelete(`/api/v1/tools/${encodeURIComponent(slug)}${force ? '?force=true' : ''}`)
+  } catch (err) {
+    throw asDependentsError(err)
+  }
 }

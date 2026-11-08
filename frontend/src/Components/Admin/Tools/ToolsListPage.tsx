@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { fetchTools, enableTool, disableTool, deleteTool, type Tool } from '../../../api/tools'
+import { fetchTools, enableTool, disableTool, deleteTool, HasDependentsError, type Tool } from '../../../api/tools'
 import { ApiError } from '../../../api/client'
 import { LoadingSpinner } from '../../../Shared/Components/Loading/LoadingSpinner'
 import { ScopeGate } from '../../../Shared/Components/Access/ScopeGate'
@@ -14,6 +14,7 @@ import { CardHead } from '../../../Shared/Components/Card/CardHead'
 import { AppScopes } from '../../../config/security/scopes'
 import { reloadAfterToolChange } from '../../../config/tools/loadTools'
 import { ToolInstallButton } from './ToolInstallButton'
+import { dependentsQuestion } from './toolDependencyDisplay'
 import { repositoryPath } from './repositoryDisplay'
 import {
   bannerKind,
@@ -73,7 +74,22 @@ export function ToolsListPage() {
     setBusySlug(tool.slug)
     try {
       if (tool.enabled) {
-        await disableTool(tool.slug)
+        try {
+          await disableTool(tool.slug)
+        } catch (err) {
+          if (!(err instanceof HasDependentsError)) throw err
+          const go = await confirm({
+            title: 'Other tools need this one',
+            message: dependentsQuestion('disable', tool.name, err.dependents),
+            confirmLabel: 'Disable anyway',
+            danger: true,
+          })
+          if (!go) {
+            setBusySlug(null)
+            return
+          }
+          await disableTool(tool.slug, true)
+        }
       } else {
         await enableTool(tool.slug)
       }
@@ -92,7 +108,22 @@ export function ToolsListPage() {
     if (!confirmed) return
     setBusySlug(tool.slug)
     try {
-      await deleteTool(tool.slug)
+      try {
+        await deleteTool(tool.slug)
+      } catch (err) {
+        if (!(err instanceof HasDependentsError)) throw err
+        const go = await confirm({
+          title: 'Other tools need this one',
+          message: dependentsQuestion('delete', tool.name, err.dependents),
+          confirmLabel: 'Delete anyway',
+          danger: true,
+        })
+        if (!go) {
+          setBusySlug(null)
+          return
+        }
+        await deleteTool(tool.slug, true)
+      }
       reloadAfterToolChange()
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to delete tool.')
