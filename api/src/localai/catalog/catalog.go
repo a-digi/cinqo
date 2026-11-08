@@ -73,12 +73,12 @@ type Model struct {
 	// UnsuitableFor lists the tasks this model was measured NOT to manage (plan 207): a tool that does such a task can warn before it
 	// starts. Only the tasks in Tasks are known; empty (the default) says nothing, which is not the same as "suitable".
 	UnsuitableFor []string `json:"unsuitableFor"`
-	// FullPrompt says a caller should give this model its whole task as one full prompt, like a cloud model, even though the platform
-	// otherwise gets short one-action steps (Phi-4-mini follows the full prompt, and answers short steps in text without calling tools).
-	FullPrompt bool `json:"fullPrompt"`
-	Source        string   `json:"source"`
-	Note          string   `json:"note"`
-	CheckedOn     string   `json:"checkedOn"`
+	// Driver says how a caller should run a long task for this model (plan 209). Empty (the default) leaves it to the platform. DriverCode: the
+	// caller does the steps itself, in code, and asks the model only small questions with no tools (a model that cannot take a whole CV).
+	Driver    string `json:"driver"`
+	Source    string `json:"source"`
+	Note      string `json:"note"`
+	CheckedOn string `json:"checkedOn"`
 }
 
 // Runtime is one build of the program that runs the models (llama.cpp's llama-server) for one system: an archive that is
@@ -235,6 +235,9 @@ func validateModel(m Model) error {
 	if err := validateUnsuitableFor(m.UnsuitableFor); err != nil {
 		return err
 	}
+	if m.Driver != "" && m.Driver != DriverCode {
+		return fmt.Errorf("driver %q is not known (empty or %q)", m.Driver, DriverCode)
+	}
 	return validateURL(m.URL)
 }
 
@@ -291,6 +294,9 @@ func Default() (Catalog, error) {
 
 // TaskCVImport is the task of reading a CV into a profile (Career's Import from CV): about a dozen dependent tool calls with large arguments.
 const TaskCVImport = "cv-import"
+
+// DriverCode is the driver of a model whose long tasks are run in code, one small question at a time (see Model.Driver).
+const DriverCode = "code"
 
 // Tasks are the tasks a model can be marked unsuitable for.
 var Tasks = []string{TaskCVImport}

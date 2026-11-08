@@ -35,12 +35,15 @@ export function isUnsuitableFor(platform: Pick<Platform, 'unsuitableFor'> | null
   return platform.unsuitableFor?.[model]?.includes(task) === true
 }
 
-// Whether work for this model is split into short one-action steps: the platform needs them and the model is not one that gets the
-// full prompt like a cloud model. Unknown is never "short steps".
-export function needsShortStepsFor(
-  platform: Pick<Platform, 'needsShortSteps' | 'fullPromptModels'> | null | undefined,
-  model: string | null | undefined,
-): boolean {
-  if (platform?.needsShortSteps !== true) return false
-  return !(model && platform.fullPromptModels?.includes(model))
+// Whether the platform needs work split into short one-action steps (the local platform). A model with the code driver does not use them
+// (usesCodeDriver), except as the fallback for a CV the code cannot cut.
+export function needsShortStepsFor(platform: Pick<Platform, 'needsShortSteps'> | null | undefined): boolean {
+  return platform?.needsShortSteps === true
+}
+
+// Whether a long task for this model is run in code, with small questions that need no tools (plan 209). Unknown (an older core, a platform
+// that names none) is never the code driver.
+export function usesCodeDriver(platform: Pick<Platform, 'drivers'> | null | undefined, model: string | null | undefined): boolean {
+  if (!platform || !model) return false
+  return platform.drivers?.[model] === 'code'
 }

@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   uploadCV,
+  fetchCvText,
+  storeDraftPiece,
+  finishDraftPieces,
   fetchCVImportRuns,
   createCVImportRun,
   finishCVImportRun,
@@ -10,7 +13,7 @@ import {
 } from '../../api'
 import { createConversation, sendMessage } from '../../Cinqo/Conversation/conversation'
 import { fetchPlatforms } from '../../Cinqo/Platform/platformRepository'
-import { CV_IMPORT_TASK, isUnsuitableFor, modelLabel, needsShortStepsFor } from '../../Cinqo/Platform/modelLabels'
+import { CV_IMPORT_TASK, isUnsuitableFor, modelLabel, needsShortStepsFor, usesCodeDriver } from '../../Cinqo/Platform/modelLabels'
 import { useAiChoice } from '../../Cinqo/Platform/useAiChoice'
 import { PDFIcon, UploadIcon } from '../../Shared/Icons/icons'
 import { cardClassName, cardStyle } from '../../Shared/cardStyle'
@@ -18,7 +21,8 @@ import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { plural } from '../CompaniesPage/companyStats'
 import { IMPORT_RUN_TOOLS, IMPORT_STEP_EXPECTATIONS, IMPORT_STEP_TOOLS, buildDoneNudge, buildImportPrompt, buildImportSteps, buildStepCorrection, saysStepDone } from './buildImportPrompt'
 import { RESTRICTION_NOT_APPLIED_MESSAGE, restrictionHolds } from '../../PersonaAi/personaTools'
-import { analyseCv } from './analysisFlow'
+import { analyseCv, analyseCvByCode } from './analysisFlow'
+import { prepareCodeImport } from './codeImport/runCodeImport'
 import { importContextProblem } from './importContext'
 import { runBadge } from './runStatusRules'
 import { importCvRunPathFor } from '../../paths'
@@ -118,7 +122,41 @@ export function ImportCvPage() {
         throw new Error('No AI platform is configured — ask an admin to add one under Platforms.')
       }
       const model = ai.model ?? undefined
-      const stepByStep = needsShortStepsFor(platform, model)
+      // A model with the code driver (Phi-4-mini, plan 209): the code reads and cuts the CV and asks the model small questions with no tools.
+      // A CV the code cannot cut (no heading it knows, no text) goes the step-by-step way below instead.
+      if (usesCodeDriver(platform, model)) {
+        const prep = await prepareCodeImport(() => fetchCvText(fileId))
+        if (prep.ok) {
+          let firstQuestion = true
+          await analyseCvByCode(
+            {
+              startConversation: async () => (await createConversation({ title: `Import CV: ${originalFilename}`, platformId: platform.id, model })).id,
+              recordRun: (conversationId) => createCVImportRun({ fileId, originalFilename, conversationId }),
+              // The first question runs in the run's own conversation, so its transcript shows something; every other one in a hidden
+              // conversation of its own (a small model repeats what it sees of its earlier answers). None of them is offered a tool.
+              ask: async (prompt, conversationId) => {
+                let where = conversationId
+                if (!firstQuestion) {
+                  where = (await createConversation({ title: `Import CV: ${originalFilename} · question`, platformId: platform.id, model, hidden: true })).id
+                }
+                firstQuestion = false
+                return (await sendMessage(where, prompt)).content
+              },
+              store: storeDraftPiece,
+              finish: finishDraftPieces,
+              endRun: finishCVImportRun,
+              onConversation: setConversationId,
+              onRun: (runId) => {
+                window.__cinqoToolBridge.navigate(importCvRunPathFor(runId))
+              },
+              onRunsChanged: loadRuns,
+            },
+            prep.cv,
+          )
+          return
+        }
+      }
+      const stepByStep = needsShortStepsFor(platform)
       // Step by step (plan 208), the first conversation holds the first step only, so it offers that step's tools; every other
       // conversation offers its own step's tools, and a continuation (no step) all of them.
       const firstTools: string[] = stepByStep ? [...IMPORT_STEP_TOOLS[0]] : [...IMPORT_RUN_TOOLS]
@@ -140,7 +178,7 @@ export function ImportCvPage() {
           const message = await sendMessage(conversationId, followUp ?? buildImportPrompt(fileId, runId))
           return { reply: message.content, toolErrors: message.toolErrors, toolsCalled: message.toolsCalled }
         },
-        // A platform whose models do better with short one-action messages (the local models: needsShortSteps, except a model marked to get the full prompt, Phi-4-mini) gets the instruction
+        // A platform whose models do better with short one-action messages (the local models: needsShortSteps) gets the instruction
         // in short steps instead of the one long prompt, which a small model answers with a made-up failure instead of a tool call.
         stepMessages: stepByStep ? (runId) => buildImportSteps(fileId, runId) : undefined,
         // Step-by-step only (plan 207): every step after the first, and a continuation, runs in a conversation of its own (hidden from the

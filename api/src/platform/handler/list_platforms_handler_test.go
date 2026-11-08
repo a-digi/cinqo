@@ -214,26 +214,26 @@ func TestThePlatformListFlagsUnsuitableModelsOnlyForOfferedModelsAndOnlyWhenTheP
 	}
 }
 
-func TestThePlatformListNamesTheFullPromptModelsOnlyAmongTheOfferedOnes(t *testing.T) {
+func TestThePlatformListNamesTheDriversOnlyOfTheOfferedModels(t *testing.T) {
 	if err := platform.Register(platform.Entry{
-		Info:            entity.Platform{ID: "list-fullprompt", Name: "Full prompt"},
-		Completer:       noopCompleter{},
-		Credentials:     func(context.Context) (string, string, error) { return "http://127.0.0.1:1", "", nil },
-		Models:          func() []string { return []string{"a", "b"} },
-		ModelFullPrompt: func() []string { return []string{"b", "gone"} },
+		Info:        entity.Platform{ID: "list-drivers", Name: "Drivers"},
+		Completer:   noopCompleter{},
+		Credentials: func(context.Context) (string, string, error) { return "http://127.0.0.1:1", "", nil },
+		Models:      func() []string { return []string{"a", "b", "c"} },
+		ModelDriver: func() map[string]string { return map[string]string{"b": "code", "c": "", "gone": "code"} },
 	}); err != nil {
 		t.Fatal(err)
 	}
 	list := platformResponses()
-	p, ok := find(list, "list-fullprompt")
-	if !ok || len(p.FullPromptModels) != 1 || p.FullPromptModels[0] != "b" {
-		t.Fatalf("%+v: only the offered, marked model", p)
+	p, ok := find(list, "list-drivers")
+	if !ok || len(p.Drivers) != 1 || p.Drivers["b"] != "code" {
+		t.Fatalf("%+v: only the offered model that has a driver", p)
 	}
-	if c, ok := find(list, "openai"); ok && c.FullPromptModels != nil {
-		t.Errorf("a platform that marks none lists none: %+v", c)
+	if c, ok := find(list, "openai"); ok && c.Drivers != nil {
+		t.Errorf("a platform that sets none lists none: %+v", c)
 	}
 	raw, _ := json.Marshal(platformResponse{ID: "x"})
-	if strings.Contains(string(raw), "fullPromptModels") {
-		t.Errorf("an absent list must not be in the JSON: %s", raw)
+	if strings.Contains(string(raw), "drivers") {
+		t.Errorf("an absent map must not be in the JSON: %s", raw)
 	}
 }

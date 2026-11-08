@@ -36,8 +36,9 @@ type platformResponse struct {
 	// UnsuitableFor maps a model id to the tasks it was measured not to manage (a tool can warn before it starts), for the models offered
 	// right now; absent when none is flagged (the cloud platforms).
 	UnsuitableFor map[string][]string `json:"unsuitableFor,omitempty"`
-	// FullPromptModels lists the offered models that get the whole task as one full prompt although the platform needs short steps.
-	FullPromptModels []string `json:"fullPromptModels,omitempty"`
+	// Drivers maps a model id to how a caller should run a long task for it ("code": in code, with small questions), for the offered models that
+	// have one; absent when none has (the cloud platforms).
+	Drivers map[string]string `json:"drivers,omitempty"`
 }
 
 // ListPlatformsHandler handles GET /api/v1/platforms. See
@@ -58,7 +59,7 @@ func platformResponses() []platformResponse {
 			continue
 		}
 		models := entry.SelectableModelList()
-		out = append(out, platformResponse{ID: info.ID, Name: info.Name, Models: models, RequiresKey: entry.RequiresKey(), OffersTools: entry.OffersAllTools(), NeedsShortSteps: entry.ShortSteps, ContextTokens: contextOf(entry), ModelNames: namesOf(entry, models), UnsuitableFor: unsuitableOf(entry, models), FullPromptModels: fullPromptOf(entry, models)})
+		out = append(out, platformResponse{ID: info.ID, Name: info.Name, Models: models, RequiresKey: entry.RequiresKey(), OffersTools: entry.OffersAllTools(), NeedsShortSteps: entry.ShortSteps, ContextTokens: contextOf(entry), ModelNames: namesOf(entry, models), UnsuitableFor: unsuitableOf(entry, models), Drivers: driversOf(entry, models)})
 	}
 	return out
 }
@@ -81,19 +82,19 @@ func namesOf(entry platform.Entry, offered []string) map[string]string {
 	return out
 }
 
-// fullPromptOf is the offered models marked to get one full prompt, nil when none is.
-func fullPromptOf(entry platform.Entry, offered []string) []string {
-	if entry.ModelFullPrompt == nil {
+// driversOf is the drivers of the offered models, nil when none has one.
+func driversOf(entry platform.Entry, offered []string) map[string]string {
+	if entry.ModelDriver == nil {
 		return nil
 	}
-	marked := map[string]bool{}
-	for _, id := range entry.ModelFullPrompt() {
-		marked[id] = true
-	}
-	var out []string
+	all := entry.ModelDriver()
+	var out map[string]string
 	for _, id := range offered {
-		if marked[id] {
-			out = append(out, id)
+		if d := all[id]; d != "" {
+			if out == nil {
+				out = map[string]string{}
+			}
+			out[id] = d
 		}
 	}
 	return out

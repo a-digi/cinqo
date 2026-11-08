@@ -352,3 +352,32 @@ func TestTheShippedQwen15BIsMarkedUnsuitableForTheCVImportAndTheOthersAreNot(t *
 		}
 	}
 }
+
+func TestAModelMayHaveTheCodeDriverAndNoOtherOne(t *testing.T) {
+	ok, err := Load([]byte(file(mutate(`"contextTokens": 4096`, `"contextTokens": 4096, "driver": "code"`))))
+	if err != nil || ok.Models[0].Driver != DriverCode {
+		t.Fatalf("the code driver: %v %+v", err, ok.Models)
+	}
+	none, err := Load([]byte(file(validEntry)))
+	if err != nil || none.Models[0].Driver != "" {
+		t.Fatalf("no field means the platform decides: %v %+v", err, none.Models)
+	}
+	for name, in := range map[string]string{"an unknown driver": `"driver": "magic"`, "a wrong case": `"driver": "Code"`, "a space": `"driver": " code"`} {
+		_, err := Load([]byte(file(mutate(`"contextTokens": 4096`, `"contextTokens": 4096, `+in))))
+		if err == nil || !strings.Contains(err.Error(), "driver") {
+			t.Errorf("%s: err = %v, want a refusal that names the field", name, err)
+		}
+	}
+}
+
+func TestOnlyThePhiEntryOfTheShippedCatalogHasTheCodeDriver(t *testing.T) {
+	c, err := Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range c.Models {
+		if want := m.ID == "phi-4-mini-instruct-q4_k_m"; (m.Driver == DriverCode) != want {
+			t.Errorf("%s: driver = %q, want code only for Phi-4-mini", m.ID, m.Driver)
+		}
+	}
+}

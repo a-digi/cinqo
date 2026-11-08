@@ -1741,6 +1741,37 @@ export async function uploadCV(file: File): Promise<CVUploadResult> {
   return jsonOrThrow<CVUploadResult>(res, 'upload cv')
 }
 
+// The text of an uploaded CV, read by the Career backend with the same library and cleaning as the pdf_to_markdown tool (plan 209).
+// Rejects with the server's own reason (the file is gone, not a PDF, no text).
+export async function fetchCvText(fileId: string): Promise<string> {
+  const res = await fetch(`${PROXY_BASE}/cv-import/text?fileId=${encodeURIComponent(fileId)}`, { credentials: 'include' })
+  if (!res.ok) throw new Error((await res.text()).trim() || `failed to read the CV text (${String(res.status)})`)
+  return ((await res.json()) as { text: string }).text
+}
+
+// Puts one piece on the draft of a generating run, exactly as the cv_import_* tools do (same checks). Rejects with the server's reason when
+// the piece is refused (400), the run is unknown (404) or no longer generating (409).
+export async function storeDraftPiece(runId: string, section: string, body: { value?: unknown; items?: unknown }): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/cv-import/draft`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ runId, section, ...body }),
+  })
+  if (!res.ok) throw new Error((await res.text()).trim() || `failed to store the ${section} (${String(res.status)})`)
+}
+
+// Checks that the draft is complete and stores it as the run's proposal; the run is then ended as ready by the caller.
+export async function finishDraftPieces(runId: string): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/cv-import/draft/finish`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ runId }),
+  })
+  if (!res.ok) throw new Error((await res.text()).trim() || `failed to finish the draft (${String(res.status)})`)
+}
+
 // One completed CV analysis: the AI's own proposal, and — once the
 // user acts on it — what was actually saved. aiProposal/saveSummary
 // are kept as `unknown` here deliberately — api.ts stays decoupled

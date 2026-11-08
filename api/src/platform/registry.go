@@ -64,10 +64,10 @@ type Entry struct {
 	// CV import), read at call time, so a tool can warn before it starts. A model missing from the map, or with no tasks, says nothing.
 	// Optional: the cloud platforms set none. It is listed as unsuitableFor, only for the models that are selectable right now.
 	ModelUnsuitable func() map[string][]string
-	// ModelFullPrompt, when set, lists the models of this platform that get the whole task as one full prompt although the platform
-	// has ShortSteps (a model that answers short steps in text instead of calling tools). Read at call time; listed as
-	// fullPromptModels, only for the models that are selectable right now. Optional.
-	ModelFullPrompt func() []string
+	// ModelDriver, when set, names for each model how a caller should run a long task for it ("code": the caller does the steps in code and asks
+	// the model only small questions with no tools; a model that is missing, or has no driver, is left to the platform: ShortSteps or one prompt).
+	// Read at call time; listed as drivers, only for the models that are selectable right now. Optional.
+	ModelDriver func() map[string]string
 	// ShortSteps says the models of this platform follow short, one-action-at-a-time instructions better than a long
 	// multi-step prompt (a small local model never called a tool when given the long import prompt, and always did when
 	// given the same work as small steps). A caller that can split its work offers it that way; it is listed as

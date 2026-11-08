@@ -6,6 +6,8 @@
 // (the AI's turn lives in the core app), so this ends it: "ready" when the turn is over, or "failed" with the reason. See
 // plan/ai/tools/career/step-155-cv-import-result-by-tool-not-chat.md.
 import { IMPORT_STEP_EXPECTATIONS, buildContinuePrompt, checkStep, type StepVerdict } from './buildImportPrompt'
+import { runCodeImport } from './codeImport/runCodeImport'
+import type { SplitCv } from './splitCv'
 import {
   CV_NOT_READ_MESSAGE,
   CV_READ_FAILED_MESSAGE,
@@ -136,6 +138,43 @@ export async function analyseCv(steps: AnalysisSteps): Promise<unknown> {
     const messages = steps.stepMessages?.(runId)
     const first = messages ? await askInSteps(steps, conversationId, runId, messages) : await ask(steps, conversationId, runId, undefined)
     return await settleRun(steps, conversationId, runId, first)
+  } finally {
+    activeRuns.delete(runId)
+  }
+}
+
+// What the code-driven import needs besides the run's own steps (plan 209): one question to a model with no tools (the first one may use the run's
+// own conversation, so its transcript shows something; the page decides), and the two draft calls.
+export interface CodeAnalysisSteps extends Pick<AnalysisSteps, 'startConversation' | 'recordRun' | 'endRun' | 'onConversation' | 'onRun' | 'onRunsChanged'> {
+  ask(prompt: string, conversationId: string): Promise<string>
+  store(runId: string, section: string, body: { value?: unknown; items?: unknown }): Promise<void>
+  finish(runId: string): Promise<void>
+}
+
+// The analysis done in code for a CV that was already read and cut (prepareCodeImport): the run is recorded, runCodeImport puts the pieces on its
+// draft, and the run is ended as ready, or as failed with the reason (the same as analyseCv does). Returns the proposal as stored.
+export async function analyseCvByCode(steps: CodeAnalysisSteps, cv: SplitCv): Promise<unknown> {
+  const conversationId = await steps.startConversation()
+  steps.onConversation(conversationId)
+  const runId = await steps.recordRun(conversationId)
+  activeRuns.add(runId)
+  try {
+    steps.onRun(runId)
+    steps.onRunsChanged()
+    try {
+      await runCodeImport(cv, {
+        ask: (prompt) => steps.ask(prompt, conversationId),
+        store: (section, body) => steps.store(runId, section, body),
+        finish: () => steps.finish(runId),
+      })
+      const run = await steps.endRun(runId, { status: 'ready' })
+      steps.onRunsChanged()
+      return run.aiProposal
+    } catch (err) {
+      const reason = failureReason(err)
+      await failRun(steps, runId, reason)
+      throw new Error(reason)
+    }
   } finally {
     activeRuns.delete(runId)
   }

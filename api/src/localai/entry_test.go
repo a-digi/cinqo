@@ -278,15 +278,16 @@ func TestTheLocalPlatformFlagsTheQwen15BAsUnsuitableForTheCVImport(t *testing.T)
 	}
 }
 
-func TestTheLocalPlatformMarksNoModelToGetTheFullPromptToday(t *testing.T) {
+func TestTheLocalPlatformSaysOnlyPhiIsDrivenInCode(t *testing.T) {
 	withEngine(t, &fakeEngine{})
 	e := Entry(openMainDB(t))
-	if e.ModelFullPrompt == nil {
-		t.Fatal("the local platform must say which models get the full prompt")
+	if e.ModelDriver == nil {
+		t.Fatal("the local platform must say how a long task is run for each model")
 	}
-	got := e.ModelFullPrompt()
-	// Phi-4-mini was tried on the full prompt (plan 208): it answered with the example error text and never called the PDF reader.
-	if len(got) != 0 {
-		t.Errorf("full prompt models = %v, want none: every local model gets short steps", got)
+	got := e.ModelDriver()
+	// Phi-4-mini failed the full prompt (it copied the prompt's failure sentence) and the tool steps (invented tools, wrote calls as text, stored
+	// paragraphs as skills): plan 209 runs its import in code, with small questions that need no tool.
+	if len(got) != 1 || got[phiID] != "code" {
+		t.Errorf("drivers = %v, want only %s: code", got, phiID)
 	}
 }
