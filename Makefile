@@ -203,6 +203,8 @@ bump-app-version:
 # binary currently is, not the filename itself. See
 # plan/ai/build/app.md.
 PRO_APP := app/cinqo-pro
+# The compile step of cinqo-pro, shared by build-app and build-app-all so the two cannot drift apart.
+PRO_BUILD = cd api && go build -o ../$(PRO_APP) ./cmd/app
 .PHONY: build-app build-app-pro
 build-app-pro: build-app
 build-app: embed-frontend embed-config
@@ -210,7 +212,7 @@ ifndef NO_BUMP
 	$(MAKE) bump-app-version
 endif
 	@mkdir -p app
-	cd api && go build -o ../$(PRO_APP) ./cmd/app
+	$(PRO_BUILD)
 	@echo "cinqo-pro $$(cat $(APP_VERSION_FILE)) built at $(PRO_APP)"
 
 # Builds the same single executable for the MacBook Air, cinqo-air (Apple Silicon, macOS arm64), explicitly (GOOS=darwin GOARCH=arm64, so it is that
@@ -223,15 +225,30 @@ AIR_APP := app/cinqo-air
 # The oldest macOS the file is allowed to start on. Without it the build asks for the macOS of the machine that built it (this one: 26.0), and an
 # Air on an older macOS refuses to start it ("built for a newer version of macOS"). Raise it only when the Air's macOS is newer than this.
 AIR_MIN_MACOS ?= 12.0
+# The compile step of cinqo-air, shared by build-app-air and build-app-all.
+AIR_BUILD = cd api && CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 MACOSX_DEPLOYMENT_TARGET=$(AIR_MIN_MACOS) \
+	CGO_CFLAGS="-mmacosx-version-min=$(AIR_MIN_MACOS)" CGO_LDFLAGS="-mmacosx-version-min=$(AIR_MIN_MACOS)" \
+	go build -o ../$(AIR_APP) ./cmd/app
 .PHONY: build-app-air
 build-app-air: embed-frontend embed-config
 ifndef NO_BUMP
 	$(MAKE) bump-app-version
 endif
 	@mkdir -p app
-	cd api && CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 MACOSX_DEPLOYMENT_TARGET=$(AIR_MIN_MACOS) \
-		CGO_CFLAGS="-mmacosx-version-min=$(AIR_MIN_MACOS)" CGO_LDFLAGS="-mmacosx-version-min=$(AIR_MIN_MACOS)" \
-		go build -o ../$(AIR_APP) ./cmd/app
+	$(AIR_BUILD)
+	@echo "cinqo-air $$(cat $(APP_VERSION_FILE)) built (macOS arm64, macOS $(AIR_MIN_MACOS) or newer) at $(AIR_APP)"
+
+# Builds both apps with one command: cinqo-pro (this machine) and cinqo-air (the MacBook Air). The frontend and the config are embedded once, the
+# version is bumped once (NO_BUMP=1 skips it), and the two binaries are then compiled from the same embedded files, so they are the same version.
+.PHONY: build-app-all
+build-app-all: embed-frontend embed-config
+ifndef NO_BUMP
+	$(MAKE) bump-app-version
+endif
+	@mkdir -p app
+	$(PRO_BUILD)
+	@echo "cinqo-pro $$(cat $(APP_VERSION_FILE)) built at $(PRO_APP)"
+	$(AIR_BUILD)
 	@echo "cinqo-air $$(cat $(APP_VERSION_FILE)) built (macOS arm64, macOS $(AIR_MIN_MACOS) or newer) at $(AIR_APP)"
 
 # Builds (if needed) and runs the single executable in the foreground —
@@ -251,9 +268,12 @@ endif
 # the same executable-relative data/ directory (which also now holds
 # config.json/config/chrome.pid/server.pid) resolves identically no
 # matter where this is launched from.
+#
+# It builds both apps first (build-app-all, without a version bump): cinqo-pro, which it then starts, and cinqo-air for the MacBook Air, so the
+# two are always built from the same code.
 .PHONY: run-app
 run-app:
-	$(MAKE) build-app NO_BUMP=1
+	$(MAKE) build-app-all NO_BUMP=1
 	./$(PRO_APP)
 
 # Packages a tools/<name>/ source directory into the .zip the install

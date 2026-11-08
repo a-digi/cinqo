@@ -72,10 +72,13 @@ foreground (Ctrl+C stops everything):
 make run-app
 ```
 
+`make run-app` builds both apps (`make build-app-all`, without a version bump):
+`app/cinqo-pro`, which it then starts, and `app/cinqo-air` for the MacBook Air.
+
 `make build-app` (or `make build-app-pro`) only builds `app/cinqo-pro`, the
 build for this machine (bumps `app/VERSION`; use `NO_BUMP=1` to skip).
 `make build-app-air` builds `app/cinqo-air` for the MacBook Air (Apple Silicon,
-macOS 12 or newer). Use `--data <dir>` before the action to change the data
+macOS 12 or newer), and `make build-app-all` builds both with one version bump. Use `--data <dir>` before the action to change the data
 directory: `./app/cinqo-pro --data /path start`.
 
 ### The two builds: `cinqo-pro` and `cinqo-air`
