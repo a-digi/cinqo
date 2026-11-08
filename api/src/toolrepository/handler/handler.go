@@ -158,6 +158,10 @@ func GetHandler(reqCtx request.RequestContext) {
 
 type installRequest struct {
 	VersionID string `json:"versionId"`
+	// WithDependencies installs or updates the tools this one needs first, in the order of the plan, but only the plan the caller confirmed.
+	WithDependencies bool `json:"withDependencies"`
+	// Confirm is the list of steps the person agreed to (see planResponse.Confirm); required with WithDependencies.
+	Confirm []string `json:"confirm"`
 }
 
 // InstallHandler handles POST /api/v1/tool-repositories/{id}/tools/{toolId}/install:
@@ -170,6 +174,10 @@ func InstallHandler(reqCtx request.RequestContext) {
 	var body installRequest
 	if err := reqCtx.BindJSON(&body); err != nil && !errors.Is(err, io.EOF) {
 		response.ErrorResponse(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if body.WithDependencies {
+		installWithDependencies(reqCtx, body)
 		return
 	}
 	env, err := environment(reqCtx)

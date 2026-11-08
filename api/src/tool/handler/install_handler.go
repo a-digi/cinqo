@@ -492,19 +492,48 @@ func InstallPackage(reqCtx request.RequestContext, data []byte, expect *PackageE
 			Message: "version must be greater than the currently installed version (" + existing.Version + ")"}
 	}
 
+	// What the tool declares it needs today, kept so a failed update can put it back.
+	oldRequired, err := tool_query.NewToolRequiredToolQueryRepo(db).FindByToolID(existing.ID)
+	if err != nil {
+		return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to read the tool's current dependencies"}
+	}
+
 	// Stop the tool's currently running backend before swapping its
 	// code directory — can't safely replace a binary a process may
 	// still hold open, and a clean stop/restart is simpler to reason
 	// about than a live swap.
-	if err := manager.Stop(db, existing.ID); err != nil {
+	if err := stopTool(db, existing.ID); err != nil {
 		return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to stop the running tool before updating: " + err.Error()}
 	}
 
-	if err := replaceInstallDir(stagingDir, finalDir); err != nil {
-		return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to update package: " + err.Error()}
+	// From here until the update is recorded, any failure must leave the old version exactly as it was: its files back, its requirements back, its status
+	// back, and its backend running again if it was enabled (plan dependency-install, step 6: a run of several installs must never leave a tool stopped
+	// or half updated).
+	restoreOld := func() {
+		_ = persistentRepo.SetStatus(existing.ID, existing.Status)
+		if !existing.Enabled {
+			return
+		}
+		if port, portErr := corePort(reqCtx); portErr == nil {
+			if startErr := startTool(db, resolvedDataDir(reqCtx), *existing, port); startErr != nil {
+				reqCtx.GetDI().GetLogger().Warning("tool %q: the update failed and the old version could not be restarted: %v", existing.Slug, startErr)
+			}
+		}
 	}
 
-	if err := chmodBackendExecutableIfPresent(finalDir); err != nil {
+	swap, err := swapInstallDir(stagingDir, finalDir)
+	if err != nil {
+		restoreOld()
+		return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to update package: " + err.Error()}
+	}
+	rollback := func() {
+		swap.rollback()
+		_ = tool_persistent.NewToolRequiredToolPersistentRepo(db).ReplaceAll(existing.ID, oldRequired)
+		restoreOld()
+	}
+
+	if err := chmodBackend(finalDir); err != nil {
+		rollback()
 		return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to finalize update: " + err.Error()}
 	}
 
@@ -541,17 +570,23 @@ func InstallPackage(reqCtx request.RequestContext, data []byte, expect *PackageE
 	} else {
 		serviceToken, err := generateServiceToken()
 		if err != nil {
+			rollback()
 			return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to generate tool service token"}
 		}
 		updated.ServiceToken = serviceToken
 	}
 
-	if err := persistentRepo.UpdateVersion(updated, scopes, routes, required); err != nil {
-		return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to record updated tool: " + err.Error()}
-	}
+	// The requirements go first: both writes are atomic on their own, and the row is the one a failure can still undo cleanly (the old requirements are
+	// written back); the other way round, a failure would leave a new row with old requirements that cannot be rebuilt.
 	if err := tool_persistent.NewToolRequiredToolPersistentRepo(db).ReplaceAll(updated.ID, requiredTools); err != nil {
+		rollback()
 		return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to record tool dependencies: " + err.Error()}
 	}
+	if err := persistentRepo.UpdateVersion(updated, scopes, routes, required); err != nil {
+		rollback()
+		return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to record updated tool: " + err.Error()}
+	}
+	swap.commit() // the update is recorded: the previous version's files are no longer needed
 
 	// Restart on the new code only if it was enabled before — an
 	// update never silently turns a disabled tool on.
@@ -635,24 +670,35 @@ func installedToolsMap(queryRepo *tool_query.ToolQueryRepo) (map[string]manifest
 	return out, nil
 }
 
-// replaceInstallDir swaps finalDir for stagingDir's contents, keeping a
-// ".prev" backup during the swap so a mid-failure doesn't leave the
-// tool with no code directory at all — matches the reference's own
-// update-path safety exactly. If the second rename fails, it
-// best-effort restores ".prev" back to finalDir.
-func replaceInstallDir(stagingDir, finalDir string) error {
-	prevDir := finalDir + ".prev"
-	_ = os.RemoveAll(prevDir) // clear any leftover from a previously failed update
+// seams for tests: how directories are renamed, the backend executable is made runnable, and a tool's process is stopped and started.
+var (
+	renameDir    = os.Rename
+	chmodBackend = chmodBackendExecutableIfPresent
+	stopTool     = manager.Stop
+	startTool    = manager.Start
+)
 
-	if err := os.Rename(finalDir, prevDir); err != nil {
-		return err
+// dirSwap is a staging directory put in place of an installed one, with the previous one kept until the update is recorded.
+type dirSwap struct{ prev, final string }
+
+// swapInstallDir puts stagingDir where finalDir is and keeps the previous directory next to it as ".prev" until commit; rollback puts it back. If the
+// second rename fails the previous directory is put back at once and nothing has changed.
+func swapInstallDir(stagingDir, finalDir string) (*dirSwap, error) {
+	prev := finalDir + ".prev"
+	_ = os.RemoveAll(prev) // clear any leftover from a previously failed update
+	if err := renameDir(finalDir, prev); err != nil {
+		return nil, err
 	}
-
-	if err := os.Rename(stagingDir, finalDir); err != nil {
-		_ = os.Rename(prevDir, finalDir) // best-effort restore
-		return err
+	if err := renameDir(stagingDir, finalDir); err != nil {
+		_ = renameDir(prev, finalDir) // restore
+		return nil, err
 	}
-
-	_ = os.RemoveAll(prevDir)
-	return nil
+	return &dirSwap{prev: prev, final: finalDir}, nil
 }
+
+func (s *dirSwap) rollback() {
+	_ = os.RemoveAll(s.final)
+	_ = renameDir(s.prev, s.final)
+}
+
+func (s *dirSwap) commit() { _ = os.RemoveAll(s.prev) }

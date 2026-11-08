@@ -93,6 +93,13 @@ func (r *ToolPersistentRepo) UpdateVersion(
 	return tx.Commit()
 }
 
+// SetStatus writes a tool's status ("installed", "running", "stopped", ...) without touching anything else: used to put a tool back as it was when an
+// update that stopped it could not be applied.
+func (r *ToolPersistentRepo) SetStatus(id, status string) error {
+	_, err := r.db.Exec(`UPDATE tools SET status = ? WHERE id = ?`, status, id)
+	return err
+}
+
 // SetEnabled flips a tool's enabled flag. The manager package (Start/Stop)
 // is responsible for actually starting/stopping the tool's backend
 // process around this call — see

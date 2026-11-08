@@ -28,16 +28,42 @@ func EnableHandler(reqCtx request.RequestContext) {
 
 	db := reqCtx.GetDI().GetDatabaseManager().Connector.DB
 	queryRepo := tool_query.NewToolQueryRepo(db)
+	if ierr := EnableTool(reqCtx, slug); ierr != nil {
+		response.ErrorResponse(w, ierr.Status, ierr.Message)
+		return
+	}
+
+	reloaded, err := queryRepo.FindBySlug(slug)
+	if err != nil {
+		response.ErrorResponse(w, http.StatusInternalServerError, "tool enabled but failed to reload")
+		return
+	}
+	mcpTools, err := mcpToolNamesFor(db, reloaded.ID)
+	if err != nil {
+		response.ErrorResponse(w, http.StatusInternalServerError, "tool enabled but failed to load functions")
+		return
+	}
+	required, err := requiredToolsFor(db, reloaded.ID)
+	if err != nil {
+		response.ErrorResponse(w, http.StatusInternalServerError, "tool enabled but failed to load dependencies")
+		return
+	}
+	response.SuccessResponse(w, http.StatusOK, toToolResponse(reloaded, systemToolsConfigFrom(reqCtx), mcpTools, required))
+}
+
+// EnableTool enables an installed tool and starts it: the same work as the enable route, for callers that enable several tools in a row (the ordered
+// install of a tool together with its dependencies). Nothing is written when a dependency of the tool cannot be used.
+func EnableTool(reqCtx request.RequestContext, slug string) *InstallError {
+	db := reqCtx.GetDI().GetDatabaseManager().Connector.DB
+	queryRepo := tool_query.NewToolQueryRepo(db)
 	persistentRepo := tool_persistent.NewToolPersistentRepo(db)
 
 	tool, err := queryRepo.FindBySlug(slug)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			response.ErrorResponse(w, http.StatusNotFound, "tool not found")
-			return
+			return &InstallError{Status: http.StatusNotFound, Message: "tool not found"}
 		}
-		response.ErrorResponse(w, http.StatusInternalServerError, "failed to look up tool")
-		return
+		return &InstallError{Status: http.StatusInternalServerError, Message: "failed to look up tool"}
 	}
 
 	// Re-enabling doesn't re-upload a manifest — read the
@@ -57,23 +83,19 @@ func EnableHandler(reqCtx request.RequestContext) {
 	// plan/ai/tools/step-14-tool-dependencies.md.
 	installedTools, err := installedToolsMap(queryRepo)
 	if err != nil {
-		response.ErrorResponse(w, http.StatusInternalServerError, "failed to check tool dependencies")
-		return
+		return &InstallError{Status: http.StatusInternalServerError, Message: "failed to check tool dependencies"}
 	}
 	if err := manifest.ValidateRequiredTools(m, installedTools); err != nil {
-		response.ErrorResponse(w, http.StatusBadRequest, err.Error())
-		return
+		return &InstallError{Status: http.StatusBadRequest, Message: err.Error()}
 	}
 
 	if err := persistentRepo.SetEnabled(tool.ID, true); err != nil {
-		response.ErrorResponse(w, http.StatusInternalServerError, "failed to enable tool: "+err.Error())
-		return
+		return &InstallError{Status: http.StatusInternalServerError, Message: "failed to enable tool: " + err.Error()}
 	}
 
 	port, err := corePort(reqCtx)
 	if err != nil {
-		response.ErrorResponse(w, http.StatusInternalServerError, "failed to determine backend port")
-		return
+		return &InstallError{Status: http.StatusInternalServerError, Message: "failed to determine backend port"}
 	}
 
 	tool.Enabled = true
@@ -91,20 +113,5 @@ func EnableHandler(reqCtx request.RequestContext) {
 	// same as if this were a fresh read here.
 	discoverMCPToolsIfDeclared(reqCtx, db, m, tool.InstallPath, tool.ID, tool.ServiceToken)
 
-	reloaded, err := queryRepo.FindBySlug(slug)
-	if err != nil {
-		response.ErrorResponse(w, http.StatusInternalServerError, "tool enabled but failed to reload")
-		return
-	}
-	mcpTools, err := mcpToolNamesFor(db, reloaded.ID)
-	if err != nil {
-		response.ErrorResponse(w, http.StatusInternalServerError, "tool enabled but failed to load functions")
-		return
-	}
-	required, err := requiredToolsFor(db, reloaded.ID)
-	if err != nil {
-		response.ErrorResponse(w, http.StatusInternalServerError, "tool enabled but failed to load dependencies")
-		return
-	}
-	response.SuccessResponse(w, http.StatusOK, toToolResponse(reloaded, systemToolsConfigFrom(reqCtx), mcpTools, required))
+	return nil
 }

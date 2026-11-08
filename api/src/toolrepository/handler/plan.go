@@ -59,6 +59,8 @@ type planResponse struct {
 	TotalBytes int64                  `json:"totalBytes"`
 	Problems   []planProblemResponse  `json:"problems"`
 	Searched   []planSearchedResponse `json:"searched"`
+	// Confirm lists the steps as the install route must be given them back ("action:tool@version:repository"): the install does only what was confirmed.
+	Confirm []string `json:"confirm"`
 }
 
 // InstallPlanHandler handles POST /api/v1/tool-repositories/{id}/tools/{toolId}/install-plan: the read-only preview of installing or updating a tool
@@ -123,7 +125,7 @@ func installedForPlan(db *sql.DB) ([]resolver.InstalledTool, error) {
 }
 
 func toPlanResponse(p *resolver.Plan) planResponse {
-	out := planResponse{OK: p.OK, Steps: []planStepResponse{}, Problems: []planProblemResponse{}, Searched: []planSearchedResponse{}}
+	out := planResponse{OK: p.OK, Steps: []planStepResponse{}, Problems: []planProblemResponse{}, Searched: []planSearchedResponse{}, Confirm: confirmList(p)}
 	for _, s := range p.Steps {
 		marks := make([]string, 0, len(s.Marks))
 		for _, m := range s.Marks {
