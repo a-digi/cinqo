@@ -49,7 +49,8 @@ export interface AnalysisSteps {
   // Step-by-step only (plan 207). A fresh conversation for one step: a small model that sees its own earlier replies repeats them instead of
   // following the new step (a 1.5B model answered every step with its first reply), so every step after the first runs in a conversation
   // of its own, and so does a continuation. Absent: every step runs in the one conversation, as before.
-  stepConversation?(runId: string, label: string): Promise<string>
+  // stepIndex is the step's index (0-based) for a step, absent for a continuation: the caller offers a step only the tools it needs (plan 208).
+  stepConversation?(runId: string, label: string, stepIndex?: number): Promise<string>
   // Step-by-step only (plan 207). The message that asks a step to be done again when it did not call the tools it had to (the step's index,
   // what was wrong, the run id). When it is absent the steps are not checked.
   stepCorrection?(index: number, verdict: Exclude<StepVerdict, 'ok'>, runId: string): string
@@ -284,7 +285,7 @@ async function askInSteps(steps: SettleSteps, conversationId: string, runId: str
       continue
     }
     // Every step after the first runs in a conversation of its own (plan 207), so the model has nothing of its earlier replies to copy.
-    const where = steps.stepConversation ? await steps.stepConversation(runId, `step ${String(i + 1)}`) : conversationId
+    const where = steps.stepConversation ? await steps.stepConversation(runId, `step ${String(i + 1)}`, i) : conversationId
     let step = await askStep(steps, where, runId, messages[i])
     if (step.error === undefined) {
       step = await verifyStep(steps, where, runId, i, step)

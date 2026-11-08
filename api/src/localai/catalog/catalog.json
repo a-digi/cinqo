@@ -13,7 +13,6 @@
       "tools": true,
       "kvBytesPerToken": 131072,
       "toolDialect": "phi-json",
-      "fullPrompt": true,
       "source": "unsloth/Phi-4-mini-instruct-GGUF at commit 78eb92a (a GGUF conversion of microsoft/Phi-4-mini-instruct)",
       "note": "The better answers of the two. Needs the most memory.",
       "checkedOn": "2026-11-03"

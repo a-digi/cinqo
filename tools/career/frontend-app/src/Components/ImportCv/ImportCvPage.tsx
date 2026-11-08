@@ -16,7 +16,7 @@ import { PDFIcon, UploadIcon } from '../../Shared/Icons/icons'
 import { cardClassName, cardStyle } from '../../Shared/cardStyle'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { plural } from '../CompaniesPage/companyStats'
-import { IMPORT_RUN_TOOLS, IMPORT_STEP_EXPECTATIONS, buildImportPrompt, buildImportSteps, buildStepCorrection } from './buildImportPrompt'
+import { IMPORT_RUN_TOOLS, IMPORT_STEP_EXPECTATIONS, IMPORT_STEP_TOOLS, buildImportPrompt, buildImportSteps, buildStepCorrection } from './buildImportPrompt'
 import { RESTRICTION_NOT_APPLIED_MESSAGE, restrictionHolds } from '../../PersonaAi/personaTools'
 import { analyseCv } from './analysisFlow'
 import { importContextProblem } from './importContext'
@@ -118,6 +118,10 @@ export function ImportCvPage() {
         throw new Error('No AI platform is configured — ask an admin to add one under Platforms.')
       }
       const model = ai.model ?? undefined
+      const stepByStep = needsShortStepsFor(platform, model)
+      // Step by step (plan 208), the first conversation holds the first step only, so it offers that step's tools; every other
+      // conversation offers its own step's tools, and a continuation (no step) all of them.
+      const firstTools: string[] = stepByStep ? [...IMPORT_STEP_TOOLS[0]] : [...IMPORT_RUN_TOOLS]
       await analyseCv({
         startConversation: async () => {
           // The AI may only use the tools an import needs: the server enforces it, not just the prompt. Unrestricted, a weak model
@@ -126,9 +130,9 @@ export function ImportCvPage() {
             title: `Import CV: ${originalFilename}`,
             platformId: platform.id,
             model,
-            allowedTools: [...IMPORT_RUN_TOOLS],
+            allowedTools: firstTools,
           })
-          if (!restrictionHolds(conversation.allowedTools, IMPORT_RUN_TOOLS)) throw new Error(RESTRICTION_NOT_APPLIED_MESSAGE)
+          if (!restrictionHolds(conversation.allowedTools, firstTools)) throw new Error(RESTRICTION_NOT_APPLIED_MESSAGE)
           return conversation.id
         },
         recordRun: (conversationId) => createCVImportRun({ fileId, originalFilename, conversationId }),
@@ -138,26 +142,27 @@ export function ImportCvPage() {
         },
         // A platform whose models do better with short one-action messages (the local models: needsShortSteps, except a model marked to get the full prompt, Phi-4-mini) gets the instruction
         // in short steps instead of the one long prompt, which a small model answers with a made-up failure instead of a tool call.
-        stepMessages: needsShortStepsFor(platform, model) ? (runId) => buildImportSteps(fileId, runId) : undefined,
+        stepMessages: stepByStep ? (runId) => buildImportSteps(fileId, runId) : undefined,
         // Step-by-step only (plan 207): every step after the first, and a continuation, runs in a conversation of its own (hidden from the
         // list; the run keeps the first one for its transcript) so the model has none of its earlier replies to copy; and a step that did not
         // call the tools it had to is asked once more, then stops the run with a message that names the step.
         stepConversation:
-          needsShortStepsFor(platform, model)
-            ? async (_runId, label) => {
+          stepByStep
+            ? async (_runId, label, stepIndex) => {
+                const tools: string[] = stepIndex === undefined ? [...IMPORT_RUN_TOOLS] : [...(IMPORT_STEP_TOOLS[stepIndex] ?? IMPORT_RUN_TOOLS)]
                 const conversation = await createConversation({
                   title: `Import CV: ${originalFilename} · ${label}`,
                   platformId: platform.id,
                   model,
-                  allowedTools: [...IMPORT_RUN_TOOLS],
+                  allowedTools: tools,
                   hidden: true,
                 })
-                if (!restrictionHolds(conversation.allowedTools, IMPORT_RUN_TOOLS)) throw new Error(RESTRICTION_NOT_APPLIED_MESSAGE)
+                if (!restrictionHolds(conversation.allowedTools, tools)) throw new Error(RESTRICTION_NOT_APPLIED_MESSAGE)
                 return conversation.id
               }
             : undefined,
         stepCorrection:
-          needsShortStepsFor(platform, model) ? (index, verdict, runId) => buildStepCorrection(IMPORT_STEP_EXPECTATIONS[index], verdict, fileId, runId) : undefined,
+          stepByStep ? (index, verdict, runId) => buildStepCorrection(IMPORT_STEP_EXPECTATIONS[index], verdict, fileId, runId) : undefined,
         endRun: finishCVImportRun,
         onConversation: setConversationId,
         // The run exists: its own page takes over from here (the analysis goes on and ends the run; the page polls it).

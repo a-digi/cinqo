@@ -46,58 +46,108 @@ If an answer carries a warning or an error about a description or a count, fix t
 Education means schools, universities, degrees, certificates and courses (not jobs). For each entry send institution (required), degree, fieldOfStudy, startDate, endDate and a short description if the CV gives one. Dates must be exactly YYYY, YYYY-MM or YYYY-MM-DD (write "Sep 2010" as 2010-09); leave a date empty when the CV does not give it, and leave endDate empty for something still going on; the end is never before the start. Never invent education the CV does not state. A degree or certificate whose school the CV does not name is still education: send it with institution "Not stated" (never guess a school), and the user can fix it afterwards. Before you call cv_import_finish, look through the CV text once more for education (headings such as Education, Ausbildung, Studium, Abschlüsse, Qualifikationen, Weiterbildung, Certifications), send every entry you find with cv_import_add_education, and only then finish; send none only when the CV has no such section.`
 }
 
-// The same import as a sequence of short messages, for a model that cannot follow the long one (plan 181, step 9): a small local
-// model given buildImportPrompt never called a tool (0 of 10 on a replay) and wrote the failure sentence the prompt prescribes
-// instead; given one small action per message it called the right tool with valid arguments every time (8 of 8 per step).
-// The page sends them one after the other in the same conversation and waits for each turn to end. Rules of a weak-model prompt,
-// kept by every message below (a check script fails when one is broken):
+// The same import as a sequence of short messages, for a model that cannot follow the long one (plan 181, step 9; reworked in plan 208).
+// A small local model given buildImportPrompt never called a tool (0 of 10 on a replay) and wrote the failure sentence the prompt
+// prescribes instead. Phi-4-mini then failed the first short steps too: it was offered all ten tools in every step, so it invented one
+// (cv_import_add_persona) and wrote its call as text. So every step now says only what that step needs, and nothing else:
+//  - the tools of the step, named in the message and the only ones the step's conversation offers (IMPORT_STEP_TOOLS);
+//  - the actions as a numbered list, in the order they are made, with the read of the CV first;
+//  - one plain line to reply with when the last call has been answered, so the step ends in a way the page can see.
+// Rules of a weak-model prompt, kept by every message below (a check script fails when one is broken):
 //  - one action per message, and the rules of a part only in the message of that part;
-//  - no quoted reply in a message that also asks for a tool call (the model writes the reply instead of calling the tool). The
-//    one exception is the first message, whose reply is for a real tool error and comes after the call;
+//  - a step names exactly the tools it offers, by their exact names;
 //  - the words of an example are the tool's own: its actions are "insert" and "skip" (a first version said "add", which the tool
-//    refuses; a replay on a fake tool did not notice, the real run did);
-//  - the tool is named by its exact name, and the first action is a command ("YOUR FIRST ACTION: call ...").
+//    refuses; a replay on a fake tool did not notice, the real run did).
 export const IMPORT_STEP_COUNT = 9
 
-export function buildImportSteps(cvFileId: string, runId: string): string[] {
-  const notACv = 'If the document is not a CV (a form, a letter, an invoice, a certificate...), send nothing in this step.'
-  // Said in every step that stores something: a small model repeats a call it does not know is finished.
-  // The text of the CV is not kept from one step to the next (the conversation keeps only what the AI wrote and what was asked, never
-  // the answers of the tools), so every step that needs the CV reads it again. Found by a real run: from the third step on the AI
-  // had no CV and filled in placeholders.
-  const reread = `First call pdf_to_markdown with url="media:${cvFileId}" to read the CV again: you do not have its text from the earlier steps. Then `
-  const once = 'Make this call once. When the tool answers that it stored it, this step is done: write nothing more.'
-  // The shape of an entry, to show where the CV's own content goes (without it a small model copies the key names as values).
-  const shape = "These show the shape only: fill in the CV's own content."
-  return [
-    // 1 read
-    `You are helping import a CV into this user's career profile. We do it one small step at a time.
+interface ImportStep {
+  title: string
+  tools: readonly string[]
+  // The numbered actions of the step; the last line of the message is added around them.
+  body: (cvFileId: string, runId: string) => string
+  // What ends the step. The default asks for "STEP n DONE"; the last step asks for one plain sentence.
+  ending?: string
+}
 
-YOUR FIRST ACTION: call the tool pdf_to_markdown with url="media:${cvFileId}". Do not write any text before you have its result. When you have the text, do nothing else until the next message.`,
-    // 2 what is stored
-    `Next step: look at what is already stored. Call list_profiles. Then call list_personas and get_persona_details for each existing persona, and list_education for each existing profile. This lets you flag possible duplicates later. Do nothing else in this step.`,
-    // 3 profile
-    `Next step: the profile. ${reread}using the CV text, call cv_import_set with runId "${runId}", section "profile" and value {"action":"insert","possibleDuplicateOf":null,"name":"<the person's name>"}. ${shape} Use "skip" instead of "insert" if the document is not a CV (do not invent a person) or you are not sure. If this person is already stored as a profile, set possibleDuplicateOf to that profile's id. ${once}`,
-    // 4 persona
-    `Next step: the persona. ${reread}using the CV text, call cv_import_set with runId "${runId}", section "persona" and value {"action":"insert","possibleDuplicateOf":null,"name":"<a short name for the persona>","title":"<the job title>"}. ${shape} Propose one persona only. Use "skip" instead of "insert" if the document is not a CV or you are not sure. If a persona it matches is already stored, set possibleDuplicateOf to that persona's id. ${once}`,
-    // 5 personal details
-    `Next step: the personal details. ${reread}using the CV text, call cv_import_set with runId "${runId}", section "personalDetails" and value {"action":"insert","possibleDuplicateOf":null,"headline":"<one line>","summary":"<two or three sentences>","location":"<city, country>"}. ${shape} Use "skip" instead of "insert" and empty texts if the document is not a CV. ${once}`,
-    // 6 skills
-    `Next step: the skills. ${reread}call cv_import_add_skills with runId "${runId}" and items holding one entry for each skill the CV lists, in this shape: [{"action":"insert","possibleDuplicateOf":null,"value":"<skill 1>"},{"action":"insert","possibleDuplicateOf":null,"value":"<skill 2>"}]. ${shape} At most 30 per call. If a skill is already stored, set possibleDuplicateOf to that stored skill's text. If the CV lists no skills, send none. ${notACv} ${once}`,
-    // 7 experience
-    `Next step: the work experience, the most important part. ${reread}count the jobs the CV lists (every position with its own header of company, title and dates) and the bullet points under each job. Then call cv_import_add_experience with runId "${runId}" and items holding the jobs, at most 3 per call (5 if they are short), until every job is sent, newest first as the CV lists them, the oldest and the shortest one too. A job has this shape: {"action":"insert","possibleDuplicateOf":null,"company":"<company>","title":"<job title>","startDate":"<YYYY-MM>","endDate":"<YYYY-MM, or empty for a current job>","bulletsInCv":<number of bullet points>,"description":"<description>"}. ${shape} Dates are exactly YYYY, YYYY-MM or YYYY-MM-DD.
-The description holds the WHOLE text of the job in this layout, one line for every bullet point:
-<introduction sentence of the job>
-- <first bullet point of the job>
-- <second bullet point of the job>
-Technologies: <the technology list of the job>
-Keep all numbers, names and tools. You may fix typos and broken line breaks, but never drop a bullet point, never merge several bullet points into one, and never add anything the CV does not say. Keep the CV's language. Lines of a side column (skills, certificates, languages) are not part of a job.
-After each call compare the number of jobs in the tool's answer with the number you have sent so far, and send the jobs that are still missing. If the tool answers with a warning about a job, send that job again with all of its text: the same company, title and start date replaces the earlier one. If the CV lists no work experience, send none. ${notACv}`,
-    // 8 education
-    `Next step: the education. Education means schools, universities, degrees, certificates and courses (not jobs). ${reread}look through the CV text for headings such as Education, Ausbildung, Studium, Abschlüsse, Qualifikationen, Weiterbildung and Certifications. Call cv_import_add_education with runId "${runId}" and items holding every entry you find, at most 10 per call, each in this shape: {"action":"insert","possibleDuplicateOf":null,"institution":"<school>","degree":"<degree>","fieldOfStudy":"<field>","startDate":"<YYYY>","endDate":"<YYYY>","description":""}. ${shape} Dates are exactly YYYY, YYYY-MM or YYYY-MM-DD (write "Sep 2010" as 2010-09); leave a date empty when the CV does not give it, and leave endDate empty for something still going on. A degree or certificate whose school the CV does not name is still education: send it with institution "Not stated" and never guess a school. Set possibleDuplicateOf to the id of the matching entry from list_education. Never invent education. If the CV has none, send none. ${notACv} ${once}`,
-    // 9 finish
-    `Last step. Call cv_import_finish with runId "${runId}" and jobsInCv set to the number of jobs the CV lists. After that, write one short plain sentence saying the analysis is done. Do not repeat or list the proposal, and use no JSON and no markdown. If the document is not a CV, say in that sentence that it does not look like a CV.`,
-  ]
+const NOT_A_CV = 'If the document is not a CV (a form, a letter, an invoice, a certificate...), call it with no entries instead.'
+// An entry's shape only shows where the CV's own content goes (without it a small model copies the key names as values).
+const SHAPE = "The text in angle brackets only shows where the CV's own content goes: replace it with the real content."
+const DATES = 'Dates are exactly YYYY, YYYY-MM or YYYY-MM-DD (write "Sep 2010" as 2010-09); leave a date empty when the CV does not give it.'
+
+const readCv = (cvFileId: string): string => `Call pdf_to_markdown with url="media:${cvFileId}". It returns the text of the CV.`
+
+const IMPORT_STEPS: ImportStep[] = [
+  {
+    title: 'read the CV',
+    tools: ['pdf_to_markdown'],
+    body: (cv) => `1. ${readCv(cv)}`,
+  },
+  {
+    title: 'look at what is already stored',
+    tools: ['list_profiles', 'list_personas', 'get_persona_details', 'list_education'],
+    body: () =>
+      '1. Call list_profiles.\n2. Call list_personas.\n3. Call get_persona_details once for each persona that list_personas returned.\n4. Call list_education once for each profile that list_profiles returned.',
+  },
+  {
+    title: 'the profile',
+    tools: ['pdf_to_markdown', 'cv_import_set'],
+    body: (cv, run) =>
+      `1. ${readCv(cv)}\n2. Call cv_import_set with runId "${run}", section "profile" and this value:\n{"action":"insert","possibleDuplicateOf":null,"name":"<the person's name>"}\n${SHAPE} If the document is not a CV, use "skip" instead of "insert" and invent no person. Make the cv_import_set call once.`,
+  },
+  {
+    title: 'the persona',
+    tools: ['pdf_to_markdown', 'cv_import_set'],
+    body: (cv, run) =>
+      `1. ${readCv(cv)}\n2. Call cv_import_set with runId "${run}", section "persona" and this value (one persona only):\n{"action":"insert","possibleDuplicateOf":null,"name":"<a short name for the persona>","title":"<the job title>"}\n${SHAPE} If the document is not a CV, use "skip" instead of "insert". Make the cv_import_set call once.`,
+  },
+  {
+    title: 'the personal details',
+    tools: ['pdf_to_markdown', 'cv_import_set'],
+    body: (cv, run) =>
+      `1. ${readCv(cv)}\n2. Call cv_import_set with runId "${run}", section "personalDetails" and this value:\n{"action":"insert","possibleDuplicateOf":null,"headline":"<one line>","summary":"<two or three sentences>","location":"<city, country>"}\n${SHAPE} If the document is not a CV, use "skip" instead of "insert" and empty texts. Make the cv_import_set call once.`,
+  },
+  {
+    title: 'the skills',
+    tools: ['pdf_to_markdown', 'cv_import_add_skills'],
+    body: (cv, run) =>
+      `1. ${readCv(cv)}\n2. Call cv_import_add_skills with runId "${run}" and items: one entry for each skill the CV lists (at most 30), in this shape:\n[{"action":"insert","possibleDuplicateOf":null,"value":"<skill 1>"},{"action":"insert","possibleDuplicateOf":null,"value":"<skill 2>"}]\n${SHAPE} If the CV lists no skills, send an empty list. ${NOT_A_CV} Make the cv_import_add_skills call once.`,
+  },
+  {
+    title: 'the work experience',
+    tools: ['pdf_to_markdown', 'cv_import_add_experience'],
+    body: (cv, run) =>
+      `1. ${readCv(cv)}\n2. Count the jobs the CV lists (every position with its own header of company, title and dates) and the bullet points under each job.\n3. Call cv_import_add_experience with runId "${run}" and items: the jobs, newest first as the CV lists them, the oldest and the shortest one too, at most 3 per call (5 if they are short). A job has this shape:\n{"action":"insert","possibleDuplicateOf":null,"company":"<company>","title":"<job title>","startDate":"<YYYY-MM>","endDate":"<YYYY-MM, or empty for a current job>","bulletsInCv":<number of bullet points>,"description":"<description>"}\n${SHAPE} ${DATES}\nThe description holds the WHOLE text of the job, one line for every bullet point:\n<introduction sentence of the job>\n- <first bullet point of the job>\n- <second bullet point of the job>\nTechnologies: <the technology list of the job>\nKeep all numbers, names and tools; never drop a bullet point, never merge bullet points, never add anything the CV does not say. Keep the CV's language. Lines of a side column (skills, certificates, languages) are not part of a job.\n4. Compare the number of jobs in the tool's answer with the number you have sent so far, and call cv_import_add_experience again with the jobs still missing. If the tool answers with a warning about a job, send that job again with all of its text (the same company, title and start date replaces the earlier one).\nIf the CV lists no work experience, send an empty list. ${NOT_A_CV}`,
+  },
+  {
+    title: 'the education',
+    tools: ['pdf_to_markdown', 'cv_import_add_education'],
+    body: (cv, run) =>
+      `1. ${readCv(cv)}\n2. Look through the CV text for schools, universities, degrees, certificates and courses (not jobs), under headings such as Education, Ausbildung, Studium, Abschlüsse, Qualifikationen, Weiterbildung and Certifications.\n3. Call cv_import_add_education with runId "${run}" and items: every entry you found (at most 10 per call), each in this shape:\n{"action":"insert","possibleDuplicateOf":null,"institution":"<school>","degree":"<degree>","fieldOfStudy":"<field>","startDate":"<YYYY>","endDate":"<YYYY>","description":""}\n${SHAPE} ${DATES} Leave endDate empty for something still going on. A degree or certificate whose school the CV does not name is still education: send it with institution "Not stated" and never guess a school. Never invent education.\nIf the CV has none, send an empty list. ${NOT_A_CV} Make the cv_import_add_education call once.`,
+  },
+  {
+    title: 'hand over the result',
+    tools: ['cv_import_finish'],
+    body: (_cv, run) => `1. Call cv_import_finish with runId "${run}" and jobsInCv set to the number of jobs the CV lists. Make the call once.`,
+    ending:
+      'After the call has been answered, write one short plain sentence saying the analysis is done, with no JSON and no markdown, and do not list the proposal. If the document is not a CV, say in that sentence that it does not look like a CV.',
+  },
+]
+
+// The tools a step offers: the page creates the step's conversation with exactly these, so a model cannot pick (or invent) another one.
+export const IMPORT_STEP_TOOLS: readonly (readonly string[])[] = IMPORT_STEPS.map((step) => step.tools)
+
+export function buildImportSteps(cvFileId: string, runId: string): string[] {
+  return IMPORT_STEPS.map((step, index) => {
+    const n = String(index + 1)
+    const ending = step.ending ?? `Only when every call above has been answered, reply with exactly this line and nothing else: STEP ${n} DONE`
+    return `STEP ${n} OF ${String(IMPORT_STEP_COUNT)}: ${step.title}. You are importing a CV into a career profile, one small step at a time.
+
+Tools you can use in this step: ${step.tools.join(', ')}. There are no other tools: never use or invent another one. Make each call as a real tool call, and never write a tool call as text.
+
+${step.body(cvFileId, runId)}
+
+${ending}`
+  })
 }
 
 // The follow-up message when an AI turn ended and the run still has no proposal (plan 165): a weak model stops after a refused piece,
@@ -168,7 +218,7 @@ export function buildStepCorrection(expectation: StepExpectation, verdict: Exclu
   const read = `First call pdf_to_markdown with url="media:${cvFileId}" and read the CV text it returns.`
   const store = expectation.store === null ? '' : ` Then call ${expectation.store} with runId "${runId}" and the real content from the CV text, exactly as the step above describes it.`
   if (verdict === 'no_read') {
-    return `You did not read the CV in your last answer, so what you stored, if anything, is only the example text. Do the step again now, in this order. ${read}${store} This replaces what you stored before. Make each call once.`
+    return `You did not read the CV in your last answer, so what you stored, if anything, is only the example text. Do the step again now, in this order. ${read}${store} This replaces what you stored before. Make each call once, as a real tool call (never written as text).`
   }
-  return `You did not call ${expectation.store ?? 'the tool'} in your last answer, so nothing was stored for the ${expectation.label}. Do it now. ${expectation.read ? read : ''}${store} Make each call once.`
+  return `You did not call ${expectation.store ?? 'the tool'} in your last answer, so nothing was stored for the ${expectation.label}. Do it now. ${expectation.read ? read : ''}${store} Make each call once, as a real tool call (never written as text).`
 }
