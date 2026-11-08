@@ -105,3 +105,5 @@ plan/
 
 # Shared test fixtures of the tools (tools/testdata): kept out of git on purpose.
 /tools/testdata/
+
+cinqo-tools
