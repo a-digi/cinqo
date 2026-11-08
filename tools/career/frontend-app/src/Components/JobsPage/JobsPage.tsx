@@ -60,6 +60,10 @@ import { JOB_DETAILS_PATH, JOBS_PATH, VIEW_COMPANY_PATH, VIEW_PLATFORM_PATH } fr
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { PAGE_ACCENT, accentFor, initialOf } from './jobsTheme'
 import { JobStatsStrip } from './JobStatsStrip'
+import { NoDetailsIcon } from './NoDetailsIcon'
+import { RunningCrawlsStrip } from './RunningCrawlsStrip'
+import { runsKey } from './runningCrawlsRules'
+import { useRunningCrawls } from './useRunningCrawls'
 import { SelectCvModal } from './SelectCvModal'
 import { SelectRecruiterModal } from '../Recruiters/SelectRecruiterModal'
 import { recruiterLabel } from '../Recruiters/recruiterMapRules'
@@ -195,6 +199,9 @@ export function JobsPage() {
   // and the button's own start. It never waits for or refuses because of a crawl that is running.
   const [missing, setMissing] = useState<MissingDetails | null>(null)
   const [startingMissing, setStartingMissing] = useState(false)
+  // The crawls running right now (plan 214): shown as a strip, and when one ends the list reloads (new jobs, new descriptions).
+  const runningCrawls = useRunningCrawls(reload)
+  const runningKey = runsKey(runningCrawls)
   const headerCheckbox = useRef<HTMLInputElement>(null)
   // Deleting the selected jobs in one go (step 149): asked first, then one request; the notice says what came of it.
   const [confirmBatchDelete, setConfirmBatchDelete] = useState(false)
@@ -239,7 +246,8 @@ export function JobsPage() {
     return () => {
       cancelled = true
     }
-  }, [jobs])
+    // Also when a crawl starts or ends: a job's state (running, scheduled) follows the crawls.
+  }, [jobs, runningKey])
 
   // Loads the list for the current view; the latest request wins, so a slow answer never replaces a newer one.
   const latestRequest = useRef(0)
@@ -1172,6 +1180,7 @@ export function JobsPage() {
           description="Job postings the AI has crawled and saved on your behalf, and any you added yourself."
           pill={{ text: `${total} ${total === 1 ? 'job' : 'jobs'}` }}
         />
+        <RunningCrawlsStrip runs={runningCrawls} />
         {/* Two columns: the jobs on the left (the point of the page), the statistics cards
             on the right. Below the large breakpoint the cards drop under the list. */}
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
@@ -1431,6 +1440,7 @@ export function JobsPage() {
                               ) : (
                                 <span className="font-medium">{job.title}</span>
                               )}
+                              {detailsState(job) === 'not-crawled' && <NoDetailsIcon state={missing?.states[job.id]} platformName={job.portalName} />}
                               {job.boardProfileCount > 0 && (
                                 <a
                                   href={`${JOB_DETAILS_PATH}?id=${encodeURIComponent(job.id)}`}

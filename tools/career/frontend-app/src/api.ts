@@ -2479,6 +2479,10 @@ export async function requestRecrawl(jobIds: string[]): Promise<RecrawlStarted> 
 
 // The jobs whose detail page was never crawled successfully (never tried, or the last try failed): jobIds are the ones that can be crawled
 // now; the counts say why the rest cannot. Nothing here depends on a crawl that is running.
+// Where a job without crawled details stands (plan 214); the first three say a crawl is under way or next, ready that nothing is scheduled, the rest
+// why it cannot be crawled yet.
+export type MissingDetailState = 'running' | 'queued' | 'scheduled' | 'ready' | 'noInstructions' | 'needsLogin' | 'noPortal'
+
 export interface MissingDetails {
   jobIds: string[]
   total: number
@@ -2486,6 +2490,8 @@ export interface MissingDetails {
   noInstructions: number
   needsLogin: number
   alreadyBeingCrawled: number
+  // By job id, for every job without a successful detail crawl. Empty from a backend that predates it (the Jobs page then promises nothing).
+  states: Record<string, MissingDetailState>
 }
 
 export async function fetchMissingDetails(): Promise<MissingDetails> {
@@ -2499,6 +2505,7 @@ export async function fetchMissingDetails(): Promise<MissingDetails> {
     noInstructions: body.noInstructions ?? 0,
     needsLogin: body.needsLogin ?? 0,
     alreadyBeingCrawled: body.alreadyBeingCrawled ?? 0,
+    states: body.states ?? {},
   }
 }
 
