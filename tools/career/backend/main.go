@@ -323,6 +323,9 @@ func runHTTPServer() {
 	http.HandleFunc("/jobs/match/unmatched", jobmatchconsumer.MatchNowHandler)
 	http.HandleFunc("/cv-import/upload", cv.UploadCVHandler)
 	http.HandleFunc("/cv-import/runs", cv.CVImportRunsHandler)
+	// Plan 209: the draft pieces the cv_import_* tools store, for a page that does the import in code.
+	http.HandleFunc("/cv-import/draft", cv.CVImportDraftHandler)
+	http.HandleFunc("/cv-import/draft/finish", cv.CVImportDraftFinishHandler)
 	http.HandleFunc("/cv-documents/templates", cvbuilder.TemplatesHandler)
 	http.HandleFunc("/cv-documents/persona-defaults", cvbuilder.PersonaDefaultsHandler)
 	http.HandleFunc("/cv-documents/photo-status", cvbuilder.PhotoStatusHandler)
