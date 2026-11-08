@@ -1,0 +1,7 @@
+routes:
+  - path: /api/v1/security/scopes
+    method: GET
+    executor: SecurityScopesList
+    security: authenticated
+    scopes:
+      - cinqo:super:admin

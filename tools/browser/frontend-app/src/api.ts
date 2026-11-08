@@ -1,0 +1,347 @@
+// api.ts — the Browser tool page's own calls to the tool's routes (crawl logs, engine and Chrome status, challenge domains, debug settings).
+// This tool stores no login (plan 182): the person logs in on the site's own page in a window the crawl run opens.
+// res.json() is typed Promise<any> — this is the one place that's cast to
+// a concrete type, so every call site below gets a real type without its
+// own scattered unsafe assignment.
+async function readJson<T>(res: Response): Promise<T> {
+  return (await res.json()) as T
+}
+
+// --- crawl logs (step 17) ---
+
+const CRAWL_LOGS_BASE = '/api/v1/tools/browser/proxy/crawl-logs'
+
+export interface CrawlLogField {
+  label: string
+  selector: string
+  attribute?: string
+  multiple?: boolean
+}
+
+export interface CrawlLogPage {
+  url: string
+  // Exactly one of results/items is ever present (step 18) — results
+  // in flat mode, items (one object per matched container) in grouped
+  // mode.
+  results?: Record<string, unknown>
+  items?: Record<string, unknown>[]
+  notFound: string[]
+  // Set (step 21) when a Cloudflare challenge interstitial was still
+  // showing on this page — results/items above may reflect the
+  // challenge page, not real content.
+  cloudflareDetected?: boolean
+  cloudflareReason?: string
+  // Set (step 22) only when Debug + "Log HTML" were both on for this
+  // crawl — this page's own raw rendered HTML at the time it was read.
+  html?: string
+}
+
+// CrawlLogEntry (step 39) is the lightweight list-row shape —
+// everything listCrawlLogs' own collapsed row needs (backend/crawl_log.go's
+// own crawlLogSummary), computed server-side at write time so fetching
+// the list never has to open a single log file. The full body (fields/
+// results/notFound/Cloudflare flags/HTML) is fetched separately, only
+// for whichever one row is actually expanded — see CrawlLogDetail and
+// fetchCrawlLogDetail below. See
+// plan/ai/tools/browser/step-39-crawl-log-file-storage.md.
+export interface CrawlLogEntry {
+  id: string
+  createdAt: string
+  stoppedReason: string
+  pagesVisited: number
+  firstPageUrl?: string
+  notFoundCount: number
+  // Where this log's file is for Cinqo's log reader (relative to the Browser's logs folder, e.g. "crawl_logs/<id>.json"); absent when
+  // the file cannot be opened there (plan 201).
+  logRef?: string
+}
+
+// CrawlLogDetail is one entry's full body — fetched on demand
+// (fetchCrawlLogDetail), never as part of the list.
+export interface CrawlLogDetail {
+  id: string
+  createdAt: string
+  // Empty when this crawl used flat (non-grouped) extraction — see
+  // CrawlLogPage's own results/items split above.
+  container?: string
+  fields: CrawlLogField[]
+  nextSelector: string
+  requestedMaxPages: number
+  effectiveMaxPages: number
+  pages: CrawlLogPage[]
+  stoppedReason: string
+  pagesVisited: number
+}
+
+export async function fetchCrawlLogs(): Promise<CrawlLogEntry[]> {
+  const res = await fetch(CRAWL_LOGS_BASE, { credentials: 'include' })
+  if (!res.ok) throw new Error(`failed to load crawl logs (${res.status})`)
+  const data = await readJson<{ logs?: CrawlLogEntry[] }>(res)
+  return data.logs ?? []
+}
+
+// fetchCrawlLogDetail (step 39) — GET ?id=<id> streams that one
+// entry's full file straight from disk on the backend
+// (http.ServeContent, crawlLogsHandler), so a huge captured-HTML entry
+// is only ever fetched when a caller actually expands that specific
+// row, never as part of the list.
+export async function fetchCrawlLogDetail(id: string): Promise<CrawlLogDetail> {
+  const res = await fetch(`${CRAWL_LOGS_BASE}?id=${encodeURIComponent(id)}`, { credentials: 'include' })
+  if (!res.ok) throw new Error(`failed to load crawl log (${res.status})`)
+  return readJson<CrawlLogDetail>(res)
+}
+
+// deleteCrawlLog/clearAllCrawlLogs (step 22) — clearAllCrawlLogs
+// requires the explicit all=true query parameter server-side (see
+// crawlLogsHandler, crawl_log.go); there's no bare "delete everything"
+// default to guard against on this side either.
+export async function deleteCrawlLog(id: string): Promise<void> {
+  const res = await fetch(`${CRAWL_LOGS_BASE}?id=${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  })
+  if (!res.ok && res.status !== 204) throw new Error(`failed to delete crawl log (${res.status})`)
+}
+
+export async function clearAllCrawlLogs(): Promise<void> {
+  const res = await fetch(`${CRAWL_LOGS_BASE}?all=true`, {
+    method: 'DELETE',
+    credentials: 'include',
+  })
+  if (!res.ok && res.status !== 204) throw new Error(`failed to clear crawl logs (${res.status})`)
+}
+
+// --- Debug settings (step 22) ---
+
+const SETTINGS_BASE = '/api/v1/tools/browser/proxy/browser-settings'
+
+// FetchEngine (step 50) — which engine serves the primary single-page
+// fetch: 'rod' (the default; pure Go over the Chrome DevTools Protocol) or
+// 'katana'. There used to be a third, 'playwright'; plan 187 removed it. See
+// plan/ai/tools/browser/step-50-fetch-engine-setting-page.md.
+export type FetchEngine = 'rod' | 'katana'
+
+export interface BrowserSettings {
+  // fetchEngine — always sent back unchanged by every page that saves this
+  // object (the backend overwrites the whole object on a PUT, and treats a
+  // missing fetchEngine as "keep the stored one").
+  fetchEngine: FetchEngine
+  debugEnabled: boolean
+  debugLogHtml: boolean
+  // debugLogChallenge (step 68) is a separate, independent toggle from
+  // debugLogHtml — it gates the Cloudflare human-wait loop's own raw
+  // HTML dump (debugging a stuck challenge), not the regular crawl-log
+  // HTML capture debugLogHtml gates.
+  debugLogChallenge: boolean
+  // humanAssist (step 96) — when an AI call meets a challenge only a person
+  // can clear, open a browser window for that person instead of just failing.
+  // On by default; a backend that predates it sends none, and a body without
+  // it leaves the stored value alone.
+  humanAssist: boolean
+}
+
+export async function fetchBrowserSettings(): Promise<BrowserSettings> {
+  const res = await fetch(SETTINGS_BASE, { credentials: 'include' })
+  if (!res.ok) throw new Error(`failed to load settings (${res.status})`)
+  return readJson<BrowserSettings>(res)
+}
+
+export async function saveBrowserSettings(settings: BrowserSettings): Promise<BrowserSettings> {
+  const res = await fetch(SETTINGS_BASE, {
+    method: 'PUT',
+    credentials: 'include',
+    body: JSON.stringify(settings),
+  })
+  if (!res.ok) throw new Error(`failed to save settings (${res.status})`)
+  return readJson<BrowserSettings>(res)
+}
+
+// --- Engine availability (step 51) ---
+//
+// Whether each fetch engine can actually run on this machine right now,
+// from GET /engine-status. Rod and Katana both need a Chrome binary. `detail`
+// is a short sentence from the backend, safe to show as text. See
+// plan/ai/tools/browser/step-51-engine-availability.md.
+
+const ENGINE_STATUS_BASE = '/api/v1/tools/browser/proxy/engine-status'
+
+export interface EngineStatus {
+  available: boolean
+  detail: string
+}
+
+export interface EngineStatusResponse {
+  rod: EngineStatus
+  // Plan 184. Absent from a backend that predates the Katana engine.
+  katana?: EngineStatus
+}
+
+export async function fetchEngineStatus(): Promise<EngineStatusResponse> {
+  const res = await fetch(ENGINE_STATUS_BASE, { credentials: 'include' })
+  if (!res.ok) throw new Error(`failed to load engine status (${res.status})`)
+  return readJson<EngineStatusResponse>(res)
+}
+
+// --- Chrome / Chromium (step 53) ---
+//
+// Whether a Chrome or Chromium is installed on the computer where Cinqo and
+// this tool run, from GET /chrome-status. Rod, Katana and the built-in browser
+// path all launch it. `os` is the
+// SERVER's operating system (so the page shows the right install
+// instructions); `detail` is a short sentence from the backend, safe to show
+// as text. See plan/ai/tools/browser/step-53-chromium-page-and-gate.md.
+
+export interface ChromeStatus {
+  installed: boolean
+  path: string
+  version: string
+  os: string
+  detail: string
+}
+
+export async function fetchChromeStatus(): Promise<ChromeStatus> {
+  const res = await fetch('/api/v1/tools/browser/proxy/chrome-status', { credentials: 'include' })
+  if (!res.ok) throw new Error(`failed to load Chrome status (${res.status})`)
+  return readJson<ChromeStatus>(res)
+}
+
+// "Test Katana" (step 52, plan 184) — really starts Chrome, attaches Katana and
+// reads a local page, so a Chrome that is found but cannot be driven is caught
+// (the availability check above cannot see that). Takes a few seconds; the
+// backend allows one test at a time (409 otherwise). `detail` is one fixed
+// sentence from the backend.
+
+export interface EngineTestResult {
+  ok: boolean
+  detail: string
+  durationMs: number
+}
+
+// The engines that have a test: Katana (starts Chrome, attaches Katana and reads one local
+// page). Rod needs no test: it is just Chrome.
+export type TestableEngine = 'katana'
+
+const ENGINE_LABEL: Record<TestableEngine, string> = { katana: 'Katana' }
+
+export async function testEngine(engine: TestableEngine): Promise<EngineTestResult> {
+  const res = await fetch('/api/v1/tools/browser/proxy/engine-test', {
+    method: 'POST',
+    credentials: 'include',
+    body: JSON.stringify({ engine }),
+  })
+  if (res.status === 409) throw new Error(`A ${ENGINE_LABEL[engine]} test is already running — try again in a moment.`)
+  if (!res.ok) throw new Error(`failed to run the ${ENGINE_LABEL[engine]} test (${res.status})`)
+  return readJson<EngineTestResult>(res)
+}
+
+// --- Cloudflare domain cache (step 30) ---
+//
+// Read-only view of what step 29's own cache (tools/browser/backend/
+// cloudflare_domains.go) has recorded — every domain that's ever given
+// the headless session an unresolved Cloudflare challenge, and so now
+// skips straight to the headed fallback on every crawl. See
+// plan/ai/tools/browser/step-30-cloudflare-domain-list-visibility.md.
+
+const CLOUDFLARE_DOMAINS_BASE = '/api/v1/tools/browser/proxy/cloudflare-domains'
+
+export interface CloudflareDomain {
+  domain: string
+  reason: string
+  firstDetectedAt: string
+}
+
+export async function fetchCloudflareDomains(): Promise<CloudflareDomain[]> {
+  const res = await fetch(CLOUDFLARE_DOMAINS_BASE, { credentials: 'include' })
+  if (!res.ok) throw new Error(`failed to load cloudflare domains (${res.status})`)
+  const data = await readJson<{ domains?: CloudflareDomain[] }>(res)
+  return data.domains ?? []
+}
+
+// --- Domains: sites that asked for a check, and kept clearances (step 96) ---
+//
+// What the tool knows about each site that showed a Cloudflare check: whether a
+// person's clearance is kept (and until when), and whether a Chrome window is
+// open for someone right now. The clearance itself is never returned. See
+// plan/ai/tools/browser/step-96-cloudflare-outcomes-and-kept-clearance.md.
+
+const DOMAINS_BASE = '/api/v1/tools/browser/proxy/domains'
+const CRAWL_CANCEL_BASE = '/api/v1/tools/browser/proxy/crawl-cancel'
+
+export interface DomainClearance {
+  state: 'valid' | 'expired' | 'none'
+  expiresAt?: string
+  source?: string
+}
+
+export interface DomainRequest {
+  // waiting: a window is open for a person; gave_up: the wait ended without a
+  // clearance; failed: no window could be opened (or it was cancelled).
+  state: 'waiting' | 'cleared' | 'gave_up' | 'failed'
+  requestId?: string
+  startedAt?: string
+  finishedAt?: string
+  detail?: string
+}
+
+export interface DomainEntry {
+  domain: string
+  reason?: string
+  firstDetectedAt?: string
+  clearance: DomainClearance
+  request?: DomainRequest
+}
+
+export async function fetchDomains(): Promise<DomainEntry[]> {
+  const res = await fetch(DOMAINS_BASE, { credentials: 'include' })
+  if (!res.ok) throw new Error(`failed to load domains (${res.status})`)
+  const data = await readJson<{ domains?: DomainEntry[] }>(res)
+  return data.domains ?? []
+}
+
+// clearDomainNow opens the Chrome window for a person to clear the site.
+export async function clearDomainNow(domain: string): Promise<void> {
+  const res = await fetch(`${DOMAINS_BASE}/clear`, {
+    method: 'POST',
+    credentials: 'include',
+    body: JSON.stringify({ domain }),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(text.trim() || `failed to open the window (${res.status})`)
+  }
+}
+
+export async function forgetDomain(domain: string): Promise<void> {
+  const res = await fetch(`${DOMAINS_BASE}?domain=${encodeURIComponent(domain)}`, { method: 'DELETE', credentials: 'include' })
+  if (!res.ok && res.status !== 204) throw new Error(`failed to forget the domain (${res.status})`)
+}
+
+export async function cancelDomainRequest(requestId: string): Promise<void> {
+  const res = await fetch(CRAWL_CANCEL_BASE, { method: 'POST', credentials: 'include', body: JSON.stringify({ requestId }) })
+  // 404 means it already ended: nothing left to cancel.
+  if (!res.ok && res.status !== 404) throw new Error(`failed to cancel (${res.status})`)
+}
+
+// --- Katana window sites (plan 198, step V3) ---
+
+const KATANA_WINDOW_BASE = '/api/v1/tools/browser/proxy'
+
+export interface KatanaWindowSite {
+  host: string
+  createdAt: string
+  lastClearedAt?: string
+}
+
+// The sites whose reads go through the Katana window, and whether the window is open right now.
+export async function fetchKatanaWindowSites(): Promise<{ hosts: KatanaWindowSite[]; windowOpen: boolean }> {
+  const res = await fetch(`${KATANA_WINDOW_BASE}/katana-window-hosts`, { credentials: 'include' })
+  if (!res.ok) throw new Error(`failed to load the window sites (${res.status})`)
+  const data = await readJson<{ hosts?: KatanaWindowSite[]; windowOpen?: boolean }>(res)
+  return { hosts: data.hosts ?? [], windowOpen: data.windowOpen === true }
+}
+
+// Forget a site: Katana reads it the headless way again and its cookies are removed from the window's profile.
+export async function forgetKatanaWindowSite(host: string): Promise<void> {
+  const res = await fetch(`${KATANA_WINDOW_BASE}/katana-window-host?host=${encodeURIComponent(host)}`, { method: 'DELETE', credentials: 'include' })
+  if (!res.ok) throw new Error(`failed to forget the site (${res.status})`)
+}

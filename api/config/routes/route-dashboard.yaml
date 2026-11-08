@@ -1,0 +1,22 @@
+routes:
+  # No static scopes: any signed-in user has a Home. Which widgets a caller may
+  # see is decided per widget by the engine (each widget's own required scope),
+  # which a static YAML scope list cannot express. A widget the caller may not
+  # see answers 404, same as one that does not exist. See
+  # plan/ai/dashboard/home-dashboard.md.
+  - path: /api/v1/dashboard/widgets
+    method: GET
+    executor: DashboardWidgets
+    security: authenticated
+
+  - path: /api/v1/dashboard/widgets/{id}/data
+    method: GET
+    executor: DashboardWidgetData
+    security: authenticated
+
+  # No static scopes, same reasoning: the layout belongs to the caller, keyed by
+  # the user id in their own token — never one they send.
+  - path: /api/v1/dashboard/layout
+    method: PUT
+    executor: DashboardLayout
+    security: authenticated

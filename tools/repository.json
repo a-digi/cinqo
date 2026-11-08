@@ -1,0 +1,161 @@
+{
+  "formatVersion": 2,
+  "name": "Cinqo tools",
+  "description": "Career, Browser and PDF Tools",
+  "authors": [
+    {
+      "name": "Anes Detit",
+      "email": "tafa.andet@googlemail.com"
+    }
+  ],
+  "generatedAt": "2026-11-07T22:57:30Z",
+  "tools": [
+    {
+      "id": "browser",
+      "currentVersionId": "0.0.244",
+      "versions": [
+        {
+          "authors": [
+            {
+              "name": "Anes Detit",
+              "email": "tafa.andet@googlemail.com"
+            }
+          ],
+          "license": "Proprietary",
+          "versionId": "0.0.244",
+          "name": "Browser",
+          "version": "0.0.244",
+          "releasedAt": "2026-11-07",
+          "packages": [
+            {
+              "os": "darwin",
+              "arch": "arm64",
+              "url": "browser/versions/tool-browser-darwin-arm64.zip",
+              "sha256": "7d30437cf6e41a2289b8a3166d60514d619d6f1fdba732fd40cf49cec20cee4f",
+              "sizeBytes": 45989768
+            },
+            {
+              "os": "linux",
+              "arch": "amd64",
+              "url": "browser/versions/tool-browser-linux-amd64.zip",
+              "sha256": "63604869c71244229025908207d7979da77cecfccfc174f537779db692c29ed8",
+              "sizeBytes": 45953057
+            },
+            {
+              "os": "linux",
+              "arch": "arm64",
+              "url": "browser/versions/tool-browser-linux-arm64.zip",
+              "sha256": "17f266e76b7f66843d8970b704688ebaf89ee8d5d85e3364ea31f36eb6c1cf07",
+              "sizeBytes": 43792695
+            },
+            {
+              "os": "windows",
+              "arch": "amd64",
+              "url": "browser/versions/tool-browser-windows-amd64.zip",
+              "sha256": "dfa4e4d9a5406f849cef89addef54381bddaa7c254f4ef3c1362256517227547",
+              "sizeBytes": 30586485
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "career",
+      "currentVersionId": "0.0.774",
+      "versions": [
+        {
+          "authors": [
+            {
+              "name": "Anes Detit",
+              "email": "tafa.andet@googlemail.com"
+            }
+          ],
+          "license": "Proprietary",
+          "versionId": "0.0.774",
+          "name": "Career",
+          "version": "0.0.774",
+          "releasedAt": "2026-11-07",
+          "packages": [
+            {
+              "os": "darwin",
+              "arch": "arm64",
+              "url": "career/versions/tool-career-darwin-arm64.zip",
+              "sha256": "ecc9c1ecea1962c74eaaae4b5f63722725e905b66287207412695499fe88ea61",
+              "sizeBytes": 18165803
+            },
+            {
+              "os": "linux",
+              "arch": "amd64",
+              "url": "career/versions/tool-career-linux-amd64.zip",
+              "sha256": "2e9f220dab8523b9f1405683f67cd7d4126573d772be44a60a1782144f95d055",
+              "sizeBytes": 18341816
+            },
+            {
+              "os": "linux",
+              "arch": "arm64",
+              "url": "career/versions/tool-career-linux-arm64.zip",
+              "sha256": "cdeabef52e3aa821c3cd379bbb9067e9b98cebbf3b009ade3fe296cfa62effe7",
+              "sizeBytes": 17333368
+            },
+            {
+              "os": "windows",
+              "arch": "amd64",
+              "url": "career/versions/tool-career-windows-amd64.zip",
+              "sha256": "38f8cb34639e6563dc8c91edb49aaed7f922f4065438600273bdae8987d282e2",
+              "sizeBytes": 18674697
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pdf_tools",
+      "currentVersionId": "0.0.123",
+      "versions": [
+        {
+          "authors": [
+            {
+              "name": "Anes Detit",
+              "email": "tafa.andet@googlemail.com"
+            }
+          ],
+          "license": "Proprietary",
+          "versionId": "0.0.123",
+          "name": "PDF Tools",
+          "version": "0.0.123",
+          "releasedAt": "2026-11-05",
+          "packages": [
+            {
+              "os": "darwin",
+              "arch": "arm64",
+              "url": "pdf_tools/versions/tool-pdf_tools-darwin-arm64.zip",
+              "sha256": "70c0d0e05f9b1701cafe924600b7cf8c25e37e59893a1c153ba4374411725ca7",
+              "sizeBytes": 7925472
+            },
+            {
+              "os": "linux",
+              "arch": "amd64",
+              "url": "pdf_tools/versions/tool-pdf_tools-linux-amd64.zip",
+              "sha256": "e128d823f2761af240131cf93e8ac4005e58b1631ea183299fd22e270c1ab3ac",
+              "sizeBytes": 8169913
+            },
+            {
+              "os": "linux",
+              "arch": "arm64",
+              "url": "pdf_tools/versions/tool-pdf_tools-linux-arm64.zip",
+              "sha256": "b4b3c747f1ae292af0a5fbbcc03798d39f7d33744c9ffb79c67f0238566a06bf",
+              "sizeBytes": 7471408
+            },
+            {
+              "os": "windows",
+              "arch": "amd64",
+              "url": "pdf_tools/versions/tool-pdf_tools-windows-amd64.zip",
+              "sha256": "4f870cb00e3aa62d595ebf3717e5ff3a0b9bd420e80442369a5a20991e98d608",
+              "sizeBytes": 8247628
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

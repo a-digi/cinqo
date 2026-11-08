@@ -1,0 +1,293 @@
+[
+ {
+  "description": "Ask the user, with a yes/no question, whether this portal link's page actually lists any jobs. Call this ONLY when your test crawl of the draft listing instructions still extracted 0 items after you already made one fix attempt (check_crawl_extraction_result itemsFound == 0 twice) \u2014 then you cannot tell a page that really has no jobs from selectors that are wrong. Ask at most once per task. The question is shown to the user on the link; you cannot see or give the answer. After a successful call, do NOT save any instructions and make no more tool calls: end your turn immediately with one short line. The user's answer arrives as a new message in this conversation.",
+  "inputSchema": {
+   "additionalProperties": false,
+   "properties": {
+    "note": {
+     "description": "one short line saying what you tried and found, e.g. '2 attempts, container .job-result matched nothing' (max 300 characters)",
+     "type": "string"
+    },
+    "portalLinkId": {
+     "description": "the portal link's own id",
+     "type": "string"
+    }
+   },
+   "required": [
+    "portalLinkId",
+    "note"
+   ],
+   "type": "object"
+  },
+  "name": "ask_user_if_page_has_jobs"
+ },
+ {
+  "description": "Check whether a crawl_paginated result (pass its own 'pages' array here, unchanged) would actually produce usable job postings \u2014 the same title-and-url-required rule the deterministic \"Crawl now\" button itself applies when deciding what to save versus skip. Call this after every crawl_paginated test run of your DRAFT listing crawl instructions, before calling set_portal_link_crawl_instructions \u2014 do not count skipped/extracted items yourself from the raw JSON; this tool's own count is the one that matters, since it is the exact rule a real crawl will use. ok: true means every extracted item produced both a title and a url (and at least one item was found at all) \u2014 only then are these instructions ready to save. ok: false means fix your container/field selectors/mapping using skippedSamples (the raw fields of up to 3 items that failed) and test again. A \"warning\" field (only 1 or 2 items extracted in total) does not change ok, but it means your container selector may match just a wrapper or part of the page: compare the count with the repeating job entries in the HTML you fetched and fix the container before saving if the page shows more.",
+  "inputSchema": {
+   "additionalProperties": false,
+   "properties": {
+    "pages": {
+     "description": "the exact 'pages' array from a crawl_paginated call you just made with your DRAFT instructions against this same URL \u2014 pass it through unchanged, do not retype or summarize it by hand.",
+     "items": {
+      "additionalProperties": false,
+      "properties": {
+       "description": {
+        "additionalProperties": false,
+        "properties": {
+         "chars": {
+          "type": "integer"
+         },
+         "errors": {
+          "items": {
+           "type": "string"
+          },
+          "type": [
+           "null",
+           "array"
+          ]
+         },
+         "fullLength": {
+          "type": "integer"
+         },
+         "limit": {
+          "type": "integer"
+         },
+         "outline": {
+          "items": {
+           "type": "string"
+          },
+          "type": [
+           "null",
+           "array"
+          ]
+         },
+         "parts": {
+          "items": {
+           "additionalProperties": false,
+           "properties": {
+            "chars": {
+             "type": "integer"
+            },
+            "cut": {
+             "type": "integer"
+            },
+            "include": {
+             "type": "string"
+            },
+            "index": {
+             "type": "integer"
+            },
+            "matches": {
+             "type": "integer"
+            },
+            "notFound": {
+             "type": "boolean"
+            },
+            "overlap": {
+             "type": "boolean"
+            },
+            "removed": {
+             "type": "integer"
+            }
+           },
+           "required": [
+            "index",
+            "matches",
+            "chars",
+            "overlap",
+            "notFound",
+            "cut",
+            "removed"
+           ],
+           "type": "object"
+          },
+          "type": [
+           "null",
+           "array"
+          ]
+         },
+         "removed": {
+          "items": {
+           "additionalProperties": false,
+           "properties": {
+            "chars": {
+             "type": "integer"
+            },
+            "kind": {
+             "type": "string"
+            },
+            "part": {
+             "type": "integer"
+            },
+            "selector": {
+             "type": "string"
+            },
+            "text": {
+             "type": "string"
+            }
+           },
+           "required": [
+            "part",
+            "kind",
+            "chars",
+            "text"
+           ],
+           "type": "object"
+          },
+          "type": [
+           "null",
+           "array"
+          ]
+         },
+         "removedTotal": {
+          "type": "integer"
+         },
+         "truncated": {
+          "type": "boolean"
+         }
+        },
+        "required": [
+         "chars",
+         "fullLength",
+         "truncated",
+         "limit"
+        ],
+        "type": [
+         "null",
+         "object"
+        ]
+       },
+       "items": {
+        "items": {
+         "additionalProperties": true,
+         "type": "object"
+        },
+        "type": [
+         "null",
+         "array"
+        ]
+       },
+       "notFound": {
+        "items": {
+         "type": "string"
+        },
+        "type": [
+         "null",
+         "array"
+        ]
+       },
+       "results": {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       "truncated": {
+        "items": {
+         "type": "string"
+        },
+        "type": [
+         "null",
+         "array"
+        ]
+       },
+       "url": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "url"
+      ],
+      "type": "object"
+     },
+     "type": [
+      "null",
+      "array",
+      "string"
+     ]
+    }
+   },
+   "required": [
+    "pages"
+   ],
+   "type": "object"
+  },
+  "name": "check_crawl_extraction_result"
+ },
+ {
+  "description": "Read the currently saved YAML crawl instructions for one portal link (null if none saved yet).",
+  "inputSchema": {
+   "additionalProperties": false,
+   "properties": {
+    "portalLinkId": {
+     "description": "the portal link's own id, from add_portal_link or list_portals",
+     "type": "string"
+    }
+   },
+   "required": [
+    "portalLinkId"
+   ],
+   "type": "object"
+  },
+  "name": "get_portal_link_crawl_instructions"
+ },
+ {
+  "description": "Read the currently saved YAML job-detail crawl instructions for one portal link (null if none saved yet) \u2014 how to extract job-position-relevant text off a single JOB's own detail page, separate from get_portal_link_crawl_instructions' own listing-page instructions.",
+  "inputSchema": {
+   "additionalProperties": false,
+   "properties": {
+    "portalLinkId": {
+     "description": "the portal link's own id, from add_portal_link or list_portals",
+     "type": "string"
+    }
+   },
+   "required": [
+    "portalLinkId"
+   ],
+   "type": "object"
+  },
+  "name": "get_portal_link_job_detail_crawl_instructions"
+ },
+ {
+  "description": "Save the YAML crawl instructions for one portal link \u2014 works equally on a link you just created or one that already existed before this conversation; call list_portals first to find the target link's own id (match by its title) if you don't already have it. BEFORE WRITING fields, decide which kind of page this is: (1) a LISTING page \u2014 a search-results/job-board/catalog page showing MULTIPLE similar items at once (this is the common case for a job portal's own crawl target), or (2) a single item's own DETAIL page describing just one thing. For a listing page, ALWAYS set a top-level container \u2014 a CSS selector for one item's own repeating wrapping element (the <div>/<li>/<article> that repeats once per item on the page) \u2014 this is the correct default for any repeating list, not an optional fix applied only after something looks wrong. Every field's own selector is then evaluated relative to each matched container, and the result is one correctly-grouped object per real item. Without container on a listing page, fields describing multiple items are instead saved as separate same-length arrays whose positions may NOT actually correspond to the same real item \u2014 silently pairing one item's title with a different item's own url/company/etc. Only omit container for a genuine single-item detail page, where there is nothing to group. The exact same shape crawl_paginated expects (fields: [...] + pagination: {nextSelector, maxPages}, plus the optional top-level container), so it can be handed to that tool directly later.\n\nRequired output schema (checked at save time, not just field shape): every field's own label \u2014 or its mapping target, see below \u2014 must, taken together, include title (required) and url (required); company, location, description, and postedAt are all optional and used verbatim with no reformatting. This is the exact vocabulary the deterministic \"Crawl now\" button reads by; if this page's own natural field names don't already match (e.g. \"job_title\" instead of \"title\"), add a top-level mapping block renaming them \u2014 the same mechanism crawl_paginated itself now supports \u2014 rather than forcing awkward labels onto your fields.\n\nExample \u2014 LISTING page (the common case):\ncontainer: \".job-result\"\nfields:\n  - label: title\n    selector: h2\n  - label: url\n    selector: a\n    attribute: href\n  - label: company\n    selector: .company\npagination:\n  nextSelector: a.next-page\n  maxPages: 5\n\nExample \u2014 LISTING page with natural field names, mapped to the required schema:\ncontainer: \".job-result\"\nfields:\n  - label: job_title\n    selector: h2\n  - label: employer\n    selector: .company\nmapping:\n  job_title: title\n  employer: company\npagination:\n  nextSelector: a.next-page\n  maxPages: 5\n\nExample \u2014 single DETAIL page (no container needed):\nfields:\n  - label: title\n    selector: h1\npagination:\n  nextSelector: a.next-page\n  maxPages: 5\n\nRejected if it doesn't parse, is missing required keys, or the effective output (after mapping) wouldn't produce both title and url \u2014 this only checks shape, not that it actually works against the real page. Before calling this, you must already have tested your draft via crawl_paginated + check_crawl_extraction_result and seen ok: true \u2014 this tool does not re-verify against the real page itself, only shape, so a passing call here is not proof the instructions work.",
+  "inputSchema": {
+   "additionalProperties": false,
+   "properties": {
+    "instructions": {
+     "description": "YAML: fields (>=1 entry, each with label+selector), pagination (nextSelector+maxPages), and optionally container/mapping \u2014 the exact shape crawl_paginated expects. The effective output (a field's own label, or its mapping target) must include title and url, see this tool's own description for the full required schema.",
+     "type": "string"
+    },
+    "portalLinkId": {
+     "description": "the portal link's own id, from add_portal_link or list_portals",
+     "type": "string"
+    }
+   },
+   "required": [
+    "portalLinkId",
+    "instructions"
+   ],
+   "type": "object"
+  },
+  "name": "set_portal_link_crawl_instructions"
+ },
+ {
+  "description": "Save the YAML job-detail crawl instructions for one portal link \u2014 how to extract ONLY the job-position-relevant text off a single job's own detail page (the page a listing's own job URL points to), ignoring everything else on that page (navigation, ads, unrelated sections, footers, etc.). This is a SEPARATE document from set_portal_link_crawl_instructions, which only covers the LISTING page's own fields+pagination. Call list_portals first to find the target link's own id.\n\nUnlike the listing instructions, there is no container (a detail page describes one job, never a repeating list) and no pagination (a detail page is never paginated). Each field is a label+selector pair, evaluated against the whole page; leave attribute unset so the extracted value is the element's own plain text, not an attribute. Required output schema: the effective field labels must include description \u2014 the full, untruncated body text of the job posting itself. Other fields may be added (e.g. requirements, salary) but only description is currently persisted back onto the job record.\n\nOnce saved, crawl this link's own job detail URLs by calling crawl_urls_with_subagents with extractFields set to these same fields, saveToolName \"save_job_detail_extraction\", and saveToolArgsKey \"jobId\" (saveToolArgsByUrl mapping each job's own url to its own job id, from list_jobs/search_jobs/save_portal_job) \u2014 never extract them yourself directly by looping over extract_from_url; crawling individual job detail pages must always go through crawl_urls_with_subagents, one call for the whole batch.\n\nExample:\nfields:\n  - label: description\n    selector: \".job-description, .job-posting-body\"\n\nRejected if it doesn't parse, has no fields, or the effective output doesn't produce description.",
+  "inputSchema": {
+   "additionalProperties": false,
+   "properties": {
+    "instructions": {
+     "description": "YAML: fields (>=1 entry, each with label+selector, optionally attribute/multiple) describing which elements on a single job's own detail page hold job-position-relevant text. No container, no pagination \u2014 a detail page is neither a repeating list nor paginated. The effective output must include a field labeled description; leave attribute unset (defaults to the element's own text content) unless you deliberately want an attribute value instead of text.",
+     "type": "string"
+    },
+    "portalLinkId": {
+     "description": "the portal link's own id, from add_portal_link or list_portals",
+     "type": "string"
+    }
+   },
+   "required": [
+    "portalLinkId",
+    "instructions"
+   ],
+   "type": "object"
+  },
+  "name": "set_portal_link_job_detail_crawl_instructions"
+ }
+]

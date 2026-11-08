@@ -1,0 +1,81 @@
+package persistent
+
+import (
+	"database/sql"
+
+	conversation_entity "github.com/a-digi/cinqo/src/conversation/entity"
+)
+
+type ConversationPersistentRepo struct {
+	db *sql.DB
+}
+
+func NewConversationPersistentRepo(db *sql.DB) *ConversationPersistentRepo {
+	return &ConversationPersistentRepo{db: db}
+}
+
+// Insert writes platform_id/model once, at creation — no method in
+// this repo ever updates them afterward (see the entity's own doc
+// comment on why that's a structural, not runtime, guarantee). hidden
+// (step 30) is likewise set only here — nothing ever flips it after
+// creation.
+func (r *ConversationPersistentRepo) Insert(c *conversation_entity.Conversation) error {
+	mode := c.OrchestrationMode
+	if mode == "" {
+		mode = conversation_entity.OrchestrationModeDirect
+	}
+	var limit any // NULL unless the creator asked for a lower budget (step 93)
+	if c.ToolIterationLimit != nil {
+		limit = *c.ToolIterationLimit
+	}
+	var allowed any // NULL unless the creator restricted the tools (step 113)
+	if c.AllowedTools != "" {
+		allowed = c.AllowedTools
+	}
+	var compact any // NULL unless the creator opted into the compact tool loop (plan 45, step 3)
+	if c.CompactToolResults {
+		compact = 1
+	}
+	_, err := r.db.Exec(
+		`INSERT INTO conversations (id, user_id, title, file_path, platform_id, model, hidden, tool_slug, orchestration_mode, tool_iteration_limit, allowed_tools, compact_tool_results) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		c.ID, c.UserID, c.Title, c.FilePath, c.PlatformID, c.Model, c.Hidden, c.ToolSlug, mode, limit, allowed, compact,
+	)
+	return err
+}
+
+// UpdateTitle renames a conversation. Ownership is the caller's own
+// responsibility — the handler already verified it via
+// FindOwnedByID before this is ever called.
+func (r *ConversationPersistentRepo) UpdateTitle(id, title string) error {
+	_, err := r.db.Exec(`UPDATE conversations SET title = ? WHERE id = ?`, title, id)
+	return err
+}
+
+// Delete removes the conversations row — row only, no message table
+// to cascade (step 1 moved content out of SQL entirely). Returns
+// sql.ErrNoRows if no row matched.
+//
+// The saved checkpoints of its turn runs (user data: tool results) are cleared in the same transaction. Foreign keys are not enforced
+// here, so the turn runs themselves are not removed by the delete: only what must not outlive the conversation is.
+func (r *ConversationPersistentRepo) Delete(id string) error {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.Exec(`UPDATE turn_runs SET checkpoint = NULL WHERE conversation_id = ? AND checkpoint IS NOT NULL`, id); err != nil {
+		return err
+	}
+	res, err := tx.Exec(`DELETE FROM conversations WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return tx.Commit()
+}

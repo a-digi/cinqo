@@ -1,0 +1,198 @@
+package handler
+
+import (
+	"database/sql"
+	"errors"
+	"fmt"
+	"net/http"
+	"os"
+
+	"github.com/google/uuid"
+
+	"github.com/a-digi/coco-server/server/request"
+	"github.com/a-digi/coco-server/server/response"
+
+	"github.com/a-digi/cinqo/src/conversation"
+	conversation_entity "github.com/a-digi/cinqo/src/conversation/entity"
+	conversation_persistent "github.com/a-digi/cinqo/src/conversation/repository/persistent"
+	conversation_query "github.com/a-digi/cinqo/src/conversation/repository/query"
+	"github.com/a-digi/cinqo/src/platform"
+	tool_query "github.com/a-digi/cinqo/src/tool/repository/query"
+)
+
+type createConversationRequest struct {
+	Title      string `json:"title"`
+	PlatformID string `json:"platformId"`
+	Model      string `json:"model"`
+	// Hidden (step 30) excludes this conversation from ListHandler's
+	// own list — omitted (or false) preserves today's exact behavior.
+	// See plan/ai/conversation/step-30-hidden-conversations.md.
+	Hidden bool `json:"hidden"`
+	// ToolSlug (step 41) — the tool this conversation is being created
+	// on behalf of (e.g. "career"), or omitted for a person's own
+	// directly-created conversation. Not validated against the tools
+	// table — see the entity's own doc comment for why.
+	ToolSlug string `json:"toolSlug"`
+	// OrchestrationMode (composer step 1) — "direct" (the default when
+	// omitted, today's behavior) or "composer". Fixed for the
+	// conversation's lifetime, like platformId/model. See
+	// plan/ai/conversation/step-42-orchestrator-composer-mode.md.
+	OrchestrationMode string `json:"orchestrationMode"`
+	// ToolIterationLimit (step 93) — optional, 1 to entity.MaxToolIterationLimit.
+	// Lowers how many model calls one turn may make; omitted means the default.
+	ToolIterationLimit *int `json:"toolIterationLimit"`
+	// AllowedTools (step 113) — optional: the MCP tools this conversation is offered and may
+	// call, and nothing else. Omitted means no restriction; an empty list, an unknown tool name
+	// or composer mode is a 400. It can only narrow what the caller may already use.
+	AllowedTools []string `json:"allowedTools"`
+	// CompactToolResults (plan/ai/conversation/step-45, step 3) — optional, default false: the tool loop folds old bulky tool results,
+	// answers a repeated read-only call in one line and warns two rounds before the budget ends. Direct mode only.
+	CompactToolResults bool `json:"compactToolResults"`
+}
+
+// CreateHandler handles POST /api/v1/conversations. title defaults to
+// "New conversation" when omitted. platformId/model are fixed for the
+// conversation's entire lifetime — no endpoint ever changes them after
+// this. See
+// plan/ai/conversation/step-07-fixed-platform-and-model-per-conversation.md.
+func CreateHandler(reqCtx request.RequestContext) {
+	w := reqCtx.GetWriter()
+
+	var body createConversationRequest
+	if err := reqCtx.BindJSON(&body); err != nil {
+		response.ErrorResponse(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	title := body.Title
+	if title == "" {
+		title = "New conversation"
+	}
+
+	entry, ok := platform.Lookup(body.PlatformID)
+	if !ok {
+		response.ErrorResponse(w, http.StatusBadRequest, "platformId is required and must be a registered platform")
+		return
+	}
+
+	if !entry.IsAvailable() {
+		response.ErrorResponse(w, http.StatusBadRequest, "this platform is not available")
+		return
+	}
+
+	model := body.Model
+	if len(entry.SelectableModelList()) > 0 {
+		if model == "" || !platform.IsSelectableModel(body.PlatformID, model) {
+			response.ErrorResponse(w, http.StatusBadRequest, "model is required for this platform and must be one of its selectable models")
+			return
+		}
+	} else {
+		if model != "" {
+			response.ErrorResponse(w, http.StatusBadRequest, "this platform has no selectable models — omit model")
+			return
+		}
+		model = entry.DefaultModel
+	}
+
+	orchestrationMode, ok := conversation_entity.ParseOrchestrationMode(body.OrchestrationMode)
+	if !ok {
+		response.ErrorResponse(w, http.StatusBadRequest, "orchestrationMode must be \"direct\" or \"composer\"")
+		return
+	}
+
+	if !conversation_entity.ValidToolIterationLimit(body.ToolIterationLimit) {
+		response.ErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("toolIterationLimit must be between 1 and %d", conversation_entity.MaxToolIterationLimit))
+		return
+	}
+
+	allowedTools, err := conversation_entity.ParseAllowedTools(body.AllowedTools)
+	if err != nil {
+		response.ErrorResponse(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	switch entry.ToolPolicyFor(model) {
+	case platform.ToolsNone:
+		if orchestrationMode != conversation_entity.OrchestrationModeDirect || allowedTools != nil {
+			response.ErrorResponse(w, http.StatusBadRequest, "this platform or model offers no tools: use direct mode without allowedTools")
+			return
+		}
+	case platform.ToolsExplicit:
+		if orchestrationMode != conversation_entity.OrchestrationModeDirect {
+			response.ErrorResponse(w, http.StatusBadRequest, "this platform offers only the tools you list: use direct mode (with allowedTools to give it tools)")
+			return
+		}
+	}
+	if allowedTools != nil && orchestrationMode != conversation_entity.OrchestrationModeDirect {
+		response.ErrorResponse(w, http.StatusBadRequest, "allowedTools is only supported in direct mode")
+		return
+	}
+	if allowedTools != nil {
+		toolRepo := tool_query.NewToolMCPToolQueryRepo(reqCtx.GetDI().GetDatabaseManager().Connector.DB)
+		for _, name := range allowedTools {
+			if _, err := toolRepo.FindMCPToolByName(name); err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					response.ErrorResponse(w, http.StatusBadRequest, fmt.Sprintf("allowedTools: unknown tool %q", name))
+					return
+				}
+				response.ErrorResponse(w, http.StatusInternalServerError, "failed to check allowedTools")
+				return
+			}
+		}
+	}
+	if body.CompactToolResults && orchestrationMode != conversation_entity.OrchestrationModeDirect {
+		response.ErrorResponse(w, http.StatusBadRequest, "compactToolResults is only supported in direct mode")
+		return
+	}
+	encodedTools, err := conversation_entity.EncodeAllowedTools(allowedTools)
+	if err != nil {
+		response.ErrorResponse(w, http.StatusInternalServerError, "failed to store allowedTools")
+		return
+	}
+
+	userID, err := callerUserID(reqCtx)
+	if err != nil {
+		response.ErrorResponse(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	db, err := conversationDB(reqCtx)
+	if err != nil {
+		response.ErrorResponse(w, http.StatusInternalServerError, "conversation database not configured")
+		return
+	}
+
+	logsDir := logsRoot(reqCtx)
+	if err := os.MkdirAll(logsDir, 0o755); err != nil {
+		response.ErrorResponse(w, http.StatusInternalServerError, "failed to prepare conversation storage")
+		return
+	}
+
+	id := uuid.NewString()
+	c := &conversation_entity.Conversation{
+		ID:         id,
+		UserID:     userID,
+		Title:      title,
+		FilePath:   conversation.LogPath(logsDir, id),
+		PlatformID: body.PlatformID,
+		Model:      model,
+		Hidden:     body.Hidden,
+		ToolSlug:   body.ToolSlug,
+
+		OrchestrationMode:  orchestrationMode,
+		ToolIterationLimit: body.ToolIterationLimit,
+		AllowedTools:       encodedTools,
+		CompactToolResults: body.CompactToolResults,
+	}
+
+	if err := conversation_persistent.NewConversationPersistentRepo(db).Insert(c); err != nil {
+		response.ErrorResponse(w, http.StatusInternalServerError, "failed to create conversation")
+		return
+	}
+
+	created, err := conversation_query.NewConversationQueryRepo(db).FindOwnedByID(id, userID)
+	if err != nil {
+		response.ErrorResponse(w, http.StatusInternalServerError, "conversation created but failed to reload")
+		return
+	}
+	response.SuccessResponse(w, http.StatusCreated, toConversationResponse(created))
+}

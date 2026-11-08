@@ -1,0 +1,637 @@
+package handler
+
+import (
+	"archive/zip"
+	"bytes"
+	"crypto/rand"
+	"database/sql"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
+	"sync"
+
+	"github.com/google/uuid"
+
+	"github.com/a-digi/coco-server/server/request"
+	"github.com/a-digi/coco-server/server/response"
+
+	"github.com/a-digi/cinqo/src/domainevent"
+	tool_entity "github.com/a-digi/cinqo/src/tool/entity"
+	"github.com/a-digi/cinqo/src/tool/manager"
+	"github.com/a-digi/cinqo/src/tool/manifest"
+	tool_mcp "github.com/a-digi/cinqo/src/tool/mcp"
+	tool_persistent "github.com/a-digi/cinqo/src/tool/repository/persistent"
+	tool_query "github.com/a-digi/cinqo/src/tool/repository/query"
+	"github.com/a-digi/cinqo/src/tool/sandbox"
+	"github.com/a-digi/cinqo/src/toolmeta"
+)
+
+// discoverMCPToolsIfDeclared is a best-effort, non-fatal hook run after
+// a tool's install/update/enable already succeeded: manifest.MCP is
+// only an optimization gate (see manifest.go's own doc comment), so a
+// failure here never fails the surrounding request — it just leaves
+// tool_mcp_tools empty for this tool, same as any tool that never
+// declared MCP support at all. Runs unconditionally regardless of
+// whether the tool's own HTTP surface is currently enabled — MCP
+// discovery spawns its own separate --mcp-mode process. See
+// plan/ai/tools/pdf-generator/step-04-ai-model-invocation.md.
+func discoverMCPToolsIfDeclared(reqCtx request.RequestContext, db *sql.DB, m manifest.Manifest, installDir, toolID, serviceToken string) {
+	if !m.MCP {
+		return
+	}
+	execPath, err := filepath.Abs(filepath.Join(installDir, backendExecutableFilename))
+	if err != nil {
+		reqCtx.GetDI().GetLogger().Warning("tool %q declared mcp support but its executable path could not be resolved: %v", m.Slug, err)
+		return
+	}
+	// A real, reproduced failure without this: the spawned --mcp
+	// process inherits a bare environment with none of
+	// TOOL_DB_DIR/TOOL_UPLOADS_DIR/TOOL_TMP_DIR set, so its own
+	// main() fails os.MkdirAll("", ...) at startup and exits before
+	// ever completing the MCP handshake — surfaced only as "connection
+	// closed: EOF" from Discover, not an obviously env-related error.
+	port, portErr := corePort(reqCtx)
+	if portErr != nil {
+		reqCtx.GetDI().GetLogger().Warning("tool %q declared mcp support but its backend port could not be determined: %v", m.Slug, portErr)
+		return
+	}
+	envVars, err := manager.ToolEnvVars(resolvedDataDir(reqCtx), m.Slug, port, serviceToken)
+	if err != nil {
+		reqCtx.GetDI().GetLogger().Warning("tool %q declared mcp support but its env vars could not be resolved: %v", m.Slug, err)
+		return
+	}
+	// TOOL_OWN_PORT lets a tool's own --mcp subprocess reach its
+	// already-running HTTP-mode sibling directly (127.0.0.1-only,
+	// same host) — the mechanism a tool needing state to persist
+	// across separate --mcp invocations (e.g. browser's own shared
+	// session) relies on. Harmless, unused env var for every tool that
+	// doesn't need it, same as CORE_API_URL already is for a tool that
+	// never calls back into cinqo's own API. See
+	// plan/ai/tools/browser/step-02-shared-browser-session.md.
+	if port, ok := manager.Port(toolID); ok {
+		envVars = append(envVars, fmt.Sprintf("TOOL_OWN_PORT=%d", port))
+	}
+	mcpTools, err := tool_mcp.Discover(reqCtx.GetRequest().Context(), execPath, envVars)
+	if err != nil {
+		reqCtx.GetDI().GetLogger().Warning("tool %q declared mcp support but discovery failed: %v", m.Slug, err)
+		return
+	}
+	// MCP's own tools/list has no concept of a cinqo scope at all — the
+	// manifest's own mcp_tools mapping is the only source of truth for
+	// which scope gates each one. A discovered name with no matching
+	// manifest entry is dropped, not cached with an empty scope (which
+	// would make it callable by anyone) — logged so a manifest that
+	// forgot to declare a real tool is a visible, not silent, gap.
+	scopeByName := make(map[string]string, len(m.MCPTools))
+	mediaParamByName := make(map[string]string, len(m.MCPTools))
+	promoteMediaParamByName := make(map[string]string, len(m.MCPTools))
+	delegatesByName := make(map[string]*manifest.DelegatesDecl, len(m.MCPTools))
+	for _, mt := range m.MCPTools {
+		scopeByName[mt.Name] = mt.RequiredScope
+		mediaParamByName[mt.Name] = mt.MediaParam
+		promoteMediaParamByName[mt.Name] = mt.PromoteMediaParam
+		delegatesByName[mt.Name] = mt.Delegates
+	}
+	filtered := make([]tool_entity.ToolMCPTool, 0, len(mcpTools))
+	for _, mt := range mcpTools {
+		scope, declared := scopeByName[mt.Name]
+		if !declared {
+			reqCtx.GetDI().GetLogger().Warning("tool %q's mcp server declared a tool %q with no matching mcp_tools entry in its manifest — not cached", m.Slug, mt.Name)
+			continue
+		}
+		mt.ToolID = toolID
+		mt.RequiredScope = scope
+		mt.MediaParam = mediaParamByName[mt.Name]
+		mt.PromoteMediaParam = promoteMediaParamByName[mt.Name]
+		mt.DelegateAllowedTools = "[]"
+		if d := delegatesByName[mt.Name]; d != nil {
+			if encoded, err := json.Marshal(d.AllowedTools); err == nil {
+				mt.CanDelegate = true
+				mt.DelegateAllowedTools = string(encoded)
+			}
+		}
+		filtered = append(filtered, mt)
+	}
+
+	if err := tool_persistent.NewToolMCPToolPersistentRepo(db).ReplaceAll(toolID, filtered); err != nil {
+		reqCtx.GetDI().GetLogger().Warning("tool %q mcp discovery succeeded but caching its tools failed: %v", m.Slug, err)
+	}
+}
+
+// discoverEventListenersIfDeclared is a best-effort, non-fatal hook run
+// after a tool's install/update already succeeded — structurally
+// identical to discoverMCPToolsIfDeclared above, for the same reason: a
+// broken event_listeners declaration must never fail an otherwise-
+// successful install. Unlike MCP discovery, this needs no live spawn —
+// the manifest's own declared list IS the cached list, verbatim. See
+// plan/ai/domain-events/step-03-tool-listener-manifest-and-cache.md.
+func discoverEventListenersIfDeclared(reqCtx request.RequestContext, db *sql.DB, m manifest.Manifest, toolID string) {
+	if len(m.EventListeners) == 0 {
+		return
+	}
+	listeners := make([]tool_entity.ToolEventListener, 0, len(m.EventListeners))
+	for _, el := range m.EventListeners {
+		listeners = append(listeners, tool_entity.ToolEventListener{
+			ToolID:     toolID,
+			Topic:      el.Topic,
+			PathSuffix: el.PathSuffix,
+		})
+	}
+	if err := tool_persistent.NewToolEventListenerPersistentRepo(db).ReplaceAll(toolID, listeners); err != nil {
+		reqCtx.GetDI().GetLogger().Warning("tool %q declared event_listeners but caching them failed: %v", m.Slug, err)
+	}
+}
+
+// cacheDashboardWidgets stores the manifest's widgets[] for the Home dashboard.
+// Unlike the listeners above it always runs, even for an empty list, so a widget
+// dropped in an update disappears. Non-fatal for the same reason: a caching
+// failure must never fail an otherwise-successful install.
+func cacheDashboardWidgets(reqCtx request.RequestContext, db *sql.DB, m manifest.Manifest, toolID string) {
+	widgets := make([]tool_entity.ToolDashboardWidget, 0, len(m.Widgets))
+	for _, w := range m.Widgets {
+		def := manifest.WidgetDefinition(m.Slug, w)
+		version := w.SchemaVersion
+		if version == 0 {
+			version = 1
+		}
+		widgets = append(widgets, tool_entity.ToolDashboardWidget{
+			ToolID: toolID, Key: def.Key, Title: def.Title, Description: def.Description,
+			Kind: string(def.Kind), SchemaVersion: version, DataPath: w.DataPath,
+			Width: def.Size.W, Height: def.Size.H, RefreshSeconds: def.RefreshSeconds,
+		})
+	}
+	if err := tool_persistent.NewToolDashboardWidgetPersistentRepo(db).ReplaceAll(toolID, widgets); err != nil {
+		reqCtx.GetDI().GetLogger().Warning("tool %q declared widgets but caching them failed: %v", m.Slug, err)
+	}
+}
+
+// cacheCommentTypes stores the manifest's comments[] for the comments engine.
+// Like cacheDashboardWidgets it always runs, even for an empty list, so a type
+// dropped in an update stops accepting comments; non-fatal for the same reason.
+func cacheCommentTypes(reqCtx request.RequestContext, db *sql.DB, m manifest.Manifest, toolID string) {
+	types := make([]tool_entity.ToolCommentType, 0, len(m.Comments))
+	for _, c := range m.Comments {
+		types = append(types, tool_entity.ToolCommentType{
+			ToolID: toolID, EntityType: c.EntityType, ReadScope: c.ReadScope, WriteScope: c.WriteScope,
+		})
+	}
+	if err := tool_persistent.NewToolCommentTypePersistentRepo(db).ReplaceAll(toolID, types); err != nil {
+		reqCtx.GetDI().GetLogger().Warning("tool %q declared comments but caching them failed: %v", m.Slug, err)
+	}
+}
+
+// publishToolInstalledEvent is the Domain Events engine's own dogfood
+// integration (plan/ai/domain-events/step-01-core-event-bus.md): the
+// smallest possible real proof that domainevent.Publish/Subscribe work
+// end to end, before any later step builds on them. Deliberately fires
+// the same "cinqo.tool.installed" topic on BOTH the fresh-install and
+// the update code path — mirroring discoverMCPToolsIfDeclared's own
+// "run after either path already succeeded" placement — rather than a
+// separate "cinqo.tool.updated" topic, since this step's only goal is
+// proving the mechanism works, not designing a real event taxonomy.
+// Best-effort: Publish's own error (payload marshal failure only, in
+// this step) is logged, never fails the surrounding install/update
+// response.
+func publishToolInstalledEvent(reqCtx request.RequestContext, toolID, slug, version string) {
+	_, err := domainevent.Publish(reqCtx.GetRequest().Context(), "cinqo.tool.installed", map[string]any{
+		"tool_id": toolID,
+		"slug":    slug,
+		"version": version,
+	})
+	if err != nil {
+		reqCtx.GetDI().GetLogger().Warning("tool %q installed but publishing cinqo.tool.installed failed: %v", slug, err)
+	}
+}
+
+// generateServiceToken mints a tool's own persistent service_token — 32
+// random bytes, hex-encoded (64 characters). Generated once, at first
+// successful install, or as a one-time backfill on update for a tool
+// installed before this column existed; never regenerated otherwise.
+// See plan/ai/domain-events/step-05-tool-publish-endpoint.md.
+func generateServiceToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("generate service token: %w", err)
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// maxUploadedPackageBytes caps the raw upload before the multipart form
+// is even parsed — rejects an oversized request before it's fully
+// buffered in memory. Matches coco-mda's own cap.
+const maxUploadedPackageBytes = 200 * 1024 * 1024
+
+// InstallHandler handles POST /api/v1/tools/install — a multipart
+// upload, single field "package". See
+// plan/ai/tools/step-03-install-update-uninstall.md.
+func InstallHandler(reqCtx request.RequestContext) {
+	w := reqCtx.GetWriter()
+	r := reqCtx.GetRequest()
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadedPackageBytes)
+	if err := r.ParseMultipartForm(maxUploadedPackageBytes); err != nil {
+		response.ErrorResponse(w, http.StatusBadRequest, "invalid or oversized upload: "+err.Error())
+		return
+	}
+
+	file, _, err := r.FormFile("package")
+	if err != nil {
+		response.ErrorResponse(w, http.StatusBadRequest, `a "package" file is required`)
+		return
+	}
+	defer file.Close()
+
+	data, err := io.ReadAll(file)
+	if err != nil {
+		response.ErrorResponse(w, http.StatusBadRequest, "failed to read the uploaded package")
+		return
+	}
+
+	result, installErr := InstallPackage(reqCtx, data, nil)
+	if installErr != nil {
+		response.ErrorResponse(w, installErr.Status, installErr.Message)
+		return
+	}
+	status := http.StatusOK
+	if result.Created {
+		status = http.StatusCreated
+	}
+	response.SuccessResponse(w, status, result.Tool)
+}
+
+// InstallError is a failed install with the HTTP status it maps to.
+type InstallError struct {
+	Status  int
+	Message string
+}
+
+func (e *InstallError) Error() string { return e.Message }
+
+// InstallResult is a successful install: Created is true for a fresh install
+// and false for an update; Tool is the same JSON shape the list returns.
+type InstallResult struct {
+	Created bool
+	Tool    any
+}
+
+// PackageExpectation lets a caller that knows what it asked for (a repository
+// install) make sure the package really is that: the manifest's slug and
+// version must equal it.
+type PackageExpectation struct {
+	Slug    string
+	Version string
+	// Info is what the repository says about who made this version. When it states authors or a licence, the
+	// package's own manifest must say the same (a repository file of the older format states nothing, so it
+	// never disagrees). It catches a hand-edited repository file: it is not a security check, since the file
+	// and the package come from one publisher.
+	Info toolmeta.Info
+}
+
+// installMu serialises installs: an upload and a repository install of the
+// same tool must not swap its directory at the same time.
+var installMu sync.Mutex
+
+// InstallPackage runs the install/update pipeline on a tool package's zip
+// bytes — extract into a staging directory, validate the manifest, then a fresh
+// install or a strictly-newer update — shared by the upload route and the
+// repository install. expect is nil for an upload.
+func InstallPackage(reqCtx request.RequestContext, data []byte, expect *PackageExpectation) (*InstallResult, *InstallError) {
+	installMu.Lock()
+	defer installMu.Unlock()
+
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return nil, &InstallError{Status: http.StatusBadRequest, Message: "not a valid zip file"}
+	}
+
+	if err := os.MkdirAll(toolsRoot(reqCtx), 0o755); err != nil {
+		return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to prepare the tools directory"}
+	}
+
+	stagingDir := filepath.Join(toolsRoot(reqCtx), ".staging", uuid.NewString())
+	if err := os.MkdirAll(stagingDir, 0o755); err != nil {
+		return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to prepare a staging directory"}
+	}
+	// Unconditional cleanup — nothing staged ever leaks on a rejected
+	// upload, regardless of where the pipeline below fails.
+	defer os.RemoveAll(stagingDir)
+
+	if err := sandbox.ExtractZip(zr, stagingDir); err != nil {
+		return nil, &InstallError{Status: http.StatusBadRequest, Message: "package failed validation: " + err.Error()}
+	}
+
+	manifestBytes, err := os.ReadFile(filepath.Join(stagingDir, "manifest.json"))
+	if err != nil {
+		return nil, &InstallError{Status: http.StatusBadRequest, Message: "package is missing manifest.json"}
+	}
+	m, err := manifest.Parse(manifestBytes)
+	if err != nil {
+		return nil, &InstallError{Status: http.StatusBadRequest, Message: err.Error()}
+	}
+	if expect != nil && (m.Slug != expect.Slug || m.Version != expect.Version) {
+		return nil, &InstallError{Status: http.StatusBadRequest,
+			Message: fmt.Sprintf("the package is %s %s but the repository lists %s %s", m.Slug, m.Version, expect.Slug, expect.Version)}
+	}
+
+	if expect != nil {
+		if msg := toolmeta.Mismatch(expect.Info, m.Info); msg != "" {
+			return nil, &InstallError{Status: http.StatusBadRequest, Message: "the package's manifest disagrees with the repository: " + msg}
+		}
+	}
+
+	db := reqCtx.GetDI().GetDatabaseManager().Connector.DB
+	queryRepo := tool_query.NewToolQueryRepo(db)
+	persistentRepo := tool_persistent.NewToolPersistentRepo(db)
+
+	existing, findErr := queryRepo.FindBySlug(m.Slug)
+	found := findErr == nil
+	if findErr != nil && !errors.Is(findErr, sql.ErrNoRows) {
+		return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to check for an existing tool"}
+	}
+
+	excludeID := ""
+	if found {
+		excludeID = existing.ID
+	}
+	existingScopes, err := queryRepo.ExistingScopesExcludingTool(excludeID)
+	if err != nil {
+		return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to check for scope conflicts"}
+	}
+
+	installedTools, err := installedToolsMap(queryRepo)
+	if err != nil {
+		return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to check installed tool dependencies"}
+	}
+
+	_, frontendErr := os.Stat(filepath.Join(stagingDir, frontendBundleFilename))
+	_, backendErr := os.Stat(filepath.Join(stagingDir, backendExecutableFilename))
+
+	currentAppVersion, err := appVersion(reqCtx)
+	if err != nil {
+		return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to determine the running app version"}
+	}
+
+	kind, err := manifest.Validate(m, manifest.ValidationInput{
+		HasFrontendBundle:    frontendErr == nil,
+		HasBackendExecutable: backendErr == nil,
+		ExistingScopes:       existingScopes,
+		CurrentAppVersion:    currentAppVersion,
+		InstalledTools:       installedTools,
+	})
+	if err != nil {
+		return nil, &InstallError{Status: http.StatusBadRequest, Message: err.Error()}
+	}
+
+	// who made it, as this package declares it (already validated): kept with the tool, whatever a repository
+	// claimed about it
+	metadata, err := toolmeta.Encode(m.Info)
+	if err != nil {
+		return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to record who made the tool"}
+	}
+
+	scopes, routes, required, requiredTools := childRowsFromManifest(m)
+	finalDir := filepath.Join(toolsRoot(reqCtx), m.Slug)
+
+	if !found {
+		tool := &tool_entity.Tool{
+			ID:       uuid.NewString(),
+			Slug:     m.Slug,
+			Name:     m.Name,
+			Version:  m.Version,
+			Kind:     kind,
+			Enabled:  true, // auto-activates, matching the reference
+			Status:   "installed",
+			Metadata: metadata,
+		}
+		if backendErr == nil {
+			tool.BackendExecutableRelpath = backendExecutableFilename
+		}
+		if frontendErr == nil {
+			tool.FrontendBundleRelpath = frontendBundleFilename
+		}
+		tool.MinAppVersion = m.MinAppVersion
+		tool.MaxAppVersion = m.MaxAppVersion
+
+		serviceToken, err := generateServiceToken()
+		if err != nil {
+			return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to generate tool service token"}
+		}
+		tool.ServiceToken = serviceToken
+
+		if err := os.Rename(stagingDir, finalDir); err != nil {
+			return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to install package: " + err.Error()}
+		}
+		tool.InstallPath = finalDir
+
+		if err := chmodBackendExecutableIfPresent(finalDir); err != nil {
+			os.RemoveAll(finalDir)
+			return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to finalize install: " + err.Error()}
+		}
+
+		if err := persistentRepo.InsertFresh(tool, scopes, routes, required); err != nil {
+			// DB insert failed after the directory was already moved —
+			// undo the move so a retry isn't blocked by an orphaned
+			// directory with no matching row.
+			os.RemoveAll(finalDir)
+			return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to record installed tool: " + err.Error()}
+		}
+		if err := tool_persistent.NewToolRequiredToolPersistentRepo(db).ReplaceAll(tool.ID, requiredTools); err != nil {
+			os.RemoveAll(finalDir)
+			return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to record tool dependencies: " + err.Error()}
+		}
+
+		// Best-effort start, matching the reference: a start failure
+		// leaves status "error" (recorded by manager.Start itself),
+		// doesn't fail the 201 — the tool is still successfully
+		// installed, just not currently running.
+		if port, portErr := corePort(reqCtx); portErr == nil {
+			if startErr := manager.Start(db, resolvedDataDir(reqCtx), *tool, port); startErr != nil {
+				reqCtx.GetDI().GetLogger().Warning("tool %q installed but failed to start: %v", tool.Slug, startErr)
+			}
+		} else {
+			reqCtx.GetDI().GetLogger().Warning("tool %q installed but could not determine backend port to start it: %v", tool.Slug, portErr)
+		}
+
+		discoverMCPToolsIfDeclared(reqCtx, db, m, finalDir, tool.ID, tool.ServiceToken)
+		discoverEventListenersIfDeclared(reqCtx, db, m, tool.ID)
+		cacheDashboardWidgets(reqCtx, db, m, tool.ID)
+		cacheCommentTypes(reqCtx, db, m, tool.ID)
+		publishToolInstalledEvent(reqCtx, tool.ID, tool.Slug, tool.Version)
+
+		created, err := queryRepo.FindByID(tool.ID)
+		if err != nil {
+			return nil, &InstallError{Status: http.StatusInternalServerError, Message: "tool installed but failed to reload"}
+		}
+		mcpTools, err := mcpToolNamesFor(db, created.ID)
+		if err != nil {
+			return nil, &InstallError{Status: http.StatusInternalServerError, Message: "tool installed but failed to load functions"}
+		}
+		return &InstallResult{Created: true, Tool: toToolResponse(created, systemToolsConfigFrom(reqCtx), mcpTools)}, nil
+	}
+
+	// Update path: same slug, must be a strictly newer version.
+	cmp, err := manifest.CompareVersions(m.Version, existing.Version)
+	if err != nil {
+		return nil, &InstallError{Status: http.StatusBadRequest, Message: err.Error()}
+	}
+	if cmp <= 0 {
+		return nil, &InstallError{Status: http.StatusBadRequest,
+			Message: "version must be greater than the currently installed version (" + existing.Version + ")"}
+	}
+
+	// Stop the tool's currently running backend before swapping its
+	// code directory — can't safely replace a binary a process may
+	// still hold open, and a clean stop/restart is simpler to reason
+	// about than a live swap.
+	if err := manager.Stop(db, existing.ID); err != nil {
+		return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to stop the running tool before updating: " + err.Error()}
+	}
+
+	if err := replaceInstallDir(stagingDir, finalDir); err != nil {
+		return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to update package: " + err.Error()}
+	}
+
+	if err := chmodBackendExecutableIfPresent(finalDir); err != nil {
+		return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to finalize update: " + err.Error()}
+	}
+
+	updated := &tool_entity.Tool{
+		ID:          existing.ID,
+		Slug:        existing.Slug,
+		Name:        m.Name,
+		Version:     m.Version,
+		Kind:        kind,
+		Enabled:     existing.Enabled, // preserved — an update doesn't silently turn a disabled tool on
+		Status:      "installed",
+		InstallPath: finalDir,
+		Metadata:    metadata,
+	}
+	if backendErr == nil {
+		updated.BackendExecutableRelpath = backendExecutableFilename
+	}
+	if frontendErr == nil {
+		updated.FrontendBundleRelpath = frontendBundleFilename
+	}
+	updated.MinAppVersion = m.MinAppVersion
+	updated.MaxAppVersion = m.MaxAppVersion
+
+	// Preserve the tool's own already-issued service_token across an
+	// update (never silently invalidated) — but backfill it if this
+	// tool was installed before this token existed at all (existing
+	// rows default to '', per the migration). Every tool ends up with
+	// one eventually, regardless of whether it actually uses
+	// event_listeners/publishing. See
+	// plan/ai/domain-events/step-05-tool-publish-endpoint.md.
+	if existing.ServiceToken != "" {
+		updated.ServiceToken = existing.ServiceToken
+	} else {
+		serviceToken, err := generateServiceToken()
+		if err != nil {
+			return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to generate tool service token"}
+		}
+		updated.ServiceToken = serviceToken
+	}
+
+	if err := persistentRepo.UpdateVersion(updated, scopes, routes, required); err != nil {
+		return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to record updated tool: " + err.Error()}
+	}
+	if err := tool_persistent.NewToolRequiredToolPersistentRepo(db).ReplaceAll(updated.ID, requiredTools); err != nil {
+		return nil, &InstallError{Status: http.StatusInternalServerError, Message: "failed to record tool dependencies: " + err.Error()}
+	}
+
+	// Restart on the new code only if it was enabled before — an
+	// update never silently turns a disabled tool on.
+	if updated.Enabled {
+		if port, portErr := corePort(reqCtx); portErr == nil {
+			if startErr := manager.Start(db, resolvedDataDir(reqCtx), *updated, port); startErr != nil {
+				reqCtx.GetDI().GetLogger().Warning("tool %q updated but failed to restart: %v", updated.Slug, startErr)
+			}
+		} else {
+			reqCtx.GetDI().GetLogger().Warning("tool %q updated but could not determine backend port to restart it: %v", updated.Slug, portErr)
+		}
+	}
+
+	// Unconditional — not gated on updated.Enabled, unlike the restart
+	// above: MCP discovery spawns its own independent --mcp-mode
+	// process regardless of the HTTP surface's enabled state.
+	discoverMCPToolsIfDeclared(reqCtx, db, m, finalDir, updated.ID, updated.ServiceToken)
+	discoverEventListenersIfDeclared(reqCtx, db, m, updated.ID)
+	cacheDashboardWidgets(reqCtx, db, m, updated.ID)
+	cacheCommentTypes(reqCtx, db, m, updated.ID)
+	publishToolInstalledEvent(reqCtx, updated.ID, updated.Slug, updated.Version)
+
+	reloaded, err := queryRepo.FindByID(updated.ID)
+	if err != nil {
+		return nil, &InstallError{Status: http.StatusInternalServerError, Message: "tool updated but failed to reload"}
+	}
+	mcpTools, err := mcpToolNamesFor(db, reloaded.ID)
+	if err != nil {
+		return nil, &InstallError{Status: http.StatusInternalServerError, Message: "tool updated but failed to load functions"}
+	}
+	return &InstallResult{Created: false, Tool: toToolResponse(reloaded, systemToolsConfigFrom(reqCtx), mcpTools)}, nil
+}
+
+func childRowsFromManifest(m manifest.Manifest) ([]tool_entity.ToolScope, []tool_entity.ToolRoute, []tool_entity.ToolRequiredScope, []tool_entity.ToolRequiredTool) {
+	scopes := make([]tool_entity.ToolScope, 0, len(m.Scopes))
+	for _, s := range m.Scopes {
+		scopes = append(scopes, tool_entity.ToolScope{Scope: s.Scope, Description: s.Description})
+	}
+	routes := make([]tool_entity.ToolRoute, 0, len(m.Routes))
+	for _, rt := range m.Routes {
+		routes = append(routes, tool_entity.ToolRoute{Method: rt.Method, PathSuffix: rt.PathSuffix, RequiredScope: rt.RequiredScope, AllowCapabilityToken: rt.AllowCapabilityToken})
+	}
+	required := make([]tool_entity.ToolRequiredScope, 0, len(m.RequiredScopes))
+	for _, s := range m.RequiredScopes {
+		required = append(required, tool_entity.ToolRequiredScope{Scope: s})
+	}
+	requiredTools := make([]tool_entity.ToolRequiredTool, 0, len(m.RequiresTools))
+	for _, rt := range m.RequiresTools {
+		requiredTools = append(requiredTools, tool_entity.ToolRequiredTool{RequiredSlug: rt.Slug, MinVersion: rt.MinVersion})
+	}
+	return scopes, routes, required, requiredTools
+}
+
+// installedToolsMap builds manifest.ValidationInput's own
+// InstalledTools lookup from every currently-installed tool — the
+// same "convert tool_entity rows into the DB-free shape manifest.go
+// itself needs" pattern ExistingScopesExcludingTool's own caller-side
+// map-building already established for scopes. See
+// plan/ai/tools/step-14-tool-dependencies.md.
+func installedToolsMap(queryRepo *tool_query.ToolQueryRepo) (map[string]manifest.InstalledToolInfo, error) {
+	all, err := queryRepo.List()
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]manifest.InstalledToolInfo, len(all))
+	for _, t := range all {
+		out[t.Slug] = manifest.InstalledToolInfo{Version: t.Version, Enabled: t.Enabled}
+	}
+	return out, nil
+}
+
+// replaceInstallDir swaps finalDir for stagingDir's contents, keeping a
+// ".prev" backup during the swap so a mid-failure doesn't leave the
+// tool with no code directory at all — matches the reference's own
+// update-path safety exactly. If the second rename fails, it
+// best-effort restores ".prev" back to finalDir.
+func replaceInstallDir(stagingDir, finalDir string) error {
+	prevDir := finalDir + ".prev"
+	_ = os.RemoveAll(prevDir) // clear any leftover from a previously failed update
+
+	if err := os.Rename(finalDir, prevDir); err != nil {
+		return err
+	}
+
+	if err := os.Rename(stagingDir, finalDir); err != nil {
+		_ = os.Rename(prevDir, finalDir) // best-effort restore
+		return err
+	}
+
+	_ = os.RemoveAll(prevDir)
+	return nil
+}

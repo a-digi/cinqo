@@ -1,0 +1,560 @@
+// main.tsx is the Career tool's own frontend entry point. Same
+// runtime contract browser's own step 15 established: React only for
+// the build, one self-contained tools/career/frontend/bundle.js, the
+// host provides window.__cinqoToolBridge. See
+// plan/ai/tools/career/step-05-react-tailwind-frontend.md.
+//
+// Step 7 split Skills and Experience out of Profile into their own
+// pages/routes/menu children. Step 9 added Personas. Step 11 added
+// Profiles — since nothing else (Personas, and everything under a
+// Persona) can be used without one existing first (step 10's own
+// "forced to be mapped to an existing Profile") — and renamed what
+// used to be called "Profile" to "Persona Details", matching the
+// backend's own step 10 rename. Step 12 nested Personas/Persona
+// Details/Skills/Experience under Profiles itself (Profiles keeps its
+// own path — the host's own SidebarMenuItem renders a path and
+// children independently — while gaining a caret to expand/collapse
+// the four of them); Jobs stays a flat sibling of Profiles, not
+// nested, since it's tool-wide rather than persona-scoped. See
+// plan/ai/tools/career/step-07-dedicated-skills-and-experience-pages.md,
+// plan/ai/tools/career/step-09-persona-frontend.md,
+// plan/ai/tools/career/step-10-job-seeker-profile.md,
+// plan/ai/tools/career/step-11-job-seeker-profile-frontend.md, and
+// plan/ai/tools/career/step-12-nested-profiles-menu.md.
+import { GoalsPage } from './Components/GoalsPage/GoalsPage'
+import { EducationEntryPage } from './Components/EducationPage/EducationEntryPage'
+import { EducationPage } from './Components/EducationPage/EducationPage'
+import { runFollower } from './Crawler/runFollowerStart'
+import { createRoot, type Root } from 'react-dom/client'
+import { ProfilesPage } from './Components/ProfilesPage/ProfilesPage'
+import { NewProfilePage } from './Components/ProfilesPage/NewProfilePage'
+import { ProfileViewPage } from './Components/ProfilesPage/ProfileViewPage'
+import { PersonaViewPage } from './Components/Persona/PersonaViewPage/PersonaViewPage'
+import { PersonasListPage } from './Components/Persona/PersonasPage/PersonasListPage'
+import { PersonasPage } from './Components/Persona/PersonasPage/PersonasPage'
+import { NewPersonaPage } from './Components/Persona/PersonasPage/NewPersonaPage'
+import { PersonaDetailsPage } from './Components/Persona/PersonaDetailsPage/PersonaDetailsPage'
+import { PersonaDetailsListPage } from './Components/Persona/PersonaDetailsPage/PersonaDetailsListPage'
+import { SkillsPage } from './Components/SkillsPage/SkillsPage'
+import { PersonaSkillsPage } from './Components/SkillsPage/PersonaSkillsPage'
+import { ExperiencePage } from './Components/ExperiencePage/ExperiencePage'
+import { PersonaExperiencePage } from './Components/ExperiencePage/PersonaExperiencePage'
+import { ExperienceEntryPage } from './Components/ExperiencePage/ExperienceEntryPage'
+import { ProfileImagePage } from './Components/ProfileImage/ProfileImagePage'
+import { ProfileImageListPage } from './Components/ProfileImage/ProfileImageListPage'
+import { CvDocumentsPage } from './Components/CvBuilder/CvDocumentsPage'
+import { CvDocumentsListPage } from './Components/CvBuilder/CvDocumentsListPage'
+import { CvBuilderPage } from './Components/CvBuilder/CvBuilderPage'
+import { JobsPage } from './Components/JobsPage/JobsPage'
+import { ApplicationsPage } from './Components/Applications/ApplicationsPage'
+import { JobBoardPage } from './Components/JobBoard/JobBoardPage'
+import { ProfileSettingsPage } from './Components/ProfileSettings/ProfileSettingsPage'
+import { JobDetailsPage } from './Components/JobDetails/JobDetailsPage'
+import { CompaniesPage } from './Components/CompaniesPage/CompaniesPage'
+import { RecruitersPage } from './Components/RecruitersPage/RecruitersPage'
+import { CompanyViewPage } from './Components/CompaniesPage/CompanyViewPage'
+import { RecruiterViewPage } from './Components/RecruitersPage/RecruiterViewPage'
+import { NewCompanyPage } from './Components/CompaniesPage/NewCompanyPage'
+import { NewRecruiterPage } from './Components/RecruitersPage/NewRecruiterPage'
+import { PortalsPage } from './Components/PortalsPage/PortalsPage'
+import { PortalViewPage } from './Components/PortalsPage/PortalViewPage'
+import { CrawlMonitorPage } from './Crawler/CrawlMonitor/CrawlMonitorPage'
+import { CleanupSettingsPage } from './Components/SettingsPage/CleanupSettingsPage'
+import { CrawlerSettingsPage } from './Components/SettingsPage/CrawlerSettingsPage'
+import { SettingsPage } from './Components/SettingsPage/SettingsPage'
+import { ImportRunPage } from './Components/ImportCv/ImportRunPage'
+import { ImportCvPage } from './Components/ImportCv/ImportCvPage'
+import { GuidePage } from './Components/Guide/GuidePage'
+import { QuestionsPage } from './Components/Guide/QuestionsPage'
+import { CONTACTS, FINDING_JOBS, GETTING_STARTED, PROFILE_AND_CV } from './Components/Guide/guideData'
+import './index.css'
+import { careerMenuEntry } from './menu'
+import {
+  IMPORT_CV_PATH,
+  IMPORT_CV_RUN_PATH,
+  PROFILES_PATH,
+  PERSONAS_PATH,
+  PERSONAS_PROFILE_PATH,
+  GOALS_PATH,
+  PERSONA_DETAILS_PATH,
+  PERSONA_DETAILS_ONE_PATH,
+  SKILLS_PATH,
+  SKILL_PERSONA_PATH,
+  EXPERIENCE_PATH,
+  EXPERIENCE_PERSONA_PATH,
+  PROFILE_IMAGE_PATH,
+  PROFILE_IMAGE_PROFILE_PATH,
+  CV_DOCUMENTS_PATH,
+  CV_DOCUMENTS_PERSONA_PATH,
+  CV_BUILDER_PATH,
+  CV_BUILDER_PERSONA_PATH,
+  JOBS_PATH,
+  APPLICATIONS_PATH,
+  JOB_BOARD_PROFILE_PATH,
+  PROFILE_SETTINGS_PROFILE_PATH,
+  JOB_DETAILS_PATH,
+  COMPANIES_PATH,
+  RECRUITERS_PATH,
+  NEW_COMPANY_PATH,
+  NEW_PROFILE_PATH,
+  NEW_PERSONA_PATH,
+  EXPERIENCE_ENTRY_PATH,
+  EDUCATION_PATH,
+  EDUCATION_ENTRY_PATH,
+  VIEW_COMPANY_PATH,
+  VIEW_RECRUITER_PATH,
+  VIEW_PROFILE_PATH,
+  VIEW_PERSONA_PATH,
+  VIEW_PERSONA_ID_PATH,
+  viewPersonaPathFor,
+  NEW_RECRUITER_PATH,
+  CLEANUP_SETTINGS_PATH,
+  CRAWLER_SETTINGS_PATH,
+  SETTINGS_PATH,
+  LEGACY_PORTALS_PATH,
+  LEGACY_VIEW_PORTAL_PATH,
+  PLATFORMS_PATH,
+  VIEW_PLATFORM_PATH,
+  CRAWL_MONITOR_PATH,
+  GUIDE_PATH,
+  GUIDE_PROFILE_PATH,
+  GUIDE_JOBS_PATH,
+  GUIDE_CONTACTS_PATH,
+  FAQ_PATH,
+} from './paths'
+
+window.__cinqoToolBridge.registerMenuEntry(careerMenuEntry)
+
+// Plan 163, step 4: the follow-up of instruction runs and the crawl flags no longer wait for a page (see Crawler/runFollower.ts).
+runFollower.start()
+
+const roots = new WeakMap<HTMLElement, Root>()
+
+function mountReact(container: HTMLElement, node: React.ReactNode) {
+  const root = createRoot(container)
+  roots.set(container, root)
+  root.render(node)
+}
+
+function unmountReact(container: HTMLElement) {
+  roots.get(container)?.unmount()
+  roots.delete(container)
+}
+
+window.__cinqoToolBridge.registerRoute({
+  path: IMPORT_CV_PATH,
+  mount: (container) => {
+    mountReact(container, <ImportCvPage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: IMPORT_CV_RUN_PATH,
+  mount: (container, params) => {
+    mountReact(container, <ImportRunPage runId={params.runId} />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: PROFILES_PATH,
+  mount: (container) => {
+    mountReact(container, <ProfilesPage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: PERSONAS_PROFILE_PATH,
+  mount: (container, params) => {
+    mountReact(container, <PersonasPage profileId={params.profileId} />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: APPLICATIONS_PATH,
+  mount: (container) => {
+    mountReact(container, <ApplicationsPage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: JOB_BOARD_PROFILE_PATH,
+  mount: (container, params) => {
+    mountReact(container, <JobBoardPage profileId={params.profileId} />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: PROFILE_SETTINGS_PROFILE_PATH,
+  mount: (container, params) => {
+    mountReact(container, <ProfileSettingsPage profileId={params.profileId} />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: PERSONAS_PATH,
+  mount: (container) => {
+    mountReact(container, <PersonasListPage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: PERSONA_DETAILS_ONE_PATH,
+  mount: (container, params) => {
+    mountReact(container, <PersonaDetailsPage personaId={params.personaId} />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: GOALS_PATH,
+  mount: (container) => {
+    mountReact(container, <GoalsPage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: PERSONA_DETAILS_PATH,
+  mount: (container) => {
+    mountReact(container, <PersonaDetailsListPage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: SKILL_PERSONA_PATH,
+  mount: (container, params) => {
+    mountReact(container, <PersonaSkillsPage personaId={params.personaId} />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: SKILLS_PATH,
+  mount: (container) => {
+    mountReact(container, <SkillsPage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: EXPERIENCE_PERSONA_PATH,
+  mount: (container, params) => {
+    mountReact(container, <PersonaExperiencePage personaId={params.personaId} />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: EXPERIENCE_PATH,
+  mount: (container) => {
+    mountReact(container, <ExperiencePage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: PROFILE_IMAGE_PROFILE_PATH,
+  mount: (container, params) => {
+    mountReact(container, <ProfileImagePage profileId={params.profileId} />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: PROFILE_IMAGE_PATH,
+  mount: (container) => {
+    mountReact(container, <ProfileImageListPage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: CV_DOCUMENTS_PERSONA_PATH,
+  mount: (container, params) => {
+    mountReact(container, <CvDocumentsPage personaId={params.personaId} />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: CV_DOCUMENTS_PATH,
+  mount: (container) => {
+    mountReact(container, <CvDocumentsListPage />)
+  },
+  unmount: unmountReact,
+})
+
+// No menu entry — reached only via CvDocumentsPage's own "+ New CV"
+// (?personaId=) and "Edit" (?id=) actions, same "reachable, but
+// menu-less" convention JOB_DETAILS_PATH already established.
+window.__cinqoToolBridge.registerRoute({
+  path: CV_BUILDER_PERSONA_PATH,
+  mount: (container, params) => {
+    mountReact(container, <CvBuilderPage personaIdFromPath={params.personaId} />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: CV_BUILDER_PATH,
+  mount: (container) => {
+    mountReact(container, <CvBuilderPage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: JOBS_PATH,
+  mount: (container) => {
+    mountReact(container, <JobsPage />)
+  },
+  unmount: unmountReact,
+})
+
+// No menu entry — reached only via JobsPage's own Eye icon, same
+// "filtered/detail destination with no sidebar item of its own"
+// convention CompaniesPage's "N linked jobs" link already established
+// for Jobs itself.
+window.__cinqoToolBridge.registerRoute({
+  path: JOB_DETAILS_PATH,
+  mount: (container) => {
+    mountReact(container, <JobDetailsPage />)
+  },
+  unmount: unmountReact,
+})
+
+// No menu entry — reached only via the lists' own "New company" / "New recruiter"
+// buttons, same "reachable, but menu-less" convention JOB_DETAILS_PATH has.
+window.__cinqoToolBridge.registerRoute({
+  path: EDUCATION_PATH,
+  mount: (container) => {
+    mountReact(container, <EducationPage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: EDUCATION_ENTRY_PATH,
+  mount: (container) => {
+    mountReact(container, <EducationEntryPage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: EXPERIENCE_ENTRY_PATH,
+  mount: (container) => {
+    mountReact(container, <ExperienceEntryPage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: NEW_PERSONA_PATH,
+  mount: (container) => {
+    mountReact(container, <NewPersonaPage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: NEW_PROFILE_PATH,
+  mount: (container) => {
+    mountReact(container, <NewProfilePage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: VIEW_PERSONA_ID_PATH,
+  mount: (container, params) => {
+    mountReact(container, <PersonaViewPage personaId={params.personaId} />)
+  },
+  unmount: unmountReact,
+})
+
+// The earlier address of the same page (?id=): sent on to the new one.
+window.__cinqoToolBridge.registerRoute({
+  path: VIEW_PERSONA_PATH,
+  mount: (container) => {
+    const id = new URLSearchParams(window.location.search).get('id')
+    if (id) window.__cinqoToolBridge.navigate(viewPersonaPathFor(id))
+    else container.textContent = 'Persona not found'
+  },
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: VIEW_PROFILE_PATH,
+  mount: (container) => {
+    mountReact(container, <ProfileViewPage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: VIEW_COMPANY_PATH,
+  mount: (container) => {
+    mountReact(container, <CompanyViewPage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: VIEW_RECRUITER_PATH,
+  mount: (container) => {
+    mountReact(container, <RecruiterViewPage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: NEW_COMPANY_PATH,
+  mount: (container) => {
+    mountReact(container, <NewCompanyPage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: NEW_RECRUITER_PATH,
+  mount: (container) => {
+    mountReact(container, <NewRecruiterPage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: COMPANIES_PATH,
+  mount: (container) => {
+    mountReact(container, <CompaniesPage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: RECRUITERS_PATH,
+  mount: (container) => {
+    mountReact(container, <RecruitersPage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: PLATFORMS_PATH,
+  mount: (container) => {
+    mountReact(container, <PortalsPage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: VIEW_PLATFORM_PATH,
+  mount: (container) => {
+    mountReact(container, <PortalViewPage />)
+  },
+  unmount: unmountReact,
+})
+
+// The earlier addresses (they said portals): sent on to the new ones, the id kept. The old address is first replaced
+// in the browser's history (the bridge can only push), so the Back button does not land on it and forward again.
+function forwardTo(path: string): void {
+  window.history.replaceState(window.history.state, '', path)
+  window.__cinqoToolBridge.navigate(path)
+}
+
+window.__cinqoToolBridge.registerRoute({
+  path: LEGACY_PORTALS_PATH,
+  mount: () => {
+    forwardTo(PLATFORMS_PATH)
+  },
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: LEGACY_VIEW_PORTAL_PATH,
+  mount: (container) => {
+    const id = new URLSearchParams(window.location.search).get('id')
+    if (id) forwardTo(`${VIEW_PLATFORM_PATH}?id=${encodeURIComponent(id)}`)
+    else container.textContent = 'Platform not found'
+  },
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: CRAWL_MONITOR_PATH,
+  mount: (container) => {
+    mountReact(container, <CrawlMonitorPage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: SETTINGS_PATH,
+  mount: (container) => {
+    mountReact(container, <SettingsPage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: CLEANUP_SETTINGS_PATH,
+  mount: (container) => {
+    mountReact(container, <CleanupSettingsPage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: CRAWLER_SETTINGS_PATH,
+  mount: (container) => {
+    mountReact(container, <CrawlerSettingsPage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: GUIDE_PATH,
+  mount: (container) => {
+    mountReact(container, <GuidePage guide={GETTING_STARTED} />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: GUIDE_PROFILE_PATH,
+  mount: (container) => {
+    mountReact(container, <GuidePage guide={PROFILE_AND_CV} />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: GUIDE_JOBS_PATH,
+  mount: (container) => {
+    mountReact(container, <GuidePage guide={FINDING_JOBS} />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: GUIDE_CONTACTS_PATH,
+  mount: (container) => {
+    mountReact(container, <GuidePage guide={CONTACTS} />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: FAQ_PATH,
+  mount: (container) => {
+    mountReact(container, <QuestionsPage />)
+  },
+  unmount: unmountReact,
+})

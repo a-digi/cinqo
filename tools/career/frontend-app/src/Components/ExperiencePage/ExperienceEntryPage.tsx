@@ -1,0 +1,251 @@
+import { useEffect, useState } from 'react'
+import {
+  addExperience,
+  addProfileExperience,
+  fetchExperience,
+  fetchPersonas,
+  fetchProfileExperience,
+  fetchProfiles,
+  updateExperience,
+  updateProfileExperience,
+} from '../../api'
+import { PlusIcon, TimelineIcon } from '../../Shared/Icons/icons'
+import { inputClass } from '../../Shared/inputClass'
+import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
+import { EXPERIENCE_PATH, experiencePathFor } from '../../paths'
+import { buildProfileSearch } from '../ProfileLibrary/libraryRules'
+import { profileLabel } from '../ProfileSwitcher/profileLabel'
+import { Field } from '../Field/Field'
+import { PAGE_ACCENT } from '../JobsPage/jobsTheme'
+import { getPersonaIdFromLocalStorage, setPersonaIdInLocalStorage } from '../Persona/PersonaSwitcher/repositoryLocalStorage'
+
+const emptyEntry = { company: '', title: '', startDate: '', endDate: '', description: '' }
+
+// The page behind "Add experience" and each entry's "Edit": ?profileId= says an entry of the profile's library (plan 173), else
+// ?personaId= says an entry of that persona's own (else the remembered persona); ?id= says which entry to edit (none = add). The
+// profile or persona cannot be changed here. Menu-less, like the other create pages.
+export function ExperienceEntryPage() {
+  const params = new URLSearchParams(window.location.search)
+  const entryId = params.get('id') ?? ''
+  // Library mode: the entry belongs to the profile, not to a persona.
+  const libraryProfileId = params.get('profileId') ?? ''
+  const [personaId, setPersonaId] = useState('')
+  const [personaName, setPersonaName] = useState('')
+  const [form, setForm] = useState(emptyEntry)
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+  const [isLoaded, setIsLoaded] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+
+  useEffect(() => {
+    if (libraryProfileId !== '') {
+      fetchProfiles()
+        .then(async (profiles) => {
+          const profile = profiles.find((p) => p.id === libraryProfileId)
+          if (!profile) {
+            setMessage('That profile was not found.')
+            return
+          }
+          setPersonaName(profileLabel(profile))
+          if (entryId) {
+            const entry = (await fetchProfileExperience(profile.id)).find((e) => e.id === entryId)
+            if (!entry) {
+              setMessage('That experience entry was not found.')
+              return
+            }
+            setForm({
+              company: entry.company,
+              title: entry.title,
+              startDate: entry.startDate ?? '',
+              endDate: entry.endDate ?? '',
+              description: entry.description ?? '',
+            })
+          }
+        })
+        .catch((err: unknown) => {
+          setError(err instanceof Error ? err.message : String(err))
+        })
+        .finally(() => {
+          setIsLoaded(true)
+        })
+      return
+    }
+    const wanted = params.get('personaId') ?? getPersonaIdFromLocalStorage() ?? ''
+    fetchPersonas()
+      .then(async (personas) => {
+        const persona = personas.find((p) => p.id === wanted)
+        if (!persona) {
+          setMessage(personas.length === 0 ? 'There are no personas yet.' : 'That persona was not found.')
+          return
+        }
+        setPersonaId(persona.id)
+        setPersonaName(persona.name)
+        if (entryId) {
+          const entry = (await fetchExperience(persona.id)).find((e) => e.id === entryId)
+          if (!entry) {
+            setMessage('That experience entry was not found.')
+            return
+          }
+          setForm({
+            company: entry.company,
+            title: entry.title,
+            startDate: entry.startDate,
+            endDate: entry.endDate,
+            description: entry.description,
+          })
+        }
+      })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err))
+      })
+      .finally(() => {
+        setIsLoaded(true)
+      })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Back to the library page of the profile, or to the persona's own experience page (the list when the persona is not known).
+  const backPath =
+    libraryProfileId !== ''
+      ? `${EXPERIENCE_PATH}${buildProfileSearch(libraryProfileId)}`
+      : personaId
+        ? experiencePathFor(personaId)
+        : EXPERIENCE_PATH
+  function backToList() {
+    window.__cinqoToolBridge.navigate(backPath)
+  }
+
+  function handleSave() {
+    if (!form.company.trim() || !form.title.trim()) {
+      setError('Company and title are both required')
+      return
+    }
+    setError('')
+    setIsSaving(true)
+    const saved =
+      libraryProfileId !== ''
+        ? entryId
+          ? updateProfileExperience(entryId, form)
+          : addProfileExperience(libraryProfileId, form)
+        : entryId
+          ? updateExperience(personaId, { id: entryId, ...form })
+          : addExperience(personaId, form)
+    saved
+      .then(() => {
+        // The list shows the remembered persona, so it opens on the one just changed.
+        if (libraryProfileId === '') setPersonaIdInLocalStorage(personaId)
+        backToList()
+      })
+      .catch((err: unknown) => {
+        setIsSaving(false)
+        setError(err instanceof Error ? err.message : String(err))
+      })
+  }
+
+  return (
+    <div className="career-v-zoom career-a-float career-t-type max-w-3xl p-6 font-sans text-gray-900">
+      <PageHeaderCard
+        icon={<TimelineIcon />}
+        title={entryId ? 'Edit experience' : 'Add experience'}
+        description={
+          libraryProfileId !== ''
+            ? personaName
+              ? `A job or role in the library of ${personaName}, which its personas can use.`
+              : 'A job or role in the library of a profile.'
+            : personaName
+              ? `A job or role on the persona “${personaName}”.`
+              : 'A job or role on a persona.'
+        }
+      />
+      {!isLoaded ? (
+        <p className="text-sm text-gray-500">Loading…</p>
+      ) : message ? (
+        <div
+          className="rounded-3xl border p-6 text-sm text-gray-700"
+          style={{ borderColor: PAGE_ACCENT.soft, background: PAGE_ACCENT.soft }}
+        >
+          {message}{' '}
+          <a
+            href={backPath}
+            onClick={(e) => {
+              e.preventDefault()
+              backToList()
+            }}
+            className="font-medium underline"
+          >
+            Back to experience
+          </a>
+        </div>
+      ) : (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            handleSave()
+          }}
+          className="career-enter career-delay-1 rounded-3xl border p-5 shadow-sm"
+          style={{ borderColor: PAGE_ACCENT.soft, background: `linear-gradient(160deg, #ffffff 45%, ${PAGE_ACCENT.soft} 100%)` }}
+        >
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Field
+              label="Company"
+              value={form.company}
+              onChange={(v) => {
+                setForm({ ...form, company: v })
+              }}
+            />
+            <Field
+              label="Title"
+              value={form.title}
+              onChange={(v) => {
+                setForm({ ...form, title: v })
+              }}
+            />
+            <Field
+              label="Start date"
+              value={form.startDate}
+              onChange={(v) => {
+                setForm({ ...form, startDate: v })
+              }}
+            />
+            <Field
+              label="End date (empty = present)"
+              value={form.endDate}
+              onChange={(v) => {
+                setForm({ ...form, endDate: v })
+              }}
+            />
+          </div>
+          <label className="mt-3 block text-xs font-medium text-gray-500">
+            Description
+            <textarea
+              value={form.description}
+              onChange={(e) => {
+                setForm({ ...form, description: e.target.value })
+              }}
+              rows={4}
+              className={`mt-1 ${inputClass}`}
+            />
+          </label>
+          <div className="min-h-[1.2em] pt-3 text-sm text-red-700">{error}</div>
+          <div className="mt-3 flex gap-2">
+            <button
+              type="submit"
+              disabled={isSaving || !isLoaded || (libraryProfileId === '' && !personaId)}
+              className="flex items-center gap-1 rounded-md bg-gray-900 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:opacity-50"
+            >
+              {!entryId && <PlusIcon />}
+              {entryId ? 'Save changes' : 'Add experience'}
+            </button>
+            <button
+              type="button"
+              onClick={backToList}
+              className="rounded-md border border-gray-200 px-3.5 py-2 text-sm text-gray-700 hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+    </div>
+  )
+}

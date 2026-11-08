@@ -1,0 +1,2405 @@
+// Package portal is the AI-facing (and HTTP-mirrored) surface over
+// jobs.db's own portals/portal_links tables — a small, curated list of
+// job-board sources the AI should crawl, and the URLs on each one to
+// visit. A Portal Link is forced to be mapped to an existing Portal,
+// never implicit — the same pattern the profile/persona and recruiters
+// domains already use for their own parent references.
+//
+// Step 19 added crawl_instructions read/write — an AI-authored YAML
+// document in the exact same shape browser's own crawl_paginated MCP
+// tool expects (fields[] + pagination), so the AI's own next step is
+// handing it straight to that tool. career cannot import browser's own
+// validation (two fully separate Go modules/binaries, no shared
+// package) — validateCrawlInstructions below is a small, independent
+// reimplementation of the *shape* check only, never a guarantee the
+// instruction actually works against a real page. See
+// plan/ai/tools/career/step-18-portals.md and
+// plan/ai/tools/career/step-19-portal-crawl-instructions.md.
+//
+// Extracted into its own package (step XX) as part of this backend's
+// split into subpackages mirroring tools/browser/backend's own auth/
+// crawler/shared layout. Imports jobs (SavePortalJob, for
+// IngestCrawlResults below) — one-directional: the jobs package
+// deliberately does NOT import this package back (see jobs.go's own
+// top comment for why that would be a cycle). See
+// plan/ai/tools/career/step-XX-package-split.md.
+package portal
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/url"
+	"regexp"
+	"strconv"
+	"strings"
+	"unicode/utf8"
+
+	"github.com/google/uuid"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"gopkg.in/yaml.v3"
+
+	"career-tool-backend/db"
+	"career-tool-backend/domainevent"
+	"career-tool-backend/jobs"
+	"career-tool-backend/portal/linkrule"
+)
+
+var ErrUnknownPortal = errors.New("unknown portal id")
+
+func requirePortalExists(id string) error {
+	var exists int
+	err := db.JobsDB.QueryRow(`SELECT 1 FROM portals WHERE id = ?`, id).Scan(&exists)
+	switch {
+	case err == sql.ErrNoRows:
+		return ErrUnknownPortal
+	case err != nil:
+		return err
+	}
+	return nil
+}
+
+var ErrUnknownPortalLink = errors.New("unknown portal link id")
+
+// RequirePortalLinkExists is exported — the crawl package's own
+// startCrawlRun (crawl_runs.go) needs it, in addition to every use
+// within this package.
+func RequirePortalLinkExists(id string) error {
+	var exists int
+	err := db.JobsDB.QueryRow(`SELECT 1 FROM portal_links WHERE id = ?`, id).Scan(&exists)
+	switch {
+	case err == sql.ErrNoRows:
+		return ErrUnknownPortalLink
+	case err != nil:
+		return err
+	}
+	return nil
+}
+
+var ErrDuplicatePortalLink = errors.New("this url is already a link on this portal")
+
+type portalLink struct {
+	ID                string `json:"id"`
+	PortalID          string `json:"portalId"`
+	URL               string `json:"url"`
+	Title             string `json:"title,omitempty"`
+	CrawlInstructions string `json:"crawlInstructions,omitempty"`
+	// JobDetailCrawlInstructions (step XX) is a second, separate
+	// instruction document from CrawlInstructions above — how to
+	// extract job-position-relevant text off a single job's own detail
+	// page (fields only, no container/pagination), rather than the
+	// listing page's own fields+pagination shape. See
+	// plan/ai/tools/career/step-XX-job-detail-crawl-instructions.md.
+	JobDetailCrawlInstructions string `json:"jobDetailCrawlInstructions,omitempty"`
+	// LastCrawledAt (step 26) is the most recent jobs.crawled_at
+	// among every job ever saved against this link — read-only,
+	// derived, never itself written; empty when no job has ever been
+	// saved for this link. See
+	// plan/ai/tools/career/step-26-last-crawled-hint.md.
+	LastCrawledAt string `json:"lastCrawledAt,omitempty"`
+	// InstructionsAIError/InstructionsAIErrorAt (step 33) record the
+	// most recent failure of an AI-driven crawl-instructions
+	// generation/edit attempt for this link — both empty when no
+	// failure is currently recorded (the default, and the state after
+	// a successful attempt clears them). See
+	// plan/ai/tools/career/step-33-ai-generated-crawl-instructions.md.
+	InstructionsAIError   string `json:"instructionsAiError,omitempty"`
+	InstructionsAIErrorAt string `json:"instructionsAiErrorAt,omitempty"`
+	// InstructionsAIConversationID (step 60) — the hidden conversation
+	// currently generating/updating this link's own crawl
+	// instructions, if one is in flight; empty once it finishes
+	// (success or failure). Checked from the frontend (GET
+	// .../turns/active on the main app), never from this tool's own
+	// backend — a separate process/database with no visibility into
+	// the main app's own turn_runs. See
+	// plan/ai/tools/career/step-60-generate-with-ai-live-chat-window.md.
+	InstructionsAIConversationID string `json:"instructionsAiConversationId,omitempty"`
+	// JobDetailInstructionsAIError/JobDetailInstructionsAIErrorAt/
+	// JobDetailInstructionsAIConversationID (step XX) are the SEPARATE,
+	// job-detail-specific counterparts to InstructionsAIError/
+	// InstructionsAIErrorAt/InstructionsAIConversationID above, which
+	// track the LISTING instructions' own AI generation instead. Kept
+	// independent so generating one document's instructions with AI can
+	// never clobber the other's own error/in-flight-conversation
+	// tracking. See
+	// plan/ai/tools/career/step-XX-job-detail-crawl-instructions.md.
+	JobDetailInstructionsAIError          string `json:"jobDetailInstructionsAiError,omitempty"`
+	JobDetailInstructionsAIErrorAt        string `json:"jobDetailInstructionsAiErrorAt,omitempty"`
+	JobDetailInstructionsAIConversationID string `json:"jobDetailInstructionsAiConversationId,omitempty"`
+	// ListingCrawlRequested/JobDetailInstructionsAIRequested (step 65)
+	// are request flags a Domain Events listener sets to ask the
+	// frontend to perform a privileged action (start a crawl, start an
+	// AI conversation) under the current user's own live session — see
+	// plan/ai/tools/career/step-65-career-event-listeners.md. Both
+	// false is the default/steady state; the frontend clears each one
+	// once it has successfully started (or, for the listing flag,
+	// attempted) the action it asked for.
+	ListingCrawlRequested            bool `json:"listingCrawlRequested"`
+	JobDetailInstructionsAIRequested bool `json:"jobDetailInstructionsAiRequested"`
+	// AIPlatformID/AIModel (step 102) are this link's own AI choice; "" means
+	// no override (the portal's, then the tool-wide, choice applies). Always
+	// present in the JSON (no omitempty).
+	AIPlatformID string `json:"aiPlatformId"`
+	AIModel      string `json:"aiModel"`
+	// RequiresLogin and LoginURL (plan 182, step 3) say this link's page is only shown to a logged-in visitor, and which page the person
+	// logs in on ("" = the link's own address). Settings of the link only: nothing about a login is stored. Always present in the JSON.
+	RequiresLogin bool   `json:"requiresLogin"`
+	LoginURL      string `json:"loginUrl"`
+	// LoginSession (plan 195, step 4) says whether a login kept in the Browser tool is available for this link: "none", "valid" or
+	// "expired". Never the session itself or its id. Always present in the JSON.
+	LoginSession string `json:"loginSession"`
+	// CrawlEngine (plan 197, step 1) is this link's own engine: "" follows the Browser tool's selected engine, "rod" reads this link the Rod
+	// way whatever the Browser selected. Always present in the JSON.
+	CrawlEngine string `json:"crawlEngine"`
+	// JobHost (plan 203) is the one other host a person confirmed this link's job links may be on ("" = none): the link's rule and its job
+	// pages may then use it besides the link's own host. Only a person's request sets it.
+	JobHost string `json:"jobHost"`
+	// EngineSuggestion (plan 197, step 4) is set while a Katana read of this link was stopped by the site (Cloudflare, a rate limit, another bot
+	// wall) and the person has not said "Not now" since: the page then offers Rod. null otherwise. Always present in the JSON.
+	EngineSuggestion *EngineSuggestion `json:"engineSuggestion"`
+	// CrawlMethod and LinkRules (plan 185, step 4): how this link's listing is crawled ("instructions" = the AI-written selectors, the
+	// default; "links" = the link crawler) and the link crawler's rule (null = none). See link_rules.go. Always present in the JSON.
+	CrawlMethod string         `json:"crawlMethod"`
+	LinkRules   *linkrule.Rule `json:"linkRules"`
+	// JobDetailCrawlRequested (step 76) is the same kind of request flag
+	// as the two above, set unconditionally by the existing
+	// events/jobs-crawled listener the instant a listing crawl finishes
+	// — independently of whether job_detail_instructions_ai_requested
+	// also got set on that same event. See
+	// plan/ai/tools/career/step-76-job-detail-crawl-requested-backend.md.
+	JobDetailCrawlRequested bool `json:"jobDetailCrawlRequested"`
+	// InstructionsAIErrorDismissedAt/JobDetailInstructionsAIErrorDismissedAt
+	// (step 71) record when the user last dismissed that document's own
+	// AI-generation error banner — compared against
+	// InstructionsAIErrorAt/JobDetailInstructionsAIErrorAt at render
+	// time by the frontend: dismissed_at >= error_at means "still
+	// dismissed," a newer error_at means a fresh failure that should
+	// show again. See
+	// plan/ai/tools/career/step-71-dismiss-tracking-data-model.md.
+	InstructionsAIErrorDismissedAt          string `json:"instructionsAiErrorDismissedAt,omitempty"`
+	JobDetailInstructionsAIErrorDismissedAt string `json:"jobDetailInstructionsAiErrorDismissedAt,omitempty"`
+	// JobDetailInstructionsOrigin says who wrote the job-detail instructions: picked, ai, manual, inherited, or "" (saved before it was recorded).
+	JobDetailInstructionsOrigin string `json:"jobDetailInstructionsOrigin"`
+	// HasActiveCrawlRun (step 37) is true while a detached "Crawl now"
+	// run is in progress for this link — read-only, derived from
+	// crawl_runs, never itself written. Lets the frontend resume
+	// watching a run still going after a page reload/reopen without a
+	// separate round trip per link. See
+	// plan/ai/tools/career/step-37-detached-crawl-now-orchestration.md.
+	HasActiveCrawlRun bool `json:"hasActiveCrawlRun"`
+	// AutoDiscoveryEnabled (step 84 follow-up) gates whether this
+	// specific link participates in the auto-discovery manager's own
+	// sweeps — the global auto_discovery_settings on/off+interval
+	// controls whether the mechanism runs at ALL; this is the per-link
+	// override on top of that ("some of the links people might not
+	// want to be auto-discovered"). Defaults true (on) — see this
+	// field's own migration doc comment (db.go) for why. Checked by
+	// ListPortalLinksEligibleForAutoDiscovery below, never by
+	// BuildCrawlRequest — a manual "Crawl now" click still works
+	// regardless of this flag; it only ever suppresses the AUTOMATIC
+	// path. See
+	// plan/ai/tools/career/step-84-auto-discovery-scheduled-crawling.md.
+	AutoDiscoveryEnabled bool `json:"autoDiscoveryEnabled"`
+	// AutoDiscoveryIntervalMinutes (step 85) is this link's own
+	// override on the schedule, checked against its own
+	// AutoDiscoveryLastRunAt instead of the shared
+	// auto_discovery_settings row — nil means "use the global
+	// interval," every link's own default. Only meaningful while
+	// AutoDiscoveryEnabled is also true. Validated against the same
+	// fixed allowlist (15/30/60/180/360/720/1440) the global interval
+	// already uses. See
+	// plan/ai/tools/career/step-85-auto-discovery-per-link-custom-interval.md.
+	AutoDiscoveryIntervalMinutes *int `json:"autoDiscoveryIntervalMinutes,omitempty"`
+	// AutoDiscoveryLastRunAt (step 85) is this link's own independent
+	// unix-seconds clock — read-only, written only by the
+	// auto-discovery manager (RecordPortalLinkAutoDiscoveryRun), and
+	// only ever meaningful while AutoDiscoveryIntervalMinutes is set; a
+	// link using the global interval keeps relying on the shared
+	// auto_discovery_settings.last_run_at instead, unchanged.
+	AutoDiscoveryLastRunAt *int64 `json:"autoDiscoveryLastRunAt,omitempty"`
+	// InstructionStats (step 86) counts this link's finished "Generate
+	// with AI" attempts per instruction kind (succeeded / failed, plus
+	// whether one is running now and the latest failure) — read-only,
+	// derived from instruction_attempts, never itself written. Always
+	// present: a link with no attempts is all zeros. See
+	// plan/ai/tools/career/step-86-instruction-attempt-tracking.md.
+	InstructionStats InstructionStats `json:"instructionStats"`
+	// LastListingCrawl (step 90) summarises the latest completed listing
+	// crawl and what is known about a zero-job result — read-only,
+	// derived from crawl_runs, absent when there is no structured data.
+	LastListingCrawl *LastListingCrawl `json:"lastListingCrawl,omitempty"`
+	// JobsQuestion (step 91) is the pending "does this page list jobs?"
+	// question the generation agent asked; absent when nothing is pending.
+	JobsQuestion *JobsQuestion `json:"jobsQuestion,omitempty"`
+	CreatedAt    string        `json:"createdAt"`
+	UpdatedAt    string        `json:"updatedAt,omitempty"`
+}
+
+type portal struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// AIPlatformID/AIModel (step 102) are this portal's own AI choice for
+	// crawling; "" means no override. Always present in the JSON (no omitempty),
+	// so the frontend never meets a missing field.
+	AIPlatformID string       `json:"aiPlatformId"`
+	AIModel      string       `json:"aiModel"`
+	Links        []portalLink `json:"links"`
+	CreatedAt    string       `json:"createdAt"`
+	UpdatedAt    string       `json:"updatedAt,omitempty"`
+}
+
+func CreatePortal(name string) (string, error) {
+	id := uuid.NewString()
+	_, err := db.JobsDB.Exec(
+		`INSERT INTO portals (id, name, created_at) VALUES (?, ?, datetime('now'))`,
+		id, name,
+	)
+	if err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+// lastCrawledByPortalLink (step 26) reads the most recent
+// jobs.crawled_at per portal_link_id, in one query — the same
+// db.JobsDB handle ListPortals already uses, no new database or
+// cross-DB join. A link with no saved job at all simply has no entry
+// in the returned map (not a zero-value string), so callers' own map
+// lookup naturally leaves portalLink.LastCrawledAt empty/omitted.
+func lastCrawledByPortalLink() (map[string]string, error) {
+	rows, err := db.JobsDB.Query(
+		`SELECT portal_link_id, MAX(crawled_at) FROM jobs
+		 WHERE portal_link_id IS NOT NULL
+		 GROUP BY portal_link_id`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[string]string)
+	for rows.Next() {
+		var linkID, lastCrawledAt string
+		if err := rows.Scan(&linkID, &lastCrawledAt); err != nil {
+			return nil, err
+		}
+		result[linkID] = lastCrawledAt
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// activeCrawlRunPortalLinkIDsRef is a deliberately independent local
+// copy of the crawl package's own activeCrawlRunPortalLinkIDs — same
+// "two separate concerns, kept in sync by hand" reasoning as
+// findPortalLinkURL in the jobs package (see that function's own doc
+// comment): the crawl package needs this package (RequirePortalLinkExists,
+// BuildCrawlRequest, etc.), so this package importing crawl back for
+// one trivial one-line query would be a real cycle. Kept here as its
+// own tiny, independent query against the same crawl_runs table rather
+// than fragmenting crawl_runs.go's own substantially larger logic out
+// of the crawl package just to share this one lookup.
+func activeCrawlRunPortalLinkIDsRef() (map[string]bool, error) {
+	rows, err := db.JobsDB.Query(`SELECT portal_link_id FROM crawl_runs WHERE status = 'running'`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make(map[string]bool)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		result[id] = true
+	}
+	return result, rows.Err()
+}
+
+// ListPortals returns every portal with its own links nested — same
+// "list is enough, no standalone getter" reasoning listProfiles/
+// ListCompanies already use; a portal's own realistic link count is
+// small.
+func ListPortals() ([]portal, error) {
+	rows, err := db.JobsDB.Query(
+		`SELECT id, name, ai_platform_id, ai_model, created_at, updated_at FROM portals ORDER BY created_at ASC`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	portals := []portal{}
+	for rows.Next() {
+		var p portal
+		var updatedAt sql.NullString
+		if err := rows.Scan(&p.ID, &p.Name, &p.AIPlatformID, &p.AIModel, &p.CreatedAt, &updatedAt); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		p.UpdatedAt = updatedAt.String
+		p.Links = []portalLink{}
+		portals = append(portals, p)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+
+	lastCrawled, err := lastCrawledByPortalLink()
+	if err != nil {
+		return nil, err
+	}
+	activeCrawlRuns, err := activeCrawlRunPortalLinkIDsRef()
+	if err != nil {
+		return nil, err
+	}
+	instructionStats, err := InstructionStatsByLink()
+	if err != nil {
+		return nil, err
+	}
+	linkCrawl, err := linkCrawlByLink()
+	if err != nil {
+		return nil, err
+	}
+	lastListingCrawls, err := LastListingCrawlByLink()
+	if err != nil {
+		return nil, err
+	}
+	detailOrigins, err := jobDetailOriginByLink()
+	if err != nil {
+		return nil, err
+	}
+	jobHosts, err := jobHostByLink()
+	if err != nil {
+		return nil, err
+	}
+
+	linkRows, err := db.JobsDB.Query(
+		`SELECT id, portal_id, url, title, crawl_instructions, job_detail_crawl_instructions, instructions_ai_error, instructions_ai_error_at, instructions_ai_conversation_id, job_detail_instructions_ai_error, job_detail_instructions_ai_error_at, job_detail_instructions_ai_conversation_id, listing_crawl_requested, job_detail_instructions_ai_requested, instructions_ai_error_dismissed_at, job_detail_instructions_ai_error_dismissed_at, job_detail_crawl_requested, auto_discovery_enabled, auto_discovery_interval_minutes, auto_discovery_last_run_at, jobs_question_asked_at, jobs_question_note, ai_platform_id, ai_model, requires_login, login_url, login_session_id, login_session_state, crawl_engine, engine_block_code, engine_block_at, engine_hint_dismissed_at, created_at, updated_at
+		 FROM portal_links ORDER BY created_at ASC`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer linkRows.Close()
+	byPortal := make(map[string][]portalLink, len(portals))
+	for linkRows.Next() {
+		var l portalLink
+		var title, crawlInstructions, jobDetailCrawlInstructions, instructionsAIError, instructionsAIErrorAt, instructionsAIConversationID, jobDetailInstructionsAIError, jobDetailInstructionsAIErrorAt, jobDetailInstructionsAIConversationID, instructionsAIErrorDismissedAt, jobDetailInstructionsAIErrorDismissedAt, updatedAt sql.NullString
+		var autoDiscoveryIntervalMinutes, autoDiscoveryLastRunAt sql.NullInt64
+		var jobsQuestionAskedAt, jobsQuestionNote sql.NullString
+		var loginSessionID, loginSessionState, engineBlockCode string
+		var engineBlockAt, engineHintDismissedAt sql.NullString
+		if err := linkRows.Scan(&l.ID, &l.PortalID, &l.URL, &title, &crawlInstructions, &jobDetailCrawlInstructions, &instructionsAIError, &instructionsAIErrorAt, &instructionsAIConversationID, &jobDetailInstructionsAIError, &jobDetailInstructionsAIErrorAt, &jobDetailInstructionsAIConversationID, &l.ListingCrawlRequested, &l.JobDetailInstructionsAIRequested, &instructionsAIErrorDismissedAt, &jobDetailInstructionsAIErrorDismissedAt, &l.JobDetailCrawlRequested, &l.AutoDiscoveryEnabled, &autoDiscoveryIntervalMinutes, &autoDiscoveryLastRunAt, &jobsQuestionAskedAt, &jobsQuestionNote, &l.AIPlatformID, &l.AIModel, &l.RequiresLogin, &l.LoginURL, &loginSessionID, &loginSessionState, &l.CrawlEngine, &engineBlockCode, &engineBlockAt, &engineHintDismissedAt, &l.CreatedAt, &updatedAt); err != nil {
+			return nil, err
+		}
+		l.LoginSession = LoginSessionLabel(loginSessionID, loginSessionState)
+		l.EngineSuggestion = suggestionOf(l.CrawlEngine, engineBlockCode, nullStringPtr(engineBlockAt), nullStringPtr(engineHintDismissedAt))
+		if autoDiscoveryIntervalMinutes.Valid {
+			v := int(autoDiscoveryIntervalMinutes.Int64)
+			l.AutoDiscoveryIntervalMinutes = &v
+		}
+		if autoDiscoveryLastRunAt.Valid {
+			l.AutoDiscoveryLastRunAt = &autoDiscoveryLastRunAt.Int64
+		}
+		l.Title = title.String
+		l.CrawlInstructions = crawlInstructions.String
+		l.JobDetailCrawlInstructions = jobDetailCrawlInstructions.String
+		l.InstructionsAIError = instructionsAIError.String
+		l.InstructionsAIErrorAt = instructionsAIErrorAt.String
+		l.JobDetailInstructionsAIError = jobDetailInstructionsAIError.String
+		l.JobDetailInstructionsAIErrorAt = jobDetailInstructionsAIErrorAt.String
+		l.JobDetailInstructionsAIConversationID = jobDetailInstructionsAIConversationID.String
+		l.InstructionsAIConversationID = instructionsAIConversationID.String
+		l.InstructionsAIErrorDismissedAt = instructionsAIErrorDismissedAt.String
+		l.JobDetailInstructionsAIErrorDismissedAt = jobDetailInstructionsAIErrorDismissedAt.String
+		l.UpdatedAt = updatedAt.String
+		if jobsQuestionAskedAt.Valid {
+			l.JobsQuestion = &JobsQuestion{AskedAt: jobsQuestionAskedAt.String, Note: jobsQuestionNote.String}
+		}
+		l.CrawlMethod, l.LinkRules = CrawlMethodInstructions, nil
+		if lc, ok := linkCrawl[l.ID]; ok {
+			l.CrawlMethod, l.LinkRules = lc.CrawlMethod, lc.Rules
+		}
+		l.JobDetailInstructionsOrigin = detailOrigins[l.ID]
+		l.JobHost = jobHosts[l.ID]
+		l.LastCrawledAt = lastCrawled[l.ID]
+		l.HasActiveCrawlRun = activeCrawlRuns[l.ID]
+		l.InstructionStats = instructionStats[l.ID]
+		if c, ok := lastListingCrawls[l.ID]; ok {
+			c := c
+			l.LastListingCrawl = &c
+		}
+		byPortal[l.PortalID] = append(byPortal[l.PortalID], l)
+	}
+	if err := linkRows.Err(); err != nil {
+		return nil, err
+	}
+	for i := range portals {
+		if links, ok := byPortal[portals[i].ID]; ok {
+			portals[i].Links = links
+		}
+	}
+	return portals, nil
+}
+
+func UpdatePortal(id, name string) error {
+	if err := requirePortalExists(id); err != nil {
+		return err
+	}
+	_, err := db.JobsDB.Exec(
+		`UPDATE portals SET name = ?, updated_at = datetime('now') WHERE id = ?`,
+		name, id,
+	)
+	return err
+}
+
+// DeletePortal cascades (ON DELETE CASCADE, db's own schema) to every
+// link it owns; step 20 makes this also un-link (never delete) any
+// jobs those links produced. A benign no-op if id is unknown, matching
+// every other delete-by-id operation in this tool.
+func DeletePortal(id string) error {
+	_, err := db.JobsDB.Exec(`DELETE FROM portals WHERE id = ?`, id)
+	return err
+}
+
+func AddPortalLink(portalId, url, title string) (string, error) {
+	if err := requirePortalExists(portalId); err != nil {
+		return "", err
+	}
+	id := uuid.NewString()
+	_, err := db.JobsDB.Exec(
+		`INSERT INTO portal_links (id, portal_id, url, title, created_at) VALUES (?, ?, ?, ?, datetime('now'))`,
+		id, portalId, url, title,
+	)
+	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
+			return "", ErrDuplicatePortalLink
+		}
+		return "", err
+	}
+	return id, nil
+}
+
+// UpdatePortalLink corrects a link's own url and/or title — both
+// independently optional, partial-update style (matching
+// UpdateCompany/updateRecruiter's own established shape). crawl_
+// instructions (step 19) is deliberately not touched by this function
+// — that column's own validated read/write path is step 19's own
+// contribution, kept separate so this step can't accidentally store
+// an unvalidated YAML document through a generic update path.
+func UpdatePortalLink(id string, url, title *string) error {
+	if err := RequirePortalLinkExists(id); err != nil {
+		return err
+	}
+	if url == nil && title == nil {
+		return nil
+	}
+
+	setClauses := ""
+	args := []any{}
+	if url != nil {
+		setClauses += "url = ?, "
+		args = append(args, *url)
+	}
+	if title != nil {
+		setClauses += "title = ?, "
+		args = append(args, *title)
+	}
+	setClauses += "updated_at = datetime('now')"
+	args = append(args, id)
+
+	_, err := db.JobsDB.Exec(`UPDATE portal_links SET `+setClauses+` WHERE id = ?`, args...)
+	if err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed") {
+		return ErrDuplicatePortalLink
+	}
+	if err != nil {
+		return err
+	}
+	// A rule of the link crawler belongs to one site: an address on another host takes the rule away (plan 185).
+	if url != nil {
+		return dropLinkRulesOfOtherHost(id)
+	}
+	return nil
+}
+
+// MaxLoginURLLength bounds a link's login page address, in characters.
+const MaxLoginURLLength = 2000
+
+// ErrInvalidLoginURL is a caller mistake (400), never a server failure.
+var ErrInvalidLoginURL = errors.New("loginUrl must be an http or https address with a host, without a user name or password, of at most 2000 characters (or empty: the link's own address is used)")
+
+// ValidateLoginURL (plan 182, step 3) trims and checks the address of a link's login page: empty is fine (the link's own address is
+// then opened), anything else must be an http or https address with a host and no embedded user name or password. Returns the trimmed value.
+func ValidateLoginURL(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", nil
+	}
+	if utf8.RuneCountInString(raw) > MaxLoginURLLength {
+		return "", ErrInvalidLoginURL
+	}
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" || u.User != nil {
+		return "", ErrInvalidLoginURL
+	}
+	return raw, nil
+}
+
+// UpdatePortalLinkLogin sets whether a link's page needs a login (requiresLogin) and/or the address of the login page (loginURL; "" clears
+// it); nil leaves a value alone. The address is checked BEFORE anything is written, so a refused request changes nothing. These are settings
+// of the link: nothing about a login itself is stored. ErrUnknownPortalLink for an unknown id.
+func UpdatePortalLinkLogin(id string, requiresLogin *bool, loginURL *string) error {
+	if err := RequirePortalLinkExists(id); err != nil {
+		return err
+	}
+	var checked string
+	if loginURL != nil {
+		v, err := ValidateLoginURL(*loginURL)
+		if err != nil {
+			return err
+		}
+		checked = v
+	}
+	if requiresLogin == nil && loginURL == nil {
+		return nil
+	}
+	// A link cannot need a login while auto-crawl is on (manual_only.go): refused before anything is written.
+	if requiresLogin != nil && *requiresLogin {
+		on, err := autoDiscoveryEnabledNow(id)
+		if err != nil {
+			return err
+		}
+		if on {
+			return ErrLoginWithAutoCrawl
+		}
+	}
+	setClauses := ""
+	args := []any{}
+	if requiresLogin != nil {
+		setClauses += "requires_login = ?, "
+		args = append(args, *requiresLogin)
+	}
+	if loginURL != nil {
+		setClauses += "login_url = ?, "
+		args = append(args, checked)
+	}
+	setClauses += "updated_at = datetime('now')"
+	args = append(args, id)
+	if _, err := db.JobsDB.Exec(`UPDATE portal_links SET `+setClauses+` WHERE id = ?`, args...); err != nil {
+		return err
+	}
+	// Auto-crawl is already off here, so only the pending request flags and an interval are left to clear (manual_only.go). A login link
+	// is also never crawled with the link crawler (plan 185).
+	if requiresLogin != nil && *requiresLogin {
+		if err := switchOffAutomatic(id); err != nil {
+			return err
+		}
+		return resetLinkCrawlForLogin(id)
+	}
+	return nil
+}
+
+// AddPortalLinkWithLogin adds a link like AddPortalLink and sets its login settings in the same call. The login address is checked first, so
+// a bad one adds nothing.
+func AddPortalLinkWithLogin(portalID, url, title string, requiresLogin bool, loginURL string) (string, error) {
+	checked, err := ValidateLoginURL(loginURL)
+	if err != nil {
+		return "", err
+	}
+	id, err := AddPortalLink(portalID, url, title)
+	if err != nil {
+		return "", err
+	}
+	// A new link starts with auto-crawl on; one that needs a login starts with it off (it is crawled by hand only, manual_only.go).
+	if requiresLogin {
+		if err := switchOffAutomatic(id); err != nil {
+			_ = RemovePortalLink(id)
+			return "", err
+		}
+	}
+	if requiresLogin || checked != "" {
+		if err := UpdatePortalLinkLogin(id, &requiresLogin, &checked); err != nil {
+			_ = RemovePortalLink(id)
+			return "", err
+		}
+	}
+	return id, nil
+}
+
+func RemovePortalLink(id string) error {
+	_, err := db.JobsDB.Exec(`DELETE FROM portal_links WHERE id = ?`, id)
+	return err
+}
+
+// UpdatePortalLinkInstructionsAIStatus records (or clears) the outcome
+// of the most recent AI-driven crawl-instructions generation/edit
+// attempt for this link — errText nil or empty clears any previously
+// recorded failure (a fresh attempt succeeded, or the caller is
+// explicitly resetting it); non-empty records it, alongside the
+// current timestamp. See
+// plan/ai/tools/career/step-33-ai-generated-crawl-instructions.md.
+func UpdatePortalLinkInstructionsAIStatus(id string, errText *string) error {
+	if err := RequirePortalLinkExists(id); err != nil {
+		return err
+	}
+	if errText == nil || *errText == "" {
+		_, err := db.JobsDB.Exec(`UPDATE portal_links SET instructions_ai_error = NULL, instructions_ai_error_at = NULL WHERE id = ?`, id)
+		return err
+	}
+	_, err := db.JobsDB.Exec(
+		`UPDATE portal_links SET instructions_ai_error = ?, instructions_ai_error_at = datetime('now') WHERE id = ?`,
+		*errText, id,
+	)
+	return err
+}
+
+// UpdatePortalLinkInstructionsAIConversationID records (or clears)
+// which hidden conversation is currently generating/updating this
+// link's own crawl instructions. Nil or "" clears it (the run
+// finished, one way or another); non-empty records the newly started
+// one. See plan/ai/tools/career/step-60-generate-with-ai-live-chat-window.md.
+func UpdatePortalLinkInstructionsAIConversationID(id string, convID *string) error {
+	if err := RequirePortalLinkExists(id); err != nil {
+		return err
+	}
+	if convID == nil || *convID == "" {
+		_, err := db.JobsDB.Exec(`UPDATE portal_links SET instructions_ai_conversation_id = NULL WHERE id = ?`, id)
+		return err
+	}
+	_, err := db.JobsDB.Exec(`UPDATE portal_links SET instructions_ai_conversation_id = ? WHERE id = ?`, *convID, id)
+	return err
+}
+
+// UpdatePortalLinkJobDetailInstructionsAIStatus mirrors
+// UpdatePortalLinkInstructionsAIStatus above exactly, for the
+// SEPARATE job-detail-crawl-instructions document instead.
+func UpdatePortalLinkJobDetailInstructionsAIStatus(id string, errText *string) error {
+	if err := RequirePortalLinkExists(id); err != nil {
+		return err
+	}
+	if errText == nil || *errText == "" {
+		_, err := db.JobsDB.Exec(`UPDATE portal_links SET job_detail_instructions_ai_error = NULL, job_detail_instructions_ai_error_at = NULL WHERE id = ?`, id)
+		return err
+	}
+	_, err := db.JobsDB.Exec(
+		`UPDATE portal_links SET job_detail_instructions_ai_error = ?, job_detail_instructions_ai_error_at = datetime('now') WHERE id = ?`,
+		*errText, id,
+	)
+	return err
+}
+
+// UpdatePortalLinkJobDetailInstructionsAIConversationID mirrors
+// UpdatePortalLinkInstructionsAIConversationID above exactly, for the
+// SEPARATE job-detail-crawl-instructions document instead.
+func UpdatePortalLinkJobDetailInstructionsAIConversationID(id string, convID *string) error {
+	if err := RequirePortalLinkExists(id); err != nil {
+		return err
+	}
+	if convID == nil || *convID == "" {
+		_, err := db.JobsDB.Exec(`UPDATE portal_links SET job_detail_instructions_ai_conversation_id = NULL WHERE id = ?`, id)
+		return err
+	}
+	_, err := db.JobsDB.Exec(`UPDATE portal_links SET job_detail_instructions_ai_conversation_id = ? WHERE id = ?`, *convID, id)
+	return err
+}
+
+// UpdatePortalLinkListingCrawlRequested/
+// UpdatePortalLinkJobDetailInstructionsAIRequested (step 67) let the
+// frontend clear the two request flags a Domain Events listener sets
+// (events.go) once it has consumed one — see
+// plan/ai/tools/career/step-67-frontend-flag-consumption.md. The
+// backend itself never clears either flag back to false (the listener
+// handlers in events.go only ever set them to true); only the
+// frontend, acting under a real user's own live session, ever does.
+func UpdatePortalLinkListingCrawlRequested(id string, requested bool) error {
+	if err := RequirePortalLinkExists(id); err != nil {
+		return err
+	}
+	if requested {
+		if err := requireNotLoginLink(id); err != nil {
+			return err
+		}
+	}
+	_, err := db.JobsDB.Exec(`UPDATE portal_links SET listing_crawl_requested = ? WHERE id = ?`, requested, id)
+	return err
+}
+
+func UpdatePortalLinkJobDetailInstructionsAIRequested(id string, requested bool) error {
+	if err := RequirePortalLinkExists(id); err != nil {
+		return err
+	}
+	if requested {
+		if err := requireNotLoginLink(id); err != nil {
+			return err
+		}
+	}
+	_, err := db.JobsDB.Exec(`UPDATE portal_links SET job_detail_instructions_ai_requested = ? WHERE id = ?`, requested, id)
+	return err
+}
+
+// UpdatePortalLinkJobDetailCrawlRequested (step 76) lets the frontend
+// clear job_detail_crawl_requested once it has consumed it — same
+// shape as UpdatePortalLinkListingCrawlRequested/
+// UpdatePortalLinkJobDetailInstructionsAIRequested above.
+func UpdatePortalLinkJobDetailCrawlRequested(id string, requested bool) error {
+	if err := RequirePortalLinkExists(id); err != nil {
+		return err
+	}
+	if requested {
+		if err := requireNotLoginLink(id); err != nil {
+			return err
+		}
+	}
+	_, err := db.JobsDB.Exec(`UPDATE portal_links SET job_detail_crawl_requested = ? WHERE id = ?`, requested, id)
+	return err
+}
+
+// UpdatePortalLinkAutoDiscoveryEnabled (step 84 follow-up) sets this
+// link's own auto-discovery opt-out flag — see the portalLink struct's
+// own AutoDiscoveryEnabled doc comment for what it gates.
+func UpdatePortalLinkAutoDiscoveryEnabled(id string, enabled bool) error {
+	if err := RequirePortalLinkExists(id); err != nil {
+		return err
+	}
+	if enabled {
+		if err := requireNotLoginLink(id); err != nil {
+			return err
+		}
+	}
+	_, err := db.JobsDB.Exec(`UPDATE portal_links SET auto_discovery_enabled = ? WHERE id = ?`, enabled, id)
+	return err
+}
+
+// ErrInvalidAutoDiscoveryInterval is a caller mistake (400), never a
+// server failure — same posture ErrInvalidCrawlInstructions already
+// has.
+var ErrInvalidAutoDiscoveryInterval = errors.New("autoDiscoveryIntervalMinutes must be one of 15, 30, 60, 180, 360, 720, 1440")
+
+// UpdatePortalLinkAutoDiscoveryInterval sets (minutes != nil) or clears
+// (minutes == nil, "use the global interval") this link's own
+// auto-discovery schedule override (step 85). A non-nil value is
+// validated against db.AllowedAutoDiscoveryIntervalMinutes — the exact
+// same allowlist the global interval already uses — rejected outright
+// rather than silently clamped, same convention every other
+// enumerated input on this tool already follows.
+func UpdatePortalLinkAutoDiscoveryInterval(id string, minutes *int) error {
+	if err := RequirePortalLinkExists(id); err != nil {
+		return err
+	}
+	if minutes != nil && !db.AllowedAutoDiscoveryIntervalMinutes[*minutes] {
+		return ErrInvalidAutoDiscoveryInterval
+	}
+	if minutes != nil {
+		if err := requireNotLoginLink(id); err != nil {
+			return err
+		}
+	}
+	var arg any
+	if minutes != nil {
+		arg = *minutes
+	}
+	_, err := db.JobsDB.Exec(`UPDATE portal_links SET auto_discovery_interval_minutes = ? WHERE id = ?`, arg, id)
+	return err
+}
+
+// UpdatePortalLinkInstructionsAIErrorDismissedAt/
+// UpdatePortalLinkJobDetailInstructionsAIErrorDismissedAt (step 71) let
+// the frontend record when the user dismissed that document's own
+// AI-generation error banner — compared against
+// InstructionsAIErrorAt/JobDetailInstructionsAIErrorAt at render time
+// (a newer error_at than the recorded dismissal means a fresh failure
+// that should show again). Same nil-clears-it shape as
+// UpdatePortalLinkInstructionsAIConversationID above. See
+// plan/ai/tools/career/step-71-dismiss-tracking-data-model.md.
+func UpdatePortalLinkInstructionsAIErrorDismissedAt(id string, dismissedAt *string) error {
+	if err := RequirePortalLinkExists(id); err != nil {
+		return err
+	}
+	if dismissedAt == nil || *dismissedAt == "" {
+		_, err := db.JobsDB.Exec(`UPDATE portal_links SET instructions_ai_error_dismissed_at = NULL WHERE id = ?`, id)
+		return err
+	}
+	_, err := db.JobsDB.Exec(`UPDATE portal_links SET instructions_ai_error_dismissed_at = ? WHERE id = ?`, *dismissedAt, id)
+	return err
+}
+
+func UpdatePortalLinkJobDetailInstructionsAIErrorDismissedAt(id string, dismissedAt *string) error {
+	if err := RequirePortalLinkExists(id); err != nil {
+		return err
+	}
+	if dismissedAt == nil || *dismissedAt == "" {
+		_, err := db.JobsDB.Exec(`UPDATE portal_links SET job_detail_instructions_ai_error_dismissed_at = NULL WHERE id = ?`, id)
+		return err
+	}
+	_, err := db.JobsDB.Exec(`UPDATE portal_links SET job_detail_instructions_ai_error_dismissed_at = ? WHERE id = ?`, *dismissedAt, id)
+	return err
+}
+
+// --- crawl instructions (step 19) ---
+
+// crawlInstructionsField/crawlInstructionsPagination originally
+// mirrored only the keys step 19's own shape check validated —
+// Attribute/Multiple were tolerated but ignored, since only
+// browser's own crawl_paginated ever consumed the full instruction.
+// Step 27 changes that: this tool's own backend now also *runs* a
+// crawl (deterministically, via BuildCrawlRequest below), so it needs
+// every field crawl_paginated itself needs, not just the two this
+// step validates the presence of. See
+// plan/ai/tools/career/step-27-ai-free-manual-crawl.md.
+type crawlInstructionsField struct {
+	Label     string `yaml:"label"`
+	Selector  string `yaml:"selector"`
+	Attribute string `yaml:"attribute,omitempty"`
+	Multiple  bool   `yaml:"multiple,omitempty"`
+	// Source and Path (plan 186, Phase B) read the value from the page's structured data instead of an element (job-detail instructions
+	// only): see structured_source.go. A field with a Source has no Selector, Attribute or Multiple.
+	Source string `yaml:"source,omitempty"`
+	Path   string `yaml:"path,omitempty"`
+}
+
+type crawlInstructionsPagination struct {
+	NextSelector string `yaml:"nextSelector"`
+	MaxPages     int    `yaml:"maxPages"`
+}
+
+type crawlInstructionsDoc struct {
+	// Container (step 30) is optional — a CSS selector for each
+	// repeating item's own wrapping element (e.g. one job listing's
+	// own <div>). When set, every field's own selector is evaluated
+	// relative to each matched container instead of the whole page,
+	// and IngestCrawlResults below consumes the resulting Items
+	// directly instead of zipping parallel arrays by index. See
+	// plan/ai/tools/career/step-30-grouped-crawl-ingestion.md and
+	// plan/ai/tools/browser/step-18-grouped-container-extraction.md.
+	Container string                   `yaml:"container,omitempty"`
+	Fields    []crawlInstructionsField `yaml:"fields"`
+	// Mapping (step 32) is optional {sourceLabel: targetKey} — renames
+	// a field's own label to a specific output key before
+	// IngestCrawlResults ever sees it (browser's own crawl_paginated
+	// applies the rename, not this tool — see
+	// plan/ai/tools/browser/step-20-output-field-mapping.md). Lets an
+	// AI author fields under whatever labels are natural for a given
+	// page (e.g. "job_title") while still satisfying the fixed
+	// "title"/"url"/... vocabulary IngestCrawlResults reads by.
+	// validateCrawlOutputSchema below checks the *effective* output
+	// (label, or its mapping target when present) produces the
+	// required keys. See
+	// plan/ai/tools/career/step-32-required-schema-and-mapping.md.
+	Mapping    map[string]string            `yaml:"mapping,omitempty"`
+	Pagination *crawlInstructionsPagination `yaml:"pagination"`
+}
+
+// requiredCrawlOutputKeys mirrors IngestCrawlResults' own hard
+// requirement exactly (title == "" || sourceURL == "" → skipped,
+// company/location/description/postedAt all optional) — the single
+// source of truth for what validateCrawlOutputSchema checks the
+// effective (post-mapping) field labels against.
+var requiredCrawlOutputKeys = []string{"title", "url"}
+
+// ErrInvalidCrawlInstructions wraps a specific, actionable detail
+// message (via fmt.Errorf's own %w) — a shape check, not a
+// correctness check: this only confirms the required keys are present,
+// never that the instruction actually works against a real page (that
+// can only be proven by the AI itself later calling browser's own
+// crawl_paginated). See
+// plan/ai/tools/career/step-19-portal-crawl-instructions.md.
+var ErrInvalidCrawlInstructions = errors.New("invalid crawl instructions")
+
+func validateCrawlInstructions(yamlText string) error {
+	var doc crawlInstructionsDoc
+	if err := yaml.Unmarshal([]byte(yamlText), &doc); err != nil {
+		return fmt.Errorf("%w: not valid YAML: %v", ErrInvalidCrawlInstructions, err)
+	}
+	if len(doc.Fields) == 0 {
+		return fmt.Errorf("%w: fields must have at least one entry", ErrInvalidCrawlInstructions)
+	}
+	for i, f := range doc.Fields {
+		if f.Label == "" {
+			return fmt.Errorf("%w: fields[%d].label is required", ErrInvalidCrawlInstructions, i)
+		}
+		if f.Selector == "" {
+			return fmt.Errorf("%w: fields[%d].selector is required", ErrInvalidCrawlInstructions, i)
+		}
+	}
+	if doc.Pagination == nil {
+		return fmt.Errorf("%w: pagination is required", ErrInvalidCrawlInstructions)
+	}
+	if doc.Pagination.NextSelector == "" {
+		return fmt.Errorf("%w: pagination.nextSelector is required", ErrInvalidCrawlInstructions)
+	}
+	if doc.Pagination.MaxPages <= 0 {
+		return fmt.Errorf("%w: pagination.maxPages is required", ErrInvalidCrawlInstructions)
+	}
+	if err := validateCrawlOutputSchema(doc); err != nil {
+		return err
+	}
+	return nil
+}
+
+// validateCrawlOutputSchema checks that the *effective* output of these
+// instructions — each field's own label, or its mapping target when
+// doc.Mapping renames it — would actually produce every key in
+// requiredCrawlOutputKeys. This is what closes the real gap step 32 was
+// written for: previously, instructions with fields labeled e.g.
+// "job_title"/"employer" (a perfectly reasonable, arguably better choice
+// for a real page's own vocabulary) passed this function's shape checks
+// cleanly, saved without error, and then silently produced zero saved
+// jobs on every future deterministic crawl — IngestCrawlResults only
+// ever reads the literal keys "title"/"url"/etc. and has no fallback.
+// Still a shape check, not a correctness check, per this function's own
+// sibling comment above: this only proves the *keys* would be right,
+// never that the selectors actually match real content on the page. See
+// plan/ai/tools/career/step-32-required-schema-and-mapping.md.
+func validateCrawlOutputSchema(doc crawlInstructionsDoc) error {
+	effective := make(map[string]bool, len(doc.Fields))
+	for _, f := range doc.Fields {
+		key := f.Label
+		if target, ok := doc.Mapping[f.Label]; ok {
+			key = target
+		}
+		effective[key] = true
+	}
+	for _, required := range requiredCrawlOutputKeys {
+		if !effective[required] {
+			return fmt.Errorf(
+				"%w: no field produces the required %q key (add a field labeled %q, or add a mapping entry renaming one of your existing fields — e.g. mapping: { <your label>: %s })",
+				ErrInvalidCrawlInstructions, required, required, required,
+			)
+		}
+	}
+	return nil
+}
+
+// GetPortalLinkURL (step 37) reads just a link's own url — the
+// detached crawl-now orchestration (crawl package) needs it to
+// navigate browser's shared session, the one field ListPortals' own
+// per-link struct already exposes to the frontend but no standalone
+// reader returned until now.
+func GetPortalLinkURL(id string) (string, error) {
+	if err := RequirePortalLinkExists(id); err != nil {
+		return "", err
+	}
+	var url string
+	if err := db.JobsDB.QueryRow(`SELECT url FROM portal_links WHERE id = ?`, id).Scan(&url); err != nil {
+		return "", err
+	}
+	return url, nil
+}
+
+// GetPortalLinkLogin (plan 182, step 4) reads a link's login setting: whether its pages need a login and the page to start the login
+// at ("" = the link's own address). It is a setting, never a login: nothing about an account is kept anywhere.
+func GetPortalLinkLogin(id string) (requiresLogin bool, loginURL string, err error) {
+	if err := RequirePortalLinkExists(id); err != nil {
+		return false, "", err
+	}
+	var flag int
+	if err := db.JobsDB.QueryRow(`SELECT requires_login, login_url FROM portal_links WHERE id = ?`, id).Scan(&flag, &loginURL); err != nil {
+		return false, "", err
+	}
+	return flag != 0, loginURL, nil
+}
+
+// LoginSessionIDPattern is the shape of a login session id (plan 195): 32 lower-case hex characters, made by the Browser tool.
+var LoginSessionIDPattern = regexp.MustCompile(`^[0-9a-f]{32}$`)
+
+// ErrLoginSessionNeedsLoginLink: a login session can only be attached to a link that is marked as needing a login.
+var ErrLoginSessionNeedsLoginLink = errors.New("a login session can only be kept for a link that needs a login")
+
+// GetLinkLoginSession (plan 195, step 2) returns the id of the login session kept for a link in the Browser tool ("" = none). It is only an
+// id: the cookies live sealed in the Browser tool and never reach this tool. ErrUnknownPortalLink for an unknown link.
+func GetLinkLoginSession(linkID string) (string, error) {
+	if err := RequirePortalLinkExists(linkID); err != nil {
+		return "", err
+	}
+	var id string
+	if err := db.JobsDB.QueryRow(`SELECT login_session_id FROM portal_links WHERE id = ?`, linkID).Scan(&id); err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+// Login session labels, as the page reads them.
+const (
+	LoginSessionNone    = "none"
+	LoginSessionValid   = "valid"
+	LoginSessionExpired = "expired"
+)
+
+// LoginSessionLabel is the label of a link's kept login from its stored id and state: "none" without an id, "expired" after the Browser tool
+// said the site no longer accepts it, else "valid".
+func LoginSessionLabel(sessionID, state string) string {
+	switch {
+	case sessionID == "":
+		return LoginSessionNone
+	case state == LoginSessionExpired:
+		return LoginSessionExpired
+	}
+	return LoginSessionValid
+}
+
+// KeptLoginFor returns the id of the login session a crawl of this link may use: the link needs a login, has a kept login, and it is not
+// known to be expired. "" otherwise (an unknown link too). It is what makes a login link crawlable without a login window (plan 195, step 4).
+func KeptLoginFor(linkID string) string {
+	var needs int
+	var id, state string
+	if err := db.JobsDB.QueryRow(`SELECT requires_login, login_session_id, login_session_state FROM portal_links WHERE id = ?`, linkID).Scan(&needs, &id, &state); err != nil {
+		return ""
+	}
+	if needs == 0 || LoginSessionLabel(id, state) != LoginSessionValid {
+		return ""
+	}
+	return id
+}
+
+// LoginSessionOf returns whether a link needs a login and the state of its kept login ("" none, "valid", "expired"), for a caller that has to
+// say why a login link cannot be read (plan 195, step 5).
+func LoginSessionOf(linkID string) (needsLogin bool, state string) {
+	var needs int
+	var id, st string
+	if err := db.JobsDB.QueryRow(`SELECT requires_login, login_session_id, login_session_state FROM portal_links WHERE id = ?`, linkID).Scan(&needs, &id, &st); err != nil {
+		return false, ""
+	}
+	switch LoginSessionLabel(id, st) {
+	case LoginSessionValid:
+		return needs != 0, "valid"
+	case LoginSessionExpired:
+		return needs != 0, LoginSessionExpired
+	}
+	return needs != 0, ""
+}
+
+// MarkLoginSessionExpired records that the Browser tool said the site no longer accepts this link's kept login, so the page offers the login
+// again and no crawl tries the session. The session id stays (the Browser tool keeps its own record, and the person may forget it).
+func MarkLoginSessionExpired(linkID string) error {
+	_, err := db.JobsDB.Exec(`UPDATE portal_links SET login_session_state = 'expired', updated_at = datetime('now') WHERE id = ? AND login_session_id != ''`, linkID)
+	return err
+}
+
+// LoginSessionIDsOfPortal returns the ids of the login sessions kept for the links of a platform, so deleting the platform can have the
+// Browser tool forget them (plan 195).
+func LoginSessionIDsOfPortal(portalID string) []string {
+	rows, err := db.JobsDB.Query(`SELECT login_session_id FROM portal_links WHERE portal_id = ? AND login_session_id <> ''`, portalID)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if rows.Scan(&id) == nil {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+// SetLinkLoginSession sets (a 32-character hex id) or clears ("") a link's login session id and returns the id it had before, so the caller
+// can have the Browser tool forget the replaced session. Only a link that needs a login may hold one.
+func SetLinkLoginSession(linkID, sessionID string) (previous string, err error) {
+	previous, err = GetLinkLoginSession(linkID)
+	if err != nil {
+		return "", err
+	}
+	if sessionID != "" {
+		if !LoginSessionIDPattern.MatchString(sessionID) {
+			return "", errors.New("sessionId must be 32 lower-case hex characters")
+		}
+		requires, _, err := GetPortalLinkLogin(linkID)
+		if err != nil {
+			return "", err
+		}
+		if !requires {
+			return "", ErrLoginSessionNeedsLoginLink
+		}
+	}
+	if _, err := db.JobsDB.Exec(`UPDATE portal_links SET login_session_id = ?, login_session_state = CASE WHEN ? = '' THEN '' ELSE 'valid' END, updated_at = datetime('now') WHERE id = ?`, sessionID, sessionID, linkID); err != nil {
+		return "", err
+	}
+	return previous, nil
+}
+
+// GetPortalIDForLink reads just a link's own owning portal_id — the
+// deterministic crawl goroutines (crawl package) need it to set
+// browser's own rateLimitKey (portal_pacing.go, tools/browser/backend/
+// crawler), which paces page fetches across EVERY link belonging to
+// the same portal, not just within one link's own run. See
+// plan/ai/tools/career/step-XX-portal-crawl-pacing.md.
+func GetPortalIDForLink(id string) (string, error) {
+	if err := RequirePortalLinkExists(id); err != nil {
+		return "", err
+	}
+	var portalID string
+	if err := db.JobsDB.QueryRow(`SELECT portal_id FROM portal_links WHERE id = ?`, id).Scan(&portalID); err != nil {
+		return "", err
+	}
+	return portalID, nil
+}
+
+func GetPortalLinkCrawlInstructions(id string) (string, error) {
+	if err := RequirePortalLinkExists(id); err != nil {
+		return "", err
+	}
+	var crawlInstructions sql.NullString
+	err := db.JobsDB.QueryRow(`SELECT crawl_instructions FROM portal_links WHERE id = ?`, id).Scan(&crawlInstructions)
+	if err != nil {
+		return "", err
+	}
+	return crawlInstructions.String, nil
+}
+
+// crawlableListingSQL is true for a link whose listing can be crawled with what it has, for the method the Browser's selected engine
+// means (plan 190, ListingMethodFor): a rule for "links", the AI instructions for "instructions"; any other method (the sweep could not
+// read the engine) lists a link that has either, and each crawl decides again when it starts. The link's stored crawl_method is not read.
+func crawlableListingSQL(method string) string {
+	const rule = `(link_rules IS NOT NULL AND link_rules != '')`
+	const instructions = `(crawl_instructions IS NOT NULL AND crawl_instructions != '')`
+	switch method {
+	case CrawlMethodLinks:
+		return rule
+	case CrawlMethodInstructions:
+		return instructions
+	}
+	return `(` + rule + ` OR ` + instructions + `)`
+}
+
+// crawlableListingForLinksSQL is crawlableListingSQL per link (plan 197, step 2): a link set to use Rod is crawlable with its AI instructions
+// whatever the Browser's method is; every other link follows the Browser's method. One condition, no semicolon.
+func crawlableListingForLinksSQL(method string) string {
+	const instructions = `(crawl_instructions IS NOT NULL AND crawl_instructions != '')`
+	return `((crawl_engine = 'rod' AND ` + instructions + `) OR (crawl_engine != 'rod' AND ` + crawlableListingSQL(method) + `))`
+}
+
+// ListPortalLinksEligibleForAutoDiscovery returns every portal link's
+// own id, across ALL portals, eligible for the auto-discovery
+// manager's own GLOBAL sweep (step 84) — has crawl_instructions set
+// (the same eligibility BuildCrawlRequest's own ErrNoCrawlInstructions
+// gate already enforces per-link), has not individually opted out via
+// auto_discovery_enabled (step 84 follow-up: "some of the links people
+// might not want to be auto-discovered," even while the global
+// schedule is on), AND has no custom interval of its own set (step 85:
+// "the links with auto-discovery activated and a custom period should
+// be excluded from the global auto-discovery" — such a link is instead
+// picked up by ListDuePortalLinksWithCustomInterval below, on its own
+// independent clock). Originally named
+// ListPortalLinksWithCrawlInstructions before the first of these two
+// extra conditions existed — renamed once it did, since the old name
+// would have been misleading about what "eligible" now actually means.
+// Applied here as a set query since the auto-discovery manager needs
+// to consider every eligible link at once, rather than one specific
+// link a caller already knows the id of (every other portal-link query
+// in this file is scoped to one known link or one known portal). See
+// plan/ai/tools/career/step-84-auto-discovery-scheduled-crawling.md and
+// plan/ai/tools/career/step-85-auto-discovery-per-link-custom-interval.md.
+func ListPortalLinksEligibleForAutoDiscovery(method string) ([]string, error) {
+	rows, err := db.JobsDB.Query(
+		`SELECT id FROM portal_links
+		 WHERE ` + crawlableListingForLinksSQL(method) + `
+		   AND auto_discovery_enabled = 1
+		   AND requires_login = 0
+		   AND auto_discovery_interval_minutes IS NULL`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	ids := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// ListDuePortalLinksWithCustomInterval returns every portal link's own
+// id, across ALL portals, that has its OWN auto-discovery interval set
+// (step 85) and is individually due for it right now — has
+// crawl_instructions set, is enabled, has a non-NULL
+// auto_discovery_interval_minutes, and either has never run
+// (auto_discovery_last_run_at IS NULL) or enough of its own interval
+// has elapsed since its own last run. This is the per-link analogue of
+// the global due-check (autodiscovery.checkAndRunSweep's own
+// comparison against auto_discovery_settings.last_run_at/
+// interval_minutes) — computed here in SQL, via SQLite's own
+// unixepoch(), rather than fetched-then-filtered in Go, mirroring this
+// file's own existing precedent of doing set-membership work in the
+// query (ListPortalLinksEligibleForAutoDiscovery above). See
+// plan/ai/tools/career/step-85-auto-discovery-per-link-custom-interval.md.
+func ListDuePortalLinksWithCustomInterval(method string) ([]string, error) {
+	rows, err := db.JobsDB.Query(
+		`SELECT id FROM portal_links
+		 WHERE ` + crawlableListingForLinksSQL(method) + `
+		   AND auto_discovery_enabled = 1
+		   AND requires_login = 0
+		   AND auto_discovery_interval_minutes IS NOT NULL
+		   AND (
+		     auto_discovery_last_run_at IS NULL
+		     OR unixepoch() - auto_discovery_last_run_at >= auto_discovery_interval_minutes * 60
+		   )`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	ids := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// RecordPortalLinkAutoDiscoveryRun sets auto_discovery_last_run_at to
+// now (unix seconds) for one link — the per-link analogue of
+// autodiscovery.recordSweepStart, called by the auto-discovery manager
+// right when THAT link's own due crawl starts (step 85), never by
+// anything else; a link using the global interval never has this
+// column touched at all, relying on the shared
+// auto_discovery_settings.last_run_at instead.
+func RecordPortalLinkAutoDiscoveryRun(id string) error {
+	_, err := db.JobsDB.Exec(
+		`UPDATE portal_links SET auto_discovery_last_run_at = unixepoch() WHERE id = ?`,
+		id,
+	)
+	return err
+}
+
+// UpdatePortalLinkCrawlInstructions is the one shared persistent-layer
+// function both the HTTP human-editing path (PUT /portal-links' own
+// optional crawlInstructions field) and the AI-facing
+// set_portal_link_crawl_instructions MCP tool call — validation lives
+// here, once, so neither path can bypass it.
+func UpdatePortalLinkCrawlInstructions(id, yamlText string) error {
+	if err := RequirePortalLinkExists(id); err != nil {
+		return err
+	}
+	if err := validateCrawlInstructions(yamlText); err != nil {
+		return err
+	}
+	_, err := db.JobsDB.Exec(
+		// Saved instructions settle any pending "does this page list jobs?"
+		// question (step 91): the agent got what it needed.
+		`UPDATE portal_links SET crawl_instructions = ?, jobs_question_asked_at = NULL, jobs_question_note = NULL, updated_at = datetime('now') WHERE id = ?`,
+		yamlText, id,
+	)
+	return err
+}
+
+// --- job detail crawl instructions (step XX) ---
+
+// jobDetailCrawlInstructionsDoc is deliberately simpler than
+// crawlInstructionsDoc above: a single job's own detail page is never
+// a repeating list (no container) and is never paginated (no
+// pagination) — just the set of elements on that one page that hold
+// job-position-relevant text. Reuses crawlInstructionsField unchanged
+// (label/selector/attribute/multiple) since the field shape itself is
+// identical; only the surrounding document differs. See
+// plan/ai/tools/career/step-XX-job-detail-crawl-instructions.md.
+type jobDetailCrawlInstructionsDoc struct {
+	Fields []crawlInstructionsField `yaml:"fields"`
+	// DescriptionRule (plan 186) is how the job's full description is read, next to Fields and not instead of them; see
+	// description_rule.go. Absent in every document written before: those behave exactly as they always did.
+	DescriptionRule *DescriptionRule `yaml:"descriptionRule,omitempty"`
+	// ReplaceTitle (plan 186, D2) lets the page's title replace the job's saved title after a detail crawl. Off unless set; needs a title
+	// field; the replacement is said in the run log and never touches a job added by hand.
+	ReplaceTitle bool `yaml:"replaceTitle,omitempty"`
+}
+
+// requiredJobDetailCrawlOutputKeys is deliberately just "description"
+// — title/company/location were already captured by the listing
+// crawl (crawlInstructionsDoc above); this document's whole purpose is
+// the full, untruncated body text a listing page's own preview cuts
+// off, not re-deriving fields the listing step already produced.
+var requiredJobDetailCrawlOutputKeys = []string{"description"}
+
+// validateJobDetailCrawlInstructions mirrors validateCrawlInstructions
+// above minus the container/pagination checks (neither concept applies
+// to a single detail page) — same "shape check, not a correctness
+// check" posture: this only confirms the required key is present,
+// never that the selectors actually match real content on the page.
+func validateJobDetailCrawlInstructions(yamlText string) error {
+	var doc jobDetailCrawlInstructionsDoc
+	if err := yaml.Unmarshal([]byte(yamlText), &doc); err != nil {
+		return fmt.Errorf("%w: not valid YAML: %v", ErrInvalidCrawlInstructions, err)
+	}
+	if err := ValidateDescriptionRule(doc.DescriptionRule); err != nil {
+		return err
+	}
+	if len(doc.Fields) == 0 && doc.DescriptionRule == nil {
+		return fmt.Errorf("%w: fields must have at least one entry", ErrInvalidCrawlInstructions)
+	}
+	for i, f := range doc.Fields {
+		if f.Label == "" {
+			return fmt.Errorf("%w: fields[%d].label is required", ErrInvalidCrawlInstructions, i)
+		}
+		if f.Source != "" || f.Path != "" {
+			if f.Source == "" {
+				return fmt.Errorf("%w: fields[%d].path needs a source", ErrInvalidCrawlInstructions, i)
+			}
+			if f.Selector != "" || f.Attribute != "" || f.Multiple {
+				return fmt.Errorf("%w: fields[%d]: a field read from the page's structured data has no selector, attribute or multiple", ErrInvalidCrawlInstructions, i)
+			}
+			if err := ValidateStructuredSource(fmt.Sprintf("fields[%d]", i), f.Source, f.Path); err != nil {
+				return fmt.Errorf("%w: %v", ErrInvalidCrawlInstructions, err)
+			}
+			continue
+		}
+		if f.Selector == "" {
+			return fmt.Errorf("%w: fields[%d].selector is required", ErrInvalidCrawlInstructions, i)
+		}
+	}
+	effective := make(map[string]bool, len(doc.Fields)+1)
+	for _, f := range doc.Fields {
+		effective[f.Label] = true
+	}
+	if doc.ReplaceTitle && !effective["title"] {
+		return fmt.Errorf("%w: replaceTitle needs a field labeled %q", ErrInvalidCrawlInstructions, "title")
+	}
+	if doc.DescriptionRule != nil {
+		effective[DescriptionLabel] = true // the rule produces the description
+	}
+	for _, required := range requiredJobDetailCrawlOutputKeys {
+		if !effective[required] {
+			return fmt.Errorf(
+				"%w: no field produces the required %q key (add a field labeled %q)",
+				ErrInvalidCrawlInstructions, required, required,
+			)
+		}
+	}
+	return nil
+}
+
+func GetPortalLinkJobDetailCrawlInstructions(id string) (string, error) {
+	if err := RequirePortalLinkExists(id); err != nil {
+		return "", err
+	}
+	var instructions sql.NullString
+	err := db.JobsDB.QueryRow(`SELECT job_detail_crawl_instructions FROM portal_links WHERE id = ?`, id).Scan(&instructions)
+	if err != nil {
+		return "", err
+	}
+	return instructions.String, nil
+}
+
+// Who wrote a link's job-detail instructions (plan 186, step 9). Only JobDetailOriginPicked instructions, which a person made on the
+// picking screen, may fill the company, location and date of a job (the screen says so); the others behave as they always did.
+const (
+	JobDetailOriginPicked    = "picked"
+	JobDetailOriginAI        = "ai"
+	JobDetailOriginManual    = "manual"
+	JobDetailOriginInherited = "inherited"
+)
+
+// UpdatePortalLinkJobDetailCrawlInstructions stores a link's job-detail instructions without recording who wrote them (origin "": see
+// UpdatePortalLinkJobDetailCrawlInstructionsFrom). Validation lives in one place, same reasoning as UpdatePortalLinkCrawlInstructions.
+func UpdatePortalLinkJobDetailCrawlInstructions(id, yamlText string) error {
+	return UpdatePortalLinkJobDetailCrawlInstructionsFrom(id, yamlText, "")
+}
+
+// UpdatePortalLinkJobDetailCrawlInstructionsFrom is the one shared persistent-layer function every save of job-detail instructions goes
+// through (the AI's tool, the text box, the picking screen), with the origin of the text.
+func UpdatePortalLinkJobDetailCrawlInstructionsFrom(id, yamlText, origin string) error {
+	if err := RequirePortalLinkExists(id); err != nil {
+		return err
+	}
+	if err := validateJobDetailCrawlInstructions(yamlText); err != nil {
+		return err
+	}
+	switch origin {
+	case "", JobDetailOriginPicked, JobDetailOriginAI, JobDetailOriginManual, JobDetailOriginInherited:
+	default:
+		return fmt.Errorf("unknown instruction origin %q", origin)
+	}
+	_, err := db.JobsDB.Exec(
+		`UPDATE portal_links SET job_detail_crawl_instructions = ?, job_detail_instructions_origin = ?, updated_at = datetime('now') WHERE id = ?`,
+		yamlText, origin, id,
+	)
+	return err
+}
+
+// jobDetailOriginByLink reads the origin of every link's job-detail instructions.
+func jobDetailOriginByLink() (map[string]string, error) {
+	rows, err := db.JobsDB.Query(`SELECT id, job_detail_instructions_origin FROM portal_links`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var id, origin string
+		if err := rows.Scan(&id, &origin); err != nil {
+			return nil, err
+		}
+		out[id] = origin
+	}
+	return out, rows.Err()
+}
+
+// --- deterministic ("Crawl now") crawl support (step 27) ---
+
+// ErrNoCrawlInstructions is a 400, not a 500 — this is a caller
+// mistake (the UI's own "Crawl now" button is already gated on
+// link.crawlInstructions being set), not a server failure.
+var ErrNoCrawlInstructions = errors.New("this portal link has no crawl instructions set")
+
+// maxAllowedPaginationPages mirrors browser's own identically-named
+// constant (tools/browser/backend/paginate.go) exactly — that ceiling
+// is normally only enforced by the AI-facing --mcp adapter in front of
+// browser's own plain POST /crawl-paginated, which this tool's
+// deterministic path calls directly, bypassing that adapter entirely.
+// Duplicated (not imported — two fully separate Go modules/binaries,
+// same reasoning as validateCrawlInstructions' own header comment)
+// here so an oversized stored maxPages still can't run an unbounded
+// crawl now that no AI-side safeguard is in the loop. See open
+// question 3, plan/ai/tools/career/step-27-ai-free-manual-crawl.md.
+const maxAllowedPaginationPages = 10
+
+// CrawlRequestField/CrawlRequest are the exact JSON shape browser's
+// own POST /crawl-paginated expects as its request body
+// (tools/browser/backend/paginate.go's paginatedCrawlRequest) — this
+// tool has no dependency on that package, so the shape is
+// independently declared here, kept in sync by hand.
+type CrawlRequestField struct {
+	Label     string `json:"label"`
+	Selector  string `json:"selector"`
+	Attribute string `json:"attribute,omitempty"`
+	Multiple  bool   `json:"multiple,omitempty"`
+	Source    string `json:"source,omitempty"`
+	Path      string `json:"path,omitempty"`
+}
+
+type CrawlRequest struct {
+	Container         string              `json:"container,omitempty"`
+	Fields            []CrawlRequestField `json:"fields"`
+	Mapping           map[string]string   `json:"mapping,omitempty"`
+	NextSelector      string              `json:"nextSelector"`
+	RequestedMaxPages int                 `json:"requestedMaxPages"`
+	EffectiveMaxPages int                 `json:"effectiveMaxPages"`
+	// DescriptionRule (plan 186) is sent only for a job-detail crawl whose instructions carry one.
+	DescriptionRule *DescriptionRule `json:"descriptionRule,omitempty"`
+	// ReplaceTitle is the instructions' replaceTitle: it is for Career's own use after the crawl and is never sent to the Browser.
+	ReplaceTitle bool `json:"-"`
+}
+
+// BuildCrawlRequest turns a portal link's own stored crawl_instructions
+// YAML into the JSON shape browser's own /crawl-paginated route
+// expects — reusing validateCrawlInstructions' own parsing/shape
+// check (defensive: normally already validated at write time, but this
+// re-checks in case a row predates that check or was hand-edited)
+// rather than re-implementing it. Returns ErrNoCrawlInstructions when
+// the link has no crawl instructions at all — the deterministic
+// "Crawl now" button has nothing to run in that case.
+func BuildCrawlRequest(id string) (CrawlRequest, error) {
+	yamlText, err := GetPortalLinkCrawlInstructions(id)
+	if err != nil {
+		return CrawlRequest{}, err
+	}
+	return BuildCrawlRequestFromYAML(yamlText)
+}
+
+// BuildCrawlRequestFromYAML is BuildCrawlRequest's own body, taking the instructions
+// text directly instead of reading it off a link — so a candidate's instructions
+// can be tried against ANOTHER link's page before being saved on it (step 103).
+// Same checks as above: empty text is ErrNoCrawlInstructions, and the text is
+// validated before it is turned into a request.
+func BuildCrawlRequestFromYAML(yamlText string) (CrawlRequest, error) {
+	if yamlText == "" {
+		return CrawlRequest{}, ErrNoCrawlInstructions
+	}
+	if err := validateCrawlInstructions(yamlText); err != nil {
+		return CrawlRequest{}, err
+	}
+
+	var doc crawlInstructionsDoc
+	if err := yaml.Unmarshal([]byte(yamlText), &doc); err != nil {
+		// Unreachable in practice — validateCrawlInstructions above
+		// already parsed this same text successfully.
+		return CrawlRequest{}, fmt.Errorf("%w: %v", ErrInvalidCrawlInstructions, err)
+	}
+
+	requested := doc.Pagination.MaxPages
+	effective := requested
+	if effective > maxAllowedPaginationPages {
+		effective = maxAllowedPaginationPages
+	}
+
+	fields := make([]CrawlRequestField, len(doc.Fields))
+	for i, f := range doc.Fields {
+		fields[i] = CrawlRequestField{Label: f.Label, Selector: f.Selector, Attribute: f.Attribute, Multiple: f.Multiple}
+	}
+
+	return CrawlRequest{
+		Container:         doc.Container,
+		Fields:            fields,
+		Mapping:           doc.Mapping,
+		NextSelector:      doc.Pagination.NextSelector,
+		RequestedMaxPages: requested,
+		EffectiveMaxPages: effective,
+	}, nil
+}
+
+// ErrNoJobDetailCrawlInstructions is BuildJobDetailCrawlRequest's own
+// counterpart to ErrNoCrawlInstructions above — the deterministic
+// "Crawl job details now" button has nothing to run without a stored
+// job_detail_crawl_instructions document.
+var ErrNoJobDetailCrawlInstructions = errors.New("this portal link has no job detail crawl instructions set")
+
+// BuildJobDetailCrawlRequest mirrors BuildCrawlRequest above, sourcing
+// from job_detail_crawl_instructions instead of crawl_instructions —
+// deliberately simpler: no container (one job per page, nothing to
+// group) and no pagination (NextSelector always "", RequestedMaxPages/
+// EffectiveMaxPages always 1 — a job's own detail page is a single
+// page, never paginated). The caller (crawl package) fills in URL
+// itself, per job, since — unlike the listing page's own fixed url —
+// a job detail crawl visits a DIFFERENT url per job.
+func BuildJobDetailCrawlRequest(id string) (CrawlRequest, error) {
+	yamlText, err := GetPortalLinkJobDetailCrawlInstructions(id)
+	if err != nil {
+		return CrawlRequest{}, err
+	}
+	return BuildJobDetailCrawlRequestFromYAML(yamlText)
+}
+
+// BuildJobDetailCrawlRequestFromYAML is BuildJobDetailCrawlRequest's own body, taking
+// the instructions text directly (step 103), for the same reason as
+// BuildCrawlRequestFromYAML above.
+func BuildJobDetailCrawlRequestFromYAML(yamlText string) (CrawlRequest, error) {
+	if yamlText == "" {
+		return CrawlRequest{}, ErrNoJobDetailCrawlInstructions
+	}
+	if err := validateJobDetailCrawlInstructions(yamlText); err != nil {
+		return CrawlRequest{}, err
+	}
+
+	var doc jobDetailCrawlInstructionsDoc
+	if err := yaml.Unmarshal([]byte(yamlText), &doc); err != nil {
+		// Unreachable in practice — validateJobDetailCrawlInstructions
+		// above already parsed this same text successfully.
+		return CrawlRequest{}, fmt.Errorf("%w: %v", ErrInvalidCrawlInstructions, err)
+	}
+
+	fields := make([]CrawlRequestField, len(doc.Fields))
+	for i, f := range doc.Fields {
+		fields[i] = CrawlRequestField{Label: f.Label, Selector: f.Selector, Attribute: f.Attribute, Multiple: f.Multiple, Source: f.Source, Path: f.Path}
+	}
+
+	return CrawlRequest{
+		Fields:            fields,
+		NextSelector:      "",
+		RequestedMaxPages: 1,
+		EffectiveMaxPages: 1,
+		DescriptionRule:   doc.DescriptionRule,
+		ReplaceTitle:      doc.ReplaceTitle,
+	}, nil
+}
+
+// CrawlResultPage mirrors browser's own pageExtractResult
+// (tools/browser/backend/paginate.go) — one page's worth of extracted
+// values, keyed by the field label the crawl instructions declared.
+// Results[label] is either a single string (Multiple: false) or a
+// []any of strings (Multiple: true) — ExtractResultStrings below
+// normalizes either shape to a []string. Items (step 30) is populated
+// instead of Results when the crawl instructions set a container —
+// each entry is already one real job's own correctly-grouped fields;
+// exactly one of Results/Items is ever non-empty, mirroring browser's
+// own contract exactly.
+type CrawlResultPage struct {
+	URL     string           `json:"url"`
+	Results map[string]any   `json:"results,omitempty"`
+	Items   []map[string]any `json:"items,omitempty"`
+	// NotFound is never read by anything in this package — decoded only
+	// for parity with browser's own pageExtractResult shape. omitempty
+	// (step 81) matters for a reason unrelated to IngestCrawlResults'
+	// own HTTP decode path (unaffected by omitempty either way): the
+	// MCP SDK auto-generates check_crawl_extraction_result's own
+	// argument JSON Schema from this exact struct, and without
+	// omitempty it marked "notFound" a REQUIRED property — rejecting a
+	// well-formed args.pages that simply omitted an unused field before
+	// the handler ever ran, confirmed live (a real tool call failed
+	// schema validation with "missing properties: [\"notFound\"]").
+	// See plan/ai/tools/career/step-81-check-crawl-extraction-result-tool.md.
+	NotFound []string `json:"notFound,omitempty"`
+	// Truncated lists the labels whose value the Browser cut at its limit (a plain field at 5,000 characters, a description
+	// at its rule's limit); Description is the report of a description rule. Both are omitted when absent (plan 186).
+	Truncated   []string           `json:"truncated,omitempty"`
+	Description *DescriptionReport `json:"description,omitempty"`
+}
+
+// DescriptionReport is the Browser's report of a description rule (plan 186): the text's size and cut flag for the run log, and the
+// parts, outline and removed text the picking screen shows. Every key is omitted by the Browser when empty.
+type DescriptionReport struct {
+	Chars        int                     `json:"chars"`
+	FullLength   int                     `json:"fullLength"`
+	Truncated    bool                    `json:"truncated"`
+	Limit        int                     `json:"limit"`
+	Parts        []DescriptionPartReport `json:"parts,omitempty"`
+	Outline      []string                `json:"outline,omitempty"`
+	Removed      []DescriptionRemoved    `json:"removed,omitempty"`
+	RemovedTotal int                     `json:"removedTotal,omitempty"`
+	Errors       []string                `json:"errors,omitempty"`
+}
+
+// DescriptionPartReport is what the Browser found for one part of a rule.
+type DescriptionPartReport struct {
+	Index    int    `json:"index"`
+	Include  string `json:"include,omitempty"`
+	Matches  int    `json:"matches"`
+	Chars    int    `json:"chars"`
+	Overlap  bool   `json:"overlap"`
+	NotFound bool   `json:"notFound"`
+	Cut      int    `json:"cut"`
+	Removed  int    `json:"removed"`
+}
+
+// DescriptionRemoved is a piece of text a rule took out (an exclude, a consent box, a cut-after), with a 200-character preview.
+type DescriptionRemoved struct {
+	Part     int    `json:"part"`
+	Kind     string `json:"kind"`
+	Selector string `json:"selector,omitempty"`
+	Chars    int    `json:"chars"`
+	Text     string `json:"text"`
+}
+
+// ExtractResultStrings normalizes one field's extracted value (a
+// plain string for a non-multiple field, a []any for a multiple one,
+// or absent) to a []string — the one shape IngestCrawlResults' own
+// per-index zip below (and the crawl package's own extractResultValues)
+// needs regardless of which the field was authored as.
+func ExtractResultStrings(v any) []string {
+	switch t := v.(type) {
+	case string:
+		if t == "" {
+			return nil
+		}
+		return []string{t}
+	case []any:
+		out := make([]string, 0, len(t))
+		for _, item := range t {
+			if s, ok := item.(string); ok && s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+// At returns s[i], or "" when i is out of range — lets
+// IngestCrawlResults zip several independently-lengthed field arrays
+// (a page listing 12 jobs might have 12 titles and 12 urls, but only
+// 9 of them also matched a "location" selector) without a bounds
+// check at every call site.
+func At(s []string, i int) string {
+	if i < len(s) {
+		return s[i]
+	}
+	return ""
+}
+
+// sanitizePostedAt strips a raw scraped postedAt value down to only
+// digits and the three common date delimiters (. / -) — job boards
+// often wrap the actual date in a label and/or surrounding text (e.g.
+// "Veröffentlichungsdatum: 31.08.2026"), which this turns into
+// "31.08.2026". Only ever applied to the DETERMINISTIC crawler's own
+// extraction (via extractCrawlResultItemFields/
+// extractCrawlResultIndexedFields below) — the AI-driven
+// save_job/save_portal_job/save_portal_jobs tools take postedAt
+// directly from the AI's own argument and are deliberately left alone,
+// per those tools' own descriptions ("free text ... not normalized").
+// If nothing that looks even loosely date-shaped survives (no digit at
+// all, or digits with no delimiter — e.g. a relative phrase like "vor
+// 19 Tagen" strips down to a bare "19", not a real date), this returns
+// "" rather than storing a misleading fragment. This is a character
+// filter, not a date validator — it does not check day/month ranges,
+// and it does not attempt to split two real dates concatenated by an
+// overly broad selector (that's a selector-quality problem, the kind
+// plan/ai/tools/career/step-79-ai-crawl-instructions-acceptance-loop.md
+// already addresses at the source, not something a character-level
+// filter can safely disambiguate after the fact).
+// SanitizePostedAt is sanitizePostedAt for callers outside this package (the job-detail step of the link crawler, plan 185, reads a posted
+// date from a detail page and must clean it exactly as a listing crawl does).
+func SanitizePostedAt(raw string) string { return sanitizePostedAt(raw) }
+
+var isoDatePrefix = regexp.MustCompile(`^\s*(\d{4})-(\d{2})-(\d{2})(?:[T ]|\s*$)`)
+
+// CleanDetailPostedAt is the date of a JOB DETAIL page (plan 185, step 7b): a machine date such as the datetime attribute of a <time>
+// element ("2026-10-28T08:55:19+00:00") becomes "2026-10-28"; anything else is cleaned exactly like a listing's date
+// (sanitizePostedAt). A date written with month names ("28 October 2026") has no digits-with-delimiters form and stays unusable: the
+// job-detail prompt asks for the datetime attribute for that reason.
+func CleanDetailPostedAt(raw string) string {
+	if m := isoDatePrefix.FindStringSubmatch(raw); m != nil {
+		month, _ := strconv.Atoi(m[2])
+		day, _ := strconv.Atoi(m[3])
+		if month >= 1 && month <= 12 && day >= 1 && day <= 31 {
+			return m[1] + "-" + m[2] + "-" + m[3]
+		}
+		return ""
+	}
+	return sanitizePostedAt(raw)
+}
+
+func sanitizePostedAt(raw string) string {
+	var b strings.Builder
+	hasDigit, hasDelimiter := false, false
+	for _, r := range raw {
+		switch {
+		case r >= '0' && r <= '9':
+			hasDigit = true
+			b.WriteRune(r)
+		case r == '.' || r == '/' || r == '-':
+			hasDelimiter = true
+			b.WriteRune(r)
+		}
+	}
+	if !hasDigit || !hasDelimiter {
+		return ""
+	}
+	return b.String()
+}
+
+// sanitizeTitle strips digits and colons from a raw scraped job title,
+// then collapses any resulting run of whitespace to a single space and
+// trims the ends — job listing pages sometimes render a stray
+// index/badge number (and its own separating colon) as part of, or
+// instead of, the real title text (e.g. "2:", "8:"), corrupting what
+// gets saved as job.title. Applied unconditionally to every occurrence
+// (not just a leading run): a title consisting ENTIRELY of digits/
+// colons — the reported bug's own shape — naturally collapses to "",
+// which IngestCrawlResults' own existing title=="" rule then correctly
+// skips, with no separate special case needed. Only digits and colons
+// are removed — other punctuation genuinely meaningful in real titles
+// (parentheses, slashes, hyphens, periods, plus signs — e.g.
+// "(m/w/d)", "Node.js", "C++") is deliberately left untouched; extend
+// this rune set later if another corrupted-title shape turns up. Only
+// ever applied to the deterministic crawler's own extraction (same
+// scoping as sanitizePostedAt above) — the AI-driven
+// save_job/save_portal_job/save_portal_jobs tools take title directly
+// from the AI's own argument and are left alone.
+// SanitizeTitle is the cleaning every scraped job title gets (digits and colons out, whitespace tidied), for callers outside this package.
+func SanitizeTitle(raw string) string { return sanitizeTitle(raw) }
+
+func sanitizeTitle(raw string) string {
+	var b strings.Builder
+	for _, r := range raw {
+		if (r >= '0' && r <= '9') || r == ':' {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return strings.Join(strings.Fields(b.String()), " ")
+}
+
+// extractCrawlResultItemFields reads title/url/company/location/
+// description/postedAt from one Items-shape entry (one real job's own
+// already-grouped fields, when a container was set) — the single place
+// both IngestCrawlResults and classifyCrawlResultPages (step 81) read
+// these six fields, so what counts as "extractable" can never drift
+// between what a real crawl saves and what a test crawl predicts. See
+// plan/ai/tools/career/step-80-shared-crawl-extraction-classifier.md.
+func extractCrawlResultItemFields(item map[string]any) (title, sourceURL, company, location, description, postedAt string) {
+	title = sanitizeTitle(At(ExtractResultStrings(item["title"]), 0))
+	sourceURL = At(ExtractResultStrings(item["url"]), 0)
+	company = At(ExtractResultStrings(item["company"]), 0)
+	location = At(ExtractResultStrings(item["location"]), 0)
+	description = At(ExtractResultStrings(item["description"]), 0)
+	postedAt = sanitizePostedAt(At(ExtractResultStrings(item["postedAt"]), 0))
+	return
+}
+
+// extractCrawlResultIndexedFields is extractCrawlResultItemFields' own
+// counterpart for the Results shape (no container — parallel arrays
+// zipped by index) — same six fields, same source of truth.
+func extractCrawlResultIndexedFields(page CrawlResultPage, i int) (title, sourceURL, company, location, description, postedAt string) {
+	title = sanitizeTitle(At(ExtractResultStrings(page.Results["title"]), i))
+	sourceURL = At(ExtractResultStrings(page.Results["url"]), i)
+	company = At(ExtractResultStrings(page.Results["company"]), i)
+	location = At(ExtractResultStrings(page.Results["location"]), i)
+	description = At(ExtractResultStrings(page.Results["description"]), i)
+	postedAt = sanitizePostedAt(At(ExtractResultStrings(page.Results["postedAt"]), i))
+	return
+}
+
+type IngestCrawlResultsResult struct {
+	JobsSaved   int `json:"jobsSaved"`
+	JobsUpdated int `json:"jobsUpdated"`
+	JobsSkipped int `json:"jobsSkipped"`
+	// JobsIgnored (step 133) counts jobs the crawl found that were deleted before and are not added again. They are
+	// ALSO counted in JobsUpdated: "updated" has always meant "found, nothing new saved" (a cross-portal duplicate
+	// counts there too), and the zero-jobs flag reads saved + updated, so a link whose jobs the user all deleted is
+	// not mistaken for a broken crawl.
+	JobsIgnored int `json:"jobsIgnored"`
+	// JobsFilteredOut (step 150) counts new jobs the crawler's criteria refused (Settings → Job crawler). Like JobsIgnored they are
+	// ALSO counted in JobsUpdated: found, nothing saved, and not a sign of a broken crawl.
+	JobsFilteredOut int `json:"jobsFilteredOut"`
+}
+
+// IngestCrawlResults maps a completed deterministic crawl's own raw
+// results (browser's own /crawl-paginated response body, forwarded
+// here unmodified by the frontend) onto job rows via the fixed label
+// vocabulary decided in step 27 (title/url required; company/
+// location/description/postedAt optional, used verbatim with no date
+// normalization or other AI-style interpretation) and persists each
+// one through the exact same jobs.SavePortalJob (step 20) the AI-based
+// "Crawl with AI" path already uses — one shared insert path for both
+// crawl mechanisms, only how a job's own fields were produced differs.
+//
+// A page listing many jobs (not just one detail page) is the common
+// case for a real job board. Grouped pages (step 30, page.Items set —
+// the crawl instructions declared a container) are handled first, per
+// page: each item is already one real job's own correctly-grouped
+// fields, no positional zipping needed at all — this is the actual
+// fix for the misalignment flat mode could silently produce. A page
+// with no Items (no container was set for this link, or an older
+// crawl instruction predating step 30) falls back to flat mode
+// unchanged: "title"/"url" are typically authored with Multiple:
+// true, yielding one array per field rather than one scalar; this
+// walks index 0..len(titles) (title is the required anchor field) and
+// zips every other field positionally via At() — a title with no
+// matching url at the same index is skipped (JobsSkipped), never
+// inserted with an empty sourceUrl. Both branches count a save the
+// same way flat mode always has: only `created` is ever checked
+// (jobs.SavePortalJob's own `duplicate` result is intentionally not
+// tracked as a separate outcome here, matching the pre-existing
+// behavior exactly — a duplicate is counted as JobsUpdated, same as a
+// genuine update).
+func IngestCrawlResults(portalLinkID string, pages []CrawlResultPage) (IngestCrawlResultsResult, error) {
+	return ingestCrawlResults(portalLinkID, pages, false)
+}
+
+// IngestLinkCrawlResults is IngestCrawlResults for jobs the link crawler found (plan 185): each job is identified by its address alone
+// (jobs.SavePortalJobByURL), because it has no company yet and two postings with the same title must stay two jobs.
+func IngestLinkCrawlResults(portalLinkID string, pages []CrawlResultPage) (IngestCrawlResultsResult, error) {
+	return ingestCrawlResults(portalLinkID, pages, true)
+}
+
+func ingestCrawlResults(portalLinkID string, pages []CrawlResultPage, byURLOnly bool) (IngestCrawlResultsResult, error) {
+	save := jobs.SavePortalJobWith
+	if byURLOnly {
+		save = jobs.SavePortalJobByURL
+	}
+	if err := RequirePortalLinkExists(portalLinkID); err != nil {
+		return IngestCrawlResultsResult{}, err
+	}
+
+	var result IngestCrawlResultsResult
+	criteria := jobs.NewCriteria() // asked once for the whole crawl (step 150)
+	for _, page := range pages {
+		if len(page.Items) > 0 {
+			for _, item := range page.Items {
+				title, sourceURL, company, location, description, postedAt := extractCrawlResultItemFields(item)
+				if title == "" || sourceURL == "" {
+					result.JobsSkipped++
+					continue
+				}
+				_, created, _, err := save(criteria, portalLinkID, sourceURL, title, company, location, description, postedAt)
+				if errors.Is(err, jobs.ErrDeletedBefore) {
+					result.JobsIgnored++
+					result.JobsUpdated++
+					continue
+				}
+				if errors.Is(err, jobs.ErrFilteredOut) {
+					result.JobsFilteredOut++
+					result.JobsUpdated++
+					continue
+				}
+				if err != nil {
+					return result, err
+				}
+				if created {
+					result.JobsSaved++
+				} else {
+					result.JobsUpdated++
+				}
+			}
+			continue
+		}
+
+		titles := ExtractResultStrings(page.Results["title"])
+		for i := range titles {
+			title, sourceURL, company, location, description, postedAt := extractCrawlResultIndexedFields(page, i)
+			if title == "" || sourceURL == "" {
+				result.JobsSkipped++
+				continue
+			}
+			_, created, _, err := save(criteria, portalLinkID, sourceURL, title, company, location, description, postedAt)
+			if errors.Is(err, jobs.ErrDeletedBefore) {
+				result.JobsIgnored++
+				result.JobsUpdated++
+				continue
+			}
+			if errors.Is(err, jobs.ErrFilteredOut) {
+				result.JobsFilteredOut++
+				result.JobsUpdated++
+				continue
+			}
+			if err != nil {
+				return result, err
+			}
+			if created {
+				result.JobsSaved++
+			} else {
+				result.JobsUpdated++
+			}
+		}
+	}
+	return result, nil
+}
+
+// WritePortalAwareError is the same idea as companies' own
+// WriteCompanyAwareError, for ErrUnknownPortal — moved here from this
+// tool's own http.go (package main) since it's fundamentally
+// portal-domain error mapping, not generic.
+func WritePortalAwareError(w http.ResponseWriter, action string, err error) {
+	if errors.Is(err, ErrUnknownPortal) {
+		http.Error(w, "unknown portal id", http.StatusBadRequest)
+		return
+	}
+	http.Error(w, "failed to "+action+": "+err.Error(), http.StatusInternalServerError)
+}
+
+// WritePortalLinkAwareError additionally maps ErrDuplicatePortalLink
+// (the same url added twice to one portal) and
+// ErrInvalidCrawlInstructions (step 19's own shape check) to a 400 —
+// the latter's own error text already carries the specific, actionable
+// reason (e.g. "pagination.maxPages is required"), so it's passed
+// straight through rather than replaced with a generic message. Moved
+// here from this tool's own http.go (package main), same reasoning as
+// WritePortalAwareError above — the crawl package also calls this.
+func WritePortalLinkAwareError(w http.ResponseWriter, action string, err error) {
+	switch {
+	case errors.Is(err, ErrUnknownPortal):
+		http.Error(w, "unknown portal id", http.StatusBadRequest)
+	case errors.Is(err, ErrUnknownPortalLink):
+		http.Error(w, "unknown portal link id", http.StatusBadRequest)
+	case errors.Is(err, ErrDuplicatePortalLink):
+		http.Error(w, "this url is already a link on this portal", http.StatusBadRequest)
+	case errors.Is(err, ErrInvalidCrawlInstructions):
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	case errors.Is(err, ErrNoCrawlInstructions):
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	case errors.Is(err, ErrNoJobDetailCrawlInstructions):
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	case errors.Is(err, ErrInvalidAutoDiscoveryInterval):
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	case errors.Is(err, ErrInvalidLoginURL), errors.Is(err, ErrManualOnly), errors.Is(err, ErrLoginWithAutoCrawl), errors.Is(err, ErrNoAIForLoginLink):
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	case errors.Is(err, ErrInvalidCrawlMethod), errors.Is(err, ErrLinkRulesNeeded), errors.Is(err, ErrLinkRulesLogin), errors.Is(err, ErrInvalidJobHost), errors.Is(err, ErrLinkRulesJobHost), errors.Is(err, ErrLinkRulesHost), errors.Is(err, ErrLinkRulesInvalid), errors.Is(err, ErrLinkRulesTooLarge):
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	case errors.Is(err, ErrInvalidInstructionKind), errors.Is(err, ErrInvalidInstructionTrigger):
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	default:
+		http.Error(w, "failed to "+action+": "+err.Error(), http.StatusInternalServerError)
+	}
+}
+
+// --- MCP registration ---
+
+type createPortalArgs struct {
+	Name string `json:"name" jsonschema:"the portal's own name, e.g. the job board's name"`
+}
+
+func RegisterCreatePortal(server *mcp.Server) {
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "create_portal",
+		Description: "Create a new job portal — a source to crawl for job postings. Only call this after " +
+			"list_portals confirms no existing portal already matches what the user described (e.g. the same " +
+			"job board under a slightly different name) — if one does, use that portal's own id instead of " +
+			"creating a duplicate.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args createPortalArgs) (*mcp.CallToolResult, any, error) {
+		if args.Name == "" {
+			return db.ErrResult("name is required"), nil, nil
+		}
+		id, err := CreatePortal(args.Name)
+		if err != nil {
+			return db.ErrResult(fmt.Sprintf("failed to create portal: %v", err)), nil, nil
+		}
+		return db.JSONResult(map[string]string{"id": id, "name": args.Name})
+	})
+}
+
+type listPortalsArgs struct{}
+
+func RegisterListPortals(server *mcp.Server) {
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "list_portals",
+		Description: "List every job portal, including each one's own crawl target links (id, title, url, " +
+			"crawlInstructions). Always call this first before create_portal, add_portal_link, or " +
+			"set_portal_link_crawl_instructions — check whether a portal or link matching what the user " +
+			"described already exists (by name/title, not just an exact URL match) before creating or asking " +
+			"to create anything new.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args listPortalsArgs) (*mcp.CallToolResult, any, error) {
+		portals, err := ListPortals()
+		if err != nil {
+			return db.ErrResult(fmt.Sprintf("failed to list portals: %v", err)), nil, nil
+		}
+		return db.JSONResult(map[string]any{"portals": portals})
+	})
+}
+
+type updatePortalArgs struct {
+	ID   string `json:"id" jsonschema:"the portal's own id, from create_portal or list_portals"`
+	Name string `json:"name" jsonschema:"the portal's own new name"`
+}
+
+func RegisterUpdatePortal(server *mcp.Server) {
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "update_portal",
+		Description: "Rename a job portal. Fails if id is unknown.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args updatePortalArgs) (*mcp.CallToolResult, any, error) {
+		if args.ID == "" {
+			return db.ErrResult("id is required"), nil, nil
+		}
+		if args.Name == "" {
+			return db.ErrResult("name is required"), nil, nil
+		}
+		if err := UpdatePortal(args.ID, args.Name); err != nil {
+			if errors.Is(err, ErrUnknownPortal) {
+				return db.ErrResult(fmt.Sprintf("unknown portal id %q", args.ID)), nil, nil
+			}
+			return db.ErrResult(fmt.Sprintf("failed to update portal: %v", err)), nil, nil
+		}
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "updated"}}}, nil, nil
+	})
+}
+
+type deletePortalArgs struct {
+	ID string `json:"id" jsonschema:"the portal's own id — deleting it also deletes every link it owns"`
+}
+
+func RegisterDeletePortal(server *mcp.Server) {
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "delete_portal",
+		Description: "Delete a job portal. This permanently deletes every crawl target link it owns.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args deletePortalArgs) (*mcp.CallToolResult, any, error) {
+		if args.ID == "" {
+			return db.ErrResult("id is required"), nil, nil
+		}
+		if err := DeletePortal(args.ID); err != nil {
+			return db.ErrResult(fmt.Sprintf("failed to delete portal: %v", err)), nil, nil
+		}
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "deleted"}}}, nil, nil
+	})
+}
+
+type addPortalLinkArgs struct {
+	PortalID      string  `json:"portalId" jsonschema:"the portal to add this crawl target to — must already exist"`
+	URL           string  `json:"url" jsonschema:"the URL to crawl for job postings"`
+	Title         string  `json:"title" jsonschema:"a short, descriptive title for this link (e.g. 'Software Engineer jobs, Hamburg') so it stays recognizable later"`
+	RequiresLogin *bool   `json:"requiresLogin,omitempty" jsonschema:"true only when the user says this page shows its jobs only to a logged-in visitor; the user then logs in themselves in a window they open when they crawl it (you never log in for them); omit otherwise"`
+	LoginURL      *string `json:"loginUrl,omitempty" jsonschema:"only with requiresLogin: the site's own login page (http or https), when it is not the link's own address; omit otherwise"`
+}
+
+func RegisterAddPortalLink(server *mcp.Server) {
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "add_portal_link",
+		Description: "Add a URL to crawl to an existing job portal, with a short, descriptive title (e.g. " +
+			"'Software Engineer jobs, Hamburg') so it stays recognizable later — title is required. Call " +
+			"list_portals first: if a link with a matching or very similar title/URL already exists under this " +
+			"portal, do not add a duplicate — use update_portal_link or set_portal_link_crawl_instructions " +
+			"against its existing id instead. If the user's request could reasonably match more than one " +
+			"existing link and it isn't clear which one they mean, ask the user to clarify before adding or " +
+			"editing anything — never guess.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args addPortalLinkArgs) (*mcp.CallToolResult, any, error) {
+		if args.PortalID == "" {
+			return db.ErrResult("portalId is required"), nil, nil
+		}
+		if args.URL == "" {
+			return db.ErrResult("url is required"), nil, nil
+		}
+		if args.Title == "" {
+			return db.ErrResult("title is required"), nil, nil
+		}
+		requires, login := false, ""
+		if args.RequiresLogin != nil {
+			requires = *args.RequiresLogin
+		}
+		if args.LoginURL != nil {
+			login = *args.LoginURL
+		}
+		id, err := AddPortalLinkWithLogin(args.PortalID, args.URL, args.Title, requires, login)
+		if err != nil {
+			switch {
+			case errors.Is(err, ErrUnknownPortal):
+				return db.ErrResult(fmt.Sprintf("unknown portal id %q", args.PortalID)), nil, nil
+			case errors.Is(err, ErrDuplicatePortalLink):
+				return db.ErrResult("this url is already a link on this portal"), nil, nil
+			case errors.Is(err, ErrInvalidLoginURL):
+				return db.ErrResult(err.Error()), nil, nil
+			}
+			return db.ErrResult(fmt.Sprintf("failed to add portal link: %v", err)), nil, nil
+		}
+		return db.JSONResult(map[string]string{"id": id})
+	})
+}
+
+type updatePortalLinkArgs struct {
+	ID            string  `json:"id" jsonschema:"the portal link's own id, from add_portal_link or list_portals"`
+	URL           *string `json:"url,omitempty" jsonschema:"the link's own new URL"`
+	Title         *string `json:"title,omitempty" jsonschema:"the link's own new title"`
+	RequiresLogin *bool   `json:"requiresLogin,omitempty" jsonschema:"set only when the user says this page shows its jobs only to a logged-in visitor (true) or no longer does (false); the user logs in themselves in a window they open when they crawl it, you never log in for them"`
+	LoginURL      *string `json:"loginUrl,omitempty" jsonschema:"the site's own login page (http or https) when it is not the link's own address; an empty text clears it"`
+}
+
+func RegisterUpdatePortalLink(server *mcp.Server) {
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "update_portal_link",
+		Description: "Correct an existing portal link's own title and/or url. This is the right tool when a " +
+			"link close to what's wanted already exists — use it instead of add_portal_link to avoid creating " +
+			"a duplicate. Fails if id is unknown.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args updatePortalLinkArgs) (*mcp.CallToolResult, any, error) {
+		if args.ID == "" {
+			return db.ErrResult("id is required"), nil, nil
+		}
+		if args.URL == nil && args.Title == nil && args.RequiresLogin == nil && args.LoginURL == nil {
+			return db.ErrResult("url, title, requiresLogin or loginUrl is required"), nil, nil
+		}
+		if args.URL != nil && *args.URL == "" {
+			return db.ErrResult("url cannot be empty"), nil, nil
+		}
+		if args.Title != nil && *args.Title == "" {
+			return db.ErrResult("title cannot be empty"), nil, nil
+		}
+		// The login address is checked before anything is written, so a refused request changes nothing.
+		if args.LoginURL != nil {
+			if _, err := ValidateLoginURL(*args.LoginURL); err != nil {
+				return db.ErrResult(err.Error()), nil, nil
+			}
+		}
+		// A link cannot need a login while auto-crawl is on (manual_only.go): refused before anything is written.
+		if err := CheckManualOnlyRequest(args.ID, args.RequiresLogin, nil, false); err != nil {
+			if errors.Is(err, ErrUnknownPortalLink) {
+				return db.ErrResult(fmt.Sprintf("unknown portal link id %q", args.ID)), nil, nil
+			}
+			if errors.Is(err, ErrLoginWithAutoCrawl) || errors.Is(err, ErrManualOnly) {
+				return db.ErrResult(err.Error()), nil, nil
+			}
+			return db.ErrResult(fmt.Sprintf("failed to update portal link: %v", err)), nil, nil
+		}
+		if err := UpdatePortalLink(args.ID, args.URL, args.Title); err != nil {
+			switch {
+			case errors.Is(err, ErrUnknownPortalLink):
+				return db.ErrResult(fmt.Sprintf("unknown portal link id %q", args.ID)), nil, nil
+			case errors.Is(err, ErrDuplicatePortalLink):
+				return db.ErrResult("this url is already a link on this portal"), nil, nil
+			}
+			return db.ErrResult(fmt.Sprintf("failed to update portal link: %v", err)), nil, nil
+		}
+		if err := UpdatePortalLinkLogin(args.ID, args.RequiresLogin, args.LoginURL); err != nil {
+			switch {
+			case errors.Is(err, ErrUnknownPortalLink):
+				return db.ErrResult(fmt.Sprintf("unknown portal link id %q", args.ID)), nil, nil
+			case errors.Is(err, ErrInvalidLoginURL):
+				return db.ErrResult(err.Error()), nil, nil
+			}
+			return db.ErrResult(fmt.Sprintf("failed to update portal link: %v", err)), nil, nil
+		}
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "updated"}}}, nil, nil
+	})
+}
+
+type removePortalLinkArgs struct {
+	ID string `json:"id" jsonschema:"the portal link's own id"`
+}
+
+func RegisterRemovePortalLink(server *mcp.Server) {
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "remove_portal_link",
+		Description: "Remove a crawl target link from a portal.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args removePortalLinkArgs) (*mcp.CallToolResult, any, error) {
+		if args.ID == "" {
+			return db.ErrResult("id is required"), nil, nil
+		}
+		if err := RemovePortalLink(args.ID); err != nil {
+			return db.ErrResult(fmt.Sprintf("failed to remove portal link: %v", err)), nil, nil
+		}
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "deleted"}}}, nil, nil
+	})
+}
+
+type getPortalLinkCrawlInstructionsArgs struct {
+	PortalLinkID string `json:"portalLinkId" jsonschema:"the portal link's own id, from add_portal_link or list_portals"`
+}
+
+func RegisterGetPortalLinkCrawlInstructions(server *mcp.Server) {
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "get_portal_link_crawl_instructions",
+		Description: "Read the currently saved YAML crawl instructions for one portal link (null if none saved yet).",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args getPortalLinkCrawlInstructionsArgs) (*mcp.CallToolResult, any, error) {
+		if args.PortalLinkID == "" {
+			return db.ErrResult("portalLinkId is required"), nil, nil
+		}
+		instructions, err := GetPortalLinkCrawlInstructions(args.PortalLinkID)
+		if err != nil {
+			if errors.Is(err, ErrUnknownPortalLink) {
+				return db.ErrResult(fmt.Sprintf("unknown portal link id %q", args.PortalLinkID)), nil, nil
+			}
+			return db.ErrResult(fmt.Sprintf("failed to read crawl instructions: %v", err)), nil, nil
+		}
+		if instructions == "" {
+			return db.JSONResult(map[string]any{"crawlInstructions": nil})
+		}
+		return db.JSONResult(map[string]any{"crawlInstructions": instructions})
+	})
+}
+
+type setPortalLinkCrawlInstructionsArgs struct {
+	PortalLinkID string `json:"portalLinkId" jsonschema:"the portal link's own id, from add_portal_link or list_portals"`
+	Instructions string `json:"instructions" jsonschema:"YAML: fields (>=1 entry, each with label+selector), pagination (nextSelector+maxPages), and optionally container/mapping — the exact shape crawl_paginated expects. The effective output (a field's own label, or its mapping target) must include title and url, see this tool's own description for the full required schema."`
+}
+
+func RegisterSetPortalLinkCrawlInstructions(server *mcp.Server) {
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "set_portal_link_crawl_instructions",
+		Description: "Save the YAML crawl instructions for one portal link — works equally on a link you just " +
+			"created or one that already existed before this conversation; call list_portals first to find the " +
+			"target link's own id (match by its title) if you don't already have it. " +
+			"BEFORE WRITING fields, decide which kind of page this is: (1) a LISTING page — a search-results/" +
+			"job-board/catalog page showing MULTIPLE similar items at once (this is the common case for a job " +
+			"portal's own crawl target), or (2) a single item's own DETAIL page describing just one thing. " +
+			"For a listing page, ALWAYS set a top-level container — a CSS selector for one item's own repeating " +
+			"wrapping element (the <div>/<li>/<article> that repeats once per item on the page) — this is the " +
+			"correct default for any repeating list, not an optional fix applied only after something looks " +
+			"wrong. Every field's own selector is then evaluated relative to each matched container, and the " +
+			"result is one correctly-grouped object per real item. Without container on a listing page, fields " +
+			"describing multiple items are instead saved as separate same-length arrays whose positions may NOT " +
+			"actually correspond to the same real item — silently pairing one item's title with a different " +
+			"item's own url/company/etc. Only omit container for a genuine single-item detail page, where there " +
+			"is nothing to group. The exact same shape crawl_paginated expects (fields: [...] + pagination: " +
+			"{nextSelector, maxPages}, plus the optional top-level container), so it can be handed to that tool " +
+			"directly later.\n\n" +
+			"Required output schema (checked at save time, not just field shape): every field's own label — or its mapping target, see below — must, taken together, include title (required) and url (required); company, location, description, and postedAt are all optional and used verbatim with no reformatting. This is the exact vocabulary the deterministic \"Crawl now\" button reads by; if this page's own natural field names don't already match (e.g. \"job_title\" instead of \"title\"), add a top-level mapping block renaming them — the same mechanism crawl_paginated itself now supports — rather than forcing awkward labels onto your fields.\n\nExample — LISTING page (the common case):\ncontainer: \".job-result\"\nfields:\n  - label: title\n    selector: h2\n  - label: url\n    selector: a\n    attribute: href\n  - label: company\n    selector: .company\npagination:\n  " +
+			"nextSelector: a.next-page\n  maxPages: 5\n\n" +
+			"Example — LISTING page with natural field names, mapped to the required schema:\ncontainer: \".job-result\"\nfields:\n  - label: job_title\n    selector: h2\n  - label: employer\n    selector: .company\nmapping:\n  job_title: title\n  employer: company\npagination:\n  " +
+			"nextSelector: a.next-page\n  maxPages: 5\n\n" +
+			"Example — single DETAIL page (no container needed):\nfields:\n  - label: title\n    selector: h1\npagination:\n  " +
+			"nextSelector: a.next-page\n  maxPages: 5\n\n" +
+			"Rejected if it doesn't parse, is missing required keys, or the effective output (after mapping) " +
+			"wouldn't produce both title and url — this only checks shape, not that it actually works against " +
+			"the real page. Before calling this, you must already have tested your draft via crawl_paginated + " +
+			"check_crawl_extraction_result and seen ok: true — this tool does not re-verify against the real " +
+			"page itself, only shape, so a passing call here is not proof the instructions work.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args setPortalLinkCrawlInstructionsArgs) (*mcp.CallToolResult, any, error) {
+		if args.PortalLinkID == "" {
+			return db.ErrResult("portalLinkId is required"), nil, nil
+		}
+		if args.Instructions == "" {
+			return db.ErrResult("instructions is required"), nil, nil
+		}
+		if err := UpdatePortalLinkCrawlInstructions(args.PortalLinkID, args.Instructions); err != nil {
+			if errors.Is(err, ErrUnknownPortalLink) {
+				return db.ErrResult(fmt.Sprintf("unknown portal link id %q", args.PortalLinkID)), nil, nil
+			}
+			// ErrInvalidCrawlInstructions and any other failure already
+			// carry a specific, actionable message of their own.
+			return db.ErrResult(err.Error()), nil, nil
+		}
+		// Step 86 — recorded here, in the AI-facing tool, not in
+		// UpdatePortalLinkCrawlInstructions: that function is shared
+		// with the human PUT /portal-links edit, which is not an AI
+		// attempt.
+		markInstructionsSavedByAI(args.PortalLinkID, InstructionKindListing)
+		// Publisher 1 of the event-driven crawl-instructions pipeline
+		// (plan/ai/tools/career/step-66-career-event-publishers.md) —
+		// fires every time the AI (re)writes the listing instructions,
+		// including a regeneration of already-working instructions:
+		// intentional, since a regenerated document should also
+		// re-trigger a fresh crawl, the same way a human manually
+		// re-clicking "Generate with AI" then "Crawl now" today would.
+		domainevent.Publish("career.portal_link.listing_instructions_ready", map[string]string{"portal_link_id": args.PortalLinkID})
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "updated"}}}, nil, nil
+	})
+}
+
+type getPortalLinkJobDetailCrawlInstructionsArgs struct {
+	PortalLinkID string `json:"portalLinkId" jsonschema:"the portal link's own id, from add_portal_link or list_portals"`
+}
+
+func RegisterGetPortalLinkJobDetailCrawlInstructions(server *mcp.Server) {
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "get_portal_link_job_detail_crawl_instructions",
+		Description: "Read the currently saved YAML job-detail crawl instructions for one portal link (null if " +
+			"none saved yet) — how to extract job-position-relevant text off a single JOB's own detail page, " +
+			"separate from get_portal_link_crawl_instructions' own listing-page instructions.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args getPortalLinkJobDetailCrawlInstructionsArgs) (*mcp.CallToolResult, any, error) {
+		if args.PortalLinkID == "" {
+			return db.ErrResult("portalLinkId is required"), nil, nil
+		}
+		instructions, err := GetPortalLinkJobDetailCrawlInstructions(args.PortalLinkID)
+		if err != nil {
+			if errors.Is(err, ErrUnknownPortalLink) {
+				return db.ErrResult(fmt.Sprintf("unknown portal link id %q", args.PortalLinkID)), nil, nil
+			}
+			return db.ErrResult(fmt.Sprintf("failed to read job detail crawl instructions: %v", err)), nil, nil
+		}
+		if instructions == "" {
+			return db.JSONResult(map[string]any{"jobDetailCrawlInstructions": nil})
+		}
+		return db.JSONResult(map[string]any{"jobDetailCrawlInstructions": instructions})
+	})
+}
+
+type setPortalLinkJobDetailCrawlInstructionsArgs struct {
+	PortalLinkID string `json:"portalLinkId" jsonschema:"the portal link's own id, from add_portal_link or list_portals"`
+	Instructions string `json:"instructions" jsonschema:"YAML: fields (>=1 entry, each with label+selector, optionally attribute/multiple) describing which elements on a single job's own detail page hold job-position-relevant text. No container, no pagination — a detail page is neither a repeating list nor paginated. The effective output must include a field labeled description; leave attribute unset (defaults to the element's own text content) unless you deliberately want an attribute value instead of text."`
+}
+
+func RegisterSetPortalLinkJobDetailCrawlInstructions(server *mcp.Server) {
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "set_portal_link_job_detail_crawl_instructions",
+		Description: "Save the YAML job-detail crawl instructions for one portal link — how to extract ONLY the " +
+			"job-position-relevant text off a single job's own detail page (the page a listing's own job URL " +
+			"points to), ignoring everything else on that page (navigation, ads, unrelated sections, footers, " +
+			"etc.). This is a SEPARATE document from set_portal_link_crawl_instructions, which only covers the " +
+			"LISTING page's own fields+pagination. Call list_portals first to find the target link's own id.\n\n" +
+			"Unlike the listing instructions, there is no container (a detail page describes one job, never a " +
+			"repeating list) and no pagination (a detail page is never paginated). Each field is a label+selector " +
+			"pair, evaluated against the whole page; leave attribute unset so the extracted value is the " +
+			"element's own plain text, not an attribute. Required output schema: the effective field labels must " +
+			"include description — the full, untruncated body text of the job posting itself. Other fields may " +
+			"be added (e.g. requirements, salary) but only description is currently persisted back onto the job " +
+			"record.\n\n" +
+			"Once saved, crawl this link's own job detail URLs by calling crawl_urls_with_subagents with " +
+			"extractFields set to these same fields, saveToolName \"save_job_detail_extraction\", and " +
+			"saveToolArgsKey \"jobId\" (saveToolArgsByUrl mapping each job's own url to its own job id, from " +
+			"list_jobs/search_jobs/save_portal_job) — never extract them yourself directly by looping over " +
+			"extract_from_url; crawling individual job detail pages must always go through " +
+			"crawl_urls_with_subagents, one call for the whole batch.\n\n" +
+			"Example:\nfields:\n  - label: description\n    selector: \".job-description, .job-posting-body\"\n\n" +
+			"Rejected if it doesn't parse, has no fields, or the effective output doesn't produce description.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args setPortalLinkJobDetailCrawlInstructionsArgs) (*mcp.CallToolResult, any, error) {
+		if args.PortalLinkID == "" {
+			return db.ErrResult("portalLinkId is required"), nil, nil
+		}
+		if args.Instructions == "" {
+			return db.ErrResult("instructions is required"), nil, nil
+		}
+		if err := UpdatePortalLinkJobDetailCrawlInstructionsFrom(args.PortalLinkID, args.Instructions, JobDetailOriginAI); err != nil {
+			if errors.Is(err, ErrUnknownPortalLink) {
+				return db.ErrResult(fmt.Sprintf("unknown portal link id %q", args.PortalLinkID)), nil, nil
+			}
+			return db.ErrResult(err.Error()), nil, nil
+		}
+		markInstructionsSavedByAI(args.PortalLinkID, InstructionKindJobDetail)
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "updated"}}}, nil, nil
+	})
+}
+
+func nullStringPtr(v sql.NullString) *string {
+	if !v.Valid {
+		return nil
+	}
+	return &v.String
+}

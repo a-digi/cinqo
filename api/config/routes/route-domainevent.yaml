@@ -1,0 +1,12 @@
+routes:
+  # security: public — deliberately not gated by the normal JWT/scope
+  # layer. Its own caller is never an end user or browser, only a
+  # loopback tool subprocess holding a service_token only core itself
+  # ever generated and handed to it. PublishHandler does its own
+  # auth (the token check) and its own authorization (the topic
+  # namespace check) entirely by hand. See
+  # plan/ai/domain-events/step-05-tool-publish-endpoint.md.
+  - path: /api/v1/events/publish
+    method: POST
+    executor: DomainEventPublish
+    security: public

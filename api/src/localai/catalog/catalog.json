@@ -1,0 +1,97 @@
+{
+  "checkedOn": "2026-11-03",
+  "models": [
+    {
+      "id": "phi-4-mini-instruct-q4_k_m",
+      "name": "Phi-4-mini-instruct",
+      "quantization": "Q4_K_M",
+      "sizeBytes": 2491874272,
+      "sha256": "88c00229914083cd112853aab84ed51b87bdf6b9ce42f532d8c85c7c63b1730a",
+      "url": "https://huggingface.co/unsloth/Phi-4-mini-instruct-GGUF/resolve/78eb92a46fc37e6b524df991ed9aca9bc6aa7b80/Phi-4-mini-instruct-Q4_K_M.gguf",
+      "license": "MIT",
+      "contextTokens": 131072,
+      "tools": true,
+      "kvBytesPerToken": 131072,
+      "toolDialect": "phi-json",
+      "source": "unsloth/Phi-4-mini-instruct-GGUF at commit 78eb92a (a GGUF conversion of microsoft/Phi-4-mini-instruct)",
+      "note": "The better answers of the two. Needs the most memory.",
+      "checkedOn": "2026-11-03"
+    },
+    {
+      "id": "qwen2.5-1.5b-instruct-q4_k_m",
+      "name": "Qwen2.5-1.5B-Instruct",
+      "quantization": "Q4_K_M",
+      "sizeBytes": 1117320736,
+      "sha256": "6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e",
+      "url": "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/91cad51170dc346986eccefdc2dd33a9da36ead9/qwen2.5-1.5b-instruct-q4_k_m.gguf",
+      "license": "Apache-2.0",
+      "contextTokens": 32768,
+      "tools": true,
+      "kvBytesPerToken": 28672,
+      "source": "Qwen/Qwen2.5-1.5B-Instruct-GGUF at commit 91cad51 (the model's own authors)",
+      "note": "A lighter, faster choice for a machine with little memory. Simpler answers.",
+      "checkedOn": "2026-11-03"
+    },
+    {
+      "id": "qwen2.5-7b-instruct-q4_k_m",
+      "name": "Qwen2.5-7B-Instruct",
+      "quantization": "Q4_K_M",
+      "sizeBytes": 4683074240,
+      "sha256": "65b8fcd92af6b4fefa935c625d1ac27ea29dcb6ee14589c55a8f115ceaaa1423",
+      "url": "https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/8911e8a47f92bac19d6f5c64a2e2095bd2f7d031/Qwen2.5-7B-Instruct-Q4_K_M.gguf",
+      "license": "Apache-2.0",
+      "contextTokens": 32768,
+      "tools": false,
+      "kvBytesPerToken": 57344,
+      "source": "bartowski/Qwen2.5-7B-Instruct-GGUF at commit 8911e8a (a single-file GGUF conversion of Qwen/Qwen2.5-7B-Instruct)",
+      "note": "A larger model for tasks with many steps. Slower, and needs a computer with plenty of memory.",
+      "checkedOn": "2026-11-03"
+    },
+    {
+      "id": "qwen2.5-coder-3b-instruct-q4_k_m",
+      "name": "Qwen2.5-Coder-3B-Instruct",
+      "quantization": "Q4_K_M",
+      "sizeBytes": 2104932800,
+      "sha256": "724fb256bec1ff062b2f65e4569e871ad2e95ab2a3989723d1769c54294730b7",
+      "url": "https://huggingface.co/Qwen/Qwen2.5-Coder-3B-Instruct-GGUF/resolve/f74adce6aa16316c625447af059dbebe4983757c/qwen2.5-coder-3b-instruct-q4_k_m.gguf",
+      "license": "Qwen-Research",
+      "contextTokens": 32768,
+      "tools": true,
+      "kvBytesPerToken": 36864,
+      "toolDialect": "qwen-json",
+      "source": "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF at commit f74adce (the model's own authors)",
+      "note": "A small model tuned for code. Calls tools by writing them as text, which Cinqo reads. Measured on the crawler recipes: the job-detail one 10 of 10, the job-list rule 10 of 10, the whole list recipe in one go 1 of 10. Research and non-commercial licence.",
+      "checkedOn": "2026-11-06"
+    }
+  ],
+  "runtimes": [
+    {
+      "id": "llama-cpp-b12064-macos-arm64",
+      "name": "llama.cpp b12064 for macOS (Apple Silicon)",
+      "version": "b12064",
+      "os": "darwin",
+      "arch": "arm64",
+      "sizeBytes": 16548551,
+      "sha256": "e566137a3c42aa91b3873f1728d8ba2922b2f70cf3cd5735839bdcd481cc1f2f",
+      "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12064/llama-b12064-bin-macos-arm64.tar.gz",
+      "binary": "llama-b12064/llama-server",
+      "license": "MIT",
+      "source": "ggml-org/llama.cpp release b12064 (the official build; Metal is included)",
+      "checkedOn": "2026-11-03"
+    },
+    {
+      "id": "llama-cpp-b12064-linux-amd64",
+      "name": "llama.cpp b12064 for Linux (amd64, CPU)",
+      "version": "b12064",
+      "os": "linux",
+      "arch": "amd64",
+      "sizeBytes": 22934665,
+      "sha256": "9032dd278610d0f21fca50ba9e5037b6e4892d1854027572cb3a0aaba2104af3",
+      "url": "https://github.com/ggml-org/llama.cpp/releases/download/b12064/llama-b12064-bin-ubuntu-x64.tar.gz",
+      "binary": "llama-b12064/llama-server",
+      "license": "MIT",
+      "source": "ggml-org/llama.cpp release b12064 (the official CPU build)",
+      "checkedOn": "2026-11-03"
+    }
+  ]
+}

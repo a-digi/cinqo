@@ -1,0 +1,40 @@
+routes:
+  # No static scopes: like route-tool.yaml's own proxy route, the real
+  # requirement is dynamic (whichever scope the target toolSlug itself
+  # declared, checked inside MediaUploadHandler) — not something this
+  # YAML can express. See media/handler/upload_handler.go's own doc
+  # comment.
+  - path: /api/v1/media/upload
+    method: POST
+    executor: MediaUpload
+    security: authenticated
+
+  # No static scopes, same reasoning as the upload route above: any
+  # authenticated caller may list THEIR OWN media, regardless of which
+  # tool-specific scope they hold — MineHandler enforces "own data
+  # only" itself (by uploaded_by_user_id, never a caller-supplied
+  # value), which a static YAML scope list can't express.
+  - path: /api/v1/media/mine
+    method: GET
+    executor: MediaMine
+    security: authenticated
+
+  # List IS a genuinely global admin operation (browse every tool's own
+  # media at once), unlike upload/mine — so, unlike them, it declares a
+  # normal static scope here and never re-checks it in the handler,
+  # matching route-tool.yaml's ToolInstall/ToolDelete.
+  - path: /api/v1/media
+    method: GET
+    executor: MediaList
+    security: authenticated
+    scopes:
+      - cinqo:super:admin
+
+  # No static scopes: delete is dynamic like upload/mine — allowed for
+  # cinqo:super:admin (the admin Media page) OR the row's own uploader
+  # (a tool's own "delete my own upload" flow, e.g. Career's import
+  # history) — see MediaDeleteHandler's own doc comment.
+  - path: /api/v1/media/{id}
+    method: DELETE
+    executor: MediaDelete
+    security: authenticated

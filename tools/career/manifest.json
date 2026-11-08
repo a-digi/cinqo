@@ -1,0 +1,1439 @@
+{
+  "slug": "career",
+  "name": "Career",
+  "version": "0.0.774",
+  "authors": [
+    { "name": "Anes Detit", "email": "tafa.andet@googlemail.com" }
+  ],
+  "license": "Proprietary",
+  "mcp": true,
+  "requires_tools": [
+    {
+      "slug": "browser"
+    },
+    {
+      "slug": "pdf_tools",
+      "min_version": "0.0.1"
+    }
+  ],
+  "scopes": [
+    {
+      "scope": "tool:career:profile",
+      "description": "Read and update the user's own career profile, personas, skills, and experience."
+    },
+    {
+      "scope": "tool:career:jobs",
+      "description": "Save, list, and search crawled job postings."
+    },
+    {
+      "scope": "tool:career:companies",
+      "description": "Create, read, update, and delete companies and their linked job postings."
+    },
+    {
+      "scope": "tool:career:portals",
+      "description": "Create, read, update, and delete job platforms and their crawl target links."
+    },
+    {
+      "scope": "tool:career:cv_import",
+      "description": "Upload a CV and let the AI propose profile/persona/skill/experience entries from it."
+    },
+    {
+      "scope": "tool:career:cv_documents",
+      "description": "Generate, list, rename, and delete CV documents built from a persona's own data."
+    }
+  ],
+  "routes": [
+    {
+      "method": "GET",
+      "path_suffix": "profiles",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "profiles",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "profiles",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "profiles",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "profile-links",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "profile-links",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "profile-links",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "profile-image",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "profile-image",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "profile-image",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "profile-photos",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "profile-photos",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "profile-photos",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "photos",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "photos",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "persona-ai-runs",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "persona-ai-runs",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "persona-ai-runs",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "persona-ai-runs",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "persona-ai-runs/apply",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "personas",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "personas",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "personas",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "personas",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "persona-details",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "persona-details",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "skills",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "skills",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "skills",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "profile-skills",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "profile-skills",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "profile-skills",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "profile-skills",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "profile-experience",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "profile-experience",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "profile-experience",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "profile-experience",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "persona-skills",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "persona-skills",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "persona-experience",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "persona-experience",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "profile-details",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "profile-details",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "education",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "education",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "education",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "education",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "application-messages",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "application-messages",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "application-messages",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "application-messages",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "experience",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "experience",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "experience",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "experience",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "jobs",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "jobs",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "job-locations",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "jobs/match",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "jobs/cv",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "jobs/cv-generations",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "jobs/cv-link",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "jobs/cv-link",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "jobs",
+      "required_scope": "tool:career:companies"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "jobs",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "jobs/delete",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "jobs/stats",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "settings/ai",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "settings/ai",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "settings/cleanup",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "settings/cleanup",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "settings/crawler",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "settings/crawler",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "settings/crawler/ignored",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "jobs/cleanup/preview",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "jobs/cleanup/run",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "jobs/deleted",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "jobs/deleted",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "companies",
+      "required_scope": "tool:career:companies"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "companies",
+      "required_scope": "tool:career:companies"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "companies",
+      "required_scope": "tool:career:companies"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "companies",
+      "required_scope": "tool:career:companies"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "recruiters",
+      "required_scope": "tool:career:companies"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "recruiters",
+      "required_scope": "tool:career:companies"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "recruiters",
+      "required_scope": "tool:career:companies"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "recruiters",
+      "required_scope": "tool:career:companies"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "portal-links/login-session",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "portal-links/login-session",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "portal-links/login-session",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "portal-links/pipeline",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "portals",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "portals",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "portals",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "portals",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "portals/ai",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "portal-links/ai",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "portal-links/inherit-instructions",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "portal-links",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "portal-links",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "portal-links",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "portal-links/crawl-request",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "portal-links/ingest-crawl-results",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "portal-links/instruction-attempts/start",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "portal-links/instruction-attempts/finish",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "portal-links/start-fresh",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "portal-links/katana/start-over",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "portal-links/crawl-now",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "portal-links/crawl-now/active",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "portal-links/crawl-now/cancel",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "portal-links/crawl-engine",
+      "required_scope": "tool:career:portals"
+    },
+
+    {
+      "method": "GET",
+      "path_suffix": "portal-links/link-crawl/rules",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "portal-links/link-crawl/rules",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "portal-links/link-crawl/candidates",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "portal-links/link-crawl/window-cleared",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "portal-links/link-crawl/window-open",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "portal-links/link-crawl/learn",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "portal-links/link-crawl/learn-pagination",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "portal-links/link-crawl/preview",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "portal-links/link-crawl/test",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "portal-links/job-detail/candidates",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "portal-links/job-detail/preview",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "portal-links/job-detail/test",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "portal-links/job-detail/save",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "portal-links/auto-discovery",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "portal-links/auto-discovery",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "portal-links/crawl-job-details-now",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "jobs/recrawl",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "jobs/recrawl/status",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "jobs/recrawl/missing",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "jobs/recrawl/active",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "jobs/recrawl/cancel",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "portal-links/crawl-runs/active",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "cv-import/upload",
+      "required_scope": "tool:career:cv_import"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "cv-import/runs",
+      "required_scope": "tool:career:cv_import"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "cv-import/runs",
+      "required_scope": "tool:career:cv_import"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "cv-import/runs",
+      "required_scope": "tool:career:cv_import"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "cv-import/runs",
+      "required_scope": "tool:career:cv_import"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "cv-documents/templates",
+      "required_scope": "tool:career:cv_documents"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "cv-documents/persona-defaults",
+      "required_scope": "tool:career:cv_documents"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "cv-documents/photo-status",
+      "required_scope": "tool:career:cv_documents"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "cv-documents/preview",
+      "required_scope": "tool:career:cv_documents"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "cv-ai-runs",
+      "required_scope": "tool:career:cv_documents"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "cv-ai-runs",
+      "required_scope": "tool:career:cv_documents"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "cv-ai-runs",
+      "required_scope": "tool:career:cv_documents"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "cv-ai-runs",
+      "required_scope": "tool:career:cv_documents"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "cv-documents/personas",
+      "required_scope": "tool:career:cv_documents"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "cv-documents/personas",
+      "required_scope": "tool:career:cv_documents"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "cv-documents",
+      "required_scope": "tool:career:cv_documents"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "cv-documents",
+      "required_scope": "tool:career:cv_documents"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "cv-documents",
+      "required_scope": "tool:career:cv_documents"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "cv-documents",
+      "required_scope": "tool:career:cv_documents"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "dashboard/new-jobs",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "dashboard/recent-jobs",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "job-recruiters",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "job-recruiters",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "job-recruiters",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "job-board",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "job-applications",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "job-statuses",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "job-statuses",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "job-statuses",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "job-statuses",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "job-board-entries",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "job-board-entries",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "job-board-usage",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "job-persona-matches",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "job-persona-matches/recalculate",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "profile-match-rules",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "profile-match-rules",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "profile-match-rules",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "profile-match-rules",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "profile-match-rules/order",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "profile-match-rules/apply",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "jobs/match/run",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "POST",
+      "path_suffix": "jobs/match/unmatched",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "job-requirements",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "PUT",
+      "path_suffix": "job-requirements",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "job-requirements/suggest",
+      "required_scope": "tool:career:jobs"
+    }
+  ],
+  "mcp_tools": [
+    {
+      "name": "create_profile",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "list_profiles",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "update_profile",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "delete_profile",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "add_profile_external_link",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "remove_profile_external_link",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "create_persona",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "list_personas",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "update_persona",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "delete_persona",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "get_persona_details",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "suggest_persona",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "suggest_cv_import",
+      "required_scope": "tool:career:cv_import"
+    },
+    {
+      "name": "cv_import_set",
+      "required_scope": "tool:career:cv_import"
+    },
+    {
+      "name": "cv_import_add_skills",
+      "required_scope": "tool:career:cv_import"
+    },
+    {
+      "name": "cv_import_add_experience",
+      "required_scope": "tool:career:cv_import"
+    },
+    {
+      "name": "cv_import_add_education",
+      "required_scope": "tool:career:cv_import"
+    },
+    {
+      "name": "cv_import_finish",
+      "required_scope": "tool:career:cv_import"
+    },
+    {
+      "name": "update_persona_details",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "add_career_skill",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "add_career_skills",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "remove_career_skill",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "add_career_experience",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "add_career_experiences",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "remove_career_experience",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "update_career_experience",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "list_profile_skills",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "add_profile_skill",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "list_profile_experience",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "add_profile_experience",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "set_persona_skills",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "set_persona_experience",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "get_profile_details",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "update_profile_details",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "list_education",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "add_education",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "update_education",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "remove_education",
+      "required_scope": "tool:career:profile"
+    },
+    {
+      "name": "list_application_messages",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "name": "add_application_message",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "name": "update_application_message",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "name": "remove_application_message",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "name": "save_job",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "name": "list_jobs",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "name": "search_jobs",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "name": "delete_job",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "name": "save_job_detail_extraction",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "name": "get_job",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "name": "save_job_match",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "name": "save_persona_cv",
+      "required_scope": "tool:career:cv_documents",
+      "promote_media_param": "pdfResource"
+    },
+    {
+      "name": "save_cv_for_persona",
+      "required_scope": "tool:career:cv_documents",
+      "promote_media_param": "pdfResource"
+    },
+    {
+      "name": "save_cv_document",
+      "required_scope": "tool:career:jobs",
+      "promote_media_param": "pdfResource"
+    },
+    {
+      "name": "list_cv_templates",
+      "required_scope": "tool:career:cv_documents"
+    },
+    {
+      "name": "get_persona_cv_defaults",
+      "required_scope": "tool:career:cv_documents"
+    },
+    {
+      "name": "render_cv_document",
+      "required_scope": "tool:career:cv_documents"
+    },
+    {
+      "name": "create_company",
+      "required_scope": "tool:career:companies"
+    },
+    {
+      "name": "list_companies",
+      "required_scope": "tool:career:companies"
+    },
+    {
+      "name": "update_company",
+      "required_scope": "tool:career:companies"
+    },
+    {
+      "name": "delete_company",
+      "required_scope": "tool:career:companies"
+    },
+    {
+      "name": "link_job_to_company",
+      "required_scope": "tool:career:companies"
+    },
+    {
+      "name": "create_recruiter",
+      "required_scope": "tool:career:companies"
+    },
+    {
+      "name": "list_recruiters",
+      "required_scope": "tool:career:companies"
+    },
+    {
+      "name": "update_recruiter",
+      "required_scope": "tool:career:companies"
+    },
+    {
+      "name": "delete_recruiter",
+      "required_scope": "tool:career:companies"
+    },
+    {
+      "name": "create_portal",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "name": "list_portals",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "name": "update_portal",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "name": "delete_portal",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "name": "add_portal_link",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "name": "update_portal_link",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "name": "remove_portal_link",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "name": "get_portal_link_crawl_instructions",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "name": "set_portal_link_crawl_instructions",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "name": "check_crawl_extraction_result",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "name": "ask_user_if_page_has_jobs",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "name": "katana_get_instruction_state",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "name": "katana_get_page_links",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "name": "katana_propose_link_rule",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "name": "katana_test_link_rule",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "name": "katana_save_link_rule",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "name": "katana_crawl_jobs",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "name": "katana_get_job_page_candidates",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "name": "katana_test_job_detail_picks",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "name": "katana_save_job_detail_picks",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "name": "get_portal_link_job_detail_crawl_instructions",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "name": "set_portal_link_job_detail_crawl_instructions",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "name": "save_portal_job",
+      "required_scope": "tool:career:jobs"
+    },
+    {
+      "name": "save_portal_jobs",
+      "required_scope": "tool:career:jobs"
+    }
+  ],
+  "event_listeners": [
+    {
+      "topic": "career.portal_link.listing_instructions_ready",
+      "path_suffix": "events/listing-instructions-ready"
+    },
+    {
+      "topic": "career.portal_link.jobs_crawled",
+      "path_suffix": "events/jobs-crawled"
+    },
+    {
+      "topic": "career.portal_link.katana_rule_saved",
+      "path_suffix": "events/katana-rule-saved"
+    },
+    {
+      "topic": "career.job.created",
+      "path_suffix": "events/job-created"
+    },
+    {
+      "topic": "career.job.found",
+      "path_suffix": "events/job-found"
+    },
+    {
+      "topic": "career.job.found",
+      "path_suffix": "events/job-found-profile-rules"
+    },
+    {
+      "topic": "career.job.found",
+      "path_suffix": "events/job-found-persona-matches"
+    },
+    {
+      "topic": "career.job.recrawl_requested",
+      "path_suffix": "events/job-recrawl"
+    },
+    {
+      "topic": "career.job.description_changed",
+      "path_suffix": "events/job-description-changed-persona-matches"
+    },
+    {
+      "topic": "career.job.description_changed",
+      "path_suffix": "events/job-description-changed-job-match"
+    },
+    {
+      "topic": "career.job.description_changed",
+      "path_suffix": "events/job-description-changed-profile-rules"
+    },
+    {
+      "topic": "career.job.deleted",
+      "path_suffix": "events/job-deleted-comments"
+    },
+    {
+      "topic": "career.job.deleted",
+      "path_suffix": "events/job-deleted-company"
+    },
+    {
+      "topic": "career.job.deleted",
+      "path_suffix": "events/job-deleted-persona-matches"
+    },
+    {
+      "topic": "career.persona.changed",
+      "path_suffix": "events/persona-changed-recompute"
+    },
+    {
+      "topic": "career.persona.changed",
+      "path_suffix": "events/persona-changed-rematch-rearm"
+    },
+    {
+      "topic": "career.profile.created",
+      "path_suffix": "events/profile-created-rematch"
+    },
+    {
+      "topic": "career.persona.created",
+      "path_suffix": "events/persona-created-rematch"
+    },
+    {
+      "topic": "career.profile.deleted",
+      "path_suffix": "events/profile-deleted-matches"
+    },
+    {
+      "topic": "career.persona.deleted",
+      "path_suffix": "events/persona-deleted-matches"
+    },
+    {
+      "topic": "career.company.deleted",
+      "path_suffix": "events/company-deleted-comments"
+    },
+    {
+      "topic": "career.recruiter.deleted",
+      "path_suffix": "events/recruiter-deleted-comments"
+    }
+  ],
+  "widgets": [
+    {
+      "key": "new_jobs",
+      "title": "New jobs",
+      "description": "Jobs added per day over the last two weeks.",
+      "kind": "chart",
+      "data_path": "dashboard/new-jobs",
+      "width": 2,
+      "height": 1,
+      "refresh_seconds": 300
+    },
+    {
+      "key": "recent_jobs",
+      "title": "Recent jobs",
+      "description": "The latest jobs that were added.",
+      "kind": "list",
+      "data_path": "dashboard/recent-jobs",
+      "width": 2,
+      "height": 2,
+      "refresh_seconds": 120
+    }
+  ],
+  "comments": [
+    {
+      "entity_type": "job",
+      "read_scope": "tool:career:jobs",
+      "write_scope": "tool:career:jobs"
+    },
+    {
+      "entity_type": "profile",
+      "read_scope": "tool:career:profile",
+      "write_scope": "tool:career:profile"
+    },
+    {
+      "entity_type": "persona",
+      "read_scope": "tool:career:profile",
+      "write_scope": "tool:career:profile"
+    },
+    {
+      "entity_type": "cv",
+      "read_scope": "tool:career:cv_documents",
+      "write_scope": "tool:career:cv_documents"
+    },
+    {
+      "entity_type": "company",
+      "read_scope": "tool:career:companies",
+      "write_scope": "tool:career:companies"
+    },
+    {
+      "entity_type": "recruiter",
+      "read_scope": "tool:career:companies",
+      "write_scope": "tool:career:companies"
+    }
+  ]
+}

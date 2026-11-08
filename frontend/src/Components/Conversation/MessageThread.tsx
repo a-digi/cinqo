@@ -1,0 +1,357 @@
+import { useState } from 'react'
+import {
+  fetchPlanForTurn,
+  fetchSubAgentsForTurn,
+  type ConversationMessage,
+  type OrchestrationMode,
+  type PlanStep,
+  type SubAgentRun,
+  type UsageExtras,
+} from '../../api/conversations'
+import { ApiError } from '../../api/client'
+import { Markdown } from '../../Shared/Components/Markdown/Markdown'
+import { ThinkingIndicator } from './ThinkingIndicator'
+import { PlanPanel } from './PlanPanel'
+import { SubAgentRow } from './SubAgentRow'
+import { formatDuration } from './formatDuration'
+import { formatTokenCount } from './formatTokenCount'
+import { usageExtrasText } from './usageText'
+import { ConfirmModal } from '../../Shared/Components/Modal/ConfirmModal'
+import { retriedText, retryNeedsConfirmation } from './retryRules'
+
+// Renders the active conversation's messages in order, user/assistant
+// styled distinctly. No streaming — a sent message shows a
+// "thinking…" placeholder (pendingUserContent/sending) until the
+// single response resolves. A failed send (plan/ai/conversation/step-08)
+// renders as its own distinct bubble with a "Start again" action and an
+// inline error-detail toggle — durable across a reload, not just this
+// live session's own transient state. See
+// plan/ai/conversation/step-05-frontend-chat-ui.md.
+export function MessageThread({
+  conversationId,
+  messages,
+  pendingUserContent,
+  sending,
+  turnStartedAt,
+  turnClockOffsetMs,
+  turnPromptTokens,
+  turnCompletionTokens,
+  turnTotalTokens,
+  turnUsageExtras,
+  turnSubAgents,
+  turnPlan,
+  orchestrationMode,
+  onStartAgain,
+  onRetry,
+}: {
+  // Needed only to fetch a past message's own historical sub-agent
+  // detail on demand (step 41 — Sub Agents, Bubble's own click-through)
+  // — fetchSubAgentsForTurn takes both the conversation and turn id.
+  conversationId: string
+  messages: ConversationMessage[]
+  pendingUserContent: string | null
+  sending: boolean
+  // Server-recorded turn-start time + this client's clock offset from
+  // the server — see ThinkingIndicator's own doc comment and
+  // plan/ai/conversation/step-24-server-tracked-turn-elapsed-time.md.
+  // null only when `sending` is false (nothing to show a timer for).
+  turnStartedAt: string | null
+  turnClockOffsetMs: number
+  // Real, provider-reported token usage accumulated so far this turn —
+  // 0 until the first iteration's response has actually landed. See
+  // plan/ai/conversation/step-34-realtime-token-usage-budget-and-display.md.
+  turnPromptTokens: number
+  turnCompletionTokens: number
+  turnTotalTokens: number
+  // What the provider has reported so far this turn besides the counts (plan 178, step 3).
+  turnUsageExtras?: UsageExtras
+  // Every sub-agent the current turn has spawned so far (step 41 —
+  // Sub Agents) — [] when none have been, same live-reconciled-on-
+  // every-poll data source as the token fields above.
+  turnSubAgents: SubAgentRun[]
+  // The current turn's composer plan (composer step 7) — [] for a
+  // direct-mode turn, or a composer turn that has not planned (yet).
+  turnPlan: PlanStep[]
+  // Only used to decide whether a past message's click-through also
+  // needs to fetch its plan — a direct conversation never has one.
+  orchestrationMode: OrchestrationMode
+  onStartAgain: (content: string) => void
+  // Redo the last step of the failed turn (only offered on its message when the server says it can be): its run id, its text, and whether
+  // the caller confirmed after the third failed retry.
+  onRetry: (turnRunId: string, content: string, confirmed: boolean) => void
+}) {
+  if (messages.length === 0 && !pendingUserContent) {
+    return <div className="flex flex-1 items-center justify-center text-sm text-gray-400">Send a message to start the conversation.</div>
+  }
+
+  return (
+    <div className="flex-1 space-y-4 overflow-y-auto p-4">
+      {messages.map((m) => (
+        <Bubble
+          key={m.createdAt + m.role}
+          conversationId={conversationId}
+          orchestrationMode={orchestrationMode}
+          message={m}
+          onStartAgain={onStartAgain}
+          onRetry={onRetry}
+          startAgainDisabled={sending}
+        />
+      ))}
+      {/* Gated on `sending`, not just pendingUserContent's own
+          truthiness: once the real reply is ready (sending goes false —
+          see ConversationPage.tsx's own mainReplyReady comment),
+          pendingUserContent still holds its last value until the watch
+          entry is fully torn down (which now waits for any outliving
+          sub-agents too), and the real user+assistant messages already
+          render above via `messages` — showing this too would duplicate
+          the just-sent message. */}
+      {sending && pendingUserContent && (
+        <Bubble
+          conversationId={conversationId}
+          orchestrationMode={orchestrationMode}
+          message={{ role: 'user', content: pendingUserContent, createdAt: '' }}
+          onStartAgain={onStartAgain}
+          onRetry={onRetry}
+          startAgainDisabled={sending}
+        />
+      )}
+      {sending && turnStartedAt && (
+        <div className="flex justify-start">
+          <ThinkingIndicator
+            startedAt={turnStartedAt}
+            clockOffsetMs={turnClockOffsetMs}
+            promptTokens={turnPromptTokens}
+            completionTokens={turnCompletionTokens}
+            totalTokens={turnTotalTokens}
+            usageExtras={turnUsageExtras}
+          />
+        </div>
+      )}
+      {/* Deliberately NOT gated on `sending` — a turn's own sub-agents
+          can keep running well after its own reply already appeared
+          above (step 41's "the reply returns early" change), and this
+          is what keeps that visible live instead of only being
+          reachable via a past message's own one-click historical
+          lookup (Bubble's own toggleSubAgents, below). */}
+      {turnPlan.length > 0 ? (
+        <div className="flex justify-start">
+          <div className="max-w-[min(32rem,100%)] space-y-1 rounded-md border border-gray-200 bg-white p-2 text-xs text-gray-400">
+            <PlanPanel plan={turnPlan} subAgents={turnSubAgents} />
+          </div>
+        </div>
+      ) : (
+        turnSubAgents.length > 0 && (
+          <div className="flex justify-start">
+            <div className="max-w-[min(32rem,100%)] space-y-1 rounded-md border border-gray-200 bg-white p-2 text-xs text-gray-400">
+              <p className="font-medium text-gray-500">
+                {turnSubAgents.some((a) => a.status === 'running') ? 'Sub-agents still working…' : 'Sub-agents'}
+              </p>
+              {turnSubAgents.map((agent) => (
+                <SubAgentRow key={agent.id} agent={agent} />
+              ))}
+            </div>
+          </div>
+        )
+      )}
+    </div>
+  )
+}
+
+function Bubble({
+  conversationId,
+  orchestrationMode,
+  message,
+  onStartAgain,
+  onRetry,
+  startAgainDisabled,
+}: {
+  conversationId: string
+  orchestrationMode: OrchestrationMode
+  message: ConversationMessage
+  onStartAgain: (content: string) => void
+  onRetry: (turnRunId: string, content: string, confirmed: boolean) => void
+  startAgainDisabled: boolean
+}) {
+  const [showError, setShowError] = useState(false)
+  const [confirmRetry, setConfirmRetry] = useState(false)
+  // Historical sub-agent detail (step 41) — fetched lazily, only on
+  // the first click of "N sub-agents" below, never eagerly for every
+  // message in the thread. undefined = not yet fetched, null = fetch
+  // failed, [] = fetched, none found (shouldn't happen if
+  // subAgentCount > 0, but handled rather than assumed).
+  const [subAgents, setSubAgents] = useState<SubAgentRun[] | null | undefined>(undefined)
+  const [plan, setPlan] = useState<PlanStep[]>([])
+  const [subAgentsError, setSubAgentsError] = useState('')
+  const [showSubAgents, setShowSubAgents] = useState(false)
+  const isUser = message.role === 'user'
+
+  function toggleSubAgents() {
+    const next = !showSubAgents
+    setShowSubAgents(next)
+    if (next && subAgents === undefined && message.turnRunId) {
+      // A composer conversation's turn may have a plan; fetch it
+      // alongside the workers so they can be shown as the plan's steps.
+      // A plan lookup failure just falls back to the flat worker list.
+      const planRequest =
+        orchestrationMode === 'composer'
+          ? fetchPlanForTurn(conversationId, message.turnRunId).catch((): PlanStep[] => [])
+          : Promise.resolve<PlanStep[]>([])
+      Promise.all([fetchSubAgentsForTurn(conversationId, message.turnRunId), planRequest])
+        .then(([agents, steps]) => {
+          setPlan(steps)
+          setSubAgents(agents)
+        })
+        .catch((err: unknown) => {
+          setSubAgentsError(err instanceof ApiError ? err.message : 'Failed to load sub-agents.')
+        })
+    }
+  }
+
+  return (
+    <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'}`}>
+      {/* max-w-[min(32rem,100%)], not a bare max-w-lg (32rem/512px) —
+          this div is a flex item under a non-stretch align-items
+          (items-end/items-start above), so it sizes via shrink-to-fit,
+          capped at whichever of {32rem, 100% of its own actual
+          container} is smaller. A bare max-w-lg is an absolute cap with
+          no relation to the container's own real width: comfortably
+          fits GlobalChatWidget.tsx's wide ConversationPage.tsx context,
+          but the SAME 512px cap is wider than the floating chat
+          widget's own ~380px box, so a message whose content wants that
+          much room (e.g. buildGenerateCvMessage.ts's own embedded XHTML
+          skeleton, rendered as a fenced code block with long CSS lines)
+          sized the bubble itself past the widget's own visible edge —
+          the code block's own overflow-x-auto (Markdown.tsx) only
+          scrolls within whatever width the bubble ends up at, so it
+          couldn't help once the bubble itself was already too wide.
+          Confirmed live: this was reproducible only in the narrow
+          widget, never on /conversations, matching the bug report
+          exactly. See plan/ai/frontend/frontend/step-XX-chat-widget-long-message-wrapping.md. */}
+      <div
+        className={`max-w-[min(32rem,100%)] break-words rounded-lg px-3 py-2 text-sm ${
+          message.failed ? 'border border-red-300 bg-red-50 text-red-900' : isUser ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-900'
+        }`}
+      >
+        <Markdown content={message.content} />
+        {message.failed && (
+          <div className="mt-2 flex items-center gap-2 border-t border-red-200 pt-2 text-xs">
+            <span className="text-red-700">Failed to send</span>
+            {message.retryable && message.turnRunId && (
+              <button
+                type="button"
+                onClick={() => {
+                  const turnRunId = message.turnRunId
+                  if (!turnRunId) return
+                  // After the third failed retry the user is asked first; the server asks again if this check is bypassed.
+                  if (retryNeedsConfirmation(message.retryCount)) setConfirmRetry(true)
+                  else onRetry(turnRunId, message.content, false)
+                }}
+                disabled={startAgainDisabled}
+                title="Redo only the last step that failed"
+                className="font-medium underline disabled:opacity-50"
+              >
+                Retry
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                onStartAgain(message.content)
+              }}
+              disabled={startAgainDisabled}
+              className="font-medium underline disabled:opacity-50"
+            >
+              Start again
+            </button>
+            {message.retryable && retriedText(message.retryCount) && (
+              <span className="text-red-700">· {retriedText(message.retryCount)}</span>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                setShowError((v) => !v)
+              }}
+              aria-label={showError ? 'Hide error details' : 'Show error details'}
+              className="ml-auto text-red-700 hover:text-red-900"
+            >
+              <InfoIcon />
+            </button>
+          </div>
+        )}
+        {message.failed && showError && (
+          <pre className="mt-2 whitespace-pre-wrap break-words rounded bg-red-100 p-2 text-xs text-red-800">{message.error}</pre>
+        )}
+        <ConfirmModal
+          open={confirmRetry}
+          title="Retry again?"
+          message={`This has failed ${String(message.retryCount ?? 0)} times in a row, so it seems to be failing all the time. Are you sure you want to try again?`}
+          details={<p>"Start again" begins a fresh turn from your message instead.</p>}
+          confirmLabel="Try again anyway"
+          danger={false}
+          onConfirm={() => {
+            setConfirmRetry(false)
+            if (message.turnRunId) onRetry(message.turnRunId, message.content, true)
+          }}
+          onCancel={() => {
+            setConfirmRetry(false)
+          }}
+        />
+      </div>
+      {message.createdAt && (
+        <div className="mt-1 px-1 text-xs text-gray-400">
+          {formatTimestamp(message.createdAt)}
+          {message.durationMs != null && ` · ${formatDuration(message.durationMs)}`}
+          {message.promptTokens != null &&
+            ` · ↑${formatTokenCount(message.promptTokens)} ↓${formatTokenCount(message.completionTokens ?? 0)}${usageExtrasText(message)}`}
+          {message.subAgentCount != null && message.turnRunId && (
+            <>
+              {' · '}
+              <button type="button" onClick={toggleSubAgents} className="underline hover:text-gray-600">
+                {message.subAgentCount} sub-agent{message.subAgentCount === 1 ? '' : 's'}
+              </button>
+            </>
+          )}
+        </div>
+      )}
+      {showSubAgents && (
+        <div className="mt-1 max-w-[min(32rem,100%)] space-y-1 rounded-md border border-gray-200 bg-white p-2">
+          {subAgentsError && <p className="text-xs text-red-600">{subAgentsError}</p>}
+          {subAgents === undefined && !subAgentsError && <p className="text-xs text-gray-400">Loading…</p>}
+          {subAgents?.length === 0 && <p className="text-xs text-gray-400">No sub-agents found.</p>}
+          {subAgents && plan.length > 0 ? (
+            <div className="text-xs text-gray-400">
+              <PlanPanel plan={plan} subAgents={subAgents} />
+            </div>
+          ) : (
+            subAgents?.map((agent) => <SubAgentRow key={agent.id} agent={agent} />)
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Full datetime including seconds (plan/ai/conversation/step-14/15's
+// own "should show the datetime, with seconds also") — the backend's
+// RFC3339 timestamps already carry second precision; this is purely a
+// display-formatting choice, not a precision one.
+function formatTimestamp(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
+}
+
+function InfoIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-4 w-4">
+      <circle cx="10" cy="10" r="7.25" strokeWidth="1.3" />
+      <path d="M10 9v4.5" strokeWidth="1.3" strokeLinecap="round" />
+      <circle cx="10" cy="6.75" r="0.9" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}

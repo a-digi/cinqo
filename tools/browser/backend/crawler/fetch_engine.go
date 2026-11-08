@@ -1,0 +1,164 @@
+// fetch_engine.go (step 49, step 50) — chooses which engine serves the
+// PRIMARY single-page fetch (crawl.go's call just before the chromedp
+// primary tab). Two engines share one contract (a *crawlError Cloudflare
+// verdict, or a plain error meaning "this engine failed, fall through to
+// chromedp"): go-rod/rod (rod_fetch.go, pure Go over CDP — the default)
+// and Katana (katana_fetch.go, plan 184). A third, Playwright, was removed
+// in plan 187.
+//
+// The choice is the stored Browser-tool setting (shared.BrowserSettings.
+// FetchEngine, changed on the Engine page), read on every fetch like the
+// Debug toggles, so a switch applies to the next page fetched with no
+// restart. See plan/ai/tools/browser/step-49-rod-fetch-engine.md and
+// step-50-fetch-engine-setting-page.md.
+package crawler
+
+import (
+	"context"
+	"log"
+	"sync"
+	"time"
+
+	"browser-tool-backend/shared"
+)
+
+const (
+	fetchEngineRod     = shared.FetchEngineRod
+	fetchEngineKatana  = shared.FetchEngineKatana
+	defaultFetchEngine = shared.DefaultFetchEngine
+	// degradedFetchEngine is the engine when the setting cannot be read at all.
+	degradedFetchEngine = shared.DegradedFetchEngine
+)
+
+// fetchFunc is the shared contract of both engines' fetch functions.
+type fetchFunc func(ctx context.Context, rawURL, requestID string, expectedSelectors, removeSelectors, removeAttributes []string, maxAttributeLength int, ignoreAttributesForMaxLength []string) (crawlResponse, error)
+
+// The engine implementations, as vars only so a test can substitute them.
+var (
+	rodFetch    fetchFunc = fetchWithRod
+	katanaFetch fetchFunc = fetchWithKatana
+)
+
+// engineStoppers shut an engine's browser down (both are idempotent). A
+// var so a test can observe which engine gets stopped.
+var engineStoppers = map[string]func(){
+	fetchEngineRod:    StopRodEngine,
+	fetchEngineKatana: StopKatanaEngine,
+}
+
+var warnSettingUnreadableOnce sync.Once
+
+// selectedFetchEngine reports which engine the next fetch will use: the
+// stored setting, read fresh. The setting is the single source of truth.
+// When it cannot be read (no database yet, or a read error) the degraded
+// engine, rod, is used — the older, simpler path, never the newer Katana
+// default — and the failure is logged once (plan 189, D2).
+func selectedFetchEngine() string {
+	if shared.DB == nil {
+		return degradedFetchEngine
+	}
+	settings, err := shared.LoadBrowserSettings()
+	if err != nil {
+		warnSettingUnreadableOnce.Do(func() {
+			log.Printf("fetch engine: browser settings unreadable (%v); using %q", err, degradedFetchEngine)
+		})
+		return degradedFetchEngine
+	}
+	return settings.FetchEngine
+}
+
+// engineIdleStop is how long an engine's browser may sit unused after its last
+// fetch before it is shut down. A crawl fetches page after page with only
+// short gaps, so the browser stays up for the whole crawl and is closed a
+// moment after it ends: a headless Chrome must never outlive the work that
+// needed it. The next fetch simply starts a fresh one. A var so tests can
+// shorten it.
+var engineIdleStop = 10 * time.Second
+
+var (
+	engineMu       sync.Mutex
+	engineCurrent  string                     // the engine the most recent fetch selected
+	engineInFlight = map[string]int{}         // fetches currently running per engine
+	engineIdle     = map[string]*time.Timer{} // pending idle shutdown per engine
+	engineIdleGen  = map[string]int{}         // bumped on every begin, so a stale timer does nothing
+)
+
+// beginEngineFetch records that a fetch is starting on engine and returns
+// the function to call when it ends. When the selection has CHANGED, the
+// engine no longer selected is stopped so its idle browser stops holding
+// memory — but only once nothing is still running on it: a fetch already
+// in flight on the old engine is never interrupted, and the last such
+// fetch stops it when it finishes. Done here, lazily, because the
+// settings handler lives in package shared and cannot import this one.
+// Stopping happens under engineMu so a quick switch back can't have its
+// freshly selected engine stopped by a late cleanup.
+//
+// Whenever the last fetch on an engine ends, an idle shutdown is armed
+// (engineIdleStop): if no new fetch begins before it fires, that engine's
+// browser is stopped, selected or not.
+func beginEngineFetch(engine string) (end func()) {
+	engineMu.Lock()
+	previous := engineCurrent
+	engineCurrent = engine
+	engineInFlight[engine]++
+	engineIdleGen[engine]++
+	if t := engineIdle[engine]; t != nil {
+		t.Stop()
+		delete(engineIdle, engine)
+	}
+	if previous != "" && previous != engine && engineInFlight[previous] == 0 {
+		stopEngineLocked(previous)
+	}
+	engineMu.Unlock()
+
+	return func() {
+		engineMu.Lock()
+		defer engineMu.Unlock()
+		engineInFlight[engine]--
+		if engine != engineCurrent && engineInFlight[engine] == 0 {
+			stopEngineLocked(engine)
+			return
+		}
+		if engineInFlight[engine] == 0 {
+			armEngineIdleStopLocked(engine)
+		}
+	}
+}
+
+// armEngineIdleStopLocked schedules the idle shutdown. Assumes engineMu is held.
+func armEngineIdleStopLocked(engine string) {
+	gen := engineIdleGen[engine]
+	engineIdle[engine] = time.AfterFunc(engineIdleStop, func() {
+		engineMu.Lock()
+		defer engineMu.Unlock()
+		if engineIdleGen[engine] != gen || engineInFlight[engine] != 0 {
+			return // a fetch began since: this timer is stale
+		}
+		delete(engineIdle, engine)
+		stopEngineLocked(engine)
+	})
+}
+
+func stopEngineLocked(engine string) {
+	if stop := engineStoppers[engine]; stop != nil {
+		stop()
+	}
+}
+
+// fetchWithEngine is the single entry point crawl.go calls. It calls the
+// selected engine's fetch with the arguments it was given and returns the
+// results unchanged. With rod selected (the default) the Katana
+// engine is never started, so no second Chrome is spawned.
+func fetchWithEngine(ctx context.Context, rawURL, requestID string, expectedSelectors, removeSelectors, removeAttributes []string, maxAttributeLength int, ignoreAttributesForMaxLength []string) (crawlResponse, error) {
+	engine := selectedFetchEngine()
+	// Plan 197, step 5: an AI conversation of a link that is set to Rod reads with Rod whatever the Browser selected (conversation_engine.go).
+	if override := fetchEngineFrom(ctx); override != "" {
+		engine = override
+	}
+	defer beginEngineFetch(engine)()
+	switch engine {
+	case fetchEngineKatana:
+		return katanaFetch(ctx, rawURL, requestID, expectedSelectors, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
+	}
+	return rodFetch(ctx, rawURL, requestID, expectedSelectors, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)
+}

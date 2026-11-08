@@ -1,0 +1,420 @@
+// Package cinqo holds cinqo's backend bootstrap, extracted out of
+// api/main.go so it can be called from more than one entrypoint —
+// api/main.go itself (unchanged behavior) and, from
+// plan/ai/build/app/step-04-combined-entrypoint.md on, the combined
+// single-executable's api/cmd/app/main.go. A package main file cannot be
+// imported by another package main, which is why this exists as its own
+// importable package rather than staying inline in main().
+package cinqo
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"os"
+	"path/filepath"
+
+	dbmanager "github.com/a-digi/coco-orm/orm"
+	"github.com/a-digi/coco-server/server"
+
+	"github.com/a-digi/cinqo/config"
+	"github.com/a-digi/cinqo/config/di"
+	"github.com/a-digi/cinqo/config/routes"
+	auth_config "github.com/a-digi/cinqo/src/auth/config"
+	auth_service "github.com/a-digi/cinqo/src/auth/service"
+	"github.com/a-digi/cinqo/src/comments"
+	comments_access "github.com/a-digi/cinqo/src/comments/access"
+	comments_handler "github.com/a-digi/cinqo/src/comments/handler"
+	"github.com/a-digi/cinqo/src/conversation"
+	"github.com/a-digi/cinqo/src/dashboard"
+	dashboard_system "github.com/a-digi/cinqo/src/dashboard/system"
+	dashboard_toolwidgets "github.com/a-digi/cinqo/src/dashboard/toolwidgets"
+	"github.com/a-digi/cinqo/src/domainevent"
+	"github.com/a-digi/cinqo/src/download"
+	"github.com/a-digi/cinqo/src/filereader"
+	filereader_handler "github.com/a-digi/cinqo/src/filereader/handler"
+	filereader_jsonview "github.com/a-digi/cinqo/src/filereader/jsonview"
+	filereader_source "github.com/a-digi/cinqo/src/filereader/source"
+	"github.com/a-digi/cinqo/src/localai"
+	platform_crypto "github.com/a-digi/cinqo/src/platform/crypto"
+	tool_filesource "github.com/a-digi/cinqo/src/tool/filesource"
+	tool_manager "github.com/a-digi/cinqo/src/tool/manager"
+	tool_query "github.com/a-digi/cinqo/src/tool/repository/query"
+	"github.com/a-digi/cinqo/src/tool/systemtools"
+	toolrepository_fetch "github.com/a-digi/cinqo/src/toolrepository/fetch"
+	"github.com/a-digi/cinqo/src/toolrepository/nativeconfig"
+	toolrepository_service "github.com/a-digi/cinqo/src/toolrepository/service"
+	"github.com/a-digi/cinqo/src/toolrepository/updatecheck"
+
+	"github.com/a-digi/coco-logger/logger"
+)
+
+// defaultDataDir is today's exact well-known location — every
+// data/-relative literal that used to be hardcoded throughout this
+// file now derives from whatever ResolveDataDir returns, and this is
+// what it returns when the caller doesn't override it. "data" and the
+// old "./data" literals resolve identically (a leading "./" is a
+// no-op to every path/filepath and os function that touches these
+// paths) — this fallback is provably behavior-preserving, not just
+// close enough. See plan/ai/build/app/step-17-configurable-data-directory.md.
+const defaultDataDir = "data"
+
+// ResolveDataDir applies the fallback rule --data needs, in the one
+// place every caller that needs it before/independent of Start itself
+// (api/main.go's own shutdown-action logger, cmd/app/main.go's own
+// apphome resolution) and Start itself all call, so the rule can't
+// drift between them. fallback is step 18's own addition — an
+// explicit --data always wins regardless; absent that, fallback wins
+// if the caller has one (cmd/app/main.go passes its own apphome-based
+// data/ directory when config.json wasn't found in CWD either), else
+// defaultDataDir ("data", CWD-relative — api/main.go's own call always
+// passes "" here, preserving its exact original behavior). See
+// plan/ai/build/app/step-18-embedded-default-config-and-app-home.md.
+func ResolveDataDir(flagValue, fallback string) string {
+	if flagValue != "" {
+		return flagValue
+	}
+	if fallback != "" {
+		return fallback
+	}
+	return defaultDataDir
+}
+
+// Options bundles Start's own input parameters — switched from
+// positional args to a struct once a third one (AppVersion) showed
+// up, per step 18's own "revisit once a third override parameter is
+// needed" note. DataDir and ConfigPath are both expected to already
+// be fully resolved by the caller (ResolveDataDir for the former; the
+// latter has no equivalent helper since its own fallback — apphome —
+// is a cmd/app/main.go-specific concept Start itself has no business
+// knowing about). AppVersion may be empty (api/main.go's own
+// non-fatal read failure, step 20) — Start registers whatever it's
+// given as-is; appVersion(reqCtx)'s own downstream empty-string check
+// (tool/handler/paths.go) is what turns that into a real error, only
+// if/when a tool install is actually attempted. See
+// plan/ai/build/app/step-18-embedded-default-config-and-app-home.md
+// and plan/ai/build/app/step-20-app-version-via-di.md.
+type Options struct {
+	DataDir    string
+	ConfigPath string
+	AppVersion string
+}
+
+// Start performs the full backend bootstrap (config, DB manager, DI,
+// auth, routes.Init) and starts the HTTP server, returning it
+// un-blocked. The caller decides how to wait for shutdown:
+// api/main.go calls server.GracefulShutdown right after (today's exact
+// behavior); api/cmd/app/main.go instead coordinates shutdown together
+// with an in-process Caddy instance. The returned ContextBag lets a
+// caller override a DI-registered value after bootstrap — e.g.
+// cmd/app/main.go overriding "auth_config"'s FrontendCallbackURL to
+// match the port its own embedded Caddy actually serves the frontend
+// on, since request handlers (auth_handler.getAuthConfig) read
+// "auth_config" fresh from the ContextBag on every request rather than
+// having it baked into a closure at routes.Init time — a later Set()
+// here takes effect immediately, no restart needed.
+func Start(opts Options) (srv *http.Server, cfg *server.Config, ctx *di.ContextBag, log logger.Logger, err error) {
+	dataDir := opts.DataDir
+	configPath := opts.ConfigPath
+	logsDir := filepath.Join(dataDir, "logs")
+	dbDir := filepath.Join(dataDir, "db")
+	keyPath := filepath.Join(dataDir, "keys", "platform-encryption.key")
+	// The app's own cache — data/cache/app, a sibling of data/cache/tools/{slug}
+	// (tool_manager.ToolEnvVars' own TOOL_CACHE_DIR) rather than a bare
+	// data/cache, so the app's own cache can never collide with (or be
+	// mistaken for) any tool's. Unlike logsDir/dbDir above, nothing else
+	// creates this directory as a side effect (no logger/DB manager
+	// consumes it yet), so it's MkdirAll'd here explicitly.
+	cacheDir := filepath.Join(dataDir, "cache", "app")
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("create app cache directory: %w", err)
+	}
+
+	log, err = logger.NewLogger(server.LogFileName("cinqo"), logsDir)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+
+	// Domain Events engine's own wiring, as early as possible once a
+	// logger exists, so neither is ever a race against the first thing
+	// that publishes or dispatches in this process's lifetime.
+	// SetLogger (plan/ai/domain-events/step-02-async-dispatch.md) gives
+	// dispatchOne's own panic/error logging somewhere real to write to,
+	// instead of its safe no-op default. The Subscribe call
+	// (plan/ai/domain-events/step-01-core-event-bus.md) is the engine's
+	// own dogfood listener: the smallest possible real proof that
+	// domainevent.Subscribe's registration and domainevent.Publish's
+	// dispatch (wired from tool/handler/install_handler.go) actually
+	// reach each other, before any later step builds on this mechanism.
+	domainevent.SetLogger(func(format string, args ...any) { log.Warning(format, args...) })
+	domainevent.Subscribe("cinqo.tool.installed", func(_ context.Context, evt domainevent.Event) error {
+		log.Info("domain event: %s: %s", evt.Topic, string(evt.Payload))
+		return nil
+	})
+	// Step 6's own dogfood listener
+	// (plan/ai/domain-events/step-06-end-to-end-dogfood.md) — proves the
+	// half step 1's own dogfood didn't cover: a TOOL-originated event
+	// (published by Career's own save_cv_pdf, via
+	// POST /api/v1/events/publish) reaching a core-native listener.
+	domainevent.Subscribe("career.cv.generated", func(_ context.Context, evt domainevent.Event) error {
+		log.Info("domain event: %s (from %s %s): %s", evt.Topic, evt.SourceKind, evt.SourceID, string(evt.Payload))
+		return nil
+	})
+
+	migrationsPath, err := config.MigrationsPath()
+	if err != nil {
+		return nil, nil, nil, log, err
+	}
+
+	manager, err := dbmanager.NewDatabaseManager("cinqo.db", dbDir, []string{migrationsPath})
+	if err != nil {
+		return nil, nil, nil, log, err
+	}
+
+	if err := manager.SyncMigrations(); err != nil {
+		return nil, nil, nil, log, err
+	}
+
+	// Domain Events engine's own tool-listener lookup
+	// (plan/ai/domain-events/step-04-core-to-tool-delivery.md) — wired
+	// as soon as cinqo.db's own migrations (tool_event_listeners among
+	// them) are guaranteed to exist, and still before any tool install
+	// could possibly happen (that only becomes reachable once the HTTP
+	// server itself starts, at the very end of this function).
+	domainevent.SetDB(manager.Connector.DB)
+
+	// Reconcile every tool the database says is already enabled — this
+	// package's own tool manager otherwise starts every restart with a
+	// completely empty in-memory "what's running" map, leaving every
+	// tool's proxy route 503ing until someone manually disables and
+	// re-enables it by hand. See
+	// plan/ai/tools/step-11-restart-enabled-tools-on-boot.md.
+	corePortCfg, err := server.LoadConfig(configPath)
+	if err != nil {
+		return nil, nil, nil, log, err
+	}
+	tool_manager.StartAllEnabled(manager.Connector.DB, dataDir, corePortCfg.Port, func(format string, args ...any) { log.Warning(format, args...) })
+
+	ctx = di.NewContextBag(manager, log)
+
+	// Conversation feature's own, separate SQLite database (its own
+	// file, its own migrations folder) — a deliberate second
+	// DatabaseManager, not a table in cinqo.db, per
+	// plan/ai/conversation/step-01-data-model-and-separate-database.md.
+	// Registered into DI under its own key rather than replacing
+	// ContextBag.DatabaseManager, so existing handlers resolving the
+	// main database are unaffected.
+	conversationMigrationsPath, err := config.ConversationMigrationsPath()
+	if err != nil {
+		return nil, nil, nil, log, err
+	}
+	conversationManager, err := dbmanager.NewDatabaseManager("conversation.db", dbDir, []string{conversationMigrationsPath})
+	if err != nil {
+		return nil, nil, nil, log, err
+	}
+	if err := conversationManager.SyncMigrations(); err != nil {
+		return nil, nil, nil, log, err
+	}
+	ctx.Set("conversation_db_manager", conversationManager)
+
+	// A turn run's own execution lives in a goroutine, not a supervised
+	// OS process — it has no PID to reattach to after a restart the way
+	// tool_manager.StartAllEnabled reconciles tools. Every turn_runs row
+	// still "running" at this point in boot is therefore, by
+	// definition, dead; mark it failed and record a matching error turn
+	// so a reopened page explains what happened instead of the turn
+	// simply vanishing. See
+	// plan/ai/conversation/step-23-detach-turn-execution-from-request.md.
+	conversation.ReconcileOrphanedTurnRuns(conversationManager.Connector.DB, func(format string, args ...any) { log.Warning(format, args...) })
+	// Sub Agents (step 41) — same "a goroutine has no PID to reattach
+	// to" reasoning, one level down: a sub-agent run orphaned by this
+	// same restart needs its own reconciliation pass.
+	conversation.ReconcileOrphanedSubAgentRuns(conversationManager.Connector.DB, func(format string, args ...any) { log.Warning(format, args...) })
+
+	// The generic download manager (plan 181, step 5): one for the whole app. Any feature that downloads a file starts its
+	// jobs here, and GET /api/v1/downloads shows them with their progress.
+	downloads := download.New(download.Options{})
+	ctx.Set("download_manager", downloads)
+
+	// The optional local AI platform (plan 181): the module's one start-up hook, a single line to delete when the module
+	// is removed.
+	if err := localai.Register(manager.Connector.DB, localai.Deps{Downloads: downloads, DataDir: dataDir}); err != nil {
+		log.Warning("local AI platform not registered: %v", err)
+	}
+
+	// Platform API-key encryption key — loaded/generated once at
+	// bootstrap, deliberately never sourced from config.json (step 2),
+	// registered into DI so every platform handler resolves the same
+	// in-memory key rather than each re-reading the file itself.
+	platformEncryptionKey, err := platform_crypto.LoadOrGenerateKey(keyPath)
+	if err != nil {
+		return nil, nil, nil, log, err
+	}
+	ctx.Set("platform_encryption_key", platformEncryptionKey)
+
+	// The resolved data directory itself — registered so tool/handler
+	// (installed-tool directories) and conversation/handler (per-
+	// conversation log files) can each derive their own subdirectory
+	// from the same root --data overrode, instead of each hardcoding
+	// their own "data/..." literal. See
+	// plan/ai/build/app/step-17-configurable-data-directory.md.
+	ctx.Set("data_dir", dataDir)
+
+	// The app's own resolved cache directory — same reasoning as
+	// data_dir above: registered once here so any future core-app code
+	// needing a persistent (but freely regenerable) cache location
+	// resolves it from DI rather than recomputing/hardcoding
+	// filepath.Join(dataDir, "cache", "app") itself.
+	ctx.Set("cache_dir", cacheDir)
+
+	// The running app's own version — resolved once here from
+	// whatever the caller supplied (embedded, for cmd/app; read fresh
+	// from api/VERSION, for the dev binary) rather than tool/handler
+	// re-reading a bare "VERSION" file itself on every install
+	// request. May be empty (api/main.go's own non-fatal read
+	// failure) — appVersion(reqCtx) (tool/handler/paths.go) is what
+	// turns that into a real, user-facing error, only if/when a tool
+	// install is actually attempted. See
+	// plan/ai/build/app/step-20-app-version-via-di.md.
+	ctx.Set("app_version", opts.AppVersion)
+
+	// The backend's own listening port — reuses corePortCfg (already
+	// loaded above, via the correctly-resolved configPath, for
+	// tool_manager.StartAllEnabled) rather than tool/handler's own
+	// corePort(reqCtx) re-reading config.json a second time via a bare
+	// CWD-relative literal, the exact same class of bug app_version
+	// itself had. See plan/ai/build/app/step-20-app-version-via-di.md.
+	ctx.Set("core_port", corePortCfg.Port)
+
+	// Cinqo's own built-in tool repository: its address comes from the
+	// app-owned config/tool-repository.yaml (replaced from the embedded copy at
+	// every launch, so a user cannot change it; absent means the built-in
+	// default, empty means none). Read once, here; a bad value is logged and
+	// ignored, never fatal. Empty string in the bag means "no native repository". See
+	// plan/ai/tools/repository/native-repository.md.
+	nativeRepo := nativeconfig.Load(config.ReadConfigFile)
+	if nativeRepo.Warning != "" {
+		log.Warning("%s", nativeRepo.Warning)
+	}
+	ctx.Set("native_tool_repository_url", nativeRepo.URL)
+	repositoryService := toolrepository_service.New(manager.Connector.DB, toolrepository_fetch.New())
+	if err := repositoryService.SyncNative(nativeRepo.URL); err != nil {
+		log.Warning("could not set up the built-in tool repository: %v", err)
+	}
+
+	// The background update check: refreshes every repository, one at a time, in
+	// its own goroutine, once now (without delaying startup) and again whenever
+	// the Tools page asks. Stopped at shutdown (cmd/app). See
+	// plan/ai/tools/repository/check-for-updates.md.
+	updateChecker := updatecheck.New(context.Background(), repositoryService)
+	ctx.Set("tool_update_checker", updateChecker)
+	updateChecker.Start(updatecheck.TriggerLaunch)
+
+	// Home dashboard engine (plan/ai/dashboard/home-dashboard.md): the system's
+	// own widgets register in the registry, installed tools' widgets come
+	// from the tool source (their manifest widgets[], cached at install).
+	// Wired after the conversation database and the repository service exist,
+	// since some system widgets read from them.
+	widgetRegistry := dashboard.NewRegistry()
+	for _, w := range []dashboard.Provider{
+		dashboard_system.NewToolsOverview(manager.Connector.DB),
+		dashboard_system.NewUpdatesAvailable(manager.Connector.DB, repositoryService, opts.AppVersion),
+		dashboard_system.NewRecentConversations(conversationManager.Connector.DB),
+		dashboard_system.NewMediaUsage(manager.Connector.DB),
+	} {
+		if err := widgetRegistry.Register(w); err != nil {
+			return nil, nil, nil, log, err
+		}
+	}
+	dashboardLog := func(format string, args ...any) { log.Warning(format, args...) }
+
+	// Comments engine (plan/ai/comments/comments-engine.md): one database file per
+	// owner under the data directory, opened on first use; the resolver knows the
+	// system's own entity types (none yet) and installed tools' declared ones.
+	commentStores := comments.NewManager(dataDir)
+	comments_handler.Configure(
+		commentStores,
+		comments_access.NewResolver(comments_access.NewSystemTypes(), comments_access.NewToolTypes(manager.Connector.DB)),
+		dashboardLog,
+	)
+	// File reader engine (plan/ai/file-reader/file-reader-engine.md): one shared engine, so its limits
+	// (reads at once, cached indexes) are global; the sources say which files it may open.
+	fileSources := filereader_source.NewRegistry()
+	if err := fileSources.Register(filereader_source.NewAITrace(filepath.Join(dataDir, "conversations"))); err != nil {
+		return nil, nil, nil, log, err
+	}
+	// An installed tool's declared file sources ("tool:<slug>:<id>"), found on demand and only while it is enabled.
+	fileSources.AddResolver(filereader_source.ToolPrefix, tool_filesource.NewResolver(tool_query.NewToolQueryRepo(manager.Connector.DB), dataDir))
+	filereader_handler.Configure(filereader.New(filereader.DefaultLimits()), fileSources, func(format string, args ...any) { log.Info(format, args...) })
+	// The JSON beautifier behind view=json (plan/ai/file-reader/step-202-json-beautifier.md): indented copies kept in a cache folder of
+	// the data directory. Not essential: if the folder cannot be made the reader still works and view=json answers "not available".
+	if jsonCache, err := filereader_jsonview.NewCache(filepath.Join(dataDir, "cache", "file-reader", "json"), filereader_jsonview.DefaultCacheLimits()); err != nil {
+		log.Warning("file-reader: JSON formatting is not available: %v", err)
+	} else {
+		filereader_handler.SetJSONView(jsonCache)
+	}
+	// Live logs (plan/ai/file-reader/live-follow.md): a module apart from the file reader, composed in livelog.go.
+	if err := configureLiveLogs(dataDir, func(format string, args ...any) { log.Info(format, args...) }); err != nil {
+		return nil, nil, nil, log, err
+	}
+	toolWidgets := dashboard_toolwidgets.NewSource(manager.Connector.DB, tool_manager.Port).WithLogger(dashboardLog)
+	dashboard.SetDefault(dashboard.NewEngine(widgetRegistry, toolWidgets).WithLogger(dashboardLog))
+
+	// Auth bootstrap: config.json's "auth" block is always present (dev
+	// HS256 secret); iam.yaml does not exist on disk yet (see
+	// plan/ai/backend/auth/step-01-iam-config-and-registration.md's open
+	// question — cinqo has no coco-iam application registration yet), so
+	// its read failure is expected and handled as "not registered yet",
+	// not a startup error.
+	authCfgBytes, err := config.ReadConfigFile("config.json")
+	if err != nil {
+		return nil, nil, nil, log, err
+	}
+	authCfg, err := auth_config.Load(authCfgBytes)
+	if err != nil {
+		return nil, nil, nil, log, err
+	}
+	if iamBytes, iamErr := config.ReadConfigFile("iam.yaml"); iamErr == nil {
+		iamCfg, iamParseErr := auth_config.LoadIamConfig(iamBytes)
+		if iamParseErr != nil {
+			log.Warning("iam.yaml present but could not be parsed, ignoring: %v", iamParseErr)
+		} else {
+			iamCfg.Apply(&authCfg)
+			log.Info("IAM config loaded from iam.yaml (issuer: %s)", authCfg.Issuer)
+		}
+	}
+
+	// jwksCtx is intentionally never cancelled: the original main()'s
+	// `defer cancelJwks()` only ever ran at process exit anyway (right
+	// after GracefulShutdown's blocking wait returned), so dropping it
+	// here changes nothing observable — the refresh goroutine dies with
+	// the process either way. See
+	// plan/ai/build/app/step-01-backend-bootstrap-refactor.md's "Open
+	// question" section.
+	jwksCtx := context.Background()
+	jwksSvc := auth_service.NewJwksService(authCfg.JwksURL, authCfg.HS256Secret, authCfg.Issuer, authCfg.Audience)
+	jwksSvc.Start(jwksCtx, func(format string, args ...any) { log.Warning(format, args...) })
+
+	ctx.Set("jwks_service", jwksSvc)
+	ctx.Set("auth_config", authCfg)
+
+	// system-tools.yaml is the sole source of truth for which installed
+	// tools are protected from deletion — optional, same convention as
+	// iam.yaml above: absent or unparseable is logged and falls back to
+	// "nothing protected" rather than failing startup. See
+	// plan/ai/tools/step-10-system-tools.md.
+	systemToolsCfg := systemtools.Config{}
+	if data, err := config.ReadConfigFile("system-tools.yaml"); err == nil {
+		if cfg, parseErr := systemtools.Load(data); parseErr != nil {
+			log.Warning("system-tools.yaml present but could not be parsed, ignoring: %v", parseErr)
+		} else {
+			systemToolsCfg = cfg
+		}
+	}
+	ctx.Set("system_tools_config", systemToolsCfg)
+
+	routes.Init(ctx)
+
+	srv, cfg, err = server.StartServer(configPath, log)
+	return srv, cfg, ctx, log, err
+}

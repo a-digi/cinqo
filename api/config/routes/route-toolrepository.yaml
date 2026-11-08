@@ -1,0 +1,50 @@
+routes:
+  # Every route needs tool:manage, reads included: the list shows which links
+  # an administrator trusts. See plan/ai/tools/repository/tool-repositories.md.
+  - path: /api/v1/tool-repositories
+    method: GET
+    executor: ToolRepositoryList
+    security: authenticated
+    scopes:
+      - tool:manage
+      - cinqo:super:admin
+
+  - path: /api/v1/tool-repositories
+    method: POST
+    executor: ToolRepositoryAdd
+    security: authenticated
+    scopes:
+      - tool:manage
+      - cinqo:super:admin
+
+  - path: /api/v1/tool-repositories/{id}
+    method: GET
+    executor: ToolRepositoryGet
+    security: authenticated
+    scopes:
+      - tool:manage
+      - cinqo:super:admin
+
+  - path: /api/v1/tool-repositories/{id}
+    method: DELETE
+    executor: ToolRepositoryDelete
+    security: authenticated
+    scopes:
+      - tool:manage
+      - cinqo:super:admin
+
+  - path: /api/v1/tool-repositories/{id}/refresh
+    method: POST
+    executor: ToolRepositoryRefresh
+    security: authenticated
+    scopes:
+      - tool:manage
+      - cinqo:super:admin
+
+  - path: /api/v1/tool-repositories/{id}/tools/{toolId}/install
+    method: POST
+    executor: ToolRepositoryInstall
+    security: authenticated
+    scopes:
+      - tool:manage
+      - cinqo:super:admin

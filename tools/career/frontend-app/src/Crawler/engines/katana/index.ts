@@ -1,0 +1,36 @@
+// The Katana engine on the screen (plan 192): the job list is crawled with a rule and the job page is read by picking its data (plans 190,
+// 191). A link that needs a login has no rule and no picker unless it has a kept login (plan 195): then it is read like any other link; the
+// callers pass requiresLogin = needsLoginWindow(...), so this file only sees the links that still need the window. It imports no other engine.
+import { hasAiInstructions, hasRule, hasText } from '../linkFacts'
+import type { InstructionEngine, LinkFacts } from '../types'
+import { katanaJobDetailGenerate } from './jobDetailPrompts'
+import { AUTO_JOB_DETAILS } from './policy'
+import { katanaListingGenerate } from './prompts'
+import { KatanaProgressView } from './KatanaProgressView'
+import { StartOver } from './StartOver'
+
+const byAi = (login: boolean) => login
+
+export const katanaEngine: InstructionEngine = {
+  id: 'katana',
+  // Plan 195, step 4: a link that needs a login, with a login kept in the Browser tool, is read like any other link.
+  usesKeptLogin: true,
+  startOverControl: StartOver,
+  progressView: KatanaProgressView,
+  listingGenerate: katanaListingGenerate,
+  jobDetailGenerate: katanaJobDetailGenerate,
+  aiTriesListing: () => true,
+  listingNeeds: (login) => (byAi(login) ? 'ai' : 'rule'),
+  hasListing: (link: LinkFacts) => (byAi(Boolean(link.requiresLogin)) ? hasAiInstructions(link) : hasRule(link)),
+  // The AI may pick the job details too (Generate on the Job details tile): its attempts are counted and shown.
+  jobDetailsWrittenByAi: () => true,
+  mayAutoWriteJobDetails: (login) => byAi(login) || AUTO_JOB_DETAILS,
+  // A request left over from before (or raised by the crawl's event, which knows no engine) is stale under Katana.
+  clearsStaleJobDetailAiRequest: (login) => !byAi(login) && !AUTO_JOB_DETAILS,
+  jobDetailsAccess(link) {
+    if (byAi(Boolean(link.requiresLogin))) return 'open'
+    // lastCrawledAt is the newest saved job of the link and is empty when the link has no job.
+    if (hasText(link.lastCrawledAt)) return 'open'
+    return hasRule(link) ? 'needs_jobs' : 'needs_rule_and_jobs'
+  },
+}

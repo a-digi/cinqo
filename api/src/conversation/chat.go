@@ -1,0 +1,1035 @@
+package conversation
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"mime"
+	"net/http"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"time"
+
+	"github.com/a-digi/cinqo/src/media"
+	media_query "github.com/a-digi/cinqo/src/media/repository/query"
+	"github.com/a-digi/cinqo/src/platform"
+	"github.com/a-digi/cinqo/src/platform/chatcompleter"
+	tool_manager "github.com/a-digi/cinqo/src/tool/manager"
+	tool_mcp "github.com/a-digi/cinqo/src/tool/mcp"
+	tool_query "github.com/a-digi/cinqo/src/tool/repository/query"
+
+	conversation_entity "github.com/a-digi/cinqo/src/conversation/entity"
+	conversation_query "github.com/a-digi/cinqo/src/conversation/repository/query"
+)
+
+// maxMessageContentLength matches the reference's own
+// MaxMessageContentLength exactly — a proven value, not picked
+// arbitrarily. See plan/ai/conversation/step-02-sending-a-message.md.
+//
+// No send-side timeout is imposed here (deliberately removed — see
+// plan/ai/conversation/step-12-remove-send-timeout.md): a real LLM
+// call, especially one running a multi-step tool-calling loop, can
+// legitimately take a long time, and there is no server-level
+// http.Server.WriteTimeout/ReadTimeout configured either (verified
+// directly in coco-server's own server.go — the http.Server there
+// sets only Addr/Handler), so the operation is bounded only by the
+// incoming request's own context (cancelled if the caller's own
+// connection goes away) and by each individual downstream call's own
+// timeout (chatcompleter HTTP client, tool_mcp.Invoke's own
+// invokeTimeout, etc.), not by an artificial ceiling on the whole
+// send.
+const maxMessageContentLength = 8000
+
+// ContextTurns is how many recent turns are sent to the platform as
+// context — the same tail-read step 1 recommends, not the full
+// retained window. Exported: step 3's "get conversation" handler uses
+// this exact same value for what it shows the frontend, per step 1's
+// own "one read mechanism, two callers" design. See step 1's own open
+// question 1 (3 vs 4).
+const ContextTurns = 4
+
+// maxToolIterations bounds the tool-calling loop (send -> tool call ->
+// invoke -> send again) — a hard ceiling against a model that keeps
+// calling tools without ever producing a final reply. Originally 5
+// (plan/ai/tools/pdf-generator/step-04-ai-model-invocation.md), raised
+// to 15 (step-29-batch-save-portal-jobs.md) — 5 was tuned for
+// pdf-generator's own single-tool-call flows and structurally
+// collided with career's own multi-step crawl workflow (get
+// instructions, navigate, crawl_paginated, then one save call per job
+// found), which a real job-listing page routinely needs more than 5
+// round-trips for even after step 29's own save_portal_jobs batching
+// cuts the per-job multiplier out entirely.
+const maxToolIterations = 15
+
+// invokeToolFn is invokeToolCall behind a variable so tests can script what a
+// tool answers (e.g. a rejected call) without installing a real tool.
+var invokeToolFn = invokeToolCall
+
+// answeredRepeat is the reply for a call identical to one already answered in this turn: it is not run again. The reply is short on
+// purpose: the repeated answer itself (a whole document, for example) is what fills a small model's context.
+func answeredRepeat(answered map[string]int, call chatcompleter.ToolCall) (string, bool) {
+	round, ok := answered[callKey(call)]
+	if !ok {
+		return "", false
+	}
+	return fmt.Sprintf("You already made this exact %s call in round %d of this turn and got its result; it is still above. Use that result and go on with the task instead of calling again.", call.Name, round), true
+}
+
+// MaxToolIterations is the ceiling a conversation's own tool-iteration limit
+// (step 93) may not exceed: a conversation can lower its budget, never raise
+// it above this.
+const MaxToolIterations = maxToolIterations
+
+// maxToolLoopContextTokens bounds how large runToolLoop's own
+// accumulated messages is allowed to grow, measured by the real,
+// provider-reported prompt token count from the previous iteration's
+// response (chatcompleter.Usage.PromptTokens) — never a local
+// estimate. Without this, a multi-iteration tool-calling turn can
+// accumulate large tool results (e.g. the Browser tool's own
+// up-to-200,000-byte crawled HTML) across enough iterations to exceed
+// a model's context window well before maxToolIterations is ever
+// reached — a real, reproduced failure (context_length_exceeded from
+// OpenRouter at 294,446 tokens against a 262,144-token model limit),
+// not a hypothetical one. No per-model context-window size is tracked
+// anywhere in this codebase today, so this is a conservative, plain
+// constant rather than per-model configuration. See
+// plan/ai/conversation/step-34-realtime-token-usage-budget-and-display.md.
+const maxToolLoopContextTokens = 100_000
+
+var (
+	ErrEmptyContent         = errors.New("conversation: content is empty")
+	ErrContentTooLong       = errors.New("conversation: content exceeds maximum length")
+	ErrPlatformNotFound     = errors.New("conversation: platform is not registered")
+	ErrPlatformUnsupported  = errors.New("conversation: platform has no chat completion support yet")
+	ErrNoKeyForPlatform     = errors.New("conversation: no API key registered for this platform")
+	ErrConversationNotFound = errors.New("conversation: conversation not found")
+	// ErrProviderCallFailed distinguishes an upstream platform failure
+	// (map to 502 at the HTTP layer, step 3) from every other error
+	// this function can return. The user's own message is still
+	// recorded when this happens — see AppendUserOnly.
+	ErrProviderCallFailed = errors.New("conversation: provider call failed")
+	// ErrToolIterationLimitReached fires when maxToolIterations is hit
+	// without the model ever returning a plain final reply — a real,
+	// visible failure mode (mapped to its own response at the HTTP
+	// layer), not silently swallowed.
+	ErrToolIterationLimitReached = errors.New("conversation: model kept calling tools without a final reply")
+	// ErrEmptyModelReply fires when the model ends its turn with no text
+	// and no generated file to show (step 92). A turn that said nothing and
+	// produced nothing is a failure, never a success: it used to complete
+	// with an empty assistant message and no reason, which left a
+	// background task (e.g. Career's "Generate instructions") looking like
+	// the agent had simply given up.
+	ErrEmptyModelReply = errors.New("the model returned an empty response")
+)
+
+// ToolLimitError is ErrToolIterationLimitReached with what happened (step
+// 93): how many rounds the budget allowed and, when the wrap-up call
+// produced one, the model's own explanation. errors.Is(err,
+// ErrToolIterationLimitReached) still holds, so every existing check works.
+type ToolLimitError struct {
+	Limit       int
+	Explanation string
+}
+
+func (e *ToolLimitError) Error() string {
+	msg := fmt.Sprintf("%s: stopped after %d rounds of tool calls without a final reply", ErrToolIterationLimitReached.Error(), e.Limit)
+	if e.Explanation != "" {
+		msg += ". The model said: " + e.Explanation
+	}
+	return msg
+}
+
+func (e *ToolLimitError) Is(target error) bool { return target == ErrToolIterationLimitReached }
+
+// maxToolLimitExplanationLen bounds the model's wrap-up text kept in the error.
+const maxToolLimitExplanationLen = 600
+
+// toolLimitWrapUpPrompt is the one instruction sent, with no tools offered,
+// when the budget runs out.
+const toolLimitWrapUpPrompt = "You have used your tool-call budget. Do not call any tools. In two or three sentences say what you tried, what failed, and what is blocking you."
+
+// toolLimitOf returns a conversation's own lowered budget, 0 when none is set.
+func toolLimitOf(c *conversation_entity.Conversation) int {
+	if c == nil || c.ToolIterationLimit == nil {
+		return 0
+	}
+	return *c.ToolIterationLimit
+}
+
+// effectiveToolLimit resolves a conversation's own limit (0 = none set) to
+// the number of model calls the loop may make.
+func effectiveToolLimit(limit int) int {
+	if limit <= 0 || limit > maxToolIterations {
+		return maxToolIterations
+	}
+	return limit
+}
+
+// SendMessage resolves the conversation's own fixed platform+model
+// (set once at creation, never mutated — see
+// plan/ai/conversation/step-07-fixed-platform-and-model-per-conversation.md)
+// and its most recently created key, sends the conversation's recent
+// history plus the new user message to that platform, and persists
+// both sides as one turn. No conversation-ownership check happens
+// here — that's the HTTP handler layer's concern (step 4); this
+// trusts the conversationID it's given. See
+// plan/ai/conversation/step-02-sending-a-message.md.
+func SendMessage(
+	ctx context.Context,
+	httpClient *http.Client,
+	mainDB *sql.DB,
+	conversationDB *sql.DB,
+	encryptionKey []byte,
+	conversationID, content string,
+	callerScopes []string,
+	dataDir string,
+	corePort int,
+) (*Turn, error) {
+	if content == "" {
+		return nil, ErrEmptyContent
+	}
+	if len(content) > maxMessageContentLength {
+		return nil, ErrContentTooLong
+	}
+
+	conv, err := conversation_query.NewConversationQueryRepo(conversationDB).FindByID(conversationID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrConversationNotFound
+		}
+		return nil, fmt.Errorf("conversation: look up conversation: %w", err)
+	}
+
+	entry, ok := platform.Lookup(conv.PlatformID)
+	if !ok {
+		return nil, ErrPlatformNotFound
+	}
+	if entry.Completer == nil {
+		return nil, ErrPlatformUnsupported
+	}
+	model := conv.Model
+
+	entry, plainKey, err := resolveEntry(ctx, mainDB, encryptionKey, entry, conv.PlatformID)
+	if err != nil {
+		return nil, err
+	}
+
+	recent, err := ReadRecentTurns(conv.FilePath, ContextTurns)
+	if err != nil {
+		return nil, fmt.Errorf("conversation: read recent turns: %w", err)
+	}
+
+	messages := make([]chatcompleter.Message, 0, len(recent)*2+1)
+	for _, t := range recent {
+		if t.Failed {
+			// No real exchange happened — replaying the user's own
+			// text with a fabricated empty assistant reply would be
+			// wrong (and some providers reject an empty message
+			// outright). Skip the whole turn rather than either.
+			continue
+		}
+		messages = append(messages,
+			chatcompleter.Message{Role: "user", Content: t.UserContent},
+			chatcompleter.Message{Role: "assistant", Content: t.AssistantContent},
+		)
+	}
+	userTimestamp := time.Now().UTC().Format(time.RFC3339)
+	messages = append(messages, chatcompleter.Message{Role: "user", Content: content})
+
+	tools, err := offerableTools(mainDB, callerScopes, false)
+	if err != nil {
+		return nil, fmt.Errorf("conversation: look up offerable tools: %w", err)
+	}
+	ctx, tools = offeredTools(ctx, entry, model, tools, conv)
+	messages = withToolHint(entry, tools, messages)
+
+	ctx = withToolLoopEconomy(ctx, conv)
+	assistantContent, err := runToolLoop(ctx, httpClient, entry, plainKey, model, messages, tools, mainDB, callerScopes, conv.UserID, dataDir, corePort, conversationID, conversationDB, "", 0, conversation_entity.OrchestrationModeDirect, nil, nil, nil, toolLimitOf(conv))
+	if err != nil {
+		// Record the user's own message AND the real failure reason —
+		// a real, recognized "## error —" block (step 8), not a
+		// dangling fragment silently dropped on the next read. The
+		// decrypted key never touches this path or any error message.
+		failedTurn := Turn{
+			UserTimestamp:  userTimestamp,
+			UserContent:    content,
+			Failed:         true,
+			ErrorTimestamp: time.Now().UTC().Format(time.RFC3339),
+			ErrorMessage:   truncateError(err.Error()),
+		}
+		if appendErr := AppendTurn(conv.FilePath, failedTurn); appendErr != nil {
+			return nil, fmt.Errorf("conversation: chat completion failed (%v) and failed to record the failed turn: %w", err, appendErr)
+		}
+		if errors.Is(err, ErrToolIterationLimitReached) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("%w: %v", ErrProviderCallFailed, err)
+	}
+
+	turn := Turn{
+		UserTimestamp:      userTimestamp,
+		UserContent:        content,
+		AssistantTimestamp: time.Now().UTC().Format(time.RFC3339),
+		AssistantContent:   assistantContent,
+	}
+	if err := AppendTurn(conv.FilePath, turn); err != nil {
+		return nil, fmt.Errorf("conversation: persist turn: %w", err)
+	}
+
+	return &turn, nil
+}
+
+// offerableTools reads every enabled tool's cached MCP schema and
+// keeps only the ones callerScopes actually grants (cinqo:super:admin
+// bypasses, matching this codebase's usual OR-matched scope
+// convention) — the pre-request half of the "check twice" posture;
+// runToolLoop/invokeToolCall re-check again immediately before
+// actually spawning anything. See
+// plan/ai/tools/pdf-generator/step-04-ai-model-invocation.md.
+// includeSubAgent controls whether the built-in spawn_subagent tool
+// (subagent.go) is appended alongside whatever real MCP tools the
+// caller's scopes unlock — true for an orchestrator turn (which has a
+// turn_runs row a spawned sub-agent can attach to), false for a
+// sub-agent's own nested loop (which must not be able to spawn a
+// sub-agent of its own — see subagent.go's own doc comment for why
+// this is the whole recursion guard, not just a default) and for
+// SendMessage's dead-but-still-compiling call site (no turn_runs row
+// to attach to at all).
+func offerableTools(mainDB *sql.DB, callerScopes []string, includeSubAgent bool) ([]chatcompleter.ToolDef, error) {
+	mcpTools, err := tool_query.NewToolMCPToolQueryRepo(mainDB).FindAllEnabled()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]chatcompleter.ToolDef, 0, len(mcpTools)+3)
+	for _, t := range mcpTools {
+		if !hasScope(callerScopes, t.RequiredScope) {
+			continue
+		}
+		out = append(out, chatcompleter.ToolDef{
+			Name:        t.Name,
+			Description: t.Description,
+			InputSchema: json.RawMessage(t.InputSchema),
+		})
+	}
+	if includeSubAgent {
+		out = append(out, subAgentToolDef, checkSubAgentToolDef, listSubAgentsToolDef, cancelSubAgentToolDef, crawlURLsWithSubagentsToolDef)
+	}
+	return out, nil
+}
+
+// runToolLoop is the send -> tool call -> invoke -> send-again loop,
+// bounded by maxToolIterations. Tool calls within one turn are invoked
+// sequentially, not concurrently — a model requesting the same
+// Chrome-backed tool twice in parallel would otherwise spawn two
+// headless Chrome instances at once.
+//
+// Every real file link any tool call produced this turn is collected
+// (allLinks) and deterministically appended to the model's own final
+// reply — never left to the model to reproduce unchanged. This closes
+// a real, live-observed failure: asked to relay a tool's result, a
+// model paraphrased a real relative link into a fabricated absolute
+// URL pointing at an entirely unrelated domain. The underlying
+// generation/storage was correct; only the model's own retelling of
+// the link was wrong — so the host now states the real link itself
+// rather than trusting that retelling. See
+// plan/ai/tools/pdf-generator/step-04-ai-model-invocation.md.
+// logStep, when non-nil, is called once per loop iteration (before
+// the model call) and once per tool invocation within that iteration
+// — a coarse, step-by-step progress trace a caller can persist
+// somewhere a client can poll (see runner.go's own use of this, added
+// by plan/ai/conversation/step-23-detach-turn-execution-from-request.md).
+// Never receives raw model/tool content, only fixed, backend-authored
+// strings — see that step's own Security considerations for why.
+//
+// logExchange, when non-nil, is called once per iteration — the exact
+// opposite of logStep: it receives the FULL raw request
+// (messages/tools) and response (result/err) for that iteration,
+// unredacted. See runner.go's own use of this (writing one .txt file
+// per turn) and plan/ai/conversation/step-36-ai-trace-logs.md.
+//
+// reportUsage, when non-nil, is called once per loop iteration with
+// that iteration's own real, provider-reported usage (the counts and,
+// since plan 178, the prompt cache, the hidden reasoning and the
+// cost) — a per-iteration increment, not a cumulative total (the
+// caller, runner.go's runDetachedTurn, persists it via
+// TurnRunPersistentRepo.AddUsage's own atomic `col = col + ?`). See plan/ai/conversation/step-34-realtime-token-usage-budget-
+// and-display.md.
+func runToolLoop(
+	ctx context.Context,
+	httpClient *http.Client,
+	entry platform.Entry,
+	apiKey, model string,
+	messages []chatcompleter.Message,
+	tools []chatcompleter.ToolDef,
+	mainDB *sql.DB,
+	callerScopes []string,
+	// userID is the conversation's own owning user (conv.UserID at
+	// every call site — SendMessage/runDetachedTurn both already fetch
+	// conv for other reasons) — threaded all the way down to
+	// invokeToolCall so a tool invocation can act with this user's own
+	// identity for anything that needs a real, known caller (e.g.
+	// promoting a tool-produced resource into permanent Media storage
+	// in-process, never a live HTTP session's own token). Unused by
+	// invokeToolCall itself until that need lands; carried through now
+	// so every call path (including nested sub-agents, below) already
+	// has it in scope rather than retrofitting it later.
+	userID string,
+	dataDir string,
+	corePort int,
+	conversationID string,
+	// conversationDB/turnRunID/depth (step 41 — Sub Agents) are needed
+	// only to dispatch a spawn_subagent/check_subagent/list_subagents/
+	// cancel_subagent tool call: conversationDB is where sub_agent_runs
+	// lives, turnRunID is the ORIGINAL orchestrator turn every sub-agent
+	// at every nesting depth is recorded flat under (see subagent.go's
+	// own "Recursive sub-agents" doc comment), and depth is this loop's
+	// own current nesting level (0 for the orchestrator itself), passed
+	// to a spawned sub-agent as depth+1 so IT can decide whether it's
+	// still allowed to spawn further (subagent.go's own
+	// maxSubAgentDepth). turnRunID == "" (SendMessage's own dead call
+	// site only) means "no parent to attach to" — offerableTools is
+	// never asked to include the sub-agent tools in that case, so these
+	// branches are simply never reached there, not merely guarded. A
+	// spawned sub-agent runs under its own, fully independent context
+	// (see subagent.go's own "the reply returns early" doc comment) —
+	// this loop never needs to track or wait for one it spawns.
+	conversationDB *sql.DB,
+	turnRunID string,
+	depth int,
+	// orchestrationMode (composer step 2) is the CONVERSATION's own
+	// mode for the orchestrator loop (depth 0); every sub-agent loop
+	// passes OrchestrationModeDirect, so the composer restriction below
+	// only ever applies to the orchestrator itself. See
+	// plan/ai/conversation/step-42-orchestrator-composer-mode.md.
+	orchestrationMode string,
+	logStep func(step string),
+	reportUsage func(usage chatcompleter.Usage),
+	logExchange func(iteration int, messages []chatcompleter.Message, tools []chatcompleter.ToolDef, result *chatcompleter.ChatCompletionResult, err error),
+	// toolIterationLimit (step 93) is the conversation's own lowered budget,
+	// 0 for none. Sub-agent loops pass 0.
+	toolIterationLimit int,
+) (string, error) {
+	limit := effectiveToolLimit(toolIterationLimit)
+	economy := economyOn(ctx) // plan/ai/conversation/step-45, step 3: only for a conversation created with compactToolResults
+	var memory callMemory
+	mediaIDs := mediaIDsIn(messages)  // the ids this conversation was given: a model's slip of the pen is put right against them
+	answered := map[string]int{}      // entry.AnswerRepeatedCalls: the round (1-based) in which a call of this turn was answered
+	var rejections argumentRejections // step 93: rejected tool calls this turn
+	var lastRejectedTool, lastRejection string
+	var allLinks []tool_mcp.ResourceLink
+	// A turn that can be retried (retry-last-step.md, step 4) is given a sink: when its loop fails the messages of the call that failed
+	// are saved, so that call can be made again later. Only the turn's own loop (depth 0) has one. A resumed loop starts with the links
+	// the earlier attempt had collected.
+	sink := checkpointSinkOf(ctx)
+	if depth != 0 {
+		sink = nil
+	}
+	if sink != nil {
+		allLinks = append(allLinks, sink.links...)
+	}
+
+	// prefix (the ContextTurns history + the new user message) never
+	// contains a tool call. groups holds one entry per iteration —
+	// [assistant-with-ToolCalls, its own matching tool-result(s)] — a
+	// complete, self-contained unit. Rebuilding the actual request
+	// payload fresh each iteration as prefix+groups (buildToolLoopMessages,
+	// below), rather than appending onto one growing slice, is what
+	// lets the whole-loop budget check drop whole OLD groups without
+	// ever risking a dangling tool_call_id — see that invariant spelled
+	// out on buildToolLoopMessages itself.
+	prefix := messages
+	// step 40 — prefix is byte-identical across every iteration of
+	// this loop (only groups grows), so its own last message is marked
+	// as a prompt-caching breakpoint: the Anthropic client caches
+	// everything up to and including it, meaning iteration 2 onward
+	// only pays full price for the one new tool-call group, not the
+	// whole history again. A copy, never an in-place mutation of the
+	// caller's own messages slice/backing array. No-op for providers
+	// that ignore CacheBreakpoint (OpenAI already caches automatically;
+	// OpenRouter isn't addressed by this step). See
+	// plan/ai/conversation/step-40-anthropic-prompt-caching.md.
+	if len(prefix) > 0 {
+		lastPrefixMsg := prefix[len(prefix)-1]
+		lastPrefixMsg.CacheBreakpoint = true
+		prefix = append(append([]chatcompleter.Message{}, prefix[:len(prefix)-1]...), lastPrefixMsg)
+	}
+	var groups [][]chatcompleter.Message
+	var lastPromptTokens int
+
+	for i := 0; i < limit; i++ {
+		// Trimmed BEFORE sending, using the real token count the
+		// provider reported for the PREVIOUS call — never a local
+		// estimate. One iteration behind the true current size
+		// (there's no earlier real number to use), but self-correcting:
+		// trims again next iteration if still over budget. Never drops
+		// the most recent group, so the model never loses its own
+		// just-produced tool results.
+		for lastPromptTokens > maxToolLoopContextTokens && len(groups) > 1 {
+			groups = groups[1:]
+		}
+		sent := groups
+		if economy {
+			sent = foldOldToolResults(groups)
+		}
+		current := buildToolLoopMessages(prefix, sent)
+		if economy {
+			current = withBudgetNudge(current, i, limit)
+		}
+
+		if logStep != nil {
+			logStep(fmt.Sprintf("iteration %d: calling model", i+1))
+		}
+		// A transient provider failure (step 92) is retried a couple of
+		// times instead of losing the whole run; every attempt is traced.
+		var result *chatcompleter.ChatCompletionResult
+		var err error
+		for attempt := 0; ; attempt++ {
+			result, err = entry.Completer.ChatCompletion(ctx, httpClient, entry.DefaultBaseURL, apiKey, model, current, tools)
+			if logExchange != nil {
+				logExchange(i+1, current, tools, result, err)
+			}
+			// An empty reply (no text, no tool call, nothing to link) is retried like a transient provider error:
+			// the same request again, up to the same number of times (plan/ai/conversation/retry-last-step.md, step 2).
+			emptyReply := err == nil && isEmptyReply(result, len(allLinks))
+			if attempt >= len(chatcompleter.RetryWaits) || !(emptyReply || (err != nil && chatcompleter.IsRetryable(err))) {
+				break
+			}
+			if emptyReply && reportUsage != nil {
+				reportUsage(result.Usage) // the discarded attempt was paid for: it stays in the turn's totals
+			}
+			if logStep != nil {
+				reason := "the model returned an empty response"
+				if err != nil {
+					reason = "provider error (" + err.Error() + ")"
+				}
+				logStep(fmt.Sprintf("iteration %d: %s, retry %d/%d", i+1, reason, attempt+1, len(chatcompleter.RetryWaits)))
+			}
+			if sleepErr := chatcompleter.Sleep(ctx, chatcompleter.RetryWaits[attempt]); sleepErr != nil {
+				return "", sleepErr
+			}
+		}
+		if err != nil {
+			sink.save(len(groups), current, allLinks)
+			return "", err
+		}
+		lastPromptTokens = result.Usage.PromptTokens
+		if reportUsage != nil {
+			reportUsage(result.Usage)
+		}
+		if logStep != nil {
+			usageLine := fmt.Sprintf("iteration %d: %d prompt + %d completion tokens", i+1, result.Usage.PromptTokens, result.Usage.CompletionTokens)
+			// step 40 — surfaced only when non-zero (any provider that
+			// never sets these, or an Anthropic call that hit neither a
+			// cache write nor a cache read, leaves both at 0) so this
+			// line reads exactly as it always has everywhere caching
+			// isn't actually happening.
+			if result.Usage.CacheCreationTokens > 0 || result.Usage.CacheReadTokens > 0 {
+				usageLine += fmt.Sprintf(" (%d cache write, %d cache read)", result.Usage.CacheCreationTokens, result.Usage.CacheReadTokens)
+			}
+			// plan/ai/conversation/step-178: the hidden reasoning and the cost, when the provider reported them.
+			if result.Usage.ReasoningTokens > 0 {
+				usageLine += fmt.Sprintf(" (%d reasoning)", result.Usage.ReasoningTokens)
+			}
+			if result.Usage.Cost != nil {
+				usageLine += " cost " + formatCost(*result.Usage.Cost)
+			}
+			logStep(usageLine)
+		}
+		if len(result.ToolCalls) == 0 {
+			if isEmptyReply(result, len(allLinks)) {
+				sink.save(len(groups), current, allLinks)
+				return "", ErrEmptyModelReply
+			}
+			return appendResourceLinks(result.Message.Content, allLinks), nil
+		}
+
+		group := []chatcompleter.Message{{
+			Role:      "assistant",
+			Content:   result.Message.Content,
+			ToolCalls: replayableToolCalls(result.ToolCalls),
+		}}
+		for _, call := range result.ToolCalls {
+			call = correctMediaReferences(call, mediaIDs)
+			if logStep != nil {
+				logStep(fmt.Sprintf("iteration %d: invoking tool %s", i+1, call.Name))
+			}
+			var text, rawText string
+			var links []tool_mcp.ResourceLink
+			repeatText, repeated := "", false
+			if economy {
+				repeatText, repeated = memory.answer(call, i)
+			}
+			if !repeated && entry.AnswerRepeatedCalls {
+				repeatText, repeated = answeredRepeat(answered, call)
+			}
+			switch {
+			case refusesDisallowedTool(ctx, call.Name):
+				// The conversation was created with an allowlist (step 113) and this tool is not on
+				// it: refused before anything else can handle the name, the orchestration and
+				// sub-agent tools included.
+				text, rawText = refusedCall, refusedCall
+			case refusesUnofferedCall(orchestrationMode, depth, call.Name, tools):
+				// Defense in depth: a composer orchestrator and every
+				// sub-agent may only call what they were actually
+				// offered, so a hallucinated or remembered tool name
+				// can never reach a real tool.
+				text, rawText = refusedCall, refusedCall
+			case call.Name == runPlanToolName && turnRunID != "" && depth == 0:
+				text = invokeRunPlanCall(ctx, httpClient, entry, apiKey, model, mainDB, conversationDB, callerScopes, userID, dataDir, corePort, conversationID, turnRunID, call)
+			case call.Name == subAgentToolName && turnRunID != "":
+				text = invokeSubAgentCall(httpClient, entry, apiKey, model, mainDB, conversationDB, callerScopes, userID, dataDir, corePort, conversationID, turnRunID, call, depth)
+			case call.Name == checkSubAgentToolName && turnRunID != "":
+				text = checkSubAgentCall(conversationDB, call)
+			case call.Name == listSubAgentsToolName && turnRunID != "":
+				text = listSubAgentsCall(conversationDB, turnRunID)
+			case call.Name == cancelSubAgentToolName && turnRunID != "":
+				text = cancelSubAgentCall(conversationDB, call)
+			case call.Name == crawlURLsWithSubagentsToolName && turnRunID != "":
+				text = invokeCrawlURLsWithSubAgentsCall(httpClient, entry, apiKey, model, mainDB, conversationDB, callerScopes, userID, dataDir, corePort, conversationID, turnRunID, call, depth)
+			case repeated:
+				text = repeatText
+			default:
+				var pending *pendingDelegation
+				text, links, pending = invokeToolFn(ctx, mainDB, callerScopes, userID, call, dataDir, corePort, conversationID)
+				rawText = text
+				if isArgumentRejection(text) {
+					lastRejectedTool, lastRejection = call.Name, text
+					text = rejections.record(tools, call.Name, text)
+				}
+				if economy {
+					memory.after(call, i, text)
+				}
+				if entry.AnswerRepeatedCalls && !isArgumentRejection(text) {
+					answered[callKey(call)] = i + 1
+				}
+				if pending != nil && turnRunID != "" {
+					text += executeDelegation(httpClient, entry, apiKey, model, mainDB, conversationDB, callerScopes, userID, dataDir, corePort, conversationID, turnRunID, pending, depth)
+				}
+			}
+			if isToolFailure(rawText) {
+				reportToolError(ctx)
+			}
+			group = append(group, chatcompleter.Message{Role: "tool", ToolCallID: call.ID, Content: truncateToolResult(text)})
+			allLinks = append(allLinks, links...)
+		}
+		groups = append(groups, group)
+		// A model that keeps sending invalid arguments is stopped here
+		// instead of spending the rest of its budget (step 93).
+		if rejections.exhausted() {
+			return "", &ArgumentRejectionError{Tool: lastRejectedTool, Count: rejections.total, Detail: rejectionDetail(lastRejection)}
+		}
+	}
+	return "", &ToolLimitError{Limit: limit, Explanation: toolLimitExplanation(ctx, httpClient, entry, apiKey, model, buildToolLoopMessages(prefix, wrapUpGroups(economy, groups)), limit, logStep, logExchange)}
+}
+
+// toolLimitExplanation makes the one tools-free wrap-up call (step 93) so a
+// run that ran out of budget says why instead of just failing. Best-effort:
+// any failure or an empty answer yields "" and the error simply has no quote.
+func toolLimitExplanation(
+	ctx context.Context,
+	httpClient *http.Client,
+	entry platform.Entry,
+	apiKey, model string,
+	messages []chatcompleter.Message,
+	limit int,
+	logStep func(step string),
+	logExchange func(iteration int, messages []chatcompleter.Message, tools []chatcompleter.ToolDef, result *chatcompleter.ChatCompletionResult, err error),
+) string {
+	if logStep != nil {
+		logStep(fmt.Sprintf("tool-call budget of %d reached: asking the model to explain, without tools", limit))
+	}
+	wrapUp := append(append([]chatcompleter.Message{}, messages...), chatcompleter.Message{Role: "user", Content: toolLimitWrapUpPrompt})
+	result, err := entry.Completer.ChatCompletion(ctx, httpClient, entry.DefaultBaseURL, apiKey, model, wrapUp, nil)
+	if logExchange != nil {
+		logExchange(limit+1, wrapUp, nil, result, err)
+	}
+	if err != nil || result == nil {
+		return ""
+	}
+	text := strings.TrimSpace(result.Message.Content)
+	if r := []rune(text); len(r) > maxToolLimitExplanationLen {
+		text = string(r[:maxToolLimitExplanationLen]) + "…"
+	}
+	return text
+}
+
+// buildToolLoopMessages assembles one iteration's actual request
+// payload: prefix, followed by every currently-retained group, oldest
+// first. Every group is a complete, self-contained (assistant-with-
+// ToolCalls, its own matching tool-result(s)) unit, and runToolLoop's
+// own trimming only ever drops whole groups, never splits one — so the
+// result here is always a valid alternating conversation for any
+// provider: no tool-role message can ever reference a removed
+// assistant message, regardless of how many old groups have been
+// trimmed away.
+func buildToolLoopMessages(prefix []chatcompleter.Message, groups [][]chatcompleter.Message) []chatcompleter.Message {
+	total := len(prefix)
+	for _, g := range groups {
+		total += len(g)
+	}
+	out := make([]chatcompleter.Message, 0, total)
+	out = append(out, prefix...)
+	for _, g := range groups {
+		out = append(out, g...)
+	}
+	return out
+}
+
+// appendResourceLinks deterministically adds every real file link
+// produced this turn to the model's own final text — always, whether
+// or not the model's own prose already mentioned one, since detecting
+// "did the model already say this correctly" would mean parsing its
+// freeform text (fragile) — a little possible redundancy is a small
+// price for never showing a wrong link. A no-op when no tool this
+// turn produced a file (the common, non-tool-calling case).
+func appendResourceLinks(content string, links []tool_mcp.ResourceLink) string {
+	if len(links) == 0 {
+		return content
+	}
+	var sb strings.Builder
+	sb.WriteString(content)
+	if len(links) == 1 {
+		sb.WriteString(fmt.Sprintf("\n\nGenerated file: [%s](%s)", links[0].Name, links[0].URI))
+	} else {
+		sb.WriteString("\n\nGenerated files:")
+		for _, l := range links {
+			sb.WriteString(fmt.Sprintf("\n- [%s](%s)", l.Name, l.URI))
+		}
+	}
+	return sb.String()
+}
+
+// invokeToolCall never returns a bare error — MCP's own two-tier
+// error model (protocol errors vs. tool-reported isError:true) and
+// cinqo's own defense-in-depth scope re-check are both collapsed into
+// plain result text here, so the model always receives a tool-result
+// message it can react to instead of an unanswered tool_call
+// stranding the conversation. See
+// plan/ai/tools/pdf-generator/step-04-ai-model-invocation.md's
+// "Invocation, concretely".
+func invokeToolCall(ctx context.Context, mainDB *sql.DB, callerScopes []string, userID string, call chatcompleter.ToolCall, dataDir string, corePort int, conversationID string) (string, []tool_mcp.ResourceLink, *pendingDelegation) {
+	mcpTool, err := tool_query.NewToolMCPToolQueryRepo(mainDB).FindMCPToolByName(call.Name)
+	if err != nil {
+		return "tool unavailable", nil, nil
+	}
+	if !hasScope(callerScopes, mcpTool.RequiredScope) {
+		return "tool unavailable", nil, nil
+	}
+
+	tool, err := tool_query.NewToolQueryRepo(mainDB).FindByID(mcpTool.ToolID)
+	if err != nil || !tool.Enabled {
+		return "tool unavailable", nil, nil
+	}
+
+	envVars, err := tool_manager.ToolEnvVars(dataDir, tool.Slug, corePort, tool.ServiceToken)
+	if err != nil {
+		return fmt.Sprintf("tool invocation failed: %v", err), nil, nil
+	}
+	// See install_handler.go's identical addition and
+	// plan/ai/tools/browser/step-02-shared-browser-session.md — lets a
+	// tool's own --mcp subprocess reach its already-running HTTP-mode
+	// sibling for state that must persist across separate calls.
+	if port, ok := tool_manager.Port(tool.ID); ok {
+		envVars = append(envVars, fmt.Sprintf("TOOL_OWN_PORT=%d", port))
+	}
+	// Plan 183: tell the tool which conversation this call belongs to, so a tool can attach a call to something a person prepared for that
+	// conversation (the Browser tool's login window). Set here, by core, never from the model's arguments.
+	envVars = append(envVars, toolConversationEnv(conversationID)...)
+	execPath, err := filepath.Abs(filepath.Join(tool.InstallPath, tool.BackendExecutableRelpath))
+	if err != nil {
+		return fmt.Sprintf("tool invocation failed: %v", err), nil, nil
+	}
+
+	args := call.Arguments
+	if mcpTool.MediaParam != "" {
+		resolvedArgs, err := resolveMediaArgument(mainDB, args, mcpTool.MediaParam, conversationID)
+		if err != nil {
+			return "tool unavailable", nil, nil
+		}
+		args = resolvedArgs
+	}
+	if mcpTool.PromoteMediaParam != "" {
+		resolvedArgs, err := resolvePromoteMediaArgument(mainDB, dataDir, tool.Slug, userID, conversationID, args, mcpTool.PromoteMediaParam)
+		if err != nil {
+			var promoteErr *promotionError
+			if errors.As(err, &promoteErr) {
+				return promoteErr.Error(), nil, nil
+			}
+			return "tool unavailable", nil, nil
+		}
+		args = resolvedArgs
+	}
+
+	text, _, links, directive := tool_mcp.Invoke(ctx, execPath, call.Name, args, envVars)
+	// A directive is honored only for a tool whose manifest opted in
+	// (can_delegate); anyone else's is dropped here, never reaching
+	// the loop.
+	if directive != nil && mcpTool.CanDelegate {
+		return text, links, &pendingDelegation{
+			ToolName:     call.Name,
+			AllowedTools: parseDelegateAllowedTools(mcpTool.DelegateAllowedTools),
+			Directive:    directive,
+		}
+	}
+	return text, links, nil
+}
+
+// toolConversationIDPattern is what a conversation id may look like to go into a tool's environment (cinqo's ids are UUIDs).
+var toolConversationIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,100}$`)
+
+// toolConversationEnv is the environment entry that names the conversation an AI tool call belongs to (plan 183): TOOL_CONVERSATION_ID. It is
+// empty for an id that is not a plain id (never put anything else into a process environment), and for no conversation.
+func toolConversationEnv(conversationID string) []string {
+	if !toolConversationIDPattern.MatchString(conversationID) {
+		return nil
+	}
+	return []string{"TOOL_CONVERSATION_ID=" + conversationID}
+}
+
+// toolProxyResourcePattern matches the resource-link shape a tool's
+// own MCP call result hands back for a file it produced and stored
+// under its own TOOL_UPLOADS_DIR — e.g. pdf_tools' own generate_pdf,
+// "/api/v1/tools/pdf_tools/proxy/files?id=<uuid>". Captures the
+// producing tool's own slug and the resource's own id.
+var toolProxyResourcePattern = regexp.MustCompile(`^/api/v1/tools/([^/]+)/proxy/[^?]*\?id=([^&]+)$`)
+
+// absoluteURLPrefix matches a scheme://host prefix wrongly prepended
+// onto what should be a relative tool proxy resource link.
+var absoluteURLPrefix = regexp.MustCompile(`^https?://[^/]+`)
+
+// normalizeToolProxyResourceValue strips a wrongly-prepended absolute
+// origin off an otherwise-relative tool proxy resource link, if
+// present, before toolProxyResourcePattern ever sees it — a
+// live-observed failure mode: asked to pass a RELATIVE resource link
+// back verbatim (e.g. pdf_tools' own generate_pdf result,
+// "/api/v1/tools/pdf_tools/proxy/files?id=...") into a LATER tool
+// call's own argument, the model instead fabricated an absolute URL
+// with a hallucinated domain in front of it — the same "a model
+// paraphrasing/retyping a URL string across turns is not reliable"
+// class of failure this file's own appendResourceLinks already exists
+// to fix for the FINAL reply text (see that function's own doc
+// comment); no equivalent existed yet for an argument the AI must
+// retype into a SUBSEQUENT tool call. Confirmed live: a real
+// save_cv_pdf call stored
+// "https://flowforge.app/api/v1/tools/pdf_tools/proxy/files?id=..."
+// verbatim as a job's own cv_media_file_id (this regex's own mismatch
+// silently skipped promotion, per this function's own pre-existing
+// "left untouched" contract below) — 404ing forever on download,
+// since that string was never a real Media file id. Leaves an
+// already-relative value, or one with no recognizable absolute-URL
+// prefix, untouched. See
+// plan/ai/tools/career/step-XX-cv-pdf-download-404.md.
+func normalizeToolProxyResourceValue(value string) string {
+	return absoluteURLPrefix.ReplaceAllString(value, "")
+}
+
+// resolvePromoteMediaArgument rewrites args[paramName], if present and
+// shaped like another tool's own proxy resource link, from that
+// transient reference into a real, permanent Media file id — the
+// symmetric, opposite-direction counterpart to resolveMediaArgument:
+// that one turns an INPUT media: reference into a real value; this one
+// turns an argument the AI is ABOUT TO PASS into this tool call INTO a
+// permanent Media file, in-process, entirely before the tool call
+// happens. dataDir is the same resolved data directory
+// tool_manager.ToolEnvVars derives TOOL_UPLOADS_DIR from — the
+// producing tool's own file is found directly on local disk (no HTTP,
+// no auth token) via the exact same "<dataDir>/uploads/tools/<slug>/"
+// convention that env var establishes. uploadedByUserID/
+// conversationID are the conversation's own already-known owner (see
+// runToolLoop's own userID parameter) — this is trusted core code
+// acting on that user's own behalf, never an untrusted request. A
+// value with no matching shape (e.g. the AI passed something else, or
+// this argument was omitted) is left untouched.
+func resolvePromoteMediaArgument(mainDB *sql.DB, dataDir, callingToolSlug, uploadedByUserID, conversationID string, args json.RawMessage, paramName string) (json.RawMessage, error) {
+	var argMap map[string]any
+	if len(args) > 0 {
+		if err := json.Unmarshal(args, &argMap); err != nil {
+			return nil, err
+		}
+	}
+	if argMap == nil {
+		return args, nil
+	}
+
+	raw, ok := argMap[paramName]
+	if !ok {
+		return args, nil
+	}
+	value, ok := raw.(string)
+	if !ok {
+		return args, nil
+	}
+	value = normalizeToolProxyResourceValue(value)
+	match := toolProxyResourcePattern.FindStringSubmatch(value)
+	if match == nil {
+		return args, nil
+	}
+	producingSlug, resourceID := match[1], match[2]
+
+	localPath, err := locatePromotedFile(dataDir, producingSlug, resourceID)
+	if err != nil {
+		return nil, err
+	}
+
+	fileID, err := media.PersistLocalFile(mainDB, dataDir, callingToolSlug, uploadedByUserID, conversationID, localPath, filepath.Base(localPath), mime.TypeByExtension(filepath.Ext(localPath)))
+	if err != nil {
+		return nil, err
+	}
+
+	argMap[paramName] = fileID
+	return json.Marshal(argMap)
+}
+
+// promotionFailedPrefix starts the answer the model gets when a resource link it passed could not be promoted into a Media file. The text
+// names the reason and how to fix the call, never a local path. isToolFailure counts it like a refused call.
+const promotionFailedPrefix = "file link not usable:"
+
+// promotionError is a failed promotion; its text is safe to show the model.
+type promotionError struct{ reason string }
+
+func (e *promotionError) Error() string { return promotionFailedPrefix + " " + e.reason }
+
+var (
+	promoteSlugPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+	// An id is a plain token, optionally followed by one short extension the model appended by mistake (a real run passed "<id>.pdf").
+	promoteIDPattern = regexp.MustCompile(`^([A-Za-z0-9_-]+)(\.[A-Za-z0-9]{1,8})?$`)
+)
+
+// locatePromotedFile finds the single file a producing tool stored under its own uploads directory for a resource id. Slug and id come from
+// text the model wrote, so both are validated as plain tokens before they touch a path: no separators, no "..".
+func locatePromotedFile(dataDir, producingSlug, resourceID string) (string, error) {
+	notUsable := &promotionError{reason: "the file in this argument was not found. Pass the link exactly as the tool returned it, with no extension added to the id."}
+	idMatch := promoteIDPattern.FindStringSubmatch(resourceID)
+	if !promoteSlugPattern.MatchString(producingSlug) || idMatch == nil {
+		return "", notUsable
+	}
+	dir := filepath.Join(dataDir, "uploads", "tools", producingSlug)
+	// The id exactly as given first, then without the extension that was appended.
+	tries := []string{resourceID}
+	if idMatch[2] != "" {
+		tries = append(tries, idMatch[1])
+	}
+	for _, id := range tries {
+		// Glob rather than a fixed extension: whatever single file the producing tool wrote under this id is promoted as-is.
+		candidates, err := filepath.Glob(filepath.Join(dir, id+".*"))
+		if err != nil {
+			return "", err
+		}
+		if len(candidates) > 0 {
+			return candidates[0], nil
+		}
+	}
+	return "", notUsable
+}
+
+// mediaArgumentScheme is the opaque, non-fetchable reference the AI is
+// given in place of a real URL — e.g. Career's own CV import prompt
+// embeds `url="media:<fileId>"` (buildImportPrompt.ts). Never a real
+// URL a tool subprocess could dial out to itself: resolveMediaArgument
+// below always resolves and substitutes it before the tool is ever
+// invoked, so a tool never has to authenticate an HTTP fetch for it —
+// there is no such fetch. See
+// plan/ai/media/step-02-career-media-migration.md.
+const mediaArgumentScheme = "media:"
+
+// resolveMediaArgument rewrites args[paramName], if present and
+// prefixed with mediaArgumentScheme, from a Media file id into a real
+// "file://<absolute path>" value the target tool's own code can read
+// directly off local disk — the mechanism that makes an unauthenticated
+// 401 structurally impossible for this argument, rather than bypassing
+// the check that used to produce one. A value with no
+// mediaArgumentScheme prefix (e.g. a plain http(s) URL some future
+// caller still passes) is left untouched.
+func resolveMediaArgument(mainDB *sql.DB, args json.RawMessage, paramName, conversationID string) (json.RawMessage, error) {
+	var argMap map[string]any
+	if len(args) > 0 {
+		if err := json.Unmarshal(args, &argMap); err != nil {
+			return nil, err
+		}
+	}
+	if argMap == nil {
+		return args, nil
+	}
+
+	raw, ok := argMap[paramName]
+	if !ok {
+		return args, nil
+	}
+	value, ok := raw.(string)
+	if !ok || !strings.HasPrefix(value, mediaArgumentScheme) {
+		return args, nil
+	}
+	fileID := strings.TrimPrefix(value, mediaArgumentScheme)
+
+	m, err := media_query.NewMediaQueryRepo(mainDB).Resolve(fileID, conversationID)
+	if err != nil {
+		return nil, err
+	}
+
+	argMap[paramName] = "file://" + m.StoredPath
+	return json.Marshal(argMap)
+}
+
+// hasScope matches proxy_handler.go's own established
+// cinqo:super:admin-bypasses-everything convention — duplicated here
+// rather than shared, matching this codebase's existing per-package
+// idiom for this exact small helper.
+func hasScope(scopes []string, want string) bool {
+	for _, s := range scopes {
+		if s == want || s == "cinqo:super:admin" {
+			return true
+		}
+	}
+	return false
+}
+
+// maxToolResultContentLength caps how much of any single tool's own
+// result text is ever forwarded into the model's context — without
+// this, a tool that can legitimately return very large content (e.g.
+// the Browser tool's up-to-200,000-byte crawled HTML,
+// tools/browser/backend/crawl.go's own maxHTMLBytes) can push a
+// multi-iteration tool-calling loop's own accumulated messages past a
+// model's context window well before maxToolIterations is ever
+// reached — a real, reproduced failure (context_length_exceeded from
+// OpenRouter at 294,446 tokens), not a hypothetical one. Applied only
+// to the ephemeral in-loop messages sent to the model, never to the
+// conversation's own persisted log (AppendTurn only ever stores the
+// final UserContent/AssistantContent per turn, never the intermediate
+// tool-call transcript). Character-length, not a real token count —
+// matching this file's own existing maxStoredErrorLength/
+// truncateError idiom below, not a new tokenizer dependency for one
+// bug fix. See plan/ai/conversation/step-33-cap-tool-result-context-
+// length.md.
+const maxToolResultContentLength = 20_000
+
+func truncateToolResult(s string) string {
+	if len(s) <= maxToolResultContentLength {
+		return s
+	}
+	return s[:maxToolResultContentLength] + fmt.Sprintf(
+		"\n\n… (truncated — %d characters total; ask for less at once, e.g. narrower selectors/pagination, if you need the rest)",
+		len(s),
+	)
+}
+
+// maxStoredErrorLength caps a failed turn's own stored error text — a
+// provider's raw error body is untrusted-length text; without a cap, a
+// single pathological response could bloat the log file
+// disproportionately. See
+// plan/ai/conversation/step-08-failed-message-handling.md.
+const maxStoredErrorLength = 2000
+
+func truncateError(s string) string {
+	if len(s) <= maxStoredErrorLength {
+		return s
+	}
+	return s[:maxStoredErrorLength] + "… (truncated)"
+}
+
+// isEmptyReply reports a model answer that carries nothing: no tool call, no text, and no resource link already collected to show instead.
+func isEmptyReply(result *chatcompleter.ChatCompletionResult, linkCount int) bool {
+	return len(result.ToolCalls) == 0 && strings.TrimSpace(result.Message.Content) == "" && linkCount == 0
+}

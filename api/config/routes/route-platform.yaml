@@ -1,0 +1,32 @@
+routes:
+  - path: /api/v1/platforms
+    method: GET
+    executor: PlatformList
+    security: authenticated
+    scopes:
+      - cinqo:platform:read
+      - cinqo:super:admin
+
+  - path: /api/v1/platforms/keys
+    method: GET
+    executor: PlatformKeyList
+    security: authenticated
+    scopes:
+      - cinqo:platform:read
+      - cinqo:super:admin
+
+  - path: /api/v1/platforms/keys
+    method: POST
+    executor: PlatformKeyCreate
+    security: authenticated
+    scopes:
+      - cinqo:platform:manage
+      - cinqo:super:admin
+
+  - path: /api/v1/platforms/keys/{id}
+    method: DELETE
+    executor: PlatformKeyDelete
+    security: authenticated
+    scopes:
+      - cinqo:platform:manage
+      - cinqo:super:admin

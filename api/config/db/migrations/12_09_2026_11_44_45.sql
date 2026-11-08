@@ -1,0 +1,6 @@
+/***Statement***/
+CREATE TABLE IF NOT EXISTS pings (
+    id TEXT NOT NULL CONSTRAINT pings_pk PRIMARY KEY,
+    message TEXT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

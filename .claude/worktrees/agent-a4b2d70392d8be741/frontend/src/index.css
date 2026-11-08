@@ -1,0 +1,98 @@
+@import 'tailwindcss';
+
+:root {
+  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+
+  /* Public style contract for tool frontend bundles (see
+     toolBridge.ts) — a tool's own bundle.js lives outside this app's
+     Tailwind build entirely (installed at runtime, scanned by nothing
+     at build time), so it can never use a Tailwind utility class.
+     These are hand-authored and deliberately NOT the same as
+     Tailwind's own auto-generated --color-* variables (those are
+     purged to only whatever shades this app's own source happens to
+     use elsewhere, and would silently disappear from under a tool if
+     that usage ever changed) — a stable promise instead, matching the
+     app's real, currently-used visual language. See
+     plan/ai/tools/browser/step-12-menu-grouping-and-tool-styling-contract.md. */
+  --cinqo-tool-text: #111827; /* gray-900 */
+  --cinqo-tool-text-muted: #6b7280; /* gray-500 */
+  --cinqo-tool-border: #e5e7eb; /* gray-200 */
+  --cinqo-tool-surface: #f9fafb; /* gray-50 */
+  --cinqo-tool-primary: #111827; /* gray-900 — the app's own CTA color */
+  --cinqo-tool-primary-text: #ffffff;
+  --cinqo-tool-danger: #b91c1c; /* red-700 */
+  --cinqo-tool-radius: 6px; /* rounded-md */
+  --cinqo-tool-font: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  --cinqo-tool-input-bg: #ffffff;
+  --cinqo-tool-primary-hover: #1f2937; /* gray-800 — the app's own real hover shade for a gray-900 button */
+  --cinqo-tool-danger-hover: #fef2f2; /* red-50 — the app's own real light-danger hover background */
+  --cinqo-tool-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05); /* Tailwind's own shadow-sm default */
+  --cinqo-tool-icon-hover: #f3f4f6; /* gray-100 — IconButton's own real default-variant hover background */
+}
+
+body {
+  margin: 0;
+}
+
+/* Per-letter "wave" effect for ThinkingIndicator's own word-change
+   animation (step 22) — each character fades/rises in with a
+   staggered animation-delay, applied via a Tailwind arbitrary-value
+   utility (animate-[thinking-wave_0.4s_ease]) rather than a Tailwind
+   keyframe, since a custom keyframe still has to be declared in real
+   CSS somewhere. See
+   plan/ai/conversation/step-22-thinking-indicator-polish.md. */
+@keyframes thinking-wave {
+  0% {
+    transform: translateY(0);
+    opacity: 0.3;
+  }
+  40% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Continuous, looping color pulse on ThinkingIndicator's own word text
+   (step — ThinkingIndicator polish) — distinct from thinking-wave
+   above (which only plays once, on a word change every 15s): this
+   runs indefinitely regardless of the word itself changing, a
+   lightweight "something is happening" cue. gray-400 (#9ca3af, this
+   indicator's own normal text color) to gray-300 (#d1d5db, lighter)
+   and back. */
+@keyframes thinking-shimmer {
+  0%,
+  100% {
+    color: #9ca3af;
+  }
+  50% {
+    color: #d1d5db;
+  }
+}
+
+/* Fade-in for ThinkingIndicator's own long-wait reassurance text
+   ("Still thinking…" / "This is taking a little bit longer…") —
+   softens their sudden appearance rather than an abrupt pop-in. */
+@keyframes thinking-fade-in {
+  0% {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Tailwind's Preflight resets <button>/[role=button] cursor to
+   "default", overriding the browser's own native pointer cursor — so
+   every button in the app needs it restored explicitly, not per
+   component. */
+button:not(:disabled),
+[role='button']:not([aria-disabled='true']) {
+  cursor: pointer;
+}

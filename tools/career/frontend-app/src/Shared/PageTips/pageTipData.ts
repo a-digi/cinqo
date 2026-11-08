@@ -1,0 +1,748 @@
+// The tips shown at the top of the Career pages (steps 105 and 106): a few short slides per page that explain how
+// the page is used. Plain data, no React, so it can be script-checked. A tip is a short title and a short text,
+// written for a banner that is read at a glance, with no prices. It is editorial text, not configuration: it
+// changes with what the app does, so it lives here and not in the pages. Every statement in it comes from what the
+// page or the tool actually does. See plan/ai/tools/career/step-106-tips-on-every-career-page.md.
+import { ACCENTS, type Accent } from '../../Components/JobsPage/jobsTheme'
+
+// The dashboards' eight accent colours, by name.
+export type TipTone = 'blue' | 'green' | 'amber' | 'rose' | 'violet' | 'teal' | 'sky' | 'orange'
+
+export const TIP_TONES: readonly TipTone[] = ['blue', 'green', 'amber', 'rose', 'violet', 'teal', 'sky', 'orange']
+
+export function toneAccent(tone: TipTone): Accent {
+  return ACCENTS[TIP_TONES.indexOf(tone)]
+}
+
+// The icon on a tip's badge (the badge component maps each name to one of the app's icons).
+export type TipIconName =
+  | 'search'
+  | 'match'
+  | 'cv'
+  | 'plus'
+  | 'details'
+  | 'job'
+  | 'company'
+  | 'people'
+  | 'person'
+  | 'layers'
+  | 'target'
+  | 'timeline'
+  | 'camera'
+  | 'upload'
+  | 'monitor'
+  | 'play'
+  | 'stop'
+  | 'log'
+  | 'alert'
+  | 'lock'
+  | 'spark'
+  | 'robot'
+  | 'bolt'
+  | 'clock'
+  | 'check'
+  | 'globe'
+  | 'link'
+  | 'pencil'
+
+export const TIP_ICON_NAMES: readonly TipIconName[] = [
+  'search',
+  'match',
+  'cv',
+  'plus',
+  'details',
+  'job',
+  'company',
+  'people',
+  'person',
+  'layers',
+  'target',
+  'timeline',
+  'camera',
+  'upload',
+  'monitor',
+  'play',
+  'stop',
+  'log',
+  'alert',
+  'lock',
+  'spark',
+  'robot',
+  'bolt',
+  'clock',
+  'check',
+  'globe',
+  'link',
+  'pencil',
+]
+
+export interface PageTip {
+  id: string
+  // The dot's tooltip and what a screen reader hears.
+  label: string
+  title: string
+  text: string
+  tone: TipTone
+  icon: TipIconName
+  // A tip can point at Settings.
+  settingsLink?: boolean
+}
+
+// The most words a tip's text may have: a tip is read at a glance.
+export const MAX_TIP_WORDS = 30
+
+export function wordCount(text: string): number {
+  const words = text.trim().split(/\s+/)
+  return words.length === 1 && words[0] === '' ? 0 : words.length
+}
+
+export type PageTipsId =
+  | 'jobs'
+  | 'applications'
+  | 'cvs'
+  | 'crawlMonitor'
+  | 'portals'
+  | 'companies'
+  | 'recruiters'
+  | 'profiles'
+  | 'personas'
+  | 'summary'
+  | 'goals'
+  | 'skills'
+  | 'experience'
+  | 'education'
+  | 'photo'
+  | 'importCv'
+  | 'settings'
+
+export interface PageTipSet {
+  // The page's name, for the carousel's accessible name ("Tips: Saved Jobs").
+  name: string
+  tips: PageTip[]
+}
+
+export const PAGE_TIPS: Record<PageTipsId, PageTipSet> = {
+  jobs: {
+    name: 'Saved Jobs',
+    tips: [
+      {
+        id: 'search',
+        label: 'Find jobs',
+        title: 'Find jobs as you type',
+        tone: 'blue',
+        icon: 'search',
+        text: 'Type in the search box and the list filters as you type. Narrow it further by location, company or platform; the Platform pill opens that platform’s page.',
+      },
+      {
+        id: 'match',
+        label: 'Job Match',
+        title: 'Match a job with a profile',
+        tone: 'violet',
+        icon: 'match',
+        text: 'Open a job’s menu and pick Job Match to let the AI compare it with a profile of yours. The score and matched skills then show on the job.',
+      },
+      {
+        id: 'cv',
+        label: 'A CV per job',
+        title: 'A CV for each job',
+        tone: 'green',
+        icon: 'cv',
+        text: 'From a job’s menu, let the AI generate a CV, build one yourself, or attach one you already made. Download it from the same menu.',
+      },
+      {
+        id: 'add',
+        label: 'Add your own',
+        title: 'Add jobs you found yourself',
+        tone: 'amber',
+        icon: 'plus',
+        text: 'Use Add job for a posting you found yourself. Such jobs are marked as yours; one without a link to the original simply has nothing to open.',
+      },
+      {
+        id: 'details',
+        label: 'Details',
+        title: 'Open the full details',
+        tone: 'sky',
+        icon: 'details',
+        text: 'View details shows the full text once a job has been crawled. Link a job to a company, and it also appears on that company’s page.',
+      },
+      {
+        id: 'protocol',
+        label: 'Protocol',
+        title: 'Keep a protocol of an application',
+        tone: 'rose',
+        icon: 'log',
+        text: 'Open a job’s details and use the Protocol card to log emails, calls and meetings with their dates. The Applications page lists these jobs.',
+      },
+    ],
+  },
+  applications: {
+    name: 'Applications',
+    tips: [
+      {
+        id: 'which',
+        label: 'Which jobs',
+        title: 'Which jobs show here',
+        tone: 'blue',
+        icon: 'job',
+        text: 'A job shows here when it is in the Applied status on a profile’s job board, or has an entry in that profile’s protocol.',
+      },
+      {
+        id: 'waiting',
+        label: 'Waiting',
+        title: 'Waiting for a reply',
+        tone: 'amber',
+        icon: 'clock',
+        text: 'The badge shows when the newest entry that has already happened is a message you sent. Planned entries in the future do not count.',
+      },
+      {
+        id: 'order',
+        label: 'Order',
+        title: 'Change the order',
+        tone: 'violet',
+        icon: 'timeline',
+        text: 'Order by latest or oldest activity, by the longest wait for a reply, or by job title. Activity is the newest entry or the last move on the board.',
+      },
+      {
+        id: 'open',
+        label: 'Open a job',
+        title: 'Write on the job’s page',
+        tone: 'green',
+        icon: 'pencil',
+        text: 'Click a job to open it for that profile. The Protocol card there is where you add, change or delete entries; this page only shows them.',
+      },
+    ],
+  },
+  cvs: {
+    name: 'CV Documents',
+    tips: [
+      {
+        id: 'by-persona',
+        label: 'By persona',
+        title: 'One list per persona',
+        tone: 'blue',
+        icon: 'person',
+        text: 'Pick a persona to see its CVs as cards. Click a card to edit it; hover it for preview, rename and delete.',
+      },
+      {
+        id: 'builder',
+        label: 'Builder',
+        title: 'Build a CV in five steps',
+        tone: 'violet',
+        icon: 'layers',
+        text: 'New CV opens a builder: persona and template, personal details, skills, experience, then title and review. The PDF is made from the persona’s own data.',
+      },
+      {
+        id: 'photo',
+        label: 'Photo',
+        title: 'Your photo on the CV',
+        tone: 'rose',
+        icon: 'camera',
+        text: 'The CV templates use the profile’s default photo. With several photos, you choose one when you create a CV. Add and manage photos on the Photo page.',
+      },
+      {
+        id: 'attach',
+        label: 'Attach to a job',
+        title: 'Attach a CV to a job',
+        tone: 'green',
+        icon: 'job',
+        text: 'On the Jobs page you can attach a CV from this list to a job. Removing it from the job never deletes the CV itself.',
+      },
+    ],
+  },
+  crawlMonitor: {
+    name: 'Crawl Monitor',
+    tips: [
+      {
+        id: 'live',
+        label: 'Live view',
+        title: 'Everything running right now',
+        tone: 'teal',
+        icon: 'monitor',
+        text: 'Every platform link being crawled shows here and refreshes by itself. Listing crawls find the jobs; job detail crawls fetch each job’s full text.',
+      },
+      {
+        id: 'auto',
+        label: 'Auto-started',
+        title: 'Started by itself',
+        tone: 'violet',
+        icon: 'bolt',
+        text: 'A crawl marked as started automatically came from auto-discovery, not from a click. Switch auto-discovery on or off on the Platforms page.',
+      },
+      {
+        id: 'needs-you',
+        label: 'Needs you',
+        title: 'Sometimes it waits for you',
+        tone: 'amber',
+        icon: 'alert',
+        text: 'If a site shows a Cloudflare check, the crawl waits for you to solve it in the browser window. The Needs you figure counts those.',
+      },
+      {
+        id: 'log-stop',
+        label: 'Log and stop',
+        title: 'Read the log, or stop it',
+        tone: 'sky',
+        icon: 'log',
+        text: 'Open a run’s log to see every step it took. Stop really interrupts the crawl on the server, not just this view.',
+      },
+    ],
+  },
+  portals: {
+    name: 'Platforms',
+    tips: [
+      {
+        id: 'your-ai',
+        label: 'Your AI',
+        title: 'Your choice of AI',
+        tone: 'violet',
+        icon: 'robot',
+        settingsLink: true,
+        text: 'A platform or a link can use its own AI platform and model (the AI chip). With none set, the platform’s is used, then the general one in Settings.',
+      },
+      {
+        id: 'cheaper-models',
+        label: 'Cheaper models',
+        title: 'Cheaper models can do it',
+        tone: 'green',
+        icon: 'spark',
+        text: 'Low-cost models from OpenRouter can often write crawl instructions too. Pick a specific cheap model: the random free router often fails at tool use.',
+      },
+      {
+        id: 'generate-once',
+        label: 'Generate once',
+        title: 'Generate once, crawl many times',
+        tone: 'blue',
+        icon: 'play',
+        text: 'Generate lets the AI write a link’s crawl instructions. Crawl now then runs them without AI, on the server, and keeps going even if you leave the page.',
+      },
+      {
+        id: 'reuse',
+        label: 'Reuse',
+        title: 'New links try what already works',
+        tone: 'teal',
+        icon: 'link',
+        text: 'Adding a link to a platform that has instructions tries them first, with no AI. If they work on the new page, the link simply reuses them.',
+      },
+      {
+        id: 'not-every-page',
+        label: 'Not every page',
+        title: 'Not every page can be crawled',
+        tone: 'amber',
+        icon: 'alert',
+        text: 'Some sites block automated visits or load their jobs only after a click or scroll. A link with no instructions yet shows “Not crawlable”; after 3 failed tries it shows “Probably can’t be crawled”.',
+      },
+      {
+        id: 'paywalls',
+        label: 'Paywalls',
+        title: 'Paywalls and logins',
+        tone: 'rose',
+        icon: 'lock',
+        text: 'Pages behind a paywall cannot be crawled. For a login, tick Requires login on the link, press Crawl now, log in in the window, then press “I am logged in”.',
+      },
+    ],
+  },
+  companies: {
+    name: 'Companies',
+    tips: [
+      {
+        id: 'directory',
+        label: 'A directory',
+        title: 'A directory of companies',
+        tone: 'blue',
+        icon: 'company',
+        text: 'Companies are kept apart from the free-text name on each crawled job. Link a job to a company from the Jobs page and it shows up here.',
+      },
+      {
+        id: 'open',
+        label: 'Open a company',
+        title: 'See a company’s jobs',
+        tone: 'sky',
+        icon: 'details',
+        text: 'View opens a company’s page with the jobs linked to it. The company name in the Jobs list links straight to it, too.',
+      },
+      {
+        id: 'safe',
+        label: 'Safe to delete',
+        title: 'Deleting never deletes jobs',
+        tone: 'green',
+        icon: 'check',
+        text: 'Deleting a company only un-links its jobs; the jobs themselves are never deleted.',
+      },
+      {
+        id: 'recruiters',
+        label: 'Recruiters',
+        title: 'Recruiters work for companies',
+        tone: 'violet',
+        icon: 'people',
+        text: 'A recruiter can work for several companies, or be a freelancer who works for none. Deleting a company never deletes its recruiters. Add them on the Recruiters page; the Overview counts them.',
+      },
+    ],
+  },
+  recruiters: {
+    name: 'Recruiters',
+    tips: [
+      {
+        id: 'tied',
+        label: 'Companies',
+        title: 'Companies, or a freelancer',
+        tone: 'blue',
+        icon: 'company',
+        text: 'Pick one or more existing companies when you add a recruiter, so add the companies first, or switch on Freelancer for a recruiter who works for no company. Companies are listed on the Companies page.',
+      },
+      {
+        id: 'fixed',
+        label: 'Change anytime',
+        title: 'Deleting a company keeps the recruiter',
+        tone: 'amber',
+        icon: 'alert',
+        text: 'Use Edit to change a recruiter’s companies, or to make them a freelancer, at any time. If a company is deleted, the recruiter stays and the company just disappears from them.',
+      },
+      {
+        id: 'filter',
+        label: 'Filter',
+        title: 'Filter by company or freelancer',
+        tone: 'sky',
+        icon: 'search',
+        text: 'Use the filter to see only one company’s recruiters, or only the freelancers. The Overview shows how many have an email address.',
+      },
+    ],
+  },
+  profiles: {
+    name: 'Profiles',
+    tips: [
+      {
+        id: 'start',
+        label: 'Start here',
+        title: 'One profile per job seeker',
+        tone: 'blue',
+        icon: 'person',
+        text: 'Personas, skills, experience and education all hang off a profile. Create the profile first, then add a persona for each role.',
+      },
+      {
+        id: 'completeness',
+        label: 'Completeness',
+        title: 'See how complete a profile is',
+        tone: 'green',
+        icon: 'check',
+        text: 'The bar on each card shows how complete the profile is and what is missing. A link, a photo, a persona, skills and experience all count.',
+      },
+      {
+        id: 'links',
+        label: 'Links',
+        title: 'Add your platforms',
+        tone: 'violet',
+        icon: 'link',
+        text: '+ Platform adds a link such as LinkedIn. A link is the biggest single part of completeness, but the profile still needs the rest.',
+      },
+      {
+        id: 'careful',
+        label: 'Careful',
+        title: 'Deleting is permanent',
+        tone: 'rose',
+        icon: 'alert',
+        text: 'Deleting a profile permanently deletes its personas and everything they own, with no further confirmation.',
+      },
+    ],
+  },
+  personas: {
+    name: 'Personas',
+    tips: [
+      {
+        id: 'per-role',
+        label: 'One per role',
+        title: 'One persona per role',
+        tone: 'blue',
+        icon: 'target',
+        text: 'A persona is one role you are pursuing, such as “Backend Engineer”. Each uses the profile’s summary and goals unless it has its own, and chooses the profile’s skills and experience it uses.',
+      },
+      {
+        id: 'why',
+        label: 'Why',
+        title: 'A clear picture for the AI',
+        tone: 'violet',
+        icon: 'spark',
+        text: 'The AI reads a persona when matching jobs and writing CVs, so a persona focused on one role gives it a clearer picture.',
+      },
+      {
+        id: 'next',
+        label: 'Next',
+        title: 'Then fill it in',
+        tone: 'green',
+        icon: 'layers',
+        text: 'After creating a persona, check its Summary, and the Goals, Skills and Experience it uses, from the My Profile menu.',
+      },
+      {
+        id: 'with-ai',
+        label: 'With AI',
+        title: 'Create personas with AI',
+        tone: 'teal',
+        icon: 'spark',
+        text: 'Create with AI proposes up to three personas from what you have filled in. You review and edit them first. The chats stay under AI history.',
+      },
+    ],
+  },
+  summary: {
+    name: 'Summary',
+    tips: [
+      {
+        id: 'profile',
+        label: 'Per profile',
+        title: 'One summary for the profile',
+        tone: 'blue',
+        icon: 'layers',
+        text: 'The profile has one summary, edited at the top of the Summary page. Every persona shows it until it has its own wording.',
+      },
+      {
+        id: 'own',
+        label: 'Own wording',
+        title: 'Word it for the role',
+        tone: 'green',
+        icon: 'pencil',
+        text: 'Open a persona to change its summary: from then on it is marked Own wording. “Use the profile’s summary” brings the shared text back. Headline and location are always the persona’s.',
+      },
+      {
+        id: 'completeness',
+        label: 'Completeness',
+        title: 'Headline and summary count',
+        tone: 'amber',
+        icon: 'check',
+        text: 'A persona with a headline and a summary (its own or the profile’s) adds to the profile’s completeness on the Profiles page.',
+      },
+      {
+        id: 'not-secret',
+        label: 'Not secret',
+        title: 'Nothing here is secret',
+        tone: 'rose',
+        icon: 'lock',
+        text: 'The AI reads this text when it writes CVs, so write it the way you would on a CV.',
+      },
+    ],
+  },
+  goals: {
+    name: 'Goals',
+    tips: [
+      {
+        id: 'profile',
+        label: 'Per profile',
+        title: 'Goals belong to the profile',
+        tone: 'blue',
+        icon: 'target',
+        text: 'Desired titles, desired locations, a minimum salary and remote work are set once for the profile, at the top of the Goals page.',
+      },
+      {
+        id: 'own',
+        label: 'Own wording',
+        title: 'A persona can differ',
+        tone: 'green',
+        icon: 'pencil',
+        text: 'A persona follows the profile’s goals. Change one on its card and it becomes that persona’s own; “Use the profile’s value” brings the shared one back.',
+      },
+      {
+        id: 'match',
+        label: 'Job match',
+        title: 'The AI reads what a persona shows',
+        tone: 'violet',
+        icon: 'spark',
+        text: 'The job match and the CV builder use each persona’s own value where it has one, otherwise the profile’s.',
+      },
+    ],
+  },
+  skills: {
+    name: 'Skills',
+    tips: [
+      {
+        id: 'per-persona',
+        label: 'Library',
+        title: 'Skills belong to the profile',
+        tone: 'blue',
+        icon: 'layers',
+        text: 'Skills are kept once per profile. Each persona chooses the ones it uses and can add skills of its own. The AI reads them when matching you against job postings.',
+      },
+      {
+        id: 'add',
+        label: 'Add and edit',
+        title: 'Add as many as you need',
+        tone: 'green',
+        icon: 'plus',
+        text: 'Type a skill and add it. Each skill can be edited afterwards.',
+      },
+      {
+        id: 'completeness',
+        label: 'Completeness',
+        title: 'Three skills count',
+        tone: 'amber',
+        icon: 'check',
+        text: 'Three skills, in the profile’s library or on one persona, make the Skills part of the profile’s completeness count.',
+      },
+    ],
+  },
+  experience: {
+    name: 'Experience',
+    tips: [
+      {
+        id: 'history',
+        label: 'Work history',
+        title: 'Your work history',
+        tone: 'blue',
+        icon: 'timeline',
+        text: 'Experience entries are kept once per profile. Each persona chooses the ones it uses, can reword the title and description for its role, and can add entries of its own. The AI reads them when matching you against job postings.',
+      },
+      {
+        id: 'current',
+        label: 'Current role',
+        title: 'No end date means current',
+        tone: 'green',
+        icon: 'clock',
+        text: 'An entry without an end date counts as your current role.',
+      },
+      {
+        id: 'completeness',
+        label: 'Completeness',
+        title: 'One entry counts',
+        tone: 'amber',
+        icon: 'check',
+        text: 'One experience entry, in the profile’s library or on a persona, makes the Experience part of the profile’s completeness count.',
+      },
+    ],
+  },
+  education: {
+    name: 'Education',
+    tips: [
+      {
+        id: 'profile',
+        label: 'Per profile',
+        title: 'Education belongs to the profile',
+        tone: 'blue',
+        icon: 'layers',
+        text: 'Schools, degrees and courses are kept once per profile. Personas do not choose among them.',
+      },
+      {
+        id: 'add',
+        label: 'Add and edit',
+        title: 'Add an entry',
+        tone: 'green',
+        icon: 'plus',
+        text: 'Add education needs an institution; the degree, field of study, dates and description are optional. Dates are YYYY, YYYY-MM or YYYY-MM-DD.',
+      },
+      {
+        id: 'current',
+        label: 'Ongoing',
+        title: 'No end date means ongoing',
+        tone: 'amber',
+        icon: 'clock',
+        text: 'An entry without an end date is shown as still going on, and listed first.',
+      },
+    ],
+  },
+  photo: {
+    name: 'Photo',
+    tips: [
+      {
+        id: 'one',
+        label: 'One photo',
+        title: 'Several photos, one default',
+        tone: 'blue',
+        icon: 'camera',
+        text: 'A profile can have several photos. The default is used on CVs unless you pick another in the CV builder. One photo can be shared by many profiles.',
+      },
+      {
+        id: 'cv',
+        label: 'On your CV',
+        title: 'Used by the CV templates',
+        tone: 'green',
+        icon: 'cv',
+        text: 'The CV templates use this photo, so add it before you build a CV.',
+      },
+      {
+        id: 'completeness',
+        label: 'Completeness',
+        title: 'A photo counts',
+        tone: 'amber',
+        icon: 'check',
+        text: 'A photo is part of how complete a profile is on the Profiles page.',
+      },
+    ],
+  },
+  importCv: {
+    name: 'Import from CV',
+    tips: [
+      {
+        id: 'upload',
+        label: 'Upload',
+        title: 'Let the AI read your CV',
+        tone: 'blue',
+        icon: 'upload',
+        text: 'Upload a CV and the AI proposes a profile, a persona, a summary, skills, experience and education from it.',
+      },
+      {
+        id: 'review',
+        label: 'You decide',
+        title: 'You review everything',
+        tone: 'green',
+        icon: 'check',
+        text: 'Nothing is saved until you have reviewed it. The AI’s proposal is only a draft.',
+      },
+      {
+        id: 'education',
+        label: 'Education',
+        title: 'Schools and degrees too',
+        tone: 'teal',
+        icon: 'details',
+        text: 'The review has an Education card. Entries go to the profile, and one the profile already has is not added again.',
+      },
+      {
+        id: 'existing',
+        label: 'Existing profile',
+        title: 'Add to a profile you have',
+        tone: 'violet',
+        icon: 'person',
+        text: 'Instead of creating a new profile, you can attach the result to an existing one.',
+      },
+      {
+        id: 'ai',
+        label: 'AI choice',
+        title: 'Uses the AI from Settings',
+        tone: 'amber',
+        icon: 'robot',
+        settingsLink: true,
+        text: 'Import uses the AI platform and model chosen in Settings. Open Settings to change it.',
+      },
+    ],
+  },
+  settings: {
+    name: 'Settings',
+    tips: [
+      {
+        id: 'one-choice',
+        label: 'One choice',
+        title: 'One AI choice for the whole tool',
+        tone: 'violet',
+        icon: 'robot',
+        text: 'The platform and model chosen here are used for crawling, Job Match, CV generation and Import from CV.',
+      },
+      {
+        id: 'overrides',
+        label: 'Overrides',
+        title: 'A platform or link can differ',
+        tone: 'blue',
+        icon: 'globe',
+        text: 'A platform, or a single link, can use its own AI platform and model. This choice applies wherever none is set.',
+      },
+      {
+        id: 'automatic',
+        label: 'Automatic',
+        title: 'Nothing saved is fine',
+        tone: 'green',
+        icon: 'spark',
+        text: 'With nothing saved, the first platform that has an API key is used.',
+      },
+      {
+        id: 'keys',
+        label: 'Keys',
+        title: 'Keys live in Cinqo',
+        tone: 'rose',
+        icon: 'lock',
+        text: 'API keys are managed in Cinqo under the AI menu, not on this page.',
+      },
+    ],
+  },
+}

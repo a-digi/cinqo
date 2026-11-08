@@ -1,0 +1,46 @@
+* { box-sizing: border-box; }
+:root { --a: #4d7c0f; --d: #1a2e05; --t: #f7fee7; --l: #bef264; --mute: #6b7280; --line: #e5e7eb; }
+body {
+  font-family: "Gill Sans", "Gill Sans MT", Calibri, "Trebuchet MS", sans-serif;
+  color: #1f2937;
+  font-size: 10pt;
+  line-height: 1.45;
+  margin: 0;
+  /* Left/right only — top/bottom breathing room comes from the PDF's
+     own per-page margin (see cvbuilder/handler.go). */
+  padding: 0 40px;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+h1, h2, p, ul { margin: 0; padding: 0; }
+ul { list-style: none; }
+.profile-photo { display: block; object-fit: cover; flex-shrink: 0; }
+.contact { display: flex; flex-wrap: wrap; }
+.entry { display: grid; break-inside: avoid; page-break-inside: avoid; }
+.entry-title { grid-area: title; }
+.entry-company { grid-area: company; }
+.entry-meta { grid-area: meta; }
+.entry-desc { grid-area: desc; white-space: pre-line; }
+.summary { white-space: pre-line; line-height: 1.65; font-size: 10.3pt; color: #374151; }
+.entry-title { font-size: 11.3pt; font-weight: 700; color: var(--d); }
+.entry-company { font-size: 10pt; color: var(--a); font-weight: 500; }
+.entry-meta { font-size: 8.8pt; color: var(--mute); padding-top: 3px; }
+.entry-desc { margin-top: 5px; color: #4b5563; line-height: 1.55; font-size: 9.7pt; }
+
+.h { display: flex; align-items: center; gap: 24px; background: var(--a); color: #fff; border-radius: 18px; padding: 30px 34px; }
+.profile-photo { width: 104px; height: 104px; border: 4px solid rgba(255,255,255,0.92); box-shadow: 0 8px 18px rgba(0,0,0,0.22); }
+h1 { font-size: 27pt; font-weight: 800; line-height: 1.08; letter-spacing: -0.015em; }
+.headline { margin-top: 5px; font-size: 12.5pt; color: rgba(255,255,255,0.88); }
+.contact { gap: 3px 16px; margin-top: 14px; font-size: 9pt; color: rgba(255,255,255,0.82); }
+
+.profile-photo { border-radius: 50%; }
+h2 { display: inline-block; font-size: 8.8pt; text-transform: uppercase; letter-spacing: 0.14em; color: #fff; background: var(--a); font-weight: 700; margin: 26px 0 13px; padding: 3px 14px; border-radius: 999px; }
+.section-experience .entry { position: relative; padding: 0 0 18px 22px; border-left: 2px solid var(--t); margin-left: 4px;
+  grid-template-columns: 1fr; grid-template-areas: "meta" "title" "company" "desc"; }
+.section-experience .entry:last-child { padding-bottom: 2px; }
+.section-experience .entry::before { content: ""; position: absolute; left: -7px; top: 3px; width: 12px; height: 12px; border-radius: 50%;
+  background: var(--a); border: 3px solid #fff; box-shadow: 0 0 0 1.5px var(--a); }
+.entry-meta { font-size: 8.5pt; text-transform: uppercase; letter-spacing: 0.1em; color: var(--a); font-weight: 600; }
+.entry-title { margin-top: 2px; }
+.entry-company { color: var(--mute); }
+.skills li { display: inline-block; border: 1px solid var(--d); color: var(--d); font-size: 7.8pt; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; padding: 4px 10px; border-radius: 3px; margin: 0 6px 7px 0; }

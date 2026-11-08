@@ -1,0 +1,45 @@
+# The local AI module's own routes (api/src/localai). Reading needs the platform read scope, every change the manage scope,
+# exactly like the platform keys. Removing the module means deleting this file with it.
+routes:
+  - path: /api/v1/local-ai
+    method: GET
+    executor: LocalAiGet
+    security: authenticated
+    scopes:
+      - cinqo:platform:read
+      - cinqo:super:admin
+
+  - path: /api/v1/local-ai/settings
+    method: PUT
+    executor: LocalAiUpdateSettings
+    security: authenticated
+    scopes:
+      - cinqo:platform:manage
+      - cinqo:super:admin
+
+  # Downloading the runtime and the model, and removing what was downloaded. The progress of a running download is read
+  # through the generic download API (GET /api/v1/downloads/{id}), which the downloads of this module are scoped to.
+  - path: /api/v1/local-ai/install
+    method: POST
+    executor: LocalAiInstall
+    security: authenticated
+    scopes:
+      - cinqo:platform:manage
+      - cinqo:super:admin
+
+  - path: /api/v1/local-ai/install
+    method: DELETE
+    executor: LocalAiRemoveDownloads
+    security: authenticated
+    scopes:
+      - cinqo:platform:manage
+      - cinqo:super:admin
+
+  # A tiny real request to the chosen model (starting the program when needed), timed: tokens per second included.
+  - path: /api/v1/local-ai/test
+    method: POST
+    executor: LocalAiTest
+    security: authenticated
+    scopes:
+      - cinqo:platform:manage
+      - cinqo:super:admin

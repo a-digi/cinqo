@@ -1,0 +1,106 @@
+routes:
+  # No static scopes: like route-tool.yaml's own proxy route, the real
+  # requirement is dynamic (whichever scope the target toolSlug itself
+  # declared, checked inside MediaUploadHandler) — not something this
+  # YAML can express. See media/handler/upload_handler.go's own doc
+  # comment.
+  - path: /api/v1/media/upload
+    method: POST
+    executor: MediaUpload
+    security: authenticated
+
+  # No static scopes, same reasoning as the upload route above: any
+  # authenticated caller may list THEIR OWN media, regardless of which
+  # tool-specific scope they hold — MineHandler enforces "own data
+  # only" itself (by uploaded_by_user_id, never a caller-supplied
+  # value), which a static YAML scope list can't express.
+  - path: /api/v1/media/mine
+    method: GET
+    executor: MediaMine
+    security: authenticated
+
+  # No static scopes, same dynamic-ownership reasoning as the DELETE
+  # route below: a caller may download a media file if they hold
+  # cinqo:super:admin OR are the row's own uploader — see
+  # DownloadHandler's own doc comment.
+  - path: /api/v1/media/{id}/download
+    method: GET
+    executor: MediaDownload
+    security: authenticated
+
+  # No static scopes: same dynamic toolSlug-scope check the generic
+  # upload route above already does — a second, image-specific sibling
+  # of it, never a replacement. See
+  # media/handler/upload_image_handler.go's own doc comment and
+  # plan/ai/media/step-03-image-upload-and-replace-endpoints.md.
+  - path: /api/v1/media/images
+    method: POST
+    executor: MediaUploadImage
+    security: authenticated
+
+  # No static scopes: dynamic ownership, same reasoning as the download
+  # route above (cinqo:super:admin OR the row's own uploader) — see
+  # media/handler/replace_image_handler.go's own doc comment.
+  - path: /api/v1/media/images/{id}
+    method: PUT
+    executor: MediaReplaceImage
+    security: authenticated
+
+  # Public — NO auth check at all, same convention as
+  # route-tool.yaml's own ToolFrontendBundle entry. The id's own
+  # randomness is the only access control; NEVER serves a row that
+  # isn't already an image (see media/handler/public_image_handler.go's
+  # own doc comment). See plan/ai/media/step-06-public-image-url.md.
+  - path: /api/v1/media/images/{id}/public
+    method: GET
+    executor: MediaPublicImage
+    security: public
+
+  # List IS a genuinely global admin operation (browse every tool's own
+  # media at once), unlike upload/mine — so, unlike them, it declares a
+  # normal static scope here and never re-checks it in the handler,
+  # matching route-tool.yaml's ToolInstall/ToolDelete.
+  - path: /api/v1/media
+    method: GET
+    executor: MediaList
+    security: authenticated
+    scopes:
+      - cinqo:super:admin
+
+  # No static scopes: delete is dynamic like upload/mine — allowed for
+  # cinqo:super:admin (the admin Media page) OR the row's own uploader
+  # (a tool's own "delete my own upload" flow, e.g. Career's import
+  # history) — see MediaDeleteHandler's own doc comment.
+  - path: /api/v1/media/{id}
+    method: DELETE
+    executor: MediaDelete
+    security: authenticated
+
+  # No static scopes: dynamic ownership, same reasoning as delete above
+  # — see media/handler/update_title_handler.go's own doc comment. See
+  # plan/ai/media/step-09-title-metadata-and-preview.md.
+  - path: /api/v1/media/{id}
+    method: PATCH
+    executor: MediaUpdateTitle
+    security: authenticated
+
+  # Public — NO end-user auth, same ToolService-bearer pattern as
+  # route-domainevent.yaml's own publish route: a Tool's own backend
+  # retitles a row IT OWNS (same tool_slug only), authenticated as
+  # itself, never as any end user. See
+  # media/handler/update_title_service_handler.go's own doc comment and
+  # plan/ai/media/step-10-obligatory-title.md.
+  - path: /api/v1/media/{id}/title
+    method: PATCH
+    executor: MediaUpdateTitleService
+    security: public
+
+  # Public — same ToolService-bearer pattern as the title route above,
+  # but read-only: lets a Tool's own backend cheaply confirm a Media
+  # file id it's holding onto still refers to a real row it owns. See
+  # media/handler/exists_service_handler.go's own doc comment and
+  # plan/ai/media/step-11-media-exists-check.md.
+  - path: /api/v1/media/{id}/exists
+    method: GET
+    executor: MediaExistsService
+    security: public

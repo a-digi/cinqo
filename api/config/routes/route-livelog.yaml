@@ -1,0 +1,14 @@
+routes:
+  # plan/ai/file-reader/live-follow.md, step 3 — the live log module (tail -f), apart from the file reader. Both routes are
+  # authenticated with NO static scope, on purpose: the scope depends on the provider being followed (ai-trace needs
+  # cinqo:super:admin), so it is checked per request inside the handler, deny by default. The client never sends a path: only a
+  # provider id and a reference the provider resolves under its own root. Delete this file to remove the routes.
+  - path: /api/v1/live-logs/providers
+    method: GET
+    executor: LiveLogsProviders
+    security: authenticated
+
+  - path: /api/v1/live-logs/{provider}/poll
+    method: GET
+    executor: LiveLogsPoll
+    security: authenticated

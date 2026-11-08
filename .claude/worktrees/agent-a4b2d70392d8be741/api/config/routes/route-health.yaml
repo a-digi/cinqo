@@ -1,0 +1,5 @@
+routes:
+  - path: /healthz
+    method: GET
+    executor: HealthzGet
+    security: public

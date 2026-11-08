@@ -1,0 +1,604 @@
+@import 'tailwindcss';
+
+/* Page entrance, the same look as the Career tool's (its own copy, under its own names so the two
+   tools' stylesheets, which share one page, never touch each other). Slow on purpose (900 ms): an
+   element rises a few pixels while it fades in. .browser-enter animates one element
+   (browser-delay-N pushes it back); .browser-stagger animates the children of a list one after
+   another. backwards fill, not both: once finished the element keeps no transform, so nothing
+   inside it is left in a transformed containing block. Off for people who ask for less motion. */
+@keyframes browser-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.browser-enter,
+.browser-stagger > * {
+  animation: var(--browser-anim, browser-rise) var(--browser-dur, 900ms) var(--browser-ease, cubic-bezier(0.22, 0.61, 0.36, 1)) backwards;
+}
+
+.browser-delay-1 {
+  animation-delay: 150ms;
+}
+
+.browser-delay-2 {
+  animation-delay: 300ms;
+}
+
+.browser-delay-3 {
+  animation-delay: 450ms;
+}
+
+.browser-stagger > :nth-child(1) {
+  animation-delay: 150ms;
+}
+.browser-stagger > :nth-child(2) {
+  animation-delay: 280ms;
+}
+.browser-stagger > :nth-child(3) {
+  animation-delay: 410ms;
+}
+.browser-stagger > :nth-child(4) {
+  animation-delay: 540ms;
+}
+.browser-stagger > :nth-child(5) {
+  animation-delay: 670ms;
+}
+.browser-stagger > :nth-child(6) {
+  animation-delay: 800ms;
+}
+.browser-stagger > :nth-child(7) {
+  animation-delay: 930ms;
+}
+.browser-stagger > :nth-child(8) {
+  animation-delay: 1060ms;
+}
+.browser-stagger > :nth-child(9) {
+  animation-delay: 1190ms;
+}
+.browser-stagger > :nth-child(10) {
+  animation-delay: 1320ms;
+}
+.browser-stagger > :nth-child(n + 11) {
+  animation-delay: 1450ms;
+}
+
+/* A different entrance for each page: the page's root element carries one of these classes, which
+   only swaps the keyframes, duration and easing the entrance rules above use (the variables are
+   inherited by everything inside the page). A page without one keeps the plain rise. */
+@keyframes browser-slide-left {
+  from {
+    opacity: 0;
+    transform: translateX(-36px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.browser-v-left {
+  --browser-anim: browser-slide-left;
+  --browser-dur: 1000ms;
+  --browser-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@keyframes browser-slide-right {
+  from {
+    opacity: 0;
+    transform: translateX(36px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.browser-v-right {
+  --browser-anim: browser-slide-right;
+  --browser-dur: 1000ms;
+  --browser-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@keyframes browser-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-24px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.browser-v-drop {
+  --browser-anim: browser-drop;
+  --browser-dur: 1000ms;
+  --browser-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@keyframes browser-zoom {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.browser-v-zoom {
+  --browser-anim: browser-zoom;
+  --browser-dur: 1000ms;
+  --browser-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@keyframes browser-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.browser-v-pop {
+  --browser-anim: browser-pop;
+  --browser-dur: 1100ms;
+  --browser-ease: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes browser-blur {
+  from {
+    opacity: 0;
+    filter: blur(10px);
+  }
+  to {
+    opacity: 1;
+    filter: none;
+  }
+}
+
+.browser-v-blur {
+  --browser-anim: browser-blur;
+  --browser-dur: 1200ms;
+  --browser-ease: ease-out;
+}
+
+@keyframes browser-flip {
+  from {
+    opacity: 0;
+    transform: perspective(700px) rotateX(-40deg);
+    transform-origin: top center;
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    transform-origin: top center;
+  }
+}
+
+.browser-v-flip {
+  --browser-anim: browser-flip;
+  --browser-dur: 1100ms;
+  --browser-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@keyframes browser-tilt {
+  from {
+    opacity: 0;
+    transform: translateY(14px) rotate(-2.5deg);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.browser-v-tilt {
+  --browser-anim: browser-tilt;
+  --browser-dur: 1000ms;
+  --browser-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@keyframes browser-wipe {
+  from {
+    opacity: 0;
+    clip-path: inset(0 100% 0 0);
+  }
+  30% {
+    opacity: 1;
+  }
+  to {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+.browser-v-wipe {
+  --browser-anim: browser-wipe;
+  --browser-dur: 1100ms;
+  --browser-ease: cubic-bezier(0.65, 0, 0.35, 1);
+}
+
+@keyframes browser-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.browser-v-fade {
+  --browser-anim: browser-fade;
+  --browser-dur: 1500ms;
+  --browser-ease: ease;
+}
+
+@keyframes browser-stretch {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scaleY(0.85);
+    transform-origin: top center;
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    transform-origin: top center;
+  }
+}
+
+.browser-v-stretch {
+  --browser-anim: browser-stretch;
+  --browser-dur: 1000ms;
+  --browser-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@keyframes browser-swing {
+  from {
+    opacity: 0;
+    transform: translateX(-28px) skewX(-6deg);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.browser-v-swing {
+  --browser-anim: browser-swing;
+  --browser-dur: 1100ms;
+  --browser-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@keyframes browser-spin {
+  from {
+    opacity: 0;
+    transform: rotate(-5deg) scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.browser-v-spin {
+  --browser-anim: browser-spin;
+  --browser-dur: 1100ms;
+  --browser-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+/* Other kinds of motion than an entrance. A page's root carries one ambient class (browser-a-float,
+   -sheen or -glow: the header card's icon floats, a sheen sweeps over the card, the count pill breathes)
+   and one title class (browser-t-type, -wave or -underline: the title is typed out, a wave runs through
+   its letters, an underline draws itself). The rest are tied to what a component shows, so they appear
+   wherever it does: a ring draws itself (.browser-ring-arc), a bar grows from its left edge
+   (.browser-grow), a connecting line draws down (.browser-draw), a check mark pops in one after another
+   (.browser-tick), a chip springs in (.browser-chip), an empty state wiggles once (.browser-wiggle).
+   --i / --k are the position in a row, set inline. All of it is off under prefers-reduced-motion. */
+@keyframes browser-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+.browser-a-float .browser-hd-icon {
+  animation: browser-float 4.5s ease-in-out infinite;
+}
+
+@keyframes browser-sheen {
+  0%,
+  55% {
+    transform: translateX(-130%) skewX(-18deg);
+  }
+  100% {
+    transform: translateX(260%) skewX(-18deg);
+  }
+}
+
+.browser-a-sheen .browser-hd::after {
+  content: '';
+  pointer-events: none;
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 35%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.75), transparent);
+  animation: browser-sheen 6.5s ease-in-out 1.2s infinite;
+}
+
+@keyframes browser-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(37, 99, 235, 0);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(37, 99, 235, 0.16);
+  }
+}
+
+.browser-a-glow .browser-hd-pill {
+  animation: browser-glow 3.2s ease-in-out infinite;
+}
+
+@keyframes browser-type {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.browser-t-type .browser-ch {
+  animation: browser-type 1ms steps(1, end) backwards;
+  animation-delay: calc(var(--i, 0) * 70ms + 500ms);
+}
+
+@keyframes browser-caret {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.browser-t-type .browser-hd-title::after {
+  content: '';
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 3px;
+  background: #2563eb;
+  vertical-align: -0.12em;
+  animation: browser-caret 0.7s steps(1, end) 0.25s 6 forwards;
+}
+
+@keyframes browser-wave {
+  0% {
+    opacity: 0;
+    transform: translateY(0.6em);
+  }
+  45% {
+    opacity: 1;
+    transform: translateY(-0.28em);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.browser-t-wave .browser-ch {
+  display: inline-block;
+  animation: browser-wave 1100ms cubic-bezier(0.22, 0.61, 0.36, 1) backwards;
+  animation-delay: calc(var(--i, 0) * 55ms + 350ms);
+}
+
+@keyframes browser-underline {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.browser-t-underline .browser-hd-title {
+  position: relative;
+  display: inline-block;
+}
+
+.browser-t-underline .browser-hd-title::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: -5px;
+  height: 3px;
+  width: 100%;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, #60a5fa, #2563eb);
+  transform-origin: left center;
+  animation: browser-underline 1300ms cubic-bezier(0.22, 0.61, 0.36, 1) 500ms both;
+}
+
+@keyframes browser-ring-draw {
+  from {
+    stroke-dasharray: 0 var(--circ);
+  }
+}
+
+.browser-ring-arc {
+  animation: browser-ring-draw 1600ms cubic-bezier(0.22, 0.61, 0.36, 1) backwards;
+  animation-delay: calc(var(--k, 0) * 350ms + 400ms);
+}
+
+@keyframes browser-grow {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+.browser-grow {
+  transform-origin: left center;
+  animation: browser-grow 1400ms cubic-bezier(0.22, 0.61, 0.36, 1) 600ms backwards;
+}
+
+@keyframes browser-draw {
+  from {
+    transform: scaleY(0);
+  }
+}
+
+.browser-draw {
+  transform-origin: top center;
+  animation: browser-draw 700ms ease-out backwards;
+  animation-delay: calc(var(--i, 0) * 180ms + 500ms);
+}
+
+@keyframes browser-tick {
+  0% {
+    opacity: 0;
+    transform: scale(0);
+  }
+  65% {
+    opacity: 1;
+    transform: scale(1.3);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.browser-tick {
+  animation: browser-tick 650ms cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
+  animation-delay: calc(var(--i, 0) * 180ms + 600ms);
+}
+
+@keyframes browser-chip {
+  0% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.12);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.browser-chip {
+  animation: browser-chip 800ms cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
+  animation-delay: calc(var(--i, 0) * 70ms + 300ms);
+}
+
+@keyframes browser-wiggle {
+  0%,
+  100% {
+    transform: none;
+  }
+  20% {
+    transform: rotate(-1.6deg);
+  }
+  40% {
+    transform: rotate(1.4deg);
+  }
+  60% {
+    transform: rotate(-0.9deg);
+  }
+  80% {
+    transform: rotate(0.6deg);
+  }
+}
+
+.browser-wiggle {
+  animation: browser-wiggle 900ms ease-in-out 1.6s 1;
+}
+
+[class*='browser-v-'] button:not(:disabled):active {
+  transform: scale(0.96);
+}
+
+@keyframes browser-ping {
+  0% {
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.55);
+  }
+  70%,
+  100% {
+    box-shadow: 0 0 0 7px rgba(34, 197, 94, 0);
+  }
+}
+
+.browser-ping {
+  animation: browser-ping 2.2s ease-out infinite;
+}
+
+.browser-a-float .browser-hero-icon {
+  animation: browser-float 4.5s ease-in-out infinite;
+}
+
+@keyframes browser-light {
+  0% {
+    opacity: 0;
+    transform: scale(0.4);
+    filter: brightness(2);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.18);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+.browser-light {
+  animation: browser-light 800ms cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
+  animation-delay: calc(var(--i, 0) * 260ms + 500ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .browser-enter,
+  .browser-stagger > *,
+  .browser-hd-icon,
+  .browser-hd::after,
+  .browser-hd-pill,
+  .browser-hd-title::after,
+  .browser-ch,
+  .browser-ring-arc,
+  .browser-grow,
+  .browser-draw,
+  .browser-tick,
+  .browser-chip,
+  .browser-wiggle,
+  .browser-ping,
+  .browser-light,
+  .browser-hero-icon {
+    animation: none !important;
+  }
+}

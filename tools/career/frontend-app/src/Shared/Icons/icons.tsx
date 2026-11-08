@@ -1,0 +1,462 @@
+// Local, self-contained icons — same reasoning as browser's own
+// src/icons.tsx: this tool's build must not import from the main
+// app's own component tree.
+export function PlusIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-4 w-4">
+      <path d="M10 5v10M5 10h10" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+export function XIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-3.5 w-3.5">
+      <path d="M6 6l8 8M14 6l-8 8" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+export function PlayIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-3.5 w-3.5">
+      <path d="M6 4.5l9 5.5-9 5.5v-11z" strokeWidth="1.4" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+// StopIcon (step 63) — marks a real, backend-effecting "stop this
+// crawl" action, distinct from PlayIcon's own "start/resume" meaning.
+// A filled square, the universal stop glyph — the only icon in this
+// file using fill instead of stroke, deliberately, so it reads
+// distinctly at a glance from every other action icon here.
+export function StopIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5">
+      <rect x="5" y="5" width="10" height="10" rx="1.5" />
+    </svg>
+  )
+}
+
+// SparkleIcon (step 33) — marks the "generate/edit with AI" action,
+// distinct from PlayIcon's own "run something" meaning.
+export function SparkleIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-3.5 w-3.5">
+      <path d="M10 3.5l1.2 3.3 3.3 1.2-3.3 1.2-1.2 3.3-1.2-3.3-3.3-1.2 3.3-1.2 1.2-3.3z" strokeWidth="1.2" strokeLinejoin="round" />
+      <path d="M15.5 13l0.6 1.6 1.6 0.6-1.6 0.6-0.6 1.6-0.6-1.6-1.6-0.6 1.6-0.6 0.6-1.6z" strokeWidth="1" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+// LogIcon (step 38) — marks the "view this crawl run's own log" toggle,
+// a plain lined-document glyph distinct from every other action icon
+// on this page.
+export function LogIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-3.5 w-3.5">
+      <rect x="4" y="3" width="12" height="14" rx="1.2" strokeWidth="1.3" />
+      <path d="M7 7h6M7 10h6M7 13h3.5" strokeWidth="1.3" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+// CrawlInstructionsIcon — marks "Job list crawl instructions" (how to read the
+// LISTING page, i.e. many rows at once): a document with several equal
+// horizontal lines, each standing for one row of the list. Distinct
+// from LogIcon's own similar document shape, which means "this run's
+// own log," not "this link's own instructions."
+export function CrawlInstructionsIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-5 w-5">
+      <rect x="3.5" y="3" width="13" height="14" rx="1.2" strokeWidth="1.3" />
+      <path d="M6.5 6.8h7M6.5 10h7M6.5 13.2h7" strokeWidth="1.3" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+// JobDetailInstructionsIcon — marks "Job detail crawl instructions"
+// (how to read ONE job's own detail page, not the listing). Previously
+// shared CrawlInstructionsIcon's own plain-rectangle document base with
+// a magnifying glass overlaid — too similar a silhouette to read as a
+// genuinely different icon at a glance, especially once both sit
+// side-by-side at a larger size. Redesigned as a single folded-corner
+// page (a distinct outline, not just a decorated variant of the list
+// icon's own rectangle) with two short lines standing for one focused
+// block of detail text, rather than the list icon's three equal rows.
+export function JobDetailInstructionsIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-5 w-5">
+      <path d="M6 3h5l4 4v9a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" strokeWidth="1.3" strokeLinejoin="round" />
+      <path d="M11 3v4h4" strokeWidth="1.3" strokeLinejoin="round" />
+      <path d="M7 11.5h6M7 14h4" strokeWidth="1.3" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+// AlertIcon (step 40) — marks the one running-phase state that needs
+// the user's own action (awaiting_human_challenge), distinct from
+// every other, passive status glyph on this page.
+export function AlertIcon({ className = 'h-3.5 w-3.5' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className={className}>
+      <path d="M10 3l8 14H2l8-14z" strokeWidth="1.3" strokeLinejoin="round" />
+      <path d="M10 8.5v3.2" strokeWidth="1.3" strokeLinecap="round" />
+      <circle cx="10" cy="14" r="0.6" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
+// FilterIcon (step 55) — a plain funnel glyph marking the Jobs page's
+// own "Filters" toggle button.
+export function FilterIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-3.5 w-3.5">
+      <path d="M3 4h14l-5.5 6.5v4.5l-3 1.5v-6z" strokeWidth="1.3" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+// ChevronDownIcon (step 58) — the Accordion's own expand/collapse
+// indicator, rotated 180deg by the caller when open rather than
+// swapped for a separate "up" glyph.
+export function ChevronDownIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-4 w-4">
+      <path d="M5 7.5l5 5 5-5" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+// PDFIcon — the Import CV page's own dropzone centerpiece (a plain
+// document-with-folded-corner glyph, no "PDF" text baked in since this
+// is an SVG path, not a font glyph — the surrounding UI copy already
+// says "PDF"). Deliberately larger than every other icon in this file
+// (those are small inline action icons; this is a big, empty-state
+// centerpiece), so it takes an explicit className rather than a
+// hardcoded size.
+export function PDFIcon({ className = 'h-16 w-16' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" className={className}>
+      <path d="M6 2.5h8.5L19 7v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1z" strokeWidth="1.2" strokeLinejoin="round" />
+      <path d="M14.5 2.5V7H19" strokeWidth="1.2" strokeLinejoin="round" />
+      <path d="M8 13h8M8 16.2h8M8 9.8h4" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+// UploadIcon — an upward arrow into a tray, the standard upload glyph.
+// Paired with PDFIcon as a small badge overlapping its corner on the
+// Import CV dropzone. Same explicit-className convention as PDFIcon,
+// for the same reason.
+export function UploadIcon({ className = 'h-4 w-4' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" className={className}>
+      <path d="M12 15.5V4.5M8.2 8.3L12 4.5l3.8 3.8" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M4.5 15.5v3a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+// EyeIcon — marks "view details" (a plain, read-only navigation
+// action), distinct from every destructive/action-triggering icon in
+// this file.
+export function EyeIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-3.5 w-3.5">
+      <path d="M2 10s2.8-5 8-5 8 5 8 5-2.8 5-8 5-8-5-8-5z" strokeWidth="1.3" strokeLinejoin="round" />
+      <circle cx="10" cy="10" r="2.2" strokeWidth="1.3" />
+    </svg>
+  )
+}
+
+// ExternalLinkIcon — marks "open the original, external page in a new
+// tab" — a box with an arrow escaping its own corner, the standard
+// external-link glyph.
+export function ExternalLinkIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-3.5 w-3.5">
+      <path
+        d="M8.5 4.5h-4a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-4"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path d="M9 3h5.5V8.5M14.5 3L8 9.5" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+// TrashIcon — marks a destructive delete action, replacing a plain
+// text "Delete"/"Remove" button wherever this file's own icon-button
+// convention applies.
+export function TrashIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-3.5 w-3.5">
+      <path d="M4 6h12M8 6V4.5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1V6" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M5.5 6l0.6 9.2a1 1 0 0 0 1 0.9h5.8a1 1 0 0 0 1-0.9L14.5 6" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M8.3 9v4M11.7 9v4" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+// MatchIcon — marks the "Job Match" action, a target/bullseye glyph
+// distinct from every other icon in this file.
+export function MatchIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-3.5 w-3.5">
+      <circle cx="10" cy="10" r="7" strokeWidth="1.3" />
+      <circle cx="10" cy="10" r="4" strokeWidth="1.3" />
+      <circle cx="10" cy="10" r="1" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
+// RefreshIcon (step 148) — marks "Recrawl": two arrows chasing each other round a circle.
+export function RefreshIcon() {
+  return (
+    <svg
+      viewBox="0 0 20 20"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-3.5 w-3.5"
+    >
+      <path d="M16.5 10a6.5 6.5 0 0 1-11.2 4.5M3.5 10a6.5 6.5 0 0 1 11.2-4.5" />
+      <path d="M14.8 2.8v3h-3M5.2 17.2v-3h3" />
+    </svg>
+  )
+}
+
+// RobotIcon (step 60) — marks "Check Progress - AI" (a
+// generate-crawl-instructions conversation currently in flight),
+// distinct from SparkleIcon's own "start this with AI" meaning.
+export function RobotIcon({ className = 'h-3.5 w-3.5' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className={className}>
+      <path d="M10 3v2" strokeWidth="1.3" strokeLinecap="round" />
+      <circle cx="10" cy="4.2" r="0.7" fill="currentColor" stroke="none" />
+      <rect x="4.5" y="6" width="11" height="9" rx="2" strokeWidth="1.3" />
+      <circle cx="7.5" cy="10.2" r="0.9" fill="currentColor" stroke="none" />
+      <circle cx="12.5" cy="10.2" r="0.9" fill="currentColor" stroke="none" />
+      <path d="M7.5 13h5" strokeWidth="1.2" strokeLinecap="round" />
+      <path d="M4.5 9.5h-1.2M16.7 9.5h-1.2" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+// DotsVerticalIcon — the standard "kebab menu" trigger glyph (three
+// vertical dots), used by Shared/ActionMenu/ActionMenu.tsx.
+export function DotsVerticalIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+      <circle cx="10" cy="4.5" r="1.4" />
+      <circle cx="10" cy="10" r="1.4" />
+      <circle cx="10" cy="15.5" r="1.4" />
+    </svg>
+  )
+}
+
+// BriefcaseIcon — the Career tool's own mark (page headers).
+export function BriefcaseIcon({ className = 'h-6 w-6' }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={className}
+    >
+      <rect x="3.5" y="7.5" width="17" height="12" rx="2.5" />
+      <path d="M9 7.5V6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v1.5M3.5 13h17" />
+    </svg>
+  )
+}
+
+// Page-header and stat-card glyphs for the Portals and Crawl Monitor pages.
+function Glyph({ children, className = 'h-6 w-6' }: { children: React.ReactNode; className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={className}
+    >
+      {children}
+    </svg>
+  )
+}
+
+export function GlobeIcon({ className }: { className?: string }) {
+  return (
+    <Glyph className={className}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18M12 3c2.6 2.7 3.8 5.7 3.8 9s-1.2 6.3-3.8 9c-2.6-2.7-3.8-5.7-3.8-9S9.4 5.7 12 3z" />
+    </Glyph>
+  )
+}
+
+export function PulseIcon({ className }: { className?: string }) {
+  return (
+    <Glyph className={className}>
+      <path d="M3 12h4l2.5-6 4 12 2.5-6H21" />
+    </Glyph>
+  )
+}
+
+export function LinkGlyphIcon({ className }: { className?: string }) {
+  return (
+    <Glyph className={className}>
+      <path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" />
+    </Glyph>
+  )
+}
+
+export function CheckCircleIcon({ className }: { className?: string }) {
+  return (
+    <Glyph className={className}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="m8 12.5 3 3 5-6" />
+    </Glyph>
+  )
+}
+
+export function ClockIcon({ className }: { className?: string }) {
+  return (
+    <Glyph className={className}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </Glyph>
+  )
+}
+
+export function LockIcon({ className }: { className?: string }) {
+  return (
+    <Glyph className={className}>
+      <rect x="5" y="11" width="14" height="9" rx="2" />
+      <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+    </Glyph>
+  )
+}
+
+export function BoltIcon({ className }: { className?: string }) {
+  return (
+    <Glyph className={className}>
+      <path d="M13 3 5 13.5h6L10 21l8-10.5h-6z" />
+    </Glyph>
+  )
+}
+
+export function BuildingIcon({ className }: { className?: string }) {
+  return (
+    <Glyph className={className}>
+      <path d="M5 21V5.5A1.5 1.5 0 0 1 6.5 4h7A1.5 1.5 0 0 1 15 5.5V21M15 10h3.5A1.5 1.5 0 0 1 20 11.5V21M3 21h18" />
+      <path d="M8.5 8h3M8.5 12h3M8.5 16h3" />
+    </Glyph>
+  )
+}
+
+export function UsersIcon({ className }: { className?: string }) {
+  return (
+    <Glyph className={className}>
+      <circle cx="9" cy="8.5" r="3.2" />
+      <path d="M3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5M16 5.6a3.2 3.2 0 0 1 0 5.8M18 14.8c1.9.7 3 2.4 3 5.2" />
+    </Glyph>
+  )
+}
+
+// Glyphs for the My Profile pages.
+export function UserIcon({ className }: { className?: string }) {
+  return (
+    <Glyph className={className}>
+      <circle cx="12" cy="8" r="3.6" />
+      <path d="M4.5 20c.8-3.6 3.8-5.6 7.5-5.6s6.7 2 7.5 5.6" />
+    </Glyph>
+  )
+}
+
+export function LayersIcon({ className }: { className?: string }) {
+  return (
+    <Glyph className={className}>
+      <path d="M12 3.5 3.5 8.2 12 12.9l8.5-4.7L12 3.5z" />
+      <path d="M3.5 12.2 12 16.9l8.5-4.7M3.5 16.2 12 20.9l8.5-4.7" />
+    </Glyph>
+  )
+}
+
+export function TargetIcon({ className }: { className?: string }) {
+  return (
+    <Glyph className={className}>
+      <circle cx="12" cy="12" r="8.5" />
+      <circle cx="12" cy="12" r="4.8" />
+      <circle cx="12" cy="12" r="1.2" />
+    </Glyph>
+  )
+}
+
+export function SparkIcon({ className }: { className?: string }) {
+  return (
+    <Glyph className={className}>
+      <path d="M12 3.5c.6 4.6 2.4 6.4 7 7-4.6.6-6.4 2.4-7 7-.6-4.6-2.4-6.4-7-7 4.6-.6 6.4-2.4 7-7z" />
+      <path d="M19 3.5v3M17.5 5h3" />
+    </Glyph>
+  )
+}
+
+export function TimelineIcon({ className }: { className?: string }) {
+  return (
+    <Glyph className={className}>
+      <path d="M7 4v16" />
+      <circle cx="7" cy="7" r="1.8" />
+      <circle cx="7" cy="17" r="1.8" />
+      <path d="M11.5 7H19M11.5 17H17" />
+    </Glyph>
+  )
+}
+
+export function EducationIcon({ className }: { className?: string }) {
+  return (
+    <Glyph className={className}>
+      <path d="M12 4 2.5 9 12 14l9.5-5L12 4z" />
+      <path d="M6 11.2V16c0 1.4 2.7 2.8 6 2.8s6-1.4 6-2.8v-4.8M21.5 9v6" />
+    </Glyph>
+  )
+}
+
+export function CameraIcon({ className }: { className?: string }) {
+  return (
+    <Glyph className={className}>
+      <path d="M4 8.5A1.5 1.5 0 0 1 5.5 7H8l1.2-2h5.6L16 7h2.5A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5v-9z" />
+      <circle cx="12" cy="13" r="3.4" />
+    </Glyph>
+  )
+}
+
+// PencilIcon — marks "edit" on a card's hover actions (a small outline pencil, the same 20px grid as EyeIcon).
+export function PencilIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" className="h-3.5 w-3.5">
+      <path d="M12.5 4.5l3 3L7 16l-3.5.5L4 13l8.5-8.5z" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+// AlertCircleIcon — an exclamation mark in a circle, marks a warning inside a small pill (decorative, the text says it).
+export function AlertCircleIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" aria-hidden="true" className="h-3 w-3 shrink-0">
+      <circle cx="10" cy="10" r="7.5" strokeWidth="1.5" />
+      <path d="M10 6v4.5" strokeWidth="1.6" strokeLinecap="round" />
+      <circle cx="10" cy="13.4" r="0.6" fill="currentColor" strokeWidth="0.8" />
+    </svg>
+  )
+}
