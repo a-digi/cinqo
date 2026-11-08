@@ -46,6 +46,7 @@ import {
   openAiLoginWindow,
 } from '../loginWindow'
 import { showsInstructionError } from '../instructionErrorRules'
+import { showsAttemptStats, showsGenerate } from '../instructedViewRules'
 import { showsManualJobDetails, showsManualListing } from '../manualInstructRules'
 import {
   instructionAlertAttempts,
@@ -1352,7 +1353,7 @@ export function CrawlPanel({
                     <CrawlInstructionsIcon />
                     Job list
                   </button>
-                  {aiTriesListing && (
+                  {aiTriesListing && showsAttemptStats(linkInstructionState) && (
                     <InstructionAttemptStats
                       stats={link.instructionStats.listing}
                       alertAttempts={listingAlertAttempts}
@@ -1397,27 +1398,33 @@ export function CrawlPanel({
                       <p className="mt-1 text-xs text-orange-800">{jobDetailsHint(jobDetailsAccess)}</p>
                     </>
                   )}
-                  {((jobDetailRecipe !== undefined && !jobDetailsBlocked && !jobDetailAiBusy) ||
+                  {((jobDetailRecipe !== undefined &&
+                    !jobDetailsBlocked &&
+                    !jobDetailAiBusy &&
+                    showsGenerate(linkInstructionState, false)) ||
                     showsManualJobDetails(link.jobDetailCrawlInstructions, jobDetailsBlocked, jobDetailAiBusy)) && (
                     <div className="mt-1 flex flex-wrap items-center justify-center gap-1.5">
-                      {jobDetailRecipe !== undefined && !jobDetailsBlocked && !jobDetailAiBusy && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            handleGenerateJobDetailInstructionsWithAI('manual')
-                          }}
-                          disabled={!hasPlatforms || !selectedPlatform}
-                          title={
-                            hasPlatforms
-                              ? 'Let the AI pick where the data of a job page is, test it on real jobs and save it.'
-                              : 'No AI platform configured — add one on the Platforms page first'
-                          }
-                          className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-white px-2.5 py-0.5 text-xs text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          <RobotIcon />
-                          Generate
-                        </button>
-                      )}
+                      {jobDetailRecipe !== undefined &&
+                        !jobDetailsBlocked &&
+                        !jobDetailAiBusy &&
+                        showsGenerate(linkInstructionState, false) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleGenerateJobDetailInstructionsWithAI('manual')
+                            }}
+                            disabled={!hasPlatforms || !selectedPlatform}
+                            title={
+                              hasPlatforms
+                                ? 'Let the AI pick where the data of a job page is, test it on real jobs and save it.'
+                                : 'No AI platform configured — add one on the Platforms page first'
+                            }
+                            className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-white px-2.5 py-0.5 text-xs text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <RobotIcon />
+                            Generate
+                          </button>
+                        )}
                       {showsManualJobDetails(link.jobDetailCrawlInstructions, jobDetailsBlocked, jobDetailAiBusy) && (
                         <button
                           type="button"
@@ -1435,7 +1442,7 @@ export function CrawlPanel({
                       )}
                     </div>
                   )}
-                  {aiWritesJobDetail && (
+                  {aiWritesJobDetail && showsAttemptStats(linkInstructionState) && (
                     <InstructionAttemptStats stats={link.instructionStats.jobDetail} alertAttempts={jobDetailAlertAttempts} />
                   )}
                   {/* Passive status only — no manual trigger anymore. This
@@ -1454,9 +1461,10 @@ export function CrawlPanel({
                   )}
                 </div>
               </div>
-              {(aiWritesListing || listingRecipe !== undefined || showsManualListing(hasListing, aiBusy)) && (
+              {(((aiWritesListing || listingRecipe !== undefined) && showsGenerate(linkInstructionState, aiBusy)) ||
+                showsManualListing(hasListing, aiBusy)) && (
                 <div className="flex shrink-0 flex-col gap-2 self-stretch">
-                  {(aiWritesListing || listingRecipe !== undefined) && (
+                  {(aiWritesListing || listingRecipe !== undefined) && showsGenerate(linkInstructionState, aiBusy) && (
                     <button
                       type="button"
                       onClick={
