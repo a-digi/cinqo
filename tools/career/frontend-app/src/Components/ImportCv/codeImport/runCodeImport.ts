@@ -8,7 +8,7 @@
 import { jobDescription, splitCv, type CvJob, type SplitCv } from '../splitCv'
 import { runPiece, type PieceOutcome } from './askPiece'
 import {
-  companyTitlePiece, detailsPiece, educationFromLines, educationPiece, educationText, nameFromHeader, namePiece, personaPiece, skillsPiece, skillsText,
+  companyTitlePiece, detailsPiece, educationFromDatedLines, educationFromLines, educationPiece, educationText, nameFromHeader, namePiece, personaPiece, skillsPiece, skillsText,
   type CompanyTitle,
 } from './pieces'
 
@@ -99,7 +99,7 @@ export async function runCodeImport(cv: SplitCv, steps: CodeImportSteps): Promis
     .split('\n')
     .filter((l) => l.trim() !== '')
   if (lines.length > 0) {
-    const byCode = educationFromLines(lines)
+    const byCode = educationFromLines(lines) ?? educationFromDatedLines(lines)
     const entries = byCode ?? (await asked('education', () => runPiece(educationPiece(cv), ask)))
     if (byCode) note('education', 'code')
     if (entries && entries.length > 0) {

@@ -122,7 +122,11 @@ const MONTHS: Record<string, string> = {
   okt: '10', oct: '10', oktober: '10', october: '10', nov: '11', november: '11', dez: '12', dec: '12', dezember: '12', december: '12',
 }
 
-const MONTH_NAMES = Object.keys(MONTHS).sort((x, y) => y.length - x.length).join('|')
+// A month may carry a repeated letter, a typo that real CVs have ("Junii 2006"): every letter of a name may repeat.
+const MONTH_NAMES = Object.keys(MONTHS)
+  .sort((x, y) => y.length - x.length)
+  .map((name) => name.split('').map((c) => `${c}+`).join(''))
+  .join('|')
 const DATE_PART = String.raw`(?:\d{1,2}[./]\d{4}|(?:${MONTH_NAMES})\.?\s+\d{4}|\d{4})`
 const NOW_WORDS = String.raw`bis heute|aktuell|heute|present|now|current|jetzt|today|ongoing|laufend`
 const DATE_RANGE = new RegExp(String.raw`(?<![\w])(?<start>${DATE_PART})\s*[-–—]\s*(?<end>${DATE_PART}|${NOW_WORDS})(?!\w)`, 'i')
@@ -135,9 +139,9 @@ export function parseCvDate(text: string): string {
     const month = Number(m[1])
     return month >= 1 && month <= 12 ? `${m[2]}-${String(month).padStart(2, '0')}` : ''
   }
-  m = /^([A-Za-zÄÖÜäöü]{3,9})\.?\s+(\d{4})$/.exec(t)
+  m = /^([A-Za-zÄÖÜäöü]{3,14})\.?\s+(\d{4})$/.exec(t)
   if (m?.[1] && m[2]) {
-    const month = MONTHS[m[1].toLowerCase()]
+    const month = MONTHS[m[1].toLowerCase().replace(/(\p{L})\1+/gu, '$1')] // the repeated letters of a typo count once
     return month ? `${m[2]}-${month}` : ''
   }
   return /^\d{4}$/.test(t) ? t : ''
@@ -147,6 +151,7 @@ const COUNTRY = /\b(Deutschland|Germany|Albanien|Albania|Österreich|Austria|Sch
 const TECH_MARK = /(?:^|\s)[>›]?\s*((?:eingesetzte\s+)?technologien|technologies|tech\s*stack)\s*:\s*/i
 const LEGAL = String.raw`(?:GmbH\s*&\s*Co\.?\s*KG|GmbH|AG|SE|KG|UG|Inc\.?|Ltd\.?|LLC|Corp\.?|Co\.|S\.A\.|B\.V\.|Oy|AB)`
 const COMPANY_FIRST = new RegExp(String.raw`^(.*?\b${LEGAL})(?=\s|$|[/|,–—-])\s*[/|,–—-]*\s*(.*)$`)
+const LEGAL_FORM = new RegExp(String.raw`\b${LEGAL}(?![\p{L}])`, 'u')
 const COMPANY_LAST = new RegExp(String.raw`^(.*?)\s+(?:@|bei|at)\s+(.*\b${LEGAL})$`, 'i')
 
 // The header cut into company and title where the CV makes it certain: the company ends at a legal form ("Statista GmbH Team Lead"), or
@@ -158,6 +163,14 @@ export function splitCompanyTitle(header: string): { company: string | null; tit
   const first = COMPANY_FIRST.exec(h)
   const title = first?.[2]?.trim() ?? ''
   if (first?.[1] && title !== '') return { company: first[1].trim(), title }
+  // "Institution, Place — Role": one dash with spaces, a comma (the place) on the left and a short role on the right. Or the legal form on the right.
+  const dash = h.split(/\s[—–]\s/)
+  if (dash.length === 2) {
+    const left = (dash[0] ?? '').trim()
+    const right = (dash[1] ?? '').trim()
+    if (left.includes(',') && right !== '' && !right.includes(',') && right.split(/\s+/).length <= 4) return { company: left, title: right }
+    if (left !== '' && !left.includes(',') && LEGAL_FORM.test(right) && !LEGAL_FORM.test(left)) return { company: right, title: left }
+  }
   return { company: null, title: null }
 }
 
@@ -172,14 +185,15 @@ interface Block {
 // "November 2022 -": a range that stops at the dash is a job that goes on.
 const OPEN_RANGE = new RegExp(String.raw`(?<![\w])(?<start>${DATE_PART})\s*[-–—]\s*$`, 'i')
 
-function dateOf(line: string): { index: number; length: number; start: string; end: string; current: boolean } | null {
+// maxIndex: how far into the line the date may start (a job's header line is short, an education entry can be long).
+function dateOf(line: string, maxIndex = 140): { index: number; length: number; start: string; end: string; current: boolean } | null {
   const m = DATE_RANGE.exec(line)
   if (!m) {
     const open = OPEN_RANGE.exec(line)
     const start = open?.groups ? parseCvDate(open.groups.start) : ''
-    return open && start !== '' && open.index <= 140 ? { index: open.index, length: open[0].length, start, end: '', current: true } : null
+    return open && start !== '' && open.index <= maxIndex ? { index: open.index, length: open[0].length, start, end: '', current: true } : null
   }
-  if (!m.groups || m.index > 140) return null
+  if (!m.groups || m.index > maxIndex) return null
   const start = parseCvDate(m.groups.start)
   if (start === '') return null
   const endText = m.groups.end.trim()
@@ -187,6 +201,11 @@ function dateOf(line: string): { index: number; length: number; start: string; e
   const end = current ? '' : parseCvDate(endText)
   if (!current && end === '') return null
   return { index: m.index, length: m[0].length, start, end, current }
+}
+
+// The date range in a line, wherever the CV puts it (before, after or alone): where it is, what it is and whether it goes on. Null when the line has none.
+export function findDateRange(line: string, maxIndex = 400): { index: number; length: number; start: string; end: string; current: boolean } | null {
+  return dateOf(line, maxIndex)
 }
 
 // The experience lines cut into one block per job. A job starts on the line with its date range. Where its header is:

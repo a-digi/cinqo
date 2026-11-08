@@ -7,7 +7,7 @@
 // is not asked at all.
 
 import type { Piece, Verdict } from './askPiece'
-import { type CvJob, type SplitCv } from '../splitCv'
+import { findDateRange, type CvJob, type SplitCv } from '../splitCv'
 
 const ok = <T>(value: T): Verdict<T> => ({ ok: true, value })
 const bad = (reason: string): Verdict<never> => ({ ok: false, reason })
@@ -112,6 +112,7 @@ export function personaPiece(cv: SplitCv): Piece<PersonaValue> {
       const title = text(o.title, 'title', 80)
       if (!title.ok) return title
       if (tokens(title.value).length > 8 || /[.!?]$/.test(title.value)) return bad('"title" must be a short job title, not a sentence')
+      if (/[,—–]/.test(title.value)) return bad('"title" is a whole line of the CV (an institution, a place, a dash): give only the job title, such as the part after the dash')
       if (!appearsIn(cvText(cv), title.value)) return bad(`"${title.value}" is not a title the CV uses: choose one that is written in the CV`)
       const name = o.name === undefined ? ok(title.value) : text(o.name, 'name', 60)
       if (!name.ok) return name
@@ -119,7 +120,8 @@ export function personaPiece(cv: SplitCv): Piece<PersonaValue> {
       return ok({ name: name.value, title: title.value })
     },
     fallback: () => {
-      const title = headlineTitle(cv) ?? (titles.length > 0 ? titles[0] : null)
+      // Only a title the code is certain of: a header line (company, place, title in one) is no title.
+      const title = headlineTitle(cv) ?? cv.jobs.find((j) => j.title !== null)?.title ?? null
       return title === null ? null : { name: title, title }
     },
   }
@@ -130,7 +132,11 @@ export function personaPiece(cv: SplitCv): Piece<PersonaValue> {
 // "Anschrift : Hamburg, Deutschland LinkedIn : ..." gives "Hamburg, Deutschland".
 export function locationFromText(t: string): string {
   const m = /(?:Anschrift|Adresse|Address|Wohnort|Location|Standort)\s*:\s*(.+?)(?=\s+(?:LinkedIn|Email|E-Mail|Tel\.?|Telefon|Phone|GitHub|Web|Xing)\b|\n|$)/i.exec(t)
-  return (m?.[1] ?? '').trim()
+  if (m?.[1]) return m[1].trim()
+  // "Anschrift Langenfelder Damm 65, 22525 Hamburg": no colon, so only the city after a German postcode is taken (without one the text could be a sentence).
+  const bare = /(?:Anschrift|Adresse|Wohnort)\s+(.+?)(?=\s+(?:LinkedIn|Email|E-Mail|Tel\.?|Telefon|Phone|GitHub|Web|Xing)\b|\n|$)/i.exec(t)
+  const city = bare ? /\b\d{5}\s+(\p{Lu}[\p{L}.-]*(?:\s+\p{Lu}[\p{L}.-]*)*)/u.exec(bare[1]) : null
+  return (city?.[1] ?? '').trim()
 }
 
 function firstSentences(t: string, count: number, max: number): string {
@@ -172,7 +178,7 @@ export function detailsPiece(cv: SplitCv): Piece<DetailsValue> {
     fallback: () => {
       const headline = headlineTitle(cv) ?? cv.jobs[0]?.title ?? ''
       const summary = firstSentences(profileText(cv), 2, 600)
-      if (headline === '' && summary === '') return null
+      if (headline === '' && summary === '' && knownLocation === '') return null
       return { headline, summary, location: knownLocation }
     },
   }
@@ -315,6 +321,38 @@ export function educationFromLines(lines: string[]): EducationEntry[] | null {
   return entries.length > 0 ? entries : null
 }
 
+// "Institution, Place — Degree October 2012 - Juli 2014", or the same with the date range on the line below ("Januar 2022 - Mai 2022"): every entry has its text and
+// its dates, and the text is cut at the dash into the school and the degree. The text after a date range that opens a line (a remark in brackets) is left out. Null when
+// a line does not fit (two lines of text in a row, text at the end with no date), so the model reads it instead.
+export function educationFromDatedLines(lines: string[]): EducationEntry[] | null {
+  const entries: EducationEntry[] = []
+  let pending: string | null = null
+  const entryOf = (text: string, d: { start: string; end: string }): EducationEntry => {
+    const parts = text.split(/\s[—–]\s/)
+    const school = parts.length === 2 ? (parts[0] ?? '').trim() : ''
+    const degree = (parts.length === 2 ? (parts[1] ?? '') : text).trim()
+    return { institution: school === '' ? 'Not stated' : school, degree, fieldOfStudy: '', startDate: d.start, endDate: d.end }
+  }
+  for (const line of lines.map((l) => l.trim()).filter((l) => l !== '')) {
+    const d = findDateRange(line)
+    if (!d) {
+      if (pending !== null) return null
+      pending = line
+      continue
+    }
+    const before = line.slice(0, d.index).trim()
+    if (before !== '') {
+      if (pending !== null) return null
+      entries.push(entryOf(before, d))
+    } else {
+      if (pending === null) return null
+      entries.push(entryOf(pending, d))
+      pending = null
+    }
+  }
+  return pending === null && entries.length > 0 ? entries : null
+}
+
 export function educationText(cv: SplitCv): string {
   return cv.sections.filter((s) => s.kind === 'education').flatMap((s) => s.lines).join('\n')
 }
@@ -350,6 +388,9 @@ export function educationPiece(cv: SplitCv): Piece<EducationEntry[]> {
       }
       return ok(entries.slice(0, 10))
     },
-    fallback: () => educationFromLines(educationText(cv).split('\n')),
+    fallback: () => {
+      const lines = educationText(cv).split('\n')
+      return educationFromLines(lines) ?? educationFromDatedLines(lines)
+    },
   }
 }
