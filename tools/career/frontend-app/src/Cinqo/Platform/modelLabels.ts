@@ -16,13 +16,18 @@ export function modelLabel(platform: Pick<Platform, 'modelNames'>, id: string): 
   return name !== undefined && name.trim() !== '' ? name : id
 }
 
+// The model's name without the download size the core's catalog appends ("Phi-4-mini-instruct, 2.3 GiB" -> "Phi-4-mini-instruct"): for chips and
+// lines that say which model runs. The pickers keep the size, it helps when choosing a model to download or switch to.
+export function modelLabelNoSize(platform: Pick<Platform, 'modelNames'>, id: string): string {
+  return modelLabel(platform, id).replace(/,\s*[\d.,]+\s*(?:[KMGT]i?B)\s*$/i, '')
+}
+
 export function modelOptions(platform: Pick<Platform, 'models' | 'modelNames'>): { value: string; label: string }[] {
   return platform.models.map((m) => ({ value: m, label: modelLabel(platform, m) }))
 }
 
 // The note under the model picker of the local platform: it says what switching does and where more models come from.
-export const LOCAL_MODEL_NOTE =
-  'One local model runs at a time; switching takes a few seconds. Only models downloaded in Cinqo are listed.'
+export const LOCAL_MODEL_NOTE = 'One local model runs at a time; switching takes a few seconds. Only models downloaded in Cinqo are listed.'
 
 export function showsLocalModelNote(platform: Pick<Platform, 'id'> | null | undefined): boolean {
   return platform?.id === LOCAL_PLATFORM_ID
@@ -33,7 +38,11 @@ export const CV_IMPORT_TASK = 'cv-import'
 
 // Whether the platform says this model was measured not to manage the task. Unknown (a platform that flags nothing, an older core) is
 // never "unsuitable".
-export function isUnsuitableFor(platform: Pick<Platform, 'unsuitableFor'> | null | undefined, model: string | null | undefined, task: string): boolean {
+export function isUnsuitableFor(
+  platform: Pick<Platform, 'unsuitableFor'> | null | undefined,
+  model: string | null | undefined,
+  task: string,
+): boolean {
   if (!platform || !model) return false
   return platform.unsuitableFor?.[model]?.includes(task) === true
 }

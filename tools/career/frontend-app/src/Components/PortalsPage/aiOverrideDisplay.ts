@@ -2,7 +2,7 @@
 // (no React), so it can be script-checked. The fields of an override are optional
 // because a record can arrive without them; that reads as "none set".
 import type { AiOverride, CrawlAiChoice } from '../../Cinqo/Platform/crawlAiChoice'
-import { modelLabel } from '../../Cinqo/Platform/modelLabels'
+import { modelLabelNoSize } from '../../Cinqo/Platform/modelLabels'
 import type { Platform } from '../../Cinqo/Platform/platformRepository'
 
 export interface AiChip {
@@ -24,13 +24,13 @@ export function aiChip(
   const platform = platforms.find((p) => p.id === platformId)
   if (!platform) return { text: 'AI: platform not available', kind: 'stale' }
   const model = (override?.model ?? '').trim()
-  return { text: model === '' ? `AI: ${platform.name}` : `AI: ${platform.name} · ${modelLabel(platform, model)}`, kind: 'set' }
+  return { text: model === '' ? `AI: ${platform.name}` : `AI: ${platform.name} · ${modelLabelNoSize(platform, model)}`, kind: 'set' }
 }
 
 // "OpenRouter · model" for a resolved choice, or a plain sentence when there is none.
 export function choiceText(platform: Platform | null, model: string | null): string {
   if (!platform) return 'no AI platform is available'
-  return model === null || model === '' ? platform.name : `${platform.name} · ${modelLabel(platform, model)}`
+  return model === null || model === '' ? platform.name : `${platform.name} · ${modelLabelNoSize(platform, model)}`
 }
 
 // A portal or link as the backend sends it carries its choice as aiPlatformId and aiModel;

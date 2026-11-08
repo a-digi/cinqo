@@ -47,9 +47,11 @@ export function crawlAiAdvice(input: {
   choice: CrawlAiChoice
   // linkInstructionFailures of the link.
   failures: number
+  // The link is instructed (both instruction sets stored, the "Instructed" pill): the advice is about getting instructions written, so there is none.
+  instructed: boolean
 }): CrawlAiAdvice | null {
-  const { usable, keysKnown, choice, failures } = input
-  if (!choice.platform) return null
+  const { usable, keysKnown, choice, failures, instructed } = input
+  if (instructed || !choice.platform) return null
   const premium = keysKnown ? usable.find((p) => p.requiresKey !== false && p.models.length > 0) : undefined
   const effectiveIsLocal = choice.platform.id === LOCAL_PLATFORM_ID
   const usingQwen = effectiveIsLocal && choice.model === RECOMMENDED_LOCAL_CRAWL_MODEL

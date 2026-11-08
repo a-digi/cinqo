@@ -36,6 +36,8 @@ import { loginAddressForSave } from '../../Crawler/loginWindow'
 import { JOBS_PATH, VIEW_PLATFORM_PATH } from '../../paths'
 import { AppLink } from '../../Shared/AppLink/AppLink'
 import { CrawlEngineProvider } from '../../Crawler/CrawlEngineProvider'
+import { engineForLink } from '../../Crawler/crawlEngine'
+import { instructionState } from '../../Crawler/instructionStats'
 import { useCrawlEngine } from '../../Crawler/useCrawlEngine'
 
 // Portals are tool-wide, not persona/profile-scoped — same reasoning
@@ -118,6 +120,7 @@ function PortalsPageContent() {
       keysKnown: ai.keysKnown,
       choice: crawlAiFor(portal, link),
       failures: linkInstructionFailures(link),
+      instructed: instructionState(link, false, false, engineForLink(link, engine)) === 'instructed',
     })
   }
 
