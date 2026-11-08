@@ -45,11 +45,17 @@ const asObject = (parsed: unknown): Record<string, unknown> | null => {
 
 // --- the name -----------------------------------------------------------------------------------------------------------------------
 
+// A name written all in capitals ("XHENI TAFA") is written as a name: "Xheni Tafa". A name that already has lower-case letters is left as it is.
+function titleCaseIfShouted(name: string): string {
+  if (name !== name.toLocaleUpperCase()) return name
+  return name.toLocaleLowerCase().replace(/(^|[\s'-])(\p{L})/gu, (_m, before: string, letter: string) => before + letter.toLocaleUpperCase())
+}
+
 // The person's name read from the top lines: the first line of two to four words that are only letters (a name has no digit, no @, no colon).
 export function nameFromHeader(header: string[]): string | null {
   for (const line of header) {
     const t = line.trim()
-    if (/^\p{Lu}[\p{L}'.-]*(?:\s+\p{Lu}[\p{L}'.-]*){1,3}$/u.test(t)) return t
+    if (/^\p{Lu}[\p{L}'.-]*(?:\s+\p{Lu}[\p{L}'.-]*){1,3}$/u.test(t)) return titleCaseIfShouted(t)
   }
   return null
 }

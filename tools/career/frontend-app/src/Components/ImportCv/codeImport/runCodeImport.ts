@@ -51,6 +51,8 @@ export async function prepareCodeImport(readText: () => Promise<string>): Promis
   const cv = splitCv(text)
   if (!cv.usable) return { ok: false, reason: 'the CV has no heading the code knows (profile, skills, experience or education)' }
   if (cv.jobs.length === 0 && skillsText(cv).trim() === '') return { ok: false, reason: 'the code found neither jobs nor skills in the CV' }
+  // A job whose header line the code could not find would be stored as "Not stated": better the step-by-step import than a proposal with holes.
+  if (cv.jobs.some((j) => j.header === '')) return { ok: false, reason: 'the code could not tell the header line (company and title) of every job' }
   return { ok: true, cv }
 }
 

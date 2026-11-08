@@ -53,19 +53,53 @@ const HEADINGS: Record<Exclude<SectionKind, 'other'>, string[]> = {
   ],
   experience: [
     'berufserfahrung', 'work experience', 'experience', 'professional experience', 'beruflicher werdegang', 'werdegang', 'employment history',
-    'work history', 'career history', 'berufliche erfahrung', 'praxiserfahrung',
+    'work history', 'career history', 'berufliche erfahrung', 'praxiserfahrung', 'berufserfahrungen', 'berufliche erfahrungen', 'berufspraxis',
   ],
   education: [
     'ausbildung', 'education', 'studium', 'abschlüsse', 'qualifikationen', 'bildung', 'akademischer werdegang', 'schulbildung', 'weiterbildung',
-    'zertifikate', 'certifications', 'certificates', 'zertifizierungen', 'kurse', 'education and training', 'ausbildung und weiterbildung',
+    'zertifikate', 'certifications', 'certificates', 'zertifizierungen', 'kurse', 'education and training', 'ausbildung und weiterbildung', 'bildungsweg',
+    'ausbildungen', 'akademische ausbildung', 'schulische ausbildung',
   ],
   languages: ['sprachen', 'languages', 'sprachkenntnisse'],
 }
-const OTHER_HEADINGS = ['projekte', 'projects', 'interessen', 'interests', 'hobbies', 'hobbys', 'publikationen', 'publications', 'referenzen', 'references', 'ehrenamt', 'volunteering', 'auszeichnungen', 'awards']
+const OTHER_HEADINGS = ['persönliche daten', 'personal details', 'sonstiges', 'projekte', 'projects', 'interessen', 'interests', 'hobbies', 'hobbys', 'publikationen', 'publications', 'referenzen', 'references', 'ehrenamt', 'volunteering', 'auszeichnungen', 'awards']
 
 const HEADING_KIND = new Map<string, SectionKind>()
 for (const [kind, words] of Object.entries(HEADINGS)) for (const w of words) HEADING_KIND.set(w, kind as SectionKind)
 for (const w of OTHER_HEADINGS) HEADING_KIND.set(w, 'other')
+
+// The name of the document itself, on a line of its own above everything: not a section and not part of the person's own lines.
+const TITLE_LINES = new Set(['lebenslauf', 'curriculum vitae', 'cv', 'resume', 'résumé', 'bewerbung', 'tabellarischer lebenslauf'])
+
+export function isTitleLine(line: string): boolean {
+  return TITLE_LINES.has(line.toLowerCase().replace(/[:·|]+\s*$/, '').replace(/^[^a-zäöüéß]+|[^a-zäöüéß]+$/g, '').trim())
+}
+
+const escapeRegex = (k: string): string => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+// A heading that a two-column layout left in the middle of a line ("... Junii 2006 KENNTNISSE Microsoft Excel ... HOBBIES"). Only a known heading written
+// in capitals counts, with letters on neither side, so ordinary text is never cut.
+const INLINE_HEADING = new RegExp(
+  `(?<![\\p{L}\\p{N}])(${[...HEADING_KIND.keys()]
+    .map((k) => k.toLocaleUpperCase('de'))
+    .sort((a, b) => b.length - a.length)
+    .map(escapeRegex)
+    .join('|')})(?![\\p{L}\\p{N}])`,
+  'gu',
+)
+
+// The line cut at every capitals heading inside it: the text before, the heading, the text after. A line with none inside (a heading line has nothing around it) stays one.
+export function splitInlineHeadings(line: string): string[] {
+  const parts: string[] = []
+  let from = 0
+  for (const m of line.matchAll(INLINE_HEADING)) {
+    parts.push(line.slice(from, m.index), m[1])
+    from = m.index + m[1].length
+  }
+  if (parts.length === 0) return [line]
+  parts.push(line.slice(from))
+  return parts.map((part) => part.trim()).filter((part) => part !== '')
+}
 
 const BULLET_CHARS = '●•▪◦○■◆▶'
 const BULLET = new RegExp(`[${BULLET_CHARS}]`)
@@ -135,9 +169,17 @@ interface Block {
   lines: string[]
 }
 
+// "November 2022 -": a range that stops at the dash is a job that goes on.
+const OPEN_RANGE = new RegExp(String.raw`(?<![\w])(?<start>${DATE_PART})\s*[-–—]\s*$`, 'i')
+
 function dateOf(line: string): { index: number; length: number; start: string; end: string; current: boolean } | null {
   const m = DATE_RANGE.exec(line)
-  if (!m?.groups || m.index > 140) return null
+  if (!m) {
+    const open = OPEN_RANGE.exec(line)
+    const start = open?.groups ? parseCvDate(open.groups.start) : ''
+    return open && start !== '' && open.index <= 140 ? { index: open.index, length: open[0].length, start, end: '', current: true } : null
+  }
+  if (!m.groups || m.index > 140) return null
   const start = parseCvDate(m.groups.start)
   if (start === '') return null
   const endText = m.groups.end.trim()
@@ -147,29 +189,45 @@ function dateOf(line: string): { index: number; length: number; start: string; e
   return { index: m.index, length: m[0].length, start, end, current }
 }
 
-// The experience lines cut into one block per job. A job starts on the line with its date range: when the line holds the company and title
-// before the date, that is the header; when the date opens the line, the line before is.
+// The experience lines cut into one block per job. A job starts on the line with its date range. Where its header is:
+//  - on the same line, before the date ("Statista GmbH Team Lead 07/2020 - 04/2024");
+//  - on the line above, when the date opens the line;
+//  - at the end of the line of the date above, when a layout puts every date under its own header and the next header after it
+//    ("Mai 2015. Privatschule TALENTI ..."): the text after a date is then the header of the next job, not text of this one.
 function jobBlocks(lines: string[]): Block[] {
-  const starts: { line: number; headerLine: number; date: NonNullable<ReturnType<typeof dateOf>> }[] = []
+  interface Start {
+    line: number
+    headerLine: number
+    date: NonNullable<ReturnType<typeof dateOf>>
+    fromRemainder: boolean
+  }
+  const starts: Start[] = []
+  const remainderOf = (st: Start): string => (lines[st.line] ?? '').slice(st.date.index + st.date.length).replace(/^[.,;:\s–—-]+/, '').trim()
   lines.forEach((line, i) => {
     const date = dateOf(line)
     if (!date) return
     const before = line.slice(0, date.index).trim()
     if (before !== '' && !BULLET.test(before) && before.length <= 140) {
-      starts.push({ line: i, headerLine: i, date })
+      starts.push({ line: i, headerLine: i, date, fromRemainder: false })
       return
     }
     if (before === '') {
       const prev = i > 0 ? lines[i - 1] : ''
-      const usable = prev !== '' && !BULLET.test(prev) && prev.length <= 140 && !dateOf(prev)
-      starts.push({ line: i, headerLine: usable ? i - 1 : i, date })
+      const standalone = prev !== '' && !BULLET.test(prev) && prev.length <= 140 && !dateOf(prev)
+      const last = starts.length > 0 ? starts[starts.length - 1] : undefined
+      const carried = last?.line === i - 1 ? remainderOf(last) : ''
+      if (standalone) starts.push({ line: i, headerLine: i - 1, date, fromRemainder: false })
+      else if (carried !== '' && !BULLET.test(carried) && carried.length <= 140) starts.push({ line: i, headerLine: i, date, fromRemainder: true })
+      else starts.push({ line: i, headerLine: i, date, fromRemainder: false })
     }
   })
   return starts.map((s, k) => {
     const end = k + 1 < starts.length ? starts[k + 1].headerLine : lines.length
     const line = lines[s.line]
-    const header = s.headerLine === s.line ? line.slice(0, s.date.index).trim() : lines[s.headerLine].trim()
-    const rest = line.slice(s.date.index + s.date.length)
+    let header = s.headerLine === s.line ? line.slice(0, s.date.index).trim() : lines[s.headerLine].trim()
+    if (s.fromRemainder) header = remainderOf(starts[k - 1])
+    const nextTakesTheRest = k + 1 < starts.length && starts[k + 1].fromRemainder
+    const rest = nextTakesTheRest ? '' : line.slice(s.date.index + s.date.length)
     return { header, startDate: s.date.start, endDate: s.date.end, current: s.date.current, lines: [rest, ...lines.slice(s.line + 1, end)] }
   })
 }
@@ -211,7 +269,7 @@ function readBlock(block: Block): Pick<CvJob, 'intro' | 'bullets' | 'stray' | 't
         if (lead !== '' && lead.split(/\s+/).length <= 6 && !/[.!?]$/.test(lead) && BULLET.test(raw)) raw = raw.slice(lead.length)
       }
     }
-    if (raw === '') continue
+    if (!/[\p{L}\p{N}]/u.test(raw)) continue // nothing but punctuation (the full stop that ended a date line) is no text
     if (state.techNext) {
       technologies = raw
       state.techNext = false
@@ -259,10 +317,12 @@ export function splitCv(text: string): SplitCv {
     .split(/\r?\n/)
     .map((l) => l.trim())
     .filter((l) => l !== '')
+    .flatMap(splitInlineHeadings)
   const header: string[] = []
   const sections: CvSection[] = []
   let current: CvSection | null = null
   for (const line of lines) {
+    if (current === null && header.length === 0 && isTitleLine(line)) continue // "LEBENSLAUF" on top is the document's name, not the person's
     const kind = headingKind(line)
     if (kind !== null) {
       current = { kind, heading: line, lines: [] }
