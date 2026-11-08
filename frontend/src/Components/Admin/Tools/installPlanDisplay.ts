@@ -1,4 +1,12 @@
-import type { DoneStep, InstallPlan, InstallPlanProblem, InstallPlanStep, InstallRun, PlanMark } from '../../../api/toolRepositories'
+import type {
+  DoneStep,
+  InstallPlan,
+  InstallPlanAlternative,
+  InstallPlanProblem,
+  InstallPlanStep,
+  InstallRun,
+  PlanMark,
+} from '../../../api/toolRepositories'
 
 // Pure display rules of the install-with-dependencies dialog (plan/ai/tools/repository/dependency-install.md, step 7), kept apart from React so they
 // can be script-checked.
@@ -99,4 +107,9 @@ export function runText(run: InstallRun): string {
     default:
       return ''
   }
+}
+
+// The offer made when an installed tool holds the requested one back: update that tool instead, and the requested one comes along.
+export function alternativeText(a: InstallPlanAlternative): string {
+  return `Update ${a.name} to v${a.version} instead: that version works with the newer ${a.forToolId}, and brings it along.`
 }

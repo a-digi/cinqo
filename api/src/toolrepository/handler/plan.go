@@ -61,6 +61,8 @@ type planResponse struct {
 	Searched   []planSearchedResponse `json:"searched"`
 	// Confirm lists the steps as the install route must be given them back ("action:tool@version:repository"): the install does only what was confirmed.
 	Confirm []string `json:"confirm"`
+	// Alternatives are other tools to update instead when this one is held back by an installed tool (plan step 10).
+	Alternatives []planAlternative `json:"alternatives"`
 }
 
 // InstallPlanHandler handles POST /api/v1/tool-repositories/{id}/tools/{toolId}/install-plan: the read-only preview of installing or updating a tool
@@ -90,7 +92,11 @@ func InstallPlanHandler(reqCtx request.RequestContext) {
 		fail(w, err)
 		return
 	}
-	response.SuccessResponse(w, http.StatusOK, toPlanResponse(plan))
+	pr := toPlanResponse(plan)
+	if !plan.OK {
+		pr.Alternatives = cascadeAlternatives(reqCtx, plan, installed, env, reqCtx.GetURI().GetPathVariable("id"))
+	}
+	response.SuccessResponse(w, http.StatusOK, pr)
 }
 
 // installedForPlan describes every installed tool the way the resolver needs it: its version, whether it is enabled and running, where it came from,
@@ -125,7 +131,7 @@ func installedForPlan(db *sql.DB) ([]resolver.InstalledTool, error) {
 }
 
 func toPlanResponse(p *resolver.Plan) planResponse {
-	out := planResponse{OK: p.OK, Steps: []planStepResponse{}, Problems: []planProblemResponse{}, Searched: []planSearchedResponse{}, Confirm: confirmList(p)}
+	out := planResponse{OK: p.OK, Steps: []planStepResponse{}, Problems: []planProblemResponse{}, Searched: []planSearchedResponse{}, Confirm: confirmList(p), Alternatives: []planAlternative{}}
 	for _, s := range p.Steps {
 		marks := make([]string, 0, len(s.Marks))
 		for _, m := range s.Marks {

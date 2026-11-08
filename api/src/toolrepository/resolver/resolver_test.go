@@ -650,3 +650,16 @@ func TestStepsCarryTheAuthorsAndTheLicence(t *testing.T) {
 		t.Fatalf("nothing is invented: %+v", c)
 	}
 }
+
+// S6 also holds for the tool that was asked for: updating Browser directly, past what an installed Career works with, is blocked, naming Career.
+func TestUpdatingTheRequestedToolPastWhatAnInstalledToolWorksWithIsBlocked(t *testing.T) {
+	src := repo("main", "Main", tl("browser", ver("2.0.0")))
+	career := installed("career", "1.0.0").needs(req("browser", "1.0.0", "1.5.0"))
+	p := mustPlan(t, ask("browser", []Source{src}, installed("browser", "1.0.0"), career), "!would_break_installed(browser)")
+	if m := problemOf(p, "browser").Message; !strings.Contains(m, "career") || !strings.Contains(m, "updating") || !strings.Contains(m, "1.0.0 to 1.5.0") {
+		t.Fatal(m)
+	}
+	// inside the range it is fine, and it still lists the dependents
+	ok := repo("main", "Main", tl("browser", ver("1.4.0")))
+	mustPlan(t, ask("browser", []Source{ok}, installed("browser", "1.0.0"), career), "browser:update@1.4.0")
+}

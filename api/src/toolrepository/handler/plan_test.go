@@ -454,3 +454,45 @@ func TestTheRepositoryDetailListsWhatEachToolNeeds(t *testing.T) {
 		t.Fatalf("a tool that needs nothing has an empty list: %v", byID["browser"]["requires"])
 	}
 }
+
+// Plan dependency-install, step 10: when an installed tool pins the one to update, the preview offers the tool that makes room: the dependent's newer
+// version, whose own plan brings the blocked tool along. Offered only when that really is the case.
+func TestABlockedUpdateOffersTheNewerDependentThatMakesRoom(t *testing.T) {
+	pinned := tool_entity.ToolRequiredTool{ToolID: "id-career", RequiredSlug: "browser", MinVersion: "1.0.0", MaxVersion: "1.5.0"}
+	setup := func(careerRequires string) (*env, string) {
+		e, srv := newEnv(t), newCountingServer(t)
+		e.installRow(t, "browser", "1.0.0", true, "running", "")
+		e.installRow(t, "career", "1.0.0", true, "running", "", pinned)
+		srv.files["/main.json"] = planFile("Main", planTool("browser", "2.0.0", "", 100), planTool("career", "2.0.0", careerRequires, 100))
+		return e, addRepo(t, e, srv.srv.URL+"/main.json")
+	}
+
+	e, id := setup(`[{"id":"browser","minVersion":"2.0.0"}]`)
+	code, out := e.plan(id, "browser", "")
+	p := planOf(out)
+	alts, _ := p["alternatives"].([]any)
+	if code != http.StatusOK || p["ok"] != false || len(alts) != 1 {
+		t.Fatalf("%d %v", code, p)
+	}
+	a := alts[0].(map[string]any)
+	if a["toolId"] != "career" || a["forToolId"] != "browser" || a["version"] != "2.0.0" || a["repositoryId"] != id || a["versionId"] == "" {
+		t.Fatalf("%v", a)
+	}
+	// the alternative is a real plan: updating Career brings Browser along
+	_, out = e.plan(a["repositoryId"].(string), "career", "")
+	if stepIDs(out) != "browser:update@2.0.0 career:update@2.0.0" {
+		t.Fatalf("%s", stepIDs(out))
+	}
+
+	// a newer Career that still pins Browser makes no room: nothing is offered
+	e, id = setup(`[{"id":"browser","maxVersion":"1.5.0"}]`)
+	_, out = e.plan(id, "browser", "")
+	if alts, _ = planOf(out)["alternatives"].([]any); len(alts) != 0 || planOf(out)["ok"] != false {
+		t.Fatalf("%v", planOf(out))
+	}
+	// a plan that works has none
+	_, out = e.plan(id, "career", "")
+	if alts, _ = planOf(out)["alternatives"].([]any); alts == nil || len(alts) != 0 {
+		t.Fatalf("a list, never null: %v", planOf(out)["alternatives"])
+	}
+}

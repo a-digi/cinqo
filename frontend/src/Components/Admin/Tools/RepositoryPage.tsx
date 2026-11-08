@@ -6,6 +6,7 @@ import {
   installFromRepository,
   installWithDependencies,
   type InstallPlan,
+  type InstallPlanAlternative,
   refreshRepository,
   removeRepository,
   type RepositoryTool,
@@ -58,7 +59,13 @@ export function RepositoryPage() {
   const [installedTools, setInstalledTools] = useState<Tool[]>([])
   const { confirm, dialog } = useConfirm()
   // The install with the tools it needs: the plan being confirmed, and why it is shown (again).
-  const [planDialog, setPlanDialog] = useState<{ tool: RepositoryTool; plan: InstallPlan; notice?: string; working: boolean } | null>(null)
+  const [planDialog, setPlanDialog] = useState<{
+    repoId: string
+    toolId: string
+    plan: InstallPlan
+    notice?: string
+    working: boolean
+  } | null>(null)
 
   // A never-fetched repository (the built-in one, opened directly) is loaded once.
   const autoLoaded = useRef(false)
@@ -148,7 +155,7 @@ export function RepositoryPage() {
     setBusy(false)
     // More than one step, a mark or a problem: the list is shown. One plain step keeps the plain question.
     if (!isSimple(plan)) {
-      setPlanDialog({ tool, plan, working: false })
+      setPlanDialog({ repoId: id, toolId: tool.id, plan, working: false })
       return
     }
     const ok = await confirm({
@@ -169,12 +176,25 @@ export function RepositoryPage() {
     }
   }
 
-  const handlePlanConfirm = async () => {
+  // The person prefers to update the tool that holds the requested one back: its own plan is shown instead (and is confirmed like any other).
+  const handleAlternative = async (alt: InstallPlanAlternative) => {
     if (!planDialog) return
-    const { tool, plan } = planDialog
     setPlanDialog({ ...planDialog, working: true })
     try {
-      const run = await installWithDependencies(id, tool.id, plan.confirm)
+      const plan = await fetchInstallPlan(alt.repositoryId, alt.toolId)
+      setPlanDialog({ repoId: alt.repositoryId, toolId: alt.toolId, plan, working: false })
+    } catch (err) {
+      setPlanDialog(null)
+      setError(errorText(err, 'Failed to check what this needs.'))
+    }
+  }
+
+  const handlePlanConfirm = async () => {
+    if (!planDialog) return
+    const { repoId, toolId, plan } = planDialog
+    setPlanDialog({ ...planDialog, working: true })
+    try {
+      const run = await installWithDependencies(repoId, toolId, plan.confirm)
       if (run.ok) {
         setPlanDialog(null)
         reloadAfterToolChange()
@@ -191,7 +211,7 @@ export function RepositoryPage() {
         return
       }
       // blocked or changed: the new plan is shown, to be looked at again
-      setPlanDialog({ tool, plan: run.plan ?? plan, notice: runText(run), working: false })
+      setPlanDialog({ repoId, toolId, plan: run.plan ?? plan, notice: runText(run), working: false })
     } catch (err) {
       setPlanDialog(null)
       setError(errorText(err, 'Failed to install.'))
@@ -377,7 +397,7 @@ export function RepositoryPage() {
       {planDialog && (
         <InstallPlanDialog
           plan={planDialog.plan}
-          rootToolId={planDialog.tool.id}
+          rootToolId={planDialog.toolId}
           notice={planDialog.notice}
           working={planDialog.working}
           onConfirm={() => {
@@ -385,6 +405,9 @@ export function RepositoryPage() {
           }}
           onCancel={() => {
             setPlanDialog(null)
+          }}
+          onUseAlternative={(alt) => {
+            void handleAlternative(alt)
           }}
         />
       )}

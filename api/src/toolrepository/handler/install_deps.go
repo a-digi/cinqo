@@ -82,6 +82,7 @@ func installWithDependencies(reqCtx request.RequestContext, body installRequest)
 	}
 	pr := toPlanResponse(&verified.Plan)
 	if !verified.Plan.OK {
+		pr.Alternatives = cascadeAlternatives(reqCtx, &verified.Plan, installed, env, repoID)
 		response.SuccessResponse(w, http.StatusConflict, runResult{Code: "plan_blocked", Message: "this cannot be installed: see the problems", Installed: []doneStep{}, NotDone: []doneStep{}, Plan: &pr})
 		return
 	}

@@ -143,6 +143,18 @@ export interface InstallPlan {
   searched: { id: string; name: string; stale: boolean; refreshedAt: string }[]
   // The steps as the install must be given them back to prove the person saw them.
   confirm: string[]
+  // Other tools to update instead when an installed tool holds this one back (plan step 10).
+  alternatives: InstallPlanAlternative[]
+}
+
+export interface InstallPlanAlternative {
+  forToolId: string
+  toolId: string
+  name: string
+  version: string
+  versionId: string
+  repositoryId: string
+  repositoryName: string
 }
 
 export interface DoneStep {

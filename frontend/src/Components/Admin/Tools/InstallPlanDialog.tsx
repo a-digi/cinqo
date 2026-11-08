@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import type { InstallPlan } from '../../../api/toolRepositories'
+import type { InstallPlan, InstallPlanAlternative } from '../../../api/toolRepositories'
 import { Pill } from '../../../Shared/Components/Pill/Pill'
-import { canConfirm, markText, needsTick, problemTitle, sizeText, stepReason, stepTitle } from './installPlanDisplay'
+import { alternativeText, canConfirm, markText, needsTick, problemTitle, sizeText, stepReason, stepTitle } from './installPlanDisplay'
 
 export interface InstallPlanDialogProps {
   plan: InstallPlan
@@ -12,11 +12,13 @@ export interface InstallPlanDialogProps {
   working: boolean
   onConfirm: () => void
   onCancel: () => void
+  // Chosen when the person prefers to update another tool, which makes room for this one.
+  onUseAlternative?: (alternative: InstallPlanAlternative) => void
 }
 
 // The confirmation of an install or update together with the tools it needs: the ordered steps, who made them and where they come from, one tick for
 // each tool from another repository, and the problems that stop the whole thing. Drawn on document.body like every other modal.
-export function InstallPlanDialog({ plan, rootToolId, notice, working, onConfirm, onCancel }: InstallPlanDialogProps) {
+export function InstallPlanDialog({ plan, rootToolId, notice, working, onConfirm, onCancel, onUseAlternative }: InstallPlanDialogProps) {
   const [ticked, setTicked] = useState<Set<string>>(new Set())
   // A different plan (it changed while it was checked) must be ticked again.
   useEffect(() => {
@@ -60,6 +62,22 @@ export function InstallPlanDialog({ plan, rootToolId, notice, working, onConfirm
               ))}
             </ul>
           )}
+          {onUseAlternative &&
+            plan.alternatives.map((alt) => (
+              <div key={alt.toolId} className="rounded-xl bg-blue-50 px-3 py-2.5 text-sm text-blue-900">
+                <p>{alternativeText(alt)}</p>
+                <button
+                  type="button"
+                  disabled={working}
+                  onClick={() => {
+                    onUseAlternative(alt)
+                  }}
+                  className="mt-2 rounded-md bg-blue-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-800 disabled:opacity-50"
+                >
+                  Look at updating {alt.name}
+                </button>
+              </div>
+            ))}
           {plan.steps.length > 0 && (
             <>
               <p className="text-sm text-gray-600">

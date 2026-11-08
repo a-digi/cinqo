@@ -68,6 +68,18 @@ func Resolve(in Input) Plan {
 				Message: fmt.Sprintf("%s needs %s %s, but %s %s would be installed", c.by, root.id, rangeText(c.min, c.max), root.id, root.cand.ver.Version)})
 		}
 	}
+	// S6 for the tool that was asked for: an installed tool outside the plan that works with it only in a range the chosen version is not in (the
+	// other tools of a plan are checked the same way when they are decided)
+	if root.cand != nil {
+		if rejected := rejecters(root.id, root.cand.ver.Version, r.installedDependents(root.id, planSet(decisions))); len(rejected) > 0 {
+			action := "installing"
+			if r.installed[root.id] != nil {
+				action = "updating"
+			}
+			problems = append(problems, Problem{ToolID: root.id, Kind: ProblemWouldBreakInstalled,
+				Message: fmt.Sprintf("%s %s to %s would leave %s: update that tool first, if a newer version supports it", action, root.id, root.cand.ver.Version, strings.Join(rejected, " and "))})
+		}
+	}
 	for _, d := range decisions {
 		problems = append(problems, d.problems...)
 	}
