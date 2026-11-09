@@ -2,7 +2,7 @@ import { useAuth } from '../Components/Auth/AuthContext'
 import { formatBytes } from '../Shared/Components/Terminal/terminalRules'
 import { UnloadControl } from './UnloadControl'
 import { canUnload, isUnloadable } from './agentUnload'
-import { AlertIcon, BotIcon, CheckIcon, EjectIcon, CpuIcon, CubeIcon, DiskIcon, LaptopIcon, MemoryIcon, SwapIcon } from './ResourceIcons'
+import { AlertIcon, BotIcon, CheckIcon, PowerIcon, CpuIcon, CubeIcon, DiskIcon, LaptopIcon, MemoryIcon, SwapIcon } from './ResourceIcons'
 import { agentView, deviceText, pillText, pillTitle, resourceLevel, usedPercent, type AgentTone, type ResourceLevel } from './resourceLevel'
 import { useFlash, useTweenedResources } from './tween'
 import { useResources } from './useResources'
@@ -115,7 +115,15 @@ function AgentChip({ tone, text, watch, unload }: { tone: AgentTone; text: strin
       <BotIcon />
       <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${AGENT[tone].dot}`} />
       <span className="max-md:hidden">{text}</span>
-      {unload && <EjectIcon />}
+      {unload && (
+        <span
+          aria-hidden="true"
+          data-testid="unload-badge"
+          className="-mr-1 ml-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-red-600 text-white shadow-sm ring-1 ring-red-700/30"
+        >
+          <PowerIcon />
+        </span>
+      )}
     </>
   )
   if (unload) {

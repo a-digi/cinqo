@@ -82,8 +82,17 @@ export const CheckIcon = (p: IconProps) => (
   </Svg>
 )
 
-export const EjectIcon = (p: IconProps) => (
-  <Svg {...p} className={p.className ?? 'h-3 w-3 opacity-70'}>
-    <path d="M10 4.5 16 11H4l6-6.5ZM4.5 14.5h11" />
-  </Svg>
+// The power symbol: a circle open at the top with a short line through the gap. Drawn thicker than the other icons so it reads at 12 px.
+export const PowerIcon = (p: IconProps) => (
+  <svg
+    viewBox="0 0 20 20"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.2"
+    strokeLinecap="round"
+    aria-hidden="true"
+    className={p.className ?? 'h-3 w-3'}
+  >
+    <path d="M10 3v6.5M5.9 5.6a6 6 0 1 0 8.2 0" />
+  </svg>
 )
