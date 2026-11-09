@@ -1,5 +1,8 @@
+import { useAuth } from '../Components/Auth/AuthContext'
 import { formatBytes } from '../Shared/Components/Terminal/terminalRules'
-import { AlertIcon, BotIcon, CheckIcon, CpuIcon, CubeIcon, DiskIcon, LaptopIcon, MemoryIcon, SwapIcon } from './ResourceIcons'
+import { UnloadControl } from './UnloadControl'
+import { canUnload, isUnloadable } from './agentUnload'
+import { AlertIcon, BotIcon, CheckIcon, EjectIcon, CpuIcon, CubeIcon, DiskIcon, LaptopIcon, MemoryIcon, SwapIcon } from './ResourceIcons'
 import { agentView, deviceText, pillText, pillTitle, resourceLevel, usedPercent, type AgentTone, type ResourceLevel } from './resourceLevel'
 import { useFlash, useTweenedResources } from './tween'
 import { useResources } from './useResources'
@@ -25,6 +28,7 @@ const AGENT: Record<AgentTone, { chip: string; dot: string }> = {
 // local agent is running. Hidden by width with max-* variants (never "hidden" plus a breakpoint: tool stylesheets load their own `.hidden`).
 export function ResourceBar() {
   const state = useResources()
+  const { scopes } = useAuth()
   const shown = useTweenedResources(state.kind === 'ready' ? state.resources : null)
   if (state.kind === 'loading' || state.kind === 'hidden') return null
   if (state.kind === 'unknown' || shown === null) {
@@ -83,7 +87,12 @@ export function ResourceBar() {
         )}
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        <AgentChip tone={agent.tone} text={agent.text} watch={agentWatch} />
+        <AgentChip
+          tone={agent.tone}
+          text={agent.text}
+          watch={agentWatch}
+          unload={canUnload(scopes) && isUnloadable(agent.tone) ? { name: r.agents.find((a) => a.kind === 'local-ai')?.name ?? '' } : null}
+        />
         <Pill level={level} text={pillText(r, level)} watch={pillText(real, level)} title={pillTitle(r)} />
       </div>
     </Shell>
@@ -97,18 +106,28 @@ const GAUGE: Record<ResourceLevel, string> = {
   red: 'bg-red-500',
 }
 
-function AgentChip({ tone, text, watch }: { tone: AgentTone; text: string; watch: string }) {
+// unload: set when the person may unload and a model is loading, working or idle; the chip is then a button with a confirmation (plan 225).
+function AgentChip({ tone, text, watch, unload }: { tone: AgentTone; text: string; watch: string; unload: { name: string } | null }) {
   const flash = useFlash(watch)
-  return (
-    <span
-      role="group"
-      aria-label={`Local agent: ${text}`}
-      title={text}
-      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset transition-all duration-500 ${AGENT[tone].chip} ${flash ? 'scale-105 shadow-md' : ''}`}
-    >
+  const className = `inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset transition-all duration-500 ${AGENT[tone].chip} ${flash ? 'scale-105 shadow-md' : ''}`
+  const inside = (
+    <>
       <BotIcon />
       <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${AGENT[tone].dot}`} />
       <span className="max-md:hidden">{text}</span>
+      {unload && <EjectIcon />}
+    </>
+  )
+  if (unload) {
+    return (
+      <UnloadControl tone={tone} name={unload.name} label={`Local agent: ${text}. Click to unload.`} className={className}>
+        {inside}
+      </UnloadControl>
+    )
+  }
+  return (
+    <span role="group" aria-label={`Local agent: ${text}`} title={text} className={className}>
+      {inside}
     </span>
   )
 }

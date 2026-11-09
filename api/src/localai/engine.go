@@ -76,6 +76,14 @@ func (managedRuntime) Status() entity.EngineStatus {
 	return managed.Status()
 }
 
+// Unload stops the model program on request. Without a managed engine there is nothing to stop.
+func (managedRuntime) Unload(force bool) entity.UnloadResult {
+	if managed == nil {
+		return entity.UnloadStopped
+	}
+	return managed.Unload(force)
+}
+
 func (managedRuntime) Test(ctx context.Context, modelID string) (entity.TestResult, error) {
 	if managed == nil {
 		return entity.TestResult{Error: errManagedNotBuilt.Error()}, nil

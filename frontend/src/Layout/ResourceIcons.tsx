@@ -81,3 +81,9 @@ export const CheckIcon = (p: IconProps) => (
     <path d="m6.8 10.2 2.2 2.2 4.2-4.6" />
   </Svg>
 )
+
+export const EjectIcon = (p: IconProps) => (
+  <Svg {...p} className={p.className ?? 'h-3 w-3 opacity-70'}>
+    <path d="M10 4.5 16 11H4l6-6.5ZM4.5 14.5h11" />
+  </Svg>
+)

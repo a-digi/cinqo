@@ -272,8 +272,26 @@ func (s *supervisor) idleStop(r *run) {
 }
 
 // Stop stops the program now (and does nothing when it is not running).
-func (s *supervisor) Stop() {
+func (s *supervisor) Stop() { s.stop(false) }
+
+// unload stops the program because a person asked for it (plan 225). A loaded program that a request is using right now is left alone unless force
+// is set: the request would end with the program's "stopped" error. A program that is still loading, idle, failed or not running is stopped without
+// that question (stopping a program that does not run is a no-op, so asking twice is fine). The check and the stop happen under one lock, so a
+// request cannot slip in between.
+func (s *supervisor) unload(force bool) entity.UnloadResult {
+	if !s.stop(!force) {
+		return entity.UnloadInUse
+	}
+	return entity.UnloadStopped
+}
+
+// stop ends the program. With respectBusy it refuses (returns false, stops nothing) while a request is using a loaded program.
+func (s *supervisor) stop(respectBusy bool) bool {
 	s.mu.Lock()
+	if respectBusy && s.state == EngineReady && s.inFlight > 0 {
+		s.mu.Unlock()
+		return false
+	}
 	r := s.cur
 	s.cur = nil
 	s.state = EngineStopped
@@ -287,6 +305,7 @@ func (s *supervisor) Stop() {
 	if r != nil {
 		s.terminate(r)
 	}
+	return true
 }
 
 // startLocked begins a new run. s.mu must be held.

@@ -35,6 +35,8 @@ type Runtime interface {
 	CanUseTools(modelID string) bool
 	Status() entity.EngineStatus
 	Test(ctx context.Context, modelID string) (entity.TestResult, error)
+	// Unload stops the model program because a person asked for it (plan 225); a loaded program a request is using is left alone unless force.
+	Unload(force bool) entity.UnloadResult
 }
 
 // Installs knows what is downloaded and starts and removes downloads.
@@ -69,6 +71,7 @@ func Handlers(runtime Runtime, installs Installs) map[string]routing.HandlerInte
 		"LocalAiInstall":         handlerFunc(a.install),
 		"LocalAiRemoveDownloads": handlerFunc(a.removeDownloads),
 		"LocalAiTest":            handlerFunc(a.test),
+		"LocalAiUnload":          handlerFunc(a.unload),
 		// a tool suggests a model, a person dismisses a suggestion (plan 220)
 		"LocalAiSuggest":           handlerFunc(a.suggest),
 		"LocalAiDismissSuggestion": handlerFunc(a.dismissSuggestion),

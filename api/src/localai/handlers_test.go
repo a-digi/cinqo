@@ -56,14 +56,16 @@ func (f fakeRequest) BindJSON(dest interface{}) error {
 
 // fakeRuntime is a runtime whose answers the tests choose.
 type fakeRuntime struct {
-	err     error
-	status  entity.EngineStatus
-	result  entity.TestResult
-	testErr error
-	asked   *[]string // the model ids CanEnable was asked about
-	tested  *[]string // the model ids Test was asked about
-	ctxs    *[]context.Context
-	during  func(context.Context) // runs inside Test, with the context the handler gave it
+	err      error
+	status   entity.EngineStatus
+	result   entity.TestResult
+	testErr  error
+	asked    *[]string // the model ids CanEnable was asked about
+	tested   *[]string // the model ids Test was asked about
+	ctxs     *[]context.Context
+	during   func(context.Context) // runs inside Test, with the context the handler gave it
+	unloaded *[]bool               // the force flags Unload was called with
+	inUse    bool                  // a conversation is using the model: Unload refuses unless forced
 }
 
 func (f fakeRuntime) CanUseTools(string) bool { return false }
@@ -80,6 +82,16 @@ func (f fakeRuntime) Status() entity.EngineStatus {
 		return entity.EngineStatus{State: entity.EngineStopped}
 	}
 	return f.status
+}
+
+func (f fakeRuntime) Unload(force bool) entity.UnloadResult {
+	if f.unloaded != nil {
+		*f.unloaded = append(*f.unloaded, force)
+	}
+	if f.inUse && !force {
+		return entity.UnloadInUse
+	}
+	return entity.UnloadStopped
 }
 
 func (f fakeRuntime) Test(ctx context.Context, modelID string) (entity.TestResult, error) {
@@ -276,13 +288,13 @@ func TestUpdateRefusesBadInputAndStoresNothing(t *testing.T) {
 
 func TestHandlersAreRegisteredUnderTheNamesOfTheRouteFile(t *testing.T) {
 	h := Handlers()
-	for _, name := range []string{"LocalAiGet", "LocalAiUpdateSettings", "LocalAiInstall", "LocalAiRemoveDownloads", "LocalAiTest", "LocalAiSuggest", "LocalAiDismissSuggestion", "LocalAiInstallModel", "LocalAiRemoveModel"} {
+	for _, name := range []string{"LocalAiGet", "LocalAiUpdateSettings", "LocalAiInstall", "LocalAiRemoveDownloads", "LocalAiTest", "LocalAiUnload", "LocalAiSuggest", "LocalAiDismissSuggestion", "LocalAiInstallModel", "LocalAiRemoveModel"} {
 		if h[name] == nil {
 			t.Errorf("no handler named %s", name)
 		}
 	}
-	if len(h) != 9 {
-		t.Errorf("%d handlers, want 9: a handler without a route is dead code, a route without a handler fails at start", len(h))
+	if len(h) != 10 {
+		t.Errorf("%d handlers, want 10: a handler without a route is dead code, a route without a handler fails at start", len(h))
 	}
 }
 

@@ -7,6 +7,12 @@ export type ResourcesState = { kind: 'loading' } | { kind: 'hidden' } | { kind: 
 
 export const POLL_MS = 2000
 
+// Asks every mounted bar to read the resources now (after an unload, so the chip does not wait for the next poll).
+export const REFRESH_EVENT = 'cinqo:resources-refresh'
+export function refreshResources(): void {
+  window.dispatchEvent(new Event(REFRESH_EVENT))
+}
+
 // Reads the resources every POLL_MS while the tab is visible; a hidden tab does not ask, and asks at once when it is shown again.
 export function useResources(intervalMs: number = POLL_MS): ResourcesState {
   const [state, setState] = useState<ResourcesState>({ kind: 'loading' })
@@ -16,6 +22,7 @@ export function useResources(intervalMs: number = POLL_MS): ResourcesState {
     let timer: ReturnType<typeof setTimeout> | undefined
     let controller: AbortController | undefined
     let running = false
+    let pending = false // a refresh asked for while a read was under way: read again right after it
 
     const schedule = () => {
       if (stopped) return
@@ -39,6 +46,11 @@ export function useResources(intervalMs: number = POLL_MS): ResourcesState {
       } finally {
         running = false
       }
+      if (pending) {
+        pending = false
+        timer = setTimeout(() => void tick(), 0)
+        return
+      }
       schedule()
     }
     const onVisible = () => {
@@ -47,13 +59,24 @@ export function useResources(intervalMs: number = POLL_MS): ResourcesState {
       void tick()
     }
 
+    const onRefresh = () => {
+      if (running) {
+        pending = true
+        return
+      }
+      clearTimeout(timer)
+      void tick()
+    }
+
     document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener(REFRESH_EVENT, onRefresh)
     void tick()
     return () => {
       stopped = true
       clearTimeout(timer)
       controller?.abort()
       document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener(REFRESH_EVENT, onRefresh)
     }
   }, [intervalMs])
 

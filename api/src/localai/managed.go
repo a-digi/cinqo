@@ -265,6 +265,9 @@ func (e *managedEngine) Status() entity.EngineStatus { return e.sup.Status() }
 // Stop stops the model program (the application is shutting down).
 func (e *managedEngine) Stop() { e.sup.Stop() }
 
+// Unload stops the model program because a person asked for it; see supervisor.unload.
+func (e *managedEngine) Unload(force bool) entity.UnloadResult { return e.sup.unload(force) }
+
 const testPrompt = "Reply with exactly one word: OK"
 
 // Test sends one tiny real request to the model, starting the program when needed, and reports how long that took. Failures

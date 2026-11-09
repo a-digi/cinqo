@@ -44,6 +44,15 @@ routes:
       - cinqo:platform:manage
       - cinqo:super:admin
 
+  # A person unloads the model program (plan 225): stops it now, without touching any setting; the next conversation loads it again.
+  - path: /api/v1/local-ai/unload
+    method: POST
+    executor: LocalAiUnload
+    security: authenticated
+    scopes:
+      - cinqo:platform:manage
+      - cinqo:super:admin
+
   # A tool suggests a model (plan 220): Cinqo looks it up on Hugging Face and stores the suggestion. Nothing is downloaded and nothing is
   # added to the list of models until a person confirms it, so the same scope as every other change.
   - path: /api/v1/local-ai/suggestions

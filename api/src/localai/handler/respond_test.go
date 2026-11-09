@@ -58,6 +58,8 @@ func (f fakeRT) Status() entity.EngineStatus {
 	return f.status
 }
 
+func (f fakeRT) Unload(bool) entity.UnloadResult { return entity.UnloadStopped }
+
 func (f fakeRT) Test(context.Context, string) (entity.TestResult, error) { return f.result, f.testErr }
 
 func withMachine(t *testing.T, info hardware.Info) {

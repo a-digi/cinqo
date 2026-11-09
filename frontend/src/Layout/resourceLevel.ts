@@ -63,16 +63,15 @@ export function agentView(agents: SystemAgent[]): { tone: AgentTone; text: strin
   const a = agents.find((x) => x.kind === 'local-ai')
   if (!a) return { tone: 'none', text: 'No local agent running' }
   const name = a.name !== '' ? a.name : 'Local AI'
-  const mem = a.memoryBytes > 0 ? ` · ${formatBytes(a.memoryBytes)}` : ''
   switch (a.state) {
     case 'starting':
       return { tone: 'starting', text: `Loading ${name}…` }
     case 'working':
-      return { tone: 'working', text: `${name} · working${mem}` }
+      return { tone: 'working', text: `${name} · working` }
     case 'idle':
       return {
         tone: 'idle',
-        text: `${name} · idle${mem}${a.unloadsInSeconds > 0 ? ` · unloads in ${unloadText(a.unloadsInSeconds)}` : ''}`,
+        text: `${name} · idle${a.unloadsInSeconds > 0 ? ` · unloads in ${unloadText(a.unloadsInSeconds)}` : ''}`,
       }
     case 'failed':
       return { tone: 'failed', text: 'Local AI stopped unexpectedly' }
