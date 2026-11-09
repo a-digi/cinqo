@@ -3,7 +3,9 @@ import { Slider, type SliderSlide } from '../../../Shared/Components/Slider/Slid
 import { ScopeGate } from '../../../Shared/Components/Access/ScopeGate'
 import { AppScopes } from '../../../config/security/scopes'
 import type { Platform } from '../../../api/platforms'
-import { groupModels, infoFor, orderPlatforms, isSafeLink, modelDisplay, type Tier } from './platformInfo'
+import { howToPath } from '../HowTo/howToRules'
+import { MOTIFS, TIER_BADGE } from './slideStyle'
+import { groupModels, infoFor, orderPlatforms, isSafeLink, modelDisplay } from './platformInfo'
 
 export type Motif = 'sparkle' | 'rings' | 'burst' | 'network'
 
@@ -105,11 +107,6 @@ export function In({ i, className = '', children }: { i: number; className?: str
   )
 }
 
-const TIER_BADGE: Record<Tier, { label: string; className: string }> = {
-  free: { label: 'Free models', className: 'bg-emerald-400/20 text-emerald-100 ring-emerald-300/40' },
-  premium: { label: 'Premium models', className: 'bg-violet-400/20 text-violet-100 ring-violet-300/40' },
-}
-
 export function Eyebrow({ children }: { children: ReactNode }) {
   return <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/60">{children}</p>
 }
@@ -122,6 +119,21 @@ export function Subtitle({ children }: { children: ReactNode }) {
   return <p className="mt-4 max-w-xl text-lg leading-relaxed text-white/75">{children}</p>
 }
 
+// "Read more": opens the slide's own landing page (plan 219). On the dark slides it is the quiet one of the buttons.
+export function ReadMore({ pageId, onReadMore }: { pageId: string; onReadMore: (path: string) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        onReadMore(howToPath(pageId))
+      }}
+      className="rounded-full px-5 py-2.5 text-sm font-semibold text-white ring-1 ring-white/40 transition hover:bg-white/10"
+    >
+      Read more
+    </button>
+  )
+}
+
 function IntroTile({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
   return (
     <div className="rounded-2xl bg-white/10 p-4 ring-1 ring-white/15 backdrop-blur-md">
@@ -132,7 +144,7 @@ function IntroTile({ icon, title, children }: { icon: ReactNode; title: string; 
   )
 }
 
-function IntroSlide({ count }: { count: number }) {
+function IntroSlide({ count, onReadMore }: { count: number; onReadMore: (path: string) => void }) {
   return (
     <Frame from="#4f46e5" to="#0ea5e9" motif="sparkle">
       <In i={0}>
@@ -187,13 +199,14 @@ function IntroSlide({ count }: { count: number }) {
           Encrypted on your server, only ever shown masked.
         </IntroTile>
       </In>
+      <In i={4} className="mt-6">
+        <ReadMore pageId="overview" onReadMore={onReadMore} />
+      </In>
     </Frame>
   )
 }
 
-const MOTIFS: Record<string, Motif> = { openai: 'rings', anthropic: 'burst', openrouter: 'network' }
-
-function ModelPanel({ models }: { models: string[] }) {
+export function ModelPanel({ models }: { models: string[] }) {
   const groups = groupModels(models)
   return (
     <div className="rounded-2xl bg-white/10 p-5 ring-1 ring-white/15 backdrop-blur-md">
@@ -233,11 +246,13 @@ function PlatformSlide({
   position,
   keyCount,
   onAddKey,
+  onReadMore,
 }: {
   platform: Platform
   position: number
   keyCount: number
   onAddKey: (platformId: string) => void
+  onReadMore: (path: string) => void
 }) {
   const info = infoFor(platform.id, platform.name)
   const showLink = isSafeLink(info.keyUrl)
@@ -289,6 +304,7 @@ function PlatformSlide({
                 {info.keyLabel} ↗
               </a>
             )}
+            <ReadMore pageId={platform.id} onReadMore={onReadMore} />
             {keyCount > 0 && (
               <span className="text-sm text-emerald-200">
                 ✓ {keyCount} {keyCount === 1 ? 'key' : 'keys'} added
@@ -310,11 +326,14 @@ export function PlatformSlides({
   platforms,
   keyCounts,
   onAddKey,
+  onReadMore,
   extraSlides = [],
 }: {
   platforms: Platform[]
   keyCounts: Record<string, number>
   onAddKey: (platformId: string) => void
+  // Opens a slide's landing page by its path (the "Read more" buttons).
+  onReadMore: (path: string) => void
   // Slides of platforms that bring their own (a platform that needs no key, the local AI): shown first, before the overview.
   extraSlides?: SliderSlide[]
 }) {
@@ -323,11 +342,11 @@ export function PlatformSlides({
   const keyed = platforms.filter((p) => p.requiresKey)
   const slides: SliderSlide[] = [
     ...extraSlides,
-    { id: 'overview', label: 'Overview', content: <IntroSlide count={keyed.length} /> },
+    { id: 'overview', label: 'Overview', content: <IntroSlide count={keyed.length} onReadMore={onReadMore} /> },
     ...orderPlatforms(keyed).map((p, i) => ({
       id: p.id,
       label: p.name,
-      content: <PlatformSlide platform={p} position={i + 1} keyCount={keyCounts[p.id] ?? 0} onAddKey={onAddKey} />,
+      content: <PlatformSlide platform={p} position={i + 1} keyCount={keyCounts[p.id] ?? 0} onAddKey={onAddKey} onReadMore={onReadMore} />,
     })),
   ]
   return <Slider ariaLabel="About AI platforms" slides={slides} tone="dark" className="rounded-3xl shadow-xl" />

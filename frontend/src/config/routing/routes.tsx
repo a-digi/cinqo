@@ -9,7 +9,7 @@ import { ToolsListPage } from '../../Components/Admin/Tools/ToolsListPage'
 import { RepositoriesPage } from '../../Components/Admin/Tools/RepositoriesPage'
 import { RepositoryPage } from '../../Components/Admin/Tools/RepositoryPage'
 import { PlatformKeysPage } from '../../Components/Admin/Platforms/PlatformKeysPage'
-import { PlatformsPage } from '../../Components/Admin/Platforms/PlatformsPage'
+import { HowToPageRoute } from '../../Components/Admin/HowTo/HowToPageRoute'
 import { localAiRoute } from '../../Components/Admin/LocalAi/route'
 import { ConversationPage } from '../../Components/Conversation/ConversationPage'
 import { AiLogsPage } from '../../Components/Conversation/AiLogsPage'
@@ -68,12 +68,23 @@ export const router = createBrowserRouter([
             ),
           },
           {
-            path: '/admin/platforms',
+            // the slider page that used to be here is gone: its address (and the older /admin/platforms) lead to the first How To page
+            path: '/admin/ai/how-to',
+            element: <Navigate to="/admin/ai/how-to/overview" replace />,
+          },
+          {
+            // one landing page per slide: overview, local-agents, or a platform id (plan 219)
+            path: '/admin/ai/how-to/:pageId',
             element: (
               <AuthGuard scopes={[AppScopes.PlatformRead]}>
-                <PlatformsPage />
+                <HowToPageRoute />
               </AuthGuard>
             ),
+          },
+          {
+            // the page's old address (it was called Platforms): kept so a bookmark still works
+            path: '/admin/platforms',
+            element: <Navigate to="/admin/ai/how-to/overview" replace />,
           },
           {
             path: '/admin/api-keys',

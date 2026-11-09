@@ -1,5 +1,7 @@
 import { AppScopes } from '../security/scopes'
 import { localAiMenuEntry } from '../../Components/Admin/LocalAi/menuEntry'
+import { HOW_TO_CONTENT } from '../../Components/Admin/HowTo/HowToContent'
+import { HOW_TO_PAGE_IDS, howToPath } from '../../Components/Admin/HowTo/howToRules'
 
 export interface MenuEntry {
   label: string
@@ -68,7 +70,14 @@ export const menuEntries: MenuEntry[] = [
       { label: 'Remote Platforms', path: '/admin/api-keys', scopes: [AppScopes.PlatformRead], icon: keysIcon },
       localAiMenuEntry,
       { label: 'Logs', path: '/admin/conversation-logs', scopes: [AppScopes.SuperAdmin] },
-      { label: 'How To', path: '/admin/platforms', scopes: [AppScopes.PlatformRead], icon: platformsIcon },
+      {
+        // a group only (no page of its own any more): it opens to show the pages below it
+        label: 'How To',
+        scopes: [AppScopes.PlatformRead],
+        icon: platformsIcon,
+        // one landing page per slide of the How To page (plan 219); the labels are the pages' own
+        children: HOW_TO_PAGE_IDS.map((id) => ({ label: HOW_TO_CONTENT[id].label, path: howToPath(id), scopes: [AppScopes.PlatformRead] })),
+      },
     ],
   },
   {

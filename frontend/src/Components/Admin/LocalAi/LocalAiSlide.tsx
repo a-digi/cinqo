@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { ApiError } from '../../../api/client'
 import { DownloadProgress } from '../../../Shared/Components/Download/DownloadProgress'
 import { useDownload } from '../../../Shared/Components/Download/useDownload'
-import { Eyebrow, Frame, In, Subtitle, Title } from '../Platforms/PlatformSlides'
+import { Eyebrow, Frame, In, ReadMore, Subtitle, Title } from '../Platforms/PlatformSlides'
 import { fetchLocalAi, type LocalAiResponse } from './localAiApi'
 import { formatBytes } from '../../../Shared/Components/Download/format'
 import { fitKind, fitLabel, needsSetup, runningDownloadIds } from './localAiFormat'
@@ -77,6 +77,12 @@ export function LocalAiSlide() {
             >
               Open Local Agents settings
             </button>
+            <ReadMore
+              pageId="local-agents"
+              onReadMore={(path) => {
+                void navigate(path)
+              }}
+            />
           </In>
         </div>
         <In i={3}>

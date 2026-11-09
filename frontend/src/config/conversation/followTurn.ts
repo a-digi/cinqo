@@ -10,7 +10,11 @@ export type FollowAction = 'watch' | 'reload' | 'none'
 //  - a running turn that nobody watches is watched (the watch shows it live and loads the conversation when it ends);
 //  - a turn that has finished and is not the one the chat last took care of means messages the chat does not have: reload;
 //  - anything else needs nothing.
-export function followAction(latest: { turnRunId: string; status: string } | null, lastSeenTurnId: string | undefined, watching: boolean): FollowAction {
+export function followAction(
+  latest: { turnRunId: string; status: string } | null,
+  lastSeenTurnId: string | undefined,
+  watching: boolean,
+): FollowAction {
   if (latest === null) return 'none'
   if (latest.status === 'running') return watching ? 'none' : 'watch'
   return latest.turnRunId === lastSeenTurnId ? 'none' : 'reload'
