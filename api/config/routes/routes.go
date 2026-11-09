@@ -29,6 +29,7 @@ import (
 	platform_handler "github.com/a-digi/cinqo/src/platform/handler"
 	"github.com/a-digi/cinqo/src/security/scopes"
 	security_handler "github.com/a-digi/cinqo/src/security/scopes/handler"
+	"github.com/a-digi/cinqo/src/system"
 	"github.com/a-digi/cinqo/src/tool"
 	tool_handler "github.com/a-digi/cinqo/src/tool/handler"
 	toolrepository_handler "github.com/a-digi/cinqo/src/toolrepository/handler"
@@ -70,9 +71,12 @@ func Init(ctx serverdi.Context) {
 	scopes.Register(tool.ScopeGroup)
 	scopes.Register(platform.ScopeGroup)
 	scopes.Register(conversation.ScopeGroup)
+	scopes.Register(system.ScopeGroup)
 
 	handlerMap := map[string]routing.HandlerInterface{
 		"HealthzGet": local_routing.HandlerFunc(health.GetHandler),
+
+		"SystemResourcesGet": local_routing.HandlerFunc(system.GetHandler),
 
 		"AuthConfig":   &auth_handler.AuthConfigHandler{},
 		"AuthCallback": &auth_handler.OidcCallbackHandler{},

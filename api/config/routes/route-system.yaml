@@ -1,0 +1,9 @@
+# What the computer is doing, for the resource bar under the top bar (api/src/system). Read-only; it needs its own read scope.
+routes:
+  - path: /api/v1/system/resources
+    method: GET
+    executor: SystemResourcesGet
+    security: authenticated
+    scopes:
+      - cinqo:system:read
+      - cinqo:super:admin
