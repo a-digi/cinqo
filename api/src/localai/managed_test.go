@@ -280,7 +280,7 @@ func TestExplainFailureOnlyRewritesTheContextOverflowAnswer(t *testing.T) {
 	overflow := &chatcompleter.CompletionError{Provider: "local AI", Status: 400, Message: `unexpected status 400: {"error":{"message":"the request exceeds the available context size, try increasing it","type":"exceed_context_size_error"}}`}
 	got := explainFailure(overflow, 4096, 32768, false)
 	var ce *chatcompleter.CompletionError
-	if !errors.As(got, &ce) || ce.Status != 400 || ce.Retryable || !strings.Contains(ce.Message, "a context of 4096 tokens") || !strings.Contains(ce.Message, "raise the context size in AI, Local AI") {
+	if !errors.As(got, &ce) || ce.Status != 400 || ce.Retryable || !strings.Contains(ce.Message, "a context of 4096 tokens") || !strings.Contains(ce.Message, "raise the context size in AI, Local Agents") {
 		t.Errorf("rewritten = %v", got)
 	}
 	if strings.Contains(got.Error(), "exceed_context_size_error") {
@@ -537,7 +537,7 @@ func TestTheOverflowAnswerGivesTheNumbersAndTheSizeToSet(t *testing.T) {
 		needed, window, max int
 		want                string
 	}{
-		{"the user's import: 6,232 tokens in 4,096", 6232, 4096, 131072, "the conversation needs 6,232 tokens but the model reads 4,096 at once (the context size): set the context size in AI, Local AI to at least 8,192"},
+		{"the user's import: 6,232 tokens in 4,096", 6232, 4096, 131072, "the conversation needs 6,232 tokens but the model reads 4,096 at once (the context size): set the context size in AI, Local Agents to at least 8,192"},
 		{"room for the answer moves it up", 7500, 4096, 131072, "to at least 16,384"},
 		{"exactly the room boundary stays", 7168, 4096, 131072, "to at least 8,192"},
 		{"one token over the room boundary moves up", 7169, 4096, 131072, "to at least 16,384"},
@@ -573,7 +573,7 @@ func TestWithoutUsableNumbersTheGeneralSentenceStays(t *testing.T) {
 		"broken json":             `unexpected status 400: {"error":{"message":"exceeds context","n_prompt_tokens":5000,`,
 	} {
 		got := explainFailure(&chatcompleter.CompletionError{Provider: "local AI", Status: 400, Message: msg}, 4096, 32768, false)
-		if !strings.Contains(got.Error(), "a context of 4096 tokens") || !strings.Contains(got.Error(), "raise the context size in AI, Local AI") {
+		if !strings.Contains(got.Error(), "a context of 4096 tokens") || !strings.Contains(got.Error(), "raise the context size in AI, Local Agents") {
 			t.Errorf("%s: %v", name, got)
 		}
 	}
@@ -622,7 +622,7 @@ func TestAToolCapableModelIsToldWhatATaskLikeAnImportNeeds(t *testing.T) {
 	// The user's real message: 6,215 tokens at 4,096 needs 8,192 for this request, but an import needs 16,384.
 	err := &chatcompleter.CompletionError{Provider: "local AI", Status: 400, Message: overflowBody(6215, 4096)}
 	got := explainFailure(err, 4096, 131072, true).Error()
-	want := "the conversation needs 6,215 tokens but the model reads 4,096 at once (the context size): set the context size in AI, Local AI to at least 8,192; tool tasks such as importing a CV need at least 16,384"
+	want := "the conversation needs 6,215 tokens but the model reads 4,096 at once (the context size): set the context size in AI, Local Agents to at least 8,192; tool tasks such as importing a CV need at least 16,384"
 	if !strings.HasSuffix(got, want) {
 		t.Errorf("got %q", got)
 	}

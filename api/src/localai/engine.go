@@ -31,7 +31,7 @@ type modelLister interface {
 }
 
 // ErrNotAvailable means the settings do not describe a local AI that can answer (switched off or no model chosen).
-var ErrNotAvailable = errors.New("the local AI is switched off or no model is chosen (see AI, Local AI)")
+var ErrNotAvailable = errors.New("the local AI is switched off or no model is chosen (see AI, Local Agents)")
 
 var errManagedNotBuilt = errors.New("the managed runtime is not available yet")
 

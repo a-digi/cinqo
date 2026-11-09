@@ -239,10 +239,10 @@ func explainFailure(err error, contextTokens, modelMax int, canUseTools bool) er
 	if !strings.Contains(low, "exceed") || !strings.Contains(low, "context") {
 		return err
 	}
-	message := fmt.Sprintf("the conversation is longer than the model can read at once (a context of %d tokens): start a new conversation, or raise the context size in AI, Local AI", contextTokens)
+	message := fmt.Sprintf("the conversation is longer than the model can read at once (a context of %d tokens): start a new conversation, or raise the context size in AI, Local Agents", contextTokens)
 	if needed, window, ok := overflowNumbers(ce.Message); ok {
 		if size := sizeToSet(needed, modelMax); size > 0 {
-			message = fmt.Sprintf("the conversation needs %s tokens but the model reads %s at once (the context size): set the context size in AI, Local AI to at least %s", hardware.Thousands(needed), hardware.Thousands(window), hardware.Thousands(size))
+			message = fmt.Sprintf("the conversation needs %s tokens but the model reads %s at once (the context size): set the context size in AI, Local Agents to at least %s", hardware.Thousands(needed), hardware.Thousands(window), hardware.Thousands(size))
 			// A conversation keeps growing: the size that holds this request is not enough for a tool task such as a CV import, which
 			// reads a document and hands results over in pieces. Say so, so the admin does not raise it twice.
 			if tools := toolTaskSize(modelMax); canUseTools && size < tools {

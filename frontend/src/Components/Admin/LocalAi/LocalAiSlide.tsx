@@ -75,7 +75,7 @@ export function LocalAiSlide() {
               }}
               className="rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-gray-900 shadow-lg transition hover:bg-white/90"
             >
-              Open Local AI settings
+              Open Local Agents settings
             </button>
           </In>
         </div>

@@ -4,4 +4,4 @@ import { LocalAiSlide } from './LocalAiSlide'
 
 // The Local AI slide, handed to the Platforms page's slider by one line in PlatformsPage.tsx. A .ts file with no JSX so
 // that the only thing exported next to a component is data, which the fast-refresh lint rule accepts.
-export const localAiSlide: SliderSlide = { id: 'local-ai', label: 'Local AI', content: createElement(LocalAiSlide) }
+export const localAiSlide: SliderSlide = { id: 'local-ai', label: 'Local Agents', content: createElement(LocalAiSlide) }

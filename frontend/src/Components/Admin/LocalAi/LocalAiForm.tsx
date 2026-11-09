@@ -202,7 +202,7 @@ export function LocalAiForm({
         onSave()
       }}
     >
-      <Card label="Local AI" title="Use a local model" badge={<StatusBadge on={on} />}>
+      <Card label="Local Agents" title="Use a local model" badge={<StatusBadge on={on} />}>
         <div className="flex items-start gap-3">
           <button
             type="button"

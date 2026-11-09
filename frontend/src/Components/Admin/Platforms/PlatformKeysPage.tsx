@@ -79,7 +79,7 @@ export function PlatformKeysPage() {
   return (
     <div className="cinqo-stagger cinqo-v-zoom cinqo-t-shimmer space-y-6 p-6">
       <div className="max-w-4xl">
-        <h1 className="text-xl font-semibold text-gray-900">API Keys</h1>
+        <h1 className="text-xl font-semibold text-gray-900">Remote Platforms</h1>
         <p className="mt-1 text-sm text-gray-500">
           AI platform API keys used by conversations. Keys are encrypted at rest and only ever shown masked.
         </p>

@@ -22,7 +22,7 @@ function messageOf(err: unknown): string {
   return err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err)
 }
 
-// The Local AI settings page (AI → Local AI): switch the local model on, say where the server is and which model it
+// The Local AI settings page (AI → Local Agents): switch the local model on, say where the server is and which model it
 // serves. plan/ai/small-llm-local/step-181-local-ai-small-models.md
 export function LocalAiPage() {
   const { scopes } = useAuth()
@@ -182,7 +182,7 @@ export function LocalAiPage() {
   return (
     <div className="cinqo-stagger cinqo-v-swing cinqo-t-type max-w-3xl space-y-5 p-6 font-sans text-gray-900">
       <div>
-        <h1 className="text-xl font-semibold">Local AI</h1>
+        <h1 className="text-xl font-semibold">Local Agents</h1>
         <p className="mt-1 text-sm text-gray-500">
           Let conversations be answered by a small language model that Cinqo runs on this computer instead of a cloud provider.
         </p>
