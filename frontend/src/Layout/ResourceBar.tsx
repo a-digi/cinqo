@@ -46,8 +46,8 @@ function Bar({
       aria-label="Computer resources"
       className="flex h-8 shrink-0 items-center justify-between gap-3 border-b border-gray-200 bg-white px-4 text-xs text-gray-600"
     >
-      {device !== '' && <span className="hidden shrink-0 font-medium text-gray-700 lg:inline">{device}</span>}
-      <span className="hidden min-w-0 flex-1 truncate sm:inline">{left}</span>
+      {device !== '' && <span className="shrink-0 font-medium text-gray-700 max-lg:hidden">{device}</span>}
+      <span className="min-w-0 flex-1 truncate max-sm:hidden">{left}</span>
       <span title={title} className={`ml-auto inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 font-medium ${PILL[level]}`}>
         {(level === 'orange' || level === 'red') && <span aria-hidden="true">!</span>}
         {pill}
