@@ -21,7 +21,7 @@ func TestStopTreeOnARealProcessTree(t *testing.T) {
 		if err := c.Start(); err != nil {
 			t.Skip("cannot start a shell")
 		}
-		t.Cleanup(func() { _ = c.Process.Kill(); _ = c.Wait() })
+		t.Cleanup(func() { _ = c.Process.Kill() })
 		return c
 	}
 	mine, decoy := mk(ours), mk(other)
@@ -44,7 +44,9 @@ func TestStopTreeOnARealProcessTree(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- r.StopTree(mine.Process.Pid, 2*time.Second) }()
 	// reap the shell as its parent (this test), which is what the tool's own launcher does with its Chrome
-	go func() { _ = mine.Wait() }()
+	reaped := make(chan struct{})
+	go func() { _ = mine.Wait(); close(reaped) }()
+	defer func() { <-reaped }()
 	if err := <-done; err != nil {
 		t.Fatal(err)
 	}

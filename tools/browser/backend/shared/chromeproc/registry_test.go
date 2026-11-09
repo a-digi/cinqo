@@ -144,7 +144,7 @@ func TestSnapshotSaysRunningOrGoneAndHasAgeAndIdle(t *testing.T) {
 
 func TestSnapshotOfNothingIsAnEmptyListNotNull(t *testing.T) {
 	raw, _ := json.Marshal(New("", newFake(), nil).Snapshot())
-	if string(raw) != `{"chromes":[],"watchdog":{"lastRunAt":"","runs":0,"killedUnused":0,"killedOrphan":0,"deadDropped":0,"defunct":0}}` {
+	if string(raw) != `{"limit":5,"running":0,"waiting":0,"chromes":[],"watchdog":{"lastRunAt":"","runs":0,"killedUnused":0,"killedOrphan":0,"deadDropped":0,"defunct":0,"stuckSessions":0}}` {
 		t.Errorf("%s", raw)
 	}
 }

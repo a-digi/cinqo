@@ -169,6 +169,9 @@ type ChromeStatus struct {
 
 // Status is what the status route answers.
 type Status struct {
+	Limit    int            `json:"limit"`   // crawl sessions that may run at once
+	Running  int            `json:"running"` // crawl sessions running now
+	Waiting  int            `json:"waiting"` // crawl requests waiting for a free slot
 	Chromes  []ChromeStatus `json:"chromes"`
 	Watchdog WatchdogStatus `json:"watchdog"`
 }
@@ -177,7 +180,8 @@ type Status struct {
 func (r *Registry) Snapshot() Status {
 	now := r.now()
 	entries := r.Entries()
-	out := Status{Chromes: make([]ChromeStatus, 0, len(entries)), Watchdog: r.watchdogStatus()}
+	ls := sessions.Status()
+	out := Status{Limit: ls.Limit, Running: ls.Running, Waiting: ls.Waiting, Chromes: make([]ChromeStatus, 0, len(entries)), Watchdog: r.watchdogStatus()}
 	for _, e := range entries {
 		state := "running"
 		if r.proc != nil && !r.proc.Alive(e.PID) {

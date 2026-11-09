@@ -35,18 +35,19 @@ type watchdogCounters struct {
 
 // WatchdogStatus is the watchdog's part of the status route.
 type WatchdogStatus struct {
-	LastRunAt    string `json:"lastRunAt"` // "" before the first pass
-	Runs         int    `json:"runs"`
-	KilledUnused int    `json:"killedUnused"`
-	KilledOrphan int    `json:"killedOrphan"`
-	DeadDropped  int    `json:"deadDropped"`
-	Defunct      int    `json:"defunct"`
+	LastRunAt     string `json:"lastRunAt"` // "" before the first pass
+	Runs          int    `json:"runs"`
+	KilledUnused  int    `json:"killedUnused"`
+	KilledOrphan  int    `json:"killedOrphan"`
+	DeadDropped   int    `json:"deadDropped"`
+	Defunct       int    `json:"defunct"`
+	StuckSessions int    `json:"stuckSessions"` // crawl sessions held over the stuck limit and released
 }
 
 func (r *Registry) watchdogStatus() WatchdogStatus {
 	r.wdMu.Lock()
 	defer r.wdMu.Unlock()
-	w := WatchdogStatus{Runs: r.wd.runs, KilledUnused: r.wd.killedUnused, KilledOrphan: r.wd.killedOrphan, DeadDropped: r.wd.deadDropped, Defunct: r.wd.defunct}
+	w := WatchdogStatus{StuckSessions: sessions.StuckReleased(), Runs: r.wd.runs, KilledUnused: r.wd.killedUnused, KilledOrphan: r.wd.killedOrphan, DeadDropped: r.wd.deadDropped, Defunct: r.wd.defunct}
 	if !r.wd.lastRun.IsZero() {
 		w.LastRunAt = r.wd.lastRun.UTC().Format(time.RFC3339)
 	}
@@ -99,11 +100,12 @@ func watched(k Kind) bool {
 
 // WatchdogResult is what one pass did.
 type WatchdogResult struct {
-	KilledUnused []int
-	KilledOrphan []int
-	DeadDropped  []int
-	Defunct      []int
-	Failed       []int
+	KilledUnused  []int
+	KilledOrphan  []int
+	DeadDropped   []int
+	Defunct       []int
+	Failed        []int
+	StuckSessions int
 }
 
 // WatchdogOnce makes one pass and returns what it did.
@@ -174,6 +176,7 @@ func (r *Registry) WatchdogOnce(cfg WatchdogConfig) WatchdogResult {
 		}
 	}
 
+	res.StuckSessions = sessions.ReapStuck(StuckAfter)
 	r.wdMu.Lock()
 	r.wd.lastRun = now
 	r.wd.runs++
@@ -201,7 +204,7 @@ func looksLikeChrome(cmd string) bool {
 }
 
 func (r WatchdogResult) acted() bool {
-	return len(r.KilledUnused)+len(r.KilledOrphan)+len(r.DeadDropped)+len(r.Defunct)+len(r.Failed) > 0
+	return r.StuckSessions > 0 || len(r.KilledUnused)+len(r.KilledOrphan)+len(r.DeadDropped)+len(r.Defunct)+len(r.Failed) > 0
 }
 
 // StartWatchdog runs a pass every cfg.Interval, and at once after Kick, until the returned stop function is called. A pass that did something
@@ -223,8 +226,8 @@ func (r *Registry) StartWatchdog(cfg WatchdogConfig) (stop func()) {
 			case <-kick:
 			}
 			if res := r.WatchdogOnce(cfg); res.acted() {
-				log.Printf("chrome watchdog: unused stopped %v, orphans stopped %v, dead dropped %v, defunct %v, could not stop %v",
-					res.KilledUnused, res.KilledOrphan, res.DeadDropped, res.Defunct, res.Failed)
+				log.Printf("chrome watchdog: unused stopped %v, orphans stopped %v, dead dropped %v, defunct %v, could not stop %v, stuck sessions released %d",
+					res.KilledUnused, res.KilledOrphan, res.DeadDropped, res.Defunct, res.Failed, res.StuckSessions)
 			}
 		}
 	}()
