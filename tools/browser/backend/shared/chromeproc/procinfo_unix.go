@@ -84,5 +84,37 @@ func (realProc) Parents() map[int]int {
 	return nil
 }
 
+// List reads every process with its parent and command line in one call: `ps -axww -o pid=,ppid=,command=`.
+func (realProc) List() []ProcInfo {
+	for _, ps := range psCandidates {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		out, err := exec.CommandContext(ctx, ps, "-axww", "-o", "pid=,ppid=,command=").Output()
+		cancel()
+		if err != nil {
+			continue
+		}
+		var list []ProcInfo
+		for _, line := range strings.Split(string(out), "\n") {
+			f := strings.Fields(line)
+			if len(f) < 2 {
+				continue
+			}
+			pid, err1 := strconv.Atoi(f[0])
+			ppid, err2 := strconv.Atoi(f[1])
+			if err1 != nil || err2 != nil {
+				continue
+			}
+			// the command is the rest of the line after the two numbers (its own spacing kept, so a folder with spaces still matches)
+			rest := strings.TrimSpace(line)
+			for i := 0; i < 2; i++ {
+				rest = strings.TrimSpace(strings.TrimPrefix(rest, f[i]))
+			}
+			list = append(list, ProcInfo{PID: pid, PPID: ppid, Command: rest})
+		}
+		return list
+	}
+	return nil
+}
+
 func (realProc) Terminate(pid int) bool { return pid > 1 && syscall.Kill(pid, syscall.SIGTERM) == nil }
 func (realProc) Kill(pid int) bool      { return pid > 1 && syscall.Kill(pid, syscall.SIGKILL) == nil }

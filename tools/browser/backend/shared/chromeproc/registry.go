@@ -55,9 +55,18 @@ type Proc interface {
 	CommandLine(pid int) string
 	// Parents maps every process id to the id of its parent (one read of the whole process table); nil when it cannot be read.
 	Parents() map[int]int
+	// List reads the whole process table once: every process with its parent and its command line; nil when it cannot be read.
+	List() []ProcInfo
 	// Terminate asks a process to end (SIGTERM); Kill ends it at once (SIGKILL). Both report whether the signal was sent.
 	Terminate(pid int) bool
 	Kill(pid int) bool
+}
+
+// ProcInfo is one row of the process table.
+type ProcInfo struct {
+	PID     int
+	PPID    int
+	Command string // searched only, never run or logged
 }
 
 // Registry is the list of the Chromes now running that the tool started.
@@ -192,6 +201,7 @@ func Configure(dir string) error {
 	if err != nil {
 		return err
 	}
+	setLedgerDir(dir)
 	setProfileRoot(filepath.Join(dir, "profiles"))
 	std.mu.Lock()
 	std.ledgerPath = path

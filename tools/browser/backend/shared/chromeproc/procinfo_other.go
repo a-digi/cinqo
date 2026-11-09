@@ -11,3 +11,4 @@ func (realProc) CommandLine(int) string { return "" }
 func (realProc) Parents() map[int]int   { return nil }
 func (realProc) Terminate(int) bool     { return false }
 func (realProc) Kill(int) bool          { return false }
+func (realProc) List() []ProcInfo       { return nil }

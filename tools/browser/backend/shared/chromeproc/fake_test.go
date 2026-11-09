@@ -11,6 +11,7 @@ type fakeProc struct {
 	parents     map[int]int
 	ignoreTerm  map[int]bool // survives SIGTERM
 	surviveKill map[int]bool // survives SIGKILL (a stuck process)
+	noList      bool         // the process table cannot be read
 	terminated  []int
 	killed      []int
 }
@@ -39,6 +40,20 @@ func (f *fakeProc) Parents() map[int]int {
 	out := map[int]int{}
 	for k, v := range f.parents {
 		out[k] = v
+	}
+	return out
+}
+func (f *fakeProc) List() []ProcInfo {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.noList {
+		return nil
+	}
+	var out []ProcInfo
+	for pid, alive := range f.alive {
+		if alive {
+			out = append(out, ProcInfo{PID: pid, PPID: f.parents[pid], Command: f.cmds[pid]})
+		}
 	}
 	return out
 }

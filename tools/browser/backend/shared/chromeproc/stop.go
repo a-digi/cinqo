@@ -82,6 +82,12 @@ func (r *Registry) StopTree(pid int, grace time.Duration) error {
 		}
 	}
 	tree = append(tree, pid)
+	return r.terminateAll(tree, pid, grace)
+}
+
+// terminateAll asks every process of the tree to end (children first), waits up to grace, kills what is left, waits until all are gone and
+// releases the root's entry. It is the one place that signals.
+func (r *Registry) terminateAll(tree []int, root int, grace time.Duration) error {
 	for _, p := range tree {
 		r.proc.Terminate(p)
 	}
@@ -102,9 +108,9 @@ func (r *Registry) StopTree(pid int, grace time.Duration) error {
 		time.Sleep(10 * time.Millisecond)
 	}
 	if !r.allGone(tree) {
-		return fmt.Errorf("chromeproc: pid %d or one of its children is still running after SIGKILL", pid)
+		return fmt.Errorf("chromeproc: pid %d or one of its children is still running after SIGKILL", root)
 	}
-	r.Release(pid)
+	r.Release(root)
 	return nil
 }
 

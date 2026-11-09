@@ -150,3 +150,56 @@ func TestStopTreeEndsARealChromeAndItsHelpers(t *testing.T) {
 		t.Errorf("a process with our profile folder is still running")
 	}
 }
+
+// The crash case end to end (plan 224, step 3): a Chrome is left running by "an earlier run" (it is in the ledger, the tool never closed it);
+// at the next start the ledger is kept aside by Configure and Sweep stops that Chrome and deletes its folder.
+func TestTheStartUpSweepStopsARealChromeLeftByAnEarlierRun(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping real-browser test in -short mode")
+	}
+	path, err := rodChromePath()
+	if err != nil {
+		t.Skipf("no Chrome available: %v", err)
+	}
+	b, l, err := launchRodBrowser(path, "")
+	if err != nil {
+		t.Fatalf("launch: %v", err)
+	}
+	pid := l.PID()
+	e, ok := entryFor(pid)
+	if !ok {
+		closeRodBrowser(b, l)
+		t.Fatal("not registered")
+	}
+	// "the tool crashed": nothing is closed. The next start configures the ledger folder again and sweeps.
+	if err := chromeproc.Configure(testChromeDir); err != nil {
+		closeRodBrowser(b, l)
+		t.Fatal(err)
+	}
+	rep := chromeproc.Sweep()
+	if len(rep.Stopped) == 0 {
+		closeRodBrowser(b, l)
+		t.Fatalf("the Chrome of the earlier run must be stopped: %+v", rep)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) && chromeproc.IsOursPID(pid) {
+		time.Sleep(50 * time.Millisecond)
+	}
+	if err := syscall.Kill(pid, 0); err == nil {
+		// still listed: it is a zombie waiting for its launcher (this test) to reap it, which closeRodBrowser does below
+		t.Logf("pid %d is not reaped yet", pid)
+	}
+	closed := make(chan struct{})
+	go func() { closeRodBrowser(b, l); close(closed) }()
+	select {
+	case <-closed:
+	case <-time.After(10 * time.Second):
+		t.Fatal("closeRodBrowser must still return")
+	}
+	if _, err := os.Stat(e.ProfileDir); !os.IsNotExist(err) {
+		t.Errorf("the profile folder must be gone: %v", err)
+	}
+	if out, _ := exec.Command("/bin/ps", "-axo", "command=").Output(); strings.Contains(string(out), e.ProfileDir) {
+		t.Error("no process may still use that folder")
+	}
+}

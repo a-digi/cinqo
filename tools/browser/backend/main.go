@@ -56,6 +56,13 @@ func runHTTPServer() {
 	if dir := os.Getenv("TOOL_CACHE_DIR"); dir != "" {
 		if err := chromeproc.Configure(filepath.Join(dir, "chrome")); err != nil {
 			log.Printf("chrome ledger: %v (the Chrome processes are tracked in memory only)", err)
+		} else {
+			// Plan 224, step 3: stop what an earlier run of this tool left running (a crash, a kill) and delete the profile folders nothing uses,
+			// before the first Chrome of this run is started. Only what is provably this tool's is ever touched.
+			rep := chromeproc.Sweep()
+			if len(rep.Stopped)+len(rep.Skipped)+len(rep.Failed) > 0 || rep.FoldersRemoved > 0 {
+				log.Printf("chrome start-up sweep: %s", rep)
+			}
 		}
 	}
 	// Plan 182: delete the throw-away profile folders of any login window an earlier run of this tool left behind (a crash, a kill).
