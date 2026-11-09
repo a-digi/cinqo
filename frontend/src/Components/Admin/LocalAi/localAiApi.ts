@@ -112,6 +112,8 @@ export interface LocalAiModel {
   // repo and publisher say where it is from and why is the reason given.
   origin: 'catalog' | 'added'
   addedBy?: string
+  // Every tool that suggested an added model (addedBy is the first of them), by the name the tool gave itself.
+  suggestedBy?: string[]
   repo?: string
   publisher?: string
   why?: string
@@ -138,6 +140,14 @@ export interface LocalAiSuggestion {
   fits: boolean | null
   // A suggestion of a model that ships with Cinqo (checked and measured by Cinqo): confirming it only downloads it.
   shipped?: boolean
+  // Every tool that suggested this model, in its own words, first suggester first: one model is one card however many tools ask.
+  suggesters?: LocalAiSuggester[]
+}
+
+export interface LocalAiSuggester {
+  tool: string
+  why: string
+  at: string
 }
 
 export interface LocalAiResponse {

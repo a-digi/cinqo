@@ -146,11 +146,13 @@ type catalogModelResponse struct {
 	Enable enableResponse `json:"enable"`
 	// Origin is "catalog" for a model shipped in the program and "added" for one a person added after a tool suggested it (plan 220). For an
 	// added model, AddedBy is who suggested it (the tool's own word), Repo and Publisher say where it is from, and Why is the reason given.
-	Origin    string `json:"origin"`
-	AddedBy   string `json:"addedBy,omitempty"`
-	Repo      string `json:"repo,omitempty"`
-	Publisher string `json:"publisher,omitempty"`
-	Why       string `json:"why,omitempty"`
+	Origin  string `json:"origin"`
+	AddedBy string `json:"addedBy,omitempty"`
+	// SuggestedBy lists every tool that suggested an added model (AddedBy is the first of them).
+	SuggestedBy []string `json:"suggestedBy,omitempty"`
+	Repo        string   `json:"repo,omitempty"`
+	Publisher   string   `json:"publisher,omitempty"`
+	Why         string   `json:"why,omitempty"`
 }
 
 type enableResponse struct {

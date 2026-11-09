@@ -74,6 +74,8 @@ type suggestionResponse struct {
 	Fits          *bool  `json:"fits"`
 	// Shipped is true for a suggestion of a model that ships with Cinqo (checked and measured by us): confirming it only downloads it.
 	Shipped bool `json:"shipped"`
+	// Suggesters are all the tools that suggested this model, in their own words, first suggester first: one model is shown once however many tools ask.
+	Suggesters []entity.Suggester `json:"suggesters"`
 	// Created is true on the answer that stored a new suggestion, false when the same file was already known (Status then says what became of it).
 	Created bool `json:"created"`
 }
@@ -94,20 +96,32 @@ func respondWithAdded(db *sql.DB, out localAiResponse, c catalog.Catalog) localA
 	if err != nil {
 		return out
 	}
+	waiting, waitErr := repo.ListByStatus(entity.AddedStatusSuggested)
+	ids := make([]string, 0, len(added)+len(waiting))
 	byID := map[string]entity.AddedModel{}
 	for _, a := range added {
 		byID[a.ID] = a
+		ids = append(ids, a.ID)
 	}
+	for _, m := range waiting {
+		ids = append(ids, m.ID)
+	}
+	who, _ := repo.Suggesters(ids...) // a table that cannot be read leaves the lists of tools empty
 	for i := range out.Catalog {
 		if a, ok := byID[out.Catalog[i].ID]; ok {
 			out.Catalog[i].Origin = "added"
 			out.Catalog[i].AddedBy, out.Catalog[i].Repo, out.Catalog[i].Publisher, out.Catalog[i].Why = a.SuggestedBy, a.Repo, a.Publisher, a.Why
+			for _, sg := range who[a.ID] {
+				out.Catalog[i].SuggestedBy = append(out.Catalog[i].SuggestedBy, sg.Tool)
+			}
 		}
 	}
-	if waiting, err := repo.ListByStatus(entity.AddedStatusSuggested); err == nil {
+	if waitErr == nil {
 		out.Suggestions = make([]suggestionResponse, 0, len(waiting))
 		for _, m := range waiting {
-			out.Suggestions = append(out.Suggestions, toSuggestion(m, out.Hardware.Info))
+			sr := toSuggestion(m, out.Hardware.Info)
+			sr.Suggesters = suggestersOrEmpty(who[m.ID])
+			out.Suggestions = append(out.Suggestions, sr)
 		}
 	}
 	return out
@@ -186,8 +200,7 @@ func (a api) suggest(reqCtx request.RequestContext) {
 	info := detect()
 	// the file is already known: answer what became of it, store nothing (a dismissed suggestion stays dismissed)
 	if existing, err := repo.Find(found.ID); err == nil {
-		s := toSuggestion(existing, info)
-		response.SuccessResponse(w, http.StatusOK, s)
+		answerKnown(w, db, existing, body, info)
 		return
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		response.ErrorResponse(w, http.StatusInternalServerError, "failed to read the suggestions")
@@ -223,15 +236,13 @@ func (a api) suggest(reqCtx request.RequestContext) {
 	if err := persistent.NewAddedModelsPersistentRepo(db).Insert(&row); err != nil {
 		// two suggestions of the same file at once: the table keeps one, and the answer is that one
 		if existing, findErr := repo.Find(found.ID); findErr == nil {
-			response.SuccessResponse(w, http.StatusOK, toSuggestion(existing, info))
+			answerKnown(w, db, existing, body, info)
 			return
 		}
 		response.ErrorResponse(w, http.StatusInternalServerError, "failed to store the suggestion")
 		return
 	}
-	s := toSuggestion(row, info)
-	s.Created = true
-	response.SuccessResponse(w, http.StatusCreated, s)
+	answerCreated(w, db, row, body, info)
 }
 
 // resolveStatus maps why a lookup failed to the answer: a name that is not valid is the caller's mistake, a file that cannot be used is a request that
@@ -280,7 +291,7 @@ func (a api) dismissSuggestion(reqCtx request.RequestContext) {
 		}
 		m.Status = entity.AddedStatusDismissed
 	}
-	response.SuccessResponse(w, http.StatusOK, toSuggestion(m, detect()))
+	response.SuccessResponse(w, http.StatusOK, withSuggesters(db, toSuggestion(m, detect())))
 }
 
 // demoteAdded puts every added model back to a suggestion after all downloaded files were removed. If the model chosen on the page was one of them,
@@ -335,6 +346,7 @@ func (a api) installModel(reqCtx request.RequestContext) {
 			return
 		}
 		_ = persistent.NewAddedModelsPersistentRepo(db).Delete(id)
+		_ = persistent.NewAddedModelsPersistentRepo(db).DeleteSuggesters(id)
 		a.respondPage(w, db, http.StatusAccepted)
 		return
 	}
@@ -403,6 +415,7 @@ func (a api) removeModel(reqCtx request.RequestContext) {
 		response.ErrorResponse(w, http.StatusInternalServerError, "failed to remove the model")
 		return
 	}
+	_ = persistent.NewAddedModelsPersistentRepo(db).DeleteSuggesters(id)
 	a.respondPage(w, db, http.StatusOK)
 }
 
@@ -476,7 +489,7 @@ func (a api) suggestShipped(w http.ResponseWriter, db *sql.DB, m catalog.Model, 
 	}
 	repo := query.NewAddedModelsQueryRepo(db)
 	if existing, err := repo.Find(m.ID); err == nil {
-		response.SuccessResponse(w, http.StatusOK, toSuggestion(existing, info))
+		answerKnown(w, db, existing, body, info)
 		return
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		response.ErrorResponse(w, http.StatusInternalServerError, "failed to read the suggestions")
@@ -493,13 +506,54 @@ func (a api) suggestShipped(w http.ResponseWriter, db *sql.DB, m catalog.Model, 
 	}
 	if err := persistent.NewAddedModelsPersistentRepo(db).Insert(&row); err != nil {
 		if existing, findErr := repo.Find(m.ID); findErr == nil {
-			response.SuccessResponse(w, http.StatusOK, toSuggestion(existing, info))
+			answerKnown(w, db, existing, body, info)
 			return
 		}
 		response.ErrorResponse(w, http.StatusInternalServerError, "failed to store the suggestion")
 		return
 	}
-	s := toSuggestion(row, info)
+	answerCreated(w, db, row, body, info)
+}
+
+func suggestersOrEmpty(list []entity.Suggester) []entity.Suggester {
+	if list == nil {
+		return []entity.Suggester{}
+	}
+	return list
+}
+
+// recordSuggester remembers that this tool suggested the model, in its own words (the first words of a tool stay; the same tool is listed once).
+func recordSuggester(db *sql.DB, modelID string, body suggestRequest) {
+	tool := cleanText(body.SuggestedBy, maxSuggestedByRunes)
+	if tool == "" {
+		tool = "a tool"
+	}
+	_ = persistent.NewAddedModelsPersistentRepo(db).AddSuggester(modelID, tool, cleanText(body.Why, maxWhyRunes), now().Format(time.RFC3339))
+}
+
+// withSuggesters adds the tools that suggested the model to its answer.
+func withSuggesters(db *sql.DB, s suggestionResponse) suggestionResponse {
+	list, err := query.NewAddedModelsQueryRepo(db).Suggesters(s.ID)
+	if err != nil {
+		list = nil
+	}
+	s.Suggesters = suggestersOrEmpty(list[s.ID])
+	return s
+}
+
+// answerKnown answers a suggestion of a model that is already known (waiting, added, or dismissed): nothing new is stored for the model, so it stays one
+// card and one download, but the tool that suggested it now is remembered too (unless the person dismissed the model: that stays as it is).
+func answerKnown(w http.ResponseWriter, db *sql.DB, existing entity.AddedModel, body suggestRequest, info hardware.Info) {
+	if existing.Status != entity.AddedStatusDismissed {
+		recordSuggester(db, existing.ID, body)
+	}
+	response.SuccessResponse(w, http.StatusOK, withSuggesters(db, toSuggestion(existing, info)))
+}
+
+// answerCreated answers the suggestion that stored a new model, and records the tool that made it.
+func answerCreated(w http.ResponseWriter, db *sql.DB, row entity.AddedModel, body suggestRequest, info hardware.Info) {
+	recordSuggester(db, row.ID, body)
+	s := withSuggesters(db, toSuggestion(row, info))
 	s.Created = true
 	response.SuccessResponse(w, http.StatusCreated, s)
 }

@@ -50,6 +50,15 @@ func newSugRig(t *testing.T, answer func(huggingface.Request) (huggingface.Resol
 	return &sugRig{t: t, db: db}
 }
 
+// newSugRigOn is a rig on a database that already has rows, with another answer for the lookup.
+func newSugRigOn(t *testing.T, db *sql.DB, answer func(huggingface.Request) (huggingface.Resolved, error)) *sugRig {
+	t.Helper()
+	r := newSugRig(t, answer)
+	r.db = db
+	models.SetSource(models.FromDB(db, nil))
+	return r
+}
+
 func (r *sugRig) suggest(body string) (int, map[string]any) {
 	r.t.Helper()
 	rec := httptest.NewRecorder()

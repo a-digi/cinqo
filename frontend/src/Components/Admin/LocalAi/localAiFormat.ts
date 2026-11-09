@@ -272,11 +272,20 @@ export function setupView(saved: Pick<LocalAiSettings, 'enabled'>, status: Local
 
 // ---- models that tools suggested (plan 220) ----
 
-// "Added by Career": who suggested a model that was added; empty for a model shipped with Cinqo.
-export function addedByText(m: Pick<LocalAiModel, 'origin' | 'addedBy'>): string {
+// "Career", "Career and Browser", "Career, Browser and PDF Tools": names in a sentence. Empty names are left out, none at all reads "a tool".
+export function joinTools(names: string[]): string {
+  const list = names.map((n) => n.trim()).filter((n) => n !== '')
+  if (list.length === 0) return 'a tool'
+  if (list.length === 1) return list[0]
+  return `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}`
+}
+
+// "Added by Career and Browser": every tool that suggested a model that was added (the first one when the core lists only one); empty for a
+// model shipped with Cinqo.
+export function addedByText(m: Pick<LocalAiModel, 'origin' | 'addedBy' | 'suggestedBy'>): string {
   if (m.origin !== 'added') return ''
-  const by = (m.addedBy ?? '').trim()
-  return by === '' ? 'Added by a tool' : `Added by ${by}`
+  const all = m.suggestedBy ?? []
+  return `Added by ${joinTools(all.length > 0 ? all : [m.addedBy ?? ''])}`
 }
 
 // Where an added model is from, in a line for its card.
@@ -294,10 +303,20 @@ export function suggestionFacts(s: LocalAiSuggestion): string {
   return `${formatBytes(s.sizeBytes)} download · needs about ${formatBytes(s.minRamBytes)} memory · ${s.quantization} · License ${s.license}`
 }
 
-// What the tool said about it, always as the tool's own words: "Career says: ...".
-export function suggestionWhy(s: Pick<LocalAiSuggestion, 'suggestedBy' | 'why'>): string {
-  const by = s.suggestedBy.trim() === '' ? 'A tool' : s.suggestedBy.trim()
-  return s.why.trim() === '' ? `${by} suggested this model.` : `${by} says: ${s.why.trim()}`
+// What each tool said about it, always as the tool's own words: "Career says: ...". One line per tool, first suggester first. A core that lists
+// only the first tool still gives its line.
+export function suggestionWhyLines(s: Pick<LocalAiSuggestion, 'suggestedBy' | 'why' | 'suggesters'>): string[] {
+  const all = s.suggesters !== undefined && s.suggesters.length > 0 ? s.suggesters : [{ tool: s.suggestedBy, why: s.why, at: '' }]
+  return all.map((x) => {
+    const by = x.tool.trim() === '' ? 'A tool' : x.tool.trim()
+    return x.why.trim() === '' ? `${by} suggested this model.` : `${by} says: ${x.why.trim()}`
+  })
+}
+
+// "Suggested by Career and Browser": who wants the model, in one line for the head of the card.
+export function suggestedByText(s: Pick<LocalAiSuggestion, 'suggestedBy' | 'suggesters'>): string {
+  const all = s.suggesters !== undefined && s.suggesters.length > 0 ? s.suggesters.map((x) => x.tool) : [s.suggestedBy]
+  return `Suggested by ${joinTools(all)}`
 }
 
 // The question asked before anything is downloaded: where it is from, who made it, how big it is.

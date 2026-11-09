@@ -599,6 +599,9 @@ the local AI (`GET /api/v1/platforms`, platform `local`, field `models`) like an
   steps (those are only written for models Cinqo measured). Do not rely on tool calls from it.
 - **Be sparing.** Suggest on a person's own action (a button), not on every page load. What you write in
   `suggestedBy` and `why` is shown as text, cut to 60 and 300 characters, and never used to decide anything.
+- **Many tools can ask for the same model.** It is still one card and one download: every tool that suggested
+  it is listed (by the name you give in `suggestedBy`, once per name, with your first `why`), and the answer you
+  get has `created: false` and a `suggesters` list. A suggestion of a model the person dismissed adds nothing.
 - The person can remove an added model at any time; a suggestion of the same file is then possible again.
 - A tool's **backend** has no credential for this route: suggest from the page, as the signed-in user.
 

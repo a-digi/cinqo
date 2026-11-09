@@ -20,7 +20,8 @@ import {
   addedSourceLine,
   canRemoveModel,
   suggestionFacts,
-  suggestionWhy,
+  suggestedByText,
+  suggestionWhyLines,
   contextAdvice,
   contextFits,
   contextLabel,
@@ -337,7 +338,12 @@ export function LocalAiForm({
                   <FitBadge fits={s.fits} />
                 </div>
                 <p className="mt-1 text-xs text-gray-600">{suggestionFacts(s)}</p>
-                <p className="mt-1 text-xs text-gray-700">{suggestionWhy(s)}</p>
+                <p className="mt-1 text-xs font-medium text-violet-700">{suggestedByText(s)}</p>
+                {suggestionWhyLines(s).map((line, i) => (
+                  <p key={i} className="mt-1 text-xs text-gray-700">
+                    {line}
+                  </p>
+                ))}
                 <p className="mt-1 text-[11px] text-gray-400">
                   Hugging Face {s.repo} · published by {s.publisher}
                   {s.shipped === true && ' · ships with Cinqo'}

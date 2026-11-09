@@ -96,3 +96,11 @@ func AddedID(repo, file, commit string) string {
 	sum := sha256.Sum256([]byte(repo + "\n" + file + "\n" + commit))
 	return AddedIDPrefix + hex.EncodeToString(sum[:])[:12]
 }
+
+// Suggester is one tool that suggested a model, in its own words. A model suggested by several tools is one model with several suggesters: it is shown
+// once, downloaded once, and every tool that wanted it is listed. Tool is the name the tool gave itself (never verified).
+type Suggester struct {
+	Tool string `json:"tool"`
+	Why  string `json:"why"`
+	At   string `json:"at"`
+}

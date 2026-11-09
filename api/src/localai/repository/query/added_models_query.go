@@ -2,6 +2,7 @@ package query
 
 import (
 	"database/sql"
+	"strings"
 
 	"github.com/a-digi/cinqo/src/localai/entity"
 )
@@ -63,4 +64,31 @@ func (r *AddedModelsQueryRepo) CountByStatus(status string) (int, error) {
 	var n int
 	err := r.db.QueryRow(`SELECT COUNT(*) FROM local_ai_models WHERE status = ?`, status).Scan(&n)
 	return n, err
+}
+
+// Suggesters returns, for each model id asked about, the tools that suggested it, first suggester first.
+func (r *AddedModelsQueryRepo) Suggesters(ids ...string) (map[string][]entity.Suggester, error) {
+	out := map[string][]entity.Suggester{}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	marks := make([]string, len(ids))
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		marks[i], args[i] = "?", id
+	}
+	rows, err := r.db.Query(`SELECT model_id, tool, why, created_at FROM local_ai_model_suggesters WHERE model_id IN (`+strings.Join(marks, ",")+`) ORDER BY created_at, rowid`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		var s entity.Suggester
+		if err := rows.Scan(&id, &s.Tool, &s.Why, &s.At); err != nil {
+			return nil, err
+		}
+		out[id] = append(out[id], s)
+	}
+	return out, rows.Err()
 }
