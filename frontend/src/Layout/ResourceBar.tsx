@@ -4,7 +4,7 @@ import { SystemDetails } from './DetailsPanel'
 import { MemoryTop } from './MemoryTop'
 import { UnloadControl } from './UnloadControl'
 import { canManageSystem, canUnload, isUnloadable } from './agentUnload'
-import { AlertIcon, BotIcon, CheckIcon, PowerIcon, CpuIcon, CubeIcon, DiskIcon, MemoryIcon, SwapIcon } from './ResourceIcons'
+import { AlertIcon, BotIcon, CheckIcon, PowerIcon, CubeIcon, MemoryIcon } from './ResourceIcons'
 import { agentView, pillText, pillTitle, resourceLevel, usedPercent, type AgentTone, type ResourceLevel } from './resourceLevel'
 import { useFlash, useTweenedResources } from './tween'
 import { useResources } from './useResources'
@@ -56,33 +56,6 @@ export function ResourceBar() {
           watch={formatBytes(real.cinqo.appBytes)}
           name="Cinqo memory"
         />
-        {r.memory.swapUsedBytes > 0 && (
-          <Chip
-            icon={<SwapIcon />}
-            label="Swap"
-            value={formatBytes(r.memory.swapUsedBytes)}
-            watch={formatBytes(real.memory.swapUsedBytes)}
-            name="Swap in use"
-          />
-        )}
-        {r.cpu.load1 >= 0 && r.cpu.cores > 0 && (
-          <Chip
-            icon={<CpuIcon />}
-            label="CPU"
-            value={`${r.cpu.load1.toFixed(1)} / ${r.cpu.cores}`}
-            watch={`${real.cpu.load1.toFixed(1)} / ${real.cpu.cores}`}
-            name={`CPU load ${r.cpu.load1.toFixed(1)} of ${r.cpu.cores} cores`}
-          />
-        )}
-        {r.disk.totalBytes > 0 && (
-          <Chip
-            icon={<DiskIcon />}
-            label="Disk"
-            value={`${formatBytes(r.disk.freeBytes)} free`}
-            watch={`${formatBytes(real.disk.freeBytes)} free`}
-            name="Disk space"
-          />
-        )}
       </div>
       <div className="flex shrink-0 items-center gap-2">
         <SystemDetails resources={r} canManage={canManageSystem(scopes)} />
