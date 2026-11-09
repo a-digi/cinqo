@@ -186,6 +186,8 @@ type localAiResponse struct {
 	Engine entity.EngineStatus `json:"engine"`
 	// Suggestions are the models tools suggested that nobody confirmed yet (plan 220): nothing of them is downloaded.
 	Suggestions []suggestionResponse `json:"suggestions"`
+	// Dismissed are the ids of the suggested models the person dismissed: a tool that suggests a model can say so instead of asking again (plan 221).
+	Dismissed []string `json:"dismissed"`
 }
 
 // recommendedContext is the size recommended for tool tasks with model m, nil for a model that cannot use tools.
@@ -258,6 +260,7 @@ func respond(s entity.Settings, c catalog.Catalog, rt Runtime, installs Installs
 		Runtime:          runtime,
 		Engine:           rt.Status(),
 		Suggestions:      []suggestionResponse{},
+		Dismissed:        []string{},
 	}
 }
 

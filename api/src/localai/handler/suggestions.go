@@ -106,6 +106,11 @@ func respondWithAdded(db *sql.DB, out localAiResponse, c catalog.Catalog) localA
 	for _, m := range waiting {
 		ids = append(ids, m.ID)
 	}
+	if dismissed, err := repo.ListByStatus(entity.AddedStatusDismissed); err == nil {
+		for _, m := range dismissed {
+			out.Dismissed = append(out.Dismissed, m.ID)
+		}
+	}
 	who, _ := repo.Suggesters(ids...) // a table that cannot be read leaves the lists of tools empty
 	for i := range out.Catalog {
 		if a, ok := byID[out.Catalog[i].ID]; ok {

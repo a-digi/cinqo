@@ -260,3 +260,22 @@ func TestTheSameFileUnderAnotherRepositoryIsTheKnownModelEvenWhenItIsHidden(t *t
 		t.Errorf("%d %v", code, got)
 	}
 }
+
+// The page's answer lists the dismissed models, so a tool can say "you dismissed it" instead of asking again. A list, never null.
+func TestThePagesAnswerListsTheDismissedModels(t *testing.T) {
+	r := newShippedRig(t)
+	if list, ok := r.page()["dismissed"].([]any); !ok || len(list) != 0 {
+		t.Fatalf("a list, never null: %v", r.page()["dismissed"])
+	}
+	r.suggestWith(coderBody)
+	r.suggestWith(shippedBody)
+	r.dismiss(coderID)
+	got := r.page()
+	list, _ := got["dismissed"].([]any)
+	if len(list) != 1 || list[0] != coderID {
+		t.Errorf("only the dismissed one: %v", got["dismissed"])
+	}
+	if len(got["suggestions"].([]any)) != 1 {
+		t.Error("the waiting one is a suggestion, not dismissed")
+	}
+}

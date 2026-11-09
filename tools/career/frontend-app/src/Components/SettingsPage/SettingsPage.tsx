@@ -2,13 +2,14 @@ import { useEffect, useState } from 'react'
 import { saveAiSettings } from '../../api'
 import { defaultModelFor } from '../../Cinqo/Platform/aiChoice'
 import { LocalModelNote } from '../../Cinqo/Platform/LocalModelNote'
-import { modelOptions, showsLocalModelNote } from '../../Cinqo/Platform/modelLabels'
+import { LOCAL_PLATFORM_ID, modelOptions, showsLocalModelNote } from '../../Cinqo/Platform/modelLabels'
 import { useAiChoice } from '../../Cinqo/Platform/useAiChoice'
 import { Dropdown } from '../Dropdown/Dropdown'
 import { InfoBox } from '../../Shared/InfoBox/InfoBox'
 import { RobotIcon } from '../../Shared/Icons/icons'
 import { ACCENTS } from '../JobsPage/jobsTheme'
 import { PageTips } from '../../Shared/PageTips/PageTips'
+import { SuggestedModelsCard } from './SuggestedModelsCard'
 
 const ACCENT = ACCENTS[4] // violet, like the AI cards on Home
 
@@ -197,6 +198,9 @@ export function SettingsPage() {
               </ul>
             </div>
           </section>
+          {ai.loaded && (
+            <SuggestedModelsCard platformModels={ai.platforms.find((p) => p.id === LOCAL_PLATFORM_ID)?.models ?? []} accent={ACCENT} />
+          )}
         </div>
         <aside className="order-2 w-full shrink-0 lg:order-1 lg:sticky lg:top-6 lg:w-72">
           <PageTips page="settings" orientation="vertical" />
