@@ -1,3 +1,4 @@
+import { ChromeSessionsCard } from './ChromeSessionsCard'
 import { ChromeSection } from './ChromiumPage'
 import { EngineSection } from './EnginePage'
 import { HealthStrip } from './HealthStrip'
@@ -43,6 +44,8 @@ export function BrowserEnginePage() {
         testError={engine.testError}
         onTest={engine.runTest}
       />
+
+      {chrome.status?.installed !== false && <ChromeSessionsCard />}
 
       <ChromeSection chrome={chrome} />
 

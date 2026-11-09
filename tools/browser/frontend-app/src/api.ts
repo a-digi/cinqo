@@ -342,6 +342,52 @@ export async function fetchKatanaWindowSites(): Promise<{ hosts: KatanaWindowSit
 
 // Forget a site: Katana reads it the headless way again and its cookies are removed from the window's profile.
 export async function forgetKatanaWindowSite(host: string): Promise<void> {
-  const res = await fetch(`${KATANA_WINDOW_BASE}/katana-window-host?host=${encodeURIComponent(host)}`, { method: 'DELETE', credentials: 'include' })
+  const res = await fetch(`${KATANA_WINDOW_BASE}/katana-window-host?host=${encodeURIComponent(host)}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  })
   if (!res.ok) throw new Error(`failed to forget the site (${res.status})`)
+}
+
+// --- Chrome sessions (plan 224) ---
+//
+// The Chrome processes the tool started and still tracks, how many crawl sessions run (at most `limit`), how many requests wait for a free
+// slot, and what the watchdog did, from GET /chrome-processes. Read only. A backend that predates it answers 404: the card is then left out.
+
+const CHROME_PROCESSES_BASE = '/api/v1/tools/browser/proxy/chrome-processes'
+
+export interface ChromeProcess {
+  pid: number
+  // 'rod', 'katana', 'shared-headless', 'headed', 'window' or 'login-window' (a newer backend may add more: the card shows those as "Chrome").
+  kind: string
+  ageSeconds: number
+  idleSeconds: number
+  // "running", or "gone" when the process ended without being released (the watchdog drops it on its next pass).
+  state: string
+}
+
+export interface WatchdogStatus {
+  lastRunAt: string // "" before the first pass
+  runs: number
+  killedUnused: number
+  killedOrphan: number
+  deadDropped: number
+  defunct: number
+  stuckSessions: number
+}
+
+export interface ChromeProcessesResponse {
+  limit: number
+  running: number
+  waiting: number
+  chromes: ChromeProcess[]
+  watchdog: WatchdogStatus
+}
+
+// null when the backend has no such route (an older Browser tool).
+export async function fetchChromeProcesses(signal?: AbortSignal): Promise<ChromeProcessesResponse | null> {
+  const res = await fetch(CHROME_PROCESSES_BASE, { credentials: 'include', signal })
+  if (res.status === 404) return null
+  if (!res.ok) throw new Error(`failed to load the Chrome sessions (${res.status})`)
+  return readJson<ChromeProcessesResponse>(res)
 }
