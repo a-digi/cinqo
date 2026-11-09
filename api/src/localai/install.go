@@ -41,6 +41,8 @@ type installer struct {
 	downloads *download.Manager
 	dataDir   string
 	catalog   catalog.Catalog
+	// source, when set, is the list of models now (shipped and added, package models); catalog is what is used without it.
+	source func() (catalog.Catalog, error)
 
 	// failures remembers why a download ended badly, seen while it was still listed by the manager (which forgets a finished job
 	// after its retention time), so a page that is reloaded can still say why. It is cleared when a new attempt starts or succeeds,
@@ -51,6 +53,16 @@ type installer struct {
 
 // failureMemory is how long a seen failure is kept.
 const failureMemory = 24 * time.Hour
+
+// cat is the list of models and runtimes now.
+func (in *installer) cat() catalog.Catalog {
+	if in.source != nil {
+		if c, err := in.source(); err == nil {
+			return c
+		}
+	}
+	return in.catalog
+}
 
 func (in *installer) root() string { return filepath.Join(in.dataDir, "local-ai") }
 
@@ -104,11 +116,11 @@ func (in *installer) RuntimeState(r catalog.Runtime) entity.FileInstall {
 // Start begins the downloads a model needs: the runtime for this system (unless it is there) and the model file (unless it
 // is there). A download that is already running is joined, not started twice.
 func (in *installer) Start(modelID string, system hardware.Info) error {
-	m, ok := in.catalog.Find(modelID)
+	m, ok := in.cat().Find(modelID)
 	if !ok {
 		return entity.ErrUnknownModel
 	}
-	rt, ok := in.catalog.RuntimeFor(system.OS, system.Arch)
+	rt, ok := in.cat().RuntimeFor(system.OS, system.Arch)
 	if !ok {
 		return entity.ErrUnsupportedSystem
 	}
@@ -193,26 +205,40 @@ func (in *installer) RuntimeFailure(r catalog.Runtime) *entity.Failure {
 // CancelDownloads stops every download of this module that is running (the program and the models) and removes their unfinished
 // files. It is what switching the local AI off does while it is still being set up (plan 205).
 func (in *installer) CancelDownloads() {
-	for _, m := range in.catalog.Models {
+	for _, m := range in.cat().Models {
 		if id, ok := in.downloads.Active(in.ModelPath(m)); ok {
 			in.downloads.Cancel(id)
 		}
 	}
-	for _, r := range in.catalog.Runtimes {
+	for _, r := range in.cat().Runtimes {
 		if id, ok := in.downloads.Active(in.archivePath(r)); ok {
 			in.downloads.Cancel(id)
 		}
 	}
 }
 
+// RemoveModel deletes one model's file and any unfinished download of it. It refuses while that model is being downloaded.
+func (in *installer) RemoveModel(m catalog.Model) error {
+	dest := in.ModelPath(m)
+	if _, ok := in.downloads.Active(dest); ok {
+		return entity.ErrDownloadRunning
+	}
+	for _, p := range []string{dest, dest + ".part"} {
+		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+			return errors.New("the model file could not be removed")
+		}
+	}
+	return nil
+}
+
 // Remove deletes everything the module downloaded (models, runtime, leftovers). It refuses while any download is running.
 func (in *installer) Remove() error {
-	for _, m := range in.catalog.Models {
+	for _, m := range in.cat().Models {
 		if _, ok := in.downloads.Active(in.ModelPath(m)); ok {
 			return entity.ErrDownloadRunning
 		}
 	}
-	for _, r := range in.catalog.Runtimes {
+	for _, r := range in.cat().Runtimes {
 		if _, ok := in.downloads.Active(in.archivePath(r)); ok {
 			return entity.ErrDownloadRunning
 		}

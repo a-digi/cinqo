@@ -548,6 +548,60 @@ if (typeof bridge.pdfThumbnail === 'function') {
 - `null` also means "not a PDF", "deleted", "too large to preview" or "unreadable": show a placeholder.
 - Hosts older than this feature have no `pdfThumbnail`; check with `typeof` first and fall back to your own image.
 
+## Suggesting a local AI model
+
+Cinqo can run small language models on the computer it is installed on (the **Local Agents** page in the AI
+menu). A tool that wants a model Cinqo does not ship can **suggest** it. The tool only says *where the model
+is*: Cinqo looks it up, asks the person, downloads it, puts it with all the other models and offers it to
+every tool's model picker. The tool never downloads anything and never gives Cinqo an address to fetch.
+
+```js
+// from your tool's page, with the signed-in user's own session
+httpClient
+  .post('/api/v1/local-ai/suggestions', {
+    repo: 'owner/name', // a Hugging Face repository
+    file: 'model-q4_k_m.gguf', // one .gguf file in the top folder of it
+    revision: 'main', // optional: a branch, a tag or a commit (default main)
+    suggestedBy: 'My tool', // shown as "My tool says: ..."
+    why: 'Writes short summaries well on a small computer.', // optional, shown to the person
+    // optional: name, contextTokens (512 to 131072, default 4096), and sha256 / sizeBytes of the file
+    // (only compared with what Hugging Face says, never used)
+  })
+  .then((suggestion) => {
+    /* suggestion.status is "suggested", "added" or "dismissed"; suggestion.created is false if it was already known */
+  })
+```
+
+**What Cinqo does.** It reads the pinned commit, the size, the SHA-256 and the licence from Hugging Face itself
+and refuses what does not meet the rules of its own list (a licence is required, the file must have a SHA-256
+on Hugging Face, 1 MiB to 20 GiB, no private or gated repository). The suggestion is stored and shown on the
+Local Agents page, **with the repository and its publisher**. Nothing is downloaded until the person clicks
+Download and confirms. Then Cinqo downloads and checks the file, and the model appears in the platform list of
+the local AI (`GET /api/v1/platforms`, platform `local`, field `models`) like any other.
+
+| Answer | Meaning |
+|---|---|
+| `201` | stored as a suggestion (`created: true`) |
+| `200` | already known: the answer says what became of it (`suggested`, `added` or `dismissed`, `created: false`) |
+| `400` | a name that is not valid, or a context size outside the bounds |
+| `403` | the user lacks the platform manage scope (`cinqo:platform:manage`): suggesting needs the same scope as confirming |
+| `404` | Hugging Face has no such repository, revision or file |
+| `409` | the model is already one of the models shipped with Cinqo: use it, do not suggest it |
+| `422` | the model cannot be used: no licence, no SHA-256, private or gated, too small or too large, or what you stated does not match |
+| `429` | 20 suggestions are already waiting: try again later |
+| `502` | Hugging Face could not be reached |
+
+**What to know**
+- **Do not wait for it.** The person may never confirm, or confirm hours later. Offer the model only when it
+  is in the platform's `models`, and say what you do until then. A **dismissed** suggestion stays dismissed:
+  suggesting the same file again does not bring it back.
+- **An added model only answers.** Cinqo has not tested it, so it is never given tools or a long task in
+  steps (those are only written for models Cinqo measured). Do not rely on tool calls from it.
+- **Be sparing.** Suggest on a person's own action (a button), not on every page load. What you write in
+  `suggestedBy` and `why` is shown as text, cut to 60 and 300 characters, and never used to decide anything.
+- The person can remove an added model at any time; a suggestion of the same file is then possible again.
+- A tool's **backend** has no credential for this route: suggest from the page, as the signed-in user.
+
 ## Publishing a repository
 
 ```

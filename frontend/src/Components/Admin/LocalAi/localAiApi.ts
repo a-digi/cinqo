@@ -108,6 +108,34 @@ export interface LocalAiModel {
   fits: boolean | null
   install: FileInstall
   enable: EnableState
+  // 'catalog': shipped with Cinqo. 'added': a model a person added after a tool suggested it (plan 220); addedBy is who suggested it (the tool's own word),
+  // repo and publisher say where it is from and why is the reason given.
+  origin: 'catalog' | 'added'
+  addedBy?: string
+  repo?: string
+  publisher?: string
+  why?: string
+}
+
+// A model a tool suggested that nobody confirmed yet: nothing of it is downloaded. The address and the hash are not sent. fits is null when the memory
+// of this machine is unknown.
+export interface LocalAiSuggestion {
+  id: string
+  name: string
+  repo: string
+  file: string
+  commit: string
+  publisher: string
+  sizeBytes: number
+  minRamBytes: number
+  quantization: string
+  license: string
+  contextTokens: number
+  why: string
+  suggestedBy: string
+  status: string
+  createdAt: string
+  fits: boolean | null
 }
 
 export interface LocalAiResponse {
@@ -118,6 +146,8 @@ export interface LocalAiResponse {
   catalogCheckedOn: string
   runtime: LocalAiRuntime
   engine: LocalAiEngine
+  // The suggestions that wait for a decision (empty from a core that predates them).
+  suggestions?: LocalAiSuggestion[]
 }
 
 export async function fetchLocalAi(): Promise<LocalAiResponse> {
@@ -159,5 +189,22 @@ export interface LocalAiTestResult {
 // started first when it is not running.
 export async function testModel(modelId?: string): Promise<LocalAiTestResult> {
   const raw = await apiPost<{ message: LocalAiTestResult }>('/api/v1/local-ai/test', modelId === undefined ? {} : { modelId })
+  return raw.message
+}
+
+// Confirms a suggested model: it becomes part of the list of models and its download starts. The answer is the page's own.
+export async function confirmSuggestion(id: string): Promise<LocalAiResponse> {
+  const raw = await apiPost<{ message: LocalAiResponse }>(`/api/v1/local-ai/models/${encodeURIComponent(id)}/install`, {})
+  return raw.message
+}
+
+// Dismisses a suggestion: it is kept as dismissed, so a tool does not offer the same file again.
+export async function dismissSuggestion(id: string): Promise<void> {
+  await apiPost(`/api/v1/local-ai/suggestions/${encodeURIComponent(id)}/dismiss`, {})
+}
+
+// Removes one added model: its file and its entry. The answer is the page's own.
+export async function removeAddedModel(id: string): Promise<LocalAiResponse> {
+  const raw = await apiDelete<{ message: LocalAiResponse }>(`/api/v1/local-ai/models/${encodeURIComponent(id)}`)
   return raw.message
 }

@@ -12,9 +12,15 @@ import type {
   LocalAiRuntime,
   LocalAiSettings,
   LocalAiStatus,
+  LocalAiSuggestion,
   LocalAiTestResult,
 } from './localAiApi'
 import {
+  addedByText,
+  addedSourceLine,
+  canRemoveModel,
+  suggestionFacts,
+  suggestionWhy,
   contextAdvice,
   contextFits,
   contextLabel,
@@ -129,6 +135,10 @@ export function LocalAiForm({
   onCancelDownload,
   onDownloadFinished,
   onRemoveDownloads,
+  suggestions,
+  onConfirmSuggestion,
+  onDismissSuggestion,
+  onRemoveModel,
   onToggle,
   onContinueSetup,
   draft,
@@ -164,6 +174,11 @@ export function LocalAiForm({
   onCancelDownload: (downloadId: string) => void
   onDownloadFinished: (key: string, d: Download | null) => void
   onRemoveDownloads: () => void
+  // Models tools suggested that wait for a decision (plan 220): confirming downloads and adds one, dismissing hides it for good; an added model can be removed.
+  suggestions: LocalAiSuggestion[]
+  onConfirmSuggestion: (s: LocalAiSuggestion) => void
+  onDismissSuggestion: (s: LocalAiSuggestion) => void
+  onRemoveModel: (m: LocalAiModel) => void
   // Switching on or off: the page saves it at once, so switching on starts the setup in the background (plan 205).
   onToggle: (enabled: boolean) => void
   // Continue or try again: starts the downloads that are missing.
@@ -216,7 +231,11 @@ export function LocalAiForm({
             }}
             className="relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2 disabled:opacity-50"
             style={{
-              background: !draft.enabled ? '#d1d5db' : visual === 'pending' ? '#f59e0b' : `linear-gradient(135deg, ${accent.from}, ${accent.to})`,
+              background: !draft.enabled
+                ? '#d1d5db'
+                : visual === 'pending'
+                  ? '#f59e0b'
+                  : `linear-gradient(135deg, ${accent.from}, ${accent.to})`,
             }}
           >
             <span
@@ -231,7 +250,8 @@ export function LocalAiForm({
             <p id={switchNoteId} className="mt-1 text-xs text-gray-500">
               Off by default. While off, &quot;Local AI&quot; is not offered anywhere. When you switch it on, Cinqo first downloads what it
               needs in the background (the program that runs the models and the chosen model, if they are not on this computer yet); once
-              that is done it shows up as a platform when a new conversation is created. Nothing you write is sent to a cloud provider by it.
+              that is done it shows up as a platform when a new conversation is created. Nothing you write is sent to a cloud provider by
+              it.
             </p>
             {sw.locked && (
               <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
@@ -303,6 +323,54 @@ export function LocalAiForm({
         </div>
       </Card>
 
+      {suggestions.length > 0 && (
+        <Card label="Suggested models" title="Suggested by tools">
+          <p className="mb-3 text-xs text-gray-500">
+            A tool suggested these models. Nothing is downloaded until you say so. Cinqo checks the file it downloads, but it has not tested
+            the model.
+          </p>
+          <ul className="space-y-3">
+            {suggestions.map((s) => (
+              <li key={s.id} className="rounded-2xl border border-gray-200 bg-white/70 p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-sm font-semibold text-gray-900">{s.name}</p>
+                  <FitBadge fits={s.fits} />
+                </div>
+                <p className="mt-1 text-xs text-gray-600">{suggestionFacts(s)}</p>
+                <p className="mt-1 text-xs text-gray-700">{suggestionWhy(s)}</p>
+                <p className="mt-1 text-[11px] text-gray-400">
+                  Hugging Face {s.repo} · published by {s.publisher}
+                </p>
+                {canManage && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      disabled={installBusy}
+                      onClick={() => {
+                        onConfirmSuggestion(s)
+                      }}
+                      className="rounded-full border border-teal-600 px-3 py-1 text-xs font-semibold text-teal-700 transition hover:bg-teal-50 disabled:opacity-50"
+                    >
+                      Download ({formatBytes(s.sizeBytes)})
+                    </button>
+                    <button
+                      type="button"
+                      disabled={installBusy}
+                      onClick={() => {
+                        onDismissSuggestion(s)
+                      }}
+                      className="rounded-full border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+
       <Card label="Model" title="Default model">
         <fieldset aria-describedby={`${groupId}-note`}>
           <legend className="sr-only">Default model</legend>
@@ -342,6 +410,11 @@ export function LocalAiForm({
                       </label>
                       <span className="rounded-full bg-gray-100 px-2 py-0.5 font-mono text-[11px] text-gray-600">{m.quantization}</span>
                       <FitBadge fits={m.fits} />
+                      {addedByText(m) !== '' && (
+                        <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-700">
+                          {addedByText(m)}
+                        </span>
+                      )}
                     </div>
                     <p className="mt-1 text-xs text-gray-600">{modelFacts(m)}</p>
                     <p className="mt-1 text-xs text-gray-500">{m.note}</p>
@@ -349,6 +422,7 @@ export function LocalAiForm({
                     <p className="mt-1 text-[11px] text-gray-400">
                       License {m.license} · {m.source}
                     </p>
+                    {addedSourceLine(m) !== '' && <p className="mt-1 text-[11px] text-gray-500">{addedSourceLine(m)}</p>}
                     <div className="relative z-10 mt-3">
                       <InstallRow
                         install={m.install}
@@ -365,6 +439,18 @@ export function LocalAiForm({
                           onDownloadFinished(m.id, d)
                         }}
                       />
+                      {canManage && canRemoveModel(m, saved.modelId) && (
+                        <button
+                          type="button"
+                          disabled={installBusy}
+                          onClick={() => {
+                            onRemoveModel(m)
+                          }}
+                          className="mt-2 text-xs font-medium text-red-700 hover:text-red-900 disabled:opacity-50"
+                        >
+                          Remove this model
+                        </button>
+                      )}
                     </div>
                   </div>
                 </li>

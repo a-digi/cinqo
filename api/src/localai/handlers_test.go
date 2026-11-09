@@ -38,8 +38,10 @@ type fakeRequest struct {
 	di   serverdi.Context
 	body string
 	req  *http.Request // the request the handler sees (a plain one when nil)
+	vars map[string]string
 }
 
+func (f fakeRequest) GetURI() *request.URI           { return &request.URI{PathVariables: f.vars} }
 func (f fakeRequest) GetWriter() http.ResponseWriter { return f.w }
 func (f fakeRequest) GetDI() serverdi.Context        { return f.di }
 func (f fakeRequest) GetRequest() *http.Request {
@@ -95,16 +97,18 @@ func (f fakeRuntime) Test(ctx context.Context, modelID string) (entity.TestResul
 
 // fakeInstalls records what the handlers ask of it.
 type fakeInstalls struct {
-	startModel  string
-	startSystem hardware.Info
-	startErr    error
-	removeErr   error
-	removed     bool
-	starts      int
-	cancels     int
-	modelFail   *entity.Failure
-	runtimeFail *entity.Failure
-	states      map[string]entity.FileInstall
+	startModel     string
+	startSystem    hardware.Info
+	startErr       error
+	removeErr      error
+	removed        bool
+	removedModels  []catalog.Model
+	removeModelErr error
+	starts         int
+	cancels        int
+	modelFail      *entity.Failure
+	runtimeFail    *entity.Failure
+	states         map[string]entity.FileInstall
 }
 
 func (f *fakeInstalls) ModelState(m catalog.Model) entity.FileInstall {
@@ -133,6 +137,11 @@ func (f *fakeInstalls) ModelFailure(catalog.Model) *entity.Failure     { return 
 func (f *fakeInstalls) RuntimeFailure(catalog.Runtime) *entity.Failure { return f.runtimeFail }
 
 func (f *fakeInstalls) Remove() error { f.removed = true; return f.removeErr }
+
+func (f *fakeInstalls) RemoveModel(m catalog.Model) error {
+	f.removedModels = append(f.removedModels, m)
+	return f.removeModelErr
+}
 
 func call(name string, runtime handler.Runtime, db *sql.DB, body string) *httptest.ResponseRecorder {
 	return callWith(name, runtime, &fakeInstalls{}, db, body)
@@ -267,13 +276,13 @@ func TestUpdateRefusesBadInputAndStoresNothing(t *testing.T) {
 
 func TestHandlersAreRegisteredUnderTheNamesOfTheRouteFile(t *testing.T) {
 	h := Handlers()
-	for _, name := range []string{"LocalAiGet", "LocalAiUpdateSettings", "LocalAiInstall", "LocalAiRemoveDownloads", "LocalAiTest"} {
+	for _, name := range []string{"LocalAiGet", "LocalAiUpdateSettings", "LocalAiInstall", "LocalAiRemoveDownloads", "LocalAiTest", "LocalAiSuggest", "LocalAiDismissSuggestion", "LocalAiInstallModel", "LocalAiRemoveModel"} {
 		if h[name] == nil {
 			t.Errorf("no handler named %s", name)
 		}
 	}
-	if len(h) != 5 {
-		t.Errorf("%d handlers, want 5: a handler without a route is dead code, a route without a handler fails at start", len(h))
+	if len(h) != 9 {
+		t.Errorf("%d handlers, want 9: a handler without a route is dead code, a route without a handler fails at start", len(h))
 	}
 }
 

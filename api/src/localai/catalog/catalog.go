@@ -203,6 +203,10 @@ func validateRuntime(r Runtime) error {
 	return nil
 }
 
+// ValidateModel checks one model entry against every rule a shipped entry must meet. The merged model list uses it for models that were added at
+// run time, so those meet exactly the same rules as the ones shipped in the program.
+func ValidateModel(m Model) error { return validateModel(m) }
+
 func validateModel(m Model) error {
 	switch {
 	case !idPattern.MatchString(m.ID):

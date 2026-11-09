@@ -23,6 +23,7 @@ func (noInstalls) RuntimeState(catalog.Runtime) entity.FileInstall {
 }
 func (noInstalls) Start(string, hardware.Info) error              { return nil }
 func (noInstalls) Remove() error                                  { return nil }
+func (noInstalls) RemoveModel(catalog.Model) error                { return nil }
 func (noInstalls) CancelDownloads()                               {}
 func (noInstalls) ModelFailure(catalog.Model) *entity.Failure     { return nil }
 func (noInstalls) RuntimeFailure(catalog.Runtime) *entity.Failure { return nil }
@@ -183,6 +184,7 @@ func (st states) ModelState(m catalog.Model) entity.FileInstall {
 	return entity.FileInstall{State: entity.InstallNotDownloaded}
 }
 func (st states) CancelDownloads()                               {}
+func (st states) RemoveModel(catalog.Model) error                { return nil }
 func (st states) ModelFailure(catalog.Model) *entity.Failure     { return nil }
 func (st states) RuntimeFailure(catalog.Runtime) *entity.Failure { return nil }
 func (st states) RuntimeState(r catalog.Runtime) entity.FileInstall {

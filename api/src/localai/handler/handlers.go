@@ -16,6 +16,7 @@ import (
 	"github.com/a-digi/cinqo/src/localai/catalog"
 	"github.com/a-digi/cinqo/src/localai/entity"
 	"github.com/a-digi/cinqo/src/localai/hardware"
+	"github.com/a-digi/cinqo/src/localai/models"
 	"github.com/a-digi/cinqo/src/localai/repository/persistent"
 	"github.com/a-digi/cinqo/src/localai/repository/query"
 )
@@ -50,6 +51,8 @@ type Installs interface {
 	CancelDownloads()
 	// Remove deletes everything downloaded; entity.ErrDownloadRunning while a download is running.
 	Remove() error
+	// RemoveModel deletes one model's file; entity.ErrDownloadRunning while that model is being downloaded.
+	RemoveModel(m catalog.Model) error
 }
 
 type api struct {
@@ -66,6 +69,12 @@ func Handlers(runtime Runtime, installs Installs) map[string]routing.HandlerInte
 		"LocalAiInstall":         handlerFunc(a.install),
 		"LocalAiRemoveDownloads": handlerFunc(a.removeDownloads),
 		"LocalAiTest":            handlerFunc(a.test),
+		// a tool suggests a model, a person dismisses a suggestion (plan 220)
+		"LocalAiSuggest":           handlerFunc(a.suggest),
+		"LocalAiDismissSuggestion": handlerFunc(a.dismissSuggestion),
+		// a person confirms a suggestion (it is added and downloaded) or removes an added model (plan 220, step 4)
+		"LocalAiInstallModel": handlerFunc(a.installModel),
+		"LocalAiRemoveModel":  handlerFunc(a.removeModel),
 	}
 }
 
@@ -135,6 +144,13 @@ type catalogModelResponse struct {
 	Install entity.FileInstall `json:"install"`
 	// Enable says whether the local AI can be switched on with this model right now, and if not, why not.
 	Enable enableResponse `json:"enable"`
+	// Origin is "catalog" for a model shipped in the program and "added" for one a person added after a tool suggested it (plan 220). For an
+	// added model, AddedBy is who suggested it (the tool's own word), Repo and Publisher say where it is from, and Why is the reason given.
+	Origin    string `json:"origin"`
+	AddedBy   string `json:"addedBy,omitempty"`
+	Repo      string `json:"repo,omitempty"`
+	Publisher string `json:"publisher,omitempty"`
+	Why       string `json:"why,omitempty"`
 }
 
 type enableResponse struct {
@@ -166,6 +182,8 @@ type localAiResponse struct {
 	Runtime          runtimeResponse        `json:"runtime"`
 	// Engine is the state of the model program: stopped (it starts when a conversation needs it), starting, ready or failed.
 	Engine entity.EngineStatus `json:"engine"`
+	// Suggestions are the models tools suggested that nobody confirmed yet (plan 220): nothing of them is downloaded.
+	Suggestions []suggestionResponse `json:"suggestions"`
 }
 
 // recommendedContext is the size recommended for tool tasks with model m, nil for a model that cannot use tools.
@@ -222,6 +240,7 @@ func respond(s entity.Settings, c catalog.Catalog, rt Runtime, installs Installs
 			RecommendedContext: recommendedContext(m, rt.CanUseTools(m.ID)),
 			Install:            installs.ModelState(m),
 			Enable:             enableOf(rt.CanEnable(m.ID)),
+			Origin:             "catalog",
 		})
 	}
 	runtime := runtimeResponse{Install: entity.FileInstall{State: entity.InstallNotDownloaded}}
@@ -236,6 +255,7 @@ func respond(s entity.Settings, c catalog.Catalog, rt Runtime, installs Installs
 		CatalogCheckedOn: c.CheckedOn,
 		Runtime:          runtime,
 		Engine:           rt.Status(),
+		Suggestions:      []suggestionResponse{},
 	}
 }
 
@@ -260,12 +280,12 @@ func (a api) get(reqCtx request.RequestContext) {
 		response.ErrorResponse(w, http.StatusInternalServerError, "failed to load the local AI settings")
 		return
 	}
-	c, err := catalog.Default()
+	c, err := models.Current()
 	if err != nil {
 		response.ErrorResponse(w, http.StatusInternalServerError, "the local AI model catalog is invalid")
 		return
 	}
-	response.SuccessResponse(w, http.StatusOK, respond(s, c, a.runtime, a.installs))
+	response.SuccessResponse(w, http.StatusOK, respondWithAdded(db, respond(s, c, a.runtime, a.installs), c))
 }
 
 type updateSettingsRequest struct {
@@ -290,7 +310,7 @@ func (a api) updateSettings(reqCtx request.RequestContext) {
 		return
 	}
 
-	c, err := catalog.Default()
+	c, err := models.Current()
 	if err != nil {
 		response.ErrorResponse(w, http.StatusInternalServerError, "the local AI model catalog is invalid")
 		return
@@ -334,7 +354,7 @@ func (a api) updateSettings(reqCtx request.RequestContext) {
 	if before.Enabled && !saved.Enabled {
 		a.installs.CancelDownloads()
 	}
-	response.SuccessResponse(w, http.StatusOK, respond(saved, c, a.runtime, a.installs))
+	response.SuccessResponse(w, http.StatusOK, respondWithAdded(db, respond(saved, c, a.runtime, a.installs), c))
 }
 
 // deriveStatus turns a switched-on setting into its real state from what is on disk and what is downloading (plan 205, D5): the
@@ -412,7 +432,7 @@ func (a api) install(reqCtx request.RequestContext) {
 		response.ErrorResponse(w, http.StatusInternalServerError, "failed to load the local AI settings")
 		return
 	}
-	c, err := catalog.Default()
+	c, err := models.Current()
 	if err != nil {
 		response.ErrorResponse(w, http.StatusInternalServerError, "the local AI model catalog is invalid")
 		return
@@ -434,7 +454,7 @@ func (a api) install(reqCtx request.RequestContext) {
 		}
 		return
 	}
-	response.SuccessResponse(w, http.StatusAccepted, respond(s, c, a.runtime, a.installs))
+	response.SuccessResponse(w, http.StatusAccepted, respondWithAdded(db, respond(s, c, a.runtime, a.installs), c))
 }
 
 // removeDownloads handles DELETE /api/v1/local-ai/install: delete everything that was downloaded. It is refused while the
@@ -463,6 +483,9 @@ func (a api) removeDownloads(reqCtx request.RequestContext) {
 		response.ErrorResponse(w, http.StatusInternalServerError, "the downloaded files could not be removed")
 		return
 	}
+	// the models people added are only metadata now: back to suggestions (they can be downloaded again), and the one chosen on the page, if it was
+	// one of them, is no longer chosen
+	demoteAdded(db, s)
 	w.WriteHeader(http.StatusNoContent)
 }
 

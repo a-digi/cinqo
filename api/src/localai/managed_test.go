@@ -19,6 +19,8 @@ import (
 	"github.com/a-digi/cinqo/src/localai/catalog"
 	"github.com/a-digi/cinqo/src/localai/entity"
 	"github.com/a-digi/cinqo/src/localai/hardware"
+	"github.com/a-digi/cinqo/src/localai/models"
+	"github.com/a-digi/cinqo/src/localai/repository/persistent"
 	"github.com/a-digi/cinqo/src/localai/repository/query"
 	"github.com/a-digi/cinqo/src/platform/chatcompleter"
 )
@@ -430,9 +432,15 @@ func TestRegisterBuildsTheEngineStopsLeftoversAndStopsTheProgramWithTheApplicati
 		engine = unavailableEngine{err: errManagedNotBuilt}
 		setInstaller(nil)
 		setDialects(nil)
+		models.SetSource(nil)
 	})
 	setDialects(nil)
 	db := openMainDB(t)
+	// a model a person added earlier is part of the list once the module has started (plan 220)
+	added := addedModel("added-registered", entity.AddedStatusAdded, 2<<20, strings.Repeat("d", 64))
+	if err := persistent.NewAddedModelsPersistentRepo(db).Insert(&added); err != nil {
+		t.Fatal(err)
+	}
 	data := t.TempDir()
 	root := filepath.Join(data, "local-ai")
 
@@ -454,6 +462,11 @@ func TestRegisterBuildsTheEngineStopsLeftoversAndStopsTheProgramWithTheApplicati
 		t.Fatal(err)
 	}
 	waitUntil(t, "the leftover to be stopped at start", func() bool { return gone(cmd.Process.Pid) })
+	if cat, err := models.Current(); err != nil {
+		t.Fatal(err)
+	} else if _, ok := cat.Find("added-registered"); !ok {
+		t.Error("Register must make the list of models read the added ones")
+	}
 	if managed == nil || engine != Engine(managed) {
 		t.Fatal("Register must make the managed engine and use it")
 	}

@@ -13,6 +13,7 @@ import (
 	"github.com/a-digi/cinqo/src/localai/entity"
 	"github.com/a-digi/cinqo/src/localai/handler"
 	"github.com/a-digi/cinqo/src/localai/hardware"
+	"github.com/a-digi/cinqo/src/localai/models"
 	"github.com/a-digi/cinqo/src/localai/repository/query"
 	"github.com/a-digi/cinqo/src/platform"
 )
@@ -28,7 +29,9 @@ func Register(mainDB *sql.DB, deps Deps) error {
 	if deps.Downloads == nil || deps.DataDir == "" {
 		return errors.New("the local AI needs the download manager and the data directory")
 	}
-	in := &installer{downloads: deps.Downloads, dataDir: deps.DataDir, catalog: cat}
+	// the models now are the shipped ones and the ones a person added after a tool suggested them (plan 220)
+	models.SetSource(models.FromDB(mainDB, nil))
+	in := &installer{downloads: deps.Downloads, dataDir: deps.DataDir, catalog: cat, source: models.Current}
 	setInstaller(in)
 
 	// A model program left over from an earlier run that did not shut down cleanly is stopped before anything else.
@@ -100,6 +103,14 @@ func (l lazyInstalls) CancelDownloads() {
 	if in, ok := l.get(); ok {
 		in.CancelDownloads()
 	}
+}
+
+func (l lazyInstalls) RemoveModel(m catalog.Model) error {
+	in, ok := l.get()
+	if !ok {
+		return errors.New("downloads are not available")
+	}
+	return in.RemoveModel(m)
 }
 
 func (l lazyInstalls) Remove() error {

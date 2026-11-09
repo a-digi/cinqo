@@ -3,8 +3,8 @@ package localai
 import (
 	"sync"
 
-	"github.com/a-digi/cinqo/src/localai/catalog"
 	"github.com/a-digi/cinqo/src/localai/dialect"
+	"github.com/a-digi/cinqo/src/localai/models"
 )
 
 // The registry of tool dialects the module knows. It is set once by Register (from dialects_default.go, the one place that
@@ -34,7 +34,7 @@ func dialectOf(model string) dialect.Dialect {
 	if l == nil {
 		return nil
 	}
-	cat, err := catalog.Default()
+	cat, err := models.Current()
 	if err != nil {
 		return nil
 	}
@@ -49,7 +49,7 @@ func dialectOf(model string) dialect.Dialect {
 // toolsUsable says whether conversations on model may be given tools: the catalog says the model was measured to call them,
 // and, when that needs a dialect, the dialect is registered. A model whose dialect was removed simply has no tools.
 func toolsUsable(model string) bool {
-	cat, err := catalog.Default()
+	cat, err := models.Current()
 	if err != nil {
 		return false
 	}

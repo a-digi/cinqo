@@ -7,6 +7,7 @@ import type {
   LocalAiResponse,
   LocalAiSettings,
   LocalAiStatus,
+  LocalAiSuggestion,
   LocalAiTestResult,
 } from './localAiApi'
 
@@ -262,8 +263,48 @@ export function setupView(saved: Pick<LocalAiSettings, 'enabled'>, status: Local
       return {
         kind: 'interrupted',
         title: 'Setting up was interrupted',
-        detail: 'Cinqo has not finished downloading what the local AI needs (the app was restarted, or a file was removed). Continue to download the rest.',
+        detail:
+          'Cinqo has not finished downloading what the local AI needs (the app was restarted, or a file was removed). Continue to download the rest.',
         actions: ['continue', 'switch_off'],
       }
   }
+}
+
+// ---- models that tools suggested (plan 220) ----
+
+// "Added by Career": who suggested a model that was added; empty for a model shipped with Cinqo.
+export function addedByText(m: Pick<LocalAiModel, 'origin' | 'addedBy'>): string {
+  if (m.origin !== 'added') return ''
+  const by = (m.addedBy ?? '').trim()
+  return by === '' ? 'Added by a tool' : `Added by ${by}`
+}
+
+// Where an added model is from, in a line for its card.
+export function addedSourceLine(m: Pick<LocalAiModel, 'origin' | 'repo' | 'publisher'>): string {
+  if (m.origin !== 'added') return ''
+  return `Hugging Face ${m.repo ?? ''}, published by ${m.publisher ?? 'unknown'}. Cinqo has not tested this model: it only answers, it gets no tools.`
+}
+
+// Whether the Remove button is offered: only an added model, never the one chosen as the default, never while it is being downloaded.
+export function canRemoveModel(m: Pick<LocalAiModel, 'id' | 'origin' | 'install'>, savedModelId: string): boolean {
+  return m.origin === 'added' && m.id !== savedModelId && m.install.state !== 'downloading'
+}
+
+export function suggestionFacts(s: LocalAiSuggestion): string {
+  return `${formatBytes(s.sizeBytes)} download · needs about ${formatBytes(s.minRamBytes)} memory · ${s.quantization} · License ${s.license}`
+}
+
+// What the tool said about it, always as the tool's own words: "Career says: ...".
+export function suggestionWhy(s: Pick<LocalAiSuggestion, 'suggestedBy' | 'why'>): string {
+  const by = s.suggestedBy.trim() === '' ? 'A tool' : s.suggestedBy.trim()
+  return s.why.trim() === '' ? `${by} suggested this model.` : `${by} says: ${s.why.trim()}`
+}
+
+// The question asked before anything is downloaded: where it is from, who made it, how big it is.
+export function suggestionConfirmMessage(s: Pick<LocalAiSuggestion, 'name' | 'repo' | 'publisher' | 'sizeBytes'>): string {
+  return `Download ${s.name} (${formatBytes(s.sizeBytes)}) from Hugging Face (${s.repo}, published by ${s.publisher})? Cinqo will run this model on your computer. Cinqo checks the file, but has not tested the model.`
+}
+
+export function removeModelMessage(m: Pick<LocalAiModel, 'name'>): string {
+  return `Remove ${m.name}? Its downloaded file is deleted. A tool can suggest it again later.`
 }

@@ -49,12 +49,12 @@ func gib(bytes uint64) string { return hardware.GiB(bytes) }
 
 // resolve finds the catalog model and the program for this system: unknown models and unsupported systems end here.
 func (e *managedEngine) resolve(modelID string) (catalog.Model, catalog.Runtime, hardware.Info, error) {
-	m, ok := e.in.catalog.Find(modelID)
+	m, ok := e.in.cat().Find(modelID)
 	if !ok {
 		return catalog.Model{}, catalog.Runtime{}, hardware.Info{}, entity.ErrUnknownModel
 	}
 	info := e.system()
-	rt, ok := e.in.catalog.RuntimeFor(info.OS, info.Arch)
+	rt, ok := e.in.cat().RuntimeFor(info.OS, info.Arch)
 	if !ok {
 		return m, catalog.Runtime{}, info, entity.ErrUnsupportedSystem
 	}
@@ -106,7 +106,7 @@ func (e *managedEngine) CanEnable(modelID string) error {
 // is not downloaded, or does not fit, is not offered (plan 206, D1).
 func (e *managedEngine) ReadyModels(defaultID string) []string {
 	var first, rest []string
-	for _, m := range e.in.catalog.Models {
+	for _, m := range e.in.cat().Models {
 		if _, _, err := e.prerequisites(m.ID); err != nil {
 			continue
 		}

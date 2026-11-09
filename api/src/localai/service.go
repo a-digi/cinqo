@@ -5,9 +5,9 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/a-digi/cinqo/src/localai/catalog"
 	"github.com/a-digi/cinqo/src/localai/entity"
 	"github.com/a-digi/cinqo/src/localai/hardware"
+	"github.com/a-digi/cinqo/src/localai/models"
 	"github.com/a-digi/cinqo/src/localai/repository/query"
 	"github.com/a-digi/cinqo/src/platform"
 	platform_entity "github.com/a-digi/cinqo/src/platform/entity"
@@ -109,20 +109,20 @@ const toolHint = "You have tools. For any question about the user's own data, al
 
 // modelNames is the readable name of every catalog model: its name and its download size ("Qwen2.5-Coder-3B-Instruct, 2.0 GiB").
 func modelNames() map[string]string {
-	cat, err := catalog.Default()
+	cat, err := models.Current()
 	if err != nil {
 		return nil
 	}
 	out := make(map[string]string, len(cat.Models))
 	for _, m := range cat.Models {
-		out[m.ID] = fmt.Sprintf("%s, %s", m.Name, hardware.GiB(uint64(m.SizeBytes)))
+		out[m.ID] = fmt.Sprintf("%s, %s", m.Name, downloadSize(m.SizeBytes))
 	}
 	return out
 }
 
 // modelDrivers is the driver of every catalog model that has one.
 func modelDrivers() map[string]string {
-	cat, err := catalog.Default()
+	cat, err := models.Current()
 	if err != nil {
 		return nil
 	}
@@ -137,7 +137,7 @@ func modelDrivers() map[string]string {
 
 // modelUnsuitable is, for every catalog model that is marked, the tasks it cannot do.
 func modelUnsuitable() map[string][]string {
-	cat, err := catalog.Default()
+	cat, err := models.Current()
 	if err != nil {
 		return nil
 	}
@@ -148,4 +148,12 @@ func modelUnsuitable() map[string][]string {
 		}
 	}
 	return out
+}
+
+// downloadSize is a model's size for a readable name: in GiB, or in MiB below one GiB (a very small model would otherwise read "0.0 GiB").
+func downloadSize(bytes int64) string {
+	if bytes < 1<<30 {
+		return fmt.Sprintf("%.1f MiB", float64(bytes)/(1<<20))
+	}
+	return hardware.GiB(uint64(bytes))
 }

@@ -7,14 +7,19 @@ import { useConfirm } from '../../../Shared/Components/Modal/useConfirm'
 import { cancelDownload, type Download } from '../../../api/downloads'
 import {
   fetchLocalAi,
+  confirmSuggestion,
+  dismissSuggestion,
+  removeAddedModel,
   removeDownloads,
   startInstall,
   testModel,
   updateLocalAiSettings,
+  type LocalAiModel,
   type LocalAiResponse,
+  type LocalAiSuggestion,
   type LocalAiTestResult,
 } from './localAiApi'
-import { hasDownloadedFiles, isDownloading } from './localAiFormat'
+import { hasDownloadedFiles, isDownloading, removeModelMessage, suggestionConfirmMessage } from './localAiFormat'
 import { LocalAiForm } from './LocalAiForm'
 import { draftOf, hasProblems, isDirty, problemsOf, toUpdate, type Draft } from './localAiRules'
 
@@ -148,6 +153,54 @@ export function LocalAiPage() {
     })
   }
 
+  // A person decides about a model a tool suggested (plan 220). The answer of the server is the page's new state: a confirmed model is in the list and
+  // its download is running.
+  function confirmDownload(s: LocalAiSuggestion) {
+    void confirm({ title: `Download ${s.name}`, message: suggestionConfirmMessage(s), confirmLabel: 'Download' }).then((ok) => {
+      if (!ok) return
+      setInstallError('')
+      setInstallBusy(true)
+      confirmSuggestion(s.id)
+        .then(setData)
+        .catch((err: unknown) => {
+          setInstallError(messageOf(err))
+          refresh()
+        })
+        .finally(() => {
+          setInstallBusy(false)
+        })
+    })
+  }
+
+  function dismiss(s: LocalAiSuggestion) {
+    setInstallError('')
+    setInstallBusy(true)
+    dismissSuggestion(s.id)
+      .then(refresh)
+      .catch((err: unknown) => {
+        setInstallError(messageOf(err))
+      })
+      .finally(() => {
+        setInstallBusy(false)
+      })
+  }
+
+  function removeModel(m: LocalAiModel) {
+    void confirm({ title: 'Remove the model', message: removeModelMessage(m), confirmLabel: 'Remove', danger: true }).then((ok) => {
+      if (!ok) return
+      setInstallError('')
+      setInstallBusy(true)
+      removeAddedModel(m.id)
+        .then(setData)
+        .catch((err: unknown) => {
+          setInstallError(messageOf(err))
+        })
+        .finally(() => {
+          setInstallBusy(false)
+        })
+    })
+  }
+
   function save(values: Draft | null = draft) {
     if (!data || !values) return
     setSaveError('')
@@ -217,6 +270,10 @@ export function LocalAiPage() {
           onCancelDownload={cancel}
           onDownloadFinished={finished}
           onRemoveDownloads={removeAll}
+          suggestions={data.suggestions ?? []}
+          onConfirmSuggestion={confirmDownload}
+          onDismissSuggestion={dismiss}
+          onRemoveModel={removeModel}
           onToggle={toggle}
           onContinueSetup={() => {
             start('runtime')

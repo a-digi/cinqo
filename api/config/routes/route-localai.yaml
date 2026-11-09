@@ -43,3 +43,38 @@ routes:
     scopes:
       - cinqo:platform:manage
       - cinqo:super:admin
+
+  # A tool suggests a model (plan 220): Cinqo looks it up on Hugging Face and stores the suggestion. Nothing is downloaded and nothing is
+  # added to the list of models until a person confirms it, so the same scope as every other change.
+  - path: /api/v1/local-ai/suggestions
+    method: POST
+    executor: LocalAiSuggest
+    security: authenticated
+    scopes:
+      - cinqo:platform:manage
+      - cinqo:super:admin
+
+  - path: /api/v1/local-ai/suggestions/{id}/dismiss
+    method: POST
+    executor: LocalAiDismissSuggestion
+    security: authenticated
+    scopes:
+      - cinqo:platform:manage
+      - cinqo:super:admin
+
+  # A person confirms a suggestion (it becomes part of the list of models and its download starts) or removes one added model (plan 220).
+  - path: /api/v1/local-ai/models/{id}/install
+    method: POST
+    executor: LocalAiInstallModel
+    security: authenticated
+    scopes:
+      - cinqo:platform:manage
+      - cinqo:super:admin
+
+  - path: /api/v1/local-ai/models/{id}
+    method: DELETE
+    executor: LocalAiRemoveModel
+    security: authenticated
+    scopes:
+      - cinqo:platform:manage
+      - cinqo:super:admin
