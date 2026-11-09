@@ -72,6 +72,8 @@ type suggestionResponse struct {
 	Status        string `json:"status"`
 	CreatedAt     string `json:"createdAt"`
 	Fits          *bool  `json:"fits"`
+	// Shipped is true for a suggestion of a model that ships with Cinqo (checked and measured by us): confirming it only downloads it.
+	Shipped bool `json:"shipped"`
 	// Created is true on the answer that stored a new suggestion, false when the same file was already known (Status then says what became of it).
 	Created bool `json:"created"`
 }
@@ -80,7 +82,7 @@ func toSuggestion(m entity.AddedModel, info hardware.Info) suggestionResponse {
 	return suggestionResponse{
 		ID: m.ID, Name: m.Name, Repo: m.Repo, File: m.File, Commit: m.Revision, Publisher: m.Publisher, SizeBytes: m.SizeBytes,
 		MinRAMBytes: hardware.MinRAMBytes(m.SizeBytes), Quantization: m.Quantization, License: m.License, ContextTokens: m.ContextTokens, Why: m.Why,
-		SuggestedBy: m.SuggestedBy, Status: m.Status, CreatedAt: m.CreatedAt, Fits: info.Fits(m.SizeBytes),
+		SuggestedBy: m.SuggestedBy, Status: m.Status, CreatedAt: m.CreatedAt, Fits: info.Fits(m.SizeBytes), Shipped: !strings.HasPrefix(m.ID, entity.AddedIDPrefix),
 	}
 }
 
@@ -160,6 +162,15 @@ func (a api) suggest(reqCtx request.RequestContext) {
 	if err != nil {
 		response.ErrorResponse(w, http.StatusInternalServerError, "database not configured")
 		return
+	}
+
+	// a model that is one of the models shipped with Cinqo (the same repository and file): its address, size and hash are already verified, so there is
+	// nothing to look up, and nothing new to add to the list: the suggestion asks the person to download the model Cinqo already knows
+	if cat, err := models.Current(); err == nil {
+		if m, ok := shippedFor(cat, strings.TrimSpace(body.Repo), strings.TrimSpace(body.File)); ok {
+			a.suggestShipped(w, db, m, body)
+			return
+		}
 	}
 
 	found, err := resolve(reqCtx.GetRequest().Context(), huggingface.Request{
@@ -250,7 +261,7 @@ func (a api) dismissSuggestion(reqCtx request.RequestContext) {
 	}
 	repo := query.NewAddedModelsQueryRepo(db)
 	m, err := repo.Find(id)
-	if errors.Is(err, sql.ErrNoRows) || (err == nil && !strings.HasPrefix(m.ID, entity.AddedIDPrefix)) {
+	if errors.Is(err, sql.ErrNoRows) {
 		response.ErrorResponse(w, http.StatusNotFound, "no such suggestion")
 		return
 	}
@@ -305,12 +316,26 @@ func (a api) installModel(reqCtx request.RequestContext) {
 	}
 	repo := query.NewAddedModelsQueryRepo(db)
 	m, err := repo.Find(id)
-	if errors.Is(err, sql.ErrNoRows) || (err == nil && !strings.HasPrefix(m.ID, entity.AddedIDPrefix)) {
+	if errors.Is(err, sql.ErrNoRows) {
 		response.ErrorResponse(w, http.StatusNotFound, "no such suggested model")
 		return
 	}
 	if err != nil {
 		response.ErrorResponse(w, http.StatusInternalServerError, "failed to read the model")
+		return
+	}
+	// a suggestion of a shipped model: it is already in the list, so confirming only starts its download, and the suggestion has done its job
+	if !strings.HasPrefix(m.ID, entity.AddedIDPrefix) {
+		if err := a.installs.Start(id, detect()); err != nil {
+			if errors.Is(err, entity.ErrUnsupportedSystem) || errors.Is(err, entity.ErrUnknownModel) {
+				response.ErrorResponse(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			response.ErrorResponse(w, http.StatusInternalServerError, "the download could not be started")
+			return
+		}
+		_ = persistent.NewAddedModelsPersistentRepo(db).Delete(id)
+		a.respondPage(w, db, http.StatusAccepted)
 		return
 	}
 	previous := m.Status
@@ -394,4 +419,87 @@ func (a api) respondPage(w http.ResponseWriter, db *sql.DB, status int) {
 		return
 	}
 	response.SuccessResponse(w, status, respondWithAdded(db, respond(s, c, a.runtime, a.installs), c))
+}
+
+// splitModelURL reads the repository, the commit and the file out of a model address
+// (https://huggingface.co/<owner>/<repo>/resolve/<commit>/<file>).
+func splitModelURL(raw string) (repo, commit, file string, ok bool) {
+	rest, found := strings.CutPrefix(raw, "https://"+huggingface.Host+"/")
+	if !found {
+		return "", "", "", false
+	}
+	parts := strings.Split(rest, "/")
+	if len(parts) != 5 || parts[2] != "resolve" {
+		return "", "", "", false
+	}
+	return parts[0] + "/" + parts[1], parts[3], parts[4], true
+}
+
+// shippedFor finds the shipped model a suggestion names: the same repository and file (a model added later is not looked for here).
+func shippedFor(cat catalog.Catalog, repo, file string) (catalog.Model, bool) {
+	for _, m := range cat.Models {
+		if strings.HasPrefix(m.ID, entity.AddedIDPrefix) {
+			continue
+		}
+		r, _, f, ok := splitModelURL(m.URL)
+		if ok && strings.EqualFold(r, repo) && f == file {
+			return m, true
+		}
+	}
+	return catalog.Model{}, false
+}
+
+// suggestShipped answers a suggestion of a model that ships with Cinqo. Already downloaded or being downloaded: the answer says so and nothing is stored.
+// Otherwise it is stored as a suggestion under the model's own id, so the person is asked on the Local Agents page and confirming starts the download
+// of the model that is already in the list. What the tool says about the model (its name, its context size) is ignored: Cinqo knows it. The cap and a
+// dismissed suggestion work as for any other.
+func (a api) suggestShipped(w http.ResponseWriter, db *sql.DB, m catalog.Model, body suggestRequest) {
+	repoName, commit, file, _ := splitModelURL(m.URL)
+	row := entity.AddedModel{
+		ID: m.ID, Repo: repoName, File: file, Revision: commit, URL: m.URL, SHA256: m.SHA256, SizeBytes: m.SizeBytes, Quantization: m.Quantization,
+		License: m.License, Name: m.Name, Publisher: strings.SplitN(repoName, "/", 2)[0], ContextTokens: m.ContextTokens,
+		Why: cleanText(body.Why, maxWhyRunes), SuggestedBy: cleanText(body.SuggestedBy, maxSuggestedByRunes), Status: entity.AddedStatusSuggested,
+		CreatedAt: now().Format(time.RFC3339),
+	}
+	info := detect()
+	switch a.installs.ModelState(m).State {
+	case entity.InstallReady:
+		s := toSuggestion(row, info)
+		s.Status = "installed"
+		response.SuccessResponse(w, http.StatusOK, s)
+		return
+	case entity.InstallDownloading:
+		s := toSuggestion(row, info)
+		s.Status = "downloading"
+		response.SuccessResponse(w, http.StatusOK, s)
+		return
+	}
+	repo := query.NewAddedModelsQueryRepo(db)
+	if existing, err := repo.Find(m.ID); err == nil {
+		response.SuccessResponse(w, http.StatusOK, toSuggestion(existing, info))
+		return
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		response.ErrorResponse(w, http.StatusInternalServerError, "failed to read the suggestions")
+		return
+	}
+	waiting, err := repo.CountByStatus(entity.AddedStatusSuggested)
+	if err != nil {
+		response.ErrorResponse(w, http.StatusInternalServerError, "failed to read the suggestions")
+		return
+	}
+	if waiting >= MaxPendingSuggestions {
+		response.ErrorResponse(w, http.StatusTooManyRequests, "too many suggestions are waiting: dismiss or confirm some first")
+		return
+	}
+	if err := persistent.NewAddedModelsPersistentRepo(db).Insert(&row); err != nil {
+		if existing, findErr := repo.Find(m.ID); findErr == nil {
+			response.SuccessResponse(w, http.StatusOK, toSuggestion(existing, info))
+			return
+		}
+		response.ErrorResponse(w, http.StatusInternalServerError, "failed to store the suggestion")
+		return
+	}
+	s := toSuggestion(row, info)
+	s.Created = true
+	response.SuccessResponse(w, http.StatusCreated, s)
 }

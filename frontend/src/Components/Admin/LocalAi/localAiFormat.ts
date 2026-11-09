@@ -301,7 +301,10 @@ export function suggestionWhy(s: Pick<LocalAiSuggestion, 'suggestedBy' | 'why'>)
 }
 
 // The question asked before anything is downloaded: where it is from, who made it, how big it is.
-export function suggestionConfirmMessage(s: Pick<LocalAiSuggestion, 'name' | 'repo' | 'publisher' | 'sizeBytes'>): string {
+export function suggestionConfirmMessage(s: Pick<LocalAiSuggestion, 'name' | 'repo' | 'publisher' | 'sizeBytes' | 'shipped'>): string {
+  if (s.shipped === true) {
+    return `Download ${s.name} (${formatBytes(s.sizeBytes)})? It is one of the models that ship with Cinqo, checked by Cinqo, and it will run on your computer.`
+  }
   return `Download ${s.name} (${formatBytes(s.sizeBytes)}) from Hugging Face (${s.repo}, published by ${s.publisher})? Cinqo will run this model on your computer. Cinqo checks the file, but has not tested the model.`
 }
 

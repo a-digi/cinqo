@@ -136,6 +136,8 @@ export interface LocalAiSuggestion {
   status: string
   createdAt: string
   fits: boolean | null
+  // A suggestion of a model that ships with Cinqo (checked and measured by Cinqo): confirming it only downloads it.
+  shipped?: boolean
 }
 
 export interface LocalAiResponse {

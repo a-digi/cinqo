@@ -34,8 +34,9 @@ export interface CrawlAiAdvice {
   text: string
   // What the pill says when it is clicked: why, and what to do.
   info: string
-  // The button in the info text: choose = open the AI modal with `suggest` preselected; get-model = go to the Local AI page; none = no button.
-  action: 'choose' | 'get-model' | 'none'
+  // The button in the info text: choose = open the AI modal with `suggest` preselected; suggest-model = ask Cinqo to download the model (it asks the
+  // person on its Local Agents page and does the download itself, plan 220); none = no button.
+  action: 'choose' | 'suggest-model' | 'none'
   suggest: { platformId: string; model: string } | null
 }
 
@@ -111,8 +112,8 @@ export function crawlAiAdvice(input: {
   return {
     kind: 'qwen-missing',
     text: 'Get Qwen Coder',
-    info: `${QWEN_NAME} is the best local model for writing crawl instructions, but it is not downloaded yet. Get it in Cinqo's Local AI page.`,
-    action: 'get-model',
+    info: `${QWEN_NAME} is the best local model for writing crawl instructions, but it is not downloaded yet. Career can ask Cinqo to download it: you confirm on Cinqo's Local Agents page, and Cinqo does the download.`,
+    action: 'suggest-model',
     suggest: null,
   }
 }

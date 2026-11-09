@@ -340,6 +340,7 @@ export function LocalAiForm({
                 <p className="mt-1 text-xs text-gray-700">{suggestionWhy(s)}</p>
                 <p className="mt-1 text-[11px] text-gray-400">
                   Hugging Face {s.repo} · published by {s.publisher}
+                  {s.shipped === true && ' · ships with Cinqo'}
                 </p>
                 {canManage && (
                   <div className="mt-3 flex flex-wrap gap-2">

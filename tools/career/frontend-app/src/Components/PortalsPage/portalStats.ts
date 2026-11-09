@@ -35,7 +35,13 @@ export function summarizePortals(portals: PortalLike[], engine: EngineReading = 
       links++
       if (
         hasListingFor(
-          { crawlInstructions: l.crawlInstructions, linkRules: (l.linkRules ?? null) as never, requiresLogin: l.requiresLogin, loginSession: l.loginSession, crawlEngine: l.crawlEngine },
+          {
+            crawlInstructions: l.crawlInstructions,
+            linkRules: (l.linkRules ?? null) as never,
+            requiresLogin: l.requiresLogin,
+            loginSession: l.loginSession,
+            crawlEngine: l.crawlEngine,
+          },
           engine,
         )
       )

@@ -16,6 +16,7 @@ import {
 } from '../../api'
 import { resolveCrawlAi } from '../../Cinqo/Platform/crawlAiChoice'
 import { LOCAL_AI_PATH } from '../../Cinqo/Platform/modelLabels'
+import { opensLocalAgents, outcomeText, suggestErrorText, suggestQwenCoder } from '../../Cinqo/Platform/suggestLocalModel'
 import { useAiChoice } from '../../Cinqo/Platform/useAiChoice'
 import { SummaryRail } from '../../Shared/SummaryRail/SummaryRail'
 import { ACCENTS, PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
@@ -122,6 +123,19 @@ function PortalsPageContent() {
       failures: linkInstructionFailures(link),
       instructed: instructionState(link, false, false, engineForLink(link, engine)) === 'instructed',
     })
+  }
+
+  // "Get Qwen Coder": Career tells Cinqo which model it wants, and Cinqo asks the person on its Local Agents page and does the download (plan 220).
+  function askCinqoForQwenCoder() {
+    setError('')
+    suggestQwenCoder()
+      .then((outcome) => {
+        if (opensLocalAgents(outcome)) window.__cinqoToolBridge.navigate(LOCAL_AI_PATH)
+        else setError(outcomeText(outcome))
+      })
+      .catch((err: unknown) => {
+        setError(suggestErrorText(err))
+      })
   }
 
   function load() {
@@ -670,7 +684,7 @@ function PortalsPageContent() {
                             advice={adviceFor(p, link)}
                             onAdviceAction={() => {
                               const advice = adviceFor(p, link)
-                              if (advice?.action === 'get-model') window.__cinqoToolBridge.navigate(LOCAL_AI_PATH)
+                              if (advice?.action === 'suggest-model') askCinqoForQwenCoder()
                               else {
                                 setAiSuggest(advice?.suggest ?? null)
                                 setAiLinkId(link.id)

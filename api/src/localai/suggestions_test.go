@@ -57,6 +57,13 @@ func (r *sugRig) suggest(body string) (int, map[string]any) {
 	return rec.Code, message(rec)
 }
 
+func (r *sugRig) suggestUsing(installs *fakeInstalls, body string) (int, map[string]any) {
+	r.t.Helper()
+	rec := httptest.NewRecorder()
+	handler.Handlers(canRun, installs)["LocalAiSuggest"].ServeHTTP(fakeRequest{w: rec, di: fakeDI{db: r.db}, body: body})
+	return rec.Code, message(rec)
+}
+
 func (r *sugRig) dismiss(id string) (int, map[string]any) {
 	r.t.Helper()
 	rec := httptest.NewRecorder()
@@ -105,6 +112,9 @@ func TestASuggestionIsStoredWithWhatCinqoFoundAndNothingElseHappens(t *testing.T
 	code, got := r.suggest(valid)
 	if code != http.StatusCreated || got["created"] != true || got["id"] != res.ID || got["status"] != "suggested" {
 		t.Fatalf("%d %v", code, got)
+	}
+	if got["shipped"] != false {
+		t.Errorf("an added model is not shipped: %v", got["shipped"])
 	}
 	if got["commit"] != res.Commit || got["publisher"] != "someone" || got["license"] != "apache-2.0" || got["sizeBytes"].(float64) != 2*gigabyte ||
 		got["suggestedBy"] != "Career" || got["why"] != "the best small model for crawl instructions" || got["contextTokens"].(float64) != 4096 || got["fits"] != true {
