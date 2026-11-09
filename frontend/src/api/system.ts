@@ -6,7 +6,8 @@ export type MemoryPressure = 'normal' | 'warn' | 'critical' | 'unknown'
 
 export interface SystemResources {
   memory: { totalBytes: number; availableBytes: number; swapUsedBytes: number; pressure: MemoryPressure }
-  cinqo: { appBytes: number }
+  // localAiBytes is the memory of the local model program, 0 while it does not run
+  cinqo: { appBytes: number; localAiBytes: number }
   sampledAt: string
 }
 

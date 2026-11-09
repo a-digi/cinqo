@@ -152,6 +152,17 @@ func newSupervisor(o supervisorOptions) *supervisor {
 	return &supervisor{o: o, state: EngineStopped}
 }
 
+// pid is the process id of the program now, 0 when none runs (never started, stopped, or gone).
+func (s *supervisor) pid() int {
+	s.mu.Lock()
+	r := s.cur
+	s.mu.Unlock()
+	if r == nil || r.isExited() {
+		return 0
+	}
+	return int(r.pid.Load())
+}
+
 // Status is the state of the program now.
 func (s *supervisor) Status() EngineStatus {
 	s.mu.Lock()

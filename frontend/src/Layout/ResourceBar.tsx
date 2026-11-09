@@ -20,6 +20,7 @@ export function ResourceBar() {
   const r = state.resources
   const level = resourceLevel(r)
   const left = [`Cinqo ${formatBytes(r.cinqo.appBytes)}`]
+  if (r.cinqo.localAiBytes > 0) left.push(`Local AI ${formatBytes(r.cinqo.localAiBytes)}`)
   if (r.memory.swapUsedBytes > 0) left.push(`Swap ${formatBytes(r.memory.swapUsedBytes)}`)
   return <Bar left={left.join(' · ')} pill={pillText(r, level)} level={level} title={pillTitle(r)} />
 }

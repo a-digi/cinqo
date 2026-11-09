@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/a-digi/coco-server/server/request"
@@ -43,7 +44,8 @@ type MemoryBody struct {
 }
 
 type CinqoBody struct {
-	AppBytes uint64 `json:"appBytes"` // the resident memory of the Cinqo program itself
+	AppBytes     uint64 `json:"appBytes"`     // the resident memory of the Cinqo program itself
+	LocalAiBytes uint64 `json:"localAiBytes"` // the resident memory of the local model program; 0 while it does not run
 }
 
 // Reader takes a reading and keeps it for cacheFor. The sources are fields so the tests can replace them.
@@ -51,6 +53,7 @@ type Reader struct {
 	memory   func() memory.MemoryInfo
 	resident func(pid int) uint64
 	pid      func() int
+	localPid func() int // the pid of the local model program, 0 when none runs
 	now      func() time.Time
 
 	mu     sync.Mutex
@@ -60,7 +63,21 @@ type Reader struct {
 
 // NewReader reads the real computer.
 func NewReader() *Reader {
-	return &Reader{memory: memory.Memory, resident: memory.Resident, pid: os.Getpid, now: time.Now}
+	return &Reader{memory: memory.Memory, resident: memory.Resident, pid: os.Getpid, localPid: localAiPid, now: time.Now}
+}
+
+// The local AI module tells the shell which process is its model program, so this package never imports the module.
+var localAiSource atomic.Pointer[func() int]
+
+// SetLocalAiPid is called once by the local AI module at start-up with a function that returns the pid of its model program now
+// (0 when it is not running). Without it the share of the local AI is 0.
+func SetLocalAiPid(f func() int) { localAiSource.Store(&f) }
+
+func localAiPid() int {
+	if f := localAiSource.Load(); f != nil {
+		return (*f)()
+	}
+	return 0
 }
 
 // Read returns the cached reading while it is younger than cacheFor, else reads again.
@@ -79,11 +96,19 @@ func (r *Reader) Read() Resources {
 			SwapUsedBytes:  m.SwapUsedBytes,
 			Pressure:       string(m.Pressure),
 		},
-		Cinqo:     CinqoBody{AppBytes: r.resident(r.pid())},
+		Cinqo:     CinqoBody{AppBytes: r.resident(r.pid()), LocalAiBytes: r.residentOf(r.localPid)},
 		SampledAt: now.UTC().Truncate(time.Second),
 	}
 	r.at = now
 	return r.cached
+}
+
+// residentOf is the resident memory of the process a function names; 0 when there is no function or no process.
+func (r *Reader) residentOf(pid func() int) uint64 {
+	if pid == nil {
+		return 0
+	}
+	return r.resident(pid())
 }
 
 // shared is the one reader (and so the one cache) of the program.

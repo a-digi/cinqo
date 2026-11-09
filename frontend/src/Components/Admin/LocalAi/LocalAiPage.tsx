@@ -20,6 +20,7 @@ import {
   type LocalAiTestResult,
 } from './localAiApi'
 import { hasDownloadedFiles, isDownloading, removeModelMessage, suggestionConfirmMessage } from './localAiFormat'
+import { useResources } from '../../../Layout/useResources'
 import { LocalAiForm } from './LocalAiForm'
 import { draftOf, hasProblems, isDirty, problemsOf, toUpdate, type Draft } from './localAiRules'
 
@@ -46,6 +47,8 @@ export function LocalAiPage() {
   const [testResult, setTestResult] = useState<LocalAiTestResult | null>(null)
   const [testError, setTestError] = useState('')
   const { confirm, dialog } = useConfirm()
+  const resources = useResources()
+  const freeBytes = resources.kind === 'ready' ? resources.resources.memory.availableBytes : null
 
   useEffect(() => {
     fetchLocalAi()
@@ -285,6 +288,7 @@ export function LocalAiPage() {
           saving={saving}
           error={saveError}
           justSaved={justSaved}
+          freeBytes={freeBytes}
           onChange={(next) => {
             setJustSaved(false)
             setDraft(next)

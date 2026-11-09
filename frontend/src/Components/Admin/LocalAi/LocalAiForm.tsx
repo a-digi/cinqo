@@ -30,8 +30,10 @@ import {
   fitLabel,
   hardwareSummary,
   idleHelp,
+  memoryShortage,
   modelFacts,
   setupView,
+  shortageText,
   supportText,
   switchVisual,
   testSummary,
@@ -149,6 +151,7 @@ export function LocalAiForm({
   saving,
   error,
   justSaved,
+  freeBytes,
   onChange,
   onSave,
   onDiscard,
@@ -191,6 +194,8 @@ export function LocalAiForm({
   saving: boolean
   error: string
   justSaved: boolean
+  // The memory that is free right now (the resource bar's reading); null when it is not known or the person may not read it.
+  freeBytes: number | null
   onChange: (next: Draft) => void
   onSave: () => void
   onDiscard: () => void
@@ -205,6 +210,7 @@ export function LocalAiForm({
   const switchOff = locked || sw.locked
   const chosen = catalog.find((m) => m.id === draft.modelId)
   const canTest = canManage && chosen?.enable.ok === true && !testing
+  const shortage = memoryShortage(chosen, draft.contextTokens, freeBytes, engine)
   const visual = switchVisual(saved, status)
   const on = visual === 'on'
   const setup = setupView(saved, status)
@@ -595,6 +601,11 @@ export function LocalAiForm({
           Sends one tiny question to the chosen model and times the answer. If the model is not loaded yet, it is loaded first, which can
           take a moment.
         </p>
+        {chosen && shortage && !testing && (
+          <p role="alert" className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            {shortageText(shortage, chosen.name)}
+          </p>
+        )}
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <button
             type="button"
@@ -602,7 +613,7 @@ export function LocalAiForm({
             onClick={onTest}
             className="rounded-full border border-teal-600 px-4 py-1.5 text-xs font-semibold text-teal-700 transition hover:bg-teal-50 disabled:opacity-50"
           >
-            {testing ? 'Testing…' : 'Test the model'}
+            {testing ? 'Testing…' : shortage ? 'Start anyway' : 'Test the model'}
           </button>
           {!chosen && <span className="text-xs text-gray-500">Choose a model first.</span>}
           {chosen && !chosen.enable.ok && (

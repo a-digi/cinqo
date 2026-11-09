@@ -77,6 +77,37 @@ export function contextCostBytes(model: Pick<LocalAiModel, 'kvBytesPerToken'> | 
   return model.kvBytesPerToken * (tokens - CONTEXT_BASELINE)
 }
 
+// What the model needs in free memory to start now, in bytes: its file plus a quarter for the runtime, plus the cache of a context beyond the
+// baseline. The same rule as the server's (api/src/localai/hardware/fit.go) without its 3 GiB reserve for the system: what the system and the
+// other programs already hold is not free any more, so the live figure of the resource bar already accounts for it (plan 222, step 5).
+export function runNeedBytes(model: Pick<LocalAiModel, 'sizeBytes' | 'kvBytesPerToken'>, tokens: number): number {
+  return Math.ceil((model.sizeBytes * 5) / 4) + contextCostBytes(model, tokens)
+}
+
+export interface MemoryShortage {
+  needed: number
+  free: number
+}
+
+// Whether starting the chosen model now would need more memory than is free right now. Only for a model that is on this computer and not
+// already loaded (a loaded model's memory is already counted as used); null when nothing can be said (free memory unknown) or all is fine.
+// This only warns: the person can start anyway.
+export function memoryShortage(
+  model: Pick<LocalAiModel, 'id' | 'sizeBytes' | 'kvBytesPerToken' | 'install'> | undefined,
+  tokens: number,
+  freeBytes: number | null,
+  engine: Pick<LocalAiEngine, 'state' | 'modelId'>,
+): MemoryShortage | null {
+  if (!model || freeBytes === null || freeBytes <= 0 || model.install.state !== 'ready') return null
+  if ((engine.state === 'ready' || engine.state === 'starting') && engine.modelId === model.id) return null
+  const needed = runNeedBytes(model, tokens)
+  return needed > freeBytes ? { needed, free: freeBytes } : null
+}
+
+export function shortageText(s: MemoryShortage, modelName: string): string {
+  return `${modelName} needs about ${formatBytes(s.needed)} to start, and only ${formatBytes(s.free)} of memory is free right now. Close other programs first, or start anyway: the computer may slow down badly or the model program may be stopped.`
+}
+
 // Whether this computer has the memory for a context size with this model; true when that is not known (never held against it).
 export function contextFits(model: Pick<LocalAiModel, 'largestContext'> | undefined, tokens: number): boolean {
   const largest = model?.largestContext

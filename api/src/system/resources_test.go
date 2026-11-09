@@ -18,13 +18,17 @@ func fakeReader(now *time.Time, calls *int) *Reader {
 			return memory.MemoryInfo{TotalBytes: 8 << 30, AvailableBytes: 1 << 30, SwapUsedBytes: 2 << 30, Pressure: memory.PressureWarn}
 		},
 		resident: func(pid int) uint64 {
-			if pid != 4242 {
-				return 1
+			switch pid {
+			case 4242:
+				return 400 << 20
+			case 777:
+				return 2900 << 20
 			}
-			return 400 << 20
+			return 1
 		},
-		pid: func() int { return 4242 },
-		now: func() time.Time { return *now },
+		pid:      func() int { return 4242 },
+		localPid: func() int { return 777 },
+		now:      func() time.Time { return *now },
 	}
 }
 
@@ -37,6 +41,9 @@ func TestReadFillsEveryFieldFromTheSources(t *testing.T) {
 	}
 	if got.Cinqo.AppBytes != 400<<20 {
 		t.Errorf("app bytes %d: the pid of this program must be asked, and only that", got.Cinqo.AppBytes)
+	}
+	if got.Cinqo.LocalAiBytes != 2900<<20 {
+		t.Errorf("local AI bytes %d: the pid of the model program must be asked", got.Cinqo.LocalAiBytes)
 	}
 	if !got.SampledAt.Equal(time.Date(2026, 11, 9, 14, 0, 0, 0, time.UTC)) {
 		t.Errorf("sampledAt %v", got.SampledAt)
@@ -81,6 +88,40 @@ func TestAnUnreadableComputerIsZeroAndUnknownNotAnError(t *testing.T) {
 		if !strings.Contains(string(raw), want) {
 			t.Errorf("%s missing in %s", want, raw)
 		}
+	}
+}
+
+func TestNoModelProgramIsZeroNotTheShellsOwnMemory(t *testing.T) {
+	now := time.Now()
+	r := &Reader{
+		memory:   func() memory.MemoryInfo { return memory.MemoryInfo{} },
+		resident: func(pid int) uint64 { return uint64(pid) * 10 },
+		pid:      func() int { return 5 },
+		now:      func() time.Time { return now },
+	}
+	if got := r.Read().Cinqo.LocalAiBytes; got != 0 {
+		t.Errorf("no source: %d, want 0", got)
+	}
+	r.at = time.Time{}
+	r.localPid = func() int { return 0 }
+	if got := r.Read().Cinqo; got.LocalAiBytes != 0 || got.AppBytes != 50 {
+		t.Errorf("source says 0 (not running): %+v", got)
+	}
+}
+
+func TestTheModuleHandsOverItsPidAndTheRealReaderUsesIt(t *testing.T) {
+	old := localAiSource.Load()
+	t.Cleanup(func() { localAiSource.Store(old) })
+	localAiSource.Store(nil)
+	if localAiPid() != 0 {
+		t.Error("without a source the pid is 0")
+	}
+	SetLocalAiPid(func() int { return 31337 })
+	if got := localAiPid(); got != 31337 {
+		t.Errorf("got %d", got)
+	}
+	if NewReader().localPid() != 31337 {
+		t.Error("the real reader must read the pid through the source")
 	}
 }
 

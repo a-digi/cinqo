@@ -16,6 +16,7 @@ import (
 	"github.com/a-digi/cinqo/src/localai/models"
 	"github.com/a-digi/cinqo/src/localai/repository/query"
 	"github.com/a-digi/cinqo/src/platform"
+	"github.com/a-digi/cinqo/src/system"
 )
 
 // Register adds the local platform to the platform registry. It is the module's only start-up hook: call it once at
@@ -39,7 +40,9 @@ func Register(mainDB *sql.DB, deps Deps) error {
 
 	// A model program left over from an earlier run that did not shut down cleanly is stopped before anything else.
 	killStale(in.root(), processAlive, commandOf, 3*time.Second)
-	engineForApp := newManagedEngine(in, newSupervisor(supervisorOptions{}), query.NewSettingsQueryRepo(mainDB))
+	sup := newSupervisor(supervisorOptions{})
+	system.SetLocalAiPid(sup.pid) // the resource bar shows how much memory the model program holds
+	engineForApp := newManagedEngine(in, sup, query.NewSettingsQueryRepo(mainDB))
 	lifecycle.OnShutdown(engineForApp.Stop) // and the one this run starts is stopped with the application
 	setManaged(engineForApp)
 	setDialects(defaultDialects())
