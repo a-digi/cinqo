@@ -41,7 +41,8 @@ func Register(mainDB *sql.DB, deps Deps) error {
 	// A model program left over from an earlier run that did not shut down cleanly is stopped before anything else.
 	killStale(in.root(), processAlive, commandOf, 3*time.Second)
 	sup := newSupervisor(supervisorOptions{})
-	system.SetLocalAiPid(sup.pid) // the resource bar shows how much memory the model program holds
+	system.SetLocalAiPid(sup.pid)                                                         // the resource bar shows how much memory the model program holds
+	system.SetLocalAiStatus(func() system.AgentStatus { return agentStatus(sup.view()) }) // and whether it runs
 	engineForApp := newManagedEngine(in, sup, query.NewSettingsQueryRepo(mainDB))
 	lifecycle.OnShutdown(engineForApp.Stop) // and the one this run starts is stopped with the application
 	setManaged(engineForApp)

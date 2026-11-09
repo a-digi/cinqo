@@ -12,9 +12,22 @@ export interface SystemResources {
   cpu: { load1: number; cores: number }
   // The space of the volume the data folder is on; 0 when it cannot be read.
   disk: { freeBytes: number; totalBytes: number }
+  // The local agents that run now (today the local model program); empty when none does.
+  agents: SystemAgent[]
   // What the computer is; a fact that could not be read is an empty string.
   device: { model: string; modelId: string; chip: string; os: string; osVersion: string; arch: string; cores: number }
   sampledAt: string
+}
+
+export type AgentState = 'starting' | 'working' | 'idle' | 'failed'
+
+// working: a request is under way; idle: loaded and waiting (unloadsInSeconds counts down to its unloading, 0 = never); failed: it stopped on its own.
+export interface SystemAgent {
+  kind: string
+  name: string
+  state: AgentState
+  memoryBytes: number
+  unloadsInSeconds: number
 }
 
 export async function fetchSystemResources(signal?: AbortSignal): Promise<SystemResources> {

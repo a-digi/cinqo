@@ -36,6 +36,8 @@ type Resources struct {
 	Cinqo  CinqoBody  `json:"cinqo"`
 	CPU    CPUBody    `json:"cpu"`
 	Disk   DiskBody   `json:"disk"`
+	// Agents are the local agents that run now (today: the local model program); empty when none does.
+	Agents []AgentBody `json:"agents"`
 	// Device is what the computer is (model, chip, system); a fact that could not be read is empty.
 	Device    device.Info `json:"device"`
 	SampledAt time.Time   `json:"sampledAt"`
@@ -60,6 +62,32 @@ type DiskBody struct {
 	TotalBytes uint64 `json:"totalBytes"`
 }
 
+// The states of a local agent: starting (loading its model), working (a request is under way), idle (loaded, waiting) and failed (it
+// stopped on its own; it starts again with the next request). AgentNone is not shown: nothing runs.
+const (
+	AgentNone     = "none"
+	AgentStarting = "starting"
+	AgentWorking  = "working"
+	AgentIdle     = "idle"
+	AgentFailed   = "failed"
+)
+
+// AgentStatus is what the local AI module says about its model program.
+type AgentStatus struct {
+	Name             string // the model's name
+	State            string
+	UnloadsInSeconds int // while idle with an idle time set: seconds until it is unloaded; 0 otherwise
+}
+
+// AgentBody is one running local agent in the route's answer.
+type AgentBody struct {
+	Kind             string `json:"kind"` // "local-ai"
+	Name             string `json:"name"`
+	State            string `json:"state"`
+	MemoryBytes      uint64 `json:"memoryBytes"`
+	UnloadsInSeconds int    `json:"unloadsInSeconds"`
+}
+
 type CinqoBody struct {
 	AppBytes     uint64 `json:"appBytes"`     // the resident memory of the Cinqo program itself
 	LocalAiBytes uint64 `json:"localAiBytes"` // the resident memory of the local model program; 0 while it does not run
@@ -71,6 +99,7 @@ type Reader struct {
 	resident func(pid int) uint64
 	pid      func() int
 	localPid func() int // the pid of the local model program, 0 when none runs
+	agent    func() AgentStatus
 	load     func() (float64, int)
 	disk     func() (free, total uint64)
 	device   func() device.Info
@@ -83,7 +112,7 @@ type Reader struct {
 
 // NewReader reads the real computer.
 func NewReader() *Reader {
-	return &Reader{memory: memory.Memory, resident: memory.Resident, pid: os.Getpid, localPid: localAiPid, load: readLoad, disk: func() (uint64, uint64) { return diskSpace(dataDirValue()) }, device: device.Current, now: time.Now}
+	return &Reader{memory: memory.Memory, resident: memory.Resident, pid: os.Getpid, localPid: localAiPid, load: readLoad, disk: func() (uint64, uint64) { return diskSpace(dataDirValue()) }, device: device.Current, agent: localAiStatus, now: time.Now}
 }
 
 // The local AI module tells the shell which process is its model program, so this package never imports the module.
@@ -92,6 +121,18 @@ var localAiSource atomic.Pointer[func() int]
 // SetLocalAiPid is called once by the local AI module at start-up with a function that returns the pid of its model program now
 // (0 when it is not running). Without it the share of the local AI is 0.
 func SetLocalAiPid(f func() int) { localAiSource.Store(&f) }
+
+var localAiStatusSource atomic.Pointer[func() AgentStatus]
+
+// SetLocalAiStatus is called once by the local AI module at start-up with a function that says what its model program is doing.
+func SetLocalAiStatus(f func() AgentStatus) { localAiStatusSource.Store(&f) }
+
+func localAiStatus() AgentStatus {
+	if f := localAiStatusSource.Load(); f != nil {
+		return (*f)()
+	}
+	return AgentStatus{State: AgentNone}
+}
 
 func localAiPid() int {
 	if f := localAiSource.Load(); f != nil {
@@ -122,6 +163,7 @@ func (r *Reader) Read() Resources {
 		CPU:       CPUBody{Load1: load, Cores: cores},
 		Disk:      DiskBody{FreeBytes: free, TotalBytes: total},
 		Device:    r.readDevice(),
+		Agents:    r.agents(),
 		SampledAt: now.UTC().Truncate(time.Second),
 	}
 	r.at = now
@@ -133,6 +175,18 @@ func (r *Reader) readLoad() (float64, int) {
 		return -1, 0
 	}
 	return r.load()
+}
+
+// agents lists the local agents that run: none when the program is stopped; its memory is the resident memory of its process.
+func (r *Reader) agents() []AgentBody {
+	if r.agent == nil {
+		return []AgentBody{}
+	}
+	st := r.agent()
+	if st.State == AgentNone || st.State == "" {
+		return []AgentBody{}
+	}
+	return []AgentBody{{Kind: "local-ai", Name: st.Name, State: st.State, MemoryBytes: r.residentOf(r.localPid), UnloadsInSeconds: st.UnloadsInSeconds}}
 }
 
 func (r *Reader) readDevice() device.Info {

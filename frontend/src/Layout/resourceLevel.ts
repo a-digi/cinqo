@@ -1,5 +1,5 @@
 import { formatBytes } from '../Shared/Components/Terminal/terminalRules'
-import type { SystemResources } from '../api/system'
+import type { SystemAgent, SystemResources } from '../api/system'
 
 // How tight the memory is (plan 222). Judged by what is still available, not by what is "used": the system keeps caches in "used".
 // unknown = the computer did not say; it is shown grey and never as an alarm.
@@ -37,6 +37,9 @@ export function pillTitle(r: SystemResources): string {
     `swap in use ${formatBytes(swapUsedBytes)}`,
   ]
   if (pressure !== 'unknown') parts.push(`system pressure ${pressure}`)
+  const level = resourceLevel(r)
+  if (r.cinqo.localAiBytes > 0 && (level === 'orange' || level === 'red'))
+    parts.push(`the local AI holds ${formatBytes(r.cinqo.localAiBytes)} of it`)
   return parts.join(', ')
 }
 
@@ -46,4 +49,32 @@ export function deviceText(r: SystemResources): string {
   const system = [d.os, d.osVersion].filter((x) => x !== '').join(' ')
   const parts = [d.model !== '' ? d.model : d.modelId, d.chip, system, r.memory.totalBytes > 0 ? formatBytes(r.memory.totalBytes) : '']
   return parts.filter((x) => x !== '').join(' · ')
+}
+
+// How long until the model is unloaded, for people: "45 s", "9 min".
+export function unloadText(seconds: number): string {
+  return seconds < 60 ? `${Math.max(1, Math.ceil(seconds))} s` : `${Math.ceil(seconds / 60)} min`
+}
+
+export type AgentTone = 'none' | 'starting' | 'working' | 'idle' | 'failed'
+
+// What the bar says about the local agents: nothing runs (grey), one is loading (amber), working or idle (green), or it stopped on its own (red).
+export function agentView(agents: SystemAgent[]): { tone: AgentTone; text: string } {
+  const a = agents.find((x) => x.kind === 'local-ai')
+  if (!a) return { tone: 'none', text: 'No local agent running' }
+  const name = a.name !== '' ? a.name : 'Local AI'
+  const mem = a.memoryBytes > 0 ? ` · ${formatBytes(a.memoryBytes)}` : ''
+  switch (a.state) {
+    case 'starting':
+      return { tone: 'starting', text: `Loading ${name}…` }
+    case 'working':
+      return { tone: 'working', text: `${name} · working${mem}` }
+    case 'idle':
+      return {
+        tone: 'idle',
+        text: `${name} · idle${mem}${a.unloadsInSeconds > 0 ? ` · unloads in ${unloadText(a.unloadsInSeconds)}` : ''}`,
+      }
+    case 'failed':
+      return { tone: 'failed', text: 'Local AI stopped unexpectedly' }
+  }
 }

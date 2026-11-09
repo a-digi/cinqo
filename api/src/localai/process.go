@@ -143,7 +143,8 @@ type supervisor struct {
 	inFlight      int
 	idleFor       time.Duration
 	idleTimer     *time.Timer
-	startFailures int // starts in a row that never became ready
+	idleDeadline  time.Time // when the idle timer stops the program; zero while no timer runs
+	startFailures int       // starts in a row that never became ready
 	lastFail      time.Time
 }
 
@@ -161,6 +162,27 @@ func (s *supervisor) pid() int {
 		return 0
 	}
 	return int(r.pid.Load())
+}
+
+// agentView is what the resource bar says about the program: its state, the model, whether a request is under way and, while it waits
+// idle with an idle time set, how long until it is stopped.
+type agentView struct {
+	state     EngineState
+	modelID   string
+	busy      bool
+	unloadsIn time.Duration
+}
+
+func (s *supervisor) view() agentView {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	v := agentView{state: s.state, modelID: s.modelID, busy: s.inFlight > 0}
+	if s.state == EngineReady && s.inFlight == 0 && !s.idleDeadline.IsZero() {
+		if left := time.Until(s.idleDeadline); left > 0 {
+			v.unloadsIn = left
+		}
+	}
+	return v
 }
 
 // Status is the state of the program now.
@@ -202,6 +224,7 @@ func (s *supervisor) ensure(ctx context.Context, spec launch, idleUnits int) (ba
 	if s.idleTimer != nil {
 		s.idleTimer.Stop()
 	}
+	s.idleDeadline = time.Time{}
 	s.mu.Unlock()
 
 	select {
@@ -230,6 +253,7 @@ func (s *supervisor) release() {
 		s.idleTimer.Stop()
 	}
 	s.idleTimer = time.AfterFunc(s.idleFor, func() { s.idleStop(cur) })
+	s.idleDeadline = time.Now().Add(s.idleFor)
 }
 
 // idleStop stops the program if it is still the same run and nobody is using it.
@@ -242,6 +266,7 @@ func (s *supervisor) idleStop(r *run) {
 	s.cur = nil
 	s.state = EngineStopped
 	s.lastErr = ""
+	s.idleDeadline = time.Time{}
 	s.mu.Unlock()
 	s.terminate(r)
 }
@@ -254,6 +279,7 @@ func (s *supervisor) Stop() {
 	s.state = EngineStopped
 	s.lastErr = ""
 	s.startFailures = 0
+	s.idleDeadline = time.Time{}
 	if s.idleTimer != nil {
 		s.idleTimer.Stop()
 	}

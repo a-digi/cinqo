@@ -30,6 +30,9 @@ func fakeReader(now *time.Time, calls *int) *Reader {
 		pid:      func() int { return 4242 },
 		localPid: func() int { return 777 },
 		load:     func() (float64, int) { return 3.5, 8 },
+		agent: func() AgentStatus {
+			return AgentStatus{Name: "Phi-4-mini-instruct", State: AgentIdle, UnloadsInSeconds: 540}
+		},
 		device: func() device.Info {
 			return device.Info{Model: "MacBook Air", Chip: "Apple M1", OS: "macOS", OSVersion: "15.1"}
 		},
@@ -53,6 +56,9 @@ func TestReadFillsEveryFieldFromTheSources(t *testing.T) {
 	}
 	if got.CPU.Load1 != 3.5 || got.CPU.Cores != 8 || got.Disk.FreeBytes != 120<<30 || got.Disk.TotalBytes != 500<<30 {
 		t.Errorf("cpu %+v disk %+v", got.CPU, got.Disk)
+	}
+	if len(got.Agents) != 1 || got.Agents[0] != (AgentBody{Kind: "local-ai", Name: "Phi-4-mini-instruct", State: "idle", MemoryBytes: 2900 << 20, UnloadsInSeconds: 540}) {
+		t.Errorf("agents %+v", got.Agents)
 	}
 	if got.Device.Model != "MacBook Air" || got.Device.Chip != "Apple M1" || got.Device.OS != "macOS" || got.Device.OSVersion != "15.1" {
 		t.Errorf("device %+v", got.Device)
@@ -158,6 +164,43 @@ func TestDataDirIsKeptForTheDiskFigures(t *testing.T) {
 	SetDataDir("/some/dir")
 	if dataDirValue() != "/some/dir" {
 		t.Error("the folder must be kept")
+	}
+}
+
+func TestNoRunningAgentIsAnEmptyListNotNull(t *testing.T) {
+	now := time.Now()
+	base := func() *Reader {
+		return &Reader{memory: func() memory.MemoryInfo { return memory.MemoryInfo{} }, resident: func(pid int) uint64 { return uint64(pid) * 5 }, pid: func() int { return 1 }, localPid: func() int { return 9 }, now: func() time.Time { return now }}
+	}
+	for name, agent := range map[string]func() AgentStatus{
+		"no source":   nil,
+		"stopped":     func() AgentStatus { return AgentStatus{State: AgentNone} },
+		"empty state": func() AgentStatus { return AgentStatus{} },
+	} {
+		r := base()
+		r.agent = agent
+		raw, err := json.Marshal(r.Read())
+		if err != nil || !strings.Contains(string(raw), `"agents":[]`) {
+			t.Errorf("%s: %s %v", name, raw, err)
+		}
+	}
+	r := base()
+	r.agent = func() AgentStatus { return AgentStatus{Name: "m", State: AgentStarting} }
+	if got := r.Read().Agents; len(got) != 1 || got[0].State != "starting" || got[0].MemoryBytes != 45 {
+		t.Errorf("a starting agent is listed with the memory of its process: %+v", got)
+	}
+}
+
+func TestTheStatusIsHandedOverByTheModule(t *testing.T) {
+	old := localAiStatusSource.Load()
+	t.Cleanup(func() { localAiStatusSource.Store(old) })
+	localAiStatusSource.Store(nil)
+	if localAiStatus().State != AgentNone {
+		t.Error("without a source nothing runs")
+	}
+	SetLocalAiStatus(func() AgentStatus { return AgentStatus{State: AgentWorking} })
+	if localAiStatus().State != AgentWorking || NewReader().agent().State != AgentWorking {
+		t.Error("the real reader must read the status through the source")
 	}
 }
 
