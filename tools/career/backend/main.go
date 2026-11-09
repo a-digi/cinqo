@@ -325,6 +325,8 @@ func runHTTPServer() {
 	http.HandleFunc("/events/job-deleted-company", jobdeletedconsumers.CompanyDeleteHandler)
 	http.HandleFunc("/events/job-deleted-persona-matches", jobdeletedconsumers.PersonaMatchJobDeletedHandler)
 	http.HandleFunc("/events/company-deleted-comments", companydeletedconsumers.CompanyCommentsDeleteHandler)
+	// Review engine: the star ratings of a deleted company.
+	http.HandleFunc("/events/company-deleted-reviews", companydeletedconsumers.CompanyReviewsDeleteHandler)
 	// Plan 168, step 7: the comments of a deleted recruiter.
 	http.HandleFunc("/events/recruiter-deleted-comments", recruiterdeletedconsumers.RecruiterCommentsDeleteHandler)
 	http.HandleFunc("/jobs/match/unmatched", jobmatchconsumer.MatchNowHandler)

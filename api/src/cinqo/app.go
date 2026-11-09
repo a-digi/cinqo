@@ -38,6 +38,9 @@ import (
 	"github.com/a-digi/cinqo/src/lifecycle"
 	"github.com/a-digi/cinqo/src/localai"
 	platform_crypto "github.com/a-digi/cinqo/src/platform/crypto"
+	"github.com/a-digi/cinqo/src/review"
+	review_access "github.com/a-digi/cinqo/src/review/access"
+	review_handler "github.com/a-digi/cinqo/src/review/handler"
 	"github.com/a-digi/cinqo/src/system"
 	"github.com/a-digi/cinqo/src/system/device"
 	tool_filesource "github.com/a-digi/cinqo/src/tool/filesource"
@@ -344,6 +347,13 @@ func Start(opts Options) (srv *http.Server, cfg *server.Config, ctx *di.ContextB
 	comments_handler.Configure(
 		commentStores,
 		comments_access.NewResolver(comments_access.NewSystemTypes(), comments_access.NewToolTypes(manager.Connector.DB)),
+		dashboardLog,
+	)
+	// Review engine (plan/ai/review/review-engine.md): the same shape as comments, one review database per owner
+	// (cinqo_review.db, <tool>_review.db); the resolver knows the system's own types (none yet) and installed tools' declared ones.
+	review_handler.Configure(
+		review.NewManager(dataDir),
+		review_access.NewResolver(review_access.NewSystemTypes(), review_access.NewToolTypes(manager.Connector.DB)),
 		dashboardLog,
 	)
 	// File reader engine (plan/ai/file-reader/file-reader-engine.md): one shared engine, so its limits

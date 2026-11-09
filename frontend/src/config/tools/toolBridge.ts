@@ -150,6 +150,18 @@ export interface ToolOpenFileReaderOptions {
   backLabel?: string
 }
 
+// Where to draw the reviews panel (or the small stars) and which entity it is about.
+export interface ToolReviewsOptions {
+  // The tool's own slug, e.g. "career" (reviews are kept per owner).
+  owner: string
+  // An entity type the tool declared in manifest.json's "reviews", e.g. "company".
+  entityType: string
+  // The entity's UUID.
+  entityId: string
+  // Heading of the panel (default "Reviews"); the small stars display has none.
+  title?: string
+}
+
 export interface ToolBridge {
   registerMenuEntry(entry: ToolMenuEntry): void
   registerRoute(route: ToolRoute): void
@@ -165,6 +177,15 @@ export interface ToolBridge {
   // Mounting into a container that already has a panel replaces it. A bad option is
   // refused with a console error and returns a function that does nothing.
   mountComments(container: HTMLElement, options: ToolCommentsOptions): () => void
+  // Draws Cinqo's reviews panel for one of the tool's entities into container and returns a function that removes it (call it from your
+  // route's unmount): the average and how the ratings are spread, the person's own stars and optional text, and everyone's reviews. The
+  // scale (3, 5 or 10 stars) and whether halves are allowed come from the type in manifest.json's "reviews"; who may do what is decided by
+  // the server from its scopes. Mounting into a container that already has one replaces it. A bad option is refused with a console error
+  // and returns a function that does nothing.
+  mountReviews(container: HTMLElement, options: ToolReviewsOptions): () => void
+  // Draws the small stars display (the average in stars, the number and the count) for one entity into container, for a row of a list.
+  // Many on one page share a single request. Same return and refusal as mountReviews.
+  mountStars(container: HTMLElement, options: ToolReviewsOptions): () => void
   // Draws Cinqo's terminal-style file reader for one text file of the tool's own data into container and
   // returns a function that removes it (call it from your route's unmount). It reads big files a window of up to
   // 500 lines at a time, with search, never loading a file whole. Who may read is decided by the server from the
@@ -202,6 +223,9 @@ export interface ToolBridgeCallbacks {
   // Supplied by the app, which owns the React side of the comments panel; this file
   // stays free of React so a tool author can copy it on its own.
   onMountComments: (container: HTMLElement, options: ToolCommentsOptions) => () => void
+  // Supplied by the app, which owns the React side of the reviews panel and the small stars display.
+  onMountReviews: (container: HTMLElement, options: ToolReviewsOptions) => () => void
+  onMountStars: (container: HTMLElement, options: ToolReviewsOptions) => () => void
   // Supplied by the app, which owns the React side of the file reader.
   onMountFileReader: (container: HTMLElement, options: ToolFileReaderOptions) => () => void
   // Supplied by the app, which owns the PDF renderer (pdf.js is only loaded when first needed).
@@ -248,6 +272,12 @@ export function createToolBridge(callbacks: ToolBridgeCallbacks): ToolBridge {
     },
     mountComments(container, options) {
       return callbacks.onMountComments(container, options)
+    },
+    mountReviews(container, options) {
+      return callbacks.onMountReviews(container, options)
+    },
+    mountStars(container, options) {
+      return callbacks.onMountStars(container, options)
     },
     mountFileReader(container, options) {
       return callbacks.onMountFileReader(container, options)

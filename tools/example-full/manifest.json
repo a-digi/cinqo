@@ -1,7 +1,7 @@
 {
   "slug": "example_full",
   "name": "Example Full Tool",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "authors": [
     { "name": "Your Name", "email": "you@example.com" }
   ],
@@ -72,6 +72,15 @@
       "kind": "custom",
       "data_path": "dashboard/custom-demo",
       "width": 2
+    }
+  ],
+  "reviews": [
+    {
+      "entity_type": "item",
+      "scale": 5,
+      "half_stars": true,
+      "read_scope": "tool:example_full:read",
+      "write_scope": "tool:example_full:write"
     }
   ],
   "comments": [

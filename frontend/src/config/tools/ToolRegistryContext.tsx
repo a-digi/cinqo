@@ -3,6 +3,7 @@ import { useAuth } from '../../Components/Auth/AuthContext'
 import { pdfThumbnail } from '../../Components/Admin/Media/pdfThumbnail'
 import { mountComments } from '../../Components/Comments/mountComments'
 import { mountFileReader } from '../../Components/FileReader/mountFileReader'
+import { mountReviews, mountStars } from '../../Components/Reviews/mountReviews'
 import { loadTools } from './loadTools'
 import type { ToolDashboardWidget, ToolMenuEntry, ToolRoute } from './toolBridge'
 
@@ -47,6 +48,8 @@ export function ToolRegistryProvider({ children }: { children: ReactNode }) {
         setRoutes((prev) => [...prev, route])
       },
       onMountComments: mountComments,
+      onMountReviews: mountReviews,
+      onMountStars: mountStars,
       onMountFileReader: mountFileReader,
       onPdfThumbnail: pdfThumbnail,
       onRegisterDashboardWidget: (widget) => {

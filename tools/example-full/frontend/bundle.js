@@ -4,9 +4,9 @@ window.__cinqoToolBridge.registerMenuEntry({
   scopes: ['tool:example_full:read'],
 })
 
-// The id of the example item the comments below are about. In a real tool this is the
-// UUID of whatever the page shows (a job, an invoice, a ticket…); comments belong to
-// (your tool, an entity type from manifest.json's "comments", that UUID).
+// The id of the example item the comments and the reviews below are about. In a real tool
+// this is the UUID of whatever the page shows (a job, an invoice, a ticket…); they belong
+// to (your tool, an entity type from manifest.json's "comments" or "reviews", that UUID).
 var EXAMPLE_ITEM_ID = '8d3c5b1e-2f4a-4c6d-9e7f-0a1b2c3d4e5f'
 
 window.__cinqoToolBridge.registerRoute({
@@ -20,6 +20,14 @@ window.__cinqoToolBridge.registerRoute({
     commentsBox.style.marginTop = '24px'
     container.appendChild(heading)
     container.appendChild(items)
+    // The small stars (average, number, count) as they would sit in a row of a list, then the
+    // full reviews panel, then the comments.
+    var starsBox = document.createElement('div')
+    starsBox.style.marginTop = '16px'
+    var reviewsBox = document.createElement('div')
+    reviewsBox.style.marginTop = '24px'
+    container.appendChild(starsBox)
+    container.appendChild(reviewsBox)
     container.appendChild(commentsBox)
 
     fetch('/api/v1/tools/example_full/proxy/items', { credentials: 'include' })
@@ -34,6 +42,19 @@ window.__cinqoToolBridge.registerRoute({
     // decides who may do what from the scopes in manifest.json. Older hosts do not have
     // this bridge method, so check for it. It returns a function that removes the panel.
     var bridge = window.__cinqoToolBridge
+
+    // Reviews: star ratings. The type in manifest.json's "reviews" says the scale (3, 5 or 10
+    // stars) and whether halves are allowed; Cinqo draws the panel and decides who may do what.
+    // mountStars is the small display for a list row (many on a page share one request).
+    // Older hosts do not have these methods, so check for them.
+    var item = { owner: 'example_full', entityType: 'item', entityId: EXAMPLE_ITEM_ID }
+    if (typeof bridge.mountStars === 'function') {
+      container.__unmountStars = bridge.mountStars(starsBox, item)
+    }
+    if (typeof bridge.mountReviews === 'function') {
+      container.__unmountReviews = bridge.mountReviews(reviewsBox, { owner: item.owner, entityType: item.entityType, entityId: item.entityId, title: 'Reviews of this item' })
+    }
+
     if (typeof bridge.mountComments === 'function') {
       container.__unmountComments = bridge.mountComments(commentsBox, {
         owner: 'example_full', // this tool's own slug
@@ -44,6 +65,14 @@ window.__cinqoToolBridge.registerRoute({
     }
   },
   unmount: function (container) {
+    if (container.__unmountStars) {
+      container.__unmountStars()
+      delete container.__unmountStars
+    }
+    if (container.__unmountReviews) {
+      container.__unmountReviews()
+      delete container.__unmountReviews
+    }
     if (container.__unmountComments) {
       container.__unmountComments()
       delete container.__unmountComments

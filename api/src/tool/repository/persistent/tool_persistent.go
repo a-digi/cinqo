@@ -144,6 +144,10 @@ func (r *ToolPersistentRepo) Delete(id string) error {
 	if _, err := tx.Exec(`DELETE FROM tool_comment_types WHERE tool_id = ?`, id); err != nil {
 		return err
 	}
+	// Same for the review declaration: it goes, the tool's review file stays.
+	if _, err := tx.Exec(`DELETE FROM tool_review_types WHERE tool_id = ?`, id); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(`DELETE FROM tools WHERE id = ?`, id); err != nil {
 		return err
 	}

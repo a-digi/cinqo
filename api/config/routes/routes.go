@@ -27,6 +27,7 @@ import (
 	"github.com/a-digi/cinqo/src/ping"
 	"github.com/a-digi/cinqo/src/platform"
 	platform_handler "github.com/a-digi/cinqo/src/platform/handler"
+	review_handler "github.com/a-digi/cinqo/src/review/handler"
 	"github.com/a-digi/cinqo/src/security/scopes"
 	security_handler "github.com/a-digi/cinqo/src/security/scopes/handler"
 	"github.com/a-digi/cinqo/src/system"
@@ -156,6 +157,12 @@ func Init(ctx serverdi.Context) {
 		"CommentsEdit":   local_routing.HandlerFunc(comments_handler.EditHandler),
 		"CommentsDelete": local_routing.HandlerFunc(comments_handler.DeleteHandler),
 		"CommentsPurge":  local_routing.HandlerFunc(comments_handler.PurgeHandler),
+
+		"ReviewsGet":       local_routing.HandlerFunc(review_handler.GetHandler),
+		"ReviewsPut":       local_routing.HandlerFunc(review_handler.PutHandler),
+		"ReviewsDelete":    local_routing.HandlerFunc(review_handler.DeleteHandler),
+		"ReviewsSummaries": local_routing.HandlerFunc(review_handler.SummariesHandler),
+		"ReviewsPurge":     local_routing.HandlerFunc(review_handler.PurgeHandler),
 
 		"DashboardWidgets":    local_routing.HandlerFunc(dashboard_handler.WidgetsHandler),
 		"DashboardWidgetData": local_routing.HandlerFunc(dashboard_handler.WidgetDataHandler),

@@ -29,14 +29,16 @@ func main() {
 		case http.MethodPost:
 			w.WriteHeader(http.StatusCreated)
 		case http.MethodDelete:
-			// A real tool would delete the item here. What matters for comments is the
-			// next line: tell Cinqo the entity is gone so the comments about it go too.
+			// A real tool would delete the item here. What matters for comments and
+			// reviews are the next two lines: tell Cinqo the entity is gone so the
+			// comments and the star ratings about it go too.
 			id := r.URL.Query().Get("id")
 			if id == "" {
 				http.Error(w, "id query parameter is required", http.StatusBadRequest)
 				return
 			}
 			purgeComments(os.Getenv("CORE_API_URL"), os.Getenv("TOOL_SERVICE_TOKEN"), "item", id)
+			purgeReviews(os.Getenv("CORE_API_URL"), os.Getenv("TOOL_SERVICE_TOKEN"), "item", id)
 			w.WriteHeader(http.StatusNoContent)
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -110,13 +112,25 @@ func customDemoWidget() any {
 // failure is logged and ignored, because failing to tidy up comments must never fail
 // the delete itself.
 func purgeComments(coreURL, token, entityType, entityID string) {
+	purge("comments", coreURL, token, entityType, entityID)
+}
+
+// purgeReviews is the same for the star ratings (see README.md, "Reviews (star ratings)
+// on your tool's entities"): they live in this tool's own review database, and core
+// removes them when told the entity is gone.
+func purgeReviews(coreURL, token, entityType, entityID string) {
+	purge("reviews", coreURL, token, entityType, entityID)
+}
+
+// purge posts to /api/v1/<what>/purge, which has the same shape for comments and reviews.
+func purge(what, coreURL, token, entityType, entityID string) {
 	if coreURL == "" || token == "" {
 		return
 	}
 	body, _ := json.Marshal(map[string]string{"entityType": entityType, "entityId": entityID})
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, coreURL+"/api/v1/comments/purge", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, coreURL+"/api/v1/"+what+"/purge", bytes.NewReader(body))
 	if err != nil {
 		return
 	}
@@ -124,11 +138,11 @@ func purgeComments(coreURL, token, entityType, entityID string) {
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "purge comments: %v\n", err)
+		fmt.Fprintf(os.Stderr, "purge %s: %v\n", what, err)
 		return
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		fmt.Fprintf(os.Stderr, "purge comments: core answered %d\n", resp.StatusCode)
+		fmt.Fprintf(os.Stderr, "purge %s: core answered %d\n", what, resp.StatusCode)
 	}
 }

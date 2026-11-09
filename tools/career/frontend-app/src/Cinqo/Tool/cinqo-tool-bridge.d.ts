@@ -31,6 +31,14 @@ interface CinqoCommentsOptions {
   metadata?: Record<string, string>
 }
 
+interface CinqoReviewsOptions {
+  owner: string
+  entityType: string
+  entityId: string
+  // The heading of the reviews panel (default "Reviews"); the small stars have none.
+  title?: string
+}
+
 interface CinqoFileReaderOptions {
   tool: string
   source: string
@@ -68,6 +76,13 @@ interface CinqoToolBridge {
   // that removes it. Optional: a host older than the comments feature does not
   // have it, and callers must check before using it.
   mountComments?(container: HTMLElement, options: CinqoCommentsOptions): () => void
+  // Draws Cinqo's reviews panel for one of this tool's entities into container (an entity type declared in manifest.json's "reviews")
+  // and returns a function that removes it. Optional: a host older than the review feature does not have it, and callers must check
+  // before using it.
+  mountReviews?(container: HTMLElement, options: CinqoReviewsOptions): () => void
+  // Draws the small stars (average in stars, the number and the count) for one entity into container, for a row of a list; the rows of
+  // a page share one request. Optional like mountReviews.
+  mountStars?(container: HTMLElement, options: CinqoReviewsOptions): () => void
   // Draws Cinqo's terminal-style file reader for one text file of this tool's own data (a source
   // declared in manifest.json's "file_sources") into container and returns a function that removes
   // it. Optional: a host older than the file reader does not have it, and callers must check first.

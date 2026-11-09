@@ -1,0 +1,35 @@
+routes:
+  # No static scopes on any of these: which scope applies depends on the owner's entity type (a tool's manifest reviews[], or a type
+  # the system registers), so the handler resolves it per request, the same pattern as comments and media. A caller who cannot read
+  # the reviews gets 404, the same as for a type that does not exist. The scale and the half stars are the type's, never the
+  # request's. See plan/ai/review/review-engine.md.
+  - path: /api/v1/reviews/{owner}/{entityType}/{entityId}
+    method: GET
+    executor: ReviewsGet
+    security: authenticated
+
+  - path: /api/v1/reviews/{owner}/{entityType}/{entityId}
+    method: PUT
+    executor: ReviewsPut
+    security: authenticated
+
+  - path: /api/v1/reviews/{owner}/{entityType}/{entityId}
+    method: DELETE
+    executor: ReviewsDelete
+    security: authenticated
+
+  # Averages for a list of entities (a table of companies shows its stars with one call). A path of its own rather than
+  # /api/v1/reviews/{owner}/{entityType}/summaries, so the static word never competes with the {entityId} variable above.
+  - path: /api/v1/review-summaries/{owner}/{entityType}
+    method: POST
+    executor: ReviewsSummaries
+    security: authenticated
+
+  # security: public, deliberately not gated by the user/scope layer, exactly like POST /api/v1/comments/purge and
+  # POST /api/v1/events/publish. Its only legitimate caller is a tool's own backend holding a service token only core ever handed it;
+  # PurgeHandler checks the token itself and treats the tool that owns it as the owner. Static path with one segment after
+  # /reviews, so it never collides with the {owner}/{entityType}/{entityId} routes above.
+  - path: /api/v1/reviews/purge
+    method: POST
+    executor: ReviewsPurge
+    security: public

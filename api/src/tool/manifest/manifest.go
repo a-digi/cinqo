@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"github.com/a-digi/cinqo/src/comments"
 	"github.com/a-digi/cinqo/src/dashboard"
+	"github.com/a-digi/cinqo/src/review"
 	"github.com/a-digi/cinqo/src/toolmeta"
 	"regexp"
 	"slices"
@@ -84,6 +85,9 @@ type Manifest struct {
 	// who may read and write those comments. Needs no backend: core stores them.
 	// See CommentTypeDecl and plan/ai/comments/comments-engine.md.
 	Comments []CommentTypeDecl `json:"comments,omitempty"`
+	// Reviews declares which of this tool's entities can be rated with stars, on which scale, and who may read and write the
+	// reviews. Needs no backend: core stores them. See ReviewTypeDecl and plan/ai/review/review-engine.md.
+	Reviews []ReviewTypeDecl `json:"reviews,omitempty"`
 	// FileSources declares text files of this tool (its own logs, say) that Cinqo's file reader may show to
 	// people holding the declared scope. Needs no backend route: core reads the files. See FileSourceDecl and
 	// plan/ai/file-reader/file-reader-engine.md.
@@ -179,6 +183,17 @@ type WidgetDecl struct {
 // tool declares.
 type CommentTypeDecl struct {
 	EntityType string `json:"entity_type"`
+	ReadScope  string `json:"read_scope"`
+	WriteScope string `json:"write_scope"`
+}
+
+// ReviewTypeDecl is one kind of entity of this tool that can be rated with stars (for example Career's "company", 5 stars with
+// half stars). Scale is 3, 5 or 10; HalfStars lets a rating end in .5. ReadScope may see the reviews; WriteScope may give, change
+// and remove its own. Both must be scopes this tool declares.
+type ReviewTypeDecl struct {
+	EntityType string `json:"entity_type"`
+	Scale      int    `json:"scale"`
+	HalfStars  bool   `json:"half_stars,omitempty"`
 	ReadScope  string `json:"read_scope"`
 	WriteScope string `json:"write_scope"`
 }
@@ -352,6 +367,9 @@ func Validate(m Manifest, in ValidationInput) (kind string, err error) {
 	if err := ValidateComments(m); err != nil {
 		return "", err
 	}
+	if err := ValidateReviews(m); err != nil {
+		return "", err
+	}
 	if err := ValidateFileSources(m); err != nil {
 		return "", err
 	}
@@ -459,6 +477,34 @@ func ValidateComments(m Manifest) error {
 		for _, f := range []struct{ name, scope string }{{"read_scope", c.ReadScope}, {"write_scope", c.WriteScope}} {
 			if _, ok := declared[f.scope]; !ok {
 				return fmt.Errorf("comments: entity_type %q: %s %q must be one of this tool's own declared scopes", c.EntityType, f.name, f.scope)
+			}
+		}
+	}
+	return nil
+}
+
+// ValidateReviews checks m.Reviews: each entity type is a valid name (the rule the review engine applies), declared once, the scale
+// is 3, 5 or 10, and both scopes are scopes this tool itself declares (the rule comments and mcp_tools have).
+func ValidateReviews(m Manifest) error {
+	declared := make(map[string]struct{}, len(m.Scopes))
+	for _, s := range m.Scopes {
+		declared[s.Scope] = struct{}{}
+	}
+	seen := map[string]struct{}{}
+	for _, r := range m.Reviews {
+		if !review.ValidEntityType(r.EntityType) {
+			return fmt.Errorf("reviews: entity_type %q must start with a lower-case letter and contain only lower-case letters, digits and underscores (at most %d characters)", r.EntityType, review.MaxEntityTypeRunes)
+		}
+		if _, dup := seen[r.EntityType]; dup {
+			return fmt.Errorf("reviews: entity_type %q is declared twice", r.EntityType)
+		}
+		seen[r.EntityType] = struct{}{}
+		if !review.ValidScale(r.Scale) {
+			return fmt.Errorf("reviews: entity_type %q: scale %d must be 3, 5 or 10", r.EntityType, r.Scale)
+		}
+		for _, f := range []struct{ name, scope string }{{"read_scope", r.ReadScope}, {"write_scope", r.WriteScope}} {
+			if _, ok := declared[f.scope]; !ok {
+				return fmt.Errorf("reviews: entity_type %q: %s %q must be one of this tool's own declared scopes", r.EntityType, f.name, f.scope)
 			}
 		}
 	}

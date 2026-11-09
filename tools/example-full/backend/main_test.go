@@ -72,3 +72,51 @@ func TestPurgeCommentsRequest(t *testing.T) {
 	core.Close()
 	purgeComments(core.URL, "secret", "item", "x")
 }
+
+// Deleting an item also tells core to purge its reviews: the reviews route, the same ToolService
+// token, and only the entity in the body.
+func TestPurgeReviewsRequest(t *testing.T) {
+	var gotPath, gotAuth string
+	var gotBody map[string]string
+	core := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath, gotAuth = r.URL.Path, r.Header.Get("Authorization")
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &gotBody)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer core.Close()
+
+	purgeReviews(core.URL, "secret", "item", "8d3c5b1e-2f4a-4c6d-9e7f-0a1b2c3d4e5f")
+	if gotPath != "/api/v1/reviews/purge" || gotAuth != "ToolService secret" {
+		t.Errorf("path %q, auth %q", gotPath, gotAuth)
+	}
+	if len(gotBody) != 2 || gotBody["entityType"] != "item" || gotBody["entityId"] != "8d3c5b1e-2f4a-4c6d-9e7f-0a1b2c3d4e5f" {
+		t.Errorf("body = %v", gotBody)
+	}
+	gotPath = ""
+	purgeReviews("", "secret", "item", "x")
+	purgeReviews(core.URL, "", "item", "x")
+	if gotPath != "" {
+		t.Error("a request went out without a complete environment")
+	}
+	core.Close()
+	purgeReviews(core.URL, "secret", "item", "x")
+}
+
+// A delete purges both the comments and the reviews of the item.
+func TestDeletingAnItemPurgesBothCommentsAndReviews(t *testing.T) {
+	var paths []string
+	core := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer core.Close()
+	t.Setenv("CORE_API_URL", core.URL)
+	t.Setenv("TOOL_SERVICE_TOKEN", "secret")
+
+	purgeComments(core.URL, "secret", "item", "x")
+	purgeReviews(core.URL, "secret", "item", "x")
+	if len(paths) != 2 || paths[0] != "/api/v1/comments/purge" || paths[1] != "/api/v1/reviews/purge" {
+		t.Errorf("%v", paths)
+	}
+}

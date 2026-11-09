@@ -3,6 +3,8 @@ import { fetchCompaniesPage, updateCompany, removeCompany, type Company, type Co
 import { BuildingIcon, PlusIcon } from '../../Shared/Icons/icons'
 import { inputClass } from '../../Shared/inputClass'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
+import { Stars } from '../../Shared/Reviews/Stars'
+import { REVIEW_TYPE_COMPANY } from '../../Shared/Reviews/reviewTypes'
 import { SummaryRail } from '../../Shared/SummaryRail/SummaryRail'
 import { ACCENTS, PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
 import { percentOrNull, plural } from './companyStats'
@@ -327,6 +329,9 @@ export function CompaniesPage() {
                         >
                           {c.name}
                         </a>
+                        <div className="mt-1">
+                          <Stars entityType={REVIEW_TYPE_COMPANY} entityId={c.id} />
+                        </div>
                         {c.description && <div className="mt-0.5 text-xs text-gray-500">{c.description}</div>}
                         <div className="mt-2 flex flex-wrap gap-2">
                           <a

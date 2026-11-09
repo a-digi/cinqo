@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { fetchCompanies, fetchJobs, type Company, type Job } from '../../api'
 import { BuildingIcon } from '../../Shared/Icons/icons'
+import { Reviews } from '../../Shared/Reviews/Reviews'
+import { REVIEW_TYPE_COMPANY } from '../../Shared/Reviews/reviewTypes'
 import { MatchScoreBar } from '../../Shared/MatchScoreBar/MatchScoreBar'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { SummaryRail } from '../../Shared/SummaryRail/SummaryRail'
@@ -189,6 +191,8 @@ export function CompanyViewPage() {
           </SummaryRail>
         </aside>
       </div>
+
+      <Reviews entityType={REVIEW_TYPE_COMPANY} entityId={company.id} />
     </div>
   )
 }

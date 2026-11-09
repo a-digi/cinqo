@@ -48,9 +48,10 @@ can additionally have its own `Makefile` — see
   frontend calls its own backend through the reverse proxy (never the
   raw port directly), which is enforced per-request against the scope
   declared for that route in `manifest.json`. It also carries three Home
-  dashboard widgets (a stat, a list and a custom one) and comments on an
-  example item — see "Adding a widget to the Home dashboard" and
-  "Comments on your tool's entities" below.
+  dashboard widgets (a stat, a list and a custom one), and comments and
+  star reviews on an example item — see "Adding a widget to the Home
+  dashboard", "Comments on your tool's entities" and "Reviews (star ratings)
+  on your tool's entities" below.
 
 Both are reference examples, not real features — copy one as your
 starting point.
@@ -414,6 +415,138 @@ because a reply below it matched a filter), and `canEdit` / `canDelete` for the 
 - Delete the entity and confirm your backend calls purge (a unit test with a fake core, like
   `example-full/backend/main_test.go`, is enough).
 - Bump the tool's `version`, rebuild the zips and regenerate `repository.json` so users get it.
+
+## Reviews (star ratings) on your tool's entities
+
+Cinqo has a review engine: your tool can let people rate its own things with stars (a Career
+company, a supplier, a recipe), with an optional short text, without any storage, API or UI of
+its own. You say which entities can be rated and on which scale, drop a line of code into the
+page that shows an entity, and Cinqo draws the panel: the average, how the ratings are spread,
+the person's own stars and everyone's reviews. It works exactly like comments (read that section
+first); what differs is below.
+
+Where the reviews live: in Cinqo, in a database that belongs to **your tool alone**
+(`<data>/db/tools/<your slug>/<your slug>_review.db`, e.g. `career_review.db`). Nobody else's
+reviews are in that file. They are **kept when your tool is uninstalled** and come back if it is
+reinstalled. A tool needs no backend for this; a frontend-only tool can use reviews.
+
+The working example is `example-full/` (`manifest.json`, `frontend/bundle.js`, `backend/main.go`);
+Career's companies are the first real use.
+
+### 1. Declare the entity types in `manifest.json`
+
+```json
+"reviews": [
+  { "entity_type": "company", "scale": 5, "half_stars": true,
+    "read_scope": "tool:mytool:read", "write_scope": "tool:mytool:write" }
+]
+```
+
+| Field | Meaning |
+|---|---|
+| `entity_type` | A name for the kind of thing: lower-case letters, digits and underscores, starting with a letter, at most 40 characters. Declared once per type. |
+| `scale` | How many stars: **3, 5 or 10**. Nothing else is accepted. |
+| `half_stars` | `true` to let a rating end in .5 (3.5 of 5); omitted or `false` for whole stars only. |
+| `read_scope` | Who may see the reviews. Must be a scope **your tool declares** in `scopes`. |
+| `write_scope` | Who may give, change and remove their own review. Also one of your tool's own scopes; it may be the same as `read_scope`. |
+
+An install is refused if a name is invalid, a type is declared twice, the scale is not 3, 5 or 10,
+or a scope is not one of your tool's own. An update that no longer lists a type stops accepting
+reviews for it (the stored reviews stay on disk).
+
+The scale and the half stars belong to the **type**, never to a request: a page cannot send its own.
+If you change a type's scale in an update (5 to 10), the old reviews are kept and still shown, marked
+with the scale they were given on, but they are left out of the average (which says how many).
+
+### 2. Show the panel, and the small stars, where the entity is shown
+
+```js
+var bridge = window.__cinqoToolBridge
+var item = { owner: 'mytool', entityType: 'company', entityId: company.id }   // a UUID
+
+// The full panel, on the page of one entity:
+var unmountPanel = bridge.mountReviews(panelContainer, Object.assign({ title: 'Reviews' }, item))
+
+// The small stars (average in stars, the number, the count) for a row of a list:
+var unmountStars = bridge.mountStars(rowContainer, item)
+
+// later, from your route's unmount():
+unmountPanel(); unmountStars()
+```
+
+- `entityId` must be a **UUID** (any case). Reviews belong to your tool, the entity type and that UUID.
+- Call the functions the mounts return when your page goes away. Mounting into a container that
+  already has one replaces it. A bad option is refused with a console error, and the returned
+  function then does nothing.
+- **Lists:** put `mountStars` in each row. All the rows shown in the same moment cost **one request**
+  per entity type (up to 100 ids per call), not one per row. If the answer cannot be had it shows
+  nothing rather than an error in the middle of your table.
+- Hosts older than the review feature do not have these methods; check
+  `typeof bridge.mountReviews === 'function'` first (the example does).
+
+### 3. Who can do what
+
+| Action | Needs |
+|---|---|
+| See the reviews and the average | `read_scope` |
+| Give, change or remove **your own** review | `write_scope` |
+| Remove someone else's review | `cinqo:super:admin` (an administrator removes but never rewrites) |
+
+A user without `read_scope` gets "not found" for everything; one with `read_scope` only sees the
+reviews and a note in place of the stars to click. A disabled tool's reviews are unreachable until it
+is enabled again.
+
+### 4. Clean up when an entity is deleted
+
+Exactly like comments, from your backend:
+
+```go
+body, _ := json.Marshal(map[string]string{"entityType": "company", "entityId": id})
+req, _ := http.NewRequestWithContext(ctx, http.MethodPost, os.Getenv("CORE_API_URL")+"/api/v1/reviews/purge", bytes.NewReader(body))
+req.Header.Set("Authorization", "ToolService "+os.Getenv("TOOL_SERVICE_TOKEN")) // not "Bearer"
+req.Header.Set("Content-Type", "application/json")
+```
+
+It answers `200 {"deleted": n}` (also `0` when there were none), takes the owner from the service
+token (a name in the body is ignored), and is refused (`403`) for a type you did not declare or while
+your tool is disabled. Career does it from a consumer of its own "company deleted" event, so a failed
+call is retried; the example does it best effort with a short timeout.
+
+### 5. Behaviour to know about
+
+- **One review per person per entity.** Rating again replaces the earlier rating and text (the
+  review keeps its place and is marked "edited"); removing it lets the person rate again later.
+- **Ratings** are whole stars, or halves where the type allows them, from the smallest step (half a
+  star, or one) up to the scale. A text is optional, plain, up to 2000 characters, never interpreted as
+  HTML or markdown.
+- **The average** is over the reviews on the type's current scale, to two decimals; the panel also
+  draws how many reviews gave each star (a half star counts in the star above it).
+- **Newest review first**, 20 at a time with a "Show older reviews" button.
+- **Author:** the id of the signed-in user, taken from their login (never from anything the page
+  sends); the shown name works as for comments ("User" when there is none).
+- Reviews are visible to everyone who may read the entity; there are no private reviews. Cinqo does not
+  check that the UUID belongs to a real entity of yours.
+
+### 6. The routes, if you need them
+
+The panel uses these; you do not normally call them yourself. All need a signed-in user, except purge.
+
+| Route | |
+|---|---|
+| `GET /api/v1/reviews/{owner}/{entityType}/{entityId}` | `{scale, halfStars, summary: {count, average, distribution, otherScale}, mine, reviews, total, nextBefore, canCreate}`; optional `limit` (max 100) and `before`. |
+| `PUT` the same path, body `{"rating": 3.5, "body": "…"}` | Give or replace the caller's own review. Only these two fields are read. |
+| `DELETE` the same path | Remove the caller's own review (`204`, also when there is none); with `?reviewId=<id>` remove one by id (its author, or an administrator). |
+| `POST /api/v1/review-summaries/{owner}/{entityType}`, body `{"ids": ["<uuid>", …]}` | Count and average for up to 100 entities in one call. |
+| `POST /api/v1/reviews/purge` | Tool only (`ToolService` token): remove all reviews of an entity. |
+
+### 7. Check it
+
+- Install the tool, open the page that shows an entity, and rate it as a user with the write scope;
+  then as one with only the read scope (the reviews and a note), and as one with neither (an error).
+- Check a list page: the small stars show, and the browser makes one `review-summaries` request.
+- Delete the entity and confirm your backend calls purge (a unit test with a fake core, like
+  `example-full/backend/main_test.go`, is enough).
+- Bump the tool's `version`, rebuild the zips and regenerate `repository.json`.
 
 ## Showing a big text file (the file reader)
 
