@@ -7,3 +7,13 @@ routes:
     scopes:
       - cinqo:system:read
       - cinqo:super:admin
+
+  # The applications that use the most memory (plan 226): names, the PID of each one's biggest process, and their summed resident size. The same read
+  # scope as the bar; only command names are read, never command lines.
+  - path: /api/v1/system/memory-top
+    method: GET
+    executor: SystemMemoryTopGet
+    security: authenticated
+    scopes:
+      - cinqo:system:read
+      - cinqo:super:admin

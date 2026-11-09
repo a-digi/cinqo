@@ -77,6 +77,7 @@ func Init(ctx serverdi.Context) {
 		"HealthzGet": local_routing.HandlerFunc(health.GetHandler),
 
 		"SystemResourcesGet": local_routing.HandlerFunc(system.GetHandler),
+		"SystemMemoryTopGet": local_routing.HandlerFunc(system.TopHandler),
 
 		"AuthConfig":   &auth_handler.AuthConfigHandler{},
 		"AuthCallback": &auth_handler.OidcCallbackHandler{},

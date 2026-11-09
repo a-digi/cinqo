@@ -221,22 +221,28 @@ func TestTheScopeIsRegisteredAsTheRouteNeedsIt(t *testing.T) {
 }
 
 // The route is authenticated, a GET, and needs the system read scope or super admin; nothing else.
-func TestTheRouteIsAuthenticatedAndScoped(t *testing.T) {
+func TestTheRoutesAreAuthenticatedAndScoped(t *testing.T) {
 	raw, err := os.ReadFile("../../config/routes/route-system.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
 	blocks := strings.Split(string(raw), "  - path:")[1:]
-	if len(blocks) != 1 {
-		t.Fatalf("%d routes, want 1", len(blocks))
+	if len(blocks) != 2 {
+		t.Fatalf("%d routes, want 2", len(blocks))
 	}
-	b := blocks[0]
-	for _, want := range []string{"/api/v1/system/resources", "method: GET", "executor: SystemResourcesGet", "security: authenticated", "cinqo:system:read", "cinqo:super:admin"} {
-		if !strings.Contains(b, want) {
-			t.Errorf("%q missing:\n%s", want, b)
+	for i, path := range []string{"/api/v1/system/resources", "/api/v1/system/memory-top"} {
+		executor := []string{"SystemResourcesGet", "SystemMemoryTopGet"}[i]
+		b := blocks[i]
+		for _, want := range []string{path, "method: GET", "executor: " + executor, "security: authenticated", "cinqo:system:read", "cinqo:super:admin"} {
+			if !strings.Contains(b, want) {
+				t.Errorf("%q missing:\n%s", want, b)
+			}
 		}
-	}
-	if n := len(regexp.MustCompile(`cinqo:[a-z]+:[a-z]+`).FindAllString(b, -1)); n != 2 {
-		t.Errorf("%d scopes, want exactly 2", n)
+		if n := len(regexp.MustCompile(`cinqo:[a-z]+:[a-z]+`).FindAllString(b, -1)); n != 2 {
+			t.Errorf("%s: %d scopes, want exactly 2", path, n)
+		}
+		if strings.Contains(b, "method: POST") || strings.Contains(b, "method: PUT") || strings.Contains(b, "method: DELETE") {
+			t.Errorf("%s must be read only", path)
+		}
 	}
 }
