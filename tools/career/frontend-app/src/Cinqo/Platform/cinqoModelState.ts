@@ -8,13 +8,15 @@ export interface CinqoModelState {
   downloaded: string[]
   waiting: string[]
   dismissed: string[]
+  // The tools that suggested each model Cinqo lists as added, by model id (from Cinqo's own list of models).
+  suggestedBy: Record<string, string[]>
 }
 
 // Reads Cinqo's answer (GET /api/v1/local-ai) as far as it has the fields: an older Cinqo that lacks the suggestions or the dismissed list just has
 // none, never an error.
 export function parseCinqoState(raw: unknown): CinqoModelState {
   const o = (raw ?? {}) as {
-    catalog?: { id?: string; install?: { state?: string } }[]
+    catalog?: { id?: string; install?: { state?: string }; suggestedBy?: string[] }[]
     suggestions?: { id?: string }[]
     dismissed?: string[]
   }
@@ -23,6 +25,9 @@ export function parseCinqoState(raw: unknown): CinqoModelState {
     downloaded: ids((o.catalog ?? []).filter((m) => m.install?.state === 'ready')),
     waiting: ids(o.suggestions),
     dismissed: (o.dismissed ?? []).filter((id): id is string => typeof id === 'string'),
+    suggestedBy: Object.fromEntries(
+      (o.catalog ?? []).flatMap((m) => (typeof m.id === 'string' && Array.isArray(m.suggestedBy) ? [[m.id, m.suggestedBy] as const] : [])),
+    ),
   }
 }
 
@@ -70,4 +75,18 @@ export function canAsk(state: ModelRowState): boolean {
 // Whether the row points to Cinqo's Local Agents page instead.
 export function pointsToCinqo(state: ModelRowState): boolean {
   return state === 'waiting' || state === 'dismissed'
+}
+
+// The name Career gives itself when it suggests a model.
+export const CAREER = 'Career'
+
+// The models Career suggests that Cinqo has on this computer and lists as added, but where Career is not among the tools that suggested them (Phi-4-mini
+// that Cinqo took over from the disk, for example): Career tells Cinqo that it uses them, so the Local Agents page says so ("Added by Cinqo and Career").
+// For a model that is already added this only records Career's name: nothing is downloaded, no card appears.
+export function modelsToRegister(models: SuggestedModel[], cinqo: CinqoModelState | null): SuggestedModel[] {
+  if (!cinqo) return []
+  return models.filter((m) => {
+    const tools = cinqo.suggestedBy[m.id] as string[] | undefined
+    return cinqo.downloaded.includes(m.id) && tools !== undefined && !tools.some((t) => t.trim().toLowerCase() === CAREER.toLowerCase())
+  })
 }

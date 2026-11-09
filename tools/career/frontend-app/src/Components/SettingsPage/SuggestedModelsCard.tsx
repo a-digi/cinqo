@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  fetchCinqoModelState,
   canAsk,
+  fetchCinqoModelState,
+  modelsToRegister,
   pointsToCinqo,
   rowState,
   rowStateText,
@@ -99,6 +100,19 @@ export function SuggestedModelsCard({ platformModels, accent }: { platformModels
   useEffect(() => {
     load()
   }, [load])
+
+  // A model Career suggests that Cinqo already has, without Career among the tools that suggested it: Career says that it uses it (once per model
+  // while this page is open; a refusal is ignored). Nothing is downloaded and no card appears.
+  const registered = useRef(new Set<string>())
+  useEffect(() => {
+    for (const m of modelsToRegister(SUGGESTED_MODELS, cinqo)) {
+      if (registered.current.has(m.id)) continue
+      registered.current.add(m.id)
+      suggestModel(m)
+        .then(load)
+        .catch(() => undefined)
+    }
+  }, [cinqo, load])
 
   return (
     <section
