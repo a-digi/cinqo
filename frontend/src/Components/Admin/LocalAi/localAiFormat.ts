@@ -280,10 +280,10 @@ export function joinTools(names: string[]): string {
   return `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}`
 }
 
-// "Added by Career and Browser": every tool that suggested a model that was added (the first one when the core lists only one); empty for a
-// model shipped with Cinqo.
+// "Added by Career and Browser": every tool that suggested a model that was added (the first one when the core lists only one). A model Cinqo offers
+// on its own is "Added by Cinqo".
 export function addedByText(m: Pick<LocalAiModel, 'origin' | 'addedBy' | 'suggestedBy'>): string {
-  if (m.origin !== 'added') return ''
+  if (m.origin !== 'added') return 'Added by Cinqo'
   const all = m.suggestedBy ?? []
   return `Added by ${joinTools(all.length > 0 ? all : [m.addedBy ?? ''])}`
 }
