@@ -184,8 +184,7 @@ export function ImportRunPage({ runId }: { runId: string }) {
           <RunActivity run={run} />
           <p className="mt-3 text-xs text-gray-400">
             This page updates by itself.
-            {run.driver === 'code' &&
-              ' If the page that started the import is closed before it finishes, the import stops.'}{' '}
+            {run.driver === 'code' && ' If the page that started the import is closed before it finishes, the import stops.'}{' '}
             <button type="button" onClick={viewTranscript} className="underline hover:text-gray-600">
               View transcript
             </button>

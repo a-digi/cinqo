@@ -144,7 +144,7 @@ export function SettingsPage() {
                     </div>
                   )}
                 </div>
-                {showsLocalModelNote(selected) && <LocalModelNote />}
+                {showsLocalModelNote(selected) && <LocalModelNote platform={selected} />}
 
                 <div className="flex flex-wrap items-center gap-3">
                   <button

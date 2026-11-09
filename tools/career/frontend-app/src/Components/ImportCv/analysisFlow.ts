@@ -110,7 +110,13 @@ async function settleRun(steps: SettleSteps, conversationId: string, runId: stri
       // often stops too early: the same conversation is asked to continue, a limited number of times, before the run fails.
       if (isNoProposalRefusal(endErr) && continuation < MAX_CONTINUATIONS) {
         // In step-by-step mode the continuation, too, is a fresh turn: the conversation is full of the model's own replies.
-        const next = await ask(steps, conversationId, runId, buildContinuePrompt(runId, failureReason(endErr)), settingsFor(steps, undefined))
+        const next = await ask(
+          steps,
+          conversationId,
+          runId,
+          buildContinuePrompt(runId, failureReason(endErr)),
+          settingsFor(steps, undefined),
+        )
         reply = next.reply
         toolsCalled = next.toolsCalled
         lastTurnError = next.turnError ?? lastTurnError
@@ -146,7 +152,10 @@ export async function analyseCv(steps: AnalysisSteps): Promise<unknown> {
 
 // What the code-driven import needs besides the run's own steps (plan 209): one question to a model with no tools (the first one may use the run's
 // own conversation, so its transcript shows something; the page decides), and the two draft calls.
-export interface CodeAnalysisSteps extends Pick<AnalysisSteps, 'startConversation' | 'recordRun' | 'endRun' | 'onConversation' | 'onRun' | 'onRunsChanged'> {
+export interface CodeAnalysisSteps extends Pick<
+  AnalysisSteps,
+  'startConversation' | 'recordRun' | 'endRun' | 'onConversation' | 'onRun' | 'onRunsChanged'
+> {
   ask(prompt: string, conversationId: string): Promise<string>
   store(runId: string, section: string, body: { value?: unknown; items?: unknown }): Promise<void>
   finish(runId: string): Promise<void>
@@ -268,12 +277,22 @@ export function isRetryableTurnError(err: unknown): boolean {
 // comes back as an empty reply so the run is asked to continue (limited by MAX_CONTINUATIONS).
 // The settings of a turn in step-by-step mode (fresh, the tools of the step, or every tool of the import for no step); none in any other mode. A step and
 // its correction are fresh (the correction says everything again); the question "are you done" is not, because it asks about the turn just before it.
-function settingsFor(steps: Pick<SettleSteps, 'stepMessages' | 'stepTools'>, stepIndex: number | undefined, fresh = true): TurnSettings | undefined {
+function settingsFor(
+  steps: Pick<SettleSteps, 'stepMessages' | 'stepTools'>,
+  stepIndex: number | undefined,
+  fresh = true,
+): TurnSettings | undefined {
   if (!steps.stepMessages || !steps.stepTools) return undefined
   return { fresh, allowedTools: steps.stepTools(stepIndex) }
 }
 
-async function ask(steps: SettleSteps, conversationId: string, runId: string, followUp: string | undefined, settings?: TurnSettings): Promise<TurnResult> {
+async function ask(
+  steps: SettleSteps,
+  conversationId: string,
+  runId: string,
+  followUp: string | undefined,
+  settings?: TurnSettings,
+): Promise<TurnResult> {
   try {
     const { reply, toolErrors, toolsCalled } = readReply(await steps.askAi(conversationId, runId, followUp, settings))
     steps.onReply(reply)
@@ -396,7 +415,8 @@ async function verifyStep(
   }
   if (verdict === 'ok') return result
   const storedSomething =
-    expectation.store !== null && (first.toolsCalled?.includes(expectation.store) === true || again.toolsCalled?.includes(expectation.store) === true)
+    expectation.store !== null &&
+    (first.toolsCalled?.includes(expectation.store) === true || again.toolsCalled?.includes(expectation.store) === true)
   const number = index + 1
   if (verdict === 'no_read' && (storedSomething || expectation.required)) {
     const message = stepNotReadMessage(expectation.label, number)

@@ -26,7 +26,8 @@ export function cvText(cv: SplitCv): string {
 
 const appearsIn = (haystack: string, needle: string): boolean => norm(haystack).includes(norm(needle))
 
-const PLACEHOLDER = /^(?:<.*>|.*\bthe person'?s\b.*|.*\b(?:your|full|first|last) name\b.*|john doe|jane doe|name|title|n\/?a|none|null|unknown|example|string)$/i
+const PLACEHOLDER =
+  /^(?:<.*>|.*\bthe person'?s\b.*|.*\b(?:your|full|first|last) name\b.*|john doe|jane doe|name|title|n\/?a|none|null|unknown|example|string)$/i
 
 function text(value: unknown, field: string, max: number, min = 1): Verdict<string> {
   if (typeof value !== 'string') return bad(`"${field}" must be text`)
@@ -48,7 +49,9 @@ const asObject = (parsed: unknown): Record<string, unknown> | null => {
 // A name written all in capitals ("XHENI TAFA") is written as a name: "Xheni Tafa". A name that already has lower-case letters is left as it is.
 function titleCaseIfShouted(name: string): string {
   if (name !== name.toLocaleUpperCase()) return name
-  return name.toLocaleLowerCase().replace(/(^|[\s'-])(\p{L})/gu, (_m, before: string, letter: string) => before + letter.toLocaleUpperCase())
+  return name
+    .toLocaleLowerCase()
+    .replace(/(^|[\s'-])(\p{L})/gu, (_m, before: string, letter: string) => before + letter.toLocaleUpperCase())
 }
 
 // The person's name read from the top lines: the first line of two to four words that are only letters (a name has no digit, no @, no colon).
@@ -112,8 +115,12 @@ export function personaPiece(cv: SplitCv): Piece<PersonaValue> {
       const title = text(o.title, 'title', 80)
       if (!title.ok) return title
       if (tokens(title.value).length > 8 || /[.!?]$/.test(title.value)) return bad('"title" must be a short job title, not a sentence')
-      if (/[,—–]/.test(title.value)) return bad('"title" is a whole line of the CV (an institution, a place, a dash): give only the job title, such as the part after the dash')
-      if (!appearsIn(cvText(cv), title.value)) return bad(`"${title.value}" is not a title the CV uses: choose one that is written in the CV`)
+      if (/[,—–]/.test(title.value))
+        return bad(
+          '"title" is a whole line of the CV (an institution, a place, a dash): give only the job title, such as the part after the dash',
+        )
+      if (!appearsIn(cvText(cv), title.value))
+        return bad(`"${title.value}" is not a title the CV uses: choose one that is written in the CV`)
       const name = o.name === undefined ? ok(title.value) : text(o.name, 'name', 60)
       if (!name.ok) return name
       if (tokens(name.value).length > 6) return bad('"name" must be a few words')
@@ -131,7 +138,10 @@ export function personaPiece(cv: SplitCv): Piece<PersonaValue> {
 
 // "Anschrift : Hamburg, Deutschland LinkedIn : ..." gives "Hamburg, Deutschland".
 export function locationFromText(t: string): string {
-  const m = /(?:Anschrift|Adresse|Address|Wohnort|Location|Standort)\s*:\s*(.+?)(?=\s+(?:LinkedIn|Email|E-Mail|Tel\.?|Telefon|Phone|GitHub|Web|Xing)\b|\n|$)/i.exec(t)
+  const m =
+    /(?:Anschrift|Adresse|Address|Wohnort|Location|Standort)\s*:\s*(.+?)(?=\s+(?:LinkedIn|Email|E-Mail|Tel\.?|Telefon|Phone|GitHub|Web|Xing)\b|\n|$)/i.exec(
+      t,
+    )
   if (m?.[1]) return m[1].trim()
   // "Anschrift Langenfelder Damm 65, 22525 Hamburg": no colon, so only the city after a German postcode is taken (without one the text could be a sentence).
   const bare = /(?:Anschrift|Adresse|Wohnort)\s+(.+?)(?=\s+(?:LinkedIn|Email|E-Mail|Tel\.?|Telefon|Phone|GitHub|Web|Xing)\b|\n|$)/i.exec(t)
@@ -172,7 +182,8 @@ export function detailsPiece(cv: SplitCv): Piece<DetailsValue> {
       if (long.length > 0 && known / long.length < 0.6) return bad('"summary" says things that are not in the CV: use only what is written')
       const loc = o.location === undefined || o.location === '' ? ok('') : text(o.location, 'location', 60)
       if (!loc.ok) return loc
-      if (loc.value !== '' && !appearsIn(all, loc.value.split(',')[0] ?? loc.value)) return bad('"location" is not in the CV: give the place the CV states, or leave it empty')
+      if (loc.value !== '' && !appearsIn(all, loc.value.split(',')[0] ?? loc.value))
+        return bad('"location" is not in the CV: give the place the CV states, or leave it empty')
       return ok({ headline: headline.value, summary: summary.value, location: loc.value })
     },
     fallback: () => {
@@ -254,7 +265,9 @@ export function skillsPiece(cv: SplitCv): Piece<string[]> {
         seen.add(norm(s))
         skills.push(s)
       }
-      return skills.length >= 3 ? ok(skills.slice(0, MAX_SKILLS)) : bad('give at least three skills, each one to four words, copied from the text (a sentence is not a skill)')
+      return skills.length >= 3
+        ? ok(skills.slice(0, MAX_SKILLS))
+        : bad('give at least three skills, each one to four words, copied from the text (a sentence is not a skill)')
     },
     fallback: () => {
       const fromJobs = skillsFromTechnologies(cv.jobs)
@@ -283,9 +296,14 @@ export function companyTitlePiece(header: string): Piece<CompanyTitle> {
       const title = text(o.title, 'title', 80)
       if (!title.ok) return title
       // A job title is a role: a place ("4 Zeiten, Hamburg") or a dash is part of the company's line, not of the title.
-      if (/[,—–]/.test(title.value) || /^\d/.test(title.value)) return bad('"title" is not a job title (it has a place, a dash or starts with a number): the title is only the role, the rest of the line is the company')
+      if (/[,—–]/.test(title.value) || /^\d/.test(title.value))
+        return bad(
+          '"title" is not a job title (it has a place, a dash or starts with a number): the title is only the role, the rest of the line is the company',
+        )
       const got = [...tokens(company.value), ...tokens(title.value)].sort().join(' ')
-      return got === want ? ok({ company: company.value, title: title.value }) : bad('the company and the title together must be exactly the words of the line: add none and drop none')
+      return got === want
+        ? ok({ company: company.value, title: title.value })
+        : bad('the company and the title together must be exactly the words of the line: add none and drop none')
     },
     fallback: () => (header.trim() === '' ? null : { company: header.trim(), title: 'Not stated' }),
   }
@@ -356,7 +374,10 @@ export function educationFromDatedLines(lines: string[]): EducationEntry[] | nul
 }
 
 export function educationText(cv: SplitCv): string {
-  return cv.sections.filter((s) => s.kind === 'education').flatMap((s) => s.lines).join('\n')
+  return cv.sections
+    .filter((s) => s.kind === 'education')
+    .flatMap((s) => s.lines)
+    .join('\n')
 }
 
 const DATE_OK = /^\d{4}(?:-\d{2}(?:-\d{2})?)?$/
@@ -368,24 +389,33 @@ export function educationPiece(cv: SplitCv): Piece<EducationEntry[]> {
     prompt: `${block('Education text of a CV', source)}\nList every school, degree, certificate or course in it. Dates are YYYY or YYYY-MM, empty when the text gives none; use "Not stated" for a school the text does not name. Answer with this JSON and nothing else: {"education":[{"institution":"<school>","degree":"<degree>","fieldOfStudy":"<field>","startDate":"<YYYY>","endDate":"<YYYY>"}]}`,
     validate: (parsed) => {
       // [{"education":[...]}] (the object in a list of one) is read as the object.
-      const root = Array.isArray(parsed) && parsed.length === 1 && asObject(parsed[0])?.education !== undefined ? (parsed[0] as unknown) : parsed
+      const root =
+        Array.isArray(parsed) && parsed.length === 1 && asObject(parsed[0])?.education !== undefined ? (parsed[0] as unknown) : parsed
       const list = Array.isArray(root) ? root : asObject(root)?.education
       if (!Array.isArray(list)) return bad('it must be a JSON object {"education": [...]}')
       const entries: EducationEntry[] = []
       for (const [i, item] of list.entries()) {
         const o = asObject(item)
         if (!o) return bad(`education[${String(i)}] must be an object`)
-        const field = (key: string, max: number): string => (typeof o[key] === 'string' ? o[key].replace(/\s+/g, ' ').trim().slice(0, max) : '')
+        const field = (key: string, max: number): string =>
+          typeof o[key] === 'string' ? o[key].replace(/\s+/g, ' ').trim().slice(0, max) : ''
         const degree = field('degree', 120)
         let institution = field('institution', 120)
         if (institution === '' || /^(?:<.*>|not stated|unknown|n\/?a)$/i.test(institution)) institution = 'Not stated'
         const startDate = field('startDate', 10)
         const endDate = field('endDate', 10)
         if (degree === '' && institution === 'Not stated') return bad(`education[${String(i)}] has neither a degree nor a school`)
-        if ((startDate !== '' && !DATE_OK.test(startDate)) || (endDate !== '' && !DATE_OK.test(endDate))) return bad(`education[${String(i)}]: dates are YYYY, YYYY-MM or empty`)
+        if ((startDate !== '' && !DATE_OK.test(startDate)) || (endDate !== '' && !DATE_OK.test(endDate)))
+          return bad(`education[${String(i)}]: dates are YYYY, YYYY-MM or empty`)
         if (startDate !== '' && endDate !== '' && endDate < startDate) return bad(`education[${String(i)}]: the end is before the start`)
         const named = [degree, institution === 'Not stated' ? '' : institution].filter((t) => t !== '')
-        for (const t of named) if (!tokens(t).filter((w) => w.length >= 4).every((w) => norm(all).includes(w))) return bad(`education[${String(i)}] "${t}" is not in the CV: copy what is written`)
+        for (const t of named)
+          if (
+            !tokens(t)
+              .filter((w) => w.length >= 4)
+              .every((w) => norm(all).includes(w))
+          )
+            return bad(`education[${String(i)}] "${t}" is not in the CV: copy what is written`)
         entries.push({ institution, degree, fieldOfStudy: field('fieldOfStudy', 120), startDate, endDate })
       }
       return ok(entries.slice(0, 10))

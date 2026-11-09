@@ -46,23 +46,94 @@ export interface SplitCv {
 
 const HEADINGS: Record<Exclude<SectionKind, 'other'>, string[]> = {
   contact: ['kontakt', 'contact', 'contact details', 'kontaktdaten'],
-  profile: ['profil', 'profile', 'kurzprofil', 'summary', 'professional summary', 'about me', 'über mich', 'zusammenfassung', 'personal statement'],
+  profile: [
+    'profil',
+    'profile',
+    'kurzprofil',
+    'summary',
+    'professional summary',
+    'about me',
+    'über mich',
+    'zusammenfassung',
+    'personal statement',
+  ],
   skills: [
-    'skills', 'key skills', 'technical skills', 'core competencies', 'kernkompetenzen', 'kenntnisse', 'it kenntnisse', 'it-kenntnisse', 'edv kenntnisse',
-    'kompetenzen', 'fähigkeiten', 'berufliche fähigkeiten', 'fachliche kompetenzen', 'expertise', 'technologien', 'technologies',
+    'skills',
+    'key skills',
+    'technical skills',
+    'core competencies',
+    'kernkompetenzen',
+    'kenntnisse',
+    'it kenntnisse',
+    'it-kenntnisse',
+    'edv kenntnisse',
+    'kompetenzen',
+    'fähigkeiten',
+    'berufliche fähigkeiten',
+    'fachliche kompetenzen',
+    'expertise',
+    'technologien',
+    'technologies',
   ],
   experience: [
-    'berufserfahrung', 'work experience', 'experience', 'professional experience', 'beruflicher werdegang', 'werdegang', 'employment history',
-    'work history', 'career history', 'berufliche erfahrung', 'praxiserfahrung', 'berufserfahrungen', 'berufliche erfahrungen', 'berufspraxis',
+    'berufserfahrung',
+    'work experience',
+    'experience',
+    'professional experience',
+    'beruflicher werdegang',
+    'werdegang',
+    'employment history',
+    'work history',
+    'career history',
+    'berufliche erfahrung',
+    'praxiserfahrung',
+    'berufserfahrungen',
+    'berufliche erfahrungen',
+    'berufspraxis',
   ],
   education: [
-    'ausbildung', 'education', 'studium', 'abschlüsse', 'qualifikationen', 'bildung', 'akademischer werdegang', 'schulbildung', 'weiterbildung',
-    'zertifikate', 'certifications', 'certificates', 'zertifizierungen', 'kurse', 'education and training', 'ausbildung und weiterbildung', 'bildungsweg',
-    'ausbildungen', 'akademische ausbildung', 'schulische ausbildung',
+    'ausbildung',
+    'education',
+    'studium',
+    'abschlüsse',
+    'qualifikationen',
+    'bildung',
+    'akademischer werdegang',
+    'schulbildung',
+    'weiterbildung',
+    'zertifikate',
+    'certifications',
+    'certificates',
+    'zertifizierungen',
+    'kurse',
+    'education and training',
+    'ausbildung und weiterbildung',
+    'bildungsweg',
+    'ausbildungen',
+    'akademische ausbildung',
+    'schulische ausbildung',
   ],
   languages: ['sprachen', 'languages', 'sprachkenntnisse'],
 }
-const OTHER_HEADINGS = ['persönliche daten', 'personal details', 'sonstiges', 'projekte', 'projects', 'interessen', 'interests', 'hobbies', 'hobbys', 'publikationen', 'publications', 'referenzen', 'references', 'ehrenamt', 'volunteering', 'auszeichnungen', 'awards']
+const OTHER_HEADINGS = [
+  'persönliche daten',
+  'personal details',
+  'sonstiges',
+  'projekte',
+  'projects',
+  'interessen',
+  'interests',
+  'hobbies',
+  'hobbys',
+  'publikationen',
+  'publications',
+  'referenzen',
+  'references',
+  'ehrenamt',
+  'volunteering',
+  'auszeichnungen',
+  'awards',
+]
 
 const HEADING_KIND = new Map<string, SectionKind>()
 for (const [kind, words] of Object.entries(HEADINGS)) for (const w of words) HEADING_KIND.set(w, kind as SectionKind)
@@ -72,7 +143,13 @@ for (const w of OTHER_HEADINGS) HEADING_KIND.set(w, 'other')
 const TITLE_LINES = new Set(['lebenslauf', 'curriculum vitae', 'cv', 'resume', 'résumé', 'bewerbung', 'tabellarischer lebenslauf'])
 
 export function isTitleLine(line: string): boolean {
-  return TITLE_LINES.has(line.toLowerCase().replace(/[:·|]+\s*$/, '').replace(/^[^a-zäöüéß]+|[^a-zäöüéß]+$/g, '').trim())
+  return TITLE_LINES.has(
+    line
+      .toLowerCase()
+      .replace(/[:·|]+\s*$/, '')
+      .replace(/^[^a-zäöüéß]+|[^a-zäöüéß]+$/g, '')
+      .trim(),
+  )
 }
 
 const escapeRegex = (k: string): string => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -117,15 +194,52 @@ export function headingKind(line: string): SectionKind | null {
 }
 
 const MONTHS: Record<string, string> = {
-  jan: '01', januar: '01', january: '01', feb: '02', februar: '02', february: '02', mär: '03', mar: '03', märz: '03', march: '03', apr: '04', april: '04',
-  mai: '05', may: '05', jun: '06', juni: '06', june: '06', jul: '07', juli: '07', july: '07', aug: '08', august: '08', sep: '09', sept: '09', september: '09',
-  okt: '10', oct: '10', oktober: '10', october: '10', nov: '11', november: '11', dez: '12', dec: '12', dezember: '12', december: '12',
+  jan: '01',
+  januar: '01',
+  january: '01',
+  feb: '02',
+  februar: '02',
+  february: '02',
+  mär: '03',
+  mar: '03',
+  märz: '03',
+  march: '03',
+  apr: '04',
+  april: '04',
+  mai: '05',
+  may: '05',
+  jun: '06',
+  juni: '06',
+  june: '06',
+  jul: '07',
+  juli: '07',
+  july: '07',
+  aug: '08',
+  august: '08',
+  sep: '09',
+  sept: '09',
+  september: '09',
+  okt: '10',
+  oct: '10',
+  oktober: '10',
+  october: '10',
+  nov: '11',
+  november: '11',
+  dez: '12',
+  dec: '12',
+  dezember: '12',
+  december: '12',
 }
 
 // A month may carry a repeated letter, a typo that real CVs have ("Junii 2006"): every letter of a name may repeat.
 const MONTH_NAMES = Object.keys(MONTHS)
   .sort((x, y) => y.length - x.length)
-  .map((name) => name.split('').map((c) => `${c}+`).join(''))
+  .map((name) =>
+    name
+      .split('')
+      .map((c) => `${c}+`)
+      .join(''),
+  )
   .join('|')
 const DATE_PART = String.raw`(?:\d{1,2}[./]\d{4}|(?:${MONTH_NAMES})\.?\s+\d{4}|\d{4})`
 const NOW_WORDS = String.raw`bis heute|aktuell|heute|present|now|current|jetzt|today|ongoing|laufend`
@@ -147,7 +261,8 @@ export function parseCvDate(text: string): string {
   return /^\d{4}$/.test(t) ? t : ''
 }
 
-const COUNTRY = /\b(Deutschland|Germany|Albanien|Albania|Österreich|Austria|Schweiz|Switzerland|USA|UK|England|Frankreich|France|Niederlande|Netherlands|Kanada|Canada)\b/gi
+const COUNTRY =
+  /\b(Deutschland|Germany|Albanien|Albania|Österreich|Austria|Schweiz|Switzerland|USA|UK|England|Frankreich|France|Niederlande|Netherlands|Kanada|Canada)\b/gi
 const TECH_MARK = /(?:^|\s)[>›]?\s*((?:eingesetzte\s+)?technologien|technologies|tech\s*stack)\s*:\s*/i
 const LEGAL = String.raw`(?:GmbH\s*&\s*Co\.?\s*KG|GmbH|AG|SE|KG|UG|Inc\.?|Ltd\.?|LLC|Corp\.?|Co\.|S\.A\.|B\.V\.|Oy|AB)`
 const COMPANY_FIRST = new RegExp(String.raw`^(.*?\b${LEGAL})(?=\s|$|[/|,–—-])\s*[/|,–—-]*\s*(.*)$`)
@@ -191,7 +306,9 @@ function dateOf(line: string, maxIndex = 140): { index: number; length: number; 
   if (!m) {
     const open = OPEN_RANGE.exec(line)
     const start = open?.groups ? parseCvDate(open.groups.start) : ''
-    return open && start !== '' && open.index <= maxIndex ? { index: open.index, length: open[0].length, start, end: '', current: true } : null
+    return open && start !== '' && open.index <= maxIndex
+      ? { index: open.index, length: open[0].length, start, end: '', current: true }
+      : null
   }
   if (!m.groups || m.index > maxIndex) return null
   const start = parseCvDate(m.groups.start)
@@ -204,7 +321,10 @@ function dateOf(line: string, maxIndex = 140): { index: number; length: number; 
 }
 
 // The date range in a line, wherever the CV puts it (before, after or alone): where it is, what it is and whether it goes on. Null when the line has none.
-export function findDateRange(line: string, maxIndex = 400): { index: number; length: number; start: string; end: string; current: boolean } | null {
+export function findDateRange(
+  line: string,
+  maxIndex = 400,
+): { index: number; length: number; start: string; end: string; current: boolean } | null {
   return dateOf(line, maxIndex)
 }
 
@@ -221,7 +341,11 @@ function jobBlocks(lines: string[]): Block[] {
     fromRemainder: boolean
   }
   const starts: Start[] = []
-  const remainderOf = (st: Start): string => (lines[st.line] ?? '').slice(st.date.index + st.date.length).replace(/^[.,;:\s–—-]+/, '').trim()
+  const remainderOf = (st: Start): string =>
+    (lines[st.line] ?? '')
+      .slice(st.date.index + st.date.length)
+      .replace(/^[.,;:\s–—-]+/, '')
+      .trim()
   lines.forEach((line, i) => {
     const date = dateOf(line)
     if (!date) return
@@ -236,7 +360,8 @@ function jobBlocks(lines: string[]): Block[] {
       const last = starts.length > 0 ? starts[starts.length - 1] : undefined
       const carried = last?.line === i - 1 ? remainderOf(last) : ''
       if (standalone) starts.push({ line: i, headerLine: i - 1, date, fromRemainder: false })
-      else if (carried !== '' && !BULLET.test(carried) && carried.length <= 140) starts.push({ line: i, headerLine: i, date, fromRemainder: true })
+      else if (carried !== '' && !BULLET.test(carried) && carried.length <= 140)
+        starts.push({ line: i, headerLine: i, date, fromRemainder: true })
       else starts.push({ line: i, headerLine: i, date, fromRemainder: false })
     }
   })

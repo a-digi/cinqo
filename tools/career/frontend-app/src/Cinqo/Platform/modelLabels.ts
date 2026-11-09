@@ -29,7 +29,8 @@ export function modelOptions(platform: Pick<Platform, 'models' | 'modelNames'>):
 // The note under the model picker of the local platform: it says what switching does and where more models come from.
 export const LOCAL_MODEL_NOTE = 'One local model runs at a time; switching takes a few seconds. Only models downloaded in Cinqo are listed.'
 
-export function showsLocalModelNote(platform: Pick<Platform, 'id'> | null | undefined): boolean {
+// A type guard: where it is true the platform is there, so the note can be given the platform.
+export function showsLocalModelNote<T extends Pick<Platform, 'id'>>(platform: T | null | undefined): platform is T {
   return platform?.id === LOCAL_PLATFORM_ID
 }
 

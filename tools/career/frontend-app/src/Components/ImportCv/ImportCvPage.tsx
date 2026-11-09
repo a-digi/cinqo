@@ -21,7 +21,16 @@ import { PDFIcon, UploadIcon } from '../../Shared/Icons/icons'
 import { cardClassName, cardStyle } from '../../Shared/cardStyle'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { plural } from '../CompaniesPage/companyStats'
-import { IMPORT_RUN_TOOLS, IMPORT_STEP_EXPECTATIONS, IMPORT_STEP_TOOLS, buildDoneNudge, buildImportPrompt, buildImportSteps, buildStepCorrection, saysStepDone } from './buildImportPrompt'
+import {
+  IMPORT_RUN_TOOLS,
+  IMPORT_STEP_EXPECTATIONS,
+  IMPORT_STEP_TOOLS,
+  buildDoneNudge,
+  buildImportPrompt,
+  buildImportSteps,
+  buildStepCorrection,
+  saysStepDone,
+} from './buildImportPrompt'
 import { RESTRICTION_NOT_APPLIED_MESSAGE, restrictionHolds } from '../../PersonaAi/personaTools'
 import { analyseCv, analyseCvByCode } from './analysisFlow'
 import { prepareCodeImport } from './codeImport/runCodeImport'
@@ -134,7 +143,8 @@ export function ImportCvPage() {
         if (prep.ok) {
           await analyseCvByCode(
             {
-              startConversation: async () => (await createConversation({ title: `Import CV: ${originalFilename}`, platformId: platform.id, model })).id,
+              startConversation: async () =>
+                (await createConversation({ title: `Import CV: ${originalFilename}`, platformId: platform.id, model })).id,
               recordRun: (conversationId) => createCVImportRun({ fileId, originalFilename, conversationId, driver: 'code' }),
               // Every question is a fresh turn of the run's own conversation (plan 210): the chat shows each question and its answer as they happen,
               // and the model is sent that question only (a small model repeats what it sees of its earlier answers). None of them is offered a tool.
@@ -179,11 +189,14 @@ export function ImportCvPage() {
         // Step-by-step only (plan 210): every step, and a continuation, is a fresh turn of the run's own conversation offered only the tools of that step
         // (every tool of the import for a continuation), so the model has none of its earlier replies to copy and the chat shows each step; and a step that
         // did not call the tools it had to is asked once more, then stops the run with a message that names the step.
-        stepTools: stepByStep ? (index) => (index === undefined ? [...IMPORT_RUN_TOOLS] : [...(IMPORT_STEP_TOOLS[index] ?? IMPORT_RUN_TOOLS)]) : undefined,
+        stepTools: stepByStep
+          ? (index) => (index === undefined ? [...IMPORT_RUN_TOOLS] : [...(IMPORT_STEP_TOOLS[index] ?? IMPORT_RUN_TOOLS)])
+          : undefined,
         saidDone: stepByStep ? saysStepDone : undefined,
         doneNudge: stepByStep ? buildDoneNudge : undefined,
-        stepCorrection:
-          stepByStep ? (index, verdict, runId) => buildStepCorrection(IMPORT_STEP_EXPECTATIONS[index], verdict, fileId, runId) : undefined,
+        stepCorrection: stepByStep
+          ? (index, verdict, runId) => buildStepCorrection(IMPORT_STEP_EXPECTATIONS[index], verdict, fileId, runId)
+          : undefined,
         endRun: finishCVImportRun,
         onConversation: setConversationId,
         // The run exists: its own page takes over from here (the analysis goes on and ends the run; the page polls it).

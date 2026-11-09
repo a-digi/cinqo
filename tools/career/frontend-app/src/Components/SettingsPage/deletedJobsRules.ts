@@ -39,7 +39,10 @@ export function rowDetail(j: DeletedJob): string {
 
 // Deleting a job you added by hand is plain; deleting a crawled job is remembered, so the person is asked first and told
 // what it means. Returns null when no question is needed.
-export function deleteQuestion(source: 'crawled' | 'manual' | undefined, title: string): { title: string; message: string; confirmLabel: string } | null {
+export function deleteQuestion(
+  source: 'crawled' | 'manual' | undefined,
+  title: string,
+): { title: string; message: string; confirmLabel: string } | null {
   if (source === 'manual') return null
   return {
     title: 'Delete this job?',

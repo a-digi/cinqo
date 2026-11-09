@@ -129,7 +129,7 @@ export function CrawlAiModal({
               />
             </div>
           )}
-          {showsLocalModelNote(selected) && <LocalModelNote />}
+          {showsLocalModelNote(selected) && <LocalModelNote platform={selected} />}
         </div>
       )}
 

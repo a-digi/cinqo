@@ -54,7 +54,7 @@ export function ImportAiPicker({
           </div>
         )}
       </div>
-      {showsLocalModelNote(platform) && <LocalModelNote />}
+      {showsLocalModelNote(platform) && <LocalModelNote platform={platform} />}
       <p className="mt-3 text-xs text-gray-500">
         Career AI settings: <span className="font-medium text-gray-700">{settingsText}</span>.{' '}
         <button

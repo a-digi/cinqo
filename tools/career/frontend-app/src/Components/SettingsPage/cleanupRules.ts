@@ -46,9 +46,12 @@ export interface FormErrors {
 
 export function formErrors(f: CleanupForm): FormErrors {
   const e: FormErrors = {}
-  if (wholeNumber(f.olderThanDays, OLDER_DAYS) === null) e.olderThanDays = `A whole number of days from ${String(OLDER_DAYS.min)} to ${String(OLDER_DAYS.max)}.`
-  if (wholeNumber(f.minMatchPercent, MATCH_PERCENT) === null) e.minMatchPercent = `A whole percentage from ${String(MATCH_PERCENT.min)} to ${String(MATCH_PERCENT.max)}.`
-  if (wholeNumber(f.intervalHours, INTERVAL_HOURS) === null) e.intervalHours = `A whole number of hours from ${String(INTERVAL_HOURS.min)} to ${String(INTERVAL_HOURS.max)}.`
+  if (wholeNumber(f.olderThanDays, OLDER_DAYS) === null)
+    e.olderThanDays = `A whole number of days from ${String(OLDER_DAYS.min)} to ${String(OLDER_DAYS.max)}.`
+  if (wholeNumber(f.minMatchPercent, MATCH_PERCENT) === null)
+    e.minMatchPercent = `A whole percentage from ${String(MATCH_PERCENT.min)} to ${String(MATCH_PERCENT.max)}.`
+  if (wholeNumber(f.intervalHours, INTERVAL_HOURS) === null)
+    e.intervalHours = `A whole number of hours from ${String(INTERVAL_HOURS.min)} to ${String(INTERVAL_HOURS.max)}.`
   return e
 }
 
@@ -115,11 +118,13 @@ function plural(n: number, one: string, many: string): string {
 export function keptLines(p: CleanupPreview): string[] {
   const k = p.kept
   const lines: string[] = []
-  if (k.onBoard > 0) lines.push(`${plural(k.onBoard, 'job is', 'jobs are')} kept because ${k.onBoard === 1 ? 'it is' : 'they are'} on a job board`)
+  if (k.onBoard > 0)
+    lines.push(`${plural(k.onBoard, 'job is', 'jobs are')} kept because ${k.onBoard === 1 ? 'it is' : 'they are'} on a job board`)
   if (k.hasCv > 0) lines.push(`${plural(k.hasCv, 'job is', 'jobs are')} kept because ${k.hasCv === 1 ? 'it has' : 'they have'} a CV`)
   if (k.inProgress > 0) lines.push(`${plural(k.inProgress, 'job is', 'jobs are')} kept because a match is running`)
   if (k.manual > 0) lines.push(`${plural(k.manual, 'job is', 'jobs are')} kept because you added ${k.manual === 1 ? 'it' : 'them'} by hand`)
-  if (k.unjudged > 0) lines.push(`${plural(k.unjudged, 'job is', 'jobs are')} kept because no profile could judge ${k.unjudged === 1 ? 'it' : 'them'}`)
+  if (k.unjudged > 0)
+    lines.push(`${plural(k.unjudged, 'job is', 'jobs are')} kept because no profile could judge ${k.unjudged === 1 ? 'it' : 'them'}`)
   return lines
 }
 

@@ -33,12 +33,18 @@ export function RunActivity({ run }: { run: CVImportRun }) {
             <span
               aria-hidden="true"
               className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
-                item.state === 'done' ? 'bg-green-600 text-white' : item.state === 'working' ? 'animate-pulse bg-blue-600 text-white' : 'bg-gray-200 text-gray-500'
+                item.state === 'done'
+                  ? 'bg-green-600 text-white'
+                  : item.state === 'working'
+                    ? 'animate-pulse bg-blue-600 text-white'
+                    : 'bg-gray-200 text-gray-500'
               }`}
             >
               {item.state === 'done' ? '✓' : item.state === 'working' ? '…' : ''}
             </span>
-            <span className={item.state === 'todo' ? 'text-gray-400' : item.state === 'working' ? 'font-medium text-blue-900' : 'text-gray-800'}>
+            <span
+              className={item.state === 'todo' ? 'text-gray-400' : item.state === 'working' ? 'font-medium text-blue-900' : 'text-gray-800'}
+            >
               {item.label}
               {item.detail !== '' && <span className="ml-1 text-xs text-gray-500">{item.detail}</span>}
               {item.state === 'working' && <span className="sr-only"> (in progress)</span>}

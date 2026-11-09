@@ -64,8 +64,8 @@ export function DeletedJobsSection() {
     <section className="career-enter career-delay-3 mt-5 rounded-3xl border border-gray-200 p-6 shadow-sm">
       <h2 className="text-base font-semibold">Deleted jobs</h2>
       <p className="text-sm text-gray-500">
-        Jobs you delete, and jobs the low-match cleanup deletes, are remembered so the crawler does not add them again. Jobs removed only because
-        they are old are not: if they come back they are genuine reposts.
+        Jobs you delete, and jobs the low-match cleanup deletes, are remembered so the crawler does not add them again. Jobs removed only
+        because they are old are not: if they come back they are genuine reposts.
       </p>
 
       {error && (

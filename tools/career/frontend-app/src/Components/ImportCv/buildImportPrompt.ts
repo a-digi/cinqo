@@ -72,7 +72,8 @@ interface ImportStep {
 const NOT_A_CV = 'If the document is not a CV (a form, a letter, an invoice, a certificate...), call it with no entries instead.'
 // An entry's shape only shows where the CV's own content goes (without it a small model copies the key names as values).
 const SHAPE = "The text in angle brackets only shows where the CV's own content goes: replace it with the real content."
-const DATES = 'Dates are exactly YYYY, YYYY-MM or YYYY-MM-DD (write "Sep 2010" as 2010-09); leave a date empty when the CV does not give it.'
+const DATES =
+  'Dates are exactly YYYY, YYYY-MM or YYYY-MM-DD (write "Sep 2010" as 2010-09); leave a date empty when the CV does not give it.'
 
 const readCv = (cvFileId: string): string => `Call pdf_to_markdown with url="media:${cvFileId}". It returns the text of the CV.`
 
@@ -127,7 +128,8 @@ const IMPORT_STEPS: ImportStep[] = [
   {
     title: 'hand over the result',
     tools: ['cv_import_finish'],
-    body: (_cv, run) => `1. Call cv_import_finish with runId "${run}" and jobsInCv set to the number of jobs the CV lists. Make the call once.`,
+    body: (_cv, run) =>
+      `1. Call cv_import_finish with runId "${run}" and jobsInCv set to the number of jobs the CV lists. Make the call once.`,
     ending:
       'After the call has been answered, write one short plain sentence saying the analysis is done, with no JSON and no markdown, and do not list the proposal. If the document is not a CV, say in that sentence that it does not look like a CV.',
   },
@@ -139,7 +141,8 @@ export const IMPORT_STEP_TOOLS: readonly (readonly string[])[] = IMPORT_STEPS.ma
 export function buildImportSteps(cvFileId: string, runId: string): string[] {
   return IMPORT_STEPS.map((step, index) => {
     const n = String(index + 1)
-    const ending = step.ending ?? `Only when every call above has been answered, reply with exactly this line and nothing else: STEP ${n} DONE`
+    const ending =
+      step.ending ?? `Only when every call above has been answered, reply with exactly this line and nothing else: STEP ${n} DONE`
     return `STEP ${n} OF ${String(IMPORT_STEP_COUNT)}: ${step.title}. You are importing a CV into a career profile, one small step at a time.
 
 Tools you can use in this step: ${step.tools.join(', ')}. There are no other tools: never use or invent another one. Make each call as a real tool call, and never write a tool call as text.
@@ -214,9 +217,17 @@ export function checkStep(expectation: StepExpectation, toolsCalled: string[] | 
 
 // The message that asks a step to be done again, in the same conversation, when checkStep found a fault. The model that wrote the
 // example text instead of reading the CV is told so, and to do the two calls in order.
-export function buildStepCorrection(expectation: StepExpectation, verdict: Exclude<StepVerdict, 'ok'>, cvFileId: string, runId: string): string {
+export function buildStepCorrection(
+  expectation: StepExpectation,
+  verdict: Exclude<StepVerdict, 'ok'>,
+  cvFileId: string,
+  runId: string,
+): string {
   const read = `First call pdf_to_markdown with url="media:${cvFileId}" and read the CV text it returns.`
-  const store = expectation.store === null ? '' : ` Then call ${expectation.store} with runId "${runId}" and the real content from the CV text, exactly as the step above describes it.`
+  const store =
+    expectation.store === null
+      ? ''
+      : ` Then call ${expectation.store} with runId "${runId}" and the real content from the CV text, exactly as the step above describes it.`
   if (verdict === 'no_read') {
     return `You did not read the CV in your last answer, so what you stored, if anything, is only the example text. Do the step again now, in this order. ${read}${store} This replaces what you stored before. Make each call once, as a real tool call (never written as text).`
   }

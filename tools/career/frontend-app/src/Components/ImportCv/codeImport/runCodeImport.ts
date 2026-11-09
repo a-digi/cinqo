@@ -8,7 +8,17 @@
 import { jobDescription, splitCv, type CvJob, type SplitCv } from '../splitCv'
 import { runPiece, type PieceOutcome } from './askPiece'
 import {
-  companyTitlePiece, detailsPiece, educationFromDatedLines, educationFromLines, educationPiece, educationText, nameFromHeader, namePiece, personaPiece, skillsPiece, skillsText,
+  companyTitlePiece,
+  detailsPiece,
+  educationFromDatedLines,
+  educationFromLines,
+  educationPiece,
+  educationText,
+  nameFromHeader,
+  namePiece,
+  personaPiece,
+  skillsPiece,
+  skillsText,
   type CompanyTitle,
 } from './pieces'
 
@@ -52,7 +62,8 @@ export async function prepareCodeImport(readText: () => Promise<string>): Promis
   if (!cv.usable) return { ok: false, reason: 'the CV has no heading the code knows (profile, skills, experience or education)' }
   if (cv.jobs.length === 0 && skillsText(cv).trim() === '') return { ok: false, reason: 'the code found neither jobs nor skills in the CV' }
   // A job whose header line the code could not find would be stored as "Not stated": better the step-by-step import than a proposal with holes.
-  if (cv.jobs.some((j) => j.header === '')) return { ok: false, reason: 'the code could not tell the header line (company and title) of every job' }
+  if (cv.jobs.some((j) => j.header === ''))
+    return { ok: false, reason: 'the code could not tell the header line (company and title) of every job' }
   return { ok: true, cv }
 }
 
@@ -79,14 +90,21 @@ export async function runCodeImport(cv: SplitCv, steps: CodeImportSteps): Promis
   await steps.store('profile', { value: { ...insert, name } })
 
   const persona = await asked('persona', () => runPiece(personaPiece(cv), ask))
-  await steps.store('persona', { value: persona ? { ...insert, name: persona.name, title: persona.title } : { ...skip, name: '', title: '' } })
+  await steps.store('persona', {
+    value: persona ? { ...insert, name: persona.name, title: persona.title } : { ...skip, name: '', title: '' },
+  })
 
   const details = await asked('personal details', () => runPiece(detailsPiece(cv), ask))
   await steps.store('personalDetails', {
-    value: details ? { ...insert, headline: details.headline, summary: details.summary, location: details.location } : { ...skip, headline: '', summary: '', location: '' },
+    value: details
+      ? { ...insert, headline: details.headline, summary: details.summary, location: details.location }
+      : { ...skip, headline: '', summary: '', location: '' },
   })
 
-  const skills = skillsText(cv).trim() === '' && cv.jobs.every((j) => j.technologies === '') ? null : await asked('skills', () => runPiece(skillsPiece(cv), ask))
+  const skills =
+    skillsText(cv).trim() === '' && cv.jobs.every((j) => j.technologies === '')
+      ? null
+      : await asked('skills', () => runPiece(skillsPiece(cv), ask))
   if (skills) await steps.store('skills', { items: skills.map((value) => ({ ...insert, value })) })
 
   let n = 0
@@ -116,7 +134,13 @@ export async function runCodeImport(cv: SplitCv, steps: CodeImportSteps): Promis
 }
 
 // One job: company and title by code when the CV makes them certain, else asked; its description built from the CV's own lines.
-async function storeJob(job: CvJob, n: number, steps: CodeImportSteps, ask: (prompt: string) => Promise<string>, note: (piece: string, source: PieceNote['source'], text?: string) => void): Promise<void> {
+async function storeJob(
+  job: CvJob,
+  n: number,
+  steps: CodeImportSteps,
+  ask: (prompt: string) => Promise<string>,
+  note: (piece: string, source: PieceNote['source'], text?: string) => void,
+): Promise<void> {
   const label = `job ${String(n)}`
   let ct: CompanyTitle | null = job.company !== null && job.title !== null ? { company: job.company, title: job.title } : null
   if (ct) note(label, 'code')
@@ -126,7 +150,14 @@ async function storeJob(job: CvJob, n: number, steps: CodeImportSteps, ask: (pro
     ct = o.value
   }
   ct ??= { company: 'Not stated', title: 'Not stated' }
-  const base = { ...insert, company: ct.company, title: ct.title, startDate: job.startDate, endDate: job.endDate, description: jobDescription(job) }
+  const base = {
+    ...insert,
+    company: ct.company,
+    title: ct.title,
+    startDate: job.startDate,
+    endDate: job.endDate,
+    description: jobDescription(job),
+  }
   try {
     await steps.store('experience', { value: { ...base, bulletsInCv: job.bullets.length } })
   } catch (first) {

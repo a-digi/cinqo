@@ -76,3 +76,9 @@ export async function suggestQwenCoder(): Promise<SuggestOutcome> {
 
 // The id of that model in Cinqo's list, for the checks that it is the one Career recommends.
 export const QWEN_CODER_MODEL_ID = RECOMMENDED_LOCAL_CRAWL_MODEL
+
+// Whether the note under a local platform's model picker offers to ask Cinqo for Qwen2.5-Coder-3B: when the platform does not list it (it is not
+// downloaded, or does not fit this computer), whatever else the person has (a key, another local model). Only the local platform has such a note.
+export function needsQwenCoderDownload(platform: { models: string[] }): boolean {
+  return !platform.models.includes(QWEN_CODER_MODEL_ID)
+}
