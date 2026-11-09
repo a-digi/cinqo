@@ -33,6 +33,9 @@ func Register(mainDB *sql.DB, deps Deps) error {
 	models.SetSource(models.FromDB(mainDB, nil))
 	in := &installer{downloads: deps.Downloads, dataDir: deps.DataDir, catalog: cat, source: models.Current}
 	setInstaller(in)
+	// a model Cinqo only offers on suggestion: one that is already on this computer is taken over, one that is missing and that Cinqo suggests itself is
+	// suggested (plan 221). Nothing is downloaded here.
+	reconcileSuggestOnly(mainDB, in, cat, time.Now())
 
 	// A model program left over from an earlier run that did not shut down cleanly is stopped before anything else.
 	killStale(in.root(), processAlive, commandOf, 3*time.Second)

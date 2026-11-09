@@ -462,15 +462,7 @@ func (a api) respondPage(w http.ResponseWriter, db *sql.DB, status int) {
 // splitModelURL reads the repository, the commit and the file out of a model address
 // (https://huggingface.co/<owner>/<repo>/resolve/<commit>/<file>).
 func splitModelURL(raw string) (repo, commit, file string, ok bool) {
-	rest, found := strings.CutPrefix(raw, "https://"+huggingface.Host+"/")
-	if !found {
-		return "", "", "", false
-	}
-	parts := strings.Split(rest, "/")
-	if len(parts) != 5 || parts[2] != "resolve" {
-		return "", "", "", false
-	}
-	return parts[0] + "/" + parts[1], parts[3], parts[4], true
+	return catalog.SplitModelURL(raw)
 }
 
 // shippedFor finds the shipped model a suggestion names: the same repository and file (a model added later is not looked for here).

@@ -46,7 +46,7 @@ func newSugRig(t *testing.T, answer func(huggingface.Request) (huggingface.Resol
 	models.SetSource(models.FromDB(db, nil))
 	restoreResolver := handler.SetResolver(func(_ context.Context, r huggingface.Request) (huggingface.Resolved, error) { return answer(r) })
 	restoreMachine := handler.SetMachine(func() hardware.Info { return hardware.Info{OS: "darwin", Arch: "arm64", RAMBytes: 16 * gigabyte} })
-	t.Cleanup(func() { restoreResolver(); restoreMachine(); models.SetSource(nil) })
+	t.Cleanup(func() { restoreResolver(); restoreMachine(); resetModels() })
 	return &sugRig{t: t, db: db}
 }
 

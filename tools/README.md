@@ -577,6 +577,9 @@ they need): suggest those by their own repository and file. Cinqo does not look 
 about the model's name and size, and keeps what it measured. A few of them (Qwen2.5-Coder-3B, which Career wants)
 are **not offered by Cinqo on its own**: they are not in the Local Agents list, not offered to any tool and cannot be
 chosen until a tool suggested them and the person confirmed. Until then, a tool that wants one must ask for it.
+Cinqo itself suggests one of them, Phi-4-mini, as the suggester "Cinqo" (it is listed with the tools that asked too),
+and a model of this kind that is already complete on the computer is taken over when Cinqo starts, so nothing that
+was downloaded before stops working.
 
 **What Cinqo does.** It reads the pinned commit, the size, the SHA-256 and the licence from Hugging Face itself
 and refuses what does not meet the rules of its own list (a licence is required, the file must have a SHA-256

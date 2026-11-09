@@ -16,6 +16,9 @@
       "driver": "code",
       "source": "unsloth/Phi-4-mini-instruct-GGUF at commit 78eb92a (a GGUF conversion of microsoft/Phi-4-mini-instruct)",
       "note": "The better answers of the two. Needs the most memory.",
+      "suggestOnly": true,
+      "suggestedByCinqo": true,
+      "suggestWhy": "The better answers of the local models, and the one used for the CV import. Needs the most memory.",
       "checkedOn": "2026-11-03"
     },
     {

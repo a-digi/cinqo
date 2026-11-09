@@ -327,8 +327,8 @@ export function LocalAiForm({
       {suggestions.length > 0 && (
         <Card label="Suggested models" title="Suggested by tools">
           <p className="mb-3 text-xs text-gray-500">
-            A tool suggested these models. Nothing is downloaded until you say so. Cinqo checks the file it downloads, but it has not tested
-            the model.
+            Tools, and Cinqo itself, suggested these models. Nothing is downloaded until you say so. Cinqo checks the file it downloads, but
+            it has not tested the model.
           </p>
           <ul className="space-y-3">
             {suggestions.map((s) => (

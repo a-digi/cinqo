@@ -203,7 +203,7 @@ func TestAModelIsDownloadedOnceHoweverManyTimesItIsConfirmed(t *testing.T) {
 	src := models.FromDB(db, nil)
 	r.in.source = src
 	models.SetSource(src)
-	t.Cleanup(func() { models.SetSource(nil) })
+	t.Cleanup(func() { resetModels() })
 
 	r.srv.hold = make(chan struct{})
 	for i := 0; i < 3; i++ {

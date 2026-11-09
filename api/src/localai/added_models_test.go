@@ -90,7 +90,14 @@ func TestMergeKeepsTheShippedListAndAppendsValidAddedModels(t *testing.T) {
 
 func TestMergeLeavesOutAnAddedModelThatBreaksARuleTakesAShippedIdOrIsRepeated(t *testing.T) {
 	base := shipped(t)
-	shippedID := base.Models[0].ID
+	// a model that is in the list by default (a hidden one would not be a problem: a row with its id is its confirmation)
+	shippedID := ""
+	for _, m := range base.Models {
+		if !m.SuggestOnly {
+			shippedID = m.ID
+			break
+		}
+	}
 	bad := func(id string, mutate func(*entity.AddedModel)) entity.AddedModel {
 		m := addedModel(id, entity.AddedStatusAdded, 2<<20, strings.Repeat("a", 64))
 		mutate(&m)
@@ -181,7 +188,7 @@ func TestAnAddedModelIsFoundWhereverTheShippedOnesAreAndIsDownloadedIntoTheSameF
 	src := models.FromDB(db, nil)
 	r.in.source = src
 	models.SetSource(src)
-	t.Cleanup(func() { models.SetSource(nil) })
+	t.Cleanup(func() { resetModels() })
 
 	if _, ok := r.in.cat().Find("qwen2.5-1.5b-instruct-q4_k_m"); !ok {
 		t.Error("the shipped models are still in the list")
@@ -239,7 +246,7 @@ func TestThePagesAnswerListsAnAddedModelNextToTheShippedOnes(t *testing.T) {
 		t.Fatal(err)
 	}
 	models.SetSource(models.FromDB(db, nil))
-	t.Cleanup(func() { models.SetSource(nil) })
+	t.Cleanup(func() { resetModels() })
 	rec := call("LocalAiGet", canRun, db, "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("%d %s", rec.Code, rec.Body.String())
@@ -281,7 +288,7 @@ func TestTheReadableNameOfAModelSaysItsSizeInTheRightUnit(t *testing.T) {
 		}
 	}
 	names := modelNames()
-	if names["qwen2.5-7b-instruct-q4_k_m"] != "Qwen2.5-7B-Instruct, 4.4 GiB" || names["phi-4-mini-instruct-q4_k_m"] != "Phi-4-mini-instruct, 2.3 GiB" {
+	if names["qwen2.5-7b-instruct-q4_k_m"] != "Qwen2.5-7B-Instruct, 4.4 GiB" || names["qwen2.5-1.5b-instruct-q4_k_m"] != "Qwen2.5-1.5B-Instruct, 1.0 GiB" {
 		t.Errorf("the shipped names do not change: %v", names)
 	}
 	// an added tiny model reads in MiB, wired through the list of models
@@ -291,7 +298,7 @@ func TestTheReadableNameOfAModelSaysItsSizeInTheRightUnit(t *testing.T) {
 		t.Fatal(err)
 	}
 	models.SetSource(models.FromDB(db, nil))
-	t.Cleanup(func() { models.SetSource(nil) })
+	t.Cleanup(func() { resetModels() })
 	if got := modelNames()["added-tinyname"]; got != "Tiny added, 1.3 MiB" {
 		t.Errorf("%q", got)
 	}

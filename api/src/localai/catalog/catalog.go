@@ -83,6 +83,10 @@ type Model struct {
 	// models, not offered to the tools and cannot be chosen until a tool suggested it and the person confirmed it (plan 220). The person's confirmation is
 	// stored as a row of the added models under the model's own id.
 	SuggestOnly bool `json:"suggestOnly,omitempty"`
+	// SuggestedByCinqo says Cinqo suggests this suggest-only model itself (as the suggester "Cinqo", with SuggestWhy as its reason) while nobody decided
+	// about it and it is not downloaded: it then waits on the Local Agents page like a suggestion from a tool.
+	SuggestedByCinqo bool   `json:"suggestedByCinqo,omitempty"`
+	SuggestWhy       string `json:"suggestWhy,omitempty"`
 }
 
 // Runtime is one build of the program that runs the models (llama.cpp's llama-server) for one system: an archive that is
@@ -235,6 +239,12 @@ func validateModel(m Model) error {
 		return errors.New("checkedOn must be a date like 2026-11-03")
 	case m.ToolDialect != "" && (len(m.ToolDialect) > maxDialectLength || !toolDialectName.MatchString(m.ToolDialect)):
 		return fmt.Errorf("toolDialect %q is not a name like phi-json", m.ToolDialect)
+	case m.SuggestedByCinqo && !m.SuggestOnly:
+		return errors.New("only a suggestOnly model can be suggested by Cinqo")
+	case m.SuggestedByCinqo && (strings.TrimSpace(m.SuggestWhy) == "" || len(m.SuggestWhy) > maxNoteLength):
+		return fmt.Errorf("a model suggested by Cinqo needs a suggestWhy of at most %d characters", maxNoteLength)
+	case m.SuggestWhy != "" && !m.SuggestedByCinqo:
+		return errors.New("suggestWhy only belongs to a model suggested by Cinqo")
 	case m.KVBytesPerToken < 0 || m.KVBytesPerToken > MaxKVBytesPerToken:
 		return fmt.Errorf("kvBytesPerToken must be between 0 and %d", MaxKVBytesPerToken)
 	case m.ToolDialect != "" && !m.Tools:
@@ -325,4 +335,18 @@ func validateUnsuitableFor(tasks []string) error {
 		seen[task] = true
 	}
 	return nil
+}
+
+// SplitModelURL reads the repository, the commit and the file out of a model address
+// (https://huggingface.co/<owner>/<repo>/resolve/<commit>/<file>).
+func SplitModelURL(raw string) (repo, commit, file string, ok bool) {
+	rest, found := strings.CutPrefix(raw, "https://"+modelHost+"/")
+	if !found {
+		return "", "", "", false
+	}
+	parts := strings.Split(rest, "/")
+	if len(parts) != 5 || parts[2] != "resolve" {
+		return "", "", "", false
+	}
+	return parts[0] + "/" + parts[1], parts[3], parts[4], true
 }

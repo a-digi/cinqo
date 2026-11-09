@@ -23,21 +23,29 @@ const (
 )
 
 // revealCoder confirms the model in a database, the way the person's confirmation does, and makes the list of models read that database.
-func revealCoder(t *testing.T, db *sql.DB) {
+func revealCoder(t *testing.T, db *sql.DB) { revealModel(t, db, coderID) }
+
+func revealModel(t *testing.T, db *sql.DB, id string) {
 	t.Helper()
-	m := entity.AddedModel{ID: coderID, Repo: "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF", File: "qwen2.5-coder-3b-instruct-q4_k_m.gguf", Revision: strings.Repeat("a", 40), URL: "u", SHA256: strings.Repeat("a", 64),
+	confirmRow(t, db, id)
+	models.SetSource(models.FromDB(db, nil))
+	t.Cleanup(func() { resetModels() })
+}
+
+// confirmRow stores the person's confirmation of a model that ships hidden.
+func confirmRow(t *testing.T, db *sql.DB, id string) {
+	t.Helper()
+	m := entity.AddedModel{ID: id, Repo: "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF", File: "qwen2.5-coder-3b-instruct-q4_k_m.gguf", Revision: strings.Repeat("a", 40), URL: "u", SHA256: strings.Repeat("a", 64),
 		SizeBytes: 5, Name: "x", Status: entity.AddedStatusAdded, CreatedAt: "2026-11-09T10:00:00Z"}
 	if err := persistent.NewAddedModelsPersistentRepo(db).Insert(&m); err != nil {
 		t.Fatal(err)
 	}
-	models.SetSource(models.FromDB(db, nil))
-	t.Cleanup(func() { models.SetSource(nil) })
 }
 
 func TestAModelThatIsOnlyOfferedOnSuggestionIsNotInTheListByDefault(t *testing.T) {
 	db := openMainDB(t)
 	models.SetSource(models.FromDB(db, nil))
-	t.Cleanup(func() { models.SetSource(nil) })
+	t.Cleanup(func() { resetModels() })
 	cat, _ := models.Current()
 	if _, ok := cat.Find(coderID); ok {
 		t.Fatal("not listed by default")
@@ -229,9 +237,12 @@ func TestAnOrdinaryModelThatIsNotMarkedSuggestOnlyIsUnchanged(t *testing.T) {
 	// the 7B is in the list by default, and a row with its id (a suggestion of it) never changes that
 	db := openMainDB(t)
 	models.SetSource(models.FromDB(db, nil))
-	t.Cleanup(func() { models.SetSource(nil) })
-	if !inList(t, "qwen2.5-7b-instruct-q4_k_m") || !inList(t, "phi-4-mini-instruct-q4_k_m") || !inList(t, "qwen2.5-1.5b-instruct-q4_k_m") {
-		t.Error("the three default models are listed")
+	t.Cleanup(func() { resetModels() })
+	if !inList(t, "qwen2.5-7b-instruct-q4_k_m") || !inList(t, "qwen2.5-1.5b-instruct-q4_k_m") {
+		t.Error("the two default models are listed")
+	}
+	if inList(t, phiID) || inList(t, coderID) {
+		t.Error("the two models Cinqo only offers on suggestion are not")
 	}
 	if code, _ := newShippedRig(t).suggestWith(shippedBody); code != http.StatusCreated {
 		t.Errorf("%d", code)

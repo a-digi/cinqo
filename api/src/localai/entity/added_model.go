@@ -104,3 +104,13 @@ type Suggester struct {
 	Why  string `json:"why"`
 	At   string `json:"at"`
 }
+
+// FromCatalog is the row of a model that ships with Cinqo (a suggest-only one): everything about the file comes from Cinqo's own entry. why and by are the
+// words of whoever suggested it.
+func FromCatalog(m catalog.Model, status, createdAt string) AddedModel {
+	repo, commit, file, _ := catalog.SplitModelURL(m.URL)
+	return AddedModel{
+		ID: m.ID, Repo: repo, File: file, Revision: commit, URL: m.URL, SHA256: m.SHA256, SizeBytes: m.SizeBytes, Quantization: m.Quantization,
+		License: m.License, Name: m.Name, Publisher: strings.SplitN(repo, "/", 2)[0], ContextTokens: m.ContextTokens, Status: status, CreatedAt: createdAt,
+	}
+}

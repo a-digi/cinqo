@@ -22,6 +22,7 @@ import (
 	"github.com/a-digi/cinqo/src/localai/models"
 	"github.com/a-digi/cinqo/src/localai/repository/persistent"
 	"github.com/a-digi/cinqo/src/localai/repository/query"
+	"github.com/a-digi/cinqo/src/platform"
 	"github.com/a-digi/cinqo/src/platform/chatcompleter"
 )
 
@@ -432,7 +433,7 @@ func TestRegisterBuildsTheEngineStopsLeftoversAndStopsTheProgramWithTheApplicati
 		engine = unavailableEngine{err: errManagedNotBuilt}
 		setInstaller(nil)
 		setDialects(nil)
-		models.SetSource(nil)
+		resetModels()
 	})
 	setDialects(nil)
 	db := openMainDB(t)
@@ -441,6 +442,8 @@ func TestRegisterBuildsTheEngineStopsLeftoversAndStopsTheProgramWithTheApplicati
 	if err := persistent.NewAddedModelsPersistentRepo(db).Insert(&added); err != nil {
 		t.Fatal(err)
 	}
+	// the models Cinqo only offers on suggestion are in the list once confirmed (this test is about the dialects Register puts in place)
+	confirmRow(t, db, phiID)
 	data := t.TempDir()
 	root := filepath.Join(data, "local-ai")
 
@@ -759,6 +762,57 @@ func TestTheContextOfALaunchIsTheSmallerOfTheSettingAndTheModelsMaximum(t *testi
 	} {
 		if got := r.e.launchFor(m(c.max), r.rt, s(c.setting)).ContextTokens; got != c.want {
 			t.Errorf("setting %d, model maximum %d: got %d, want %d", c.setting, c.max, got, c.want)
+		}
+	}
+}
+
+// Register is where the models Cinqo only offers on suggestion are reconciled with what is on this computer (plan 221): with nothing on disk Cinqo suggests
+// Phi itself, and a model whose file is complete is taken over. Nothing is downloaded.
+func TestRegisterSuggestsPhiItselfAndTakesOverACompleteFile(t *testing.T) {
+	t.Cleanup(func() {
+		managed = nil
+		engine = unavailableEngine{err: errManagedNotBuilt}
+		setInstaller(nil)
+		setDialects(nil)
+		resetModels()
+	})
+	known := shipped(t)
+	phi, _ := known.Find(phiID)
+	coder, _ := known.Find(coderID)
+
+	db := openMainDB(t)
+	// the platform registry is process-wide: another test may have registered it already, which Register reports after the reconciliation has run
+	if err := Register(db, Deps{Downloads: download.New(download.Options{}), DataDir: t.TempDir()}); err != nil && !errors.Is(err, platform.ErrInvalidEntry) {
+		t.Fatal(err)
+	}
+	row, err := query.NewAddedModelsQueryRepo(db).Find(phiID)
+	if err != nil || row.Status != entity.AddedStatusSuggested || row.SuggestedBy != "Cinqo" {
+		t.Fatalf("with nothing on the computer Cinqo suggests Phi itself: %+v %v", row, err)
+	}
+	if _, err := query.NewAddedModelsQueryRepo(db).Find(coderID); err == nil {
+		t.Error("Cinqo does not suggest the Coder: only Career does")
+	}
+
+	// a complete file (sparse: only the size matters to the check) is taken over on the next start, nothing is downloaded
+	db2 := openMainDB(t)
+	data := t.TempDir()
+	modelsDir := filepath.Join(data, "local-ai", "models")
+	if err := os.MkdirAll(modelsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range []catalog.Model{phi, coder} {
+		p := filepath.Join(modelsDir, m.ID+".gguf")
+		if err := os.WriteFile(p, nil, 0o644); err != nil || os.Truncate(p, m.SizeBytes) != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := Register(db2, Deps{Downloads: download.New(download.Options{}), DataDir: data}); err != nil && !errors.Is(err, platform.ErrInvalidEntry) {
+		t.Fatal(err)
+	}
+	for _, id := range []string{phiID, coderID} {
+		r, err := query.NewAddedModelsQueryRepo(db2).Find(id)
+		if err != nil || r.Status != entity.AddedStatusAdded || r.SuggestedBy != "Cinqo" {
+			t.Errorf("%s: %+v %v", id, r, err)
 		}
 	}
 }
