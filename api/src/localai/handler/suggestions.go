@@ -180,8 +180,8 @@ func (a api) suggest(reqCtx request.RequestContext) {
 
 	// a model that is one of the models shipped with Cinqo (the same repository and file): its address, size and hash are already verified, so there is
 	// nothing to look up, and nothing new to add to the list: the suggestion asks the person to download the model Cinqo already knows
-	if cat, err := models.Current(); err == nil {
-		if m, ok := shippedFor(cat, strings.TrimSpace(body.Repo), strings.TrimSpace(body.File)); ok {
+	if known, err := catalog.Default(); err == nil {
+		if m, ok := shippedFor(known, strings.TrimSpace(body.Repo), strings.TrimSpace(body.File)); ok {
 			a.suggestShipped(w, db, m, body)
 			return
 		}
@@ -206,8 +206,8 @@ func (a api) suggest(reqCtx request.RequestContext) {
 		response.ErrorResponse(w, http.StatusInternalServerError, "failed to read the suggestions")
 		return
 	}
-	// the same file is one of the models shipped with the program
-	if cat, err := models.Current(); err == nil {
+	// the same file is one of the models Cinqo knows (shipped with the program, hidden ones included)
+	if cat, err := catalog.Default(); err == nil {
 		for _, m := range cat.Models {
 			if m.SHA256 == found.SHA256 {
 				response.ErrorResponse(w, http.StatusConflict, "this model is already in the list of models")
@@ -335,8 +335,33 @@ func (a api) installModel(reqCtx request.RequestContext) {
 		response.ErrorResponse(w, http.StatusInternalServerError, "failed to read the model")
 		return
 	}
-	// a suggestion of a shipped model: it is already in the list, so confirming only starts its download, and the suggestion has done its job
+	// a suggestion of a model that ships with Cinqo
 	if !strings.HasPrefix(m.ID, entity.AddedIDPrefix) {
+		// one that Cinqo only offers on suggestion (suggestOnly): confirming adds it to the list (the row is kept, with the tools that suggested it) and
+		// starts its download; a file that is already there is simply taken over
+		if isSuggestOnly(id) {
+			previous := m.Status
+			if previous != entity.AddedStatusAdded {
+				if err := persistent.NewAddedModelsPersistentRepo(db).SetStatus(id, entity.AddedStatusAdded, now().Format(time.RFC3339)); err != nil {
+					response.ErrorResponse(w, http.StatusInternalServerError, "failed to add the model")
+					return
+				}
+			}
+			if err := a.installs.Start(id, detect()); err != nil {
+				if previous != entity.AddedStatusAdded {
+					_ = persistent.NewAddedModelsPersistentRepo(db).SetStatus(id, previous, now().Format(time.RFC3339))
+				}
+				if errors.Is(err, entity.ErrUnsupportedSystem) || errors.Is(err, entity.ErrUnknownModel) {
+					response.ErrorResponse(w, http.StatusBadRequest, err.Error())
+					return
+				}
+				response.ErrorResponse(w, http.StatusInternalServerError, "the download could not be started")
+				return
+			}
+			a.respondPage(w, db, http.StatusAccepted)
+			return
+		}
+		// one that is in the list already: confirming only starts its download, and the suggestion has done its job
 		if err := a.installs.Start(id, detect()); err != nil {
 			if errors.Is(err, entity.ErrUnsupportedSystem) || errors.Is(err, entity.ErrUnknownModel) {
 				response.ErrorResponse(w, http.StatusBadRequest, err.Error())
@@ -382,7 +407,7 @@ func (a api) removeModel(reqCtx request.RequestContext) {
 		return
 	}
 	m, err := query.NewAddedModelsQueryRepo(db).Find(id)
-	if errors.Is(err, sql.ErrNoRows) || (err == nil && !strings.HasPrefix(m.ID, entity.AddedIDPrefix)) {
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && !strings.HasPrefix(m.ID, entity.AddedIDPrefix) && !isSuggestOnly(m.ID)) {
 		response.ErrorResponse(w, http.StatusNotFound, "no such added model")
 		return
 	}
@@ -475,7 +500,13 @@ func (a api) suggestShipped(w http.ResponseWriter, db *sql.DB, m catalog.Model, 
 		CreatedAt: now().Format(time.RFC3339),
 	}
 	info := detect()
-	switch a.installs.ModelState(m).State {
+	// a suggest-only model is not in the list until the person confirms it, so it is never answered as installed or downloading: the person is asked (a
+	// file that is already on disk is then simply taken over by the confirmation)
+	state := entity.InstallNotDownloaded
+	if !m.SuggestOnly {
+		state = a.installs.ModelState(m).State
+	}
+	switch state {
 	case entity.InstallReady:
 		s := toSuggestion(row, info)
 		s.Status = "installed"
@@ -556,4 +587,14 @@ func answerCreated(w http.ResponseWriter, db *sql.DB, row entity.AddedModel, bod
 	s := withSuggesters(db, toSuggestion(row, info))
 	s.Created = true
 	response.SuccessResponse(w, http.StatusCreated, s)
+}
+
+// isSuggestOnly says whether id is a model Cinqo knows but offers only when a tool suggested it and the person confirmed it.
+func isSuggestOnly(id string) bool {
+	known, err := catalog.Default()
+	if err != nil {
+		return false
+	}
+	m, ok := known.Find(id)
+	return ok && m.SuggestOnly
 }

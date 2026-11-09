@@ -63,6 +63,7 @@
       "toolDialect": "qwen-json",
       "source": "Qwen/Qwen2.5-Coder-3B-Instruct-GGUF at commit f74adce (the model's own authors)",
       "note": "A small model tuned for code. Calls tools by writing them as text, which Cinqo reads. Measured on the crawler recipes: the job-detail one 10 of 10, the job-list rule 10 of 10, the whole list recipe in one go 1 of 10. Research and non-commercial licence.",
+      "suggestOnly": true,
       "checkedOn": "2026-11-06"
     }
   ],

@@ -32,6 +32,18 @@ func addedModel(id, status string, size int64, sum string) entity.AddedModel {
 	}
 }
 
+// listed is how many shipped models are in the list by default: the ones Cinqo only offers when a tool suggested them (suggestOnly) are not.
+func listed(t *testing.T) int {
+	t.Helper()
+	n := 0
+	for _, m := range shipped(t).Models {
+		if !m.SuggestOnly {
+			n++
+		}
+	}
+	return n
+}
+
 func shipped(t *testing.T) catalog.Catalog {
 	t.Helper()
 	c, err := catalog.Default()
@@ -48,13 +60,18 @@ func TestMergeKeepsTheShippedListAndAppendsValidAddedModels(t *testing.T) {
 	if len(problems) != 0 {
 		t.Fatalf("%v", problems)
 	}
-	if len(merged.Models) != len(base.Models)+1 || merged.Models[len(merged.Models)-1].ID != "added-aaa111" {
+	if len(merged.Models) != listed(t)+1 || merged.Models[len(merged.Models)-1].ID != "added-aaa111" {
 		t.Fatalf("the added model is appended: %d models", len(merged.Models))
 	}
-	for i, m := range base.Models {
+	i := 0
+	for _, m := range base.Models {
+		if m.SuggestOnly {
+			continue
+		}
 		if merged.Models[i].ID != m.ID {
 			t.Fatalf("the shipped models keep their place and order")
 		}
+		i++
 	}
 	if len(merged.Runtimes) != len(base.Runtimes) {
 		t.Error("the runtimes are the shipped ones")
@@ -66,7 +83,7 @@ func TestMergeKeepsTheShippedListAndAppendsValidAddedModels(t *testing.T) {
 	if got.ContextTokens != 8192 || got.Name != "Tiny added" || got.Note != "good for crawl instructions" || !strings.Contains(got.Source, "added by Career") {
 		t.Errorf("%+v", got)
 	}
-	if len(base.Models) == len(merged.Models) {
+	if len(shipped(t).Models) != len(base.Models) {
 		t.Error("the shipped catalog value must not be changed")
 	}
 }
@@ -90,14 +107,14 @@ func TestMergeLeavesOutAnAddedModelThatBreaksARuleTakesAShippedIdOrIsRepeated(t 
 	}
 	for name, m := range cases {
 		merged, problems := models.Merge(base, []entity.AddedModel{m})
-		if len(problems) != 1 || len(merged.Models) != len(base.Models) {
+		if len(problems) != 1 || len(merged.Models) != listed(t) {
 			t.Errorf("%s: problems=%v models=%d", name, problems, len(merged.Models))
 		}
 	}
 	// the same id twice: the first one stays
 	one := addedModel("added-dup", entity.AddedStatusAdded, 2<<20, strings.Repeat("a", 64))
 	merged, problems := models.Merge(base, []entity.AddedModel{one, one})
-	if len(problems) != 1 || len(merged.Models) != len(base.Models)+1 {
+	if len(problems) != 1 || len(merged.Models) != listed(t)+1 {
 		t.Errorf("a repeated id: problems=%v models=%d", problems, len(merged.Models))
 	}
 }
@@ -144,7 +161,7 @@ func TestFromDBMergesOnlyTheAddedStatusAndNeverFailsTheShippedList(t *testing.T)
 	}
 	seen = nil
 	cat, err = models.FromDB(db, func(e error) { seen = append(seen, e) })()
-	if err != nil || len(cat.Models) != len(shipped(t).Models) || len(seen) != 1 {
+	if err != nil || len(cat.Models) != listed(t) || len(seen) != 1 {
 		t.Errorf("shipped models must still be answered: err=%v models=%d seen=%v", err, len(cat.Models), seen)
 	}
 }
@@ -166,7 +183,7 @@ func TestAnAddedModelIsFoundWhereverTheShippedOnesAreAndIsDownloadedIntoTheSameF
 	models.SetSource(src)
 	t.Cleanup(func() { models.SetSource(nil) })
 
-	if _, ok := r.in.cat().Find("qwen2.5-coder-3b-instruct-q4_k_m"); !ok {
+	if _, ok := r.in.cat().Find("qwen2.5-1.5b-instruct-q4_k_m"); !ok {
 		t.Error("the shipped models are still in the list")
 	}
 	m, ok := r.in.cat().Find(id)
@@ -242,7 +259,7 @@ func TestThePagesAnswerListsAnAddedModelNextToTheShippedOnes(t *testing.T) {
 	for _, m := range out.Message.Catalog {
 		ids[m.ID] = true
 	}
-	if !ids["added-pagetest"] || !ids["qwen2.5-coder-3b-instruct-q4_k_m"] {
+	if !ids["added-pagetest"] || !ids["qwen2.5-1.5b-instruct-q4_k_m"] {
 		t.Errorf("the page lists shipped and added models: %v", ids)
 	}
 }
@@ -264,7 +281,7 @@ func TestTheReadableNameOfAModelSaysItsSizeInTheRightUnit(t *testing.T) {
 		}
 	}
 	names := modelNames()
-	if names["qwen2.5-coder-3b-instruct-q4_k_m"] != "Qwen2.5-Coder-3B-Instruct, 2.0 GiB" || names["phi-4-mini-instruct-q4_k_m"] != "Phi-4-mini-instruct, 2.3 GiB" {
+	if names["qwen2.5-7b-instruct-q4_k_m"] != "Qwen2.5-7B-Instruct, 4.4 GiB" || names["phi-4-mini-instruct-q4_k_m"] != "Phi-4-mini-instruct, 2.3 GiB" {
 		t.Errorf("the shipped names do not change: %v", names)
 	}
 	// an added tiny model reads in MiB, wired through the list of models

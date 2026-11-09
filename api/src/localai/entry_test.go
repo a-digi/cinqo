@@ -142,7 +142,10 @@ func TestOnlyAModelMeasuredToUseToolsGetsTheExplicitPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	withDialects(t, reg)
-	e := Entry(openMainDB(t))
+	// the model Cinqo only offers on suggestion is in the list once a person confirmed it: its dialect and tools are unchanged
+	db := openMainDB(t)
+	revealCoder(t, db)
+	e := Entry(db)
 	for model, want := range map[string]platform.ToolPolicy{
 		"qwen2.5-1.5b-instruct-q4_k_m":     platform.ToolsExplicit,
 		"phi-4-mini-instruct-q4_k_m":       platform.ToolsExplicit, // through its own dialect (0 of 40 natively, 50 of 50 with the dialect)
@@ -250,10 +253,12 @@ func TestTheLocalPlatformNamesItsModelsReadably(t *testing.T) {
 		t.Fatal("the local platform must give readable names")
 	}
 	names := e.ModelNames()
+	if _, listed := names[coderID]; listed {
+		t.Errorf("a model that is only offered on suggestion has no name in the list: %v", names)
+	}
 	for id, want := range map[string]string{
-		"qwen2.5-coder-3b-instruct-q4_k_m": "Qwen2.5-Coder-3B-Instruct, 2.0 GiB",
-		"qwen2.5-1.5b-instruct-q4_k_m":     "Qwen2.5-1.5B-Instruct, 1.0 GiB",
-		phiID:                              "Phi-4-mini-instruct, 2.3 GiB",
+		"qwen2.5-1.5b-instruct-q4_k_m": "Qwen2.5-1.5B-Instruct, 1.0 GiB",
+		phiID:                          "Phi-4-mini-instruct, 2.3 GiB",
 	} {
 		if names[id] != want {
 			t.Errorf("%s: %q, want %q", id, names[id], want)

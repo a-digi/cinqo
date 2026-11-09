@@ -14,23 +14,42 @@ import (
 	"github.com/a-digi/cinqo/src/localai/repository/query"
 )
 
-// Merge returns the shipped catalog with the added models appended. The shipped part is never changed. An added model that breaks a rule of the
-// catalog (the same rules as a shipped entry), takes a shipped id, or repeats another added id is left out and reported in the second result: a broken
-// row must never take the shipped models down.
+// Merge returns the list of models: the shipped catalog with the added models appended. The shipped part is never changed, except that a model marked
+// suggestOnly (one Cinqo knows and measured but does not offer on its own) is left out unless a person confirmed it: a row of the added models with the
+// model's own id and status added reveals it, and it then has everything the file says about it (its tools, its dialect, its memory profile). An added
+// model that breaks a rule of the catalog (the same rules as a shipped entry), takes a shipped id, or repeats another added id is left out and reported
+// in the second result: a broken row must never take the shipped models down.
 func Merge(shipped catalog.Catalog, added []entity.AddedModel) (catalog.Catalog, []error) {
 	out := shipped
-	out.Models = append([]catalog.Model(nil), shipped.Models...)
+	out.Models = make([]catalog.Model, 0, len(shipped.Models)+len(added))
 	used := map[string]bool{}
+	hidden := map[string]bool{}
 	for _, m := range shipped.Models {
 		used[m.ID] = true
+		if m.SuggestOnly {
+			hidden[m.ID] = true
+		}
 	}
 	for _, r := range shipped.Runtimes {
 		used[r.ID] = true
+	}
+	revealed := map[string]bool{}
+	for _, a := range added {
+		if hidden[a.ID] {
+			revealed[a.ID] = true
+		}
+	}
+	for _, m := range shipped.Models {
+		if !m.SuggestOnly || revealed[m.ID] {
+			out.Models = append(out.Models, m)
+		}
 	}
 	var problems []error
 	for _, a := range added {
 		m := a.CatalogModel()
 		switch {
+		case hidden[a.ID]:
+			// a confirmed model that ships hidden: it is the shipped entry that was added to the list above
 		case !strings.HasPrefix(a.ID, entity.AddedIDPrefix):
 			problems = append(problems, fmt.Errorf("added model %q: its id must start with %q", a.ID, entity.AddedIDPrefix))
 		case used[a.ID]:
@@ -52,7 +71,7 @@ var (
 	source func() (catalog.Catalog, error)
 )
 
-// SetSource tells the package where the current list comes from (module start-up). Without a source, Current is just the shipped catalog.
+// SetSource tells the package where the current list comes from (module start-up). Without a source, Current is the shipped models Cinqo offers on its own.
 func SetSource(f func() (catalog.Catalog, error)) {
 	mu.Lock()
 	source = f
@@ -65,7 +84,7 @@ func Current() (catalog.Catalog, error) {
 	f := source
 	mu.RUnlock()
 	if f == nil {
-		return catalog.Default()
+		return defaultList()
 	}
 	return f()
 }
@@ -83,7 +102,8 @@ func FromDB(db *sql.DB, onProblem func(error)) func() (catalog.Catalog, error) {
 			if onProblem != nil {
 				onProblem(err)
 			}
-			return shipped, nil
+			list, _ := Merge(shipped, nil)
+			return list, nil
 		}
 		merged, problems := Merge(shipped, added)
 		if onProblem != nil {
@@ -93,4 +113,14 @@ func FromDB(db *sql.DB, onProblem func(error)) func() (catalog.Catalog, error) {
 		}
 		return merged, nil
 	}
+}
+
+// defaultList is the list of models with nobody having added anything: the shipped models Cinqo offers on its own.
+func defaultList() (catalog.Catalog, error) {
+	shipped, err := catalog.Default()
+	if err != nil {
+		return catalog.Catalog{}, err
+	}
+	list, _ := Merge(shipped, nil)
+	return list, nil
 }

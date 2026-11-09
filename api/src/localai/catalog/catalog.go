@@ -79,6 +79,10 @@ type Model struct {
 	Source    string `json:"source"`
 	Note      string `json:"note"`
 	CheckedOn string `json:"checkedOn"`
+	// SuggestOnly marks a model Cinqo knows (and measured: its tools, dialect and memory profile) but does not offer on its own: it is not in the list of
+	// models, not offered to the tools and cannot be chosen until a tool suggested it and the person confirmed it (plan 220). The person's confirmation is
+	// stored as a row of the added models under the model's own id.
+	SuggestOnly bool `json:"suggestOnly,omitempty"`
 }
 
 // Runtime is one build of the program that runs the models (llama.cpp's llama-server) for one system: an archive that is

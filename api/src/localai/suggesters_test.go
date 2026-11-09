@@ -172,8 +172,8 @@ func TestOneCardPerModelAndTheCapCountsModelsNotTools(t *testing.T) {
 
 func TestAShippedModelSuggestedByTwoToolsIsOneCardAndOneDownloadAndTheSuggestionIsForgottenAfterwards(t *testing.T) {
 	r := newShippedRig(t)
-	r.suggestWith(`{"repo":"Qwen/Qwen2.5-Coder-3B-Instruct-GGUF","file":"qwen2.5-coder-3b-instruct-q4_k_m.gguf","suggestedBy":"Career","why":"crawls"}`)
-	_, second := r.suggestWith(`{"repo":"Qwen/Qwen2.5-Coder-3B-Instruct-GGUF","file":"qwen2.5-coder-3b-instruct-q4_k_m.gguf","suggestedBy":"Browser","why":"reading"}`)
+	r.suggestWith(`{"repo":"bartowski/Qwen2.5-7B-Instruct-GGUF","file":"Qwen2.5-7B-Instruct-Q4_K_M.gguf","suggestedBy":"Career","why":"crawls"}`)
+	_, second := r.suggestWith(`{"repo":"bartowski/Qwen2.5-7B-Instruct-GGUF","file":"Qwen2.5-7B-Instruct-Q4_K_M.gguf","suggestedBy":"Browser","why":"reading"}`)
 	if second["created"] != false || strings.Join(toolsOf(second), ",") != "Career,Browser" {
 		t.Fatalf("%v", second)
 	}
@@ -181,10 +181,10 @@ func TestAShippedModelSuggestedByTwoToolsIsOneCardAndOneDownloadAndTheSuggestion
 	if len(cards) != 1 || len(cards[0].(map[string]any)["suggesters"].([]any)) != 2 {
 		t.Fatalf("one card, two tools: %v", cards)
 	}
-	if code, _ := r.do("LocalAiInstallModel", map[string]string{"id": coderID}); code != http.StatusAccepted || r.installs.starts != 1 {
+	if code, _ := r.do("LocalAiInstallModel", map[string]string{"id": shippedID}); code != http.StatusAccepted || r.installs.starts != 1 {
 		t.Errorf("one download: %d starts=%d", code, r.installs.starts)
 	}
-	if suggesterRows(t, r.sugRig, coderID) != 0 || r.status(coderID) != "(none)" {
+	if suggesterRows(t, r.sugRig, shippedID) != 0 || r.status(shippedID) != "(none)" {
 		t.Error("the suggestion and its tools are forgotten once the model is downloading")
 	}
 }

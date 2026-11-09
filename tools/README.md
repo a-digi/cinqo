@@ -572,6 +572,12 @@ httpClient
   })
 ```
 
+**A model Cinqo knows.** Some models are known to Cinqo and measured (what they can do with tools, how much memory
+they need): suggest those by their own repository and file. Cinqo does not look them up again, ignores your words
+about the model's name and size, and keeps what it measured. A few of them (Qwen2.5-Coder-3B, which Career wants)
+are **not offered by Cinqo on its own**: they are not in the Local Agents list, not offered to any tool and cannot be
+chosen until a tool suggested them and the person confirmed. Until then, a tool that wants one must ask for it.
+
 **What Cinqo does.** It reads the pinned commit, the size, the SHA-256 and the licence from Hugging Face itself
 and refuses what does not meet the rules of its own list (a licence is required, the file must have a SHA-256
 on Hugging Face, 1 MiB to 20 GiB, no private or gated repository). The suggestion is stored and shown on the
@@ -586,7 +592,7 @@ the local AI (`GET /api/v1/platforms`, platform `local`, field `models`) like an
 | `400` | a name that is not valid, or a context size outside the bounds |
 | `403` | the user lacks the platform manage scope (`cinqo:platform:manage`): suggesting needs the same scope as confirming |
 | `404` | Hugging Face has no such repository, revision or file |
-| `409` | the model is already one of the models shipped with Cinqo: use it, do not suggest it |
+| `409` | the same file is a model Cinqo already knows, under another repository: suggest it by its own repository and file |
 | `422` | the model cannot be used: no licence, no SHA-256, private or gated, too small or too large, or what you stated does not match |
 | `429` | 20 suggestions are already waiting: try again later |
 | `502` | Hugging Face could not be reached |
