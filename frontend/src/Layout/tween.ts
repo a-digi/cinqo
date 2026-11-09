@@ -109,3 +109,32 @@ export function useFlash(value: string): boolean {
   }, [value])
   return on
 }
+
+// A number that glides to its target over TWEEN_MS (the first value, and a person who asked for less motion, get it at once).
+export function useTweenedNumber(target: number): number {
+  const [shown, setShown] = useState(target)
+  const shownRef = useRef(target)
+  const raf = useRef<number | undefined>(undefined)
+  useEffect(() => {
+    if (raf.current !== undefined) cancelAnimationFrame(raf.current)
+    const from = shownRef.current
+    if (from === target || prefersReducedMotion()) {
+      shownRef.current = target
+      setShown(target)
+      return
+    }
+    const start = performance.now()
+    const step = (now: number) => {
+      const t = (now - start) / TWEEN_MS
+      const next = t >= 1 ? target : Math.round(from + (target - from) * easeOut(t))
+      shownRef.current = next
+      setShown(next)
+      if (t < 1) raf.current = requestAnimationFrame(step)
+    }
+    raf.current = requestAnimationFrame(step)
+    return () => {
+      if (raf.current !== undefined) cancelAnimationFrame(raf.current)
+    }
+  }, [target])
+  return shown
+}

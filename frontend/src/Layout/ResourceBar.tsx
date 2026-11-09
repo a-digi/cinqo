@@ -1,5 +1,6 @@
 import { useAuth } from '../Components/Auth/AuthContext'
 import { formatBytes } from '../Shared/Components/Terminal/terminalRules'
+import { MemoryTop } from './MemoryTop'
 import { UnloadControl } from './UnloadControl'
 import { canUnload, isUnloadable } from './agentUnload'
 import { AlertIcon, BotIcon, CheckIcon, PowerIcon, CpuIcon, CubeIcon, DiskIcon, LaptopIcon, MemoryIcon, SwapIcon } from './ResourceIcons'
@@ -93,7 +94,7 @@ export function ResourceBar() {
           watch={agentWatch}
           unload={canUnload(scopes) && isUnloadable(agent.tone) ? { name: r.agents.find((a) => a.kind === 'local-ai')?.name ?? '' } : null}
         />
-        <Pill level={level} text={pillText(r, level)} watch={pillText(real, level)} title={pillTitle(r)} />
+        <Pill level={level} text={pillText(r, level)} watch={pillText(real, level)} title={pillTitle(r)} interactive />
       </div>
     </Shell>
   )
@@ -189,15 +190,39 @@ function Chip({
   )
 }
 
-function Pill({ level, text, watch, title }: { level: ResourceLevel; text: string; watch: string; title: string }) {
+// interactive: the pill is a button that drops down the applications that use the most memory (plan 226). Not for the grey "unknown" pill, where the
+// list could not be read either.
+function Pill({
+  level,
+  text,
+  watch,
+  title,
+  interactive,
+}: {
+  level: ResourceLevel
+  text: string
+  watch: string
+  title: string
+  interactive?: boolean
+}) {
   const flash = useFlash(watch)
-  return (
-    <span
-      title={title}
-      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ring-1 ring-inset transition-all duration-500 ${PILL[level]} ${flash ? 'scale-105 shadow-md' : ''}`}
-    >
+  const className = `inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ring-1 ring-inset transition-all duration-500 ${PILL[level]} ${flash ? 'scale-105 shadow-md' : ''}`
+  const inside = (
+    <>
       {level === 'orange' || level === 'red' ? <AlertIcon /> : level === 'ok' ? <CheckIcon /> : <MemoryIcon />}
       <span>{text}</span>
+    </>
+  )
+  if (interactive) {
+    return (
+      <MemoryTop label={`${text}. Click to see which programs use the memory.`} title={title} className={className}>
+        {inside}
+      </MemoryTop>
+    )
+  }
+  return (
+    <span title={title} className={className}>
+      {inside}
     </span>
   )
 }

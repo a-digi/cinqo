@@ -34,3 +34,24 @@ export async function fetchSystemResources(signal?: AbortSignal): Promise<System
   const raw = await apiGet<{ message: SystemResources }>('/api/v1/system/resources', signal)
   return raw.message
 }
+
+// The applications that use the most memory (api/src/system, plan 226): one row per application, its processes summed.
+export interface MemoryTopApp {
+  name: string
+  pid: number // the application's biggest process
+  processes: number
+  rssBytes: number
+  cinqo: boolean // Cinqo's own program, its tools and the model program, merged into one row
+}
+
+export interface MemoryTop {
+  sampledAt: string
+  totalBytes: number
+  apps: MemoryTopApp[]
+  note?: string // why the list is empty, when the system cannot be read
+}
+
+export async function fetchMemoryTop(signal?: AbortSignal): Promise<MemoryTop> {
+  const raw = await apiGet<{ message: MemoryTop }>('/api/v1/system/memory-top', signal)
+  return raw.message
+}
