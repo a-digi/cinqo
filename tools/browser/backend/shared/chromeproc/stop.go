@@ -57,6 +57,8 @@ func (r *Registry) provablyOurs(pid int) bool {
 	return IsOurs(r.proc.CommandLine(pid))
 }
 
+func ownPID() int { return os.Getpid() }
+
 func protected(pid int) bool {
 	return pid <= 1 || pid == os.Getpid() || pid == os.Getppid()
 }

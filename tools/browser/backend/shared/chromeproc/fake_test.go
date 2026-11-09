@@ -9,9 +9,10 @@ type fakeProc struct {
 	starts      map[int]string
 	cmds        map[int]string
 	parents     map[int]int
-	ignoreTerm  map[int]bool // survives SIGTERM
-	surviveKill map[int]bool // survives SIGKILL (a stuck process)
-	noList      bool         // the process table cannot be read
+	ignoreTerm  map[int]bool   // survives SIGTERM
+	surviveKill map[int]bool   // survives SIGKILL (a stuck process)
+	stats       map[int]string // process state letters; "Z" is defunct
+	noList      bool           // the process table cannot be read
 	terminated  []int
 	killed      []int
 }
@@ -24,6 +25,7 @@ func newFake() *fakeProc {
 		parents:     map[int]int{},
 		ignoreTerm:  map[int]bool{},
 		surviveKill: map[int]bool{},
+		stats:       map[int]string{},
 	}
 }
 
@@ -52,7 +54,7 @@ func (f *fakeProc) List() []ProcInfo {
 	var out []ProcInfo
 	for pid, alive := range f.alive {
 		if alive {
-			out = append(out, ProcInfo{PID: pid, PPID: f.parents[pid], Command: f.cmds[pid]})
+			out = append(out, ProcInfo{PID: pid, PPID: f.parents[pid], Stat: f.stats[pid], Command: f.cmds[pid]})
 		}
 	}
 	return out

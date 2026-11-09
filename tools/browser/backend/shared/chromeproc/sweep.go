@@ -99,7 +99,23 @@ func (r *Registry) Sweep() SweepReport {
 	}
 
 	// 2. orphans: ours by their command line, nobody's child any more, not registered here
+	stopped, failed := r.huntOrphans(r.proc.List(), sweepGrace)
+	rep.Stopped = append(rep.Stopped, stopped...)
+	rep.Failed = append(rep.Failed, failed...)
+
+	// 3. profile folders that nothing uses (and the folders of the earlier ledger's entries, when nothing uses them)
 	table = r.proc.List()
+	if table == nil {
+		return rep
+	}
+	rep.FoldersRemoved = sweepFolders(table)
+	return rep
+}
+
+// huntOrphans stops every process in the table that is a Chrome of this tool (our profile folder in its command line), is not registered
+// here, and has lost its parent (init, or a parent that no longer exists). A Chrome whose parent is alive belongs to a running tool (this
+// one, still starting it, or another instance) and is never an orphan. It returns the ids it stopped and the ones it could not.
+func (r *Registry) huntOrphans(table []ProcInfo, grace time.Duration) (stopped, failed []int) {
 	alive := map[int]bool{}
 	for _, p := range table {
 		alive[p.PID] = true
@@ -107,6 +123,9 @@ func (r *Registry) Sweep() SweepReport {
 	var orphans []int
 	for _, p := range table {
 		if protected(p.PID) || !IsOurs(p.Command) || r.registered(p.PID) {
+			continue
+		}
+		if strings.HasPrefix(p.Stat, "Z") { // defunct: nothing to stop, the watchdog counts it
 			continue
 		}
 		if p.PPID == 1 || p.PPID == 0 || !alive[p.PPID] {
@@ -118,20 +137,13 @@ func (r *Registry) Sweep() SweepReport {
 		if !r.proc.Alive(pid) { // already taken down as the child of an earlier orphan
 			continue
 		}
-		if err := r.stopTreeNow(pid, sweepGrace); err != nil {
-			rep.Failed = append(rep.Failed, pid)
+		if err := r.stopTreeNow(pid, grace); err != nil {
+			failed = append(failed, pid)
 			continue
 		}
-		rep.Stopped = append(rep.Stopped, pid)
+		stopped = append(stopped, pid)
 	}
-
-	// 3. profile folders that nothing uses (and the folders of the earlier ledger's entries, when nothing uses them)
-	table = r.proc.List()
-	if table == nil {
-		return rep
-	}
-	rep.FoldersRemoved = sweepFolders(table)
-	return rep
+	return stopped, failed
 }
 
 // sameProcess says whether the process now running under an earlier ledger entry's id is that same Chrome: its start time is the recorded

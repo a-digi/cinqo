@@ -42,6 +42,9 @@ func main() {
 	runHTTPServer()
 }
 
+// stopChromeWatchdog stops the Chrome watchdog; a no-op until it is started.
+var stopChromeWatchdog = func() {}
+
 func runHTTPServer() {
 	port := os.Getenv("PORT")
 
@@ -63,6 +66,10 @@ func runHTTPServer() {
 			if len(rep.Stopped)+len(rep.Skipped)+len(rep.Failed) > 0 || rep.FoldersRemoved > 0 {
 				log.Printf("chrome start-up sweep: %s", rep)
 			}
+			// Plan 224, step 4: the watchdog that does not trust the timers (every 30 s, and after each crawl).
+			crawler.RegisterChromeHooks()
+			shared.RegisterChromeHooks()
+			stopChromeWatchdog = chromeproc.StartWatchdog(chromeproc.DefaultWatchdog)
 		}
 	}
 	// Plan 182: delete the throw-away profile folders of any login window an earlier run of this tool left behind (a crash, a kill).
@@ -75,6 +82,7 @@ func runHTTPServer() {
 	go func() {
 		<-sigCh
 		log.Print("shutting down, closing browser session")
+		stopChromeWatchdog() // first: nothing may restart or kill a Chrome while the tool closes them itself
 		auth.StopLoginWindows()
 		shared.StopSharedSession()
 		crawler.StopRodEngine()

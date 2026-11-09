@@ -122,6 +122,7 @@ func beginEngineFetch(engine string) (end func()) {
 		}
 		if engineInFlight[engine] == 0 {
 			armEngineIdleStopLocked(engine)
+			chromeproc.Kick() // a crawl just ended: let the Chrome watchdog look now (plan 224)
 		}
 	}
 }

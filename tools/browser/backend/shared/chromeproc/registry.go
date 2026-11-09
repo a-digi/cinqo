@@ -66,6 +66,7 @@ type Proc interface {
 type ProcInfo struct {
 	PID     int
 	PPID    int
+	Stat    string // the process state letters ("S", "Ss+", "Z" for a defunct process)
 	Command string // searched only, never run or logged
 }
 
@@ -76,6 +77,11 @@ type Registry struct {
 	ledgerPath string
 	now        func() time.Time
 	proc       Proc
+
+	wdMu     sync.Mutex
+	wd       watchdogCounters
+	busy     map[Kind]func() bool
+	stoppers map[Kind]func()
 }
 
 // New makes a registry. ledgerPath "" keeps it in memory only.
@@ -163,14 +169,15 @@ type ChromeStatus struct {
 
 // Status is what the status route answers.
 type Status struct {
-	Chromes []ChromeStatus `json:"chromes"`
+	Chromes  []ChromeStatus `json:"chromes"`
+	Watchdog WatchdogStatus `json:"watchdog"`
 }
 
 // Snapshot reads the registry and asks the operating system whether each process still exists.
 func (r *Registry) Snapshot() Status {
 	now := r.now()
 	entries := r.Entries()
-	out := Status{Chromes: make([]ChromeStatus, 0, len(entries))}
+	out := Status{Chromes: make([]ChromeStatus, 0, len(entries)), Watchdog: r.watchdogStatus()}
 	for _, e := range entries {
 		state := "running"
 		if r.proc != nil && !r.proc.Alive(e.PID) {

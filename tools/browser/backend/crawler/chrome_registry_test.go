@@ -203,3 +203,58 @@ func TestTheStartUpSweepStopsARealChromeLeftByAnEarlierRun(t *testing.T) {
 		t.Error("no process may still use that folder")
 	}
 }
+
+// The watchdog with a real Katana Chrome (plan 224, step 4): left alone while a fetch is in flight, stopped through the engine's own stop
+// when it is not in use any more, and the engine forgets it so the next fetch starts a fresh one.
+func TestTheWatchdogStopsAnUnusedRealKatanaChromeAndLeavesABusyOne(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping real-browser test in -short mode")
+	}
+	if _, err := rodChromePath(); err != nil {
+		t.Skipf("no Chrome available: %v", err)
+	}
+	RegisterChromeHooks()
+	if _, err := ensureKatanaEngine(); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	t.Cleanup(StopKatanaEngine)
+	var e chromeproc.Entry
+	for _, c := range chromeproc.Entries() {
+		if c.Kind == chromeproc.KindKatana {
+			e = c
+		}
+	}
+	if e.PID == 0 {
+		t.Fatal("the Katana Chrome is not registered")
+	}
+	cfg := chromeproc.WatchdogConfig{Interval: time.Hour, UnusedAfter: time.Millisecond, KillAfter: 5 * time.Second}
+	time.Sleep(20 * time.Millisecond)
+
+	end := beginEngineFetch(fetchEngineKatana) // a fetch is in flight
+	if res := chromeproc.WatchdogOnce(cfg); len(res.KilledUnused) != 0 || !katanaRunning() {
+		end()
+		t.Fatalf("a Chrome with a fetch in flight must be left alone: %+v", res)
+	}
+	end()
+
+	res := chromeproc.WatchdogOnce(cfg)
+	if len(res.KilledUnused) != 1 || res.KilledUnused[0] != e.PID {
+		t.Fatalf("an unused Chrome must be stopped: %+v", res)
+	}
+	if katanaRunning() {
+		t.Error("the engine must have forgotten its Chrome")
+	}
+	if chromeproc.IsOursPID(e.PID) {
+		t.Error("the process must be gone")
+	}
+	if _, err := os.Stat(e.ProfileDir); !os.IsNotExist(err) {
+		t.Errorf("the profile folder must be removed: %v", err)
+	}
+	if _, ok := entryFor(e.PID); ok {
+		t.Error("released")
+	}
+	// the next use starts a fresh Chrome
+	if _, err := ensureKatanaEngine(); err != nil || !katanaRunning() {
+		t.Errorf("a new Chrome must start: %v", err)
+	}
+}
