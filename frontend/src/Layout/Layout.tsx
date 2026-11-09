@@ -4,6 +4,7 @@ import { ErrorAlert } from '../Shared/Components/ErrorAlert/ErrorAlert'
 import { Content } from './Content'
 import { GlobalChatWidget } from './GlobalChatWidget'
 import { Navbar } from './Navbar'
+import { ResourceBar } from './ResourceBar'
 import { Sidebar } from './Sidebar'
 
 // Minimal authenticated shell: Navbar + Sidebar + Content, plus the
@@ -25,6 +26,7 @@ export function Layout() {
           setIsSidebarCollapsed((v) => !v)
         }}
       />
+      <ResourceBar />
       <ErrorAlert errors={errors} onDismiss={dismissError} />
       <div className="flex flex-1 overflow-hidden">
         {!isSidebarCollapsed && <Sidebar />}
