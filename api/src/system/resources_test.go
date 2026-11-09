@@ -214,35 +214,49 @@ func TestTheRealReaderAnswersOnThisComputer(t *testing.T) {
 	}
 }
 
-func TestTheScopeIsRegisteredAsTheRouteNeedsIt(t *testing.T) {
-	if ScopeGroup.ID != "cinqo:system" || len(ScopeGroup.Scopes) != 1 || ScopeGroup.Scopes[0].ID != "cinqo:system:read" {
+func TestTheScopesAreRegisteredAsTheRoutesNeedThem(t *testing.T) {
+	if ScopeGroup.ID != "cinqo:system" || len(ScopeGroup.Scopes) != 2 || ScopeGroup.Scopes[0].ID != "cinqo:system:read" || ScopeGroup.Scopes[1].ID != "cinqo:system:manage" {
 		t.Errorf("%+v", ScopeGroup)
+	}
+	for _, sc := range ScopeGroup.Scopes {
+		if sc.Description == "" {
+			t.Errorf("%s has no description", sc.ID)
+		}
 	}
 }
 
-// The route is authenticated, a GET, and needs the system read scope or super admin; nothing else.
+// The routes are authenticated; the reads need the system read scope or super admin, marking a stop as seen (a change) needs the manage scope or super admin.
 func TestTheRoutesAreAuthenticatedAndScoped(t *testing.T) {
 	raw, err := os.ReadFile("../../config/routes/route-system.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
 	blocks := strings.Split(string(raw), "  - path:")[1:]
-	if len(blocks) != 2 {
-		t.Fatalf("%d routes, want 2", len(blocks))
+	type want struct{ path, method, executor, scope string }
+	wants := []want{
+		{"/api/v1/system/resources", "GET", "SystemResourcesGet", "cinqo:system:read"},
+		{"/api/v1/system/memory-top", "GET", "SystemMemoryTopGet", "cinqo:system:read"},
+		{"/api/v1/system/events", "GET", "SystemEventsGet", "cinqo:system:read"},
+		{"/api/v1/system/events/{id}/acknowledge", "POST", "SystemEventAcknowledge", "cinqo:system:manage"},
 	}
-	for i, path := range []string{"/api/v1/system/resources", "/api/v1/system/memory-top"} {
-		executor := []string{"SystemResourcesGet", "SystemMemoryTopGet"}[i]
+	if len(blocks) != len(wants) {
+		t.Fatalf("%d routes, want %d", len(blocks), len(wants))
+	}
+	for i, w := range wants {
 		b := blocks[i]
-		for _, want := range []string{path, "method: GET", "executor: " + executor, "security: authenticated", "cinqo:system:read", "cinqo:super:admin"} {
-			if !strings.Contains(b, want) {
-				t.Errorf("%q missing:\n%s", want, b)
+		for _, must := range []string{w.path, "method: " + w.method, "executor: " + w.executor, "security: authenticated", w.scope, "cinqo:super:admin"} {
+			if !strings.Contains(b, must) {
+				t.Errorf("%q missing:\n%s", must, b)
 			}
 		}
 		if n := len(regexp.MustCompile(`cinqo:[a-z]+:[a-z]+`).FindAllString(b, -1)); n != 2 {
-			t.Errorf("%s: %d scopes, want exactly 2", path, n)
+			t.Errorf("%s: %d scopes, want exactly 2", w.path, n)
 		}
-		if strings.Contains(b, "method: POST") || strings.Contains(b, "method: PUT") || strings.Contains(b, "method: DELETE") {
-			t.Errorf("%s must be read only", path)
+		if w.method == "GET" && (strings.Contains(b, "cinqo:system:manage") || strings.Contains(b, "method: POST")) {
+			t.Errorf("%s is a read: it must not need or allow a change", w.path)
+		}
+		if w.method == "POST" && strings.Contains(b, "cinqo:system:read") {
+			t.Errorf("%s changes data: the read scope alone must not allow it", w.path)
 		}
 	}
 }

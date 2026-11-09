@@ -143,8 +143,9 @@ type supervisor struct {
 	inFlight      int
 	idleFor       time.Duration
 	idleTimer     *time.Timer
-	idleDeadline  time.Time // when the idle timer stops the program; zero while no timer runs
-	startFailures int       // starts in a row that never became ready
+	idleDeadline  time.Time                    // when the idle timer stops the program; zero while no timer runs
+	startFailures int                          // starts in a row that never became ready
+	onCrash       func(modelID, reason string) // called, outside the lock, when a ready program dies on its own (plan 223, step 4)
 	lastFail      time.Time
 }
 
@@ -450,14 +451,19 @@ func (s *supervisor) failStart(r *run, err error) {
 func (s *supervisor) onExit(r *run, werr error) {
 	removePID(r.spec.Dir, int(r.pid.Load()))
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.cur != r || s.state != EngineReady {
+		s.mu.Unlock()
 		return // stopped on purpose, or still starting (the start loop reports it)
 	}
 	s.cur = nil
 	s.state = EngineFailed
 	s.lastErr = s.exitReasonLocked(r.spec.Dir, "the model program stopped unexpectedly", werr)
 	s.lastFail = time.Now()
+	cb, model, reason := s.onCrash, s.modelID, s.lastErr
+	s.mu.Unlock()
+	if cb != nil {
+		cb(model, reason) // outside the lock: it writes to the database
+	}
 }
 
 func (s *supervisor) exitReason(dir, prefix string) string {

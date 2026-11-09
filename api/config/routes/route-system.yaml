@@ -17,3 +17,20 @@ routes:
     scopes:
       - cinqo:system:read
       - cinqo:super:admin
+
+  # The record of unexpected stops (plan 223, step 5): read with the bar's scope; marking one as seen changes data, so it needs its own scope.
+  - path: /api/v1/system/events
+    method: GET
+    executor: SystemEventsGet
+    security: authenticated
+    scopes:
+      - cinqo:system:read
+      - cinqo:super:admin
+
+  - path: /api/v1/system/events/{id}/acknowledge
+    method: POST
+    executor: SystemEventAcknowledge
+    security: authenticated
+    scopes:
+      - cinqo:system:manage
+      - cinqo:super:admin

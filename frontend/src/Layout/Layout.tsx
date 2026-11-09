@@ -2,9 +2,11 @@ import { useState } from 'react'
 import { useErrorAlert } from '../Shared/Components/ErrorAlert/ErrorAlertContext'
 import { ErrorAlert } from '../Shared/Components/ErrorAlert/ErrorAlert'
 import { Content } from './Content'
+import { DownloadAnnouncer } from './DownloadAnnouncer'
 import { GlobalChatWidget } from './GlobalChatWidget'
 import { Navbar } from './Navbar'
 import { ResourceBar } from './ResourceBar'
+import { UpdateBanner } from './UpdateBanner'
 import { Sidebar } from './Sidebar'
 
 // Minimal authenticated shell: Navbar + Sidebar + Content, plus the
@@ -27,6 +29,8 @@ export function Layout() {
         }}
       />
       <ResourceBar />
+      <UpdateBanner />
+      <DownloadAnnouncer />
       <ErrorAlert errors={errors} onDismiss={dismissError} />
       <div className="flex flex-1 overflow-hidden">
         {!isSidebarCollapsed && <Sidebar />}

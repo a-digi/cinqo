@@ -785,6 +785,9 @@ func TestRegisterSuggestsPhiItselfAndTakesOverACompleteFile(t *testing.T) {
 	if err := Register(db, Deps{Downloads: download.New(download.Options{}), DataDir: t.TempDir()}); err != nil && !errors.Is(err, platform.ErrInvalidEntry) {
 		t.Fatal(err)
 	}
+	if managed == nil || managed.sup == nil || managed.sup.onCrash == nil {
+		t.Error("Register must wire the model program's crash to the record of unexpected stops (plan 223, step 4)")
+	}
 	row, err := query.NewAddedModelsQueryRepo(db).Find(phiID)
 	if err != nil || row.Status != entity.AddedStatusSuggested || row.SuggestedBy != "Cinqo" {
 		t.Fatalf("with nothing on the computer Cinqo suggests Phi itself: %+v %v", row, err)

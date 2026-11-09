@@ -81,6 +81,9 @@ build for this machine (bumps `app/VERSION`; use `NO_BUMP=1` to skip).
 macOS 12 or newer), and `make build-app-all` builds both with one version bump. Use `--data <dir>` before the action to change the data
 directory: `./app/cinqo-pro --data /path start`.
 
+The app opens its own Chrome as an **application window** (no address bar, no tabs). `--window=browser` (or the environment variable
+`CINQO_WINDOW=browser`) opens a normal browser window instead; the flag wins over the variable, and any other value is refused at start.
+
 ### The two builds: `cinqo-pro` and `cinqo-air`
 
 | File             | Built by             | For                                          | Needs macOS     |

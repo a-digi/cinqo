@@ -22,7 +22,8 @@ var ScopeGroup = entity.ScopeGroup{
 	ID:          "cinqo:system",
 	Description: "What the computer Cinqo runs on is doing (the resource bar).",
 	Scopes: []entity.Scope{
-		{ID: "cinqo:system:read", Description: "Can view the memory of the computer and how much of it Cinqo uses."},
+		{ID: "cinqo:system:read", Description: "Can view the memory of the computer and how much of it Cinqo uses, and the record of unexpected stops."},
+		{ID: "cinqo:system:manage", Description: "Can mark an unexpected stop as seen."},
 	},
 }
 

@@ -17,14 +17,45 @@ export function Navbar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
         </button>
         <span className="text-lg font-semibold text-gray-900">cinqo</span>
       </div>
-      <button
-        type="button"
-        onClick={() => void logout()}
-        className="rounded-md border border-gray-300 px-3 py-1 text-sm text-gray-700 hover:bg-gray-50"
-      >
-        Sign out
-      </button>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            window.location.reload()
+          }}
+          aria-label="Reload Cinqo"
+          title="Reload (Cmd/Ctrl+R)"
+          className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1 text-sm text-gray-700 hover:bg-gray-50"
+        >
+          <ReloadIcon />
+          <span className="max-sm:hidden">Reload</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => void logout()}
+          className="rounded-md border border-gray-300 px-3 py-1 text-sm text-gray-700 hover:bg-gray-50"
+        >
+          Sign out
+        </button>
+      </div>
     </header>
+  )
+}
+
+function ReloadIcon() {
+  return (
+    <svg
+      viewBox="0 0 20 20"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className="h-4 w-4"
+    >
+      <path d="M16 10a6 6 0 1 1-1.8-4.3M16 3.5v3.2h-3.2" />
+    </svg>
   )
 }
 

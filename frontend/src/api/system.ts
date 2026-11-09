@@ -1,4 +1,4 @@
-import { apiGet } from './client'
+import { apiGet, apiPost } from './client'
 
 // What the computer Cinqo runs on is doing (api/src/system): memory, and how much of it Cinqo itself holds. A value the
 // computer could not read is 0 and the pressure "unknown".
@@ -54,4 +54,24 @@ export interface MemoryTop {
 export async function fetchMemoryTop(signal?: AbortSignal): Promise<MemoryTop> {
   const raw = await apiGet<{ message: MemoryTop }>('/api/v1/system/memory-top', signal)
   return raw.message
+}
+
+// The record of unexpected stops (api/src/system, plan 223): newest first. A stop is "seen" once a person with the manage scope marked it.
+export interface SystemEvent {
+  id: string
+  at: string // RFC 3339, UTC
+  kind: string // 'app_unclean_exit' or 'local_ai_stopped'
+  verdict: string // the app's own guess, in words
+  evidence: { label: string; value: string }[]
+  acknowledged: boolean
+  acknowledgedAt?: string
+}
+
+export async function fetchSystemEvents(signal?: AbortSignal): Promise<SystemEvent[]> {
+  const raw = await apiGet<{ message: { events: SystemEvent[] } }>('/api/v1/system/events', signal)
+  return raw.message.events
+}
+
+export async function acknowledgeSystemEvent(id: string): Promise<void> {
+  await apiPost(`/api/v1/system/events/${encodeURIComponent(id)}/acknowledge`)
 }

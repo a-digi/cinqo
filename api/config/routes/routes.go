@@ -76,8 +76,10 @@ func Init(ctx serverdi.Context) {
 	handlerMap := map[string]routing.HandlerInterface{
 		"HealthzGet": local_routing.HandlerFunc(health.GetHandler),
 
-		"SystemResourcesGet": local_routing.HandlerFunc(system.GetHandler),
-		"SystemMemoryTopGet": local_routing.HandlerFunc(system.TopHandler),
+		"SystemResourcesGet":     local_routing.HandlerFunc(system.GetHandler),
+		"SystemMemoryTopGet":     local_routing.HandlerFunc(system.TopHandler),
+		"SystemEventsGet":        local_routing.HandlerFunc(system.EventsHandler),
+		"SystemEventAcknowledge": local_routing.HandlerFunc(system.AcknowledgeEventHandler),
 
 		"AuthConfig":   &auth_handler.AuthConfigHandler{},
 		"AuthCallback": &auth_handler.OidcCallbackHandler{},

@@ -35,6 +35,7 @@ import (
 	filereader_handler "github.com/a-digi/cinqo/src/filereader/handler"
 	filereader_jsonview "github.com/a-digi/cinqo/src/filereader/jsonview"
 	filereader_source "github.com/a-digi/cinqo/src/filereader/source"
+	"github.com/a-digi/cinqo/src/lifecycle"
 	"github.com/a-digi/cinqo/src/localai"
 	platform_crypto "github.com/a-digi/cinqo/src/platform/crypto"
 	"github.com/a-digi/cinqo/src/system"
@@ -245,6 +246,10 @@ func Start(opts Options) (srv *http.Server, cfg *server.Config, ctx *di.ContextB
 	if err := localai.Register(manager.Connector.DB, localai.Deps{Downloads: downloads, DataDir: dataDir}); err != nil {
 		log.Warning("local AI platform not registered: %v", err)
 	}
+
+	// The flight recorder of this run (plan 223, step 3): writes how the app is doing every few seconds and says so when it stops properly; the next
+	// start turns a run that never said so into an event with the last readings. It never stops the app.
+	lifecycle.OnShutdown(system.StartRunRecorder(manager.Connector.DB, func(format string, args ...any) { log.Warning(format, args...) }))
 
 	// Platform API-key encryption key — loaded/generated once at
 	// bootstrap, deliberately never sourced from config.json (step 2),

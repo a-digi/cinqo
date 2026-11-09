@@ -1,8 +1,9 @@
 import { useAuth } from '../Components/Auth/AuthContext'
 import { formatBytes } from '../Shared/Components/Terminal/terminalRules'
+import { SystemDetails } from './DetailsPanel'
 import { MemoryTop } from './MemoryTop'
 import { UnloadControl } from './UnloadControl'
-import { canUnload, isUnloadable } from './agentUnload'
+import { canManageSystem, canUnload, isUnloadable } from './agentUnload'
 import { AlertIcon, BotIcon, CheckIcon, PowerIcon, CpuIcon, CubeIcon, DiskIcon, LaptopIcon, MemoryIcon, SwapIcon } from './ResourceIcons'
 import { agentView, deviceText, pillText, pillTitle, resourceLevel, usedPercent, type AgentTone, type ResourceLevel } from './resourceLevel'
 import { useFlash, useTweenedResources } from './tween'
@@ -88,6 +89,7 @@ export function ResourceBar() {
         )}
       </div>
       <div className="flex shrink-0 items-center gap-2">
+        <SystemDetails resources={r} canManage={canManageSystem(scopes)} />
         <AgentChip
           tone={agent.tone}
           text={agent.text}

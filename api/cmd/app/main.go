@@ -106,7 +106,15 @@ func run() error {
 	// plan/ai/build/app/step-17-configurable-data-directory.md and
 	// plan/ai/build/app/step-22-data-dir-always-executable-relative.md.
 	dataDirFlag := flag.String("data", "", `path to the data directory (default: "data", next to the executable)`)
+	windowFlag := flag.String("window", "", `kind of Chrome window to open: "app" (an application window without an address bar, the default) or "browser" (a normal window); CINQO_WINDOW sets it too`)
 	flag.Parse()
+
+	// The kind of window, decided before anything starts: a typo is refused here, never silently turned into the wrong window (plan 227).
+	mode, err := parseWindowMode(*windowFlag, os.Getenv("CINQO_WINDOW"))
+	if err != nil {
+		return err
+	}
+	launchWindowMode = mode
 
 	// Armed before anything else starts (backend, Caddy, or the
 	// browser) so a self-sent SIGTERM from launchPrivateChrome's exit
@@ -601,6 +609,13 @@ func openBrowser(url string) (int, error) {
 	}
 }
 
+// PLAN 227 (2026-11-09): the window is now an application window by default
+// (--app=<url>, no address bar or tabs) again, with a visible Reload button and
+// download feedback in the shell to answer the two problems that made step 15
+// take it out; --window=browser or CINQO_WINDOW=browser opens the normal window
+// described below. See chromeArgs (window_mode.go) and
+// plan/ai/build/app/step-227-chrome-app-window-again.md.
+//
 // launchPrivateChrome spawns a genuinely separate Chrome instance — not
 // a new tab in whatever Chrome window already happens to be open.
 // Verified directly: invoking the real binary with a fresh
@@ -647,13 +662,8 @@ func launchPrivateChrome(chromePath, url string) (int, error) {
 		return 0, err
 	}
 
-	cmd := exec.Command(chromePath,
-		"--user-data-dir="+profileDir,
-		"--no-first-run",
-		"--no-default-browser-check",
-		fmt.Sprintf("--remote-debugging-port=%d", debugPort),
-		url, // a normal window/tab navigated to url, not --app=<url>
-	)
+	// An application window (--app=<url>, plan 227) or a normal window with a tab, as launchWindowMode says; see chromeArgs.
+	cmd := newChromeCommand(chromePath, profileDir, debugPort, url)
 	if err := cmd.Start(); err != nil {
 		_ = os.RemoveAll(profileDir)
 		return 0, err

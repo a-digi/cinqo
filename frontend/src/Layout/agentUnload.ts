@@ -55,3 +55,8 @@ export function isInUse(e: unknown): boolean {
 export function agentName(name: string): string {
   return name !== '' ? name : 'the local model'
 }
+
+// Marking an unexpected stop as seen needs the system manage scope (or super admin).
+export function canManageSystem(scopes: string[]): boolean {
+  return scopes.includes(AppScopes.SuperAdmin) || scopes.includes(AppScopes.SystemManage)
+}
