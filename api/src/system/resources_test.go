@@ -28,6 +28,8 @@ func fakeReader(now *time.Time, calls *int) *Reader {
 		},
 		pid:      func() int { return 4242 },
 		localPid: func() int { return 777 },
+		load:     func() (float64, int) { return 3.5, 8 },
+		disk:     func() (uint64, uint64) { return 120 << 30, 500 << 30 },
 		now:      func() time.Time { return *now },
 	}
 }
@@ -44,6 +46,9 @@ func TestReadFillsEveryFieldFromTheSources(t *testing.T) {
 	}
 	if got.Cinqo.LocalAiBytes != 2900<<20 {
 		t.Errorf("local AI bytes %d: the pid of the model program must be asked", got.Cinqo.LocalAiBytes)
+	}
+	if got.CPU.Load1 != 3.5 || got.CPU.Cores != 8 || got.Disk.FreeBytes != 120<<30 || got.Disk.TotalBytes != 500<<30 {
+		t.Errorf("cpu %+v disk %+v", got.CPU, got.Disk)
 	}
 	if !got.SampledAt.Equal(time.Date(2026, 11, 9, 14, 0, 0, 0, time.UTC)) {
 		t.Errorf("sampledAt %v", got.SampledAt)
@@ -122,6 +127,27 @@ func TestTheModuleHandsOverItsPidAndTheRealReaderUsesIt(t *testing.T) {
 	}
 	if NewReader().localPid() != 31337 {
 		t.Error("the real reader must read the pid through the source")
+	}
+}
+
+func TestNoSourcesIsUnknownNotZeroLoad(t *testing.T) {
+	r := &Reader{memory: func() memory.MemoryInfo { return memory.MemoryInfo{} }, resident: func(int) uint64 { return 0 }, pid: func() int { return 1 }, now: time.Now}
+	got := r.Read()
+	if got.CPU.Load1 != -1 || got.CPU.Cores != 0 || got.Disk.FreeBytes != 0 || got.Disk.TotalBytes != 0 {
+		t.Errorf("cpu %+v disk %+v", got.CPU, got.Disk)
+	}
+}
+
+func TestDataDirIsKeptForTheDiskFigures(t *testing.T) {
+	old := dataDir.Load()
+	t.Cleanup(func() { dataDir.Store(old) })
+	dataDir.Store(nil)
+	if dataDirValue() != "" {
+		t.Error("unset means empty")
+	}
+	SetDataDir("/some/dir")
+	if dataDirValue() != "/some/dir" {
+		t.Error("the folder must be kept")
 	}
 }
 

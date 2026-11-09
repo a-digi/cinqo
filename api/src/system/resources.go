@@ -33,6 +33,8 @@ const cacheFor = 2 * time.Second
 type Resources struct {
 	Memory    MemoryBody `json:"memory"`
 	Cinqo     CinqoBody  `json:"cinqo"`
+	CPU       CPUBody    `json:"cpu"`
+	Disk      DiskBody   `json:"disk"`
 	SampledAt time.Time  `json:"sampledAt"`
 }
 
@@ -41,6 +43,18 @@ type MemoryBody struct {
 	AvailableBytes uint64 `json:"availableBytes"`
 	SwapUsedBytes  uint64 `json:"swapUsedBytes"`
 	Pressure       string `json:"pressure"` // normal, warn, critical or unknown
+}
+
+// CPUBody is the load of the last minute (the average number of programs waiting for or using a core; -1 when the system does not say) and the number of cores.
+type CPUBody struct {
+	Load1 float64 `json:"load1"`
+	Cores int     `json:"cores"`
+}
+
+// DiskBody is the space of the volume Cinqo's data folder is on; 0 when it cannot be read.
+type DiskBody struct {
+	FreeBytes  uint64 `json:"freeBytes"`
+	TotalBytes uint64 `json:"totalBytes"`
 }
 
 type CinqoBody struct {
@@ -54,6 +68,8 @@ type Reader struct {
 	resident func(pid int) uint64
 	pid      func() int
 	localPid func() int // the pid of the local model program, 0 when none runs
+	load     func() (float64, int)
+	disk     func() (free, total uint64)
 	now      func() time.Time
 
 	mu     sync.Mutex
@@ -63,7 +79,7 @@ type Reader struct {
 
 // NewReader reads the real computer.
 func NewReader() *Reader {
-	return &Reader{memory: memory.Memory, resident: memory.Resident, pid: os.Getpid, localPid: localAiPid, now: time.Now}
+	return &Reader{memory: memory.Memory, resident: memory.Resident, pid: os.Getpid, localPid: localAiPid, load: readLoad, disk: func() (uint64, uint64) { return diskSpace(dataDirValue()) }, now: time.Now}
 }
 
 // The local AI module tells the shell which process is its model program, so this package never imports the module.
@@ -89,6 +105,8 @@ func (r *Reader) Read() Resources {
 		return r.cached
 	}
 	m := r.memory()
+	load, cores := r.readLoad()
+	free, total := r.readDisk()
 	r.cached = Resources{
 		Memory: MemoryBody{
 			TotalBytes:     m.TotalBytes,
@@ -97,10 +115,38 @@ func (r *Reader) Read() Resources {
 			Pressure:       string(m.Pressure),
 		},
 		Cinqo:     CinqoBody{AppBytes: r.resident(r.pid()), LocalAiBytes: r.residentOf(r.localPid)},
+		CPU:       CPUBody{Load1: load, Cores: cores},
+		Disk:      DiskBody{FreeBytes: free, TotalBytes: total},
 		SampledAt: now.UTC().Truncate(time.Second),
 	}
 	r.at = now
 	return r.cached
+}
+
+func (r *Reader) readLoad() (float64, int) {
+	if r.load == nil {
+		return -1, 0
+	}
+	return r.load()
+}
+
+func (r *Reader) readDisk() (uint64, uint64) {
+	if r.disk == nil {
+		return 0, 0
+	}
+	return r.disk()
+}
+
+var dataDir atomic.Pointer[string]
+
+// SetDataDir is called once at start-up with the data folder, whose volume the disk figures describe.
+func SetDataDir(dir string) { dataDir.Store(&dir) }
+
+func dataDirValue() string {
+	if p := dataDir.Load(); p != nil {
+		return *p
+	}
+	return ""
 }
 
 // residentOf is the resident memory of the process a function names; 0 when there is no function or no process.

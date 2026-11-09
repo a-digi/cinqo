@@ -22,6 +22,8 @@ export function ResourceBar() {
   const left = [`Cinqo ${formatBytes(r.cinqo.appBytes)}`]
   if (r.cinqo.localAiBytes > 0) left.push(`Local AI ${formatBytes(r.cinqo.localAiBytes)}`)
   if (r.memory.swapUsedBytes > 0) left.push(`Swap ${formatBytes(r.memory.swapUsedBytes)}`)
+  if (r.cpu.load1 >= 0 && r.cpu.cores > 0) left.push(`CPU load ${r.cpu.load1.toFixed(1)} of ${r.cpu.cores} cores`)
+  if (r.disk.totalBytes > 0) left.push(`Disk ${formatBytes(r.disk.freeBytes)} free`)
   return <Bar left={left.join(' · ')} pill={pillText(r, level)} level={level} title={pillTitle(r)} />
 }
 

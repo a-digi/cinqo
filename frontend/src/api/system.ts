@@ -8,6 +8,10 @@ export interface SystemResources {
   memory: { totalBytes: number; availableBytes: number; swapUsedBytes: number; pressure: MemoryPressure }
   // localAiBytes is the memory of the local model program, 0 while it does not run
   cinqo: { appBytes: number; localAiBytes: number }
+  // load1 is the load average of the last minute (-1 when the system does not say); cores is the number of cores.
+  cpu: { load1: number; cores: number }
+  // The space of the volume the data folder is on; 0 when it cannot be read.
+  disk: { freeBytes: number; totalBytes: number }
   sampledAt: string
 }
 
