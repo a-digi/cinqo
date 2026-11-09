@@ -3,6 +3,8 @@ import { fetchCompaniesPage, updateCompany, removeCompany, type Company, type Co
 import { BuildingIcon, PlusIcon } from '../../Shared/Icons/icons'
 import { inputClass } from '../../Shared/inputClass'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
+import { Modal } from '../../Shared/Modal/Modal'
+import { Reviews } from '../../Shared/Reviews/Reviews'
 import { Stars } from '../../Shared/Reviews/Stars'
 import { REVIEW_TYPE_COMPANY } from '../../Shared/Reviews/reviewTypes'
 import { SummaryRail } from '../../Shared/SummaryRail/SummaryRail'
@@ -48,6 +50,9 @@ export function CompaniesPage() {
   const { page, limit } = view
   // The text of the search box while it is being typed (it reaches the address after SEARCH_DEBOUNCE_MS) and of the per-page
   // box (it reaches the address on Enter or when the box loses focus, and only when it is a number from 1 to 200).
+  // The company whose reviews window is open, and a counter that makes the list's small stars ask again once it is closed.
+  const [ratingFor, setRatingFor] = useState<Company | null>(null)
+  const [starsVersion, setStarsVersion] = useState(0)
   const [queryInput, setQueryInput] = useState(view.query)
   const [limitInput, setLimitInput] = useState(String(view.limit))
   const limitFocused = useRef(false)
@@ -329,8 +334,17 @@ export function CompaniesPage() {
                         >
                           {c.name}
                         </a>
-                        <div className="mt-1">
-                          <Stars entityType={REVIEW_TYPE_COMPANY} entityId={c.id} />
+                        <div className="mt-1 flex items-center gap-2">
+                          <Stars key={`${c.id}-${starsVersion}`} entityType={REVIEW_TYPE_COMPANY} entityId={c.id} />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRatingFor(c)
+                            }}
+                            className="rounded-md border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-100"
+                          >
+                            Rate
+                          </button>
                         </div>
                         {c.description && <div className="mt-0.5 text-xs text-gray-500">{c.description}</div>}
                         <div className="mt-2 flex flex-wrap gap-2">
@@ -435,6 +449,17 @@ export function CompaniesPage() {
           </div>
         </aside>
       </div>
+
+      <Modal
+        open={ratingFor !== null}
+        title={ratingFor ? `Rate ${ratingFor.name}` : 'Rate'}
+        onClose={() => {
+          setRatingFor(null)
+          setStarsVersion((v) => v + 1) // the list's stars ask again: the rating may have changed
+        }}
+      >
+        {ratingFor && <Reviews entityType={REVIEW_TYPE_COMPANY} entityId={ratingFor.id} inRail />}
+      </Modal>
     </div>
   )
 }

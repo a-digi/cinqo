@@ -7,8 +7,20 @@ import type { ReviewType } from './reviewTypes'
 // halves are allowed, and a read and a write scope. On a host too old to have the reviews feature there is no bridge method and nothing
 // is drawn.
 //
-// It carries its own room below the panel: the app's floating chat button sits over the bottom corner of the page.
-export function Reviews({ entityType, entityId, title = 'Reviews' }: { entityType: ReviewType; entityId: string; title?: string }) {
+// Below the page it carries its own room underneath (the app's floating chat button sits over the bottom corner); in a side column
+// (inRail) it does not.
+export function Reviews({
+  entityType,
+  entityId,
+  title = 'Reviews',
+  inRail = false,
+}: {
+  entityType: ReviewType
+  entityId: string
+  title?: string
+  // In a side column (next to the page's summary) instead of below the page: no extra room underneath.
+  inRail?: boolean
+}) {
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -19,7 +31,7 @@ export function Reviews({ entityType, entityId, title = 'Reviews' }: { entityTyp
   }, [entityType, entityId, title])
 
   return (
-    <div className="mt-6 pb-24">
+    <div className={inRail ? 'mt-4' : 'mt-6 pb-24'}>
       <div ref={ref} />
     </div>
   )

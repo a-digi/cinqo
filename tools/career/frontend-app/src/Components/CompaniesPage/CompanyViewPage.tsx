@@ -163,7 +163,7 @@ export function CompanyViewPage() {
           )}
         </div>
 
-        <aside className="order-2 w-full shrink-0 lg:order-1 lg:sticky lg:top-6 lg:w-56">
+        <aside className="order-2 w-full shrink-0 lg:order-1 lg:w-80">
           <SummaryRail
             title="Company"
             segments={[
@@ -189,10 +189,9 @@ export function CompanyViewPage() {
               {plural(company.recruiterCount, 'recruiter', 'recruiters')} →
             </a>
           </SummaryRail>
+          <Reviews entityType={REVIEW_TYPE_COMPANY} entityId={company.id} inRail />
         </aside>
       </div>
-
-      <Reviews entityType={REVIEW_TYPE_COMPANY} entityId={company.id} />
     </div>
   )
 }
