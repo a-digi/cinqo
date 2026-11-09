@@ -25,6 +25,7 @@ import (
 
 	tool_query "github.com/a-digi/cinqo/src/tool/repository/query"
 
+	"github.com/a-digi/cinqo/src/media"
 	media_entity "github.com/a-digi/cinqo/src/media/entity"
 	media_persistent "github.com/a-digi/cinqo/src/media/repository/persistent"
 )
@@ -152,10 +153,8 @@ func UploadHandler(reqCtx request.RequestContext) {
 		return
 	}
 
-	contentType := header.Header.Get("Content-Type")
-	if contentType == "" {
-		contentType = "application/octet-stream"
-	}
+	// what the client declared is kept only when it says something specific; otherwise the file itself decides (a PDF sent as octet-stream is a PDF)
+	contentType := media.ResolveStoredContentType(header.Header.Get("Content-Type"), extension, storedPath)
 
 	m := &media_entity.MediaFile{
 		ID:               id,

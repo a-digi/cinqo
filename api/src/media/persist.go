@@ -41,10 +41,6 @@ func PersistLocalFile(db *sql.DB, dataDir, toolSlug, uploadedByUserID, conversat
 	}
 	defer src.Close()
 
-	if contentType == "" {
-		contentType = "application/octet-stream"
-	}
-
 	id := uuid.NewString()
 	toolDir := filepath.Join(dataDir, "media", "tools", toolSlug)
 	if err := os.MkdirAll(toolDir, 0o755); err != nil {
@@ -62,6 +58,8 @@ func PersistLocalFile(db *sql.DB, dataDir, toolSlug, uploadedByUserID, conversat
 		_ = os.Remove(storedPath)
 		return "", copyErr
 	}
+
+	contentType = ResolveStoredContentType(contentType, filepath.Ext(originalFilename), storedPath)
 
 	m := &media_entity.MediaFile{
 		ID:               id,
