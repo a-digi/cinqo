@@ -38,6 +38,7 @@ import (
 	"github.com/a-digi/cinqo/src/localai"
 	platform_crypto "github.com/a-digi/cinqo/src/platform/crypto"
 	"github.com/a-digi/cinqo/src/system"
+	"github.com/a-digi/cinqo/src/system/device"
 	tool_filesource "github.com/a-digi/cinqo/src/tool/filesource"
 	tool_manager "github.com/a-digi/cinqo/src/tool/manager"
 	tool_query "github.com/a-digi/cinqo/src/tool/repository/query"
@@ -116,6 +117,7 @@ type Options struct {
 // here takes effect immediately, no restart needed.
 func Start(opts Options) (srv *http.Server, cfg *server.Config, ctx *di.ContextBag, log logger.Logger, err error) {
 	dataDir := opts.DataDir
+	device.Start()             // the resource bar says what the computer is; read in the background, once
 	system.SetDataDir(dataDir) // the resource bar shows the free space of the volume the data lives on
 	configPath := opts.ConfigPath
 	logsDir := filepath.Join(dataDir, "logs")

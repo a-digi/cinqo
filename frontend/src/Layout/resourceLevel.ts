@@ -39,3 +39,11 @@ export function pillTitle(r: SystemResources): string {
   if (pressure !== 'unknown') parts.push(`system pressure ${pressure}`)
   return parts.join(', ')
 }
+
+// What the computer is, in one line: "MacBook Air · Apple M1 · macOS 15.1 · 8 GB". A fact that is not known is left out; empty when none is.
+export function deviceText(r: SystemResources): string {
+  const d = r.device
+  const system = [d.os, d.osVersion].filter((x) => x !== '').join(' ')
+  const parts = [d.model !== '' ? d.model : d.modelId, d.chip, system, r.memory.totalBytes > 0 ? formatBytes(r.memory.totalBytes) : '']
+  return parts.filter((x) => x !== '').join(' · ')
+}

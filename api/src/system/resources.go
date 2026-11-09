@@ -13,6 +13,7 @@ import (
 	"github.com/a-digi/coco-server/server/response"
 
 	"github.com/a-digi/cinqo/src/security/scopes/entity"
+	"github.com/a-digi/cinqo/src/system/device"
 	"github.com/a-digi/cinqo/src/system/memory"
 )
 
@@ -31,11 +32,13 @@ const cacheFor = 2 * time.Second
 // Resources is the body of GET /api/v1/system/resources. A value that could not be read is 0 / "unknown": the bar then shows it
 // grey and never as an alarm.
 type Resources struct {
-	Memory    MemoryBody `json:"memory"`
-	Cinqo     CinqoBody  `json:"cinqo"`
-	CPU       CPUBody    `json:"cpu"`
-	Disk      DiskBody   `json:"disk"`
-	SampledAt time.Time  `json:"sampledAt"`
+	Memory MemoryBody `json:"memory"`
+	Cinqo  CinqoBody  `json:"cinqo"`
+	CPU    CPUBody    `json:"cpu"`
+	Disk   DiskBody   `json:"disk"`
+	// Device is what the computer is (model, chip, system); a fact that could not be read is empty.
+	Device    device.Info `json:"device"`
+	SampledAt time.Time   `json:"sampledAt"`
 }
 
 type MemoryBody struct {
@@ -70,6 +73,7 @@ type Reader struct {
 	localPid func() int // the pid of the local model program, 0 when none runs
 	load     func() (float64, int)
 	disk     func() (free, total uint64)
+	device   func() device.Info
 	now      func() time.Time
 
 	mu     sync.Mutex
@@ -79,7 +83,7 @@ type Reader struct {
 
 // NewReader reads the real computer.
 func NewReader() *Reader {
-	return &Reader{memory: memory.Memory, resident: memory.Resident, pid: os.Getpid, localPid: localAiPid, load: readLoad, disk: func() (uint64, uint64) { return diskSpace(dataDirValue()) }, now: time.Now}
+	return &Reader{memory: memory.Memory, resident: memory.Resident, pid: os.Getpid, localPid: localAiPid, load: readLoad, disk: func() (uint64, uint64) { return diskSpace(dataDirValue()) }, device: device.Current, now: time.Now}
 }
 
 // The local AI module tells the shell which process is its model program, so this package never imports the module.
@@ -117,6 +121,7 @@ func (r *Reader) Read() Resources {
 		Cinqo:     CinqoBody{AppBytes: r.resident(r.pid()), LocalAiBytes: r.residentOf(r.localPid)},
 		CPU:       CPUBody{Load1: load, Cores: cores},
 		Disk:      DiskBody{FreeBytes: free, TotalBytes: total},
+		Device:    r.readDevice(),
 		SampledAt: now.UTC().Truncate(time.Second),
 	}
 	r.at = now
@@ -128,6 +133,13 @@ func (r *Reader) readLoad() (float64, int) {
 		return -1, 0
 	}
 	return r.load()
+}
+
+func (r *Reader) readDevice() device.Info {
+	if r.device == nil {
+		return device.Info{}
+	}
+	return r.device()
 }
 
 func (r *Reader) readDisk() (uint64, uint64) {

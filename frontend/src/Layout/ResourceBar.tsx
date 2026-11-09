@@ -1,5 +1,5 @@
 import { formatBytes } from '../Shared/Components/Terminal/terminalRules'
-import { pillText, pillTitle, resourceLevel, type ResourceLevel } from './resourceLevel'
+import { deviceText, pillText, pillTitle, resourceLevel, type ResourceLevel } from './resourceLevel'
 import { useResources } from './useResources'
 
 const PILL: Record<ResourceLevel, string> = {
@@ -15,7 +15,7 @@ export function ResourceBar() {
   const state = useResources()
   if (state.kind === 'loading' || state.kind === 'hidden') return null
   if (state.kind === 'unknown') {
-    return <Bar left={null} pill="Memory: unknown" level="unknown" title="The computer's memory could not be read." />
+    return <Bar device="" left={null} pill="Memory: unknown" level="unknown" title="The computer's memory could not be read." />
   }
   const r = state.resources
   const level = resourceLevel(r)
@@ -24,17 +24,30 @@ export function ResourceBar() {
   if (r.memory.swapUsedBytes > 0) left.push(`Swap ${formatBytes(r.memory.swapUsedBytes)}`)
   if (r.cpu.load1 >= 0 && r.cpu.cores > 0) left.push(`CPU load ${r.cpu.load1.toFixed(1)} of ${r.cpu.cores} cores`)
   if (r.disk.totalBytes > 0) left.push(`Disk ${formatBytes(r.disk.freeBytes)} free`)
-  return <Bar left={left.join(' · ')} pill={pillText(r, level)} level={level} title={pillTitle(r)} />
+  return <Bar device={deviceText(r)} left={left.join(' · ')} pill={pillText(r, level)} level={level} title={pillTitle(r)} />
 }
 
-function Bar({ left, pill, level, title }: { left: string | null; pill: string; level: ResourceLevel; title: string }) {
+function Bar({
+  device,
+  left,
+  pill,
+  level,
+  title,
+}: {
+  device: string
+  left: string | null
+  pill: string
+  level: ResourceLevel
+  title: string
+}) {
   return (
     <div
       role="status"
       aria-label="Computer resources"
       className="flex h-8 shrink-0 items-center justify-between gap-3 border-b border-gray-200 bg-white px-4 text-xs text-gray-600"
     >
-      <span className="hidden truncate sm:inline">{left}</span>
+      {device !== '' && <span className="hidden shrink-0 font-medium text-gray-700 lg:inline">{device}</span>}
+      <span className="hidden min-w-0 flex-1 truncate sm:inline">{left}</span>
       <span title={title} className={`ml-auto inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 font-medium ${PILL[level]}`}>
         {(level === 'orange' || level === 'red') && <span aria-hidden="true">!</span>}
         {pill}

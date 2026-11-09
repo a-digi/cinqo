@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/a-digi/cinqo/src/system/device"
 	"github.com/a-digi/cinqo/src/system/memory"
 )
 
@@ -29,8 +30,11 @@ func fakeReader(now *time.Time, calls *int) *Reader {
 		pid:      func() int { return 4242 },
 		localPid: func() int { return 777 },
 		load:     func() (float64, int) { return 3.5, 8 },
-		disk:     func() (uint64, uint64) { return 120 << 30, 500 << 30 },
-		now:      func() time.Time { return *now },
+		device: func() device.Info {
+			return device.Info{Model: "MacBook Air", Chip: "Apple M1", OS: "macOS", OSVersion: "15.1"}
+		},
+		disk: func() (uint64, uint64) { return 120 << 30, 500 << 30 },
+		now:  func() time.Time { return *now },
 	}
 }
 
@@ -49,6 +53,9 @@ func TestReadFillsEveryFieldFromTheSources(t *testing.T) {
 	}
 	if got.CPU.Load1 != 3.5 || got.CPU.Cores != 8 || got.Disk.FreeBytes != 120<<30 || got.Disk.TotalBytes != 500<<30 {
 		t.Errorf("cpu %+v disk %+v", got.CPU, got.Disk)
+	}
+	if got.Device.Model != "MacBook Air" || got.Device.Chip != "Apple M1" || got.Device.OS != "macOS" || got.Device.OSVersion != "15.1" {
+		t.Errorf("device %+v", got.Device)
 	}
 	if !got.SampledAt.Equal(time.Date(2026, 11, 9, 14, 0, 0, 0, time.UTC)) {
 		t.Errorf("sampledAt %v", got.SampledAt)
@@ -133,6 +140,9 @@ func TestTheModuleHandsOverItsPidAndTheRealReaderUsesIt(t *testing.T) {
 func TestNoSourcesIsUnknownNotZeroLoad(t *testing.T) {
 	r := &Reader{memory: func() memory.MemoryInfo { return memory.MemoryInfo{} }, resident: func(int) uint64 { return 0 }, pid: func() int { return 1 }, now: time.Now}
 	got := r.Read()
+	if got.Device != (device.Info{}) {
+		t.Errorf("no source: %+v", got.Device)
+	}
 	if got.CPU.Load1 != -1 || got.CPU.Cores != 0 || got.Disk.FreeBytes != 0 || got.Disk.TotalBytes != 0 {
 		t.Errorf("cpu %+v disk %+v", got.CPU, got.Disk)
 	}

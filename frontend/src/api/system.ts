@@ -12,6 +12,8 @@ export interface SystemResources {
   cpu: { load1: number; cores: number }
   // The space of the volume the data folder is on; 0 when it cannot be read.
   disk: { freeBytes: number; totalBytes: number }
+  // What the computer is; a fact that could not be read is an empty string.
+  device: { model: string; modelId: string; chip: string; os: string; osVersion: string; arch: string; cores: number }
   sampledAt: string
 }
 
