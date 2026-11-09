@@ -4,8 +4,8 @@ import { SystemDetails } from './DetailsPanel'
 import { MemoryTop } from './MemoryTop'
 import { UnloadControl } from './UnloadControl'
 import { canManageSystem, canUnload, isUnloadable } from './agentUnload'
-import { AlertIcon, BotIcon, CheckIcon, PowerIcon, CpuIcon, CubeIcon, DiskIcon, LaptopIcon, MemoryIcon, SwapIcon } from './ResourceIcons'
-import { agentView, deviceText, pillText, pillTitle, resourceLevel, usedPercent, type AgentTone, type ResourceLevel } from './resourceLevel'
+import { AlertIcon, BotIcon, CheckIcon, PowerIcon, CpuIcon, CubeIcon, DiskIcon, MemoryIcon, SwapIcon } from './ResourceIcons'
+import { agentView, pillText, pillTitle, resourceLevel, usedPercent, type AgentTone, type ResourceLevel } from './resourceLevel'
 import { useFlash, useTweenedResources } from './tween'
 import { useResources } from './useResources'
 
@@ -44,15 +44,11 @@ export function ResourceBar() {
   const r = shown
   const real = state.resources // levels, colours and the gauge follow the real reading; only the numbers glide
   const level = resourceLevel(real)
-  const device = deviceText(r)
   const agent = agentView(r.agents)
   const agentWatch = agentView(real.agents).text
   return (
     <Shell gauge={{ level, percent: usedPercent(real) }}>
       <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden max-sm:hidden">
-        {device !== '' && (
-          <Chip icon={<LaptopIcon />} label="" value={device} watch={deviceText(real)} name="Device" tone="font-medium max-lg:hidden" />
-        )}
         <Chip
           icon={<CubeIcon />}
           label="Cinqo"
