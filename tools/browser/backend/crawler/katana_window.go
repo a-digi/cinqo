@@ -32,6 +32,7 @@ import (
 
 	"browser-tool-backend/shared"
 
+	"browser-tool-backend/shared/chromeproc"
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/launcher"
 	"github.com/go-rod/rod/lib/proto"
@@ -98,14 +99,17 @@ func realLaunchWindowChrome() (*rod.Browser, *launcher.Launcher, string, error) 
 	if err != nil {
 		return nil, nil, "", err
 	}
+	chromeproc.AddOwnedRoot(dir) // the persistent profile of the visible window: a Chrome with it is this tool's
 	l := newRodLauncher(path, "").Headless(false).UserDataDir(dir).Leakless(false)
 	ws, err := l.Launch()
 	if err != nil {
 		l.Kill()
 		return nil, nil, "", fmt.Errorf("katana window: failed to launch Chrome: %w", err)
 	}
+	registerLauncherChrome(chromeproc.KindWindow, l, path)
 	b := rod.New().ControlURL(ws).NoDefaultDevice()
 	if err := b.Connect(); err != nil {
+		chromeproc.Release(l.PID())
 		l.Kill()
 		return nil, nil, "", fmt.Errorf("katana window: failed to connect to Chrome: %w", err)
 	}
@@ -122,6 +126,7 @@ func closeWindowChromeLocked() {
 		_ = windowBrowser.Close()
 	}
 	if windowLauncher != nil {
+		chromeproc.Release(windowLauncher.PID())
 		windowLauncher.Kill()
 	}
 	windowBrowser, windowLauncher, windowWS = nil, nil, ""
@@ -162,6 +167,7 @@ func ensureWindowTabLocked() {
 }
 
 func touchWindowLocked() {
+	chromeproc.TouchKind(chromeproc.KindWindow)
 	if windowIdle != nil {
 		windowIdle.Stop()
 	}

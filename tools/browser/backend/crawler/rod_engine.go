@@ -25,6 +25,7 @@ import (
 	"github.com/go-rod/rod/lib/proto"
 
 	"browser-tool-backend/shared"
+	"browser-tool-backend/shared/chromeproc"
 )
 
 // errRodNoChrome: no Chrome binary could be found. A plain error — never
@@ -130,6 +131,7 @@ func newRodLauncher(chromePath, userAgent string) *launcher.Launcher {
 // downloads one.
 func launchRodBrowser(chromePath, userAgent string) (*rod.Browser, *launcher.Launcher, error) {
 	l := newRodLauncher(chromePath, userAgent)
+	useOwnProfile(l, chromeproc.KindRod)
 
 	wsURL, err := l.Launch()
 	if err != nil {
@@ -137,6 +139,7 @@ func launchRodBrowser(chromePath, userAgent string) (*rod.Browser, *launcher.Lau
 		l.Cleanup()
 		return nil, nil, fmt.Errorf("rod engine: failed to launch Chrome: %w", err)
 	}
+	registerLauncherChrome(chromeproc.KindRod, l, chromePath)
 	// NoDefaultDevice is essential: rod otherwise emulates a built-in
 	// "laptop" device on EVERY new page, which is a CDP user-agent
 	// override (a fixed, stale "Chrome/87 ... Mac OS X 11_0_0" UA). That is
@@ -146,6 +149,7 @@ func launchRodBrowser(chromePath, userAgent string) (*rod.Browser, *launcher.Lau
 	// TestRodBrowserPresentsAHumanFingerprint.
 	b := rod.New().ControlURL(wsURL).NoDefaultDevice()
 	if err := b.Connect(); err != nil {
+		chromeproc.Release(l.PID())
 		l.Kill()
 		l.Cleanup()
 		return nil, nil, fmt.Errorf("rod engine: failed to connect to Chrome: %w", err)
@@ -160,9 +164,28 @@ func closeRodBrowser(b *rod.Browser, l *launcher.Launcher) {
 		_ = b.Close()
 	}
 	if l != nil {
+		chromeproc.Release(l.PID())
 		l.Kill()
 		l.Cleanup()
 	}
+}
+
+// useOwnProfile gives a headless Chrome its own named profile folder under the tool's profile root (plan 224, step 2), so a Chrome of this
+// tool can be told from every other one by its command line. The launcher's Cleanup removes the folder again. If the folder cannot be
+// made the launch goes on with the launcher's own temporary folder (the registry still tracks the process).
+func useOwnProfile(l *launcher.Launcher, kind chromeproc.Kind) {
+	dir, err := chromeproc.NewProfileDir(kind)
+	if err != nil {
+		log.Printf("chrome profile folder: %v (using the launcher's own folder)", err)
+		return
+	}
+	l.UserDataDir(dir)
+}
+
+// registerLauncherChrome records a Chrome a rod launcher just started in the registry of Chrome processes (plan 224). The launcher knows
+// the process id and the profile folder; the registry is only told, it never stops anything in this step.
+func registerLauncherChrome(kind chromeproc.Kind, l *launcher.Launcher, binary string) {
+	chromeproc.Register(chromeproc.Launch{Kind: kind, PID: l.PID(), ProfileDir: l.Get(flags.UserDataDir), Binary: binary})
 }
 
 func rodBrowserVersion(b *rod.Browser) (*proto.BrowserGetVersionResult, error) {

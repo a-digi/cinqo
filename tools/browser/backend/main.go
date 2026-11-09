@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -30,6 +31,7 @@ import (
 	"browser-tool-backend/auth"
 	"browser-tool-backend/crawler"
 	"browser-tool-backend/shared"
+	"browser-tool-backend/shared/chromeproc"
 )
 
 func main() {
@@ -49,6 +51,12 @@ func runHTTPServer() {
 	// regardless of whether a browser has ever been launched.
 	if err := shared.InitDB(); err != nil {
 		log.Fatalf("failed to open browser database: %v", err)
+	}
+	// Plan 224: the list of the Chrome processes this tool starts, kept in a ledger file that outlives it (a ledger of an earlier run is kept aside).
+	if dir := os.Getenv("TOOL_CACHE_DIR"); dir != "" {
+		if err := chromeproc.Configure(filepath.Join(dir, "chrome")); err != nil {
+			log.Printf("chrome ledger: %v (the Chrome processes are tracked in memory only)", err)
+		}
 	}
 	// Plan 182: delete the throw-away profile folders of any login window an earlier run of this tool left behind (a crash, a kill).
 	if n := shared.SweepLoginWindowFolders(); n > 0 {
@@ -93,6 +101,7 @@ func runHTTPServer() {
 	http.HandleFunc("/browser-settings", shared.BrowserSettingsHandler)
 	http.HandleFunc("/engine-status", crawler.EngineStatusHandler)
 	http.HandleFunc("/chrome-status", shared.ChromeStatusHandler)
+	http.HandleFunc("/chrome-processes", chromeproc.StatusHandler) // plan 224: the Chrome processes this tool started and still tracks
 	http.HandleFunc("/engine-test", crawler.EngineTestHandler)
 	http.HandleFunc("/cloudflare-domains", crawler.CloudflareDomainsHandler)
 	http.HandleFunc("/crawl-status", crawler.CrawlStatusHandler)

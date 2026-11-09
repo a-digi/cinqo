@@ -22,6 +22,7 @@ import (
 	"log"
 	"sync"
 
+	"browser-tool-backend/shared/chromeproc"
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/launcher"
 )
@@ -37,16 +38,19 @@ var (
 // connects to it. userAgent "" means Chrome's own.
 func launchKatanaChrome(chromePath, userAgent string) (*rod.Browser, *launcher.Launcher, string, error) {
 	l := newRodLauncher(chromePath, userAgent)
+	useOwnProfile(l, chromeproc.KindKatana)
 	ws, err := l.Launch()
 	if err != nil {
 		l.Kill()
 		l.Cleanup()
 		return nil, nil, "", fmt.Errorf("katana engine: failed to launch Chrome: %w", err)
 	}
+	registerLauncherChrome(chromeproc.KindKatana, l, chromePath)
 	// NoDefaultDevice for the same reason as launchRodBrowser: no CDP
 	// user-agent override on pages created through this connection.
 	b := rod.New().ControlURL(ws).NoDefaultDevice()
 	if err := b.Connect(); err != nil {
+		chromeproc.Release(l.PID())
 		l.Kill()
 		l.Cleanup()
 		return nil, nil, "", fmt.Errorf("katana engine: failed to connect to Chrome: %w", err)

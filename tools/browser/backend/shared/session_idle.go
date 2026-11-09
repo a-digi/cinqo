@@ -4,6 +4,8 @@ import (
 	"log"
 	"sync/atomic"
 	"time"
+
+	"browser-tool-backend/shared/chromeproc"
 )
 
 // The shared headless browser must not outlive the work that needed it: a
@@ -25,7 +27,10 @@ var lastSessionActivity atomic.Int64 // unix nanoseconds
 
 // touchSessionActivity records that the shared browser was just asked for or
 // just released.
-func touchSessionActivity() { lastSessionActivity.Store(time.Now().UnixNano()) }
+func touchSessionActivity() {
+	lastSessionActivity.Store(time.Now().UnixNano())
+	chromeproc.TouchKind(chromeproc.KindSharedHeadless)
+}
 
 // reapIdleSession closes the shared headless browser when it is running, not
 // in use and not used since SessionIdleStop. Reports whether it closed it.

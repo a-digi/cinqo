@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"browser-tool-backend/shared"
+	"browser-tool-backend/shared/chromeproc"
 )
 
 const (
@@ -145,6 +146,16 @@ func stopEngineLocked(engine string) {
 	}
 }
 
+// touchEngineChrome tells the registry of Chrome processes that the engine's Chrome is in use (plan 224).
+func touchEngineChrome(engine string) {
+	switch engine {
+	case fetchEngineKatana:
+		chromeproc.TouchKind(chromeproc.KindKatana)
+	case fetchEngineRod:
+		chromeproc.TouchKind(chromeproc.KindRod)
+	}
+}
+
 // fetchWithEngine is the single entry point crawl.go calls. It calls the
 // selected engine's fetch with the arguments it was given and returns the
 // results unchanged. With rod selected (the default) the Katana
@@ -156,6 +167,8 @@ func fetchWithEngine(ctx context.Context, rawURL, requestID string, expectedSele
 		engine = override
 	}
 	defer beginEngineFetch(engine)()
+	touchEngineChrome(engine)
+	defer touchEngineChrome(engine)
 	switch engine {
 	case fetchEngineKatana:
 		return katanaFetch(ctx, rawURL, requestID, expectedSelectors, removeSelectors, removeAttributes, maxAttributeLength, ignoreAttributesForMaxLength)

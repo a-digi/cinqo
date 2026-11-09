@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"browser-tool-backend/shared/chromeproc"
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
 )
@@ -121,6 +122,7 @@ type LoginWindow struct {
 	dir          string
 	cancelTab    context.CancelFunc
 	cancelAlloc  context.CancelFunc
+	pid          int // the process id of its Chrome in the registry of Chrome processes; 0 when it could not be told
 	done         chan struct{}
 	closeOnce    sync.Once
 	closeCleaned chan struct{}
@@ -133,6 +135,7 @@ func OpenLoginWindow(startURL string) (*LoginWindow, error) {
 	if err != nil {
 		return nil, err
 	}
+	chromeproc.AddOwnedRoot(loginWindowRoot()) // the folder the login windows' profiles are made in
 	alloc, cancelAlloc := chromedp.NewExecAllocator(context.Background(), loginWindowAllocatorOptions(dir)...)
 	tab, cancelTab := chromedp.NewContext(alloc)
 	w := &LoginWindow{Ctx: tab, dir: dir, cancelTab: cancelTab, cancelAlloc: cancelAlloc, done: make(chan struct{}), closeCleaned: make(chan struct{})}
@@ -146,6 +149,10 @@ func OpenLoginWindow(startURL string) (*LoginWindow, error) {
 	if err != nil {
 		w.Close()
 		return nil, fmt.Errorf("login window: could not open the login page: %w", err)
+	}
+	if pid := chromedpPID(tab); pid > 0 {
+		w.pid = pid
+		chromeproc.Register(chromeproc.Launch{Kind: chromeproc.KindLoginWindow, PID: pid, ProfileDir: dir})
 	}
 	go func() {
 		<-tab.Done()
@@ -183,6 +190,7 @@ func (w *LoginWindow) Close() {
 	w.closeOnce.Do(func() {
 		w.cancelTab()
 		w.cancelAlloc()
+		chromeproc.Release(w.pid)
 		if err := removeLoginWindowDir(w.dir); err != nil {
 			log.Printf("login window: could not delete its temporary profile folder (the next start removes it): %v", err)
 		}

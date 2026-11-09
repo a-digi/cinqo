@@ -28,6 +28,7 @@ import (
 	"sync"
 	"time"
 
+	"browser-tool-backend/shared/chromeproc"
 	"github.com/chromedp/cdproto/browser"
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
@@ -286,9 +287,20 @@ func openPrimaryTabLocked() error {
 // userAgent field then just echoes the flag back. userAgent "" launches
 // with Chrome's native UA.
 func launchHeadlessBrowser(userAgent string) (context.Context, []context.CancelFunc, string, error) {
-	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), allocatorOptions(userAgent)...)
+	opts := allocatorOptions(userAgent)
+	// its own named profile folder under the tool's profile root (plan 224, step 2); removed again when the browser is stopped
+	profileDir, perr := chromeproc.NewProfileDir(chromeproc.KindSharedHeadless)
+	if perr != nil {
+		log.Printf("chrome profile folder: %v (using chromedp's own folder)", perr)
+	} else {
+		opts = append(opts[:len(opts):len(opts)], chromedp.UserDataDir(profileDir))
+	}
+	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
 	ctx, ctxCancel := chromedp.NewContext(allocCtx)
 	cancels := []context.CancelFunc{ctxCancel, allocCancel}
+	if perr == nil {
+		cancels = append(cancels, func() { _ = chromeproc.RemoveProfileDir(profileDir) })
+	}
 
 	var product string
 	actions := []chromedp.Action{
@@ -304,6 +316,7 @@ func launchHeadlessBrowser(userAgent string) (context.Context, []context.CancelF
 		cancelAll(cancels)
 		return nil, nil, "", err
 	}
+	cancels = registerChromedpChrome(chromeproc.KindSharedHeadless, ctx, profileDir, cancels)
 	return ctx, cancels, product, nil
 }
 

@@ -25,6 +25,7 @@ import (
 	"sync"
 	"time"
 
+	"browser-tool-backend/shared/chromeproc"
 	"github.com/chromedp/chromedp"
 )
 
@@ -138,6 +139,7 @@ func launchHeadedLocked() error {
 	if err != nil {
 		return err
 	}
+	chromeproc.AddOwnedRoot(profileDir) // its persistent profile: a Chrome with it is this tool's
 	removeStaleChromeSingletonLock(profileDir)
 
 	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), normalAllocatorOptions(profileDir)...)
@@ -147,6 +149,7 @@ func launchHeadedLocked() error {
 		cancelAll(cancels)
 		return err
 	}
+	cancels = registerChromedpChrome(chromeproc.KindHeaded, ctx, profileDir, cancels)
 	headedRoot, headedCancels = ctx, cancels
 	return nil
 }
