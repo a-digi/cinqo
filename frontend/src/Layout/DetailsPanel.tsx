@@ -1,13 +1,16 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { acknowledgeSystemEvent, type SystemEvent, type SystemResources } from '../api/system'
+import { formatBytes } from '../Shared/Components/Terminal/terminalRules'
 import { agentLine, chipText, deviceRows, eventTitle, liveRows, unseenOf, whenText } from './eventsRules'
 import { AlertIcon, LaptopIcon } from './ResourceIcons'
+import { useFlash } from './tween'
 import { useSystemEvents } from './useSystemEvents'
 
 // The details of the computer and of Cinqo's own record of unexpected stops (plan 223, step 5), in a panel under two buttons of the bar: "Details"
 // (always) and, while a stop has not been marked as seen, a red chip that says so. Both open the same panel. Marking a stop as seen needs the
 // manage scope; without it the panel only shows the record.
-export function SystemDetails({ resources, canManage }: { resources: SystemResources; canManage: boolean }) {
+export function SystemDetails({ resources, canManage, cinqoWatch }: { resources: SystemResources; canManage: boolean; cinqoWatch: string }) {
+  const flash = useFlash(cinqoWatch) // Cinqo's own memory lights up when its real reading changes
   const { events, refresh } = useSystemEvents()
   const unseen = unseenOf(events)
   const [open, setOpen] = useState(false)
@@ -63,12 +66,14 @@ export function SystemDetails({ resources, canManage }: { resources: SystemResou
         aria-expanded={open}
         aria-controls={open ? panelId : undefined}
         aria-label="Details about this computer and Cinqo"
-        title="Details about this computer and Cinqo"
+        title={`Details about this computer and Cinqo. Cinqo uses ${formatBytes(resources.cinqo.appBytes)} of memory.`}
         onClick={toggle}
-        className="inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-700 shadow-sm ring-1 ring-inset ring-slate-200 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500"
+        className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium text-slate-700 shadow-sm ring-1 ring-inset ring-slate-200 transition-all duration-500 hover:bg-slate-50 ${flash ? 'scale-105 bg-sky-50 shadow-md' : 'bg-white'} focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500`}
       >
         <LaptopIcon className="h-3.5 w-3.5" />
         <span className="max-md:hidden">Details</span>
+        <span className="text-slate-400 max-md:hidden" aria-hidden="true">·</span>
+        <span className="tabular-nums text-slate-500">Cinqo {formatBytes(resources.cinqo.appBytes)}</span>
       </button>
       {open && (
         <div

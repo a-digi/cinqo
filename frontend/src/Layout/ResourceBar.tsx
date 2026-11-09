@@ -4,7 +4,7 @@ import { SystemDetails } from './DetailsPanel'
 import { MemoryTop } from './MemoryTop'
 import { UnloadControl } from './UnloadControl'
 import { canManageSystem, canUnload, isUnloadable } from './agentUnload'
-import { AlertIcon, BotIcon, CheckIcon, PowerIcon, CubeIcon, MemoryIcon } from './ResourceIcons'
+import { AlertIcon, BotIcon, CheckIcon, PowerIcon, MemoryIcon } from './ResourceIcons'
 import { agentView, pillText, pillTitle, resourceLevel, usedPercent, type AgentTone, type ResourceLevel } from './resourceLevel'
 import { useFlash, useTweenedResources } from './tween'
 import { useResources } from './useResources'
@@ -48,17 +48,9 @@ export function ResourceBar() {
   const agentWatch = agentView(real.agents).text
   return (
     <Shell gauge={{ level, percent: usedPercent(real) }}>
-      <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden max-sm:hidden">
-        <Chip
-          icon={<CubeIcon />}
-          label="Cinqo"
-          value={formatBytes(r.cinqo.appBytes)}
-          watch={formatBytes(real.cinqo.appBytes)}
-          name="Cinqo memory"
-        />
-      </div>
+      <div className="min-w-0 flex-1" />
       <div className="flex shrink-0 items-center gap-2">
-        <SystemDetails resources={r} canManage={canManageSystem(scopes)} />
+        <SystemDetails resources={r} canManage={canManageSystem(scopes)} cinqoWatch={formatBytes(real.cinqo.appBytes)} />
         <AgentChip
           tone={agent.tone}
           text={agent.text}
@@ -129,35 +121,6 @@ function Shell({ children, gauge }: { children: React.ReactNode; gauge: { level:
         </div>
       )}
     </div>
-  )
-}
-
-function Chip({
-  icon,
-  label,
-  value,
-  watch,
-  name,
-  tone,
-}: {
-  icon: React.ReactNode
-  label: string
-  value: string
-  watch: string
-  name: string
-  tone?: string
-}) {
-  const flash = useFlash(watch)
-  return (
-    <span
-      role="group"
-      aria-label={`${name}: ${value}`}
-      className={`inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 shadow-sm ring-1 ring-inset transition-all duration-500 ${flash ? 'bg-sky-50 text-slate-800 ring-sky-300' : 'bg-white text-slate-700 ring-slate-200'} ${tone ?? ''}`}
-    >
-      <span className="text-slate-400">{icon}</span>
-      {label !== '' && <span className="text-slate-500">{label}</span>}
-      <span className="font-semibold">{value}</span>
-    </span>
   )
 }
 
