@@ -27,7 +27,7 @@ var ScopeGroup = entity.ScopeGroup{
 }
 
 // cacheFor is how long one reading answers every caller: many open tabs cannot multiply the calls to the operating system.
-const cacheFor = 2 * time.Second
+const cacheFor = time.Second
 
 // Resources is the body of GET /api/v1/system/resources. A value that could not be read is 0 / "unknown": the bar then shows it
 // grey and never as an alarm.

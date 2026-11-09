@@ -68,20 +68,20 @@ func TestReadFillsEveryFieldFromTheSources(t *testing.T) {
 	}
 }
 
-func TestTheReadingIsKeptForTwoSecondsAndThenRenewed(t *testing.T) {
+func TestTheReadingIsKeptForOneSecondAndThenRenewed(t *testing.T) {
 	now := time.Date(2026, 11, 9, 14, 0, 0, 0, time.UTC)
 	calls := 0
 	r := fakeReader(&now, &calls)
 	r.Read()
-	now = now.Add(1999 * time.Millisecond)
+	now = now.Add(999 * time.Millisecond)
 	r.Read()
 	if calls != 1 {
-		t.Errorf("%d reads within two seconds, want 1", calls)
+		t.Errorf("%d reads within one second, want 1", calls)
 	}
 	now = now.Add(time.Millisecond)
 	r.Read()
 	if calls != 2 {
-		t.Errorf("%d reads after two seconds, want 2", calls)
+		t.Errorf("%d reads after one second, want 2", calls)
 	}
 	now = now.Add(-time.Hour) // the clock went back: never serve a reading from the future
 	r.Read()

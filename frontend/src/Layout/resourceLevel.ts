@@ -78,3 +78,10 @@ export function agentView(agents: SystemAgent[]): { tone: AgentTone; text: strin
       return { tone: 'failed', text: 'Local AI stopped unexpectedly' }
   }
 }
+
+// The share of the memory that is taken (total minus available), 0 to 100.
+export function usedPercent(r: SystemResources): number {
+  const { totalBytes, availableBytes } = r.memory
+  if (totalBytes <= 0) return 0
+  return Math.min(100, Math.max(0, Math.round(((totalBytes - availableBytes) / totalBytes) * 100)))
+}

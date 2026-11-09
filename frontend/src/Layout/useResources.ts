@@ -5,7 +5,7 @@ import { fetchSystemResources, type SystemResources } from '../api/system'
 // loading: nothing answered yet. hidden: this person may not see it (no scope), so there is no bar. unknown: the call failed.
 export type ResourcesState = { kind: 'loading' } | { kind: 'hidden' } | { kind: 'unknown' } | { kind: 'ready'; resources: SystemResources }
 
-export const POLL_MS = 5000
+export const POLL_MS = 2000
 
 // Reads the resources every POLL_MS while the tab is visible; a hidden tab does not ask, and asks at once when it is shown again.
 export function useResources(intervalMs: number = POLL_MS): ResourcesState {

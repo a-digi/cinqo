@@ -1,6 +1,7 @@
 import { formatBytes } from '../Shared/Components/Terminal/terminalRules'
 import { AlertIcon, BotIcon, CheckIcon, CpuIcon, CubeIcon, DiskIcon, LaptopIcon, MemoryIcon, SwapIcon } from './ResourceIcons'
-import { agentView, deviceText, pillText, pillTitle, resourceLevel, type AgentTone, type ResourceLevel } from './resourceLevel'
+import { agentView, deviceText, pillText, pillTitle, resourceLevel, usedPercent, type AgentTone, type ResourceLevel } from './resourceLevel'
+import { useFlash, useTweenedResources } from './tween'
 import { useResources } from './useResources'
 
 // The pill's colours: strong enough to be noticed at a glance, and never the only sign (its words and icon change too).
@@ -24,82 +25,135 @@ const AGENT: Record<AgentTone, { chip: string; dot: string }> = {
 // local agent is running. Hidden by width with max-* variants (never "hidden" plus a breakpoint: tool stylesheets load their own `.hidden`).
 export function ResourceBar() {
   const state = useResources()
+  const shown = useTweenedResources(state.kind === 'ready' ? state.resources : null)
   if (state.kind === 'loading' || state.kind === 'hidden') return null
-  if (state.kind === 'unknown') {
+  if (state.kind === 'unknown' || shown === null) {
     return (
-      <Shell>
+      <Shell gauge={null}>
         <div className="flex-1" />
-        <Pill level="unknown" text="Memory: unknown" title="The computer's memory could not be read." />
+        <Pill level="unknown" text="Memory: unknown" watch="unknown" title="The computer's memory could not be read." />
       </Shell>
     )
   }
-  const r = state.resources
-  const level = resourceLevel(r)
+  const r = shown
+  const real = state.resources // levels, colours and the gauge follow the real reading; only the numbers glide
+  const level = resourceLevel(real)
   const device = deviceText(r)
   const agent = agentView(r.agents)
+  const agentWatch = agentView(real.agents).text
   return (
-    <Shell>
+    <Shell gauge={{ level, percent: usedPercent(real) }}>
       <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden max-sm:hidden">
         {device !== '' && (
-          <Chip
-            icon={<LaptopIcon />}
-            label=""
-            value={device}
-            name="Device"
-            tone="text-slate-700 ring-slate-200 bg-white font-medium max-lg:hidden"
-          />
+          <Chip icon={<LaptopIcon />} label="" value={device} watch={deviceText(real)} name="Device" tone="font-medium max-lg:hidden" />
         )}
-        <Chip icon={<CubeIcon />} label="Cinqo" value={formatBytes(r.cinqo.appBytes)} name="Cinqo memory" />
+        <Chip
+          icon={<CubeIcon />}
+          label="Cinqo"
+          value={formatBytes(r.cinqo.appBytes)}
+          watch={formatBytes(real.cinqo.appBytes)}
+          name="Cinqo memory"
+        />
         {r.memory.swapUsedBytes > 0 && (
-          <Chip icon={<SwapIcon />} label="Swap" value={formatBytes(r.memory.swapUsedBytes)} name="Swap in use" />
+          <Chip
+            icon={<SwapIcon />}
+            label="Swap"
+            value={formatBytes(r.memory.swapUsedBytes)}
+            watch={formatBytes(real.memory.swapUsedBytes)}
+            name="Swap in use"
+          />
         )}
         {r.cpu.load1 >= 0 && r.cpu.cores > 0 && (
           <Chip
             icon={<CpuIcon />}
             label="CPU"
             value={`${r.cpu.load1.toFixed(1)} / ${r.cpu.cores}`}
+            watch={`${real.cpu.load1.toFixed(1)} / ${real.cpu.cores}`}
             name={`CPU load ${r.cpu.load1.toFixed(1)} of ${r.cpu.cores} cores`}
           />
         )}
         {r.disk.totalBytes > 0 && (
-          <Chip icon={<DiskIcon />} label="Disk" value={`${formatBytes(r.disk.freeBytes)} free`} name="Disk space" />
+          <Chip
+            icon={<DiskIcon />}
+            label="Disk"
+            value={`${formatBytes(r.disk.freeBytes)} free`}
+            watch={`${formatBytes(real.disk.freeBytes)} free`}
+            name="Disk space"
+          />
         )}
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        <span
-          role="group"
-          aria-label={`Local agent: ${agent.text}`}
-          title={agent.text}
-          className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${AGENT[agent.tone].chip}`}
-        >
-          <BotIcon />
-          <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${AGENT[agent.tone].dot}`} />
-          <span className="max-md:hidden">{agent.text}</span>
-        </span>
-        <Pill level={level} text={pillText(r, level)} title={pillTitle(r)} />
+        <AgentChip tone={agent.tone} text={agent.text} watch={agentWatch} />
+        <Pill level={level} text={pillText(r, level)} watch={pillText(real, level)} title={pillTitle(r)} />
       </div>
     </Shell>
   )
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
+const GAUGE: Record<ResourceLevel, string> = {
+  unknown: 'bg-gray-300',
+  ok: 'bg-emerald-500',
+  orange: 'bg-orange-500',
+  red: 'bg-red-500',
+}
+
+function AgentChip({ tone, text, watch }: { tone: AgentTone; text: string; watch: string }) {
+  const flash = useFlash(watch)
+  return (
+    <span
+      role="group"
+      aria-label={`Local agent: ${text}`}
+      title={text}
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset transition-all duration-500 ${AGENT[tone].chip} ${flash ? 'scale-105 shadow-md' : ''}`}
+    >
+      <BotIcon />
+      <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${AGENT[tone].dot}`} />
+      <span className="max-md:hidden">{text}</span>
+    </span>
+  )
+}
+
+function Shell({ children, gauge }: { children: React.ReactNode; gauge: { level: ResourceLevel; percent: number } | null }) {
   return (
     <div
       role="status"
       aria-label="Computer resources"
-      className="flex h-11 shrink-0 items-center gap-3 border-b border-slate-200 bg-gradient-to-r from-slate-100 via-slate-50 to-slate-100 px-4 text-xs text-slate-600 shadow-inner"
+      className="relative flex h-11 shrink-0 items-center gap-3 border-b border-slate-200 bg-gradient-to-r from-slate-100 via-slate-50 to-slate-100 px-4 text-xs text-slate-600 shadow-inner"
     >
       {children}
+      {gauge && (
+        <div aria-hidden="true" className="absolute inset-x-0 bottom-0 h-0.5 bg-slate-200">
+          <div
+            className={`h-full transition-[width,background-color] duration-700 ease-out ${GAUGE[gauge.level]}`}
+            style={{ width: `${gauge.percent}%` }}
+          />
+        </div>
+      )}
     </div>
   )
 }
 
-function Chip({ icon, label, value, name, tone }: { icon: React.ReactNode; label: string; value: string; name: string; tone?: string }) {
+function Chip({
+  icon,
+  label,
+  value,
+  watch,
+  name,
+  tone,
+}: {
+  icon: React.ReactNode
+  label: string
+  value: string
+  watch: string
+  name: string
+  tone?: string
+}) {
+  const flash = useFlash(watch)
   return (
     <span
       role="group"
       aria-label={`${name}: ${value}`}
-      className={`inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 shadow-sm ring-1 ring-inset ${tone ?? 'bg-white text-slate-700 ring-slate-200'}`}
+      className={`inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 shadow-sm ring-1 ring-inset transition-all duration-500 ${flash ? 'bg-sky-50 text-slate-800 ring-sky-300' : 'bg-white text-slate-700 ring-slate-200'} ${tone ?? ''}`}
     >
       <span className="text-slate-400">{icon}</span>
       {label !== '' && <span className="text-slate-500">{label}</span>}
@@ -108,11 +162,12 @@ function Chip({ icon, label, value, name, tone }: { icon: React.ReactNode; label
   )
 }
 
-function Pill({ level, text, title }: { level: ResourceLevel; text: string; title: string }) {
+function Pill({ level, text, watch, title }: { level: ResourceLevel; text: string; watch: string; title: string }) {
+  const flash = useFlash(watch)
   return (
     <span
       title={title}
-      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ring-1 ring-inset ${PILL[level]}`}
+      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ring-1 ring-inset transition-all duration-500 ${PILL[level]} ${flash ? 'scale-105 shadow-md' : ''}`}
     >
       {level === 'orange' || level === 'red' ? <AlertIcon /> : level === 'ok' ? <CheckIcon /> : <MemoryIcon />}
       <span>{text}</span>
