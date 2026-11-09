@@ -80,7 +80,7 @@ export function SystemDetails({ resources, canManage, cinqoWatch }: { resources:
           id={panelId}
           role="dialog"
           aria-labelledby={titleId}
-          className="absolute right-0 top-full z-50 mt-2 max-h-[75vh] w-[32rem] max-w-[92vw] overflow-y-auto rounded-xl border border-slate-200 bg-white p-4 text-left shadow-xl"
+          className="absolute left-0 top-full z-50 mt-2 max-h-[75vh] w-[32rem] max-w-[92vw] overflow-y-auto rounded-xl border border-slate-200 bg-white p-4 text-left shadow-xl"
         >
           <h2 id={titleId} className="text-sm font-semibold text-slate-900">
             This computer and Cinqo

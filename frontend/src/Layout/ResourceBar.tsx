@@ -48,8 +48,7 @@ export function ResourceBar() {
   const agentWatch = agentView(real.agents).text
   return (
     <Shell gauge={{ level, percent: usedPercent(real) }}>
-      <div className="min-w-0 flex-1" />
-      <div className="flex shrink-0 items-center gap-2">
+      <div className="flex min-w-0 flex-1 items-center gap-2">
         <SystemDetails resources={r} canManage={canManageSystem(scopes)} cinqoWatch={formatBytes(real.cinqo.appBytes)} />
         <AgentChip
           tone={agent.tone}
@@ -57,6 +56,8 @@ export function ResourceBar() {
           watch={agentWatch}
           unload={canUnload(scopes) && isUnloadable(agent.tone) ? { name: r.agents.find((a) => a.kind === 'local-ai')?.name ?? '' } : null}
         />
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
         <Pill level={level} text={pillText(r, level)} watch={pillText(real, level)} title={pillTitle(r)} interactive />
       </div>
     </Shell>
