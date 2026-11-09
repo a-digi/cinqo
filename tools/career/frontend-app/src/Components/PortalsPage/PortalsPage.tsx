@@ -16,6 +16,7 @@ import {
 } from '../../api'
 import { resolveCrawlAi } from '../../Cinqo/Platform/crawlAiChoice'
 import { LOCAL_AI_PATH } from '../../Cinqo/Platform/modelLabels'
+import { QWEN_CODER } from '../../Cinqo/Platform/suggestedModels'
 import { opensLocalAgents, outcomeText, suggestErrorText, suggestQwenCoder } from '../../Cinqo/Platform/suggestLocalModel'
 import { useAiChoice } from '../../Cinqo/Platform/useAiChoice'
 import { SummaryRail } from '../../Shared/SummaryRail/SummaryRail'
@@ -131,7 +132,7 @@ function PortalsPageContent() {
     suggestQwenCoder()
       .then((outcome) => {
         if (opensLocalAgents(outcome)) window.__cinqoToolBridge.navigate(LOCAL_AI_PATH)
-        else setError(outcomeText(outcome))
+        else setError(outcomeText(outcome, QWEN_CODER))
       })
       .catch((err: unknown) => {
         setError(suggestErrorText(err))

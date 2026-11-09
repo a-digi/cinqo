@@ -3,11 +3,7 @@
 // with the signed-in person's own session, so it needs the same permission as confirming it (the platform manage scope of Cinqo).
 // Pure apart from the one request, so the texts can be script-checked.
 import { CoreApiError, httpClient } from '../Http/client'
-import { RECOMMENDED_LOCAL_CRAWL_MODEL } from './modelLabels'
-
-// Where the recommended crawl model is: Qwen2.5-Coder-3B, one of the models that ship with Cinqo (repository and file as Cinqo lists them).
-export const QWEN_CODER_REPO = 'Qwen/Qwen2.5-Coder-3B-Instruct-GGUF'
-export const QWEN_CODER_FILE = 'qwen2.5-coder-3b-instruct-q4_k_m.gguf'
+import { QWEN_CODER, type SuggestedModel } from './suggestedModels'
 
 // What became of the suggestion: 'suggested' (it waits for the person on Cinqo's Local Agents page), 'installed' (already downloaded),
 // 'downloading' (a download is running), 'dismissed' (the person said no earlier: it stays no).
@@ -31,14 +27,14 @@ export function outcomeOf(s: LocalModelSuggestion): SuggestOutcome {
 }
 
 // What to tell the person after a suggestion went through. The ones that wait are sent to Cinqo's page, so the others only need a line.
-export function outcomeText(o: SuggestOutcome): string {
+export function outcomeText(o: SuggestOutcome, model: Pick<SuggestedModel, 'name'> = QWEN_CODER): string {
   switch (o) {
     case 'installed':
-      return 'Qwen2.5-Coder-3B is already downloaded in Cinqo.'
+      return `${model.name} is already downloaded in Cinqo.`
     case 'downloading':
-      return 'Cinqo is already downloading Qwen2.5-Coder-3B.'
+      return `Cinqo is already downloading ${model.name}.`
     case 'dismissed':
-      return 'You dismissed Qwen2.5-Coder-3B in Cinqo earlier. You can still download it on the Local Agents page.'
+      return `You dismissed ${model.name} in Cinqo earlier. You can still download it on the Local Agents page.`
     case 'suggested':
       return 'Cinqo is waiting for your confirmation on the Local Agents page.'
   }
@@ -63,22 +59,22 @@ export function suggestErrorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
-// Asks Cinqo to download Qwen2.5-Coder-3B. Resolves with what became of the suggestion; rejects with a CoreApiError.
-export async function suggestQwenCoder(): Promise<SuggestOutcome> {
+// Asks Cinqo to download a model: Career says where it is (repository and file) and why it wants it, nothing else. Resolves with what became of the
+// suggestion; rejects with a CoreApiError.
+export async function suggestModel(model: SuggestedModel): Promise<SuggestOutcome> {
   const res = await httpClient.post('/api/v1/local-ai/suggestions', {
-    repo: QWEN_CODER_REPO,
-    file: QWEN_CODER_FILE,
+    repo: model.repo,
+    file: model.file,
     suggestedBy: 'Career',
-    why: 'The best local model for writing crawl instructions for job links.',
+    why: model.why,
   })
   return outcomeOf(await httpClient.responseBody<LocalModelSuggestion>(res, 'ask Cinqo for the model'))
 }
 
-// The id of that model in Cinqo's list, for the checks that it is the one Career recommends.
-export const QWEN_CODER_MODEL_ID = RECOMMENDED_LOCAL_CRAWL_MODEL
-
-// Whether the note under a local platform's model picker offers to ask Cinqo for Qwen2.5-Coder-3B: when the platform does not list it (it is not
-// downloaded, or does not fit this computer), whatever else the person has (a key, another local model). Only the local platform has such a note.
-export function needsQwenCoderDownload(platform: { models: string[] }): boolean {
-  return !platform.models.includes(QWEN_CODER_MODEL_ID)
+// Asks Cinqo to download Qwen2.5-Coder-3B (the advice "Get Qwen Coder" on the Platforms page).
+export function suggestQwenCoder(): Promise<SuggestOutcome> {
+  return suggestModel(QWEN_CODER)
 }
+
+// The id of that model in Cinqo's list, for the checks that it is the one Career recommends.
+export const QWEN_CODER_MODEL_ID = QWEN_CODER.id
