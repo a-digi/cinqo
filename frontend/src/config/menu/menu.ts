@@ -65,10 +65,10 @@ export const menuEntries: MenuEntry[] = [
     label: 'AI',
     icon: aiIcon,
     children: [
-      { label: 'Platform', path: '/admin/platforms', scopes: [AppScopes.PlatformRead], icon: platformsIcon },
       { label: 'Remote Platforms', path: '/admin/api-keys', scopes: [AppScopes.PlatformRead], icon: keysIcon },
       localAiMenuEntry,
       { label: 'Logs', path: '/admin/conversation-logs', scopes: [AppScopes.SuperAdmin] },
+      { label: 'How To', path: '/admin/platforms', scopes: [AppScopes.PlatformRead], icon: platformsIcon },
     ],
   },
   {
