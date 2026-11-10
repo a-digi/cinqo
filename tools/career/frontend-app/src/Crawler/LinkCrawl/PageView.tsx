@@ -134,6 +134,10 @@ export function PageView({
       const url = byAnchor.current.get(Number(a.getAttribute('data-cinqo-a')))
       if (url !== undefined && latest.current.selectable(url)) latest.current.onToggle(url)
     })
+    // A drag that starts on a link or an image would be a browser drag-and-drop of it; in this view a drag is a text selection.
+    d.addEventListener('dragstart', (e) => {
+      e.preventDefault()
+    })
     d.addEventListener('mousedown', () => {
       setBar(null)
     })

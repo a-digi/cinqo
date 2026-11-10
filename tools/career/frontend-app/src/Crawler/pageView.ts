@@ -53,6 +53,7 @@ export function anchorMarks(marks: Marks, anchors: Map<string, number[]>): Map<n
 export const VIEW_STYLE = `
 html, body { overflow: auto !important; }
 body, body * { -webkit-user-select: text !important; user-select: text !important; }
+a, img { -webkit-user-drag: none !important; user-drag: none !important; }
 a[data-cinqo-a] { cursor: pointer; }
 a[data-cinqo-a].cinqo-block { display: block !important; }
 a[data-cinqo-a].cinqo-job { outline: 3px solid #16a34a; outline-offset: 2px; background-color: rgba(22, 163, 74, 0.16) !important; border-radius: 2px; }
