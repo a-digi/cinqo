@@ -47,14 +47,14 @@ const paginatedAutoWaitReserve = 10 * time.Second
 // constant). paginatedCrawlTimeout's own 35s budget is sized for the
 // AI path's hard external ceiling (the MCP host's own 45s invoke
 // timeout) and has no slack at all for maxAllowedPaginationPages pages
-// each also waiting up to maxPortalCrawlDelay between them — a real
+// each also waiting up to alarmPortalGap between them — a real
 // conflict, not a hypothetical: without this, pacing would make a
 // multi-page listing crawl reliably stop after 1 page with
 // "time_budget_reached" the moment the first pacing wait alone
 // approached this budget. Career's own outbound HTTP call has no such
 // external ceiling (crawlNowHTTPClient's own 100-minute timeout,
 // crawl_now.go), so this can be generous: sized for
-// maxAllowedPaginationPages pages at up to maxPortalCrawlDelay pacing
+// maxAllowedPaginationPages pages at up to alarmPortalGap pacing
 // plus real navigate/extract time each, with margin.
 const paginatedCrawlTimeoutWithPacing = 10 * time.Minute
 

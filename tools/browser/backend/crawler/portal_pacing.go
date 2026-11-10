@@ -1,9 +1,9 @@
-// portal_pacing.go implements a deliberate, randomized delay between
+// portal_pacing.go implements a deliberate delay between
 // consecutive page fetches sharing the same caller-supplied key —
-// anti-detection pacing for Career's own deterministic crawl
+// politeness pacing for Career's own deterministic crawl
 // mechanisms ("Crawl now" / "Crawl job details now"), which visit
-// many pages across possibly-different portal links but must never
-// hit the SAME portal faster than a human plausibly would. This
+// many pages across possibly-different portal links but must not
+// hit the SAME portal faster than a fixed small gap, and slower while the site is rate limiting them (plan 230). This
 // package has no concept of "portal" itself — key is opaque, supplied
 // by the caller (Career passes its own portal id); the AI-driven
 // crawl_paginated/extract_page_data/fetch_page_html path never sets
@@ -22,35 +22,26 @@ package crawler
 import (
 	"context"
 	"errors"
-	"math/rand"
 	"sync"
 	"time"
 )
 
-// minPortalCrawlDelay/maxPortalCrawlDelay bound the randomized wait —
-// plain constants, matching this codebase's own "constants over
-// premature configurability" convention.
+// The gap between two reads of one key (plan 230, replacing the random 10 to 30 s and the doubling gap of plan 197): normalPortalGap, and
+// alarmPortalGap while the key's alarm is raised. The alarm is raised by a read that ended rate limited (HTTP 429, Cloudflare error 1015, a
+// cf-mitigated 429) and removed by the first read of the key that ends without a rate limit. Any other error changes nothing. In memory only:
+// the rule is the site's, a restart starts without an alarm.
 const (
-	minPortalCrawlDelay = 10 * time.Second
-	maxPortalCrawlDelay = 30 * time.Second
-)
-
-// Adaptive gap (plan 197, B1): after a rate-limited answer for a key the minimum gap between its reads becomes startRateGap, doubling on every
-// further rate limit up to maxRateGap, and halves (to nothing) after cleanReadsToEase clean reads. In memory only: the rule is the site's.
-const (
-	startRateGap     = 30 * time.Second
-	maxRateGap       = 5 * time.Minute
-	cleanReadsToEase = 3
+	normalPortalGap = 3 * time.Second
+	alarmPortalGap  = 20 * time.Second
 )
 
 var (
-	portalPacingMu   sync.Mutex
-	portalPacingLast = map[string]time.Time{}
-	portalRateGap    = map[string]time.Duration{}
-	portalCleanReads = map[string]int{}
+	portalPacingMu    sync.Mutex
+	portalPacingLast  = map[string]time.Time{}
+	portalPacingAlarm = map[string]bool{}
 )
 
-// notePacingOutcome records how a paced read of key ended: a rate limit grows the key's gap, a clean read counts toward easing it, any other
+// notePacingOutcome records how a paced read of key ended: a rate limit raises the key's alarm, a read without one removes it, any other
 // error changes nothing. A no-op for key "" (every AI call).
 func notePacingOutcome(key string, err error) {
 	if key == "" {
@@ -59,74 +50,59 @@ func notePacingOutcome(key string, err error) {
 	portalPacingMu.Lock()
 	defer portalPacingMu.Unlock()
 	if err == nil {
-		if portalRateGap[key] == 0 {
-			return
-		}
-		portalCleanReads[key]++
-		if portalCleanReads[key] >= cleanReadsToEase {
-			portalCleanReads[key] = 0
-			if g := portalRateGap[key] / 2; g >= startRateGap {
-				portalRateGap[key] = g
-			} else {
-				delete(portalRateGap, key)
-			}
-		}
+		delete(portalPacingAlarm, key)
 		return
 	}
 	var ce *crawlError
 	if errors.As(err, &ce) && ce.Code == codeRateLimited {
-		portalCleanReads[key] = 0
-		g := portalRateGap[key]
-		if g == 0 {
-			g = startRateGap
-		} else if g *= 2; g > maxRateGap {
-			g = maxRateGap
-		}
-		portalRateGap[key] = g
+		portalPacingAlarm[key] = true
 	}
 }
 
-// pacingGapFor is the current adaptive gap of key (0 when none).
-func pacingGapFor(key string) time.Duration {
+// pacingAlarmRaised says whether key's alarm is raised.
+func pacingAlarmRaised(key string) bool {
 	portalPacingMu.Lock()
 	defer portalPacingMu.Unlock()
-	return portalRateGap[key]
+	return portalPacingAlarm[key]
 }
 
-// withPacingRetry fills RetryAfterSeconds of a rate-limit error with the key's gap when the site gave none.
+// withPacingRetry fills RetryAfterSeconds of a rate-limit error with the alarm gap when the site gave none.
 func withPacingRetry(key string, err error) {
 	var ce *crawlError
-	if key != "" && errors.As(err, &ce) && ce.Code == codeRateLimited && ce.RetryAfterSeconds == 0 {
-		ce.RetryAfterSeconds = int(pacingGapFor(key).Seconds() + 0.5)
+	if key != "" && errors.As(err, &ce) && ce.Code == codeRateLimited && ce.RetryAfterSeconds == 0 && pacingAlarmRaised(key) {
+		ce.RetryAfterSeconds = int(alarmPortalGap.Seconds())
 	}
 }
 
-// awaitPortalCrawlPacing blocks until this fetch's reserved start time:
-// at least a random [minPortalCrawlDelay, maxPortalCrawlDelay) after
-// the previous reservation under the same key — a no-op when key is ""
-// (every AI-driven call, which never sets rateLimitKey; see this file's
-// own top comment). ctx-aware: a "Stop crawl" cancellation (Career's own
-// crawl_cancel.go, one level up) interrupts the wait immediately; the
-// reservation itself is kept, which only ever spaces later fetches
+// reservePacingSlot reserves and returns the start time of a fetch for key requested at now: the first read of a key starts at once, the
+// next at least the key's current gap after the previous reservation (not after whenever that fetch finished, so parallel workers cannot
+// fire together). Pure apart from the reservation: awaitPortalCrawlPacing does the waiting.
+func reservePacingSlot(key string, now time.Time) time.Time {
+	portalPacingMu.Lock()
+	defer portalPacingMu.Unlock()
+	start := now
+	if last, ok := portalPacingLast[key]; ok {
+		gap := normalPortalGap
+		if portalPacingAlarm[key] {
+			gap = alarmPortalGap
+		}
+		if next := last.Add(gap); next.After(start) {
+			start = next
+		}
+	}
+	portalPacingLast[key] = start
+	return start
+}
+
+// awaitPortalCrawlPacing blocks until this fetch's reserved start time (see reservePacingSlot): a no-op when key is "" (every AI-driven
+// call, which never sets rateLimitKey; see this file's own top comment). ctx-aware: a "Stop crawl" cancellation (Career's own
+// crawl_cancel.go, one level up) interrupts the wait immediately; the reservation itself is kept, which only ever spaces later fetches
 // further apart.
 func awaitPortalCrawlPacing(ctx context.Context, key string) {
 	if key == "" {
 		return
 	}
-	portalPacingMu.Lock()
-	start := time.Now()
-	if last, ok := portalPacingLast[key]; ok {
-		delay := minPortalCrawlDelay + time.Duration(rand.Int63n(int64(maxPortalCrawlDelay-minPortalCrawlDelay)))
-		if gap := portalRateGap[key]; gap > delay {
-			delay = gap
-		}
-		if next := last.Add(delay); next.After(start) {
-			start = next
-		}
-	}
-	portalPacingLast[key] = start
-	portalPacingMu.Unlock()
-
+	start := reservePacingSlot(key, time.Now())
 	if wait := time.Until(start); wait > 0 {
 		timer := time.NewTimer(wait)
 		defer timer.Stop()
