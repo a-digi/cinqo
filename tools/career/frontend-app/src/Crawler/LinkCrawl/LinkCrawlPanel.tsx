@@ -34,6 +34,7 @@ import {
   type Marks,
 } from '../linkCrawlRules'
 
+import { CheckCircleIcon, PencilIcon, TrashIcon, XIcon } from '../../Shared/Icons/icons'
 import { InstructionSection } from '../InstructionSection'
 import { buttonClass, cardClass, inputClass, primaryClass } from '../instructionStyles'
 
@@ -319,15 +320,17 @@ export function LinkCrawlPanel({ link, onReload }: { link: PortalLink; onReload:
           <h3 className="text-base font-semibold text-gray-900">Link crawler</h3>
           <p className="mt-0.5 text-sm text-gray-500">Find the jobs of this page by the address of their links, without AI.</p>
         </div>
-        <button
-          type="button"
-          className={primaryClass}
-          onClick={() => {
-            setOpen((o) => !o)
-          }}
-        >
-          {open ? 'Close' : link.linkRules ? 'Change the rule' : 'Choose the job links'}
-        </button>
+        {!link.linkRules && (
+          <button
+            type="button"
+            className={primaryClass}
+            onClick={() => {
+              setOpen((o) => !o)
+            }}
+          >
+            {open ? 'Close' : 'Choose the job links'}
+          </button>
+        )}
       </div>
 
       {link.jobHost !== '' && (
@@ -349,26 +352,53 @@ export function LinkCrawlPanel({ link, onReload }: { link: PortalLink; onReload:
       )}
 
       {link.linkRules && (
-        <div className={`mt-4 ${cardClass} text-gray-800`} data-testid="link-crawl-saved-rule">
-          <div className="font-semibold text-gray-900">Saved rule for {link.linkRules.host}</div>
-          <ul className="mt-1 list-disc pl-5 font-mono">
-            {link.linkRules.include.map((p) => (
-              <li key={`i-${p}`}>{p}</li>
-            ))}
-            {(link.linkRules.exclude ?? []).map((p) => (
-              <li key={`e-${p}`} className="text-red-800">
-                not: {p}
-              </li>
-            ))}
-          </ul>
-          <p className="mt-1">{describePagination(link.linkRules.pagination)}</p>
-          <p className="mt-1 text-gray-600">
-            Crawl now and auto-discovery use this rule while Katana is the selected engine. With Rod selected the link is crawled with its
-            AI instructions instead.
-          </p>
-          <button type="button" className={`${buttonClass} mt-1`} disabled={busy} onClick={removeRule}>
-            Remove the rule
-          </button>
+        <div className={`career-enter mt-4 ${cardClass} text-gray-800`} data-testid="link-crawl-saved-rule">
+          <div className="flex items-start gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-green-50 text-green-700">
+              <CheckCircleIcon className="h-5 w-5" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="font-semibold text-gray-900">Saved rule for {link.linkRules.host}</div>
+              <ul className="mt-2 space-y-1 font-mono text-xs">
+                {link.linkRules.include.map((p) => (
+                  <li key={`i-${p}`} className="rounded-lg bg-gray-50 px-2.5 py-1.5 text-gray-800">
+                    {p}
+                  </li>
+                ))}
+                {(link.linkRules.exclude ?? []).map((p) => (
+                  <li key={`e-${p}`} className="rounded-lg bg-red-50 px-2.5 py-1.5 text-red-800">
+                    not: {p}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2">{describePagination(link.linkRules.pagination)}</p>
+              <p className="mt-1 text-xs text-gray-500">
+                Crawl now and auto-discovery use this rule while Katana is the selected engine. With Rod selected the link is crawled with
+                its AI instructions instead.
+              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  className={`${primaryClass} inline-flex items-center gap-1.5`}
+                  onClick={() => {
+                    setOpen((o) => !o)
+                  }}
+                >
+                  {open ? <XIcon /> : <PencilIcon />}
+                  {open ? 'Close' : 'Change the rule'}
+                </button>
+                <button
+                  type="button"
+                  className={`${buttonClass} inline-flex items-center gap-1.5 border-red-200 text-red-700 hover:bg-red-50`}
+                  disabled={busy}
+                  onClick={removeRule}
+                >
+                  <TrashIcon />
+                  Remove the rule
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

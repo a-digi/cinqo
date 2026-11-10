@@ -12,8 +12,11 @@ export const primaryClass = `rounded-md bg-gray-900 px-3 py-1.5 text-xs font-med
 export const inputClass =
   'rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none'
 
-// A white card for what the person picks or reads (a list, a preview, a saved rule).
-export const cardClass = 'rounded-xl border border-gray-200 bg-white p-4'
+// A white card for what the person picks or reads (a list, a preview, a saved rule): the shape of the dashboard cards (rounded-2xl, thin border, soft shadow
+// that lifts on hover).
+export const cardClass =
+  'rounded-2xl border border-gray-100 bg-white p-4 shadow-sm transition-shadow duration-300 hover:shadow-md motion-reduce:transition-none'
 
 // A quiet card on a light gray, for notes.
-export const mutedCardClass = 'rounded-xl border border-gray-200 bg-gray-50 p-4'
+export const mutedCardClass =
+  'rounded-2xl border border-gray-100 bg-gray-50 p-4 shadow-sm transition-shadow duration-300 hover:shadow-md motion-reduce:transition-none'
