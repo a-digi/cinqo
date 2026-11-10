@@ -12,8 +12,6 @@ const g20 = (body: string) =>
 
 // A document with its folded corner, shared by the CV glyphs.
 const DOC = '<path d="M6 2.5h8.5L19 7v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1z"/><path d="M14.5 2.5V7H19"/>'
-// A speech bubble, shared by the Q&A glyph.
-const BUBBLE = '<path d="M4 4.5h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1h-9l-4.5 4v-4H4a1 1 0 0 1-1-1v-10a1 1 0 0 1 1-1z"/>'
 
 // --- Profiles ---
 // Profiles: a person (the Profiles page's own header icon).
@@ -104,17 +102,3 @@ export const jobCleanupIcon = g20(
 )
 // Job crawler: a filter funnel (which jobs are kept out).
 export const jobCrawlerIcon = g20('<path d="M3 4h14l-5.5 6.5v4.5l-3 1.5v-6z"/>')
-
-// --- Q&A ---
-// Q&A (group): a speech bubble with a question mark.
-export const qaIcon = g24(`${BUBBLE}<path d="M9.8 9.2a2.2 2.2 0 1 1 3.2 2c-.7.4-1 .8-1 1.6M12 14.4v.1"/>`)
-// Getting started: a flag.
-export const gettingStartedIcon = g24('<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>')
-// Finding jobs: a magnifier.
-export const findingJobsIcon = g24('<circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/>')
-// Companies & recruiters: a building with a person.
-export const contactsGuideIcon = g24(
-  '<path d="M3 21V6.5A1.5 1.5 0 0 1 4.5 5h6A1.5 1.5 0 0 1 12 6.5V21M3 21h18M6.5 9H9M6.5 13H9M6.5 17H9"/><circle cx="17" cy="10.5" r="2.4"/><path d="M13.3 21c.3-2.4 1.8-3.8 3.7-3.8s3.4 1.4 3.7 3.8"/>',
-)
-// Questions: a question mark in a circle.
-export const questionsIcon = g24('<circle cx="12" cy="12" r="9"/><path d="M9.6 9.6a2.5 2.5 0 1 1 3.6 2.2c-.8.4-1.2.9-1.2 1.8M12 16.8v.1"/>')
