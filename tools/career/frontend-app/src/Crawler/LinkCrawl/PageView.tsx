@@ -15,12 +15,20 @@ import {
 } from '../pageView'
 
 const ALL_MARK_CLASSES = [...Object.values(MARK_CLASS), BLOCK_CLASS]
+// about the width of the bar, to keep it inside the view
+const BAR_WIDTH = 400
+const CHOICES: { kind: MarkKind | null; label: string; tone: string }[] = [
+  { kind: 'picked', label: 'Job', tone: 'text-green-700 hover:bg-green-50' },
+  { kind: 'notJob', label: 'Not a job', tone: 'text-red-700 hover:bg-red-50' },
+  { kind: 'pages', label: 'Next page', tone: 'text-gray-700 hover:bg-gray-100' },
+  { kind: null, label: 'Clear', tone: 'text-gray-700 hover:bg-gray-100' },
+]
 const BLOCKISH = /^(block|flex|grid|list-item|table|flow-root)/
 
 // The page of the link as the Browser tool read it (plan 247): a copy with no script in it, shown in a sandboxed iframe that runs none either. The page
 // scrolls on its own. The panel's marks (jobs, not a job, next page) are drawn on the links of the page, and a link ticked in the list is scrolled into
-// view. The other way round: a click on a link ticks it, and selecting text ticks every link the selection touches, with a small bar to say "not a job",
-// "next page" or to clear them. The panel's list stays the one place the marks live; this only shows them and reports what the person did.
+// view. The other way round: a click on a link asks what it is (job, not a job, next page, or clear) in a small bar, and selecting text ticks every link the
+// selection touches as a job, with the same bar to change them. The panel's list stays the one place the marks live; this only shows them and reports what the person did.
 export function PageView({
   snapshotId,
   links,
@@ -28,7 +36,6 @@ export function PageView({
   reveal,
   onReady,
   selectable,
-  onToggle,
   onMark,
 }: {
   snapshotId: string
@@ -40,9 +47,7 @@ export function PageView({
   onReady: (present: Set<number>) => void
   // Whether a link of the page may be marked (a link of another site cannot be: a rule is for the link's own site).
   selectable: (url: string) => boolean
-  // A click on a link of the page.
-  onToggle: (url: string) => void
-  // A selection ticked these links (kind 'picked'), or the bar changed them (any kind, or null = clear).
+  // A selection ticked these links (kind 'picked'), or the bar set what they are (any kind, or null = clear).
   onMark: (urls: string[], kind: MarkKind | null) => void
 }) {
   const [html, setHtml] = useState<string | null>(null)
@@ -51,7 +56,7 @@ export function PageView({
   const [hideFixed, setHideFixed] = useState(true)
   const [fixedCount, setFixedCount] = useState(0)
   const [loaded, setLoaded] = useState(0)
-  const [bar, setBar] = useState<{ urls: string[]; left: number; top: number } | null>(null)
+  const [bar, setBar] = useState<{ urls: string[]; left: number; top: number; click: boolean } | null>(null)
   const box = useRef<HTMLDivElement>(null)
   const frame = useRef<HTMLIFrameElement>(null)
   const byUrl = useRef(new Map<string, number[]>())
@@ -59,8 +64,8 @@ export function PageView({
   byUrl.current = anchorsByUrl(links)
   byAnchor.current = urlByAnchor(links)
   // The handlers added to the copy's document live as long as it does, so they read the latest props through this.
-  const latest = useRef({ selectable, onToggle, onMark })
-  latest.current = { selectable, onToggle, onMark }
+  const latest = useRef({ selectable, onMark })
+  latest.current = { selectable, onMark }
 
   useEffect(() => {
     const ctl = new AbortController()
@@ -115,6 +120,9 @@ export function PageView({
     setLoaded((n) => n + 1)
   }
 
+  // The bar stays inside the view.
+  const place = (left: number, width: number) => Math.max(8, Math.min(left, width - BAR_WIDTH))
+
   // Clicks and selections in the page.
   function wire(d: Document) {
     // A copy is wired once: the marker sits on the document itself, so a new document (a new copy) is wired again and the same one is not.
@@ -132,7 +140,17 @@ export function PageView({
       e.preventDefault() // a link never opens here
       if (selectionOf()) return // the end of a selection, which has been handled
       const url = byAnchor.current.get(Number(a.getAttribute('data-cinqo-a')))
-      if (url !== undefined && latest.current.selectable(url)) latest.current.onToggle(url)
+      if (url === undefined || !latest.current.selectable(url)) return
+      // What the link is is the person's to say: the bar asks, where they clicked, and nothing is marked until they answer.
+      const f = frame.current?.getBoundingClientRect()
+      const b = box.current?.getBoundingClientRect()
+      if (!f || !b) return
+      setBar({
+        urls: [url],
+        click: true,
+        left: place(f.left - b.left + e.clientX - 20, b.width),
+        top: Math.max(8, Math.min(f.top - b.top + e.clientY + 14, b.height - 52)),
+      })
     })
     // A drag that starts on a link or an image would be a browser drag-and-drop of it; in this view a drag is a text selection.
     d.addEventListener('dragstart', (e) => {
@@ -164,7 +182,8 @@ export function PageView({
       if (!f || !b) return
       setBar({
         urls,
-        left: Math.max(8, Math.min(f.left - b.left + r.left, b.width - 330)),
+        click: false,
+        left: place(f.left - b.left + r.left, b.width),
         top: Math.max(8, Math.min(f.top - b.top + r.bottom + 8, b.height - 52)),
       })
     })
@@ -175,6 +194,14 @@ export function PageView({
     onMark(bar.urls, kind)
     doc()?.defaultView?.getSelection()?.removeAllRanges()
     setBar(null)
+  }
+
+  // What these links are now, when they are all the same (null = none, undefined = mixed).
+  function current(urls: string[]): MarkKind | null | undefined {
+    const of = (u: string): MarkKind | null =>
+      marks.picked.includes(u) ? 'picked' : marks.notJob.includes(u) ? 'notJob' : marks.pages.includes(u) ? 'pages' : null
+    const first = of(urls[0] ?? '')
+    return urls.every((u) => of(u) === first) ? first : undefined
   }
 
   // The marks of the panel, drawn on the page.
@@ -226,7 +253,7 @@ export function PageView({
       data-testid="link-crawl-page-view"
     >
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-gray-100 bg-gray-50 px-3 py-2 text-xs text-gray-600">
-        <span>Scroll the page, then click a link or select text to tick its links.</span>
+        <span>Scroll the page, then click a link to say what it is, or select text to tick its links.</span>
         <span className="flex items-center gap-3">
           {fixedCount > 0 && (
             <label className="flex items-center gap-1">
@@ -273,41 +300,27 @@ export function PageView({
       {bar && (
         <div
           role="toolbar"
-          aria-label="What the selected links are"
+          aria-label={bar.click ? 'What this link is' : 'What the selected links are'}
           data-testid="page-view-bar"
           style={{ left: bar.left, top: bar.top }}
           className="absolute z-10 flex items-center gap-1 rounded-xl border border-gray-200 bg-white px-2 py-1.5 text-xs shadow-lg"
         >
           <span className="px-1 font-medium text-gray-900">
-            {bar.urls.length} link{bar.urls.length === 1 ? '' : 's'} ticked
+            {bar.click ? 'This link is' : `${String(bar.urls.length)} link${bar.urls.length === 1 ? '' : 's'} ticked`}
           </span>
-          <button
-            type="button"
-            className="rounded-md border border-gray-200 px-2 py-1 text-red-700 hover:bg-red-50"
-            onClick={() => {
-              markFromBar('notJob')
-            }}
-          >
-            Not a job
-          </button>
-          <button
-            type="button"
-            className="rounded-md border border-gray-200 px-2 py-1 text-gray-700 hover:bg-gray-100"
-            onClick={() => {
-              markFromBar('pages')
-            }}
-          >
-            Next page
-          </button>
-          <button
-            type="button"
-            className="rounded-md border border-gray-200 px-2 py-1 text-gray-700 hover:bg-gray-100"
-            onClick={() => {
-              markFromBar(null)
-            }}
-          >
-            Clear
-          </button>
+          {CHOICES.map((c) => (
+            <button
+              key={c.label}
+              type="button"
+              aria-pressed={c.kind !== null && current(bar.urls) === c.kind}
+              className={`rounded-md border px-2 py-1 aria-pressed:border-gray-900 aria-pressed:bg-gray-50 aria-pressed:font-semibold ${c.tone} border-gray-200`}
+              onClick={() => {
+                markFromBar(c.kind)
+              }}
+            >
+              {c.label}
+            </button>
+          ))}
         </div>
       )}
     </div>

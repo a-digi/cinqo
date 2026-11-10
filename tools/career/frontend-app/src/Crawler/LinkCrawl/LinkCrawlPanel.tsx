@@ -696,9 +696,6 @@ export function LinkCrawlPanel({ link, onReload }: { link: PortalLink; onReload:
                       reveal={reveal}
                       onReady={setInView}
                       selectable={(url) => allowed.has(url)}
-                      onToggle={(url) => {
-                        setMarks((m) => toggleMark(m, url, 'picked')) // the link is already in view: no scrolling
-                      }}
                       onMark={markMany}
                     />
                   )}
