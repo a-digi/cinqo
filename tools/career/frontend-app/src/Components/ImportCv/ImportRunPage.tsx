@@ -3,6 +3,7 @@
 // the read-only result of what was proposed and saved, and a plain message for an address that matches no run (deleted or wrong).
 import { useEffect, useState } from 'react'
 import { deleteCVImportRun, fetchCVImportRun, finishCVImportRun, type CVImportRun } from '../../api'
+import { ConfirmationModal } from '../../Shared/ConfirmationModal/ConfirmationModal'
 import { awaitTurnCompletion, fetchTurnStatus, sendMessage } from '../../Cinqo/Conversation/conversation'
 import { isAnalysisActive, resumeAnalysis } from './analysisFlow'
 import { IMPORT_CV_PATH } from '../../paths'
@@ -16,7 +17,9 @@ import { ImportRunDetail } from './ImportRunDetail'
 import { pipelineStages } from './pipelineRules'
 import { RUN_POLL_INTERVAL_MS, runPageView, shouldPollRun } from './runPageRules'
 import { RunActivity } from './RunActivity'
-import { DECLINED_MESSAGE } from './runOutcome'
+import { declineRun } from './declineRun'
+import { RestartPanel } from './RestartPanel'
+import { DECLINED_MESSAGE, restartOffer } from './runOutcome'
 import { ABANDONED_MESSAGE, isAbandonedCodeRun } from './runActivityRules'
 
 function goToHistory() {
@@ -44,6 +47,11 @@ export function ImportRunPage({ runId }: { runId: string }) {
   const [loadError, setLoadError] = useState('')
   const [actionError, setActionError] = useState('')
   const view = runPageView(run)
+  // Starting the import again from this page (plan 242, step 3): the panel is open, a decline waits for the person's confirmation, and is under way.
+  const [restartOpen, setRestartOpen] = useState(false)
+  const [confirmDecline, setConfirmDecline] = useState(false)
+  const [declining, setDeclining] = useState(false)
+  const offer = restartOffer(view)
 
   useEffect(() => {
     let cancelled = false
@@ -141,6 +149,23 @@ export function ImportRunPage({ runId }: { runId: string }) {
     }
   }
 
+  // Declines everything that was proposed (nothing was saved from it) and opens the panel to start again. The run is read again, so the page shows it as
+  // declined at once.
+  async function handleDecline() {
+    setConfirmDecline(false)
+    setActionError('')
+    setDeclining(true)
+    try {
+      await declineRun(runId)
+      setRun(await fetchCVImportRun(runId))
+      setRestartOpen(true)
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setDeclining(false)
+    }
+  }
+
   function viewTranscript() {
     if (run) window.__cinqoToolBridge.openConversation(run.conversationId)
   }
@@ -155,6 +180,15 @@ export function ImportRunPage({ runId }: { runId: string }) {
       <div className="mb-3">
         <BackLink />
       </div>
+
+      {run && restartOpen && offer === 'restart' && (
+        <RestartPanel
+          run={run}
+          onClose={() => {
+            setRestartOpen(false)
+          }}
+        />
+      )}
 
       {view === 'loading' && <p className="text-sm text-gray-400">Loading…</p>}
 
@@ -196,7 +230,17 @@ export function ImportRunPage({ runId }: { runId: string }) {
       {run && view === 'failed' && (
         <section className={cardClassName} style={cardStyle}>
           <FailureNotice error={run.error} onViewTranscript={viewTranscript} />
-          <p className="mt-3 text-xs text-gray-500">To try again, use “Process again” in the import history.</p>
+          {offer === 'restart' && !restartOpen && (
+            <button
+              type="button"
+              onClick={() => {
+                setRestartOpen(true)
+              }}
+              className="mt-3 rounded-full border border-blue-200 bg-white px-3.5 py-1.5 text-sm text-blue-700 hover:bg-blue-50"
+            >
+              Start again
+            </button>
+          )}
         </section>
       )}
 
@@ -208,6 +252,17 @@ export function ImportRunPage({ runId }: { runId: string }) {
           <section className={cardClassName} style={cardStyle}>
             <p className="text-sm text-gray-700">{DECLINED_MESSAGE}</p>
             <p className="mt-1 text-xs text-gray-500">What the AI proposed is shown below; none of it was taken.</p>
+            {offer === 'restart' && !restartOpen && (
+              <button
+                type="button"
+                onClick={() => {
+                  setRestartOpen(true)
+                }}
+                className="mt-3 rounded-full border border-blue-200 bg-white px-3.5 py-1.5 text-sm text-blue-700 hover:bg-blue-50"
+              >
+                Start again
+              </button>
+            )}
           </section>
           <ImportRunDetail run={run} onClose={goToHistory} />
         </div>
@@ -216,6 +271,18 @@ export function ImportRunPage({ runId }: { runId: string }) {
       {run && (
         <div className="mt-4">
           {actionError !== '' && <p className="mb-2 text-sm text-red-700">{actionError}</p>}
+          {offer === 'decline-and-restart' && (
+            <button
+              type="button"
+              onClick={() => {
+                setConfirmDecline(true)
+              }}
+              disabled={declining}
+              className="mr-2 rounded-full border border-blue-200 bg-white px-3 py-1 text-xs text-blue-700 hover:bg-blue-50 disabled:opacity-40"
+            >
+              {declining ? 'Declining…' : 'Decline all and start again'}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => {
@@ -227,6 +294,18 @@ export function ImportRunPage({ runId }: { runId: string }) {
           </button>
         </div>
       )}
+      <ConfirmationModal
+        open={confirmDecline}
+        title="Decline this import?"
+        message="Nothing from this import is saved. It stays in your history as declined, and you can start again."
+        confirmLabel="Decline and start again"
+        onConfirm={() => {
+          void handleDecline()
+        }}
+        onCancel={() => {
+          setConfirmDecline(false)
+        }}
+      />
     </div>
   )
 }

@@ -27,3 +27,27 @@ export function isDeclinedRun(run: { status: string; saveSummary?: unknown }): b
 
 // What a person is told on a declined import.
 export const DECLINED_MESSAGE = 'You declined this import. Nothing from it was saved.'
+
+// What the run page offers for restarting (plan 242, step 3), by the view of the run: a review (nothing saved yet) offers to decline it and start again,
+// a failed or declined one offers to start again, and nothing else does (a run still analysing, a loading or missing one, and one that was saved from:
+// declining could not undo the saved rows, and the history's "Process again" stays for it).
+export type RestartOffer = 'decline-and-restart' | 'restart' | null
+
+export function restartOffer(view: string): RestartOffer {
+  if (view === 'review') return 'decline-and-restart'
+  if (view === 'failed' || view === 'declined') return 'restart'
+  return null
+}
+
+// The uploaded CV is only kept for a day: this is said when it can not be read any more.
+export const STORED_CV_GONE_MESSAGE = 'The uploaded file is no longer stored. Choose the CV again.'
+
+// Whether the stored upload can still be read: asks once (the page gives the read of the CV text); any failure means it can not.
+export async function storedCvAvailable(readText: () => Promise<unknown>): Promise<boolean> {
+  try {
+    await readText()
+    return true
+  } catch {
+    return false
+  }
+}
