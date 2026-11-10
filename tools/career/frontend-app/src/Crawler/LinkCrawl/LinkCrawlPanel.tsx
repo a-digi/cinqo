@@ -97,8 +97,9 @@ export function LinkCrawlPanel({ link, onReload }: { link: PortalLink; onReload:
   // the temporary page files the Browser tool holds (null = not known, e.g. an older Browser tool) and what the last deletion said
   const [files, setFiles] = useState<SnapshotStats | null>(null)
   const [filesNote, setFilesNote] = useState('')
-  // plan 247: the list can be hidden so only the page shows, bigger; the marks live on in the panel and are drawn on the page
-  const [listHidden, setListHidden] = useState(false)
+  // plan 247: with a page to show, only the page is shown (large); the list is one click away ("Show the list"). The marks live in the panel either way and
+  // are drawn on the page. Without a page copy the list is always shown.
+  const [listHidden, setListHidden] = useState(true)
   const revealSeq = useRef(0)
   const learnSeq = useRef(0)
   const previewSeq = useRef(0)
@@ -588,21 +589,30 @@ export function LinkCrawlPanel({ link, onReload }: { link: PortalLink; onReload:
                     )}
                   </div>
                 )}
-                <p className="text-gray-700">
-                  Tick the links that are <strong>jobs</strong>; two or three are enough. Mark a link that looks like a job but is not one
-                  with <em>not a job</em>, and the link to the second (and third) page of the list with <em>next page</em>.
-                </p>
+                {page.snapshot && listHidden ? (
+                  <p className="text-gray-700" data-testid="page-only-hint">
+                    Click a link in the page and say what it is: a <strong>job</strong>, <em>not a job</em> or the <em>next page</em>. Two
+                    or three jobs are enough. You can also select text to tick every link in it.
+                  </p>
+                ) : (
+                  <p className="text-gray-700">
+                    Tick the links that are <strong>jobs</strong>; two or three are enough. Mark a link that looks like a job but is not one
+                    with <em>not a job</em>, and the link to the second (and third) page of the list with <em>next page</em>.
+                  </p>
+                )}
                 <div className="flex flex-wrap items-center gap-3">
-                  <input
-                    type="search"
-                    value={query}
-                    onChange={(e) => {
-                      setQuery(e.target.value)
-                    }}
-                    placeholder="Filter by address or text"
-                    aria-label="Filter the links"
-                    className={`w-64 ${inputClass}`}
-                  />
+                  {!(page.snapshot && listHidden) && (
+                    <input
+                      type="search"
+                      value={query}
+                      onChange={(e) => {
+                        setQuery(e.target.value)
+                      }}
+                      placeholder="Filter by address or text"
+                      aria-label="Filter the links"
+                      className={`w-64 ${inputClass}`}
+                    />
+                  )}
                   <label className="flex items-center gap-1">
                     <input
                       type="checkbox"
