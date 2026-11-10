@@ -26,6 +26,7 @@ export function MatchScoreBar({
   jobTitle,
   kind,
   breakdown,
+  showEngine = true,
 }: {
   score: number
   skills: string[]
@@ -33,6 +34,9 @@ export function MatchScoreBar({
   // The engine that made the match ('ai' or 'manual') and, for a manual one, how the score was made (step 129).
   kind?: 'ai' | 'manual'
   breakdown?: ManualMatchResult
+  // Whether the small "AI" or "Manual" pill follows the percentage on the bar. The Jobs table turns it off (its Match column shows the bar and the
+  // percentage only); the pill is still in the dialog that opens on a click, and every other page keeps it.
+  showEngine?: boolean
 }) {
   const [modalOpen, setModalOpen] = useState(false)
   const clamped = Math.max(0, Math.min(100, score))
@@ -67,7 +71,7 @@ export function MatchScoreBar({
         <span className={`text-xs font-medium text-gray-700 ${isExceptional ? '[animation:robot-bob_1.6s_ease-in-out_infinite]' : ''}`}>
           {clamped}%
         </span>
-        <EngineBadge label={engineLabel(kind)} />
+        {showEngine && <EngineBadge label={engineLabel(kind)} />}
       </button>
       <Modal
         open={modalOpen}

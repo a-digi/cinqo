@@ -35,7 +35,6 @@ import { buildJobMatchMessage, jobMatchConversationTitle } from '../../JobMatch/
 import { buildGenerateCvMessage, generateCvConversationTitle } from '../../CvPdf/buildGenerateCvMessage'
 import { Dropdown } from '../Dropdown/Dropdown'
 import { Pagination } from '../Pagination/Pagination'
-import { AppLink } from '../../Shared/AppLink/AppLink'
 import { Modal } from '../../Shared/Modal/Modal'
 import { MatchScoreBar } from '../../Shared/MatchScoreBar/MatchScoreBar'
 import { refusalText } from '../../Shared/MatchScoreBar/matchRules'
@@ -56,11 +55,11 @@ import {
 } from '../../Shared/Icons/icons'
 import { AddJobModal } from './AddJobModal'
 import { companyCell } from './companyCell'
-import { JOB_DETAILS_PATH, JOBS_PATH, VIEW_COMPANY_PATH, VIEW_PLATFORM_PATH } from '../../paths'
+import { JOB_DETAILS_PATH, JOBS_PATH, VIEW_COMPANY_PATH } from '../../paths'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
-import { PAGE_ACCENT, accentFor, initialOf } from './jobsTheme'
+import { PAGE_ACCENT } from './jobsTheme'
 import { JobStatsStrip } from './JobStatsStrip'
-import { NoDetailsIcon } from './NoDetailsIcon'
+import { JobTitleCell } from './JobTitleCell'
 import { RunningCrawlsStrip } from './RunningCrawlsStrip'
 import { runsKey } from './runningCrawlsRules'
 import { useRunningCrawls } from './useRunningCrawls'
@@ -68,7 +67,6 @@ import { SelectCvModal } from './SelectCvModal'
 import { SelectRecruiterModal } from '../Recruiters/SelectRecruiterModal'
 import { recruiterLabel } from '../Recruiters/recruiterMapRules'
 import { AddToBoardModal } from '../JobBoard/AddToBoardModal'
-import { plural } from '../CompaniesPage/companyStats'
 import { ConfirmationModal } from '../../Shared/ConfirmationModal/ConfirmationModal'
 import { deleteQuestion } from '../SettingsPage/deletedJobsRules'
 import { matchUnmatchedMessage } from './matchUnmatchedRules'
@@ -100,7 +98,7 @@ import {
   showRemove,
   sourceNote,
 } from './cvActions'
-import { canOpenOriginal, detailsState, isManualJob, platformLabel } from './manualJob'
+import { canOpenOriginal, detailsState } from './manualJob'
 import { Typewriter } from '../../Shared/Typewriter/Typewriter'
 import { truncate } from '../../Shared/Text/transform'
 import { PageTips } from '../../Shared/PageTips/PageTips'
@@ -1398,9 +1396,7 @@ export function JobsPage() {
                           onChange={togglePageRows}
                         />
                       </th>
-                      <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Title</th>
-                      <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Company</th>
-                      <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Platform</th>
+                      <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Job</th>
                       <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Posted</th>
                       <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Match</th>
                       <th className="bg-blue-50/70 p-3 text-right text-xs font-semibold uppercase tracking-wide text-blue-700">Actions</th>
@@ -1422,103 +1418,7 @@ export function JobsPage() {
                             />
                           </td>
                           <td className="border-b border-blue-50 p-3 text-gray-900">
-                            <div className="flex items-center gap-3">
-                              <span
-                                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white shadow-sm"
-                                style={{ background: accentFor(job.company || job.title).to }}
-                                aria-hidden="true"
-                              >
-                                {initialOf(job.company || job.title)}
-                              </span>
-                              {detailsState(job) === 'available' ? (
-                                <AppLink
-                                  href={`${JOB_DETAILS_PATH}?id=${encodeURIComponent(job.id)}`}
-                                  className="rounded font-medium hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
-                                >
-                                  {job.title}
-                                </AppLink>
-                              ) : (
-                                <span className="font-medium">{job.title}</span>
-                              )}
-                              {detailsState(job) === 'not-crawled' && <NoDetailsIcon state={missing?.states[job.id]} platformName={job.portalName} />}
-                              {job.boardProfileCount > 0 && (
-                                <a
-                                  href={`${JOB_DETAILS_PATH}?id=${encodeURIComponent(job.id)}`}
-                                  onClick={(e) => {
-                                    e.preventDefault()
-                                    window.__cinqoToolBridge.navigate(`${JOB_DETAILS_PATH}?id=${encodeURIComponent(job.id)}`)
-                                  }}
-                                  title="Profiles whose job board has this job (open the job to see the status on each)"
-                                  className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800 hover:underline"
-                                >
-                                  On {plural(job.boardProfileCount, 'board', 'boards')}
-                                </a>
-                              )}
-                              {isManualJob(job) && (
-                                <span
-                                  title="You added this job yourself"
-                                  className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-800"
-                                >
-                                  Manual
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="border-b border-blue-50 p-3">
-                            {cell.linkTo ? (
-                              <a
-                                href={cell.linkTo}
-                                onClick={(e) => {
-                                  e.preventDefault()
-                                  window.__cinqoToolBridge.navigate(cell.linkTo ?? '')
-                                }}
-                                title="Open this company's page"
-                                className="font-medium text-blue-700 hover:underline focus:outline-none focus-visible:underline"
-                              >
-                                {cell.text}
-                              </a>
-                            ) : (
-                              cell.text
-                            )}
-                            {cell.linkTo && (
-                              <div className="mt-0.5 flex items-center gap-1.5 text-xs text-gray-400">
-                                {cell.linkedName !== null && <>linked to {cell.linkedName}</>}
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    handleUnlink(job.id)
-                                  }}
-                                  className="text-gray-400 underline hover:text-red-700"
-                                >
-                                  unlink
-                                </button>
-                              </div>
-                            )}
-                          </td>
-                          <td className="border-b border-blue-50 p-3">
-                            {platformLabel(job) === '—' ? (
-                              <span className="text-gray-300">—</span>
-                            ) : job.portalId ? (
-                              <a
-                                href={`${VIEW_PLATFORM_PATH}?id=${encodeURIComponent(job.portalId)}`}
-                                onClick={(e) => {
-                                  e.preventDefault()
-                                  window.__cinqoToolBridge.navigate(`${VIEW_PLATFORM_PATH}?id=${encodeURIComponent(job.portalId ?? '')}`)
-                                }}
-                                title="Open this platform's page"
-                                className="inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium hover:underline"
-                                style={{ background: accentFor(platformLabel(job)).soft, color: accentFor(platformLabel(job)).text }}
-                              >
-                                {platformLabel(job)}
-                              </a>
-                            ) : (
-                              <span
-                                className="inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium"
-                                style={{ background: accentFor(platformLabel(job)).soft, color: accentFor(platformLabel(job)).text }}
-                              >
-                                {platformLabel(job)}
-                              </span>
-                            )}
+                            <JobTitleCell job={job} cell={cell} missingState={missing?.states[job.id]} onUnlink={handleUnlink} />
                           </td>
                           <td className="border-b border-blue-50 p-3">
                             {job.postedAt ? (
@@ -1548,6 +1448,7 @@ export function JobsPage() {
                               </span>
                             ) : job.matchStatus === 'completed' && job.matchScore !== undefined ? (
                               <MatchScoreBar
+                                showEngine={false}
                                 score={job.matchScore}
                                 skills={job.matchedSkills}
                                 jobTitle={job.title}
