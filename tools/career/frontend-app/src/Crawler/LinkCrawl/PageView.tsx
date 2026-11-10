@@ -1,21 +1,35 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { fetchSnapshotHtml, type PageLink } from '../linkCrawl'
-import type { Marks } from '../linkCrawlRules'
-import { anchorMarks, anchorsByUrl, BLOCK_CLASS, HIDE_IMAGES_STYLE, MARK_CLASS, VIEW_STYLE } from '../pageView'
+import type { MarkKind, Marks } from '../linkCrawlRules'
+import {
+  anchorMarks,
+  anchorsByUrl,
+  BLOCK_CLASS,
+  HIDE_FIXED_STYLE,
+  HIDE_IMAGES_STYLE,
+  linksInRange,
+  MARK_CLASS,
+  urlByAnchor,
+  VIEW_STYLE,
+} from '../pageView'
 
 const ALL_MARK_CLASSES = [...Object.values(MARK_CLASS), BLOCK_CLASS]
 const BLOCKISH = /^(block|flex|grid|list-item|table|flow-root)/
 
-// The page of the link as the Browser tool read it (plan 247): a copy with no script in it, shown in a sandboxed iframe that runs none either. The
-// panel's marks (jobs, not a job, next page) are drawn on the links of the page, and a link ticked in the list is scrolled into view. The panel's list stays
-// the one place the marks live; this only shows them.
+// The page of the link as the Browser tool read it (plan 247): a copy with no script in it, shown in a sandboxed iframe that runs none either. The page
+// scrolls on its own. The panel's marks (jobs, not a job, next page) are drawn on the links of the page, and a link ticked in the list is scrolled into
+// view. The other way round: a click on a link ticks it, and selecting text ticks every link the selection touches, with a small bar to say "not a job",
+// "next page" or to clear them. The panel's list stays the one place the marks live; this only shows them and reports what the person did.
 export function PageView({
   snapshotId,
   links,
   marks,
   reveal,
   onReady,
+  selectable,
+  onToggle,
+  onMark,
 }: {
   snapshotId: string
   links: PageLink[]
@@ -24,19 +38,35 @@ export function PageView({
   reveal: { url: string; seq: number } | null
   // The anchor numbers that are in the picture (a link inside a shadow root is listed but not drawn).
   onReady: (present: Set<number>) => void
+  // Whether a link of the page may be marked (a link of another site cannot be: a rule is for the link's own site).
+  selectable: (url: string) => boolean
+  // A click on a link of the page.
+  onToggle: (url: string) => void
+  // A selection ticked these links (kind 'picked'), or the bar changed them (any kind, or null = clear).
+  onMark: (urls: string[], kind: MarkKind | null) => void
 }) {
   const [html, setHtml] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [hideImages, setHideImages] = useState(false)
+  const [hideFixed, setHideFixed] = useState(true)
+  const [fixedCount, setFixedCount] = useState(0)
   const [loaded, setLoaded] = useState(0)
+  const [bar, setBar] = useState<{ urls: string[]; left: number; top: number } | null>(null)
+  const box = useRef<HTMLDivElement>(null)
   const frame = useRef<HTMLIFrameElement>(null)
   const byUrl = useRef(new Map<string, number[]>())
+  const byAnchor = useRef(new Map<number, string>())
   byUrl.current = anchorsByUrl(links)
+  byAnchor.current = urlByAnchor(links)
+  // The handlers added to the copy's document live as long as it does, so they read the latest props through this.
+  const latest = useRef({ selectable, onToggle, onMark })
+  latest.current = { selectable, onToggle, onMark }
 
   useEffect(() => {
     const ctl = new AbortController()
     setHtml(null)
     setError('')
+    setBar(null)
     fetchSnapshotHtml(snapshotId, ctl.signal)
       .then(setHtml)
       .catch((err: unknown) => {
@@ -58,6 +88,7 @@ export function PageView({
     for (const [id, css] of [
       ['cinqo-view', VIEW_STYLE],
       ['cinqo-view-images', ''],
+      ['cinqo-view-fixed', ''],
     ] as const) {
       let el = d.getElementById(id)
       if (!el) {
@@ -67,8 +98,79 @@ export function PageView({
       }
       el.textContent = css
     }
+    // Pop-ups, cookie bars and fixed headers cover the page and follow the scroll; they are found once so they can be hidden.
+    const win = d.defaultView
+    let fixed = 0
+    if (win) {
+      for (const el of Array.from(d.body.querySelectorAll('*'))) {
+        if (win.getComputedStyle(el).position === 'fixed') {
+          el.setAttribute('data-cinqo-fixed', '1')
+          fixed += 1
+        }
+      }
+    }
+    setFixedCount(fixed)
+    wire(d)
     onReady(new Set(Array.from(d.querySelectorAll('a[data-cinqo-a]'), (a) => Number(a.getAttribute('data-cinqo-a')))))
     setLoaded((n) => n + 1)
+  }
+
+  // Clicks and selections in the page.
+  function wire(d: Document) {
+    // A copy is wired once: the marker sits on the document itself, so a new document (a new copy) is wired again and the same one is not.
+    if (d.documentElement.hasAttribute('data-cinqo-wired')) return
+    d.documentElement.setAttribute('data-cinqo-wired', '1')
+    const selectionOf = () => {
+      const s = d.defaultView?.getSelection()
+      return s && !s.isCollapsed && s.rangeCount > 0 ? s : null
+    }
+    d.addEventListener('click', (e) => {
+      // not `instanceof Element`: the page's elements belong to the iframe's window, whose Element is not ours
+      const target = e.target as Partial<Element> | null
+      const a = typeof target?.closest === 'function' ? target.closest('a') : null
+      if (!a) return
+      e.preventDefault() // a link never opens here
+      if (selectionOf()) return // the end of a selection, which has been handled
+      const url = byAnchor.current.get(Number(a.getAttribute('data-cinqo-a')))
+      if (url !== undefined && latest.current.selectable(url)) latest.current.onToggle(url)
+    })
+    d.addEventListener('mousedown', () => {
+      setBar(null)
+    })
+    d.addEventListener(
+      'scroll',
+      () => {
+        setBar(null)
+      },
+      true,
+    )
+    d.addEventListener('mouseup', () => {
+      const s = selectionOf()
+      if (!s) return
+      const range = s.getRangeAt(0)
+      const urls = linksInRange(range, d, byAnchor.current).filter((u) => latest.current.selectable(u))
+      if (urls.length === 0) {
+        setBar(null)
+        return
+      }
+      latest.current.onMark(urls, 'picked')
+      const r = range.getBoundingClientRect()
+      const f = frame.current?.getBoundingClientRect()
+      const b = box.current?.getBoundingClientRect()
+      if (!f || !b) return
+      setBar({
+        urls,
+        left: Math.max(8, Math.min(f.left - b.left + r.left, b.width - 330)),
+        top: Math.max(8, Math.min(f.top - b.top + r.bottom + 8, b.height - 52)),
+      })
+    })
+  }
+
+  function markFromBar(kind: MarkKind | null) {
+    if (!bar) return
+    onMark(bar.urls, kind)
+    doc()?.defaultView?.getSelection()?.removeAllRanges()
+    setBar(null)
   }
 
   // The marks of the panel, drawn on the page.
@@ -91,9 +193,12 @@ export function PageView({
   }, [marks, links, loaded])
 
   useEffect(() => {
-    const el = doc()?.getElementById('cinqo-view-images')
-    if (el) el.textContent = hideImages ? HIDE_IMAGES_STYLE : ''
-  }, [hideImages, loaded])
+    const d = doc()
+    const images = d?.getElementById('cinqo-view-images')
+    if (images) images.textContent = hideImages ? HIDE_IMAGES_STYLE : ''
+    const fixed = d?.getElementById('cinqo-view-fixed')
+    if (fixed) fixed.textContent = hideFixed ? HIDE_FIXED_STYLE : ''
+  }, [hideImages, hideFixed, loaded])
 
   // A link ticked in the list is brought into view.
   useEffect(() => {
@@ -112,22 +217,38 @@ export function PageView({
 
   return (
     <div
-      className="flex h-[34rem] flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm"
+      ref={box}
+      className="relative flex h-[34rem] flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm"
       data-testid="link-crawl-page-view"
     >
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 bg-gray-50 px-3 py-2 text-xs text-gray-600">
-        <span>The page as it was read. Links do not open here.</span>
-        <label className="flex items-center gap-1">
-          <input
-            type="checkbox"
-            checked={hideImages}
-            onChange={(e) => {
-              setHideImages(e.target.checked)
-            }}
-            className="accent-gray-900"
-          />
-          Hide images
-        </label>
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-gray-100 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+        <span>Scroll the page, then click a link or select text to tick its links.</span>
+        <span className="flex items-center gap-3">
+          {fixedCount > 0 && (
+            <label className="flex items-center gap-1">
+              <input
+                type="checkbox"
+                checked={hideFixed}
+                onChange={(e) => {
+                  setHideFixed(e.target.checked)
+                }}
+                className="accent-gray-900"
+              />
+              Hide pop-ups and bars ({fixedCount})
+            </label>
+          )}
+          <label className="flex items-center gap-1">
+            <input
+              type="checkbox"
+              checked={hideImages}
+              onChange={(e) => {
+                setHideImages(e.target.checked)
+              }}
+              className="accent-gray-900"
+            />
+            Hide images
+          </label>
+        </span>
       </div>
       {error && (
         <p role="alert" className="p-3 text-sm text-red-700">
@@ -144,6 +265,46 @@ export function PageView({
           onLoad={onLoad}
           className="min-h-0 w-full flex-1 bg-white"
         />
+      )}
+      {bar && (
+        <div
+          role="toolbar"
+          aria-label="What the selected links are"
+          data-testid="page-view-bar"
+          style={{ left: bar.left, top: bar.top }}
+          className="absolute z-10 flex items-center gap-1 rounded-xl border border-gray-200 bg-white px-2 py-1.5 text-xs shadow-lg"
+        >
+          <span className="px-1 font-medium text-gray-900">
+            {bar.urls.length} link{bar.urls.length === 1 ? '' : 's'} ticked
+          </span>
+          <button
+            type="button"
+            className="rounded-md border border-gray-200 px-2 py-1 text-red-700 hover:bg-red-50"
+            onClick={() => {
+              markFromBar('notJob')
+            }}
+          >
+            Not a job
+          </button>
+          <button
+            type="button"
+            className="rounded-md border border-gray-200 px-2 py-1 text-gray-700 hover:bg-gray-100"
+            onClick={() => {
+              markFromBar('pages')
+            }}
+          >
+            Next page
+          </button>
+          <button
+            type="button"
+            className="rounded-md border border-gray-200 px-2 py-1 text-gray-700 hover:bg-gray-100"
+            onClick={() => {
+              markFromBar(null)
+            }}
+          >
+            Clear
+          </button>
+        </div>
       )}
     </div>
   )

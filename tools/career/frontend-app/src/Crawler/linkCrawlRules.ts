@@ -34,7 +34,8 @@ export function filterLinks(links: PageLink[], query: string, sameSiteOnly: bool
     .split(/\s+/)
     .filter((w) => w !== '')
   return links.filter((l) => {
-    if (sameSiteOnly && hostOf(l.url) !== siteHost.toLowerCase() && (jobHost === '' || hostOf(l.url) !== jobHost.toLowerCase())) return false
+    if (sameSiteOnly && hostOf(l.url) !== siteHost.toLowerCase() && (jobHost === '' || hostOf(l.url) !== jobHost.toLowerCase()))
+      return false
     if (words.length === 0) return true
     const hay = `${l.url} ${(l.texts ?? []).join(' ')} ${l.titleAttr ?? ''}`.toLowerCase()
     return words.every((w) => hay.includes(w))
@@ -50,6 +51,25 @@ export interface Marks {
 }
 
 export const NO_MARKS: Marks = { picked: [], notJob: [], pages: [] }
+
+// The most links one rule can be learned from (the backend refuses more, plan 185).
+export const MAX_PICKED = 200
+
+// Marks several links at once (a selection in the page, plan 247): each gets exactly this mark, or none for kind null; a link keeps one meaning. Ticking
+// stops at MAX_PICKED; left counts the links that were not ticked for that reason.
+export function setMarks(marks: Marks, urls: string[], kind: MarkKind | null): { marks: Marks; left: number } {
+  const gone = new Set(urls)
+  const next: Marks = {
+    picked: marks.picked.filter((u) => !gone.has(u)),
+    notJob: marks.notJob.filter((u) => !gone.has(u)),
+    pages: marks.pages.filter((u) => !gone.has(u)),
+  }
+  if (kind === null) return { marks: next, left: 0 }
+  const room = kind === 'picked' ? Math.max(0, MAX_PICKED - next.picked.length) : Infinity
+  const add = [...new Set(urls)]
+  next[kind] = [...next[kind], ...add.slice(0, room)]
+  return { marks: next, left: Math.max(0, add.length - room) }
+}
 
 // A link has one meaning: marking it as a job, as not a job or as a next page removes its other marks; marking it again unmarks it.
 export function toggleMark(marks: Marks, url: string, kind: MarkKind): Marks {

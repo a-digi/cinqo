@@ -31,7 +31,10 @@ import {
   saveBlockedReason,
   shortUrl,
   stopReasonText,
+  MAX_PICKED,
+  setMarks as applyMarks,
   toggleMark,
+  type MarkKind,
   type Marks,
 } from '../linkCrawlRules'
 
@@ -221,6 +224,16 @@ export function LinkCrawlPanel({ link, onReload }: { link: PortalLink; onReload:
   function showInPage(url: string) {
     revealSeq.current += 1
     setReveal({ url, seq: revealSeq.current })
+  }
+  // plan 247: the links of the page a person may mark (the site filter applies to the page as it does to the list)
+  const allowed = useMemo(
+    () => new Set(page ? filterLinks(page.links, '', sameSiteOnly, siteHost, link.jobHost).map((l) => l.url) : []),
+    [page, sameSiteOnly, siteHost, link.jobHost],
+  )
+  function markMany(urls: string[], kind: MarkKind | null) {
+    const r = applyMarks(marks, urls, kind)
+    setMarks(r.marks)
+    if (r.left > 0) setError(`At most ${String(MAX_PICKED)} links can be ticked; ${String(r.left)} were left out.`)
   }
   function mark(url: string, kind: 'picked' | 'notJob' | 'pages', wasMarked: boolean) {
     setMarks((m) => toggleMark(m, url, kind))
@@ -622,7 +635,18 @@ export function LinkCrawlPanel({ link, onReload }: { link: PortalLink; onReload:
                     )}
                   </ul>
                   {page.snapshot && (
-                    <PageView snapshotId={page.snapshot.id} links={page.links} marks={marks} reveal={reveal} onReady={setInView} />
+                    <PageView
+                      snapshotId={page.snapshot.id}
+                      links={page.links}
+                      marks={marks}
+                      reveal={reveal}
+                      onReady={setInView}
+                      selectable={(url) => allowed.has(url)}
+                      onToggle={(url) => {
+                        setMarks((m) => toggleMark(m, url, 'picked')) // the link is already in view: no scrolling
+                      }}
+                      onMark={markMany}
+                    />
                   )}
                 </div>
                 {!page.snapshot && page.snapshotError && (
