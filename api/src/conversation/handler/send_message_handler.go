@@ -24,6 +24,8 @@ type sendMessageRequest struct {
 	Content      string   `json:"content"`
 	Fresh        bool     `json:"fresh"`
 	AllowedTools []string `json:"allowedTools"`
+	// ReleaseLoadedModel: as on creating a conversation (plan/ai/conversation/step-241) — unload another model nobody uses, then start the turn.
+	ReleaseLoadedModel bool `json:"releaseLoadedModel"`
 }
 
 // startTurnRunResponse — this route no longer waits for the AI to
@@ -105,6 +107,15 @@ func SendMessageHandler(reqCtx request.RequestContext) {
 	if status, message := checkTurnAllowedTools(mainDB, conv, allowedTools); status != 0 {
 		response.ErrorResponse(w, status, message)
 		return
+	}
+
+	// A turn on a local model must not silently displace another model that is loaded (plan/ai/conversation/step-241); checked once, here, never inside
+	// the tool loop. A platform that has gone is the turn's to report.
+	if entry, ok := platform.Lookup(conv.PlatformID); ok {
+		if status, occupied := occupiedAnswer(entry, conv.Model, userID, scopes, body.ReleaseLoadedModel); occupied != nil {
+			writeOccupied(w, status, occupied)
+			return
+		}
 	}
 
 	port, err := corePort(reqCtx)

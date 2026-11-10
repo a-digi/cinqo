@@ -84,6 +84,13 @@ type Entry struct {
 	AnswerRepeatedCalls bool
 	// ToolHint, when set, is a system message added to a turn that is offered tools (a small model needs telling).
 	ToolHint string
+	// Occupant, when set, says whether starting a conversation on model would displace what the platform has loaded right now (the local AI
+	// runs one model program at a time and swaps it silently when another model is asked for): it returns what is loaded and who uses it, or nil
+	// when there is no conflict (nothing loaded, or the same model). Read at call time. Optional: the cloud platforms set none and never conflict
+	// (plan/ai/conversation/step-241-one-local-model-at-a-time-notify-before-a-new-conversation.md).
+	Occupant func(model string) *Occupant
+	// Release, when set, unloads what Occupant named, never forcing it: false when it is in use at that moment and was left alone.
+	Release func(model string) bool
 }
 
 // ToolPolicy says which tools a conversation on a platform may be offered.

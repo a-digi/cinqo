@@ -47,6 +47,7 @@ func Register(mainDB *sql.DB, deps Deps) error {
 	engineForApp := newManagedEngine(in, sup, query.NewSettingsQueryRepo(mainDB))
 	lifecycle.OnShutdown(engineForApp.Stop) // and the one this run starts is stopped with the application
 	setManaged(engineForApp)
+	setRunningTurns(deps.RunningTurns)
 	setDialects(defaultDialects())
 	return platform.Register(Entry(mainDB))
 }

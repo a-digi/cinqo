@@ -10,6 +10,8 @@ import { ConversationSidebar } from './ConversationSidebar'
 import { MessageThread } from './MessageThread'
 import { MessageComposer } from './MessageComposer'
 import { NewConversationForm } from './NewConversationForm'
+import { startWithOccupiedCheck } from './occupiedRules'
+import { useOccupiedDialog } from './useOccupiedDialog'
 import { CONVERSATIONS_PATH, conversationPath, isConversationId } from './conversationPaths'
 
 // The whole screen: sidebar + thread + composer — a real top-level
@@ -68,6 +70,7 @@ export function ConversationPage() {
   const [platforms, setPlatforms] = useState<Platform[] | null>(null)
   const [platformsError, setPlatformsError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const { ask: askOccupied, dialog: occupiedDialog } = useOccupiedDialog()
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [creatingNew, setCreatingNew] = useState(false)
   // tools (step 41) — every installed tool, for the sidebar's own
@@ -125,7 +128,12 @@ export function ConversationPage() {
 
   const handleCreate = async (input: { platformId: string; model?: string; orchestrationMode: OrchestrationMode }) => {
     try {
-      const created = await createConversation(input)
+      // Another local model that is loaded is told to the person first, who may unload it and go on (plan/ai/conversation/step-241).
+      const created = await startWithOccupiedCheck(
+        (release) => createConversation(release ? { ...input, releaseLoadedModel: true } : input),
+        askOccupied,
+      )
+      if (created === undefined) return
       setCreatingNew(false)
       void navigate(conversationPath(created.id))
     } catch {
@@ -277,6 +285,7 @@ export function ConversationPage() {
           </>
         )}
       </div>
+      {occupiedDialog}
     </div>
   )
 }

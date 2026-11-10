@@ -113,6 +113,7 @@ export interface ConversationContextValue {
     platformId: string
     model?: string
     orchestrationMode?: OrchestrationMode
+    releaseLoadedModel?: boolean
   }) => Promise<Conversation>
   // Explicit conversationId (not implicitly "the selected one") — the
   // literal shape multi-conversation infrastructure requires: a caller
@@ -493,7 +494,13 @@ export function ConversationProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const createConversation = useCallback(
-    async (input: { title?: string; platformId: string; model?: string; orchestrationMode?: OrchestrationMode }) => {
+    async (input: {
+      title?: string
+      platformId: string
+      model?: string
+      orchestrationMode?: OrchestrationMode
+      releaseLoadedModel?: boolean
+    }) => {
       const created = await createConversationApi(input)
       setConversations((prev) => (prev ? [created, ...prev] : [created]))
       setSelectedId(created.id)

@@ -100,6 +100,10 @@ func Entry(db *sql.DB) platform.Entry {
 			return 0
 		},
 		ToolHint: toolHint,
+		// A new conversation on another model than the loaded one would swap the model program silently: the platform says what is loaded and who
+		// uses it, and can unload it (plan 241).
+		Occupant: occupantOfEngine,
+		Release:  releaseEngine,
 	}
 }
 

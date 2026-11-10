@@ -11,11 +11,14 @@ import (
 
 	"github.com/a-digi/cinqo/src/conversation"
 	conversation_query "github.com/a-digi/cinqo/src/conversation/repository/query"
+	"github.com/a-digi/cinqo/src/platform"
 )
 
 type retryTurnRequest struct {
 	// Confirmed says the caller was told the turn keeps failing and wants another try anyway.
 	Confirmed bool `json:"confirmed"`
+	// ReleaseLoadedModel: as on sending a message (plan/ai/conversation/step-241).
+	ReleaseLoadedModel bool `json:"releaseLoadedModel"`
 }
 
 type retryTurnResponse struct {
@@ -69,13 +72,21 @@ func RetryTurnHandler(reqCtx request.RequestContext) {
 		response.ErrorResponse(w, http.StatusInternalServerError, "conversation database not configured")
 		return
 	}
-	if _, err := conversation_query.NewConversationQueryRepo(convDB).FindOwnedByID(id, userID); err != nil {
+	conv, err := conversation_query.NewConversationQueryRepo(convDB).FindOwnedByID(id, userID)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			response.ErrorResponse(w, http.StatusNotFound, "conversation not found")
 			return
 		}
 		response.ErrorResponse(w, http.StatusInternalServerError, "failed to look up conversation")
 		return
+	}
+	// A retry on a local model must not silently displace another model that is loaded either (plan/ai/conversation/step-241).
+	if entry, ok := platform.Lookup(conv.PlatformID); ok {
+		if status, occupied := occupiedAnswer(entry, conv.Model, userID, scopes, body.ReleaseLoadedModel); occupied != nil {
+			writeOccupied(w, status, occupied)
+			return
+		}
 	}
 	encKey, err := encryptionKey(reqCtx)
 	if err != nil {

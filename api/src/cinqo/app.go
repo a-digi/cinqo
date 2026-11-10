@@ -26,6 +26,7 @@ import (
 	comments_access "github.com/a-digi/cinqo/src/comments/access"
 	comments_handler "github.com/a-digi/cinqo/src/comments/handler"
 	"github.com/a-digi/cinqo/src/conversation"
+	conversation_query "github.com/a-digi/cinqo/src/conversation/repository/query"
 	"github.com/a-digi/cinqo/src/dashboard"
 	dashboard_system "github.com/a-digi/cinqo/src/dashboard/system"
 	dashboard_toolwidgets "github.com/a-digi/cinqo/src/dashboard/toolwidgets"
@@ -246,7 +247,20 @@ func Start(opts Options) (srv *http.Server, cfg *server.Config, ctx *di.ContextB
 
 	// The optional local AI platform (plan 181): the module's one start-up hook, a single line to delete when the module
 	// is removed.
-	if err := localai.Register(manager.Connector.DB, localai.Deps{Downloads: downloads, DataDir: dataDir}); err != nil {
+	// RunningTurns tells it which conversations of the local platform have a turn under way, so a new conversation on another model can say who uses the
+	// loaded one (plan 241).
+	localRunning := func() []localai.RunningTurn {
+		turns, err := conversation_query.NewTurnRunQueryRepo(conversationManager.Connector.DB).FindRunningOnPlatform(localai.PlatformID)
+		if err != nil {
+			return nil
+		}
+		out := make([]localai.RunningTurn, len(turns))
+		for i, t := range turns {
+			out[i] = localai.RunningTurn{ConversationID: t.ConversationID, Title: t.Title, UserID: t.UserID, Model: t.Model}
+		}
+		return out
+	}
+	if err := localai.Register(manager.Connector.DB, localai.Deps{Downloads: downloads, DataDir: dataDir, RunningTurns: localRunning}); err != nil {
 		log.Warning("local AI platform not registered: %v", err)
 	}
 

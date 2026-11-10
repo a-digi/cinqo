@@ -16,6 +16,8 @@ export interface ConfirmModalProps {
   // true — see that step's own "Security considerations" for why
   // Cancel (not Confirm) is what gets autofocused regardless of this.
   danger?: boolean
+  // Leaves out the confirm button: a notice with only the cancel button (labelled as you like). Default false.
+  hideConfirm?: boolean
   onConfirm: () => void
   onCancel: () => void
 }
@@ -28,6 +30,7 @@ export function ConfirmModal({
   confirmLabel = 'Confirm',
   cancelLabel = 'Cancel',
   danger = true,
+  hideConfirm = false,
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
@@ -80,15 +83,17 @@ export function ConfirmModal({
           >
             {cancelLabel}
           </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            className={`rounded px-3 py-1.5 text-sm font-medium text-white ${
-              danger ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-900 hover:bg-gray-800'
-            }`}
-          >
-            {confirmLabel}
-          </button>
+          {!hideConfirm && (
+            <button
+              type="button"
+              onClick={onConfirm}
+              className={`rounded px-3 py-1.5 text-sm font-medium text-white ${
+                danger ? 'bg-red-600 hover:bg-red-700' : 'bg-gray-900 hover:bg-gray-800'
+              }`}
+            >
+              {confirmLabel}
+            </button>
+          )}
         </div>
       </div>
     </div>

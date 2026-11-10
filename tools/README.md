@@ -775,6 +775,31 @@ the local AI (`GET /api/v1/platforms`, platform `local`, field `models`) like an
 - The person can remove an added model at any time; a suggestion of the same file is then possible again.
 - A tool's **backend** has no credential for this route: suggest from the page, as the signed-in user.
 
+## Starting a conversation on a local model while another one is loaded
+
+The local AI runs one model at a time. Starting a conversation (or sending a message, or retrying a turn) on a
+local model while **another** local model is loaded or loading does not swap it silently any more: the call
+answers `409` with the code `local_model_occupied`. The same model loaded is no conflict, and a cloud platform
+never conflicts.
+
+```json
+{ "error": true, "code": "local_model_occupied",
+  "message": "Phi-4-mini is loaded. Unload it before starting a conversation on Qwen2.5-Coder-3B.",
+  "data": { "loadedModel": "phi-4-mini-instruct-q4_k_m", "loadedModelName": "Phi-4-mini",
+            "state": "idle", "conversations": [], "othersUsing": 0, "canRelease": true } }
+```
+
+- `state` is `idle` or `loading` (loaded, nobody uses it) or `in_use` (a conversation, or another request, is
+  using it right now). For `in_use` the message says to stop that conversation first; nothing here forces it.
+- `conversations` names only **the caller's own** conversations (`id`, `title`); another person's conversation
+  is only counted in `othersUsing`.
+- `canRelease` is true when the caller may unload a model (`cinqo:platform:manage`) and the model is not in use.
+- To unload an idle model and go on in **one** call, send `"releaseLoadedModel": true` with the same request
+  (create, send message, retry). A caller without `cinqo:platform:manage` gets `403`; a model in use is still
+  the `409`. Without the field nothing is ever unloaded for you.
+- The message is a sentence fit to show a person as it is; a tool that does not read `code` and `data` can just
+  show it.
+
 ## Publishing a repository
 
 ```

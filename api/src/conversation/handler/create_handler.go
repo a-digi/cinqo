@@ -49,6 +49,9 @@ type createConversationRequest struct {
 	// CompactToolResults (plan/ai/conversation/step-45, step 3) — optional, default false: the tool loop folds old bulky tool results,
 	// answers a repeated read-only call in one line and warns two rounds before the budget ends. Direct mode only.
 	CompactToolResults bool `json:"compactToolResults"`
+	// ReleaseLoadedModel (plan/ai/conversation/step-241) — optional, default false: when a platform has another model loaded that nobody uses, unload it
+	// and go on, in one call. Never forced: a model in use is still a 409. Needs the permission to manage the AI platforms.
+	ReleaseLoadedModel bool `json:"releaseLoadedModel"`
 }
 
 // CreateHandler handles POST /api/v1/conversations. title defaults to
@@ -166,6 +169,17 @@ func CreateHandler(reqCtx request.RequestContext) {
 	userID, err := callerUserID(reqCtx)
 	if err != nil {
 		response.ErrorResponse(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	// A new conversation on a local model must not silently displace another model that is loaded (plan/ai/conversation/step-241).
+	scopes, err := callerScopes(reqCtx)
+	if err != nil {
+		response.ErrorResponse(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	if status, occupied := occupiedAnswer(entry, model, userID, scopes, body.ReleaseLoadedModel); occupied != nil {
+		writeOccupied(w, status, occupied)
 		return
 	}
 

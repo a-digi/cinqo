@@ -22,6 +22,8 @@ type Deps struct {
 	Downloads *download.Manager
 	// DataDir is the application's data directory; everything the module downloads lives under <DataDir>/local-ai.
 	DataDir string
+	// RunningTurns says which conversations of this platform have a turn under way, with the model each uses (plan 241); nil: none is known.
+	RunningTurns func() []RunningTurn
 }
 
 // modelHost says whether a host may serve a model file: Hugging Face and the content hosts it redirects to (a.hf.co).

@@ -208,6 +208,8 @@ export async function createConversation(input: {
   platformId: string
   model?: string
   orchestrationMode?: OrchestrationMode
+  // Unload another local model nobody is using, then create (plan/ai/conversation/step-241): without it a loaded other model is a 409.
+  releaseLoadedModel?: boolean
 }): Promise<Conversation> {
   const raw = await apiPost<{ message: Conversation }>('/api/v1/conversations', input)
   return raw.message

@@ -168,3 +168,35 @@ func (r *TurnRunQueryRepo) FindAllRunning() ([]*conversation_entity.TurnRun, err
 	}
 	return out, rows.Err()
 }
+
+// RunningTurn is a turn under way and the conversation it belongs to.
+type RunningTurn struct {
+	ConversationID string
+	Title          string
+	UserID         string
+	Model          string
+}
+
+// FindRunningOnPlatform returns the turns still marked "running" whose conversation uses the platform, with the conversation's title, owner and
+// model. The local AI asks it which conversations are using the loaded model (a running turn is the reliable sign: between two requests of one
+// turn's tool loop the model program is momentarily idle).
+func (r *TurnRunQueryRepo) FindRunningOnPlatform(platformID string) ([]RunningTurn, error) {
+	rows, err := r.db.Query(`SELECT c.id, c.title, c.user_id, c.model
+		FROM turn_runs t JOIN conversations c ON c.id = t.conversation_id
+		WHERE t.status = 'running' AND c.platform_id = ?
+		ORDER BY t.started_at`, platformID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]RunningTurn, 0)
+	for rows.Next() {
+		var t RunningTurn
+		if err := rows.Scan(&t.ConversationID, &t.Title, &t.UserID, &t.Model); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}

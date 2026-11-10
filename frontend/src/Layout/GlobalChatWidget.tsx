@@ -7,6 +7,8 @@ import type { Conversation, OrchestrationMode } from '../api/conversations'
 import { conversationPath } from '../Components/Conversation/conversationPaths'
 import { setToolConversationOpener } from '../config/tools/toolConversationOpener'
 import { useConfirm } from '../Shared/Components/Modal/useConfirm'
+import { startWithOccupiedCheck } from '../Components/Conversation/occupiedRules'
+import { useOccupiedDialog } from '../Components/Conversation/useOccupiedDialog'
 import { IconButton } from '../Shared/Components/IconButton/IconButton'
 import { TrashIcon } from '../Shared/Components/IconButton/icons'
 import { LoadingSpinner } from '../Shared/Components/Loading/LoadingSpinner'
@@ -59,6 +61,7 @@ export function GlobalChatWidget() {
   const turnSubAgents = watch?.subAgents ?? []
   const turnPlan = watch?.plan ?? []
   const { confirm, dialog } = useConfirm()
+  const { ask: askOccupied, dialog: occupiedDialog } = useOccupiedDialog()
   const [busyId, setBusyId] = useState<string | null>(null)
 
   // showList/creatingNew (step 18) are local to the widget, not the
@@ -126,7 +129,12 @@ export function GlobalChatWidget() {
 
   async function handleCreate(input: { platformId: string; model?: string; orchestrationMode: OrchestrationMode }) {
     try {
-      await createConversation(input)
+      // Another local model that is loaded is told to the person first, who may unload it and go on (plan/ai/conversation/step-241).
+      const created = await startWithOccupiedCheck(
+        (release) => createConversation(release ? { ...input, releaseLoadedModel: true } : input),
+        askOccupied,
+      )
+      if (created === undefined) return
       setCreatingNew(false)
     } catch {
       // createConversation already surfaces its own failure via the
@@ -169,6 +177,7 @@ export function GlobalChatWidget() {
           </button>
         </div>
         {dialog}
+        {occupiedDialog}
       </>
     )
   }
@@ -286,6 +295,7 @@ export function GlobalChatWidget() {
         </div>
       </div>
       {dialog}
+      {occupiedDialog}
     </>
   )
 }
