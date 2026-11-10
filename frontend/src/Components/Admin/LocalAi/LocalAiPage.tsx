@@ -20,6 +20,7 @@ import {
   type LocalAiTestResult,
 } from './localAiApi'
 import { hasDownloadedFiles, isDownloading, removeModelMessage, suggestionConfirmMessage } from './localAiFormat'
+import { usePlatforms } from '../../../config/platforms/PlatformsContext'
 import { useResources } from '../../../Layout/useResources'
 import { LocalAiForm } from './LocalAiForm'
 import { draftOf, hasProblems, isDirty, problemsOf, toUpdate, type Draft } from './localAiRules'
@@ -48,6 +49,12 @@ export function LocalAiPage() {
   const [testError, setTestError] = useState('')
   const { confirm, dialog } = useConfirm()
   const resources = useResources()
+  // The shared list of AI platforms (plan 243): told whenever something happens that can add or remove a model the chats may use (the list a chat reads
+  // holds the models that are ready right now).
+  const { notifyChanged } = usePlatforms()
+  const localAiChanged = useCallback(() => {
+    notifyChanged('local-ai')
+  }, [notifyChanged])
   const freeBytes = resources.kind === 'ready' ? resources.resources.memory.availableBytes : null
 
   useEffect(() => {
@@ -104,6 +111,7 @@ export function LocalAiPage() {
     startInstall(modelId)
       .then((response) => {
         setData(response)
+        localAiChanged()
       })
       .catch((err: unknown) => {
         setInstallError(messageOf(err))
@@ -123,6 +131,7 @@ export function LocalAiPage() {
       .finally(() => {
         setInstallBusy(false)
         refresh()
+        localAiChanged()
       })
   }
 
@@ -130,8 +139,9 @@ export function LocalAiPage() {
     (key: string, d: Download | null) => {
       if (d?.state === 'failed') setFailures((prev) => ({ ...prev, [key]: d }))
       refresh()
+      localAiChanged()
     },
-    [refresh],
+    [refresh, localAiChanged],
   )
 
   function removeAll() {
@@ -146,6 +156,7 @@ export function LocalAiPage() {
         .then(() => {
           setFailures({})
           refresh()
+          localAiChanged()
         })
         .catch((err: unknown) => {
           setInstallError(messageOf(err))
@@ -164,7 +175,10 @@ export function LocalAiPage() {
       setInstallError('')
       setInstallBusy(true)
       confirmSuggestion(s.id)
-        .then(setData)
+        .then((response) => {
+          setData(response)
+          localAiChanged()
+        })
         .catch((err: unknown) => {
           setInstallError(messageOf(err))
           refresh()
@@ -179,7 +193,10 @@ export function LocalAiPage() {
     setInstallError('')
     setInstallBusy(true)
     dismissSuggestion(s.id)
-      .then(refresh)
+      .then(() => {
+        refresh()
+        localAiChanged()
+      })
       .catch((err: unknown) => {
         setInstallError(messageOf(err))
       })
@@ -194,7 +211,10 @@ export function LocalAiPage() {
       setInstallError('')
       setInstallBusy(true)
       removeAddedModel(m.id)
-        .then(setData)
+        .then((response) => {
+          setData(response)
+          localAiChanged()
+        })
         .catch((err: unknown) => {
           setInstallError(messageOf(err))
         })
@@ -215,6 +235,7 @@ export function LocalAiPage() {
         setData(response)
         setDraft(draftOf(response.settings))
         setJustSaved(true)
+        localAiChanged()
       })
       .catch((err: unknown) => {
         setSaveError(messageOf(err))

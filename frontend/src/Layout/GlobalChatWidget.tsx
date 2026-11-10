@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useConversationContext } from '../config/conversation/ConversationContext'
-import { fetchPlatforms, type Platform } from '../api/platforms'
-import { ApiError } from '../api/client'
+import { usePlatforms } from '../config/platforms/PlatformsContext'
+import type { Platform } from '../api/platforms'
 import type { Conversation, OrchestrationMode } from '../api/conversations'
 import { conversationPath } from '../Components/Conversation/conversationPaths'
 import { setToolConversationOpener } from '../config/tools/toolConversationOpener'
@@ -16,6 +16,9 @@ import { MessageThread } from '../Components/Conversation/MessageThread'
 import { MessageComposer } from '../Components/Conversation/MessageComposer'
 import { NewConversationForm } from '../Components/Conversation/NewConversationForm'
 import { TurnStatusBadge } from '../Components/Conversation/TurnStatusBadge'
+
+// What the widget works with until the first read of the platforms has worked.
+const NO_PLATFORMS: Platform[] = []
 
 // Floating bottom-right chat widget, mounted once in Layout.tsx so it
 // persists across every authenticated route (not just /conversations).
@@ -71,16 +74,9 @@ export function GlobalChatWidget() {
   // (step-18's own open question 3, resolved in favor of list-first).
   const [showList, setShowList] = useState(!selectedId)
   const [creatingNew, setCreatingNew] = useState(false)
-  const [platforms, setPlatforms] = useState<Platform[]>([])
-  const [platformsError, setPlatformsError] = useState<string | null>(null)
-
-  useEffect(() => {
-    fetchPlatforms()
-      .then(setPlatforms)
-      .catch((err: unknown) => {
-        setPlatformsError(err instanceof ApiError ? err.message : 'Failed to load platforms.')
-      })
-  }, [])
+  // The shared list of AI platforms (plan 243): it follows keys and local models that are added or removed, instead of being read once here.
+  const { platforms: sharedPlatforms, error: platformsError } = usePlatforms()
+  const platforms = sharedPlatforms ?? NO_PLATFORMS
 
   // Lets a tool (a separate React root, same page — see
   // config/tools/toolBridge.ts's own openConversation) tell this

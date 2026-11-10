@@ -2,6 +2,7 @@ import { Outlet } from 'react-router-dom'
 import { AuthProvider } from './AuthContext'
 import { ToolRegistryProvider } from '../../config/tools/ToolRegistryContext'
 import { ConversationProvider } from '../../config/conversation/ConversationContext'
+import { PlatformsProvider } from '../../config/platforms/PlatformsContext'
 
 // Pathless layout route wrapping every route that needs a session
 // (/login, /login/callback, and the AuthGuard-protected `/` subtree).
@@ -22,14 +23,17 @@ import { ConversationProvider } from '../../config/conversation/ConversationCont
 // the second — same reasoning, and it must be visible to both
 // ConversationPage (rendered under Layout's own Outlet) and, from
 // step-17, the floating widget mounted directly in Layout — the only
-// placement visible to both.
+// placement visible to both. PlatformsProvider (plan/ai/frontend/step-243) is the third: the one list of AI platforms both read, so a key or a local model
+// added or removed shows in both without a reload.
 export function AuthenticatedProviders() {
   return (
     <AuthProvider>
       <ToolRegistryProvider>
-        <ConversationProvider>
-          <Outlet />
-        </ConversationProvider>
+        <PlatformsProvider>
+          <ConversationProvider>
+            <Outlet />
+          </ConversationProvider>
+        </PlatformsProvider>
       </ToolRegistryProvider>
     </AuthProvider>
   )

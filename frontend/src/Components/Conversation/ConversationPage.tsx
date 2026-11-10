@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
 import type { ConversationDetail, OrchestrationMode } from '../../api/conversations'
-import { fetchPlatforms, type Platform } from '../../api/platforms'
+import type { Platform } from '../../api/platforms'
 import { fetchTools, type Tool } from '../../api/tools'
-import { ApiError } from '../../api/client'
 import { useConversationContext } from '../../config/conversation/ConversationContext'
+import { usePlatforms } from '../../config/platforms/PlatformsContext'
 import { LoadingSpinner } from '../../Shared/Components/Loading/LoadingSpinner'
 import { ConversationSidebar } from './ConversationSidebar'
 import { MessageThread } from './MessageThread'
@@ -67,8 +67,8 @@ export function ConversationPage() {
   const turnTotalTokens = watch?.totalTokens ?? 0
   const turnSubAgents = watch?.subAgents ?? []
   const turnPlan = watch?.plan ?? []
-  const [platforms, setPlatforms] = useState<Platform[] | null>(null)
-  const [platformsError, setPlatformsError] = useState<string | null>(null)
+  // The shared list of AI platforms (plan 243): it follows keys and local models that are added or removed, instead of being read once here.
+  const { platforms, error: platformsError } = usePlatforms()
   const [busyId, setBusyId] = useState<string | null>(null)
   const { ask: askOccupied, dialog: occupiedDialog } = useOccupiedDialog()
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
@@ -104,11 +104,6 @@ export function ConversationPage() {
   }, [routeId, selectedId, creatingNew, busyId, error, detail, navigate])
 
   useEffect(() => {
-    fetchPlatforms()
-      .then(setPlatforms)
-      .catch((err: unknown) => {
-        setPlatformsError(err instanceof ApiError ? err.message : 'Failed to load platforms.')
-      })
     fetchTools()
       .then(setTools)
       .catch(() => {

@@ -14,6 +14,7 @@ import { ScopeGate } from '../../../Shared/Components/Access/ScopeGate'
 import { useConfirm } from '../../../Shared/Components/Modal/useConfirm'
 import { Dropdown } from '../../../Shared/Components/Dropdown/Dropdown'
 import { AppScopes } from '../../../config/security/scopes'
+import { usePlatforms } from '../../../config/platforms/PlatformsContext'
 
 // Admin-only view of registered AI platforms and their API keys
 // (api/src/platform) — see
@@ -30,6 +31,8 @@ export function PlatformKeysPage() {
   const [searchParams] = useSearchParams()
   const [platform, setPlatform] = useState(() => searchParams.get('platform') ?? '')
   const { confirm, dialog } = useConfirm()
+  // The shared list of AI platforms (plan 243): told when a key was added or removed, so the chats follow without a reload.
+  const { notifyChanged } = usePlatforms()
 
   const load = () => {
     setError(null)
@@ -57,6 +60,7 @@ export function PlatformKeysPage() {
     try {
       await deletePlatformKey(key.id)
       setKeys((prev) => (prev ? prev.filter((k) => k.id !== key.id) : prev))
+      notifyChanged('keys')
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to delete key.')
     } finally {
@@ -137,6 +141,7 @@ export function PlatformKeysPage() {
           onPlatformChange={setPlatform}
           onCreated={(key) => {
             setKeys((prev) => (prev ? [key, ...prev] : [key]))
+            notifyChanged('keys')
           }}
           onError={(message) => {
             setError(message)
