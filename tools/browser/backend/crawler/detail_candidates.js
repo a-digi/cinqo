@@ -13,6 +13,8 @@
   var MAX_LD_BLOCKS = 20;
   var MAX_LD_BYTES = 400000;
   var truncated = false;
+  // plan 249: with the view on, the pickable elements are numbered (data-cinqo-e) for the page copy the person clicks in. The Go side swaps the literal.
+  var VIEW = /*__VIEW__*/false;
 
   var SKIP = /^(script|style|noscript|template|svg|path|meta|link|html|head|iframe|object|embed|canvas|img|picture|video|audio|source|track)$/i;
   var norm = function (s) { return (s || "").replace(/\s+/g, " ").trim(); };
@@ -255,5 +257,30 @@
   }
   if (elements.length >= MAX_ELEMENTS) truncated = true;
 
-  return JSON.stringify({ candidates: result, structured: structured, elements: elements, pageTextChars: pageText, truncated: truncated });
+  // ---- the elements of the page copy: every element with text, numbered, each with the selector that is verified on this page
+  var viewElements = [];
+  if (VIEW) {
+    var MAX_VIEW = 2000;
+    var MAX_VIEW_CHARS = 50000;
+    var VIEW_BUDGET_MS = 4000;
+    var t0 = Date.now();
+    // a page may carry numbers of its own: they go, so every number in the copy is ours
+    Array.prototype.forEach.call(document.querySelectorAll("[data-cinqo-e]"), function (x) { x.removeAttribute("data-cinqo-e"); });
+    for (var v = 0; v < all.length && viewElements.length < MAX_VIEW; v++) {
+      if (Date.now() - t0 > VIEW_BUDGET_MS) { truncated = true; break; }
+      var ve = all[v];
+      if (furnitureOf(ve) === "consent") continue;
+      var vt = textOf(ve);
+      if (vt.length === 0 || vt.length > MAX_VIEW_CHARS) continue;
+      var vs = selectorOf(ve);
+      var vn = viewElements.length + 1;
+      ve.setAttribute("data-cinqo-e", String(vn));
+      var item = { n: vn, selector: vs.s, unique: vs.unique, tag: ve.tagName.toLowerCase(), chars: vt.length, text: vt.slice(0, 80) };
+      if (ve.hasAttribute("datetime")) item.attribute = "datetime";
+      viewElements.push(item);
+    }
+    if (viewElements.length >= MAX_VIEW) truncated = true;
+  }
+
+  return JSON.stringify({ candidates: result, structured: structured, elements: elements, viewElements: viewElements, pageTextChars: pageText, truncated: truncated });
 })()

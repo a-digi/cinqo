@@ -31,6 +31,14 @@ import (
 //go:embed detail_candidates.js
 var detailCandidatesJS string
 
+// detailCandidatesScript is the analysis script; with view true the pickable elements are numbered for the page copy (plan 249).
+func detailCandidatesScript(view bool) string {
+	if !view {
+		return detailCandidatesJS
+	}
+	return strings.Replace(detailCandidatesJS, "/*__VIEW__*/false", "true", 1)
+}
+
 // The bounds on what one page may return.
 const (
 	maxDetailCandidates = 8
@@ -39,6 +47,10 @@ const (
 	maxDetailSelector   = 300
 	maxDetailJobs       = 3
 	maxDetailJSONBytes  = 4 << 20
+	// The page copy (plan 249): how many elements are numbered, how long their text preview is, the largest number the copy may carry (five digits).
+	maxDetailViewElements = 2000
+	maxDetailViewText     = 80
+	maxDetailViewNumber   = 99999
 )
 
 type detailFurniture struct {
@@ -105,6 +117,18 @@ type detailElement struct {
 	Chars    int    `json:"chars"`
 }
 
+// detailViewElement is one element of the page copy the person clicks in (plan 249): its number (data-cinqo-e in the copy), the selector that is
+// verified on the live page, its tag, how much text it holds and the start of it, and the attribute that holds a machine date when it has one.
+type detailViewElement struct {
+	N         int    `json:"n"`
+	Selector  string `json:"selector"`
+	Unique    bool   `json:"unique"`
+	Tag       string `json:"tag"`
+	Chars     int    `json:"chars"`
+	Text      string `json:"text"`
+	Attribute string `json:"attribute,omitempty"`
+}
+
 type detailCandidateSet struct {
 	Title       []detailCandidate `json:"title"`
 	Company     []detailCandidate `json:"company"`
@@ -121,6 +145,11 @@ type fetchDetailCandidatesResponse struct {
 	Elements      []detailElement    `json:"elements"`
 	PageTextChars int                `json:"pageTextChars"`
 	Truncated     bool               `json:"truncated"`
+	// ViewElements, Snapshot and SnapshotError (plan 249): only when a page copy was asked for. The copy numbers these elements (data-cinqo-e), so a click
+	// in it is a selector; a failed copy never fails the analysis (SnapshotError says why).
+	ViewElements  []detailViewElement `json:"viewElements,omitempty"`
+	Snapshot      *snapshotInfo       `json:"snapshot,omitempty"`
+	SnapshotError string              `json:"snapshotError,omitempty"`
 }
 
 // cleanDetailText bounds a string from the page: no control characters, at most n runes.
@@ -241,7 +270,35 @@ func clampDetailCandidates(in fetchDetailCandidatesResponse) fetchDetailCandidat
 		}
 		out.Elements = append(out.Elements, detailElement{Selector: sel, Unique: e.Unique, Tag: cleanDetailText(e.Tag, 20), Text: cleanDetailText(e.Text, maxDetailText), Chars: nonNeg(e.Chars)})
 	}
+	out.ViewElements = clampViewElements(in.ViewElements, &truncated)
 	out.Truncated = truncated
+	return out
+}
+
+// clampViewElements bounds the numbered elements a page returned: a number is 1 to 99999 and used once, a selector is storable, the attribute is one of the
+// known machine-date attributes.
+func clampViewElements(in []detailViewElement, truncated *bool) []detailViewElement {
+	var out []detailViewElement
+	seen := map[int]bool{}
+	for _, e := range in {
+		if len(out) >= maxDetailViewElements {
+			*truncated = true
+			break
+		}
+		if e.N < 1 || e.N > maxDetailViewNumber || seen[e.N] {
+			continue
+		}
+		sel := cleanDetailText(e.Selector, maxDetailSelector+1)
+		if sel == "" || utf8.RuneCountInString(sel) > maxDetailSelector {
+			continue
+		}
+		attr := ""
+		if e.Attribute == "datetime" {
+			attr = e.Attribute
+		}
+		seen[e.N] = true
+		out = append(out, detailViewElement{N: e.N, Selector: sel, Unique: e.Unique, Tag: cleanDetailText(e.Tag, 20), Chars: nonNeg(e.Chars), Text: cleanDetailText(e.Text, maxDetailViewText), Attribute: attr})
+	}
 	return out
 }
 
@@ -277,7 +334,8 @@ func fetchDetailCandidatesWithKatana(ctx context.Context, rawURL, requestID stri
 		if rerr := refuseRedirectToPrivate(rawURL, finalURL); rerr != nil {
 			return fetchDetailCandidatesResponse{}, rerr
 		}
-		listJSON, err := rodEvalString(p, detailCandidatesJS)
+		withView := wantsSnapshot(ctx)
+		listJSON, err := rodEvalString(p, detailCandidatesScript(withView))
 		if err != nil {
 			return fetchDetailCandidatesResponse{}, fmt.Errorf("katana: failed to analyse the page: %w", err)
 		}
@@ -287,6 +345,15 @@ func fetchDetailCandidatesWithKatana(ctx context.Context, rawURL, requestID stri
 		}
 		res.FinalURL = finalURL
 		res.Title = cleanDetailText(title, maxDetailText)
+		if withView {
+			// Never fails the analysis: the suggestions are good without the picture.
+			if info, serr := snapshotLivePage(p, ctx, rawURL, finalURL, title); serr != nil {
+				res.SnapshotError = serr.Error()
+				res.ViewElements = nil
+			} else {
+				res.Snapshot = &info
+			}
+		}
 		return res, nil
 	})
 }
@@ -303,6 +370,8 @@ type fetchDetailCandidatesRequest struct {
 	LoginSessionID string `json:"loginSessionId,omitempty"`
 	// Attended (plan 198): a person started this and is watching, so a check only they can clear may open the Katana window. Never set by an AI tool on its own.
 	Attended bool `json:"attended,omitempty"`
+	// Snapshot (plan 249): also keep a sanitised copy of the page, with its elements numbered, for the picker to show.
+	Snapshot bool `json:"snapshot,omitempty"`
 }
 
 // FetchDetailCandidatesHandler handles POST /fetch-detail-candidates.
@@ -315,7 +384,7 @@ func FetchDetailCandidatesHandler(w http.ResponseWriter, r *http.Request) {
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&body); err != nil || strings.TrimSpace(body.URL) == "" {
-		http.Error(w, "url is required (and only url, requestId, rateLimitKey, loginSessionId and attended are accepted)", http.StatusBadRequest)
+		http.Error(w, "url is required (and only url, requestId, rateLimitKey, loginSessionId, snapshot and attended are accepted)", http.StatusBadRequest)
 		return
 	}
 	if err := checkLoginSessionID(body.LoginSessionID); err != nil {
@@ -327,7 +396,7 @@ func FetchDetailCandidatesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, cancel := context.WithCancel(withAttended(withLoginSession(r.Context(), body.LoginSessionID), body.Attended))
+	ctx, cancel := context.WithCancel(withSnapshot(withAttended(withLoginSession(r.Context(), body.LoginSessionID), body.Attended), body.Snapshot))
 	registerCrawlCancel(body.RequestID, cancel)
 	defer func() {
 		unregisterCrawlCancel(body.RequestID)

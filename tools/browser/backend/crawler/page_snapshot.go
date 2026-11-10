@@ -128,6 +128,19 @@ var droppedAttributes = map[string]bool{
 	"data-href": true, "loading": true, "referrerpolicy": true, "crossorigin": true,
 }
 
+// isViewNumber says whether v is a number the page copy may carry on an element: one to five digits, no sign, no leading zero.
+func isViewNumber(v string) bool {
+	if len(v) < 1 || len(v) > 5 || v[0] == '0' {
+		return false
+	}
+	for _, r := range v {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 func attrIndex(n *html.Node, key string) int {
 	for i, a := range n.Attr {
 		if a.Namespace == "" && a.Key == key {
@@ -183,7 +196,8 @@ func cleanElement(n *html.Node, base *url.URL) {
 		case strings.HasPrefix(key, "on"), droppedAttributes[key]:
 			continue
 		case strings.HasPrefix(key, "data-cinqo-"):
-			if !(key == "data-cinqo-a" && n.DataAtom == atom.A) {
+			// the number of a link (data-cinqo-a, anchors only) and the number of a pickable element (data-cinqo-e, any element, 1 to 5 digits): ours only
+			if !(key == "data-cinqo-a" && n.DataAtom == atom.A) && !(key == "data-cinqo-e" && isViewNumber(a.Val)) {
 				continue
 			}
 		}
