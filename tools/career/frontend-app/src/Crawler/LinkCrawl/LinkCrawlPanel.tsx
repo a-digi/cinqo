@@ -610,7 +610,7 @@ export function LinkCrawlPanel({ link, onReload }: { link: PortalLink; onReload:
           {page && marks.picked.length > 0 && (
             <>
               <InstructionSection
-                number={3}
+                number={marks.pages.length > 0 ? 3 : 2}
                 title="The partial URL of the jobs"
                 description="The address pattern the job links share, and the links to leave out."
               >
@@ -655,7 +655,7 @@ export function LinkCrawlPanel({ link, onReload }: { link: PortalLink; onReload:
                 )}
               </InstructionSection>
               <InstructionSection
-                number={4}
+                number={marks.pages.length > 0 ? 4 : 3}
                 title="Check and save"
                 description="See what the rule finds on this page, test it on the page, then save it."
               >

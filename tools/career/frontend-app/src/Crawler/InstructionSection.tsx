@@ -25,7 +25,7 @@ export function InstructionSection({
         <div className="min-w-0 flex-1">
           <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
           {description !== undefined && <p className="mt-0.5 text-xs text-gray-500">{description}</p>}
-          <div className="mt-4 space-y-3 text-sm text-gray-800">{children}</div>
+          <div className="mt-4 space-y-3 text-sm text-gray-800 [&_input]:accent-gray-900">{children}</div>
         </div>
       </div>
     </section>
