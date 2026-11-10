@@ -27,6 +27,41 @@ import {
   SKILLS_PATH,
 } from './paths'
 
+import {
+  aiSettingsIcon,
+  applicationsIcon,
+  companiesIcon,
+  contactsGuideIcon,
+  contactsIcon,
+  coursesIcon,
+  crawlMonitorIcon,
+  cvDocumentsIcon,
+  cvIcon,
+  educationIcon,
+  experienceIcon,
+  findingJobsIcon,
+  gettingStartedIcon,
+  goalsIcon,
+  hobbiesIcon,
+  importIcon,
+  jobCleanupIcon,
+  jobCrawlerIcon,
+  jobsGroupIcon,
+  jobsIcon,
+  languagesIcon,
+  myProfileIcon,
+  personasIcon,
+  platformsGroupIcon,
+  platformsIcon,
+  profilesIcon,
+  qaIcon,
+  questionsIcon,
+  recruitersIcon,
+  settingsIcon,
+  skillsIcon,
+  summaryIcon,
+} from './menuIcons'
+
 // The bridge's own menu-entry type (its interface is local to the d.ts file).
 type MenuEntry = Parameters<Window['__cinqoToolBridge']['registerMenuEntry']>[0]
 
@@ -46,71 +81,78 @@ export const careerMenuEntry: MenuEntry = {
   children: [
     {
       label: 'My Profile',
+      icon: myProfileIcon,
       children: [
-        { label: 'Profiles', path: PROFILES_PATH, scopes: ['tool:career:profile'] },
-        { label: 'Personas', path: PERSONAS_PATH, scopes: ['tool:career:profile'] },
-        { label: 'Summary', path: PERSONA_DETAILS_PATH, scopes: ['tool:career:profile'] },
-        { label: 'Goals', path: GOALS_PATH, scopes: ['tool:career:profile'] },
-        { label: 'Skills', path: SKILLS_PATH, scopes: ['tool:career:profile'] },
-        { label: 'Experience', path: EXPERIENCE_PATH, scopes: ['tool:career:profile'] },
-        { label: 'Education', path: EDUCATION_PATH, scopes: ['tool:career:profile'] },
-        { label: 'Languages', path: LANGUAGES_PATH, scopes: ['tool:career:profile'] },
-        { label: 'Courses', path: COURSES_PATH, scopes: ['tool:career:profile'] },
-        { label: 'Hobbies', path: HOBBIES_PATH, scopes: ['tool:career:profile'] },
+        { label: 'Profiles', path: PROFILES_PATH, scopes: ['tool:career:profile'], icon: profilesIcon },
+        { label: 'Personas', path: PERSONAS_PATH, scopes: ['tool:career:profile'], icon: personasIcon },
+        { label: 'Summary', path: PERSONA_DETAILS_PATH, scopes: ['tool:career:profile'], icon: summaryIcon },
+        { label: 'Goals', path: GOALS_PATH, scopes: ['tool:career:profile'], icon: goalsIcon },
+        { label: 'Skills', path: SKILLS_PATH, scopes: ['tool:career:profile'], icon: skillsIcon },
+        { label: 'Experience', path: EXPERIENCE_PATH, scopes: ['tool:career:profile'], icon: experienceIcon },
+        { label: 'Education', path: EDUCATION_PATH, scopes: ['tool:career:profile'], icon: educationIcon },
+        { label: 'Languages', path: LANGUAGES_PATH, scopes: ['tool:career:profile'], icon: languagesIcon },
+        { label: 'Courses', path: COURSES_PATH, scopes: ['tool:career:profile'], icon: coursesIcon },
+        { label: 'Hobbies', path: HOBBIES_PATH, scopes: ['tool:career:profile'], icon: hobbiesIcon },
       ],
     },
     {
       label: 'CV',
+      icon: cvIcon,
       children: [
         // Your CVs, built from a persona.
-        { label: 'CVs', path: CV_DOCUMENTS_PATH, scopes: ['tool:career:cv_documents'] },
+        { label: 'CVs', path: CV_DOCUMENTS_PATH, scopes: ['tool:career:cv_documents'], icon: cvDocumentsIcon },
         // Reads a CV into the profile, persona, skills, experience and education (the page is still headed "Import from CV").
-        { label: 'Import', path: IMPORT_CV_PATH, scopes: ['tool:career:cv_import'] },
+        { label: 'Import', path: IMPORT_CV_PATH, scopes: ['tool:career:cv_import'], icon: importIcon },
       ],
     },
     {
       label: 'Jobs',
+      icon: jobsGroupIcon,
       children: [
-        { label: 'Jobs', path: JOBS_PATH, scopes: ['tool:career:jobs'] },
-        { label: 'Applications', path: APPLICATIONS_PATH, scopes: ['tool:career:jobs'] },
+        { label: 'Jobs', path: JOBS_PATH, scopes: ['tool:career:jobs'], icon: jobsIcon },
+        { label: 'Applications', path: APPLICATIONS_PATH, scopes: ['tool:career:jobs'], icon: applicationsIcon },
         {
           // The job portals the jobs are crawled from (formerly "Job Sources").
           label: 'Platforms',
+          icon: platformsGroupIcon,
           children: [
-            { label: 'Platforms', path: PLATFORMS_PATH, scopes: ['tool:career:portals'] },
-            { label: 'Crawl Monitor', path: CRAWL_MONITOR_PATH, scopes: ['tool:career:portals'] },
+            { label: 'Platforms', path: PLATFORMS_PATH, scopes: ['tool:career:portals'], icon: platformsIcon },
+            { label: 'Crawl Monitor', path: CRAWL_MONITOR_PATH, scopes: ['tool:career:portals'], icon: crawlMonitorIcon },
           ],
         },
         {
           label: 'Contacts',
+          icon: contactsIcon,
           children: [
-            { label: 'Companies', path: COMPANIES_PATH, scopes: ['tool:career:companies'] },
-            { label: 'Recruiters', path: RECRUITERS_PATH, scopes: ['tool:career:companies'] },
+            { label: 'Companies', path: COMPANIES_PATH, scopes: ['tool:career:companies'], icon: companiesIcon },
+            { label: 'Recruiters', path: RECRUITERS_PATH, scopes: ['tool:career:companies'], icon: recruitersIcon },
           ],
         },
       ],
     },
     {
       label: 'Settings',
+      icon: settingsIcon,
       children: [
         // The AI platform and model every Career feature uses (crawling, Job Match, CVs).
-        { label: 'AI', path: SETTINGS_PATH, scopes: ['tool:career:jobs'] },
+        { label: 'AI', path: SETTINGS_PATH, scopes: ['tool:career:jobs'], icon: aiSettingsIcon },
         // Delete old jobs and jobs that match no profile, by hand or on a schedule.
-        { label: 'Job cleanup', path: CLEANUP_SETTINGS_PATH, scopes: ['tool:career:jobs'] },
+        { label: 'Job cleanup', path: CLEANUP_SETTINGS_PATH, scopes: ['tool:career:jobs'], icon: jobCleanupIcon },
         // Which jobs the crawler must not insert (Ignore jobs).
-        { label: 'Job crawler', path: CRAWLER_SETTINGS_PATH, scopes: ['tool:career:jobs'] },
+        { label: 'Job crawler', path: CRAWLER_SETTINGS_PATH, scopes: ['tool:career:jobs'], icon: jobCrawlerIcon },
       ],
     },
     {
       // Onboarding (plan 170): text pages that explain how to use the tool. No scopes: they call nothing, so everyone who sees the
       // Career menu sees them.
       label: 'Q&A',
+      icon: qaIcon,
       children: [
-        { label: 'Getting started', path: GUIDE_PATH },
-        { label: 'Profile & CV', path: GUIDE_PROFILE_PATH },
-        { label: 'Finding jobs', path: GUIDE_JOBS_PATH },
-        { label: 'Companies & recruiters', path: GUIDE_CONTACTS_PATH },
-        { label: 'Questions', path: FAQ_PATH },
+        { label: 'Getting started', path: GUIDE_PATH, icon: gettingStartedIcon },
+        { label: 'Profile & CV', path: GUIDE_PROFILE_PATH, icon: cvIcon },
+        { label: 'Finding jobs', path: GUIDE_JOBS_PATH, icon: findingJobsIcon },
+        { label: 'Companies & recruiters', path: GUIDE_CONTACTS_PATH, icon: contactsGuideIcon },
+        { label: 'Questions', path: FAQ_PATH, icon: questionsIcon },
       ],
     },
   ],

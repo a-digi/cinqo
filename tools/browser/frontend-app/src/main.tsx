@@ -12,6 +12,7 @@ import { CrawlLogsPage } from './CrawlLogsPage'
 import { DebugPage } from './DebugPage'
 import { DomainsPage } from './DomainsPage'
 import { fetchChromeStatus } from './api'
+import { browserEngineIcon, challengesIcon, crawlLogsIcon, debugGroupIcon, debugIcon, domainsIcon } from './menuIcons'
 import './index.css'
 
 const CRAWL_LOGS_PATH = '/tools/browser/crawl-logs'
@@ -36,6 +37,7 @@ const chromeReady: Promise<boolean> = fetchChromeStatus()
 const browserEngineEntry = {
   label: 'Browser & Engine',
   path: BROWSER_ENGINE_PATH,
+  icon: browserEngineIcon,
   // Either existing scope: a user who has only the Login scope still
   // needs the one page that explains why nothing else works without
   // Chrome (menu visibility is "any of" — filterVisible.ts).
@@ -47,10 +49,12 @@ const chromeDependentEntries = [
   {
     // Challenges: the sites that asked for a check only a person can pass.
     label: 'Challenges',
+    icon: challengesIcon,
     children: [
       {
         label: 'Domains',
         path: DOMAINS_PATH,
+        icon: domainsIcon,
         // Step 96 — sites that asked for a check, and clearing them. Same scope as
         // the routes it calls (domains, domains/clear, crawl-cancel).
         scopes: ['tool:browser:crawl'],
@@ -61,10 +65,12 @@ const chromeDependentEntries = [
     // Debug and Crawl Logs are one group: the Debug page controls the logging that
     // fills Crawl Logs, so they sit together under a parent of the same name.
     label: 'Debug',
+    icon: debugGroupIcon,
     children: [
       {
         label: 'Debug',
         path: DEBUG_PATH,
+        icon: debugIcon,
         // Reuses tool:browser:crawl (step 22's own design) — same
         // permission tier as Crawl Logs, which this page's own Debug
         // toggle controls the logging behind.
@@ -73,6 +79,7 @@ const chromeDependentEntries = [
       {
         label: 'Crawl Logs',
         path: CRAWL_LOGS_PATH,
+        icon: crawlLogsIcon,
         // Reuses tool:browser:crawl — the same permission already
         // needed to run a crawl at all (step 17's own design).
         scopes: ['tool:browser:crawl'],

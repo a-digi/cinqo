@@ -2,6 +2,7 @@ import { AppScopes } from '../security/scopes'
 import { localAiMenuEntry } from '../../Components/Admin/LocalAi/menuEntry'
 import { HOW_TO_CONTENT } from '../../Components/Admin/HowTo/HowToContent'
 import { HOW_TO_PAGE_IDS, howToPath } from '../../Components/Admin/HowTo/howToRules'
+import { howToIcons, installedToolsIcon, logsIcon, repositoriesIcon, scopesIcon } from './menuIcons'
 
 export interface MenuEntry {
   label: string
@@ -59,8 +60,8 @@ export const menuEntries: MenuEntry[] = [
     label: 'Tools',
     icon: toolsIcon,
     children: [
-      { label: 'Installed Tools', path: '/admin/tools', scopes: [AppScopes.ToolManage] },
-      { label: 'Repositories', path: '/admin/tool-repositories', scopes: [AppScopes.ToolManage] },
+      { label: 'Installed Tools', path: '/admin/tools', scopes: [AppScopes.ToolManage], icon: installedToolsIcon },
+      { label: 'Repositories', path: '/admin/tool-repositories', scopes: [AppScopes.ToolManage], icon: repositoriesIcon },
     ],
   },
   {
@@ -69,14 +70,14 @@ export const menuEntries: MenuEntry[] = [
     children: [
       { label: 'Remote Platforms', path: '/admin/api-keys', scopes: [AppScopes.PlatformRead], icon: keysIcon },
       localAiMenuEntry,
-      { label: 'Logs', path: '/admin/conversation-logs', scopes: [AppScopes.SuperAdmin] },
+      { label: 'Logs', path: '/admin/conversation-logs', scopes: [AppScopes.SuperAdmin], icon: logsIcon },
       {
         // a group only (no page of its own any more): it opens to show the pages below it
         label: 'How To',
         scopes: [AppScopes.PlatformRead],
         icon: platformsIcon,
         // one landing page per slide of the How To page (plan 219); the labels are the pages' own
-        children: HOW_TO_PAGE_IDS.map((id) => ({ label: HOW_TO_CONTENT[id].label, path: howToPath(id), scopes: [AppScopes.PlatformRead] })),
+        children: HOW_TO_PAGE_IDS.map((id) => ({ label: HOW_TO_CONTENT[id].label, path: howToPath(id), scopes: [AppScopes.PlatformRead], icon: howToIcons[id] })),
       },
     ],
   },
@@ -87,13 +88,7 @@ export const menuEntries: MenuEntry[] = [
       {
         label: 'Security',
         icon: securityIcon,
-        // Deliberately left without its own icon — a real,
-        // deep (depth-3) leaf, both a natural fit (a single scope
-        // list doesn't need its own glyph distinct from its
-        // Security parent) and a live demonstration that an
-        // icon-less entry still aligns correctly (see
-        // SidebarMenuItem's own reserved icon-slot width).
-        children: [{ label: 'Scopes', path: '/admin/security/scopes', scopes: [AppScopes.SuperAdmin] }],
+        children: [{ label: 'Scopes', path: '/admin/security/scopes', scopes: [AppScopes.SuperAdmin], icon: scopesIcon }],
       },
     ],
   },
