@@ -5,12 +5,15 @@ import {
   COMPANIES_PATH,
   CRAWLER_SETTINGS_PATH,
   CRAWL_MONITOR_PATH,
+  COURSES_PATH,
   CV_DOCUMENTS_PATH,
   EDUCATION_PATH,
   EXPERIENCE_PATH,
   GOALS_PATH,
+  HOBBIES_PATH,
   IMPORT_CV_PATH,
   JOBS_PATH,
+  LANGUAGES_PATH,
   PERSONAS_PATH,
   PERSONA_DETAILS_PATH,
   PLATFORMS_PATH,
@@ -79,7 +82,7 @@ export const PROFILE_AND_CV: Guide = {
   id: 'profile-and-cv',
   design: 'cards',
   title: 'Profile & CV',
-  description: 'How to set up who you are and turn it into a CV, in ten steps. The AI reads all of it when it matches jobs and writes CVs.',
+  description: 'How to set up who you are and turn it into a CV, in thirteen steps. The AI reads all of it when it matches jobs and writes CVs.',
   steps: [
     {
       id: 'profile',
@@ -127,8 +130,26 @@ export const PROFILE_AND_CV: Guide = {
     {
       id: 'education',
       title: 'Add the education',
-      text: 'Schools, degrees and courses belong to the profile itself and are shared by all its personas. Add one with Add education; an entry without an end date counts as ongoing.',
+      text: 'Schools and degrees belong to the profile itself and are shared by all its personas. Add one with Add education; an entry without an end date counts as ongoing. Short trainings and certificates go on the Courses page.',
       link: { label: 'Open Education', path: EDUCATION_PATH },
+    },
+    {
+      id: 'languages',
+      title: 'Add your languages',
+      text: 'The languages you speak or write, each with an optional level from C2 down to A1 (or Native). Tick Spoken, Written or both; a language is listed once.',
+      link: { label: 'Open Languages', path: LANGUAGES_PATH },
+    },
+    {
+      id: 'courses',
+      title: 'Add your courses',
+      text: 'Short trainings and certificates, with the provider, the completed date and a link to the certificate if you have one.',
+      link: { label: 'Open Courses', path: COURSES_PATH },
+    },
+    {
+      id: 'hobbies',
+      title: 'Add your hobbies',
+      text: 'What you do outside work, one entry per hobby with an optional description.',
+      link: { label: 'Open Hobbies', path: HOBBIES_PATH },
     },
     {
       id: 'photo',

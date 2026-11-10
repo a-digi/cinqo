@@ -432,6 +432,34 @@ export function EducationIcon({ className }: { className?: string }) {
   )
 }
 
+// Languages: two speech bubbles. Courses: a certificate with a ribbon. Hobbies: a star (what you do for the joy of it).
+export function LanguagesIcon({ className }: { className?: string }) {
+  return (
+    <Glyph className={className}>
+      <path d="M3.5 5.5A1.5 1.5 0 0 1 5 4h8a1.5 1.5 0 0 1 1.5 1.5v5A1.5 1.5 0 0 1 13 12H8.5L5.5 15v-3H5a1.5 1.5 0 0 1-1.5-1.5v-5z" />
+      <path d="M17.5 9H19a1.5 1.5 0 0 1 1.5 1.5v5A1.5 1.5 0 0 1 19 17h-.5v3l-3-3H11a1.5 1.5 0 0 1-1.5-1.5V14" />
+    </Glyph>
+  )
+}
+
+export function CoursesIcon({ className }: { className?: string }) {
+  return (
+    <Glyph className={className}>
+      <rect x="3.5" y="4" width="17" height="12" rx="1.5" />
+      <path d="M7 8.5h10M7 11.5h6" />
+      <path d="m9 16 -1 4.5 3.5-1.8 3.5 1.8-1-4.5" />
+    </Glyph>
+  )
+}
+
+export function HobbiesIcon({ className }: { className?: string }) {
+  return (
+    <Glyph className={className}>
+      <path d="m12 3.8 2.5 5.1 5.6.8-4 4 1 5.6-5.1-2.7-5.1 2.7 1-5.6-4-4 5.6-.8L12 3.8z" />
+    </Glyph>
+  )
+}
+
 export function CameraIcon({ className }: { className?: string }) {
   return (
     <Glyph className={className}>

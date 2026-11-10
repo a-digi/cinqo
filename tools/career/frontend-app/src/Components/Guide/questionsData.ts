@@ -7,6 +7,7 @@ import {
   CRAWLER_SETTINGS_PATH,
   CRAWL_MONITOR_PATH,
   EDUCATION_PATH,
+  LANGUAGES_PATH,
   GOALS_PATH,
   IMPORT_CV_PATH,
   JOBS_PATH,
@@ -125,8 +126,15 @@ export const QUESTIONS: Question[] = [
     id: 'education',
     question: 'Where do I put my education, and do personas use it?',
     answer:
-      'On the Education page. Schools, degrees and courses belong to the profile itself and are shared by all its personas; a persona does not choose among them. An entry without an end date counts as ongoing.',
+      'On the Education page. Schools and degrees belong to the profile itself and are shared by all its personas; a persona does not choose among them. An entry without an end date counts as ongoing. Short trainings and certificates go on the Courses page.',
     link: { label: 'Open Education', path: EDUCATION_PATH },
+  },
+  {
+    id: 'languages-courses-hobbies',
+    question: 'Where do I put my languages, courses and hobbies?',
+    answer:
+      'On their own pages under My Profile: Languages (spoken, written or both, with an optional level from C2 down to A1 or Native), Courses (short trainings and certificates, with an optional certificate link) and Hobbies. Like education, they belong to the profile itself and are shared by all its personas.',
+    link: { label: 'Open Languages', path: LANGUAGES_PATH },
   },
   {
     id: 'import-review',

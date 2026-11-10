@@ -45,6 +45,14 @@ export function skillsPathFor(personaId: string): string {
 // The profile's education (plan 173, step 7): its list, and the add/edit page (an exact path, menu-less).
 export const EDUCATION_PATH = '/tools/career/education'
 export const EDUCATION_ENTRY_PATH = '/tools/career/education/entry'
+
+// The profile's languages, courses and hobbies (plan 231): each a list and an add/edit page (an exact path, menu-less).
+export const LANGUAGES_PATH = '/tools/career/languages'
+export const LANGUAGES_ENTRY_PATH = '/tools/career/languages/entry'
+export const COURSES_PATH = '/tools/career/courses'
+export const COURSES_ENTRY_PATH = '/tools/career/courses/entry'
+export const HOBBIES_PATH = '/tools/career/hobbies'
+export const HOBBIES_ENTRY_PATH = '/tools/career/hobbies/entry'
 export const EXPERIENCE_PATH = '/tools/career/experience'
 // One persona's experience on its own page: a pattern route, the id arrives as the page's route parameter. The
 // add/edit page (EXPERIENCE_ENTRY_PATH, an exact path) wins over it; a persona id is never "entry".

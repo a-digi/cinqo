@@ -24,6 +24,12 @@
 import { GoalsPage } from './Components/GoalsPage/GoalsPage'
 import { EducationEntryPage } from './Components/EducationPage/EducationEntryPage'
 import { EducationPage } from './Components/EducationPage/EducationPage'
+import { LanguagesEntryPage } from './Components/LanguagesPage/LanguagesEntryPage'
+import { LanguagesPage } from './Components/LanguagesPage/LanguagesPage'
+import { CoursesEntryPage } from './Components/CoursesPage/CoursesEntryPage'
+import { CoursesPage } from './Components/CoursesPage/CoursesPage'
+import { HobbiesEntryPage } from './Components/HobbiesPage/HobbiesEntryPage'
+import { HobbiesPage } from './Components/HobbiesPage/HobbiesPage'
 import { runFollower } from './Crawler/runFollowerStart'
 import { createRoot, type Root } from 'react-dom/client'
 import { ProfilesPage } from './Components/ProfilesPage/ProfilesPage'
@@ -101,6 +107,12 @@ import {
   EXPERIENCE_ENTRY_PATH,
   EDUCATION_PATH,
   EDUCATION_ENTRY_PATH,
+  LANGUAGES_PATH,
+  LANGUAGES_ENTRY_PATH,
+  COURSES_PATH,
+  COURSES_ENTRY_PATH,
+  HOBBIES_PATH,
+  HOBBIES_ENTRY_PATH,
   VIEW_COMPANY_PATH,
   VIEW_RECRUITER_PATH,
   VIEW_PROFILE_PATH,
@@ -346,6 +358,54 @@ window.__cinqoToolBridge.registerRoute({
   path: EDUCATION_ENTRY_PATH,
   mount: (container) => {
     mountReact(container, <EducationEntryPage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: LANGUAGES_PATH,
+  mount: (container) => {
+    mountReact(container, <LanguagesPage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: LANGUAGES_ENTRY_PATH,
+  mount: (container) => {
+    mountReact(container, <LanguagesEntryPage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: COURSES_PATH,
+  mount: (container) => {
+    mountReact(container, <CoursesPage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: COURSES_ENTRY_PATH,
+  mount: (container) => {
+    mountReact(container, <CoursesEntryPage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: HOBBIES_PATH,
+  mount: (container) => {
+    mountReact(container, <HobbiesPage />)
+  },
+  unmount: unmountReact,
+})
+
+window.__cinqoToolBridge.registerRoute({
+  path: HOBBIES_ENTRY_PATH,
+  mount: (container) => {
+    mountReact(container, <HobbiesEntryPage />)
   },
   unmount: unmountReact,
 })

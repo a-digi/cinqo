@@ -111,6 +111,9 @@ export type PageTipsId =
   | 'skills'
   | 'experience'
   | 'education'
+  | 'languages'
+  | 'courses'
+  | 'hobbies'
   | 'photo'
   | 'importCv'
   | 'settings'
@@ -613,7 +616,7 @@ export const PAGE_TIPS: Record<PageTipsId, PageTipSet> = {
         title: 'Education belongs to the profile',
         tone: 'blue',
         icon: 'layers',
-        text: 'Schools, degrees and courses are kept once per profile. Personas do not choose among them.',
+        text: 'Schools and degrees are kept once per profile. Personas do not choose among them. Short trainings and certificates go on the Courses page.',
       },
       {
         id: 'add',
@@ -630,6 +633,85 @@ export const PAGE_TIPS: Record<PageTipsId, PageTipSet> = {
         tone: 'amber',
         icon: 'clock',
         text: 'An entry without an end date is shown as still going on, and listed first.',
+      },
+    ],
+  },
+  languages: {
+    name: 'Languages',
+    tips: [
+      {
+        id: 'profile',
+        label: 'Per profile',
+        title: 'Languages belong to the profile',
+        tone: 'blue',
+        icon: 'layers',
+        text: 'The languages you speak or write are kept once per profile. Personas do not choose among them.',
+      },
+      {
+        id: 'add',
+        label: 'Add and edit',
+        title: 'Add a language',
+        tone: 'green',
+        icon: 'plus',
+        text: 'Add language needs a name and at least one of Spoken or Written. Each language is listed once; add it again and it is refused.',
+      },
+      {
+        id: 'level',
+        label: 'Level',
+        title: 'The level is optional',
+        tone: 'amber',
+        icon: 'target',
+        text: 'Pick Native or a level from C2 (proficient) down to A1 (beginner), or leave it as Not given. The best levels are listed first.',
+      },
+    ],
+  },
+  courses: {
+    name: 'Courses',
+    tips: [
+      {
+        id: 'profile',
+        label: 'Per profile',
+        title: 'Courses belong to the profile',
+        tone: 'blue',
+        icon: 'layers',
+        text: 'Short trainings and certificates are kept once per profile. Schools and degrees go on the Education page.',
+      },
+      {
+        id: 'add',
+        label: 'Add and edit',
+        title: 'Add a course',
+        tone: 'green',
+        icon: 'plus',
+        text: 'Add course needs a title; the provider, completed date, certificate link and description are optional. The date is YYYY, YYYY-MM or YYYY-MM-DD.',
+      },
+      {
+        id: 'link',
+        label: 'Certificate',
+        title: 'A link to the certificate',
+        tone: 'amber',
+        icon: 'details',
+        text: 'The certificate link must start with http:// or https://. It shows as a Certificate button that opens in a new tab.',
+      },
+    ],
+  },
+  hobbies: {
+    name: 'Hobbies',
+    tips: [
+      {
+        id: 'profile',
+        label: 'Per profile',
+        title: 'Hobbies belong to the profile',
+        tone: 'blue',
+        icon: 'layers',
+        text: 'What you do outside work is kept once per profile. Personas do not choose among them.',
+      },
+      {
+        id: 'add',
+        label: 'Add and edit',
+        title: 'Add a hobby',
+        tone: 'green',
+        icon: 'plus',
+        text: 'Add hobby needs a name; the description is optional. Each hobby is listed once, by name.',
       },
     ],
   },

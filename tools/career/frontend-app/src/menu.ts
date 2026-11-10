@@ -1,6 +1,7 @@
 import {
   COMPANIES_PATH,
   CRAWL_MONITOR_PATH,
+  COURSES_PATH,
   CV_DOCUMENTS_PATH,
   EDUCATION_PATH,
   EXPERIENCE_PATH,
@@ -9,8 +10,10 @@ import {
   GUIDE_CONTACTS_PATH,
   GUIDE_JOBS_PATH,
   GUIDE_PROFILE_PATH,
+  HOBBIES_PATH,
   IMPORT_CV_PATH,
   JOBS_PATH,
+  LANGUAGES_PATH,
   APPLICATIONS_PATH,
   PERSONAS_PATH,
   GOALS_PATH,
@@ -27,7 +30,8 @@ import {
 // The bridge's own menu-entry type (its interface is local to the d.ts file).
 type MenuEntry = Parameters<Window['__cinqoToolBridge']['registerMenuEntry']>[0]
 
-// The Career tool's sidebar menu: My Profile first (the one-time setup, which everything else works from), then CV (your CVs and the CV
+// The Career tool's sidebar menu: My Profile first (the one-time setup, which everything else works from: its pages end with Education,
+// Languages, Courses and Hobbies, plan 231), then CV (your CVs and the CV
 // import: a group of its own next to the profile they are built from), then Jobs (with the platforms that feed it and the contacts around
 // it: Companies and Recruiters), then Settings and Q&A. A parent is a pure grouping label, never a page of its own, and a group is only
 // shown when at least one of its pages is visible to the user (filterVisible, which works at any depth), so the per-page scopes below are
@@ -50,6 +54,9 @@ export const careerMenuEntry: MenuEntry = {
         { label: 'Skills', path: SKILLS_PATH, scopes: ['tool:career:profile'] },
         { label: 'Experience', path: EXPERIENCE_PATH, scopes: ['tool:career:profile'] },
         { label: 'Education', path: EDUCATION_PATH, scopes: ['tool:career:profile'] },
+        { label: 'Languages', path: LANGUAGES_PATH, scopes: ['tool:career:profile'] },
+        { label: 'Courses', path: COURSES_PATH, scopes: ['tool:career:profile'] },
+        { label: 'Hobbies', path: HOBBIES_PATH, scopes: ['tool:career:profile'] },
       ],
     },
     {

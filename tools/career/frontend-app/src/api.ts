@@ -2917,6 +2917,118 @@ export async function removeEducation(id: string): Promise<void> {
   if (!res.ok && res.status !== 204) await libraryJson<unknown>(res, 'remove the education')
 }
 
+// --- the profile's languages, courses and hobbies (plan 231) ---
+
+export interface Language {
+  id: string
+  profileId: string
+  language: string
+  // '' (not given), 'native', or a CEFR level: 'c2', 'c1', 'b2', 'b1', 'a2', 'a1'.
+  level: string
+  canSpeak: boolean
+  canWrite: boolean
+  createdAt: string
+}
+
+export interface LanguageInput {
+  language: string
+  level: string
+  canSpeak: boolean
+  canWrite: boolean
+}
+
+export async function fetchLanguages(profileId: string): Promise<Language[]> {
+  const res = await fetch(`${PROXY_BASE}/languages?profileId=${encodeURIComponent(profileId)}`, { credentials: 'include' })
+  return (await libraryJson<{ languages: Language[] }>(res, 'load the languages')).languages
+}
+
+export async function addLanguage(profileId: string, entry: LanguageInput): Promise<Language[]> {
+  const res = await fetch(`${PROXY_BASE}/languages`, { method: 'POST', credentials: 'include', body: JSON.stringify({ profileId, ...entry }) })
+  return (await libraryJson<{ languages: Language[] }>(res, 'add the language')).languages
+}
+
+export async function updateLanguage(id: string, entry: Partial<LanguageInput>): Promise<Language[]> {
+  const res = await fetch(`${PROXY_BASE}/languages`, { method: 'PUT', credentials: 'include', body: JSON.stringify({ id, ...entry }) })
+  return (await libraryJson<{ languages: Language[] }>(res, 'update the language')).languages
+}
+
+export async function removeLanguage(id: string): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/languages?id=${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'include' })
+  if (!res.ok && res.status !== 204) await libraryJson<unknown>(res, 'remove the language')
+}
+
+export interface Course {
+  id: string
+  profileId: string
+  title: string
+  provider: string
+  completedDate: string
+  credentialUrl: string
+  description: string
+  createdAt: string
+}
+
+export interface CourseInput {
+  title: string
+  provider: string
+  completedDate: string
+  credentialUrl: string
+  description: string
+}
+
+export async function fetchCourses(profileId: string): Promise<Course[]> {
+  const res = await fetch(`${PROXY_BASE}/courses?profileId=${encodeURIComponent(profileId)}`, { credentials: 'include' })
+  return (await libraryJson<{ courses: Course[] }>(res, 'load the courses')).courses
+}
+
+export async function addCourse(profileId: string, entry: CourseInput): Promise<Course[]> {
+  const res = await fetch(`${PROXY_BASE}/courses`, { method: 'POST', credentials: 'include', body: JSON.stringify({ profileId, ...entry }) })
+  return (await libraryJson<{ courses: Course[] }>(res, 'add the course')).courses
+}
+
+export async function updateCourse(id: string, entry: Partial<CourseInput>): Promise<Course[]> {
+  const res = await fetch(`${PROXY_BASE}/courses`, { method: 'PUT', credentials: 'include', body: JSON.stringify({ id, ...entry }) })
+  return (await libraryJson<{ courses: Course[] }>(res, 'update the course')).courses
+}
+
+export async function removeCourse(id: string): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/courses?id=${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'include' })
+  if (!res.ok && res.status !== 204) await libraryJson<unknown>(res, 'remove the course')
+}
+
+export interface Hobby {
+  id: string
+  profileId: string
+  name: string
+  description: string
+  createdAt: string
+}
+
+export interface HobbyInput {
+  name: string
+  description: string
+}
+
+export async function fetchHobbies(profileId: string): Promise<Hobby[]> {
+  const res = await fetch(`${PROXY_BASE}/hobbies?profileId=${encodeURIComponent(profileId)}`, { credentials: 'include' })
+  return (await libraryJson<{ hobbies: Hobby[] }>(res, 'load the hobbies')).hobbies
+}
+
+export async function addHobby(profileId: string, entry: HobbyInput): Promise<Hobby[]> {
+  const res = await fetch(`${PROXY_BASE}/hobbies`, { method: 'POST', credentials: 'include', body: JSON.stringify({ profileId, ...entry }) })
+  return (await libraryJson<{ hobbies: Hobby[] }>(res, 'add the hobby')).hobbies
+}
+
+export async function updateHobby(id: string, entry: Partial<HobbyInput>): Promise<Hobby[]> {
+  const res = await fetch(`${PROXY_BASE}/hobbies`, { method: 'PUT', credentials: 'include', body: JSON.stringify({ id, ...entry }) })
+  return (await libraryJson<{ hobbies: Hobby[] }>(res, 'update the hobby')).hobbies
+}
+
+export async function removeHobby(id: string): Promise<void> {
+  const res = await fetch(`${PROXY_BASE}/hobbies?id=${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'include' })
+  if (!res.ok && res.status !== 204) await libraryJson<unknown>(res, 'remove the hobby')
+}
+
 // --- the summary and the goals of a profile (plan 174, step 3 and 4) ---
 
 // What every persona of the profile follows unless it has its own. minSalary 0 is "no minimum".
