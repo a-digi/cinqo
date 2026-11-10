@@ -27,11 +27,12 @@ import {
 // The bridge's own menu-entry type (its interface is local to the d.ts file).
 type MenuEntry = Parameters<Window['__cinqoToolBridge']['registerMenuEntry']>[0]
 
-// The Career tool's sidebar menu: My Profile first (it holds the one-time setup and the CV pages, and everything else works from it),
-// then Jobs (with the platforms that feed it and the contacts around it: Companies and Recruiters), then Settings and Q&A. A parent is
-// a pure grouping label, never a page of its own, and a group is only shown when at least one of its pages is visible to the user
-// (filterVisible, which works at any depth), so the per-page scopes below are all that decide who sees what. Every path is unchanged
-// from before the regrouping (plan/ai/tools/career/step-172-menu-contacts-under-jobs.md).
+// The Career tool's sidebar menu: My Profile first (the one-time setup, which everything else works from), then CV (your CVs and the CV
+// import: a group of its own next to the profile they are built from), then Jobs (with the platforms that feed it and the contacts around
+// it: Companies and Recruiters), then Settings and Q&A. A parent is a pure grouping label, never a page of its own, and a group is only
+// shown when at least one of its pages is visible to the user (filterVisible, which works at any depth), so the per-page scopes below are
+// all that decide who sees what. Every path is unchanged by the regroupings (plan/ai/tools/career/step-172-menu-contacts-under-jobs.md,
+// step-228-cv-menu-under-career.md).
 export const careerMenuEntry: MenuEntry = {
   label: 'Career',
   // A briefcase glyph — built only from the sidebar's own sanitizer
@@ -49,15 +50,15 @@ export const careerMenuEntry: MenuEntry = {
         { label: 'Skills', path: SKILLS_PATH, scopes: ['tool:career:profile'] },
         { label: 'Experience', path: EXPERIENCE_PATH, scopes: ['tool:career:profile'] },
         { label: 'Education', path: EDUCATION_PATH, scopes: ['tool:career:profile'] },
-        {
-          label: 'CV',
-          children: [
-            // Your CVs, built from a persona.
-            { label: 'CVs', path: CV_DOCUMENTS_PATH, scopes: ['tool:career:cv_documents'] },
-            // Reads a CV into the profile, persona, skills, experience and education (the page is still headed "Import from CV").
-            { label: 'Import', path: IMPORT_CV_PATH, scopes: ['tool:career:cv_import'] },
-          ],
-        },
+      ],
+    },
+    {
+      label: 'CV',
+      children: [
+        // Your CVs, built from a persona.
+        { label: 'CVs', path: CV_DOCUMENTS_PATH, scopes: ['tool:career:cv_documents'] },
+        // Reads a CV into the profile, persona, skills, experience and education (the page is still headed "Import from CV").
+        { label: 'Import', path: IMPORT_CV_PATH, scopes: ['tool:career:cv_import'] },
       ],
     },
     {
