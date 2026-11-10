@@ -1411,8 +1411,10 @@ export function JobsPage() {
                         />
                       </th>
                       <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Job</th>
+                      <th className="w-44 bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">
+                        Match
+                      </th>
                       <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Posted</th>
-                      <th className="bg-blue-50/70 p-3 text-left text-xs font-semibold uppercase tracking-wide text-blue-700">Match</th>
                       <th className="bg-blue-50/70 p-3 text-right text-xs font-semibold uppercase tracking-wide text-blue-700">Actions</th>
                     </tr>
                   </thead>
@@ -1434,12 +1436,7 @@ export function JobsPage() {
                           <td className="border-b border-blue-50 p-3 text-gray-900">
                             <JobTitleCell job={job} cell={cell} missingState={missing?.states[job.id]} onUnlink={handleUnlink} />
                           </td>
-                          <td className="border-b border-blue-50 p-3">
-                            {job.postedAt ? (
-                              <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs text-gray-600">{job.postedAt}</span>
-                            ) : null}
-                          </td>
-                          <td className="border-b border-blue-50 p-3">
+                          <td className="w-44 border-b border-blue-50 p-3">
                             {manualRunning.has(job.id) ? (
                               <span className="text-xs text-gray-500">Matching…</span>
                             ) : job.matchStatus === 'matching' ? (
@@ -1472,6 +1469,11 @@ export function JobsPage() {
                             ) : (
                               <span className="text-xs text-gray-300">—</span>
                             )}
+                          </td>
+                          <td className="border-b border-blue-50 p-3">
+                            {job.postedAt ? (
+                              <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs text-gray-600">{job.postedAt}</span>
+                            ) : null}
                           </td>
                           <td className="border-b border-blue-50 p-3 text-right">
                             <ActionMenu triggerLabel={`Actions for ${job.title}`} items={buildJobActionItems(job)} />
