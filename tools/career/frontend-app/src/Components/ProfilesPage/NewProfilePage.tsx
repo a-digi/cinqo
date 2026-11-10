@@ -40,7 +40,7 @@ export function NewProfilePage() {
       <PageHeaderCard
         icon={<UserIcon />}
         title="New profile"
-        description="A profile is one job seeker. Personas, skills, experience and education hang off it; you can add links afterwards."
+        description="A profile is one job seeker. Target roles, skills, experience and education hang off it; you can add links afterwards."
       />
       <form
         onSubmit={(e) => {

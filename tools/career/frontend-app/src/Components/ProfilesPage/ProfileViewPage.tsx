@@ -166,7 +166,10 @@ export function ProfileViewPage() {
         title={name}
         description={lifetimeText(profile.createdAt, profile.updatedAt, formatDate) || 'No dates recorded.'}
         // The pill links on to this profile's personas (the completeness is in the Overview card below).
-        pill={{ text: personasLoaded ? plural(personas.length, 'persona', 'personas') : 'Personas', href: personasPathFor(profile.id) }}
+        pill={{
+          text: personasLoaded ? plural(personas.length, 'target role', 'target roles') : 'Target roles',
+          href: personasPathFor(profile.id),
+        }}
       />
 
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
@@ -186,7 +189,7 @@ export function ProfileViewPage() {
               )}
               <div className="min-w-0">
                 <p className="truncate text-base font-semibold">{name}</p>
-                <p className="text-xs text-gray-500">{personas.length === 1 ? '1 persona' : `${personas.length} personas`}</p>
+                <p className="text-xs text-gray-500">{personas.length === 1 ? '1 target role' : `${personas.length} target roles`}</p>
               </div>
             </div>
             <CompletenessMeter completeness={profile.completeness} />
@@ -249,10 +252,10 @@ export function ProfileViewPage() {
             </div>
           </section>
 
-          <section aria-label="Personas">
-            <h2 className="mb-3 text-sm font-semibold text-gray-700">Personas</h2>
+          <section aria-label="Target roles">
+            <h2 className="mb-3 text-sm font-semibold text-gray-700">Target roles</h2>
             {personas.length === 0 ? (
-              <p className="text-sm text-gray-400">This profile has no personas yet.</p>
+              <p className="text-sm text-gray-400">This profile has no target roles yet.</p>
             ) : (
               <ul className="space-y-3">
                 {personas.map((p) => {
@@ -288,7 +291,7 @@ export function ProfileViewPage() {
             {cvs === null ? (
               <p className="text-sm text-gray-400">The CVs could not be read.</p>
             ) : cvs.length === 0 ? (
-              <p className="text-sm text-gray-400">No CVs yet for this profile&apos;s personas.</p>
+              <p className="text-sm text-gray-400">No CVs yet for this profile&apos;s target roles.</p>
             ) : (
               <CvCardGrid docs={cvs} templates={templates} aiChats={aiChats} />
             )}

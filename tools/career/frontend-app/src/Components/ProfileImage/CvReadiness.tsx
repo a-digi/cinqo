@@ -59,8 +59,8 @@ export function CvReadiness({
               </li>
             ))}
           </ul>
-          {personaName !== '' && <p className="mt-3 text-xs text-gray-400">Checked on the persona “{personaName}”.</p>}
-          {status === 'error' && <p className="mt-3 text-xs text-amber-700">Could not read the persona, so its items are unchecked.</p>}
+          {personaName !== '' && <p className="mt-3 text-xs text-gray-400">Checked on the target role “{personaName}”.</p>}
+          {status === 'error' && <p className="mt-3 text-xs text-amber-700">Could not read the target role, so its items are unchecked.</p>}
         </>
       )}
     </section>

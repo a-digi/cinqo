@@ -95,7 +95,7 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
 
     const needsExistingPersona = !effectiveChecked.persona && resolvedPersonaId === null && !insertedKeys.persona
     if (needsExistingPersona && !existingPersonaId) {
-      setInsertValidationError('Select an existing persona, or check the proposed one above, before inserting.')
+      setInsertValidationError('Select an existing target role, or check the proposed one above, before inserting.')
       return
     }
 
@@ -192,10 +192,10 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
         </section>
 
         <section className={cardClassName} style={cardStyle}>
-          <h2 className="mb-2 text-base font-semibold text-gray-900">Personas</h2>
+          <h2 className="mb-2 text-base font-semibold text-gray-900">Target roles</h2>
           <ProposalRow
             item={proposal.persona}
-            label={[proposal.persona.name, proposal.persona.title].filter(Boolean).join(' — ') || '(no persona proposed)'}
+            label={[proposal.persona.name, proposal.persona.title].filter(Boolean).join(' — ') || '(no target role proposed)'}
             resolvedDuplicateLabel={resolvedLabelFor(proposal.persona, 'persona')}
             checked={checked.persona}
             onToggle={() => {
@@ -210,10 +210,10 @@ export function ImportReview({ run, onStartOver }: { run: CVImportRun; onStartOv
                 options={duplicateLabels?.personaList.map((p) => ({ value: p.id, label: p.name })) ?? []}
                 value={existingPersonaId}
                 onChange={setExistingPersonaId}
-                placeholder="Select an existing persona…"
+                placeholder="Select an existing target role…"
               />
               <p className="mt-1 text-xs text-gray-400">
-                Personal Details, Skills, and Experience below will attach to this persona instead of a new one.
+                Personal Details, Skills, and Experience below will attach to this target role instead of a new one.
               </p>
             </div>
           )}

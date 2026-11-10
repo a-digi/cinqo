@@ -51,7 +51,7 @@ export function PersonaCvs({
     window.__cinqoToolBridge.navigate(path)
   }
   return (
-    <section aria-label="CVs of this persona" className="mt-3 border-t border-gray-100 pt-2">
+    <section aria-label="CVs of this target role" className="mt-3 border-t border-gray-100 pt-2">
       <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
         {rows.length === 1 ? '1 CV' : `${rows.length} CVs`}
       </p>
@@ -65,12 +65,12 @@ export function PersonaCvs({
                   {doc.title}
                 </span>
                 <span
-                  title={builtFrom ? 'Built from this persona' : 'Attached to this persona'}
+                  title={builtFrom ? 'Built from this target role' : 'Attached to this target role'}
                   className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
                     builtFrom ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-700'
                   }`}
                 >
-                  {builtFrom ? 'Built from this persona' : 'Attached'}
+                  {builtFrom ? 'Built from this target role' : 'Attached'}
                 </span>
                 <span className="text-gray-400">{[templateLabel(templates, doc.templateId), created].filter((x) => x).join(' · ')}</span>
                 <span className="ml-auto flex gap-2">
@@ -147,7 +147,7 @@ export function PersonaCvs({
             !ai.platform
               ? 'No AI platform is available. Choose one in Settings.'
               : working
-                ? 'The AI is already creating a CV for this persona.'
+                ? 'The AI is already creating a CV for this target role.'
                 : ''
           }
           onStart={(focus) => aiRuns.start({ id: personaId, name: personaName }, focus, ai)}

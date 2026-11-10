@@ -39,7 +39,7 @@ const withProfile = (path: string) => (profileId: string) => `${path}${buildProf
 
 export const PROFILE_AREAS: readonly ProfileArea[] = [
   // Personas have a page of their own per profile: the id is part of the path.
-  { key: 'personas', label: 'Personas', icon: personasIcon, href: personasPathFor },
+  { key: 'personas', label: 'Target roles', icon: personasIcon, href: personasPathFor },
   { key: 'summary', label: 'Summary', icon: summaryIcon, href: withProfile(PERSONA_DETAILS_PATH) },
   { key: 'goals', label: 'Goals', icon: goalsIcon, href: withProfile(GOALS_PATH) },
   { key: 'skills', label: 'Skills', icon: skillsIcon, href: withProfile(SKILLS_PATH) },

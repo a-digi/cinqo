@@ -107,8 +107,8 @@ export function JobRequirements({ jobId }: { jobId: string }) {
         </button>
       </div>
       <p className="mb-3 text-xs text-gray-500">
-        What this job asks for, with how much it matters. The manual job match (Jobs ▸ Job Match ▸ Manual) checks a persona against these
-        and lists what is missing; without any it reads the job text instead. Run it again after a change.
+        What this job asks for, with how much it matters. The manual job match (Jobs ▸ Job Match ▸ Manual) checks a target role against
+        these and lists what is missing; without any it reads the job text instead. Run it again after a change.
       </p>
 
       {suggestions !== null && (

@@ -42,7 +42,7 @@ export function groupPersonasByProfile<P extends PersonaLike>(personas: P[], pro
     .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }))
   const knownIds = new Set(profiles.map((pr) => pr.id))
   const orphans = personas.filter((p) => !knownIds.has(p.profileId)).sort(byName)
-  return orphans.length > 0 ? [...known, { profileId: '', label: 'Other personas', personas: orphans }] : known
+  return orphans.length > 0 ? [...known, { profileId: '', label: 'Other target roles', personas: orphans }] : known
 }
 
 // "a, b, c +2 more": the first `max` items and how many are left out.

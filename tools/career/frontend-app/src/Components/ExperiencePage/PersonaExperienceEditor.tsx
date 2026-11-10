@@ -116,7 +116,7 @@ export function PersonaExperienceEditor({
           <input
             type="checkbox"
             checked={on}
-            aria-label={`Use ${entry.title} at ${entry.company} on this persona`}
+            aria-label={`Use ${entry.title} at ${entry.company} on this target role`}
             onChange={(e) => {
               save(toggleUse(used, entry.id, e.target.checked), entry.id)
             }}
@@ -176,7 +176,7 @@ export function PersonaExperienceEditor({
             {on && draft && (
               <div className="mt-3 space-y-2">
                 <label className="block text-xs font-medium text-gray-500">
-                  Title for this persona
+                  Title for this target role
                   <input
                     value={draft.title}
                     onChange={(e) => {
@@ -186,7 +186,7 @@ export function PersonaExperienceEditor({
                   />
                 </label>
                 <label className="block text-xs font-medium text-gray-500">
-                  Description for this persona
+                  Description for this target role
                   <textarea
                     value={draft.description}
                     onChange={(e) => {
@@ -303,7 +303,7 @@ export function PersonaExperienceEditor({
             >
               Add entries to the library
             </a>{' '}
-            and choose here which ones this persona uses.
+            and choose here which ones this target role uses.
           </p>
         )}
         <div className="career-stagger space-y-3">{library.map(libraryCard)}</div>
@@ -311,7 +311,7 @@ export function PersonaExperienceEditor({
 
       <section>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-sm font-semibold text-gray-800">Only on this persona</h2>
+          <h2 className="text-sm font-semibold text-gray-800">Only on this target role</h2>
           <button
             type="button"
             onClick={() => {

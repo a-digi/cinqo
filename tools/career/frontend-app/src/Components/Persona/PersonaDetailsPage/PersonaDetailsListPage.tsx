@@ -45,8 +45,8 @@ export function PersonaDetailsListPage() {
       <PageHeaderCard
         icon={<TargetIcon />}
         title="Summary"
-        description="The summary of the profile, and how each of its personas presents itself. A persona uses the profile’s summary unless it has its own wording. The AI reads it when matching jobs and writing CVs."
-        pill={loaded && error === '' && profileId !== '' ? { text: plural(personas.length, 'persona', 'personas') } : undefined}
+        description="The summary of the profile, and how each of its target roles presents itself. A target role uses the profile’s summary unless it has its own wording. The AI reads it when matching jobs and writing CVs."
+        pill={loaded && error === '' && profileId !== '' ? { text: plural(personas.length, 'target role', 'target roles') } : undefined}
       />
       {/* The tips sit in a column of their own beside the list (under it on a narrow window). */}
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
@@ -77,7 +77,7 @@ export function PersonaDetailsListPage() {
           )}
           {loaded && error === '' && profileId !== '' && personas.length === 0 && (
             <p className="rounded-3xl border border-gray-100 bg-gray-50 p-8 text-center text-sm text-gray-500">
-              There are no personas yet.{' '}
+              There are no target roles yet.{' '}
               <a
                 href={PERSONAS_PATH}
                 onClick={(e) => {
@@ -86,7 +86,7 @@ export function PersonaDetailsListPage() {
                 }}
                 className="font-medium text-blue-700 hover:underline"
               >
-                Create one on the Personas page
+                Create one on the Target roles page
               </a>
               , then word its summary here.
             </p>

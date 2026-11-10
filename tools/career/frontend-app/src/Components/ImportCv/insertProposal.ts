@@ -110,7 +110,7 @@ export async function insertSelected(
   if (personaId === null) {
     if (checked.persona) {
       if (profileId === null) {
-        result.persona = { ok: false, error: 'no profile to attach this persona to' }
+        result.persona = { ok: false, error: 'no profile to attach this target role to' }
       } else {
         try {
           const created = await createPersona(profileId, proposal.persona.name, proposal.persona.title)
@@ -123,19 +123,19 @@ export async function insertSelected(
     } else {
       personaId = options.existingPersonaId
       if (personaId === null) {
-        result.persona = { ok: false, error: 'no existing persona selected' }
+        result.persona = { ok: false, error: 'no existing target role selected' }
       }
     }
   }
 
   if (checked.personalDetails) {
     if (personaId === null) {
-      result.personalDetails = { ok: false, error: 'no persona to attach to' }
+      result.personalDetails = { ok: false, error: 'no target role to attach to' }
     } else {
       try {
         // Plan 174: a summary or goal the CV states fills the PROFILE's value where it has none; the persona keeps only what differs.
         const ownProfileId = (await fetchPersonas()).find((p) => p.id === personaId)?.profileId ?? profileId
-        if (ownProfileId === null) throw new Error('no profile found for this persona')
+        if (ownProfileId === null) throw new Error('no profile found for this target role')
         const plan = importDetailsPlan(proposal.personalDetails, await fetchProfileDetails(ownProfileId))
         if (hasChanges(plan.profilePatch)) await updateProfileDetails(ownProfileId, plan.profilePatch)
         await updatePersonaDetails(personaId, plan.personaArgs)
@@ -162,7 +162,7 @@ export async function insertSelected(
   const skillRows: { index: number; value: string; id?: string; error?: string }[] = []
   for (const [i, skill] of skillEntries) {
     if (personaId === null || libraryProfileId === null) {
-      skillRows.push({ index: i, value: skill.value, error: 'no persona to attach to' })
+      skillRows.push({ index: i, value: skill.value, error: 'no target role to attach to' })
       continue
     }
     try {
@@ -185,7 +185,7 @@ export async function insertSelected(
       const view = await fetchPersonaSkillsView(personaId)
       await setPersonaSkillIds(personaId, mergeIds(view.used, addedSkillIds))
     } catch (err) {
-      skillChoiceError = `added to the library, but not chosen for the persona: ${message(err)}`
+      skillChoiceError = `added to the library, but not chosen for the target role: ${message(err)}`
     }
   }
   for (const row of skillRows) {
@@ -203,7 +203,7 @@ export async function insertSelected(
   for (const [i, exp] of experienceEntries) {
     const label = `${exp.title} at ${exp.company}`
     if (personaId === null || libraryProfileId === null) {
-      experienceRows.push({ index: i, label, error: 'no persona to attach to' })
+      experienceRows.push({ index: i, label, error: 'no target role to attach to' })
       continue
     }
     try {
@@ -232,7 +232,7 @@ export async function insertSelected(
       const view = await fetchPersonaExperienceView(personaId)
       await setPersonaExperienceUse(personaId, mergeUses(view.used, addedEntryIds))
     } catch (err) {
-      experienceChoiceError = `added to the library, but not chosen for the persona: ${message(err)}`
+      experienceChoiceError = `added to the library, but not chosen for the target role: ${message(err)}`
     }
   }
   for (const row of experienceRows) {

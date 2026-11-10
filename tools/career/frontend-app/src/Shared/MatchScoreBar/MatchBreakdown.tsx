@@ -61,7 +61,7 @@ export function MatchBreakdown({ result }: { result: ManualMatchResult }) {
       )}
       {result.gaps.length > 0 && (
         <div>
-          <p className="mb-1 font-medium text-gray-700">In the job, not in this persona</p>
+          <p className="mb-1 font-medium text-gray-700">In the job, not in this target role</p>
           <div className="flex flex-wrap gap-1.5">
             {result.gaps.map((g) => (
               <span key={g} className="rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[11px] text-gray-600">

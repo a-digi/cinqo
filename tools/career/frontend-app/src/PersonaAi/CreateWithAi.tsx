@@ -51,7 +51,7 @@ export function CreateWithAi({
       <button
         type="button"
         disabled={disabledReason !== ''}
-        title={disabledReason || 'Let the AI propose new personas from what you have filled in'}
+        title={disabledReason || 'Let the AI propose new target roles from what you have filled in'}
         onClick={() => {
           setOpen(true)
         }}
@@ -61,13 +61,13 @@ export function CreateWithAi({
         Create with AI
       </button>
 
-      <Modal open={open} title="Create personas with AI" onClose={close}>
+      <Modal open={open} title="Create target roles with AI" onClose={close}>
         <p className="mb-3 text-sm text-gray-600">
-          The AI reads this profile&apos;s personas (details, skills and experience) and proposes up to three new ones. Nothing is saved
+          The AI reads this profile&apos;s target roles (details, skills and experience) and proposes up to three new ones. Nothing is saved
           until you have reviewed them.
         </p>
         <label className="block text-xs font-medium text-gray-500">
-          What should the personas focus on? (optional)
+          What should the target roles focus on? (optional)
           <textarea
             value={focus}
             onChange={(e) => {

@@ -35,7 +35,7 @@ export function NeedsAttention({ total, undescribed, onEdit }: { total: number; 
       )}
       {undescribed.length > 0 && (
         <>
-          <p className="mt-3 text-xs text-gray-500">A description tells you (and the AI) what each persona is for.</p>
+          <p className="mt-3 text-xs text-gray-500">A description tells you (and the AI) what each target role is for.</p>
           <ul className="mt-2 space-y-1.5">
             {undescribed.map((p) => (
               <li key={p.id} className="flex items-center gap-2 rounded-xl bg-amber-50 px-2.5 py-1.5">

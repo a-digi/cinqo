@@ -43,7 +43,7 @@ export function PersonaMatchesCard({ jobId, reloadKey = 0 }: { jobId: string; re
   const best = data?.matches.find((m) => m.personaId === data.best)
   const others = data?.matches.filter((m) => m.personaId !== data.best) ?? []
   return (
-    <InfoCard look="persona" icon={<UserIcon className="h-4 w-4" />} title="Best persona">
+    <InfoCard look="persona" icon={<UserIcon className="h-4 w-4" />} title="Best target role">
       {error !== '' && (
         <p role="alert" className="mb-3 text-xs text-red-700">
           {error}
@@ -52,8 +52,8 @@ export function PersonaMatchesCard({ jobId, reloadKey = 0 }: { jobId: string; re
       {data === null && error === '' && <p className="text-xs text-gray-400">Loading…</p>}
       {data !== null && best === undefined && (
         <p className="text-xs text-gray-500">
-          No persona has a score for this job yet. Scores are made when a job is found; “Recalculate” makes them now. A persona with no
-          skills and no title to compare has none.
+          No target role has a score for this job yet. Scores are made when a job is found; “Recalculate” makes them now. A target role with
+          no skills and no title to compare has none.
         </p>
       )}
       {best !== undefined && (
@@ -74,7 +74,7 @@ export function PersonaMatchesCard({ jobId, reloadKey = 0 }: { jobId: string; re
         </div>
       )}
       {others.length > 0 && (
-        <ul aria-label="Other personas" className="mt-3 space-y-1.5">
+        <ul aria-label="Other target roles" className="mt-3 space-y-1.5">
           {others.map((m) => (
             <li key={m.personaId} className="flex items-start justify-between gap-2 text-xs">
               <span className="min-w-0 break-words text-gray-600">

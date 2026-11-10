@@ -12,7 +12,7 @@ export function matchUnmatchedMessage(r: MatchUnmatchedResult): string {
   if (r.matched > 0) parts.push(`Matched ${plural(r.matched)}`)
   if (r.skippedExisting > 0) parts.push(`${plural(r.skippedExisting)} got a match in the meantime`)
   if (r.unjudged > 0)
-    parts.push(`${plural(r.unjudged)} could not be judged yet: give a persona skills or desired titles and it will be matched`)
+    parts.push(`${plural(r.unjudged)} could not be judged yet: give a target role skills or desired titles and it will be matched`)
   if (r.failed > 0) parts.push(`${plural(r.failed)} could not be matched because of an error`)
   let text = `${parts.join('. ')}.`
   if (r.more) text += ' More jobs are waiting: press the button again.'

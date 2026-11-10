@@ -127,7 +127,7 @@ export type PersonaDecision = { index: number; decision: 'accepted'; persona: Pr
 
 export async function fetchPersonaAiRuns(profileId: string): Promise<PersonaAiRun[]> {
   const res = await fetch(`${PROXY_BASE}/persona-ai-runs?profileId=${encodeURIComponent(profileId)}`, { credentials: 'include' })
-  const data = await jsonOrThrow<{ runs: PersonaAiRun[] }>(res, 'load persona AI runs')
+  const data = await jsonOrThrow<{ runs: PersonaAiRun[] }>(res, 'load target role AI runs')
   return data.runs
 }
 
@@ -139,7 +139,7 @@ export async function createPersonaAiRun(profileId: string, conversationId: stri
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ profileId, conversationId, focus }),
   })
-  const data = await jsonOrThrow<{ id: string }>(res, 'record persona AI run')
+  const data = await jsonOrThrow<{ id: string }>(res, 'record target role AI run')
   return data.id
 }
 
@@ -153,7 +153,7 @@ export async function applyPersonaAiRun(runId: string, decisions: PersonaDecisio
     body: JSON.stringify({ runId, decisions }),
   })
   if (!res.ok) {
-    throw new Error((await res.text()).trim() || `failed to create the personas (${res.status})`)
+    throw new Error((await res.text()).trim() || `failed to create the target roles (${res.status})`)
   }
   const data = (await res.json()) as { personas: { id: string; name: string }[] }
   return data.personas
@@ -177,7 +177,7 @@ export async function finishPersonaAiRun(id: string, outcome: { status: 'ready' 
     body: JSON.stringify({ id, ...outcome }),
   })
   if (!res.ok) {
-    throw new Error((await res.text()).trim() || `failed to finish persona AI run (${res.status})`)
+    throw new Error((await res.text()).trim() || `failed to finish target role AI run (${res.status})`)
   }
 }
 
@@ -620,7 +620,7 @@ export async function removeProfileExternalLink(profileId: string, platform: str
 export async function fetchPersonas(profileId?: string): Promise<Persona[]> {
   const qs = profileId ? `?profileId=${encodeURIComponent(profileId)}` : ''
   const res = await fetch(`${PROXY_BASE}/personas${qs}`, { credentials: 'include' })
-  const data = await jsonOrThrow<{ personas: Persona[] }>(res, 'load personas')
+  const data = await jsonOrThrow<{ personas: Persona[] }>(res, 'load target roles')
   return data.personas
 }
 
@@ -632,7 +632,7 @@ export async function createPersona(profileId: string, name: string, description
     credentials: 'include',
     body: JSON.stringify({ profileId, name, description }),
   })
-  return jsonOrThrow<{ id: string; personas: Persona[] }>(res, 'create persona')
+  return jsonOrThrow<{ id: string; personas: Persona[] }>(res, 'create target role')
 }
 
 export async function updatePersona(id: string, args: { name?: string; description?: string }): Promise<Persona[]> {
@@ -641,7 +641,7 @@ export async function updatePersona(id: string, args: { name?: string; descripti
     credentials: 'include',
     body: JSON.stringify({ id, ...args }),
   })
-  const data = await jsonOrThrow<{ personas: Persona[] }>(res, 'update persona')
+  const data = await jsonOrThrow<{ personas: Persona[] }>(res, 'update target role')
   return data.personas
 }
 
@@ -650,14 +650,14 @@ export async function deletePersona(id: string): Promise<void> {
     method: 'DELETE',
     credentials: 'include',
   })
-  if (!res.ok && res.status !== 204) throw new Error(`failed to delete persona (${res.status})`)
+  if (!res.ok && res.status !== 204) throw new Error(`failed to delete target role (${res.status})`)
 }
 
 // --- persona details ---
 
 export async function fetchPersonaDetails(personaId: string): Promise<PersonaDetailsResult> {
   const res = await fetch(`${PROXY_BASE}/persona-details?personaId=${encodeURIComponent(personaId)}`, { credentials: 'include' })
-  return jsonOrThrow<PersonaDetailsResult>(res, 'load persona details')
+  return jsonOrThrow<PersonaDetailsResult>(res, 'load target role details')
 }
 
 export interface UpdatePersonaDetailsArgs {
@@ -678,7 +678,7 @@ export async function updatePersonaDetails(personaId: string, args: UpdatePerson
     credentials: 'include',
     body: JSON.stringify({ personaId, ...args }),
   })
-  return jsonOrThrow<PersonaDetailsResult>(res, 'update persona details')
+  return jsonOrThrow<PersonaDetailsResult>(res, 'update target role details')
 }
 
 export async function fetchSkills(personaId: string): Promise<string[]> {
@@ -1985,7 +1985,7 @@ export async function fetchCvPersonaDefaults(personaId: string): Promise<CvData>
   const res = await fetch(`${PROXY_BASE}/cv-documents/persona-defaults?personaId=${encodeURIComponent(personaId)}`, {
     credentials: 'include',
   })
-  return jsonOrThrow<CvData>(res, 'load persona defaults')
+  return jsonOrThrow<CvData>(res, 'load target role defaults')
 }
 
 // Answers "does this persona's own profile have a photo uploaded, and which?" — the profile's
@@ -2598,7 +2598,7 @@ export interface JobPersonaMatches {
 
 export async function fetchJobPersonaMatches(jobId: string): Promise<JobPersonaMatches> {
   const res = await fetch(`${PROXY_BASE}/job-persona-matches?jobId=${encodeURIComponent(jobId)}`, { credentials: 'include' })
-  return jsonOrThrow<JobPersonaMatches>(res, 'load the persona matches')
+  return jsonOrThrow<JobPersonaMatches>(res, 'load the target role matches')
 }
 
 // Scores the job for every persona now and answers like the read.
@@ -2608,7 +2608,7 @@ export async function recalculateJobPersonaMatches(jobId: string): Promise<JobPe
     credentials: 'include',
     body: JSON.stringify({ jobId }),
   })
-  return jsonOrThrow<JobPersonaMatches>(res, 'score the job for the personas')
+  return jsonOrThrow<JobPersonaMatches>(res, 'score the job for the target roles')
 }
 
 // --- manual (no AI) job match (step 129) ---
@@ -2840,7 +2840,7 @@ export interface PersonaExperienceView {
 
 export async function fetchPersonaSkillsView(personaId: string): Promise<PersonaSkillsView> {
   const res = await fetch(`${PROXY_BASE}/persona-skills?personaId=${encodeURIComponent(personaId)}`, { credentials: 'include' })
-  return libraryJson<PersonaSkillsView>(res, 'load the persona’s skills')
+  return libraryJson<PersonaSkillsView>(res, 'load the target role’s skills')
 }
 
 // Replaces the persona's whole choice of library skills with exactly these ids.
@@ -2850,12 +2850,12 @@ export async function setPersonaSkillIds(personaId: string, skillIds: string[]):
     credentials: 'include',
     body: JSON.stringify({ personaId, skillIds }),
   })
-  return libraryJson<PersonaSkillsView>(res, 'save the persona’s skills')
+  return libraryJson<PersonaSkillsView>(res, 'save the target role’s skills')
 }
 
 export async function fetchPersonaExperienceView(personaId: string): Promise<PersonaExperienceView> {
   const res = await fetch(`${PROXY_BASE}/persona-experience?personaId=${encodeURIComponent(personaId)}`, { credentials: 'include' })
-  const view = await libraryJson<PersonaExperienceView>(res, 'load the persona’s experience')
+  const view = await libraryJson<PersonaExperienceView>(res, 'load the target role’s experience')
   return { ...view, own: normalizeExperience(view.own) }
 }
 
@@ -2866,7 +2866,7 @@ export async function setPersonaExperienceUse(personaId: string, experience: Exp
     credentials: 'include',
     body: JSON.stringify({ personaId, experience }),
   })
-  const view = await libraryJson<PersonaExperienceView>(res, 'save the persona’s experience')
+  const view = await libraryJson<PersonaExperienceView>(res, 'save the target role’s experience')
   return { ...view, own: normalizeExperience(view.own) }
 }
 

@@ -486,7 +486,7 @@ function Column({
                       <ProtocolChipLine protocol={job.protocol} href={jobDetailsPathFor(job.jobId, profileId)} />
                     )}
                     {job.personas !== undefined && job.personas.length > 0 && (
-                      <ul aria-label="Persona scores" className="mt-2 space-y-1 border-t border-gray-100 pt-2">
+                      <ul aria-label="Target role scores" className="mt-2 space-y-1 border-t border-gray-100 pt-2">
                         {job.personas.map((p) => (
                           <li
                             key={p.personaId}

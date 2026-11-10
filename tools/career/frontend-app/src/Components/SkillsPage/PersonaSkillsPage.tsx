@@ -29,7 +29,7 @@ export function PersonaSkillsPage({ personaId }: { personaId: string }) {
       .then((list) => {
         const found = list.find((p) => p.id === personaId)
         if (!found) {
-          setError('Persona not found')
+          setError('Target role not found')
           return
         }
         setPersona(found)
@@ -78,7 +78,7 @@ export function PersonaSkillsPage({ personaId }: { personaId: string }) {
       <PageHeaderCard
         icon={<SparkIcon />}
         title={`Skills: ${persona.name}`}
-        description={`${profile ? `${profileLabel(profile)} · ` : ''}The skills this persona uses from the profile’s library, and the ones only it has. The AI reads them when matching you against job postings.`}
+        description={`${profile ? `${profileLabel(profile)} · ` : ''}The skills this target role uses from the profile’s library, and the ones only it has. The AI reads them when matching you against job postings.`}
         pill={count !== null ? { text: plural(count, 'skill', 'skills') } : undefined}
       />
       {/* The tips sit in a column of their own beside the page (under it on a narrow window). */}

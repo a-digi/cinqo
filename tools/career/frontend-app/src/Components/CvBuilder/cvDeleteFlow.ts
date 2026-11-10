@@ -5,7 +5,7 @@ import type { CvDocumentJob } from '../../api'
 // The first confirmation. It says what the delete really does: the PDF goes too (the server deletes the file first and keeps the CV
 // when it cannot), and a CV attached to several personas is removed from all of them.
 export function deleteQuestion(title: string): string {
-  return `Delete "${title}"? Its PDF file is deleted too, and it is removed from every persona it is attached to. This cannot be undone.`
+  return `Delete "${title}"? Its PDF file is deleted too, and it is removed from every target role it is attached to. This cannot be undone.`
 }
 
 export type DeleteAttempt = { kind: 'deleted' } | { kind: 'in_use'; jobs: CvDocumentJob[] } | { kind: 'error'; message: string }

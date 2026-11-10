@@ -12,7 +12,7 @@ export function HobbiesPage() {
       entryPath={HOBBIES_ENTRY_PATH}
       icon={<HobbiesIcon />}
       title="Hobbies"
-      description="What you do outside work. They belong to the profile itself, so every persona and every CV can use them."
+      description="What you do outside work. They belong to the profile itself, so every target role and every CV can use them."
       tipsPage="hobbies"
       addLabel="Add hobby"
       hint="Each hobby is listed once, by name."

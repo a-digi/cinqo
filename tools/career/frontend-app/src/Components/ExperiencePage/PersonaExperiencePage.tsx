@@ -29,7 +29,7 @@ export function PersonaExperiencePage({ personaId }: { personaId: string }) {
       .then((list) => {
         const found = list.find((p) => p.id === personaId)
         if (!found) {
-          setError('Persona not found')
+          setError('Target role not found')
           return
         }
         setPersona(found)
@@ -78,7 +78,7 @@ export function PersonaExperiencePage({ personaId }: { personaId: string }) {
       <PageHeaderCard
         icon={<TimelineIcon />}
         title={`Experience: ${persona.name}`}
-        description={`${profile ? `${profileLabel(profile)} · ` : ''}The work history this persona uses from the profile’s library, worded for its role, and the entries only it has. The AI reads it when matching you against job postings.`}
+        description={`${profile ? `${profileLabel(profile)} · ` : ''}The work history this target role uses from the profile’s library, worded for its role, and the entries only it has. The AI reads it when matching you against job postings.`}
         pill={count !== null ? { text: plural(count, 'entry', 'entries') } : undefined}
       />
       {/* The tips sit in a column of their own beside the page (under it on a narrow window). */}

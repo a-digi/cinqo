@@ -92,8 +92,10 @@ export function removeAt<T>(list: T[], index: number): T[] {
 export function duplicateHint(p: ProposedPersona, existing: { id: string; name: string }[]): string | null {
   if (p.possibleDuplicateOf !== null) {
     const hinted = existing.find((e) => e.id === p.possibleDuplicateOf)
-    return hinted ? `Looks like your existing persona "${hinted.name}".` : 'The AI thinks this looks like a persona you already have.'
+    return hinted
+      ? `Looks like your existing target role "${hinted.name}".`
+      : 'The AI thinks this looks like a target role you already have.'
   }
   const same = existing.find((e) => e.name.trim().toLowerCase() === p.name.trim().toLowerCase())
-  return same ? `You already have a persona called "${same.name}".` : null
+  return same ? `You already have a target role called "${same.name}".` : null
 }

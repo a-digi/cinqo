@@ -50,7 +50,7 @@ export function GoalsPage() {
       <PageHeaderCard
         icon={<TargetIcon />}
         title="Goals"
-        description="What the profile is looking for. It is set once for the profile; every persona uses it unless the persona has its own. The AI reads it when matching jobs and writing CVs."
+        description="What the profile is looking for. It is set once for the profile; every target role uses it unless the target role has its own. The AI reads it when matching jobs and writing CVs."
       />
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
         <div className="order-1 min-w-0 flex-1 lg:order-2">
@@ -77,8 +77,8 @@ export function GoalsPage() {
                   setVersion((v) => v + 1)
                 }}
               />
-              <h2 className="mb-2 mt-6 text-sm font-semibold text-gray-700">Personas</h2>
-              {mine.length === 0 && <p className="text-sm text-gray-500">This profile has no personas yet.</p>}
+              <h2 className="mb-2 mt-6 text-sm font-semibold text-gray-700">Target roles</h2>
+              {mine.length === 0 && <p className="text-sm text-gray-500">This profile has no target roles yet.</p>}
               <div className="space-y-4">
                 {mine.map((p) => (
                   <PersonaGoals key={`${p.id}-${String(version)}`} persona={p} />
@@ -144,7 +144,7 @@ function ProfileGoals({ profileId, onSaved }: { profileId: string; onSaved: () =
   return (
     <section className="career-enter career-delay-1 rounded-3xl border p-5 shadow-sm" style={cardStyle}>
       <h2 className="mb-1 text-sm font-semibold text-gray-700">Goals of the profile</h2>
-      <p className="mb-3 text-xs text-gray-500">Every persona below uses these unless it has its own.</p>
+      <p className="mb-3 text-xs text-gray-500">Every target role below uses these unless it has its own.</p>
       <GoalsFields
         idPrefix="profile-goals"
         form={form}
@@ -254,7 +254,7 @@ function PersonaGoals({ persona }: { persona: Persona }) {
           disabled={saving}
           className="rounded-md bg-gray-800 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-900 disabled:opacity-50"
         >
-          {saving ? 'Saving…' : 'Save for this persona'}
+          {saving ? 'Saving…' : 'Save for this target role'}
         </button>
         {justSaved && <span className="text-sm text-green-700">Saved</span>}
       </div>

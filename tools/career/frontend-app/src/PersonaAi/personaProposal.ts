@@ -29,7 +29,7 @@ function str(value: unknown, field: string, max: number, required = false): stri
 }
 
 function persona(raw: unknown, n: number): ProposedPersona {
-  const at = `persona ${n}`
+  const at = `target role ${n}`
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) throw new Error(`${at} is not an object`)
   const r = raw as Record<string, unknown>
   const d = typeof r.details === 'object' && r.details !== null ? (r.details as Record<string, unknown>) : {}
@@ -107,7 +107,7 @@ export function parseProposalReply(reply: string): ParseResult {
     if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) throw new Error('the reply is not a JSON object')
     const r = raw as Record<string, unknown>
     if (!Array.isArray(r.personas)) throw new Error('personas must be a list (an empty list when there is nothing to propose)')
-    if (r.personas.length > MAX_PERSONAS) throw new Error(`too many personas (max ${MAX_PERSONAS})`)
+    if (r.personas.length > MAX_PERSONAS) throw new Error(`too many target roles (max ${MAX_PERSONAS})`)
     const personas = r.personas.map((p: unknown, i) => persona(p, i + 1))
     const names = new Set<string>()
     for (const p of personas) {
@@ -124,8 +124,8 @@ export function parseProposalReply(reply: string): ParseResult {
 // What is wrong with the personas the user accepted (possibly edited), or null when they can be
 // created: the same checks the AI's reply gets, and unique names among them.
 export function checkAccepted(personas: ProposedPersona[]): string | null {
-  if (personas.length === 0) return 'Pick at least one persona to create.'
-  if (personas.length > MAX_PERSONAS) return `Too many personas (max ${MAX_PERSONAS}).`
+  if (personas.length === 0) return 'Pick at least one target role to create.'
+  if (personas.length > MAX_PERSONAS) return `Too many target roles (max ${MAX_PERSONAS}).`
   const names = new Set<string>()
   try {
     personas.forEach((p, i) => {
@@ -135,7 +135,7 @@ export function checkAccepted(personas: ProposedPersona[]): string | null {
       names.add(key)
     })
   } catch (err) {
-    return err instanceof Error ? err.message : 'A persona is invalid.'
+    return err instanceof Error ? err.message : 'A target role is invalid.'
   }
   return null
 }

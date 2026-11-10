@@ -187,7 +187,7 @@ function SuggestionCard({
       className={`rounded-2xl bg-white p-3 shadow-sm ${linked ? 'ring-4 ring-purple-500' : 'ring-1 ring-purple-200'}`}
     >
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <span className="text-xs font-semibold uppercase tracking-wide text-purple-700">Suggested persona</span>
+        <span className="text-xs font-semibold uppercase tracking-wide text-purple-700">Suggested target role</span>
         <span className="ml-auto flex gap-2">
           <button
             type="button"

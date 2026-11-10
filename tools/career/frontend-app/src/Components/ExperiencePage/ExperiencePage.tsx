@@ -22,7 +22,7 @@ export function ExperiencePage() {
       <PageHeaderCard
         icon={<TimelineIcon />}
         title="Experience"
-        description="The work history of your profile, shared by all its personas. A persona uses some of it, and can have entries of its own. The AI reads it when matching you against job postings."
+        description="The work history of your profile, shared by all its target roles. A target role uses some of it, and can have entries of its own. The AI reads it when matching you against job postings."
         pill={loaded && error === '' && profileId !== '' && count !== null ? { text: experienceCountText(count) } : undefined}
       />
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
@@ -41,12 +41,12 @@ export function ExperiencePage() {
                 profileId={profileId}
                 onSelect={select}
                 personaHref={experiencePathFor}
-                personaLabel="Experience of a persona:"
+                personaLabel="Experience of a target role:"
               />
               <ProfileExperienceEditor profileId={profileId} onCount={setCount} />
               {personas.length === 0 && (
                 <p className="mt-3 text-xs text-gray-500">
-                  A persona picks its entries from here.{' '}
+                  A target role picks its entries from here.{' '}
                   <a
                     href={PERSONAS_PATH}
                     onClick={(e) => {
@@ -55,7 +55,7 @@ export function ExperiencePage() {
                     }}
                     className="font-medium text-blue-700 hover:underline"
                   >
-                    Create a persona
+                    Create a target role
                   </a>
                   .
                 </p>

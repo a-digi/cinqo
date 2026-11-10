@@ -111,7 +111,7 @@ export function PersonaSkillsEditor({
             >
               Add them to the library
             </a>{' '}
-            and choose here which ones this persona uses.
+            and choose here which ones this target role uses.
           </p>
         )}
         <div className="flex flex-wrap gap-2">
@@ -124,7 +124,7 @@ export function PersonaSkillsEditor({
                 type="button"
                 role="checkbox"
                 aria-checked={on}
-                title={on ? 'Used by this persona: click to stop using it' : 'Not used by this persona: click to use it'}
+                title={on ? 'Used by this target role: click to stop using it' : 'Not used by this target role: click to use it'}
                 onClick={() => {
                   toggle(skill.id, !on)
                 }}
@@ -151,7 +151,7 @@ export function PersonaSkillsEditor({
 
       <section className="career-enter career-delay-2 rounded-3xl border p-5 shadow-sm" style={cardStyle}>
         <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-sm font-semibold text-gray-800">Only on this persona</h2>
+          <h2 className="text-sm font-semibold text-gray-800">Only on this target role</h2>
           {view && (
             <span className="text-xs text-gray-500">
               {view.own.length === 1 ? '1 skill of its own' : `${String(view.own.length)} skills of its own`}
@@ -246,7 +246,7 @@ export function PersonaSkillsEditor({
             onKeyDown={(e) => {
               if (e.key === 'Enter') handleAdd()
             }}
-            placeholder="Add a skill to this persona only"
+            placeholder="Add a skill to this target role only"
             className={`flex-1 ${inputClass}`}
           />
           <button

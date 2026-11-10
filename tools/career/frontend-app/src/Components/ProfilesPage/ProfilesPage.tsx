@@ -138,7 +138,7 @@ export function ProfilesPage() {
       <PageHeaderCard
         icon={<UserIcon />}
         title="Profiles"
-        description="One profile per job seeker, with links to their platforms. Personas, skills, experience and education belong to a profile; open each from its card."
+        description="One profile per job seeker, with links to their platforms. Target roles, skills, experience and education belong to a profile; open each from its card."
         pill={{ text: plural(summary.profiles, 'profile', 'profiles') }}
       />
       {/* Steps 105 to 108: the tips sit in a column of their own beside the page (under it on a narrow window). */}
@@ -165,8 +165,8 @@ export function ProfilesPage() {
                   New profile
                 </button>
                 <p className="min-w-0 flex-1 text-xs text-gray-500">
-                  Deleting a profile permanently deletes its personas and everything they own (details, skills, experience), with no further
-                  confirmation.
+                  Deleting a profile permanently deletes its target roles and everything they own (details, skills, experience), with no
+                  further confirmation.
                 </p>
               </div>
 

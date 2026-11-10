@@ -91,10 +91,10 @@ export function ImportRunDetail({ run, onClose }: { run: CVImportRun; onClose: (
       </section>
 
       <section className={cardClassName} style={cardStyle}>
-        <h2 className="mb-2 text-base font-semibold text-gray-900">Personas</h2>
+        <h2 className="mb-2 text-base font-semibold text-gray-900">Target roles</h2>
         <ul>
           <Row
-            label={[proposal.persona.name, proposal.persona.title].filter(Boolean).join(' — ') || '(no persona proposed)'}
+            label={[proposal.persona.name, proposal.persona.title].filter(Boolean).join(' — ') || '(no target role proposed)'}
             result={summary?.persona}
           />
         </ul>

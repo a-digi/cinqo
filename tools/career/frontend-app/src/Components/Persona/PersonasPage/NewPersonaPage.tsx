@@ -67,8 +67,8 @@ export function NewPersonaPage() {
     <div className="career-v-swing career-a-sheen career-t-wave max-w-3xl p-6 font-sans text-gray-900">
       <PageHeaderCard
         icon={<LayersIcon />}
-        title="New persona"
-        description="A persona is one role this profile is pursuing. It gets its own summary, skills and experience."
+        title="New target role"
+        description="A target role is one kind of job this profile is pursuing. It gets its own summary, skills and experience."
       />
       {isLoaded && profiles.length === 0 ? (
         <div
@@ -140,7 +140,7 @@ export function NewPersonaPage() {
               className="flex items-center gap-1 rounded-md bg-gray-900 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:opacity-50"
             >
               <PlusIcon />
-              Create persona
+              Create target role
             </button>
             <button
               type="button"

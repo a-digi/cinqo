@@ -45,8 +45,8 @@ export function summarizeRun(run: PersonaAiRun): RunSummary {
         ? `${created.length} created, ${declined.length} declined`
         : created.length > 0
           ? created.length === 1
-            ? '1 persona created'
-            : `${created.length} personas created`
+            ? '1 target role created'
+            : `${created.length} target roles created`
           : declined.length > 0
             ? declined.length === proposed.length
               ? 'All declined'
@@ -64,7 +64,7 @@ export function summarizeRun(run: PersonaAiRun): RunSummary {
     return {
       label: 'The AI found nothing to propose',
       tone: 'ready',
-      detail: orElse(run.proposal?.note, 'There was not enough data to base a persona on.'),
+      detail: orElse(run.proposal?.note, 'There was not enough data to base a target role on.'),
     }
   }
   return {

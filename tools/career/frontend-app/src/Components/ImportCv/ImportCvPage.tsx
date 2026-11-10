@@ -47,7 +47,7 @@ import { PageTips } from '../../Shared/PageTips/PageTips'
 // Details/Skills/Experience, matching the real Career entities these
 // map onto. See
 // plan/ai/tools/career/import-cv/step-04-import-cv-page-and-menu-entry.md.
-const AREAS = ['Profile', 'Personas', 'Personal Details', 'Skills', 'Experience'] as const
+const AREAS = ['Profile', 'Target roles', 'Personal Details', 'Skills', 'Experience'] as const
 
 type PageState = 'upload' | 'analyzing' | 'error'
 
@@ -304,7 +304,7 @@ export function ImportCvPage() {
       <PageHeaderCard
         icon={<UploadIcon className="h-6 w-6" />}
         title="Import from CV"
-        description="Upload a CV and let the AI propose a profile, persona, summary, skills, experience and education from it. You review everything before it is saved."
+        description="Upload a CV and let the AI propose a profile, target role, summary, skills, experience and education from it. You review everything before it is saved."
         pill={headerPill}
       />
       {/* Steps 105 to 108: the tips sit in a column of their own beside the page (under it on a narrow window). */}

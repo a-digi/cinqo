@@ -27,7 +27,7 @@ import { cvBuilderPathFor, cvDocumentsPathFor } from '../../paths'
 const CV_DOCUMENTS_PATH = '/tools/career/cv-documents'
 
 const STEPS = [
-  { label: 'Persona' },
+  { label: 'Target role' },
   { label: 'Template' },
   { label: 'Personal Details' },
   { label: 'Skills' },
@@ -202,11 +202,11 @@ export function CvBuilderPage({ personaIdFromPath }: { personaIdFromPath?: strin
 
   function goNext() {
     if (step === 0 && (!personaId || !cvData)) {
-      setError('Pick a persona')
+      setError('Pick a target role')
       return
     }
     if (step === 1 && !personaId) {
-      setError('Pick a persona first: go back to the Persona step')
+      setError('Pick a target role first: go back to the Target role step')
       return
     }
     if (step === 1 && !templateId) {
@@ -214,7 +214,7 @@ export function CvBuilderPage({ personaIdFromPath }: { personaIdFromPath?: strin
       return
     }
     if (step === 1 && !cvData) {
-      setError("The persona's data could not be loaded. Go back to the Persona step and pick it again")
+      setError("The target role's data could not be loaded. Go back to the Target role step and pick it again")
       return
     }
     setError('')

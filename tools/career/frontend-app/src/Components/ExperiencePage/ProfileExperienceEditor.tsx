@@ -68,7 +68,7 @@ export function ProfileExperienceEditor({ profileId, onCount }: { profileId: str
           Add experience
         </button>
         <p className="min-w-0 flex-1 text-xs text-gray-500">
-          An entry without an end date counts as your current role. Each persona chooses its entries from this library.
+          An entry without an end date counts as your current role. Each target role chooses its entries from this library.
         </p>
       </div>
 

@@ -27,12 +27,12 @@ export function PersonaPicker({ personaId, onSelect }: { personaId: string | nul
   }, [])
 
   return (
-    <section aria-label="Persona">
+    <section aria-label="Target role">
       <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Who is this CV for?</h3>
       {error !== '' && <p className="mb-2 text-sm text-red-700">{error}</p>}
       {loaded && error === '' && personas.length === 0 && (
         <p className="text-sm text-gray-500">
-          There are no personas yet.{' '}
+          There are no target roles yet.{' '}
           <a
             href={PERSONAS_PATH}
             onClick={(e) => {
@@ -41,7 +41,7 @@ export function PersonaPicker({ personaId, onSelect }: { personaId: string | nul
             }}
             className="font-medium text-blue-700 hover:underline"
           >
-            Create one on the Personas page
+            Create one on the Target roles page
           </a>{' '}
           first.
         </p>

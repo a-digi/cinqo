@@ -114,11 +114,11 @@ export function CvCard({
           </button>
         )}
       </div>
-      <ul className="mt-1.5 flex flex-wrap items-center gap-1.5" aria-label={`Personas of ${doc.title}`}>
+      <ul className="mt-1.5 flex flex-wrap items-center gap-1.5" aria-label={`Target roles of ${doc.title}`}>
         {doc.personas.map((p) => (
           <li
             key={p.id}
-            title={p.builtFrom ? 'The persona this CV was built from' : 'Attached persona'}
+            title={p.builtFrom ? 'The target role this CV was built from' : 'Attached target role'}
             className={`inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
               p.builtFrom ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-700'
             }`}
@@ -128,7 +128,7 @@ export function CvCard({
               <button
                 type="button"
                 aria-label={`Detach ${doc.title} from ${p.name}`}
-                title="Detach from this persona (the CV stays)"
+                title="Detach from this target role (the CV stays)"
                 onClick={() => {
                   onDetach(p.id)
                 }}
@@ -142,14 +142,14 @@ export function CvCard({
         {attachable.length > 0 && (
           <li>
             <select
-              aria-label={`Attach ${doc.title} to a persona`}
+              aria-label={`Attach ${doc.title} to a target role`}
               value=""
               onChange={(e) => {
                 if (e.target.value !== '') onAttach?.(e.target.value)
               }}
               className="rounded-full border border-dashed border-gray-300 bg-white px-2 py-0.5 text-[11px] text-gray-600 hover:border-gray-400"
             >
-              <option value="">+ Persona</option>
+              <option value="">+ Target role</option>
               {attachable.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}

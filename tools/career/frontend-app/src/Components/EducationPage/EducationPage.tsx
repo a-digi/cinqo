@@ -51,7 +51,7 @@ export function EducationPage() {
       <PageHeaderCard
         icon={<EducationIcon />}
         title="Education"
-        description="The schools and degrees of your profile. They belong to the profile itself, so every persona and every CV can use them. Short trainings and certificates go on the Courses page."
+        description="The schools and degrees of your profile. They belong to the profile itself, so every target role and every CV can use them. Short trainings and certificates go on the Courses page."
         pill={loaded && shownError === '' && profileId !== '' ? { text: educationCountText(entries.length) } : undefined}
       />
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">

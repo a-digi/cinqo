@@ -22,7 +22,7 @@ export function SkillsPage() {
       <PageHeaderCard
         icon={<SparkIcon />}
         title="Skills"
-        description="The skills of your profile, shared by all its personas. A persona uses some of them, and can have skills of its own. The AI reads them when matching you against job postings."
+        description="The skills of your profile, shared by all its target roles. A target role uses some of them, and can have skills of its own. The AI reads them when matching you against job postings."
         pill={loaded && error === '' && profileId !== '' && count !== null ? { text: skillCountText(count) } : undefined}
       />
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
@@ -41,12 +41,12 @@ export function SkillsPage() {
                 profileId={profileId}
                 onSelect={select}
                 personaHref={skillsPathFor}
-                personaLabel="Skills of a persona:"
+                personaLabel="Skills of a target role:"
               />
               <ProfileSkillsEditor profileId={profileId} onCount={setCount} />
               {personas.length === 0 && (
                 <p className="mt-3 text-xs text-gray-500">
-                  A persona picks its skills from here.{' '}
+                  A target role picks its skills from here.{' '}
                   <a
                     href={PERSONAS_PATH}
                     onClick={(e) => {
@@ -55,7 +55,7 @@ export function SkillsPage() {
                     }}
                     className="font-medium text-blue-700 hover:underline"
                   >
-                    Create a persona
+                    Create a target role
                   </a>
                   .
                 </p>

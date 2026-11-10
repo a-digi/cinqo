@@ -72,7 +72,7 @@ export function PersonaDetailsPage({ personaId }: { personaId: string }) {
       .then((list) => {
         const found = list.find((p) => p.id === personaId)
         if (!found) {
-          setNotFound('Persona not found')
+          setNotFound('Target role not found')
           return
         }
         setPersona(found)
@@ -165,7 +165,7 @@ export function PersonaDetailsPage({ personaId }: { personaId: string }) {
       <PageHeaderCard
         icon={<TargetIcon />}
         title={`Summary: ${persona.name}`}
-        description={`${profile ? `${profileLabel(profile)} · ` : ''}How this persona presents itself. The summary starts from the profile's and can be worded for this persona. The AI reads it when matching jobs and writing CVs; nothing here is a secret.`}
+        description={`${profile ? `${profileLabel(profile)} · ` : ''}How this target role presents itself. The summary starts from the profile's and can be worded for this target role. The AI reads it when matching jobs and writing CVs; nothing here is a secret.`}
         pill={{ text: `${completeness.percent}% complete` }}
       />
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">

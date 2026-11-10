@@ -222,7 +222,7 @@ export function ProfileSkillsEditor({ profileId, onCount }: { profileId: string;
           </button>
         </div>
         <p className="mt-3 text-xs text-gray-500">
-          The number on a skill is how many personas use it. Each persona chooses its skills from this library.
+          The number on a skill is how many target roles use it. Each target role chooses its skills from this library.
         </p>
       </section>
     </>

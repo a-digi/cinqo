@@ -55,7 +55,7 @@ export function usePersonaAiRuns(profileId: string | null) {
       return outcome
         .catch((recordErr: unknown) => {
           // Already finished (another tab), or unreachable: the list below shows the truth.
-          console.error('failed to record the persona AI run outcome', runId, recordErr)
+          console.error('failed to record the target role AI run outcome', runId, recordErr)
         })
         .then(() => {
           watching.current.delete(runId)

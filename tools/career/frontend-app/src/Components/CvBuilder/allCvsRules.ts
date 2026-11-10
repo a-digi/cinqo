@@ -26,4 +26,4 @@ export function rowFacts(row: Pick<AllCvRow, 'personas' | 'created'>): string {
   return [row.personas, row.created].filter((part) => part !== '').join(' · ')
 }
 
-export const NO_CVS_TEXT = 'No CVs yet. Open a persona to create one.'
+export const NO_CVS_TEXT = 'No CVs yet. Open a target role to create one.'

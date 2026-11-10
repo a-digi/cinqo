@@ -448,7 +448,7 @@ window.__cinqoToolBridge.registerRoute({
   mount: (container) => {
     const id = new URLSearchParams(window.location.search).get('id')
     if (id) window.__cinqoToolBridge.navigate(viewPersonaPathFor(id))
-    else container.textContent = 'Persona not found'
+    else container.textContent = 'Target role not found'
   },
 })
 

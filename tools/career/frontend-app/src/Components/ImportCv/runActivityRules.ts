@@ -18,7 +18,7 @@ export function activityItems(progress: CVImportProgress | undefined): ActivityI
   const p: CVImportProgress = progress ?? { profile: false, persona: false, personalDetails: false, skills: 0, experience: 0, education: 0 }
   const parts: { key: ActivityItem['key']; label: string; done: boolean; count?: number }[] = [
     { key: 'profile', label: 'Profile', done: p.profile },
-    { key: 'persona', label: 'Persona', done: p.persona },
+    { key: 'persona', label: 'Target role', done: p.persona },
     { key: 'details', label: 'Personal details', done: p.personalDetails },
     { key: 'skills', label: 'Skills', done: p.skills > 0, count: p.skills },
     { key: 'jobs', label: 'Work experience', done: p.experience > 0, count: p.experience },

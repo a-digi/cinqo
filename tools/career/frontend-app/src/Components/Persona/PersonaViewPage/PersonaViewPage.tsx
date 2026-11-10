@@ -66,7 +66,7 @@ export function PersonaViewPage({ personaId }: { personaId: string }) {
 
   useEffect(() => {
     if (!personaId) {
-      setError('No persona selected')
+      setError('No target role selected')
       setLoaded(true)
       return
     }
@@ -74,7 +74,7 @@ export function PersonaViewPage({ personaId }: { personaId: string }) {
       .then((list) => {
         const found = list.find((p) => p.id === personaId)
         if (!found) {
-          setError('Persona not found')
+          setError('Target role not found')
           return
         }
         setPersona(found)
@@ -142,7 +142,7 @@ export function PersonaViewPage({ personaId }: { personaId: string }) {
       }}
       className="mb-3 inline-block text-sm font-medium text-blue-700 hover:underline"
     >
-      ← All personas
+      ← All target roles
     </a>
   )
 
@@ -189,7 +189,7 @@ export function PersonaViewPage({ personaId }: { personaId: string }) {
           (personaChatId !== null ? (
             <button
               type="button"
-              title="Open the chat that proposed this persona"
+              title="Open the chat that proposed this target role"
               onClick={() => {
                 window.__cinqoToolBridge.openConversation(personaChatId)
               }}
@@ -317,7 +317,7 @@ export function PersonaViewPage({ personaId }: { personaId: string }) {
           {cvs === null ? (
             <p className="text-sm text-gray-400">The CVs could not be read.</p>
           ) : cvs.length === 0 ? (
-            <p className="text-sm text-gray-400">No CVs yet for this persona.</p>
+            <p className="text-sm text-gray-400">No CVs yet for this target role.</p>
           ) : (
             <CvCardGrid docs={cvs} templates={templates} aiChats={aiChats} />
           )}

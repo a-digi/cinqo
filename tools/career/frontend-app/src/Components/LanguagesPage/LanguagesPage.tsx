@@ -14,7 +14,7 @@ export function LanguagesPage() {
       entryPath={LANGUAGES_ENTRY_PATH}
       icon={<LanguagesIcon />}
       title="Languages"
-      description="The languages you speak or write, with your level. They belong to the profile itself, so every persona and every CV can use them."
+      description="The languages you speak or write, with your level. They belong to the profile itself, so every target role and every CV can use them."
       tipsPage="languages"
       addLabel="Add language"
       hint="Each language is listed once; the best levels come first."

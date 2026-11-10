@@ -29,13 +29,13 @@ export function pointsShare(c: MatchComponent): number {
 // Why a score was scaled down, or '' when it was not (a scale of 1, or none stored).
 export function relevanceText(scale: number | undefined): string {
   if (scale === undefined || scale >= 1) return ''
-  return `The job's title and skills hardly resemble this persona's field, so the score is scaled down to ${String(Math.round(scale * 100))} %.`
+  return `The job's title and skills hardly resemble this target role's field, so the score is scaled down to ${String(Math.round(scale * 100))} %.`
 }
 
 // Why a score was halved because of the persona's remote-work choice, or '' when it was not.
 export function dealbreakerText(scale: number | undefined): string {
   if (scale === undefined || scale >= 1) return ''
-  return `The job rules out this persona's remote-work choice (see Location), so the score is scaled down to ${String(Math.round(scale * 100))} %.`
+  return `The job rules out this target role's remote-work choice (see Location), so the score is scaled down to ${String(Math.round(scale * 100))} %.`
 }
 
 export function modeText(result: Pick<ManualMatchResult, 'mode'>): string {

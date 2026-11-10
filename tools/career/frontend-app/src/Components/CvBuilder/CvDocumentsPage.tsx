@@ -204,7 +204,7 @@ export function CvDocumentsPage({ personaId }: { personaId: string }) {
     return (
       <div className="max-w-3xl p-6 font-sans text-gray-900">
         {backLink}
-        <div className="text-sm text-gray-500">{personasLoaded ? 'Persona not found' : 'Loading…'}</div>
+        <div className="text-sm text-gray-500">{personasLoaded ? 'Target role not found' : 'Loading…'}</div>
       </div>
     )
   }
@@ -215,7 +215,7 @@ export function CvDocumentsPage({ personaId }: { personaId: string }) {
       <PageHeaderCard
         icon={<PDFIcon className="h-6 w-6" />}
         title={`CVs: ${persona.name}`}
-        description={`${profile ? `${profileLabel(profile)} · ` : ''}Generate a CV PDF from this persona's own data, using one of a few fixed designs.`}
+        description={`${profile ? `${profileLabel(profile)} · ` : ''}Generate a CV PDF from this target role's own data, using one of a few fixed designs.`}
         pill={!loading ? { text: plural(documents.length, 'CV', 'CVs') } : undefined}
       />
       {/* Steps 105 to 108: the tips sit in a column of their own on the right of the CVs (under them on a narrow window). */}
@@ -236,7 +236,7 @@ export function CvDocumentsPage({ personaId }: { personaId: string }) {
                 !ai.platform
                   ? 'No AI platform is available. Choose one in Settings.'
                   : hasRunningCvRun(aiRuns.runs)
-                    ? 'The AI is already creating a CV for this persona.'
+                    ? 'The AI is already creating a CV for this target role.'
                     : ''
               }
               onStart={(focus) => aiRuns.start({ id: personaId, name: personaName }, focus, ai)}

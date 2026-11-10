@@ -68,7 +68,7 @@ export function withoutDraft<T>(drafts: Readonly<Record<string, T>>, id: string)
 
 // The note a persona's item carries where a persona is shown (plan 173): '' for an item from the profile's library, "Only on this
 // persona" for one it has on its own.
-export const OWN_NOTE = 'Only on this persona'
+export const OWN_NOTE = 'Only on this target role'
 
 export function skillNote(source: 'profile' | 'persona' | undefined): string {
   return source === 'persona' ? OWN_NOTE : ''

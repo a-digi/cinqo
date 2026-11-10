@@ -25,16 +25,16 @@ export function buildProfileSearch(profileId: string): string {
 
 // "Not used", "Used by 1 persona", "Used by 3 personas".
 export function usedByText(count: number): string {
-  if (count <= 0) return 'Not used by any persona'
-  return count === 1 ? 'Used by 1 persona' : `Used by ${String(count)} personas`
+  if (count <= 0) return 'Not used by any target role'
+  return count === 1 ? 'Used by 1 target role' : `Used by ${String(count)} target roles`
 }
 
 // What asking to remove a library item says when personas use it (null when none does: nothing to warn about, it is removed at once).
 export function removeWarning(count: number): string | null {
   if (count <= 0) return null
   return count === 1
-    ? 'One persona uses this. Removing it takes it off that persona too.'
-    : `${String(count)} personas use this. Removing it takes it off all of them.`
+    ? 'One target role uses this. Removing it takes it off that target role too.'
+    : `${String(count)} target roles use this. Removing it takes it off all of them.`
 }
 
 // The personas of one profile, in the order they are given.

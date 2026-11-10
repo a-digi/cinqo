@@ -54,7 +54,7 @@ export function ProfileSummaryCard({ profileId, onSaved }: { profileId: string; 
     >
       <h2 className="mb-1 text-sm font-semibold text-gray-700">Summary of the profile</h2>
       <p className="mb-2 text-xs text-gray-500">
-        Every persona below shows this summary unless it has its own wording. The AI reads it; nothing here is a secret.
+        Every target role below shows this summary unless it has its own wording. The AI reads it; nothing here is a secret.
       </p>
       <textarea
         id="profile-summary"

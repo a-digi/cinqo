@@ -54,7 +54,7 @@ export function CreateCvWithAi({
       <button
         type="button"
         disabled={disabledReason !== ''}
-        title={disabledReason || 'Let the AI choose a design and create a CV from this persona'}
+        title={disabledReason || 'Let the AI choose a design and create a CV from this target role'}
         onClick={() => {
           setOpen(true)
         }}
@@ -66,7 +66,7 @@ export function CreateCvWithAi({
 
       <Modal open={open} title="Create a CV with AI" onClose={close}>
         <p className="mb-3 text-sm text-gray-600">
-          The AI reads the persona <span className="font-medium text-gray-800">{personaName}</span> (details, skills and experience),
+          The AI reads the target role <span className="font-medium text-gray-800">{personaName}</span> (details, skills and experience),
           chooses one of the CV designs and creates the CV. It only uses what is already filled in, and the CV appears in the list below
           when it is done. It has no photo; you can make a CV by hand if you want one.
         </p>
@@ -84,7 +84,8 @@ export function CreateCvWithAi({
           />
         </label>
         <p className="mt-3 text-xs text-gray-500">
-          This persona&apos;s data is sent to <span className="font-medium text-gray-700">{aiText || 'the AI platform'}</span> to do this.{' '}
+          This target role&apos;s data is sent to <span className="font-medium text-gray-700">{aiText || 'the AI platform'}</span> to do
+          this.{' '}
           <button
             type="button"
             onClick={() => {

@@ -62,8 +62,8 @@ export function CvDocumentsListPage() {
       <PageHeaderCard
         icon={<PDFIcon className="h-6 w-6" />}
         title="CV Documents"
-        description="Pick a persona to see its CVs and create new ones from its own data, using one of a few fixed designs."
-        pill={loaded && error === '' ? { text: plural(personas.length, 'persona', 'personas') } : undefined}
+        description="Pick a target role to see its CVs and create new ones from its own data, using one of a few fixed designs."
+        pill={loaded && error === '' ? { text: plural(personas.length, 'target role', 'target roles') } : undefined}
       />
       {/* The tips sit in a column of their own beside the list (under it on a narrow window). */}
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
@@ -71,7 +71,7 @@ export function CvDocumentsListPage() {
           {error !== '' && <p className="mb-3 text-sm text-red-700">{error}</p>}
           {loaded && error === '' && personas.length === 0 && (
             <p className="rounded-3xl border border-gray-100 bg-gray-50 p-8 text-center text-sm text-gray-500">
-              There are no personas yet.{' '}
+              There are no target roles yet.{' '}
               <a
                 href={PERSONAS_PATH}
                 onClick={(e) => {
@@ -80,7 +80,7 @@ export function CvDocumentsListPage() {
                 }}
                 className="font-medium text-blue-700 hover:underline"
               >
-                Create one on the Personas page
+                Create one on the Target roles page
               </a>
               , then create its CVs here.
             </p>

@@ -75,7 +75,7 @@ export function ExperienceEntryPage() {
       .then(async (personas) => {
         const persona = personas.find((p) => p.id === wanted)
         if (!persona) {
-          setMessage(personas.length === 0 ? 'There are no personas yet.' : 'That persona was not found.')
+          setMessage(personas.length === 0 ? 'There are no target roles yet.' : 'That target role was not found.')
           return
         }
         setPersonaId(persona.id)
@@ -150,11 +150,11 @@ export function ExperienceEntryPage() {
         description={
           libraryProfileId !== ''
             ? personaName
-              ? `A job or role in the library of ${personaName}, which its personas can use.`
+              ? `A job or role in the library of ${personaName}, which its target roles can use.`
               : 'A job or role in the library of a profile.'
             : personaName
-              ? `A job or role on the persona “${personaName}”.`
-              : 'A job or role on a persona.'
+              ? `A job or role of the target role “${personaName}”.`
+              : 'A job or role of a target role.'
         }
       />
       {!isLoaded ? (

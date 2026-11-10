@@ -223,11 +223,11 @@ export function PersonasPage({ profileId }: { profileId: string }) {
       {backLink}
       <PageHeaderCard
         icon={<LayersIcon />}
-        title={`Personas: ${profileName}`}
+        title={`Target roles: ${profileName}`}
         description={
-          'One persona per role this profile is pursuing, e.g. "Backend Engineer". Each has its own summary, skills and experience.'
+          'One target role for each kind of job this profile is pursuing, e.g. "Backend Engineer". Each has its own summary, skills and experience.'
         }
-        pill={{ text: plural(summary.personas, 'persona', 'personas') }}
+        pill={{ text: plural(summary.personas, 'target role', 'target roles') }}
       />
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
         <div className="min-w-0 flex-1">
@@ -241,7 +241,7 @@ export function PersonasPage({ profileId }: { profileId: string }) {
                 className="flex shrink-0 items-center gap-1.5 rounded-md bg-gray-800 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-900"
               >
                 <PlusIcon />
-                New persona
+                New target role
               </button>
               <CreateWithAi
                 ai={ai}
@@ -249,7 +249,7 @@ export function PersonasPage({ profileId }: { profileId: string }) {
                   !ai.platform
                     ? 'No AI platform is available. Choose one in Settings.'
                     : personas.length === 0
-                      ? 'Add a persona first: the AI builds on what you have filled in.'
+                      ? 'Add a target role first: the AI builds on what you have filled in.'
                       : hasRunningRun(aiRuns.runs)
                         ? 'An AI run is already working on this profile.'
                         : ''
@@ -257,7 +257,8 @@ export function PersonasPage({ profileId }: { profileId: string }) {
                 onStart={(focus) => aiRuns.start({ id: profileId, name: profileName }, focus, ai)}
               />
               <p className="min-w-0 flex-1 text-xs text-gray-500">
-                Deleting a persona permanently deletes its details, every skill and every experience entry, with no further confirmation.
+                Deleting a target role permanently deletes its details, every skill and every experience entry, with no further
+                confirmation.
               </p>
             </div>
           )}
@@ -270,7 +271,7 @@ export function PersonasPage({ profileId }: { profileId: string }) {
               className="mb-3 flex items-center justify-between gap-3 rounded-2xl border border-purple-200 bg-purple-50 px-4 py-2.5 text-sm text-purple-900"
             >
               <span>
-                {newIds.length === 1 ? '1 persona was' : `${newIds.length} personas were`} created with AI.{' '}
+                {newIds.length === 1 ? '1 target role was' : `${newIds.length} target roles were`} created with AI.{' '}
                 {newIds.length === 1 ? 'It is' : 'They are'} highlighted below.
               </span>
               <button
@@ -308,7 +309,7 @@ export function PersonasPage({ profileId }: { profileId: string }) {
               className="career-wiggle rounded-3xl border p-8 text-center text-sm text-gray-500"
               style={{ borderColor: PAGE_ACCENT.soft, background: PAGE_ACCENT.soft }}
             >
-              This profile has no personas yet. Create the first one with “New persona”.
+              This profile has no target roles yet. Create the first one with “New target role”.
             </div>
           )}
 
@@ -502,7 +503,7 @@ function CreatedWithAiChip({ chatId }: { chatId: string | null }) {
   return (
     <button
       type="button"
-      title="Open the chat that proposed this persona"
+      title="Open the chat that proposed this target role"
       onClick={() => {
         window.__cinqoToolBridge.openConversation(chatId)
       }}

@@ -110,7 +110,7 @@ export function CrawlerSettingsPage() {
               <div className="space-y-2">
                 <Check
                   label="Ignore jobs that match no profile well"
-                  hint="A job is saved only if at least one of your profiles matches it with the limit or more. A job no profile can judge (no profile, no persona, too little to compare) is saved."
+                  hint="A job is saved only if at least one of your profiles matches it with the limit or more. A job no profile can judge (no profile, no target role, too little to compare) is saved."
                   checked={form.minMatchEnabled}
                   onChange={(v) => {
                     edit({ minMatchEnabled: v })

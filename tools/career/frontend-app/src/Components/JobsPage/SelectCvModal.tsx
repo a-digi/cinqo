@@ -96,7 +96,7 @@ export function SelectCvModal({ job, onClose, onLinked }: SelectCvModalProps) {
               onChange={(e) => {
                 setQuery(e.target.value)
               }}
-              placeholder="Filter by title or persona…"
+              placeholder="Filter by title or target role…"
               aria-label="Filter CVs"
               className="mb-2 w-full rounded-md border border-gray-200 px-3 py-1.5 text-sm focus:border-gray-400 focus:outline-none"
             />

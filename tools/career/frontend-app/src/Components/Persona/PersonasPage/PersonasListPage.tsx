@@ -49,8 +49,8 @@ export function PersonasListPage() {
     <div className="career-v-flip career-a-sheen career-t-wave max-w-7xl p-6 font-sans text-gray-900">
       <PageHeaderCard
         icon={<LayersIcon />}
-        title="Personas"
-        description="Pick a profile to see its personas: one per role it is pursuing, each with its own summary, skills and experience."
+        title="Target roles"
+        description="Pick a profile to see its target roles: one for each kind of job it is pursuing, each with its own summary, skills and experience."
         pill={loaded && error === '' ? { text: plural(profiles.length, 'profile', 'profiles') } : undefined}
       />
       {/* The tips sit in a column of their own beside the list (under it on a narrow window). */}
@@ -70,12 +70,12 @@ export function PersonasListPage() {
               >
                 Create one on the Profiles page
               </a>
-              , then add its personas here.
+              , then add its target roles here.
             </p>
           )}
           {profiles.length > 0 && (
             <>
-              <p className="mb-4 text-xs text-gray-500">{plural(personas.length, 'persona', 'personas')} across these profiles.</p>
+              <p className="mb-4 text-xs text-gray-500">{plural(personas.length, 'target role', 'target roles')} across these profiles.</p>
               <ProfileList
                 profiles={profiles}
                 hrefFor={(p) => personasPathFor(p.id)}
@@ -85,7 +85,7 @@ export function PersonasListPage() {
                   const { shown, more } = previewItems(names, PREVIEW_PERSONAS)
                   return (
                     <span className="mt-1.5 block text-xs text-gray-500">
-                      <span className="font-medium text-gray-700">{plural(names.length, 'persona', 'personas')}</span>
+                      <span className="font-medium text-gray-700">{plural(names.length, 'target role', 'target roles')}</span>
                       {shown.length > 0 && <span> · {shown.join(' · ')}</span>}
                       {more > 0 && <span> · +{more} more</span>}
                     </span>

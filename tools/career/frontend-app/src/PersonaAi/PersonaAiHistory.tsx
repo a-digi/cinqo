@@ -64,7 +64,7 @@ export function PersonaAiHistory({
                     <button
                       type="button"
                       aria-label="Remove this run from the history"
-                      title="Remove this run from the history. The personas created from it stay."
+                      title="Remove this run from the history. The target roles created from it stay."
                       onClick={() => {
                         setRemoving(run)
                       }}
@@ -119,7 +119,7 @@ export function PersonaAiHistory({
       <ConfirmationModal
         open={removing !== null}
         title="Remove from the history"
-        message="Remove this run from the history? The personas created from it stay, and the chat itself is not deleted."
+        message="Remove this run from the history? The target roles created from it stay, and the chat itself is not deleted."
         confirmLabel="Remove"
         variant="danger"
         onConfirm={confirmRemove}

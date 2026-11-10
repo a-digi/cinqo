@@ -41,16 +41,22 @@ export function readinessItems(r: Readiness): ReadinessItem[] {
     },
     {
       key: 'persona',
-      label: 'A persona',
+      label: 'A target role',
       done: hasPersona,
-      note: hasPersona ? 'The CV is built from a persona.' : 'No persona yet.',
+      note: hasPersona ? 'The CV is built from a target role.' : 'No target role yet.',
       fix: hasPersona ? null : 'new-persona',
     },
     {
       key: 'summary',
       label: 'A summary',
       done: summaryDone,
-      note: !hasPersona ? 'Needs a persona first.' : r.checked === null ? 'Could not check.' : summaryDone ? 'Written.' : 'Still empty.',
+      note: !hasPersona
+        ? 'Needs a target role first.'
+        : r.checked === null
+          ? 'Could not check.'
+          : summaryDone
+            ? 'Written.'
+            : 'Still empty.',
       fix: hasPersona && r.checked !== null && !summaryDone ? 'details' : null,
     },
     {
@@ -58,7 +64,7 @@ export function readinessItems(r: Readiness): ReadinessItem[] {
       label: 'Skills and experience',
       done: hasSkills && hasExperience,
       note: !hasPersona
-        ? 'Needs a persona first.'
+        ? 'Needs a target role first.'
         : r.checked === null
           ? 'Could not check.'
           : hasSkills && hasExperience

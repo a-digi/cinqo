@@ -14,7 +14,7 @@ export function CoursesPage() {
       entryPath={COURSES_ENTRY_PATH}
       icon={<CoursesIcon />}
       title="Courses"
-      description="The short trainings and certificates you completed. They belong to the profile itself, so every persona and every CV can use them."
+      description="The short trainings and certificates you completed. They belong to the profile itself, so every target role and every CV can use them."
       tipsPage="courses"
       addLabel="Add course"
       hint="Schools and degrees go on the Education page. The latest completed course comes first."

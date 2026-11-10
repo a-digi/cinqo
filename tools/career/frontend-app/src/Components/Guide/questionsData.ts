@@ -110,37 +110,37 @@ export const QUESTIONS: Question[] = [
   },
   {
     id: 'persona',
-    question: 'What is a persona?',
+    question: 'What is a target role?',
     answer:
-      'One role a profile is pursuing, for example “Backend Engineer”. A persona uses the profile’s summary and goals unless it has its own, chooses which of the profile’s skills and experience it uses (and can reword the experience for its role), and can have skills and experience of its own. The AI matches jobs and writes CVs from it.',
-    link: { label: 'Open Personas', path: PERSONAS_PATH },
+      'One kind of job a profile is pursuing, for example “Backend Engineer”. A target role uses the profile’s summary and goals unless it has its own, chooses which of the profile’s skills and experience it uses (and can reword the experience for its role), and can have skills and experience of its own. The AI matches jobs and writes CVs from it.',
+    link: { label: 'Open Target roles', path: PERSONAS_PATH },
   },
   {
     id: 'goals',
-    question: 'Are the summary and the goals per persona?',
+    question: 'Are the summary and the goals per target role?',
     answer:
-      'Both are set once for the profile: the summary on the Summary page, the goals (desired titles and locations, minimum salary, remote work) on the Goals page. A persona shows the profile’s value until you give that persona one of its own; the pages mark each as Following the profile or Own wording, and Use the profile’s value brings the shared one back. Headline and location are always the persona’s.',
+      'Both are set once for the profile: the summary on the Summary page, the goals (desired titles and locations, minimum salary, remote work) on the Goals page. A target role shows the profile’s value until you give that target role one of its own; the pages mark each as Following the profile or Own wording, and Use the profile’s value brings the shared one back. Headline and location are always the target role’s.',
     link: { label: 'Open Goals', path: GOALS_PATH },
   },
   {
     id: 'education',
-    question: 'Where do I put my education, and do personas use it?',
+    question: 'Where do I put my education, and do target roles use it?',
     answer:
-      'On the Education page. Schools and degrees belong to the profile itself and are shared by all its personas; a persona does not choose among them. An entry without an end date counts as ongoing. Short trainings and certificates go on the Courses page.',
+      'On the Education page. Schools and degrees belong to the profile itself and are shared by all its target roles; a target role does not choose among them. An entry without an end date counts as ongoing. Short trainings and certificates go on the Courses page.',
     link: { label: 'Open Education', path: EDUCATION_PATH },
   },
   {
     id: 'languages-courses-hobbies',
     question: 'Where do I put my languages, courses and hobbies?',
     answer:
-      'On their own pages, which each profile’s card on the Profiles page opens: Languages (spoken, written or both, with an optional level from C2 down to A1 or Native), Courses (short trainings and certificates, with an optional certificate link) and Hobbies. Like education, they belong to the profile itself and are shared by all its personas.',
+      'On their own pages, which each profile’s card on the Profiles page opens: Languages (spoken, written or both, with an optional level from C2 down to A1 or Native), Courses (short trainings and certificates, with an optional certificate link) and Hobbies. Like education, they belong to the profile itself and are shared by all its target roles.',
     link: { label: 'Open Languages', path: LANGUAGES_PATH },
   },
   {
     id: 'import-review',
     question: 'Is everything saved straight away when I import a CV?',
     answer:
-      'No. Import from CV lets the AI propose a profile, persona, summary, skills, experience and education (skills and experience go into the profile’s library, education into the profile; an education entry the profile already has is not added again), and you review everything before it is saved.',
+      'No. Import from CV lets the AI propose a profile, target role, summary, skills, experience and education (skills and experience go into the profile’s library, education into the profile; an education entry the profile already has is not added again), and you review everything before it is saved.',
     link: { label: 'Open Import from CV', path: IMPORT_CV_PATH },
   },
   {
