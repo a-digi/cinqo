@@ -52,3 +52,18 @@ func JobApplicationsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	db.WriteJSON(w, map[string]any{"profileId": profileID, "applications": apps})
 }
+
+// ApplicationCountHandler handles GET /application-count — how many applications there are in all profiles, as {"total": N} (plan 238). The
+// menu asks it to decide whether to show its Applications item; it uses the same rule as the Applications page.
+func ApplicationCountHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	total, err := jobboard.ApplicationCount()
+	if err != nil {
+		http.Error(w, "failed to count the applications", http.StatusInternalServerError)
+		return
+	}
+	db.WriteJSON(w, map[string]int{"total": total})
+}

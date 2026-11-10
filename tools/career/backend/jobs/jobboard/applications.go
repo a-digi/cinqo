@@ -107,3 +107,36 @@ func Applications(profileID string) ([]Application, error) {
 	}
 	return out, nil
 }
+
+// ApplicationCount is how many applications there are in all (plan/ai/tools/career/step-238-applications-menu-item-only-with-applications.md):
+// the sum, over every profile, of the applications Applications lists for it, so the count can never disagree with the Applications page. The
+// menu uses it to show its Applications item only when there is something to open.
+func ApplicationCount() (int, error) {
+	rows, err := db.CareerDB.Query(`SELECT id FROM profiles`)
+	if err != nil {
+		return 0, err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return 0, err
+	}
+	rows.Close()
+	total := 0
+	for _, id := range ids {
+		apps, err := Applications(id)
+		if err != nil {
+			return 0, err
+		}
+		total += len(apps)
+	}
+	return total, nil
+}

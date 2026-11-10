@@ -8,7 +8,7 @@
       "email": "tafa.andet@googlemail.com"
     }
   ],
-  "generatedAt": "2026-11-10T14:51:03Z",
+  "generatedAt": "2026-11-10T15:04:37Z",
   "tools": [
     {
       "id": "browser",
@@ -62,7 +62,7 @@
     },
     {
       "id": "career",
-      "currentVersionId": "0.0.828",
+      "currentVersionId": "0.0.829",
       "versions": [
         {
           "authors": [
@@ -72,7 +72,7 @@
             }
           ],
           "license": "Proprietary",
-          "versionId": "0.0.828",
+          "versionId": "0.0.829",
           "name": "Career",
           "description": "Your career workspace: profiles, skills and experience; crawls job platforms, matches jobs to your profile, imports a CV and generates CV PDFs.",
           "requires": [
@@ -84,36 +84,36 @@
               "minVersion": "0.0.1"
             }
           ],
-          "version": "0.0.828",
+          "version": "0.0.829",
           "releasedAt": "2026-11-10",
           "packages": [
             {
               "os": "darwin",
               "arch": "arm64",
               "url": "https://raw.githubusercontent.com/a-digi/cinqo-tools/main/career/versions/tool-career-darwin-arm64.zip",
-              "sha256": "42ebf8d7308c906405584890a9540abbe472f45b7f638a01fbdde04b57b39ae3",
-              "sizeBytes": 18454435
+              "sha256": "28f8f706262bb3d4a7608094a6a98bccc46cc6c5885ec85503b0486824149dee",
+              "sizeBytes": 18456578
             },
             {
               "os": "linux",
               "arch": "amd64",
               "url": "https://raw.githubusercontent.com/a-digi/cinqo-tools/main/career/versions/tool-career-linux-amd64.zip",
-              "sha256": "06e2fb8e59f24000e7ef0919b92feb025050bb5f230cd893f49015b0615169ad",
-              "sizeBytes": 18628639
+              "sha256": "ff4de0e7d94931fb59d7d155882d63b0d2fb06463a99a314daa4a7fc4769f682",
+              "sizeBytes": 18629816
             },
             {
               "os": "linux",
               "arch": "arm64",
               "url": "https://raw.githubusercontent.com/a-digi/cinqo-tools/main/career/versions/tool-career-linux-arm64.zip",
-              "sha256": "2ab1bbcde45b893462b2964af5d544157b58859304c4794de3209b2def4713fb",
-              "sizeBytes": 17601387
+              "sha256": "f798753a3dad692f3069e61f95333f77d3c0a22685dc6d090e37deeedf6cda1d",
+              "sizeBytes": 17600167
             },
             {
               "os": "windows",
               "arch": "amd64",
               "url": "https://raw.githubusercontent.com/a-digi/cinqo-tools/main/career/versions/tool-career-windows-amd64.zip",
-              "sha256": "2a8589dbef220f06f4209000855529f624aea40f990a007d233c2a4846448328",
-              "sizeBytes": 18960535
+              "sha256": "e4725428b1191cf11d6c42cfeb1f1309d88fe6b7fc8f9c52bc55b562c48ae87a",
+              "sizeBytes": 18963995
             }
           ]
         }

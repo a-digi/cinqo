@@ -255,6 +255,8 @@ func runHTTPServer() {
 	http.HandleFunc("/job-recruiters", jobshandlers.JobRecruitersHandler)
 	http.HandleFunc("/job-board", jobshandlers.JobBoardHandler)
 	http.HandleFunc("/job-applications", jobshandlers.JobApplicationsHandler)
+	// Plan 238: how many applications there are, for the menu.
+	http.HandleFunc("/application-count", jobshandlers.ApplicationCountHandler)
 	http.HandleFunc("/job-statuses", jobshandlers.JobStatusesHandler)
 	http.HandleFunc("/job-board-entries", jobshandlers.JobBoardEntriesHandler)
 	http.HandleFunc("/job-board-usage", jobshandlers.JobBoardUsageHandler)

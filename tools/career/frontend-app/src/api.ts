@@ -2252,6 +2252,13 @@ export async function fetchJobApplications(profileId: string): Promise<JobApplic
   return (await jsonOrThrow<{ applications: JobApplication[] }>(res, 'load the applications')).applications
 }
 
+// How many applications there are in all (plan 238): the menu shows its Applications item only when there are some. The answer is read as raw data
+// so a wrong shape is not trusted (applicationsMenu.ts checks it).
+export async function fetchApplicationCountRaw(): Promise<unknown> {
+  const res = await fetch(`${PROXY_BASE}/application-count`, { credentials: 'include' })
+  return jsonOrThrow<unknown>(res, 'count the applications')
+}
+
 // Puts a job on a profile's board in a status: adds it when it is not on the board yet, moves it otherwise.
 export async function setJobBoardEntry(profileId: string, jobId: string, statusId: string): Promise<void> {
   const res = await fetch(`${PROXY_BASE}/job-board-entries`, {
@@ -2943,7 +2950,11 @@ export async function fetchLanguages(profileId: string): Promise<Language[]> {
 }
 
 export async function addLanguage(profileId: string, entry: LanguageInput): Promise<Language[]> {
-  const res = await fetch(`${PROXY_BASE}/languages`, { method: 'POST', credentials: 'include', body: JSON.stringify({ profileId, ...entry }) })
+  const res = await fetch(`${PROXY_BASE}/languages`, {
+    method: 'POST',
+    credentials: 'include',
+    body: JSON.stringify({ profileId, ...entry }),
+  })
   return (await libraryJson<{ languages: Language[] }>(res, 'add the language')).languages
 }
 
@@ -2982,7 +2993,11 @@ export async function fetchCourses(profileId: string): Promise<Course[]> {
 }
 
 export async function addCourse(profileId: string, entry: CourseInput): Promise<Course[]> {
-  const res = await fetch(`${PROXY_BASE}/courses`, { method: 'POST', credentials: 'include', body: JSON.stringify({ profileId, ...entry }) })
+  const res = await fetch(`${PROXY_BASE}/courses`, {
+    method: 'POST',
+    credentials: 'include',
+    body: JSON.stringify({ profileId, ...entry }),
+  })
   return (await libraryJson<{ courses: Course[] }>(res, 'add the course')).courses
 }
 
@@ -3015,7 +3030,11 @@ export async function fetchHobbies(profileId: string): Promise<Hobby[]> {
 }
 
 export async function addHobby(profileId: string, entry: HobbyInput): Promise<Hobby[]> {
-  const res = await fetch(`${PROXY_BASE}/hobbies`, { method: 'POST', credentials: 'include', body: JSON.stringify({ profileId, ...entry }) })
+  const res = await fetch(`${PROXY_BASE}/hobbies`, {
+    method: 'POST',
+    credentials: 'include',
+    body: JSON.stringify({ profileId, ...entry }),
+  })
   return (await libraryJson<{ hobbies: Hobby[] }>(res, 'add the hobby')).hobbies
 }
 

@@ -22,6 +22,8 @@
 // plan/ai/tools/career/step-11-job-seeker-profile-frontend.md, and
 // plan/ai/tools/career/step-12-nested-profiles-menu.md.
 import { GoalsPage } from './Components/GoalsPage/GoalsPage'
+import { fetchApplicationCountRaw } from './api'
+import { createApplicationsMenuRefresher } from './applicationsMenu'
 import { EducationEntryPage } from './Components/EducationPage/EducationEntryPage'
 import { EducationPage } from './Components/EducationPage/EducationPage'
 import { LanguagesEntryPage } from './Components/LanguagesPage/LanguagesEntryPage'
@@ -137,12 +139,23 @@ import {
 
 window.__cinqoToolBridge.registerMenuEntry(careerMenuEntry)
 
+// Plan 238: the Applications item shows only when there is an application. Asked now and every time a Career page opens (mountReact below).
+const refreshApplicationsMenu = createApplicationsMenuRefresher({
+  fetchCount: fetchApplicationCountRaw,
+  setHidden:
+    typeof window.__cinqoToolBridge.setMenuEntryHidden === 'function'
+      ? window.__cinqoToolBridge.setMenuEntryHidden.bind(window.__cinqoToolBridge)
+      : undefined,
+})
+void refreshApplicationsMenu()
+
 // Plan 163, step 4: the follow-up of instruction runs and the crawl flags no longer wait for a page (see Crawler/runFollower.ts).
 runFollower.start()
 
 const roots = new WeakMap<HTMLElement, Root>()
 
 function mountReact(container: HTMLElement, node: React.ReactNode) {
+  void refreshApplicationsMenu()
   const root = createRoot(container)
   roots.set(container, root)
   root.render(node)

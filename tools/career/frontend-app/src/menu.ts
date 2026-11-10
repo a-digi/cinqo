@@ -76,7 +76,8 @@ export const careerMenuEntry: MenuEntry = {
       icon: jobsGroupIcon,
       children: [
         { label: 'Jobs', path: JOBS_PATH, scopes: ['tool:career:jobs'], icon: jobsIcon },
-        { label: 'Applications', path: APPLICATIONS_PATH, scopes: ['tool:career:jobs'], icon: applicationsIcon },
+        // Starts hidden and is shown by applicationsMenu.ts once there is an application (plan 238).
+        { label: 'Applications', path: APPLICATIONS_PATH, scopes: ['tool:career:jobs'], icon: applicationsIcon, hidden: true },
         {
           // The job portals the jobs are crawled from (formerly "Job Sources").
           label: 'Platforms',
