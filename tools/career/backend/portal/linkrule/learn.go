@@ -26,6 +26,9 @@ type Link struct {
 	Texts     []string `json:"texts,omitempty"`
 	TitleAttr string   `json:"titleAttr,omitempty"`
 	Rel       string   `json:"rel,omitempty"`
+	// Anchors (plan 247): the numbers of this link's <a> elements in the page copy the picker shows; only present when a copy was asked for. Never read by the
+	// rule code, only carried to the screen and back.
+	Anchors []int `json:"anchors,omitempty"`
 }
 
 // Proposal is what the tool shows the person after they picked links: the

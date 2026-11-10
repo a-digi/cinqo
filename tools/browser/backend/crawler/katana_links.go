@@ -49,6 +49,8 @@ type pageLink struct {
 	Texts     []string `json:"texts,omitempty"`
 	TitleAttr string   `json:"titleAttr,omitempty"`
 	Rel       string   `json:"rel,omitempty"`
+	// Anchors (plan 247): the numbers of the <a> elements of the snapshot that carry this URL (data-cinqo-a), only when a snapshot was asked for.
+	Anchors []int `json:"anchors,omitempty"`
 }
 
 // fetchLinksResponse is the body of a successful POST /fetch-links.
@@ -61,6 +63,9 @@ type fetchLinksResponse struct {
 	// DroppedPrivate counts links to loopback/private/link-local addresses
 	// (literal IPs and localhost names), which are never offered.
 	DroppedPrivate int `json:"droppedPrivate"`
+	// Snapshot (plan 247): the sanitised copy of the page the picker shows, when asked for and made; SnapshotError says why not (the list is still good).
+	Snapshot      *snapshotInfo `json:"snapshot,omitempty"`
+	SnapshotError string        `json:"snapshotError,omitempty"`
 }
 
 // rawPageLink is what the page script reports for one element.
@@ -70,21 +75,25 @@ type rawPageLink struct {
 	Title string `json:"ti"`
 	Rel   string `json:"r"`
 	Kind  string `json:"k"` // "a" or "link"
+	// N is the number the page script gave an <a> (1, 2, ...) when a snapshot was asked for; 0 otherwise.
+	N int `json:"n"`
 }
 
 // pageLinksJS collects the links of the live document: anchors (open shadow
 // roots included) and <link rel=next|prev|canonical>. The href is resolved
 // against the document's base URL by the browser itself.
 const pageLinksJS = `(function () {
-	var out = [];
+	var out = [], num = 0, number = __NUMBER__;
 	function abs(v) { try { return new URL(v, document.baseURI).href; } catch (e) { return ""; } }
 	function walk(root) {
 		var anchors = root.querySelectorAll("a[href]");
 		for (var i = 0; i < anchors.length; i++) {
 			var a = anchors[i], h = a.getAttribute("href");
 			if (h === null) continue;
+			var n = 0;
+			if (number) { n = ++num; a.setAttribute("data-cinqo-a", String(n)); }
 			out.push({h: abs(h), t: ((a.innerText || a.textContent || "") + "").replace(/\s+/g, " ").trim().slice(0, 400),
-				ti: (a.getAttribute("title") || a.getAttribute("aria-label") || "").trim().slice(0, 400), r: a.getAttribute("rel") || "", k: "a"});
+				ti: (a.getAttribute("title") || a.getAttribute("aria-label") || "").trim().slice(0, 400), r: a.getAttribute("rel") || "", k: "a", n: n});
 		}
 		var all = root.querySelectorAll("*");
 		for (var j = 0; j < all.length; j++) { if (all[j].shadowRoot) walk(all[j].shadowRoot); }
@@ -97,6 +106,11 @@ const pageLinksJS = `(function () {
 	}
 	return JSON.stringify(out);
 })()`
+
+// pageLinksScript is pageLinksJS; with number true it also numbers the page's anchors (data-cinqo-a) for the snapshot.
+func pageLinksScript(number bool) string {
+	return strings.Replace(pageLinksJS, "__NUMBER__", fmt.Sprintf("%t", number), 1)
+}
 
 // normalizePageURL makes the URLs of one page comparable: http(s) only, no
 // credentials, lower-case scheme and host, no fragment, a bare host gets
@@ -175,6 +189,9 @@ func buildLinkList(raw []rawPageLink, pageHost string) (links []pageLink, droppe
 			i = len(links) - 1
 		}
 		l := &links[i]
+		if r.N > 0 && r.Kind == "a" {
+			l.Anchors = append(l.Anchors, r.N)
+		}
 		if t := cleanLinkText(r.Text); t != "" && len(l.Texts) < maxTextsPerLink && !containsString(l.Texts, t) {
 			l.Texts = append(l.Texts, t)
 		}
@@ -229,7 +246,8 @@ func fetchLinksWithKatana(ctx context.Context, rawURL, requestID string) (fetchL
 		if rerr := refuseRedirectToPrivate(rawURL, finalURL); rerr != nil {
 			return fetchLinksResponse{}, rerr
 		}
-		listJSON, err := rodEvalString(p, pageLinksJS)
+		snapshotWanted := wantsSnapshot(ctx)
+		listJSON, err := rodEvalString(p, pageLinksScript(snapshotWanted))
 		if err != nil {
 			return fetchLinksResponse{}, fmt.Errorf("katana: failed to read the links: %w", err)
 		}
@@ -242,7 +260,16 @@ func fetchLinksWithKatana(ctx context.Context, rawURL, requestID string) (fetchL
 			pageHost = fu.Hostname()
 		}
 		links, dropped, truncated := buildLinkList(raw, pageHost)
-		return fetchLinksResponse{FinalURL: finalURL, Title: title, Links: links, Truncated: truncated, DroppedPrivate: dropped}, nil
+		resp := fetchLinksResponse{FinalURL: finalURL, Title: title, Links: links, Truncated: truncated, DroppedPrivate: dropped}
+		if snapshotWanted {
+			// Never fails the read: the list is good without the picture.
+			if info, serr := snapshotLivePage(p, ctx, rawURL, finalURL, title); serr != nil {
+				resp.SnapshotError = serr.Error()
+			} else {
+				resp.Snapshot = &info
+			}
+		}
+		return resp, nil
 	})
 }
 
@@ -259,6 +286,8 @@ type fetchLinksRequest struct {
 	RateLimitKey string `json:"rateLimitKey,omitempty"`
 	// LoginSessionID (plan 195): the kept login to fetch with; see login_session_fetch.go. Never set by an AI tool.
 	LoginSessionID string `json:"loginSessionId,omitempty"`
+	// Snapshot (plan 247): also keep a sanitised copy of the page for the picker to show.
+	Snapshot bool `json:"snapshot,omitempty"`
 	// Attended (plan 198): a person started this and is watching, so a check only they can clear may open the Katana window. Never set by an AI tool on its own.
 	Attended bool `json:"attended,omitempty"`
 }
@@ -279,7 +308,7 @@ func FetchLinksHandler(w http.ResponseWriter, r *http.Request) {
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&body); err != nil || strings.TrimSpace(body.URL) == "" {
-		http.Error(w, "url is required (and only url, requestId, rateLimitKey, loginSessionId and attended are accepted)", http.StatusBadRequest)
+		http.Error(w, "url is required (and only url, requestId, rateLimitKey, loginSessionId, snapshot and attended are accepted)", http.StatusBadRequest)
 		return
 	}
 	if err := checkLoginSessionID(body.LoginSessionID); err != nil {
@@ -300,7 +329,7 @@ func FetchLinksHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Cancellable by requestId like every crawl (crawl-cancel), and ends when the caller disconnects.
-	ctx, cancel := context.WithCancel(withAttended(withLoginSession(r.Context(), body.LoginSessionID), body.Attended))
+	ctx, cancel := context.WithCancel(withSnapshot(withAttended(withLoginSession(r.Context(), body.LoginSessionID), body.Attended), body.Snapshot))
 	registerCrawlCancel(body.RequestID, cancel)
 	defer func() {
 		unregisterCrawlCancel(body.RequestID)
@@ -324,4 +353,21 @@ func FetchLinksHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	setCrawlPhase(body.RequestID, phaseCompleted, "links read")
 	writeFetchLinksJSON(w, http.StatusOK, result)
+}
+
+// snapshotLivePage captures the live tab, makes the safe copy and stores it (plan 247).
+func snapshotLivePage(p *rod.Page, ctx context.Context, rawURL, finalURL, title string) (snapshotInfo, error) {
+	raw, err := rodEvalString(p, snapshotCaptureJS)
+	if err != nil {
+		return snapshotInfo{}, fmt.Errorf("the page could not be copied: %w", err)
+	}
+	capture, err := parseSnapshotCapture(raw)
+	if err != nil {
+		return snapshotInfo{}, err
+	}
+	htmlText, truncated, err := buildSnapshotHTML(capture, finalURL)
+	if err != nil {
+		return snapshotInfo{}, err
+	}
+	return writeSnapshot(htmlText, snapshotMeta{URL: rawURL, FinalURL: finalURL, Title: title, Login: loginSessionFrom(ctx) != "", Truncated: truncated})
 }

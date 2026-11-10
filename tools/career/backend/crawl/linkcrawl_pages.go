@@ -44,6 +44,9 @@ type pageLinks struct {
 	Links          []linkrule.Link `json:"links"`
 	Truncated      bool            `json:"truncated"`
 	DroppedPrivate int             `json:"droppedPrivate"`
+	// Snapshot (plan 247): the page copy the Browser tool kept for the picker, when one was asked for and made; SnapshotError says why not.
+	Snapshot      *PageSnapshot `json:"snapshot,omitempty"`
+	SnapshotError string        `json:"snapshotError,omitempty"`
 }
 
 // linkFetchError is a verdict or refusal of the Browser tool (a check page, a rate limit, a refused redirect, a bad address).
@@ -64,6 +67,9 @@ func fetchPageLinksViaCore(ctx context.Context, coreURL, accessToken, pageURL, p
 	fields := map[string]any{"url": pageURL, "rateLimitKey": portalID}
 	if attendedFrom(ctx) {
 		fields["attended"] = true // plan 198: a person is watching, so a check they can clear may open the Katana window
+	}
+	if snapshotRequested(ctx) {
+		fields["snapshot"] = true // plan 247: also keep a sanitised copy of the page for the picker to show
 	}
 	if id := keptLoginFrom(ctx); id != "" {
 		fields["loginSessionId"] = id // plan 195: the kept login of a link that needs a login
@@ -242,6 +248,8 @@ func writeFetchFailure(w http.ResponseWriter, err error) {
 type candidatesBody struct {
 	PortalLinkID string `json:"portalLinkId"`
 	URL          string `json:"url,omitempty"`
+	// Snapshot (plan 247): also keep a copy of the page for the picker to show (see linkcrawl_snapshot.go).
+	Snapshot bool `json:"snapshot,omitempty"`
 }
 
 type candidatesResponse struct {
@@ -271,7 +279,7 @@ func LinkCrawlCandidatesHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	res, err := fetchPageLinks(withAttended(withKeptLogin(r.Context(), lc.sessionID), true), lc.coreURL, lc.token, page, lc.portalID, "")
+	res, err := fetchPageLinks(withSnapshotRequest(withAttended(withKeptLogin(r.Context(), lc.sessionID), true), body.Snapshot), lc.coreURL, lc.token, page, lc.portalID, "")
 	noteFetchOutcome(lc.linkID, err)
 	if err != nil {
 		writeFetchFailure(w, err)

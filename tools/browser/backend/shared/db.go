@@ -32,6 +32,9 @@ var (
 	// regenerate from scratch at any time. See
 	// plan/ai/tools/browser/step-45-fetch-html-caching-plan.md.
 	FetchCacheDir string
+	// PageSnapshotsDir holds the sanitised page copies the Career picker shows (plan 247): one .html and one .json per snapshot, deleted when the
+	// picker closes, by an age sweep, or by the manual "delete temporary files" button. Always safe to remove.
+	PageSnapshotsDir string
 	// ChallengeLogsDir holds one subfolder per crawl session's own
 	// requestID, each containing one raw-HTML .txt file per tick of the
 	// Cloudflare human-wait loop (Debug + Log HTML only) — set once
@@ -81,6 +84,11 @@ func InitDB() error {
 	FetchCacheDir = filepath.Join(cacheDir, "fetch_cache")
 	if err := os.MkdirAll(FetchCacheDir, 0o755); err != nil {
 		return fmt.Errorf("failed to create fetch_cache directory: %w", err)
+	}
+
+	PageSnapshotsDir = filepath.Join(cacheDir, "page_snapshots")
+	if err := os.MkdirAll(PageSnapshotsDir, 0o700); err != nil {
+		return fmt.Errorf("failed to create page_snapshots directory: %w", err)
 	}
 
 	ChallengeLogsDir = filepath.Join(logsDir, "challenge_logs")

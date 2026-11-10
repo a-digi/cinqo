@@ -55,6 +55,8 @@ func runHTTPServer() {
 	if err := shared.InitDB(); err != nil {
 		log.Fatalf("failed to open browser database: %v", err)
 	}
+	// Plan 247: the page copies the Career picker shows are temporary; sweep the old ones now and every 10 minutes.
+	crawler.StartSnapshotSweeper(context.Background())
 	// Plan 224: the list of the Chrome processes this tool starts, kept in a ledger file that outlives it (a ledger of an earlier run is kept aside).
 	if dir := os.Getenv("TOOL_CACHE_DIR"); dir != "" {
 		if err := chromeproc.Configure(filepath.Join(dir, "chrome")); err != nil {
@@ -103,6 +105,8 @@ func runHTTPServer() {
 	http.HandleFunc("/crawl-paginated", chromeproc.LimitSessions(crawler.PaginatedCrawlHandler))
 	http.HandleFunc("/find-repeating-items", chromeproc.LimitSessions(crawler.FindRepeatingItemsHandler))
 	http.HandleFunc("/fetch-links", chromeproc.LimitSessions(crawler.FetchLinksHandler))
+	http.HandleFunc("/page-snapshot", crawler.PageSnapshotHandler)                // plan 247
+	http.HandleFunc("/page-snapshots", crawler.PageSnapshotsHandler)              // plan 247
 	http.HandleFunc("/katana-window-cleared", crawler.KatanaWindowClearedHandler) // plan 198
 	http.HandleFunc("/katana-window-hosts", crawler.KatanaWindowHostsHandler)
 	http.HandleFunc("/katana-window-host", crawler.KatanaWindowHostHandler)

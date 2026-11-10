@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.0.845",
+  "version": "0.0.848",
   "description": "Your career workspace: profiles, skills and experience; crawls job platforms, matches jobs to your profile, imports a CV and generates CV PDFs.",
   "authors": [
     { "name": "Anes Detit", "email": "tafa.andet@googlemail.com" }
@@ -678,6 +678,26 @@
     {
       "method": "POST",
       "path_suffix": "portal-links/link-crawl/window-open",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "portal-links/link-crawl/snapshot",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "portal-links/link-crawl/snapshot",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "GET",
+      "path_suffix": "portal-links/link-crawl/snapshots",
+      "required_scope": "tool:career:portals"
+    },
+    {
+      "method": "DELETE",
+      "path_suffix": "portal-links/link-crawl/snapshots",
       "required_scope": "tool:career:portals"
     },
     {

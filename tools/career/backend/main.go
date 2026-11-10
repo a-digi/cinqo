@@ -297,6 +297,8 @@ func runHTTPServer() {
 	http.HandleFunc("/portal-links/link-crawl/candidates", crawl.LinkCrawlCandidatesHandler)
 	http.HandleFunc("/portal-links/link-crawl/window-cleared", crawl.LinkCrawlWindowClearedHandler) // plan 198
 	http.HandleFunc("/portal-links/link-crawl/window-open", crawl.LinkCrawlWindowOpenHandler)
+	http.HandleFunc("/portal-links/link-crawl/snapshot", crawl.LinkCrawlSnapshotHandler)   // plan 247
+	http.HandleFunc("/portal-links/link-crawl/snapshots", crawl.LinkCrawlSnapshotsHandler) // plan 247
 	http.HandleFunc("/portal-links/link-crawl/learn", crawl.LinkCrawlLearnHandler)
 	http.HandleFunc("/portal-links/link-crawl/learn-pagination", crawl.LinkCrawlLearnPaginationHandler)
 	http.HandleFunc("/portal-links/link-crawl/preview", crawl.LinkCrawlPreviewHandler)

@@ -2,6 +2,7 @@ package crawl
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -39,6 +40,10 @@ type fakeCore struct {
 	// capabilities answers GET /capabilities of the Browser tool; nil = an older Browser tool (the route does not exist: 404).
 	capabilities func() (status int, body string)
 	capsCalls    int
+	// snapshots answers the page-copy routes of the Browser tool (plan 247) by method and path+query; nil = an older Browser tool (404). snapshotCalls
+	// records them as "METHOD path?query" with the Authorization header after a space.
+	snapshots     func(method, pathQuery string) (status int, contentType, body string)
+	snapshotCalls []string
 }
 
 func newFakeCore(t *testing.T, engine string) *fakeCore {
@@ -90,8 +95,12 @@ func newFakeCore(t *testing.T, engine string) *fakeCore {
 			_, _ = w.Write([]byte(out))
 		case "/api/v1/tools/browser/proxy/fetch-links":
 			raw, _ := io.ReadAll(r.Body)
-			var b map[string]string
-			_ = json.Unmarshal(raw, &b)
+			var anyBody map[string]any
+			_ = json.Unmarshal(raw, &anyBody)
+			b := map[string]string{}
+			for k, v := range anyBody {
+				b[k] = fmt.Sprint(v)
+			}
 			f.fetches = append(f.fetches, b)
 			if f.failFor != "" && b["url"] == f.failFor {
 				w.WriteHeader(http.StatusBadGateway)
@@ -109,6 +118,22 @@ func newFakeCore(t *testing.T, engine string) *fakeCore {
 			}
 			w.WriteHeader(f.fetchStatus)
 			_, _ = w.Write([]byte(f.fetchBody))
+		case "/api/v1/tools/browser/proxy/page-snapshot", "/api/v1/tools/browser/proxy/page-snapshots":
+			pq := r.URL.Path
+			if r.URL.RawQuery != "" {
+				pq += "?" + r.URL.RawQuery
+			}
+			f.snapshotCalls = append(f.snapshotCalls, r.Method+" "+pq+" "+r.Header.Get("Authorization"))
+			if f.snapshots == nil {
+				http.NotFound(w, r)
+				return
+			}
+			status, ct, out := f.snapshots(r.Method, pq)
+			if ct != "" {
+				w.Header().Set("Content-Type", ct)
+			}
+			w.WriteHeader(status)
+			_, _ = w.Write([]byte(out))
 		default:
 			http.NotFound(w, r)
 		}

@@ -13,6 +13,16 @@ export interface PageLink {
   texts?: string[]
   titleAttr?: string
   rel?: string
+  // plan 247: the numbers of this link's <a> elements in the page copy (data-cinqo-a); present only when a copy was asked for.
+  anchors?: number[]
+}
+
+// plan 247: the page copy the Browser tool kept for the picker to show (see PageView).
+export interface PageSnapshot {
+  id: string
+  bytes: number
+  createdAt: string
+  truncated?: boolean
 }
 
 // How many of the page's links are on one host and how many of them look like postings (the biggest group of links with the same address
@@ -39,6 +49,9 @@ export interface PageLinks {
   site?: HostSummary
   otherHosts?: HostSummary[]
   jobHost?: string
+  // plan 247: the copy of the page, when one was asked for and made; snapshotError says why not (the list is good either way).
+  snapshot?: PageSnapshot
+  snapshotError?: string
 }
 
 export interface Proposal {
@@ -141,8 +154,32 @@ async function call<T>(path: string, method: 'POST' | 'PUT' | 'GET', body: unkno
 }
 
 // Load the links of the link's page (or of another page of its site).
-export function fetchLinkCandidates(portalLinkId: string, url?: string, signal?: AbortSignal): Promise<PageLinks> {
-  return call<PageLinks>('candidates', 'POST', { portalLinkId, ...(url ? { url } : {}) }, 'load the links of the page', signal)
+// With snapshot the Browser tool also keeps a safe copy of the page for the picker to show; it is deleted when the picker closes.
+export function fetchLinkCandidates(
+  portalLinkId: string,
+  url?: string,
+  signal?: AbortSignal,
+  options?: { snapshot?: boolean },
+): Promise<PageLinks> {
+  return call<PageLinks>(
+    'candidates',
+    'POST',
+    { portalLinkId, ...(url ? { url } : {}), ...(options?.snapshot ? { snapshot: true } : {}) },
+    'load the links of the page',
+    signal,
+  )
+}
+
+// plan 247: the page copy as html (for a sandboxed iframe), and its removal (also fine when it is already gone).
+export async function fetchSnapshotHtml(id: string, signal?: AbortSignal): Promise<string> {
+  const res = await fetch(`${LINK_CRAWL_BASE}/snapshot?id=${encodeURIComponent(id)}`, { credentials: 'include', cache: 'no-store', signal })
+  if (!res.ok) throw await readError(res, 'show the page')
+  return res.text()
+}
+
+export async function deleteSnapshot(id: string): Promise<void> {
+  const res = await fetch(`${LINK_CRAWL_BASE}/snapshot?id=${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'include' })
+  if (!res.ok && res.status !== 404) throw await readError(res, 'delete the page copy')
 }
 
 // The picked links -> the proposed partial URL (nothing is loaded or saved).
@@ -202,5 +239,10 @@ export function openKatanaWindow(portalLinkId: string): Promise<{ ok: boolean }>
 export const WINDOW_CHECK_CODE = 'human_check_requested'
 
 export function confirmWindowCleared(portalLinkId: string, url?: string): Promise<{ ok: boolean }> {
-  return call<{ ok: boolean }>('window-cleared', 'POST', { portalLinkId, ...(url ? { url } : {}) }, 'tell the Browser the check was cleared')
+  return call<{ ok: boolean }>(
+    'window-cleared',
+    'POST',
+    { portalLinkId, ...(url ? { url } : {}) },
+    'tell the Browser the check was cleared',
+  )
 }
