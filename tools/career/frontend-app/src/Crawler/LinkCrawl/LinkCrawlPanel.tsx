@@ -347,8 +347,20 @@ export function LinkCrawlPanel({ link, onReload }: { link: PortalLink; onReload:
     saveLinkRules(link.id, rule)
       .then(() => {
         setNote('The rule is saved.')
-        // plan 247: the instruction is done, so its page copy is not needed any more (the effect on the copy's id deletes the file)
-        setPage((p) => (p ? { ...p, snapshot: undefined } : p))
+        // plan 247: the instruction is done. The modal stays open, but the picker folds away so only the saved rule and its "Change the rule" button are
+        // left, and everything of this round is dropped; its page copy goes with the page (the effect on the copy's id deletes the file).
+        setOpen(false)
+        setPage(null)
+        setMarks(NO_MARKS)
+        setPagesProposal(null)
+        setPagination(undefined)
+        setPaginationError('')
+        setProposal(null)
+        setPattern('')
+        setExcludes([])
+        setPreview(null)
+        setTest(null)
+        setConfirmed(false)
         onReload()
       })
       .catch((err: unknown) => {
