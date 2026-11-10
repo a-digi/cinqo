@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 )
 
 // The profile folders of the Chromes this tool starts (plan 224, step 2). Every headless Chrome gets its own named folder under one
@@ -121,4 +122,62 @@ func IsOurs(cmd string) bool {
 		}
 	}
 	return false
+}
+
+// ProfileFolder is one folder directly inside the profile root, and whether it must be left alone.
+type ProfileFolder struct {
+	Path  string
+	InUse bool
+}
+
+// recentProfile is how young a profile folder must be to count as in use even when no Chrome names it yet (a folder is made a moment before its
+// Chrome is registered).
+const recentProfile = time.Minute
+
+// ProfileFolders lists the folders directly inside the profile root. A folder is in use when a registered Chrome that is still alive has it as its
+// profile, when a running process names it in its command line, or when it is younger than a minute. When the process table cannot be read nothing can
+// be told, so every folder counts as in use. Nothing is deleted here.
+func ProfileFolders() []ProfileFolder { return std.profileFolders() }
+
+func (r *Registry) profileFolders() []ProfileFolder {
+	root := ProfileRoot()
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil
+	}
+	var table []ProcInfo
+	if r.proc != nil {
+		table = r.proc.List()
+	}
+	registered := map[string]bool{}
+	for _, e := range r.Entries() {
+		if e.ProfileDir != "" && (r.proc == nil || r.proc.Alive(e.PID)) {
+			registered[filepath.Clean(e.ProfileDir)] = true
+		}
+	}
+	now := r.now()
+	var out []ProfileFolder
+	for _, de := range entries {
+		if !de.IsDir() {
+			continue
+		}
+		path := filepath.Join(root, de.Name())
+		inUse := registered[path] || table == nil || folderInUse(table, path)
+		if !inUse {
+			if info, err := de.Info(); err == nil && now.Sub(info.ModTime()) < recentProfile {
+				inUse = true
+			}
+		}
+		out = append(out, ProfileFolder{Path: path, InUse: inUse})
+	}
+	return out
+}
+
+// LedgerDir is the folder the ledger lives in ("" until Configure).
+func LedgerDir() string { return currentLedgerDir() }
+
+// IsLedgerFile says whether a file name in the ledger folder belongs to the ledger (the ledger itself and the temporary file it is written through), which
+// must never be deleted while the tool runs.
+func IsLedgerFile(name string) bool {
+	return name == ledgerName || strings.HasPrefix(name, ".chrome-pids-")
 }

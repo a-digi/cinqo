@@ -74,6 +74,11 @@ func runHTTPServer() {
 			stopChromeWatchdog = chromeproc.StartWatchdog(chromeproc.DefaultWatchdog)
 		}
 	}
+	// Plan 248: the temporary files folder (page copies, the page cache, idle Chrome profiles) is emptied at every start, after the Chrome sweep above and
+	// before the first request is served: nothing of an earlier run is worth keeping, and no person has to ask for it.
+	if line := crawler.SummarizeTempClear("at start", crawler.ClearTemporaryFiles()); line != "" {
+		log.Print(line)
+	}
 	// Plan 182: delete the throw-away profile folders of any login window an earlier run of this tool left behind (a crash, a kill).
 	if n := shared.SweepLoginWindowFolders(); n > 0 {
 		log.Printf("removed %d login window folder(s) left by an earlier run", n)
@@ -90,6 +95,10 @@ func runHTTPServer() {
 		crawler.StopRodEngine()
 		crawler.StopKatanaEngine()
 		crawler.StopKatanaWindow() // plan 198
+		// Plan 248: a clean stop empties the temporary files folder too (best effort; the start-up clear covers a crash or a kill).
+		if line := crawler.SummarizeTempClear("at stop", crawler.ClearTemporaryFiles()); line != "" {
+			log.Print(line)
+		}
 		os.Exit(0)
 	}()
 
@@ -107,6 +116,7 @@ func runHTTPServer() {
 	http.HandleFunc("/fetch-links", chromeproc.LimitSessions(crawler.FetchLinksHandler))
 	http.HandleFunc("/page-snapshot", crawler.PageSnapshotHandler)                // plan 247
 	http.HandleFunc("/page-snapshots", crawler.PageSnapshotsHandler)              // plan 247
+	http.HandleFunc("/temp-files", crawler.TempFilesHandler)                      // plan 248
 	http.HandleFunc("/katana-window-cleared", crawler.KatanaWindowClearedHandler) // plan 198
 	http.HandleFunc("/katana-window-hosts", crawler.KatanaWindowHostsHandler)
 	http.HandleFunc("/katana-window-host", crawler.KatanaWindowHostHandler)

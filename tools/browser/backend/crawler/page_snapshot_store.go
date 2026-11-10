@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"browser-tool-backend/shared"
@@ -29,6 +30,9 @@ const (
 	snapshotMaxAgeLogin = 15 * time.Minute
 	snapshotSweepEvery  = 10 * time.Minute
 )
+
+// snapshotMu serialises the changes of the page copy folder: making a copy (which removes the others), the removal of one, and a clear of the whole folder.
+var snapshotMu sync.Mutex
 
 var (
 	snapshotIDRe   = regexp.MustCompile(`^[0-9a-f]{32}$`)
@@ -82,6 +86,8 @@ func writeSnapshot(htmlText string, meta snapshotMeta) (snapshotInfo, error) {
 	if err != nil {
 		return snapshotInfo{}, err
 	}
+	snapshotMu.Lock()
+	defer snapshotMu.Unlock()
 	meta.ID, meta.Bytes, meta.CreatedAt = id, len(htmlText), time.Now().UTC().Format(time.RFC3339)
 	if err := os.WriteFile(filepath.Join(dir, id+".html"), []byte(htmlText), 0o600); err != nil {
 		return snapshotInfo{}, err
@@ -91,7 +97,25 @@ func writeSnapshot(htmlText string, meta snapshotMeta) (snapshotInfo, error) {
 		_ = os.Remove(filepath.Join(dir, id+".html"))
 		return snapshotInfo{}, err
 	}
+	// Plan 248: one copy at a time. The new copy is written first, so a failed write never leaves the person with none; every other copy goes now. A view
+	// that is already open keeps the page it loaded in memory, so only a reload of an old view finds its copy gone.
+	removeOtherSnapshots(dir, id)
 	return snapshotInfo{ID: id, Bytes: meta.Bytes, CreatedAt: meta.CreatedAt, Truncated: meta.Truncated}, nil
+}
+
+// removeOtherSnapshots deletes every snapshot file in dir except the two of the snapshot keep (and nothing that is not named like a snapshot file).
+func removeOtherSnapshots(dir, keep string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		m := snapshotFileRe.FindStringSubmatch(e.Name())
+		if m == nil || e.IsDir() || m[1] == keep {
+			continue
+		}
+		_ = os.Remove(filepath.Join(dir, e.Name()))
+	}
 }
 
 // deleteSnapshot removes one copy; a missing one is fine.

@@ -35,6 +35,9 @@ var (
 	// PageSnapshotsDir holds the sanitised page copies the Career picker shows (plan 247): one .html and one .json per snapshot, deleted when the
 	// picker closes, by an age sweep, or by the manual "delete temporary files" button. Always safe to remove.
 	PageSnapshotsDir string
+	// CacheRoot is the tool's whole cache folder (TOOL_CACHE_DIR, absolute): the temporary files folder that Browser & Engine shows and clears (plan 248).
+	// FetchCacheDir, PageSnapshotsDir and the Chrome profile root all live inside it.
+	CacheRoot string
 	// ChallengeLogsDir holds one subfolder per crawl session's own
 	// requestID, each containing one raw-HTML .txt file per tick of the
 	// Cloudflare human-wait loop (Debug + Log HTML only) — set once
@@ -80,6 +83,8 @@ func InitDB() error {
 	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 		return fmt.Errorf("failed to create TOOL_CACHE_DIR: %w", err)
 	}
+
+	CacheRoot = filepath.Clean(cacheDir)
 
 	FetchCacheDir = filepath.Join(cacheDir, "fetch_cache")
 	if err := os.MkdirAll(FetchCacheDir, 0o755); err != nil {

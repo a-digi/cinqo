@@ -209,10 +209,32 @@ func TestTheFolderIsRecreatedPrivate(t *testing.T) {
 	}
 }
 
+// plant puts a page copy in the folder without the one-copy rule of writeSnapshot (plan 248), for the tests that need several copies side by side.
+func plant(t *testing.T, html string, meta snapshotMeta) snapshotInfo {
+	t.Helper()
+	dir, err := snapshotDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := newSnapshotID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta.ID, meta.Bytes, meta.CreatedAt = id, len(html), time.Now().UTC().Format(time.RFC3339)
+	b, _ := json.Marshal(meta)
+	if err := os.WriteFile(filepath.Join(dir, id+".html"), []byte(html), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, id+".json"), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return snapshotInfo{ID: id, Bytes: len(html), CreatedAt: meta.CreatedAt}
+}
+
 func TestDeleteAllTouchesOnlyItsOwnFiles(t *testing.T) {
 	dir := newStore(t)
-	a, _ := writeSnapshot("<a>", snapshotMeta{})
-	b, _ := writeSnapshot("<b>", snapshotMeta{})
+	a := plant(t, "<a>", snapshotMeta{})
+	b := plant(t, "<b>", snapshotMeta{})
 	foreign := filepath.Join(dir, "notes.txt")
 	notOurs := filepath.Join(dir, strings.Repeat("a", 32)+".txt")
 	sub := filepath.Join(dir, strings.Repeat("b", 32)+".html")
@@ -238,9 +260,9 @@ func TestDeleteAllTouchesOnlyItsOwnFiles(t *testing.T) {
 
 func TestSweepUsesTheAgeLimitsAndTheLoginLimit(t *testing.T) {
 	dir := newStore(t)
-	plain, _ := writeSnapshot("<p>", snapshotMeta{})
-	login, _ := writeSnapshot("<l>", snapshotMeta{Login: true})
-	fresh, _ := writeSnapshot("<f>", snapshotMeta{})
+	plain := plant(t, "<p>", snapshotMeta{})
+	login := plant(t, "<l>", snapshotMeta{Login: true})
+	fresh := plant(t, "<f>", snapshotMeta{})
 	age := func(id string, d time.Duration) {
 		for _, ext := range []string{".html", ".json"} {
 			past := time.Now().Add(-d)
@@ -258,8 +280,8 @@ func TestSweepUsesTheAgeLimitsAndTheLoginLimit(t *testing.T) {
 		t.Error("a young snapshot was swept")
 	}
 	// 30 minutes old: the login one would go, a plain one stays
-	p2, _ := writeSnapshot("<p>", snapshotMeta{})
-	l2, _ := writeSnapshot("<l>", snapshotMeta{Login: true})
+	p2 := plant(t, "<p>", snapshotMeta{})
+	l2 := plant(t, "<l>", snapshotMeta{Login: true})
 	age(p2.ID, 30*time.Minute)
 	age(l2.ID, 30*time.Minute)
 	sweepSnapshots(time.Now())
