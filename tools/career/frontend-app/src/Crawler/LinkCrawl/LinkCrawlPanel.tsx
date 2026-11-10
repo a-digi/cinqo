@@ -2,7 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { updatePortalLink, type LinkPagination, type LinkRule, type PortalLink } from '../../api'
 import { WindowCheckPrompt } from '../WindowCheckPrompt'
 import {
+  deleteAllSnapshots,
   deleteSnapshot,
+  fetchSnapshotStats,
+  type SnapshotStats,
   fetchLinkCandidates,
   learnLinkPagination,
   learnLinkPattern,
@@ -41,6 +44,7 @@ import {
 import { CheckCircleIcon, PencilIcon, TrashIcon, XIcon } from '../../Shared/Icons/icons'
 import { InstructionSection } from '../InstructionSection'
 import { PageView } from './PageView'
+import { formatBytes } from '../pageView'
 import { buttonClass, cardClass, inputClass, primaryClass } from '../instructionStyles'
 
 const SHOWN_LINKS = 200
@@ -90,6 +94,9 @@ export function LinkCrawlPanel({ link, onReload }: { link: PortalLink; onReload:
   // plan 247: the link last ticked or asked for in the list (the view scrolls to it) and the anchors that are in the picture
   const [reveal, setReveal] = useState<{ url: string; seq: number } | null>(null)
   const [inView, setInView] = useState<Set<number> | null>(null)
+  // the temporary page files the Browser tool holds (null = not known, e.g. an older Browser tool) and what the last deletion said
+  const [files, setFiles] = useState<SnapshotStats | null>(null)
+  const [filesNote, setFilesNote] = useState('')
   const revealSeq = useRef(0)
   const learnSeq = useRef(0)
   const previewSeq = useRef(0)
@@ -221,6 +228,32 @@ export function LinkCrawlPanel({ link, onReload }: { link: PortalLink; onReload:
       void deleteSnapshot(snapshotId).catch(() => undefined)
     }
   }, [snapshotId])
+  function refreshFiles() {
+    fetchSnapshotStats()
+      .then(setFiles)
+      .catch(() => {
+        setFiles(null)
+      })
+  }
+  // The count is read when the picker opens and again whenever a copy was made or went away.
+  useEffect(() => {
+    if (open) refreshFiles()
+  }, [open, snapshotId])
+  function deleteFiles() {
+    setFilesNote('')
+    deleteAllSnapshots()
+      .then((n) => {
+        setFilesNote(
+          n === 0
+            ? 'There was nothing to delete.'
+            : `Deleted ${String(n)} temporary page file${n === 1 ? '' : 's'}. The page in view stays until you close this.`,
+        )
+        refreshFiles()
+      })
+      .catch((err: unknown) => {
+        setFilesNote(errorText(err))
+      })
+  }
   function showInPage(url: string) {
     revealSeq.current += 1
     setReveal({ url, seq: revealSeq.current })
@@ -311,6 +344,8 @@ export function LinkCrawlPanel({ link, onReload }: { link: PortalLink; onReload:
     saveLinkRules(link.id, rule)
       .then(() => {
         setNote('The rule is saved.')
+        // plan 247: the instruction is done, so its page copy is not needed any more (the effect on the copy's id deletes the file)
+        setPage((p) => (p ? { ...p, snapshot: undefined } : p))
         onReload()
       })
       .catch((err: unknown) => {
@@ -480,6 +515,25 @@ export function LinkCrawlPanel({ link, onReload }: { link: PortalLink; onReload:
                 </span>
               )}
             </div>
+
+            {files && (
+              <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500" data-testid="temp-files">
+                <span>
+                  Temporary page files: {files.count}
+                  {files.count > 0 ? ` (${formatBytes(files.bytes)})` : ''}
+                </span>
+                <button
+                  type="button"
+                  className={`${buttonClass} inline-flex items-center gap-1.5`}
+                  disabled={files.count === 0}
+                  onClick={deleteFiles}
+                >
+                  <TrashIcon />
+                  Delete temporary files
+                </button>
+                {filesNote && <span role="status">{filesNote}</span>}
+              </div>
+            )}
 
             {page && (
               <>

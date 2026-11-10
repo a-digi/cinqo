@@ -61,3 +61,10 @@ a[data-cinqo-a].cinqo-next { outline: 3px dashed #111827; outline-offset: 2px; b
 `
 export const HIDE_FIXED_STYLE = '[data-cinqo-fixed] { display: none !important; }'
 export const HIDE_IMAGES_STYLE = 'img, picture, video, svg image { visibility: hidden !important; }'
+
+// A size for people: 640 B, 12.5 KB, 3.1 MB.
+export function formatBytes(n: number): string {
+  if (n < 1024) return `${String(n)} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+  return `${(n / 1024 / 1024).toFixed(1)} MB`
+}

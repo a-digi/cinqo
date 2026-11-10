@@ -177,6 +177,24 @@ export async function fetchSnapshotHtml(id: string, signal?: AbortSignal): Promi
   return res.text()
 }
 
+// plan 247: how many temporary page files the Browser tool holds, and a way to delete all of them.
+export interface SnapshotStats {
+  count: number
+  bytes: number
+}
+
+export async function fetchSnapshotStats(): Promise<SnapshotStats> {
+  const res = await fetch(`${LINK_CRAWL_BASE}/snapshots`, { credentials: 'include', cache: 'no-store' })
+  if (!res.ok) throw await readError(res, 'count the temporary page files')
+  return (await res.json()) as SnapshotStats
+}
+
+export async function deleteAllSnapshots(): Promise<number> {
+  const res = await fetch(`${LINK_CRAWL_BASE}/snapshots`, { method: 'DELETE', credentials: 'include' })
+  if (!res.ok) throw await readError(res, 'delete the temporary page files')
+  return ((await res.json()) as { deleted: number }).deleted
+}
+
 export async function deleteSnapshot(id: string): Promise<void> {
   const res = await fetch(`${LINK_CRAWL_BASE}/snapshot?id=${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'include' })
   if (!res.ok && res.status !== 404) throw await readError(res, 'delete the page copy')
