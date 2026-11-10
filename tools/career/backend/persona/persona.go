@@ -34,7 +34,7 @@ import (
 // auto-created persona) — the literal enforcement of "forced to be
 // mapped to an existing Persona." Exported so http.go (package main)
 // can still map it to a 400.
-var ErrUnknownPersona = errors.New("unknown persona id")
+var ErrUnknownPersona = errors.New("unknown target role id")
 
 // requirePersonaExists is the shared guard every persona-scoped
 // function (persona_details.go) calls before doing anything else.

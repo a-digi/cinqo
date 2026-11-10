@@ -21,11 +21,11 @@ import (
 
 var (
 	ErrUnknownProfile = errors.New("unknown profile id")
-	ErrUnknownPersona = errors.New("unknown persona id")
+	ErrUnknownPersona = errors.New("unknown target role id")
 	// ErrUnknownItem is an unknown skill or experience of the library.
 	ErrUnknownItem = errors.New("unknown profile item id")
 	// ErrOtherProfile: a persona can only use items of its own profile.
-	ErrOtherProfile       = errors.New("an item of another profile cannot be used by this persona")
+	ErrOtherProfile       = errors.New("an item of another profile cannot be used by this target role")
 	ErrSkillRequired      = errors.New("a skill needs a name")
 	ErrDuplicateSkill     = errors.New("the profile already has this skill")
 	ErrExperienceRequired = errors.New("an experience needs a company and a title")

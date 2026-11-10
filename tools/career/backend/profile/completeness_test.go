@@ -1,6 +1,9 @@
 package profile
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func full() completenessInput {
 	return completenessInput{
@@ -97,6 +100,25 @@ func TestBandOf_Edges(t *testing.T) {
 	for score, want := range cases {
 		if got := bandOf(score); got != want {
 			t.Errorf("bandOf(%d) = %s, want %s", score, got, want)
+		}
+	}
+}
+
+// The checklist item for a target role keeps its key (the data) and says "Target role" on screen (plan 234).
+func TestTheTargetRoleItemIsCalledTargetRoleAndKeepsItsKey(t *testing.T) {
+	c := completenessOf(completenessInput{PersonaCount: 1})
+	var found *completenessItem
+	for i := range c.Items {
+		if c.Items[i].Key == "persona" {
+			found = &c.Items[i]
+		}
+	}
+	if found == nil || found.Label != "Target role" || !found.Done || found.Weight != 15 {
+		t.Fatalf("%+v", found)
+	}
+	for _, it := range c.Items {
+		if strings.Contains(strings.ToLower(it.Label), "persona") {
+			t.Errorf("a label still says persona: %+v", it)
 		}
 	}
 }

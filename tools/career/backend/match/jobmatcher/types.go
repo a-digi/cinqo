@@ -89,7 +89,7 @@ type Result struct {
 }
 
 // ErrNoPersonas is returned for a profile without personas.
-var ErrNoPersonas = errors.New("this profile has no personas")
+var ErrNoPersonas = errors.New("this profile has no target roles")
 
 // InsufficientDataError says why no score could be made: neither skills nor title could be judged for any persona.
 // Every reason is something a person can fix.

@@ -126,7 +126,7 @@ func requiredYears(texts ...string) int {
 // holds two of the skills the job's text mentions). It also returns the persona's total months, for the level.
 func experienceFit(pj preparedJob, p Persona, sk skillsOutcome, now time.Time) (value float64, evaluable bool, note string, totalMonths int) {
 	if len(p.Experience) == 0 {
-		return 0, false, "this persona has no experience entries", 0
+		return 0, false, "this target role has no experience entries", 0
 	}
 	var all, relevant []span
 	for _, e := range p.Experience {
@@ -140,7 +140,7 @@ func experienceFit(pj preparedJob, p Persona, sk skillsOutcome, now time.Time) (
 		}
 	}
 	if len(all) == 0 {
-		return 0, false, "this persona's experience entries have no readable dates", 0
+		return 0, false, "this target role's experience entries have no readable dates", 0
 	}
 	months := unionMonths(relevant)
 	years := requiredYears(append(pj.requirementTerms(), pj.job.Description)...)

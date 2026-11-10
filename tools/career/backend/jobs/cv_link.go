@@ -32,7 +32,7 @@ var (
 	// ErrInvalidCvLinkSource: source is neither "manual" nor "existing".
 	ErrInvalidCvLinkSource = errors.New(`source must be "manual" or "existing"`)
 	// ErrCvPersonaMissing: the document's persona (and so its profile) is gone.
-	ErrCvPersonaMissing = errors.New("the persona of this CV no longer exists")
+	ErrCvPersonaMissing = errors.New("the target role of this CV no longer exists")
 )
 
 // LinkCv makes cvDocumentID the job's current CV. Idempotent: linking the same

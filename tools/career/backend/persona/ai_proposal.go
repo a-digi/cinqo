@@ -95,7 +95,7 @@ func ParseProposal(raw []byte) (Proposal, error) {
 
 func ValidateProposal(p Proposal) error {
 	if len(p.Personas) > MaxProposedPersonas {
-		return invalid("too many personas (max %d)", MaxProposedPersonas)
+		return invalid("too many target roles (max %d)", MaxProposedPersonas)
 	}
 	if err := checkText("note", p.Note, maxNote); err != nil {
 		return err
@@ -103,11 +103,11 @@ func ValidateProposal(p Proposal) error {
 	names := map[string]bool{}
 	for i, pp := range p.Personas {
 		if err := ValidateProposedPersona(pp); err != nil {
-			return fmt.Errorf("persona %d: %w", i+1, err)
+			return fmt.Errorf("target role %d: %w", i+1, err)
 		}
 		key := strings.ToLower(strings.TrimSpace(pp.Name))
 		if names[key] {
-			return invalid("persona %d: the name %q is used twice", i+1, pp.Name)
+			return invalid("target role %d: the name %q is used twice", i+1, pp.Name)
 		}
 		names[key] = true
 	}

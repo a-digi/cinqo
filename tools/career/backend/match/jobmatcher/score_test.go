@@ -70,7 +70,7 @@ func TestNoEvidenceForSkillsOrTitleFailsWithReasonsNotANumber(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 	joined := strings.Join(ins.Reasons, " | ")
-	for _, want := range []string{"Empty: this persona has no skills", "Empty: this persona has no desired title"} {
+	for _, want := range []string{"Empty: this target role has no skills", "Empty: this target role has no desired title"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("reasons %q lack %q", joined, want)
 		}

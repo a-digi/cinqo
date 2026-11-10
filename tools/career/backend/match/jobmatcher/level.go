@@ -60,10 +60,10 @@ func levelFit(pj preparedJob, p Persona, totalMonths int) (value float64, evalua
 		personaLevel = levelOfMonths(totalMonths)
 	}
 	if personaLevel < 0 {
-		return 0, false, "this persona has no experience and no level in its desired titles"
+		return 0, false, "this target role has no experience and no level in its desired titles"
 	}
 	names := []string{"junior", "mid-level", "senior"}
-	note = "the job is " + names[jobLevel] + ", the persona " + names[personaLevel]
+	note = "the job is " + names[jobLevel] + ", the target role " + names[personaLevel]
 	switch d := jobLevel - personaLevel; {
 	case d == 0:
 		return 1, true, note

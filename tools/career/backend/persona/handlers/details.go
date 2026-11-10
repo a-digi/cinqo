@@ -19,7 +19,7 @@ func PersonaDetailsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		result, err := persona.FetchPersonaDetails(personaID)
 		if err != nil {
-			handler.WritePersonaAwareError(w, "read persona details", err)
+			handler.WritePersonaAwareError(w, "read target role details", err)
 			return
 		}
 		db.WriteJSON(w, result)
@@ -35,12 +35,12 @@ func PersonaDetailsHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := persona.UpdatePersonaDetails(body); err != nil {
-			handler.WritePersonaAwareError(w, "update persona details", err)
+			handler.WritePersonaAwareError(w, "update target role details", err)
 			return
 		}
 		result, err := persona.FetchPersonaDetails(body.PersonaID)
 		if err != nil {
-			http.Error(w, "persona details updated but failed to reload: "+err.Error(), http.StatusInternalServerError)
+			http.Error(w, "target role details updated but failed to reload: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 		db.WriteJSON(w, result)

@@ -94,7 +94,7 @@ func titleFit(job Job, p Persona) (value float64, evaluable bool, note string) {
 	case len(alts) == 0:
 		return 0, false, "this job's title has no usable words"
 	case len(cands) == 0:
-		return 0, false, "this persona has no desired title, headline or past job title"
+		return 0, false, "this target role has no desired title, headline or past job title"
 	}
 	best := 0.0
 	var bestCand titleCandidate
@@ -106,7 +106,7 @@ func titleFit(job Job, p Persona) (value float64, evaluable bool, note string) {
 		}
 	}
 	if best == 0 {
-		return 0, true, "no title of this persona resembles the job's title"
+		return 0, true, "no title of this target role resembles the job's title"
 	}
 	return best, true, fmt.Sprintf("closest: %q (%s)", bestCand.label, bestCand.source)
 }

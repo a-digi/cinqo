@@ -84,7 +84,7 @@ func scorePersona(pj preparedJob, p Persona, c Corpus, now time.Time) (Result, [
 	if !sk.evaluable && !tOK {
 		who := p.Name
 		if strings.TrimSpace(who) == "" {
-			who = "persona"
+			who = "target role"
 		}
 		return Result{}, []string{who + ": " + sk.note, who + ": " + tNote}
 	}

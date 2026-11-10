@@ -37,7 +37,7 @@ const (
 )
 
 var (
-	ErrUnknownAiRun  = errors.New("unknown persona ai run id")
+	ErrUnknownAiRun  = errors.New("unknown target role ai run id")
 	ErrAiRunFinished = errors.New("this run is already finished")
 )
 

@@ -1,7 +1,7 @@
 {
   "slug": "career",
   "name": "Career",
-  "version": "0.0.829",
+  "version": "0.0.830",
   "description": "Your career workspace: profiles, skills and experience; crawls job platforms, matches jobs to your profile, imports a CV and generates CV PDFs.",
   "authors": [
     { "name": "Anes Detit", "email": "tafa.andet@googlemail.com" }
@@ -20,7 +20,7 @@
   "scopes": [
     {
       "scope": "tool:career:profile",
-      "description": "Read and update the user's own career profile, personas, skills, and experience."
+      "description": "Read and update the user's own career profile, target roles, skills, and experience."
     },
     {
       "scope": "tool:career:jobs",
@@ -36,11 +36,11 @@
     },
     {
       "scope": "tool:career:cv_import",
-      "description": "Upload a CV and let the AI propose profile/persona/skill/experience entries from it."
+      "description": "Upload a CV and let the AI propose profile/target role/skill/experience entries from it."
     },
     {
       "scope": "tool:career:cv_documents",
-      "description": "Generate, list, rename, and delete CV documents built from a persona's own data."
+      "description": "Generate, list, rename, and delete CV documents built from a target role's own data."
     }
   ],
   "routes": [

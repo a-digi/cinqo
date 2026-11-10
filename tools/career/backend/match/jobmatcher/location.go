@@ -51,22 +51,22 @@ func legacyLocationFit(pj preparedJob, p Persona) (value float64, evaluable bool
 	places := cityWords(p.Location + " " + p.DesiredLocations)
 	personaRemote := reRemote.MatchString(fold(p.DesiredLocations + " " + p.Location))
 	if len(places) == 0 && !personaRemote {
-		return 0, false, "this persona has no location or desired location"
+		return 0, false, "this target role has no location or desired location"
 	}
 	for _, w := range jobWords {
 		for _, pl := range places {
 			if w == pl {
-				return 1, true, "the job's place is one the persona wants or lives in: " + strings.TrimSpace(pj.job.Location)
+				return 1, true, "the job's place is one the target role wants or lives in: " + strings.TrimSpace(pj.job.Location)
 			}
 		}
 	}
 	if remote {
 		if personaRemote {
-			return 1, true, "the job is remote or hybrid and the persona wants that"
+			return 1, true, "the job is remote or hybrid and the target role wants that"
 		}
-		return LocationRemote, true, "the job is remote or hybrid, its place is not the persona's"
+		return LocationRemote, true, "the job is remote or hybrid, its place is not the target role's"
 	}
-	return 0, true, "the job's place is not one the persona wants or lives in"
+	return 0, true, "the job's place is not one the target role wants or lives in"
 }
 
 // rulesOut reports whether the persona's explicit remote preference rules this job out: remote only against an on-site
@@ -98,18 +98,18 @@ func preferenceLocationFit(pj preparedJob, p Persona) (value float64, evaluable 
 	if pref == "remote_only" {
 		switch mode {
 		case WorkRemote:
-			return 1, true, "the persona wants remote work only and the job is remote"
+			return 1, true, "the target role wants remote work only and the job is remote"
 		case WorkHybrid:
-			return LocationRemoteOnlyHybrid, true, "the persona wants remote work only and the job is hybrid"
+			return LocationRemoteOnlyHybrid, true, "the target role wants remote work only and the job is hybrid"
 		}
-		return 0, true, "the persona wants remote work only and the job is on-site"
+		return 0, true, "the target role wants remote work only and the job is on-site"
 	}
 	// A fully remote job: place does not matter for a persona that is open to it, and does not help one that is not.
 	if mode == WorkRemote {
 		if pref == "open" {
-			return 1, true, "the job is remote and the persona is open to remote work"
+			return 1, true, "the job is remote and the target role is open to remote work"
 		}
-		return 0, true, "the job is remote and the persona wants on-site work only"
+		return 0, true, "the job is remote and the target role wants on-site work only"
 	}
 	// Hybrid and on-site jobs: the place decides.
 	jobWords := cityWords(pj.job.Location)
@@ -118,7 +118,7 @@ func preferenceLocationFit(pj preparedJob, p Persona) (value float64, evaluable 
 	case len(jobWords) == 0:
 		return 0, false, "this job is " + mode.String() + " but names no place"
 	case len(places) == 0:
-		return 0, false, "this persona has no location or desired location"
+		return 0, false, "this target role has no location or desired location"
 	}
 	fits := false
 	for _, w := range jobWords {
@@ -128,9 +128,9 @@ func preferenceLocationFit(pj preparedJob, p Persona) (value float64, evaluable 
 	}
 	switch {
 	case fits:
-		return 1, true, "the job is " + mode.String() + " in a place the persona wants or lives in: " + strings.TrimSpace(pj.job.Location)
+		return 1, true, "the job is " + mode.String() + " in a place the target role wants or lives in: " + strings.TrimSpace(pj.job.Location)
 	case mode == WorkHybrid && pref == "open":
-		return LocationOpenHybridElsewhere, true, "the job is hybrid in another place and the persona is open to hybrid work"
+		return LocationOpenHybridElsewhere, true, "the job is hybrid in another place and the target role is open to hybrid work"
 	}
-	return 0, true, "the job is " + mode.String() + " in a place the persona does not want"
+	return 0, true, "the job is " + mode.String() + " in a place the target role does not want"
 }

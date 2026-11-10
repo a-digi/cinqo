@@ -28,7 +28,7 @@ func PersonasHandler(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		personas, err := persona.ListPersonas(r.URL.Query().Get("profileId"))
 		if err != nil {
-			http.Error(w, "failed to list personas: "+err.Error(), http.StatusInternalServerError)
+			http.Error(w, "failed to list target roles: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 		db.WriteJSON(w, map[string]any{"personas": personas})
@@ -49,12 +49,12 @@ func PersonasHandler(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "unknown profile id", http.StatusBadRequest)
 				return
 			}
-			http.Error(w, "failed to create persona: "+err.Error(), http.StatusInternalServerError)
+			http.Error(w, "failed to create target role: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 		personas, err := persona.ListPersonas("")
 		if err != nil {
-			http.Error(w, "persona created but failed to reload: "+err.Error(), http.StatusInternalServerError)
+			http.Error(w, "target role created but failed to reload: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 		db.WriteJSON(w, map[string]any{"id": id, "personas": personas})
@@ -66,12 +66,12 @@ func PersonasHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := persona.UpdatePersona(body.ID, body.Name, body.Description); err != nil {
-			handler.WritePersonaAwareError(w, "update persona", err)
+			handler.WritePersonaAwareError(w, "update target role", err)
 			return
 		}
 		personas, err := persona.ListPersonas("")
 		if err != nil {
-			http.Error(w, "persona updated but failed to reload: "+err.Error(), http.StatusInternalServerError)
+			http.Error(w, "target role updated but failed to reload: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 		db.WriteJSON(w, map[string]any{"personas": personas})
@@ -83,7 +83,7 @@ func PersonasHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := persona.DeletePersona(id); err != nil {
-			http.Error(w, "failed to delete persona: "+err.Error(), http.StatusInternalServerError)
+			http.Error(w, "failed to delete target role: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)

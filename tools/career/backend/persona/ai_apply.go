@@ -26,7 +26,7 @@ var (
 	ErrAiRunNotReady = errors.New("this run has no proposal to decide on")
 	ErrAiRunDecided  = errors.New("this run was already decided")
 	// ErrPersonaDecided: a persona in the request already has a decision.
-	ErrPersonaDecided = errors.New("this persona was already decided")
+	ErrPersonaDecided = errors.New("this target role was already decided")
 )
 
 const (
@@ -129,25 +129,25 @@ func resolveDecisions(run decidableRun, decisions []Decision) ([]ProposedPersona
 	byIndex := make(map[int]Decision, len(decisions))
 	for _, d := range decisions {
 		if d.Index < 0 || d.Index >= len(run.proposed) {
-			return nil, nil, nil, invalid("decision for persona %d: there is no such proposed persona", d.Index)
+			return nil, nil, nil, invalid("decision for target role %d: there is no such proposed target role", d.Index)
 		}
 		if _, dup := byIndex[d.Index]; dup {
-			return nil, nil, nil, invalid("persona %d has more than one decision", d.Index)
+			return nil, nil, nil, invalid("target role %d has more than one decision", d.Index)
 		}
 		if run.decided[d.Index] {
-			return nil, nil, nil, fmt.Errorf("%w: persona %d", ErrPersonaDecided, d.Index)
+			return nil, nil, nil, fmt.Errorf("%w: target role %d", ErrPersonaDecided, d.Index)
 		}
 		switch d.Decision {
 		case decisionAccepted:
 			if d.Persona == nil {
-				return nil, nil, nil, invalid("persona %d is accepted but has no content", d.Index)
+				return nil, nil, nil, invalid("target role %d is accepted but has no content", d.Index)
 			}
 		case decisionDeclined:
 			if d.Persona != nil {
-				return nil, nil, nil, invalid("persona %d is declined, so it must not carry content", d.Index)
+				return nil, nil, nil, invalid("target role %d is declined, so it must not carry content", d.Index)
 			}
 		default:
-			return nil, nil, nil, invalid("persona %d: the decision must be %q or %q", d.Index, decisionAccepted, decisionDeclined)
+			return nil, nil, nil, invalid("target role %d: the decision must be %q or %q", d.Index, decisionAccepted, decisionDeclined)
 		}
 		byIndex[d.Index] = d
 	}
@@ -181,7 +181,7 @@ func commitDecision(tx *sql.Tx, run decidableRun, runID string, accepted []Propo
 	for _, p := range accepted {
 		id, err := insertAppliedPersona(tx, run.profileID, runID, p)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create persona %q: %w", p.Name, err)
+			return nil, fmt.Errorf("failed to create target role %q: %w", p.Name, err)
 		}
 		created = append(created, aiRunPersona{ID: id, Name: p.Name})
 	}

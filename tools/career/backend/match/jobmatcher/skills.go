@@ -135,7 +135,7 @@ func requirementStrength(r reqTokens, ev evidence) (float64, []string) {
 func requirementsSkills(reqs []reqTokens, ev evidence) skillsOutcome {
 	out := skillsOutcome{mode: ModeRequirements, reqs: reqs}
 	if !ev.any {
-		out.note = "this persona has no skills, experience, headline or summary to check the requirements against"
+		out.note = "this target role has no skills, experience, headline or summary to check the requirements against"
 		return out
 	}
 	var earned, total float64
@@ -172,7 +172,7 @@ func textSkills(pj preparedJob, ev evidence, c Corpus) skillsOutcome {
 	out := skillsOutcome{mode: ModeText}
 	switch {
 	case len(ev.skills) == 0:
-		out.note = "this persona has no skills"
+		out.note = "this target role has no skills"
 		return out
 	case len(pj.descTokens) == 0:
 		out.note = "this job has no description and no requirements yet"

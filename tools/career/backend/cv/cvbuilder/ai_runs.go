@@ -35,7 +35,7 @@ const (
 var (
 	ErrUnknownCvAiRun    = errors.New("unknown cv ai run id")
 	ErrCvAiRunFinished   = errors.New("this run is already finished")
-	ErrCvAiRunInProgress = errors.New("an AI run is already creating a CV for this persona")
+	ErrCvAiRunInProgress = errors.New("an AI run is already creating a CV for this target role")
 	ErrCvAiNothingSaved  = errors.New("the AI did not save a CV in this run")
 	errInvalidCvAiRun    = errors.New("invalid cv ai run")
 )
@@ -253,7 +253,7 @@ func CvAiRunsHandler(w http.ResponseWriter, r *http.Request) {
 func writeCvAiRunError(w http.ResponseWriter, action string, err error) {
 	switch {
 	case errors.Is(err, persona.ErrUnknownPersona):
-		http.Error(w, "unknown persona id", http.StatusNotFound)
+		http.Error(w, "unknown target role id", http.StatusNotFound)
 	case errors.Is(err, ErrUnknownCvAiRun):
 		http.Error(w, "unknown run id", http.StatusNotFound)
 	case errors.Is(err, ErrCvAiRunFinished), errors.Is(err, ErrCvAiRunInProgress):

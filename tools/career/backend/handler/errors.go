@@ -12,7 +12,7 @@ import (
 // package's own personaAwareErrResult reasoning on the MCP side.
 func WritePersonaAwareError(w http.ResponseWriter, action string, err error) {
 	if errors.Is(err, persona.ErrUnknownPersona) {
-		http.Error(w, "unknown persona id", http.StatusBadRequest)
+		http.Error(w, "unknown target role id", http.StatusBadRequest)
 		return
 	}
 	if errors.Is(err, persona.ErrInvalidRemotePreference) || errors.Is(err, persona.ErrProfileItem) ||

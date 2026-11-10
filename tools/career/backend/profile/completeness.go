@@ -51,7 +51,7 @@ func completenessOf(in completenessInput) completeness {
 		{"name", "Name", 10, strings.TrimSpace(in.FirstName) != "" || strings.TrimSpace(in.LastName) != ""},
 		{"links", "Platform links", 25, in.LinkCount >= 1},
 		{"image", "Profile image", 10, in.HasImage},
-		{"persona", "Persona", 15, in.PersonaCount >= 1},
+		{"persona", "Target role", 15, in.PersonaCount >= 1},
 		{"summary", "Headline and summary", 15, in.HasHeadlineAndSummary},
 		{"skills", "Skills", 15, in.BestSkillCount >= minSkills},
 		{"experience", "Experience", 10, in.BestExperienceCount >= 1},

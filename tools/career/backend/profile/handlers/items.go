@@ -22,7 +22,7 @@ func writeProfileItemsError(w http.ResponseWriter, action string, err error) {
 	case errors.Is(err, profileitems.ErrUnknownProfile):
 		http.Error(w, "unknown profile id", http.StatusBadRequest)
 	case errors.Is(err, profileitems.ErrUnknownPersona), errors.Is(err, persona.ErrUnknownPersona):
-		http.Error(w, "unknown persona id", http.StatusBadRequest)
+		http.Error(w, "unknown target role id", http.StatusBadRequest)
 	case errors.Is(err, profileitems.ErrUnknownItem):
 		http.Error(w, "unknown skill or experience id", http.StatusBadRequest)
 	case errors.Is(err, profileitems.ErrDuplicateSkill):
@@ -192,7 +192,7 @@ func ProfileExperienceHandler(w http.ResponseWriter, r *http.Request) {
 func personaSkillsView(w http.ResponseWriter, personaID string) {
 	use, err := profileitems.GetPersonaUse(personaID)
 	if err != nil {
-		writeProfileItemsError(w, "read what the persona uses", err)
+		writeProfileItemsError(w, "read what the target role uses", err)
 		return
 	}
 	library, err := profileitems.SkillsOfPersonasProfile(personaID)
@@ -202,7 +202,7 @@ func personaSkillsView(w http.ResponseWriter, personaID string) {
 	}
 	details, err := persona.FetchPersonaDetails(personaID)
 	if err != nil {
-		writeProfileItemsError(w, "read the persona's skills", err)
+		writeProfileItemsError(w, "read the target role's skills", err)
 		return
 	}
 	own := []map[string]string{}
@@ -232,7 +232,7 @@ func PersonaSkillsHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := profileitems.SetPersonaSkills(body.PersonaID, *body.SkillIDs); err != nil {
-			writeProfileItemsError(w, "set the persona's skills", err)
+			writeProfileItemsError(w, "set the target role's skills", err)
 			return
 		}
 		personaSkillsView(w, body.PersonaID)
@@ -245,7 +245,7 @@ func PersonaSkillsHandler(w http.ResponseWriter, r *http.Request) {
 func personaExperienceView(w http.ResponseWriter, personaID string) {
 	use, err := profileitems.GetPersonaUse(personaID)
 	if err != nil {
-		writeProfileItemsError(w, "read what the persona uses", err)
+		writeProfileItemsError(w, "read what the target role uses", err)
 		return
 	}
 	library, err := profileitems.ExperienceOfPersonasProfile(personaID)
@@ -255,7 +255,7 @@ func personaExperienceView(w http.ResponseWriter, personaID string) {
 	}
 	details, err := persona.FetchPersonaDetails(personaID)
 	if err != nil {
-		writeProfileItemsError(w, "read the persona's experience", err)
+		writeProfileItemsError(w, "read the target role's experience", err)
 		return
 	}
 	db.WriteJSON(w, map[string]any{"used": use.Experience, "library": library, "own": details.OwnExperience()})
@@ -281,7 +281,7 @@ func PersonaExperienceHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := profileitems.SetPersonaExperience(body.PersonaID, *body.Experience); err != nil {
-			writeProfileItemsError(w, "set the persona's experience", err)
+			writeProfileItemsError(w, "set the target role's experience", err)
 			return
 		}
 		personaExperienceView(w, body.PersonaID)

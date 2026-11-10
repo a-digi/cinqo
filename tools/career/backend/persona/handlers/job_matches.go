@@ -109,12 +109,12 @@ func jobExists(jobID string) (bool, error) {
 func answerPersonaMatches(w http.ResponseWriter, jobID string) {
 	rows, err := personamatch.ForJob(jobID)
 	if err != nil {
-		http.Error(w, "failed to read the persona matches: "+err.Error(), http.StatusInternalServerError)
+		http.Error(w, "failed to read the target role matches: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	personas, err := listMatchPersonas()
 	if err != nil {
-		http.Error(w, "failed to read the personas: "+err.Error(), http.StatusInternalServerError)
+		http.Error(w, "failed to read the target roles: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	db.WriteJSON(w, buildPersonaMatches(rows, personas))

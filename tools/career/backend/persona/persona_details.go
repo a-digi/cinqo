@@ -393,7 +393,7 @@ func scoredDetailsDiffer(a, b personaDetails) bool {
 
 // ErrProfileItem is returned when a persona's own route is asked to change an experience that comes from the profile's library
 // (plan 173): the persona only uses it. It is changed in the library, or overridden for the persona by profileitems.
-var ErrProfileItem = errors.New("this experience comes from the profile: change it in the profile's library, or override its title and description for this persona")
+var ErrProfileItem = errors.New("this experience comes from the profile: change it in the profile's library, or override its title and description for this target role")
 
 // usesProfileExperience reports whether the persona uses the library experience with this id.
 func usesProfileExperience(personaId, id string) (bool, error) {

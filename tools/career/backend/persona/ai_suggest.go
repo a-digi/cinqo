@@ -22,7 +22,7 @@ import (
 
 var (
 	ErrRunNotGenerating = errors.New("this run is not generating")
-	errTooManySuggested = fmt.Errorf("a run suggests at most %d personas", MaxProposedPersonas)
+	errTooManySuggested = fmt.Errorf("a run suggests at most %d target roles", MaxProposedPersonas)
 )
 
 // isEmptyJSON is true for no body at all and for a JSON null.

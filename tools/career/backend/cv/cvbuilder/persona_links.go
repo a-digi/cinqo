@@ -17,9 +17,9 @@ import (
 var (
 	// ErrPersonaOfOtherProfile: a CV holds one person's data, so it can only be attached to personas
 	// of the profile that owns the persona it was built from.
-	ErrPersonaOfOtherProfile = errors.New("this persona belongs to another profile than the CV")
+	ErrPersonaOfOtherProfile = errors.New("this target role belongs to another profile than the CV")
 	// ErrCannotDetachBuiltFrom: the persona the CV was built from stays linked.
-	ErrCannotDetachBuiltFrom = errors.New("the persona the CV was built from cannot be detached")
+	ErrCannotDetachBuiltFrom = errors.New("the target role the CV was built from cannot be detached")
 )
 
 // AttachCvToPersona links a CV to a persona. Idempotent. ErrUnknownCvDocument,
@@ -115,10 +115,10 @@ func PersonaLinksHandler(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, ErrUnknownCvDocument):
 		http.Error(w, "unknown cv document id", http.StatusNotFound)
 	case errors.Is(err, persona.ErrUnknownPersona):
-		http.Error(w, "unknown persona id", http.StatusNotFound)
+		http.Error(w, "unknown target role id", http.StatusNotFound)
 	case errors.Is(err, ErrPersonaOfOtherProfile), errors.Is(err, ErrCannotDetachBuiltFrom):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	default:
-		http.Error(w, "failed to change the CV's personas: "+err.Error(), http.StatusInternalServerError)
+		http.Error(w, "failed to change the CV's target roles: "+err.Error(), http.StatusInternalServerError)
 	}
 }

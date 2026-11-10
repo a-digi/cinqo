@@ -101,8 +101,8 @@ func TestTheNotesSayWhichRowApplied(t *testing.T) {
 		{"open", "remote", "open to remote work"},
 		{"onsite", "remote", "on-site work only"},
 		{"open", "hybrid, Munich", "open to hybrid work"},
-		{"onsite", "on-site, Berlin", "a place the persona wants"},
-		{"onsite", "on-site, Munich", "a place the persona does not want"},
+		{"onsite", "on-site, Berlin", "a place the target role wants"},
+		{"onsite", "on-site, Munich", "a place the target role does not want"},
 	}
 	for _, c := range cases {
 		_, _, note := locationOf(modeJob(c.kind), c.pref, "Berlin")

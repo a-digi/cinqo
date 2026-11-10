@@ -155,10 +155,10 @@ func PersonaDefaultsHandler(w http.ResponseWriter, r *http.Request) {
 	data, err := AssembleCvData(personaID)
 	if err != nil {
 		if errors.Is(err, persona.ErrUnknownPersona) {
-			http.Error(w, "unknown persona id", http.StatusNotFound)
+			http.Error(w, "unknown target role id", http.StatusNotFound)
 			return
 		}
-		http.Error(w, "failed to assemble persona defaults: "+err.Error(), http.StatusInternalServerError)
+		http.Error(w, "failed to assemble target role defaults: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	db.WriteJSON(w, data)
@@ -200,7 +200,7 @@ func PhotoStatusHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		if errors.Is(err, persona.ErrUnknownPersona) {
-			http.Error(w, "unknown persona id", http.StatusNotFound)
+			http.Error(w, "unknown target role id", http.StatusNotFound)
 			return
 		}
 		http.Error(w, "failed to check profile photo: "+err.Error(), http.StatusInternalServerError)
@@ -269,7 +269,7 @@ func PreviewHandler(w http.ResponseWriter, r *http.Request) {
 		photoDataURI, photoErr = resolveProfilePhoto(r, body.PersonaID, body.PhotoMediaFileID)
 		if photoErr != nil {
 			if errors.Is(photoErr, persona.ErrUnknownPersona) {
-				http.Error(w, "unknown persona id", http.StatusBadRequest)
+				http.Error(w, "unknown target role id", http.StatusBadRequest)
 				return
 			}
 			if errors.Is(photoErr, errPhotoNotOfProfile) {
@@ -370,10 +370,10 @@ func DocumentsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := requirePersonaExists(body.PersonaID); err != nil {
 			if errors.Is(err, persona.ErrUnknownPersona) {
-				http.Error(w, "unknown persona id", http.StatusNotFound)
+				http.Error(w, "unknown target role id", http.StatusNotFound)
 				return
 			}
-			http.Error(w, "failed to validate persona: "+err.Error(), http.StatusInternalServerError)
+			http.Error(w, "failed to validate target role: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 		if err := ValidateCvData(body.Data); err != nil {
