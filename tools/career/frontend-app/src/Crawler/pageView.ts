@@ -48,18 +48,25 @@ export function anchorMarks(marks: Marks, anchors: Map<string, number[]>): Map<n
   return out
 }
 
-// The style the view adds to the page copy: the marks, and a pointer on the links (a click never leaves the view). The images rule is a second element so it can
-// be switched.
-export const VIEW_STYLE = `
+// The style every page frame adds to its copy (plan 249: shared by the Job list and the Job details pickers): the page scrolls on its own even where it locks its
+// scrolling, its text can be selected, and a drag that starts on a link or an image is a text selection, not a drag-and-drop of it.
+export const FRAME_STYLE = `
 html, body { overflow: auto !important; }
 body, body * { -webkit-user-select: text !important; user-select: text !important; }
 a, img { -webkit-user-drag: none !important; user-drag: none !important; }
+`
+
+// What the Job list adds: the marks on the links, and a pointer on them (a click never leaves the view).
+export const LINK_MARK_STYLE = `
 a[data-cinqo-a] { cursor: pointer; }
 a[data-cinqo-a].cinqo-block { display: block !important; }
 a[data-cinqo-a].cinqo-job { outline: 3px solid #16a34a; outline-offset: 2px; background-color: rgba(22, 163, 74, 0.16) !important; border-radius: 2px; }
 a[data-cinqo-a].cinqo-notjob { outline: 3px solid #dc2626; outline-offset: 2px; background-color: rgba(220, 38, 38, 0.12) !important; text-decoration: line-through !important; border-radius: 2px; }
 a[data-cinqo-a].cinqo-next { outline: 3px dashed #111827; outline-offset: 2px; background-color: rgba(17, 24, 39, 0.1) !important; border-radius: 2px; }
 `
+
+// The style the Job list's view adds to the page copy.
+export const VIEW_STYLE = FRAME_STYLE + LINK_MARK_STYLE
 export const HIDE_FIXED_STYLE = '[data-cinqo-fixed] { display: none !important; }'
 export const HIDE_IMAGES_STYLE = 'img, picture, video, svg image { visibility: hidden !important; }'
 
