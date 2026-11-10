@@ -19,3 +19,14 @@ export const LOCAL_AI_FOLLOW_UP_MS = 2000
 export function followUpDelay(reason: 'keys' | 'local-ai'): number | null {
   return reason === 'local-ai' ? LOCAL_AI_FOLLOW_UP_MS : null
 }
+
+// How often the platforms are read while a chat shows that no AI is available (a key or a model may be added any moment), and only while the tab is visible.
+export const POLL_INTERVAL_MS = 5000
+
+// Coming back to the window fires `focus` and `visibilitychange` together, and a click on the page fires `focus` again: the platforms are read once for such a
+// burst, not once per event. now and last are times in milliseconds (last: when the last read for a return was asked for, or null).
+export const MIN_RETURN_GAP_MS = 1000
+
+export function shouldReadOnReturn(now: number, last: number | null): boolean {
+  return last === null || now - last >= MIN_RETURN_GAP_MS
+}

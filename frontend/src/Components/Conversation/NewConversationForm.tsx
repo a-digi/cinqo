@@ -5,6 +5,7 @@ import { canAddKeys } from './canAddKeys'
 import type { OrchestrationMode } from '../../api/conversations'
 import { selectablePlatforms, type Platform } from '../../api/platforms'
 import { Dropdown } from '../../Shared/Components/Dropdown/Dropdown'
+import { useKeepPlatformsFresh } from '../../config/platforms/useKeepPlatformsFresh'
 
 // The one-time platform (and, for OpenAI/Anthropic, model) picker
 // shown before a conversation exists. Originally local to
@@ -30,6 +31,8 @@ export function NewConversationForm({
 
 function NoPlatformWithAKey({ onCancel }: { onCancel: () => void }) {
   const { scopes } = useAuth()
+  // Nothing can be started yet: look again every few seconds, so a key or a local model added meanwhile turns this into the form by itself.
+  useKeepPlatformsFresh()
   return (
     <div className="flex flex-1 items-center justify-center p-4">
       <div className="w-full max-w-sm space-y-3 rounded-lg border border-gray-200 p-5 text-center">

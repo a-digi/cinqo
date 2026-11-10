@@ -75,8 +75,13 @@ export function GlobalChatWidget() {
   const [showList, setShowList] = useState(!selectedId)
   const [creatingNew, setCreatingNew] = useState(false)
   // The shared list of AI platforms (plan 243): it follows keys and local models that are added or removed, instead of being read once here.
-  const { platforms: sharedPlatforms, error: platformsError } = usePlatforms()
+  const { platforms: sharedPlatforms, error: platformsError, refresh: refreshPlatforms } = usePlatforms()
   const platforms = sharedPlatforms ?? NO_PLATFORMS
+
+  // Opening the chat looks at the platforms again (a key may have been added while it was closed, in another tab or by someone else).
+  useEffect(() => {
+    if (isOpen) void refreshPlatforms()
+  }, [isOpen, refreshPlatforms])
 
   // Lets a tool (a separate React root, same page — see
   // config/tools/toolBridge.ts's own openConversation) tell this

@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ApiError } from '../../api/client'
 import { fetchPlatforms, type Platform } from '../../api/platforms'
-import { PLATFORMS_LOAD_ERROR, followUpDelay, samePlatforms } from './platformsRules'
+import { PLATFORMS_LOAD_ERROR, followUpDelay, samePlatforms, shouldReadOnReturn } from './platformsRules'
 import { createRefresher } from './platformsRefresher'
 
 // Why the AI platforms may have changed: an API key was added or removed, or the local AI (its models, its switch) changed.
@@ -65,6 +65,25 @@ export function PlatformsProvider({ children }: { children: ReactNode }) {
     void refresh()
     return () => {
       alive.current = false
+    }
+  }, [refresh])
+
+  // Coming back to the window or the tab (a key added in another tab, a download that finished meanwhile): the platforms are read again, once for the
+  // burst of events that coming back fires.
+  const lastReturn = useRef<number | null>(null)
+  useEffect(() => {
+    function onReturn() {
+      if (document.visibilityState !== 'visible') return
+      const now = Date.now()
+      if (!shouldReadOnReturn(now, lastReturn.current)) return
+      lastReturn.current = now
+      void refresh()
+    }
+    window.addEventListener('focus', onReturn)
+    document.addEventListener('visibilitychange', onReturn)
+    return () => {
+      window.removeEventListener('focus', onReturn)
+      document.removeEventListener('visibilitychange', onReturn)
     }
   }, [refresh])
 
