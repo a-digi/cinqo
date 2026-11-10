@@ -306,6 +306,9 @@ export function CrawlPanel({
   // incorrectly, have allowed). See
   // plan/ai/tools/career/step-XX-job-detail-crawl-instructions.md.
   const [activeInstructionsModal, setActiveInstructionsModal] = useState<'crawl' | 'rules' | 'jobDetail' | null>(null)
+  // Why the last Save in the instruction modal was refused (the server checks the YAML). It is shown inside the modal: the modal covers the whole window now, so a
+  // message on the page behind it could not be seen (plan 245).
+  const [instructionsSaveError, setInstructionsSaveError] = useState('')
   const [instructionsDraft, setInstructionsDraft] = useState('')
 
   // crawlInstructionsOpen — the "Crawl instructions" section's own
@@ -1136,6 +1139,7 @@ export function CrawlPanel({
   const jobDetailPickOnly = listingNeeds(engine, needsLoginWindow(engine, link)) === 'rule'
 
   function openCrawlInstructionsModal() {
+    setInstructionsSaveError('')
     if (listingNeeds(engine, needsLoginWindow(engine, link)) === 'rule') {
       setActiveInstructionsModal('rules')
       return
@@ -1145,13 +1149,14 @@ export function CrawlPanel({
   }
 
   function handleSaveCrawlInstructions() {
+    setInstructionsSaveError('')
     updatePortalLink(link.id, { crawlInstructions: instructionsDraft })
       .then(() => {
         setActiveInstructionsModal(null)
         onReload()
       })
       .catch((err: unknown) => {
-        onError(err instanceof Error ? err.message : String(err))
+        setInstructionsSaveError(err instanceof Error ? err.message : String(err))
       })
   }
 
@@ -1162,18 +1167,20 @@ export function CrawlPanel({
 
   function openJobDetailInstructionsModal() {
     if (jobDetailsBlocked) return
+    setInstructionsSaveError('')
     setJobDetailInstructionsDraft(link.jobDetailCrawlInstructions ?? '')
     setActiveInstructionsModal('jobDetail')
   }
 
   function handleSaveJobDetailCrawlInstructions() {
+    setInstructionsSaveError('')
     updatePortalLink(link.id, { jobDetailCrawlInstructions: jobDetailInstructionsDraft })
       .then(() => {
         setActiveInstructionsModal(null)
         onReload()
       })
       .catch((err: unknown) => {
-        onError(err instanceof Error ? err.message : String(err))
+        setInstructionsSaveError(err instanceof Error ? err.message : String(err))
       })
   }
 
@@ -1948,7 +1955,8 @@ export function CrawlPanel({
               ? 'Job list rules (Katana)'
               : 'Job list crawl instructions'
         }
-        size={activeInstructionsModal === 'jobDetail' || activeInstructionsModal === 'rules' ? 'wide' : 'default'}
+        // The instruction modals are the whole window on a white page, outside this item (plan/ai/tools/career/step-245-instruction-modals-full-page.md).
+        size="full"
         onClose={() => {
           setActiveInstructionsModal(null)
         }}
@@ -1962,10 +1970,15 @@ export function CrawlPanel({
                 setInstructionsDraft(e.target.value)
               }}
               placeholder={'fields:\n  - label: title\n    selector: h1\npagination:\n  nextSelector: a.next-page\n  maxPages: 5'}
-              rows={10}
+              rows={24}
               spellCheck={false}
               className="w-full rounded-md border border-gray-300 px-2 py-1.5 font-mono text-xs text-gray-900 focus:border-gray-500 focus:outline-none"
             />
+            {instructionsSaveError !== '' && (
+              <p role="alert" className="mt-3 text-sm text-red-700">
+                {instructionsSaveError}
+              </p>
+            )}
             <div className="mt-3 flex gap-2">
               <button
                 type="button"
@@ -2005,10 +2018,15 @@ export function CrawlPanel({
                     setJobDetailInstructionsDraft(e.target.value)
                   }}
                   placeholder={'fields:\n  - label: description\n    selector: ".job-description, .job-posting-body"'}
-                  rows={10}
+                  rows={24}
                   spellCheck={false}
                   className="w-full rounded-md border border-gray-300 px-2 py-1.5 font-mono text-xs text-gray-900 focus:border-gray-500 focus:outline-none"
                 />
+                {instructionsSaveError !== '' && (
+                  <p role="alert" className="mt-3 text-sm text-red-700">
+                    {instructionsSaveError}
+                  </p>
+                )}
                 <div className="mt-3 flex gap-2">
                   <button
                     type="button"

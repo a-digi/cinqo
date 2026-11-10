@@ -1,4 +1,5 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { XIcon } from '../Icons/icons'
 
 interface ModalProps {
@@ -7,8 +8,10 @@ interface ModalProps {
   onClose: () => void
   children: React.ReactNode
   // 'wide' is for a long form: a wider panel whose body scrolls inside the window. The default
-  // is unchanged.
-  size?: 'default' | 'wide'
+  // is unchanged. 'full' (plan/ai/tools/career/step-245-instruction-modals-full-page.md) is the whole browser window on a white
+  // page: it is rendered outside the item that opened it (a portal into document.body), has a header with Close and a body that
+  // scrolls on its own, stops the page behind from scrolling and hands the focus back when it closes.
+  size?: 'default' | 'wide' | 'full'
 }
 
 // Shared modal — controlled (open/onClose only), no fetch calls, no
@@ -32,8 +35,58 @@ export function Modal({ open, title, onClose, children, size = 'default' }: Moda
     }
   }, [open, onClose])
 
+  const isFull = open && size === 'full'
+  const pageRef = useRef<HTMLDivElement>(null)
+
+  // The page behind a full-page modal does not scroll while it is open; what was set before is put back on every way out (close, unmount).
+  useEffect(() => {
+    if (!isFull) return
+    const before = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = before
+    }
+  }, [isFull])
+
+  // The focus goes into a full-page modal when it opens and back to what had it (the button that opened it) when it closes.
+  useEffect(() => {
+    if (!isFull) return
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    pageRef.current?.focus()
+    return () => {
+      opener?.focus()
+    }
+  }, [isFull])
+
   if (!open) {
     return null
+  }
+
+  if (size === 'full') {
+    return createPortal(
+      <div
+        ref={pageRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        tabIndex={-1}
+        className="fixed inset-0 z-[60] flex flex-col bg-white font-sans text-gray-900 outline-none"
+      >
+        <div className="flex shrink-0 items-center justify-between border-b border-gray-200 px-6 py-3.5">
+          <h2 className="text-base font-semibold text-gray-900">{title}</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+          >
+            <XIcon />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">{children}</div>
+      </div>,
+      document.body,
+    )
   }
 
   return (
