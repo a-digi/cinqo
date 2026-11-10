@@ -389,15 +389,13 @@ export function LinkCrawlPanel({ link, onReload }: { link: PortalLink; onReload:
 
   return (
     <div className="text-sm text-gray-800" data-testid="link-crawl-panel">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0">
-          <h3 className="text-base font-semibold text-gray-900">Link crawler</h3>
-          <p className="mt-0.5 text-sm text-gray-500">Find the jobs of this page by the address of their links, without AI.</p>
-        </div>
+      <div className="min-w-0">
+        <h3 className="text-base font-semibold text-gray-900">Link crawler</h3>
+        <p className="mt-0.5 text-sm text-gray-500">Find the jobs of this page by the address of their links, without AI.</p>
         {!link.linkRules && (
           <button
             type="button"
-            className={primaryClass}
+            className={`${primaryClass} mt-3`}
             onClick={() => {
               setOpen((o) => !o)
             }}
