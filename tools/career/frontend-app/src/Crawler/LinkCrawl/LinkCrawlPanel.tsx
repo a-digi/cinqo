@@ -97,6 +97,8 @@ export function LinkCrawlPanel({ link, onReload }: { link: PortalLink; onReload:
   // the temporary page files the Browser tool holds (null = not known, e.g. an older Browser tool) and what the last deletion said
   const [files, setFiles] = useState<SnapshotStats | null>(null)
   const [filesNote, setFilesNote] = useState('')
+  // plan 247: the list can be hidden so only the page shows, bigger; the marks live on in the panel and are drawn on the page
+  const [listHidden, setListHidden] = useState(false)
   const revealSeq = useRef(0)
   const learnSeq = useRef(0)
   const previewSeq = useRef(0)
@@ -617,77 +619,94 @@ export function LinkCrawlPanel({ link, onReload }: { link: PortalLink; onReload:
                   <span className="text-gray-600">
                     {marks.picked.length} job link(s) ticked, {marks.notJob.length} marked not a job, {marks.pages.length} next page link(s)
                   </span>
+                  {page.snapshot && (
+                    <button
+                      type="button"
+                      className={`${buttonClass} ml-auto`}
+                      aria-expanded={!listHidden}
+                      onClick={() => {
+                        setListHidden((h) => !h)
+                      }}
+                    >
+                      {listHidden ? 'Show the list' : 'Hide the list'}
+                    </button>
+                  )}
                 </div>
 
-                <div className={page.snapshot ? 'grid gap-4 lg:grid-cols-2 lg:items-start' : ''} data-testid="link-crawl-list-and-view">
-                  <ul
-                    className={`${page.snapshot ? 'max-h-[34rem]' : 'max-h-96'} overflow-auto rounded-2xl border border-gray-100 bg-white shadow-sm`}
-                    aria-label="Links of the page"
-                  >
-                    {shown.slice(0, SHOWN_LINKS).map((l) => {
-                      const isPicked = marks.picked.includes(l.url)
-                      const isNot = marks.notJob.includes(l.url)
-                      const isPage = marks.pages.includes(l.url)
-                      return (
-                        <li
-                          key={l.url}
-                          className={`flex items-start gap-2 border-b border-gray-100 px-2 py-1 last:border-b-0 ${isPicked ? 'bg-green-50' : isNot ? 'bg-red-50' : isPage ? 'bg-gray-100' : ''}`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={isPicked}
-                            aria-label={`Job link ${l.url}`}
-                            onChange={() => {
-                              mark(l.url, 'picked', isPicked)
-                            }}
-                            className="mt-0.5"
-                          />
-                          <div className="min-w-0 flex-1">
-                            <div className="truncate font-medium text-gray-900">
-                              {linkLabel(l) || <span className="text-gray-400">(no text)</span>}
+                <div
+                  className={page.snapshot && !listHidden ? 'grid gap-4 lg:grid-cols-2 lg:items-start' : ''}
+                  data-testid="link-crawl-list-and-view"
+                >
+                  {!(page.snapshot && listHidden) && (
+                    <ul
+                      className={`${page.snapshot ? 'max-h-[34rem]' : 'max-h-96'} overflow-auto rounded-2xl border border-gray-100 bg-white shadow-sm`}
+                      aria-label="Links of the page"
+                    >
+                      {shown.slice(0, SHOWN_LINKS).map((l) => {
+                        const isPicked = marks.picked.includes(l.url)
+                        const isNot = marks.notJob.includes(l.url)
+                        const isPage = marks.pages.includes(l.url)
+                        return (
+                          <li
+                            key={l.url}
+                            className={`flex items-start gap-2 border-b border-gray-100 px-2 py-1 last:border-b-0 ${isPicked ? 'bg-green-50' : isNot ? 'bg-red-50' : isPage ? 'bg-gray-100' : ''}`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isPicked}
+                              aria-label={`Job link ${l.url}`}
+                              onChange={() => {
+                                mark(l.url, 'picked', isPicked)
+                              }}
+                              className="mt-0.5"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate font-medium text-gray-900">
+                                {linkLabel(l) || <span className="text-gray-400">(no text)</span>}
+                              </div>
+                              <div className="truncate font-mono text-gray-600">{shortUrl(l.url, siteHost)}</div>
                             </div>
-                            <div className="truncate font-mono text-gray-600">{shortUrl(l.url, siteHost)}</div>
-                          </div>
-                          {inView && (l.anchors ?? []).some((n) => inView.has(n)) && (
+                            {inView && (l.anchors ?? []).some((n) => inView.has(n)) && (
+                              <button
+                                type="button"
+                                title="Show this link in the page"
+                                aria-label={`Show ${l.url} in the page`}
+                                className="shrink-0 rounded border border-gray-200 px-1.5 py-0.5 text-gray-600 hover:bg-gray-100"
+                                onClick={() => {
+                                  showInPage(l.url)
+                                }}
+                              >
+                                in page
+                              </button>
+                            )}
+                            {jobUrls.has(l.url) && <span className="shrink-0 rounded bg-green-100 px-1.5 py-0.5 text-green-800">job</span>}
                             <button
                               type="button"
-                              title="Show this link in the page"
-                              aria-label={`Show ${l.url} in the page`}
-                              className="shrink-0 rounded border border-gray-200 px-1.5 py-0.5 text-gray-600 hover:bg-gray-100"
+                              className={`shrink-0 rounded border px-1.5 py-0.5 ${isNot ? 'border-red-300 bg-red-100 text-red-800' : 'border-gray-200 text-gray-600 hover:bg-gray-100'}`}
                               onClick={() => {
-                                showInPage(l.url)
+                                mark(l.url, 'notJob', isNot)
                               }}
                             >
-                              in page
+                              {isNot ? 'not a job ✓' : 'not a job'}
                             </button>
-                          )}
-                          {jobUrls.has(l.url) && <span className="shrink-0 rounded bg-green-100 px-1.5 py-0.5 text-green-800">job</span>}
-                          <button
-                            type="button"
-                            className={`shrink-0 rounded border px-1.5 py-0.5 ${isNot ? 'border-red-300 bg-red-100 text-red-800' : 'border-gray-200 text-gray-600 hover:bg-gray-100'}`}
-                            onClick={() => {
-                              mark(l.url, 'notJob', isNot)
-                            }}
-                          >
-                            {isNot ? 'not a job ✓' : 'not a job'}
-                          </button>
-                          <button
-                            type="button"
-                            className={`shrink-0 rounded border px-1.5 py-0.5 ${isPage ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 text-gray-600 hover:bg-gray-100'}`}
-                            onClick={() => {
-                              mark(l.url, 'pages', isPage)
-                            }}
-                          >
-                            {isPage ? 'next page ✓' : 'next page'}
-                          </button>
-                        </li>
-                      )
-                    })}
-                    {shown.length === 0 && <li className="px-2 py-2 text-gray-500">No link matches the filter.</li>}
-                    {shown.length > SHOWN_LINKS && (
-                      <li className="px-2 py-1 text-gray-500">{shown.length - SHOWN_LINKS} more: narrow the filter to see them.</li>
-                    )}
-                  </ul>
+                            <button
+                              type="button"
+                              className={`shrink-0 rounded border px-1.5 py-0.5 ${isPage ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 text-gray-600 hover:bg-gray-100'}`}
+                              onClick={() => {
+                                mark(l.url, 'pages', isPage)
+                              }}
+                            >
+                              {isPage ? 'next page ✓' : 'next page'}
+                            </button>
+                          </li>
+                        )
+                      })}
+                      {shown.length === 0 && <li className="px-2 py-2 text-gray-500">No link matches the filter.</li>}
+                      {shown.length > SHOWN_LINKS && (
+                        <li className="px-2 py-1 text-gray-500">{shown.length - SHOWN_LINKS} more: narrow the filter to see them.</li>
+                      )}
+                    </ul>
+                  )}
                   {page.snapshot && (
                     <PageView
                       snapshotId={page.snapshot.id}
@@ -695,6 +714,7 @@ export function LinkCrawlPanel({ link, onReload }: { link: PortalLink; onReload:
                       marks={marks}
                       reveal={reveal}
                       onReady={setInView}
+                      large={listHidden}
                       selectable={(url) => allowed.has(url)}
                       onMark={markMany}
                     />

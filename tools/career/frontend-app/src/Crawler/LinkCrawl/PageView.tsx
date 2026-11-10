@@ -35,6 +35,7 @@ export function PageView({
   marks,
   reveal,
   onReady,
+  large,
   selectable,
   onMark,
 }: {
@@ -45,6 +46,8 @@ export function PageView({
   reveal: { url: string; seq: number } | null
   // The anchor numbers that are in the picture (a link inside a shadow root is listed but not drawn).
   onReady: (present: Set<number>) => void
+  // The list beside the page is hidden: the page takes the whole width and a taller frame.
+  large: boolean
   // Whether a link of the page may be marked (a link of another site cannot be: a rule is for the link's own site).
   selectable: (url: string) => boolean
   // A selection ticked these links (kind 'picked'), or the bar set what they are (any kind, or null = clear).
@@ -249,7 +252,7 @@ export function PageView({
   return (
     <div
       ref={box}
-      className="relative flex h-[34rem] flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm"
+      className={`relative flex flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm ${large ? 'h-[max(34rem,calc(100vh-11rem))]' : 'h-[34rem]'}`}
       data-testid="link-crawl-page-view"
     >
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-gray-100 bg-gray-50 px-3 py-2 text-xs text-gray-600">
