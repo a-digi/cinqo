@@ -309,3 +309,30 @@ func TestDeleteKeepsAMediaFileThatAnotherRunStillUses(t *testing.T) {
 		t.Errorf("the last run on the file did not take it away: %v", deleted)
 	}
 }
+
+// ---- PUT: a declined import (plan/ai/tools/career/step-242-restart-cv-import-inside-the-import-page.md) ----
+
+// Declining a review is a save summary with a flag the page reads: it must be stored exactly as sent, come back in the run, in the list and in a
+// single read, and leave the run ready (the status is never changed by a summary).
+func TestADeclinedSummaryIsStoredAndReturnedAsSent(t *testing.T) {
+	setup(t)
+	id, _ := createCVImportRun("m", "f", "c", []byte(`{}`))
+	const declined = `{"declined":true,"skills":[],"experience":[],"education":[]}`
+	rec := call(http.MethodPut, "/cv-import/runs", `{"id":"`+id+`","saveSummary":`+declined+`}`)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	if r := runOf(t, id); string(r.SaveSummary) != declined || r.Status != "ready" {
+		t.Errorf("%+v", r)
+	}
+	for name, target := range map[string]string{"one run": "/cv-import/runs?id=" + id, "the list": "/cv-import/runs"} {
+		got := call(http.MethodGet, target, "")
+		if got.Code != http.StatusOK || !strings.Contains(got.Body.String(), `"saveSummary":{"declined":true,"skills":[],"experience":[],"education":[]}`) {
+			t.Errorf("%s: %d %s", name, got.Code, got.Body.String())
+		}
+	}
+	// a later review outcome replaces it, as every summary does
+	if rec := call(http.MethodPut, "/cv-import/runs", `{"id":"`+id+`","saveSummary":{"skills":[]}}`); rec.Code != http.StatusNoContent || string(runOf(t, id).SaveSummary) != `{"skills":[]}` {
+		t.Errorf("%d %s", rec.Code, runOf(t, id).SaveSummary)
+	}
+}

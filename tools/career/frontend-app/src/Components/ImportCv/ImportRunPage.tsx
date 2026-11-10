@@ -16,6 +16,7 @@ import { ImportRunDetail } from './ImportRunDetail'
 import { pipelineStages } from './pipelineRules'
 import { RUN_POLL_INTERVAL_MS, runPageView, shouldPollRun } from './runPageRules'
 import { RunActivity } from './RunActivity'
+import { DECLINED_MESSAGE } from './runOutcome'
 import { ABANDONED_MESSAGE, isAbandonedCodeRun } from './runActivityRules'
 
 function goToHistory() {
@@ -201,6 +202,16 @@ export function ImportRunPage({ runId }: { runId: string }) {
 
       {run && view === 'review' && <ImportReview key={run.id} run={run} onStartOver={goToHistory} />}
       {run && view === 'ready' && <ImportRunDetail run={run} onClose={goToHistory} />}
+
+      {run && view === 'declined' && (
+        <div className="space-y-4">
+          <section className={cardClassName} style={cardStyle}>
+            <p className="text-sm text-gray-700">{DECLINED_MESSAGE}</p>
+            <p className="mt-1 text-xs text-gray-500">What the AI proposed is shown below; none of it was taken.</p>
+          </section>
+          <ImportRunDetail run={run} onClose={goToHistory} />
+        </div>
+      )}
 
       {run && (
         <div className="mt-4">

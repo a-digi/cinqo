@@ -41,6 +41,8 @@ export interface InsertResult {
   experience: (ItemResult & { index: number; label: string })[]
   // Missing in a summary stored before education existed.
   education: (ItemResult & { index: number; label: string })[]
+  // True in the summary of an import the person declined (plan 242): nothing was inserted.
+  declined?: boolean
 }
 
 export interface InsertOptions {

@@ -1,16 +1,20 @@
 // Pure rules for the Import history list (step 155): what a run's status looks like and what can be done with it. A run is
 // "generating" while the AI analyses the CV, "ready" once its proposal is there (every run from before step 155 is ready) and
 // "failed" when the analysis did not produce one. No React, so they can be script-checked.
+import { DECLINED_MESSAGE, isDeclinedRun } from './runOutcome'
+
 export type RunStatus = 'generating' | 'ready' | 'failed'
 
 export interface RunLike {
   status: RunStatus
   error?: string
+  // The save summary of a review (plan 242: a declined import says so in it).
+  saveSummary?: unknown
 }
 
-export type BadgeTone = 'amber' | 'red'
+export type BadgeTone = 'amber' | 'red' | 'gray'
 
-// The badge of a run in the list, or null for a ready run (it needs none: it has its proposal and its View button).
+// The badge of a run in the list, or null for a ready run (it needs none: it has its proposal and its View button), except a declined one.
 export function runBadge(run: RunLike): { label: string; tone: BadgeTone; title: string } | null {
   switch (run.status) {
     case 'generating':
@@ -18,7 +22,7 @@ export function runBadge(run: RunLike): { label: string; tone: BadgeTone; title:
     case 'failed':
       return { label: 'Failed', tone: 'red', title: describeFailure(run.error).message }
     default:
-      return null
+      return isDeclinedRun(run) ? { label: 'Declined', tone: 'gray', title: DECLINED_MESSAGE } : null
   }
 }
 
