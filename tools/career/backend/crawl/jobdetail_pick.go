@@ -51,6 +51,9 @@ func fetchDetailPageViaCore(ctx context.Context, coreURL, accessToken, pageURL, 
 	if id := keptLoginFrom(ctx); id != "" {
 		fields["loginSessionId"] = id // plan 195: the kept login of a link that needs a login
 	}
+	if snapshotRequested(ctx) {
+		fields["snapshot"] = true // plan 249: also keep a sanitised copy of the page, its elements numbered, for the picker to show
+	}
 	body, err := json.Marshal(fields)
 	if err != nil {
 		return detailpick.Page{}, err
@@ -329,6 +332,8 @@ type pickCandidatesBody struct {
 	// JobID or URL choose the sample page (a saved job of the link, or an address on the link's own site); none: the oldest saved job.
 	JobID string `json:"jobId,omitempty"`
 	URL   string `json:"url,omitempty"`
+	// Snapshot (plan 249): also keep a copy of the page for the picker to show (see linkcrawl_snapshot.go).
+	Snapshot bool `json:"snapshot,omitempty"`
 }
 
 type pickDescriptionHelp struct {
@@ -363,6 +368,29 @@ type pickCandidatesResponse struct {
 	PageTextChars int                  `json:"pageTextChars"`
 	Truncated     bool                 `json:"truncated"`
 	Current       pickCurrent          `json:"current"`
+	// ViewElements, Snapshot and SnapshotError (plan 249): the page copy and the elements numbered in it, when one was asked for and made.
+	ViewElements  []detailpick.ViewElement `json:"viewElements,omitempty"`
+	Snapshot      *detailpick.SnapshotInfo `json:"snapshot,omitempty"`
+	SnapshotError string                   `json:"snapshotError,omitempty"`
+}
+
+// maxViewElements is the most numbered elements a page copy may offer (the Browser tool keeps to the same bound).
+const maxViewElements = 2000
+
+// checkedCopy keeps only what the screen can use of the Browser's page copy: a copy with an id that is not a copy id is dropped (the screen puts the id in an
+// address), elements without a copy are dropped (they point into nothing) and the list is bounded.
+func checkedCopy(page detailpick.Page) (*detailpick.SnapshotInfo, []detailpick.ViewElement, string) {
+	if page.Snapshot == nil {
+		return nil, nil, page.SnapshotError
+	}
+	if !snapshotIDPattern.MatchString(page.Snapshot.ID) {
+		return nil, nil, "the Browser tool answered with a page copy this tool cannot use"
+	}
+	els := page.ViewElements
+	if len(els) > maxViewElements {
+		els = els[:maxViewElements]
+	}
+	return page.Snapshot, els, ""
 }
 
 func currentInstructions(linkID string) pickCurrent {
@@ -429,7 +457,7 @@ func JobDetailCandidatesHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "that job's page is not on the link's own site", http.StatusBadRequest)
 		return
 	}
-	page, err := fetchDetailPage(withAttended(withKeptLoginFor(r.Context(), pc.linkID, pc.sessionID), true), pc.coreURL, pc.token, pageURL, pc.portalID)
+	page, err := fetchDetailPage(withSnapshotRequest(withAttended(withKeptLoginFor(r.Context(), pc.linkID, pc.sessionID), true), body.Snapshot), pc.coreURL, pc.token, pageURL, pc.portalID)
 	noteFetchOutcome(pc.linkID, err)
 	if err != nil {
 		writeFetchFailure(w, err)
@@ -450,6 +478,9 @@ func JobDetailCandidatesHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if resp.Elements == nil {
 		resp.Elements = []detailpick.Element{}
+	}
+	if body.Snapshot { // a copy nobody asked for is never passed on: the screen would not know to delete it
+		resp.Snapshot, resp.ViewElements, resp.SnapshotError = checkedCopy(page)
 	}
 	for f, ranked := range detailpick.RankAll(page) {
 		resp.Ranked[string(f)] = ranked

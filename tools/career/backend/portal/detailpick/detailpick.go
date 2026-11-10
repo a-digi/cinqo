@@ -119,6 +119,27 @@ type Element struct {
 	Chars    int    `json:"chars"`
 }
 
+// ViewElement is one element of the page copy the person clicks in (plan 249): its number (data-cinqo-e in the copy), the selector the Browser verified on
+// the live page, its tag, how much text it holds and the start of it, and the attribute that holds a machine date when it has one. Carried to the screen as it
+// came; the ranking never reads it.
+type ViewElement struct {
+	N         int    `json:"n"`
+	Selector  string `json:"selector"`
+	Unique    bool   `json:"unique"`
+	Tag       string `json:"tag"`
+	Chars     int    `json:"chars"`
+	Text      string `json:"text"`
+	Attribute string `json:"attribute,omitempty"`
+}
+
+// SnapshotInfo is what the Browser tool reports about the page copy it made (plan 247).
+type SnapshotInfo struct {
+	ID        string `json:"id"`
+	Bytes     int    `json:"bytes"`
+	CreatedAt string `json:"createdAt"`
+	Truncated bool   `json:"truncated,omitempty"`
+}
+
 // Page is the Browser's fetch-detail-candidates answer.
 type Page struct {
 	FinalURL      string     `json:"finalUrl"`
@@ -128,4 +149,8 @@ type Page struct {
 	Elements      []Element  `json:"elements"`
 	PageTextChars int        `json:"pageTextChars"`
 	Truncated     bool       `json:"truncated"`
+	// ViewElements, Snapshot and SnapshotError (plan 249): only when a page copy was asked for.
+	ViewElements  []ViewElement `json:"viewElements,omitempty"`
+	Snapshot      *SnapshotInfo `json:"snapshot,omitempty"`
+	SnapshotError string        `json:"snapshotError,omitempty"`
 }
