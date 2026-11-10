@@ -15,6 +15,7 @@ import { PAGE_ACCENT } from '../JobsPage/jobsTheme'
 import { ProfileBar } from '../ProfileLibrary/ProfileBar'
 import { personasOfProfile } from '../ProfileLibrary/libraryRules'
 import { useProfileChoice } from '../ProfileLibrary/useProfileChoice'
+import { BackToProfile } from '../ProfileItems/BackToProfile'
 import { GoalsFields } from './GoalsFields'
 import {
   followRequest,
@@ -45,6 +46,7 @@ export function GoalsPage() {
 
   return (
     <div className="career-v-zoom career-a-float career-t-type max-w-5xl p-6 font-sans text-gray-900">
+      {profileId !== '' && <BackToProfile profileId={profileId} />}
       <PageHeaderCard
         icon={<TargetIcon />}
         title="Goals"

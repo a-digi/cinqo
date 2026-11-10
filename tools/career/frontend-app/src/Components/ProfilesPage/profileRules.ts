@@ -69,3 +69,10 @@ export function averageScore(profiles: { completeness: { score: number } }[]): n
   if (profiles.length === 0) return null
   return Math.round(profiles.reduce((sum, p) => sum + p.completeness.score, 0) / profiles.length)
 }
+
+// The profile whose card the Profiles page should scroll to and highlight: the one the address names (?profileId=), when it is one of the
+// profiles, else null.
+export function profileToFocus(search: string, profiles: { id: string }[]): string | null {
+  const id = new URLSearchParams(search).get('profileId')
+  return id !== null && profiles.some((p) => p.id === id) ? id : null
+}

@@ -8,9 +8,11 @@ import { plural } from '../CompaniesPage/companyStats'
 import { PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
 import { profileLabel } from '../ProfileSwitcher/profileLabel'
 import { CompletenessMeter } from './CompletenessMeter'
+import { ProfileAreaCards } from './ProfileAreaCards'
 import { PhotoAvatar } from '../ProfileImage/PhotoAvatar'
 import { PlatformShelf } from './PlatformShelf'
 import { averageScore, firstWithoutLinks, platformCounts } from './profileRules'
+import { useFocusedProfile } from './useFocusedProfile'
 import { summarizeProfiles } from './profileStats'
 import { PageTips } from '../../Shared/PageTips/PageTips'
 
@@ -31,6 +33,8 @@ export function ProfilesPage() {
   // The profiles whose add-link form is open; every form starts hidden.
   const [openLinkFormIds, setOpenLinkFormIds] = useState<Set<string>>(new Set())
   const [error, setError] = useState('')
+  // The profile whose card the address names (the back link of its pages): scrolled to and highlighted for a moment.
+  const focusId = useFocusedProfile(profiles)
 
   function load() {
     setError('')
@@ -137,7 +141,7 @@ export function ProfilesPage() {
       <PageHeaderCard
         icon={<UserIcon />}
         title="Profiles"
-        description="One profile per job seeker, with links to their platforms. Personas, skills, experience and education belong to a profile."
+        description="One profile per job seeker, with links to their platforms. Personas, skills, experience and education belong to a profile; open each from its card."
         pill={{ text: plural(summary.profiles, 'profile', 'profiles') }}
       />
       {/* Steps 105 to 108: the tips sit in a column of their own beside the page (under it on a narrow window). */}
@@ -189,7 +193,7 @@ export function ProfilesPage() {
                     <div
                       key={p.id}
                       id={`profile-${p.id}`}
-                      className="rounded-3xl border p-4 shadow-sm transition-shadow hover:shadow-md"
+                      className={`rounded-3xl border p-4 shadow-sm transition-shadow hover:shadow-md ${focusId === p.id ? 'ring-2 ring-blue-400' : ''}`}
                       style={{
                         borderColor: PAGE_ACCENT.soft,
                         background: `linear-gradient(160deg, #ffffff 45%, ${PAGE_ACCENT.soft} 100%)`,
@@ -378,6 +382,7 @@ export function ProfilesPage() {
                           </button>
                         </div>
                       )}
+                      <ProfileAreaCards profileId={p.id} name={p.firstName || p.lastName ? name : '(unnamed)'} />
                     </div>
                   )
                 })}

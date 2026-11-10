@@ -6,6 +6,7 @@ import { EXPERIENCE_PATH, PERSONAS_PATH, experiencePathFor } from '../../paths'
 import { ProfileBar } from '../ProfileLibrary/ProfileBar'
 import { experienceCountText } from '../ProfileLibrary/libraryRules'
 import { useProfileChoice } from '../ProfileLibrary/useProfileChoice'
+import { BackToProfile } from '../ProfileItems/BackToProfile'
 import { ProfileExperienceEditor } from './ProfileExperienceEditor'
 
 // The Experience page: the profile's own library of work experience (plan 173). It is global to the profile; each persona uses some of
@@ -17,6 +18,7 @@ export function ExperiencePage() {
 
   return (
     <div className="career-v-fade career-a-sheen career-t-type max-w-7xl p-6 font-sans text-gray-900">
+      {profileId !== '' && <BackToProfile profileId={profileId} />}
       <PageHeaderCard
         icon={<TimelineIcon />}
         title="Experience"

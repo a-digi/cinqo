@@ -7,6 +7,7 @@ import { buildProfileSearch } from '../ProfileLibrary/libraryRules'
 import { PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
 import { ProfileBar } from '../ProfileLibrary/ProfileBar'
 import { useProfileChoice } from '../ProfileLibrary/useProfileChoice'
+import { BackToProfile } from './BackToProfile'
 
 // The list page of a profile's own items (languages, courses, hobbies; plan 231), the same layout as the Education page: the profile
 // comes from the address (?profileId=), with a dropdown when there is more than one; Add and Edit open the item's entry page; Remove
@@ -79,6 +80,7 @@ export function ProfileItemsPage<T extends { id: string }>({
 
   return (
     <div className="career-v-zoom career-a-float career-t-type max-w-5xl p-6 font-sans text-gray-900">
+      {profileId !== '' && <BackToProfile profileId={profileId} />}
       <PageHeaderCard
         icon={icon}
         title={title}

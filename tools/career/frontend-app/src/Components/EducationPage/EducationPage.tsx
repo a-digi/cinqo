@@ -7,6 +7,7 @@ import { EDUCATION_ENTRY_PATH, EDUCATION_PATH } from '../../paths'
 import { PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
 import { ProfileBar } from '../ProfileLibrary/ProfileBar'
 import { useProfileChoice } from '../ProfileLibrary/useProfileChoice'
+import { BackToProfile } from '../ProfileItems/BackToProfile'
 import { degreeLine, educationCountText, isOngoing, periodText } from './educationRules'
 
 // The Education page (plan 173): the education of the profile (schools, degrees, courses), global to it; personas do not choose it. The
@@ -46,6 +47,7 @@ export function EducationPage() {
 
   return (
     <div className="career-v-zoom career-a-float career-t-type max-w-5xl p-6 font-sans text-gray-900">
+      {profileId !== '' && <BackToProfile profileId={profileId} />}
       <PageHeaderCard
         icon={<EducationIcon />}
         title="Education"

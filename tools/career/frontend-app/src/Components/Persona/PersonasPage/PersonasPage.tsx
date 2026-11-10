@@ -14,7 +14,7 @@ import {
 import { LayersIcon, PlusIcon, SparkleIcon } from '../../../Shared/Icons/icons'
 import { inputClass } from '../../../Shared/inputClass'
 import { PageHeaderCard } from '../../../Shared/PageHeader/PageHeaderCard'
-import { NEW_PERSONA_PATH, PERSONAS_PATH, viewPersonaPathFor } from '../../../paths'
+import { NEW_PERSONA_PATH, viewPersonaPathFor } from '../../../paths'
 import { plural } from '../../CompaniesPage/companyStats'
 import { PAGE_ACCENT, accentFor, initialOf } from '../../JobsPage/jobsTheme'
 import { PhotoAvatar } from '../../ProfileImage/PhotoAvatar'
@@ -25,6 +25,7 @@ import { summarizePersonas, undescribedPersonas } from './personaStats'
 import { PageTips } from '../../../Shared/PageTips/PageTips'
 import { useAiChoice } from '../../../Cinqo/Platform/useAiChoice'
 import { profileLabel } from '../../ProfileSwitcher/profileLabel'
+import { BackToProfile } from '../../ProfileItems/BackToProfile'
 import { CreateWithAi } from '../../../PersonaAi/CreateWithAi'
 import { PersonaAiHistory } from '../../../PersonaAi/PersonaAiHistory'
 import { PersonaSuggestions } from '../../../PersonaAi/PersonaSuggestions'
@@ -206,18 +207,7 @@ export function PersonasPage({ profileId }: { profileId: string }) {
     })
   }
 
-  const backLink = (
-    <a
-      href={PERSONAS_PATH}
-      onClick={(e) => {
-        e.preventDefault()
-        window.__cinqoToolBridge.navigate(PERSONAS_PATH)
-      }}
-      className="mb-3 inline-block text-sm font-medium text-blue-700 hover:underline"
-    >
-      ← All profiles
-    </a>
-  )
+  const backLink = <BackToProfile profileId={profileId} />
 
   if (!profileFound) {
     return (

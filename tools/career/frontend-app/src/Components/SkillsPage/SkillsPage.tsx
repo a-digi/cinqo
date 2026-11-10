@@ -6,6 +6,7 @@ import { PERSONAS_PATH, SKILLS_PATH, skillsPathFor } from '../../paths'
 import { ProfileBar } from '../ProfileLibrary/ProfileBar'
 import { skillCountText } from '../ProfileLibrary/libraryRules'
 import { useProfileChoice } from '../ProfileLibrary/useProfileChoice'
+import { BackToProfile } from '../ProfileItems/BackToProfile'
 import { ProfileSkillsEditor } from './ProfileSkillsEditor'
 
 // The Skills page: the profile's own library of skills (plan 173). They are global to the profile; each persona uses some of them,
@@ -17,6 +18,7 @@ export function SkillsPage() {
 
   return (
     <div className="career-v-tilt career-a-glow career-t-wave max-w-7xl p-6 font-sans text-gray-900">
+      {profileId !== '' && <BackToProfile profileId={profileId} />}
       <PageHeaderCard
         icon={<SparkIcon />}
         title="Skills"

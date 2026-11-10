@@ -9,6 +9,7 @@ import { PersonaList } from '../PersonaList'
 import { ProfileBar } from '../../ProfileLibrary/ProfileBar'
 import { personasOfProfile } from '../../ProfileLibrary/libraryRules'
 import { useProfileChoice } from '../../ProfileLibrary/useProfileChoice'
+import { BackToProfile } from '../../ProfileItems/BackToProfile'
 import { positioningCompleteness } from './detailsStats'
 import { ProfileSummaryCard } from './ProfileSummaryCard'
 import { isOwn, markText } from '../../GoalsPage/goalsRules'
@@ -40,6 +41,7 @@ export function PersonaDetailsListPage() {
 
   return (
     <div className="career-v-wipe career-a-float career-t-underline max-w-7xl p-6 font-sans text-gray-900">
+      {profileId !== '' && <BackToProfile profileId={profileId} />}
       <PageHeaderCard
         icon={<TargetIcon />}
         title="Summary"

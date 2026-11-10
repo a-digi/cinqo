@@ -9,6 +9,10 @@ export function importCvRunPathFor(runId: string): string {
 }
 export const PROFILES_PATH = '/tools/career/profiles'
 export const VIEW_PROFILE_PATH = '/tools/career/profiles/view'
+// The Profiles page scrolled to one profile's card (and the card shown highlighted for a moment): where the pages of a profile's card lead back to.
+export function profileCardPathFor(profileId: string): string {
+  return `${PROFILES_PATH}?profileId=${encodeURIComponent(profileId)}`
+}
 export const PERSONAS_PATH = '/tools/career/personas'
 // One profile's personas on their own page: a pattern route, the id arrives as the page's route parameter. The
 // exact paths /personas/new and /personas/view win over it; a profile id is never "new" or "view".
