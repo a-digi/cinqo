@@ -56,9 +56,9 @@ import {
 import { AddJobModal } from './AddJobModal'
 import { companyCell } from './companyCell'
 import { JOB_DETAILS_PATH, JOBS_PATH, VIEW_COMPANY_PATH } from '../../paths'
-import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { PAGE_ACCENT } from './jobsTheme'
-import { JobStatsStrip } from './JobStatsStrip'
+import { JobPlatformCard, JobStatCards } from './JobStatsStrip'
+import { useJobStats } from './useJobStats'
 import { JobTitleCell } from './JobTitleCell'
 import { RunningCrawlsStrip } from './RunningCrawlsStrip'
 import { runsKey } from './runningCrawlsRules'
@@ -164,6 +164,11 @@ export function JobsPage() {
   const [unmatchedNotice, setUnmatchedNotice] = useState('')
   // The jobs a manual (no AI) match is running for; it answers within a moment, so this only guards a double click.
   const [manualRunning, setManualRunning] = useState<ReadonlySet<string>>(new Set())
+  // The numbers of the statistics cards; refetched when a job is added or deleted or finishes matching or its CV, so the page's total and how many jobs
+  // on this page have a completed match or CV are in the key.
+  const jobStats = useJobStats(
+    `${total}:${jobs.filter((j) => j.matchStatus === 'completed').length}:${jobs.filter((j) => j.cvStatus === 'completed').length}`,
+  )
 
   // "Add job" (step 97) — the modal for a job added by hand.
   const [addOpen, setAddOpen] = useState(false)
@@ -1172,12 +1177,9 @@ export function JobsPage() {
   return (
     <div className="career-a-sheen career-t-underline max-w-7xl p-6 font-sans text-gray-900">
       <div className="min-w-0">
-        <PageHeaderCard
-          icon={<BriefcaseIcon />}
-          title="Saved Jobs"
-          description="Job postings the AI has crawled and saved on your behalf, and any you added yourself."
-          pill={{ text: `${total} ${total === 1 ? 'job' : 'jobs'}` }}
-        />
+        {/* The page has no visible header any more (plan 236); its heading stays for a screen reader. */}
+        <h1 className="sr-only">Saved jobs</h1>
+        <JobStatCards jobStats={jobStats} />
         <RunningCrawlsStrip runs={runningCrawls} />
         {/* Two columns: the jobs on the left (the point of the page), the statistics cards
             on the right. Below the large breakpoint the cards drop under the list. */}
@@ -1476,10 +1478,8 @@ export function JobsPage() {
           {/* Refetched when a job is added, deleted or finishes matching / its CV: the page's
               own total, and how many jobs on this page have a completed match or CV. */}
           <aside className="career-enter career-delay-2 w-full shrink-0 career-rail-sticky lg:w-72">
-            <JobStatsStrip
-              refreshKey={`${total}:${jobs.filter((j) => j.matchStatus === 'completed').length}:${jobs.filter((j) => j.cvStatus === 'completed').length}`}
-            />
-            <div className="mt-8">
+            <JobPlatformCard jobStats={jobStats} />
+            <div className={jobStats.state === 'ready' ? 'mt-8' : ''}>
               <PageTips page="jobs" orientation="vertical" />
             </div>
           </aside>

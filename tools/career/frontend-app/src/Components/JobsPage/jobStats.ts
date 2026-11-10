@@ -88,3 +88,52 @@ export function platformBars(list: PlatformCount[]): PlatformBar[] {
   const max = Math.max(1, ...list.map((p) => p.count))
   return list.map((p) => ({ name: p.name, count: p.count, widthPct: Math.max(p.count > 0 ? 4 : 0, Math.round((p.count / max) * 100)) }))
 }
+
+// What each of the four headline cards says (plan 236), in the order they are shown. `accent` names the colour: the cards' own colours, or the
+// score's tone for the average match (a neutral one while no job has a match yet: no match is not bad news).
+export interface StatCardRow {
+  key: 'total' | 'week' | 'match' | 'cv'
+  label: string
+  value: string
+  caption: string
+  trend: Trend | null
+  accent: 'blue' | 'violet' | 'neutral' | 'high' | 'mid' | 'low' | 'cv'
+}
+
+export function statCardRows(stats: JobStats): StatCardRow[] {
+  const tone = stats.avgMatchScore === null ? 'neutral' : scoreTone(stats.avgMatchScore)
+  return [
+    {
+      key: 'total',
+      label: 'Saved jobs',
+      value: stats.total.toLocaleString('en'),
+      caption: `${stats.companies} ${stats.companies === 1 ? 'company' : 'companies'}${stats.manual > 0 ? ` · ${stats.manual} added by hand` : ''}`,
+      trend: null,
+      accent: 'blue',
+    },
+    {
+      key: 'week',
+      label: 'Added this week',
+      value: stats.addedLast7Days.toLocaleString('en'),
+      caption: '',
+      trend: weekTrend(stats.addedLast7Days, stats.addedPrev7Days),
+      accent: 'violet',
+    },
+    {
+      key: 'match',
+      label: 'Average match',
+      value: stats.avgMatchScore === null ? '–' : `${stats.avgMatchScore}%`,
+      caption: `${stats.matched} of ${stats.total} matched (${percentOf(stats.matched, stats.total)}%)`,
+      trend: null,
+      accent: tone,
+    },
+    {
+      key: 'cv',
+      label: 'With a CV',
+      value: stats.withCv.toLocaleString('en'),
+      caption: `${percentOf(stats.withCv, stats.total)}% of jobs`,
+      trend: null,
+      accent: 'cv',
+    },
+  ]
+}

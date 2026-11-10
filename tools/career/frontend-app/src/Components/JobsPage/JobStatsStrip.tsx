@@ -1,14 +1,12 @@
-import { useEffect, useState } from 'react'
-import { fetchJobStatsRaw } from '../../api'
 import { BriefcaseIcon } from '../../Shared/Icons/icons'
 import { StatCard } from '../../Shared/StatCard/StatCard'
 import { ACCENTS, accentFor, initialOf } from './jobsTheme'
-import { parseJobStats, percentOf, platformBars, scoreTone, weekTrend, type JobStats } from './jobStats'
+import { platformBars, statCardRows, type JobStats, type StatCardRow } from './jobStats'
+import type { JobStatsState } from './useJobStats'
 
-// The Jobs page's statistics cards, stacked in the column to the right of the list:
-// four headline numbers and where the jobs come from. Fed by GET /jobs/stats;
-// refetched when `refreshKey` changes (a job was added, deleted, matched…). If the
-// numbers cannot be loaded the column says so quietly; the list keeps working.
+// The Jobs page's statistics cards (plan 236): the four headline numbers in a row at the top of the page, and where the jobs come from in the
+// column to the right of the list. Both are fed by the page's one useJobStats call (GET /jobs/stats). If the numbers cannot be loaded the top says
+// so quietly; the list keeps working.
 const GREEN = ACCENTS[1]
 const AMBER = ACCENTS[2]
 const VIOLET = ACCENTS[4]
@@ -88,75 +86,55 @@ function PlatformCard({ stats }: { stats: JobStats }) {
   )
 }
 
-export function JobStatsStrip({ refreshKey }: { refreshKey: string }) {
-  const [stats, setStats] = useState<JobStats | null>(null)
-  const [state, setState] = useState<'loading' | 'ready' | 'failed'>('loading')
+// The accent of each card: its own colour, or the score's tone for the average match.
+const ROW_ACCENT: Record<StatCardRow['accent'], (typeof ACCENTS)[number]> = {
+  blue: ACCENTS[0],
+  violet: VIOLET,
+  neutral: ACCENTS[6],
+  high: GREEN,
+  mid: AMBER,
+  low: ACCENTS[3],
+  cv: ACCENTS[5],
+}
+const ROW_ICON: Record<StatCardRow['key'], React.ReactNode> = {
+  total: <BriefcaseIcon className="h-5 w-5" />,
+  week: <CalendarPlusIcon />,
+  match: <TargetIcon />,
+  cv: <DocumentIcon />,
+}
 
-  useEffect(() => {
-    let cancelled = false
-    fetchJobStatsRaw()
-      .then((raw) => {
-        if (cancelled) return
-        const parsed = parseJobStats(raw)
-        setStats(parsed)
-        setState(parsed ? 'ready' : 'failed')
-      })
-      .catch(() => {
-        if (!cancelled) setState((prev) => (prev === 'ready' ? prev : 'failed'))
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [refreshKey])
-
-  if (state === 'failed') return <p className="text-xs text-gray-400">The job statistics could not be loaded.</p>
-  if (state === 'loading' || !stats) {
+// The four headline cards in a row: one column on a phone, two from the small breakpoint, four from the extra large one (a window of 1280 px or
+// more; narrower, each card is too narrow for its small print).
+export function JobStatCards({ jobStats }: { jobStats: JobStatsState }) {
+  if (jobStats.state === 'failed') return <p className="mb-5 text-xs text-gray-400">The job statistics could not be loaded.</p>
+  if (jobStats.state === 'loading') {
     return (
-      <div className="animate-pulse space-y-3" aria-label="Loading statistics">
+      <div className="mb-5 grid animate-pulse grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Loading statistics">
         {[0, 1, 2, 3].map((i) => (
           <div key={i} className="h-[72px] rounded-3xl bg-gray-100" />
         ))}
       </div>
     )
   }
-
-  const trend = weekTrend(stats.addedLast7Days, stats.addedPrev7Days)
-  const tone = stats.avgMatchScore === null ? null : scoreTone(stats.avgMatchScore)
-  // No matches yet is not bad news: a neutral colour, not the red of a low score.
-  const scoreAccent = tone === null ? ACCENTS[6] : tone === 'high' ? GREEN : tone === 'mid' ? AMBER : ACCENTS[3]
-
   return (
-    <div className="space-y-3">
-      <StatCard
-        accent={ACCENTS[0]}
-        icon={<BriefcaseIcon className="h-5 w-5" />}
-        label="Saved jobs"
-        value={stats.total.toLocaleString('en')}
-        caption={`${stats.companies} ${stats.companies === 1 ? 'company' : 'companies'}${stats.manual > 0 ? ` · ${stats.manual} added by hand` : ''}`}
-      />
-      <StatCard
-        accent={VIOLET}
-        icon={<CalendarPlusIcon />}
-        label="Added this week"
-        value={stats.addedLast7Days.toLocaleString('en')}
-        caption=""
-        trend={trend}
-      />
-      <StatCard
-        accent={scoreAccent}
-        icon={<TargetIcon />}
-        label="Average match"
-        value={stats.avgMatchScore === null ? '–' : `${stats.avgMatchScore}%`}
-        caption={`${stats.matched} of ${stats.total} matched (${percentOf(stats.matched, stats.total)}%)`}
-      />
-      <StatCard
-        accent={ACCENTS[5]}
-        icon={<DocumentIcon />}
-        label="With a CV"
-        value={stats.withCv.toLocaleString('en')}
-        caption={`${percentOf(stats.withCv, stats.total)}% of jobs`}
-      />
-      <PlatformCard stats={stats} />
+    <div className="career-enter mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      {statCardRows(jobStats.stats).map((row) => (
+        <StatCard
+          key={row.key}
+          accent={ROW_ACCENT[row.accent]}
+          icon={ROW_ICON[row.key]}
+          label={row.label}
+          value={row.value}
+          caption={row.caption}
+          trend={row.trend}
+        />
+      ))}
     </div>
   )
+}
+
+// "Where jobs come from", for the column beside the list; nothing while the numbers load or when they cannot be loaded.
+export function JobPlatformCard({ jobStats }: { jobStats: JobStatsState }) {
+  if (jobStats.state !== 'ready') return null
+  return <PlatformCard stats={jobStats.stats} />
 }
