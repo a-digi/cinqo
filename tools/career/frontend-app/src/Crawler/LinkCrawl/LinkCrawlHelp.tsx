@@ -1,17 +1,17 @@
 // The in-app explanation of the link crawler (plan 185, step 9): what it does, what it needs, how to
-// set it up, and what happens to the data of each job afterwards. Closed by default, so it costs a
-// line on the screen; every statement here is a rule the code enforces.
+// set it up, and what happens to the data of each job afterwards. It is shown open in the right column of the
+// instruction modal (plan 246); every statement here is a rule the code enforces.
 export function LinkCrawlHelp() {
   return (
-    <details className="mt-2 rounded-md border border-blue-200 bg-white p-2 text-gray-800" data-testid="link-crawl-help">
-      <summary className="cursor-pointer font-medium">How the link crawler works</summary>
-      <div className="mt-2 space-y-2">
+    <section className="text-xs leading-relaxed text-gray-700" data-testid="link-crawl-help">
+      <h3 className="text-sm font-semibold text-gray-900">How the link crawler works</h3>
+      <div className="mt-3 space-y-3">
         <p>
           The list of jobs is found <strong>without AI</strong>: the Browser tool reads the page, and the jobs are the links whose address
           matches your rule. The title of a job is the text of its link.
         </p>
         <div>
-          <div className="font-medium">What it needs</div>
+          <div className="font-semibold text-gray-900">What it needs</div>
           <ul className="list-disc pl-5">
             <li>
               <strong>Katana</strong> must be the selected engine (the default, on the Browser &amp; Engine page). The rule is what the link
@@ -22,7 +22,7 @@ export function LinkCrawlHelp() {
           </ul>
         </div>
         <div>
-          <div className="font-medium">Setting it up</div>
+          <div className="font-semibold text-gray-900">Setting it up</div>
           <ol className="list-decimal pl-5">
             <li>Load the links of the page, then tick two or three that are jobs.</li>
             <li>
@@ -33,7 +33,7 @@ export function LinkCrawlHelp() {
           </ol>
         </div>
         <div>
-          <div className="font-medium">Reading a rule</div>
+          <div className="font-semibold text-gray-900">Reading a rule</div>
           <ul className="list-disc pl-5 font-mono">
             <li>host/jobs/* — one part of the address after /jobs/</li>
             <li>host/jobs/# — a number after /jobs/ (not a word such as /jobs/types)</li>
@@ -42,7 +42,7 @@ export function LinkCrawlHelp() {
           </ul>
         </div>
         <div>
-          <div className="font-medium">After the list: the job details</div>
+          <div className="font-semibold text-gray-900">After the list: the job details</div>
           <p>
             A job found this way starts with its title and address only. The job-detail step (the AI-written detail instructions, then{' '}
             <em>Crawl job details now</em>) adds the description and fills the company, the location and the posted date{' '}
@@ -56,6 +56,6 @@ export function LinkCrawlHelp() {
           two jobs.
         </p>
       </div>
-    </details>
+    </section>
   )
 }

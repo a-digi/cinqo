@@ -24,11 +24,7 @@ import {
   verificationState,
   type Verification,
 } from './jobDetailPickRules'
-
-const buttonClass =
-  'rounded-md border border-blue-300 bg-white px-2.5 py-1 text-xs font-medium text-blue-800 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50'
-const primaryClass =
-  'rounded-md bg-blue-700 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50'
+import { buttonClass, primaryClass } from '../instructionStyles'
 
 function errorText(err: unknown): string {
   if (err instanceof PickError) return describePickFailure(err.message, err.advice)
@@ -180,7 +176,7 @@ export function VerifyPanel({
   const needsTick = usable ? groups !== null && groups.blocking.length === 0 && groups.warnings.length > 0 : previewValid
 
   return (
-    <div className="rounded-md border border-blue-200 bg-white p-2" data-testid="job-detail-verify">
+    <div className="rounded-md border border-gray-200 bg-white p-2" data-testid="job-detail-verify">
       <div className="font-medium">Check the picks on sample jobs</div>
       <p className="mt-1 text-gray-600">
         {hasSamples
@@ -237,7 +233,7 @@ export function VerifyPanel({
         </div>
       )}
 
-      <div className="mt-3 border-t border-blue-100 pt-2">
+      <div className="mt-3 border-t border-gray-100 pt-2">
         <p className="mb-1 text-gray-700">
           Saved picks fill a job&apos;s empty company, location and posted date when its page is crawled; they never replace what a job
           already has.

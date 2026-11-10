@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { updatePortalLink, type LinkPagination, type LinkRule, type PortalLink } from '../../api'
-import { LinkCrawlHelp } from './LinkCrawlHelp'
 import { WindowCheckPrompt } from '../WindowCheckPrompt'
 import {
   fetchLinkCandidates,
@@ -35,13 +34,11 @@ import {
   type Marks,
 } from '../linkCrawlRules'
 
+import { InstructionSection } from '../InstructionSection'
+import { buttonClass, cardClass, inputClass, primaryClass } from '../instructionStyles'
+
 const SHOWN_LINKS = 200
 const PREVIEW_ITEMS = 15
-
-const buttonClass =
-  'rounded-md border border-blue-300 bg-white px-2.5 py-1 text-xs font-medium text-blue-800 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50'
-const primaryClass =
-  'rounded-md bg-blue-700 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50'
 
 function errorText(err: unknown): string {
   if (err instanceof LinkCrawlError) return describeFailure(err.message, err.advice)
@@ -193,7 +190,10 @@ export function LinkCrawlPanel({ link, onReload }: { link: PortalLink; onReload:
     }
   }, [page, rule, pattern, link.id])
 
-  const shown = useMemo(() => (page ? filterLinks(page.links, query, sameSiteOnly, siteHost, link.jobHost) : []), [page, query, sameSiteOnly, siteHost, link.jobHost])
+  const shown = useMemo(
+    () => (page ? filterLinks(page.links, query, sameSiteOnly, siteHost, link.jobHost) : []),
+    [page, query, sameSiteOnly, siteHost, link.jobHost],
+  )
   // plan 203: which links of other sites are hidden, and when the page's postings are on another site
   const notice = useMemo(
     () => (page ? hiddenSitesNotice(page.site, page.otherHosts, siteHost, sameSiteOnly) : null),
@@ -313,13 +313,15 @@ export function LinkCrawlPanel({ link, onReload }: { link: PortalLink; onReload:
   const notes = [...(proposal?.notes ?? []), ...(preview?.notes ?? []), ...(pagesProposal?.notes ?? [])]
 
   return (
-    <div className="mb-2 rounded-2xl border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900" data-testid="link-crawl-panel">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="font-semibold">Link crawler</span>
-        <span>— find the jobs of this page by the address of their links, without AI.</span>
+    <div className="text-sm text-gray-800" data-testid="link-crawl-panel">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
+          <h3 className="text-base font-semibold text-gray-900">Link crawler</h3>
+          <p className="mt-0.5 text-sm text-gray-500">Find the jobs of this page by the address of their links, without AI.</p>
+        </div>
         <button
           type="button"
-          className={buttonClass}
+          className={primaryClass}
           onClick={() => {
             setOpen((o) => !o)
           }}
@@ -328,22 +330,27 @@ export function LinkCrawlPanel({ link, onReload }: { link: PortalLink; onReload:
         </button>
       </div>
 
-      <LinkCrawlHelp />
-
       {link.jobHost !== '' && (
-        <p className="mt-2 flex flex-wrap items-center gap-2 text-gray-800" data-testid="job-host-line">
+        <p className="mt-4 flex flex-wrap items-center gap-2 text-gray-800" data-testid="job-host-line">
           <span>
             Job links also on <strong>{link.jobHost}</strong> (confirmed by you).
           </span>
-          <button type="button" className={buttonClass} disabled={busy} onClick={() => { setJobHost('') }}>
+          <button
+            type="button"
+            className={buttonClass}
+            disabled={busy}
+            onClick={() => {
+              setJobHost('')
+            }}
+          >
             Remove
           </button>
         </p>
       )}
 
       {link.linkRules && (
-        <div className="mt-2 rounded-md border border-blue-200 bg-white p-2 text-gray-800" data-testid="link-crawl-saved-rule">
-          <div className="font-medium">Saved rule for {link.linkRules.host}</div>
+        <div className={`mt-4 ${cardClass} text-gray-800`} data-testid="link-crawl-saved-rule">
+          <div className="font-semibold text-gray-900">Saved rule for {link.linkRules.host}</div>
           <ul className="mt-1 list-disc pl-5 font-mono">
             {link.linkRules.include.map((p) => (
               <li key={`i-${p}`}>{p}</li>
@@ -366,12 +373,12 @@ export function LinkCrawlPanel({ link, onReload }: { link: PortalLink; onReload:
       )}
 
       {note && (
-        <p role="status" className="mt-2 text-green-800">
+        <p role="status" className="mt-4 text-green-700">
           {note}
         </p>
       )}
       {error && (
-        <p role="alert" className="mt-2 text-red-700">
+        <p role="alert" className="mt-4 text-red-700">
           {error}
         </p>
       )}
@@ -388,318 +395,352 @@ export function LinkCrawlPanel({ link, onReload }: { link: PortalLink; onReload:
       )}
 
       {open && (
-        <div className="mt-3 space-y-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <button type="button" className={primaryClass} disabled={loading} onClick={loadLinks}>
-              {loading ? 'Loading the links…' : page ? 'Load the links again' : 'Load the links of this page'}
-            </button>
-            {page && (
-              <span className="text-gray-700">
-                {page.links.length} links found on “{page.title || page.finalUrl}”{page.truncated ? ' (the list was cut at its limit)' : ''}
-                {page.droppedPrivate > 0 ? `, ${page.droppedPrivate} to private addresses hidden` : ''}
-              </span>
-            )}
-          </div>
-
-          {page && (
-            <>
-              {notice && (
-                <p
-                  role="status"
-                  data-testid="hidden-sites-notice"
-                  className={`rounded-md border px-2 py-1.5 ${notice.tone === 'warn' ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-gray-200 bg-gray-50 text-gray-700'}`}
-                >
-                  {notice.text}
-                </p>
-              )}
-              {notice?.tone === 'warn' && warnHost !== '' && (
-                <div className="rounded-md border border-amber-300 bg-white p-2 text-amber-900" data-testid="job-host-confirm">
-                  {confirmHost === '' ? (
-                    <button
-                      type="button"
-                      className={buttonClass}
-                      disabled={busy}
-                      onClick={() => {
-                        setConfirmHost(warnHost)
-                      }}
-                    >
-                      Use {warnHost} for the job links…
-                    </button>
-                  ) : (
-                    <>
-                      <p>{jobHostConfirmText(confirmHost, siteHost)}</p>
-                      <div className="mt-2 flex gap-2">
-                        <button type="button" className={primaryClass} disabled={busy} onClick={() => { setJobHost(confirmHost) }}>
-                          Yes, confirm {confirmHost}
-                        </button>
-                        <button type="button" className={buttonClass} disabled={busy} onClick={() => { setConfirmHost('') }}>
-                          Cancel
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              )}
-              <p className="text-gray-700">
-                Tick the links that are <strong>jobs</strong>; two or three are enough. Mark a link that looks like a job but is not one
-                with <em>not a job</em>, and the link to the second (and third) page of the list with <em>next page</em>.
-              </p>
-              <div className="flex flex-wrap items-center gap-3">
-                <input
-                  type="search"
-                  value={query}
-                  onChange={(e) => {
-                    setQuery(e.target.value)
-                  }}
-                  placeholder="Filter by address or text"
-                  aria-label="Filter the links"
-                  className="w-64 rounded-md border border-blue-200 bg-white px-2 py-1 text-xs"
-                />
-                <label className="flex items-center gap-1">
-                  <input
-                    type="checkbox"
-                    checked={sameSiteOnly}
-                    onChange={(e) => {
-                      setSameSiteOnly(e.target.checked)
-                    }}
-                  />
-                  Only this site ({siteHost}{link.jobHost !== '' ? ` and ${link.jobHost}` : ''})
-                </label>
-                <span className="text-gray-600">
-                  {marks.picked.length} job link(s) ticked, {marks.notJob.length} marked not a job, {marks.pages.length} next page link(s)
-                </span>
-              </div>
-
-              <ul className="max-h-72 overflow-auto rounded-md border border-blue-200 bg-white" aria-label="Links of the page">
-                {shown.slice(0, SHOWN_LINKS).map((l) => {
-                  const isPicked = marks.picked.includes(l.url)
-                  const isNot = marks.notJob.includes(l.url)
-                  const isPage = marks.pages.includes(l.url)
-                  return (
-                    <li
-                      key={l.url}
-                      className={`flex items-start gap-2 border-b border-gray-100 px-2 py-1 last:border-b-0 ${isPicked ? 'bg-green-50' : isNot ? 'bg-red-50' : isPage ? 'bg-sky-50' : ''}`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={isPicked}
-                        aria-label={`Job link ${l.url}`}
-                        onChange={() => {
-                          setMarks((m) => toggleMark(m, l.url, 'picked'))
-                        }}
-                        className="mt-0.5"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate font-medium text-gray-900">
-                          {linkLabel(l) || <span className="text-gray-400">(no text)</span>}
-                        </div>
-                        <div className="truncate font-mono text-gray-600">{shortUrl(l.url, siteHost)}</div>
-                      </div>
-                      {jobUrls.has(l.url) && <span className="shrink-0 rounded bg-green-100 px-1.5 py-0.5 text-green-800">job</span>}
-                      <button
-                        type="button"
-                        className={`shrink-0 rounded border px-1.5 py-0.5 ${isNot ? 'border-red-300 bg-red-100 text-red-800' : 'border-gray-200 text-gray-600 hover:bg-gray-100'}`}
-                        onClick={() => {
-                          setMarks((m) => toggleMark(m, l.url, 'notJob'))
-                        }}
-                      >
-                        {isNot ? 'not a job ✓' : 'not a job'}
-                      </button>
-                      <button
-                        type="button"
-                        className={`shrink-0 rounded border px-1.5 py-0.5 ${isPage ? 'border-sky-300 bg-sky-100 text-sky-800' : 'border-gray-200 text-gray-600 hover:bg-gray-100'}`}
-                        onClick={() => {
-                          setMarks((m) => toggleMark(m, l.url, 'pages'))
-                        }}
-                      >
-                        {isPage ? 'next page ✓' : 'next page'}
-                      </button>
-                    </li>
-                  )
-                })}
-                {shown.length === 0 && <li className="px-2 py-2 text-gray-500">No link matches the filter.</li>}
-                {shown.length > SHOWN_LINKS && (
-                  <li className="px-2 py-1 text-gray-500">{shown.length - SHOWN_LINKS} more: narrow the filter to see them.</li>
-                )}
-              </ul>
-            </>
-          )}
-
-          {page && marks.pages.length > 0 && (
-            <div className="space-y-2 rounded-md border border-blue-200 bg-white p-2 text-gray-800" data-testid="link-crawl-pagination">
-              <div className="font-medium">The next pages</div>
-              {pagesProposal && (
-                <>
-                  <p>{describePagination(effectivePagination)}</p>
-                  <ul className="font-mono text-gray-600">
-                    {pagesProposal.nextUrls.slice(0, 3).map((u) => (
-                      <li key={u} className="truncate">
-                        {shortUrl(u, siteHost)}
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              )}
-              {paginationError && (
-                <p role="alert" className="text-red-700">
-                  {paginationError}
-                </p>
-              )}
-              <label className="flex items-center gap-2">
-                The most pages one crawl loads
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={maxPagesText}
-                  onChange={(e) => {
-                    setMaxPagesText(e.target.value)
-                    setTest(null)
-                  }}
-                  aria-label="The most pages"
-                  className="w-16 rounded-md border border-blue-200 px-2 py-1 text-xs"
-                />
-                <span className="text-gray-600">(1 to {MAX_PAGES_LIMIT})</span>
-              </label>
-              {maxPagesError && (
-                <p role="alert" className="text-red-700">
-                  {maxPagesError}
-                </p>
-              )}
-              <button
-                type="button"
-                className={buttonClass}
-                onClick={() => {
-                  setMarks((m) => ({ ...m, pages: [] }))
-                }}
-              >
-                Only the first page
+        <div className="mt-8">
+          <InstructionSection
+            number={1}
+            title="Choose the job links"
+            description="Load the links of the page, then tick two or three that are jobs."
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <button type="button" className={primaryClass} disabled={loading} onClick={loadLinks}>
+                {loading ? 'Loading the links…' : page ? 'Load the links again' : 'Load the links of this page'}
               </button>
+              {page && (
+                <span className="text-gray-700">
+                  {page.links.length} links found on “{page.title || page.finalUrl}”
+                  {page.truncated ? ' (the list was cut at its limit)' : ''}
+                  {page.droppedPrivate > 0 ? `, ${page.droppedPrivate} to private addresses hidden` : ''}
+                </span>
+              )}
             </div>
-          )}
 
-          {page && marks.picked.length > 0 && (
-            <div className="space-y-2 rounded-md border border-blue-200 bg-white p-2 text-gray-800">
-              <div className="font-medium">The partial URL of the jobs</div>
-              <label className="block">
-                <span className="sr-only">Pattern</span>
-                <input
-                  type="text"
-                  value={pattern}
-                  onChange={(e) => {
-                    setPattern(e.target.value)
-                    setConfirmed(false)
-                    setTest(null)
-                  }}
-                  spellCheck={false}
-                  className="w-full rounded-md border border-blue-200 px-2 py-1 font-mono text-xs"
-                />
-              </label>
-              <p className="text-gray-600">
-                <code>*</code> stands for any text inside one part of the address, <code>#</code> for a number (an id such as 8195, but not
-                a word such as types), <code>**</code> for anything below it. The scheme and a trailing / do not matter.
-              </p>
-              {excludes.length > 0 && (
-                <div>
-                  <div className="font-medium">Not these</div>
-                  <ul className="mt-1 space-y-1">
-                    {excludes.map((p) => (
-                      <li key={p} className="flex items-center gap-2 font-mono text-red-800">
-                        {p}
+            {page && (
+              <>
+                {notice && (
+                  <p
+                    role="status"
+                    data-testid="hidden-sites-notice"
+                    className={`rounded-md border px-2 py-1.5 ${notice.tone === 'warn' ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-gray-200 bg-gray-50 text-gray-700'}`}
+                  >
+                    {notice.text}
+                  </p>
+                )}
+                {notice?.tone === 'warn' && warnHost !== '' && (
+                  <div className="rounded-md border border-amber-300 bg-white p-2 text-amber-900" data-testid="job-host-confirm">
+                    {confirmHost === '' ? (
+                      <button
+                        type="button"
+                        className={buttonClass}
+                        disabled={busy}
+                        onClick={() => {
+                          setConfirmHost(warnHost)
+                        }}
+                      >
+                        Use {warnHost} for the job links…
+                      </button>
+                    ) : (
+                      <>
+                        <p>{jobHostConfirmText(confirmHost, siteHost)}</p>
+                        <div className="mt-2 flex gap-2">
+                          <button
+                            type="button"
+                            className={primaryClass}
+                            disabled={busy}
+                            onClick={() => {
+                              setJobHost(confirmHost)
+                            }}
+                          >
+                            Yes, confirm {confirmHost}
+                          </button>
+                          <button
+                            type="button"
+                            className={buttonClass}
+                            disabled={busy}
+                            onClick={() => {
+                              setConfirmHost('')
+                            }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+                <p className="text-gray-700">
+                  Tick the links that are <strong>jobs</strong>; two or three are enough. Mark a link that looks like a job but is not one
+                  with <em>not a job</em>, and the link to the second (and third) page of the list with <em>next page</em>.
+                </p>
+                <div className="flex flex-wrap items-center gap-3">
+                  <input
+                    type="search"
+                    value={query}
+                    onChange={(e) => {
+                      setQuery(e.target.value)
+                    }}
+                    placeholder="Filter by address or text"
+                    aria-label="Filter the links"
+                    className={`w-64 ${inputClass}`}
+                  />
+                  <label className="flex items-center gap-1">
+                    <input
+                      type="checkbox"
+                      checked={sameSiteOnly}
+                      onChange={(e) => {
+                        setSameSiteOnly(e.target.checked)
+                      }}
+                    />
+                    Only this site ({siteHost}
+                    {link.jobHost !== '' ? ` and ${link.jobHost}` : ''})
+                  </label>
+                  <span className="text-gray-600">
+                    {marks.picked.length} job link(s) ticked, {marks.notJob.length} marked not a job, {marks.pages.length} next page link(s)
+                  </span>
+                </div>
+
+                <ul className="max-h-96 overflow-auto rounded-xl border border-gray-200 bg-white" aria-label="Links of the page">
+                  {shown.slice(0, SHOWN_LINKS).map((l) => {
+                    const isPicked = marks.picked.includes(l.url)
+                    const isNot = marks.notJob.includes(l.url)
+                    const isPage = marks.pages.includes(l.url)
+                    return (
+                      <li
+                        key={l.url}
+                        className={`flex items-start gap-2 border-b border-gray-100 px-2 py-1 last:border-b-0 ${isPicked ? 'bg-green-50' : isNot ? 'bg-red-50' : isPage ? 'bg-gray-100' : ''}`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isPicked}
+                          aria-label={`Job link ${l.url}`}
+                          onChange={() => {
+                            setMarks((m) => toggleMark(m, l.url, 'picked'))
+                          }}
+                          className="mt-0.5"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate font-medium text-gray-900">
+                            {linkLabel(l) || <span className="text-gray-400">(no text)</span>}
+                          </div>
+                          <div className="truncate font-mono text-gray-600">{shortUrl(l.url, siteHost)}</div>
+                        </div>
+                        {jobUrls.has(l.url) && <span className="shrink-0 rounded bg-green-100 px-1.5 py-0.5 text-green-800">job</span>}
                         <button
                           type="button"
-                          className={buttonClass}
+                          className={`shrink-0 rounded border px-1.5 py-0.5 ${isNot ? 'border-red-300 bg-red-100 text-red-800' : 'border-gray-200 text-gray-600 hover:bg-gray-100'}`}
                           onClick={() => {
-                            setExcludes((ex) => ex.filter((x) => x !== p))
+                            setMarks((m) => toggleMark(m, l.url, 'notJob'))
                           }}
                         >
-                          Remove
+                          {isNot ? 'not a job ✓' : 'not a job'}
+                        </button>
+                        <button
+                          type="button"
+                          className={`shrink-0 rounded border px-1.5 py-0.5 ${isPage ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 text-gray-600 hover:bg-gray-100'}`}
+                          onClick={() => {
+                            setMarks((m) => toggleMark(m, l.url, 'pages'))
+                          }}
+                        >
+                          {isPage ? 'next page ✓' : 'next page'}
                         </button>
                       </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              {preview && (
-                <div data-testid="link-crawl-preview">
-                  <div>
-                    The rule finds <strong>{preview.items.length}</strong> job(s) on this page
-                    {preview.skippedNoTitle > 0 ? `; ${preview.skippedNoTitle} matching link(s) have no text and are left out` : ''}.
-                  </div>
-                  <ul className="mt-1 max-h-40 overflow-auto">
-                    {preview.items.slice(0, PREVIEW_ITEMS).map((i) => (
-                      <li key={i.url} className="truncate">
-                        <span className="font-medium">{i.title}</span>{' '}
-                        <span className="font-mono text-gray-500">{shortUrl(i.url, siteHost)}</span>
-                      </li>
-                    ))}
-                  </ul>
-                  {preview.items.length > PREVIEW_ITEMS && (
-                    <div className="text-gray-500">…and {preview.items.length - PREVIEW_ITEMS} more.</div>
+                    )
+                  })}
+                  {shown.length === 0 && <li className="px-2 py-2 text-gray-500">No link matches the filter.</li>}
+                  {shown.length > SHOWN_LINKS && (
+                    <li className="px-2 py-1 text-gray-500">{shown.length - SHOWN_LINKS} more: narrow the filter to see them.</li>
                   )}
-                </div>
-              )}
-              {previewError && (
-                <p role="alert" className="text-red-700">
-                  {previewError}
-                </p>
-              )}
-              {notes.length > 0 && (
-                <ul className="list-disc pl-5 text-amber-900">
-                  {notes.map((n) => (
-                    <li key={n}>{n}</li>
-                  ))}
                 </ul>
-              )}
-              {proposal && (proposal.excludedStillMatched?.length ?? 0) > 0 && (
-                <p className="text-amber-900">
-                  Still matched although you marked them as not a job: {proposal.excludedStillMatched?.join(', ')}
-                </p>
-              )}
-              {needsConfirm && (
-                <label className="flex items-center gap-2 text-amber-900">
+              </>
+            )}
+          </InstructionSection>
+
+          {page && marks.pages.length > 0 && (
+            <InstructionSection number={2} title="The next pages" description="How the crawl moves on from the first page of the list.">
+              <div className="space-y-3" data-testid="link-crawl-pagination">
+                {pagesProposal && (
+                  <>
+                    <p>{describePagination(effectivePagination)}</p>
+                    <ul className="font-mono text-gray-600">
+                      {pagesProposal.nextUrls.slice(0, 3).map((u) => (
+                        <li key={u} className="truncate">
+                          {shortUrl(u, siteHost)}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+                {paginationError && (
+                  <p role="alert" className="text-red-700">
+                    {paginationError}
+                  </p>
+                )}
+                <label className="flex items-center gap-2">
+                  The most pages one crawl loads
                   <input
-                    type="checkbox"
-                    checked={confirmed}
+                    type="text"
+                    inputMode="numeric"
+                    value={maxPagesText}
                     onChange={(e) => {
-                      setConfirmed(e.target.checked)
+                      setMaxPagesText(e.target.value)
+                      setTest(null)
                     }}
+                    aria-label="The most pages"
+                    className={`w-20 ${inputClass}`}
                   />
-                  I checked the matches: they are all jobs.
+                  <span className="text-gray-600">(1 to {MAX_PAGES_LIMIT})</span>
                 </label>
-              )}
-              <div className="flex flex-wrap items-center gap-2">
+                {maxPagesError && (
+                  <p role="alert" className="text-red-700">
+                    {maxPagesError}
+                  </p>
+                )}
                 <button
                   type="button"
                   className={buttonClass}
-                  disabled={busy || pattern.trim() === '' || previewError !== ''}
-                  onClick={runTest}
+                  onClick={() => {
+                    setMarks((m) => ({ ...m, pages: [] }))
+                  }}
                 >
-                  Test on the page now
+                  Only the first page
                 </button>
-                <button type="button" className={primaryClass} disabled={blocked !== ''} onClick={save} title={blocked}>
-                  Save the rule
-                </button>
-                {blocked !== '' && <span className="text-gray-600">{blocked}</span>}
               </div>
-              {test && (
-                <div data-testid="link-crawl-test" className="rounded-md border border-green-200 bg-green-50 p-2">
+            </InstructionSection>
+          )}
+
+          {page && marks.picked.length > 0 && (
+            <>
+              <InstructionSection
+                number={3}
+                title="The partial URL of the jobs"
+                description="The address pattern the job links share, and the links to leave out."
+              >
+                <label className="block">
+                  <span className="sr-only">Pattern</span>
+                  <input
+                    type="text"
+                    value={pattern}
+                    onChange={(e) => {
+                      setPattern(e.target.value)
+                      setConfirmed(false)
+                      setTest(null)
+                    }}
+                    spellCheck={false}
+                    className={`w-full font-mono ${inputClass}`}
+                  />
+                </label>
+                <p className="text-gray-600">
+                  <code>*</code> stands for any text inside one part of the address, <code>#</code> for a number (an id such as 8195, but
+                  not a word such as types), <code>**</code> for anything below it. The scheme and a trailing / do not matter.
+                </p>
+                {excludes.length > 0 && (
                   <div>
-                    Loaded {test.pages.length} page(s) just now: <strong>{test.items.length}</strong> job(s) would be created;{' '}
-                    {stopReasonText(test.stopReason, test.stopDetail)}. Nothing was saved.
+                    <div className="font-semibold text-gray-900">Not these</div>
+                    <ul className="mt-1 space-y-1">
+                      {excludes.map((p) => (
+                        <li key={p} className="flex items-center gap-2 font-mono text-red-800">
+                          {p}
+                          <button
+                            type="button"
+                            className={buttonClass}
+                            onClick={() => {
+                              setExcludes((ex) => ex.filter((x) => x !== p))
+                            }}
+                          >
+                            Remove
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
-                  <ul className="mt-1">
-                    {test.pages.map((p, i) => (
-                      <li key={p.url} className="truncate">
-                        Page {i + 1}: {p.newJobs} new job link(s) — “{p.title !== '' ? p.title : p.finalUrl}”
-                      </li>
+                )}
+              </InstructionSection>
+              <InstructionSection
+                number={4}
+                title="Check and save"
+                description="See what the rule finds on this page, test it on the page, then save it."
+              >
+                {preview && (
+                  <div data-testid="link-crawl-preview">
+                    <div>
+                      The rule finds <strong>{preview.items.length}</strong> job(s) on this page
+                      {preview.skippedNoTitle > 0 ? `; ${preview.skippedNoTitle} matching link(s) have no text and are left out` : ''}.
+                    </div>
+                    <ul className="mt-1 max-h-40 overflow-auto">
+                      {preview.items.slice(0, PREVIEW_ITEMS).map((i) => (
+                        <li key={i.url} className="truncate">
+                          <span className="font-medium">{i.title}</span>{' '}
+                          <span className="font-mono text-gray-500">{shortUrl(i.url, siteHost)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    {preview.items.length > PREVIEW_ITEMS && (
+                      <div className="text-gray-500">…and {preview.items.length - PREVIEW_ITEMS} more.</div>
+                    )}
+                  </div>
+                )}
+                {previewError && (
+                  <p role="alert" className="text-red-700">
+                    {previewError}
+                  </p>
+                )}
+                {notes.length > 0 && (
+                  <ul className="list-disc pl-5 text-amber-900">
+                    {notes.map((n) => (
+                      <li key={n}>{n}</li>
                     ))}
                   </ul>
-                  {test.stopReason === 'max_pages' && (
-                    <div className="text-gray-600">A test loads two pages at most; a crawl loads up to the limit above.</div>
-                  )}
+                )}
+                {proposal && (proposal.excludedStillMatched?.length ?? 0) > 0 && (
+                  <p className="text-amber-900">
+                    Still matched although you marked them as not a job: {proposal.excludedStillMatched?.join(', ')}
+                  </p>
+                )}
+                {needsConfirm && (
+                  <label className="flex items-center gap-2 text-amber-900">
+                    <input
+                      type="checkbox"
+                      checked={confirmed}
+                      onChange={(e) => {
+                        setConfirmed(e.target.checked)
+                      }}
+                    />
+                    I checked the matches: they are all jobs.
+                  </label>
+                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    className={buttonClass}
+                    disabled={busy || pattern.trim() === '' || previewError !== ''}
+                    onClick={runTest}
+                  >
+                    Test on the page now
+                  </button>
+                  <button type="button" className={primaryClass} disabled={blocked !== ''} onClick={save} title={blocked}>
+                    Save the rule
+                  </button>
+                  {blocked !== '' && <span className="text-gray-600">{blocked}</span>}
                 </div>
-              )}
-            </div>
+                {test && (
+                  <div data-testid="link-crawl-test" className="rounded-md border border-green-200 bg-green-50 p-2">
+                    <div>
+                      Loaded {test.pages.length} page(s) just now: <strong>{test.items.length}</strong> job(s) would be created;{' '}
+                      {stopReasonText(test.stopReason, test.stopDetail)}. Nothing was saved.
+                    </div>
+                    <ul className="mt-1">
+                      {test.pages.map((p, i) => (
+                        <li key={p.url} className="truncate">
+                          Page {i + 1}: {p.newJobs} new job link(s) — “{p.title !== '' ? p.title : p.finalUrl}”
+                        </li>
+                      ))}
+                    </ul>
+                    {test.stopReason === 'max_pages' && (
+                      <div className="text-gray-600">A test loads two pages at most; a crawl loads up to the limit above.</div>
+                    )}
+                  </div>
+                )}
+              </InstructionSection>
+            </>
           )}
         </div>
       )}

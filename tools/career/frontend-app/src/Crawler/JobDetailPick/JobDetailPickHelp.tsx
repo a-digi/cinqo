@@ -1,17 +1,17 @@
 // The in-app explanation of "Pick the data of a job page" (plan 186, step 12): what it does, how to use it, what saving does to jobs and what
-// it needs. Closed by default; every statement here is a rule the code enforces.
+// it needs. Shown open in the right column of the instruction modal (plan 246); every statement here is a rule the code enforces.
 export function JobDetailPickHelp() {
   return (
-    <details className="mt-2 rounded-md border border-blue-200 bg-white p-2 text-gray-800" data-testid="job-detail-pick-help">
-      <summary className="cursor-pointer font-medium">How picking the data of a job page works</summary>
-      <div className="mt-2 space-y-2">
+    <section className="text-xs leading-relaxed text-gray-700" data-testid="job-detail-pick-help">
+      <h3 className="text-sm font-semibold text-gray-900">How picking the data of a job page works</h3>
+      <div className="mt-3 space-y-3">
         <p>
           You show the tool where one job page says its title, company, location, posted date and description. It then reads every job of
           this link that way, <strong>without AI</strong>. The AI route stays available: &ldquo;Generate&rdquo; still writes instructions,
           and typing them by hand still works.
         </p>
         <div>
-          <div className="font-medium">Using it</div>
+          <div className="font-semibold text-gray-900">Using it</div>
           <ol className="list-decimal pl-5">
             <li>Choose a sample page: one of this link&apos;s saved jobs, or another address on its own site.</li>
             <li>
@@ -32,7 +32,7 @@ export function JobDetailPickHelp() {
           </ol>
         </div>
         <div>
-          <div className="font-medium">What saving does</div>
+          <div className="font-semibold text-gray-900">What saving does</div>
           <ul className="list-disc pl-5">
             <li>
               It replaces the job-detail instructions this link has now. Nothing is recrawled by saving: run &ldquo;Crawl job details
@@ -50,7 +50,7 @@ export function JobDetailPickHelp() {
           </ul>
         </div>
         <div>
-          <div className="font-medium">What it needs</div>
+          <div className="font-semibold text-gray-900">What it needs</div>
           <ul className="list-disc pl-5">
             <li>The link must not need a login: for those the AI instructions are used.</li>
             <li>
@@ -64,6 +64,6 @@ export function JobDetailPickHelp() {
           </ul>
         </div>
       </div>
-    </details>
+    </section>
   )
 }

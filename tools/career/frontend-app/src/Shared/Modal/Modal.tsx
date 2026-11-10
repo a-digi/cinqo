@@ -12,6 +12,9 @@ interface ModalProps {
   // page: it is rendered outside the item that opened it (a portal into document.body), has a header with Close and a body that
   // scrolls on its own, stops the page behind from scrolling and hands the focus back when it closes.
   size?: 'default' | 'wide' | 'full'
+  // Full size only (plan 246): a line under the title (what is being edited) and a bar fixed at the bottom (the actions), outside the scrolling body.
+  subtitle?: React.ReactNode
+  footer?: React.ReactNode
 }
 
 // Shared modal — controlled (open/onClose only), no fetch calls, no
@@ -19,7 +22,7 @@ interface ModalProps {
 // hiding via CSS, since nothing in this tool needs it to stay mounted
 // (no animated-out close, matching the ask: an entrance animation
 // only). See plan/ai/tools/career/step-58-portals-page-modal-accordion-redesign.md.
-export function Modal({ open, title, onClose, children, size = 'default' }: ModalProps) {
+export function Modal({ open, title, onClose, children, size = 'default', subtitle, footer }: ModalProps) {
   useEffect(() => {
     if (!open) {
       return
@@ -72,8 +75,13 @@ export function Modal({ open, title, onClose, children, size = 'default' }: Moda
         tabIndex={-1}
         className="fixed inset-0 z-[60] flex flex-col bg-white font-sans text-gray-900 outline-none"
       >
-        <div className="flex shrink-0 items-center justify-between border-b border-gray-200 px-6 py-3.5">
-          <h2 className="text-base font-semibold text-gray-900">{title}</h2>
+        <div className="flex shrink-0 items-center justify-between gap-4 border-b border-gray-200 px-6 py-3.5">
+          <div className="min-w-0">
+            <h2 className="text-base font-semibold text-gray-900">{title}</h2>
+            {subtitle !== undefined && subtitle !== null && (
+              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500">{subtitle}</div>
+            )}
+          </div>
           <button
             type="button"
             onClick={onClose}
@@ -84,6 +92,7 @@ export function Modal({ open, title, onClose, children, size = 'default' }: Moda
           </button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">{children}</div>
+        {footer !== undefined && footer !== null && <div className="shrink-0 border-t border-gray-200 bg-white px-6 py-3">{footer}</div>}
       </div>,
       document.body,
     )

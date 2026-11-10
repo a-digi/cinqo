@@ -34,7 +34,12 @@ import {
 } from '../generateInstructions'
 import { startCrawlNow, stopCrawlNow, fetchActiveCrawlRun, type CrawlRun } from '../crawlNow'
 import { LinkCrawlPanel } from '../LinkCrawl/LinkCrawlPanel'
+import { LinkCrawlHelp } from '../LinkCrawl/LinkCrawlHelp'
+import { InstructionModalLayout } from '../InstructionModalLayout'
+import { InstructionYamlHelp } from '../InstructionYamlHelp'
+import { instructionContext } from '../instructionModalRules'
 import { JobDetailPickPanel } from '../JobDetailPick/JobDetailPickPanel'
+import { JobDetailPickHelp } from '../JobDetailPick/JobDetailPickHelp'
 import { phaseLabel, latestCrawlLogMessage } from '../crawlPhase'
 import {
   AI_LOGIN_WAIT_TEXT,
@@ -1203,6 +1208,65 @@ export function CrawlPanel({
     void updatePortalLink(link.id, { jobDetailInstructionsAiErrorDismissedAt: dismissedAt }).then(onReload)
   }
 
+  // What the instruction modal shows around its content (plan 246): the link being edited in the header, the help in the right column, and for the
+  // YAML modals a bar at the bottom with the actions (and the reason a Save was refused, plan 245).
+  const modalContext = activeInstructionsModal === null ? null : instructionContext(activeInstructionsModal, link, engine)
+  const modalSubtitle =
+    modalContext === null ? undefined : (
+      <>
+        <span className="min-w-0 truncate font-mono">{modalContext.url}</span>
+        {modalContext.engine !== null && (
+          <span className="rounded-full border border-gray-200 px-2 py-0.5 text-gray-600">{modalContext.engine}</span>
+        )}
+        <span
+          className={`rounded-full border px-2 py-0.5 ${modalContext.state.tone === 'saved' ? 'border-green-200 bg-green-50 text-green-700' : 'border-gray-200 text-gray-500'}`}
+        >
+          {modalContext.state.text}
+        </span>
+      </>
+    )
+  const modalHelp =
+    activeInstructionsModal === 'rules' ? (
+      <LinkCrawlHelp />
+    ) : activeInstructionsModal === 'crawl' ? (
+      <InstructionYamlHelp kind="list" />
+    ) : activeInstructionsModal === 'jobDetail' ? (
+      <div className="space-y-6">
+        {!loginWindow && <JobDetailPickHelp />}
+        {!jobDetailPickOnly && <InstructionYamlHelp kind="detail" />}
+      </div>
+    ) : undefined
+  const hasYamlFooter = activeInstructionsModal === 'crawl' || (activeInstructionsModal === 'jobDetail' && !jobDetailPickOnly)
+  const modalFooter = hasYamlFooter ? (
+    <div className="flex items-center justify-between gap-4">
+      <div className="min-w-0 flex-1">
+        {instructionsSaveError !== '' && (
+          <p role="alert" className="text-sm text-red-700">
+            {instructionsSaveError}
+          </p>
+        )}
+      </div>
+      <div className="flex shrink-0 gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            setActiveInstructionsModal(null)
+          }}
+          className="rounded-md border border-gray-200 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={activeInstructionsModal === 'crawl' ? handleSaveCrawlInstructions : handleSaveJobDetailCrawlInstructions}
+          className="rounded-md bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-800"
+        >
+          Save
+        </button>
+      </div>
+    </div>
+  ) : undefined
+
   return (
     <div className="mt-3">
       {/* Auto-discovery opt-out (step 84 follow-up) — always visible,
@@ -1955,15 +2019,18 @@ export function CrawlPanel({
               ? 'Job list rules (Katana)'
               : 'Job list crawl instructions'
         }
-        // The instruction modals are the whole window on a white page, outside this item (plan/ai/tools/career/step-245-instruction-modals-full-page.md).
+        // The instruction modals are the whole window on a white page, outside this item (plan/ai/tools/career/step-245-instruction-modals-full-page.md),
+        // with the instructions on the left and the help on the right (plan/ai/tools/career/step-246-instruction-modal-two-columns-and-design.md).
         size="full"
+        subtitle={modalSubtitle}
+        footer={modalFooter}
         onClose={() => {
           setActiveInstructionsModal(null)
         }}
       >
-        {activeInstructionsModal === 'rules' && <LinkCrawlPanel link={link} onReload={onReload} />}
-        {activeInstructionsModal === 'crawl' && (
-          <>
+        <InstructionModalLayout help={modalHelp} helpTitle="Help">
+          {activeInstructionsModal === 'rules' && <LinkCrawlPanel link={link} onReload={onReload} />}
+          {activeInstructionsModal === 'crawl' && (
             <textarea
               value={instructionsDraft}
               onChange={(e) => {
@@ -1974,44 +2041,19 @@ export function CrawlPanel({
               spellCheck={false}
               className="w-full rounded-md border border-gray-300 px-2 py-1.5 font-mono text-xs text-gray-900 focus:border-gray-500 focus:outline-none"
             />
-            {instructionsSaveError !== '' && (
-              <p role="alert" className="mt-3 text-sm text-red-700">
-                {instructionsSaveError}
-              </p>
-            )}
-            <div className="mt-3 flex gap-2">
-              <button
-                type="button"
-                onClick={handleSaveCrawlInstructions}
-                className="rounded-md bg-gray-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-gray-800"
-              >
-                Save
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveInstructionsModal(null)
-                }}
-                className="rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-white"
-              >
-                Cancel
-              </button>
-            </div>
-          </>
-        )}
-        {activeInstructionsModal === 'jobDetail' && (
-          <>
-            {!loginWindow && (
-              <JobDetailPickPanel
-                link={link}
-                onSaved={(yaml) => {
-                  setJobDetailInstructionsDraft(yaml)
-                  onReload()
-                }}
-              />
-            )}
-            {!jobDetailPickOnly && (
-              <>
+          )}
+          {activeInstructionsModal === 'jobDetail' && (
+            <>
+              {!loginWindow && (
+                <JobDetailPickPanel
+                  link={link}
+                  onSaved={(yaml) => {
+                    setJobDetailInstructionsDraft(yaml)
+                    onReload()
+                  }}
+                />
+              )}
+              {!jobDetailPickOnly && (
                 <textarea
                   value={jobDetailInstructionsDraft}
                   onChange={(e) => {
@@ -2022,33 +2064,10 @@ export function CrawlPanel({
                   spellCheck={false}
                   className="w-full rounded-md border border-gray-300 px-2 py-1.5 font-mono text-xs text-gray-900 focus:border-gray-500 focus:outline-none"
                 />
-                {instructionsSaveError !== '' && (
-                  <p role="alert" className="mt-3 text-sm text-red-700">
-                    {instructionsSaveError}
-                  </p>
-                )}
-                <div className="mt-3 flex gap-2">
-                  <button
-                    type="button"
-                    onClick={handleSaveJobDetailCrawlInstructions}
-                    className="rounded-md bg-gray-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-gray-800"
-                  >
-                    Save
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveInstructionsModal(null)
-                    }}
-                    className="rounded-md border border-gray-200 px-2.5 py-1 text-xs text-gray-700 hover:bg-white"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </>
-            )}
-          </>
-        )}
+              )}
+            </>
+          )}
+        </InstructionModalLayout>
       </Modal>
     </div>
   )

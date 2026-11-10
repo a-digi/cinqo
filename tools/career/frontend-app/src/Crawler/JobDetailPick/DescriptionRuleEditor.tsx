@@ -24,12 +24,8 @@ import {
   type RuleDraft,
 } from './jobDetailPickRules'
 
-const buttonClass =
-  'rounded-md border border-blue-300 bg-white px-2 py-0.5 text-xs font-medium text-blue-800 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50'
-const primaryClass =
-  'rounded-md bg-blue-700 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50'
-const inputClass = 'rounded-md border border-blue-200 bg-white px-2 py-1 text-xs'
 const SHOWN_TEXT = 2500
+import { buttonClass, inputClass, primaryClass } from '../instructionStyles'
 
 function errorText(err: unknown): string {
   if (err instanceof PickError) return describePickFailure(err.message, err.advice)
@@ -63,7 +59,7 @@ function ListEditor({
       {items.length === 0 && <p className="text-gray-500">Nothing.</p>}
       <ul className="flex flex-wrap gap-1">
         {items.map((it, i) => (
-          <li key={it} className="flex items-center gap-1 rounded-full border border-blue-200 bg-white px-2 py-0.5">
+          <li key={it} className="flex items-center gap-1 rounded-full border border-gray-200 bg-white px-2 py-0.5">
             <code className="text-[11px]">{it}</code>
             <button
               type="button"
@@ -88,7 +84,7 @@ function ListEditor({
                 key={s.text}
                 type="button"
                 title={s.hint}
-                className={`rounded-full border px-2 py-0.5 text-[11px] hover:bg-blue-50 ${s.risky ? 'border-amber-400 text-amber-900' : 'border-gray-300 text-gray-800'}`}
+                className={`rounded-full border px-2 py-0.5 text-[11px] hover:bg-gray-50 ${s.risky ? 'border-amber-400 text-amber-900' : 'border-gray-300 text-gray-800'}`}
                 onClick={() => {
                   onChange(addToList(items, s.text, max))
                 }}
@@ -145,7 +141,7 @@ function PartCard({
   const help = descriptionHelpFor(page, part.include)
   const boxes = page.ranked.description.slice(0, 8)
   return (
-    <div className="rounded-md border border-blue-200 bg-white p-2" data-testid={`rule-part-${index + 1}`}>
+    <div className="rounded-md border border-gray-200 bg-white p-2" data-testid={`rule-part-${index + 1}`}>
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-semibold">Part {index + 1}</span>
         <button
@@ -277,7 +273,7 @@ function TryResult({ job, test }: { job: PickTestJob; test: PickTest }) {
   const report = job.report
   const flags = test.flags.filter((f) => f.field === 'description' || f.field === undefined)
   return (
-    <div className="mt-2 space-y-2 rounded-md border border-blue-200 bg-white p-2" data-testid="rule-try-result">
+    <div className="mt-2 space-y-2 rounded-md border border-gray-200 bg-white p-2" data-testid="rule-try-result">
       <div className="font-medium">
         “{job.title}”: {chars(job.descriptionChars)}
         {job.storedChars > 0 ? ` (saved now: ${chars(job.storedChars)})` : ''}
@@ -451,7 +447,7 @@ export function DescriptionRuleEditor({
   }
 
   return (
-    <div className="rounded-md border border-blue-300 bg-white p-2" data-testid="rule-editor">
+    <div className="rounded-md border border-gray-300 bg-white p-2" data-testid="rule-editor">
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-semibold text-gray-900">Description rule *</span>
         <span className="flex-1 text-gray-600">The boxes to take, what to leave out of them, and how the text is written.</span>
