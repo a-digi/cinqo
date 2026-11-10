@@ -15,12 +15,9 @@ const DOC = '<path d="M6 2.5h8.5L19 7v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3.5a1 1 0
 // A speech bubble, shared by the Q&A glyph.
 const BUBBLE = '<path d="M4 4.5h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1h-9l-4.5 4v-4H4a1 1 0 0 1-1-1v-10a1 1 0 0 1 1-1z"/>'
 
-// --- My Profile ---
-export const myProfileIcon = g24('<circle cx="12" cy="8" r="3.6"/><path d="M4.5 20c.8-3.6 3.8-5.6 7.5-5.6s6.7 2 7.5 5.6"/>')
-// Profiles: an ID card.
-export const profilesIcon = g24(
-  '<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="11" r="2.2"/><path d="M5.8 16c.5-1.6 1.8-2.5 3.2-2.5s2.7.9 3.2 2.5M14.5 10h4M14.5 13.5h3"/>',
-)
+// --- Profiles ---
+// Profiles: a person (the Profiles page's own header icon).
+export const profilesIcon = g24('<circle cx="12" cy="8" r="3.6"/><path d="M4.5 20c.8-3.6 3.8-5.6 7.5-5.6s6.7 2 7.5 5.6"/>')
 // Personas: two people.
 export const personasIcon = g24(
   '<circle cx="9" cy="8.5" r="3.2"/><path d="M3 20c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5M16 5.6a3.2 3.2 0 0 1 0 5.8M18 14.8c1.9.7 3 2.4 3 5.2"/>',

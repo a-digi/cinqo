@@ -34,10 +34,9 @@ import {
   jobCrawlerIcon,
   jobsGroupIcon,
   jobsIcon,
-  myProfileIcon,
+  profilesIcon,
   platformsGroupIcon,
   platformsIcon,
-  profilesIcon,
   qaIcon,
   questionsIcon,
   recruitersIcon,
@@ -47,10 +46,10 @@ import {
 // The bridge's own menu-entry type (its interface is local to the d.ts file).
 type MenuEntry = Parameters<Window['__cinqoToolBridge']['registerMenuEntry']>[0]
 
-// The Career tool's sidebar menu: My Profile first (the Profiles page: each profile's card opens that profile's own pages, Personas, Summary,
-// Goals, Skills, Experience, Education, Languages, Courses and Hobbies, so those are no longer menu entries, plan 233), then CV (your CVs and the
-// CV import: a group of its own next to the profile they are built from), then Jobs (with the platforms that feed it and the contacts around
-// it: Companies and Recruiters), then Settings and Q&A. A parent is a pure grouping label, never a page of its own, and a group is only
+// The Career tool's sidebar menu: Profiles first (one entry, not a group: each profile's card on that page opens that profile's own pages,
+// Personas, Summary, Goals, Skills, Experience, Education, Languages, Courses and Hobbies, so those are not menu entries, plan 233), then CV (your CVs
+// and the CV import: a group of its own next to the profile they are built from), then Jobs (with the platforms that feed it and the contacts
+// around it: Companies and Recruiters), then Settings and Q&A. A parent is a pure grouping label, never a page of its own, and a group is only
 // shown when at least one of its pages is visible to the user (filterVisible, which works at any depth), so the per-page scopes below are
 // all that decide who sees what. Every path is unchanged by the regroupings (plan/ai/tools/career/step-172-menu-contacts-under-jobs.md,
 // step-228-cv-menu-under-career.md); the pages themselves stay registered at their addresses.
@@ -61,11 +60,7 @@ export const careerMenuEntry: MenuEntry = {
   // plan/ai/tools/step-15-menu-icons-for-browser-and-career.md.
   icon: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor"><rect x="3" y="7" width="14" height="9" rx="1.5" stroke-width="1.3"/><path d="M7 7V5.5a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 13 5.5V7" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><line x1="3" y1="11" x2="17" y2="11" stroke-width="1.3"/></svg>',
   children: [
-    {
-      label: 'My Profile',
-      icon: myProfileIcon,
-      children: [{ label: 'Profiles', path: PROFILES_PATH, scopes: ['tool:career:profile'], icon: profilesIcon }],
-    },
+    { label: 'Profiles', path: PROFILES_PATH, scopes: ['tool:career:profile'], icon: profilesIcon },
     {
       label: 'CV',
       icon: cvIcon,
