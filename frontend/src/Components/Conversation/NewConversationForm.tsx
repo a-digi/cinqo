@@ -6,6 +6,7 @@ import type { OrchestrationMode } from '../../api/conversations'
 import { selectablePlatforms, type Platform } from '../../api/platforms'
 import { Dropdown } from '../../Shared/Components/Dropdown/Dropdown'
 import { useKeepPlatformsFresh } from '../../config/platforms/useKeepPlatformsFresh'
+import { reconcileChoice } from '../../config/platforms/platformsRules'
 
 // The one-time platform (and, for OpenAI/Anthropic, model) picker
 // shown before a conversation exists. Originally local to
@@ -64,8 +65,10 @@ function Form({
   onCreate: (input: { platformId: string; model?: string; orchestrationMode: OrchestrationMode }) => void
   onCancel: () => void
 }) {
-  const [platformId, setPlatformId] = useState(platforms[0]?.id ?? '')
-  const [model, setModel] = useState(platforms[0]?.models[0] ?? '')
+  // What the person picked; the choice shown and submitted is that pick made valid for the platforms there are now (plan 243: a platform or model that
+  // goes away while this form is open is never submitted, and a pick that comes back is valid again).
+  const [pick, setPick] = useState({ platformId: platforms[0]?.id ?? '', model: platforms[0]?.models[0] ?? '' })
+  const { platformId, model } = reconcileChoice(platforms, pick)
   // Composer mode (composer step 7): the AI plans and sub-agents do the
   // work, instead of the AI using tools itself. On by default; fixed
   // for the conversation's lifetime like the platform and model.
@@ -79,9 +82,8 @@ function Form({
   const composerOn = composer && offersTools
 
   const handlePlatformChange = (id: string) => {
-    setPlatformId(id)
     const next = platforms.find((p) => p.id === id)
-    setModel(next?.models[0] ?? '')
+    setPick({ platformId: id, model: next?.models[0] ?? '' })
   }
 
   const handleSubmit = (e: React.SyntheticEvent<HTMLFormElement>) => {
@@ -102,7 +104,13 @@ function Form({
         {needsModel && (
           <div>
             <span className="mb-1 block text-xs font-medium text-gray-500">Model</span>
-            <Dropdown options={(selectedPlatform?.models ?? []).map((m) => ({ value: m, label: m }))} value={model} onChange={setModel} />
+            <Dropdown
+              options={(selectedPlatform?.models ?? []).map((m) => ({ value: m, label: m }))}
+              value={model}
+              onChange={(m) => {
+                setPick({ platformId, model: m })
+              }}
+            />
           </div>
         )}
         <div className="flex items-start gap-2 text-xs text-gray-600">

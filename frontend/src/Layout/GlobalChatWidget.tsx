@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useConversationContext } from '../config/conversation/ConversationContext'
 import { usePlatforms } from '../config/platforms/PlatformsContext'
+import { conversationAvailability } from '../config/platforms/platformsRules'
 import type { Platform } from '../api/platforms'
 import type { Conversation, OrchestrationMode } from '../api/conversations'
 import { conversationPath } from '../Components/Conversation/conversationPaths'
@@ -290,6 +291,7 @@ export function GlobalChatWidget() {
                 onSend={(content) => void sendMessage(detail.id, content)}
                 onStop={() => void stopTurn(detail.id)}
                 disabled={sending}
+                unavailableReason={unavailableReasonOf(sharedPlatforms, detail)}
               />
             </>
           )}
@@ -399,4 +401,10 @@ function CloseIcon() {
       <path d="M5.5 5.5l9 9M14.5 5.5l-9 9" strokeWidth="1.6" strokeLinecap="round" />
     </svg>
   )
+}
+
+// Why this conversation can not answer now (its key or model is gone), or null (plan 243); nothing is blocked until the platforms were read.
+function unavailableReasonOf(platforms: Platform[] | null, detail: { platformId: string; model: string }): string | null {
+  const availability = conversationAvailability(platforms, detail)
+  return availability.available ? null : availability.reason
 }

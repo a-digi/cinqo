@@ -15,11 +15,15 @@ export function MessageComposer({
   onSend,
   onStop,
   disabled,
+  unavailableReason = null,
 }: {
   platformLabel: string
   onSend: (content: string) => void
   onStop?: () => void
   disabled: boolean
+  // Set when the key or the model this conversation was created with can not answer any more (plan 243): a notice shows and sending is off until it can
+  // again. A turn that is already running is never touched: while `disabled` (a turn running) the Stop button works as before.
+  unavailableReason?: string | null
 }) {
   const [content, setContent] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -34,9 +38,10 @@ export function MessageComposer({
     el.style.height = `${el.scrollHeight}px`
   }, [content])
 
+  const blocked = unavailableReason !== null && !disabled
   const submit = () => {
     const trimmed = content.trim()
-    if (trimmed === '' || disabled) return
+    if (trimmed === '' || disabled || blocked) return
     onSend(trimmed)
     setContent('')
   }
@@ -48,6 +53,11 @@ export function MessageComposer({
 
   return (
     <form onSubmit={handleSubmit} className="border-t border-gray-200 p-3">
+      {blocked && (
+        <p role="status" className="mb-2 rounded border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-800">
+          {unavailableReason} You can read this conversation, but not write in it until it can answer again.
+        </p>
+      )}
       <div className="mb-1.5 truncate text-xs text-gray-500" title={platformLabel}>
         {platformLabel}
       </div>
@@ -66,7 +76,7 @@ export function MessageComposer({
           }}
           placeholder="Type a message…"
           rows={1}
-          disabled={disabled}
+          disabled={disabled || blocked}
           className="min-w-0 flex-1 resize-none overflow-y-auto rounded border border-gray-300 px-3 py-2 text-sm disabled:opacity-50"
           style={{ maxHeight: '12rem' }}
         />
@@ -81,7 +91,7 @@ export function MessageComposer({
         ) : (
           <button
             type="submit"
-            disabled={disabled || content.trim() === ''}
+            disabled={disabled || blocked || content.trim() === ''}
             className="rounded bg-gray-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
           >
             Send

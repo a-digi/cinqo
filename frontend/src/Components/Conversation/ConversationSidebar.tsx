@@ -128,9 +128,7 @@ export function ConversationSidebar({
             content — this only ever matches each conversation's own
             title, never anything said inside it. */}
         <p className="text-xs text-gray-400">Searches titles only, not message content</p>
-        {tools.length > 0 && (
-          <Dropdown options={toolFilterOptions} value={toolFilter} onChange={setToolFilter} placeholder="All tools" />
-        )}
+        {tools.length > 0 && <Dropdown options={toolFilterOptions} value={toolFilter} onChange={setToolFilter} placeholder="All tools" />}
       </div>
 
       <div className="flex-1 overflow-y-auto">

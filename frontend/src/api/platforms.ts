@@ -19,6 +19,8 @@ export interface Platform {
   hasKey: boolean
   // false for a platform whose conversations get no tools and run in direct mode only (no composer mode).
   offersTools: boolean
+  // Readable names of the models offered now, by model id (the local AI); absent for a platform that gives none.
+  modelNames?: Record<string, string>
 }
 
 // The platforms a new conversation can be started on: those that have a key (or need none). The Platform keys and How-to pages keep

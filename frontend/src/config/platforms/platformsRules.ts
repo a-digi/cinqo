@@ -30,3 +30,57 @@ export const MIN_RETURN_GAP_MS = 1000
 export function shouldReadOnReturn(now: number, last: number | null): boolean {
   return last === null || now - last >= MIN_RETURN_GAP_MS
 }
+
+// What a new conversation's form works with: the platform and model picked (the model is empty for a platform with no model choice).
+export interface PlatformChoice {
+  platformId: string
+  model: string
+}
+
+// The choice the form should show and submit, given the platforms a conversation can be started on now (the selectable ones) and what the person picked.
+// A pick that still exists is kept (a model that is no longer offered gives way to the platform's first one); a platform that is gone gives way to the
+// first platform and its first model; with none left the choice is empty. The person's own pick is not forgotten by the caller: if the platform comes
+// back, the pick is valid again.
+export function reconcileChoice(selectable: readonly Platform[], choice: PlatformChoice): PlatformChoice {
+  const picked = selectable.find((p) => p.id === choice.platformId)
+  if (picked !== undefined) {
+    if (picked.models.length === 0) return { platformId: picked.id, model: '' }
+    return { platformId: picked.id, model: picked.models.includes(choice.model) ? choice.model : (picked.models[0] ?? '') }
+  }
+  const first = selectable.at(0)
+  if (first === undefined) return { platformId: '', model: '' }
+  return { platformId: first.id, model: first.models[0] ?? '' }
+}
+
+export type ConversationAvailability = { available: true } | { available: false; reason: string }
+
+// Whether the platform and model a conversation was created with can still answer. platforms is null until the first read: nothing is known then and the
+// conversation is not blocked. A platform that needs a key and has none, a platform that is gone, and a model the platform no longer offers are the
+// reasons; a platform that offers no model choice (models empty) is judged by its key only.
+export function conversationAvailability(
+  platforms: readonly Platform[] | null,
+  conversation: { platformId: string; model: string },
+): ConversationAvailability {
+  if (platforms === null) return { available: true }
+  const platform = platforms.find((p) => p.id === conversation.platformId)
+  if (platform === undefined) {
+    return {
+      available: false,
+      reason:
+        conversation.platformId === 'local'
+          ? 'The local AI is not available: it is switched off or has no model ready.'
+          : `The AI platform "${conversation.platformId}" is not available any more.`,
+    }
+  }
+  if (platform.requiresKey && !platform.hasKey) return { available: false, reason: `The API key of ${platform.name} was removed.` }
+  if (platform.models.length > 0 && !platform.models.includes(conversation.model)) {
+    const name = platform.modelNames?.[conversation.model] ?? conversation.model
+    return {
+      available: false,
+      reason: platform.requiresKey
+        ? `The model ${name} is not offered by ${platform.name} any more.`
+        : `The model ${name} is not available any more: it was removed, or the local AI is switched off.`,
+    }
+  }
+  return { available: true }
+}

@@ -5,6 +5,7 @@ import type { Platform } from '../../api/platforms'
 import { fetchTools, type Tool } from '../../api/tools'
 import { useConversationContext } from '../../config/conversation/ConversationContext'
 import { usePlatforms } from '../../config/platforms/PlatformsContext'
+import { conversationAvailability } from '../../config/platforms/platformsRules'
 import { LoadingSpinner } from '../../Shared/Components/Loading/LoadingSpinner'
 import { ConversationSidebar } from './ConversationSidebar'
 import { MessageThread } from './MessageThread'
@@ -273,6 +274,7 @@ export function ConversationPage() {
             />
             <MessageComposer
               platformLabel={platformLabel(platforms, detail)}
+              unavailableReason={unavailableReasonOf(platforms, detail)}
               onSend={(content) => void sendMessage(selectedId, content)}
               onStop={() => void stopTurn(selectedId)}
               disabled={sending}
@@ -283,6 +285,12 @@ export function ConversationPage() {
       {occupiedDialog}
     </div>
   )
+}
+
+// Why this conversation can not answer now (its key or model is gone), or null (plan 243).
+function unavailableReasonOf(platforms: Platform[], detail: ConversationDetail): string | null {
+  const availability = conversationAvailability(platforms, detail)
+  return availability.available ? null : availability.reason
 }
 
 function platformLabel(platforms: Platform[], detail: ConversationDetail): string {
