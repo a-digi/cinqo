@@ -133,7 +133,7 @@ export const QUESTIONS: Question[] = [
     id: 'languages-courses-hobbies',
     question: 'Where do I put my languages, courses and hobbies?',
     answer:
-      'On their own pages under My Profile: Languages (spoken, written or both, with an optional level from C2 down to A1 or Native), Courses (short trainings and certificates, with an optional certificate link) and Hobbies. Like education, they belong to the profile itself and are shared by all its personas.',
+      'On their own pages, which each profile’s card on the Profiles page opens: Languages (spoken, written or both, with an optional level from C2 down to A1 or Native), Courses (short trainings and certificates, with an optional certificate link) and Hobbies. Like education, they belong to the profile itself and are shared by all its personas.',
     link: { label: 'Open Languages', path: LANGUAGES_PATH },
   },
   {

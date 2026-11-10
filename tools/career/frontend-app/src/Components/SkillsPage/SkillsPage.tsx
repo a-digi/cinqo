@@ -18,7 +18,7 @@ export function SkillsPage() {
 
   return (
     <div className="career-v-tilt career-a-glow career-t-wave max-w-7xl p-6 font-sans text-gray-900">
-      {profileId !== '' && <BackToProfile profileId={profileId} />}
+      {profileId !== '' && <BackToProfile profileId={profileId} profiles={profiles} />}
       <PageHeaderCard
         icon={<SparkIcon />}
         title="Skills"

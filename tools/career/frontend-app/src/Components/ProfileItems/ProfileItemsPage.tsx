@@ -80,7 +80,7 @@ export function ProfileItemsPage<T extends { id: string }>({
 
   return (
     <div className="career-v-zoom career-a-float career-t-type max-w-5xl p-6 font-sans text-gray-900">
-      {profileId !== '' && <BackToProfile profileId={profileId} />}
+      {profileId !== '' && <BackToProfile profileId={profileId} profiles={profiles} />}
       <PageHeaderCard
         icon={icon}
         title={title}

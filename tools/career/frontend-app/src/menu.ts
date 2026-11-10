@@ -1,30 +1,21 @@
 import {
   COMPANIES_PATH,
   CRAWL_MONITOR_PATH,
-  COURSES_PATH,
   CV_DOCUMENTS_PATH,
-  EDUCATION_PATH,
-  EXPERIENCE_PATH,
   FAQ_PATH,
   GUIDE_PATH,
   GUIDE_CONTACTS_PATH,
   GUIDE_JOBS_PATH,
   GUIDE_PROFILE_PATH,
-  HOBBIES_PATH,
   IMPORT_CV_PATH,
   JOBS_PATH,
-  LANGUAGES_PATH,
   APPLICATIONS_PATH,
-  PERSONAS_PATH,
-  GOALS_PATH,
-  PERSONA_DETAILS_PATH,
   PLATFORMS_PATH,
   PROFILES_PATH,
   RECRUITERS_PATH,
   CLEANUP_SETTINGS_PATH,
   CRAWLER_SETTINGS_PATH,
   SETTINGS_PATH,
-  SKILLS_PATH,
 } from './paths'
 
 import {
@@ -33,24 +24,17 @@ import {
   companiesIcon,
   contactsGuideIcon,
   contactsIcon,
-  coursesIcon,
   crawlMonitorIcon,
   cvDocumentsIcon,
   cvIcon,
-  educationIcon,
-  experienceIcon,
   findingJobsIcon,
   gettingStartedIcon,
-  goalsIcon,
-  hobbiesIcon,
   importIcon,
   jobCleanupIcon,
   jobCrawlerIcon,
   jobsGroupIcon,
   jobsIcon,
-  languagesIcon,
   myProfileIcon,
-  personasIcon,
   platformsGroupIcon,
   platformsIcon,
   profilesIcon,
@@ -58,20 +42,18 @@ import {
   questionsIcon,
   recruitersIcon,
   settingsIcon,
-  skillsIcon,
-  summaryIcon,
 } from './menuIcons'
 
 // The bridge's own menu-entry type (its interface is local to the d.ts file).
 type MenuEntry = Parameters<Window['__cinqoToolBridge']['registerMenuEntry']>[0]
 
-// The Career tool's sidebar menu: My Profile first (the one-time setup, which everything else works from: its pages end with Education,
-// Languages, Courses and Hobbies, plan 231), then CV (your CVs and the CV
-// import: a group of its own next to the profile they are built from), then Jobs (with the platforms that feed it and the contacts around
+// The Career tool's sidebar menu: My Profile first (the Profiles page: each profile's card opens that profile's own pages, Personas, Summary,
+// Goals, Skills, Experience, Education, Languages, Courses and Hobbies, so those are no longer menu entries, plan 233), then CV (your CVs and the
+// CV import: a group of its own next to the profile they are built from), then Jobs (with the platforms that feed it and the contacts around
 // it: Companies and Recruiters), then Settings and Q&A. A parent is a pure grouping label, never a page of its own, and a group is only
 // shown when at least one of its pages is visible to the user (filterVisible, which works at any depth), so the per-page scopes below are
 // all that decide who sees what. Every path is unchanged by the regroupings (plan/ai/tools/career/step-172-menu-contacts-under-jobs.md,
-// step-228-cv-menu-under-career.md).
+// step-228-cv-menu-under-career.md); the pages themselves stay registered at their addresses.
 export const careerMenuEntry: MenuEntry = {
   label: 'Career',
   // A briefcase glyph — built only from the sidebar's own sanitizer
@@ -82,18 +64,7 @@ export const careerMenuEntry: MenuEntry = {
     {
       label: 'My Profile',
       icon: myProfileIcon,
-      children: [
-        { label: 'Profiles', path: PROFILES_PATH, scopes: ['tool:career:profile'], icon: profilesIcon },
-        { label: 'Personas', path: PERSONAS_PATH, scopes: ['tool:career:profile'], icon: personasIcon },
-        { label: 'Summary', path: PERSONA_DETAILS_PATH, scopes: ['tool:career:profile'], icon: summaryIcon },
-        { label: 'Goals', path: GOALS_PATH, scopes: ['tool:career:profile'], icon: goalsIcon },
-        { label: 'Skills', path: SKILLS_PATH, scopes: ['tool:career:profile'], icon: skillsIcon },
-        { label: 'Experience', path: EXPERIENCE_PATH, scopes: ['tool:career:profile'], icon: experienceIcon },
-        { label: 'Education', path: EDUCATION_PATH, scopes: ['tool:career:profile'], icon: educationIcon },
-        { label: 'Languages', path: LANGUAGES_PATH, scopes: ['tool:career:profile'], icon: languagesIcon },
-        { label: 'Courses', path: COURSES_PATH, scopes: ['tool:career:profile'], icon: coursesIcon },
-        { label: 'Hobbies', path: HOBBIES_PATH, scopes: ['tool:career:profile'], icon: hobbiesIcon },
-      ],
+      children: [{ label: 'Profiles', path: PROFILES_PATH, scopes: ['tool:career:profile'], icon: profilesIcon }],
     },
     {
       label: 'CV',

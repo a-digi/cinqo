@@ -471,7 +471,7 @@ export const PAGE_TIPS: Record<PageTipsId, PageTipSet> = {
         title: 'Then fill it in',
         tone: 'green',
         icon: 'layers',
-        text: 'After creating a persona, check its Summary, and the Goals, Skills and Experience it uses, from the My Profile menu.',
+        text: 'After creating a persona, check its Summary, and the Goals, Skills and Experience it uses, from the profile’s card on the Profiles page.',
       },
       {
         id: 'with-ai',

@@ -12,7 +12,6 @@ import { ProfileAreaCards } from './ProfileAreaCards'
 import { PhotoAvatar } from '../ProfileImage/PhotoAvatar'
 import { PlatformShelf } from './PlatformShelf'
 import { averageScore, firstWithoutLinks, platformCounts } from './profileRules'
-import { useFocusedProfile } from './useFocusedProfile'
 import { summarizeProfiles } from './profileStats'
 import { PageTips } from '../../Shared/PageTips/PageTips'
 
@@ -33,8 +32,6 @@ export function ProfilesPage() {
   // The profiles whose add-link form is open; every form starts hidden.
   const [openLinkFormIds, setOpenLinkFormIds] = useState<Set<string>>(new Set())
   const [error, setError] = useState('')
-  // The profile whose card the address names (the back link of its pages): scrolled to and highlighted for a moment.
-  const focusId = useFocusedProfile(profiles)
 
   function load() {
     setError('')
@@ -193,7 +190,7 @@ export function ProfilesPage() {
                     <div
                       key={p.id}
                       id={`profile-${p.id}`}
-                      className={`rounded-3xl border p-4 shadow-sm transition-shadow hover:shadow-md ${focusId === p.id ? 'ring-2 ring-blue-400' : ''}`}
+                      className="rounded-3xl border p-4 shadow-sm transition-shadow hover:shadow-md"
                       style={{
                         borderColor: PAGE_ACCENT.soft,
                         background: `linear-gradient(160deg, #ffffff 45%, ${PAGE_ACCENT.soft} 100%)`,

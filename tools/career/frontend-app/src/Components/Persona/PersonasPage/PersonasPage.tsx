@@ -207,7 +207,7 @@ export function PersonasPage({ profileId }: { profileId: string }) {
     })
   }
 
-  const backLink = <BackToProfile profileId={profileId} />
+  const backLink = <BackToProfile profileId={profileId} name={profileName} />
 
   if (!profileFound) {
     return (
