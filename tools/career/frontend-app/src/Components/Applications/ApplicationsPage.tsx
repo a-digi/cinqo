@@ -1,8 +1,9 @@
+import { HelpLink } from '../Guide/HelpLink'
 import { useEffect, useState } from 'react'
 import { fetchJobApplications, fetchProfiles, type JobApplication, type Profile } from '../../api'
 import { AppLink } from '../../Shared/AppLink/AppLink'
 import { PageTips } from '../../Shared/PageTips/PageTips'
-import { jobBoardPathFor } from '../../paths'
+import { APPLICATIONS_PATH, jobBoardPathFor } from '../../paths'
 import { plural } from '../CompaniesPage/companyStats'
 import { columnAccent } from '../JobBoard/jobBoardRules'
 import { jobDetailsPathFor } from '../JobDetails/jobProfileScope'
@@ -40,6 +41,9 @@ export function ApplicationsPage() {
     <div className="career-v-tilt career-a-float career-t-wave max-w-full p-6 font-sans text-gray-900">
       {/* The page has no visible header any more (plan 237); its heading stays for a screen reader. */}
       <h1 className="sr-only">Applications</h1>
+      <div className="mb-3 flex justify-end">
+        <HelpLink page={APPLICATIONS_PATH} />
+      </div>
       <PageTips page="applications" />
       {error !== '' && (
         <p role="alert" className="mb-3 text-sm text-red-700">

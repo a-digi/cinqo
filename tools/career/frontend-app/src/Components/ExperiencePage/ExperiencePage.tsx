@@ -22,6 +22,7 @@ export function ExperiencePage() {
       <PageHeaderCard
         icon={<TimelineIcon />}
         title="Experience"
+        help={EXPERIENCE_PATH}
         description="The work history of your profile, shared by all its target roles. A target role uses some of it, and can have entries of its own. The AI reads it when matching you against job postings."
         pill={loaded && error === '' && profileId !== '' && count !== null ? { text: experienceCountText(count) } : undefined}
       />

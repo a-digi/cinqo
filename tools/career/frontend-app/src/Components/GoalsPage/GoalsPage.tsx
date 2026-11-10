@@ -50,6 +50,7 @@ export function GoalsPage() {
       <PageHeaderCard
         icon={<TargetIcon />}
         title="Goals"
+        help={GOALS_PATH}
         description="What the profile is looking for. It is set once for the profile; every target role uses it unless the target role has its own. The AI reads it when matching jobs and writing CVs."
       />
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">

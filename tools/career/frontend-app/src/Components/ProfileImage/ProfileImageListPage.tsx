@@ -3,7 +3,7 @@ import { fetchProfilePhotos, fetchProfiles, type Profile, type ProfilePhoto } fr
 import { CameraIcon } from '../../Shared/Icons/icons'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { PageTips } from '../../Shared/PageTips/PageTips'
-import { PROFILES_PATH, photosPathFor } from '../../paths'
+import { PROFILES_PATH, PROFILE_IMAGE_PATH, photosPathFor } from '../../paths'
 import { plural } from '../CompaniesPage/companyStats'
 import { ProfileList } from '../ProfilesPage/ProfileList'
 
@@ -44,6 +44,7 @@ export function ProfileImageListPage() {
       <PageHeaderCard
         icon={<CameraIcon />}
         title="Photo"
+        help={PROFILE_IMAGE_PATH}
         description="Pick a profile to see and change its photos, used by the CV templates. A profile can have several, one of them the default; one photo can be shared by many profiles."
         pill={loaded && error === '' ? { text: plural(profiles.length, 'profile', 'profiles') } : undefined}
       />

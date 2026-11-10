@@ -1,3 +1,5 @@
+import { CRAWLER_SETTINGS_PATH } from '../../paths'
+import { HelpLink } from '../Guide/HelpLink'
 import { useEffect, useState } from 'react'
 import { fetchCrawlerSettings, saveCrawlerSettings } from '../../api'
 import { InfoBox } from '../../Shared/InfoBox/InfoBox'
@@ -83,7 +85,10 @@ export function CrawlerSettingsPage() {
 
   return (
     <div className="career-v-spin career-a-sheen career-t-type max-w-3xl p-6 font-sans text-gray-900">
-      <h1 className="text-xl font-semibold">Job crawler</h1>
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="text-xl font-semibold">Job crawler</h1>
+        <HelpLink page={CRAWLER_SETTINGS_PATH} />
+      </div>
       <p className="mt-1 mb-5 text-sm text-gray-500">Settings for the jobs the crawler finds.</p>
 
       <section

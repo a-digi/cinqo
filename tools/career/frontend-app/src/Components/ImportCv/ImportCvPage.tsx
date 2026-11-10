@@ -36,7 +36,7 @@ import { analyseCv, analyseCvByCode } from './analysisFlow'
 import { prepareCodeImport } from './codeImport/runCodeImport'
 import { importContextProblem } from './importContext'
 import { runBadge } from './runStatusRules'
-import { importCvRunPathFor } from '../../paths'
+import { IMPORT_CV_PATH, importCvRunPathFor } from '../../paths'
 import { FailureNotice } from './FailureNotice'
 import { ImportPipeline } from './ImportPipeline'
 import { UnsuitableModelNotice } from './UnsuitableModelNotice'
@@ -304,6 +304,7 @@ export function ImportCvPage() {
       <PageHeaderCard
         icon={<UploadIcon className="h-6 w-6" />}
         title="Import from CV"
+        help={IMPORT_CV_PATH}
         description="Upload a CV and let the AI propose a profile, target role, summary, skills, experience and education from it. You review everything before it is saved."
         pill={headerPill}
       />

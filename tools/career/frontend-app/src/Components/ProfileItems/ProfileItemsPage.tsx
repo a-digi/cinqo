@@ -84,6 +84,7 @@ export function ProfileItemsPage<T extends { id: string }>({
       <PageHeaderCard
         icon={icon}
         title={title}
+        help={path}
         description={description}
         pill={loaded && shownError === '' && profileId !== '' ? { text: countText(items.length) } : undefined}
       />
@@ -97,7 +98,14 @@ export function ProfileItemsPage<T extends { id: string }>({
           )}
           {profileId !== '' && (
             <>
-              <ProfileBar profiles={profiles} personas={[]} profileId={profileId} onSelect={select} personaHref={() => path} personaLabel="" />
+              <ProfileBar
+                profiles={profiles}
+                personas={[]}
+                profileId={profileId}
+                onSelect={select}
+                personaHref={() => path}
+                personaLabel=""
+              />
               <div className="mb-3 flex items-center justify-start gap-3">
                 <button
                   type="button"

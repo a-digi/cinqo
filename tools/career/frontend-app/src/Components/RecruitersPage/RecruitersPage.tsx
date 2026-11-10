@@ -138,6 +138,7 @@ export function RecruitersPage() {
       <PageHeaderCard
         icon={<UsersIcon />}
         title="Recruiters"
+        help={RECRUITERS_PATH}
         description="Recruiter contacts and the companies they work for, or freelancers attached to none. A recruiter can work for several companies; deleting a company never deletes the recruiter."
         // Filtered to one company, the pill names it and links on to that company's page; otherwise it links to the
         // Companies page, the other list the recruiters belong to.

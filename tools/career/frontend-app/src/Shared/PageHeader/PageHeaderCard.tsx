@@ -1,4 +1,5 @@
 import { PAGE_ACCENT, gradient, type Accent } from '../../Components/JobsPage/jobsTheme'
+import { HelpLink } from '../../Components/Guide/HelpLink'
 import { AppLink } from '../AppLink/AppLink'
 
 // The card at the top of a Career list page: a gradient icon badge, the title, a one
@@ -9,6 +10,7 @@ export function PageHeaderCard({
   title,
   description,
   pill,
+  help,
   accent = PAGE_ACCENT,
 }: {
   icon: React.ReactNode
@@ -17,6 +19,8 @@ export function PageHeaderCard({
   // The small pill on the right ("42 jobs", "3 running"); omit for none. With an href the pill is a link to that
   // page of the app (a persona's header links its profile's name this way).
   pill?: { text: string; accent?: Accent; href?: string }
+  // The page's own address (its *_PATH): shows the page's Help link (plan 239) before the pill; nothing when the page has no help.
+  help?: string
   accent?: Accent
 }) {
   const pillAccent = pill?.accent ?? accent
@@ -46,6 +50,7 @@ export function PageHeaderCard({
           </h1>
           <p className="mt-0.5 text-sm text-gray-500">{description}</p>
         </div>
+        {help !== undefined && <HelpLink page={help} className="shrink-0" />}
         {pill &&
           (pill.href ? (
             <AppLink

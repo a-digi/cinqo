@@ -51,6 +51,7 @@ export function EducationPage() {
       <PageHeaderCard
         icon={<EducationIcon />}
         title="Education"
+        help={EDUCATION_PATH}
         description="The schools and degrees of your profile. They belong to the profile itself, so every target role and every CV can use them. Short trainings and certificates go on the Courses page."
         pill={loaded && shownError === '' && profileId !== '' ? { text: educationCountText(entries.length) } : undefined}
       />
@@ -83,7 +84,9 @@ export function EducationPage() {
                   <PlusIcon />
                   Add education
                 </button>
-                <p className="min-w-0 flex-1 text-xs text-gray-500">An entry without an end date counts as still going on. Short trainings and certificates go on the Courses page.</p>
+                <p className="min-w-0 flex-1 text-xs text-gray-500">
+                  An entry without an end date counts as still going on. Short trainings and certificates go on the Courses page.
+                </p>
               </div>
               {entries.length === 0 && shownError === '' && (
                 <div

@@ -22,6 +22,7 @@ export function SkillsPage() {
       <PageHeaderCard
         icon={<SparkIcon />}
         title="Skills"
+        help={SKILLS_PATH}
         description="The skills of your profile, shared by all its target roles. A target role uses some of them, and can have skills of its own. The AI reads them when matching you against job postings."
         pill={loaded && error === '' && profileId !== '' && count !== null ? { text: skillCountText(count) } : undefined}
       />

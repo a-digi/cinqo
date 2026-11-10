@@ -1,9 +1,10 @@
+import { AppLink } from '../../Shared/AppLink/AppLink'
 import { useEffect, useState } from 'react'
 import { fetchProfiles, updateProfile, deleteProfile, addProfileExternalLink, removeProfileExternalLink, type Profile } from '../../api'
 import { CameraIcon, PlusIcon, UserIcon, XIcon } from '../../Shared/Icons/icons'
 import { inputClass } from '../../Shared/inputClass'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
-import { NEW_PROFILE_PATH, VIEW_PROFILE_PATH, photosPathFor, profileSettingsPathFor } from '../../paths'
+import { GUIDE_PATH, NEW_PROFILE_PATH, PROFILES_PATH, VIEW_PROFILE_PATH, photosPathFor, profileSettingsPathFor } from '../../paths'
 import { plural } from '../CompaniesPage/companyStats'
 import { PAGE_ACCENT, accentFor, initialOf } from '../JobsPage/jobsTheme'
 import { profileLabel } from '../ProfileSwitcher/profileLabel'
@@ -138,9 +139,16 @@ export function ProfilesPage() {
       <PageHeaderCard
         icon={<UserIcon />}
         title="Profiles"
+        help={PROFILES_PATH}
         description="One profile per job seeker, with links to their platforms. Target roles, skills, experience and education belong to a profile; open each from its card."
         pill={{ text: plural(summary.profiles, 'profile', 'profiles') }}
       />
+      <p className="mb-4 text-sm text-gray-600">
+        New to the Career tool?{' '}
+        <AppLink href={GUIDE_PATH} className="font-medium text-blue-700 hover:underline">
+          Getting started →
+        </AppLink>
+      </p>
       {/* Steps 105 to 108: the tips sit in a column of their own beside the page (under it on a narrow window). */}
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
         <div className="order-1 min-w-0 flex-1 lg:order-2">
@@ -177,7 +185,10 @@ export function ProfilesPage() {
                   className="career-wiggle rounded-3xl border p-8 text-center text-sm text-gray-500"
                   style={{ borderColor: PAGE_ACCENT.soft, background: PAGE_ACCENT.soft }}
                 >
-                  No profiles yet. Create the first one with “New profile”.
+                  No profiles yet. Create the first one with “New profile”.{' '}
+                  <AppLink href={GUIDE_PATH} className="font-medium text-blue-700 hover:underline">
+                    Getting started →
+                  </AppLink>
                 </div>
               )}
 

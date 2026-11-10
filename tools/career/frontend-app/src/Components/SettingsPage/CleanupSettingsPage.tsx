@@ -1,3 +1,5 @@
+import { CLEANUP_SETTINGS_PATH } from '../../paths'
+import { HelpLink } from '../Guide/HelpLink'
 import { useEffect, useState } from 'react'
 import { fetchCleanupSettings, previewCleanup, runCleanup, saveCleanupSettings, type CleanupPreview, type CleanupSettings } from '../../api'
 import { InfoBox } from '../../Shared/InfoBox/InfoBox'
@@ -143,7 +145,10 @@ export function CleanupSettingsPage() {
 
   return (
     <div className="career-v-spin career-a-sheen career-t-type max-w-3xl p-6 font-sans text-gray-900">
-      <h1 className="text-xl font-semibold">Job cleanup</h1>
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="text-xl font-semibold">Job cleanup</h1>
+        <HelpLink page={CLEANUP_SETTINGS_PATH} />
+      </div>
       <p className="mt-1 mb-5 text-sm text-gray-500">
         Delete old jobs and jobs that match none of your profiles, by hand or on a schedule.
       </p>

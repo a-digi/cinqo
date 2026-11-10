@@ -82,7 +82,8 @@ export const PROFILE_AND_CV: Guide = {
   id: 'profile-and-cv',
   design: 'cards',
   title: 'Profile & CV',
-  description: 'How to set up who you are and turn it into a CV, in thirteen steps. The AI reads all of it when it matches jobs and writes CVs.',
+  description:
+    'How to set up who you are and turn it into a CV, in thirteen steps. The AI reads all of it when it matches jobs and writes CVs.',
   steps: [
     {
       id: 'profile',

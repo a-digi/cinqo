@@ -1,3 +1,5 @@
+import { AppLink } from '../../Shared/AppLink/AppLink'
+import { HelpLink } from '../Guide/HelpLink'
 import { useEffect, useRef, useState } from 'react'
 import {
   fetchJobs,
@@ -55,7 +57,7 @@ import {
 } from '../../Shared/Icons/icons'
 import { AddJobModal } from './AddJobModal'
 import { companyCell } from './companyCell'
-import { JOB_DETAILS_PATH, JOBS_PATH, VIEW_COMPANY_PATH } from '../../paths'
+import { GUIDE_PATH, JOBS_PATH, JOB_DETAILS_PATH, VIEW_COMPANY_PATH } from '../../paths'
 import { PAGE_ACCENT } from './jobsTheme'
 import { JobPlatformCard, JobStatCards } from './JobStatsStrip'
 import { useJobStats } from './useJobStats'
@@ -1214,6 +1216,7 @@ export function JobsPage() {
               >
                 {missingLabel(missing, startingMissing || recrawl.running)}
               </button>
+              <HelpLink page={JOBS_PATH} className="ml-auto" />
             </div>
 
             {/* Search, sort, page size and the filters toggle: their own row below the buttons, on its own background. */}
@@ -1375,6 +1378,15 @@ export function JobsPage() {
                 setSelected(new Map())
               }}
             />
+
+            {jobStats.state === 'ready' && jobStats.stats.total === 0 && (
+              <p className="mb-3 rounded-3xl border border-gray-100 bg-gray-50 p-4 text-center text-sm text-gray-600">
+                No saved jobs yet. New to the Career tool?{' '}
+                <AppLink href={GUIDE_PATH} className="font-medium text-blue-700 hover:underline">
+                  Getting started →
+                </AppLink>
+              </p>
+            )}
 
             <div
               className="relative overflow-hidden rounded-3xl border shadow-sm"

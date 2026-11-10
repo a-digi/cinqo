@@ -1,3 +1,4 @@
+import { HelpLink } from '../Guide/HelpLink'
 import { useEffect, useState } from 'react'
 import { runFollower } from '../../Crawler/runFollowerStart'
 import {
@@ -35,7 +36,7 @@ import { aiChip, describeChoice, linkChip, overrideOf } from './aiOverrideDispla
 import { crawlAiAdvice, linkInstructionFailures } from './crawlAiAdvice'
 import { PortalLinkHeader } from './PortalLinkHeader'
 import { loginAddressForSave } from '../../Crawler/loginWindow'
-import { JOBS_PATH, VIEW_PLATFORM_PATH } from '../../paths'
+import { JOBS_PATH, PLATFORMS_PATH, VIEW_PLATFORM_PATH } from '../../paths'
 import { AppLink } from '../../Shared/AppLink/AppLink'
 import { CrawlEngineProvider } from '../../Crawler/CrawlEngineProvider'
 import { engineForLink } from '../../Crawler/crawlEngine'
@@ -405,14 +406,17 @@ function PortalsPageContent() {
         <div className="order-1 min-w-0 flex-1 lg:order-2">
           <div className="mb-3 flex items-center justify-between gap-3">
             <p className="text-xs text-gray-500">Deleting a platform permanently deletes every link it owns.</p>
-            {/* Links on to the Jobs page, whose jobs come from these portals. */}
-            <AppLink
-              href={JOBS_PATH}
-              className="shrink-0 rounded-full px-3 py-1 text-sm font-semibold hover:underline"
-              style={{ background: PAGE_ACCENT.soft, color: PAGE_ACCENT.text }}
-            >
-              {plural(summary.portals, 'platform', 'platforms')}
-            </AppLink>
+            <div className="flex shrink-0 items-center gap-3">
+              <HelpLink page={PLATFORMS_PATH} />
+              {/* Links on to the Jobs page, whose jobs come from these portals. */}
+              <AppLink
+                href={JOBS_PATH}
+                className="shrink-0 rounded-full px-3 py-1 text-sm font-semibold hover:underline"
+                style={{ background: PAGE_ACCENT.soft, color: PAGE_ACCENT.text }}
+              >
+                {plural(summary.portals, 'platform', 'platforms')}
+              </AppLink>
+            </div>
           </div>
 
           <div className="min-h-[1.2em] text-sm text-red-700">{error}</div>

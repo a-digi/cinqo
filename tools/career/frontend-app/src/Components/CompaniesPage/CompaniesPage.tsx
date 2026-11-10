@@ -194,6 +194,7 @@ export function CompaniesPage() {
       <PageHeaderCard
         icon={<BuildingIcon />}
         title="Companies"
+        help={COMPANIES_PATH}
         description="A directory of companies, separate from the free-text name on each crawled job. Deleting a company un-links its jobs; it never deletes them."
         // The pill links on to the Recruiters page, the other list tied to companies.
         pill={{ text: plural(overview.companies, 'company', 'companies'), href: RECRUITERS_PATH }}

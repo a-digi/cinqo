@@ -3,7 +3,7 @@ import { fetchPersonas, fetchProfiles, type Persona, type Profile } from '../../
 import { LayersIcon } from '../../../Shared/Icons/icons'
 import { PageHeaderCard } from '../../../Shared/PageHeader/PageHeaderCard'
 import { PageTips } from '../../../Shared/PageTips/PageTips'
-import { PROFILES_PATH, personasPathFor } from '../../../paths'
+import { PERSONAS_PATH, PROFILES_PATH, personasPathFor } from '../../../paths'
 import { plural } from '../../CompaniesPage/companyStats'
 import { ProfileList } from '../../ProfilesPage/ProfileList'
 import { previewItems } from '../personaListRules'
@@ -50,6 +50,7 @@ export function PersonasListPage() {
       <PageHeaderCard
         icon={<LayersIcon />}
         title="Target roles"
+        help={PERSONAS_PATH}
         description="Pick a profile to see its target roles: one for each kind of job it is pursuing, each with its own summary, skills and experience."
         pill={loaded && error === '' ? { text: plural(profiles.length, 'profile', 'profiles') } : undefined}
       />

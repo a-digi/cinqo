@@ -9,7 +9,7 @@ import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { SummaryRail } from '../../Shared/SummaryRail/SummaryRail'
 import { ACCENTS, accentFor, initialOf } from '../../Components/JobsPage/jobsTheme'
 import { PageTips } from '../../Shared/PageTips/PageTips'
-import { PLATFORMS_PATH } from '../../paths'
+import { CRAWL_MONITOR_PATH, PLATFORMS_PATH } from '../../paths'
 
 // CrawlMonitorPage is the centralized "which portal is being crawled
 // right now" view — one place to see every currently-running crawl
@@ -102,6 +102,7 @@ export function CrawlMonitorPage() {
       <PageHeaderCard
         icon={<PulseIcon />}
         title="Crawl Monitor"
+        help={CRAWL_MONITOR_PATH}
         description="Every platform currently being crawled, across every link. Refreshes automatically."
         // The pill links on to the Portals page, where crawls are started and managed.
         pill={{

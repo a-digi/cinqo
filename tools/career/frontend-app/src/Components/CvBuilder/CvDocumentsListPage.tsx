@@ -3,7 +3,7 @@ import { fetchAllCvDocuments, fetchPersonas, fetchProfiles, type CvDocument, typ
 import { PDFIcon } from '../../Shared/Icons/icons'
 import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { PageTips } from '../../Shared/PageTips/PageTips'
-import { PERSONAS_PATH, cvDocumentsPathFor } from '../../paths'
+import { CV_DOCUMENTS_PATH, PERSONAS_PATH, cvDocumentsPathFor } from '../../paths'
 import { plural } from '../CompaniesPage/companyStats'
 import { PersonaList } from '../Persona/PersonaList'
 import { previewItems } from '../Persona/personaListRules'
@@ -62,6 +62,7 @@ export function CvDocumentsListPage() {
       <PageHeaderCard
         icon={<PDFIcon className="h-6 w-6" />}
         title="CV Documents"
+        help={CV_DOCUMENTS_PATH}
         description="Pick a target role to see its CVs and create new ones from its own data, using one of a few fixed designs."
         pill={loaded && error === '' ? { text: plural(personas.length, 'target role', 'target roles') } : undefined}
       />

@@ -1,3 +1,5 @@
+import { SETTINGS_PATH } from '../../paths'
+import { HelpLink } from '../Guide/HelpLink'
 import { useEffect, useState } from 'react'
 import { saveAiSettings } from '../../api'
 import { defaultModelFor } from '../../Cinqo/Platform/aiChoice'
@@ -69,7 +71,10 @@ export function SettingsPage() {
 
   return (
     <div className="career-v-spin career-a-sheen career-t-type max-w-5xl p-6 font-sans text-gray-900">
-      <h1 className="text-xl font-semibold">Settings</h1>
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="text-xl font-semibold">Settings</h1>
+        <HelpLink page={SETTINGS_PATH} />
+      </div>
       <p className="mt-1 mb-5 text-sm text-gray-500">How the Career tool uses AI.</p>
 
       {/* Steps 105 to 108: the tips sit in a column of their own beside the page (under it on a narrow window). */}
