@@ -32,6 +32,10 @@ export interface ToolMenuEntry {
   // outright, before parsing. See
   // plan/ai/frontend/frontend/step-13-sidebar-icons-and-calculated-indentation.md.
   icon?: string
+  // A page (an entry with a path) that starts hidden: the sidebar does not draw it until the tool calls setMenuEntryHidden(path, false). For a page
+  // whose menu item should only show once there is something to open (the tool then asks its own server and shows it), so it never flashes.
+  // Ignored by a group. Default false (shown).
+  hidden?: boolean
 }
 
 export interface ToolRoute {
@@ -164,6 +168,12 @@ export interface ToolReviewsOptions {
 
 export interface ToolBridge {
   registerMenuEntry(entry: ToolMenuEntry): void
+  // Shows or hides the menu page whose address is `path`, at any depth of an entry the tool registered (a group disappears with its last page and
+  // comes back with its first). It only changes what the sidebar draws: it is not an access control (the server still checks the scope of every
+  // call, and the page stays reachable by its address). An address no entry has changes nothing now, and is remembered in case an entry with it is
+  // registered later (so a call may come before the registration). A path that is not a non-empty string, or a `hidden` that is not true or
+  // false, is refused with a console error.
+  setMenuEntryHidden(path: string, hidden: boolean): void
   registerRoute(route: ToolRoute): void
   // Registers the display for a "custom" dashboard widget. The first
   // registration of an id wins; a malformed id or a missing mount is refused
@@ -218,6 +228,7 @@ export interface ToolBridge {
 
 export interface ToolBridgeCallbacks {
   onRegisterMenuEntry: (entry: ToolMenuEntry) => void
+  onSetMenuEntryHidden: (path: string, hidden: boolean) => void
   onRegisterRoute: (route: ToolRoute) => void
   onRegisterDashboardWidget: (widget: ToolDashboardWidget) => void
   // Supplied by the app, which owns the React side of the comments panel; this file
@@ -249,6 +260,15 @@ export function createToolBridge(callbacks: ToolBridgeCallbacks): ToolBridge {
   return {
     registerMenuEntry(entry) {
       callbacks.onRegisterMenuEntry(entry)
+    },
+    setMenuEntryHidden(path, hidden) {
+      if (typeof path !== 'string' || path === '' || typeof hidden !== 'boolean') {
+        console.error(
+          `setMenuEntryHidden(${JSON.stringify(path)}, ${JSON.stringify(hidden)}): a page address and true or false are needed — ignoring.`,
+        )
+        return
+      }
+      callbacks.onSetMenuEntryHidden(path, hidden)
     },
     registerRoute(route) {
       if (!isValidToolRoutePath(route.path)) {

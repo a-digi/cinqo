@@ -8,6 +8,8 @@ interface CinqoToolMenuEntry {
   scopes?: string[]
   children?: CinqoToolMenuEntry[]
   icon?: string
+  // A page that starts hidden until setMenuEntryHidden(path, false) shows it (a host older than plan 238 ignores it: the page stays visible).
+  hidden?: boolean
 }
 
 interface CinqoToolRoute {
@@ -64,6 +66,8 @@ interface CinqoOpenFileReaderOptions {
 
 interface CinqoToolBridge {
   registerMenuEntry(entry: CinqoToolMenuEntry): void
+  // Shows or hides the menu page with this address (what the sidebar draws only; a host older than plan 238 does not have it).
+  setMenuEntryHidden?(path: string, hidden: boolean): void
   registerRoute(route: CinqoToolRoute): void
   navigate(path: string): void
   // Opens the main app's floating chat widget (if mounted) showing

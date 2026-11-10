@@ -657,6 +657,34 @@ as it is, and **Text** is the plain reader.
   file, never the content.
 - Who can read is decided by the server from `scope` on every request.
 
+## Showing a menu page only when there is something to open
+
+A tool's menu is registered once (`registerMenuEntry`), but a page of it can be **hidden and shown while the app runs**, for a page that only
+makes sense once the tool has data for it (an "Applications" page when there are applications).
+
+```js
+var bridge = window.__cinqoToolBridge
+
+// 1. Register the page hidden, so it never flashes:
+bridge.registerMenuEntry({
+  label: 'My tool',
+  children: [{ label: 'Applications', path: '/tools/my_tool/applications', scopes: ['tool:my_tool:read'], hidden: true }],
+})
+
+// 2. Ask your own server and show or hide it (at load, and whenever the answer may have changed, for example when one of your pages opens):
+fetch('/api/v1/tools/my_tool/proxy/application-count', { credentials: 'include' })
+  .then(function (r) { return r.json() })
+  .then(function (d) { if (typeof bridge.setMenuEntryHidden === 'function') bridge.setMenuEntryHidden('/tools/my_tool/applications', d.total === 0) })
+```
+
+- `hidden: true` on an entry with a `path` starts it hidden; `setMenuEntryHidden(path, hidden)` shows or hides the page with that address, at any
+  depth of an entry your tool registered. A group disappears with its last page and comes back with its first.
+- It changes only what the **sidebar draws**. It is not an access control: the server still checks the scope of every call, and the page stays
+  reachable by its address (give it an empty state for that case).
+- On a host older than this method, `hidden` is ignored and the page simply stays visible; check `typeof bridge.setMenuEntryHidden === 'function'`
+  before calling it (as above). A path no entry has changes nothing, and a call made before the entry is registered is remembered.
+- Keep the check cheap (one small request): it runs often. If it fails, leave the page in the state it had.
+
 ## Previewing a PDF from Media
 
 A tool bundle is one file, so it cannot ship pdf.js and its worker. To show the first page of a PDF
