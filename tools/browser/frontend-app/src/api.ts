@@ -391,3 +391,50 @@ export async function fetchChromeProcesses(signal?: AbortSignal): Promise<Chrome
   if (!res.ok) throw new Error(`failed to load the Chrome sessions (${res.status})`)
   return readJson<ChromeProcessesResponse>(res)
 }
+
+// --- Temporary files (plan 248) ---
+//
+// The tool's temporary files folder: page copies, the page cache and idle browser profiles. GET /temp-files measures it (the size of the whole folder
+// and its parts), DELETE /temp-files clears what is not in use. The tool also clears it by itself at every start and stop and when a new page copy is
+// made. A backend that predates it answers 404: the card is then left out.
+
+const TEMP_FILES_BASE = '/api/v1/tools/browser/proxy/temp-files'
+
+export interface TempFilesPart {
+  // 'page_copies', 'page_cache', 'chrome_profiles' or 'other' (a newer backend may add more).
+  id: string
+  label: string
+  bytes: number
+  files: number
+  // Only for 'chrome_profiles': how many profile folders belong to a browser that is running now.
+  inUse?: number
+}
+
+export interface TempFilesResponse {
+  // The size of the whole folder, and the number of files in it.
+  bytes: number
+  files: number
+  parts: TempFilesPart[]
+}
+
+export interface TempFilesCleared {
+  deletedBytes: number
+  deletedFiles: number
+  // What is left in the folder (the list of running browsers and the profiles of browsers that run), and why.
+  keptBytes: number
+  keptReason: string
+}
+
+// null when the backend has no such route (an older Browser tool).
+export async function fetchTempFiles(signal?: AbortSignal): Promise<TempFilesResponse | null> {
+  const res = await fetch(TEMP_FILES_BASE, { credentials: 'include', cache: 'no-store', signal })
+  if (res.status === 404) return null
+  if (!res.ok) throw new Error(`failed to read the temporary files (${res.status})`)
+  return readJson<TempFilesResponse>(res)
+}
+
+export async function clearTempFiles(): Promise<TempFilesCleared> {
+  const res = await fetch(TEMP_FILES_BASE, { method: 'DELETE', credentials: 'include' })
+  if (!res.ok) throw new Error(`failed to delete the temporary files (${res.status})`)
+  return readJson<TempFilesCleared>(res)
+}

@@ -120,3 +120,21 @@ export function ChallengeIcon({ className }: { className?: string }) {
     </Glyph>
   )
 }
+
+// The Temporary files card on Browser & Engine.
+export function FolderIcon({ className }: { className?: string }) {
+  return (
+    <Glyph className={className}>
+      <path d="M3.5 7.5a1.8 1.8 0 0 1 1.8-1.8h3.6l1.9 2.1h7.9a1.8 1.8 0 0 1 1.8 1.8v7.7a1.8 1.8 0 0 1-1.8 1.8H5.3a1.8 1.8 0 0 1-1.8-1.8V7.5z" />
+    </Glyph>
+  )
+}
+
+// A delete button.
+export function TrashIcon({ className = 'h-4 w-4' }: { className?: string }) {
+  return (
+    <Glyph className={className}>
+      <path d="M4.5 7h15M9 7V5.2a1.2 1.2 0 0 1 1.2-1.2h3.6A1.2 1.2 0 0 1 15 5.2V7M6.5 7l.8 11.2a1.5 1.5 0 0 0 1.5 1.3h6.4a1.5 1.5 0 0 0 1.5-1.3L17.5 7M10 11v5M14 11v5" />
+    </Glyph>
+  )
+}

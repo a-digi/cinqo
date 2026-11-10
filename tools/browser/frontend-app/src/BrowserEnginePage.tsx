@@ -5,6 +5,7 @@ import { HealthStrip } from './HealthStrip'
 import { chromeLight, engineLights, headerPill } from './healthRules'
 import { PageHeaderCard } from './Shared/PageHeaderCard'
 import { ShieldIcon } from './icons'
+import { TempFilesCard } from './TempFilesCard'
 import { useChromeStatus, useEngine } from './useBrowserStatus'
 
 // "Browser & Engine" — one page for what runs the Browser tool: the Chrome it
@@ -46,6 +47,8 @@ export function BrowserEnginePage() {
       />
 
       {chrome.status?.installed !== false && <ChromeSessionsCard />}
+
+      <TempFilesCard />
 
       <ChromeSection chrome={chrome} />
 
