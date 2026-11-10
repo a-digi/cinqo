@@ -7,6 +7,7 @@ import (
 	"github.com/a-digi/coco-server/server/response"
 
 	"github.com/a-digi/cinqo/src/platform"
+	platform_query "github.com/a-digi/cinqo/src/platform/repository/query"
 )
 
 // platformResponse is {id, name} plus the platform's own selectable
@@ -21,6 +22,9 @@ type platformResponse struct {
 	// RequiresKey is true for a platform reached with a stored API key
 	// (the cloud platforms): the frontend shows "add a key" only then.
 	RequiresKey bool `json:"requiresKey"`
+	// HasKey is true when the platform is ready as far as keys go: a key is stored for it, or it needs none (the local AI). A screen
+	// that starts a conversation offers only the platforms with HasKey (plan/ai/conversation/step-229). It says nothing about the key.
+	HasKey bool `json:"hasKey"`
 	// OffersTools is false for a platform whose conversations are offered no tools and run in direct mode only: the
 	// frontend then does not offer composer mode for it.
 	OffersTools bool `json:"offersTools"`
@@ -46,11 +50,18 @@ type platformResponse struct {
 func ListPlatformsHandler(reqCtx request.RequestContext) {
 	w := reqCtx.GetWriter()
 
-	response.SuccessResponse(w, http.StatusOK, platformResponses())
+	db := reqCtx.GetDI().GetDatabaseManager().Connector.DB
+	withKey, err := platform_query.NewKeyQueryRepo(db).PlatformsWithKey()
+	if err != nil {
+		response.ErrorResponse(w, http.StatusInternalServerError, "failed to read the platform keys")
+		return
+	}
+	response.SuccessResponse(w, http.StatusOK, platformResponses(withKey))
 }
 
-// platformResponses is the list the endpoint returns: every registered platform that is available right now.
-func platformResponses() []platformResponse {
+// platformResponses is the list the endpoint returns: every registered platform that is available right now. withKey is the set of platform
+// ids that have a stored key.
+func platformResponses(withKey map[string]bool) []platformResponse {
 	entries := platform.List()
 	out := make([]platformResponse, 0, len(entries))
 	for _, info := range entries {
@@ -59,7 +70,7 @@ func platformResponses() []platformResponse {
 			continue
 		}
 		models := entry.SelectableModelList()
-		out = append(out, platformResponse{ID: info.ID, Name: info.Name, Models: models, RequiresKey: entry.RequiresKey(), OffersTools: entry.OffersAllTools(), NeedsShortSteps: entry.ShortSteps, ContextTokens: contextOf(entry), ModelNames: namesOf(entry, models), UnsuitableFor: unsuitableOf(entry, models), Drivers: driversOf(entry, models)})
+		out = append(out, platformResponse{ID: info.ID, Name: info.Name, Models: models, RequiresKey: entry.RequiresKey(), HasKey: !entry.RequiresKey() || withKey[info.ID], OffersTools: entry.OffersAllTools(), NeedsShortSteps: entry.ShortSteps, ContextTokens: contextOf(entry), ModelNames: namesOf(entry, models), UnsuitableFor: unsuitableOf(entry, models), Drivers: driversOf(entry, models)})
 	}
 	return out
 }

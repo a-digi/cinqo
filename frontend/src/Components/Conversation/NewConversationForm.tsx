@@ -1,6 +1,9 @@
 import { useId, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { useAuth } from '../Auth/AuthContext'
+import { canAddKeys } from './canAddKeys'
 import type { OrchestrationMode } from '../../api/conversations'
-import type { Platform } from '../../api/platforms'
+import { selectablePlatforms, type Platform } from '../../api/platforms'
 import { Dropdown } from '../../Shared/Components/Dropdown/Dropdown'
 
 // The one-time platform (and, for OpenAI/Anthropic, model) picker
@@ -9,7 +12,47 @@ import { Dropdown } from '../../Shared/Components/Dropdown/Dropdown'
 // can share this exact same form instead of duplicating it — both
 // call the shared ConversationContext's own createConversation with
 // whatever this form's own onCreate hands back.
+// Takes every platform and offers only those with a key (or that need none), so the page and the chat window cannot differ
+// (plan/ai/conversation/step-229-platforms-with-a-key-only.md). With none to offer it says so instead of showing the form.
 export function NewConversationForm({
+  platforms: all,
+  onCreate,
+  onCancel,
+}: {
+  platforms: Platform[]
+  onCreate: (input: { platformId: string; model?: string; orchestrationMode: OrchestrationMode }) => void
+  onCancel: () => void
+}) {
+  const platforms = selectablePlatforms(all)
+  if (platforms.length === 0) return <NoPlatformWithAKey onCancel={onCancel} />
+  return <Form platforms={platforms} onCreate={onCreate} onCancel={onCancel} />
+}
+
+function NoPlatformWithAKey({ onCancel }: { onCancel: () => void }) {
+  const { scopes } = useAuth()
+  return (
+    <div className="flex flex-1 items-center justify-center p-4">
+      <div className="w-full max-w-sm space-y-3 rounded-lg border border-gray-200 p-5 text-center">
+        <h2 className="text-sm font-semibold text-gray-900">New conversation</h2>
+        <p className="text-sm text-gray-600">No AI platform has an API key yet.</p>
+        {canAddKeys(scopes) && (
+          <Link to="/admin/api-keys" className="block text-sm font-medium text-gray-900 underline">
+            Add an API key
+          </Link>
+        )}
+        <button
+          type="button"
+          onClick={onCancel}
+          className="rounded border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+        >
+          Back
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function Form({
   platforms,
   onCreate,
   onCancel,

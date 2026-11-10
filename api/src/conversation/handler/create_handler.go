@@ -17,6 +17,7 @@ import (
 	conversation_persistent "github.com/a-digi/cinqo/src/conversation/repository/persistent"
 	conversation_query "github.com/a-digi/cinqo/src/conversation/repository/query"
 	"github.com/a-digi/cinqo/src/platform"
+	platform_query "github.com/a-digi/cinqo/src/platform/repository/query"
 	tool_query "github.com/a-digi/cinqo/src/tool/repository/query"
 )
 
@@ -147,6 +148,19 @@ func CreateHandler(reqCtx request.RequestContext) {
 	if err != nil {
 		response.ErrorResponse(w, http.StatusInternalServerError, "failed to store allowedTools")
 		return
+	}
+
+	// A platform reached with a stored key needs one before a conversation can start (plan/ai/conversation/step-229).
+	if entry.RequiresKey() {
+		withKey, err := platform_query.NewKeyQueryRepo(reqCtx.GetDI().GetDatabaseManager().Connector.DB).PlatformsWithKey()
+		if err != nil {
+			response.ErrorResponse(w, http.StatusInternalServerError, "failed to check the platform key")
+			return
+		}
+		if !withKey[body.PlatformID] {
+			response.ErrorResponse(w, http.StatusBadRequest, "this platform has no API key yet")
+			return
+		}
 	}
 
 	userID, err := callerUserID(reqCtx)

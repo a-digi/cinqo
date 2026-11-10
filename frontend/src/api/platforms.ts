@@ -15,8 +15,16 @@ export interface Platform {
   // true for a platform reached with a stored API key (the cloud platforms): only those get "add a key" buttons and
   // a place in the key form. A platform that needs none brings its own settings page.
   requiresKey: boolean
+  // true when the platform is ready as far as keys go: a key is stored for it, or it needs none (the local AI).
+  hasKey: boolean
   // false for a platform whose conversations get no tools and run in direct mode only (no composer mode).
   offersTools: boolean
+}
+
+// The platforms a new conversation can be started on: those that have a key (or need none). The Platform keys and How-to pages keep
+// using the whole list, to add the first key to a platform that has none (plan/ai/conversation/step-229-platforms-with-a-key-only.md).
+export function selectablePlatforms(platforms: Platform[]): Platform[] {
+  return platforms.filter((p) => p.hasKey)
 }
 
 export interface PlatformKey {

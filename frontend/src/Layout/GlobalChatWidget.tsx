@@ -229,9 +229,9 @@ export function GlobalChatWidget() {
           )}
 
           {creatingNew ? (
-            platforms.length === 0 ? (
+            platformsError && platforms.length === 0 ? (
               <div className="flex flex-1 items-center justify-center p-4 text-center text-sm text-gray-400">
-                {platformsError ? 'Could not load AI platforms.' : 'No AI platform configured yet.'}
+                Could not load AI platforms.
               </div>
             ) : (
               <NewConversationForm

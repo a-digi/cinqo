@@ -62,3 +62,23 @@ func (r *KeyQueryRepo) FindMostRecentForPlatform(platformID string) (*platform_e
 	row := r.db.QueryRow(`SELECT `+keyColumns+` FROM platform_keys WHERE platform = ? ORDER BY created_at DESC LIMIT 1`, platformID)
 	return scanKey(row.Scan)
 }
+
+// PlatformsWithKey is the set of platform ids that have at least one stored key (the keys themselves are never read). One query,
+// for the platform list and the create rule (plan/ai/conversation/step-229-platforms-with-a-key-only.md).
+func (r *KeyQueryRepo) PlatformsWithKey() (map[string]bool, error) {
+	rows, err := r.db.Query(`SELECT DISTINCT platform FROM platform_keys`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := map[string]bool{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out[id] = true
+	}
+	return out, rows.Err()
+}

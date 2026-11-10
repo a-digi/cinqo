@@ -41,7 +41,7 @@ func TestThePlatformListSaysWhichPlatformsNeedAKeyAndHidesUnavailableOnes(t *tes
 		t.Fatal(err)
 	}
 
-	list := platformResponses()
+	list := platformResponses(nil)
 	if _, ok := find(list, "list-keyless"); ok {
 		t.Error("an unavailable platform must not be listed")
 	}
@@ -53,7 +53,7 @@ func TestThePlatformListSaysWhichPlatformsNeedAKeyAndHidesUnavailableOnes(t *tes
 	}
 
 	available = true
-	p, ok := find(platformResponses(), "list-keyless")
+	p, ok := find(platformResponses(nil), "list-keyless")
 	if !ok {
 		t.Fatal("an available platform must be listed")
 	}
@@ -72,7 +72,7 @@ func TestAPlatformWithPerModelToolsIsNotOfferedTheToolModes(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	p, ok := find(platformResponses(), "list-permodel")
+	p, ok := find(platformResponses(nil), "list-permodel")
 	if !ok || p.OffersTools {
 		t.Errorf("%+v (listed %v): a form that cannot name an allowlist must not offer tool modes", p, ok)
 	}
@@ -88,7 +88,7 @@ func TestThePlatformListSaysWhichPlatformsNeedShortSteps(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	list := platformResponses()
+	list := platformResponses(nil)
 	if p, ok := find(list, "list-shortsteps"); !ok || !p.NeedsShortSteps {
 		t.Errorf("%+v (listed %v): a platform that asked for short steps must say so", p, ok)
 	}
@@ -119,12 +119,12 @@ func TestThePlatformListStatesTheContextOnlyOfAPlatformThatHasOne(t *testing.T) 
 	}); err != nil {
 		t.Fatal(err)
 	}
-	list := platformResponses()
+	list := platformResponses(nil)
 	if p, ok := find(list, "list-context"); !ok || p.ContextTokens == nil || *p.ContextTokens != 16384 {
 		t.Errorf("%+v (listed %v): the context must be stated", p, ok)
 	}
 	limit = 8192 // read at call time, not cached
-	if p, _ := find(platformResponses(), "list-context"); p.ContextTokens == nil || *p.ContextTokens != 8192 {
+	if p, _ := find(platformResponses(nil), "list-context"); p.ContextTokens == nil || *p.ContextTokens != 8192 {
 		t.Errorf("the context is read at call time: %+v", p)
 	}
 	if p, ok := find(list, "list-nocontext"); !ok || p.ContextTokens != nil {
@@ -163,13 +163,13 @@ func TestThePlatformListGivesReadableModelNamesOnlyForOfferedModelsAndOnlyWhenTh
 	}); err != nil {
 		t.Fatal(err)
 	}
-	list := platformResponses()
+	list := platformResponses(nil)
 	p, ok := find(list, "list-names")
 	if !ok || len(p.ModelNames) != 1 || p.ModelNames["m-one"] != "Model One, 1.0 GiB" {
 		t.Fatalf("%+v: a name for the offered model that has one, none for an empty name, none for a model that is not offered", p)
 	}
 	offered = []string{"m-two", "m-one"} // read at call time
-	if p, _ := find(platformResponses(), "list-names"); p.ModelNames["m-one"] == "" {
+	if p, _ := find(platformResponses(nil), "list-names"); p.ModelNames["m-one"] == "" {
 		t.Errorf("names are read at call time: %+v", p)
 	}
 	if n, ok := find(list, "list-names-none"); !ok || n.ModelNames != nil {
@@ -198,7 +198,7 @@ func TestThePlatformListFlagsUnsuitableModelsOnlyForOfferedModelsAndOnlyWhenTheP
 	}); err != nil {
 		t.Fatal(err)
 	}
-	list := platformResponses()
+	list := platformResponses(nil)
 	p, ok := find(list, "list-unsuitable")
 	if !ok || len(p.UnsuitableFor) != 1 || len(p.UnsuitableFor["weak"]) != 1 || p.UnsuitableFor["weak"][0] != "cv-import" {
 		t.Fatalf("%+v: only the offered model that is flagged, with its tasks", p)
@@ -224,7 +224,7 @@ func TestThePlatformListNamesTheDriversOnlyOfTheOfferedModels(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	list := platformResponses()
+	list := platformResponses(nil)
 	p, ok := find(list, "list-drivers")
 	if !ok || len(p.Drivers) != 1 || p.Drivers["b"] != "code" {
 		t.Fatalf("%+v: only the offered model that has a driver", p)
