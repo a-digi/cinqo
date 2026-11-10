@@ -24,10 +24,13 @@ package main
 import (
 	applicationloghandlers "career-tool-backend/applicationlog/handlers"
 	companieshandlers "career-tool-backend/companies/handlers"
+	courseshandlers "career-tool-backend/courses/handlers"
 	crawlhandlers "career-tool-backend/crawl/handlers"
 	cvhandlers "career-tool-backend/cv/handlers"
 	educationhandlers "career-tool-backend/education/handlers"
+	hobbieshandlers "career-tool-backend/hobbies/handlers"
 	jobshandlers "career-tool-backend/jobs/handlers"
+	languageshandlers "career-tool-backend/languages/handlers"
 	"career-tool-backend/match"
 	personahandlers "career-tool-backend/persona/handlers"
 	portalhandlers "career-tool-backend/portal/handlers"
@@ -223,6 +226,10 @@ func runHTTPServer() {
 	http.HandleFunc("/persona-experience", profilehandlers.PersonaExperienceHandler)
 	// Plan 173, step 6: the profile's education.
 	http.HandleFunc("/education", educationhandlers.EducationHandler)
+	// Plan 231: the profile's languages, courses and hobbies.
+	http.HandleFunc("/languages", languageshandlers.LanguagesHandler)
+	http.HandleFunc("/courses", courseshandlers.CoursesHandler)
+	http.HandleFunc("/hobbies", hobbieshandlers.HobbiesHandler)
 	// Plan 176, step 2: the application protocol.
 	http.HandleFunc("/application-messages", applicationloghandlers.ApplicationLogHandler)
 	// Plan 174, step 3: the summary and goals of a profile.

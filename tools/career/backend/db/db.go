@@ -434,6 +434,45 @@ CREATE TABLE IF NOT EXISTS profile_education (
 
 CREATE INDEX IF NOT EXISTS profile_education_profile_idx ON profile_education(profile_id);
 
+-- The profile's languages, courses and hobbies (plan/ai/tools/career/step-231-hobbies-courses-languages.md): like education, global to the
+-- profile (many per profile, deleted with it, never chosen or changed by a persona). Every rule (the level list, at least one of spoken or
+-- written, the date shape, an http(s) link, the lengths) is checked by the languages, courses and hobbies packages before the write; the
+-- unique indexes only back the one-entry-per-name rule (case-insensitive for plain letters).
+CREATE TABLE IF NOT EXISTS profile_languages (
+    id         TEXT PRIMARY KEY,
+    profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    language   TEXT NOT NULL,
+    level      TEXT NOT NULL DEFAULT '',
+    can_speak  INTEGER NOT NULL DEFAULT 0,
+    can_write  INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS profile_languages_unique ON profile_languages(profile_id, language COLLATE NOCASE);
+
+CREATE TABLE IF NOT EXISTS profile_courses (
+    id             TEXT PRIMARY KEY,
+    profile_id     TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    title          TEXT NOT NULL,
+    provider       TEXT NOT NULL DEFAULT '',
+    completed_date TEXT,
+    credential_url TEXT NOT NULL DEFAULT '',
+    description    TEXT,
+    created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS profile_courses_profile_idx ON profile_courses(profile_id);
+
+CREATE TABLE IF NOT EXISTS profile_hobbies (
+    id          TEXT PRIMARY KEY,
+    profile_id  TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    name        TEXT NOT NULL,
+    description TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS profile_hobbies_unique ON profile_hobbies(profile_id, name COLLATE NOCASE);
+
 -- The one-time data migrations that must not run twice (a second run would lift the custom items a person added after the first),
 -- by name, with the time they ran.
 CREATE TABLE IF NOT EXISTS career_migrations (
