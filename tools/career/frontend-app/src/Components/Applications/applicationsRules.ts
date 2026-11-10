@@ -1,4 +1,5 @@
 import type { JobApplication } from '../../api'
+import { plural } from '../CompaniesPage/companyStats'
 import { agoText, protocolChip } from '../JobBoard/protocolChipRules'
 
 // The rules of the overview of applications (plan/ai/tools/career/step-176-application-protocol.md, step 5).
@@ -58,6 +59,12 @@ export function sortApplications(list: readonly JobApplication[], sort: Applicat
 // How many of the applications wait for a reply.
 export function waitingCount(list: readonly JobApplication[]): number {
   return list.filter((a) => a.waitingForReply).length
+}
+
+// The page's totals, now that it has no header (plan 237): "5 applications · 2 waiting", or "1 application" when none waits.
+export function totalsText(total: number, waiting: number): string {
+  const all = plural(total, 'application', 'applications')
+  return waiting > 0 ? `${all} · ${String(waiting)} waiting` : all
 }
 
 // What the row says about the protocol: "3 entries · You wrote 2 days ago · 1 planned", or "No entries yet" when there is none.

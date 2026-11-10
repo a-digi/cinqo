@@ -1,15 +1,13 @@
 import { useEffect, useState } from 'react'
 import { fetchJobApplications, fetchProfiles, type JobApplication, type Profile } from '../../api'
 import { AppLink } from '../../Shared/AppLink/AppLink'
-import { BriefcaseIcon } from '../../Shared/Icons/icons'
-import { PageHeaderCard } from '../../Shared/PageHeader/PageHeaderCard'
 import { PageTips } from '../../Shared/PageTips/PageTips'
 import { jobBoardPathFor } from '../../paths'
 import { plural } from '../CompaniesPage/companyStats'
 import { columnAccent } from '../JobBoard/jobBoardRules'
 import { jobDetailsPathFor } from '../JobDetails/jobProfileScope'
 import { profileLabel } from '../ProfileSwitcher/profileLabel'
-import { SORTS, activityText, protocolText, sortApplications, waitingCount, type ApplicationSort } from './applicationsRules'
+import { SORTS, activityText, protocolText, sortApplications, totalsText, waitingCount, type ApplicationSort } from './applicationsRules'
 
 interface ProfileApplications {
   profile: Profile
@@ -40,17 +38,8 @@ export function ApplicationsPage() {
 
   return (
     <div className="career-v-tilt career-a-float career-t-wave max-w-full p-6 font-sans text-gray-900">
-      <PageHeaderCard
-        icon={<BriefcaseIcon />}
-        title="Applications"
-        description="The jobs each profile applied to or keeps a protocol for, and who owes the next message."
-        pill={{
-          text:
-            waiting > 0
-              ? `${plural(total, 'application', 'applications')} · ${String(waiting)} waiting`
-              : plural(total, 'application', 'applications'),
-        }}
-      />
+      {/* The page has no visible header any more (plan 237); its heading stays for a screen reader. */}
+      <h1 className="sr-only">Applications</h1>
       <PageTips page="applications" />
       {error !== '' && (
         <p role="alert" className="mb-3 text-sm text-red-700">
@@ -80,6 +69,7 @@ export function ApplicationsPage() {
               </option>
             ))}
           </select>
+          <span className="ml-auto">{totalsText(total, waiting)}</span>
         </div>
       )}
       {shown.map(({ profile, applications }) => (
